@@ -1,7 +1,7 @@
 export const MENU_TREE = [
   {
     key: '_config',
-    label: 'Cadastros',
+    label: 'Configurações',
     children: [
       { key: 'usuarios', label: 'Usuários' },
       { key: 'grupos', label: 'Grupos de Acessos' },

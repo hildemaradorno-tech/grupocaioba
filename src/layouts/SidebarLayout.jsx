@@ -615,7 +615,7 @@ export default function SidebarLayout() {
           {canViewSection('_config') && (
             <SidebarIconBtn
               icon={Settings}
-              label="Cadastros"
+              label="Configurações"
               isActive={currentSection === '_config' || activeSection === '_config'}
               onClick={() => toggleSection('_config')}
             />
@@ -716,7 +716,7 @@ export default function SidebarLayout() {
           <div className="absolute left-full top-0 bottom-0 w-56 bg-blue-950 border-r border-blue-800/50 shadow-2xl z-50 flex flex-col overflow-hidden">
             <div className="h-16 flex items-center px-4 border-b border-blue-900 bg-blue-900/40 shrink-0">
               <span className="text-sm font-bold text-white truncate">
-                {activeSection === '_config' && 'Cadastros'}
+                {activeSection === '_config' && 'Configurações'}
                 {activeSection === '_comissoes-calculo' && 'Comissões'}
                 {activeSection === '_cadastros' && 'Cadastro de Tabelas'}
                 {activeSection === '_comissoes' && 'Regras de Comissões'}
