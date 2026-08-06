@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Get-ChildItem -Path \"c:\\\\Users\\\\hilde\\\\Documents\\\\Sistema em Desenvolvimento\\\\backend\" -Depth 0 | Where-Object {$_.PSIsContainer -eq $false} | Select-Object Name)",
+      "PowerShell(Get-ChildItem -Path \"c:\\\\Users\\\\hilde\\\\Documents\\\\Sistema em Desenvolvimento\" -Recurse -Directory | Select-Object -First 50 | ForEach-Object { $_.FullName })",
+      "PowerShell(Get-ChildItem -Path \"c:\\\\Users\\\\hilde\\\\Documents\\\\Sistema em Desenvolvimento\" -Depth 1 -Force | Where-Object { $_.PSIsContainer -eq $false } | Select-Object Name)",
+      "PowerShell(node --version)",
+      "PowerShell(npm --version)",
+      "PowerShell(netstat -ano)",
+      "PowerShell(Stop-Process -Id 12016 -Force -Confirm:$false)",
+      "Read(//c/Users/hilde/Documents/Claude Coude - Desenvolvimento Sistemas/Sistema em Desenvolvimento/src/pages/kpi/**)",
+      "PowerShell(cd \"c:\\\\Users\\\\hilde\\\\Documents\\\\Claude Coude - Desenvolvimento Sistemas\\\\Sistema em Desenvolvimento\\\\backend\"; Start-Process powershell -ArgumentList '-NoExit', '-Command', 'npm run dev' -WindowStyle Minimized; Write-Output \"Backend iniciando...\")",
+      "PowerShell(cd \"c:\\\\Users\\\\hilde\\\\Documents\\\\Claude Coude - Desenvolvimento Sistemas\\\\Sistema em Desenvolvimento\"; Start-Process powershell -ArgumentList '-NoExit', '-Command', 'npm run dev' -WindowStyle Minimized; Write-Output \"Frontend iniciando...\")",
+      "PowerShell(Start-Sleep -Seconds 4; try { $r = Invoke-WebRequest -Uri \"http://localhost:3001/api/kpi/status\" -UseBasicParsing -TimeoutSec 5; \"Backend OK: $\\($r.Content\\)\" } catch { \"Backend erro: $_\" })",
+      "PowerShell(Get-Process -Id 13512,26716,24112 -ErrorAction SilentlyContinue)",
+      "PowerShell(try { $r = Invoke-WebRequest \"http://localhost:3000\" -UseBasicParsing -TimeoutSec 3; \"3000: \" + $r.StatusCode + \" - \" + $r.Content.Substring\\(0,80\\) } catch { \"3000: $_\" }; try { $r = Invoke-WebRequest \"http://localhost:3001/api/kpi/status\" -UseBasicParsing -TimeoutSec 3; \"3001/api: \" + $r.StatusCode + \" - \" + $r.Content.Substring\\(0,100\\) } catch { \"3001/api: $_\" })",
+      "PowerShell(Stop-Process -Id 13512,26716,24112 -Force -Confirm:$false -ErrorAction SilentlyContinue)",
+      "PowerShell(cd \"c:\\\\Users\\\\hilde\\\\Documents\\\\Claude Coude - Desenvolvimento Sistemas\\\\Sistema em Desenvolvimento\\\\backend\"; Start-Process powershell -ArgumentList '-NoExit', '-Command', 'cd \"c:\\\\Users\\\\hilde\\\\Documents\\\\Claude Coude - Desenvolvimento Sistemas\\\\Sistema em Desenvolvimento\\\\backend\"; npm run dev' -WindowStyle Normal; Write-Output \"Backend iniciado\")",
+      "PowerShell(cd \"c:\\\\Users\\\\hilde\\\\Documents\\\\Claude Coude - Desenvolvimento Sistemas\\\\Sistema em Desenvolvimento\"; Get-ChildItem -Path src -Recurse -File | Where-Object { $_.LastWriteTime -gt \\(Get-Item dist\\\\index.html\\).LastWriteTime } | Sort-Object LastWriteTime -Descending | ForEach-Object { \"$\\($_.LastWriteTime.ToString\\('dd/MM HH:mm'\\)\\) $\\($_.FullName.Replace\\(\\(Get-Location\\).Path + '\\\\src\\\\', ''\\)\\)\" })",
+      "PowerShell(Select-String -Path \"dist\\\\assets\\\\index-C5J1XlQs.css\" -Pattern \"bg-violet-50\\\\b\",\"bg-violet-600\",\"text-violet-700\",\"border-violet-100\" -List | ForEach-Object { $_.Pattern })",
+      "PowerShell($css = Get-Content \"dist\\\\assets\\\\index-C5J1XlQs.css\" -Raw; foreach \\($c in @\\('bg-violet-50','bg-violet-600','text-violet-700','border-violet-100','bg-sky-50','text-sky-700','border-sky-100'\\)\\) { \"$c => \" + $css.Contains\\(\".$c\"\\) })"
+    ]
+  }
+}

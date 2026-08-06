@@ -1,0 +1,16 @@
+node_modules
+/dist
+.env
+.env.local
+.env.local.*
+
+# Local Netlify folder
+.netlify
+
+# Banco de dados local (KPI)
+backend/portal.db
+
+# Arquivos de credenciais avulsos
+Acesso Azure.txt
+*.txt.secret
+Acesso*.txt
