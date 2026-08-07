@@ -33,6 +33,7 @@ import Medidas from './pages/Medidas'
 import CalculoComissoes from './pages/CalculoComissoes'
 import HistoricoComissoes from './pages/HistoricoComissoes'
 import Ferias from './pages/Ferias'
+import SobreavisoPlantao from './pages/SobreavisoPlantao'
 import Funcionarios from './pages/Funcionarios'
 import Feriados from './pages/Feriados'
 import Calendario from './pages/Calendario'
@@ -180,6 +181,7 @@ export default function App() {
           { path: '/calculo-comissoes', element: <CalculoComissoes />, menuPath: 'calculo-comissoes' },
           { path: '/historico-comissoes', element: <HistoricoComissoes />, menuPath: 'calculo-comissoes' },
           { path: '/ferias', element: <Ferias />, menuPath: 'ferias' },
+          { path: '/sobreaviso-plantao', element: <SobreavisoPlantao />, menuPath: 'sobreaviso-plantao' },
           { path: '/funcionarios', element: <Funcionarios />, menuPath: 'funcionarios' },
           { path: '/feriados', element: <Feriados />, menuPath: 'feriados' },
           { path: '/calendario', element: <Calendario />, menuPath: 'calendario' },

@@ -60,6 +60,14 @@ export const ACOES_POR_MENU = [
       { value: 'editar', label: 'Editar Título (observação)' },
     ],
   },
+  {
+    menuPath: 'sobreaviso-plantao',
+    acoes: [
+      { value: 'editar',             label: 'Editar Lançamentos' },
+      { value: 'excluir',            label: 'Excluir Lançamentos' },
+      { value: 'configurar_valores', label: 'Configurar Valores (R$/dia e R$/deslocamento)' },
+    ],
+  },
 ]
 
 export const ACOES_POR_PATH = Object.fromEntries(ACOES_POR_MENU.map(m => [m.menuPath, m.acoes]))

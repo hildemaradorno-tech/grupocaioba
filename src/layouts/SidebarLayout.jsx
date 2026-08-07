@@ -11,6 +11,7 @@ import {
   ClipboardList, Home, FolderKanban, CircleDot, FileText, CalendarDays, DollarSign, Truck, LayoutGrid,
   Calculator, BookOpen, Palmtree, GraduationCap,
   KeyRound, Eye, EyeOff, X, AlertTriangle, Bike, Network, PieChart, Share2, RefreshCw, Gauge, Ruler,
+  PhoneCall,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import TrocarSenhaObrigatoria from '../pages/TrocarSenhaObrigatoria'
@@ -29,7 +30,7 @@ MENU_TREE.forEach(buildSectionLeaves)
 // ── Map route to section key ──────────────────────────────────────────────────
 function getActiveSectionKey(pathname) {
   if (pathname === '/usuarios' || pathname === '/grupos' || pathname === '/permissoes-matriz') return '_config'
-  if (pathname === '/ferias' || pathname === '/calculo-comissoes' || pathname === '/politica-comissao' || pathname === '/fontes-calculo' || pathname === '/bases-calculo' || pathname === '/cargos-remuneracoes') return '_comissoes-calculo'
+  if (pathname === '/ferias' || pathname === '/calculo-comissoes' || pathname === '/politica-comissao' || pathname === '/fontes-calculo' || pathname === '/bases-calculo' || pathname === '/cargos-remuneracoes' || pathname === '/sobreaviso-plantao') return '_comissoes-calculo'
   const cadastros = ['/segmentos','/agrup-empresas','/empresas','/areas','/agrup-departamentos',
     '/departamentos','/setores','/box','/agrup-cargos','/cargos','/organograma',
     '/movimento-venda','/natureza-operacoes','/tipos-produtos','/tipos-os',
@@ -433,9 +434,10 @@ export default function SidebarLayout() {
                 <div className="mx-3 my-2 border-t border-blue-800/50" />
               </>
             )}
-            {(canView('ferias') || canView('calculo-comissoes')) && <FlyGroup label="Comissões" />}
+            {(canView('ferias') || canView('calculo-comissoes') || canView('sobreaviso-plantao')) && <FlyGroup label="Comissões" />}
             {canView('ferias') && <FlyItem to="/ferias" icon={Palmtree} onClose={closeFlyout}>Férias</FlyItem>}
             {canView('calculo-comissoes') && <FlyItem to="/calculo-comissoes" icon={Wallet} onClose={closeFlyout}>Cálculo de Comissões DAF</FlyItem>}
+            {canView('sobreaviso-plantao') && <FlyItem to="/sobreaviso-plantao" icon={PhoneCall} onClose={closeFlyout}>Sobreaviso/Plantão</FlyItem>}
           </>
         )
 

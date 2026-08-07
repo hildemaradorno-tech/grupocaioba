@@ -75,6 +75,7 @@ export const MENU_TREE = [
       },
       { key: 'ferias', label: 'Férias' },
       { key: 'calculo-comissoes', label: 'Cálculo de Comissões DAF' },
+      { key: 'sobreaviso-plantao', label: 'Sobreaviso/Plantão' },
     ],
   },
   {

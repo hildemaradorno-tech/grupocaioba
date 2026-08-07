@@ -954,6 +954,66 @@ export const apiService = {
     return { success: true }
   },
 
+  // SOBREAVISO/PLANTÃO — controle mensal por colaborador (substitui a planilha enviada ao RH).
+  getSobreavisoConfig: async () => {
+    const { data, error } = await supabase
+      .from('config_sobreaviso')
+      .select('*')
+      .limit(1)
+      .single()
+    if (error) throw error
+    return data
+  },
+
+  updateSobreavisoConfig: async (id, payload) => {
+    const { data, error } = await supabase
+      .from('config_sobreaviso')
+      .update({ ...payload, atualizado_em: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single()
+    if (error) throw error
+    return data
+  },
+
+  getSobreavisoLancamentos: async (mesReferencia) => {
+    const { data, error } = await supabase
+      .from('rh_sobreaviso_plantao')
+      .select('*')
+      .eq('mes_referencia', mesReferencia)
+      .order('funcionario_nome', { ascending: true })
+    if (error) throw error
+    return data || []
+  },
+
+  createSobreavisoLancamento: async (payload) => {
+    const { data, error } = await supabase
+      .from('rh_sobreaviso_plantao')
+      .insert([payload])
+      .select()
+    if (error) throw error
+    return data?.[0]
+  },
+
+  updateSobreavisoLancamento: async (id, payload) => {
+    const { data, error } = await supabase
+      .from('rh_sobreaviso_plantao')
+      .update({ ...payload, atualizado_em: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+    if (error) throw error
+    return data?.[0]
+  },
+
+  deleteSobreavisoLancamento: async (id) => {
+    const { error } = await supabase
+      .from('rh_sobreaviso_plantao')
+      .delete()
+      .eq('id', id)
+    if (error) throw error
+    return { success: true }
+  },
+
   // POLÍTICA DE COMISSÃO
   getPoliticaComissao: async () => {
     const { data, error } = await supabase
@@ -2405,8 +2465,9 @@ export const apiService = {
   },
 
   deleteGarantia: async (id) => {
-    const { error } = await supabase.from('gar_garantias').delete().eq('id', id)
+    const { data, error } = await supabase.from('gar_garantias').delete().eq('id', id).select('id')
     if (error) throw error
+    if (!data || data.length === 0) throw new Error(`Registro ${id} não foi removido (0 linhas afetadas — verifique as políticas de RLS em gar_garantias no Supabase)`)
     return { success: true }
   },
 

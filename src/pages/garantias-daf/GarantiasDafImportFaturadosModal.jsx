@@ -87,7 +87,7 @@ export default function GarantiasDafImportFaturadosModal({ onClose, onImported, 
       .then(d => setEmpresasDim(d.filter(e => e.ativo !== false)))
       .catch(() => {})
     apiService.getTiposOS()
-      .then(d => setTiposOS(d.filter(t => t.ativo !== false)))
+      .then(d => setTiposOS(d.filter(t => t.ativo !== false && t.classificacao === 'Garantia')))
       .catch(() => {})
     apiService.getFuncionarios()
       .then(d => setFuncionarios(d.filter(f => f.ativo !== false)))
