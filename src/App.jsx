@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from './context/AuthContext'
 import { KpiYearProvider } from './context/KpiYearContext'
 import { normalizePath } from './config/menuTree'
 import Login from './pages/Login'
+import RedefinirSenha from './pages/RedefinirSenha'
 import SidebarLayout from './layouts/SidebarLayout'
 import Home from './pages/Home'
 import Usuarios from './pages/Usuarios'
@@ -150,6 +151,7 @@ export default function App() {
     <ProjetosFiltrosProvider>
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/redefinir-senha" element={<RedefinirSenha />} />
       <Route element={<ProtectedRoute><SidebarLayout /></ProtectedRoute>}>
         {[
           { path: '/', element: <Home /> },
