@@ -17,6 +17,7 @@ import garantiasRoutes from './routes/garantias.js'
 import calculoComissaoRoutes from './routes/calculoComissao.js'
 import rhFeriasRoutes from './routes/rhFerias.js'
 import hondaRoutes from './routes/honda.js'
+import googleCalendarRoutes from './routes/googleCalendar.js'
 import { iniciarSchedulerKpi } from './services/kpiSyncScheduler.js'
 
 const app = express()
@@ -37,6 +38,9 @@ app.use('/api/rh-ferias', rhFeriasRoutes)
 
 // ── Rotas Honda (integração MicroWork Cloud) ──────────────────────────────────
 app.use('/api/honda', hondaRoutes)
+
+// ── Rotas Google Calendar (OAuth + leitura de eventos) ───────────────────────
+app.use('/api/google-calendar', googleCalendarRoutes)
 
 // Handler de erro global — sem isso, um erro lançado dentro de uma rota (ex: pasta/arquivo do
 // SharePoint não encontrado) cai no handler padrão do Express, que responde com uma página HTML
