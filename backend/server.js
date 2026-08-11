@@ -217,29 +217,26 @@ async function start() {
 
   // ==================== CRIAÇÃO DE USUÁRIO VIA SUPABASE ADMIN ====================
 
-  // POST /api/auth/create-user — cria usuário no Supabase Auth com email já confirmado
+  // POST /api/auth/create-user — cria usuário no Supabase Auth e envia e-mail de convite/boas-vindas
+  // (o próprio usuário define a senha ao clicar no link do e-mail, admin não define senha nenhuma).
   app.post('/api/auth/create-user', async (req, res) => {
     if (!supabaseAdmin) {
       return res.status(503).json({ error: 'SUPABASE_SERVICE_KEY não configurada no backend. Configure o arquivo backend/.env.' })
     }
-    const { nome, email, senha, grupo_id } = req.body
-    if (!nome || !email || !senha) {
-      return res.status(400).json({ error: 'Campos obrigatórios: nome, email, senha' })
-    }
-    if (senha.length < 6) {
-      return res.status(400).json({ error: 'A senha deve ter no mínimo 6 caracteres.' })
+    const { nome, email, grupo_id, redirectTo } = req.body
+    if (!nome || !email) {
+      return res.status(400).json({ error: 'Campos obrigatórios: nome, email' })
     }
 
-    // 1. Cria no Supabase Auth (email_confirm: true → sem confirmação de e-mail)
-    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
-      email,
-      password: senha,
-      email_confirm: true,
+    // 1. Cria no Supabase Auth e envia o e-mail de convite (template "Invite user" do Supabase)
+    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
+      data: { nome },
+      ...(redirectTo ? { redirectTo } : {}),
     })
     if (authError) return res.status(400).json({ error: authError.message })
 
-    // 2. Insere perfil na tabela usuarios
-    const perfilInsert = { id: authData.user.id, nome, email, ativo: true, senha_atualizada_em: new Date().toISOString() }
+    // 2. Insere perfil na tabela usuarios — sem senha_atualizada_em, pois ainda não definiu senha
+    const perfilInsert = { id: authData.user.id, nome, email, ativo: true }
     if (grupo_id) perfilInsert.grupo_id = grupo_id
     const { data, error } = await supabaseAdmin
       .from('usuarios')

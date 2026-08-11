@@ -6,6 +6,7 @@ import { supabase } from '../services/supabaseClient'
 export default function RedefinirSenha() {
   const navigate = useNavigate()
   const [status, setStatus] = useState('checking') // 'checking' | 'ready' | 'invalid'
+  const [tipoLink, setTipoLink] = useState(null) // 'recovery' | 'invite' — muda o texto da tela
   const [novaSenha, setNovaSenha] = useState('')
   const [confirmarSenha, setConfirmarSenha] = useState('')
   const [verNova, setVerNova] = useState(false)
@@ -31,16 +32,18 @@ export default function RedefinirSenha() {
       marcarInvalido()
       return
     }
-    // Só prossegue se a URL realmente carrega um token de recuperação do Supabase
-    // (#access_token=...&type=recovery). Sem isso, uma sessão normal já ativa no
+    // Só prossegue se a URL realmente carrega um token do Supabase de redefinição
+    // (#type=recovery, link de "esqueci minha senha") ou de convite de novo usuário
+    // (#type=invite, e-mail de boas-vindas). Sem isso, uma sessão normal já ativa no
     // navegador não deve liberar a troca de senha por essa tela pública.
-    if (!hash.includes('type=recovery')) {
-      marcarInvalido()
-      return
-    }
+    if (hash.includes('type=invite')) setTipoLink('invite')
+    else if (hash.includes('type=recovery')) setTipoLink('recovery')
+    else { marcarInvalido(); return }
 
+    // Convite (novo usuário) estabelece uma sessão normal (SIGNED_IN); redefinição de
+    // senha estabelece uma sessão especial de recuperação (PASSWORD_RECOVERY).
     const { data: subscription } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'PASSWORD_RECOVERY') marcarPronto()
+      if (event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN') marcarPronto()
     })
 
     supabase.auth.getSession().then(({ data }) => {
@@ -98,13 +101,17 @@ export default function RedefinirSenha() {
             <KeyRound className="h-7 w-7 text-white" />
           </div>
           <h1 className="text-2xl font-bold text-white tracking-tight">Sistema de Gestão</h1>
-          <p className="text-slate-400 text-sm mt-1">Redefinição de senha</p>
+          <p className="text-slate-400 text-sm mt-1">
+            {tipoLink === 'invite' ? 'Bem-vindo(a)! Defina sua senha de acesso.' : 'Redefinição de senha'}
+          </p>
         </div>
 
         {/* Card */}
         <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
           <div className="px-8 py-6 border-b border-slate-100 bg-slate-50">
-            <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wide">Nova senha</h2>
+            <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wide">
+              {tipoLink === 'invite' ? 'Definir senha' : 'Nova senha'}
+            </h2>
           </div>
 
           <div className="px-8 py-6">
@@ -197,7 +204,7 @@ export default function RedefinirSenha() {
                   {salvando && (
                     <span className="inline-block h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                   )}
-                  {salvando ? 'Salvando...' : 'Salvar nova senha'}
+                  {salvando ? 'Salvando...' : (tipoLink === 'invite' ? 'Criar senha e continuar' : 'Salvar nova senha')}
                 </button>
               </form>
             )}

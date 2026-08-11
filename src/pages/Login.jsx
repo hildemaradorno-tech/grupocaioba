@@ -84,7 +84,7 @@ export default function Login() {
               {/* Sucesso da redefinição de senha */}
               {resetOk && (
                 <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-3 text-xs font-semibold text-emerald-700">
-                  Senha redefinida com sucesso. Faça login com sua nova senha.
+                  Senha definida com sucesso. Faça login com sua nova senha.
                 </div>
               )}
 

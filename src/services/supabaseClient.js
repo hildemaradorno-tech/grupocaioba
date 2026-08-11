@@ -725,12 +725,12 @@ export const apiService = {
     return { success: true }
   },
 
-  createUsuario: async (nome, email, senha, grupo_id = null) => {
+  createUsuario: async (nome, email, grupo_id = null, redirectTo) => {
     const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
     const res = await fetch(`${backendUrl}/api/auth/create-user`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ nome, email, senha, grupo_id }),
+      body: JSON.stringify({ nome, email, grupo_id, redirectTo }),
     })
     const body = await res.json()
     if (!res.ok) throw new Error(body.error || 'Erro ao criar usuário')
