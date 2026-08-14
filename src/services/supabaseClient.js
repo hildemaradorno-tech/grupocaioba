@@ -3338,30 +3338,71 @@ export const apiService = {
   },
 
   enviarConvitesManifestacao: async (projetoId, usuariosIds) => {
+    if (!usuariosIds || usuariosIds.length === 0) return { enviados: 0 }
+    // Busca dados do projeto e dos usuários diretamente no Supabase (sem precisar
+    // de SUPABASE_SERVICE_KEY no backend — apenas o smtp precisa do backend)
+    const [{ data: projeto }, { data: usuarios }] = await Promise.all([
+      supabase.from('proj_projetos').select('nome, manifestacao_prazo').eq('id', projetoId).single(),
+      supabase.from('usuarios').select('id, nome, email').in('id', usuariosIds),
+    ])
+    const destinatarios = (usuarios || []).filter(u => u.email)
+    if (destinatarios.length === 0) return { enviados: 0 }
+
     const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
-    const { data: sessionData } = await supabase.auth.getSession()
     const res = await fetch(`${backendUrl}/api/projetos/${projetoId}/enviar-convites`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionData?.session?.access_token || ''}` },
-      body: JSON.stringify({ usuariosIds }),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projeto, destinatarios }),
     })
     const json = await res.json().catch(() => ({}))
     if (!res.ok) throw new Error(json.error || 'Erro ao enviar convites')
     return json
   },
 
-  // Encerramento passa pelo backend (não Supabase direto) porque a mesma lógica
-  // precisa rodar automaticamente pelo scheduler de prazo — ver manifestacaoService.js
+  reabrirPeriodoManifestacao: async (projetoId) => {
+    const { data: faseManif } = await supabase
+      .from('proj_fases')
+      .select('id, nome')
+      .eq('aciona_manifestacao', true)
+      .limit(1)
+      .maybeSingle()
+    const { error } = await supabase
+      .from('proj_projetos')
+      .update({
+        fase_id:                    faseManif?.id   ?? null,
+        fase_nome:                  faseManif?.nome ?? null,
+        manifestacao_status:        'aberto',
+        manifestacao_encerrada_em:  null,
+        manifestacao_encerrada_por: null,
+      })
+      .eq('id', projetoId)
+    if (error) throw error
+    return { success: true }
+  },
+
+  // Encerramento manual direto no Supabase. O scheduler do Railway chama
+  // manifestacaoService.js diretamente (não por HTTP), então este endpoint
+  // não precisa passar pelo backend para funcionar.
   encerrarPeriodoManifestacao: async (projetoId) => {
-    const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
-    const { data: sessionData } = await supabase.auth.getSession()
-    const res = await fetch(`${backendUrl}/api/projetos/${projetoId}/encerrar-manifestacao`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${sessionData?.session?.access_token || ''}` },
-    })
-    const json = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(json.error || 'Erro ao encerrar período de manifestação')
-    return json
+    const { data: faseFinal } = await supabase
+      .from('proj_fases')
+      .select('id, nome')
+      .eq('aciona_consolidacao', true)
+      .limit(1)
+      .maybeSingle()
+    const { data: { user } } = await supabase.auth.getUser()
+    const { error } = await supabase
+      .from('proj_projetos')
+      .update({
+        fase_id:                    faseFinal?.id   ?? null,
+        fase_nome:                  faseFinal?.nome ?? null,
+        manifestacao_status:        'encerrado',
+        manifestacao_encerrada_em:  new Date().toISOString(),
+        manifestacao_encerrada_por: user?.email || 'manual',
+      })
+      .eq('id', projetoId)
+    if (error) throw error
+    return { success: true }
   },
 
   getProjTemplates: async () => {

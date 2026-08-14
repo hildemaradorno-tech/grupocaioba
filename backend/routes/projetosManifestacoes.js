@@ -1,7 +1,6 @@
 import { Router } from 'express'
 import { authMiddleware } from '../middleware/authMiddleware.js'
 import { encerrarPeriodoManifestacao } from '../services/manifestacaoService.js'
-import { getSupabaseAdmin } from '../services/supabaseAdmin.js'
 import { enviarEmail } from '../services/emailService.js'
 
 const router = Router()
@@ -17,25 +16,17 @@ router.post('/:id/encerrar-manifestacao', authMiddleware, wrap(async (req, res) 
   res.json({ success: true })
 }))
 
-// POST /api/projetos/:id/enviar-convites — dispara e-mail de convite para os
-// usuários indicados em usuariosIds. Usado ao iniciar fase de manifestação e ao
-// adicionar novos participantes enquanto o período está aberto.
-router.post('/:id/enviar-convites', authMiddleware, wrap(async (req, res) => {
-  const { usuariosIds } = req.body
-  if (!Array.isArray(usuariosIds) || usuariosIds.length === 0) return res.json({ enviados: 0 })
-
-  const supabaseAdmin = getSupabaseAdmin()
-  if (!supabaseAdmin) return res.status(503).json({ error: 'SUPABASE_SERVICE_KEY não configurada.' })
-
-  const [{ data: projeto }, { data: usuarios }] = await Promise.all([
-    supabaseAdmin.from('proj_projetos').select('nome, manifestacao_prazo').eq('id', req.params.id).single(),
-    supabaseAdmin.from('usuarios').select('id, nome, email').in('id', usuariosIds),
-  ])
+// POST /api/projetos/:id/enviar-convites — dispara e-mail de convite.
+// O frontend já busca nome/email dos usuários no Supabase e envia aqui prontos,
+// eliminando a dependência de SUPABASE_SERVICE_KEY nesta rota.
+router.post('/:id/enviar-convites', wrap(async (req, res) => {
+  const { projeto, destinatarios } = req.body
+  if (!Array.isArray(destinatarios) || destinatarios.length === 0) return res.json({ enviados: 0 })
 
   const fmtData = (d) => d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') : '—'
 
   let enviados = 0
-  for (const u of (usuarios || [])) {
+  for (const u of destinatarios) {
     if (!u.email) continue
     try {
       await enviarEmail({
@@ -44,7 +35,7 @@ router.post('/:id/enviar-convites', authMiddleware, wrap(async (req, res) => {
         html: `
           <div style="font-family:sans-serif;max-width:560px;margin:0 auto;color:#1e293b">
             <h2 style="color:#1e40af;margin-bottom:4px">Manifestação de Projeto</h2>
-            <p>Olá, <strong>${u.nome}</strong>.</p>
+            <p>Olá, <strong>${u.nome || u.email}</strong>.</p>
             <p>Você foi convidado(a) a participar do <strong>Período de Manifestação</strong> do projeto:</p>
             <p style="font-size:17px;font-weight:bold;background:#f1f5f9;padding:10px 14px;border-radius:6px;border-left:4px solid #3b82f6">${projeto?.nome || ''}</p>
             <p><strong>Prazo para manifestação:</strong> ${fmtData(projeto?.manifestacao_prazo)}</p>

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react'
-import { CheckCircle2, Send, Loader2, ShieldCheck, FileDown, Lock, Users, Pencil, Check, X as XIcon, ExternalLink, Trash2 } from 'lucide-react'
+import { CheckCircle2, Send, Loader2, ShieldCheck, FileDown, Lock, Unlock, Users, Pencil, Check, X as XIcon, ExternalLink, Trash2 } from 'lucide-react'
 import { apiService } from '../../services/api'
 import { useAuth } from '../../context/AuthContext'
 import ManifestacaoRichEditor from './ManifestacaoRichEditor'
@@ -44,6 +44,7 @@ export default function ManifestacoesTab({ projeto, onReload, convidados = [] })
   const [salvandoEdit, setSalvandoEdit] = useState(false)
   const [erroEdit, setErroEdit] = useState('')
   const [encerrando, setEncerrando] = useState(false)
+  const [reabrindo, setReabrindo] = useState(false)
   const [erro, setErro] = useState('')
 
   // Gerenciar participantes
@@ -129,6 +130,19 @@ export default function ManifestacoesTab({ projeto, onReload, convidados = [] })
   const marcarEmAnalise = async (m) => {
     await apiService.updateManifestacaoStatus(m.id, 'Em Análise')
     await carregar()
+  }
+
+  const reabrirPeriodo = async () => {
+    if (!window.confirm('Reabrir o Período de Manifestação? O projeto voltará à fase de Manifestação.')) return
+    setReabrindo(true)
+    try {
+      await apiService.reabrirPeriodoManifestacao(projeto.id)
+      await onReload()
+    } catch (err) {
+      alert('Erro ao reabrir período: ' + (err.message || String(err)))
+    } finally {
+      setReabrindo(false)
+    }
   }
 
   const encerrarPeriodo = async () => {
@@ -264,6 +278,16 @@ export default function ManifestacoesTab({ projeto, onReload, convidados = [] })
                 <Lock className="h-3.5 w-3.5 shrink-0" />
                 Período de Manifestação encerrado em {fmtDataHora(projeto.manifestacao_encerrada_em)}
               </span>
+            )}
+            {encerrado && podeGerenciar && (
+              <button
+                onClick={reabrirPeriodo}
+                disabled={reabrindo}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 text-[11px] font-bold rounded-md border border-slate-200 transition-colors shadow-sm disabled:opacity-50 ml-auto"
+              >
+                {reabrindo ? <Loader2 className="h-3 w-3 animate-spin" /> : <Unlock className="h-3 w-3" />}
+                Reabrir Período
+              </button>
             )}
             {!aberto && !encerrado && (
               <span>Período de Manifestação ainda não iniciado. Use "Iniciar Fase" no cabeçalho do projeto.</span>
