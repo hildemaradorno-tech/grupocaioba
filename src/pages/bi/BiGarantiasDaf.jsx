@@ -5,20 +5,19 @@ import { useAuth } from '../../context/AuthContext'
 import GarantiasOficinaDashboard from '../garantias-daf/GarantiasOficinaDashboard'
 import GarantiasAbertoDashboard from '../garantias-daf/GarantiasAbertoDashboard'
 import GarantiasTitulosDashboard from '../garantias-daf/GarantiasTitulosDashboard'
-import PreAnaliseDashboard from '../../components/PreAnaliseDashboard'
 
 const ABAS = [
   {
     key: 'oficina', label: 'Em Andamento', icon: Activity, rota: '/garantias-daf-andamento', permKey: 'garantias-daf-andamento',
-    objetivo: 'acompanhar as ordens de serviço de garantia que estão atualmente na oficina, identificando gargalos e atrasos antes que virem atraso crítico.',
+    objetivo: 'acompanhar as ordens de serviço de garantia que estão atualmente na oficina, executando o serviço.',
   },
   {
     key: 'aberto', label: 'Encerrada', icon: FileText, rota: '/garantias-daf', permKey: 'garantias-daf',
-    objetivo: 'acompanhar o andamento das garantias já encerradas na oficina, da digitação até a aprovação ou recusa pela DAF.',
+    objetivo: 'acompanhar o andamento das garantias já encerradas na oficina e que já se encontra com o departamento de garantia.',
   },
   {
     key: 'titulos', label: 'Títulos a Receber', icon: DollarSign, rota: '/garantias-daf-titulos', permKey: 'garantias-daf-titulos',
-    objetivo: 'acompanhar os títulos financeiros a receber vinculados às garantias, por empresa, tipo e situação de vencimento (vencidos vs. a vencer).',
+    objetivo: 'acompanhar os títulos financeiros a receber vinculados às garantias faturadas.',
   },
 ]
 
@@ -31,11 +30,8 @@ export default function BiGarantiasDaf() {
   const [aba, setAba] = useState(() => ABAS.some(a => a.key === location.state?.aba) ? location.state.aba : 'oficina')
   const abaAtual = ABAS.find(a => a.key === aba)
 
-  // Cada dashboard filho reporta sua pré-análise (resumo + pontos) via onAnalise — exibida
-  // sempre no mesmo canto, independente de qual aba está ativa.
-  const [analise, setAnalise] = useState({ resumo: null, pontos: [] })
   const [lastModified, setLastModified] = useState(null)
-  useEffect(() => { setAnalise({ resumo: null, pontos: [] }); setLastModified(null) }, [aba])
+  useEffect(() => { setLastModified(null) }, [aba])
 
   const fmtDataHora = (s) => { if (!s) return null; try { return new Date(s).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) } catch { return null } }
 
@@ -70,33 +66,28 @@ export default function BiGarantiasDaf() {
           </div>
         </div>
 
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-0.5 bg-[#0f172a] border border-white/10 rounded-lg p-0.5 w-fit">
-            {ABAS.map(({ key, label, icon: Icon }) => (
-              <button
-                key={key}
-                onClick={() => setAba(key)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${
-                  aba === key ? 'bg-violet-600 text-white shadow-sm' : 'text-[#898781] hover:text-white hover:bg-white/5'
-                }`}
-              >
-                <Icon className="h-3.5 w-3.5" />
-                {label}
-              </button>
-            ))}
-          </div>
-
-          {/* PRÉ-ANÁLISE — mesmo canto em todas as abas */}
-          <PreAnaliseDashboard resumo={analise.resumo} pontos={analise.pontos} />
+        <div className="flex items-center gap-0.5 bg-[#0f172a] border border-white/10 rounded-lg p-0.5 w-fit">
+          {ABAS.map(({ key, label, icon: Icon }) => (
+            <button
+              key={key}
+              onClick={() => setAba(key)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${
+                aba === key ? 'bg-violet-600 text-white shadow-sm' : 'text-[#898781] hover:text-white hover:bg-white/5'
+              }`}
+            >
+              <Icon className="h-3.5 w-3.5" />
+              {label}
+            </button>
+          ))}
         </div>
 
         <p className="text-xs text-[#c3c2b7]">
           <strong className="font-bold text-white">Objetivo:</strong> {abaAtual.objetivo}
         </p>
 
-        {aba === 'oficina' && <GarantiasOficinaDashboard onAnalise={setAnalise} onLastModified={setLastModified} />}
-        {aba === 'aberto' && <GarantiasAbertoDashboard onAnalise={setAnalise} onLastModified={setLastModified} />}
-        {aba === 'titulos' && <GarantiasTitulosDashboard onAnalise={setAnalise} onLastModified={setLastModified} />}
+        {aba === 'oficina' && <GarantiasOficinaDashboard onLastModified={setLastModified} />}
+        {aba === 'aberto' && <GarantiasAbertoDashboard onLastModified={setLastModified} />}
+        {aba === 'titulos' && <GarantiasTitulosDashboard onLastModified={setLastModified} />}
       </div>
     </div>
   )

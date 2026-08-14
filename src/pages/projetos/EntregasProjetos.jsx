@@ -155,7 +155,7 @@ export default function EntregasProjetos() {
                   <tr
                     key={p.id}
                     className="hover:bg-teal-50/40 transition-colors cursor-pointer border-b border-slate-100"
-                    onClick={() => navigate(`/projetos/${p.id}`)}
+                    onClick={() => navigate(`/projetos/detalhe/${p.id}`)}
                   >
                     {/* Data Término */}
                     <td className="p-3 whitespace-nowrap">

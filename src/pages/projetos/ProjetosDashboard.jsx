@@ -1,15 +1,15 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react'
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Plus, Search, Edit2, Trash2, FolderKanban, Filter, RotateCcw,
   Activity, CheckCircle, AlertTriangle, Layers, ShieldAlert,
-  ChevronRight, ChevronDown, Loader2, X, CheckCircle2, CalendarCheck, Copy, BarChart2,
+  ChevronRight, ChevronDown, Loader2, X, CheckCircle2, CalendarCheck, Copy, BarChart2, Download, Eye,
 } from 'lucide-react'
 import { apiService } from '../../services/api'
 import { useAuth } from '../../context/AuthContext'
-import { useProjetosFiltros, aplicarFiltrosGlobais } from '../../context/ProjetosFiltrosContext'
+import { useProjetosFiltros, aplicarFiltrosGlobais, _projetosSession } from '../../context/ProjetosFiltrosContext'
 import ProjetosNav from './ProjetosNav'
-import ProjetosFiltrosPanel from './ProjetosFiltrosPanel'
+import ProjetosFiltrosPanel, { FiltrosCompactBar } from './ProjetosFiltrosPanel'
 
 const STATUS_MAP = {
   mapeado:      { label: 'Mapeado',      cor: 'bg-slate-100 text-slate-600', corAtivo: 'bg-slate-500 text-white' },
@@ -19,12 +19,22 @@ const STATUS_MAP = {
   concluido:    { label: 'Concluído',    cor: 'bg-teal-700 text-white' },
 }
 
+const STATUS_ORDER = ['em_andamento', 'programado', 'mapeado', 'pausado', 'concluido', 'cancelado']
+const STATUS_COR_HEADER = {
+  em_andamento: '#f59e0b',
+  programado:   '#3b82f6',
+  mapeado:      '#94a3b8',
+  pausado:      '#a855f7',
+  concluido:    '#0d9488',
+  cancelado:    '#ef4444',
+}
+
 const KANBAN_MAP = {
-  mapeado:      { label: 'Mapeado',       cor: 'bg-slate-100 text-slate-600' },
-  programado:   { label: 'Programado',    cor: 'bg-blue-100 text-blue-700' },
-  em_andamento: { label: 'Em Andamento',  cor: 'bg-amber-100 text-amber-700' },
-  pausado:      { label: 'Pausado',       cor: 'bg-purple-100 text-purple-700' },
-  concluido:    { label: 'Concluído',     cor: 'bg-teal-700 text-white' },
+  mapeado:      { label: 'Mapeado',       cor: 'bg-slate-100 text-slate-500' },
+  programado:   { label: 'Programado',    cor: 'bg-blue-100 text-blue-600' },
+  em_andamento: { label: 'Em Andamento',  cor: 'bg-amber-100 text-amber-600' },
+  pausado:      { label: 'Pausado',       cor: 'bg-purple-100 text-purple-600' },
+  concluido:    { label: 'Concluído',     cor: 'bg-teal-100 text-teal-700' },
 }
 
 const FILTROS_VAZIOS = { nome: '', empresa_id: '', responsavel_id: '', sistema_id: '', fase_id: '', departamento_nome: '', area_nome: '' }
@@ -69,8 +79,6 @@ const _dash = {
   departamentos:          [],
   filtros:                null,
   filtrosAbertos:         false,
-  filtroCards:            null,
-  filtroCardProjetos:     null,
   filtroRespProjeto:      '',
   filtroRespTarefa:       '',
   filtroDataTermIni:      '',
@@ -80,6 +88,19 @@ const _dash = {
   tarefasPorProjeto:      {},
   deliberacoesExpandidas: new Set(),
   deliberacoesPorTarefa:  {},
+  statusesRecolhidos:     new Set(STATUS_ORDER),
+  deptosExpandidos:       new Set(),
+}
+
+// Chamado pelo SidebarLayout no logout — garante que ao logar novamente
+// a tela começa recolhida (sem vazamento de estado entre sessões).
+export function resetDashProjetos() {
+  _dash.expandidos             = new Set()
+  _dash.statusesRecolhidos     = new Set(STATUS_ORDER)
+  _dash.deptosExpandidos       = new Set()
+  _dash.deliberacoesExpandidas = new Set()
+  _dash.deliberacoesPorTarefa  = {}
+  _dash.tarefasPorProjeto      = {}
 }
 
 const fmtData = (d) => d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') : '—'
@@ -112,12 +133,15 @@ function CardKpi({ icon: Icon, label, count, ativo, onClick, st }) {
 export default function ProjetosDashboard() {
   const navigate = useNavigate()
   const { isAdmin, empresasPermitidas, departamentosPermitidosEfetivos, hasActionOrDefault, hasPermission, user } = useAuth()
-  const canCriar      = hasActionOrDefault('projetos', 'criar')
-  const canEditar     = hasActionOrDefault('projetos', 'editar')
-  const canExcluir    = hasActionOrDefault('projetos', 'excluir')
-  const canDuplicar   = hasActionOrDefault('projetos', 'duplicar')
-  const canExcluirTar = hasActionOrDefault('projetos', 'excluir_tarefa')
   const ctx = useProjetosFiltros()
+  const { modoVerTodos, setModoVerTodos } = ctx
+  const canCriar      = !modoVerTodos && hasActionOrDefault('projetos', 'criar')
+  const canEditar     = !modoVerTodos && hasActionOrDefault('projetos', 'editar')
+  const canExcluir    = !modoVerTodos && hasActionOrDefault('projetos', 'excluir')
+  const canDuplicar   = !modoVerTodos && hasActionOrDefault('projetos', 'duplicar')
+  const canEditarTar   = !modoVerTodos && hasActionOrDefault('projetos', 'editar_tarefa')
+  const canExcluirTar  = !modoVerTodos && hasActionOrDefault('projetos', 'excluir_tarefa')
+  const canConcluirTar = !modoVerTodos && hasActionOrDefault('projetos', 'concluir_tarefa')
   const hoje2 = new Date().toISOString().split('T')[0]
 
   const [dados, setDados] = useState(() => _dash.dados ?? [])
@@ -131,8 +155,8 @@ export default function ProjetosDashboard() {
   const [error, setError] = useState(null)
   const [filtros, setFiltros] = useState(() => _dash.filtros ?? FILTROS_VAZIOS)
   const [filtrosAbertos, setFiltrosAbertos] = useState(() => _dash.filtrosAbertos)
-  const [filtroCards, setFiltroCards] = useState(() => new Set(_dash.filtroCards || []))
-  const [filtroCardProjetos, setFiltroCardProjetos] = useState(() => new Set(_dash.filtroCardProjetos || []))
+  const [filtroCards, setFiltroCards] = useState(() => new Set(['mapeado', 'programado', 'em_andamento', 'pausado']))
+  const [filtroCardProjetos, setFiltroCardProjetos] = useState(() => new Set(['mapeado', 'programado', 'em_andamento', 'pausado']))
   const [sortConfig, setSortConfig] = useState(() => {
     const s = _dash.sortConfig
     if (!s) return [{ campo: 'titulo', dir: 'asc' }, { campo: 'sistemas', dir: 'asc' }]
@@ -156,23 +180,28 @@ export default function ProjetosDashboard() {
   const filtroRespTarefa = ctx.filtroRespTarefa
   const filtroFase      = ctx.filtroFase
   const filtroSistema   = ctx.filtroSistema
-  const filtroDataTermIni = ctx.filtroDataIni
-  const setFiltroDataTermIni = ctx.setFiltroDataIni
-  const filtroDataTermFim = ctx.filtroDataFim
-  const setFiltroDataTermFim = ctx.setFiltroDataFim
-  const filtroDataTipo = ctx.filtroDataTipo
-  const setFiltroDataTipo = ctx.setFiltroDataTipo
+  const filtroDataTermIni     = ctx.filtroDataIni
+  const setFiltroDataTermIni  = ctx.setFiltroDataIni
+  const filtroDataTermFim     = ctx.filtroDataFim
+  const setFiltroDataTermFim  = ctx.setFiltroDataFim
+  const filtroDataProjTermIni = ctx.filtroDataProjIni
+  const filtroDataProjTermFim = ctx.filtroDataProjFim
   const [deliberacoesExpandidas, setDeliberacoesExpandidas] = useState(() => new Set(_dash.deliberacoesExpandidas))
   const [deliberacoesPorTarefa, setDeliberacoesPorTarefa] = useState(() => ({ ..._dash.deliberacoesPorTarefa }))
   const [novaDelib, setNovaDelib] = useState({})
   const [editandoDelib, setEditandoDelib] = useState(null)
   const [modalConcluir, setModalConcluir] = useState(null) // { tarefa, dataFim }
+  const [deptosExpandidos, setDeptosExpandidos] = useState(() => new Set(_dash.deptosExpandidos))
+  const [statusesRecolhidos, setStatusesRecolhidos] = useState(() => new Set(_dash.statusesRecolhidos))
+  const [gerandoPDF, setGerandoPDF] = useState(false)
+  const tableRef = useRef(null)
 
   // Projetos após filtros globais (contexto compartilhado entre abas)
-  const dadosGlobal = useMemo(() => aplicarFiltrosGlobais(dados, ctx, departamentosPermitidosEfetivos), [
+  // modoVerTodos ignora restrição de departamento e bloqueia edições
+  const dadosGlobal = useMemo(() => aplicarFiltrosGlobais(dados, ctx, modoVerTodos ? null : departamentosPermitidosEfetivos), [
     dados, ctx.filtroEmpresa, ctx.filtroDepartamento, ctx.filtroArea,
     ctx.filtroFase, ctx.filtroSistema, ctx.filtroRespProjeto, ctx.filtroRespTarefa,
-    departamentosPermitidosEfetivos,
+    departamentosPermitidosEfetivos, modoVerTodos,
   ])
 
   const loadData = useCallback(async (f = filtros, silent = false) => {
@@ -188,17 +217,23 @@ export default function ProjetosDashboard() {
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { loadData(FILTROS_VAZIOS, _dash.dados !== null) }, [isAdmin, empresasPermitidas])
+  useEffect(() => {
+    if (_projetosSession.primeiroAcesso) {
+      ctx.setFiltrosAbertos(false)
+      _projetosSession.primeiroAcesso = false
+    }
+  }, []) // fecha apenas no primeiro acesso da sessão (reseta em F5)
 
   useEffect(() => { _dash.dados = dados }, [dados])
   useEffect(() => { _dash.filtros = filtros }, [filtros])
   useEffect(() => { _dash.filtrosAbertos = filtrosAbertos }, [filtrosAbertos])
-  useEffect(() => { _dash.filtroCards = [...filtroCards] }, [filtroCards])
-  useEffect(() => { _dash.filtroCardProjetos = [...filtroCardProjetos] }, [filtroCardProjetos])
   useEffect(() => { _dash.sortConfig = sortConfig }, [sortConfig])
   useEffect(() => { _dash.expandidos = new Set(expandidos) }, [expandidos])
   useEffect(() => { _dash.tarefasPorProjeto = { ...tarefasPorProjeto } }, [tarefasPorProjeto])
   useEffect(() => { _dash.deliberacoesExpandidas = new Set(deliberacoesExpandidas) }, [deliberacoesExpandidas])
   useEffect(() => { _dash.deliberacoesPorTarefa = { ...deliberacoesPorTarefa } }, [deliberacoesPorTarefa])
+  useEffect(() => { _dash.statusesRecolhidos = new Set(statusesRecolhidos) }, [statusesRecolhidos])
+  useEffect(() => { _dash.deptosExpandidos = new Set(deptosExpandidos) }, [deptosExpandidos])
 
   // Mapa taskId → contagem de deliberações (derivado do getProjetos, sempre fresco)
   const tarefaDelibsMap = useMemo(() => {
@@ -285,13 +320,20 @@ export default function ProjetosDashboard() {
       base = base.filter(p => isAtrasado(p) || (p.proj_tarefas || []).some(t => t.status_kanban !== 'concluido' && t.data_fim && t.data_fim < hojeISO))
     if (filtroHoje)
       base = base.filter(p => (p.proj_tarefas || []).some(t => t.status_kanban !== 'concluido' && t.data_fim === hojeISO))
+    if (filtroDataProjTermIni || filtroDataProjTermFim)
+      base = base.filter(p => {
+        const dataFimProj = getDataFimMax(p)
+        if (!dataFimProj) return !filtroDataProjTermFim
+        if (filtroDataProjTermIni && dataFimProj < filtroDataProjTermIni) return false
+        if (filtroDataProjTermFim && dataFimProj > filtroDataProjTermFim) return false
+        return true
+      })
     if (filtroDataTermIni || filtroDataTermFim)
       base = base.filter(p => {
-        // Mapeado sem datas: inclui quando não há data final no filtro
         const tarefas = p.proj_tarefas || []
         if (!filtroDataTermFim && p.status === 'mapeado' && !tarefas.some(t => t.data_fim || t.data_inicio))
           return true
-        return tarefas.some(t => tarefaPassaFiltroData(t, filtroDataTermIni, filtroDataTermFim, filtroDataTipo))
+        return tarefas.some(t => tarefaPassaFiltroData(t, filtroDataTermIni, filtroDataTermFim, 'fim'))
       })
     if (!sortConfig.length) return base
     const normStr = v => typeof v === 'string' ? v.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '') : v
@@ -311,6 +353,36 @@ export default function ProjetosDashboard() {
     })
   })()
 
+  const dadosPorDepto = (() => {
+    const deptos = [...new Set(dadosFiltrados.map(p => p.departamento_nome || 'Sem Departamento'))].sort((a, b) => a.localeCompare(b, 'pt-BR'))
+    return deptos.map(depto => {
+      const projetos = dadosFiltrados
+        .filter(p => (p.departamento_nome || 'Sem Departamento') === depto)
+        .sort((a, b) => {
+          const oa = STATUS_ORDER.indexOf(a.status); const ob = STATUS_ORDER.indexOf(b.status)
+          return (oa === -1 ? 999 : oa) - (ob === -1 ? 999 : ob)
+        })
+      return {
+        depto,
+        projetos,
+        totalTarefas: projetos.reduce((s, p) => s + (p.proj_tarefas || []).length, 0),
+        resps: [...new Set(projetos.map(p => p.responsavel_nome).filter(Boolean))],
+      }
+    })
+  })()
+  const dadosPorDeptoFlat = dadosPorDepto.flatMap(({ projetos }) => projetos)
+  const deptInfoMap = Object.fromEntries(dadosPorDepto.map(({ depto, projetos, totalTarefas, resps }) => [depto, { count: projetos.length, totalTarefas, resps }]))
+  const statusInfoMap = (() => {
+    const m = {}
+    dadosPorDepto.forEach(({ depto, projetos }) => {
+      STATUS_ORDER.forEach(st => {
+        const count = projetos.filter(p => p.status === st).length
+        if (count > 0) m[`${depto}__${st}`] = count
+      })
+    })
+    return m
+  })()
+
   const anyExpanded = expandidos.size > 0
   const qtdAtrasadas = dadosGlobal.reduce((total, p) =>
     total + (p.proj_tarefas || []).filter(t =>
@@ -326,8 +398,305 @@ export default function ProjetosDashboard() {
   const sistemaCorTextoMap = Object.fromEntries(sistemas.map(s => [s.nome, s.cor_texto || null]))
   const faseCorMap = Object.fromEntries(fases.map(f => [f.nome, f.cor || '#1e293b']))
 
-  const handleRecolherTodos = () => setExpandidos(new Set())
+  const handleRecolherTodos = () => { setExpandidos(new Set()); setDeptosExpandidos(new Set()); setStatusesRecolhidos(new Set(STATUS_ORDER)) }
+
+  const handleSalvarPDF = async () => {
+    if (gerandoPDF) return
+    setGerandoPDF(true)
+    try {
+      // Carrega tarefas que faltam no cache (sem alterar estado visual)
+      const tarefasCache = { ...tarefasPorProjeto }
+      const idsParaCarregar = dadosFiltrados.map(p => p.id).filter(id => !tarefasCache[id] || !tarefasCache[id].some(t => t.proj_deliberacoes !== undefined))
+      await Promise.all(idsParaCarregar.map(async id => {
+        try {
+          const tarefas = await apiService.getTarefas(id)
+          tarefasCache[id] = tarefas
+          setTarefasPorProjeto(prev => ({ ...prev, [id]: tarefas }))
+        } catch { }
+      }))
+
+      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
+        import('html2canvas'),
+        import('jspdf'),
+      ])
+
+      // Mapeamento de cores inline (sem Tailwind) para o PDF
+      const KANBAN_CSS = {
+        mapeado:      { bg: '#f1f5f9', color: '#64748b' },
+        programado:   { bg: '#dbeafe', color: '#2563eb' },
+        em_andamento: { bg: '#fef3c7', color: '#d97706' },
+        pausado:      { bg: '#f3e8ff', color: '#9333ea' },
+        concluido:    { bg: '#ccfbf1', color: '#0f766e' },
+      }
+
+      // WRAP_W=960 · pdfW=297 A4 landscape → 1px=0,207mm → 10px≈5,9pt
+      // Estrutura: wrap sem padding lateral → dept/status são full-width naturalmente
+      //            projetos/tarefas têm margin lateral de 24px cada lado
+      const WRAP_W    = 960
+      const M_SIDE    = 24   // margem lateral em px para conteúdo de projeto/tarefa
+      // Cols: Nº | Tarefa | Sistema | Depto/Área | Resp. | Status | % | Início | Término
+      // largura disponível ≈ 896px (912px - padding 10px+6px do taskRow)
+      const TASK_COLS = '26px 1fr 78px 86px 88px 96px 44px 52px 52px'
+
+      const wrap = document.createElement('div')
+      wrap.style.cssText = `position:fixed;left:-9999px;top:0;width:${WRAP_W}px;background:#fff;font-family:"Segoe UI",system-ui,Arial,sans-serif;color:#1e293b;`
+
+      // Rastreia elementos para quebra de página inteligente
+      const statusGroupEls = []
+      const projHeaderEls  = []
+
+      const filtroDepto = ctx.filtroDepartamento || filtros.departamento_nome || ''
+      const filtroLabel = filtroDepto ? ` — ${filtroDepto}` : ''
+      const totalTarefasGlobal = dadosPorDepto.reduce((s, d) => s + d.totalTarefas, 0)
+
+      // ── Cabeçalho do documento (com padding lateral = margem da página) ──
+      const docHeader = document.createElement('div')
+      docHeader.style.cssText = `padding:16px ${M_SIDE}px 12px;border-bottom:2px solid #1e293b;display:flex;justify-content:space-between;align-items:center;`
+      docHeader.innerHTML = `
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="width:36px;height:36px;background:#3b82f6;border-radius:7px;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+            <span style="color:white;font-weight:800;font-size:13px">GP</span>
+          </div>
+          <div>
+            <div style="font-size:9px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:1.5px">Gestão de Projetos</div>
+            <div style="font-size:15px;font-weight:800;color:#0f172a;line-height:1.2;margin-top:1px">Relatório de Projetos${filtroLabel}</div>
+            <div style="font-size:9px;color:#64748b;margin-top:2px">${dadosFiltrados.length} projeto${dadosFiltrados.length !== 1 ? 's' : ''} · ${totalTarefasGlobal} tarefa${totalTarefasGlobal !== 1 ? 's' : ''}</div>
+          </div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:9px;color:#94a3b8;text-transform:uppercase;letter-spacing:1px">Data</div>
+          <div style="font-size:11px;color:#334155;font-weight:700;margin-top:2px">${new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })}</div>
+        </div>
+      `
+      wrap.appendChild(docHeader)
+
+      for (const { depto, projetos, totalTarefas } of dadosPorDepto) {
+        // ── Dept header: full-width (sem margem lateral, padding interno) ──
+        const deptHeader = document.createElement('div')
+        deptHeader.style.cssText = `background:#334155;color:white;padding:8px ${M_SIDE}px;display:flex;justify-content:space-between;align-items:center;margin-top:10px;`
+        deptHeader.innerHTML = `
+          <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:2px">${depto}</span>
+          <span style="font-size:9px;opacity:0.65;font-weight:400">${projetos.length} projeto${projetos.length !== 1 ? 's' : ''} · ${totalTarefas} tarefa${totalTarefas !== 1 ? 's' : ''}</span>
+        `
+        wrap.appendChild(deptHeader)
+
+        for (const status of STATUS_ORDER) {
+          const projetosStatus = projetos.filter(p => p.status === status)
+          if (projetosStatus.length === 0) continue
+
+          // ── Status header: full-width ──────────────────────────
+          const stHdr = document.createElement('div')
+          stHdr.style.cssText = `background:${STATUS_COR_HEADER[status] || '#94a3b8'};color:white;padding:6px ${M_SIDE}px;display:flex;align-items:center;gap:8px;margin-top:2px;`
+          stHdr.innerHTML = `
+            <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px">${STATUS_MAP[status]?.label || status}</span>
+            <span style="font-size:9px;opacity:0.8">· ${projetosStatus.length} projeto${projetosStatus.length !== 1 ? 's' : ''}</span>
+          `
+          wrap.appendChild(stHdr)
+          statusGroupEls.push(stHdr)
+
+          for (const p of projetosStatus) {
+            const tarefas       = tarefasCache[p.id] || []
+            const tsDatas       = p.proj_tarefas || []
+            const dataFimMax    = tsDatas.map(t => t.data_fim).filter(Boolean).sort().reverse()[0] || null
+            const dataInicioMin = [...tsDatas.map(t => t.data_inicio).filter(Boolean)].sort()[0] || null
+            const total  = tsDatas.length
+            const pct    = total > 0 ? Math.round(tsDatas.reduce((s, t) => s + (t.status_kanban === 'concluido' ? 100 : (Number(t.progresso_pct) || 0)), 0) / total) : 0
+            const atrasado  = p.status !== 'concluido' && dataFimMax && dataFimMax < hojeISO
+            const borderClr = atrasado ? '#ef4444' : (STATUS_COR_HEADER[p.status] || '#94a3b8')
+            const pctClr    = atrasado ? '#ef4444' : '#3b82f6'
+
+            const sistemasProj = p.sistemas_nomes && p.sistemas_nomes.length > 0
+              ? p.sistemas_nomes.map(nome => {
+                  const cor = sistemaCorMap[nome] || '#1e293b'
+                  const txt = sistemaCorTextoMap[nome] || getTextColor(cor)
+                  return `<span style="display:inline-block;background:${cor};color:${txt};padding:2px 7px;border-radius:3px;font-size:9px;font-weight:700;white-space:nowrap;vertical-align:middle">${nome}</span>`
+                }).join('')
+              : ''
+
+            // ── Projeto: margem lateral, sem badge de status (já agrupado) ──
+            const projHeader = document.createElement('div')
+            projHeader.style.cssText = `margin:5px ${M_SIDE}px 0;padding:8px 8px 7px 10px;border-left:4px solid ${borderClr};background:${atrasado ? '#fff5f5' : '#f8fafc'};border-bottom:1px solid #e2e8f0;`
+            projHeader.innerHTML = `
+              <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
+                <div style="min-width:0;flex:1">
+                  <div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:2px">
+                    <span style="font-size:11px;font-weight:700;color:#0f172a;text-transform:uppercase;line-height:1.35">${p.nome}</span>
+                    ${sistemasProj}
+                  </div>
+                  ${p.responsavel_nome ? `<div style="font-size:9px;color:#64748b">Resp. Projeto: <strong style="color:#475569">${p.responsavel_nome}</strong></div>` : ''}
+                </div>
+                <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0;min-width:155px">
+                  <div style="font-size:9px;color:#64748b;white-space:nowrap">
+                    ${dataInicioMin ? fmtData(dataInicioMin) : '—'} → ${dataFimMax ? `<span style="color:${atrasado ? '#ef4444' : '#64748b'};font-weight:${atrasado ? '700' : '400'}">${fmtData(dataFimMax)}</span>` : '—'}
+                  </div>
+                  <div style="display:flex;align-items:center;gap:5px">
+                    <div style="width:60px;height:4px;background:#e2e8f0;border-radius:2px;overflow:hidden">
+                      <div style="height:100%;width:${pct}%;background:${pctClr};border-radius:2px"></div>
+                    </div>
+                    <span style="font-size:9px;font-weight:700;color:${atrasado ? '#ef4444' : '#334155'}">${pct}% concluído</span>
+                  </div>
+                </div>
+              </div>
+            `
+            wrap.appendChild(projHeader)
+            projHeaderEls.push(projHeader)
+
+            if (tarefas.length > 0) {
+              // ── Tabela de tarefas: margem lateral ─────────────────
+              const taskBlock = document.createElement('div')
+              taskBlock.style.cssText = `margin:0 ${M_SIDE}px;border-bottom:2px solid #e2e8f0;margin-bottom:1px;`
+
+              const taskHdr = document.createElement('div')
+              taskHdr.style.cssText = `display:grid;grid-template-columns:${TASK_COLS};background:#e9ecef;padding:5px 6px 5px 10px;font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:#64748b;border-bottom:1px solid #dee2e6;`
+              taskHdr.innerHTML = `
+                <span style="text-align:center">Nº</span>
+                <span>Tarefa</span>
+                <span>Sistema</span>
+                <span>Depto / Área</span>
+                <span>Resp. Tarefa</span>
+                <span style="text-align:center">Status</span>
+                <span style="text-align:center">%</span>
+                <span style="text-align:center">Início</span>
+                <span style="text-align:center">Término</span>
+              `
+              taskBlock.appendChild(taskHdr)
+
+              const tarefasOrdenadas = [...tarefas].sort((a, b) => {
+                if (a.etapa == null && b.etapa == null) return 0
+                if (a.etapa == null) return 1
+                if (b.etapa == null) return -1
+                return Number(a.etapa) - Number(b.etapa)
+              })
+              for (let i = 0; i < tarefasOrdenadas.length; i++) {
+                const t         = tarefasOrdenadas[i]
+                const kt        = KANBAN_MAP[t.status_kanban] || { label: t.status_kanban }
+                const pctT      = t.status_kanban === 'concluido' ? 100 : Math.min(100, Number(t.progresso_pct) || 0)
+                const atrasadaT = t.status_kanban !== 'concluido' && t.data_fim && t.data_fim < hojeISO
+                const stBadgeClr = STATUS_COR_HEADER[t.status_kanban] || '#94a3b8'
+                const sistCor   = t.sistema_nome ? (sistemaCorMap[t.sistema_nome] || '#1e293b') : null
+                const sistTxt   = t.sistema_nome ? (sistemaCorTextoMap[t.sistema_nome] || getTextColor(sistCor)) : null
+                const deptoArea = [p.departamento_nome, t.area_nome].filter(Boolean).join(' / ') || ''
+
+                // Célula Sistema separada (badge colorido)
+                const sistemaCell = t.sistema_nome
+                  ? `<div><span style="display:inline-block;background:${sistCor};color:${sistTxt};padding:2px 5px;border-radius:3px;font-size:8px;font-weight:700;white-space:nowrap;vertical-align:middle">${t.sistema_nome}</span></div>`
+                  : `<div style="color:#cbd5e1;font-size:9px">—</div>`
+
+                // Célula Depto/Área separada
+                const deptoCell = deptoArea
+                  ? `<div style="font-size:8px;color:#64748b;line-height:1.35;word-break:break-word">${deptoArea}</div>`
+                  : `<div style="color:#cbd5e1;font-size:9px">—</div>`
+
+                // % sem barra, sem quebra de linha
+                const pctText = `<span style="font-size:8px;font-weight:700;color:${pctT >= 100 ? '#0f766e' : '#64748b'};white-space:nowrap">${pctT}%</span>`
+
+                const taskRow = document.createElement('div')
+                taskRow.style.cssText = `display:grid;grid-template-columns:${TASK_COLS};padding:6px 6px 6px 10px;border-bottom:1px solid #f0f4f8;background:${atrasadaT ? '#fff5f5' : (i % 2 === 0 ? '#ffffff' : '#f8fafc')};align-items:start;font-size:10px;`
+                taskRow.innerHTML = `
+                  <div style="text-align:center;padding-top:1px">
+                    ${t.etapa != null
+                      ? `<span style="display:inline-block;width:18px;height:18px;border-radius:50%;font-size:9px;font-weight:700;background:${t.status_kanban === 'em_andamento' ? '#f97316' : '#e0e7ff'};color:${t.status_kanban === 'em_andamento' ? '#fff' : '#3730a3'};text-align:center;line-height:18px">${t.etapa}</span>`
+                      : '<span style="color:#cbd5e1">—</span>'}
+                  </div>
+                  <div style="color:#1e293b;font-weight:500;padding-right:6px;min-width:0;word-break:break-word;overflow-wrap:break-word;line-height:1.45">${t.nome}</div>
+                  ${sistemaCell}
+                  ${deptoCell}
+                  <div style="color:#475569;line-height:1.4;font-size:10px;word-break:break-word">${t.responsavel_nome || '<span style="color:#cbd5e1">—</span>'}</div>
+                  <div style="text-align:center;padding-top:1px">
+                    <span style="display:inline-block;background:${stBadgeClr};color:white;padding:2px 6px;border-radius:3px;font-size:8px;font-weight:700;white-space:nowrap;vertical-align:middle">${kt.label || t.status_kanban}</span>
+                  </div>
+                  <div style="text-align:center;padding-top:3px">${pctText}</div>
+                  <div style="text-align:center;color:#64748b;font-size:9px;padding-top:2px">${t.data_inicio ? fmtData(t.data_inicio) : '<span style="color:#cbd5e1">—</span>'}</div>
+                  <div style="text-align:center;font-size:9px;padding-top:2px;color:${atrasadaT ? '#ef4444' : '#64748b'};font-weight:${atrasadaT ? '700' : '400'}">${t.data_fim ? fmtData(t.data_fim) : '<span style="color:#cbd5e1">—</span>'}</div>
+                `
+                taskBlock.appendChild(taskRow)
+              }
+              wrap.appendChild(taskBlock)
+            }
+          }
+        }
+      }
+      // Após montar o DOM, mede posições Y de cada elemento antes de renderizar
+      document.body.appendChild(wrap)
+      const wrapTop  = wrap.getBoundingClientRect().top
+      const SCALE    = 1.5
+      const statusYs = statusGroupEls.map(el =>
+        Math.round((el.getBoundingClientRect().top - wrapTop) * SCALE)
+      )
+      const projYs = projHeaderEls.map(el =>
+        Math.round((el.getBoundingClientRect().top - wrapTop) * SCALE)
+      )
+
+      let canvas
+      try {
+        canvas = await html2canvas(wrap, { scale: SCALE, useCORS: true, backgroundColor: '#ffffff', logging: false, width: WRAP_W })
+      } finally {
+        document.body.removeChild(wrap)
+      }
+
+      // Dimensões PDF A4 landscape com margens de 10 mm em todos os lados
+      const PAGE_W_MM = 297
+      const PAGE_H_MM = 210
+      const MARGIN_MM = 10
+      const CONTENT_W = PAGE_W_MM - 2 * MARGIN_MM     // 277 mm de largura útil
+      const mmPerPx   = CONTENT_W / canvas.width       // mm por pixel do canvas
+      const pageHpx   = Math.floor((PAGE_H_MM - 2 * MARGIN_MM) / mmPerPx)
+
+      // ── Corte inteligente de páginas ────────────────────────────────
+      // • Grupos de status sempre começam numa nova página (corte mandatório)
+      // • Projetos não são cortados ao meio (corte preferencial nos últimos 35%)
+      const slices = []
+      let cur = 0
+      while (cur < canvas.height) {
+        const ideal = cur + pageHpx
+        if (ideal >= canvas.height) { slices.push({ start: cur, end: canvas.height }); break }
+
+        // Status group dentro desta página → corta antes dele (ignora primeiros 25%)
+        const minSt  = cur + Math.floor(pageHpx * 0.25)
+        const nextSt = statusYs.find(y => y >= minSt && y <= ideal)
+        if (nextSt != null) { slices.push({ start: cur, end: nextSt }); cur = nextSt; continue }
+
+        // Projeto que começa nos últimos 35% → corta antes dele
+        const lookback  = cur + Math.floor(pageHpx * 0.65)
+        const lastProj  = projYs.filter(y => y >= lookback && y <= ideal).pop()
+        if (lastProj != null) { slices.push({ start: cur, end: lastProj }); cur = lastProj; continue }
+
+        slices.push({ start: cur, end: ideal }); cur = ideal
+      }
+
+      const pdf    = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
+      const datStr = new Date().toLocaleString('pt-BR')
+      for (let pg = 0; pg < slices.length; pg++) {
+        if (pg > 0) pdf.addPage('a4', 'landscape')
+        const { start, end } = slices[pg]
+        const sliceH  = end - start
+        const pgCanvas = document.createElement('canvas')
+        pgCanvas.width  = canvas.width
+        pgCanvas.height = sliceH
+        pgCanvas.getContext('2d').drawImage(canvas, 0, start, canvas.width, sliceH, 0, 0, canvas.width, sliceH)
+        const imgHmm = Math.round(sliceH * mmPerPx)
+        pdf.addImage(pgCanvas.toDataURL('image/jpeg', 0.92), 'JPEG', MARGIN_MM, MARGIN_MM, CONTENT_W, imgHmm)
+        // Rodapé em todas as páginas (texto direto no PDF, fora da imagem)
+        pdf.setFontSize(7)
+        pdf.setTextColor(148, 163, 184)
+        pdf.text(`Portal de Gestão — ${datStr}`, MARGIN_MM, PAGE_H_MM - 4)
+        pdf.text(`${pg + 1} / ${slices.length}`, PAGE_W_MM / 2, PAGE_H_MM - 4, { align: 'center' })
+        pdf.text('Confidencial', PAGE_W_MM - MARGIN_MM, PAGE_H_MM - 4, { align: 'right' })
+      }
+
+      const sufixo = filtroDepto ? ` - ${filtroDepto}` : ''
+      pdf.save(`Gestão de Projetos${sufixo}.pdf`)
+    } catch (err) {
+      console.error('Erro ao gerar PDF:', err)
+    } finally {
+      setGerandoPDF(false)
+    }
+  }
+
   const handleExpandirTodos = async () => {
+    const todosDeptos = [...new Set(dadosFiltrados.map(p => p.departamento_nome || 'Sem Departamento'))]
+    setDeptosExpandidos(new Set(todosDeptos))
+    setStatusesRecolhidos(new Set())
     const ids = dadosFiltrados.map(p => p.id)
     setExpandidos(new Set(ids))
     const idsParaCarregar = ids.filter(id => {
@@ -365,6 +734,18 @@ export default function ProjetosDashboard() {
       return next
     })
   }
+
+  const toggleDepto = (depto) => setDeptosExpandidos(prev => {
+    const next = new Set(prev)
+    next.has(depto) ? next.delete(depto) : next.add(depto)
+    return next
+  })
+
+  const toggleStatus = (st) => setStatusesRecolhidos(prev => {
+    const next = new Set(prev)
+    next.has(st) ? next.delete(st) : next.add(st)
+    return next
+  })
 
   const toggleExpandir = async (projetoId) => {
     const novoSet = new Set(expandidos)
@@ -602,11 +983,16 @@ export default function ProjetosDashboard() {
     <div className="p-6 space-y-5 max-w-screen-2xl">
 
       {/* CABEÇALHO */}
-      <div className="border-b border-slate-200 pb-4 space-y-3">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-bold text-slate-900 tracking-tight">Gestão de Projetos</h1>
-            <p className="text-xs text-slate-500">Controle de tarefas, cronograma e quadro Kanban dos projetos.</p>
+      <div className="space-y-3">
+        <div className="flex items-center justify-between border-b border-slate-200 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-indigo-600 rounded-lg shrink-0">
+              <FolderKanban className="h-4 w-4 text-white" />
+            </div>
+            <div>
+              <h1 className="text-xl font-bold text-slate-900 tracking-tight">Gestão de Projetos</h1>
+              <p className="text-xs text-slate-500">Controle de tarefas, cronograma e quadro Kanban dos projetos.</p>
+            </div>
           </div>
           <div className="flex items-center gap-2">
             {hasPermission('bi/projetos') && (
@@ -617,6 +1003,27 @@ export default function ProjetosDashboard() {
                 <BarChart2 className="h-4 w-4 text-indigo-500" /> Ir para Dashboard
               </button>
             )}
+            {departamentosPermitidosEfetivos?.size > 0 && (
+              <button
+                onClick={() => setModoVerTodos(!modoVerTodos)}
+                className={`flex items-center gap-2 text-xs font-semibold px-3 py-2 rounded-md shadow-sm border transition-colors ${
+                  modoVerTodos
+                    ? 'bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100'
+                    : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                <Eye className="h-4 w-4" />
+                {modoVerTodos ? 'Sair da Visualização Geral' : 'Ver Todos os Projetos'}
+              </button>
+            )}
+            <button
+              onClick={handleSalvarPDF}
+              disabled={gerandoPDF || dadosFiltrados.length === 0}
+              className="flex items-center gap-2 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-wait text-slate-700 text-xs font-semibold px-3 py-2 rounded-md shadow-sm border border-slate-200 transition-colors"
+            >
+              {gerandoPDF ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+              {gerandoPDF ? 'Gerando...' : 'Salvar PDF'}
+            </button>
             {canCriar && (
               <button
                 onClick={() => navigate('/projetos/novo')}
@@ -627,52 +1034,27 @@ export default function ProjetosDashboard() {
             )}
           </div>
         </div>
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex items-start justify-between gap-3">
           <ProjetosNav />
-          <div className="flex items-center gap-2 shrink-0">
-            <div className="flex items-center gap-0.5 bg-slate-100 border border-slate-200 rounded-md p-0.5 shrink-0">
-              {[{ k: 'inicio', l: 'Início' }, { k: 'fim', l: 'Término' }, { k: 'ambos', l: 'Ambos' }].map(({ k, l }) => (
-                <button key={k} onClick={() => setFiltroDataTipo(k)}
-                  className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-colors ${filtroDataTipo === k ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
-                  {l}
-                </button>
-              ))}
-            </div>
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">De</span>
-            <input
-              type="date"
-              value={filtroDataTermIni}
-              onChange={e => setFiltroDataTermIni(e.target.value)}
-              onClick={e => e.target.showPicker?.()}
-              className="text-xs px-2 py-1 border border-slate-200 rounded-md bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 cursor-pointer"
-            />
-            <span className="text-[10px] text-slate-400">até</span>
-            <input
-              type="date"
-              value={filtroDataTermFim}
-              onChange={e => setFiltroDataTermFim(e.target.value)}
-              onClick={e => e.target.showPicker?.()}
-              min={filtroDataTermIni || undefined}
-              className="text-xs px-2 py-1 border border-slate-200 rounded-md bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 cursor-pointer"
-            />
-            {(filtroDataTermIni || filtroDataTermFim) && (
-              <button
-                onClick={() => { setFiltroDataTermIni(''); setFiltroDataTermFim('') }}
-                className="p-1 text-slate-300 hover:text-red-500 transition-colors"
-                title="Limpar datas"
-              >
-                <X className="h-3 w-3" />
-              </button>
-            )}
-          </div>
+          <FiltrosCompactBar />
         </div>
+        <ProjetosFiltrosPanel projetos={dados} showTrigger={false} />
       </div>
+
+      {modoVerTodos && (
+        <div className="flex items-center gap-2 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-xs font-semibold">
+          <Eye className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+          Modo Visualização Geral — exibindo todos os departamentos. Todas as edições estão bloqueadas.
+          <button onClick={() => setModoVerTodos(false)} className="ml-auto text-amber-600 hover:text-amber-800 font-bold underline underline-offset-2">
+            Sair
+          </button>
+        </div>
+      )}
 
       {/* CARDS KPI — Projetos por status */}
       {(() => {
         const projCards = Object.entries(STATUS_CARD_CONFIG)
           .map(([status, cfg]) => ({ status, cfg, count: dadosGlobal.filter(p => p.status === status).length }))
-          .filter(c => c.count > 0)
         projCards.push({
           status: '__total__',
           cfg: { label: 'Total Projetos', icon: Layers, st: { bg:'bg-slate-50', border:'border-slate-200', ring:'ring-slate-300', icoBg:'bg-slate-100', icoTxt:'text-slate-500', numTxt:'text-slate-800', labelTxt:'text-slate-400' } },
@@ -693,182 +1075,170 @@ export default function ProjetosDashboard() {
         )
       })()}
 
-      {/* CARDS KPI — dinâmicos por status de tarefas + Atrasadas + Hoje */}
+      {/* CARDS KPI — status de tarefas */}
       {(() => {
         const countTarefas = (status) => dadosGlobal.reduce((s, p) => s + (p.proj_tarefas || []).filter(t => t.status_kanban === status).length, 0)
-        const cards = []
-        for (const status of ['mapeado', 'programado', 'em_andamento']) {
-          const cnt = countTarefas(status)
-          if (cnt > 0) cards.push({ key: status, cfg: STATUS_CARD_CONFIG[status], count: cnt, kind: 'status' })
-          if (status === 'em_andamento') {
-            if (qtdAtrasadas > 0) cards.push({ key: 'atrasadas', count: qtdAtrasadas, kind: 'atrasadas' })
-            if (qtdHoje > 0)      cards.push({ key: 'hoje',      count: qtdHoje,      kind: 'hoje'      })
-          }
-        }
-        for (const status of ['pausado', 'concluido']) {
-          const cnt = countTarefas(status)
-          if (cnt > 0) cards.push({ key: status, cfg: STATUS_CARD_CONFIG[status], count: cnt, kind: 'status' })
-        }
+        const cards = ['mapeado', 'programado', 'em_andamento', 'pausado', 'concluido'].map(status => ({
+          key: status, cfg: STATUS_CARD_CONFIG[status], count: countTarefas(status),
+        }))
         const totalTarefas = dadosGlobal.reduce((s, p) => s + (p.proj_tarefas || []).length, 0)
-        cards.push({ key: 'total', count: totalTarefas, kind: 'total' })
         return (
-          <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cards.length}, 1fr)`, gap: '10px' }}>
-            {cards.map(c => {
-              if (c.kind === 'status') return (
-                <CardKpi key={c.key} icon={c.cfg.icon} label={c.cfg.label} count={c.count}
-                  ativo={filtroCards.has(c.key)}
-                  onClick={() => setFiltroCards(prev => { const s = new Set(prev); s.has(c.key) ? s.delete(c.key) : s.add(c.key); return s })}
-                  st={c.cfg.st} />
-              )
-              if (c.kind === 'atrasadas') return (
-                <CardKpi key="atrasadas" icon={AlertTriangle} label="Atrasadas" count={c.count}
-                  ativo={filtroAtrasadas} onClick={() => { setFiltroAtrasadas(p => !p); setFiltroHoje(false) }}
-                  st={{ bg:'bg-red-50', border:'border-red-200', ring:'ring-red-300', icoBg:'bg-red-100', icoTxt:'text-red-600', numTxt:'text-red-700', labelTxt:'text-red-500' }} />
-              )
-              if (c.kind === 'hoje') return (
-                <CardKpi key="hoje" icon={CalendarCheck} label="Hoje" count={c.count}
-                  ativo={filtroHoje} onClick={() => { setFiltroHoje(p => !p); setFiltroAtrasadas(false) }}
-                  st={{ bg:'bg-sky-50', border:'border-sky-200', ring:'ring-sky-300', icoBg:'bg-sky-100', icoTxt:'text-sky-600', numTxt:'text-sky-700', labelTxt:'text-sky-500' }} />
-              )
-              return (
-                <CardKpi key="total" icon={Layers} label="Total Tarefas" count={c.count} ativo={false}
-                  onClick={() => { setFiltroCards(new Set()); setFiltroAtrasadas(false); setFiltroHoje(false) }}
-                  st={{ bg:'bg-slate-50', border:'border-slate-200', ring:'ring-slate-300', icoBg:'bg-slate-100', icoTxt:'text-slate-500', numTxt:'text-slate-800', labelTxt:'text-slate-400' }} />
-              )
-            })}
+          <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cards.length + 1}, 1fr)`, gap: '10px' }}>
+            {cards.map(c => (
+              <CardKpi key={c.key} icon={c.cfg.icon} label={c.cfg.label} count={c.count}
+                ativo={filtroCards.has(c.key)}
+                onClick={() => setFiltroCards(prev => { const s = new Set(prev); s.has(c.key) ? s.delete(c.key) : s.add(c.key); return s })}
+                st={c.cfg.st} />
+            ))}
+            <CardKpi key="total" icon={Layers} label="Total Tarefas" count={totalTarefas} ativo={false}
+              onClick={() => setFiltroCards(new Set())}
+              st={{ bg:'bg-slate-50', border:'border-slate-200', ring:'ring-slate-300', icoBg:'bg-slate-100', icoTxt:'text-slate-500', numTxt:'text-slate-800', labelTxt:'text-slate-400' }} />
           </div>
         )
       })()}
 
-      {/* FILTROS */}
-      <ProjetosFiltrosPanel projetos={dados} />
-
       {/* TABELA */}
-      <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-x-auto custom-scrollbar-light">
-        {!loading && dadosFiltrados.length > 0 && (
-          <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100 bg-slate-50/50">
-            <span className="text-[11px] text-slate-400 font-medium">
-              {dadosFiltrados.length} projeto{dadosFiltrados.length !== 1 ? 's' : ''}
-              {expandidos.size > 0 && ` · ${expandidos.size} expandido${expandidos.size !== 1 ? 's' : ''}`}
-            </span>
-            <button
-              onClick={anyExpanded ? handleRecolherTodos : handleExpandirTodos}
-              className="flex items-center gap-1 text-[11px] font-semibold text-blue-600 hover:text-blue-700 transition-colors"
-            >
-              {anyExpanded
-                ? <><ChevronDown className="h-3.5 w-3.5" /> Recolher todos</>
-                : <><ChevronRight className="h-3.5 w-3.5" /> Expandir todos</>
-              }
-            </button>
-          </div>
-        )}
+      <div ref={tableRef} className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-x-auto custom-scrollbar-light">
+        {!loading && dadosFiltrados.length > 0 && (() => {
+          const todosDeptos = [...new Set(dadosFiltrados.map(p => p.departamento_nome || 'Sem Departamento'))]
+          const anyDeptoExp  = deptosExpandidos.size > 0
+          const anyStatusExp = statusesRecolhidos.size === 0   // true = status abertos
+          const anyTarefaExp = anyExpanded
+
+          // próxima ação de expandir em cascata
+          const proximoExpandir = !anyDeptoExp
+            ? { label: 'Expandir departamentos', fn: () => setDeptosExpandidos(new Set(todosDeptos)) }
+            : !anyStatusExp
+              ? { label: 'Expandir status',        fn: () => setStatusesRecolhidos(new Set()) }
+              : !anyTarefaExp
+                ? { label: 'Expandir projetos',     fn: handleExpandirTodos }
+                : null
+
+          // próxima ação de recolher em cascata (inverso)
+          const proximoRecolher = anyTarefaExp
+            ? { label: 'Recolher projetos',      fn: () => setExpandidos(new Set()) }
+            : anyStatusExp && anyDeptoExp
+              ? { label: 'Recolher status',        fn: () => setStatusesRecolhidos(new Set(STATUS_ORDER)) }
+              : anyDeptoExp
+                ? { label: 'Recolher departamentos', fn: () => setDeptosExpandidos(new Set()) }
+                : null
+
+          const btnBase = 'flex items-center gap-1 text-[11px] font-semibold transition-colors'
+          const btnOn  = btnBase + ' text-blue-600 hover:text-blue-700'
+          const btnOff = btnBase + ' text-slate-300 cursor-default'
+          return (
+            <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100 bg-slate-50/50">
+              <span className="text-[11px] text-slate-400 font-medium">
+                {dadosFiltrados.length} projeto{dadosFiltrados.length !== 1 ? 's' : ''}
+                {expandidos.size > 0 && ` · ${expandidos.size} expandido${expandidos.size !== 1 ? 's' : ''}`}
+              </span>
+              <div className="flex items-center gap-4">
+                {/* Botão 1 — Expandir/Recolher tudo */}
+                <button
+                  onClick={anyDeptoExp ? handleRecolherTodos : handleExpandirTodos}
+                  className={btnOn}
+                >
+                  {anyDeptoExp
+                    ? <><ChevronDown className="h-3.5 w-3.5" /> Recolher tudo</>
+                    : <><ChevronRight className="h-3.5 w-3.5" /> Expandir tudo</>
+                  }
+                </button>
+                <span className="text-slate-200">|</span>
+                {/* Botão 2 — Expandir por nível (label muda conforme estado) */}
+                <button
+                  onClick={proximoExpandir?.fn}
+                  disabled={!proximoExpandir}
+                  className={proximoExpandir ? btnOn : btnOff}
+                >
+                  <ChevronRight className="h-3.5 w-3.5" />
+                  {proximoExpandir?.label ?? 'Expandir nível'}
+                </button>
+                <span className="text-slate-200">|</span>
+                {/* Botão 3 — Recolher por nível (label muda conforme estado) */}
+                <button
+                  onClick={proximoRecolher?.fn}
+                  disabled={!proximoRecolher}
+                  className={proximoRecolher ? btnOn : btnOff}
+                >
+                  <ChevronDown className="h-3.5 w-3.5" />
+                  {proximoRecolher?.label ?? 'Recolher nível'}
+                </button>
+              </div>
+            </div>
+          )
+        })()}
         {loading ? (
           <div className="p-10 text-center text-xs text-slate-400">Carregando...</div>
         ) : (
-          <table className="text-left border-collapse text-xs" style={{ minWidth: anyExpanded ? '1700px' : '1020px' }}>
-            <thead>
-              <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[10px] font-bold uppercase tracking-wider">
-                {[
-                  { campo: 'titulo',       label: 'Título / Tarefa / Deliberações', style: { minWidth: '360px' } },
-                  { campo: 'sistemas',     label: 'Sistemas', style: { minWidth: '160px' } },
-                  { campo: 'depto',        label: 'Departamento / Área' },
-                  { campo: 'resp_projeto', label: 'Resp.Projeto / Tarefa', style: { minWidth: '160px' } },
-                  { campo: 'status',       label: 'Status / Fase', style: { minWidth: '160px' } },
-                  { campo: 'conclusao',    label: '% Conclusão' },
-                  { campo: 'data_inicio',  label: 'Data Início' },
-                  { campo: 'data_fim',     label: 'Data Término' },
-                ].map(({ campo, label, style }) => {
-                  const idx = sortConfig.findIndex(k => k.campo === campo)
-                  const ativo = idx !== -1
-                  const dir = ativo ? sortConfig[idx].dir : null
-                  return (
-                    <th key={campo} className="p-3 whitespace-nowrap" style={style}>
-                      <button
-                        title="Clique: ordenar | Shift+Clique: adicionar ordenação secundária"
-                        onClick={e => {
-                          if (e.shiftKey) {
-                            setSortConfig(prev => {
-                              const i = prev.findIndex(k => k.campo === campo)
-                              if (i !== -1) {
-                                const next = [...prev]
-                                next[i] = { campo, dir: prev[i].dir === 'asc' ? 'desc' : 'asc' }
-                                return next
-                              }
-                              return [...prev, { campo, dir: 'asc' }]
-                            })
-                          } else {
-                            setSortConfig(prev => {
-                              const cur = prev.find(k => k.campo === campo)
-                              return [{ campo, dir: cur?.dir === 'asc' ? 'desc' : 'asc' }]
-                            })
-                          }
-                        }}
-                        className="flex items-center gap-1 uppercase font-bold tracking-wider hover:text-blue-600 transition-colors"
-                      >
-                        {label}
-                        <span className="normal-case font-normal flex items-center gap-0.5">
-                          {ativo ? (dir === 'asc' ? '↑' : '↓') : '↕'}
-                          {ativo && sortConfig.length > 1 && (
-                            <span className="text-[8px] text-blue-400 font-bold">{idx + 1}</span>
-                          )}
-                        </span>
-                      </button>
-                    </th>
-                  )
-                })}
-                {anyExpanded && (
-                  <>
-                    {[
-                      { campo: 'sistema',     label: 'Sistema' },
-                      { campo: 'unidade',     label: 'Unidade' },
-                    ].map(({ campo, label }) => {
-                      const idx = sortConfig.findIndex(k => k.campo === campo)
-                      const ativo = idx !== -1
-                      const dir = ativo ? sortConfig[idx].dir : null
-                      return (
-                        <th key={campo} className="p-3 whitespace-nowrap">
-                          <button
-                            title="Clique: ordenar | Shift+Clique: adicionar ordenação secundária"
-                            onClick={e => {
-                              if (e.shiftKey) {
-                                setSortConfig(prev => {
-                                  const i = prev.findIndex(k => k.campo === campo)
-                                  if (i !== -1) {
-                                    const next = [...prev]
-                                    next[i] = { campo, dir: prev[i].dir === 'asc' ? 'desc' : 'asc' }
-                                    return next
-                                  }
-                                  return [...prev, { campo, dir: 'asc' }]
-                                })
-                              } else {
-                                setSortConfig(prev => {
-                                  const cur = prev.find(k => k.campo === campo)
-                                  return [{ campo, dir: cur?.dir === 'asc' ? 'desc' : 'asc' }]
-                                })
-                              }
-                            }}
-                            className="flex items-center gap-1 uppercase font-bold tracking-wider hover:text-blue-600 transition-colors"
-                          >
-                            {label}
-                            <span className="normal-case font-normal flex items-center gap-0.5">
-                              {ativo ? (dir === 'asc' ? '↑' : '↓') : '↕'}
-                              {ativo && sortConfig.length > 1 && (
-                                <span className="text-[8px] text-blue-400 font-bold">{idx + 1}</span>
-                              )}
-                            </span>
-                          </button>
-                        </th>
-                      )
-                    })}
-                  </>
-                )}
-                <th className="p-3 w-20 text-center sticky right-0 bg-slate-50 border-l border-slate-200">Ações</th>
-              </tr>
-            </thead>
+          <table className="w-full text-left border-collapse text-xs">
+            <thead></thead>
             <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
               {dadosFiltrados.length === 0 ? (
-                <tr><td colSpan={anyExpanded ? 11 : 9} className="p-10 text-center text-slate-400">Nenhum projeto encontrado.</td></tr>
-              ) : dadosFiltrados.map(p => {
+                <tr><td colSpan={8} className="p-10 text-center text-slate-400">Nenhum projeto encontrado.</td></tr>
+              ) : dadosPorDeptoFlat.map((p, pi) => {
+                const depto = p.departamento_nome || 'Sem Departamento'
+                const prevDepto = pi > 0 ? (dadosPorDeptoFlat[pi - 1].departamento_nome || 'Sem Departamento') : null
+                const isNewDepto = depto !== prevDepto
+                const deptoExpandido = deptosExpandidos.has(depto)
+                const { count: deptoCount, totalTarefas, resps } = deptInfoMap[depto]
+                if (!deptoExpandido && !isNewDepto) return null
+                if (!deptoExpandido) return (
+                  <tr key={`depto-${depto}`} className="cursor-pointer select-none" onClick={() => toggleDepto(depto)}>
+                    <td colSpan={8}>
+                      <div className="bg-slate-700 text-white px-5 py-3 flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <span className="opacity-60"><ChevronRight className="h-4 w-4" /></span>
+                          <span className="text-sm font-bold uppercase tracking-widest shrink-0">{depto}</span>
+                          {resps.length > 0 && <span className="text-xs opacity-75 font-medium hidden sm:inline">Responsável Geral: <span className="font-semibold opacity-100">{resps.join(' · ')}</span></span>}
+                        </div>
+                        <span className="text-xs opacity-80 font-medium shrink-0">{deptoCount} projeto{deptoCount !== 1 ? 's' : ''} · {totalTarefas} tarefa{totalTarefas !== 1 ? 's' : ''}</span>
+                      </div>
+                    </td>
+                  </tr>
+                )
+                const pStatus = p.status
+                const isNewStatus = isNewDepto || (pi > 0 && dadosPorDeptoFlat[pi - 1].status !== pStatus)
+                const statusRecolhido = statusesRecolhidos.has(pStatus)
+                const statusCount = statusInfoMap[`${depto}__${pStatus}`] || 0
+                const statusLabel = STATUS_MAP[pStatus]?.label || pStatus
+                const statusCor = STATUS_COR_HEADER[pStatus] || '#94a3b8'
+                if (statusRecolhido && !isNewStatus) return null
+                if (statusRecolhido && isNewStatus && !isNewDepto) return (
+                  <tr key={`status-${depto}-${pStatus}`} className="cursor-pointer select-none" onClick={() => toggleStatus(pStatus)}>
+                    <td colSpan={8}>
+                      <div style={{ backgroundColor: statusCor }} className="px-5 py-2 flex items-center gap-2">
+                        <span className="text-white/70"><ChevronRight className="h-3.5 w-3.5" /></span>
+                        <span className="text-xs font-bold uppercase tracking-widest text-white">{statusLabel}</span>
+                        <span className="text-xs text-white/75 font-medium">· {statusCount} projeto{statusCount !== 1 ? 's' : ''}</span>
+                      </div>
+                    </td>
+                  </tr>
+                )
+                if (statusRecolhido && isNewStatus && isNewDepto) return (
+                  <React.Fragment key={`deptstatus-${depto}-${pStatus}`}>
+                    <tr className="cursor-pointer select-none" onClick={() => toggleDepto(depto)}>
+                      <td colSpan={8} className={pi > 0 ? 'pt-1' : ''}>
+                        <div className="bg-slate-700 text-white px-5 py-3 flex items-center justify-between gap-4">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <span className="opacity-60"><ChevronDown className="h-4 w-4" /></span>
+                            <span className="text-sm font-bold uppercase tracking-widest shrink-0">{depto}</span>
+                            {resps.length > 0 && <span className="text-xs opacity-75 font-medium hidden sm:inline">Responsável Geral: <span className="font-semibold opacity-100">{resps.join(' · ')}</span></span>}
+                          </div>
+                          <span className="text-xs opacity-80 font-medium shrink-0">{deptoCount} projeto{deptoCount !== 1 ? 's' : ''} · {totalTarefas} tarefa{totalTarefas !== 1 ? 's' : ''}</span>
+                        </div>
+                      </td>
+                    </tr>
+                    <tr className="cursor-pointer select-none" onClick={() => toggleStatus(pStatus)}>
+                      <td colSpan={8}>
+                        <div style={{ backgroundColor: statusCor }} className="px-5 py-2 flex items-center gap-2">
+                          <span className="text-white/70"><ChevronRight className="h-3.5 w-3.5" /></span>
+                          <span className="text-xs font-bold uppercase tracking-widest text-white">{statusLabel}</span>
+                          <span className="text-xs text-white/75 font-medium">· {statusCount} projeto{statusCount !== 1 ? 's' : ''}</span>
+                        </div>
+                      </td>
+                    </tr>
+                  </React.Fragment>
+                )
                 const st = STATUS_MAP[p.status] || { label: p.status, cor: 'bg-slate-100 text-slate-500' }
                 const atrasado = isAtrasado(p)
                 const expandido = expandidos.has(p.id)
@@ -888,12 +1258,82 @@ export default function ProjetosDashboard() {
                   })
                 return (
                   <React.Fragment key={p.id}>
+                    {isNewDepto && (
+                      <tr className="cursor-pointer select-none" onClick={() => toggleDepto(depto)}>
+                        <td colSpan={8} className={pi > 0 ? 'pt-1' : ''}>
+                          <div className="bg-slate-700 text-white px-5 py-3 flex items-center justify-between gap-4">
+                            <div className="flex items-center gap-3 min-w-0">
+                              <span className="opacity-60">{deptoExpandido ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}</span>
+                              <span className="text-sm font-bold uppercase tracking-widest shrink-0">{depto}</span>
+                              {resps.length > 0 && <span className="text-xs opacity-75 font-medium hidden sm:inline">Responsável Geral: <span className="font-semibold opacity-100">{resps.join(' · ')}</span></span>}
+                            </div>
+                            <span className="text-xs opacity-80 font-medium shrink-0">{deptoCount} projeto{deptoCount !== 1 ? 's' : ''} · {totalTarefas} tarefa{totalTarefas !== 1 ? 's' : ''}</span>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    {isNewStatus && (
+                      <tr className="cursor-pointer select-none" onClick={() => toggleStatus(pStatus)}>
+                        <td colSpan={8}>
+                          <div style={{ backgroundColor: statusCor }} className="px-5 py-2 flex items-center gap-2">
+                            <span className="text-white/70"><ChevronDown className="h-3.5 w-3.5" /></span>
+                            <span className="text-xs font-bold uppercase tracking-widest text-white">{statusLabel}</span>
+                            <span className="text-xs text-white/75 font-medium">· {statusCount} projeto{statusCount !== 1 ? 's' : ''}</span>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    {isNewStatus && (
+                      <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[10px] font-bold uppercase tracking-wider">
+                        {[
+                          { campo: 'titulo',       label: 'Título / Tarefa / Deliberações', style: { minWidth: '360px' } },
+                          { campo: 'sistemas',     label: 'Sistemas', style: { minWidth: '160px' } },
+                          { campo: 'depto',        label: 'Departamento / Área' },
+                          { campo: 'resp_projeto', label: 'Resp. Projeto' },
+                          { campo: 'conclusao',    label: '% Conclusão' },
+                          { campo: 'data_inicio',  label: 'Data Início' },
+                          { campo: 'data_fim',     label: 'Data Término' },
+                        ].map(({ campo, label, style }) => {
+                          const idx = sortConfig.findIndex(k => k.campo === campo)
+                          const ativo = idx !== -1
+                          const dir = ativo ? sortConfig[idx].dir : null
+                          return (
+                            <th key={campo} className="p-3 whitespace-nowrap" style={style}>
+                              <button
+                                title="Clique: ordenar | Shift+Clique: adicionar ordenação secundária"
+                                onClick={e => {
+                                  if (e.shiftKey) {
+                                    setSortConfig(prev => { const i = prev.findIndex(k => k.campo === campo); if (i !== -1) { const next = [...prev]; next[i] = { campo, dir: prev[i].dir === 'asc' ? 'desc' : 'asc' }; return next }; return [...prev, { campo, dir: 'asc' }] })
+                                  } else {
+                                    setSortConfig(prev => { const cur = prev.find(k => k.campo === campo); return [{ campo, dir: cur?.dir === 'asc' ? 'desc' : 'asc' }] })
+                                  }
+                                }}
+                                className="flex items-center gap-1 uppercase font-bold tracking-wider hover:text-blue-600 transition-colors"
+                              >
+                                {label}
+                                <span className="normal-case font-normal flex items-center gap-0.5">
+                                  {ativo ? (dir === 'asc' ? '↑' : '↓') : '↕'}
+                                  {ativo && sortConfig.length > 1 && <span className="text-[8px] text-blue-400 font-bold">{idx + 1}</span>}
+                                </span>
+                              </button>
+                            </th>
+                          )
+                        })}
+                        <th className="p-3 w-20 text-center border-l border-slate-200">Ações</th>
+                      </tr>
+                    )}
                     {/* ── Linha do projeto ── */}
                     <tr
-                      className={`hover:bg-blue-50/40 transition-colors cursor-pointer border-b border-slate-100 ${expandido ? 'bg-blue-50/20' : ''} ${atrasado && !expandido ? 'bg-red-50/30' : ''}`}
-                      onClick={() => navigate(`/projetos/${p.id}`)}
+                      className={`transition-colors cursor-pointer border-b-2 ${
+                        expandido
+                          ? 'bg-blue-50 border-b-blue-200 hover:bg-blue-100/60'
+                          : atrasado
+                            ? 'bg-red-50 border-b-red-100 hover:bg-red-50/80'
+                            : 'bg-slate-100/80 border-b-slate-200 hover:bg-blue-50/60'
+                      }`}
+                      onClick={() => navigate(`/projetos/detalhe/${p.id}`)}
                     >
-                      <td className="p-3">
+                      <td className={`p-3 border-l-[3px] ${expandido ? 'border-l-blue-500' : atrasado ? 'border-l-red-400' : 'border-l-slate-400'}`}>
                         <div className="flex items-center gap-2">
                           <button
                             onClick={e => { e.stopPropagation(); toggleExpandir(p.id) }}
@@ -907,8 +1347,11 @@ export default function ProjetosDashboard() {
                                 : <ChevronRight className="h-3.5 w-3.5" />
                             }
                           </button>
-                          <FolderKanban className="h-3.5 w-3.5 text-blue-500 shrink-0" />
-                          <span className="font-bold text-slate-900">{p.nome}</span>
+                          <FolderKanban className="h-4 w-4 text-blue-500 shrink-0" />
+                          <div className="min-w-0">
+                            <div className="text-[8px] font-extrabold text-blue-500/80 uppercase tracking-widest leading-none mb-0.5">Projeto</div>
+                            <span className="font-bold text-slate-900 text-[13px] leading-tight">{p.nome}</span>
+                          </div>
                         </div>
                       </td>
                       <td className="p-3">
@@ -931,11 +1374,7 @@ export default function ProjetosDashboard() {
                         <span className="block">{p.departamento_nome || '—'}</span>
                         {p.area_nome && <span className="block italic text-slate-400 text-[10px]">{p.area_nome}</span>}
                       </td>
-                      <td className="p-3 text-slate-600 whitespace-nowrap">{p.responsavel_nome || '—'}</td>
-                      <td className="p-3 leading-tight">
-                        <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold ${st.cor}`}>{st.label}</span>
-                        {p.fase_nome && <span className="block italic text-slate-400 text-[10px] pl-0.5 mt-0.5">{p.fase_nome}</span>}
-                      </td>
+                      <td className="p-3 text-slate-600 whitespace-nowrap">{p.responsavel_nome || <span className="text-slate-300">—</span>}</td>
                       <td className="p-3 whitespace-nowrap">{(() => {
                         const ts = p.proj_tarefas
                         if (!ts || ts.length === 0) return <span className="text-slate-400">—</span>
@@ -957,12 +1396,11 @@ export default function ProjetosDashboard() {
                                                                                'text-slate-500'
                         }>{fmtData(dataFimMax)}</span>
                       </td>
-                      {anyExpanded && <><td className="p-3 text-slate-400">—</td><td className="p-3 text-slate-400">—</td></>}
-                      <td className="p-3 text-center sticky right-0 bg-white border-l border-slate-100 shadow-[-4px_0_12px_rgba(0,0,0,0.03)]" onClick={e => e.stopPropagation()}>
+                      <td className="p-3 text-center border-l border-slate-100" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center justify-center gap-1">
                           {canEditar && (
                             <button
-                              onClick={() => navigate(`/projetos/${p.id}/editar`)}
+                              onClick={() => navigate(`/projetos/detalhe/${p.id}`)}
                               className="p-1 rounded transition-colors text-slate-500 hover:text-blue-600 hover:bg-blue-50"
                               title="Editar projeto"
                             >
@@ -990,123 +1428,117 @@ export default function ProjetosDashboard() {
                       </td>
                     </tr>
 
-                    {/* ── Linhas de tarefas (expandidas) ── */}
-                    {expandido && tarefas.length > 0 && (() => {
-                      const sel = tarefasSelecionadas[p.id] || new Set()
-                      const todasSel = tarefas.length > 0 && tarefas.every(t => sel.has(t.id))
-                      return (
-                        <tr className="border-b border-slate-200 bg-slate-200/50">
-                          <td colSpan={anyExpanded ? 11 : 9} className="py-1 px-3">
-                            <div className="flex items-center gap-3 pl-6">
-                              <label className="flex items-center gap-1.5 cursor-pointer select-none text-[11px] text-slate-600 font-medium">
-                                <input
-                                  type="checkbox"
-                                  checked={todasSel}
-                                  onChange={() => toggleSelecionarTodas(p.id, tarefas)}
-                                  className="w-3.5 h-3.5 accent-blue-600"
-                                />
-                                Selecionar todos
-                              </label>
-                              {sel.size > 0 && canExcluirTar && (
-                                <button
-                                  onClick={() => excluirTarefasSelecionadas(p.id)}
-                                  className="flex items-center gap-1 px-2.5 py-0.5 bg-red-600 hover:bg-red-700 text-white text-[10px] font-semibold rounded transition-colors"
-                                >
-                                  <Trash2 className="h-3 w-3" />
-                                  Excluir {sel.size} selecionada{sel.size !== 1 ? 's' : ''}
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      )
-                    })()}
-                    {expandido && tarefas.map((t, i) => {
+                    {/* ── Tarefas (sub-tabela estilo Planejamento) ── */}
+                    {expandido && tarefas.length > 0 && (
+                      <tr>
+                        <td colSpan={8} className="p-0 bg-slate-50">
+                          <div className="ml-10 border-l-[3px] border-l-blue-300">
+                          <table className="w-full text-xs border-collapse">
+                            <thead>
+                              <tr className="bg-slate-200/70 border-y border-slate-300/50 text-[9px] font-extrabold uppercase tracking-widest text-slate-500">
+                                <th className="px-2 py-1.5 text-center w-10">#</th>
+                                <th className="px-3 py-1.5 text-left">Tarefa</th>
+                                <th className="px-2 py-1.5 text-center w-24 whitespace-nowrap">Sistema</th>
+                                <th className="px-2 py-1.5 text-center w-32 whitespace-nowrap">Depto / Área</th>
+                                <th className="px-2 py-1.5 text-center w-24 whitespace-nowrap">Responsável</th>
+                                <th className="px-2 py-1.5 text-center w-24 whitespace-nowrap">Status</th>
+                                <th className="px-2 py-1.5 text-center w-28 whitespace-nowrap">% Concl.</th>
+                                <th className="px-2 py-1.5 text-center w-20 whitespace-nowrap">Início</th>
+                                <th className="px-2 py-1.5 text-center w-20 whitespace-nowrap">Término</th>
+                                <th className="px-1 py-1.5 w-16" />
+                              </tr>
+                            </thead>
+                            <tbody>
+                    {tarefas.map((t, i) => {
                       const kt = KANBAN_MAP[t.status_kanban] || { label: t.status_kanban, cor: 'bg-slate-100 text-slate-500' }
                       const atrasadaTarefa = isAtrasadaTarefa(t)
                       const delibersAberto = deliberacoesExpandidas.has(t.id)
                       const delibers = deliberacoesPorTarefa[t.id] || []
                       const formDelib = novaDelib[t.id] || { data: hoje2, texto: '' }
+                      const pct = t.status_kanban === 'concluido' ? 100 : Math.min(100, t.progresso_pct || 0)
+                      const sistCor = t.sistema_nome ? (sistemaCorMap[t.sistema_nome] || '#1e293b') : null
+                      const sistTxt = t.sistema_nome ? (sistemaCorTextoMap[t.sistema_nome] || getTextColor(sistCor)) : null
                       return (
                         <React.Fragment key={t.id}>
-                          {/* linha da tarefa */}
-                          <tr className={`text-[11px] border-b border-slate-100/60 ${atrasadaTarefa ? 'bg-red-50/20' : 'bg-slate-50/50'} hover:bg-slate-100/60 transition-colors`}>
-                            <td className="py-2 pr-3 pl-7">
-                              <div className="flex items-center gap-2">
-                                <input
-                                  type="checkbox"
-                                  checked={(tarefasSelecionadas[p.id] || new Set()).has(t.id)}
-                                  onChange={() => toggleSelecionarTarefa(p.id, t.id)}
-                                  onClick={e => e.stopPropagation()}
-                                  className="w-3.5 h-3.5 accent-blue-600 shrink-0"
-                                />
-                                <span className="w-1 h-1 rounded-full bg-slate-300 shrink-0" />
-                                {t.etapa != null && (
-                                  <span className={`shrink-0 w-5 h-5 flex items-center justify-center rounded-full text-[10px] font-bold ${t.status_kanban === 'em_andamento' ? 'bg-orange-500 text-white shadow-sm' : 'bg-slate-200 text-slate-600'}`}>{t.etapa}</span>
-                                )}
-                                <span className="text-slate-700 flex-1">{t.nome}</span>
+                          <tr className={`border-b border-slate-100 hover:bg-blue-50/20 transition-colors ${atrasadaTarefa ? 'bg-red-50/20' : 'bg-white'}`}>
+                            {/* Etapa */}
+                            <td className="px-2 py-1.5 text-center">
+                              {t.etapa != null
+                                ? <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-[10px] font-bold ${t.status_kanban === 'em_andamento' ? 'bg-orange-500 text-white shadow-sm' : 'bg-indigo-100 text-indigo-700'}`}>{t.etapa}</span>
+                                : <span className="text-slate-300">—</span>}
+                            </td>
+                            {/* Nome + deliberações */}
+                            <td className="px-3 py-1.5">
+                              <div className="flex items-start justify-between gap-2 min-w-0">
+                                <div className="flex items-start gap-1.5 min-w-0 flex-1">
+                                  {atrasadaTarefa && <AlertTriangle className="h-3 w-3 text-red-400 shrink-0 mt-0.5" />}
+                                  <span className="text-slate-700 font-medium leading-snug">{t.nome}</span>
+                                </div>
                                 <button
                                   onClick={() => toggleDeliberacoes(t.id)}
                                   title="Deliberações"
-                                  className={`shrink-0 flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold transition-colors ${delibersAberto ? 'bg-blue-100 text-blue-600' : (delibers.length > 0 || (tarefaDelibsMap[t.id] ?? 0) > 0) ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'text-slate-400 hover:bg-blue-50 hover:text-blue-500'}`}
+                                  className={`shrink-0 mt-0.5 flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold transition-colors ${delibersAberto ? 'bg-blue-100 text-blue-600' : (delibers.length > 0 || (tarefaDelibsMap[t.id] ?? 0) > 0) ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'text-slate-300 hover:bg-blue-50 hover:text-blue-500'}`}
                                 >
                                   <Plus className={`h-3 w-3 transition-transform duration-150 ${delibersAberto ? 'rotate-45' : ''}`} />
                                   {(() => { const n = delibers.length || tarefaDelibsMap[t.id] || 0; return n > 0 ? <span>{n}</span> : null })()}
                                 </button>
                               </div>
                             </td>
-                            <td className="py-2 px-3 text-slate-400">—</td>
-                            <td className="py-2 px-3 text-slate-600 leading-tight">
-                              <span className="block">{p.departamento_nome || '—'}</span>
-                              {p.area_nome && <span className="block italic text-slate-400 text-[10px]">{p.area_nome}</span>}
-                            </td>
-                            <td className="py-2 px-3 text-slate-500 whitespace-nowrap">{t.responsavel_nome || '—'}</td>
-                            <td className="py-2 px-3 leading-tight">
-                              <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold ${kt.cor}`}>{kt.label}</span>
-                              {t.fase_nome && <span className="block italic text-slate-400 text-[10px] pl-0.5 mt-0.5">{t.fase_nome}</span>}
-                            </td>
-                            <td className="py-2 px-3 whitespace-nowrap">{(() => {
-                              const pct = t.status_kanban === 'concluido' ? 100 : Math.min(100, t.progresso_pct || 0)
-                              return (
-                                <div className="flex items-center gap-2">
-                                  <div className="h-1.5 w-14 bg-slate-100 rounded-full overflow-hidden shrink-0">
-                                    <div className="h-full bg-blue-500 rounded-full" style={{ width: `${pct}%` }} />
-                                  </div>
-                                  <span className="text-[11px] text-slate-400">{pct}%</span>
-                                </div>
-                              )
-                            })()}</td>
-                            <td className="py-2 px-3 text-slate-400 whitespace-nowrap">{fmtData(t.data_inicio)}</td>
-                            <td className="py-2 px-3 whitespace-nowrap">
-                              <span className={
-                                atrasadaTarefa       ? 'text-red-600 font-bold' :
-                                isHojeTarefa(t)      ? 'text-blue-600 font-bold' :
-                                                       'text-slate-400'
-                              }>{fmtData(t.data_fim)}</span>
-                            </td>
-                            <td className="py-2 px-3 whitespace-nowrap">
+                            {/* Sistema */}
+                            <td className="px-2 py-1.5 text-center whitespace-nowrap">
                               {t.sistema_nome
-                                ? <span className="px-2 py-0.5 rounded text-[10px] font-bold" style={{ backgroundColor: sistemaCorMap[t.sistema_nome] || '#1e293b', color: sistemaCorTextoMap[t.sistema_nome] || getTextColor(sistemaCorMap[t.sistema_nome] || '#1e293b') }}>{t.sistema_nome}</span>
-                                : <span className="text-slate-400">—</span>}
+                                ? <span className="px-1.5 py-0.5 rounded text-[9px] font-bold" style={{ backgroundColor: sistCor, color: sistTxt }}>{t.sistema_nome}</span>
+                                : <span className="text-slate-300">—</span>}
                             </td>
-                            <td className="py-2 px-3 text-slate-400 whitespace-nowrap">{t.empresa_nome || '—'}</td>
-                            <td className="py-2 px-3 sticky right-0 bg-slate-50/80 border-l border-slate-100">
-                              <div className="flex items-center justify-center gap-1">
-                                {t.status_kanban !== 'concluido' && (
-                                  <button
-                                    onClick={() => setModalConcluir({ tarefa: t, dataFim: hoje2 })}
-                                    className="p-1 text-slate-400 hover:text-teal-600 hover:bg-teal-50 rounded transition-colors"
-                                    title="Concluir tarefa"
-                                  >
+                            {/* Depto / Área */}
+                            <td className="px-2 py-1.5 text-center text-[10px] text-slate-500 whitespace-nowrap">
+                              {(p.departamento_nome || t.area_nome)
+                                ? [p.departamento_nome, t.area_nome].filter(Boolean).join(' / ')
+                                : <span className="text-slate-300">—</span>}
+                            </td>
+                            {/* Responsável */}
+                            <td className="px-2 py-1.5 text-center text-slate-600 text-[11px]">{t.responsavel_nome || <span className="text-slate-300">—</span>}</td>
+                            {/* Status */}
+                            <td className="px-2 py-1.5 text-center whitespace-nowrap">
+                              <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide ${kt.cor}`}>{kt.label}</span>
+                            </td>
+                            {/* % Conclusão */}
+                            <td className="px-2 py-1.5">
+                              <div className="flex items-center gap-1.5">
+                                <div className="flex-1 h-1.5 bg-slate-200 rounded-full overflow-hidden min-w-[40px]">
+                                  <div className="h-full rounded-full bg-teal-500 transition-all" style={{ width: `${pct}%` }} />
+                                </div>
+                                <span className={`text-[10px] font-bold whitespace-nowrap ${pct >= 100 ? 'text-teal-600' : pct > 0 ? 'text-slate-600' : 'text-slate-400'}`}>{pct}%</span>
+                              </div>
+                            </td>
+                            {/* Início */}
+                            <td className="px-2 py-1.5 text-center whitespace-nowrap text-[11px]">
+                              {t.data_inicio ? <span className="text-slate-600">{fmtData(t.data_inicio)}</span> : <span className="text-slate-300">—</span>}
+                            </td>
+                            {/* Término */}
+                            <td className="px-2 py-1.5 text-center whitespace-nowrap text-[11px]">
+                              {t.data_fim
+                                ? <span className={atrasadaTarefa ? 'text-red-500 font-semibold' : (isHojeTarefa(t) ? 'text-blue-600 font-semibold' : 'text-slate-600')}>{fmtData(t.data_fim)}</span>
+                                : <span className="text-slate-300">—</span>}
+                            </td>
+                            {/* Ações */}
+                            <td className="px-1 py-1.5">
+                              <div className="flex items-center justify-center gap-0.5">
+                                {t.status_kanban !== 'concluido' && canConcluirTar && (
+                                  <button onClick={() => setModalConcluir({ tarefa: t, dataFim: hoje2 })} className="p-1 text-slate-400 hover:text-teal-600 hover:bg-teal-50 rounded transition-colors" title="Concluir tarefa">
                                     <CheckCircle2 className="h-3 w-3" />
                                   </button>
                                 )}
-                                <button onClick={() => abrirEditTarefa(t)} className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors" title="Editar tarefa">
-                                  <Edit2 className="h-3 w-3" />
-                                </button>
-                                <button onClick={() => setModalExcluirTarefa(t)} className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors" title="Excluir tarefa">
-                                  <Trash2 className="h-3 w-3" />
-                                </button>
+                                {canEditarTar && (
+                                  <button onClick={() => abrirEditTarefa(t)} className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors" title="Editar tarefa">
+                                    <Edit2 className="h-3 w-3" />
+                                  </button>
+                                )}
+                                {canExcluirTar && (
+                                  <button onClick={() => setModalExcluirTarefa(t)} className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors" title="Excluir tarefa">
+                                    <Trash2 className="h-3 w-3" />
+                                  </button>
+                                )}
                               </div>
                             </td>
                           </tr>
@@ -1114,7 +1546,7 @@ export default function ProjetosDashboard() {
                           {/* painel de deliberações */}
                           {delibersAberto && (
                             <tr className="border-b border-blue-100">
-                              <td colSpan={anyExpanded ? 11 : 9} className="pl-14 pr-6 py-4 bg-blue-50/30">
+                              <td colSpan={10} className="pl-14 pr-6 py-4 bg-blue-50/30">
                                 <div className="space-y-3">
                                   {/* lista */}
                                   {delibers.length > 0 ? (
@@ -1199,9 +1631,15 @@ export default function ProjetosDashboard() {
                         </React.Fragment>
                       )
                     })}
+                            </tbody>
+                          </table>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
                     {expandido && tarefas.length === 0 && !carregando && (
                       <tr className="bg-slate-50/50 border-b border-slate-100/60">
-                        <td colSpan={anyExpanded ? 11 : 9} className="py-3 pl-10 text-[11px] text-slate-400 italic">Nenhuma tarefa cadastrada.</td>
+                        <td colSpan={8} className="py-3 pl-10 text-[11px] text-slate-400 italic">Nenhuma tarefa cadastrada.</td>
                       </tr>
                     )}
                   </React.Fragment>
@@ -1213,8 +1651,14 @@ export default function ProjetosDashboard() {
       </div>
       <p className="text-[10px] text-slate-400">
         {dadosFiltrados.length} projeto(s) exibido(s)
-        {filtroCards.size > 0 && <> · filtrado por <strong>{[...filtroCards].map(k => STATUS_CARD_CONFIG[k]?.label).filter(Boolean).join(', ')}</strong></>}
-        {filtroCardProjetos.size > 0 && <> · status <strong>{[...filtroCardProjetos].map(k => STATUS_CARD_CONFIG[k]?.label).filter(Boolean).join(', ')}</strong></>}
+        {(() => {
+          const excTar = Object.keys(STATUS_CARD_CONFIG).filter(k => filtroCards.size > 0 && !filtroCards.has(k))
+          return excTar.length > 0 && <> · ocultando tarefas <strong>{excTar.map(k => STATUS_CARD_CONFIG[k]?.label).filter(Boolean).join(', ')}</strong></>
+        })()}
+        {(() => {
+          const excluidos = Object.keys(STATUS_CARD_CONFIG).filter(k => filtroCardProjetos.size > 0 && !filtroCardProjetos.has(k))
+          return excluidos.length > 0 && <> · ocultando <strong>{excluidos.map(k => STATUS_CARD_CONFIG[k]?.label).filter(Boolean).join(', ')}</strong></>
+        })()}
       </p>
 
       {/* MODAL CONCLUIR TAREFA */}

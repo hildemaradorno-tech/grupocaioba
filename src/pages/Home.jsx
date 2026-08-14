@@ -108,7 +108,7 @@ function TabelaMenu({ node, hasPermission, navigate, onFechar }) {
   const [caminho, setCaminho] = useState([]) // array de nós (subpastas) navegados
 
   const atual = caminho.length ? caminho[caminho.length - 1] : node
-  const itens = (atual.children || []).filter(n => nodeVisivel(n, hasPermission))
+  const itens = (atual.children || []).filter(n => !n.virtual && nodeVisivel(n, hasPermission))
   const Icone = GRUPO_ICONES[node.key] || Folder
   const cor = GRUPO_CORES[node.key] || COR_PADRAO
 
@@ -255,11 +255,12 @@ export default function Home() {
   const [editando, setEditando]     = useState(false)
   const [arrastando, setArrastando] = useState(null) // key do bloco sendo arrastado
   const [ordem, setOrdem]           = useState(null)       // array de keys, null = padrão A-Z
-  const [ordemCarregada, setOrdemCarregada] = useState(false)
 
   // Ordem personalizada dos blocos vem do próprio usuário no Supabase — assim
   // acompanha o mesmo login em qualquer dispositivo (celular, outro computador etc.),
-  // em vez de ficar presa ao localStorage de um navegador só.
+  // em vez de ficar presa ao localStorage de um navegador só. Os blocos aparecem
+  // na hora com a ordem padrão e só se reorganizam quando essa consulta volta,
+  // em vez de deixar a tela em branco esperando o Supabase responder.
   useEffect(() => {
     if (!user?.email) return
     // Busca por e-mail (não por id) — auth.users.id pode não bater com usuarios.id,
@@ -267,7 +268,6 @@ export default function Home() {
     supabase.from('usuarios').select('home_ordem_blocos').eq('email', user.email).maybeSingle()
       .then(({ data }) => setOrdem(data?.home_ordem_blocos || null))
       .catch(() => setOrdem(null))
-      .finally(() => setOrdemCarregada(true))
   }, [user?.email])
 
   const nodesVisiveis  = MENU_TREE.filter(node => nodeVisivel(node, hasPermission))
@@ -383,39 +383,37 @@ export default function Home() {
       )}
 
       {/* Menus da barra lateral, em blocos — ao selecionar um, só ele fica visível ao lado da tabela */}
-      {ordemCarregada && (
-        <div className="flex flex-col lg:flex-row gap-4 items-start">
-          <div className={(grupoAberto && !editando) ? 'w-40 shrink-0' : 'grid gap-4 flex-1 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5'}>
-            {nodesOrdenados
-              .filter(node => editando || !grupoAberto || grupoAberto.key === node.key)
-              .map(node => (
-                <GrupoBloco
-                  key={node.key}
-                  node={node}
-                  ativo={grupoAberto?.key === node.key}
-                  quantidade={getLeafKeys(node).filter(k => hasPermission(k)).length}
-                  onClick={() => setGrupoAberto(g => g?.key === node.key ? null : node)}
-                  editando={editando}
-                  arrastando={arrastando}
-                  onDragStart={handleDragStartBloco}
-                  onDragOver={handleDragOverBloco}
-                  onDrop={handleDropBloco}
-                  onDragEnd={() => setArrastando(null)}
-                />
-              ))}
-          </div>
-          {grupoAberto && !editando && (
-            <div className="w-full lg:flex-1 shrink-0">
-              <TabelaMenu
-                node={grupoAberto}
-                hasPermission={hasPermission}
-                navigate={navigate}
-                onFechar={() => setGrupoAberto(null)}
+      <div className="flex flex-col lg:flex-row gap-4 items-start">
+        <div className={(grupoAberto && !editando) ? 'w-40 shrink-0' : 'grid gap-4 flex-1 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5'}>
+          {nodesOrdenados
+            .filter(node => editando || !grupoAberto || grupoAberto.key === node.key)
+            .map(node => (
+              <GrupoBloco
+                key={node.key}
+                node={node}
+                ativo={grupoAberto?.key === node.key}
+                quantidade={getLeafKeys(node).filter(k => hasPermission(k)).length}
+                onClick={() => setGrupoAberto(g => g?.key === node.key ? null : node)}
+                editando={editando}
+                arrastando={arrastando}
+                onDragStart={handleDragStartBloco}
+                onDragOver={handleDragOverBloco}
+                onDrop={handleDropBloco}
+                onDragEnd={() => setArrastando(null)}
               />
-            </div>
-          )}
+            ))}
         </div>
-      )}
+        {grupoAberto && !editando && (
+          <div className="w-full lg:flex-1 shrink-0">
+            <TabelaMenu
+              node={grupoAberto}
+              hasPermission={hasPermission}
+              navigate={navigate}
+              onFechar={() => setGrupoAberto(null)}
+            />
+          </div>
+        )}
+      </div>
 
     </div>
   )

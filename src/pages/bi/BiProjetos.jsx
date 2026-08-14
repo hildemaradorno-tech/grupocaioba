@@ -213,14 +213,17 @@ export default function BiProjetos() {
   ), [projetos])
 
   // ── PROJETOS EFETIVOS ──────────────────────────────────────────────────────
-  // Respeitam: dept + status de projeto. Usados nos gráficos de depto e tabela.
+  // Respeitam: dept + status de projeto + período (término). Base de quase tudo na tela —
+  // stat tiles, gráfico por sistema, tabela de projetos.
   const projetosEfetivos = useMemo(() => {
     let arr = filtroDepartamento ? projetos.filter(p => departamentoOf(p) === filtroDepartamento) : projetos
     if (filtroStatusProjeto) arr = arr.filter(p => statusInfo(p.status).label === filtroStatusProjeto)
+    if (algumFiltroAtivo) arr = arr.filter(p => dentroDoIntervalo(dataTerminoProjeto(p)))
     return arr
-  }, [projetos, filtroDepartamento, filtroStatusProjeto])
+  }, [projetos, filtroDepartamento, filtroStatusProjeto, dataInicio, dataFim])
 
-  // Tarefas dos projetos efetivos, com filtro adicional de status de tarefa
+  // Tarefas dos projetos efetivos, com filtro adicional de status de tarefa. O período (término)
+  // já vem herdado de projetosEfetivos — filtra pelo término do PROJETO, não da tarefa em si.
   const tarefasEfetivas = useMemo(() => {
     const base = projetosEfetivos.flatMap(p =>
       (p.proj_tarefas || []).map(t => ({ ...t, departamento_nome: departamentoOf(p), projeto_nome: p.nome, _pid: p.id, _pstatus: p.status }))
@@ -229,8 +232,8 @@ export default function BiProjetos() {
   }, [projetosEfetivos, filtroStatusTarefa])
 
   // ── GRÁFICO: PROJETOS POR STATUS ───────────────────────────────────────────
-  // Cross-filter: filtra por dept + status de TAREFA (para mostrar quais status de projeto
-  // existem nos projetos que têm tarefas do status selecionado).
+  // Cross-filter: filtra por dept + status de TAREFA + período (para mostrar quais status de
+  // projeto existem nos projetos que têm tarefas do status selecionado, dentro do período).
   const projetosParaStatusChart = useMemo(() => {
     let arr = filtroDepartamento ? projetos.filter(p => departamentoOf(p) === filtroDepartamento) : projetos
     if (filtroStatusTarefa) {
@@ -241,19 +244,28 @@ export default function BiProjetos() {
       )
       arr = arr.filter(p => pidsComTarefa.has(p.id))
     }
+    if (algumFiltroAtivo) arr = arr.filter(p => dentroDoIntervalo(dataTerminoProjeto(p)))
     return arr
-  }, [projetos, filtroDepartamento, filtroStatusTarefa, tarefasTodas])
+  }, [projetos, filtroDepartamento, filtroStatusTarefa, tarefasTodas, dataInicio, dataFim])
+
+  // IDs dos projetos cujo término cai no período selecionado — usado para filtrar tarefas pelo
+  // término do PROJETO pai (não da tarefa em si).
+  const pidsNoPeriodo = useMemo(() => {
+    if (!algumFiltroAtivo) return null
+    return new Set(projetos.filter(p => dentroDoIntervalo(dataTerminoProjeto(p))).map(p => p.id))
+  }, [projetos, dataInicio, dataFim])
 
   // ── GRÁFICO: TAREFAS POR STATUS ────────────────────────────────────────────
-  // Cross-filter: filtra por dept + status de PROJETO (para mostrar quais status de tarefa
-  // existem nas tarefas de projetos do status selecionado).
+  // Cross-filter: filtra por dept + status de PROJETO + período (término do projeto pai, para
+  // mostrar quais status de tarefa existem nas tarefas de projetos do status selecionado).
   const tarefasParaStatusChart = useMemo(() => {
     let arr = filtroDepartamento ? tarefasTodas.filter(t => t.departamento_nome === filtroDepartamento) : tarefasTodas
     if (filtroStatusProjeto) {
       arr = arr.filter(t => statusInfo(t._pstatus).label === filtroStatusProjeto)
     }
+    if (pidsNoPeriodo) arr = arr.filter(t => pidsNoPeriodo.has(t._pid))
     return arr
-  }, [tarefasTodas, filtroDepartamento, filtroStatusProjeto])
+  }, [tarefasTodas, filtroDepartamento, filtroStatusProjeto, pidsNoPeriodo])
 
   const projetosPorStatus = useMemo(() => {
     const map = new Map()
@@ -272,25 +284,18 @@ export default function BiProjetos() {
   }, [tarefasParaStatusChart])
 
   // ── GRÁFICOS POR DEPARTAMENTO (pizza) ──────────────────────────────────────
-  // Quando status de projeto selecionado: mostra aquele status por dept (sem filtro de data)
-  // Quando nenhum status: mostra somente concluídos (com filtro de data)
+  // Quando status de projeto selecionado: mostra aquele status por dept.
+  // Quando nenhum status: mostra somente concluídos.
+  // Em ambos os casos, projetosEfetivos/tarefasEfetivas já respeitam o período (término).
   const projetosParaDepto = useMemo(() => {
     if (filtroStatusProjeto) return projetosEfetivos
-    return projetosEfetivos.filter(p => {
-      if (p.status !== 'concluido') return false
-      if (algumFiltroAtivo) return dentroDoIntervalo(dataTerminoProjeto(p))
-      return true
-    })
-  }, [projetosEfetivos, filtroStatusProjeto, dataInicio, dataFim])
+    return projetosEfetivos.filter(p => p.status === 'concluido')
+  }, [projetosEfetivos, filtroStatusProjeto])
 
   const tarefasParaDepto = useMemo(() => {
     if (filtroStatusTarefa) return tarefasEfetivas
-    return tarefasEfetivas.filter(t => {
-      if (t.status_kanban !== 'concluido') return false
-      if (algumFiltroAtivo) return dentroDoIntervalo(t.data_fim)
-      return true
-    })
-  }, [tarefasEfetivas, filtroStatusTarefa, dataInicio, dataFim])
+    return tarefasEfetivas.filter(t => t.status_kanban === 'concluido')
+  }, [tarefasEfetivas, filtroStatusTarefa])
 
   const projetosPorDepartamento = useMemo(() => {
     const map = new Map()
@@ -387,7 +392,7 @@ export default function BiProjetos() {
 
       {/* FILTROS */}
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Período (término)</span>
+        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Término Projeto</span>
         <input
           type="date" value={dataInicio} onChange={e => setDataInicio(e.target.value)}
           onClick={e => e.target.showPicker?.()}

@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Eye, EyeOff, LogIn, MailCheck } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { apiService } from '../services/supabaseClient'
+import { APP_VERSION, APP_BUILD_DATE } from '../version'
 
 export default function Login() {
   const { login } = useAuth()
@@ -231,6 +232,9 @@ export default function Login() {
 
         <p className="text-center text-slate-500 text-xs mt-6">
           Problemas de acesso? Contate o administrador.
+        </p>
+        <p className="text-center text-slate-600 text-xs mt-2">
+          v{APP_VERSION} · Atualizado em {APP_BUILD_DATE}
         </p>
       </div>
     </div>

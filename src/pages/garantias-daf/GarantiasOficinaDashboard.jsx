@@ -163,9 +163,13 @@ const BUCKETS_VALOR_CLUSTER = [
   { label: '100k+', min: 100000, max: Infinity },
 ]
 
+// Buckets são contíguos de 0 a Infinity — só não bate com nenhum quando v é negativo
+// (data de criação futura, valor com estorno etc.). Nesse caso cai na PRIMEIRA faixa, não na
+// última: sem isso, essas OS anômalas ficavam escondidas dentro da bolha "30d+ / 100k+".
 function indiceFaixa(v, buckets) {
   const i = buckets.findIndex(b => v >= b.min && v < b.max)
-  return i === -1 ? buckets.length - 1 : i
+  if (i !== -1) return i
+  return v < buckets[0].min ? 0 : buckets.length - 1
 }
 
 // Cor de status por cruzamento (dias × valor) — paleta de status fixa, nunca usada como categórica.
@@ -250,7 +254,7 @@ function ClusterOficina({ dados, filtroAtivo, onSlice }) {
               stroke={ativa ? '#ffffff' : cor}
               strokeWidth={ativa ? 2.5 : 1.5}
             >
-              <title>{`${BUCKETS_DIAS_CLUSTER[ix].label} · R$ ${BUCKETS_VALOR_CLUSTER[iy].label} · ${cel.qtd} OS · ${fmtMoeda(cel.valor)}`}</title>
+              <title>{`${BUCKETS_DIAS_CLUSTER[ix].label} · R$ ${BUCKETS_VALOR_CLUSTER[iy].label} · Quant OS: ${cel.qtd} · Valor total das OS: ${fmtMoeda(cel.valor)}`}</title>
             </circle>
             <text x={xCentro(ix)} y={yCentro(iy) + 3} textAnchor="middle" className="fill-white font-bold pointer-events-none" style={{ fontSize: '10px' }}>{cel.qtd}</text>
           </g>
@@ -271,7 +275,7 @@ const diasNaOficina = (r) => r.data_criacao ? Math.floor((new Date() - new Date(
 
 // Dashboard "Garantias na Oficina" — ROF001_OSABERTA.xlsx ao vivo do SharePoint,
 // apenas OS do tipo Garantia, com filtros cruzados entre todos os gráficos.
-export default function GarantiasOficinaDashboard({ onAnalise, onLastModified }) {
+export default function GarantiasOficinaDashboard({ onLastModified }) {
   const [oficinaRows, setOficinaRows] = useState([])
   const [oficinaLoading, setOficinaLoading] = useState(true)
   const [siglasGarantiaOficina, setSiglasGarantiaOficina] = useState(new Set())
@@ -421,52 +425,6 @@ export default function GarantiasOficinaDashboard({ onAnalise, onLastModified })
     return { total: oficinaRowsFiltradas.length, valorTotal, tempoMedio, mais14, valorMais14 }
   }, [oficinaRowsFiltradas])
 
-  // ── Pré-análise dinâmica — lida a partir dos mesmos números exibidos nos cards/gráficos ──
-  const analiseOficina = useMemo(() => {
-    const pontos = []
-    const { total, mais14, valorMais14, tempoMedio } = oficinaStats
-    if (total === 0) return { resumo: null, pontos }
-
-    const pctMais14 = Math.round((mais14 / total) * 100)
-
-    if (pctMais14 >= 30) {
-      pontos.push({ tipo: 'critico', texto: `${mais14} OS (${pctMais14}%) estão há mais de 14 dias na oficina, somando ${fmtMoeda(valorMais14)} — priorize a análise dessas ordens antes que percam o prazo de reivindicação.` })
-    } else if (mais14 === 0) {
-      pontos.push({ tipo: 'elogio', texto: 'Nenhuma OS passou de 14 dias na oficina — ótimo controle do backlog crítico.' })
-    }
-
-    if (tempoMedio > 14) {
-      pontos.push({ tipo: 'critico', texto: `Tempo médio na oficina de ${tempoMedio}d — bem acima do ideal, indica gargalo estrutural no fluxo de garantias.` })
-      pontos.push({ tipo: 'melhoria', texto: 'Avaliar a capacidade da oficina ou redistribuir a carga entre as equipes pode reduzir o tempo médio de atendimento.' })
-    } else if (tempoMedio <= 7) {
-      pontos.push({ tipo: 'elogio', texto: `Tempo médio na oficina de ${tempoMedio}d — dentro da faixa ideal (0–7 dias).` })
-    }
-
-    const valorTotalTipo = oficinaPorTipo.reduce((s, t) => s + t.valor, 0)
-    const topTipo = [...oficinaPorTipo].sort((a, b) => b.valor - a.valor)[0]
-    if (topTipo && valorTotalTipo > 0) {
-      const pctTipo = Math.round((topTipo.valor / valorTotalTipo) * 100)
-      if (pctTipo >= 50) {
-        pontos.push({ tipo: 'melhoria', texto: `"${topTipo.label}" concentra ${pctTipo}% do valor em disputa na oficina — padronizar o atendimento desse tipo pode reduzir o tempo médio geral.` })
-      }
-    }
-
-    if (mais14 > 0) {
-      pontos.push({ tipo: 'melhoria', texto: 'Priorizar diariamente as OS que se aproximam de 14 dias evita que cheguem à faixa crítica.' })
-    }
-
-    const critico = pctMais14 >= 30 || tempoMedio > 14
-    const atencao = !critico && (mais14 > 0 || tempoMedio > 7)
-    const resumo = critico
-      ? { tipo: 'critico', texto: `Situação crítica: ${pctMais14}% das OS já passam de 14 dias na oficina, com tempo médio de ${tempoMedio}d — risco real de perda de prazo de garantia.` }
-      : atencao
-        ? { tipo: 'atencao', texto: `Situação sob controle, mas com sinais de atenção: ${mais14} OS (${pctMais14}%) acima de 14 dias e tempo médio de ${tempoMedio}d.` }
-        : { tipo: 'positivo', texto: `Fluxo saudável: nenhuma OS relevante acumulando tempo na oficina e tempo médio de ${tempoMedio}d dentro do esperado.` }
-
-    return { resumo, pontos }
-  }, [oficinaStats, oficinaPorTipo])
-
-  useEffect(() => { onAnalise?.(analiseOficina) }, [analiseOficina, onAnalise])
   useEffect(() => { onLastModified?.(oficinaLastModified) }, [oficinaLastModified, onLastModified])
 
   // ── Tabela de detalhamento — uma linha por OS, reflete os mesmos filtros dos gráficos ──
@@ -488,8 +446,11 @@ export default function GarantiasOficinaDashboard({ onAnalise, onLastModified })
   ]
 
   const linhasDetalheOficina = useMemo(() => {
+    // Uma OS pode ter mais de um item de garantia (linhas duplicadas com o mesmo os_numero) —
+    // a chave do React precisa ser única por LINHA, não por OS, senão o React reconcilia errado
+    // e "vaza" linhas de um render anterior (com outro filtro) pro render atual.
     const linhas = oficinaRowsFiltradas.map((r, i) => ({
-      id: r.os_numero || i,
+      id: `${r.os_numero || 'sem-os'}-${i}`,
       os_numero: r.os_numero || '',
       empresa_nome: r.empresa_nome || '',
       data_criacao: r.data_criacao || '',
@@ -667,7 +628,12 @@ export default function GarantiasOficinaDashboard({ onAnalise, onLastModified })
       {/* CLUSTER MAP: OS EM ABERTO — dias × valor, antes do detalhe por OS */}
       <div className="bg-[#0f172a] rounded-lg border border-white/10 shadow-sm p-5">
         <p className="text-xs font-bold text-white mb-1">Ordens de Serviço em Aberto — Concentração por Dias e Valor</p>
-        <p className="text-[11px] text-[#898781] mb-4">Cada bolha cruza uma faixa de dias em aberto (eixo horizontal) com uma faixa de valor em R$ (eixo vertical) — o tamanho mostra quantas OS caem ali, revelando onde a concentração está.</p>
+        <p className="text-[11px] text-[#898781] mb-2">Cada bolha cruza uma faixa de dias em aberto (eixo horizontal) com uma faixa de valor em R$ (eixo vertical) — o tamanho mostra quantas OS caem ali, revelando onde a concentração está.</p>
+        <div className="flex items-center gap-4 mb-4">
+          <span className="flex items-center gap-1.5 text-[10px] text-[#898781]"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: '#0ca30c' }} /> No prazo <em className="italic">(até 14d e até R$ 30k)</em></span>
+          <span className="flex items-center gap-1.5 text-[10px] text-[#898781]"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: '#fab219' }} /> Atenção <em className="italic">(até 30d e até R$ 50k)</em></span>
+          <span className="flex items-center gap-1.5 text-[10px] text-[#898781]"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: '#d03b3b' }} /> Crítico <em className="italic">(acima disso)</em></span>
+        </div>
         <ClusterOficina dados={dadosClusterOficina} filtroAtivo={filtroCluster} onSlice={toggleFiltroCluster} />
       </div>
 

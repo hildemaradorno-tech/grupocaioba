@@ -36,6 +36,7 @@ export function AuthProvider({ children }) {
   // por padrão, mesmo com as 5 dimensões todas em "Todos").
   const [comissaoEscopoHabilitado, setComissaoEscopoHabilitado] = useState(false)
   const [userNome, setUserNome] = useState('')
+  const [usuarioId, setUsuarioId] = useState(null) // usuarios.id (≠ auth.users.id)
   const [trocarSenha, setTrocarSenha] = useState(false)
 
   // Simulação de visualização como outro usuário
@@ -57,6 +58,7 @@ export function AuthProvider({ children }) {
       setComissaoEscopo(escopoComissaoTudoLiberado())
       setComissaoEscopoHabilitado(false)
       setUserNome('')
+      setUsuarioId(null)
       setPermissionsLoading(false)
       return
     }
@@ -79,6 +81,7 @@ export function AuthProvider({ children }) {
       }
 
       setUserNome(perfil?.nome || '')
+      setUsuarioId(perfil?.id || null)
 
       if (!perfil?.grupo_id) {
         console.warn('[Auth] Usuário sem grupo_id — sem permissões atribuídas:', authUser.email)
@@ -344,7 +347,7 @@ export function AuthProvider({ children }) {
 
   return (
     <AuthContext.Provider value={{
-      user, loading, permissionsLoading, userNome,
+      user, loading, permissionsLoading, userNome, usuarioId,
       login, logout,
       hasPermission, hasAction, hasActionOrDefault, hasEmpresaPermission,
       isAdmin, isAdminEfetivo, empresasPermitidas,

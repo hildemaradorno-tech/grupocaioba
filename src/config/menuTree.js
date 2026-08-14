@@ -28,6 +28,7 @@ export const MENU_TREE = [
               { key: 'segmentos', label: 'Segmentos' },
               { key: 'agrup-empresas', label: 'Agrupamento Empresas' },
               { key: 'empresas', label: 'Empresas' },
+              { key: 'areas', label: 'Áreas' },
               { key: 'agrup-departamentos', label: 'Agrupamento Depto.' },
               { key: 'departamentos', label: 'Departamentos' },
               { key: 'setores', label: 'Setor de Serviços' },
@@ -111,17 +112,22 @@ export const MENU_TREE = [
     key: '_controle-processos',
     label: 'Controle de Processos',
     children: [
-      { key: 'garantias-daf-andamento', label: 'Garantias DAF na Oficina' },
-      { key: 'garantias-daf', label: 'Garantias DAF Aberto' },
-      { key: 'garantias-daf-faturadas', label: 'Garantias DAF Faturadas' },
-      { key: 'garantias-daf-titulos',   label: 'Garantias DAF a Receber' },
       {
-        key: '_controle-processos-honda',
-        label: 'Controle de Processos HONDA',
+        // Permissões individuais mantidas (controlam quais abas aparecem em Garantias DAF),
+        // mas o grupo inteiro navega direto pra página única — ver navTo no Home.jsx (TabelaMenu),
+        // mesmo padrão do grupo Matriz KPIs logo abaixo. As telas de Andamento/Aberto/a Receber
+        // já ficam acessíveis como abas (GarantiasNav) dentro de uma mesma tela.
+        key: '_garantias-daf',
+        label: 'Garantias DAF',
+        navTo: 'garantias-daf-andamento',
         children: [
-          { key: 'honda/garantias-a-receber', label: 'Contas a Receber' },
+          { key: 'garantias-daf-andamento', label: 'Garantias DAF na Oficina' },
+          { key: 'garantias-daf', label: 'Garantias DAF Aberto' },
+          { key: 'garantias-daf-faturadas', label: 'Garantias DAF Faturadas' },
+          { key: 'garantias-daf-titulos',   label: 'Garantias DAF a Receber' },
         ],
       },
+      { key: 'honda/garantias-a-receber', label: 'Contas a Receber HONDA' },
       {
         key: '_auditoria.cadastros',
         label: 'Cadastros de Auditoria',
@@ -145,10 +151,9 @@ export const MENU_TREE = [
     label: 'Gestão de Projetos',
     children: [
       { key: 'projetos', label: 'Projetos' },
-      { key: 'projetos/lista-tarefas', label: 'Lista de Tarefas' },
-      { key: 'projetos/pdca', label: 'PDCA' },
-      { key: 'projetos/planejamento', label: 'Planejamento' },
-      { key: 'projetos/calendario', label: 'Agenda' },
+      { key: 'projetos/lista-tarefas', label: 'Lista de Tarefas', virtual: true },
+      { key: 'projetos/manifestacoes', label: 'Manifestações', virtual: true },
+      { key: 'projetos/calendario', label: 'Agenda', virtual: true },
       {
         key: '_gestao-projetos.cadastros',
         label: 'Cadastros',
@@ -204,12 +209,6 @@ export const MENU_TREE = [
     children: [
       { key: 'rpa/agendamentos', label: 'Agendamento de Processos' },
       { key: 'documentacoes', label: 'Documentações' },
-    ],
-  },
-  {
-    key: '_ecossistema',
-    label: 'Ecossistema',
-    children: [
       { key: 'ecossistema', label: 'Ecossistema' },
     ],
   },

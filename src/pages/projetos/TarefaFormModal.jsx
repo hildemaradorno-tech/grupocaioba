@@ -78,9 +78,16 @@ export default function TarefaFormModal({ projetoId, tarefa, initialValues, tare
     return base
   }
 
-  const [form, setForm] = useState(() =>
-    normalizarBase(tarefa || (initialValues || {}), { responsaveis, sistemas, fases, empresas, areas })
-  )
+  const [form, setForm] = useState(() => {
+    const base = normalizarBase(tarefa || (initialValues || {}), { responsaveis, sistemas, fases, empresas, areas })
+    if (!modoEdicao && base.etapa == null) {
+      const tomadas = new Set(tarefas.filter(t => t.etapa != null).map(t => t.etapa))
+      let prox = 1
+      while (tomadas.has(prox) && prox <= 50) prox++
+      if (prox <= 50) base.etapa = prox
+    }
+    return base
+  })
   const [dependeDe, setDependeDe] = useState(() =>
     modoEdicao ? dependenciasAtuais.filter(d => d.tarefa_id === tarefa.id).map(d => d.depende_de_tarefa_id) : []
   )
@@ -362,7 +369,7 @@ export default function TarefaFormModal({ projetoId, tarefa, initialValues, tare
                   <select name="etapa" value={form.etapa ?? ''} onChange={handleChange}
                     className={alertSel(form.etapa == null)}>
                     <option value="">— Sem etapa —</option>
-                    {Array.from({ length: 20 }, (_, i) => i + 1).map(n => (
+                    {Array.from({ length: 50 }, (_, i) => i + 1).map(n => (
                       <option key={n} value={n}>
                         {ordinal(n)}{etapasTomadas.has(n) ? ' (em uso)' : ''}
                       </option>

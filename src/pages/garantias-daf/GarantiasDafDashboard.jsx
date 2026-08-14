@@ -5,7 +5,7 @@ import {
   Search, Edit2, Trash2, ShieldAlert, FileText,
   Activity, Clock, AlertTriangle, Filter, RotateCcw, Download,
   Bell, ChevronDown, ChevronUp, CheckCircle, XCircle, Send, BarChart2,
-  CheckSquare, Square, Loader2, Eye, Receipt, Info,
+  CheckSquare, Square, Loader2, Info, Eye,
 } from 'lucide-react'
 import { apiService } from '../../services/api'
 import { useAuth } from '../../context/AuthContext'
@@ -611,7 +611,7 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
             <span className="relative group cursor-help">
               <Info className="h-3.5 w-3.5 text-slate-400" />
               <span className="absolute top-full left-0 mt-2 w-64 text-[10px] text-white bg-slate-700 rounded px-2 py-1.5 leading-relaxed opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 normal-case font-normal tracking-normal">
-                Fonte: {isAndamento ? 'ROF001_OSABERTA.xlsx' : 'ROF001_OSABERTA_ENCERRADA.xlsx'}
+                Fonte de dados: {isAndamento ? 'ROF001_OSABERTA.xlsx' : 'ROF001_OSABERTA_ENCERRADA.xlsx'}
               </span>
             </span>
           </h1>
@@ -653,34 +653,6 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
                   Arquivo: {new Date(spLastModified).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                 </span>
               )}
-              <button
-                onClick={() => setModalImportar(true)}
-                className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold px-3 py-2 rounded-md shadow-sm border border-slate-200 transition-colors"
-              >
-                <Download className="h-4 w-4 text-blue-500" /> Importar Abertos
-              </button>
-              <button
-                onClick={handleBuscarFaturamentoLote}
-                disabled={buscandoFaturamentoLote || grpNaoEncontrado.length === 0}
-                title="Busca faturamento (ROF017) somente para as OS não encontradas no arquivo SharePoint (ROF001_OSABERTA_ENCERRADA); se encontrar NF emitida, muda o status para E e move para Faturadas"
-                className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold px-3 py-2 rounded-md shadow-sm border border-slate-200 transition-colors disabled:opacity-50"
-              >
-                {buscandoFaturamentoLote
-                  ? <Loader2 className="h-3.5 w-3.5 text-emerald-500 animate-spin" />
-                  : <FileText className="h-4 w-4 text-emerald-500" />}
-                {buscandoFaturamentoLote
-                  ? `Buscando ${progressoBuscaLote?.atual ?? 0}/${progressoBuscaLote?.total ?? 0}...`
-                  : `Buscar Faturamento (${grpNaoEncontrado.length})`}
-              </button>
-              {hasPermission('garantias-daf-faturadas') && (
-                <button
-                  onClick={() => navigate('/garantias-daf-faturadas')}
-                  title="Ver OS faturadas (Status E)"
-                  className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold px-3 py-2 rounded-md shadow-sm border border-slate-200 transition-colors"
-                >
-                  <Receipt className="h-4 w-4 text-indigo-500" /> Faturadas
-                </button>
-              )}
               {canExcluirOS && selecionados.size > 0 && (
                 <button
                   onClick={() => setModalExcluirLote(true)}
@@ -702,9 +674,50 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
         </div>
       </div>
 
-      {/* ── ALERTAS (lado a lado) ── */}
-      {!isAndamento && (!spLoading && pendFechadas.length > 0 || grpAnd15.length > 0) && (
+      {/* ── ALERTAS ── */}
+      {!isAndamento && (grpNaoEncontrado.length > 0 || (!spLoading && pendFechadas.length > 0) || grpAnd15.length > 0) && (
+        <div className="space-y-3">
+        {(grpNaoEncontrado.length > 0 || (!spLoading && pendFechadas.length > 0)) && (
         <div className="flex gap-3">
+          {grpNaoEncontrado.length > 0 && (
+            <div className="flex flex-1 items-center gap-3 bg-red-50 border border-red-300 rounded-lg px-4 py-3">
+              <div className="p-1.5 bg-red-100 rounded-md shrink-0">
+                <AlertTriangle className="h-4 w-4 text-red-600" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-bold text-red-800">
+                  {grpNaoEncontrado.length} OS não encontrada(s) no arquivo SharePoint
+                </p>
+                <p className="text-[10px] text-red-600 mt-0.5">
+                  Podem ter sido faturadas ou canceladas — vale conferir.
+                </p>
+              </div>
+              <button
+                onClick={() => setFiltroNaBase(prev => prev === 'nao' ? '' : 'nao')}
+                title={filtroNaBase === 'nao' ? 'Limpar filtro e mostrar todas as OS' : 'Filtrar a tabela abaixo só com estas OS'}
+                className={`shrink-0 flex items-center justify-center p-2 rounded-md border transition-colors ${
+                  filtroNaBase === 'nao'
+                    ? 'bg-red-600 border-red-600 text-white'
+                    : 'bg-white border-red-300 text-red-700 hover:bg-red-100'
+                }`}
+              >
+                <Eye className="h-3.5 w-3.5" />
+              </button>
+              <button
+                onClick={handleBuscarFaturamentoLote}
+                disabled={buscandoFaturamentoLote}
+                title="Busca faturamento (ROF017) para as OS não encontradas no arquivo SharePoint; se encontrar NF emitida, muda o status para E e move para Faturadas"
+                className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md bg-red-600 hover:bg-red-700 text-white transition-colors disabled:opacity-50"
+              >
+                {buscandoFaturamentoLote
+                  ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  : <FileText className="h-3.5 w-3.5" />}
+                {buscandoFaturamentoLote
+                  ? `Buscando ${progressoBuscaLote?.atual ?? 0}/${progressoBuscaLote?.total ?? 0}...`
+                  : 'Buscar'}
+              </button>
+            </div>
+          )}
           {!spLoading && pendFechadas.length > 0 && (
             <div className="flex flex-1 items-center gap-3 bg-blue-50 border border-blue-300 rounded-lg px-4 py-3">
               <div className="p-1.5 bg-blue-100 rounded-md shrink-0">
@@ -712,7 +725,7 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-xs font-bold text-blue-800">
-                  {pendFechadas.length} OS disponíve{pendFechadas.length === 1 ? 'l' : 'is'} para importar do SharePoint (ROF001_OSABERTA_ENCERRADA)
+                  {pendFechadas.length} OS disponíve{pendFechadas.length === 1 ? 'l' : 'is'} para importar do SharePoint
                 </p>
                 <p className="text-[10px] text-blue-600 mt-0.5">
                   Ordens de serviço fechadas ainda não importadas para o sistema.
@@ -723,12 +736,14 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
                 className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md bg-blue-600 hover:bg-blue-700 text-white transition-colors"
               >
                 <Download className="h-3.5 w-3.5" />
-                Importar agora
+                Importar
               </button>
             </div>
           )}
+        </div>
+        )}
           {grpAnd15.length > 0 && (
-            <div className="flex flex-1 items-center gap-3 bg-orange-50 border border-orange-300 rounded-lg px-4 py-3">
+            <div className="flex items-center gap-3 bg-orange-50 border border-orange-300 rounded-lg px-4 py-3">
               <div className="p-1.5 bg-orange-100 rounded-md shrink-0">
                 <Clock className="h-4 w-4 text-orange-600" />
               </div>
@@ -749,30 +764,6 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
               </button>
             </div>
           )}
-        </div>
-      )}
-
-      {/* ── ALERTA NÃO ENCONTRADO NO SP ── */}
-      {!isAndamento && grpNaoEncontrado.length > 0 && (
-        <div className="flex items-center gap-3 bg-red-50 border border-red-300 rounded-lg px-4 py-3">
-          <div className="p-1.5 bg-red-100 rounded-md shrink-0">
-            <AlertTriangle className="h-4 w-4 text-red-600" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-xs font-bold text-red-800">
-              {grpNaoEncontrado.length} OS não encontrada(s) no arquivo SharePoint (ROF001_OSABERTA_ENCERRADA)
-            </p>
-            <p className="text-[10px] text-red-600 mt-0.5">
-              Podem ter sido faturadas ou canceladas — vale conferir.
-            </p>
-          </div>
-          <button
-            onClick={() => { setFiltroNaBase(prev => prev === 'nao' ? '' : 'nao'); setFiltroCard(null); setStatusFiltro('') }}
-            className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${filtroNaBase === 'nao' ? 'bg-red-700 text-white' : 'bg-red-600 hover:bg-red-700 text-white'}`}
-          >
-            <Eye className="h-3.5 w-3.5" />
-            {filtroNaBase === 'nao' ? 'Visualizando' : 'Visualizar'}
-          </button>
         </div>
       )}
 

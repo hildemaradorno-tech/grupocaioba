@@ -142,10 +142,10 @@ export default function ProjetoForm() {
       })
       if (modoEdicao) {
         await apiService.updateProjeto(id, payload)
-        navigate(`/projetos/${id}`)
+        navigate(`/projetos/detalhe/${id}`)
       } else {
         const novo = await apiService.createProjeto(payload, user?.email)
-        navigate(`/projetos/${novo.id}`)
+        navigate(`/projetos/detalhe/${novo.id}`)
       }
     } catch (err) { setError(err.message || String(err)) }
     finally { setSalvando(false) }

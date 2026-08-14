@@ -72,8 +72,7 @@ import ProjAreas from './pages/projetos/cadastros/ProjAreas'
 import ProjStatus from './pages/projetos/cadastros/ProjStatus'
 import ProjTemplates from './pages/projetos/cadastros/ProjTemplates'
 import CalendarioProjetos from './pages/projetos/CalendarioProjetos'
-import AtaReuniao from './pages/projetos/AtaReuniao'
-import PlanejamentoProjetos from './pages/projetos/PlanejamentoProjetos'
+import ManifestacoesPainel from './pages/projetos/ManifestacoesPainel'
 import { ProjetosFiltrosProvider } from './context/ProjetosFiltrosContext'
 import Fornecedores from './pages/Fornecedores'
 import KpiMatriz, { KPI_MATRIZ_PERMS } from './pages/kpi/KpiMatriz'
@@ -213,14 +212,13 @@ export default function App() {
           { path: '/garantias-daf-faturadas', element: <GarantiasDafFaturadas />, menuPath: '/garantias-daf-faturadas' },
           { path: '/garantias-daf-titulos',   element: <GarantiasDafTitulos />,   menuPath: '/garantias-daf-titulos' },
           { path: '/projetos', element: <ProjetosDashboard />, menuPath: 'projetos' },
-          { path: '/projetos/pdca', element: <AtaReuniao />, menuPath: 'projetos/pdca' },
-          { path: '/projetos/planejamento', element: <PlanejamentoProjetos />, menuPath: 'projetos/planejamento' },
+          { path: '/projetos/manifestacoes', element: <ManifestacoesPainel />, menuPath: ['projetos/manifestacoes', 'projetos'] },
           { path: '/projetos/lista-tarefas', element: <CalendarioProjetos abaInicial="lista" />, menuPath: 'projetos/lista-tarefas' },
           { path: '/projetos/calendario', element: <CalendarioProjetos abaInicial="calendario" />, menuPath: 'projetos/calendario' },
           { path: '/fornecedores', element: <Fornecedores />, menuPath: 'fornecedores' },
           { path: '/projetos/novo', element: <ProjetoEditor />, menuPath: 'projetos' },
-          { path: '/projetos/:id/editar', element: <ProjetoEditor />, menuPath: 'projetos' },
-          { path: '/projetos/:id', element: <ProjetoDetalhe />, menuPath: 'projetos' },
+          { path: '/projetos/detalhe/:id/editar', element: <ProjetoEditor />, menuPath: 'projetos' },
+          { path: '/projetos/detalhe/:id', element: <ProjetoDetalhe />, menuPath: 'projetos' },
           { path: '/projetos/empresas', element: <ProjEmpresas />, menuPath: '/projetos/empresas' },
           { path: '/projetos/departamentos', element: <ProjDepartamentos />, menuPath: '/projetos/departamentos' },
           { path: '/projetos/areas', element: <ProjAreas />, menuPath: '/projetos/areas' },

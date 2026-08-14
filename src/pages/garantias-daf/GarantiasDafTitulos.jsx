@@ -6,6 +6,7 @@ import {
 import { apiService } from '../../services/api'
 import { useAuth } from '../../context/AuthContext'
 import GarantiasNav from './GarantiasNav'
+import TituloObservacoesPanel from './TituloObservacoesPanel'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
 
@@ -37,8 +38,7 @@ export default function GarantiasDafTitulos() {
   const [dataFim, setDataFim]                       = useState('')
   const [garantias, setGarantias]                   = useState([])
   const [filtrosAbertos, setFiltrosAbertos]         = useState(false)
-  const [titulosObs, setTitulosObs]                 = useState(new Map()) // nro_titulo → observação editável
-  const [salvandoObs, setSalvandoObs]               = useState(false)
+  const [titulosObs, setTitulosObs]                 = useState([]) // linhas de gar_titulos_observacoes (histórico)
 
   const loadTitulos = useCallback(async (force = false) => {
     if (force) setTitulosRefreshing(true); else setTitulosLoading(true)
@@ -60,10 +60,15 @@ export default function GarantiasDafTitulos() {
 
   const loadTitulosObs = useCallback(async () => {
     try {
-      const rows = await apiService.getTitulosObservacoes()
-      setTitulosObs(new Map(rows.map(r => [r.nro_titulo, r.observacao || ''])))
+      setTitulosObs(await apiService.getTitulosObservacoes())
     } catch {}
   }, [])
+
+  // nro_titulo → tem ao menos uma observação registrada — usado para destacar o botão Editar na linha.
+  const titulosComObsSet = useMemo(
+    () => new Set(titulosObs.map(o => o.nro_titulo)),
+    [titulosObs]
+  )
 
   useEffect(() => {
     loadTitulos()
@@ -109,23 +114,24 @@ export default function GarantiasDafTitulos() {
     return m
   }, [garantias])
 
-  // Reconciliação: títulos com observação salva que ganharam vínculo com uma OS (ex: título estava
-  // desvinculado quando a observação foi gravada, e depois passou a aparecer vinculado) — propaga
-  // o número do título + a observação para a OS Faturada automaticamente ao carregar a tela.
+  // Propaga só o Nº do Título (não a observação, que agora mora só em gar_titulos_observacoes)
+  // para a OS vinculada — mantém o "Nº Título" visível em Editar Garantia mesmo se o título
+  // sair do arquivo RFN003 (ex: já liquidado) antes de a OS ser reaberta.
   useEffect(() => {
-    if (titulosRows.length === 0 || garantias.length === 0 || titulosObs.size === 0) return
+    if (titulosObs.length === 0 || titulosRows.length === 0 || garantias.length === 0) return
     const garantiaById = new Map(garantias.map(g => [g.id, g]))
-    for (const [nroTitulo, observacao] of titulosObs.entries()) {
+    const nroTitulosComObs = new Set(titulosObs.map(o => o.nro_titulo))
+    for (const nroTitulo of nroTitulosComObs) {
       const tituloRow = titulosRows.find(r => r.nro_titulo === nroTitulo)
       if (!tituloRow) continue
       const osKey = String(tituloRow.os_numero ?? '').trim()
       const garantiaId = garantiaIdByOS.get(osKey)
       if (!garantiaId) continue
       const g = garantiaById.get(garantiaId)
-      if (!g || (g.numero_titulo === nroTitulo && (g.titulo_observacao || '') === observacao)) continue
-      apiService.updateGarantia(garantiaId, { numero_titulo: nroTitulo, titulo_observacao: observacao }, user?.email, g.status_codigo).catch(() => {})
+      if (!g || g.numero_titulo === nroTitulo) continue
+      apiService.updateGarantia(garantiaId, { numero_titulo: nroTitulo }, user?.email, g.status_codigo).catch(() => {})
     }
-  }, [titulosRows, garantias, titulosObs, garantiaIdByOS, user])
+  }, [titulosObs, titulosRows, garantias, garantiaIdByOS, user])
 
   const temEnvioTitulo = useCallback((r) => {
     const osKey    = String(r.os_numero   || '').trim()
@@ -261,95 +267,67 @@ export default function GarantiasDafTitulos() {
     setFiltroSituacaoVencimento(null)
   }
 
-  // ── Edição de observação do título (gar_titulos_observacoes) ──────────
+  // ── Edição de observações do título (gar_titulos_observacoes) ──────────
   const [modalEditarTitulo, setModalEditarTitulo] = useState(null) // linha do título sendo editado
-  const [textoEdicaoObs, setTextoEdicaoObs]        = useState('')
 
-  const abrirEdicaoTitulo = (row) => {
-    setModalEditarTitulo(row)
-    setTextoEdicaoObs(titulosObs.get(row.nro_titulo) || '')
-  }
-
-  const salvarObservacaoTitulo = async () => {
-    if (!modalEditarTitulo) return
-    setSalvandoObs(true)
-    try {
-      const nroTitulo = modalEditarTitulo.nro_titulo
-      await apiService.upsertTituloObservacao(nroTitulo, textoEdicaoObs, user?.email)
-      setTitulosObs(prev => new Map(prev).set(nroTitulo, textoEdicaoObs))
-
-      // Se o título já tem OS vinculada, propaga nº do título + observação para a OS Faturada.
-      const osKey = String(modalEditarTitulo.os_numero ?? '').trim()
-      const garantiaId = garantiaIdByOS.get(osKey)
-      if (garantiaId) {
-        const g = garantias.find(x => x.id === garantiaId)
-        await apiService.updateGarantia(
-          garantiaId,
-          { numero_titulo: nroTitulo, titulo_observacao: textoEdicaoObs },
-          user?.email,
-          g?.status_codigo
-        )
-      }
-      setModalEditarTitulo(null)
-    } catch (err) {
-      alert('Erro ao salvar observação do título: ' + (err.message || String(err)))
-    } finally {
-      setSalvandoObs(false)
-    }
-  }
+  const abrirEdicaoTitulo = (row) => setModalEditarTitulo(row)
 
   return (
     <div className="p-6 space-y-5 max-w-screen-2xl">
 
       {/* CABEÇALHO */}
-      <div className="flex items-center justify-between border-b border-slate-200 pb-4">
-        <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
-            <Receipt className="h-5 w-5 text-indigo-500" />
-            Garantias DAF Faturadas
-            <span className="relative group cursor-help">
-              <Info className="h-3.5 w-3.5 text-slate-400" />
-              <span className="absolute top-full left-0 mt-2 w-64 text-[10px] text-white bg-slate-700 rounded px-2 py-1.5 leading-relaxed opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 normal-case font-normal tracking-normal">
-                Fonte: RFN003_PosicaoAnaliticoReceber_Excel.xls
+      <div className="space-y-3 border-b border-slate-200 pb-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
+              <Receipt className="h-5 w-5 text-indigo-500" />
+              Garantias DAF Faturadas
+              <span className="relative group cursor-help">
+                <Info className="h-3.5 w-3.5 text-slate-400" />
+                <span className="absolute top-full left-0 mt-2 w-64 text-[10px] text-white bg-slate-700 rounded px-2 py-1.5 leading-relaxed opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 normal-case font-normal tracking-normal">
+                  Fonte de dados: RFN003_PosicaoAnaliticoReceber_Excel.xls
+                </span>
               </span>
-            </span>
-          </h1>
-          <p className="text-xs text-slate-500">
-            Títulos financeiros a receber vinculados às OS faturadas.
-          </p>
-          <div className="mt-3"><GarantiasNav /></div>
+            </h1>
+            <p className="text-xs text-slate-500">
+              Títulos financeiros a receber vinculados às OS faturadas.
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            {titulosLastMod && (
+              <span className="text-[10px] text-slate-400">
+                Modificado em <strong className="text-slate-500">{new Date(titulosLastMod).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</strong>
+              </span>
+            )}
+            <button
+              onClick={() => loadTitulos(true)}
+              disabled={titulosRefreshing || titulosLoading}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-semibold text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 shadow-sm transition-colors disabled:opacity-50"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${titulosRefreshing ? 'animate-spin' : ''}`} />
+              Atualizar arquivo
+            </button>
+            {hasPermission('bi/garantias-daf') && (
+              <button
+                onClick={() => navigate('/bi/garantias-daf', { state: { aba: 'titulos' } })}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-semibold text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 shadow-sm transition-colors"
+              >
+                <BarChart2 className="h-3.5 w-3.5 text-indigo-500" />
+                Ir para Dashboard
+              </button>
+            )}
+          </div>
         </div>
-        <div className="flex items-center gap-3">
-          {titulosLastMod && (
-            <span className="text-[10px] text-slate-400">
-              Modificado em <strong className="text-slate-500">{new Date(titulosLastMod).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</strong>
-            </span>
-          )}
-          <button
-            onClick={() => loadTitulos(true)}
-            disabled={titulosRefreshing || titulosLoading}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-semibold text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 shadow-sm transition-colors disabled:opacity-50"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${titulosRefreshing ? 'animate-spin' : ''}`} />
-            Atualizar arquivo
-          </button>
+        <div className="flex items-center justify-between">
+          <GarantiasNav />
           {hasPermission('garantias-daf-faturadas') && (
             <button
               onClick={() => navigate('/garantias-daf-faturadas')}
-              title="Ver OS faturadas (Status E)"
+              title="Ver histórico de movimentações das OS"
               className="flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-semibold text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 shadow-sm transition-colors"
             >
               <Receipt className="h-3.5 w-3.5 text-indigo-500" />
-              Faturadas
-            </button>
-          )}
-          {hasPermission('bi/garantias-daf') && (
-            <button
-              onClick={() => navigate('/bi/garantias-daf', { state: { aba: 'titulos' } })}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-semibold text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 shadow-sm transition-colors"
-            >
-              <BarChart2 className="h-3.5 w-3.5 text-indigo-500" />
-              Ir para Dashboard
+              Históricos de O.S.
             </button>
           )}
         </div>
@@ -495,7 +473,7 @@ export default function GarantiasDafTitulos() {
             >
               <Link2Off className="h-4 w-4 text-orange-600 shrink-0" />
               <p className="text-xs text-orange-700 font-semibold flex-1">
-                {grpNaoVinculado.length} título(s) · Não identificado O.S. Faturadas
+                {grpNaoVinculado.length} título(s) · Não vinculado O.S. Faturadas
                 <span className="text-orange-500 font-normal"> — {fmtMoeda(valorGrpNaoVinculado)}</span>
                 {filtrosComunsAtivos && <span className="ml-1.5 px-1.5 py-0.5 bg-orange-100 text-orange-700 rounded text-[9px] font-bold">filtrado</span>}
               </p>
@@ -651,8 +629,8 @@ export default function GarantiasDafTitulos() {
                       {canEditarTitulo && (
                         <button
                           onClick={() => abrirEdicaoTitulo(r)}
-                          className={`p-1 rounded transition-colors hover:bg-indigo-50 ${titulosObs.get(r.nro_titulo) ? 'text-indigo-500 hover:text-indigo-700' : 'text-slate-400 hover:text-indigo-600'}`}
-                          title={titulosObs.get(r.nro_titulo) ? 'Editar observação do título' : 'Adicionar observação ao título'}
+                          className={`p-1 rounded transition-colors hover:bg-indigo-50 ${titulosComObsSet.has(r.nro_titulo) ? 'text-indigo-500 hover:text-indigo-700' : 'text-slate-400 hover:text-indigo-600'}`}
+                          title={titulosComObsSet.has(r.nro_titulo) ? 'Ver/editar observações do título' : 'Adicionar observação ao título'}
                         >
                           <Edit2 className="h-3.5 w-3.5" />
                         </button>
@@ -776,35 +754,28 @@ export default function GarantiasDafTitulos() {
                 {garantiaId ? (
                   <div className="flex items-center gap-1.5 text-[11px] text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-md px-2.5 py-1.5">
                     <Link2 className="h-3 w-3 shrink-0" />
-                    Vinculado a OS em Garantias DAF Faturadas — a observação será gravada também na OS.
+                    Vinculado a OS em Garantias DAF Faturadas — as observações também aparecem lá.
                   </div>
                 ) : (
                   <div className="flex items-center gap-1.5 text-[11px] text-orange-600 bg-orange-50 border border-orange-200 rounded-md px-2.5 py-1.5">
                     <Link2Off className="h-3 w-3 shrink-0" />
-                    Sem vínculo com OS no momento — a observação fica salva no título e será propagada automaticamente quando ele for vinculado.
+                    Sem vínculo com OS — vincule a OS {osKey || 'deste título'} em Garantias DAF Faturadas antes de adicionar observações. Toda informação do título deve estar gravada na OS.
                   </div>
                 )}
                 <div>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1 block">Observação</label>
-                  <textarea
-                    value={textoEdicaoObs}
-                    onChange={e => setTextoEdicaoObs(e.target.value)}
-                    rows={4}
-                    className="w-full text-xs p-2.5 border border-slate-200 rounded-md focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 outline-none resize-none"
-                    placeholder="Digite uma observação para este título..."
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1 block">Observações</label>
+                  <TituloObservacoesPanel
+                    nroTitulo={modalEditarTitulo.nro_titulo}
+                    observacoes={titulosObs}
+                    podeEditar={canEditarTitulo}
+                    bloqueado={!garantiaId}
+                    userEmail={user?.email}
+                    onChange={loadTitulosObs}
                   />
                 </div>
               </div>
               <div className="flex justify-end gap-2 px-4 py-3 bg-slate-50 border-t border-slate-100">
-                <button onClick={() => setModalEditarTitulo(null)} className="px-4 py-1.5 rounded-md text-xs font-semibold text-slate-600 hover:bg-slate-200/60 transition-colors">Cancelar</button>
-                <button
-                  onClick={salvarObservacaoTitulo}
-                  disabled={salvandoObs}
-                  className="flex items-center gap-1.5 px-4 py-1.5 rounded-md text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm transition-colors disabled:opacity-50"
-                >
-                  {salvandoObs ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-                  {salvandoObs ? 'Salvando...' : 'Salvar'}
-                </button>
+                <button onClick={() => setModalEditarTitulo(null)} className="px-4 py-1.5 rounded-md text-xs font-semibold text-slate-600 hover:bg-slate-200/60 transition-colors">Fechar</button>
               </div>
             </div>
           </div>

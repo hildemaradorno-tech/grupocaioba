@@ -3,6 +3,11 @@ import React, { createContext, useContext, useState } from 'react'
 // Backing store module-level: sobrevive navegações de rota, perde em F5
 const STATUS_PADRAO = ['mapeado', 'programado', 'em_andamento', 'pausado']
 
+// Flag de primeiro acesso ao módulo de projetos nesta sessão.
+// Ancorado em window para sobreviver ao HMR do Vite em dev; reseta em F5/reload.
+if (!window._projetosSession) window._projetosSession = { primeiroAcesso: true }
+export const _projetosSession = window._projetosSession
+
 const _f = {
   filtroEmpresa: '', filtroDepartamento: '', filtroArea: '',
   filtroFase: '', filtroSistema: '',
@@ -13,6 +18,9 @@ const _f = {
   filtroDataIni: '',
   filtroDataFim: '',
   filtroDataTipo: 'fim',
+  filtroDataProjIni: '',
+  filtroDataProjFim: '',
+  modoVerTodos: false,
 }
 
 const ProjetosFiltrosContext = createContext(null)
@@ -31,6 +39,9 @@ export function ProjetosFiltrosProvider({ children }) {
   const [filtroDataIni,        setFiltroDataIni]        = useState(() => _f.filtroDataIni)
   const [filtroDataFim,        setFiltroDataFim]        = useState(() => _f.filtroDataFim)
   const [filtroDataTipo,       setFiltroDataTipo]       = useState(() => _f.filtroDataTipo)
+  const [filtroDataProjIni,    setFiltroDataProjIniState] = useState(() => _f.filtroDataProjIni)
+  const [filtroDataProjFim,    setFiltroDataProjFimState] = useState(() => _f.filtroDataProjFim)
+  const [modoVerTodos,         setModoVerTodosState]      = useState(() => _f.modoVerTodos)
 
   const mk = (setter, key) => (v) => { setter(v); _f[key] = v }
 
@@ -44,6 +55,8 @@ export function ProjetosFiltrosProvider({ children }) {
     _f.filtroDataIni = ''; setFiltroDataIni('')
     _f.filtroDataFim = ''; setFiltroDataFim('')
     _f.filtroDataTipo = 'fim'; setFiltroDataTipo('fim')
+    _f.filtroDataProjIni = ''; setFiltroDataProjIniState('')
+    _f.filtroDataProjFim = ''; setFiltroDataProjFimState('')
   }
 
   const temFiltroAtivo = !!(filtroEmpresa || filtroDepartamento || filtroArea || filtroFase || filtroSistema || filtroRespProjeto || filtroRespTarefa)
@@ -68,6 +81,12 @@ export function ProjetosFiltrosProvider({ children }) {
       setFiltroDataFim: (v) => { setFiltroDataFim(v); _f.filtroDataFim = v },
       filtroDataTipo,
       setFiltroDataTipo: (v) => { setFiltroDataTipo(v); _f.filtroDataTipo = v },
+      filtroDataProjIni,
+      setFiltroDataProjIni: (v) => { setFiltroDataProjIniState(v); _f.filtroDataProjIni = v },
+      filtroDataProjFim,
+      setFiltroDataProjFim: (v) => { setFiltroDataProjFimState(v); _f.filtroDataProjFim = v },
+      modoVerTodos,
+      setModoVerTodos: (v) => { setModoVerTodosState(v); _f.modoVerTodos = v },
       limparFiltros,
       temFiltroAtivo,
     }}>

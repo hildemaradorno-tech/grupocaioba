@@ -1,10 +1,15 @@
 ﻿import React, { useState, useEffect } from 'react'
 import { useSessionState } from '../hooks/useSessionState'
-import { Trash2, Plus, Edit2, Eye, EyeOff, X, UserCheck, Search, Copy, Check, UserPlus } from 'lucide-react'
+import { Trash2, Plus, Edit2, Eye, EyeOff, X, UserCheck, Search, Copy, Check, UserPlus, Send } from 'lucide-react'
 import PermissionActionButtons from '../components/PermissionActionButtons'
 import { apiService } from '../services/api'
 import { supabase } from '../services/supabaseClient'
 import { useAuth } from '../context/AuthContext'
+
+// Link de definição/redefinição de senha enviado por e-mail sempre precisa apontar pro
+// sistema em produção — nunca pro localhost de quem está logado criando/reenviando o
+// convite (window.location.origin varia conforme onde o admin está rodando o sistema).
+const URL_PRODUCAO = 'https://portalgestaocaioba.pages.dev'
 
 function traduzirErroSenha(msg = '') {
   if (msg.toLowerCase().includes('different from the old password')) return 'A nova senha deve ser diferente da senha atual.'
@@ -33,6 +38,8 @@ export default function Usuarios() {
   const [itemVisualizado, setItemVisualizado] = useState(null)
   const [busca, setBusca] = useState('')
   const [conviteEnviado, setConviteEnviado] = useState(null) // { nome, email }
+  const [reenviandoId, setReenviandoId] = useState(null)
+  const [reenviadoId, setReenviadoId] = useState(null)
   const [senhaParaCopia, setSenhaParaCopia] = useState('')
   const [copiadoModal, setCopiadoModal] = useState(null) // 'whats' | 'email' | null
   const abrirVisualizar = (item) => { setItemVisualizado(item); setModalVisualizarAberto(true); setSenhaParaCopia(''); setCopiadoModal(null) }
@@ -89,7 +96,7 @@ export default function Usuarios() {
         if (!authServiceConfigured) {
           throw new Error('Criação de usuário exige SUPABASE_SERVICE_KEY configurada no backend.')
         }
-        const redirectTo = `${window.location.origin}/redefinir-senha`
+        const redirectTo = `${URL_PRODUCAO}/redefinir-senha`
         await apiService.createUsuario(form.nome, form.email, form.grupo_id || null, redirectTo)
         setConviteEnviado({ nome: form.nome, email: form.email })
         resetForm()
@@ -112,6 +119,20 @@ export default function Usuarios() {
     setSenhaParaCopia('')
     setCopiadoModal(null)
     setShowForm(true)
+  }
+
+  const handleReenviarConvite = async (usuario) => {
+    setReenviandoId(usuario.id)
+    setReenviadoId(null)
+    try {
+      await apiService.sendResetPasswordEmail(usuario.email, `${URL_PRODUCAO}/redefinir-senha`)
+      setReenviadoId(usuario.id)
+      setTimeout(() => setReenviadoId(null), 3000)
+    } catch (err) {
+      alert('Erro ao enviar e-mail: ' + (err.message || String(err)))
+    } finally {
+      setReenviandoId(null)
+    }
   }
 
   const handleDelete = async (id) => {
@@ -183,8 +204,8 @@ export default function Usuarios() {
 
       {/* MODAL: CRIAR / EDITAR */}
       {showForm && (
-        <div className="fixed top-0 right-0 bottom-0 left-16 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg border border-slate-200 w-[480px] shadow-xl overflow-hidden">
+        <div className="fixed top-0 right-0 bottom-0 left-16 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-lg border border-slate-200 w-[480px] max-w-full max-h-[90vh] shadow-xl overflow-y-auto my-auto">
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-slate-50">
               <h2 className="text-sm font-bold text-slate-900">
                 {editingId ? 'Editar Usuário' : 'Novo Usuário'}
@@ -323,13 +344,13 @@ export default function Usuarios() {
         </div>
       )}
 
-      <div className="bg-white rounded-lg shadow overflow-hidden">
+      <div className="bg-white rounded-lg shadow overflow-x-auto">
         <table className="w-full">
           <thead className="bg-slate-100 border-b border-slate-200">
             <tr>
               <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Nome</th>
               <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">E-mail</th>
-              <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Grupo</th>
+              <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Grupo de Acesso</th>
               <th className="px-6 py-3 text-center text-sm font-semibold text-slate-700">Senha</th>
               <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Ações</th>
             </tr>
@@ -372,11 +393,24 @@ export default function Usuarios() {
                     onEdit={() => handleEdit(u)}
                     onDelete={() => handleDelete(u.id)}
                   />
+                  <button
+                    onClick={() => handleReenviarConvite(u)}
+                    disabled={reenviandoId === u.id}
+                    title="Reenviar e-mail com o link de definição/redefinição de senha (aponta para o sistema em produção)"
+                    className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold border transition-colors disabled:opacity-50 whitespace-nowrap ${
+                      reenviadoId === u.id
+                        ? 'border-green-300 text-green-700 bg-green-50'
+                        : 'border-blue-300 text-blue-700 bg-blue-50 hover:bg-blue-100'
+                    }`}
+                  >
+                    {reenviadoId === u.id ? <Check size={13} /> : <Send size={13} />}
+                    {reenviandoId === u.id ? 'Enviando...' : reenviadoId === u.id ? 'Enviado!' : 'Reenviar e-mail'}
+                  </button>
                   {isAdmin && u.email !== user?.email && (
                     <button
                       onClick={() => iniciarVisualizacao(u)}
                       title={`Visualizar como ${u.nome}`}
-                      className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold border border-violet-300 text-violet-700 bg-violet-50 hover:bg-violet-100 transition-colors"
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold border border-violet-300 text-violet-700 bg-violet-50 hover:bg-violet-100 transition-colors whitespace-nowrap"
                     >
                       <UserCheck size={13} /> Visualizar como
                     </button>
@@ -402,8 +436,8 @@ export default function Usuarios() {
 
       {/* MODAL: VISUALIZAR */}
       {modalVisualizarAberto && itemVisualizado && (
-        <div className="fixed top-0 right-0 bottom-0 left-16 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg border border-slate-200 w-[420px] shadow-xl overflow-hidden">
+        <div className="fixed top-0 right-0 bottom-0 left-16 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-lg border border-slate-200 w-[420px] max-w-full max-h-[90vh] shadow-xl overflow-y-auto my-auto">
             <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50">
               <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                 <Eye className="h-4 w-4 text-slate-500" />Visualizar Usuário

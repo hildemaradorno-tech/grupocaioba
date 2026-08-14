@@ -18,15 +18,15 @@ export const ACOES_POR_MENU = [
       { value: 'concluir_tarefa',  label: 'Concluir Tarefa (→ Concluído)' },
       { value: 'deliberacao',      label: 'Criar / Editar / Excluir Deliberações' },
       { value: 'custo',            label: 'Gerenciar Custos e Confirmar Pagamentos' },
+      { value: 'iniciar_fase',          label: 'Iniciar Fase do Projeto' },
+      { value: 'enviar_manifestacao',   label: 'Enviar Manifestação / De Acordo' },
     ],
   },
   {
-    menuPath: 'projetos/pdca',
+    menuPath: 'projetos/manifestacoes',
     acoes: [
-      { value: 'editar_projeto',  label: 'Editar Projeto' },
-      { value: 'editar_tarefa',   label: 'Editar Tarefa' },
-      { value: 'iniciar_tarefa',  label: 'Iniciar Tarefa (→ Em Andamento)' },
-      { value: 'concluir_tarefa', label: 'Concluir Tarefa (→ Concluído)' },
+      { value: 'responder_manifestacao', label: 'Responder / Aprovar Manifestação' },
+      { value: 'encerrar_periodo',       label: 'Encerrar Período de Manifestação' },
     ],
   },
   {

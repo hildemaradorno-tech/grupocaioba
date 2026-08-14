@@ -18,7 +18,9 @@ import calculoComissaoRoutes from './routes/calculoComissao.js'
 import rhFeriasRoutes from './routes/rhFerias.js'
 import hondaRoutes from './routes/honda.js'
 import googleCalendarRoutes from './routes/googleCalendar.js'
+import projetosManifestacoesRoutes from './routes/projetosManifestacoes.js'
 import { iniciarSchedulerKpi } from './services/kpiSyncScheduler.js'
+import { iniciarSchedulerManifestacao } from './services/manifestacaoScheduler.js'
 
 const app = express()
 app.use(cors())
@@ -41,6 +43,9 @@ app.use('/api/honda', hondaRoutes)
 
 // ── Rotas Google Calendar (OAuth + leitura de eventos) ───────────────────────
 app.use('/api/google-calendar', googleCalendarRoutes)
+
+// ── Rotas Gestão de Projetos — Período de Manifestação (Etapa 2) ────────────
+app.use('/api/projetos', projetosManifestacoesRoutes)
 
 // Handler de erro global — sem isso, um erro lançado dentro de uma rota (ex: pasta/arquivo do
 // SharePoint não encontrado) cai no handler padrão do Express, que responde com uma página HTML
@@ -356,6 +361,7 @@ async function start() {
   })
 
   iniciarSchedulerKpi()
+  iniciarSchedulerManifestacao()
 }
 
 start().catch(console.error)

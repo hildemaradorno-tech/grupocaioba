@@ -77,7 +77,7 @@ router.post('/sharepoint/refresh', wrap(async (req, res) => {
 }))
 
 // GET /api/garantias/faturados?dataInicio=YYYY-MM-DD&dataFim=YYYY-MM-DD
-// Retorna linhas do ROF003_OSEMISSAONFNTI filtradas por Data_Criacao
+// Retorna linhas do ROF017_FATURAMENTOPOROS filtradas por Data_Criacao
 router.get('/faturados', wrap(async (req, res) => {
   if (!isConfigured()) {
     return res.status(503).json({ error: 'sharepoint_not_configured', message: 'Credenciais Azure AD não configuradas.' })

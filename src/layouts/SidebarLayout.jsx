@@ -18,6 +18,7 @@ import TrocarSenhaObrigatoria from '../pages/TrocarSenhaObrigatoria'
 import { supabase } from '../services/supabaseClient'
 import { MENU_TREE, getLeafKeys } from '../config/menuTree'
 import { APP_VERSION } from '../version'
+import { resetDashProjetos } from '../pages/projetos/ProjetosDashboard'
 
 // ── Precompute leaf key sets (recursive) ─────────────────────────────────────
 const sectionLeaves = {}
@@ -41,9 +42,8 @@ function getActiveSectionKey(pathname) {
   if (pathname.startsWith('/projetos')) return '_gestao-projetos'
   if (pathname.startsWith('/calculadoras')) return '_calculadoras'
   if (pathname.startsWith('/bi') || pathname.startsWith('/kpi')) return '_bi'
-  if (pathname.startsWith('/documentacoes') || pathname.startsWith('/rpa')) return '_documentacoes'
+  if (pathname.startsWith('/documentacoes') || pathname.startsWith('/rpa') || pathname.startsWith('/ecossistema')) return '_documentacoes'
   if (pathname.startsWith('/treinamentos')) return '_treinamentos'
-  if (pathname.startsWith('/ecossistema')) return '_ecossistema'
   return null
 }
 
@@ -323,6 +323,7 @@ export default function SidebarLayout() {
   }, [location.pathname])
 
   const handleLogout = async () => {
+    resetDashProjetos()
     await logout()
     navigate('/login')
   }
@@ -504,10 +505,6 @@ export default function SidebarLayout() {
           <>
             <FlyGroup label="Gestão de Projetos" />
             {canView('projetos') && <FlyItem to="/projetos" icon={FolderKanban} onClose={closeFlyout}>Projetos</FlyItem>}
-            {canView('projetos/lista-tarefas') && <FlyItem to="/projetos/lista-tarefas" icon={FileText} onClose={closeFlyout}>Lista de Tarefas</FlyItem>}
-            {canView('projetos/pdca') && <FlyItem to="/projetos/pdca" icon={ClipboardList} onClose={closeFlyout}>PDCA</FlyItem>}
-            {canView('projetos/planejamento') && <FlyItem to="/projetos/planejamento" icon={LayoutGrid} onClose={closeFlyout}>Planejamento</FlyItem>}
-            {canView('projetos/calendario') && <FlyItem to="/projetos/calendario" icon={CalendarDays} onClose={closeFlyout}>Agenda</FlyItem>}
 
             {canViewSection('_gestao-projetos.cadastros') && (
               <>
@@ -560,6 +557,7 @@ export default function SidebarLayout() {
             <FlyGroup label="Documentações" />
             {canView('rpa/agendamentos') && <FlyItem to="/rpa/agendamentos" icon={Clock} onClose={closeFlyout}>Agendamento de Processos</FlyItem>}
             {canView('documentacoes') && <FlyItem to="/documentacoes" icon={BookOpen} onClose={closeFlyout}>Documentações</FlyItem>}
+            {canView('ecossistema') && <FlyItem to="/ecossistema" icon={Share2} onClose={closeFlyout}>Ecossistema</FlyItem>}
           </>
         )
 
@@ -568,14 +566,6 @@ export default function SidebarLayout() {
           <>
             <FlyGroup label="Treinamentos" />
             {canView('treinamentos/grade') && <FlyItem to="/treinamentos/grade" icon={GraduationCap} onClose={closeFlyout}>Grade de Treinamentos</FlyItem>}
-          </>
-        )
-
-      case '_ecossistema':
-        return (
-          <>
-            <FlyGroup label="Ecossistema" />
-            {canView('ecossistema') && <FlyItem to="/ecossistema" icon={Share2} onClose={closeFlyout}>Ecossistema</FlyItem>}
           </>
         )
 
@@ -687,14 +677,6 @@ export default function SidebarLayout() {
               onClick={() => toggleSection('_treinamentos')}
             />
           )}
-          {canViewSection('_ecossistema') && (
-            <SidebarIconBtn
-              icon={Share2}
-              label="Ecossistema"
-              isActive={currentSection === '_ecossistema' || activeSection === '_ecossistema'}
-              onClick={() => toggleSection('_ecossistema')}
-            />
-          )}
 
         </nav>
 
@@ -730,7 +712,6 @@ export default function SidebarLayout() {
                 {activeSection === '_bi' && 'BI - Dashboard'}
                 {activeSection === '_documentacoes' && 'Documentações'}
                 {activeSection === '_treinamentos' && 'Treinamentos'}
-                {activeSection === '_ecossistema' && 'Ecossistema'}
                 {activeSection === 'organograma' && 'Organograma'}
               </span>
             </div>
@@ -782,6 +763,15 @@ export default function SidebarLayout() {
           </div>
         )}
         <Outlet />
+
+        {/* Identificador da rota atual — fixo no topo, pra localizar rápido qual tela/arquivo
+            ajustar quando o usuário pedir uma mudança (informa o path exato usado no App.jsx).
+            Não mostra na Home, que não é uma tela de ajuste específica. */}
+        {location.pathname !== '/' && (
+          <span className="fixed top-1.5 left-1/2 -translate-x-1/2 z-50 text-[10px] font-mono text-slate-400 bg-white/90 border border-slate-200 px-1.5 py-0.5 rounded shadow-sm select-text">
+            {location.pathname}
+          </span>
+        )}
       </main>
 
       {trocarSenha && !impersonando && (

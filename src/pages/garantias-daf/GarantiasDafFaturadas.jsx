@@ -2,9 +2,9 @@ import React, { useEffect, useState, useCallback, useMemo } from 'react'
 import { useSessionState } from '../../hooks/useSessionState'
 import { useNavigate } from 'react-router-dom'
 import {
-  Search, Edit2, ShieldAlert, FileText,
-  AlertTriangle, Filter, RotateCcw, Download,
-  XCircle, Truck, ArrowUp, ArrowDown, Link2, Link2Off, Info,
+  Search, Edit2, Eye, ShieldAlert,
+  Filter, RotateCcw, Download,
+  XCircle, ArrowUp, ArrowDown, Link2, Link2Off, Info,
 } from 'lucide-react'
 import { apiService } from '../../services/api'
 import { useAuth } from '../../context/AuthContext'
@@ -43,24 +43,6 @@ const fmt = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', c
 
 const FILTROS_VAZIOS = { numero_os: '', chassi: '', numero_nf: '', data_inicio: '', data_fim: '' }
 
-function CardGrupo({ icon: Icon, label, count, ativo, onClick, st }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`rounded-lg border p-3 text-left transition-all hover:shadow-md w-full ${st.bg} ${st.border} ${ativo ? 'ring-2 ring-offset-1 ' + st.ring + ' shadow-md' : 'shadow-sm'}`}
-    >
-      <div className="flex items-center gap-1.5 mb-2">
-        <div className={`p-1 rounded ${st.icoBg}`}>
-          <Icon className={`h-3 w-3 ${st.icoTxt}`} />
-        </div>
-        <p className={`text-[9px] font-bold uppercase tracking-wide leading-tight ${st.labelTxt}`}>{label}</p>
-      </div>
-      <p className={`text-2xl font-bold ${st.numTxt} leading-none`}>{count}</p>
-      <p className={`text-[9px] ${st.labelTxt} mt-0.5`}>OS</p>
-    </button>
-  )
-}
-
 export default function GarantiasDafFaturadas() {
   const navigate = useNavigate()
   const { isAdmin, empresasPermitidas, hasActionOrDefault } = useAuth()
@@ -73,7 +55,6 @@ export default function GarantiasDafFaturadas() {
   const [error, setError] = useState(null)
   const [filtros, setFiltros] = useSessionState('daf_fat_filtros', FILTROS_VAZIOS)
   const [filtrosAbertos, setFiltrosAbertos] = useSessionState('daf_fat_filtros_abertos', false)
-  const [filtroCard, setFiltroCard] = useSessionState('daf_fat_card', null)
   const [modalExcluir, setModalExcluir] = useState(false)
   const [modalImportarFaturados, setModalImportarFaturados] = useState(false)
   const [filtroEmpresaDash, setFiltroEmpresaDash] = useSessionState('daf_fat_empresa', '')
@@ -219,7 +200,14 @@ export default function GarantiasDafFaturadas() {
   }
 
   const handleBuscar = (e) => { e.preventDefault(); loadData(filtros) }
-  const handleLimpar = () => { setFiltros(FILTROS_VAZIOS); setFiltroCard(null); loadData(FILTROS_VAZIOS) }
+  const handleLimpar = () => { setFiltros(FILTROS_VAZIOS); loadData(FILTROS_VAZIOS) }
+  const handleLimparTudo = () => {
+    handleLimpar()
+    setFiltroEmpresaDash('')
+    setFiltroTipoOsDash('')
+    setFiltroConsultorDash('')
+  }
+  const temFiltroAtivo = Object.values(filtros).some(v => !!v) || !!filtroEmpresaDash || !!filtroTipoOsDash || !!filtroConsultorDash
 
   const toggleSelecionado = (id) => {
     setSelecionados(prev => {
@@ -252,10 +240,6 @@ export default function GarantiasDafFaturadas() {
     finally { setExcluindoLote(false); setModalExcluir(false) }
   }
 
-  const handleCardClick = (key) => {
-    setFiltroCard(prev => prev === key ? null : key)
-  }
-
   const hoje = new Date()
 
   const diasSemEnvio = (g) => {
@@ -264,35 +248,13 @@ export default function GarantiasDafFaturadas() {
     return Math.floor((hoje - new Date(g.data_emissao_nf + 'T12:00:00')) / 86400000)
   }
 
-  // Crítico e "a enviar" particionam TODAS as não-enviadas (status ≠ F), inclusive as sem
-  // data_emissao_nf preenchida — evita registros "sumirem" da soma dos cards por dado incompleto.
-  const isCritico = (g) => { const d = diasSemEnvio(g); return d !== null && d > 5 }
-  const grpEnviado = dadosBase.filter(g => g.status_codigo === 'F')
-  const grpCritico = dadosBase.filter(g => g.status_codigo !== 'F' && isCritico(g))
-  const grpAEnviar = dadosBase.filter(g => g.status_codigo !== 'F' && !isCritico(g))
-  const grpSemVinculo = dadosBase.filter(g => !titulosOsSet.has(String(g.numero_os ?? '').trim()))
-
-  const dadosFiltrados = (() => {
-    if (filtroCard) {
-      switch (filtroCard) {
-        case 'total':       return dadosBase
-        case 'a_enviar':    return grpAEnviar
-        case 'critico':     return grpCritico
-        case 'enviado':     return grpEnviado
-        case 'sem_vinculo': return grpSemVinculo
-        default: return dadosBase
-      }
-    }
-    return dadosBase
-  })()
-
   const handleSort = (col) => {
     if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
     else { setSortCol(col); setSortDir('asc') }
   }
 
   const sortedDados = useMemo(() => {
-    const arr = [...dadosFiltrados]
+    const arr = [...dadosBase]
     arr.sort((a, b) => {
       if (sortCol === 'total') {
         const va = Number(a.valor_pecas || 0) + Number(a.valor_servicos || 0)
@@ -305,30 +267,7 @@ export default function GarantiasDafFaturadas() {
       return sortDir === 'asc' ? cmp : -cmp
     })
     return arr
-  }, [dadosFiltrados, sortCol, sortDir])
-
-  const CARDS_GRUPOS = [
-    {
-      key: 'total', label: 'Total Faturadas', icon: FileText, items: dadosBase,
-      st: { bg: 'bg-sky-50', border: 'border-sky-200', ring: 'ring-sky-300', icoBg: 'bg-sky-100', icoTxt: 'text-sky-600', numTxt: 'text-sky-700', labelTxt: 'text-sky-500', divider: 'border-sky-200' },
-    },
-    {
-      key: 'a_enviar', label: 'Nota Fiscal a Enviar', icon: FileText, items: grpAEnviar,
-      st: { bg: 'bg-amber-50', border: 'border-amber-200', ring: 'ring-amber-300', icoBg: 'bg-amber-100', icoTxt: 'text-amber-600', numTxt: 'text-amber-700', labelTxt: 'text-amber-500', divider: 'border-amber-200' },
-    },
-    {
-      key: 'critico', label: 'Crítico — Sem Envio >5d', icon: AlertTriangle, items: grpCritico,
-      st: { bg: 'bg-red-50', border: 'border-red-200', ring: 'ring-red-300', icoBg: 'bg-red-100', icoTxt: 'text-red-500', numTxt: 'text-red-600', labelTxt: 'text-red-400', divider: 'border-red-100' },
-    },
-    {
-      key: 'enviado', label: 'Processo Enviado', icon: Truck, items: grpEnviado,
-      st: { bg: 'bg-blue-100', border: 'border-blue-300', ring: 'ring-blue-400', icoBg: 'bg-blue-200', icoTxt: 'text-blue-700', numTxt: 'text-blue-800', labelTxt: 'text-blue-600', divider: 'border-blue-300' },
-    },
-    {
-      key: 'sem_vinculo', label: 'Não Identificado — Títulos a Receber', icon: Link2Off, items: grpSemVinculo,
-      st: { bg: 'bg-orange-50', border: 'border-orange-200', ring: 'ring-orange-300', icoBg: 'bg-orange-100', icoTxt: 'text-orange-600', numTxt: 'text-orange-700', labelTxt: 'text-orange-500', divider: 'border-orange-200' },
-    },
-  ]
+  }, [dadosBase, sortCol, sortDir])
 
   if (error) return (
     <div className="p-6">
@@ -349,7 +288,7 @@ export default function GarantiasDafFaturadas() {
             <span className="relative group cursor-help">
               <Info className="h-3.5 w-3.5 text-slate-400" />
               <span className="absolute top-full left-0 mt-2 w-72 text-[10px] text-white bg-slate-700 rounded px-2 py-1.5 leading-relaxed opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 normal-case font-normal tracking-normal">
-                Fonte: ROF001_OSABERTA_ENCERRADA.xlsx e ROF017_FATURAMENTOPOROS.xlsx
+                Fonte de dados: ROF001_OSABERTA_ENCERRADA.xlsx e ROF017_FATURAMENTOPOROS.xlsx
               </span>
             </span>
           </h1>
@@ -381,44 +320,43 @@ export default function GarantiasDafFaturadas() {
         </div>
       </div>
 
-      {/* ── CARDS GRUPOS ── */}
-      <div className="grid grid-cols-5 gap-4">
-        {CARDS_GRUPOS.map(c => (
-          <CardGrupo
-            key={c.key}
-            icon={c.icon}
-            label={c.label}
-            count={c.items.length}
-            ativo={filtroCard === c.key}
-            onClick={() => handleCardClick(c.key)}
-            st={c.st}
-          />
-        ))}
-      </div>
-
       {/* ── FILTROS AVANÇADOS ── */}
       <div className="bg-white rounded-lg border border-slate-200 shadow-sm">
-        <button
-          onClick={() => setFiltrosAbertos(p => !p)}
-          className="w-full flex items-center justify-between px-4 py-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
-        >
-          <span className="flex items-center gap-2">
+        <div className="w-full flex items-center justify-between px-4 py-3 text-xs font-semibold text-slate-700">
+          <button
+            onClick={() => setFiltrosAbertos(p => !p)}
+            className="flex items-center gap-2 flex-1 text-left hover:opacity-70 transition-opacity"
+          >
             <Filter className="h-3.5 w-3.5 text-slate-400" />
             Filtros avançados
             {filtroEmpresaDash && <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px] font-bold">{filtroEmpresaDash}</span>}
             {filtroTipoOsDash && <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px] font-bold">{filtroTipoOsDash}</span>}
             {filtroConsultorDash && <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px] font-bold">{filtroConsultorDash}</span>}
-          </span>
-          <span className="text-slate-400">{filtrosAbertos ? '▲' : '▼'}</span>
-        </button>
+          </button>
+          <div className="flex items-center gap-3">
+            {temFiltroAtivo && (
+              <button
+                type="button"
+                onClick={handleLimparTudo}
+                className="flex items-center gap-1 text-slate-400 hover:text-red-600 transition-colors"
+                title="Limpar todos os filtros"
+              >
+                <RotateCcw className="h-3.5 w-3.5" /> Limpar filtros
+              </button>
+            )}
+            <button onClick={() => setFiltrosAbertos(p => !p)} className="text-slate-400 hover:text-slate-600 transition-colors">
+              {filtrosAbertos ? '▲' : '▼'}
+            </button>
+          </div>
+        </div>
         {filtrosAbertos && (
           <form onSubmit={handleBuscar} className="px-4 pb-4 border-t border-slate-100">
-            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-9 gap-3 mt-3">
-              <div className="flex flex-col gap-1 lg:col-span-2">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3">
+              <div className="flex flex-col gap-1 md:col-span-2">
                 <label className="text-[10px] font-bold text-slate-400 uppercase">Empresa</label>
                 <select
                   value={filtroEmpresaDash}
-                  onChange={e => { setFiltroEmpresaDash(e.target.value); setFiltroCard(null) }}
+                  onChange={e => setFiltroEmpresaDash(e.target.value)}
                   className="text-xs p-1.5 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20 bg-white"
                 >
                   <option value="">Todas as empresas</option>
@@ -429,7 +367,7 @@ export default function GarantiasDafFaturadas() {
                 <label className="text-[10px] font-bold text-slate-400 uppercase">Tipo OS</label>
                 <select
                   value={filtroTipoOsDash}
-                  onChange={e => { setFiltroTipoOsDash(e.target.value); setFiltroCard(null) }}
+                  onChange={e => setFiltroTipoOsDash(e.target.value)}
                   className="text-xs p-1.5 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20 bg-white"
                 >
                   <option value="">Todos os tipos</option>
@@ -440,13 +378,15 @@ export default function GarantiasDafFaturadas() {
                 <label className="text-[10px] font-bold text-slate-400 uppercase">Consultor</label>
                 <select
                   value={filtroConsultorDash}
-                  onChange={e => { setFiltroConsultorDash(e.target.value); setFiltroCard(null) }}
+                  onChange={e => setFiltroConsultorDash(e.target.value)}
                   className="text-xs p-1.5 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20 bg-white"
                 >
                   <option value="">Todos os consultores</option>
                   {consultoresDisponiveis.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mt-3">
               {[
                 { name: 'numero_os', placeholder: 'Nº OS' },
                 { name: 'chassi', placeholder: 'Chassi' },
@@ -459,7 +399,7 @@ export default function GarantiasDafFaturadas() {
                     className="text-xs p-1.5 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20" />
                 </div>
               ))}
-              <div className="flex flex-col gap-1 lg:col-span-2">
+              <div className="flex flex-col gap-1 md:col-span-2">
                 <label className="text-[10px] font-bold text-slate-400 uppercase">Período</label>
                 <div className="flex gap-1">
                   <input type="date" name="data_inicio" value={filtros.data_inicio} onChange={handleFiltroChange}
@@ -473,7 +413,7 @@ export default function GarantiasDafFaturadas() {
               <button type="submit" className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 transition-colors">
                 <Search className="h-3.5 w-3.5" /> Buscar
               </button>
-              <button type="button" onClick={() => { handleLimpar(); setFiltroEmpresaDash(''); setFiltroTipoOsDash(''); setFiltroConsultorDash('') }} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-slate-600 hover:bg-slate-100 transition-colors">
+              <button type="button" onClick={handleLimparTudo} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-slate-600 hover:bg-slate-100 transition-colors">
                 <RotateCcw className="h-3.5 w-3.5" /> Limpar
               </button>
             </div>
@@ -595,6 +535,9 @@ export default function GarantiasDafFaturadas() {
                     </td>
                     <td className="p-3 text-center sticky right-0 bg-white border-l border-slate-100 shadow-[-4px_0_12px_rgba(0,0,0,0.03)]">
                       <div className="flex items-center justify-center gap-1">
+                        <button onClick={() => navigate(`/garantias-daf/${item.id}`, { state: { from: '/garantias-daf-faturadas', modo: 'visualizar' } })} className="p-1 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors" title="Visualizar">
+                          <Eye className="h-3.5 w-3.5" />
+                        </button>
                         {canEditarOS && (
                           <button onClick={() => navigate(`/garantias-daf/${item.id}`, { state: { from: '/garantias-daf-faturadas' } })} className="p-1 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors" title="Editar">
                             <Edit2 className="h-3.5 w-3.5" />
@@ -610,9 +553,7 @@ export default function GarantiasDafFaturadas() {
         )}
       </div>
       <p className="text-[10px] text-slate-400">
-        {dadosFiltrados.length} registro(s) exibido(s)
-        {filtroCard && <> · filtrado por <strong>{CARDS_GRUPOS.find(c => c.key === filtroCard)?.label ?? filtroCard}</strong></>}
-        {dadosFiltrados.length !== dadosBase.length && <> de {dadosBase.length} total</>}
+        {dadosBase.length} registro(s) exibido(s)
       </p>
 
       {/* MODAL IMPORTAR FATURADOS */}

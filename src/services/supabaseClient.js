@@ -66,20 +66,20 @@ export const apiService = {
     return data || []
   },
 
-  createGrupo: async (nome_grupo, is_admin = false) => {
+  createGrupo: async (nome_grupo, is_admin = false, departamento = null) => {
     const { data, error } = await supabase
       .from('grupos_acesso')
-      .insert([{ nome_grupo, is_admin }])
+      .insert([{ nome_grupo, is_admin, departamento }])
       .select()
       .single()
     if (error) throw error
     return data
   },
 
-  updateGrupo: async (id, nome_grupo, is_admin = false) => {
+  updateGrupo: async (id, nome_grupo, is_admin = false, departamento = null) => {
     const { data, error } = await supabase
       .from('grupos_acesso')
-      .update({ nome_grupo, is_admin })
+      .update({ nome_grupo, is_admin, departamento })
       .eq('id', id)
       .select()
       .single()
@@ -2503,34 +2503,37 @@ export const apiService = {
   // ══════════════════════════════════════════
 
   getTitulosObservacoes: async () => {
-    const { data, error } = await supabase.from('gar_titulos_observacoes').select('*')
+    const { data, error } = await supabase
+      .from('gar_titulos_observacoes')
+      .select('*')
+      .order('criado_em', { ascending: false })
     if (error) throw error
     return data || []
   },
 
-  upsertTituloObservacao: async (nroTitulo, observacao, userEmail) => {
+  createTituloObservacao: async (nroTitulo, observacao, userEmail) => {
     const { data, error } = await supabase
       .from('gar_titulos_observacoes')
-      .upsert(
-        { nro_titulo: nroTitulo, observacao, atualizado_por: userEmail, atualizado_em: new Date().toISOString() },
-        { onConflict: 'nro_titulo' }
-      )
+      .insert([{ nro_titulo: nroTitulo, observacao, atualizado_por: userEmail, atualizado_em: new Date().toISOString() }])
       .select()
     if (error) throw error
     return data?.[0]
   },
 
-  // Restaura tipo_garantia_descricao para a descrição completa
-  // tipoMap: Map<sigla, descricao> ex: "G01" → "G01 - GARANTIA NORMAL EQUIPAMENTOS E MAQUINAS"
-  restaurarTiposGarantia: async (tipoMap) => {
-    for (const [sigla, descricao] of tipoMap) {
-      if (!sigla || !descricao || sigla === descricao) continue
-      const { error } = await supabase
-        .from('gar_garantias')
-        .update({ tipo_garantia_descricao: descricao, tipo_os_sigla: sigla })
-        .eq('tipo_garantia_descricao', sigla)
-      if (error) throw error
-    }
+  updateTituloObservacao: async (id, observacao, userEmail) => {
+    const { data, error } = await supabase
+      .from('gar_titulos_observacoes')
+      .update({ observacao, atualizado_por: userEmail, atualizado_em: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+    if (error) throw error
+    return data?.[0]
+  },
+
+  deleteTituloObservacao: async (id) => {
+    const { error } = await supabase.from('gar_titulos_observacoes').delete().eq('id', id)
+    if (error) throw error
+    return { success: true }
   },
 
   /**
@@ -3191,6 +3194,176 @@ export const apiService = {
     return { success: true }
   },
 
+  // ══════════════════════════════════════════
+  // GESTÃO DE PROJETOS — PERÍODO DE MANIFESTAÇÃO (ETAPA 2)
+  // ══════════════════════════════════════════
+
+  getManifestacoes: async (projetoId) => {
+    const { data, error } = await supabase
+      .from('proj_manifestacoes')
+      .select('*')
+      .eq('projeto_id', projetoId)
+      .order('data_hora_envio', { ascending: false })
+    if (error) throw error
+    return data || []
+  },
+
+  // Sem filtro de projeto — usado no painel geral (visão do responsável)
+  getManifestacoesPendentes: async () => {
+    const { data, error } = await supabase
+      .from('proj_manifestacoes')
+      .select('*, proj_projetos(id, nome)')
+      .in('status', ['Pendente', 'Em Análise'])
+      .order('data_hora_envio', { ascending: true })
+    if (error) throw error
+    return data || []
+  },
+
+  getManifestoesRespondidas: async () => {
+    const { data, error } = await supabase
+      .from('proj_manifestacoes')
+      .select('*, proj_projetos(id, nome)')
+      .eq('status', 'Respondido')
+      .order('data_hora_resposta', { ascending: false })
+    if (error) throw error
+    return data || []
+  },
+
+  deleteManifestacao: async (id) => {
+    const { error } = await supabase.from('proj_manifestacoes').delete().eq('id', id)
+    if (error) throw error
+  },
+
+  createManifestacao: async (payload) => {
+    const deAcordo = payload.tipo_manifestacao === 'De Acordo'
+    const status = deAcordo ? 'Respondido' : 'Pendente'
+    const resultado_manifestacao = deAcordo ? 'De Acordo' : null
+    const { data, error } = await supabase
+      .from('proj_manifestacoes')
+      .insert([{ ...payload, status, resultado_manifestacao, data_hora_envio: new Date().toISOString() }])
+      .select()
+    if (error) throw error
+    return data?.[0]
+  },
+
+  updateManifestacao: async (id, { tipo_manifestacao, texto_manifestacao }) => {
+    const { data, error } = await supabase
+      .from('proj_manifestacoes')
+      .update({ tipo_manifestacao, texto_manifestacao })
+      .eq('id', id)
+      .select()
+    if (error) throw error
+    return data?.[0]
+  },
+
+  updateManifestacaoStatus: async (id, status) => {
+    const { data, error } = await supabase
+      .from('proj_manifestacoes')
+      .update({ status })
+      .eq('id', id)
+      .select()
+    if (error) throw error
+    return data?.[0]
+  },
+
+  responderManifestacao: async (id, { resposta_responsavel, responsavel_email, responsavel_nome, resultado_manifestacao }) => {
+    const { data, error } = await supabase
+      .from('proj_manifestacoes')
+      .update({
+        resposta_responsavel,
+        responsavel_email,
+        responsavel_nome,
+        resultado_manifestacao: resultado_manifestacao || null,
+        status: 'Respondido',
+        data_hora_resposta: new Date().toISOString(),
+      })
+      .eq('id', id)
+      .select()
+    if (error) throw error
+    return data?.[0]
+  },
+
+  getManifestacoesByProjetoIds: async (ids) => {
+    if (!ids || ids.length === 0) return []
+    const { data, error } = await supabase
+      .from('proj_manifestacoes')
+      .select('projeto_id, resultado_manifestacao, tipo_manifestacao')
+      .in('projeto_id', ids)
+    if (error) throw error
+    return data || []
+  },
+
+  getProjetosConvidadoIds: async () => {
+    // usuarios.id ≠ auth.users.id — precisa buscar pelo email
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return []
+    const { data: perfil } = await supabase.from('usuarios').select('id').eq('email', user.email).maybeSingle()
+    if (!perfil?.id) return []
+    const { data, error } = await supabase
+      .from('proj_manifestacao_convidados')
+      .select('projeto_id')
+      .eq('usuario_id', perfil.id)
+    if (error) return []
+    return (data || []).map(r => r.projeto_id)
+  },
+
+  getConvidadosByProjetoIds: async (ids) => {
+    if (!ids || ids.length === 0) return []
+    const { data, error } = await supabase
+      .from('proj_manifestacao_convidados')
+      .select('projeto_id, usuarios(id, nome, email)')
+      .in('projeto_id', ids)
+    if (error) throw error
+    return data || []
+  },
+
+  getConvidadosManifestacao: async (projetoId) => {
+    const { data, error } = await supabase
+      .from('proj_manifestacao_convidados')
+      .select('usuario_id, usuarios(id, nome, email)')
+      .eq('projeto_id', projetoId)
+    if (error) throw error
+    return data || []
+  },
+
+  setConvidadosManifestacao: async (projetoId, usuarioIds) => {
+    const { error: delErr } = await supabase.from('proj_manifestacao_convidados').delete().eq('projeto_id', projetoId)
+    if (delErr) throw delErr
+    if (usuarioIds.length > 0) {
+      const { error } = await supabase
+        .from('proj_manifestacao_convidados')
+        .insert(usuarioIds.map(usuario_id => ({ projeto_id: projetoId, usuario_id })))
+      if (error) throw error
+    }
+  },
+
+  enviarConvitesManifestacao: async (projetoId, usuariosIds) => {
+    const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
+    const { data: sessionData } = await supabase.auth.getSession()
+    const res = await fetch(`${backendUrl}/api/projetos/${projetoId}/enviar-convites`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionData?.session?.access_token || ''}` },
+      body: JSON.stringify({ usuariosIds }),
+    })
+    const json = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(json.error || 'Erro ao enviar convites')
+    return json
+  },
+
+  // Encerramento passa pelo backend (não Supabase direto) porque a mesma lógica
+  // precisa rodar automaticamente pelo scheduler de prazo — ver manifestacaoService.js
+  encerrarPeriodoManifestacao: async (projetoId) => {
+    const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
+    const { data: sessionData } = await supabase.auth.getSession()
+    const res = await fetch(`${backendUrl}/api/projetos/${projetoId}/encerrar-manifestacao`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${sessionData?.session?.access_token || ''}` },
+    })
+    const json = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(json.error || 'Erro ao encerrar período de manifestação')
+    return json
+  },
+
   getProjTemplates: async () => {
     const { data, error } = await supabase.from('proj_templates').select('*').order('ordem', { ascending: true }).order('texto', { ascending: true })
     if (error) throw error
@@ -3729,5 +3902,40 @@ export const apiService = {
     const { error } = await supabase.from('ecossistema_departamentos').delete().eq('id', id)
     if (error) throw error
     return { success: true }
+  },
+
+  // GOOGLE CALENDAR
+  getGoogleCalendarStatus: async (usuarioId) => {
+    const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
+    const res = await fetch(`${backendUrl}/api/google-calendar/status?usuario_id=${usuarioId}`)
+    const body = await res.json()
+    return body // { connected: bool, google_email: string|null }
+  },
+
+  getGoogleCalendarAuthUrl: async (usuarioId) => {
+    const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
+    const res = await fetch(`${backendUrl}/api/google-calendar/auth-url?usuario_id=${usuarioId}`)
+    const body = await res.json()
+    if (!res.ok) throw new Error(body.error || 'Erro ao obter URL de autorização')
+    return body.url
+  },
+
+  getGoogleCalendarEvents: async (usuarioId, dataIni, dataFim) => {
+    const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
+    const qs = new URLSearchParams({ usuario_id: usuarioId })
+    if (dataIni) qs.set('data_ini', dataIni)
+    if (dataFim) qs.set('data_fim', dataFim)
+    const res = await fetch(`${backendUrl}/api/google-calendar/events?${qs}`)
+    const body = await res.json()
+    if (!res.ok) throw new Error(body.error || 'Erro ao buscar eventos')
+    return body // { connected, google_email, events: [] }
+  },
+
+  disconnectGoogleCalendar: async (usuarioId) => {
+    const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
+    const res = await fetch(`${backendUrl}/api/google-calendar/disconnect?usuario_id=${usuarioId}`, { method: 'DELETE' })
+    const body = await res.json()
+    if (!res.ok) throw new Error(body.error || 'Erro ao desconectar')
+    return body
   },
 }
