@@ -132,7 +132,9 @@ function CardKpi({ icon: Icon, label, count, ativo, onClick, st }) {
 
 export default function ProjetosDashboard() {
   const navigate = useNavigate()
-  const { isAdmin, empresasPermitidas, departamentosPermitidosEfetivos, hasActionOrDefault, hasPermission, user } = useAuth()
+  const { isAdmin, isAdminEfetivo, empresasPermitidas, departamentosPermitidosEfetivos, hasActionOrDefault, hasPermission, user, usuarioId, userNome, impersonando } = useAuth()
+  const idEfetivo   = impersonando?.id    || usuarioId
+  const nomeEfetivo = impersonando?.nome  || userNome
   const ctx = useProjetosFiltros()
   const { modoVerTodos, setModoVerTodos } = ctx
   const canCriar      = !modoVerTodos && hasActionOrDefault('projetos', 'criar')
@@ -146,7 +148,7 @@ export default function ProjetosDashboard() {
 
   const [dados, setDados] = useState(() => _dash.dados ?? [])
   const [empresas, setEmpresas] = useState(() => _dash.empresas)
-  const [responsaveis, setResponsaveis] = useState(() => _dash.responsaveis)
+  const [responsaveis, setResponsaveis] = useState(null)
   const [sistemas, setSistemas] = useState(() => _dash.sistemas)
   const [fases, setFases] = useState(() => _dash.fases)
   const [areas, setAreas] = useState(() => _dash.areas)
@@ -155,7 +157,7 @@ export default function ProjetosDashboard() {
   const [error, setError] = useState(null)
   const [filtros, setFiltros] = useState(() => _dash.filtros ?? FILTROS_VAZIOS)
   const [filtrosAbertos, setFiltrosAbertos] = useState(() => _dash.filtrosAbertos)
-  const [filtroCards, setFiltroCards] = useState(() => new Set(['mapeado', 'programado', 'em_andamento', 'pausado']))
+  const [filtroCards, setFiltroCards] = useState(() => new Set())
   const [filtroCardProjetos, setFiltroCardProjetos] = useState(() => new Set(['mapeado', 'programado', 'em_andamento', 'pausado']))
   const [sortConfig, setSortConfig] = useState(() => {
     const s = _dash.sortConfig
@@ -198,10 +200,21 @@ export default function ProjetosDashboard() {
 
   // Projetos após filtros globais (contexto compartilhado entre abas)
   // modoVerTodos ignora restrição de departamento e bloqueia edições
-  const dadosGlobal = useMemo(() => aplicarFiltrosGlobais(dados, ctx, modoVerTodos ? null : departamentosPermitidosEfetivos), [
+  // Não-admins veem por padrão apenas projetos em que são responsáveis; modoVerTodos libera tudo
+  const dadosGlobal = useMemo(() => {
+    let lista = aplicarFiltrosGlobais(dados, ctx, null)
+    if (!isAdminEfetivo && !modoVerTodos && responsaveis !== null) {
+      // Encontra o nome do responsável vinculado ao usuário logado
+      const meuNomeResp = responsaveis.find(r => r.usuario_id === idEfetivo)?.nome
+      lista = lista.filter(p =>
+        meuNomeResp != null && p.responsavel_nome === meuNomeResp
+      )
+    }
+    return lista
+  }, [
     dados, ctx.filtroEmpresa, ctx.filtroDepartamento, ctx.filtroArea,
     ctx.filtroFase, ctx.filtroSistema, ctx.filtroRespProjeto, ctx.filtroRespTarefa,
-    departamentosPermitidosEfetivos, modoVerTodos,
+    modoVerTodos, isAdminEfetivo, idEfetivo, responsaveis,
   ])
 
   const loadData = useCallback(async (f = filtros, silent = false) => {
@@ -799,7 +812,7 @@ export default function ProjetosDashboard() {
       }, user?.email)
       // Cria cada tarefa na cópia (preserva todos os campos exceto id/timestamps)
       await Promise.all(
-        tarefasOriginais.map(({ id: _tid, criado_em: _tce, atualizado_em: _tae, ...dadosTarefa }) =>
+        tarefasOriginais.map(({ id: _tid, criado_em: _tce, atualizado_em: _tae, proj_deliberacoes: _del, ...dadosTarefa }) =>
           apiService.createTarefa({ ...dadosTarefa, projeto_id: novoProjeto.id })
         )
       )
@@ -1003,7 +1016,7 @@ export default function ProjetosDashboard() {
                 <BarChart2 className="h-4 w-4 text-indigo-500" /> Ir para Dashboard
               </button>
             )}
-            {departamentosPermitidosEfetivos?.size > 0 && (
+            {(!isAdminEfetivo || departamentosPermitidosEfetivos?.size > 0) && (
               <button
                 onClick={() => setModoVerTodos(!modoVerTodos)}
                 className={`flex items-center gap-2 text-xs font-semibold px-3 py-2 rounded-md shadow-sm border transition-colors ${
@@ -1013,7 +1026,7 @@ export default function ProjetosDashboard() {
                 }`}
               >
                 <Eye className="h-4 w-4" />
-                {modoVerTodos ? 'Sair da Visualização Geral' : 'Ver Todos os Projetos'}
+                {modoVerTodos ? 'Meus Projetos' : 'Ver Todos os Projetos'}
               </button>
             )}
             <button
@@ -1044,9 +1057,9 @@ export default function ProjetosDashboard() {
       {modoVerTodos && (
         <div className="flex items-center gap-2 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-xs font-semibold">
           <Eye className="h-3.5 w-3.5 text-amber-500 shrink-0" />
-          Modo Visualização Geral — exibindo todos os departamentos. Todas as edições estão bloqueadas.
+          Visualização geral — exibindo todos os projetos do seu departamento. Edições bloqueadas.
           <button onClick={() => setModoVerTodos(false)} className="ml-auto text-amber-600 hover:text-amber-800 font-bold underline underline-offset-2">
-            Sair
+            Voltar para Meus Projetos
           </button>
         </div>
       )}

@@ -1,4 +1,5 @@
 import { getSupabaseAdmin } from './supabaseAdmin.js'
+import { enviarEmail } from './emailService.js'
 
 /**
  * Encerra o Período de Manifestação (Etapa 2) de um projeto: move a fase do
@@ -29,4 +30,35 @@ export async function encerrarPeriodoManifestacao(projetoId, { manual = false, u
     .eq('id', projetoId)
 
   if (error) throw error
+
+  // Notifica participantes sobre encerramento
+  try {
+    const [{ data: projeto }, { data: convidados }] = await Promise.all([
+      supabaseAdmin.from('proj_projetos').select('id, nome').eq('id', projetoId).single(),
+      supabaseAdmin.from('proj_manifestacao_convidados').select('usuarios(nome, email)').eq('projeto_id', projetoId),
+    ])
+    const link = 'https://portalgestaocaioba.pages.dev/projetos/manifestacoes'
+    for (const c of (convidados || [])) {
+      const u = c.usuarios
+      if (!u?.email) continue
+      await enviarEmail({
+        to: u.email,
+        subject: `Período de Manifestação encerrado — ${projeto?.nome || ''}`,
+        html: `
+          <div style="font-family:sans-serif;max-width:560px;margin:0 auto;color:#1e293b">
+            <h2 style="color:#1e40af;margin-bottom:4px">Manifestação de Projeto</h2>
+            <p>Olá, <strong>${u.nome || u.email}</strong>.</p>
+            <p>O <strong>Período de Manifestação</strong> do projeto abaixo foi encerrado automaticamente por prazo:</p>
+            <p style="font-size:17px;font-weight:bold;background:#f1f5f9;padding:10px 14px;border-radius:6px;border-left:4px solid #3b82f6">${projeto?.nome || ''}</p>
+            <p>Acesse o painel para visualizar os resultados consolidados:</p>
+            <p><a href="${link}" style="display:inline-block;background:#2563eb;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:bold">Acessar Manifestações</a></p>
+            <hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0">
+            <p style="font-size:11px;color:#94a3b8">Portal de Gestão — notificação automática. Não responda este e-mail.</p>
+          </div>
+        `,
+      }).catch(err => console.warn(`[manifestacao] Falha ao notificar encerramento para ${u.email}:`, err.message))
+    }
+  } catch (err) {
+    console.warn('[manifestacao] Falha ao enviar notificações de encerramento:', err.message)
+  }
 }

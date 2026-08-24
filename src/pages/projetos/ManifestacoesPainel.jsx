@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Loader2, Clock, Send, Eye, Lock, ChevronDown, ChevronUp } from 'lucide-react'
+import { Loader2, Clock, Send, Eye, Lock, ChevronDown, ChevronUp, Plus, X, Trash2 } from 'lucide-react'
 import { apiService } from '../../services/api'
 import { useAuth } from '../../context/AuthContext'
 import ProjetosNav from './ProjetosNav'
@@ -34,7 +34,7 @@ function getTextColor(hex) {
 
 export default function ManifestacoesPainel() {
   const navigate = useNavigate()
-  const { hasActionOrDefault, isAdmin } = useAuth()
+  const { hasActionOrDefault, isAdmin, impersonando } = useAuth()
   const canResponder = hasActionOrDefault('projetos/manifestacoes', 'responder_manifestacao')
   const canEncerrar  = hasActionOrDefault('projetos/manifestacoes', 'encerrar_periodo')
   const podeVerTodos = isAdmin || canResponder || canEncerrar
@@ -44,15 +44,28 @@ export default function ManifestacoesPainel() {
   const [sistemaCorMap, setSistemaCorMap] = useState({})
   const [sistemaCorTextoMap, setSistemaCorTextoMap] = useState({})
   const [loading, setLoading] = useState(true)
-  const [verTodos, setVerTodos] = useState(false)
+  const [verTodos, setVerTodos] = useState(isAdmin)
   const [encerradasAberta, setEncerradasAberta] = useState(false)
+
+  // ── Manifestação Avulsa ───────────────────────────────────────────────────
+  const [modalAvulsa, setModalAvulsa] = useState(false)
+  const [avulsaCarregando, setAvulsaCarregando] = useState(false)
+  const [avulsaSalvando, setAvulsaSalvando] = useState(false)
+  const [avulsaErro, setAvulsaErro] = useState('')
+  const [avulsaProjetos, setAvulsaProjetos] = useState([])
+  const [avulsaUsuarios, setAvulsaUsuarios] = useState([])
+  const [avulsaProjId, setAvulsaProjId] = useState('')
+  const [avulsaPrazo, setAvulsaPrazo] = useState('')
+  const [avulsaLinkDocs, setAvulsaLinkDocs] = useState('')
+  const [avulsaBusca, setAvulsaBusca] = useState('')
+  const [avulsaConvIds, setAvulsaConvIds] = useState(new Set())
 
   const carregarTudo = useCallback(async () => {
     setLoading(true)
     try {
       const [lista, convIds, sistemas] = await Promise.all([
         apiService.getProjetosLista(),
-        apiService.getProjetosConvidadoIds(),
+        apiService.getProjetosConvidadoIds(impersonando?.id || null),
         apiService.getProjSistemas(),
       ])
       setSistemaCorMap(Object.fromEntries(sistemas.map(s => [s.nome, s.cor || '#1e293b'])))
@@ -82,7 +95,7 @@ export default function ManifestacoesPainel() {
       })))
     } catch { /* silencioso */ }
     finally { setLoading(false) }
-  }, [])
+  }, [impersonando?.id])
 
   useEffect(() => { carregarTudo() }, [carregarTudo])
 
@@ -93,6 +106,87 @@ export default function ManifestacoesPainel() {
     if (a.manifestacao_status === b.manifestacao_status) return 0
     return a.manifestacao_status === 'aberto' ? -1 : 1
   })
+
+  const abrirModalAvulsa = async () => {
+    setAvulsaProjId('')
+    setAvulsaPrazo('')
+    setAvulsaLinkDocs('')
+    setAvulsaConvIds(new Set())
+    setAvulsaBusca('')
+    setAvulsaErro('')
+    setAvulsaCarregando(true)
+    setModalAvulsa(true)
+    try {
+      const [lista, users] = await Promise.all([
+        apiService.getProjetosLista(),
+        apiService.getUsuarios(),
+      ])
+      const abertosIds = new Set(projetos.filter(p => p.manifestacao_status === 'aberto').map(p => p.id))
+      setAvulsaProjetos(
+        lista
+          .filter(p => p.status === 'concluido' && !abertosIds.has(p.id))
+          .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
+      )
+      setAvulsaUsuarios(users.filter(u => u.ativo !== false))
+    } catch (err) {
+      setAvulsaErro(err.message || String(err))
+    } finally {
+      setAvulsaCarregando(false)
+    }
+  }
+
+  const salvarAvulsa = async () => {
+    if (!avulsaProjId) { setAvulsaErro('Selecione um projeto.'); return }
+    if (!avulsaPrazo)  { setAvulsaErro('Defina o prazo.'); return }
+    setAvulsaErro('')
+    setAvulsaSalvando(true)
+    try {
+      await apiService.updateProjeto(avulsaProjId, {
+        manifestacao_status: 'aberto',
+        manifestacao_prazo: avulsaPrazo,
+        manifestacao_link_docs: avulsaLinkDocs.trim() || null,
+        manifestacao_orientacao: null,
+        manifestacao_encerrada_em: null,
+        manifestacao_encerrada_por: null,
+      })
+      await apiService.setConvidadosManifestacao(avulsaProjId, [...avulsaConvIds])
+      if (avulsaConvIds.size > 0) {
+        apiService.enviarConvitesManifestacao(avulsaProjId, [...avulsaConvIds]).catch(() => {})
+      }
+      setModalAvulsa(false)
+      carregarTudo()
+    } catch (err) {
+      setAvulsaErro(err.message || String(err))
+    } finally {
+      setAvulsaSalvando(false)
+    }
+  }
+
+  const excluirPeriodo = async (p) => {
+    if (!window.confirm(`Excluir o Período de Manifestação de "${p.nome}"?\nEsta ação remove o período mas não afeta o projeto.`)) return
+    try {
+      await apiService.updateProjeto(p.id, {
+        manifestacao_status: 'nao_iniciado',
+        manifestacao_prazo: null,
+        manifestacao_link_docs: null,
+        manifestacao_orientacao: null,
+        manifestacao_encerrada_em: null,
+        manifestacao_encerrada_por: null,
+      })
+      await apiService.setConvidadosManifestacao(p.id, [])
+      carregarTudo()
+    } catch (err) {
+      alert('Erro ao excluir período: ' + (err.message || String(err)))
+    }
+  }
+
+  const toggleAvulsaConv = (id) => {
+    setAvulsaConvIds(prev => {
+      const s = new Set(prev)
+      s.has(id) ? s.delete(id) : s.add(id)
+      return s
+    })
+  }
 
   return (
     <div className="p-6 space-y-5 max-w-screen-xl">
@@ -105,19 +199,30 @@ export default function ManifestacoesPainel() {
               : 'Exibindo apenas projetos nos quais você é participante convidado.'}
           </p>
         </div>
-        {podeVerTodos && (
-          <button
-            onClick={() => setVerTodos(v => !v)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold border transition-colors shrink-0 ${
-              verTodos
-                ? 'bg-indigo-600 border-indigo-600 text-white hover:bg-indigo-700'
-                : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50'
-            }`}
-          >
-            <Eye className="h-3.5 w-3.5" />
-            {verTodos ? 'Meus Projetos' : 'Ver Todos os Projetos'}
-          </button>
-        )}
+        <div className="flex items-center gap-2 shrink-0">
+          {canEncerrar && (
+            <button
+              onClick={abrirModalAvulsa}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold border border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Manifestação Avulsa
+            </button>
+          )}
+          {podeVerTodos && (
+            <button
+              onClick={() => setVerTodos(v => !v)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold border transition-colors ${
+                verTodos
+                  ? 'bg-indigo-600 border-indigo-600 text-white hover:bg-indigo-700'
+                  : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              <Eye className="h-3.5 w-3.5" />
+              {verTodos ? 'Meus Projetos' : 'Ver Todos os Projetos'}
+            </button>
+          )}
+        </div>
       </div>
 
       <ProjetosNav />
@@ -132,6 +237,8 @@ export default function ManifestacoesPainel() {
 
         const renderLinha = (p) => {
           const aberto = p.manifestacao_status === 'aberto'
+          const souParticipante = convidadoIds.has(p.id)
+          const podeManifestar = aberto && souParticipante
           const sistNomes = Array.isArray(p.sistemas_nomes) ? p.sistemas_nomes : []
           const contagens = contarResultados(p.proj_manifestacoes)
           const temManifestacoes = Object.keys(contagens).length > 0
@@ -189,16 +296,27 @@ export default function ManifestacoesPainel() {
                 }
               </div>
 
-              <button
-                onClick={() => navigate(`/projetos/detalhe/${p.id}`, { state: { aba: 'manifestacoes' } })}
-                className={`flex items-center gap-1.5 px-4 py-2 text-xs font-bold rounded-md transition-colors shadow-sm shrink-0 ${
-                  aberto
-                    ? 'bg-blue-600 hover:bg-blue-700 text-white'
-                    : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
-                }`}
-              >
-                {aberto ? <><Send className="h-3.5 w-3.5" /> Manifestar</> : <><Eye className="h-3.5 w-3.5" /> Visualizar</>}
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                {canEncerrar && p.proj_manifestacoes?.length === 0 && (
+                  <button
+                    onClick={() => excluirPeriodo(p)}
+                    title="Excluir período de manifestação"
+                    className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                )}
+                <button
+                  onClick={() => navigate(`/projetos/detalhe/${p.id}`, { state: { aba: 'manifestacoes' } })}
+                  className={`flex items-center gap-1.5 px-4 py-2 text-xs font-bold rounded-md transition-colors shadow-sm ${
+                    podeManifestar
+                      ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                  }`}
+                >
+                  {podeManifestar ? <><Send className="h-3.5 w-3.5" /> Manifestar</> : <><Eye className="h-3.5 w-3.5" /> Visualizar</>}
+                </button>
+              </div>
             </div>
           )
         }
@@ -243,6 +361,142 @@ export default function ManifestacoesPainel() {
           </div>
         )
       })()}
+
+      {/* ── Modal Manifestação Avulsa ─────────────────────────────────────── */}
+      {modalAvulsa && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl border border-slate-200 w-[560px] max-h-[85vh] shadow-xl flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900">Nova Manifestação Avulsa</h3>
+                <p className="text-[11px] text-slate-500 mt-0.5">Abrir período de manifestação para projeto concluído</p>
+              </div>
+              <button onClick={() => setModalAvulsa(false)} className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto p-5 space-y-4">
+              {avulsaCarregando ? (
+                <div className="flex items-center justify-center py-8 text-slate-400 text-xs gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Carregando projetos...
+                </div>
+              ) : (
+                <>
+                  <div className="bg-amber-50 border border-amber-200 rounded-md px-3 py-2 text-[11px] text-amber-700">
+                    Selecione um <strong>projeto concluído</strong> para abrir um período de manifestação sem alterar a fase atual do projeto.
+                  </div>
+
+                  {/* Projeto */}
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide block mb-1">Projeto Concluído *</label>
+                    <select
+                      value={avulsaProjId}
+                      onChange={e => setAvulsaProjId(e.target.value)}
+                      className="w-full text-xs p-2 border border-slate-200 rounded-md bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
+                    >
+                      <option value="">— Selecione —</option>
+                      {avulsaProjetos.map(p => (
+                        <option key={p.id} value={p.id}>{p.nome}</option>
+                      ))}
+                    </select>
+                    {avulsaProjetos.length === 0 && (
+                      <p className="text-[10px] text-slate-400 mt-1 italic">Nenhum projeto concluído disponível (sem manifestação ativa).</p>
+                    )}
+                  </div>
+
+                  {/* Prazo */}
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide block mb-1">Prazo para Manifestação *</label>
+                    <input
+                      type="date"
+                      value={avulsaPrazo}
+                      onChange={e => setAvulsaPrazo(e.target.value)}
+                      className="w-full text-xs p-2 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
+                    />
+                  </div>
+
+                  {/* Link Docs */}
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide block mb-1">Link de Documentos (opcional)</label>
+                    <input
+                      type="url"
+                      value={avulsaLinkDocs}
+                      onChange={e => setAvulsaLinkDocs(e.target.value)}
+                      placeholder="https://... (pasta SharePoint ou OneDrive)"
+                      className="w-full text-xs p-2 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
+                    />
+                  </div>
+
+                  {/* Participantes */}
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide block mb-1">
+                      Convidar Participantes
+                      {avulsaConvIds.size > 0 && <span className="ml-1.5 text-blue-600">({avulsaConvIds.size} selecionado{avulsaConvIds.size > 1 ? 's' : ''})</span>}
+                    </label>
+                    <input
+                      type="text"
+                      value={avulsaBusca}
+                      onChange={e => setAvulsaBusca(e.target.value)}
+                      placeholder="Buscar por nome ou e-mail..."
+                      className="w-full mb-1 text-xs px-2.5 py-1.5 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 outline-none"
+                    />
+                    <div className="border border-slate-200 rounded-md max-h-40 overflow-y-auto divide-y divide-slate-50">
+                      {avulsaUsuarios.length === 0 ? (
+                        <p className="px-3 py-2 text-[11px] text-slate-400 italic">Nenhum usuário disponível.</p>
+                      ) : (() => {
+                        const q = avulsaBusca.toLowerCase().trim()
+                        const lista = q
+                          ? avulsaUsuarios.filter(u => u.nome?.toLowerCase().includes(q) || u.email?.toLowerCase().includes(q))
+                          : avulsaUsuarios
+                        if (lista.length === 0) return (
+                          <p className="px-3 py-2 text-[11px] text-slate-400 italic">Nenhum usuário encontrado.</p>
+                        )
+                        return lista.map(u => (
+                          <label key={u.id} className="flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={avulsaConvIds.has(u.id)}
+                              onChange={() => toggleAvulsaConv(u.id)}
+                              className="w-3.5 h-3.5 accent-blue-600"
+                            />
+                            <span className="flex-1 truncate">{u.nome}</span>
+                            <span className="text-[10px] text-slate-400 truncate max-w-[160px]">{u.email}</span>
+                          </label>
+                        ))
+                      })()}
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {avulsaErro && (
+                <p className="text-[11px] text-red-600 font-medium bg-red-50 border border-red-200 rounded px-3 py-2">{avulsaErro}</p>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-end gap-2 px-5 py-3 bg-slate-50 border-t border-slate-100">
+              <button
+                onClick={() => setModalAvulsa(false)}
+                disabled={avulsaSalvando}
+                className="px-3 py-1.5 rounded-md text-xs font-semibold text-slate-600 hover:bg-slate-200/60 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={salvarAvulsa}
+                disabled={avulsaCarregando || avulsaSalvando || !avulsaProjId || !avulsaPrazo}
+                className="flex items-center gap-1.5 px-4 py-1.5 rounded-md text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 shadow-sm transition-colors"
+              >
+                {avulsaSalvando ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Abrindo...</> : <><Plus className="h-3.5 w-3.5" /> Abrir Manifestação</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

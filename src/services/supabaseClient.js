@@ -5,6 +5,62 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
+// ── Auditoria Externa — fechamento automático de Ciclo ───────────────────────
+// O status do ciclo não é mais editável manualmente: fica "em_andamento" até
+// que TODAS as Divergências (achados) do ciclo tenham um Plano de Ação
+// concluído/validado pela auditoria — aí o ciclo passa sozinho para
+// "concluido". Se alguma voltar a ficar pendente depois disso, o ciclo
+// reabre ("em_andamento") automaticamente. Chamado sempre que um Plano de
+// Ação é criado/editado/excluído.
+function calcularRiscoPorValor(totalApontado) {
+  const v = Number(totalApontado || 0)
+  if (v >= 100000) return 'alta'
+  if (v >= 20000) return 'media'
+  return 'baixa'
+}
+
+async function cicloIdDoAchado(achadoId) {
+  const { data } = await supabase.from('audext_achados').select('ciclo_id').eq('id', achadoId).single()
+  return data?.ciclo_id || null
+}
+
+async function verificarFechamentoCiclo(cicloId) {
+  if (!cicloId) return
+  try {
+    const { data: achados } = await supabase.from('audext_achados').select('id').eq('ciclo_id', cicloId)
+    if (!achados || achados.length === 0) return
+
+    const { data: planos } = await supabase
+      .from('audext_planos_acao')
+      .select('achado_id, status')
+      .in('achado_id', achados.map(a => a.id))
+
+    // Uma divergência pode ter várias ações — só conta como resolvida quando
+    // TODAS as ações cadastradas estiverem concluídas/validadas (não basta uma).
+    const statusPorAchado = new Map()
+    for (const p of planos || []) {
+      if (!statusPorAchado.has(p.achado_id)) statusPorAchado.set(p.achado_id, [])
+      statusPorAchado.get(p.achado_id).push(p.status)
+    }
+
+    const todosResolvidos = achados.every(a => {
+      const stats = statusPorAchado.get(a.id)
+      return !!stats && stats.length > 0 && stats.every(s => s === 'concluido' || s === 'validado_auditoria')
+    })
+
+    const { data: ciclo } = await supabase.from('audext_ciclos').select('status').eq('id', cicloId).single()
+    if (!ciclo || ciclo.status === 'arquivado') return
+
+    if (todosResolvidos && ciclo.status !== 'concluido') {
+      await supabase.from('audext_ciclos').update({ status: 'concluido' }).eq('id', cicloId)
+    } else if (!todosResolvidos && ciclo.status === 'concluido') {
+      await supabase.from('audext_ciclos').update({ status: 'em_andamento' }).eq('id', cicloId)
+    }
+  } catch (err) {
+    console.warn('[auditoria-externa] Falha ao verificar fechamento automático do ciclo:', err.message)
+  }
+}
+
 // Política de Comissão se vincula à Fonte/Base de Cálculo por ID (fonte_calculo_id/base_calculo_id),
 // não mais por um "código" texto — evita quebrar o vínculo quando a Fonte/Base é renomeada.
 const SELECT_POLITICA_COM_FONTE_BASE = `
@@ -18,22 +74,21 @@ const enriquecePoliticaFonteBase = (p) => ({
   base_tipo_nome: p.base_calculo?.nome || null,
 })
 
-// Mesma lógica de gerarCodigo() usada em BasesCalculo.jsx — usada aqui só pra gerar um código
-// único ao copiar uma Medida de BI pra uma nova Base de Cálculo.
-const gerarCodigoUnico = (nome, codigosExistentes) => {
-  const base = (nome || '')
-    .normalize('NFD').replace(/[̀-ͯ]/g, '')
-    .toUpperCase()
-    .replace(/[^A-Z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '')
-  let codigo = base
-  let i = 2
-  while (codigosExistentes.has(codigo)) {
-    codigo = `${base}_${i}`
-    i += 1
-  }
-  return codigo
-}
+// Mapeia uma linha aprovada de um rascunho de meta (fato_rascunho_metas_*) pro formato de
+// fato_metas_publicadas — usada logo após aprovar (ver approveMetasXEmpresa abaixo), pra
+// publicar automaticamente só aquela empresa+tipo+ano, sem precisar de um botão "Publicar"
+// separado. Campos que a tabela de origem não tiver (ex: colaborador_id em Terceiros) ficam
+// null, que é o valor esperado em fato_metas_publicadas mesmo.
+const _toRowPublicada = (r, tipo, ts) => ({
+  empresa_id: r.empresa_id, empresa_nome: r.empresa_nome, ano: r.ano, mes: r.mes, tipo,
+  colaborador_id: r.colaborador_id || null, colaborador_nome: r.colaborador_nome || null,
+  departamento_id: r.departamento_id || null, departamento_nome: r.departamento_nome || null,
+  setor_id: r.setor_id || null, setor_nome: r.setor_nome || null,
+  cargo_id: r.cargo_id || null, cargo_nome: r.cargo_nome || null,
+  meta_faturamento: r.meta_aprovada,
+  meta_pecas: r.meta_pecas || null, meta_servicos: r.meta_servicos || null,
+  publicado_em: ts,
+})
 
 export const apiService = {
   // USUÁRIOS
@@ -442,7 +497,7 @@ export const apiService = {
         agrupamento:dim_agrupamento_cargos(nome_agrupamento_cargo),
         departamentos:rel_cargos_departamentos(departamento_id),
         setores_rel:rel_cargos_setores(setor_id),
-        agrupamento_empresa:dim_agrupamento_empresas(nome_agrupamento)
+        empresa:dim_empresas(cnpj, nome_empresa, empresa_fantasia, agrupamento_nome)
       `)
       .order('nome_cargo', { ascending: true })
     if (error) throw error
@@ -451,14 +506,20 @@ export const apiService = {
       nome_agrupamento_cargo: c.agrupamento?.nome_agrupamento_cargo || '',
       departamento_ids: (c.departamentos || []).map(r => r.departamento_id),
       setor_ids: (c.setores_rel || []).map(r => r.setor_id),
-      nome_agrupamento_empresa: c.agrupamento_empresa?.nome_agrupamento || '',
+      cnpj_empresa: c.empresa?.cnpj || '',
+      nome_empresa: c.empresa?.empresa_fantasia || c.empresa?.nome_empresa || '',
+      nome_agrupamento_empresa: c.empresa?.agrupamento_nome || '',
     }))
   },
 
-  createCargo: async ({ nome_cargo, agrupamento_id, codigo_cargo, agrupamento_empresa_id, departamento_ids, setor_ids, ativo, nivel_cargo }) => {
+  createCargo: async ({ nome_cargo, agrupamento_id, codigo_cargo, empresa_id, departamento_ids, setor_ids, ativo, nivel_cargo, tipo_contratacao, codigo_cargo_clt, codigo_cargo_pj }) => {
     const { data, error } = await supabase
       .from('dim_cargos')
-      .insert([{ nome_cargo, agrupamento_id, codigo_cargo: codigo_cargo || null, agrupamento_empresa_id: agrupamento_empresa_id || null, ativo: ativo ?? true, nivel_cargo: nivel_cargo || null }])
+      .insert([{
+        nome_cargo, agrupamento_id, codigo_cargo: codigo_cargo || null, empresa_id: empresa_id || null,
+        ativo: ativo ?? true, nivel_cargo: nivel_cargo || null,
+        tipo_contratacao: tipo_contratacao || 'CLT', codigo_cargo_clt: codigo_cargo_clt || null, codigo_cargo_pj: codigo_cargo_pj || null,
+      }])
       .select()
     if (error) throw error
     const cargo = data?.[0]
@@ -480,10 +541,14 @@ export const apiService = {
     return cargo
   },
 
-  updateCargo: async (id, { nome_cargo, agrupamento_id, codigo_cargo, agrupamento_empresa_id, departamento_ids, setor_ids, ativo, nivel_cargo }) => {
+  updateCargo: async (id, { nome_cargo, agrupamento_id, codigo_cargo, empresa_id, departamento_ids, setor_ids, ativo, nivel_cargo, tipo_contratacao, codigo_cargo_clt, codigo_cargo_pj }) => {
     const { data, error } = await supabase
       .from('dim_cargos')
-      .update({ nome_cargo, agrupamento_id, codigo_cargo: codigo_cargo || null, agrupamento_empresa_id: agrupamento_empresa_id || null, ativo: ativo ?? true, nivel_cargo: nivel_cargo || null })
+      .update({
+        nome_cargo, agrupamento_id, codigo_cargo: codigo_cargo || null, empresa_id: empresa_id || null,
+        ativo: ativo ?? true, nivel_cargo: nivel_cargo || null,
+        tipo_contratacao: tipo_contratacao || 'CLT', codigo_cargo_clt: codigo_cargo_clt || null, codigo_cargo_pj: codigo_cargo_pj || null,
+      })
       .eq('id', id)
       .select()
     if (error) throw error
@@ -547,6 +612,76 @@ export const apiService = {
 
   deleteArea: async (id) => {
     const { error } = await supabase.from('dim_areas').delete().eq('id', id)
+    if (error) throw error
+    return { success: true }
+  },
+
+  // RUBRICAS — cadastro que alimenta o seletor "Código da Rubrica" em Política de Comissão.
+  getRubricas: async () => {
+    const { data, error } = await supabase
+      .from('dim_rubricas')
+      .select('*')
+      .order('codigo', { ascending: true })
+    if (error) throw error
+    return data || []
+  },
+
+  createRubrica: async ({ codigo, descricao, ativo }) => {
+    const { data, error } = await supabase
+      .from('dim_rubricas')
+      .insert([{ codigo, descricao: descricao || null, ativo: ativo ?? true }])
+      .select()
+    if (error) throw error
+    return data?.[0]
+  },
+
+  updateRubrica: async (id, { codigo, descricao, ativo }) => {
+    const { data, error } = await supabase
+      .from('dim_rubricas')
+      .update({ codigo, descricao: descricao || null, ativo: ativo ?? true })
+      .eq('id', id)
+      .select()
+    if (error) throw error
+    return data?.[0]
+  },
+
+  deleteRubrica: async (id) => {
+    const { error } = await supabase.from('dim_rubricas').delete().eq('id', id)
+    if (error) throw error
+    return { success: true }
+  },
+
+  // TIPOS DE PROCESSO — cadastro que alimenta o seletor "Tipo do Processo" em Política de Comissão.
+  getTiposProcesso: async () => {
+    const { data, error } = await supabase
+      .from('dim_tipos_processo')
+      .select('*')
+      .order('codigo', { ascending: true })
+    if (error) throw error
+    return data || []
+  },
+
+  createTipoProcesso: async ({ codigo, descricao, ativo }) => {
+    const { data, error } = await supabase
+      .from('dim_tipos_processo')
+      .insert([{ codigo, descricao: descricao || null, ativo: ativo ?? true }])
+      .select()
+    if (error) throw error
+    return data?.[0]
+  },
+
+  updateTipoProcesso: async (id, { codigo, descricao, ativo }) => {
+    const { data, error } = await supabase
+      .from('dim_tipos_processo')
+      .update({ codigo, descricao: descricao || null, ativo: ativo ?? true })
+      .eq('id', id)
+      .select()
+    if (error) throw error
+    return data?.[0]
+  },
+
+  deleteTipoProcesso: async (id) => {
+    const { error } = await supabase.from('dim_tipos_processo').delete().eq('id', id)
     if (error) throw error
     return { success: true }
   },
@@ -636,7 +771,7 @@ export const apiService = {
     return data || []
   },
 
-  createEmpresa: async ({ agrupamento_empresa_id, agrupamento_nome, segmento_id, segmento_nome, codigo_empresa, sigla_empresa, nome_empresa, empresa_fantasia, marca, cnpj, codigo_concessionaria, nome_empresa_sistema, ativo }) => {
+  createEmpresa: async ({ agrupamento_empresa_id, agrupamento_nome, segmento_id, segmento_nome, codigo_empresa, codigo_empresa_dominio, sigla_empresa, nome_empresa, empresa_fantasia, marca, cnpj, codigo_concessionaria, nome_empresa_sistema, ativo }) => {
     const { data, error } = await supabase
       .from('dim_empresas')
       .insert([{
@@ -645,6 +780,7 @@ export const apiService = {
         segmento_id,
         segmento_nome,
         codigo_empresa,
+        codigo_empresa_dominio: codigo_empresa_dominio || null,
         sigla_empresa,
         nome_empresa,
         empresa_fantasia,
@@ -659,7 +795,7 @@ export const apiService = {
     return data?.[0]
   },
 
-  updateEmpresa: async (id, { agrupamento_empresa_id, agrupamento_nome, segmento_id, segmento_nome, codigo_empresa, sigla_empresa, nome_empresa, empresa_fantasia, marca, cnpj, codigo_concessionaria, nome_empresa_sistema, ativo }) => {
+  updateEmpresa: async (id, { agrupamento_empresa_id, agrupamento_nome, segmento_id, segmento_nome, codigo_empresa, codigo_empresa_dominio, sigla_empresa, nome_empresa, empresa_fantasia, marca, cnpj, codigo_concessionaria, nome_empresa_sistema, ativo }) => {
     const { data, error } = await supabase
       .from('dim_empresas')
       .update({
@@ -668,6 +804,7 @@ export const apiService = {
         segmento_id,
         segmento_nome,
         codigo_empresa,
+        codigo_empresa_dominio: codigo_empresa_dominio || null,
         sigla_empresa,
         nome_empresa,
         empresa_fantasia,
@@ -1220,14 +1357,122 @@ export const apiService = {
     }))
   },
 
-  // ── MEDIDAS DE BI — cadastro próprio (dim_medidas_bi), espelhando o motor de Base de Cálculo
-  // (Fonte + coluna/agregação + regras), mas dedicado a alimentar dashboards de BI. Cada Medida
-  // pode indicar um "Destino BI" (destino_bi) e ser copiada pra uma Base de Cálculo de Comissões
-  // via copiarMedidaParaBaseCalculo.
+  // Substitui TODAS as regras (e condições) de uma Base — delete-then-reinsert,
+  // mesmo padrão de setPermissoesGrupo. regras: [{ ordem, tipo_acao, coluna_alvo,
+  // condicao_logica, condicoes: [{ ordem, coluna, operador, valor }] }]
+  setRegrasCalculo: async (baseCalculoId, regras) => {
+    const { error: eDel } = await supabase
+      .from('dim_regras_calculo')
+      .delete()
+      .eq('base_calculo_id', baseCalculoId)
+    if (eDel) throw eDel // condições somem via ON DELETE CASCADE
+
+    if (!regras || regras.length === 0) return
+
+    const { data: novasRegras, error: eIns } = await supabase
+      .from('dim_regras_calculo')
+      .insert(regras.map((r, i) => ({
+        base_calculo_id: baseCalculoId,
+        ordem: r.ordem ?? i,
+        tipo_acao: r.tipo_acao,
+        coluna_alvo: r.coluna_alvo || null,
+        condicao_logica: r.condicao_logica || null,
+        ativo: true,
+      })))
+      .select()
+    if (eIns) throw eIns
+
+    const todasCondicoes = novasRegras.flatMap((regraSalva, i) =>
+      (regras[i].condicoes || []).map((c, j) => ({
+        regra_id: regraSalva.id,
+        ordem: c.ordem ?? j,
+        coluna: c.coluna,
+        operador: c.operador,
+        valor: c.valor ?? null,
+      }))
+    )
+    if (todasCondicoes.length > 0) {
+      const { error: eCond } = await supabase.from('dim_regra_condicoes').insert(todasCondicoes)
+      if (eCond) throw eCond
+    }
+  },
+
+  // CÁLCULO DE COMISSÕES (lote — vários funcionários de uma vez, agrupado por arquivo)
+  calcularComissoesLote: async (itens) => {
+    const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
+    const res = await fetch(`${backendUrl}/api/calculo-comissao/lote`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ itens }),
+    })
+    const body = await res.json()
+    if (!res.ok) throw new Error(body.error || 'Erro ao calcular comissões')
+    return body.resultados
+  },
+
+  // ==================== BI - DASHBOARD (Fontes / Medidas) ====================
+  // Cadastro próprio de BI, independente de Comissões — não referencia dim_fontes_calculo/
+  // dim_bases_calculo/dim_regras_calculo. Mesmo motor (coluna + agregação + regras), tabelas
+  // e rota backend (/api/bi-medidas) dedicadas.
+
+  // FONTES BI (arquivo/pasta do SharePoint)
+  getFontesBi: async () => {
+    const { data, error } = await supabase
+      .from('dim_fontes_bi')
+      .select('*')
+      .order('nome', { ascending: true })
+    if (error) throw error
+    return data || []
+  },
+
+  createFonteBi: async (payload) => {
+    const { data, error } = await supabase
+      .from('dim_fontes_bi')
+      .insert([{ ...payload, ativo: payload.ativo ?? true }])
+      .select()
+    if (error) throw error
+    return data?.[0]
+  },
+
+  updateFonteBi: async (id, payload) => {
+    const { data, error } = await supabase
+      .from('dim_fontes_bi')
+      .update({ ...payload, atualizado_em: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+    if (error) throw error
+    return data?.[0]
+  },
+
+  deleteFonteBi: async (id) => {
+    const { error } = await supabase
+      .from('dim_fontes_bi')
+      .delete()
+      .eq('id', id)
+    if (error) throw error
+    return { success: true }
+  },
+
+  // Diagnóstico: lista as colunas reais de um arquivo do SharePoint (botão "Detectar Colunas")
+  getColunasFonteBi: async ({ pasta, prefixo, usaSubpastaAno, ano, linhaCabecalho }) => {
+    const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
+    const qs = new URLSearchParams({
+      pasta, prefixo,
+      usaSubpastaAno: String(!!usaSubpastaAno),
+      linhaCabecalho: String(linhaCabecalho || 0),
+      ...(ano ? { ano: String(ano) } : {}),
+    })
+    const res = await fetch(`${backendUrl}/api/bi-medidas/colunas?${qs}`)
+    const body = await res.json()
+    if (!res.ok) throw new Error(body.error || 'Erro ao detectar colunas do arquivo SharePoint')
+    return body
+  },
+
+  // MEDIDAS BI (coluna + agregação extraída da Fonte BI)
   getMedidasBiComFonte: async () => {
     const { data, error } = await supabase
       .from('dim_medidas_bi')
-      .select('*, fonte_calculo:dim_fontes_calculo(id, nome, codigo, pasta_sharepoint, prefixo_arquivo, usa_subpasta_ano, linha_cabecalho, coluna_empresa, coluna_data, coluna_funcionario)')
+      .select('*, fonte_bi:dim_fontes_bi(id, nome, codigo, pasta_sharepoint, prefixo_arquivo, usa_subpasta_ano, linha_cabecalho, coluna_empresa, coluna_data, coluna_funcionario, campo_relacao_funcionario, coluna_tipo_os, coluna_natureza_operacao, coluna_movimento)')
       .order('nome', { ascending: true })
     if (error) throw error
     return data || []
@@ -1334,140 +1579,33 @@ export const apiService = {
     }
   },
 
-  // Copia uma Medida de BI (+ regras) pra uma nova Base de Cálculo, pra reuso em Comissões.
-  // A cópia é independente: alterar a Medida depois não afeta a Base já criada.
-  copiarMedidaParaBaseCalculo: async (medidaBiId) => {
-    const { data: medida, error: eMedida } = await supabase
-      .from('dim_medidas_bi')
-      .select('*')
-      .eq('id', medidaBiId)
-      .single()
-    if (eMedida) throw eMedida
-
-    const regras = await apiService.getRegrasMedidaBiComCondicoes(medidaBiId)
-    const basesExistentes = await apiService.getBasesCalculoComFonte()
-    const nomesExistentes = new Set(basesExistentes.map(b => b.nome))
-    const codigosExistentes = new Set(basesExistentes.map(b => b.codigo))
-
-    let nome = medida.nome
-    let sufixo = 2
-    while (nomesExistentes.has(nome)) {
-      nome = `${medida.nome} (${sufixo})`
-      sufixo += 1
-    }
-    const codigo = gerarCodigoUnico(nome, codigosExistentes)
-
-    const novaBase = await apiService.createBaseCalculo({
-      fonte_calculo_id: medida.fonte_calculo_id,
-      nome,
-      codigo,
-      descricao: medida.descricao,
-      coluna_valor: medida.coluna_valor,
-      tipo_agregacao: medida.tipo_agregacao,
-    })
-
-    if (regras.length > 0) {
-      await apiService.setRegrasCalculo(novaBase.id, regras)
-    }
-
-    return novaBase
-  },
-
-  // `medida` aceita o CÓDIGO da Medida de BI (visível na listagem) ou, se vier em formato
-  // UUID, o id diretamente — o que for mais prático pra chamar.
-  // Uso: const { valor } = await apiService.getValorMedida('REAL_PECAS_BALCAO', { empresaId, dataInicio, dataFim })
-  getValorMedida: async (medida, { empresaId, dataInicio, dataFim } = {}) => {
-    const ehUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(medida)
-    const { data: medidaBi, error: eMedida } = await supabase
-      .from('dim_medidas_bi')
-      .select('*, fonte_calculo:dim_fontes_calculo(id, nome, codigo, pasta_sharepoint, prefixo_arquivo, usa_subpasta_ano, linha_cabecalho, coluna_empresa, coluna_data)')
-      .eq(ehUuid ? 'id' : 'codigo', medida)
-      .single()
-    if (eMedida) throw new Error(`Medida de BI "${medida}" não encontrada.`)
-    const fonte = medidaBi?.fonte_calculo
-    if (!fonte?.pasta_sharepoint || !fonte?.prefixo_arquivo || !medidaBi?.coluna_valor) {
-      throw new Error(`Medida de BI "${medidaBi?.nome || medida}" (ou sua Fonte) ainda não tem arquivo/coluna do SharePoint configurados.`)
-    }
-
-    let empresaLabel = null
-    if (empresaId) {
-      const { data: empresa } = await supabase
-        .from('dim_empresas')
-        .select('nome_empresa_sistema, empresa_fantasia, nome_empresa')
-        .eq('id', empresaId)
-        .single()
-      empresaLabel = empresa?.nome_empresa_sistema || empresa?.empresa_fantasia || empresa?.nome_empresa || null
-    }
-
-    const regras = await apiService.getRegrasParaCalculoMedidaBi(medidaBi.id)
-
-    return apiService.previewCalculoComissao({
-      pasta: fonte.pasta_sharepoint,
-      prefixo: fonte.prefixo_arquivo,
-      usaSubpastaAno: fonte.usa_subpasta_ano,
-      linhaCabecalho: fonte.linha_cabecalho,
-      colunaEmpresa: fonte.coluna_empresa,
-      colunaData: fonte.coluna_data,
-      colunaValor: medidaBi.coluna_valor,
-      tipoAgregacao: medidaBi.tipo_agregacao,
-      empresaNome: empresaLabel,
-      dataInicio: dataInicio || null,
-      dataFim: dataFim || null,
-      regras,
-    })
-  },
-
-  // Substitui TODAS as regras (e condições) de uma Base — delete-then-reinsert,
-  // mesmo padrão de setPermissoesGrupo. regras: [{ ordem, tipo_acao, coluna_alvo,
-  // condicao_logica, condicoes: [{ ordem, coluna, operador, valor }] }]
-  setRegrasCalculo: async (baseCalculoId, regras) => {
-    const { error: eDel } = await supabase
-      .from('dim_regras_calculo')
-      .delete()
-      .eq('base_calculo_id', baseCalculoId)
-    if (eDel) throw eDel // condições somem via ON DELETE CASCADE
-
-    if (!regras || regras.length === 0) return
-
-    const { data: novasRegras, error: eIns } = await supabase
-      .from('dim_regras_calculo')
-      .insert(regras.map((r, i) => ({
-        base_calculo_id: baseCalculoId,
-        ordem: r.ordem ?? i,
-        tipo_acao: r.tipo_acao,
-        coluna_alvo: r.coluna_alvo || null,
-        condicao_logica: r.condicao_logica || null,
-        ativo: true,
-      })))
-      .select()
-    if (eIns) throw eIns
-
-    const todasCondicoes = novasRegras.flatMap((regraSalva, i) =>
-      (regras[i].condicoes || []).map((c, j) => ({
-        regra_id: regraSalva.id,
-        ordem: c.ordem ?? j,
-        coluna: c.coluna,
-        operador: c.operador,
-        valor: c.valor ?? null,
-      }))
-    )
-    if (todasCondicoes.length > 0) {
-      const { error: eCond } = await supabase.from('dim_regra_condicoes').insert(todasCondicoes)
-      if (eCond) throw eCond
-    }
-  },
-
-  // CÁLCULO DE COMISSÕES (lote — vários funcionários de uma vez, agrupado por arquivo)
-  calcularComissoesLote: async (itens) => {
+  // Painel de Conferência com corte por dimensão: agrega o valor da Medida agrupado pela
+  // combinação de dimensões pedida (valores brutos do arquivo). colunasDimensao mapeia
+  // 'funcionario'|'tipo_os'|'natureza_operacao'|'movimento' -> nome da coluna no arquivo
+  // (vem da Fonte BI vinculada) — só inclui as que a tela pediu pra cortar.
+  agregarMedidaBi: async ({ pasta, prefixo, usaSubpastaAno, linhaCabecalho, colunaEmpresa, colunaData, colunaValor, tipoAgregacao, colunasDimensao, empresaNome, dataInicio, dataFim, regras }) => {
     const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
-    const res = await fetch(`${backendUrl}/api/calculo-comissao/lote`, {
+    const res = await fetch(`${backendUrl}/api/bi-medidas/agregar`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ itens }),
+      body: JSON.stringify({
+        pasta, prefixo,
+        usaSubpastaAno: !!usaSubpastaAno,
+        linhaCabecalho: linhaCabecalho || 0,
+        colunaEmpresa: colunaEmpresa || '',
+        colunaData: colunaData || '',
+        colunaValor: colunaValor || '',
+        tipoAgregacao: tipoAgregacao || 'SOMA',
+        colunasDimensao: colunasDimensao || {},
+        empresaNome: empresaNome || null,
+        dataInicio: dataInicio || null,
+        dataFim: dataFim || null,
+        regras: regras || [],
+      }),
     })
     const body = await res.json()
-    if (!res.ok) throw new Error(body.error || 'Erro ao calcular comissões')
-    return body.resultados
+    if (!res.ok) throw new Error(body.error || 'Erro ao agregar Medida BI')
+    return body
   },
 
   // ==================== RH FÉRIAS ====================
@@ -1642,6 +1780,21 @@ export const apiService = {
     return lote
   },
 
+  // Segunda conferência, feita pelo DP, depois do Gerente já ter conferido — só depois dessa
+  // etapa o RH/Seletiva pode processar o pagamento (ver processarLote).
+  confirmarConferenciaDpLote: async (loteId, usuario) => {
+    const agora = new Date().toISOString()
+    const { data, error } = await supabase
+      .from('fato_comissoes_lotes')
+      .update({ status: 'CONFERIDO_DP', conferido_dp_por: usuario, conferido_dp_em: agora, atualizado_em: agora })
+      .eq('id', loteId)
+      .select()
+    if (error) throw error
+    const lote = data?.[0]
+    await supabase.from('fato_comissoes_lotes_historico').insert([{ lote_id: loteId, acao: 'CONFERIDO_DP', usuario, valor_no_momento: lote?.valor_total }])
+    return lote
+  },
+
   processarLote: async (loteId, usuario) => {
     const agora = new Date().toISOString()
     const { data, error } = await supabase
@@ -1657,9 +1810,40 @@ export const apiService = {
 
   // Reabertura TOTAL — todo mundo do lote volta pra Rascunho, perde Conferido/Processado.
   autorizarReprocessamentoLote: async (loteId, usuario) => {
+    const { data: atual, error: eGet } = await supabase
+      .from('fato_comissoes_lotes')
+      .select('status, valor_total')
+      .eq('id', loteId)
+      .single()
+    if (eGet) throw eGet
+    // Desfaz só a ÚLTIMA etapa concluída (um passo por vez), não pula direto pra Rascunho:
+    // Processado -> Conferido pelo DP (RH reprocessa); Conferido pelo DP -> Conferido (DP
+    // confere de novo); Conferido -> Rascunho (Gerente recalcula). Preserva as etapas
+    // anteriores já feitas — só quem fez a última etapa precisa agir de novo.
+    const update = { atualizado_em: new Date().toISOString() }
+    if (atual?.status === 'PROCESSADO') {
+      update.status = 'CONFERIDO_DP'
+      update.processado_por = null
+      update.processado_em = null
+    } else if (atual?.status === 'CONFERIDO_DP') {
+      update.status = 'CONFERIDO'
+      update.conferido_dp_por = null
+      update.conferido_dp_em = null
+      update.funcionarios_conferidos_dp = []
+    } else {
+      update.status = 'RASCUNHO'
+      update.conferido_por = null
+      update.conferido_em = null
+      update.conferido_dp_por = null
+      update.conferido_dp_em = null
+      update.processado_por = null
+      update.processado_em = null
+      update.funcionarios_liberados_reprocessamento = []
+      update.funcionarios_conferidos_dp = []
+    }
     const { data, error } = await supabase
       .from('fato_comissoes_lotes')
-      .update({ status: 'RASCUNHO', conferido_por: null, conferido_em: null, processado_por: null, processado_em: null, funcionarios_liberados_reprocessamento: [], atualizado_em: new Date().toISOString() })
+      .update(update)
       .eq('id', loteId)
       .select()
     if (error) throw error
@@ -1674,14 +1858,15 @@ export const apiService = {
   liberarReprocessamentoLote: async (loteId, funcionarioIds, usuario) => {
     const { data: atual, error: eGet } = await supabase
       .from('fato_comissoes_lotes')
-      .select('funcionarios_liberados_reprocessamento, valor_total')
+      .select('funcionarios_liberados_reprocessamento, funcionarios_conferidos_dp, valor_total')
       .eq('id', loteId)
       .single()
     if (eGet) throw eGet
     const uniao = [...new Set([...(atual?.funcionarios_liberados_reprocessamento || []), ...funcionarioIds])]
+    const conferidosDpRestantes = (atual?.funcionarios_conferidos_dp || []).filter(id => !funcionarioIds.includes(id))
     const { data, error } = await supabase
       .from('fato_comissoes_lotes')
-      .update({ funcionarios_liberados_reprocessamento: uniao, atualizado_em: new Date().toISOString() })
+      .update({ funcionarios_liberados_reprocessamento: uniao, funcionarios_conferidos_dp: conferidosDpRestantes, atualizado_em: new Date().toISOString() })
       .eq('id', loteId)
       .select()
     if (error) throw error
@@ -1691,18 +1876,57 @@ export const apiService = {
   },
 
   // Chamado depois que Cálculo de Comissões salva de novo um funcionário liberado — ele trava
-  // de novo sozinho (some da lista). Sem linha de histórico: é rotina, não uma autorização.
-  destravarFuncionariosSalvosLote: async (loteId, funcionarioIdsSalvos) => {
+  // de novo sozinho (some da lista). Se o lote já tinha passado da conferência do DP
+  // (CONFERIDO_DP ou até PROCESSADO), a correção volta o status pra CONFERIDO — o valor mudou
+  // depois que o DP olhou, então precisa passar pelo DP de novo antes do RH/Seletiva processar
+  // (só a etapa do DP é desfeita; a conferência do Gerente continua valendo, já que foi ele
+  // quem corrigiu e salvou). Se o lote ainda estava só CONFERIDO (DP nem tinha revisado ainda),
+  // não muda nada — sem linha de histórico nesse caso, é rotina, não uma reabertura.
+  destravarFuncionariosSalvosLote: async (loteId, funcionarioIdsSalvos, usuario) => {
     const { data: atual, error: eGet } = await supabase
       .from('fato_comissoes_lotes')
-      .select('funcionarios_liberados_reprocessamento')
+      .select('funcionarios_liberados_reprocessamento, funcionarios_conferidos_dp, status, valor_total')
       .eq('id', loteId)
       .single()
     if (eGet) throw eGet
     const restantes = (atual?.funcionarios_liberados_reprocessamento || []).filter(id => !funcionarioIdsSalvos.includes(id))
+    const conferidosDpRestantes = (atual?.funcionarios_conferidos_dp || []).filter(id => !funcionarioIdsSalvos.includes(id))
+    const precisaVoltarPraConferido = atual?.status === 'CONFERIDO_DP' || atual?.status === 'PROCESSADO'
+    const update = { funcionarios_liberados_reprocessamento: restantes, funcionarios_conferidos_dp: conferidosDpRestantes, atualizado_em: new Date().toISOString() }
+    if (precisaVoltarPraConferido) {
+      update.status = 'CONFERIDO'
+      update.conferido_dp_por = null
+      update.conferido_dp_em = null
+      update.processado_por = null
+      update.processado_em = null
+    }
     const { data, error } = await supabase
       .from('fato_comissoes_lotes')
-      .update({ funcionarios_liberados_reprocessamento: restantes, atualizado_em: new Date().toISOString() })
+      .update(update)
+      .eq('id', loteId)
+      .select()
+    if (error) throw error
+    const lote = data?.[0]
+    if (precisaVoltarPraConferido) {
+      await supabase.from('fato_comissoes_lotes_historico').insert([{ lote_id: loteId, acao: 'REPROCESSAMENTO_SALVO', usuario, valor_no_momento: lote?.valor_total }])
+    }
+    return lote
+  },
+
+  // Checklist visual pro DP/RH não se perder revisando um lote com muitos funcionários — não
+  // trava nada, é só ajuda de tela. Alterna o funcionário dentro/fora de funcionarios_conferidos_dp.
+  toggleFuncionarioConferidoDp: async (loteId, funcionarioId) => {
+    const { data: atual, error: eGet } = await supabase
+      .from('fato_comissoes_lotes')
+      .select('funcionarios_conferidos_dp')
+      .eq('id', loteId)
+      .single()
+    if (eGet) throw eGet
+    const lista = atual?.funcionarios_conferidos_dp || []
+    const novaLista = lista.includes(funcionarioId) ? lista.filter(id => id !== funcionarioId) : [...lista, funcionarioId]
+    const { data, error } = await supabase
+      .from('fato_comissoes_lotes')
+      .update({ funcionarios_conferidos_dp: novaLista, atualizado_em: new Date().toISOString() })
       .eq('id', loteId)
       .select()
     if (error) throw error
@@ -1926,12 +2150,27 @@ export const apiService = {
     return { success: true }
   },
 
+  // Aprova E publica na hora pra fato_metas_publicadas (só essa empresa+tipo+ano) — sem passo
+  // separado de "Publicar", ver _toRowPublicada acima.
   approveMetasPecasEmpresa: async (empresaId, ano) => {
     const { error } = await supabase.rpc('approve_metas_pecas_empresa', {
       p_empresa_id: empresaId,
       p_ano: Number(ano),
     })
     if (error) throw error
+
+    // fato_rascunho_metas_pecas não tem colunas meta_pecas/meta_servicos (o registro inteiro já
+    // É de peças) — só meta_faturamento mesmo, que é o que BiPossibilidades.jsx lê pra tipo='pecas'.
+    const { data: rows, error: errFetch } = await supabase.from('fato_rascunho_metas_pecas')
+      .select('empresa_id,empresa_nome,ano,mes,colaborador_id,colaborador_nome,departamento_id,departamento_nome,setor_id,setor_nome,cargo_id,cargo_nome,meta_faturamento,meta_aprovada')
+      .eq('empresa_id', empresaId).eq('ano', ano).not('meta_aprovada', 'is', null)
+    if (errFetch) throw errFetch
+    if (rows && rows.length > 0) {
+      const ts = new Date().toISOString()
+      const { error: errPub } = await supabase.from('fato_metas_publicadas')
+        .upsert(rows.map(r => _toRowPublicada(r, 'pecas', ts)), { onConflict: 'empresa_id,ano,mes,tipo,colaborador_id' })
+      if (errPub) throw errPub
+    }
     return { success: true }
   },
 
@@ -2003,6 +2242,17 @@ export const apiService = {
   approveMetasMecanicoEmpresa: async (empresaId, ano) => {
     const { error } = await supabase.rpc('approve_metas_mecanico_empresa', { p_empresa_id: empresaId, p_ano: Number(ano) })
     if (error) throw error
+
+    const { data: rows, error: errFetch } = await supabase.from('fato_rascunho_metas_servicos_mecanico')
+      .select('empresa_id,empresa_nome,ano,mes,colaborador_id,colaborador_nome,departamento_id,departamento_nome,setor_id,setor_nome,cargo_id,cargo_nome,meta_faturamento,meta_pecas,meta_servicos,meta_aprovada')
+      .eq('empresa_id', empresaId).eq('ano', ano).not('meta_aprovada', 'is', null)
+    if (errFetch) throw errFetch
+    if (rows && rows.length > 0) {
+      const ts = new Date().toISOString()
+      const { error: errPub } = await supabase.from('fato_metas_publicadas')
+        .upsert(rows.map(r => _toRowPublicada(r, 'mecanico', ts)), { onConflict: 'empresa_id,ano,mes,tipo,colaborador_id' })
+      if (errPub) throw errPub
+    }
     return { success: true }
   },
   getMetasMecanicoTotaisPorMes: async (empresaId, ano) => {
@@ -2048,6 +2298,17 @@ export const apiService = {
   approveMetasConsultorEmpresa: async (empresaId, ano) => {
     const { error } = await supabase.rpc('approve_metas_consultor_empresa', { p_empresa_id: empresaId, p_ano: Number(ano) })
     if (error) throw error
+
+    const { data: rows, error: errFetch } = await supabase.from('fato_rascunho_metas_servicos_consultor')
+      .select('empresa_id,empresa_nome,ano,mes,colaborador_id,colaborador_nome,departamento_id,departamento_nome,setor_id,setor_nome,cargo_id,cargo_nome,meta_faturamento,meta_aprovada')
+      .eq('empresa_id', empresaId).eq('ano', ano).not('meta_aprovada', 'is', null)
+    if (errFetch) throw errFetch
+    if (rows && rows.length > 0) {
+      const ts = new Date().toISOString()
+      const { error: errPub } = await supabase.from('fato_metas_publicadas')
+        .upsert(rows.map(r => _toRowPublicada(r, 'consultor', ts)), { onConflict: 'empresa_id,ano,mes,tipo,colaborador_id' })
+      if (errPub) throw errPub
+    }
     return { success: true }
   },
   getPendingApprovalsConsultor: async () => {
@@ -2109,6 +2370,17 @@ export const apiService = {
         .update({ meta_aprovada: r.meta_faturamento, aprovado_em: new Date().toISOString() }).eq('id', r.id)
       if (error) throw error
     }
+
+    const { data: aprovadas, error: errFetch2 } = await supabase.from('fato_rascunho_metas_terceiros')
+      .select('empresa_id,empresa_nome,ano,mes,meta_faturamento,meta_servicos,meta_aprovada')
+      .eq('empresa_id', empresaId).eq('ano', ano).not('meta_aprovada', 'is', null)
+    if (errFetch2) throw errFetch2
+    if (aprovadas && aprovadas.length > 0) {
+      const ts = new Date().toISOString()
+      const { error: errPub } = await supabase.from('fato_metas_publicadas')
+        .upsert(aprovadas.map(r => _toRowPublicada(r, 'terceiros', ts)), { onConflict: 'empresa_id,ano,mes,tipo,colaborador_id' })
+      if (errPub) throw errPub
+    }
     return { success: true }
   },
   getPendingApprovalsTerceiros: async () => {
@@ -2153,6 +2425,25 @@ export const apiService = {
       const { error } = await supabase.from('fato_rascunho_metas_funilaria_pintura')
         .update({ meta_aprovada: r.meta_faturamento, aprovado_em: new Date().toISOString() }).eq('id', r.id)
       if (error) throw error
+    }
+
+    // fato_rascunho_metas_funilaria_pintura não tem colaborador_id/departamento_id/setor_id/
+    // cargo_id (é por empresa+mês só) — Funilaria/Pintura é sempre um Setor do departamento
+    // Oficina (cadastro em /departamentos), então fixamos os dois na publicação.
+    const { data: aprovadas, error: errFetch2 } = await supabase.from('fato_rascunho_metas_funilaria_pintura')
+      .select('empresa_id,empresa_nome,ano,mes,meta_faturamento,meta_pecas,meta_servicos,meta_aprovada')
+      .eq('empresa_id', empresaId).eq('ano', ano).not('meta_aprovada', 'is', null)
+    if (errFetch2) throw errFetch2
+    if (aprovadas && aprovadas.length > 0) {
+      const ts = new Date().toISOString()
+      const comDepartamentoFixo = aprovadas.map(r => ({
+        ...r,
+        departamento_id: 'd549c5fc-79dd-4346-bfd9-cbef8e902a3f', departamento_nome: 'OFICINA',
+        setor_id: '1dc0a6ce-ced3-4084-8eb9-14084821adbe', setor_nome: 'Funilaria/Pintura',
+      }))
+      const { error: errPub } = await supabase.from('fato_metas_publicadas')
+        .upsert(comDepartamentoFixo.map(r => _toRowPublicada(r, 'funilaria', ts)), { onConflict: 'empresa_id,ano,mes,tipo,colaborador_id' })
+      if (errPub) throw errPub
     }
     return { success: true }
   },
@@ -2212,40 +2503,6 @@ export const apiService = {
     }
   },
 
-  // PUBLICAR METAS APROVADAS PARA POWER BI
-  publishMetasAprovadas: async (ano) => {
-    const ts = new Date().toISOString()
-    const [{ data: pecas }, { data: mecanico }, { data: consultor }, { data: funilaria }, { data: terceiros }] = await Promise.all([
-      supabase.from('fato_rascunho_metas_pecas').select('empresa_id,empresa_nome,ano,mes,colaborador_id,colaborador_nome,departamento_id,departamento_nome,setor_id,setor_nome,cargo_id,cargo_nome,meta_faturamento,meta_pecas,meta_servicos,meta_aprovada').eq('ano', ano).not('meta_aprovada', 'is', null),
-      supabase.from('fato_rascunho_metas_servicos_mecanico').select('empresa_id,empresa_nome,ano,mes,colaborador_id,colaborador_nome,departamento_id,departamento_nome,setor_id,setor_nome,cargo_id,cargo_nome,meta_faturamento,meta_pecas,meta_servicos,meta_aprovada').eq('ano', ano).not('meta_aprovada', 'is', null),
-      supabase.from('fato_rascunho_metas_servicos_consultor').select('empresa_id,empresa_nome,ano,mes,colaborador_id,colaborador_nome,departamento_id,departamento_nome,setor_id,setor_nome,cargo_id,cargo_nome,meta_faturamento,meta_aprovada').eq('ano', ano).not('meta_aprovada', 'is', null),
-      supabase.from('fato_rascunho_metas_funilaria_pintura').select('empresa_id,empresa_nome,ano,mes,colaborador_id,colaborador_nome,departamento_id,departamento_nome,setor_id,setor_nome,cargo_id,cargo_nome,meta_faturamento,meta_pecas,meta_servicos,meta_aprovada').eq('ano', ano).not('meta_aprovada', 'is', null),
-      supabase.from('fato_rascunho_metas_terceiros').select('empresa_id,empresa_nome,ano,mes,meta_faturamento,meta_servicos,meta_aprovada').eq('ano', ano).not('meta_aprovada', 'is', null),
-    ])
-    const toRow = (r, tipo) => ({
-      empresa_id: r.empresa_id, empresa_nome: r.empresa_nome, ano: r.ano, mes: r.mes, tipo,
-      colaborador_id: r.colaborador_id || null, colaborador_nome: r.colaborador_nome || null,
-      departamento_id: r.departamento_id || null, departamento_nome: r.departamento_nome || null,
-      setor_id: r.setor_id || null, setor_nome: r.setor_nome || null,
-      cargo_id: r.cargo_id || null, cargo_nome: r.cargo_nome || null,
-      meta_faturamento: r.meta_aprovada,
-      meta_pecas: r.meta_pecas || null, meta_servicos: r.meta_servicos || null,
-      publicado_em: ts,
-    })
-    const rows = [
-      ...(pecas    || []).map(r => toRow(r, 'pecas')),
-      ...(mecanico || []).map(r => toRow(r, 'mecanico')),
-      ...(consultor|| []).map(r => toRow(r, 'consultor')),
-      ...(funilaria|| []).map(r => toRow(r, 'funilaria')),
-      ...(terceiros|| []).map(r => toRow(r, 'terceiros')),
-    ]
-    if (rows.length === 0) return { success: true, count: 0 }
-    const { error } = await supabase.from('fato_metas_publicadas')
-      .upsert(rows, { onConflict: 'empresa_id,ano,mes,tipo,colaborador_id' })
-    if (error) throw error
-    return { success: true, count: rows.length, publicado_em: ts }
-  },
-
   getUltimaPublicacao: async (ano) => {
     const { data, error } = await supabase.from('fato_metas_publicadas')
       .select('publicado_em').eq('ano', ano).order('publicado_em', { ascending: false }).limit(1)
@@ -2255,7 +2512,7 @@ export const apiService = {
 
   getTotalGrupoPublicado: async (ano) => {
     const { data, error } = await supabase.from('fato_metas_publicadas')
-      .select('empresa_id,empresa_nome,mes,tipo,colaborador_id,colaborador_nome,departamento_id,departamento_nome,setor_id,setor_nome,cargo_id,cargo_nome,meta_faturamento,meta_pecas,meta_servicos,publicado_em')
+      .select('empresa_id,empresa_nome,ano,mes,tipo,colaborador_id,colaborador_nome,departamento_id,departamento_nome,setor_id,setor_nome,cargo_id,cargo_nome,meta_faturamento,meta_pecas,meta_servicos,publicado_em')
       .eq('ano', ano)
       .order('empresa_nome', { ascending: true })
     if (error) throw error
@@ -2824,13 +3081,13 @@ export const apiService = {
     if (error) throw error
     return data || []
   },
-  createProjResponsavel: async ({ nome, ativo }) => {
-    const { data, error } = await supabase.from('proj_responsaveis').insert([{ nome, ativo: ativo ?? true }]).select()
+  createProjResponsavel: async ({ nome, ativo, usuario_id }) => {
+    const { data, error } = await supabase.from('proj_responsaveis').insert([{ nome, ativo: ativo ?? true, usuario_id: usuario_id || null }]).select()
     if (error) throw error
     return data?.[0]
   },
-  updateProjResponsavel: async (id, { nome, ativo }) => {
-    const { data, error } = await supabase.from('proj_responsaveis').update({ nome, ativo: ativo ?? true }).eq('id', id).select()
+  updateProjResponsavel: async (id, { nome, ativo, usuario_id }) => {
+    const { data, error } = await supabase.from('proj_responsaveis').update({ nome, ativo: ativo ?? true, usuario_id: usuario_id || null }).eq('id', id).select()
     if (error) throw error
     return data?.[0]
   },
@@ -3002,11 +3259,49 @@ export const apiService = {
   getProjetosParaAta: async (filtros = {}) => {
     let q = supabase
       .from('proj_projetos')
-      .select('id, nome, status, departamento_nome, area_nome, sistema_nome, sistemas_nomes, responsavel_nome, data_inicio, data_fim_prevista, proj_tarefas(id, nome, area_nome, progresso_pct, data_inicio, data_fim, status_kanban, fase_nome, sistema_nome, responsavel_nome, etapa, proj_deliberacoes(id, data, texto))')
+      .select('id, nome, status, departamento_nome, area_nome, sistema_nome, sistemas_nomes, responsavel_nome, data_inicio, data_fim_prevista, data_fim_real, criado_em, proj_tarefas(id, nome, area_nome, progresso_pct, data_inicio, data_fim, status_kanban, fase_nome, sistema_nome, responsavel_nome, etapa, proj_deliberacoes(id, data, texto))')
       .order('departamento_nome', { ascending: true })
     const { data, error } = await q
     if (error) throw error
     return data || []
+  },
+
+  getAtasReuniao: async () => {
+    const { data, error } = await supabase
+      .from('proj_atas_reuniao')
+      .select('*')
+      .order('data', { ascending: false })
+    if (error) throw error
+    return data || []
+  },
+
+  createAtaReuniao: async (payload) => {
+    const { data, error } = await supabase
+      .from('proj_atas_reuniao')
+      .insert([payload])
+      .select()
+      .single()
+    if (error) throw error
+    return data
+  },
+
+  updateAtaReuniao: async (id, payload) => {
+    const { data, error } = await supabase
+      .from('proj_atas_reuniao')
+      .update(payload)
+      .eq('id', id)
+      .select()
+      .single()
+    if (error) throw error
+    return data
+  },
+
+  deleteAtaReuniao: async (id) => {
+    const { error } = await supabase
+      .from('proj_atas_reuniao')
+      .delete()
+      .eq('id', id)
+    if (error) throw error
   },
 
   // Dados para o dashboard BI (visão executiva) — projetos com data de conclusão real e
@@ -3266,7 +3561,7 @@ export const apiService = {
     return data?.[0]
   },
 
-  responderManifestacao: async (id, { resposta_responsavel, responsavel_email, responsavel_nome, resultado_manifestacao }) => {
+  responderManifestacao: async (id, { resposta_responsavel, responsavel_email, responsavel_nome, resultado_manifestacao, usuario_email, usuario_nome, projeto_id }) => {
     const { data, error } = await supabase
       .from('proj_manifestacoes')
       .update({
@@ -3280,7 +3575,27 @@ export const apiService = {
       .eq('id', id)
       .select()
     if (error) throw error
-    return data?.[0]
+    const m = data?.[0]
+    const emailNotif = m?.usuario_email || usuario_email
+    const projetoIdNotif = m?.projeto_id || projeto_id
+    if (emailNotif && resultado_manifestacao) {
+      const { data: projeto } = await supabase.from('proj_projetos').select('nome').eq('id', projetoIdNotif).single()
+      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
+      const manifestacaoPayload = {
+        ...(m || {}),
+        usuario_email: emailNotif,
+        usuario_nome: m?.usuario_nome || usuario_nome,
+        resultado_manifestacao: m?.resultado_manifestacao || resultado_manifestacao,
+        resposta_responsavel,
+        projeto_id: projetoIdNotif,
+      }
+      fetch(`${backendUrl}/api/projetos/${projetoIdNotif}/notificar-resultado`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ manifestacao: manifestacaoPayload, projeto }),
+      }).catch(e => console.warn('[manifestacao] Falha ao notificar resultado:', e.message))
+    }
+    return m
   },
 
   getManifestacoesByProjetoIds: async (ids) => {
@@ -3293,16 +3608,21 @@ export const apiService = {
     return data || []
   },
 
-  getProjetosConvidadoIds: async () => {
-    // usuarios.id ≠ auth.users.id — precisa buscar pelo email
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return []
-    const { data: perfil } = await supabase.from('usuarios').select('id').eq('email', user.email).maybeSingle()
-    if (!perfil?.id) return []
+  getProjetosConvidadoIds: async (usuarioId = null) => {
+    // usuarios.id ≠ auth.users.id — precisa buscar pelo email, exceto quando já veio um
+    // usuarioId explícito (ex: modo "Visualizar como", que não é uma sessão auth real).
+    let perfilId = usuarioId
+    if (!perfilId) {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return []
+      const { data: perfil } = await supabase.from('usuarios').select('id').eq('email', user.email).maybeSingle()
+      perfilId = perfil?.id
+    }
+    if (!perfilId) return []
     const { data, error } = await supabase
       .from('proj_manifestacao_convidados')
       .select('projeto_id')
-      .eq('usuario_id', perfil.id)
+      .eq('usuario_id', perfilId)
     if (error) return []
     return (data || []).map(r => r.projeto_id)
   },
@@ -3402,6 +3722,26 @@ export const apiService = {
       })
       .eq('id', projetoId)
     if (error) throw error
+    // Notifica participantes sobre encerramento (não bloqueia)
+    ;(async () => {
+      try {
+        const [{ data: projeto }, { data: convidados }] = await Promise.all([
+          supabase.from('proj_projetos').select('nome').eq('id', projetoId).single(),
+          supabase.from('proj_manifestacao_convidados').select('usuarios(nome, email)').eq('projeto_id', projetoId),
+        ])
+        const participantes = (convidados || []).map(c => c.usuarios).filter(u => u?.email)
+        if (participantes.length > 0) {
+          const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
+          await fetch(`${backendUrl}/api/projetos/${projetoId}/notificar-encerramento`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ projeto, participantes }),
+          })
+        }
+      } catch (e) {
+        console.warn('[manifestacao] Falha ao notificar encerramento:', e.message)
+      }
+    })()
     return { success: true }
   },
 
@@ -3795,40 +4135,58 @@ export const apiService = {
     return data?.[0]
   },
 
-  // Cargos — cadastro próprio do módulo (substitui dim_cargos aqui dentro),
-  // mesmo padrão simples de trein_categorias/trein_sistemas + campo Setor fixo
-  getTreinCargos: async () => {
+  // Organograma de Treinamentos — cadastro de cargos em árvore, importado do
+  // relatório de organograma do Bizneo (chart-report.xlsx). Fonte de cargos
+  // da Grade de Treinamentos (substitui dim_cargos).
+  getTreinOrganograma: async () => {
     const { data, error } = await supabase
-      .from('trein_cargos')
+      .from('trein_organograma')
       .select('*')
       .order('nome', { ascending: true })
     if (error) throw error
     return data || []
   },
 
-  createTreinCargo: async ({ nome, setor }) => {
-    const { data, error } = await supabase
-      .from('trein_cargos')
-      .insert([{ nome: nome.trim().toUpperCase(), setor }])
-      .select()
-    if (error) throw error
-    return data?.[0]
-  },
+  // Upsert em lote a partir do import da planilha. `linhas` = [{ bizneo_org_id,
+  // nome, bizneo_pai_id, supervisor_nome, headcount }]. Feito em 3 passos:
+  // 1) upsert por bizneo_org_id (nome/supervisor/headcount, reativa se preciso);
+  // 2) resolve pai_id de cada linha buscando o id interno pelo bizneo_pai_id;
+  // 3) quem estava no banco e não veio nesse import vira ativo=false (não
+  //    apaga, pra não perder vínculos de curso já feitos com aquele cargo).
+  salvarTreinOrganogramaLote: async (linhas) => {
+    const payload = linhas.map(l => ({
+      bizneo_org_id: l.bizneo_org_id,
+      nome: l.nome,
+      supervisor_nome: l.supervisor_nome || null,
+      headcount: l.headcount || 0,
+      ativo: true,
+      atualizado_em: new Date().toISOString(),
+    }))
+    const { error: upsertErr } = await supabase
+      .from('trein_organograma')
+      .upsert(payload, { onConflict: 'bizneo_org_id' })
+    if (upsertErr) throw upsertErr
 
-  updateTreinCargo: async (id, { nome, setor }) => {
-    const { data, error } = await supabase
-      .from('trein_cargos')
-      .update({ nome: nome.trim().toUpperCase(), setor })
-      .eq('id', id)
-      .select()
-    if (error) throw error
-    return data?.[0]
-  },
+    const { data: todos, error: selErr } = await supabase.from('trein_organograma').select('id, bizneo_org_id')
+    if (selErr) throw selErr
+    const idPorBizneoId = Object.fromEntries(todos.map(r => [r.bizneo_org_id, r.id]))
 
-  deleteTreinCargo: async (id) => {
-    const { error } = await supabase.from('trein_cargos').delete().eq('id', id)
-    if (error) throw error
-    return { success: true }
+    const updatesPai = linhas
+      .filter(l => l.bizneo_pai_id)
+      .map(l => ({ id: idPorBizneoId[l.bizneo_org_id], pai_id: idPorBizneoId[l.bizneo_pai_id] || null }))
+      .filter(u => u.id)
+    await Promise.all(updatesPai.map(u =>
+      supabase.from('trein_organograma').update({ pai_id: u.pai_id }).eq('id', u.id)
+    ))
+
+    const idsImportados = new Set(linhas.map(l => idPorBizneoId[l.bizneo_org_id]).filter(Boolean))
+    const idsInativar = todos.filter(r => !idsImportados.has(r.id)).map(r => r.id)
+    if (idsInativar.length) {
+      const { error } = await supabase.from('trein_organograma').update({ ativo: false }).in('id', idsInativar)
+      if (error) throw error
+    }
+
+    return { success: true, total: linhas.length, inativados: idsInativar.length }
   },
 
   getTreinCursos: async () => {
@@ -3978,5 +4336,391 @@ export const apiService = {
     const body = await res.json()
     if (!res.ok) throw new Error(body.error || 'Erro ao desconectar')
     return body
+  },
+
+  // ══════════════════════════════════════════
+  // GESTÃO DE PROJETOS — AUDITORIA EXTERNA (Achados/Divergências/Plano de Ação)
+  // ══════════════════════════════════════════
+
+  // CICLOS DE AUDITORIA (Audit Engagement)
+  getAuditExtCiclos: async () => {
+    const { data, error } = await supabase
+      .from('audext_ciclos')
+      .select('*, proj_empresas(id, nome)')
+      .order('criado_em', { ascending: false })
+    if (error) throw error
+    return data || []
+  },
+  createAuditExtCiclo: async (payload, userEmail) => {
+    const { data, error } = await supabase
+      .from('audext_ciclos')
+      .insert([{ ...payload, criado_por: userEmail }])
+      .select()
+    if (error) throw error
+    return data?.[0]
+  },
+  updateAuditExtCiclo: async (id, payload) => {
+    const { data, error } = await supabase
+      .from('audext_ciclos')
+      .update(payload)
+      .eq('id', id)
+      .select()
+    if (error) throw error
+    return data?.[0]
+  },
+  deleteAuditExtCiclo: async (id) => {
+    const { error } = await supabase.from('audext_ciclos').delete().eq('id', id)
+    if (error) throw error
+    return { success: true }
+  },
+
+  // ACHADOS (Findings)
+  getAuditExtAchados: async () => {
+    const { data, error } = await supabase
+      .from('audext_achados')
+      .select('*, audext_ciclos(id, periodo_competencia, empresa_id, proj_empresas(id, nome)), audext_impactos(id, nome)')
+      .order('criado_em', { ascending: false })
+    if (error) throw error
+    return data || []
+  },
+  createAuditExtAchado: async (payload, userEmail) => {
+    // numero_codigo não é mais preenchido no formulário — gera automaticamente
+    // como sequência dentro do ciclo (ex: "#01", "#02"...).
+    const { count } = await supabase
+      .from('audext_achados')
+      .select('id', { count: 'exact', head: true })
+      .eq('ciclo_id', payload.ciclo_id)
+    const numero_codigo = `#${String((count || 0) + 1).padStart(2, '0')}`
+    const classificacao_risco = calcularRiscoPorValor(payload.total_apontado)
+    const { data, error } = await supabase
+      .from('audext_achados')
+      .insert([{ ...payload, numero_codigo, classificacao_risco, criado_por: userEmail }])
+      .select()
+    if (error) throw error
+    return data?.[0]
+  },
+  updateAuditExtAchado: async (id, payload) => {
+    const extra = { ...payload, atualizado_em: new Date().toISOString() }
+    if (payload.total_apontado !== undefined) extra.classificacao_risco = calcularRiscoPorValor(payload.total_apontado)
+    const { data, error } = await supabase
+      .from('audext_achados')
+      .update(extra)
+      .eq('id', id)
+      .select()
+    if (error) throw error
+    return data?.[0]
+  },
+  deleteAuditExtAchado: async (id) => {
+    const { error } = await supabase.from('audext_achados').delete().eq('id', id)
+    if (error) throw error
+    return { success: true }
+  },
+
+  // TIPOS DE AÇÃO (cadastro usado no Plano de Ação)
+  getAuditExtTiposAcao: async () => {
+    const { data, error } = await supabase.from('audext_tipos_acao').select('*').order('nome', { ascending: true })
+    if (error) throw error
+    return data || []
+  },
+  createAuditExtTipoAcao: async ({ nome, ativo }) => {
+    const { data, error } = await supabase.from('audext_tipos_acao').insert([{ nome, ativo: ativo ?? true }]).select()
+    if (error) throw error
+    return data?.[0]
+  },
+  updateAuditExtTipoAcao: async (id, { nome, ativo }) => {
+    const { data, error } = await supabase.from('audext_tipos_acao').update({ nome, ativo: ativo ?? true }).eq('id', id).select()
+    if (error) throw error
+    return data?.[0]
+  },
+  deleteAuditExtTipoAcao: async (id) => {
+    const { error } = await supabase.from('audext_tipos_acao').delete().eq('id', id)
+    if (error) throw error
+    return { success: true }
+  },
+
+  // IMPACTOS (cadastro usado na Divergência)
+  getAuditExtImpactos: async () => {
+    const { data, error } = await supabase.from('audext_impactos').select('*').order('nome', { ascending: true })
+    if (error) throw error
+    return data || []
+  },
+  createAuditExtImpacto: async ({ nome, ativo }) => {
+    const { data, error } = await supabase.from('audext_impactos').insert([{ nome, ativo: ativo ?? true }]).select()
+    if (error) throw error
+    return data?.[0]
+  },
+  updateAuditExtImpacto: async (id, { nome, ativo }) => {
+    const { data, error } = await supabase.from('audext_impactos').update({ nome, ativo: ativo ?? true }).eq('id', id).select()
+    if (error) throw error
+    return data?.[0]
+  },
+  deleteAuditExtImpacto: async (id) => {
+    const { error } = await supabase.from('audext_impactos').delete().eq('id', id)
+    if (error) throw error
+    return { success: true }
+  },
+
+  // Evidências (imagens) — bucket público "auditoria-evidencias", controle de
+  // upload/edição/exclusão feito pela aplicação (mesmo padrão do resto do módulo).
+  uploadAuditExtEvidencia: async (pastaId, file) => {
+    const ext = (file.name?.split('.').pop() || (file.type === 'image/png' ? 'png' : 'jpg')).toLowerCase()
+    const path = `${pastaId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`
+    const { error } = await supabase.storage.from('auditoria-evidencias').upload(path, file, { contentType: file.type })
+    if (error) throw error
+    const { data } = supabase.storage.from('auditoria-evidencias').getPublicUrl(path)
+    return data.publicUrl
+  },
+  removeAuditExtEvidencia: async (url) => {
+    const marker = '/auditoria-evidencias/'
+    const idx = url.indexOf(marker)
+    if (idx === -1) return
+    const path = decodeURIComponent(url.slice(idx + marker.length))
+    await supabase.storage.from('auditoria-evidencias').remove([path])
+  },
+
+  // PLANOS DE AÇÃO (Action Items)
+  getAuditExtPlanosAcao: async () => {
+    const { data, error } = await supabase
+      .from('audext_planos_acao')
+      .select('*, audext_achados(id, numero_codigo, titulo, classificacao_risco), proj_responsaveis(id, nome), proj_departamentos(id, nome), audext_tipos_acao(id, nome), dim_empresas(id, empresa_fantasia, nome_empresa)')
+      .order('criado_em', { ascending: false })
+    if (error) throw error
+    return data || []
+  },
+  createAuditExtPlanoAcao: async (payload) => {
+    const { data, error } = await supabase
+      .from('audext_planos_acao')
+      .insert([payload])
+      .select()
+    if (error) throw error
+    await verificarFechamentoCiclo(await cicloIdDoAchado(payload.achado_id))
+    return data?.[0]
+  },
+  updateAuditExtPlanoAcao: async (id, payload, userEmail) => {
+    const extra = { ...payload, atualizado_em: new Date().toISOString() }
+    if (payload.status === 'validado_auditoria') {
+      extra.validado_em = new Date().toISOString()
+      extra.validado_por = userEmail
+    } else if (payload.status) {
+      // Voltando de "Validado" (ou qualquer troca de status) — limpa o carimbo de validação.
+      extra.validado_em = null
+      extra.validado_por = null
+    }
+    const { data, error } = await supabase
+      .from('audext_planos_acao')
+      .update(extra)
+      .eq('id', id)
+      .select()
+    if (error) throw error
+    if (data?.[0]?.achado_id) await verificarFechamentoCiclo(await cicloIdDoAchado(data[0].achado_id))
+    return data?.[0]
+  },
+  deleteAuditExtPlanoAcao: async (id) => {
+    const { data: existente } = await supabase.from('audext_planos_acao').select('achado_id').eq('id', id).single()
+    const { error } = await supabase.from('audext_planos_acao').delete().eq('id', id)
+    if (error) throw error
+    if (existente?.achado_id) await verificarFechamentoCiclo(await cicloIdDoAchado(existente.achado_id))
+    return { success: true }
+  },
+
+  // COPILOTO DE IA — chama o backend (adapter Gemini/OpenAI/Anthropic)
+  diagnosticoAuditIA: async ({ achado }) => {
+    const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
+    const res = await fetch(`${backendUrl}/api/audit-ai/diagnostico`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ achado }),
+    })
+    const body = await res.json()
+    if (!res.ok) throw new Error(body.error || 'Erro ao gerar diagnóstico.')
+    return body
+  },
+  chatAuditIA: async ({ mensagem, achadosRelacionados, historico }) => {
+    const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
+    const res = await fetch(`${backendUrl}/api/audit-ai/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mensagem, achadosRelacionados, historico }),
+    })
+    const body = await res.json()
+    if (!res.ok) throw new Error(body.error || 'Erro ao consultar o copiloto.')
+    return body.resposta
+  },
+
+  // Governança — Grupo de Acessos (Dealer.net / MicroWork)
+  getGovernancaGrupos: async () => {
+    const { data, error } = await supabase
+      .from('governanca_grupos_acesso')
+      .select('*')
+      .order('sistema', { ascending: true })
+      .order('nome', { ascending: true })
+    if (error) throw error
+    return data || []
+  },
+
+  createGovernancaGrupo: async ({ nome, sistema, descricao, permissoes }) => {
+    const { data, error } = await supabase
+      .from('governanca_grupos_acesso')
+      .insert([{ nome: nome.trim(), sistema, descricao: descricao?.trim() || null, permissoes: permissoes || [] }])
+      .select()
+    if (error) throw error
+    return data?.[0]
+  },
+
+  updateGovernancaGrupo: async (id, { nome, sistema, descricao, permissoes }) => {
+    const { data, error } = await supabase
+      .from('governanca_grupos_acesso')
+      .update({ nome: nome.trim(), sistema, descricao: descricao?.trim() || null, permissoes: permissoes || [] })
+      .eq('id', id)
+      .select()
+    if (error) throw error
+    return data?.[0]
+  },
+
+  deleteGovernancaGrupo: async (id) => {
+    const { error } = await supabase.from('governanca_grupos_acesso').delete().eq('id', id)
+    if (error) throw error
+    return { success: true }
+  },
+
+  // Governança — Perfis de Acesso (matriz menu × perfil, por sistema)
+  getGovernancaMenus: async (sistema) => {
+    // Supabase/PostgREST limita a 1000 linhas por requisição por padrão —
+    // o catálogo de menus (Dealer.net tem 2115 nós) passa disso, então
+    // pagina em blocos até esgotar os resultados.
+    const PAGE = 1000
+    let inicio = 0
+    let todos = []
+    while (true) {
+      const { data, error } = await supabase
+        .from('governanca_menus')
+        .select('*')
+        .eq('sistema', sistema)
+        .order('ordem', { ascending: true })
+        .range(inicio, inicio + PAGE - 1)
+      if (error) throw error
+      todos = todos.concat(data || [])
+      if (!data || data.length < PAGE) break
+      inicio += PAGE
+    }
+    return todos
+  },
+
+  createGovernancaMenu: async ({ sistema, pai_id, nome, ordem }) => {
+    const { data, error } = await supabase
+      .from('governanca_menus')
+      .insert([{ sistema, pai_id: pai_id || null, nome: nome.trim(), ordem: ordem || 0 }])
+      .select()
+    if (error) throw error
+    return data?.[0]
+  },
+
+  updateGovernancaMenu: async (id, { nome }) => {
+    const { data, error } = await supabase
+      .from('governanca_menus')
+      .update({ nome: nome.trim() })
+      .eq('id', id)
+      .select()
+    if (error) throw error
+    return data?.[0]
+  },
+
+  deleteGovernancaMenu: async (id) => {
+    const { error } = await supabase.from('governanca_menus').delete().eq('id', id)
+    if (error) throw error
+    return { success: true }
+  },
+
+  getGovernancaPerfis: async (sistema) => {
+    const { data, error } = await supabase
+      .from('governanca_perfis')
+      .select('*')
+      .eq('sistema', sistema)
+      .order('nome', { ascending: true })
+    if (error) throw error
+    return data || []
+  },
+
+  createGovernancaPerfil: async ({ sistema, nome, descricao }) => {
+    const { data, error } = await supabase
+      .from('governanca_perfis')
+      .insert([{ sistema, nome: nome.trim(), descricao: descricao?.trim() || null }])
+      .select()
+    if (error) throw error
+    return data?.[0]
+  },
+
+  updateGovernancaPerfil: async (id, { nome, descricao }) => {
+    const { data, error } = await supabase
+      .from('governanca_perfis')
+      .update({ nome: nome.trim(), descricao: descricao?.trim() || null })
+      .eq('id', id)
+      .select()
+    if (error) throw error
+    return data?.[0]
+  },
+
+  deleteGovernancaPerfil: async (id) => {
+    const { error } = await supabase.from('governanca_perfis').delete().eq('id', id)
+    if (error) throw error
+    return { success: true }
+  },
+
+  // Retorna todos os pares (perfil_id, menu_id) marcados para os perfis informados
+  getGovernancaPerfilMenus: async (perfilIds) => {
+    if (!perfilIds || perfilIds.length === 0) return []
+    const { data, error } = await supabase
+      .from('governanca_perfil_menus')
+      .select('perfil_id, menu_id')
+      .in('perfil_id', perfilIds)
+    if (error) throw error
+    return data || []
+  },
+
+  marcarGovernancaPerfilMenu: async (perfilId, menuId) => {
+    const { error } = await supabase
+      .from('governanca_perfil_menus')
+      .upsert([{ perfil_id: perfilId, menu_id: menuId }], { onConflict: 'perfil_id,menu_id' })
+    if (error) throw error
+    return { success: true }
+  },
+
+  desmarcarGovernancaPerfilMenu: async (perfilId, menuId) => {
+    const { error } = await supabase
+      .from('governanca_perfil_menus')
+      .delete()
+      .eq('perfil_id', perfilId)
+      .eq('menu_id', menuId)
+    if (error) throw error
+    return { success: true }
+  },
+
+  // Retorna todos os pares (grupo_id, menu_id) marcados para os grupos informados
+  getGovernancaGrupoMenus: async (grupoIds) => {
+    if (!grupoIds || grupoIds.length === 0) return []
+    const { data, error } = await supabase
+      .from('governanca_grupo_menus')
+      .select('grupo_id, menu_id')
+      .in('grupo_id', grupoIds)
+    if (error) throw error
+    return data || []
+  },
+
+  marcarGovernancaGrupoMenu: async (grupoId, menuId) => {
+    const { error } = await supabase
+      .from('governanca_grupo_menus')
+      .upsert([{ grupo_id: grupoId, menu_id: menuId }], { onConflict: 'grupo_id,menu_id' })
+    if (error) throw error
+    return { success: true }
+  },
+
+  desmarcarGovernancaGrupoMenu: async (grupoId, menuId) => {
+    const { error } = await supabase
+      .from('governanca_grupo_menus')
+      .delete()
+      .eq('grupo_id', grupoId)
+      .eq('menu_id', menuId)
+    if (error) throw error
+    return { success: true }
   },
 }
