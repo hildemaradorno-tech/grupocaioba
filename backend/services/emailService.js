@@ -35,20 +35,30 @@ function buildRawEmail(to, subject, htmlContent) {
 
 export async function enviarEmail({ to, subject, html }) {
   const client = getOAuth2Client()
+  console.log(`[email] Provedor: ${client ? 'Gmail API' : process.env.BREVO_API_KEY ? 'Brevo' : 'nenhum'} → ${to}`)
 
   if (client) {
-    const { token } = await client.getAccessToken()
-    const res = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ raw: buildRawEmail(to, subject, html) }),
-    })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}))
-      throw new Error(err.error?.message || `Gmail API error ${res.status}`)
+    const tokenRes = await client.getAccessToken()
+    const token = tokenRes.token
+    console.log(`[email] Access token obtido: ${token ? 'sim' : 'não'}`)
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 15000)
+    try {
+      const res = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ raw: buildRawEmail(to, subject, html) }),
+        signal: controller.signal,
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.error?.message || `Gmail API error ${res.status}`)
+      }
+      console.log(`[email] Enviado via Gmail API → ${to}`)
+      return
+    } finally {
+      clearTimeout(timer)
     }
-    console.log(`[email] Enviado via Gmail API → ${to}`)
-    return
   }
 
   // Fallback: Brevo HTTP API
