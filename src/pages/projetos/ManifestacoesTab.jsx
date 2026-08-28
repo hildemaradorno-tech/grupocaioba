@@ -1,9 +1,10 @@
-import React, { useEffect, useState, useCallback } from 'react'
-import { CheckCircle2, Send, Loader2, ShieldCheck, FileDown, Lock, Unlock, Users, Pencil, Check, X as XIcon, ExternalLink, Trash2 } from 'lucide-react'
+import React, { useEffect, useState, useCallback, Suspense, lazy } from 'react'
+import { CheckCircle2, Send, Loader2, ShieldCheck, FileDown, Lock, Unlock, Users, Pencil, Check, X as XIcon, ExternalLink, Trash2, ClipboardEdit } from 'lucide-react'
 import { apiService } from '../../services/api'
 import { useAuth } from '../../context/AuthContext'
-import ManifestacaoRichEditor from './ManifestacaoRichEditor'
 import ResponderManifestacaoModal, { RESULTADO_COR } from './ResponderManifestacaoModal'
+
+const ManifestacaoRichEditor = lazy(() => import('./ManifestacaoRichEditor'))
 
 const TIPOS = ['Sugestão', 'Correção', 'Inclusão', 'Dúvida']
 
@@ -24,16 +25,20 @@ const STATUS_COR = {
 const fmtData = (d) => d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') : '—'
 const fmtDataHora = (d) => d ? new Date(d).toLocaleString('pt-BR') : '—'
 
-export default function ManifestacoesTab({ projeto, onReload, convidados = [] }) {
-  const { user, userNome, hasActionOrDefault, isAdmin, usuarioId } = useAuth()
+export default function ManifestacoesTab({ projeto, onReload, convidados = [], manifestacoesInicial = [] }) {
+  const { user, userNome, hasActionOrDefault, isAdmin, usuarioId, impersonando } = useAuth()
+  const emailEfetivo = impersonando?.email || user?.email || null
+  const nomeEfetivo  = impersonando?.nome  || userNome  || null
   const canEnviar    = hasActionOrDefault('projetos', 'enviar_manifestacao')
-  const canResponder = hasActionOrDefault('projetos/manifestacoes', 'responder_manifestacao')
-  const canEncerrar  = hasActionOrDefault('projetos/manifestacoes', 'encerrar_periodo')
-  const isConvidado  = convidados.some(c => c.usuario_id === usuarioId)
+  const canResponder             = hasActionOrDefault('projetos/manifestacoes', 'responder_manifestacao')
+  const canEncerrar              = hasActionOrDefault('projetos/manifestacoes', 'encerrar_periodo')
+  const canGerenciarParticipantes = hasActionOrDefault('projetos/manifestacoes', 'gerenciar_participantes')
+  const idEfetivo    = impersonando?.id || usuarioId
+  const isConvidado  = convidados.some(c => c.usuario_id === idEfetivo)
   const podeGerenciar = isAdmin || canEncerrar
 
-  const [manifestacoes, setManifestacoes] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [manifestacoes, setManifestacoes] = useState(manifestacoesInicial)
+  const [loading, setLoading] = useState(false)
   const [tipo, setTipo] = useState('Sugestão')
   const [texto, setTexto] = useState('')
   const [enviando, setEnviando] = useState(false)
@@ -52,7 +57,9 @@ export default function ManifestacoesTab({ projeto, onReload, convidados = [] })
   const [todosUsuarios, setTodosUsuarios] = useState([])
   const [novoConvIds, setNovoConvIds] = useState(new Set())
   const [salvandoPartic, setSalvandoPartic] = useState(false)
+  const [reenviando, setReenviando] = useState(false)
   const [erroPartic, setErroPartic] = useState('')
+  const [buscaPartic, setBuscaPartic] = useState('')
 
   // Alterar prazo
   const [editandoPrazo, setEditandoPrazo] = useState(false)
@@ -71,7 +78,8 @@ export default function ManifestacoesTab({ projeto, onReload, convidados = [] })
       .finally(() => setLoading(false))
   }, [projeto.id])
 
-  useEffect(() => { carregar() }, [carregar])
+  // Sincroniza quando o ProjetoDetalhe recarrega (ex: após encerrar período)
+  useEffect(() => { setManifestacoes(manifestacoesInicial) }, [manifestacoesInicial])
 
   const enviarManifestacao = async (tipoEnvio) => {
     if (tipoEnvio !== 'De Acordo' && !texto.trim()) return
@@ -80,8 +88,8 @@ export default function ManifestacoesTab({ projeto, onReload, convidados = [] })
     try {
       await apiService.createManifestacao({
         projeto_id: projeto.id,
-        usuario_email: user?.email || null,
-        usuario_nome: userNome || null,
+        usuario_email: emailEfetivo,
+        usuario_nome: nomeEfetivo,
         tipo_manifestacao: tipoEnvio,
         texto_manifestacao: tipoEnvio === 'De Acordo' ? null : texto,
       })
@@ -173,7 +181,8 @@ export default function ManifestacoesTab({ projeto, onReload, convidados = [] })
 
   const contagemPorTipo = manifestacoes.reduce((acc, m) => { acc[m.tipo_manifestacao] = (acc[m.tipo_manifestacao] || 0) + 1; return acc }, {})
 
-  const jaDeAcordo = manifestacoes.some(m => m.tipo_manifestacao === 'De Acordo' && (m.usuario_email === user?.email))
+  const jaDeAcordo          = manifestacoes.some(m => m.tipo_manifestacao === 'De Acordo' && m.usuario_email === emailEfetivo)
+  const jaEnviouManifestacao = manifestacoes.some(m => m.tipo_manifestacao !== 'De Acordo' && m.usuario_email === emailEfetivo)
 
   const abrirGerenciarParticipantes = async () => {
     setErroPartic('')
@@ -183,6 +192,7 @@ export default function ManifestacoesTab({ projeto, onReload, convidados = [] })
       const rows = await apiService.getUsuarios().catch(() => [])
       setTodosUsuarios(rows.filter(u => u.ativo !== false))
     }
+    setBuscaPartic('')
     setModalParticipantes(true)
   }
 
@@ -192,16 +202,59 @@ export default function ManifestacoesTab({ projeto, onReload, convidados = [] })
     try {
       const idsAntigos = new Set(convidados.map(c => c.usuario_id))
       const novos = [...novoConvIds].filter(id => !idsAntigos.has(id))
+      console.log('[manifestacao] idsAntigos:', [...idsAntigos])
+      console.log('[manifestacao] novoConvIds:', [...novoConvIds])
+      console.log('[manifestacao] novos a notificar:', novos)
       await apiService.setConvidadosManifestacao(projeto.id, [...novoConvIds])
-      if (novos.length > 0) {
-        apiService.enviarConvitesManifestacao(projeto.id, novos).catch(() => {})
-      }
       setModalParticipantes(false)
       await onReload()
+      if (novos.length > 0) {
+        try {
+          const destsNovos = todosUsuarios.filter(u => novos.includes(u.id))
+          const resultado = await apiService.enviarConvitesManifestacao(projeto.id, novos, destsNovos)
+          console.log('[manifestacao] resultado envio:', resultado)
+          if (resultado?.enviados > 0) {
+            alert(`✅ ${resultado.enviados} e-mail(is) de convite enviado(s) com sucesso.`)
+          } else if (resultado?.erros?.length > 0) {
+            alert(`⚠️ Participantes salvos, mas o envio de e-mail falhou:\n\n${resultado.erros.map(e => `${e.email}: ${e.erro}`).join('\n')}`)
+          } else {
+            alert('⚠️ Participantes salvos, mas nenhum e-mail foi enviado.\n\nVerifique no Railway se GMAIL_USER e GMAIL_APP_PASSWORD estão configurados.')
+          }
+        } catch (errEmail) {
+          console.error('[manifestacao] erro email:', errEmail)
+          alert('⚠️ Participantes salvos, mas houve falha no envio dos e-mails:\n' + (errEmail.message || String(errEmail)))
+        }
+      } else {
+        console.log('[manifestacao] nenhum participante novo — e-mail não enviado')
+        alert('ℹ️ Participantes salvos. Nenhum participante novo — use "Re-enviar convites" para notificar os atuais.')
+      }
     } catch (err) {
       setErroPartic(err.message || String(err))
     } finally {
       setSalvandoPartic(false)
+    }
+  }
+
+  const reenviarConvites = async () => {
+    if (novoConvIds.size === 0) { alert('Nenhum participante para notificar.'); return }
+    setReenviando(true)
+    try {
+      const dests = todosUsuarios.filter(u => novoConvIds.has(u.id))
+      console.log('[reenviar] novoConvIds:', [...novoConvIds])
+      console.log('[reenviar] dests:', dests.map(u => ({ id: u.id, nome: u.nome, email: u.email })))
+      const resultado = await apiService.enviarConvitesManifestacao(projeto.id, [...novoConvIds], dests)
+      console.log('[reenviar] resultado:', resultado)
+      if (resultado?.enviados > 0) {
+        alert(`✅ ${resultado.enviados} e-mail(is) de convite re-enviado(s) com sucesso.`)
+      } else if (resultado?.erros?.length > 0) {
+        alert(`⚠️ Falha ao enviar e-mail:\n${resultado.erros.map(e => `${e.email}: ${e.erro}`).join('\n')}`)
+      } else {
+        alert('⚠️ Nenhum e-mail enviado. Verifique se os participantes têm e-mail cadastrado.')
+      }
+    } catch (err) {
+      alert('Erro ao re-enviar convites: ' + (err.message || String(err)))
+    } finally {
+      setReenviando(false)
     }
   }
 
@@ -238,12 +291,13 @@ export default function ManifestacoesTab({ projeto, onReload, convidados = [] })
               <>
                 <span className="flex items-center gap-1.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse shrink-0" />
-                  Período de Manifestação Aberto
+                  Período de Manifestação
                 </span>
                 <span className="text-slate-400 select-none">·</span>
                 {!editandoPrazo ? (
                   <span className="flex items-center gap-1 text-slate-300">
                     Prazo: <strong className="text-white ml-0.5">{fmtData(projeto.manifestacao_prazo)}</strong>
+                    <span className="ml-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-green-500/30 text-green-300 border border-green-500/40">Aberto</span>
                     {isAdmin && (
                       <button
                         onClick={() => { setNovoPrazo(projeto.manifestacao_prazo || ''); setEditandoPrazo(true) }}
@@ -276,7 +330,9 @@ export default function ManifestacoesTab({ projeto, onReload, convidados = [] })
             {encerrado && (
               <span className="flex items-center gap-1.5">
                 <Lock className="h-3.5 w-3.5 shrink-0" />
-                Período de Manifestação encerrado em {fmtDataHora(projeto.manifestacao_encerrada_em)}
+                Período de Manifestação
+                <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-slate-400/30 text-slate-200 border border-slate-400/40">Encerrado</span>
+                <span className="text-slate-300">· em {fmtDataHora(projeto.manifestacao_encerrada_em)}</span>
               </span>
             )}
             {encerrado && podeGerenciar && (
@@ -296,7 +352,7 @@ export default function ManifestacoesTab({ projeto, onReload, convidados = [] })
 
           {aberto && (
             <div className="flex items-center gap-2 shrink-0">
-              {canEnviar && isConvidado && (
+              {canEnviar && isConvidado && !jaEnviouManifestacao && (
                 jaDeAcordo ? (
                   <span className="flex items-center gap-1.5 px-3 py-1.5 bg-teal-100 text-teal-700 text-[11px] font-bold rounded-md">
                     <ShieldCheck className="h-3 w-3" /> Ciente registrado
@@ -312,14 +368,12 @@ export default function ManifestacoesTab({ projeto, onReload, convidados = [] })
                   </button>
                 )
               )}
-              {podeGerenciar && (
-                <button
-                  onClick={abrirGerenciarParticipantes}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 text-[11px] font-bold rounded-md border border-slate-200 transition-colors shadow-sm"
-                >
-                  <Users className="h-3 w-3" /> Participantes ({convidados.length})
-                </button>
-              )}
+              <button
+                onClick={abrirGerenciarParticipantes}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 text-[11px] font-bold rounded-md border border-slate-200 transition-colors shadow-sm"
+              >
+                <Users className="h-3 w-3" /> Participantes ({convidados.length})
+              </button>
               {canEncerrar && (
                 <button
                   onClick={encerrarPeriodo}
@@ -342,7 +396,7 @@ export default function ManifestacoesTab({ projeto, onReload, convidados = [] })
               Analise as informações do projeto e registre sua manifestação: uma <strong>Sugestão</strong>, <strong>Correção</strong>, <strong>Inclusão</strong> ou <strong>Dúvida</strong>. Se estiver de acordo sem observações, clique em <strong>"Ciente / De Acordo"</strong>.
             </p>
             {projeto.manifestacao_orientacao && (
-              <div className="text-blue-700 leading-relaxed border-t border-blue-200 pt-2" dangerouslySetInnerHTML={{ __html: projeto.manifestacao_orientacao }} />
+              <div className="rich-html text-blue-700 leading-relaxed border-t border-blue-200 pt-2" dangerouslySetInnerHTML={{ __html: projeto.manifestacao_orientacao }} />
             )}
             {projeto.manifestacao_link_docs && (
               <a
@@ -353,6 +407,19 @@ export default function ManifestacoesTab({ projeto, onReload, convidados = [] })
               >
                 <ExternalLink className="h-3.5 w-3.5" /> Acessar documentos de referência
               </a>
+            )}
+            {convidados.length > 0 && (
+              <div className="border-t border-blue-200 pt-2">
+                <p className="text-[10px] font-bold text-blue-400 uppercase tracking-wide mb-1.5">Participantes</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {convidados.map(c => (
+                    <span key={c.usuario_id} className="inline-flex items-center gap-1 bg-blue-100 text-blue-700 text-[11px] font-medium px-2 py-0.5 rounded-full">
+                      <span className="w-1.5 h-1.5 rounded-full bg-teal-500 shrink-0" />
+                      {c.usuarios?.nome || c.usuarios?.email || c.usuario_id}
+                    </span>
+                  ))}
+                </div>
+              </div>
             )}
           </div>
         )}
@@ -367,7 +434,9 @@ export default function ManifestacoesTab({ projeto, onReload, convidados = [] })
               {TIPOS.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
           </div>
-          <ManifestacaoRichEditor value={texto} onChange={setTexto} placeholder="Descreva sua sugestão, correção, inclusão ou dúvida..." disabled={enviando} />
+          <Suspense fallback={<div className="h-32 rounded border border-slate-200 bg-slate-50 animate-pulse" />}>
+            <ManifestacaoRichEditor value={texto} onChange={setTexto} placeholder="Descreva sua sugestão, correção, inclusão ou dúvida..." disabled={enviando} />
+          </Suspense>
           {erro && <p className="text-[11px] text-red-600 font-medium">{erro}</p>}
           <div className="flex items-center justify-end gap-2">
             <button
@@ -413,11 +482,12 @@ export default function ManifestacoesTab({ projeto, onReload, convidados = [] })
                 </td>
                 <td className="p-3">
                   {m.texto_manifestacao && (
-                    <div className="line-clamp-3 text-slate-600" dangerouslySetInnerHTML={{ __html: m.texto_manifestacao }} />
+                    <div className="rich-html line-clamp-3 text-slate-600" dangerouslySetInnerHTML={{ __html: m.texto_manifestacao }} />
                   )}
                   {m.resposta_responsavel && (
                     <div className="mt-1.5 bg-slate-50 rounded px-2 py-1.5 text-[11px] text-slate-500">
-                      <span className="font-bold text-slate-400">Resposta ({m.responsavel_nome || m.responsavel_email}):</span> {m.resposta_responsavel}
+                      <span className="font-bold text-slate-400 block mb-0.5">Resposta ({m.responsavel_nome || m.responsavel_email}):</span>
+                      <div className="rich-html" dangerouslySetInnerHTML={{ __html: m.resposta_responsavel }} />
                     </div>
                   )}
                 </td>
@@ -438,6 +508,11 @@ export default function ManifestacoesTab({ projeto, onReload, convidados = [] })
                     {canResponder && m.status !== 'Respondido' && (
                       <button onClick={() => setModalResponder(m)} title="Responder" className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors">
                         <CheckCircle2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                    {canResponder && m.status === 'Respondido' && (
+                      <button onClick={() => setModalResponder(m)} title="Editar Resposta" className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors">
+                        <ClipboardEdit className="h-3.5 w-3.5" />
                       </button>
                     )}
                     {podeGerenciar && m.tipo_manifestacao !== 'De Acordo' && (
@@ -474,6 +549,31 @@ export default function ManifestacoesTab({ projeto, onReload, convidados = [] })
                 <span key={t} className={`px-2.5 py-1 rounded-full text-[11px] font-bold ${TIPO_COR[t] || 'bg-slate-100 text-slate-600'}`}>{t}: {n}</span>
               ))}
             </div>
+            {convidados.length > 0 && (
+              <div className="border-t border-slate-100 pt-3">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-2">Participantes ({convidados.length})</p>
+                <div className="flex flex-col gap-1.5">
+                  {convidados
+                    .map(c => {
+                      const email = c.usuarios?.email
+                      const nome  = c.usuarios?.nome || email || c.usuario_id
+                      const deAcordo = manifestacoes.some(m => m.usuario_email === email && m.tipo_manifestacao === 'De Acordo')
+                      const respondeu = manifestacoes.some(m => m.usuario_email === email && m.tipo_manifestacao !== 'De Acordo')
+                      const ordem = respondeu ? 0 : deAcordo ? 1 : 2
+                      return { nome, deAcordo, respondeu, ordem }
+                    })
+                    .sort((a, b) => a.ordem - b.ordem || a.nome.localeCompare(b.nome, 'pt-BR'))
+                    .map(({ nome, deAcordo, respondeu }, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <span className="text-[11px] text-slate-700 flex-1 truncate">{nome}</span>
+                        {respondeu  && <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-blue-100 text-blue-700 shrink-0">Respondeu</span>}
+                        {deAcordo   && <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-teal-100 text-teal-700 shrink-0">De Acordo</span>}
+                        {!respondeu && !deAcordo && <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-slate-100 text-slate-500 shrink-0">Não respondeu</span>}
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -499,7 +599,9 @@ export default function ManifestacoesTab({ projeto, onReload, convidados = [] })
               </div>
               <div className="flex flex-col gap-1">
                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Texto da Manifestação</label>
-                <ManifestacaoRichEditor value={editTexto} onChange={setEditTexto} placeholder="Texto da manifestação..." disabled={salvandoEdit} />
+                <Suspense fallback={<div className="h-32 rounded border border-slate-200 bg-slate-50 animate-pulse" />}>
+                  <ManifestacaoRichEditor value={editTexto} onChange={setEditTexto} placeholder="Texto da manifestação..." disabled={salvandoEdit} />
+                </Suspense>
               </div>
               {erroEdit && <p className="text-[11px] text-red-600 font-medium">{erroEdit}</p>}
             </div>
@@ -527,7 +629,9 @@ export default function ManifestacoesTab({ projeto, onReload, convidados = [] })
           <div className="bg-white rounded-lg border border-slate-200 w-[420px] max-h-[80vh] shadow-xl flex flex-col">
             <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
               <div>
-                <h3 className="text-sm font-bold text-slate-900">Gerenciar Participantes</h3>
+                <h3 className="text-sm font-bold text-slate-900">
+                  {canGerenciarParticipantes ? 'Gerenciar Participantes' : 'Participantes'}
+                </h3>
                 <p className="text-[11px] text-slate-500 truncate max-w-[340px]">{projeto.nome}</p>
               </div>
               <button onClick={() => setModalParticipantes(false)} className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors">
@@ -535,33 +639,76 @@ export default function ManifestacoesTab({ projeto, onReload, convidados = [] })
               </button>
             </div>
             <div className="flex-1 overflow-y-auto p-4">
-              <p className="text-[11px] text-slate-500 mb-2">Selecione quem pode ver e enviar manifestações neste projeto. Novos convidados receberão e-mail de convite.</p>
-              <div className="border border-slate-200 rounded-md max-h-64 overflow-y-auto divide-y divide-slate-50">
+              {canGerenciarParticipantes && (
+                <p className="text-[11px] text-slate-500 mb-2">Selecione quem pode ver e enviar manifestações neste projeto. Novos convidados receberão e-mail de convite.</p>
+              )}
+              <input
+                type="text"
+                value={buscaPartic}
+                onChange={e => setBuscaPartic(e.target.value)}
+                placeholder="Buscar por nome ou e-mail..."
+                className="w-full mb-2 text-xs px-2.5 py-1.5 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 outline-none"
+              />
+              <div className="border border-slate-200 rounded-md max-h-60 overflow-y-auto divide-y divide-slate-50">
                 {todosUsuarios.length === 0 ? (
                   <p className="px-3 py-2 text-[11px] text-slate-400 italic">Carregando...</p>
-                ) : todosUsuarios.map(u => (
-                  <label key={u.id} className="flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={novoConvIds.has(u.id)}
-                      onChange={() => setNovoConvIds(prev => { const s = new Set(prev); s.has(u.id) ? s.delete(u.id) : s.add(u.id); return s })}
-                      className="w-3.5 h-3.5 accent-blue-600"
-                    />
-                    <span className="flex-1 truncate font-medium">{u.nome}</span>
-                    <span className="text-[10px] text-slate-400 truncate max-w-[140px]">{u.email}</span>
-                  </label>
-                ))}
+                ) : (() => {
+                  const q = buscaPartic.toLowerCase().trim()
+                  const base = canGerenciarParticipantes
+                    ? todosUsuarios
+                    : todosUsuarios.filter(u => novoConvIds.has(u.id))
+                  const lista = q
+                    ? base.filter(u => u.nome?.toLowerCase().includes(q) || u.email?.toLowerCase().includes(q))
+                    : base
+                  if (lista.length === 0) return (
+                    <p className="px-3 py-2 text-[11px] text-slate-400 italic">
+                      {canGerenciarParticipantes ? 'Nenhum usuário encontrado.' : 'Nenhum participante neste projeto.'}
+                    </p>
+                  )
+                  return lista.map(u => (
+                    <div key={u.id} className="flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700">
+                      {canGerenciarParticipantes ? (
+                        <label className="flex items-center gap-2 w-full cursor-pointer hover:bg-slate-50 -mx-3 px-3 rounded">
+                          <input
+                            type="checkbox"
+                            checked={novoConvIds.has(u.id)}
+                            onChange={() => setNovoConvIds(prev => { const s = new Set(prev); s.has(u.id) ? s.delete(u.id) : s.add(u.id); return s })}
+                            className="w-3.5 h-3.5 accent-blue-600 shrink-0"
+                          />
+                          <span className="flex-1 truncate font-medium">{u.nome}</span>
+                          <span className="text-[10px] text-slate-400 truncate max-w-[140px]">{u.email}</span>
+                        </label>
+                      ) : (
+                        <>
+                          <span className="w-2 h-2 rounded-full bg-teal-500 shrink-0" />
+                          <span className="flex-1 truncate font-medium">{u.nome}</span>
+                          <span className="text-[10px] text-slate-400 truncate max-w-[140px]">{u.email}</span>
+                        </>
+                      )}
+                    </div>
+                  ))
+                })()}
               </div>
               {erroPartic && <p className="mt-2 text-[11px] text-red-600 font-medium">{erroPartic}</p>}
             </div>
             <div className="flex items-center justify-between gap-2 p-3 bg-slate-50 border-t border-slate-100">
-              <span className="text-[11px] text-slate-400">{novoConvIds.size} participante(s) selecionado(s)</span>
+              <span className="text-[11px] text-slate-400">{novoConvIds.size} participante(s)</span>
               <div className="flex items-center gap-2">
-                <button onClick={() => setModalParticipantes(false)} disabled={salvandoPartic} className="px-3 py-1.5 rounded-md text-xs font-semibold text-slate-600 hover:bg-slate-200/60 transition-colors">Cancelar</button>
-                <button onClick={salvarParticipantes} disabled={salvandoPartic} className="flex items-center gap-1.5 px-4 py-1.5 rounded-md text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 shadow-sm transition-colors">
-                  {salvandoPartic ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Users className="h-3.5 w-3.5" />}
-                  {salvandoPartic ? 'Salvando...' : 'Salvar Participantes'}
-                </button>
+                {canGerenciarParticipantes ? (
+                  <>
+                    <button onClick={() => setModalParticipantes(false)} disabled={salvandoPartic || reenviando} className="px-3 py-1.5 rounded-md text-xs font-semibold text-slate-600 hover:bg-slate-200/60 transition-colors">Cancelar</button>
+                    <button onClick={reenviarConvites} disabled={salvandoPartic || reenviando} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 disabled:opacity-50 transition-colors">
+                      {reenviando ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                      {reenviando ? 'Enviando...' : 'Re-enviar convites'}
+                    </button>
+                    <button onClick={salvarParticipantes} disabled={salvandoPartic || reenviando} className="flex items-center gap-1.5 px-4 py-1.5 rounded-md text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 shadow-sm transition-colors">
+                      {salvandoPartic ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Users className="h-3.5 w-3.5" />}
+                      {salvandoPartic ? 'Salvando...' : 'Salvar Participantes'}
+                    </button>
+                  </>
+                ) : (
+                  <button onClick={() => setModalParticipantes(false)} className="px-3 py-1.5 rounded-md text-xs font-semibold text-slate-600 hover:bg-slate-200/60 transition-colors">Fechar</button>
+                )}
               </div>
             </div>
           </div>

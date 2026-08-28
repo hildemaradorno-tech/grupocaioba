@@ -14,6 +14,7 @@ async function getGmailAccessToken() {
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
+    console.error('[gmail] OAuth token error:', JSON.stringify(err))
     throw new Error(`OAuth token error: ${err.error_description || err.error || res.status}`)
   }
   const data = await res.json()
@@ -24,7 +25,7 @@ function buildRawEmail(to, subject, htmlContent) {
   const boundary = 'bnd_' + Date.now()
   const mime = [
     `To: ${to}`,
-    `From: ${FROM_NAME} <${FROM_EMAIL}>`,
+    `From: =?UTF-8?B?${Buffer.from(FROM_NAME).toString('base64')}?= <${FROM_EMAIL}>`,
     `Subject: =?UTF-8?B?${Buffer.from(subject).toString('base64')}?=`,
     'MIME-Version: 1.0',
     `Content-Type: multipart/alternative; boundary="${boundary}"`,

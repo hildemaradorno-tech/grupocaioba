@@ -24,6 +24,20 @@ async function cicloIdDoAchado(achadoId) {
   return data?.ciclo_id || null
 }
 
+// Valor Corrigido da divergência = soma do Valor Corrigido de todas as suas
+// Ações (audext_planos_acao) — campo travado, recalculado sempre que uma ação
+// é criada/editada/excluída.
+async function atualizarValorCorrigidoAchado(achadoId) {
+  if (!achadoId) return
+  try {
+    const { data: planos } = await supabase.from('audext_planos_acao').select('valor_corrigido').eq('achado_id', achadoId)
+    const soma = (planos || []).reduce((s, p) => s + Number(p.valor_corrigido || 0), 0)
+    await supabase.from('audext_achados').update({ valor_corrigido: soma }).eq('id', achadoId)
+  } catch (err) {
+    console.warn('[auditoria-externa] Falha ao recalcular Valor Corrigido da divergência:', err.message)
+  }
+}
+
 async function verificarFechamentoCiclo(cicloId) {
   if (!cicloId) return
   try {
@@ -771,7 +785,7 @@ export const apiService = {
     return data || []
   },
 
-  createEmpresa: async ({ agrupamento_empresa_id, agrupamento_nome, segmento_id, segmento_nome, codigo_empresa, codigo_empresa_dominio, sigla_empresa, nome_empresa, empresa_fantasia, marca, cnpj, codigo_concessionaria, nome_empresa_sistema, ativo }) => {
+  createEmpresa: async ({ agrupamento_empresa_id, agrupamento_nome, segmento_id, segmento_nome, codigo_empresa, codigo_empresa_dominio, sigla_empresa, nome_empresa, empresa_fantasia, marca, cnpj, codigo_concessionaria, nome_empresa_sistema, sistema_dms, numero_filial, ativo }) => {
     const { data, error } = await supabase
       .from('dim_empresas')
       .insert([{
@@ -788,6 +802,8 @@ export const apiService = {
         cnpj,
         codigo_concessionaria,
         nome_empresa_sistema: nome_empresa_sistema || null,
+        sistema_dms: sistema_dms || null,
+        numero_filial: numero_filial || null,
         ativo: ativo ?? true
       }])
       .select()
@@ -795,7 +811,7 @@ export const apiService = {
     return data?.[0]
   },
 
-  updateEmpresa: async (id, { agrupamento_empresa_id, agrupamento_nome, segmento_id, segmento_nome, codigo_empresa, codigo_empresa_dominio, sigla_empresa, nome_empresa, empresa_fantasia, marca, cnpj, codigo_concessionaria, nome_empresa_sistema, ativo }) => {
+  updateEmpresa: async (id, { agrupamento_empresa_id, agrupamento_nome, segmento_id, segmento_nome, codigo_empresa, codigo_empresa_dominio, sigla_empresa, nome_empresa, empresa_fantasia, marca, cnpj, codigo_concessionaria, nome_empresa_sistema, sistema_dms, numero_filial, ativo }) => {
     const { data, error } = await supabase
       .from('dim_empresas')
       .update({
@@ -812,6 +828,8 @@ export const apiService = {
         cnpj,
         codigo_concessionaria,
         nome_empresa_sistema: nome_empresa_sistema || null,
+        sistema_dms: sistema_dms || null,
+        numero_filial: numero_filial || null,
         ativo: ativo ?? true
       })
       .eq('id', id)
@@ -3657,10 +3675,24 @@ export const apiService = {
     }
   },
 
-  enviarConvitesManifestacao: async (projetoId, usuariosIds) => {
+  enviarConvitesManifestacao: async (projetoId, usuariosIds, destinatariosOverride = null, projetoOverride = null) => {
+    // Se o chamador já tem os dados prontos (nome, email) — usa direto sem nova query
+    if (destinatariosOverride) {
+      const destinatarios = destinatariosOverride.filter(u => u.email)
+      if (destinatarios.length === 0) return { enviados: 0 }
+      const projetoData = projetoOverride || (await supabase.from('proj_projetos').select('nome, manifestacao_prazo').eq('id', projetoId).single()).data
+      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
+      const res = await fetch(`${backendUrl}/api/projetos/${projetoId}/enviar-convites`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projeto: projetoData, destinatarios }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(json.error || 'Erro ao enviar convites')
+      return json
+    }
+
     if (!usuariosIds || usuariosIds.length === 0) return { enviados: 0 }
-    // Busca dados do projeto e dos usuários diretamente no Supabase (sem precisar
-    // de SUPABASE_SERVICE_KEY no backend — apenas o smtp precisa do backend)
     const [{ data: projeto }, { data: usuarios }] = await Promise.all([
       supabase.from('proj_projetos').select('nome, manifestacao_prazo').eq('id', projetoId).single(),
       supabase.from('usuarios').select('id, nome, email').in('id', usuariosIds),
@@ -4493,6 +4525,7 @@ export const apiService = {
       .insert([payload])
       .select()
     if (error) throw error
+    await atualizarValorCorrigidoAchado(payload.achado_id)
     await verificarFechamentoCiclo(await cicloIdDoAchado(payload.achado_id))
     return data?.[0]
   },
@@ -4512,14 +4545,20 @@ export const apiService = {
       .eq('id', id)
       .select()
     if (error) throw error
-    if (data?.[0]?.achado_id) await verificarFechamentoCiclo(await cicloIdDoAchado(data[0].achado_id))
+    if (data?.[0]?.achado_id) {
+      await atualizarValorCorrigidoAchado(data[0].achado_id)
+      await verificarFechamentoCiclo(await cicloIdDoAchado(data[0].achado_id))
+    }
     return data?.[0]
   },
   deleteAuditExtPlanoAcao: async (id) => {
     const { data: existente } = await supabase.from('audext_planos_acao').select('achado_id').eq('id', id).single()
     const { error } = await supabase.from('audext_planos_acao').delete().eq('id', id)
     if (error) throw error
-    if (existente?.achado_id) await verificarFechamentoCiclo(await cicloIdDoAchado(existente.achado_id))
+    if (existente?.achado_id) {
+      await atualizarValorCorrigidoAchado(existente.achado_id)
+      await verificarFechamentoCiclo(await cicloIdDoAchado(existente.achado_id))
+    }
     return { success: true }
   },
 
