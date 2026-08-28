@@ -15,15 +15,18 @@ import jwt from 'jsonwebtoken'
 import kpiRoutes       from './routes/kpi.js'
 import garantiasRoutes from './routes/garantias.js'
 import calculoComissaoRoutes from './routes/calculoComissao.js'
+import biMedidasRoutes from './routes/biMedidas.js'
 import rhFeriasRoutes from './routes/rhFerias.js'
 import hondaRoutes from './routes/honda.js'
 import googleCalendarRoutes from './routes/googleCalendar.js'
 import projetosManifestacoesRoutes from './routes/projetosManifestacoes.js'
+import auditAiRoutes from './routes/auditAi.js'
 import { iniciarSchedulerKpi } from './services/kpiSyncScheduler.js'
 import { iniciarSchedulerManifestacao } from './services/manifestacaoScheduler.js'
 
 const app = express()
-app.use(cors())
+app.use(cors({ origin: '*', methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'], allowedHeaders: ['Content-Type','Authorization'] }))
+app.options('*', cors())
 app.use(express.json())
 
 // ── Rotas da Matriz KPIs (SharePoint / Microsoft Graph) ──────────────────────
@@ -34,6 +37,9 @@ app.use('/api/garantias', garantiasRoutes)
 
 // ── Rotas Fonte/Base de Cálculo (SharePoint genérico p/ comissões) ───────────
 app.use('/api/calculo-comissao', calculoComissaoRoutes)
+
+// ── Rotas Fonte BI / Medida BI (SharePoint genérico p/ dashboards de BI) ─────
+app.use('/api/bi-medidas', biMedidasRoutes)
 
 // ── Rotas RH Férias (SharePoint Relacao de Ferias Calculadas) ─────────────────
 app.use('/api/rh-ferias', rhFeriasRoutes)
@@ -46,6 +52,9 @@ app.use('/api/google-calendar', googleCalendarRoutes)
 
 // ── Rotas Gestão de Projetos — Período de Manifestação (Etapa 2) ────────────
 app.use('/api/projetos', projetosManifestacoesRoutes)
+
+// ── Rotas Gestão de Projetos — Auditoria Externa (Copiloto de IA) ───────────
+app.use('/api/audit-ai', auditAiRoutes)
 
 // Handler de erro global — sem isso, um erro lançado dentro de uma rota (ex: pasta/arquivo do
 // SharePoint não encontrado) cai no handler padrão do Express, que responde com uma página HTML
