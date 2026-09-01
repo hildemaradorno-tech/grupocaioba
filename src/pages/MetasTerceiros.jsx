@@ -49,8 +49,8 @@ export default function MetasTerceiros() {
   const [empresas,       setEmpresas]       = useState([])
   const [dados,          setDados]          = useState([])
   const [diasUteis,      setDiasUteis]      = useState({})
-  const [filtroEmpresa,  setFiltroEmpresa]  = useSessionState('mter_empresa', '')
-  const [filtroAno,      setFiltroAno]      = useSessionState('mter_ano', anoAtual)
+  const [filtroEmpresa,  setFiltroEmpresa]  = useSessionState('mpvs_servicos_empresa', '')
+  const [filtroAno,      setFiltroAno]      = useSessionState('mpvs_servicos_ano', anoAtual)
   const [loading,        setLoading]        = useState(false)
   const [error,          setError]          = useState(null)
   const [grupoAberto,    setGrupoAberto]    = useState(true)
@@ -58,7 +58,6 @@ export default function MetasTerceiros() {
   const [expandedDepts,  setExpandedDepts]  = useState(new Set())
   const [expandedSetores,setExpandedSetores]= useState(new Set())
   const [expandedBoxes,  setExpandedBoxes]  = useState(new Set())
-  const [expandedCargos, setExpandedCargos] = useState(new Set())
   const [localEdits,     setLocalEdits]     = useState({})
   const [salvandoKeys,   setSalvandoKeys]   = useState(new Set())
   const [modalZerar,     setModalZerar]     = useState(null)
@@ -95,7 +94,9 @@ export default function MetasTerceiros() {
         apiService.getEmpresas(),
         apiService.getMetasTerceiros(null, filtroAno),
       ])
-      const sorted = [...emps].sort((a, b) => (a.empresa_fantasia || '').localeCompare(b.empresa_fantasia || ''))
+      const sorted = emps
+        .filter(e => ['Caiobá Trucks', 'Caiobá Motos'].includes(e.agrupamento_nome))
+        .sort((a, b) => (a.empresa_fantasia || '').localeCompare(b.empresa_fantasia || ''))
       setEmpresas(sorted)
       setDados(rows)
       const comDados = sorted.filter(e => rows.some(r => r.empresa_id === e.id))
@@ -221,22 +222,21 @@ export default function MetasTerceiros() {
 
   const expandirTudo = () => {
     setGrupoAberto(true)
-    const emps = new Set(), depts = new Set(), sets = new Set(), bxs = new Set(), cars = new Set()
+    const emps = new Set(), depts = new Set(), sets = new Set(), bxs = new Set()
     empList.forEach(emp => {
       emps.add(emp.id)
       depts.add(`${emp.id}_d`)
       sets.add(`${emp.id}_s`)
       bxs.add(`${emp.id}_b`)
-      cars.add(`${emp.id}_c`)
     })
     setExpandedEmps(emps); setExpandedDepts(depts); setExpandedSetores(sets)
-    setExpandedBoxes(bxs); setExpandedCargos(cars)
+    setExpandedBoxes(bxs)
   }
 
   const recolherTudo = () => {
     setGrupoAberto(false)
     setExpandedEmps(new Set()); setExpandedDepts(new Set()); setExpandedSetores(new Set())
-    setExpandedBoxes(new Set()); setExpandedCargos(new Set())
+    setExpandedBoxes(new Set())
   }
 
   const grupoMeses = useMemo(() =>
@@ -380,11 +380,9 @@ export default function MetasTerceiros() {
                           const dKey = `${empId}_d`
                           const sKey = `${empId}_s`
                           const bKey = `${empId}_b`
-                          const cKey = `${empId}_c`
                           const dOpen = expandedDepts.has(dKey)
                           const sOpen = expandedSetores.has(sKey)
                           const bOpen = expandedBoxes.has(bKey)
-                          const cOpen = expandedCargos.has(cKey)
                           return (
                             <>
                               {/* Departamento */}
@@ -436,28 +434,11 @@ export default function MetasTerceiros() {
                                 </tr>
                               )}
 
-                              {/* Cargo */}
-                              {dOpen && sOpen && bOpen && (
-                                <tr className="cursor-pointer bg-white border-b border-slate-100 hover:bg-slate-50 transition-colors"
-                                  onClick={() => toggle(setExpandedCargos, cKey)}>
-                                  <td className="px-3 py-1 sticky left-0 bg-white z-10 whitespace-nowrap">
-                                    <div className="flex items-center gap-2 pl-20">
-                                      {cOpen ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
-                                      <span className="text-slate-400 text-xs mr-0.5">Cargo:</span>
-                                      <span className="font-semibold text-slate-600">Terceiros</span>
-                                    </div>
-                                  </td>
-                                  {empMeses.map((v, i) => <td key={i} className="px-1 py-1 text-right text-xs text-slate-500 whitespace-nowrap">{v > 0 ? fmtBRL(v) : '—'}</td>)}
-                                  <td className="px-2 py-1 text-right text-xs font-semibold text-indigo-500 bg-indigo-50/40 whitespace-nowrap">{empAnual > 0 ? fmtBRL(empAnual) : '—'}</td>
-                                  <td />
-                                </tr>
-                              )}
-
                               {/* TERCEIROS */}
-                              {dOpen && sOpen && bOpen && cOpen && (
+                              {dOpen && sOpen && bOpen && (
                                 <tr className="bg-amber-50 border-b border-amber-100">
                                   <td className="px-3 py-1.5 sticky left-0 bg-amber-50 z-10 whitespace-nowrap">
-                                    <div className="pl-24 font-bold text-xs text-indigo-600 cursor-pointer hover:text-indigo-800 hover:underline select-none"
+                                    <div className="pl-20 font-bold text-xs text-indigo-600 cursor-pointer hover:text-indigo-800 hover:underline select-none"
                                       onClick={() => abrirVisualizar(empId, empNome)}>
                                       TERCEIROS
                                     </div>

@@ -18,8 +18,7 @@ function aggColabs(colabsMap) {
   )
   return a
 }
-function aggCargo(cargo)  { return aggColabs(cargo.colabs) }
-function aggBox(box)      { const a = Array(12).fill(0); Object.values(box.cargos).forEach(c  => aggCargo(c).forEach((v,i) => { a[i]+=v })); return a }
+function aggBox(box)      { const a = Array(12).fill(0); Object.values(box.colabs).forEach(c => aggColabs({ x: c }).forEach((v,i) => { a[i]+=v })); return a }
 function aggSetor(setor)  { const a = Array(12).fill(0); Object.values(setor.boxes).forEach(b => aggBox(b).forEach((v,i)   => { a[i]+=v })); return a }
 function aggDept(dept)    { const a = Array(12).fill(0); Object.values(dept.setores).forEach(s => aggSetor(s).forEach((v,i)=> { a[i]+=v })); return a }
 function aggEmp(emp)      { const a = Array(12).fill(0); Object.values(emp.depts).forEach(d   => aggDept(d).forEach((v,i)  => { a[i]+=v })); return a }
@@ -44,12 +43,10 @@ function pendingCountEmp(emp) {
   Object.values(emp.depts).forEach(d =>
     Object.values(d.setores).forEach(st =>
       Object.values(st.boxes).forEach(bx =>
-        Object.values(bx.cargos).forEach(ca =>
-          Object.values(ca.colabs).forEach(co =>
-            Object.values(co.meses).forEach(m => {
-              if (cellState(m.meta_faturamento, m.meta_aprovada) !== 'ok') n++
-            })
-          )
+        Object.values(bx.colabs).forEach(co =>
+          Object.values(co.meses).forEach(m => {
+            if (cellState(m.meta_faturamento, m.meta_aprovada) !== 'ok') n++
+          })
         )
       )
     )
@@ -253,7 +250,6 @@ export default function MetasPecas() {
   const [expandedDepts,    setExpandedDepts]    = useState(new Set())
   const [expandedSetores,  setExpandedSetores]  = useState(new Set())
   const [expandedBoxes,    setExpandedBoxes]    = useState(new Set())
-  const [expandedCargos,   setExpandedCargos]   = useState(new Set())
 
   // Modal
   const [modalAberto,       setModalAberto]       = useState(false)
@@ -331,10 +327,8 @@ export default function MetasPecas() {
       const stMap = depts[did].setores
       if (!stMap[sId]) stMap[sId] = { nome: sNome, boxes: {} }
       const bxMap = stMap[sId].boxes
-      if (!bxMap[bId]) bxMap[bId] = { nome: bNome, cargos: {} }
-      const caMap = bxMap[bId].cargos
-      if (!caMap[cId]) caMap[cId] = { nome: cNome, colabs: {} }
-      const coMap = caMap[cId].colabs
+      if (!bxMap[bId]) bxMap[bId] = { nome: bNome, colabs: {} }
+      const coMap = bxMap[bId].colabs
       if (!coMap[colid]) coMap[colid] = { nome: coNome, meses: {} }
       coMap[colid].meses[row.mes] = {
         id: row.id,
@@ -364,19 +358,18 @@ export default function MetasPecas() {
           const sKey = `${dKey}§${sid}`; sets.add(sKey)
           Object.entries(setor.boxes).forEach(([bid, box]) => {
             const bKey = `${sKey}§${bid}`; bxs.add(bKey)
-            Object.keys(box.cargos).forEach(cid => cars.add(`${bKey}§${cid}`))
           })
         })
       })
     })
     setExpandedEmpresas(emps); setExpandedDepts(depts); setExpandedSetores(sets)
-    setExpandedBoxes(bxs); setExpandedCargos(cars)
+    setExpandedBoxes(bxs)
   }
 
   const recolherTudo = () => {
     setGrupoAberto(false)
     setExpandedEmpresas(new Set()); setExpandedDepts(new Set()); setExpandedSetores(new Set())
-    setExpandedBoxes(new Set()); setExpandedCargos(new Set())
+    setExpandedBoxes(new Set())
   }
 
   // Save cell on blur
@@ -592,8 +585,7 @@ export default function MetasPecas() {
       s + Object.values(emp.depts).reduce((sd, d) =>
         sd + Object.values(d.setores).reduce((ss, st) =>
           ss + Object.values(st.boxes).reduce((sb, bx) =>
-            sb + Object.values(bx.cargos).reduce((sc, ca) =>
-              sc + Object.keys(ca.colabs).length, 0), 0), 0), 0), 0),
+            sb + Object.keys(bx.colabs).length, 0), 0), 0), 0),
     [tree])
 
   return (
@@ -793,70 +785,44 @@ export default function MetasPecas() {
                                               <td />
                                             </tr>
 
-                                            {expandedBoxes.has(boxKey) && Object.entries(box.cargos).map(([cId, cargo]) => {
-                                              const carKey = `${boxKey}§${cId}`
-                                              const carMeses = aggCargo(cargo)
-                                              const carTotal = sumArr(carMeses)
+                                            {expandedBoxes.has(boxKey) && Object.entries(box.colabs).map(([colabId, colab]) => {
+                                              const colMeses = aggColabs({ [colabId]: colab })
+                                              const colTotal = sumArr(colMeses)
                                               return (
-                                                <React.Fragment key={cId}>
-                                                  {/* ── CARGO ── */}
-                                                  <tr className="cursor-pointer bg-white hover:bg-indigo-50/20 transition-colors border-b border-slate-100"
-                                                      onClick={() => toggle(expandedCargos, setExpandedCargos, carKey)}>
-                                                    <td className="px-3 py-1 sticky left-0 bg-white z-10 whitespace-nowrap">
-                                                      <div className="flex items-center gap-2 pl-20">
-                                                        {expandedCargos.has(carKey) ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
-                                                        <span className="text-slate-400 mr-0.5">Cargo:</span>
-                                                        <span className="font-semibold text-slate-600">{cargo.nome}</span>
-                                                      </div>
-                                                    </td>
-                                                    {carMeses.map((v, i) => (
-                                                      <td key={i} className="px-1 py-1 text-right text-xs text-slate-500 whitespace-nowrap">{v > 0 ? fmtBRL(v) : '—'}</td>
-                                                    ))}
-                                                    <td className="px-2 py-1 text-right text-xs font-semibold text-indigo-500 bg-indigo-50/40 whitespace-nowrap">{carTotal > 0 ? fmtBRL(carTotal) : '—'}</td>
-                                                    <td />
-                                                  </tr>
-
-                                                  {expandedCargos.has(carKey) && Object.entries(cargo.colabs).map(([colabId, colab]) => {
-                                                    const colMeses = aggColabs({ [colabId]: colab })
-                                                    const colTotal = sumArr(colMeses)
+                                                <tr key={colabId} className="border-b border-slate-100 hover:bg-indigo-50/30 transition-colors">
+                                                  <td className="px-3 py-2 sticky left-0 bg-white z-10">
+                                                    <div
+                                                      className="pl-20 font-semibold text-indigo-600 hover:text-indigo-800 hover:underline whitespace-nowrap cursor-pointer select-none"
+                                                      onClick={() => abrirVisualizar(empId, colabId)}
+                                                    >{colab.nome}</div>
+                                                  </td>
+                                                  {Array.from({ length: 12 }, (_, i) => {
+                                                    const md = colab.meses[i + 1]
+                                                    const estado = md ? cellState(md.meta_faturamento, md.meta_aprovada) : 'ok'
                                                     return (
-                                                      <tr key={colabId} className="border-b border-slate-100 hover:bg-indigo-50/30 transition-colors">
-                                                        <td className="px-3 py-2 sticky left-0 bg-white z-10">
-                                                          <div
-                                                            className="pl-24 font-semibold text-indigo-600 hover:text-indigo-800 hover:underline whitespace-nowrap cursor-pointer select-none"
-                                                            onClick={() => abrirVisualizar(empId, colabId)}
-                                                          >{colab.nome}</div>
-                                                        </td>
-                                                        {Array.from({ length: 12 }, (_, i) => {
-                                                          const md = colab.meses[i + 1]
-                                                          const estado = md ? cellState(md.meta_faturamento, md.meta_aprovada) : 'ok'
-                                                          return (
-                                                            <td key={i} className={`p-1 border-l border-slate-100 relative ${md ? '' : 'bg-slate-50'}`}>
-                                                              {md
-                                                                ? <MetaCellInput rowId={md.id} value={md.meta_faturamento} onSave={salvarCelula} estado={estado} />
-                                                                : <span className="flex justify-center text-slate-300">—</span>}
-                                                            </td>
-                                                          )
-                                                        })}
-                                                        <td className="px-2 py-2 text-right text-xs font-bold text-indigo-700 bg-indigo-50 border-l border-indigo-100 whitespace-nowrap">
-                                                          {colTotal > 0 ? fmtBRL(colTotal) : '—'}
-                                                        </td>
-                                                        <td className="px-2 py-2 text-center whitespace-nowrap" colSpan="2">
-                                                          {(() => {
-                                                            const mesesComValor = Object.values(colab.meses).filter(m => Number(m.meta_faturamento) > 0)
-                                                            const aprovado = mesesComValor.length > 0 && mesesComValor.every(m => cellState(m.meta_faturamento, m.meta_aprovada) === 'ok')
-                                                            const label = aprovado ? 'APROVADO' : 'AGUARDANDO APROVACAO'
-                                                            return (
-                                                              <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${STATUS_CLS[label] || 'bg-slate-100 text-slate-500'}`}>
-                                                                {STATUS_DISPLAY[label] || label}
-                                                              </span>
-                                                            )
-                                                          })()}
-                                                        </td>
-                                                      </tr>
+                                                      <td key={i} className={`p-1 border-l border-slate-100 relative ${md ? '' : 'bg-slate-50'}`}>
+                                                        {md
+                                                          ? <MetaCellInput rowId={md.id} value={md.meta_faturamento} onSave={salvarCelula} estado={estado} />
+                                                          : <span className="flex justify-center text-slate-300">—</span>}
+                                                      </td>
                                                     )
                                                   })}
-                                                </React.Fragment>
+                                                  <td className="px-2 py-2 text-right text-xs font-bold text-indigo-700 bg-indigo-50 border-l border-indigo-100 whitespace-nowrap">
+                                                    {colTotal > 0 ? fmtBRL(colTotal) : '—'}
+                                                  </td>
+                                                  <td className="px-2 py-2 text-center whitespace-nowrap" colSpan="2">
+                                                    {(() => {
+                                                      const mesesComValor = Object.values(colab.meses).filter(m => Number(m.meta_faturamento) > 0)
+                                                      const aprovado = mesesComValor.length > 0 && mesesComValor.every(m => cellState(m.meta_faturamento, m.meta_aprovada) === 'ok')
+                                                      const label = aprovado ? 'APROVADO' : 'AGUARDANDO APROVACAO'
+                                                      return (
+                                                        <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${STATUS_CLS[label] || 'bg-slate-100 text-slate-500'}`}>
+                                                          {STATUS_DISPLAY[label] || label}
+                                                        </span>
+                                                      )
+                                                    })()}
+                                                  </td>
+                                                </tr>
                                               )
                                             })}
                                           </React.Fragment>

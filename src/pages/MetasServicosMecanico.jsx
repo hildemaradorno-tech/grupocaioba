@@ -19,13 +19,12 @@ function formatBRL(n) { const num = Number(n); if (!num && num !== 0) return '';
 function cellState(cur, apr) { const c = Number(cur) || 0; if (c === 0) return 'ok'; if (apr === null || apr === undefined) return 'new'; if (Math.abs(c - Number(apr)) > 0.001) return 'changed'; return 'ok' }
 function pendingCountEmp(emp) {
   let n = 0
-  Object.values(emp.depts).forEach(d => Object.values(d.setores).forEach(st => Object.values(st.boxes).forEach(bx => Object.values(bx.cargos).forEach(ca => Object.values(ca.colabs).forEach(co => Object.values(co.meses).forEach(m => { if (cellState(m.meta_faturamento, m.meta_aprovada) !== 'ok') n++ }))))))
+  Object.values(emp.depts).forEach(d => Object.values(d.setores).forEach(st => Object.values(st.boxes).forEach(bx => Object.values(bx.colabs).forEach(co => Object.values(co.meses).forEach(m => { if (cellState(m.meta_faturamento, m.meta_aprovada) !== 'ok') n++ })))))
   return n
 }
 
 function aggColabs(cm, f='meta_faturamento') { const a = Array(12).fill(0); Object.values(cm).forEach(c => Object.entries(c.meses).forEach(([m, d]) => { a[+m-1] += Number(d[f])||0 })); return a }
-function aggCargo(ca, f)  { const a = Array(12).fill(0); Object.values(ca.colabs).forEach(c => aggColabs({x:c},f).forEach((v,i)=>{a[i]+=v})); return a }
-function aggBox(bx, f)    { const a = Array(12).fill(0); Object.values(bx.cargos).forEach(c => aggCargo(c,f).forEach((v,i)=>{a[i]+=v})); return a }
+function aggBox(bx, f)    { const a = Array(12).fill(0); Object.values(bx.colabs).forEach(c => aggColabs({x:c},f).forEach((v,i)=>{a[i]+=v})); return a }
 function aggSetor(st, f)  { const a = Array(12).fill(0); Object.values(st.boxes).forEach(b => aggBox(b,f).forEach((v,i)=>{a[i]+=v})); return a }
 function aggDept(d, f)    { const a = Array(12).fill(0); Object.values(d.setores).forEach(s => aggSetor(s,f).forEach((v,i)=>{a[i]+=v})); return a }
 function aggEmp(e, f)     { const a = Array(12).fill(0); Object.values(e.depts).forEach(d => aggDept(d,f).forEach((v,i)=>{a[i]+=v})); return a }
@@ -118,7 +117,6 @@ export default function MetasServicosMecanico({ onDistribuir } = {}) {
   const [expandedDepts,   setExpandedDepts]   = useState(new Set())
   const [expandedSetores, setExpandedSetores] = useState(new Set())
   const [expandedBoxes,   setExpandedBoxes]   = useState(new Set())
-  const [expandedCargos,  setExpandedCargos]  = useState(new Set())
 
   const [modalAberto,        setModalAberto]        = useState(false)
   const [modoModal,          setModoModal]          = useState('incluir') // 'incluir' | 'editar'
@@ -234,9 +232,8 @@ export default function MetasServicosMecanico({ onDistribuir } = {}) {
       depts[did].nome = dNome
       const stMap = depts[did].setores
       if (!stMap[sId]) stMap[sId] = { nome: sNome, boxes: {} }
-      if (!stMap[sId].boxes[bId]) stMap[sId].boxes[bId] = { nome: bNome, cargos: {} }
-      if (!stMap[sId].boxes[bId].cargos[cId]) stMap[sId].boxes[bId].cargos[cId] = { nome: cNome, colabs: {} }
-      const coMap = stMap[sId].boxes[bId].cargos[cId].colabs
+      if (!stMap[sId].boxes[bId]) stMap[sId].boxes[bId] = { nome: bNome, colabs: {} }
+      const coMap = stMap[sId].boxes[bId].colabs
       if (!coMap[colid]) coMap[colid] = { nome: coNome, meses: {} }
       const _hd = Number(row.horas_disponiveis) || 0
       const _prod = Number(row.produtividade) || 0
@@ -278,25 +275,24 @@ export default function MetasServicosMecanico({ onDistribuir } = {}) {
           const sKey = `${dKey}§${sid}`; sets.add(sKey)
           Object.entries(setor.boxes).forEach(([bid, box]) => {
             const bKey = `${sKey}§${bid}`; bxs.add(bKey)
-            Object.keys(box.cargos).forEach(cid => cars.add(`${bKey}§${cid}`))
           })
         })
       })
     })
     setExpandedEmpresas(emps); setExpandedDepts(depts); setExpandedSetores(sets)
-    setExpandedBoxes(bxs); setExpandedCargos(cars)
+    setExpandedBoxes(bxs)
   }
 
   const recolherTudo = () => {
     setGrupoAberto(false)
     setExpandedEmpresas(new Set()); setExpandedDepts(new Set()); setExpandedSetores(new Set())
-    setExpandedBoxes(new Set()); setExpandedCargos(new Set())
+    setExpandedBoxes(new Set())
   }
 
   const totalColabs = useMemo(() =>
     Object.values(tree).reduce((s,e) => s + Object.values(e.depts).reduce((sd,d) =>
       sd + Object.values(d.setores).reduce((ss,st) => ss + Object.values(st.boxes).reduce((sb,bx) =>
-        sb + Object.values(bx.cargos).reduce((sc,ca) => sc + Object.keys(ca.colabs).length, 0), 0), 0), 0), 0),
+        sb + Object.keys(bx.colabs).length, 0), 0), 0), 0),
     [tree])
 
   // Índice 0-based do primeiro mês habilitado para preenchimento (baseado na data de admissão vs ano do form)
@@ -950,49 +946,35 @@ export default function MetasServicosMecanico({ onDistribuir } = {}) {
                                               <td colSpan="2"/>
                                             </tr>
 
-                                            {expandedBoxes.has(bKey) && Object.entries(box.cargos).map(([cId, cargo]) => {
-                                              const carKey = `${bKey}§${cId}`; const carMeses = aggCargo(cargo, vField); const carTotal = sumArr(carMeses)
+                                            {expandedBoxes.has(bKey) && Object.entries(box.colabs).map(([colabId, colab]) => {
+                                              const colMeses = aggColabs({x:colab}, vField); const colTotal = sumArr(colMeses)
+                                              const mesesComValor = Object.entries(colab.meses).filter(([, m]) => Number(m.meta_faturamento) > 0)
+                                              const distribuido = mesesComValor.length > 0 && mesesComValor.every(([mes]) => distribSet.has(`${empId}|${Number(mes)}`))
+                                              const statusLabel = distribuido ? 'DISTRIBUIDO' : 'AGUARDANDO'
                                               return (
-                                                <React.Fragment key={cId}>
-                                                  <tr className="cursor-pointer bg-white hover:bg-indigo-50/20 border-b border-slate-100 transition-colors" onClick={() => toggle(expandedCargos, setExpandedCargos, carKey)}>
-                                                    <td className="px-3 py-1 sticky left-0 bg-white z-10 whitespace-nowrap"><div className="flex items-center gap-2 pl-20">{expandedCargos.has(carKey)?<ChevronDown size={11}/>:<ChevronRight size={11}/>}<span className="text-slate-400 mr-0.5">Cargo:</span><span className="font-semibold text-slate-600">{cargo.nome}</span></div></td>
-                                                    {carMeses.map((v,i) => <td key={i} className="px-1 py-1 text-right text-xs text-slate-500 whitespace-nowrap">{v>0?fmtBRL(v):'—'}</td>)}
-                                                    <td className="px-2 py-1 text-right text-xs font-semibold text-indigo-500 bg-indigo-50/40 whitespace-nowrap">{carTotal>0?fmtBRL(carTotal):'—'}</td>
-                                                    <td colSpan="2"/>
-                                                  </tr>
-
-                                                  {expandedCargos.has(carKey) && Object.entries(cargo.colabs).map(([colabId, colab]) => {
-                                                    const colMeses = aggColabs({x:colab}, vField); const colTotal = sumArr(colMeses)
-                                                    const mesesComValor = Object.entries(colab.meses).filter(([, m]) => Number(m.meta_faturamento) > 0)
-                                                    const distribuido = mesesComValor.length > 0 && mesesComValor.every(([mes]) => distribSet.has(`${empId}|${Number(mes)}`))
-                                                    const statusLabel = distribuido ? 'DISTRIBUIDO' : 'AGUARDANDO'
+                                                <tr key={colabId} className="border-b border-slate-100 hover:bg-indigo-50/30 transition-colors">
+                                                  <td className="px-3 py-2 sticky left-0 bg-white z-10">
+                                                    <div className="pl-20 font-semibold text-indigo-600 whitespace-nowrap cursor-pointer hover:text-indigo-800 hover:underline select-none"
+                                                      onClick={() => abrirVisualizar(empId, colabId)}>
+                                                      {colab.nome}
+                                                    </div>
+                                                  </td>
+                                                  {Array.from({ length: 12 }, (_, i) => {
+                                                    const md = colab.meses[i+1]
                                                     return (
-                                                      <tr key={colabId} className="border-b border-slate-100 hover:bg-indigo-50/30 transition-colors">
-                                                        <td className="px-3 py-2 sticky left-0 bg-white z-10">
-                                                          <div className="pl-24 font-semibold text-indigo-600 whitespace-nowrap cursor-pointer hover:text-indigo-800 hover:underline select-none"
-                                                            onClick={() => abrirVisualizar(empId, colabId)}>
-                                                            {colab.nome}
-                                                          </div>
-                                                        </td>
-                                                        {Array.from({ length: 12 }, (_, i) => {
-                                                          const md = colab.meses[i+1]
-                                                          return (
-                                                            <td key={i} className={`p-1 border-l border-slate-100 text-right text-xs font-mono ${md ? '' : 'bg-slate-50'}`}>
-                                                              {md
-                                                                ? <div className="relative"><span className={Number(md[vField])>0 ? 'text-slate-800' : 'text-slate-300'}>{Number(md[vField])>0 ? fmtBRL(md[vField]) : '—'}</span>
-                                                                    {cellState(md.meta_faturamento, md.meta_aprovada)==='new' && <span className="absolute -top-1.5 -right-1 inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-blue-500 text-white"><Sparkles size={8}/></span>}
-                                                                    {cellState(md.meta_faturamento, md.meta_aprovada)==='changed' && <span className="absolute -top-1.5 -right-1 inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-amber-500 text-white"><Pencil size={8}/></span>}
-                                                                  </div>
-                                                                : <span className="text-slate-300">—</span>}
-                                                            </td>
-                                                          )
-                                                        })}
-                                                        <td className="px-2 py-2 text-right text-xs font-bold text-indigo-700 bg-indigo-50 whitespace-nowrap">{colTotal>0?fmtBRL(colTotal):'—'}</td>
-                                                        <td className="px-2 py-2 text-center whitespace-nowrap"><span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${STATUS_CLS[statusLabel]||'bg-slate-100 text-slate-500'}`}>{STATUS_DISPLAY[statusLabel] || statusLabel}</span></td>
-                                                      </tr>
+                                                      <td key={i} className={`p-1 border-l border-slate-100 text-right text-xs font-mono ${md ? '' : 'bg-slate-50'}`}>
+                                                        {md
+                                                          ? <div className="relative"><span className={Number(md[vField])>0 ? 'text-slate-800' : 'text-slate-300'}>{Number(md[vField])>0 ? fmtBRL(md[vField]) : '—'}</span>
+                                                              {cellState(md.meta_faturamento, md.meta_aprovada)==='new' && <span className="absolute -top-1.5 -right-1 inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-blue-500 text-white"><Sparkles size={8}/></span>}
+                                                              {cellState(md.meta_faturamento, md.meta_aprovada)==='changed' && <span className="absolute -top-1.5 -right-1 inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-amber-500 text-white"><Pencil size={8}/></span>}
+                                                            </div>
+                                                          : <span className="text-slate-300">—</span>}
+                                                      </td>
                                                     )
                                                   })}
-                                                </React.Fragment>
+                                                  <td className="px-2 py-2 text-right text-xs font-bold text-indigo-700 bg-indigo-50 whitespace-nowrap">{colTotal>0?fmtBRL(colTotal):'—'}</td>
+                                                  <td className="px-2 py-2 text-center whitespace-nowrap"><span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${STATUS_CLS[statusLabel]||'bg-slate-100 text-slate-500'}`}>{STATUS_DISPLAY[statusLabel] || statusLabel}</span></td>
+                                                </tr>
                                               )
                                             })}
                                           </React.Fragment>
