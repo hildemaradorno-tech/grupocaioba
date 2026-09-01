@@ -1035,11 +1035,6 @@ export default function MetasServicosMecanico({ onDistribuir } = {}) {
                     <option value="">Nenhum</option>
                     {boxesDoSetor.map(b => <option key={b.id} value={b.id}>{b.nome_box}</option>)}
                   </select></div>
-                <div><label className={LBL}>Cargo</label>
-                  <select name="cargo_id" className={SEL} value={form.cargo_id} onChange={handleFormChange} disabled={!form.departamento_id}>
-                    <option value="">Selecione...</option>
-                    {cargosDoDepto.map(c => <option key={c.id} value={c.id}>{c.nome_cargo}</option>)}
-                  </select></div>
               </div>
               <div className="grid grid-cols-3 gap-4 items-end">
                 <div className="col-span-2"><label className={LBL}>Colaborador *</label>
