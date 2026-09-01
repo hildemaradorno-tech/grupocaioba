@@ -337,9 +337,8 @@ export default function MetasServicosMecanico({ onDistribuir } = {}) {
     if (form.departamento_id) l = l.filter(f => Array.isArray(f.departamento_ids) ? f.departamento_ids.includes(form.departamento_id) : f.departamento_id === form.departamento_id)
     if (form.setor_id)        l = l.filter(f => Array.isArray(f.setor_ids) ? f.setor_ids.includes(form.setor_id) : f.setor_id === form.setor_id)
     if (form.box_id)          l = l.filter(f => f.box_id === form.box_id)
-    if (form.cargo_id)        l = l.filter(f => f.cargo_id === form.cargo_id)
     return l
-  }, [funcionarios, form.empresa_id, form.departamento_id, form.setor_id, form.box_id, form.cargo_id])
+  }, [funcionarios, form.empresa_id, form.departamento_id, form.setor_id, form.box_id])
 
   const handleFormChange = async (e) => {
     const { name, value } = e.target
@@ -1017,7 +1016,7 @@ export default function MetasServicosMecanico({ onDistribuir } = {}) {
                     {ANOS.map(a => <option key={a} value={a}>{a}</option>)}
                   </select></div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-3 gap-4">
                 <div><label className={LBL}>Departamento</label>
                   <select name="departamento_id" className={SEL} value={form.departamento_id} onChange={handleFormChange} disabled>
                     <option value="">Selecione...</option>
@@ -1028,8 +1027,6 @@ export default function MetasServicosMecanico({ onDistribuir } = {}) {
                     <option value="">Selecione...</option>
                     {setoresDoDepto.map(s => <option key={s.id} value={s.id}>{s.nome_setor}</option>)}
                   </select></div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
                 <div><label className={LBL}>Box</label>
                   <select name="box_id" className={SEL} value={form.box_id} onChange={handleFormChange} disabled={!form.setor_id}>
                     <option value="">Nenhum</option>
