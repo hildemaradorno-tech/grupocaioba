@@ -20,7 +20,7 @@ function tarefaPassaFiltroData(t, ini, fim, tipo) {
   return true
 }
 import { useNavigate, useLocation } from 'react-router-dom'
-import { ArrowLeft, ChevronLeft, ChevronRight, CalendarDays, RotateCcw, List, FileDown, FolderOpen, Users, CheckCircle2, PlayCircle, X, Filter, Activity, CheckCircle, AlertTriangle, Layers, ShieldAlert, BarChart2, Eye } from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, CalendarDays, RotateCcw, List, FileDown, FolderOpen, Users, CheckCircle2, PlayCircle, X, Filter, Activity, CheckCircle, AlertTriangle, Layers, BarChart2, Eye, PartyPopper } from 'lucide-react'
 import ProjetosNav from './ProjetosNav'
 import jsPDF from 'jspdf'
 import html2canvas from 'html2canvas'
@@ -54,7 +54,6 @@ const TASK_KPI_CFG = {
   em_andamento: { label: 'Em Andamento', icon: Activity,      st: { bg:'bg-amber-50',  border:'border-amber-100',  ring:'ring-amber-400',  icoBg:'bg-amber-100',  icoTxt:'text-amber-500',  numTxt:'text-amber-800',  labelTxt:'text-amber-400'  } },
   pausado:      { label: 'Pausado',      icon: AlertTriangle, st: { bg:'bg-purple-50', border:'border-purple-100', ring:'ring-purple-400', icoBg:'bg-purple-100', icoTxt:'text-purple-500', numTxt:'text-purple-800', labelTxt:'text-purple-400' } },
   concluido:    { label: 'Concluído',    icon: CheckCircle2,  st: { bg:'bg-teal-50',   border:'border-teal-100',   ring:'ring-teal-400',   icoBg:'bg-teal-100',   icoTxt:'text-teal-500',   numTxt:'text-teal-800',   labelTxt:'text-teal-400'   } },
-  cancelado:    { label: 'Cancelado',    icon: ShieldAlert,   st: { bg:'bg-red-50',    border:'border-red-100',    ring:'ring-red-400',    icoBg:'bg-red-100',    icoTxt:'text-red-500',    numTxt:'text-red-800',    labelTxt:'text-red-400'    } },
 }
 
 const DIAS_SEMANA = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
@@ -142,6 +141,7 @@ export default function CalendarioProjetos({ abaInicial = 'lista' }) {
   const [loadingGoogle, setLoadingGoogle]     = useState(false)
   const [modalEditarTarefa, setModalEditarTarefa] = useState(null)
   const [modalConcluir, setModalConcluir] = useState(null) // { tarefa, dataFim }
+  const [modalConcluirProjeto, setModalConcluirProjeto] = useState(null) // projeto object
   const [optsResp,  setOptsResp]  = useState([])
   const [optsSist,  setOptsSist]  = useState([])
   const [optsFase,  setOptsFase]  = useState([])
@@ -243,8 +243,25 @@ export default function CalendarioProjetos({ abaInicial = 'lista' }) {
         data_fim: dataFim || null,
       })
       setModalConcluir(null)
+      // Verifica se todas as tarefas do mesmo projeto estão concluídas
+      const tarefasDoProjeto = tarefas.filter(t => t.projeto_id === tarefa.projeto_id)
+      const todasConcluidas = tarefasDoProjeto.length > 0 &&
+        tarefasDoProjeto.every(t => t.id === tarefa.id ? true : t.status_kanban === 'concluido')
+      if (todasConcluidas) {
+        const proj = projetos.find(p => p.id === tarefa.projeto_id)
+        if (proj && proj.status !== 'concluido') setModalConcluirProjeto(proj)
+      }
       recarregarDados()
     } catch (err) { alert('Erro ao concluir: ' + (err.message || String(err))) }
+  }
+
+  const handleConcluirProjeto = async () => {
+    if (!modalConcluirProjeto) return
+    try {
+      await apiService.updateProjeto(modalConcluirProjeto.id, { status: 'concluido' })
+      setModalConcluirProjeto(null)
+      recarregarDados()
+    } catch (err) { alert('Erro ao concluir projeto: ' + (err.message || String(err))) }
   }
 
   // Projetos após filtros globais compartilhados
@@ -747,7 +764,7 @@ export default function CalendarioProjetos({ abaInicial = 'lista' }) {
           <FiltrosCompactBar />
         </div>
       </div>
-      <ProjetosFiltrosPanel projetos={projetos} showTrigger={false} />
+      <ProjetosFiltrosPanel projetos={projetos} showTrigger={false} hiddenFilters={aba === 'lista' ? ['termProjeto'] : []} />
 
       {modoVerTodos && (
         <div className="flex items-center gap-2 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-xs font-semibold">
@@ -1113,6 +1130,37 @@ export default function CalendarioProjetos({ abaInicial = 'lista' }) {
               <span className="text-[10px] text-slate-500 font-medium">Google Calendar</span>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Modal Concluir Projeto */}
+      {modalConcluirProjeto && (
+        <div className="fixed top-0 right-0 bottom-0 left-16 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl border border-slate-200 w-[420px] shadow-2xl overflow-hidden">
+            <div className="p-5 border-b border-slate-100 bg-gradient-to-r from-teal-50 to-emerald-50 flex items-center gap-4">
+              <div className="p-3 bg-teal-100 text-teal-600 rounded-full shrink-0">
+                <PartyPopper className="h-6 w-6" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-900">Todas as tarefas concluídas!</h3>
+                <p className="text-xs text-slate-500 mt-0.5">Deseja marcar o projeto como <strong className="text-teal-700">Concluído</strong>?</p>
+              </div>
+            </div>
+            <div className="p-4">
+              <p className="text-xs text-slate-600 leading-relaxed">
+                O projeto <strong>"{modalConcluirProjeto.nome}"</strong> teve todas as suas tarefas concluídas.
+                Deseja atualizar o status do projeto para <strong className="text-teal-700">Concluído</strong>?
+              </p>
+            </div>
+            <div className="flex items-center justify-end gap-2 p-3 bg-slate-50 border-t border-slate-100">
+              <button onClick={() => setModalConcluirProjeto(null)} className="px-3 py-1.5 rounded-md text-xs font-semibold text-slate-600 hover:bg-slate-200/60 transition-colors">
+                Agora não
+              </button>
+              <button onClick={handleConcluirProjeto} className="px-4 py-1.5 rounded-md text-xs font-semibold text-white bg-teal-600 hover:bg-teal-700 shadow-sm transition-colors">
+                Sim, concluir projeto
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

@@ -21,6 +21,11 @@ async function getGmailAccessToken() {
   return data.access_token
 }
 
+const AVISO_AUTOMATICO = `
+  <div style="font-family:sans-serif;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:6px;padding:8px 14px;margin-bottom:20px;text-align:center;color:#475569;font-size:12px;letter-spacing:0.3px">
+    --------------- NÃO RESPONDER ESTE E-MAIL. ENVIO AUTOMÁTICO ---------------------
+  </div>`
+
 function buildRawEmail(to, subject, htmlContent) {
   const boundary = 'bnd_' + Date.now()
   const mime = [
@@ -34,7 +39,7 @@ function buildRawEmail(to, subject, htmlContent) {
     'Content-Type: text/html; charset=UTF-8',
     'Content-Transfer-Encoding: base64',
     '',
-    Buffer.from(htmlContent).toString('base64'),
+    Buffer.from(AVISO_AUTOMATICO + htmlContent).toString('base64'),
     '',
     `--${boundary}--`,
   ].join('\r\n')

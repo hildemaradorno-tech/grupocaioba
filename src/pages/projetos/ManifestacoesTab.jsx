@@ -65,6 +65,7 @@ export default function ManifestacoesTab({ projeto, onReload, convidados = [], m
   const [editandoPrazo, setEditandoPrazo] = useState(false)
   const [novoPrazo, setNovoPrazo] = useState('')
   const [salvandoPrazo, setSalvandoPrazo] = useState(false)
+  const [expandedTextos, setExpandedTextos] = useState(new Set())
 
   const status = projeto.manifestacao_status || 'nao_iniciado'
   const aberto = status === 'aberto'
@@ -403,9 +404,9 @@ export default function ManifestacoesTab({ projeto, onReload, convidados = [], m
                 href={projeto.manifestacao_link_docs}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-800 transition-colors"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-md hover:shadow-lg transition-all ring-2 ring-blue-300 ring-offset-1"
               >
-                <ExternalLink className="h-3.5 w-3.5" /> Acessar documentos de referência
+                <ExternalLink className="h-4 w-4 shrink-0" /> Acessar documentos de referência
               </a>
             )}
             {convidados.length > 0 && (
@@ -482,7 +483,18 @@ export default function ManifestacoesTab({ projeto, onReload, convidados = [], m
                 </td>
                 <td className="p-3">
                   {m.texto_manifestacao && (
-                    <div className="rich-html line-clamp-3 text-slate-600" dangerouslySetInnerHTML={{ __html: m.texto_manifestacao }} />
+                    <div>
+                      <div
+                        className={`rich-html text-slate-600 ${expandedTextos.has(m.id) ? '' : 'line-clamp-3'}`}
+                        dangerouslySetInnerHTML={{ __html: m.texto_manifestacao }}
+                      />
+                      <button
+                        onClick={() => setExpandedTextos(prev => { const s = new Set(prev); s.has(m.id) ? s.delete(m.id) : s.add(m.id); return s })}
+                        className="mt-1 text-[10px] font-semibold text-blue-500 hover:text-blue-700 transition-colors"
+                      >
+                        {expandedTextos.has(m.id) ? 'Ver menos ▲' : 'Ver mais ▼'}
+                      </button>
+                    </div>
                   )}
                   {m.resposta_responsavel && (
                     <div className="mt-1.5 bg-slate-50 rounded px-2 py-1.5 text-[11px] text-slate-500">
