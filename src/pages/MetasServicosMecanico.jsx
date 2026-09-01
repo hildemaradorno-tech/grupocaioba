@@ -887,7 +887,7 @@ export default function MetasServicosMecanico({ onDistribuir } = {}) {
                 return (
                   <>
                     {/* GRUPO */}
-                    <tr className="cursor-pointer bg-blue-950 hover:bg-blue-900 transition-colors sticky top-[41px] z-10" onClick={() => setGrupoAberto(v => !v)}>
+                    <tr className="cursor-pointer bg-blue-950 hover:bg-blue-900 transition-colors" onClick={() => setGrupoAberto(v => !v)}>
                       <td className="px-3 py-2.5 text-white font-bold sticky left-0 bg-blue-950 z-10 whitespace-nowrap">
                         <div className="flex items-center gap-2">{grupoAberto ? <ChevronDown size={15}/> : <ChevronRight size={15}/>}🏢 Grupo Caiobá</div>
                       </td>
