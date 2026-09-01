@@ -28,7 +28,7 @@ const sumArr = (a) => a.reduce((s, v) => s + v, 0)
 
 export default function MetasPosVendaTotalOficina() {
   const navigate = useNavigate()
-  const [filtroAno,     setFiltroAno]     = useSessionState('mpvto_ano', anoAtual)
+  const [filtroAno,     setFiltroAno]     = useSessionState('mpvs_servicos_ano', anoAtual)
   const [dadosMec,      setDadosMec]      = useState([])
   const [dadosFun,      setDadosFun]      = useState([])
   const [dadosTer,      setDadosTer]      = useState([])
@@ -221,8 +221,8 @@ export default function MetasPosVendaTotalOficina() {
     dadosMec.forEach(row => {
       const _hd = Number(row.horas_disponiveis) || 0, _prod = Number(row.produtividade) || 0
       const _vh = Number(row.valor_hora) || 0,        _cp   = Number(row.coef_pecas)   || 0
-      const _ms = _hd * (_prod / 100) * _vh
-      addRow(row, _ms * _cp, _ms)
+      const _ms = Math.round(_hd * (_prod / 100) * _vh)
+      addRow(row, Math.round(_ms * _cp), _ms)
     })
     funRowsNorm.forEach(row => addRow(row, Number(row.meta_pecas) || 0, Number(row.meta_servicos) || 0))
     terRowsNorm.forEach(row => addRow(row, 0, Number(row.meta_servicos) || 0))

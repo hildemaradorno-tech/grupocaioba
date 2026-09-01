@@ -108,8 +108,8 @@ export default function MetasServicosMecanico({ onDistribuir } = {}) {
   const { hasPermission } = useAuth()
   const canEdit = hasPermission('/metas/pos-vendas/servicos', 'editar')
   const canDelete = hasPermission('/metas/pos-vendas/servicos', 'excluir')
-  const [filtroEmpresa,  setFiltroEmpresa]  = useSessionState('msm_empresa', '')
-  const [filtroAno,      setFiltroAno]      = useSessionState('msm_ano', anoAtual)
+  const [filtroEmpresa,  setFiltroEmpresa]  = useSessionState('mpvs_servicos_empresa', '')
+  const [filtroAno,      setFiltroAno]      = useSessionState('mpvs_servicos_ano', anoAtual)
   const [filtroMecanico, setFiltroMecanico] = useSessionState('msm_mecanico', '')
   const [filtroVisu,     setFiltroVisu]     = useSessionState('msm_visu', 'total')
 
@@ -168,7 +168,7 @@ export default function MetasServicosMecanico({ onDistribuir } = {}) {
         apiService.getEmpresas(), apiService.getDepartamentos(), apiService.getSetores(),
         apiService.getBox(), apiService.getCargos(), apiService.getFuncionarios(),
       ])
-      setEmpresas(sortNome(emps, 'empresa_fantasia'))
+      setEmpresas(sortNome(emps.filter(e => ['Caiobá Trucks', 'Caiobá Motos'].includes(e.agrupamento_nome)), 'empresa_fantasia'))
       setDepartamentos(sortNome(depts, 'nome_departamento'))
       setSetores(sortNome(sets, 'nome_setor'))
       setBoxes(sortNome(bxs, 'nome_box'))
@@ -194,17 +194,39 @@ export default function MetasServicosMecanico({ onDistribuir } = {}) {
   const tree = useMemo(() => {
     const t = {}
     dadosFiltrados.forEach(row => {
-      const eid   = row.empresa_id; const did  = row.departamento_id
-      const sId   = row.setor_id   || row.setor_nome   || '—'
-      const bId   = row.box_id     || row.box_nome     || '—'
-      const cId   = row.cargo_id   || row.cargo_nome   || '—'
+      const eid   = row.empresa_id
       const colid = row.colaborador_id
+      const func  = funcionarios.find(f => f.id === colid)
 
-      const dNome  = departamentos.find(d => d.id === did)?.nome_departamento   || row.departamento_nome || did
-      const sNome  = setores.find(s => s.id === row.setor_id)?.nome_setor        || row.setor_nome        || '—'
-      const bNome  = boxes.find(b => b.id === row.box_id)?.nome_box              || row.box_nome          || '—'
-      const cNome  = cargos.find(c => c.id === row.cargo_id)?.nome_cargo         || row.cargo_nome        || '—'
-      const coNome = funcionarios.find(f => f.id === colid)?.nome_funcionario    || row.colaborador_nome  || colid
+      // Cargo/depto/setor/box resolvidos pelo cadastro atual do funcionário (não pelo retrato
+      // gravado na linha da meta), pra refletir mudanças feitas depois em /funcionarios. Só faz
+      // essa resolução "ao vivo" quando o funcionário da meta ainda existe no cadastro — se o
+      // colaborador_id da linha foi excluído, os IDs de cargo/box gravados podem ter sido
+      // reaproveitados por outro cadastro (ex: cargo renomeado pra outra função), então nesse
+      // caso usa só o retrato (nomes) gravado na própria linha.
+      let cId, cargo, bId, box, sId, setor, did
+      if (func) {
+        cId   = func.cargo_id || '—'
+        cargo = cargos.find(c => c.id === cId)
+        bId   = func.box_id || '—'
+        box   = boxes.find(b => b.id === bId)
+        const boxSetorIds   = box ? (Array.isArray(box.setor_ids) ? box.setor_ids : [box.setor_id]).filter(Boolean) : []
+        const cargoSetorIds = cargo?.setor_ids || func.setor_ids || []
+        sId   = boxSetorIds.find(sid => cargoSetorIds.includes(sid)) || boxSetorIds[0] || cargoSetorIds[0] || '—'
+        setor = setores.find(s => s.id === sId)
+        did   = setor?.departamento_id || cargo?.departamento_ids?.[0] || func.departamento_ids?.[0] || '—'
+      } else {
+        cId = row.cargo_id || '—'; cargo = null
+        bId = row.box_id   || '—'; box   = null
+        sId = row.setor_id || '—'; setor = null
+        did = row.departamento_id || '—'
+      }
+
+      const dNome  = (func && departamentos.find(d => d.id === did)?.nome_departamento) || row.departamento_nome || did
+      const sNome  = (func && setor?.nome_setor) || row.setor_nome || '—'
+      const bNome  = (func && box?.nome_box)     || row.box_nome   || '—'
+      const cNome  = (func && cargo?.nome_cargo) || row.cargo_nome || '—'
+      const coNome = func?.nome_funcionario || row.colaborador_nome || colid
 
       if (!t[eid]) t[eid] = { nome: row.empresa_nome || eid, depts: {} }
       const depts = t[eid].depts
@@ -221,8 +243,8 @@ export default function MetasServicosMecanico({ onDistribuir } = {}) {
       const _vh = Number(row.valor_hora) || 0
       const _cp = Number(row.coef_pecas) || 0
       const _hm = _hd * (_prod / 100)
-      const _ms = _hm * _vh
-      const _mp = _ms * _cp
+      const _ms = Math.round(_hm * _vh)
+      const _mp = Math.round(_ms * _cp)
       coMap[colid].meses[row.mes] = {
         id: row.id,
         horas_disponiveis: row.horas_disponiveis,
