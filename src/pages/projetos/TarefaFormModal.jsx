@@ -35,8 +35,9 @@ const STATUS_KANBAN_OPTIONS = [
 ]
 
 
-export default function TarefaFormModal({ projetoId, tarefa, initialValues, tarefas, dependenciasAtuais, responsaveis, sistemas, fases, empresas, areas, onClose, onSaved, onNavigate }) {
+export default function TarefaFormModal({ projetoId, tarefa, initialValues, tarefas, dependenciasAtuais, responsaveis, sistemas, fases, empresas, areas, canAlterarStatus, onClose, onSaved, onNavigate }) {
   const modoEdicao = Boolean(tarefa)
+  const statusTravado = !canAlterarStatus
 
   const tarefasOrdenadas = [...tarefas].sort((a, b) => {
     const ea = a.etapa ?? 9999, eb = b.etapa ?? 9999
@@ -436,10 +437,16 @@ export default function TarefaFormModal({ projetoId, tarefa, initialValues, tare
             </div>
             <div className="flex flex-col gap-1">
               <label className="text-[10px] font-bold text-slate-500 uppercase">Status (Kanban)</label>
-              <select name="status_kanban" value={form.status_kanban} onChange={handleChange}
-                className="w-full text-xs p-2 border border-slate-200 rounded-md bg-white focus:ring-2 focus:ring-blue-500/20">
-                {STATUS_KANBAN_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
+              {statusTravado ? (
+                <div className="w-full text-xs p-2 border border-slate-200 rounded-md bg-slate-50 font-medium text-slate-500">
+                  {STATUS_KANBAN_OPTIONS.find(o => o.value === form.status_kanban)?.label || 'Mapeado'}
+                </div>
+              ) : (
+                <select name="status_kanban" value={form.status_kanban} onChange={handleChange}
+                  className="w-full text-xs p-2 border border-slate-200 rounded-md bg-white focus:ring-2 focus:ring-blue-500/20">
+                  {STATUS_KANBAN_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              )}
             </div>
             <div className="flex flex-col gap-1">
               <label className="text-[10px] font-bold text-slate-500 uppercase">Progresso (%)</label>

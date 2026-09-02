@@ -1,4 +1,5 @@
 ﻿import React, { useEffect, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useSessionState } from '../hooks/useSessionState'
 import { Plus, X, AlertTriangle, FolderTree, Layers, Eye } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
@@ -6,6 +7,8 @@ import PermissionActionButtons from '../components/PermissionActionButtons'
 import { apiService } from '../services/api'
 
 export default function Setores() {
+  const location = useLocation()
+  const navigate = useNavigate()
   const [departamentos, setDepartamentos] = useState([])
   const [dados, setDados] = useState([])
   const [loading, setLoading] = useState(true)
@@ -67,6 +70,16 @@ export default function Setores() {
     setTipoSetor(item.tipo_setor || '')
     setModalAberto(true)
   }
+
+  // Veio de outra tela (ex: Organograma, clicando no lápis de editar) pedindo pra abrir direto
+  // a edição de um setor específico — consome o state da navegação uma única vez.
+  useEffect(() => {
+    const idParaEditar = location.state?.editarId
+    if (!idParaEditar || dados.length === 0) return
+    const item = dados.find(s => s.id === idParaEditar)
+    if (item) abrirEditar(item)
+    navigate(location.pathname, { replace: true, state: {} })
+  }, [dados, location.state])
 
   const abrirExcluir = (item) => {
     setIdSelecionado(item.id)

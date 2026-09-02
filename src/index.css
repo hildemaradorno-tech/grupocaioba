@@ -15,6 +15,63 @@
 
 body { @apply bg-slate-50; }
 
+/* recharts (gráficos clicáveis) — tira o contorno de foco padrão do navegador que aparece ao
+   clicar numa barra/elemento do SVG (cor varia com o tema de acento do SO, ex: laranja no
+   Windows). O foco pode cair em qualquer elemento interno (rect da barra, path, svg), não só
+   no <svg> raiz — por isso o seletor pega qualquer descendente focado dentro do gráfico. */
+.recharts-wrapper *:focus {
+  outline: none;
+}
+
+/* TipTap / ProseMirror rich text editor */
+.manifestacao-editor .ProseMirror {
+  outline: none;
+  min-height: 90px;
+  max-height: 300px;
+  overflow-y: auto;
+  padding: 0.625rem;
+  font-size: 0.75rem;
+  color: rgb(51 65 85);
+  line-height: 1.625;
+  word-break: break-word;
+}
+.manifestacao-editor .ProseMirror ul {
+  list-style-type: disc;
+  padding-left: 1.4rem;
+  margin: 0.25rem 0;
+}
+.manifestacao-editor .ProseMirror ol {
+  list-style-type: decimal;
+  padding-left: 1.4rem;
+  margin: 0.25rem 0;
+}
+.manifestacao-editor .ProseMirror li {
+  display: list-item;
+  margin: 0.1rem 0;
+}
+.manifestacao-editor .ProseMirror a {
+  color: rgb(37 99 235);
+  text-decoration: underline;
+}
+.manifestacao-editor .ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: #cbd5e1;
+  pointer-events: none;
+  height: 0;
+}
+.manifestacao-editor .ProseMirror:focus { outline: none; }
+
+/* Exibição de HTML rico (fora do editor) */
+.rich-html ul { list-style-type: disc; padding-left: 1.4rem; margin: 0.25rem 0; }
+.rich-html ol { list-style-type: decimal; padding-left: 1.4rem; margin: 0.25rem 0; }
+.rich-html li { display: list-item; margin: 0.1rem 0; }
+.rich-html strong, .rich-html b { font-weight: 700; }
+.rich-html em, .rich-html i { font-style: italic; }
+.rich-html u { text-decoration: underline; }
+.rich-html a { color: inherit; text-decoration: underline; }
+.rich-html p { margin: 0.15rem 0; }
+
 @media print {
   @page { size: A4; margin: 1.5cm; }
   * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }

@@ -1,4 +1,5 @@
 ﻿import React, { useEffect, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useSessionState } from '../hooks/useSessionState'
 import { Plus, X, AlertTriangle, Building2, Eye } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
@@ -6,6 +7,8 @@ import PermissionActionButtons from '../components/PermissionActionButtons'
 import { apiService } from '../services/api'
 
 export default function AgrupamentoEmpresas() {
+  const location = useLocation()
+  const navigate = useNavigate()
   const [items, setItems] = useState([])
   const [segmentos, setSegmentos] = useState([])
   const [empresas, setEmpresas] = useState([])
@@ -56,6 +59,16 @@ export default function AgrupamentoEmpresas() {
     setForm({ nome_agrupamento: item.nome_agrupamento || '', segmento_id: item.segmento_id || '', ativo: item.ativo ?? true })
     setModalAberto(true)
   }
+
+  // Veio de outra tela (ex: Organograma, clicando no lápis de editar) pedindo pra abrir direto
+  // a edição de um agrupamento de empresas específico — consome o state da navegação uma única vez.
+  useEffect(() => {
+    const idParaEditar = location.state?.editarId
+    if (!idParaEditar || items.length === 0) return
+    const item = items.find(i => i.id === idParaEditar)
+    if (item) abrirEditar(item)
+    navigate(location.pathname, { replace: true, state: {} })
+  }, [items, location.state])
 
   const abrirExcluir = (item) => {
     setIdExcluir(item.id)

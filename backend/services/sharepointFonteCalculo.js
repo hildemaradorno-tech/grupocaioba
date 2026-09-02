@@ -204,15 +204,20 @@ function arquivoCobreIntervalo(nomeArquivo, dataInicio, dataFim) {
   return true
 }
 
-// Lista os arquivos de uma pasta (opcionalmente pasta/{ano}) que começam com prefixoArquivo.
+// Lista os arquivos de uma pasta (opcionalmente pasta/subpasta) que começam com prefixoArquivo.
 // dataInicio/dataFim (opcionais, 'YYYY-MM-DD') restringem ainda mais quando o nome do arquivo
 // tem ano/mês reconhecível (ver arquivoCobreIntervalo) — reduz drasticamente quantos arquivos
 // precisam ser baixados quando a pasta tem um arquivo por ano/mês em vez de subpastas.
-export async function listarArquivos({ pastaSharepoint, prefixoArquivo, usaSubpastaAno, ano, dataInicio, dataFim }) {
+// subpastaPadrao é um template com o token literal "{ano}" (ex: "{ano}", "Ano {ano}",
+// "Base {ano} - Nova") — nem toda fonte guarda o arquivo numa subpasta que é só o ano puro,
+// então o nome da subpasta é configurável por Fonte de Cálculo em vez de fixo no código.
+// Sem valor configurado, cai no comportamento antigo (subpasta = ano puro).
+export async function listarArquivos({ pastaSharepoint, prefixoArquivo, usaSubpastaAno, subpastaPadrao, ano, dataInicio, dataFim }) {
   const driveId = process.env.SHAREPOINT_DRIVE_ID
   if (!driveId) throw new Error('SHAREPOINT_DRIVE_ID não configurado no ambiente')
 
-  const pastaFinal = usaSubpastaAno ? `${pastaSharepoint}/${ano}` : pastaSharepoint
+  const nomeSubpasta = (subpastaPadrao || '{ano}').replace('{ano}', ano)
+  const pastaFinal = usaSubpastaAno ? `${pastaSharepoint}/${nomeSubpasta}` : pastaSharepoint
 
   let folderData
   try {
@@ -238,9 +243,9 @@ export async function baixarBuffer(downloadUrl) {
 
 // Diagnóstico: retorna colunas disponíveis + amostra, SEM carregar o arquivo inteiro
 // (usa sheetRows para limitar quantas linhas o XLSX efetivamente parseia).
-export async function getColunas({ pastaSharepoint, prefixoArquivo, usaSubpastaAno, ano, linhaCabecalho }) {
+export async function getColunas({ pastaSharepoint, prefixoArquivo, usaSubpastaAno, subpastaPadrao, ano, linhaCabecalho }) {
   const files = await listarArquivos({
-    pastaSharepoint, prefixoArquivo, usaSubpastaAno,
+    pastaSharepoint, prefixoArquivo, usaSubpastaAno, subpastaPadrao,
     ano: ano || new Date().getFullYear(),
   })
   const file = files[0]
@@ -354,9 +359,9 @@ async function agregarArquivo(downloadUrl, { linhaCabecalho, colunaEmpresa, colu
 
 // Combina listagem de arquivos + leitura em streaming + agregação, usado pelo painel de conferência.
 // Cacheia só o RESULTADO final (números), nunca as linhas do arquivo.
-export async function preview({ pastaSharepoint, prefixoArquivo, usaSubpastaAno, linhaCabecalho, colunaEmpresa, colunaData, colunaValor, tipoAgregacao, empresaNome, dataInicio, dataFim, regras }) {
+export async function preview({ pastaSharepoint, prefixoArquivo, usaSubpastaAno, subpastaPadrao, linhaCabecalho, colunaEmpresa, colunaData, colunaValor, tipoAgregacao, empresaNome, dataInicio, dataFim, regras }) {
   const empresaAlvo = empresaNome ? normalizaTexto(empresaNome) : null
-  const key = [pastaSharepoint, prefixoArquivo, usaSubpastaAno, linhaCabecalho || 0, colunaEmpresa, colunaData, colunaValor, tipoAgregacao, empresaAlvo, dataInicio, dataFim, JSON.stringify(regras || [])].join('|')
+  const key = [pastaSharepoint, prefixoArquivo, usaSubpastaAno, subpastaPadrao, linhaCabecalho || 0, colunaEmpresa, colunaData, colunaValor, tipoAgregacao, empresaAlvo, dataInicio, dataFim, JSON.stringify(regras || [])].join('|')
   const cached = _cache.get(key)
   if (cached && (Date.now() - cached.ts) < CACHE_TTL_MS) return cached.resultado
 
@@ -364,7 +369,7 @@ export async function preview({ pastaSharepoint, prefixoArquivo, usaSubpastaAno,
   const acc = { totalLinhas: 0, totalFiltradas: 0, soma: 0, empresasAmostra: new Set() }
 
   for (const ano of anos) {
-    const files = await listarArquivos({ pastaSharepoint, prefixoArquivo, usaSubpastaAno, ano, dataInicio, dataFim })
+    const files = await listarArquivos({ pastaSharepoint, prefixoArquivo, usaSubpastaAno, subpastaPadrao, ano, dataInicio, dataFim })
     for (const file of files) {
       const downloadUrl = file['@microsoft.graph.downloadUrl']
       if (!downloadUrl) continue

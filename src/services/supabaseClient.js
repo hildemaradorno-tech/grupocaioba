@@ -79,7 +79,7 @@ async function verificarFechamentoCiclo(cicloId) {
 // não mais por um "código" texto — evita quebrar o vínculo quando a Fonte/Base é renomeada.
 const SELECT_POLITICA_COM_FONTE_BASE = `
   *,
-  fonte_calculo:dim_fontes_calculo(id, nome, codigo, pasta_sharepoint, prefixo_arquivo, usa_subpasta_ano, linha_cabecalho, coluna_empresa, coluna_data, coluna_funcionario),
+  fonte_calculo:dim_fontes_calculo(id, nome, codigo, pasta_sharepoint, prefixo_arquivo, usa_subpasta_ano, subpasta_padrao, linha_cabecalho, coluna_empresa, coluna_data, coluna_funcionario),
   base_calculo:dim_bases_calculo(id, nome, codigo, coluna_valor, tipo_agregacao)
 `
 const enriquecePoliticaFonteBase = (p) => ({
@@ -700,6 +700,89 @@ export const apiService = {
     return { success: true }
   },
 
+  // PLANO DMS — categorias de plano de manutenção (Óleos e Filtros, Dinâmico, Preventivo,
+  // Pleno...) e a tabela de valores por categoria + prazo (tempo em meses), base pro futuro
+  // cálculo de comissões desse plano.
+  getCategoriasPlanoDms: async () => {
+    const { data, error } = await supabase
+      .from('dim_categorias_plano_dms')
+      .select('*')
+      .order('nome', { ascending: true })
+    if (error) throw error
+    return data || []
+  },
+
+  createCategoriaPlanoDms: async ({ nome, ativo }) => {
+    const { data, error } = await supabase
+      .from('dim_categorias_plano_dms')
+      .insert([{ nome, ativo: ativo ?? true }])
+      .select()
+    if (error) throw error
+    return data?.[0]
+  },
+
+  updateCategoriaPlanoDms: async (id, { nome, ativo }) => {
+    const { data, error } = await supabase
+      .from('dim_categorias_plano_dms')
+      .update({ nome, ativo: ativo ?? true, atualizado_em: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+    if (error) throw error
+    return data?.[0]
+  },
+
+  deleteCategoriaPlanoDms: async (id) => {
+    const { error } = await supabase.from('dim_categorias_plano_dms').delete().eq('id', id)
+    if (error) throw error
+    return { success: true }
+  },
+
+  getPlanoDmsValores: async () => {
+    const { data, error } = await supabase
+      .from('fato_plano_dms_valores')
+      .select('*')
+      .order('tempo_meses', { ascending: true })
+    if (error) throw error
+    return data || []
+  },
+
+  createPlanoDmsValor: async ({ categoria_id, tempo_meses, valor, ativo }) => {
+    const { data, error } = await supabase
+      .from('fato_plano_dms_valores')
+      .insert([{ categoria_id, tempo_meses, valor, ativo: ativo ?? true }])
+      .select()
+    if (error) throw error
+    return data?.[0]
+  },
+
+  updatePlanoDmsValor: async (id, { tempo_meses, valor, ativo }) => {
+    const { data, error } = await supabase
+      .from('fato_plano_dms_valores')
+      .update({ tempo_meses, valor, ativo: ativo ?? true, atualizado_em: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+    if (error) throw error
+    return data?.[0]
+  },
+
+  deletePlanoDmsValor: async (id) => {
+    const { error } = await supabase.from('fato_plano_dms_valores').delete().eq('id', id)
+    if (error) throw error
+    return { success: true }
+  },
+
+  // Cálculo de Comissão Plano DMS: cruza O.S. P04 do SharePoint (período) com o arquivo de
+  // Chassi -> Plano vendido; devolve { matched, semPlano } cru (funcionário/política/valor são
+  // resolvidos no front, em CalculoPlanoDms.jsx).
+  calcularPlanoDms: async ({ ano, periodoInicio, periodoFim }) => {
+    const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
+    const params = new URLSearchParams({ ano, periodoInicio, periodoFim })
+    const res = await fetch(`${backendUrl}/api/plano-dms/calcular?${params}`)
+    const body = await res.json()
+    if (!res.ok) throw new Error(body.detalhe || body.error || 'Erro ao calcular Plano DMS')
+    return body
+  },
+
   // AGRUPAMENTO CARGOS
   getAgrupamentoCargos: async () => {
     const { data, error } = await supabase
@@ -1260,7 +1343,7 @@ export const apiService = {
   getBasesCalculoComFonte: async () => {
     const { data, error } = await supabase
       .from('dim_bases_calculo')
-      .select('*, fonte_calculo:dim_fontes_calculo(id, nome, codigo, pasta_sharepoint, prefixo_arquivo, usa_subpasta_ano, linha_cabecalho, coluna_empresa, coluna_data, coluna_funcionario)')
+      .select('*, fonte_calculo:dim_fontes_calculo(id, nome, codigo, pasta_sharepoint, prefixo_arquivo, usa_subpasta_ano, subpasta_padrao, linha_cabecalho, coluna_empresa, coluna_data, coluna_funcionario)')
       .order('nome', { ascending: true })
     if (error) throw error
     return data || []
@@ -1295,12 +1378,13 @@ export const apiService = {
   },
 
   // Diagnóstico: lista as colunas reais de um arquivo do SharePoint (botão "Detectar Colunas")
-  getColunasFonteCalculo: async ({ pasta, prefixo, usaSubpastaAno, ano, linhaCabecalho }) => {
+  getColunasFonteCalculo: async ({ pasta, prefixo, usaSubpastaAno, subpastaPadrao, ano, linhaCabecalho }) => {
     const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
     const qs = new URLSearchParams({
       pasta, prefixo,
       usaSubpastaAno: String(!!usaSubpastaAno),
       linhaCabecalho: String(linhaCabecalho || 0),
+      ...(subpastaPadrao ? { subpastaPadrao } : {}),
       ...(ano ? { ano: String(ano) } : {}),
     })
     const res = await fetch(`${backendUrl}/api/calculo-comissao/colunas?${qs}`)
@@ -1312,7 +1396,7 @@ export const apiService = {
   // Painel de conferência: calcula o valor agregado para uma empresa/período específicos,
   // aplicando as Regras de Cálculo da Base (se houver). POST porque `regras` é uma lista
   // aninhada de tamanho variável.
-  previewCalculoComissao: async ({ pasta, prefixo, usaSubpastaAno, linhaCabecalho, colunaEmpresa, colunaData, colunaValor, tipoAgregacao, empresaNome, dataInicio, dataFim, regras }) => {
+  previewCalculoComissao: async ({ pasta, prefixo, usaSubpastaAno, subpastaPadrao, linhaCabecalho, colunaEmpresa, colunaData, colunaValor, tipoAgregacao, empresaNome, dataInicio, dataFim, regras }) => {
     const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
     const res = await fetch(`${backendUrl}/api/calculo-comissao/preview`, {
       method: 'POST',
@@ -1320,6 +1404,7 @@ export const apiService = {
       body: JSON.stringify({
         pasta, prefixo,
         usaSubpastaAno: !!usaSubpastaAno,
+        subpastaPadrao: subpastaPadrao || null,
         linhaCabecalho: linhaCabecalho || 0,
         colunaEmpresa: colunaEmpresa || '',
         colunaData: colunaData || '',
@@ -1759,6 +1844,35 @@ export const apiService = {
     return data || null
   },
 
+  // TODOS os lotes de uma empresa num período, de qualquer departamento — usado só pra achar
+  // lotes "órfãos": um departamento que já teve cálculo salvo mas hoje não tem mais nenhum
+  // funcionário elegível nele (ex: o cargo foi remanejado pra outro departamento depois do
+  // cálculo). Sem isso, esse lote fica preso — nunca aparece como aba pra selecionar e excluir.
+  getLotesPorEmpresaPeriodo: async (periodoInicio, periodoFim, empresaId) => {
+    if (!empresaId) return []
+    const { data, error } = await supabase
+      .from('fato_comissoes_lotes')
+      .select('*')
+      .eq('periodo_inicio', periodoInicio)
+      .eq('periodo_fim', periodoFim)
+      .eq('empresa_id', empresaId)
+    if (error) throw error
+    return data || []
+  },
+
+  // TODOS os lotes de um período, de qualquer empresa/departamento — usado no painel "Visão
+  // Geral" de Processamento de Comissões, que lista todas as lojas/departamentos e quem já
+  // conferiu, independente de já ter algum resultado calculado carregado na tela.
+  getLotesPorPeriodo: async (periodoInicio, periodoFim) => {
+    const { data, error } = await supabase
+      .from('fato_comissoes_lotes')
+      .select('*')
+      .eq('periodo_inicio', periodoInicio)
+      .eq('periodo_fim', periodoFim)
+    if (error) throw error
+    return data || []
+  },
+
   // Cria o lote (Rascunho) se não existir, ou atualiza o snapshot enquanto ainda for Rascunho.
   // Se já estiver Conferido/Processado, não mexe no lote (precisa de Autorizar Reprocessamento antes).
   salvarLoteRascunho: async ({ periodoInicio, periodoFim, empresaId, empresaNome, departamentoId, departamentoNome, qtdFuncionarios, valorTotal, usuario }) => {
@@ -1971,21 +2085,42 @@ export const apiService = {
     return data || []
   },
 
+  // Todos os eventos de vários lotes de uma vez, mais antigo primeiro — usado no painel "Linha
+  // do Tempo" de Processamento de Comissões, que mostra quem fez o quê e quando em ordem, pra
+  // todos os lotes do período (não só 1).
+  getHistoricoLotesPorIds: async (loteIds) => {
+    if (!loteIds || loteIds.length === 0) return []
+    const { data, error } = await supabase
+      .from('fato_comissoes_lotes_historico')
+      .select('*')
+      .in('lote_id', loteIds)
+      .order('data_hora', { ascending: true })
+    if (error) throw error
+    return data || []
+  },
+
   // Só deve ser chamado com o lote em RASCUNHO (checagem de status é feita em quem chama) —
-  // apaga os valores salvos do período (só dos funcionarioIds informados — a empresa
-  // selecionada na tela, pra não apagar o que outro gerente já salvou de outra empresa no
-  // mesmo período) e o próprio lote (histórico de eventos some junto, via ON DELETE CASCADE),
-  // voltando o período pro estado "nunca calculado" NAQUELA empresa.
-  // loteId pode vir null: se os valores foram salvos mas o lote não chegou a ser criado
-  // (estado órfão), ainda dá pra excluir os valores calculados do período. Exclusão por
-  // intervalo (não igualdade) pra alcançar também os segmentos parciais criados por férias.
+  // apaga os valores salvos do período e o próprio lote (histórico de eventos some junto, via
+  // ON DELETE CASCADE), voltando o período pro estado "nunca calculado" NAQUELA empresa.
+  // Com loteId, apaga só os registros DESSE lote (via lote_id) — preciso e seguro mesmo se o
+  // departamento do lote não bater mais com o departamento atual do funcionário (ex: cargo
+  // remanejado depois do cálculo, ver "PÓS-VENDAS" órfã na Chapadão em ago/2026).
+  // loteId pode vir null: se os valores foram salvos mas o lote não chegou a ser criado (estado
+  // órfão), cai pro fallback por funcionarioIds+período — e recusa se funcionarioIds vier vazio,
+  // pra nunca apagar por período sozinho (isso alcançaria TODAS as empresas daquele período).
   excluirHistoricoLote: async (loteId, periodoInicio, periodoFim, funcionarioIds) => {
-    let queryDel = supabase
-      .from('fato_comissoes_calculadas')
-      .delete()
-      .gte('periodo_inicio', periodoInicio)
-      .lte('periodo_fim', periodoFim)
-    if (funcionarioIds && funcionarioIds.length > 0) queryDel = queryDel.in('funcionario_id', funcionarioIds)
+    let queryDel = supabase.from('fato_comissoes_calculadas').delete()
+    if (loteId) {
+      queryDel = queryDel.eq('lote_id', loteId)
+    } else {
+      if (!funcionarioIds || funcionarioIds.length === 0) {
+        throw new Error('Não foi possível identificar com segurança quais registros excluir (nenhum funcionário correspondente encontrado). Nada foi apagado.')
+      }
+      queryDel = queryDel
+        .gte('periodo_inicio', periodoInicio)
+        .lte('periodo_fim', periodoFim)
+        .in('funcionario_id', funcionarioIds)
+    }
     const { error: e1 } = await queryDel
     if (e1) throw e1
 
@@ -2466,12 +2601,17 @@ export const apiService = {
     return { success: true }
   },
 
-  // NÃO APROVAR — reverte meta_aprovada para null em cada tabela rascunho
+  // NÃO APROVAR — reverte meta_aprovada para null em cada tabela rascunho e remove a
+  // publicação correspondente de fato_metas_publicadas (aprovar publica na hora, então
+  // desaprovar precisa desfazer a publicação pra não deixar dado obsoleto indo pro Power BI).
   unapproveMetasPecasEmpresa: async (empresaId, ano) => {
     const { error } = await supabase.from('fato_rascunho_metas_pecas')
       .update({ meta_aprovada: null, aprovado_em: null })
       .eq('empresa_id', empresaId).eq('ano', ano)
     if (error) throw error
+    const { error: errDel } = await supabase.from('fato_metas_publicadas')
+      .delete().eq('empresa_id', empresaId).eq('ano', ano).eq('tipo', 'pecas')
+    if (errDel) throw errDel
     return { success: true }
   },
   unapproveMetasMecanicoEmpresa: async (empresaId, ano) => {
@@ -2479,6 +2619,9 @@ export const apiService = {
       .update({ meta_aprovada: null, aprovado_em: null })
       .eq('empresa_id', empresaId).eq('ano', ano)
     if (error) throw error
+    const { error: errDel } = await supabase.from('fato_metas_publicadas')
+      .delete().eq('empresa_id', empresaId).eq('ano', ano).eq('tipo', 'mecanico')
+    if (errDel) throw errDel
     return { success: true }
   },
   unapproveMetasConsultorEmpresa: async (empresaId, ano) => {
@@ -2486,6 +2629,9 @@ export const apiService = {
       .update({ meta_aprovada: null, aprovado_em: null })
       .eq('empresa_id', empresaId).eq('ano', ano)
     if (error) throw error
+    const { error: errDel } = await supabase.from('fato_metas_publicadas')
+      .delete().eq('empresa_id', empresaId).eq('ano', ano).eq('tipo', 'consultor')
+    if (errDel) throw errDel
     return { success: true }
   },
   unapproveMetasFunilariaEmpresa: async (empresaId, ano) => {
@@ -2493,6 +2639,9 @@ export const apiService = {
       .update({ meta_aprovada: null, aprovado_em: null })
       .eq('empresa_id', empresaId).eq('ano', ano)
     if (error) throw error
+    const { error: errDel } = await supabase.from('fato_metas_publicadas')
+      .delete().eq('empresa_id', empresaId).eq('ano', ano).eq('tipo', 'funilaria')
+    if (errDel) throw errDel
     return { success: true }
   },
   unapproveMetasTerceirosEmpresa: async (empresaId, ano) => {
@@ -2500,6 +2649,9 @@ export const apiService = {
       .update({ meta_aprovada: null, aprovado_em: null })
       .eq('empresa_id', empresaId).eq('ano', ano)
     if (error) throw error
+    const { error: errDel } = await supabase.from('fato_metas_publicadas')
+      .delete().eq('empresa_id', empresaId).eq('ano', ano).eq('tipo', 'terceiros')
+    if (errDel) throw errDel
     return { success: true }
   },
 
@@ -3198,14 +3350,16 @@ export const apiService = {
   // cada uma TODOS ou INDIVIDUAL) — separado da restrição de Empresa usada em Garantias DAF.
   getPermissoesComissaoGrupo: async (grupoId) => {
     const dims = ['empresa', 'area', 'departamento', 'setor', 'agrupamento_cargo']
-    const [{ data: modos, error: e1 }, { data: valores, error: e2 }, { data: grupoRow, error: e3 }] = await Promise.all([
+    const [{ data: modos, error: e1 }, { data: valores, error: e2 }, { data: grupoRow, error: e3 }, { data: nivelDepto, error: e4 }] = await Promise.all([
       supabase.from('permissoes_comissao_modo').select('dimensao, modo').eq('grupo_id', grupoId),
       supabase.from('permissoes_comissao_valor').select('dimensao, valor').eq('grupo_id', grupoId),
       supabase.from('grupos_acesso').select('comissao_escopo_habilitado').eq('id', grupoId).maybeSingle(),
+      supabase.from('permissoes_comissao_departamento_nivel').select('departamento_id, nivel_acesso, responsavel').eq('grupo_id', grupoId),
     ])
     if (e1) throw e1
     if (e2) throw e2
     if (e3) throw e3
+    if (e4) throw e4
     const escopo = { habilitado: !!grupoRow?.comissao_escopo_habilitado }
     for (const dim of dims) {
       const modoRow = (modos || []).find(m => m.dimensao === dim)
@@ -3214,23 +3368,33 @@ export const apiService = {
         valores: (valores || []).filter(v => v.dimensao === dim).map(v => v.valor),
       }
     }
+    // Nível de acesso (editar/visualizar) + marcação de responsável, por departamento —
+    // ausência de linha pra um departamento = 'editar' + não-responsável (ver migração).
+    escopo.departamentoNivel = Object.fromEntries(
+      (nivelDepto || []).map(r => [r.departamento_id, { nivel_acesso: r.nivel_acesso, responsavel: !!r.responsavel }])
+    )
     return escopo
   },
 
   // `habilitado` é a trava mestre (grupos_acesso.comissao_escopo_habilitado): enquanto
   // false, o grupo não enxerga nenhum funcionário em Cálculo de Comissões, independente
-  // de como as 5 dimensões estiverem configuradas.
-  setPermissoesComissaoGrupo: async (grupoId, escopo, habilitado) => {
+  // de como as 5 dimensões estiverem configuradas. `departamentoNivel` é
+  // { [departamento_id]: { nivel_acesso, responsavel } } — só persiste os departamentos que
+  // ainda estão marcados em escopo.departamento.valores (Individual) e que fujam do default
+  // ('editar' + não-responsável), pra manter a tabela enxuta.
+  setPermissoesComissaoGrupo: async (grupoId, escopo, habilitado, departamentoNivel) => {
     // 'empresa' é controlada por permissoes_empresa_grupo (Acesso por Empresa), não aqui
     const dims = ['area', 'departamento', 'setor', 'agrupamento_cargo']
-    const [{ error: delModo }, { error: delValor }, { error: errHab }] = await Promise.all([
+    const [{ error: delModo }, { error: delValor }, { error: errHab }, { error: delNivel }] = await Promise.all([
       supabase.from('permissoes_comissao_modo').delete().eq('grupo_id', grupoId),
       supabase.from('permissoes_comissao_valor').delete().eq('grupo_id', grupoId),
       supabase.from('grupos_acesso').update({ comissao_escopo_habilitado: !!habilitado }).eq('id', grupoId),
+      supabase.from('permissoes_comissao_departamento_nivel').delete().eq('grupo_id', grupoId),
     ])
     if (delModo) throw delModo
     if (delValor) throw delValor
     if (errHab) throw errHab
+    if (delNivel) throw delNivel
 
     const modoRows = dims.map(dim => ({ grupo_id: grupoId, dimensao: dim, modo: escopo[dim]?.modo === 'INDIVIDUAL' ? 'INDIVIDUAL' : 'TODOS' }))
     const valorRows = dims
@@ -3243,6 +3407,66 @@ export const apiService = {
       const { error: insValor } = await supabase.from('permissoes_comissao_valor').insert(valorRows)
       if (insValor) throw insValor
     }
+
+    const departamentosVisiveis = new Set(escopo.departamento?.modo === 'INDIVIDUAL' ? (escopo.departamento?.valores || []) : [])
+    const nivelRows = Object.entries(departamentoNivel || {})
+      .filter(([depId, v]) => departamentosVisiveis.has(depId) && (v?.nivel_acesso === 'visualizar' || v?.responsavel))
+      .map(([depId, v]) => ({ grupo_id: grupoId, departamento_id: depId, nivel_acesso: v?.nivel_acesso === 'visualizar' ? 'visualizar' : 'editar', responsavel: !!v?.responsavel }))
+    if (nivelRows.length > 0) {
+      const { error: insNivel } = await supabase.from('permissoes_comissao_departamento_nivel').insert(nivelRows)
+      if (insNivel) throw insNivel
+    }
+  },
+
+  // Departamentos marcados como "Responsável" — { [departamento_id]: { [empresa_id]: [nomes] } }.
+  // Um mesmo Departamento (ex: "Estoque de Peças") pode existir em várias lojas ao mesmo tempo
+  // (dim_departamentos.empresa_ids), cada uma com seu próprio gerente/grupo — por isso o
+  // resultado é bucketizado por Empresa também, usando o "Acesso por Empresa" de CADA grupo
+  // marcado como responsável, pra não misturar o responsável de uma loja com o de outra que só
+  // compartilha o mesmo departamento. Grupo sem nenhuma empresa liberada não aparece em lugar
+  // nenhum (fail-closed, mesmo critério de comissaoEscopoEfetivo).
+  getResponsaveisComissaoDepartamentos: async () => {
+    const { data: linhas, error: e1 } = await supabase
+      .from('permissoes_comissao_departamento_nivel')
+      .select('grupo_id, departamento_id')
+      .eq('responsavel', true)
+    if (e1) throw e1
+    if (!linhas || linhas.length === 0) return {}
+    const grupoIds = [...new Set(linhas.map(l => l.grupo_id))]
+    const [{ data: usuarios, error: e2 }, { data: empresasGrupo, error: e3 }] = await Promise.all([
+      supabase.from('usuarios').select('nome, email, grupo_id').in('grupo_id', grupoIds).eq('ativo', true),
+      supabase.from('permissoes_empresa_grupo').select('grupo_id, empresa_id').in('grupo_id', grupoIds),
+    ])
+    if (e2) throw e2
+    if (e3) throw e3
+    const usuariosPorGrupo = new Map()
+    for (const u of usuarios || []) {
+      if (!usuariosPorGrupo.has(u.grupo_id)) usuariosPorGrupo.set(u.grupo_id, [])
+      usuariosPorGrupo.get(u.grupo_id).push(u.nome || u.email)
+    }
+    const empresasPorGrupo = new Map()
+    for (const e of empresasGrupo || []) {
+      if (!empresasPorGrupo.has(e.grupo_id)) empresasPorGrupo.set(e.grupo_id, [])
+      empresasPorGrupo.get(e.grupo_id).push(e.empresa_id)
+    }
+    const mapa = {}
+    for (const l of linhas) {
+      const nomes = usuariosPorGrupo.get(l.grupo_id) || []
+      if (nomes.length === 0) continue
+      const empresaIds = empresasPorGrupo.get(l.grupo_id) || []
+      if (empresaIds.length === 0) continue
+      if (!mapa[l.departamento_id]) mapa[l.departamento_id] = {}
+      for (const empresaId of empresaIds) {
+        if (!mapa[l.departamento_id][empresaId]) mapa[l.departamento_id][empresaId] = []
+        mapa[l.departamento_id][empresaId].push(...nomes)
+      }
+    }
+    for (const depId of Object.keys(mapa)) {
+      for (const empId of Object.keys(mapa[depId])) {
+        mapa[depId][empId] = [...new Set(mapa[depId][empId])]
+      }
+    }
+    return mapa
   },
 
   // ══════════════════════════════════════════

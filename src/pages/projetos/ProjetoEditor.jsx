@@ -45,6 +45,7 @@ export default function ProjetoEditor() {
   const { user, hasActionOrDefault } = useAuth()
   const { modoVerTodos } = useProjetosFiltros()
   const canExcluir = !modoVerTodos && hasActionOrDefault('projetos', 'excluir')
+  const canAlterarStatus = hasActionOrDefault('projetos', 'alterar_status')
   const isNew = !id
 
   // Se está em modo visualização geral, redireciona para o detalhe (sem edição)
@@ -109,7 +110,7 @@ export default function ProjetoEditor() {
     const init = async () => {
       setLoading(true)
       try {
-        if (!_lookups.departamentos) {
+        if (Object.values(_lookups).some(v => v === null)) {
           const [deps, ars, sis, resps, emps, fas] = await Promise.all([
             apiService.getProjDepartamentos(),
             apiService.getProjAreas(),
@@ -540,9 +541,15 @@ export default function ProjetoEditor() {
           </div>
           <div className="flex flex-col gap-1">
             <Lbl>Status</Lbl>
-            <select name="status" value={proj.status || 'mapeado'} onChange={handleProjChange} className={sel}>
-              {Object.entries(STATUS_PROJ).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
+            {canAlterarStatus ? (
+              <select name="status" value={proj.status || 'mapeado'} onChange={handleProjChange} className={sel}>
+                {Object.entries(STATUS_PROJ).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+            ) : (
+              <div className={`${sel} bg-slate-50 text-slate-500 pointer-events-none`}>
+                {STATUS_PROJ[proj.status || 'mapeado'] || 'Mapeado'}
+              </div>
+            )}
           </div>
           <div className="flex flex-col gap-1">
             <Lbl>Resp.Projeto</Lbl>

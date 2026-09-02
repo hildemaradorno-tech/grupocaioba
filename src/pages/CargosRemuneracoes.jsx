@@ -53,6 +53,7 @@ export default function CargosRemuneracoes() {
   const [gerandoPDF, setGerandoPDF] = useState(false)
 
   const [filtroCargo, setFiltroCargo] = useState('')
+  const [filtroEmpresa, setFiltroEmpresa] = useState('')
   const [filtroAgrupamentoEmpresa, setFiltroAgrupamentoEmpresa] = useState('')
   const [filtroArea, setFiltroArea] = useState('')
   const [filtroAgrupamentoCargo, setFiltroAgrupamentoCargo] = useState('')
@@ -114,14 +115,16 @@ export default function CargosRemuneracoes() {
   // Área "Pós-Vendas", por exemplo, faz Departamento/Setor/Cargo mostrarem só quem é Pós-Vendas.
   const filtrarCargos = useMemo(() => (ignorar) => cargosComPolitica.filter(c => {
     if (ignorar !== 'cargo' && filtroCargo && c.nome_cargo !== filtroCargo) return false
+    if (ignorar !== 'empresa' && filtroEmpresa && c.nome_empresa !== filtroEmpresa) return false
     if (ignorar !== 'agrupEmpresa' && filtroAgrupamentoEmpresa && c.nome_agrupamento_empresa !== filtroAgrupamentoEmpresa) return false
     if (ignorar !== 'area' && filtroArea && !c.nomeAreas.includes(filtroArea)) return false
     if (ignorar !== 'agrupCargo' && filtroAgrupamentoCargo && c.nome_agrupamento_cargo !== filtroAgrupamentoCargo) return false
     if (ignorar !== 'departamento' && filtroDepartamento && !c.nomeDepartamentos.includes(filtroDepartamento)) return false
     if (ignorar !== 'setor' && filtroSetor && !c.nomeSetores.includes(filtroSetor)) return false
     return true
-  }), [cargosComPolitica, filtroCargo, filtroAgrupamentoEmpresa, filtroArea, filtroAgrupamentoCargo, filtroDepartamento, filtroSetor])
+  }), [cargosComPolitica, filtroCargo, filtroEmpresa, filtroAgrupamentoEmpresa, filtroArea, filtroAgrupamentoCargo, filtroDepartamento, filtroSetor])
 
+  const empresasUnicas = useMemo(() => juntaUnicos(filtrarCargos('empresa').map(c => c.nome_empresa)), [filtrarCargos])
   const agrupamentosEmpresaUnicos = useMemo(() => juntaUnicos(filtrarCargos('agrupEmpresa').map(c => c.nome_agrupamento_empresa)), [filtrarCargos])
   const areasUnicas = useMemo(() => juntaUnicos(filtrarCargos('area').flatMap(c => c.nomeAreas)), [filtrarCargos])
   const departamentosUnicos = useMemo(() => juntaUnicos(filtrarCargos('departamento').flatMap(c => c.nomeDepartamentos)), [filtrarCargos])
@@ -133,17 +136,18 @@ export default function CargosRemuneracoes() {
 
   // Seleção que ficou sem opção depois de mudar outro filtro é limpa automaticamente.
   useEffect(() => {
+    if (filtroEmpresa && !empresasUnicas.includes(filtroEmpresa)) setFiltroEmpresa('')
     if (filtroAgrupamentoEmpresa && !agrupamentosEmpresaUnicos.includes(filtroAgrupamentoEmpresa)) setFiltroAgrupamentoEmpresa('')
     if (filtroArea && !areasUnicas.includes(filtroArea)) setFiltroArea('')
     if (filtroDepartamento && !departamentosUnicos.includes(filtroDepartamento)) setFiltroDepartamento('')
     if (filtroSetor && !setoresUnicos.includes(filtroSetor)) setFiltroSetor('')
     if (filtroAgrupamentoCargo && !agrupamentosCargoUnicos.includes(filtroAgrupamentoCargo)) setFiltroAgrupamentoCargo('')
     if (filtroCargo && !cargosUnicos.includes(filtroCargo)) setFiltroCargo('')
-  }, [agrupamentosEmpresaUnicos, areasUnicas, departamentosUnicos, setoresUnicos, agrupamentosCargoUnicos, cargosUnicos])
+  }, [empresasUnicas, agrupamentosEmpresaUnicos, areasUnicas, departamentosUnicos, setoresUnicos, agrupamentosCargoUnicos, cargosUnicos])
 
-  const temFiltroAtivo = !!(filtroAgrupamentoEmpresa || filtroArea || filtroDepartamento || filtroSetor || filtroAgrupamentoCargo || filtroCargo)
+  const temFiltroAtivo = !!(filtroEmpresa || filtroAgrupamentoEmpresa || filtroArea || filtroDepartamento || filtroSetor || filtroAgrupamentoCargo || filtroCargo)
   const limparFiltros = () => {
-    setFiltroAgrupamentoEmpresa(''); setFiltroArea(''); setFiltroDepartamento('')
+    setFiltroEmpresa(''); setFiltroAgrupamentoEmpresa(''); setFiltroArea(''); setFiltroDepartamento('')
     setFiltroSetor(''); setFiltroAgrupamentoCargo(''); setFiltroCargo('')
   }
 
@@ -179,7 +183,28 @@ export default function CargosRemuneracoes() {
     return [...linhasOrdenadas, LINHA_DSR]
   }
 
-  // Agrupa os cargos exibidos por Departamento, igual ao padrão já usado em Cálculo de Comissões.
+  // Mesmo código de cargo existe 1x por empresa (dim_cargos é por empresa) — junta as linhas de
+  // Política/Ganho de todos os cargos "irmãos" (mesmo código) num card único, removendo
+  // duplicatas com descrição+valor idênticos.
+  const linhasDoGrupoCargo = (cargosDoGrupo) => {
+    const vistos = new Set()
+    const linhas = []
+    for (const cargo of cargosDoGrupo) {
+      for (const l of linhasDoCargo(cargo)) {
+        if (l.tipo === 'dsr') continue
+        const chave = `${l.tipo}|${l.descricao}|${l.display}`
+        if (vistos.has(chave)) continue
+        vistos.add(chave)
+        linhas.push(l)
+      }
+    }
+    linhas.sort((a, b) => a.descricao.localeCompare(b.descricao, 'pt-BR'))
+    return [...linhas, LINHA_DSR]
+  }
+
+  // Agrupa os cargos exibidos por Departamento, igual ao padrão já usado em Cálculo de Comissões
+  // — e dentro de cada departamento, agrupa por código do cargo, pra cargos com o mesmo código
+  // em empresas diferentes aparecerem num card só, em vez de um card duplicado por empresa.
   const gruposPorDepartamento = useMemo(() => {
     const grupos = new Map()
     for (const c of cargosFiltrados) {
@@ -189,10 +214,23 @@ export default function CargosRemuneracoes() {
     }
     return [...grupos.entries()]
       .sort((a, b) => a[0].localeCompare(b[0], 'pt-BR'))
-      .map(([nomeDepartamento, itens]) => ({
-        nomeDepartamento,
-        itens: itens.sort((a, b) => (a.codigo_cargo || '').localeCompare(b.codigo_cargo || '', 'pt-BR', { numeric: true }) || a.nome_cargo.localeCompare(b.nome_cargo, 'pt-BR')),
-      }))
+      .map(([nomeDepartamento, cargosDoDepto]) => {
+        const porCodigo = new Map()
+        for (const c of cargosDoDepto) {
+          const chave = c.codigo_cargo ? `cod:${c.codigo_cargo}` : `nome:${c.nome_cargo}`
+          if (!porCodigo.has(chave)) porCodigo.set(chave, [])
+          porCodigo.get(chave).push(c)
+        }
+        const itens = [...porCodigo.entries()]
+          .map(([chave, cargosDoGrupo]) => ({
+            chave,
+            codigo_cargo: cargosDoGrupo[0].codigo_cargo,
+            nome_cargo: cargosDoGrupo[0].nome_cargo,
+            cargos: cargosDoGrupo,
+          }))
+          .sort((a, b) => (a.codigo_cargo || '').localeCompare(b.codigo_cargo || '', 'pt-BR', { numeric: true }) || a.nome_cargo.localeCompare(b.nome_cargo, 'pt-BR'))
+        return { nomeDepartamento, itens }
+      })
   }, [cargosFiltrados])
 
   const abrirIncluirGanho = (cargoId) => {
@@ -221,7 +259,7 @@ export default function CargosRemuneracoes() {
       const cargo = cargos.find(c => c.id === formGanho.cargo_id)
       const payload = {
         cargo_id: formGanho.cargo_id,
-        agrupamento_empresa_id: cargo?.agrupamento_empresa_id || null,
+        empresa_id: cargo?.empresa_id || null,
         descricao: formGanho.descricao,
         metrica: formGanho.metrica || null,
         tipo_valor: formGanho.tipo_valor,
@@ -272,8 +310,8 @@ export default function CargosRemuneracoes() {
       // Mesmo visual da tela: cards em grid 2 colunas, cabeçalho cinza-claro, linha de DSR em
       // destaque âmbar — só sem os botões de ação (Ganho/editar/excluir), que não fazem sentido no PDF.
       const montarHtmlDepartamento = (grupo) => {
-        const cardsCargo = grupo.itens.map(cargo => {
-          const linhas = linhasDoCargo(cargo)
+        const cardsCargo = grupo.itens.map(cargoGrupo => {
+          const linhas = linhasDoGrupoCargo(cargoGrupo.cargos)
           const linhasHtml = linhas.map(l => `
             <tr style="${l.tipo === 'dsr' ? 'background:#fffbeb;' : ''}">
               <td style="padding:5px 10px;border-bottom:1px solid #f1f5f9;font-weight:600;color:#1e293b;">${l.descricao}</td>
@@ -282,7 +320,7 @@ export default function CargosRemuneracoes() {
           return `
             <div style="border:1px solid #e2e8f0;border-radius:6px;overflow:hidden;break-inside:avoid;">
               <div style="padding:8px 12px;background:#f8fafc;border-bottom:1px solid #e2e8f0;font-size:12px;font-weight:800;color:#0f172a;">
-                ${cargo.codigo_cargo ? `<span style="color:#94a3b8;font-weight:600;">${cargo.codigo_cargo} — </span>` : ''}${cargo.nome_cargo}
+                ${cargoGrupo.codigo_cargo ? `<span style="color:#94a3b8;font-weight:600;">${cargoGrupo.codigo_cargo} — </span>` : ''}${cargoGrupo.nome_cargo}
               </div>
               <table style="width:100%;border-collapse:collapse;font-size:11px;">
                 <thead>
@@ -392,6 +430,13 @@ export default function CargosRemuneracoes() {
         {filtrosAbertos && (
           <div className="flex flex-wrap items-end gap-3 px-4 pb-4 border-t border-slate-100 pt-3">
             <div className="flex flex-col gap-1.5">
+              <label className={LBL}>Empresa</label>
+              <select value={filtroEmpresa} onChange={e => setFiltroEmpresa(e.target.value)} className={SEL}>
+                <option value="">Todas as Empresas</option>
+                {empresasUnicas.map(e => <option key={e} value={e}>{e}</option>)}
+              </select>
+            </div>
+            <div className="flex flex-col gap-1.5">
               <label className={LBL}>Agrupamento de Empresas</label>
               <select value={filtroAgrupamentoEmpresa} onChange={e => setFiltroAgrupamentoEmpresa(e.target.value)} className={SEL}>
                 <option value="">Todos os Agrupamentos</option>
@@ -451,22 +496,22 @@ export default function CargosRemuneracoes() {
         <div key={grupo.nomeDepartamento} className="space-y-3">
           <h2 className="text-xs font-bold text-indigo-900 uppercase tracking-wide bg-indigo-100 px-3 py-1.5 rounded-md">{grupo.nomeDepartamento}</h2>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {grupo.itens.map(cargo => {
-              const linhas = linhasDoCargo(cargo)
+            {grupo.itens.map(cargoGrupo => {
+              const linhas = linhasDoGrupoCargo(cargoGrupo.cargos)
               const primeiraPoliticaId = linhas.find(l => l.tipo === 'politica')?.id
               return (
-              <div key={cargo.id} className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
+              <div key={cargoGrupo.chave} className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
                 <div className="flex items-center justify-between px-4 py-3 bg-slate-50 border-b border-slate-200">
                   <h3
                     className={`text-sm font-bold text-slate-900 ${canEditPolitica && primeiraPoliticaId ? 'cursor-pointer hover:text-blue-700 hover:underline' : ''}`}
                     onClick={canEditPolitica && primeiraPoliticaId ? () => abrirEdicaoPolitica(primeiraPoliticaId) : undefined}
                     title={canEditPolitica && primeiraPoliticaId ? 'Editar Política de Comissão deste cargo' : undefined}
                   >
-                    {cargo.codigo_cargo && <span className="font-mono text-slate-400 mr-1.5">{cargo.codigo_cargo} —</span>}
-                    {cargo.nome_cargo}
+                    {cargoGrupo.codigo_cargo && <span className="font-mono text-slate-400 mr-1.5">{cargoGrupo.codigo_cargo} —</span>}
+                    {cargoGrupo.nome_cargo}
                   </h3>
                   {canEdit && (
-                    <button onClick={() => abrirIncluirGanho(cargo.id)} title="Cadastrar Descrição de Ganho pra este cargo"
+                    <button onClick={() => abrirIncluirGanho(cargoGrupo.cargos[0].id)} title="Cadastrar Descrição de Ganho pra este cargo"
                       className="flex items-center gap-1 text-[11px] font-semibold text-blue-600 hover:text-blue-800 transition-colors">
                       <Plus className="h-3 w-3" /> Ganho
                     </button>

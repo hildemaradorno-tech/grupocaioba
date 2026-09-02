@@ -6,12 +6,12 @@ import {
   Building2, Layers, FolderTree, Box as BoxIcon, Briefcase, Tag,
   Wrench, Package, TrendingUp, FileCheck2,
   BadgePercent, ScrollText, Clock, CalendarX, Calendar,
-  Target, ShoppingBag, Car, Paintbrush, Cog, ClipboardCheck, UserCheck,
+  Target, ShoppingBag, Car, Cog, ClipboardCheck, UserCheck,
   LogOut, BarChart2, Wallet,
   ClipboardList, Home, FolderKanban, CircleDot, FileText, CalendarDays, DollarSign, Truck, LayoutGrid,
-  Calculator, BookOpen, Palmtree, GraduationCap,
+  Calculator, BookOpen, GraduationCap,
   KeyRound, Eye, EyeOff, X, AlertTriangle, Bike, Network, PieChart, Share2, RefreshCw, Gauge, Ruler,
-  PhoneCall,
+  ShieldAlert, Landmark, Database, Hash, ListChecks, ExternalLink,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import TrocarSenhaObrigatoria from '../pages/TrocarSenhaObrigatoria'
@@ -31,19 +31,20 @@ MENU_TREE.forEach(buildSectionLeaves)
 // ── Map route to section key ──────────────────────────────────────────────────
 function getActiveSectionKey(pathname) {
   if (pathname === '/usuarios' || pathname === '/grupos' || pathname === '/permissoes-matriz') return '_config'
-  if (pathname === '/ferias' || pathname === '/calculo-comissoes' || pathname === '/politica-comissao' || pathname === '/fontes-calculo' || pathname === '/bases-calculo' || pathname === '/cargos-remuneracoes' || pathname === '/sobreaviso-plantao') return '_comissoes-calculo'
+  if (pathname === '/folha-pagamento-daf' || pathname === '/politica-comissao' || pathname === '/fontes-calculo' || pathname === '/bases-calculo' || pathname === '/cargos-remuneracoes' || pathname === '/rubricas' || pathname === '/tipos-processo' || pathname === '/plano-dms') return '_comissoes-calculo'
   const cadastros = ['/segmentos','/agrup-empresas','/empresas','/areas','/agrup-departamentos',
     '/departamentos','/setores','/box','/agrup-cargos','/cargos','/organograma',
     '/movimento-venda','/natureza-operacoes','/tipos-produtos','/tipos-os',
-    '/classificacao-compra','/funcionarios','/feriados','/calendario','/sincronizacao-dados','/medidas-bi']
+    '/classificacao-compra','/funcionarios','/feriados','/calendario','/sincronizacao-dados']
   if (cadastros.includes(pathname)) return '_config'
   if (pathname.startsWith('/metas')) return '_metas'
   if (pathname.startsWith('/garantias-daf') || pathname.startsWith('/auditoria-os-aberto') || pathname.startsWith('/auditoria') || pathname.startsWith('/garantia') || pathname.startsWith('/honda')) return '_controle-processos'
-  if (pathname.startsWith('/projetos')) return '_gestao-projetos'
+  if (pathname.startsWith('/projetos') || pathname.startsWith('/auditoria-externa')) return '_gestao-projetos'
   if (pathname.startsWith('/calculadoras')) return '_calculadoras'
   if (pathname.startsWith('/bi') || pathname.startsWith('/kpi')) return '_bi'
   if (pathname.startsWith('/documentacoes') || pathname.startsWith('/rpa') || pathname.startsWith('/ecossistema')) return '_documentacoes'
   if (pathname.startsWith('/treinamentos')) return '_treinamentos'
+  if (pathname.startsWith('/governanca')) return '_governanca'
   return null
 }
 
@@ -210,6 +211,23 @@ function FlyItem({ to, icon: Icon, children, badge, onClose }) {
   )
 }
 
+// ── Flyout: link externo (abre em nova aba, sem passar pelo react-router) ────
+function FlyItemExternal({ href, icon: Icon, children, onClose }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={onClose}
+      className="flex items-center gap-2 px-3 py-1.5 rounded-md text-xs transition-colors text-slate-300 hover:text-white hover:bg-blue-700/60"
+    >
+      {Icon && <Icon className="h-3.5 w-3.5 shrink-0 text-blue-400" />}
+      <span className="flex-1 truncate">{children}</span>
+      <ExternalLink className="h-3 w-3 shrink-0 text-slate-500" />
+    </a>
+  )
+}
+
 // ── Main layout ───────────────────────────────────────────────────────────────
 export default function SidebarLayout() {
   const location = useLocation()
@@ -342,13 +360,6 @@ export default function SidebarLayout() {
             {canView('usuarios') && <FlyItem to="/usuarios" icon={Users} onClose={closeFlyout}>Usuários</FlyItem>}
             {canView('grupos') && <FlyItem to="/grupos" icon={ShieldCheck} onClose={closeFlyout}>Grupos de Acessos</FlyItem>}
             {canView('permissoes-matriz') && <FlyItem to="/permissoes-matriz" icon={KeyRound} onClose={closeFlyout}>Matriz de Permissões</FlyItem>}
-            {canView('funcionarios') && (
-              <>
-                <div className="mx-3 my-2 border-t border-blue-800/50" />
-                <FlyGroup label="Funcionários" />
-                <FlyItem to="/funcionarios" icon={Users} onClose={closeFlyout}>Funcionários</FlyItem>
-              </>
-            )}
             {canViewSection('_gestao-tempo') && (
               <>
                 <div className="mx-3 my-2 border-t border-blue-800/50" />
@@ -363,7 +374,6 @@ export default function SidebarLayout() {
                 <FlyItem to="/sincronizacao-dados" icon={RefreshCw} onClose={closeFlyout}>Sincronização de Dados</FlyItem>
               </>
             )}
-            {canView('medidas-bi') && <FlyItem to="/medidas-bi" icon={Ruler} onClose={closeFlyout}>Medidas</FlyItem>}
             {canViewSection('_cadastros.gerais') && (
               <>
                 <div className="mx-3 my-2 border-t border-blue-800/50" />
@@ -381,8 +391,16 @@ export default function SidebarLayout() {
                 {canView('organograma') && <FlyItem to="/organograma" icon={Network} onClose={closeFlyout}>Organograma</FlyItem>}
               </>
             )}
+            {canView('funcionarios') && (
+              <>
+                <div className="mx-3 my-2 border-t border-blue-800/50" />
+                <FlyGroup label="Funcionários" />
+                <FlyItem to="/funcionarios" icon={Users} onClose={closeFlyout}>Funcionários</FlyItem>
+              </>
+            )}
             {canViewSection('_cadastros.vendas') && (
               <>
+                <div className="mx-3 my-2 border-t border-blue-800/50" />
                 <FlyGroup label="Tabelas de Vendas" />
                 {canView('movimento-venda') && <FlyItem to="/movimento-venda" icon={TrendingUp} onClose={closeFlyout}>Movimento de Venda</FlyItem>}
                 {canView('natureza-operacoes') && <FlyItem to="/natureza-operacoes" icon={FileCheck2} onClose={closeFlyout}>Natureza de Operações</FlyItem>}
@@ -393,6 +411,7 @@ export default function SidebarLayout() {
             )}
             {canViewSection('_cadastros.compras') && (
               <>
+                <div className="mx-3 my-2 border-t border-blue-800/50" />
                 <FlyGroup label="Tabelas de Compras" />
                 {canView('fornecedores') && <FlyItem to="/fornecedores" icon={Truck} onClose={closeFlyout}>Fornecedores</FlyItem>}
               </>
@@ -432,13 +451,18 @@ export default function SidebarLayout() {
                 {canView('bases-calculo') && <FlyItem to="/bases-calculo" icon={Calculator} onClose={closeFlyout}>Base de Cálculo</FlyItem>}
                 {canView('politica-comissao') && <FlyItem to="/politica-comissao" icon={ScrollText} onClose={closeFlyout}>Política de Comissões</FlyItem>}
                 {canView('cargos-remuneracoes') && <FlyItem to="/cargos-remuneracoes" icon={Briefcase} onClose={closeFlyout}>Cargos e Remunerações</FlyItem>}
+                {canView('rubricas') && <FlyItem to="/rubricas" icon={Hash} onClose={closeFlyout}>Rubrica</FlyItem>}
+                {canView('tipos-processo') && <FlyItem to="/tipos-processo" icon={ListChecks} onClose={closeFlyout}>Tipo de Processo</FlyItem>}
+                {canView('plano-dms') && <FlyItem to="/plano-dms" icon={Wrench} onClose={closeFlyout}>Valor Plano DMS</FlyItem>}
                 <div className="mx-3 my-2 border-t border-blue-800/50" />
               </>
             )}
-            {(canView('ferias') || canView('calculo-comissoes') || canView('sobreaviso-plantao')) && <FlyGroup label="Comissões" />}
-            {canView('ferias') && <FlyItem to="/ferias" icon={Palmtree} onClose={closeFlyout}>Férias</FlyItem>}
-            {canView('calculo-comissoes') && <FlyItem to="/calculo-comissoes" icon={Wallet} onClose={closeFlyout}>Cálculo de Comissões DAF</FlyItem>}
-            {canView('sobreaviso-plantao') && <FlyItem to="/sobreaviso-plantao" icon={PhoneCall} onClose={closeFlyout}>Sobreaviso/Plantão</FlyItem>}
+            {(canView('ferias') || canView('calculo-comissoes') || canView('processamento-comissoes') || canView('sobreaviso-plantao') || canView('plano-dms-calculo')) && (
+              <>
+                <div className="mx-3 my-2 border-t border-blue-800/50" />
+                <FlyItem to="/folha-pagamento-daf" icon={Wallet} onClose={closeFlyout}>Folha de Pagamento - DAF</FlyItem>
+              </>
+            )}
           </>
         )
 
@@ -458,9 +482,6 @@ export default function SidebarLayout() {
                 <FlyGroup label="Pós-Vendas" />
                 {canView('metas/pos-vendas/pecas') && <FlyItem to="/metas/pos-vendas/pecas" icon={Package} onClose={closeFlyout}>Peças</FlyItem>}
                 {canView('metas/pos-vendas/servicos') && <FlyItem to="/metas/pos-vendas/servicos" icon={Cog} onClose={closeFlyout}>Serviços</FlyItem>}
-                {canView('metas/pos-vendas/funilaria-pintura') && <FlyItem to="/metas/pos-vendas/funilaria-pintura" icon={Paintbrush} onClose={closeFlyout}>Funilaria e Pintura</FlyItem>}
-                {canView('metas/pos-vendas/terceiros') && <FlyItem to="/metas/pos-vendas/terceiros" icon={Briefcase} onClose={closeFlyout}>Terceiros</FlyItem>}
-                {canView('metas/pos-vendas/distribuicao-consultores') && <FlyItem to="/metas/pos-vendas/distribuicao-consultores" icon={UserCheck} onClose={closeFlyout}>Distribuição por Consultor</FlyItem>}
                 {canView('metas/pos-vendas/total') && <FlyItem to="/metas/pos-vendas/total" icon={TrendingUp} onClose={closeFlyout}>Total Pós-Vendas</FlyItem>}
               </>
             )}
@@ -506,6 +527,10 @@ export default function SidebarLayout() {
             <FlyGroup label="Gestão de Projetos" />
             {canView('projetos') && <FlyItem to="/projetos" icon={FolderKanban} onClose={closeFlyout}>Projetos</FlyItem>}
 
+            {(canView('auditoria-externa/ciclos') || canView('auditoria-externa/dashboard') || canView('auditoria-externa/divergencias') || canView('auditoria-externa/plano-acao') || canView('auditoria-externa/tipos-acao') || canView('auditoria-externa/impactos')) && (
+              <FlyItem to="/auditoria-externa/dashboard" icon={ShieldAlert} onClose={closeFlyout}>Auditoria Externa</FlyItem>
+            )}
+
             {canViewSection('_gestao-projetos.cadastros') && (
               <>
                 <div className="h-px bg-slate-100 my-2" />
@@ -542,6 +567,9 @@ export default function SidebarLayout() {
             {canView('bi/garantias-daf') && <FlyItem to="/bi/garantias-daf" icon={ShieldCheck} onClose={closeFlyout}>Garantias DAF</FlyItem>}
             {canView('bi/projetos') && <FlyItem to="/bi/projetos" icon={FolderKanban} onClose={closeFlyout}>Gestão de Projetos</FlyItem>}
             {canView('bi/possibilidades') && <FlyItem to="/bi/possibilidades" icon={Gauge} onClose={closeFlyout}>Possibilidades</FlyItem>}
+            {canView('bi/fontes') && <FlyItem to="/bi/fontes" icon={Database} onClose={closeFlyout}>Fontes</FlyItem>}
+            {canView('bi/medidas') && <FlyItem to="/bi/medidas" icon={Ruler} onClose={closeFlyout}>Medidas</FlyItem>}
+            {canView('bi/comissoes') && <FlyItem to="/bi/comissoes" icon={Wallet} onClose={closeFlyout}>Comissões</FlyItem>}
             {canViewSection('_bi.kpis') && (
               <>
                 <div className="mx-3 my-2 border-t border-blue-800/50" />
@@ -566,6 +594,16 @@ export default function SidebarLayout() {
           <>
             <FlyGroup label="Treinamentos" />
             {canView('treinamentos/grade') && <FlyItem to="/treinamentos/grade" icon={GraduationCap} onClose={closeFlyout}>Grade de Treinamentos</FlyItem>}
+            {canView('treinamentos/central') && <FlyItemExternal href="https://centraldetreinamentos.netlify.app/" icon={BookOpen} onClose={closeFlyout}>Central de Treinamentos</FlyItemExternal>}
+          </>
+        )
+
+      case '_governanca':
+        return (
+          <>
+            <FlyGroup label="Governança" />
+            {canView('governanca/grupo-acessos') && <FlyItem to="/governanca/grupo-acessos" icon={Landmark} onClose={closeFlyout}>Grupo de Acessos</FlyItem>}
+            {canView('governanca/perfis-acesso') && <FlyItem to="/governanca/perfis-acesso" icon={ShieldCheck} onClose={closeFlyout}>Perfis de Acesso</FlyItem>}
           </>
         )
 
@@ -677,6 +715,14 @@ export default function SidebarLayout() {
               onClick={() => toggleSection('_treinamentos')}
             />
           )}
+          {canViewSection('_governanca') && (
+            <SidebarIconBtn
+              icon={Landmark}
+              label="Governança"
+              isActive={currentSection === '_governanca' || activeSection === '_governanca'}
+              onClick={() => toggleSection('_governanca')}
+            />
+          )}
 
         </nav>
 
@@ -712,6 +758,7 @@ export default function SidebarLayout() {
                 {activeSection === '_bi' && 'BI - Dashboard'}
                 {activeSection === '_documentacoes' && 'Documentações'}
                 {activeSection === '_treinamentos' && 'Treinamentos'}
+                {activeSection === '_governanca' && 'Governança'}
                 {activeSection === 'organograma' && 'Organograma'}
               </span>
             </div>
@@ -764,13 +811,16 @@ export default function SidebarLayout() {
         )}
         <Outlet />
 
-        {/* Identificador da rota atual — fixo no topo, pra localizar rápido qual tela/arquivo
-            ajustar quando o usuário pedir uma mudança (informa o path exato usado no App.jsx).
-            Não mostra na Home, que não é uma tela de ajuste específica. */}
+        {/* Identificador da rota atual — no final do conteúdo de cada tela (não fixo, não
+            sobrepõe nada ao rolar a página), pra localizar rápido qual tela/arquivo ajustar
+            quando o usuário pedir uma mudança (informa o path exato usado no App.jsx).
+            Não mostra na Home. */}
         {location.pathname !== '/' && (
-          <span className="fixed top-1.5 left-1/2 -translate-x-1/2 z-50 text-[10px] font-mono text-slate-400 bg-white/90 border border-slate-200 px-1.5 py-0.5 rounded shadow-sm select-text">
-            {location.pathname}
-          </span>
+          <div className="flex justify-end px-4 py-3">
+            <span className="text-[10px] font-mono text-slate-400 bg-white border border-slate-200 px-1.5 py-0.5 rounded shadow-sm select-text">
+              {location.pathname}
+            </span>
+          </div>
         )}
       </main>
 

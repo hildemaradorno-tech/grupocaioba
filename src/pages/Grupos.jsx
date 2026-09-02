@@ -129,7 +129,11 @@ function TreeNode({ node, selected, onToggle, disabled, defaultOpen = false, sel
 
 // ── Seletor de dimensão de escopo (Cálculo de Comissões) — Todos ou Individual ────────────
 
-function SeletorDimensaoComissao({ label, escopo, opcoes, disabled, onModoChange, onToggleValor, onSelecionarTodos, onLimpar }) {
+// `nivelPorValor`/`onNivelChange`/`onToggleResponsavel` são opcionais e só usados na instância
+// de Departamento — quando presentes, cada opção MARCADA ganha um seletor Editar/Visualizar +
+// checkbox Responsável ao lado (nível de acesso extra, some-se às Ações já existentes; ver
+// `departamentoSoVisualizacao` em utils/permissoesComissao.js).
+function SeletorDimensaoComissao({ label, escopo, opcoes, disabled, onModoChange, onToggleValor, onSelecionarTodos, onLimpar, nivelPorValor, onNivelChange, onToggleResponsavel }) {
   const modo = escopo?.modo || 'TODOS'
   const valores = escopo?.valores || new Set()
   return (
@@ -168,17 +172,53 @@ function SeletorDimensaoComissao({ label, escopo, opcoes, disabled, onModoChange
           <div className="flex flex-col gap-0.5">
             {opcoes.length === 0 ? (
               <p className="text-xs text-slate-400 py-1">Nenhuma opção cadastrada.</p>
-            ) : opcoes.map(op => (
-              <label key={op.valor} className="flex items-center gap-1.5 px-2 py-1 rounded text-xs cursor-pointer hover:bg-slate-50 select-none">
-                <input
-                  type="checkbox"
-                  checked={valores.has(op.valor)}
-                  onChange={() => onToggleValor(op.valor)}
-                  className="w-3 h-3 rounded accent-blue-600 shrink-0"
-                />
-                {op.label}
-              </label>
-            ))}
+            ) : opcoes.map(op => {
+              const marcado = valores.has(op.valor)
+              const nivel = nivelPorValor?.[op.valor]?.nivel_acesso === 'visualizar' ? 'visualizar' : 'editar'
+              const responsavel = !!nivelPorValor?.[op.valor]?.responsavel
+              return (
+                <div key={op.valor} className="flex items-center justify-between gap-2 px-2 py-1 rounded hover:bg-slate-50">
+                  <label className="flex items-center gap-1.5 text-xs cursor-pointer select-none min-w-0">
+                    <input
+                      type="checkbox"
+                      checked={marcado}
+                      onChange={() => onToggleValor(op.valor)}
+                      className="w-3 h-3 rounded accent-blue-600 shrink-0"
+                    />
+                    <span className="truncate">{op.label}</span>
+                  </label>
+                  {marcado && onNivelChange && (
+                    <div className="flex items-center gap-2 shrink-0">
+                      <div className="inline-flex rounded-md border border-slate-200 overflow-hidden text-[10px] font-semibold">
+                        <button
+                          type="button"
+                          onClick={() => onNivelChange(op.valor, 'editar')}
+                          className={`px-1.5 py-0.5 transition-colors ${nivel === 'editar' ? 'bg-blue-600 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}
+                        >
+                          Editar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onNivelChange(op.valor, 'visualizar')}
+                          className={`px-1.5 py-0.5 border-l border-slate-200 transition-colors ${nivel === 'visualizar' ? 'bg-amber-500 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}
+                        >
+                          Visualizar
+                        </button>
+                      </div>
+                      <label className="flex items-center gap-1 text-[10px] text-slate-500 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={responsavel}
+                          onChange={() => onToggleResponsavel(op.valor)}
+                          className="w-3 h-3 rounded accent-indigo-600 shrink-0"
+                        />
+                        Responsável
+                      </label>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
         </>
       )}
@@ -204,11 +244,10 @@ export default function Grupos() {
   const [selectedAcoes, setSelectedAcoes] = useState(new Set()) // "menu_path|acao"
   const [selectedEmpresas, setSelectedEmpresas] = useState(new Set())
   const [empresas, setEmpresas] = useState([])
-  const [selectedDeptos, setSelectedDeptos] = useState(new Set()) // Set de nome (string)
-  const [deptoTodos, setDeptoTodos] = useState(true) // true = acesso a todos os departamentos
-  const [deptosProjetos, setDeptosProjetos] = useState([])
   const [comissaoEscopo, setComissaoEscopo] = useState(escopoComissaoTudoLiberado())
   const [comissaoHabilitado, setComissaoHabilitado] = useState(false)
+  // Nível de acesso extra por Departamento — { [departamento_id]: { nivel_acesso: 'editar'|'visualizar', responsavel: bool } }
+  const [comissaoDepartamentoNivel, setComissaoDepartamentoNivel] = useState({})
   const [departamentosComissao, setDepartamentosComissao] = useState([])
   const [setoresComissao, setSetoresComissao] = useState([])
   const [agrupamentosCargoComissao, setAgrupamentosCargoComissao] = useState([])
@@ -272,6 +311,11 @@ export default function Grupos() {
       } else {
         const created = await apiService.createGrupo(formData.nome_grupo.trim(), undefined, departamento)
         setGrupos(prev => [...prev, created].sort((a, b) => a.nome_grupo.localeCompare(b.nome_grupo, 'pt-BR')))
+        setShowForm(false)
+        setFormData({ id: null, nome_grupo: '', departamento: '' })
+        // Grupo novo criado — já abre direto a edição de Permissões de Acesso dele.
+        await openPermissoes(created)
+        return
       }
       setShowForm(false)
       setFormData({ id: null, nome_grupo: '', departamento: '' })
@@ -342,11 +386,10 @@ export default function Grupos() {
       const novoNome = `Cópia de ${grupo.nome_grupo}`
       const novoGrupo = await apiService.createGrupo(novoNome, undefined, grupo.departamento || null)
 
-      const [paths, acoes, empIds, deptoNomes, comissaoEscopoRaw] = await Promise.all([
+      const [paths, acoes, empIds, comissaoEscopoRaw] = await Promise.all([
         apiService.getPermissoesGrupo(grupo.id),
         apiService.getPermissoesGrupoAcoes(grupo.id),
         apiService.getPermissoesEmpresasGrupo(grupo.id),
-        apiService.getPermissoesDeptoPorGrupo(grupo.id),
         apiService.getPermissoesComissaoGrupo(grupo.id),
       ])
 
@@ -354,7 +397,6 @@ export default function Grupos() {
         apiService.setPermissoesGrupo(novoGrupo.id, { is_admin: grupo.is_admin, paths }),
         apiService.setPermissoesGrupoAcoes(novoGrupo.id, acoes.map(a => ({ menu_path: a.menu_path, acao: a.acao }))),
         apiService.setPermissoesEmpresasGrupo(novoGrupo.id, empIds),
-        apiService.setPermissoesDeptoPorGrupo(novoGrupo.id, deptoNomes),
         apiService.setPermissoesComissaoGrupo(novoGrupo.id, comissaoEscopoRaw, comissaoEscopoRaw.habilitado),
       ])
 
@@ -381,13 +423,11 @@ export default function Grupos() {
     setTreeDefaultOpen(false)
     setTreeKey(k => k + 1)
     try {
-      const [paths, acoes, empIds, emps, deptoNomes, deptos, deptosDim, setoresDim, agrupCargos, comissaoEscopoRaw] = await Promise.all([
+      const [paths, acoes, empIds, emps, deptosDim, setoresDim, agrupCargos, comissaoEscopoRaw] = await Promise.all([
         apiService.getPermissoesGrupo(grupo.id),
         apiService.getPermissoesGrupoAcoes(grupo.id),
         apiService.getPermissoesEmpresasGrupo(grupo.id),
         apiService.getEmpresas(),
-        apiService.getPermissoesDeptoPorGrupo(grupo.id),
-        apiService.getProjDepartamentos(),
         apiService.getDepartamentos(),
         apiService.getSetores(),
         apiService.getAgrupamentoCargos(),
@@ -397,9 +437,6 @@ export default function Grupos() {
       setSelectedAcoes(new Set(acoes.map(a => `${a.menu_path}|${a.acao}`)))
       setSelectedEmpresas(new Set(empIds))
       setEmpresas(emps.filter(e => e.ativo !== false).sort((a, b) => (a.nome_empresa || '').localeCompare(b.nome_empresa || '', 'pt-BR')))
-      setSelectedDeptos(new Set(deptoNomes))
-      setDeptoTodos(deptoNomes.length === 0)
-      setDeptosProjetos(deptos.filter(d => d.ativo !== false))
       setDepartamentosComissao(deptosDim.filter(d => d.ativo !== false))
       setSetoresComissao(setoresDim.filter(s => s.ativo !== false))
       setAgrupamentosCargoComissao(agrupCargos.filter(a => a.ativo !== false))
@@ -408,14 +445,15 @@ export default function Grupos() {
         { modo: comissaoEscopoRaw[dim]?.modo === 'INDIVIDUAL' ? 'INDIVIDUAL' : 'TODOS', valores: new Set(comissaoEscopoRaw[dim]?.valores || []) },
       ])))
       setComissaoHabilitado(!!comissaoEscopoRaw.habilitado)
+      setComissaoDepartamentoNivel(comissaoEscopoRaw.departamentoNivel || {})
     } catch (err) {
       alert('Erro ao carregar permissões: ' + err.message)
       setSelectedPaths(new Set())
       setSelectedAcoes(new Set())
       setSelectedEmpresas(new Set())
-      setSelectedDeptos(new Set())
       setComissaoEscopo(escopoComissaoTudoLiberado())
       setComissaoHabilitado(false)
+      setComissaoDepartamentoNivel({})
     } finally {
       setLoadingPerms(false)
     }
@@ -454,17 +492,6 @@ export default function Grupos() {
   const handleSelectAllEmpresas = () => setSelectedEmpresas(new Set(empresas.map(e => e.id)))
   const handleClearAllEmpresas = () => setSelectedEmpresas(new Set())
 
-  const handleToggleDepto = (nome, value) => {
-    setSelectedDeptos(prev => {
-      const next = new Set(prev)
-      if (value) next.add(nome)
-      else next.delete(nome)
-      return next
-    })
-  }
-  const handleSelectAllDeptos = () => setSelectedDeptos(new Set(deptosProjetos.map(d => d.nome)))
-  const handleClearAllDeptos = () => setSelectedDeptos(new Set())
-
   const handleComissaoModoChange = (dim, modo) => {
     setComissaoEscopo(prev => ({ ...prev, [dim]: { ...prev[dim], modo } }))
   }
@@ -483,6 +510,13 @@ export default function Grupos() {
     setComissaoEscopo(prev => ({ ...prev, [dim]: { ...prev[dim], valores: new Set() } }))
   }
 
+  const handleDepartamentoNivelChange = (depId, nivel) => {
+    setComissaoDepartamentoNivel(prev => ({ ...prev, [depId]: { ...prev[depId], nivel_acesso: nivel } }))
+  }
+  const handleDepartamentoToggleResponsavel = (depId) => {
+    setComissaoDepartamentoNivel(prev => ({ ...prev, [depId]: { ...prev[depId], responsavel: !prev[depId]?.responsavel } }))
+  }
+
   const handleSavePerms = async () => {
     setSavingPerms(true)
     setSaveSuccess(false)
@@ -497,13 +531,12 @@ export default function Grupos() {
           return { menu_path, acao }
         })),
         apiService.setPermissoesEmpresasGrupo(editingId, isAdmin ? [] : [...selectedEmpresas]),
-        apiService.setPermissoesDeptoPorGrupo(editingId, isAdmin ? [] : [...selectedDeptos]),
         apiService.setPermissoesComissaoGrupo(editingId, Object.fromEntries(DIMENSOES_COMISSAO.map(dim => [
           dim,
           isAdmin
             ? { modo: 'TODOS', valores: [] }
             : { modo: comissaoEscopo[dim]?.modo || 'TODOS', valores: [...(comissaoEscopo[dim]?.valores || [])] },
-        ])), comissaoHabilitado),
+        ])), comissaoHabilitado, isAdmin ? {} : comissaoDepartamentoNivel),
       ])
       setGrupos(prev => prev.map(g => g.id === editingId ? { ...g, is_admin: isAdmin } : g))
       setSiglasPorGrupo(prev => ({
@@ -726,7 +759,7 @@ export default function Grupos() {
         <div className="px-5 py-4 border-b border-slate-100">
           <h2 className="text-base font-bold text-slate-900">Acesso por Empresa</h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            Define quais empresas este grupo pode visualizar em todos os módulos do sistema (Garantias DAF, Projetos, Cálculo de Comissões DAF, etc.).
+            Define quais empresas este grupo pode visualizar em todos os módulos do sistema (Garantias DAF, Projetos, Cálculo de Comissões, etc.).
             {isAdmin && <span className="ml-1 text-amber-600 font-medium">Administrador tem acesso a todas as empresas automaticamente.</span>}
           </p>
         </div>
@@ -777,92 +810,8 @@ export default function Grupos() {
         )}
       </div>
 
-      {/* ── Acesso por Departamento (Projetos) ── */}
-      {!loadingPerms && (isAdmin || [...selectedPaths].some(p => p.startsWith('projetos'))) && (
-      <div className="bg-white rounded-lg shadow border border-slate-200 overflow-hidden mt-4">
-        <div className="px-5 py-4 border-b border-slate-100">
-          <h2 className="text-base font-bold text-slate-900">Acesso por Departamento (Projetos)</h2>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Define quais departamentos este grupo pode visualizar nos módulos de Projetos.
-            Com "Todos os Departamentos" ativo, o botão de visão geral não é exibido na tela de Projetos.
-          </p>
-        </div>
-        {loadingPerms ? null : (
-          <>
-            {/* Toggle "Todos os Departamentos" */}
-            {!isAdmin && (
-              <div className="px-5 py-3 border-b border-slate-100">
-                <label className="flex items-center gap-3 cursor-pointer select-none group">
-                  <div
-                    onClick={() => {
-                      if (!deptoTodos) { setDeptoTodos(true); setSelectedDeptos(new Set()) }
-                      else { setDeptoTodos(false) }
-                    }}
-                    className={`relative w-10 h-5 rounded-full transition-colors ${deptoTodos ? 'bg-blue-600' : 'bg-slate-300'}`}
-                  >
-                    <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${deptoTodos ? 'translate-x-5' : ''}`} />
-                  </div>
-                  <span className={`text-sm font-semibold ${deptoTodos ? 'text-blue-700' : 'text-slate-600'}`}>
-                    Todos os Departamentos
-                  </span>
-                  {deptoTodos && (
-                    <span className="text-[11px] text-blue-500 font-medium">— acesso irrestrito, sem necessidade de seleção individual</span>
-                  )}
-                </label>
-              </div>
-            )}
-
-            {/* Lista individual — visível apenas quando não está em modo "todos" */}
-            {!isAdmin && !deptoTodos && (
-              <>
-                {deptosProjetos.length > 0 && (
-                  <div className="px-5 py-2 border-b border-slate-100 flex items-center gap-2">
-                    <button type="button" onClick={handleSelectAllDeptos} className="text-xs text-blue-600 hover:underline">
-                      Selecionar todos
-                    </button>
-                    <span className="text-slate-300">|</span>
-                    <button type="button" onClick={handleClearAllDeptos} className="text-xs text-slate-500 hover:underline">
-                      Desmarcar todos
-                    </button>
-                    <span className="ml-auto text-xs text-slate-400">
-                      {selectedDeptos.size === 0 ? 'Nenhum selecionado' : `${selectedDeptos.size}/${deptosProjetos.length} departamentos`}
-                    </span>
-                  </div>
-                )}
-                <div className="p-4 flex flex-col gap-0.5">
-                  {deptosProjetos.map(depto => (
-                    <label key={depto.id} className="flex items-center gap-2 py-1.5 px-2 rounded cursor-pointer hover:bg-slate-50 select-none">
-                      <input
-                        type="checkbox"
-                        checked={selectedDeptos.has(depto.nome)}
-                        onChange={(e) => handleToggleDepto(depto.nome, e.target.checked)}
-                        className="w-3.5 h-3.5 rounded accent-blue-600"
-                      />
-                      <span className="text-sm text-slate-800">{depto.nome}</span>
-                    </label>
-                  ))}
-                  {deptosProjetos.length === 0 && (
-                    <p className="text-sm text-slate-400 py-2">
-                      Nenhum departamento cadastrado. Cadastre em Projetos → Departamentos.
-                    </p>
-                  )}
-                </div>
-              </>
-            )}
-
-            {/* Admin sempre vê tudo */}
-            {isAdmin && (
-              <div className="px-5 py-3 text-xs text-amber-600 font-medium">
-                Administrador vê todos os departamentos automaticamente.
-              </div>
-            )}
-          </>
-        )}
-      </div>
-      )}
-
       {/* ── Acesso à Cálculo de Comissões ── */}
-      {!loadingPerms && (isAdmin || [...selectedPaths].some(p => p.startsWith('calculo-comissoes'))) && (() => {
+      {!loadingPerms && (isAdmin || [...selectedPaths].some(p => p.startsWith('calculo-comissoes') || p.startsWith('processamento-comissoes'))) && (() => {
         const opcoesDepartamento = departamentosComissao.map(d => ({
           valor: d.id,
           label: d.area
@@ -878,11 +827,14 @@ export default function Grupos() {
           <div className="bg-white rounded-lg shadow border border-slate-200 overflow-hidden mt-4">
             <div className="px-5 py-4 border-b border-slate-100 flex items-start justify-between gap-4">
               <div>
-                <h2 className="text-base font-bold text-slate-900">Acesso à Cálculo de Comissões DAF</h2>
+                <h2 className="text-base font-bold text-slate-900">Acesso à Cálculo de Comissões</h2>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Restringe quais funcionários este grupo pode ver/calcular em Cálculo de Comissões DAF e Histórico de Comissões,
+                  Restringe quais funcionários este grupo pode ver/calcular em Cálculo de Comissões e Processamento de Comissões,
                   por Área, Departamento, Setor e Agrupamento de Cargos. "Todos" não restringe; "Individual" libera
                   só os valores marcados. A restrição por Empresa é definida em <strong>Acesso por Empresa</strong> acima.
+                  Em Departamento (Individual), cada um marcado pode ficar como <strong>Editar</strong> (respeita as Ações
+                  já marcadas neste grupo) ou <strong>Visualizar</strong> (desliga os botões de ação só nesse departamento,
+                  mesmo com a Ação marcada) — e pode ser sinalizado como <strong>Responsável</strong>, só pra identificação.
                   {isAdmin && <span className="block mt-1 text-amber-600 font-medium">Administrador vê tudo automaticamente.</span>}
                   {!isAdmin && !comissaoHabilitado && (
                     <span className="block mt-1 text-red-600 font-medium">Desabilitado: este grupo não enxerga nenhum funcionário — só acessa a tela.</span>
@@ -920,6 +872,9 @@ export default function Grupos() {
                 onToggleValor={v => handleComissaoToggleValor('departamento', v)}
                 onSelecionarTodos={() => handleComissaoSelecionarTodos('departamento', opcoesDepartamento)}
                 onLimpar={() => handleComissaoLimpar('departamento')}
+                nivelPorValor={comissaoDepartamentoNivel}
+                onNivelChange={handleDepartamentoNivelChange}
+                onToggleResponsavel={handleDepartamentoToggleResponsavel}
               />
               <SeletorDimensaoComissao
                 label="Setor" escopo={comissaoEscopo.setor} opcoes={opcoesSetor} disabled={isAdmin}

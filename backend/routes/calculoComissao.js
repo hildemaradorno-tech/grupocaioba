@@ -11,7 +11,7 @@ const wrap = fn => (req, res, next) => fn(req, res, next).catch(next)
 // Diagnóstico: lista as colunas reais do arquivo, para o cadastro de Fonte/Base de Cálculo.
 router.get('/colunas', wrap(async (req, res) => {
   if (!isConfigured()) return res.status(503).json({ error: 'sharepoint_not_configured' })
-  const { pasta, prefixo, usaSubpastaAno, ano, linhaCabecalho } = req.query
+  const { pasta, prefixo, usaSubpastaAno, subpastaPadrao, ano, linhaCabecalho } = req.query
   if (!pasta || !prefixo) {
     return res.status(400).json({ error: 'Parâmetros obrigatórios: pasta, prefixo' })
   }
@@ -19,6 +19,7 @@ router.get('/colunas', wrap(async (req, res) => {
     pastaSharepoint: pasta,
     prefixoArquivo: prefixo,
     usaSubpastaAno: usaSubpastaAno === 'true',
+    subpastaPadrao: subpastaPadrao || undefined,
     ano: ano ? Number(ano) : undefined,
     linhaCabecalho: linhaCabecalho ? Number(linhaCabecalho) : 0,
   })
@@ -35,7 +36,7 @@ router.get('/colunas', wrap(async (req, res) => {
 router.post('/preview', wrap(async (req, res) => {
   if (!isConfigured()) return res.status(503).json({ error: 'sharepoint_not_configured' })
   const {
-    pasta, prefixo, usaSubpastaAno, linhaCabecalho,
+    pasta, prefixo, usaSubpastaAno, subpastaPadrao, linhaCabecalho,
     colunaEmpresa, colunaData, colunaValor, tipoAgregacao,
     empresaNome, dataInicio, dataFim, regras,
   } = req.body || {}
@@ -48,6 +49,7 @@ router.post('/preview', wrap(async (req, res) => {
     pastaSharepoint: pasta,
     prefixoArquivo: prefixo,
     usaSubpastaAno: !!usaSubpastaAno,
+    subpastaPadrao: subpastaPadrao || undefined,
     linhaCabecalho: linhaCabecalho ? Number(linhaCabecalho) : 0,
     colunaEmpresa, colunaData, colunaValor,
     tipoAgregacao: tipoAgregacao || 'SOMA',
@@ -78,6 +80,7 @@ router.post('/lote', wrap(async (req, res) => {
     pastaSharepoint: it.pasta,
     prefixoArquivo: it.prefixo,
     usaSubpastaAno: !!it.usaSubpastaAno,
+    subpastaPadrao: it.subpastaPadrao || null,
     linhaCabecalho: it.linhaCabecalho ? Number(it.linhaCabecalho) : 0,
     colunaEmpresa: it.colunaEmpresa,
     colunaData: it.colunaData,

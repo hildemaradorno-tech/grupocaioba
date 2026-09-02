@@ -20,7 +20,7 @@ import {
 // ser calculados numa única leitura do arquivo.
 function chaveGrupo(item) {
   return [
-    item.pastaSharepoint, item.prefixoArquivo, item.usaSubpastaAno, item.linhaCabecalho || 0,
+    item.pastaSharepoint, item.prefixoArquivo, item.usaSubpastaAno, item.subpastaPadrao || '', item.linhaCabecalho || 0,
     item.colunaEmpresa, item.colunaData, item.colunaValor, item.colunaFuncionario || '',
     item.tipoAgregacao, JSON.stringify(item.regras || []),
   ].join('|')
@@ -166,7 +166,7 @@ export async function calcularLote(itens) {
     for (const ano of anos) {
       const files = await listarArquivos({
         pastaSharepoint: base.pastaSharepoint, prefixoArquivo: base.prefixoArquivo,
-        usaSubpastaAno: base.usaSubpastaAno, ano,
+        usaSubpastaAno: base.usaSubpastaAno, subpastaPadrao: base.subpastaPadrao, ano,
         dataInicio: dataInicioGrupo, dataFim: dataFimGrupo,
       })
       for (const file of files) {

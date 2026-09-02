@@ -16,7 +16,6 @@ export const MENU_TREE = [
         ],
       },
       { key: 'sincronizacao-dados', label: 'Sincronização de Dados' },
-      { key: 'medidas-bi', label: 'Medidas' },
       {
         key: '_cadastros',
         label: 'Cadastro de Tabelas',
@@ -72,10 +71,15 @@ export const MENU_TREE = [
           { key: 'bases-calculo', label: 'Base de Cálculo' },
           { key: 'politica-comissao', label: 'Política de Comissões' },
           { key: 'cargos-remuneracoes', label: 'Cargos e Remunerações' },
+          { key: 'rubricas', label: 'Rubrica' },
+          { key: 'tipos-processo', label: 'Tipo de Processo' },
+          { key: 'plano-dms', label: 'Valor Plano DMS' },
         ],
       },
       { key: 'ferias', label: 'Férias' },
-      { key: 'calculo-comissoes', label: 'Cálculo de Comissões DAF' },
+      { key: 'calculo-comissoes', label: 'Cálculo de Comissões' },
+      { key: 'plano-dms-calculo', label: 'Plano DMS' },
+      { key: 'processamento-comissoes', label: 'Processamento de Comissões' },
       { key: 'sobreaviso-plantao', label: 'Sobreaviso/Plantão' },
     ],
   },
@@ -98,10 +102,8 @@ export const MENU_TREE = [
         children: [
           { key: 'metas/pos-vendas/pecas', label: 'Peças' },
           { key: 'metas/pos-vendas/servicos', label: 'Serviços' },
-          { key: 'metas/pos-vendas/funilaria-pintura', label: 'Funilaria e Pintura' },
-          { key: 'metas/pos-vendas/terceiros', label: 'Terceiros' },
-          { key: 'metas/pos-vendas/distribuicao-consultores', label: 'Distribuição por Consultor' },
           { key: 'metas/pos-vendas/total', label: 'Total Pós-Vendas' },
+          { key: 'metas/pos-vendas/distribuicao-consultores', label: 'Distribuição — Consultores', virtual: true },
         ],
       },
       { key: 'metas/gestao-aprovacao', label: 'Gestão de Aprovação' },
@@ -154,6 +156,20 @@ export const MENU_TREE = [
       { key: 'projetos/lista-tarefas', label: 'Lista de Tarefas', virtual: true },
       { key: 'projetos/manifestacoes', label: 'Manifestações', virtual: true },
       { key: 'projetos/calendario', label: 'Agenda', virtual: true },
+      { key: 'projetos/ata-reuniao', label: 'Ata de Reunião', virtual: true },
+      {
+        key: '_gestao-projetos.auditoria-externa',
+        label: 'Auditoria Externa',
+        navTo: 'auditoria-externa/dashboard',
+        children: [
+          { key: 'auditoria-externa/dashboard', label: 'Dashboard' },
+          { key: 'auditoria-externa/ciclos', label: 'Ciclos de Auditoria' },
+          { key: 'auditoria-externa/divergencias', label: 'Divergências' },
+          { key: 'auditoria-externa/plano-acao', label: 'Plano de Ação' },
+          { key: 'auditoria-externa/tipos-acao', label: 'Tipos de Ação' },
+          { key: 'auditoria-externa/impactos', label: 'Impactos' },
+        ],
+      },
       {
         key: '_gestao-projetos.cadastros',
         label: 'Cadastros',
@@ -184,6 +200,9 @@ export const MENU_TREE = [
       { key: 'bi/garantias-daf', label: 'BI — Garantias DAF' },
       { key: 'bi/projetos', label: 'BI — Gestão de Projetos' },
       { key: 'bi/possibilidades', label: 'BI — Possibilidades' },
+      { key: 'bi/fontes', label: 'BI — Fontes' },
+      { key: 'bi/medidas', label: 'BI — Medidas' },
+      { key: 'bi/comissoes', label: 'BI — Comissões' },
       {
         // Permissões individuais mantidas (controlam quais abas aparecem em /kpi/matriz),
         // mas o grupo inteiro navega direto pra página única — ver navTo no Home.jsx (TabelaMenu).
@@ -217,6 +236,15 @@ export const MENU_TREE = [
     label: 'Treinamentos',
     children: [
       { key: 'treinamentos/grade', label: 'Grade de Treinamentos' },
+      { key: 'treinamentos/central', label: 'Central de Treinamentos', href: 'https://centraldetreinamentos.netlify.app/' },
+    ],
+  },
+  {
+    key: '_governanca',
+    label: 'Governança',
+    children: [
+      { key: 'governanca/grupo-acessos', label: 'Grupo de Acessos' },
+      { key: 'governanca/perfis-acesso', label: 'Perfis de Acesso' },
     ],
   },
 ]

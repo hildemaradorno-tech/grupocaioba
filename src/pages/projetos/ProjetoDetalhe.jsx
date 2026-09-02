@@ -58,11 +58,13 @@ const getTextColor = (hex) => {
 export default function ProjetoDetalhe() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const { state: navState } = useLocation()
+  const { state: navState, search } = useLocation()
+  const _searchParams = new URLSearchParams(search)
   const { hasActionOrDefault, usuarioId, isAdmin } = useAuth()
   const { modoVerTodos } = useProjetosFiltros()
   const canEditar         = !modoVerTodos && hasActionOrDefault('projetos', 'editar')
-  const canCriarTarefa   = !modoVerTodos && hasActionOrDefault('projetos', 'criar_tarefa')
+  const canCriarTarefa        = !modoVerTodos && hasActionOrDefault('projetos', 'criar_tarefa')
+  const canAlterarStatusTarefa = hasActionOrDefault('projetos', 'alterar_status_tarefa')
   const canEditarTarefa  = !modoVerTodos && hasActionOrDefault('projetos', 'editar_tarefa')
   const canExcluirTarefa = !modoVerTodos && hasActionOrDefault('projetos', 'excluir_tarefa')
   const canMoverTarefa   = !modoVerTodos && hasActionOrDefault('projetos', 'mover_tarefa')
@@ -75,13 +77,14 @@ export default function ProjetoDetalhe() {
   const canResponderManif   = hasActionOrDefault('projetos/manifestacoes', 'responder_manifestacao')
   const canEncerrarManif    = hasActionOrDefault('projetos/manifestacoes', 'encerrar_periodo')
 
-  const [aba, setAba] = useState(navState?.aba || 'tarefas')
+  const [aba, setAba] = useState(navState?.aba || _searchParams.get('aba') || 'tarefas')
   const [modalIniciarFase, setModalIniciarFase] = useState(false)
   const [projeto, setProjeto] = useState(null)
   const [tarefas, setTarefas] = useState([])
   const [dependencias, setDependencias] = useState([])
   const [responsaveis, setResponsaveis] = useState([])
   const [sistemas, setSistemas] = useState([])
+  const [usuarios, setUsuarios] = useState([])
   const [fases, setFases] = useState([])
   const [empresas, setEmpresas] = useState([])
   const [areas, setAreas] = useState([])
@@ -114,23 +117,35 @@ export default function ProjetoDetalhe() {
   const [buscaProjeto, setBuscaProjeto] = useState('')
   const [movendoTarefa, setMovendoTarefa] = useState(false)
   const [convidados, setConvidados] = useState([])
+  const [manifestacoesIniciais, setManifestoesIniciais] = useState([])
   const isConvidadoManif     = convidados.some(c => c.usuario_id === usuarioId)
-  const podeVerManifestacoes = isAdmin || canResponderManif || canEncerrarManif || isConvidadoManif
+  // A aba só existe se o projeto tiver alguma tarefa numa fase que aciona
+  // manifestação (senão a mensagem "ainda não iniciado" apareceria em
+  // projetos que nunca vão ter Período de Manifestação) — ou se o período já
+  // foi iniciado/encerrado alguma vez (mantém o histórico visível mesmo que
+  // a tarefa daquela fase tenha sido movida/excluída depois).
+  const faseManifestacaoIds = new Set(fases.filter(f => f.aciona_manifestacao).map(f => f.id))
+  const temTarefaManifestacao = tarefas.some(t => faseManifestacaoIds.has(t.fase_id))
+  const manifestacaoJaIniciada = projeto?.manifestacao_status === 'aberto' || projeto?.manifestacao_status === 'encerrado'
+  const podeVerManifestacoes = (isAdmin || canResponderManif || canEncerrarManif || isConvidadoManif)
+    && (temTarefaManifestacao || manifestacaoJaIniciada)
 
   const loadData = useCallback(async () => {
     clearProjetosCache()
     setLoading(true); setError(null)
     try {
-      const [proj, tfs, deps, conv] = await Promise.all([
+      const [proj, tfs, deps, conv, mans] = await Promise.all([
         apiService.getProjetoById(id),
         apiService.getTarefas(id),
         apiService.getDependencias(id),
         apiService.getConvidadosManifestacao(id),
+        apiService.getManifestacoes(id),
       ])
       setProjeto(proj)
       setTarefas(tfs)
       setDependencias(deps)
       setConvidados(conv)
+      setManifestoesIniciais(mans)
     } catch (err) { setError(err.message || String(err)) }
     finally { setLoading(false) }
   }, [id])
@@ -143,12 +158,14 @@ export default function ProjetoDetalhe() {
       apiService.getProjFases(),
       apiService.getProjEmpresas(),
       apiService.getProjAreas(),
-    ]).then(([respData, sistData, faseData, empData, areaData]) => {
+      apiService.getUsuarios(),
+    ]).then(([respData, sistData, faseData, empData, areaData, usuData]) => {
       setResponsaveis(respData.filter(r => r.ativo !== false))
       setSistemas(sistData.filter(s => s.ativo !== false))
       setFases(faseData.filter(f => f.ativo !== false))
       setEmpresas(empData.filter(e => e.ativo !== false))
       setAreas(areaData.filter(a => a.ativo !== false))
+      setUsuarios(usuData)
     }).catch(() => {})
   }, [])
 
@@ -217,6 +234,7 @@ const abrirModalMover = async (tarefa) => {
   if (!projeto) return null
 
   const st = STATUS_MAP[projeto.status] || { label: projeto.status, cor: 'bg-slate-100 text-slate-500' }
+  const nomeUsuario = (email) => usuarios.find(u => u.email === email)?.nome || email
 
   const handleProximaEtapa = (t) => {
     const proximoDia = t.data_fim
@@ -418,10 +436,16 @@ const abrirModalMover = async (tarefa) => {
     setSalvandoEtapa(t.id)
     try {
       if (novaEtapa != null) {
-        const conflito = tarefas.find(c => c.id !== t.id && c.etapa === novaEtapa)
-        if (conflito) {
-          await apiService.updateTarefa(conflito.id, { etapa: null })
-          setTarefas(prev => prev.map(x => x.id === conflito.id ? { ...x, etapa: null } : x))
+        // Abre espaço pra inserir nessa posição empurrando pra baixo (soma 1) quem já estava
+        // nela em diante, em vez de apagar a etapa de quem já tinha uma — mesmo raciocínio já
+        // usado ao excluir tarefas (shift), só que abrindo espaço em vez de fechando. Processa
+        // da maior etapa pra menor pra nunca colidir com a próxima durante os updates.
+        const paraEmpurrar = tarefas
+          .filter(c => c.id !== t.id && c.etapa != null && c.etapa >= novaEtapa)
+          .sort((a, b) => b.etapa - a.etapa)
+        for (const c of paraEmpurrar) {
+          await apiService.updateTarefa(c.id, { etapa: c.etapa + 1 })
+          setTarefas(prev => prev.map(x => x.id === c.id ? { ...x, etapa: c.etapa + 1 } : x))
         }
       }
       await apiService.updateTarefa(t.id, { etapa: novaEtapa })
@@ -585,6 +609,15 @@ const abrirModalMover = async (tarefa) => {
                       <span><span className="font-semibold text-slate-400">Resp.:</span> {projeto.responsavel_nome}</span>
                     </>
                   )}
+                  {projeto.criado_por && (
+                    <>
+                      {(ini || fim || projeto.responsavel_nome) && <span className="text-slate-300">·</span>}
+                      <span>
+                        <span className="font-semibold text-slate-400">Cadastrado por:</span> {nomeUsuario(projeto.criado_por)}
+                        {projeto.criado_em && <> em {new Date(projeto.criado_em).toLocaleDateString('pt-BR')}</>}
+                      </span>
+                    </>
+                  )}
                 </p>
               )
             })()}
@@ -632,7 +665,7 @@ const abrirModalMover = async (tarefa) => {
       </div>
 
       {aba === 'manifestacoes' && (
-        <ManifestacoesTab projeto={projeto} onReload={loadData} convidados={convidados} />
+        <ManifestacoesTab projeto={projeto} onReload={loadData} convidados={convidados} manifestacoesInicial={manifestacoesIniciais} />
       )}
 
       {aba === 'tarefas' && (
@@ -1207,6 +1240,7 @@ const abrirModalMover = async (tarefa) => {
           fases={fases}
           empresas={empresas}
           areas={areas}
+          canAlterarStatus={canAlterarStatusTarefa}
           onClose={() => setModalTarefa(null)}
           onSaved={() => { setModalTarefa(null); loadData() }}
           onNavigate={(t) => setModalTarefa({ tarefa: t })}

@@ -127,6 +127,7 @@ export default function Usuarios() {
     try {
       await apiService.sendResetPasswordEmail(usuario.email, `${URL_PRODUCAO}/redefinir-senha`)
       setReenviadoId(usuario.id)
+      setConviteEnviado({ nome: usuario.nome, email: usuario.email, tipo: 'reenvio' })
       setTimeout(() => setReenviadoId(null), 3000)
     } catch (err) {
       alert('Erro ao enviar e-mail: ' + (err.message || String(err)))
@@ -331,15 +332,18 @@ export default function Usuarios() {
           <div className="flex items-center justify-between px-5 py-3 bg-green-100 border-b border-green-200">
             <div className="flex items-center gap-2 text-green-800 font-semibold text-sm">
               <UserPlus className="h-4 w-4" />
-              Usuário criado — e-mail de boas-vindas enviado
+              {conviteEnviado.tipo === 'reenvio' ? 'E-mail reenviado' : 'Usuário criado — e-mail de boas-vindas enviado'}
             </div>
             <button onClick={() => setConviteEnviado(null)} className="text-green-600 hover:text-green-800">
               <X className="h-4 w-4" />
             </button>
           </div>
           <div className="px-5 py-4 text-sm text-slate-700">
-            Um e-mail de boas-vindas foi enviado para <span className="font-semibold">{conviteEnviado.nome}</span> em{' '}
-            <span className="font-mono text-slate-800">{conviteEnviado.email}</span> com um link para ele mesmo definir a senha de acesso.
+            {conviteEnviado.tipo === 'reenvio'
+              ? <>Um e-mail com o link de redefinição de senha foi reenviado para <span className="font-semibold">{conviteEnviado.nome}</span> em{' '}
+                  <span className="font-mono text-slate-800">{conviteEnviado.email}</span>.</>
+              : <>Um e-mail de boas-vindas foi enviado para <span className="font-semibold">{conviteEnviado.nome}</span> em{' '}
+                  <span className="font-mono text-slate-800">{conviteEnviado.email}</span> com um link para ele mesmo definir a senha de acesso.</>}
           </div>
         </div>
       )}

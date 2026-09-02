@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { X, Loader2, CheckCircle2, AlertCircle, MessageSquare } from 'lucide-react'
 import { apiService } from '../../services/api'
 import { useAuth } from '../../context/AuthContext'
+import ManifestacaoRichEditor from './ManifestacaoRichEditor'
 
 const TIPO_COR = {
   'Sugestão':  'bg-blue-100 text-blue-700',
@@ -61,6 +62,9 @@ export default function ResponderManifestacaoModal({ manifestacao, onClose, onSa
         responsavel_email: user?.email || null,
         responsavel_nome: userNome || null,
         resultado_manifestacao: resultado,
+        usuario_email: manifestacao.usuario_email,
+        usuario_nome: manifestacao.usuario_nome,
+        projeto_id: manifestacao.projeto_id,
       })
       onSaved()
     } catch (err) {
@@ -75,7 +79,9 @@ export default function ResponderManifestacaoModal({ manifestacao, onClose, onSa
       <div className="bg-white rounded-lg border border-slate-200 w-[600px] max-h-[80vh] shadow-xl flex flex-col">
         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
           <div>
-            <h3 className="text-sm font-bold text-slate-900">Responder Manifestação</h3>
+            <h3 className="text-sm font-bold text-slate-900">
+              {manifestacao.resultado_manifestacao ? 'Editar Resposta' : 'Responder Manifestação'}
+            </h3>
             <p className="text-[11px] text-slate-500">{manifestacao.usuario_nome || manifestacao.usuario_email} · {fmtDataHora(manifestacao.data_hora_envio)}</p>
           </div>
           <button onClick={onClose} className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors">
@@ -91,7 +97,7 @@ export default function ResponderManifestacaoModal({ manifestacao, onClose, onSa
             </span>
             {manifestacao.texto_manifestacao && (
               <div
-                className="text-xs text-slate-700 leading-relaxed bg-slate-50 rounded-md p-3 border border-slate-100"
+                className="rich-html text-xs text-slate-700 leading-relaxed bg-slate-50 rounded-md p-3 border border-slate-100"
                 dangerouslySetInnerHTML={{ __html: manifestacao.texto_manifestacao }}
               />
             )}
@@ -122,13 +128,13 @@ export default function ResponderManifestacaoModal({ manifestacao, onClose, onSa
           {/* Resposta */}
           <div>
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Resposta / Consideração</label>
-            <textarea
-              value={resposta}
-              onChange={e => setResposta(e.target.value)}
-              rows={4}
-              placeholder="Descreva a decisão tomada, justificativa ou esclarecimento..."
-              className="w-full mt-1 text-xs p-2 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 resize-none"
-            />
+            <div className="mt-1">
+              <ManifestacaoRichEditor
+                value={resposta}
+                onChange={setResposta}
+                placeholder="Descreva a decisão tomada, justificativa ou esclarecimento..."
+              />
+            </div>
           </div>
 
           {erro && <p className="text-[11px] text-red-600 font-medium">{erro}</p>}

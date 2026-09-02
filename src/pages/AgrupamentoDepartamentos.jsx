@@ -1,4 +1,5 @@
 ﻿import React, { useEffect, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useSessionState } from '../hooks/useSessionState'
 import { Plus, X, AlertTriangle, Layers, Eye } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
@@ -6,6 +7,8 @@ import PermissionActionButtons from '../components/PermissionActionButtons'
 import { apiService } from '../services/supabaseClient'
 
 export default function AgrupamentoDepartamentos() {
+  const location = useLocation()
+  const navigate = useNavigate()
   const [items, setItems] = useState([])
   const [areas, setAreas] = useState([])
   const [loading, setLoading] = useState(true)
@@ -53,6 +56,16 @@ export default function AgrupamentoDepartamentos() {
     setForm({ nome_agrupamento: item.nome_agrupamento, area: item.area || '', ativo: item.ativo ?? true })
     setModalAberto(true)
   }
+
+  // Veio de outra tela (ex: Organograma, clicando no lápis de editar) pedindo pra abrir direto
+  // a edição de um agrupamento de departamento específico — consome o state da navegação uma única vez.
+  useEffect(() => {
+    const idParaEditar = location.state?.editarId
+    if (!idParaEditar || items.length === 0) return
+    const item = items.find(i => i.id === idParaEditar)
+    if (item) abrirEditar(item)
+    navigate(location.pathname, { replace: true, state: {} })
+  }, [items, location.state])
 
   const abrirExcluir = (item) => {
     setIdExcluir(item.id)

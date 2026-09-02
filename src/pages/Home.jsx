@@ -1,14 +1,13 @@
-import React, { useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useSessionState } from '../hooks/useSessionState'
 import { useNavigate } from 'react-router-dom'
 import {
   ClipboardCheck, AlertTriangle, ChevronRight, KeyRound,
   Settings, Wallet, Target, ClipboardList, FolderKanban, Calculator, BookOpen,
-  Folder, FileText, X, PieChart, Settings2, GripVertical, Check, RotateCcw, GraduationCap,
+  Folder, FileText, X, PieChart, GraduationCap, ExternalLink,
 } from 'lucide-react'
 import { apiService } from '../services/api'
 import { useAuth } from '../context/AuthContext'
-import { supabase } from '../services/supabaseClient'
 import { MENU_TREE, getLeafKeys } from '../config/menuTree'
 
 const DIAS_LIMITE_SENHA = 30
@@ -47,95 +46,48 @@ function nodeVisivel(n, hasPermission) {
   return n.children ? getLeafKeys(n).some(k => hasPermission(k)) : hasPermission(n.key)
 }
 
-// Ordena os grupos: sem ordem salva, A-Z; com ordem salva, respeita a posição escolhida pelo usuário
-function ordenarNodes(nodes, ordem) {
-  if (!ordem) return [...nodes].sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'))
-  const indice = new Map(ordem.map((k, i) => [k, i]))
-  return [...nodes].sort((a, b) => {
-    const ia = indice.has(a.key) ? indice.get(a.key) : Infinity
-    const ib = indice.has(b.key) ? indice.get(b.key) : Infinity
-    return ia !== ib ? ia - ib : a.label.localeCompare(b.label, 'pt-BR')
-  })
-}
-
 // ── Bloco grande (grade) representando um grupo de menu ──────────────────────
-function GrupoBloco({ node, ativo, quantidade, onClick, editando, arrastando, onDragStart, onDragOver, onDrop, onDragEnd }) {
+function GrupoBloco({ node, ativo, quantidade, onClick }) {
   const Icone = GRUPO_ICONES[node.key] || Folder
   const cor = GRUPO_CORES[node.key] || COR_PADRAO
 
   return (
-    <div
-      draggable={editando}
-      onDragStart={editando ? (e) => onDragStart(e, node.key) : undefined}
-      onDragOver={editando ? (e) => onDragOver(e, node.key) : undefined}
-      onDrop={editando ? (e) => onDrop(e, node.key) : undefined}
-      onDragEnd={editando ? onDragEnd : undefined}
-      className="relative"
+    <button
+      onClick={onClick}
+      className={`w-full flex flex-col rounded-2xl overflow-hidden border shadow-sm hover:shadow-md transition-all ${
+        ativo ? `${cor.ring} ring-2` : 'border-slate-200'
+      }`}
     >
-      <button
-        onClick={editando ? undefined : onClick}
-        className={`w-full flex flex-col rounded-2xl overflow-hidden border shadow-sm transition-all ${
-          editando ? 'border-dashed border-slate-300 cursor-grab active:cursor-grabbing' : 'hover:shadow-md'
-        } ${
-          !editando && ativo ? `${cor.ring} ring-2` : ''
-        } ${
-          !editando && !ativo ? 'border-slate-200' : ''
-        } ${arrastando === node.key ? 'opacity-40' : ''}`}
-      >
-        <div className="flex-1 flex items-center justify-center bg-slate-100 py-8">
-          <div className={`bg-gradient-to-br ${cor.grad} text-white rounded-2xl p-4 shadow`}>
-            <Icone size={32} />
-          </div>
+      <div className="flex-1 flex items-center justify-center bg-slate-100 py-8">
+        <div className={`bg-gradient-to-br ${cor.grad} text-white rounded-2xl p-4 shadow`}>
+          <Icone size={32} />
         </div>
-        <div className="flex items-center justify-between gap-2 bg-slate-200/70 px-3 py-2.5">
-          <span className="text-sm font-bold text-slate-800 text-left leading-tight">{node.label}</span>
-          <span className="shrink-0 w-5 h-5 rounded-full bg-slate-500 text-white text-[10px] font-bold flex items-center justify-center">
-            {quantidade}
-          </span>
-        </div>
-      </button>
-      {editando && (
-        <div className="absolute top-1.5 right-1.5 bg-white/90 rounded-md p-1 shadow pointer-events-none">
-          <GripVertical size={14} className="text-slate-400" />
-        </div>
-      )}
-    </div>
+      </div>
+      <div className="flex items-center justify-between gap-2 bg-slate-200/70 px-3 py-2.5">
+        <span className="text-sm font-bold text-slate-800 text-left leading-tight">{node.label}</span>
+        <span className="shrink-0 w-5 h-5 rounded-full bg-slate-500 text-white text-[10px] font-bold flex items-center justify-center">
+          {quantidade}
+        </span>
+      </div>
+    </button>
   )
 }
 
-// ── Tabela de linhas com o conteúdo do grupo selecionado (com navegação por pastas) ──
-function TabelaMenu({ node, hasPermission, navigate, onFechar }) {
-  const [caminho, setCaminho] = useState([]) // array de nós (subpastas) navegados
-
-  const atual = caminho.length ? caminho[caminho.length - 1] : node
-  const itens = (atual.children || []).filter(n => !n.virtual && nodeVisivel(n, hasPermission))
-  const Icone = GRUPO_ICONES[node.key] || Folder
-  const cor = GRUPO_CORES[node.key] || COR_PADRAO
+// ── Coluna com o conteúdo de um nível do grupo — cada subpasta clicada abre uma
+// nova coluna ao lado (cascata lateral, estilo colunas do Finder) ──
+function ColunaMenu({ node, rootNode, selecionadoKey, hasPermission, navigate, onSelecionar, onFechar }) {
+  const itens = (node.children || []).filter(n => !n.virtual && nodeVisivel(n, hasPermission))
+  const Icone = GRUPO_ICONES[rootNode.key] || Folder
+  const cor = GRUPO_CORES[rootNode.key] || COR_PADRAO
 
   return (
-    <div className={`border border-slate-200 border-l-4 ${cor.accent} rounded-2xl overflow-hidden bg-white shadow-sm`}>
-      <div className={`flex items-center gap-2 flex-wrap px-4 py-3 ${cor.headerBg} border-b ${cor.headerBorder}`}>
+    <div className={`w-full sm:w-[280px] shrink-0 border border-slate-200 border-l-4 ${cor.accent} rounded-2xl overflow-hidden bg-white shadow-sm`}>
+      <div className={`flex items-center gap-2 px-4 py-3 ${cor.headerBg} border-b ${cor.headerBorder}`}>
         <div className={`bg-gradient-to-br ${cor.grad} text-white rounded-lg p-1.5 shrink-0`}>
           <Icone size={14} />
         </div>
-        <button
-          onClick={() => setCaminho([])}
-          className={`px-3 py-1 rounded-full ${cor.pill} hover:opacity-80 text-xs font-bold transition-opacity`}
-        >
-          {node.label}
-        </button>
-        {caminho.map((n, i) => (
-          <React.Fragment key={n.key}>
-            <ChevronRight size={12} className={`${cor.chevron} shrink-0`} />
-            <button
-              onClick={() => setCaminho(caminho.slice(0, i + 1))}
-              className="px-3 py-1 rounded-full bg-slate-100 hover:bg-slate-200 text-xs font-semibold text-slate-600 transition-colors"
-            >
-              {n.label}
-            </button>
-          </React.Fragment>
-        ))}
-        <button onClick={onFechar} className="ml-auto text-slate-400 hover:text-slate-600">
+        <span className="text-xs font-bold text-slate-700 flex-1 truncate">{node.label}</span>
+        <button onClick={onFechar} className="text-slate-400 hover:text-slate-600 shrink-0">
           <X size={16} />
         </button>
       </div>
@@ -145,14 +97,22 @@ function TabelaMenu({ node, hasPermission, navigate, onFechar }) {
           // navTo faz um nó com children se comportar como link direto (ex.: Matriz KPIs
           // mantém os leaves para o editor de permissões, mas navega direto pra página única).
           const isFolder = !!item.children && !item.navTo
+          const ativo = isFolder && selecionadoKey === item.key
           return (
             <button
               key={item.key}
-              onClick={() => isFolder ? setCaminho([...caminho, item]) : navigate('/' + (item.navTo || item.key))}
-              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-slate-100 hover:bg-slate-200 transition-colors text-left"
+              onClick={() => {
+                if (item.href) { window.open(item.href, '_blank', 'noopener,noreferrer'); return }
+                isFolder ? onSelecionar(item) : navigate('/' + (item.navTo || item.key))
+              }}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-colors text-left ${
+                ativo ? cor.pill : 'bg-slate-100 hover:bg-slate-200'
+              }`}
             >
               {isFolder
                 ? <Folder size={20} className="text-amber-400 fill-amber-300 shrink-0" />
+                : item.href
+                ? <ExternalLink size={20} className="text-slate-400 shrink-0" />
                 : <FileText size={20} className="text-slate-400 shrink-0" />}
               <span className="text-sm font-bold text-slate-800 flex-1">{item.label}</span>
               {isFolder && <ChevronRight size={16} className="text-slate-400 shrink-0" />}
@@ -214,7 +174,7 @@ function AlertaExpandivel({ cor, icone: Icone, categoria, resumo, detalhe, quant
 
 export default function Home() {
   const navigate = useNavigate()
-  const { user, hasPermission, isAdminEfetivo } = useAuth()
+  const { hasPermission, isAdminEfetivo } = useAuth()
   const podeVerAprovacao = hasPermission('metas/gestao-aprovacao')
 
   const [pendentes, setPendentes]   = useState(null) // null = carregando
@@ -250,90 +210,33 @@ export default function Home() {
   const carregando = pendentes === null
   const carregandoSenhas = usuariosSenhaVencida === null
 
-  const [grupoAberto, setGrupoAberto] = useState(null) // nó do MENU_TREE em exibição na tabela
+  // path[0] é o bloco de topo aberto (só um por vez — os demais blocos somem, ficando só
+  // o selecionado); cada nível seguinte é uma subpasta aberta em cascata, ao lado do anterior.
+  const [caminhoAberto, setCaminhoAberto] = useState([])
 
-  const [editando, setEditando]     = useState(false)
-  const [arrastando, setArrastando] = useState(null) // key do bloco sendo arrastado
-  const [ordem, setOrdem]           = useState(null)       // array de keys, null = padrão A-Z
-
-  // Ordem personalizada dos blocos vem do próprio usuário no Supabase — assim
-  // acompanha o mesmo login em qualquer dispositivo (celular, outro computador etc.),
-  // em vez de ficar presa ao localStorage de um navegador só. Os blocos aparecem
-  // na hora com a ordem padrão e só se reorganizam quando essa consulta volta,
-  // em vez de deixar a tela em branco esperando o Supabase responder.
-  useEffect(() => {
-    if (!user?.email) return
-    // Busca por e-mail (não por id) — auth.users.id pode não bater com usuarios.id,
-    // mesmo cuidado já tomado em AuthContext ao carregar o perfil/permissões.
-    supabase.from('usuarios').select('home_ordem_blocos').eq('email', user.email).maybeSingle()
-      .then(({ data }) => setOrdem(data?.home_ordem_blocos || null))
-      .catch(() => setOrdem(null))
-  }, [user?.email])
-
-  const nodesVisiveis  = MENU_TREE.filter(node => nodeVisivel(node, hasPermission))
-  const nodesOrdenados = ordenarNodes(nodesVisiveis, ordem)
-
-  const salvarOrdem = (novaOrdem) => {
-    setOrdem(novaOrdem)
-    if (!user?.email) return
-    supabase.from('usuarios').update({ home_ordem_blocos: novaOrdem }).eq('email', user.email)
-      .then(({ error }) => { if (error) console.error('[Home] Erro ao salvar ordem dos blocos:', error) })
+  const toggleGrupo = (node) => {
+    setCaminhoAberto(prev => prev[0]?.key === node.key ? [] : [node])
+  }
+  const selecionarSub = (index, item) => {
+    setCaminhoAberto(prev => prev[index + 1]?.key === item.key
+      ? prev.slice(0, index + 1)
+      : [...prev.slice(0, index + 1), item])
+  }
+  const fecharColuna = (index) => {
+    setCaminhoAberto(prev => prev.slice(0, index))
   }
 
-  const handleDragStartBloco = (e, key) => {
-    setArrastando(key)
-    e.dataTransfer.effectAllowed = 'move'
-  }
-  const handleDragOverBloco = (e) => { e.preventDefault() }
-  const handleDropBloco = (e, keyAlvo) => {
-    e.preventDefault()
-    if (!arrastando || arrastando === keyAlvo) return
-    const keys = nodesOrdenados.map(n => n.key)
-    const origemIdx = keys.indexOf(arrastando)
-    const destinoIdx = keys.indexOf(keyAlvo)
-    if (origemIdx === -1 || destinoIdx === -1) return
-    const novaOrdem = [...keys]
-    novaOrdem.splice(origemIdx, 1)
-    novaOrdem.splice(destinoIdx, 0, arrastando)
-    salvarOrdem(novaOrdem)
-  }
-
-  const alternarEdicao = () => {
-    setEditando(e => !e)
-    setGrupoAberto(null)
-  }
+  const nodesOrdenados = MENU_TREE
+    .filter(node => nodeVisivel(node, hasPermission))
+    .sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'))
 
   return (
     <div className="p-8 max-w-screen-xl flex flex-col gap-4">
 
       {/* Título */}
-      <div className="flex items-start justify-between gap-4 mb-4">
-        <div>
-          <h1 className="text-4xl font-bold text-slate-900 mb-1">Bem-vindo ao Portal de Gestão</h1>
-          <p className="text-lg text-slate-500">Grupo Caiobá</p>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          {editando && (
-            <button
-              onClick={() => salvarOrdem(null)}
-              title="Restaurar ordem alfabética (A-Z)"
-              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors"
-            >
-              <RotateCcw size={14} />
-              Restaurar A-Z
-            </button>
-          )}
-          <button
-            onClick={alternarEdicao}
-            title={editando ? 'Concluir personalização' : 'Personalizar organização dos blocos'}
-            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-colors ${
-              editando ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-            }`}
-          >
-            {editando ? <Check size={14} /> : <Settings2 size={14} />}
-            {editando ? 'Concluir' : 'Personalizar'}
-          </button>
-        </div>
+      <div className="mb-4">
+        <h1 className="text-4xl font-bold text-slate-900 mb-1">Bem-vindo ao Portal de Gestão</h1>
+        <p className="text-lg text-slate-500">Grupo Caiobá</p>
       </div>
 
       {/* Alerta de usuários com senha não renovada — só para admin, e só quando há pendência */}
@@ -376,41 +279,36 @@ export default function Home() {
         />
       )}
 
-      {editando && (
-        <p className="text-xs text-slate-500 -mt-2">
-          Arraste os blocos para reorganizá-los do seu jeito. Clique em "Concluir" quando terminar.
-        </p>
-      )}
-
-      {/* Menus da barra lateral, em blocos — ao selecionar um, só ele fica visível ao lado da tabela */}
+      {/* Menus da barra lateral, em blocos — ao selecionar um, só ele fica visível e os submenus abrem em cascata ao lado */}
       <div className="flex flex-col lg:flex-row gap-4 items-start">
-        <div className={(grupoAberto && !editando) ? 'w-40 shrink-0' : 'grid gap-4 flex-1 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5'}>
+        <div className={caminhoAberto.length ? 'w-40 shrink-0' : 'grid gap-4 flex-1 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5'}>
           {nodesOrdenados
-            .filter(node => editando || !grupoAberto || grupoAberto.key === node.key)
+            .filter(node => !caminhoAberto.length || caminhoAberto[0].key === node.key)
             .map(node => (
               <GrupoBloco
                 key={node.key}
                 node={node}
-                ativo={grupoAberto?.key === node.key}
+                ativo={caminhoAberto[0]?.key === node.key}
                 quantidade={getLeafKeys(node).filter(k => hasPermission(k)).length}
-                onClick={() => setGrupoAberto(g => g?.key === node.key ? null : node)}
-                editando={editando}
-                arrastando={arrastando}
-                onDragStart={handleDragStartBloco}
-                onDragOver={handleDragOverBloco}
-                onDrop={handleDropBloco}
-                onDragEnd={() => setArrastando(null)}
+                onClick={() => toggleGrupo(node)}
               />
             ))}
         </div>
-        {grupoAberto && !editando && (
-          <div className="w-full lg:flex-1 shrink-0">
-            <TabelaMenu
-              node={grupoAberto}
-              hasPermission={hasPermission}
-              navigate={navigate}
-              onFechar={() => setGrupoAberto(null)}
-            />
+
+        {caminhoAberto.length > 0 && (
+          <div className="flex gap-4 items-start overflow-x-auto pb-2 flex-1 min-w-0">
+            {caminhoAberto.map((n, i) => (
+              <ColunaMenu
+                key={n.key}
+                node={n}
+                rootNode={caminhoAberto[0]}
+                selecionadoKey={caminhoAberto[i + 1]?.key}
+                hasPermission={hasPermission}
+                navigate={navigate}
+                onSelecionar={item => selecionarSub(i, item)}
+                onFechar={() => fecharColuna(i)}
+              />
+            ))}
           </div>
         )}
       </div>

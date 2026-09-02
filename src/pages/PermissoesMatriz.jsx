@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import {
   ChevronDown, ChevronRight, Search, X, ShieldCheck, Zap,
-  RefreshCw, AlertTriangle, LayoutDashboard,
+  RefreshCw, AlertTriangle, LayoutDashboard, Check, CircleDot,
 } from 'lucide-react'
 import { supabase } from '../services/supabaseClient'
 import { apiService } from '../services/api'
-import { MENU_TREE } from '../config/menuTree'
+import { MENU_TREE, getLeafKeys } from '../config/menuTree'
 import { ACOES_POR_MENU, ACOES_POR_PATH } from '../config/acoesMenu'
 
 // ── Flatten MENU_TREE into display rows ──────────────────────────────────────
@@ -66,11 +66,14 @@ export default function PermissoesMatriz() {
   const [grupos, setGrupos] = useState([])
   const [permsSet, setPermsSet] = useState(new Set())   // "grupoId:menuPath"
   const [acoesSet, setAcoesSet] = useState(new Set())   // "grupoId:menuPath:acao"
+  const [agrupamentosCargo, setAgrupamentosCargo] = useState([])
+  const [escopoAgrupCargoPorGrupo, setEscopoAgrupCargoPorGrupo] = useState({}) // grupoId -> { modo, valores:Set }
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(new Set())       // cell keys being saved
   const [err, setErr] = useState(null)
   const [busca, setBusca] = useState('')
   const [buscaGrupo, setBuscaGrupo] = useState('')
+  const [filtroAgrupCargo, setFiltroAgrupCargo] = useState('')
   const [openSections, setOpenSections] = useState(new Set())
   const busRef = useRef(null)
   const buscaGrupoRef = useRef(null)
@@ -80,16 +83,34 @@ export default function PermissoesMatriz() {
     setLoading(true)
     setErr(null)
     try {
-      const [grps, { data: perms, error: e1 }, { data: acoes, error: e2 }] = await Promise.all([
+      const [grps, { data: perms, error: e1 }, { data: acoes, error: e2 }, agrupCargos, { data: modosAgrup, error: e3 }, { data: valoresAgrup, error: e4 }] = await Promise.all([
         apiService.getGrupos(),
         supabase.from('permissoes_grupo').select('grupo_id, menu_path'),
         supabase.from('permissoes_grupo_acoes').select('grupo_id, menu_path, acao'),
+        apiService.getAgrupamentoCargos(),
+        supabase.from('permissoes_comissao_modo').select('grupo_id, modo').eq('dimensao', 'agrupamento_cargo'),
+        supabase.from('permissoes_comissao_valor').select('grupo_id, valor').eq('dimensao', 'agrupamento_cargo'),
       ])
       if (e1) throw e1
       if (e2) throw e2
+      if (e3) throw e3
+      if (e4) throw e4
       setGrupos(grps)
       setPermsSet(new Set((perms || []).map(p => `${p.grupo_id}:${p.menu_path}`)))
       setAcoesSet(new Set((acoes || []).map(a => `${a.grupo_id}:${a.menu_path}:${a.acao}`)))
+      setAgrupamentosCargo(agrupCargos.filter(a => a.ativo !== false))
+
+      // Escopo de Comissão (dimensão Agrupamento de Cargos) por grupo — usado só pra filtrar
+      // as colunas da matriz, não altera nenhuma permissão de menu/ação.
+      const mapa = {}
+      for (const m of modosAgrup || []) {
+        mapa[m.grupo_id] = { modo: m.modo === 'INDIVIDUAL' ? 'INDIVIDUAL' : 'TODOS', valores: new Set() }
+      }
+      for (const v of valoresAgrup || []) {
+        if (!mapa[v.grupo_id]) mapa[v.grupo_id] = { modo: 'INDIVIDUAL', valores: new Set() }
+        mapa[v.grupo_id].valores.add(v.valor)
+      }
+      setEscopoAgrupCargoPorGrupo(mapa)
     } catch (e) {
       setErr(e.message || 'Erro ao carregar dados.')
     } finally {
@@ -162,40 +183,59 @@ export default function PermissoesMatriz() {
   const collapseAll = () => setOpenSections(new Set())
 
   // ── Visible rows (filtered by open sections + search) ──────────────────────
+  // Com busca ativa, ignora o estado de seções recolhidas — busca em TUDO e mostra
+  // as seções ancestrais dos itens encontrados, senão um menu/ação dentro de uma
+  // seção fechada nunca apareceria no resultado da busca.
   const visibleRows = useMemo(() => {
-    let rows = ALL_ROWS.filter(row => row.sectionAncestors.every(k => openSections.has(k)))
     if (busca.trim()) {
       const term = busca.toLowerCase()
-      rows = rows.filter(r => r.label.toLowerCase().includes(term) || r.type === 'section')
+      const encontrados = ALL_ROWS.filter(r => r.type !== 'section' && r.label.toLowerCase().includes(term))
+      const chavesEncontradas = new Set(encontrados.map(r => r.key))
+      const chavesAncestrais = new Set()
+      encontrados.forEach(r => r.sectionAncestors.forEach(k => chavesAncestrais.add(k)))
+      return ALL_ROWS.filter(r => chavesEncontradas.has(r.key) || (r.type === 'section' && chavesAncestrais.has(r.key)))
     }
-    return rows
+    return ALL_ROWS.filter(row => row.sectionAncestors.every(k => openSections.has(k)))
   }, [openSections, busca])
 
-  // ── Section summary: count of leaves with at least one group checked ─────────
+  // ── Section summary: leaf keys de cada seção (em qualquer profundidade), pra
+  // resumir o acesso do grupo naquela seção sem precisar expandir. Reaproveita
+  // getLeafKeys (mesma função usada em SidebarLayout/Grupos) — a versão anterior
+  // aqui duplicava contagens por reusar a mesma chave de seção em toda a recursão.
   const getSectionLeafKeys = useMemo(() => {
     const map = {}
-    function walk(nodes, sKey) {
+    function walk(nodes) {
       for (const node of nodes) {
-        if (!node.children) {
-          if (!map[sKey]) map[sKey] = []
-          map[sKey].push(node.key)
-        } else {
-          walk(node.children, sKey)
-          if (!map[sKey]) map[sKey] = []
-          if (map[node.key]) map[sKey].push(...map[node.key])
+        if (node.children) {
+          map[node.key] = getLeafKeys(node)
+          walk(node.children)
         }
       }
     }
-    MENU_TREE.forEach(n => walk([n], n.key))
+    walk(MENU_TREE)
     return map
   }, [])
 
-  // ── Grupos filtrados por busca de nome ─────────────────────────────────────
+  // ── Grupos filtrados por busca de nome + escopo de comissão (Agrupamento de Cargos) ──────
+  // Admin sempre enxerga tudo; sem a trava mestre (comissao_escopo_habilitado) o grupo não
+  // tem acesso a nenhum agrupamento de cargos em Comissões, então some do filtro; com modo
+  // TODOS na dimensão o grupo enxerga qualquer agrupamento; em INDIVIDUAL, só os marcados.
+  const passaFiltroAgrupCargo = useCallback((g) => {
+    if (!filtroAgrupCargo) return true
+    if (g.is_admin) return true
+    if (!g.comissao_escopo_habilitado) return false
+    const cfg = escopoAgrupCargoPorGrupo[g.id]
+    if (!cfg || cfg.modo !== 'INDIVIDUAL') return true
+    return cfg.valores.has(filtroAgrupCargo)
+  }, [filtroAgrupCargo, escopoAgrupCargoPorGrupo])
+
   const gruposVisiveis = useMemo(() => {
-    if (!buscaGrupo.trim()) return grupos
-    const term = buscaGrupo.toLowerCase()
-    return grupos.filter(g => g.nome_grupo.toLowerCase().includes(term))
-  }, [grupos, buscaGrupo])
+    const term = buscaGrupo.trim().toLowerCase()
+    return grupos.filter(g =>
+      (!term || g.nome_grupo.toLowerCase().includes(term)) &&
+      passaFiltroAgrupCargo(g)
+    )
+  }, [grupos, buscaGrupo, passaFiltroAgrupCargo])
 
   // ── Cell helpers ────────────────────────────────────────────────────────────
   const hasPerm  = (gId, path) => permsSet.has(`${gId}:${path}`)
@@ -259,6 +299,27 @@ export default function PermissoesMatriz() {
           <span className="text-xs text-slate-400 shrink-0">
             {gruposVisiveis.length} de {grupos.length} grupos
           </span>
+        )}
+
+        <div className="w-px h-4 bg-slate-300 shrink-0" />
+
+        <span className="text-xs font-semibold text-slate-500 shrink-0" title="Mostra só os grupos cujo Escopo de Comissão (em Grupos de Acesso) dá acesso a esse Agrupamento de Cargos">
+          Agrupamento de Cargos:
+        </span>
+        <select
+          value={filtroAgrupCargo}
+          onChange={e => setFiltroAgrupCargo(e.target.value)}
+          className="w-52 py-1.5 px-2 text-xs border border-slate-200 rounded bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
+        >
+          <option value="">Todos</option>
+          {agrupamentosCargo.map(a => (
+            <option key={a.id} value={a.id}>{a.nome_agrupamento_cargo}</option>
+          ))}
+        </select>
+        {filtroAgrupCargo && (
+          <button onClick={() => setFiltroAgrupCargo('')} className="text-xs text-indigo-600 hover:text-indigo-800 font-semibold shrink-0">
+            Limpar
+          </button>
         )}
 
         <div className="w-px h-4 bg-slate-300 shrink-0" />
@@ -327,7 +388,9 @@ export default function PermissoesMatriz() {
                 ))
               : visibleRows.map(row => {
                   if (row.type === 'section') {
-                    const isOpen = openSections.has(row.key)
+                    // Durante a busca, a seção aparece forçadamente expandida (filha bateu com o termo),
+                    // então o ícone deve refletir isso mesmo que não esteja em openSections de verdade.
+                    const isOpen = busca.trim() ? true : openSections.has(row.key)
                     return (
                       <tr key={row.key} className="bg-slate-100 hover:bg-slate-200/70 transition-colors">
                         <td className="sticky left-0 z-10 bg-slate-100 hover:bg-slate-200/70 border-r border-b border-slate-200 px-4 py-2">
@@ -343,11 +406,29 @@ export default function PermissoesMatriz() {
                             <span className="text-xs font-bold text-slate-700 uppercase tracking-wide">{row.label}</span>
                           </button>
                         </td>
-                        {gruposVisiveis.map(g => (
-                          <td key={g.id} className="border-r border-b border-slate-200 px-3 py-2 text-center text-slate-300 text-xs">
-                            —
-                          </td>
-                        ))}
+                        {gruposVisiveis.map(g => {
+                          const leaves = getSectionLeafKeys[row.key] || []
+                          const permitidas = g.is_admin ? leaves : leaves.filter(k => hasPerm(g.id, k))
+                          const total = leaves.length
+                          const qtd = permitidas.length
+                          return (
+                            <td key={g.id} className="border-r border-b border-slate-200 px-3 py-2 text-center text-xs">
+                              {total === 0 ? (
+                                <span className="text-slate-300">—</span>
+                              ) : qtd === total ? (
+                                <span title={`Acesso completo (${qtd}/${total})`} className="inline-flex items-center justify-center">
+                                  <Check className="h-3.5 w-3.5 text-emerald-600" />
+                                </span>
+                              ) : qtd > 0 ? (
+                                <span title={`Acesso parcial (${qtd}/${total})`} className="inline-flex items-center justify-center">
+                                  <CircleDot className="h-3.5 w-3.5 text-amber-500" />
+                                </span>
+                              ) : (
+                                <span title="Sem acesso" className="text-slate-300">—</span>
+                              )}
+                            </td>
+                          )
+                        })}
                       </tr>
                     )
                   }
@@ -446,6 +527,12 @@ export default function PermissoesMatriz() {
         </span>
         <span className="flex items-center gap-1.5">
           <ShieldCheck className="h-3.5 w-3.5 text-amber-500" /> Admin — acesso total automático
+        </span>
+        <span className="flex items-center gap-1.5">
+          <Check className="h-3.5 w-3.5 text-emerald-600" /> Seção — grupo tem acesso a tudo
+        </span>
+        <span className="flex items-center gap-1.5">
+          <CircleDot className="h-3.5 w-3.5 text-amber-500" /> Seção — acesso parcial
         </span>
         <span className="ml-auto text-slate-400">Clique em qualquer checkbox para salvar imediatamente.</span>
       </div>

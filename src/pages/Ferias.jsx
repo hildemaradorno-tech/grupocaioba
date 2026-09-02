@@ -70,6 +70,15 @@ export default function Ferias() {
     apiService.getInfoArquivoFerias().then(setInfoArquivo).catch(() => setInfoArquivo(null))
   }, [])
 
+  // Mesma checagem de atualidade usada em Cálculo de Comissões: o arquivo do RH só conta como
+  // em dia se já tiver sido modificado dentro do mês corrente — senão o banco está desatualizado.
+  const mesArquivoFerias = infoArquivo?.dataModificacao?.slice(0, 7) || null
+  const mesAtualReal = useMemo(() => {
+    const hoje = new Date()
+    return `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}`
+  }, [])
+  const bancoDesatualizado = !!(mesArquivoFerias && mesArquivoFerias < mesAtualReal)
+
   // Importar e Reprocessar usam a MESMA sincronização (insere novos, remove os que sumiram do
   // arquivo) — o que muda é só o rótulo registrado no log e o texto dos avisos.
   const handleSincronizar = async (acao) => {
@@ -197,8 +206,21 @@ export default function Ferias() {
         </div>
       )}
 
-      {/* AVISO: banco já importado — outro gerente não precisa refazer */}
-      {jaImportado && (
+      {/* AVISO: arquivo do RH desatualizado — banco ainda não reflete o mês corrente */}
+      {jaImportado && bancoDesatualizado && (
+        <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 text-amber-800 text-xs leading-relaxed">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+          <span>
+            <strong>Banco desatualizado</strong> — o arquivo do RH ainda não foi atualizado neste mês
+            {infoArquivo?.dataModificacao && <> (última modificação em <strong>{fmtDataHora(infoArquivo.dataModificacao)}</strong>)</>}.
+            {' '}Clique em <strong>Reprocessar</strong> assim que o RH subir o arquivo atualizado.
+          </span>
+        </div>
+      )}
+
+      {/* AVISO: banco já importado — outro gerente não precisa refazer (só quando está em dia;
+          desatualizado mostra o alerta amarelo acima em vez deste) */}
+      {jaImportado && !bancoDesatualizado && (
         <div className="flex items-start gap-2 bg-emerald-50 border border-emerald-200 rounded-md px-3 py-2 text-emerald-800 text-xs leading-relaxed">
           <CheckCircle2 className="h-3.5 w-3.5 shrink-0 mt-0.5" />
           <span>

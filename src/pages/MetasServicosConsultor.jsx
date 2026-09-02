@@ -79,8 +79,8 @@ export default function MetasServicosConsultor() {
   const [filtroVisu,    setFiltroVisu]    = useSessionState('msc_visu', 'total')
   const [loading,       setLoading]       = useState(false)
   const [error,         setError]         = useState(null)
-  const [filtroEmpresa, setFiltroEmpresa] = useSessionState('msc_empresa', '')
-  const [filtroAno,     setFiltroAno]     = useSessionState('msc_ano', anoAtual)
+  const [filtroEmpresa, setFiltroEmpresa] = useSessionState('mpvs_servicos_empresa', '')
+  const [filtroAno,     setFiltroAno]     = useSessionState('mpvs_servicos_ano', anoAtual)
   const { hasPermission } = useAuth()
   const canEdit = hasPermission('/metas/pos-vendas/servicos', 'editar')
   const canDelete = hasPermission('/metas/pos-vendas/servicos', 'excluir')
@@ -112,7 +112,7 @@ export default function MetasServicosConsultor() {
         apiService.getEmpresas(), apiService.getDepartamentos(), apiService.getSetores(),
         apiService.getBox(), apiService.getCargos(), apiService.getFuncionarios(),
       ])
-      setEmpresas(sortNome(emps, 'empresa_fantasia'))
+      setEmpresas(sortNome(emps.filter(e => ['Caiobá Trucks', 'Caiobá Motos'].includes(e.agrupamento_nome)), 'empresa_fantasia'))
       setDepartamentos(sortNome(depts, 'nome_departamento'))
       setSetores(sortNome(sets, 'nome_setor'))
       setBoxes(sortNome(bxs, 'nome_box'))
@@ -160,47 +160,17 @@ export default function MetasServicosConsultor() {
     finally { setLoading(false) }
   }
 
-  const toggle = (set, setter, key) => setter(prev => { const n=new Set(prev); n.has(key)?n.delete(key):n.add(key); return n })
-
-  const tudoExpandido = grupoAberto && Object.keys(tree).length > 0 &&
-    Object.keys(tree).every(eid => expandedEmpresas.has(eid))
-
-  const expandirTudo = () => {
-    setGrupoAberto(true)
-    const emps = new Set(), depts = new Set(), sets = new Set(), bxs = new Set(), cars = new Set()
-    Object.entries(tree).forEach(([eid, emp]) => {
-      emps.add(eid)
-      Object.entries(emp.depts).forEach(([did, dept]) => {
-        const dKey = `${eid}§${did}`; depts.add(dKey)
-        Object.entries(dept.setores).forEach(([sid, setor]) => {
-          const sKey = `${dKey}§${sid}`; sets.add(sKey)
-          Object.entries(setor.boxes).forEach(([bid, box]) => {
-            const bKey = `${sKey}§${bid}`; bxs.add(bKey)
-            Object.keys(box.cargos).forEach(cid => cars.add(`${bKey}§${cid}`))
-          })
-        })
-      })
-    })
-    setExpandedEmpresas(emps); setExpandedDepts(depts); setExpandedSetores(sets)
-    setExpandedBoxes(bxs); setExpandedCargos(cars)
-  }
-
-  const recolherTudo = () => {
-    setGrupoAberto(false)
-    setExpandedEmpresas(new Set()); setExpandedDepts(new Set()); setExpandedSetores(new Set())
-    setExpandedBoxes(new Set()); setExpandedCargos(new Set())
-  }
-
   const setoresConsultoria = useMemo(()=>new Set(setores.filter(s=>s.tipo_setor==='consultoria').map(s=>s.id)),[setores])
   const boxesConsultoria   = useMemo(()=>boxes.filter(b=>(Array.isArray(b.setor_ids)?b.setor_ids:[b.setor_id]).some(sid=>setoresConsultoria.has(sid))).sort((a,b)=>(b.nome_box||'').localeCompare(a.nome_box||'')),[boxes,setoresConsultoria])
 
   const tree = useMemo(() => {
     // Lookup maps for O(1) resolution from dimension tables
-    const deptMap  = Object.fromEntries(departamentos.map(d => [d.id, d.nome_departamento]))
-    const setorMap = Object.fromEntries(setores.map(s => [s.id, s.nome_setor]))
-    const boxMap   = Object.fromEntries(boxes.map(b => [b.id, b.nome_box]))
-    const cargoMap = Object.fromEntries(cargos.map(c => [c.id, c.nome_cargo]))
-    const funcMap  = Object.fromEntries(funcionarios.map(f => [f.id, f.nome_funcionario]))
+    const deptMap    = Object.fromEntries(departamentos.map(d => [d.id, d.nome_departamento]))
+    const setorMap   = Object.fromEntries(setores.map(s => [s.id, s.nome_setor]))
+    const setorObjMap = Object.fromEntries(setores.map(s => [s.id, s]))
+    const boxMap     = Object.fromEntries(boxes.map(b => [b.id, b.nome_box]))
+    const cargoMap   = Object.fromEntries(cargos.map(c => [c.id, c.nome_cargo]))
+    const funcObjMap = Object.fromEntries(funcionarios.map(f => [f.id, f]))
 
     // Mapa box_id → setor_id atual (via dim_box.setor_ids), para re-roteamento de setores orphaned
     const boxToSetorMap = {}
@@ -212,27 +182,39 @@ export default function MetasServicosConsultor() {
 
     const t = {}
     dados.forEach(row => {
-      // Box ou cargo deletado — descarta a linha
-      if (row.box_id   && !boxMap[row.box_id])     return
-      if (row.cargo_id && !cargoMap[row.cargo_id]) return
-
-      const eid   = row.empresa_id
-      const did   = row.departamento_id || '—'
-      const bId   = row.box_id   || '—'
-      const cId   = row.cargo_id || '—'
       const colid = row.colaborador_id
+      const func  = funcObjMap[colid]
 
-      // Setor: SEMPRE resolve pelo vínculo atual do box em dim_box (ignora setor_id armazenado na linha)
-      const sId = (row.box_id && boxToSetorMap[row.box_id])
-        || (row.setor_id && setorMap[row.setor_id] ? row.setor_id : null)
-        || '—'
-      if (!setorMap[sId]) return
+      // Cargo/box/setor/depto resolvidos pelo cadastro atual do funcionário (não pelo retrato
+      // gravado na linha), pra refletir mudanças feitas depois em /funcionarios. Só faz essa
+      // resolução "ao vivo" quando o funcionário da meta ainda existe no cadastro — se o
+      // colaborador_id da linha foi excluído, os IDs gravados podem ter sido reaproveitados por
+      // outro cadastro (ex: cargo renomeado pra outra função), então nesse caso usa só o retrato.
+      const eid = row.empresa_id
+      let cId, bId, sId, did
+      if (func) {
+        cId = func.cargo_id || '—'
+        bId = func.box_id   || '—'
+        if (bId !== '—' && !boxMap[bId])   return
+        if (cId !== '—' && !cargoMap[cId]) return
+        // Setor: SEMPRE resolve pelo vínculo atual do box em dim_box
+        sId = (bId !== '—' && boxToSetorMap[bId])
+          || (row.setor_id && setorMap[row.setor_id] ? row.setor_id : null)
+          || '—'
+        if (!setorMap[sId]) return
+        did = setorObjMap[sId]?.departamento_id || '—'
+      } else {
+        cId = row.cargo_id || '—'
+        bId = row.box_id   || '—'
+        sId = row.setor_id || '—'
+        did = row.departamento_id || '—'
+      }
 
-      const dNome  = deptMap[did]        || '—'
-      const sNome  = setorMap[sId]       || '—'
-      const bNome  = boxMap[bId]         || '—'
-      const cNome  = cargoMap[cId]       || '—'
-      const coNome = funcMap[colid]      || row.colaborador_nome || colid
+      const dNome  = (func && deptMap[did])  || row.departamento_nome || '—'
+      const sNome  = (func && setorMap[sId]) || row.setor_nome        || '—'
+      const bNome  = (func && boxMap[bId])   || row.box_nome          || '—'
+      const cNome  = (func && cargoMap[cId]) || row.cargo_nome        || '—'
+      const coNome = func?.nome_funcionario || row.colaborador_nome || colid
 
       if(!t[eid]) t[eid]={ nome:row.empresa_nome||eid, depts:{} }
       const depts=t[eid].depts
@@ -288,6 +270,37 @@ export default function MetasServicosConsultor() {
     })
     return t
   }, [dados, totaisMec, totaisTer, totaisFun, boxesConsultoria, setoresConsultoria, setores, departamentos, empresas, boxes, cargos, funcionarios])
+
+  const toggle = (set, setter, key) => setter(prev => { const n=new Set(prev); n.has(key)?n.delete(key):n.add(key); return n })
+
+  const tudoExpandido = grupoAberto && Object.keys(tree).length > 0 &&
+    Object.keys(tree).every(eid => expandedEmpresas.has(eid))
+
+  const expandirTudo = () => {
+    setGrupoAberto(true)
+    const emps = new Set(), depts = new Set(), sets = new Set(), bxs = new Set(), cars = new Set()
+    Object.entries(tree).forEach(([eid, emp]) => {
+      emps.add(eid)
+      Object.entries(emp.depts).forEach(([did, dept]) => {
+        const dKey = `${eid}§${did}`; depts.add(dKey)
+        Object.entries(dept.setores).forEach(([sid, setor]) => {
+          const sKey = `${dKey}§${sid}`; sets.add(sKey)
+          Object.entries(setor.boxes).forEach(([bid, box]) => {
+            const bKey = `${sKey}§${bid}`; bxs.add(bKey)
+            Object.keys(box.cargos).forEach(cid => cars.add(`${bKey}§${cid}`))
+          })
+        })
+      })
+    })
+    setExpandedEmpresas(emps); setExpandedDepts(depts); setExpandedSetores(sets)
+    setExpandedBoxes(bxs); setExpandedCargos(cars)
+  }
+
+  const recolherTudo = () => {
+    setGrupoAberto(false)
+    setExpandedEmpresas(new Set()); setExpandedDepts(new Set()); setExpandedSetores(new Set())
+    setExpandedBoxes(new Set()); setExpandedCargos(new Set())
+  }
 
   const totalColabs = useMemo(() =>
     Object.values(tree).reduce((s,e)=>s+Object.values(e.depts).reduce((sd,d)=>sd+Object.values(d.setores).reduce((ss,st)=>ss+Object.values(st.boxes).reduce((sb,bx)=>sb+Object.values(bx.cargos).reduce((sc,ca)=>sc+Object.keys(ca.colabs).length,0),0),0),0),0),

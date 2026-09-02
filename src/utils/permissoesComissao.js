@@ -42,3 +42,12 @@ export function passaEscopoComissao(candidato, escopo) {
   }
   return true
 }
+
+// nivelPorDepartamento: Map<departamento_id, 'editar'|'visualizar'> (comissaoNivelDepartamentoEfetivo
+// do AuthContext) — ausência de entrada = 'editar' (sem restrição extra), mesmo padrão de
+// "dimensão ausente nunca bloqueia" usado acima. Departamento nulo (nada selecionado/aplicável)
+// também nunca bloqueia.
+export function departamentoSoVisualizacao(departamentoId, nivelPorDepartamento) {
+  if (!departamentoId || !nivelPorDepartamento) return false
+  return nivelPorDepartamento.get(departamentoId) === 'visualizar'
+}

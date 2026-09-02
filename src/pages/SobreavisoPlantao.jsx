@@ -8,12 +8,27 @@ const INP = 'w-full text-xs p-2 border border-slate-200 rounded-md font-medium t
 const LBL = 'text-[11px] font-bold text-slate-500 uppercase tracking-wide'
 
 const fmtBRL = (v) => (v != null && v !== '') ? parseFloat(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : 'R$ 0,00'
+const fmtDate = (v) => {
+  if (!v) return '-'
+  const [y, m, d] = String(v).split('-')
+  return `${d}/${m}/${y}`
+}
 
 const MESES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
 
 const mesRefDe = (data) => `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, '0')}-01`
 
-const FORM_VAZIO = { funcionario_id: '', dias_sobreaviso: '', deslocamentos: '', cliente_atendido: '' }
+const FORM_VAZIO = { funcionario_id: '', data_inicio: '', data_fim: '', deslocamentos: '', cliente_atendido: '' }
+
+// Dias corridos entre Data Início e Data Fim, incluindo os dois extremos (ex: 01/09 a 03/09 = 3
+// dias) — mesmo critério de "dias corridos" usado no RH, sem descontar fim de semana/feriado.
+const diasCorridos = (inicio, fim) => {
+  if (!inicio || !fim) return 0
+  const d1 = new Date(`${inicio}T00:00:00`)
+  const d2 = new Date(`${fim}T00:00:00`)
+  const dias = Math.round((d2 - d1) / 86400000) + 1
+  return dias > 0 ? dias : 0
+}
 
 export default function SobreavisoPlantao() {
   const { hasAction } = useAuth()
@@ -26,7 +41,12 @@ export default function SobreavisoPlantao() {
   const [funcionarios, setFuncionarios] = useState([])
   const [config, setConfig] = useState(null)
   const [lancamentos, setLancamentos] = useState([])
-  const [mesReferencia, setMesReferencia] = useState(mesRefDe(new Date()))
+  // Vem pré-selecionado com o mês anterior — é o mês recém-fechado, mesmo padrão já usado como
+  // período padrão em Cálculo de Comissões e Processamento de Comissões.
+  const [mesReferencia, setMesReferencia] = useState(() => {
+    const hoje = new Date()
+    return mesRefDe(new Date(hoje.getFullYear(), hoje.getMonth() - 1, 1))
+  })
 
   const [formConfig, setFormConfig] = useState({ valor_dia_sobreaviso: '', valor_deslocamento: '' })
   const [salvandoConfig, setSalvandoConfig] = useState(false)
@@ -62,7 +82,10 @@ export default function SobreavisoPlantao() {
     if (cfgResult.status === 'fulfilled') {
       const cfg = cfgResult.value
       setConfig(cfg)
-      setFormConfig({ valor_dia_sobreaviso: cfg.valor_dia_sobreaviso, valor_deslocamento: cfg.valor_deslocamento })
+      setFormConfig({
+        valor_dia_sobreaviso: parseFloat(cfg.valor_dia_sobreaviso).toFixed(2),
+        valor_deslocamento: parseFloat(cfg.valor_deslocamento).toFixed(2),
+      })
     }
     const erros = [funcsResult, cfgResult].filter(r => r.status === 'rejected').map(r => r.reason?.message || String(r.reason))
     if (erros.length > 0) setErro('Erro ao carregar dados: ' + erros.join(' | '))
@@ -124,7 +147,8 @@ export default function SobreavisoPlantao() {
     setEditandoId(l.id)
     setForm({
       funcionario_id: l.funcionario_id,
-      dias_sobreaviso: l.dias_sobreaviso,
+      data_inicio: l.data_inicio || '',
+      data_fim: l.data_fim || '',
       deslocamentos: l.deslocamentos,
       cliente_atendido: l.cliente_atendido || '',
     })
@@ -132,27 +156,32 @@ export default function SobreavisoPlantao() {
     setModalAberto(true)
   }
 
+  const diasCalculados = useMemo(() => diasCorridos(form.data_inicio, form.data_fim), [form.data_inicio, form.data_fim])
+
   const totalCalculado = useMemo(() => {
     if (!config) return 0
-    const dias = parseFloat(form.dias_sobreaviso) || 0
     const desloc = parseFloat(form.deslocamentos) || 0
-    return dias * Number(config.valor_dia_sobreaviso) + desloc * Number(config.valor_deslocamento)
-  }, [form.dias_sobreaviso, form.deslocamentos, config])
+    return diasCalculados * Number(config.valor_dia_sobreaviso) + desloc * Number(config.valor_deslocamento)
+  }, [diasCalculados, form.deslocamentos, config])
 
   const handleSalvar = async (e) => {
     e.preventDefault()
     setErroModal(null)
     if (!form.funcionario_id) { setErroModal('Selecione o colaborador.'); return }
+    if (!form.data_inicio || !form.data_fim) { setErroModal('Informe a Data Início e a Data Fim do sobreaviso.'); return }
+    if (form.data_fim < form.data_inicio) { setErroModal('A Data Fim não pode ser antes da Data Início.'); return }
     if (!config) { setErroModal('Configuração de valores ainda não carregada. Recarregue a página.'); return }
     setSalvando(true)
     try {
       const funcionario = funcionarios.find(f => f.id === form.funcionario_id)
-      const dias = parseInt(form.dias_sobreaviso, 10) || 0
+      const dias = diasCalculados
       const desloc = parseInt(form.deslocamentos, 10) || 0
       const payload = {
         funcionario_id: form.funcionario_id,
         funcionario_nome: funcionario?.nome_funcionario || '',
         mes_referencia: mesReferencia,
+        data_inicio: form.data_inicio,
+        data_fim: form.data_fim,
         dias_sobreaviso: dias,
         deslocamentos: desloc,
         cliente_atendido: form.cliente_atendido || null,
@@ -283,7 +312,12 @@ export default function SobreavisoPlantao() {
             {lancamentos.map(l => (
               <tr key={l.id} className="border-b border-slate-100 hover:bg-slate-50/60">
                 <td className="px-4 py-2.5 font-semibold text-slate-800">{l.funcionario_nome}</td>
-                <td className="px-4 py-2.5 text-center">{l.dias_sobreaviso}</td>
+                <td className="px-4 py-2.5 text-center">
+                  {l.dias_sobreaviso}
+                  {l.data_inicio && l.data_fim && (
+                    <div className="text-[10px] text-slate-400 font-normal">{fmtDate(l.data_inicio)} a {fmtDate(l.data_fim)}</div>
+                  )}
+                </td>
                 <td className="px-4 py-2.5 text-center">{l.deslocamentos}</td>
                 <td className="px-4 py-2.5 text-slate-500">{l.cliente_atendido || '-'}</td>
                 <td className="px-4 py-2.5 text-right font-semibold text-slate-800">{fmtBRL(l.total)}</td>
@@ -345,23 +379,36 @@ export default function SobreavisoPlantao() {
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="flex flex-col gap-1.5">
-                    <label className={LBL}>Dias Sobreaviso</label>
+                    <label className={LBL}>Data Início *</label>
                     <input
-                      type="number" min="0" step="1"
-                      value={form.dias_sobreaviso}
-                      onChange={e => setForm(prev => ({ ...prev, dias_sobreaviso: e.target.value }))}
-                      placeholder="0" className={INP}
+                      type="date" required
+                      value={form.data_inicio}
+                      onChange={e => setForm(prev => ({ ...prev, data_inicio: e.target.value }))}
+                      className={INP}
                     />
                   </div>
                   <div className="flex flex-col gap-1.5">
-                    <label className={LBL}>Deslocamentos</label>
+                    <label className={LBL}>Data Fim *</label>
                     <input
-                      type="number" min="0" step="1"
-                      value={form.deslocamentos}
-                      onChange={e => setForm(prev => ({ ...prev, deslocamentos: e.target.value }))}
-                      placeholder="0" className={INP}
+                      type="date" required
+                      value={form.data_fim}
+                      onChange={e => setForm(prev => ({ ...prev, data_fim: e.target.value }))}
+                      className={INP}
                     />
                   </div>
+                </div>
+                <div className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
+                  <span className={LBL}>Dias Sobreaviso (corridos)</span>
+                  <span className="text-sm font-bold text-slate-800">{diasCalculados}</span>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className={LBL}>Deslocamentos</label>
+                  <input
+                    type="number" min="0" step="1"
+                    value={form.deslocamentos}
+                    onChange={e => setForm(prev => ({ ...prev, deslocamentos: e.target.value }))}
+                    placeholder="0" className={INP}
+                  />
                 </div>
                 <div className="flex flex-col gap-1.5">
                   <label className={LBL}>Cliente Atendido/OS</label>

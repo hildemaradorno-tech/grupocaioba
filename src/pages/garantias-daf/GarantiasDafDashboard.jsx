@@ -3,13 +3,12 @@ import { useSessionState } from '../../hooks/useSessionState'
 import { useNavigate } from 'react-router-dom'
 import {
   Search, Edit2, Trash2, ShieldAlert, FileText,
-  Activity, Clock, AlertTriangle, Filter, RotateCcw, Download,
+  Activity, Clock, AlertTriangle, Filter, RotateCcw, Download, RefreshCw,
   Bell, ChevronDown, ChevronUp, CheckCircle, XCircle, Send, BarChart2,
   CheckSquare, Square, Loader2, Info, Eye,
 } from 'lucide-react'
 import { apiService } from '../../services/api'
 import { useAuth } from '../../context/AuthContext'
-import GarantiasDafImportModal from './GarantiasDafImportModal'
 import GarantiasNav from './GarantiasNav'
 
 const STATUS_MAP = {
@@ -104,7 +103,10 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
   const [sortDirAnd, setSortDirAnd] = useSessionState(`${pfx}_and_sort_dir`, 'asc')
   const [alertaAberto, setAlertaAberto] = useState(true)
   const [modalExcluir, setModalExcluir] = useState(false)
-  const [modalImportar, setModalImportar] = useState(false)
+  const [importandoPend, setImportandoPend] = useState(false)
+  const [progressoImportPend, setProgressoImportPend] = useState(null) // { atual, total }
+  const [novosImportadosNums, setNovosImportadosNums] = useState(null) // Set<numero_os> — último lote auto-importado
+  const [erroImportLote, setErroImportLote] = useState(null) // { total, exemplo } — resumo dos erros do último lote
   const [spRows, setSpRows]             = useState([])
   const [spLoading, setSpLoading]       = useState(false)
   const [spLastModified, setSpLastModified] = useState(null)
@@ -433,6 +435,73 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
     [spRows, importadosSet, importadosSemTipo, importadosTodosPorOS, loading, filtroEmpresaDash]
   )
 
+  // nome (fantasia/sistema/oficial, lowercase) → empresa_id — usado para resolver empresa_id
+  // ao importar OS direto do SharePoint (mesma lógica de GarantiasDafImportModal).
+  const empresaLookup = useMemo(() => {
+    const map = new Map()
+    for (const e of empresasDim) {
+      if (e.empresa_fantasia) map.set(e.empresa_fantasia.toLowerCase().trim(), e.id)
+      if (e.nome_empresa) map.set(e.nome_empresa.toLowerCase().trim(), e.id)
+      if (e.nome_empresa_sistema) map.set(e.nome_empresa_sistema.toLowerCase().trim(), e.id)
+    }
+    return map
+  }, [empresasDim])
+  const findEmpresaId = useCallback(
+    (nome) => nome ? (empresaLookup.get(nome.toLowerCase().trim()) || null) : null,
+    [empresaLookup]
+  )
+
+  // Importa direto do SharePoint (ROF001_OSABERTA_ENCERRADA) todas as OS pendentes, automaticamente
+  // ao carregar a tela — sem modal de seleção nem confirmação, os dados já vêm completos do arquivo.
+  // Guarda os números das OS recém-importadas para o botão "Visualizar" filtrar a tabela abaixo.
+  const handleImportarLote = useCallback(async () => {
+    if (pendFechadas.length === 0) return
+
+    setImportandoPend(true)
+    setErroImportLote(null)
+    setProgressoImportPend({ atual: 0, total: pendFechadas.length })
+    const novos = []
+    let erros = 0
+    let exemploErro = ''
+
+    for (let i = 0; i < pendFechadas.length; i++) {
+      const row = pendFechadas[i]
+      setProgressoImportPend({ atual: i + 1, total: pendFechadas.length })
+      try {
+        await apiService.createGarantia(
+          {
+            numero_os:               row.os_numero,
+            empresa_id:              findEmpresaId(row.empresa_nome),
+            empresa_nome:            row.empresa_nome,
+            cliente:                 row.proprietario_veiculo,
+            consultor_nome:          row.consultor_nome,
+            tipo_garantia_descricao: row.tipo_os_descricao || '',
+            tipo_os_sigla:           row.tipo_os_sigla || '',
+            chassi:                  row.veiculo_chassi,
+            valor_pecas:             row.produto,
+            valor_servicos:          row.servico,
+            data_abertura_os:        row.data_criacao,
+            fechado:                 !!row.fechado_data,
+            data_fechamento_os:      row.fechado_data || null,
+            status_codigo:           'A',
+          },
+          user?.email
+        )
+        novos.push(String(row.os_numero ?? '').trim())
+      } catch (err) {
+        erros++
+        if (!exemploErro) exemploErro = err?.message || String(err)
+        console.error('[Importar OS SharePoint]', row.os_numero, err)
+      }
+    }
+
+    setNovosImportadosNums(novos.length > 0 ? new Set(novos) : null)
+    await loadData()
+    setImportandoPend(false)
+    setProgressoImportPend(null)
+    setErroImportLote(erros > 0 ? { total: erros, exemplo: exemploErro } : null)
+  }, [pendFechadas, findEmpresaId, user, loadData])
+
   const handleFiltroChange = (e) => {
     const { name, value } = e.target
     setFiltros(prev => ({ ...prev, [name]: value }))
@@ -536,6 +605,11 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
         case 'andamento15': base = grpAnd15; break
         case 'aprovada':    base = grpAprovada; break
         case 'recusas':     base = grpRecusas; break
+        case 'novos_importados':
+          base = novosImportadosNums
+            ? dadosBase.filter(g => novosImportadosNums.has(String(g.numero_os ?? '').trim()))
+            : dadosBase
+          break
         default: base = dadosBase
       }
     } else {
@@ -604,37 +678,40 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
     <div className="p-6 space-y-5 max-w-screen-2xl">
 
       {/* CABEÇALHO */}
-      <div className="flex items-center justify-between border-b border-slate-200 pb-4">
+      <div className="space-y-3 border-b border-slate-200 pb-4">
+        <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-1.5">
             {isAndamento ? 'Garantias DAF Na Oficina' : 'Garantias DAF com Garantista'}
             <span className="relative group cursor-help">
               <Info className="h-3.5 w-3.5 text-slate-400" />
-              <span className="absolute top-full left-0 mt-2 w-64 text-[10px] text-white bg-slate-700 rounded px-2 py-1.5 leading-relaxed opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 normal-case font-normal tracking-normal">
-                Fonte de dados: {isAndamento ? 'ROF001_OSABERTA.xlsx' : 'ROF001_OSABERTA_ENCERRADA.xlsx'}
+              <span className="absolute top-full left-0 mt-2 w-96 text-[10px] text-white bg-slate-700 rounded px-2 py-1.5 leading-relaxed opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 normal-case font-normal tracking-normal space-y-1">
+                <div>Fonte de dados: Relatório extraído do sistema Dealer.net através do sistema Robert Automation</div>
+                <div>RPA: Processo 4: Extração Relatório Auditoria de O.S.</div>
+                <div>Nome do Arquivo: {isAndamento ? 'ROF001_OSABERTA.xlsx' : 'ROF001_OSABERTA_ENCERRADA.xlsx'}</div>
+                <div>Pasta SharePoint: /Banco de Dados - DAF - Pós-Vendas/Relatório Geral OS</div>
               </span>
             </span>
           </h1>
           <p className="text-xs text-slate-500">
             {isAndamento ? 'Ordens de serviço em andamento na oficina.' : 'Ordens de serviço encerrada em fase de digitação da garantia'}
           </p>
-          <div className="mt-3"><GarantiasNav /></div>
         </div>
         <div className="flex items-center gap-2">
           {isAndamento && (
             <div className="flex items-center gap-3">
               {spLastModified && (
                 <span className="text-[10px] text-slate-400">
-                  Arquivo: {new Date(spLastModified).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                  Modificado em <strong className="text-slate-500">{new Date(spLastModified).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</strong>
                 </span>
               )}
               <button
                 onClick={() => fetchSharePoint(true)}
                 disabled={spLoading}
-                className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold px-3 py-2 rounded-md shadow-sm border border-slate-200 transition-colors disabled:opacity-50"
+                className="flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-semibold text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 shadow-sm transition-colors disabled:opacity-50"
               >
-                <RotateCcw className={`h-3.5 w-3.5 text-blue-500 ${spLoading ? 'animate-spin' : ''}`} />
-                {spLoading ? 'Atualizando...' : 'Atualizar SharePoint'}
+                <RefreshCw className={`h-3.5 w-3.5 ${spLoading ? 'animate-spin' : ''}`} />
+                Atualizar arquivo
               </button>
               {hasPermission('bi/garantias-daf') && (
                 <button
@@ -650,8 +727,30 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
             <div className="flex items-center gap-2">
               {spLastModified && (
                 <span className="text-[10px] text-slate-400">
-                  Arquivo: {new Date(spLastModified).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                  Modificado em <strong className="text-slate-500">{new Date(spLastModified).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</strong>
                 </span>
+              )}
+              <button
+                onClick={() => fetchSharePoint(true)}
+                disabled={spLoading}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-semibold text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 shadow-sm transition-colors disabled:opacity-50"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${spLoading ? 'animate-spin' : ''}`} />
+                Atualizar arquivo
+              </button>
+              {!spLoading && (importandoPend || pendFechadas.length > 0) && (
+                <button
+                  onClick={handleImportarLote}
+                  disabled={importandoPend}
+                  className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold px-3 py-2 rounded-md shadow-sm border border-slate-200 transition-colors disabled:opacity-50 whitespace-nowrap shrink-0"
+                >
+                  {importandoPend
+                    ? <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />
+                    : <Download className="h-4 w-4 text-blue-500" />}
+                  {importandoPend
+                    ? `Importando ${progressoImportPend?.atual ?? 0}/${progressoImportPend?.total ?? 0}`
+                    : 'Importar'}
+                </button>
               )}
               {canExcluirOS && selecionados.size > 0 && (
                 <button
@@ -672,13 +771,13 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
             </div>
           )}
         </div>
+        </div>
+        <GarantiasNav />
       </div>
 
       {/* ── ALERTAS ── */}
-      {!isAndamento && (grpNaoEncontrado.length > 0 || (!spLoading && pendFechadas.length > 0) || grpAnd15.length > 0) && (
-        <div className="space-y-3">
-        {(grpNaoEncontrado.length > 0 || (!spLoading && pendFechadas.length > 0)) && (
-        <div className="flex gap-3">
+      {!isAndamento && (grpNaoEncontrado.length > 0 || importandoPend || (!spLoading && pendFechadas.length > 0) || grpAnd15.length > 0 || !!novosImportadosNums?.size || !!erroImportLote) && (
+        <div className="flex flex-wrap gap-3">
           {grpNaoEncontrado.length > 0 && (
             <div className="flex flex-1 items-center gap-3 bg-red-50 border border-red-300 rounded-lg px-4 py-3">
               <div className="p-1.5 bg-red-100 rounded-md shrink-0">
@@ -714,11 +813,11 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
                   : <FileText className="h-3.5 w-3.5" />}
                 {buscandoFaturamentoLote
                   ? `Buscando ${progressoBuscaLote?.atual ?? 0}/${progressoBuscaLote?.total ?? 0}...`
-                  : 'Buscar'}
+                  : 'Buscar NF'}
               </button>
             </div>
           )}
-          {!spLoading && pendFechadas.length > 0 && (
+          {!importandoPend && !spLoading && pendFechadas.length > 0 && (
             <div className="flex flex-1 items-center gap-3 bg-blue-50 border border-blue-300 rounded-lg px-4 py-3">
               <div className="p-1.5 bg-blue-100 rounded-md shrink-0">
                 <Download className="h-4 w-4 text-blue-600" />
@@ -728,22 +827,73 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
                   {pendFechadas.length} OS disponíve{pendFechadas.length === 1 ? 'l' : 'is'} para importar do SharePoint
                 </p>
                 <p className="text-[10px] text-blue-600 mt-0.5">
+                  Ordens de serviço fechadas ainda não importadas para o sistema — use o botão "Importar" no topo da tela.
+                </p>
+              </div>
+            </div>
+          )}
+          {importandoPend && (
+            <div className="flex flex-1 items-center gap-3 bg-blue-50 border border-blue-300 rounded-lg px-4 py-3">
+              <div className="p-1.5 bg-blue-100 rounded-md shrink-0">
+                <Loader2 className="h-4 w-4 text-blue-600 animate-spin" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-bold text-blue-800">
+                  Importando {progressoImportPend?.atual ?? 0}/{progressoImportPend?.total ?? 0} OS do SharePoint...
+                </p>
+                <p className="text-[10px] text-blue-600 mt-0.5">
                   Ordens de serviço fechadas ainda não importadas para o sistema.
                 </p>
               </div>
+            </div>
+          )}
+          {!importandoPend && !!novosImportadosNums?.size && (
+            <div className="flex flex-1 items-center gap-3 bg-green-50 border border-green-300 rounded-lg px-4 py-3">
+              <div className="p-1.5 bg-green-100 rounded-md shrink-0">
+                <CheckCircle className="h-4 w-4 text-green-600" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-bold text-green-800">
+                  {novosImportadosNums.size} OS importada{novosImportadosNums.size === 1 ? '' : 's'} automaticamente do SharePoint
+                </p>
+                <p className="text-[10px] text-green-600 mt-0.5">
+                  Última importação — conferir os dados trazidos automaticamente.
+                </p>
+              </div>
               <button
-                onClick={() => setModalImportar(true)}
-                className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md bg-blue-600 hover:bg-blue-700 text-white transition-colors"
+                onClick={() => { setFiltroCard(prev => prev === 'novos_importados' ? null : 'novos_importados'); setStatusFiltro('') }}
+                className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${filtroCard === 'novos_importados' ? 'bg-green-700 text-white' : 'bg-green-600 hover:bg-green-700 text-white'}`}
               >
-                <Download className="h-3.5 w-3.5" />
-                Importar
+                <Eye className="h-3.5 w-3.5" />
+                {filtroCard === 'novos_importados' ? 'Visualizando' : 'Visualizar'}
               </button>
             </div>
           )}
-        </div>
-        )}
+          {!importandoPend && !!erroImportLote && (
+            <div className="flex flex-1 items-center gap-3 bg-red-50 border border-red-300 rounded-lg px-4 py-3">
+              <div className="p-1.5 bg-red-100 rounded-md shrink-0">
+                <AlertTriangle className="h-4 w-4 text-red-600" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-bold text-red-800">
+                  {erroImportLote.total} OS não puderam ser importadas automaticamente
+                </p>
+                <p className="text-[10px] text-red-600 mt-0.5 truncate" title={erroImportLote.exemplo}>
+                  Erro: {erroImportLote.exemplo}
+                </p>
+              </div>
+              <button
+                onClick={handleImportarLote}
+                disabled={importandoPend}
+                className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md bg-red-600 hover:bg-red-700 text-white transition-colors disabled:opacity-50"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                Tentar novamente
+              </button>
+            </div>
+          )}
           {grpAnd15.length > 0 && (
-            <div className="flex items-center gap-3 bg-orange-50 border border-orange-300 rounded-lg px-4 py-3">
+            <div className="flex flex-1 items-center gap-3 bg-orange-50 border border-orange-300 rounded-lg px-4 py-3">
               <div className="p-1.5 bg-orange-100 rounded-md shrink-0">
                 <Clock className="h-4 w-4 text-orange-600" />
               </div>
@@ -998,7 +1148,7 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
                     <span className="text-xs font-bold text-indigo-600 uppercase tracking-wide">Tipos de OS</span>
                     <span className="ml-auto text-[10px] text-slate-400">{tipos.length} tipos</span>
                   </div>
-                  <div className="overflow-y-auto max-h-52 divide-y divide-slate-50">
+                  <div className="divide-y divide-slate-50">
                     {/* Header */}
                     <div className="grid grid-cols-[1fr_40px_90px_90px] gap-2 pb-1.5 text-[9px] font-bold text-slate-400 uppercase tracking-wider">
                       <div>Tipo</div>
@@ -1116,23 +1266,23 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
 
       {/* ── TABELA ANDAMENTO (SharePoint) ── */}
       {isAndamento && (
-        <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-x-auto custom-scrollbar-light">
+        <div className="bg-white rounded-lg border border-slate-200 shadow-sm">
           {spLoading ? (
             <div className="p-10 text-center text-xs text-slate-400">Carregando dados do SharePoint...</div>
           ) : (
-            <table className="w-full text-left border-collapse">
+            <table className="w-full table-fixed text-left border-collapse">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[10px] font-bold uppercase tracking-wider">
                   {[
-                    { col: 'os_numero',            label: 'Nº OS',                cls: 'whitespace-nowrap' },
-                    { col: 'empresa_nome',          label: 'Empresa',              cls: 'whitespace-nowrap min-w-[280px]' },
-                    { col: 'data_criacao',          label: 'Data Criação',         cls: 'whitespace-nowrap' },
-                    { col: 'dias_aberto',           label: 'Dias',                 cls: 'whitespace-nowrap text-right' },
-                    { col: 'tipo_os_sigla',         label: 'Tipo OS',              cls: 'whitespace-nowrap' },
-                    { col: 'consultor_nome',        label: 'Consultor',            cls: 'whitespace-nowrap' },
-                    { col: 'proprietario_veiculo',  label: 'Proprietário Veículo', cls: 'whitespace-nowrap min-w-[260px]' },
-                    { col: 'veiculo_chassi',        label: 'Nº Chassi',            cls: 'whitespace-nowrap' },
-                    { col: 'total',                 label: 'Total',                cls: 'whitespace-nowrap text-right' },
+                    { col: 'os_numero',            label: 'Nº OS',                cls: 'w-20' },
+                    { col: 'empresa_nome',          label: 'Empresa',              cls: 'w-[18%]' },
+                    { col: 'data_criacao',          label: 'Data Criação',         cls: 'w-24' },
+                    { col: 'dias_aberto',           label: 'Dias',                 cls: 'w-14 text-right' },
+                    { col: 'tipo_os_sigla',         label: 'Tipo OS',              cls: 'w-[14%]' },
+                    { col: 'consultor_nome',        label: 'Consultor',            cls: 'w-[14%]' },
+                    { col: 'proprietario_veiculo',  label: 'Proprietário Veículo', cls: 'w-[18%]' },
+                    { col: 'veiculo_chassi',        label: 'Nº Chassi',            cls: 'w-24' },
+                    { col: 'total',                 label: 'Total',                cls: 'w-24 text-right' },
                   ].map(({ col, label, cls }) => (
                     <th key={col} onClick={() => handleSortAnd(col)}
                       className={`p-3 ${cls} cursor-pointer select-none hover:bg-slate-100 hover:text-slate-600 transition-colors`}>
@@ -1159,15 +1309,15 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
                     : 'text-green-700'
                   return (
                   <tr key={`${r.os_numero}_${r.tipo_os_sigla}_${idx}`} className="hover:bg-slate-50/70 transition-colors">
-                    <td className="p-3 font-mono font-bold text-slate-900 whitespace-nowrap">{r.os_numero || '—'}</td>
-                    <td className="p-3 text-slate-700">{spEmpresaNome(r)}</td>
-                    <td className="p-3 text-slate-500 whitespace-nowrap">{r.data_criacao ? new Date(r.data_criacao + 'T12:00:00').toLocaleDateString('pt-BR') : '—'}</td>
-                    <td className={`p-3 text-right whitespace-nowrap ${diasCor}`}>{diasAberto !== null ? `${diasAberto}d` : '—'}</td>
-                    <td className="p-3 text-slate-600 whitespace-nowrap">{r.tipo_os_descricao || tipoOsDescMap.get(r.tipo_os_sigla?.trim()) || r.tipo_os_sigla || '—'}</td>
-                    <td className="p-3 text-slate-600 whitespace-nowrap">{r.consultor_nome || '—'}</td>
-                    <td className="p-3 text-slate-700">{r.proprietario_veiculo || '—'}</td>
-                    <td className="p-3 font-mono text-slate-500 whitespace-nowrap">{r.veiculo_chassi ? r.veiculo_chassi.slice(-8) : '—'}</td>
-                    <td className="p-3 text-right font-semibold text-slate-900 whitespace-nowrap">{r.total > 0 ? fmt(r.total) : '—'}</td>
+                    <td className="p-3 font-mono font-bold text-slate-900 truncate">{r.os_numero || '—'}</td>
+                    <td className="p-3 text-slate-700 truncate" title={spEmpresaNome(r)}>{spEmpresaNome(r)}</td>
+                    <td className="p-3 text-slate-500 truncate">{r.data_criacao ? new Date(r.data_criacao + 'T12:00:00').toLocaleDateString('pt-BR') : '—'}</td>
+                    <td className={`p-3 text-right truncate ${diasCor}`}>{diasAberto !== null ? `${diasAberto}d` : '—'}</td>
+                    <td className="p-3 text-slate-600 truncate" title={r.tipo_os_descricao || tipoOsDescMap.get(r.tipo_os_sigla?.trim()) || r.tipo_os_sigla || ''}>{r.tipo_os_descricao || tipoOsDescMap.get(r.tipo_os_sigla?.trim()) || r.tipo_os_sigla || '—'}</td>
+                    <td className="p-3 text-slate-600 truncate" title={r.consultor_nome || ''}>{r.consultor_nome || '—'}</td>
+                    <td className="p-3 text-slate-700 truncate" title={r.proprietario_veiculo || ''}>{r.proprietario_veiculo || '—'}</td>
+                    <td className="p-3 font-mono text-slate-500 truncate">{r.veiculo_chassi ? r.veiculo_chassi.slice(-8) : '—'}</td>
+                    <td className="p-3 text-right font-semibold text-slate-900 truncate">{r.total > 0 ? fmt(r.total) : '—'}</td>
                   </tr>
                   )
                 })}
@@ -1297,14 +1447,6 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
         </p>
       )}
 
-      {/* MODAL IMPORTAR ABERTOS */}
-      {modalImportar && (
-        <GarantiasDafImportModal
-          osJaImportadas={dadosTodos}
-          onClose={() => setModalImportar(false)}
-          onImported={() => { loadData(filtros) }}
-        />
-      )}
 
       {/* MODAL EXCLUIR */}
       {modalExcluir && (

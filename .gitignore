@@ -14,3 +14,9 @@ backend/portal.db
 Acesso Azure.txt
 *.txt.secret
 Acesso*.txt
+
+# Planilhas de referência baixadas localmente (dados de RH/financeiro, não são código)
+/Arquivos
+
+# Cache local do Supabase CLI (project ref, pooler URL etc.)
+supabase/.temp

@@ -15,6 +15,7 @@ import jwt from 'jsonwebtoken'
 import kpiRoutes       from './routes/kpi.js'
 import garantiasRoutes from './routes/garantias.js'
 import calculoComissaoRoutes from './routes/calculoComissao.js'
+import planoDmsRoutes from './routes/planoDms.js'
 import biMedidasRoutes from './routes/biMedidas.js'
 import rhFeriasRoutes from './routes/rhFerias.js'
 import hondaRoutes from './routes/honda.js'
@@ -37,6 +38,9 @@ app.use('/api/garantias', garantiasRoutes)
 
 // ── Rotas Fonte/Base de Cálculo (SharePoint genérico p/ comissões) ───────────
 app.use('/api/calculo-comissao', calculoComissaoRoutes)
+
+// ── Rotas Comissão Plano DMS (O.S. P04 x Chassi x Valor do Plano) ────────────
+app.use('/api/plano-dms', planoDmsRoutes)
 
 // ── Rotas Fonte BI / Medida BI (SharePoint genérico p/ dashboards de BI) ─────
 app.use('/api/bi-medidas', biMedidasRoutes)

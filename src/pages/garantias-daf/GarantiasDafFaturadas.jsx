@@ -66,7 +66,6 @@ export default function GarantiasDafFaturadas() {
   const [sortDir, setSortDir] = useSessionState('daf_fat_sort_dir', 'desc')
   const [empresasDim, setEmpresasDim] = useState([])
   const [titulosOsSet, setTitulosOsSet] = useState(new Set())
-  const [rof001LastModified, setRof001LastModified] = useState(null)
 
   const loadData = useCallback(async (f = filtros) => {
     setLoading(true); setError(null)
@@ -94,10 +93,6 @@ export default function GarantiasDafFaturadas() {
     if (!hasActive) setFiltrosAbertos(false)
     apiService.getEmpresas().then(d => setEmpresasDim(d.filter(e => e.ativo !== false))).catch(() => {})
     carregarVinculoTitulos()
-    fetch(`${BACKEND_URL}/api/garantias/sharepoint/aberta`)
-      .then(r => r.ok ? r.json() : {})
-      .then(data => setRof001LastModified(data.lastModified ?? null))
-      .catch(() => {})
   }, [isAdmin, empresasPermitidas])
 
   // Limpa seleção sempre que os dados recarregam (nova busca/exclusão) — evita manter
@@ -287,8 +282,11 @@ export default function GarantiasDafFaturadas() {
             Garantias DAF Faturadas
             <span className="relative group cursor-help">
               <Info className="h-3.5 w-3.5 text-slate-400" />
-              <span className="absolute top-full left-0 mt-2 w-72 text-[10px] text-white bg-slate-700 rounded px-2 py-1.5 leading-relaxed opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 normal-case font-normal tracking-normal">
-                Fonte de dados: ROF001_OSABERTA_ENCERRADA.xlsx e ROF017_FATURAMENTOPOROS.xlsx
+              <span className="absolute top-full left-0 mt-2 w-96 text-[10px] text-white bg-slate-700 rounded px-2 py-1.5 leading-relaxed opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 normal-case font-normal tracking-normal space-y-1">
+                <div>Fonte de dados: Relatório extraído do sistema Dealer.net através do sistema Robert Automation</div>
+                <div>RPA: Processo 4: Extração Relatório Auditoria de O.S.</div>
+                <div>Nome do Arquivo: ROF017_FATURAMENTOPOROS.xlsx</div>
+                <div>Pasta SharePoint: /Banco de Dados - DAF - Pós-Vendas/Relatório Geral OS</div>
               </span>
             </span>
           </h1>
@@ -298,11 +296,6 @@ export default function GarantiasDafFaturadas() {
           <div className="mt-3"><GarantiasNav /></div>
         </div>
         <div className="flex items-center gap-2">
-          {rof001LastModified && (
-            <span className="text-[10px] text-slate-400">
-              Arquivo: <strong className="text-slate-500">{new Date(rof001LastModified).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</strong>
-            </span>
-          )}
           {canExcluirOS && selecionados.size > 0 && (
             <button
               onClick={() => setModalExcluir(true)}

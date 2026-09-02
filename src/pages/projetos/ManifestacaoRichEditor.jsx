@@ -1,145 +1,186 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { Bold, Italic, Underline, List, ListOrdered, Link as LinkIcon, Smile } from 'lucide-react'
+import { useEditor, EditorContent } from '@tiptap/react'
+import StarterKit from '@tiptap/starter-kit'
+import UnderlineExt from '@tiptap/extension-underline'
+import LinkExt from '@tiptap/extension-link'
+import Placeholder from '@tiptap/extension-placeholder'
+import { TextStyle } from '@tiptap/extension-text-style'
+import { Color } from '@tiptap/extension-color'
+import { Bold, Italic, Underline, List, ListOrdered, Link as LinkIcon, Smile, CaseSensitive } from 'lucide-react'
 
-const TAGS_PERMITIDAS = new Set(['B', 'STRONG', 'I', 'EM', 'U', 'UL', 'OL', 'LI', 'BR', 'P', 'DIV', 'A'])
+const CORES = [
+  { label: 'Automático', value: null },
+  { label: 'Preto',      value: '#0f172a' },
+  { label: 'Cinza',      value: '#64748b' },
+  { label: 'Vermelho',   value: '#dc2626' },
+  { label: 'Laranja',    value: '#ea580c' },
+  { label: 'Amarelo',    value: '#ca8a04' },
+  { label: 'Verde',      value: '#16a34a' },
+  { label: 'Azul',       value: '#2563eb' },
+  { label: 'Roxo',       value: '#9333ea' },
+  { label: 'Rosa',       value: '#db2777' },
+]
 
-function sanitizarHtml(html) {
-  const container = document.createElement('div')
-  container.innerHTML = html
-  const limpar = (node) => {
-    ;[...node.childNodes].forEach(child => {
-      if (child.nodeType === Node.ELEMENT_NODE) {
-        if (!TAGS_PERMITIDAS.has(child.tagName)) {
-          const texto = document.createTextNode(child.textContent)
-          node.replaceChild(texto, child)
-          return
-        }
-        ;[...child.attributes].forEach(attr => {
-          const nome = attr.name.toLowerCase()
-          if (nome === 'href') {
-            if (/^\s*javascript:/i.test(attr.value)) child.removeAttribute(attr.name)
-          } else {
-            child.removeAttribute(attr.name)
-          }
-        })
-        limpar(child)
-      } else if (child.nodeType !== Node.TEXT_NODE) {
-        node.removeChild(child)
-      }
-    })
-  }
-  limpar(container)
-  return container.innerHTML
-}
-
-const EMOJIS = [
-  '✅','❌','⚠️','💡','📌','📎','🔹','🔸','▶️','✔️',
-  '📋','📁','🗂️','📝','✏️','🖊️','📊','📈','📉','🔍',
-  '👍','👎','👏','🙌','🤝','💪','🎯','🚀','⭐','🔔',
-  '1️⃣','2️⃣','3️⃣','4️⃣','5️⃣','🔴','🟡','🟢','🔵','⚪',
+const EMOJI_CATEGORIAS = [
+  { label: 'Smileys', emojis: ['😀','😃','😄','😁','😆','😅','😂','🤣','😊','😇','🙂','🙃','😉','😍','🥰','😘','😋','😎','🤩','🥳','😏','😒','😔','😟','🙁','😣','😩','🥺','😢','😭','😤','😠','😡','🤬','🤯','😳','😱','😨','🤗','🤔','🤭','🤫','🤥','😶','😐','😑','😬','🙄','😮','🥱','😴','😵','🤐','🥴','🤢','🤧','😷','🤒','🤕','🤑','😈','👿','💩','🤡','👻','💀','☠️','👽','🤖'] },
+  { label: 'Gestos', emojis: ['👋','🤚','🖐️','✋','🖖','🤙','👌','🤌','✌️','🤞','🖕','👆','👇','👈','👉','👍','👎','✊','👊','🤛','🤜','👏','🙌','🤲','🤝','🙏','💪','🦾','🤳','💅','🫶'] },
+  { label: 'Pessoas', emojis: ['👶','🧒','👦','👧','🧑','👱','👨','🧔','👩','🧓','👴','👵','👮','💂','🕵️','👷','🤴','👸','👲','🧕','🤵','👰','🧙','🧛','🧟','🧞','🧜','🧚','🧝','🦸','🦹'] },
+  { label: 'Natureza', emojis: ['🌸','🌺','🌻','🌹','🌷','🌱','🌿','🍀','🍃','🍂','🍁','🌾','🌵','🌴','🌳','🌲','🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐨','🐯','🦁','🐸','🦋','🐝','🌙','⭐','🌟','💫','✨','☀️','🌤️','⛅','☁️','🌧️','⛈️','❄️','🌊','🌀','🌈'] },
+  { label: 'Comida', emojis: ['🍎','🍊','🍋','🍇','🍓','🍒','🍑','🥭','🍍','🥥','🥝','🍅','🥦','🥕','🌽','🍕','🍔','🌮','🌯','🥗','🍜','🍝','🍣','🍱','🍛','🍚','☕','🍵','🥤','🧃','🍺','🍷','🥂','🎂','🍰','🍫','🍬','🍭'] },
+  { label: 'Viagem', emojis: ['🚗','🚕','🚙','🏎️','🚓','🚑','🚒','🚌','🏍️','🚲','🛴','🚁','✈️','🚂','🚢','🛸','🏔️','⛰️','🌋','🏕️','🏖️','🏜️','🏝️','🏛️','🏗️','🏢','🏥','🏦','🏨','🏪','🏫','🏬','🏭','🗼','🗽','⛪','🕌','⛩️','🗺️','🧭'] },
+  { label: 'Atividades', emojis: ['⚽','🏀','🏈','⚾','🎾','🏐','🏉','🎱','🏓','🏸','🥊','🎳','🏋️','🤸','🏊','🚴','🏄','⛷️','🏂','🎮','🕹️','🎲','♟️','🎯','🎨','🖌️','🎭','🎬','🎤','🎧','🎵','🎶','🎹','🥁','🎸','🎷','🎺','🎻','🏆','🥇','🎖️','🎪'] },
+  { label: 'Objetos', emojis: ['💼','📋','📌','📍','📎','🔗','📝','✏️','🖊️','📊','📈','📉','🔍','🔎','💡','🔦','💰','💵','💳','📱','💻','🖥️','⌨️','🖱️','📷','📸','🎥','📺','📻','📡','🔋','🔌','📁','📂','🗂️','📦','🔑','🔒','🔓','🔔','🔕','🛎️','🧲','⚙️','🔧','🔨','🪛','🔬','🔭','💊','💉','🩺','🩹'] },
+  { label: 'Símbolos', emojis: ['❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','❣️','💕','💞','💓','💗','💖','💘','💝','✅','❌','⚠️','🚫','💡','📌','📎','🔹','🔸','▶️','◀️','⏩','⏪','✔️','🔴','🟠','🟡','🟢','🔵','🟣','⚫','⚪','🔶','🔷','🔔','💬','💭','🗯️','🔥','⚡','💥','❓','❗','ℹ️','🆕','🆒','🆓','🔛','🔝','🔜'] },
 ]
 
 export default function ManifestacaoRichEditor({ value, onChange, placeholder, disabled }) {
-  const ref = useRef(null)
-  const ultimoValorExterno = useRef('')
+  const lastEmitted = useRef('')
   const [emojiAberto, setEmojiAberto] = useState(false)
+  const [coresAberto, setCoresAberto] = useState(false)
   const emojiRef = useRef(null)
+  const coresRef = useRef(null)
+
+  const editor = useEditor({
+    extensions: [
+      StarterKit,
+      UnderlineExt,
+      TextStyle,
+      Color,
+      LinkExt.configure({ openOnClick: false, autolink: true }),
+      Placeholder.configure({ placeholder: placeholder || '' }),
+    ],
+    content: value || '',
+    editable: !disabled,
+    onUpdate: ({ editor }) => {
+      const html = editor.getHTML()
+      lastEmitted.current = html
+      onChange(html)
+    },
+  })
 
   useEffect(() => {
-    if (ref.current && value !== ultimoValorExterno.current && value !== ref.current.innerHTML) {
-      ref.current.innerHTML = value || ''
-      ultimoValorExterno.current = value || ''
-    }
-  }, [value])
+    if (!editor) return
+    if (value === lastEmitted.current) return
+    if (value !== editor.getHTML()) editor.commands.setContent(value || '', false)
+  }, [value, editor])
 
-  // Fecha o picker de emoji ao clicar fora
+  useEffect(() => {
+    if (editor) editor.setEditable(!disabled)
+  }, [disabled, editor])
+
   useEffect(() => {
     if (!emojiAberto) return
-    const handle = (e) => {
-      if (emojiRef.current && !emojiRef.current.contains(e.target)) setEmojiAberto(false)
-    }
+    const handle = (e) => { if (emojiRef.current && !emojiRef.current.contains(e.target)) setEmojiAberto(false) }
     document.addEventListener('mousedown', handle)
     return () => document.removeEventListener('mousedown', handle)
   }, [emojiAberto])
 
-  const exec = (cmd, arg) => {
-    if (disabled) return
-    ref.current?.focus()
-    document.execCommand(cmd, false, arg)
-    handleInput()
-  }
-
-  const handleInput = () => {
-    if (!ref.current) return
-    const html = sanitizarHtml(ref.current.innerHTML)
-    ultimoValorExterno.current = html
-    onChange(html)
-  }
+  useEffect(() => {
+    if (!coresAberto) return
+    const handle = (e) => { if (coresRef.current && !coresRef.current.contains(e.target)) setCoresAberto(false) }
+    document.addEventListener('mousedown', handle)
+    return () => document.removeEventListener('mousedown', handle)
+  }, [coresAberto])
 
   const inserirLink = () => {
-    const url = window.prompt('URL do link:')
-    if (url) exec('createLink', url)
+    if (!editor) return
+    const prev = editor.getAttributes('link').href || ''
+    const url = window.prompt('URL do link:', prev)
+    if (url === null) return
+    if (url === '') editor.chain().focus().unsetLink().run()
+    else editor.chain().focus().setLink({ href: url }).run()
   }
 
-  const inserirEmoji = (emoji) => {
-    if (disabled) return
-    ref.current?.focus()
-    document.execCommand('insertText', false, emoji)
-    handleInput()
-    setEmojiAberto(false)
+  const aplicarCor = (cor) => {
+    if (!editor) return
+    if (cor) editor.chain().focus().setColor(cor).run()
+    else editor.chain().focus().unsetColor().run()
+    setCoresAberto(false)
   }
 
-  const btn = 'p-1.5 rounded text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-colors disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-slate-500'
+  const corAtual = editor?.getAttributes('textStyle')?.color || null
+
+  const btn = (active) =>
+    `p-1.5 rounded transition-colors disabled:opacity-40 ${active ? 'text-blue-600 bg-blue-50' : 'text-slate-500 hover:text-blue-600 hover:bg-blue-50'}`
+
+  if (!editor) return null
 
   return (
-    <div className={`border border-slate-200 rounded-md overflow-visible ${disabled ? 'bg-slate-50' : 'bg-white'}`}>
-      <div className="flex items-center gap-0.5 px-1.5 py-1 border-b border-slate-100 bg-slate-50 rounded-t-md">
-        <button type="button" disabled={disabled} onClick={() => exec('bold')}                  className={btn} title="Negrito"><Bold         className="h-3.5 w-3.5" /></button>
-        <button type="button" disabled={disabled} onClick={() => exec('italic')}                className={btn} title="Itálico"><Italic       className="h-3.5 w-3.5" /></button>
-        <button type="button" disabled={disabled} onClick={() => exec('underline')}             className={btn} title="Sublinhado"><Underline  className="h-3.5 w-3.5" /></button>
-        <div className="w-px h-4 bg-slate-200 mx-0.5" />
-        <button type="button" disabled={disabled} onClick={() => exec('insertUnorderedList')}   className={btn} title="Marcadores"><List          className="h-3.5 w-3.5" /></button>
-        <button type="button" disabled={disabled} onClick={() => exec('insertOrderedList')}     className={btn} title="Lista numerada"><ListOrdered className="h-3.5 w-3.5" /></button>
-        <div className="w-px h-4 bg-slate-200 mx-0.5" />
-        <button type="button" disabled={disabled} onClick={inserirLink}                         className={btn} title="Link"><LinkIcon         className="h-3.5 w-3.5" /></button>
-        <div className="relative" ref={emojiRef}>
+    <div className={`manifestacao-editor border border-slate-200 rounded-md overflow-visible ${disabled ? 'bg-slate-50' : 'bg-white'}`}>
+      <div className="flex items-center gap-0.5 px-1.5 py-1 border-b border-slate-100 bg-slate-50 rounded-t-md flex-wrap">
+        <button type="button" disabled={disabled} onClick={() => editor.chain().focus().toggleBold().run()} className={btn(editor.isActive('bold'))} title="Negrito"><Bold className="h-3.5 w-3.5" /></button>
+        <button type="button" disabled={disabled} onClick={() => editor.chain().focus().toggleItalic().run()} className={btn(editor.isActive('italic'))} title="Itálico"><Italic className="h-3.5 w-3.5" /></button>
+        <button type="button" disabled={disabled} onClick={() => editor.chain().focus().toggleUnderline().run()} className={btn(editor.isActive('underline'))} title="Sublinhado"><Underline className="h-3.5 w-3.5" /></button>
+
+        {/* Cor do texto */}
+        <div className="relative" ref={coresRef}>
           <button
             type="button"
             disabled={disabled}
-            onClick={() => setEmojiAberto(v => !v)}
-            className={btn}
-            title="Emoji"
+            onClick={() => setCoresAberto(v => !v)}
+            className={btn(coresAberto)}
+            title="Cor do texto"
           >
-            <Smile className="h-3.5 w-3.5" />
+            <span className="flex flex-col items-center leading-none">
+              <CaseSensitive className="h-3.5 w-3.5" />
+              <span className="h-0.5 w-3.5 rounded-sm mt-0.5" style={{ backgroundColor: corAtual || '#0f172a' }} />
+            </span>
           </button>
-          {emojiAberto && (
-            <div className="absolute left-0 top-full mt-1 z-50 bg-white border border-slate-200 rounded-lg shadow-lg p-2 w-52">
-              <div className="grid grid-cols-10 gap-0.5">
-                {EMOJIS.map(e => (
+          {coresAberto && (
+            <div className="absolute left-0 top-full mt-1 z-50 bg-white border border-slate-200 rounded-lg shadow-xl p-2 w-44">
+              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wide mb-1.5">Cor do texto</p>
+              <div className="grid grid-cols-5 gap-1">
+                {CORES.map(c => (
                   <button
-                    key={e}
+                    key={c.label}
                     type="button"
-                    onClick={() => inserirEmoji(e)}
-                    className="text-base hover:bg-slate-100 rounded p-0.5 transition-colors leading-none"
-                    title={e}
+                    onClick={() => aplicarCor(c.value)}
+                    title={c.label}
+                    className="w-6 h-6 rounded-full border-2 transition-transform hover:scale-110 flex items-center justify-center"
+                    style={{
+                      backgroundColor: c.value || '#ffffff',
+                      borderColor: corAtual === c.value ? '#2563eb' : '#e2e8f0',
+                    }}
                   >
-                    {e}
+                    {!c.value && <span className="text-[8px] text-slate-400 font-bold">A</span>}
                   </button>
                 ))}
               </div>
             </div>
           )}
         </div>
+
+        <div className="w-px h-4 bg-slate-200 mx-0.5" />
+        <button type="button" disabled={disabled} onClick={() => editor.chain().focus().toggleBulletList().run()} className={btn(editor.isActive('bulletList'))} title="Marcadores"><List className="h-3.5 w-3.5" /></button>
+        <button type="button" disabled={disabled} onClick={() => editor.chain().focus().toggleOrderedList().run()} className={btn(editor.isActive('orderedList'))} title="Lista numerada"><ListOrdered className="h-3.5 w-3.5" /></button>
+        <div className="w-px h-4 bg-slate-200 mx-0.5" />
+        <button type="button" disabled={disabled} onClick={inserirLink} className={btn(editor.isActive('link'))} title="Link"><LinkIcon className="h-3.5 w-3.5" /></button>
+
+        {/* Emoji */}
+        <div className="relative" ref={emojiRef}>
+          <button type="button" disabled={disabled} onClick={() => setEmojiAberto(v => !v)} className={btn(emojiAberto)} title="Emoji">
+            <span className="text-sm leading-none">😊</span>
+          </button>
+          {emojiAberto && (
+            <div className="absolute left-0 top-full mt-1 z-50 bg-white border border-slate-200 rounded-lg shadow-xl p-2 w-80 max-h-72 overflow-y-auto">
+              {EMOJI_CATEGORIAS.map(cat => (
+                <div key={cat.label} className="mb-2">
+                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wide mb-1 px-0.5">{cat.label}</p>
+                  <div className="flex flex-wrap gap-0.5">
+                    {cat.emojis.map(em => (
+                      <button key={em} type="button" onClick={() => { editor.chain().focus().insertContent(em).run(); setEmojiAberto(false) }}
+                        className="text-base hover:bg-slate-100 rounded p-0.5 transition-colors leading-none" title={em}>
+                        {em}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
-      <div
-        ref={ref}
-        contentEditable={!disabled}
-        suppressContentEditableWarning
-        onInput={handleInput}
-        onBlur={handleInput}
-        data-placeholder={placeholder}
-        className="min-h-[90px] max-h-[260px] overflow-y-auto p-2.5 text-xs text-slate-700 leading-relaxed focus:outline-none empty:before:content-[attr(data-placeholder)] empty:before:text-slate-300"
-      />
+      <EditorContent editor={editor} />
     </div>
   )
 }

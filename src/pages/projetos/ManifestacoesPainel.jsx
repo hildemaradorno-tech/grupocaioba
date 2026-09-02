@@ -5,7 +5,11 @@ import { apiService } from '../../services/api'
 import { useAuth } from '../../context/AuthContext'
 import ProjetosNav from './ProjetosNav'
 
-const fmtData = (d) => d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') : '—'
+const fmtData = (d) => {
+  if (!d) return '—'
+  const date = d.includes('T') ? new Date(d) : new Date(d + 'T12:00:00')
+  return date.toLocaleDateString('pt-BR')
+}
 
 const RESULTADO_BADGE = {
   'Aprovado':               'bg-emerald-200 text-emerald-800',
@@ -196,7 +200,7 @@ export default function ManifestacoesPainel() {
           <p className="text-xs text-slate-500 mt-1">
             {verTodos
               ? 'Exibindo todos os projetos com Período de Manifestação aberto.'
-              : 'Exibindo apenas projetos nos quais você é participante convidado.'}
+              : 'Exibindo apenas os projetos em que você é participante.'}
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -209,16 +213,16 @@ export default function ManifestacoesPainel() {
               Manifestação Avulsa
             </button>
           )}
-          {podeVerTodos && (
+          {!isAdmin && (
             <button
               onClick={() => setVerTodos(v => !v)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold border transition-colors ${
+              className={`flex items-center gap-2 text-xs font-semibold px-3 py-2 rounded-md shadow-sm border transition-colors ${
                 verTodos
-                  ? 'bg-indigo-600 border-indigo-600 text-white hover:bg-indigo-700'
-                  : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50'
+                  ? 'bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100'
+                  : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
               }`}
             >
-              <Eye className="h-3.5 w-3.5" />
+              <Eye className="h-4 w-4" />
               {verTodos ? 'Meus Projetos' : 'Ver Todos os Projetos'}
             </button>
           )}

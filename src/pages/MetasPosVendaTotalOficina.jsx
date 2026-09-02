@@ -60,7 +60,6 @@ export default function MetasPosVendaTotalOficina() {
   const [deletandoConsultor, setDeletandoConsultor] = useState(false)
   const [collapsedConsDepts, setCollapsedConsDepts] = useState(new Set())
   const [collapsedConsSets,  setCollapsedConsSets]  = useState(new Set())
-  const [collapsedConsCargs, setCollapsedConsCargs] = useState(new Set())
 
   const toggle = (setter, key) =>
     setter(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n })
@@ -243,31 +242,28 @@ export default function MetasPosVendaTotalOficina() {
       const empId  = r.empresa_id
       const deptId = r.departamento_id || '—'
       const setId  = r.setor_id        || '—'
-      const carId  = r.cargo_id        || '—'
       const dNome  = r.departamento_nome || departamentos.find(d => d.id === deptId)?.nome_departamento || '—'
       const sNome  = r.setor_nome        || setores.find(s => s.id === setId)?.nome_setor              || '—'
-      const cNome  = r.cargo_nome        || cargos.find(c => c.id === carId)?.nome_cargo               || '—'
 
       if (!m[empId]) m[empId] = {}
       if (!m[empId][deptId]) m[empId][deptId] = { nome: dNome, setores: {} }
-      if (!m[empId][deptId].setores[setId]) m[empId][deptId].setores[setId] = { nome: sNome, cargos: {} }
-      if (!m[empId][deptId].setores[setId].cargos[carId]) m[empId][deptId].setores[setId].cargos[carId] = { nome: cNome, colabs: {} }
+      if (!m[empId][deptId].setores[setId]) m[empId][deptId].setores[setId] = { nome: sNome, colabs: {} }
 
       const key = `${r.colaborador_id}||${r.tipo_pool || 'total'}`
-      if (!m[empId][deptId].setores[setId].cargos[carId].colabs[key])
-        m[empId][deptId].setores[setId].cargos[carId].colabs[key] = {
+      if (!m[empId][deptId].setores[setId].colabs[key])
+        m[empId][deptId].setores[setId].colabs[key] = {
           colaborador_id:   r.colaborador_id,
           colaborador_nome: r.colaborador_nome || funcionarios.find(f => f.id === r.colaborador_id)?.nome_funcionario || r.colaborador_id,
           tipo_pool:        r.tipo_pool || 'total',
           meses:            {},
         }
-      m[empId][deptId].setores[setId].cargos[carId].colabs[key].meses[r.mes] = {
+      m[empId][deptId].setores[setId].colabs[key].meses[r.mes] = {
         meta_faturamento: Number(r.meta_faturamento) || 0,
         meta_aprovada:    r.meta_aprovada ?? null,
       }
     })
     return m
-  }, [dadosConsultor, funcionarios, departamentos, setores, cargos])
+  }, [dadosConsultor, funcionarios, departamentos, setores])
 
   const tudoExpandido = empresas.length > 0 && empresas.every(emp => expandedEmps.has(emp.id))
 
@@ -654,8 +650,7 @@ export default function MetasPosVendaTotalOficina() {
                         if (!empConsMap || Object.keys(empConsMap).length === 0) return null
 
                         const aggColabsMeses = (colabs) => { const a=Array(12).fill(0); Object.values(colabs).forEach(c=>Array.from({length:12},(_,i)=>{a[i]+=(c.meses[i+1]?.meta_faturamento||0)})); return a }
-                        const aggCargoMeses  = (cargo)  => aggColabsMeses(cargo.colabs)
-                        const aggSetorCMeses = (setor)  => { const a=Array(12).fill(0); Object.values(setor.cargos).forEach(c=>aggCargoMeses(c).forEach((v,i)=>{a[i]+=v})); return a }
+                        const aggSetorCMeses = (setor)  => aggColabsMeses(setor.colabs)
                         const aggDeptCMeses  = (dept)   => { const a=Array(12).fill(0); Object.values(dept.setores).forEach(s=>aggSetorCMeses(s).forEach((v,i)=>{a[i]+=v})); return a }
                         const totalConsMeses = Object.values(empConsMap).reduce((acc, dept) => { aggDeptCMeses(dept).forEach((v,i)=>{acc[i]+=v}); return acc }, Array(12).fill(0))
 
@@ -725,62 +720,36 @@ export default function MetasPosVendaTotalOficina() {
                                           <td className="bg-white"/>
                                         </tr>
 
-                                        {sOpen && Object.entries(setor.cargos).map(([carId, cargo]) => {
-                                          const cKey   = `${emp.id}§c§${deptId}§${setId}§${carId}`
-                                          const cOpen  = !collapsedConsCargs.has(cKey)
-                                          const cMeses = aggCargoMeses(cargo)
+                                        {/* Consultores (folha) */}
+                                        {sOpen && Object.entries(setor.colabs).map(([key, consultor]) => {
+                                          const mValues  = Array.from({length:12},(_,i) => consultor.meses[i+1]?.meta_faturamento||0)
                                           return (
-                                            <React.Fragment key={carId}>
-                                              {/* Cargo */}
-                                              <tr className="bg-slate-50/60 border-b border-teal-50 cursor-pointer hover:bg-teal-50/30 transition-colors"
-                                                  onClick={() => toggle(setCollapsedConsCargs, cKey)}>
-                                                <td className="px-4 py-1 sticky left-0 bg-slate-50/60 z-10 whitespace-nowrap">
-                                                  <div className="flex items-center gap-2 pl-14">
-                                                    {cOpen ? <ChevronDown size={10}/> : <ChevronRight size={10}/>}
-                                                    <span className="text-[9px] font-bold text-teal-600 bg-teal-100 px-1.5 py-0.5 rounded uppercase tracking-wide">{cargo.nome}</span>
-                                                  </div>
-                                                </td>
-                                                {cMeses.map((v,i) => <td key={i} className="px-1 py-1 text-right text-teal-500 text-xs whitespace-nowrap bg-slate-50/60">{v>0?fmtBRL(v):'—'}</td>)}
-                                                <td className="px-2 py-1 text-right font-semibold text-teal-600 bg-teal-50 text-xs whitespace-nowrap">{sumArr(cMeses)>0?fmtBRL(sumArr(cMeses)):'—'}</td>
-                                                <td className="bg-slate-50/60"/>
-                                                <td className="bg-slate-50/60"/>
-                                              </tr>
-
-                                              {/* Consultores (folha) */}
-                                              {cOpen && Object.entries(cargo.colabs).map(([key, consultor]) => {
-                                                const mValues  = Array.from({length:12},(_,i) => consultor.meses[i+1]?.meta_faturamento||0)
-                                                const tipoSigla = TIPOS_POOL.find(t=>t.key===consultor.tipo_pool)?.sigla||'TOT'
-                                                return (
-                                                  <tr key={key} className="border-b border-teal-50 bg-white hover:bg-teal-50/50">
-                                                    <td className="px-4 py-1.5 sticky left-0 bg-white z-10 whitespace-nowrap">
-                                                      <div className="flex items-center gap-2 pl-[4.5rem] cursor-pointer select-none"
-                                                        onClick={() => visualizarConsultor(emp.id, consultor.colaborador_id, consultor.tipo_pool)}>
-                                                        <UserCircle size={11} className="text-teal-500 shrink-0"/>
-                                                        <span className="font-semibold text-teal-600 hover:text-teal-800 hover:underline text-xs">{consultor.colaborador_nome}</span>
-                                                        <span className="text-[9px] font-bold text-teal-700 bg-teal-200 px-1.5 py-0.5 rounded-full whitespace-nowrap">{tipoSigla}</span>
-                                                      </div>
-                                                    </td>
-                                                    {mValues.map((v,i) => (
-                                                      <td key={i} className="px-1 py-1.5 text-right text-teal-700 font-mono whitespace-nowrap text-xs">{v>0?fmtBRL(v):'—'}</td>
-                                                    ))}
-                                                    <td className="px-2 py-1.5 text-right font-bold text-teal-800 bg-teal-100 whitespace-nowrap text-xs">{sumArr(mValues)>0?fmtBRL(sumArr(mValues)):'—'}</td>
-                                                    <td className="px-2 py-1.5 text-center bg-white whitespace-nowrap" colSpan="2">
-                                                      {(() => {
-                                                        const meses = Object.values(consultor.meses)
-                                                        const comValor = meses.filter(m => m.meta_faturamento > 0)
-                                                        if (comValor.length === 0) return null
-                                                        const aprovado = comValor.every(m => cellStateC(m.meta_faturamento, m.meta_aprovada) === 'ok')
-                                                        return (
-                                                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap ${aprovado ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-                                                            {aprovado ? 'Aprovado' : 'Aguard. Aprovação'}
-                                                          </span>
-                                                        )
-                                                      })()}
-                                                    </td>
-                                                  </tr>
-                                                )
-                                              })}
-                                            </React.Fragment>
+                                            <tr key={key} className="border-b border-teal-50 bg-white hover:bg-teal-50/50">
+                                              <td className="px-4 py-1.5 sticky left-0 bg-white z-10 whitespace-nowrap">
+                                                <div className="flex items-center gap-2 pl-14 cursor-pointer select-none"
+                                                  onClick={() => visualizarConsultor(emp.id, consultor.colaborador_id, consultor.tipo_pool)}>
+                                                  <UserCircle size={11} className="text-teal-500 shrink-0"/>
+                                                  <span className="font-semibold text-teal-600 hover:text-teal-800 hover:underline text-xs">{consultor.colaborador_nome}</span>
+                                                </div>
+                                              </td>
+                                              {mValues.map((v,i) => (
+                                                <td key={i} className="px-1 py-1.5 text-right text-teal-700 font-mono whitespace-nowrap text-xs">{v>0?fmtBRL(v):'—'}</td>
+                                              ))}
+                                              <td className="px-2 py-1.5 text-right font-bold text-teal-800 bg-teal-100 whitespace-nowrap text-xs">{sumArr(mValues)>0?fmtBRL(sumArr(mValues)):'—'}</td>
+                                              <td className="px-2 py-1.5 text-center bg-white whitespace-nowrap" colSpan="2">
+                                                {(() => {
+                                                  const meses = Object.values(consultor.meses)
+                                                  const comValor = meses.filter(m => m.meta_faturamento > 0)
+                                                  if (comValor.length === 0) return null
+                                                  const aprovado = comValor.every(m => cellStateC(m.meta_faturamento, m.meta_aprovada) === 'ok')
+                                                  return (
+                                                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap ${aprovado ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                                                      {aprovado ? 'Aprovado' : 'Aguard. Aprovação'}
+                                                    </span>
+                                                  )
+                                                })()}
+                                              </td>
+                                            </tr>
                                           )
                                         })}
                                       </React.Fragment>
