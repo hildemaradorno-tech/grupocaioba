@@ -118,12 +118,44 @@ export default function CalculoPlanoDms() {
       return {
         func: e.func,
         cargo: e.cargo,
+        politica: e.politica,
         detalhes: calc?.detalhes || [],
         quantidadeTotal: calc ? calc.quantidadeTotal : null,
         valorTotal: calc ? calc.valorTotal : null,
       }
     })
   }, [elegiveis, resultado])
+
+  // Agrupa o roster por Departamento -> Cargo, mesmo padrão visual (cores/hierarquia) já usado
+  // em Cálculo de Comissões e Processamento de Comissões — Empresa é sempre a selecionada acima,
+  // mostrada como sub-cabeçalho igual às outras telas.
+  const gruposPrevia = useMemo(() => {
+    if (!dados) return []
+    const departamentosMap = Object.fromEntries(dados.departamentos.map(d => [d.id, d]))
+    const porDepto = new Map()
+    for (const c of linhasPrevia) {
+      const nomeDepartamento = (c.func.departamento_ids || []).map(id => departamentosMap[id]?.nome_departamento).filter(Boolean).join(', ') || 'Sem Departamento'
+      if (!porDepto.has(nomeDepartamento)) porDepto.set(nomeDepartamento, new Map())
+      const porCargo = porDepto.get(nomeDepartamento)
+      const nomeCargo = c.cargo?.nome_cargo || 'Sem Cargo'
+      if (!porCargo.has(nomeCargo)) porCargo.set(nomeCargo, { nomeCargo, codigoCargo: c.cargo?.codigo_cargo, itens: [] })
+      porCargo.get(nomeCargo).itens.push(c)
+    }
+    return [...porDepto.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0], 'pt-BR'))
+      .map(([nomeDepartamento, porCargo]) => ({
+        nomeDepartamento,
+        cargos: [...porCargo.values()].sort((a, b) => a.nomeCargo.localeCompare(b.nomeCargo, 'pt-BR')),
+      }))
+  }, [dados, linhasPrevia])
+
+  // Mesmos rótulos/cores de status já usados em Cálculo de Comissões, adaptados às 3 fases desta
+  // tela (ainda não tem workflow de lote — isso só existe depois de Salvar, em Processamento).
+  const statusLinha = (c) => {
+    if (c.quantidadeTotal == null) return { label: 'Pendente', className: 'bg-slate-100 text-slate-500' }
+    if (salvo) return { label: 'Salvo', className: 'bg-emerald-100 text-emerald-700' }
+    return { label: 'Calculado', className: 'bg-blue-100 text-blue-700' }
+  }
 
   const handleCalcular = async () => {
     if (!dados || !periodoValido || !filtroEmpresa) return
@@ -414,51 +446,91 @@ export default function CalculoPlanoDms() {
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[11px] font-semibold uppercase tracking-wider">
-                    <th className="p-3 w-8"></th>
-                    <th className="p-3">Consultor</th>
-                    <th className="p-3">Cargo</th>
+                    <th className="p-3">Nome / Cargo</th>
                     <th className="p-3 text-right">Valor Comissão</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
-                  {linhasPrevia.map(c => (
-                    <React.Fragment key={c.func.id}>
-                      <tr className="hover:bg-slate-50/70 transition-colors cursor-pointer" onClick={() => toggleExpandido(c.func.id)}>
-                        <td className="p-3">
-                          {c.detalhes.length > 0 && (expandido.has(c.func.id) ? <ChevronDown className="h-3.5 w-3.5 text-slate-400" /> : <ChevronRight className="h-3.5 w-3.5 text-slate-400" />)}
+                  {gruposPrevia.map(grupoDepto => (
+                    <React.Fragment key={grupoDepto.nomeDepartamento}>
+                      <tr className="bg-indigo-100">
+                        <td colSpan={2} className="px-3 py-2 font-bold text-indigo-900 text-[11px] uppercase tracking-wide">
+                          {grupoDepto.nomeDepartamento}
                         </td>
-                        <td className="p-3">{c.func.nome_funcionario}</td>
-                        <td className="p-3 text-slate-500">{c.cargo?.nome_cargo || '-'}</td>
-                        <td className="p-3 text-right text-emerald-700 font-semibold">{c.valorTotal == null ? <span className="text-slate-300 font-normal">Aguardando cálculo</span> : fmtBRL(c.valorTotal)}</td>
                       </tr>
-                      {expandido.has(c.func.id) && c.detalhes.length > 0 && (
-                        <tr>
-                          <td colSpan={4} className="p-0 bg-slate-50/60">
-                            <table className="w-full text-left">
-                              <thead>
-                                <tr className="text-[10px] font-semibold uppercase text-slate-400">
-                                  <th className="pl-12 py-1.5">Categoria</th>
-                                  <th className="py-1.5">Prazo</th>
-                                  <th className="py-1.5 text-right">Qtd.</th>
-                                  <th className="py-1.5 text-right">Valor Unit.</th>
-                                  <th className="py-1.5 pr-4 text-right">Subtotal</th>
+                      {grupoDepto.cargos.map(grupo => (
+                        <React.Fragment key={grupo.nomeCargo}>
+                          <tr className="bg-slate-100">
+                            <td colSpan={2} className="px-3 py-1.5 pl-6 font-bold text-slate-700 text-[11px] uppercase tracking-wide">
+                              {grupo.nomeCargo}
+                              {grupo.codigoCargo && (
+                                <span className="ml-2 font-mono font-normal text-slate-400 normal-case">({grupo.codigoCargo})</span>
+                              )}
+                            </td>
+                          </tr>
+                          <tr className="bg-slate-50">
+                            <td colSpan={2} className="px-3 py-1 pl-10 font-semibold text-slate-500 text-[10px] uppercase tracking-wide">
+                              {filtroEmpresa}
+                            </td>
+                          </tr>
+                          {grupo.itens.map(c => {
+                            const st = statusLinha(c)
+                            return (
+                              <React.Fragment key={c.func.id}>
+                                <tr className="hover:bg-slate-50/70 transition-colors cursor-pointer" onClick={() => c.detalhes.length > 0 && toggleExpandido(c.func.id)}>
+                                  <td className="px-3 py-1.5 pl-8 align-top">
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      {c.detalhes.length > 0 && (expandido.has(c.func.id) ? <ChevronDown className="h-3.5 w-3.5 text-slate-400 shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 text-slate-400 shrink-0" />)}
+                                      <span className={`inline-block px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wide ${st.className}`}>{st.label}</span>
+                                      <span className="inline-block w-14 font-mono font-normal text-slate-400">{c.func.codigo_funcionario || ''}</span>
+                                      <span className="font-bold text-slate-900">{c.func.nome_funcionario}</span>
+                                    </div>
+                                    <div className="pl-[4.75rem] mt-0.5">
+                                      {c.politica?.descricao_comissao || 'Comissão Plano DMS'}
+                                      {(c.politica?.codigo_rubrica || c.politica?.tipo_processo) && (
+                                        <div className="text-[10px] font-normal text-slate-400 mt-0.5">
+                                          {c.politica?.codigo_rubrica && <>Rubrica <span className="font-mono text-slate-500">{c.politica.codigo_rubrica}</span></>}
+                                          {c.politica?.codigo_rubrica && c.politica?.tipo_processo && <span className="mx-1">·</span>}
+                                          {c.politica?.tipo_processo && <>Tipo <span className="font-mono text-slate-500">{c.politica.tipo_processo}</span></>}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </td>
+                                  <td className="px-3 py-1.5 text-right text-emerald-700 font-semibold align-top">{c.valorTotal == null ? <span className="text-slate-300 font-normal">Aguardando cálculo</span> : fmtBRL(c.valorTotal)}</td>
                                 </tr>
-                              </thead>
-                              <tbody className="text-[11px] text-slate-600">
-                                {c.detalhes.map((d, i) => (
-                                  <tr key={i}>
-                                    <td className="pl-12 py-1">{d.categoria}</td>
-                                    <td className="py-1">{d.tempoMeses} meses</td>
-                                    <td className="py-1 text-right font-mono">{d.quantidade}</td>
-                                    <td className="py-1 text-right font-mono">{fmtBRL(d.valorUnitario)}</td>
-                                    <td className="py-1 pr-4 text-right font-mono">{fmtBRL(d.subtotal)}</td>
+                                {expandido.has(c.func.id) && c.detalhes.length > 0 && (
+                                  <tr>
+                                    <td colSpan={2} className="p-0 bg-slate-50/60">
+                                      <table className="w-full text-left">
+                                        <thead>
+                                          <tr className="text-[10px] font-semibold uppercase text-slate-400">
+                                            <th className="pl-12 py-1.5">Categoria</th>
+                                            <th className="py-1.5">Prazo</th>
+                                            <th className="py-1.5 text-right">Qtd.</th>
+                                            <th className="py-1.5 text-right">Valor Unit.</th>
+                                            <th className="py-1.5 pr-4 text-right">Subtotal</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody className="text-[11px] text-slate-600">
+                                          {c.detalhes.map((d, i) => (
+                                            <tr key={i}>
+                                              <td className="pl-12 py-1">{d.categoria}</td>
+                                              <td className="py-1">{d.tempoMeses} meses</td>
+                                              <td className="py-1 text-right font-mono">{d.quantidade}</td>
+                                              <td className="py-1 text-right font-mono">{fmtBRL(d.valorUnitario)}</td>
+                                              <td className="py-1 pr-4 text-right font-mono">{fmtBRL(d.subtotal)}</td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                    </td>
                                   </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </td>
-                        </tr>
-                      )}
+                                )}
+                              </React.Fragment>
+                            )
+                          })}
+                        </React.Fragment>
+                      ))}
                     </React.Fragment>
                   ))}
                 </tbody>
