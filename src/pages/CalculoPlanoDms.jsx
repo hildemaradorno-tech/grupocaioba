@@ -447,6 +447,7 @@ export default function CalculoPlanoDms() {
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[11px] font-semibold uppercase tracking-wider">
                     <th className="p-3">Nome / Cargo</th>
+                    <th className="p-3">Comissão</th>
                     <th className="p-3 text-right">Valor Comissão</th>
                   </tr>
                 </thead>
@@ -454,14 +455,14 @@ export default function CalculoPlanoDms() {
                   {gruposPrevia.map(grupoDepto => (
                     <React.Fragment key={grupoDepto.nomeDepartamento}>
                       <tr className="bg-indigo-100">
-                        <td colSpan={2} className="px-3 py-2 font-bold text-indigo-900 text-[11px] uppercase tracking-wide">
+                        <td colSpan={3} className="px-3 py-2 font-bold text-indigo-900 text-[11px] uppercase tracking-wide">
                           {grupoDepto.nomeDepartamento}
                         </td>
                       </tr>
                       {grupoDepto.cargos.map(grupo => (
                         <React.Fragment key={grupo.nomeCargo}>
                           <tr className="bg-slate-100">
-                            <td colSpan={2} className="px-3 py-1.5 pl-6 font-bold text-slate-700 text-[11px] uppercase tracking-wide">
+                            <td colSpan={3} className="px-3 py-1.5 pl-6 font-bold text-slate-700 text-[11px] uppercase tracking-wide">
                               {grupo.nomeCargo}
                               {grupo.codigoCargo && (
                                 <span className="ml-2 font-mono font-normal text-slate-400 normal-case">({grupo.codigoCargo})</span>
@@ -469,7 +470,7 @@ export default function CalculoPlanoDms() {
                             </td>
                           </tr>
                           <tr className="bg-slate-50">
-                            <td colSpan={2} className="px-3 py-1 pl-10 font-semibold text-slate-500 text-[10px] uppercase tracking-wide">
+                            <td colSpan={3} className="px-3 py-1 pl-10 font-semibold text-slate-500 text-[10px] uppercase tracking-wide">
                               {filtroEmpresa}
                             </td>
                           </tr>
@@ -478,29 +479,29 @@ export default function CalculoPlanoDms() {
                             return (
                               <React.Fragment key={c.func.id}>
                                 <tr className="hover:bg-slate-50/70 transition-colors cursor-pointer" onClick={() => c.detalhes.length > 0 && toggleExpandido(c.func.id)}>
-                                  <td className="px-3 py-1.5 pl-8 align-top">
-                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                  <td className="px-3 py-1.5 pl-8 align-top whitespace-nowrap">
+                                    <div className="flex items-center gap-1.5">
                                       {c.detalhes.length > 0 && (expandido.has(c.func.id) ? <ChevronDown className="h-3.5 w-3.5 text-slate-400 shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 text-slate-400 shrink-0" />)}
                                       <span className={`inline-block px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wide ${st.className}`}>{st.label}</span>
                                       <span className="inline-block w-14 font-mono font-normal text-slate-400">{c.func.codigo_funcionario || ''}</span>
                                       <span className="font-bold text-slate-900">{c.func.nome_funcionario}</span>
                                     </div>
-                                    <div className="pl-[4.75rem] mt-0.5">
-                                      {c.politica?.descricao_comissao || 'Comissão Plano DMS'}
-                                      {(c.politica?.codigo_rubrica || c.politica?.tipo_processo) && (
-                                        <div className="text-[10px] font-normal text-slate-400 mt-0.5">
-                                          {c.politica?.codigo_rubrica && <>Rubrica <span className="font-mono text-slate-500">{c.politica.codigo_rubrica}</span></>}
-                                          {c.politica?.codigo_rubrica && c.politica?.tipo_processo && <span className="mx-1">·</span>}
-                                          {c.politica?.tipo_processo && <>Tipo <span className="font-mono text-slate-500">{c.politica.tipo_processo}</span></>}
-                                        </div>
-                                      )}
-                                    </div>
+                                  </td>
+                                  <td className="px-3 py-1.5 align-top whitespace-nowrap">
+                                    {c.politica?.descricao_comissao || 'Comissão Plano DMS'}
+                                    {(c.politica?.codigo_rubrica || c.politica?.tipo_processo) && (
+                                      <div className="text-[10px] font-normal text-slate-400 mt-0.5">
+                                        {c.politica?.codigo_rubrica && <>Rubrica <span className="font-mono text-slate-500">{c.politica.codigo_rubrica}</span></>}
+                                        {c.politica?.codigo_rubrica && c.politica?.tipo_processo && <span className="mx-1">·</span>}
+                                        {c.politica?.tipo_processo && <>Tipo <span className="font-mono text-slate-500">{c.politica.tipo_processo}</span></>}
+                                      </div>
+                                    )}
                                   </td>
                                   <td className="px-3 py-1.5 text-right text-emerald-700 font-semibold align-top">{c.valorTotal == null ? <span className="text-slate-300 font-normal">Aguardando cálculo</span> : fmtBRL(c.valorTotal)}</td>
                                 </tr>
                                 {expandido.has(c.func.id) && c.detalhes.length > 0 && (
                                   <tr>
-                                    <td colSpan={2} className="p-0 bg-slate-50/60">
+                                    <td colSpan={3} className="p-0 bg-slate-50/60">
                                       <table className="w-full text-left">
                                         <thead>
                                           <tr className="text-[10px] font-semibold uppercase text-slate-400">
