@@ -7,7 +7,10 @@ const SEM_DEPARTAMENTO = 'Sem departamento'
 
 const fmtBRL = (v) => v == null ? '-' : v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const mesmoMes = (a, b) => a && b && a.slice(0, 7) === b.slice(0, 7)
-const normaliza = (v) => String(v ?? '').trim().toUpperCase()
+// Remove acentos além de trim+uppercase — o arquivo de O.S. do SharePoint grava "CAIOBA TRUCKS"
+// sem acento, enquanto o cadastro (dim_empresas.empresa_fantasia) usa "CAIOBÁ TRUCKS"; sem isso,
+// nenhuma O.S. batia com a empresa selecionada.
+const normaliza = (v) => String(v ?? '').trim().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
 
 const LBL = 'text-[11px] font-bold text-slate-500 uppercase tracking-wide'
 
@@ -88,88 +91,127 @@ export default function CalculoPlanoDms() {
 
   useEffect(() => { setResultado(null); setSalvo(false) }, [periodoInicio, periodoFim, filtroEmpresa])
 
+  // Roster de consultores elegíveis (cargo com Política de Comissão Plano DMS ativa) da empresa
+  // selecionada — aparece assim que a empresa é escolhida, mesmo antes de Calcular, pra dar
+  // visibilidade de quem é esperado na lista (sem isso, um cálculo que zera tudo por engano
+  // parece uma tela vazia sem explicação nenhuma).
+  const elegiveis = useMemo(() => {
+    if (!dados || !filtroEmpresa) return []
+    const empresaSel = dados.empresas.find(e => (e.empresa_fantasia || e.nome_empresa) === filtroEmpresa)
+    if (!empresaSel) return []
+    const funcionariosAtivos = dados.funcionarios.filter(f => !f.data_demissao && (!f.situacao_funcionario || f.situacao_funcionario === '1' || f.situacao_funcionario === '9'))
+    const cargosMap = Object.fromEntries(dados.cargos.map(c => [c.id, c]))
+    const politicasPlanoDms = dados.politicas.filter(p => p.tipo_calculo === 'PLANO_DMS' && p.ativo !== false)
+    return funcionariosAtivos
+      .filter(f => f.empresa_id === empresaSel.id)
+      .map(f => ({ func: f, cargo: cargosMap[f.cargo_id], politica: politicasPlanoDms.find(p => p.cargo_id === f.cargo_id) }))
+      .filter(e => e.politica)
+      .sort((a, b) => (a.func.nome_funcionario || '').localeCompare(b.func.nome_funcionario || '', 'pt-BR'))
+  }, [dados, filtroEmpresa])
+
+  // Junta o roster com os valores calculados (quando já houver resultado) — antes de Calcular,
+  // quantidade/valor ficam em branco; depois, cada linha do roster ganha seu total.
+  const linhasPrevia = useMemo(() => {
+    const porFuncId = new Map((resultado?.candidatos || []).map(c => [c.func.id, c]))
+    return elegiveis.map(e => {
+      const calc = porFuncId.get(e.func.id)
+      return {
+        func: e.func,
+        cargo: e.cargo,
+        detalhes: calc?.detalhes || [],
+        quantidadeTotal: calc ? calc.quantidadeTotal : null,
+        valorTotal: calc ? calc.valorTotal : null,
+      }
+    })
+  }, [elegiveis, resultado])
+
   const handleCalcular = async () => {
     if (!dados || !periodoValido || !filtroEmpresa) return
     setCalculando(true)
     setErro(null)
     try {
       const ano = periodoInicio.slice(0, 4)
-      const { matched, semPlano } = await apiService.calcularPlanoDms({ ano, periodoInicio, periodoFim })
+      const { matched, semPlano, planoInativo } = await apiService.calcularPlanoDms({ ano, periodoInicio, periodoFim })
 
       const empresaSel = dados.empresas.find(e => (e.empresa_fantasia || e.nome_empresa) === filtroEmpresa)
       const nomeEmpresaNorm = normaliza(empresaSel?.empresa_fantasia || empresaSel?.nome_empresa)
 
       const funcionariosAtivos = dados.funcionarios.filter(f => !f.data_demissao && (!f.situacao_funcionario || f.situacao_funcionario === '1' || f.situacao_funcionario === '9'))
-      const funcPorNome = new Map()
-      for (const f of funcionariosAtivos) {
-        if (f.empresa_id !== empresaSel?.id) continue
-        funcPorNome.set(normaliza(f.nome_funcionario), f)
-      }
       const cargosMap = Object.fromEntries(dados.cargos.map(c => [c.id, c]))
       const categoriasMap = new Map(dados.categorias.map(c => [normaliza(c.nome), c]))
       const valoresMap = new Map(dados.valores.map(v => [`${v.categoria_id}::${v.tempo_meses}`, v]))
-      const politicasPlanoDms = dados.politicas.filter(p => p.tipo_calculo === 'PLANO_DMS' && p.ativo !== false)
+      // Confirmado com o usuário: quem recebe é quem ocupa o CARGO configurado na Política de
+      // Comissão Plano DMS — não importa qual nome está no campo Consultor_Nome de cada O.S.
+      // (pode ser outra pessoa que só abriu/registrou a O.S. no sistema). Política herda o
+      // empresa_id do cargo com que foi criada, então já vem escopada pra esta empresa.
+      const politicasPlanoDms = dados.politicas.filter(p => p.tipo_calculo === 'PLANO_DMS' && p.ativo !== false && p.empresa_id === empresaSel?.id)
 
       const matchedDaEmpresa = matched.filter(m => normaliza(m.empresa_nome) === nomeEmpresaNorm)
       const semPlanoDaEmpresa = semPlano.filter(m => normaliza(m.empresa_nome) === nomeEmpresaNorm)
+      const planoInativoDaEmpresa = planoInativo.filter(m => normaliza(m.empresa_nome) === nomeEmpresaNorm)
 
-      const consultorSemFuncionario = []
       const categoriaSemCadastro = []
       const semValorCadastrado = []
-      // grupos: funcionario_id::categoria_id::tempo_meses -> { func, categoria, tempoMeses, quantidade, osNumeros }
-      const grupos = new Map()
+      const semCargoConfigurado = []
 
+      // 1. Agrupa TODAS as O.S. da empresa por categoria+prazo, sem olhar quem está no
+      // Consultor_Nome — o total é da empresa como um todo, depois atribuído ao cargo.
+      const grupos = new Map() // categoria_id::prazo -> { categoria, tempoMeses, quantidade }
       for (const os of matchedDaEmpresa) {
-        const func = funcPorNome.get(normaliza(os.consultor_nome))
-        if (!func) { consultorSemFuncionario.push(os); continue }
         const categoria = categoriasMap.get(normaliza(os.categoria))
         if (!categoria) { categoriaSemCadastro.push(os); continue }
-        const chave = `${func.id}::${categoria.id}::${os.prazo}`
-        if (!grupos.has(chave)) grupos.set(chave, { func, categoria, tempoMeses: os.prazo, quantidade: 0, osNumeros: [] })
-        const g = grupos.get(chave)
-        g.quantidade += 1
-        g.osNumeros.push(os.os_numero)
+        const chave = `${categoria.id}::${os.prazo}`
+        if (!grupos.has(chave)) grupos.set(chave, { categoria, tempoMeses: os.prazo, quantidade: 0 })
+        grupos.get(chave).quantidade += 1
       }
 
-      // Um candidato por funcionário, com o detalhamento por categoria+prazo dentro.
-      const candidatosPorFuncionario = new Map()
+      const detalhes = []
+      let quantidadeTotal = 0
+      let valorTotal = 0
       for (const g of grupos.values()) {
         const valorCadastro = valoresMap.get(`${g.categoria.id}::${g.tempoMeses}`)
         if (!valorCadastro || valorCadastro.ativo === false) {
-          semValorCadastrado.push({ categoria: g.categoria.nome, tempoMeses: g.tempoMeses, funcionario: g.func.nome_funcionario, quantidade: g.quantidade })
+          semValorCadastrado.push({ categoria: g.categoria.nome, tempoMeses: g.tempoMeses, quantidade: g.quantidade })
           continue
         }
-        if (!candidatosPorFuncionario.has(g.func.id)) {
-          candidatosPorFuncionario.set(g.func.id, { func: g.func, detalhes: [], quantidadeTotal: 0, valorTotal: 0 })
-        }
-        const c = candidatosPorFuncionario.get(g.func.id)
         const subtotal = g.quantidade * parseFloat(valorCadastro.valor)
-        c.detalhes.push({ categoria: g.categoria.nome, tempoMeses: g.tempoMeses, quantidade: g.quantidade, valorUnitario: parseFloat(valorCadastro.valor), subtotal })
-        c.quantidadeTotal += g.quantidade
-        c.valorTotal += subtotal
+        detalhes.push({ categoria: g.categoria.nome, tempoMeses: g.tempoMeses, quantidade: g.quantidade, valorUnitario: parseFloat(valorCadastro.valor), subtotal })
+        quantidadeTotal += g.quantidade
+        valorTotal += subtotal
       }
 
+      // 2. Resolve o(s) cargo(s) configurado(s) na política pra esta empresa -> funcionário(s)
+      // ativo(s). Com exatamente 1 cargo e 1 titular ativo, ele leva o total inteiro; qualquer
+      // outra combinação (0 ou 2+ cargos, 0 ou 2+ titulares) vira pendência — evita atribuir
+      // valor errado por adivinhação quando a configuração está ambígua.
+      const cargoIdsPolitica = [...new Set(politicasPlanoDms.map(p => p.cargo_id).filter(Boolean))]
       const candidatos = []
-      const semPolitica = []
-      for (const c of candidatosPorFuncionario.values()) {
-        const cargo = cargosMap[c.func.cargo_id]
-        const politica = politicasPlanoDms.find(p => p.cargo_id === c.func.cargo_id)
-        if (!politica) {
-          semPolitica.push({ funcionario: c.func.nome_funcionario, cargo: cargo?.nome_cargo || '-', valorTotal: c.valorTotal })
-          continue
+      if (cargoIdsPolitica.length === 0) {
+        if (quantidadeTotal > 0) semCargoConfigurado.push({ motivo: 'sem_politica', valorTotal, quantidadeTotal })
+      } else if (cargoIdsPolitica.length > 1) {
+        semCargoConfigurado.push({ motivo: 'multiplos_cargos', cargos: cargoIdsPolitica.map(id => cargosMap[id]?.nome_cargo).filter(Boolean), valorTotal, quantidadeTotal })
+      } else if (quantidadeTotal > 0 || detalhes.length > 0) {
+        const cargoId = cargoIdsPolitica[0]
+        const titulares = funcionariosAtivos.filter(f => f.cargo_id === cargoId && f.empresa_id === empresaSel.id)
+        if (titulares.length === 0) {
+          semCargoConfigurado.push({ motivo: 'sem_funcionario', cargo: cargosMap[cargoId]?.nome_cargo, valorTotal, quantidadeTotal })
+        } else if (titulares.length > 1) {
+          semCargoConfigurado.push({ motivo: 'mais_de_um_funcionario', cargo: cargosMap[cargoId]?.nome_cargo, funcionarios: titulares.map(f => f.nome_funcionario), valorTotal, quantidadeTotal })
+        } else {
+          const func = titulares[0]
+          const politica = politicasPlanoDms.find(p => p.cargo_id === cargoId)
+          candidatos.push({ func, cargo: cargosMap[cargoId], politica, detalhes, quantidadeTotal, valorTotal })
         }
-        candidatos.push({ func: c.func, cargo, politica, detalhes: c.detalhes, quantidadeTotal: c.quantidadeTotal, valorTotal: c.valorTotal })
       }
-      candidatos.sort((a, b) => (a.func.nome_funcionario || '').localeCompare(b.func.nome_funcionario || '', 'pt-BR'))
 
       setResultado({
         candidatos,
         pendencias: {
           semPlano: semPlanoDaEmpresa,
-          consultorSemFuncionario,
+          planoInativo: planoInativoDaEmpresa,
           categoriaSemCadastro,
           semValorCadastrado,
-          semPolitica,
+          semCargoConfigurado,
         },
       })
     } catch (err) {
@@ -238,7 +280,10 @@ export default function CalculoPlanoDms() {
           valor_comissao: c.valorTotal,
           total_linhas_fonte: null,
           total_linhas_filtradas: null,
-          detalhe_empresas: null,
+          // Reaproveita a coluna detalhe_empresas (pensada originalmente pra breakdown por
+          // empresa) pra guardar o detalhamento por categoria+prazo — HistoricoComissoes.jsx
+          // distingue pelo campo "tipo" e mostra num botão de detalhe próprio pra Plano DMS.
+          detalhe_empresas: c.detalhes.map(d => ({ tipo: 'plano_dms', categoria: d.categoria, tempoMeses: d.tempoMeses, quantidade: d.quantidade, valorUnitario: d.valorUnitario, subtotal: d.subtotal })),
         }))
 
         const valorTotalLote = registrosNovos.reduce((acc, r) => acc + r.valor_comissao, 0)
@@ -272,9 +317,9 @@ export default function CalculoPlanoDms() {
   }
 
   const totalPendencias = resultado
-    ? resultado.pendencias.semPlano.length + resultado.pendencias.consultorSemFuncionario.length
+    ? resultado.pendencias.semPlano.length + resultado.pendencias.planoInativo.length
       + resultado.pendencias.categoriaSemCadastro.length + resultado.pendencias.semValorCadastrado.length
-      + resultado.pendencias.semPolitica.length
+      + resultado.pendencias.semCargoConfigurado.length
     : 0
 
   return (
@@ -354,16 +399,17 @@ export default function CalculoPlanoDms() {
         {!filtroEmpresa && <p className="text-[11px] text-slate-400 mt-2">Selecione uma empresa acima pra liberar o cálculo.</p>}
       </div>
 
-      {resultado && (
+      {filtroEmpresa && (
         <>
-          {/* PRÉVIA POR CONSULTOR */}
+          {/* PRÉVIA POR CONSULTOR — mostra o roster (cargo com Política Plano DMS ativa) assim
+              que a empresa é escolhida; quantidade/valor ficam em branco até Calcular rodar. */}
           <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
             <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
               <h3 className="text-xs font-bold text-slate-700">Prévia por Consultor</h3>
-              <span className="text-[11px] text-slate-400">{resultado.candidatos.length} consultor(es)</span>
+              <span className="text-[11px] text-slate-400">{linhasPrevia.length} consultor(es)</span>
             </div>
-            {resultado.candidatos.length === 0 ? (
-              <p className="p-4 text-xs text-slate-400">Nenhum consultor com comissão de Plano DMS neste período.</p>
+            {linhasPrevia.length === 0 ? (
+              <p className="p-4 text-xs text-slate-400">Nenhum funcionário ativo desta empresa tem cargo com Política de Comissão Plano DMS configurada.</p>
             ) : (
               <table className="w-full text-left border-collapse">
                 <thead>
@@ -371,25 +417,23 @@ export default function CalculoPlanoDms() {
                     <th className="p-3 w-8"></th>
                     <th className="p-3">Consultor</th>
                     <th className="p-3">Cargo</th>
-                    <th className="p-3 text-right">Quantidade</th>
                     <th className="p-3 text-right">Valor Comissão</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
-                  {resultado.candidatos.map(c => (
+                  {linhasPrevia.map(c => (
                     <React.Fragment key={c.func.id}>
                       <tr className="hover:bg-slate-50/70 transition-colors cursor-pointer" onClick={() => toggleExpandido(c.func.id)}>
                         <td className="p-3">
-                          {expandido.has(c.func.id) ? <ChevronDown className="h-3.5 w-3.5 text-slate-400" /> : <ChevronRight className="h-3.5 w-3.5 text-slate-400" />}
+                          {c.detalhes.length > 0 && (expandido.has(c.func.id) ? <ChevronDown className="h-3.5 w-3.5 text-slate-400" /> : <ChevronRight className="h-3.5 w-3.5 text-slate-400" />)}
                         </td>
                         <td className="p-3">{c.func.nome_funcionario}</td>
                         <td className="p-3 text-slate-500">{c.cargo?.nome_cargo || '-'}</td>
-                        <td className="p-3 text-right font-mono">{c.quantidadeTotal}</td>
-                        <td className="p-3 text-right text-emerald-700 font-semibold">{fmtBRL(c.valorTotal)}</td>
+                        <td className="p-3 text-right text-emerald-700 font-semibold">{c.valorTotal == null ? <span className="text-slate-300 font-normal">Aguardando cálculo</span> : fmtBRL(c.valorTotal)}</td>
                       </tr>
-                      {expandido.has(c.func.id) && (
+                      {expandido.has(c.func.id) && c.detalhes.length > 0 && (
                         <tr>
-                          <td colSpan={5} className="p-0 bg-slate-50/60">
+                          <td colSpan={4} className="p-0 bg-slate-50/60">
                             <table className="w-full text-left">
                               <thead>
                                 <tr className="text-[10px] font-semibold uppercase text-slate-400">
@@ -423,6 +467,7 @@ export default function CalculoPlanoDms() {
           </div>
 
           {/* PENDÊNCIAS */}
+          {resultado && (
           <div className="bg-white rounded-lg border border-amber-200 shadow-sm overflow-hidden">
             <div className="px-4 py-3 border-b border-amber-100 bg-amber-50 flex items-center justify-between">
               <h3 className="text-xs font-bold text-amber-800 flex items-center gap-1.5"><AlertTriangle className="h-3.5 w-3.5" /> Pendências</h3>
@@ -434,23 +479,23 @@ export default function CalculoPlanoDms() {
               <div className="p-4 space-y-4 text-xs">
                 {resultado.pendencias.semPlano.length > 0 && (
                   <div>
-                    <p className="font-bold text-slate-700 mb-1.5">O.S. sem plano encontrado pro chassi ({resultado.pendencias.semPlano.length})</p>
+                    <p className="font-bold text-slate-700 mb-1.5">O.S. em aberto sem plano encontrado pro chassi ({resultado.pendencias.semPlano.length})</p>
                     <div className="max-h-40 overflow-y-auto border border-slate-100 rounded-md">
                       {resultado.pendencias.semPlano.map((os, i) => (
                         <div key={i} className="px-2 py-1 border-b border-slate-50 last:border-0 text-slate-500">
-                          O.S. {os.os_numero} — {os.consultor_nome} — Chassi {os.veiculo_chassi} — {os.data_criacao?.split('-').reverse().join('/')}
+                          O.S. {os.os_numero} — Chassi {os.veiculo_chassi} — Cliente {os.proprietario_veiculo || '-'} — {os.data_criacao?.split('-').reverse().join('/')}
                         </div>
                       ))}
                     </div>
                   </div>
                 )}
-                {resultado.pendencias.consultorSemFuncionario.length > 0 && (
+                {resultado.pendencias.planoInativo.length > 0 && (
                   <div>
-                    <p className="font-bold text-slate-700 mb-1.5">Consultor sem funcionário casado no cadastro ({resultado.pendencias.consultorSemFuncionario.length})</p>
+                    <p className="font-bold text-slate-700 mb-1.5">O.S. com plano encontrado, mas contrato não ativo ({resultado.pendencias.planoInativo.length})</p>
                     <div className="max-h-40 overflow-y-auto border border-slate-100 rounded-md">
-                      {resultado.pendencias.consultorSemFuncionario.map((os, i) => (
+                      {resultado.pendencias.planoInativo.map((os, i) => (
                         <div key={i} className="px-2 py-1 border-b border-slate-50 last:border-0 text-slate-500">
-                          O.S. {os.os_numero} — "{os.consultor_nome}"
+                          O.S. {os.os_numero} — Chassi {os.veiculo_chassi} — Cliente {os.proprietario_veiculo || '-'} — {os.categoria} / {os.prazo} meses — Status: <span className="font-semibold text-amber-600">{os.status || '-'}</span>
                         </div>
                       ))}
                     </div>
@@ -474,19 +519,22 @@ export default function CalculoPlanoDms() {
                     <div className="max-h-40 overflow-y-auto border border-slate-100 rounded-md">
                       {resultado.pendencias.semValorCadastrado.map((p, i) => (
                         <div key={i} className="px-2 py-1 border-b border-slate-50 last:border-0 text-slate-500">
-                          {p.funcionario} — {p.categoria} / {p.tempoMeses} meses ({p.quantidade} O.S.)
+                          {p.categoria} / {p.tempoMeses} meses ({p.quantidade} O.S.)
                         </div>
                       ))}
                     </div>
                   </div>
                 )}
-                {resultado.pendencias.semPolitica.length > 0 && (
+                {resultado.pendencias.semCargoConfigurado.length > 0 && (
                   <div>
-                    <p className="font-bold text-slate-700 mb-1.5">Funcionário sem Política de Comissão Plano DMS pro cargo ({resultado.pendencias.semPolitica.length})</p>
+                    <p className="font-bold text-slate-700 mb-1.5">Não foi possível atribuir o valor calculado a um funcionário ({resultado.pendencias.semCargoConfigurado.length})</p>
                     <div className="max-h-40 overflow-y-auto border border-slate-100 rounded-md">
-                      {resultado.pendencias.semPolitica.map((p, i) => (
+                      {resultado.pendencias.semCargoConfigurado.map((p, i) => (
                         <div key={i} className="px-2 py-1 border-b border-slate-50 last:border-0 text-slate-500">
-                          {p.funcionario} — {p.cargo} — {fmtBRL(p.valorTotal)} não calculado
+                          {p.motivo === 'sem_politica' && `Nenhuma Política de Comissão Plano DMS configurada pra esta empresa — ${fmtBRL(p.valorTotal)} (${p.quantidadeTotal} O.S.) não calculado`}
+                          {p.motivo === 'multiplos_cargos' && `Mais de um cargo configurado na Política Plano DMS desta empresa (${p.cargos.join(', ')}) — não dá pra saber como dividir ${fmtBRL(p.valorTotal)} entre eles`}
+                          {p.motivo === 'sem_funcionario' && `Nenhum funcionário ativo no cargo "${p.cargo}" — ${fmtBRL(p.valorTotal)} (${p.quantidadeTotal} O.S.) não calculado`}
+                          {p.motivo === 'mais_de_um_funcionario' && `Mais de um funcionário ativo no cargo "${p.cargo}" (${p.funcionarios.join(', ')}) — não dá pra saber quem deve receber ${fmtBRL(p.valorTotal)}`}
                         </div>
                       ))}
                     </div>
@@ -495,6 +543,7 @@ export default function CalculoPlanoDms() {
               </div>
             )}
           </div>
+          )}
         </>
       )}
     </div>

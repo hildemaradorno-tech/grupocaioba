@@ -70,12 +70,16 @@ const juntaUnicos = (arr) => [...new Set(arr.filter(Boolean))].sort((a, b) => a.
 // Peças e outra pra Serviços, cada uma com sua própria Fonte/Base, e os valores se somam.
 function resolvePoliticas(funcionario, politicas, empresasMap) {
   if (!funcionario.cargo_id) return []
+  // Política Plano DMS não passa por aqui — ela não tem Fonte/Base (calcularComissaoSobre
+  // quebraria) e é calculada à parte, em Folha de Pagamento - DAF → aba Plano DMS, atribuída ao
+  // cargo (não ao funcionário individualmente) — ver CalculoPlanoDms.jsx.
+  const politicasPadrao = politicas.filter(p => p.tipo_calculo !== 'PLANO_DMS')
   const agrupId = empresasMap[funcionario.empresa_id]?.agrupamento_empresa_id || null
   const porAgrupamento = agrupId
-    ? politicas.filter(p => p.cargo_id === funcionario.cargo_id && p.agrupamento_empresa_id === agrupId && p.ativo !== false)
+    ? politicasPadrao.filter(p => p.cargo_id === funcionario.cargo_id && p.agrupamento_empresa_id === agrupId && p.ativo !== false)
     : []
   if (porAgrupamento.length > 0) return porAgrupamento
-  return politicas.filter(p => p.cargo_id === funcionario.cargo_id && p.ativo !== false)
+  return politicasPadrao.filter(p => p.cargo_id === funcionario.cargo_id && p.ativo !== false)
 }
 
 // Chave única de uma linha (funcionário + política + segmento de apuração) — um funcionário

@@ -932,7 +932,11 @@ export default function PoliticaComissao() {
                       Nível de Cálculo *
                       <span className="relative group cursor-help normal-case tracking-normal">
                         <Info className="h-3.5 w-3.5 text-blue-500" />
-                        <span className="absolute right-0 top-full mt-1 hidden group-hover:block w-80 bg-slate-800 text-white text-[11px] font-normal rounded-md p-3 shadow-xl z-30 leading-relaxed space-y-1">
+                        {/* Padrão fica na 3ª coluna (perto da borda direita do modal) — expande pra
+                            esquerda. Plano DMS fica sozinho na 1ª coluna (perto da borda esquerda) —
+                            com right-0 aqui, o tooltip estourava pra fora do modal, por baixo do
+                            menu lateral. */}
+                        <span className={`absolute top-full mt-1 hidden group-hover:block w-80 bg-slate-800 text-white text-[11px] font-normal rounded-md p-3 shadow-xl z-30 leading-relaxed space-y-1 ${form.tipo_calculo === 'PLANO_DMS' ? 'left-0' : 'right-0'}`}>
                           <span className="block"><strong>EMPRESA</strong> — soma o valor de TODAS as empresas do Agrupamento do funcionário (o grupo inteiro), sem separar por pessoa. Todos do cargo recebem sobre esse total.</span>
                           <span className="block mt-1.5"><strong>EQUIPE</strong> — soma o valor só da empresa onde o funcionário está registrado, sem separar por pessoa. Todos do cargo naquela empresa recebem sobre o mesmo total.</span>
                           <span className="block mt-1.5"><strong>INDIVIDUAL</strong> — soma só as linhas do PRÓPRIO funcionário (a Fonte de Cálculo precisa ter a "Coluna Funcionário" configurada). Cada um recebe sobre o que ele mesmo produziu.</span>

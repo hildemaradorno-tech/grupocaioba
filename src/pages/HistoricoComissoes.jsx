@@ -444,6 +444,14 @@ export default function HistoricoComissoes() {
   const [jaBuscou, setJaBuscou] = useState(false)
   const [resultados, setResultados] = useState([])
   const [detalheAberto, setDetalheAberto] = useState(null)
+  // Linhas (registro.id) com o detalhamento de Plano DMS (categoria/prazo/quantidade) expandido,
+  // dentro do modal "Detalhe do Cálculo" — fica fechado por padrão, só o total aparece na linha.
+  const [planoDmsExpandido, setPlanoDmsExpandido] = useState(new Set())
+  const togglePlanoDmsExpandido = (registroId) => setPlanoDmsExpandido(prev => {
+    const novo = new Set(prev)
+    novo.has(registroId) ? novo.delete(registroId) : novo.add(registroId)
+    return novo
+  })
   // Modal "Incluir Funcionário" — grupo (lote) sendo editado, texto de busca e seleção.
   const [incluirFuncionarioGrupo, setIncluirFuncionarioGrupo] = useState(null)
   const [incluirFuncionarioBusca, setIncluirFuncionarioBusca] = useState('')
@@ -1103,22 +1111,30 @@ export default function HistoricoComissoes() {
         const linhasFunc = grupoCargo.funcionarios.map(f => {
           const linhas = f.registros.map((r, i) => {
             const nomeComCodigo = r.func?.codigo_funcionario ? `${r.func.codigo_funcionario} — ${f.funcionarioNome}` : f.funcionarioNome
+            const ehPlanoDmsPdf = r.politica?.tipo_calculo === 'PLANO_DMS'
             // Detalhamento por empresa (Nível EMPRESA + "detalhar por empresa" marcado na
             // Política) — mesmo bloco que já existe no PDF de Cálculo de Comissões, pra
             // auditar de onde veio o total quando a comissão soma mais de uma empresa.
-            const detalheEmpresasHtml = Array.isArray(r.detalhe_empresas) && r.detalhe_empresas.length > 0
+            const detalheEmpresasHtml = !ehPlanoDmsPdf && Array.isArray(r.detalhe_empresas) && r.detalhe_empresas.length > 0
               ? r.detalhe_empresas.map(d => `
                   <div style="font-size:10px;font-weight:400;color:#94a3b8;margin-top:2px;">
                     ${d.empresa}: Base <span style="color:#64748b;">${fmtValorBase(r.politica?.base_calculo, d.valorBase)}</span>
                     <span style="color:#cbd5e1;"> &rarr; </span>
                     Comissão <span style="color:#059669;font-weight:600;">${fmtBRL(d.valorComissao)}</span>
                   </div>`).join('')
-              : ''
+              // Detalhamento por categoria+prazo de Comissão Plano DMS (fica sempre visível
+              // no PDF, sem botão — o clique-pra-expandir só existe na tela).
+              : (ehPlanoDmsPdf && Array.isArray(r.detalhe_empresas) ? r.detalhe_empresas.filter(d => d.tipo === 'plano_dms').map(d => `
+                  <div style="font-size:10px;font-weight:400;color:#94a3b8;margin-top:2px;">
+                    ${d.categoria} / ${d.tempoMeses} meses: <span style="color:#64748b;">${d.quantidade} × ${fmtBRL(d.valorUnitario)}</span>
+                    <span style="color:#cbd5e1;"> &rarr; </span>
+                    <span style="color:#059669;font-weight:600;">${fmtBRL(d.subtotal)}</span>
+                  </div>`).join('') : '')
             return `
               <tr>
                 <td style="padding:6px 8px;font-weight:700;border-bottom:1px solid #e2e8f0;white-space:nowrap;">${i === 0 ? nomeComCodigo : ''}</td>
                 <td style="padding:6px 8px;border-bottom:1px solid #e2e8f0;">${r.comissaoDescricao || '-'}${tipoComissaoPorBase(r.politica?.base_calculo) ? ` <span style="font-style:italic;color:#94a3b8;">(${tipoComissaoPorBase(r.politica?.base_calculo)})</span>` : ''}${detalheEmpresasHtml}</td>
-                <td style="padding:6px 8px;text-align:right;border-bottom:1px solid #e2e8f0;">${fmtValorBase(r.politica?.base_calculo, r.valor_base)}</td>
+                <td style="padding:6px 8px;text-align:right;border-bottom:1px solid #e2e8f0;">${ehPlanoDmsPdf ? `${r.valor_base ?? 0} O.S.` : fmtValorBase(r.politica?.base_calculo, r.valor_base)}</td>
                 <td style="padding:6px 8px;text-align:right;border-bottom:1px solid #e2e8f0;">${fmtPct(r.politica?.comissao_servicos)}</td>
                 <td style="padding:6px 8px;text-align:right;border-bottom:1px solid #e2e8f0;">${fmtPct(r.politica?.comissao_pecas)}</td>
                 <td style="padding:6px 8px;text-align:right;border-bottom:1px solid #e2e8f0;">${fmtPct(r.politica?.comissao_total)}</td>
@@ -1491,8 +1507,13 @@ export default function HistoricoComissoes() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
-                  {detalheAberto.registros.map((r, i) => (
-                    <tr key={r.id}>
+                  {detalheAberto.registros.map((r, i) => {
+                    const ehPlanoDms = r.politica?.tipo_calculo === 'PLANO_DMS'
+                    const planoDetalhes = ehPlanoDms && Array.isArray(r.detalhe_empresas) ? r.detalhe_empresas.filter(d => d.tipo === 'plano_dms') : []
+                    const empresaDetalhes = !ehPlanoDms && Array.isArray(r.detalhe_empresas) ? r.detalhe_empresas : []
+                    return (
+                    <React.Fragment key={r.id}>
+                    <tr>
                       <td className="px-3 py-1.5 font-bold text-slate-900 whitespace-nowrap">
                         {i === 0 && (
                           <>
@@ -1513,9 +1534,19 @@ export default function HistoricoComissoes() {
                             {r.politica?.tipo_processo && <>Tipo <span className="font-mono text-slate-500">{r.politica.tipo_processo}</span></>}
                           </div>
                         )}
-                        {Array.isArray(r.detalhe_empresas) && r.detalhe_empresas.length > 0 && (
+                        {planoDetalhes.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => togglePlanoDmsExpandido(r.id)}
+                            className="mt-1 flex items-center gap-1 text-[10px] font-semibold text-blue-600 hover:text-blue-700"
+                          >
+                            {planoDmsExpandido.has(r.id) ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                            Ver valores de planos ({planoDetalhes.length})
+                          </button>
+                        )}
+                        {empresaDetalhes.length > 0 && (
                           <div className="mt-1 space-y-0.5">
-                            {r.detalhe_empresas.map(d => (
+                            {empresaDetalhes.map(d => (
                               <div key={d.empresa} className="text-[10px] font-normal text-slate-400">
                                 {d.empresa}: Base <span className="text-slate-500">{fmtValorBase(r.politica?.base_calculo, d.valorBase)}</span>
                                 <span className="text-slate-300"> → </span>
@@ -1526,14 +1557,44 @@ export default function HistoricoComissoes() {
                         )}
                       </td>
                       <td className="px-3 py-1.5 font-mono whitespace-nowrap">{fmtData(r.periodo_inicio)} – {fmtData(r.periodo_fim)}</td>
-                      <td className="px-3 py-1.5 text-right font-mono">{fmtValorBase(r.politica?.base_calculo, r.valor_base)}</td>
+                      <td className="px-3 py-1.5 text-right font-mono">{ehPlanoDms ? `${r.valor_base ?? 0} O.S.` : fmtValorBase(r.politica?.base_calculo, r.valor_base)}</td>
                       <td className="px-3 py-1.5 text-right font-mono">{fmtPct(r.politica?.comissao_servicos)}</td>
                       <td className="px-3 py-1.5 text-right font-mono">{fmtPct(r.politica?.comissao_pecas)}</td>
                       <td className="px-3 py-1.5 text-right font-mono">{fmtPct(r.politica?.comissao_total)}</td>
                       <td className="px-3 py-1.5 text-right font-mono">{fmtBRL(r.politica?.comissao_valor != null ? parseFloat(r.politica.comissao_valor) : null)}</td>
                       <td className="px-3 py-1.5 text-right font-mono font-semibold text-slate-800">{fmtBRL(r.valor_comissao)}</td>
                     </tr>
-                  ))}
+                    {planoDetalhes.length > 0 && planoDmsExpandido.has(r.id) && (
+                      <tr>
+                        <td colSpan={9} className="p-0 bg-slate-50/60">
+                          <table className="w-full text-left">
+                            <thead>
+                              <tr className="text-[10px] font-semibold uppercase text-slate-400">
+                                <th className="pl-12 py-1.5">Categoria</th>
+                                <th className="py-1.5">Prazo</th>
+                                <th className="py-1.5 text-right">Qtd.</th>
+                                <th className="py-1.5 text-right">Valor Unit.</th>
+                                <th className="py-1.5 pr-4 text-right">Subtotal</th>
+                              </tr>
+                            </thead>
+                            <tbody className="text-[11px] text-slate-600">
+                              {planoDetalhes.map((d, di) => (
+                                <tr key={di}>
+                                  <td className="pl-12 py-1">{d.categoria}</td>
+                                  <td className="py-1">{d.tempoMeses} meses</td>
+                                  <td className="py-1 text-right font-mono">{d.quantidade}</td>
+                                  <td className="py-1 text-right font-mono">{fmtBRL(d.valorUnitario)}</td>
+                                  <td className="py-1 pr-4 text-right font-mono">{fmtBRL(d.subtotal)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </td>
+                      </tr>
+                    )}
+                    </React.Fragment>
+                    )
+                  })}
                   {detalheAberto.registros.length > 1 && (
                     <tr className="bg-emerald-50/50">
                       <td colSpan="8" className="px-3 py-1.5 text-right text-[11px] font-bold text-slate-600">Total {detalheAberto.funcionarioNome}</td>

@@ -56,6 +56,7 @@ async function getOsPlanoDms(ano, periodoInicio, periodoFim) {
       consultor_nome: String(r['Consultor_Nome'] ?? '').trim(),
       empresa_nome: String(r['Empresa_Nome'] ?? '').trim(),
       veiculo_chassi: String(r['Veiculo_Chassi'] ?? '').trim(),
+      proprietario_veiculo: String(r['Proprietario_Veiculo'] ?? '').trim(),
       data_criacao: toIsoDate(r['Data_Criacao']),
     }))
     .filter(r => r.os_numero !== '' && r.veiculo_chassi !== '')
@@ -84,6 +85,7 @@ async function getChassiPlanoMap() {
     const entrada = {
       categoria: String(r['Tipo (Contrato) (Contrato DMS)'] ?? '').trim(),
       prazo: parseInt(String(r['Prazo (Contrato) (Contrato DMS)'] ?? '').trim(), 10) || null,
+      status,
       ativo: status.startsWith('Ativo'),
       dataModificacao: toIsoDate(r['(Não Modificar) Data de Modificação']) || '',
     }
@@ -112,8 +114,11 @@ function resolverPlanoPorChassi(veiculoChassi, chassiMap) {
 }
 
 // Junta O.S. P04 do período com o mapa de Chassi -> Plano. Retorna:
-//  - matched: [{ os_numero, consultor_nome, empresa_nome, data_criacao, categoria, prazo }]
-//  - semPlano: [{ os_numero, consultor_nome, empresa_nome, data_criacao, veiculo_chassi }] (chassi sem plano encontrado)
+//  - matched: [{ os_numero, consultor_nome, empresa_nome, proprietario_veiculo, data_criacao, veiculo_chassi, categoria, prazo }]
+//    (chassi achado E com status ativo — só esses contam pra comissão)
+//  - semPlano: [{ ...os }] (chassi não encontrado em nenhum contrato do arquivo de plano)
+//  - planoInativo: [{ ...os, categoria, prazo, status }] (chassi achado, mas o contrato não está
+//    ativo — ex: "Pendente de Contrato", "Renovado - Remover Gobrax")
 export async function calcularPlanoDms({ periodoInicio, periodoFim, ano }) {
   const chaveCache = `${ano}|${periodoInicio}|${periodoFim}`
   const cacheado = _cache.get(chaveCache)
@@ -126,16 +131,19 @@ export async function calcularPlanoDms({ periodoInicio, periodoFim, ano }) {
 
   const matched = []
   const semPlano = []
+  const planoInativo = []
   for (const os of osRows) {
     const plano = resolverPlanoPorChassi(os.veiculo_chassi, chassiMap)
-    if (plano) {
+    if (!plano) {
+      semPlano.push(os)
+    } else if (plano.ativo) {
       matched.push({ ...os, categoria: plano.categoria, prazo: plano.prazo })
     } else {
-      semPlano.push(os)
+      planoInativo.push({ ...os, categoria: plano.categoria, prazo: plano.prazo, status: plano.status })
     }
   }
 
-  const resultado = { matched, semPlano }
+  const resultado = { matched, semPlano, planoInativo }
   _cache.set(chaveCache, { resultado, ts: Date.now() })
   return resultado
 }
