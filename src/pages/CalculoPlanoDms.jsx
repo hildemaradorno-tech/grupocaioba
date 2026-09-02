@@ -436,9 +436,8 @@ export default function CalculoPlanoDms() {
           {/* PRÉVIA POR CONSULTOR — mostra o roster (cargo com Política Plano DMS ativa) assim
               que a empresa é escolhida; quantidade/valor ficam em branco até Calcular rodar. */}
           <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
-            <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
+            <div className="px-4 py-3 border-b border-slate-100">
               <h3 className="text-xs font-bold text-slate-700">Prévia por Consultor</h3>
-              <span className="text-[11px] text-slate-400">{linhasPrevia.length} consultor(es)</span>
             </div>
             {linhasPrevia.length === 0 ? (
               <p className="p-4 text-xs text-slate-400">Nenhum funcionário ativo desta empresa tem cargo com Política de Comissão Plano DMS configurada.</p>
