@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, Save, Plus, Edit2, Trash2, X, Loader2, Copy, ArrowRight, CheckCircle2, PlayCircle, FolderInput, RotateCcw, PartyPopper } from 'lucide-react'
 import { apiService } from '../../services/api'
 import { useAuth } from '../../context/AuthContext'
+import { useProjetosFiltros } from '../../context/ProjetosFiltrosContext'
 import { clearProjetosCache } from '../../services/projetosCache'
 import { projLookups as _lookups } from '../../services/projLookups'
 import TarefaFormModal from './TarefaFormModal'
@@ -42,8 +43,15 @@ export default function ProjetoEditor() {
   const { id } = useParams()
   const navigate = useNavigate()
   const { user, hasActionOrDefault } = useAuth()
-  const canExcluir = hasActionOrDefault('projetos', 'excluir')
+  const { modoVerTodos } = useProjetosFiltros()
+  const canExcluir = !modoVerTodos && hasActionOrDefault('projetos', 'excluir')
+  const canAlterarStatus = hasActionOrDefault('projetos', 'alterar_status')
   const isNew = !id
+
+  // Se está em modo visualização geral, redireciona para o detalhe (sem edição)
+  useEffect(() => {
+    if (modoVerTodos) navigate(id ? `/projetos/detalhe/${id}` : '/projetos', { replace: true })
+  }, [modoVerTodos, id, navigate])
 
   // Projeto
   const [proj, setProj] = useState({
@@ -102,7 +110,7 @@ export default function ProjetoEditor() {
     const init = async () => {
       setLoading(true)
       try {
-        if (!_lookups.departamentos) {
+        if (Object.values(_lookups).some(v => v === null)) {
           const [deps, ars, sis, resps, emps, fas] = await Promise.all([
             apiService.getProjDepartamentos(),
             apiService.getProjAreas(),
@@ -192,7 +200,7 @@ export default function ProjetoEditor() {
       }
       if (isNew) {
         const novo = await apiService.createProjeto(payload, user?.email)
-        navigate(`/projetos/${novo.id}/editar`, { replace: true })
+        navigate(`/projetos/detalhe/${novo.id}/editar`, { replace: true })
       } else {
         await apiService.updateProjeto(id, payload)
         clearProjetosCache()
@@ -438,7 +446,7 @@ export default function ProjetoEditor() {
       clearProjetosCache()
       setSelectedTarefas(new Set())
       setModalNovoProj(null)
-      navigate(`/projetos/${novo.id}/editar`)
+      navigate(`/projetos/detalhe/${novo.id}/editar`)
     } catch (err) { alert('Erro: ' + err.message) }
     finally { setCriandoNovoProj(false) }
   }
@@ -473,7 +481,7 @@ export default function ProjetoEditor() {
   const faseCorMap = Object.fromEntries(fases.map(f => [f.nome, f.cor || '#1e293b']))
 
   return (
-    <div className="p-6 space-y-5 max-w-screen-lg">
+    <div className="p-6 space-y-5 max-w-screen-2xl">
 
       {/* Cabeçalho */}
       <div className="flex items-center gap-3 border-b border-slate-200 pb-4">
@@ -510,8 +518,8 @@ export default function ProjetoEditor() {
       {/* Card: Informações do projeto */}
       <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-5 space-y-4">
         <h2 className="text-xs font-bold text-slate-500 uppercase tracking-wide">Informações do Projeto</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="md:col-span-2 flex flex-col gap-1">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="md:col-span-2 lg:col-span-4 flex flex-col gap-1">
             <Lbl>Título do Projeto *</Lbl>
             <input ref={nomeInputRef} name="nome" value={proj.nome} onChange={handleProjChange}
               placeholder="Nome do projeto..." className={inp}
@@ -533,9 +541,15 @@ export default function ProjetoEditor() {
           </div>
           <div className="flex flex-col gap-1">
             <Lbl>Status</Lbl>
-            <select name="status" value={proj.status || 'mapeado'} onChange={handleProjChange} className={sel}>
-              {Object.entries(STATUS_PROJ).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
+            {canAlterarStatus ? (
+              <select name="status" value={proj.status || 'mapeado'} onChange={handleProjChange} className={sel}>
+                {Object.entries(STATUS_PROJ).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+            ) : (
+              <div className={`${sel} bg-slate-50 text-slate-500 pointer-events-none`}>
+                {STATUS_PROJ[proj.status || 'mapeado'] || 'Mapeado'}
+              </div>
+            )}
           </div>
           <div className="flex flex-col gap-1">
             <Lbl>Resp.Projeto</Lbl>
@@ -546,7 +560,7 @@ export default function ProjetoEditor() {
           </div>
 
           {/* Multi-select Sistemas */}
-          <div className="md:col-span-2 flex flex-col gap-1">
+          <div className="md:col-span-2 lg:col-span-4 flex flex-col gap-1">
             <Lbl>Sistemas Atendidos</Lbl>
             <div ref={dropSistRef} className="relative">
               <div

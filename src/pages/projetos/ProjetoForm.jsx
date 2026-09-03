@@ -13,14 +13,15 @@ const FORM_VAZIO = {
   fase_id: '', fase_nome: '',
   responsavel_id: '', responsavel_nome: '',
   data_inicio: '', data_fim_prevista: '', data_fim_real: '',
-  status: 'planejado', cor: '#2563eb',
+  status: 'mapeado', cor: '#2563eb',
 }
 
 const STATUS_OPTIONS = [
-  { value: 'planejado',    label: 'Planejado' },
+  { value: 'mapeado',      label: 'Mapeado' },
+  { value: 'programado',   label: 'Programado' },
   { value: 'em_andamento', label: 'Em Andamento' },
-  { value: 'concluido',    label: 'Concluído' },
   { value: 'pausado',      label: 'Pausado' },
+  { value: 'concluido',    label: 'Concluído' },
   { value: 'cancelado',    label: 'Cancelado' },
 ]
 
@@ -50,8 +51,9 @@ const SelectField = ({ children, ...props }) => (
 export default function ProjetoForm() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const { user } = useAuth()
+  const { user, isAdmin, hasActionOrDefault } = useAuth()
   const modoEdicao = Boolean(id)
+  const statusTravado = !hasActionOrDefault('projetos', 'alterar_status')
 
   const [form, setForm] = useState(FORM_VAZIO)
   const [empresas, setEmpresas] = useState([])
@@ -142,10 +144,10 @@ export default function ProjetoForm() {
       })
       if (modoEdicao) {
         await apiService.updateProjeto(id, payload)
-        navigate(`/projetos/${id}`)
+        navigate(`/projetos/detalhe/${id}`)
       } else {
         const novo = await apiService.createProjeto(payload, user?.email)
-        navigate(`/projetos/${novo.id}`)
+        navigate(`/projetos/detalhe/${novo.id}`)
       }
     } catch (err) { setError(err.message || String(err)) }
     finally { setSalvando(false) }
@@ -239,9 +241,15 @@ export default function ProjetoForm() {
           </div>
           <div className="flex flex-col gap-1">
             <LabelField>Status</LabelField>
-            <SelectField name="status" value={form.status} onChange={handleChange}>
-              {STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </SelectField>
+            {statusTravado ? (
+              <div className="w-full text-xs p-2 border border-slate-200 rounded-md bg-slate-50 font-medium text-slate-500">
+                {STATUS_OPTIONS.find(o => o.value === form.status)?.label || 'Mapeado'}
+              </div>
+            ) : (
+              <SelectField name="status" value={form.status} onChange={handleChange}>
+                {STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </SelectField>
+            )}
           </div>
         </div>
       </div>

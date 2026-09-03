@@ -3,13 +3,14 @@ import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import {
   ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Save, ArrowLeft,
   Building2, Wrench, BarChart2, XCircle, History, Lock,
-  Search, CheckCircle, AlertCircle, Loader2,
+  Search, CheckCircle, AlertCircle, Loader2, Eye,
 } from 'lucide-react'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
 import { apiService } from '../../services/api'
 import { useAuth } from '../../context/AuthContext'
 import GarantiasNav from './GarantiasNav'
+import TituloObservacoesPanel from './TituloObservacoesPanel'
 
 const STATUS_OPTIONS = [
   { value: 'A',  label: 'A — Em Análise no Setor de Garantia' },
@@ -216,6 +217,7 @@ export default function GarantiasDafForm() {
   const location = useLocation()
   const { user, hasActionOrDefault } = useAuth()
   const modoEdicao = Boolean(id)
+  const modoVisualizar = location.state?.modo === 'visualizar'
   const canEditarOS = hasActionOrDefault('garantias-daf', 'editar')
   const voltarPara = location.state?.from || '/garantias-daf'
 
@@ -250,6 +252,8 @@ export default function GarantiasDafForm() {
   const [zerandoSG, setZerandoSG] = useState(false)
   const [logAberto, setLogAberto] = useState(false)
   const [tituloEncontrado, setTituloEncontrado] = useState(null) // título a receber (RFN003) localizado por OS + Nota Fiscal
+  const [titulosObs, setTitulosObs] = useState([]) // histórico de observações (gar_titulos_observacoes)
+  const loadTitulosObs = () => apiService.getTitulosObservacoes().then(setTitulosObs).catch(() => {})
 
   useEffect(() => {
     const init = async () => {
@@ -263,6 +267,7 @@ export default function GarantiasDafForm() {
         setEmpresas(emps)
         setTiposOS(tipos.filter(t => t.ativo))
         setFuncionarios(funcs.filter(f => f.ativo !== false && f.cargo_nome === 'Consultor de Serviços'))
+        loadTitulosObs()
 
         if (modoEdicao) {
           const [garantia, logData] = await Promise.all([
@@ -343,6 +348,7 @@ export default function GarantiasDafForm() {
   }, [form.numero_os, form.numero_nf, nfList])
 
   const handleChange = (e) => {
+    if (modoVisualizar) return
     const { name, value, type, checked } = e.target
     if (type === 'checkbox') {
       setForm(prev => ({ ...prev, [name]: checked }))
@@ -357,6 +363,7 @@ export default function GarantiasDafForm() {
   }
 
   const handleBuscarFaturamento = async () => {
+    if (modoVisualizar) return
     if (!form.numero_os?.trim()) {
       alert('Número da OS não informado.')
       return
@@ -420,7 +427,7 @@ export default function GarantiasDafForm() {
   }
 
   const handleZerarSG = async () => {
-    if (!modoEdicao) return
+    if (!modoEdicao || modoVisualizar) return
     setZerandoSG(true)
     try {
       await apiService.updateGarantia(id, { numero_sg: null, data_sg: null }, user?.email, statusAnterior)
@@ -433,6 +440,7 @@ export default function GarantiasDafForm() {
   }
 
   const handleSalvar = async () => {
+    if (modoVisualizar) return
     if (!form.numero_os) { alert('Informe o Número da OS.'); return }
 
     // Nº SG e Data SG obrigatórios
@@ -566,8 +574,17 @@ export default function GarantiasDafForm() {
           <ArrowLeft className="h-4 w-4" />
         </button>
         <div>
-          <h1 className="text-xl font-bold text-slate-900">{modoEdicao ? `Editar Garantia — OS ${form.numero_os}` : 'Nova Garantia DAF'}</h1>
-          <p className="text-xs text-slate-500">Preencha as etapas conforme o avanço do processo.</p>
+          <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+            {modoEdicao ? `Editar Garantia — OS ${form.numero_os}` : 'Nova Garantia DAF'}
+            {modoVisualizar && (
+              <span className="flex items-center gap-1 px-2 py-0.5 bg-slate-100 text-slate-500 rounded-full text-[10px] font-bold uppercase tracking-wide">
+                <Eye className="h-3 w-3" /> Modo visualização
+              </span>
+            )}
+          </h1>
+          <p className="text-xs text-slate-500">
+            {modoVisualizar ? 'Somente leitura — nenhuma alteração será salva.' : 'Preencha as etapas conforme o avanço do processo.'}
+          </p>
           <div className="mt-3"><GarantiasNav /></div>
         </div>
       </div>
@@ -729,7 +746,7 @@ export default function GarantiasDafForm() {
                   <button
                     type="button"
                     onClick={handleZerarSG}
-                    disabled={zerandoSG}
+                    disabled={zerandoSG || modoVisualizar}
                     className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-semibold text-red-600 border border-red-200 hover:bg-red-50 transition-colors disabled:opacity-50"
                   >
                     {zerandoSG ? <Loader2 className="h-3 w-3 animate-spin" /> : <XCircle className="h-3 w-3" />}
@@ -764,6 +781,7 @@ export default function GarantiasDafForm() {
                     name="sg_reapresentada_toggle"
                     checked={form.sg_reapresentada !== 'S'}
                     onChange={() => setForm(f => ({ ...f, sg_reapresentada: '', data_reapresentacao: '' }))}
+                    disabled={modoVisualizar}
                     className="accent-blue-600 w-3.5 h-3.5"
                   />
                   <span className="text-[11px] font-medium text-slate-600">Nova Garantia</span>
@@ -774,6 +792,7 @@ export default function GarantiasDafForm() {
                     name="sg_reapresentada_toggle"
                     checked={form.sg_reapresentada === 'S'}
                     onChange={() => setForm(f => ({ ...f, sg_reapresentada: 'S', status_codigo: 'G' }))}
+                    disabled={modoVisualizar}
                     className="accent-blue-600 w-3.5 h-3.5"
                   />
                   <span className="text-[11px] font-medium text-slate-600">Garantia Reapresentada</span>
@@ -982,7 +1001,7 @@ export default function GarantiasDafForm() {
                 <button
                   type="button"
                   onClick={handleBuscarFaturamento}
-                  disabled={buscandoFaturamento}
+                  disabled={buscandoFaturamento || modoVisualizar}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm transition-colors disabled:opacity-60"
                 >
                   {buscandoFaturamento
@@ -1020,11 +1039,12 @@ export default function GarantiasDafForm() {
               </div>
             )}
 
-            {/* Layout principal: NFs + Envio Fábrica */}
+            {/* Layout principal: NFs + Envio Fábrica lado a lado */}
             <div className="space-y-4">
+            <div className="flex gap-4 items-start">
 
               {/* Notas Fiscais */}
-              <div className="space-y-2">
+              <div className="flex-1 min-w-0 space-y-2">
                 <div className="flex items-center gap-1.5">
                   <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Notas Fiscais Emitidas</span>
                   {nfList.length > 0 && (
@@ -1120,51 +1140,65 @@ export default function GarantiasDafForm() {
                 </div>
               </div>
 
-              {/* Envio para Fábrica — linha compacta abaixo das NFs */}
-              <div className="bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 flex items-center gap-6 flex-wrap">
-                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide shrink-0">Envio para Fábrica</span>
-                <div className="flex items-center gap-3">
+              {/* Envio para Fábrica — coluna estreita ao lado das NFs */}
+              <div className="w-48 shrink-0 bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 space-y-3">
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Envio para Fábrica</span>
+                <div className="flex flex-col gap-1">
                   <LabelField>Data de Envio</LabelField>
                   <InputField type="date" name="data_envio_fabrica" value={form.data_envio_fabrica} onChange={handleChange} />
                 </div>
                 {delta2 !== null && (
-                  <div className="flex items-center gap-2 ml-2">
+                  <div className="flex flex-col gap-1">
                     <span className="text-[10px] font-bold text-slate-400 uppercase">Δ Faturamento → Envio</span>
                     <span className={`text-sm font-bold ${delta2 > 30 ? 'text-red-600' : delta2 > 15 ? 'text-yellow-600' : 'text-green-600'}`}>{delta2}d</span>
                   </div>
                 )}
               </div>
 
+            </div>
+
               {/* Título a Receber localizado (RFN003) por OS + Nota Fiscal — abaixo de Data de Envio.
-                  Nº Título e Observação também caem no fallback gravado na OS (numero_titulo /
-                  titulo_observacao), preenchido a partir de "Editar Título" em Títulos a Receber. */}
-              {(tituloEncontrado || form.numero_titulo) && (
-                <div className="bg-indigo-50 border border-indigo-200 rounded-lg px-4 py-3 flex items-center gap-6 flex-wrap">
-                  <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-wide shrink-0">Título a Receber Localizado</span>
-                  <div className="flex items-center gap-2">
-                    <LabelField locked>Nº Título</LabelField>
-                    <ReadOnlyField value={tituloEncontrado?.nro_titulo || form.numero_titulo} />
+                  Nº Título cai no fallback gravado na OS (numero_titulo) quando o título some do
+                  RFN003 (ex: já liquidado). Observações vêm direto de gar_titulos_observacoes,
+                  mesma fonte usada em "Editar Título" (Títulos a Receber). */}
+              {(() => {
+                const nroTitulo = tituloEncontrado?.nro_titulo || form.numero_titulo
+                if (!nroTitulo) return null
+                return (
+                <div className="space-y-2">
+                  <div className="bg-indigo-50 border border-indigo-200 rounded-lg px-4 py-3 flex items-center gap-6 flex-wrap">
+                    <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-wide shrink-0">Título a Receber Localizado</span>
+                    <div className="flex items-center gap-2">
+                      <LabelField locked>Nº Título</LabelField>
+                      <ReadOnlyField value={nroTitulo} />
+                    </div>
+                    {tituloEncontrado && (
+                      <div className="flex items-center gap-2">
+                        <LabelField locked>Nº Lançamento</LabelField>
+                        <ReadOnlyField value={tituloEncontrado.nro_lancamento} />
+                      </div>
+                    )}
+                    {tituloEncontrado && (
+                      <div className="flex items-center gap-2">
+                        <LabelField locked>Data de Vencimento</LabelField>
+                        <ReadOnlyField value={fmtDate(tituloEncontrado.data_vencimento)} />
+                      </div>
+                    )}
                   </div>
-                  {tituloEncontrado && (
-                    <div className="flex items-center gap-2">
-                      <LabelField locked>Nº Lançamento</LabelField>
-                      <ReadOnlyField value={tituloEncontrado.nro_lancamento} />
-                    </div>
-                  )}
-                  {tituloEncontrado && (
-                    <div className="flex items-center gap-2">
-                      <LabelField locked>Data de Vencimento</LabelField>
-                      <ReadOnlyField value={fmtDate(tituloEncontrado.data_vencimento)} />
-                    </div>
-                  )}
-                  {form.titulo_observacao && (
-                    <div className="flex items-center gap-2 basis-full">
-                      <LabelField locked>Observação do Título</LabelField>
-                      <ReadOnlyField value={form.titulo_observacao} />
-                    </div>
-                  )}
+                  <div className="bg-indigo-50/60 border border-indigo-100 rounded-lg px-4 py-3">
+                    <label className="text-[10px] font-bold text-indigo-400 uppercase tracking-wide mb-2 block">Observações do Título</label>
+                    <TituloObservacoesPanel
+                      nroTitulo={nroTitulo}
+                      observacoes={titulosObs}
+                      podeEditar={canEditarOS && !modoVisualizar}
+                      bloqueado={false}
+                      userEmail={user?.email}
+                      onChange={loadTitulosObs}
+                    />
+                  </div>
                 </div>
-              )}
+                )
+              })()}
             </div>
 
           </div>
@@ -1313,6 +1347,7 @@ export default function GarantiasDafForm() {
               </button>
             )}
           </div>
+          {!modoVisualizar && (
           <button
             type="button"
             onClick={handleSalvar}
@@ -1323,6 +1358,7 @@ export default function GarantiasDafForm() {
             <Save className="h-3.5 w-3.5" />
             {salvando ? 'Salvando...' : 'Salvar Garantia'}
           </button>
+          )}
         </div>
       </div>
 

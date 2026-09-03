@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from './context/AuthContext'
 import { KpiYearProvider } from './context/KpiYearContext'
 import { normalizePath } from './config/menuTree'
 import Login from './pages/Login'
+import RedefinirSenha from './pages/RedefinirSenha'
 import SidebarLayout from './layouts/SidebarLayout'
 import Home from './pages/Home'
 import Usuarios from './pages/Usuarios'
@@ -28,10 +29,10 @@ import PoliticaComissao from './pages/PoliticaComissao'
 import CargosRemuneracoes from './pages/CargosRemuneracoes'
 import FontesCalculo from './pages/FontesCalculo'
 import BasesCalculo from './pages/BasesCalculo'
-import Medidas from './pages/Medidas'
-import CalculoComissoes from './pages/CalculoComissoes'
-import HistoricoComissoes from './pages/HistoricoComissoes'
-import Ferias from './pages/Ferias'
+import Rubricas from './pages/Rubricas'
+import TiposProcesso from './pages/TiposProcesso'
+import PlanoDms from './pages/PlanoDms'
+import FolhaPagamentoDaf from './pages/FolhaPagamentoDaf'
 import Funcionarios from './pages/Funcionarios'
 import Feriados from './pages/Feriados'
 import Calendario from './pages/Calendario'
@@ -42,13 +43,11 @@ import MetasVendaSeminovos from './pages/MetasVendaSeminovos'
 import MetasPosVendaServicos from './pages/MetasPosVendaServicos'
 import MetasServicosMecanico from './pages/MetasServicosMecanico'
 import MetasServicosConsultor from './pages/MetasServicosConsultor'
-import MetasPosVendaFunilariaPintura from './pages/MetasPosVendaFunilariaPintura'
-import MetasTerceiros from './pages/MetasTerceiros'
+import MetasDistribuicaoConsultores from './pages/MetasDistribuicaoConsultores'
 import MetasGestaoAprovacao from './pages/MetasGestaoAprovacao'
 import MetasVendaTotal from './pages/MetasVendaTotal'
 import MetasPosVendaTotal from './pages/MetasPosVendaTotal'
 import MetasTotalGrupo from './pages/MetasTotalGrupo'
-import MetasDistribuicaoConsultores from './pages/MetasDistribuicaoConsultores'
 import GarantiasDafDashboard from './pages/garantias-daf/GarantiasDafDashboard'
 import GarantiasDafFaturadas from './pages/garantias-daf/GarantiasDafFaturadas'
 import GarantiasDafTitulos from './pages/garantias-daf/GarantiasDafTitulos'
@@ -70,8 +69,14 @@ import ProjAreas from './pages/projetos/cadastros/ProjAreas'
 import ProjStatus from './pages/projetos/cadastros/ProjStatus'
 import ProjTemplates from './pages/projetos/cadastros/ProjTemplates'
 import CalendarioProjetos from './pages/projetos/CalendarioProjetos'
+import ManifestacoesPainel from './pages/projetos/ManifestacoesPainel'
 import AtaReuniao from './pages/projetos/AtaReuniao'
-import PlanejamentoProjetos from './pages/projetos/PlanejamentoProjetos'
+import AuditoriaDashboard from './pages/auditoria-externa/AuditoriaDashboard'
+import AchadosPainel from './pages/auditoria-externa/AchadosPainel'
+import PlanoAcaoPainel from './pages/auditoria-externa/PlanoAcaoPainel'
+import CiclosAuditoria from './pages/auditoria-externa/CiclosAuditoria'
+import TiposAcaoAuditoria from './pages/auditoria-externa/TiposAcaoAuditoria'
+import ImpactosAuditoria from './pages/auditoria-externa/ImpactosAuditoria'
 import { ProjetosFiltrosProvider } from './context/ProjetosFiltrosContext'
 import Fornecedores from './pages/Fornecedores'
 import KpiMatriz, { KPI_MATRIZ_PERMS } from './pages/kpi/KpiMatriz'
@@ -79,11 +84,16 @@ import CalcVendaServico from './pages/calculadoras/CalcVendaServico'
 import Documentacoes from './pages/Documentacoes'
 import RpaAgendamentos from './pages/rpa/RpaAgendamentos'
 import GradeTreinamentos from './pages/treinamentos/GradeTreinamentos'
+import GrupoAcessos from './pages/governanca/GrupoAcessos'
+import PerfisAcesso from './pages/governanca/PerfisAcesso'
 import Ecossistema from './pages/Ecossistema'
 import Organograma from './pages/Organograma'
 import BiGarantiasDaf from './pages/bi/BiGarantiasDaf'
 import BiProjetos from './pages/bi/BiProjetos'
 import BiPossibilidades from './pages/bi/BiPossibilidades'
+import FontesBi from './pages/bi/FontesBi'
+import MedidasBi from './pages/bi/MedidasBi'
+import BiComissoes from './pages/bi/BiComissoes'
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth()
@@ -150,6 +160,7 @@ export default function App() {
     <ProjetosFiltrosProvider>
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/redefinir-senha" element={<RedefinirSenha />} />
       <Route element={<ProtectedRoute><SidebarLayout /></ProtectedRoute>}>
         {[
           { path: '/', element: <Home /> },
@@ -175,14 +186,18 @@ export default function App() {
           { path: '/cargos-remuneracoes', element: <CargosRemuneracoes />, menuPath: 'cargos-remuneracoes' },
           { path: '/fontes-calculo', element: <FontesCalculo />, menuPath: 'fontes-calculo' },
           { path: '/bases-calculo', element: <BasesCalculo />, menuPath: 'bases-calculo' },
-          { path: '/calculo-comissoes', element: <CalculoComissoes />, menuPath: 'calculo-comissoes' },
-          { path: '/historico-comissoes', element: <HistoricoComissoes />, menuPath: 'calculo-comissoes' },
-          { path: '/ferias', element: <Ferias />, menuPath: 'ferias' },
+          { path: '/rubricas', element: <Rubricas />, menuPath: 'rubricas' },
+          { path: '/tipos-processo', element: <TiposProcesso />, menuPath: 'tipos-processo' },
+          { path: '/plano-dms', element: <PlanoDms />, menuPath: 'plano-dms' },
+          { path: '/folha-pagamento-daf', element: <FolhaPagamentoDaf />, menuPath: ['ferias', 'calculo-comissoes', 'processamento-comissoes', 'sobreaviso-plantao', 'plano-dms-calculo'] },
+          { path: '/calculo-comissoes', element: <Navigate to="/folha-pagamento-daf?aba=calculo-comissoes" replace /> },
+          { path: '/processamento-comissoes', element: <Navigate to="/folha-pagamento-daf?aba=processamento-comissoes" replace /> },
+          { path: '/ferias', element: <Navigate to="/folha-pagamento-daf?aba=ferias" replace /> },
+          { path: '/sobreaviso-plantao', element: <Navigate to="/folha-pagamento-daf?aba=sobreaviso-plantao" replace /> },
           { path: '/funcionarios', element: <Funcionarios />, menuPath: 'funcionarios' },
           { path: '/feriados', element: <Feriados />, menuPath: 'feriados' },
           { path: '/calendario', element: <Calendario />, menuPath: 'calendario' },
           { path: '/sincronizacao-dados', element: <SincronizacaoDados />, menuPath: 'sincronizacao-dados' },
-          { path: '/medidas-bi', element: <Medidas />, menuPath: 'medidas-bi' },
           { path: '/metas/vendas/novos', element: <MetasVendaNovos />, menuPath: '/metas/vendas/novos' },
           { path: '/metas/vendas/seminovos', element: <MetasVendaSeminovos />, menuPath: '/metas/vendas/seminovos' },
           { path: '/metas/vendas/total', element: <MetasVendaTotal />, menuPath: '/metas/vendas/total' },
@@ -190,10 +205,8 @@ export default function App() {
           { path: '/metas/pos-vendas/servicos', element: <MetasPosVendaServicos />, menuPath: '/metas/pos-vendas/servicos' },
           { path: '/metas/pos-vendas/servicos/mecanico', element: <MetasServicosMecanico />, menuPath: '/metas/pos-vendas/servicos' },
           { path: '/metas/pos-vendas/servicos/consultor', element: <MetasServicosConsultor />, menuPath: '/metas/pos-vendas/servicos' },
-          { path: '/metas/pos-vendas/funilaria-pintura', element: <MetasPosVendaFunilariaPintura />, menuPath: '/metas/pos-vendas/funilaria-pintura' },
-          { path: '/metas/pos-vendas/terceiros', element: <MetasTerceiros />, menuPath: '/metas/pos-vendas/terceiros' },
-
           { path: '/metas/pos-vendas/distribuicao-consultores', element: <MetasDistribuicaoConsultores />, menuPath: '/metas/pos-vendas/distribuicao-consultores' },
+
           { path: '/metas/pos-vendas/total', element: <MetasPosVendaTotal />, menuPath: '/metas/pos-vendas/total' },
           { path: '/metas/total-grupo', element: <MetasTotalGrupo />, menuPath: '/metas/total-grupo' },
           { path: '/metas/gestao-aprovacao', element: <MetasGestaoAprovacao />, menuPath: '/metas/gestao-aprovacao' },
@@ -209,14 +222,20 @@ export default function App() {
           { path: '/garantias-daf-faturadas', element: <GarantiasDafFaturadas />, menuPath: '/garantias-daf-faturadas' },
           { path: '/garantias-daf-titulos',   element: <GarantiasDafTitulos />,   menuPath: '/garantias-daf-titulos' },
           { path: '/projetos', element: <ProjetosDashboard />, menuPath: 'projetos' },
-          { path: '/projetos/pdca', element: <AtaReuniao />, menuPath: 'projetos/pdca' },
-          { path: '/projetos/planejamento', element: <PlanejamentoProjetos />, menuPath: 'projetos/planejamento' },
+          { path: '/projetos/manifestacoes', element: <ManifestacoesPainel />, menuPath: ['projetos/manifestacoes', 'projetos'] },
           { path: '/projetos/lista-tarefas', element: <CalendarioProjetos abaInicial="lista" />, menuPath: 'projetos/lista-tarefas' },
           { path: '/projetos/calendario', element: <CalendarioProjetos abaInicial="calendario" />, menuPath: 'projetos/calendario' },
+          { path: '/projetos/ata-reuniao', element: <AtaReuniao />, menuPath: 'projetos/ata-reuniao' },
+          { path: '/auditoria-externa/dashboard', element: <AuditoriaDashboard />, menuPath: 'auditoria-externa/dashboard' },
+          { path: '/auditoria-externa/divergencias', element: <AchadosPainel />, menuPath: 'auditoria-externa/divergencias' },
+          { path: '/auditoria-externa/plano-acao', element: <PlanoAcaoPainel />, menuPath: 'auditoria-externa/plano-acao' },
+          { path: '/auditoria-externa/ciclos', element: <CiclosAuditoria />, menuPath: 'auditoria-externa/ciclos' },
+          { path: '/auditoria-externa/tipos-acao', element: <TiposAcaoAuditoria />, menuPath: 'auditoria-externa/tipos-acao' },
+          { path: '/auditoria-externa/impactos', element: <ImpactosAuditoria />, menuPath: 'auditoria-externa/impactos' },
           { path: '/fornecedores', element: <Fornecedores />, menuPath: 'fornecedores' },
           { path: '/projetos/novo', element: <ProjetoEditor />, menuPath: 'projetos' },
-          { path: '/projetos/:id/editar', element: <ProjetoEditor />, menuPath: 'projetos' },
-          { path: '/projetos/:id', element: <ProjetoDetalhe />, menuPath: 'projetos' },
+          { path: '/projetos/detalhe/:id/editar', element: <ProjetoEditor />, menuPath: 'projetos' },
+          { path: '/projetos/detalhe/:id', element: <ProjetoDetalhe />, menuPath: 'projetos' },
           { path: '/projetos/empresas', element: <ProjEmpresas />, menuPath: '/projetos/empresas' },
           { path: '/projetos/departamentos', element: <ProjDepartamentos />, menuPath: '/projetos/departamentos' },
           { path: '/projetos/areas', element: <ProjAreas />, menuPath: '/projetos/areas' },
@@ -230,11 +249,16 @@ export default function App() {
           { path: '/documentacoes', element: <Documentacoes />, menuPath: 'documentacoes' },
           { path: '/rpa/agendamentos', element: <RpaAgendamentos />, menuPath: 'rpa/agendamentos' },
           { path: '/treinamentos/grade', element: <GradeTreinamentos />, menuPath: 'treinamentos/grade' },
+          { path: '/governanca/grupo-acessos', element: <GrupoAcessos />, menuPath: 'governanca/grupo-acessos' },
+          { path: '/governanca/perfis-acesso', element: <PerfisAcesso />, menuPath: 'governanca/perfis-acesso' },
           { path: '/ecossistema', element: <Ecossistema />, menuPath: 'ecossistema' },
           { path: '/organograma', element: <Organograma />, menuPath: 'organograma' },
           { path: '/bi/garantias-daf', element: <BiGarantiasDaf />, menuPath: 'bi/garantias-daf' },
           { path: '/bi/projetos', element: <BiProjetos />, menuPath: 'bi/projetos' },
           { path: '/bi/possibilidades', element: <BiPossibilidades />, menuPath: 'bi/possibilidades' },
+          { path: '/bi/fontes', element: <FontesBi />, menuPath: 'bi/fontes' },
+          { path: '/bi/medidas', element: <MedidasBi />, menuPath: 'bi/medidas' },
+          { path: '/bi/comissoes', element: <BiComissoes />, menuPath: 'bi/comissoes' },
         ].map(route => (
           <Route
             key={route.path}

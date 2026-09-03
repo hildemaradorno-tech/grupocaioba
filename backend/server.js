@@ -15,12 +15,20 @@ import jwt from 'jsonwebtoken'
 import kpiRoutes       from './routes/kpi.js'
 import garantiasRoutes from './routes/garantias.js'
 import calculoComissaoRoutes from './routes/calculoComissao.js'
+import planoDmsRoutes from './routes/planoDms.js'
+import biMedidasRoutes from './routes/biMedidas.js'
 import rhFeriasRoutes from './routes/rhFerias.js'
 import hondaRoutes from './routes/honda.js'
+import truckpagRoutes from './routes/truckpag.js'
+import googleCalendarRoutes from './routes/googleCalendar.js'
+import projetosManifestacoesRoutes from './routes/projetosManifestacoes.js'
+import auditAiRoutes from './routes/auditAi.js'
 import { iniciarSchedulerKpi } from './services/kpiSyncScheduler.js'
+import { iniciarSchedulerManifestacao } from './services/manifestacaoScheduler.js'
 
 const app = express()
-app.use(cors())
+app.use(cors({ origin: '*', methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'], allowedHeaders: ['Content-Type','Authorization'] }))
+app.options('*', cors())
 app.use(express.json())
 
 // ── Rotas da Matriz KPIs (SharePoint / Microsoft Graph) ──────────────────────
@@ -32,11 +40,29 @@ app.use('/api/garantias', garantiasRoutes)
 // ── Rotas Fonte/Base de Cálculo (SharePoint genérico p/ comissões) ───────────
 app.use('/api/calculo-comissao', calculoComissaoRoutes)
 
+// ── Rotas Comissão Plano DMS (O.S. P04 x Chassi x Valor do Plano) ────────────
+app.use('/api/plano-dms', planoDmsRoutes)
+
+// ── Rotas Fonte BI / Medida BI (SharePoint genérico p/ dashboards de BI) ─────
+app.use('/api/bi-medidas', biMedidasRoutes)
+
 // ── Rotas RH Férias (SharePoint Relacao de Ferias Calculadas) ─────────────────
 app.use('/api/rh-ferias', rhFeriasRoutes)
 
 // ── Rotas Honda (integração MicroWork Cloud) ──────────────────────────────────
 app.use('/api/honda', hondaRoutes)
+
+// ── Rotas TruckPag (SharePoint — Financeiro DAF) ─────────────────────────────
+app.use('/api/truckpag', truckpagRoutes)
+
+// ── Rotas Google Calendar (OAuth + leitura de eventos) ───────────────────────
+app.use('/api/google-calendar', googleCalendarRoutes)
+
+// ── Rotas Gestão de Projetos — Período de Manifestação (Etapa 2) ────────────
+app.use('/api/projetos', projetosManifestacoesRoutes)
+
+// ── Rotas Gestão de Projetos — Auditoria Externa (Copiloto de IA) ───────────
+app.use('/api/audit-ai', auditAiRoutes)
 
 // Handler de erro global — sem isso, um erro lançado dentro de uma rota (ex: pasta/arquivo do
 // SharePoint não encontrado) cai no handler padrão do Express, que responde com uma página HTML
@@ -217,29 +243,26 @@ async function start() {
 
   // ==================== CRIAÇÃO DE USUÁRIO VIA SUPABASE ADMIN ====================
 
-  // POST /api/auth/create-user — cria usuário no Supabase Auth com email já confirmado
+  // POST /api/auth/create-user — cria usuário no Supabase Auth e envia e-mail de convite/boas-vindas
+  // (o próprio usuário define a senha ao clicar no link do e-mail, admin não define senha nenhuma).
   app.post('/api/auth/create-user', async (req, res) => {
     if (!supabaseAdmin) {
       return res.status(503).json({ error: 'SUPABASE_SERVICE_KEY não configurada no backend. Configure o arquivo backend/.env.' })
     }
-    const { nome, email, senha, grupo_id } = req.body
-    if (!nome || !email || !senha) {
-      return res.status(400).json({ error: 'Campos obrigatórios: nome, email, senha' })
-    }
-    if (senha.length < 6) {
-      return res.status(400).json({ error: 'A senha deve ter no mínimo 6 caracteres.' })
+    const { nome, email, grupo_id, redirectTo } = req.body
+    if (!nome || !email) {
+      return res.status(400).json({ error: 'Campos obrigatórios: nome, email' })
     }
 
-    // 1. Cria no Supabase Auth (email_confirm: true → sem confirmação de e-mail)
-    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
-      email,
-      password: senha,
-      email_confirm: true,
+    // 1. Cria no Supabase Auth e envia o e-mail de convite (template "Invite user" do Supabase)
+    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
+      data: { nome },
+      ...(redirectTo ? { redirectTo } : {}),
     })
     if (authError) return res.status(400).json({ error: authError.message })
 
-    // 2. Insere perfil na tabela usuarios
-    const perfilInsert = { id: authData.user.id, nome, email, ativo: true, senha_atualizada_em: new Date().toISOString() }
+    // 2. Insere perfil na tabela usuarios — sem senha_atualizada_em, pois ainda não definiu senha
+    const perfilInsert = { id: authData.user.id, nome, email, ativo: true }
     if (grupo_id) perfilInsert.grupo_id = grupo_id
     const { data, error } = await supabaseAdmin
       .from('usuarios')
@@ -355,6 +378,7 @@ async function start() {
   })
 
   iniciarSchedulerKpi()
+  iniciarSchedulerManifestacao()
 }
 
 start().catch(console.error)

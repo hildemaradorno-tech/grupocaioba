@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useSessionState } from '../hooks/useSessionState'
 import { Plus, X, AlertTriangle, Tag, Eye } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
@@ -6,6 +7,8 @@ import PermissionActionButtons from '../components/PermissionActionButtons'
 import { apiService } from '../services/api'
 
 export default function Areas() {
+  const location = useLocation()
+  const navigate = useNavigate()
   const [dados, setDados] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -51,6 +54,16 @@ export default function Areas() {
     setErroModal(null)
     setModalAberto(true)
   }
+
+  // Veio de outra tela (ex: Organograma, clicando no lápis de editar) pedindo pra abrir direto
+  // a edição de uma área específica — consome o state da navegação uma única vez.
+  useEffect(() => {
+    const idParaEditar = location.state?.editarId
+    if (!idParaEditar || dados.length === 0) return
+    const item = dados.find(a => a.id === idParaEditar)
+    if (item) abrirEditar(item)
+    navigate(location.pathname, { replace: true, state: {} })
+  }, [dados, location.state])
 
   const abrirExcluir = (item) => {
     setIdExcluir(item.id)

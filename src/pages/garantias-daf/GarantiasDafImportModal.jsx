@@ -1,7 +1,7 @@
 ﻿import React, { useEffect, useState, useMemo } from 'react'
 import {
   X, RefreshCw, Download, CheckSquare, Square, Loader2,
-  Clock, AlertCircle, Search,
+  Clock, AlertCircle, Search, Info,
 } from 'lucide-react'
 import { apiService } from '../../services/api'
 import { useAuth } from '../../context/AuthContext'
@@ -224,7 +224,13 @@ export default function GarantiasDafImportModal({ onClose, onImported, osJaImpor
           <div>
             <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
               <Download className="h-4 w-4 text-blue-600" />
-              Importar OS do SharePoint — ROF001_OSABERTA_ENCERRADA
+              Importar OS do SharePoint
+              <span className="relative group cursor-help">
+                <Info className="h-3.5 w-3.5 text-slate-400" />
+                <span className="absolute top-full left-0 mt-2 w-64 text-[10px] text-white bg-slate-700 rounded px-2 py-1.5 leading-relaxed opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 normal-case font-normal tracking-normal">
+                  Fonte de dados: ROF001_OSABERTA_ENCERRADA
+                </span>
+              </span>
             </h2>
             <p className="text-[10px] text-slate-400 mt-0.5">
               Badges indicam se a OS (número + tipo) já está na tabela de controle.

@@ -1,10 +1,14 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useSessionState } from '../hooks/useSessionState'
-import { Plus, Edit2, Trash2, ShieldCheck, ShieldOff, ChevronDown, ChevronRight, Check, Save, ArrowLeft, Copy, Users, X, UserPlus, UserMinus, Search } from 'lucide-react'
+import { Plus, Edit2, Trash2, ShieldCheck, ShieldOff, ChevronDown, ChevronRight, Check, Save, ArrowLeft, Copy, Users, X, UserPlus, UserMinus, Search, Eye, Building2 } from 'lucide-react'
 import { apiService } from '../services/api'
 import { MENU_TREE, getLeafKeys, ALL_LEAF_KEYS } from '../config/menuTree'
 import { ACOES_POR_MENU, ACOES_POR_PATH } from '../config/acoesMenu'
 import { DIMENSOES_COMISSAO, escopoComissaoTudoLiberado } from '../utils/permissoesComissao'
+
+// Departamento é só informativo — identifica na tabela a qual área do Grupo Caiobá
+// cada grupo de acesso pertence. Não interfere em nenhuma permissão.
+const DEPARTAMENTOS_GRUPO = ['Vendas', 'Serviços', 'Peças', 'Financeiro', 'RH', 'Contabilidade', 'Controladoria', 'Diretoria', 'Tecnologia', 'Marketing']
 
 // ── Tree checkbox node ────────────────────────────────────────────────────────
 
@@ -125,7 +129,11 @@ function TreeNode({ node, selected, onToggle, disabled, defaultOpen = false, sel
 
 // ── Seletor de dimensão de escopo (Cálculo de Comissões) — Todos ou Individual ────────────
 
-function SeletorDimensaoComissao({ label, escopo, opcoes, disabled, onModoChange, onToggleValor, onSelecionarTodos, onLimpar }) {
+// `nivelPorValor`/`onNivelChange`/`onToggleResponsavel` são opcionais e só usados na instância
+// de Departamento — quando presentes, cada opção MARCADA ganha um seletor Editar/Visualizar +
+// checkbox Responsável ao lado (nível de acesso extra, some-se às Ações já existentes; ver
+// `departamentoSoVisualizacao` em utils/permissoesComissao.js).
+function SeletorDimensaoComissao({ label, escopo, opcoes, disabled, onModoChange, onToggleValor, onSelecionarTodos, onLimpar, nivelPorValor, onNivelChange, onToggleResponsavel }) {
   const modo = escopo?.modo || 'TODOS'
   const valores = escopo?.valores || new Set()
   return (
@@ -164,17 +172,53 @@ function SeletorDimensaoComissao({ label, escopo, opcoes, disabled, onModoChange
           <div className="flex flex-col gap-0.5">
             {opcoes.length === 0 ? (
               <p className="text-xs text-slate-400 py-1">Nenhuma opção cadastrada.</p>
-            ) : opcoes.map(op => (
-              <label key={op.valor} className="flex items-center gap-1.5 px-2 py-1 rounded text-xs cursor-pointer hover:bg-slate-50 select-none">
-                <input
-                  type="checkbox"
-                  checked={valores.has(op.valor)}
-                  onChange={() => onToggleValor(op.valor)}
-                  className="w-3 h-3 rounded accent-blue-600 shrink-0"
-                />
-                {op.label}
-              </label>
-            ))}
+            ) : opcoes.map(op => {
+              const marcado = valores.has(op.valor)
+              const nivel = nivelPorValor?.[op.valor]?.nivel_acesso === 'visualizar' ? 'visualizar' : 'editar'
+              const responsavel = !!nivelPorValor?.[op.valor]?.responsavel
+              return (
+                <div key={op.valor} className="flex items-center justify-between gap-2 px-2 py-1 rounded hover:bg-slate-50">
+                  <label className="flex items-center gap-1.5 text-xs cursor-pointer select-none min-w-0">
+                    <input
+                      type="checkbox"
+                      checked={marcado}
+                      onChange={() => onToggleValor(op.valor)}
+                      className="w-3 h-3 rounded accent-blue-600 shrink-0"
+                    />
+                    <span className="truncate">{op.label}</span>
+                  </label>
+                  {marcado && onNivelChange && (
+                    <div className="flex items-center gap-2 shrink-0">
+                      <div className="inline-flex rounded-md border border-slate-200 overflow-hidden text-[10px] font-semibold">
+                        <button
+                          type="button"
+                          onClick={() => onNivelChange(op.valor, 'editar')}
+                          className={`px-1.5 py-0.5 transition-colors ${nivel === 'editar' ? 'bg-blue-600 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}
+                        >
+                          Editar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onNivelChange(op.valor, 'visualizar')}
+                          className={`px-1.5 py-0.5 border-l border-slate-200 transition-colors ${nivel === 'visualizar' ? 'bg-amber-500 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}
+                        >
+                          Visualizar
+                        </button>
+                      </div>
+                      <label className="flex items-center gap-1 text-[10px] text-slate-500 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={responsavel}
+                          onChange={() => onToggleResponsavel(op.valor)}
+                          className="w-3 h-3 rounded accent-indigo-600 shrink-0"
+                        />
+                        Responsável
+                      </label>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
         </>
       )}
@@ -190,7 +234,7 @@ export default function Grupos() {
 
   // ─ list form (nome)
   const [showForm, setShowForm] = useSessionState('grp_showform', false)
-  const [formData, setFormData] = useSessionState('grp_form', { id: null, nome_grupo: '' })
+  const [formData, setFormData] = useSessionState('grp_form', { id: null, nome_grupo: '', departamento: '' })
   const [saving, setSaving] = useState(false)
 
   // ─ permission editor
@@ -200,10 +244,10 @@ export default function Grupos() {
   const [selectedAcoes, setSelectedAcoes] = useState(new Set()) // "menu_path|acao"
   const [selectedEmpresas, setSelectedEmpresas] = useState(new Set())
   const [empresas, setEmpresas] = useState([])
-  const [selectedDeptos, setSelectedDeptos] = useState(new Set()) // Set de nome (string)
-  const [deptosProjetos, setDeptosProjetos] = useState([])
   const [comissaoEscopo, setComissaoEscopo] = useState(escopoComissaoTudoLiberado())
   const [comissaoHabilitado, setComissaoHabilitado] = useState(false)
+  // Nível de acesso extra por Departamento — { [departamento_id]: { nivel_acesso: 'editar'|'visualizar', responsavel: bool } }
+  const [comissaoDepartamentoNivel, setComissaoDepartamentoNivel] = useState({})
   const [departamentosComissao, setDepartamentosComissao] = useState([])
   const [setoresComissao, setSetoresComissao] = useState([])
   const [agrupamentosCargoComissao, setAgrupamentosCargoComissao] = useState([])
@@ -229,6 +273,7 @@ export default function Grupos() {
       const empsAtivas = emps.filter(e => e.ativo !== false)
       setTodasEmpresas(empsAtivas)
       setSiglasPorGrupo(buildSiglas(todasPerms, empsAtivas))
+      setEmpresasPorGrupo(buildEmpresasPorGrupo(todasPerms, empsAtivas))
       setGrupos(grps.sort((a, b) => a.nome_grupo.localeCompare(b.nome_grupo, 'pt-BR')))
       setTodosUsuarios(usrs.sort((a, b) => (a.nome || '').localeCompare(b.nome || '', 'pt-BR')))
     } catch (err) {
@@ -241,12 +286,12 @@ export default function Grupos() {
   // ─ Create / edit group name ───────────────────────────────────────────────
 
   const openNewForm = () => {
-    setFormData({ id: null, nome_grupo: '' })
+    setFormData({ id: null, nome_grupo: '', departamento: '' })
     setShowForm(true)
   }
 
   const openEditForm = (grupo) => {
-    setFormData({ id: grupo.id, nome_grupo: grupo.nome_grupo })
+    setFormData({ id: grupo.id, nome_grupo: grupo.nome_grupo, departamento: grupo.departamento || '' })
     setShowForm(true)
   }
 
@@ -255,15 +300,25 @@ export default function Grupos() {
     if (!formData.nome_grupo.trim()) return
     setSaving(true)
     try {
+      const departamento = formData.departamento || null
       if (formData.id) {
-        const updated = await apiService.updateGrupo(formData.id, formData.nome_grupo.trim())
-        setGrupos(prev => prev.map(g => g.id === updated.id ? { ...g, nome_grupo: updated.nome_grupo } : g).sort((a, b) => a.nome_grupo.localeCompare(b.nome_grupo, 'pt-BR')))
+        // Preserva o is_admin atual do grupo — updateGrupo grava esse campo junto, e um
+        // default errado aqui reseta silenciosamente o grupo pra não-admin (já causou perda
+        // total de acesso numa edição de departamento).
+        const isAdminAtual = grupos.find(g => g.id === formData.id)?.is_admin ?? false
+        const updated = await apiService.updateGrupo(formData.id, formData.nome_grupo.trim(), isAdminAtual, departamento)
+        setGrupos(prev => prev.map(g => g.id === updated.id ? { ...g, nome_grupo: updated.nome_grupo, departamento: updated.departamento } : g).sort((a, b) => a.nome_grupo.localeCompare(b.nome_grupo, 'pt-BR')))
       } else {
-        const created = await apiService.createGrupo(formData.nome_grupo.trim())
+        const created = await apiService.createGrupo(formData.nome_grupo.trim(), undefined, departamento)
         setGrupos(prev => [...prev, created].sort((a, b) => a.nome_grupo.localeCompare(b.nome_grupo, 'pt-BR')))
+        setShowForm(false)
+        setFormData({ id: null, nome_grupo: '', departamento: '' })
+        // Grupo novo criado — já abre direto a edição de Permissões de Acesso dele.
+        await openPermissoes(created)
+        return
       }
       setShowForm(false)
-      setFormData({ id: null, nome_grupo: '' })
+      setFormData({ id: null, nome_grupo: '', departamento: '' })
     } catch (err) {
       alert('Erro ao salvar: ' + err.message)
     } finally {
@@ -284,9 +339,13 @@ export default function Grupos() {
 
   const [duplicando, setDuplicando] = useState(null)
   const [siglasPorGrupo, setSiglasPorGrupo] = useState({})
+  const [empresasPorGrupo, setEmpresasPorGrupo] = useState({}) // grupo_id -> [empresa completa]
   const [todasEmpresas, setTodasEmpresas] = useState([])
   const [todosUsuarios, setTodosUsuarios] = useState([])
-  const [modalUsuarios, setModalUsuarios] = useState(null) // grupo sendo visualizado
+  const [modalUsuarios, setModalUsuarios] = useState(null) // grupo sendo visualizado (membros)
+  const [modalVisualizar, setModalVisualizar] = useState(null) // grupo sendo visualizado (resumo)
+  const [verTodosUsuarios, setVerTodosUsuarios] = useState(false) // tela geral: todos usuários x grupo
+  const [buscaTodosUsuarios, setBuscaTodosUsuarios] = useState('')
   const [salvandoUsuario, setSalvandoUsuario] = useState(null)
 
   const buildSiglas = (todasPerms, emps) => {
@@ -295,6 +354,16 @@ export default function Grupos() {
       if (!mapa[grupo_id]) mapa[grupo_id] = []
       const emp = emps.find(e => e.id === empresa_id)
       if (emp?.sigla_empresa) mapa[grupo_id].push(emp.sigla_empresa)
+    })
+    return mapa
+  }
+
+  const buildEmpresasPorGrupo = (todasPerms, emps) => {
+    const mapa = {}
+    todasPerms.forEach(({ grupo_id, empresa_id }) => {
+      if (!mapa[grupo_id]) mapa[grupo_id] = []
+      const emp = emps.find(e => e.id === empresa_id)
+      if (emp) mapa[grupo_id].push(emp)
     })
     return mapa
   }
@@ -315,13 +384,12 @@ export default function Grupos() {
     setDuplicando(grupo.id)
     try {
       const novoNome = `Cópia de ${grupo.nome_grupo}`
-      const novoGrupo = await apiService.createGrupo(novoNome)
+      const novoGrupo = await apiService.createGrupo(novoNome, undefined, grupo.departamento || null)
 
-      const [paths, acoes, empIds, deptoNomes, comissaoEscopoRaw] = await Promise.all([
+      const [paths, acoes, empIds, comissaoEscopoRaw] = await Promise.all([
         apiService.getPermissoesGrupo(grupo.id),
         apiService.getPermissoesGrupoAcoes(grupo.id),
         apiService.getPermissoesEmpresasGrupo(grupo.id),
-        apiService.getPermissoesDeptoPorGrupo(grupo.id),
         apiService.getPermissoesComissaoGrupo(grupo.id),
       ])
 
@@ -329,7 +397,6 @@ export default function Grupos() {
         apiService.setPermissoesGrupo(novoGrupo.id, { is_admin: grupo.is_admin, paths }),
         apiService.setPermissoesGrupoAcoes(novoGrupo.id, acoes.map(a => ({ menu_path: a.menu_path, acao: a.acao }))),
         apiService.setPermissoesEmpresasGrupo(novoGrupo.id, empIds),
-        apiService.setPermissoesDeptoPorGrupo(novoGrupo.id, deptoNomes),
         apiService.setPermissoesComissaoGrupo(novoGrupo.id, comissaoEscopoRaw, comissaoEscopoRaw.habilitado),
       ])
 
@@ -356,13 +423,11 @@ export default function Grupos() {
     setTreeDefaultOpen(false)
     setTreeKey(k => k + 1)
     try {
-      const [paths, acoes, empIds, emps, deptoNomes, deptos, deptosDim, setoresDim, agrupCargos, comissaoEscopoRaw] = await Promise.all([
+      const [paths, acoes, empIds, emps, deptosDim, setoresDim, agrupCargos, comissaoEscopoRaw] = await Promise.all([
         apiService.getPermissoesGrupo(grupo.id),
         apiService.getPermissoesGrupoAcoes(grupo.id),
         apiService.getPermissoesEmpresasGrupo(grupo.id),
         apiService.getEmpresas(),
-        apiService.getPermissoesDeptoPorGrupo(grupo.id),
-        apiService.getProjDepartamentos(),
         apiService.getDepartamentos(),
         apiService.getSetores(),
         apiService.getAgrupamentoCargos(),
@@ -372,8 +437,6 @@ export default function Grupos() {
       setSelectedAcoes(new Set(acoes.map(a => `${a.menu_path}|${a.acao}`)))
       setSelectedEmpresas(new Set(empIds))
       setEmpresas(emps.filter(e => e.ativo !== false).sort((a, b) => (a.nome_empresa || '').localeCompare(b.nome_empresa || '', 'pt-BR')))
-      setSelectedDeptos(new Set(deptoNomes))
-      setDeptosProjetos(deptos.filter(d => d.ativo !== false))
       setDepartamentosComissao(deptosDim.filter(d => d.ativo !== false))
       setSetoresComissao(setoresDim.filter(s => s.ativo !== false))
       setAgrupamentosCargoComissao(agrupCargos.filter(a => a.ativo !== false))
@@ -382,14 +445,15 @@ export default function Grupos() {
         { modo: comissaoEscopoRaw[dim]?.modo === 'INDIVIDUAL' ? 'INDIVIDUAL' : 'TODOS', valores: new Set(comissaoEscopoRaw[dim]?.valores || []) },
       ])))
       setComissaoHabilitado(!!comissaoEscopoRaw.habilitado)
+      setComissaoDepartamentoNivel(comissaoEscopoRaw.departamentoNivel || {})
     } catch (err) {
       alert('Erro ao carregar permissões: ' + err.message)
       setSelectedPaths(new Set())
       setSelectedAcoes(new Set())
       setSelectedEmpresas(new Set())
-      setSelectedDeptos(new Set())
       setComissaoEscopo(escopoComissaoTudoLiberado())
       setComissaoHabilitado(false)
+      setComissaoDepartamentoNivel({})
     } finally {
       setLoadingPerms(false)
     }
@@ -428,17 +492,6 @@ export default function Grupos() {
   const handleSelectAllEmpresas = () => setSelectedEmpresas(new Set(empresas.map(e => e.id)))
   const handleClearAllEmpresas = () => setSelectedEmpresas(new Set())
 
-  const handleToggleDepto = (nome, value) => {
-    setSelectedDeptos(prev => {
-      const next = new Set(prev)
-      if (value) next.add(nome)
-      else next.delete(nome)
-      return next
-    })
-  }
-  const handleSelectAllDeptos = () => setSelectedDeptos(new Set(deptosProjetos.map(d => d.nome)))
-  const handleClearAllDeptos = () => setSelectedDeptos(new Set())
-
   const handleComissaoModoChange = (dim, modo) => {
     setComissaoEscopo(prev => ({ ...prev, [dim]: { ...prev[dim], modo } }))
   }
@@ -457,6 +510,13 @@ export default function Grupos() {
     setComissaoEscopo(prev => ({ ...prev, [dim]: { ...prev[dim], valores: new Set() } }))
   }
 
+  const handleDepartamentoNivelChange = (depId, nivel) => {
+    setComissaoDepartamentoNivel(prev => ({ ...prev, [depId]: { ...prev[depId], nivel_acesso: nivel } }))
+  }
+  const handleDepartamentoToggleResponsavel = (depId) => {
+    setComissaoDepartamentoNivel(prev => ({ ...prev, [depId]: { ...prev[depId], responsavel: !prev[depId]?.responsavel } }))
+  }
+
   const handleSavePerms = async () => {
     setSavingPerms(true)
     setSaveSuccess(false)
@@ -471,13 +531,12 @@ export default function Grupos() {
           return { menu_path, acao }
         })),
         apiService.setPermissoesEmpresasGrupo(editingId, isAdmin ? [] : [...selectedEmpresas]),
-        apiService.setPermissoesDeptoPorGrupo(editingId, isAdmin ? [] : [...selectedDeptos]),
         apiService.setPermissoesComissaoGrupo(editingId, Object.fromEntries(DIMENSOES_COMISSAO.map(dim => [
           dim,
           isAdmin
             ? { modo: 'TODOS', valores: [] }
             : { modo: comissaoEscopo[dim]?.modo || 'TODOS', valores: [...(comissaoEscopo[dim]?.valores || [])] },
-        ])), comissaoHabilitado),
+        ])), comissaoHabilitado, isAdmin ? {} : comissaoDepartamentoNivel),
       ])
       setGrupos(prev => prev.map(g => g.id === editingId ? { ...g, is_admin: isAdmin } : g))
       setSiglasPorGrupo(prev => ({
@@ -490,6 +549,94 @@ export default function Grupos() {
     } finally {
       setSavingPerms(false)
     }
+  }
+
+  // ─ Render: todos os usuários × grupo ────────────────────────────────────────
+
+  if (verTodosUsuarios) {
+    const q = buscaTodosUsuarios.trim().toLowerCase()
+    const linhas = todosUsuarios
+      .map(u => ({ ...u, grupoNome: grupos.find(g => g.id === u.grupo_id)?.nome_grupo || null }))
+      .filter(u => !q ||
+        (u.nome || '').toLowerCase().includes(q) ||
+        (u.email || '').toLowerCase().includes(q) ||
+        (u.grupoNome || '').toLowerCase().includes(q)
+      )
+
+    return (
+      <div className="p-6 max-w-screen-xl">
+        <div className="mb-5 flex items-center gap-3">
+          <button
+            onClick={() => { setVerTodosUsuarios(false); setBuscaTodosUsuarios('') }}
+            className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800 transition-colors"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Grupos
+          </button>
+          <span className="text-slate-300">/</span>
+          <span className="text-sm font-semibold text-slate-800">Todos os Usuários</span>
+        </div>
+
+        <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900">Todos os Usuários</h1>
+            <p className="text-sm text-slate-500 mt-0.5">{todosUsuarios.length} usuário(s) cadastrado(s)</p>
+          </div>
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Buscar por nome, e-mail ou grupo..."
+              value={buscaTodosUsuarios}
+              onChange={e => setBuscaTodosUsuarios(e.target.value)}
+              autoFocus
+              className="pl-8 pr-8 py-2 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 w-72"
+            />
+            {buscaTodosUsuarios && (
+              <button onClick={() => setBuscaTodosUsuarios('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow border border-slate-200 overflow-hidden">
+          <table className="w-full">
+            <thead className="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th className="px-5 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wide">Nome</th>
+                <th className="px-5 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wide">E-mail</th>
+                <th className="px-5 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wide">Grupo de Acesso</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {linhas.length === 0 && (
+                <tr>
+                  <td colSpan={3} className="px-5 py-8 text-center text-sm text-slate-400">
+                    {q ? `Nenhum usuário encontrado para "${buscaTodosUsuarios}".` : 'Nenhum usuário cadastrado.'}
+                  </td>
+                </tr>
+              )}
+              {linhas.map(u => (
+                <tr key={u.id} className="hover:bg-slate-50">
+                  <td className="px-5 py-3 text-sm font-medium text-slate-900 whitespace-nowrap">{u.nome || '—'}</td>
+                  <td className="px-5 py-3 text-sm text-slate-600 whitespace-nowrap">{u.email}</td>
+                  <td className="px-5 py-3">
+                    {u.grupoNome ? (
+                      <span className="text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full">
+                        {u.grupoNome}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-slate-400">Sem grupo</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    )
   }
 
   // ─ Render: permission editor ───────────────────────────────────────────────
@@ -612,7 +759,7 @@ export default function Grupos() {
         <div className="px-5 py-4 border-b border-slate-100">
           <h2 className="text-base font-bold text-slate-900">Acesso por Empresa</h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            Define quais empresas este grupo pode visualizar em todos os módulos do sistema (Garantias DAF, Projetos, Cálculo de Comissões DAF, etc.).
+            Define quais empresas este grupo pode visualizar em todos os módulos do sistema (Garantias DAF, Projetos, Cálculo de Comissões, etc.).
             {isAdmin && <span className="ml-1 text-amber-600 font-medium">Administrador tem acesso a todas as empresas automaticamente.</span>}
           </p>
         </div>
@@ -663,62 +810,8 @@ export default function Grupos() {
         )}
       </div>
 
-      {/* ── Acesso por Departamento (Projetos) ── */}
-      {!loadingPerms && (isAdmin || [...selectedPaths].some(p => p.startsWith('projetos'))) && (
-      <div className="bg-white rounded-lg shadow border border-slate-200 overflow-hidden mt-4">
-        <div className="px-5 py-4 border-b border-slate-100">
-          <h2 className="text-base font-bold text-slate-900">Acesso por Departamento (Projetos)</h2>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Define quais departamentos este grupo pode visualizar nos módulos de Projetos.
-            Sem nenhum marcado, o grupo vê todos os departamentos.
-            {isAdmin && <span className="ml-1 text-amber-600 font-medium">Administrador vê todos os departamentos automaticamente.</span>}
-          </p>
-        </div>
-        {loadingPerms ? null : (
-          <>
-            {!isAdmin && deptosProjetos.length > 0 && (
-              <div className="px-5 py-2 border-b border-slate-100 flex items-center gap-2">
-                <button type="button" onClick={handleSelectAllDeptos} className="text-xs text-blue-600 hover:underline">
-                  Selecionar todos
-                </button>
-                <span className="text-slate-300">|</span>
-                <button type="button" onClick={handleClearAllDeptos} className="text-xs text-slate-500 hover:underline">
-                  Desmarcar todos
-                </button>
-                <span className="ml-auto text-xs text-slate-400">
-                  {selectedDeptos.size === 0 ? 'Todos liberados' : `${selectedDeptos.size}/${deptosProjetos.length} departamentos`}
-                </span>
-              </div>
-            )}
-            <div className="p-4 flex flex-col gap-0.5">
-              {deptosProjetos.map(depto => (
-                <label
-                  key={depto.id}
-                  className={`flex items-center gap-2 py-1.5 px-2 rounded cursor-pointer hover:bg-slate-50 select-none ${isAdmin ? 'opacity-50' : ''}`}
-                >
-                  <input
-                    type="checkbox"
-                    disabled={isAdmin}
-                    checked={isAdmin || selectedDeptos.has(depto.nome)}
-                    onChange={(e) => handleToggleDepto(depto.nome, e.target.checked)}
-                    className="w-3.5 h-3.5 rounded accent-blue-600"
-                  />
-                  <span className="text-sm text-slate-800">{depto.nome}</span>
-                </label>
-              ))}
-              {deptosProjetos.length === 0 && (
-                <p className="text-sm text-slate-400 py-2">
-                  Nenhum departamento cadastrado. Cadastre em Projetos → Departamentos.
-                </p>
-              )}
-            </div>
-          </>
-        )}
-      </div>
-      )}
-
       {/* ── Acesso à Cálculo de Comissões ── */}
-      {!loadingPerms && (isAdmin || [...selectedPaths].some(p => p.startsWith('calculo-comissoes'))) && (() => {
+      {!loadingPerms && (isAdmin || [...selectedPaths].some(p => p.startsWith('calculo-comissoes') || p.startsWith('processamento-comissoes'))) && (() => {
         const opcoesDepartamento = departamentosComissao.map(d => ({
           valor: d.id,
           label: d.area
@@ -734,11 +827,14 @@ export default function Grupos() {
           <div className="bg-white rounded-lg shadow border border-slate-200 overflow-hidden mt-4">
             <div className="px-5 py-4 border-b border-slate-100 flex items-start justify-between gap-4">
               <div>
-                <h2 className="text-base font-bold text-slate-900">Acesso à Cálculo de Comissões DAF</h2>
+                <h2 className="text-base font-bold text-slate-900">Acesso à Cálculo de Comissões</h2>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Restringe quais funcionários este grupo pode ver/calcular em Cálculo de Comissões DAF e Histórico de Comissões,
+                  Restringe quais funcionários este grupo pode ver/calcular em Cálculo de Comissões e Processamento de Comissões,
                   por Área, Departamento, Setor e Agrupamento de Cargos. "Todos" não restringe; "Individual" libera
                   só os valores marcados. A restrição por Empresa é definida em <strong>Acesso por Empresa</strong> acima.
+                  Em Departamento (Individual), cada um marcado pode ficar como <strong>Editar</strong> (respeita as Ações
+                  já marcadas neste grupo) ou <strong>Visualizar</strong> (desliga os botões de ação só nesse departamento,
+                  mesmo com a Ação marcada) — e pode ser sinalizado como <strong>Responsável</strong>, só pra identificação.
                   {isAdmin && <span className="block mt-1 text-amber-600 font-medium">Administrador vê tudo automaticamente.</span>}
                   {!isAdmin && !comissaoHabilitado && (
                     <span className="block mt-1 text-red-600 font-medium">Desabilitado: este grupo não enxerga nenhum funcionário — só acessa a tela.</span>
@@ -776,6 +872,9 @@ export default function Grupos() {
                 onToggleValor={v => handleComissaoToggleValor('departamento', v)}
                 onSelecionarTodos={() => handleComissaoSelecionarTodos('departamento', opcoesDepartamento)}
                 onLimpar={() => handleComissaoLimpar('departamento')}
+                nivelPorValor={comissaoDepartamentoNivel}
+                onNivelChange={handleDepartamentoNivelChange}
+                onToggleResponsavel={handleDepartamentoToggleResponsavel}
               />
               <SeletorDimensaoComissao
                 label="Setor" escopo={comissaoEscopo.setor} opcoes={opcoesSetor} disabled={isAdmin}
@@ -812,7 +911,8 @@ export default function Grupos() {
           g.nome_grupo.toLowerCase().includes(termo) ||
           tipo.includes(termo) ||
           siglas.includes(termo) ||
-          qtdUsuarios.includes(termo)
+          qtdUsuarios.includes(termo) ||
+          (g.departamento || '').toLowerCase().includes(termo)
         )
       })
     : grupos
@@ -838,6 +938,13 @@ export default function Grupos() {
             )}
           </div>
           <button
+            onClick={() => setVerTodosUsuarios(true)}
+            className="flex items-center gap-2 px-4 py-2 border border-slate-300 text-slate-700 rounded-md hover:bg-slate-100 text-sm font-medium"
+          >
+            <Users className="h-4 w-4" />
+            Ver Todos os Usuários
+          </button>
+          <button
             onClick={openNewForm}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm font-medium"
           >
@@ -861,6 +968,14 @@ export default function Grupos() {
               autoFocus
               className="flex-1 px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
             />
+            <select
+              value={formData.departamento}
+              onChange={(e) => setFormData(d => ({ ...d, departamento: e.target.value }))}
+              className="px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-sm"
+            >
+              <option value="">— Departamento —</option>
+              {DEPARTAMENTOS_GRUPO.map(d => <option key={d} value={d}>{d}</option>)}
+            </select>
             <button
               type="submit"
               disabled={saving}
@@ -894,9 +1009,9 @@ export default function Grupos() {
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr>
                 <th className="px-5 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wide">Nome do Grupo</th>
+                <th className="px-5 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wide">Departamento</th>
                 <th className="px-5 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wide">Tipo</th>
                 <th className="px-5 py-3 text-center text-xs font-semibold text-slate-600 uppercase tracking-wide">Usuários</th>
-                <th className="px-5 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wide">Acesso por Empresa</th>
                 <th className="px-5 py-3 text-right text-xs font-semibold text-slate-600 uppercase tracking-wide">Ações</th>
               </tr>
             </thead>
@@ -911,6 +1026,9 @@ export default function Grupos() {
               {gruposFiltrados.map(g => (
                 <tr key={g.id} className="hover:bg-slate-50">
                   <td className="px-5 py-3 text-sm font-medium text-slate-900 whitespace-nowrap">{g.nome_grupo}</td>
+                  <td className="px-5 py-3 text-sm text-slate-600 whitespace-nowrap">
+                    {g.departamento || <span className="text-slate-300">—</span>}
+                  </td>
                   <td className="px-5 py-3">
                     {g.is_admin ? (
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-700">
@@ -939,22 +1057,14 @@ export default function Grupos() {
                     })()}
                   </td>
                   <td className="px-5 py-3">
-                    {g.is_admin ? (
-                      <span className="text-xs font-semibold text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">Todas</span>
-                    ) : (siglasPorGrupo[g.id] || []).length === 0 ? (
-                      <span className="text-xs text-slate-400">—</span>
-                    ) : (
-                      <div className="flex flex-wrap gap-1">
-                        {(siglasPorGrupo[g.id] || []).sort((a, b) => a.localeCompare(b, 'pt-BR')).map(sigla => (
-                          <span key={sigla} className="text-[11px] font-semibold text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded">
-                            {sigla}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </td>
-                  <td className="px-5 py-3">
                     <div className="flex items-center justify-end gap-2">
+                      <button
+                        onClick={() => setModalVisualizar(g)}
+                        className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-md transition-colors"
+                        title="Visualizar grupo"
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                      </button>
                       <button
                         onClick={() => openPermissoes(g)}
                         className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-600 border border-blue-200 rounded-md hover:bg-blue-50 transition-colors"
@@ -993,6 +1103,18 @@ export default function Grupos() {
         </div>
       )}
 
+      {/* ── MODAL VISUALIZAR GRUPO ── */}
+      {modalVisualizar && (
+        <ModalVisualizarGrupo
+          g={modalVisualizar}
+          qtdUsuarios={todosUsuarios.filter(u => u.grupo_id === modalVisualizar.id).length}
+          empresas={empresasPorGrupo[modalVisualizar.id] || []}
+          onVerUsuarios={() => { setModalVisualizar(null); setModalUsuarios(modalVisualizar) }}
+          onEditarPermissoes={() => { setModalVisualizar(null); openPermissoes(modalVisualizar) }}
+          onClose={() => setModalVisualizar(null)}
+        />
+      )}
+
       {/* ── MODAL USUÁRIOS DO GRUPO ── */}
       {modalUsuarios && (() => {
         const g = modalUsuarios
@@ -1011,6 +1133,95 @@ export default function Grupos() {
           />
         )
       })()}
+    </div>
+  )
+}
+
+function ModalVisualizarGrupo({ g, qtdUsuarios, empresas, onVerUsuarios, onEditarPermissoes, onClose }) {
+  const empresasOrdenadas = [...empresas].sort((a, b) => (a.nome_empresa || '').localeCompare(b.nome_empresa || '', 'pt-BR'))
+  return (
+    <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50">
+      <div className="bg-white rounded-xl border border-slate-200 w-[480px] max-h-[85vh] shadow-2xl flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-slate-50 shrink-0">
+          <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+            <Eye className="h-4 w-4 text-slate-500" /> Visualizar Grupo
+          </h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Nome do Grupo</span>
+            <span className="text-sm font-semibold text-slate-800">{g.nome_grupo}</span>
+          </div>
+
+          <div className="flex flex-col gap-0.5">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Departamento</span>
+            <span className="text-sm font-semibold text-slate-800">{g.departamento || '—'}</span>
+          </div>
+
+          <div className="flex flex-col gap-0.5">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Tipo</span>
+            {g.is_admin ? (
+              <span className="inline-flex items-center gap-1 w-fit px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-700">
+                <ShieldCheck className="h-3 w-3" /> Administrador
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 w-fit px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-600">
+                Personalizado
+              </span>
+            )}
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Usuários no Grupo</span>
+            <button
+              onClick={onVerUsuarios}
+              className="inline-flex items-center gap-1.5 w-fit px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition-colors"
+            >
+              <Users className="h-3 w-3" /> {qtdUsuarios} usuário(s) — ver lista
+            </button>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Acesso por Empresa</span>
+            {g.is_admin ? (
+              <span className="text-xs font-semibold text-amber-600 bg-amber-50 border border-amber-200 px-2 py-1 rounded-md w-fit">
+                Todas as empresas (Administrador)
+              </span>
+            ) : empresasOrdenadas.length === 0 ? (
+              <span className="text-xs text-slate-400">Nenhuma empresa liberada.</span>
+            ) : (
+              <div className="flex flex-col gap-1">
+                {empresasOrdenadas.map(emp => (
+                  <div key={emp.id} className="flex items-center gap-2 text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded-md px-2.5 py-1.5">
+                    <Building2 className="h-3 w-3 text-slate-400 shrink-0" />
+                    <span className="font-medium">{emp.nome_empresa}</span>
+                    {emp.sigla_empresa && <span className="ml-auto text-[10px] font-semibold text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded">{emp.sigla_empresa}</span>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center justify-end gap-2 px-5 py-3 bg-slate-50 border-t border-slate-100 shrink-0">
+          <button
+            onClick={onEditarPermissoes}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-600 border border-blue-200 rounded-md hover:bg-blue-50 transition-colors"
+          >
+            <ShieldCheck className="h-3.5 w-3.5" /> Editar Permissões
+          </button>
+          <button
+            onClick={onClose}
+            className="px-4 py-1.5 rounded-md text-xs font-semibold text-slate-600 hover:bg-slate-200/60 transition-colors"
+          >
+            Fechar
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

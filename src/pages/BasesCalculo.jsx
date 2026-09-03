@@ -140,6 +140,20 @@ export default function BasesCalculo() {
 
   useEffect(() => { loadData() }, [])
 
+  // Data Início/Fim do painel de conferência sempre abrem no mês ANTERIOR ao atual — é o mês
+  // que normalmente já está fechado no ERP e pronto pra conferir, então evita o usuário ter
+  // que ajustar manualmente toda vez (sobrescreve qualquer valor salvo de sessão anterior).
+  useEffect(() => {
+    const hoje = new Date()
+    const mesAnterior = new Date(hoje.getFullYear(), hoje.getMonth() - 1, 1)
+    const ano = mesAnterior.getFullYear()
+    const mes = mesAnterior.getMonth()
+    const pad = (n) => String(n).padStart(2, '0')
+    const ultimoDia = new Date(ano, mes + 1, 0).getDate()
+    setConfDataInicio(`${ano}-${pad(mes + 1)}-01`)
+    setConfDataFim(`${ano}-${pad(mes + 1)}-${pad(ultimoDia)}`)
+  }, [])
+
   const loadData = async () => {
     setLoading(true)
     setError(null)
@@ -303,6 +317,7 @@ export default function BasesCalculo() {
         pasta: fonteSelecionada.pasta_sharepoint,
         prefixo: fonteSelecionada.prefixo_arquivo,
         usaSubpastaAno: fonteSelecionada.usa_subpasta_ano,
+        subpastaPadrao: fonteSelecionada.subpasta_padrao,
         linhaCabecalho: fonteSelecionada.linha_cabecalho,
       })
       setColunasDetectadas(info)
@@ -395,6 +410,7 @@ export default function BasesCalculo() {
         pasta: fonte.pasta_sharepoint,
         prefixo: fonte.prefixo_arquivo,
         usaSubpastaAno: fonte.usa_subpasta_ano,
+        subpastaPadrao: fonte.subpasta_padrao,
         linhaCabecalho: fonte.linha_cabecalho,
         colunaEmpresa: fonte.coluna_empresa,
         colunaData: fonte.coluna_data,

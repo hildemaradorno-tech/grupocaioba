@@ -1,7 +1,7 @@
 export const MENU_TREE = [
   {
     key: '_config',
-    label: 'Cadastros',
+    label: 'Configurações',
     children: [
       { key: 'usuarios', label: 'Usuários' },
       { key: 'grupos', label: 'Grupos de Acessos' },
@@ -16,7 +16,6 @@ export const MENU_TREE = [
         ],
       },
       { key: 'sincronizacao-dados', label: 'Sincronização de Dados' },
-      { key: 'medidas-bi', label: 'Medidas' },
       {
         key: '_cadastros',
         label: 'Cadastro de Tabelas',
@@ -28,6 +27,7 @@ export const MENU_TREE = [
               { key: 'segmentos', label: 'Segmentos' },
               { key: 'agrup-empresas', label: 'Agrupamento Empresas' },
               { key: 'empresas', label: 'Empresas' },
+              { key: 'areas', label: 'Áreas' },
               { key: 'agrup-departamentos', label: 'Agrupamento Depto.' },
               { key: 'departamentos', label: 'Departamentos' },
               { key: 'setores', label: 'Setor de Serviços' },
@@ -71,10 +71,27 @@ export const MENU_TREE = [
           { key: 'bases-calculo', label: 'Base de Cálculo' },
           { key: 'politica-comissao', label: 'Política de Comissões' },
           { key: 'cargos-remuneracoes', label: 'Cargos e Remunerações' },
+          { key: 'rubricas', label: 'Rubrica' },
+          { key: 'tipos-processo', label: 'Tipo de Processo' },
+          { key: 'plano-dms', label: 'Valor Plano DMS' },
         ],
       },
-      { key: 'ferias', label: 'Férias' },
-      { key: 'calculo-comissoes', label: 'Cálculo de Comissões DAF' },
+      {
+        // Permissões individuais mantidas (controlam quais abas aparecem em
+        // /folha-pagamento-daf), mas o grupo inteiro navega direto pra página única — mesmo
+        // padrão já usado em Garantias DAF e Matriz KPIs (navTo faz o nó com children se
+        // comportar como link direto em vez de abrir uma sub-pasta).
+        key: '_folha-pagamento-daf',
+        label: 'Folha de Pagamento - DAF',
+        navTo: 'folha-pagamento-daf',
+        children: [
+          { key: 'ferias', label: 'Férias' },
+          { key: 'calculo-comissoes', label: 'Cálculo de Comissões' },
+          { key: 'plano-dms-calculo', label: 'Plano DMS' },
+          { key: 'processamento-comissoes', label: 'Processamento de Comissões' },
+          { key: 'sobreaviso-plantao', label: 'Sobreaviso/Plantão' },
+        ],
+      },
     ],
   },
   {
@@ -96,10 +113,8 @@ export const MENU_TREE = [
         children: [
           { key: 'metas/pos-vendas/pecas', label: 'Peças' },
           { key: 'metas/pos-vendas/servicos', label: 'Serviços' },
-          { key: 'metas/pos-vendas/funilaria-pintura', label: 'Funilaria e Pintura' },
-          { key: 'metas/pos-vendas/terceiros', label: 'Terceiros' },
-          { key: 'metas/pos-vendas/distribuicao-consultores', label: 'Distribuição por Consultor' },
           { key: 'metas/pos-vendas/total', label: 'Total Pós-Vendas' },
+          { key: 'metas/pos-vendas/distribuicao-consultores', label: 'Distribuição — Consultores', virtual: true },
         ],
       },
       { key: 'metas/gestao-aprovacao', label: 'Gestão de Aprovação' },
@@ -110,17 +125,22 @@ export const MENU_TREE = [
     key: '_controle-processos',
     label: 'Controle de Processos',
     children: [
-      { key: 'garantias-daf-andamento', label: 'Garantias DAF na Oficina' },
-      { key: 'garantias-daf', label: 'Garantias DAF Aberto' },
-      { key: 'garantias-daf-faturadas', label: 'Garantias DAF Faturadas' },
-      { key: 'garantias-daf-titulos',   label: 'Garantias DAF a Receber' },
       {
-        key: '_controle-processos-honda',
-        label: 'Controle de Processos HONDA',
+        // Permissões individuais mantidas (controlam quais abas aparecem em Garantias DAF),
+        // mas o grupo inteiro navega direto pra página única — ver navTo no Home.jsx (TabelaMenu),
+        // mesmo padrão do grupo Matriz KPIs logo abaixo. As telas de Andamento/Aberto/a Receber
+        // já ficam acessíveis como abas (GarantiasNav) dentro de uma mesma tela.
+        key: '_garantias-daf',
+        label: 'Garantias DAF',
+        navTo: 'garantias-daf-andamento',
         children: [
-          { key: 'honda/garantias-a-receber', label: 'Contas a Receber' },
+          { key: 'garantias-daf-andamento', label: 'Garantias DAF na Oficina' },
+          { key: 'garantias-daf', label: 'Garantias DAF Aberto' },
+          { key: 'garantias-daf-faturadas', label: 'Garantias DAF Faturadas' },
+          { key: 'garantias-daf-titulos',   label: 'Garantias DAF a Receber' },
         ],
       },
+      { key: 'honda/garantias-a-receber', label: 'Contas a Receber HONDA' },
       {
         key: '_auditoria.cadastros',
         label: 'Cadastros de Auditoria',
@@ -144,10 +164,23 @@ export const MENU_TREE = [
     label: 'Gestão de Projetos',
     children: [
       { key: 'projetos', label: 'Projetos' },
-      { key: 'projetos/lista-tarefas', label: 'Lista de Tarefas' },
-      { key: 'projetos/pdca', label: 'PDCA' },
-      { key: 'projetos/planejamento', label: 'Planejamento' },
-      { key: 'projetos/calendario', label: 'Agenda' },
+      { key: 'projetos/lista-tarefas', label: 'Lista de Tarefas', virtual: true },
+      { key: 'projetos/manifestacoes', label: 'Manifestações', virtual: true },
+      { key: 'projetos/calendario', label: 'Agenda', virtual: true },
+      { key: 'projetos/ata-reuniao', label: 'Ata de Reunião', virtual: true },
+      {
+        key: '_gestao-projetos.auditoria-externa',
+        label: 'Auditoria Externa',
+        navTo: 'auditoria-externa/dashboard',
+        children: [
+          { key: 'auditoria-externa/dashboard', label: 'Dashboard' },
+          { key: 'auditoria-externa/ciclos', label: 'Ciclos de Auditoria' },
+          { key: 'auditoria-externa/divergencias', label: 'Divergências' },
+          { key: 'auditoria-externa/plano-acao', label: 'Plano de Ação' },
+          { key: 'auditoria-externa/tipos-acao', label: 'Tipos de Ação' },
+          { key: 'auditoria-externa/impactos', label: 'Impactos' },
+        ],
+      },
       {
         key: '_gestao-projetos.cadastros',
         label: 'Cadastros',
@@ -178,6 +211,9 @@ export const MENU_TREE = [
       { key: 'bi/garantias-daf', label: 'BI — Garantias DAF' },
       { key: 'bi/projetos', label: 'BI — Gestão de Projetos' },
       { key: 'bi/possibilidades', label: 'BI — Possibilidades' },
+      { key: 'bi/fontes', label: 'BI — Fontes' },
+      { key: 'bi/medidas', label: 'BI — Medidas' },
+      { key: 'bi/comissoes', label: 'BI — Comissões' },
       {
         // Permissões individuais mantidas (controlam quais abas aparecem em /kpi/matriz),
         // mas o grupo inteiro navega direto pra página única — ver navTo no Home.jsx (TabelaMenu).
@@ -203,12 +239,6 @@ export const MENU_TREE = [
     children: [
       { key: 'rpa/agendamentos', label: 'Agendamento de Processos' },
       { key: 'documentacoes', label: 'Documentações' },
-    ],
-  },
-  {
-    key: '_ecossistema',
-    label: 'Ecossistema',
-    children: [
       { key: 'ecossistema', label: 'Ecossistema' },
     ],
   },
@@ -217,6 +247,15 @@ export const MENU_TREE = [
     label: 'Treinamentos',
     children: [
       { key: 'treinamentos/grade', label: 'Grade de Treinamentos' },
+      { key: 'treinamentos/central', label: 'Central de Treinamentos', href: 'https://centraldetreinamentos.netlify.app/' },
+    ],
+  },
+  {
+    key: '_governanca',
+    label: 'Governança',
+    children: [
+      { key: 'governanca/grupo-acessos', label: 'Grupo de Acessos' },
+      { key: 'governanca/perfis-acesso', label: 'Perfis de Acesso' },
     ],
   },
 ]

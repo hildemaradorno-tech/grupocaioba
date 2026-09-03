@@ -1,10 +1,14 @@
 import React, { useEffect, useState, useCallback } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Edit2, Plus, Trash2, ShieldAlert, ArrowRight, Copy, MessageSquare, AlertCircle, CheckCircle2, CalendarCheck, FolderInput, PlayCircle, Download, Loader2, PartyPopper, RotateCcw } from 'lucide-react'
+import { useNavigate, useParams, useLocation } from 'react-router-dom'
+import { ArrowLeft, Edit2, Plus, Trash2, ShieldAlert, ArrowRight, Copy, MessageSquare, CheckCircle2, FolderInput, PlayCircle, Loader2, PartyPopper, RotateCcw, Eye, Filter, Activity, CheckCircle, AlertTriangle, Layers, X, Flag, ClipboardList } from 'lucide-react'
+import { useAuth } from '../../context/AuthContext'
+import { useProjetosFiltros } from '../../context/ProjetosFiltrosContext'
 import { apiService } from '../../services/api'
 import { clearProjetosCache } from '../../services/projetosCache'
 import TarefaFormModal from './TarefaFormModal'
 import DeliberacoesModal from './DeliberacoesModal'
+import ManifestacoesTab from './ManifestacoesTab'
+import IniciarFaseModal from './IniciarFaseModal'
 
 const STATUS_MAP = {
   mapeado:      { label: 'Mapeado',      cor: 'bg-slate-100 text-slate-600' },
@@ -23,6 +27,27 @@ const STATUS_COR = {
 }
 
 
+const TASK_KPI_CFG = {
+  mapeado:      { label: 'Mapeado',      icon: Layers,        st: { bg:'bg-slate-50',  border:'border-slate-200',  ring:'ring-slate-400',  icoBg:'bg-slate-100',  icoTxt:'text-slate-500',  numTxt:'text-slate-800',  labelTxt:'text-slate-400'  } },
+  programado:   { label: 'Programado',   icon: CheckCircle,   st: { bg:'bg-blue-50',   border:'border-blue-100',   ring:'ring-blue-400',   icoBg:'bg-blue-100',   icoTxt:'text-blue-500',   numTxt:'text-blue-800',   labelTxt:'text-blue-400'   } },
+  em_andamento: { label: 'Em Andamento', icon: Activity,      st: { bg:'bg-amber-50',  border:'border-amber-100',  ring:'ring-amber-400',  icoBg:'bg-amber-100',  icoTxt:'text-amber-500',  numTxt:'text-amber-800',  labelTxt:'text-amber-400'  } },
+  pausado:      { label: 'Pausado',      icon: AlertTriangle, st: { bg:'bg-purple-50', border:'border-purple-100', ring:'ring-purple-400', icoBg:'bg-purple-100', icoTxt:'text-purple-500', numTxt:'text-purple-800', labelTxt:'text-purple-400' } },
+  concluido:    { label: 'Concluído',    icon: CheckCircle2,  st: { bg:'bg-teal-50',   border:'border-teal-100',   ring:'ring-teal-400',   icoBg:'bg-teal-100',   icoTxt:'text-teal-500',   numTxt:'text-teal-800',   labelTxt:'text-teal-400'   } },
+  cancelado:    { label: 'Cancelado',    icon: ShieldAlert,   st: { bg:'bg-red-50',    border:'border-red-100',    ring:'ring-red-400',    icoBg:'bg-red-100',    icoTxt:'text-red-500',    numTxt:'text-red-800',    labelTxt:'text-red-400'    } },
+}
+
+function CardKpi({ icon: Icon, label, count, ativo, onClick, st }) {
+  return (
+    <button onClick={onClick} className={`rounded-lg border px-3 py-2 text-left transition-all hover:shadow-md ${st.bg} ${st.border} ${ativo ? 'ring-2 ring-offset-1 ' + st.ring + ' shadow-md' : 'shadow-sm'}`}>
+      <div className="flex items-center gap-1 mb-1">
+        <div className={`p-0.5 rounded ${st.icoBg}`}><Icon className={`h-2.5 w-2.5 ${st.icoTxt}`} /></div>
+        <p className={`text-[8px] font-bold uppercase tracking-wide leading-tight ${st.labelTxt}`}>{label}</p>
+      </div>
+      <p className={`text-xl font-bold ${st.numTxt} leading-none`}>{count}</p>
+    </button>
+  )
+}
+
 const fmtData = (d) => d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') : '—'
 const getTextColor = (hex) => {
   const h = hex || '#1e293b'
@@ -33,12 +58,33 @@ const getTextColor = (hex) => {
 export default function ProjetoDetalhe() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const { state: navState, search } = useLocation()
+  const _searchParams = new URLSearchParams(search)
+  const { hasActionOrDefault, usuarioId, isAdmin } = useAuth()
+  const { modoVerTodos } = useProjetosFiltros()
+  const canEditar         = !modoVerTodos && hasActionOrDefault('projetos', 'editar')
+  const canCriarTarefa        = !modoVerTodos && hasActionOrDefault('projetos', 'criar_tarefa')
+  const canAlterarStatusTarefa = hasActionOrDefault('projetos', 'alterar_status_tarefa')
+  const canEditarTarefa  = !modoVerTodos && hasActionOrDefault('projetos', 'editar_tarefa')
+  const canExcluirTarefa = !modoVerTodos && hasActionOrDefault('projetos', 'excluir_tarefa')
+  const canMoverTarefa   = !modoVerTodos && hasActionOrDefault('projetos', 'mover_tarefa')
+  const canDuplicarTarefa = !modoVerTodos && hasActionOrDefault('projetos', 'duplicar_tarefa')
+  const canResetarTarefa = !modoVerTodos && hasActionOrDefault('projetos', 'resetar_tarefa')
+  const canIniciarTarefa = !modoVerTodos && hasActionOrDefault('projetos', 'iniciar_tarefa')
+  const canConcluirTarefa = !modoVerTodos && hasActionOrDefault('projetos', 'concluir_tarefa')
+  const canDeliberacao   = !modoVerTodos && hasActionOrDefault('projetos', 'deliberacao')
+  const canIniciarFase      = !modoVerTodos && hasActionOrDefault('projetos', 'iniciar_fase')
+  const canResponderManif   = hasActionOrDefault('projetos/manifestacoes', 'responder_manifestacao')
+  const canEncerrarManif    = hasActionOrDefault('projetos/manifestacoes', 'encerrar_periodo')
 
+  const [aba, setAba] = useState(navState?.aba || _searchParams.get('aba') || 'tarefas')
+  const [modalIniciarFase, setModalIniciarFase] = useState(false)
   const [projeto, setProjeto] = useState(null)
   const [tarefas, setTarefas] = useState([])
   const [dependencias, setDependencias] = useState([])
   const [responsaveis, setResponsaveis] = useState([])
   const [sistemas, setSistemas] = useState([])
+  const [usuarios, setUsuarios] = useState([])
   const [fases, setFases] = useState([])
   const [empresas, setEmpresas] = useState([])
   const [areas, setAreas] = useState([])
@@ -48,9 +94,8 @@ export default function ProjetoDetalhe() {
   const [modalDelib, setModalDelib] = useState(null)
   const [modalExcluir, setModalExcluir] = useState(null)
   const [sortConfig, setSortConfig] = useState({ campo: 'etapa', dir: 'asc' })
-  const [filtroAtrasadas, setFiltroAtrasadas] = useState(false)
-  const [filtroHoje, setFiltroHoje] = useState(false)
-  const [filtroStatus, setFiltroStatus] = useState([])
+  const [filtroStatusCard, setFiltroStatusCard] = useState(new Set())
+  const [filtrosAbertos, setFiltrosAbertos] = useState(false)
   const [filtroResponsavel, setFiltroResponsavel] = useState('')
   const [filtroArea, setFiltroArea] = useState('')
   const [filtroSistema, setFiltroSistema] = useState('')
@@ -71,19 +116,36 @@ export default function ProjetoDetalhe() {
   const [projetoDestinoId, setProjetoDestinoId] = useState('')
   const [buscaProjeto, setBuscaProjeto] = useState('')
   const [movendoTarefa, setMovendoTarefa] = useState(false)
+  const [convidados, setConvidados] = useState([])
+  const [manifestacoesIniciais, setManifestoesIniciais] = useState([])
+  const isConvidadoManif     = convidados.some(c => c.usuario_id === usuarioId)
+  // A aba só existe se o projeto tiver alguma tarefa numa fase que aciona
+  // manifestação (senão a mensagem "ainda não iniciado" apareceria em
+  // projetos que nunca vão ter Período de Manifestação) — ou se o período já
+  // foi iniciado/encerrado alguma vez (mantém o histórico visível mesmo que
+  // a tarefa daquela fase tenha sido movida/excluída depois).
+  const faseManifestacaoIds = new Set(fases.filter(f => f.aciona_manifestacao).map(f => f.id))
+  const temTarefaManifestacao = tarefas.some(t => faseManifestacaoIds.has(t.fase_id))
+  const manifestacaoJaIniciada = projeto?.manifestacao_status === 'aberto' || projeto?.manifestacao_status === 'encerrado'
+  const podeVerManifestacoes = (isAdmin || canResponderManif || canEncerrarManif || isConvidadoManif)
+    && (temTarefaManifestacao || manifestacaoJaIniciada)
 
   const loadData = useCallback(async () => {
     clearProjetosCache()
     setLoading(true); setError(null)
     try {
-      const [proj, tfs, deps] = await Promise.all([
+      const [proj, tfs, deps, conv, mans] = await Promise.all([
         apiService.getProjetoById(id),
         apiService.getTarefas(id),
         apiService.getDependencias(id),
+        apiService.getConvidadosManifestacao(id),
+        apiService.getManifestacoes(id),
       ])
       setProjeto(proj)
       setTarefas(tfs)
       setDependencias(deps)
+      setConvidados(conv)
+      setManifestoesIniciais(mans)
     } catch (err) { setError(err.message || String(err)) }
     finally { setLoading(false) }
   }, [id])
@@ -96,12 +158,14 @@ export default function ProjetoDetalhe() {
       apiService.getProjFases(),
       apiService.getProjEmpresas(),
       apiService.getProjAreas(),
-    ]).then(([respData, sistData, faseData, empData, areaData]) => {
+      apiService.getUsuarios(),
+    ]).then(([respData, sistData, faseData, empData, areaData, usuData]) => {
       setResponsaveis(respData.filter(r => r.ativo !== false))
       setSistemas(sistData.filter(s => s.ativo !== false))
       setFases(faseData.filter(f => f.ativo !== false))
       setEmpresas(empData.filter(e => e.ativo !== false))
       setAreas(areaData.filter(a => a.ativo !== false))
+      setUsuarios(usuData)
     }).catch(() => {})
   }, [])
 
@@ -170,6 +234,7 @@ const abrirModalMover = async (tarefa) => {
   if (!projeto) return null
 
   const st = STATUS_MAP[projeto.status] || { label: projeto.status, cor: 'bg-slate-100 text-slate-500' }
+  const nomeUsuario = (email) => usuarios.find(u => u.email === email)?.nome || email
 
   const handleProximaEtapa = (t) => {
     const proximoDia = t.data_fim
@@ -266,16 +331,16 @@ const abrirModalMover = async (tarefa) => {
       ))
       setModalNovoProjeto(null)
       setTarefasSelecionadas(new Set())
-      navigate(`/projetos/${novo.id}`)
+      navigate(`/projetos/detalhe/${novo.id}`)
     } catch (err) {
       alert('Erro: ' + (err.message || String(err)))
       setModalNovoProjeto(prev => ({ ...prev, salvando: false }))
     }
   }
 
-  const tarefasOrdenadas = (() => {
-    let base = filtroAtrasadas ? tarefas.filter(isAtrasada) : filtroHoje ? tarefas.filter(isHoje) : tarefas
-    if (filtroStatus.length > 0) base = base.filter(t => filtroStatus.includes(t.status_kanban))
+  // Filtros Avançados aplicados sem considerar seleção de card
+  const tarefasFiltradas = (() => {
+    let base = [...tarefas]
     if (filtroResponsavel) base = base.filter(t => t.responsavel_nome === filtroResponsavel)
     if (filtroArea)        base = base.filter(t => t.area_nome === filtroArea)
     if (filtroSistema)     base = base.filter(t => t.sistema_nome === filtroSistema)
@@ -283,6 +348,11 @@ const abrirModalMover = async (tarefa) => {
     if (filtroUnidade)     base = base.filter(t => t.empresa_nome === filtroUnidade)
     if (filtroDataTermIni) base = base.filter(t => t.data_fim && t.data_fim >= filtroDataTermIni)
     if (filtroDataTermFim) base = base.filter(t => t.data_fim && t.data_fim <= filtroDataTermFim)
+    return base
+  })()
+
+  const tarefasOrdenadas = (() => {
+    let base = filtroStatusCard.size > 0 ? tarefasFiltradas.filter(t => filtroStatusCard.has(t.status_kanban || 'mapeado')) : tarefasFiltradas
     if (!sortConfig.campo) return base
     return [...base].sort((a, b) => {
       const vals = {
@@ -366,10 +436,16 @@ const abrirModalMover = async (tarefa) => {
     setSalvandoEtapa(t.id)
     try {
       if (novaEtapa != null) {
-        const conflito = tarefas.find(c => c.id !== t.id && c.etapa === novaEtapa)
-        if (conflito) {
-          await apiService.updateTarefa(conflito.id, { etapa: null })
-          setTarefas(prev => prev.map(x => x.id === conflito.id ? { ...x, etapa: null } : x))
+        // Abre espaço pra inserir nessa posição empurrando pra baixo (soma 1) quem já estava
+        // nela em diante, em vez de apagar a etapa de quem já tinha uma — mesmo raciocínio já
+        // usado ao excluir tarefas (shift), só que abrindo espaço em vez de fechando. Processa
+        // da maior etapa pra menor pra nunca colidir com a próxima durante os updates.
+        const paraEmpurrar = tarefas
+          .filter(c => c.id !== t.id && c.etapa != null && c.etapa >= novaEtapa)
+          .sort((a, b) => b.etapa - a.etapa)
+        for (const c of paraEmpurrar) {
+          await apiService.updateTarefa(c.id, { etapa: c.etapa + 1 })
+          setTarefas(prev => prev.map(x => x.id === c.id ? { ...x, etapa: c.etapa + 1 } : x))
         }
       }
       await apiService.updateTarefa(t.id, { etapa: novaEtapa })
@@ -471,6 +547,12 @@ const abrirModalMover = async (tarefa) => {
 
   return (
     <div className="p-6 space-y-5 max-w-screen-2xl">
+      {modoVerTodos && (
+        <div className="flex items-center gap-2 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-xs font-semibold">
+          <Eye className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+          Modo Visualização Geral — todas as edições estão bloqueadas.
+        </div>
+      )}
       {/* CABEÇALHO */}
       <div id="projeto-detalhe-cabecalho" className="flex items-start justify-between gap-4 border-b border-slate-200 pb-4">
         <div className="flex items-start gap-3 min-w-0">
@@ -490,6 +572,11 @@ const abrirModalMover = async (tarefa) => {
                 )
               })}
               <span className={`px-3 py-1 rounded-full text-xs font-bold ${st.cor}`}>{st.label}</span>
+              {projeto.fase_nome && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-100">
+                  <Flag className="h-3 w-3" /> {projeto.fase_nome}
+                </span>
+              )}
               {tarefas.length > 0 && (() => {
                 const pct = Math.round(tarefas.reduce((s, t) => s + (t.status_kanban === 'concluido' ? 100 : Number(t.progresso_pct) || 0), 0) / tarefas.length)
                 return (
@@ -522,202 +609,245 @@ const abrirModalMover = async (tarefa) => {
                       <span><span className="font-semibold text-slate-400">Resp.:</span> {projeto.responsavel_nome}</span>
                     </>
                   )}
+                  {projeto.criado_por && (
+                    <>
+                      {(ini || fim || projeto.responsavel_nome) && <span className="text-slate-300">·</span>}
+                      <span>
+                        <span className="font-semibold text-slate-400">Cadastrado por:</span> {nomeUsuario(projeto.criado_por)}
+                        {projeto.criado_em && <> em {new Date(projeto.criado_em).toLocaleDateString('pt-BR')}</>}
+                      </span>
+                    </>
+                  )}
                 </p>
               )
             })()}
           </div>
         </div>
         <div className="no-print flex items-center gap-2 shrink-0">
-          <button
-            onClick={handleSalvarPDF}
-            disabled={gerandoPDF}
-            className="flex items-center gap-2 bg-white hover:bg-slate-50 disabled:opacity-60 disabled:cursor-wait text-slate-700 text-xs font-semibold px-3 py-2 rounded-md shadow-sm border border-slate-200 transition-colors whitespace-nowrap"
-          >
-            {gerandoPDF ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-            {gerandoPDF ? 'Gerando...' : 'Salvar PDF'}
-          </button>
-          <button
-            onClick={() => navigate(`/projetos/${id}/editar`)}
-            className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold px-3 py-2 rounded-md shadow-sm border border-slate-200 transition-colors whitespace-nowrap"
-          >
-            <Edit2 className="h-3.5 w-3.5" /> Editar Projeto
-          </button>
+          {canIniciarFase && (
+            <button
+              onClick={() => setModalIniciarFase(true)}
+              className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold px-3 py-2 rounded-md shadow-sm border border-slate-200 transition-colors whitespace-nowrap"
+            >
+              <Flag className="h-3.5 w-3.5" /> Iniciar Fase
+            </button>
+          )}
+          {canEditar && (
+            <button
+              onClick={() => navigate(`/projetos/detalhe/${id}/editar`)}
+              className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold px-3 py-2 rounded-md shadow-sm border border-slate-200 transition-colors whitespace-nowrap"
+            >
+              <Edit2 className="h-3.5 w-3.5" /> Editar Projeto
+            </button>
+          )}
         </div>
       </div>
 
-      {/* BARRA DE AÇÕES */}
-      <div className="flex items-center gap-1 border-b border-slate-200 pb-1">
-        <div className="flex items-center gap-2 mr-2">
-          <span className="text-xs font-semibold text-slate-500">Término:</span>
-          <input
-            type="date"
-            value={filtroDataTermIni}
-            onChange={e => setFiltroDataTermIni(e.target.value)}
-            className="text-xs px-2 py-1.5 border border-slate-200 rounded-md bg-white focus:ring-2 focus:ring-blue-400/30"
-          />
-          <span className="text-xs text-slate-400">até</span>
-          <input
-            type="date"
-            value={filtroDataTermFim}
-            onChange={e => setFiltroDataTermFim(e.target.value)}
-            min={filtroDataTermIni || undefined}
-            className="text-xs px-2 py-1.5 border border-slate-200 rounded-md bg-white focus:ring-2 focus:ring-blue-400/30"
-          />
+      {/* TABS */}
+      <div className="no-print flex items-center gap-1 border-b border-slate-200">
+        {[
+          { key: 'tarefas', label: 'Tarefas', icon: Layers },
+          podeVerManifestacoes && { key: 'manifestacoes', label: 'Manifestações', icon: ClipboardList },
+        ].filter(Boolean).map(t => (
           <button
-            onClick={() => { setFiltroDataTermIni(''); setFiltroDataTermFim('') }}
-            className="text-xs font-semibold px-2.5 py-1.5 rounded-md border border-slate-200 text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors whitespace-nowrap"
+            key={t.key}
+            onClick={() => setAba(t.key)}
+            className={`flex items-center gap-1.5 px-4 py-2 text-xs font-bold border-b-2 transition-colors ${
+              aba === t.key ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-400 hover:text-slate-600'
+            }`}
           >
-            Limpar filtro
+            <t.icon className="h-3.5 w-3.5" /> {t.label}
+            {t.key === 'manifestacoes' && projeto.manifestacao_status === 'aberto' && (
+              <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+            )}
           </button>
-        </div>
-        <div className="flex-1" />
-        <button
-          onClick={() => { setFiltroAtrasadas(p => !p); setFiltroHoje(false) }}
-          className={`flex items-center gap-1.5 mb-1 text-xs font-semibold px-3 py-1.5 rounded-md shadow-sm border transition-colors ${
-            filtroAtrasadas
-              ? 'bg-red-600 text-white border-red-600 hover:bg-red-700'
-              : 'bg-white text-red-600 border-red-200 hover:bg-red-50'
-          }`}
-          title="Filtrar tarefas atrasadas"
-        >
-          <AlertCircle className="h-3.5 w-3.5" /> Atrasadas
-        </button>
-        <button
-          onClick={() => { setFiltroHoje(p => !p); setFiltroAtrasadas(false) }}
-          className={`flex items-center gap-1.5 mb-1 text-xs font-semibold px-3 py-1.5 rounded-md shadow-sm border transition-colors ${
-            filtroHoje
-              ? 'bg-blue-600 text-white border-blue-600 hover:bg-blue-700'
-              : 'bg-white text-blue-600 border-blue-200 hover:bg-blue-50'
-          }`}
-          title="Filtrar tarefas com término hoje"
-        >
-          <CalendarCheck className="h-3.5 w-3.5" /> Hoje
-        </button>
-        <button
-          onClick={() => setModalTarefa({ tarefa: null, prefill: { area_nome: projeto.area_nome || '' } })}
-          className="flex items-center gap-2 mb-1 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-md shadow-sm transition-colors"
-        >
-          <Plus className="h-4 w-4" /> Nova Tarefa
-        </button>
+        ))}
       </div>
+
+      {aba === 'manifestacoes' && (
+        <ManifestacoesTab projeto={projeto} onReload={loadData} convidados={convidados} manifestacoesInicial={manifestacoesIniciais} />
+      )}
+
+      {aba === 'tarefas' && (
+      <>
+
+      {/* BARRA FILTROS + NOVA TAREFA */}
+      {(() => {
+        const filterCount = [filtroResponsavel, filtroArea, filtroSistema, filtroFase, filtroUnidade].filter(Boolean).length
+          + ((filtroDataTermIni || filtroDataTermFim) ? 1 : 0)
+        return (
+          <div className="flex items-start justify-end gap-2">
+            <div className="flex flex-col items-end gap-1.5">
+              <button
+                onClick={() => setFiltrosAbertos(v => !v)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
+                  filtrosAbertos ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                <Filter className="h-3.5 w-3.5" />
+                Filtros Avançados
+                {filterCount > 0 && (
+                  <span className="bg-indigo-600 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center leading-none">{filterCount}</span>
+                )}
+                <span className="text-slate-400 text-[10px]">{filtrosAbertos ? '▲' : '▼'}</span>
+              </button>
+              {filterCount > 0 && (
+                <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                  {[
+                    filtroResponsavel && { key: 'resp', text: `Resp.: ${filtroResponsavel}`, clear: () => setFiltroResponsavel('') },
+                    filtroArea        && { key: 'area', text: `Área: ${filtroArea}`,          clear: () => setFiltroArea('') },
+                    filtroSistema     && { key: 'sist', text: `Sistema: ${filtroSistema}`,    clear: () => setFiltroSistema('') },
+                    filtroFase        && { key: 'fase', text: `Fase: ${filtroFase}`,          clear: () => setFiltroFase('') },
+                    filtroUnidade     && { key: 'uni',  text: `Unidade: ${filtroUnidade}`,    clear: () => setFiltroUnidade('') },
+                    (filtroDataTermIni || filtroDataTermFim) && {
+                      key: 'data',
+                      text: `Térm.: ${filtroDataTermIni ? new Date(filtroDataTermIni + 'T12:00:00').toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit', year:'2-digit' }) : '—'} → ${filtroDataTermFim ? new Date(filtroDataTermFim + 'T12:00:00').toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit', year:'2-digit' }) : '—'}`,
+                      clear: () => { setFiltroDataTermIni(''); setFiltroDataTermFim('') },
+                    },
+                  ].filter(Boolean).map(chip => (
+                    <span key={chip.key} className="flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-full text-[10px] bg-indigo-50 border border-indigo-200 text-indigo-700 font-semibold">
+                      <span className="truncate max-w-[160px]">{chip.text}</span>
+                      <button onClick={chip.clear} className="shrink-0 p-0.5 hover:bg-indigo-100 rounded-full transition-colors"><X className="h-2.5 w-2.5" /></button>
+                    </span>
+                  ))}
+                  <button
+                    onClick={() => { setFiltroResponsavel(''); setFiltroArea(''); setFiltroSistema(''); setFiltroFase(''); setFiltroUnidade(''); setFiltroDataTermIni(''); setFiltroDataTermFim('') }}
+                    className="flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold text-red-500 hover:bg-red-50 border border-red-200 transition-colors shrink-0"
+                  >
+                    <RotateCcw className="h-3 w-3" /> Limpar tudo
+                  </button>
+                </div>
+              )}
+            </div>
+            {canCriarTarefa && (
+              <button
+                onClick={() => setModalTarefa({ tarefa: null, prefill: { area_nome: projeto.area_nome || '' } })}
+                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-md shadow-sm transition-colors shrink-0"
+              >
+                <Plus className="h-4 w-4" /> Nova Tarefa
+              </button>
+            )}
+          </div>
+        )
+      })()}
+
+      {/* Painel de filtros colapsável */}
+      {filtrosAbertos && (
+        <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-3">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide shrink-0">Término:</span>
+            <input type="date" value={filtroDataTermIni} onChange={e => setFiltroDataTermIni(e.target.value)}
+              className="text-xs px-2 py-1.5 border border-slate-200 rounded-md bg-white focus:ring-2 focus:ring-blue-400/30" />
+            <span className="text-xs text-slate-400">até</span>
+            <input type="date" value={filtroDataTermFim} onChange={e => setFiltroDataTermFim(e.target.value)} min={filtroDataTermIni || undefined}
+              className="text-xs px-2 py-1.5 border border-slate-200 rounded-md bg-white focus:ring-2 focus:ring-blue-400/30" />
+          </div>
+          {(() => {
+            const optsResp    = [...new Set(tarefas.map(t => t.responsavel_nome).filter(Boolean))].sort()
+            const optsArea    = [...new Set(tarefas.map(t => t.area_nome).filter(Boolean))].sort()
+            const optsSistema = [...new Set(tarefas.map(t => t.sistema_nome).filter(Boolean))].sort()
+            const optsFase    = [...new Set(tarefas.map(t => t.fase_nome).filter(Boolean))].sort()
+            const optsUnidade = [...new Set(tarefas.map(t => t.empresa_nome).filter(Boolean))].sort()
+            const selectCls = "text-xs border border-slate-200 rounded-md px-2 py-1 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-400/30 max-w-[160px]"
+            const filters = [
+              { label: 'Responsável', opts: optsResp,    value: filtroResponsavel, set: setFiltroResponsavel },
+              { label: 'Área',        opts: optsArea,    value: filtroArea,        set: setFiltroArea },
+              { label: 'Sistema',     opts: optsSistema, value: filtroSistema,     set: setFiltroSistema },
+              { label: 'Fase',        opts: optsFase,    value: filtroFase,        set: setFiltroFase },
+              { label: 'Unidade',     opts: optsUnidade, value: filtroUnidade,     set: setFiltroUnidade },
+            ].filter(f => f.opts.length > 0)
+            return (
+              <div className="flex items-center gap-3 flex-wrap">
+                {filters.map(({ label, opts, value, set }) => (
+                  <div key={label} className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide shrink-0">{label}:</span>
+                    <select value={value} onChange={e => set(e.target.value)} className={selectCls}>
+                      <option value="">Todos</option>
+                      {opts.map(o => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                    {value && <button onClick={() => set('')} className="text-[10px] text-slate-400 hover:text-slate-600 transition-colors">✕</button>}
+                  </div>
+                ))}
+              </div>
+            )
+          })()}
+        </div>
+      )}
 
       {/* LISTA DE TAREFAS */}
       <div className="space-y-3">
-        {/* Filtros de tarefas */}
+        {/* KPI cards de status das tarefas */}
         {(() => {
-          const optsResp    = [...new Set(tarefas.map(t => t.responsavel_nome).filter(Boolean))].sort()
-          const optsArea    = [...new Set(tarefas.map(t => t.area_nome).filter(Boolean))].sort()
-          const optsSistema = [...new Set(tarefas.map(t => t.sistema_nome).filter(Boolean))].sort()
-          const optsFase    = [...new Set(tarefas.map(t => t.fase_nome).filter(Boolean))].sort()
-          const optsUnidade = [...new Set(tarefas.map(t => t.empresa_nome).filter(Boolean))].sort()
-          const selectCls = "text-xs border border-slate-200 rounded-md px-2 py-1 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-400/30 max-w-[140px]"
-          const filters = [
-            { label: 'Responsável', opts: optsResp,    value: filtroResponsavel, set: setFiltroResponsavel },
-            { label: 'Área',        opts: optsArea,    value: filtroArea,        set: setFiltroArea },
-            { label: 'Sistema',     opts: optsSistema, value: filtroSistema,     set: setFiltroSistema },
-            { label: 'Fase',        opts: optsFase,    value: filtroFase,        set: setFiltroFase },
-            { label: 'Unidade',     opts: optsUnidade, value: filtroUnidade,     set: setFiltroUnidade },
-          ].filter(f => f.opts.length > 0)
+          const counts = {}
+          Object.keys(TASK_KPI_CFG).forEach(s => { counts[s] = 0 })
+          tarefasFiltradas.forEach(t => { const s = t.status_kanban || 'mapeado'; if (counts[s] !== undefined) counts[s]++ })
+          const cards = Object.entries(TASK_KPI_CFG).map(([status, cfg]) => ({ status, cfg, count: counts[status] || 0 }))
           return (
-            <div className="flex items-center gap-3 flex-wrap">
-              {filters.map(({ label, opts, value, set }) => (
-                <div key={label} className="flex items-center gap-1.5">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide shrink-0">{label}:</span>
-                  <select value={value} onChange={e => set(e.target.value)} className={selectCls}>
-                    <option value="">Todos</option>
-                    {opts.map(o => <option key={o} value={o}>{o}</option>)}
-                  </select>
-                  {value && (
-                    <button onClick={() => set('')} className="text-[10px] text-slate-400 hover:text-slate-600 transition-colors" title="Limpar">✕</button>
-                  )}
-                </div>
+            <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cards.length + 1}, 1fr)`, gap: '10px' }}>
+              {cards.map(c => (
+                <CardKpi key={c.status} icon={c.cfg.icon} label={c.cfg.label} count={c.count}
+                  ativo={filtroStatusCard.has(c.status)}
+                  onClick={() => setFiltroStatusCard(prev => { const s = new Set(prev); s.has(c.status) ? s.delete(c.status) : s.add(c.status); return s })}
+                  st={c.cfg.st}
+                />
               ))}
+              <CardKpi
+                icon={Layers} label="Total Tarefas" count={tarefasFiltradas.length}
+                ativo={false}
+                onClick={() => setFiltroStatusCard(new Set())}
+                st={{ bg:'bg-slate-50', border:'border-slate-200', ring:'ring-slate-300', icoBg:'bg-slate-100', icoTxt:'text-slate-500', numTxt:'text-slate-800', labelTxt:'text-slate-400' }}
+              />
             </div>
           )
         })()}
 
-        {/* Filtro de status multi-select */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide shrink-0">Status:</span>
-          {Object.entries(STATUS_MAP).map(([s, { label }]) => {
-            const cor = STATUS_COR[s]
-            const ativo = filtroStatus.includes(s)
-            return (
-              <button key={s}
-                onClick={() => setFiltroStatus(prev =>
-                  ativo ? prev.filter(x => x !== s) : [...prev, s]
-                )}
-                style={{
-                  background: ativo ? cor : cor + '18',
-                  color: ativo ? '#fff' : cor,
-                  border: `1.5px solid ${cor}40`,
-                }}
-                className="px-3 py-1 rounded-full text-[11px] font-semibold transition-all"
-              >
-                {label}
-              </button>
-            )
-          })}
-          <div className="flex items-center gap-1 border-l border-slate-200 pl-2 ml-1">
-            <button
-              onClick={() => setFiltroStatus(Object.keys(STATUS_MAP))}
-              className="px-2.5 py-1 rounded-md text-[11px] font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors"
-            >
-              Selecionar Todos
-            </button>
-            <button
-              onClick={() => setFiltroStatus([])}
-              className="px-2.5 py-1 rounded-md text-[11px] font-semibold text-slate-500 hover:bg-slate-100 transition-colors"
-            >
-              Remover Todos
-            </button>
-          </div>
-          <div className="ml-auto flex items-center gap-2 shrink-0">
+        {/* Ações em massa + contagem */}
+        {(tarefasSelecionadas.size > 0 || tarefasOrdenadas.length !== tarefas.length) && (
+          <div className="flex items-center gap-2 flex-wrap justify-end">
             {tarefasSelecionadas.size > 0 && (
               <>
-                <button
-                  onClick={abrirModalMoverSelecionadas}
-                  className="flex items-center gap-1 px-2.5 py-1 bg-violet-600 hover:bg-violet-700 text-white text-[10px] font-semibold rounded transition-colors"
-                >
-                  <FolderInput className="h-3 w-3" />
-                  Mover {tarefasSelecionadas.size} selecionada{tarefasSelecionadas.size !== 1 ? 's' : ''}
-                </button>
-                <button
-                  onClick={() => setModalNovoProjeto({ fase: 'pergunta', nomeProjeto: '', salvando: false })}
-                  className="flex items-center gap-1 px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-semibold rounded transition-colors"
-                >
-                  <Plus className="h-3 w-3" />
-                  Novo Projeto com {tarefasSelecionadas.size} selecionada{tarefasSelecionadas.size !== 1 ? 's' : ''}
-                </button>
-                <button
-                  onClick={duplicarTarefasSelecionadas}
-                  className="flex items-center gap-1 px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-semibold rounded transition-colors"
-                >
-                  <Copy className="h-3 w-3" />
-                  Duplicar {tarefasSelecionadas.size} selecionada{tarefasSelecionadas.size !== 1 ? 's' : ''}
-                </button>
-                <button
-                  onClick={resetarTarefasSelecionadas}
-                  className="flex items-center gap-1 px-2.5 py-1 bg-orange-500 hover:bg-orange-600 text-white text-[10px] font-semibold rounded transition-colors"
-                >
-                  <RotateCcw className="h-3 w-3" />
-                  Resetar {tarefasSelecionadas.size} selecionada{tarefasSelecionadas.size !== 1 ? 's' : ''}
-                </button>
-                <button
-                  onClick={excluirTarefasSelecionadas}
-                  className="flex items-center gap-1 px-2.5 py-1 bg-red-600 hover:bg-red-700 text-white text-[10px] font-semibold rounded transition-colors"
-                >
-                  <Trash2 className="h-3 w-3" />
-                  Excluir {tarefasSelecionadas.size} selecionada{tarefasSelecionadas.size !== 1 ? 's' : ''}
-                </button>
+                {canMoverTarefa && (
+                  <button onClick={abrirModalMoverSelecionadas}
+                    className="flex items-center gap-1 px-2.5 py-1 bg-violet-600 hover:bg-violet-700 text-white text-[10px] font-semibold rounded transition-colors">
+                    <FolderInput className="h-3 w-3" />
+                    Mover {tarefasSelecionadas.size} selecionada{tarefasSelecionadas.size !== 1 ? 's' : ''}
+                  </button>
+                )}
+                {canMoverTarefa && (
+                  <button onClick={() => setModalNovoProjeto({ fase: 'pergunta', nomeProjeto: '', salvando: false })}
+                    className="flex items-center gap-1 px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-semibold rounded transition-colors">
+                    <Plus className="h-3 w-3" />
+                    Novo Projeto com {tarefasSelecionadas.size} selecionada{tarefasSelecionadas.size !== 1 ? 's' : ''}
+                  </button>
+                )}
+                {canDuplicarTarefa && (
+                  <button onClick={duplicarTarefasSelecionadas}
+                    className="flex items-center gap-1 px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-semibold rounded transition-colors">
+                    <Copy className="h-3 w-3" />
+                    Duplicar {tarefasSelecionadas.size} selecionada{tarefasSelecionadas.size !== 1 ? 's' : ''}
+                  </button>
+                )}
+                {canResetarTarefa && (
+                  <button onClick={resetarTarefasSelecionadas}
+                    className="flex items-center gap-1 px-2.5 py-1 bg-orange-500 hover:bg-orange-600 text-white text-[10px] font-semibold rounded transition-colors">
+                    <RotateCcw className="h-3 w-3" />
+                    Resetar {tarefasSelecionadas.size} selecionada{tarefasSelecionadas.size !== 1 ? 's' : ''}
+                  </button>
+                )}
+                {canExcluirTarefa && (
+                  <button onClick={excluirTarefasSelecionadas}
+                    className="flex items-center gap-1 px-2.5 py-1 bg-red-600 hover:bg-red-700 text-white text-[10px] font-semibold rounded transition-colors">
+                    <Trash2 className="h-3 w-3" />
+                    Excluir {tarefasSelecionadas.size} selecionada{tarefasSelecionadas.size !== 1 ? 's' : ''}
+                  </button>
+                )}
               </>
             )}
             <span className="text-[10px] text-slate-400">
-              {tarefasOrdenadas.length} tarefa{tarefasOrdenadas.length !== 1 ? 's' : ''}
-              {filtroStatus.length === 0 && !filtroAtrasadas && !filtroHoje ? '' : ` de ${tarefas.length} total`}
+              {tarefasOrdenadas.length} tarefa{tarefasOrdenadas.length !== 1 ? 's' : ''} de {tarefasFiltradas.length} total
             </span>
           </div>
-        </div>
+        )}
         <div id="projeto-detalhe-tabela" className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-x-auto custom-scrollbar-light">
           <table className="w-full text-left border-collapse">
             <thead>
@@ -734,16 +864,16 @@ const abrirModalMover = async (tarefa) => {
                 {[
                   { campo: 'etapa',         label: 'Etapa',       cls: 'w-20' },
                   { campo: 'nome',          label: 'Tarefa',      cls: 'min-w-[320px]' },
-                  { campo: 'sistema_nome',  label: 'Sistema',     cls: 'w-24' },
-                  { campo: 'area_nome',     label: 'Depto/Área',  cls: 'w-36' },
+                  { campo: 'sistema_nome',  label: 'Sistema',     subtitle: 'Depto / Área', cls: 'w-36' },
                   { campo: 'responsavel',   label: 'Responsável', cls: 'w-32' },
                   { campo: 'data_inicio',   label: 'Início',      cls: 'w-16' },
                   { campo: 'data_fim',      label: 'Fim',         cls: 'w-16' },
                   { campo: 'status_kanban', label: 'Status',      cls: 'w-28' },
                   { campo: 'progresso_pct', label: 'Progresso',   cls: 'w-28' },
                   { campo: 'empresa_nome',  label: 'Unidade',     cls: 'w-28' },
-                ].map(({ campo, label, cls = '' }) => (
+                ].map(({ campo, label, subtitle, cls = '' }) => (
                   <th key={campo} className={`p-3 ${cls}`}>
+                    <div className="flex flex-col gap-0.5">
                     <button
                       onClick={() => setSortConfig(prev =>
                         prev.campo === campo
@@ -757,6 +887,8 @@ const abrirModalMover = async (tarefa) => {
                         {sortConfig.campo === campo ? (sortConfig.dir === 'asc' ? '↑' : '↓') : '↕'}
                       </span>
                     </button>
+                    {subtitle && <span className="text-[10px] font-normal normal-case text-slate-400 tracking-normal">{subtitle}</span>}
+                    </div>
                   </th>
                 ))}
                 <th className="no-print p-3 w-20 text-center">Ações</th>
@@ -800,37 +932,42 @@ const abrirModalMover = async (tarefa) => {
                         })}
                       </select>
                     ) : (
-                      <button
-                        onClick={() => setEditandoEtapa(t.id)}
-                        title="Clique para alterar a etapa"
-                        className="group inline-flex items-center justify-center w-9 h-9"
-                      >
-                        {t.etapa != null
-                          ? <span className={`inline-flex items-center justify-center w-8 h-8 rounded-full text-[11px] font-bold transition-colors shadow-sm ${t.etapa === etapaAtual ? 'bg-orange-500 text-white group-hover:bg-orange-600' : 'bg-indigo-100 text-indigo-700 group-hover:bg-indigo-200'}`}>{t.etapa}ª</span>
-                          : <span className="text-slate-300 group-hover:text-indigo-400 text-lg transition-colors">+</span>}
-                      </button>
+                      canEditarTarefa ? (
+                        <button
+                          onClick={() => setEditandoEtapa(t.id)}
+                          title="Clique para alterar a etapa"
+                          className="group inline-flex items-center justify-center w-9 h-9"
+                        >
+                          {t.etapa != null
+                            ? <span className={`inline-flex items-center justify-center w-8 h-8 rounded-full text-[11px] font-bold transition-colors shadow-sm ${t.etapa === etapaAtual ? 'bg-orange-500 text-white group-hover:bg-orange-600' : 'bg-indigo-100 text-indigo-700 group-hover:bg-indigo-200'}`}>{t.etapa}ª</span>
+                            : <span className="text-slate-300 group-hover:text-indigo-400 text-lg transition-colors">+</span>}
+                        </button>
+                      ) : (
+                        t.etapa != null
+                          ? <span className="inline-flex items-center justify-center w-8 h-8 rounded-full text-[11px] font-bold shadow-sm bg-indigo-100 text-indigo-700">{t.etapa}ª</span>
+                          : null
+                      )
                     )}
                   </td>
                   <td className="p-3 leading-snug" style={{ whiteSpace: 'normal' }}>
                     <div className="flex items-start gap-1.5">
                       <span className="font-bold text-slate-900 flex-1">{t.nome}</span>
-                      <button onClick={() => setModalDelib(t)} className="shrink-0 mt-0.5 p-0.5 text-slate-300 hover:text-amber-500 transition-colors" title="Deliberações">
-                        <MessageSquare className="h-3.5 w-3.5" />
-                      </button>
+                      {canDeliberacao && (
+                        <button onClick={() => setModalDelib(t)} className="shrink-0 mt-0.5 p-0.5 text-slate-300 hover:text-amber-500 transition-colors" title="Deliberações">
+                          <MessageSquare className="h-3.5 w-3.5" />
+                        </button>
+                      )}
                     </div>
                   </td>
-                  <td className="p-3 whitespace-nowrap">
-                    {t.sistema_nome
-                      ? <span className="px-2 py-0.5 rounded text-[10px] font-bold" style={{ backgroundColor: sistemaCorMap[t.sistema_nome] || '#1e293b', color: sistemaCorTextoMap[t.sistema_nome] || getTextColor(sistemaCorMap[t.sistema_nome] || '#1e293b') }}>{t.sistema_nome}</span>
-                      : <span className="text-slate-400">—</span>}
-                  </td>
-                  <td className="p-3 whitespace-nowrap">
+                  <td className="p-3">
                     <div className="flex flex-col gap-0.5">
-                      {projeto.departamento_nome
-                        ? <span className="text-[10px] font-bold text-slate-700">{projeto.departamento_nome}</span>
+                      {t.sistema_nome
+                        ? <span className="px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap" style={{ backgroundColor: sistemaCorMap[t.sistema_nome] || '#1e293b', color: sistemaCorTextoMap[t.sistema_nome] || getTextColor(sistemaCorMap[t.sistema_nome] || '#1e293b') }}>{t.sistema_nome}</span>
                         : <span className="text-slate-400">—</span>}
-                      {(t.area_nome || projeto.area_nome) && (
-                        <span className="text-[10px] text-slate-400 italic pl-0.5">{t.area_nome || projeto.area_nome}</span>
+                      {(projeto.departamento_nome || t.area_nome || projeto.area_nome) && (
+                        <div className="text-[10px] text-slate-400 italic mt-0.5 whitespace-nowrap">
+                          {[projeto.departamento_nome, t.area_nome || projeto.area_nome].filter(Boolean).join(' / ')}
+                        </div>
                       )}
                     </div>
                   </td>
@@ -878,7 +1015,7 @@ const abrirModalMover = async (tarefa) => {
                   <td className="p-3 text-slate-500 whitespace-nowrap">{t.empresa_nome || '—'}</td>
                   <td className="no-print p-3 text-center">
                     <div className="flex items-center justify-center gap-1">
-                      {t.status_kanban === 'programado' && (
+                      {canIniciarTarefa && t.status_kanban === 'programado' && (
                         <button
                           onClick={() => handleIniciarTarefa(t)}
                           className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
@@ -887,7 +1024,7 @@ const abrirModalMover = async (tarefa) => {
                           <PlayCircle className="h-3.5 w-3.5" />
                         </button>
                       )}
-                      {t.status_kanban === 'em_andamento' && (
+                      {canConcluirTarefa && t.status_kanban === 'em_andamento' && (
                         <button
                           onClick={() => setModalConcluir({ tarefa: t, dataFim: hojeISO })}
                           className="p-1 text-slate-400 hover:text-teal-600 hover:bg-teal-50 rounded transition-colors"
@@ -896,21 +1033,31 @@ const abrirModalMover = async (tarefa) => {
                           <CheckCircle2 className="h-3.5 w-3.5" />
                         </button>
                       )}
-                      <button onClick={() => handleProximaEtapa(t)} className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors" title="Próxima Etapa">
-                        <ArrowRight className="h-3.5 w-3.5" />
-                      </button>
-                      <button onClick={() => handleDuplicar(t)} className="p-1 text-slate-400 hover:text-teal-600 hover:bg-teal-50 rounded transition-colors" title="Duplicar">
-                        <Copy className="h-3.5 w-3.5" />
-                      </button>
-                      <button onClick={() => setModalTarefa({ tarefa: t })} className="p-1 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors" title="Editar">
-                        <Edit2 className="h-3.5 w-3.5" />
-                      </button>
-                      <button onClick={() => abrirModalMover(t)} className="p-1 text-slate-400 hover:text-violet-600 hover:bg-violet-50 rounded transition-colors" title="Mover para outro projeto">
-                        <FolderInput className="h-3.5 w-3.5" />
-                      </button>
-                      <button onClick={() => setModalExcluir(t)} className="p-1 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded transition-colors" title="Excluir">
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+                      {canEditarTarefa && (
+                        <button onClick={() => handleProximaEtapa(t)} className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors" title="Próxima Etapa">
+                          <ArrowRight className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                      {canDuplicarTarefa && (
+                        <button onClick={() => handleDuplicar(t)} className="p-1 text-slate-400 hover:text-teal-600 hover:bg-teal-50 rounded transition-colors" title="Duplicar">
+                          <Copy className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                      {canEditarTarefa && (
+                        <button onClick={() => setModalTarefa({ tarefa: t })} className="p-1 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors" title="Editar">
+                          <Edit2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                      {canMoverTarefa && (
+                        <button onClick={() => abrirModalMover(t)} className="p-1 text-slate-400 hover:text-violet-600 hover:bg-violet-50 rounded transition-colors" title="Mover para outro projeto">
+                          <FolderInput className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                      {canExcluirTarefa && (
+                        <button onClick={() => setModalExcluir(t)} className="p-1 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded transition-colors" title="Excluir">
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -919,6 +1066,8 @@ const abrirModalMover = async (tarefa) => {
           </table>
         </div>
       </div>
+      </>
+      )}
 
       {/* MODAL MOVER PARA NOVO PROJETO */}
       {modalNovoProjeto && (
@@ -1091,6 +1240,7 @@ const abrirModalMover = async (tarefa) => {
           fases={fases}
           empresas={empresas}
           areas={areas}
+          canAlterarStatus={canAlterarStatusTarefa}
           onClose={() => setModalTarefa(null)}
           onSaved={() => { setModalTarefa(null); loadData() }}
           onNavigate={(t) => setModalTarefa({ tarefa: t })}
@@ -1171,6 +1321,16 @@ const abrirModalMover = async (tarefa) => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* MODAL INICIAR FASE */}
+      {modalIniciarFase && (
+        <IniciarFaseModal
+          projeto={projeto}
+          fases={fases}
+          onClose={() => setModalIniciarFase(false)}
+          onSaved={() => { setModalIniciarFase(false); loadData() }}
+        />
       )}
 
       {/* MODAL EXCLUIR TAREFA */}

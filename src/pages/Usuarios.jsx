@@ -1,10 +1,15 @@
 ﻿import React, { useState, useEffect } from 'react'
 import { useSessionState } from '../hooks/useSessionState'
-import { Trash2, Plus, Edit2, Eye, EyeOff, X, UserCheck, Search, Copy, Check, UserPlus } from 'lucide-react'
+import { Trash2, Plus, Edit2, Eye, EyeOff, X, UserCheck, Search, Copy, Check, UserPlus, Send } from 'lucide-react'
 import PermissionActionButtons from '../components/PermissionActionButtons'
 import { apiService } from '../services/api'
 import { supabase } from '../services/supabaseClient'
 import { useAuth } from '../context/AuthContext'
+
+// Link de definição/redefinição de senha enviado por e-mail sempre precisa apontar pro
+// sistema em produção — nunca pro localhost de quem está logado criando/reenviando o
+// convite (window.location.origin varia conforme onde o admin está rodando o sistema).
+const URL_PRODUCAO = 'https://portalgestaocaioba.pages.dev'
 
 function traduzirErroSenha(msg = '') {
   if (msg.toLowerCase().includes('different from the old password')) return 'A nova senha deve ser diferente da senha atual.'
@@ -32,8 +37,9 @@ export default function Usuarios() {
   const [modalVisualizarAberto, setModalVisualizarAberto] = useState(false)
   const [itemVisualizado, setItemVisualizado] = useState(null)
   const [busca, setBusca] = useState('')
-  const [credenciasCriadas, setCredenciasCriadas] = useState(null) // { nome, email, senha }
-  const [copiado, setCopiado] = useState(null) // 'whats' | 'email' | null
+  const [conviteEnviado, setConviteEnviado] = useState(null) // { nome, email }
+  const [reenviandoId, setReenviandoId] = useState(null)
+  const [reenviadoId, setReenviadoId] = useState(null)
   const [senhaParaCopia, setSenhaParaCopia] = useState('')
   const [copiadoModal, setCopiadoModal] = useState(null) // 'whats' | 'email' | null
   const abrirVisualizar = (item) => { setItemVisualizado(item); setModalVisualizarAberto(true); setSenhaParaCopia(''); setCopiadoModal(null) }
@@ -63,11 +69,6 @@ export default function Usuarios() {
   const handleSubmit = async (e) => {
     e.preventDefault()
 
-    if (!editingId) {
-      if (form.senha.length < 6) return alert('A senha deve ter no mínimo 6 caracteres.')
-      if (form.senha !== form.senhaConfirm) return alert('As senhas não coincidem.')
-    }
-
     if (alterarSenha && editingId) {
       if (!authServiceConfigured) return alert('A alteração de senha exige SUPABASE_SERVICE_KEY configurada no backend.')
       if (form.senha.length < 6) return alert('A senha deve ter no mínimo 6 caracteres.')
@@ -95,11 +96,9 @@ export default function Usuarios() {
         if (!authServiceConfigured) {
           throw new Error('Criação de usuário exige SUPABASE_SERVICE_KEY configurada no backend.')
         }
-        await apiService.createUsuario(form.nome, form.email, form.senha, form.grupo_id || null)
-        try {
-          await supabase.from('usuarios').update({ trocar_senha: true }).eq('email', form.email)
-        } catch { /* best-effort */ }
-        setCredenciasCriadas({ nome: form.nome, email: form.email, senha: form.senha })
+        const redirectTo = `${URL_PRODUCAO}/redefinir-senha`
+        await apiService.createUsuario(form.nome, form.email, form.grupo_id || null, redirectTo)
+        setConviteEnviado({ nome: form.nome, email: form.email })
         resetForm()
         loadData()
       }
@@ -120,6 +119,21 @@ export default function Usuarios() {
     setSenhaParaCopia('')
     setCopiadoModal(null)
     setShowForm(true)
+  }
+
+  const handleReenviarConvite = async (usuario) => {
+    setReenviandoId(usuario.id)
+    setReenviadoId(null)
+    try {
+      await apiService.sendResetPasswordEmail(usuario.email, `${URL_PRODUCAO}/redefinir-senha`)
+      setReenviadoId(usuario.id)
+      setConviteEnviado({ nome: usuario.nome, email: usuario.email, tipo: 'reenvio' })
+      setTimeout(() => setReenviadoId(null), 3000)
+    } catch (err) {
+      alert('Erro ao enviar e-mail: ' + (err.message || String(err)))
+    } finally {
+      setReenviandoId(null)
+    }
   }
 
   const handleDelete = async (id) => {
@@ -157,7 +171,7 @@ export default function Usuarios() {
     </div>
   )
 
-  const showSenhaSection = !editingId || alterarSenha
+  const showSenhaSection = editingId && alterarSenha
 
   return (
     <div className="p-6 max-w-screen-xl">
@@ -191,8 +205,8 @@ export default function Usuarios() {
 
       {/* MODAL: CRIAR / EDITAR */}
       {showForm && (
-        <div className="fixed top-0 right-0 bottom-0 left-16 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg border border-slate-200 w-[480px] shadow-xl overflow-hidden">
+        <div className="fixed top-0 right-0 bottom-0 left-16 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-lg border border-slate-200 w-[480px] max-w-full max-h-[90vh] shadow-xl overflow-y-auto my-auto">
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-slate-50">
               <h2 className="text-sm font-bold text-slate-900">
                 {editingId ? 'Editar Usuário' : 'Novo Usuário'}
@@ -229,6 +243,12 @@ export default function Usuarios() {
                 ))}
               </select>
 
+              {!editingId && (
+                <p className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
+                  Um e-mail de boas-vindas será enviado para o usuário definir a própria senha de acesso.
+                </p>
+              )}
+
               {editingId && (
                 <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer select-none">
                   <input
@@ -244,16 +264,14 @@ export default function Usuarios() {
 
               {showSenhaSection && (
                 <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
-                  <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">
-                    {editingId ? 'Nova senha' : 'Definir senha de acesso'}
-                  </p>
+                  <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Nova senha</p>
                   <div className="relative">
                     <input
                       type={showSenha ? 'text' : 'password'}
                       placeholder="Senha (mínimo 6 caracteres)"
                       value={form.senha}
                       onChange={(e) => setForm({ ...form, senha: e.target.value })}
-                      required={!editingId || alterarSenha}
+                      required={alterarSenha}
                       minLength={6}
                       className="w-full px-3 py-2 pr-10 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-sm"
                     />
@@ -267,7 +285,7 @@ export default function Usuarios() {
                       placeholder="Confirmar senha"
                       value={form.senhaConfirm}
                       onChange={(e) => setForm({ ...form, senhaConfirm: e.target.value })}
-                      required={!editingId || alterarSenha}
+                      required={alterarSenha}
                       className="w-full px-3 py-2 pr-10 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-sm"
                     />
                     <button type="button" onClick={() => setShowSenhaConfirm(v => !v)} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600" tabIndex={-1}>
@@ -309,59 +327,34 @@ export default function Usuarios() {
         </div>
       )}
 
-      {credenciasCriadas && (
+      {conviteEnviado && (
         <div className="mb-6 bg-green-50 border border-green-200 rounded-lg overflow-hidden shadow-sm">
           <div className="flex items-center justify-between px-5 py-3 bg-green-100 border-b border-green-200">
             <div className="flex items-center gap-2 text-green-800 font-semibold text-sm">
               <UserPlus className="h-4 w-4" />
-              Usuário criado — compartilhe as credenciais de acesso
+              {conviteEnviado.tipo === 'reenvio' ? 'E-mail reenviado' : 'Usuário criado — e-mail de boas-vindas enviado'}
             </div>
-            <button onClick={() => { setCredenciasCriadas(null); setCopiado(false) }} className="text-green-600 hover:text-green-800">
+            <button onClick={() => setConviteEnviado(null)} className="text-green-600 hover:text-green-800">
               <X className="h-4 w-4" />
             </button>
           </div>
-          <div className="px-5 py-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-6">
-            {/* Campos individuais */}
-            <div className="flex-1 space-y-2">
-              {[
-                { label: 'Nome', value: credenciasCriadas.nome },
-                { label: 'E-mail', value: credenciasCriadas.email },
-                { label: 'Senha', value: credenciasCriadas.senha },
-              ].map(({ label, value }) => (
-                <div key={label} className="flex items-center gap-2">
-                  <span className="text-xs font-semibold text-slate-500 w-12 shrink-0">{label}:</span>
-                  <span className="text-sm font-mono text-slate-800 bg-white border border-slate-200 rounded px-2 py-0.5 flex-1 select-all">{value}</span>
-                </div>
-              ))}
-            </div>
-            {/* Botão copiar */}
-            <div className="shrink-0 flex items-start">
-              <button
-                onClick={() => {
-                  const texto = `Olá, ${credenciasCriadas.nome}!\n\nSeu acesso ao sistema 🌐 Portal de Gestão do Grupo Caiobá foi criado. Utilize as credenciais abaixo para entrar:\n\n📧 E-mail: ${credenciasCriadas.email}\n🔑 Senha: ${credenciasCriadas.senha}`
-                  navigator.clipboard.writeText(texto)
-                  setCopiado('share')
-                  setTimeout(() => setCopiado(null), 2500)
-                }}
-                className={`flex items-center gap-1.5 px-4 py-2 rounded-md text-sm font-semibold transition-colors ${
-                  copiado === 'share' ? 'bg-green-600 text-white' : 'bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-100'
-                }`}
-              >
-                {copiado === 'share' ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                {copiado === 'share' ? 'Copiado!' : 'Compartilhar acesso'}
-              </button>
-            </div>
+          <div className="px-5 py-4 text-sm text-slate-700">
+            {conviteEnviado.tipo === 'reenvio'
+              ? <>Um e-mail com o link de redefinição de senha foi reenviado para <span className="font-semibold">{conviteEnviado.nome}</span> em{' '}
+                  <span className="font-mono text-slate-800">{conviteEnviado.email}</span>.</>
+              : <>Um e-mail de boas-vindas foi enviado para <span className="font-semibold">{conviteEnviado.nome}</span> em{' '}
+                  <span className="font-mono text-slate-800">{conviteEnviado.email}</span> com um link para ele mesmo definir a senha de acesso.</>}
           </div>
         </div>
       )}
 
-      <div className="bg-white rounded-lg shadow overflow-hidden">
+      <div className="bg-white rounded-lg shadow overflow-x-auto">
         <table className="w-full">
           <thead className="bg-slate-100 border-b border-slate-200">
             <tr>
               <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Nome</th>
               <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">E-mail</th>
-              <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Grupo</th>
+              <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Grupo de Acesso</th>
               <th className="px-6 py-3 text-center text-sm font-semibold text-slate-700">Senha</th>
               <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Ações</th>
             </tr>
@@ -404,11 +397,24 @@ export default function Usuarios() {
                     onEdit={() => handleEdit(u)}
                     onDelete={() => handleDelete(u.id)}
                   />
+                  <button
+                    onClick={() => handleReenviarConvite(u)}
+                    disabled={reenviandoId === u.id}
+                    title="Reenviar e-mail com o link de definição/redefinição de senha (aponta para o sistema em produção)"
+                    className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold border transition-colors disabled:opacity-50 whitespace-nowrap ${
+                      reenviadoId === u.id
+                        ? 'border-green-300 text-green-700 bg-green-50'
+                        : 'border-blue-300 text-blue-700 bg-blue-50 hover:bg-blue-100'
+                    }`}
+                  >
+                    {reenviadoId === u.id ? <Check size={13} /> : <Send size={13} />}
+                    {reenviandoId === u.id ? 'Enviando...' : reenviadoId === u.id ? 'Enviado!' : 'Reenviar e-mail'}
+                  </button>
                   {isAdmin && u.email !== user?.email && (
                     <button
                       onClick={() => iniciarVisualizacao(u)}
                       title={`Visualizar como ${u.nome}`}
-                      className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold border border-violet-300 text-violet-700 bg-violet-50 hover:bg-violet-100 transition-colors"
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold border border-violet-300 text-violet-700 bg-violet-50 hover:bg-violet-100 transition-colors whitespace-nowrap"
                     >
                       <UserCheck size={13} /> Visualizar como
                     </button>
@@ -434,8 +440,8 @@ export default function Usuarios() {
 
       {/* MODAL: VISUALIZAR */}
       {modalVisualizarAberto && itemVisualizado && (
-        <div className="fixed top-0 right-0 bottom-0 left-16 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg border border-slate-200 w-[420px] shadow-xl overflow-hidden">
+        <div className="fixed top-0 right-0 bottom-0 left-16 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-lg border border-slate-200 w-[420px] max-w-full max-h-[90vh] shadow-xl overflow-y-auto my-auto">
             <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50">
               <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                 <Eye className="h-4 w-4 text-slate-500" />Visualizar Usuário

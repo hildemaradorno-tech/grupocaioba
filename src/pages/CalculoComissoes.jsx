@@ -1,17 +1,23 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useSessionState } from '../hooks/useSessionState'
-import { Wallet, PlayCircle, Loader2, AlertTriangle, Save, History, X, ShieldCheck, Lock, ArrowUp, ArrowDown, ArrowUpDown, Trash2, ChevronDown, ChevronRight, ChevronLeft, FileDown, RefreshCw, CheckCircle2 } from 'lucide-react'
+import { Wallet, PlayCircle, Loader2, AlertTriangle, Save, X, ShieldCheck, Lock, ArrowUp, ArrowDown, ArrowUpDown, Trash2, ChevronDown, ChevronRight, ChevronLeft, FileDown, RefreshCw, CheckCircle2 } from 'lucide-react'
 import { apiService } from '../services/api'
 import { useAuth } from '../context/AuthContext'
 import { buscaComCoringa } from '../utils/buscaTexto'
-import { passaEscopoComissao } from '../utils/permissoesComissao'
+import { passaEscopoComissao, departamentoSoVisualizacao } from '../utils/permissoesComissao'
+
+// Sentinela pra funcionário sem departamento algum (departamento_ids vazio) — sem isso não tem
+// como selecionar essa "aba" na tela pra conferir/excluir o histórico desse grupo.
+const SEM_DEPARTAMENTO = 'Sem departamento'
 
 const ROTULO_ACAO_HISTORICO = {
   CRIADO: 'Cálculo realizado',
   CONFERIDO: 'Conferido',
+  CONFERIDO_DP: 'Conferido pelo DP',
   PROCESSADO: 'Processado p/ pagamento',
   REPROCESSAMENTO_AUTORIZADO: 'Reprocessamento autorizado',
+  REPROCESSAMENTO_SALVO: 'Correção salva — conferência do DP reaberta',
 }
 
 function FiltroMultiSelect({ placeholder, opcoes, selecionados, onChange }) {
@@ -64,12 +70,16 @@ const juntaUnicos = (arr) => [...new Set(arr.filter(Boolean))].sort((a, b) => a.
 // Peças e outra pra Serviços, cada uma com sua própria Fonte/Base, e os valores se somam.
 function resolvePoliticas(funcionario, politicas, empresasMap) {
   if (!funcionario.cargo_id) return []
+  // Política Plano DMS não passa por aqui — ela não tem Fonte/Base (calcularComissaoSobre
+  // quebraria) e é calculada à parte, em Folha de Pagamento - DAF → aba Plano DMS, atribuída ao
+  // cargo (não ao funcionário individualmente) — ver CalculoPlanoDms.jsx.
+  const politicasPadrao = politicas.filter(p => p.tipo_calculo !== 'PLANO_DMS')
   const agrupId = empresasMap[funcionario.empresa_id]?.agrupamento_empresa_id || null
   const porAgrupamento = agrupId
-    ? politicas.filter(p => p.cargo_id === funcionario.cargo_id && p.agrupamento_empresa_id === agrupId && p.ativo !== false)
+    ? politicasPadrao.filter(p => p.cargo_id === funcionario.cargo_id && p.agrupamento_empresa_id === agrupId && p.ativo !== false)
     : []
   if (porAgrupamento.length > 0) return porAgrupamento
-  return politicas.filter(p => p.cargo_id === funcionario.cargo_id && p.ativo !== false)
+  return politicasPadrao.filter(p => p.cargo_id === funcionario.cargo_id && p.ativo !== false)
 }
 
 // Chave única de uma linha (funcionário + política + segmento de apuração) — um funcionário
@@ -104,9 +114,13 @@ function subtraiFerias(inicio, fim, feriasList) {
 
 // A coluna "Valor" respeita a natureza da Base: bases de horas (nome contém "hora") aparecem
 // como HR 442,53; as demais (faturamento, margem etc.) como moeda R$.
+// Base CONTAGEM (ex: Agendamentos) é quantidade, não dinheiro — mostra número puro em vez de
+// "R$"; bases de horas aparecem como HR; as demais (SOMA em R$, ex: faturamento) como moeda.
+const baseEmContagem = (c) => c.base?.tipo_agregacao === 'CONTAGEM'
 const baseEmHoras = (c) => /hora/.test((c.base?.nome || '').toLowerCase())
 const fmtValorBase = (c, v) => {
   if (v == null) return '-'
+  if (baseEmContagem(c)) return v.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
   if (baseEmHoras(c)) return `HR ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
   return fmtBRL(v)
 }
@@ -139,7 +153,7 @@ const tipoComissaoPorBase = (c) => {
 
 export default function CalculoComissoes() {
   const navigate = useNavigate()
-  const { user, hasAction, comissaoEscopoEfetivo } = useAuth()
+  const { user, hasAction, hasPermission, comissaoEscopoEfetivo, comissaoNivelDepartamentoEfetivo } = useAuth()
   const podeCalcular = hasAction('calculo-comissoes', 'calcular')
   const podeSalvar = hasAction('calculo-comissoes', 'salvar')
   const podeConferir = hasAction('calculo-comissoes', 'conferir')
@@ -207,18 +221,20 @@ export default function CalculoComissoes() {
     setPeriodoFim(`${anoAlvo}-${pad(mesAlvo + 1)}-${pad(ultimoDia)}`)
   }
 
-  // Ao abrir a tela, o período sempre volta pro mês atual (dia 1 ao último dia) — se o usuário
-  // tinha deixado um mês antigo selecionado na sessão anterior, não fica preso nele.
+  // Ao abrir a tela, o período sempre volta pro mês anterior (dia 1 ao último dia) — a comissão
+  // é calculada sobre o mês fechado, não o corrente; se o usuário tinha deixado outro mês
+  // selecionado na sessão anterior, não fica preso nele.
   useEffect(() => {
     const hoje = new Date()
-    const ano = hoje.getFullYear()
-    const mes = hoje.getMonth()
+    const anterior = new Date(hoje.getFullYear(), hoje.getMonth() - 1, 1)
+    const ano = anterior.getFullYear()
+    const mes = anterior.getMonth()
     const pad = (n) => String(n).padStart(2, '0')
-    const mesAtual = `${ano}-${pad(mes + 1)}`
-    if (periodoInicio.slice(0, 7) === mesAtual && periodoFim.slice(0, 7) === mesAtual) return
+    const mesAlvo = `${ano}-${pad(mes + 1)}`
+    if (periodoInicio.slice(0, 7) === mesAlvo && periodoFim.slice(0, 7) === mesAlvo) return
     const ultimoDia = new Date(ano, mes + 1, 0).getDate()
-    setPeriodoInicio(`${mesAtual}-01`)
-    setPeriodoFim(`${mesAtual}-${pad(ultimoDia)}`)
+    setPeriodoInicio(`${mesAlvo}-01`)
+    setPeriodoFim(`${mesAlvo}-${pad(ultimoDia)}`)
   }, [])
 
   // Empresa selecionada (aba) — id resolvido a partir do nome pra passar pro backend. Cada
@@ -243,6 +259,11 @@ export default function CalculoComissoes() {
     return achado?.id || null
   }, [departamentoUnicoSelecionado, dados])
 
+  // Nível de acesso extra por Departamento (Grupos de Acesso → Acesso à Cálculo de Comissões):
+  // "Visualizar" desliga Calcular/Salvar/Conferir/Salvar PDF/Excluir só neste departamento,
+  // mesmo com a Ação correspondente marcada pro grupo — soma-se às Ações, não as substitui.
+  const departamentoSomenteVisualizacao = departamentoSoVisualizacao(departamentoSelecionadoId, comissaoNivelDepartamentoEfetivo)
+
   // Busca o lote de aprovação (da empresa+departamento selecionados) sempre que Data Início/
   // Fim/Empresa/Departamento mudam. Só existe um lote pra apontar quando exatamente 1
   // departamento está marcado — com 0 ou 2+ marcados fica null (não tem workflow único pra
@@ -251,12 +272,30 @@ export default function CalculoComissoes() {
     setLote(null)
     setHistoricoLote([])
     setMostrarHistoricoLote(false)
+    // Sem isso, sair do "if" abaixo (empresa/departamento desmarcados no meio de uma busca em
+    // andamento) deixava carregandoLoteObj travado em true pra sempre — a busca cancelada não
+    // reseta o próprio flag (o cancelamento existe só pra não sobrescrever o estado com uma
+    // resposta atrasada), e o "return" antecipado também não passava por ali.
+    setCarregandoLoteObj(false)
     if (!periodoValido || !filtroEmpresa || !departamentoUnicoSelecionado) return
     let cancelado = false
     ;(async () => {
       setCarregandoLoteObj(true)
       try {
-        const loteAtual = await apiService.getLoteComissoes(periodoInicio, periodoFim, empresaSelecionadaId, departamentoSelecionadoId)
+        // Alguns lotes antigos foram salvos com departamento_id nulo mesmo tendo um
+        // departamento_nome válido (dado legado) — a busca por id não acha esses. E o
+        // pseudo-departamento "Sem Departamento" nunca tem id de verdade pra buscar por id
+        // (buscar por id nulo pegaria TODOS os lotes-sem-id da empresa de uma vez, o que
+        // já causou "JSON object requested, multiple (or no) rows returned" aqui). Então:
+        // busca por id só quando há um id real; senão (ou se não achar), cai pro fallback
+        // que traz todos os lotes da empresa+período e casa pelo nome do departamento.
+        let loteAtual = departamentoSelecionadoId
+          ? await apiService.getLoteComissoes(periodoInicio, periodoFim, empresaSelecionadaId, departamentoSelecionadoId)
+          : null
+        if (!loteAtual) {
+          const todos = await apiService.getLotesPorEmpresaPeriodo(periodoInicio, periodoFim, empresaSelecionadaId)
+          loteAtual = todos.find(l => (l.departamento_nome || SEM_DEPARTAMENTO) === departamentoUnicoSelecionado) || null
+        }
         if (!cancelado) setLote(loteAtual)
       } catch (err) {
         if (!cancelado) setErro(err.message || String(err))
@@ -361,9 +400,15 @@ export default function CalculoComissoes() {
       // Só os funcionários desta empresa+departamento — pra não apagar o que outro gerente já
       // salvou de outra empresa/departamento no mesmo período (o lote é por período+empresa+
       // departamento, mas os valores calculados em fato_comissoes_calculadas não têm essas
-      // colunas direto, só via funcionario_id).
+      // colunas direto, só via funcionario_id). "Sem departamento" é departamento_ids vazio, não
+      // um id de verdade — não dá pra comparar com .includes(departamentoSelecionadoId) (que
+      // aqui é null e nunca bateria com nada).
       const funcionarioIds = (dados?.funcionarios || [])
-        .filter(f => f.empresa_id === empresaSelecionadaId && (f.departamento_ids || []).includes(departamentoSelecionadoId))
+        .filter(f => {
+          if (f.empresa_id !== empresaSelecionadaId) return false
+          if (departamentoUnicoSelecionado === SEM_DEPARTAMENTO) return (f.departamento_ids || []).length === 0
+          return (f.departamento_ids || []).includes(departamentoSelecionadoId)
+        })
         .map(f => f.id)
       await apiService.excluirHistoricoLote(lote?.id || null, periodoInicio, periodoFim, funcionarioIds)
       setLote(null)
@@ -406,18 +451,27 @@ export default function CalculoComissoes() {
   }, [])
 
   // Data de modificação do arquivo de férias no SharePoint (só metadado, não baixa o arquivo) —
-  // se o arquivo for de um mês ANTES do período selecionado, avisa que pode estar desatualizado
-  // pro cálculo em andamento (best-effort: falha aqui não pode derrubar a tela). Arquivo do
-  // mesmo mês ou de um mês mais recente (ex: RH já subiu agosto e o período é julho) conta como
-  // atualizado — só o mês anterior ao período é motivo de alerta.
+  // compara contra o mês ATUAL de verdade (hoje), não contra o período selecionado: o período
+  // calculado aqui é sempre o mês anterior (fechado), então o arquivo de férias só está em dia
+  // se já tiver sido atualizado dentro do mês corrente, capturando os lançamentos feitos durante
+  // o mês que acabou de fechar (best-effort: falha aqui não pode derrubar a tela).
   const [infoArquivoFerias, setInfoArquivoFerias] = useState(null)
   useEffect(() => {
     apiService.getInfoArquivoFerias().then(setInfoArquivoFerias).catch(() => setInfoArquivoFerias(null))
   }, [])
+
+  // Departamentos marcados como "Responsável" em Grupos de Acesso — { [departamento_id]: [nomes] }.
+  const [responsaveisPorDepartamento, setResponsaveisPorDepartamento] = useState({})
+  useEffect(() => {
+    apiService.getResponsaveisComissaoDepartamentos().then(setResponsaveisPorDepartamento).catch(() => setResponsaveisPorDepartamento({}))
+  }, [])
   const mesArquivoFerias = infoArquivoFerias?.dataModificacao?.slice(0, 7) || null
-  const mesPeriodoAtual = periodoValido ? periodoInicio.slice(0, 7) : null
-  const feriasDesatualizada = !!(mesArquivoFerias && mesPeriodoAtual && mesArquivoFerias < mesPeriodoAtual)
-  const feriasAtualizada = !!(mesArquivoFerias && mesPeriodoAtual && mesArquivoFerias >= mesPeriodoAtual)
+  const mesAtualReal = useMemo(() => {
+    const hoje = new Date()
+    return `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}`
+  }, [])
+  const feriasDesatualizada = !!(mesArquivoFerias && mesArquivoFerias < mesAtualReal)
+  const feriasAtualizada = !!(mesArquivoFerias && mesArquivoFerias >= mesAtualReal)
 
   // Férias importadas no menu Férias, indexadas por código do empregado + CNPJ da empresa.
   // O código NÃO basta sozinho: cada empresa numera seus funcionários do 1 em diante, então o
@@ -444,17 +498,19 @@ export default function CalculoComissoes() {
     return lista.filter(f => f.inicio_gozo && f.fim_gozo && f.inicio_gozo <= periodoFim && f.fim_gozo >= periodoInicio)
   }
 
+
   // Monta a lista de candidatos (funcionário + política/fonte/base resolvidas, ou motivo de exclusão)
   const candidatos = useMemo(() => {
     if (!dados) return []
     const { funcionarios, empresas, cargos, departamentos, setores, politicas } = dados
     // Mesmo critério de "Situação (Ativo) = Sim" usado em Funcionarios.jsx: sem data de demissão
-    // e situação vazia ou "1 - Trabalhando" (exclui Demitido e qualquer Afastado — férias, doença etc).
+    // e situação vazia, "1 - Trabalhando" ou "9 - Férias" (exclui Demitido e qualquer outro
+    // Afastado — doença etc). Quem está de férias sempre aparece na tabela — `recebe_comissao_ferias`
+    // só decide se os dias de férias são descontados do período calculado, não se ele some da lista.
     const SITUACAO_FERIAS = '9'
     const funcionariosAtivos = funcionarios.filter(f => {
       if (f.data_demissao) return false
-      if (!f.situacao_funcionario || f.situacao_funcionario === '1') return true
-      if (f.situacao_funcionario === SITUACAO_FERIAS && f.recebe_comissao_ferias) return true
+      if (!f.situacao_funcionario || f.situacao_funcionario === '1' || f.situacao_funcionario === SITUACAO_FERIAS) return true
       return false
     })
     const empresasMap = Object.fromEntries(empresas.map(e => [e.id, e]))
@@ -554,7 +610,15 @@ export default function CalculoComissoes() {
   const filtrarCandidatos = useMemo(() => (ignorar) => candidatos.filter(c => {
     if (ignorar !== 'funcionario' && filtroFuncionario && !buscaComCoringa(c.func.nome_funcionario, filtroFuncionario)) return false
     if (ignorar !== 'empresa' && filtroEmpresa && (c.empresa?.empresa_fantasia || c.empresa?.nome_empresa) !== filtroEmpresa) return false
-    if (ignorar !== 'departamento' && filtrosDepartamento.length > 0 && !c.departamentoNomes.some(n => filtrosDepartamento.includes(n))) return false
+    // Departamento é subordinado à Empresa nesta tela (não um facet do mesmo nível) — nunca
+    // deve estreitar de volta a lista de Empresas. Sem essa exceção, marcar um departamento
+    // "órfão" (só com lote salvo, sem candidato elegível hoje — ver departamentosComLote)
+    // zerava empresasUnicas e a Empresa selecionada era limpa sozinha pelo efeito de
+    // auto-limpeza de filtro inválido logo abaixo.
+    if (ignorar !== 'departamento' && ignorar !== 'empresa' && filtrosDepartamento.length > 0) {
+      const nomesOuSemDepto = c.departamentoNomes.length > 0 ? c.departamentoNomes : [SEM_DEPARTAMENTO]
+      if (!nomesOuSemDepto.some(n => filtrosDepartamento.includes(n))) return false
+    }
     if (ignorar !== 'setor' && filtroSetor && !c.setorNomes.includes(filtroSetor)) return false
     if (ignorar !== 'area' && filtroArea && !c.areaNomes.includes(filtroArea)) return false
     if (ignorar !== 'cargo' && filtroCargo && c.cargo?.nome_cargo !== filtroCargo) return false
@@ -563,8 +627,60 @@ export default function CalculoComissoes() {
     return true
   }), [candidatos, filtroFuncionario, filtroEmpresa, filtrosDepartamento, filtroSetor, filtroArea, filtroCargo, filtroAgrupamentoCargo, filtroComissoes])
 
-  const empresasUnicas = useMemo(() => juntaUnicos(filtrarCandidatos('empresa').map(c => c.empresa?.empresa_fantasia || c.empresa?.nome_empresa)), [filtrarCandidatos])
-  const departamentosUnicos = useMemo(() => juntaUnicos(filtrarCandidatos('departamento').flatMap(c => c.departamentoNomes)), [filtrarCandidatos])
+  // Só empresas do agrupamento Caiobá Trucks — Comissões DAF não se aplica a Caiobá Motos nem
+  // Outras Caiobá (Serviços ADM, Locações).
+  const empresasUnicas = useMemo(() => juntaUnicos(
+    filtrarCandidatos('empresa').filter(c => c.empresa?.agrupamento_nome === 'Caiobá Trucks').map(c => c.empresa?.empresa_fantasia || c.empresa?.nome_empresa)
+  ), [filtrarCandidatos])
+  // Departamentos "órfãos": já têm lote salvo pra empresa+período, mas nenhum funcionário
+  // elegível neles HOJE (ex: o cargo foi remanejado pra outro departamento depois do cálculo).
+  // Sem isso, o lote fica preso — nunca vira aba selecionável, então nunca dá pra excluir.
+  const [departamentosComLote, setDepartamentosComLote] = useState([])
+  useEffect(() => {
+    if (!periodoValido || !filtroEmpresa || !empresaSelecionadaId) { setDepartamentosComLote([]); return }
+    let cancelado = false
+    ;(async () => {
+      try {
+        const lotes = await apiService.getLotesPorEmpresaPeriodo(periodoInicio, periodoFim, empresaSelecionadaId)
+        // Nome salvo no lote é um retrato do momento em que foi criado — se o departamento foi
+        // renomeado depois, resolve pelo id (cadastro atual) primeiro, senão duplica aba com o
+        // nome antigo ao lado do nome novo pro mesmo departamento.
+        if (!cancelado) setDepartamentosComLote(lotes.map(l => {
+          const nomeAtual = l.departamento_id ? dados?.departamentos.find(d => d.id === l.departamento_id)?.nome_departamento : null
+          return nomeAtual || l.departamento_nome || SEM_DEPARTAMENTO
+        }))
+      } catch {
+        if (!cancelado) setDepartamentosComLote([])
+      }
+    })()
+    return () => { cancelado = true }
+  }, [filtroEmpresa, empresaSelecionadaId, periodoInicio, periodoFim, periodoValido, dados])
+
+  // Cobre o caso mais órfão de todos: valor calculado e salvo, mas nem lote foi criado (aparece
+  // em Processamento de Comissões como "Sem lote"). Nesse caso nem departamentosComLote enxerga
+  // — cruza direto os funcionários com valor salvo neste período contra o cadastro de
+  // funcionários (sem exigir política/elegibilidade viva), pra sempre existir uma aba pra
+  // selecionar e excluir.
+  const departamentosComValorSalvo = useMemo(() => {
+    if (!filtroEmpresa || !empresaSelecionadaId || !dados) return []
+    const funcionarioIdsComValor = new Set(Object.keys(valoresPorFuncionario).map(chave => chave.split('::')[0]))
+    if (funcionarioIdsComValor.size === 0) return []
+    const nomes = new Set()
+    for (const f of dados.funcionarios || []) {
+      if (f.empresa_id !== empresaSelecionadaId || !funcionarioIdsComValor.has(f.id)) continue
+      const deptNomes = (f.departamento_ids || []).map(id => dados.departamentos.find(d => d.id === id)?.nome_departamento).filter(Boolean)
+      if (deptNomes.length === 0) nomes.add(SEM_DEPARTAMENTO)
+      else deptNomes.forEach(n => nomes.add(n))
+    }
+    return [...nomes]
+  }, [filtroEmpresa, empresaSelecionadaId, dados, valoresPorFuncionario])
+
+  const departamentosUnicos = useMemo(() => juntaUnicos([
+    ...filtrarCandidatos('departamento').flatMap(c => c.departamentoNomes.length > 0 ? c.departamentoNomes : [SEM_DEPARTAMENTO]),
+    ...departamentosComLote,
+    ...departamentosComValorSalvo,
+  ]), [filtrarCandidatos, departamentosComLote, departamentosComValorSalvo])
+
   const setoresUnicos = useMemo(() => juntaUnicos(filtrarCandidatos('setor').flatMap(c => c.setorNomes)), [filtrarCandidatos])
   const areasUnicas = useMemo(() => juntaUnicos(filtrarCandidatos('area').flatMap(c => c.areaNomes)), [filtrarCandidatos])
   const cargosUnicos = useMemo(() => juntaUnicos(filtrarCandidatos('cargo').map(c => c.cargo?.nome_cargo)), [filtrarCandidatos])
@@ -660,6 +776,14 @@ export default function CalculoComissoes() {
     && combinacoesEmpresaDepartamento.length > 0
     && lotesTodasEmpresas.length === combinacoesEmpresaDepartamento.length
     && lotesTodasEmpresas.every(l => l && l.status !== 'RASCUNHO')
+  // Mesmo lookup de combinacoesEmpresaDepartamento/lotesTodasEmpresas, só que indexado por
+  // empresa+departamento — usado em statusLinha pra resolver o status de cada funcionário na
+  // visão "Todas as Empresas" (sem isso, todo mundo aparecia preso em "Aguardando Gerente"
+  // mesmo já Conferido/Processado, porque lotesPorDepartamento só é buscado com empresa marcada).
+  const lotesTodasEmpresasPorChave = useMemo(
+    () => Object.fromEntries(combinacoesEmpresaDepartamento.map((combo, i) => [`${combo.empresaId}::${combo.deptNome}`, lotesTodasEmpresas[i]])),
+    [combinacoesEmpresaDepartamento, lotesTodasEmpresas]
+  )
 
   const candidatosFiltrados = useMemo(() => filtrarCandidatos(null), [filtrarCandidatos])
 
@@ -697,18 +821,25 @@ export default function CalculoComissoes() {
   const statusLinha = (c) => {
     const liberado = !!lote?.funcionarios_liberados_reprocessamento?.includes(c.func.id)
     const calculado = !!valoresPorFuncionario[chaveLinha(c)]
-    if (liberado) return { label: 'Reprocessar', className: 'bg-amber-100 text-amber-700' }
+    if (liberado) return { label: 'Aguardando Reprocessamento', className: 'bg-amber-100 text-amber-700' }
     if (!calculado) return { label: 'Pendente', className: 'bg-slate-100 text-slate-500' }
     // Com exatamente 1 departamento marcado usa o `lote` único já carregado; em modo combinado
     // (0 ou 2+ marcados) não tem um lote só pra apontar, então olha o lote do(s) departamento(s)
-    // do próprio candidato (lotesPorDepartamento) — sem isso, todo mundo aparecia só como
-    // "Calculado" na visão combinada, mesmo quando já Conferido/Processado.
+    // do próprio candidato — de lotesPorDepartamento (empresa marcada) ou, sem empresa nenhuma
+    // selecionada, de lotesTodasEmpresasPorChave (empresa+departamento do próprio candidato).
+    // Sem isso, todo mundo aparecia preso em "Aguardando Gerente" na visão sem empresa, mesmo já
+    // Conferido/Processado.
     const statusEfetivo = departamentoUnicoSelecionado
       ? lote?.status
-      : (c.departamentoNomes || []).map(n => lotesPorDepartamento[n]?.status).find(Boolean)
+      : filtroEmpresa
+        ? (c.departamentoNomes || []).map(n => lotesPorDepartamento[n]?.status).find(Boolean)
+        : (c.departamentoNomes || []).map(n => lotesTodasEmpresasPorChave[`${c.func.empresa_id}::${n}`]?.status).find(Boolean)
+    // Mesmos rótulos usados em Processamento de Comissões (STATUS_LOTE_INFO), pra identificar de
+    // cara em que etapa do fluxo aquele funcionário está sem precisar trocar de aba.
     if (statusEfetivo === 'PROCESSADO') return { label: 'Processado', className: 'bg-emerald-100 text-emerald-700' }
-    if (statusEfetivo === 'CONFERIDO') return { label: 'Conferido', className: 'bg-blue-100 text-blue-700' }
-    return { label: 'Calculado', className: 'bg-slate-200 text-slate-700' }
+    if (statusEfetivo === 'CONFERIDO_DP') return { label: 'Aguardando Processamento', className: 'bg-indigo-100 text-indigo-700' }
+    if (statusEfetivo === 'CONFERIDO') return { label: 'Aguardando DP', className: 'bg-blue-100 text-blue-700' }
+    return { label: 'Aguardando Gerente', className: 'bg-slate-200 text-slate-700' }
   }
 
   const handleCalcular = async () => {
@@ -727,6 +858,7 @@ export default function CalculoComissoes() {
         pasta: c.fonte.pasta_sharepoint,
         prefixo: c.fonte.prefixo_arquivo,
         usaSubpastaAno: c.fonte.usa_subpasta_ano,
+        subpastaPadrao: c.fonte.subpasta_padrao || null,
         linhaCabecalho: c.fonte.linha_cabecalho,
         colunaEmpresa: c.fonte.coluna_empresa,
         colunaData: c.fonte.coluna_data,
@@ -965,9 +1097,10 @@ export default function CalculoComissoes() {
       // (férias), e a limpeza dos antigos precisa cobrir o intervalo todo.
       await apiService.salvarComissoesCalculadas(registros, periodoInicio, periodoFim)
       if (loteBloqueado) {
-        // Reprocessamento parcial: só destrava (some da lista de liberados) quem acabou de
-        // salvar — o status do lote (Conferido/Processado) não muda.
-        loteAtualizado = await apiService.destravarFuncionariosSalvosLote(lote.id, registros.map(r => r.funcionario_id))
+        // Reprocessamento parcial: destrava (some da lista de liberados) quem acabou de salvar.
+        // Se o lote já tinha passado do DP (Conferido pelo DP ou Processado), o status volta
+        // pra Conferido — o valor mudou depois que o DP olhou, precisa passar por ele de novo.
+        loteAtualizado = await apiService.destravarFuncionariosSalvosLote(lote.id, registros.map(r => r.funcionario_id), usuarioLabel)
       }
       setLote(loteAtualizado)
       if (mostrarHistoricoLote) await carregarHistoricoLote(loteAtualizado.id)
@@ -1039,7 +1172,7 @@ export default function CalculoComissoes() {
         <div style="font-family:Arial,Helvetica,sans-serif;background:#fff;padding:20px 20px 0 20px;width:${WRAP_W}px;box-sizing:border-box;">
           <div style="display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #1e293b;padding-bottom:12px;margin-bottom:16px;">
             <div>
-              <div style="font-size:22px;font-weight:800;color:#0f172a;">Cálculo de Comissões DAF</div>
+              <div style="font-size:22px;font-weight:800;color:#0f172a;">Cálculo de Comissões</div>
               <div style="font-size:15px;font-weight:700;color:#1e293b;margin-top:2px;">${nomesEmpresaDoDepto(grupoDepto)}</div>
             </div>
             <div style="text-align:right;font-size:13px;color:#475569;">
@@ -1201,15 +1334,14 @@ export default function CalculoComissoes() {
         <div>
           <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
             <Wallet className="h-5 w-5 text-blue-600" />
-            Cálculo de Comissões DAF
+            Cálculo de Comissões
           </h1>
-          <p className="text-xs text-slate-500">Filtre quem você quer ver, confira a política de comissão de cada um e depois calcule o valor pro período escolhido.</p>
         </div>
         <div className="flex items-center gap-2">
           {feriasDesatualizada && (
             <button
               onClick={() => navigate('/ferias')}
-              title="A data de modificação do arquivo de férias não é do mês do período selecionado — pode estar desatualizado"
+              title="A data de modificação do arquivo de férias não é do mês do período selecionado — atualize antes de calcular (Calcular Comissões fica bloqueado até lá)"
               className="flex items-center gap-1.5 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 hover:bg-amber-100 px-3 py-2 rounded-md transition-colors"
             >
               <RefreshCw className="h-4 w-4" /> Atualizar Férias
@@ -1224,9 +1356,6 @@ export default function CalculoComissoes() {
               <CheckCircle2 className="h-4 w-4" /> Férias Atualizadas
             </button>
           )}
-          <button onClick={() => navigate('/historico-comissoes')} className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 px-3 py-2 rounded-md hover:bg-slate-100 transition-colors">
-            <History className="h-4 w-4" /> Histórico
-          </button>
         </div>
       </div>
 
@@ -1248,90 +1377,20 @@ export default function CalculoComissoes() {
                 Cada empresa tem seu próprio lote no mesmo período, pra um gerente conferir/
                 processar/excluir a própria loja sem interferir no trabalho de outro gerente
                 em outra empresa (mesmo padrão de escopo por Empresa já usado em Grupos de Acesso). */}
-            <div className="flex flex-wrap items-center gap-1.5 mb-3 pb-3 border-b border-slate-100">
-              <label className={`${LBL} mr-1`}>Empresa</label>
-              {empresasUnicas.map(nome => (
-                <button
-                  key={nome}
-                  type="button"
-                  onClick={() => setFiltroEmpresa(v => v === nome ? '' : nome)}
-                  className={`px-3 py-1.5 rounded-md text-xs font-semibold border transition-colors ${
-                    filtroEmpresa === nome
-                      ? 'bg-blue-600 border-blue-600 text-white'
-                      : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-                  }`}
+            <div className="flex flex-wrap items-end gap-4 mb-3 pb-3 border-b border-slate-100">
+              <div className="flex flex-col gap-1.5">
+                <label className={LBL}>Empresa</label>
+                <select
+                  value={filtroEmpresa}
+                  onChange={e => setFiltroEmpresa(e.target.value)}
+                  className="w-96 text-xs p-2 border border-slate-200 rounded-md bg-white font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                 >
-                  {nome}
-                </button>
-              ))}
-            </div>
-            {/* Abas de Departamento — multi-select pra VISUALIZAR (a tabela combina os
-                departamentos marcados); cada botão marcado mostra um X pra desmarcar só ele.
-                As ações do fluxo de aprovação (Calcular/Salvar/Conferir/Processar/Excluir) só
-                liberam com exatamente 1 marcado — cada departamento tem seu próprio lote, então
-                mais de um por vez não tem um lote único pra apontar. */}
-            {filtroEmpresa && (
-              <div className="flex flex-wrap items-center gap-1.5 mb-3 pb-3 border-b border-slate-100">
-                <label className={`${LBL} mr-1`}>Departamento</label>
-                {departamentosUnicos.map(nome => {
-                  const selecionado = filtrosDepartamento.includes(nome)
-                  const loteDept = lotesPorDepartamento[nome]
-                  const fechado = !!(loteDept && loteDept.status !== 'RASCUNHO')
-                  const corBolinha = carregandoLotesDepartamentos ? 'bg-slate-300' : fechado ? 'bg-emerald-500' : 'bg-amber-400'
-                  const tituloBolinha = carregandoLotesDepartamentos
-                    ? 'Verificando status...'
-                    : fechado
-                      ? `Fechado (${loteDept.status === 'PROCESSADO' ? 'Processado' : 'Conferido'})`
-                      : 'Ainda não fechado (Rascunho ou nunca calculado)'
-                  return (
-                    <button
-                      key={nome}
-                      type="button"
-                      onClick={() => setFiltrosDepartamento(prev => prev.includes(nome) ? prev.filter(d => d !== nome) : [...prev, nome])}
-                      title={tituloBolinha}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold border transition-colors ${
-                        selecionado
-                          ? 'bg-blue-600 border-blue-600 text-white'
-                          : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-                      }`}
-                    >
-                      <span className={`inline-block w-1.5 h-1.5 rounded-full shrink-0 ${corBolinha}`} />
-                      {nome}
-                      {selecionado && <X className="h-3 w-3" />}
-                    </button>
-                  )
-                })}
-                {filtrosDepartamento.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setFiltrosDepartamento([])}
-                    className="flex items-center gap-1 text-[11px] font-semibold text-slate-400 hover:text-red-600 transition-colors ml-1"
-                  >
-                    <X className="h-3 w-3" /> Limpar seleção
-                  </button>
-                )}
-                <span className="flex items-center gap-1 text-[10px] text-slate-400 ml-1">
-                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400" /> não fechado
-                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 ml-1.5" /> fechado
-                </span>
+                  <option value="">Selecione...</option>
+                  {empresasUnicas.map(nome => (
+                    <option key={nome} value={nome}>{nome}</option>
+                  ))}
+                </select>
               </div>
-            )}
-            {!filtroEmpresa && (
-              <p className="flex items-center gap-1.5 text-[11px] text-amber-600 mb-3">
-                <Lock className="h-3 w-3" /> Selecione uma empresa acima (e depois um departamento) pra liberar Calcular/Salvar/Conferir. Sem nada selecionado, o Salvar PDF libera pra todas as empresas juntas, desde que tudo já esteja Conferido.
-              </p>
-            )}
-            {filtroEmpresa && filtrosDepartamento.length === 0 && (
-              <p className="flex items-center gap-1.5 text-[11px] text-amber-600 mb-3">
-                <Lock className="h-3 w-3" /> Selecione um departamento acima pra liberar.
-              </p>
-            )}
-            {filtroEmpresa && filtrosDepartamento.length > 1 && (
-              <p className="flex items-center gap-1.5 text-[11px] text-amber-600 mb-3">
-                <Lock className="h-3 w-3" /> Vários departamentos selecionados — mostrando a visão combinada. Selecione só um pra liberar Calcular/Salvar/Conferir (o Salvar PDF libera com vários, desde que todos já estejam Conferidos).
-              </p>
-            )}
-            <div className="flex flex-wrap items-end gap-4">
               <div className="flex flex-col gap-1.5">
                 <label className={LBL}>Data Início</label>
                 <input type="date" className="w-40 text-xs p-2 border border-slate-200 rounded-md font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" value={periodoInicio} onChange={e => setPeriodoInicio(e.target.value)} />
@@ -1350,8 +1409,7 @@ export default function CalculoComissoes() {
                   </button>
                 </div>
               </div>
-              {/* Filtros Avançados — botão movido pra cá, junto do período; o painel só abre
-                  ao clicar, expandindo logo abaixo desta linha (mesma seção, sem card à parte). */}
+              {/* Filtros Avançados — fica nesta mesma linha, empurrado pra direita. */}
               <button
                 type="button"
                 onClick={() => setFiltrosAbertos(v => !v)}
@@ -1363,14 +1421,83 @@ export default function CalculoComissoes() {
               </button>
             </div>
             {periodoMesesDiferentes && (
-              <p className="text-[11px] text-amber-600 mt-2">Data Início e Data Fim precisam estar dentro do mesmo mês.</p>
+              <p className="text-[11px] text-amber-600 mb-3">Data Início e Data Fim precisam estar dentro do mesmo mês.</p>
+            )}
+            {/* Abas de Departamento — multi-select pra VISUALIZAR (a tabela combina os
+                departamentos marcados); cada botão marcado mostra um X pra desmarcar só ele.
+                As ações do fluxo de aprovação (Calcular/Salvar/Conferir/Processar/Excluir) só
+                liberam com exatamente 1 marcado — cada departamento tem seu próprio lote, então
+                mais de um por vez não tem um lote único pra apontar. */}
+            {filtroEmpresa && (
+              <div className="flex flex-wrap items-center gap-1.5 mb-3 pb-3 border-b border-slate-100">
+                <label className={`${LBL} mr-1`}>Departamento</label>
+                {departamentosUnicos.map(nome => {
+                  const selecionado = filtrosDepartamento.includes(nome)
+                  const loteDept = lotesPorDepartamento[nome]
+                  const fechado = !!(loteDept && loteDept.status !== 'RASCUNHO')
+                  const tituloBolinha = carregandoLotesDepartamentos
+                    ? 'Verificando status...'
+                    : fechado
+                      ? `Fechado (${loteDept.status === 'PROCESSADO' ? 'Processado' : loteDept.status === 'CONFERIDO_DP' ? 'Conferido pelo DP' : 'Conferido'})`
+                      : 'Ainda não fechado (Rascunho ou nunca calculado)'
+                  return (
+                    <button
+                      key={nome}
+                      type="button"
+                      onClick={() => setFiltrosDepartamento(prev => prev.includes(nome) ? prev.filter(d => d !== nome) : [...prev, nome])}
+                      title={tituloBolinha}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold border transition-colors ${
+                        selecionado
+                          ? 'bg-blue-600 border-blue-600 text-white'
+                          : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      {carregandoLotesDepartamentos
+                        ? <span className="inline-block w-1.5 h-1.5 rounded-full shrink-0 bg-slate-300" />
+                        : fechado
+                          ? <Lock className="h-3 w-3 shrink-0 text-emerald-500" />
+                          : <span className="inline-block w-1.5 h-1.5 rounded-full shrink-0 bg-amber-400" />}
+                      {nome}
+                      {selecionado && <X className="h-3 w-3" />}
+                    </button>
+                  )
+                })}
+                {departamentoSomenteVisualizacao && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold border shrink-0 bg-slate-100 text-slate-500 border-slate-200" title="Este departamento está liberado só pra visualização (Grupos de Acesso) — sem botões de ação.">
+                    Somente Visualização
+                  </span>
+                )}
+                {departamentoSelecionadoId && empresaSelecionadaId && responsaveisPorDepartamento[departamentoSelecionadoId]?.[empresaSelecionadaId]?.length > 0 && (
+                  <span className="text-[11px] text-slate-400 ml-1">
+                    Responsável: <strong className="text-slate-600 font-semibold">{responsaveisPorDepartamento[departamentoSelecionadoId][empresaSelecionadaId].join(', ')}</strong>
+                  </span>
+                )}
+                {filtrosDepartamento.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setFiltrosDepartamento([])}
+                    className="flex items-center gap-1 text-[11px] font-semibold text-slate-400 hover:text-red-600 transition-colors ml-1"
+                  >
+                    <X className="h-3 w-3" /> Limpar seleção
+                  </button>
+                )}
+                <span className="flex items-center gap-1 text-[10px] text-slate-400 ml-1">
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400" /> aberto
+                  <Lock className="h-3 w-3 text-emerald-500 ml-1.5" /> fechado
+                </span>
+              </div>
+            )}
+            {filtroEmpresa && filtrosDepartamento.length > 1 && (
+              <p className="flex items-center gap-1.5 text-[11px] text-amber-600 mb-3">
+                <Lock className="h-3 w-3" /> Vários departamentos selecionados — mostrando a visão combinada. Selecione só um pra liberar Calcular/Salvar/Conferir (o Salvar PDF libera com vários, desde que todos já estejam Conferidos).
+              </p>
             )}
             {loteBloqueado && (
               <p className="flex items-center gap-1.5 text-[11px] text-amber-600 mt-2">
                 <Lock className="h-3 w-3" />
                 {elegiveisFiltrados.length > 0
-                  ? `Este período já foi ${lote.status === 'PROCESSADO' ? 'processado' : 'conferido'} — só ${elegiveisFiltrados.length} funcionário(s) liberado(s) pra reprocessamento em Histórico de Comissões ficam recalculáveis agora.`
-                  : `Este período já foi ${lote.status === 'PROCESSADO' ? 'processado' : 'conferido'} — peça ao RH pra liberar o reprocessamento em Histórico de Comissões antes de recalcular.`}
+                  ? `Este período já foi ${lote.status === 'PROCESSADO' ? 'processado' : lote.status === 'CONFERIDO_DP' ? 'conferido pelo DP' : 'conferido'} — só ${elegiveisFiltrados.length} funcionário(s) liberado(s) pra reprocessamento em Processamento de Comissões ficam recalculáveis agora.`
+                  : `Este período já foi ${lote.status === 'PROCESSADO' ? 'processado' : lote.status === 'CONFERIDO_DP' ? 'conferido pelo DP' : 'conferido'} — peça ao RH/DP pra liberar o reprocessamento em Processamento de Comissões antes de recalcular.`}
               </p>
             )}
             {filtrosAbertos && (
@@ -1455,10 +1582,11 @@ export default function CalculoComissoes() {
                   {lote && (
                     <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
                       lote.status === 'PROCESSADO' ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      : lote.status === 'CONFERIDO_DP' ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
                       : lote.status === 'CONFERIDO' ? 'bg-blue-50 text-blue-700 border-blue-200'
                       : 'bg-slate-100 text-slate-500 border-slate-200'
                     }`}>
-                      {lote.status === 'PROCESSADO' ? 'Processado' : lote.status === 'CONFERIDO' ? 'Conferido' : 'Rascunho'}
+                      {lote.status === 'PROCESSADO' ? 'Processado' : lote.status === 'CONFERIDO_DP' ? 'Aguardando Processamento' : lote.status === 'CONFERIDO' ? 'Aguardando DP' : 'Aguardando Gerente'}
                     </span>
                   )}
                 </div>
@@ -1494,17 +1622,23 @@ export default function CalculoComissoes() {
                       {podeCalcular && (
                         <button
                           onClick={handleCalcular}
-                          disabled={!filtroEmpresa || !departamentoUnicoSelecionado || !periodoValido || calculando || elegiveisFiltrados.length === 0}
-                          className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold px-3 py-1.5 rounded-md shadow-sm transition-colors"
+                          disabled={!filtroEmpresa || !departamentoUnicoSelecionado || !periodoValido || calculando || elegiveisFiltrados.length === 0 || feriasDesatualizada || departamentoSomenteVisualizacao}
+                          title={departamentoSomenteVisualizacao ? 'Este departamento está liberado só pra visualização — peça pra alguém com edição fazer isso.' : feriasDesatualizada ? 'O arquivo de férias está desatualizado pro mês do período selecionado — atualize em Férias antes de calcular.' : undefined}
+                          className={
+                            feriasDesatualizada
+                              ? 'flex items-center gap-1.5 bg-amber-100 border border-amber-300 text-amber-700 cursor-not-allowed text-xs font-semibold px-3 py-1.5 rounded-md shadow-sm transition-colors'
+                              : 'flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold px-3 py-1.5 rounded-md shadow-sm transition-colors'
+                          }
                         >
-                          {calculando ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <PlayCircle className="h-3.5 w-3.5" />}
-                          Calcular Comissões ({elegiveisFiltrados.length})
+                          {calculando ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : feriasDesatualizada ? <AlertTriangle className="h-3.5 w-3.5" /> : <PlayCircle className="h-3.5 w-3.5" />}
+                          {feriasDesatualizada ? 'Férias Desatualizadas' : `Calcular Comissões (${elegiveisFiltrados.length})`}
                         </button>
                       )}
                       {podeSalvar && (
                         <button
                           onClick={handleSalvar}
-                          disabled={!filtroEmpresa || !departamentoUnicoSelecionado || elegiveisFiltrados.length === 0 || qtdCalculados === 0 || salvando || (salvo && lote?.status === 'RASCUNHO')}
+                          disabled={!filtroEmpresa || !departamentoUnicoSelecionado || elegiveisFiltrados.length === 0 || qtdCalculados === 0 || salvando || (salvo && lote?.status === 'RASCUNHO') || departamentoSomenteVisualizacao}
+                          title={departamentoSomenteVisualizacao ? 'Este departamento está liberado só pra visualização — peça pra alguém com edição fazer isso.' : undefined}
                           className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold px-3 py-1.5 rounded-md shadow-sm transition-colors"
                         >
                           {salvando ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
@@ -1514,7 +1648,8 @@ export default function CalculoComissoes() {
                       {podeConferir && (
                         <button
                           onClick={handleConferir}
-                          disabled={!filtroEmpresa || !departamentoUnicoSelecionado || !(lote?.status === 'RASCUNHO' && salvo) || processandoAcao === 'conferir'}
+                          disabled={!filtroEmpresa || !departamentoUnicoSelecionado || !(lote?.status === 'RASCUNHO' && salvo) || processandoAcao === 'conferir' || departamentoSomenteVisualizacao}
+                          title={departamentoSomenteVisualizacao ? 'Este departamento está liberado só pra visualização — peça pra alguém com edição fazer isso.' : undefined}
                           className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold px-3 py-1.5 rounded-md shadow-sm transition-colors"
                         >
                           {processandoAcao === 'conferir' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />}
@@ -1528,11 +1663,11 @@ export default function CalculoComissoes() {
                             (!filtroEmpresa
                               ? (carregandoLotesTodasEmpresas || !todasEmpresasConferidas)
                               : (departamentoUnicoSelecionado
-                                  ? (!lote || lote.status === 'RASCUNHO')
+                                  ? (!lote || lote.status === 'RASCUNHO' || departamentoSomenteVisualizacao)
                                   : (carregandoLotesDepartamentos || !todosDepartamentosConferidos))) ||
                             gerandoPDF || (filtroEmpresa ? gruposPorCargo.length === 0 : gruposPorEmpresaDepartamento.length === 0)
                           }
-                          title="Baixa o PDF com uma página por Departamento, pra enviar ao RH — disponível depois de Comissões Conferidas. Pode marcar vários departamentos (ou nenhum, pra todos os da empresa; ou nenhuma empresa, pra todas as lojas juntas) pra baixar tudo num PDF só, desde que já estejam Conferidos."
+                          title={departamentoUnicoSelecionado && departamentoSomenteVisualizacao ? 'Este departamento está liberado só pra visualização — peça pra alguém com edição fazer isso.' : "Baixa o PDF com uma página por Departamento, pra enviar ao RH — disponível depois de Comissões Conferidas. Pode marcar vários departamentos (ou nenhum, pra todos os da empresa; ou nenhuma empresa, pra todas as lojas juntas) pra baixar tudo num PDF só, desde que já estejam Conferidos."}
                           className="flex items-center gap-1.5 border border-slate-300 text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-semibold px-3 py-1.5 rounded-md transition-colors"
                         >
                           {gerandoPDF ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileDown className="h-3.5 w-3.5" />}
@@ -1542,8 +1677,8 @@ export default function CalculoComissoes() {
                       {podeExcluir && (lote ? lote.status === 'RASCUNHO' : salvo) && (
                         <button
                           onClick={handleExcluirHistorico}
-                          disabled={!filtroEmpresa || !departamentoUnicoSelecionado || processandoAcao === 'excluir'}
-                          title="Só pode excluir enquanto o período estiver em Rascunho"
+                          disabled={!filtroEmpresa || !departamentoUnicoSelecionado || processandoAcao === 'excluir' || departamentoSomenteVisualizacao}
+                          title={departamentoSomenteVisualizacao ? 'Este departamento está liberado só pra visualização — peça pra alguém com edição fazer isso.' : "Só pode excluir enquanto o período estiver em Rascunho"}
                           className="flex items-center gap-1.5 border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-40 text-xs font-semibold px-3 py-1.5 rounded-md transition-colors ml-auto"
                         >
                           {processandoAcao === 'excluir' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
@@ -1576,6 +1711,7 @@ export default function CalculoComissoes() {
               </div>
             </div>
           )}
+
 
           {/* LISTA — sempre visível, com a política resumida; valores aparecem depois de calcular.
               Calcular/Salvar/Conferir/Processar/Salvar PDF ficam no card Etapas do Processamento, acima. */}
@@ -1703,6 +1839,13 @@ export default function CalculoComissoes() {
                                       <span className="ml-1.5 text-[10px] font-semibold text-blue-600 whitespace-nowrap">
                                         {fmtDiaMes(c.segInicio)} a {fmtDiaMes(c.segFim)}
                                       </span>
+                                    )}
+                                    {(c.politica?.codigo_rubrica || c.politica?.tipo_processo) && (
+                                      <div className="text-[10px] font-normal text-slate-400 mt-0.5">
+                                        {c.politica?.codigo_rubrica && <>Rubrica <span className="font-mono text-slate-500">{c.politica.codigo_rubrica}</span></>}
+                                        {c.politica?.codigo_rubrica && c.politica?.tipo_processo && <span className="mx-1">·</span>}
+                                        {c.politica?.tipo_processo && <>Tipo <span className="font-mono text-slate-500">{c.politica.tipo_processo}</span></>}
+                                      </div>
                                     )}
                                     {/* Detalhamento por empresa (Nível EMPRESA + checkbox marcado na Política) —
                                         uma linha por empresa, abaixo da descrição, pra auditar de onde veio o total. */}

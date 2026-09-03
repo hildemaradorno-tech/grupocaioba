@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react'
 import { useSessionState } from '../../hooks/useSessionState'
-import { Plus, X, AlertTriangle, Search, Users, ClipboardList, Grid3x3, Check, SlidersHorizontal, ChevronDown, ChevronUp, FileDown, Pencil, Trash2, ArrowUp, ArrowDown, ArrowUpDown, Tags, UserCog } from 'lucide-react'
+import { Plus, X, AlertTriangle, Search, Users, ClipboardList, Grid3x3, Check, SlidersHorizontal, ChevronDown, ChevronUp, FileDown, Pencil, Trash2, ArrowUp, ArrowDown, ArrowUpDown, Tags, Network } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import PermissionActionButtons from '../../components/PermissionActionButtons'
 import { apiService } from '../../services/api'
+import OrganogramaTreinamentos from './OrganogramaTreinamentos'
 
 const cmpTexto = (a, b) => (a || '').localeCompare(b || '')
 
@@ -47,22 +48,25 @@ function ThSort({ label, col, sort, onSort, center, className = '' }) {
   )
 }
 
-const _cache = { cursos: null, categorias: null, sistemas: null, cargosModulo: null }
-
-const SETORES = ['Peças', 'Serviços', 'Administrativo', 'Loja']
-const SETOR_ORDEM = { 'Peças': 1, 'Serviços': 2, 'Administrativo': 3, 'Loja': 4 }
+const _cache = { cursos: null, categorias: null, sistemas: null, cargos: null }
 
 export default function GradeTreinamentos() {
   const [cursos, setCursos] = useState(() => _cache.cursos ?? [])
   const [categorias, setCategorias] = useState(() => _cache.categorias ?? [])
   const [sistemas, setSistemas] = useState(() => _cache.sistemas ?? [])
-  const [cargosModulo, setCargosModulo] = useState(() => _cache.cargosModulo ?? [])
+  // cargos = árvore importada do Organograma (trein_organograma), não mais
+  // dim_cargos — ver Organograma de Treinamentos. Campos: id, nome, pai_id,
+  // headcount (supervisor_nome existe mas não é usado aqui).
+  const [cargos, setCargos] = useState(() => _cache.cargos ?? [])
   const [loading, setLoading] = useState(() => _cache.cursos === null)
   const [error, setError] = useState(null)
 
   const [visualizacao, setVisualizacao] = useSessionState('trein_grade_visualizacao', 'cargo')
   const [filtroCategoria, setFiltroCategoria] = useSessionState('trein_grade_filtro_categoria', '')
-  const [filtroSetor, setFiltroSetor] = useSessionState('trein_grade_filtro_setor', '')
+  const [filtroSistema, setFiltroSistema] = useSessionState('trein_grade_filtro_sistema', '')
+  // Filtro por Empresa = raiz da árvore do cargo (Holding/Caiobá Trucks/Caiobá
+  // Honda), substitui o antigo Agrupamento de Cargos (que dependia de dim_cargos).
+  const [filtroEmpresaCargo, setFiltroEmpresaCargo] = useSessionState('trein_grade_filtro_empresa_cargo', '')
   const [filtrosAvancados, setFiltrosAvancados] = useState(false)
   const [filtroCurso, setFiltroCurso] = useSessionState('trein_grade_filtro_curso', '')
   const [filtroCargoMatriz, setFiltroCargoMatriz] = useSessionState('trein_grade_filtro_cargo_matriz', '')
@@ -81,6 +85,8 @@ export default function GradeTreinamentos() {
   // cargoSel: { cargoId: 'OBR' | 'SUG' } — obrigatório ou sugerido (exclusivos)
   const [form, setForm] = useState({ nome: '', categoria_id: '', sistema_id: '', ativo: true, cargoSel: {} })
   const [buscaCargoModal, setBuscaCargoModal] = useState('')
+  const [filtroEmpresaCargoModal, setFiltroEmpresaCargoModal] = useState('')
+  const [filtroTipoCargoModal, setFiltroTipoCargoModal] = useState('') // '' | 'OBR' | 'SUG'
   const [salvando, setSalvando] = useState(false)
   const [erroCurso, setErroCurso] = useState(null)
 
@@ -108,25 +114,17 @@ export default function GradeTreinamentos() {
   const [categoriaExcluir, setCategoriaExcluir] = useState(null)
   const [modalExcluirCategoriaAberto, setModalExcluirCategoriaAberto] = useState(false)
 
-  // Modal "Cargos Cadastrados" (lista com editar/excluir + novo cargo), mesmo
-  // padrão do modal de Categorias acima
-  const [modalCargosModuloAberto, setModalCargosModuloAberto] = useState(false)
-  const [cargoModuloEditId, setCargoModuloEditId] = useState(null)
-  const [cargoModuloEditNome, setCargoModuloEditNome] = useState('')
-  const [cargoModuloEditSetor, setCargoModuloEditSetor] = useState(SETORES[0])
-  const [salvandoCargoModuloEdit, setSalvandoCargoModuloEdit] = useState(false)
-  const [erroCargoModuloEdit, setErroCargoModuloEdit] = useState(null)
-  const [novoCargoModuloNome, setNovoCargoModuloNome] = useState('')
-  const [novoCargoModuloSetor, setNovoCargoModuloSetor] = useState(SETORES[0])
-  const [criandoCargoModulo, setCriandoCargoModulo] = useState(false)
-  const [erroCargoModuloGerenciar, setErroCargoModuloGerenciar] = useState(null)
-  const [cargoModuloExcluir, setCargoModuloExcluir] = useState(null)
-  const [modalExcluirCargoModuloAberto, setModalExcluirCargoModuloAberto] = useState(false)
-
-
   // Exclusão de curso
   const [modalExcluirAberto, setModalExcluirAberto] = useState(false)
   const [cursoExcluir, setCursoExcluir] = useState(null)
+
+  // Expandir curso (aba Cursos): mostra empresas/departamentos/cargos
+  const [cursosExpandidos, setCursosExpandidos] = useState(() => new Set())
+  const toggleCursoExpandido = (id) => setCursosExpandidos(prev => {
+    const next = new Set(prev)
+    next.has(id) ? next.delete(id) : next.add(id)
+    return next
+  })
 
   const [gerandoPDF, setGerandoPDF] = useState(false)
   const [pdfMenuAberto, setPdfMenuAberto] = useState(false)
@@ -146,7 +144,7 @@ export default function GradeTreinamentos() {
   useEffect(() => { _cache.cursos = cursos }, [cursos])
   useEffect(() => { _cache.categorias = categorias }, [categorias])
   useEffect(() => { _cache.sistemas = sistemas }, [sistemas])
-  useEffect(() => { _cache.cargosModulo = cargosModulo }, [cargosModulo])
+  useEffect(() => { _cache.cargos = cargos }, [cargos])
 
   const loadDados = async (silent = false) => {
     if (!silent) { setLoading(true); setError(null) }
@@ -155,12 +153,12 @@ export default function GradeTreinamentos() {
         apiService.getTreinCursos(),
         apiService.getTreinCategorias(),
         apiService.getTreinSistemas(),
-        apiService.getTreinCargos(),
+        apiService.getTreinOrganograma(),
       ])
       setCursos(cur)
       setCategorias(cat.filter(c => c.ativo))
       setSistemas(sis.filter(s => s.ativo))
-      setCargosModulo(carg.filter(c => c.ativo !== false).sort((a, b) => cmpTexto(a.nome, b.nome)))
+      setCargos(carg.filter(c => c.ativo !== false).sort((a, b) => cmpTexto(a.nome, b.nome)))
     } catch (err) {
       if (!silent) setError(err.message || String(err))
     } finally {
@@ -173,6 +171,8 @@ export default function GradeTreinamentos() {
     setEditingId(null)
     setForm({ nome: '', categoria_id: '', sistema_id: '', ativo: true, cargoSel: {} })
     setBuscaCargoModal('')
+    setFiltroEmpresaCargoModal('')
+    setFiltroTipoCargoModal('')
     setNovaCategoriaAberta(false)
     setNovaCategoriaNome('')
     setNovoSistemaAberto(false)
@@ -193,6 +193,8 @@ export default function GradeTreinamentos() {
       cargoSel: Object.fromEntries((curso.cargos || []).map(c => [c.cargo_id, c.obrigatorio === false ? 'SUG' : 'OBR'])),
     })
     setBuscaCargoModal('')
+    setFiltroEmpresaCargoModal('')
+    setFiltroTipoCargoModal('')
     setNovaCategoriaAberta(false)
     setNovaCategoriaNome('')
     setNovoSistemaAberto(false)
@@ -228,7 +230,7 @@ export default function GradeTreinamentos() {
         sistema_id: form.sistema_id,
         sistema_nome: sistema?.nome,
         ativo: form.ativo,
-        cargos: cargosModulo.filter(c => form.cargoSel[c.id]).map(c => ({ id: c.id, nome: c.nome, obrigatorio: form.cargoSel[c.id] === 'OBR' })),
+        cargos: cargos.filter(c => form.cargoSel[c.id]).map(c => ({ id: c.id, nome: c.nome, obrigatorio: form.cargoSel[c.id] === 'OBR' })),
       }
       if (editingId) await apiService.updateTreinCurso(editingId, payload)
       else await apiService.createTreinCurso(payload)
@@ -301,7 +303,7 @@ export default function GradeTreinamentos() {
 
           const topo = M + 30
           const GRUPO_H = 12
-          // Faixa com o agrupamento (Setor) dos cargos
+          // Faixa com o agrupamento (Nível) dos cargos
           const gruposBloco = []
           colsBloco.forEach(c => {
             const g = gruposBloco[gruposBloco.length - 1]
@@ -732,115 +734,69 @@ export default function GradeTreinamentos() {
     }
   }
 
-  // ── Modal "Cargos Cadastrados" — mesmo padrão do de Categorias acima ────────
-  const abrirGerenciarCargosModulo = () => {
-    setCargoModuloEditId(null)
-    setCargoModuloEditNome('')
-    setCargoModuloEditSetor(SETORES[0])
-    setErroCargoModuloEdit(null)
-    setNovoCargoModuloNome('')
-    setNovoCargoModuloSetor(SETORES[0])
-    setErroCargoModuloGerenciar(null)
-    setModalCargosModuloAberto(true)
-  }
-
-  const handleCriarCargoModulo = async (e) => {
-    e.preventDefault()
-    const nome = novoCargoModuloNome.trim()
-    if (!nome) return
-    setCriandoCargoModulo(true)
-    setErroCargoModuloGerenciar(null)
-    try {
-      const criado = await apiService.createTreinCargo({ nome, setor: novoCargoModuloSetor })
-      setCargosModulo(prev => [...prev, criado].sort((a, b) => cmpTexto(a.nome, b.nome)))
-      setNovoCargoModuloNome('')
-      setNovoCargoModuloSetor(SETORES[0])
-    } catch (err) {
-      setErroCargoModuloGerenciar(msgErro(err, 'cargo'))
-    } finally {
-      setCriandoCargoModulo(false)
-    }
-  }
-
-  const abrirEditarCargoModulo = (cargo) => {
-    setCargoModuloEditId(cargo.id)
-    setCargoModuloEditNome(cargo.nome || '')
-    setCargoModuloEditSetor(cargo.setor || SETORES[0])
-    setErroCargoModuloEdit(null)
-  }
-
-  const handleSalvarCargoModuloEdit = async (e) => {
-    e.preventDefault()
-    const nome = cargoModuloEditNome.trim()
-    if (!nome) return
-    setSalvandoCargoModuloEdit(true)
-    setErroCargoModuloEdit(null)
-    try {
-      const atualizado = await apiService.updateTreinCargo(cargoModuloEditId, { nome, setor: cargoModuloEditSetor })
-      setCargosModulo(prev => prev.map(c => c.id === cargoModuloEditId ? atualizado : c).sort((a, b) => cmpTexto(a.nome, b.nome)))
-      await loadDados(true)
-      setCargoModuloEditId(null)
-      setCargoModuloEditNome('')
-    } catch (err) {
-      setErroCargoModuloEdit(msgErro(err, 'cargo'))
-    } finally {
-      setSalvandoCargoModuloEdit(false)
-    }
-  }
-
-  const handleConfirmarExclusaoCargoModulo = async () => {
-    try {
-      await apiService.deleteTreinCargo(cargoModuloExcluir.id)
-      setCargosModulo(prev => prev.filter(c => c.id !== cargoModuloExcluir.id))
-      await loadDados(true)
-    } catch (err) {
-      alert('Erro ao excluir cargo: ' + msgErro(err, 'cargo'))
-    } finally {
-      setModalExcluirCargoModuloAberto(false)
-    }
-  }
-
   // ── Derivações ──────────────────────────────────────────────────────────────
   const buscaUp = busca.trim().toUpperCase()
 
-  // Cursos que passam nos filtros de categoria/setor (busca é aplicada
+  // Helpers de árvore: cargos agora vêm do Organograma de Treinamentos
+  // (trein_organograma, pai_id em vez dos agrupamentos de dim_cargos).
+  const cargoPorId = Object.fromEntries(cargos.map(c => [c.id, c]))
+  const raizDoCargo = (cargoId) => {
+    let atual = cargoPorId[cargoId]
+    let guarda = 0
+    while (atual?.pai_id && cargoPorId[atual.pai_id] && guarda++ < 20) atual = cargoPorId[atual.pai_id]
+    return atual
+  }
+  const caminhoCargo = (cargoId) => {
+    const partes = []
+    let atual = cargoPorId[cargoId]
+    let guarda = 0
+    while (atual && guarda++ < 20) { partes.unshift(atual.nome); atual = atual.pai_id ? cargoPorId[atual.pai_id] : null }
+    return partes.join(' › ')
+  }
+
+  // Filtro avançado: Empresa (raiz da árvore) — restringe quais cargos aparecem.
+  // Precisa vir ANTES de cursoPassaFiltros/cursosFiltrados: os dois já a usam
+  // logo abaixo (se ficasse depois, um `const` lido antes de ser declarado
+  // no mesmo escopo estoura "Cannot access before initialization" assim que
+  // o filtro fosse usado — bug real que existia aqui antes, corrigido agora).
+  const cargosDaEmpresa = filtroEmpresaCargo
+    ? new Set(cargos.filter(c => raizDoCargo(c.id)?.id === filtroEmpresaCargo).map(c => c.id))
+    : null
+  const cargoPermitido = (cargoId) => !cargosDaEmpresa || cargosDaEmpresa.has(cargoId)
+
+  // Cursos que passam nos filtros de categoria/empresa (busca é aplicada
   // por visão, sobre o campo principal de cada uma)
   const cursoPassaFiltros = (curso) => {
     if (filtroCurso && curso.id !== filtroCurso) return false
     if (filtroCategoria && curso.categoria_id !== filtroCategoria) return false
-    if (filtroSetor && !(curso.cargos || []).some(cc => cargosDoSetor.has(cc.cargo_id))) return false
+    if (filtroSistema && curso.sistema_id !== filtroSistema) return false
+    if (filtroEmpresaCargo && !(curso.cargos || []).some(cc => cargosDaEmpresa.has(cc.cargo_id))) return false
     return true
   }
 
   const cursosFiltrados = cursos.filter(c => c.ativo && cursoPassaFiltros(c))
 
-  // Filtro avançado: Setor — restringe quais cargos aparecem (substitui o
-  // antigo Agrupamento de Cargos, que dependia de dim_cargos)
-  const cargosDoSetor = filtroSetor
-    ? new Set(cargosModulo.filter(c => c.setor === filtroSetor).map(c => c.id))
-    : null
-  const cargoPermitido = (cargoId) => !cargosDoSetor || cargosDoSetor.has(cargoId)
-
   // Curso "qualifica" para um filtro quando atende a TODOS os demais filtros
   // avançados ativos (o filtro indicado em `ignorar` fica de fora da checagem).
-  // Usado só para calcular dinamicamente as opções de Curso/Categoria a partir
-  // do que já está selecionado nos OUTROS filtros (Setor é uma lista fixa de
-  // 4 valores e não entra nessa cascata — ver opcoesCurso/opcoesCategoria).
+  // Usado só para calcular dinamicamente as opções de Curso/Categoria/Sistema
+  // a partir do que já está selecionado nos OUTROS filtros (Empresa é uma
+  // lista de valores próprios e não entra nessa cascata).
   const cursoQualifica = (curso, ignorar = {}) => {
     if (!ignorar.curso && filtroCurso && curso.id !== filtroCurso) return false
     if (!ignorar.categoria && filtroCategoria && curso.categoria_id !== filtroCategoria) return false
-    if (!ignorar.setor && filtroSetor) {
-      if (!(curso.cargos || []).some(cc => cargosDoSetor.has(cc.cargo_id))) return false
+    if (!ignorar.sistema && filtroSistema && curso.sistema_id !== filtroSistema) return false
+    if (!ignorar.empresaCargo && filtroEmpresaCargo) {
+      if (!(curso.cargos || []).some(cc => cargosDaEmpresa.has(cc.cargo_id))) return false
     }
     return true
   }
 
   const cursosAtivos = cursos.filter(c => c.ativo)
 
-  // Opções dinâmicas de Curso/Categoria: cada uma reflete só os valores que
-  // ainda fazem sentido dado o que já foi escolhido nos OUTROS filtros (o
-  // próprio filtro do seletor não se autolimita, senão só a opção já marcada
-  // apareceria).
+  // Opções dinâmicas de Curso/Categoria/Sistema: cada uma reflete só os
+  // valores que ainda fazem sentido dado o que já foi escolhido nos OUTROS
+  // filtros (o próprio filtro do seletor não se autolimita, senão só a opção
+  // já marcada apareceria).
   const opcoesCurso = cursosAtivos
     .filter(c => cursoQualifica(c, { curso: true }))
     .sort((a, b) => cmpTexto(a.nome, b.nome))
@@ -849,16 +805,44 @@ export default function GradeTreinamentos() {
     cursosAtivos.some(c => c.categoria_id === cat.id && cursoQualifica(c, { categoria: true }))
   )
 
-  // Se a combinação de filtros mudar e a seleção atual de Curso/Categoria
-  // deixar de fazer sentido, limpa esse filtro em vez de deixá-lo "travado"
-  // num valor que não aparece mais na lista.
+  const opcoesSistema = sistemas.filter(s =>
+    cursosAtivos.some(c => c.sistema_id === s.id && cursoQualifica(c, { sistema: true }))
+  )
+
+  // Opções do filtro Empresa: as raízes da árvore (Holding/Trucks/Honda) que
+  // têm algum cargo usado nos cursos que já passam nos OUTROS filtros
+  const opcoesEmpresaCargo = (() => {
+    const cargoIds = new Set()
+    cursosAtivos.filter(c => cursoQualifica(c, { empresaCargo: true })).forEach(c => {
+      ;(c.cargos || []).forEach(cc => cargoIds.add(cc.cargo_id))
+    })
+    const raizIds = new Set([...cargoIds].map(id => raizDoCargo(id)?.id).filter(Boolean))
+    return cargos.filter(c => !c.pai_id && raizIds.has(c.id)).sort((a, b) => cmpTexto(a.nome, b.nome))
+  })()
+
+  // Se a combinação de filtros mudar e a seleção atual de Curso/Categoria/
+  // Sistema/Empresa deixar de fazer sentido, limpa esse filtro em vez de
+  // deixá-lo "travado" num valor que não aparece mais na lista.
   useEffect(() => {
     if (filtroCurso && !cursosAtivos.some(c => c.id === filtroCurso && cursoQualifica(c, { curso: true }))) setFiltroCurso('')
-  }, [filtroCategoria, filtroSetor, cursos])
+  }, [filtroCategoria, filtroSistema, filtroEmpresaCargo, cursos])
 
   useEffect(() => {
     if (filtroCategoria && !cursosAtivos.some(c => c.categoria_id === filtroCategoria && cursoQualifica(c, { categoria: true }))) setFiltroCategoria('')
-  }, [filtroCurso, filtroSetor, cursos])
+  }, [filtroCurso, filtroSistema, filtroEmpresaCargo, cursos])
+
+  useEffect(() => {
+    if (filtroSistema && !cursosAtivos.some(c => c.sistema_id === filtroSistema && cursoQualifica(c, { sistema: true }))) setFiltroSistema('')
+  }, [filtroCurso, filtroCategoria, filtroEmpresaCargo, cursos])
+
+  useEffect(() => {
+    if (filtroEmpresaCargo) {
+      const cargoIdsQualificados = new Set()
+      cursosAtivos.filter(c => cursoQualifica(c, { empresaCargo: true })).forEach(c => (c.cargos || []).forEach(cc => cargoIdsQualificados.add(cc.cargo_id)))
+      const aindaValido = [...cargoIdsQualificados].some(id => raizDoCargo(id)?.id === filtroEmpresaCargo)
+      if (!aindaValido) setFiltroEmpresaCargo('')
+    }
+  }, [filtroCurso, filtroCategoria, filtroSistema, cursos, cargos])
 
   // Base: um item por cargo com seus cursos + flag obrigatório/sugerido, sem
   // filtro de busca nem ordenação
@@ -868,11 +852,11 @@ export default function GradeTreinamentos() {
       ;(curso.cargos || []).forEach(cc => {
         if (!cargoPermitido(cc.cargo_id)) return
         if (!porCargo[cc.cargo_id]) {
-          const cargo = cargosModulo.find(c => c.id === cc.cargo_id)
+          const cargo = cargoPorId[cc.cargo_id]
           porCargo[cc.cargo_id] = {
             cargoId: cc.cargo_id,
-            cargo: cargo?.nome || cc.cargo_nome || '—',
-            setor: cargo?.setor || 'Sem setor',
+            cargo: caminhoCargo(cc.cargo_id) || cargo?.nome || cc.cargo_nome || '—',
+            empresa: raizDoCargo(cc.cargo_id)?.nome || 'Sem empresa',
             cursos: [],
             flags: {},
           }
@@ -894,7 +878,7 @@ export default function GradeTreinamentos() {
       const dir = sortCargo.dir === 'asc' ? 1 : -1
       let v
       if (sortCargo.col === 'qtd') v = a.cursos.length - b.cursos.length
-      else if (sortCargo.col === 'setor') v = cmpTexto(a.setor, b.setor)
+      else if (sortCargo.col === 'empresa') v = cmpTexto(a.empresa, b.empresa)
       else v = cmpTexto(a.cargo, b.cargo)
       return v !== 0 ? v * dir : cmpTexto(a.cargo, b.cargo)
     })
@@ -910,7 +894,7 @@ export default function GradeTreinamentos() {
   // Visão "Cursos" (cadastro): inclui inativos
   const linhasCursos = cursos
     .filter(c => cursoPassaFiltros(c))
-    .filter(c => !cargosDoSetor || (c.cargos || []).some(cc => cargosDoSetor.has(cc.cargo_id)))
+    .filter(c => !cargosDaEmpresa || (c.cargos || []).some(cc => cargosDaEmpresa.has(cc.cargo_id)))
     .filter(c => !buscaUp || (c.nome || '').toUpperCase().includes(buscaUp) || (c.categoria_nome || '').toUpperCase().includes(buscaUp))
     .sort((a, b) => {
       const dir = sortCurso.dir === 'asc' ? 1 : -1
@@ -928,7 +912,7 @@ export default function GradeTreinamentos() {
   const matriz = (() => {
     const rows = cursosFiltrados
       .filter(c => !filtroCargoMatriz || (c.cargos || []).some(cc => cc.cargo_id === filtroCargoMatriz))
-      .filter(c => !cargosDoSetor || (c.cargos || []).some(cc => cargosDoSetor.has(cc.cargo_id)))
+      .filter(c => !cargosDaEmpresa || (c.cargos || []).some(cc => cargosDaEmpresa.has(cc.cargo_id)))
       .filter(c => !buscaUp
         || (c.nome || '').toUpperCase().includes(buscaUp)
         || (c.categoria_nome || '').toUpperCase().includes(buscaUp)
@@ -939,27 +923,24 @@ export default function GradeTreinamentos() {
         flags: Object.fromEntries((c.cargos || []).filter(x => cargoPermitido(x.cargo_id)).map(x => [x.cargo_id, x.obrigatorio !== false])),
       }))
       .sort((a, b) => cmpTexto(a.curso.nome, b.curso.nome))
-    // Colunas (cargos) agrupadas pelo Setor, na ordem Peças → Loja. O campo
-    // `agrup` do objeto de coluna é reaproveitado (era Nível do Cargo antes)
-    // pra não precisar tocar a faixa de agrupamento na tela e no PDF.
-    const ordemSetor = (n) => SETOR_ORDEM[n] ?? 99
+    // Colunas agrupadas pela Empresa (raiz da árvore do cargo)
     const colsMap = {}
     rows.forEach(r => {
       ;(r.curso.cargos || []).forEach(cc => {
         if (!cargoPermitido(cc.cargo_id)) return
         if (!colsMap[cc.cargo_id]) {
-          const cad = cargosModulo.find(c => c.id === cc.cargo_id)
+          const cad = cargoPorId[cc.cargo_id]
           colsMap[cc.cargo_id] = {
             id: cc.cargo_id,
             nome: cad?.nome || cc.cargo_nome || '—',
-            agrup: cad?.setor || 'Sem setor',
+            agrup: raizDoCargo(cc.cargo_id)?.nome || 'Sem empresa',
           }
         }
       })
     })
-    // Colunas agrupadas pelo Setor
+    // Colunas agrupadas pela Empresa
     const cols = Object.values(colsMap).sort((a, b) =>
-      (ordemSetor(a.agrup) - ordemSetor(b.agrup)) || cmpTexto(a.agrup, b.agrup) || cmpTexto(a.nome, b.nome))
+      cmpTexto(a.agrup, b.agrup) || cmpTexto(a.nome, b.nome))
     cols.forEach((c, i) => { c.inicioGrupo = i === 0 || cols[i - 1].agrup !== c.agrup })
     const grupos = []
     cols.forEach(c => {
@@ -970,11 +951,41 @@ export default function GradeTreinamentos() {
     return { rows, cols, grupos }
   })()
 
-  // Lista de cargos do modal de curso: filtrada só pela busca interna
-  const cargosModalFiltrados = cargosModulo.filter(c => {
-    if (buscaCargoModal.trim() && !(c.nome || '').toUpperCase().includes(buscaCargoModal.trim().toUpperCase())) return false
-    return true
-  })
+  // Lista de cargos do modal de curso: filtrada pela busca interna, pelo
+  // seletor de Empresa (raiz da árvore) e por Obrigatório/Sugerido (clicando
+  // no cabeçalho da respectiva coluna) — agrupada por Empresa pra separar
+  // visualmente os cargos
+  const cargosModalFiltrados = cargos
+    .filter(c => {
+      if (buscaCargoModal.trim() && !(c.nome || '').toUpperCase().includes(buscaCargoModal.trim().toUpperCase())) return false
+      if (filtroEmpresaCargoModal && raizDoCargo(c.id)?.id !== filtroEmpresaCargoModal) return false
+      if (filtroTipoCargoModal && form.cargoSel[c.id] !== filtroTipoCargoModal) return false
+      return true
+    })
+    .map(c => ({ ...c, empresaNome: raizDoCargo(c.id)?.nome || 'Sem empresa', caminho: caminhoCargo(c.id) }))
+    .sort((a, b) => cmpTexto(a.empresaNome, b.empresaNome) || cmpTexto(a.caminho, b.caminho))
+
+  // Detalhe de um treinamento ao expandir na aba Cursos: para cada cargo
+  // vinculado, a Empresa (raiz) e o Departamento (caminho intermediário na
+  // árvore) do cargo. Não há mais vínculo com dim_funcionarios — cargos vêm
+  // do Organograma de Treinamentos (Bizneo), sem ligação com Funcionários.
+  const detalheCargosCurso = (curso) =>
+    (curso.cargos || [])
+      .map(cc => {
+        const cargo = cargoPorId[cc.cargo_id]
+        const raiz = raizDoCargo(cc.cargo_id)
+        const caminho = caminhoCargo(cc.cargo_id).split(' › ')
+        const departamento = caminho.length > 2 ? caminho.slice(1, -1).join(' › ') : null
+        return {
+          cargoId: cc.cargo_id,
+          cargoNome: cargo?.nome || cc.cargo_nome || '—',
+          obrigatorio: cc.obrigatorio !== false,
+          empresa: raiz?.nome || '—',
+          departamento,
+          headcount: cargo?.headcount || 0,
+        }
+      })
+      .sort((a, b) => (b.obrigatorio - a.obrigatorio) || cmpTexto(a.cargoNome, b.cargoNome))
 
   if (loading) return <div className="p-6">Carregando...</div>
 
@@ -993,7 +1004,7 @@ export default function GradeTreinamentos() {
       <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 border-b border-slate-200 pb-4">
         <div className="min-w-0 flex-1 basis-96">
           <h1 className="text-xl font-bold text-slate-900 tracking-tight">Grade de Treinamentos</h1>
-          <p className="text-xs text-slate-500 mt-0.5 max-w-3xl">Cursos por categoria, com cargos obrigatórios e setores. Cargos são um cadastro próprio deste módulo.</p>
+          <p className="text-xs text-slate-500 mt-0.5 max-w-3xl">Cursos por categoria, com cargos obrigatórios. Cargos vêm do Organograma de Treinamentos (importado do Bizneo).</p>
         </div>
         <div className="flex items-center gap-2 shrink-0 ml-auto">
           {visualizacao === 'matriz' && (
@@ -1041,11 +1052,6 @@ export default function GradeTreinamentos() {
             </div>
           )}
           {canEdit && (
-            <button onClick={abrirGerenciarCargosModulo} className="flex items-center gap-2 whitespace-nowrap bg-white hover:bg-slate-50 text-slate-600 border border-slate-200 text-xs font-semibold px-3 py-2 rounded-md shadow-sm transition-colors">
-              <UserCog className="h-4 w-4 shrink-0" /> Cargos
-            </button>
-          )}
-          {canEdit && (
             <button onClick={abrirGerenciarCategorias} className="flex items-center gap-2 whitespace-nowrap bg-white hover:bg-slate-50 text-slate-600 border border-slate-200 text-xs font-semibold px-3 py-2 rounded-md shadow-sm transition-colors">
               <Tags className="h-4 w-4 shrink-0" /> Categorias
             </button>
@@ -1068,16 +1074,7 @@ export default function GradeTreinamentos() {
               visualizacao === 'cursos' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
             }`}
           >
-            <ClipboardList className="h-3.5 w-3.5" /> Cursos
-          </button>
-          <button
-            type="button"
-            onClick={() => setVisualizacao('matriz')}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded text-[11px] font-semibold transition-colors ${
-              visualizacao === 'matriz' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-            }`}
-          >
-            <Grid3x3 className="h-3.5 w-3.5" /> Por Curso
+            <ClipboardList className="h-3.5 w-3.5" /> Por Cursos
           </button>
           <button
             type="button"
@@ -1088,23 +1085,43 @@ export default function GradeTreinamentos() {
           >
             <Users className="h-3.5 w-3.5" /> Por Cargo
           </button>
+          <button
+            type="button"
+            onClick={() => setVisualizacao('matriz')}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded text-[11px] font-semibold transition-colors ${
+              visualizacao === 'matriz' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            <Grid3x3 className="h-3.5 w-3.5" /> Cursos x Cargos
+          </button>
+          <button
+            type="button"
+            onClick={() => setVisualizacao('organograma')}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded text-[11px] font-semibold transition-colors ${
+              visualizacao === 'organograma' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            <Network className="h-3.5 w-3.5" /> Organograma
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={() => setFiltrosAvancados(v => !v)}
-          className={`flex items-center gap-1.5 px-2.5 py-2 rounded-md text-[11px] font-semibold border transition-colors ${
-            filtrosAvancados || filtroSetor || filtroCategoria || filtroCurso || busca
-              ? 'bg-blue-50 text-blue-700 border-blue-200'
-              : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-          }`}
-        >
-          <SlidersHorizontal className="h-3.5 w-3.5" /> Filtros Avançados
-          {filtrosAvancados ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-        </button>
+        {visualizacao !== 'organograma' && (
+          <button
+            type="button"
+            onClick={() => setFiltrosAvancados(v => !v)}
+            className={`flex items-center gap-1.5 px-2.5 py-2 rounded-md text-[11px] font-semibold border transition-colors ${
+              filtrosAvancados || filtroEmpresaCargo || filtroSistema || filtroCategoria || filtroCurso || busca
+                ? 'bg-blue-50 text-blue-700 border-blue-200'
+                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+            }`}
+          >
+            <SlidersHorizontal className="h-3.5 w-3.5" /> Filtros Avançados
+            {filtrosAvancados ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+          </button>
+        )}
       </div>
 
       {/* Painel retrátil de filtros avançados */}
-      {filtrosAvancados && (
+      {filtrosAvancados && visualizacao !== 'organograma' && (
         <div className="flex flex-wrap items-end gap-4 bg-slate-50 border border-slate-200 rounded-md p-3">
           <div className="flex flex-col gap-1">
             <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Curso</label>
@@ -1156,22 +1173,35 @@ export default function GradeTreinamentos() {
             </div>
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Setor</label>
+            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Sistema</label>
             <select
-              value={filtroSetor}
-              onChange={e => setFiltroSetor(e.target.value)}
+              value={filtroSistema}
+              onChange={e => setFiltroSistema(e.target.value)}
               className="text-xs p-2 border border-slate-200 rounded-md font-medium text-slate-700 bg-white min-w-56 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
             >
-              <option value="">Todos os setores</option>
-              {SETORES.map(s => (
-                <option key={s} value={s}>{s}</option>
+              <option value="">Todos os sistemas</option>
+              {opcoesSistema.map(s => (
+                <option key={s.id} value={s.id}>{s.nome}</option>
               ))}
             </select>
           </div>
-          {(filtroSetor || filtroCategoria || filtroCurso || busca) && (
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Empresa</label>
+            <select
+              value={filtroEmpresaCargo}
+              onChange={e => setFiltroEmpresaCargo(e.target.value)}
+              className="text-xs p-2 border border-slate-200 rounded-md font-medium text-slate-700 bg-white min-w-56 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+            >
+              <option value="">Todas as empresas</option>
+              {opcoesEmpresaCargo.map(a => (
+                <option key={a.id} value={a.id}>{a.nome}</option>
+              ))}
+            </select>
+          </div>
+          {(filtroEmpresaCargo || filtroSistema || filtroCategoria || filtroCurso || busca) && (
             <button
               type="button"
-              onClick={() => { setFiltroSetor(''); setFiltroCategoria(''); setFiltroCurso(''); setBusca('') }}
+              onClick={() => { setFiltroEmpresaCargo(''); setFiltroSistema(''); setFiltroCategoria(''); setFiltroCurso(''); setBusca('') }}
               className="flex items-center gap-1 px-2.5 py-2 rounded-md text-[11px] font-semibold text-red-600 hover:bg-red-50 border border-transparent hover:border-red-200 transition-colors"
             >
               <X className="h-3.5 w-3.5" /> Limpar filtros
@@ -1203,7 +1233,7 @@ export default function GradeTreinamentos() {
         <table className="table-auto text-left border-collapse">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[11px] font-semibold uppercase tracking-wider">
-              <ThSort label="Setor" col="setor" sort={sortCargo} onSort={toggleSortCargo} className="w-[170px] min-w-[170px] sticky left-0 bg-slate-50 z-10 align-bottom" />
+              <ThSort label="Empresa" col="empresa" sort={sortCargo} onSort={toggleSortCargo} className="w-[170px] min-w-[170px] sticky left-0 bg-slate-50 z-10 align-bottom" />
               <ThSort label="Cargo" col="cargo" sort={sortCargo} onSort={toggleSortCargo} className="min-w-[260px] sticky left-[170px] bg-slate-50 z-10 align-bottom" />
               <ThSort label="Cursos" col="qtd" sort={sortCargo} onSort={toggleSortCargo} center className="align-bottom" />
               {cursosColsPorCargo.map(c => (
@@ -1235,7 +1265,7 @@ export default function GradeTreinamentos() {
               <tr key={l.cargoId} className="hover:bg-slate-50/70 transition-colors">
                 <td className="px-3 py-1.5 align-top sticky left-0 bg-white z-10 w-[170px] min-w-[170px]">
                   <span className="inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold border bg-sky-50 text-sky-700 border-sky-100">
-                    {l.setor}
+                    {l.empresa}
                   </span>
                 </td>
                 <td className="px-3 py-1.5 align-top font-bold text-slate-800 sticky left-[170px] bg-white z-10">
@@ -1244,7 +1274,7 @@ export default function GradeTreinamentos() {
                     onClick={() => canEdit
                       ? abrirCursosDoCargo(l.cargoId, l.cargo)
                       : (setFiltroCargoMatriz(l.cargoId), setVisualizacao('matriz'))}
-                    title={canEdit ? 'Selecionar os cursos deste cargo' : 'Ver em Por Curso os cursos deste cargo'}
+                    title={canEdit ? 'Selecionar os cursos deste cargo' : 'Ver em Cursos x Cargos os cursos deste cargo'}
                     className="text-left hover:text-blue-600 hover:underline transition-colors"
                   >
                     {l.cargo}
@@ -1255,8 +1285,7 @@ export default function GradeTreinamentos() {
                   <td key={c.id} className="p-1 text-center align-middle">
                     {l.flags[c.id] !== undefined ? (
                       <span
-                        title={`${l.cargo} — ${l.flags[c.id] ? 'Obrigatório' : 'Sugerido'}: ${c.nome}`}
-                        className={`inline-flex items-center justify-center w-5 h-5 rounded-full border cursor-help ${
+                        className={`inline-flex items-center justify-center w-5 h-5 rounded-full border ${
                           l.flags[c.id] ? 'bg-emerald-600 border-emerald-700' : 'bg-slate-300 border-slate-400'
                         }`}
                       >
@@ -1279,7 +1308,7 @@ export default function GradeTreinamentos() {
         <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-md px-3 py-2 text-xs font-semibold text-blue-800">
           Filtrado pelo cargo:
           <span className="inline-flex items-center gap-1.5 rounded px-1.5 py-0.5 bg-white border border-blue-200">
-            {cargosModulo.find(c => c.id === filtroCargoMatriz)?.nome || '—'}
+            {cargoPorId[filtroCargoMatriz]?.nome || '—'}
             <button type="button" onClick={() => setFiltroCargoMatriz('')} title="Remover filtro de cargo" className="text-blue-500 hover:text-blue-800 transition-colors">
               <X className="h-3.5 w-3.5" />
             </button>
@@ -1347,8 +1376,7 @@ export default function GradeTreinamentos() {
                   <td key={c.id} className={`p-1 text-center align-middle ${c.id === filtroCargoMatriz ? 'bg-blue-50/50' : ''} ${c.inicioGrupo ? 'border-l border-slate-200' : ''}`}>
                     {r.flags[c.id] !== undefined ? (
                       <span
-                        title={`${c.nome} — ${r.flags[c.id] ? 'Obrigatório' : 'Sugerido'}: ${r.curso.nome}`}
-                        className={`inline-flex items-center justify-center w-5 h-5 rounded-full border cursor-help ${
+                        className={`inline-flex items-center justify-center w-5 h-5 rounded-full border ${
                           r.flags[c.id] ? 'bg-emerald-600 border-emerald-700' : 'bg-slate-300 border-slate-400'
                         }`}
                       >
@@ -1366,6 +1394,8 @@ export default function GradeTreinamentos() {
       </div>
       )}
 
+      {/* Organograma de Treinamentos — mesma tela do menu, embutida como aba */}
+      {visualizacao === 'organograma' && <OrganogramaTreinamentos onAlterado={() => loadDados(true)} />}
 
       {/* Cadastro de cursos */}
       {visualizacao === 'cursos' && (
@@ -1373,20 +1403,34 @@ export default function GradeTreinamentos() {
         <table className="w-full table-auto text-left border-collapse min-w-[900px]">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[11px] font-semibold uppercase tracking-wider">
+              <th className="w-8 px-1 py-2"></th>
               <ThSort label="Curso" col="nome" sort={sortCurso} onSort={toggleSortCurso} className="min-w-[260px]" />
               <ThSort label="Categoria" col="categoria" sort={sortCurso} onSort={toggleSortCurso} />
               <ThSort label="Sistema" col="sistema" sort={sortCurso} onSort={toggleSortCurso} />
               <ThSort label="Cargos" col="cargos" sort={sortCurso} onSort={toggleSortCurso} center />
-              <th className="px-3 py-2">Setores</th>
+              <th className="px-3 py-2">Empresas</th>
               <ThSort label="Status" col="status" sort={sortCurso} onSort={toggleSortCurso} />
               <th className="px-3 py-2 w-20 text-center">Ações</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 text-[11px] font-medium text-slate-700">
             {linhasCursos.length === 0 ? (
-              <tr><td colSpan={7} className="p-6 text-center text-slate-400">Nenhum curso cadastrado.</td></tr>
-            ) : linhasCursos.map(c => (
-              <tr key={c.id} className={`hover:bg-slate-50/70 transition-colors ${!c.ativo ? 'opacity-50' : ''}`}>
+              <tr><td colSpan={8} className="p-6 text-center text-slate-400">Nenhum curso cadastrado.</td></tr>
+            ) : linhasCursos.map(c => { const expandido = cursosExpandidos.has(c.id); return (
+              <React.Fragment key={c.id}>
+              <tr className={`hover:bg-slate-50/70 transition-colors ${!c.ativo ? 'opacity-50' : ''}`}>
+                <td className="px-1 py-1.5 align-top text-center">
+                  {(c.cargos || []).length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => toggleCursoExpandido(c.id)}
+                      title={expandido ? 'Recolher' : 'Ver empresas, departamentos e cargos'}
+                      className="p-0.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                    >
+                      {expandido ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                    </button>
+                  )}
+                </td>
                 <td className="px-3 py-1.5 align-top font-bold text-slate-800">
                   {canEdit ? (
                     <button type="button" onClick={() => abrirEditar(c)} title="Editar curso" className="text-left hover:text-blue-600 hover:underline transition-colors">
@@ -1403,14 +1447,14 @@ export default function GradeTreinamentos() {
                 </td>
                 <td className="px-3 py-1.5 align-top">
                   {(() => {
-                    const setores = [...new Set((c.cargos || [])
-                      .map(cc => cargosModulo.find(cg => cg.id === cc.cargo_id)?.setor)
+                    const empresasDoCurso = [...new Set((c.cargos || [])
+                      .map(cc => raizDoCargo(cc.cargo_id)?.nome)
                       .filter(Boolean))].sort(cmpTexto)
-                    return setores.length ? (
+                    return empresasDoCurso.length ? (
                       <div className="flex flex-wrap gap-1">
-                        {setores.map(s => (
-                          <span key={s} className="inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold border bg-sky-50 text-sky-700 border-sky-100">
-                            {s}
+                        {empresasDoCurso.map(n => (
+                          <span key={n} className="inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold border bg-sky-50 text-sky-700 border-sky-100">
+                            {n}
                           </span>
                         ))}
                       </div>
@@ -1430,7 +1474,52 @@ export default function GradeTreinamentos() {
                   <PermissionActionButtons menuPath="treinamentos/grade" onEdit={canEdit ? () => abrirEditar(c) : undefined} onDelete={canEdit ? () => { setCursoExcluir(c); setModalExcluirAberto(true) } : undefined} />
                 </td>
               </tr>
-            ))}
+              {expandido && (
+                <tr className="bg-slate-50/60">
+                  <td colSpan={8} className="px-4 py-3">
+                    {(() => {
+                      const detalhe = detalheCargosCurso(c)
+                      return detalhe.length === 0 ? (
+                        <p className="text-slate-400 italic">Nenhum cargo vinculado a este curso.</p>
+                      ) : (
+                        <div className="bg-white border border-slate-200 rounded-md overflow-hidden">
+                          <table className="w-full text-left border-collapse">
+                            <thead>
+                              <tr className="bg-slate-100 text-slate-400 text-[10px] font-bold uppercase tracking-wider">
+                                <th className="px-3 py-1.5">Tipo</th>
+                                <th className="px-3 py-1.5">Empresa</th>
+                                <th className="px-3 py-1.5">Departamento</th>
+                                <th className="px-3 py-1.5">Cargo</th>
+                                <th className="px-3 py-1.5 text-center">Headcount</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {detalhe.map(d => (
+                                <tr key={d.cargoId} className="hover:bg-slate-50/70 transition-colors">
+                                  <td className="px-3 py-1.5 align-top whitespace-nowrap">
+                                    <span className={`inline-flex items-center gap-1 text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${d.obrigatorio ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${d.obrigatorio ? 'bg-emerald-600' : 'bg-slate-400'}`} />
+                                      {d.obrigatorio ? 'Obrigatório' : 'Sugerido'}
+                                    </span>
+                                  </td>
+                                  <td className="px-3 py-1.5 align-top whitespace-nowrap text-slate-700">{d.empresa}</td>
+                                  <td className="px-3 py-1.5 align-top text-slate-500">
+                                    {d.departamento || <span className="text-[9px] font-semibold text-slate-400">—</span>}
+                                  </td>
+                                  <td className="px-3 py-1.5 align-top font-bold text-slate-800 whitespace-nowrap">{d.cargoNome}</td>
+                                  <td className="px-3 py-1.5 align-top text-center tabular-nums text-slate-500">{d.headcount || '—'}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )
+                    })()}
+                  </td>
+                </tr>
+              )}
+              </React.Fragment>
+            )})}
           </tbody>
         </table>
       </div>
@@ -1571,63 +1660,95 @@ export default function GradeTreinamentos() {
                       </button>
                     )}
                   </div>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      value={buscaCargoModal}
-                      onChange={e => setBuscaCargoModal(e.target.value)}
-                      placeholder="Filtrar cargos..."
-                      className="w-full text-xs p-1.5 pr-7 border border-slate-200 rounded-md font-medium text-slate-700 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                    />
-                    {buscaCargoModal && (
-                      <button
-                        type="button"
-                        onClick={() => setBuscaCargoModal('')}
-                        title="Limpar filtro"
-                        className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    )}
+                  <div className="flex items-center gap-2">
+                    <div className="relative flex-1">
+                      <input
+                        type="text"
+                        value={buscaCargoModal}
+                        onChange={e => setBuscaCargoModal(e.target.value)}
+                        placeholder="Filtrar cargos..."
+                        className="w-full text-xs p-1.5 pr-7 border border-slate-200 rounded-md font-medium text-slate-700 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                      />
+                      {buscaCargoModal && (
+                        <button
+                          type="button"
+                          onClick={() => setBuscaCargoModal('')}
+                          title="Limpar filtro"
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
+                    <select
+                      value={filtroEmpresaCargoModal}
+                      onChange={e => setFiltroEmpresaCargoModal(e.target.value)}
+                      className="text-xs p-1.5 border border-slate-200 rounded-md font-medium text-slate-700 bg-white shrink-0 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                    >
+                      <option value="">Todas as empresas</option>
+                      {cargos.filter(c => !c.pai_id).sort((a, b) => cmpTexto(a.nome, b.nome)).map(e => <option key={e.id} value={e.id}>{e.nome}</option>)}
+                    </select>
                   </div>
                   <div className="border border-slate-200 rounded-md max-h-48 overflow-y-auto">
                     <div className="flex items-center justify-between px-3 py-1.5 bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
                       <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Cargo</span>
                       <span className="flex gap-2 shrink-0">
-                        <span className="w-20 text-center text-[10px] font-bold text-emerald-700 uppercase tracking-wide">Obrigatório</span>
-                        <span className="w-20 text-center text-[10px] font-bold text-slate-500 uppercase tracking-wide">Sugerido</span>
+                        <button
+                          type="button"
+                          onClick={() => setFiltroTipoCargoModal(v => v === 'OBR' ? '' : 'OBR')}
+                          title="Filtrar só os cargos marcados como Obrigatório"
+                          className={`w-20 text-center text-[10px] font-bold uppercase tracking-wide rounded transition-colors ${
+                            filtroTipoCargoModal === 'OBR' ? 'bg-emerald-600 text-white' : 'text-emerald-700 hover:bg-emerald-50'
+                          }`}
+                        >
+                          Obrigatório
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setFiltroTipoCargoModal(v => v === 'SUG' ? '' : 'SUG')}
+                          title="Filtrar só os cargos marcados como Sugerido"
+                          className={`w-20 text-center text-[10px] font-bold uppercase tracking-wide rounded transition-colors ${
+                            filtroTipoCargoModal === 'SUG' ? 'bg-slate-500 text-white' : 'text-slate-500 hover:bg-slate-200'
+                          }`}
+                        >
+                          Sugerido
+                        </button>
                       </span>
                     </div>
                     <div className="divide-y divide-slate-100">
                       {cargosModalFiltrados.length === 0 ? (
                         <div className="p-3 text-center text-[11px] text-slate-400">Nenhum cargo encontrado.</div>
-                      ) : cargosModalFiltrados.map(c => (
-                        <div key={c.id} className="flex items-center justify-between px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
-                          <span className="flex-1 flex items-center gap-1.5">
-                            {c.nome}
-                            <span className="inline-block rounded px-1 py-0.5 text-[9px] font-semibold border bg-sky-50 text-sky-700 border-sky-100">{c.setor}</span>
-                          </span>
-                          <span className="flex gap-2 shrink-0">
-                            <span className="w-20 text-center">
-                              <input
-                                type="checkbox"
-                                checked={form.cargoSel[c.id] === 'OBR'}
-                                onChange={() => toggleCargoSel(c.id, 'OBR')}
-                                title="Obrigatório"
-                                className="w-3.5 h-3.5 accent-emerald-600"
-                              />
+                      ) : cargosModalFiltrados.map((c, i) => (
+                        <React.Fragment key={c.id}>
+                          {(i === 0 || cargosModalFiltrados[i - 1].empresaNome !== c.empresaNome) && (
+                            <div className="px-3 py-1 bg-slate-100 text-[9px] font-bold text-slate-500 uppercase tracking-wide sticky top-[26px] z-[5]">
+                              {c.empresaNome}
+                            </div>
+                          )}
+                          <div className="flex items-center justify-between px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
+                            <span className="flex-1" title={c.caminho}>{c.nome}</span>
+                            <span className="flex gap-2 shrink-0">
+                              <span className="w-20 text-center">
+                                <input
+                                  type="checkbox"
+                                  checked={form.cargoSel[c.id] === 'OBR'}
+                                  onChange={() => toggleCargoSel(c.id, 'OBR')}
+                                  title="Obrigatório"
+                                  className="w-3.5 h-3.5 accent-emerald-600"
+                                />
+                              </span>
+                              <span className="w-20 text-center">
+                                <input
+                                  type="checkbox"
+                                  checked={form.cargoSel[c.id] === 'SUG'}
+                                  onChange={() => toggleCargoSel(c.id, 'SUG')}
+                                  title="Sugerido"
+                                  className="w-3.5 h-3.5 accent-slate-500"
+                                />
+                              </span>
                             </span>
-                            <span className="w-20 text-center">
-                              <input
-                                type="checkbox"
-                                checked={form.cargoSel[c.id] === 'SUG'}
-                                onChange={() => toggleCargoSel(c.id, 'SUG')}
-                                title="Sugerido"
-                                className="w-3.5 h-3.5 accent-slate-500"
-                              />
-                            </span>
-                          </span>
-                        </div>
+                          </div>
+                        </React.Fragment>
                       ))}
                     </div>
                   </div>
@@ -1749,128 +1870,6 @@ export default function GradeTreinamentos() {
                 <button onClick={() => setModalExcluirCategoriaAberto(false)} className="px-3 py-1.5 rounded-md text-xs font-semibold text-slate-600 hover:bg-slate-200/60 transition-colors">Voltar</button>
                 {emUso === 0 && (
                   <button onClick={handleConfirmarExclusaoCategoria} className="px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-red-600 hover:bg-red-700 shadow-sm transition-colors">Sim, Excluir</button>
-                )}
-              </div>
-            </div>
-          </div>
-        )
-      })()}
-
-      {/* Modal Gerenciar Cargos: lista + novo/editar/excluir */}
-      {modalCargosModuloAberto && (
-        <div className="fixed top-0 right-0 bottom-0 left-16 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg border border-slate-200 w-[480px] max-h-[85vh] shadow-xl overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50 shrink-0">
-              <h3 className="text-sm font-bold text-slate-900">Cargos Cadastrados</h3>
-              <button onClick={() => setModalCargosModuloAberto(false)} className="text-slate-400 hover:text-slate-600"><X className="h-4 w-4" /></button>
-            </div>
-            <div className="p-5 space-y-4 overflow-y-auto">
-              <form onSubmit={handleCriarCargoModulo} className="flex flex-col gap-2 bg-slate-50 border border-slate-200 rounded-md p-2">
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={novoCargoModuloNome}
-                    onChange={e => setNovoCargoModuloNome(e.target.value)}
-                    placeholder="NOME DO NOVO CARGO"
-                    className="flex-1 text-xs p-1.5 border border-slate-200 rounded-md font-medium text-slate-800 uppercase placeholder:normal-case focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                  />
-                  <select
-                    value={novoCargoModuloSetor}
-                    onChange={e => setNovoCargoModuloSetor(e.target.value)}
-                    className="text-xs p-1.5 border border-slate-200 rounded-md font-medium text-slate-800 bg-white shrink-0 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                  >
-                    {SETORES.map(s => <option key={s} value={s}>{s}</option>)}
-                  </select>
-                  <button type="submit" disabled={criandoCargoModulo || !novoCargoModuloNome.trim()}
-                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-md text-[11px] font-semibold text-white bg-blue-600 hover:bg-blue-700 transition-colors disabled:opacity-50 shrink-0">
-                    <Plus className="h-3.5 w-3.5" /> {criandoCargoModulo ? 'Salvando...' : 'Novo Cargo'}
-                  </button>
-                </div>
-                <ErroForm>{erroCargoModuloGerenciar}</ErroForm>
-              </form>
-
-              <div className="border border-slate-200 rounded-md divide-y divide-slate-100 max-h-72 overflow-y-auto">
-                {cargosModulo.length === 0 ? (
-                  <div className="p-3 text-center text-[11px] text-slate-400">Nenhum cargo cadastrado.</div>
-                ) : cargosModulo.map(cg => (
-                  <div key={cg.id} className="p-2">
-                    {cargoModuloEditId === cg.id ? (
-                      <form onSubmit={handleSalvarCargoModuloEdit} className="flex flex-col gap-2">
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="text"
-                            autoFocus
-                            value={cargoModuloEditNome}
-                            onChange={e => setCargoModuloEditNome(e.target.value)}
-                            className="flex-1 text-xs p-1.5 border border-slate-200 rounded-md font-medium text-slate-800 uppercase focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                          />
-                          <select
-                            value={cargoModuloEditSetor}
-                            onChange={e => setCargoModuloEditSetor(e.target.value)}
-                            className="text-xs p-1.5 border border-slate-200 rounded-md font-medium text-slate-800 bg-white shrink-0 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                          >
-                            {SETORES.map(s => <option key={s} value={s}>{s}</option>)}
-                          </select>
-                          <button type="button" onClick={() => setCargoModuloEditId(null)} className="text-slate-400 hover:text-slate-600 transition-colors shrink-0">
-                            <X className="h-4 w-4" />
-                          </button>
-                          <button type="submit" disabled={salvandoCargoModuloEdit || !cargoModuloEditNome.trim()}
-                            className="px-2.5 py-1.5 rounded-md text-[11px] font-semibold text-white bg-blue-600 hover:bg-blue-700 transition-colors disabled:opacity-50 shrink-0">
-                            {salvandoCargoModuloEdit ? 'Salvando...' : 'Salvar'}
-                          </button>
-                        </div>
-                        <ErroForm>{erroCargoModuloEdit}</ErroForm>
-                      </form>
-                    ) : (
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="flex items-center gap-1.5 text-xs font-medium text-slate-700">
-                          {cg.nome}
-                          <span className="inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold border bg-sky-50 text-sky-700 border-sky-100">{cg.setor}</span>
-                        </span>
-                        <span className="flex items-center gap-1 shrink-0">
-                          <button type="button" onClick={() => abrirEditarCargoModulo(cg)} title="Editar cargo" className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors">
-                            <Pencil className="h-3.5 w-3.5" />
-                          </button>
-                          <button type="button" onClick={() => { setCargoModuloExcluir(cg); setModalExcluirCargoModuloAberto(true) }} title="Excluir cargo" className="p-1.5 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded transition-colors">
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="flex items-center justify-end gap-2 p-3 bg-slate-50 border-t border-slate-100 shrink-0">
-              <button type="button" onClick={() => setModalCargosModuloAberto(false)} className="px-3 py-1.5 rounded-md text-xs font-semibold text-slate-600 hover:bg-slate-200/60 transition-colors">Fechar</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal exclusão de cargo */}
-      {modalExcluirCargoModuloAberto && cargoModuloExcluir && (() => {
-        const emUso = cursos.filter(c => (c.cargos || []).some(cc => cc.cargo_id === cargoModuloExcluir.id)).length
-        return (
-          <div className="fixed top-0 right-0 bottom-0 left-16 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg border border-slate-200 w-[400px] shadow-xl overflow-hidden">
-              <div className="p-4 flex items-start gap-3">
-                <div className="p-2 bg-red-50 text-red-600 rounded-full shrink-0"><AlertTriangle className="h-5 w-5" /></div>
-                <div className="space-y-1">
-                  <h3 className="text-sm font-bold text-slate-900">Confirmar Exclusão</h3>
-                  {emUso > 0 ? (
-                    <p className="text-xs text-slate-500 leading-relaxed">
-                      O cargo <strong className="text-slate-800">"{cargoModuloExcluir.nome}"</strong> está em uso por <strong className="text-slate-800">{emUso} curso{emUso > 1 ? 's' : ''}</strong>. Remova o vínculo desses cursos antes.
-                    </p>
-                  ) : (
-                    <p className="text-xs text-slate-500 leading-relaxed">Deseja excluir o cargo <strong className="text-slate-800">"{cargoModuloExcluir.nome}"</strong>?</p>
-                  )}
-                </div>
-              </div>
-              <div className="flex items-center justify-end gap-2 p-3 bg-slate-50 border-t border-slate-100">
-                <button onClick={() => setModalExcluirCargoModuloAberto(false)} className="px-3 py-1.5 rounded-md text-xs font-semibold text-slate-600 hover:bg-slate-200/60 transition-colors">Voltar</button>
-                {emUso === 0 && (
-                  <button onClick={handleConfirmarExclusaoCargoModulo} className="px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-red-600 hover:bg-red-700 shadow-sm transition-colors">Sim, Excluir</button>
                 )}
               </div>
             </div>

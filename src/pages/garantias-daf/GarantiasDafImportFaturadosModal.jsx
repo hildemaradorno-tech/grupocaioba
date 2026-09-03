@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react'
 import {
-  X, RefreshCw, Download, CheckSquare, Square, Loader2,
-  CheckCircle2, AlertCircle, Search, Receipt, Calendar,
+  X, Download, CheckSquare, Square, Loader2,
+  CheckCircle2, AlertCircle, Search, Receipt, Calendar, Info,
 } from 'lucide-react'
 import { apiService } from '../../services/api'
 import { useAuth } from '../../context/AuthContext'
@@ -25,7 +25,7 @@ function defaultPeriodo() {
   return { ini: fmt2(ini), fim: fmt2(fim) }
 }
 
-async function fetchFaturados(dataInicio, dataFim, forceRefresh = false, numeroOS = null) {
+async function fetchFaturados(dataInicio, dataFim, numeroOS = null) {
   const params = new URLSearchParams()
   if (numeroOS) {
     // Quando OS específica: backend retorna todos os tipos dela sem filtrar data
@@ -35,12 +35,7 @@ async function fetchFaturados(dataInicio, dataFim, forceRefresh = false, numeroO
     if (dataFim)    params.set('dataFim',    dataFim)
   }
 
-  const base = forceRefresh
-    ? `${BACKEND_URL}/api/garantias/faturados/refresh`
-    : `${BACKEND_URL}/api/garantias/faturados`
-  const method = forceRefresh ? 'POST' : 'GET'
-
-  const res = await fetch(`${base}?${params}`, { method })
+  const res = await fetch(`${BACKEND_URL}/api/garantias/faturados?${params}`)
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))
     throw new Error(body.message || `Erro ${res.status} ao buscar SharePoint`)
@@ -59,7 +54,6 @@ export default function GarantiasDafImportFaturadosModal({ onClose, onImported, 
   // ── Estado de dados ────────────────────────────────────
   const [shareRows,  setShareRows]  = useState(null)   // null = ainda não buscou
   const [loading,    setLoading]    = useState(false)
-  const [refreshing, setRefreshing] = useState(false)
   const [error,      setError]      = useState(null)
 
   // ── Filtros da tabela (após a busca) ───────────────────
@@ -70,7 +64,6 @@ export default function GarantiasDafImportFaturadosModal({ onClose, onImported, 
   const [selecionados,  setSelecionados]  = useState(new Set())
   const [importando,    setImportando]    = useState(false)
   const [importResult,  setImportResult]  = useState(null)
-  const [restaurando,   setRestaurando]   = useState(false)
   const [empresasDim,   setEmpresasDim]   = useState([])
   const [tiposOS,       setTiposOS]       = useState([])
   const [funcionarios,  setFuncionarios]  = useState([])
@@ -87,7 +80,7 @@ export default function GarantiasDafImportFaturadosModal({ onClose, onImported, 
       .then(d => setEmpresasDim(d.filter(e => e.ativo !== false)))
       .catch(() => {})
     apiService.getTiposOS()
-      .then(d => setTiposOS(d.filter(t => t.ativo !== false)))
+      .then(d => setTiposOS(d.filter(t => t.ativo !== false && t.classificacao === 'Garantia')))
       .catch(() => {})
     apiService.getFuncionarios()
       .then(d => setFuncionarios(d.filter(f => f.ativo !== false)))
@@ -145,43 +138,52 @@ export default function GarantiasDafImportFaturadosModal({ onClose, onImported, 
     return empresaLookup.get(nome.toLowerCase().trim()) || null
   }
 
-  // ── Busca / refresh ────────────────────────────────────
-  const buscarDados = async (forceRefresh = false) => {
+  // ── Busca ───────────────────────────────────────────────
+  const buscarDados = async () => {
     setError(null)
     setSelecionados(new Set())
     setImportResult(null)
     setFiltroEmpresa('')
-    if (forceRefresh) setRefreshing(true)
-    else              setLoading(true)
+    setLoading(true)
     try {
       const osAlvo = filtroOS.trim() || null
-      const rows = await fetchFaturados(dataInicio, dataFim, forceRefresh, osAlvo)
+      const rows = await fetchFaturados(dataInicio, dataFim, osAlvo)
       setShareRows(rows)
     } catch (err) {
       setError(err.message || String(err))
       setShareRows([])
     } finally {
       setLoading(false)
-      setRefreshing(false)
     }
   }
 
-  // ── Empresas disponíveis nos resultados ────────────────
+  // Siglas de tipo de O.S. classificadas como "Garantia" no cadastro — usadas para restringir
+  // o resultado do ROF017 (que traz OS de todos os tipos) só às de garantia.
+  const garantiaSiglas = useMemo(
+    () => new Set(tiposOS.map(t => tipoCode(t.sigla)).filter(Boolean)),
+    [tiposOS]
+  )
+
+  // ── Empresas disponíveis nos resultados (já restrito a garantia) ───
   const empresas = useMemo(() => {
     if (!shareRows) return []
-    const set = new Set(shareRows.map(r => r.empresa_nome).filter(Boolean))
+    const rows = garantiaSiglas.size > 0
+      ? shareRows.filter(r => garantiaSiglas.has(tipoCode(r.tipo_os_sigla) || tipoCode(r.tipo_os_descricao)))
+      : shareRows
+    const set = new Set(rows.map(r => r.empresa_nome).filter(Boolean))
     return Array.from(set).sort()
-  }, [shareRows])
+  }, [shareRows, garantiaSiglas])
 
-  // ── Filtro de tabela (OS + empresa) ────────────────────
+  // ── Filtro de tabela (tipo garantia + OS + empresa) ────
   const rowsFiltradas = useMemo(() => {
     if (!shareRows) return []
     let rows = shareRows
+    if (garantiaSiglas.size > 0) rows = rows.filter(r => garantiaSiglas.has(tipoCode(r.tipo_os_sigla) || tipoCode(r.tipo_os_descricao)))
     const os = filtroOS.trim()
     if (os) rows = rows.filter(r => String(r.os_numero ?? '').includes(os))
     if (filtroEmpresa) rows = rows.filter(r => r.empresa_nome === filtroEmpresa)
     return rows
-  }, [shareRows, filtroEmpresa, filtroOS])
+  }, [shareRows, filtroEmpresa, filtroOS, garantiaSiglas])
 
   // ── Seleção ────────────────────────────────────────────
   // Chave composta: numero_os + código do tipo (ex: "134||G01")
@@ -206,28 +208,6 @@ export default function GarantiasDafImportFaturadosModal({ onClose, onImported, 
     todosDispSelecionados
       ? setSelecionados(new Set())
       : setSelecionados(new Set(disponíveis.map(r => rowId(r))))
-
-  // ── Restaurar descrições ───────────────────────────────
-  const handleRestaurarDescricoes = async () => {
-    if (!shareRows || shareRows.length === 0) return
-    setRestaurando(true)
-    try {
-      const tipoMap = new Map()
-      for (const r of shareRows) {
-        const sigla = String(r.tipo_os_sigla || '').trim() || tipoCode(r.tipo_os_descricao)
-        const descricao = r.tipo_os_descricao
-        if (sigla && descricao && sigla !== descricao && !tipoMap.has(sigla)) {
-          tipoMap.set(sigla, descricao)
-        }
-      }
-      await apiService.restaurarTiposGarantia(tipoMap)
-      onImported()
-    } catch (err) {
-      alert('Erro ao restaurar descrições: ' + (err.message || String(err)))
-    } finally {
-      setRestaurando(false)
-    }
-  }
 
   // ── Importação (chamada após confirmação no popup) ─────
   const handleImportar = async () => {
@@ -288,10 +268,16 @@ export default function GarantiasDafImportFaturadosModal({ onClose, onImported, 
           <div>
             <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
               <Receipt className="h-4 w-4 text-green-600" />
-              Importar OS Faturadas do SharePoint — ROF017_FATURAMENTOPOROS
+              Importar OS Faturadas do SharePoint
+              <span className="relative group cursor-help">
+                <Info className="h-3.5 w-3.5 text-slate-400" />
+                <span className="absolute top-full left-0 mt-2 w-64 text-[10px] text-white bg-slate-700 rounded px-2 py-1.5 leading-relaxed opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 normal-case font-normal tracking-normal">
+                  Fonte de dados: ROF017_FATURAMENTOPOROS
+                </span>
+              </span>
             </h2>
             <p className="text-[10px] text-slate-400 mt-0.5">
-              Filtre por período ou informe um Nº OS para buscar. Status inicial: <strong>E — Nota Fiscal Emitida</strong>.
+              Importa para a base de Garantias DAF as OS de garantia já faturadas (nota fiscal emitida) no SharePoint.
             </p>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors">
@@ -329,15 +315,15 @@ export default function GarantiasDafImportFaturadosModal({ onClose, onImported, 
               placeholder="Nº OS..."
               value={filtroOS}
               onChange={e => setFiltroOS(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && buscarDados(false)}
+              onKeyDown={e => e.key === 'Enter' && buscarDados()}
               className="pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-md focus:ring-2 focus:ring-green-500/20 outline-none w-[110px]"
             />
           </div>
 
           {/* Botão Buscar */}
           <button
-            onClick={() => buscarDados(false)}
-            disabled={loading || refreshing || (!filtroOS.trim() && (!dataInicio || !dataFim))}
+            onClick={() => buscarDados()}
+            disabled={loading || (!filtroOS.trim() && (!dataInicio || !dataFim))}
             className="flex items-center gap-1.5 px-4 py-1.5 rounded-md text-xs font-semibold text-white bg-green-600 hover:bg-green-700 shadow-sm transition-colors disabled:opacity-50"
           >
             {loading
@@ -345,31 +331,6 @@ export default function GarantiasDafImportFaturadosModal({ onClose, onImported, 
               : <><Search className="h-3.5 w-3.5" /> Buscar</>
             }
           </button>
-
-          {/* Atualizar cache (só aparece após primeira busca) */}
-          {jaBuscou && (
-            <button
-              onClick={() => buscarDados(true)}
-              disabled={loading || refreshing}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-slate-600 border border-slate-200 hover:bg-slate-50 transition-colors disabled:opacity-50"
-            >
-              <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} />
-              Atualizar arquivo
-            </button>
-          )}
-
-          {/* Restaurar descrições (só aparece quando há dados carregados) */}
-          {shareRows && shareRows.length > 0 && (
-            <button
-              onClick={handleRestaurarDescricoes}
-              disabled={restaurando || loading}
-              title="Restaura a descrição completa do Tipo OS no banco de dados usando os dados do SharePoint"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-amber-700 border border-amber-200 bg-amber-50 hover:bg-amber-100 transition-colors disabled:opacity-50"
-            >
-              <RefreshCw className={`h-3.5 w-3.5 ${restaurando ? 'animate-spin' : ''}`} />
-              {restaurando ? 'Restaurando...' : 'Restaurar descrições'}
-            </button>
-          )}
 
           {/* Filtro empresa (só após primeira busca) */}
           {jaBuscou && !loading && (
@@ -438,7 +399,7 @@ export default function GarantiasDafImportFaturadosModal({ onClose, onImported, 
             <div className="flex flex-col items-center justify-center h-full gap-3 text-slate-400">
               <Loader2 className="h-6 w-6 animate-spin" />
               <p className="text-xs">Buscando registros no SharePoint...</p>
-              <p className="text-[10px]">Lendo arquivo ROF003_OSEMISSAONFNTI · pode levar alguns segundos.</p>
+              <p className="text-[10px]">Lendo arquivo ROF017_FATURAMENTOPOROS · pode levar alguns segundos.</p>
             </div>
           )}
 
@@ -447,7 +408,7 @@ export default function GarantiasDafImportFaturadosModal({ onClose, onImported, 
             <div className="flex flex-col items-center justify-center h-full gap-3">
               <AlertCircle className="h-6 w-6 text-red-400" />
               <p className="text-xs text-red-600 font-semibold">{error}</p>
-              <button onClick={() => buscarDados(false)} className="text-xs text-blue-600 underline">Tentar novamente</button>
+              <button onClick={() => buscarDados()} className="text-xs text-blue-600 underline">Tentar novamente</button>
             </div>
           )}
 

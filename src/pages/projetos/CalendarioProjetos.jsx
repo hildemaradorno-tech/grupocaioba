@@ -19,19 +19,42 @@ function tarefaPassaFiltroData(t, ini, fim, tipo) {
   if (fim && t.data_fim > fim) return false
   return true
 }
-import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, ChevronLeft, ChevronRight, CalendarDays, RotateCcw, List, FileDown, FolderOpen, Users, CheckCircle2, PlayCircle, X } from 'lucide-react'
+import { useNavigate, useLocation } from 'react-router-dom'
+import { ArrowLeft, ChevronLeft, ChevronRight, CalendarDays, RotateCcw, List, FileDown, FolderOpen, Users, CheckCircle2, PlayCircle, X, Filter, Activity, CheckCircle, AlertTriangle, Layers, BarChart2, Eye, PartyPopper } from 'lucide-react'
 import ProjetosNav from './ProjetosNav'
 import jsPDF from 'jspdf'
 import html2canvas from 'html2canvas'
 import { apiService } from '../../services/api'
 import { useAuth } from '../../context/AuthContext'
-import { useProjetosFiltros, aplicarFiltrosGlobais } from '../../context/ProjetosFiltrosContext'
+import { useProjetosFiltros, aplicarFiltrosGlobais, _projetosSession } from '../../context/ProjetosFiltrosContext'
 import TarefaFormModal from './TarefaFormModal'
-import ProjetosFiltrosPanel from './ProjetosFiltrosPanel'
+import ProjetosFiltrosPanel, { FiltrosCompactBar } from './ProjetosFiltrosPanel'
 import { getProjetosCache, setProjetosCache, clearProjetosCache } from '../../services/projetosCache'
 
 const hojeISO = new Date().toISOString().slice(0, 10)
+
+function CardKpi({ icon: Icon, label, count, ativo, onClick, st }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`rounded-lg border px-3 py-2 text-left transition-all hover:shadow-md ${st.bg} ${st.border} ${ativo ? 'ring-2 ring-offset-1 ' + st.ring + ' shadow-md' : 'shadow-sm'}`}
+    >
+      <div className="flex items-center gap-1 mb-1">
+        <div className={`p-0.5 rounded ${st.icoBg}`}><Icon className={`h-2.5 w-2.5 ${st.icoTxt}`} /></div>
+        <p className={`text-[8px] font-bold uppercase tracking-wide leading-tight ${st.labelTxt}`}>{label}</p>
+      </div>
+      <p className={`text-xl font-bold ${st.numTxt} leading-none`}>{count}</p>
+    </button>
+  )
+}
+
+const TASK_KPI_CFG = {
+  mapeado:      { label: 'Mapeado',      icon: Layers,        st: { bg:'bg-slate-50',  border:'border-slate-200',  ring:'ring-slate-400',  icoBg:'bg-slate-100',  icoTxt:'text-slate-500',  numTxt:'text-slate-800',  labelTxt:'text-slate-400'  } },
+  programado:   { label: 'Programado',   icon: CheckCircle,   st: { bg:'bg-blue-50',   border:'border-blue-100',   ring:'ring-blue-400',   icoBg:'bg-blue-100',   icoTxt:'text-blue-500',   numTxt:'text-blue-800',   labelTxt:'text-blue-400'   } },
+  em_andamento: { label: 'Em Andamento', icon: Activity,      st: { bg:'bg-amber-50',  border:'border-amber-100',  ring:'ring-amber-400',  icoBg:'bg-amber-100',  icoTxt:'text-amber-500',  numTxt:'text-amber-800',  labelTxt:'text-amber-400'  } },
+  pausado:      { label: 'Pausado',      icon: AlertTriangle, st: { bg:'bg-purple-50', border:'border-purple-100', ring:'ring-purple-400', icoBg:'bg-purple-100', icoTxt:'text-purple-500', numTxt:'text-purple-800', labelTxt:'text-purple-400' } },
+  concluido:    { label: 'Concluído',    icon: CheckCircle2,  st: { bg:'bg-teal-50',   border:'border-teal-100',   ring:'ring-teal-400',   icoBg:'bg-teal-100',   icoTxt:'text-teal-500',   numTxt:'text-teal-800',   labelTxt:'text-teal-400'   } },
+}
 
 const DIAS_SEMANA = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
 const MESES = [
@@ -67,25 +90,30 @@ const fmtData = (d) => d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-BR')
 const DIAS_SEMANA_FULL = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado']
 const fmtDiaSemana = (iso) => { if (!iso) return ''; const d = new Date(iso + 'T12:00:00'); return DIAS_SEMANA_FULL[d.getDay()] }
 const toKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-const getMondayOf = (d) => {
+const getSundayOf = (d) => {
   const dt = new Date(d); dt.setHours(12, 0, 0, 0)
-  const dow = dt.getDay() || 7
-  dt.setDate(dt.getDate() - (dow - 1))
+  dt.setDate(dt.getDate() - dt.getDay())
   return dt
 }
 const addDaysLocal = (d, n) => { const dt = new Date(d); dt.setDate(dt.getDate() + n); return dt }
 
 export default function CalendarioProjetos({ abaInicial = 'lista' }) {
   const navigate = useNavigate()
-  const { isAdmin, empresasPermitidas, departamentosPermitidosEfetivos } = useAuth()
+  const location = useLocation()
+  const { isAdmin, empresasPermitidas, departamentosPermitidosEfetivos, hasActionOrDefault, hasPermission, user } = useAuth()
   const ctx = useProjetosFiltros()
+  const { modoVerTodos, setModoVerTodos } = ctx
+  const canEditarProjeto  = !modoVerTodos && hasActionOrDefault('projetos', 'editar')
+  const canEditarTarefa   = !modoVerTodos && hasActionOrDefault('projetos', 'editar_tarefa')
+  const canIniciarTarefa  = !modoVerTodos && hasActionOrDefault('projetos', 'iniciar_tarefa')
+  const canConcluirTarefa = !modoVerTodos && hasActionOrDefault('projetos', 'concluir_tarefa')
   const hoje = new Date()
 
   const aba = abaInicial // 'lista' | 'calendario' — determinado pela rota
-  const [vistaCalendario, setVistaCalendario] = useState('mensal') // 'mensal' | 'semanal'
+  const [vistaCalendario, setVistaCalendario] = useState('semanal') // 'mensal' | 'semanal'
   const [ano, setAno]             = useState(hoje.getFullYear())
   const [mes, setMes]             = useState(hoje.getMonth()) // 0-indexed
-  const [semanaBase, setSemanaBase] = useState(() => getMondayOf(new Date()))
+  const [semanaBase, setSemanaBase] = useState(() => getSundayOf(new Date()))
   const [projetos, setProjetos] = useState(getProjetosCache() ?? [])
   const [loading, setLoading]   = useState(getProjetosCache() === null)
   const [tooltip, setTooltip]   = useState(null) // { tarefa, x, y }
@@ -98,21 +126,35 @@ export default function CalendarioProjetos({ abaInicial = 'lista' }) {
   const setFiltroDataFim   = ctx.setFiltroDataFim
   const filtroDataTipo     = ctx.filtroDataTipo
   const setFiltroDataTipo  = ctx.setFiltroDataTipo
+  const filtroDataProjIni  = ctx.filtroDataProjIni
+  const filtroDataProjFim  = ctx.filtroDataProjFim
   const filtroStatusLista   = ctx.filtroStatusTarefa
   const setFiltroStatusLista   = ctx.setFiltroStatusTarefa
   const filtroStatusProjeto = ctx.filtroStatusProjeto
   const setFiltroStatusProjeto = ctx.setFiltroStatusProjeto
   const [visualizacaoLista,  setVisualizacaoLista]   = useState('data') // 'data' | 'projeto' | 'responsavel'
-  const [filtroStatusCal,     setFiltroStatusCal]     = useState(new Set(['programado', 'em_andamento']))
+  const [filtroStatusCard, setFiltroStatusCard] = useState(new Set(['mapeado', 'programado', 'em_andamento', 'pausado']))
   const [gerandoPDF, setGerandoPDF] = useState(false)
+  const [googleConnected, setGoogleConnected] = useState(false)
+  const [googleEmail, setGoogleEmail]         = useState(null)
+  const [googleEvents, setGoogleEvents]       = useState([])
+  const [loadingGoogle, setLoadingGoogle]     = useState(false)
   const [modalEditarTarefa, setModalEditarTarefa] = useState(null)
   const [modalConcluir, setModalConcluir] = useState(null) // { tarefa, dataFim }
+  const [modalConcluirProjeto, setModalConcluirProjeto] = useState(null) // projeto object
   const [optsResp,  setOptsResp]  = useState([])
   const [optsSist,  setOptsSist]  = useState([])
   const [optsFase,  setOptsFase]  = useState([])
   const [optsEmp,   setOptsEmp]   = useState([])
   const [optsArea,  setOptsArea]  = useState([])
   const tableRef = useRef(null)
+
+  useEffect(() => {
+    if (_projetosSession.primeiroAcesso) {
+      ctx.setFiltrosAbertos(false)
+      _projetosSession.primeiroAcesso = false
+    }
+  }, []) // fecha apenas no primeiro acesso da sessão (reseta em F5)
 
   useEffect(() => {
     if (getProjetosCache()) return
@@ -139,6 +181,43 @@ export default function CalendarioProjetos({ abaInicial = 'lista' }) {
     }).catch(() => {})
   }, [])
 
+  // Google Calendar — verifica status e carrega eventos apenas na aba Agenda
+  useEffect(() => {
+    if (abaInicial !== 'calendario' || !user?.id) return
+    const params = new URLSearchParams(location.search)
+    if (params.get('google_connected') === '1') {
+      navigate('/projetos/calendario', { replace: true })
+    }
+    apiService.getGoogleCalendarStatus(user.id)
+      .then(s => { setGoogleConnected(s.connected); setGoogleEmail(s.google_email || null) })
+      .catch(() => {})
+  }, [abaInicial, user?.id, location.search])
+
+  useEffect(() => {
+    if (abaInicial !== 'calendario' || !googleConnected || !user?.id) { setGoogleEvents([]); return }
+    setLoadingGoogle(true)
+    const d0 = toKey(diasSemana[0])
+    const d6 = toKey(diasSemana[6])
+    apiService.getGoogleCalendarEvents(user.id, d0, d6)
+      .then(r => setGoogleEvents(r.events || []))
+      .catch(() => setGoogleEvents([]))
+      .finally(() => setLoadingGoogle(false))
+  }, [abaInicial, googleConnected, user?.id, semanaBase])
+
+  const handleConectarGoogle = async () => {
+    if (!user?.id) return
+    try {
+      const url = await apiService.getGoogleCalendarAuthUrl(user.id)
+      window.location.href = url
+    } catch (err) { alert('Erro: ' + err.message) }
+  }
+
+  const handleDesconectarGoogle = async () => {
+    if (!user?.id) return
+    await apiService.disconnectGoogleCalendar(user.id).catch(() => {})
+    setGoogleConnected(false); setGoogleEmail(null); setGoogleEvents([])
+  }
+
   const recarregarDados = () => {
     const filtrosEmpresa = isAdmin ? {} : { empresa_ids: [...empresasPermitidas] }
     clearProjetosCache()
@@ -164,21 +243,49 @@ export default function CalendarioProjetos({ abaInicial = 'lista' }) {
         data_fim: dataFim || null,
       })
       setModalConcluir(null)
+      // Verifica se todas as tarefas do mesmo projeto estão concluídas
+      const tarefasDoProjeto = tarefas.filter(t => t.projeto_id === tarefa.projeto_id)
+      const todasConcluidas = tarefasDoProjeto.length > 0 &&
+        tarefasDoProjeto.every(t => t.id === tarefa.id ? true : t.status_kanban === 'concluido')
+      if (todasConcluidas) {
+        const proj = projetos.find(p => p.id === tarefa.projeto_id)
+        if (proj && proj.status !== 'concluido') setModalConcluirProjeto(proj)
+      }
       recarregarDados()
     } catch (err) { alert('Erro ao concluir: ' + (err.message || String(err))) }
   }
 
+  const handleConcluirProjeto = async () => {
+    if (!modalConcluirProjeto) return
+    try {
+      await apiService.updateProjeto(modalConcluirProjeto.id, { status: 'concluido' })
+      setModalConcluirProjeto(null)
+      recarregarDados()
+    } catch (err) { alert('Erro ao concluir projeto: ' + (err.message || String(err))) }
+  }
+
   // Projetos após filtros globais compartilhados
-  const projetosGlobal = useMemo(() => aplicarFiltrosGlobais(projetos, ctx, departamentosPermitidosEfetivos), [
+  // modoVerTodos ignora restrição de departamento e bloqueia edições
+  const projetosGlobal = useMemo(() => aplicarFiltrosGlobais(projetos, ctx, modoVerTodos ? null : departamentosPermitidosEfetivos), [
     projetos, ctx.filtroEmpresa, ctx.filtroDepartamento, ctx.filtroArea,
     ctx.filtroFase, ctx.filtroSistema, ctx.filtroRespProjeto, ctx.filtroRespTarefa,
-    departamentosPermitidosEfetivos,
+    departamentosPermitidosEfetivos, modoVerTodos,
   ])
 
   // Todas as tarefas achatadas com nome do projeto, departamento e projeto_id
   // Usa campos do projeto como fallback quando a tarefa não tem os seus próprios preenchidos
-  const tarefas = useMemo(() =>
-    projetosGlobal.flatMap(p =>
+  const tarefas = useMemo(() => {
+    let projsFiltrados = projetosGlobal
+    if (filtroDataProjIni || filtroDataProjFim) {
+      projsFiltrados = projetosGlobal.filter(p => {
+        const dataFimProj = (p.proj_tarefas || []).map(t => t.data_fim).filter(Boolean).sort().pop()
+        if (!dataFimProj) return !filtroDataProjFim
+        if (filtroDataProjIni && dataFimProj < filtroDataProjIni) return false
+        if (filtroDataProjFim && dataFimProj > filtroDataProjFim) return false
+        return true
+      })
+    }
+    return projsFiltrados.flatMap(p =>
       (p.proj_tarefas || [])
         .filter(t => !ctx.filtroRespTarefa || (t.responsavel_nome || '') === ctx.filtroRespTarefa)
         .map(t => ({
@@ -192,9 +299,8 @@ export default function CalendarioProjetos({ abaInicial = 'lista' }) {
           projeto_responsavel_nome: p.responsavel_nome || '',
           projeto_status:           p.status || '',
         }))
-    ),
-    [projetosGlobal, ctx.filtroRespTarefa]
-  )
+    )
+  }, [projetosGlobal, ctx.filtroRespTarefa, filtroDataProjIni, filtroDataProjFim])
 
   // Listas únicas ordenadas para os filtros
   const responsaveis = useMemo(() =>
@@ -224,9 +330,9 @@ export default function CalendarioProjetos({ abaInicial = 'lista' }) {
   // Tarefas para o calendário: apenas responsável da tarefa + status (sem departamento)
   const tarefasParaCalendario = useMemo(() => {
     let result = tarefas.filter(t => !filtroResponsavel || t.responsavel_nome === filtroResponsavel)
-    if (filtroStatusCal.size > 0) result = result.filter(t => filtroStatusCal.has(t.status_kanban))
+    if (filtroStatusCard.size > 0) result = result.filter(t => filtroStatusCard.has(t.status_kanban))
     return result
-  }, [tarefas, filtroResponsavel, filtroStatusCal])
+  }, [tarefas, filtroResponsavel, filtroStatusCard])
 
   // Monta a grade de semanas do mês atual
   const semanas = useMemo(() => {
@@ -353,9 +459,47 @@ export default function CalendarioProjetos({ abaInicial = 'lista' }) {
     return { slotMapSemana: map, maxLaneSemana: laneEnds.length }
   }, [tarefasParaCalendario, diasSemana])
 
+  const { slotMapGoogle, maxLaneGoogle } = useMemo(() => {
+    if (!googleEvents.length) return { slotMapGoogle: {}, maxLaneGoogle: 0 }
+    const d0 = toKey(diasSemana[0])
+    const d6 = toKey(diasSemana[6])
+    const evs = googleEvents
+      .filter(e => {
+        const start = (e.start?.date || e.start?.dateTime || '').slice(0, 10)
+        const end   = (e.end?.date   || e.end?.dateTime   || '').slice(0, 10)
+        return start && end && start <= d6 && end >= d0
+      })
+      .map(e => ({
+        id:    e.id,
+        nome:  e.summary || '(sem título)',
+        data_inicio: (e.start?.date || e.start?.dateTime || '').slice(0, 10),
+        data_fim:    (e.end?.date   || e.end?.dateTime   || '').slice(0, 10),
+        google: true,
+      }))
+      .sort((a, b) => (a.data_inicio < b.data_inicio ? -1 : 1))
+    const laneEnds = []
+    const withLanes = evs.map(ev => {
+      let lane = 0
+      while (lane < laneEnds.length && laneEnds[lane] >= ev.data_inicio) lane++
+      laneEnds[lane] = ev.data_fim
+      return { ...ev, lane }
+    })
+    const map = {}
+    withLanes.forEach(ev => {
+      diasSemana.forEach(data => {
+        const key = toKey(data)
+        if (key >= ev.data_inicio && key <= ev.data_fim) {
+          if (!map[key]) map[key] = {}
+          map[key][ev.lane] = { ...ev, isStart: key === ev.data_inicio, isEnd: key === ev.data_fim }
+        }
+      })
+    })
+    return { slotMapGoogle: map, maxLaneGoogle: laneEnds.length }
+  }, [googleEvents, diasSemana])
+
   const prevSemana = () => setSemanaBase(d => addDaysLocal(d, -7))
   const nextSemana = () => setSemanaBase(d => addDaysLocal(d, +7))
-  const irParaHoje = () => { setSemanaBase(getMondayOf(new Date())); setAno(hoje.getFullYear()); setMes(hoje.getMonth()) }
+  const irParaHoje = () => { setSemanaBase(getSundayOf(new Date())); setAno(hoje.getFullYear()); setMes(hoje.getMonth()) }
 
   const semanaLabel = (() => {
     const d0 = diasSemana[0], d6 = diasSemana[6]
@@ -367,22 +511,20 @@ export default function CalendarioProjetos({ abaInicial = 'lista' }) {
   // Lista ordenada por data_fim ASC para a aba Lista (com filtros de status, data e responsáveis)
   const tarefasLista = useMemo(() =>
     [...tarefasFiltradas]
-      .filter(t => filtroStatusLista.length === 0 || filtroStatusLista.includes(t.status_kanban || 'mapeado'))
-      .filter(t => filtroStatusProjeto.length === 0 || filtroStatusProjeto.includes(t.projeto_status || 'mapeado'))
+      .filter(t => filtroStatusCard.size === 0 || filtroStatusCard.has(t.status_kanban || 'mapeado'))
       .filter(t => !filtroResponsavelProjeto || t.projeto_responsavel_nome === filtroResponsavelProjeto)
       .filter(t => {
         const temFiltroData = filtroDataIni || filtroDataFim
         if (!temFiltroData) return true
-        // Mapeado sem datas: inclui quando não há data final no filtro
         if (!filtroDataFim && t.status_kanban === 'mapeado' && !t.data_inicio && !t.data_fim) return true
-        return tarefaPassaFiltroData(t, filtroDataIni, filtroDataFim, filtroDataTipo)
+        return tarefaPassaFiltroData(t, filtroDataIni, filtroDataFim, 'fim')
       })
       .sort((a, b) => {
         const da = a.data_fim || a.data_inicio || '9999-99-99'
         const db = b.data_fim || b.data_inicio || '9999-99-99'
         return da < db ? -1 : da > db ? 1 : 0
       }),
-    [tarefasFiltradas, filtroStatusLista, filtroStatusProjeto, filtroResponsavelProjeto, filtroDataIni, filtroDataFim, filtroDataTipo]
+    [tarefasFiltradas, filtroStatusCard, filtroResponsavelProjeto, filtroDataIni, filtroDataFim]
   )
 
   const gruposLista = useMemo(() => {
@@ -515,12 +657,6 @@ export default function CalendarioProjetos({ abaInicial = 'lista' }) {
       {/* Cabeçalho */}
       <div className="flex items-center justify-between border-b border-slate-200 pb-4">
         <div className="flex items-center gap-3">
-          <button
-            onClick={() => navigate('/projetos')}
-            className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-md transition-colors"
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </button>
           <div className="p-2 bg-indigo-600 rounded-lg shrink-0">
             <CalendarDays className="h-4 w-4 text-white" />
           </div>
@@ -534,9 +670,29 @@ export default function CalendarioProjetos({ abaInicial = 'lista' }) {
           </div>
         </div>
 
-        {/* Botão PDF — só na lista de tarefas */}
-        {aba === 'lista' && (
-          <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 shrink-0">
+          {hasPermission('bi/projetos') && (
+            <button
+              onClick={() => navigate('/bi/projetos')}
+              className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold px-3 py-2 rounded-md shadow-sm border border-slate-200 transition-colors"
+            >
+              <BarChart2 className="h-4 w-4 text-indigo-500" /> Ir para Dashboard
+            </button>
+          )}
+          {departamentosPermitidosEfetivos?.size > 0 && (
+            <button
+              onClick={() => setModoVerTodos(!modoVerTodos)}
+              className={`flex items-center gap-2 text-xs font-semibold px-3 py-2 rounded-md shadow-sm border transition-colors ${
+                modoVerTodos
+                  ? 'bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100'
+                  : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              <Eye className="h-4 w-4" />
+              {modoVerTodos ? 'Sair da Visualização Geral' : 'Ver Todos os Projetos'}
+            </button>
+          )}
+          {aba === 'lista' && (
             <button
               onClick={baixarPDF}
               disabled={gerandoPDF || tarefasLista.length === 0}
@@ -545,13 +701,10 @@ export default function CalendarioProjetos({ abaInicial = 'lista' }) {
               <FileDown className="h-3.5 w-3.5" />
               {gerandoPDF ? 'Gerando…' : 'Baixar PDF'}
             </button>
-          </div>
-        )}
-        {/* Controles de navegação — só no calendário */}
-        {aba === 'calendario' && (
-          <div className="flex items-center gap-2">
-            {/* Toggle Mensal / Semanal */}
-            <div className="flex items-center bg-slate-100 rounded-lg p-0.5 mr-1">
+          )}
+          {aba === 'calendario' && (<>
+            <div className="w-px h-5 bg-slate-200 mx-1" />
+            <div className="flex items-center bg-slate-100 rounded-lg p-0.5">
               {[['mensal','Mensal'],['semanal','Semanal']].map(([v, l]) => (
                 <button key={v} onClick={() => setVistaCalendario(v)}
                   className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
@@ -561,7 +714,6 @@ export default function CalendarioProjetos({ abaInicial = 'lista' }) {
                 </button>
               ))}
             </div>
-
             {vistaCalendario === 'mensal' ? (<>
               <button onClick={prevMes} className="p-1.5 border border-slate-200 rounded-md hover:bg-slate-100 text-slate-500 transition-colors">
                 <ChevronLeft className="h-4 w-4" />
@@ -589,129 +741,69 @@ export default function CalendarioProjetos({ abaInicial = 'lista' }) {
                 Hoje
               </button>
             </>)}
-          </div>
-        )}
+          </>)}
+        </div>
       </div>
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex items-start justify-between gap-3">
         <ProjetosNav />
-        <div className="flex items-center gap-2 shrink-0">
-          <div className="flex items-center gap-0.5 bg-slate-100 border border-slate-200 rounded-md p-0.5 shrink-0">
-            {[{ k: 'inicio', l: 'Início' }, { k: 'fim', l: 'Término' }, { k: 'ambos', l: 'Ambos' }].map(({ k, l }) => (
-              <button key={k} onClick={() => setFiltroDataTipo(k)}
-                className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-colors ${filtroDataTipo === k ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
-                {l}
-              </button>
-            ))}
-          </div>
-          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">De</span>
-          <input
-            type="date"
-            value={filtroDataIni}
-            onChange={e => setFiltroDataIni(e.target.value)}
-            onClick={e => e.target.showPicker?.()}
-            className="text-xs px-2 py-1 border border-slate-200 rounded-md bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 cursor-pointer"
-          />
-          <span className="text-[10px] text-slate-400">até</span>
-          <input
-            type="date"
-            value={filtroDataFim}
-            onChange={e => setFiltroDataFim(e.target.value)}
-            onClick={e => e.target.showPicker?.()}
-            min={filtroDataIni || undefined}
-            className="text-xs px-2 py-1 border border-slate-200 rounded-md bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 cursor-pointer"
-          />
-          <button
-            onClick={() => { setFiltroDataIni(''); setFiltroDataFim('') }}
-            className={`p-1 rounded transition-colors ${(filtroDataIni || filtroDataFim) ? 'text-red-400 hover:text-red-600' : 'text-slate-200 cursor-default'}`}
-            title="Limpar datas"
-          >
-            <X className="h-3.5 w-3.5" />
+        <div className="flex items-start gap-2">
+          {aba === 'calendario' && (googleConnected ? (
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold bg-white border border-slate-200 text-slate-600">
+              <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 shrink-0" fill="none"><path d="M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477 10-10S17.523 2 12 2z" fill="#4285F4"/><path d="M17.82 12.2c0-.367-.033-.72-.094-1.06H12v2.006h3.264a2.79 2.79 0 01-1.211 1.83v1.52h1.961c1.147-1.056 1.807-2.613 1.807-4.297z" fill="#4285F4"/><path d="M12 18c1.638 0 3.012-.543 4.014-1.47l-1.961-1.52c-.543.364-1.237.578-2.053.578-1.578 0-2.915-1.066-3.392-2.497H6.577v1.57A6.002 6.002 0 0012 18z" fill="#34A853"/><path d="M8.608 13.09A3.603 3.603 0 018.42 12c0-.38.065-.748.188-1.09V9.34H6.577A6.002 6.002 0 006 12c0 .967.232 1.882.577 2.66l2.031-1.57z" fill="#FBBC05"/><path d="M12 8.413c.89 0 1.688.306 2.316.906l1.735-1.735C14.01 6.543 13.071 6 12 6a6.002 6.002 0 00-5.423 3.34l2.031 1.57C9.085 9.48 10.422 8.413 12 8.413z" fill="#EA4335"/></svg>
+              <span className="max-w-[130px] truncate">{googleEmail}</span>
+              <button onClick={handleDesconectarGoogle} className="ml-1 text-slate-400 hover:text-red-500 transition-colors" title="Desconectar"><X className="h-3 w-3" /></button>
+            </div>
+          ) : (
+            <button onClick={handleConectarGoogle}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors"
+              title="Sincronizar com Google Calendar">
+              <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 shrink-0" fill="none"><path d="M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477 10-10S17.523 2 12 2z" fill="#4285F4"/><path d="M17.82 12.2c0-.367-.033-.72-.094-1.06H12v2.006h3.264a2.79 2.79 0 01-1.211 1.83v1.52h1.961c1.147-1.056 1.807-2.613 1.807-4.297z" fill="#4285F4"/><path d="M12 18c1.638 0 3.012-.543 4.014-1.47l-1.961-1.52c-.543.364-1.237.578-2.053.578-1.578 0-2.915-1.066-3.392-2.497H6.577v1.57A6.002 6.002 0 0012 18z" fill="#34A853"/><path d="M8.608 13.09A3.603 3.603 0 018.42 12c0-.38.065-.748.188-1.09V9.34H6.577A6.002 6.002 0 006 12c0 .967.232 1.882.577 2.66l2.031-1.57z" fill="#FBBC05"/><path d="M12 8.413c.89 0 1.688.306 2.316.906l1.735-1.735C14.01 6.543 13.071 6 12 6a6.002 6.002 0 00-5.423 3.34l2.031 1.57C9.085 9.48 10.422 8.413 12 8.413z" fill="#EA4335"/></svg>
+              Conectar Google Calendar
+            </button>
+          ))}
+          <FiltrosCompactBar />
+        </div>
+      </div>
+      <ProjetosFiltrosPanel projetos={projetos} showTrigger={false} hiddenFilters={aba === 'lista' ? ['termProjeto'] : []} />
+
+      {modoVerTodos && (
+        <div className="flex items-center gap-2 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-xs font-semibold">
+          <Eye className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+          Modo Visualização Geral — exibindo todos os departamentos. Todas as edições estão bloqueadas.
+          <button onClick={() => setModoVerTodos(false)} className="ml-auto text-amber-600 hover:text-amber-800 font-bold underline underline-offset-2">
+            Sair
           </button>
         </div>
-      </div>
-      <ProjetosFiltrosPanel projetos={projetos} />
-
-      {/* Filtro de status — só na aba agenda */}
-      {aba === 'calendario' && !loading && (
-        <div className="bg-white rounded-lg border border-slate-200 shadow-sm px-4 py-2.5 flex items-center gap-2 flex-wrap">
-          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide shrink-0">Status:</span>
-          {Object.keys(STATUS_LABEL).map(s => {
-            const cor = STATUS_COR[s]
-            const ativo = filtroStatusCal.has(s)
-            return (
-              <button key={s}
-                onClick={() => setFiltroStatusCal(prev => {
-                  const next = new Set(prev)
-                  if (next.has(s)) next.delete(s); else next.add(s)
-                  return next
-                })}
-                style={{
-                  background: ativo ? cor : cor + '18',
-                  color: ativo ? '#fff' : cor,
-                  border: `1.5px solid ${cor}40`,
-                }}
-                className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold transition-all"
-              >
-                {STATUS_LABEL[s]}
-              </button>
-            )
-          })}
-          {filtroStatusCal.size > 0 && (
-            <button onClick={() => setFiltroStatusCal(new Set())}
-              className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-500 border border-slate-300 hover:bg-slate-200 transition-all"
-            >
-              Limpar status
-            </button>
-          )}
-        </div>
       )}
+
+      {/* Cards KPI — visíveis em ambas as abas */}
+      {!loading && (() => {
+        const counts = {}
+        Object.keys(TASK_KPI_CFG).forEach(s => { counts[s] = 0 })
+        tarefasFiltradas.forEach(t => { const s = t.status_kanban || 'mapeado'; if (counts[s] !== undefined) counts[s]++ })
+        const cards = Object.entries(TASK_KPI_CFG)
+          .map(([status, cfg]) => ({ status, cfg, count: counts[status] || 0 }))
+        return (
+          <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cards.length + 1}, 1fr)`, gap: '10px' }}>
+            {cards.map(c => (
+              <CardKpi key={c.status} icon={c.cfg.icon} label={c.cfg.label} count={c.count}
+                ativo={filtroStatusCard.has(c.status)}
+                onClick={() => setFiltroStatusCard(prev => { const s = new Set(prev); s.has(c.status) ? s.delete(c.status) : s.add(c.status); return s })}
+                st={c.cfg.st} />
+            ))}
+            <CardKpi
+              icon={Layers} label="Total Tarefas" count={tarefasFiltradas.length}
+              ativo={false}
+              onClick={() => setFiltroStatusCard(new Set())}
+              st={{ bg:'bg-slate-50', border:'border-slate-200', ring:'ring-slate-300', icoBg:'bg-slate-100', icoTxt:'text-slate-500', numTxt:'text-slate-800', labelTxt:'text-slate-400' }}
+            />
+          </div>
+        )
+      })()}
 
       {/* ── ABA LISTA ────────────────────────────────────────────────────────── */}
       {aba === 'lista' && !loading && (
         <div className="space-y-3">
-          {/* Filtros de status */}
-          <div className="bg-white rounded-lg border border-slate-200 shadow-sm px-4 py-3 space-y-2">
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide shrink-0 w-24">Status Projeto:</span>
-              {Object.keys(STATUS_LABEL).map(s => {
-                const cor = STATUS_COR[s]
-                const ativo = filtroStatusProjeto.includes(s)
-                return (
-                  <button key={s}
-                    onClick={() => setFiltroStatusProjeto(prev => ativo ? prev.filter(x => x !== s) : [...prev, s])}
-                    style={{ background: ativo ? cor : cor + '18', color: ativo ? '#fff' : cor, border: `1.5px solid ${cor}40` }}
-                    className="px-3 py-1 rounded-full text-[11px] font-semibold transition-all"
-                  >{STATUS_LABEL[s]}</button>
-                )
-              })}
-              <button onClick={() => setFiltroStatusProjeto(Object.keys(STATUS_LABEL))} className="px-2.5 py-1 rounded-md text-[11px] font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors">Selecionar Todos</button>
-              <button onClick={() => setFiltroStatusProjeto([])} className="px-2.5 py-1 rounded-md text-[11px] font-semibold text-slate-500 hover:bg-slate-100 transition-colors">Remover Todos</button>
-            </div>
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide shrink-0 w-24">Status Tarefa:</span>
-              {Object.keys(STATUS_LABEL).map(s => {
-                const cor = STATUS_COR[s]
-                const ativo = filtroStatusLista.includes(s)
-                return (
-                  <button key={s}
-                    onClick={() => setFiltroStatusLista(prev => ativo ? prev.filter(x => x !== s) : [...prev, s])}
-                    style={{ background: ativo ? cor : cor + '18', color: ativo ? '#fff' : cor, border: `1.5px solid ${cor}40` }}
-                    className="px-3 py-1 rounded-full text-[11px] font-semibold transition-all"
-                  >{STATUS_LABEL[s]}</button>
-                )
-              })}
-              <button onClick={() => setFiltroStatusLista(Object.keys(STATUS_LABEL))} className="px-2.5 py-1 rounded-md text-[11px] font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors">Selecionar Todos</button>
-              <button onClick={() => setFiltroStatusLista([])} className="px-2.5 py-1 rounded-md text-[11px] font-semibold text-slate-500 hover:bg-slate-100 transition-colors">Remover Todos</button>
-            </div>
-            <div className="flex justify-end pt-1.5 border-t border-slate-100">
-              <button
-                onClick={() => { setFiltroStatusProjeto([]); setFiltroStatusLista([]) }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-slate-500 hover:bg-slate-100 transition-colors"
-              >
-                <RotateCcw className="h-3 w-3" /> Limpar todos os status
-              </button>
-            </div>
-          </div>
           {/* Tabela */}
           <div ref={tableRef} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="overflow-x-auto">
@@ -787,7 +879,7 @@ export default function CalendarioProjetos({ abaInicial = 'lista' }) {
                       const atrasada = t.status_kanban !== 'concluido' && t.data_fim && t.data_fim < hojeISO
                       const hoje_fim = t.status_kanban !== 'concluido' && t.data_fim === hojeISO
                       return (
-                        <tr key={t.id} className="hover:bg-slate-50 transition-colors border-b border-slate-100 cursor-pointer" onClick={() => setModalEditarTarefa(t)}>
+                        <tr key={t.id} className={`hover:bg-slate-50 transition-colors border-b border-slate-100 ${canEditarTarefa ? 'cursor-pointer' : ''}`} onClick={() => canEditarTarefa && setModalEditarTarefa(t)}>
                           <td className="px-3 py-2.5 text-center">
                             {t.etapa != null
                               ? <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-[10px] font-bold ${t.status_kanban === 'em_andamento' ? 'bg-orange-500 text-white shadow-sm' : 'bg-indigo-100 text-indigo-700'}`}>{t.etapa}ª</span>
@@ -807,12 +899,16 @@ export default function CalendarioProjetos({ abaInicial = 'lista' }) {
                           <td className="px-4 py-2.5 font-medium text-slate-800">{t.nome}</td>
                           {visualizacaoLista !== 'projeto' && (
                             <td className="px-4 py-2.5">
-                              <button
-                                onClick={e => { e.stopPropagation(); navigate(`/projetos/${t.projeto_id}/editar`) }}
-                                className="text-indigo-600 hover:text-indigo-800 hover:underline text-left text-xs"
-                              >
-                                {t.projeto_nome}
-                              </button>
+                              {canEditarProjeto ? (
+                                <button
+                                  onClick={e => { e.stopPropagation(); navigate(`/projetos/detalhe/${t.projeto_id}/editar`) }}
+                                  className="text-indigo-600 hover:text-indigo-800 hover:underline text-left text-xs"
+                                >
+                                  {t.projeto_nome}
+                                </button>
+                              ) : (
+                                <span className="text-xs text-slate-700">{t.projeto_nome}</span>
+                              )}
                             </td>
                           )}
                           {visualizacaoLista !== 'resp_projeto' && visualizacaoLista !== 'projeto' && <td className="px-4 py-2.5 text-slate-500">{t.projeto_responsavel_nome || '—'}</td>}
@@ -822,7 +918,7 @@ export default function CalendarioProjetos({ abaInicial = 'lista' }) {
                               ? <span className="px-2 py-0.5 rounded text-[10px] font-bold" style={{ backgroundColor: sistemaCorMap[t.sistema_nome] || '#1e293b', color: getTextColor(sistemaCorMap[t.sistema_nome] || '#1e293b') }}>{t.sistema_nome}</span>
                               : null
                             }
-                            <div className="text-[10px] text-slate-400 italic mt-0.5">
+                            <div className="text-[10px] text-slate-400 italic mt-0.5 whitespace-nowrap">
                               {[t.departamento_nome, t.area_nome].filter(Boolean).join(' / ') || '—'}
                             </div>
                           </td>
@@ -845,7 +941,7 @@ export default function CalendarioProjetos({ abaInicial = 'lista' }) {
                           )}
                           <td className="px-4 py-2.5">
                             <div className="flex items-center gap-1">
-                              {t.status_kanban === 'programado' && (
+                              {canIniciarTarefa && t.status_kanban === 'programado' && (
                                 <button
                                   onClick={e => { e.stopPropagation(); handleIniciarTarefa(t) }}
                                   className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
@@ -854,7 +950,7 @@ export default function CalendarioProjetos({ abaInicial = 'lista' }) {
                                   <PlayCircle className="h-3.5 w-3.5" />
                                 </button>
                               )}
-                              {t.status_kanban === 'em_andamento' && (
+                              {canConcluirTarefa && t.status_kanban === 'em_andamento' && (
                                 <button
                                   onClick={e => { e.stopPropagation(); setModalConcluir({ tarefa: t, dataFim: hojeISO }) }}
                                   className="p-1.5 text-slate-400 hover:text-teal-600 hover:bg-teal-50 rounded transition-colors"
@@ -918,7 +1014,7 @@ export default function CalendarioProjetos({ abaInicial = 'lista' }) {
                             const isEndHere   = t.isEnd   || di === 6
                             const cor = STATUS_COR[t.status_kanban] || '#3b82f6'
                             return (
-                              <div key={lane} onMouseMove={e => setTooltip({ tarefa: t, x: e.clientX, y: e.clientY })} onMouseLeave={() => setTooltip(null)} onDoubleClick={() => { setTooltip(null); setModalEditarTarefa(t) }}
+                              <div key={lane} onMouseMove={e => setTooltip({ tarefa: t, x: e.clientX, y: e.clientY })} onMouseLeave={() => setTooltip(null)} onDoubleClick={() => { if (!canEditarTarefa) return; setTooltip(null); setModalEditarTarefa(t) }}
                                 style={{ position:'relative', zIndex:1, height:'16px', flexShrink:0, backgroundColor:cor, opacity:0.88, cursor:'pointer', display:'flex', alignItems:'center', overflow:'hidden',
                                   borderRadius:[isStartHere?'3px':'0', isEndHere?'3px':'0', isEndHere?'3px':'0', isStartHere?'3px':'0'].join(' '),
                                   marginLeft:isStartHere?'3px':'-1px', marginRight:isEndHere?'3px':'-1px', paddingLeft:isStartHere?'6px':'2px', paddingRight:'3px' }}>
@@ -939,9 +1035,10 @@ export default function CalendarioProjetos({ abaInicial = 'lista' }) {
 
         {/* ── VISTA SEMANAL ─────────────────────────────────────────────────── */}
         {vistaCalendario === 'semanal' && (() => {
-          const DIAS_SEG = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom']
-          const numSlots = Math.max(1, maxLaneSemana)
-          const colHeight = Math.max(180, 52 + numSlots * 28)
+          const DIAS_SEG = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
+          const numSlots      = Math.max(1, maxLaneSemana)
+          const numSlotsGoogle = maxLaneGoogle
+          const colHeight = Math.max(180, 52 + numSlots * 28 + (numSlotsGoogle > 0 ? 8 + numSlotsGoogle * 24 : 0))
           return (
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
               {/* Cabeçalho dos dias */}
@@ -949,7 +1046,7 @@ export default function CalendarioProjetos({ abaInicial = 'lista' }) {
                 {diasSemana.map((data, di) => {
                   const key = toKey(data)
                   const isHoje  = key === hojeStr
-                  const ehFimSem = di === 5 || di === 6
+                  const ehFimSem = di === 0 || di === 6
                   return (
                     <div key={di} className={`flex flex-col items-center py-3 border-l border-slate-100 first:border-l-0 ${ehFimSem ? 'bg-slate-50' : 'bg-white'}`}>
                       <span className={`text-[10px] font-bold uppercase tracking-wider mb-1 ${ehFimSem ? 'text-slate-400' : 'text-slate-400'}`}>{DIAS_SEG[di]}</span>
@@ -963,11 +1060,13 @@ export default function CalendarioProjetos({ abaInicial = 'lista' }) {
               <div className="grid grid-cols-7 divide-x divide-slate-100" style={{ minHeight: `${colHeight}px` }}>
                 {diasSemana.map((data, di) => {
                   const key = toKey(data)
-                  const slots = slotMapSemana[key] || {}
-                  const ehFimSem = di === 5 || di === 6
+                  const slots       = slotMapSemana[key] || {}
+                  const slotsGoogle = slotMapGoogle[key]  || {}
+                  const ehFimSem = di === 0 || di === 6
                   const isHoje  = key === hojeStr
                   return (
                     <div key={di} className={`relative flex flex-col p-1.5 gap-1 ${ehFimSem ? 'bg-slate-50/60' : ''} ${isHoje ? 'bg-indigo-50/30' : ''}`}>
+                      {/* Tarefas do sistema */}
                       {Array.from({ length: numSlots }, (_, lane) => {
                         const t = slots[lane]
                         if (!t) return <div key={lane} style={{ height: '24px', flexShrink: 0 }} />
@@ -975,7 +1074,7 @@ export default function CalendarioProjetos({ abaInicial = 'lista' }) {
                         const isStartHere = t.isStart || di === 0
                         const isEndHere   = t.isEnd   || di === 6
                         return (
-                          <div key={lane} onMouseMove={e => setTooltip({ tarefa: t, x: e.clientX, y: e.clientY })} onMouseLeave={() => setTooltip(null)} onDoubleClick={() => { setTooltip(null); setModalEditarTarefa(t) }}
+                          <div key={lane} onMouseMove={e => setTooltip({ tarefa: t, x: e.clientX, y: e.clientY })} onMouseLeave={() => setTooltip(null)} onDoubleClick={() => { if (!canEditarTarefa) return; setTooltip(null); setModalEditarTarefa(t) }}
                             style={{ height:'24px', flexShrink:0, backgroundColor:cor, opacity:0.85, cursor:'pointer', display:'flex', alignItems:'center', overflow:'hidden',
                               borderRadius:[isStartHere?'5px':'0', isEndHere?'5px':'0', isEndHere?'5px':'0', isStartHere?'5px':'0'].join(' '),
                               marginLeft:isStartHere?'0':'-7px', marginRight:isEndHere?'0':'-7px',
@@ -985,6 +1084,28 @@ export default function CalendarioProjetos({ abaInicial = 'lista' }) {
                           </div>
                         )
                       })}
+                      {/* Separador + eventos Google Calendar */}
+                      {numSlotsGoogle > 0 && (
+                        <>
+                          <div style={{ height:'4px', flexShrink:0, borderTop:'1px dashed #e2e8f0', margin:'2px -6px 0' }} />
+                          {Array.from({ length: numSlotsGoogle }, (_, lane) => {
+                            const ev = slotsGoogle[lane]
+                            if (!ev) return <div key={lane} style={{ height: '22px', flexShrink: 0 }} />
+                            const isStartHere = ev.isStart || di === 0
+                            const isEndHere   = ev.isEnd   || di === 6
+                            return (
+                              <div key={lane}
+                                title={ev.nome}
+                                style={{ height:'22px', flexShrink:0, backgroundColor:'#4285F4', opacity:0.82, display:'flex', alignItems:'center', overflow:'hidden',
+                                  borderRadius:[isStartHere?'4px':'0', isEndHere?'4px':'0', isEndHere?'4px':'0', isStartHere?'4px':'0'].join(' '),
+                                  marginLeft:isStartHere?'0':'-7px', marginRight:isEndHere?'0':'-7px',
+                                  paddingLeft:isStartHere?'7px':'4px', paddingRight:'4px' }}>
+                                {isStartHere && <span style={{ fontSize:'9px', fontWeight:600, color:'#fff', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', lineHeight:1, userSelect:'none' }}>{ev.nome}</span>}
+                              </div>
+                            )
+                          })}
+                        </>
+                      )}
                     </div>
                   )
                 })}
@@ -1003,6 +1124,43 @@ export default function CalendarioProjetos({ abaInicial = 'lista' }) {
               <span className="text-[10px] text-slate-500 font-medium">{STATUS_LABEL[k]}</span>
             </div>
           ))}
+          {googleConnected && (
+            <div className="flex items-center gap-1.5 ml-2 pl-2 border-l border-slate-200">
+              <div className="w-3 h-3 rounded-sm shrink-0" style={{ backgroundColor: '#4285F4' }} />
+              <span className="text-[10px] text-slate-500 font-medium">Google Calendar</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Modal Concluir Projeto */}
+      {modalConcluirProjeto && (
+        <div className="fixed top-0 right-0 bottom-0 left-16 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl border border-slate-200 w-[420px] shadow-2xl overflow-hidden">
+            <div className="p-5 border-b border-slate-100 bg-gradient-to-r from-teal-50 to-emerald-50 flex items-center gap-4">
+              <div className="p-3 bg-teal-100 text-teal-600 rounded-full shrink-0">
+                <PartyPopper className="h-6 w-6" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-900">Todas as tarefas concluídas!</h3>
+                <p className="text-xs text-slate-500 mt-0.5">Deseja marcar o projeto como <strong className="text-teal-700">Concluído</strong>?</p>
+              </div>
+            </div>
+            <div className="p-4">
+              <p className="text-xs text-slate-600 leading-relaxed">
+                O projeto <strong>"{modalConcluirProjeto.nome}"</strong> teve todas as suas tarefas concluídas.
+                Deseja atualizar o status do projeto para <strong className="text-teal-700">Concluído</strong>?
+              </p>
+            </div>
+            <div className="flex items-center justify-end gap-2 p-3 bg-slate-50 border-t border-slate-100">
+              <button onClick={() => setModalConcluirProjeto(null)} className="px-3 py-1.5 rounded-md text-xs font-semibold text-slate-600 hover:bg-slate-200/60 transition-colors">
+                Agora não
+              </button>
+              <button onClick={handleConcluirProjeto} className="px-4 py-1.5 rounded-md text-xs font-semibold text-white bg-teal-600 hover:bg-teal-700 shadow-sm transition-colors">
+                Sim, concluir projeto
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   ClipboardCheck, AlertTriangle, CheckCircle2, Loader2, Sparkles, Pencil,
   ArrowRight, RefreshCw, Building2, ChevronDown, ChevronRight,
-  Package, Wrench, Paintbrush, Users, Send, TrendingUp, Clock,
+  Package, Wrench, TrendingUp,
   BarChart3, Cog, Eye, XCircle, Info, Ban,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
@@ -29,8 +29,6 @@ const TIPOS = [
   { key: 'pecas',     grupo: 'pecas',    contabilizaTotal: true,  label: 'Peças',              labelCurto: 'Peças',     icon: Package,    color: 'blue',   nav: '/metas/pos-vendas/pecas' },
   { key: 'consultor', grupo: 'servicos', contabilizaTotal: true,  label: 'Consultores',         labelCurto: 'Consultor', icon: Cog,        color: 'violet', nav: '/metas/pos-vendas/distribuicao-consultores' },
   { key: 'mecanico',  grupo: 'servicos', contabilizaTotal: false, label: 'Serviços Mecânico',  labelCurto: 'Mecânico',  icon: Wrench,     color: 'indigo', nav: '/metas/pos-vendas/servicos/mecanico' },
-  { key: 'funilaria', grupo: 'servicos', contabilizaTotal: false, label: 'Funilaria e Pintura', labelCurto: 'Funilaria', icon: Paintbrush, color: 'orange', nav: '/metas/pos-vendas/funilaria-pintura' },
-  { key: 'terceiros', grupo: 'servicos', contabilizaTotal: false, label: 'Terceiros',           labelCurto: 'Terceiros', icon: Users,      color: 'teal',   nav: '/metas/pos-vendas/terceiros' },
 ]
 
 const COLORS = {
@@ -71,19 +69,16 @@ export default function MetasGestaoAprovacao() {
   const [error,     setError]     = useState(null)
 
   // Dados pendentes (para fila de aprovação)
-  const [pending, setPending] = useState({ pecas: [], mecanico: [], consultor: [], funilaria: [], terceiros: [] })
+  const [pending, setPending] = useState({ pecas: [], mecanico: [], consultor: [] })
   // Dados completos (para visão geral)
-  const [resumo,  setResumo]  = useState({ pecas: [], mecanico: [], consultor: [], funilaria: [], terceiros: [] })
+  const [resumo,  setResumo]  = useState({ pecas: [], mecanico: [], consultor: [] })
   // Última publicação
   const [ultimaPublicacao, setUltimaPublicacao] = useState(null)
 
   const [aprovando,      setAprovando]      = useState(null) // 'empId|tipo'
   const [naoAprovando,   setNaoAprovando]   = useState(null) // 'empId|tipo'
   const [modalNaoAprovar, setModalNaoAprovar] = useState(null)
-  const [publicando,     setPublicando]     = useState(false)
   const [modalConf,    setModalConf]    = useState(null)
-  const [modalPublicar, setModalPublicar] = useState(false)
-  const [sucessoPubl,  setSucessoPubl]  = useState(null)
 
   const [abaAtiva,      setAbaAtiva]      = useSessionState('mga_aba', 'pecas')
   const [subAba,        setSubAba]        = useSessionState('mga_subaba', 'fila')
@@ -96,16 +91,14 @@ export default function MetasGestaoAprovacao() {
   const load = useCallback(async () => {
     setLoading(true); setError(null)
     try {
-      const [pendPecas, pendMec, pendCons, pendFun, pendTer, res, ultPub] = await Promise.all([
+      const [pendPecas, pendMec, pendCons, res, ultPub] = await Promise.all([
         apiService.getPendingApprovals(),
         apiService.getPendingApprovalsMecanico(),
         apiService.getPendingApprovalsConsultor(),
-        apiService.getPendingApprovalsFunilaria(),
-        apiService.getPendingApprovalsTerceiros(),
         apiService.getResumoMetasAprovacao(filtroAno),
         apiService.getUltimaPublicacao(filtroAno),
       ])
-      setPending({ pecas: pendPecas, mecanico: pendMec, consultor: pendCons, funilaria: pendFun, terceiros: pendTer })
+      setPending({ pecas: pendPecas, mecanico: pendMec, consultor: pendCons })
       setResumo(res)
       setUltimaPublicacao(ultPub)
     } catch (err) { setError(err.message || String(err)) }
@@ -116,8 +109,8 @@ export default function MetasGestaoAprovacao() {
 
   // ── KPIs ──────────────────────────────────────────────────────────────────
   const kpi = useMemo(() => {
-    const allPend = [...pending.pecas, ...pending.mecanico, ...pending.consultor, ...pending.funilaria, ...pending.terceiros]
-    const allRes  = [...resumo.pecas,  ...resumo.mecanico,  ...resumo.consultor,  ...resumo.funilaria,  ...resumo.terceiros]
+    const allPend = [...pending.pecas, ...pending.mecanico, ...pending.consultor, ]
+    const allRes  = [...resumo.pecas,  ...resumo.mecanico,  ...resumo.consultor,  ]
     const totalPendItems  = allPend.length
     const totalAprovados  = allRes.filter(r => !isPendente(r)).length
     const totalRegistros  = allRes.length
@@ -199,8 +192,6 @@ export default function MetasGestaoAprovacao() {
       if (tipo === 'pecas')     await apiService.approveMetasPecasEmpresa(empId, filtroAno)
       if (tipo === 'mecanico')  await apiService.approveMetasMecanicoEmpresa(empId, filtroAno)
       if (tipo === 'consultor') await apiService.approveMetasConsultorEmpresa(empId, filtroAno)
-      if (tipo === 'funilaria') await apiService.approveMetasFunilariaEmpresa(empId, filtroAno)
-      if (tipo === 'terceiros') await apiService.approveMetasTerceirosEmpresa(empId, filtroAno)
       await load()
     } catch (err) { setError(err.message || String(err)) }
     finally { setAprovando(null) }
@@ -220,22 +211,9 @@ export default function MetasGestaoAprovacao() {
       if (tipo === 'pecas')     await apiService.unapproveMetasPecasEmpresa(empId, filtroAno)
       if (tipo === 'mecanico')  await apiService.unapproveMetasMecanicoEmpresa(empId, filtroAno)
       if (tipo === 'consultor') await apiService.unapproveMetasConsultorEmpresa(empId, filtroAno)
-      if (tipo === 'funilaria') await apiService.unapproveMetasFunilariaEmpresa(empId, filtroAno)
-      if (tipo === 'terceiros') await apiService.unapproveMetasTerceirosEmpresa(empId, filtroAno)
       await load()
     } catch (err) { setError(err.message || String(err)) }
     finally { setNaoAprovando(null) }
-  }
-
-  // ── Publicar para Power BI ────────────────────────────────────────────
-  const handlePublicar = async () => {
-    setPublicando(true); setModalPublicar(false)
-    try {
-      const result = await apiService.publishMetasAprovadas(filtroAno)
-      setSucessoPubl(result)
-      await load()
-    } catch (err) { setError(err.message || String(err)) }
-    finally { setPublicando(false) }
   }
 
   // ── Render helpers ────────────────────────────────────────────────────
@@ -275,37 +253,16 @@ export default function MetasGestaoAprovacao() {
 
       <div className="flex-1 overflow-auto px-6 py-5 space-y-5">
 
-        {/* Banner: tudo aprovado → publicar */}
+        {/* Banner: tudo aprovado (cada Aprovar já publica pra fato_metas_publicadas na hora) */}
         {tudo_aprovado && (
-          <div className="flex items-center justify-between gap-4 bg-green-50 border border-green-300 rounded-xl px-5 py-4">
-            <div className="flex items-center gap-3">
-              <CheckCircle2 size={22} className="text-green-600 shrink-0" />
-              <div>
-                <p className="font-bold text-green-800">Todas as metas foram aprovadas!</p>
-                <p className="text-xs text-green-600">
-                  {ultimaPublicacao ? `Última publicação: ${fmtDate(ultimaPublicacao)}` : 'Nenhuma publicação registrada para este ano.'}
-                </p>
-              </div>
-            </div>
-            <button onClick={() => setModalPublicar(true)} disabled={publicando}
-              className="inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white text-sm font-bold px-5 py-2.5 rounded-xl transition-colors shadow disabled:opacity-50 shrink-0">
-              {publicando ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
-              Publicar para Power BI
-            </button>
-          </div>
-        )}
-
-        {/* Banner: publicação realizada */}
-        {sucessoPubl && (
-          <div className="flex items-center justify-between gap-4 bg-indigo-50 border border-indigo-300 rounded-xl px-5 py-4">
-            <div className="flex items-center gap-3">
-              <Send size={18} className="text-indigo-600 shrink-0" />
-              <p className="text-sm font-semibold text-indigo-800">
-                {sucessoPubl.count} registros publicados com sucesso em {fmtDate(sucessoPubl.publicado_em)}.
-                A tabela <code className="bg-indigo-100 px-1 rounded">fato_metas_publicadas</code> foi atualizada.
+          <div className="flex items-center gap-3 bg-green-50 border border-green-300 rounded-xl px-5 py-4">
+            <CheckCircle2 size={22} className="text-green-600 shrink-0" />
+            <div>
+              <p className="font-bold text-green-800">Todas as metas foram aprovadas e publicadas!</p>
+              <p className="text-xs text-green-600">
+                {ultimaPublicacao ? `Última publicação: ${fmtDate(ultimaPublicacao)}` : 'Nenhuma publicação registrada para este ano.'}
               </p>
             </div>
-            <button onClick={() => setSucessoPubl(null)}><XCircle size={16} className="text-indigo-400 hover:text-indigo-600" /></button>
           </div>
         )}
 
@@ -322,7 +279,7 @@ export default function MetasGestaoAprovacao() {
         <div className="flex gap-1 bg-white border border-slate-200 rounded-xl p-1">
           {[
             { key: 'pecas',    label: 'Peças',    icon: Package,    badge: pending.pecas.length },
-            { key: 'servicos', label: 'Serviços', icon: Wrench,     badge: pending.mecanico.length + pending.consultor.length + pending.funilaria.length + pending.terceiros.length },
+            { key: 'servicos', label: 'Serviços', icon: Wrench,     badge: pending.mecanico.length + pending.consultor.length },
             { key: 'novos',    label: 'Novos',    icon: TrendingUp, badge: 0 },
             { key: 'usados',   label: 'Usados',   icon: RefreshCw,  badge: 0 },
             { key: 'geral',    label: 'Geral',    icon: BarChart3,  badge: 0 },
@@ -685,17 +642,6 @@ export default function MetasGestaoAprovacao() {
                 )
               })
             )}
-
-            {/* Botão publicar também na visão geral */}
-            {tudo_aprovado && (
-              <div className="flex justify-end pt-2">
-                <button onClick={() => setModalPublicar(true)} disabled={publicando}
-                  className="inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white text-sm font-bold px-6 py-3 rounded-xl transition-colors shadow disabled:opacity-50">
-                  {publicando ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
-                  Publicar para Power BI
-                </button>
-              </div>
-            )}
           </div>
         )}
 
@@ -770,61 +716,6 @@ export default function MetasGestaoAprovacao() {
               <button onClick={handleAprovar}
                 className="flex-1 bg-green-600 hover:bg-green-700 text-white text-sm font-bold px-4 py-2.5 rounded-xl transition-colors inline-flex items-center justify-center gap-2">
                 <CheckCircle2 size={15} /> Aprovar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ═══════════════════════════════════════════════════════════════════
-          MODAL — PUBLICAR PARA POWER BI
-      ══════════════════════════════════════════════════════════════════════ */}
-      {modalPublicar && (
-        <div className="fixed top-0 right-0 bottom-0 left-16 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg">
-            <div className="p-6">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-12 h-12 bg-indigo-100 rounded-xl flex items-center justify-center shrink-0">
-                  <Send size={22} className="text-indigo-600" />
-                </div>
-                <div>
-                  <h2 className="text-lg font-bold text-slate-800">Publicar Metas para Power BI</h2>
-                  <p className="text-xs text-slate-400">Ano {filtroAno} — {kpi.totalAprovados} registros aprovados</p>
-                </div>
-              </div>
-
-              <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-4 space-y-2">
-                <p className="text-sm font-semibold text-blue-800">O que será publicado:</p>
-                <ul className="text-xs text-blue-700 space-y-1 list-disc list-inside">
-                  {TIPOS.map(t => {
-                    const tot = resumo[t.key].filter(r => r.meta_aprovada != null).length
-                    return tot > 0 ? <li key={t.key}>{t.label}: {tot} registros</li> : null
-                  })}
-                </ul>
-              </div>
-
-              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4">
-                <p className="text-xs text-amber-700">
-                  <strong>Tabela de destino:</strong> <code>fato_metas_publicadas</code><br/>
-                  Os dados serão gravados com upsert — registros existentes do mesmo período serão atualizados.
-                  Esta tabela deve existir no Supabase com os campos: <code>empresa_id, ano, mes, tipo, colaborador_id, meta_faturamento, meta_pecas, meta_servicos, publicado_em</code>.
-                </p>
-              </div>
-
-              {ultimaPublicacao && (
-                <p className="text-xs text-slate-400 mb-4 flex items-center gap-1.5">
-                  <Clock size={11} /> Última publicação: {fmtDate(ultimaPublicacao)}
-                </p>
-              )}
-            </div>
-            <div className="flex gap-3 px-6 pb-6">
-              <button onClick={() => setModalPublicar(false)}
-                className="flex-1 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-sm font-semibold px-4 py-2.5 rounded-xl transition-colors">
-                Cancelar
-              </button>
-              <button onClick={handlePublicar}
-                className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold px-4 py-2.5 rounded-xl transition-colors inline-flex items-center justify-center gap-2">
-                <Send size={15} /> Publicar agora
               </button>
             </div>
           </div>

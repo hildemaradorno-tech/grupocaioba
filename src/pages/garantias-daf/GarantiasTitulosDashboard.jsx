@@ -129,7 +129,7 @@ function StatTileGradient({ icon: Icon, label, value, sub, gradiente, onClick, d
 
 // Dashboard "Títulos a Receber" — RFN003_PosicaoAnaliticoReceber, com filtros cruzados
 // entre situação de vencimento, empresa e tipo de título.
-export default function GarantiasTitulosDashboard({ onAnalise, onLastModified }) {
+export default function GarantiasTitulosDashboard({ onLastModified }) {
   const [titulosRows, setTitulosRows] = useState([])
   const [tiposCadastrados, setTiposCadastrados] = useState([])
   const [loading, setLoading] = useState(true)
@@ -225,44 +225,6 @@ export default function GarantiasTitulosDashboard({ onAnalise, onLastModified })
     }
   }, [baseSituacao])
 
-  // ── Pré-análise dinâmica — lida a partir dos mesmos números exibidos nos cards/gráficos ──
-  const analiseTitulos = useMemo(() => {
-    const pontos = []
-    if (stats.totalValor === 0) return { resumo: null, pontos }
-
-    const pctVencido = Math.round((stats.vencidosValor / stats.totalValor) * 100)
-    if (pctVencido >= 15) {
-      pontos.push({ tipo: 'critico', texto: `${stats.vencidosQtd} títulos vencidos (${pctVencido}% do valor), somando ${fmtMoeda(stats.vencidosValor)} — priorize a cobrança para reduzir o risco de perda financeira.` })
-    } else if (stats.vencidosQtd === 0) {
-      pontos.push({ tipo: 'elogio', texto: 'Nenhum título vencido — carteira de recebíveis em dia.' })
-    }
-
-    const topEmpresa = porEmpresa[0]
-    const valorTotalEmpresa = porEmpresa.reduce((s, e) => s + e.valor, 0)
-    let pctEmpresa = 0
-    if (topEmpresa && valorTotalEmpresa > 0) {
-      pctEmpresa = Math.round((topEmpresa.valor / valorTotalEmpresa) * 100)
-    }
-
-    if (stats.vencidosQtd > 0) {
-      pontos.push({ tipo: 'melhoria', texto: 'Priorizar a cobrança dos títulos vencidos há mais tempo reduz o risco de perda financeira.' })
-    }
-    if (pctEmpresa >= 40) {
-      pontos.push({ tipo: 'melhoria', texto: `"${topEmpresa.label}" concentra ${pctEmpresa}% do valor a receber — negociar prazos ou diversificar a carteira reduz essa dependência.` })
-    }
-
-    const critico = pctVencido >= 15
-    const atencao = !critico && (stats.vencidosQtd > 0 || pctEmpresa >= 40)
-    const resumo = critico
-      ? { tipo: 'critico', texto: `Situação crítica: ${pctVencido}% do valor a receber está vencido (${fmtMoeda(stats.vencidosValor)}) — risco real para o fluxo de caixa.` }
-      : atencao
-        ? { tipo: 'atencao', texto: `Situação sob controle, mas com pontos a monitorar: ${pctVencido}% do valor vencido${pctEmpresa >= 40 ? ` e concentração de ${pctEmpresa}% numa única empresa` : ''}.` }
-        : { tipo: 'positivo', texto: 'Carteira de recebíveis em dia — nenhum título vencido relevante no momento.' }
-
-    return { resumo, pontos }
-  }, [stats, porEmpresa])
-
-  useEffect(() => { onAnalise?.(analiseTitulos) }, [analiseTitulos, onAnalise])
   useEffect(() => { onLastModified?.(titulosLastModified) }, [titulosLastModified, onLastModified])
 
   // ── TABELA PIVOT: Tipo de Título × Ano/Mês de Vencimento ────────────────
@@ -404,39 +366,6 @@ export default function GarantiasTitulosDashboard({ onAnalise, onLastModified })
         />
       </div>
 
-      {/* GRÁFICO: POR TIPO DE ORDEM DE SERVIÇO — nível categoria */}
-      <div className="bg-[#0f172a] rounded-lg border border-white/10 shadow-sm p-5">
-        <p className="text-xs font-bold text-white mb-1">Títulos por Tipo de Ordem de Serviço</p>
-        <p className="text-[11px] text-[#898781] mb-5">Quantidade de títulos em cada tipo de título/O.S.</p>
-        <div className="flex items-end gap-4 h-40 px-2">
-          {porTipo.map(t => {
-            const maxQtd = Math.max(...porTipo.map(x => x.qtd), 1)
-            const pct = Math.max((t.qtd / maxQtd) * 100, t.qtd > 0 ? 6 : 0)
-            const ativo = filtroTipo === t.label
-            const esmaecido = filtroTipo && !ativo
-            return (
-              <button
-                type="button"
-                key={t.label}
-                onClick={() => toggleFiltroTipo(t.label)}
-                className={`relative group flex-1 min-w-[64px] flex flex-col items-center gap-2 h-full justify-end cursor-pointer transition-opacity ${esmaecido ? 'opacity-40' : ''}`}
-              >
-                <div className="absolute -top-1 left-1/2 -translate-x-1/2 -translate-y-full hidden group-hover:flex flex-col items-center z-20 pointer-events-none">
-                  <span className="bg-[#1a1a19] text-white text-[10px] rounded px-2 py-1 whitespace-nowrap shadow-lg border border-white/10">{t.qtd} título(s) · {fmtMoeda(t.valor)}</span>
-                </div>
-                <span className="text-xs font-bold text-white">{t.qtd}</span>
-                <div className="w-full flex items-end justify-center flex-1">
-                  <div
-                    className={`w-8 rounded-t-md transition-all ${ativo ? 'ring-2 ring-offset-1 ring-offset-[#0f172a] ring-white/60' : ''}`}
-                    style={{ height: `${pct}%`, backgroundColor: '#3987e5', minHeight: t.qtd > 0 ? '6px' : '0' }}
-                  />
-                </div>
-                <span className="text-[10px] text-[#898781] text-center leading-tight truncate max-w-[80px]" title={t.label}>{t.label}</span>
-              </button>
-            )
-          })}
-        </div>
-      </div>
 
       {/* DONUTS: POR EMPRESA / POR TIPO DE TÍTULO — nível categoria, participação no total */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

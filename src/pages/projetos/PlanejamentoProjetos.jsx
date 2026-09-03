@@ -1,8 +1,8 @@
-import React, { useEffect, useState, useMemo } from 'react'
+import React, { useEffect, useState, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, ChevronDown, ChevronRight, RotateCcw, AlertCircle, X, Download, Loader2 } from 'lucide-react'
+import { ArrowLeft, ChevronDown, ChevronRight, RotateCcw, AlertCircle, X, Download, Loader2, Filter, Pencil, PlayCircle, CheckCircle2, Edit2, ScrollText } from 'lucide-react'
 import ProjetosNav from './ProjetosNav'
-import ProjetosFiltrosPanel from './ProjetosFiltrosPanel'
+import TarefaFormModal from './TarefaFormModal'
 import { apiService } from '../../services/api'
 import { useAuth } from '../../context/AuthContext'
 import { useProjetosFiltros, aplicarFiltrosGlobais } from '../../context/ProjetosFiltrosContext'
@@ -70,14 +70,26 @@ function tarefaPassaFiltroData(t, ini, fim, tipo) {
 const fmtData = (d) => {
   if (!d) return ''
   const [y, m, dia] = d.split('-')
-  return `${dia}/${m}/${y.slice(2)}`
+  return `${dia}/${m}/${y}`
 }
 
 const hojeISO = new Date().toISOString().slice(0, 10)
 
+function getTextColor(hex) {
+  const h = hex || '#1e293b'
+  const r = parseInt(h.slice(1, 3), 16)
+  const g = parseInt(h.slice(3, 5), 16)
+  const b = parseInt(h.slice(5, 7), 16)
+  return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.5 ? '#1e293b' : '#ffffff'
+}
+
 export default function PlanejamentoProjetos() {
   const navigate = useNavigate()
-  const { isAdmin, empresasPermitidas, departamentosPermitidosEfetivos } = useAuth()
+  const { isAdmin, empresasPermitidas, departamentosPermitidosEfetivos, hasActionOrDefault } = useAuth()
+  const canEditarProjeto  = hasActionOrDefault('projetos/planejamento', 'editar_projeto')
+  const canEditarTarefa   = hasActionOrDefault('projetos/planejamento', 'editar_tarefa')
+  const canIniciarTarefa  = hasActionOrDefault('projetos/planejamento', 'iniciar_tarefa')
+  const canConcluirTarefa = hasActionOrDefault('projetos/planejamento', 'concluir_tarefa')
   const ctx = useProjetosFiltros()
   const {
     filtroDataIni:  filtroDataTermIni, setFiltroDataIni,
@@ -86,26 +98,81 @@ export default function PlanejamentoProjetos() {
     filtroStatusProjeto,  setFiltroStatusProjeto,
     filtroStatusTarefa,   setFiltroStatusTarefa,
     filtrosAbertos,       setFiltrosAbertos,
+    filtroEmpresa,        setFiltroEmpresa,
+    filtroDepartamento,   setFiltroDepartamento,
+    filtroArea,           setFiltroArea,
+    filtroFase,           setFiltroFase,
+    filtroSistema,        setFiltroSistema,
+    filtroRespProjeto,    setFiltroRespProjeto,
+    filtroRespTarefa,     setFiltroRespTarefa,
     limparFiltros,
   } = ctx
 
-  const [projetos, setProjetos]     = useState([])
-  const [fases, setFases]           = useState([])
-  const [loading, setLoading]       = useState(true)
-  const [error, setError]           = useState(null)
-  const [recolhidos, setRecolhidos] = useState(new Set())
-  const [gerandoPDF, setGerandoPDF] = useState(false)
+  const [projetos, setProjetos]         = useState([])
+  const [fases, setFases]               = useState([])
+  const [sistemas, setSistemas]         = useState([])
+  const [loading, setLoading]           = useState(true)
+  const [error, setError]               = useState(null)
+  const [recolhidos, setRecolhidos]           = useState(new Set())
+  const [deptosExpandidos, setDeptosExpandidos] = useState(new Set())
+  const [statusesRecolhidos, setStatusesRecolhidos] = useState(new Set(['em_andamento','programado','mapeado','pausado','concluido','cancelado']))
+  const [gerandoPDF, setGerandoPDF]           = useState(false)
+  const [verTodos, setVerTodos]               = useState(false)
+  const [modalEditarTarefa, setModalEditarTarefa] = useState(null)
+  const [modalConcluir, setModalConcluir]     = useState(null)
+  const [delibersAbertos, setDelibersAbertos] = useState(new Set())
+  const [optsResp, setOptsResp]               = useState([])
+  const [optsEmp,       setOptsEmp]       = useState([])
+  const [modalOptsArea, setModalOptsArea] = useState([])
+
+  const recarregarDados = useCallback(() => {
+    const filtrosEmpresa = (isAdmin || verTodos) ? {} : { empresa_ids: [...empresasPermitidas] }
+    apiService.getProjetosParaAta(filtrosEmpresa)
+      .then(setProjetos)
+      .catch(err => setError(err.message || String(err)))
+  }, [isAdmin, empresasPermitidas, verTodos])
 
   useEffect(() => {
-    const filtrosEmpresa = isAdmin ? {} : { empresa_ids: [...empresasPermitidas] }
+    setLoading(true)
+    const filtrosEmpresa = (isAdmin || verTodos) ? {} : { empresa_ids: [...empresasPermitidas] }
     Promise.all([
       apiService.getProjetosParaAta(filtrosEmpresa),
       apiService.getProjFases(),
+      apiService.getProjSistemas(),
     ])
-      .then(([ps, fs]) => { setProjetos(ps); setFases(fs) })
+      .then(([ps, fs, sis]) => { setProjetos(ps); setFases(fs); setSistemas(sis); setRecolhidos(new Set(ps.map(p => p.id))) })
       .catch(err => setError(err.message || String(err)))
       .finally(() => setLoading(false))
-  }, [isAdmin, empresasPermitidas])
+  }, [isAdmin, empresasPermitidas, verTodos])
+
+  useEffect(() => {
+    Promise.all([
+      apiService.getProjResponsaveis(),
+      apiService.getProjEmpresas(),
+      apiService.getProjAreas(),
+    ]).then(([rs, es, as]) => {
+      setOptsResp(rs.filter(r => r.ativo !== false))
+      setOptsEmp(es.filter(e => e.ativo !== false))
+      setModalOptsArea(as.filter(a => a.ativo !== false))
+    }).catch(() => {})
+  }, [])
+
+  const handleIniciarTarefa = async (tarefa) => {
+    try {
+      await apiService.updateTarefa(tarefa.id, { status_kanban: 'em_andamento' })
+      recarregarDados()
+    } catch (err) { alert('Erro ao iniciar: ' + (err.message || String(err))) }
+  }
+
+  const handleConcluirTarefa = async () => {
+    if (!modalConcluir) return
+    const { tarefa, dataFim } = modalConcluir
+    try {
+      await apiService.updateTarefa(tarefa.id, { status_kanban: 'concluido', progresso_pct: 100, data_fim: dataFim || null })
+      setModalConcluir(null)
+      recarregarDados()
+    } catch (err) { alert('Erro ao concluir: ' + (err.message || String(err))) }
+  }
 
   // mapa: nome → posição no array (getProjFases já retorna na ordem correta do cadastro)
   const faseOrdemPorNome = useMemo(() =>
@@ -116,7 +183,7 @@ export default function PlanejamentoProjetos() {
     setter(arr.includes(val) ? arr.filter(x => x !== val) : [...arr, val])
 
   const projetosBase = useMemo(() => {
-    let base = aplicarFiltrosGlobais(projetos, ctx, departamentosPermitidosEfetivos)
+    let base = aplicarFiltrosGlobais(projetos, ctx, verTodos ? null : departamentosPermitidosEfetivos)
     if (filtroStatusProjeto.length > 0)
       base = base.filter(p => filtroStatusProjeto.includes(p.status))
     return base
@@ -135,12 +202,12 @@ export default function PlanejamentoProjetos() {
         ...p,
         proj_tarefas: p.proj_tarefas.filter(t => {
           if (!filtroDataTermFim && t.status_kanban === 'mapeado' && !t.data_inicio && !t.data_fim) return true
-          return tarefaPassaFiltroData(t, filtroDataTermIni, filtroDataTermFim, filtroDataTipo)
+          return tarefaPassaFiltroData(t, filtroDataTermIni, filtroDataTermFim, 'fim')
         }),
       }))
       .filter(p => p.proj_tarefas.length > 0)
     return base.slice().sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
-  }, [projetosBase, filtroDataTermIni, filtroDataTermFim, filtroDataTipo])
+  }, [projetosBase, filtroDataTermIni, filtroDataTermFim])
 
   // Calcula as fases com data de um conjunto de tarefas (usado por projeto)
   const fasesComDataDe = (tarefas) => {
@@ -149,8 +216,6 @@ export default function PlanejamentoProjetos() {
       .sort((a, b) => (faseOrdemPorNome[a] ?? 9999) - (faseOrdemPorNome[b] ?? 9999))
       .filter(fase => tarefas.some(t => {
         if (t.fase_nome !== fase) return false
-        if (filtroDataTipo === 'inicio') return !!t.data_inicio
-        if (filtroDataTipo === 'ambos')  return !!t.data_inicio || !!t.data_fim
         return !!t.data_fim
       }))
   }
@@ -160,6 +225,21 @@ export default function PlanejamentoProjetos() {
     next.has(id) ? next.delete(id) : next.add(id)
     return next
   })
+
+  const toggleDepto = (depto) => setDeptosExpandidos(prev => {
+    const next = new Set(prev)
+    next.has(depto) ? next.delete(depto) : next.add(depto)
+    return next
+  })
+
+  // Departamentos únicos ordenados, derivados dos projetos filtrados
+  const departamentos = useMemo(() =>
+    [...new Set(projetosRender.map(p => p.departamento_nome || 'Sem Departamento'))]
+      .sort((a, b) => a.localeCompare(b, 'pt-BR'))
+  , [projetosRender])
+
+  const sistemaCorMap      = useMemo(() => Object.fromEntries(sistemas.map(s => [s.nome, s.cor || '#1e293b'])), [sistemas])
+  const sistemaCorTextoMap = useMemo(() => Object.fromEntries(sistemas.map(s => [s.nome, s.cor_texto || null])), [sistemas])
 
   const handleSalvarPDF = async () => {
     const ids = projetosRender.map(p => p.id)
@@ -244,6 +324,24 @@ export default function PlanejamentoProjetos() {
     }
   }
 
+  const tarefasTodas = useMemo(() => projetos.flatMap(p => p.proj_tarefas || []), [projetos])
+  const uniq = (arr) => [...new Set(arr.filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'))
+  const optsEmpresa     = useMemo(() => uniq(projetos.map(p => p.empresa_nome)),        [projetos])
+  const optsDepto       = useMemo(() => uniq(projetos.map(p => p.departamento_nome)),   [projetos])
+  const optsArea        = useMemo(() => uniq(projetos.map(p => p.area_nome)),           [projetos])
+  const optsFase        = useMemo(() => uniq(tarefasTodas.map(t => t.fase_nome)),       [tarefasTodas])
+  const optsSistema     = useMemo(() => uniq(tarefasTodas.map(t => t.sistema_nome)),    [tarefasTodas])
+  const optsRespProjeto = useMemo(() => uniq(projetos.map(p => p.responsavel_nome)),    [projetos])
+  const optsRespTarefa  = useMemo(() => uniq(tarefasTodas.map(t => t.responsavel_nome)),[tarefasTodas])
+
+  const numFiltrosAtivos = [
+    filtroEmpresa, filtroDepartamento, filtroArea, filtroFase,
+    filtroSistema, filtroRespProjeto, filtroRespTarefa,
+    (filtroDataTermIni || filtroDataTermFim) ? 'data' : '',
+  ].filter(Boolean).length
+
+  const sel = 'text-xs p-1.5 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20 bg-white w-full'
+
   if (loading) return <div className="p-6 text-center text-sm text-slate-400">Carregando...</div>
   if (error)   return <div className="p-6 text-center text-sm text-red-500">{error}</div>
 
@@ -260,6 +358,13 @@ export default function PlanejamentoProjetos() {
           <p className="text-xs text-slate-500">Visão matricial de tarefas por fase/etapa.</p>
         </div>
         <button
+          onClick={() => setVerTodos(v => !v)}
+          className={`flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-semibold border transition-colors whitespace-nowrap ${verTodos ? 'bg-amber-50 text-amber-700 border-amber-300' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 shadow-sm'}`}
+          title={verTodos ? 'Voltar para minha visão' : 'Ver todos os projetos (somente leitura)'}
+        >
+          {verTodos ? '← Minha Visão' : 'Ver Todos os Projetos'}
+        </button>
+        <button
           onClick={handleSalvarPDF}
           disabled={gerandoPDF}
           className="flex items-center gap-2 bg-white hover:bg-slate-50 disabled:opacity-60 disabled:cursor-wait text-slate-700 text-xs font-semibold px-3 py-2 rounded-md shadow-sm border border-slate-200 transition-colors whitespace-nowrap"
@@ -268,219 +373,559 @@ export default function PlanejamentoProjetos() {
           {gerandoPDF ? 'Gerando...' : 'Salvar PDF'}
         </button>
       </div>
+      {verTodos && (
+        <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 text-xs text-amber-700 font-semibold">
+          <span className="inline-block w-2 h-2 rounded-full bg-amber-400 shrink-0" />
+          Modo visualização — todos os projetos · somente leitura
+        </div>
+      )}
 
-      {/* Barra de navegação + filtros de data */}
+      {/* Barra de navegação + botão Filtros Avançados */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <ProjetosNav />
-        <div className="flex items-center gap-2 flex-wrap shrink-0">
-          <div className="flex items-center gap-0.5 bg-slate-100 border border-slate-200 rounded-md p-0.5">
-            {[{ k: 'inicio', l: 'Início' }, { k: 'fim', l: 'Término' }, { k: 'ambos', l: 'Ambos' }].map(({ k, l }) => (
-              <button key={k} onClick={() => setFiltroDataTipo(k)}
-                className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-colors ${filtroDataTipo === k ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
-                {l}
+        <button
+          onClick={() => setFiltrosAbertos(v => !v)}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold border transition-colors shrink-0 ${filtrosAbertos ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-200 hover:text-indigo-600'}`}
+        >
+          <Filter className="h-3.5 w-3.5" />
+          Filtros Avançados
+          {numFiltrosAtivos > 0 && (
+            <span className="ml-0.5 px-1.5 py-0.5 rounded-full text-[10px] bg-indigo-600 text-white font-bold leading-none">{numFiltrosAtivos}</span>
+          )}
+        </button>
+      </div>
+
+      {/* Painel colapsável de filtros */}
+      {filtrosAbertos && (
+        <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-4 space-y-3">
+          {/* Filtro de período — Término */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide shrink-0">Término entre:</span>
+            <input type="date" value={filtroDataTermIni} onChange={e => setFiltroDataIni(e.target.value)}
+              onClick={e => e.target.showPicker?.()}
+              className="text-[11px] border border-slate-200 rounded-md px-2 py-1.5 text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400" />
+            <span className="text-[10px] text-slate-400">e</span>
+            <input type="date" value={filtroDataTermFim} onChange={e => setFiltroDataFim(e.target.value)}
+              onClick={e => e.target.showPicker?.()}
+              min={filtroDataTermIni || undefined}
+              className="text-[11px] border border-slate-200 rounded-md px-2 py-1.5 text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400" />
+            {(filtroDataTermIni || filtroDataTermFim) && (
+              <button onClick={() => { setFiltroDataIni(''); setFiltroDataFim('') }}
+                className="p-1 text-red-400 hover:text-red-600 rounded transition-colors" title="Limpar datas">
+                <X className="h-3.5 w-3.5" />
               </button>
-            ))}
+            )}
           </div>
-          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">De</span>
-          <input type="date" value={filtroDataTermIni} onChange={e => setFiltroDataIni(e.target.value)}
-            onClick={e => e.target.showPicker?.()}
-            className="text-[11px] border border-slate-200 rounded-md px-2 py-1.5 text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400" />
-          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">até</span>
-          <input type="date" value={filtroDataTermFim} onChange={e => setFiltroDataFim(e.target.value)}
-            onClick={e => e.target.showPicker?.()}
-            min={filtroDataTermIni || undefined}
-            className="text-[11px] border border-slate-200 rounded-md px-2 py-1.5 text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400" />
-          <button
-            onClick={() => { setFiltroDataIni(''); setFiltroDataFim('') }}
-            className={`p-1 rounded transition-colors ${(filtroDataTermIni || filtroDataTermFim) ? 'text-red-400 hover:text-red-600' : 'text-slate-200 cursor-default'}`}
-            title="Limpar datas"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      </div>
 
-      {/* Painel de filtros avançados — sempre visível (toggle interno) */}
-      <ProjetosFiltrosPanel projetos={projetos} />
+          {/* Dropdowns */}
+          <div className="grid grid-cols-2 md:grid-cols-7 gap-3">
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] font-bold text-slate-400 uppercase">Empresa</label>
+              <select value={filtroEmpresa} onChange={e => setFiltroEmpresa(e.target.value)} className={sel}>
+                <option value="">Todas</option>
+                {optsEmpresa.map(v => <option key={v} value={v}>{v}</option>)}
+              </select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] font-bold text-slate-400 uppercase">Departamento</label>
+              <select value={filtroDepartamento} onChange={e => setFiltroDepartamento(e.target.value)} className={sel}>
+                <option value="">Todos</option>
+                {optsDepto.map(v => <option key={v} value={v}>{v}</option>)}
+              </select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] font-bold text-slate-400 uppercase">Área</label>
+              <select value={filtroArea} onChange={e => setFiltroArea(e.target.value)} className={sel}>
+                <option value="">Todas</option>
+                {optsArea.map(v => <option key={v} value={v}>{v}</option>)}
+              </select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] font-bold text-slate-400 uppercase">Fase</label>
+              <select value={filtroFase} onChange={e => setFiltroFase(e.target.value)} className={sel}>
+                <option value="">Todas</option>
+                {optsFase.map(v => <option key={v} value={v}>{v}</option>)}
+              </select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] font-bold text-slate-400 uppercase">Sistema</label>
+              <select value={filtroSistema} onChange={e => setFiltroSistema(e.target.value)} className={sel}>
+                <option value="">Todos</option>
+                {optsSistema.map(v => <option key={v} value={v}>{v}</option>)}
+              </select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] font-bold text-slate-400 uppercase">Resp.Projeto</label>
+              <select value={filtroRespProjeto} onChange={e => setFiltroRespProjeto(e.target.value)} className={sel}>
+                <option value="">Todos</option>
+                {optsRespProjeto.map(v => <option key={v} value={v}>{v}</option>)}
+              </select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] font-bold text-slate-400 uppercase">Resp.Tarefa</label>
+              <select value={filtroRespTarefa} onChange={e => setFiltroRespTarefa(e.target.value)} className={sel}>
+                <option value="">Todos</option>
+                {optsRespTarefa.map(v => <option key={v} value={v}>{v}</option>)}
+              </select>
+            </div>
+          </div>
 
-      {/* Status chips */}
-      <div className="bg-white rounded-lg border border-slate-200 shadow-sm px-4 py-3 space-y-2">
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide shrink-0 w-24">Status Projeto:</span>
-          {STATUS_PROJETO.map(s => {
-            const cor = STATUS_COR[s.value] || '#94a3b8'
-            const ativo = filtroStatusProjeto.includes(s.value)
-            return (
-              <button key={s.value}
-                onClick={() => toggleStatus(filtroStatusProjeto, setFiltroStatusProjeto, s.value)}
-                style={{ background: ativo ? cor : cor + '18', color: ativo ? '#fff' : cor, border: `1.5px solid ${cor}40` }}
-                className="px-3 py-1 rounded-full text-[11px] font-semibold transition-all">
-                {s.label}
-              </button>
-            )
-          })}
-          <button onClick={() => setFiltroStatusProjeto(STATUS_PROJETO.map(s => s.value))} className="px-2.5 py-1 rounded-md text-[11px] font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors">Selecionar Todos</button>
-          <button onClick={() => setFiltroStatusProjeto([])} className="px-2.5 py-1 rounded-md text-[11px] font-semibold text-slate-500 hover:bg-slate-100 transition-colors">Remover Todos</button>
-        </div>
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide shrink-0 w-24">Status Tarefa:</span>
-          {STATUS_TAREFA.map(s => {
-            const cor = STATUS_COR[s.value] || '#94a3b8'
-            const ativo = filtroStatusTarefa.includes(s.value)
-            return (
-              <button key={s.value}
-                onClick={() => toggleStatus(filtroStatusTarefa, setFiltroStatusTarefa, s.value)}
-                style={{ background: ativo ? cor : cor + '18', color: ativo ? '#fff' : cor, border: `1.5px solid ${cor}40` }}
-                className="px-3 py-1 rounded-full text-[11px] font-semibold transition-all">
-                {s.label}
-              </button>
-            )
-          })}
-          <button onClick={() => setFiltroStatusTarefa(STATUS_TAREFA.map(s => s.value))} className="px-2.5 py-1 rounded-md text-[11px] font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors">Selecionar Todos</button>
-          <button onClick={() => setFiltroStatusTarefa([])} className="px-2.5 py-1 rounded-md text-[11px] font-semibold text-slate-500 hover:bg-slate-100 transition-colors">Remover Todos</button>
-        </div>
-        <div className="flex justify-end pt-1.5 border-t border-slate-100">
-          <button onClick={() => { setFiltroStatusProjeto([]); setFiltroStatusTarefa([]) }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-slate-500 hover:bg-slate-100 transition-colors">
-            <RotateCcw className="h-3 w-3" /> Limpar todos os status
-          </button>
-        </div>
-      </div>
-
-      {/* Botões recolher/expandir */}
-      {projetosRender.length > 0 && (
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setRecolhidos(new Set(projetosRender.map(p => p.id)))}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-colors"
-          >
-            <ChevronRight className="h-3.5 w-3.5" /> Recolher tudo
-          </button>
-          <button
-            onClick={() => setRecolhidos(new Set())}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-colors"
-          >
-            <ChevronDown className="h-3.5 w-3.5" /> Expandir tudo
+          <button onClick={limparFiltros}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-slate-600 hover:bg-slate-100 transition-colors">
+            <RotateCcw className="h-3.5 w-3.5" /> Limpar Filtros
           </button>
         </div>
       )}
 
-      {/* Tabelas por projeto */}
+      {/* Status chips + ações */}
+      <div className="bg-white rounded-lg border border-slate-200 shadow-sm px-4 py-3">
+        <div className="flex items-center gap-4">
+          {/* Linhas de chips */}
+          <div className="flex-1 space-y-2 min-w-0">
+            {/* Projeto */}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide shrink-0 w-14">Projeto:</span>
+              {STATUS_PROJETO.map(s => {
+                const cor = STATUS_COR[s.value] || '#94a3b8'
+                const ativo = filtroStatusProjeto.includes(s.value)
+                return (
+                  <button key={s.value}
+                    onClick={() => toggleStatus(filtroStatusProjeto, setFiltroStatusProjeto, s.value)}
+                    style={{ background: ativo ? cor : cor + '18', color: ativo ? '#fff' : cor, border: `1.5px solid ${cor}40` }}
+                    className="px-3 py-1 rounded-full text-[11px] font-semibold transition-all">
+                    {s.label}
+                  </button>
+                )
+              })}
+              {filtroStatusProjeto.length > 0 && (
+                <button onClick={() => setFiltroStatusProjeto([])}
+                  className="flex items-center gap-0.5 text-[11px] text-slate-400 hover:text-red-500 transition-colors ml-1">
+                  <X className="h-3 w-3" /> Limpar projeto
+                </button>
+              )}
+            </div>
+            {/* Tarefa */}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide shrink-0 w-14">Tarefa:</span>
+              {STATUS_TAREFA.map(s => {
+                const cor = STATUS_COR[s.value] || '#94a3b8'
+                const ativo = filtroStatusTarefa.includes(s.value)
+                return (
+                  <button key={s.value}
+                    onClick={() => toggleStatus(filtroStatusTarefa, setFiltroStatusTarefa, s.value)}
+                    style={{ background: ativo ? cor : cor + '18', color: ativo ? '#fff' : cor, border: `1.5px solid ${cor}40` }}
+                    className="px-3 py-1 rounded-full text-[11px] font-semibold transition-all">
+                    {s.label}
+                  </button>
+                )
+              })}
+              {filtroStatusTarefa.length > 0 && (
+                <button onClick={() => setFiltroStatusTarefa([])}
+                  className="flex items-center gap-0.5 text-[11px] text-slate-400 hover:text-red-500 transition-colors ml-1">
+                  <X className="h-3 w-3" /> Limpar tarefa
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Ações de status */}
+          <div className="flex items-center gap-1.5 shrink-0 border-l border-slate-200 pl-4">
+            <button
+              onClick={() => { setFiltroStatusProjeto([]); setFiltroStatusTarefa([]) }}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-md text-[11px] font-semibold text-red-500 border border-red-200 hover:bg-red-50 transition-colors whitespace-nowrap">
+              <X className="h-3 w-3" /> Limpar Todos
+            </button>
+            <button
+              onClick={() => { setFiltroStatusProjeto(['mapeado','programado','em_andamento','pausado']); setFiltroStatusTarefa(['mapeado','programado','em_andamento','pausado']) }}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-md text-[11px] font-semibold text-slate-600 border border-slate-200 hover:bg-slate-50 transition-colors whitespace-nowrap">
+              <RotateCcw className="h-3 w-3" /> Filtro Original
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Botões recolher / expandir */}
+      {projetosRender.length > 0 && (
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => { setDeptosExpandidos(new Set()); setRecolhidos(new Set(projetosRender.map(p => p.id))); setStatusesRecolhidos(new Set(['em_andamento','programado','mapeado','pausado','concluido','cancelado'])) }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-colors">
+            <ChevronRight className="h-3.5 w-3.5" /> Recolher tudo
+          </button>
+          <div className="w-px h-5 bg-slate-200" />
+          <button
+            onClick={() => { setDeptosExpandidos(new Set(departamentos)); setRecolhidos(new Set()); setStatusesRecolhidos(new Set()) }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-colors">
+            <ChevronDown className="h-3.5 w-3.5" /> Expandir tudo
+          </button>
+          {deptosExpandidos.size > 0 && statusesRecolhidos.size > 0 ? (
+            <button
+              onClick={() => { setDeptosExpandidos(new Set()); setStatusesRecolhidos(new Set(['em_andamento','programado','mapeado','pausado','concluido','cancelado'])); setRecolhidos(new Set(projetosRender.map(p => p.id))) }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-colors">
+              <ChevronRight className="h-3.5 w-3.5" /> Recolher Status
+            </button>
+          ) : (
+            <button
+              onClick={() => { setDeptosExpandidos(new Set(departamentos)); setStatusesRecolhidos(new Set(['em_andamento','programado','mapeado','pausado','concluido','cancelado'])); setRecolhidos(new Set(projetosRender.map(p => p.id))) }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-colors">
+              <ChevronDown className="h-3.5 w-3.5" /> Expandir por Status
+            </button>
+          )}
+          {deptosExpandidos.size > 0 && statusesRecolhidos.size === 0 && recolhidos.size > 0 ? (
+            <button
+              onClick={() => { setDeptosExpandidos(new Set()); setStatusesRecolhidos(new Set(['em_andamento','programado','mapeado','pausado','concluido','cancelado'])); setRecolhidos(new Set(projetosRender.map(p => p.id))) }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-colors">
+              <ChevronRight className="h-3.5 w-3.5" /> Recolher Projetos
+            </button>
+          ) : (
+            <button
+              onClick={() => { setDeptosExpandidos(new Set(departamentos)); setStatusesRecolhidos(new Set()); setRecolhidos(new Set(projetosRender.map(p => p.id))) }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-colors">
+              <ChevronDown className="h-3.5 w-3.5" /> Expandir por Projetos
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Conteúdo agrupado por departamento */}
       {projetosRender.length === 0 ? (
         <div className="p-16 text-center text-sm text-slate-400 bg-white rounded-lg border border-slate-200">
           Nenhum projeto encontrado com os filtros selecionados.
         </div>
       ) : (
-        <div id="planejamento-conteudo" className="space-y-4">
-          {projetosRender.map(p => {
-            const tarefas = p.proj_tarefas.slice().sort((a, b) => {
-              const ea = a.etapa ?? 999
-              const eb = b.etapa ?? 999
-              if (ea !== eb) return ea - eb
-              const oa = faseOrdemPorNome[a.fase_nome] ?? 9999
-              const ob = faseOrdemPorNome[b.fase_nome] ?? 9999
-              if (oa !== ob) return oa - ob
-              return (a.data_fim || '').localeCompare(b.data_fim || '')
-            })
-            const recolhido = recolhidos.has(p.id)
-            const fasesProj = fasesComDataDe(tarefas)
+        <div id="planejamento-conteudo" className="space-y-1">
+          {departamentos.map((depto, di) => {
+            const projsDepto = projetosRender
+              .filter(p => (p.departamento_nome || 'Sem Departamento') === depto)
+              .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
+            if (projsDepto.length === 0) return null
+            const deptoRecolhido = !deptosExpandidos.has(depto)
+            const totalTarefas = projsDepto.reduce((sum, p) => sum + p.proj_tarefas.length, 0)
+            const resps = [...new Set(projsDepto.map(p => p.responsavel_nome).filter(Boolean))]
 
             return (
-              <div key={p.id} id={`planejamento-projeto-${p.id}`} className="rounded-lg border border-slate-200 shadow-sm overflow-hidden">
-                {/* Cabeçalho do projeto */}
-                <div className="bg-slate-100 border-b border-slate-200 px-3 py-2">
-                  <button onClick={() => toggleRecolhido(p.id)} className="flex items-center gap-2 w-full text-left">
-                    {recolhido
-                      ? <ChevronRight className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-                      : <ChevronDown className="h-3.5 w-3.5 text-slate-400 shrink-0" />}
-                    <span className="font-bold text-slate-800 text-[11px]">{p.nome}</span>
-                    {p.departamento_nome && (
-                      <span className="text-[10px] text-slate-500 font-medium">· {p.departamento_nome}</span>
+              <div key={depto} className={di > 0 ? 'mt-3' : ''}>
+                {/* Cabeçalho do Departamento */}
+                <div
+                  className="px-5 py-3 flex items-center justify-between bg-slate-700 text-white gap-4 cursor-pointer select-none rounded-t-lg"
+                  onClick={() => toggleDepto(depto)}
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="opacity-60">
+                      {deptoRecolhido ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                    </span>
+                    <span className="text-sm font-bold uppercase tracking-widest shrink-0">{depto}</span>
+                    {resps.length > 0 && (
+                      <span className="text-xs opacity-75 font-medium hidden sm:inline">
+                        Responsável Geral: <span className="font-semibold opacity-100">{resps.join(' · ')}</span>
+                      </span>
                     )}
-                    {(p.sistemas_nomes || []).map(s => (
-                      <span key={s} className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-700 text-white">{s}</span>
-                    ))}
-                    <span className="ml-auto text-[10px] text-slate-400 font-medium">{tarefas.length} tarefa{tarefas.length !== 1 ? 's' : ''}</span>
-                  </button>
+                  </div>
+                  <span className="text-xs opacity-80 font-medium shrink-0">
+                    {projsDepto.length} projeto{projsDepto.length !== 1 ? 's' : ''} · {totalTarefas} tarefa{totalTarefas !== 1 ? 's' : ''}
+                  </span>
                 </div>
 
-                {/* Tabela do projeto */}
-                {!recolhido && (
-                  <div className="overflow-x-auto">
-                    <table className="text-xs border-collapse w-full">
-                      <thead>
-                        <tr className="bg-slate-600 text-white text-[10px] font-bold uppercase tracking-wider">
-                          <th className="px-4 py-2 text-left min-w-[460px] sticky left-0 bg-slate-600 z-10">Tarefa</th>
-                          <th className="px-3 py-2 text-center w-32 whitespace-nowrap">Sistema / Depto / Área</th>
-                          <th className="px-3 py-2 text-center w-32 whitespace-nowrap">Status / Responsável</th>
-                          {fasesProj.map(fase => (
-                            <th key={fase} className="px-3 py-2 text-center w-28 whitespace-nowrap">{fase}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {tarefas.map(t => {
-                          const atrasada = t.status_kanban !== 'concluido' && t.data_fim && t.data_fim < hojeISO
-                          const statusCor = STATUS_TAREFA_COR[t.status_kanban || 'mapeado'] || 'bg-slate-100 text-slate-600'
-                          const statusLabel = STATUS_TAREFA_LABEL[t.status_kanban || 'mapeado'] || t.status_kanban || '—'
-                          return (
-                            <tr key={t.id}
-                              className={`border-b border-slate-100 hover:bg-slate-50 transition-colors cursor-pointer ${atrasada ? 'bg-red-50/40' : 'bg-white'}`}
-                              onClick={() => navigate(`/projetos/${p.id}/editar`)}
-                            >
-                              <td className={`px-4 py-2 sticky left-0 z-10 ${atrasada ? 'bg-red-50/70' : 'bg-white'}`}>
-                                <div className="flex items-start gap-1.5">
-                                  {atrasada && <AlertCircle className="h-3 w-3 text-red-400 shrink-0 mt-0.5" />}
-                                  {t.etapa != null && (
-                                    <span className="shrink-0 mt-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-100 text-indigo-700">{t.etapa}ª</span>
-                                  )}
-                                  <span className="text-slate-700 font-medium leading-snug">{t.nome}</span>
-                                </div>
-                              </td>
-                              <td className="px-3 py-2 text-center">
-                                {t.sistema_nome && <div className="text-[10px] font-semibold text-slate-700 whitespace-nowrap">{t.sistema_nome}</div>}
-                                {p.departamento_nome && <div className="text-[10px] italic text-slate-400 whitespace-nowrap">{p.departamento_nome}{p.area_nome ? ` / ${p.area_nome}` : ''}</div>}
-                              </td>
-                              <td className="px-3 py-2 text-center">
-                                <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold ${statusCor}`}>{statusLabel}</span>
-                                {t.responsavel_nome && (
-                                  <div className="text-[10px] italic text-slate-400 mt-0.5 whitespace-nowrap">{t.responsavel_nome}</div>
+                {/* Projetos do departamento agrupados por status */}
+                {!deptoRecolhido && (
+                  <div className="space-y-0 border border-t-0 border-slate-200 rounded-b-lg overflow-hidden">
+                    {['em_andamento','programado','mapeado','pausado','concluido','cancelado'].map(stValue => {
+                      const st = STATUS_PROJETO.find(s => s.value === stValue)
+                      if (!st) return null
+                      const projsStatus = projsDepto.filter(p => p.status === stValue)
+                      if (projsStatus.length === 0) return null
+                      const corStatus = STATUS_COR[stValue] || '#94a3b8'
+                      return (
+                        <React.Fragment key={stValue}>
+                          {/* Cabeçalho do status */}
+                          <div
+                            className="px-5 py-2 flex items-center gap-2 cursor-pointer select-none"
+                            style={{ backgroundColor: corStatus }}
+                            onClick={() => setStatusesRecolhidos(prev => {
+                              const next = new Set(prev)
+                              next.has(stValue) ? next.delete(stValue) : next.add(stValue)
+                              return next
+                            })}
+                          >
+                            <span className="text-white/70">
+                              {statusesRecolhidos.has(stValue)
+                                ? <ChevronRight className="h-3.5 w-3.5" />
+                                : <ChevronDown className="h-3.5 w-3.5" />}
+                            </span>
+                            <span className="text-xs font-bold uppercase tracking-widest text-white">{st.label}</span>
+                            <span className="text-xs text-white/75 font-medium">· {projsStatus.length} projeto{projsStatus.length !== 1 ? 's' : ''}</span>
+                          </div>
+                          {!statusesRecolhidos.has(stValue) && projsStatus.map((p, pi) => {
+                      const tarefas = p.proj_tarefas.slice().sort((a, b) => {
+                        const ea = a.etapa ?? 999
+                        const eb = b.etapa ?? 999
+                        if (ea !== eb) return ea - eb
+                        const oa = faseOrdemPorNome[a.fase_nome] ?? 9999
+                        const ob = faseOrdemPorNome[b.fase_nome] ?? 9999
+                        if (oa !== ob) return oa - ob
+                        return (a.data_fim || '').localeCompare(b.data_fim || '')
+                      })
+                      const recolhido = recolhidos.has(p.id)
+                      const fasesProj = fasesComDataDe(tarefas)
+
+                      return (
+                        <div key={p.id} id={`planejamento-projeto-${p.id}`} className={pi > 0 ? 'border-t border-slate-200' : ''}>
+                          {/* Cabeçalho do projeto */}
+                          {(() => {
+                            const todasTarefas = projetos.find(orig => orig.id === p.id)?.proj_tarefas || []
+                            const progresso = todasTarefas.length > 0
+                              ? Math.round(todasTarefas.reduce((s, t) => s + (t.status_kanban === 'concluido' ? 100 : (Number(t.progresso_pct) || 0)), 0) / todasTarefas.length)
+                              : 0
+                            const datasIni = todasTarefas.map(t => t.data_inicio).filter(Boolean).sort()
+                            const datasFim = todasTarefas.map(t => t.data_fim).filter(Boolean).sort()
+                            const dataIniT = datasIni[0]
+                            const dataFimT = datasFim[datasFim.length - 1]
+                            return (
+                              <div className="bg-slate-100 px-4 py-2 flex items-center gap-2">
+                                <button onClick={() => toggleRecolhido(p.id)} className="flex items-center gap-2 min-w-0 flex-1 text-left">
+                                  {recolhido
+                                    ? <ChevronRight className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                                    : <ChevronDown className="h-3.5 w-3.5 text-slate-400 shrink-0" />}
+                                  <span className="font-bold text-slate-800 text-[11px] truncate">{p.nome}</span>
+                                  {(p.sistemas_nomes || []).map(s => {
+                                    const cor = sistemaCorMap[s] || '#1e293b'
+                                    const txt = sistemaCorTextoMap[s] || getTextColor(cor)
+                                    return (
+                                      <span key={s} className="px-1.5 py-0.5 rounded text-[9px] font-bold shrink-0" style={{ backgroundColor: cor, color: txt }}>{s}</span>
+                                    )
+                                  })}
+                                </button>
+                                <button
+                                  onClick={() => navigate(`/projetos/detalhe/${p.id}/editar`)}
+                                  className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors shrink-0"
+                                  title="Editar projeto"
+                                >
+                                  <Pencil className="h-3 w-3" />
+                                </button>
+                                {(dataIniT || dataFimT) && (
+                                  <span className="text-[10px] text-slate-500 whitespace-nowrap shrink-0">
+                                    Início/Término: {fmtData(dataIniT) || '—'} → {fmtData(dataFimT) || '—'}
+                                  </span>
                                 )}
-                              </td>
-                              {fasesProj.map(fase => {
-                                if (t.fase_nome !== fase) return <td key={fase} className="px-3 py-2 text-center border-l border-slate-100" />
-                                const dataIni = t.data_inicio
-                                const dataFim = t.data_fim
-                                const atrasadaCell = t.status_kanban !== 'concluido' && dataFim && dataFim < hojeISO
-                                let conteudo
-                                if (filtroDataTipo === 'inicio') {
-                                  conteudo = dataIni
-                                    ? <span className={`font-semibold ${atrasadaCell ? 'text-red-600' : 'text-slate-700'}`}>{fmtData(dataIni)}</span>
-                                    : <span className="text-slate-300 italic">sem data</span>
-                                } else if (filtroDataTipo === 'ambos') {
-                                  conteudo = (dataIni || dataFim)
-                                    ? <span className={`font-semibold ${atrasadaCell ? 'text-red-600' : 'text-slate-700'}`}>
-                                        {dataIni ? fmtData(dataIni) : '—'} → {dataFim ? fmtData(dataFim) : '—'}
-                                      </span>
-                                    : <span className="text-slate-300 italic">sem data</span>
-                                } else {
-                                  conteudo = dataFim
-                                    ? <span className={`font-semibold ${atrasadaCell ? 'text-red-600' : 'text-slate-700'}`}>{fmtData(dataFim)}</span>
-                                    : <span className="text-slate-300 italic">sem data</span>
-                                }
-                                return <td key={fase} className="px-3 py-2 text-center border-l border-slate-100">{conteudo}</td>
-                              })}
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
+                                <span className={`text-[10px] font-bold whitespace-nowrap shrink-0 ${progresso >= 100 ? 'text-teal-600' : progresso >= 50 ? 'text-amber-600' : 'text-slate-500'}`}>
+                                  {progresso}% concluído
+                                </span>
+                              </div>
+                            )
+                          })()}
+
+                          {/* Tabela do projeto */}
+                          {!recolhido && (
+                            <div className="overflow-x-auto">
+                              <table className="text-xs border-collapse w-full">
+                                <thead>
+                                  <tr className="bg-white border-b border-slate-200 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                                    <th className="px-3 py-2 text-center w-14 sticky left-0 bg-white z-10">Etapa</th>
+                                    <th className="px-4 py-2 text-left min-w-[280px]">Tarefa</th>
+                                    <th className="px-3 py-2 text-center w-36 whitespace-nowrap">Sistema<br/><span className="normal-case font-normal text-slate-300">Depto / Área</span></th>
+                                    <th className="px-3 py-2 text-center w-28 whitespace-nowrap">Resp. Tarefa</th>
+                                    <th className="px-3 py-2 text-center w-32 whitespace-nowrap">Status</th>
+                                    <th className="px-3 py-2 text-center w-36 whitespace-nowrap">% Conclusão</th>
+                                    <th className="px-3 py-2 text-center w-28 whitespace-nowrap">Início</th>
+                                    <th className="px-3 py-2 text-center w-28 whitespace-nowrap">Término</th>
+                                    <th className="px-2 py-2 w-8" />
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {tarefas.map(t => {
+                                    const atrasada = t.status_kanban !== 'concluido' && t.data_fim && t.data_fim < hojeISO
+                                    const statusCor = STATUS_TAREFA_COR[t.status_kanban || 'mapeado'] || 'bg-slate-100 text-slate-600'
+                                    const statusLabel = STATUS_TAREFA_LABEL[t.status_kanban || 'mapeado'] || t.status_kanban || '—'
+                                    const pct = t.progresso_pct ?? (t.status_kanban === 'concluido' ? 100 : 0)
+                                    const sistCor = t.sistema_nome ? (sistemaCorMap[t.sistema_nome] || '#1e293b') : null
+                                    const sistTxt = t.sistema_nome ? (sistemaCorTextoMap[t.sistema_nome] || getTextColor(sistCor)) : null
+                                    return (
+                                      <tr key={t.id} className={`border-b border-slate-100 hover:bg-slate-50 transition-colors ${atrasada ? 'bg-red-50/30' : 'bg-white'}`}>
+                                        <td className={`px-3 py-2.5 text-center sticky left-0 z-10 ${atrasada ? 'bg-red-50/60' : 'bg-white'}`}>
+                                          {t.etapa != null
+                                            ? <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-[10px] font-bold ${t.status_kanban === 'em_andamento' ? 'bg-orange-500 text-white shadow-sm' : 'bg-indigo-100 text-indigo-700'}`}>{t.etapa}</span>
+                                            : <span className="text-slate-300">—</span>}
+                                        </td>
+                                        <td className="px-4 py-2.5">
+                                          <div className="flex items-start gap-1.5">
+                                            {atrasada && <AlertCircle className="h-3 w-3 text-red-400 shrink-0 mt-0.5" />}
+                                            <div className="flex flex-col gap-0.5 w-full">
+                                              <div className="flex items-center gap-1.5">
+                                                <span className="text-slate-700 font-medium leading-snug">{t.nome}</span>
+                                                {(t.proj_deliberacoes || []).length > 0 && (
+                                                  <button
+                                                    onClick={() => setDelibersAbertos(prev => {
+                                                      const next = new Set(prev)
+                                                      next.has(t.id) ? next.delete(t.id) : next.add(t.id)
+                                                      return next
+                                                    })}
+                                                    className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold transition-colors shrink-0 ${delibersAbertos.has(t.id) ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-500 hover:bg-indigo-50 hover:text-indigo-600'}`}
+                                                    title={delibersAbertos.has(t.id) ? 'Ocultar deliberações' : 'Ver deliberações'}
+                                                  >
+                                                    <ScrollText className="h-3 w-3" />
+                                                    {(t.proj_deliberacoes || []).length}
+                                                  </button>
+                                                )}
+                                              </div>
+                                              {delibersAbertos.has(t.id) && (t.proj_deliberacoes || []).length > 0 && (
+                                                <div className="flex flex-col gap-0.5 mt-1 pl-1 border-l-2 border-indigo-200">
+                                                  {[...(t.proj_deliberacoes || [])].sort((a, b) => (a.data || '') < (b.data || '') ? -1 : 1).map(d => (
+                                                    <span key={d.id} className="flex items-start gap-1 text-[10px] italic text-slate-500 leading-snug">
+                                                      <ScrollText className="h-3 w-3 shrink-0 mt-px text-indigo-400" />
+                                                      {d.data ? `${fmtData(d.data)} — ` : ''}{d.texto}
+                                                    </span>
+                                                  ))}
+                                                </div>
+                                              )}
+                                            </div>
+                                          </div>
+                                        </td>
+                                        <td className="px-3 py-2.5 text-center">
+                                          {t.sistema_nome && (
+                                            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold" style={{ backgroundColor: sistCor, color: sistTxt }}>{t.sistema_nome}</span>
+                                          )}
+                                          {(p.departamento_nome || p.area_nome) && (
+                                            <div className="text-[10px] text-slate-400 italic mt-0.5 whitespace-nowrap">
+                                              {[p.departamento_nome, p.area_nome].filter(Boolean).join(' / ')}
+                                            </div>
+                                          )}
+                                        </td>
+                                        <td className="px-3 py-2.5 text-center text-slate-600 whitespace-nowrap">
+                                          {t.responsavel_nome || <span className="text-slate-300">—</span>}
+                                        </td>
+                                        <td className="px-3 py-2.5 text-center whitespace-nowrap">
+                                          <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide ${statusCor}`}>{statusLabel}</span>
+                                        </td>
+                                        <td className="px-3 py-2.5">
+                                          <div className="flex items-center gap-2">
+                                            <div className="flex-1 h-1.5 bg-slate-200 rounded-full overflow-hidden min-w-[60px]">
+                                              <div className="h-full rounded-full bg-teal-500 transition-all" style={{ width: `${pct}%` }} />
+                                            </div>
+                                            <span className={`text-[10px] font-bold whitespace-nowrap ${pct >= 100 ? 'text-teal-600' : pct > 0 ? 'text-slate-600' : 'text-slate-400'}`}>{pct}%</span>
+                                          </div>
+                                        </td>
+                                        <td className="px-3 py-2.5 text-center whitespace-nowrap">
+                                          {t.data_inicio
+                                            ? <span className="text-slate-600">{fmtData(t.data_inicio)}</span>
+                                            : <span className="text-slate-300">—</span>}
+                                        </td>
+                                        <td className="px-3 py-2.5 text-center whitespace-nowrap">
+                                          {t.data_fim
+                                            ? <span className={atrasada ? 'text-red-500 font-semibold' : 'text-slate-600'}>{fmtData(t.data_fim)}</span>
+                                            : <span className="text-slate-300">—</span>}
+                                        </td>
+                                        <td className="px-2 py-2.5 text-center">
+                                          <div className="flex items-center gap-1 justify-center">
+                                            {canIniciarTarefa && !verTodos && t.status_kanban === 'programado' && (
+                                              <button
+                                                onClick={() => handleIniciarTarefa(t)}
+                                                className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                                title="Iniciar tarefa"
+                                              >
+                                                <PlayCircle className="h-3.5 w-3.5" />
+                                              </button>
+                                            )}
+                                            {canConcluirTarefa && !verTodos && t.status_kanban === 'em_andamento' && (
+                                              <button
+                                                onClick={() => setModalConcluir({ tarefa: t, dataFim: hojeISO })}
+                                                className="p-1 text-slate-400 hover:text-teal-600 hover:bg-teal-50 rounded transition-colors"
+                                                title="Concluir tarefa"
+                                              >
+                                                <CheckCircle2 className="h-3.5 w-3.5" />
+                                              </button>
+                                            )}
+                                            {canEditarTarefa && !verTodos ? (
+                                              <button
+                                                onClick={() => setModalEditarTarefa({ ...t, projeto_id: p.id, _tarefasProjeto: p.proj_tarefas || [] })}
+                                                className="p-1 text-slate-300 hover:text-indigo-500 rounded transition-colors"
+                                                title="Ver / Editar tarefa"
+                                              >
+                                                <Edit2 className="h-3.5 w-3.5" />
+                                              </button>
+                                            ) : (
+                                              <button onClick={() => navigate(`/projetos/detalhe/${p.id}/editar`)}
+                                                className="p-1 text-slate-300 hover:text-indigo-500 rounded transition-colors">
+                                                <Pencil className="h-3 w-3" />
+                                              </button>
+                                            )}
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    )
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                        </React.Fragment>
+                      )
+                    })}
                   </div>
                 )}
               </div>
             )
           })}
         </div>
+      )}
+
+      {/* Modal Concluir Tarefa */}
+      {modalConcluir && (
+        <div className="fixed top-0 right-0 bottom-0 left-16 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg border border-slate-200 w-[380px] shadow-xl overflow-hidden">
+            <div className="p-4 border-b border-slate-100 bg-teal-50 flex items-center gap-3">
+              <div className="p-2 bg-teal-100 text-teal-600 rounded-full shrink-0">
+                <CheckCircle2 className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-sm font-bold text-slate-900">Concluir Tarefa</h3>
+                <p className="text-xs text-slate-500 truncate">{modalConcluir.tarefa.nome}</p>
+              </div>
+            </div>
+            <div className="p-4 space-y-3">
+              <div>
+                <label className="text-[10px] font-bold text-slate-400 uppercase">Data de Término</label>
+                <input
+                  type="date"
+                  autoFocus
+                  value={modalConcluir.dataFim}
+                  onChange={e => setModalConcluir(prev => ({ ...prev, dataFim: e.target.value }))}
+                  onKeyDown={e => e.key === 'Enter' && handleConcluirTarefa()}
+                  className="w-full mt-1 text-sm p-2 border border-slate-200 rounded-md focus:ring-2 focus:ring-teal-500/20 focus:border-teal-400"
+                />
+              </div>
+              <p className="text-xs text-slate-400">Status será alterado para <strong className="text-teal-700">Concluído</strong> e progresso definido em <strong>100%</strong>.</p>
+            </div>
+            <div className="flex items-center justify-end gap-2 p-3 bg-slate-50 border-t border-slate-100">
+              <button onClick={() => setModalConcluir(null)} className="px-3 py-1.5 rounded-md text-xs font-semibold text-slate-600 hover:bg-slate-200/60 transition-colors">Cancelar</button>
+              <button onClick={handleConcluirTarefa} className="px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-teal-600 hover:bg-teal-700 shadow-sm transition-colors">Confirmar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modalEditarTarefa && (
+        <TarefaFormModal
+          projetoId={modalEditarTarefa.projeto_id}
+          tarefa={modalEditarTarefa}
+          initialValues={null}
+          tarefas={modalEditarTarefa._tarefasProjeto}
+          dependenciasAtuais={[]}
+          responsaveis={optsResp}
+          sistemas={sistemas.filter(s => s.ativo !== false)}
+          fases={fases.filter(f => f.ativo !== false)}
+          empresas={optsEmp}
+          areas={modalOptsArea}
+          onClose={() => setModalEditarTarefa(null)}
+          onSaved={() => { recarregarDados(); setModalEditarTarefa(null) }}
+          onNavigate={(t) => setModalEditarTarefa({
+            ...t,
+            projeto_id: modalEditarTarefa.projeto_id,
+            _tarefasProjeto: modalEditarTarefa._tarefasProjeto,
+          })}
+        />
       )}
     </div>
   )

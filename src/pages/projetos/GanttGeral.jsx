@@ -769,7 +769,7 @@ export default function GanttGeral() {
                           overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', flex:1,
                         }} title={row.label}>{row.label}</span>
                         {isProj && (
-                          <button onClick={() => navigate(`/projetos/${row.id}`)} title="Abrir projeto"
+                          <button onClick={() => navigate(`/projetos/detalhe/${row.id}`)} title="Abrir projeto"
                             style={{ flexShrink:0, border:'none', background:'transparent', cursor:'pointer', color:'#94a3b8', padding:1, display:'flex', alignItems:'center' }}>
                             <ExternalLink style={{ width:10, height:10 }} />
                           </button>

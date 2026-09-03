@@ -7,7 +7,7 @@ import { apiService } from '../services/api'
 
 const FORM_VAZIO = {
   nome: '', codigo: '', descricao: '',
-  pasta_sharepoint: '', prefixo_arquivo: '', usa_subpasta_ano: false, linha_cabecalho: 0,
+  pasta_sharepoint: '', prefixo_arquivo: '', usa_subpasta_ano: false, subpasta_padrao: '', linha_cabecalho: 0,
   coluna_empresa: '', coluna_data: '', coluna_funcionario: '',
   ativo: true,
 }
@@ -34,6 +34,7 @@ export default function FontesCalculo() {
   const [detectando, setDetectando] = useState(false)
   const [erroDetectar, setErroDetectar] = useState(null)
   const [colunasDetectadas, setColunasDetectadas] = useState(null)
+  const [filtroColuna, setFiltroColuna] = useState('')
 
   const { hasPermission } = useAuth()
   const canEdit = hasPermission('fontes-calculo', 'editar')
@@ -65,6 +66,7 @@ export default function FontesCalculo() {
     setErroModal(null)
     setColunasDetectadas(null)
     setErroDetectar(null)
+    setFiltroColuna('')
     setModalAberto(true)
   }
 
@@ -77,6 +79,7 @@ export default function FontesCalculo() {
       pasta_sharepoint: item.pasta_sharepoint || '',
       prefixo_arquivo: item.prefixo_arquivo || '',
       usa_subpasta_ano: item.usa_subpasta_ano || false,
+      subpasta_padrao: item.subpasta_padrao || '',
       linha_cabecalho: item.linha_cabecalho ?? 0,
       coluna_empresa: item.coluna_empresa || '',
       coluna_data: item.coluna_data || '',
@@ -86,6 +89,7 @@ export default function FontesCalculo() {
     setErroModal(null)
     setColunasDetectadas(null)
     setErroDetectar(null)
+    setFiltroColuna('')
     setModalAberto(true)
   }
 
@@ -106,11 +110,13 @@ export default function FontesCalculo() {
     setDetectando(true)
     setErroDetectar(null)
     setColunasDetectadas(null)
+    setFiltroColuna('')
     try {
       const info = await apiService.getColunasFonteCalculo({
         pasta: form.pasta_sharepoint,
         prefixo: form.prefixo_arquivo,
         usaSubpastaAno: form.usa_subpasta_ano,
+        subpastaPadrao: form.subpasta_padrao,
         linhaCabecalho: form.linha_cabecalho,
       })
       setColunasDetectadas(info)
@@ -132,6 +138,7 @@ export default function FontesCalculo() {
         pasta_sharepoint: form.pasta_sharepoint || null,
         prefixo_arquivo: form.prefixo_arquivo || null,
         usa_subpasta_ano: !!form.usa_subpasta_ano,
+        subpasta_padrao: form.usa_subpasta_ano ? (form.subpasta_padrao || '{ano}') : null,
         linha_cabecalho: parseInt(form.linha_cabecalho, 10) || 0,
         coluna_empresa: form.coluna_empresa || null,
         coluna_data: form.coluna_data || null,
@@ -308,7 +315,7 @@ export default function FontesCalculo() {
                     <div className="flex items-center justify-between gap-4">
                       <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer">
                         <input type="checkbox" name="usa_subpasta_ano" checked={form.usa_subpasta_ano} onChange={handleInputChange} className="w-4 h-4" />
-                        Arquivo fica dentro de subpastas por ano (ex: .../2026/arquivo.xlsx)
+                        Arquivo fica dentro de uma subpasta (ex: .../2026/arquivo.xlsx)
                       </label>
                       <div className="flex items-center gap-1.5 shrink-0">
                         <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wide whitespace-nowrap">Linha do Cabeçalho</label>
@@ -317,6 +324,22 @@ export default function FontesCalculo() {
                           className="w-14 text-xs p-1.5 border border-slate-200 rounded-md font-medium text-slate-800 text-center" />
                       </div>
                     </div>
+
+                    {form.usa_subpasta_ano && (
+                      <div className="flex flex-col gap-1.5">
+                        <label className={`${LBL} flex items-center gap-1`}>
+                          Nome da Subpasta
+                          <span className="relative group cursor-help">
+                            <Info className="h-3 w-3 text-slate-400" />
+                            <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 text-[10px] text-white bg-slate-700 rounded px-2 py-1.5 leading-relaxed opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 text-center normal-case font-normal tracking-normal">
+                              Use o token "{'{ano}'}" onde o ano do período calculado deve entrar. Ex: {'{ano}'} (padrão), Ano {'{ano}'}, Base {'{ano}'} - Nova.
+                            </span>
+                          </span>
+                        </label>
+                        <input type="text" name="subpasta_padrao" value={form.subpasta_padrao} onChange={handleInputChange}
+                          placeholder="{ano}" className={`${INP} font-mono`} />
+                      </div>
+                    )}
 
                     <div className="flex items-center gap-2 pt-1">
                       <button
@@ -342,8 +365,23 @@ export default function FontesCalculo() {
                     )}
 
                     {colunasDetectadas && colunasDetectadas.colunas.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5 border-t border-indigo-100 pt-3">
-                        {colunasDetectadas.colunas.map(col => (
+                      <div className="relative border-t border-indigo-100 pt-3">
+                        <Search className="h-3.5 w-3.5 text-slate-300 absolute left-2.5 top-1/2 -translate-y-1/2 mt-1.5" />
+                        <input
+                          type="text"
+                          value={filtroColuna}
+                          onChange={e => setFiltroColuna(e.target.value)}
+                          placeholder="Buscar coluna..."
+                          className="w-full text-[11px] pl-8 pr-2 py-1.5 border border-slate-200 rounded-md bg-white text-slate-700 placeholder-slate-300 focus:outline-none focus:border-indigo-400"
+                        />
+                      </div>
+                    )}
+
+                    {colunasDetectadas && colunasDetectadas.colunas.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {colunasDetectadas.colunas.filter(col => col.toLowerCase().includes(filtroColuna.trim().toLowerCase())).length === 0 ? (
+                          <p className="text-[11px] text-slate-400 p-1">Nenhuma coluna encontrada para "{filtroColuna}".</p>
+                        ) : colunasDetectadas.colunas.filter(col => col.toLowerCase().includes(filtroColuna.trim().toLowerCase())).map(col => (
                           <div key={col} className="flex items-center border border-slate-200 rounded overflow-hidden text-[10px]">
                             <span className="px-2 py-1 font-mono text-slate-700 bg-white">{col}</span>
                             <button type="button" onClick={() => setForm(prev => ({ ...prev, coluna_empresa: col }))}
@@ -454,9 +492,15 @@ export default function FontesCalculo() {
                 <span className="text-xs font-mono font-semibold text-slate-800">{itemVisualizado.prefixo_arquivo || '-'}</span>
               </div>
               <div className="flex flex-col gap-0.5">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Usa Subpasta por Ano</span>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Usa Subpasta</span>
                 <span className="text-xs font-semibold text-slate-800">{itemVisualizado.usa_subpasta_ano ? 'Sim' : 'Não'}</span>
               </div>
+              {itemVisualizado.usa_subpasta_ano && (
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Nome da Subpasta</span>
+                  <span className="text-xs font-mono font-semibold text-slate-800">{itemVisualizado.subpasta_padrao || '{ano}'}</span>
+                </div>
+              )}
               <div className="flex flex-col gap-0.5">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Linha do Cabeçalho</span>
                 <span className="text-xs font-semibold text-slate-800">{itemVisualizado.linha_cabecalho ?? 0}</span>

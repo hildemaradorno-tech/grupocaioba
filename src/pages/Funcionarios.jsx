@@ -1,9 +1,11 @@
 ﻿import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react'
-import { Plus, Edit2, Trash2, X, AlertTriangle, Users, Eye, BadgePercent, Search, Info, ChevronDown, ArrowUp, ArrowDown, ArrowUpDown, FileDown, FileSpreadsheet } from 'lucide-react'
+import { createPortal } from 'react-dom'
+import { Plus, Edit2, Trash2, X, AlertTriangle, Users, Eye, BadgePercent, Search, Info, ChevronDown, ArrowUp, ArrowDown, ArrowUpDown, FileDown, FileSpreadsheet, RefreshCw, Loader2 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import PermissionActionButtons from '../components/PermissionActionButtons'
 import { apiService } from '../services/api'
 import { useSessionState } from '../hooks/useSessionState'
+import ImportarFuncionariosModal from './ImportarFuncionariosModal'
 
 const SEL = 'w-full text-xs p-2 border border-slate-200 rounded-md bg-white font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500'
 const INP = 'w-full text-xs p-2 border border-slate-200 rounded-md font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500'
@@ -15,15 +17,44 @@ const LBL_RO = 'text-[11px] font-bold text-indigo-400 uppercase tracking-wide'
 // aceitam selecionar vários valores de uma vez, sem precisar da caixa de lista aberta do <select multiple>.
 function FiltroMultiSelect({ placeholder, opcoes, selecionados, onChange }) {
   const [aberto, setAberto] = useState(false)
+  const [pos, setPos] = useState(null)
   const ref = useRef(null)
 
   useEffect(() => {
     const fecharSeClicarFora = (e) => {
-      if (ref.current && !ref.current.contains(e.target)) setAberto(false)
+      if (ref.current && !ref.current.contains(e.target) && !e.target.closest('[data-filtro-multiselect-panel]')) setAberto(false)
     }
     document.addEventListener('mousedown', fecharSeClicarFora)
     return () => document.removeEventListener('mousedown', fecharSeClicarFora)
   }, [])
+
+  // A tabela usa overflow-x-auto, que corta qualquer dropdown posicionado com "absolute" dentro
+  // dela (o eixo Y vira scroll implicitamente). Renderiza o painel via portal em document.body,
+  // "fixed" na posição real do botão, pra ele aparecer por cima da tabela sem ser cortado.
+  const abrir = () => {
+    if (!aberto && ref.current) {
+      const r = ref.current.getBoundingClientRect()
+      setPos({ top: r.bottom + 4, left: r.left, minWidth: r.width })
+    }
+    setAberto(v => !v)
+  }
+
+  useEffect(() => {
+    if (!aberto) return
+    // capture:true pega o scroll de QUALQUER elemento (inclusive o scroll interno da própria
+    // lista de opções) — só fecha se o scroll não for dentro do painel, senão rolar a lista de
+    // opções fecharia o dropdown imediatamente.
+    const fechar = (e) => {
+      if (e.target?.closest?.('[data-filtro-multiselect-panel]')) return
+      setAberto(false)
+    }
+    window.addEventListener('scroll', fechar, true)
+    window.addEventListener('resize', fechar)
+    return () => {
+      window.removeEventListener('scroll', fechar, true)
+      window.removeEventListener('resize', fechar)
+    }
+  }, [aberto])
 
   const toggleOpcao = (valor) => {
     onChange(selecionados.includes(valor) ? selecionados.filter(v => v !== valor) : [...selecionados, valor])
@@ -37,14 +68,26 @@ function FiltroMultiSelect({ placeholder, opcoes, selecionados, onChange }) {
     <div ref={ref} className="relative">
       <button
         type="button"
-        onClick={() => setAberto(v => !v)}
+        onClick={abrir}
         className="w-full flex items-center justify-between gap-1 px-2 py-1 text-[11px] border border-slate-200 rounded bg-slate-50 hover:bg-white focus:outline-none focus:border-blue-400 transition-colors"
       >
         <span className={`truncate ${selecionados.length === 0 ? 'text-slate-400' : 'text-slate-700 font-semibold'}`}>{textoBotao}</span>
-        <ChevronDown className="h-3 w-3 text-slate-400 shrink-0" />
+        <span className="flex items-center gap-0.5 shrink-0">
+          {selecionados.length > 0 && (
+            <X
+              className="h-3 w-3 text-slate-400 hover:text-red-600"
+              onClick={(e) => { e.stopPropagation(); onChange([]) }}
+            />
+          )}
+          <ChevronDown className="h-3 w-3 text-slate-400 shrink-0" />
+        </span>
       </button>
-      {aberto && (
-        <div className="absolute z-20 mt-1 min-w-full w-max max-h-52 overflow-y-auto bg-white border border-slate-200 rounded-md shadow-lg py-1 custom-scrollbar">
+      {aberto && pos && createPortal(
+        <div
+          data-filtro-multiselect-panel
+          style={{ position: 'fixed', top: pos.top, left: pos.left, minWidth: pos.minWidth }}
+          className="z-50 w-max max-h-52 overflow-y-auto bg-white border border-slate-200 rounded-md shadow-lg py-1 custom-scrollbar"
+        >
           {opcoes.length === 0 ? (
             <p className="px-2 py-1.5 text-[11px] text-slate-400">Nenhuma opção.</p>
           ) : opcoes.map(op => (
@@ -58,7 +101,8 @@ function FiltroMultiSelect({ placeholder, opcoes, selecionados, onChange }) {
               <span className="whitespace-nowrap">{op}</span>
             </label>
           ))}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   )
@@ -120,6 +164,7 @@ const SITUACAO_BADGE_LABEL = {
 const FORM_VAZIO = {
   nome_funcionario: '',
   codigo_funcionario: '',
+  codigo_sistema_bi: '',
   empresa_id: '',
   empresa_nome: '',
   cargo_id: '',
@@ -147,6 +192,12 @@ const fmtDate = (v) => {
   if (!v) return '-'
   const [y, m, d] = String(v).split('-')
   return `${d}/${m}/${y}`
+}
+const fmtCnpj = (v) => {
+  if (!v) return null
+  const s = String(v).replace(/\D/g, '')
+  if (s.length === 14) return `${s.slice(0, 2)}.${s.slice(2, 5)}.${s.slice(5, 8)}/${s.slice(8, 12)}-${s.slice(12)}`
+  return v
 }
 const fmtPct = (v) => (v != null && v !== '') ? `${parseFloat(v).toFixed(2)}%` : '-'
 const fmtBRL = (v) => (v != null && v !== '') ? parseFloat(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '-'
@@ -203,8 +254,16 @@ export default function Funcionarios() {
   const [gerandoExcel, setGerandoExcel] = useState(false)
   const [menuSalvarAberto, setMenuSalvarAberto] = useState(false)
   const menuSalvarRef = useRef(null)
+  const [modalImportarAberto, setModalImportarAberto] = useState(false)
 
-  const [colFiltros, setColFiltros] = useSessionState('func_colfiltros', { nome: '', empresa: [], cargo: [], ativo: [] })
+  // colFiltros persiste no localStorage — quem já usava a tela antes do filtro de CNPJ
+  // existir tem um objeto salvo sem essa chave, então nunca confia direto em
+  // colFiltros.cnpj (undefined quebraria .length/.includes); sempre usa cnpjFiltro.
+  const [colFiltros, setColFiltros] = useSessionState('func_colfiltros', { nome: '', empresa: [], cnpj: [], cargo: [], departamento: [], setor: [], box: [], ativo: [] })
+  const cnpjFiltro = colFiltros.cnpj || []
+  const departamentoFiltro = colFiltros.departamento || []
+  const setorFiltro = colFiltros.setor || []
+  const boxFiltro = colFiltros.box || []
 
   const [modalAberto, setModalAberto] = useSessionState('func_modal', false)
   const [modalExcluirAberto, setModalExcluirAberto] = useState(false)
@@ -215,6 +274,7 @@ export default function Funcionarios() {
   const [form, setForm] = useSessionState('func_form', FORM_VAZIO)
   const [erroModal, setErroModal] = useState(null)
   const [buscandoPolitica, setBuscandoPolitica] = useState(false)
+  const [sincronizando, setSincronizando] = useState(false)
   const { hasPermission } = useAuth()
   const canEdit = hasPermission('funcionarios', 'editar')
   const canDelete = hasPermission('funcionarios', 'excluir')
@@ -326,7 +386,7 @@ export default function Funcionarios() {
     const emp = empresas.find(x => x.id === empId)
     const agrupId = emp?.agrupamento_empresa_id || null
     const currentCargo = cargos.find(c => c.id === form.cargo_id)
-    const cargoCompativel = currentCargo && (!agrupId || currentCargo.agrupamento_empresa_id === agrupId)
+    const cargoCompativel = currentCargo && (!currentCargo.empresa_id || currentCargo.empresa_id === empId)
     const novoCargoId = cargoCompativel ? form.cargo_id : ''
     setForm(prev => ({
       ...prev,
@@ -407,6 +467,7 @@ export default function Funcionarios() {
     setForm({
       nome_funcionario: item.nome_funcionario || '',
       codigo_funcionario: item.codigo_funcionario || '',
+      codigo_sistema_bi: item.codigo_sistema_bi || '',
       empresa_id: item.empresa_id || '',
       empresa_nome: item.empresa_nome || '',
       cargo_id: item.cargo_id || '',
@@ -431,6 +492,41 @@ export default function Funcionarios() {
     })
     setErroModal(null)
     setModalAberto(true)
+  }
+
+  // Departamento/Setor do funcionário são herdados do Cargo, mas só ficam gravados de novo no
+  // registro do funcionário quando alguém abre e salva a tela dele — se o cargo mudar de
+  // departamento/setor depois, quem já tinha esse cargo fica com o dado antigo até ser resalvo.
+  // Este botão varre todo mundo e resalva só quem estiver desatualizado, sem precisar abrir um
+  // por um.
+  const arraysIguaisIgnorandoOrdem = (a, b) => {
+    const sa = [...(a || [])].sort()
+    const sb = [...(b || [])].sort()
+    return sa.length === sb.length && sa.every((v, i) => v === sb[i])
+  }
+
+  const handleSincronizarDepartamentos = async () => {
+    setSincronizando(true)
+    try {
+      let atualizados = 0
+      for (const item of dados) {
+        const cargo = cargos.find(c => c.id === item.cargo_id)
+        if (!cargo) continue
+        const deptoIdsCargo = cargo.departamento_ids || []
+        const setorIdsCargo = cargo.setor_ids || []
+        if (arraysIguaisIgnorandoOrdem(deptoIdsCargo, item.departamento_ids) && arraysIguaisIgnorandoOrdem(setorIdsCargo, item.setor_ids)) continue
+        await apiService.updateFuncionario(item.id, { departamento_ids: deptoIdsCargo, setor_ids: setorIdsCargo })
+        atualizados++
+      }
+      await loadData()
+      alert(atualizados > 0
+        ? `${atualizados} funcionário(s) atualizado(s) com o departamento/setor mais recente do cargo.`
+        : 'Todos os funcionários já estavam com o departamento/setor em dia.')
+    } catch (err) {
+      alert('Erro ao sincronizar: ' + (err.message || String(err)))
+    } finally {
+      setSincronizando(false)
+    }
   }
 
   const abrirExcluir = (item) => {
@@ -473,6 +569,7 @@ export default function Funcionarios() {
       const payload = {
         nome_funcionario: form.nome_funcionario,
         codigo_funcionario: form.codigo_funcionario || null,
+        codigo_sistema_bi: form.codigo_sistema_bi || null,
         empresa_id: form.empresa_id || null,
         empresa_nome: form.empresa_nome || null,
         cargo_id: form.cargo_id || null,
@@ -769,17 +866,79 @@ export default function Funcionarios() {
     }
   }
 
+  const getCnpj = useCallback((f) =>
+    fmtCnpj(empresas.find(e => e.id === f.empresa_id)?.cnpj) || null,
+    [empresas])
+
+  // Padrão "Sem X" — funcionário sem departamento/setor/box preenchido ganha uma opção própria
+  // no filtro, em vez de simplesmente sumir do seletor sem dar como localizar esses registros.
+  const SEM_DEPARTAMENTO = 'Sem departamento'
+  const SEM_SETOR = 'Sem setor'
+  const SEM_BOX = 'Sem box'
+  // Departamento/Setor são definidos no Cargo — o funcionário só guarda uma cópia desses ids
+  // (gravada da última vez que o cadastro dele foi salvo). Se o Cargo mudar de
+  // departamento/setor depois, essa cópia fica desatualizada, então sempre prioriza o valor
+  // atual do Cargo vinculado e só cai pro campo do próprio funcionário se ele não tiver cargo.
+  const deptoIdsDe = (f) => cargos.find(c => c.id === f.cargo_id)?.departamento_ids || f.departamento_ids || []
+  const setorIdsDe = (f) => cargos.find(c => c.id === f.cargo_id)?.setor_ids || f.setor_ids || []
+  const getDeptLabels = (f) => {
+    const n = deptoIdsDe(f).map(id => departamentos.find(d => d.id === id)?.nome_departamento).filter(Boolean)
+    return n.length > 0 ? n : [SEM_DEPARTAMENTO]
+  }
+  const getSetorLabelsF = (f) => {
+    const n = setorIdsDe(f).map(id => setores.find(s => s.id === id)?.nome_setor).filter(Boolean)
+    return n.length > 0 ? n : [SEM_SETOR]
+  }
+  const getBoxLabel = (f) => f.box_nome || SEM_BOX
+  const comSemOpcao = (nomes, semLabel, temAlgumVazio) => {
+    const unicos = [...new Set(nomes.filter(n => n && n !== semLabel))].sort((a, b) => a.localeCompare(b, 'pt-BR'))
+    return temAlgumVazio ? [semLabel, ...unicos] : unicos
+  }
+
+  // Filtros dinâmicos (facetados): as opções de cada seletor são calculadas aplicando todos os
+  // OUTROS filtros ativos, menos o dele mesmo — mesmo padrão usado em Cargos/Cargos e Remunerações.
+  // Só estreita as OPÇÕES exibidas; nunca mexe na seleção que o usuário já fez nos outros filtros.
+  const filtrarComExcecao = useMemo(() => (ignorar) => dados.filter(f =>
+    (ignorar === 'nome' || !colFiltros.nome || (f.nome_funcionario || '').toLowerCase().includes(colFiltros.nome.toLowerCase())) &&
+    (ignorar === 'empresa' || colFiltros.empresa.length === 0 || colFiltros.empresa.includes(f.empresa_nome)) &&
+    (ignorar === 'cnpj' || cnpjFiltro.length === 0 || cnpjFiltro.includes(getCnpj(f))) &&
+    (ignorar === 'cargo' || colFiltros.cargo.length === 0 || colFiltros.cargo.includes(f.cargo_nome)) &&
+    (ignorar === 'departamento' || departamentoFiltro.length === 0 || getDeptLabels(f).some(v => departamentoFiltro.includes(v))) &&
+    (ignorar === 'setor' || setorFiltro.length === 0 || getSetorLabelsF(f).some(v => setorFiltro.includes(v))) &&
+    (ignorar === 'box' || boxFiltro.length === 0 || boxFiltro.includes(getBoxLabel(f))) &&
+    (ignorar === 'ativo' || colFiltros.ativo.length === 0 || colFiltros.ativo.includes(statusInfo(f).label))
+  ), [dados, colFiltros, cnpjFiltro, departamentoFiltro, setorFiltro, boxFiltro, departamentos, setores, cargos, getCnpj])
+
   const empresasUnicas = useMemo(() =>
-    [...new Set(dados.map(f => f.empresa_nome).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR')),
-    [dados])
+    [...new Set(filtrarComExcecao('empresa').map(f => f.empresa_nome).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR')),
+    [filtrarComExcecao])
 
   const cargosUnicos = useMemo(() =>
-    [...new Set(dados.map(f => f.cargo_nome).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR')),
-    [dados])
+    [...new Set(filtrarComExcecao('cargo').map(f => f.cargo_nome).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR')),
+    [filtrarComExcecao])
+
+  const departamentosUnicos = useMemo(() => {
+    const base = filtrarComExcecao('departamento')
+    return comSemOpcao(base.flatMap(f => getDeptLabels(f)), SEM_DEPARTAMENTO, base.some(f => getDeptLabels(f).includes(SEM_DEPARTAMENTO)))
+  }, [filtrarComExcecao, departamentos, cargos])
+
+  const setoresUnicos = useMemo(() => {
+    const base = filtrarComExcecao('setor')
+    return comSemOpcao(base.flatMap(f => getSetorLabelsF(f)), SEM_SETOR, base.some(f => getSetorLabelsF(f).includes(SEM_SETOR)))
+  }, [filtrarComExcecao, setores, cargos])
+
+  const boxesUnicos = useMemo(() => {
+    const base = filtrarComExcecao('box')
+    return comSemOpcao(base.map(f => getBoxLabel(f)), SEM_BOX, base.some(f => getBoxLabel(f) === SEM_BOX))
+  }, [filtrarComExcecao])
+
+  const cnpjsUnicos = useMemo(() =>
+    [...new Set(filtrarComExcecao('cnpj').map(f => getCnpj(f)).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR')),
+    [filtrarComExcecao, getCnpj])
 
   const statusOpcoes = useMemo(() =>
-    [...new Set(dados.map(f => statusInfo(f).label))].sort((a, b) => a.localeCompare(b, 'pt-BR')),
-    [dados])
+    [...new Set(filtrarComExcecao('ativo').map(f => statusInfo(f).label))].sort((a, b) => a.localeCompare(b, 'pt-BR')),
+    [filtrarComExcecao])
 
   // TODAS as políticas que batem com o cargo/empresa selecionados no formulário — quando o
   // cargo tem mais de uma (ex: Peças + Serviços), mostra a lista inteira abaixo da Descrição.
@@ -806,13 +965,7 @@ export default function Funcionarios() {
     : ordenacao.direcao === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
 
   const dadosFiltrados = useMemo(() => {
-    const filtrados = dados.filter(f => {
-      if (colFiltros.nome && !(f.nome_funcionario || '').toLowerCase().includes(colFiltros.nome.toLowerCase())) return false
-      if (colFiltros.empresa.length > 0 && !colFiltros.empresa.includes(f.empresa_nome)) return false
-      if (colFiltros.cargo.length > 0 && !colFiltros.cargo.includes(f.cargo_nome)) return false
-      if (colFiltros.ativo.length > 0 && !colFiltros.ativo.includes(statusInfo(f).label)) return false
-      return true
-    })
+    const filtrados = filtrarComExcecao(null)
 
     if (!ordenacao.coluna) return filtrados
     const dir = ordenacao.direcao === 'desc' ? -1 : 1
@@ -821,10 +974,15 @@ export default function Funcionarios() {
       nome: (f) => f.nome_funcionario || '',
       empresa: (f) => f.empresa_nome || '',
       cargo: (f) => f.cargo_nome || '',
+      departamento: (f) => getNomes(deptoIdsDe(f), departamentos, 'nome_departamento'),
+      setor: (f) => getNomes(setorIdsDe(f), setores, 'nome_setor'),
+      box: (f) => f.box_nome || '',
+      admissao: (f) => f.data_admissao || '',
+      demissao: (f) => f.data_demissao || '',
       ativo: (f) => statusInfo(f).label || '',
     }[ordenacao.coluna]
     return [...filtrados].sort((a, b) => dir * getVal(a).localeCompare(getVal(b), 'pt-BR', { sensitivity: 'base' }))
-  }, [dados, colFiltros, ordenacao])
+  }, [filtrarComExcecao, ordenacao, departamentos, setores, cargos])
 
   if (loading) return <div className="p-6 text-xs text-slate-500">Carregando...</div>
 
@@ -881,6 +1039,26 @@ export default function Funcionarios() {
           </div>
           {canEdit && (
             <button
+              onClick={handleSincronizarDepartamentos}
+              disabled={sincronizando}
+              title="Reaplica o Departamento/Setor mais recente do Cargo em quem ainda está com o dado antigo"
+              className="flex items-center gap-2 border border-slate-300 text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-semibold px-3 py-2 rounded-md transition-colors"
+            >
+              {sincronizando ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              Atualizar Departamentos
+            </button>
+          )}
+          {canEdit && (
+            <button
+              onClick={() => setModalImportarAberto(true)}
+              className="flex items-center gap-2 border border-slate-300 text-slate-700 hover:bg-slate-100 text-xs font-semibold px-3 py-2 rounded-md transition-colors"
+            >
+              <FileSpreadsheet className="h-4 w-4" />
+              Importar Excel
+            </button>
+          )}
+          {canEdit && (
+            <button
               onClick={abrirIncluir}
               className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-2 rounded-md shadow-sm transition-colors"
             >
@@ -911,9 +1089,36 @@ export default function Funcionarios() {
                   Empresa {iconeOrdenacao('empresa')}
                 </button>
               </th>
+              <th className="p-3 w-36">CNPJ</th>
+              <th className="p-3 w-20">Cód. Cargo</th>
               <th className="p-3">
                 <button onClick={() => alternarOrdenacao('cargo')} className="flex items-center gap-1 hover:text-slate-600 transition-colors">
                   Cargo {iconeOrdenacao('cargo')}
+                </button>
+              </th>
+              <th className="p-3">
+                <button onClick={() => alternarOrdenacao('departamento')} className="flex items-center gap-1 hover:text-slate-600 transition-colors">
+                  Departamento {iconeOrdenacao('departamento')}
+                </button>
+              </th>
+              <th className="p-3">
+                <button onClick={() => alternarOrdenacao('setor')} className="flex items-center gap-1 hover:text-slate-600 transition-colors">
+                  Setor {iconeOrdenacao('setor')}
+                </button>
+              </th>
+              <th className="p-3">
+                <button onClick={() => alternarOrdenacao('box')} className="flex items-center gap-1 hover:text-slate-600 transition-colors">
+                  Box {iconeOrdenacao('box')}
+                </button>
+              </th>
+              <th className="p-3 whitespace-nowrap">
+                <button onClick={() => alternarOrdenacao('admissao')} className="flex items-center gap-1 hover:text-slate-600 transition-colors">
+                  Data Admissão {iconeOrdenacao('admissao')}
+                </button>
+              </th>
+              <th className="p-3 whitespace-nowrap">
+                <button onClick={() => alternarOrdenacao('demissao')} className="flex items-center gap-1 hover:text-slate-600 transition-colors">
+                  Data Demissão {iconeOrdenacao('demissao')}
                 </button>
               </th>
               <th className="p-3 w-20 text-center">
@@ -933,8 +1138,14 @@ export default function Funcionarios() {
                     placeholder="Filtrar nome..."
                     value={colFiltros.nome}
                     onChange={e => setCol('nome', e.target.value)}
-                    className="w-full pl-6 pr-2 py-1 text-[11px] border border-slate-200 rounded bg-slate-50 focus:outline-none focus:border-blue-400 focus:bg-white"
+                    className="w-full pl-6 pr-6 py-1 text-[11px] border border-slate-200 rounded bg-slate-50 focus:outline-none focus:border-blue-400 focus:bg-white"
                   />
+                  {colFiltros.nome && (
+                    <X
+                      className="absolute right-2 top-1/2 -translate-y-1/2 h-3 w-3 text-slate-400 hover:text-red-600 cursor-pointer"
+                      onClick={() => setCol('nome', '')}
+                    />
+                  )}
                 </div>
               </th>
               <th className="px-2 py-1.5">
@@ -945,6 +1156,15 @@ export default function Funcionarios() {
                   onChange={v => setCol('empresa', v)}
                 />
               </th>
+              <th className="px-2 py-1.5 w-36">
+                <FiltroMultiSelect
+                  placeholder="Todos"
+                  opcoes={cnpjsUnicos}
+                  selecionados={cnpjFiltro}
+                  onChange={v => setCol('cnpj', v)}
+                />
+              </th>
+              <th className="px-2 py-1.5 w-20" />
               <th className="px-2 py-1.5">
                 <FiltroMultiSelect
                   placeholder="Todos"
@@ -953,6 +1173,32 @@ export default function Funcionarios() {
                   onChange={v => setCol('cargo', v)}
                 />
               </th>
+              <th className="px-2 py-1.5">
+                <FiltroMultiSelect
+                  placeholder="Todos"
+                  opcoes={departamentosUnicos}
+                  selecionados={departamentoFiltro}
+                  onChange={v => setCol('departamento', v)}
+                />
+              </th>
+              <th className="px-2 py-1.5">
+                <FiltroMultiSelect
+                  placeholder="Todos"
+                  opcoes={setoresUnicos}
+                  selecionados={setorFiltro}
+                  onChange={v => setCol('setor', v)}
+                />
+              </th>
+              <th className="px-2 py-1.5">
+                <FiltroMultiSelect
+                  placeholder="Todos"
+                  opcoes={boxesUnicos}
+                  selecionados={boxFiltro}
+                  onChange={v => setCol('box', v)}
+                />
+              </th>
+              <th className="px-2 py-1.5" />
+              <th className="px-2 py-1.5" />
               <th className="px-2 py-1.5 w-20">
                 <FiltroMultiSelect
                   placeholder="Todos"
@@ -963,8 +1209,8 @@ export default function Funcionarios() {
               </th>
               <th className="px-2 py-1.5 w-24 text-center">
                 <button
-                  onClick={() => setColFiltros({ nome: '', empresa: [], cargo: [], ativo: [] })}
-                  disabled={!colFiltros.nome && colFiltros.empresa.length === 0 && colFiltros.cargo.length === 0 && colFiltros.ativo.length === 0}
+                  onClick={() => setColFiltros({ nome: '', empresa: [], cnpj: [], cargo: [], departamento: [], setor: [], box: [], ativo: [] })}
+                  disabled={!colFiltros.nome && colFiltros.empresa.length === 0 && cnpjFiltro.length === 0 && colFiltros.cargo.length === 0 && departamentoFiltro.length === 0 && setorFiltro.length === 0 && boxFiltro.length === 0 && colFiltros.ativo.length === 0}
                   className="flex items-center gap-1 mx-auto text-[11px] font-semibold text-slate-400 hover:text-red-600 disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:text-slate-400 transition-colors"
                   title="Limpar todos os filtros"
                 >
@@ -977,8 +1223,8 @@ export default function Funcionarios() {
           <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
             {dadosFiltrados.length === 0 ? (
               <tr>
-                <td colSpan="6" className="p-6 text-center text-slate-400">
-                  {(colFiltros.nome || colFiltros.empresa.length > 0 || colFiltros.cargo.length > 0 || colFiltros.ativo.length > 0)
+                <td colSpan="13" className="p-6 text-center text-slate-400">
+                  {(colFiltros.nome || colFiltros.empresa.length > 0 || cnpjFiltro.length > 0 || colFiltros.cargo.length > 0 || departamentoFiltro.length > 0 || setorFiltro.length > 0 || boxFiltro.length > 0 || colFiltros.ativo.length > 0)
                     ? 'Nenhum funcionário encontrado para os filtros aplicados.' : 'Nenhum funcionário cadastrado.'}
                 </td>
               </tr>
@@ -986,25 +1232,38 @@ export default function Funcionarios() {
               const st = statusInfo(item)
               return (
                 <tr key={item.id} className="hover:bg-slate-50/70 transition-colors">
-                  <td className="p-3 text-slate-500 font-mono text-[11px]">{item.codigo_funcionario || '-'}</td>
-                  <td className="p-3 font-bold text-slate-900">
+                  <td className="p-3 text-slate-500 font-mono text-[11px] whitespace-nowrap">{item.codigo_funcionario || '-'}</td>
+                  <td className="p-3 font-bold text-slate-900 whitespace-nowrap">
                     <div className="flex items-center gap-2">
                       <Users className="h-3.5 w-3.5 text-blue-400 shrink-0" />
                       {item.nome_funcionario}
                     </div>
                   </td>
-                  <td className="p-3 text-slate-700">{item.empresa_nome || '-'}</td>
-                  <td className="p-3">
-                    <span className="bg-blue-50 text-blue-800 font-bold px-1.5 py-0.5 rounded border border-blue-100 text-[10px]">
+                  <td className="p-3 text-slate-700 whitespace-nowrap">{item.empresa_nome || '-'}</td>
+                  <td className="p-3 text-slate-500 font-mono text-[11px] whitespace-nowrap">
+                    {fmtCnpj(empresas.find(e => e.id === item.empresa_id)?.cnpj) || '-'}
+                  </td>
+                  <td className="p-3 text-slate-500 font-mono text-[11px] whitespace-nowrap">{item.cargo_codigo || '-'}</td>
+                  <td className="p-3 whitespace-nowrap">
+                    <span className="bg-blue-50 text-blue-800 font-bold px-1.5 py-0.5 rounded border border-blue-100 text-[10px] whitespace-nowrap">
                       {item.cargo_nome || '-'}
                     </span>
                   </td>
-                  <td className="p-3 text-center">
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${st.cls}`}>
+                  <td className="p-3 text-slate-500 truncate max-w-[180px]" title={getNomes(deptoIdsDe(item), departamentos, 'nome_departamento')}>
+                    {getNomes(deptoIdsDe(item), departamentos, 'nome_departamento')}
+                  </td>
+                  <td className="p-3 text-slate-500 truncate max-w-[180px]" title={getNomes(setorIdsDe(item), setores, 'nome_setor')}>
+                    {getNomes(setorIdsDe(item), setores, 'nome_setor')}
+                  </td>
+                  <td className="p-3 text-slate-500 whitespace-nowrap">{item.box_nome || '-'}</td>
+                  <td className="p-3 text-slate-500 font-mono text-[11px] whitespace-nowrap">{fmtDate(item.data_admissao) || '-'}</td>
+                  <td className="p-3 text-slate-500 font-mono text-[11px] whitespace-nowrap">{fmtDate(item.data_demissao) || '-'}</td>
+                  <td className="p-3 text-center whitespace-nowrap">
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold border whitespace-nowrap ${st.cls}`}>
                       {st.label}
                     </span>
                   </td>
-                  <td className="p-3">
+                  <td className="p-3 whitespace-nowrap">
                     <PermissionActionButtons
                     menuPath="funcionarios"
                     onView={() => abrirVisualizar(item)}
@@ -1022,7 +1281,7 @@ export default function Funcionarios() {
       {/* MODAL: INCLUIR / EDITAR */}
       {modalAberto && (
         <div className="fixed top-0 right-0 bottom-0 left-16 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg border border-slate-200 w-full max-w-[780px] shadow-xl overflow-hidden">
+          <div className="bg-white rounded-lg border border-slate-200 w-full max-w-[980px] shadow-xl overflow-hidden">
             <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50">
               <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                 <Users className="h-4 w-4 text-blue-600" />
@@ -1037,46 +1296,26 @@ export default function Funcionarios() {
               <div className="p-5 space-y-4 max-h-[74vh] overflow-y-auto custom-scrollbar">
 
                 {/* Nome */}
-                <div className="flex flex-col gap-1.5">
-                  <label className={LBL}>Nome do Funcionário *</label>
-                  <input
-                    type="text"
-                    name="nome_funcionario"
-                    required
-                    value={form.nome_funcionario}
-                    onChange={handleInputChange}
-                    placeholder="Nome completo do funcionário"
-                    className={INP}
-                  />
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="col-span-3 flex flex-col gap-1.5">
+                    <label className={LBL}>Nome do Funcionário *</label>
+                    <input
+                      type="text"
+                      name="nome_funcionario"
+                      required
+                      value={form.nome_funcionario}
+                      onChange={handleInputChange}
+                      placeholder="Nome completo do funcionário"
+                      className={INP}
+                    />
+                  </div>
                 </div>
 
-                {/* Empresa + Cargo + Código Funcionário */}
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="flex flex-col gap-1.5">
-                    <label className={LBL}>Empresa *</label>
-                    <select required value={form.empresa_id} onChange={handleEmpresaChange} className={SEL}>
-                      <option value="">Selecione a empresa</option>
-                      {empresas.map(e => <option key={e.id} value={e.id}>{e.empresa_fantasia || e.nome_empresa}</option>)}
-                    </select>
-                  </div>
-                  <div className="flex flex-col gap-1.5">
-                    <label className={LBL}>Cargo *</label>
-                    <select required value={form.cargo_id} onChange={handleCargoChange} className={SEL}>
-                      <option value="">Selecione o cargo</option>
-                      {cargos
-                        .filter(c => {
-                          if (!form.empresa_id) return true
-                          const agrupId = getAgrupamentoId(form.empresa_id)
-                          if (!agrupId) return true
-                          return c.agrupamento_empresa_id === agrupId
-                        })
-                        .map(c => <option key={c.id} value={c.id}>{c.nome_cargo}</option>)
-                      }
-                    </select>
-                  </div>
+                {/* Código Domínio Web + Código Sistema */}
+                <div className="grid grid-cols-2 gap-4">
                   <div className="flex flex-col gap-1.5">
                     <label className={`${LBL} flex items-center gap-1`}>
-                      Código Funcionário
+                      Código Domínio Web
                       <span className="relative group cursor-help">
                         <Info className="h-3 w-3 text-slate-400" />
                         <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-52 text-[10px] text-white bg-slate-700 rounded px-2 py-1.5 leading-relaxed opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 text-center normal-case font-normal tracking-normal">
@@ -1093,10 +1332,57 @@ export default function Funcionarios() {
                       className={INP}
                     />
                   </div>
+                  <div className="flex flex-col gap-1.5">
+                    <label className={`${LBL} flex items-center gap-1`}>
+                      Código Sistema
+                      <span className="relative group cursor-help">
+                        <Info className="h-3 w-3 text-slate-400" />
+                        <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 text-[10px] text-white bg-slate-700 rounded px-2 py-1.5 leading-relaxed opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 text-center normal-case font-normal tracking-normal">
+                          Código do funcionário no sistema de origem dos relatórios de BI (SharePoint) — usado pra relacionar com as Fontes BI configuradas pra casar por código em vez do Nome do Funcionário
+                        </span>
+                      </span>
+                    </label>
+                    <input
+                      type="text"
+                      name="codigo_sistema_bi"
+                      value={form.codigo_sistema_bi}
+                      onChange={handleInputChange}
+                      placeholder="Ex: código do vendedor no sistema de vendas"
+                      className={INP}
+                    />
+                  </div>
                 </div>
 
-                {/* Departamento + Setor + Box */}
+                {/* Empresa + CNPJ */}
                 <div className="grid grid-cols-3 gap-4">
+                  <div className="col-span-2 flex flex-col gap-1.5">
+                    <label className={LBL}>Empresa *</label>
+                    <select required value={form.empresa_id} onChange={handleEmpresaChange} className={SEL}>
+                      <option value="">Selecione a empresa</option>
+                      {empresas.map(e => <option key={e.id} value={e.id}>{e.empresa_fantasia || e.nome_empresa}</option>)}
+                    </select>
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <label className={LBL_RO}>CNPJ</label>
+                    <div className={INP_RO}>
+                      {fmtCnpj(empresas.find(e => e.id === form.empresa_id)?.cnpj) || <span className="text-slate-300">—</span>}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Cargo + Departamento + Setor + Box */}
+                <div className="grid grid-cols-4 gap-4">
+                  <div className="flex flex-col gap-1.5">
+                    <label className={LBL}>Cargo *</label>
+                    <select required value={form.cargo_id} onChange={handleCargoChange} className={SEL}>
+                      <option value="">Selecione o cargo</option>
+                      {cargos
+                        .filter(c => !form.empresa_id || !c.empresa_id || c.empresa_id === form.empresa_id)
+                        .sort((a, b) => (a.nome_cargo || '').localeCompare(b.nome_cargo || '', 'pt-BR'))
+                        .map(c => <option key={c.id} value={c.id}>{c.codigo_cargo ? `${c.codigo_cargo} — ${c.nome_cargo}` : c.nome_cargo}</option>)
+                      }
+                    </select>
+                  </div>
                   <div className="flex flex-col gap-1.5">
                     <label className={form.cargo_id ? LBL_RO : LBL}>Departamento</label>
                     <div className={INP_RO}>
@@ -1180,7 +1466,7 @@ export default function Funcionarios() {
                     className="w-4 h-4 rounded accent-indigo-600"
                   />
                   <span className="text-xs font-semibold text-slate-700">Recebe comissão durante férias</span>
-                  <span className="text-[10px] text-slate-400">(aparece no Cálculo de Comissões DAF mesmo em férias)</span>
+                  <span className="text-[10px] text-slate-400">(aparece no Cálculo de Comissões mesmo em férias)</span>
                 </label>
 
                 {/* Seção Política de Comissão */}
@@ -1310,9 +1596,33 @@ export default function Funcionarios() {
                   <span className="text-xs font-mono font-semibold text-slate-800">{fmtDate(itemVisualizado.data_demissao)}</span>
                 </div>
               </div>
-              <div className="flex flex-col gap-0.5">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Empresa</span>
-                <span className="text-xs font-semibold text-slate-800">{itemVisualizado.empresa_nome || '-'}</span>
+              <div className="flex items-start gap-6">
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Empresa</span>
+                  <span className="text-xs font-semibold text-slate-800">{itemVisualizado.empresa_nome || '-'}</span>
+                </div>
+                <div className="flex flex-col gap-0.5 shrink-0">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">CNPJ</span>
+                  <span className="text-xs font-mono font-semibold text-slate-800">
+                    {fmtCnpj(empresas.find(e => e.id === itemVisualizado.empresa_id)?.cnpj) || '-'}
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-start gap-6">
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Código Sistema (BI)</span>
+                  <span className="text-xs font-mono font-semibold text-slate-800">{itemVisualizado.codigo_sistema_bi || '-'}</span>
+                </div>
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Situação do Funcionário</span>
+                  <span className="text-xs font-semibold text-slate-800">{situacaoTexto(itemVisualizado.situacao_funcionario) || '-'}</span>
+                </div>
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Comissão nas Férias</span>
+                  <span className={`inline-flex w-fit items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${itemVisualizado.recebe_comissao_ferias ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-slate-100 text-slate-500 border-slate-200'}`}>
+                    {itemVisualizado.recebe_comissao_ferias ? 'Sim' : 'Não'}
+                  </span>
+                </div>
               </div>
               <div className="grid grid-cols-4 gap-x-6 gap-y-3">
                 <div className="flex flex-col gap-0.5">
@@ -1326,11 +1636,11 @@ export default function Funcionarios() {
                 </div>
                 <div className="flex flex-col gap-0.5">
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Departamento</span>
-                  <span className="text-xs font-semibold text-slate-800">{getNomes(itemVisualizado.departamento_ids, departamentos, 'nome_departamento')}</span>
+                  <span className="text-xs font-semibold text-slate-800">{getNomes(deptoIdsDe(itemVisualizado), departamentos, 'nome_departamento')}</span>
                 </div>
                 <div className="flex flex-col gap-0.5">
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Setor</span>
-                  <span className="text-xs font-semibold text-slate-800">{getNomes(itemVisualizado.setor_ids, setores, 'nome_setor')}</span>
+                  <span className="text-xs font-semibold text-slate-800">{getNomes(setorIdsDe(itemVisualizado), setores, 'nome_setor')}</span>
                 </div>
                 <div className="flex flex-col gap-0.5">
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Box</span>
@@ -1366,7 +1676,15 @@ export default function Funcionarios() {
                               <div className="grid grid-cols-3 gap-x-3 text-slate-500">
                                 <div><span className="text-slate-400">Fonte:</span> {p.fonte_calculo?.nome || '—'}</div>
                                 <div><span className="text-slate-400">Base:</span> {p.base_calculo?.nome || '—'}</div>
-                                <div><span className="text-slate-400">Nível:</span> {p.nivel_calculo || '—'}</div>
+                                <div>
+                                  <span className="text-slate-400">Nível:</span> {p.nivel_calculo || '—'}
+                                  {(p.codigo_rubrica || p.tipo_processo) && (
+                                    <span className="text-[10px] text-slate-400">
+                                      {p.codigo_rubrica && <> · Rubrica <span className="font-mono text-slate-500">{p.codigo_rubrica}</span></>}
+                                      {p.tipo_processo && <> · Tipo <span className="font-mono text-slate-500">{p.tipo_processo}</span></>}
+                                    </span>
+                                  )}
+                                </div>
                               </div>
                               <div className="font-mono font-bold text-indigo-600 flex flex-wrap gap-x-2">
                                 {percentuaisDaPolitica(p).length === 0
@@ -1422,6 +1740,18 @@ export default function Funcionarios() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* MODAL: IMPORTAR EXCEL */}
+      {modalImportarAberto && (
+        <ImportarFuncionariosModal
+          funcionarios={dados}
+          empresas={empresas}
+          cargos={cargos}
+          boxes={boxes}
+          onClose={() => setModalImportarAberto(false)}
+          onImported={loadData}
+        />
       )}
 
     </div>

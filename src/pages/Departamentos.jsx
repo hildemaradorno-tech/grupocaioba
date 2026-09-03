@@ -1,4 +1,5 @@
 ﻿import React, { useState, useEffect } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useSessionState } from '../hooks/useSessionState'
 import { Plus, X, AlertTriangle, Layers, CheckSquare, Square, Eye } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
@@ -6,6 +7,8 @@ import PermissionActionButtons from '../components/PermissionActionButtons'
 import { apiService } from '../services/api'
 
 export default function Departamentos() {
+  const location = useLocation()
+  const navigate = useNavigate()
   const [empresasCadastradas, setEmpresasCadastradas] = useState([])
   const [agrupamentos, setAgrupamentos] = useState([])
   const [dados, setDados] = useState([])
@@ -91,6 +94,16 @@ export default function Departamentos() {
     setArea(agrupObj?.area || item.area || '')
     setModalAberto(true)
   }
+
+  // Veio de outra tela (ex: Organograma, clicando no lápis de editar) pedindo pra abrir direto
+  // a edição de um departamento específico — consome o state da navegação uma única vez.
+  useEffect(() => {
+    const idParaEditar = location.state?.editarId
+    if (!idParaEditar || dados.length === 0) return
+    const item = dados.find(d => d.id === idParaEditar)
+    if (item) abrirEditar(item)
+    navigate(location.pathname, { replace: true, state: {} })
+  }, [dados, location.state])
 
   const abrirExcluir = (item) => {
     setIdSelecionado(item.id)

@@ -1,19 +1,41 @@
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import { NavLink } from 'react-router-dom'
-import { FolderKanban, List, ClipboardList, CalendarDays, LayoutGrid } from 'lucide-react'
+import { FolderKanban, List, CalendarDays, ClipboardList, FileText } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
+import { apiService } from '../../services/api'
 
-const LINKS = [
-  { to: '/projetos',               key: 'projetos',              label: 'Projetos',         icon: FolderKanban, end: true },
-  { to: '/projetos/lista-tarefas', key: 'projetos/lista-tarefas',label: 'Lista de Tarefas', icon: List },
-  { to: '/projetos/pdca',          key: 'projetos/pdca',         label: 'PDCA',             icon: ClipboardList },
-  { to: '/projetos/planejamento',  key: 'projetos/planejamento', label: 'Planejamento',     icon: LayoutGrid },
-  { to: '/projetos/calendario',    key: 'projetos/calendario',   label: 'Agenda',           icon: CalendarDays },
-]
+// Cache módulo-nível para não refazer a query em cada render de navegação
+let _convIds = null
+let _convTs   = 0
 
 export default function ProjetosNav() {
   const { hasPermission } = useAuth()
-  const visíveis = LINKS.filter(l => hasPermission(l.key))
+  const [isConvidadoEmAlgum, setIsConvidadoEmAlgum] = useState(false)
+
+  useEffect(() => {
+    const now = Date.now()
+    if (_convIds !== null && now - _convTs < 300_000) {
+      setIsConvidadoEmAlgum(_convIds.length > 0)
+      return
+    }
+    apiService.getProjetosConvidadoIds().then(ids => {
+      _convIds = ids
+      _convTs  = Date.now()
+      setIsConvidadoEmAlgum(ids.length > 0)
+    }).catch(() => {})
+  }, [])
+
+  const LINKS = [
+    { to: '/projetos',               key: 'projetos',               label: 'Projetos',        icon: FolderKanban, end: true },
+    { to: '/projetos/lista-tarefas', key: 'projetos/lista-tarefas', label: 'Lista de Tarefas', icon: List },
+    { to: '/projetos/manifestacoes', key: 'projetos/manifestacoes', label: 'Manifestações',   icon: ClipboardList, convidadoOk: true },
+    { to: '/projetos/calendario',    key: 'projetos/calendario',    label: 'Agenda',           icon: CalendarDays },
+    { to: '/projetos/ata-reuniao',   key: 'projetos/ata-reuniao',   label: 'Ata de Reunião',   icon: FileText },
+  ]
+
+  const visíveis = LINKS.filter(l =>
+    hasPermission(l.key) || (l.convidadoOk && isConvidadoEmAlgum)
+  )
 
   return (
     <div className="flex items-center gap-0.5 bg-slate-100 border border-slate-200 rounded-lg p-0.5 w-fit">

@@ -1105,7 +1105,10 @@ export default function MetasDistribuicaoConsultores() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className={LBL}>Box</label>
-                  <div className={`${SEL} bg-slate-100 text-slate-500 cursor-not-allowed`}>{form.box_nome || (abaAtiva === 'funilaria' ? 'Consultor Funilaria/Pintura' : 'Consultor de Serviços')}</div>
+                  <select name="box_id" className={SEL} value={form.box_id} onChange={handleFormChange} disabled={!form.setor_id}>
+                    <option value="">Selecione...</option>
+                    {boxesDoSetor.map(b => <option key={b.id} value={b.id}>{b.nome_box}</option>)}
+                  </select>
                 </div>
                 <div>
                   <label className={LBL}>Cargo</label>
