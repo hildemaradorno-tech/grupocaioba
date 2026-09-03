@@ -19,6 +19,7 @@ import planoDmsRoutes from './routes/planoDms.js'
 import biMedidasRoutes from './routes/biMedidas.js'
 import rhFeriasRoutes from './routes/rhFerias.js'
 import hondaRoutes from './routes/honda.js'
+import truckpagRoutes from './routes/truckpag.js'
 import googleCalendarRoutes from './routes/googleCalendar.js'
 import projetosManifestacoesRoutes from './routes/projetosManifestacoes.js'
 import auditAiRoutes from './routes/auditAi.js'
@@ -50,6 +51,9 @@ app.use('/api/rh-ferias', rhFeriasRoutes)
 
 // ── Rotas Honda (integração MicroWork Cloud) ──────────────────────────────────
 app.use('/api/honda', hondaRoutes)
+
+// ── Rotas TruckPag (SharePoint — Financeiro DAF) ─────────────────────────────
+app.use('/api/truckpag', truckpagRoutes)
 
 // ── Rotas Google Calendar (OAuth + leitura de eventos) ───────────────────────
 app.use('/api/google-calendar', googleCalendarRoutes)
