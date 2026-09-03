@@ -80,14 +80,6 @@ async function downloadWorkbook(filePath) {
 }
 
 // Posição de títulos a receber TruckPag (RFN003) — substitui a tabela inteira a cada atualização.
-// "18878/1 " → { numero: "18878", parcela: 1 }
-function splitNroTitulo(v) {
-  const s = String(v ?? '').trim()
-  const i = s.indexOf('/')
-  if (i === -1) return { numero: s, parcela: null }
-  return { numero: s.slice(0, i).trim(), parcela: parseNum(s.slice(i + 1)) }
-}
-
 // O arquivo do SharePoint (relatório Analítico) traz TODOS os agentes cobradores da
 // concessionária (bancos, carteira, garantia etc.), não só TruckPag — precisa filtrar por
 // Agente Cobrador='TRUCKPAG'. Guarda a linha crua inteira em dados_extra (todas as colunas do
@@ -102,12 +94,11 @@ export async function getTruckPagTitulos() {
   const rows = raw
     .filter(r => String(r['Agente Cobrador'] ?? '').trim().toUpperCase() === 'TRUCKPAG')
     .map(r => {
-      const { numero, parcela } = splitNroTitulo(r['Nro Titulo'])
       const diasAtraso = parseNum(r['Atr.'])
       return {
         titulo_codigo: parseNum(r['Lanc.']),
-        titulo_numero: numero,
-        titulo_parcela: parcela,
+        titulo_numero: String(r['Nro Titulo'] ?? '').trim(),
+        titulo_parcela: null,
         titulo_empresa_cod: null,
         titulo_empresa_nome: String(r.Empresa ?? '').trim(),
         titulo_os_numero: String(r['O.S'] ?? '').trim(),
@@ -197,6 +188,9 @@ export async function getTruckPagRepasses() {
       nome: colIdx('Nome do cliente'),
       valorOS: colIdx('Valor OS'),
       valorNfE: colIdx('Valor NF-e'),
+      valorParcelaNfE: colIdx('Valor parcela NF-e'),
+      valorNfsE: colIdx('Valor NFS-e'),
+      valorParcelaNfsE: colIdx('Valor parcela NFS-e'),
       valorTotalParcela: colIdx('Valor total parcela'),
       taxaPct: colIdx('Taxa adm (%)'),
       valorTaxa: colIdx('Valor taxa'),
@@ -223,6 +217,9 @@ export async function getTruckPagRepasses() {
           nome_cliente: String(r[idx.nome] ?? '').trim(),
           valor_os: parseMoney(r[idx.valorOS]),
           valor_nf_e: parseMoney(r[idx.valorNfE]),
+          valor_parcela_nf_e: parseMoney(r[idx.valorParcelaNfE]),
+          valor_nfs_e: parseMoney(r[idx.valorNfsE]),
+          valor_parcela_nfs_e: parseMoney(r[idx.valorParcelaNfsE]),
           valor_parcela_total: parseMoney(r[idx.valorTotalParcela]),
           taxa_adm_pct: parsePercent(r[idx.taxaPct]),
           valor_taxa: parseMoney(r[idx.valorTaxa]),
