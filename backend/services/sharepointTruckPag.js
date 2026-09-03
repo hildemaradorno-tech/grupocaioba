@@ -98,6 +98,8 @@ export async function getTruckPagTitulos() {
       titulo_empresa_cod: parseNum(r.TituloEmpresaCod),
       titulo_empresa_nome: String(r.TituloEmpresaNome ?? '').trim(),
       titulo_os_numero: String(r.TituloOSnumero ?? '').trim(),
+      titulo_nota_fiscal_numero: String(r.TituloNotaFiscalNumero ?? '').trim(),
+      titulo_nota_fiscal_elet_serv_numero: String(r.TituloNotaFiscalEletServNumero ?? '').trim(),
       titulo_pessoa_nome: String(r.TituloPessoaNome ?? '').trim(),
       titulo_pessoa_doc_ident: String(r.TituloPessoaDocIdent ?? '').trim(),
       titulo_data_emissao: toIsoDate(r.TituloDataEmissao),
