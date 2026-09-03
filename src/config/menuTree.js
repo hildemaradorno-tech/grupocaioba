@@ -76,11 +76,22 @@ export const MENU_TREE = [
           { key: 'plano-dms', label: 'Valor Plano DMS' },
         ],
       },
-      { key: 'ferias', label: 'Férias' },
-      { key: 'calculo-comissoes', label: 'Cálculo de Comissões' },
-      { key: 'plano-dms-calculo', label: 'Plano DMS' },
-      { key: 'processamento-comissoes', label: 'Processamento de Comissões' },
-      { key: 'sobreaviso-plantao', label: 'Sobreaviso/Plantão' },
+      {
+        // Permissões individuais mantidas (controlam quais abas aparecem em
+        // /folha-pagamento-daf), mas o grupo inteiro navega direto pra página única — mesmo
+        // padrão já usado em Garantias DAF e Matriz KPIs (navTo faz o nó com children se
+        // comportar como link direto em vez de abrir uma sub-pasta).
+        key: '_folha-pagamento-daf',
+        label: 'Folha de Pagamento - DAF',
+        navTo: 'folha-pagamento-daf',
+        children: [
+          { key: 'ferias', label: 'Férias' },
+          { key: 'calculo-comissoes', label: 'Cálculo de Comissões' },
+          { key: 'plano-dms-calculo', label: 'Plano DMS' },
+          { key: 'processamento-comissoes', label: 'Processamento de Comissões' },
+          { key: 'sobreaviso-plantao', label: 'Sobreaviso/Plantão' },
+        ],
+      },
     ],
   },
   {
