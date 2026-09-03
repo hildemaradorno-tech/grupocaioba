@@ -221,6 +221,11 @@ function LoteCard({ grupo, expandido, onToggleExpand, selecionados, onToggleSele
               <span className="text-sm font-bold text-slate-900">{grupo.empresaNome}</span>
               <span className="text-xs text-slate-400">—</span>
               <span className="text-xs font-semibold text-slate-600">{grupo.departamentoNome}</span>
+            </div>
+            {/* Status sempre na linha de baixo, nunca disputando espaço com Empresa/Departamento
+                — antes ficava no mesmo flex-wrap, então às vezes colava do lado (nome curto) e
+                às vezes quebrava linha (nome longo), inconsistente entre os cards. */}
+            <div className="flex items-center gap-2 flex-wrap mt-1">
               <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border shrink-0 ${statusInfo.className}`}>{statusInfo.label}</span>
               {grupo.soVisualizacao && (
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold border shrink-0 bg-slate-100 text-slate-500 border-slate-200" title="Este departamento está liberado só pra visualização (Grupos de Acesso) — sem botões de ação.">
