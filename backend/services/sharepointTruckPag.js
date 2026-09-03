@@ -3,7 +3,7 @@ import axios from 'axios'
 import { graphGet } from './graphClient.js'
 
 const PASTA = '/Banco de Dados - DAF - Pós-Vendas/Financeiro - DAF'
-const FILE_TITULOS = `${PASTA}/RFN003_POSICAOTITULOARECEBER.xlsx`
+const FILE_TITULOS = `${PASTA}/RFN003_PosicaoAnaliticoReceber_Excel.xls`
 const FILE_CREDITOS = `${PASTA}/RFN024_SALDOCREDITOSNAOIDENTIFICADOS.xlsx`
 const FILE_REPASSES = `${PASTA}/contas-receber-daf.xlsx`
 
@@ -80,8 +80,18 @@ async function downloadWorkbook(filePath) {
 }
 
 // Posição de títulos a receber TruckPag (RFN003) — substitui a tabela inteira a cada atualização.
-// O arquivo do SharePoint traz TODOS os agrupamentos financeiros da concessionária (carteira,
-// bancos, garantia, comissão etc.), não só TruckPag — precisa filtrar por Agrupamento='TRUCKPAG'.
+// "18878/1 " → { numero: "18878", parcela: 1 }
+function splitNroTitulo(v) {
+  const s = String(v ?? '').trim()
+  const i = s.indexOf('/')
+  if (i === -1) return { numero: s, parcela: null }
+  return { numero: s.slice(0, i).trim(), parcela: parseNum(s.slice(i + 1)) }
+}
+
+// O arquivo do SharePoint (relatório Analítico) traz TODOS os agentes cobradores da
+// concessionária (bancos, carteira, garantia etc.), não só TruckPag — precisa filtrar por
+// Agente Cobrador='TRUCKPAG'. Guarda a linha crua inteira em dados_extra (todas as colunas do
+// arquivo), além de mapear os campos já usados na conciliação título×repasse.
 export async function getTruckPagTitulos() {
   if (_cache.titulos !== null && (Date.now() - _cacheTs.titulos) < CACHE_TTL_MS) return _cache.titulos
 
@@ -90,28 +100,33 @@ export async function getTruckPagTitulos() {
   const raw = XLSX.utils.sheet_to_json(sheet, { defval: '' })
 
   const rows = raw
-    .filter(r => String(r.Agrupamento ?? '').trim().toUpperCase() === 'TRUCKPAG')
-    .map(r => ({
-      titulo_codigo: parseNum(r.TituloCodigo),
-      titulo_numero: String(r.TituloNumero ?? '').trim(),
-      titulo_parcela: parseNum(r.TituloParcela),
-      titulo_empresa_cod: parseNum(r.TituloEmpresaCod),
-      titulo_empresa_nome: String(r.TituloEmpresaNome ?? '').trim(),
-      titulo_os_numero: String(r.TituloOSnumero ?? '').trim(),
-      titulo_nota_fiscal_numero: String(r.TituloNotaFiscalNumero ?? '').trim(),
-      titulo_nota_fiscal_elet_serv_numero: String(r.TituloNotaFiscalEletServNumero ?? '').trim(),
-      titulo_pessoa_nome: String(r.TituloPessoaNome ?? '').trim(),
-      titulo_pessoa_doc_ident: String(r.TituloPessoaDocIdent ?? '').trim(),
-      titulo_data_emissao: toIsoDate(r.TituloDataEmissao),
-      titulo_data_venc: toIsoDate(r.TituloDataVenc),
-      titulo_dias_atraso: parseNum(r.TituloDiasAtraso),
-      titulo_saldo: parseMoney(r.TituloSaldo),
-      titulo_valor: parseMoney(r.TituloValor),
-      tipo_titulo_descr: String(r.TipoTituloDescr ?? '').trim(),
-      departamento_sigla: String(r.DepartamentoSigla ?? '').trim(),
-      titulo_vendedor_nome: String(r.TituloVendedorNome ?? '').trim(),
-      is_vencido: Number(r.IsVencido) === 1,
-    }))
+    .filter(r => String(r['Agente Cobrador'] ?? '').trim().toUpperCase() === 'TRUCKPAG')
+    .map(r => {
+      const { numero, parcela } = splitNroTitulo(r['Nro Titulo'])
+      const diasAtraso = parseNum(r['Atr.'])
+      return {
+        titulo_codigo: parseNum(r['Lanc.']),
+        titulo_numero: numero,
+        titulo_parcela: parcela,
+        titulo_empresa_cod: null,
+        titulo_empresa_nome: String(r.Empresa ?? '').trim(),
+        titulo_os_numero: String(r['O.S'] ?? '').trim(),
+        titulo_nota_fiscal_numero: String(r['Nota Fiscal'] ?? '').trim(),
+        titulo_nota_fiscal_elet_serv_numero: String(r['Nota Fiscal / Nota de Serviço'] ?? '').trim(),
+        titulo_pessoa_nome: String(r['Cliente/Fornecedor'] ?? '').trim(),
+        titulo_pessoa_doc_ident: String(r['CNPJ/CPF'] ?? '').trim(),
+        titulo_data_emissao: toIsoDate(r['Emiss.']),
+        titulo_data_venc: toIsoDate(r['Vencto.']),
+        titulo_dias_atraso: diasAtraso,
+        titulo_saldo: parseMoney(r.Saldo),
+        titulo_valor: parseMoney(r.Valor),
+        tipo_titulo_descr: String(r['Tipo de Título'] ?? '').trim(),
+        departamento_sigla: String(r['Depart.'] ?? '').trim(),
+        titulo_vendedor_nome: String(r.Vendedor ?? '').trim(),
+        is_vencido: (diasAtraso ?? 0) > 0,
+        dados_extra: r,
+      }
+    })
     .filter(l => l.titulo_codigo)
 
   _cache.titulos = { rows, lastModified }
