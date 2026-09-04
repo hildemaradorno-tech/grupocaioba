@@ -274,7 +274,20 @@ export async function getTruckPagRepasses() {
     console.warn(`[TruckPag/repasses] ${blocosIgnorados.length} de ${subBlocosEncontrados} sub-bloco(s) "Data pagamento" ignorado(s) (data ou coluna de lote não reconhecida):`, JSON.stringify(blocosIgnorados))
   }
 
-  _cache.repasses = { rows, lastModified, blocosIgnorados }
+  // Dedup pela mesma chave natural usada no upsert do Supabase (numero_lote+nf_e+data_pagamento)
+  // — a planilha real traz algumas linhas repetidas (mesma nota relistada), e o upsert em lote
+  // do Supabase quebra inteiro se a MESMA chave de conflito aparecer 2x no mesmo lote de 500
+  // linhas ("ON CONFLICT DO UPDATE command cannot affect row a second time"), travando a
+  // importação no meio e deixando os lotes seguintes de fora. Mantém a última ocorrência de cada
+  // chave (mesmo critério do upsert em si).
+  const porChave = new Map()
+  for (const r of rows) porChave.set(`${r.numero_lote}|${r.nf_e}|${r.data_pagamento}`, r)
+  const rowsSemDuplicata = [...porChave.values()]
+  if (rowsSemDuplicata.length < rows.length) {
+    console.warn(`[TruckPag/repasses] ${rows.length - rowsSemDuplicata.length} linha(s) duplicada(s) (mesmo lote+NF-e+data) removida(s) antes de importar.`)
+  }
+
+  _cache.repasses = { rows: rowsSemDuplicata, lastModified, blocosIgnorados }
   _cacheTs.repasses = Date.now()
   return _cache.repasses
 }
