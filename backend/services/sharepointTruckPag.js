@@ -151,12 +151,30 @@ export async function getTruckPagCreditos() {
 }
 
 // Repasses recebidos da TruckPag (contas-receber-daf.xlsx) — o arquivo real tem UM BLOCO POR
-// ESTABELECIMENTO (Dourados, Três Lagoas, Campo Grande...), cada bloco repetindo o mesmo layout:
-// "Estabelecimento" (label + valor), "Data pagamento" (label + valor), cabeçalho de colunas,
-// linhas de dados, depois linha(s) em branco até o próximo bloco. Precisa varrer o arquivo
-// inteiro reconhecendo cada bloco, não só o primeiro. Histórico cumulativo (upsert no Supabase).
+// ESTABELECIMENTO (Dourados, Três Lagoas, Campo Grande...) e, DENTRO de cada um, MUITOS
+// sub-blocos "Data pagamento" (um por data de repasse recebido, histórico acumulado ao longo do
+// tempo) — cada um com seu próprio cabeçalho de colunas + linhas de dados + linha em branco antes
+// do próximo. Um "Estabelecimento" só reaparece quando muda de unidade; até lá, é tudo o mesmo
+// estabelecimento com dezenas de sub-blocos de data em sequência. Testado contra o arquivo real:
+// só ler o primeiro "Data pagamento" de cada estabelecimento (como a versão anterior fazia)
+// perdia praticamente tudo — de ~7.900 linhas, só 12 eram capturadas. Histórico cumulativo
+// (upsert no Supabase).
 function linhaEmBranco(row) {
   return !row || row.every(c => String(c ?? '').trim() === '')
+}
+
+// Normaliza texto de cabeçalho pra comparar sem depender de acento, maiúscula/minúscula ou do
+// caractere exato usado pro "Nº" (às vezes vem com º de ordinal, às vezes com ° de grau — cópia e
+// cola entre blocos de estabelecimentos diferentes já trouxe as duas variantes no mesmo arquivo).
+// Sem essa normalização, um bloco com cabeçalho ligeiramente diferente perde TODAS as linhas
+// silenciosamente (colIdx não acha a coluna, o bloco inteiro vira 0 linhas sem erro nenhum).
+function normalizarCabecalho(v) {
+  return String(v ?? '')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[°ºª]/g, '') // °, º, ª
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase()
 }
 
 export async function getTruckPagRepasses() {
@@ -167,73 +185,96 @@ export async function getTruckPagRepasses() {
   const linhas = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' })
 
   const rows = []
+  const blocosIgnorados = []
   let i = 0
-  let blocosEncontrados = 0
+  let estabelecimentosEncontrados = 0
+  let subBlocosEncontrados = 0
+  let estabelecimentoAtual = null
+
   while (i < linhas.length) {
-    const primeiraCelula = String(linhas[i]?.[0] ?? '').trim()
-    if (primeiraCelula !== 'Estabelecimento') { i++; continue }
+    const primeiraCelula = normalizarCabecalho(linhas[i]?.[0])
 
-    blocosEncontrados++
-    const estabelecimento = String(linhas[i + 1]?.[0] ?? '').trim()
-    const dataPagamento = toIsoDate(linhas[i + 3]?.[0])
-    const cabecalho = (linhas[i + 4] || []).map(c => String(c ?? '').trim())
-    const colIdx = (nome) => cabecalho.indexOf(nome)
-    const idx = {
-      nfE: colIdx('Nº NF-e'),
-      nfsE: colIdx('Nº NFS-e'),
-      os: colIdx('Nº OS'),
-      lote: colIdx('Nº lote'),
-      parcelas: colIdx('Parcelas'),
-      cnpj: colIdx('CNPJ do cliente'),
-      nome: colIdx('Nome do cliente'),
-      valorOS: colIdx('Valor OS'),
-      valorNfE: colIdx('Valor NF-e'),
-      valorParcelaNfE: colIdx('Valor parcela NF-e'),
-      valorNfsE: colIdx('Valor NFS-e'),
-      valorParcelaNfsE: colIdx('Valor parcela NFS-e'),
-      valorTotalParcela: colIdx('Valor total parcela'),
-      taxaPct: colIdx('Taxa adm (%)'),
-      valorTaxa: colIdx('Valor taxa'),
-      valorRecebido: colIdx('Valor recebido'),
+    if (primeiraCelula === 'estabelecimento') {
+      estabelecimentosEncontrados++
+      estabelecimentoAtual = String(linhas[i + 1]?.[0] ?? '').trim()
+      i += 2
+      continue
     }
 
-    let j = i + 5
-    if (dataPagamento && idx.lote !== -1 && idx.valorRecebido !== -1) {
-      for (; j < linhas.length; j++) {
-        const r = linhas[j]
-        if (linhaEmBranco(r)) break
-        if (String(r[0] ?? '').trim() === 'Estabelecimento') break
-        const lote = String(r[idx.lote] ?? '').trim()
-        if (!lote) continue
-        rows.push({
-          estabelecimento,
-          data_pagamento: dataPagamento,
-          nf_e: String(r[idx.nfE] ?? '').trim(),
-          nfs_e: String(r[idx.nfsE] ?? '').trim(),
-          numero_os: String(r[idx.os] ?? '').trim(),
-          numero_lote: lote,
-          parcelas: String(r[idx.parcelas] ?? '').trim(),
-          cnpj_cliente: String(r[idx.cnpj] ?? '').trim(),
-          nome_cliente: String(r[idx.nome] ?? '').trim(),
-          valor_os: parseMoney(r[idx.valorOS]),
-          valor_nf_e: parseMoney(r[idx.valorNfE]),
-          valor_parcela_nf_e: parseMoney(r[idx.valorParcelaNfE]),
-          valor_nfs_e: parseMoney(r[idx.valorNfsE]),
-          valor_parcela_nfs_e: parseMoney(r[idx.valorParcelaNfsE]),
-          valor_parcela_total: parseMoney(r[idx.valorTotalParcela]),
-          taxa_adm_pct: parsePercent(r[idx.taxaPct]),
-          valor_taxa: parseMoney(r[idx.valorTaxa]),
-          valor_recebido: parseMoney(r[idx.valorRecebido]),
-        })
+    if (primeiraCelula === 'data pagamento' && estabelecimentoAtual) {
+      subBlocosEncontrados++
+      const dataPagamento = toIsoDate(linhas[i + 1]?.[0])
+      const cabecalho = (linhas[i + 2] || []).map(c => normalizarCabecalho(c))
+      const colIdx = (nome) => cabecalho.indexOf(normalizarCabecalho(nome))
+      const idx = {
+        nfE: colIdx('Nº NF-e'),
+        nfsE: colIdx('Nº NFS-e'),
+        os: colIdx('Nº OS'),
+        lote: colIdx('Nº lote'),
+        parcelas: colIdx('Parcelas'),
+        cnpj: colIdx('CNPJ do cliente'),
+        nome: colIdx('Nome do cliente'),
+        valorOS: colIdx('Valor OS'),
+        valorNfE: colIdx('Valor NF-e'),
+        valorParcelaNfE: colIdx('Valor parcela NF-e'),
+        valorNfsE: colIdx('Valor NFS-e'),
+        valorParcelaNfsE: colIdx('Valor parcela NFS-e'),
+        valorTotalParcela: colIdx('Valor total parcela'),
+        taxaPct: colIdx('Taxa adm (%)'),
+        valorTaxa: colIdx('Valor taxa'),
+        valorRecebido: colIdx('Valor recebido'),
       }
+
+      let j = i + 3
+      // Só exige data de pagamento e a coluna de lote (chave da linha) — as demais colunas são
+      // opcionais (ficam null se a planilha não trouxer), pra um cabeçalho ligeiramente diferente
+      // não descartar o sub-bloco inteiro silenciosamente.
+      if (dataPagamento && idx.lote !== -1) {
+        for (; j < linhas.length; j++) {
+          const r = linhas[j]
+          if (linhaEmBranco(r)) break
+          const c0 = normalizarCabecalho(r[0])
+          if (c0 === 'estabelecimento' || c0 === 'data pagamento') break
+          const lote = String(r[idx.lote] ?? '').trim()
+          if (!lote) continue
+          rows.push({
+            estabelecimento: estabelecimentoAtual,
+            data_pagamento: dataPagamento,
+            nf_e: String(r[idx.nfE] ?? '').trim(),
+            nfs_e: String(r[idx.nfsE] ?? '').trim(),
+            numero_os: String(r[idx.os] ?? '').trim(),
+            numero_lote: lote,
+            parcelas: String(r[idx.parcelas] ?? '').trim(),
+            cnpj_cliente: String(r[idx.cnpj] ?? '').trim(),
+            nome_cliente: String(r[idx.nome] ?? '').trim(),
+            valor_os: parseMoney(r[idx.valorOS]),
+            valor_nf_e: parseMoney(r[idx.valorNfE]),
+            valor_parcela_nf_e: parseMoney(r[idx.valorParcelaNfE]),
+            valor_nfs_e: parseMoney(r[idx.valorNfsE]),
+            valor_parcela_nfs_e: parseMoney(r[idx.valorParcelaNfsE]),
+            valor_parcela_total: parseMoney(r[idx.valorTotalParcela]),
+            taxa_adm_pct: parsePercent(r[idx.taxaPct]),
+            valor_taxa: parseMoney(r[idx.valorTaxa]),
+            valor_recebido: parseMoney(r[idx.valorRecebido]),
+          })
+        }
+      } else {
+        blocosIgnorados.push({ linha: i + 1, estabelecimento: estabelecimentoAtual, dataPagamento, colunaLoteEncontrada: idx.lote !== -1 })
+      }
+      i = j
+      continue
     }
-    i = j
+
+    i++
   }
 
-  if (blocosEncontrados === 0) throw new Error('Formato do arquivo de repasse não reconhecido — nenhum bloco "Estabelecimento" encontrado.')
+  if (estabelecimentosEncontrados === 0) throw new Error('Formato do arquivo de repasse não reconhecido — nenhum bloco "Estabelecimento" encontrado.')
   if (rows.length === 0) throw new Error('Nenhuma linha de repasse encontrada no arquivo.')
+  if (blocosIgnorados.length > 0) {
+    console.warn(`[TruckPag/repasses] ${blocosIgnorados.length} de ${subBlocosEncontrados} sub-bloco(s) "Data pagamento" ignorado(s) (data ou coluna de lote não reconhecida):`, JSON.stringify(blocosIgnorados))
+  }
 
-  _cache.repasses = { rows, lastModified }
+  _cache.repasses = { rows, lastModified, blocosIgnorados }
   _cacheTs.repasses = Date.now()
   return _cache.repasses
 }
