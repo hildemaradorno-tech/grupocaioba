@@ -4986,4 +4986,117 @@ export const apiService = {
     if (error) throw error
     return { success: true }
   },
+
+  // ── TruckPag — Conciliação de Contas a Receber ──────────────────────────
+
+  getTruckPagTitulos: async () => {
+    const { data, error } = await supabase
+      .from('truckpag_titulos')
+      .select('*')
+      .order('titulo_data_venc', { ascending: true })
+    if (error) throw error
+    return data || []
+  },
+
+  getTruckPagCreditos: async () => {
+    const { data, error } = await supabase
+      .from('truckpag_creditos_nao_identificados')
+      .select('*')
+      .order('data_caixa', { ascending: false })
+    if (error) throw error
+    return data || []
+  },
+
+  getTruckPagRepasses: async (filtros = {}) => {
+    // Supabase/PostgREST limita a 1000 linhas por requisição por padrão — o histórico de
+    // repasses já passa bem disso (~5 mil linhas), então pagina em blocos até esgotar.
+    const PAGE = 1000
+    let inicio = 0
+    let todos = []
+    while (true) {
+      let q = supabase.from('truckpag_repasses').select('*').order('data_pagamento', { ascending: false }).range(inicio, inicio + PAGE - 1)
+      if (filtros.dataInicio) q = q.gte('data_pagamento', filtros.dataInicio)
+      if (filtros.dataFim) q = q.lte('data_pagamento', filtros.dataFim)
+      const { data, error } = await q
+      if (error) throw error
+      todos = todos.concat(data || [])
+      if (!data || data.length < PAGE) break
+      inicio += PAGE
+    }
+    return todos
+  },
+
+  // truckpag_titulos e truckpag_creditos_nao_identificados são um "retrato" do momento
+  // (relatório de posição) — cada importação substitui o conteúdo inteiro da tabela,
+  // em vez de casar linha a linha contra o que já existe.
+  importarTruckPagTitulos: async (linhas) => {
+    const { error: delError } = await supabase.from('truckpag_titulos').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+    if (delError) throw delError
+    const CHUNK = 500
+    for (let i = 0; i < linhas.length; i += CHUNK) {
+      const { error } = await supabase.from('truckpag_titulos').insert(linhas.slice(i, i + CHUNK))
+      if (error) throw error
+    }
+    return { success: true, total: linhas.length }
+  },
+
+  importarTruckPagCreditos: async (linhas) => {
+    const { error: delError } = await supabase.from('truckpag_creditos_nao_identificados').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+    if (delError) throw delError
+    const CHUNK = 500
+    for (let i = 0; i < linhas.length; i += CHUNK) {
+      const { error } = await supabase.from('truckpag_creditos_nao_identificados').insert(linhas.slice(i, i + CHUNK))
+      if (error) throw error
+    }
+    return { success: true, total: linhas.length }
+  },
+
+  // truckpag_repasses é histórico cumulativo — cada importação soma novos lotes de
+  // repasse por cima dos anteriores (upsert pela chave natural do lote).
+  importarTruckPagRepasses: async (linhas) => {
+    const CHUNK = 500
+    for (let i = 0; i < linhas.length; i += CHUNK) {
+      const { error } = await supabase
+        .from('truckpag_repasses')
+        .upsert(linhas.slice(i, i + CHUNK), { onConflict: 'numero_lote,nf_e,data_pagamento' })
+      if (error) throw error
+    }
+    return { success: true, total: linhas.length }
+  },
+
+  // ── TruckPag — Configurações (Tipo de Saldo) ────────────────────────────
+
+  getTruckPagTiposSaldo: async () => {
+    const { data, error } = await supabase
+      .from('truckpag_config_tipos_saldo')
+      .select('*')
+      .order('texto', { ascending: true })
+    if (error) throw error
+    return data || []
+  },
+
+  createTruckPagTipoSaldo: async (texto) => {
+    const { data, error } = await supabase
+      .from('truckpag_config_tipos_saldo')
+      .insert([{ texto: texto.trim() }])
+      .select()
+    if (error) throw error
+    return data?.[0]
+  },
+
+  updateTruckPagTipoSaldo: async (id, campos) => {
+    const { data, error } = await supabase
+      .from('truckpag_config_tipos_saldo')
+      .update({ ...campos, atualizado_em: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+    if (error) throw error
+    return data?.[0]
+  },
+
+  deleteTruckPagTipoSaldo: async (id) => {
+    const { error } = await supabase.from('truckpag_config_tipos_saldo').delete().eq('id', id)
+    if (error) throw error
+    return { success: true }
+  },
 }

@@ -145,7 +145,24 @@ export async function getTruckPagCreditos() {
     }))
     .filter(l => l.tesouraria_codigo)
 
-  _cache.creditos = { rows, lastModified }
+  // tesouraria_codigo é UNIQUE no banco, mas a planilha real repete o mesmo código em várias
+  // linhas (padrão: a 1ª linha do código traz o valor de verdade, as seguintes vêm com valor
+  // zerado — sobra de célula mesclada no export). Inserir tudo direto quebra o INSERT inteiro
+  // (unique_violation) na primeira leva que contém a duplicata, derrubando a importação no meio
+  // — foi o que aconteceu: só as primeiras 500 linhas (todas de 2014-2017) chegaram a entrar,
+  // o resto (inclusive tudo de 2026) ficou de fora. Mantém, pra cada código, a linha com valor
+  // diferente de zero (ou a primeira, se todas forem zero).
+  const porCodigo = new Map()
+  for (const r of rows) {
+    const atual = porCodigo.get(r.tesouraria_codigo)
+    if (!atual || (atual.valor === 0 && r.valor !== 0)) porCodigo.set(r.tesouraria_codigo, r)
+  }
+  const rowsSemDuplicata = [...porCodigo.values()]
+  if (rowsSemDuplicata.length < rows.length) {
+    console.warn(`[TruckPag/creditos] ${rows.length - rowsSemDuplicata.length} linha(s) duplicada(s) (mesmo tesouraria_codigo) removida(s) antes de importar.`)
+  }
+
+  _cache.creditos = { rows: rowsSemDuplicata, lastModified }
   _cacheTs.creditos = Date.now()
   return _cache.creditos
 }
