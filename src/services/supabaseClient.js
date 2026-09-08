@@ -700,89 +700,6 @@ export const apiService = {
     return { success: true }
   },
 
-  // PLANO DMS — categorias de plano de manutenção (Óleos e Filtros, Dinâmico, Preventivo,
-  // Pleno...) e a tabela de valores por categoria + prazo (tempo em meses), base pro futuro
-  // cálculo de comissões desse plano.
-  getCategoriasPlanoDms: async () => {
-    const { data, error } = await supabase
-      .from('dim_categorias_plano_dms')
-      .select('*')
-      .order('nome', { ascending: true })
-    if (error) throw error
-    return data || []
-  },
-
-  createCategoriaPlanoDms: async ({ nome, ativo }) => {
-    const { data, error } = await supabase
-      .from('dim_categorias_plano_dms')
-      .insert([{ nome, ativo: ativo ?? true }])
-      .select()
-    if (error) throw error
-    return data?.[0]
-  },
-
-  updateCategoriaPlanoDms: async (id, { nome, ativo }) => {
-    const { data, error } = await supabase
-      .from('dim_categorias_plano_dms')
-      .update({ nome, ativo: ativo ?? true, atualizado_em: new Date().toISOString() })
-      .eq('id', id)
-      .select()
-    if (error) throw error
-    return data?.[0]
-  },
-
-  deleteCategoriaPlanoDms: async (id) => {
-    const { error } = await supabase.from('dim_categorias_plano_dms').delete().eq('id', id)
-    if (error) throw error
-    return { success: true }
-  },
-
-  getPlanoDmsValores: async () => {
-    const { data, error } = await supabase
-      .from('fato_plano_dms_valores')
-      .select('*')
-      .order('tempo_meses', { ascending: true })
-    if (error) throw error
-    return data || []
-  },
-
-  createPlanoDmsValor: async ({ categoria_id, tempo_meses, valor, ativo }) => {
-    const { data, error } = await supabase
-      .from('fato_plano_dms_valores')
-      .insert([{ categoria_id, tempo_meses, valor, ativo: ativo ?? true }])
-      .select()
-    if (error) throw error
-    return data?.[0]
-  },
-
-  updatePlanoDmsValor: async (id, { tempo_meses, valor, ativo }) => {
-    const { data, error } = await supabase
-      .from('fato_plano_dms_valores')
-      .update({ tempo_meses, valor, ativo: ativo ?? true, atualizado_em: new Date().toISOString() })
-      .eq('id', id)
-      .select()
-    if (error) throw error
-    return data?.[0]
-  },
-
-  deletePlanoDmsValor: async (id) => {
-    const { error } = await supabase.from('fato_plano_dms_valores').delete().eq('id', id)
-    if (error) throw error
-    return { success: true }
-  },
-
-  // Cálculo de Comissão Plano DMS: cruza O.S. P04 do SharePoint (período) com o arquivo de
-  // Chassi -> Plano vendido; devolve { matched, semPlano } cru (funcionário/política/valor são
-  // resolvidos no front, em CalculoPlanoDms.jsx).
-  calcularPlanoDms: async ({ ano, periodoInicio, periodoFim }) => {
-    const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
-    const params = new URLSearchParams({ ano, periodoInicio, periodoFim })
-    const res = await fetch(`${backendUrl}/api/plano-dms/calcular?${params}`)
-    const body = await res.json()
-    if (!res.ok) throw new Error(body.detalhe || body.error || 'Erro ao calcular Plano DMS')
-    return body
-  },
-
   // AGRUPAMENTO CARGOS
   getAgrupamentoCargos: async () => {
     const { data, error } = await supabase
@@ -5051,14 +4968,17 @@ export const apiService = {
     return { success: true, total: linhas.length }
   },
 
-  // truckpag_repasses é histórico cumulativo — cada importação soma novos lotes de
-  // repasse por cima dos anteriores (upsert pela chave natural do lote).
+  // truckpag_repasses também virou snapshot (substitui tudo a cada "Atualizar do SharePoint") —
+  // o arquivo contas-receber-daf.xlsx já traz o histórico acumulado inteiro a cada leitura (não só
+  // as novidades), então não tem por que manter via upsert: mais simples é limpar e inserir de
+  // novo, igual títulos/créditos, e garante que baixa/exclusão feita direto na planilha também
+  // reflete aqui (upsert nunca removia linha que sumiu da fonte).
   importarTruckPagRepasses: async (linhas) => {
+    const { error: delError } = await supabase.from('truckpag_repasses').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+    if (delError) throw delError
     const CHUNK = 500
     for (let i = 0; i < linhas.length; i += CHUNK) {
-      const { error } = await supabase
-        .from('truckpag_repasses')
-        .upsert(linhas.slice(i, i + CHUNK), { onConflict: 'numero_lote,nf_e,data_pagamento' })
+      const { error } = await supabase.from('truckpag_repasses').insert(linhas.slice(i, i + CHUNK))
       if (error) throw error
     }
     return { success: true, total: linhas.length }
@@ -5097,6 +5017,37 @@ export const apiService = {
   deleteTruckPagTipoSaldo: async (id) => {
     const { error } = await supabase.from('truckpag_config_tipos_saldo').delete().eq('id', id)
     if (error) throw error
+    return { success: true }
+  },
+
+  // Tolerância de valor pra vincular Repasse x Crédito (linha única, editada in-place).
+  getTruckPagToleranciaConciliacao: async () => {
+    const { data, error } = await supabase
+      .from('truckpag_config_conciliacao')
+      .select('*')
+      .limit(1)
+      .maybeSingle()
+    if (error) throw error
+    return data?.tolerancia_valor ?? 0.02
+  },
+
+  updateTruckPagToleranciaConciliacao: async (valor) => {
+    const { data: existente, error: selError } = await supabase
+      .from('truckpag_config_conciliacao')
+      .select('id')
+      .limit(1)
+      .maybeSingle()
+    if (selError) throw selError
+    if (existente) {
+      const { error } = await supabase
+        .from('truckpag_config_conciliacao')
+        .update({ tolerancia_valor: valor, atualizado_em: new Date().toISOString() })
+        .eq('id', existente.id)
+      if (error) throw error
+    } else {
+      const { error } = await supabase.from('truckpag_config_conciliacao').insert([{ tolerancia_valor: valor }])
+      if (error) throw error
+    }
     return { success: true }
   },
 }

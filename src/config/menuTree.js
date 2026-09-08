@@ -73,7 +73,6 @@ export const MENU_TREE = [
           { key: 'cargos-remuneracoes', label: 'Cargos e Remunerações' },
           { key: 'rubricas', label: 'Rubrica' },
           { key: 'tipos-processo', label: 'Tipo de Processo' },
-          { key: 'plano-dms', label: 'Valor Plano DMS' },
         ],
       },
       {
@@ -87,7 +86,6 @@ export const MENU_TREE = [
         children: [
           { key: 'ferias', label: 'Férias' },
           { key: 'calculo-comissoes', label: 'Cálculo de Comissões' },
-          { key: 'plano-dms-calculo', label: 'Plano DMS' },
           { key: 'processamento-comissoes', label: 'Processamento de Comissões' },
           { key: 'sobreaviso-plantao', label: 'Sobreaviso/Plantão' },
         ],
@@ -141,6 +139,26 @@ export const MENU_TREE = [
         ],
       },
       { key: 'honda/garantias-a-receber', label: 'Contas a Receber HONDA' },
+      {
+        key: '_bpm',
+        label: 'BPM - Processos',
+        navTo: 'bpm/processos',
+        children: [
+          { key: 'bpm/processos', label: 'Catálogo de Processos' },
+          { key: 'bpm/modelador', label: 'Modelador BPMN' },
+          { key: 'bpm/minhas-tarefas', label: 'Minhas Tarefas' },
+        ],
+      },
+      {
+        key: '_truckpag',
+        label: 'Contas a Receber TruckPag',
+        navTo: 'truckpag/titulos',
+        children: [
+          { key: 'truckpag/conciliacao', label: 'Conciliação' },
+          { key: 'truckpag/repasses', label: 'Repasses' },
+          { key: 'truckpag/titulos', label: 'Títulos' },
+        ],
+      },
       {
         key: '_auditoria.cadastros',
         label: 'Cadastros de Auditoria',
