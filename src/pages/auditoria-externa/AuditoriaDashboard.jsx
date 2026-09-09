@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react'
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell, PieChart, Pie, Legend, FunnelChart, Funnel, LabelList } from 'recharts'
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell, PieChart, Pie, Legend, LabelList } from 'recharts'
 import { AlertTriangle, CheckCircle2, ShieldAlert, Layers } from 'lucide-react'
 import { apiService } from '../../services/api'
 import AuditoriaExternaNav from './AuditoriaExternaNav'
@@ -42,18 +42,21 @@ function RankingPie({ dados, cores }) {
   )
 }
 
-// Gráfico de funil por contagem — maior quantidade no topo, decrescendo.
-function RankingFunil({ dados, cores }) {
+// Gráfico de colunas (barras verticais) por contagem.
+function RankingColunas({ dados, cores }) {
   if (dados.length === 0) return <p className="text-xs text-slate-400">Sem dados ainda.</p>
   return (
-    <ResponsiveContainer width="100%" height={240}>
-      <FunnelChart>
+    <ResponsiveContainer width="100%" height={260}>
+      <BarChart data={dados} margin={{ top: 8, left: -12 }}>
+        <CartesianGrid strokeDasharray="3 3" vertical={false} />
+        <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={0} angle={-20} textAnchor="end" height={60} />
+        <YAxis allowDecimals={false} tick={{ fontSize: 10 }} />
         <Tooltip formatter={(v, n, p) => [v, p.payload.label]} />
-        <Funnel data={dados} dataKey="qtd" nameKey="label" isAnimationActive>
-          <LabelList position="right" dataKey="label" fill="#334155" stroke="none" fontSize={11} />
+        <Bar dataKey="qtd" radius={[4, 4, 0, 0]}>
+          <LabelList dataKey="qtd" position="top" fontSize={11} fontWeight="bold" fill="#334155" />
           {dados.map((d, i) => <Cell key={i} fill={cores[i % cores.length]} />)}
-        </Funnel>
-      </FunnelChart>
+        </Bar>
+      </BarChart>
     </ResponsiveContainer>
   )
 }
@@ -188,6 +191,7 @@ export default function AuditoriaDashboard() {
               <YAxis type="category" dataKey="status" tick={{ fontSize: 11 }} width={100} />
               <Tooltip formatter={v => [`${v} divergência(s) (${totalDivergencias ? Math.round((v / totalDivergencias) * 100) : 0}% do total)`, '']} />
               <Bar dataKey="qtd" radius={[0, 4, 4, 0]}>
+                <LabelList dataKey="qtd" position="right" fontSize={11} fontWeight="bold" fill="#334155" />
                 {statusData.map((d, i) => <Cell key={i} fill={d.cor} />)}
               </Bar>
             </BarChart>
@@ -196,7 +200,7 @@ export default function AuditoriaDashboard() {
 
         <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-4">
           <h3 className="text-xs font-bold text-slate-700 mb-3">Divergências por Tipo de Ação Tomada</h3>
-          <RankingFunil dados={porTipoAcao} cores={PIE_CORES_TIPO_ACAO} />
+          <RankingColunas dados={porTipoAcao} cores={PIE_CORES_TIPO_ACAO} />
         </div>
       </div>
 

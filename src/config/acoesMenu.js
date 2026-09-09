@@ -102,12 +102,6 @@ export const ACOES_POR_MENU = [
     ],
   },
   {
-    menuPath: 'auditoria-externa/impactos',
-    acoes: [
-      { value: 'editar', label: 'Criar / Editar Impacto' },
-    ],
-  },
-  {
     menuPath: 'sobreaviso-plantao',
     acoes: [
       { value: 'editar',             label: 'Editar Lançamentos' },

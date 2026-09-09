@@ -1,11 +1,12 @@
 import React, { useEffect, useState, useMemo } from 'react'
 import { useSessionState } from '../../hooks/useSessionState'
-import { Plus, X, AlertTriangle, CalendarClock, Eye, Trash2 } from 'lucide-react'
+import { Plus, X, AlertTriangle, CalendarClock, Eye, Trash2, Upload } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import PermissionActionButtons from '../../components/PermissionActionButtons'
 import { apiService } from '../../services/api'
 import AuditoriaExternaNav from './AuditoriaExternaNav'
 import ManifestacaoRichEditor from '../projetos/ManifestacaoRichEditor'
+import ImportarDivergenciasModal from './ImportarDivergenciasModal'
 import { CICLO_STATUS_MAP, Badge, fmtData, PercentualBar, calcularPercentualAtingidoAchado } from './auditExtConstants'
 
 const FORM_VAZIO = { empresa_id: '', periodo_competencia: '', firma_auditoria: '', data_apresentacao: '', status: 'em_andamento', observacoes: '' }
@@ -18,6 +19,7 @@ export default function CiclosAuditoria() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [modalAberto, setModalAberto] = useState(false)
+  const [modalImportarAberto, setModalImportarAberto] = useState(false)
   const [modalExcluirAberto, setModalExcluirAberto] = useState(false)
   const [modalVisualizarAberto, setModalVisualizarAberto] = useState(false)
   const [itemVisualizado, setItemVisualizado] = useState(null)
@@ -169,9 +171,14 @@ export default function CiclosAuditoria() {
             <p className="text-xs text-slate-500">Períodos de auditoria externa por empresa (ex: 1º Tri 2026, firma responsável).</p>
           </div>
           {canEdit && (
-            <button onClick={abrirIncluir} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-2 rounded-md shadow-sm transition-colors">
-              <Plus className="h-4 w-4" /> Novo Ciclo
-            </button>
+            <div className="flex items-center gap-2">
+              <button onClick={() => setModalImportarAberto(true)} className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold px-3 py-2 rounded-md shadow-sm border border-slate-200 transition-colors">
+                <Upload className="h-4 w-4 text-emerald-600" /> Importar Excel
+              </button>
+              <button onClick={abrirIncluir} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-2 rounded-md shadow-sm transition-colors">
+                <Plus className="h-4 w-4" /> Novo Ciclo
+              </button>
+            </div>
           )}
         </div>
         <AuditoriaExternaNav />
@@ -363,6 +370,13 @@ export default function CiclosAuditoria() {
             </div>
           </div>
         </div>
+      )}
+
+      {modalImportarAberto && (
+        <ImportarDivergenciasModal
+          onClose={() => setModalImportarAberto(false)}
+          onImported={() => { setModalImportarAberto(false); loadDados() }}
+        />
       )}
     </div>
   )

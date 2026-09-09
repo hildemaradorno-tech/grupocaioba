@@ -142,8 +142,9 @@ export const MENU_TREE = [
       {
         key: '_bpm',
         label: 'BPM - Processos',
-        navTo: 'bpm/processos',
+        navTo: 'bpm/nfe-cancelamento-devolucao',
         children: [
+          { key: 'bpm/nfe-cancelamento-devolucao', label: 'Cancelamento/Devolução NF-e' },
           { key: 'bpm/processos', label: 'Catálogo de Processos' },
           { key: 'bpm/modelador', label: 'Modelador BPMN' },
           { key: 'bpm/minhas-tarefas', label: 'Minhas Tarefas' },
@@ -196,7 +197,6 @@ export const MENU_TREE = [
           { key: 'auditoria-externa/divergencias', label: 'Divergências' },
           { key: 'auditoria-externa/plano-acao', label: 'Plano de Ação' },
           { key: 'auditoria-externa/tipos-acao', label: 'Tipos de Ação' },
-          { key: 'auditoria-externa/impactos', label: 'Impactos' },
         ],
       },
       {

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useState } from 'react'
 import { X } from 'lucide-react'
 import { apiService } from '../../services/api'
 import ManifestacaoRichEditor from '../projetos/ManifestacaoRichEditor'
@@ -7,7 +7,7 @@ import { MoedaInput, fmtMoeda } from './auditExtConstants'
 
 const FORM_VAZIO = {
   ciclo_id: '', titulo: '', motivo: '', total_apontado: '',
-  fundamentacao_tecnica: '', impacto_id: '', fatos_apontados: '', recomendacoes: '', evidencias: '',
+  fundamentacao_tecnica: '', impactos: '', fatos_apontados: '', recomendacoes: '', evidencias: '',
 }
 
 export default function AchadoFormModal({ ciclos, achado, cicloIdPadrao, onClose, onSaved, userEmail }) {
@@ -17,7 +17,7 @@ export default function AchadoFormModal({ ciclos, achado, cicloIdPadrao, onClose
     motivo: achado.motivo || '',
     total_apontado: achado.total_apontado ?? '',
     fundamentacao_tecnica: achado.fundamentacao_tecnica || '',
-    impacto_id: achado.impacto_id || '',
+    impactos: achado.impactos || '',
     fatos_apontados: achado.fatos_apontados || '',
     recomendacoes: achado.recomendacoes || '',
     evidencias: achado.evidencias || '',
@@ -28,17 +28,12 @@ export default function AchadoFormModal({ ciclos, achado, cicloIdPadrao, onClose
   // primeiro "Salvar"). No update, usa o id real do achado.
   const [novoAchadoId] = useState(() => achado?.id || crypto.randomUUID())
   const [salvando, setSalvando] = useState(false)
-  const [impactos, setImpactos] = useState([])
-
-  useEffect(() => {
-    apiService.getAuditExtImpactos().then(d => setImpactos(d.filter(i => i.ativo !== false))).catch(() => {})
-  }, [])
 
   const handleSalvar = async (e) => {
     e.preventDefault()
     if (!form.ciclo_id) { alert('Selecione o ciclo de auditoria.'); return }
     setSalvando(true)
-    const payload = { ...form, total_apontado: Number(form.total_apontado || 0), impacto_id: form.impacto_id || null, evidencias_imagens_urls: imagensUrls }
+    const payload = { ...form, total_apontado: Number(form.total_apontado || 0), evidencias_imagens_urls: imagensUrls }
     try {
       if (achado) await apiService.updateAuditExtAchado(achado.id, payload)
       else await apiService.createAuditExtAchado({ ...payload, id: novoAchadoId }, userEmail)
@@ -85,12 +80,9 @@ export default function AchadoFormModal({ ciclos, achado, cicloIdPadrao, onClose
                 placeholder="Ex: NBC TG 26, NBC TA 300/315" className="w-full text-xs p-2 border border-slate-200 rounded-md font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
             </div>
             <div className="flex flex-col gap-1.5">
-              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Impacto</label>
-              <select value={form.impacto_id} onChange={e => setForm(p => ({ ...p, impacto_id: e.target.value }))}
-                className="w-full text-xs p-2 border border-slate-200 rounded-md font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500">
-                <option value="">— Selecione —</option>
-                {impactos.map(i => <option key={i.id} value={i.id}>{i.nome}</option>)}
-              </select>
+              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Impactos</label>
+              <textarea rows={3} value={form.impactos} onChange={e => setForm(p => ({ ...p, impactos: e.target.value }))}
+                placeholder="Impactos da divergência para a empresa" className="w-full text-xs p-2 border border-slate-200 rounded-md font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-1.5">

@@ -1,23 +1,22 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react'
-import { Link } from 'react-router-dom'
 import { useSessionState } from '../../hooks/useSessionState'
-import { Plus, Filter, RotateCcw, Edit2, Trash2, Sparkles, ShieldAlert, Eye, ChevronRight, ChevronDown } from 'lucide-react'
+import { Plus, Filter, RotateCcw, Edit2, Trash2, Sparkles, ShieldAlert, Eye, ChevronRight, ChevronDown, Upload } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { apiService } from '../../services/api'
 import AuditoriaExternaNav from './AuditoriaExternaNav'
 import AchadoFormModal from './AchadoFormModal'
 import AchadoDetalheDrawer from './AchadoDetalheDrawer'
 import AuditAiChatDrawer from './AuditAiChatDrawer'
+import ImportarDivergenciasModal from './ImportarDivergenciasModal'
 import { fmtMoeda, compararPorCodigo } from './auditExtConstants'
 
 const FILTROS_VAZIOS = { empresa: '', norma: '' }
 
 export default function AchadosPainel() {
-  const { user, hasPermission, hasActionOrDefault } = useAuth()
+  const { user, hasActionOrDefault } = useAuth()
   const canEditar = hasActionOrDefault('auditoria-externa/divergencias', 'editar_achado')
   const canExcluir = hasActionOrDefault('auditoria-externa/divergencias', 'excluir_achado')
   const canChatIA = hasActionOrDefault('auditoria-externa/divergencias', 'usar_chat_ia')
-  const canVerImpactos = hasPermission('auditoria-externa/impactos')
 
   const [achados, setAchados] = useState([])
   const [ciclos, setCiclos] = useState([])
@@ -29,6 +28,7 @@ export default function AchadosPainel() {
   const [modalAchado, setModalAchado] = useState(null) // null | 'novo' | item
   const [achadoDetalhe, setAchadoDetalhe] = useState(null)
   const [chatAberto, setChatAberto] = useState(false)
+  const [modalImportarAberto, setModalImportarAberto] = useState(false)
   const [ciclosExpandidos, setCiclosExpandidos] = useState(new Set())
 
   const loadDados = useCallback(async () => {
@@ -114,17 +114,14 @@ export default function AchadosPainel() {
             <p className="text-xs text-slate-500">Gestão de achados de auditoria externa e itens de divergência contábil x financeira.</p>
           </div>
           <div className="flex items-center gap-2">
-            {canVerImpactos && (
-              <Link
-                to="/auditoria-externa/impactos"
-                className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold px-3 py-2 rounded-md shadow-sm border border-slate-200 transition-colors shrink-0"
-              >
-                <Plus className="h-4 w-4 text-indigo-500" /> Novo Impacto
-              </Link>
-            )}
             {canChatIA && (
               <button onClick={() => setChatAberto(true)} className="flex items-center gap-1.5 bg-white hover:bg-indigo-50 text-indigo-700 text-xs font-semibold px-3 py-2 rounded-md shadow-sm border border-indigo-200 transition-colors">
                 <Sparkles className="h-3.5 w-3.5" /> Copiloto de Auditoria
+              </button>
+            )}
+            {canEditar && (
+              <button onClick={() => setModalImportarAberto(true)} className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold px-3 py-2 rounded-md shadow-sm border border-slate-200 transition-colors">
+                <Upload className="h-4 w-4 text-emerald-600" /> Importar Excel
               </button>
             )}
             {canEditar && (
@@ -261,6 +258,13 @@ export default function AchadosPainel() {
         onClose={() => setChatAberto(false)}
         achadosRelacionados={achados}
       />
+
+      {modalImportarAberto && (
+        <ImportarDivergenciasModal
+          onClose={() => setModalImportarAberto(false)}
+          onImported={() => { setModalImportarAberto(false); loadDados() }}
+        />
+      )}
     </div>
   )
 }

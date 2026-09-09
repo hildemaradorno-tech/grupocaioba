@@ -103,10 +103,10 @@ export default function AchadoDetalheDrawer({ achado, onClose }) {
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1">Valor Corrigido</p>
               <p className="text-emerald-700 font-bold text-sm">{fmtMoeda(achado.valor_corrigido)}</p>
             </div>
-            {achado.audext_impactos?.nome && (
+            {achado.impactos && (
               <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1">Impacto</p>
-                <p className="text-slate-700">{achado.audext_impactos.nome}</p>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1">Impactos</p>
+                <p className="text-slate-700 whitespace-pre-wrap">{achado.impactos}</p>
               </div>
             )}
             <div className="col-span-2 grid grid-cols-2 gap-4">

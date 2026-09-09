@@ -4551,7 +4551,7 @@ export const apiService = {
   getAuditExtAchados: async () => {
     const { data, error } = await supabase
       .from('audext_achados')
-      .select('*, audext_ciclos(id, periodo_competencia, empresa_id, proj_empresas(id, nome)), audext_impactos(id, nome)')
+      .select('*, audext_ciclos(id, periodo_competencia, empresa_id, proj_empresas(id, nome))')
       .order('criado_em', { ascending: false })
     if (error) throw error
     return data || []
@@ -4607,28 +4607,6 @@ export const apiService = {
   },
   deleteAuditExtTipoAcao: async (id) => {
     const { error } = await supabase.from('audext_tipos_acao').delete().eq('id', id)
-    if (error) throw error
-    return { success: true }
-  },
-
-  // IMPACTOS (cadastro usado na Divergência)
-  getAuditExtImpactos: async () => {
-    const { data, error } = await supabase.from('audext_impactos').select('*').order('nome', { ascending: true })
-    if (error) throw error
-    return data || []
-  },
-  createAuditExtImpacto: async ({ nome, ativo }) => {
-    const { data, error } = await supabase.from('audext_impactos').insert([{ nome, ativo: ativo ?? true }]).select()
-    if (error) throw error
-    return data?.[0]
-  },
-  updateAuditExtImpacto: async (id, { nome, ativo }) => {
-    const { data, error } = await supabase.from('audext_impactos').update({ nome, ativo: ativo ?? true }).eq('id', id).select()
-    if (error) throw error
-    return data?.[0]
-  },
-  deleteAuditExtImpacto: async (id) => {
-    const { error } = await supabase.from('audext_impactos').delete().eq('id', id)
     if (error) throw error
     return { success: true }
   },

@@ -501,7 +501,7 @@ export default function SidebarLayout() {
       case '_controle-processos':
         return (
           <>
-            {(canView('garantias-daf-andamento') || canView('garantias-daf') || canView('garantias-daf-faturadas') || canView('garantias-daf-titulos') || canView('honda/garantias-a-receber') || canView('bpm/processos')) && (
+            {(canView('garantias-daf-andamento') || canView('garantias-daf') || canView('garantias-daf-faturadas') || canView('garantias-daf-titulos') || canView('honda/garantias-a-receber') || canView('bpm/nfe-cancelamento-devolucao')) && (
               <FlyGroup label="Controle de Processos" />
             )}
             {/* Dashboard e as demais telas (Encerradas, Faturadas, a Receber) já ficam acessíveis como abas dentro de Garantias DAF. */}
@@ -509,7 +509,7 @@ export default function SidebarLayout() {
               <FlyItem to={canView('garantias-daf-andamento') ? '/garantias-daf-andamento' : '/garantias-daf'} icon={ShieldCheck} onClose={closeFlyout}>Garantias DAF</FlyItem>
             )}
             {canView('honda/garantias-a-receber') && <FlyItem to="/honda/garantias-a-receber" icon={Bike} onClose={closeFlyout}>Contas a Receber HONDA</FlyItem>}
-            {canView('bpm/processos') && <FlyItem to="/bpm/processos" icon={Workflow} onClose={closeFlyout}>BPM - Processos</FlyItem>}
+            {canView('bpm/nfe-cancelamento-devolucao') && <FlyItem to="/bpm/nfe-cancelamento-devolucao" icon={Workflow} onClose={closeFlyout}>BPM - Processos</FlyItem>}
       {(canView('truckpag/titulos') || canView('truckpag/conciliacao')) && (
         <FlyItem to="/truckpag/titulos" icon={Truck} onClose={closeFlyout}>Contas a Receber TruckPag</FlyItem>
       )}
@@ -530,7 +530,7 @@ export default function SidebarLayout() {
             <FlyGroup label="Gestão de Projetos" />
             {canView('projetos') && <FlyItem to="/projetos" icon={FolderKanban} onClose={closeFlyout}>Projetos</FlyItem>}
 
-            {(canView('auditoria-externa/ciclos') || canView('auditoria-externa/dashboard') || canView('auditoria-externa/divergencias') || canView('auditoria-externa/plano-acao') || canView('auditoria-externa/tipos-acao') || canView('auditoria-externa/impactos')) && (
+            {(canView('auditoria-externa/ciclos') || canView('auditoria-externa/dashboard') || canView('auditoria-externa/divergencias') || canView('auditoria-externa/plano-acao') || canView('auditoria-externa/tipos-acao')) && (
               <FlyItem to="/auditoria-externa/dashboard" icon={ShieldAlert} onClose={closeFlyout}>Auditoria Externa</FlyItem>
             )}
 
