@@ -245,7 +245,7 @@ async function start() {
     if (!supabaseAdmin) {
       return res.status(503).json({ error: 'SUPABASE_SERVICE_KEY não configurada no backend. Configure o arquivo backend/.env.' })
     }
-    const { nome, email, grupo_id, agrupamento_cargo_id, redirectTo } = req.body
+    const { nome, email, grupo_id, cargo_id, redirectTo } = req.body
     if (!nome || !email) {
       return res.status(400).json({ error: 'Campos obrigatórios: nome, email' })
     }
@@ -260,7 +260,7 @@ async function start() {
     // 2. Insere perfil na tabela usuarios — sem senha_atualizada_em, pois ainda não definiu senha
     const perfilInsert = { id: authData.user.id, nome, email, ativo: true }
     if (grupo_id) perfilInsert.grupo_id = grupo_id
-    if (agrupamento_cargo_id) perfilInsert.agrupamento_cargo_id = agrupamento_cargo_id
+    if (cargo_id) perfilInsert.cargo_id = cargo_id
     const { data, error } = await supabaseAdmin
       .from('usuarios')
       .insert([perfilInsert])
