@@ -81,9 +81,6 @@ export default function BpmProcessos() {
           <Link to="/bpm/nfe-cancelamento-devolucao" className="flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-semibold text-slate-600 hover:bg-slate-100 border border-slate-200">
             <FileWarning className="h-3.5 w-3.5" /> Cancelamento/Devolução NF-e
           </Link>
-          <Link to="/bpm/minhas-tarefas" className="flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-semibold text-slate-600 hover:bg-slate-100 border border-slate-200">
-            <ListChecks className="h-3.5 w-3.5" /> Minhas Tarefas
-          </Link>
           <Link to="/bpm/modelador" className="flex items-center gap-1.5 px-4 py-2 rounded-md text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700">
             <Plus className="h-3.5 w-3.5" /> Novo Processo
           </Link>

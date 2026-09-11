@@ -141,13 +141,11 @@ export const MENU_TREE = [
       { key: 'honda/garantias-a-receber', label: 'Contas a Receber HONDA' },
       {
         key: '_bpm',
-        label: 'BPM - Processos',
+        label: 'Cancelamento/Devolução NF-e',
         navTo: 'bpm/nfe-cancelamento-devolucao',
         children: [
-          { key: 'bpm/nfe-cancelamento-devolucao', label: 'Cancelamento/Devolução NF-e' },
-          { key: 'bpm/processos', label: 'Catálogo de Processos' },
-          { key: 'bpm/modelador', label: 'Modelador BPMN' },
-          { key: 'bpm/minhas-tarefas', label: 'Minhas Tarefas' },
+          { key: 'bpm/nfe-cancelamento-devolucao', label: 'Solicitações' },
+          { key: 'bpm/nfe-etapas', label: 'Etapas' },
         ],
       },
       {

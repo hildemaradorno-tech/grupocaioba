@@ -40,6 +40,7 @@ export function AuthProvider({ children }) {
   const [comissaoNivelDepartamento, setComissaoNivelDepartamento] = useState(new Map())
   const [userNome, setUserNome] = useState('')
   const [usuarioId, setUsuarioId] = useState(null) // usuarios.id (≠ auth.users.id)
+  const [userAgrupamentoCargoId, setUserAgrupamentoCargoId] = useState(null)
   const [trocarSenha, setTrocarSenha] = useState(false)
 
   // Simulação de visualização como outro usuário
@@ -52,6 +53,7 @@ export function AuthProvider({ children }) {
   const [impersonandoComissaoEscopo, setImpersonandoComissaoEscopo] = useState(escopoComissaoTudoLiberado())
   const [impersonandoComissaoEscopoHabilitado, setImpersonandoComissaoEscopoHabilitado] = useState(false)
   const [impersonandoComissaoNivelDepartamento, setImpersonandoComissaoNivelDepartamento] = useState(new Map())
+  const [impersonandoAgrupamentoCargoId, setImpersonandoAgrupamentoCargoId] = useState(null)
 
   const loadPermissions = async (authUser) => {
     if (!authUser) {
@@ -64,6 +66,7 @@ export function AuthProvider({ children }) {
       setComissaoNivelDepartamento(new Map())
       setUserNome('')
       setUsuarioId(null)
+      setUserAgrupamentoCargoId(null)
       setPermissionsLoading(false)
       return
     }
@@ -73,7 +76,7 @@ export function AuthProvider({ children }) {
       // Busca por email (mais robusto — evita mismatch entre auth.users.id e usuarios.id)
       const { data: perfil, error: e1 } = await supabase
         .from('usuarios')
-        .select('id, grupo_id, nome')
+        .select('id, grupo_id, nome, agrupamento_cargo_id')
         .eq('email', authUser.email)
         .maybeSingle()
 
@@ -87,6 +90,7 @@ export function AuthProvider({ children }) {
 
       setUserNome(perfil?.nome || '')
       setUsuarioId(perfil?.id || null)
+      setUserAgrupamentoCargoId(perfil?.agrupamento_cargo_id || null)
 
       if (!perfil?.grupo_id) {
         console.warn('[Auth] Usuário sem grupo_id — sem permissões atribuídas:', authUser.email)
@@ -201,9 +205,11 @@ export function AuthProvider({ children }) {
     try {
       const { data: perfil } = await supabase
         .from('usuarios')
-        .select('grupo_id')
+        .select('grupo_id, agrupamento_cargo_id')
         .eq('id', usuario.id)
         .maybeSingle()
+
+      setImpersonandoAgrupamentoCargoId(perfil?.agrupamento_cargo_id || null)
 
       if (!perfil?.grupo_id) {
         setImpersonando({ ...usuario, semGrupo: true })
@@ -264,6 +270,7 @@ export function AuthProvider({ children }) {
     setImpersonandoComissaoEscopo(escopoComissaoTudoLiberado())
     setImpersonandoComissaoEscopoHabilitado(false)
     setImpersonandoComissaoNivelDepartamento(new Map())
+    setImpersonandoAgrupamentoCargoId(null)
   }
 
   const login = async (email, senha) => {
@@ -365,9 +372,14 @@ export function AuthProvider({ children }) {
     return impersonando ? impersonandoComissaoNivelDepartamento : comissaoNivelDepartamento
   }, [isAdminEfetivo, impersonando, impersonandoComissaoNivelDepartamento, comissaoNivelDepartamento])
 
+  // Agrupamento de Cargos "em vigor" (considera visualização como outro usuário) — usado pra
+  // saber se a pessoa pode assumir uma tarefa do BPM restrita a um cargo específico (compara
+  // pelo agrupamento do cargo exigido, não pelo cargo exato — ver assumirTarefa em bpmService).
+  const agrupamentoCargoIdEfetivo = impersonando ? impersonandoAgrupamentoCargoId : userAgrupamentoCargoId
+
   return (
     <AuthContext.Provider value={{
-      user, loading, permissionsLoading, userNome, usuarioId,
+      user, loading, permissionsLoading, userNome, usuarioId, userAgrupamentoCargoId, agrupamentoCargoIdEfetivo,
       login, logout,
       hasPermission, hasAction, hasActionOrDefault, hasEmpresaPermission,
       isAdmin, isAdminEfetivo, empresasPermitidas,

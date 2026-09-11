@@ -23,13 +23,14 @@ export default function Usuarios() {
   const { isAdmin, iniciarVisualizacao, user } = useAuth()
   const [usuarios, setUsuarios] = useState([])
   const [grupos, setGrupos] = useState([])
+  const [agrupamentosCargo, setAgrupamentosCargo] = useState([])
   const [showForm, setShowForm] = useSessionState('usr_showform', false)
   const [editingId, setEditingId] = useSessionState('usr_editid', null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [savedOk, setSavedOk] = useState(false)
   const [error, setError] = useState(null)
-  const [form, setForm] = useState({ nome: '', email: '', senha: '', senhaConfirm: '', grupo_id: '' })
+  const [form, setForm] = useState({ nome: '', email: '', senha: '', senhaConfirm: '', grupo_id: '', agrupamento_cargo_id: '' })
   const [alterarSenha, setAlterarSenha] = useState(false)
   const [showSenha, setShowSenha] = useState(false)
   const [showSenhaConfirm, setShowSenhaConfirm] = useState(false)
@@ -50,13 +51,15 @@ export default function Usuarios() {
     setLoading(true)
     setError(null)
     try {
-      const [usuariosData, gruposData, authStatus] = await Promise.all([
+      const [usuariosData, gruposData, agrupamentosCargoData, authStatus] = await Promise.all([
         apiService.getUsuarios(),
         apiService.getGrupos(),
+        apiService.getAgrupamentoCargos(),
         apiService.getAuthStatus(),
       ])
       setUsuarios(usuariosData)
       setGrupos(gruposData)
+      setAgrupamentosCargo(agrupamentosCargoData.filter(a => a.ativo !== false))
       setAuthServiceConfigured(Boolean(authStatus.serviceRoleConfigured))
     } catch (err) {
       console.error('Erro ao carregar dados', err)
@@ -78,7 +81,7 @@ export default function Usuarios() {
     setSaving(true)
     try {
       if (editingId) {
-        await apiService.updateUsuario(editingId, form.nome, form.email, form.grupo_id || null)
+        await apiService.updateUsuario(editingId, form.nome, form.email, form.grupo_id || null, form.agrupamento_cargo_id || null)
         if (alterarSenha && form.senha) {
           if (form.email === user?.email) {
             // Próprio usuário logado: usa a sessão atual, sem precisar do service key
@@ -97,7 +100,7 @@ export default function Usuarios() {
           throw new Error('Criação de usuário exige SUPABASE_SERVICE_KEY configurada no backend.')
         }
         const redirectTo = `${URL_PRODUCAO}/redefinir-senha`
-        await apiService.createUsuario(form.nome, form.email, form.grupo_id || null, redirectTo)
+        await apiService.createUsuario(form.nome, form.email, form.grupo_id || null, redirectTo, form.agrupamento_cargo_id || null)
         setConviteEnviado({ nome: form.nome, email: form.email })
         resetForm()
         loadData()
@@ -111,7 +114,7 @@ export default function Usuarios() {
   }
 
   const handleEdit = (usuario) => {
-    setForm({ nome: usuario.nome, email: usuario.email, senha: '', senhaConfirm: '', grupo_id: usuario.grupo_id || '' })
+    setForm({ nome: usuario.nome, email: usuario.email, senha: '', senhaConfirm: '', grupo_id: usuario.grupo_id || '', agrupamento_cargo_id: usuario.agrupamento_cargo_id || '' })
     setEditingId(usuario.id)
     setAlterarSenha(false)
     setShowSenha(false)
@@ -151,7 +154,7 @@ export default function Usuarios() {
   }
 
   const resetForm = () => {
-    setForm({ nome: '', email: '', senha: '', senhaConfirm: '', grupo_id: '' })
+    setForm({ nome: '', email: '', senha: '', senhaConfirm: '', grupo_id: '', agrupamento_cargo_id: '' })
     setEditingId(null)
     setAlterarSenha(false)
     setShowSenha(false)
@@ -242,6 +245,19 @@ export default function Usuarios() {
                   <option key={g.id} value={g.id}>{g.nome_grupo}{g.is_admin ? ' (Admin)' : ''}</option>
                 ))}
               </select>
+              <select
+                value={form.agrupamento_cargo_id}
+                onChange={(e) => setForm({ ...form, agrupamento_cargo_id: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-sm"
+              >
+                <option value="">— Sem agrupamento de cargos —</option>
+                {agrupamentosCargo.map(a => (
+                  <option key={a.id} value={a.id}>{a.nome_agrupamento_cargo}</option>
+                ))}
+              </select>
+              <p className="text-[11px] text-slate-400 -mt-1">
+                O agrupamento de cargos define quais tarefas de fluxos (BPM) esse usuário pode assumir.
+              </p>
 
               {!editingId && (
                 <p className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
@@ -355,6 +371,7 @@ export default function Usuarios() {
               <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Nome</th>
               <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">E-mail</th>
               <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Grupo de Acesso</th>
+              <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Agrupamento de Cargos</th>
               <th className="px-6 py-3 text-center text-sm font-semibold text-slate-700">Senha</th>
               <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Ações</th>
             </tr>
@@ -378,6 +395,9 @@ export default function Usuarios() {
                 <td className="px-6 py-3 text-sm text-slate-600">{u.email}</td>
                 <td className="px-6 py-3 text-sm text-slate-500 whitespace-nowrap">
                   {grupos.find(g => g.id === u.grupo_id)?.nome_grupo || <span className="text-slate-300">—</span>}
+                </td>
+                <td className="px-6 py-3 text-sm text-slate-500 whitespace-nowrap">
+                  {agrupamentosCargo.find(a => a.id === u.agrupamento_cargo_id)?.nome_agrupamento_cargo || <span className="text-slate-300">—</span>}
                 </td>
                 <td className="px-6 py-3 text-center">
                   {senhaOk && (
@@ -429,7 +449,7 @@ export default function Usuarios() {
                 (grupos.find(g => g.id === u.grupo_id)?.nome_grupo || '').toLowerCase().includes(busca.toLowerCase())
               ) : usuarios).length === 0 && (
               <tr>
-                <td colSpan={5} className="px-6 py-6 text-center text-sm text-slate-400">
+                <td colSpan={6} className="px-6 py-6 text-center text-sm text-slate-400">
                   {busca.trim() ? `Nenhum usuário encontrado para "${busca}".` : 'Nenhum usuário cadastrado.'}
                 </td>
               </tr>
@@ -463,6 +483,12 @@ export default function Usuarios() {
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Grupo de Acesso</span>
                 <span className="text-xs font-semibold text-slate-800">
                   {grupos.find(g => g.id === itemVisualizado.grupo_id)?.nome_grupo || '—'}
+                </span>
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Agrupamento de Cargos</span>
+                <span className="text-xs font-semibold text-slate-800">
+                  {agrupamentosCargo.find(a => a.id === itemVisualizado.agrupamento_cargo_id)?.nome_agrupamento_cargo || '—'}
                 </span>
               </div>
 

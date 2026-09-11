@@ -2,7 +2,7 @@
 // Segue o mesmo padrão do restante do projeto: as telas chamam essas funções, que falam
 // diretamente com o Supabase (sem passar pelo backend Railway).
 import { supabase } from '../supabaseClient'
-import { parseBpmnXml, iniciarFluxo, continuarAposTarefa, BPM_TERMINAL } from './bpmEngine'
+import { parseBpmnXml, iniciarFluxo, continuarAposTarefa, encontrarLaneDoElemento, BPM_TERMINAL } from './bpmEngine'
 
 async function registrarAuditoria({ instanceId, taskId, atorUserId, acao, antes, depois }) {
   const { error } = await supabase.from('bpm_audit_log').insert({
@@ -123,14 +123,17 @@ export async function listarInstancias({ status } = {}) {
   return data || []
 }
 
-// Nome da etapa aberta de cada instância da lista (pra mostrar "etapa atual" numa tabela sem
-// abrir cada instância uma por uma) — retorna um mapa { [instance_id]: elemento_nome }.
-export async function mapaEtapaAbertaPorInstancia(instanceIds) {
+// Dados da tarefa aberta de cada instância da lista (pra montar uma tela tipo "worklist" — etapa
+// atual, setor/pessoa responsável, prazo — sem abrir cada instância uma por uma). Retorna um mapa
+// { [instance_id]: { id, elemento_nome, responsavel_papel, responsavel_user_id, prazo_em } }.
+export async function mapaTarefaAbertaPorInstancia(instanceIds) {
   if (!instanceIds || !instanceIds.length) return {}
   const { data, error } = await supabase
-    .from('bpm_tasks').select('instance_id, elemento_nome').eq('status', 'aberta').in('instance_id', instanceIds)
+    .from('bpm_tasks')
+    .select('id, instance_id, elemento_nome, responsavel_papel, responsavel_agrupamento_cargo_id, responsavel_user_id, prazo_em')
+    .eq('status', 'aberta').in('instance_id', instanceIds)
   if (error) throw error
-  return Object.fromEntries((data || []).map(t => [t.instance_id, t.elemento_nome]))
+  return Object.fromEntries((data || []).map(t => [t.instance_id, t]))
 }
 
 // Exclui a instância e tudo que depende dela (tarefas, auditoria, comentários) via ON DELETE
@@ -156,11 +159,19 @@ export async function listarTarefasDaInstancia(instanceId) {
   return data || []
 }
 
-async function criarTarefaUsuario({ instanceId, elemento, elementosMeta }) {
+async function criarTarefaUsuario({ instanceId, elemento, elementosMeta, process }) {
   const meta = (elementosMeta || {})[elemento.id] || {}
   let prazoEm = null
   if (meta.prazo_horas) {
     prazoEm = new Date(Date.now() + Number(meta.prazo_horas) * 3600 * 1000).toISOString()
+  }
+  // A tarefa pode definir o próprio cargo responsável; se não definir, herda o da raia (Lane)
+  // onde ela está desenhada no Pool — permite configurar o cargo uma vez por raia em vez de
+  // repetir em cada tarefa.
+  let agrupamentoCargoId = meta.responsavel_agrupamento_cargo_id || null
+  if (!agrupamentoCargoId) {
+    const laneId = encontrarLaneDoElemento(elemento.id, process)
+    if (laneId) agrupamentoCargoId = (elementosMeta || {})[laneId]?.responsavel_agrupamento_cargo_id || null
   }
   const { data, error } = await supabase
     .from('bpm_tasks')
@@ -170,6 +181,7 @@ async function criarTarefaUsuario({ instanceId, elemento, elementosMeta }) {
       elemento_nome: elemento.name || null,
       tipo: 'user',
       responsavel_papel: meta.responsavel_papel || null,
+      responsavel_agrupamento_cargo_id: agrupamentoCargoId,
       prazo_em: prazoEm,
     })
     .select().single()
@@ -179,7 +191,7 @@ async function criarTarefaUsuario({ instanceId, elemento, elementosMeta }) {
 
 // Aplica o resultado do motor (pausa/fim/pendência) numa instância: cria a próxima tarefa,
 // encerra a instância ou marca pendência manual, e registra a auditoria.
-async function aplicarResultadoMotor({ instanceId, resultado, atorUserId, elementosMeta }) {
+async function aplicarResultadoMotor({ instanceId, resultado, atorUserId, elementosMeta, process }) {
   for (const entrada of resultado.log) {
     await registrarAuditoria({
       instanceId, atorUserId,
@@ -189,7 +201,7 @@ async function aplicarResultadoMotor({ instanceId, resultado, atorUserId, elemen
   }
 
   if (resultado.tipo === BPM_TERMINAL.PAUSA_TAREFA) {
-    const tarefa = await criarTarefaUsuario({ instanceId, elemento: resultado.elemento, elementosMeta })
+    const tarefa = await criarTarefaUsuario({ instanceId, elemento: resultado.elemento, elementosMeta, process })
     await supabase.from('bpm_process_instances').update({
       dados: resultado.dados, elemento_atual_ids: [resultado.elemento.id],
     }).eq('id', instanceId)
@@ -225,7 +237,7 @@ export async function iniciarInstancia({ definitionId, titulo, dadosIniciais, us
   await registrarAuditoria({ instanceId: instancia.id, atorUserId: userId, acao: 'instancia_iniciada', depois: dadosIniciais })
 
   const resultado = await iniciarFluxo({ process, dados: dadosIniciais || {}, elementosMeta: def.elementos_meta })
-  const efeito = await aplicarResultadoMotor({ instanceId: instancia.id, resultado, atorUserId: userId, elementosMeta: def.elementos_meta })
+  const efeito = await aplicarResultadoMotor({ instanceId: instancia.id, resultado, atorUserId: userId, elementosMeta: def.elementos_meta, process })
   return { instanciaId: instancia.id, ...efeito }
 }
 
@@ -252,8 +264,7 @@ export async function completarTarefa({ taskId, decisao, dadosTarefa, userId }) 
   const dadosAtualizados = { ...(instancia.dados || {}), ...(dadosTarefa || {}) }
   const { process, byId } = await parseBpmnXml(def.bpmn_xml)
   const resultado = await continuarAposTarefa({ byId, elementoTarefaId: tarefa.elemento_id, dados: dadosAtualizados, elementosMeta: def.elementos_meta })
-  void process
-  const efeito = await aplicarResultadoMotor({ instanceId: instancia.id, resultado, atorUserId: userId, elementosMeta: def.elementos_meta })
+  const efeito = await aplicarResultadoMotor({ instanceId: instancia.id, resultado, atorUserId: userId, elementosMeta: def.elementos_meta, process })
   return { instanciaId: instancia.id, ...efeito }
 }
 
@@ -284,7 +295,21 @@ export async function listarTarefasPorPapeis({ papeis }) {
   return data || []
 }
 
+// Só permite assumir se a tarefa não exigir agrupamento de cargos nenhum, ou se o agrupamento
+// de cargos do usuário bater com o exigido pela etapa (definido no Modelador) — reforça no
+// servidor o mesmo filtro que a tela já aplica escondendo o botão, pra não depender só da UI.
 export async function assumirTarefa({ taskId, userId }) {
+  const { data: tarefa, error: errTarefa } = await supabase.from('bpm_tasks').select('responsavel_agrupamento_cargo_id').eq('id', taskId).single()
+  if (errTarefa) throw errTarefa
+
+  if (tarefa.responsavel_agrupamento_cargo_id) {
+    const { data: usuario, error: errUsuario } = await supabase.from('usuarios').select('agrupamento_cargo_id').eq('id', userId).single()
+    if (errUsuario) throw errUsuario
+    if (usuario.agrupamento_cargo_id !== tarefa.responsavel_agrupamento_cargo_id) {
+      throw new Error('Esta tarefa é exclusiva de quem está no agrupamento de cargos definido para essa etapa — você não pode assumi-la.')
+    }
+  }
+
   const { error } = await supabase.from('bpm_tasks').update({ responsavel_user_id: userId }).eq('id', taskId).is('responsavel_user_id', null)
   if (error) throw error
 }

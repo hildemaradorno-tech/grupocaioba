@@ -34,6 +34,18 @@ export function findStartEvent(process) {
   return (process.flowElements || []).find(el => el.$type === 'bpmn:StartEvent')
 }
 
+// Acha o id da raia (bpmn:Lane) que contém um elemento, se houver — usado pra herdar o
+// agrupamento de cargo responsável da raia quando a tarefa não define o dela por conta própria.
+export function encontrarLaneDoElemento(elementoId, process) {
+  for (const laneSet of process.laneSets || []) {
+    for (const lane of laneSet.lanes || []) {
+      const refs = (lane.flowNodeRef || []).map(r => (typeof r === 'string' ? r : r.id))
+      if (refs.includes(elementoId)) return lane.id
+    }
+  }
+  return null
+}
+
 function avaliarCondicao(condBody, dados) {
   if (!condBody) return true
   let cond

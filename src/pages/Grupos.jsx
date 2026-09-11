@@ -233,7 +233,7 @@ export default function Grupos() {
   const [loading, setLoading] = useState(true)
 
   // ─ list form (nome)
-  const [showForm, setShowForm] = useSessionState('grp_showform', false)
+  const [showForm, setShowForm] = useState(false)
   const [formData, setFormData] = useSessionState('grp_form', { id: null, nome_grupo: '', departamento: '' })
   const [saving, setSaving] = useState(false)
 
@@ -243,6 +243,8 @@ export default function Grupos() {
   const [selectedPaths, setSelectedPaths] = useState(new Set())
   const [selectedAcoes, setSelectedAcoes] = useState(new Set()) // "menu_path|acao"
   const [selectedEmpresas, setSelectedEmpresas] = useState(new Set())
+  const [selectedDeptosProjetos, setSelectedDeptosProjetos] = useState(new Set())
+  const [projDepartamentos, setProjDepartamentos] = useState([])
   const [empresas, setEmpresas] = useState([])
   const [comissaoEscopo, setComissaoEscopo] = useState(escopoComissaoTudoLiberado())
   const [comissaoHabilitado, setComissaoHabilitado] = useState(false)
@@ -423,7 +425,7 @@ export default function Grupos() {
     setTreeDefaultOpen(false)
     setTreeKey(k => k + 1)
     try {
-      const [paths, acoes, empIds, emps, deptosDim, setoresDim, agrupCargos, comissaoEscopoRaw] = await Promise.all([
+      const [paths, acoes, empIds, emps, deptosDim, setoresDim, agrupCargos, comissaoEscopoRaw, deptosProj, projDeptos] = await Promise.all([
         apiService.getPermissoesGrupo(grupo.id),
         apiService.getPermissoesGrupoAcoes(grupo.id),
         apiService.getPermissoesEmpresasGrupo(grupo.id),
@@ -432,10 +434,14 @@ export default function Grupos() {
         apiService.getSetores(),
         apiService.getAgrupamentoCargos(),
         apiService.getPermissoesComissaoGrupo(grupo.id),
+        apiService.getPermissoesDeptoPorGrupo(grupo.id),
+        apiService.getProjDepartamentos(),
       ])
       setSelectedPaths(new Set(paths))
       setSelectedAcoes(new Set(acoes.map(a => `${a.menu_path}|${a.acao}`)))
       setSelectedEmpresas(new Set(empIds))
+      setSelectedDeptosProjetos(new Set(deptosProj))
+      setProjDepartamentos((projDeptos || []).filter(d => d.ativo !== false).sort((a, b) => (a.nome || '').localeCompare(b.nome || '', 'pt-BR')))
       setEmpresas(emps.filter(e => e.ativo !== false).sort((a, b) => (a.nome_empresa || '').localeCompare(b.nome_empresa || '', 'pt-BR')))
       setDepartamentosComissao(deptosDim.filter(d => d.ativo !== false))
       setSetoresComissao(setoresDim.filter(s => s.ativo !== false))
@@ -451,6 +457,7 @@ export default function Grupos() {
       setSelectedPaths(new Set())
       setSelectedAcoes(new Set())
       setSelectedEmpresas(new Set())
+      setSelectedDeptosProjetos(new Set())
       setComissaoEscopo(escopoComissaoTudoLiberado())
       setComissaoHabilitado(false)
       setComissaoDepartamentoNivel({})
@@ -492,6 +499,17 @@ export default function Grupos() {
   const handleSelectAllEmpresas = () => setSelectedEmpresas(new Set(empresas.map(e => e.id)))
   const handleClearAllEmpresas = () => setSelectedEmpresas(new Set())
 
+  const handleToggleDeptoProj = (nome, value) => {
+    setSelectedDeptosProjetos(prev => {
+      const next = new Set(prev)
+      if (value) next.add(nome)
+      else next.delete(nome)
+      return next
+    })
+  }
+  const handleSelectAllDeptosProj = () => setSelectedDeptosProjetos(new Set(projDepartamentos.map(d => d.nome)))
+  const handleClearAllDeptosProj = () => setSelectedDeptosProjetos(new Set())
+
   const handleComissaoModoChange = (dim, modo) => {
     setComissaoEscopo(prev => ({ ...prev, [dim]: { ...prev[dim], modo } }))
   }
@@ -531,6 +549,7 @@ export default function Grupos() {
           return { menu_path, acao }
         })),
         apiService.setPermissoesEmpresasGrupo(editingId, isAdmin ? [] : [...selectedEmpresas]),
+        apiService.setPermissoesDeptoPorGrupo(editingId, isAdmin ? [] : [...selectedDeptosProjetos]),
         apiService.setPermissoesComissaoGrupo(editingId, Object.fromEntries(DIMENSOES_COMISSAO.map(dim => [
           dim,
           isAdmin
@@ -803,6 +822,60 @@ export default function Grupos() {
               {empresas.length === 0 && (
                 <p className="text-sm text-slate-400 col-span-3 py-2">
                   Nenhuma empresa cadastrada. Cadastre em Cadastro de Tabelas → Empresas.
+                </p>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* ── Acesso por Departamento — Gestão de Projetos ── */}
+      <div className="bg-white rounded-lg shadow border border-slate-200 overflow-hidden mt-4">
+        <div className="px-5 py-4 border-b border-slate-100">
+          <h2 className="text-base font-bold text-slate-900">Acesso por Departamento — Gestão de Projetos</h2>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Restringe quais projetos este grupo pode visualizar em Gestão de Projetos, pelo departamento do projeto.
+            Sem nenhum marcado = sem restrição (vê todos os projetos). Marque apenas se quiser que o grupo enxergue só os departamentos selecionados.
+            {isAdmin && <span className="ml-1 text-amber-600 font-medium">Administrador tem acesso a todos os departamentos automaticamente.</span>}
+          </p>
+        </div>
+        {loadingPerms ? null : (
+          <>
+            {!isAdmin && projDepartamentos.length > 0 && (
+              <div className="px-5 py-2 border-b border-slate-100 flex items-center gap-2">
+                <button type="button" onClick={handleSelectAllDeptosProj} className="text-xs text-blue-600 hover:underline">
+                  Selecionar todos
+                </button>
+                <span className="text-slate-300">|</span>
+                <button type="button" onClick={handleClearAllDeptosProj} className="text-xs text-slate-500 hover:underline">
+                  Desmarcar todos (sem restrição)
+                </button>
+                <span className="ml-auto text-xs text-slate-400">
+                  {selectedDeptosProjetos.size === 0
+                    ? 'Sem restrição — vê todos'
+                    : `${selectedDeptosProjetos.size}/${projDepartamentos.length} departamentos`}
+                </span>
+              </div>
+            )}
+            <div className="p-4 flex flex-col gap-0.5">
+              {projDepartamentos.map(depto => (
+                <label
+                  key={depto.id}
+                  className={`flex items-center gap-2 py-1.5 px-2 rounded cursor-pointer hover:bg-slate-50 select-none ${isAdmin ? 'opacity-50' : ''}`}
+                >
+                  <input
+                    type="checkbox"
+                    disabled={isAdmin}
+                    checked={isAdmin || selectedDeptosProjetos.has(depto.nome)}
+                    onChange={(e) => handleToggleDeptoProj(depto.nome, e.target.checked)}
+                    className="w-3.5 h-3.5 rounded accent-blue-600"
+                  />
+                  <span className="text-sm text-slate-800 font-medium leading-tight">{depto.nome}</span>
+                </label>
+              ))}
+              {projDepartamentos.length === 0 && (
+                <p className="text-sm text-slate-400 py-2">
+                  Nenhum departamento cadastrado. Cadastre em Gestão de Projetos → Cadastros → Departamentos.
                 </p>
               )}
             </div>

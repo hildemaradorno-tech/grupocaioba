@@ -55,10 +55,11 @@ import AuditoriaOsAberto from './pages/garantias-daf/AuditoriaOsAberto'
 import HondaGarantiasReceber from './pages/honda/HondaGarantiasReceber'
 import BpmProcessos from './pages/bpm/BpmProcessos'
 import BpmModelador from './pages/bpm/BpmModelador'
-import BpmMinhasTarefas from './pages/bpm/BpmMinhasTarefas'
 import BpmNovaInstancia from './pages/bpm/BpmNovaInstancia'
 import BpmInstancia from './pages/bpm/BpmInstancia'
 import NfeCancelamentoDevolucao from './pages/bpm/NfeCancelamentoDevolucao'
+import NfeSolicitacaoDetalhe from './pages/bpm/NfeSolicitacaoDetalhe'
+import NfeEtapasConfig from './pages/bpm/NfeEtapasConfig'
 import TruckPagTitulos from './pages/truckpag/TruckPagTitulos'
 import TruckPagConciliacao from './pages/truckpag/TruckPagConciliacao'
 import TruckPagRepasses from './pages/truckpag/TruckPagRepasses'
@@ -221,10 +222,11 @@ export default function App() {
           { path: '/bpm/processos', element: <BpmProcessos />, menuPath: 'bpm/processos' },
           { path: '/bpm/modelador', element: <BpmModelador />, menuPath: 'bpm/modelador' },
           { path: '/bpm/modelador/:id', element: <BpmModelador />, menuPath: 'bpm/modelador' },
-          { path: '/bpm/minhas-tarefas', element: <BpmMinhasTarefas />, menuPath: 'bpm/minhas-tarefas' },
           { path: '/bpm/instancias/novo/:definitionId', element: <BpmNovaInstancia />, menuPath: 'bpm/processos' },
-          { path: '/bpm/instancias/:id', element: <BpmInstancia />, menuPath: ['bpm/processos', 'bpm/minhas-tarefas'] },
+          { path: '/bpm/instancias/:id', element: <BpmInstancia />, menuPath: ['bpm/processos', 'bpm/nfe-cancelamento-devolucao'] },
           { path: '/bpm/nfe-cancelamento-devolucao', element: <NfeCancelamentoDevolucao />, menuPath: 'bpm/nfe-cancelamento-devolucao' },
+          { path: '/bpm/nfe-solicitacoes/:id', element: <NfeSolicitacaoDetalhe />, menuPath: 'bpm/nfe-cancelamento-devolucao' },
+          { path: '/bpm/nfe-etapas', element: <NfeEtapasConfig />, menuPath: 'bpm/nfe-etapas' },
           { path: '/truckpag/titulos', element: <TruckPagTitulos />, menuPath: 'truckpag/titulos' },
           { path: '/truckpag/conciliacao', element: <TruckPagConciliacao />, menuPath: 'truckpag/conciliacao' },
           { path: '/truckpag/repasses', element: <TruckPagRepasses />, menuPath: 'truckpag/repasses' },

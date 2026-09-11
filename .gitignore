@@ -18,5 +18,8 @@ Acesso*.txt
 # Planilhas de referência baixadas localmente (dados de RH/financeiro, não são código)
 /Arquivos
 
+# Arquivos de exemplo (XML de notas etc.) para eu analisar — dados sensíveis, não são código
+/documentosparanalise
+
 # Cache local do Supabase CLI (project ref, pooler URL etc.)
 supabase/.temp

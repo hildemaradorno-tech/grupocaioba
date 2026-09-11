@@ -109,7 +109,7 @@ export const apiService = {
   getUsuarios: async () => {
     const { data, error } = await supabase
       .from('usuarios')
-      .select('id, nome, email, ativo, criado_em, grupo_id, senha_atualizada_em')
+      .select('id, nome, email, ativo, criado_em, grupo_id, agrupamento_cargo_id, senha_atualizada_em')
       .order('nome', { ascending: true })
     if (error) throw error
     return data || []
@@ -118,7 +118,7 @@ export const apiService = {
   getUsuarioById: async (id) => {
     const { data, error } = await supabase
       .from('usuarios')
-      .select('id, nome, email, grupo_id')
+      .select('id, nome, email, grupo_id, agrupamento_cargo_id')
       .eq('id', id)
       .single()
     if (error) throw error
@@ -880,12 +880,12 @@ export const apiService = {
     return { success: true }
   },
 
-  createUsuario: async (nome, email, grupo_id = null, redirectTo) => {
+  createUsuario: async (nome, email, grupo_id = null, redirectTo, agrupamento_cargo_id = null) => {
     const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
     const res = await fetch(`${backendUrl}/api/auth/create-user`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ nome, email, grupo_id, redirectTo }),
+      body: JSON.stringify({ nome, email, grupo_id, redirectTo, agrupamento_cargo_id }),
     })
     const body = await res.json()
     if (!res.ok) throw new Error(body.error || 'Erro ao criar usuário')
@@ -912,9 +912,10 @@ export const apiService = {
     return body
   },
 
-  updateUsuario: async (id, nome, email, grupo_id = undefined) => {
+  updateUsuario: async (id, nome, email, grupo_id = undefined, agrupamento_cargo_id = undefined) => {
     const payload = { nome, email, atualizado_em: new Date().toISOString() }
     if (grupo_id !== undefined) payload.grupo_id = grupo_id || null
+    if (agrupamento_cargo_id !== undefined) payload.agrupamento_cargo_id = agrupamento_cargo_id || null
     const { data, error } = await supabase
       .from('usuarios')
       .update(payload)

@@ -1,17 +1,22 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import BpmnModeler from 'bpmn-js/lib/Modeler'
 import 'bpmn-js/dist/assets/diagram-js.css'
 import 'bpmn-js/dist/assets/bpmn-js.css'
 import 'bpmn-js/dist/assets/bpmn-font/css/bpmn.css'
 import './bpmModelador.css'
-import { Save, UploadCloud, FilePlus2, Wand2, ArrowLeft, AlertTriangle, CheckCircle2 } from 'lucide-react'
+import { Save, UploadCloud, FilePlus2, Wand2, ArrowLeft, AlertTriangle, CheckCircle2, HelpCircle } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
+import { apiService } from '../../services/api'
 import { obterDefinicao, salvarDefinicao, publicarDefinicao } from '../../services/bpm/bpmService'
 import { BPM_CONNECTOR_OPCOES } from '../../services/bpm/bpmConnectors'
 import { BPM_XML_VAZIO, BPM_PILOTO_DEFINICAO } from '../../services/bpm/bpmSeedPiloto'
 import { bpmnTranslatePtBrModule, registrarDescricoesElementos } from './bpmnPtBr'
+import { bpmnCorEventoInicioModule } from './bpmnCorEventoInicio'
 import EditorFormulario from './BpmEditorFormulario'
+import BpmTutorial, { BPM_TOUR_STEPS } from './BpmTutorial'
+
+const TOUR_VISTO_KEY = 'bpm_tour_modelador_visto'
 
 const OPERADORES = ['true', 'false', '>', '>=', '<', '<=', '==', '!=']
 
@@ -24,7 +29,7 @@ function slugify(nome) {
 // Painel de propriedades customizado — não usamos bpmn-js-properties-panel para não adicionar
 // mais uma dependência pesada; guardamos os metadados (papel/prazo/conector/condição) à parte,
 // em elementos_meta e form_schemas, indexados pelo id do elemento no diagrama.
-function PainelPropriedades({ elemento, formSchemas, setFormSchemas, elementosMeta, setElementosMeta, modelerRef }) {
+function PainelPropriedades({ elemento, formSchemas, setFormSchemas, elementosMeta, setElementosMeta, modelerRef, agrupamentosCargo }) {
   if (!elemento) {
     return <p className="text-xs text-slate-400 p-4">Selecione um elemento no diagrama para editar seus detalhes.</p>
   }
@@ -39,6 +44,13 @@ function PainelPropriedades({ elemento, formSchemas, setFormSchemas, elementosMe
 
   const metaAtual = elementosMeta[id] || {}
   const atualizarMeta = (patch) => setElementosMeta(prev => ({ ...prev, [id]: { ...prev[id], ...patch } }))
+
+  // Se a tarefa está dentro de uma raia (Lane), ela herda o cargo responsável da raia quando
+  // não define o próprio — usado só pra mostrar essa dica no painel (a herança de verdade
+  // acontece no motor, em bpmService.js).
+  const lanePai = elemento.parent?.businessObject?.$type === 'bpmn:Lane' ? elemento.parent : null
+  const cargoHerdadoDaLane = lanePai ? (elementosMeta[lanePai.id]?.responsavel_agrupamento_cargo_id || null) : null
+  const nomeCargoHerdado = cargoHerdadoDaLane ? agrupamentosCargo.find(a => a.id === cargoHerdadoDaLane)?.nome_agrupamento_cargo : null
 
   if (tipo === 'bpmn:SequenceFlow') {
     const bo = elemento.businessObject
@@ -101,7 +113,7 @@ function PainelPropriedades({ elemento, formSchemas, setFormSchemas, elementosMe
       </div>
       <div className="flex flex-col gap-1.5">
         <label className="text-[10px] font-bold text-slate-400 uppercase">Nome</label>
-        <input defaultValue={nome} onBlur={e => renomear(e.target.value)} className="text-xs p-2 border border-slate-200 rounded-md" />
+        <input key={id + ':' + nome} defaultValue={nome} onBlur={e => renomear(e.target.value)} className="text-xs p-2 border border-slate-200 rounded-md" />
       </div>
 
       {tipo === 'bpmn:ServiceTask' && (
@@ -114,12 +126,47 @@ function PainelPropriedades({ elemento, formSchemas, setFormSchemas, elementosMe
         </div>
       )}
 
+      {tipo === 'bpmn:Lane' && (
+        <div className="flex flex-col gap-1.5">
+          <label className="text-[10px] font-bold text-slate-400 uppercase">Agrupamento de cargos da raia</label>
+          <select
+            value={metaAtual.responsavel_agrupamento_cargo_id || ''}
+            onChange={e => {
+              const cargoId = e.target.value || null
+              atualizarMeta({ responsavel_agrupamento_cargo_id: cargoId })
+              // O nome da raia é o rótulo que aparece na lateral do diagrama — sincroniza com o
+              // cargo escolhido pra não precisar digitar o mesmo nome duas vezes.
+              if (cargoId) {
+                const cargoEscolhido = agrupamentosCargo.find(a => a.id === cargoId)
+                if (cargoEscolhido) renomear(cargoEscolhido.nome_agrupamento_cargo)
+              }
+            }}
+            className="text-xs p-2 border border-slate-200 rounded-md bg-white"
+          >
+            <option value="">Sem restrição de cargo</option>
+            {agrupamentosCargo.map(a => <option key={a.id} value={a.id}>{a.nome_agrupamento_cargo}</option>)}
+          </select>
+          <p className="text-[10px] text-slate-400">Toda Tarefa de Usuário dentro desta raia herda esse cargo automaticamente — a menos que a tarefa defina o dela próprio. O nome da raia é atualizado junto.</p>
+        </div>
+      )}
+
       {tipo === 'bpmn:UserTask' && (
         <>
           <div className="flex flex-col gap-1.5">
-            <label className="text-[10px] font-bold text-slate-400 uppercase">Responsável (papel)</label>
-            <input value={metaAtual.responsavel_papel || ''} onChange={e => atualizarMeta({ responsavel_papel: e.target.value })}
-              placeholder="ex.: financeiro, fiscal, estoque, gerencia" className="text-xs p-2 border border-slate-200 rounded-md" />
+            <label className="text-[10px] font-bold text-slate-400 uppercase">Agrupamento de cargos responsável</label>
+            <select
+              value={metaAtual.responsavel_agrupamento_cargo_id || ''}
+              onChange={e => atualizarMeta({ responsavel_agrupamento_cargo_id: e.target.value || null })}
+              className="text-xs p-2 border border-slate-200 rounded-md bg-white"
+            >
+              <option value="">{nomeCargoHerdado ? `Herdar da raia (${nomeCargoHerdado})` : 'Qualquer pessoa (sem restrição de cargo)'}</option>
+              {agrupamentosCargo.map(a => <option key={a.id} value={a.id}>{a.nome_agrupamento_cargo}</option>)}
+            </select>
+            <p className="text-[10px] text-slate-400">
+              {nomeCargoHerdado
+                ? `Em branco, herda o cargo da raia (${nomeCargoHerdado}). Escolha um cargo aqui só se essa tarefa precisar de um diferente do resto da raia.`
+                : 'Só quem estiver nesse agrupamento de cargos (em Usuários) vai poder assumir essa tarefa.'}
+            </p>
           </div>
           <div className="flex flex-col gap-1.5">
             <label className="text-[10px] font-bold text-slate-400 uppercase">Prazo (horas)</label>
@@ -143,6 +190,7 @@ function PainelPropriedades({ elemento, formSchemas, setFormSchemas, elementosMe
 
 export default function BpmModelador() {
   const { id } = useParams()
+  const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const { user } = useAuth()
   const containerRef = useRef(null)
@@ -150,7 +198,10 @@ export default function BpmModelador() {
 
   const [definicaoId, setDefinicaoId] = useState(id || null)
   const [status, setStatus] = useState('rascunho')
-  const [chave, setChave] = useState('')
+  // Quando chega aqui sem :id (processo novo) mas com ?chave=... na URL, usa essa chave em vez
+  // de deixar em branco — senão salvarDefinicao gera a chave a partir do nome digitado, que quase
+  // nunca bate com a chave fixa que a tela de origem (ex.: NF-e) está procurando.
+  const [chave, setChave] = useState(!id ? (searchParams.get('chave') || '') : '')
   const [nome, setNome] = useState('')
   const [descricao, setDescricao] = useState('')
   const [formSchemas, setFormSchemas] = useState({})
@@ -159,13 +210,19 @@ export default function BpmModelador() {
   const [salvando, setSalvando] = useState(false)
   const [mensagem, setMensagem] = useState(null)
   const [pronto, setPronto] = useState(false)
+  const [tourAberto, setTourAberto] = useState(false)
+  const [agrupamentosCargo, setAgrupamentosCargo] = useState([])
+
+  useEffect(() => {
+    apiService.getAgrupamentoCargos().then(lista => setAgrupamentosCargo(lista.filter(a => a.ativo !== false))).catch(() => setAgrupamentosCargo([]))
+  }, [])
 
   useEffect(() => {
     let cancelado = false
     const modeler = new BpmnModeler({
       container: containerRef.current,
       keyboard: { bindTo: window },
-      additionalModules: [bpmnTranslatePtBrModule],
+      additionalModules: [bpmnTranslatePtBrModule, bpmnCorEventoInicioModule],
     })
     modelerRef.current = modeler
     registrarDescricoesElementos(modeler)
@@ -196,6 +253,12 @@ export default function BpmModelador() {
         if (cancelado) return
         modeler.get('canvas').zoom('fit-viewport')
         setPronto(true)
+        try {
+          if (!localStorage.getItem(TOUR_VISTO_KEY)) {
+            localStorage.setItem(TOUR_VISTO_KEY, '1')
+            setTourAberto(true)
+          }
+        } catch { /* localStorage indisponível — sem tutorial automático, sem problema */ }
       } catch (e) {
         if (!cancelado) setMensagem({ tipo: 'erro', texto: 'Erro ao carregar o diagrama: ' + (e.message || String(e)) })
       }
@@ -228,10 +291,12 @@ export default function BpmModelador() {
     if (!modeler) return
     await modeler.importXML(BPM_XML_VAZIO)
     modeler.get('canvas').zoom('fit-viewport')
-    setChave(''); setNome(''); setDescricao('')
+    // Mantém a chave que veio por ?chave= na URL (se veio) — "Novo em branco" é só pra recomeçar
+    // o desenho, não pra desligar este editor do processo que a tela de origem está esperando.
+    setChave(searchParams.get('chave') || ''); setNome(''); setDescricao('')
     setFormSchemas({}); setElementosMeta({})
     setDefinicaoId(null); setStatus('rascunho')
-  }, [])
+  }, [searchParams])
 
   const salvar = async () => {
     if (!nome.trim()) { setMensagem({ tipo: 'erro', texto: 'Informe o nome do processo antes de salvar.' }); return }
@@ -244,6 +309,9 @@ export default function BpmModelador() {
         bpmnXml: xml, formSchemas, elementosMeta, userId: user?.id,
       })
       setDefinicaoId(salvo.id); setChave(salvo.chave); setStatus(salvo.status)
+      // Reflete o id salvo na URL — senão um F5 (ou voltar depois) reabre em branco, como se o
+      // rascunho tivesse sumido, mesmo já estando salvo no banco.
+      if (!id) navigate(`/bpm/modelador/${salvo.id}`, { replace: true })
       setMensagem({ tipo: 'ok', texto: `Salvo (versão ${salvo.versao}, ${salvo.status}).` })
     } catch (e) {
       setMensagem({ tipo: 'erro', texto: 'Erro ao salvar: ' + (e.message || String(e)) })
@@ -266,7 +334,7 @@ export default function BpmModelador() {
   return (
     <div className="h-[calc(100vh-0px)] flex flex-col">
       <div className="border-b border-slate-200 bg-white px-4 py-2.5 flex flex-wrap items-center gap-2">
-        <button onClick={() => navigate('/bpm/processos')} className="p-1.5 text-slate-500 hover:bg-slate-100 rounded-md" title="Voltar ao catálogo">
+        <button onClick={() => navigate('/bpm/nfe-cancelamento-devolucao')} className="p-1.5 text-slate-500 hover:bg-slate-100 rounded-md" title="Voltar">
           <ArrowLeft className="h-4 w-4" />
         </button>
         <input value={nome} onChange={e => setNome(e.target.value)} placeholder="Nome do processo"
@@ -276,18 +344,26 @@ export default function BpmModelador() {
         <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded-full ${status === 'publicado' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
           {status}{chave ? ` · v` : ''}
         </span>
+        {chave && (
+          <span title="Chave interna do processo — é ela (não o nome) que conecta este fluxo à tela que o usa." className="text-[10px] font-mono text-slate-400 bg-slate-50 border border-slate-200 rounded-full px-2 py-1">
+            chave: {chave}
+          </span>
+        )}
 
         <div className="ml-auto flex items-center gap-2">
+          <button onClick={() => setTourAberto(true)} title="Rever o tutorial" className="p-1.5 rounded-md text-slate-500 hover:bg-slate-100">
+            <HelpCircle className="h-4 w-4" />
+          </button>
           <button onClick={novoEmBranco} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-slate-600 hover:bg-slate-100">
             <FilePlus2 className="h-3.5 w-3.5" /> Novo em branco
           </button>
-          <button onClick={carregarPiloto} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-slate-600 hover:bg-slate-100">
+          <button data-tour="btn-exemplo" onClick={carregarPiloto} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-slate-600 hover:bg-slate-100">
             <Wand2 className="h-3.5 w-3.5" /> Carregar exemplo (piloto)
           </button>
-          <button onClick={salvar} disabled={salvando || !pronto} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-slate-700 hover:bg-slate-800 disabled:opacity-50">
+          <button data-tour="btn-salvar" onClick={salvar} disabled={salvando || !pronto} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-slate-700 hover:bg-slate-800 disabled:opacity-50">
             <Save className="h-3.5 w-3.5" /> Salvar
           </button>
-          <button onClick={publicar} disabled={salvando || !pronto} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50">
+          <button data-tour="btn-publicar" onClick={publicar} disabled={salvando || !pronto} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50">
             <UploadCloud className="h-3.5 w-3.5" /> Publicar
           </button>
         </div>
@@ -303,15 +379,18 @@ export default function BpmModelador() {
 
       <div className="flex-1 flex min-h-0">
         <div ref={containerRef} className="bpm-modelador-canvas flex-1 bg-slate-50" />
-        <div className="w-80 border-l border-slate-200 bg-white overflow-y-auto shrink-0">
+        <div data-tour="painel-propriedades" className="w-80 border-l border-slate-200 bg-white overflow-y-auto shrink-0">
           <PainelPropriedades
             elemento={selecionado}
             formSchemas={formSchemas} setFormSchemas={setFormSchemas}
             elementosMeta={elementosMeta} setElementosMeta={setElementosMeta}
             modelerRef={modelerRef}
+            agrupamentosCargo={agrupamentosCargo}
           />
         </div>
       </div>
+
+      <BpmTutorial steps={BPM_TOUR_STEPS} aberto={tourAberto} onFechar={() => setTourAberto(false)} />
     </div>
   )
 }

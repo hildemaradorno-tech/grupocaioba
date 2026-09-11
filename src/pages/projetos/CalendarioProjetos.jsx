@@ -103,8 +103,10 @@ export default function CalendarioProjetos({ abaInicial = 'lista' }) {
   const { isAdmin, empresasPermitidas, departamentosPermitidosEfetivos, hasActionOrDefault, hasPermission, user } = useAuth()
   const ctx = useProjetosFiltros()
   const { modoVerTodos, setModoVerTodos } = ctx
+  const canVerTodos       = !isAdmin && hasActionOrDefault('projetos', 'ver_todos_projetos') && departamentosPermitidosEfetivos?.size > 0
   const canEditarProjeto  = !modoVerTodos && hasActionOrDefault('projetos', 'editar')
-  const canEditarTarefa   = !modoVerTodos && hasActionOrDefault('projetos', 'editar_tarefa')
+  const canEditarTarefa        = !modoVerTodos && hasActionOrDefault('projetos', 'editar_tarefa')
+  const canAlterarStatusTarefa = hasActionOrDefault('projetos', 'alterar_status_tarefa')
   const canIniciarTarefa  = !modoVerTodos && hasActionOrDefault('projetos', 'iniciar_tarefa')
   const canConcluirTarefa = !modoVerTodos && hasActionOrDefault('projetos', 'concluir_tarefa')
   const hoje = new Date()
@@ -679,7 +681,7 @@ export default function CalendarioProjetos({ abaInicial = 'lista' }) {
               <BarChart2 className="h-4 w-4 text-indigo-500" /> Ir para Dashboard
             </button>
           )}
-          {departamentosPermitidosEfetivos?.size > 0 && (
+          {canVerTodos && (
             <button
               onClick={() => setModoVerTodos(!modoVerTodos)}
               className={`flex items-center gap-2 text-xs font-semibold px-3 py-2 rounded-md shadow-sm border transition-colors ${
@@ -1212,6 +1214,7 @@ export default function CalendarioProjetos({ abaInicial = 'lista' }) {
           fases={optsFase}
           empresas={optsEmp}
           areas={optsArea}
+          canAlterarStatus={canAlterarStatusTarefa}
           onClose={() => setModalEditarTarefa(null)}
           onSaved={() => { setModalEditarTarefa(null); recarregarDados() }}
           onNavigate={(t) => setModalEditarTarefa(t)}

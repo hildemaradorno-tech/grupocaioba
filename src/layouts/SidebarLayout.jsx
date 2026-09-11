@@ -509,7 +509,7 @@ export default function SidebarLayout() {
               <FlyItem to={canView('garantias-daf-andamento') ? '/garantias-daf-andamento' : '/garantias-daf'} icon={ShieldCheck} onClose={closeFlyout}>Garantias DAF</FlyItem>
             )}
             {canView('honda/garantias-a-receber') && <FlyItem to="/honda/garantias-a-receber" icon={Bike} onClose={closeFlyout}>Contas a Receber HONDA</FlyItem>}
-            {canView('bpm/nfe-cancelamento-devolucao') && <FlyItem to="/bpm/nfe-cancelamento-devolucao" icon={Workflow} onClose={closeFlyout}>BPM - Processos</FlyItem>}
+            {canView('bpm/nfe-cancelamento-devolucao') && <FlyItem to="/bpm/nfe-cancelamento-devolucao" icon={Workflow} onClose={closeFlyout}>Cancelamento/Devolução NF-e</FlyItem>}
       {(canView('truckpag/titulos') || canView('truckpag/conciliacao')) && (
         <FlyItem to="/truckpag/titulos" icon={Truck} onClose={closeFlyout}>Contas a Receber TruckPag</FlyItem>
       )}

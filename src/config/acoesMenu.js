@@ -22,6 +22,7 @@ export const ACOES_POR_MENU = [
       { value: 'custo',            label: 'Gerenciar Custos e Confirmar Pagamentos' },
       { value: 'iniciar_fase',          label: 'Iniciar Fase do Projeto' },
       { value: 'enviar_manifestacao',   label: 'Enviar Manifestação / De Acordo' },
+      { value: 'ver_todos_projetos',    label: 'Ver Todos os Projetos (ignora filtro de departamento)' },
     ],
   },
   {
