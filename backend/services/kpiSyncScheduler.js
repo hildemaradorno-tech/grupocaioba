@@ -5,27 +5,46 @@
  * dispara executarSincronizacao('AGENDADO'). O horário é lido do Supabase a
  * cada tick — mudar a configuração pela tela tem efeito imediato, sem
  * precisar reiniciar o backend.
+ *
+ * Os horários configurados na tela são sempre horário de Brasília — por isso
+ * "agora" é calculado explicitamente no fuso America/Sao_Paulo via Intl,
+ * independente do fuso do servidor (Railway roda em UTC por padrão; sem essa
+ * conversão, "12:00" configurado disparava às 12:00 UTC = 09:00 em Brasília).
  */
 import cron from 'node-cron'
 import { getSupabaseAdmin } from './supabaseAdmin.js'
 import { executarSincronizacao, sincronizacaoEmAndamento } from './kpiSyncService.js'
 
+const FUSO_BRASILIA = 'America/Sao_Paulo'
+
 // Evita disparar duas vezes no mesmo minuto (ex.: tick demorar e o cron
 // reentrar) — guarda a última chave "AAAA-MM-DD HH:MM" já processada.
 let ultimoMinutoProcessado = null
 
+function partesBrasilia(d) {
+  const partes = new Intl.DateTimeFormat('en-CA', {
+    timeZone: FUSO_BRASILIA,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+    weekday: 'short',
+  }).formatToParts(d)
+  return Object.fromEntries(partes.map(p => [p.type, p.value]))
+}
+
 function horaAgoraStr(d) {
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:00`
+  const p = partesBrasilia(d)
+  return `${p.hour}:${p.minute}:00`
 }
 
 function diaSemanaAtual(d) {
-  // JS: 0=Domingo..6=Sábado → convenção do módulo: 1=Segunda..7=Domingo
-  const js = d.getDay()
-  return js === 0 ? 7 : js
+  // Convenção do módulo: 1=Segunda..7=Domingo
+  const mapa = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 }
+  return mapa[partesBrasilia(d).weekday]
 }
 
 function dataAtualIso(d) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  const p = partesBrasilia(d)
+  return `${p.year}-${p.month}-${p.day}`
 }
 
 async function verificarEDisparar() {
