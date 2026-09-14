@@ -535,8 +535,9 @@ export default function CalendarioProjetos({ abaInicial = 'lista' }) {
       let key
       if (visualizacaoLista === 'responsavel')   key = t.responsavel_nome          || '— Sem responsável —'
       else if (visualizacaoLista === 'resp_projeto') key = t.projeto_responsavel_nome  || '— Sem responsável —'
-      else if (visualizacaoLista === 'data')    key = t.data_fim                  || '— Sem data —'
+      else if (visualizacaoLista === 'data')    key = t.data_fim                  || null
       else                                       key = t.projeto_nome              || '— Sem projeto —'
+      if (key === null) return // modo data: ignora tarefas sem data
       if (!map[key]) map[key] = []
       map[key].push(t)
     })
@@ -546,8 +547,8 @@ export default function CalendarioProjetos({ abaInicial = 'lista' }) {
       if (visualizacaoLista === 'data') return a < b ? -1 : a > b ? 1 : 0
       return a.localeCompare(b, 'pt-BR')
     })
-    // No modo Por Projeto, ordena as tarefas de cada grupo por etapa A→Z (nulls no fim)
-    if (visualizacaoLista === 'projeto') {
+    // Ordena tarefas por etapa (nulls no fim) no modo Projeto e no modo Data
+    if (visualizacaoLista === 'projeto' || visualizacaoLista === 'data') {
       grupos.forEach(([, tarefas]) => {
         tarefas.sort((a, b) => {
           if (a.etapa == null && b.etapa == null) return 0
