@@ -132,12 +132,13 @@ function CardKpi({ icon: Icon, label, count, ativo, onClick, st }) {
 
 export default function ProjetosDashboard() {
   const navigate = useNavigate()
-  const { isAdmin, isAdminEfetivo, empresasPermitidas, departamentosPermitidosEfetivos, hasActionOrDefault, hasPermission, user, usuarioId, userNome, impersonando } = useAuth()
+  const { isAdmin, isAdminEfetivo, empresasPermitidas, departamentosPermitidosEfetivos, projetosDeptoModoEfetivo, hasActionOrDefault, hasPermission, user, usuarioId, userNome, impersonando } = useAuth()
   const idEfetivo   = impersonando?.id    || usuarioId
   const nomeEfetivo = impersonando?.nome  || userNome
   const ctx = useProjetosFiltros()
   const { modoVerTodos, setModoVerTodos } = ctx
-  const canVerTodos   = !isAdminEfetivo && hasActionOrDefault('projetos', 'ver_todos_projetos') && departamentosPermitidosEfetivos?.size > 0
+  // Botão "Ver Todos" aparece SOMENTE quando o flag ver_todos_projetos está marcado no grupo
+  const canVerTodos   = !isAdminEfetivo && hasActionOrDefault('projetos', 'ver_todos_projetos')
   const canCriar      = !modoVerTodos && hasActionOrDefault('projetos', 'criar')
   const canEditar     = !modoVerTodos && hasActionOrDefault('projetos', 'editar')
   const canExcluir    = !modoVerTodos && hasActionOrDefault('projetos', 'excluir')
@@ -200,14 +201,16 @@ export default function ProjetosDashboard() {
   const tableRef = useRef(null)
 
   // Projetos após filtros globais (contexto compartilhado entre abas)
-  // Com restrição de depto → filtra por departamento (vê todos os projetos do depto)
-  // Sem restrição de depto → filtra por responsável (vê só seus projetos)
+  // TODOS mode   → sem restrição de depto, vê todos os projetos
+  // INDIVIDUAL   → filtra pelo(s) departamento(s) configurados; botão "Ver Todos" remove esse filtro
+  // null (sem grupo) → filtra por responsável (vê só seus projetos)
   // modoVerTodos ignora restrição de departamento e bloqueia edições
   const dadosGlobal = useMemo(() => {
     const hasDeptFilter = !modoVerTodos && departamentosPermitidosEfetivos?.size > 0
     let lista = aplicarFiltrosGlobais(dados, ctx, hasDeptFilter ? departamentosPermitidosEfetivos : null)
-    if (!isAdminEfetivo && !modoVerTodos && !hasDeptFilter && responsaveis !== null) {
-      // Sem restrição de depto: mostra apenas projetos em que o usuário é responsável
+    // Aplica filtro por responsável só quando: não admin, não modoVerTodos, sem restrição de depto
+    // E o modo NÃO é TODOS (TODOS = ver tudo sem restrição)
+    if (!isAdminEfetivo && !modoVerTodos && !hasDeptFilter && projetosDeptoModoEfetivo !== 'TODOS' && responsaveis !== null) {
       const meuNomeResp = responsaveis.find(r => r.usuario_id === idEfetivo)?.nome
       lista = lista.filter(p =>
         meuNomeResp != null && p.responsavel_nome === meuNomeResp
@@ -217,7 +220,7 @@ export default function ProjetosDashboard() {
   }, [
     dados, ctx.filtroEmpresa, ctx.filtroDepartamento, ctx.filtroArea,
     ctx.filtroFase, ctx.filtroSistema, ctx.filtroRespProjeto, ctx.filtroRespTarefa,
-    modoVerTodos, isAdminEfetivo, idEfetivo, responsaveis, departamentosPermitidosEfetivos,
+    modoVerTodos, isAdminEfetivo, idEfetivo, responsaveis, departamentosPermitidosEfetivos, projetosDeptoModoEfetivo,
   ])
 
   const loadData = useCallback(async (f = filtros, silent = false) => {

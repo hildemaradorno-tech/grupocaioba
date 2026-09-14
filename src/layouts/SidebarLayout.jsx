@@ -509,7 +509,7 @@ export default function SidebarLayout() {
       case '_controle-processos':
         return (
           <>
-            {(canView('garantias-daf-andamento') || canView('garantias-daf') || canView('garantias-daf-faturadas') || canView('garantias-daf-titulos') || canView('honda/garantias-a-receber') || canView('bpm/nfe-cancelamento-devolucao')) && (
+            {(canView('garantias-daf-andamento') || canView('garantias-daf') || canView('garantias-daf-historicodeos') || canView('garantias-daf-titulos') || canView('honda/garantias-a-receber') || canView('bpm/nfe-cancelamento-devolucao')) && (
               <FlyGroup label="Controle de Processos" />
             )}
             {/* Dashboard e as demais telas (Encerradas, Faturadas, a Receber) já ficam acessíveis como abas dentro de Garantias DAF. */}

@@ -59,7 +59,7 @@ export const ACOES_POR_MENU = [
     ],
   },
   {
-    menuPath: 'garantias-daf-faturadas',
+    menuPath: 'garantias-daf-historicodeos',
     acoes: [
       { value: 'editar',  label: 'Editar OS' },
       { value: 'excluir', label: 'Excluir OS' },
@@ -69,6 +69,12 @@ export const ACOES_POR_MENU = [
     menuPath: 'garantias-daf-titulos',
     acoes: [
       { value: 'editar', label: 'Editar Título (observação)' },
+    ],
+  },
+  {
+    menuPath: 'auditoria-externa/dashboard',
+    acoes: [
+      { value: 'ver_todos', label: 'Ver Todos (ignorar restrição de Empresa/Departamento do grupo)' },
     ],
   },
   {

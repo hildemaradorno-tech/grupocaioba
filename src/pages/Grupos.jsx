@@ -253,6 +253,9 @@ export default function Grupos() {
   const [projDepartamentos, setProjDepartamentos] = useState([])
   const [selectedDeptosAuditoria, setSelectedDeptosAuditoria] = useState(new Set())
   const [auditoriaDeptoModo, setAuditoriaDeptoModo] = useState('TODOS')
+  const [projEmpresas, setProjEmpresas] = useState([])
+  const [selectedEmpresasAuditoria, setSelectedEmpresasAuditoria] = useState(new Set())
+  const [auditoriaEmpresaModo, setAuditoriaEmpresaModo] = useState('TODOS')
   const [empresas, setEmpresas] = useState([])
   const [comissaoEscopo, setComissaoEscopo] = useState(escopoComissaoTudoLiberado())
   const [comissaoHabilitado, setComissaoHabilitado] = useState(false)
@@ -433,7 +436,7 @@ export default function Grupos() {
     setTreeDefaultOpen(false)
     setTreeKey(k => k + 1)
     try {
-      const [paths, acoes, empIds, emps, deptosDim, setoresDim, agrupCargos, comissaoEscopoRaw, deptosProj, projDeptos, deptosAudit] = await Promise.all([
+      const [paths, acoes, empIds, emps, deptosDim, setoresDim, agrupCargos, comissaoEscopoRaw, deptosProj, projDeptos, deptosAudit, projEmps, empresasAudit] = await Promise.all([
         apiService.getPermissoesGrupo(grupo.id),
         apiService.getPermissoesGrupoAcoes(grupo.id),
         apiService.getPermissoesEmpresasGrupo(grupo.id),
@@ -445,6 +448,8 @@ export default function Grupos() {
         apiService.getPermissoesDeptoPorGrupo(grupo.id),
         apiService.getProjDepartamentos(),
         apiService.getPermissoesDeptoAuditoriaPorGrupo(grupo.id),
+        apiService.getProjEmpresas(),
+        apiService.getPermissoesEmpresaAuditoriaPorGrupo(grupo.id),
       ])
       setSelectedPaths(new Set(paths))
       setSelectedAcoes(new Set(acoes.map(a => `${a.menu_path}|${a.acao}`)))
@@ -454,6 +459,9 @@ export default function Grupos() {
       setProjDepartamentos((projDeptos || []).filter(d => d.ativo !== false).sort((a, b) => (a.nome || '').localeCompare(b.nome || '', 'pt-BR')))
       setAuditoriaDeptoModo(deptosAudit.modo)
       setSelectedDeptosAuditoria(new Set(deptosAudit.valores))
+      setProjEmpresas((projEmps || []).filter(e => e.ativo !== false).sort((a, b) => (a.nome || '').localeCompare(b.nome || '', 'pt-BR')))
+      setAuditoriaEmpresaModo(empresasAudit.modo)
+      setSelectedEmpresasAuditoria(new Set(empresasAudit.valores))
       setEmpresas(emps.filter(e => e.ativo !== false).sort((a, b) => (a.nome_empresa || '').localeCompare(b.nome_empresa || '', 'pt-BR')))
       setDepartamentosComissao(deptosDim.filter(d => d.ativo !== false))
       setSetoresComissao(setoresDim.filter(s => s.ativo !== false))
@@ -473,6 +481,8 @@ export default function Grupos() {
       setProjetosDeptoModo('TODOS')
       setSelectedDeptosAuditoria(new Set())
       setAuditoriaDeptoModo('TODOS')
+      setSelectedEmpresasAuditoria(new Set())
+      setAuditoriaEmpresaModo('TODOS')
       setComissaoEscopo(escopoComissaoTudoLiberado())
       setComissaoHabilitado(false)
       setComissaoDepartamentoNivel({})
@@ -536,6 +546,17 @@ export default function Grupos() {
   const handleSelectAllDeptosAuditoria = () => setSelectedDeptosAuditoria(new Set(projDepartamentos.map(d => d.nome)))
   const handleClearAllDeptosAuditoria = () => setSelectedDeptosAuditoria(new Set())
 
+  const handleToggleEmpresaAuditoria = (id) => {
+    setSelectedEmpresasAuditoria(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+  const handleSelectAllEmpresasAuditoria = () => setSelectedEmpresasAuditoria(new Set(projEmpresas.map(e => e.id)))
+  const handleClearAllEmpresasAuditoria = () => setSelectedEmpresasAuditoria(new Set())
+
   const handleComissaoModoChange = (dim, modo) => {
     setComissaoEscopo(prev => ({ ...prev, [dim]: { ...prev[dim], modo } }))
   }
@@ -577,6 +598,7 @@ export default function Grupos() {
         apiService.setPermissoesEmpresasGrupo(editingId, isAdmin ? [] : [...selectedEmpresas]),
         apiService.setPermissoesDeptoPorGrupo(editingId, isAdmin ? 'TODOS' : projetosDeptoModo, isAdmin ? [] : [...selectedDeptosProjetos]),
         apiService.setPermissoesDeptoAuditoriaPorGrupo(editingId, isAdmin ? 'TODOS' : auditoriaDeptoModo, isAdmin ? [] : [...selectedDeptosAuditoria]),
+        apiService.setPermissoesEmpresaAuditoriaPorGrupo(editingId, isAdmin ? 'TODOS' : auditoriaEmpresaModo, isAdmin ? [] : [...selectedEmpresasAuditoria]),
         apiService.setPermissoesComissaoGrupo(editingId, Object.fromEntries(DIMENSOES_COMISSAO.map(dim => [
           dim,
           isAdmin
@@ -908,6 +930,35 @@ export default function Grupos() {
                 onToggleValor={handleToggleDeptoAuditoria}
                 onSelecionarTodos={handleSelectAllDeptosAuditoria}
                 onLimpar={handleClearAllDeptosAuditoria}
+              />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Acesso por Empresa — Auditoria Externa (só quando o grupo tem alguma
+           página do módulo liberada) ── */}
+      {(isAdmin || AUDITORIA_EXTERNA_KEYS.some(k => selectedPaths.has(k))) && (
+        <div className="bg-white rounded-lg shadow border border-slate-200 overflow-hidden mt-4">
+          <div className="px-5 py-4 border-b border-slate-100">
+            <h2 className="text-base font-bold text-slate-900">Acesso por Empresa — Auditoria Externa</h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Restringe quais ciclos/achados/planos de ação este grupo pode visualizar em Auditoria Externa, pela empresa do ciclo de auditoria.
+              "Todos" não restringe (inclusive empresas criadas no futuro); "Individual" libera só as marcadas.
+              {isAdmin && <span className="block mt-1 text-amber-600 font-medium">Administrador vê tudo automaticamente.</span>}
+            </p>
+          </div>
+          {!loadingPerms && (
+            <div className="px-5 py-1">
+              <SeletorDimensaoComissao
+                label="Empresa"
+                escopo={{ modo: auditoriaEmpresaModo, valores: selectedEmpresasAuditoria }}
+                opcoes={projEmpresas.map(e => ({ valor: e.id, label: e.nome }))}
+                disabled={isAdmin}
+                onModoChange={setAuditoriaEmpresaModo}
+                onToggleValor={handleToggleEmpresaAuditoria}
+                onSelecionarTodos={handleSelectAllEmpresasAuditoria}
+                onLimpar={handleClearAllEmpresasAuditoria}
               />
             </div>
           )}

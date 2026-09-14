@@ -1,12 +1,13 @@
 import React from 'react'
 import { NavLink } from 'react-router-dom'
-import { Activity, FileText, DollarSign } from 'lucide-react'
+import { Activity, FileText, DollarSign, Receipt } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 
 const LINKS = [
   { to: '/garantias-daf-andamento',  label: 'Aberto (Em andamento)', icon: Activity },
   { to: '/garantias-daf',            label: 'Aberto (Encerrada)',  icon: FileText, end: true },
   { to: '/garantias-daf-titulos',    label: 'Títulos a Receber',   icon: DollarSign },
+  { to: '/garantias-daf-historicodeos', label: 'Histórico de O.S.', icon: Receipt },
 ]
 
 export default function GarantiasNav() {

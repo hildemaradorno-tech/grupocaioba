@@ -239,7 +239,7 @@ export default function App() {
           { path: '/garantias-daf', element: <GarantiasDafDashboard key="aberto" />, menuPath: '/garantias-daf' },
           { path: '/garantias-daf/novo', element: <GarantiasDafForm />, menuPath: '/garantias-daf' },
           { path: '/garantias-daf/:id', element: <GarantiasDafForm />, menuPath: '/garantias-daf' },
-          { path: '/garantias-daf-faturadas', element: <GarantiasDafFaturadas />, menuPath: '/garantias-daf-faturadas' },
+          { path: '/garantias-daf-historicodeos', element: <GarantiasDafFaturadas />, menuPath: '/garantias-daf-historicodeos' },
           { path: '/garantias-daf-titulos',   element: <GarantiasDafTitulos />,   menuPath: '/garantias-daf-titulos' },
           { path: '/projetos', element: <ProjetosDashboard />, menuPath: 'projetos' },
           { path: '/projetos/manifestacoes', element: <ManifestacoesPainel />, menuPath: ['projetos/manifestacoes', 'projetos'] },

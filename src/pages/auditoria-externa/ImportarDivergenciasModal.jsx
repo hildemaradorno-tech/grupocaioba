@@ -41,7 +41,7 @@ const textoParaHtml = (s) => {
 }
 
 export default function ImportarDivergenciasModal({ onClose, onImported, cicloIdPadrao }) {
-  const { user, hasActionOrDefault, isAdminEfetivo, empresasPermitidas } = useAuth()
+  const { user, hasActionOrDefault, isAdminEfetivo, empresasPermitidasAuditoriaEfetivas } = useAuth()
   const canImportar = hasActionOrDefault('auditoria-externa/divergencias', 'importar_divergencias')
   const fileRef = useRef(null)
   const [arrastando, setArrastando] = useState(false)
@@ -58,7 +58,7 @@ export default function ImportarDivergenciasModal({ onClose, onImported, cicloId
   }, [])
 
   // Escopo por Empresa (Grupo de Acesso) — vazio = sem restrição.
-  const ciclos = ciclosTodos.filter(c => empresaNoEscopo(c.empresa_id, empresasPermitidas, isAdminEfetivo))
+  const ciclos = ciclosTodos.filter(c => empresaNoEscopo(c.empresa_id, empresasPermitidasAuditoriaEfetivas, isAdminEfetivo))
 
   const baixarModelo = () => {
     const ws = XLSX.utils.aoa_to_sheet([CABECALHO_MODELO, LINHA_EXEMPLO])

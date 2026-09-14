@@ -131,7 +131,7 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
       // Sempre carrega todos (paginado) para importadosSet e modais
       const todos = await apiService.getAllGarantiasParaImport({ ...filtrosEmpresa })
       setDadosTodos(todos)
-      // Carrega resultado filtrado (exclui E e F — ambos ficam em Faturadas)
+      // Carrega resultado filtrado (exclui E e F — ambos ficam em Histórico de O.S.)
       const extraFiltros = isAndamento ? { sem_fechamento: true } : {}
       const garantias = await apiService.getGarantias({ ...f, ...filtrosEmpresa, status_not_in: ['E', 'F'], ...extraFiltros })
       setDados(garantias)
@@ -346,11 +346,11 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
   // Busca faturamento (ROF017) somente para as OS do alerta "não encontrada no SharePoint"
   // (grpNaoEncontrado) — são as candidatas a já terem sido faturadas ou canceladas.
   // Se encontrar NF emitida, grava os dados de faturamento e muda status para 'E',
-  // fazendo a OS sair desta lista e passar a aparecer em Garantias DAF Faturadas.
+  // fazendo a OS sair desta lista e passar a aparecer em Histórico de O.S.
   const handleBuscarFaturamentoLote = useCallback(async () => {
     if (grpNaoEncontrado.length === 0) return
     const confirmar = window.confirm(
-      `Buscar faturamento para ${grpNaoEncontrado.length} OS não encontrada(s) no SharePoint?\n\nAs OS com Nota Fiscal emitida terão o status alterado automaticamente para "E — Nota Fiscal Emitida" e passarão a aparecer em Garantias DAF Faturadas.`
+      `Buscar faturamento para ${grpNaoEncontrado.length} OS não encontrada(s) no SharePoint?\n\nAs OS com Nota Fiscal emitida terão o status alterado automaticamente para "E — Nota Fiscal Emitida" e passarão a aparecer em Histórico de O.S.`
     )
     if (!confirmar) return
 
@@ -411,7 +411,7 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
       await loadData()
       alert(
         `Busca de faturamento concluída:\n` +
-        `✅ ${encontrados} OS com NF emitida — status alterado para E e movida(s) para Faturadas\n` +
+        `✅ ${encontrados} OS com NF emitida — status alterado para E e movida(s) para Histórico de O.S.\n` +
         `⏳ ${naoEncontrados} sem NF emitida ainda\n` +
         (erros > 0 ? `❌ ${erros} erro(s) na busca` : '')
       )
@@ -708,17 +708,18 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
               <button
                 onClick={() => fetchSharePoint(true)}
                 disabled={spLoading}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-semibold text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 shadow-sm transition-colors disabled:opacity-50"
+                title="Atualizar arquivo"
+                className="flex items-center justify-center p-2 rounded-md text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 shadow-sm transition-colors disabled:opacity-50"
               >
                 <RefreshCw className={`h-3.5 w-3.5 ${spLoading ? 'animate-spin' : ''}`} />
-                Atualizar arquivo
               </button>
               {hasPermission('bi/garantias-daf') && (
                 <button
                   onClick={() => navigate('/bi/garantias-daf', { state: { aba: 'oficina' } })}
-                  className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold px-3 py-2 rounded-md shadow-sm border border-slate-200 transition-colors"
+                  title="Ir para Dashboard"
+                  className="flex items-center justify-center p-2 bg-white hover:bg-slate-50 text-slate-700 rounded-md shadow-sm border border-slate-200 transition-colors"
                 >
-                  <BarChart2 className="h-4 w-4 text-indigo-500" /> Ir para Dashboard
+                  <BarChart2 className="h-4 w-4 text-indigo-500" />
                 </button>
               )}
             </div>
@@ -733,10 +734,10 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
               <button
                 onClick={() => fetchSharePoint(true)}
                 disabled={spLoading}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-semibold text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 shadow-sm transition-colors disabled:opacity-50"
+                title="Atualizar arquivo"
+                className="flex items-center justify-center p-2 rounded-md text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 shadow-sm transition-colors disabled:opacity-50"
               >
                 <RefreshCw className={`h-3.5 w-3.5 ${spLoading ? 'animate-spin' : ''}`} />
-                Atualizar arquivo
               </button>
               {!spLoading && (importandoPend || pendFechadas.length > 0) && (
                 <button
@@ -763,9 +764,10 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
               {hasPermission('bi/garantias-daf') && (
                 <button
                   onClick={() => navigate('/bi/garantias-daf', { state: { aba: 'aberto' } })}
-                  className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold px-3 py-2 rounded-md shadow-sm border border-slate-200 transition-colors"
+                  title="Ir para Dashboard"
+                  className="flex items-center justify-center p-2 bg-white hover:bg-slate-50 text-slate-700 rounded-md shadow-sm border border-slate-200 transition-colors"
                 >
-                  <BarChart2 className="h-4 w-4 text-indigo-500" /> Ir para Dashboard
+                  <BarChart2 className="h-4 w-4 text-indigo-500" />
                 </button>
               )}
             </div>
@@ -805,7 +807,7 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
               <button
                 onClick={handleBuscarFaturamentoLote}
                 disabled={buscandoFaturamentoLote}
-                title="Busca faturamento (ROF017) para as OS não encontradas no arquivo SharePoint; se encontrar NF emitida, muda o status para E e move para Faturadas"
+                title="Busca faturamento (ROF017) para as OS não encontradas no arquivo SharePoint; se encontrar NF emitida, muda o status para E e move para Histórico de O.S."
                 className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md bg-red-600 hover:bg-red-700 text-white transition-colors disabled:opacity-50"
               >
                 {buscandoFaturamentoLote

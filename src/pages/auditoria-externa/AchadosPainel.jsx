@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react'
 import { useSessionState } from '../../hooks/useSessionState'
-import { Plus, Filter, RotateCcw, Edit2, Trash2, Sparkles, ShieldAlert, Eye, ChevronRight, ChevronDown, Upload } from 'lucide-react'
+import { Plus, Filter, RotateCcw, Edit2, Trash2, Sparkles, ShieldAlert, Eye, ChevronRight, ChevronDown, Upload, Users } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { apiService } from '../../services/api'
 import AuditoriaExternaNav from './AuditoriaExternaNav'
@@ -13,11 +13,14 @@ import { fmtMoeda, compararPorCodigo, empresaNoEscopo } from './auditExtConstant
 const FILTROS_VAZIOS = { empresa: '', norma: '' }
 
 export default function AchadosPainel() {
-  const { user, hasActionOrDefault, isAdminEfetivo, empresasPermitidas } = useAuth()
+  const { user, hasActionOrDefault, isAdminEfetivo, empresasPermitidasAuditoriaEfetivas } = useAuth()
   const canEditar = hasActionOrDefault('auditoria-externa/divergencias', 'editar_achado')
   const canExcluir = hasActionOrDefault('auditoria-externa/divergencias', 'excluir_achado')
   const canChatIA = hasActionOrDefault('auditoria-externa/divergencias', 'usar_chat_ia')
   const canImportar = hasActionOrDefault('auditoria-externa/divergencias', 'importar_divergencias')
+  const canVerTodos = hasActionOrDefault('auditoria-externa/dashboard', 'ver_todos') && empresasPermitidasAuditoriaEfetivas.size > 0
+  const [verTodos, setVerTodos] = useSessionState('audext_ver_todos', false)
+  const empresasEfetivas = verTodos ? new Set() : empresasPermitidasAuditoriaEfetivas
 
   const [achados, setAchados] = useState([])
   const [ciclos, setCiclos] = useState([])
@@ -50,16 +53,16 @@ export default function AchadosPainel() {
 
   // Escopo por Empresa (Grupo de Acesso) — vazio = sem restrição.
   const achadosVisiveis = useMemo(() =>
-    achados.filter(a => empresaNoEscopo(a.audext_ciclos?.empresa_id, empresasPermitidas, isAdminEfetivo)),
-    [achados, empresasPermitidas, isAdminEfetivo])
+    achados.filter(a => empresaNoEscopo(a.audext_ciclos?.empresa_id, empresasEfetivas, isAdminEfetivo)),
+    [achados, empresasEfetivas, isAdminEfetivo])
 
   const empresasVisiveis = useMemo(() =>
-    empresas.filter(e => empresaNoEscopo(e.id, empresasPermitidas, isAdminEfetivo)),
-    [empresas, empresasPermitidas, isAdminEfetivo])
+    empresas.filter(e => empresaNoEscopo(e.id, empresasEfetivas, isAdminEfetivo)),
+    [empresas, empresasEfetivas, isAdminEfetivo])
 
   const ciclosVisiveis = useMemo(() =>
-    ciclos.filter(c => empresaNoEscopo(c.empresa_id, empresasPermitidas, isAdminEfetivo)),
-    [ciclos, empresasPermitidas, isAdminEfetivo])
+    ciclos.filter(c => empresaNoEscopo(c.empresa_id, empresasEfetivas, isAdminEfetivo)),
+    [ciclos, empresasEfetivas, isAdminEfetivo])
 
   const normasDisponiveis = useMemo(() =>
     Array.from(new Set(achadosVisiveis.map(a => a.fundamentacao_tecnica).filter(Boolean))).sort(),
@@ -128,6 +131,15 @@ export default function AchadosPainel() {
             <p className="text-xs text-slate-500">Gestão de achados de auditoria externa e itens de divergência contábil x financeira.</p>
           </div>
           <div className="flex items-center gap-2">
+            {canVerTodos && (
+              <button
+                onClick={() => setVerTodos(v => !v)}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-semibold border transition-colors whitespace-nowrap ${verTodos ? 'bg-amber-50 text-amber-700 border-amber-300' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 shadow-sm'}`}
+                title={verTodos ? 'Voltar para minha visão' : 'Ver todas as Empresas'}
+              >
+                <Users className="h-3.5 w-3.5" /> {verTodos ? '← Minha Visão' : 'Ver Todos'}
+              </button>
+            )}
             {canChatIA && (
               <button onClick={() => setChatAberto(true)} className="flex items-center gap-1.5 bg-white hover:bg-indigo-50 text-indigo-700 text-xs font-semibold px-3 py-2 rounded-md shadow-sm border border-indigo-200 transition-colors">
                 <Sparkles className="h-3.5 w-3.5" /> Copiloto de Auditoria
@@ -145,6 +157,12 @@ export default function AchadosPainel() {
             )}
           </div>
         </div>
+        {verTodos && (
+          <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 text-xs text-amber-700 font-semibold">
+            <span className="inline-block w-2 h-2 rounded-full bg-amber-400 shrink-0" />
+            Modo "Ver Todos" — mostrando todas as Empresas, ignorando a restrição do seu grupo de acesso
+          </div>
+        )}
         <AuditoriaExternaNav />
       </div>
 

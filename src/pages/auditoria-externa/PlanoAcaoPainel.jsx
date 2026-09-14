@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react'
 import { Link } from 'react-router-dom'
-import { Plus, Edit2, Trash2, CheckCircle2, RotateCcw, Clock, User, Eye, ChevronRight, ChevronDown, Filter } from 'lucide-react'
+import { Plus, Edit2, Trash2, CheckCircle2, RotateCcw, Clock, User, Eye, ChevronRight, ChevronDown, Filter, Users } from 'lucide-react'
 import { useSessionState } from '../../hooks/useSessionState'
 import { useAuth } from '../../context/AuthContext'
 import { apiService } from '../../services/api'
@@ -16,7 +16,7 @@ const ANTERIOR_STATUS = { em_andamento: 'pendente', concluido: 'em_andamento', v
 const FILTROS_VAZIOS = { tipoAcaoId: '', empresaId: '', departamentoId: '', responsavelId: '', status: '' }
 
 export default function PlanoAcaoPainel() {
-  const { user, hasPermission, hasActionOrDefault, isAdminEfetivo, empresasPermitidas, departamentosPermitidosAuditoriaEfetivos } = useAuth()
+  const { user, hasPermission, hasActionOrDefault, isAdminEfetivo, empresasPermitidasAuditoriaEfetivas, departamentosPermitidosAuditoriaEfetivos } = useAuth()
   const canEditar = hasActionOrDefault('auditoria-externa/plano-acao', 'editar_plano')
   const canExcluirPlano = hasActionOrDefault('auditoria-externa/plano-acao', 'excluir_plano')
   const canAvancarStatus = hasActionOrDefault('auditoria-externa/plano-acao', 'avancar_status_acao')
@@ -25,6 +25,8 @@ export default function PlanoAcaoPainel() {
   const canVerTiposAcao = hasPermission('auditoria-externa/tipos-acao')
   const canCriarTipoAcao = hasActionOrDefault('auditoria-externa/tipos-acao', 'editar')
   const canEditarAchado = hasActionOrDefault('auditoria-externa/divergencias', 'editar_achado')
+  const canVerTodos = hasActionOrDefault('auditoria-externa/dashboard', 'ver_todos') &&
+    (empresasPermitidasAuditoriaEfetivas.size > 0 || departamentosPermitidosAuditoriaEfetivos.size > 0)
 
   const [planos, setPlanos] = useState([])
   const [achados, setAchados] = useState([])
@@ -32,6 +34,9 @@ export default function PlanoAcaoPainel() {
   const [loading, setLoading] = useState(true)
   const [ciclosExpandidos, setCiclosExpandidos] = useState(new Set())
   const [expandidos, setExpandidos] = useState(new Set())
+  const [verTodos, setVerTodos] = useSessionState('audext_ver_todos', false)
+  const empresasEfetivas = verTodos ? new Set() : empresasPermitidasAuditoriaEfetivas
+  const departamentosEfetivos = verTodos ? new Set() : departamentosPermitidosAuditoriaEfetivos
   const [filtros, setFiltros] = useSessionState('audext_plano_acao_filtros', FILTROS_VAZIOS)
   const [filtrosAbertos, setFiltrosAbertos] = useSessionState('audext_plano_acao_filtros_abertos', false)
   const [modalPlano, setModalPlano] = useState(null) // null | { tipo: 'novo', achadoId } | { tipo: 'editar', plano }
@@ -65,25 +70,42 @@ export default function PlanoAcaoPainel() {
   const achadoIdsNoEscopoDeEmpresa = useMemo(() => {
     const set = new Set()
     for (const a of achados) {
-      if (empresaNoEscopo(a.audext_ciclos?.empresa_id, empresasPermitidas, isAdminEfetivo)) set.add(a.id)
+      if (empresaNoEscopo(a.audext_ciclos?.empresa_id, empresasEfetivas, isAdminEfetivo)) set.add(a.id)
     }
     return set
-  }, [achados, empresasPermitidas, isAdminEfetivo])
-
-  const achadosVisiveis = useMemo(() =>
-    achados.filter(a => achadoIdsNoEscopoDeEmpresa.has(a.id)),
-    [achados, achadoIdsNoEscopoDeEmpresa])
+  }, [achados, empresasEfetivas, isAdminEfetivo])
 
   const planosVisiveis = useMemo(() =>
     planos.filter(p =>
       achadoIdsNoEscopoDeEmpresa.has(p.achado_id) &&
-      departamentoNoEscopo(p.proj_departamentos?.nome, departamentosPermitidosAuditoriaEfetivos, isAdminEfetivo)
+      departamentoNoEscopo(p.proj_departamentos?.nome, departamentosEfetivos, isAdminEfetivo)
     ),
-    [planos, achadoIdsNoEscopoDeEmpresa, departamentosPermitidosAuditoriaEfetivos, isAdminEfetivo])
+    [planos, achadoIdsNoEscopoDeEmpresa, departamentosEfetivos, isAdminEfetivo])
+
+  // Uma divergência com ações, mas nenhuma no departamento liberado, some da visão —
+  // divergências sem nenhuma ação cadastrada continuam visíveis (nada pra restringir ainda).
+  const achadoIdsComAcaoReal = useMemo(() => {
+    const set = new Set()
+    for (const p of planos) set.add(p.achado_id)
+    return set
+  }, [planos])
+
+  const achadoIdsComAcaoVisivel = useMemo(() => {
+    const set = new Set()
+    for (const p of planosVisiveis) set.add(p.achado_id)
+    return set
+  }, [planosVisiveis])
+
+  const achadosVisiveis = useMemo(() =>
+    achados.filter(a =>
+      achadoIdsNoEscopoDeEmpresa.has(a.id) &&
+      (!achadoIdsComAcaoReal.has(a.id) || achadoIdsComAcaoVisivel.has(a.id))
+    ),
+    [achados, achadoIdsNoEscopoDeEmpresa, achadoIdsComAcaoReal, achadoIdsComAcaoVisivel])
 
   const ciclosVisiveis = useMemo(() =>
-    ciclos.filter(c => empresaNoEscopo(c.empresa_id, empresasPermitidas, isAdminEfetivo)),
-    [ciclos, empresasPermitidas, isAdminEfetivo])
+    ciclos.filter(c => empresaNoEscopo(c.empresa_id, empresasEfetivas, isAdminEfetivo)),
+    [ciclos, empresasEfetivas, isAdminEfetivo])
 
   // Opções do filtro derivadas só do que já está de fato utilizado nas ações
   // cadastradas (não o cadastro inteiro) — evita listar tipo/empresa/departamento/
@@ -213,15 +235,32 @@ export default function PlanoAcaoPainel() {
             <h1 className="text-xl font-bold text-slate-900 tracking-tight">Plano de Ação</h1>
             <p className="text-xs text-slate-500">Devolutiva da controladoria: causa raiz, ação corretiva, responsável e validação. Toda divergência cadastrada aparece aqui — cada divergência pode ter várias ações.</p>
           </div>
-          {canVerTiposAcao && canCriarTipoAcao && (
-            <Link
-              to="/auditoria-externa/tipos-acao"
-              className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold px-3 py-2 rounded-md shadow-sm border border-slate-200 transition-colors shrink-0"
-            >
-              <Plus className="h-4 w-4 text-indigo-500" /> Novo Tipo de Ação
-            </Link>
-          )}
+          <div className="flex items-center gap-2 shrink-0">
+            {canVerTodos && (
+              <button
+                onClick={() => setVerTodos(v => !v)}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-semibold border transition-colors whitespace-nowrap ${verTodos ? 'bg-amber-50 text-amber-700 border-amber-300' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 shadow-sm'}`}
+                title={verTodos ? 'Voltar para minha visão' : 'Ver todas as Empresas e Departamentos'}
+              >
+                <Users className="h-3.5 w-3.5" /> {verTodos ? '← Minha Visão' : 'Ver Todos'}
+              </button>
+            )}
+            {canVerTiposAcao && canCriarTipoAcao && (
+              <Link
+                to="/auditoria-externa/tipos-acao"
+                className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold px-3 py-2 rounded-md shadow-sm border border-slate-200 transition-colors"
+              >
+                <Plus className="h-4 w-4 text-indigo-500" /> Novo Tipo de Ação
+              </Link>
+            )}
+          </div>
         </div>
+        {verTodos && (
+          <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 text-xs text-amber-700 font-semibold">
+            <span className="inline-block w-2 h-2 rounded-full bg-amber-400 shrink-0" />
+            Modo "Ver Todos" — mostrando todas as Empresas e Departamentos, ignorando a restrição do seu grupo de acesso
+          </div>
+        )}
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <AuditoriaExternaNav />
           <button

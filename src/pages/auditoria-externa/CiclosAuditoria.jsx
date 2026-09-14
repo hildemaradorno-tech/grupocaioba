@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react'
 import { useSessionState } from '../../hooks/useSessionState'
-import { Plus, X, AlertTriangle, CalendarClock, Eye, Trash2, Upload } from 'lucide-react'
+import { Plus, X, AlertTriangle, CalendarClock, Eye, Trash2, Upload, Users } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import PermissionActionButtons from '../../components/PermissionActionButtons'
 import { apiService } from '../../services/api'
@@ -27,18 +27,21 @@ export default function CiclosAuditoria() {
   const [idExcluir, setIdExcluir] = useState(null)
   const [nomeExcluir, setNomeExcluir] = useState('')
   const [form, setForm] = useSessionState('audext_ciclos_form', FORM_VAZIO)
-  const { user, hasActionOrDefault, isAdminEfetivo, empresasPermitidas } = useAuth()
+  const { user, hasActionOrDefault, isAdminEfetivo, empresasPermitidasAuditoriaEfetivas } = useAuth()
   const canEdit = hasActionOrDefault('auditoria-externa/ciclos', 'editar')
   const canExcluir = hasActionOrDefault('auditoria-externa/ciclos', 'excluir')
   const canImportar = hasActionOrDefault('auditoria-externa/divergencias', 'importar_divergencias')
+  const canVerTodos = hasActionOrDefault('auditoria-externa/dashboard', 'ver_todos') && empresasPermitidasAuditoriaEfetivas.size > 0
+  const [verTodos, setVerTodos] = useSessionState('audext_ver_todos', false)
+  const empresasEfetivas = verTodos ? new Set() : empresasPermitidasAuditoriaEfetivas
 
   // Escopo por Empresa (Grupo de Acesso) — vazio = sem restrição.
   const empresasVisiveis = useMemo(() =>
-    empresas.filter(e => empresaNoEscopo(e.id, empresasPermitidas, isAdminEfetivo)),
-    [empresas, empresasPermitidas, isAdminEfetivo])
+    empresas.filter(e => empresaNoEscopo(e.id, empresasEfetivas, isAdminEfetivo)),
+    [empresas, empresasEfetivas, isAdminEfetivo])
   const dadosVisiveis = useMemo(() =>
-    dados.filter(c => empresaNoEscopo(c.empresa_id, empresasPermitidas, isAdminEfetivo)),
-    [dados, empresasPermitidas, isAdminEfetivo])
+    dados.filter(c => empresaNoEscopo(c.empresa_id, empresasEfetivas, isAdminEfetivo)),
+    [dados, empresasEfetivas, isAdminEfetivo])
 
   const loadDados = async () => {
     setLoading(true); setError(null)
@@ -180,6 +183,15 @@ export default function CiclosAuditoria() {
             <p className="text-xs text-slate-500">Períodos de auditoria externa por empresa (ex: 1º Tri 2026, firma responsável).</p>
           </div>
           <div className="flex items-center gap-2">
+            {canVerTodos && (
+              <button
+                onClick={() => setVerTodos(v => !v)}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-semibold border transition-colors whitespace-nowrap ${verTodos ? 'bg-amber-50 text-amber-700 border-amber-300' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 shadow-sm'}`}
+                title={verTodos ? 'Voltar para minha visão' : 'Ver todas as Empresas'}
+              >
+                <Users className="h-3.5 w-3.5" /> {verTodos ? '← Minha Visão' : 'Ver Todos'}
+              </button>
+            )}
             {canImportar && (
               <button onClick={() => setModalImportarAberto(true)} className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold px-3 py-2 rounded-md shadow-sm border border-slate-200 transition-colors">
                 <Upload className="h-4 w-4 text-emerald-600" /> Importar Excel
@@ -192,6 +204,12 @@ export default function CiclosAuditoria() {
             )}
           </div>
         </div>
+        {verTodos && (
+          <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 text-xs text-amber-700 font-semibold">
+            <span className="inline-block w-2 h-2 rounded-full bg-amber-400 shrink-0" />
+            Modo "Ver Todos" — mostrando todas as Empresas, ignorando a restrição do seu grupo de acesso
+          </div>
+        )}
         <AuditoriaExternaNav />
       </div>
 

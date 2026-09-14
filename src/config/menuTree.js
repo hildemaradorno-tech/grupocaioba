@@ -142,7 +142,7 @@ export const MENU_TREE = [
         children: [
           { key: 'garantias-daf-andamento', label: 'Garantias DAF na Oficina' },
           { key: 'garantias-daf', label: 'Garantias DAF Aberto' },
-          { key: 'garantias-daf-faturadas', label: 'Garantias DAF Faturadas' },
+          { key: 'garantias-daf-historicodeos', label: 'Histórico de O.S.' },
           { key: 'garantias-daf-titulos',   label: 'Garantias DAF a Receber' },
         ],
       },

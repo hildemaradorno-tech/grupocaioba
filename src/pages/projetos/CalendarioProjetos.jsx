@@ -100,10 +100,10 @@ const addDaysLocal = (d, n) => { const dt = new Date(d); dt.setDate(dt.getDate()
 export default function CalendarioProjetos({ abaInicial = 'lista' }) {
   const navigate = useNavigate()
   const location = useLocation()
-  const { isAdmin, empresasPermitidas, departamentosPermitidosEfetivos, hasActionOrDefault, hasPermission, user } = useAuth()
+  const { isAdmin, empresasPermitidas, departamentosPermitidosEfetivos, projetosDeptoModoEfetivo, hasActionOrDefault, hasPermission, user } = useAuth()
   const ctx = useProjetosFiltros()
   const { modoVerTodos, setModoVerTodos } = ctx
-  const canVerTodos       = !isAdmin && hasActionOrDefault('projetos', 'ver_todos_projetos') && departamentosPermitidosEfetivos?.size > 0
+  const canVerTodos       = !isAdmin && hasActionOrDefault('projetos', 'ver_todos_projetos')
   const canEditarProjeto  = !modoVerTodos && hasActionOrDefault('projetos', 'editar')
   const canEditarTarefa        = !modoVerTodos && hasActionOrDefault('projetos', 'editar_tarefa')
   const canAlterarStatusTarefa = hasActionOrDefault('projetos', 'alterar_status_tarefa')

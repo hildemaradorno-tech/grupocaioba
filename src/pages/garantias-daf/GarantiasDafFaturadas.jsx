@@ -46,8 +46,8 @@ const FILTROS_VAZIOS = { numero_os: '', chassi: '', numero_nf: '', data_inicio: 
 export default function GarantiasDafFaturadas() {
   const navigate = useNavigate()
   const { isAdmin, empresasPermitidas, hasActionOrDefault } = useAuth()
-  const canEditarOS = hasActionOrDefault('garantias-daf-faturadas', 'editar')
-  const canExcluirOS = hasActionOrDefault('garantias-daf-faturadas', 'excluir')
+  const canEditarOS = hasActionOrDefault('garantias-daf-historicodeos', 'editar')
+  const canExcluirOS = hasActionOrDefault('garantias-daf-historicodeos', 'excluir')
 
   const [dados, setDados] = useState([])
   const [dadosTodos, setDadosTodos] = useState([])
@@ -279,7 +279,7 @@ export default function GarantiasDafFaturadas() {
       <div className="flex items-center justify-between border-b border-slate-200 pb-4">
         <div>
           <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-1.5">
-            Garantias DAF Faturadas
+            Histórico de O.S.
             <span className="relative group cursor-help">
               <Info className="h-3.5 w-3.5 text-slate-400" />
               <span className="absolute top-full left-0 mt-2 w-96 text-[10px] text-white bg-slate-700 rounded px-2 py-1.5 leading-relaxed opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 normal-case font-normal tracking-normal space-y-1">
@@ -486,7 +486,7 @@ export default function GarantiasDafFaturadas() {
                       <div className="flex items-center gap-1.5">
                         <button
                           type="button"
-                          onClick={() => navigate(`/garantias-daf/${item.id}`, { state: { from: '/garantias-daf-faturadas' } })}
+                          onClick={() => navigate(`/garantias-daf/${item.id}`, { state: { from: '/garantias-daf-historicodeos' } })}
                           className={`shrink-0 p-0.5 rounded transition-colors ${item.data_envio_fabrica ? 'hover:bg-slate-100' : 'bg-amber-100 hover:bg-amber-200'}`}
                           title={item.data_envio_fabrica
                             ? `Enviado para fábrica em ${fmtData(item.data_envio_fabrica)} — clique para editar`
@@ -528,11 +528,11 @@ export default function GarantiasDafFaturadas() {
                     </td>
                     <td className="p-3 text-center sticky right-0 bg-white border-l border-slate-100 shadow-[-4px_0_12px_rgba(0,0,0,0.03)]">
                       <div className="flex items-center justify-center gap-1">
-                        <button onClick={() => navigate(`/garantias-daf/${item.id}`, { state: { from: '/garantias-daf-faturadas', modo: 'visualizar' } })} className="p-1 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors" title="Visualizar">
+                        <button onClick={() => navigate(`/garantias-daf/${item.id}`, { state: { from: '/garantias-daf-historicodeos', modo: 'visualizar' } })} className="p-1 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors" title="Visualizar">
                           <Eye className="h-3.5 w-3.5" />
                         </button>
                         {canEditarOS && (
-                          <button onClick={() => navigate(`/garantias-daf/${item.id}`, { state: { from: '/garantias-daf-faturadas' } })} className="p-1 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors" title="Editar">
+                          <button onClick={() => navigate(`/garantias-daf/${item.id}`, { state: { from: '/garantias-daf-historicodeos' } })} className="p-1 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors" title="Editar">
                             <Edit2 className="h-3.5 w-3.5" />
                           </button>
                         )}

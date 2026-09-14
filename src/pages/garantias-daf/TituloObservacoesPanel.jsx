@@ -123,7 +123,7 @@ export default function TituloObservacoesPanel({ nroTitulo, observacoes, podeEdi
       {podeEditar && (
         bloqueado ? (
           <p className="text-[11px] text-orange-600 bg-orange-50 border border-orange-200 rounded-md px-2.5 py-1.5">
-            Vincule este título a uma OS em Garantias DAF Faturadas antes de adicionar observações.
+            Vincule este título a uma OS em Histórico de O.S. antes de adicionar observações.
           </p>
         ) : (
           <div className="flex items-start gap-2">

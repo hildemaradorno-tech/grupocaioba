@@ -3312,6 +3312,35 @@ export const apiService = {
     }
   },
 
+  // Mesma ideia acima, mas pra Empresa — Auditoria Externa não pode reaproveitar
+  // permissoes_empresa_grupo (usa dim_empresas.id) porque o Ciclo de Auditoria referencia
+  // proj_empresas.id, uma tabela diferente. `modo` fica em grupos_acesso.auditoria_empresa_modo.
+  getPermissoesEmpresaAuditoriaPorGrupo: async (grupoId) => {
+    const [{ data, error }, { data: grupoRow, error: e2 }] = await Promise.all([
+      supabase.from('permissoes_empresa_grupo_auditoria').select('empresa_id').eq('grupo_id', grupoId),
+      supabase.from('grupos_acesso').select('auditoria_empresa_modo').eq('id', grupoId).maybeSingle(),
+    ])
+    if (error) throw error
+    if (e2) throw e2
+    return {
+      modo: grupoRow?.auditoria_empresa_modo === 'INDIVIDUAL' ? 'INDIVIDUAL' : 'TODOS',
+      valores: (data || []).map(r => r.empresa_id),
+    }
+  },
+  setPermissoesEmpresaAuditoriaPorGrupo: async (grupoId, modo, ids) => {
+    const modoFinal = modo === 'INDIVIDUAL' ? 'INDIVIDUAL' : 'TODOS'
+    const [{ error: delErr }, { error: errModo }] = await Promise.all([
+      supabase.from('permissoes_empresa_grupo_auditoria').delete().eq('grupo_id', grupoId),
+      supabase.from('grupos_acesso').update({ auditoria_empresa_modo: modoFinal }).eq('id', grupoId),
+    ])
+    if (delErr) throw delErr
+    if (errModo) throw errModo
+    if (modoFinal === 'INDIVIDUAL' && ids.length > 0) {
+      const { error } = await supabase.from('permissoes_empresa_grupo_auditoria').insert(ids.map(empresa_id => ({ grupo_id: grupoId, empresa_id })))
+      if (error) throw error
+    }
+  },
+
   // Escopo de acesso exclusivo do módulo Cálculo de Comissões (5 dimensões independentes,
   // cada uma TODOS ou INDIVIDUAL) — separado da restrição de Empresa usada em Garantias DAF.
   getPermissoesComissaoGrupo: async (grupoId) => {
