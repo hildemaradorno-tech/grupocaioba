@@ -717,9 +717,9 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
                 <button
                   onClick={() => navigate('/bi/garantias-daf', { state: { aba: 'oficina' } })}
                   title="Ir para Dashboard"
-                  className="flex items-center justify-center p-2 bg-white hover:bg-slate-50 text-slate-700 rounded-md shadow-sm border border-slate-200 transition-colors"
+                  className="flex items-center justify-center p-2 rounded-md text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 shadow-sm transition-colors"
                 >
-                  <BarChart2 className="h-4 w-4 text-indigo-500" />
+                  <BarChart2 className="h-3.5 w-3.5 text-indigo-500" />
                 </button>
               )}
             </div>
@@ -765,9 +765,9 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
                 <button
                   onClick={() => navigate('/bi/garantias-daf', { state: { aba: 'aberto' } })}
                   title="Ir para Dashboard"
-                  className="flex items-center justify-center p-2 bg-white hover:bg-slate-50 text-slate-700 rounded-md shadow-sm border border-slate-200 transition-colors"
+                  className="flex items-center justify-center p-2 rounded-md text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 shadow-sm transition-colors"
                 >
-                  <BarChart2 className="h-4 w-4 text-indigo-500" />
+                  <BarChart2 className="h-3.5 w-3.5 text-indigo-500" />
                 </button>
               )}
             </div>
