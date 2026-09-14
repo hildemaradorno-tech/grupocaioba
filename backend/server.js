@@ -245,7 +245,7 @@ async function start() {
     if (!supabaseAdmin) {
       return res.status(503).json({ error: 'SUPABASE_SERVICE_KEY não configurada no backend. Configure o arquivo backend/.env.' })
     }
-    const { nome, email, grupo_id, cargo_id, redirectTo } = req.body
+    const { nome, email, grupo_id, cargo_id, funcionario_id, redirectTo } = req.body
     if (!nome || !email) {
       return res.status(400).json({ error: 'Campos obrigatórios: nome, email' })
     }
@@ -261,6 +261,7 @@ async function start() {
     const perfilInsert = { id: authData.user.id, nome, email, ativo: true }
     if (grupo_id) perfilInsert.grupo_id = grupo_id
     if (cargo_id) perfilInsert.cargo_id = cargo_id
+    if (funcionario_id) perfilInsert.funcionario_id = funcionario_id
     const { data, error } = await supabaseAdmin
       .from('usuarios')
       .insert([perfilInsert])
