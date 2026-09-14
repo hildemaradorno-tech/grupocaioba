@@ -5,7 +5,7 @@ import { useSessionState } from '../../hooks/useSessionState'
 import { apiService } from '../../services/api'
 import AuditoriaExternaNav from './AuditoriaExternaNav'
 import { useAuth } from '../../context/AuthContext'
-import { calcularPercentualAtingidoAchado, statusAgregadoAchado, achadoResolvido, empresaNoEscopo, departamentoNoEscopo } from './auditExtConstants'
+import { calcularPercentualAtingidoAchado, statusAgregadoAchado, achadoResolvido, empresaNoEscopo, departamentoNoEscopo, fmtMoeda } from './auditExtConstants'
 
 function KpiCard({ icon: Icon, label, valor, sub, cor }) {
   return (
@@ -22,6 +22,8 @@ function KpiCard({ icon: Icon, label, valor, sub, cor }) {
 
 const PIE_CORES_DEPARTAMENTO = ['#2563eb', '#0ea5e9', '#14b8a6', '#0d9488', '#6366f1', '#3b82f6', '#22d3ee', '#0891b2']
 const PIE_CORES_TIPO_ACAO = ['#7c3aed', '#c026d3', '#db2777', '#f97316', '#ea580c', '#a855f7', '#e11d48', '#d946ef']
+const PIE_CORES_IMPACTO = ['#b91c1c', '#ea580c', '#ca8a04', '#65a30d', '#0f766e', '#1d4ed8', '#7c3aed', '#be185d']
+const STATUS_COR_CHART = { sem_plano: '#94a3b8', pendente: '#94a3b8', em_andamento: '#3b82f6', concluido: '#10b981', validado_auditoria: '#4f46e5' }
 
 // Gráfico de pizza por contagem, usado em "por Departamento" / "por Tipo de Ação".
 // Por fora de cada fatia mostra o % do total; passando o mouse (tooltip) mostra
@@ -44,18 +46,20 @@ function RankingPie({ dados, cores }) {
   )
 }
 
-// Gráfico de colunas (barras verticais) por contagem.
-function RankingColunas({ dados, cores }) {
+// Gráfico de colunas (barras verticais) por contagem — ou, quando `formatarValor`
+// é passado, por valor monetário (ex: "Impacto" em R$ por texto de impacto).
+function RankingColunas({ dados, cores, formatarValor }) {
   if (dados.length === 0) return <p className="text-xs text-slate-400">Sem dados ainda.</p>
+  const fmt = formatarValor || (v => v)
   return (
     <ResponsiveContainer width="100%" height={260}>
       <BarChart data={dados} margin={{ top: 8, left: -12 }}>
         <CartesianGrid strokeDasharray="3 3" vertical={false} />
         <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={0} angle={-20} textAnchor="end" height={60} />
-        <YAxis allowDecimals={false} tick={{ fontSize: 10 }} />
-        <Tooltip formatter={(v, n, p) => [v, p.payload.label]} />
+        <YAxis allowDecimals={false} tick={{ fontSize: 10 }} tickFormatter={fmt} />
+        <Tooltip formatter={(v, n, p) => [fmt(v), p.payload.label]} />
         <Bar dataKey="qtd" radius={[4, 4, 0, 0]}>
-          <LabelList dataKey="qtd" position="top" fontSize={11} fontWeight="bold" fill="#334155" />
+          <LabelList dataKey="qtd" position="top" fontSize={11} fontWeight="bold" fill="#334155" formatter={fmt} />
           {dados.map((d, i) => <Cell key={i} fill={cores[i % cores.length]} />)}
         </Bar>
       </BarChart>
@@ -63,7 +67,6 @@ function RankingColunas({ dados, cores }) {
   )
 }
 
-const STATUS_COR_CHART = { sem_plano: '#94a3b8', pendente: '#94a3b8', em_andamento: '#3b82f6', concluido: '#10b981', validado_auditoria: '#4f46e5' }
 
 export default function AuditoriaDashboard() {
   const { isAdminEfetivo, empresasPermitidasAuditoriaEfetivas, departamentosPermitidosAuditoriaEfetivos, hasActionOrDefault } = useAuth()
@@ -176,9 +179,9 @@ export default function AuditoriaDashboard() {
     return Math.round(soma / achadosFiltrados.length)
   }, [achadosFiltrados])
 
-  // Como estão as soluções: quantidade de divergências em cada estágio (o
-  // estágio da divergência é o mais atrasado entre as ações dela).
-  // "Validado pela Auditoria" entra junto com "Concluído" aqui.
+  // Quantidade de divergências em cada estágio (o estágio da divergência é o
+  // mais atrasado entre as ações dela). "Validado pela Auditoria" entra junto
+  // com "Concluído" aqui.
   const statusData = useMemo(() => {
     const m = { sem_plano: 0, pendente: 0, em_andamento: 0, concluido: 0 }
     for (const a of achadosFiltrados) {
@@ -209,6 +212,17 @@ export default function AuditoriaDashboard() {
     }
     return Array.from(m.entries()).map(([label, qtd]) => ({ label, qtd })).sort((a, b) => b.qtd - a.qtd)
   }, [planosFiltrados])
+
+  // Total Apontado (R$) somado por texto de Impacto — cada divergência entra no
+  // grupo do texto exato preenchido no campo "Impactos" (texto livre).
+  const porImpacto = useMemo(() => {
+    const m = new Map()
+    for (const a of achadosFiltrados) {
+      const texto = (a.impactos || '').trim() || 'Não informado'
+      m.set(texto, (m.get(texto) || 0) + Number(a.total_apontado || 0))
+    }
+    return Array.from(m.entries()).map(([label, qtd]) => ({ label, qtd })).sort((a, b) => b.qtd - a.qtd)
+  }, [achadosFiltrados])
 
   if (loading) return <div className="p-6">Carregando...</div>
 
@@ -275,7 +289,7 @@ export default function AuditoriaDashboard() {
 
       <div className="grid grid-cols-2 gap-4">
         <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-4">
-          <h3 className="text-xs font-bold text-slate-700 mb-3">Como Estão as Soluções — Divergências por Status</h3>
+          <h3 className="text-xs font-bold text-slate-700 mb-3">Divergências por Status</h3>
           <ResponsiveContainer width="100%" height={260}>
             <BarChart data={statusData} layout="vertical" margin={{ left: 24 }}>
               <CartesianGrid strokeDasharray="3 3" horizontal={false} />
@@ -296,9 +310,16 @@ export default function AuditoriaDashboard() {
         </div>
       </div>
 
-      <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-4">
-        <h3 className="text-xs font-bold text-slate-700 mb-3">Divergências por Departamento</h3>
-        <RankingPie dados={porDepartamento} cores={PIE_CORES_DEPARTAMENTO} />
+      <div className="grid grid-cols-2 gap-4">
+        <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-4">
+          <h3 className="text-xs font-bold text-slate-700 mb-3">Divergências por Departamento</h3>
+          <RankingPie dados={porDepartamento} cores={PIE_CORES_DEPARTAMENTO} />
+        </div>
+
+        <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-4">
+          <h3 className="text-xs font-bold text-slate-700 mb-3">Impactos das Divergências</h3>
+          <RankingColunas dados={porImpacto} cores={PIE_CORES_IMPACTO} formatarValor={fmtMoeda} />
+        </div>
       </div>
     </div>
   )
