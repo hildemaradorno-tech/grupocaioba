@@ -1,8 +1,8 @@
 ﻿import React, { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useSessionState } from '../hooks/useSessionState'
-import { Trash2, Plus, Edit2, Eye, EyeOff, X, UserCheck, Search, Check, UserPlus, Send, ChevronDown, Link2 } from 'lucide-react'
-import PermissionActionButtons from '../components/PermissionActionButtons'
+import { Trash2, Plus, Edit2, Eye, EyeOff, X, UserCheck, Search, UserPlus, Send, Link2, Settings } from 'lucide-react'
+import { SearchCombobox } from '../components/SearchCombobox'
 import { apiService } from '../services/api'
 import { supabase } from '../services/supabaseClient'
 import { useAuth } from '../context/AuthContext'
@@ -20,31 +20,27 @@ function traduzirErroSenha(msg = '') {
   return null
 }
 
-// Combobox de seleção única com busca — o <select> nativo fica difícil de navegar com muitas
-// opções (cargos, um por empresa; ou funcionários), então digitar filtra a lista em vez de
-// rolar tudo procurando. Genérico: quem usa passa como formatar rótulo/busca de cada opção.
-function SearchCombobox({ value, onChange, opcoes, placeholder, emptyOptionLabel, searchPlaceholder, notFoundLabel, getLabel, getSearchText }) {
+// Menu de ações por linha (engrenagem) — reúne Visualizar/Editar/Excluir/Reenviar e-mail/
+// Visualizar como num só botão em vez de vários ícones lado a lado. Mesmo padrão de portal
+// (document.body, position fixed) usado no SearchCombobox, pra não ficar cortado pelo
+// overflow-x-auto da tabela; alinhado pela direita do botão pra não estourar a borda da tela.
+function AcoesMenu({ acoes }) {
   const [aberto, setAberto] = useState(false)
-  const [busca, setBusca] = useState('')
   const [pos, setPos] = useState(null)
   const ref = useRef(null)
 
   useEffect(() => {
     const fecharSeClicarFora = (e) => {
-      if (ref.current && !ref.current.contains(e.target) && !e.target.closest('[data-search-combobox-panel]')) { setAberto(false); setBusca('') }
+      if (ref.current && !ref.current.contains(e.target) && !e.target.closest('[data-acoes-menu-panel]')) setAberto(false)
     }
     document.addEventListener('mousedown', fecharSeClicarFora)
     return () => document.removeEventListener('mousedown', fecharSeClicarFora)
   }, [])
 
-  // O modal de Editar Usuário tem overflow-y-auto (rola o formulário) — um painel "absolute"
-  // aqui dentro ficava cortado/deslocado por esse scroll. Renderiza via portal em document.body,
-  // "fixed" na posição real do botão, pra flutuar por cima sem ser cortado (mesmo padrão já
-  // usado nos filtros de coluna de Cargos/Funcionários).
   const abrir = () => {
     if (!aberto && ref.current) {
       const r = ref.current.getBoundingClientRect()
-      setPos({ top: r.bottom + 4, left: r.left, width: r.width })
+      setPos({ top: r.bottom + 4, right: window.innerWidth - r.right })
     }
     setAberto(v => !v)
   }
@@ -52,7 +48,7 @@ function SearchCombobox({ value, onChange, opcoes, placeholder, emptyOptionLabel
   useEffect(() => {
     if (!aberto) return
     const fechar = (e) => {
-      if (e.target?.closest?.('[data-search-combobox-panel]')) return
+      if (e.target?.closest?.('[data-acoes-menu-panel]')) return
       setAberto(false)
     }
     window.addEventListener('scroll', fechar, true)
@@ -63,60 +59,39 @@ function SearchCombobox({ value, onChange, opcoes, placeholder, emptyOptionLabel
     }
   }, [aberto])
 
-  const selecionado = opcoes.find(o => o.id === value)
-  const q = busca.trim().toLowerCase()
-  const filtradas = q ? opcoes.filter(o => getSearchText(o).toLowerCase().includes(q)) : opcoes
+  const visiveis = acoes.filter(Boolean)
+  if (visiveis.length === 0) return null
 
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref} className="relative inline-block">
       <button
         type="button"
         onClick={abrir}
-        className="w-full flex items-center justify-between gap-2 px-3 py-2 border border-slate-300 rounded-md bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        title="Ações"
+        className="inline-flex items-center justify-center p-1.5 rounded border border-slate-300 text-slate-500 bg-white hover:bg-slate-50 hover:text-slate-700 transition-colors"
       >
-        <span className={`truncate ${selecionado ? 'text-slate-800' : 'text-slate-400'}`}>
-          {selecionado ? getLabel(selecionado) : placeholder}
-        </span>
-        <ChevronDown className="h-4 w-4 text-slate-400 shrink-0" />
+        <Settings size={14} />
       </button>
       {aberto && pos && createPortal(
         <div
-          data-search-combobox-panel
-          style={{ position: 'fixed', top: pos.top, left: pos.left, width: pos.width }}
-          className="z-50 bg-white border border-slate-200 rounded-md shadow-lg overflow-hidden"
+          data-acoes-menu-panel
+          style={{ position: 'fixed', top: pos.top, right: pos.right }}
+          className="z-50 w-56 bg-white border border-slate-200 rounded-md shadow-lg overflow-hidden py-1"
         >
-          <div className="relative border-b border-slate-100">
-            <Search className="h-3.5 w-3.5 text-slate-300 absolute left-2.5 top-1/2 -translate-y-1/2" />
-            <input
-              autoFocus
-              type="text"
-              value={busca}
-              onChange={e => setBusca(e.target.value)}
-              placeholder={searchPlaceholder}
-              className="w-full text-sm pl-8 pr-2 py-2 focus:outline-none"
-            />
-          </div>
-          <div className="max-h-52 overflow-y-auto custom-scrollbar">
+          {visiveis.map((a, i) => (
             <button
+              key={i}
               type="button"
-              onClick={() => { onChange(''); setAberto(false); setBusca('') }}
-              className="w-full text-left px-3 py-2 text-sm text-slate-500 hover:bg-slate-50"
+              disabled={a.disabled}
+              onClick={() => { setAberto(false); a.onClick() }}
+              className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                a.danger ? 'text-red-600 hover:bg-red-50' : 'text-slate-700 hover:bg-slate-50'
+              }`}
             >
-              {emptyOptionLabel}
+              {a.icon}
+              {a.label}
             </button>
-            {filtradas.length === 0 ? (
-              <p className="px-3 py-2 text-sm text-slate-400">{notFoundLabel}</p>
-            ) : filtradas.map(o => (
-              <button
-                key={o.id}
-                type="button"
-                onClick={() => { onChange(o.id); setAberto(false); setBusca('') }}
-                className={`w-full text-left px-3 py-2 text-sm hover:bg-blue-50 ${o.id === value ? 'bg-blue-50 font-semibold text-blue-700' : 'text-slate-700'}`}
-              >
-                {getLabel(o)}
-              </button>
-            ))}
-          </div>
+          ))}
         </div>,
         document.body
       )}
@@ -144,8 +119,6 @@ export default function Usuarios() {
   const [itemVisualizado, setItemVisualizado] = useState(null)
   const [busca, setBusca] = useState('')
   const [conviteEnviado, setConviteEnviado] = useState(null) // { nome, email }
-  const [reenviandoId, setReenviandoId] = useState(null)
-  const [reenviadoId, setReenviadoId] = useState(null)
   const abrirVisualizar = (item) => { setItemVisualizado(item); setModalVisualizarAberto(true) }
 
   useEffect(() => { loadData() }, [])
@@ -227,17 +200,11 @@ export default function Usuarios() {
   }
 
   const handleReenviarConvite = async (usuario) => {
-    setReenviandoId(usuario.id)
-    setReenviadoId(null)
     try {
       await apiService.sendResetPasswordEmail(usuario.email, `${URL_PRODUCAO}/redefinir-senha`)
-      setReenviadoId(usuario.id)
       setConviteEnviado({ nome: usuario.nome, email: usuario.email, tipo: 'reenvio' })
-      setTimeout(() => setReenviadoId(null), 3000)
     } catch (err) {
       alert('Erro ao enviar e-mail: ' + (err.message || String(err)))
-    } finally {
-      setReenviandoId(null)
     }
   }
 
@@ -532,34 +499,14 @@ export default function Usuarios() {
                     <span title="Sem registro de data" className="inline-block w-3 h-3 rounded-full bg-slate-300" />
                   )}
                 </td>
-                <td className="px-6 py-3 text-sm flex gap-2 items-center">
-                  <PermissionActionButtons
-                    menuPath="usuarios"
-                    onView={() => abrirVisualizar(u)}
-                    onEdit={() => handleEdit(u)}
-                    onDelete={() => handleDelete(u.id)}
-                  />
-                  <button
-                    onClick={() => handleReenviarConvite(u)}
-                    disabled={reenviandoId === u.id}
-                    title={reenviandoId === u.id ? 'Enviando...' : reenviadoId === u.id ? 'E-mail enviado!' : 'Reenviar e-mail com o link de definição/redefinição de senha (aponta para o sistema em produção)'}
-                    className={`inline-flex items-center justify-center p-1.5 rounded border transition-colors disabled:opacity-50 ${
-                      reenviadoId === u.id
-                        ? 'border-green-300 text-green-700 bg-green-50'
-                        : 'border-blue-300 text-blue-700 bg-blue-50 hover:bg-blue-100'
-                    }`}
-                  >
-                    {reenviadoId === u.id ? <Check size={13} /> : <Send size={13} />}
-                  </button>
-                  {isAdmin && u.email !== user?.email && (
-                    <button
-                      onClick={() => iniciarVisualizacao(u)}
-                      title={`Visualizar como ${u.nome}`}
-                      className="inline-flex items-center justify-center p-1.5 rounded border border-violet-300 text-violet-700 bg-violet-50 hover:bg-violet-100 transition-colors"
-                    >
-                      <UserCheck size={13} />
-                    </button>
-                  )}
+                <td className="px-6 py-3 text-sm">
+                  <AcoesMenu acoes={[
+                    { label: 'Visualizar', icon: <Eye size={14} />, onClick: () => abrirVisualizar(u) },
+                    { label: 'Editar', icon: <Edit2 size={14} />, onClick: () => handleEdit(u) },
+                    { label: 'Reenviar e-mail', icon: <Send size={14} />, onClick: () => handleReenviarConvite(u) },
+                    (isAdmin && u.email !== user?.email) && { label: `Visualizar como ${u.nome}`, icon: <UserCheck size={14} />, onClick: () => iniciarVisualizacao(u) },
+                    { label: 'Excluir', icon: <Trash2 size={14} />, onClick: () => handleDelete(u.id), danger: true },
+                  ]} />
                 </td>
               </tr>
               )

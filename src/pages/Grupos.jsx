@@ -141,6 +141,9 @@ function TreeNode({ node, selected, onToggle, disabled, defaultOpen = false, sel
 function SeletorDimensaoComissao({ label, escopo, opcoes, disabled, onModoChange, onToggleValor, onSelecionarTodos, onLimpar, nivelPorValor, onNivelChange, onToggleResponsavel }) {
   const modo = escopo?.modo || 'TODOS'
   const valores = escopo?.valores || new Set()
+  // Lista de opções recolhida por padrão quando marcado Individual — evita que a tela de
+  // Permissões de Acesso fique enorme quando há muitos departamentos/setores/cargos.
+  const [expandido, setExpandido] = useState(false)
   return (
     <div className="py-3">
       <div className="flex items-center justify-between gap-3 mb-2">
@@ -168,12 +171,22 @@ function SeletorDimensaoComissao({ label, escopo, opcoes, disabled, onModoChange
         <>
           {opcoes.length > 0 && (
             <div className="flex items-center gap-2 mb-1.5">
+              <button
+                type="button"
+                onClick={() => setExpandido(v => !v)}
+                className="flex items-center gap-1 text-[11px] font-semibold text-slate-500 hover:text-slate-700"
+              >
+                {expandido ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                {expandido ? 'Recolher' : 'Expandir'}
+              </button>
+              <span className="text-slate-300">|</span>
               <button type="button" onClick={onSelecionarTodos} className="text-[11px] text-blue-600 hover:underline">Selecionar todos</button>
               <span className="text-slate-300">|</span>
               <button type="button" onClick={onLimpar} className="text-[11px] text-slate-500 hover:underline">Desmarcar todos</button>
               <span className="ml-auto text-[11px] text-slate-400">{valores.size}/{opcoes.length}</span>
             </div>
           )}
+          {(expandido || opcoes.length === 0) && (
           <div className="flex flex-col gap-0.5">
             {opcoes.length === 0 ? (
               <p className="text-xs text-slate-400 py-1">Nenhuma opção cadastrada.</p>
@@ -225,6 +238,7 @@ function SeletorDimensaoComissao({ label, escopo, opcoes, disabled, onModoChange
               )
             })}
           </div>
+          )}
         </>
       )}
     </div>
@@ -248,6 +262,14 @@ export default function Grupos() {
   const [selectedPaths, setSelectedPaths] = useState(new Set())
   const [selectedAcoes, setSelectedAcoes] = useState(new Set()) // "menu_path|acao"
   const [selectedEmpresas, setSelectedEmpresas] = useState(new Set())
+  // Modo (Todos/Individual) do "Acesso por Empresa" — sem coluna própria no banco (essa
+  // restrição só grava a lista de ids selecionados), então é inferido ao carregar: lista
+  // completa = Todos, lista parcial (ou vazia) = Individual. Precisa ser um estado explícito
+  // (não só derivado do tamanho do Set) senão clicar "Individual" partindo de "Todos" não
+  // tinha efeito nenhum — o painel de checkboxes só aparecia quando a seleção já não era mais
+  // "tudo", e nada mudava a seleção ao clicar Individual.
+  const [empresaModoIndividual, setEmpresaModoIndividual] = useState(false)
+  const [empresaExpandido, setEmpresaExpandido] = useState(false)
   const [selectedDeptosProjetos, setSelectedDeptosProjetos] = useState(new Set())
   const [projetosDeptoModo, setProjetosDeptoModo] = useState('TODOS')
   const [projDepartamentos, setProjDepartamentos] = useState([])
@@ -454,6 +476,9 @@ export default function Grupos() {
       setSelectedPaths(new Set(paths))
       setSelectedAcoes(new Set(acoes.map(a => `${a.menu_path}|${a.acao}`)))
       setSelectedEmpresas(new Set(empIds))
+      const empresasAtivas = emps.filter(e => e.ativo !== false)
+      setEmpresaModoIndividual(empIds.length !== empresasAtivas.length)
+      setEmpresaExpandido(false)
       setProjetosDeptoModo(deptosProj.modo)
       setSelectedDeptosProjetos(new Set(deptosProj.valores))
       setProjDepartamentos((projDeptos || []).filter(d => d.ativo !== false).sort((a, b) => (a.nome || '').localeCompare(b.nome || '', 'pt-BR')))
@@ -477,6 +502,8 @@ export default function Grupos() {
       setSelectedPaths(new Set())
       setSelectedAcoes(new Set())
       setSelectedEmpresas(new Set())
+      setEmpresaModoIndividual(false)
+      setEmpresaExpandido(false)
       setSelectedDeptosProjetos(new Set())
       setProjetosDeptoModo('TODOS')
       setSelectedDeptosAuditoria(new Set())
@@ -824,19 +851,44 @@ export default function Grupos() {
 
       {/* ── Acesso por Empresa ── */}
       <div className="bg-white rounded-lg shadow border border-slate-200 overflow-hidden mt-4">
-        <div className="px-5 py-4 border-b border-slate-100">
-          <h2 className="text-base font-bold text-slate-900">Acesso por Empresa</h2>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Define quais empresas este grupo pode visualizar em todos os módulos do sistema (Garantias DAF, Projetos, Cálculo de Comissões, etc.).
-            {isAdmin && <span className="ml-1 text-amber-600 font-medium">Administrador tem acesso a todas as empresas automaticamente.</span>}
-          </p>
+        <div className="px-5 py-4 border-b border-slate-100 flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-base font-bold text-slate-900">Acesso por Empresa</h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Define quais empresas este grupo pode visualizar em todos os módulos do sistema (Garantias DAF, Projetos, Cálculo de Comissões, etc.).
+              {isAdmin && <span className="ml-1 text-amber-600 font-medium">Administrador tem acesso a todas as empresas automaticamente.</span>}
+            </p>
+          </div>
+          {!isAdmin && empresas.length > 0 && (
+            <div className="shrink-0 inline-flex rounded-md border border-slate-200 overflow-hidden text-xs font-semibold">
+              <button
+                type="button"
+                onClick={() => { handleSelectAllEmpresas(); setEmpresaModoIndividual(false) }}
+                className={`px-2.5 py-1 transition-colors ${!empresaModoIndividual ? 'bg-blue-600 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}
+              >
+                Todos
+              </button>
+              <button
+                type="button"
+                onClick={() => setEmpresaModoIndividual(true)}
+                className={`px-2.5 py-1 border-l border-slate-200 transition-colors ${empresaModoIndividual ? 'bg-blue-600 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}
+              >
+                Individual
+              </button>
+            </div>
+          )}
         </div>
         {loadingPerms ? null : (
           <>
-            {!isAdmin && empresas.length > 0 && (
+            {!isAdmin && empresas.length > 0 && empresaModoIndividual && (
               <div className="px-5 py-2 border-b border-slate-100 flex items-center gap-2">
-                <button type="button" onClick={handleSelectAllEmpresas} className="text-xs text-blue-600 hover:underline">
-                  Selecionar todas
+                <button
+                  type="button"
+                  onClick={() => setEmpresaExpandido(v => !v)}
+                  className="flex items-center gap-1 text-[11px] font-semibold text-slate-500 hover:text-slate-700"
+                >
+                  {empresaExpandido ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                  {empresaExpandido ? 'Recolher' : 'Expandir'}
                 </button>
                 <span className="text-slate-300">|</span>
                 <button type="button" onClick={handleClearAllEmpresas} className="text-xs text-slate-500 hover:underline">
@@ -847,33 +899,35 @@ export default function Grupos() {
                 </span>
               </div>
             )}
-            <div className="p-4 flex flex-col gap-0.5">
-              {empresas.map(empresa => (
-                <label
-                  key={empresa.id}
-                  className={`flex items-center gap-2 py-1.5 px-2 rounded cursor-pointer hover:bg-slate-50 select-none ${isAdmin ? 'opacity-50' : ''}`}
-                >
-                  <input
-                    type="checkbox"
-                    disabled={isAdmin}
-                    checked={isAdmin || selectedEmpresas.has(empresa.id)}
-                    onChange={(e) => handleToggleEmpresa(empresa.id, e.target.checked)}
-                    className="w-3.5 h-3.5 rounded accent-blue-600"
-                  />
-                  <div className="flex flex-col">
-                    <span className="text-sm text-slate-800 font-medium leading-tight">{empresa.nome_empresa}</span>
-                    {empresa.sigla_empresa && (
-                      <span className="text-xs text-slate-400">{empresa.sigla_empresa}</span>
-                    )}
-                  </div>
-                </label>
-              ))}
-              {empresas.length === 0 && (
-                <p className="text-sm text-slate-400 col-span-3 py-2">
-                  Nenhuma empresa cadastrada. Cadastre em Cadastro de Tabelas → Empresas.
-                </p>
-              )}
-            </div>
+            {(isAdmin || (empresaModoIndividual && empresaExpandido) || empresas.length === 0) && (
+              <div className="p-4 flex flex-col gap-0.5">
+                {empresas.map(empresa => (
+                  <label
+                    key={empresa.id}
+                    className={`flex items-center gap-2 py-1.5 px-2 rounded cursor-pointer hover:bg-slate-50 select-none ${isAdmin ? 'opacity-50' : ''}`}
+                  >
+                    <input
+                      type="checkbox"
+                      disabled={isAdmin}
+                      checked={isAdmin || selectedEmpresas.has(empresa.id)}
+                      onChange={(e) => handleToggleEmpresa(empresa.id, e.target.checked)}
+                      className="w-3.5 h-3.5 rounded accent-blue-600"
+                    />
+                    <div className="flex flex-col">
+                      <span className="text-sm text-slate-800 font-medium leading-tight">{empresa.nome_empresa}</span>
+                      {empresa.sigla_empresa && (
+                        <span className="text-xs text-slate-400">{empresa.sigla_empresa}</span>
+                      )}
+                    </div>
+                  </label>
+                ))}
+                {empresas.length === 0 && (
+                  <p className="text-sm text-slate-400 col-span-3 py-2">
+                    Nenhuma empresa cadastrada. Cadastre em Cadastro de Tabelas → Empresas.
+                  </p>
+                )}
+              </div>
+            )}
           </>
         )}
       </div>

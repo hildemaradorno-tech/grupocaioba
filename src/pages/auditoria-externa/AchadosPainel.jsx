@@ -8,21 +8,24 @@ import AchadoFormModal from './AchadoFormModal'
 import AchadoDetalheDrawer from './AchadoDetalheDrawer'
 import AuditAiChatDrawer from './AuditAiChatDrawer'
 import ImportarDivergenciasModal from './ImportarDivergenciasModal'
-import { fmtMoeda, compararPorCodigo, empresaNoEscopo } from './auditExtConstants'
+import { fmtMoeda, compararPorCodigo, empresaNoEscopo, departamentoNoEscopo } from './auditExtConstants'
 
 const FILTROS_VAZIOS = { empresa: '', norma: '' }
 
 export default function AchadosPainel() {
-  const { user, hasActionOrDefault, isAdminEfetivo, empresasPermitidasAuditoriaEfetivas } = useAuth()
+  const { user, hasActionOrDefault, isAdminEfetivo, empresasPermitidasAuditoriaEfetivas, departamentosPermitidosAuditoriaEfetivos } = useAuth()
   const canEditar = hasActionOrDefault('auditoria-externa/divergencias', 'editar_achado')
   const canExcluir = hasActionOrDefault('auditoria-externa/divergencias', 'excluir_achado')
   const canChatIA = hasActionOrDefault('auditoria-externa/divergencias', 'usar_chat_ia')
   const canImportar = hasActionOrDefault('auditoria-externa/divergencias', 'importar_divergencias')
-  const canVerTodos = hasActionOrDefault('auditoria-externa/dashboard', 'ver_todos') && empresasPermitidasAuditoriaEfetivas.size > 0
+  const canVerTodos = hasActionOrDefault('auditoria-externa/dashboard', 'ver_todos') &&
+    (empresasPermitidasAuditoriaEfetivas.size > 0 || departamentosPermitidosAuditoriaEfetivos.size > 0)
   const [verTodos, setVerTodos] = useSessionState('audext_ver_todos', false)
   const empresasEfetivas = verTodos ? new Set() : empresasPermitidasAuditoriaEfetivas
+  const departamentosEfetivos = verTodos ? new Set() : departamentosPermitidosAuditoriaEfetivos
 
   const [achados, setAchados] = useState([])
+  const [planos, setPlanos] = useState([])
   const [ciclos, setCiclos] = useState([])
   const [empresas, setEmpresas] = useState([])
   const [loading, setLoading] = useState(true)
@@ -38,8 +41,9 @@ export default function AchadosPainel() {
   const loadDados = useCallback(async () => {
     setLoading(true); setError(null)
     try {
-      const [a, c, e] = await Promise.all([apiService.getAuditExtAchados(), apiService.getAuditExtCiclos(), apiService.getProjEmpresas()])
+      const [a, p, c, e] = await Promise.all([apiService.getAuditExtAchados(), apiService.getAuditExtPlanosAcao(), apiService.getAuditExtCiclos(), apiService.getProjEmpresas()])
       setAchados(a)
+      setPlanos(p)
       setCiclos(c)
       setEmpresas(e.filter(x => x.ativo !== false))
     } catch (err) {
@@ -51,10 +55,26 @@ export default function AchadosPainel() {
 
   useEffect(() => { loadDados() }, [loadDados])
 
-  // Escopo por Empresa (Grupo de Acesso) — vazio = sem restrição.
+  // Escopo por Empresa/Departamento (Grupo de Acesso) — vazio = sem restrição.
+  // Departamento é definido pelas Ações do achado (uma divergência pode ter ações de
+  // departamentos diferentes) — com restrição ativa, só aparecem achados com pelo
+  // menos uma ação no departamento liberado.
+  const isDeptoRestrito = !isAdminEfetivo && departamentosEfetivos.size > 0
+
+  const achadoIdsComAcaoVisivel = useMemo(() => {
+    const set = new Set()
+    for (const p of planos) {
+      if (departamentoNoEscopo(p.proj_departamentos?.nome, departamentosEfetivos, isAdminEfetivo)) set.add(p.achado_id)
+    }
+    return set
+  }, [planos, departamentosEfetivos, isAdminEfetivo])
+
   const achadosVisiveis = useMemo(() =>
-    achados.filter(a => empresaNoEscopo(a.audext_ciclos?.empresa_id, empresasEfetivas, isAdminEfetivo)),
-    [achados, empresasEfetivas, isAdminEfetivo])
+    achados.filter(a =>
+      empresaNoEscopo(a.audext_ciclos?.empresa_id, empresasEfetivas, isAdminEfetivo) &&
+      (!isDeptoRestrito || achadoIdsComAcaoVisivel.has(a.id))
+    ),
+    [achados, empresasEfetivas, isAdminEfetivo, isDeptoRestrito, achadoIdsComAcaoVisivel])
 
   const empresasVisiveis = useMemo(() =>
     empresas.filter(e => empresaNoEscopo(e.id, empresasEfetivas, isAdminEfetivo)),

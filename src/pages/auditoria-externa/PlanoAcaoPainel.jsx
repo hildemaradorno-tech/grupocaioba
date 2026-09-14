@@ -82,13 +82,10 @@ export default function PlanoAcaoPainel() {
     ),
     [planos, achadoIdsNoEscopoDeEmpresa, departamentosEfetivos, isAdminEfetivo])
 
-  // Uma divergência com ações, mas nenhuma no departamento liberado, some da visão —
-  // divergências sem nenhuma ação cadastrada continuam visíveis (nada pra restringir ainda).
-  const achadoIdsComAcaoReal = useMemo(() => {
-    const set = new Set()
-    for (const p of planos) set.add(p.achado_id)
-    return set
-  }, [planos])
+  // Com restrição de Departamento ativa, uma divergência só aparece se tiver pelo menos
+  // uma ação no departamento liberado — sem restrição (modo TODOS/admin/Ver Todos),
+  // divergências sem nenhuma ação cadastrada continuam visíveis normalmente.
+  const isDeptoRestrito = !isAdminEfetivo && departamentosEfetivos.size > 0
 
   const achadoIdsComAcaoVisivel = useMemo(() => {
     const set = new Set()
@@ -99,9 +96,9 @@ export default function PlanoAcaoPainel() {
   const achadosVisiveis = useMemo(() =>
     achados.filter(a =>
       achadoIdsNoEscopoDeEmpresa.has(a.id) &&
-      (!achadoIdsComAcaoReal.has(a.id) || achadoIdsComAcaoVisivel.has(a.id))
+      (!isDeptoRestrito || achadoIdsComAcaoVisivel.has(a.id))
     ),
-    [achados, achadoIdsNoEscopoDeEmpresa, achadoIdsComAcaoReal, achadoIdsComAcaoVisivel])
+    [achados, achadoIdsNoEscopoDeEmpresa, isDeptoRestrito, achadoIdsComAcaoVisivel])
 
   const ciclosVisiveis = useMemo(() =>
     ciclos.filter(c => empresaNoEscopo(c.empresa_id, empresasEfetivas, isAdminEfetivo)),

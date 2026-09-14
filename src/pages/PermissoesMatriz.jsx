@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import {
-  ChevronDown, ChevronRight, Search, X, ShieldCheck, Zap,
+  ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, Search, X, ShieldCheck, Zap,
   RefreshCw, AlertTriangle, LayoutDashboard, Check, CircleDot,
 } from 'lucide-react'
 import { supabase } from '../services/supabaseClient'
 import { apiService } from '../services/api'
 import { MENU_TREE, getLeafKeys } from '../config/menuTree'
 import { ACOES_POR_MENU, ACOES_POR_PATH } from '../config/acoesMenu'
+import { MultiSearchCombobox } from '../components/SearchCombobox'
 
 // ── Flatten MENU_TREE into display rows ──────────────────────────────────────
 
@@ -55,6 +56,13 @@ const ALL_SECTION_KEYS = (() => {
   return s
 })()
 
+// ── Menus com ações (usado pra "Expandir todos" também abrir as ações) ────────
+const ALL_MENU_KEYS_COM_ACOES = (() => {
+  const s = new Set()
+  ALL_ROWS.forEach(r => { if (r.type === 'menu' && (ACOES_POR_PATH[r.key] || []).length > 0) s.add(r.key) })
+  return s
+})()
+
 // ── Loading skeleton ──────────────────────────────────────────────────────────
 function Skeleton({ w = 'w-24', h = 'h-4' }) {
   return <div className={`${w} ${h} bg-slate-200 rounded animate-pulse`} />
@@ -66,51 +74,30 @@ export default function PermissoesMatriz() {
   const [grupos, setGrupos] = useState([])
   const [permsSet, setPermsSet] = useState(new Set())   // "grupoId:menuPath"
   const [acoesSet, setAcoesSet] = useState(new Set())   // "grupoId:menuPath:acao"
-  const [agrupamentosCargo, setAgrupamentosCargo] = useState([])
-  const [escopoAgrupCargoPorGrupo, setEscopoAgrupCargoPorGrupo] = useState({}) // grupoId -> { modo, valores:Set }
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(new Set())       // cell keys being saved
   const [err, setErr] = useState(null)
   const [busca, setBusca] = useState('')
-  const [buscaGrupo, setBuscaGrupo] = useState('')
-  const [filtroAgrupCargo, setFiltroAgrupCargo] = useState('')
+  const [gruposSelecionados, setGruposSelecionados] = useState([])
   const [openSections, setOpenSections] = useState(new Set())
+  const [openAcoesMenu, setOpenAcoesMenu] = useState(new Set())
   const busRef = useRef(null)
-  const buscaGrupoRef = useRef(null)
 
   // ── Load all data ───────────────────────────────────────────────────────────
   const loadAll = useCallback(async () => {
     setLoading(true)
     setErr(null)
     try {
-      const [grps, { data: perms, error: e1 }, { data: acoes, error: e2 }, agrupCargos, { data: modosAgrup, error: e3 }, { data: valoresAgrup, error: e4 }] = await Promise.all([
+      const [grps, { data: perms, error: e1 }, { data: acoes, error: e2 }] = await Promise.all([
         apiService.getGrupos(),
         supabase.from('permissoes_grupo').select('grupo_id, menu_path'),
         supabase.from('permissoes_grupo_acoes').select('grupo_id, menu_path, acao'),
-        apiService.getAgrupamentoCargos(),
-        supabase.from('permissoes_comissao_modo').select('grupo_id, modo').eq('dimensao', 'agrupamento_cargo'),
-        supabase.from('permissoes_comissao_valor').select('grupo_id, valor').eq('dimensao', 'agrupamento_cargo'),
       ])
       if (e1) throw e1
       if (e2) throw e2
-      if (e3) throw e3
-      if (e4) throw e4
       setGrupos(grps)
       setPermsSet(new Set((perms || []).map(p => `${p.grupo_id}:${p.menu_path}`)))
       setAcoesSet(new Set((acoes || []).map(a => `${a.grupo_id}:${a.menu_path}:${a.acao}`)))
-      setAgrupamentosCargo(agrupCargos.filter(a => a.ativo !== false))
-
-      // Escopo de Comissão (dimensão Agrupamento de Cargos) por grupo — usado só pra filtrar
-      // as colunas da matriz, não altera nenhuma permissão de menu/ação.
-      const mapa = {}
-      for (const m of modosAgrup || []) {
-        mapa[m.grupo_id] = { modo: m.modo === 'INDIVIDUAL' ? 'INDIVIDUAL' : 'TODOS', valores: new Set() }
-      }
-      for (const v of valoresAgrup || []) {
-        if (!mapa[v.grupo_id]) mapa[v.grupo_id] = { modo: 'INDIVIDUAL', valores: new Set() }
-        mapa[v.grupo_id].valores.add(v.valor)
-      }
-      setEscopoAgrupCargoPorGrupo(mapa)
     } catch (e) {
       setErr(e.message || 'Erro ao carregar dados.')
     } finally {
@@ -179,8 +166,19 @@ export default function PermissoesMatriz() {
     })
   }, [])
 
-  const expandAll  = () => setOpenSections(new Set(ALL_SECTION_KEYS))
-  const collapseAll = () => setOpenSections(new Set())
+  // ── Ações por menu — fechadas por padrão, cada menu abre as suas sob demanda ──
+  const toggleAcoesMenu = useCallback((key) => {
+    setOpenAcoesMenu(s => {
+      const n = new Set(s)
+      if (n.has(key)) n.delete(key); else n.add(key)
+      return n
+    })
+  }, [])
+
+  const expandAll  = () => { setOpenSections(new Set(ALL_SECTION_KEYS)); setOpenAcoesMenu(new Set(ALL_MENU_KEYS_COM_ACOES)) }
+  const collapseAll = () => { setOpenSections(new Set()); setOpenAcoesMenu(new Set()) }
+  const todasExpandidas = openSections.size >= ALL_SECTION_KEYS.size && openAcoesMenu.size >= ALL_MENU_KEYS_COM_ACOES.size
+  const toggleExpandirTudo = () => (todasExpandidas ? collapseAll() : expandAll())
 
   // ── Visible rows (filtered by open sections + search) ──────────────────────
   // Com busca ativa, ignora o estado de seções recolhidas — busca em TUDO e mostra
@@ -195,8 +193,12 @@ export default function PermissoesMatriz() {
       encontrados.forEach(r => r.sectionAncestors.forEach(k => chavesAncestrais.add(k)))
       return ALL_ROWS.filter(r => chavesEncontradas.has(r.key) || (r.type === 'section' && chavesAncestrais.has(r.key)))
     }
-    return ALL_ROWS.filter(row => row.sectionAncestors.every(k => openSections.has(k)))
-  }, [openSections, busca])
+    return ALL_ROWS.filter(row => {
+      if (!row.sectionAncestors.every(k => openSections.has(k))) return false
+      if (row.type === 'action' && !openAcoesMenu.has(row.menuKey)) return false
+      return true
+    })
+  }, [openSections, openAcoesMenu, busca])
 
   // ── Section summary: leaf keys de cada seção (em qualquer profundidade), pra
   // resumir o acesso do grupo naquela seção sem precisar expandir. Reaproveita
@@ -216,26 +218,11 @@ export default function PermissoesMatriz() {
     return map
   }, [])
 
-  // ── Grupos filtrados por busca de nome + escopo de comissão (Agrupamento de Cargos) ──────
-  // Admin sempre enxerga tudo; sem a trava mestre (comissao_escopo_habilitado) o grupo não
-  // tem acesso a nenhum agrupamento de cargos em Comissões, então some do filtro; com modo
-  // TODOS na dimensão o grupo enxerga qualquer agrupamento; em INDIVIDUAL, só os marcados.
-  const passaFiltroAgrupCargo = useCallback((g) => {
-    if (!filtroAgrupCargo) return true
-    if (g.is_admin) return true
-    if (!g.comissao_escopo_habilitado) return false
-    const cfg = escopoAgrupCargoPorGrupo[g.id]
-    if (!cfg || cfg.modo !== 'INDIVIDUAL') return true
-    return cfg.valores.has(filtroAgrupCargo)
-  }, [filtroAgrupCargo, escopoAgrupCargoPorGrupo])
-
+  // ── Grupos filtrados pela seleção de grupos (colunas) ───────────────────────
   const gruposVisiveis = useMemo(() => {
-    const term = buscaGrupo.trim().toLowerCase()
-    return grupos.filter(g =>
-      (!term || g.nome_grupo.toLowerCase().includes(term)) &&
-      passaFiltroAgrupCargo(g)
-    )
-  }, [grupos, buscaGrupo, passaFiltroAgrupCargo])
+    const idsSelecionados = new Set(gruposSelecionados)
+    return grupos.filter(g => idsSelecionados.size === 0 || idsSelecionados.has(g.id))
+  }, [grupos, gruposSelecionados])
 
   // ── Cell helpers ────────────────────────────────────────────────────────────
   const hasPerm  = (gId, path) => permsSet.has(`${gId}:${path}`)
@@ -258,14 +245,8 @@ export default function PermissoesMatriz() {
             </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            <button onClick={expandAll}  className="text-xs px-2.5 py-1.5 rounded border border-slate-200 hover:bg-slate-50 text-slate-600 transition-colors">
-              Expandir todos
-            </button>
-            <button onClick={collapseAll} className="text-xs px-2.5 py-1.5 rounded border border-slate-200 hover:bg-slate-50 text-slate-600 transition-colors">
-              Recolher todos
-            </button>
-            <button onClick={loadAll} disabled={loading} className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded border border-slate-200 hover:bg-slate-50 text-slate-600 transition-colors disabled:opacity-50">
-              <RefreshCw className={`h-3 w-3 ${loading ? 'animate-spin' : ''}`} /> Atualizar
+            <button onClick={loadAll} disabled={loading} title="Atualizar" className="p-2 rounded border border-slate-200 hover:bg-slate-50 text-slate-600 transition-colors disabled:opacity-50">
+              <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
             </button>
           </div>
         </div>
@@ -280,48 +261,19 @@ export default function PermissoesMatriz() {
       {/* Filtros: grupo (colunas) + permissão (linhas) */}
       <div className="shrink-0 px-6 py-2.5 border-b border-slate-200 bg-slate-50 flex items-center gap-4 flex-wrap">
         <span className="text-xs font-semibold text-slate-500 shrink-0">Filtrar grupos:</span>
-        <div className="relative w-56">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-          <input
-            ref={buscaGrupoRef}
-            value={buscaGrupo}
-            onChange={e => setBuscaGrupo(e.target.value)}
-            placeholder="Ex: Gerente, Vendas…"
-            className="w-full pl-8 pr-7 py-1.5 text-xs border border-slate-200 rounded bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
+        <div className="w-64">
+          <MultiSearchCombobox
+            value={gruposSelecionados}
+            onChange={setGruposSelecionados}
+            placeholder="— Todos os grupos —"
+            searchPlaceholder="Buscar grupo pelo nome..."
+            notFoundLabel="Nenhum grupo encontrado."
+            opcoes={grupos}
+            getLabel={(g) => g.nome_grupo}
+            getSearchText={(g) => g.nome_grupo}
+            resumo={(sel) => sel.length === 1 ? sel[0].nome_grupo : `${sel.length} grupos`}
           />
-          {buscaGrupo && (
-            <button onClick={() => { setBuscaGrupo(''); buscaGrupoRef.current?.focus() }} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
-              <X className="h-3.5 w-3.5" />
-            </button>
-          )}
         </div>
-        {buscaGrupo.trim() && (
-          <span className="text-xs text-slate-400 shrink-0">
-            {gruposVisiveis.length} de {grupos.length} grupos
-          </span>
-        )}
-
-        <div className="w-px h-4 bg-slate-300 shrink-0" />
-
-        <span className="text-xs font-semibold text-slate-500 shrink-0" title="Mostra só os grupos cujo Escopo de Comissão (em Grupos de Acesso) dá acesso a esse Agrupamento de Cargos">
-          Agrupamento de Cargos:
-        </span>
-        <select
-          value={filtroAgrupCargo}
-          onChange={e => setFiltroAgrupCargo(e.target.value)}
-          className="w-52 py-1.5 px-2 text-xs border border-slate-200 rounded bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
-        >
-          <option value="">Todos</option>
-          {agrupamentosCargo.map(a => (
-            <option key={a.id} value={a.id}>{a.nome_agrupamento_cargo}</option>
-          ))}
-        </select>
-        {filtroAgrupCargo && (
-          <button onClick={() => setFiltroAgrupCargo('')} className="text-xs text-indigo-600 hover:text-indigo-800 font-semibold shrink-0">
-            Limpar
-          </button>
-        )}
-
         <div className="w-px h-4 bg-slate-300 shrink-0" />
 
         <span className="text-xs font-semibold text-slate-500 shrink-0">Filtrar permissão:</span>
@@ -349,7 +301,17 @@ export default function PermissoesMatriz() {
             <tr className="sticky top-0 z-20">
               {/* First sticky column header */}
               <th className="sticky left-0 z-30 bg-slate-800 text-white text-left px-4 py-3 font-semibold text-xs uppercase tracking-wide border-r border-slate-600 min-w-[300px] w-[300px]">
-                Menu / Recurso
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={toggleExpandirTudo}
+                    title={todasExpandidas ? 'Recolher todos' : 'Expandir todos'}
+                    className="p-0.5 rounded hover:bg-slate-700 text-slate-300 hover:text-white transition-colors normal-case"
+                  >
+                    {todasExpandidas ? <ChevronsDownUp className="h-3.5 w-3.5" /> : <ChevronsUpDown className="h-3.5 w-3.5" />}
+                  </button>
+                  Menu / Recurso
+                </div>
               </th>
               {loading
                 ? [1, 2, 3].map(i => (
@@ -434,15 +396,28 @@ export default function PermissoesMatriz() {
                   }
 
                   if (row.type === 'menu') {
+                    const minhasAcoes = ACOES_POR_PATH[row.key] || []
+                    const acoesAbertas = openAcoesMenu.has(row.key)
                     return (
                       <tr key={row.key} className="bg-white hover:bg-blue-50/30 transition-colors group">
                         <td className="sticky left-0 z-10 bg-white group-hover:bg-blue-50/30 border-r border-b border-slate-100 px-4 py-2">
-                          <span
-                            className="text-sm text-slate-700"
-                            style={{ paddingLeft: `${row.depth * 16}px`, display: 'block' }}
-                          >
-                            {row.label}
-                          </span>
+                          <div className="flex items-center gap-2" style={{ paddingLeft: `${row.depth * 16}px` }}>
+                            <span className="text-sm text-slate-700 truncate">{row.label}</span>
+                            {minhasAcoes.length > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => toggleAcoesMenu(row.key)}
+                                className={`shrink-0 flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded border transition-colors ${
+                                  acoesAbertas
+                                    ? 'bg-blue-100 text-blue-700 border-blue-300'
+                                    : 'text-blue-600 border-blue-200 hover:bg-blue-50'
+                                }`}
+                              >
+                                {acoesAbertas ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                                Ações ({minhasAcoes.length})
+                              </button>
+                            )}
+                          </div>
                         </td>
                         {gruposVisiveis.map(g => {
                           const cellKey = `${g.id}:${row.key}`

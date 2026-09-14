@@ -112,13 +112,10 @@ export default function AuditoriaDashboard() {
     ),
     [planos, achadoIdsNoEscopoDeEmpresa, departamentosEfetivos, isAdminEfetivo])
 
-  // Uma divergência com ações, mas nenhuma no departamento liberado, some da visão —
-  // divergências sem nenhuma ação cadastrada continuam visíveis (nada pra restringir ainda).
-  const achadoTemAcaoReal = useMemo(() => {
-    const set = new Set()
-    for (const p of planos) set.add(p.achado_id)
-    return set
-  }, [planos])
+  // Com restrição de Departamento ativa, uma divergência só aparece se tiver pelo menos
+  // uma ação no departamento liberado — sem restrição (modo TODOS/admin/Ver Todos),
+  // divergências sem nenhuma ação cadastrada continuam visíveis normalmente.
+  const isDeptoRestrito = !isAdminEfetivo && departamentosEfetivos.size > 0
 
   const planosVisiveisPorAchado = useMemo(() => {
     const m = new Map()
@@ -132,9 +129,9 @@ export default function AuditoriaDashboard() {
   const achadosVisiveis = useMemo(() =>
     achados.filter(a =>
       achadoIdsNoEscopoDeEmpresa.has(a.id) &&
-      (!achadoTemAcaoReal.has(a.id) || planosVisiveisPorAchado.has(a.id))
+      (!isDeptoRestrito || planosVisiveisPorAchado.has(a.id))
     ),
-    [achados, achadoIdsNoEscopoDeEmpresa, achadoTemAcaoReal, planosVisiveisPorAchado])
+    [achados, achadoIdsNoEscopoDeEmpresa, isDeptoRestrito, planosVisiveisPorAchado])
 
   const ciclosVisiveis = useMemo(() =>
     ciclos.filter(c => empresaNoEscopo(c.empresa_id, empresasEfetivas, isAdminEfetivo)),
