@@ -963,6 +963,18 @@ const abrirModalMover = async (tarefa) => {
                         </button>
                       )}
                     </div>
+                    {t.proj_deliberacoes?.length > 0 && (
+                      <div className="mt-1.5 space-y-1">
+                        {t.proj_deliberacoes.map(d => (
+                          <div key={d.id} className="flex gap-1.5 text-[10px] bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                            <span className="text-amber-600 font-semibold shrink-0 whitespace-nowrap">
+                              {d.data ? new Date(d.data + 'T12:00:00').toLocaleDateString('pt-BR') : '—'}
+                            </span>
+                            <span className="text-slate-600 leading-snug">{d.texto}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </td>
                   <td className="p-3">
                     <div className="flex flex-col gap-0.5">

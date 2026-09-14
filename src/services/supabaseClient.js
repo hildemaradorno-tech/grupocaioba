@@ -109,7 +109,7 @@ export const apiService = {
   getUsuarios: async () => {
     const { data, error } = await supabase
       .from('usuarios')
-      .select('id, nome, email, ativo, criado_em, grupo_id, cargo_id, senha_atualizada_em')
+      .select('id, nome, email, ativo, criado_em, grupo_id, cargo_id, funcionario_id, senha_atualizada_em')
       .order('nome', { ascending: true })
     if (error) throw error
     return data || []
@@ -118,7 +118,7 @@ export const apiService = {
   getUsuarioById: async (id) => {
     const { data, error } = await supabase
       .from('usuarios')
-      .select('id, nome, email, grupo_id, cargo_id')
+      .select('id, nome, email, grupo_id, cargo_id, funcionario_id')
       .eq('id', id)
       .single()
     if (error) throw error
@@ -880,12 +880,12 @@ export const apiService = {
     return { success: true }
   },
 
-  createUsuario: async (nome, email, grupo_id = null, redirectTo, cargo_id = null) => {
+  createUsuario: async (nome, email, grupo_id = null, redirectTo, cargo_id = null, funcionario_id = null) => {
     const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
     const res = await fetch(`${backendUrl}/api/auth/create-user`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ nome, email, grupo_id, redirectTo, cargo_id }),
+      body: JSON.stringify({ nome, email, grupo_id, redirectTo, cargo_id, funcionario_id }),
     })
     const body = await res.json()
     if (!res.ok) throw new Error(body.error || 'Erro ao criar usuário')
@@ -912,10 +912,11 @@ export const apiService = {
     return body
   },
 
-  updateUsuario: async (id, nome, email, grupo_id = undefined, cargo_id = undefined) => {
+  updateUsuario: async (id, nome, email, grupo_id = undefined, cargo_id = undefined, funcionario_id = undefined) => {
     const payload = { nome, email, atualizado_em: new Date().toISOString() }
     if (grupo_id !== undefined) payload.grupo_id = grupo_id || null
     if (cargo_id !== undefined) payload.cargo_id = cargo_id || null
+    if (funcionario_id !== undefined) payload.funcionario_id = funcionario_id || null
     const { data, error } = await supabase
       .from('usuarios')
       .update(payload)

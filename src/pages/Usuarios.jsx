@@ -1,7 +1,7 @@
 ﻿import React, { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useSessionState } from '../hooks/useSessionState'
-import { Trash2, Plus, Edit2, Eye, EyeOff, X, UserCheck, Search, Check, UserPlus, Send, ChevronDown } from 'lucide-react'
+import { Trash2, Plus, Edit2, Eye, EyeOff, X, UserCheck, Search, Check, UserPlus, Send, ChevronDown, Link2 } from 'lucide-react'
 import PermissionActionButtons from '../components/PermissionActionButtons'
 import { apiService } from '../services/api'
 import { supabase } from '../services/supabaseClient'
@@ -20,9 +20,10 @@ function traduzirErroSenha(msg = '') {
   return null
 }
 
-// Combobox de seleção única com busca — o <select> nativo fica difícil de navegar com muitos
-// cargos (um por empresa), então digitar filtra a lista em vez de rolar tudo procurando.
-function CargoCombobox({ value, onChange, opcoes, placeholder }) {
+// Combobox de seleção única com busca — o <select> nativo fica difícil de navegar com muitas
+// opções (cargos, um por empresa; ou funcionários), então digitar filtra a lista em vez de
+// rolar tudo procurando. Genérico: quem usa passa como formatar rótulo/busca de cada opção.
+function SearchCombobox({ value, onChange, opcoes, placeholder, emptyOptionLabel, searchPlaceholder, notFoundLabel, getLabel, getSearchText }) {
   const [aberto, setAberto] = useState(false)
   const [busca, setBusca] = useState('')
   const [pos, setPos] = useState(null)
@@ -30,7 +31,7 @@ function CargoCombobox({ value, onChange, opcoes, placeholder }) {
 
   useEffect(() => {
     const fecharSeClicarFora = (e) => {
-      if (ref.current && !ref.current.contains(e.target) && !e.target.closest('[data-cargo-combobox-panel]')) { setAberto(false); setBusca('') }
+      if (ref.current && !ref.current.contains(e.target) && !e.target.closest('[data-search-combobox-panel]')) { setAberto(false); setBusca('') }
     }
     document.addEventListener('mousedown', fecharSeClicarFora)
     return () => document.removeEventListener('mousedown', fecharSeClicarFora)
@@ -51,7 +52,7 @@ function CargoCombobox({ value, onChange, opcoes, placeholder }) {
   useEffect(() => {
     if (!aberto) return
     const fechar = (e) => {
-      if (e.target?.closest?.('[data-cargo-combobox-panel]')) return
+      if (e.target?.closest?.('[data-search-combobox-panel]')) return
       setAberto(false)
     }
     window.addEventListener('scroll', fechar, true)
@@ -64,9 +65,7 @@ function CargoCombobox({ value, onChange, opcoes, placeholder }) {
 
   const selecionado = opcoes.find(o => o.id === value)
   const q = busca.trim().toLowerCase()
-  const filtradas = q
-    ? opcoes.filter(o => `${o.nome_cargo} ${o.nome_empresa || ''}`.toLowerCase().includes(q))
-    : opcoes
+  const filtradas = q ? opcoes.filter(o => getSearchText(o).toLowerCase().includes(q)) : opcoes
 
   return (
     <div ref={ref} className="relative">
@@ -76,13 +75,13 @@ function CargoCombobox({ value, onChange, opcoes, placeholder }) {
         className="w-full flex items-center justify-between gap-2 px-3 py-2 border border-slate-300 rounded-md bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
       >
         <span className={`truncate ${selecionado ? 'text-slate-800' : 'text-slate-400'}`}>
-          {selecionado ? `${selecionado.nome_cargo}${selecionado.nome_empresa ? ` — ${selecionado.nome_empresa}` : ''}` : placeholder}
+          {selecionado ? getLabel(selecionado) : placeholder}
         </span>
         <ChevronDown className="h-4 w-4 text-slate-400 shrink-0" />
       </button>
       {aberto && pos && createPortal(
         <div
-          data-cargo-combobox-panel
+          data-search-combobox-panel
           style={{ position: 'fixed', top: pos.top, left: pos.left, width: pos.width }}
           className="z-50 bg-white border border-slate-200 rounded-md shadow-lg overflow-hidden"
         >
@@ -93,7 +92,7 @@ function CargoCombobox({ value, onChange, opcoes, placeholder }) {
               type="text"
               value={busca}
               onChange={e => setBusca(e.target.value)}
-              placeholder="Buscar cargo ou empresa..."
+              placeholder={searchPlaceholder}
               className="w-full text-sm pl-8 pr-2 py-2 focus:outline-none"
             />
           </div>
@@ -103,10 +102,10 @@ function CargoCombobox({ value, onChange, opcoes, placeholder }) {
               onClick={() => { onChange(''); setAberto(false); setBusca('') }}
               className="w-full text-left px-3 py-2 text-sm text-slate-500 hover:bg-slate-50"
             >
-              — Sem cargo —
+              {emptyOptionLabel}
             </button>
             {filtradas.length === 0 ? (
-              <p className="px-3 py-2 text-sm text-slate-400">Nenhum cargo encontrado.</p>
+              <p className="px-3 py-2 text-sm text-slate-400">{notFoundLabel}</p>
             ) : filtradas.map(o => (
               <button
                 key={o.id}
@@ -114,7 +113,7 @@ function CargoCombobox({ value, onChange, opcoes, placeholder }) {
                 onClick={() => { onChange(o.id); setAberto(false); setBusca('') }}
                 className={`w-full text-left px-3 py-2 text-sm hover:bg-blue-50 ${o.id === value ? 'bg-blue-50 font-semibold text-blue-700' : 'text-slate-700'}`}
               >
-                {o.nome_cargo}{o.nome_empresa ? <span className="text-slate-400"> — {o.nome_empresa}</span> : ''}
+                {getLabel(o)}
               </button>
             ))}
           </div>
@@ -130,12 +129,13 @@ export default function Usuarios() {
   const [usuarios, setUsuarios] = useState([])
   const [grupos, setGrupos] = useState([])
   const [cargos, setCargos] = useState([])
+  const [funcionarios, setFuncionarios] = useState([])
   const [showForm, setShowForm] = useSessionState('usr_showform', false)
   const [editingId, setEditingId] = useSessionState('usr_editid', null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
-  const [form, setForm] = useState({ nome: '', email: '', senha: '', senhaConfirm: '', grupo_id: '', cargo_id: '' })
+  const [form, setForm] = useState({ nome: '', email: '', senha: '', senhaConfirm: '', grupo_id: '', cargo_id: '', funcionario_id: '' })
   const [alterarSenha, setAlterarSenha] = useState(false)
   const [showSenha, setShowSenha] = useState(false)
   const [showSenhaConfirm, setShowSenhaConfirm] = useState(false)
@@ -154,15 +154,17 @@ export default function Usuarios() {
     setLoading(true)
     setError(null)
     try {
-      const [usuariosData, gruposData, cargosData, authStatus] = await Promise.all([
+      const [usuariosData, gruposData, cargosData, funcionariosData, authStatus] = await Promise.all([
         apiService.getUsuarios(),
         apiService.getGrupos(),
         apiService.getCargos(),
+        apiService.getFuncionarios(),
         apiService.getAuthStatus(),
       ])
       setUsuarios(usuariosData)
       setGrupos(gruposData)
       setCargos(cargosData.filter(c => c.ativo !== false))
+      setFuncionarios(funcionariosData.filter(f => f.ativo !== false))
       setAuthServiceConfigured(Boolean(authStatus.serviceRoleConfigured))
     } catch (err) {
       console.error('Erro ao carregar dados', err)
@@ -184,7 +186,7 @@ export default function Usuarios() {
     setSaving(true)
     try {
       if (editingId) {
-        await apiService.updateUsuario(editingId, form.nome, form.email, form.grupo_id || null, form.cargo_id || null)
+        await apiService.updateUsuario(editingId, form.nome, form.email, form.grupo_id || null, form.cargo_id || null, form.funcionario_id || null)
         if (alterarSenha && form.senha) {
           if (form.email === user?.email) {
             // Próprio usuário logado: usa a sessão atual, sem precisar do service key
@@ -202,7 +204,7 @@ export default function Usuarios() {
           throw new Error('Criação de usuário exige SUPABASE_SERVICE_KEY configurada no backend.')
         }
         const redirectTo = `${URL_PRODUCAO}/redefinir-senha`
-        await apiService.createUsuario(form.nome, form.email, form.grupo_id || null, redirectTo, form.cargo_id || null)
+        await apiService.createUsuario(form.nome, form.email, form.grupo_id || null, redirectTo, form.cargo_id || null, form.funcionario_id || null)
         setConviteEnviado({ nome: form.nome, email: form.email })
         resetForm()
         loadData()
@@ -216,7 +218,7 @@ export default function Usuarios() {
   }
 
   const handleEdit = (usuario) => {
-    setForm({ nome: usuario.nome, email: usuario.email, senha: '', senhaConfirm: '', grupo_id: usuario.grupo_id || '', cargo_id: usuario.cargo_id || '' })
+    setForm({ nome: usuario.nome, email: usuario.email, senha: '', senhaConfirm: '', grupo_id: usuario.grupo_id || '', cargo_id: usuario.cargo_id || '', funcionario_id: usuario.funcionario_id || '' })
     setEditingId(usuario.id)
     setAlterarSenha(false)
     setShowSenha(false)
@@ -254,7 +256,7 @@ export default function Usuarios() {
   }
 
   const resetForm = () => {
-    setForm({ nome: '', email: '', senha: '', senhaConfirm: '', grupo_id: '', cargo_id: '' })
+    setForm({ nome: '', email: '', senha: '', senhaConfirm: '', grupo_id: '', cargo_id: '', funcionario_id: '' })
     setEditingId(null)
     setAlterarSenha(false)
     setShowSenha(false)
@@ -345,14 +347,49 @@ export default function Usuarios() {
                   <option key={g.id} value={g.id}>{g.nome_grupo}{g.is_admin ? ' (Admin)' : ''}</option>
                 ))}
               </select>
-              <CargoCombobox
-                value={form.cargo_id}
-                onChange={(id) => setForm({ ...form, cargo_id: id })}
-                placeholder="— Sem cargo —"
-                opcoes={[...cargos].sort((a, b) => a.nome_cargo.localeCompare(b.nome_cargo, 'pt-BR') || (a.nome_empresa || '').localeCompare(b.nome_empresa || '', 'pt-BR'))}
+              <SearchCombobox
+                value={form.funcionario_id}
+                onChange={(id) => {
+                  const func = funcionarios.find(f => f.id === id)
+                  setForm(prev => ({ ...prev, funcionario_id: id, cargo_id: func ? (func.cargo_id || '') : prev.cargo_id }))
+                }}
+                placeholder="— Nenhum funcionário vinculado —"
+                emptyOptionLabel="— Nenhum funcionário vinculado —"
+                searchPlaceholder="Buscar funcionário, empresa ou cargo..."
+                notFoundLabel="Nenhum funcionário encontrado."
+                opcoes={[...funcionarios].sort((a, b) => (a.nome_funcionario || '').localeCompare(b.nome_funcionario || '', 'pt-BR'))}
+                getLabel={(f) => <>{f.nome_funcionario}{f.cargo_nome ? <span className="text-slate-400"> — {f.cargo_nome}</span> : ''}{f.empresa_nome ? <span className="text-slate-400"> — {f.empresa_nome}</span> : ''}</>}
+                getSearchText={(f) => `${f.nome_funcionario || ''} ${f.empresa_nome || ''} ${f.cargo_nome || ''} ${f.codigo_funcionario || ''}`}
               />
               <p className="text-[11px] text-slate-400 -mt-1">
-                O cargo define quais tarefas de fluxos (BPM) esse usuário pode assumir.
+                Vincule o funcionário correspondente pra trazer o cargo dele automaticamente (busque por nome, empresa ou cargo).
+              </p>
+
+              {form.funcionario_id ? (
+                <div className="w-full flex items-center gap-1.5 px-3 py-2 border border-slate-200 rounded-md bg-slate-50 text-sm text-slate-600">
+                  <Link2 className="h-3.5 w-3.5 text-blue-500 shrink-0" title="Vinculado ao funcionário selecionado acima" />
+                  {cargos.find(c => c.id === form.cargo_id)?.nome_cargo || <span className="text-slate-400">— Sem cargo —</span>}
+                  {cargos.find(c => c.id === form.cargo_id)?.nome_empresa && (
+                    <span className="text-slate-400"> — {cargos.find(c => c.id === form.cargo_id).nome_empresa}</span>
+                  )}
+                </div>
+              ) : (
+                <SearchCombobox
+                  value={form.cargo_id}
+                  onChange={(id) => setForm({ ...form, cargo_id: id })}
+                  placeholder="— Sem cargo —"
+                  emptyOptionLabel="— Sem cargo —"
+                  searchPlaceholder="Buscar cargo ou empresa..."
+                  notFoundLabel="Nenhum cargo encontrado."
+                  opcoes={[...cargos].sort((a, b) => a.nome_cargo.localeCompare(b.nome_cargo, 'pt-BR') || (a.nome_empresa || '').localeCompare(b.nome_empresa || '', 'pt-BR'))}
+                  getLabel={(o) => <>{o.nome_cargo}{o.nome_empresa ? <span className="text-slate-400"> — {o.nome_empresa}</span> : ''}</>}
+                  getSearchText={(o) => `${o.nome_cargo} ${o.nome_empresa || ''}`}
+                />
+              )}
+              <p className="text-[11px] text-slate-400 -mt-1">
+                {form.funcionario_id
+                  ? 'Cargo definido pelo funcionário vinculado acima — pra trocar, vincule outro funcionário ou desvincule (Nenhum) pra escolher o cargo direto.'
+                  : 'O cargo define quais tarefas de fluxos (BPM) esse usuário pode assumir.'}
               </p>
 
               {!editingId && (
@@ -479,7 +516,10 @@ export default function Usuarios() {
                   {grupos.find(g => g.id === u.grupo_id)?.nome_grupo || <span className="text-slate-300">—</span>}
                 </td>
                 <td className="px-6 py-3 text-sm text-slate-500 whitespace-nowrap">
-                  {cargos.find(a => a.id === u.cargo_id)?.nome_cargo || <span className="text-slate-300">—</span>}
+                  <span className="inline-flex items-center gap-1.5">
+                    {u.funcionario_id && <Link2 className="h-3.5 w-3.5 text-blue-500 shrink-0" title="Cargo vinculado a um funcionário" />}
+                    {cargos.find(a => a.id === u.cargo_id)?.nome_cargo || <span className="text-slate-300">—</span>}
+                  </span>
                 </td>
                 <td className="px-6 py-3 text-center">
                   {senhaOk && (
@@ -568,7 +608,8 @@ export default function Usuarios() {
               </div>
               <div className="flex flex-col gap-0.5">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Cargo</span>
-                <span className="text-xs font-semibold text-slate-800">
+                <span className="text-xs font-semibold text-slate-800 inline-flex items-center gap-1.5">
+                  {itemVisualizado.funcionario_id && <Link2 className="h-3 w-3 text-blue-500 shrink-0" title="Cargo vinculado a um funcionário" />}
                   {cargos.find(a => a.id === itemVisualizado.cargo_id)?.nome_cargo || '—'}
                 </span>
               </div>
