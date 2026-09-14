@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { X } from 'lucide-react'
 import { apiService } from '../../services/api'
+import { useAuth } from '../../context/AuthContext'
 import ManifestacaoRichEditor from '../projetos/ManifestacaoRichEditor'
 import EvidenciaUploader from './EvidenciaUploader'
 import { MoedaInput, fmtMoeda } from './auditExtConstants'
@@ -11,6 +12,8 @@ const FORM_VAZIO = {
 }
 
 export default function AchadoFormModal({ ciclos, achado, cicloIdPadrao, onClose, onSaved, userEmail }) {
+  const { hasActionOrDefault } = useAuth()
+  const canGerenciarEvidencias = hasActionOrDefault('auditoria-externa/divergencias', 'gerenciar_evidencias')
   const [form, setForm] = useState(achado ? {
     ciclo_id: achado.ciclo_id || '',
     titulo: achado.titulo || '',
@@ -31,6 +34,7 @@ export default function AchadoFormModal({ ciclos, achado, cicloIdPadrao, onClose
 
   const handleSalvar = async (e) => {
     e.preventDefault()
+    if (!hasActionOrDefault('auditoria-externa/divergencias', 'editar_achado')) return
     if (!form.ciclo_id) { alert('Selecione o ciclo de auditoria.'); return }
     setSalvando(true)
     const payload = { ...form, total_apontado: Number(form.total_apontado || 0), evidencias_imagens_urls: imagensUrls }
@@ -118,7 +122,7 @@ export default function AchadoFormModal({ ciclos, achado, cicloIdPadrao, onClose
               <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Evidências</label>
               <textarea rows={3} value={form.evidencias} onChange={e => setForm(p => ({ ...p, evidencias: e.target.value }))}
                 placeholder="Documentos e evidências que sustentam a divergência" className="w-full text-xs p-2 border border-slate-200 rounded-md font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
-              <EvidenciaUploader pastaId={novoAchadoId} urls={imagensUrls} onChange={setImagensUrls} />
+              <EvidenciaUploader pastaId={novoAchadoId} urls={imagensUrls} onChange={setImagensUrls} readOnly={!canGerenciarEvidencias} />
             </div>
           </div>
           <div className="flex items-center justify-end gap-2 p-3 bg-slate-50 border-t border-slate-100">

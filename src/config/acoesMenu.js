@@ -81,25 +81,29 @@ export const ACOES_POR_MENU = [
   {
     menuPath: 'auditoria-externa/divergencias',
     acoes: [
-      { value: 'editar_achado',       label: 'Criar / Editar Achado' },
-      { value: 'excluir_achado',      label: 'Excluir Achado' },
-      { value: 'editar_divergencia',  label: 'Criar / Editar Divergência' },
-      { value: 'excluir_divergencia', label: 'Excluir Divergência' },
-      { value: 'usar_diagnostico_ia', label: 'Usar Diagnóstico IA' },
-      { value: 'usar_chat_ia',        label: 'Usar Chat do Copiloto de Auditoria' },
+      { value: 'editar_achado',          label: 'Criar / Editar Achado' },
+      { value: 'excluir_achado',         label: 'Excluir Achado' },
+      { value: 'importar_divergencias',  label: 'Importar Divergências via Excel' },
+      { value: 'gerenciar_evidencias',   label: 'Anexar / Remover Evidências (imagens)' },
+      { value: 'usar_diagnostico_ia',    label: 'Usar Diagnóstico IA' },
+      { value: 'usar_chat_ia',           label: 'Usar Chat do Copiloto de Auditoria' },
     ],
   },
   {
     menuPath: 'auditoria-externa/plano-acao',
     acoes: [
       { value: 'editar_plano',        label: 'Criar / Editar Plano de Ação' },
+      { value: 'excluir_plano',       label: 'Excluir Ação do Plano de Ação' },
+      { value: 'avancar_status_acao', label: 'Avançar Status da Ação' },
+      { value: 'voltar_status_acao',  label: 'Voltar Status da Ação (regredir etapa)' },
       { value: 'validar_plano_acao',  label: 'Validar Plano de Ação (Auditoria)' },
     ],
   },
   {
     menuPath: 'auditoria-externa/tipos-acao',
     acoes: [
-      { value: 'editar', label: 'Criar / Editar Tipo de Ação' },
+      { value: 'editar',  label: 'Criar / Editar Tipo de Ação' },
+      { value: 'excluir', label: 'Excluir Tipo de Ação' },
     ],
   },
   {

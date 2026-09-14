@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { X, Save, Loader2, Trash2, ChevronLeft, ChevronRight } from 'lucide-react'
+import { X, Save, Loader2, Trash2, ChevronLeft, ChevronRight, Pencil, Check } from 'lucide-react'
 import { apiService } from '../../services/api'
 import CalendarioPicker from './CalendarioPicker'
 
@@ -99,6 +99,8 @@ export default function TarefaFormModal({ projetoId, tarefa, initialValues, tare
   const [deliberacoes, setDeliberacoes] = useState([])
   const [novaDelib, setNovaDelib] = useState({ data: hoje, texto: '' })
   const [adicionandoDelib, setAdicionandoDelib] = useState(false)
+  const [editandoDelib, setEditandoDelib] = useState(null) // { id, data, texto }
+  const [salvandoDelib, setSalvandoDelib] = useState(false)
   const [templates, setTemplates] = useState([])
   const [ocupacao, setOcupacao] = useState([])
   const [carregandoOcup, setCarregandoOcup] = useState(false)
@@ -478,19 +480,73 @@ export default function TarefaFormModal({ projetoId, tarefa, initialValues, tare
                 <div className="space-y-1 max-h-40 overflow-y-auto">
                   {deliberacoes.map(d => (
                     <div key={d.id} className="flex items-start gap-2 text-xs text-slate-700 bg-slate-50 rounded px-2 py-1.5">
-                      <span className="text-slate-400 shrink-0 font-medium">
-                        {d.data ? new Date(d.data + 'T12:00:00').toLocaleDateString('pt-BR') : '—'}
-                      </span>
-                      <span className="flex-1">{d.texto}</span>
-                      <button
-                        onClick={async () => {
-                          await apiService.deleteDeliberacao(d.id)
-                          setDeliberacoes(prev => prev.filter(x => x.id !== d.id))
-                        }}
-                        className="shrink-0 text-slate-300 hover:text-red-500 transition-colors"
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </button>
+                      {editandoDelib?.id === d.id ? (
+                        <>
+                          <input
+                            type="date"
+                            value={editandoDelib.data}
+                            onChange={e => setEditandoDelib(p => ({ ...p, data: e.target.value }))}
+                            className="text-xs p-1 border border-blue-300 rounded w-28 shrink-0 focus:ring-2 focus:ring-blue-500/20"
+                          />
+                          <input
+                            autoFocus
+                            value={editandoDelib.texto}
+                            onChange={e => setEditandoDelib(p => ({ ...p, texto: e.target.value }))}
+                            onKeyDown={async e => {
+                              if (e.key === 'Enter' && editandoDelib.texto.trim()) {
+                                setSalvandoDelib(true)
+                                try {
+                                  await apiService.updateDeliberacao(d.id, editandoDelib.data, editandoDelib.texto.trim())
+                                  setDeliberacoes(prev => prev.map(x => x.id === d.id ? { ...x, data: editandoDelib.data, texto: editandoDelib.texto.trim() } : x))
+                                  setEditandoDelib(null)
+                                } finally { setSalvandoDelib(false) }
+                              }
+                              if (e.key === 'Escape') setEditandoDelib(null)
+                            }}
+                            className="flex-1 text-xs p-1 border border-blue-300 rounded focus:ring-2 focus:ring-blue-500/20"
+                          />
+                          <button
+                            disabled={!editandoDelib.texto.trim() || salvandoDelib}
+                            onClick={async () => {
+                              if (!editandoDelib.texto.trim()) return
+                              setSalvandoDelib(true)
+                              try {
+                                await apiService.updateDeliberacao(d.id, editandoDelib.data, editandoDelib.texto.trim())
+                                setDeliberacoes(prev => prev.map(x => x.id === d.id ? { ...x, data: editandoDelib.data, texto: editandoDelib.texto.trim() } : x))
+                                setEditandoDelib(null)
+                              } finally { setSalvandoDelib(false) }
+                            }}
+                            className="shrink-0 text-blue-500 hover:text-blue-700 disabled:opacity-40 transition-colors"
+                          >
+                            {salvandoDelib ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+                          </button>
+                          <button onClick={() => setEditandoDelib(null)} className="shrink-0 text-slate-300 hover:text-slate-500 transition-colors">
+                            <X className="h-3 w-3" />
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <span className="text-slate-400 shrink-0 font-medium">
+                            {d.data ? new Date(d.data + 'T12:00:00').toLocaleDateString('pt-BR') : '—'}
+                          </span>
+                          <span className="flex-1">{d.texto}</span>
+                          <button
+                            onClick={() => setEditandoDelib({ id: d.id, data: d.data || hoje, texto: d.texto })}
+                            className="shrink-0 text-slate-300 hover:text-blue-500 transition-colors"
+                          >
+                            <Pencil className="h-3 w-3" />
+                          </button>
+                          <button
+                            onClick={async () => {
+                              await apiService.deleteDeliberacao(d.id)
+                              setDeliberacoes(prev => prev.filter(x => x.id !== d.id))
+                            }}
+                            className="shrink-0 text-slate-300 hover:text-red-500 transition-colors"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        </>
+                      )}
                     </div>
                   ))}
                 </div>

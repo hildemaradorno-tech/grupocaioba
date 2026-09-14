@@ -55,6 +55,7 @@ import AuditoriaOsAberto from './pages/garantias-daf/AuditoriaOsAberto'
 import HondaGarantiasReceber from './pages/honda/HondaGarantiasReceber'
 import BpmProcessos from './pages/bpm/BpmProcessos'
 import BpmModelador from './pages/bpm/BpmModelador'
+import BpmRegras from './pages/bpm/BpmRegras'
 import BpmNovaInstancia from './pages/bpm/BpmNovaInstancia'
 import BpmInstancia from './pages/bpm/BpmInstancia'
 import NfeCancelamentoDevolucao from './pages/bpm/NfeCancelamentoDevolucao'
@@ -220,8 +221,9 @@ export default function App() {
           { path: '/auditoria-os-aberto', element: <AuditoriaOsAberto />, menuPath: '/auditoria-os-aberto' },
           { path: '/honda/garantias-a-receber', element: <HondaGarantiasReceber />, menuPath: 'honda/garantias-a-receber' },
           { path: '/bpm/processos', element: <BpmProcessos />, menuPath: 'bpm/processos' },
-          { path: '/bpm/modelador', element: <BpmModelador />, menuPath: 'bpm/modelador' },
-          { path: '/bpm/modelador/:id', element: <BpmModelador />, menuPath: 'bpm/modelador' },
+          { path: '/bpm/modelador', element: <BpmModelador />, menuPath: ['bpm/modelador', 'bpm/nfe-cancelamento-devolucao'] },
+          { path: '/bpm/modelador/:id', element: <BpmModelador />, menuPath: ['bpm/modelador', 'bpm/nfe-cancelamento-devolucao'] },
+          { path: '/bpm/regras', element: <BpmRegras />, menuPath: 'bpm/nfe-cancelamento-devolucao' },
           { path: '/bpm/instancias/novo/:definitionId', element: <BpmNovaInstancia />, menuPath: 'bpm/processos' },
           { path: '/bpm/instancias/:id', element: <BpmInstancia />, menuPath: ['bpm/processos', 'bpm/nfe-cancelamento-devolucao'] },
           { path: '/bpm/nfe-cancelamento-devolucao', element: <NfeCancelamentoDevolucao />, menuPath: 'bpm/nfe-cancelamento-devolucao' },

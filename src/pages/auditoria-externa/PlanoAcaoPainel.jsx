@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react'
 import { Link } from 'react-router-dom'
-import { Plus, Edit2, Trash2, CheckCircle2, RotateCcw, Clock, User, Eye, ChevronRight, ChevronDown } from 'lucide-react'
+import { Plus, Edit2, Trash2, CheckCircle2, RotateCcw, Clock, User, Eye, ChevronRight, ChevronDown, Filter } from 'lucide-react'
+import { useSessionState } from '../../hooks/useSessionState'
 import { useAuth } from '../../context/AuthContext'
 import { apiService } from '../../services/api'
 import AuditoriaExternaNav from './AuditoriaExternaNav'
@@ -8,16 +9,21 @@ import PlanoAcaoFormModal from './PlanoAcaoFormModal'
 import AchadoFormModal from './AchadoFormModal'
 import AchadoDetalheDrawer from './AchadoDetalheDrawer'
 import PlanoDetalheDrawer from './PlanoDetalheDrawer'
-import { STATUS_PLANO_MAP, Badge, fmtData, fmtMoeda, PercentualBar, compararPorCodigo, calcularPercentualAtingidoAchado, calcularPercentualPlano, statusAgregadoAchado } from './auditExtConstants'
+import { STATUS_PLANO_MAP, Badge, fmtData, fmtMoeda, PercentualBar, compararPorCodigo, calcularPercentualAtingidoAchado, calcularPercentualPlano, statusAgregadoAchado, empresaNoEscopo, departamentoNoEscopo } from './auditExtConstants'
 
 const PROXIMO_STATUS = { pendente: 'em_andamento', em_andamento: 'concluido', concluido: 'validado_auditoria' }
 const ANTERIOR_STATUS = { em_andamento: 'pendente', concluido: 'em_andamento', validado_auditoria: 'concluido' }
+const FILTROS_VAZIOS = { tipoAcaoId: '', empresaId: '', departamentoId: '', responsavelId: '', status: '' }
 
 export default function PlanoAcaoPainel() {
-  const { user, hasPermission, hasActionOrDefault } = useAuth()
+  const { user, hasPermission, hasActionOrDefault, isAdminEfetivo, empresasPermitidas, departamentosPermitidosAuditoriaEfetivos } = useAuth()
   const canEditar = hasActionOrDefault('auditoria-externa/plano-acao', 'editar_plano')
+  const canExcluirPlano = hasActionOrDefault('auditoria-externa/plano-acao', 'excluir_plano')
+  const canAvancarStatus = hasActionOrDefault('auditoria-externa/plano-acao', 'avancar_status_acao')
+  const canVoltarStatus = hasActionOrDefault('auditoria-externa/plano-acao', 'voltar_status_acao')
   const canValidar = hasActionOrDefault('auditoria-externa/plano-acao', 'validar_plano_acao')
   const canVerTiposAcao = hasPermission('auditoria-externa/tipos-acao')
+  const canCriarTipoAcao = hasActionOrDefault('auditoria-externa/tipos-acao', 'editar')
   const canEditarAchado = hasActionOrDefault('auditoria-externa/divergencias', 'editar_achado')
 
   const [planos, setPlanos] = useState([])
@@ -26,6 +32,8 @@ export default function PlanoAcaoPainel() {
   const [loading, setLoading] = useState(true)
   const [ciclosExpandidos, setCiclosExpandidos] = useState(new Set())
   const [expandidos, setExpandidos] = useState(new Set())
+  const [filtros, setFiltros] = useSessionState('audext_plano_acao_filtros', FILTROS_VAZIOS)
+  const [filtrosAbertos, setFiltrosAbertos] = useSessionState('audext_plano_acao_filtros_abertos', false)
   const [modalPlano, setModalPlano] = useState(null) // null | { tipo: 'novo', achadoId } | { tipo: 'editar', plano }
   const [achadoDetalhe, setAchadoDetalhe] = useState(null)
   const [achadoEditar, setAchadoEditar] = useState(null)
@@ -34,7 +42,11 @@ export default function PlanoAcaoPainel() {
   const loadDados = useCallback(async () => {
     setLoading(true)
     try {
-      const [p, a, c] = await Promise.all([apiService.getAuditExtPlanosAcao(), apiService.getAuditExtAchados(), apiService.getAuditExtCiclos()])
+      const [p, a, c] = await Promise.all([
+        apiService.getAuditExtPlanosAcao(),
+        apiService.getAuditExtAchados(),
+        apiService.getAuditExtCiclos(),
+      ])
       setPlanos(p)
       setAchados(a)
       setCiclos(c)
@@ -44,17 +56,86 @@ export default function PlanoAcaoPainel() {
 
   useEffect(() => { loadDados() }, [loadDados])
 
+  const hasFiltroAtivo = Object.values(filtros).some(Boolean)
+  const handleLimparFiltros = () => setFiltros(FILTROS_VAZIOS)
+
+  // Escopo por Empresa/Departamento (Grupo de Acesso) — vazio = sem restrição.
+  // Empresa restringe pela empresa do Ciclo da divergência; Departamento restringe
+  // cada Ação individualmente (uma divergência pode ter ações de departamentos diferentes).
+  const achadoIdsNoEscopoDeEmpresa = useMemo(() => {
+    const set = new Set()
+    for (const a of achados) {
+      if (empresaNoEscopo(a.audext_ciclos?.empresa_id, empresasPermitidas, isAdminEfetivo)) set.add(a.id)
+    }
+    return set
+  }, [achados, empresasPermitidas, isAdminEfetivo])
+
+  const achadosVisiveis = useMemo(() =>
+    achados.filter(a => achadoIdsNoEscopoDeEmpresa.has(a.id)),
+    [achados, achadoIdsNoEscopoDeEmpresa])
+
+  const planosVisiveis = useMemo(() =>
+    planos.filter(p =>
+      achadoIdsNoEscopoDeEmpresa.has(p.achado_id) &&
+      departamentoNoEscopo(p.proj_departamentos?.nome, departamentosPermitidosAuditoriaEfetivos, isAdminEfetivo)
+    ),
+    [planos, achadoIdsNoEscopoDeEmpresa, departamentosPermitidosAuditoriaEfetivos, isAdminEfetivo])
+
+  const ciclosVisiveis = useMemo(() =>
+    ciclos.filter(c => empresaNoEscopo(c.empresa_id, empresasPermitidas, isAdminEfetivo)),
+    [ciclos, empresasPermitidas, isAdminEfetivo])
+
+  // Opções do filtro derivadas só do que já está de fato utilizado nas ações
+  // cadastradas (não o cadastro inteiro) — evita listar tipo/empresa/departamento/
+  // responsável que nunca foram usados em nenhuma ação.
+  const opcoesUnicas = (campo, chaveNome) => {
+    const m = new Map()
+    for (const p of planosVisiveis) {
+      const obj = p[campo]
+      if (obj?.id) m.set(obj.id, obj[chaveNome])
+    }
+    return Array.from(m, ([id, nome]) => ({ id, nome })).sort((a, b) => (a.nome || '').localeCompare(b.nome || '', 'pt-BR'))
+  }
+  const tiposAcaoDisponiveis = useMemo(() => opcoesUnicas('audext_tipos_acao', 'nome'), [planosVisiveis])
+  const empresasDisponiveis = useMemo(() => {
+    const m = new Map()
+    for (const p of planosVisiveis) {
+      if (p.dim_empresas?.id) m.set(p.dim_empresas.id, p.dim_empresas.empresa_fantasia || p.dim_empresas.nome_empresa)
+    }
+    return Array.from(m, ([id, nome]) => ({ id, nome })).sort((a, b) => (a.nome || '').localeCompare(b.nome || '', 'pt-BR'))
+  }, [planosVisiveis])
+  const departamentosDisponiveis = useMemo(() => opcoesUnicas('proj_departamentos', 'nome'), [planosVisiveis])
+  const responsaveisDisponiveis = useMemo(() => opcoesUnicas('proj_responsaveis', 'nome'), [planosVisiveis])
+  const statusDisponiveis = useMemo(() => {
+    const usados = new Set(planosVisiveis.map(p => p.status).filter(Boolean))
+    return Object.entries(STATUS_PLANO_MAP).filter(([value]) => usados.has(value))
+  }, [planosVisiveis])
+
+  const planoPassaFiltro = useCallback((p) => {
+    if (filtros.tipoAcaoId && p.tipo_acao_id !== filtros.tipoAcaoId) return false
+    if (filtros.empresaId && p.empresa_id !== filtros.empresaId) return false
+    if (filtros.departamentoId && p.departamento_id !== filtros.departamentoId) return false
+    if (filtros.responsavelId && p.responsavel_id !== filtros.responsavelId) return false
+    if (filtros.status && p.status !== filtros.status) return false
+    return true
+  }, [filtros])
+
   // Uma linha por Divergência cadastrada — com todas as Ações (planos de ação) dela, se já existirem.
+  // Com filtro avançado ativo, só ficam as ações que batem no filtro, e divergências sem
+  // nenhuma ação correspondente somem da lista.
   const linhas = useMemo(() => {
+    const planosBase = hasFiltroAtivo ? planosVisiveis.filter(planoPassaFiltro) : planosVisiveis
     const planosPorAchado = new Map()
-    for (const p of planos) {
+    for (const p of planosBase) {
       if (!planosPorAchado.has(p.achado_id)) planosPorAchado.set(p.achado_id, [])
       planosPorAchado.get(p.achado_id).push(p)
     }
-    return [...achados]
+    let base = [...achadosVisiveis]
       .sort(compararPorCodigo)
       .map(a => ({ achado: a, planosDoAchado: planosPorAchado.get(a.id) || [] }))
-  }, [achados, planos])
+    if (hasFiltroAtivo) base = base.filter(l => l.planosDoAchado.length > 0)
+    return base
+  }, [achadosVisiveis, planosVisiveis, hasFiltroAtivo, planoPassaFiltro])
 
   // Divergências agrupadas por Ciclo de Auditoria.
   const gruposPorCiclo = useMemo(() => {
@@ -92,6 +173,7 @@ export default function PlanoAcaoPainel() {
   const handleAvancar = async (plano) => {
     const proximo = PROXIMO_STATUS[plano.status]
     if (!proximo) return
+    if (!(proximo !== 'validado_auditoria' ? canAvancarStatus : canValidar)) return
     try {
       await apiService.updateAuditExtPlanoAcao(plano.id, { status: proximo }, user?.email)
       await loadDados()
@@ -103,6 +185,7 @@ export default function PlanoAcaoPainel() {
   const handleVoltar = async (plano) => {
     const anterior = ANTERIOR_STATUS[plano.status]
     if (!anterior) return
+    if (!(plano.status === 'validado_auditoria' ? canValidar : canVoltarStatus)) return
     try {
       await apiService.updateAuditExtPlanoAcao(plano.id, { status: anterior }, user?.email)
       await loadDados()
@@ -112,6 +195,7 @@ export default function PlanoAcaoPainel() {
   }
 
   const handleExcluir = async (plano) => {
+    if (!canExcluirPlano) return
     if (!window.confirm('Excluir esta ação do plano de ação?')) return
     try {
       await apiService.deleteAuditExtPlanoAcao(plano.id)
@@ -129,7 +213,7 @@ export default function PlanoAcaoPainel() {
             <h1 className="text-xl font-bold text-slate-900 tracking-tight">Plano de Ação</h1>
             <p className="text-xs text-slate-500">Devolutiva da controladoria: causa raiz, ação corretiva, responsável e validação. Toda divergência cadastrada aparece aqui — cada divergência pode ter várias ações.</p>
           </div>
-          {canVerTiposAcao && (
+          {canVerTiposAcao && canCriarTipoAcao && (
             <Link
               to="/auditoria-externa/tipos-acao"
               className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold px-3 py-2 rounded-md shadow-sm border border-slate-200 transition-colors shrink-0"
@@ -138,7 +222,64 @@ export default function PlanoAcaoPainel() {
             </Link>
           )}
         </div>
-        <AuditoriaExternaNav />
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <AuditoriaExternaNav />
+          <button
+            onClick={() => setFiltrosAbertos(v => !v)}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-semibold border transition-colors shrink-0 ${filtrosAbertos || hasFiltroAtivo ? 'bg-slate-700 text-white border-slate-700' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
+          >
+            <Filter className="h-3.5 w-3.5" /> Filtro Avançado
+            {hasFiltroAtivo && (
+              <span className="ml-0.5 px-1.5 py-0.5 rounded-full text-[10px] bg-indigo-600 text-white font-bold leading-none">
+                {Object.values(filtros).filter(Boolean).length}
+              </span>
+            )}
+          </button>
+        </div>
+        {filtrosAbertos && (
+          <div className="bg-white border border-slate-200 rounded-lg p-4 flex flex-wrap items-end gap-3">
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Tipo de Ação</label>
+              <select value={filtros.tipoAcaoId} onChange={e => setFiltros(p => ({ ...p, tipoAcaoId: e.target.value }))} className="text-xs p-2 border border-slate-200 rounded-md min-w-[160px]">
+                <option value="">Todos</option>
+                {tiposAcaoDisponiveis.map(t => <option key={t.id} value={t.id}>{t.nome}</option>)}
+              </select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Empresa</label>
+              <select value={filtros.empresaId} onChange={e => setFiltros(p => ({ ...p, empresaId: e.target.value }))} className="text-xs p-2 border border-slate-200 rounded-md min-w-[160px]">
+                <option value="">Todas</option>
+                {empresasDisponiveis.map(e => <option key={e.id} value={e.id}>{e.nome}</option>)}
+              </select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Departamento</label>
+              <select value={filtros.departamentoId} onChange={e => setFiltros(p => ({ ...p, departamentoId: e.target.value }))} className="text-xs p-2 border border-slate-200 rounded-md min-w-[160px]">
+                <option value="">Todos</option>
+                {departamentosDisponiveis.map(d => <option key={d.id} value={d.id}>{d.nome}</option>)}
+              </select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Responsável</label>
+              <select value={filtros.responsavelId} onChange={e => setFiltros(p => ({ ...p, responsavelId: e.target.value }))} className="text-xs p-2 border border-slate-200 rounded-md min-w-[160px]">
+                <option value="">Todos</option>
+                {responsaveisDisponiveis.map(r => <option key={r.id} value={r.id}>{r.nome}</option>)}
+              </select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Status</label>
+              <select value={filtros.status} onChange={e => setFiltros(p => ({ ...p, status: e.target.value }))} className="text-xs p-2 border border-slate-200 rounded-md min-w-[160px]">
+                <option value="">Todos</option>
+                {statusDisponiveis.map(([value, s]) => <option key={value} value={value}>{s.label}</option>)}
+              </select>
+            </div>
+            {hasFiltroAtivo && (
+              <button onClick={handleLimparFiltros} className="flex items-center gap-1 text-[11px] font-semibold text-slate-500 hover:text-slate-700 px-2 py-1.5">
+                <RotateCcw className="h-3 w-3" /> Limpar filtros
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {loading ? (
@@ -149,7 +290,7 @@ export default function PlanoAcaoPainel() {
         <div className="space-y-3">
           {gruposPorCiclo.map(({ ciclo, linhas: linhasDoCiclo }) => {
             const cicloId = ciclo?.id
-            const cicloExpandido = ciclosExpandidos.has(cicloId)
+            const cicloExpandido = hasFiltroAtivo || ciclosExpandidos.has(cicloId)
             return (
               <div key={cicloId || 'sem-ciclo'}>
                 {/* Cabeçalho do Ciclo — mesmo padrão do cabeçalho de departamento em Planejamento */}
@@ -173,7 +314,7 @@ export default function PlanoAcaoPainel() {
                 {cicloExpandido && (
                   <div className="space-y-3 border border-t-0 border-slate-200 rounded-b-lg p-3 bg-slate-50/60">
                     {linhasDoCiclo.map(({ achado, planosDoAchado }) => {
-                      const expandido = expandidos.has(achado.id)
+                      const expandido = hasFiltroAtivo || expandidos.has(achado.id)
                       const statusAchado = statusAgregadoAchado(planosDoAchado)
                       return (
               <div key={achado.id} className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
@@ -262,8 +403,8 @@ export default function PlanoAcaoPainel() {
                         ) : planosDoAchado.map((plano, i) => {
                           const proximo = PROXIMO_STATUS[plano.status]
                           const anterior = ANTERIOR_STATUS[plano.status]
-                          const podeAvancar = proximo && (proximo !== 'validado_auditoria' ? canEditar : canValidar)
-                          const podeVoltar = anterior && (plano.status === 'validado_auditoria' ? canValidar : canEditar)
+                          const podeAvancar = proximo && (proximo !== 'validado_auditoria' ? canAvancarStatus : canValidar)
+                          const podeVoltar = anterior && (plano.status === 'validado_auditoria' ? canValidar : canVoltarStatus)
                           return (
                             <tr key={plano.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
                               <td className="px-3 py-2.5 text-center text-slate-400 font-bold">{i + 1}</td>
@@ -298,7 +439,7 @@ export default function PlanoAcaoPainel() {
                                   {canEditar && (
                                     <button onClick={() => setModalPlano({ tipo: 'editar', plano })} className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors" title="Editar"><Edit2 className="h-3.5 w-3.5" /></button>
                                   )}
-                                  {canEditar && (
+                                  {canExcluirPlano && (
                                     <button onClick={() => handleExcluir(plano)} className="p-1.5 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded transition-colors" title="Excluir"><Trash2 className="h-3.5 w-3.5" /></button>
                                   )}
                                   {podeVoltar && (
@@ -333,7 +474,7 @@ export default function PlanoAcaoPainel() {
 
       {modalPlano && (
         <PlanoAcaoFormModal
-          achadosDisponiveis={achados}
+          achadosDisponiveis={achadosVisiveis}
           plano={modalPlano.tipo === 'editar' ? modalPlano.plano : null}
           achadoIdPadrao={modalPlano.tipo === 'novo' ? modalPlano.achadoId : undefined}
           onClose={() => setModalPlano(null)}
@@ -347,7 +488,7 @@ export default function PlanoAcaoPainel() {
 
       {achadoEditar && (
         <AchadoFormModal
-          ciclos={ciclos}
+          ciclos={ciclosVisiveis}
           achado={achadoEditar}
           userEmail={user?.email}
           onClose={() => setAchadoEditar(null)}
@@ -358,7 +499,7 @@ export default function PlanoAcaoPainel() {
       {planoDetalhe && (
         <PlanoDetalheDrawer
           plano={planoDetalhe}
-          achado={achados.find(a => a.id === planoDetalhe.achado_id)}
+          achado={achadosVisiveis.find(a => a.id === planoDetalhe.achado_id)}
           onClose={() => setPlanoDetalhe(null)}
         />
       )}

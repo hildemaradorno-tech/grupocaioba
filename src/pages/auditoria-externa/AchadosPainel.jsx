@@ -8,15 +8,16 @@ import AchadoFormModal from './AchadoFormModal'
 import AchadoDetalheDrawer from './AchadoDetalheDrawer'
 import AuditAiChatDrawer from './AuditAiChatDrawer'
 import ImportarDivergenciasModal from './ImportarDivergenciasModal'
-import { fmtMoeda, compararPorCodigo } from './auditExtConstants'
+import { fmtMoeda, compararPorCodigo, empresaNoEscopo } from './auditExtConstants'
 
 const FILTROS_VAZIOS = { empresa: '', norma: '' }
 
 export default function AchadosPainel() {
-  const { user, hasActionOrDefault } = useAuth()
+  const { user, hasActionOrDefault, isAdminEfetivo, empresasPermitidas } = useAuth()
   const canEditar = hasActionOrDefault('auditoria-externa/divergencias', 'editar_achado')
   const canExcluir = hasActionOrDefault('auditoria-externa/divergencias', 'excluir_achado')
   const canChatIA = hasActionOrDefault('auditoria-externa/divergencias', 'usar_chat_ia')
+  const canImportar = hasActionOrDefault('auditoria-externa/divergencias', 'importar_divergencias')
 
   const [achados, setAchados] = useState([])
   const [ciclos, setCiclos] = useState([])
@@ -47,17 +48,30 @@ export default function AchadosPainel() {
 
   useEffect(() => { loadDados() }, [loadDados])
 
+  // Escopo por Empresa (Grupo de Acesso) — vazio = sem restrição.
+  const achadosVisiveis = useMemo(() =>
+    achados.filter(a => empresaNoEscopo(a.audext_ciclos?.empresa_id, empresasPermitidas, isAdminEfetivo)),
+    [achados, empresasPermitidas, isAdminEfetivo])
+
+  const empresasVisiveis = useMemo(() =>
+    empresas.filter(e => empresaNoEscopo(e.id, empresasPermitidas, isAdminEfetivo)),
+    [empresas, empresasPermitidas, isAdminEfetivo])
+
+  const ciclosVisiveis = useMemo(() =>
+    ciclos.filter(c => empresaNoEscopo(c.empresa_id, empresasPermitidas, isAdminEfetivo)),
+    [ciclos, empresasPermitidas, isAdminEfetivo])
+
   const normasDisponiveis = useMemo(() =>
-    Array.from(new Set(achados.map(a => a.fundamentacao_tecnica).filter(Boolean))).sort(),
-    [achados]
+    Array.from(new Set(achadosVisiveis.map(a => a.fundamentacao_tecnica).filter(Boolean))).sort(),
+    [achadosVisiveis]
   )
 
   const achadosFiltrados = useMemo(() => {
-    let base = achados
+    let base = achadosVisiveis
     if (filtros.empresa) base = base.filter(a => a.audext_ciclos?.empresa_id === filtros.empresa)
     if (filtros.norma) base = base.filter(a => a.fundamentacao_tecnica === filtros.norma)
     return [...base].sort(compararPorCodigo)
-  }, [achados, filtros])
+  }, [achadosVisiveis, filtros])
 
   // Divergências agrupadas por Ciclo de Auditoria.
   const gruposPorCiclo = useMemo(() => {
@@ -119,7 +133,7 @@ export default function AchadosPainel() {
                 <Sparkles className="h-3.5 w-3.5" /> Copiloto de Auditoria
               </button>
             )}
-            {canEditar && (
+            {canImportar && (
               <button onClick={() => setModalImportarAberto(true)} className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold px-3 py-2 rounded-md shadow-sm border border-slate-200 transition-colors">
                 <Upload className="h-4 w-4 text-emerald-600" /> Importar Excel
               </button>
@@ -147,7 +161,7 @@ export default function AchadosPainel() {
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Empresa</label>
               <select value={filtros.empresa} onChange={e => setFiltros(p => ({ ...p, empresa: e.target.value }))} className="text-xs p-2 border border-slate-200 rounded-md min-w-[160px]">
                 <option value="">Todas</option>
-                {empresas.map(e => <option key={e.id} value={e.id}>{e.nome}</option>)}
+                {empresasVisiveis.map(e => <option key={e.id} value={e.id}>{e.nome}</option>)}
               </select>
             </div>
             <div className="flex flex-col gap-1">
@@ -237,7 +251,7 @@ export default function AchadosPainel() {
 
       {modalAchado && (
         <AchadoFormModal
-          ciclos={ciclos}
+          ciclos={ciclosVisiveis}
           achado={modalAchado === 'novo' ? null : modalAchado}
           userEmail={user?.email}
           onClose={() => setModalAchado(null)}
@@ -256,7 +270,7 @@ export default function AchadosPainel() {
       <AuditAiChatDrawer
         open={chatAberto}
         onClose={() => setChatAberto(false)}
-        achadosRelacionados={achados}
+        achadosRelacionados={achadosVisiveis}
       />
 
       {modalImportarAberto && (

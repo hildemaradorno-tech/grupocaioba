@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from 'react'
 import { X } from 'lucide-react'
 import { apiService } from '../../services/api'
+import { useAuth } from '../../context/AuthContext'
 import ManifestacaoRichEditor from '../projetos/ManifestacaoRichEditor'
 import { MoedaInput } from './auditExtConstants'
 
 const FORM_VAZIO = { achado_id: '', tipo_acao_id: '', causa_raiz: '', acao_proposta: '', total_apontado: '', valor_corrigido: '', empresa_id: '', responsavel_id: '', departamento_id: '', prazo_limite: '' }
 
 export default function PlanoAcaoFormModal({ achadosDisponiveis, plano, achadoIdPadrao, onClose, onSaved }) {
+  const { hasActionOrDefault } = useAuth()
   const [form, setForm] = useState(plano ? {
     achado_id: plano.achado_id || '',
     tipo_acao_id: plano.tipo_acao_id || '',
@@ -34,6 +36,7 @@ export default function PlanoAcaoFormModal({ achadosDisponiveis, plano, achadoId
 
   const handleSalvar = async (e) => {
     e.preventDefault()
+    if (!hasActionOrDefault('auditoria-externa/plano-acao', 'editar_plano')) return
     if (!form.achado_id) { alert('Selecione a divergência relacionada.'); return }
     setSalvando(true)
     const payload = {

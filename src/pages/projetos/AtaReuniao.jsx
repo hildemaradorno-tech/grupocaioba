@@ -7,9 +7,10 @@ import {
 import { useNavigate } from 'react-router-dom'
 import { apiService } from '../../services/api'
 import { useAuth } from '../../context/AuthContext'
+import logoCaioba from '../../assets/logo-caioba.jpg'
 
 // ── constantes ────────────────────────────────────────────────────────────────
-const LOGO_URL = 'https://limadigitalnet-my.sharepoint.com/:i:/g/personal/hildemar_limadigital_net_br/IQCLK28KdsSHRLtlmwLrO2whAV-i_i673amZBEJ41hOimkY?e=2yp4pZ'
+const LOGO_URL = logoCaioba
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 const dataHoje    = () => new Date().toISOString().split('T')[0]
@@ -55,7 +56,7 @@ const rowToForm = (row) => {
     horarioFim: row.horario_fim || '',
     local: row.local || '',
     proximaReuniao: row.proxima_reuniao || '',
-    logoUrl: d.logoUrl || LOGO_URL,
+    logoUrl: LOGO_URL,
     responsavelAta: d.responsavelAta || '',
     responsavelAtaNome: row.responsavel_ata_nome || '',
     participantesIds: new Set(d.participantesIds || []),
@@ -120,11 +121,11 @@ const AtaPreview = React.forwardRef(function AtaPreview({ form }, ref) {
   return (
     <div ref={ref} style={s.page}>
       {/* Cabeçalho */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '24px', borderBottom: '3px solid #1e3a5f', paddingBottom: '18px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px', borderBottom: '3px solid #1e3a5f', paddingBottom: '8px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
           {form.logoUrl && (
             <img src={form.logoUrl} alt="Logo" crossOrigin="anonymous"
-              style={{ height: '54px', objectFit: 'contain', maxWidth: '160px' }} />
+              style={{ height: '90px', objectFit: 'contain', maxWidth: '240px' }} />
           )}
           <div>
             <div style={{ fontSize: '10px', fontWeight: '600', color: '#64748b', textTransform: 'uppercase', letterSpacing: '1.5px' }}>Gestão de Projetos</div>
@@ -261,6 +262,17 @@ const AtaPreview = React.forwardRef(function AtaPreview({ form }, ref) {
                               {[t.projetoArea, t.projetoSistema].filter(Boolean).length > 0 && (
                                 <div style={{ fontSize: '8px', color: '#94a3b8', marginTop: '1px' }}>
                                   {[t.projetoArea, t.projetoSistema].filter(Boolean).join(' › ')}
+                                </div>
+                              )}
+                              {t.proj_deliberacoes?.length > 0 && (
+                                <div style={{ marginTop: '5px', paddingTop: '5px', borderTop: '1px dashed #fcd34d' }}>
+                                  <div style={{ fontSize: '8px', fontWeight: '700', color: '#92400e', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '3px' }}>Deliberações</div>
+                                  {t.proj_deliberacoes.map(d => (
+                                    <div key={d.id} style={{ display: 'flex', gap: '6px', fontSize: '9px', marginBottom: '2px', alignItems: 'flex-start' }}>
+                                      <span style={{ color: '#b45309', fontWeight: '600', whiteSpace: 'nowrap', flexShrink: 0 }}>{fmtData(d.data)}</span>
+                                      <span style={{ color: '#374151', lineHeight: '1.4' }}>{d.texto}</span>
+                                    </div>
+                                  ))}
                                 </div>
                               )}
                             </td>
@@ -952,6 +964,17 @@ export default function AtaReuniao() {
                                     {[t.projetoArea, t.projetoSistema].filter(Boolean).join(' › ')}
                                     {t.responsavel_nome ? `  ·  Resp.: ${t.responsavel_nome}` : ''}
                                   </p>
+                                  {t.proj_deliberacoes?.length > 0 && (
+                                    <div className="mt-2 pt-2 border-t border-amber-200">
+                                      <p className="text-[9px] font-bold text-amber-700 uppercase tracking-wide mb-1">Deliberações</p>
+                                      {t.proj_deliberacoes.map(d => (
+                                        <div key={d.id} className="flex gap-2 text-[10px] mb-1">
+                                          <span className="text-amber-600 font-semibold shrink-0 whitespace-nowrap">{fmtData(d.data)}</span>
+                                          <span className="text-slate-600 leading-snug">{d.texto}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
                                 </div>
                               </div>
                             ))}

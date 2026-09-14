@@ -115,7 +115,7 @@ export async function publicarDefinicao(id) {
 export async function listarInstancias({ status } = {}) {
   let query = supabase
     .from('bpm_process_instances')
-    .select('id, titulo, status, dados, iniciado_em, concluido_em, process_definition_id, bpm_process_definitions(nome, chave, versao)')
+    .select('id, titulo, status, dados, iniciado_em, iniciado_por, concluido_em, process_definition_id, bpm_process_definitions(nome, chave, versao)')
     .order('iniciado_em', { ascending: false })
   if (status) query = query.eq('status', status)
   const { data, error } = await query
@@ -296,16 +296,23 @@ export async function listarTarefasPorPapeis({ papeis }) {
 }
 
 // Só permite assumir se a tarefa não exigir agrupamento de cargos nenhum, ou se o agrupamento
-// de cargos do usuário bater com o exigido pela etapa (definido no Modelador) — reforça no
-// servidor o mesmo filtro que a tela já aplica escondendo o botão, pra não depender só da UI.
+// do CARGO do usuário (usuarios.cargo_id é um cargo específico; o agrupamento dele é resolvido
+// via dim_cargos) bater com o agrupamento exigido pela etapa (definido no Modelador) — reforça
+// no servidor o mesmo filtro que a tela já aplica escondendo o botão, pra não depender só da UI.
 export async function assumirTarefa({ taskId, userId }) {
   const { data: tarefa, error: errTarefa } = await supabase.from('bpm_tasks').select('responsavel_agrupamento_cargo_id').eq('id', taskId).single()
   if (errTarefa) throw errTarefa
 
   if (tarefa.responsavel_agrupamento_cargo_id) {
-    const { data: usuario, error: errUsuario } = await supabase.from('usuarios').select('agrupamento_cargo_id').eq('id', userId).single()
+    const { data: usuario, error: errUsuario } = await supabase.from('usuarios').select('cargo_id').eq('id', userId).single()
     if (errUsuario) throw errUsuario
-    if (usuario.agrupamento_cargo_id !== tarefa.responsavel_agrupamento_cargo_id) {
+    let agrupamentoUsuario = null
+    if (usuario.cargo_id) {
+      const { data: cargo, error: errCargo } = await supabase.from('dim_cargos').select('agrupamento_id').eq('id', usuario.cargo_id).single()
+      if (errCargo) throw errCargo
+      agrupamentoUsuario = cargo?.agrupamento_id || null
+    }
+    if (agrupamentoUsuario !== tarefa.responsavel_agrupamento_cargo_id) {
       throw new Error('Esta tarefa é exclusiva de quem está no agrupamento de cargos definido para essa etapa — você não pode assumi-la.')
     }
   }

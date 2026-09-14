@@ -1,9 +1,11 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react'
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell, PieChart, Pie, Legend, LabelList } from 'recharts'
-import { AlertTriangle, CheckCircle2, ShieldAlert, Layers } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, ShieldAlert, Layers, CalendarClock } from 'lucide-react'
+import { useSessionState } from '../../hooks/useSessionState'
 import { apiService } from '../../services/api'
 import AuditoriaExternaNav from './AuditoriaExternaNav'
-import { calcularPercentualAtingidoAchado, statusAgregadoAchado, achadoResolvido } from './auditExtConstants'
+import { useAuth } from '../../context/AuthContext'
+import { calcularPercentualAtingidoAchado, statusAgregadoAchado, achadoResolvido, empresaNoEscopo, departamentoNoEscopo } from './auditExtConstants'
 
 function KpiCard({ icon: Icon, label, valor, sub, cor }) {
   return (
@@ -64,10 +66,12 @@ function RankingColunas({ dados, cores }) {
 const STATUS_COR_CHART = { sem_plano: '#94a3b8', pendente: '#94a3b8', em_andamento: '#3b82f6', concluido: '#10b981', validado_auditoria: '#4f46e5' }
 
 export default function AuditoriaDashboard() {
+  const { isAdminEfetivo, empresasPermitidas, departamentosPermitidosAuditoriaEfetivos } = useAuth()
   const [achados, setAchados] = useState([])
   const [planos, setPlanos] = useState([])
   const [ciclos, setCiclos] = useState([])
   const [loading, setLoading] = useState(true)
+  const [cicloId, setCicloId] = useSessionState('audext_dashboard_ciclo', '')
 
   const loadDados = useCallback(async () => {
     setLoading(true)
@@ -86,74 +90,122 @@ export default function AuditoriaDashboard() {
 
   useEffect(() => { loadDados() }, [loadDados])
 
+  // Escopo por Empresa/Departamento (Grupo de Acesso) — vazio = sem restrição.
+  const achadoIdsNoEscopoDeEmpresa = useMemo(() => {
+    const set = new Set()
+    for (const a of achados) {
+      if (empresaNoEscopo(a.audext_ciclos?.empresa_id, empresasPermitidas, isAdminEfetivo)) set.add(a.id)
+    }
+    return set
+  }, [achados, empresasPermitidas, isAdminEfetivo])
+
+  const achadosVisiveis = useMemo(() =>
+    achados.filter(a => achadoIdsNoEscopoDeEmpresa.has(a.id)),
+    [achados, achadoIdsNoEscopoDeEmpresa])
+
+  const planosVisiveis = useMemo(() =>
+    planos.filter(p =>
+      achadoIdsNoEscopoDeEmpresa.has(p.achado_id) &&
+      departamentoNoEscopo(p.proj_departamentos?.nome, departamentosPermitidosAuditoriaEfetivos, isAdminEfetivo)
+    ),
+    [planos, achadoIdsNoEscopoDeEmpresa, departamentosPermitidosAuditoriaEfetivos, isAdminEfetivo])
+
+  const ciclosVisiveis = useMemo(() =>
+    ciclos.filter(c => empresaNoEscopo(c.empresa_id, empresasPermitidas, isAdminEfetivo)),
+    [ciclos, empresasPermitidas, isAdminEfetivo])
+
+  // Filtro por Ciclo de Auditoria — vazio = todos os ciclos (visão consolidada).
+  const achadosFiltrados = useMemo(() =>
+    cicloId ? achadosVisiveis.filter(a => a.ciclo_id === cicloId) : achadosVisiveis,
+    [achadosVisiveis, cicloId])
+
+  const achadoIdsFiltrados = useMemo(() => new Set(achadosFiltrados.map(a => a.id)), [achadosFiltrados])
+
+  const planosFiltrados = useMemo(() =>
+    cicloId ? planosVisiveis.filter(p => achadoIdsFiltrados.has(p.achado_id)) : planosVisiveis,
+    [planosVisiveis, cicloId, achadoIdsFiltrados])
+
+  const cicloSelecionado = ciclosVisiveis.find(c => c.id === cicloId)
+
   // Uma divergência pode ter várias ações (planos de ação).
   const planosPorAchado = useMemo(() => {
     const m = new Map()
-    for (const p of planos) {
+    for (const p of planosFiltrados) {
       if (!m.has(p.achado_id)) m.set(p.achado_id, [])
       m.get(p.achado_id).push(p)
     }
     return m
-  }, [planos])
+  }, [planosFiltrados])
 
-  const totalDivergencias = achados.length
+  const totalDivergencias = achadosFiltrados.length
 
   const resolvidas = useMemo(() =>
-    achados.filter(a => achadoResolvido(planosPorAchado.get(a.id))).length,
-    [achados, planosPorAchado])
+    achadosFiltrados.filter(a => achadoResolvido(planosPorAchado.get(a.id))).length,
+    [achadosFiltrados, planosPorAchado])
 
   const naoResolvidas = totalDivergencias - resolvidas
 
   // % de conclusão geral = média do % atingido (Valor Corrigido ÷ Total
   // Apontado) de cada divergência — automático.
   const percentualGeral = useMemo(() => {
-    if (achados.length === 0) return 0
-    const soma = achados.reduce((s, a) => s + calcularPercentualAtingidoAchado(a), 0)
-    return Math.round(soma / achados.length)
-  }, [achados])
+    if (achadosFiltrados.length === 0) return 0
+    const soma = achadosFiltrados.reduce((s, a) => s + calcularPercentualAtingidoAchado(a), 0)
+    return Math.round(soma / achadosFiltrados.length)
+  }, [achadosFiltrados])
 
   // Como estão as soluções: quantidade de divergências em cada estágio (o
   // estágio da divergência é o mais atrasado entre as ações dela).
   // "Validado pela Auditoria" entra junto com "Concluído" aqui.
   const statusData = useMemo(() => {
     const m = { sem_plano: 0, pendente: 0, em_andamento: 0, concluido: 0 }
-    for (const a of achados) {
+    for (const a of achadosFiltrados) {
       const st = statusAgregadoAchado(planosPorAchado.get(a.id))
       const chave = st === 'validado_auditoria' ? 'concluido' : (st || 'sem_plano')
       m[chave]++
     }
     const labels = { sem_plano: 'Sem Plano', pendente: 'Pendente', em_andamento: 'Em Andamento', concluido: 'Concluído' }
     return Object.entries(m).map(([k, qtd]) => ({ status: labels[k], qtd, cor: STATUS_COR_CHART[k] }))
-  }, [achados, planosPorAchado])
+  }, [achadosFiltrados, planosPorAchado])
 
   // Em quais departamentos tiveram mais ações (cada ação conta pro seu departamento).
   const porDepartamento = useMemo(() => {
     const m = new Map()
-    for (const p of planos) {
+    for (const p of planosFiltrados) {
       const nome = p.proj_departamentos?.nome || 'Não atribuído'
       m.set(nome, (m.get(nome) || 0) + 1)
     }
     return Array.from(m.entries()).map(([label, qtd]) => ({ label, qtd })).sort((a, b) => b.qtd - a.qtd)
-  }, [planos])
+  }, [planosFiltrados])
 
   // Que tipo de ação foi realizada (cada ação conta pro seu tipo).
   const porTipoAcao = useMemo(() => {
     const m = new Map()
-    for (const p of planos) {
+    for (const p of planosFiltrados) {
       const nome = p.audext_tipos_acao?.nome || 'Não definido'
       m.set(nome, (m.get(nome) || 0) + 1)
     }
     return Array.from(m.entries()).map(([label, qtd]) => ({ label, qtd })).sort((a, b) => b.qtd - a.qtd)
-  }, [planos])
+  }, [planosFiltrados])
 
   if (loading) return <div className="p-6">Carregando...</div>
 
   return (
     <div className="p-6 space-y-5 max-w-screen-2xl">
       <div className="space-y-3 border-b border-slate-200 pb-4">
-        <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Dashboard — Auditoria Externa</h1>
-          <p className="text-xs text-slate-500">Visão consolidada por quantidade de divergências, andamento das soluções e conclusão dos ciclos de auditoria.</p>
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <h1 className="text-xl font-bold text-slate-900 tracking-tight">Dashboard — Auditoria Externa</h1>
+            <p className="text-xs text-slate-500">Visão consolidada por quantidade de divergências, andamento das soluções e conclusão dos ciclos de auditoria.</p>
+          </div>
+          <div className="flex flex-col gap-1 shrink-0">
+            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1"><CalendarClock className="h-3 w-3" /> Ciclo de Auditoria</label>
+            <select value={cicloId} onChange={e => setCicloId(e.target.value)} className="text-xs p-2 border border-slate-200 rounded-md min-w-[220px] font-medium text-slate-700 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500">
+              <option value="">Todos os ciclos (visão consolidada)</option>
+              {ciclosVisiveis.map(c => (
+                <option key={c.id} value={c.id}>{c.proj_empresas?.nome || '—'} · {c.periodo_competencia}</option>
+              ))}
+            </select>
+          </div>
         </div>
         <AuditoriaExternaNav />
       </div>
@@ -161,7 +213,7 @@ export default function AuditoriaDashboard() {
       <div className="grid grid-cols-4 gap-3">
         <KpiCard
           icon={ShieldAlert} label="Total de Divergências" valor={totalDivergencias}
-          sub={`${ciclos.length} ciclo(s) de auditoria`}
+          sub={cicloSelecionado ? `${cicloSelecionado.proj_empresas?.nome || '—'} · ${cicloSelecionado.periodo_competencia}` : `${ciclosVisiveis.length} ciclo(s) de auditoria`}
           cor={{ bg: 'bg-indigo-50', border: 'border-indigo-200', icoBg: 'bg-indigo-100', icoTxt: 'text-indigo-600', numTxt: 'text-indigo-700', labelTxt: 'text-indigo-500' }}
         />
         <KpiCard

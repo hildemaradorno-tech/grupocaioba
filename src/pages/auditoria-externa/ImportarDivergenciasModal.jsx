@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { apiService } from '../../services/api'
 import { useAuth } from '../../context/AuthContext'
+import { empresaNoEscopo } from './auditExtConstants'
 
 // ── Colunas obrigatórias no Excel (nesta ordem) ──────────────────────────────
 const COLUNAS = ['Título da Divergência']
@@ -40,7 +41,8 @@ const textoParaHtml = (s) => {
 }
 
 export default function ImportarDivergenciasModal({ onClose, onImported, cicloIdPadrao }) {
-  const { user } = useAuth()
+  const { user, hasActionOrDefault, isAdminEfetivo, empresasPermitidas } = useAuth()
+  const canImportar = hasActionOrDefault('auditoria-externa/divergencias', 'importar_divergencias')
   const fileRef = useRef(null)
   const [arrastando, setArrastando] = useState(false)
   const [etapa, setEtapa] = useState('selecao') // selecao | preview | importando | resultado
@@ -48,12 +50,15 @@ export default function ImportarDivergenciasModal({ onClose, onImported, cicloId
   const [nomeArquivo, setNomeArquivo] = useState('')
   const [linhas, setLinhas] = useState([])
   const [resultado, setResultado] = useState(null)
-  const [ciclos, setCiclos] = useState([])
+  const [ciclosTodos, setCiclosTodos] = useState([])
   const [cicloId, setCicloId] = useState(cicloIdPadrao || '')
 
   useEffect(() => {
-    apiService.getAuditExtCiclos().then(setCiclos).catch(() => {})
+    apiService.getAuditExtCiclos().then(setCiclosTodos).catch(() => {})
   }, [])
+
+  // Escopo por Empresa (Grupo de Acesso) — vazio = sem restrição.
+  const ciclos = ciclosTodos.filter(c => empresaNoEscopo(c.empresa_id, empresasPermitidas, isAdminEfetivo))
 
   const baixarModelo = () => {
     const ws = XLSX.utils.aoa_to_sheet([CABECALHO_MODELO, LINHA_EXEMPLO])
@@ -125,6 +130,7 @@ export default function ImportarDivergenciasModal({ onClose, onImported, cicloId
   }
 
   const handleImportar = async () => {
+    if (!canImportar) return
     setEtapa('importando')
     let divergenciasCriadas = 0
     const erros = []

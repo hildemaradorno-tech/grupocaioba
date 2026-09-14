@@ -1,11 +1,14 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { X, Send, Sparkles, Loader2 } from 'lucide-react'
 import { apiService } from '../../services/api'
+import { useAuth } from '../../context/AuthContext'
 
 // Painel de chat lateral do Copiloto de Auditoria — reutilizável em qualquer
 // tela do módulo. `achadosRelacionados` é opcional: quando informado (ex: a
 // partir da tela de Achados), é enviado como contexto extra para a IA.
 export default function AuditAiChatDrawer({ open, onClose, achadosRelacionados = [] }) {
+  const { hasActionOrDefault } = useAuth()
+  const canUsarChatIA = hasActionOrDefault('auditoria-externa/divergencias', 'usar_chat_ia')
   const [mensagem, setMensagem] = useState('')
   const [historico, setHistorico] = useState([])
   const [enviando, setEnviando] = useState(false)
@@ -35,7 +38,7 @@ export default function AuditAiChatDrawer({ open, onClose, achadosRelacionados =
     }
   }
 
-  if (!open) return null
+  if (!open || !canUsarChatIA) return null
 
   return (
     <>

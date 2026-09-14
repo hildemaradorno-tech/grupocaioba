@@ -1,7 +1,6 @@
 ﻿import React, { useEffect, useState, useMemo, useCallback } from 'react'
 import { useSessionState } from '../hooks/useSessionState'
-import { Plus, Trash2, X, AlertTriangle, ChevronRight, ChevronDown, Wrench, Loader2, CheckCircle2, Sparkles, Pencil, Edit2, ClipboardCheck, Eye, ArrowRight, UserCircle } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
+import { Plus, Trash2, X, AlertTriangle, ChevronRight, ChevronDown, Wrench, Loader2, CheckCircle2, Sparkles, Pencil, Edit2, Eye, ArrowRight } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import PermissionActionButtons from '../components/PermissionActionButtons'
 import { apiService } from '../services/api'
@@ -11,7 +10,6 @@ const ANOS = Array.from({ length: 7 }, (_, i) => anoAtual - 1 + i)
 const MESES_ABR = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
 
 const fmtBRL = (v) => { const n = Number(v); if (!v && v !== 0) return '—'; return n.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) }
-const fmtPct = (v) => { const n = Number(v); if (!n && n !== 0) return '—'; return n.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 2 }) + '%' }
 
 function parseBRL(s) { if (!s && s !== 0) return 0; const str = String(s).trim(); if (str.includes(',')) return parseFloat(str.replace(/\./g, '').replace(',', '.')) || 0; return parseFloat(str) || 0 }
 function formatBRL(n) { const num = Number(n); if (!num && num !== 0) return ''; return num.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) }
@@ -78,14 +76,6 @@ const BTN_SEC = 'inline-flex items-center gap-2 bg-white border border-slate-300
 const STATUS_CLS     = { 'AGUARDANDO': 'bg-amber-100 text-amber-700', 'DISTRIBUIDO': 'bg-green-100 text-green-700' }
 const STATUS_DISPLAY = { 'AGUARDANDO': 'Aguard. Distribuição',       'DISTRIBUIDO': 'Valor Distribuído' }
 
-const TIPOS_POOL = [
-  { key: 'somente_mecanica',   label: 'Somente Mecânica'                        },
-  { key: 'mecanica_terceiro',  label: 'Mecânica + Terceiro'                     },
-  { key: 'somente_funilaria',  label: 'Somente Funilaria'                       },
-  { key: 'funilaria_terceiro', label: 'Funilaria + Terceiro'                    },
-  { key: 'total',              label: 'Total (Mecânica + Funilaria + Terceiro)' },
-]
-
 const FORM_VAZIO = { empresa_id:'', empresa_nome:'', departamento_id:'', departamento_nome:'', setor_id:'', setor_nome:'', box_id:'', box_nome:'', cargo_id:'', cargo_nome:'', colaborador_id:'', colaborador_nome:'', data_admissao:'', ano: anoAtual }
 
 function calcHorasMeta(horas, produtividade) {
@@ -101,7 +91,6 @@ const mesesVazios = (diasUteis = {}) => Array.from({ length: 12 }, (_, i) => {
 })
 
 export default function MetasServicosMecanico({ onDistribuir } = {}) {
-  const navigate = useNavigate()
   const [empresas,      setEmpresas]      = useState([])
   const [departamentos, setDepartamentos] = useState([])
   const [setores,       setSetores]       = useState([])
@@ -118,6 +107,8 @@ export default function MetasServicosMecanico({ onDistribuir } = {}) {
   const [filtroEmpresa,  setFiltroEmpresa]  = useSessionState('mpvs_servicos_empresa', '')
   const [filtroAno,      setFiltroAno]      = useSessionState('mpvs_servicos_ano', anoAtual)
   const [filtroMecanico, setFiltroMecanico] = useSessionState('msm_mecanico', '')
+  const [filtroSetor,    setFiltroSetor]    = useSessionState('msm_setor', '')
+  const [filtroBox,      setFiltroBox]      = useSessionState('msm_box', '')
   const [filtroVisu,     setFiltroVisu]     = useSessionState('msm_visu', 'total')
 
   const [grupoAberto,        setGrupoAberto]        = useState(true)
@@ -125,9 +116,6 @@ export default function MetasServicosMecanico({ onDistribuir } = {}) {
   const [expandedDepts,      setExpandedDepts]      = useState(new Set())
   const [expandedSetores,    setExpandedSetores]    = useState(new Set())
   const [expandedBoxes,      setExpandedBoxes]      = useState(new Set())
-  const [collapsedConsDepts,  setCollapsedConsDepts]  = useState(new Set())
-  const [collapsedConsSets,   setCollapsedConsSets]   = useState(new Set())
-  const [modalConsultor,      setModalConsultor]      = useState(null)
 
   const [modalAberto,        setModalAberto]        = useState(false)
   const [modoModal,          setModoModal]          = useState('incluir') // 'incluir' | 'editar'
@@ -148,9 +136,46 @@ export default function MetasServicosMecanico({ onDistribuir } = {}) {
   const [copyCPSel,          setCopyCPSel]          = useState(new Set(Array.from({length:12},(_,i)=>i)))
   const [copyCPVal,          setCopyCPVal]          = useState('')
   useEffect(() => { loadLookups() }, [])
-  useEffect(() => { setFiltroMecanico(''); loadDados() }, [filtroEmpresa, filtroAno])
+  useEffect(() => { setFiltroMecanico(''); setFiltroSetor(''); setFiltroBox(''); loadDados() }, [filtroEmpresa, filtroAno])
 
   const sortNome = (arr, f) => [...arr].sort((a,b) => (a[f]||'').localeCompare(b[f]||''))
+
+  // Resolve cargo/depto/setor/box de uma linha da meta: pelo cadastro atual do funcionário
+  // quando ele ainda existe em /funcionarios; senão pelo que foi gravado na própria linha
+  // (colaborador "fantasma" ou excluído do cadastro). Usado tanto pra montar a árvore quanto
+  // pros filtros de Setor/Box.
+  const resolverPosicao = useCallback((row) => {
+    const func = funcionarios.find(f => f.id === row.colaborador_id)
+    let cId, bId, sId, did
+    if (func) {
+      cId = func.cargo_id || '—'
+      const cargoTmp = cargos.find(c => c.id === cId)
+      bId = func.box_id || '—'
+      const boxTmp = boxes.find(b => b.id === bId)
+      const boxSetorIds   = boxTmp ? (Array.isArray(boxTmp.setor_ids) ? boxTmp.setor_ids : [boxTmp.setor_id]).filter(Boolean) : []
+      const cargoSetorIds = cargoTmp?.setor_ids || func.setor_ids || []
+      sId = boxSetorIds.find(sid => cargoSetorIds.includes(sid)) || boxSetorIds[0] || cargoSetorIds[0] || '—'
+      const setorTmp = setores.find(s => s.id === sId)
+      did = setorTmp?.departamento_id || cargoTmp?.departamento_ids?.[0] || func.departamento_ids?.[0] || '—'
+    } else {
+      cId = row.cargo_id || '—'
+      bId = row.box_id   || '—'
+      sId = row.setor_id || '—'
+      did = row.departamento_id || '—'
+    }
+    const cargo = cargos.find(c => c.id === cId)
+    const box   = boxes.find(b => b.id === bId)
+    const setor = setores.find(s => s.id === sId)
+    const dept  = departamentos.find(d => d.id === did)
+    return {
+      func, cId, bId, sId, did,
+      dNome: dept?.nome_departamento || row.departamento_nome || did,
+      sNome: setor?.nome_setor       || row.setor_nome        || '—',
+      bNome: box?.nome_box           || row.box_nome          || '—',
+      cNome: cargo?.nome_cargo       || row.cargo_nome        || '—',
+      coNome: func?.nome_funcionario || row.colaborador_nome  || row.colaborador_id,
+    }
+  }, [funcionarios, cargos, boxes, setores, departamentos])
 
   const mecanicosDisponiveis = useMemo(() => {
     const seen = new Set()
@@ -160,9 +185,31 @@ export default function MetasServicosMecanico({ onDistribuir } = {}) {
       .sort((a, b) => (a.nome || '').localeCompare(b.nome || ''))
   }, [dados])
 
-  const dadosFiltrados = useMemo(() =>
-    filtroMecanico ? dados.filter(r => r.colaborador_id === filtroMecanico) : dados,
-    [dados, filtroMecanico])
+  const setoresDisponiveis = useMemo(() => {
+    const seen = new Map()
+    dados.forEach(r => { const { sId, sNome } = resolverPosicao(r); if (sId !== '—' && !seen.has(sId)) seen.set(sId, sNome) })
+    return [...seen.entries()].map(([id, nome]) => ({ id, nome })).sort((a,b) => a.nome.localeCompare(b.nome))
+  }, [dados, resolverPosicao])
+
+  const boxesDisponiveis = useMemo(() => {
+    const seen = new Map()
+    dados.forEach(r => {
+      const { sId, bId, bNome } = resolverPosicao(r)
+      if (filtroSetor && sId !== filtroSetor) return
+      if (bId !== '—' && !seen.has(bId)) seen.set(bId, bNome)
+    })
+    return [...seen.entries()].map(([id, nome]) => ({ id, nome })).sort((a,b) => a.nome.localeCompare(b.nome))
+  }, [dados, resolverPosicao, filtroSetor])
+
+  const dadosFiltrados = useMemo(() => dados.filter(r => {
+    if (filtroMecanico && r.colaborador_id !== filtroMecanico) return false
+    if (filtroSetor || filtroBox) {
+      const { sId, bId } = resolverPosicao(r)
+      if (filtroSetor && sId !== filtroSetor) return false
+      if (filtroBox   && bId !== filtroBox)   return false
+    }
+    return true
+  }), [dados, filtroMecanico, filtroSetor, filtroBox, resolverPosicao])
 
   // Chaves empresa_id|mes onde existe ao menos 1 consultor com meta distribuída
   const distribSet = useMemo(() => {
@@ -205,37 +252,7 @@ export default function MetasServicosMecanico({ onDistribuir } = {}) {
     dadosFiltrados.forEach(row => {
       const eid   = row.empresa_id
       const colid = row.colaborador_id
-      const func  = funcionarios.find(f => f.id === colid)
-
-      // Cargo/depto/setor/box resolvidos pelo cadastro atual do funcionário (não pelo retrato
-      // gravado na linha da meta), pra refletir mudanças feitas depois em /funcionarios. Só faz
-      // essa resolução "ao vivo" quando o funcionário da meta ainda existe no cadastro — se o
-      // colaborador_id da linha foi excluído, os IDs de cargo/box gravados podem ter sido
-      // reaproveitados por outro cadastro (ex: cargo renomeado pra outra função), então nesse
-      // caso usa só o retrato (nomes) gravado na própria linha.
-      let cId, cargo, bId, box, sId, setor, did
-      if (func) {
-        cId   = func.cargo_id || '—'
-        cargo = cargos.find(c => c.id === cId)
-        bId   = func.box_id || '—'
-        box   = boxes.find(b => b.id === bId)
-        const boxSetorIds   = box ? (Array.isArray(box.setor_ids) ? box.setor_ids : [box.setor_id]).filter(Boolean) : []
-        const cargoSetorIds = cargo?.setor_ids || func.setor_ids || []
-        sId   = boxSetorIds.find(sid => cargoSetorIds.includes(sid)) || boxSetorIds[0] || cargoSetorIds[0] || '—'
-        setor = setores.find(s => s.id === sId)
-        did   = setor?.departamento_id || cargo?.departamento_ids?.[0] || func.departamento_ids?.[0] || '—'
-      } else {
-        cId = row.cargo_id || '—'; cargo = null
-        bId = row.box_id   || '—'; box   = null
-        sId = row.setor_id || '—'; setor = null
-        did = row.departamento_id || '—'
-      }
-
-      const dNome  = (func && departamentos.find(d => d.id === did)?.nome_departamento) || row.departamento_nome || did
-      const sNome  = (func && setor?.nome_setor) || row.setor_nome || '—'
-      const bNome  = (func && box?.nome_box)     || row.box_nome   || '—'
-      const cNome  = (func && cargo?.nome_cargo) || row.cargo_nome || '—'
-      const coNome = func?.nome_funcionario || row.colaborador_nome || colid
+      const { cId, bId, sId, did, dNome, sNome, bNome, coNome } = resolverPosicao(row)
 
       if (!t[eid]) t[eid] = { nome: row.empresa_nome || eid, depts: {} }
       const depts = t[eid].depts
@@ -269,124 +286,15 @@ export default function MetasServicosMecanico({ onDistribuir } = {}) {
       }
     })
     return t
-  }, [dadosFiltrados, departamentos, setores, boxes, cargos, funcionarios])
-
-  const consultoresPorEmpresa = useMemo(() => {
-    const m = {}
-    dadosConsultor.forEach(r => {
-      const empId  = r.empresa_id
-      const deptId = r.departamento_id || '—'
-      const setId  = r.setor_id        || '—'
-      const dNome  = r.departamento_nome || departamentos.find(d => d.id === deptId)?.nome_departamento || '—'
-      const sNome  = r.setor_nome        || setores.find(s => s.id === setId)?.nome_setor              || '—'
-      if (!m[empId]) m[empId] = {}
-      if (!m[empId][deptId]) m[empId][deptId] = { nome: dNome, setores: {} }
-      if (!m[empId][deptId].setores[setId]) m[empId][deptId].setores[setId] = { nome: sNome, colabs: {} }
-      const key = `${r.colaborador_id}||${r.tipo_pool || 'total'}`
-      if (!m[empId][deptId].setores[setId].colabs[key])
-        m[empId][deptId].setores[setId].colabs[key] = {
-          colaborador_id:   r.colaborador_id,
-          colaborador_nome: r.colaborador_nome || funcionarios.find(f => f.id === r.colaborador_id)?.nome_funcionario || r.colaborador_id,
-          tipo_pool:        r.tipo_pool || 'total',
-          meses: {},
-        }
-      m[empId][deptId].setores[setId].colabs[key].meses[r.mes] = {
-        meta_faturamento: Number(r.meta_faturamento) || 0,
-        meta_aprovada:    r.meta_aprovada ?? null,
-        percentual:       Number(r.percentual) || 0,
-      }
-    })
-    return m
-  }, [dadosConsultor, funcionarios, departamentos, setores])
-
-  const abrirVisualizarConsultor = async (empId, empNome, deptNome, setorNome, colab) => {
-    setModalConsultor({ empId, empNome, deptNome, setorNome, ...colab, pool: {}, outrosPerMes: {}, loadingPool: true })
-    try {
-      const tp = colab.tipo_pool
-      const usaMec = ['somente_mecanica','mecanica_terceiro','total'].includes(tp)
-      const usaFun = ['somente_funilaria','funilaria_terceiro','total'].includes(tp)
-      const usaTer = ['mecanica_terceiro','funilaria_terceiro','total'].includes(tp)
-
-      // Mec pool vem de `dados` já carregado
-      const mecByMes = {}
-      dados.filter(r => r.empresa_id === empId).forEach(r => {
-        if (!mecByMes[r.mes]) mecByMes[r.mes] = { servicos: 0, pecas: 0 }
-        mecByMes[r.mes].servicos += Number(r.meta_servicos) || 0
-        mecByMes[r.mes].pecas    += Number(r.meta_pecas)    || 0
-      })
-
-      // Funilaria e terceiros: carrega se necessário
-      let funByMes = {}, terByMes = {}
-      const requests = []
-      if (usaFun) requests.push(apiService.getMetasFunilaria(empId, filtroAno))
-      else requests.push(Promise.resolve([]))
-      if (usaTer) requests.push(apiService.getMetasTerceiros(empId, filtroAno))
-      else requests.push(Promise.resolve([]))
-      const [funRows, terRows] = await Promise.all(requests)
-      funRows.forEach(r => {
-        if (!funByMes[r.mes]) funByMes[r.mes] = { servicos: 0, pecas: 0 }
-        funByMes[r.mes].servicos += Number(r.meta_servicos) || 0
-        funByMes[r.mes].pecas    += Number(r.meta_pecas)    || 0
-      })
-      terRows.forEach(r => {
-        if (!terByMes[r.mes]) terByMes[r.mes] = { servicos: 0 }
-        terByMes[r.mes].servicos += Number(r.meta_servicos) || 0
-      })
-
-      const pool = {}
-      for (let mes = 1; mes <= 12; mes++) {
-        let v = 0
-        if (usaMec) v += (mecByMes[mes]?.servicos||0) + (mecByMes[mes]?.pecas||0)
-        if (usaFun) v += (funByMes[mes]?.servicos||0) + (funByMes[mes]?.pecas||0)
-        if (usaTer) v += (terByMes[mes]?.servicos||0)
-        pool[mes] = v
-      }
-
-      // Já distribuído aos outros consultores (mesma empresa + tipo_pool)
-      const outrosPerMes = {}
-      dadosConsultor
-        .filter(r => r.empresa_id === empId && r.tipo_pool === tp && r.colaborador_id !== colab.colaborador_id)
-        .forEach(r => { outrosPerMes[r.mes] = (outrosPerMes[r.mes] || 0) + (Number(r.percentual) || 0) })
-
-      setModalConsultor(prev => ({ ...prev, pool, outrosPerMes, loadingPool: false }))
-    } catch { setModalConsultor(prev => ({ ...prev, loadingPool: false })) }
-  }
+  }, [dadosFiltrados, resolverPosicao])
 
   const toggle = (set, setter, key) => setter(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n })
-
-  const tudoExpandido = grupoAberto && Object.keys(tree).length > 0 &&
-    Object.keys(tree).every(eid => expandedEmpresas.has(eid))
-
-  const expandirTudo = () => {
-    setGrupoAberto(true)
-    const emps = new Set(), depts = new Set(), sets = new Set(), bxs = new Set(), cars = new Set()
-    Object.entries(tree).forEach(([eid, emp]) => {
-      emps.add(eid)
-      Object.entries(emp.depts).forEach(([did, dept]) => {
-        const dKey = `${eid}§${did}`; depts.add(dKey)
-        Object.entries(dept.setores).forEach(([sid, setor]) => {
-          const sKey = `${dKey}§${sid}`; sets.add(sKey)
-          Object.entries(setor.boxes).forEach(([bid, box]) => {
-            const bKey = `${sKey}§${bid}`; bxs.add(bKey)
-          })
-        })
-      })
-    })
-    setExpandedEmpresas(emps); setExpandedDepts(depts); setExpandedSetores(sets)
-    setExpandedBoxes(bxs)
-  }
 
   const recolherTudo = () => {
     setGrupoAberto(false)
     setExpandedEmpresas(new Set()); setExpandedDepts(new Set()); setExpandedSetores(new Set())
     setExpandedBoxes(new Set())
   }
-
-  const totalColabs = useMemo(() =>
-    Object.values(tree).reduce((s,e) => s + Object.values(e.depts).reduce((sd,d) =>
-      sd + Object.values(d.setores).reduce((ss,st) => ss + Object.values(st.boxes).reduce((sb,bx) =>
-        sb + Object.keys(bx.colabs).length, 0), 0), 0), 0),
-    [tree])
 
   // Índice 0-based do primeiro mês habilitado para preenchimento (baseado na data de admissão vs ano do form)
   const mesAdmissao = useMemo(() => {
@@ -949,35 +857,49 @@ export default function MetasServicosMecanico({ onDistribuir } = {}) {
               </button>
             ))}
           </div>
-          <button onClick={() => navigate('/metas/gestao-aprovacao')} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-indigo-300 bg-indigo-50 text-indigo-700 text-sm font-medium hover:bg-indigo-100 transition-colors">
-            <ClipboardCheck size={16} /> Gestão de Aprovação
-          </button>
           {canEdit && <button onClick={abrirIncluir} className={BTN_PRI}><Plus size={16} /> Adicionar Mecânico</button>}
         </div>
       </div>
 
-      <div className="flex items-end gap-3 bg-white border border-slate-200 rounded-xl p-4">
-        <div className="flex-1 max-w-xs">
-          <label className={LBL}>Empresa</label>
-          <select className={SEL} value={filtroEmpresa} onChange={e => setFiltroEmpresa(e.target.value)}>
-            <option value="">Todas as empresas</option>
-            {empresas.map(e => <option key={e.id} value={e.id}>{e.empresa_fantasia||e.nome_empresa}</option>)}
-          </select>
+      <div className="flex flex-col gap-3 bg-white border border-slate-200 rounded-xl p-4">
+        <div className="flex items-end gap-3">
+          <div className="flex-1 max-w-xs">
+            <label className={LBL}>Empresa</label>
+            <select className={SEL} value={filtroEmpresa} onChange={e => setFiltroEmpresa(e.target.value)}>
+              <option value="">Todas as empresas</option>
+              {empresas.map(e => <option key={e.id} value={e.id}>{e.empresa_fantasia||e.nome_empresa}</option>)}
+            </select>
+          </div>
+          <div className="w-28">
+            <label className={LBL}>Ano</label>
+            <select className={SEL} value={filtroAno} onChange={e => setFiltroAno(Number(e.target.value))}>
+              {ANOS.map(a => <option key={a} value={a}>{a}</option>)}
+            </select>
+          </div>
+          <div className="flex-1 max-w-xs">
+            <label className={LBL}>Setor</label>
+            <select className={SEL} value={filtroSetor} onChange={e => { setFiltroSetor(e.target.value); setFiltroBox('') }}>
+              <option value="">Todos os setores</option>
+              {setoresDisponiveis.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
+            </select>
+          </div>
+          <div className="flex-1 max-w-xs">
+            <label className={LBL}>Box</label>
+            <select className={SEL} value={filtroBox} onChange={e => setFiltroBox(e.target.value)}>
+              <option value="">Todos os boxes</option>
+              {boxesDisponiveis.map(b => <option key={b.id} value={b.id}>{b.nome}</option>)}
+            </select>
+          </div>
         </div>
-        <div className="w-28">
-          <label className={LBL}>Ano</label>
-          <select className={SEL} value={filtroAno} onChange={e => setFiltroAno(Number(e.target.value))}>
-            {ANOS.map(a => <option key={a} value={a}>{a}</option>)}
-          </select>
+        <div className="flex items-end gap-3">
+          <div className="flex-1 max-w-xs">
+            <label className={LBL}>Mecânico</label>
+            <select className={SEL} value={filtroMecanico} onChange={e => setFiltroMecanico(e.target.value)}>
+              <option value="">Todos os mecânicos</option>
+              {mecanicosDisponiveis.map(m => <option key={m.id} value={m.id}>{m.nome}</option>)}
+            </select>
+          </div>
         </div>
-        <div className="flex-1 max-w-xs">
-          <label className={LBL}>Mecânico</label>
-          <select className={SEL} value={filtroMecanico} onChange={e => setFiltroMecanico(e.target.value)}>
-            <option value="">Todos os mecânicos</option>
-            {mecanicosDisponiveis.map(m => <option key={m.id} value={m.id}>{m.nome}</option>)}
-          </select>
-        </div>
-        <div className="ml-auto text-sm text-slate-500">{Object.keys(tree).length} empresa(s) · {totalColabs} mecânico(s)</div>
       </div>
 
       {error && <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm"><AlertTriangle size={15}/> {error} <button onClick={() => setError(null)} className="ml-auto"><X size={14}/></button></div>}
@@ -990,14 +912,13 @@ export default function MetasServicosMecanico({ onDistribuir } = {}) {
               <tr>
                 <th className="px-3 py-2.5 text-left font-semibold text-slate-600 uppercase tracking-wide border-b border-slate-200 w-60 sticky left-0 bg-slate-50 z-10">
                   <div className="flex items-center gap-2">
-                    <span>Mecânico / Nível</span>
                     {Object.keys(tree).length > 0 && (
                       <button
-                        onClick={tudoExpandido ? recolherTudo : expandirTudo}
-                        title={tudoExpandido ? 'Recolher tudo' : 'Expandir tudo'}
+                        onClick={recolherTudo}
+                        title="Recolher tudo"
                         className="ml-1 px-1.5 py-0.5 rounded text-[10px] font-bold border border-slate-300 bg-white hover:bg-indigo-50 hover:border-indigo-400 hover:text-indigo-700 text-slate-500 transition-colors whitespace-nowrap"
                       >
-                        {tudoExpandido ? '− Recolher' : '+ Expandir'}
+                        − Recolher tudo
                       </button>
                     )}
                   </div>
@@ -1116,97 +1037,6 @@ export default function MetasServicosMecanico({ onDistribuir } = {}) {
                             )
                           })}
 
-                          {/* ── CONSULTORES DE SERVIÇO ── */}
-                          {expandedEmpresas.has(empId) && (() => {
-                            const empConsMap = consultoresPorEmpresa[empId]
-                            if (!empConsMap || Object.keys(empConsMap).length === 0) return null
-                            const aggCMeses = (colabs) => { const a=Array(12).fill(0); Object.values(colabs).forEach(c=>Array.from({length:12},(_,i)=>{a[i]+=(c.meses[i+1]?.meta_faturamento||0)})); return a }
-                            const aggSMeses = (s) => aggCMeses(s.colabs)
-                            const aggDMeses = (d) => { const a=Array(12).fill(0); Object.values(d.setores).forEach(s=>aggSMeses(s).forEach((v,i)=>{a[i]+=v})); return a }
-                            const totalConsMeses = Object.values(empConsMap).reduce((acc,d)=>{aggDMeses(d).forEach((v,i)=>{acc[i]+=v});return acc},Array(12).fill(0))
-                            return (
-                              <>
-                                <tr>
-                                  <td className="py-1.5 px-3 bg-teal-700 sticky left-0 z-10 whitespace-nowrap">
-                                    <div className="flex items-center gap-2">
-                                      <UserCircle size={11} className="text-teal-300 shrink-0"/>
-                                      <span className="text-[10px] font-bold uppercase tracking-wider text-white">Consultores de Serviço</span>
-                                    </div>
-                                  </td>
-                                  {totalConsMeses.map((v,i) => <td key={i} className="px-1 py-1.5 text-right text-white font-bold text-xs whitespace-nowrap bg-teal-700">{v>0?fmtBRL(v):'—'}</td>)}
-                                  <td className="px-2 py-1.5 text-right font-bold text-white bg-teal-800 text-xs whitespace-nowrap">{sumArr(totalConsMeses)>0?fmtBRL(sumArr(totalConsMeses)):'—'}</td>
-                                  <td className="bg-teal-700"/>
-                                </tr>
-                                {Object.entries(empConsMap).map(([deptId, dept]) => {
-                                  const dKey  = `${empId}§c§${deptId}`
-                                  const dOpen = !collapsedConsDepts.has(dKey)
-                                  const dMeses = aggDMeses(dept)
-                                  return (
-                                    <React.Fragment key={deptId}>
-                                      <tr className="bg-teal-50 border-b border-teal-200 cursor-pointer hover:bg-teal-100/60 transition-colors"
-                                          onClick={() => toggle(collapsedConsDepts, setCollapsedConsDepts, dKey)}>
-                                        <td className="px-3 py-1 sticky left-0 bg-teal-50 z-10 whitespace-nowrap">
-                                          <div className="flex items-center gap-2 pl-6">
-                                            {dOpen?<ChevronDown size={11}/>:<ChevronRight size={11}/>}
-                                            <span className="font-bold text-teal-800 text-xs">{dept.nome}</span>
-                                          </div>
-                                        </td>
-                                        {dMeses.map((v,i) => <td key={i} className="px-1 py-1 text-right text-teal-700 text-xs font-semibold whitespace-nowrap bg-teal-50">{v>0?fmtBRL(v):'—'}</td>)}
-                                        <td className="px-2 py-1 text-right font-bold text-teal-800 bg-teal-100 text-xs whitespace-nowrap">{sumArr(dMeses)>0?fmtBRL(sumArr(dMeses)):'—'}</td>
-                                        <td className="bg-teal-50"/>
-                                      </tr>
-                                      {dOpen && Object.entries(dept.setores).map(([setId, setor]) => {
-                                        const sKey  = `${empId}§c§${deptId}§${setId}`
-                                        const sOpen = !collapsedConsSets.has(sKey)
-                                        const sMeses = aggSMeses(setor)
-                                        return (
-                                          <React.Fragment key={setId}>
-                                            <tr className="bg-white border-b border-teal-100 cursor-pointer hover:bg-teal-50/40 transition-colors"
-                                                onClick={() => toggle(collapsedConsSets, setCollapsedConsSets, sKey)}>
-                                              <td className="px-3 py-1 sticky left-0 bg-white z-10 whitespace-nowrap">
-                                                <div className="flex items-center gap-2 pl-10">
-                                                  {sOpen?<ChevronDown size={10}/>:<ChevronRight size={10}/>}
-                                                  <span className="font-semibold text-teal-700 text-xs">{setor.nome}</span>
-                                                </div>
-                                              </td>
-                                              {sMeses.map((v,i) => <td key={i} className="px-1 py-1 text-right text-teal-600 text-xs whitespace-nowrap">{v>0?fmtBRL(v):'—'}</td>)}
-                                              <td className="px-2 py-1 text-right font-semibold text-teal-700 bg-teal-50 text-xs whitespace-nowrap">{sumArr(sMeses)>0?fmtBRL(sumArr(sMeses)):'—'}</td>
-                                              <td className="bg-white"/>
-                                            </tr>
-                                            {sOpen && Object.entries(setor.colabs).map(([key, colab]) => {
-                                              const mValues  = Array.from({length:12},(_,i)=>colab.meses[i+1]?.meta_faturamento||0)
-                                              const comValor = Object.values(colab.meses).filter(m=>m.meta_faturamento>0)
-                                              const aprovado = comValor.length>0 && comValor.every(m=>m.meta_aprovada!==null&&m.meta_aprovada!==undefined)
-                                              return (
-                                                <tr key={key} className="border-b border-teal-50 bg-white hover:bg-teal-50/50">
-                                                  <td className="px-3 py-1.5 sticky left-0 bg-white z-10 whitespace-nowrap">
-                                                    <div className="flex items-center gap-2 pl-14 cursor-pointer select-none"
-                                                      onClick={() => abrirVisualizarConsultor(empId, emp.nome, dept.nome, setor.nome, colab)}>
-                                                      <UserCircle size={11} className="text-teal-500 shrink-0"/>
-                                                      <span className="font-semibold text-teal-600 hover:text-teal-800 hover:underline text-xs">{colab.colaborador_nome}</span>
-                                                    </div>
-                                                  </td>
-                                                  {mValues.map((v,i) => <td key={i} className="px-1 py-1.5 text-right text-teal-700 font-mono whitespace-nowrap text-xs">{v>0?fmtBRL(v):'—'}</td>)}
-                                                  <td className="px-2 py-1.5 text-right font-bold text-teal-800 bg-teal-100 whitespace-nowrap text-xs">{sumArr(mValues)>0?fmtBRL(sumArr(mValues)):'—'}</td>
-                                                  <td className="px-2 py-1.5 text-center whitespace-nowrap">
-                                                    {comValor.length>0 && (
-                                                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap ${aprovado?'bg-green-100 text-green-700':'bg-amber-100 text-amber-700'}`}>
-                                                        {aprovado?'Aprovado':'Aguard. Aprovação'}
-                                                      </span>
-                                                    )}
-                                                  </td>
-                                                </tr>
-                                              )
-                                            })}
-                                          </React.Fragment>
-                                        )
-                                      })}
-                                    </React.Fragment>
-                                  )
-                                })}
-                              </>
-                            )
-                          })()}
                         </React.Fragment>
                       )
                     })}
@@ -1245,12 +1075,12 @@ export default function MetasServicosMecanico({ onDistribuir } = {}) {
                     {departamentos.map(d => <option key={d.id} value={d.id}>{d.nome_departamento}</option>)}
                   </select></div>
                 <div><label className={LBL}>Setor</label>
-                  <select name="setor_id" className={SEL} value={form.setor_id} onChange={handleFormChange} disabled={!form.departamento_id}>
+                  <select name="setor_id" className={SEL} value={form.setor_id} onChange={handleFormChange} disabled={!form.departamento_id || modoModal === 'visualizar'}>
                     <option value="">Selecione...</option>
                     {setoresDoDepto.map(s => <option key={s.id} value={s.id}>{s.nome_setor}</option>)}
                   </select></div>
                 <div><label className={LBL}>Box</label>
-                  <select name="box_id" className={SEL} value={form.box_id} onChange={handleFormChange} disabled={!form.setor_id}>
+                  <select name="box_id" className={SEL} value={form.box_id} onChange={handleFormChange} disabled={!form.setor_id || modoModal === 'visualizar'}>
                     <option value="">Nenhum</option>
                     {boxesDoSetor.map(b => <option key={b.id} value={b.id}>{b.nome_box}</option>)}
                   </select></div>
@@ -1400,151 +1230,6 @@ export default function MetasServicosMecanico({ onDistribuir } = {}) {
                   </div>
                 </>
               )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL VISUALIZAR DISTRIBUIÇÃO CONSULTOR */}
-      {modalConsultor && (
-        <div className="fixed top-0 right-0 bottom-0 left-16 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[95vh] flex flex-col">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
-              <h2 className="text-lg font-bold text-slate-800">Visualizar Distribuição — Consultores de Serviços</h2>
-              <button onClick={() => setModalConsultor(null)} className="text-slate-400 hover:text-slate-600"><X size={20}/></button>
-            </div>
-            <div className="overflow-auto flex-1 p-6 space-y-4">
-              {/* Campos informativos */}
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <label className={LBL}>Empresa *</label>
-                  <div className={`${SEL} bg-slate-100 text-slate-600 cursor-not-allowed`}>{modalConsultor.empNome}</div>
-                </div>
-                <div>
-                  <label className={LBL}>Tipo de Distribuição *</label>
-                  <div className={`${SEL} bg-slate-100 text-slate-600 cursor-not-allowed`}>
-                    {TIPOS_POOL.find(t => t.key === modalConsultor.tipo_pool)?.label || modalConsultor.tipo_pool || '—'}
-                  </div>
-                </div>
-                <div>
-                  <label className={LBL}>Consultor *</label>
-                  <div className={`${SEL} bg-slate-100 text-slate-600 cursor-not-allowed`}>{modalConsultor.colaborador_nome}</div>
-                </div>
-              </div>
-
-              {/* Barra de pool */}
-              {!modalConsultor.loadingPool && (() => {
-                const totalPool = Object.values(modalConsultor.pool).reduce((s,v)=>s+v,0)
-                const totalDist = Array.from({length:12},(_,i)=>i+1).reduce((s,m)=>s+(modalConsultor.outrosPerMes[m]||0)+(modalConsultor.meses[m]?.percentual||0),0)
-                const pctMed = totalDist / 12
-                const outrosPct = Array.from({length:12},(_,i)=>i+1).reduce((s,m)=>s+(modalConsultor.outrosPerMes[m]||0),0) / 12
-                const estePct = Math.max(0, pctMed - outrosPct)
-                if (totalPool > 0) return (
-                  <div className="flex items-center gap-3 text-xs">
-                    <span className="text-slate-500 shrink-0">Pool: <span className="font-semibold text-teal-700">{TIPOS_POOL.find(t=>t.key===modalConsultor.tipo_pool)?.label}</span></span>
-                    <div className="flex-1 h-2.5 rounded-full bg-slate-100 overflow-hidden flex">
-                      <div className="bg-amber-400 h-full transition-all" style={{width:`${Math.min(100,outrosPct)}%`}}/>
-                      <div className="bg-indigo-500 h-full transition-all" style={{width:`${Math.min(100,estePct)}%`}}/>
-                    </div>
-                    <span className={`font-semibold shrink-0 ${pctMed >= 99.9 ? 'text-green-600' : 'text-orange-600'}`}>{pctMed.toFixed(1)}% distribuído</span>
-                    <span className="text-slate-400 shrink-0">🟡 outros &nbsp;🔵 este consultor</span>
-                  </div>
-                )
-              })()}
-
-              {/* Grade de distribuição */}
-              <div>
-                <span className="text-xs font-bold text-slate-600 uppercase tracking-wide block mb-2">Distribuição % por Mês</span>
-                <div className="overflow-x-auto border border-slate-200 rounded-lg">
-                  <table className="border-separate border-spacing-1 p-1" style={{ minWidth: '1250px' }}>
-                    <thead>
-                      <tr>
-                        <th className="w-40 text-left text-xs text-slate-500 font-semibold px-1">Campo</th>
-                        {MESES_ABR.map((m,i) => <th key={i} className="w-24 text-center text-xs font-bold text-slate-700 bg-slate-100 border border-slate-200 rounded px-1 py-1">{m}</th>)}
-                        <th className="w-28 text-center text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded px-1 py-1">Total Ano</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {/* Pool */}
-                      <tr>
-                        <td className="text-xs font-semibold text-slate-600 px-1 whitespace-nowrap">
-                          {TIPOS_POOL.find(t=>t.key===modalConsultor.tipo_pool)?.label||'Pool'} (R$)
-                        </td>
-                        {Array.from({length:12},(_,i) => {
-                          const v = modalConsultor.loadingPool ? null : (modalConsultor.pool[i+1]||0)
-                          return <td key={i} className="bg-slate-50 border border-slate-200 rounded p-1 text-right text-xs font-mono text-slate-700">
-                            {modalConsultor.loadingPool ? <span className="text-slate-300">...</span> : v > 0 ? fmtBRL(v) : '—'}
-                          </td>
-                        })}
-                        <td className="bg-slate-100 border border-slate-200 rounded p-1 text-right text-xs font-bold text-slate-700">
-                          {modalConsultor.loadingPool ? '...' : fmtBRL(Object.values(modalConsultor.pool).reduce((s,v)=>s+v,0))}
-                        </td>
-                      </tr>
-                      {/* Já Distribuído */}
-                      <tr>
-                        <td className="text-xs font-semibold text-orange-600 px-1 whitespace-nowrap">Já Distribuído (%)</td>
-                        {Array.from({length:12},(_,i) => {
-                          const v = modalConsultor.outrosPerMes[i+1]||0
-                          return <td key={i} className="bg-orange-50 border border-orange-100 rounded p-1 text-right text-xs font-mono text-orange-600">
-                            {v > 0 ? fmtPct(v) : '—'}
-                          </td>
-                        })}
-                        <td className="bg-orange-50 border border-orange-200 rounded p-1 text-right text-xs font-bold text-orange-600">
-                          {fmtPct(Array.from({length:12},(_,i)=>modalConsultor.outrosPerMes[i+1]||0).reduce((s,v)=>s+v,0)/12)} méd.
-                        </td>
-                      </tr>
-                      {/* Disponível */}
-                      <tr>
-                        <td className="text-xs font-semibold text-green-600 px-1 whitespace-nowrap">Disponível (%)</td>
-                        {Array.from({length:12},(_,i) => {
-                          const outros = modalConsultor.outrosPerMes[i+1]||0
-                          const d = Math.max(0, 100 - outros)
-                          return <td key={i} className={`border rounded p-1 text-right text-xs font-mono ${d<=0?'bg-red-50 border-red-200 text-red-500':'bg-green-50 border-green-100 text-green-700'}`}>
-                            {fmtPct(d)}
-                          </td>
-                        })}
-                        <td className="bg-green-50 border border-green-200 rounded p-1 text-right text-xs font-bold text-green-700">
-                          {fmtPct(Array.from({length:12},(_,i)=>Math.max(0,100-(modalConsultor.outrosPerMes[i+1]||0))).reduce((s,v)=>s+v,0)/12)} méd.
-                        </td>
-                      </tr>
-                      {/* % Consultor */}
-                      <tr>
-                        <td className="text-xs font-bold text-indigo-700 px-1 whitespace-nowrap">% Consultor</td>
-                        {Array.from({length:12},(_,i) => {
-                          const v = modalConsultor.meses[i+1]?.percentual||0
-                          return <td key={i} className="bg-indigo-50 border border-indigo-200 rounded p-1 text-center text-xs font-mono text-indigo-700">
-                            {v > 0 ? v.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:2}) : '—'}
-                          </td>
-                        })}
-                        <td className="bg-indigo-100 border border-indigo-300 rounded p-1 text-right text-xs font-bold text-indigo-800">
-                          {fmtPct(Array.from({length:12},(_,i)=>modalConsultor.meses[i+1]?.percentual||0).reduce((s,v)=>s+v,0)/12)} méd.
-                        </td>
-                      </tr>
-                      {/* Meta Consultor */}
-                      <tr>
-                        <td className="text-xs font-bold text-teal-700 px-1 whitespace-nowrap">Meta Consultor (R$)</td>
-                        {Array.from({length:12},(_,i) => {
-                          const v = modalConsultor.meses[i+1]?.meta_faturamento||0
-                          return <td key={i} className="bg-teal-50 border border-teal-100 rounded p-1 text-right text-xs font-mono text-teal-700">
-                            {v > 0 ? fmtBRL(v) : '—'}
-                          </td>
-                        })}
-                        <td className="bg-teal-100 border border-teal-300 rounded p-1 text-right text-xs font-bold text-teal-800">
-                          {fmtBRL(Array.from({length:12},(_,i)=>modalConsultor.meses[i+1]?.meta_faturamento||0).reduce((s,v)=>s+v,0))}
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-            <div className="flex justify-between items-center gap-3 px-6 py-4 border-t border-slate-200">
-              <button
-                onClick={() => { setModalConsultor(null); navigate('/metas/pos-vendas/distribuicao-consultores') }}
-                className={BTN_SEC}>
-                <Edit2 size={14}/> Editar
-              </button>
-              <button onClick={() => setModalConsultor(null)} className={BTN_SEC}>Fechar</button>
             </div>
           </div>
         </div>

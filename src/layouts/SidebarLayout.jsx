@@ -44,7 +44,7 @@ function getActiveSectionKey(pathname) {
   if (pathname.startsWith('/bi') || pathname.startsWith('/kpi')) return '_bi'
   if (pathname.startsWith('/documentacoes') || pathname.startsWith('/rpa') || pathname.startsWith('/ecossistema')) return '_documentacoes'
   if (pathname.startsWith('/treinamentos')) return '_treinamentos'
-  if (pathname.startsWith('/governanca')) return '_governanca'
+  if (pathname.startsWith('/governanca')) return '_config'
   return null
 }
 
@@ -416,6 +416,14 @@ export default function SidebarLayout() {
                 {canView('fornecedores') && <FlyItem to="/fornecedores" icon={Truck} onClose={closeFlyout}>Fornecedores</FlyItem>}
               </>
             )}
+            {canViewSection('_governanca') && (
+              <>
+                <div className="mx-3 my-2 border-t border-blue-800/50" />
+                <FlyGroup label="Governança" />
+                {canView('governanca/grupo-acessos') && <FlyItem to="/governanca/grupo-acessos" icon={Landmark} onClose={closeFlyout}>Grupo de Acessos</FlyItem>}
+                {canView('governanca/perfis-acesso') && <FlyItem to="/governanca/perfis-acesso" icon={ShieldCheck} onClose={closeFlyout}>Perfis de Acesso</FlyItem>}
+              </>
+            )}
           </>
         )
 
@@ -601,15 +609,6 @@ export default function SidebarLayout() {
           </>
         )
 
-      case '_governanca':
-        return (
-          <>
-            <FlyGroup label="Governança" />
-            {canView('governanca/grupo-acessos') && <FlyItem to="/governanca/grupo-acessos" icon={Landmark} onClose={closeFlyout}>Grupo de Acessos</FlyItem>}
-            {canView('governanca/perfis-acesso') && <FlyItem to="/governanca/perfis-acesso" icon={ShieldCheck} onClose={closeFlyout}>Perfis de Acesso</FlyItem>}
-          </>
-        )
-
       default:
         return null
     }
@@ -718,15 +717,6 @@ export default function SidebarLayout() {
               onClick={() => toggleSection('_treinamentos')}
             />
           )}
-          {canViewSection('_governanca') && (
-            <SidebarIconBtn
-              icon={Landmark}
-              label="Governança"
-              isActive={currentSection === '_governanca' || activeSection === '_governanca'}
-              onClick={() => toggleSection('_governanca')}
-            />
-          )}
-
         </nav>
 
         {/* Footer */}
@@ -761,7 +751,6 @@ export default function SidebarLayout() {
                 {activeSection === '_bi' && 'BI - Dashboard'}
                 {activeSection === '_documentacoes' && 'Documentações'}
                 {activeSection === '_treinamentos' && 'Treinamentos'}
-                {activeSection === '_governanca' && 'Governança'}
                 {activeSection === 'organograma' && 'Organograma'}
               </span>
             </div>

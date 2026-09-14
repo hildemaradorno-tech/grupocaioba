@@ -57,6 +57,14 @@ export const MENU_TREE = [
           },
         ],
       },
+      {
+        key: '_governanca',
+        label: 'Governança',
+        children: [
+          { key: 'governanca/grupo-acessos', label: 'Grupo de Acessos' },
+          { key: 'governanca/perfis-acesso', label: 'Perfis de Acesso' },
+        ],
+      },
     ],
   },
   {
@@ -264,14 +272,6 @@ export const MENU_TREE = [
     children: [
       { key: 'treinamentos/grade', label: 'Grade de Treinamentos' },
       { key: 'treinamentos/central', label: 'Central de Treinamentos', href: 'https://centraldetreinamentos.netlify.app/' },
-    ],
-  },
-  {
-    key: '_governanca',
-    label: 'Governança',
-    children: [
-      { key: 'governanca/grupo-acessos', label: 'Grupo de Acessos' },
-      { key: 'governanca/perfis-acesso', label: 'Perfis de Acesso' },
     ],
   },
 ]

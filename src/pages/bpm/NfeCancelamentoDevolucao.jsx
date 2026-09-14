@@ -2,11 +2,11 @@ import React, { useEffect, useState, useCallback } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
   FileWarning, Upload, PlusCircle, AlertTriangle, Loader2, ClipboardList, CheckSquare, Square,
-  Wrench, Package, ArrowRight, Settings, Lock,
+  Wrench, Package, ArrowRight, Settings, Lock, Trash2,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { apiService } from '../../services/api'
-import { listarDefinicoes, listarInstancias, iniciarInstancia, mapaTarefaAbertaPorInstancia } from '../../services/bpm/bpmService'
+import { listarDefinicoes, listarInstancias, iniciarInstancia, mapaTarefaAbertaPorInstancia, excluirInstancia } from '../../services/bpm/bpmService'
 import { parseNfeXml, lerArquivoComoTexto } from '../../services/bpm/nfeXmlParser'
 
 const CHAVE_PROCESSO = 'cancelamento-devolucao-nfe'
@@ -61,6 +61,16 @@ function fmtData(iso) {
   return new Date(iso).toLocaleDateString('pt-BR', { timeZone: 'UTC' })
 }
 
+function fmtDataHora(iso) {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })
+}
+
+function fmtDataSolicitacao(iso) {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleDateString('pt-BR')
+}
+
 function fmtMoeda(v) {
   if (v === '' || v === null || v === undefined) return '—'
   return Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -70,15 +80,14 @@ export default function NfeCancelamentoDevolucao() {
   const navigate = useNavigate()
   const { user } = useAuth()
   const [aba, setAba] = useState('acompanhamento')
+  const [subAba, setSubAba] = useState('bpm') // 'bpm' | 'controle' — só usado dentro de "acompanhamento"
   const [definicao, setDefinicao] = useState(null)
   const [definicaoCarregada, setDefinicaoCarregada] = useState(false)
-  const [ultimaDefinicaoId, setUltimaDefinicaoId] = useState(null)
   const [form, setForm] = useState(VAZIO)
   const [tipoDocEscolhido, setTipoDocEscolhido] = useState('')
   const [importando, setImportando] = useState(false)
   const [enviando, setEnviando] = useState(false)
   const [erro, setErro] = useState(null)
-  const [avisoImportacao, setAvisoImportacao] = useState(null)
   const [xmlImportado, setXmlImportado] = useState(false)
 
   const [solicitacoes, setSolicitacoes] = useState([])
@@ -88,23 +97,16 @@ export default function NfeCancelamentoDevolucao() {
   const [loadingLista, setLoadingLista] = useState(true)
 
   useEffect(() => {
-    // listarDefinicoes traz TODAS as versões/status (não só publicadas) — precisamos disso pra
-    // sempre reabrir a última versão salva no Modelador (senão o botão "Fluxo" abre sempre um
-    // diagrama em branco e o rascunho que a pessoa estava montando "some" da tela).
+    // listarDefinicoes traz TODAS as versões/status (não só publicadas) — precisamos saber se já
+    // existe um rascunho, mesmo não publicado, pra liberar o link de "Regras do processo".
     listarDefinicoes()
       .then(defs => {
         const doProcesso = defs.filter(d => d.chave === CHAVE_PROCESSO) // já vem ordenado por versão desc
         setDefinicao(doProcesso.find(d => d.status === 'publicado') || null)
-        setUltimaDefinicaoId(doProcesso[0]?.id || null)
       })
       .catch(e => setErro(e.message || String(e)))
       .finally(() => setDefinicaoCarregada(true))
   }, [])
-
-  // Sem rascunho/publicado ainda: manda pro Modelador em branco já com a chave certa (via query
-  // param), senão um processo criado do zero salvaria com uma chave derivada do nome digitado —
-  // que quase nunca bate com CHAVE_PROCESSO, e o processo "sumiria" desta tela mesmo salvo.
-  const linkModelador = ultimaDefinicaoId ? `/bpm/modelador/${ultimaDefinicaoId}` : `/bpm/modelador?chave=${CHAVE_PROCESSO}`
 
   const carregarSolicitacoes = useCallback(async () => {
     setLoadingLista(true)
@@ -114,8 +116,9 @@ export default function NfeCancelamentoDevolucao() {
       setSolicitacoes(doProcesso)
       const mapa = await mapaTarefaAbertaPorInstancia(doProcesso.filter(i => i.status === 'em_andamento').map(i => i.id))
       setTarefasAbertas(mapa)
-      const ids = [...new Set(Object.values(mapa).map(t => t.responsavel_user_id).filter(Boolean))]
-      if (ids.length) {
+      // Carrega os usuários uma vez só e usa o mapa tanto pra "Responsável" (tarefa aberta) quanto
+      // pra "Quem solicitou" (aba Controle) — mais simples que duas buscas condicionais.
+      if (doProcesso.length) {
         const usuarios = await apiService.getUsuarios()
         setUsuariosMap(Object.fromEntries(usuarios.map(u => [u.id, u.nome])))
       }
@@ -130,11 +133,21 @@ export default function NfeCancelamentoDevolucao() {
 
   useEffect(() => { if (aba === 'acompanhamento') carregarSolicitacoes() }, [aba, carregarSolicitacoes])
 
+  const excluirSolicitacao = async (s) => {
+    if (!window.confirm(`Excluir a solicitação da nota ${s.dados?.numero_nf || ''}? Isso apaga o histórico e não pode ser desfeito.`)) return
+    try {
+      await excluirInstancia(s.id)
+      await carregarSolicitacoes()
+    } catch (e) {
+      setErro(e.message || String(e))
+    }
+  }
+
   const set = (patch) => setForm(p => ({ ...p, ...patch }))
 
   const importarXml = async (file) => {
     if (!file) return
-    setImportando(true); setAvisoImportacao(null); setErro(null)
+    setImportando(true); setErro(null)
     try {
       const texto = await lerArquivoComoTexto(file)
       const { tipoDocumento, tipoItemSugerido, itens, ...dados } = parseNfeXml(texto)
@@ -152,7 +165,6 @@ export default function NfeCancelamentoDevolucao() {
         tipo_item: tipoDocEscolhido === 'servico' ? 'Serviço' : (tipoItemSugerido || form.tipo_item),
       })
       setXmlImportado(true)
-      setAvisoImportacao(`Dados importados do XML (${tipoDocumento})${itens.length ? ` — ${itens.length} ${itens.length === 1 ? 'item' : 'itens'} encontrado(s)` : ''}. Os campos abaixo ficam travados (vieram do XML); use "Trocar arquivo" se precisar importar outro.`)
     } catch (e) {
       setErro('Erro ao importar XML: ' + (e.message || String(e)))
     } finally { setImportando(false) }
@@ -171,6 +183,16 @@ export default function NfeCancelamentoDevolucao() {
     setForm(p => ({ ...p, itensSelecionados: p.itensSelecionados.length === p.itens.length ? [] : p.itens.map(i => i.codigo) }))
   }
 
+  // Cancelamento é sempre da nota inteira — não faz sentido escolher só alguns itens, então
+  // trava a seleção em "todos" sempre que o tipo de solicitação for cancelamento.
+  useEffect(() => {
+    if (form.tipo_solicitacao === 'cancelamento' && form.itens.length && form.itensSelecionados.length !== form.itens.length) {
+      setForm(p => ({ ...p, itensSelecionados: p.itens.map(i => i.codigo) }))
+    }
+  }, [form.tipo_solicitacao, form.itens, form.itensSelecionados])
+
+  const cancelamentoTotal = form.tipo_solicitacao === 'cancelamento'
+
   // Só libera "Detalhes da Nota Fiscal" (e o resto do formulário) depois que o bloco de cima
   // (tipo de documento, tipo de nota, tipo de venda, tipo de solicitação e motivo) for preenchido.
   const topoCompleto = !!(tipoDocEscolhido && form.tipo_nota && form.tipo_item && form.tipo_solicitacao && form.motivo)
@@ -180,7 +202,7 @@ export default function NfeCancelamentoDevolucao() {
     || (form.itens.length > 0 && form.itensSelecionados.length === 0)
 
   const iniciarNovaSolicitacao = () => {
-    setForm(VAZIO); setTipoDocEscolhido(''); setAvisoImportacao(null); setErro(null); setXmlImportado(false)
+    setForm(VAZIO); setTipoDocEscolhido(''); setErro(null); setXmlImportado(false)
     setAba('nova')
   }
 
@@ -220,8 +242,8 @@ export default function NfeCancelamentoDevolucao() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Link to={linkModelador} className="flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-semibold text-slate-600 hover:bg-slate-100 border border-slate-200">
-            <Settings className="h-3.5 w-3.5" /> Fluxo (BPM/BPMN)
+          <Link to="/bpm/regras" className="flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-semibold text-slate-600 hover:bg-slate-100 border border-slate-200">
+            <Settings className="h-3.5 w-3.5" /> Regras do processo
           </Link>
           <button onClick={iniciarNovaSolicitacao}
             className="flex items-center gap-1.5 px-4 py-2 rounded-md text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700">
@@ -242,7 +264,7 @@ export default function NfeCancelamentoDevolucao() {
           <div className="p-10 text-center text-xs text-slate-400 flex items-center justify-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Carregando...</div>
         ) : !definicao ? (
           <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-xs text-amber-800">
-            O processo "Cancelamento e Devolução de NF-e" ainda não está publicado. Abra o <Link to={linkModelador} className="underline font-semibold">Modelador BPMN</Link>, carregue o exemplo do piloto (ou monte o seu, o tutorial te ajuda) e publique antes de criar solicitações.
+            O processo "Cancelamento e Devolução de NF-e" ainda não está publicado. Abra <Link to="/bpm/regras" className="underline font-semibold">Regras do processo</Link>, defina as etapas e publique antes de criar solicitações.
           </div>
         ) : (
           <div className="max-w-3xl space-y-4">
@@ -303,9 +325,6 @@ export default function NfeCancelamentoDevolucao() {
               </div>
             </div>
 
-            {avisoImportacao && (
-              <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 text-[11px] text-emerald-700 font-semibold">{avisoImportacao}</div>
-            )}
 
             {!topoCompleto ? (
               <p className="text-xs text-slate-400 italic px-1">Preencha as informações acima (tipo de nota, tipo de venda, tipo de solicitação e motivo) para continuar.</p>
@@ -315,8 +334,8 @@ export default function NfeCancelamentoDevolucao() {
               <div className="px-4 pt-4 pb-2 flex items-center gap-2">
                 <p className="text-xs font-bold text-slate-700">Detalhes da Nota Fiscal</p>
                 {xmlImportado && (
-                  <span className="flex items-center gap-1 text-[10px] font-bold uppercase text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">
-                    <Lock className="h-2.5 w-2.5" /> Travado (veio do XML)
+                  <span title="Travado (veio do XML)" className="flex items-center text-amber-600 bg-amber-50 p-1 rounded-full">
+                    <Lock className="h-2.5 w-2.5" />
                   </span>
                 )}
               </div>
@@ -330,7 +349,9 @@ export default function NfeCancelamentoDevolucao() {
                     ['Cliente / Fornecedor', true, <input key="c" disabled={xmlImportado} value={form.cliente} onChange={e => set({ cliente: e.target.value })} className="w-full text-xs p-2 border border-slate-200 rounded-md disabled:bg-slate-50 disabled:text-slate-500" />],
                     ['CNPJ/CPF do cliente', false, <input key="c2" disabled={xmlImportado} value={form.cnpj_cliente} onChange={e => set({ cnpj_cliente: e.target.value })} className="w-full text-xs p-2 border border-slate-200 rounded-md disabled:bg-slate-50 disabled:text-slate-500" />],
                     ['Data da nota', true, <input key="d" type="date" disabled={xmlImportado} value={form.data_nf} onChange={e => set({ data_nf: e.target.value })} className="w-full text-xs p-2 border border-slate-200 rounded-md disabled:bg-slate-50 disabled:text-slate-500" />],
-                    ['Valor da nota (R$)', true, <input key="e" type="number" step="0.01" disabled={xmlImportado} value={form.valor_nf} onChange={e => set({ valor_nf: e.target.value })} className="w-full text-xs p-2 border border-slate-200 rounded-md disabled:bg-slate-50 disabled:text-slate-500" />],
+                    ['Valor da nota (R$)', true, xmlImportado
+                      ? <div key="e" className="w-full text-xs p-2 border border-slate-200 rounded-md bg-slate-50 text-slate-500">{Number(form.valor_nf || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                      : <input key="e" type="number" step="0.01" value={form.valor_nf} onChange={e => set({ valor_nf: e.target.value })} className="w-full text-xs p-2 border border-slate-200 rounded-md" />],
                   ].map(([label, obrigatorio, campo]) => (
                     <tr key={label} className="align-top">
                       <td className="w-[38%] min-w-[130px] bg-slate-50 px-3 py-2.5 text-[11px] font-bold text-slate-600 border-r border-slate-200">
@@ -346,17 +367,21 @@ export default function NfeCancelamentoDevolucao() {
             {form.itens.length > 0 && (
               <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
                 <div className="px-4 py-2.5 border-b border-slate-100 flex items-center justify-between">
-                  <p className="text-xs font-bold text-slate-700">Itens da nota — marque os que estão sendo devolvidos</p>
-                  <button onClick={alternarTodosItens} className="flex items-center gap-1 text-[11px] font-semibold text-indigo-600 hover:underline">
-                    {form.itensSelecionados.length === form.itens.length
-                      ? <><Square className="h-3.5 w-3.5" /> Desmarcar todos</>
-                      : <><CheckSquare className="h-3.5 w-3.5" /> Marcar todos</>}
-                  </button>
+                  <p className="text-xs font-bold text-slate-700">
+                    {cancelamentoTotal ? 'Itens da nota — cancelamento cancela a nota inteira' : 'Itens da nota — marque os que estão sendo devolvidos'}
+                  </p>
+                  {!cancelamentoTotal && (
+                    <button onClick={alternarTodosItens} className="flex items-center gap-1 text-[11px] font-semibold text-indigo-600 hover:underline">
+                      {form.itensSelecionados.length === form.itens.length
+                        ? <><Square className="h-3.5 w-3.5" /> Desmarcar todos</>
+                        : <><CheckSquare className="h-3.5 w-3.5" /> Marcar todos</>}
+                    </button>
+                  )}
                 </div>
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[10px] font-bold uppercase tracking-wider">
-                      <th className="p-2 w-8"></th>
+                      {!cancelamentoTotal && <th className="p-2 w-8"></th>}
                       <th className="p-2">Código</th>
                       <th className="p-2">Descrição</th>
                       <th className="p-2 text-right">Qtd.</th>
@@ -368,10 +393,12 @@ export default function NfeCancelamentoDevolucao() {
                     {form.itens.map(item => {
                       const marcado = form.itensSelecionados.includes(item.codigo)
                       return (
-                        <tr key={item.codigo} className={`cursor-pointer transition-colors ${marcado ? 'bg-indigo-50/40' : 'hover:bg-slate-50/70'}`} onClick={() => alternarItem(item.codigo)}>
-                          <td className="p-2 text-center">
-                            <input type="checkbox" checked={marcado} onChange={() => alternarItem(item.codigo)} onClick={e => e.stopPropagation()} className="w-3.5 h-3.5" />
-                          </td>
+                        <tr key={item.codigo} className={cancelamentoTotal ? '' : `cursor-pointer transition-colors ${marcado ? 'bg-indigo-50/40' : 'hover:bg-slate-50/70'}`} onClick={cancelamentoTotal ? undefined : () => alternarItem(item.codigo)}>
+                          {!cancelamentoTotal && (
+                            <td className="p-2 text-center">
+                              <input type="checkbox" checked={marcado} onChange={() => alternarItem(item.codigo)} onClick={e => e.stopPropagation()} className="w-3.5 h-3.5" />
+                            </td>
+                          )}
                           <td className="p-2 font-mono text-[11px] text-slate-500">{item.codigo}</td>
                           <td className="p-2">{item.descricao}</td>
                           <td className="p-2 text-right">{item.quantidade}</td>
@@ -400,60 +427,112 @@ export default function NfeCancelamentoDevolucao() {
           </div>
         )
       ) : (
-        <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-x-auto">
-          {loadingLista ? (
-            <div className="p-10 text-center text-xs text-slate-400 flex items-center justify-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Carregando...</div>
-          ) : solicitacoes.length === 0 ? (
-            <div className="p-10 text-center text-xs text-slate-400 flex flex-col items-center gap-2">
-              <ClipboardList className="h-6 w-6 text-slate-300" /> Nenhuma solicitação criada ainda.
-            </div>
-          ) : (
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[10px] font-bold uppercase tracking-wider">
-                  <th className="p-3">Nº da nota</th>
-                  <th className="p-3">Cliente</th>
-                  <th className="p-3 text-right">Valor</th>
-                  <th className="p-3">Cargo responsável</th>
-                  <th className="p-3">Responsável</th>
-                  <th className="p-3">Ação necessária</th>
-                  <th className="p-3 text-center">SLA</th>
-                  <th className="p-3 text-center">Status</th>
-                  <th className="p-3 text-center">Ação</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
-                {solicitacoes.map(s => {
-                  const d = s.dados || {}
-                  const tarefa = tarefasAbertas[s.id]
-                  const st = STATUS_SOLICITACAO[s.status] || { label: s.status, cls: 'bg-slate-100 text-slate-500' }
-                  const sla = s.status === 'em_andamento' ? slaBadge(tarefa?.prazo_em) : null
-                  return (
-                    <tr key={s.id} className="hover:bg-slate-50/70 transition-colors">
-                      <td className="p-3 font-semibold whitespace-nowrap">{d.numero_nf || '—'}</td>
-                      <td className="p-3 text-slate-500 whitespace-nowrap">{d.cliente || '—'}</td>
-                      <td className="p-3 text-right whitespace-nowrap">{fmtMoeda(d.valor_nf)}</td>
-                      <td className="p-3 whitespace-nowrap">{cargosMap[tarefa?.responsavel_agrupamento_cargo_id] || (s.status === 'em_andamento' ? '—' : '')}</td>
-                      <td className="p-3 whitespace-nowrap">
-                        {s.status !== 'em_andamento' ? '' : tarefa?.responsavel_user_id ? (usuariosMap[tarefa.responsavel_user_id] || '—') : <span className="text-slate-400 italic">Sem responsável</span>}
-                      </td>
-                      <td className="p-3 whitespace-nowrap">{tarefa?.elemento_nome || '—'}</td>
-                      <td className="p-3 text-center">
-                        {sla && <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap ${sla.cls}`}>{sla.label}</span>}
-                      </td>
-                      <td className="p-3 text-center"><span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap ${st.cls}`}>{st.label}</span></td>
-                      <td className="p-3 text-center">
-                        <Link to={`/bpm/nfe-solicitacoes/${s.id}`}
-                          className="inline-flex items-center px-3 py-1.5 rounded-md text-[11px] font-bold text-white bg-indigo-600 hover:bg-indigo-700">
-                          Abrir
-                        </Link>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          )}
+        <div className="space-y-3">
+          <div className="flex items-center gap-1 border-b border-slate-200">
+            <button onClick={() => setSubAba('bpm')}
+              className={`px-3 py-2 text-xs font-bold border-b-2 -mb-px ${subAba === 'bpm' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
+              BPM
+            </button>
+            <button onClick={() => setSubAba('controle')}
+              className={`px-3 py-2 text-xs font-bold border-b-2 -mb-px ${subAba === 'controle' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
+              Controle
+            </button>
+          </div>
+
+          <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-x-auto">
+            {loadingLista ? (
+              <div className="p-10 text-center text-xs text-slate-400 flex items-center justify-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Carregando...</div>
+            ) : solicitacoes.length === 0 ? (
+              <div className="p-10 text-center text-xs text-slate-400 flex flex-col items-center gap-2">
+                <ClipboardList className="h-6 w-6 text-slate-300" /> Nenhuma solicitação criada ainda.
+              </div>
+            ) : subAba === 'controle' ? (
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[10px] font-bold uppercase tracking-wider">
+                    <th className="p-3">Nº da nota</th>
+                    <th className="p-3">Data</th>
+                    <th className="p-3">Tipo de solicitação</th>
+                    <th className="p-3 text-right">Valor</th>
+                    <th className="p-3">Quem solicitou</th>
+                    <th className="p-3 text-center">Ação</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
+                  {solicitacoes.map(s => {
+                    const d = s.dados || {}
+                    const tipoLabel = TIPOS_SOLICITACAO.find(t => t.value === d.tipo_solicitacao)?.label || '—'
+                    return (
+                      <tr key={s.id} className="hover:bg-slate-50/70 transition-colors">
+                        <td className="p-3 font-semibold whitespace-nowrap">{d.numero_nf || '—'}</td>
+                        <td className="p-3 text-slate-500 whitespace-nowrap">{fmtDataSolicitacao(s.iniciado_em)}</td>
+                        <td className="p-3 whitespace-nowrap">{tipoLabel}</td>
+                        <td className="p-3 text-right whitespace-nowrap">{fmtMoeda(d.valor_nf)}</td>
+                        <td className="p-3 whitespace-nowrap">{usuariosMap[s.iniciado_por] || '—'}</td>
+                        <td className="p-3 text-center">
+                          <Link to={`/bpm/nfe-solicitacoes/${s.id}`}
+                            className="inline-flex items-center px-3 py-1.5 rounded-md text-[11px] font-bold text-white bg-indigo-600 hover:bg-indigo-700">
+                            Abrir
+                          </Link>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            ) : (
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[10px] font-bold uppercase tracking-wider">
+                    <th className="p-3">Data e hora da solicitação</th>
+                    <th className="p-3">Tipo de solicitação</th>
+                    <th className="p-3">Ação necessária</th>
+                    <th className="p-3">Cargo</th>
+                    <th className="p-3">Responsável</th>
+                    <th className="p-3 text-center">SLA</th>
+                    <th className="p-3 text-center">Status</th>
+                    <th className="p-3 text-center">Ação</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
+                  {solicitacoes.map(s => {
+                    const d = s.dados || {}
+                    const tarefa = tarefasAbertas[s.id]
+                    const st = STATUS_SOLICITACAO[s.status] || { label: s.status, cls: 'bg-slate-100 text-slate-500' }
+                    const sla = s.status === 'em_andamento' ? slaBadge(tarefa?.prazo_em) : null
+                    const tipoLabel = TIPOS_SOLICITACAO.find(t => t.value === d.tipo_solicitacao)?.label || '—'
+                    return (
+                      <tr key={s.id} className="hover:bg-slate-50/70 transition-colors">
+                        <td className="p-3 text-slate-500 whitespace-nowrap">{fmtDataHora(s.iniciado_em)}</td>
+                        <td className="p-3 whitespace-nowrap">{tipoLabel}</td>
+                        <td className="p-3 whitespace-nowrap">{tarefa?.elemento_nome || '—'}</td>
+                        <td className="p-3 whitespace-nowrap">{cargosMap[tarefa?.responsavel_agrupamento_cargo_id] || (s.status === 'em_andamento' ? '—' : '')}</td>
+                        <td className="p-3 whitespace-nowrap">
+                          {s.status !== 'em_andamento' ? '' : tarefa?.responsavel_user_id ? (usuariosMap[tarefa.responsavel_user_id] || '—') : <span className="text-slate-400 italic">Sem responsável</span>}
+                        </td>
+                        <td className="p-3 text-center">
+                          {sla && <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap ${sla.cls}`}>{sla.label}</span>}
+                        </td>
+                        <td className="p-3 text-center"><span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap ${st.cls}`}>{st.label}</span></td>
+                        <td className="p-3 text-center">
+                          <div className="inline-flex items-center gap-1.5">
+                            <Link to={`/bpm/nfe-solicitacoes/${s.id}`}
+                              className="inline-flex items-center px-3 py-1.5 rounded-md text-[11px] font-bold text-white bg-indigo-600 hover:bg-indigo-700">
+                              Abrir
+                            </Link>
+                            <button onClick={() => excluirSolicitacao(s)} title="Excluir solicitação"
+                              className="inline-flex items-center p-1.5 rounded-md text-slate-400 hover:text-red-600 hover:bg-red-50">
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
         </div>
       )}
     </div>

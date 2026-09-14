@@ -2,9 +2,8 @@
 import { useSessionState } from '../hooks/useSessionState'
 import {
   Wrench, ChevronDown, ChevronRight, Building2, Layers, FolderTree,
-  Loader2, AlertTriangle, ClipboardCheck, Plus, X, Edit2, Eye, Trash2, UserCircle, CheckCircle2,
+  Loader2, AlertTriangle, Plus, X, Edit2, Eye, Trash2, UserCircle, CheckCircle2,
 } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
 import { apiService } from '../services/api'
 
 const anoAtual = new Date().getFullYear()
@@ -27,7 +26,6 @@ const fmtBRL = (v) => {
 const sumArr = (a) => a.reduce((s, v) => s + v, 0)
 
 export default function MetasPosVendaTotalOficina() {
-  const navigate = useNavigate()
   const [filtroAno,     setFiltroAno]     = useSessionState('mpvs_servicos_ano', anoAtual)
   const [dadosMec,      setDadosMec]      = useState([])
   const [dadosFun,      setDadosFun]      = useState([])
@@ -523,9 +521,6 @@ export default function MetasPosVendaTotalOficina() {
           </select>
           <button onClick={() => abrirModalConsultor()} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 transition-colors">
             <Plus size={16} /> Adicionar Consultor
-          </button>
-          <button onClick={() => navigate('/metas/gestao-aprovacao')} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-indigo-300 bg-indigo-50 text-indigo-700 text-sm font-medium hover:bg-indigo-100 transition-colors">
-            <ClipboardCheck size={16} /> Gestão de Aprovação
           </button>
         </div>
       </div>

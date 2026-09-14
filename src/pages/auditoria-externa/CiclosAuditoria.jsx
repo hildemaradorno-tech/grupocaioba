@@ -7,7 +7,7 @@ import { apiService } from '../../services/api'
 import AuditoriaExternaNav from './AuditoriaExternaNav'
 import ManifestacaoRichEditor from '../projetos/ManifestacaoRichEditor'
 import ImportarDivergenciasModal from './ImportarDivergenciasModal'
-import { CICLO_STATUS_MAP, Badge, fmtData, PercentualBar, calcularPercentualAtingidoAchado } from './auditExtConstants'
+import { CICLO_STATUS_MAP, Badge, fmtData, PercentualBar, calcularPercentualAtingidoAchado, empresaNoEscopo } from './auditExtConstants'
 
 const FORM_VAZIO = { empresa_id: '', periodo_competencia: '', firma_auditoria: '', data_apresentacao: '', status: 'em_andamento', observacoes: '' }
 
@@ -27,9 +27,18 @@ export default function CiclosAuditoria() {
   const [idExcluir, setIdExcluir] = useState(null)
   const [nomeExcluir, setNomeExcluir] = useState('')
   const [form, setForm] = useSessionState('audext_ciclos_form', FORM_VAZIO)
-  const { user, hasActionOrDefault } = useAuth()
+  const { user, hasActionOrDefault, isAdminEfetivo, empresasPermitidas } = useAuth()
   const canEdit = hasActionOrDefault('auditoria-externa/ciclos', 'editar')
   const canExcluir = hasActionOrDefault('auditoria-externa/ciclos', 'excluir')
+  const canImportar = hasActionOrDefault('auditoria-externa/divergencias', 'importar_divergencias')
+
+  // Escopo por Empresa (Grupo de Acesso) — vazio = sem restrição.
+  const empresasVisiveis = useMemo(() =>
+    empresas.filter(e => empresaNoEscopo(e.id, empresasPermitidas, isAdminEfetivo)),
+    [empresas, empresasPermitidas, isAdminEfetivo])
+  const dadosVisiveis = useMemo(() =>
+    dados.filter(c => empresaNoEscopo(c.empresa_id, empresasPermitidas, isAdminEfetivo)),
+    [dados, empresasPermitidas, isAdminEfetivo])
 
   const loadDados = async () => {
     setLoading(true); setError(null)
@@ -170,16 +179,18 @@ export default function CiclosAuditoria() {
             <h1 className="text-xl font-bold text-slate-900 tracking-tight">Ciclos de Auditoria</h1>
             <p className="text-xs text-slate-500">Períodos de auditoria externa por empresa (ex: 1º Tri 2026, firma responsável).</p>
           </div>
-          {canEdit && (
-            <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2">
+            {canImportar && (
               <button onClick={() => setModalImportarAberto(true)} className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold px-3 py-2 rounded-md shadow-sm border border-slate-200 transition-colors">
                 <Upload className="h-4 w-4 text-emerald-600" /> Importar Excel
               </button>
+            )}
+            {canEdit && (
               <button onClick={abrirIncluir} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-2 rounded-md shadow-sm transition-colors">
                 <Plus className="h-4 w-4" /> Novo Ciclo
               </button>
-            </div>
-          )}
+            )}
+          </div>
         </div>
         <AuditoriaExternaNav />
       </div>
@@ -199,9 +210,9 @@ export default function CiclosAuditoria() {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
-            {dados.length === 0 ? (
+            {dadosVisiveis.length === 0 ? (
               <tr><td colSpan="8" className="p-6 text-center text-slate-400">Nenhum ciclo de auditoria cadastrado.</td></tr>
-            ) : dados.map(item => (
+            ) : dadosVisiveis.map(item => (
               <tr key={item.id} className="hover:bg-slate-50/70 transition-colors">
                 <td className="p-3 text-slate-900 font-bold flex items-center gap-2"><CalendarClock className="h-3.5 w-3.5 text-indigo-500" /> {item.proj_empresas?.nome || '—'}</td>
                 <td className="p-3">{item.periodo_competencia}</td>
@@ -249,7 +260,7 @@ export default function CiclosAuditoria() {
                   <select value={form.empresa_id} onChange={e => setForm(prev => ({ ...prev, empresa_id: e.target.value }))}
                     className="w-full text-xs p-2 border border-slate-200 rounded-md font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500">
                     <option value="">— Selecione —</option>
-                    {empresas.map(e => <option key={e.id} value={e.id}>{e.nome}</option>)}
+                    {empresasVisiveis.map(e => <option key={e.id} value={e.id}>{e.nome}</option>)}
                   </select>
                 </div>
                 <div className="flex flex-col gap-1.5">

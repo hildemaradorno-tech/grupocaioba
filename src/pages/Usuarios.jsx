@@ -1,6 +1,7 @@
-﻿import React, { useState, useEffect } from 'react'
+﻿import React, { useState, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { useSessionState } from '../hooks/useSessionState'
-import { Trash2, Plus, Edit2, Eye, EyeOff, X, UserCheck, Search, Copy, Check, UserPlus, Send } from 'lucide-react'
+import { Trash2, Plus, Edit2, Eye, EyeOff, X, UserCheck, Search, Check, UserPlus, Send, ChevronDown } from 'lucide-react'
 import PermissionActionButtons from '../components/PermissionActionButtons'
 import { apiService } from '../services/api'
 import { supabase } from '../services/supabaseClient'
@@ -19,18 +20,122 @@ function traduzirErroSenha(msg = '') {
   return null
 }
 
+// Combobox de seleção única com busca — o <select> nativo fica difícil de navegar com muitos
+// cargos (um por empresa), então digitar filtra a lista em vez de rolar tudo procurando.
+function CargoCombobox({ value, onChange, opcoes, placeholder }) {
+  const [aberto, setAberto] = useState(false)
+  const [busca, setBusca] = useState('')
+  const [pos, setPos] = useState(null)
+  const ref = useRef(null)
+
+  useEffect(() => {
+    const fecharSeClicarFora = (e) => {
+      if (ref.current && !ref.current.contains(e.target) && !e.target.closest('[data-cargo-combobox-panel]')) { setAberto(false); setBusca('') }
+    }
+    document.addEventListener('mousedown', fecharSeClicarFora)
+    return () => document.removeEventListener('mousedown', fecharSeClicarFora)
+  }, [])
+
+  // O modal de Editar Usuário tem overflow-y-auto (rola o formulário) — um painel "absolute"
+  // aqui dentro ficava cortado/deslocado por esse scroll. Renderiza via portal em document.body,
+  // "fixed" na posição real do botão, pra flutuar por cima sem ser cortado (mesmo padrão já
+  // usado nos filtros de coluna de Cargos/Funcionários).
+  const abrir = () => {
+    if (!aberto && ref.current) {
+      const r = ref.current.getBoundingClientRect()
+      setPos({ top: r.bottom + 4, left: r.left, width: r.width })
+    }
+    setAberto(v => !v)
+  }
+
+  useEffect(() => {
+    if (!aberto) return
+    const fechar = (e) => {
+      if (e.target?.closest?.('[data-cargo-combobox-panel]')) return
+      setAberto(false)
+    }
+    window.addEventListener('scroll', fechar, true)
+    window.addEventListener('resize', fechar)
+    return () => {
+      window.removeEventListener('scroll', fechar, true)
+      window.removeEventListener('resize', fechar)
+    }
+  }, [aberto])
+
+  const selecionado = opcoes.find(o => o.id === value)
+  const q = busca.trim().toLowerCase()
+  const filtradas = q
+    ? opcoes.filter(o => `${o.nome_cargo} ${o.nome_empresa || ''}`.toLowerCase().includes(q))
+    : opcoes
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={abrir}
+        className="w-full flex items-center justify-between gap-2 px-3 py-2 border border-slate-300 rounded-md bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+      >
+        <span className={`truncate ${selecionado ? 'text-slate-800' : 'text-slate-400'}`}>
+          {selecionado ? `${selecionado.nome_cargo}${selecionado.nome_empresa ? ` — ${selecionado.nome_empresa}` : ''}` : placeholder}
+        </span>
+        <ChevronDown className="h-4 w-4 text-slate-400 shrink-0" />
+      </button>
+      {aberto && pos && createPortal(
+        <div
+          data-cargo-combobox-panel
+          style={{ position: 'fixed', top: pos.top, left: pos.left, width: pos.width }}
+          className="z-50 bg-white border border-slate-200 rounded-md shadow-lg overflow-hidden"
+        >
+          <div className="relative border-b border-slate-100">
+            <Search className="h-3.5 w-3.5 text-slate-300 absolute left-2.5 top-1/2 -translate-y-1/2" />
+            <input
+              autoFocus
+              type="text"
+              value={busca}
+              onChange={e => setBusca(e.target.value)}
+              placeholder="Buscar cargo ou empresa..."
+              className="w-full text-sm pl-8 pr-2 py-2 focus:outline-none"
+            />
+          </div>
+          <div className="max-h-52 overflow-y-auto custom-scrollbar">
+            <button
+              type="button"
+              onClick={() => { onChange(''); setAberto(false); setBusca('') }}
+              className="w-full text-left px-3 py-2 text-sm text-slate-500 hover:bg-slate-50"
+            >
+              — Sem cargo —
+            </button>
+            {filtradas.length === 0 ? (
+              <p className="px-3 py-2 text-sm text-slate-400">Nenhum cargo encontrado.</p>
+            ) : filtradas.map(o => (
+              <button
+                key={o.id}
+                type="button"
+                onClick={() => { onChange(o.id); setAberto(false); setBusca('') }}
+                className={`w-full text-left px-3 py-2 text-sm hover:bg-blue-50 ${o.id === value ? 'bg-blue-50 font-semibold text-blue-700' : 'text-slate-700'}`}
+              >
+                {o.nome_cargo}{o.nome_empresa ? <span className="text-slate-400"> — {o.nome_empresa}</span> : ''}
+              </button>
+            ))}
+          </div>
+        </div>,
+        document.body
+      )}
+    </div>
+  )
+}
+
 export default function Usuarios() {
   const { isAdmin, iniciarVisualizacao, user } = useAuth()
   const [usuarios, setUsuarios] = useState([])
   const [grupos, setGrupos] = useState([])
-  const [agrupamentosCargo, setAgrupamentosCargo] = useState([])
+  const [cargos, setCargos] = useState([])
   const [showForm, setShowForm] = useSessionState('usr_showform', false)
   const [editingId, setEditingId] = useSessionState('usr_editid', null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [savedOk, setSavedOk] = useState(false)
   const [error, setError] = useState(null)
-  const [form, setForm] = useState({ nome: '', email: '', senha: '', senhaConfirm: '', grupo_id: '', agrupamento_cargo_id: '' })
+  const [form, setForm] = useState({ nome: '', email: '', senha: '', senhaConfirm: '', grupo_id: '', cargo_id: '' })
   const [alterarSenha, setAlterarSenha] = useState(false)
   const [showSenha, setShowSenha] = useState(false)
   const [showSenhaConfirm, setShowSenhaConfirm] = useState(false)
@@ -41,9 +146,7 @@ export default function Usuarios() {
   const [conviteEnviado, setConviteEnviado] = useState(null) // { nome, email }
   const [reenviandoId, setReenviandoId] = useState(null)
   const [reenviadoId, setReenviadoId] = useState(null)
-  const [senhaParaCopia, setSenhaParaCopia] = useState('')
-  const [copiadoModal, setCopiadoModal] = useState(null) // 'whats' | 'email' | null
-  const abrirVisualizar = (item) => { setItemVisualizado(item); setModalVisualizarAberto(true); setSenhaParaCopia(''); setCopiadoModal(null) }
+  const abrirVisualizar = (item) => { setItemVisualizado(item); setModalVisualizarAberto(true) }
 
   useEffect(() => { loadData() }, [])
 
@@ -51,15 +154,15 @@ export default function Usuarios() {
     setLoading(true)
     setError(null)
     try {
-      const [usuariosData, gruposData, agrupamentosCargoData, authStatus] = await Promise.all([
+      const [usuariosData, gruposData, cargosData, authStatus] = await Promise.all([
         apiService.getUsuarios(),
         apiService.getGrupos(),
-        apiService.getAgrupamentoCargos(),
+        apiService.getCargos(),
         apiService.getAuthStatus(),
       ])
       setUsuarios(usuariosData)
       setGrupos(gruposData)
-      setAgrupamentosCargo(agrupamentosCargoData.filter(a => a.ativo !== false))
+      setCargos(cargosData.filter(c => c.ativo !== false))
       setAuthServiceConfigured(Boolean(authStatus.serviceRoleConfigured))
     } catch (err) {
       console.error('Erro ao carregar dados', err)
@@ -81,7 +184,7 @@ export default function Usuarios() {
     setSaving(true)
     try {
       if (editingId) {
-        await apiService.updateUsuario(editingId, form.nome, form.email, form.grupo_id || null, form.agrupamento_cargo_id || null)
+        await apiService.updateUsuario(editingId, form.nome, form.email, form.grupo_id || null, form.cargo_id || null)
         if (alterarSenha && form.senha) {
           if (form.email === user?.email) {
             // Próprio usuário logado: usa a sessão atual, sem precisar do service key
@@ -93,14 +196,13 @@ export default function Usuarios() {
           }
         }
         loadData()
-        setSavedOk(true)
-        setTimeout(() => setSavedOk(false), 2500)
+        resetForm()
       } else {
         if (!authServiceConfigured) {
           throw new Error('Criação de usuário exige SUPABASE_SERVICE_KEY configurada no backend.')
         }
         const redirectTo = `${URL_PRODUCAO}/redefinir-senha`
-        await apiService.createUsuario(form.nome, form.email, form.grupo_id || null, redirectTo, form.agrupamento_cargo_id || null)
+        await apiService.createUsuario(form.nome, form.email, form.grupo_id || null, redirectTo, form.cargo_id || null)
         setConviteEnviado({ nome: form.nome, email: form.email })
         resetForm()
         loadData()
@@ -114,13 +216,11 @@ export default function Usuarios() {
   }
 
   const handleEdit = (usuario) => {
-    setForm({ nome: usuario.nome, email: usuario.email, senha: '', senhaConfirm: '', grupo_id: usuario.grupo_id || '', agrupamento_cargo_id: usuario.agrupamento_cargo_id || '' })
+    setForm({ nome: usuario.nome, email: usuario.email, senha: '', senhaConfirm: '', grupo_id: usuario.grupo_id || '', cargo_id: usuario.cargo_id || '' })
     setEditingId(usuario.id)
     setAlterarSenha(false)
     setShowSenha(false)
     setShowSenhaConfirm(false)
-    setSenhaParaCopia('')
-    setCopiadoModal(null)
     setShowForm(true)
   }
 
@@ -154,7 +254,7 @@ export default function Usuarios() {
   }
 
   const resetForm = () => {
-    setForm({ nome: '', email: '', senha: '', senhaConfirm: '', grupo_id: '', agrupamento_cargo_id: '' })
+    setForm({ nome: '', email: '', senha: '', senhaConfirm: '', grupo_id: '', cargo_id: '' })
     setEditingId(null)
     setAlterarSenha(false)
     setShowSenha(false)
@@ -162,10 +262,10 @@ export default function Usuarios() {
     setShowForm(false)
   }
 
-  if (loading) return <div className="p-6 max-w-screen-xl">Carregando...</div>
+  if (loading) return <div className="p-6">Carregando...</div>
 
   if (error) return (
-    <div className="p-6 max-w-screen-xl">
+    <div className="p-6">
       <div className="bg-yellow-50 border border-yellow-200 rounded p-6">
         <h2 className="text-lg font-semibold mb-2">Erro ao carregar dados</h2>
         <p className="mb-4 text-sm text-slate-700">{error}</p>
@@ -177,7 +277,7 @@ export default function Usuarios() {
   const showSenhaSection = editingId && alterarSenha
 
   return (
-    <div className="p-6 max-w-screen-xl">
+    <div className="p-6">
       <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <h1 className="text-2xl font-bold text-slate-900">Usuários</h1>
         <div className="flex items-center gap-2">
@@ -245,18 +345,14 @@ export default function Usuarios() {
                   <option key={g.id} value={g.id}>{g.nome_grupo}{g.is_admin ? ' (Admin)' : ''}</option>
                 ))}
               </select>
-              <select
-                value={form.agrupamento_cargo_id}
-                onChange={(e) => setForm({ ...form, agrupamento_cargo_id: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-sm"
-              >
-                <option value="">— Sem agrupamento de cargos —</option>
-                {agrupamentosCargo.map(a => (
-                  <option key={a.id} value={a.id}>{a.nome_agrupamento_cargo}</option>
-                ))}
-              </select>
+              <CargoCombobox
+                value={form.cargo_id}
+                onChange={(id) => setForm({ ...form, cargo_id: id })}
+                placeholder="— Sem cargo —"
+                opcoes={[...cargos].sort((a, b) => a.nome_cargo.localeCompare(b.nome_cargo, 'pt-BR') || (a.nome_empresa || '').localeCompare(b.nome_empresa || '', 'pt-BR'))}
+              />
               <p className="text-[11px] text-slate-400 -mt-1">
-                O agrupamento de cargos define quais tarefas de fluxos (BPM) esse usuário pode assumir.
+                O cargo define quais tarefas de fluxos (BPM) esse usuário pode assumir.
               </p>
 
               {!editingId && (
@@ -315,28 +411,14 @@ export default function Usuarios() {
               )}
 
               <div className="flex gap-2 pt-1 flex-wrap">
-                <button type="submit" disabled={saving} className={`px-4 py-2 rounded-md text-sm font-semibold transition-colors disabled:opacity-50 ${savedOk ? 'bg-emerald-500 text-white' : 'bg-green-600 hover:bg-green-700 text-white'}`}>
-                  {saving ? 'Salvando...' : savedOk ? '✓ Salvo!' : 'Salvar'}
+                <button type="submit" disabled={saving} className="px-4 py-2 rounded-md text-sm font-semibold transition-colors disabled:opacity-50 bg-green-600 hover:bg-green-700 text-white">
+                  {saving ? 'Salvando...' : 'Salvar'}
                 </button>
-                {editingId && (
-                  <button
-                    type="button"
-                    disabled={!form.senha.trim()}
-                    onClick={() => {
-                      const texto = `Olá, ${form.nome}!\n\nSeu acesso ao sistema 🌐 Portal de Gestão do Grupo Caiobá foi criado. Utilize as credenciais abaixo para entrar:\n\n📧 E-mail: ${form.email}\n🔑 Senha: ${form.senha}`
-                      navigator.clipboard.writeText(texto)
-                      setCopiadoModal('share')
-                      setTimeout(() => setCopiadoModal(null), 2500)
-                    }}
-                    className={`flex items-center gap-1.5 px-4 py-2 rounded-md text-sm font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${copiadoModal === 'share' ? 'bg-green-600 text-white' : 'bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-100'}`}
-                  >
-                    {copiadoModal === 'share' ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                    {copiadoModal === 'share' ? 'Copiado!' : 'Compartilhar acesso'}
+                {!editingId && (
+                  <button type="button" onClick={resetForm} className="bg-slate-200 text-slate-700 px-4 py-2 rounded-md hover:bg-slate-300 text-sm font-semibold">
+                    Cancelar
                   </button>
                 )}
-                <button type="button" onClick={resetForm} className="bg-slate-200 text-slate-700 px-4 py-2 rounded-md hover:bg-slate-300 text-sm font-semibold">
-                  {editingId ? 'Fechar' : 'Cancelar'}
-                </button>
               </div>
             </form>
           </div>
@@ -371,7 +453,7 @@ export default function Usuarios() {
               <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Nome</th>
               <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">E-mail</th>
               <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Grupo de Acesso</th>
-              <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Agrupamento de Cargos</th>
+              <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Cargo</th>
               <th className="px-6 py-3 text-center text-sm font-semibold text-slate-700">Senha</th>
               <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Ações</th>
             </tr>
@@ -397,7 +479,7 @@ export default function Usuarios() {
                   {grupos.find(g => g.id === u.grupo_id)?.nome_grupo || <span className="text-slate-300">—</span>}
                 </td>
                 <td className="px-6 py-3 text-sm text-slate-500 whitespace-nowrap">
-                  {agrupamentosCargo.find(a => a.id === u.agrupamento_cargo_id)?.nome_agrupamento_cargo || <span className="text-slate-300">—</span>}
+                  {cargos.find(a => a.id === u.cargo_id)?.nome_cargo || <span className="text-slate-300">—</span>}
                 </td>
                 <td className="px-6 py-3 text-center">
                   {senhaOk && (
@@ -420,23 +502,22 @@ export default function Usuarios() {
                   <button
                     onClick={() => handleReenviarConvite(u)}
                     disabled={reenviandoId === u.id}
-                    title="Reenviar e-mail com o link de definição/redefinição de senha (aponta para o sistema em produção)"
-                    className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold border transition-colors disabled:opacity-50 whitespace-nowrap ${
+                    title={reenviandoId === u.id ? 'Enviando...' : reenviadoId === u.id ? 'E-mail enviado!' : 'Reenviar e-mail com o link de definição/redefinição de senha (aponta para o sistema em produção)'}
+                    className={`inline-flex items-center justify-center p-1.5 rounded border transition-colors disabled:opacity-50 ${
                       reenviadoId === u.id
                         ? 'border-green-300 text-green-700 bg-green-50'
                         : 'border-blue-300 text-blue-700 bg-blue-50 hover:bg-blue-100'
                     }`}
                   >
                     {reenviadoId === u.id ? <Check size={13} /> : <Send size={13} />}
-                    {reenviandoId === u.id ? 'Enviando...' : reenviadoId === u.id ? 'Enviado!' : 'Reenviar e-mail'}
                   </button>
                   {isAdmin && u.email !== user?.email && (
                     <button
                       onClick={() => iniciarVisualizacao(u)}
                       title={`Visualizar como ${u.nome}`}
-                      className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold border border-violet-300 text-violet-700 bg-violet-50 hover:bg-violet-100 transition-colors whitespace-nowrap"
+                      className="inline-flex items-center justify-center p-1.5 rounded border border-violet-300 text-violet-700 bg-violet-50 hover:bg-violet-100 transition-colors"
                     >
-                      <UserCheck size={13} /> Visualizar como
+                      <UserCheck size={13} />
                     </button>
                   )}
                 </td>
@@ -486,9 +567,9 @@ export default function Usuarios() {
                 </span>
               </div>
               <div className="flex flex-col gap-0.5">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Agrupamento de Cargos</span>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Cargo</span>
                 <span className="text-xs font-semibold text-slate-800">
-                  {agrupamentosCargo.find(a => a.id === itemVisualizado.agrupamento_cargo_id)?.nome_agrupamento_cargo || '—'}
+                  {cargos.find(a => a.id === itemVisualizado.cargo_id)?.nome_cargo || '—'}
                 </span>
               </div>
 

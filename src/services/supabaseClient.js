@@ -109,7 +109,7 @@ export const apiService = {
   getUsuarios: async () => {
     const { data, error } = await supabase
       .from('usuarios')
-      .select('id, nome, email, ativo, criado_em, grupo_id, agrupamento_cargo_id, senha_atualizada_em')
+      .select('id, nome, email, ativo, criado_em, grupo_id, cargo_id, senha_atualizada_em')
       .order('nome', { ascending: true })
     if (error) throw error
     return data || []
@@ -118,7 +118,7 @@ export const apiService = {
   getUsuarioById: async (id) => {
     const { data, error } = await supabase
       .from('usuarios')
-      .select('id, nome, email, grupo_id, agrupamento_cargo_id')
+      .select('id, nome, email, grupo_id, cargo_id')
       .eq('id', id)
       .single()
     if (error) throw error
@@ -880,12 +880,12 @@ export const apiService = {
     return { success: true }
   },
 
-  createUsuario: async (nome, email, grupo_id = null, redirectTo, agrupamento_cargo_id = null) => {
+  createUsuario: async (nome, email, grupo_id = null, redirectTo, cargo_id = null) => {
     const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
     const res = await fetch(`${backendUrl}/api/auth/create-user`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ nome, email, grupo_id, redirectTo, agrupamento_cargo_id }),
+      body: JSON.stringify({ nome, email, grupo_id, redirectTo, cargo_id }),
     })
     const body = await res.json()
     if (!res.ok) throw new Error(body.error || 'Erro ao criar usuário')
@@ -912,10 +912,10 @@ export const apiService = {
     return body
   },
 
-  updateUsuario: async (id, nome, email, grupo_id = undefined, agrupamento_cargo_id = undefined) => {
+  updateUsuario: async (id, nome, email, grupo_id = undefined, cargo_id = undefined) => {
     const payload = { nome, email, atualizado_em: new Date().toISOString() }
     if (grupo_id !== undefined) payload.grupo_id = grupo_id || null
-    if (agrupamento_cargo_id !== undefined) payload.agrupamento_cargo_id = agrupamento_cargo_id || null
+    if (cargo_id !== undefined) payload.cargo_id = cargo_id || null
     const { data, error } = await supabase
       .from('usuarios')
       .update(payload)
@@ -3250,16 +3250,63 @@ export const apiService = {
     return { success: true }
   },
 
+  // Restringe Gestão de Projetos por departamento. Modo TODOS/INDIVIDUAL igual ao de
+  // Cálculo de Comissões e Auditoria Externa: TODOS = sem restrição (inclusive
+  // departamentos futuros), INDIVIDUAL = só os nomes marcados em permissoes_depto_grupo.
+  // `modo` fica em grupos_acesso.projetos_depto_modo (default 'TODOS').
   getPermissoesDeptoPorGrupo: async (grupoId) => {
-    const { data, error } = await supabase.from('permissoes_depto_grupo').select('departamento_nome').eq('grupo_id', grupoId)
+    const [{ data, error }, { data: grupoRow, error: e2 }] = await Promise.all([
+      supabase.from('permissoes_depto_grupo').select('departamento_nome').eq('grupo_id', grupoId),
+      supabase.from('grupos_acesso').select('projetos_depto_modo').eq('id', grupoId).maybeSingle(),
+    ])
     if (error) throw error
-    return (data || []).map(r => r.departamento_nome)
+    if (e2) throw e2
+    return {
+      modo: grupoRow?.projetos_depto_modo === 'INDIVIDUAL' ? 'INDIVIDUAL' : 'TODOS',
+      valores: (data || []).map(r => r.departamento_nome),
+    }
   },
-  setPermissoesDeptoPorGrupo: async (grupoId, nomes) => {
-    const { error: delErr } = await supabase.from('permissoes_depto_grupo').delete().eq('grupo_id', grupoId)
+  setPermissoesDeptoPorGrupo: async (grupoId, modo, nomes) => {
+    const modoFinal = modo === 'INDIVIDUAL' ? 'INDIVIDUAL' : 'TODOS'
+    const [{ error: delErr }, { error: errModo }] = await Promise.all([
+      supabase.from('permissoes_depto_grupo').delete().eq('grupo_id', grupoId),
+      supabase.from('grupos_acesso').update({ projetos_depto_modo: modoFinal }).eq('id', grupoId),
+    ])
     if (delErr) throw delErr
-    if (nomes.length > 0) {
+    if (errModo) throw errModo
+    if (modoFinal === 'INDIVIDUAL' && nomes.length > 0) {
       const { error } = await supabase.from('permissoes_depto_grupo').insert(nomes.map(nome => ({ grupo_id: grupoId, departamento_nome: nome })))
+      if (error) throw error
+    }
+  },
+
+  // Restringe Auditoria Externa por departamento, independente de Projetos (antes as duas
+  // telas compartilhavam a mesma restrição). Modo TODOS/INDIVIDUAL igual ao de
+  // Cálculo de Comissões: TODOS = sem restrição (inclusive departamentos futuros),
+  // INDIVIDUAL = só os nomes marcados em permissoes_depto_grupo_auditoria.
+  // `modo` fica em grupos_acesso.auditoria_depto_modo (default 'TODOS').
+  getPermissoesDeptoAuditoriaPorGrupo: async (grupoId) => {
+    const [{ data, error }, { data: grupoRow, error: e2 }] = await Promise.all([
+      supabase.from('permissoes_depto_grupo_auditoria').select('departamento_nome').eq('grupo_id', grupoId),
+      supabase.from('grupos_acesso').select('auditoria_depto_modo').eq('id', grupoId).maybeSingle(),
+    ])
+    if (error) throw error
+    if (e2) throw e2
+    return {
+      modo: grupoRow?.auditoria_depto_modo === 'INDIVIDUAL' ? 'INDIVIDUAL' : 'TODOS',
+      valores: (data || []).map(r => r.departamento_nome),
+    }
+  },
+  setPermissoesDeptoAuditoriaPorGrupo: async (grupoId, modo, nomes) => {
+    const modoFinal = modo === 'INDIVIDUAL' ? 'INDIVIDUAL' : 'TODOS'
+    const [{ error: delErr }, { error: errModo }] = await Promise.all([
+      supabase.from('permissoes_depto_grupo_auditoria').delete().eq('grupo_id', grupoId),
+      supabase.from('grupos_acesso').update({ auditoria_depto_modo: modoFinal }).eq('id', grupoId),
+    ])
+    if (delErr) throw delErr
+    if (errModo) throw errModo
+    if (modoFinal === 'INDIVIDUAL' && nomes.length > 0) {
+      const { error } = await supabase.from('permissoes_depto_grupo_auditoria').insert(nomes.map(nome => ({ grupo_id: grupoId, departamento_nome: nome })))
       if (error) throw error
     }
   },

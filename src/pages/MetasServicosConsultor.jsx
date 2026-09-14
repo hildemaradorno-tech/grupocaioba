@@ -1,9 +1,7 @@
 ﻿import React, { useEffect, useState, useMemo } from 'react'
 import { useSessionState } from '../hooks/useSessionState'
-import { Plus, Trash2, X, AlertTriangle, ChevronRight, ChevronDown, Cog, Loader2, CheckCircle2, Sparkles, Pencil, Info, ClipboardCheck } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
+import { Plus, Trash2, X, AlertTriangle, ChevronRight, ChevronDown, Cog, Loader2, CheckCircle2, Sparkles, Pencil, Info } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
-import PermissionActionButtons from '../components/PermissionActionButtons'
 import { apiService } from '../services/api'
 
 const anoAtual = new Date().getFullYear()
@@ -17,13 +15,12 @@ function parseBRL(s) { if (!s && s !== 0) return 0; const str = String(s).trim()
 function cellState(cur, apr) { const c = Number(cur)||0; if(c===0) return 'ok'; if(apr===null||apr===undefined) return 'new'; if(Math.abs(c-Number(apr))>0.001) return 'changed'; return 'ok' }
 function pendingCountEmp(emp) {
   let n = 0
-  Object.values(emp.depts).forEach(d => Object.values(d.setores).forEach(st => Object.values(st.boxes).forEach(bx => Object.values(bx.cargos).forEach(ca => Object.values(ca.colabs).forEach(co => Object.values(co.meses).forEach(m => { if(cellState(m.meta_faturamento,m.meta_aprovada)!=='ok') n++ }))))))
+  Object.values(emp.depts).forEach(d => Object.values(d.setores).forEach(st => Object.values(st.boxes).forEach(bx => Object.values(bx.colabs).forEach(co => Object.values(co.meses).forEach(m => { if(cellState(m.meta_faturamento,m.meta_aprovada)!=='ok') n++ })))))
   return n
 }
 
 function aggColabs(cm) { const a=Array(12).fill(0); Object.values(cm).forEach(c=>Object.entries(c.meses).forEach(([m,d])=>{a[+m-1]+=Number(d.meta_faturamento)||0})); return a }
-function aggCargo(ca)  { const a=Array(12).fill(0); Object.values(ca.colabs).forEach(c=>aggColabs({x:c}).forEach((v,i)=>{a[i]+=v})); return a }
-function aggBox(bx)    { const a=Array(12).fill(0); Object.values(bx.cargos).forEach(c=>aggCargo(c).forEach((v,i)=>{a[i]+=v})); return a }
+function aggBox(bx)    { const a=Array(12).fill(0); Object.values(bx.colabs).forEach(c=>aggColabs({x:c}).forEach((v,i)=>{a[i]+=v})); return a }
 function aggSetor(st)  { const a=Array(12).fill(0); Object.values(st.boxes).forEach(b=>aggBox(b).forEach((v,i)=>{a[i]+=v})); return a }
 function aggDept(d)    { const a=Array(12).fill(0); Object.values(d.setores).forEach(s=>aggSetor(s).forEach((v,i)=>{a[i]+=v})); return a }
 function aggEmp(e)     { const a=Array(12).fill(0); Object.values(e.depts).forEach(d=>aggDept(d).forEach((v,i)=>{a[i]+=v})); return a }
@@ -65,12 +62,12 @@ function PctInput({ value, onChange }) {
 }
 
 export default function MetasServicosConsultor() {
-  const navigate = useNavigate()
   const [empresas,      setEmpresas]      = useState([])
   const [departamentos, setDepartamentos] = useState([])
   const [setores,       setSetores]       = useState([])
   const [boxes,         setBoxes]         = useState([])
   const [cargos,        setCargos]        = useState([])
+  const [agrupamentosCargo, setAgrupamentosCargo] = useState([])
   const [funcionarios,  setFuncionarios]  = useState([])
   const [dados,         setDados]         = useState([])
   const [totaisMec,     setTotaisMec]     = useState({}) // { empresaId: { mes: { servicos, pecas } } }
@@ -90,14 +87,13 @@ export default function MetasServicosConsultor() {
   const [expandedDepts,    setExpandedDepts]    = useState(new Set())
   const [expandedSetores,  setExpandedSetores]  = useState(new Set())
   const [expandedBoxes,    setExpandedBoxes]    = useState(new Set())
-  const [expandedCargos,   setExpandedCargos]   = useState(new Set())
 
   const [modalAberto,        setModalAberto]        = useState(false)
   const [modoModal,          setModoModal]          = useState('incluir')
   const [modalExcluirAberto, setModalExcluirAberto] = useState(false)
   const [form,               setForm]               = useState(FORM_VAZIO)
   const [mesesForm,          setMesesForm]          = useState(mesesVazios())
-  const [mecTotaisModal,     setMecTotaisModal]     = useState({})
+  const [mecRowsModal,       setMecRowsModal]       = useState([])
   const [colabExcluir,       setColabExcluir]       = useState(null)
   const [salvando,           setSalvando]           = useState(false)
   const [erroModal,          setErroModal]          = useState(null)
@@ -108,15 +104,16 @@ export default function MetasServicosConsultor() {
 
   const loadLookups = async () => {
     try {
-      const [emps, depts, sets, bxs, cargs, funcs] = await Promise.all([
+      const [emps, depts, sets, bxs, cargs, agrups, funcs] = await Promise.all([
         apiService.getEmpresas(), apiService.getDepartamentos(), apiService.getSetores(),
-        apiService.getBox(), apiService.getCargos(), apiService.getFuncionarios(),
+        apiService.getBox(), apiService.getCargos(), apiService.getAgrupamentoCargos(), apiService.getFuncionarios(),
       ])
       setEmpresas(sortNome(emps.filter(e => ['Caiobá Trucks', 'Caiobá Motos'].includes(e.agrupamento_nome)), 'empresa_fantasia'))
       setDepartamentos(sortNome(depts, 'nome_departamento'))
       setSetores(sortNome(sets, 'nome_setor'))
       setBoxes(sortNome(bxs, 'nome_box'))
       setCargos(sortNome(cargs, 'nome_cargo'))
+      setAgrupamentosCargo(agrups)
       setFuncionarios(sortNome(funcs, 'nome_funcionario'))
     } catch (err) { setError(err.message || String(err)) }
   }
@@ -185,35 +182,24 @@ export default function MetasServicosConsultor() {
       const colid = row.colaborador_id
       const func  = funcObjMap[colid]
 
-      // Cargo/box/setor/depto resolvidos pelo cadastro atual do funcionário (não pelo retrato
-      // gravado na linha), pra refletir mudanças feitas depois em /funcionarios. Só faz essa
-      // resolução "ao vivo" quando o funcionário da meta ainda existe no cadastro — se o
-      // colaborador_id da linha foi excluído, os IDs gravados podem ter sido reaproveitados por
-      // outro cadastro (ex: cargo renomeado pra outra função), então nesse caso usa só o retrato.
+      // IDs de cargo/box/setor/depto: SEMPRE do que foi escolhido na própria linha da meta (o
+      // formulário de Incluir/Editar Consultor é quem define em qual box o consultor atua,
+      // independente do cadastro dele em /funcionarios — por isso não sobrepomos aqui).
       const eid = row.empresa_id
-      let cId, bId, sId, did
-      if (func) {
-        cId = func.cargo_id || '—'
-        bId = func.box_id   || '—'
-        if (bId !== '—' && !boxMap[bId])   return
-        if (cId !== '—' && !cargoMap[cId]) return
-        // Setor: SEMPRE resolve pelo vínculo atual do box em dim_box
-        sId = (bId !== '—' && boxToSetorMap[bId])
-          || (row.setor_id && setorMap[row.setor_id] ? row.setor_id : null)
-          || '—'
-        if (!setorMap[sId]) return
-        did = setorObjMap[sId]?.departamento_id || '—'
-      } else {
-        cId = row.cargo_id || '—'
-        bId = row.box_id   || '—'
-        sId = row.setor_id || '—'
-        did = row.departamento_id || '—'
-      }
+      const cId = row.cargo_id || '—'
+      const bId = row.box_id   || '—'
+      // Setor: resolve pelo vínculo atual do box em dim_box (re-roteia se o box mudou de setor),
+      // com fallback pro setor_id gravado na linha.
+      const sId = (bId !== '—' && boxToSetorMap[bId])
+        || (row.setor_id && setorMap[row.setor_id] ? row.setor_id : null)
+        || row.setor_id || '—'
+      const did = setorObjMap[sId]?.departamento_id || row.departamento_id || '—'
 
-      const dNome  = (func && deptMap[did])  || row.departamento_nome || '—'
-      const sNome  = (func && setorMap[sId]) || row.setor_nome        || '—'
-      const bNome  = (func && boxMap[bId])   || row.box_nome          || '—'
-      const cNome  = (func && cargoMap[cId]) || row.cargo_nome        || '—'
+      // Nomes SEMPRE resolvidos pelo cadastro atual (podem ser renomeados depois que a meta foi
+      // lançada) — só cai pro retrato gravado na linha se o próprio ID não existir mais.
+      const dNome  = deptMap[did]  || row.departamento_nome || '—'
+      const sNome  = setorMap[sId] || row.setor_nome        || '—'
+      const bNome  = boxMap[bId]   || row.box_nome          || '—'
       const coNome = func?.nome_funcionario || row.colaborador_nome || colid
 
       if(!t[eid]) t[eid]={ nome:row.empresa_nome||eid, depts:{} }
@@ -222,9 +208,8 @@ export default function MetasServicosConsultor() {
       depts[did].nome = dNome
       const stMap=depts[did].setores
       if(!stMap[sId]) stMap[sId]={ nome:sNome, boxes:{} }
-      if(!stMap[sId].boxes[bId]) stMap[sId].boxes[bId]={ nome:bNome, cargos:{}, auto:false }
-      if(!stMap[sId].boxes[bId].cargos[cId]) stMap[sId].boxes[bId].cargos[cId]={ nome:cNome, colabs:{} }
-      const coMap=stMap[sId].boxes[bId].cargos[cId].colabs
+      if(!stMap[sId].boxes[bId]) stMap[sId].boxes[bId]={ nome:bNome, colabs:{}, auto:false }
+      const coMap=stMap[sId].boxes[bId].colabs
       if(!coMap[colid]) coMap[colid]={ nome:coNome, meses:{} }
       const _isFun = bNome.toLowerCase().includes('funilaria') || bNome.toLowerCase().includes('pintura')
       const _mec  = totaisMec[eid]?.[row.mes] || {}
@@ -264,7 +249,7 @@ export default function MetasServicosConsultor() {
         if (!depts[dId]) depts[dId] = { nome: dNome, setores: {} }
         if (!depts[dId].setores[setorId]) depts[dId].setores[setorId] = { nome: sNome, boxes: {} }
         if (!depts[dId].setores[setorId].boxes[bId]) {
-          depts[dId].setores[setorId].boxes[bId] = { nome: bNome, cargos: {}, auto: true }
+          depts[dId].setores[setorId].boxes[bId] = { nome: bNome, colabs: {}, auto: true }
         }
       })
     })
@@ -278,44 +263,48 @@ export default function MetasServicosConsultor() {
 
   const expandirTudo = () => {
     setGrupoAberto(true)
-    const emps = new Set(), depts = new Set(), sets = new Set(), bxs = new Set(), cars = new Set()
+    const emps = new Set(), depts = new Set(), sets = new Set(), bxs = new Set()
     Object.entries(tree).forEach(([eid, emp]) => {
       emps.add(eid)
       Object.entries(emp.depts).forEach(([did, dept]) => {
         const dKey = `${eid}§${did}`; depts.add(dKey)
         Object.entries(dept.setores).forEach(([sid, setor]) => {
           const sKey = `${dKey}§${sid}`; sets.add(sKey)
-          Object.entries(setor.boxes).forEach(([bid, box]) => {
-            const bKey = `${sKey}§${bid}`; bxs.add(bKey)
-            Object.keys(box.cargos).forEach(cid => cars.add(`${bKey}§${cid}`))
-          })
+          Object.keys(setor.boxes).forEach(bid => bxs.add(`${sKey}§${bid}`))
         })
       })
     })
     setExpandedEmpresas(emps); setExpandedDepts(depts); setExpandedSetores(sets)
-    setExpandedBoxes(bxs); setExpandedCargos(cars)
+    setExpandedBoxes(bxs)
   }
 
   const recolherTudo = () => {
     setGrupoAberto(false)
     setExpandedEmpresas(new Set()); setExpandedDepts(new Set()); setExpandedSetores(new Set())
-    setExpandedBoxes(new Set()); setExpandedCargos(new Set())
+    setExpandedBoxes(new Set())
   }
 
   const totalColabs = useMemo(() =>
-    Object.values(tree).reduce((s,e)=>s+Object.values(e.depts).reduce((sd,d)=>sd+Object.values(d.setores).reduce((ss,st)=>ss+Object.values(st.boxes).reduce((sb,bx)=>sb+Object.values(bx.cargos).reduce((sc,ca)=>sc+Object.keys(ca.colabs).length,0),0),0),0),0),
+    Object.values(tree).reduce((s,e)=>s+Object.values(e.depts).reduce((sd,d)=>sd+Object.values(d.setores).reduce((ss,st)=>ss+Object.values(st.boxes).reduce((sb,bx)=>sb+Object.keys(bx.colabs).length,0),0),0),0),
     [tree])
 
   const setoresDoDepto = useMemo(()=>setores.filter(s=>s.departamento_id===form.departamento_id && s.tipo_setor==='consultoria'),[setores,form.departamento_id])
   const boxesDoSetor   = useMemo(()=>boxes.filter(b=>(Array.isArray(b.setor_ids)?b.setor_ids:[b.setor_id]).includes(form.setor_id)),[boxes,form.setor_id])
-  const cargosDoDepto  = useMemo(()=>cargos.filter(c=>(c.setor_ids||[]).some(sid=>setoresConsultoria.has(sid))),[cargos,setoresConsultoria])
+  const cargosPorId = useMemo(()=>Object.fromEntries(cargos.map(c=>[c.id,c])),[cargos])
+  // "Adicionar Consultor" só deve oferecer funcionários com cargo no agrupamento
+  // "Consultores de Serviços" — evita listar gente de outras funções por engano.
+  const agrupamentoConsultoresId = useMemo(
+    () => agrupamentosCargo.find(a => (a.nome_agrupamento_cargo || '').trim().toLowerCase() === 'consultores de serviços')?.id || null,
+    [agrupamentosCargo]
+  )
   const funcsEmp = useMemo(() => {
     let l=funcionarios
     if(form.empresa_id) l=l.filter(f=>f.empresa_id===form.empresa_id)
     if(form.departamento_id) l=l.filter(f=>Array.isArray(f.departamento_ids)?f.departamento_ids.includes(form.departamento_id):f.departamento_id===form.departamento_id)
     if(form.setor_id) l=l.filter(f=>Array.isArray(f.setor_ids)?f.setor_ids.includes(form.setor_id):f.setor_id===form.setor_id)
+    if(agrupamentoConsultoresId) l=l.filter(f=>cargosPorId[f.cargo_id]?.agrupamento_id===agrupamentoConsultoresId)
     return l
-  },[funcionarios,form.empresa_id,form.departamento_id,form.setor_id])
+  },[funcionarios,form.empresa_id,form.departamento_id,form.setor_id,cargosPorId,agrupamentoConsultoresId])
 
   const handleFormChange = async (e) => {
     const { name, value } = e.target
@@ -323,10 +312,10 @@ export default function MetasServicosConsultor() {
     if(name==='empresa_id') {
       const emp=empresas.find(x=>x.id===value)
       up.empresa_nome=emp?(emp.empresa_fantasia||emp.nome_empresa):''; up.colaborador_id=''; up.colaborador_nome=''
-      // Carrega totais mecânico para esta empresa
+      // Carrega linhas de mecânico desta empresa (pra filtrar pelo box selecionado)
       if(value && filtroAno) {
-        try { const t = await apiService.getMetasMecanicoTotaisPorMes(value, filtroAno); setMecTotaisModal(t) } catch {}
-      } else { setMecTotaisModal({}) }
+        try { setMecRowsModal(await apiService.getMetasMecanico(value, filtroAno)) } catch {}
+      } else { setMecRowsModal([]) }
     }
     if(name==='departamento_id') { const dep=departamentos.find(x=>x.id===value); up.departamento_nome=dep?.nome_departamento||''; up.setor_id=''; up.setor_nome=''; up.box_id=''; up.box_nome=''; up.cargo_id=''; up.cargo_nome='' }
     if(name==='setor_id') { const s=setores.find(x=>x.id===value); up.setor_nome=s?.nome_setor||''; up.box_id=''; up.box_nome=''; up.colaborador_id=''; up.colaborador_nome='' }
@@ -343,8 +332,8 @@ export default function MetasServicosConsultor() {
     setMesesForm(mesesVazios())
     setErroModal(null)
     if(filtroEmpresa) {
-      try { const t=await apiService.getMetasMecanicoTotaisPorMes(filtroEmpresa,filtroAno); setMecTotaisModal(t) } catch {}
-    } else { setMecTotaisModal({}) }
+      try { setMecRowsModal(await apiService.getMetasMecanico(filtroEmpresa, filtroAno)) } catch {}
+    } else { setMecRowsModal([]) }
     setModoModal('incluir')
     setModalAberto(true)
   }
@@ -379,8 +368,8 @@ export default function MetasServicosConsultor() {
     }))
     setErroModal(null)
     if (empId) {
-      try { const t = await apiService.getMetasMecanicoTotaisPorMes(empId, filtroAno); setMecTotaisModal(t) } catch {}
-    } else { setMecTotaisModal({}) }
+      try { setMecRowsModal(await apiService.getMetasMecanico(empId, filtroAno)) } catch {}
+    } else { setMecRowsModal([]) }
     setModoModal(modo)
     setModalAberto(true)
   }
@@ -391,7 +380,8 @@ export default function MetasServicosConsultor() {
   const boxSelecionadoNome = boxes.find(b => b.id === form.box_id)?.nome_box || ''
   const isFunBoxModal = boxSelecionadoNome.toLowerCase().includes('funilaria') || boxSelecionadoNome.toLowerCase().includes('pintura')
 
-  // Referência do modal: Funilaria/Pintura se box for funilaria, senão Mecânica + Terceiros
+  // Referência do modal: Funilaria/Pintura se box for funilaria, senão Mecânica (só do box
+  // selecionado, não da empresa toda) + Terceiros (Terceiros não tem box, então entra inteiro).
   const refModalPorMes = useMemo(() => {
     const result = {}
     if (isFunBoxModal) {
@@ -401,22 +391,18 @@ export default function MetasServicosConsultor() {
       }
     } else {
       const ter = totaisTer[form.empresa_id] || {}
+      const rowsDoBox = form.box_id
+        ? mecRowsModal.filter(r => (funcionarios.find(f => f.id === r.colaborador_id)?.box_id || r.box_id) === form.box_id)
+        : []
       for (let m = 1; m <= 12; m++) {
-        result[m] = (mecTotaisModal[m]?.servicos || 0) + (Number(ter[m]) || 0)
+        const doMes = rowsDoBox.filter(r => Number(r.mes) === m)
+        const servicos = doMes.reduce((s, r) => s + (Number(r.meta_servicos) || 0), 0)
+        const pecas    = doMes.reduce((s, r) => s + (Number(r.meta_pecas)    || 0), 0)
+        result[m] = servicos + pecas + (Number(ter[m]) || 0)
       }
     }
     return result
-  }, [mecTotaisModal, totaisTer, totaisFun, form.empresa_id, isFunBoxModal])
-
-  // Valor de referência por empresa/mês conforme filtroVisu
-  const getRefVal = (empId, mes) => {
-    const mec = totaisMec[empId]?.[mes] || {}
-    const ter = Number(totaisTer[empId]?.[mes]) || 0
-    const fun = totaisFun[empId]?.[mes] || {}
-    if (filtroVisu === 'servicos') return (mec.servicos || 0) + ter
-    if (filtroVisu === 'pecas')    return (mec.pecas    || 0) + (fun.pecas    || 0)
-    return (mec.servicos || 0) + (mec.pecas || 0) + ter + (fun.servicos || 0) + (fun.pecas || 0)
-  }
+  }, [mecRowsModal, totaisTer, totaisFun, funcionarios, form.empresa_id, form.box_id, isFunBoxModal])
 
   // Calcula meta = (mecânico serviços + terceiros) do mês × percentual/100
   const calcMetaConsultor = (mes, percentual) => {
@@ -469,7 +455,7 @@ export default function MetasServicosConsultor() {
   }
 
   const grupoMeses = aggTree(tree)
-  const NCOLS = 16
+  const NCOLS = 15
 
   return (
     <div className="flex flex-col h-full p-6 gap-4">
@@ -494,9 +480,6 @@ export default function MetasServicosConsultor() {
               </button>
             ))}
           </div>
-          <button onClick={() => navigate('/metas/gestao-aprovacao')} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-indigo-300 bg-indigo-50 text-indigo-700 text-sm font-medium hover:bg-indigo-100 transition-colors">
-            <ClipboardCheck size={16} /> Gestão de Aprovação
-          </button>
           {canEdit && <button onClick={abrirIncluir} className={BTN_PRI}><Plus size={16}/> Adicionar Consultor</button>}
         </div>
       </div>
@@ -539,7 +522,6 @@ export default function MetasServicosConsultor() {
                 {MESES_ABR.map(m => <th key={m} className="px-1 py-2.5 text-center font-semibold text-slate-600 uppercase border-b border-slate-200 w-24">{m}</th>)}
                 <th className="px-2 py-2.5 text-center font-semibold text-indigo-700 uppercase border-b border-slate-200 w-28 bg-indigo-50">Total Ano</th>
                 <th className="px-2 py-2.5 text-center font-semibold text-slate-600 uppercase border-b border-slate-200 w-36">Situação</th>
-                <th className="px-2 py-2.5 text-center font-semibold text-slate-600 uppercase border-b border-slate-200 w-14">Ações</th>
               </tr>
             </thead>
             <tbody>
@@ -563,7 +545,7 @@ export default function MetasServicosConsultor() {
                       const mecEmp=totaisMec[empId]||{}
                       // Todos os colabs desta empresa para calcular soma %
                       const allColabs = {}
-                      Object.values(emp.depts).forEach(d=>Object.values(d.setores).forEach(st=>Object.values(st.boxes).forEach(bx=>Object.values(bx.cargos).forEach(ca=>Object.entries(ca.colabs).forEach(([id,co])=>{allColabs[id]=co})))))
+                      Object.values(emp.depts).forEach(d=>Object.values(d.setores).forEach(st=>Object.values(st.boxes).forEach(bx=>Object.entries(bx.colabs).forEach(([id,co])=>{allColabs[id]=co}))))
                       const pctSoma = sumPctPorMes(allColabs)
 
                       return (
@@ -572,8 +554,8 @@ export default function MetasServicosConsultor() {
                             <td className="px-3 py-2 text-white font-bold sticky left-0 bg-indigo-700 z-10 whitespace-nowrap">
                               <div className="flex items-center gap-2 pl-4">{expandedEmpresas.has(empId)?<ChevronDown size={14}/>:<ChevronRight size={14}/>}{emp.nome}</div>
                             </td>
-                            {Array.from({length:12},(_,i)=>{const v=getRefVal(empId,i+1); return <td key={i} className="px-1 py-2 text-right text-xs font-semibold text-indigo-200 whitespace-nowrap">{v>0?fmtBRL(v):'—'}</td>})}
-                            <td className="px-2 py-2 text-right text-xs font-bold text-amber-300 bg-indigo-800 whitespace-nowrap">{fmtBRL(Array.from({length:12},(_,i)=>getRefVal(empId,i+1)).reduce((s,v)=>s+v,0))}</td>
+                            {empMeses.map((v,i)=><td key={i} className="px-1 py-2 text-right text-xs font-semibold text-indigo-200 whitespace-nowrap">{v>0?fmtBRL(v):'—'}</td>)}
+                            <td className="px-2 py-2 text-right text-xs font-bold text-amber-300 bg-indigo-800 whitespace-nowrap">{empTotal>0?fmtBRL(empTotal):'—'}</td>
                             <td colSpan="2"/>
                           </tr>
 
@@ -584,7 +566,7 @@ export default function MetasServicosConsultor() {
                             return (
                               <React.Fragment key={deptId}>
                                 <tr className="cursor-pointer bg-slate-200 hover:bg-slate-300 transition-colors" onClick={()=>toggle(expandedDepts,setExpandedDepts,dKey)}>
-                                  <td className="px-3 py-1.5 text-slate-800 font-bold sticky left-0 bg-slate-200 z-10 whitespace-nowrap"><div className="flex items-center gap-2 pl-8">{expandedDepts.has(dKey)?<ChevronDown size={13}/>:<ChevronRight size={13}/>}{dept.nome}</div></td>
+                                  <td className="px-3 py-1.5 text-slate-800 font-bold sticky left-0 bg-slate-200 z-10 whitespace-nowrap"><div className="flex items-center gap-2 pl-8">{expandedDepts.has(dKey)?<ChevronDown size={13}/>:<ChevronRight size={13}/>}<span className="text-slate-500 font-normal mr-0.5">Departamento:</span><span className="font-bold">{dept.nome}</span></div></td>
                                   {dMeses.map((v,i)=><td key={i} className="px-1 py-1.5 text-right text-xs font-semibold text-slate-700 whitespace-nowrap">{v>0?fmtBRL(v):'—'}</td>)}
                                   <td className="px-2 py-1.5 text-right text-xs font-bold text-indigo-700 bg-indigo-50 whitespace-nowrap">{dTotal>0?fmtBRL(dTotal):'—'}</td>
                                   <td colSpan="2"/>
@@ -603,7 +585,8 @@ export default function MetasServicosConsultor() {
 
                                       {expandedSetores.has(sKey) && Object.entries(setor.boxes).map(([bId, box]) => {
                                         const bKey=`${sKey}§${bId}`; const bMeses=aggBox(box); const bTotal=sumArr(bMeses)
-                                        const isAuto = box.auto && Object.keys(box.cargos).length === 0
+                                        const pctBox = sumPctPorMes(box.colabs)
+                                        const isAuto = box.auto && Object.keys(box.colabs).length === 0
                                         const mecRef = mecEmp || {}
                                         const terRef = totaisTer[empId] || {}
                                         const funRef = totaisFun[empId] || {}
@@ -626,63 +609,56 @@ export default function MetasServicosConsultor() {
                                           <React.Fragment key={bId}>
                                             <tr className={`cursor-pointer border-b border-slate-100 transition-colors ${isAuto?'bg-emerald-50/40 hover:bg-emerald-50':'bg-white hover:bg-amber-50/30'}`} onClick={()=>toggle(expandedBoxes,setExpandedBoxes,bKey)}>
                                               <td className="px-3 py-1.5 sticky left-0 z-10 whitespace-nowrap" style={{background:'inherit'}}><div className="flex items-center gap-2 pl-16">{expandedBoxes.has(bKey)?<ChevronDown size={11}/>:<ChevronRight size={11}/>}<span className="text-slate-400 mr-0.5">Box:</span><span className={`font-semibold ${isAuto?'text-emerald-700':'text-slate-600'}`}>{box.nome}</span>{isAuto&&<span className="text-[9px] bg-emerald-100 text-emerald-600 px-1 rounded">auto</span>}</div></td>
-                                              {isAuto
-                                                ? Array.from({length:12},(_,i)=>{const v=getAutoVal(i+1); return <td key={i} className="px-1 py-1.5 text-right text-xs text-emerald-600 font-mono whitespace-nowrap">{v>0?fmtBRL(v):'—'}</td>})
-                                                : bMeses.map((v,i)=><td key={i} className="px-1 py-1.5 text-right text-xs text-slate-500 whitespace-nowrap">{v>0?fmtBRL(v):'—'}</td>)
-                                              }
+                                              {Array.from({length:12},(_,i)=>{
+                                                const v = isAuto ? getAutoVal(i+1) : bMeses[i]
+                                                const pct = pctBox[i]
+                                                const poolVal = getAutoVal(i+1)
+                                                return (
+                                                  <td key={i} className="px-1 py-1.5 text-right whitespace-nowrap">
+                                                    <div className={`text-xs font-mono ${isAuto?'text-emerald-600':'text-slate-500'}`}>{v>0?fmtBRL(v):'—'}</div>
+                                                    {poolVal > 0 && (
+                                                      <div className={`text-[10px] font-semibold ${pct>=99.9?'text-green-600':pct>0?'text-amber-600':'text-red-500'}`}>
+                                                        {fmtPct(pct)} distrib.
+                                                      </div>
+                                                    )}
+                                                  </td>
+                                                )
+                                              })}
                                               <td className="px-2 py-1.5 text-right text-xs font-semibold text-indigo-500 bg-indigo-50/40 whitespace-nowrap">{isAuto?fmtBRL(autoTotal):bTotal>0?fmtBRL(bTotal):'—'}</td>
                                               <td colSpan="2"/>
                                             </tr>
 
-                                            {expandedBoxes.has(bKey) && Object.entries(box.cargos).map(([cId, cargo]) => {
-                                              const carKey=`${bKey}§${cId}`; const carMeses=aggCargo(cargo); const carTotal=sumArr(carMeses)
+                                            {expandedBoxes.has(bKey) && Object.entries(box.colabs).map(([colabId, colab]) => {
+                                              const colMeses=aggColabs({x:colab}); const colTotal=sumArr(colMeses)
+                                              const mesesComValor=Object.values(colab.meses).filter(m=>Number(m.meta_faturamento)>0)
+                                              const aprovado=mesesComValor.length>0&&mesesComValor.every(m=>cellState(m.meta_faturamento,m.meta_aprovada)==='ok')
+                                              const statusLabel=aprovado?'APROVADO':'AGUARDANDO APROVACAO'
                                               return (
-                                                <React.Fragment key={cId}>
-                                                  <tr className="cursor-pointer bg-white hover:bg-indigo-50/20 border-b border-slate-100 transition-colors" onClick={()=>toggle(expandedCargos,setExpandedCargos,carKey)}>
-                                                    <td className="px-3 py-1 sticky left-0 bg-white z-10 whitespace-nowrap"><div className="flex items-center gap-2 pl-20">{expandedCargos.has(carKey)?<ChevronDown size={11}/>:<ChevronRight size={11}/>}<span className="text-slate-400 mr-0.5">Cargo:</span><span className="font-semibold text-slate-600">{cargo.nome}</span></div></td>
-                                                    {carMeses.map((v,i)=><td key={i} className="px-1 py-1 text-right text-xs text-slate-500 whitespace-nowrap">{v>0?fmtBRL(v):'—'}</td>)}
-                                                    <td className="px-2 py-1 text-right text-xs font-semibold text-indigo-500 bg-indigo-50/40 whitespace-nowrap">{carTotal>0?fmtBRL(carTotal):'—'}</td>
-                                                    <td colSpan="2"/>
-                                                  </tr>
-
-                                                  {expandedCargos.has(carKey) && Object.entries(cargo.colabs).map(([colabId, colab]) => {
-                                                    const colMeses=aggColabs({x:colab}); const colTotal=sumArr(colMeses)
-                                                    const mesesComValor=Object.values(colab.meses).filter(m=>Number(m.meta_faturamento)>0)
-                                                    const aprovado=mesesComValor.length>0&&mesesComValor.every(m=>cellState(m.meta_faturamento,m.meta_aprovada)==='ok')
-                                                    const statusLabel=aprovado?'APROVADO':'AGUARDANDO APROVACAO'
+                                                <tr key={colabId} className="border-b border-slate-100 hover:bg-indigo-50/30 transition-colors">
+                                                  <td className="px-3 py-2 sticky left-0 bg-white z-10">
+                                                    <div className="pl-20 font-semibold text-indigo-600 whitespace-nowrap cursor-pointer hover:text-indigo-800 hover:underline select-none"
+                                                      onClick={() => abrirVisualizar(empId, colabId)}>
+                                                      {colab.nome}
+                                                    </div>
+                                                  </td>
+                                                  {Array.from({length:12},(_,i)=>{
+                                                    const md=colab.meses[i+1]
                                                     return (
-                                                      <tr key={colabId} className="border-b border-slate-100 hover:bg-indigo-50/30 transition-colors">
-                                                        <td className="px-3 py-2 sticky left-0 bg-white z-10"><div className="pl-24 font-semibold text-slate-800 whitespace-nowrap">{colab.nome}</div></td>
-                                                        {Array.from({length:12},(_,i)=>{
-                                                          const md=colab.meses[i+1]
-                                                          return (
-                                                            <td key={i} className={`p-1 border-l border-slate-100 ${md?'':'bg-slate-50'}`}>
-                                                              {md ? (
-                                                                <div className="relative text-right">
-                                                                  <div className={`text-xs font-mono ${Number(md.meta_faturamento)>0?'text-slate-800':'text-slate-300'}`}>{Number(md.meta_faturamento)>0?fmtBRL(md.meta_faturamento):'—'}</div>
-                                                                  {Number(md.percentual)>0 && <div className="text-[10px] text-emerald-600 font-semibold">{fmtPct(md.percentual)}</div>}
-                                                                  {cellState(md.meta_faturamento,md.meta_aprovada)==='new'&&<span className="absolute -top-1 -right-1 inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-blue-500 text-white"><Sparkles size={8}/></span>}
-                                                                  {cellState(md.meta_faturamento,md.meta_aprovada)==='changed'&&<span className="absolute -top-1 -right-1 inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-amber-500 text-white"><Pencil size={8}/></span>}
-                                                                </div>
-                                                              ) : <span className="flex justify-center text-slate-300">—</span>}
-                                                            </td>
-                                                          )
-                                                        })}
-                                                        <td className="px-2 py-2 text-right text-xs font-bold text-indigo-700 bg-indigo-50 whitespace-nowrap">{colTotal>0?fmtBRL(colTotal):'—'}</td>
-                                                        <td className="px-2 py-2 text-center"><span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${STATUS_CLS[statusLabel]||'bg-slate-100 text-slate-500'}`}>{STATUS_DISPLAY[statusLabel] || statusLabel}</span></td>
-                                                        <td className="px-2 py-2 text-center">
-                                                          <PermissionActionButtons
-                                                            menuPath="/metas/pos-vendas/servicos"
-                                                            onView={() => abrirVisualizar(empId, colabId)}
-                                                            onEdit={() => abrirEditar(empId, colabId)}
-                                                            onDelete={() => { setColabExcluir({colaborador_id:colabId,empresa_id:empId,nome:colab.nome}); setModalExcluirAberto(true) }}
-                                                            className="justify-center"
-                                                          />
-                                                        </td>
-                                                      </tr>
+                                                      <td key={i} className={`p-1 border-l border-slate-100 ${md?'':'bg-slate-50'}`}>
+                                                        {md ? (
+                                                          <div className="relative text-right">
+                                                            <div className={`text-xs font-mono ${Number(md.meta_faturamento)>0?'text-slate-800':'text-slate-300'}`}>{Number(md.meta_faturamento)>0?fmtBRL(md.meta_faturamento):'—'}</div>
+                                                            {Number(md.percentual)>0 && <div className="text-[10px] text-emerald-600 font-semibold">{fmtPct(md.percentual)}</div>}
+                                                            {cellState(md.meta_faturamento,md.meta_aprovada)==='new'&&<span className="absolute -top-1 -right-1 inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-blue-500 text-white"><Sparkles size={8}/></span>}
+                                                            {cellState(md.meta_faturamento,md.meta_aprovada)==='changed'&&<span className="absolute -top-1 -right-1 inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-amber-500 text-white"><Pencil size={8}/></span>}
+                                                          </div>
+                                                        ) : <span className="flex justify-center text-slate-300">—</span>}
+                                                      </td>
                                                     )
                                                   })}
-                                                </React.Fragment>
+                                                  <td className="px-2 py-2 text-right text-xs font-bold text-indigo-700 bg-indigo-50 whitespace-nowrap">{colTotal>0?fmtBRL(colTotal):'—'}</td>
+                                                  <td className="px-2 py-2 text-center"><span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${STATUS_CLS[statusLabel]||'bg-slate-100 text-slate-500'}`}>{STATUS_DISPLAY[statusLabel] || statusLabel}</span></td>
+                                                </tr>
                                               )
                                             })}
                                           </React.Fragment>
@@ -725,7 +701,7 @@ export default function MetasServicosConsultor() {
                     {ANOS.map(a=><option key={a} value={a}>{a}</option>)}
                   </select></div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-3 gap-4">
                 <div><label className={LBL}>Departamento</label>
                   <div className={`${SEL} bg-slate-100 text-slate-500 cursor-not-allowed`}>OFICINA</div>
                 </div>
@@ -734,17 +710,10 @@ export default function MetasServicosConsultor() {
                     <option value="">Selecione...</option>
                     {setoresDoDepto.map(s=><option key={s.id} value={s.id}>{s.nome_setor}</option>)}
                   </select></div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
                 <div><label className={LBL}>Box</label>
-                  <select name="box_id" className={SEL} value={form.box_id} onChange={handleFormChange} disabled={!form.setor_id || modoModal !== 'incluir'}>
+                  <select name="box_id" className={SEL} value={form.box_id} onChange={handleFormChange} disabled={!form.setor_id || modoModal === 'visualizar'}>
                     <option value="">Nenhum</option>
                     {boxesDoSetor.map(b=><option key={b.id} value={b.id}>{b.nome_box}</option>)}
-                  </select></div>
-                <div><label className={LBL}>Cargo</label>
-                  <select name="cargo_id" className={SEL} value={form.cargo_id} onChange={handleFormChange} disabled={!form.departamento_id || modoModal !== 'incluir'}>
-                    <option value="">Selecione...</option>
-                    {cargosDoDepto.map(c=><option key={c.id} value={c.id}>{c.nome_cargo}</option>)}
                   </select></div>
               </div>
               <div><label className={LBL}>Consultor *</label>
@@ -811,13 +780,34 @@ export default function MetasServicosConsultor() {
                   </table>
                 </div>
                 {!form.empresa_id && <p className="text-xs text-slate-400 mt-1 flex items-center gap-1"><Info size={12}/> Selecione a empresa para ver os totais do mecânico como referência.</p>}
+                {form.empresa_id && !form.box_id && <p className="text-xs text-slate-400 mt-1 flex items-center gap-1"><Info size={12}/> Selecione o Box para ver a referência de distribuição daquele box.</p>}
               </div>
             </div>
             {erroModal && <div className="mx-6 mb-2 flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm"><AlertTriangle size={15}/> {erroModal}</div>}
-            <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-200">
-              <button onClick={()=>setModalAberto(false)} className={BTN_SEC} disabled={salvando}>{modoModal === 'visualizar' ? 'Fechar' : 'Cancelar'}</button>
-              {modoModal !== 'visualizar' && <button onClick={handleSalvar} className={BTN_PRI} disabled={salvando}>{salvando?<><Loader2 size={15} className="animate-spin"/> Salvando...</>:modoModal==='editar'?'Salvar':'Adicionar'}</button>}
-            </div>
+            {modoModal === 'visualizar' ? (
+              <div className="flex justify-between items-center gap-3 px-6 py-4 border-t border-slate-200">
+                <div className="flex gap-2">
+                  {canEdit && (
+                    <button onClick={() => setModoModal('editar')} className={BTN_SEC}>
+                      <Pencil size={14}/> Editar
+                    </button>
+                  )}
+                  {canDelete && (
+                    <button
+                      onClick={() => { setModalAberto(false); setColabExcluir({ colaborador_id: form.colaborador_id, empresa_id: form.empresa_id, nome: form.colaborador_nome }); setModalExcluirAberto(true) }}
+                      className="inline-flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors">
+                      <Trash2 size={14}/> Excluir
+                    </button>
+                  )}
+                </div>
+                <button onClick={()=>setModalAberto(false)} className={BTN_SEC}>Fechar</button>
+              </div>
+            ) : (
+              <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-200">
+                <button onClick={()=>setModalAberto(false)} className={BTN_SEC} disabled={salvando}>Cancelar</button>
+                <button onClick={handleSalvar} className={BTN_PRI} disabled={salvando}>{salvando?<><Loader2 size={15} className="animate-spin"/> Salvando...</>:modoModal==='editar'?'Salvar':'Adicionar'}</button>
+              </div>
+            )}
           </div>
         </div>
       )}

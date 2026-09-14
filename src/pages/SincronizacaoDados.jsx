@@ -38,9 +38,12 @@ const BTN_SEC = 'inline-flex items-center gap-2 bg-white border border-slate-300
 
 const diasVazios = () => Object.fromEntries(DIAS_SEMANA.map(d => [d.n, []]))
 
+// Fixa o fuso em Brasília na exibição — sem isso, o horário mostrado depende
+// do fuso do computador de quem está olhando, e pode não bater com o horário
+// configurado (que é sempre horário de Brasília).
 function formatDataHora(iso) {
   if (!iso) return '—'
-  return new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
+  return new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Sao_Paulo' })
 }
 
 function duracao(inicio, fim) {
@@ -263,6 +266,7 @@ export default function SincronizacaoDados() {
         <p className="text-sm text-slate-500 mt-1">
           Agenda a leitura periódica do SharePoint para o Dashboard de KPI e a Matriz KPIs — as telas passam a ler
           os dados já sincronizados em vez de acessar o SharePoint a cada carregamento.
+          Todos os horários desta tela (agendados e da última sincronização) são no fuso de Brasília.
         </p>
       </div>
 
@@ -330,7 +334,8 @@ export default function SincronizacaoDados() {
 
       {/* Cronograma semanal */}
       <div className="bg-white border border-slate-200 rounded-xl p-5">
-        <div className="text-sm font-semibold text-slate-800 mb-3">Cronograma Semanal</div>
+        <div className="text-sm font-semibold text-slate-800">Cronograma Semanal</div>
+        <div className="text-xs text-slate-500 mb-3">Horários no fuso de Brasília.</div>
 
         {canEdit && (
           <div className="flex items-end gap-2 mb-4 bg-slate-50 border border-slate-200 rounded-lg p-3">
@@ -380,7 +385,7 @@ export default function SincronizacaoDados() {
       {/* Datas específicas */}
       <div className="bg-white border border-slate-200 rounded-xl p-5">
         <div className="text-sm font-semibold text-slate-800 mb-1">Datas Específicas</div>
-        <div className="text-xs text-slate-500 mb-3">Rodadas avulsas, além do cronograma semanal (ex.: fechamento do mês).</div>
+        <div className="text-xs text-slate-500 mb-3">Rodadas avulsas, além do cronograma semanal (ex.: fechamento do mês). Horário no fuso de Brasília.</div>
 
         {canEdit && (
           <div className="flex items-end gap-2 mb-4 bg-slate-50 border border-slate-200 rounded-lg p-3">
