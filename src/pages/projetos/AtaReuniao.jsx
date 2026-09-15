@@ -352,26 +352,62 @@ export default function AtaReuniao() {
   const navigate = useNavigate()
   const pdfRef = useRef(null)
 
-  // ── locais (localStorage) ─────────────────────────────────────────────────
-  const [locais, setLocais] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('ata_locais') || '[]') } catch { return [] }
-  })
+  // ── locais (Supabase — compartilhado entre todos os acessos/dispositivos;
+  //    antes ficava só no localStorage do navegador, então um local cadastrado
+  //    num computador não aparecia em outro nem no acesso online) ────────────
+  const [locais, setLocais] = useState([])
   const [modalLocais, setModalLocais] = useState(false)
   const [novoLocal, setNovoLocal]     = useState('')
   const [editLocal, setEditLocal]     = useState(null)
 
-  const persistirLocais = (arr) => { setLocais(arr); localStorage.setItem('ata_locais', JSON.stringify(arr)) }
-  const adicionarLocal  = () => { const v = novoLocal.trim(); if (!v || locais.includes(v)) return; persistirLocais([...locais, v]); setNovoLocal('') }
-  const salvarEdicaoLocal = () => {
+  useEffect(() => {
+    (async () => {
+      // Migração única: locais que ficaram presos no localStorage deste
+      // navegador (de antes dessa correção) sobem pro banco, se ainda não
+      // existirem lá, pra não se perderem.
+      let antigos = []
+      try { antigos = JSON.parse(localStorage.getItem('ata_locais') || '[]') } catch { antigos = [] }
+      if (antigos.length > 0) {
+        const atuais = await apiService.getAtaLocais().catch(() => [])
+        const nomesAtuais = new Set(atuais.map(l => l.nome))
+        for (const nome of antigos) {
+          if (nome && !nomesAtuais.has(nome)) {
+            await apiService.createAtaLocal(nome).catch(() => {})
+          }
+        }
+        localStorage.removeItem('ata_locais')
+      }
+      apiService.getAtaLocais().then(setLocais).catch(() => {})
+    })()
+  }, [])
+
+  const adicionarLocal = async () => {
+    const v = novoLocal.trim()
+    if (!v || locais.some(l => l.nome === v)) return
+    try {
+      const novo = await apiService.createAtaLocal(v)
+      setLocais(prev => [...prev, novo].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR')))
+      setNovoLocal('')
+    } catch (err) { alert('Erro ao adicionar local: ' + err.message) }
+  }
+  const salvarEdicaoLocal = async () => {
     if (!editLocal) return
     const v = editLocal.valor.trim()
     if (!v) return
-    const arr = locais.map((l, i) => i === editLocal.idx ? v : l)
-    persistirLocais(arr)
-    if (form.local === locais[editLocal.idx]) set('local', v)
-    setEditLocal(null)
+    try {
+      await apiService.updateAtaLocal(editLocal.id, v)
+      const nomeAntigo = locais.find(l => l.id === editLocal.id)?.nome
+      setLocais(prev => prev.map(l => l.id === editLocal.id ? { ...l, nome: v } : l).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR')))
+      if (form.local === nomeAntigo) set('local', v)
+      setEditLocal(null)
+    } catch (err) { alert('Erro ao editar local: ' + err.message) }
   }
-  const excluirLocal = (idx) => persistirLocais(locais.filter((_, i) => i !== idx))
+  const excluirLocal = async (id) => {
+    try {
+      await apiService.deleteAtaLocal(id)
+      setLocais(prev => prev.filter(l => l.id !== id))
+    } catch (err) { alert('Erro ao excluir local: ' + err.message) }
+  }
 
   // ── lista de atas salvas ──────────────────────────────────────────────────
   const [atas, setAtas]               = useState([])
@@ -669,7 +705,7 @@ export default function AtaReuniao() {
             <select value={form.local} onChange={e => set('local', e.target.value)}
               className={`flex-1 text-sm px-3 py-2 border rounded-md focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 outline-none ${form.local ? 'border-blue-400 bg-blue-50 text-blue-800 font-medium' : 'border-slate-200 bg-white'}`}>
               <option value="">Selecionar local...</option>
-              {locais.map((l, i) => <option key={i} value={l}>{l}</option>)}
+              {locais.map(l => <option key={l.id} value={l.nome}>{l.nome}</option>)}
             </select>
             <button onClick={() => { setNovoLocal(''); setEditLocal(null); setModalLocais(true) }}
               title="Adicionar novo local"
@@ -1157,9 +1193,9 @@ export default function AtaReuniao() {
               <div className="space-y-1.5 max-h-60 overflow-y-auto">
                 {locais.length === 0 ? (
                   <p className="text-xs text-slate-400 italic text-center py-4">Nenhum local cadastrado ainda.</p>
-                ) : locais.map((l, idx) => (
-                  <div key={idx} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 group">
-                    {editLocal?.idx === idx ? (
+                ) : locais.map(l => (
+                  <div key={l.id} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 group">
+                    {editLocal?.id === l.id ? (
                       <>
                         <input type="text" value={editLocal.valor}
                           onChange={e => setEditLocal(ev => ({ ...ev, valor: e.target.value }))}
@@ -1176,18 +1212,18 @@ export default function AtaReuniao() {
                     ) : (
                       <>
                         <MapPin className="h-3 w-3 text-slate-400 shrink-0" />
-                        <span className="flex-1 text-xs text-slate-700 truncate">{l}</span>
+                        <span className="flex-1 text-xs text-slate-700 truncate">{l.nome}</span>
                         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button onClick={() => setEditLocal({ idx, valor: l })} title="Editar"
+                          <button onClick={() => setEditLocal({ id: l.id, valor: l.nome })} title="Editar"
                             className="p-1 text-slate-400 hover:text-blue-600 transition-colors">
                             <Pencil className="h-3.5 w-3.5" />
                           </button>
-                          <button onClick={() => excluirLocal(idx)} title="Excluir"
+                          <button onClick={() => excluirLocal(l.id)} title="Excluir"
                             className="p-1 text-slate-400 hover:text-red-500 transition-colors">
                             <Trash2 className="h-3.5 w-3.5" />
                           </button>
                         </div>
-                        <button onClick={() => { set('local', l); setModalLocais(false) }}
+                        <button onClick={() => { set('local', l.nome); setModalLocais(false) }}
                           title="Usar este local"
                           className="px-2 py-0.5 rounded text-[10px] font-semibold text-blue-600 hover:bg-blue-50 transition-colors shrink-0">
                           Usar

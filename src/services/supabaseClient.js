@@ -3503,6 +3503,45 @@ export const apiService = {
     return data || []
   },
 
+  getAtaLocais: async () => {
+    const { data, error } = await supabase
+      .from('proj_ata_locais')
+      .select('*')
+      .eq('ativo', true)
+      .order('nome', { ascending: true })
+    if (error) throw error
+    return data || []
+  },
+
+  createAtaLocal: async (nome) => {
+    const { data, error } = await supabase
+      .from('proj_ata_locais')
+      .insert([{ nome }])
+      .select()
+      .single()
+    if (error) throw error
+    return data
+  },
+
+  updateAtaLocal: async (id, nome) => {
+    const { data, error } = await supabase
+      .from('proj_ata_locais')
+      .update({ nome })
+      .eq('id', id)
+      .select()
+      .single()
+    if (error) throw error
+    return data
+  },
+
+  deleteAtaLocal: async (id) => {
+    const { error } = await supabase
+      .from('proj_ata_locais')
+      .delete()
+      .eq('id', id)
+    if (error) throw error
+  },
+
   getAtasReuniao: async () => {
     const { data, error } = await supabase
       .from('proj_atas_reuniao')
