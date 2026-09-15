@@ -247,11 +247,16 @@ Resultado final = **Fonte A + Fonte B** (soma período a período)
 
 | # | Indicador | Status |
 |---|-----------|--------|
-| 1 | O.S. Garantia em Aberto | ⏳ Pendente |
-| 2 | Total de Agendamentos | ⏳ Pendente |
-| 3 | % Agendamentos Convertidos | ⏳ Pendente |
-| 4 | Auditorias por Casa | ⏳ Pendente |
-| 5 | NPS (Net Promoter Score) | ⏳ Pendente |
+| 1 | O.S. de Garantia em Aberto | ⏳ Pendente |
+| 2 | Agendamentos Ativos | ⏳ Pendente |
+| 3 | Total Agendamento | ⏳ Pendente |
+| 4 | Penetração Plano de Manutenção | ⏳ Pendente |
+| 5 | Recusa de Garantia | ⏳ Pendente |
+| 6 | Auditoria Padrão DOURADOS | ⏳ Pendente |
+| 7 | Auditoria Padrão TRÊS LAGOAS | ⏳ Pendente |
+| 8 | Auditoria Padrão CAMPO GRANDE | ⏳ Pendente |
+| 9 | Auditoria Padrão CHAPADÃO | ⏳ Pendente |
+| 10 | NPS Fábrica | ⏳ Pendente |
 
 ---
 
