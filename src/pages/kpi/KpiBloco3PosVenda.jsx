@@ -106,12 +106,21 @@ function QuadroTable({ quadro, activePeriods, year, onSalvarPeso }) {
   const subheadCls  = COR_SUBHEADER[quadro.cor] ?? COR_SUBHEADER.blue
   const colSpanBase = 4
 
+  // Peso de cada indicador deve somar 100% dentro do quadro do gerente.
+  const totalPeso = Math.round(quadro.kpis.reduce((s, k) => s + (k.pesoObj ?? 0), 0) * 100)
+  const totalOk   = totalPeso === 100
+
   return (
     <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
       {/* Cabeçalho do quadro — título do gerente */}
       <div className={`px-5 py-3 flex items-center gap-2 ${headerCls}`}>
         <Wrench className="h-4 w-4 opacity-80" />
         <span className="text-sm font-bold tracking-wide">{quadro.tituloGerente}</span>
+        <span className={`ml-auto text-[11px] font-semibold px-2 py-0.5 rounded-full ${
+          totalOk ? 'bg-white/20 text-white' : 'bg-red-500 text-white'
+        }`} title="Soma dos pesos dos indicadores desse gerente — deve fechar em 100%">
+          Total pesos: {totalPeso}%{!totalOk && ' ⚠'}
+        </span>
       </div>
 
       <div className="overflow-x-auto">
