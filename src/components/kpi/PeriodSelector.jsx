@@ -92,7 +92,11 @@ export function usePeriodSelector(pageKey, defaultViewMode = 'mensal') {
   }, [viewMode, visibleT, visibleM, weekMonth, visibleS])
 
   const toggleT = (p) => setVisibleT(prev => ({ ...prev, [p]: !prev[p] }))
-  const toggleM = (p) => setVisibleM(prev => ({ ...prev, [p]: !prev[p] }))
+  // Clique normal seleciona só esse mês; Ctrl/Cmd+clique acrescenta ou remove
+  // esse mês da seleção atual (multi-seleção).
+  const toggleM = (p, multi) => setVisibleM(prev => multi
+    ? { ...prev, [p]: !prev[p] }
+    : Object.fromEntries(M_PERIODS.map(m => [m, m === p])))
   const toggleS = (p) => setVisibleS(prev => ({ ...prev, [p]: !prev[p] }))
 
   const selectAllT = () => setVisibleT(Object.fromEntries(T_PERIODS.map(p => [p, true])))
@@ -176,9 +180,14 @@ export default function PeriodSelector({ state, hideLegend = false, modes = VIEW
 
         {viewMode === 'mensal' && (
           <>
-            <span className="text-xs text-slate-400 ml-2 mr-1">Meses:</span>
+            <span className="text-xs text-slate-400 ml-2 mr-1" title="Ctrl+clique para selecionar vários meses">Meses:</span>
             {M_PERIODS.map(p => (
-              <button key={p} onClick={() => toggleM(p)} className={`${btnBase} ${visibleM[p] ? btnOn : btnOff}`}>
+              <button
+                key={p}
+                onClick={e => toggleM(p, e.ctrlKey || e.metaKey)}
+                title="Ctrl+clique para selecionar vários meses"
+                className={`${btnBase} ${visibleM[p] ? btnOn : btnOff}`}
+              >
                 {M_LABELS[p]}
               </button>
             ))}

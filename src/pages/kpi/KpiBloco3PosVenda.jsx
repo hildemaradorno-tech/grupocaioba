@@ -1,5 +1,5 @@
 ﻿import React, { useState } from 'react'
-import { Wrench } from 'lucide-react'
+import { Wrench, Info } from 'lucide-react'
 import { MOCK_BLOCO3_POS_VENDA } from '../../data/kpiMockData'
 import PeriodSelector, { usePeriodSelector } from '../../components/kpi/PeriodSelector'
 import { getPeriodData, getPeriodLabel } from '../../utils/kpiPeriods'
@@ -9,6 +9,33 @@ import DataSourceBadge from '../../components/kpi/DataSourceBadge'
 import { useKpiYear } from '../../context/KpiYearContext'
 
 const BLOCO_PESOS = 'bloco3-pos-venda'
+
+// Explicação de como o Realizado de cada indicador é calculado — ver KPI_INDICADORES.md
+// pro detalhamento completo de fonte/filtro/coluna. Indicadores sem fórmula definida
+// ainda mostram um aviso genérico em vez de sumir o ícone.
+const EXPLICACAO_PADRAO = 'Fonte e fórmula deste indicador ainda não foram definidas — o Realizado ainda não vem do SharePoint.'
+const EXPLICACOES = {
+  'Faturamento Total Oficina (Peças + Serviços)': 'Soma do faturamento líquido de Peças/Serviços de Oficina (RPR001: vendas − devoluções) com o faturamento bruto de Serviços do Recepcionista (tot_serv), por período.',
+  'Margem Bruta Serviços': 'Margem bruta dos Serviços do Recepcionista ÷ Faturamento bruto de Serviços (tot_serv) × 100.',
+  'Margem Bruta Peças Oficina': 'Lucro líquido das Peças de Oficina (RPR001: NFItem_VlMargemCont, vendas − devoluções) ÷ Faturamento líquido total da Oficina (NFItem_VlTotal) × 100.',
+  'Faturamento Oficina (Serviços)': 'Faturamento bruto de Serviços do Recepcionista (tot_serv) da casa, filtrado pela empresa.',
+  'Faturamento Balcão': 'Faturamento líquido de Peças de Balcão (RPR001: vendas − devoluções, fora de O.S. de oficina).',
+  'Margem Bruta Peças Balcão': 'Margem de contribuição líquida das Peças de Balcão ÷ Faturamento líquido de Balcão × 100.',
+  'Eficácia da Oficina': 'Horas vendidas (ROF042) ÷ Horas disponíveis (ROF096) × 100.',
+  'Produtividade da Oficina': 'Horas aplicadas/total (ROF042) ÷ Horas disponíveis (ROF096) × 100.',
+}
+
+function InfoIndicador({ indicador }) {
+  const texto = EXPLICACOES[indicador] || EXPLICACAO_PADRAO
+  return (
+    <span className="relative inline-flex group/info align-middle ml-1.5">
+      <Info className="h-3.5 w-3.5 text-slate-400 hover:text-blue-500 cursor-help shrink-0" />
+      <span className="pointer-events-none absolute left-1/2 -translate-x-1/2 top-full mt-1.5 w-64 rounded-lg bg-slate-800 text-white text-[11px] leading-snug px-2.5 py-2 opacity-0 group-hover/info:opacity-100 transition-opacity z-20 whitespace-normal text-left shadow-lg">
+        {texto}
+      </span>
+    </span>
+  )
+}
 
 // Paleta de cores por gerente (cabeçalho da seção)
 const COR_HEADER = {
@@ -153,7 +180,10 @@ function QuadroTable({ quadro, activePeriods, year, onSalvarPeso }) {
             {quadro.kpis.map(row => (
               <tr key={row.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
                 <td className="px-3 py-2.5 text-center text-slate-400 font-mono">{row.id}</td>
-                <td className="px-4 py-2.5 font-medium text-slate-700 sticky left-0 bg-white">{row.indicador}</td>
+                <td className="px-4 py-2.5 font-medium text-slate-700 sticky left-0 bg-white">
+                  {row.indicador}
+                  <InfoIndicador indicador={row.indicador} />
+                </td>
                 <td className="px-2 py-2.5 text-center font-bold text-slate-600">{row.orientacao}</td>
                 <td className="px-3 py-2.5 text-center text-slate-500">
                   <PesoInput value={row.pesoObj} onSave={peso => onSalvarPeso(quadro.tituloGerente, row.id, peso)} />
