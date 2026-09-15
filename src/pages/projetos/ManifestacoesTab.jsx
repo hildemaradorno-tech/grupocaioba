@@ -299,7 +299,7 @@ export default function ManifestacoesTab({ projeto, onReload, convidados = [], m
                   <span className="flex items-center gap-1 text-slate-300">
                     Prazo: <strong className="text-white ml-0.5">{fmtData(projeto.manifestacao_prazo)}</strong>
                     <span className="ml-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-green-500/30 text-green-300 border border-green-500/40">Aberto</span>
-                    {isAdmin && (
+                    {podeGerenciar && (
                       <button
                         onClick={() => { setNovoPrazo(projeto.manifestacao_prazo || ''); setEditandoPrazo(true) }}
                         className="ml-1 p-0.5 rounded hover:bg-slate-600 transition-colors"
@@ -316,10 +316,13 @@ export default function ManifestacoesTab({ projeto, onReload, convidados = [], m
                       type="date"
                       value={novoPrazo}
                       onChange={e => setNovoPrazo(e.target.value)}
-                      className="text-xs px-1.5 py-0.5 rounded bg-slate-600 border border-slate-400 text-white focus:outline-none focus:border-slate-200"
+                      onClick={e => e.target.showPicker?.()}
+                      style={{ colorScheme: 'dark' }}
+                      className="text-xs px-2 py-0.5 rounded bg-white border border-slate-300 text-slate-800 focus:outline-none focus:border-blue-400"
                     />
-                    <button onClick={salvarPrazo} disabled={salvandoPrazo || !novoPrazo} className="p-0.5 rounded hover:bg-slate-600 disabled:opacity-50" title="Confirmar">
-                      {salvandoPrazo ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5 text-green-400" />}
+                    <button onClick={salvarPrazo} disabled={salvandoPrazo || !novoPrazo} className="flex items-center gap-1 px-2 py-0.5 rounded bg-green-500 hover:bg-green-600 text-white text-[11px] font-semibold disabled:opacity-50 transition-colors" title="Confirmar">
+                      {salvandoPrazo ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+                      Salvar
                     </button>
                     <button onClick={() => setEditandoPrazo(false)} className="p-0.5 rounded hover:bg-slate-600" title="Cancelar">
                       <XIcon className="h-3.5 w-3.5 text-red-400" />

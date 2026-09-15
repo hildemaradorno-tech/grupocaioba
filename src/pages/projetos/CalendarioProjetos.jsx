@@ -100,11 +100,13 @@ const addDaysLocal = (d, n) => { const dt = new Date(d); dt.setDate(dt.getDate()
 export default function CalendarioProjetos({ abaInicial = 'lista' }) {
   const navigate = useNavigate()
   const location = useLocation()
-  const { isAdmin, empresasPermitidas, departamentosPermitidosEfetivos, hasActionOrDefault, hasPermission, user } = useAuth()
+  const { isAdmin, empresasPermitidas, departamentosPermitidosEfetivos, projetosDeptoModoEfetivo, hasActionOrDefault, hasPermission, user } = useAuth()
   const ctx = useProjetosFiltros()
   const { modoVerTodos, setModoVerTodos } = ctx
+  const canVerTodos       = !isAdmin && hasActionOrDefault('projetos', 'ver_todos_projetos')
   const canEditarProjeto  = !modoVerTodos && hasActionOrDefault('projetos', 'editar')
-  const canEditarTarefa   = !modoVerTodos && hasActionOrDefault('projetos', 'editar_tarefa')
+  const canEditarTarefa        = !modoVerTodos && hasActionOrDefault('projetos', 'editar_tarefa')
+  const canAlterarStatusTarefa = hasActionOrDefault('projetos', 'alterar_status_tarefa')
   const canIniciarTarefa  = !modoVerTodos && hasActionOrDefault('projetos', 'iniciar_tarefa')
   const canConcluirTarefa = !modoVerTodos && hasActionOrDefault('projetos', 'concluir_tarefa')
   const hoje = new Date()
@@ -533,8 +535,9 @@ export default function CalendarioProjetos({ abaInicial = 'lista' }) {
       let key
       if (visualizacaoLista === 'responsavel')   key = t.responsavel_nome          || '— Sem responsável —'
       else if (visualizacaoLista === 'resp_projeto') key = t.projeto_responsavel_nome  || '— Sem responsável —'
-      else if (visualizacaoLista === 'data')    key = t.data_fim                  || '— Sem data —'
+      else if (visualizacaoLista === 'data')    key = t.data_fim                  || null
       else                                       key = t.projeto_nome              || '— Sem projeto —'
+      if (key === null) return // modo data: ignora tarefas sem data
       if (!map[key]) map[key] = []
       map[key].push(t)
     })
@@ -544,8 +547,8 @@ export default function CalendarioProjetos({ abaInicial = 'lista' }) {
       if (visualizacaoLista === 'data') return a < b ? -1 : a > b ? 1 : 0
       return a.localeCompare(b, 'pt-BR')
     })
-    // No modo Por Projeto, ordena as tarefas de cada grupo por etapa A→Z (nulls no fim)
-    if (visualizacaoLista === 'projeto') {
+    // Ordena tarefas por etapa (nulls no fim) no modo Projeto e no modo Data
+    if (visualizacaoLista === 'projeto' || visualizacaoLista === 'data') {
       grupos.forEach(([, tarefas]) => {
         tarefas.sort((a, b) => {
           if (a.etapa == null && b.etapa == null) return 0
@@ -679,7 +682,7 @@ export default function CalendarioProjetos({ abaInicial = 'lista' }) {
               <BarChart2 className="h-4 w-4 text-indigo-500" /> Ir para Dashboard
             </button>
           )}
-          {departamentosPermitidosEfetivos?.size > 0 && (
+          {canVerTodos && (
             <button
               onClick={() => setModoVerTodos(!modoVerTodos)}
               className={`flex items-center gap-2 text-xs font-semibold px-3 py-2 rounded-md shadow-sm border transition-colors ${
@@ -896,7 +899,21 @@ export default function CalendarioProjetos({ abaInicial = 'lista' }) {
                               )}
                             </td>
                           )}
-                          <td className="px-4 py-2.5 font-medium text-slate-800">{t.nome}</td>
+                          <td className="px-4 py-2.5 font-medium text-slate-800">
+                            <span>{t.nome}</span>
+                            {t.proj_deliberacoes?.length > 0 && (
+                              <div className="mt-1.5 space-y-1">
+                                {t.proj_deliberacoes.map(d => (
+                                  <div key={d.id} className="flex gap-1.5 text-[10px] bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                                    <span className="text-amber-600 font-semibold shrink-0 whitespace-nowrap">
+                                      {d.data ? new Date(d.data + 'T12:00:00').toLocaleDateString('pt-BR') : '—'}
+                                    </span>
+                                    <span className="text-slate-600 leading-snug">{d.texto}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </td>
                           {visualizacaoLista !== 'projeto' && (
                             <td className="px-4 py-2.5">
                               {canEditarProjeto ? (
@@ -1212,6 +1229,7 @@ export default function CalendarioProjetos({ abaInicial = 'lista' }) {
           fases={optsFase}
           empresas={optsEmp}
           areas={optsArea}
+          canAlterarStatus={canAlterarStatusTarefa}
           onClose={() => setModalEditarTarefa(null)}
           onSaved={() => { setModalEditarTarefa(null); recarregarDados() }}
           onNavigate={(t) => setModalEditarTarefa(t)}

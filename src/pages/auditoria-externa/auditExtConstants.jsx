@@ -74,6 +74,19 @@ export function calcularPercentualPlano(plano) {
   return Math.max(0, Math.min(100, Math.floor((corrigido / total) * 100)))
 }
 
+// Escopo de acesso por Empresa/Departamento (mesmo mecanismo de "Acesso por
+// Empresa"/"Acesso por Departamento" já usado em Gestão de Projetos, vindo do
+// Grupo de Acesso do usuário). Set vazio = sem restrição (admin ou grupo liberado
+// pra tudo). `empresaId` aqui é sempre o id de proj_empresas (o mesmo da Empresa
+// do Ciclo) — não confundir com o empresa_id (dim_empresas) da Empresa da Ação.
+export function empresaNoEscopo(empresaId, empresasPermitidas, isAdminEfetivo) {
+  return !!isAdminEfetivo || !empresasPermitidas || empresasPermitidas.size === 0 || empresasPermitidas.has(empresaId)
+}
+
+export function departamentoNoEscopo(nome, departamentosPermitidos, isAdminEfetivo) {
+  return !!isAdminEfetivo || !departamentosPermitidos || departamentosPermitidos.size === 0 || (!!nome && departamentosPermitidos.has(nome))
+}
+
 const STATUS_PRIORIDADE = { pendente: 0, em_andamento: 1, concluido: 2, validado_auditoria: 3 }
 
 // Status representativo da divergência = o status menos avançado entre as

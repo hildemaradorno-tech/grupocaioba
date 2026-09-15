@@ -134,7 +134,7 @@ export default function HondaGarantiasReceber() {
     setLoading(true)
     setErro(null)
     try {
-      const r = await fetch(`${BACKEND_URL}/api/honda/garantias-a-receber`)
+      const r = await fetch(`${BACKEND_URL}/api/honda/contas-a-receber`)
       if (!r.ok) {
         const body = await r.json().catch(() => ({}))
         throw new Error(body.message || `Erro ${r.status} ao consultar a API.`)
@@ -296,7 +296,7 @@ export default function HondaGarantiasReceber() {
         <div>
           <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
             <Bike className="h-5 w-5 text-red-600" />
-            Controle de Processos HONDA
+            Contas a Receber HONDA
             <span className="relative group cursor-help">
               <Info className="h-3.5 w-3.5 text-slate-400" />
               <span className="absolute top-full left-0 mt-2 w-64 text-[10px] text-white bg-slate-700 rounded px-2 py-1.5 leading-relaxed opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 normal-case font-normal tracking-normal">

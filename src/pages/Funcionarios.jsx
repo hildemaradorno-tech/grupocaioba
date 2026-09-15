@@ -171,8 +171,6 @@ const FORM_VAZIO = {
   cargo_nome: '',
   departamento_ids: [],
   setor_ids: [],
-  box_id: '',
-  box_nome: '',
   data_admissao: '',
   data_demissao: '',
   situacao_funcionario: '',
@@ -244,7 +242,6 @@ export default function Funcionarios() {
   const [dados, setDados] = useState([])
   const [empresas, setEmpresas] = useState([])
   const [cargos, setCargos] = useState([])
-  const [boxes, setBoxes] = useState([])
   const [departamentos, setDepartamentos] = useState([])
   const [setores, setSetores] = useState([])
   const [politicasTodas, setPoliticasTodas] = useState([])
@@ -259,11 +256,10 @@ export default function Funcionarios() {
   // colFiltros persiste no localStorage — quem já usava a tela antes do filtro de CNPJ
   // existir tem um objeto salvo sem essa chave, então nunca confia direto em
   // colFiltros.cnpj (undefined quebraria .length/.includes); sempre usa cnpjFiltro.
-  const [colFiltros, setColFiltros] = useSessionState('func_colfiltros', { nome: '', empresa: [], cnpj: [], cargo: [], departamento: [], setor: [], box: [], ativo: [] })
+  const [colFiltros, setColFiltros] = useSessionState('func_colfiltros', { nome: '', empresa: [], cnpj: [], cargo: [], departamento: [], setor: [], ativo: [] })
   const cnpjFiltro = colFiltros.cnpj || []
   const departamentoFiltro = colFiltros.departamento || []
   const setorFiltro = colFiltros.setor || []
-  const boxFiltro = colFiltros.box || []
 
   const [modalAberto, setModalAberto] = useSessionState('func_modal', false)
   const [modalExcluirAberto, setModalExcluirAberto] = useState(false)
@@ -292,11 +288,10 @@ export default function Funcionarios() {
     setLoading(true)
     setError(null)
     try {
-      const [funcs, emps, carg, box, depts, sets, politicas] = await Promise.all([
+      const [funcs, emps, carg, depts, sets, politicas] = await Promise.all([
         apiService.getFuncionarios(),
         apiService.getEmpresas(),
         apiService.getCargos(),
-        apiService.getBox(),
         apiService.getDepartamentos(),
         apiService.getSetores(),
         apiService.getPoliticaComissao(),
@@ -336,7 +331,6 @@ export default function Funcionarios() {
       setDados(funcsEnriquecidos)
       setEmpresas([...emps].sort((a, b) => (a.empresa_fantasia || '').localeCompare(b.empresa_fantasia || '', 'pt-BR')))
       setCargos([...carg].sort((a, b) => (a.nome_cargo || '').localeCompare(b.nome_cargo || '', 'pt-BR')))
-      setBoxes(box.filter(b => b.ativo !== false))
       setDepartamentos(depts)
       setSetores(sets)
       setPoliticasTodas(politicas)
@@ -404,18 +398,12 @@ export default function Funcionarios() {
     const currentEmpresaId = form.empresa_id
     const cargoSetorIds = cargo?.setor_ids || []
     const cargoDeptoIds = cargo?.departamento_ids || []
-    // Deriva box a partir dos setores do cargo
-    const boxDoCargo = cargoSetorIds.length > 0
-      ? boxes.find(b => Array.isArray(b.setor_ids) && b.setor_ids.some(sid => cargoSetorIds.includes(sid)))
-      : null
     setForm(prev => ({
       ...prev,
       cargo_id: cargoId,
       cargo_nome: cargo?.nome_cargo || '',
       departamento_ids: cargoDeptoIds,
       setor_ids: cargoSetorIds,
-      box_id: boxDoCargo?.id || '',
-      box_nome: boxDoCargo?.nome_box || '',
       ...clearPolitica(),
     }))
     if (cargoId && currentEmpresaId) buscarPolitica(cargoId, getAgrupamentoId(currentEmpresaId))
@@ -461,9 +449,6 @@ export default function Funcionarios() {
     const cargo = cargos.find(c => c.id === item.cargo_id)
     const cargoSetorIds = cargo?.setor_ids || item.setor_ids || []
     const cargoDeptoIds = cargo?.departamento_ids || item.departamento_ids || []
-    const boxDoCargo = item.box_id
-      ? boxes.find(b => b.id === item.box_id)
-      : null
     setForm({
       nome_funcionario: item.nome_funcionario || '',
       codigo_funcionario: item.codigo_funcionario || '',
@@ -474,8 +459,6 @@ export default function Funcionarios() {
       cargo_nome: item.cargo_nome || '',
       departamento_ids: cargoDeptoIds,
       setor_ids: cargoSetorIds,
-      box_id: boxDoCargo?.id || '',
-      box_nome: boxDoCargo?.nome_box || '',
       data_admissao: item.data_admissao || '',
       data_demissao: item.data_demissao || '',
       situacao_funcionario: item.situacao_funcionario || '',
@@ -576,8 +559,6 @@ export default function Funcionarios() {
         cargo_nome: form.cargo_nome || null,
         departamento_ids: form.departamento_ids,
         setor_ids: form.setor_ids,
-        box_id: form.box_id || null,
-        box_nome: form.box_nome || null,
         data_admissao: form.data_admissao || null,
         data_demissao: form.data_demissao || null,
         situacao_funcionario: form.situacao_funcionario || null,
@@ -870,11 +851,10 @@ export default function Funcionarios() {
     fmtCnpj(empresas.find(e => e.id === f.empresa_id)?.cnpj) || null,
     [empresas])
 
-  // Padrão "Sem X" — funcionário sem departamento/setor/box preenchido ganha uma opção própria
+  // Padrão "Sem X" — funcionário sem departamento/setor preenchido ganha uma opção própria
   // no filtro, em vez de simplesmente sumir do seletor sem dar como localizar esses registros.
   const SEM_DEPARTAMENTO = 'Sem departamento'
   const SEM_SETOR = 'Sem setor'
-  const SEM_BOX = 'Sem box'
   // Departamento/Setor são definidos no Cargo — o funcionário só guarda uma cópia desses ids
   // (gravada da última vez que o cadastro dele foi salvo). Se o Cargo mudar de
   // departamento/setor depois, essa cópia fica desatualizada, então sempre prioriza o valor
@@ -889,7 +869,6 @@ export default function Funcionarios() {
     const n = setorIdsDe(f).map(id => setores.find(s => s.id === id)?.nome_setor).filter(Boolean)
     return n.length > 0 ? n : [SEM_SETOR]
   }
-  const getBoxLabel = (f) => f.box_nome || SEM_BOX
   const comSemOpcao = (nomes, semLabel, temAlgumVazio) => {
     const unicos = [...new Set(nomes.filter(n => n && n !== semLabel))].sort((a, b) => a.localeCompare(b, 'pt-BR'))
     return temAlgumVazio ? [semLabel, ...unicos] : unicos
@@ -905,9 +884,8 @@ export default function Funcionarios() {
     (ignorar === 'cargo' || colFiltros.cargo.length === 0 || colFiltros.cargo.includes(f.cargo_nome)) &&
     (ignorar === 'departamento' || departamentoFiltro.length === 0 || getDeptLabels(f).some(v => departamentoFiltro.includes(v))) &&
     (ignorar === 'setor' || setorFiltro.length === 0 || getSetorLabelsF(f).some(v => setorFiltro.includes(v))) &&
-    (ignorar === 'box' || boxFiltro.length === 0 || boxFiltro.includes(getBoxLabel(f))) &&
     (ignorar === 'ativo' || colFiltros.ativo.length === 0 || colFiltros.ativo.includes(statusInfo(f).label))
-  ), [dados, colFiltros, cnpjFiltro, departamentoFiltro, setorFiltro, boxFiltro, departamentos, setores, cargos, getCnpj])
+  ), [dados, colFiltros, cnpjFiltro, departamentoFiltro, setorFiltro, departamentos, setores, cargos, getCnpj])
 
   const empresasUnicas = useMemo(() =>
     [...new Set(filtrarComExcecao('empresa').map(f => f.empresa_nome).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR')),
@@ -926,11 +904,6 @@ export default function Funcionarios() {
     const base = filtrarComExcecao('setor')
     return comSemOpcao(base.flatMap(f => getSetorLabelsF(f)), SEM_SETOR, base.some(f => getSetorLabelsF(f).includes(SEM_SETOR)))
   }, [filtrarComExcecao, setores, cargos])
-
-  const boxesUnicos = useMemo(() => {
-    const base = filtrarComExcecao('box')
-    return comSemOpcao(base.map(f => getBoxLabel(f)), SEM_BOX, base.some(f => getBoxLabel(f) === SEM_BOX))
-  }, [filtrarComExcecao])
 
   const cnpjsUnicos = useMemo(() =>
     [...new Set(filtrarComExcecao('cnpj').map(f => getCnpj(f)).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR')),
@@ -976,7 +949,6 @@ export default function Funcionarios() {
       cargo: (f) => f.cargo_nome || '',
       departamento: (f) => getNomes(deptoIdsDe(f), departamentos, 'nome_departamento'),
       setor: (f) => getNomes(setorIdsDe(f), setores, 'nome_setor'),
-      box: (f) => f.box_nome || '',
       admissao: (f) => f.data_admissao || '',
       demissao: (f) => f.data_demissao || '',
       ativo: (f) => statusInfo(f).label || '',
@@ -1106,11 +1078,6 @@ export default function Funcionarios() {
                   Setor {iconeOrdenacao('setor')}
                 </button>
               </th>
-              <th className="p-3">
-                <button onClick={() => alternarOrdenacao('box')} className="flex items-center gap-1 hover:text-slate-600 transition-colors">
-                  Box {iconeOrdenacao('box')}
-                </button>
-              </th>
               <th className="p-3 whitespace-nowrap">
                 <button onClick={() => alternarOrdenacao('admissao')} className="flex items-center gap-1 hover:text-slate-600 transition-colors">
                   Data Admissão {iconeOrdenacao('admissao')}
@@ -1189,14 +1156,6 @@ export default function Funcionarios() {
                   onChange={v => setCol('setor', v)}
                 />
               </th>
-              <th className="px-2 py-1.5">
-                <FiltroMultiSelect
-                  placeholder="Todos"
-                  opcoes={boxesUnicos}
-                  selecionados={boxFiltro}
-                  onChange={v => setCol('box', v)}
-                />
-              </th>
               <th className="px-2 py-1.5" />
               <th className="px-2 py-1.5" />
               <th className="px-2 py-1.5 w-20">
@@ -1209,8 +1168,8 @@ export default function Funcionarios() {
               </th>
               <th className="px-2 py-1.5 w-24 text-center">
                 <button
-                  onClick={() => setColFiltros({ nome: '', empresa: [], cnpj: [], cargo: [], departamento: [], setor: [], box: [], ativo: [] })}
-                  disabled={!colFiltros.nome && colFiltros.empresa.length === 0 && cnpjFiltro.length === 0 && colFiltros.cargo.length === 0 && departamentoFiltro.length === 0 && setorFiltro.length === 0 && boxFiltro.length === 0 && colFiltros.ativo.length === 0}
+                  onClick={() => setColFiltros({ nome: '', empresa: [], cnpj: [], cargo: [], departamento: [], setor: [], ativo: [] })}
+                  disabled={!colFiltros.nome && colFiltros.empresa.length === 0 && cnpjFiltro.length === 0 && colFiltros.cargo.length === 0 && departamentoFiltro.length === 0 && setorFiltro.length === 0 && colFiltros.ativo.length === 0}
                   className="flex items-center gap-1 mx-auto text-[11px] font-semibold text-slate-400 hover:text-red-600 disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:text-slate-400 transition-colors"
                   title="Limpar todos os filtros"
                 >
@@ -1223,8 +1182,8 @@ export default function Funcionarios() {
           <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
             {dadosFiltrados.length === 0 ? (
               <tr>
-                <td colSpan="13" className="p-6 text-center text-slate-400">
-                  {(colFiltros.nome || colFiltros.empresa.length > 0 || cnpjFiltro.length > 0 || colFiltros.cargo.length > 0 || departamentoFiltro.length > 0 || setorFiltro.length > 0 || boxFiltro.length > 0 || colFiltros.ativo.length > 0)
+                <td colSpan="12" className="p-6 text-center text-slate-400">
+                  {(colFiltros.nome || colFiltros.empresa.length > 0 || cnpjFiltro.length > 0 || colFiltros.cargo.length > 0 || departamentoFiltro.length > 0 || setorFiltro.length > 0 || colFiltros.ativo.length > 0)
                     ? 'Nenhum funcionário encontrado para os filtros aplicados.' : 'Nenhum funcionário cadastrado.'}
                 </td>
               </tr>
@@ -1255,7 +1214,6 @@ export default function Funcionarios() {
                   <td className="p-3 text-slate-500 truncate max-w-[180px]" title={getNomes(setorIdsDe(item), setores, 'nome_setor')}>
                     {getNomes(setorIdsDe(item), setores, 'nome_setor')}
                   </td>
-                  <td className="p-3 text-slate-500 whitespace-nowrap">{item.box_nome || '-'}</td>
                   <td className="p-3 text-slate-500 font-mono text-[11px] whitespace-nowrap">{fmtDate(item.data_admissao) || '-'}</td>
                   <td className="p-3 text-slate-500 font-mono text-[11px] whitespace-nowrap">{fmtDate(item.data_demissao) || '-'}</td>
                   <td className="p-3 text-center whitespace-nowrap">
@@ -1370,8 +1328,8 @@ export default function Funcionarios() {
                   </div>
                 </div>
 
-                {/* Cargo + Departamento + Setor + Box */}
-                <div className="grid grid-cols-4 gap-4">
+                {/* Cargo + Departamento + Setor */}
+                <div className="grid grid-cols-3 gap-4">
                   <div className="flex flex-col gap-1.5">
                     <label className={LBL}>Cargo *</label>
                     <select required value={form.cargo_id} onChange={handleCargoChange} className={SEL}>
@@ -1394,27 +1352,6 @@ export default function Funcionarios() {
                     <div className={INP_RO}>
                       {getNomes(form.setor_ids, setores, 'nome_setor')}
                     </div>
-                  </div>
-                  <div className="flex flex-col gap-1.5">
-                    <label className={LBL}>Box</label>
-                    <select
-                      value={form.box_id}
-                      onChange={e => {
-                        const b = boxes.find(x => x.id === e.target.value)
-                        setForm(prev => ({ ...prev, box_id: b?.id || '', box_nome: b?.nome_box || '' }))
-                      }}
-                      className={SEL}
-                    >
-                      <option value="">Nenhum</option>
-                      {boxes
-                        .filter(b =>
-                          form.setor_ids?.length > 0
-                            ? Array.isArray(b.setor_ids) && b.setor_ids.some(sid => form.setor_ids.includes(sid))
-                            : true
-                        )
-                        .map(b => <option key={b.id} value={b.id}>{b.nome_box}</option>)
-                      }
-                    </select>
                   </div>
                 </div>
 
@@ -1624,7 +1561,7 @@ export default function Funcionarios() {
                   </span>
                 </div>
               </div>
-              <div className="grid grid-cols-4 gap-x-6 gap-y-3">
+              <div className="grid grid-cols-3 gap-x-6 gap-y-3">
                 <div className="flex flex-col gap-0.5">
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Cargo</span>
                   <div className="flex items-baseline gap-2">
@@ -1641,10 +1578,6 @@ export default function Funcionarios() {
                 <div className="flex flex-col gap-0.5">
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Setor</span>
                   <span className="text-xs font-semibold text-slate-800">{getNomes(setorIdsDe(itemVisualizado), setores, 'nome_setor')}</span>
-                </div>
-                <div className="flex flex-col gap-0.5">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Box</span>
-                  <span className="text-xs font-semibold text-slate-800">{itemVisualizado.box_nome || '-'}</span>
                 </div>
               </div>
 
@@ -1748,7 +1681,6 @@ export default function Funcionarios() {
           funcionarios={dados}
           empresas={empresas}
           cargos={cargos}
-          boxes={boxes}
           onClose={() => setModalImportarAberto(false)}
           onImported={loadData}
         />

@@ -10,6 +10,11 @@ import { DIMENSOES_COMISSAO, escopoComissaoTudoLiberado } from '../utils/permiss
 // cada grupo de acesso pertence. Não interfere em nenhuma permissão.
 const DEPARTAMENTOS_GRUPO = ['Vendas', 'Serviços', 'Peças', 'Financeiro', 'RH', 'Contabilidade', 'Controladoria', 'Diretoria', 'Tecnologia', 'Marketing']
 
+// Usado pra só exibir "Acesso por Departamento — Auditoria Externa"/"— Gestão de Projetos"
+// quando o grupo já tem pelo menos uma página do respectivo módulo liberada em Acesso a Páginas.
+const AUDITORIA_EXTERNA_KEYS = ALL_LEAF_KEYS.filter(k => k.startsWith('auditoria-externa/'))
+const GESTAO_PROJETOS_KEYS = ALL_LEAF_KEYS.filter(k => k === 'projetos' || k.startsWith('projetos/'))
+
 // ── Tree checkbox node ────────────────────────────────────────────────────────
 
 function TreeNode({ node, selected, onToggle, disabled, defaultOpen = false, selectedAcoes, onToggleAcao }) {
@@ -136,6 +141,9 @@ function TreeNode({ node, selected, onToggle, disabled, defaultOpen = false, sel
 function SeletorDimensaoComissao({ label, escopo, opcoes, disabled, onModoChange, onToggleValor, onSelecionarTodos, onLimpar, nivelPorValor, onNivelChange, onToggleResponsavel }) {
   const modo = escopo?.modo || 'TODOS'
   const valores = escopo?.valores || new Set()
+  // Lista de opções recolhida por padrão quando marcado Individual — evita que a tela de
+  // Permissões de Acesso fique enorme quando há muitos departamentos/setores/cargos.
+  const [expandido, setExpandido] = useState(false)
   return (
     <div className="py-3">
       <div className="flex items-center justify-between gap-3 mb-2">
@@ -163,12 +171,22 @@ function SeletorDimensaoComissao({ label, escopo, opcoes, disabled, onModoChange
         <>
           {opcoes.length > 0 && (
             <div className="flex items-center gap-2 mb-1.5">
+              <button
+                type="button"
+                onClick={() => setExpandido(v => !v)}
+                className="flex items-center gap-1 text-[11px] font-semibold text-slate-500 hover:text-slate-700"
+              >
+                {expandido ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                {expandido ? 'Recolher' : 'Expandir'}
+              </button>
+              <span className="text-slate-300">|</span>
               <button type="button" onClick={onSelecionarTodos} className="text-[11px] text-blue-600 hover:underline">Selecionar todos</button>
               <span className="text-slate-300">|</span>
               <button type="button" onClick={onLimpar} className="text-[11px] text-slate-500 hover:underline">Desmarcar todos</button>
               <span className="ml-auto text-[11px] text-slate-400">{valores.size}/{opcoes.length}</span>
             </div>
           )}
+          {(expandido || opcoes.length === 0) && (
           <div className="flex flex-col gap-0.5">
             {opcoes.length === 0 ? (
               <p className="text-xs text-slate-400 py-1">Nenhuma opção cadastrada.</p>
@@ -220,6 +238,7 @@ function SeletorDimensaoComissao({ label, escopo, opcoes, disabled, onModoChange
               )
             })}
           </div>
+          )}
         </>
       )}
     </div>
@@ -233,7 +252,7 @@ export default function Grupos() {
   const [loading, setLoading] = useState(true)
 
   // ─ list form (nome)
-  const [showForm, setShowForm] = useSessionState('grp_showform', false)
+  const [showForm, setShowForm] = useState(false)
   const [formData, setFormData] = useSessionState('grp_form', { id: null, nome_grupo: '', departamento: '' })
   const [saving, setSaving] = useState(false)
 
@@ -243,6 +262,22 @@ export default function Grupos() {
   const [selectedPaths, setSelectedPaths] = useState(new Set())
   const [selectedAcoes, setSelectedAcoes] = useState(new Set()) // "menu_path|acao"
   const [selectedEmpresas, setSelectedEmpresas] = useState(new Set())
+  // Modo (Todos/Individual) do "Acesso por Empresa" — sem coluna própria no banco (essa
+  // restrição só grava a lista de ids selecionados), então é inferido ao carregar: lista
+  // completa = Todos, lista parcial (ou vazia) = Individual. Precisa ser um estado explícito
+  // (não só derivado do tamanho do Set) senão clicar "Individual" partindo de "Todos" não
+  // tinha efeito nenhum — o painel de checkboxes só aparecia quando a seleção já não era mais
+  // "tudo", e nada mudava a seleção ao clicar Individual.
+  const [empresaModoIndividual, setEmpresaModoIndividual] = useState(false)
+  const [empresaExpandido, setEmpresaExpandido] = useState(false)
+  const [selectedDeptosProjetos, setSelectedDeptosProjetos] = useState(new Set())
+  const [projetosDeptoModo, setProjetosDeptoModo] = useState('TODOS')
+  const [projDepartamentos, setProjDepartamentos] = useState([])
+  const [selectedDeptosAuditoria, setSelectedDeptosAuditoria] = useState(new Set())
+  const [auditoriaDeptoModo, setAuditoriaDeptoModo] = useState('TODOS')
+  const [projEmpresas, setProjEmpresas] = useState([])
+  const [selectedEmpresasAuditoria, setSelectedEmpresasAuditoria] = useState(new Set())
+  const [auditoriaEmpresaModo, setAuditoriaEmpresaModo] = useState('TODOS')
   const [empresas, setEmpresas] = useState([])
   const [comissaoEscopo, setComissaoEscopo] = useState(escopoComissaoTudoLiberado())
   const [comissaoHabilitado, setComissaoHabilitado] = useState(false)
@@ -423,7 +458,7 @@ export default function Grupos() {
     setTreeDefaultOpen(false)
     setTreeKey(k => k + 1)
     try {
-      const [paths, acoes, empIds, emps, deptosDim, setoresDim, agrupCargos, comissaoEscopoRaw] = await Promise.all([
+      const [paths, acoes, empIds, emps, deptosDim, setoresDim, agrupCargos, comissaoEscopoRaw, deptosProj, projDeptos, deptosAudit, projEmps, empresasAudit] = await Promise.all([
         apiService.getPermissoesGrupo(grupo.id),
         apiService.getPermissoesGrupoAcoes(grupo.id),
         apiService.getPermissoesEmpresasGrupo(grupo.id),
@@ -432,10 +467,26 @@ export default function Grupos() {
         apiService.getSetores(),
         apiService.getAgrupamentoCargos(),
         apiService.getPermissoesComissaoGrupo(grupo.id),
+        apiService.getPermissoesDeptoPorGrupo(grupo.id),
+        apiService.getProjDepartamentos(),
+        apiService.getPermissoesDeptoAuditoriaPorGrupo(grupo.id),
+        apiService.getProjEmpresas(),
+        apiService.getPermissoesEmpresaAuditoriaPorGrupo(grupo.id),
       ])
       setSelectedPaths(new Set(paths))
       setSelectedAcoes(new Set(acoes.map(a => `${a.menu_path}|${a.acao}`)))
       setSelectedEmpresas(new Set(empIds))
+      const empresasAtivas = emps.filter(e => e.ativo !== false)
+      setEmpresaModoIndividual(empIds.length !== empresasAtivas.length)
+      setEmpresaExpandido(false)
+      setProjetosDeptoModo(deptosProj.modo)
+      setSelectedDeptosProjetos(new Set(deptosProj.valores))
+      setProjDepartamentos((projDeptos || []).filter(d => d.ativo !== false).sort((a, b) => (a.nome || '').localeCompare(b.nome || '', 'pt-BR')))
+      setAuditoriaDeptoModo(deptosAudit.modo)
+      setSelectedDeptosAuditoria(new Set(deptosAudit.valores))
+      setProjEmpresas((projEmps || []).filter(e => e.ativo !== false).sort((a, b) => (a.nome || '').localeCompare(b.nome || '', 'pt-BR')))
+      setAuditoriaEmpresaModo(empresasAudit.modo)
+      setSelectedEmpresasAuditoria(new Set(empresasAudit.valores))
       setEmpresas(emps.filter(e => e.ativo !== false).sort((a, b) => (a.nome_empresa || '').localeCompare(b.nome_empresa || '', 'pt-BR')))
       setDepartamentosComissao(deptosDim.filter(d => d.ativo !== false))
       setSetoresComissao(setoresDim.filter(s => s.ativo !== false))
@@ -451,6 +502,14 @@ export default function Grupos() {
       setSelectedPaths(new Set())
       setSelectedAcoes(new Set())
       setSelectedEmpresas(new Set())
+      setEmpresaModoIndividual(false)
+      setEmpresaExpandido(false)
+      setSelectedDeptosProjetos(new Set())
+      setProjetosDeptoModo('TODOS')
+      setSelectedDeptosAuditoria(new Set())
+      setAuditoriaDeptoModo('TODOS')
+      setSelectedEmpresasAuditoria(new Set())
+      setAuditoriaEmpresaModo('TODOS')
       setComissaoEscopo(escopoComissaoTudoLiberado())
       setComissaoHabilitado(false)
       setComissaoDepartamentoNivel({})
@@ -492,6 +551,39 @@ export default function Grupos() {
   const handleSelectAllEmpresas = () => setSelectedEmpresas(new Set(empresas.map(e => e.id)))
   const handleClearAllEmpresas = () => setSelectedEmpresas(new Set())
 
+  const handleToggleDeptoProj = (nome) => {
+    setSelectedDeptosProjetos(prev => {
+      const next = new Set(prev)
+      if (next.has(nome)) next.delete(nome)
+      else next.add(nome)
+      return next
+    })
+  }
+  const handleSelectAllDeptosProj = () => setSelectedDeptosProjetos(new Set(projDepartamentos.map(d => d.nome)))
+  const handleClearAllDeptosProj = () => setSelectedDeptosProjetos(new Set())
+
+  const handleToggleDeptoAuditoria = (nome) => {
+    setSelectedDeptosAuditoria(prev => {
+      const next = new Set(prev)
+      if (next.has(nome)) next.delete(nome)
+      else next.add(nome)
+      return next
+    })
+  }
+  const handleSelectAllDeptosAuditoria = () => setSelectedDeptosAuditoria(new Set(projDepartamentos.map(d => d.nome)))
+  const handleClearAllDeptosAuditoria = () => setSelectedDeptosAuditoria(new Set())
+
+  const handleToggleEmpresaAuditoria = (id) => {
+    setSelectedEmpresasAuditoria(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+  const handleSelectAllEmpresasAuditoria = () => setSelectedEmpresasAuditoria(new Set(projEmpresas.map(e => e.id)))
+  const handleClearAllEmpresasAuditoria = () => setSelectedEmpresasAuditoria(new Set())
+
   const handleComissaoModoChange = (dim, modo) => {
     setComissaoEscopo(prev => ({ ...prev, [dim]: { ...prev[dim], modo } }))
   }
@@ -531,6 +623,9 @@ export default function Grupos() {
           return { menu_path, acao }
         })),
         apiService.setPermissoesEmpresasGrupo(editingId, isAdmin ? [] : [...selectedEmpresas]),
+        apiService.setPermissoesDeptoPorGrupo(editingId, isAdmin ? 'TODOS' : projetosDeptoModo, isAdmin ? [] : [...selectedDeptosProjetos]),
+        apiService.setPermissoesDeptoAuditoriaPorGrupo(editingId, isAdmin ? 'TODOS' : auditoriaDeptoModo, isAdmin ? [] : [...selectedDeptosAuditoria]),
+        apiService.setPermissoesEmpresaAuditoriaPorGrupo(editingId, isAdmin ? 'TODOS' : auditoriaEmpresaModo, isAdmin ? [] : [...selectedEmpresasAuditoria]),
         apiService.setPermissoesComissaoGrupo(editingId, Object.fromEntries(DIMENSOES_COMISSAO.map(dim => [
           dim,
           isAdmin
@@ -756,19 +851,44 @@ export default function Grupos() {
 
       {/* ── Acesso por Empresa ── */}
       <div className="bg-white rounded-lg shadow border border-slate-200 overflow-hidden mt-4">
-        <div className="px-5 py-4 border-b border-slate-100">
-          <h2 className="text-base font-bold text-slate-900">Acesso por Empresa</h2>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Define quais empresas este grupo pode visualizar em todos os módulos do sistema (Garantias DAF, Projetos, Cálculo de Comissões, etc.).
-            {isAdmin && <span className="ml-1 text-amber-600 font-medium">Administrador tem acesso a todas as empresas automaticamente.</span>}
-          </p>
+        <div className="px-5 py-4 border-b border-slate-100 flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-base font-bold text-slate-900">Acesso por Empresa</h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Define quais empresas este grupo pode visualizar em todos os módulos do sistema (Garantias DAF, Projetos, Cálculo de Comissões, etc.).
+              {isAdmin && <span className="ml-1 text-amber-600 font-medium">Administrador tem acesso a todas as empresas automaticamente.</span>}
+            </p>
+          </div>
+          {!isAdmin && empresas.length > 0 && (
+            <div className="shrink-0 inline-flex rounded-md border border-slate-200 overflow-hidden text-xs font-semibold">
+              <button
+                type="button"
+                onClick={() => { handleSelectAllEmpresas(); setEmpresaModoIndividual(false) }}
+                className={`px-2.5 py-1 transition-colors ${!empresaModoIndividual ? 'bg-blue-600 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}
+              >
+                Todos
+              </button>
+              <button
+                type="button"
+                onClick={() => setEmpresaModoIndividual(true)}
+                className={`px-2.5 py-1 border-l border-slate-200 transition-colors ${empresaModoIndividual ? 'bg-blue-600 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}
+              >
+                Individual
+              </button>
+            </div>
+          )}
         </div>
         {loadingPerms ? null : (
           <>
-            {!isAdmin && empresas.length > 0 && (
+            {!isAdmin && empresas.length > 0 && empresaModoIndividual && (
               <div className="px-5 py-2 border-b border-slate-100 flex items-center gap-2">
-                <button type="button" onClick={handleSelectAllEmpresas} className="text-xs text-blue-600 hover:underline">
-                  Selecionar todas
+                <button
+                  type="button"
+                  onClick={() => setEmpresaExpandido(v => !v)}
+                  className="flex items-center gap-1 text-[11px] font-semibold text-slate-500 hover:text-slate-700"
+                >
+                  {empresaExpandido ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                  {empresaExpandido ? 'Recolher' : 'Expandir'}
                 </button>
                 <span className="text-slate-300">|</span>
                 <button type="button" onClick={handleClearAllEmpresas} className="text-xs text-slate-500 hover:underline">
@@ -779,36 +899,125 @@ export default function Grupos() {
                 </span>
               </div>
             )}
-            <div className="p-4 flex flex-col gap-0.5">
-              {empresas.map(empresa => (
-                <label
-                  key={empresa.id}
-                  className={`flex items-center gap-2 py-1.5 px-2 rounded cursor-pointer hover:bg-slate-50 select-none ${isAdmin ? 'opacity-50' : ''}`}
-                >
-                  <input
-                    type="checkbox"
-                    disabled={isAdmin}
-                    checked={isAdmin || selectedEmpresas.has(empresa.id)}
-                    onChange={(e) => handleToggleEmpresa(empresa.id, e.target.checked)}
-                    className="w-3.5 h-3.5 rounded accent-blue-600"
-                  />
-                  <div className="flex flex-col">
-                    <span className="text-sm text-slate-800 font-medium leading-tight">{empresa.nome_empresa}</span>
-                    {empresa.sigla_empresa && (
-                      <span className="text-xs text-slate-400">{empresa.sigla_empresa}</span>
-                    )}
-                  </div>
-                </label>
-              ))}
-              {empresas.length === 0 && (
-                <p className="text-sm text-slate-400 col-span-3 py-2">
-                  Nenhuma empresa cadastrada. Cadastre em Cadastro de Tabelas → Empresas.
-                </p>
-              )}
-            </div>
+            {(isAdmin || (empresaModoIndividual && empresaExpandido) || empresas.length === 0) && (
+              <div className="p-4 flex flex-col gap-0.5">
+                {empresas.map(empresa => (
+                  <label
+                    key={empresa.id}
+                    className={`flex items-center gap-2 py-1.5 px-2 rounded cursor-pointer hover:bg-slate-50 select-none ${isAdmin ? 'opacity-50' : ''}`}
+                  >
+                    <input
+                      type="checkbox"
+                      disabled={isAdmin}
+                      checked={isAdmin || selectedEmpresas.has(empresa.id)}
+                      onChange={(e) => handleToggleEmpresa(empresa.id, e.target.checked)}
+                      className="w-3.5 h-3.5 rounded accent-blue-600"
+                    />
+                    <div className="flex flex-col">
+                      <span className="text-sm text-slate-800 font-medium leading-tight">{empresa.nome_empresa}</span>
+                      {empresa.sigla_empresa && (
+                        <span className="text-xs text-slate-400">{empresa.sigla_empresa}</span>
+                      )}
+                    </div>
+                  </label>
+                ))}
+                {empresas.length === 0 && (
+                  <p className="text-sm text-slate-400 col-span-3 py-2">
+                    Nenhuma empresa cadastrada. Cadastre em Cadastro de Tabelas → Empresas.
+                  </p>
+                )}
+              </div>
+            )}
           </>
         )}
       </div>
+
+      {/* ── Acesso por Departamento — Gestão de Projetos (só quando o grupo tem alguma
+           página do módulo liberada) ── */}
+      {(isAdmin || GESTAO_PROJETOS_KEYS.some(k => selectedPaths.has(k))) && (
+        <div className="bg-white rounded-lg shadow border border-slate-200 overflow-hidden mt-4">
+          <div className="px-5 py-4 border-b border-slate-100">
+            <h2 className="text-base font-bold text-slate-900">Acesso por Departamento — Gestão de Projetos</h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Restringe quais projetos este grupo pode visualizar em Gestão de Projetos, pelo departamento do projeto.
+              "Todos" não restringe (inclusive departamentos criados no futuro); "Individual" libera só os marcados.
+              {isAdmin && <span className="block mt-1 text-amber-600 font-medium">Administrador vê tudo automaticamente.</span>}
+            </p>
+          </div>
+          {!loadingPerms && (
+            <div className="px-5 py-1">
+              <SeletorDimensaoComissao
+                label="Departamento"
+                escopo={{ modo: projetosDeptoModo, valores: selectedDeptosProjetos }}
+                opcoes={projDepartamentos.map(d => ({ valor: d.nome, label: d.nome }))}
+                disabled={isAdmin}
+                onModoChange={setProjetosDeptoModo}
+                onToggleValor={handleToggleDeptoProj}
+                onSelecionarTodos={handleSelectAllDeptosProj}
+                onLimpar={handleClearAllDeptosProj}
+              />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Acesso por Departamento — Auditoria Externa (só quando o grupo tem alguma
+           página do módulo liberada) ── */}
+      {(isAdmin || AUDITORIA_EXTERNA_KEYS.some(k => selectedPaths.has(k))) && (
+        <div className="bg-white rounded-lg shadow border border-slate-200 overflow-hidden mt-4">
+          <div className="px-5 py-4 border-b border-slate-100">
+            <h2 className="text-base font-bold text-slate-900">Acesso por Departamento — Auditoria Externa</h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Restringe quais achados/planos de ação este grupo pode visualizar em Auditoria Externa, por departamento.
+              "Todos" não restringe (inclusive departamentos criados no futuro); "Individual" libera só os marcados.
+              {isAdmin && <span className="block mt-1 text-amber-600 font-medium">Administrador vê tudo automaticamente.</span>}
+            </p>
+          </div>
+          {!loadingPerms && (
+            <div className="px-5 py-1">
+              <SeletorDimensaoComissao
+                label="Departamento"
+                escopo={{ modo: auditoriaDeptoModo, valores: selectedDeptosAuditoria }}
+                opcoes={projDepartamentos.map(d => ({ valor: d.nome, label: d.nome }))}
+                disabled={isAdmin}
+                onModoChange={setAuditoriaDeptoModo}
+                onToggleValor={handleToggleDeptoAuditoria}
+                onSelecionarTodos={handleSelectAllDeptosAuditoria}
+                onLimpar={handleClearAllDeptosAuditoria}
+              />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Acesso por Empresa — Auditoria Externa (só quando o grupo tem alguma
+           página do módulo liberada) ── */}
+      {(isAdmin || AUDITORIA_EXTERNA_KEYS.some(k => selectedPaths.has(k))) && (
+        <div className="bg-white rounded-lg shadow border border-slate-200 overflow-hidden mt-4">
+          <div className="px-5 py-4 border-b border-slate-100">
+            <h2 className="text-base font-bold text-slate-900">Acesso por Empresa — Auditoria Externa</h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Restringe quais ciclos/achados/planos de ação este grupo pode visualizar em Auditoria Externa, pela empresa do ciclo de auditoria.
+              "Todos" não restringe (inclusive empresas criadas no futuro); "Individual" libera só as marcadas.
+              {isAdmin && <span className="block mt-1 text-amber-600 font-medium">Administrador vê tudo automaticamente.</span>}
+            </p>
+          </div>
+          {!loadingPerms && (
+            <div className="px-5 py-1">
+              <SeletorDimensaoComissao
+                label="Empresa"
+                escopo={{ modo: auditoriaEmpresaModo, valores: selectedEmpresasAuditoria }}
+                opcoes={projEmpresas.map(e => ({ valor: e.id, label: e.nome }))}
+                disabled={isAdmin}
+                onModoChange={setAuditoriaEmpresaModo}
+                onToggleValor={handleToggleEmpresaAuditoria}
+                onSelecionarTodos={handleSelectAllEmpresasAuditoria}
+                onLimpar={handleClearAllEmpresasAuditoria}
+              />
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── Acesso à Cálculo de Comissões ── */}
       {!loadingPerms && (isAdmin || [...selectedPaths].some(p => p.startsWith('calculo-comissoes') || p.startsWith('processamento-comissoes'))) && (() => {

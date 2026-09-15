@@ -12,7 +12,6 @@ const USA_FAIXA_OPCOES = ['NÃO', 'SIM']
 
 const FORM_VAZIO = {
   cargo_ids: [],
-  tipo_calculo: 'PADRAO',
   descricao_comissao: '',
   codigo_rubrica: '',
   tipo_processo: '11',
@@ -228,7 +227,6 @@ export default function PoliticaComissao() {
         itens,
         cargosNomes: [...new Set(itens.map(i => i.cargo_nome).filter(Boolean))],
         empresasNomes: [...new Set(itens.map(i => i.empresa_nome).filter(Boolean))],
-        tipo_calculo: primeiro.tipo_calculo || 'PADRAO',
         descricao_comissao: primeiro.descricao_comissao,
         codigo_rubrica: primeiro.codigo_rubrica,
         tipo_processo: primeiro.tipo_processo,
@@ -373,7 +371,6 @@ export default function PoliticaComissao() {
     setItensOriginais(new Map(grupo.itens.map(i => [i.cargo_id, i.id])))
     setForm({
       cargo_ids: grupo.itens.map(i => i.cargo_id).filter(Boolean),
-      tipo_calculo: grupo.tipo_calculo || 'PADRAO',
       descricao_comissao: grupo.descricao_comissao || '',
       codigo_rubrica: grupo.codigo_rubrica || '',
       tipo_processo: grupo.tipo_processo || '',
@@ -431,7 +428,6 @@ export default function PoliticaComissao() {
           empresa_nome: item.empresa_nome || null,
           cargo_id: item.cargo_id || null,
           cargo_nome: item.cargo_nome || null,
-          tipo_calculo: item.tipo_calculo || 'PADRAO',
           descricao_comissao: item.descricao_comissao ? `${item.descricao_comissao} (Cópia)` : null,
           codigo_rubrica: item.codigo_rubrica || null,
           tipo_processo: item.tipo_processo || null,
@@ -741,18 +737,10 @@ export default function PoliticaComissao() {
                     )
                   })() : '-'}
                 </td>
-                {grupo.tipo_calculo === 'PLANO_DMS' ? (
-                  <td className="p-3 text-center" colSpan={4}>
-                    <span className="inline-flex px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 text-[10px] font-bold">Plano DMS</span>
-                  </td>
-                ) : (
-                  <>
-                    <td className="p-3 min-w-[110px] text-right font-mono">{fmtPct(grupo.comissao_servicos)}</td>
-                    <td className="p-3 min-w-[100px] text-right font-mono">{fmtPct(grupo.comissao_pecas)}</td>
-                    <td className="p-3 min-w-[100px] text-right font-mono text-slate-900">{fmtPct(grupo.comissao_total)}</td>
-                    <td className="p-3 min-w-[130px] text-right text-emerald-700">{fmtBRL(grupo.comissao_valor)}</td>
-                  </>
-                )}
+                <td className="p-3 min-w-[110px] text-right font-mono">{fmtPct(grupo.comissao_servicos)}</td>
+                <td className="p-3 min-w-[100px] text-right font-mono">{fmtPct(grupo.comissao_pecas)}</td>
+                <td className="p-3 min-w-[100px] text-right font-mono text-slate-900">{fmtPct(grupo.comissao_total)}</td>
+                <td className="p-3 min-w-[130px] text-right text-emerald-700">{fmtBRL(grupo.comissao_valor)}</td>
                 <td className="p-3 min-w-[110px] font-mono text-[11px] text-slate-600">
                   <div>{fmtDate(grupo.vig_inicio)}</div>
                   <div className="text-slate-400">{fmtDate(grupo.vig_fim)}</div>
@@ -829,32 +817,6 @@ export default function PoliticaComissao() {
                   )}
                 </div>
 
-                {/* Tipo de Cálculo — Padrão usa Fonte/Base de Cálculo (comportamento de sempre);
-                    Plano DMS calcula pelo motor bespoke de O.S. P04 x Chassi x Valor do Plano,
-                    sem Fonte/Base configurados aqui. */}
-                <div className="flex flex-col gap-1.5">
-                  <label className={LBL}>Tipo de Cálculo</label>
-                  <div className="inline-flex rounded-md border border-slate-200 overflow-hidden w-fit">
-                    {[{ v: 'PADRAO', l: 'Padrão' }, { v: 'PLANO_DMS', l: 'Plano DMS' }].map(op => (
-                      <button
-                        key={op.v}
-                        type="button"
-                        onClick={() => setForm(prev => ({ ...prev, tipo_calculo: op.v }))}
-                        className={`px-3 py-1.5 text-xs font-semibold transition-colors ${
-                          form.tipo_calculo === op.v ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'
-                        }`}
-                      >
-                        {op.l}
-                      </button>
-                    ))}
-                  </div>
-                  {form.tipo_calculo === 'PLANO_DMS' && (
-                    <p className="text-[11px] text-slate-400">
-                      O valor é calculado pelo cálculo de Plano DMS (O.S. P04 × Chassi × Valor do Plano), em Folha de Pagamento - DAF. Fonte/Base de Cálculo e percentuais não se aplicam aqui.
-                    </p>
-                  )}
-                </div>
-
                 {/* Descrição + Código da Rubrica + Tipo do Processo */}
                 <div className="grid grid-cols-4 gap-4">
                   <div className="col-span-2 flex flex-col gap-1.5">
@@ -906,37 +868,28 @@ export default function PoliticaComissao() {
                   </div>
                 </div>
 
-                {/* Fonte de Cálculo + Base de Cálculo + Nível de Cálculo — Fonte/Base só fazem
-                    sentido no cálculo Padrão; Plano DMS não usa (valor vem do motor bespoke). */}
-                <div className={`grid gap-4 ${form.tipo_calculo === 'PLANO_DMS' ? 'grid-cols-1' : 'grid-cols-3'}`}>
-                  {form.tipo_calculo !== 'PLANO_DMS' && (
-                    <>
-                      <div className="flex flex-col gap-1.5">
-                        <label className={LBL}>Fonte de Cálculo *</label>
-                        <select required name="fonte_calculo_id" value={form.fonte_calculo_id} onChange={handleFonteChange} className={SEL}>
-                          <option value="">Selecione</option>
-                          {fontesCalculo.filter(f => f.ativo).map(f => <option key={f.id} value={f.id}>{f.nome}</option>)}
-                        </select>
-                      </div>
-                      <div className="flex flex-col gap-1.5">
-                        <label className={LBL}>Base de Cálculo *</label>
-                        <select required name="base_calculo_id" value={form.base_calculo_id} onChange={handleInputChange} disabled={!form.fonte_calculo_id} className={`${SEL} disabled:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed`}>
-                          <option value="">{form.fonte_calculo_id ? 'Selecione' : 'Selecione a Fonte primeiro'}</option>
-                          {basesCalculo.filter(b => b.ativo && b.fonte_calculo_id === form.fonte_calculo_id).map(b => <option key={b.id} value={b.id}>{b.nome}</option>)}
-                        </select>
-                      </div>
-                    </>
-                  )}
+                {/* Fonte de Cálculo + Base de Cálculo + Nível de Cálculo */}
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="flex flex-col gap-1.5">
+                    <label className={LBL}>Fonte de Cálculo *</label>
+                    <select required name="fonte_calculo_id" value={form.fonte_calculo_id} onChange={handleFonteChange} className={SEL}>
+                      <option value="">Selecione</option>
+                      {fontesCalculo.filter(f => f.ativo).map(f => <option key={f.id} value={f.id}>{f.nome}</option>)}
+                    </select>
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <label className={LBL}>Base de Cálculo *</label>
+                    <select required name="base_calculo_id" value={form.base_calculo_id} onChange={handleInputChange} disabled={!form.fonte_calculo_id} className={`${SEL} disabled:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed`}>
+                      <option value="">{form.fonte_calculo_id ? 'Selecione' : 'Selecione a Fonte primeiro'}</option>
+                      {basesCalculo.filter(b => b.ativo && b.fonte_calculo_id === form.fonte_calculo_id).map(b => <option key={b.id} value={b.id}>{b.nome}</option>)}
+                    </select>
+                  </div>
                   <div className="flex flex-col gap-1.5">
                     <label className={`${LBL} flex items-center gap-1`}>
                       Nível de Cálculo *
                       <span className="relative group cursor-help normal-case tracking-normal">
                         <Info className="h-3.5 w-3.5 text-blue-500" />
-                        {/* Padrão fica na 3ª coluna (perto da borda direita do modal) — expande pra
-                            esquerda. Plano DMS fica sozinho na 1ª coluna (perto da borda esquerda) —
-                            com right-0 aqui, o tooltip estourava pra fora do modal, por baixo do
-                            menu lateral. */}
-                        <span className={`absolute top-full mt-1 hidden group-hover:block w-80 bg-slate-800 text-white text-[11px] font-normal rounded-md p-3 shadow-xl z-30 leading-relaxed space-y-1 ${form.tipo_calculo === 'PLANO_DMS' ? 'left-0' : 'right-0'}`}>
+                        <span className="absolute right-0 top-full mt-1 hidden group-hover:block w-80 bg-slate-800 text-white text-[11px] font-normal rounded-md p-3 shadow-xl z-30 leading-relaxed space-y-1">
                           <span className="block"><strong>EMPRESA</strong> — soma o valor de TODAS as empresas do Agrupamento do funcionário (o grupo inteiro), sem separar por pessoa. Todos do cargo recebem sobre esse total.</span>
                           <span className="block mt-1.5"><strong>EQUIPE</strong> — soma o valor só da empresa onde o funcionário está registrado, sem separar por pessoa. Todos do cargo naquela empresa recebem sobre o mesmo total.</span>
                           <span className="block mt-1.5"><strong>INDIVIDUAL</strong> — soma só as linhas do PRÓPRIO funcionário (a Fonte de Cálculo precisa ter a "Coluna Funcionário" configurada). Cada um recebe sobre o que ele mesmo produziu.</span>
@@ -951,8 +904,7 @@ export default function PoliticaComissao() {
                   </div>
                 </div>
 
-                {/* Percentuais + Valor — não se aplicam ao Plano DMS (valor vem do motor bespoke) */}
-                {form.tipo_calculo !== 'PLANO_DMS' && (
+                {/* Percentuais + Valor */}
                 <div className="grid grid-cols-4 gap-4">
                   <div className="flex flex-col gap-1.5">
                     <label className={LBL}>% Serviços</label>
@@ -988,7 +940,6 @@ export default function PoliticaComissao() {
                     </div>
                   </div>
                 </div>
-                )}
 
                 {/* Usa Faixa + Vigência */}
                 <div className="grid grid-cols-3 gap-4">

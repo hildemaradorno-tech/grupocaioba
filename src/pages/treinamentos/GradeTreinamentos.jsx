@@ -923,24 +923,39 @@ export default function GradeTreinamentos() {
         flags: Object.fromEntries((c.cargos || []).filter(x => cargoPermitido(x.cargo_id)).map(x => [x.cargo_id, x.obrigatorio !== false])),
       }))
       .sort((a, b) => cmpTexto(a.curso.nome, b.curso.nome))
-    // Colunas agrupadas pela Empresa (raiz da árvore do cargo)
+
+    // Colunas agrupadas por Empresa + Nome do cargo: a árvore importada do Bizneo repete muito
+    // nome de cargo em departamentos diferentes ("Consultor de Serviço" em vários lugares da
+    // mesma empresa) — cargos com a mesma empresa e o mesmo nome viram UMA coluna só, em vez de
+    // uma coluna por cargo_id (departamento). Marca chave por curso: cai como "obrigatório" na
+    // coluna agrupada se qualquer um dos cargos que ela reúne exigir o curso como obrigatório;
+    // "sugerido" se nenhum for obrigatório mas algum marcar como sugerido.
+    const chaveCol = (cargoId) => {
+      const nome = cargoPorId[cargoId]?.nome || '—'
+      const agrup = raizDoCargo(cargoId)?.nome || 'Sem empresa'
+      return `${agrup}||${nome}`
+    }
     const colsMap = {}
     rows.forEach(r => {
       ;(r.curso.cargos || []).forEach(cc => {
         if (!cargoPermitido(cc.cargo_id)) return
-        if (!colsMap[cc.cargo_id]) {
+        const chave = chaveCol(cc.cargo_id)
+        if (!colsMap[chave]) {
           const cad = cargoPorId[cc.cargo_id]
-          colsMap[cc.cargo_id] = {
-            id: cc.cargo_id,
+          colsMap[chave] = {
+            id: chave,
             nome: cad?.nome || cc.cargo_nome || '—',
             agrup: raizDoCargo(cc.cargo_id)?.nome || 'Sem empresa',
+            cargoIds: new Set(),
           }
         }
+        colsMap[chave].cargoIds.add(cc.cargo_id)
       })
     })
     // Colunas agrupadas pela Empresa
-    const cols = Object.values(colsMap).sort((a, b) =>
-      cmpTexto(a.agrup, b.agrup) || cmpTexto(a.nome, b.nome))
+    const cols = Object.values(colsMap)
+      .map(c => ({ ...c, cargoIds: [...c.cargoIds] }))
+      .sort((a, b) => cmpTexto(a.agrup, b.agrup) || cmpTexto(a.nome, b.nome))
     cols.forEach((c, i) => { c.inicioGrupo = i === 0 || cols[i - 1].agrup !== c.agrup })
     const grupos = []
     cols.forEach(c => {
@@ -948,6 +963,17 @@ export default function GradeTreinamentos() {
       if (g && g.nome === c.agrup) g.span++
       else grupos.push({ nome: c.agrup, span: 1 })
     })
+
+    // Reagrupa os flags de cada linha (curso) na mesma chave das colunas acima
+    rows.forEach(r => {
+      const flagsAgrupados = {}
+      Object.entries(r.flags).forEach(([cargoId, obrigatorio]) => {
+        const chave = chaveCol(cargoId)
+        flagsAgrupados[chave] = (flagsAgrupados[chave] || false) || obrigatorio
+      })
+      r.flags = flagsAgrupados
+    })
+
     return { rows, cols, grupos }
   })()
 
@@ -1331,7 +1357,7 @@ export default function GradeTreinamentos() {
             </tr>
             <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[11px] font-semibold uppercase tracking-wider">
               {matriz.cols.map(c => (
-                <th key={c.id} title={`${c.nome} — ${c.agrup}`} className={`p-0 relative ${c.id === filtroCargoMatriz ? 'bg-blue-50' : ''} ${c.inicioGrupo ? 'border-l border-slate-200' : ''}`} style={{ width: 42, minWidth: 42, height: 170, verticalAlign: 'bottom' }}>
+                <th key={c.id} title={`${c.nome} — ${c.agrup}`} className={`p-0 relative ${c.cargoIds.includes(filtroCargoMatriz) ? 'bg-blue-50' : ''} ${c.inicioGrupo ? 'border-l border-slate-200' : ''}`} style={{ width: 42, minWidth: 42, height: 170, verticalAlign: 'bottom' }}>
                   <div
                     className="text-[10px] font-semibold normal-case leading-tight text-slate-500"
                     style={{
@@ -1373,7 +1399,7 @@ export default function GradeTreinamentos() {
                   </span>
                 </td>
                 {matriz.cols.map(c => (
-                  <td key={c.id} className={`p-1 text-center align-middle ${c.id === filtroCargoMatriz ? 'bg-blue-50/50' : ''} ${c.inicioGrupo ? 'border-l border-slate-200' : ''}`}>
+                  <td key={c.id} className={`p-1 text-center align-middle ${c.cargoIds.includes(filtroCargoMatriz) ? 'bg-blue-50/50' : ''} ${c.inicioGrupo ? 'border-l border-slate-200' : ''}`}>
                     {r.flags[c.id] !== undefined ? (
                       <span
                         className={`inline-flex items-center justify-center w-5 h-5 rounded-full border ${

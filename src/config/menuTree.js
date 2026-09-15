@@ -57,6 +57,14 @@ export const MENU_TREE = [
           },
         ],
       },
+      {
+        key: '_governanca',
+        label: 'Governança',
+        children: [
+          { key: 'governanca/grupo-acessos', label: 'Grupo de Acessos' },
+          { key: 'governanca/perfis-acesso', label: 'Perfis de Acesso' },
+        ],
+      },
     ],
   },
   {
@@ -73,7 +81,6 @@ export const MENU_TREE = [
           { key: 'cargos-remuneracoes', label: 'Cargos e Remunerações' },
           { key: 'rubricas', label: 'Rubrica' },
           { key: 'tipos-processo', label: 'Tipo de Processo' },
-          { key: 'plano-dms', label: 'Valor Plano DMS' },
         ],
       },
       {
@@ -87,7 +94,6 @@ export const MENU_TREE = [
         children: [
           { key: 'ferias', label: 'Férias' },
           { key: 'calculo-comissoes', label: 'Cálculo de Comissões' },
-          { key: 'plano-dms-calculo', label: 'Plano DMS' },
           { key: 'processamento-comissoes', label: 'Processamento de Comissões' },
           { key: 'sobreaviso-plantao', label: 'Sobreaviso/Plantão' },
         ],
@@ -136,11 +142,30 @@ export const MENU_TREE = [
         children: [
           { key: 'garantias-daf-andamento', label: 'Garantias DAF na Oficina' },
           { key: 'garantias-daf', label: 'Garantias DAF Aberto' },
-          { key: 'garantias-daf-faturadas', label: 'Garantias DAF Faturadas' },
+          { key: 'garantias-daf-historicodeos', label: 'Histórico de O.S.' },
           { key: 'garantias-daf-titulos',   label: 'Garantias DAF a Receber' },
         ],
       },
-      { key: 'honda/garantias-a-receber', label: 'Contas a Receber HONDA' },
+      { key: 'honda/contas-a-receber', label: 'Contas a Receber HONDA' },
+      {
+        key: '_bpm',
+        label: 'Cancelamento/Devolução NF-e',
+        navTo: 'bpm/nfe-cancelamento-devolucao',
+        children: [
+          { key: 'bpm/nfe-cancelamento-devolucao', label: 'Solicitações' },
+          { key: 'bpm/nfe-etapas', label: 'Etapas' },
+        ],
+      },
+      {
+        key: '_truckpag',
+        label: 'Contas a Receber TruckPag',
+        navTo: 'truckpag/titulos',
+        children: [
+          { key: 'truckpag/conciliacao', label: 'Conciliação' },
+          { key: 'truckpag/repasses', label: 'Repasses' },
+          { key: 'truckpag/titulos', label: 'Títulos' },
+        ],
+      },
       {
         key: '_auditoria.cadastros',
         label: 'Cadastros de Auditoria',
@@ -178,7 +203,6 @@ export const MENU_TREE = [
           { key: 'auditoria-externa/divergencias', label: 'Divergências' },
           { key: 'auditoria-externa/plano-acao', label: 'Plano de Ação' },
           { key: 'auditoria-externa/tipos-acao', label: 'Tipos de Ação' },
-          { key: 'auditoria-externa/impactos', label: 'Impactos' },
         ],
       },
       {
@@ -248,14 +272,6 @@ export const MENU_TREE = [
     children: [
       { key: 'treinamentos/grade', label: 'Grade de Treinamentos' },
       { key: 'treinamentos/central', label: 'Central de Treinamentos', href: 'https://centraldetreinamentos.netlify.app/' },
-    ],
-  },
-  {
-    key: '_governanca',
-    label: 'Governança',
-    children: [
-      { key: 'governanca/grupo-acessos', label: 'Grupo de Acessos' },
-      { key: 'governanca/perfis-acesso', label: 'Perfis de Acesso' },
     ],
   },
 ]

@@ -2,7 +2,7 @@ import React from 'react'
 import {
   BookOpen, LayoutGrid, Server, Database, FileSpreadsheet, Cloud, TrainTrack,
   ShieldCheck, ArrowRight, KeyRound, Boxes, Workflow, FolderTree, MapPin,
-  Activity, GitBranch, Lock,
+  Activity, GitBranch, Lock, Bot, BarChart2, Share2, CheckCircle2,
 } from 'lucide-react'
 
 // Cartão de uma peça da arquitetura (frontend, backend, Supabase, etc.)
@@ -167,6 +167,95 @@ export default function Documentacoes() {
             Este espaço de documentação, o agendamento de rotinas de RPA/Power BI e a grade de treinamentos obrigatórios
             por cargo e categoria.
           </PecaCard>
+        </div>
+      </Secao>
+
+      {/* ── Motor de BPM/BPMN ───────────────────────────────────────────── */}
+      <Secao
+        titulo="Motor de BPM/BPMN (Controle de Processos)"
+        subtitulo="Modelagem, execução e acompanhamento de processos de negócio — módulo BPM - Processos"
+      >
+        <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+          <p className="text-sm text-slate-700 leading-relaxed">
+            Os processos de <strong>cancelamento e devolução de notas fiscais</strong> (venda e compra — motos, caminhões,
+            peças e insumos) eram feitos manualmente, sem rastreabilidade, sem aprovações formais e sem histórico auditável.
+            O <strong>BPM - Processos</strong> nasce para digitalizar esse fluxo como primeiro processo publicado, mas foi
+            desenhado como um <strong>motor de BPM genérico</strong>: nenhuma tabela é modelada em torno de "nota fiscal" —
+            um processo é apenas uma <em>definição publicada</em> num catálogo, pronta para receber outros fluxos no futuro
+            (garantia de peças, PDI de veículo novo, aprovação de desconto comercial, admissão de funcionário etc.).
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <PecaCard icon={GitBranch} titulo="Modelagem (Process Design)" tag="BPMN 2.0" corTag="bg-blue-50 text-blue-700">
+            Editor visual (biblioteca <code className="text-[10px] bg-slate-100 px-1 py-0.5 rounded">bpmn-js</code>):
+            eventos, tarefas humanas/automáticas, gateways exclusivos, pools/lanes por área, com versionamento (publicar
+            nova versão não afeta instâncias já em andamento).
+          </PecaCard>
+          <PecaCard icon={Workflow} titulo="Execução (Runtime)" tag="Engine" corTag="bg-violet-50 text-violet-700">
+            Motor próprio que interpreta o BPMN publicado: cria a instância, gera tarefas para tarefas humanas, executa
+            conectores para tarefas de serviço e decide o caminho nos gateways a partir dos dados da instância.
+          </PecaCard>
+          <PecaCard icon={ShieldCheck} titulo="Governança" tag="RBAC + Auditoria" corTag="bg-emerald-50 text-emerald-700">
+            Responsáveis por papel ou usuário, matriz de alçadas por valor e log de auditoria imutável (quem fez o quê,
+            quando, com estado antes/depois) — base da trilha de conformidade fiscal.
+          </PecaCard>
+          <PecaCard icon={BarChart2} titulo="Analytics (BAM)" tag="BI" corTag="bg-amber-50 text-amber-700">
+            Indicadores de tempo por etapa, gargalos e cumprimento de SLA entram em <strong>BI - Dashboard</strong>, seguindo
+            o mesmo padrão dos demais módulos (nunca embutidos na tela operacional).
+          </PecaCard>
+          <PecaCard icon={Share2} titulo="Integração" tag="Conectores" corTag="bg-cyan-50 text-cyan-700">
+            Tarefas de serviço chamam conectores plugáveis (ex.: SEFAZ, estoque, financeiro) sem acoplar o motor a um
+            processo específico — na primeira versão, esses conectores são simulados (stub).
+          </PecaCard>
+          <PecaCard icon={Bot} titulo="IA de apoio" tag="Claude" corTag="bg-rose-50 text-rose-700">
+            Planejado: resumo de instância, sugestão de decisão (sempre com humano no loop) e detecção de anomalias —
+            ainda não implementado nesta fase.
+          </PecaCard>
+        </div>
+
+        <div className="bg-white border border-slate-200 rounded-2xl divide-y divide-slate-100 shadow-sm overflow-hidden">
+          <div className="p-4">
+            <h3 className="text-xs font-bold text-slate-600 uppercase tracking-wider mb-1">Modelo de dados</h3>
+            <p className="text-xs text-slate-500">Tabelas Supabase do motor (prefixo <code className="bg-slate-100 px-1 py-0.5 rounded">bpm_</code>)</p>
+          </div>
+          {[
+            ['bpm_process_definitions', 'Definição publicada de um processo (BPMN + versão + status rascunho/publicado/arquivado), com os formulários de cada etapa e a matriz de alçadas.'],
+            ['bpm_process_instances', 'Uma execução concreta de uma definição (ex.: uma solicitação de cancelamento específica), com os dados acumulados do formulário e status atual.'],
+            ['bpm_tasks', 'Tarefa humana ou de serviço gerada pela instância, com responsável, prazo e decisão registrada.'],
+            ['bpm_audit_log', 'Log imutável de cada ação (quem, quando, estado antes/depois) — trilha de auditoria da instância.'],
+            ['bpm_comments', 'Linha do tempo de comentários por instância.'],
+          ].map(([nome, desc]) => (
+            <div key={nome} className="flex items-start gap-3 p-4">
+              <Database className="h-4 w-4 text-slate-400 shrink-0 mt-0.5" />
+              <div className="text-xs text-slate-600 leading-relaxed">
+                <code className="text-slate-800 font-bold bg-slate-100 px-1 py-0.5 rounded">{nome}</code> — {desc}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+          <h3 className="text-xs font-bold text-slate-600 uppercase tracking-wider mb-3">
+            Processo piloto — Cancelamento e Devolução de NF-e (venda e compra)
+          </h3>
+          <ol className="space-y-2 text-xs text-slate-600 leading-relaxed list-decimal list-inside">
+            <li><strong className="text-slate-800">Solicitação</strong> — solicitante identifica a NF-e, o motivo, o tipo (venda/compra) e se é devolução total ou parcial.</li>
+            <li><strong className="text-slate-800">Validação automática</strong> — o motor confere prazo legal junto à SEFAZ e a existência/status da nota.</li>
+            <li><strong className="text-slate-800">Gateway — dentro do prazo SEFAZ?</strong> sim → cancelamento do evento na SEFAZ; não → devolução com NF-e de devolução/nota complementar.</li>
+            <li><strong className="text-slate-800">Análise fiscal, aprovação financeira (por alçada), conferência de estoque</strong> e, quando exigida pela alçada, <strong className="text-slate-800">validação gerencial</strong>.</li>
+            <li><strong className="text-slate-800">Integrações</strong> — emissão do evento na SEFAZ (ou NF-e de devolução), atualização de estoque e do financeiro.</li>
+            <li><strong className="text-slate-800">Exceções</strong> — rejeição da SEFAZ, prazo expirado ou reprovação em qualquer etapa voltam para tratamento manual, com a pendência registrada.</li>
+            <li><strong className="text-slate-800">Encerramento</strong> — nota cancelada/devolvida, ou instância encerrada com pendência manual.</li>
+          </ol>
+        </div>
+
+        <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 flex items-start gap-2.5">
+          <CheckCircle2 className="h-4 w-4 text-slate-400 shrink-0 mt-0.5" />
+          <p className="text-xs text-slate-500 leading-relaxed">
+            Roadmap de expansão (pós-piloto): garantia de peças, PDI de veículo novo, aprovação de desconto comercial acima
+            de alçada, admissão de funcionário e manutenção preventiva de frota própria.
+          </p>
         </div>
       </Secao>
 

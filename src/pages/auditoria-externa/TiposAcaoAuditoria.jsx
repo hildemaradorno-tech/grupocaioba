@@ -17,6 +17,7 @@ export default function TiposAcaoAuditoria() {
   const [form, setForm] = useState({ nome: '', ativo: true })
   const { hasActionOrDefault } = useAuth()
   const canEdit = hasActionOrDefault('auditoria-externa/tipos-acao', 'editar')
+  const canExcluir = hasActionOrDefault('auditoria-externa/tipos-acao', 'excluir')
 
   const loadDados = async () => {
     setLoading(true); setError(null)
@@ -48,6 +49,7 @@ export default function TiposAcaoAuditoria() {
   }
 
   const handleConfirmarExclusao = async () => {
+    if (!canExcluir) return
     try {
       await apiService.deleteAuditExtTipoAcao(idExcluir)
       await loadDados()
@@ -108,7 +110,7 @@ export default function TiposAcaoAuditoria() {
                 <td className="p-3">
                   <PermissionActionButtons
                     onEdit={canEdit ? () => abrirEditar(item) : undefined}
-                    onDelete={canEdit ? () => abrirExcluir(item) : undefined}
+                    onDelete={canExcluir ? () => abrirExcluir(item) : undefined}
                   />
                 </td>
               </tr>

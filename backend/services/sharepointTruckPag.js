@@ -174,8 +174,9 @@ export async function getTruckPagCreditos() {
 // do próximo. Um "Estabelecimento" só reaparece quando muda de unidade; até lá, é tudo o mesmo
 // estabelecimento com dezenas de sub-blocos de data em sequência. Testado contra o arquivo real:
 // só ler o primeiro "Data pagamento" de cada estabelecimento (como a versão anterior fazia)
-// perdia praticamente tudo — de ~7.900 linhas, só 12 eram capturadas. Histórico cumulativo
-// (upsert no Supabase).
+// perdia praticamente tudo — de ~7.900 linhas, só 12 eram capturadas. O arquivo já traz o
+// histórico acumulado inteiro a cada leitura, então a importação no Supabase substitui a tabela
+// inteira a cada "Atualizar do SharePoint" (não faz upsert incremental).
 function linhaEmBranco(row) {
   return !row || row.every(c => String(c ?? '').trim() === '')
 }

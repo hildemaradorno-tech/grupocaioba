@@ -166,39 +166,6 @@ export default function MetasDistribuicaoConsultores() {
 
   const toggle = (set, setter, key) => setter(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n })
 
-  const tudoExpandido = grupoAberto &&
-    [...new Set([...empresasComRef, ...Object.keys(tree)])].length > 0 &&
-    [...new Set([...empresasComRef, ...Object.keys(tree)])].every(eid => expandedEmpresas.has(eid))
-
-  const expandirTudo = () => {
-    setGrupoAberto(true)
-    const emps = new Set(), depts = new Set(), sets = new Set(), bxs = new Set(), cars = new Set()
-    const empIds = [...new Set([...empresasComRef, ...Object.keys(tree)])]
-    empIds.forEach(empId => {
-      emps.add(empId)
-      const emp = tree[empId]
-      if (!emp || Object.keys(emp.depts || {}).length === 0) {
-        // virtual keys
-        depts.add(`${empId}§vdept`)
-        sets.add(`${empId}§vsetor`)
-        bxs.add(`${empId}§vbox`)
-      } else {
-        Object.entries(emp.depts).forEach(([deptId, dept]) => {
-          const dKey = `${empId}§${deptId}`; depts.add(dKey)
-          Object.entries(dept.setores || {}).forEach(([sId, setor]) => {
-            const sKey = `${dKey}§${sId}`; sets.add(sKey)
-            Object.entries(setor.boxes || {}).forEach(([bId, box]) => {
-              const bKey = `${sKey}§${bId}`; bxs.add(bKey)
-              Object.values(box.cargos || {}).forEach(cargo => cars.add(`${empId}§cargo§${cargo.nome}`))
-            })
-          })
-        })
-      }
-    })
-    setExpandedEmpresas(emps); setExpandedDepts(depts); setExpandedSetores(sets)
-    setExpandedBoxes(bxs); setExpandedCargos(cars)
-  }
-
   const recolherTudo = () => {
     setGrupoAberto(false)
     setExpandedEmpresas(new Set()); setExpandedDepts(new Set()); setExpandedSetores(new Set())
@@ -353,6 +320,39 @@ export default function MetasDistribuicaoConsultores() {
     Object.keys(tree).forEach(eid => all.add(eid))
     return [...all]
   }, [tree, totaisMec, totaisTer, totaisFun, abaAtiva])
+
+  const tudoExpandido = grupoAberto &&
+    [...new Set([...empresasComRef, ...Object.keys(tree)])].length > 0 &&
+    [...new Set([...empresasComRef, ...Object.keys(tree)])].every(eid => expandedEmpresas.has(eid))
+
+  const expandirTudo = () => {
+    setGrupoAberto(true)
+    const emps = new Set(), depts = new Set(), sets = new Set(), bxs = new Set(), cars = new Set()
+    const empIds = [...new Set([...empresasComRef, ...Object.keys(tree)])]
+    empIds.forEach(empId => {
+      emps.add(empId)
+      const emp = tree[empId]
+      if (!emp || Object.keys(emp.depts || {}).length === 0) {
+        // virtual keys
+        depts.add(`${empId}§vdept`)
+        sets.add(`${empId}§vsetor`)
+        bxs.add(`${empId}§vbox`)
+      } else {
+        Object.entries(emp.depts).forEach(([deptId, dept]) => {
+          const dKey = `${empId}§${deptId}`; depts.add(dKey)
+          Object.entries(dept.setores || {}).forEach(([sId, setor]) => {
+            const sKey = `${dKey}§${sId}`; sets.add(sKey)
+            Object.entries(setor.boxes || {}).forEach(([bId, box]) => {
+              const bKey = `${sKey}§${bId}`; bxs.add(bKey)
+              Object.values(box.cargos || {}).forEach(cargo => cars.add(`${empId}§cargo§${cargo.nome}`))
+            })
+          })
+        })
+      }
+    })
+    setExpandedEmpresas(emps); setExpandedDepts(depts); setExpandedSetores(sets)
+    setExpandedBoxes(bxs); setExpandedCargos(cars)
+  }
 
   const grupoRefMeses = useMemo(() => {
     const a = Array(12).fill(0)

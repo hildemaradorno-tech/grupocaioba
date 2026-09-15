@@ -192,15 +192,7 @@ const STATUS_INFO = {
 
 const DIFF_LABEL = { nome: 'nome', cargo: 'cargo', situacao: 'situação', admissao: 'admissão', reativacao: 'reativação', cpf: 'cpf' }
 
-// Deriva o Box a partir dos setores do cargo — mesmo critério usado no formulário manual
-// (handleCargoChange em Funcionarios.jsx), pra não deixar boxes desalinhados num cadastro em lote.
-const boxDoCargo = (cargo, boxes) => {
-  const setorIds = cargo?.setor_ids || []
-  if (setorIds.length === 0) return null
-  return boxes.find(b => Array.isArray(b.setor_ids) && b.setor_ids.some(sid => setorIds.includes(sid))) || null
-}
-
-export default function ImportarFuncionariosModal({ funcionarios, empresas, cargos, boxes, onClose, onImported }) {
+export default function ImportarFuncionariosModal({ funcionarios, empresas, cargos, onClose, onImported }) {
   const fileRef = useRef(null)
   // 'cadastro' = fluxo original (cria/atualiza cadastro + ausentes vira demitido); 'demissoes' =
   // outro relatório do ERP, só atualiza situação+data de demissão de quem já está cadastrado.
@@ -421,7 +413,6 @@ export default function ImportarFuncionariosModal({ funcionarios, empresas, carg
         const cargoNome = cargoObj?.nome_cargo || l.cargoNome
 
         if (l.status === 'novo' || (l.status === 'cargo_nao_encontrado' && !l.funcionarioExistenteId)) {
-          const box = boxDoCargo(cargoObj, boxes)
           let politica = null
           try { politica = await apiService.getPoliticaByCargoEmpresa(cargoId, l.agrupamentoEmpresaId) } catch { /* segue sem política */ }
           await apiService.createFuncionario({
@@ -433,8 +424,6 @@ export default function ImportarFuncionariosModal({ funcionarios, empresas, carg
             cargo_nome: cargoNome,
             departamento_ids: cargoObj?.departamento_ids || [],
             setor_ids: cargoObj?.setor_ids || [],
-            box_id: box?.id || null,
-            box_nome: box?.nome_box || null,
             data_admissao: l.dataAdmissao,
             data_demissao: null,
             situacao_funcionario: l.situacao || null,
@@ -462,9 +451,6 @@ export default function ImportarFuncionariosModal({ funcionarios, empresas, carg
             payload.cargo_nome = cargoNome
             payload.departamento_ids = cargoObj?.departamento_ids || []
             payload.setor_ids = cargoObj?.setor_ids || []
-            const box = boxDoCargo(cargoObj, boxes)
-            payload.box_id = box?.id || null
-            payload.box_nome = box?.nome_box || null
             let politica = null
             try { politica = await apiService.getPoliticaByCargoEmpresa(cargoId, l.agrupamentoEmpresaId) } catch { /* segue sem política */ }
             payload.politica_id = politica?.id || null

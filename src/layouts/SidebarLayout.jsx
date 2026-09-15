@@ -11,7 +11,7 @@ import {
   ClipboardList, Home, FolderKanban, CircleDot, FileText, CalendarDays, DollarSign, Truck, LayoutGrid,
   Calculator, BookOpen, GraduationCap,
   KeyRound, Eye, EyeOff, X, AlertTriangle, Bike, Network, PieChart, Share2, RefreshCw, Gauge, Ruler,
-  ShieldAlert, Landmark, Database, Hash, ListChecks, ExternalLink,
+  ShieldAlert, Landmark, Database, Hash, ListChecks, ExternalLink, Workflow,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import TrocarSenhaObrigatoria from '../pages/TrocarSenhaObrigatoria'
@@ -31,20 +31,20 @@ MENU_TREE.forEach(buildSectionLeaves)
 // ── Map route to section key ──────────────────────────────────────────────────
 function getActiveSectionKey(pathname) {
   if (pathname === '/usuarios' || pathname === '/grupos' || pathname === '/permissoes-matriz') return '_config'
-  if (pathname === '/folha-pagamento-daf' || pathname === '/politica-comissao' || pathname === '/fontes-calculo' || pathname === '/bases-calculo' || pathname === '/cargos-remuneracoes' || pathname === '/rubricas' || pathname === '/tipos-processo' || pathname === '/plano-dms') return '_comissoes-calculo'
+  if (pathname === '/folha-pagamento-daf' || pathname === '/politica-comissao' || pathname === '/fontes-calculo' || pathname === '/bases-calculo' || pathname === '/cargos-remuneracoes' || pathname === '/rubricas' || pathname === '/tipos-processo') return '_comissoes-calculo'
   const cadastros = ['/segmentos','/agrup-empresas','/empresas','/areas','/agrup-departamentos',
     '/departamentos','/setores','/box','/agrup-cargos','/cargos','/organograma',
     '/movimento-venda','/natureza-operacoes','/tipos-produtos','/tipos-os',
     '/classificacao-compra','/funcionarios','/feriados','/calendario','/sincronizacao-dados']
   if (cadastros.includes(pathname)) return '_config'
   if (pathname.startsWith('/metas')) return '_metas'
-  if (pathname.startsWith('/garantias-daf') || pathname.startsWith('/auditoria-os-aberto') || pathname.startsWith('/auditoria') || pathname.startsWith('/garantia') || pathname.startsWith('/honda')) return '_controle-processos'
+  if (pathname.startsWith('/garantias-daf') || pathname.startsWith('/auditoria-os-aberto') || pathname.startsWith('/auditoria') || pathname.startsWith('/garantia') || pathname.startsWith('/honda') || pathname.startsWith('/truckpag') || pathname.startsWith('/bpm')) return '_controle-processos'
   if (pathname.startsWith('/projetos') || pathname.startsWith('/auditoria-externa')) return '_gestao-projetos'
   if (pathname.startsWith('/calculadoras')) return '_calculadoras'
   if (pathname.startsWith('/bi') || pathname.startsWith('/kpi')) return '_bi'
   if (pathname.startsWith('/documentacoes') || pathname.startsWith('/rpa') || pathname.startsWith('/ecossistema')) return '_documentacoes'
   if (pathname.startsWith('/treinamentos')) return '_treinamentos'
-  if (pathname.startsWith('/governanca')) return '_governanca'
+  if (pathname.startsWith('/governanca')) return '_config'
   return null
 }
 
@@ -416,6 +416,14 @@ export default function SidebarLayout() {
                 {canView('fornecedores') && <FlyItem to="/fornecedores" icon={Truck} onClose={closeFlyout}>Fornecedores</FlyItem>}
               </>
             )}
+            {canViewSection('_governanca') && (
+              <>
+                <div className="mx-3 my-2 border-t border-blue-800/50" />
+                <FlyGroup label="Governança" />
+                {canView('governanca/grupo-acessos') && <FlyItem to="/governanca/grupo-acessos" icon={Landmark} onClose={closeFlyout}>Grupo de Acessos</FlyItem>}
+                {canView('governanca/perfis-acesso') && <FlyItem to="/governanca/perfis-acesso" icon={ShieldCheck} onClose={closeFlyout}>Perfis de Acesso</FlyItem>}
+              </>
+            )}
           </>
         )
 
@@ -453,11 +461,10 @@ export default function SidebarLayout() {
                 {canView('cargos-remuneracoes') && <FlyItem to="/cargos-remuneracoes" icon={Briefcase} onClose={closeFlyout}>Cargos e Remunerações</FlyItem>}
                 {canView('rubricas') && <FlyItem to="/rubricas" icon={Hash} onClose={closeFlyout}>Rubrica</FlyItem>}
                 {canView('tipos-processo') && <FlyItem to="/tipos-processo" icon={ListChecks} onClose={closeFlyout}>Tipo de Processo</FlyItem>}
-                {canView('plano-dms') && <FlyItem to="/plano-dms" icon={Wrench} onClose={closeFlyout}>Valor Plano DMS</FlyItem>}
                 <div className="mx-3 my-2 border-t border-blue-800/50" />
               </>
             )}
-            {(canView('ferias') || canView('calculo-comissoes') || canView('processamento-comissoes') || canView('sobreaviso-plantao') || canView('plano-dms-calculo')) && (
+            {(canView('ferias') || canView('calculo-comissoes') || canView('processamento-comissoes') || canView('sobreaviso-plantao')) && (
               <>
                 <div className="mx-3 my-2 border-t border-blue-800/50" />
                 <FlyItem to="/folha-pagamento-daf" icon={Wallet} onClose={closeFlyout}>Folha de Pagamento - DAF</FlyItem>
@@ -502,14 +509,18 @@ export default function SidebarLayout() {
       case '_controle-processos':
         return (
           <>
-            {(canView('garantias-daf-andamento') || canView('garantias-daf') || canView('garantias-daf-faturadas') || canView('garantias-daf-titulos') || canView('honda/garantias-a-receber')) && (
+            {(canView('garantias-daf-andamento') || canView('garantias-daf') || canView('garantias-daf-historicodeos') || canView('garantias-daf-titulos') || canView('honda/contas-a-receber') || canView('bpm/nfe-cancelamento-devolucao')) && (
               <FlyGroup label="Controle de Processos" />
             )}
             {/* Dashboard e as demais telas (Encerradas, Faturadas, a Receber) já ficam acessíveis como abas dentro de Garantias DAF. */}
             {(canView('garantias-daf-andamento') || canView('garantias-daf')) && (
               <FlyItem to={canView('garantias-daf-andamento') ? '/garantias-daf-andamento' : '/garantias-daf'} icon={ShieldCheck} onClose={closeFlyout}>Garantias DAF</FlyItem>
             )}
-            {canView('honda/garantias-a-receber') && <FlyItem to="/honda/garantias-a-receber" icon={Bike} onClose={closeFlyout}>Contas a Receber HONDA</FlyItem>}
+            {canView('honda/contas-a-receber') && <FlyItem to="/honda/contas-a-receber" icon={Bike} onClose={closeFlyout}>Contas a Receber HONDA</FlyItem>}
+            {canView('bpm/nfe-cancelamento-devolucao') && <FlyItem to="/bpm/nfe-cancelamento-devolucao" icon={Workflow} onClose={closeFlyout}>Cancelamento/Devolução NF-e</FlyItem>}
+      {(canView('truckpag/titulos') || canView('truckpag/conciliacao')) && (
+        <FlyItem to="/truckpag/titulos" icon={Truck} onClose={closeFlyout}>Contas a Receber TruckPag</FlyItem>
+      )}
             {(canView('auditoria/responsaveis') || canView('auditoria/situacoes') || canView('auditoria-os-aberto')) && (
               <FlyGroup label="Cadastros de Auditoria" />
             )}
@@ -527,7 +538,7 @@ export default function SidebarLayout() {
             <FlyGroup label="Gestão de Projetos" />
             {canView('projetos') && <FlyItem to="/projetos" icon={FolderKanban} onClose={closeFlyout}>Projetos</FlyItem>}
 
-            {(canView('auditoria-externa/ciclos') || canView('auditoria-externa/dashboard') || canView('auditoria-externa/divergencias') || canView('auditoria-externa/plano-acao') || canView('auditoria-externa/tipos-acao') || canView('auditoria-externa/impactos')) && (
+            {(canView('auditoria-externa/ciclos') || canView('auditoria-externa/dashboard') || canView('auditoria-externa/divergencias') || canView('auditoria-externa/plano-acao') || canView('auditoria-externa/tipos-acao')) && (
               <FlyItem to="/auditoria-externa/dashboard" icon={ShieldAlert} onClose={closeFlyout}>Auditoria Externa</FlyItem>
             )}
 
@@ -595,15 +606,6 @@ export default function SidebarLayout() {
             <FlyGroup label="Treinamentos" />
             {canView('treinamentos/grade') && <FlyItem to="/treinamentos/grade" icon={GraduationCap} onClose={closeFlyout}>Grade de Treinamentos</FlyItem>}
             {canView('treinamentos/central') && <FlyItemExternal href="https://centraldetreinamentos.netlify.app/" icon={BookOpen} onClose={closeFlyout}>Central de Treinamentos</FlyItemExternal>}
-          </>
-        )
-
-      case '_governanca':
-        return (
-          <>
-            <FlyGroup label="Governança" />
-            {canView('governanca/grupo-acessos') && <FlyItem to="/governanca/grupo-acessos" icon={Landmark} onClose={closeFlyout}>Grupo de Acessos</FlyItem>}
-            {canView('governanca/perfis-acesso') && <FlyItem to="/governanca/perfis-acesso" icon={ShieldCheck} onClose={closeFlyout}>Perfis de Acesso</FlyItem>}
           </>
         )
 
@@ -715,15 +717,6 @@ export default function SidebarLayout() {
               onClick={() => toggleSection('_treinamentos')}
             />
           )}
-          {canViewSection('_governanca') && (
-            <SidebarIconBtn
-              icon={Landmark}
-              label="Governança"
-              isActive={currentSection === '_governanca' || activeSection === '_governanca'}
-              onClick={() => toggleSection('_governanca')}
-            />
-          )}
-
         </nav>
 
         {/* Footer */}
@@ -758,7 +751,6 @@ export default function SidebarLayout() {
                 {activeSection === '_bi' && 'BI - Dashboard'}
                 {activeSection === '_documentacoes' && 'Documentações'}
                 {activeSection === '_treinamentos' && 'Treinamentos'}
-                {activeSection === '_governanca' && 'Governança'}
                 {activeSection === 'organograma' && 'Organograma'}
               </span>
             </div>

@@ -30,7 +30,7 @@ router.post('/diagnostico', wrap(async (req, res) => {
 Motivo: ${achado.motivo || '—'}
 Fundamentação técnica: ${achado.fundamentacao_tecnica || '—'}
 Total apontado: ${fmtMoeda(achado.total_apontado)}
-Impacto: ${achado.audext_impactos?.nome || achado.impactos || '—'}
+Impactos: ${achado.impactos || '—'}
 Fatos apontados pela auditoria: ${textoSimples(achado.fatos_apontados) || '—'}
 Recomendações da auditoria: ${textoSimples(achado.recomendacoes) || '—'}
 Evidências: ${achado.evidencias || '—'}`

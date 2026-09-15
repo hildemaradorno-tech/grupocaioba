@@ -1,12 +1,13 @@
 import React, { useEffect, useState, useMemo } from 'react'
 import { useSessionState } from '../../hooks/useSessionState'
-import { Plus, X, AlertTriangle, CalendarClock, Eye, Trash2 } from 'lucide-react'
+import { Plus, X, AlertTriangle, CalendarClock, Eye, Trash2, Upload, Users } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import PermissionActionButtons from '../../components/PermissionActionButtons'
 import { apiService } from '../../services/api'
 import AuditoriaExternaNav from './AuditoriaExternaNav'
 import ManifestacaoRichEditor from '../projetos/ManifestacaoRichEditor'
-import { CICLO_STATUS_MAP, Badge, fmtData, PercentualBar, calcularPercentualAtingidoAchado } from './auditExtConstants'
+import ImportarDivergenciasModal from './ImportarDivergenciasModal'
+import { CICLO_STATUS_MAP, Badge, fmtData, PercentualBar, calcularPercentualAtingidoAchado, empresaNoEscopo } from './auditExtConstants'
 
 const FORM_VAZIO = { empresa_id: '', periodo_competencia: '', firma_auditoria: '', data_apresentacao: '', status: 'em_andamento', observacoes: '' }
 
@@ -18,6 +19,7 @@ export default function CiclosAuditoria() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [modalAberto, setModalAberto] = useState(false)
+  const [modalImportarAberto, setModalImportarAberto] = useState(false)
   const [modalExcluirAberto, setModalExcluirAberto] = useState(false)
   const [modalVisualizarAberto, setModalVisualizarAberto] = useState(false)
   const [itemVisualizado, setItemVisualizado] = useState(null)
@@ -25,9 +27,21 @@ export default function CiclosAuditoria() {
   const [idExcluir, setIdExcluir] = useState(null)
   const [nomeExcluir, setNomeExcluir] = useState('')
   const [form, setForm] = useSessionState('audext_ciclos_form', FORM_VAZIO)
-  const { user, hasActionOrDefault } = useAuth()
+  const { user, hasActionOrDefault, isAdminEfetivo, empresasPermitidasAuditoriaEfetivas } = useAuth()
   const canEdit = hasActionOrDefault('auditoria-externa/ciclos', 'editar')
   const canExcluir = hasActionOrDefault('auditoria-externa/ciclos', 'excluir')
+  const canImportar = hasActionOrDefault('auditoria-externa/divergencias', 'importar_divergencias')
+  const canVerTodos = hasActionOrDefault('auditoria-externa/dashboard', 'ver_todos') && empresasPermitidasAuditoriaEfetivas.size > 0
+  const [verTodos, setVerTodos] = useSessionState('audext_ver_todos', false)
+  const empresasEfetivas = verTodos ? new Set() : empresasPermitidasAuditoriaEfetivas
+
+  // Escopo por Empresa (Grupo de Acesso) — vazio = sem restrição.
+  const empresasVisiveis = useMemo(() =>
+    empresas.filter(e => empresaNoEscopo(e.id, empresasEfetivas, isAdminEfetivo)),
+    [empresas, empresasEfetivas, isAdminEfetivo])
+  const dadosVisiveis = useMemo(() =>
+    dados.filter(c => empresaNoEscopo(c.empresa_id, empresasEfetivas, isAdminEfetivo)),
+    [dados, empresasEfetivas, isAdminEfetivo])
 
   const loadDados = async () => {
     setLoading(true); setError(null)
@@ -168,12 +182,34 @@ export default function CiclosAuditoria() {
             <h1 className="text-xl font-bold text-slate-900 tracking-tight">Ciclos de Auditoria</h1>
             <p className="text-xs text-slate-500">Períodos de auditoria externa por empresa (ex: 1º Tri 2026, firma responsável).</p>
           </div>
-          {canEdit && (
-            <button onClick={abrirIncluir} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-2 rounded-md shadow-sm transition-colors">
-              <Plus className="h-4 w-4" /> Novo Ciclo
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            {canVerTodos && (
+              <button
+                onClick={() => setVerTodos(v => !v)}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-semibold border transition-colors whitespace-nowrap ${verTodos ? 'bg-amber-50 text-amber-700 border-amber-300' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 shadow-sm'}`}
+                title={verTodos ? 'Voltar para minha visão' : 'Ver todas as Empresas'}
+              >
+                <Users className="h-3.5 w-3.5" /> {verTodos ? '← Minha Visão' : 'Ver Todos'}
+              </button>
+            )}
+            {canImportar && (
+              <button onClick={() => setModalImportarAberto(true)} className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold px-3 py-2 rounded-md shadow-sm border border-slate-200 transition-colors">
+                <Upload className="h-4 w-4 text-emerald-600" /> Importar Excel
+              </button>
+            )}
+            {canEdit && (
+              <button onClick={abrirIncluir} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-2 rounded-md shadow-sm transition-colors">
+                <Plus className="h-4 w-4" /> Novo Ciclo
+              </button>
+            )}
+          </div>
         </div>
+        {verTodos && (
+          <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 text-xs text-amber-700 font-semibold">
+            <span className="inline-block w-2 h-2 rounded-full bg-amber-400 shrink-0" />
+            Modo "Ver Todos" — mostrando todas as Empresas, ignorando a restrição do seu grupo de acesso
+          </div>
+        )}
         <AuditoriaExternaNav />
       </div>
 
@@ -192,9 +228,9 @@ export default function CiclosAuditoria() {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
-            {dados.length === 0 ? (
+            {dadosVisiveis.length === 0 ? (
               <tr><td colSpan="8" className="p-6 text-center text-slate-400">Nenhum ciclo de auditoria cadastrado.</td></tr>
-            ) : dados.map(item => (
+            ) : dadosVisiveis.map(item => (
               <tr key={item.id} className="hover:bg-slate-50/70 transition-colors">
                 <td className="p-3 text-slate-900 font-bold flex items-center gap-2"><CalendarClock className="h-3.5 w-3.5 text-indigo-500" /> {item.proj_empresas?.nome || '—'}</td>
                 <td className="p-3">{item.periodo_competencia}</td>
@@ -242,7 +278,7 @@ export default function CiclosAuditoria() {
                   <select value={form.empresa_id} onChange={e => setForm(prev => ({ ...prev, empresa_id: e.target.value }))}
                     className="w-full text-xs p-2 border border-slate-200 rounded-md font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500">
                     <option value="">— Selecione —</option>
-                    {empresas.map(e => <option key={e.id} value={e.id}>{e.nome}</option>)}
+                    {empresasVisiveis.map(e => <option key={e.id} value={e.id}>{e.nome}</option>)}
                   </select>
                 </div>
                 <div className="flex flex-col gap-1.5">
@@ -363,6 +399,13 @@ export default function CiclosAuditoria() {
             </div>
           </div>
         </div>
+      )}
+
+      {modalImportarAberto && (
+        <ImportarDivergenciasModal
+          onClose={() => setModalImportarAberto(false)}
+          onImported={() => { setModalImportarAberto(false); loadDados() }}
+        />
       )}
     </div>
   )

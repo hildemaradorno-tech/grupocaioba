@@ -31,7 +31,6 @@ import FontesCalculo from './pages/FontesCalculo'
 import BasesCalculo from './pages/BasesCalculo'
 import Rubricas from './pages/Rubricas'
 import TiposProcesso from './pages/TiposProcesso'
-import PlanoDms from './pages/PlanoDms'
 import FolhaPagamentoDaf from './pages/FolhaPagamentoDaf'
 import Funcionarios from './pages/Funcionarios'
 import Feriados from './pages/Feriados'
@@ -54,6 +53,17 @@ import GarantiasDafTitulos from './pages/garantias-daf/GarantiasDafTitulos'
 import GarantiasDafForm from './pages/garantias-daf/GarantiasDafForm'
 import AuditoriaOsAberto from './pages/garantias-daf/AuditoriaOsAberto'
 import HondaGarantiasReceber from './pages/honda/HondaGarantiasReceber'
+import BpmProcessos from './pages/bpm/BpmProcessos'
+import BpmModelador from './pages/bpm/BpmModelador'
+import BpmRegras from './pages/bpm/BpmRegras'
+import BpmNovaInstancia from './pages/bpm/BpmNovaInstancia'
+import BpmInstancia from './pages/bpm/BpmInstancia'
+import NfeCancelamentoDevolucao from './pages/bpm/NfeCancelamentoDevolucao'
+import NfeSolicitacaoDetalhe from './pages/bpm/NfeSolicitacaoDetalhe'
+import NfeEtapasConfig from './pages/bpm/NfeEtapasConfig'
+import TruckPagTitulos from './pages/truckpag/TruckPagTitulos'
+import TruckPagConciliacao from './pages/truckpag/TruckPagConciliacao'
+import TruckPagRepasses from './pages/truckpag/TruckPagRepasses'
 import AuditoriaResponsaveis from './pages/auditoria/AuditoriaResponsaveis'
 import AuditoriaSituacoes from './pages/auditoria/AuditoriaSituacoes'
 import TipoTituloGarantia from './pages/garantia/TipoTituloGarantia'
@@ -76,7 +86,6 @@ import AchadosPainel from './pages/auditoria-externa/AchadosPainel'
 import PlanoAcaoPainel from './pages/auditoria-externa/PlanoAcaoPainel'
 import CiclosAuditoria from './pages/auditoria-externa/CiclosAuditoria'
 import TiposAcaoAuditoria from './pages/auditoria-externa/TiposAcaoAuditoria'
-import ImpactosAuditoria from './pages/auditoria-externa/ImpactosAuditoria'
 import { ProjetosFiltrosProvider } from './context/ProjetosFiltrosContext'
 import Fornecedores from './pages/Fornecedores'
 import KpiMatriz, { KPI_MATRIZ_PERMS } from './pages/kpi/KpiMatriz'
@@ -188,8 +197,7 @@ export default function App() {
           { path: '/bases-calculo', element: <BasesCalculo />, menuPath: 'bases-calculo' },
           { path: '/rubricas', element: <Rubricas />, menuPath: 'rubricas' },
           { path: '/tipos-processo', element: <TiposProcesso />, menuPath: 'tipos-processo' },
-          { path: '/plano-dms', element: <PlanoDms />, menuPath: 'plano-dms' },
-          { path: '/folha-pagamento-daf', element: <FolhaPagamentoDaf />, menuPath: ['ferias', 'calculo-comissoes', 'processamento-comissoes', 'sobreaviso-plantao', 'plano-dms-calculo'] },
+          { path: '/folha-pagamento-daf', element: <FolhaPagamentoDaf />, menuPath: ['ferias', 'calculo-comissoes', 'processamento-comissoes', 'sobreaviso-plantao'] },
           { path: '/calculo-comissoes', element: <Navigate to="/folha-pagamento-daf?aba=calculo-comissoes" replace /> },
           { path: '/processamento-comissoes', element: <Navigate to="/folha-pagamento-daf?aba=processamento-comissoes" replace /> },
           { path: '/ferias', element: <Navigate to="/folha-pagamento-daf?aba=ferias" replace /> },
@@ -211,7 +219,19 @@ export default function App() {
           { path: '/metas/total-grupo', element: <MetasTotalGrupo />, menuPath: '/metas/total-grupo' },
           { path: '/metas/gestao-aprovacao', element: <MetasGestaoAprovacao />, menuPath: '/metas/gestao-aprovacao' },
           { path: '/auditoria-os-aberto', element: <AuditoriaOsAberto />, menuPath: '/auditoria-os-aberto' },
-          { path: '/honda/garantias-a-receber', element: <HondaGarantiasReceber />, menuPath: 'honda/garantias-a-receber' },
+          { path: '/honda/contas-a-receber', element: <HondaGarantiasReceber />, menuPath: 'honda/contas-a-receber' },
+          { path: '/bpm/processos', element: <BpmProcessos />, menuPath: 'bpm/processos' },
+          { path: '/bpm/modelador', element: <BpmModelador />, menuPath: ['bpm/modelador', 'bpm/nfe-cancelamento-devolucao'] },
+          { path: '/bpm/modelador/:id', element: <BpmModelador />, menuPath: ['bpm/modelador', 'bpm/nfe-cancelamento-devolucao'] },
+          { path: '/bpm/regras', element: <BpmRegras />, menuPath: 'bpm/nfe-cancelamento-devolucao' },
+          { path: '/bpm/instancias/novo/:definitionId', element: <BpmNovaInstancia />, menuPath: 'bpm/processos' },
+          { path: '/bpm/instancias/:id', element: <BpmInstancia />, menuPath: ['bpm/processos', 'bpm/nfe-cancelamento-devolucao'] },
+          { path: '/bpm/nfe-cancelamento-devolucao', element: <NfeCancelamentoDevolucao />, menuPath: 'bpm/nfe-cancelamento-devolucao' },
+          { path: '/bpm/nfe-solicitacoes/:id', element: <NfeSolicitacaoDetalhe />, menuPath: 'bpm/nfe-cancelamento-devolucao' },
+          { path: '/bpm/nfe-etapas', element: <NfeEtapasConfig />, menuPath: 'bpm/nfe-etapas' },
+          { path: '/truckpag/titulos', element: <TruckPagTitulos />, menuPath: 'truckpag/titulos' },
+          { path: '/truckpag/conciliacao', element: <TruckPagConciliacao />, menuPath: 'truckpag/conciliacao' },
+          { path: '/truckpag/repasses', element: <TruckPagRepasses />, menuPath: 'truckpag/repasses' },
           { path: '/auditoria/responsaveis', element: <AuditoriaResponsaveis />, menuPath: 'auditoria/responsaveis' },
           { path: '/auditoria/situacoes', element: <AuditoriaSituacoes />, menuPath: 'auditoria/situacoes' },
           { path: '/garantia/tipo-titulo', element: <TipoTituloGarantia />, menuPath: 'garantia/tipo-titulo' },
@@ -219,7 +239,7 @@ export default function App() {
           { path: '/garantias-daf', element: <GarantiasDafDashboard key="aberto" />, menuPath: '/garantias-daf' },
           { path: '/garantias-daf/novo', element: <GarantiasDafForm />, menuPath: '/garantias-daf' },
           { path: '/garantias-daf/:id', element: <GarantiasDafForm />, menuPath: '/garantias-daf' },
-          { path: '/garantias-daf-faturadas', element: <GarantiasDafFaturadas />, menuPath: '/garantias-daf-faturadas' },
+          { path: '/garantias-daf-historicodeos', element: <GarantiasDafFaturadas />, menuPath: '/garantias-daf-historicodeos' },
           { path: '/garantias-daf-titulos',   element: <GarantiasDafTitulos />,   menuPath: '/garantias-daf-titulos' },
           { path: '/projetos', element: <ProjetosDashboard />, menuPath: 'projetos' },
           { path: '/projetos/manifestacoes', element: <ManifestacoesPainel />, menuPath: ['projetos/manifestacoes', 'projetos'] },
@@ -231,7 +251,6 @@ export default function App() {
           { path: '/auditoria-externa/plano-acao', element: <PlanoAcaoPainel />, menuPath: 'auditoria-externa/plano-acao' },
           { path: '/auditoria-externa/ciclos', element: <CiclosAuditoria />, menuPath: 'auditoria-externa/ciclos' },
           { path: '/auditoria-externa/tipos-acao', element: <TiposAcaoAuditoria />, menuPath: 'auditoria-externa/tipos-acao' },
-          { path: '/auditoria-externa/impactos', element: <ImpactosAuditoria />, menuPath: 'auditoria-externa/impactos' },
           { path: '/fornecedores', element: <Fornecedores />, menuPath: 'fornecedores' },
           { path: '/projetos/novo', element: <ProjetoEditor />, menuPath: 'projetos' },
           { path: '/projetos/detalhe/:id/editar', element: <ProjetoEditor />, menuPath: 'projetos' },

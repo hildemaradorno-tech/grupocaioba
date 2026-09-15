@@ -86,6 +86,8 @@ function getTextColor(hex) {
 export default function PlanejamentoProjetos() {
   const navigate = useNavigate()
   const { isAdmin, empresasPermitidas, departamentosPermitidosEfetivos, hasActionOrDefault } = useAuth()
+  const canVerTodos            = !isAdmin && hasActionOrDefault('projetos', 'ver_todos_projetos') && departamentosPermitidosEfetivos?.size > 0
+  const canAlterarStatusTarefa = hasActionOrDefault('projetos', 'alterar_status_tarefa')
   const canEditarProjeto  = hasActionOrDefault('projetos/planejamento', 'editar_projeto')
   const canEditarTarefa   = hasActionOrDefault('projetos/planejamento', 'editar_tarefa')
   const canIniciarTarefa  = hasActionOrDefault('projetos/planejamento', 'iniciar_tarefa')
@@ -357,13 +359,15 @@ export default function PlanejamentoProjetos() {
           <h1 className="text-xl font-bold text-slate-900 tracking-tight">Planejamento</h1>
           <p className="text-xs text-slate-500">Visão matricial de tarefas por fase/etapa.</p>
         </div>
-        <button
-          onClick={() => setVerTodos(v => !v)}
-          className={`flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-semibold border transition-colors whitespace-nowrap ${verTodos ? 'bg-amber-50 text-amber-700 border-amber-300' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 shadow-sm'}`}
-          title={verTodos ? 'Voltar para minha visão' : 'Ver todos os projetos (somente leitura)'}
-        >
-          {verTodos ? '← Minha Visão' : 'Ver Todos os Projetos'}
-        </button>
+        {canVerTodos && (
+          <button
+            onClick={() => setVerTodos(v => !v)}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-semibold border transition-colors whitespace-nowrap ${verTodos ? 'bg-amber-50 text-amber-700 border-amber-300' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 shadow-sm'}`}
+            title={verTodos ? 'Voltar para minha visão' : 'Ver todos os projetos (somente leitura)'}
+          >
+            {verTodos ? '← Minha Visão' : 'Ver Todos os Projetos'}
+          </button>
+        )}
         <button
           onClick={handleSalvarPDF}
           disabled={gerandoPDF}
@@ -918,6 +922,7 @@ export default function PlanejamentoProjetos() {
           fases={fases.filter(f => f.ativo !== false)}
           empresas={optsEmp}
           areas={modalOptsArea}
+          canAlterarStatus={canAlterarStatusTarefa}
           onClose={() => setModalEditarTarefa(null)}
           onSaved={() => { recarregarDados(); setModalEditarTarefa(null) }}
           onNavigate={(t) => setModalEditarTarefa({

@@ -28,6 +28,13 @@ export function AuthProvider({ children }) {
   const [isAdmin, setIsAdmin] = useState(false)
   const [empresasPermitidas, setEmpresasPermitidas] = useState(new Set())
   const [departamentosPermitidos, setDepartamentosPermitidos] = useState(new Set())
+  // Restrição por Departamento EXCLUSIVA de Auditoria Externa — separada da de Gestão de
+  // Projetos acima (antes as duas telas compartilhavam departamentosPermitidos).
+  const [departamentosPermitidosAuditoria, setDepartamentosPermitidosAuditoria] = useState(new Set())
+  // Restrição por Empresa EXCLUSIVA de Auditoria Externa — não pode reaproveitar
+  // empresasPermitidas (guarda dim_empresas.id) porque o Ciclo de Auditoria referencia
+  // proj_empresas.id, uma tabela diferente (ids não se cruzam entre as duas).
+  const [empresasPermitidasAuditoria, setEmpresasPermitidasAuditoria] = useState(new Set())
   // Escopo de acesso exclusivo do módulo Cálculo de Comissões (5 dimensões, cada uma
   // TODOS ou INDIVIDUAL) — separado da restrição de Empresa usada em Garantias DAF.
   const [comissaoEscopo, setComissaoEscopo] = useState(escopoComissaoTudoLiberado())
@@ -40,18 +47,29 @@ export function AuthProvider({ children }) {
   const [comissaoNivelDepartamento, setComissaoNivelDepartamento] = useState(new Map())
   const [userNome, setUserNome] = useState('')
   const [usuarioId, setUsuarioId] = useState(null) // usuarios.id (≠ auth.users.id)
+  const [userCargoId, setUserCargoId] = useState(null)
+  // Agrupamento do Cargo escolhido em Usuários — não é guardado direto na tabela usuarios (que
+  // guarda o cargo específico, cargo_id), é resolvido via dim_cargos.agrupamento_id. É contra
+  // isso que o BPM compara (bpm_tasks.responsavel_agrupamento_cargo_id), não contra o cargo exato.
+  const [userAgrupamentoCargoId, setUserAgrupamentoCargoId] = useState(null)
   const [trocarSenha, setTrocarSenha] = useState(false)
 
   // Simulação de visualização como outro usuário
   const [impersonando, setImpersonando] = useState(null) // { id, nome, email }
   const [impersonandoPermissions, setImpersonandoPermissions] = useState(new Set())
   const [impersonandoAcoes, setImpersonandoAcoes] = useState(new Set())
+  const [projetosDeptoModo, setProjetosDeptoModo] = useState(null) // null | 'TODOS' | 'INDIVIDUAL'
   const [impersonandoIsAdmin, setImpersonandoIsAdmin] = useState(false)
   const [impersonandoEmpresas, setImpersonandoEmpresas] = useState(new Set())
   const [impersonandoDeptos, setImpersonandoDeptos] = useState(new Set())
+  const [impersonandoProjetosDeptoModo, setImpersonandoProjetosDeptoModo] = useState(null)
+  const [impersonandoDeptosAuditoria, setImpersonandoDeptosAuditoria] = useState(new Set())
+  const [impersonandoEmpresasAuditoria, setImpersonandoEmpresasAuditoria] = useState(new Set())
   const [impersonandoComissaoEscopo, setImpersonandoComissaoEscopo] = useState(escopoComissaoTudoLiberado())
   const [impersonandoComissaoEscopoHabilitado, setImpersonandoComissaoEscopoHabilitado] = useState(false)
   const [impersonandoComissaoNivelDepartamento, setImpersonandoComissaoNivelDepartamento] = useState(new Map())
+  const [impersonandoCargoId, setImpersonandoCargoId] = useState(null)
+  const [impersonandoAgrupamentoCargoId, setImpersonandoAgrupamentoCargoId] = useState(null)
 
   const loadPermissions = async (authUser) => {
     if (!authUser) {
@@ -59,11 +77,15 @@ export function AuthProvider({ children }) {
       setIsAdmin(false)
       setEmpresasPermitidas(new Set())
       setDepartamentosPermitidos(new Set())
+      setDepartamentosPermitidosAuditoria(new Set())
+      setEmpresasPermitidasAuditoria(new Set())
       setComissaoEscopo(escopoComissaoTudoLiberado())
       setComissaoEscopoHabilitado(false)
       setComissaoNivelDepartamento(new Map())
       setUserNome('')
       setUsuarioId(null)
+      setUserCargoId(null)
+      setUserAgrupamentoCargoId(null)
       setPermissionsLoading(false)
       return
     }
@@ -73,7 +95,7 @@ export function AuthProvider({ children }) {
       // Busca por email (mais robusto — evita mismatch entre auth.users.id e usuarios.id)
       const { data: perfil, error: e1 } = await supabase
         .from('usuarios')
-        .select('id, grupo_id, nome')
+        .select('id, grupo_id, nome, cargo_id')
         .eq('email', authUser.email)
         .maybeSingle()
 
@@ -87,6 +109,13 @@ export function AuthProvider({ children }) {
 
       setUserNome(perfil?.nome || '')
       setUsuarioId(perfil?.id || null)
+      setUserCargoId(perfil?.cargo_id || null)
+      if (perfil?.cargo_id) {
+        const { data: cargo } = await supabase.from('dim_cargos').select('agrupamento_id').eq('id', perfil.cargo_id).maybeSingle()
+        setUserAgrupamentoCargoId(cargo?.agrupamento_id || null)
+      } else {
+        setUserAgrupamentoCargoId(null)
+      }
 
       if (!perfil?.grupo_id) {
         console.warn('[Auth] Usuário sem grupo_id — sem permissões atribuídas:', authUser.email)
@@ -97,12 +126,14 @@ export function AuthProvider({ children }) {
         return
       }
 
-      const [{ data: grupo, error: e2 },{ data: perms, error: e3 }, { data: empPerms, error: e4 }, { data: acoes }, { data: deptoPerms }] = await Promise.all([
-        supabase.from('grupos_acesso').select('is_admin').eq('id', perfil.grupo_id).single(),
+      const [{ data: grupo, error: e2 },{ data: perms, error: e3 }, { data: empPerms, error: e4 }, { data: acoes }, { data: deptoPerms }, { data: deptoAuditPerms }, { data: empAuditPerms }] = await Promise.all([
+        supabase.from('grupos_acesso').select('is_admin, auditoria_depto_modo, projetos_depto_modo, auditoria_empresa_modo').eq('id', perfil.grupo_id).single(),
         supabase.from('permissoes_grupo').select('menu_path').eq('grupo_id', perfil.grupo_id),
         supabase.from('permissoes_empresa_grupo').select('empresa_id').eq('grupo_id', perfil.grupo_id),
         supabase.from('permissoes_grupo_acoes').select('menu_path, acao').eq('grupo_id', perfil.grupo_id),
         supabase.from('permissoes_depto_grupo').select('departamento_nome').eq('grupo_id', perfil.grupo_id),
+        supabase.from('permissoes_depto_grupo_auditoria').select('departamento_nome').eq('grupo_id', perfil.grupo_id),
+        supabase.from('permissoes_empresa_grupo_auditoria').select('empresa_id').eq('grupo_id', perfil.grupo_id),
       ])
 
       if (e2) {
@@ -111,6 +142,8 @@ export function AuthProvider({ children }) {
         setIsAdmin(false)
         setEmpresasPermitidas(new Set())
         setDepartamentosPermitidos(new Set())
+        setDepartamentosPermitidosAuditoria(new Set())
+        setEmpresasPermitidasAuditoria(new Set())
         setComissaoEscopo(escopoComissaoTudoLiberado())
         setComissaoEscopoHabilitado(false)
         return
@@ -122,6 +155,8 @@ export function AuthProvider({ children }) {
         setIsAdmin(false)
         setEmpresasPermitidas(new Set())
         setDepartamentosPermitidos(new Set())
+        setDepartamentosPermitidosAuditoria(new Set())
+        setEmpresasPermitidasAuditoria(new Set())
         setComissaoEscopo(escopoComissaoTudoLiberado())
         setComissaoEscopoHabilitado(false)
         return
@@ -131,7 +166,10 @@ export function AuthProvider({ children }) {
       setIsAdmin(!!grupo?.is_admin)
       setPermissions(new Set((perms || []).map(p => p.menu_path)))
       setEmpresasPermitidas(new Set((empPerms || []).map(p => p.empresa_id)))
-      setDepartamentosPermitidos(new Set((deptoPerms || []).map(p => p.departamento_nome)))
+      setProjetosDeptoModo(grupo?.projetos_depto_modo || null)
+      setDepartamentosPermitidos(grupo?.projetos_depto_modo === 'INDIVIDUAL' ? new Set((deptoPerms || []).map(p => p.departamento_nome)) : new Set())
+      setDepartamentosPermitidosAuditoria(grupo?.auditoria_depto_modo === 'INDIVIDUAL' ? new Set((deptoAuditPerms || []).map(p => p.departamento_nome)) : new Set())
+      setEmpresasPermitidasAuditoria(grupo?.auditoria_empresa_modo === 'INDIVIDUAL' ? new Set((empAuditPerms || []).map(p => p.empresa_id)) : new Set())
       setPermissoesAcoes(new Set((acoes || []).map(a => `${a.menu_path}|${a.acao}`)))
 
       // Busca isolada e best-effort: um problema aqui (coluna/tabela ainda não migrada, etc.)
@@ -201,9 +239,17 @@ export function AuthProvider({ children }) {
     try {
       const { data: perfil } = await supabase
         .from('usuarios')
-        .select('grupo_id')
+        .select('grupo_id, cargo_id')
         .eq('id', usuario.id)
         .maybeSingle()
+
+      setImpersonandoCargoId(perfil?.cargo_id || null)
+      if (perfil?.cargo_id) {
+        const { data: cargo } = await supabase.from('dim_cargos').select('agrupamento_id').eq('id', perfil.cargo_id).maybeSingle()
+        setImpersonandoAgrupamentoCargoId(cargo?.agrupamento_id || null)
+      } else {
+        setImpersonandoAgrupamentoCargoId(null)
+      }
 
       if (!perfil?.grupo_id) {
         setImpersonando({ ...usuario, semGrupo: true })
@@ -211,6 +257,8 @@ export function AuthProvider({ children }) {
         setImpersonandoIsAdmin(false)
         setImpersonandoEmpresas(new Set())
         setImpersonandoDeptos(new Set())
+        setImpersonandoDeptosAuditoria(new Set())
+        setImpersonandoEmpresasAuditoria(new Set())
         setImpersonandoAcoes(new Set())
         setImpersonandoComissaoEscopo(escopoComissaoTudoLiberado())
         setImpersonandoComissaoEscopoHabilitado(false)
@@ -218,18 +266,23 @@ export function AuthProvider({ children }) {
         return
       }
 
-      const [{ data: grupo }, { data: perms }, { data: empPerms }, { data: acoes }, { data: deptoPerms }] = await Promise.all([
-        supabase.from('grupos_acesso').select('is_admin').eq('id', perfil.grupo_id).single(),
+      const [{ data: grupo }, { data: perms }, { data: empPerms }, { data: acoes }, { data: deptoPerms }, { data: deptoAuditPerms }, { data: empAuditPerms }] = await Promise.all([
+        supabase.from('grupos_acesso').select('is_admin, auditoria_depto_modo, projetos_depto_modo, auditoria_empresa_modo').eq('id', perfil.grupo_id).single(),
         supabase.from('permissoes_grupo').select('menu_path').eq('grupo_id', perfil.grupo_id),
         supabase.from('permissoes_empresa_grupo').select('empresa_id').eq('grupo_id', perfil.grupo_id),
         supabase.from('permissoes_grupo_acoes').select('menu_path, acao').eq('grupo_id', perfil.grupo_id),
         supabase.from('permissoes_depto_grupo').select('departamento_nome').eq('grupo_id', perfil.grupo_id),
+        supabase.from('permissoes_depto_grupo_auditoria').select('departamento_nome').eq('grupo_id', perfil.grupo_id),
+        supabase.from('permissoes_empresa_grupo_auditoria').select('empresa_id').eq('grupo_id', perfil.grupo_id),
       ])
 
       setImpersonandoIsAdmin(!!grupo?.is_admin)
       setImpersonandoPermissions(new Set((perms || []).map(p => p.menu_path)))
       setImpersonandoEmpresas(new Set((empPerms || []).map(p => p.empresa_id)))
-      setImpersonandoDeptos(new Set((deptoPerms || []).map(p => p.departamento_nome)))
+      setImpersonandoProjetosDeptoModo(grupo?.projetos_depto_modo || null)
+      setImpersonandoDeptos(grupo?.projetos_depto_modo === 'INDIVIDUAL' ? new Set((deptoPerms || []).map(p => p.departamento_nome)) : new Set())
+      setImpersonandoDeptosAuditoria(grupo?.auditoria_depto_modo === 'INDIVIDUAL' ? new Set((deptoAuditPerms || []).map(p => p.departamento_nome)) : new Set())
+      setImpersonandoEmpresasAuditoria(grupo?.auditoria_empresa_modo === 'INDIVIDUAL' ? new Set((empAuditPerms || []).map(p => p.empresa_id)) : new Set())
       setImpersonandoAcoes(new Set((acoes || []).map(a => `${a.menu_path}|${a.acao}`)))
       setImpersonando(usuario)
 
@@ -260,10 +313,14 @@ export function AuthProvider({ children }) {
     setImpersonandoIsAdmin(false)
     setImpersonandoEmpresas(new Set())
     setImpersonandoDeptos(new Set())
+    setImpersonandoDeptosAuditoria(new Set())
+    setImpersonandoEmpresasAuditoria(new Set())
     setImpersonandoAcoes(new Set())
     setImpersonandoComissaoEscopo(escopoComissaoTudoLiberado())
     setImpersonandoComissaoEscopoHabilitado(false)
     setImpersonandoComissaoNivelDepartamento(new Map())
+    setImpersonandoCargoId(null)
+    setImpersonandoAgrupamentoCargoId(null)
   }
 
   const login = async (email, senha) => {
@@ -345,6 +402,26 @@ export function AuthProvider({ children }) {
     () => isAdminEfetivo ? new Set() : (impersonando ? impersonandoDeptos : departamentosPermitidos),
     [isAdminEfetivo, impersonando, impersonandoDeptos, departamentosPermitidos]
   )
+  // Modo de acesso por departamento para Gestão de Projetos (null | 'TODOS' | 'INDIVIDUAL')
+  const projetosDeptoModoEfetivo = isAdminEfetivo ? null : (impersonando ? impersonandoProjetosDeptoModo : projetosDeptoModo)
+  // Mesma lógica, mas pro escopo exclusivo de Auditoria Externa (tabela separada).
+  const departamentosPermitidosAuditoriaEfetivos = useMemo(
+    () => isAdminEfetivo ? new Set() : (impersonando ? impersonandoDeptosAuditoria : departamentosPermitidosAuditoria),
+    [isAdminEfetivo, impersonando, impersonandoDeptosAuditoria, departamentosPermitidosAuditoria]
+  )
+  // Empresa "em vigor" (considera admin e visualização como outro usuário) — mesmo padrão
+  // acima. `empresasPermitidas` (bruto) continua exportado pra não quebrar quem já lida com
+  // isAdmin no próprio call site (Projetos, Garantias DAF, Comissões).
+  const empresasPermitidasEfetivas = useMemo(
+    () => isAdminEfetivo ? new Set() : (impersonando ? impersonandoEmpresas : empresasPermitidas),
+    [isAdminEfetivo, impersonando, impersonandoEmpresas, empresasPermitidas]
+  )
+  // Mesma lógica, mas pro escopo de Empresa exclusivo de Auditoria Externa (proj_empresas.id,
+  // não dim_empresas.id — ver comentário acima da declaração de empresasPermitidasAuditoria).
+  const empresasPermitidasAuditoriaEfetivas = useMemo(
+    () => isAdminEfetivo ? new Set() : (impersonando ? impersonandoEmpresasAuditoria : empresasPermitidasAuditoria),
+    [isAdminEfetivo, impersonando, impersonandoEmpresasAuditoria, empresasPermitidasAuditoria]
+  )
 
   // Escopo de Cálculo de Comissões "em vigor" — admin (real ou impersonando) sempre vê tudo.
   // A dimensão "empresa" é controlada por "Acesso por Empresa" (empresasPermitidas), unificando
@@ -365,13 +442,20 @@ export function AuthProvider({ children }) {
     return impersonando ? impersonandoComissaoNivelDepartamento : comissaoNivelDepartamento
   }, [isAdminEfetivo, impersonando, impersonandoComissaoNivelDepartamento, comissaoNivelDepartamento])
 
+  // Cargo "em vigor" (considera visualização como outro usuário) e o Agrupamento resolvido a
+  // partir dele — usado pra saber se a pessoa pode assumir uma tarefa do BPM restrita a um
+  // agrupamento de cargos (bpm_tasks.responsavel_agrupamento_cargo_id compara contra este).
+  const cargoIdEfetivo = impersonando ? impersonandoCargoId : userCargoId
+  const agrupamentoCargoIdEfetivo = impersonando ? impersonandoAgrupamentoCargoId : userAgrupamentoCargoId
+
   return (
     <AuthContext.Provider value={{
-      user, loading, permissionsLoading, userNome, usuarioId,
+      user, loading, permissionsLoading, userNome, usuarioId, userCargoId, cargoIdEfetivo, agrupamentoCargoIdEfetivo,
       login, logout,
       hasPermission, hasAction, hasActionOrDefault, hasEmpresaPermission,
-      isAdmin, isAdminEfetivo, empresasPermitidas,
-      departamentosPermitidos, departamentosPermitidosEfetivos,
+      isAdmin, isAdminEfetivo, empresasPermitidas, empresasPermitidasEfetivas,
+      departamentosPermitidos, departamentosPermitidosEfetivos, projetosDeptoModoEfetivo,
+      departamentosPermitidosAuditoriaEfetivos, empresasPermitidasAuditoriaEfetivas,
       comissaoEscopoEfetivo, comissaoNivelDepartamentoEfetivo,
       trocarSenha, marcarSenhaTrocada,
       impersonando, iniciarVisualizacao, encerrarVisualizacao,

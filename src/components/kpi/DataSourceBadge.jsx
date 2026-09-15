@@ -2,9 +2,10 @@ import React, { useEffect, useState } from 'react'
 import { Cloud, Database, Loader2, AlertTriangle } from 'lucide-react'
 import { getStatusSincronizacao } from '../../services/kpiService'
 
+// Fixa o fuso em Brasília — ver mesmo comentário em SincronizacaoDados.jsx.
 function formatDataHora(iso) {
   if (!iso) return null
-  return new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
+  return new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Sao_Paulo' })
 }
 
 // Só exibe a origem do dado (sincronizado vs. mock) e quando foi a última

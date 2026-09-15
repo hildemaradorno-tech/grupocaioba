@@ -46,8 +46,8 @@ const FILTROS_VAZIOS = { numero_os: '', chassi: '', numero_nf: '', data_inicio: 
 export default function GarantiasDafFaturadas() {
   const navigate = useNavigate()
   const { isAdmin, empresasPermitidas, hasActionOrDefault } = useAuth()
-  const canEditarOS = hasActionOrDefault('garantias-daf-faturadas', 'editar')
-  const canExcluirOS = hasActionOrDefault('garantias-daf-faturadas', 'excluir')
+  const canEditarOS = hasActionOrDefault('garantias-daf-historicodeos', 'editar')
+  const canExcluirOS = hasActionOrDefault('garantias-daf-historicodeos', 'excluir')
 
   const [dados, setDados] = useState([])
   const [dadosTodos, setDadosTodos] = useState([])
@@ -60,8 +60,8 @@ export default function GarantiasDafFaturadas() {
   const [filtroEmpresaDash, setFiltroEmpresaDash] = useSessionState('daf_fat_empresa', '')
   const [filtroTipoOsDash, setFiltroTipoOsDash] = useSessionState('daf_fat_tipo_os', '')
   const [filtroConsultorDash, setFiltroConsultorDash] = useSessionState('daf_fat_consultor', '')
-  const [selecionados, setSelecionados] = useState(new Set())
-  const [excluindoLote, setExcluindoLote] = useState(false)
+  const [idExcluir, setIdExcluir] = useState(null)
+  const [nomeExcluir, setNomeExcluir] = useState('')
   const [sortCol, setSortCol] = useSessionState('daf_fat_sort_col', 'data_abertura_os')
   const [sortDir, setSortDir] = useSessionState('daf_fat_sort_dir', 'desc')
   const [empresasDim, setEmpresasDim] = useState([])
@@ -94,10 +94,6 @@ export default function GarantiasDafFaturadas() {
     apiService.getEmpresas().then(d => setEmpresasDim(d.filter(e => e.ativo !== false))).catch(() => {})
     carregarVinculoTitulos()
   }, [isAdmin, empresasPermitidas])
-
-  // Limpa seleção sempre que os dados recarregam (nova busca/exclusão) — evita manter
-  // ids selecionados que não correspondem mais ao conjunto exibido.
-  useEffect(() => { setSelecionados(new Set()) }, [dados])
 
   // empresa_id → empresa_fantasia (fallback nome_empresa)
   const empresaFantasiaMap = useMemo(() => {
@@ -204,35 +200,16 @@ export default function GarantiasDafFaturadas() {
   }
   const temFiltroAtivo = Object.values(filtros).some(v => !!v) || !!filtroEmpresaDash || !!filtroTipoOsDash || !!filtroConsultorDash
 
-  const toggleSelecionado = (id) => {
-    setSelecionados(prev => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id); else next.add(id)
-      return next
-    })
+  const confirmarExcluir = (item) => {
+    setIdExcluir(item.id)
+    setNomeExcluir(`OS ${item.numero_os}`)
+    setModalExcluir(true)
   }
 
-  const toggleSelecionarTodos = (ids) => {
-    setSelecionados(prev => {
-      const todosMarcados = ids.length > 0 && ids.every(id => prev.has(id))
-      if (todosMarcados) {
-        const next = new Set(prev)
-        for (const id of ids) next.delete(id)
-        return next
-      }
-      return new Set([...prev, ...ids])
-    })
-  }
-
-  const handleExcluirSelecionados = async () => {
-    setExcluindoLote(true)
-    try {
-      const ids = [...selecionados]
-      for (const id of ids) await apiService.deleteGarantia(id)
-      setSelecionados(new Set())
-      await loadData(filtros)
-    } catch (err) { alert('Erro ao excluir: ' + (err.message || String(err))) }
-    finally { setExcluindoLote(false); setModalExcluir(false) }
+  const handleExcluir = async () => {
+    try { await apiService.deleteGarantia(idExcluir); await loadData(filtros) }
+    catch (err) { alert('Erro ao excluir: ' + (err.message || String(err))) }
+    finally { setModalExcluir(false) }
   }
 
   const hoje = new Date()
@@ -276,10 +253,11 @@ export default function GarantiasDafFaturadas() {
     <div className="p-6 space-y-5 max-w-screen-2xl">
 
       {/* CABEÇALHO */}
-      <div className="flex items-center justify-between border-b border-slate-200 pb-4">
+      <div className="space-y-3 border-b border-slate-200 pb-4">
+        <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-1.5">
-            Garantias DAF Faturadas
+            Histórico de O.S.
             <span className="relative group cursor-help">
               <Info className="h-3.5 w-3.5 text-slate-400" />
               <span className="absolute top-full left-0 mt-2 w-96 text-[10px] text-white bg-slate-700 rounded px-2 py-1.5 leading-relaxed opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 normal-case font-normal tracking-normal space-y-1">
@@ -287,30 +265,27 @@ export default function GarantiasDafFaturadas() {
                 <div>RPA: Processo 4: Extração Relatório Auditoria de O.S.</div>
                 <div>Nome do Arquivo: ROF017_FATURAMENTOPOROS.xlsx</div>
                 <div>Pasta SharePoint: /Banco de Dados - DAF - Pós-Vendas/Relatório Geral OS</div>
+                <div className="pt-1 border-t border-white/20">
+                  Como importar: clique em "Importar OS", informe o período (ou o Nº da OS) e busque. Selecione as OS desejadas, preencha Empresa, Tipo de O.S. e Consultor para o lote e confirme a importação.
+                </div>
               </span>
             </span>
           </h1>
           <p className="text-xs text-slate-500">
             Ordens de serviço com nota fiscal emitida (Status E).
           </p>
-          <div className="mt-3"><GarantiasNav /></div>
         </div>
         <div className="flex items-center gap-2">
-          {canExcluirOS && selecionados.size > 0 && (
-            <button
-              onClick={() => setModalExcluir(true)}
-              className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold px-3 py-2 rounded-md shadow-sm transition-colors"
-            >
-              <XCircle className="h-4 w-4" /> Excluir selecionadas ({selecionados.size})
-            </button>
-          )}
           <button
             onClick={() => setModalImportarFaturados(true)}
-            className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold px-3 py-2 rounded-md shadow-sm border border-slate-200 transition-colors"
+            title="Importar OS"
+            className="flex items-center justify-center p-2 bg-white hover:bg-slate-50 text-slate-700 rounded-md shadow-sm border border-slate-200 transition-colors"
           >
-            <Download className="h-4 w-4 text-green-500" /> Importar Faturados
+            <Download className="h-4 w-4 text-green-500" />
           </button>
         </div>
+        </div>
+        <GarantiasNav />
       </div>
 
       {/* ── FILTROS AVANÇADOS ── */}
@@ -422,16 +397,6 @@ export default function GarantiasDafFaturadas() {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[10px] font-bold uppercase tracking-wider">
-                {canExcluirOS && (
-                  <th className="p-3 whitespace-nowrap w-8">
-                    <input
-                      type="checkbox"
-                      checked={sortedDados.length > 0 && sortedDados.every(d => selecionados.has(d.id))}
-                      onChange={() => toggleSelecionarTodos(sortedDados.map(d => d.id))}
-                      className="rounded border-slate-300"
-                    />
-                  </th>
-                )}
                 {[
                   { col: 'numero_os',               label: 'Nº OS',                cls: 'whitespace-nowrap' },
                   { col: 'empresa_nome',             label: 'Empresa',              cls: 'whitespace-nowrap min-w-[220px]' },
@@ -461,7 +426,7 @@ export default function GarantiasDafFaturadas() {
             </thead>
             <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
               {sortedDados.length === 0 ? (
-                <tr><td colSpan={canExcluirOS ? 14 : 13} className="p-10 text-center text-slate-400">Nenhuma garantia faturada encontrada.</td></tr>
+                <tr><td colSpan="13" className="p-10 text-center text-slate-400">Nenhuma garantia faturada encontrada.</td></tr>
               ) : sortedDados.map(item => {
                 const vt = Number(item.valor_pecas || 0) + Number(item.valor_servicos || 0)
                 const dc = diasSemEnvio(item)
@@ -471,22 +436,12 @@ export default function GarantiasDafFaturadas() {
                   ? { label: STATUS_MAP.E.label, cor: dc !== null && dc > 5 ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700' }
                   : STATUS_MAP[item.status_codigo] || { label: item.status_codigo, cor: 'bg-slate-100 text-slate-500' }
                 return (
-                  <tr key={item.id} className={`hover:bg-slate-50/70 transition-colors ${dc !== null && dc > 5 ? 'bg-red-50/40' : ''} ${selecionados.has(item.id) ? 'bg-blue-50/60' : ''}`}>
-                    {canExcluirOS && (
-                      <td className="p-3 whitespace-nowrap">
-                        <input
-                          type="checkbox"
-                          checked={selecionados.has(item.id)}
-                          onChange={() => toggleSelecionado(item.id)}
-                          className="rounded border-slate-300"
-                        />
-                      </td>
-                    )}
+                  <tr key={item.id} className={`hover:bg-slate-50/70 transition-colors ${dc !== null && dc > 5 ? 'bg-red-50/40' : ''}`}>
                     <td className="p-3 whitespace-nowrap">
                       <div className="flex items-center gap-1.5">
                         <button
                           type="button"
-                          onClick={() => navigate(`/garantias-daf/${item.id}`, { state: { from: '/garantias-daf-faturadas' } })}
+                          onClick={() => navigate(`/garantias-daf/${item.id}`, { state: { from: '/garantias-daf-historicodeos' } })}
                           className={`shrink-0 p-0.5 rounded transition-colors ${item.data_envio_fabrica ? 'hover:bg-slate-100' : 'bg-amber-100 hover:bg-amber-200'}`}
                           title={item.data_envio_fabrica
                             ? `Enviado para fábrica em ${fmtData(item.data_envio_fabrica)} — clique para editar`
@@ -528,12 +483,17 @@ export default function GarantiasDafFaturadas() {
                     </td>
                     <td className="p-3 text-center sticky right-0 bg-white border-l border-slate-100 shadow-[-4px_0_12px_rgba(0,0,0,0.03)]">
                       <div className="flex items-center justify-center gap-1">
-                        <button onClick={() => navigate(`/garantias-daf/${item.id}`, { state: { from: '/garantias-daf-faturadas', modo: 'visualizar' } })} className="p-1 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors" title="Visualizar">
+                        <button onClick={() => navigate(`/garantias-daf/${item.id}`, { state: { from: '/garantias-daf-historicodeos', modo: 'visualizar' } })} className="p-1 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors" title="Visualizar">
                           <Eye className="h-3.5 w-3.5" />
                         </button>
                         {canEditarOS && (
-                          <button onClick={() => navigate(`/garantias-daf/${item.id}`, { state: { from: '/garantias-daf-faturadas' } })} className="p-1 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors" title="Editar">
+                          <button onClick={() => navigate(`/garantias-daf/${item.id}`, { state: { from: '/garantias-daf-historicodeos' } })} className="p-1 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors" title="Editar">
                             <Edit2 className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                        {canExcluirOS && (
+                          <button onClick={() => confirmarExcluir(item)} className="p-1 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded transition-colors" title="Excluir">
+                            <XCircle className="h-3.5 w-3.5" />
                           </button>
                         )}
                       </div>
@@ -565,15 +525,13 @@ export default function GarantiasDafFaturadas() {
             <div className="p-4 flex items-start gap-3">
               <div className="p-2 bg-red-50 text-red-600 rounded-full shrink-0"><ShieldAlert className="h-5 w-5" /></div>
               <div className="space-y-1">
-                <h3 className="text-sm font-bold text-slate-900">Remover Garantias</h3>
-                <p className="text-xs text-slate-500">Confirma a exclusão permanente de <strong className="text-slate-800">{selecionados.size} OS selecionada{selecionados.size !== 1 ? 's' : ''}</strong>? O histórico de alterações também será apagado.</p>
+                <h3 className="text-sm font-bold text-slate-900">Remover Garantia</h3>
+                <p className="text-xs text-slate-500">Confirma a exclusão permanente de <strong className="text-slate-800">"{nomeExcluir}"</strong>? O histórico de alterações também será apagado.</p>
               </div>
             </div>
             <div className="flex items-center justify-end gap-2 p-3 bg-slate-50 border-t border-slate-100">
-              <button onClick={() => setModalExcluir(false)} disabled={excluindoLote} className="px-3 py-1.5 rounded-md text-xs font-semibold text-slate-600 hover:bg-slate-200/60 transition-colors disabled:opacity-50">Voltar</button>
-              <button onClick={handleExcluirSelecionados} disabled={excluindoLote} className="px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-red-600 hover:bg-red-700 shadow-sm transition-colors disabled:opacity-50">
-                {excluindoLote ? 'Excluindo...' : 'Sim, Excluir'}
-              </button>
+              <button onClick={() => setModalExcluir(false)} className="px-3 py-1.5 rounded-md text-xs font-semibold text-slate-600 hover:bg-slate-200/60 transition-colors">Voltar</button>
+              <button onClick={handleExcluir} className="px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-red-600 hover:bg-red-700 shadow-sm transition-colors">Sim, Excluir</button>
             </div>
           </div>
         </div>

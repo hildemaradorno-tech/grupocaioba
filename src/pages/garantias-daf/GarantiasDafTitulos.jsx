@@ -98,7 +98,7 @@ export default function GarantiasDafTitulos() {
     [titulosRows]
   )
 
-  // OS presentes em Garantias DAF (Faturadas) — usado para saber se o título tem vínculo
+  // OS presentes em Histórico de O.S. — usado para saber se o título tem vínculo
   const garantiasOsSet = useMemo(
     () => new Set(garantias.map(g => String(g.numero_os ?? '').trim()).filter(Boolean)),
     [garantias]
@@ -212,7 +212,7 @@ export default function GarantiasDafTitulos() {
     () => aplicarFiltrosComuns(titulosRows, { pularVinculo: true }),
     [titulosRows, aplicarFiltrosComuns]
   )
-  // Títulos cuja OS ainda não está vinculada (cadastrada) em Garantias DAF Faturadas
+  // Títulos cuja OS ainda não está vinculada (cadastrada) em Histórico de O.S.
   const grpNaoVinculado = useMemo(
     () => baseAlertaVinculo.filter(r => !garantiasOsSet.has(String(r.os_numero ?? '').trim())),
     [baseAlertaVinculo, garantiasOsSet]
@@ -281,7 +281,7 @@ export default function GarantiasDafTitulos() {
           <div>
             <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
               <Receipt className="h-5 w-5 text-indigo-500" />
-              Garantias DAF Faturadas
+              Garantias DAF a Receber
               <span className="relative group cursor-help">
                 <Info className="h-3.5 w-3.5 text-slate-400" />
                 <span className="absolute top-full left-0 mt-2 w-96 text-[10px] text-white bg-slate-700 rounded px-2 py-1.5 leading-relaxed opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 normal-case font-normal tracking-normal space-y-1">
@@ -305,34 +305,24 @@ export default function GarantiasDafTitulos() {
             <button
               onClick={() => loadTitulos(true)}
               disabled={titulosRefreshing || titulosLoading}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-semibold text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 shadow-sm transition-colors disabled:opacity-50"
+              title="Atualizar arquivo"
+              className="flex items-center justify-center p-2 rounded-md text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 shadow-sm transition-colors disabled:opacity-50"
             >
               <RefreshCw className={`h-3.5 w-3.5 ${titulosRefreshing ? 'animate-spin' : ''}`} />
-              Atualizar arquivo
             </button>
             {hasPermission('bi/garantias-daf') && (
               <button
                 onClick={() => navigate('/bi/garantias-daf', { state: { aba: 'titulos' } })}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-semibold text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 shadow-sm transition-colors"
+                title="Ir para Dashboard"
+                className="flex items-center justify-center p-2 rounded-md text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 shadow-sm transition-colors"
               >
                 <BarChart2 className="h-3.5 w-3.5 text-indigo-500" />
-                Ir para Dashboard
               </button>
             )}
           </div>
         </div>
         <div className="flex items-center justify-between">
           <GarantiasNav />
-          {hasPermission('garantias-daf-faturadas') && (
-            <button
-              onClick={() => navigate('/garantias-daf-faturadas')}
-              title="Ver histórico de movimentações das OS"
-              className="flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-semibold text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 shadow-sm transition-colors"
-            >
-              <Receipt className="h-3.5 w-3.5 text-indigo-500" />
-              Históricos de O.S.
-            </button>
-          )}
         </div>
       </div>
 
@@ -476,7 +466,7 @@ export default function GarantiasDafTitulos() {
             >
               <Link2Off className="h-4 w-4 text-orange-600 shrink-0" />
               <p className="text-xs text-orange-700 font-semibold flex-1">
-                {grpNaoVinculado.length} título(s) · Não vinculado O.S. Faturadas
+                {grpNaoVinculado.length} título(s) · Não vinculado a Histórico de O.S.
                 <span className="text-orange-500 font-normal"> — {fmtMoeda(valorGrpNaoVinculado)}</span>
                 {filtrosComunsAtivos && <span className="ml-1.5 px-1.5 py-0.5 bg-orange-100 text-orange-700 rounded text-[9px] font-bold">filtrado</span>}
               </p>
@@ -624,7 +614,7 @@ export default function GarantiasDafTitulos() {
                 const garantiaId = garantiaIdByOS.get(osKey)
                 const irParaOS = () => {
                   if (garantiaId) navigate(`/garantias-daf/${garantiaId}`, { state: { from: '/garantias-daf-titulos' } })
-                  else alert(`A OS ${osKey || ''} deste título ainda não está cadastrada em Garantias DAF Faturadas.`)
+                  else alert(`A OS ${osKey || ''} deste título ainda não está cadastrada em Histórico de O.S.`)
                 }
                 return (
                   <tr key={i} className={`transition-colors hover:bg-slate-50/70 ${atrasado ? 'bg-red-50/30' : ''}`}>
@@ -665,8 +655,8 @@ export default function GarantiasDafTitulos() {
                           onClick={irParaOS}
                           className={`shrink-0 p-0.5 rounded transition-colors ${garantiaId ? 'hover:bg-slate-100' : 'bg-orange-100 hover:bg-orange-200'}`}
                           title={garantiaId
-                            ? 'Vinculado a OS em Garantias DAF Faturadas — clique para ver'
-                            : 'Não identificado O.S. Faturadas — clique para detalhes'}
+                            ? 'Vinculado a OS em Histórico de O.S. — clique para ver'
+                            : 'Não identificado em Histórico de O.S. — clique para detalhes'}
                         >
                           {garantiaId
                             ? <Link2 className="h-3.5 w-3.5 text-indigo-500" />
@@ -757,12 +747,12 @@ export default function GarantiasDafTitulos() {
                 {garantiaId ? (
                   <div className="flex items-center gap-1.5 text-[11px] text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-md px-2.5 py-1.5">
                     <Link2 className="h-3 w-3 shrink-0" />
-                    Vinculado a OS em Garantias DAF Faturadas — as observações também aparecem lá.
+                    Vinculado a OS em Histórico de O.S. — as observações também aparecem lá.
                   </div>
                 ) : (
                   <div className="flex items-center gap-1.5 text-[11px] text-orange-600 bg-orange-50 border border-orange-200 rounded-md px-2.5 py-1.5">
                     <Link2Off className="h-3 w-3 shrink-0" />
-                    Sem vínculo com OS — vincule a OS {osKey || 'deste título'} em Garantias DAF Faturadas antes de adicionar observações. Toda informação do título deve estar gravada na OS.
+                    Sem vínculo com OS — vincule a OS {osKey || 'deste título'} em Histórico de O.S. antes de adicionar observações. Toda informação do título deve estar gravada na OS.
                   </div>
                 )}
                 <div>

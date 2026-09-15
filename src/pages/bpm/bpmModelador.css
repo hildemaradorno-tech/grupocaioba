@@ -1,0 +1,57 @@
+/* Redesenha a paleta padrão do bpmn-js (que por padrão flutua solta, ancorada em position:
+   absolute) para ficar como uma barra lateral fixa, encostada na borda esquerda do canvas,
+   do topo até o fim — em vez do cartão flutuante com cantos arredondados e sombra. */
+
+.bpm-modelador-canvas {
+  position: relative;
+}
+
+.bpm-modelador-canvas .djs-palette {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 48px;
+  border: none;
+  border-right: 1px solid #e2e8f0;
+  border-radius: 0;
+  background: #ffffff;
+  box-shadow: none;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.bpm-modelador-canvas .djs-palette .djs-palette-entries {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 6px 0;
+}
+
+.bpm-modelador-canvas .djs-palette .group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  border-bottom: 1px solid #e2e8f0;
+  padding-bottom: 6px;
+  margin-bottom: 6px;
+}
+
+.bpm-modelador-canvas .djs-palette .group:last-child {
+  border-bottom: none;
+}
+
+.bpm-modelador-canvas .djs-palette .entry {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  margin: 2px 0;
+}
+
+.bpm-modelador-canvas .djs-palette .entry:hover {
+  background: #eef2ff;
+  color: #4f46e5;
+}

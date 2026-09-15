@@ -1,25 +1,31 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react'
-import { Link } from 'react-router-dom'
 import { useSessionState } from '../../hooks/useSessionState'
-import { Plus, Filter, RotateCcw, Edit2, Trash2, Sparkles, ShieldAlert, Eye, ChevronRight, ChevronDown } from 'lucide-react'
+import { Plus, Filter, RotateCcw, Edit2, Trash2, Sparkles, ShieldAlert, Eye, ChevronRight, ChevronDown, Upload, Users } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { apiService } from '../../services/api'
 import AuditoriaExternaNav from './AuditoriaExternaNav'
 import AchadoFormModal from './AchadoFormModal'
 import AchadoDetalheDrawer from './AchadoDetalheDrawer'
 import AuditAiChatDrawer from './AuditAiChatDrawer'
-import { fmtMoeda, compararPorCodigo } from './auditExtConstants'
+import ImportarDivergenciasModal from './ImportarDivergenciasModal'
+import { fmtMoeda, compararPorCodigo, empresaNoEscopo, departamentoNoEscopo } from './auditExtConstants'
 
 const FILTROS_VAZIOS = { empresa: '', norma: '' }
 
 export default function AchadosPainel() {
-  const { user, hasPermission, hasActionOrDefault } = useAuth()
+  const { user, hasActionOrDefault, isAdminEfetivo, empresasPermitidasAuditoriaEfetivas, departamentosPermitidosAuditoriaEfetivos } = useAuth()
   const canEditar = hasActionOrDefault('auditoria-externa/divergencias', 'editar_achado')
   const canExcluir = hasActionOrDefault('auditoria-externa/divergencias', 'excluir_achado')
   const canChatIA = hasActionOrDefault('auditoria-externa/divergencias', 'usar_chat_ia')
-  const canVerImpactos = hasPermission('auditoria-externa/impactos')
+  const canImportar = hasActionOrDefault('auditoria-externa/divergencias', 'importar_divergencias')
+  const canVerTodos = hasActionOrDefault('auditoria-externa/dashboard', 'ver_todos') &&
+    (empresasPermitidasAuditoriaEfetivas.size > 0 || departamentosPermitidosAuditoriaEfetivos.size > 0)
+  const [verTodos, setVerTodos] = useSessionState('audext_ver_todos', false)
+  const empresasEfetivas = verTodos ? new Set() : empresasPermitidasAuditoriaEfetivas
+  const departamentosEfetivos = verTodos ? new Set() : departamentosPermitidosAuditoriaEfetivos
 
   const [achados, setAchados] = useState([])
+  const [planos, setPlanos] = useState([])
   const [ciclos, setCiclos] = useState([])
   const [empresas, setEmpresas] = useState([])
   const [loading, setLoading] = useState(true)
@@ -29,13 +35,15 @@ export default function AchadosPainel() {
   const [modalAchado, setModalAchado] = useState(null) // null | 'novo' | item
   const [achadoDetalhe, setAchadoDetalhe] = useState(null)
   const [chatAberto, setChatAberto] = useState(false)
+  const [modalImportarAberto, setModalImportarAberto] = useState(false)
   const [ciclosExpandidos, setCiclosExpandidos] = useState(new Set())
 
   const loadDados = useCallback(async () => {
     setLoading(true); setError(null)
     try {
-      const [a, c, e] = await Promise.all([apiService.getAuditExtAchados(), apiService.getAuditExtCiclos(), apiService.getProjEmpresas()])
+      const [a, p, c, e] = await Promise.all([apiService.getAuditExtAchados(), apiService.getAuditExtPlanosAcao(), apiService.getAuditExtCiclos(), apiService.getProjEmpresas()])
       setAchados(a)
+      setPlanos(p)
       setCiclos(c)
       setEmpresas(e.filter(x => x.ativo !== false))
     } catch (err) {
@@ -47,17 +55,46 @@ export default function AchadosPainel() {
 
   useEffect(() => { loadDados() }, [loadDados])
 
+  // Escopo por Empresa/Departamento (Grupo de Acesso) — vazio = sem restrição.
+  // Departamento é definido pelas Ações do achado (uma divergência pode ter ações de
+  // departamentos diferentes) — com restrição ativa, só aparecem achados com pelo
+  // menos uma ação no departamento liberado.
+  const isDeptoRestrito = !isAdminEfetivo && departamentosEfetivos.size > 0
+
+  const achadoIdsComAcaoVisivel = useMemo(() => {
+    const set = new Set()
+    for (const p of planos) {
+      if (departamentoNoEscopo(p.proj_departamentos?.nome, departamentosEfetivos, isAdminEfetivo)) set.add(p.achado_id)
+    }
+    return set
+  }, [planos, departamentosEfetivos, isAdminEfetivo])
+
+  const achadosVisiveis = useMemo(() =>
+    achados.filter(a =>
+      empresaNoEscopo(a.audext_ciclos?.empresa_id, empresasEfetivas, isAdminEfetivo) &&
+      (!isDeptoRestrito || achadoIdsComAcaoVisivel.has(a.id))
+    ),
+    [achados, empresasEfetivas, isAdminEfetivo, isDeptoRestrito, achadoIdsComAcaoVisivel])
+
+  const empresasVisiveis = useMemo(() =>
+    empresas.filter(e => empresaNoEscopo(e.id, empresasEfetivas, isAdminEfetivo)),
+    [empresas, empresasEfetivas, isAdminEfetivo])
+
+  const ciclosVisiveis = useMemo(() =>
+    ciclos.filter(c => empresaNoEscopo(c.empresa_id, empresasEfetivas, isAdminEfetivo)),
+    [ciclos, empresasEfetivas, isAdminEfetivo])
+
   const normasDisponiveis = useMemo(() =>
-    Array.from(new Set(achados.map(a => a.fundamentacao_tecnica).filter(Boolean))).sort(),
-    [achados]
+    Array.from(new Set(achadosVisiveis.map(a => a.fundamentacao_tecnica).filter(Boolean))).sort(),
+    [achadosVisiveis]
   )
 
   const achadosFiltrados = useMemo(() => {
-    let base = achados
+    let base = achadosVisiveis
     if (filtros.empresa) base = base.filter(a => a.audext_ciclos?.empresa_id === filtros.empresa)
     if (filtros.norma) base = base.filter(a => a.fundamentacao_tecnica === filtros.norma)
     return [...base].sort(compararPorCodigo)
-  }, [achados, filtros])
+  }, [achadosVisiveis, filtros])
 
   // Divergências agrupadas por Ciclo de Auditoria.
   const gruposPorCiclo = useMemo(() => {
@@ -114,17 +151,23 @@ export default function AchadosPainel() {
             <p className="text-xs text-slate-500">Gestão de achados de auditoria externa e itens de divergência contábil x financeira.</p>
           </div>
           <div className="flex items-center gap-2">
-            {canVerImpactos && (
-              <Link
-                to="/auditoria-externa/impactos"
-                className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold px-3 py-2 rounded-md shadow-sm border border-slate-200 transition-colors shrink-0"
+            {canVerTodos && (
+              <button
+                onClick={() => setVerTodos(v => !v)}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-semibold border transition-colors whitespace-nowrap ${verTodos ? 'bg-amber-50 text-amber-700 border-amber-300' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 shadow-sm'}`}
+                title={verTodos ? 'Voltar para minha visão' : 'Ver todas as Empresas'}
               >
-                <Plus className="h-4 w-4 text-indigo-500" /> Novo Impacto
-              </Link>
+                <Users className="h-3.5 w-3.5" /> {verTodos ? '← Minha Visão' : 'Ver Todos'}
+              </button>
             )}
             {canChatIA && (
               <button onClick={() => setChatAberto(true)} className="flex items-center gap-1.5 bg-white hover:bg-indigo-50 text-indigo-700 text-xs font-semibold px-3 py-2 rounded-md shadow-sm border border-indigo-200 transition-colors">
                 <Sparkles className="h-3.5 w-3.5" /> Copiloto de Auditoria
+              </button>
+            )}
+            {canImportar && (
+              <button onClick={() => setModalImportarAberto(true)} className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold px-3 py-2 rounded-md shadow-sm border border-slate-200 transition-colors">
+                <Upload className="h-4 w-4 text-emerald-600" /> Importar Excel
               </button>
             )}
             {canEditar && (
@@ -134,6 +177,12 @@ export default function AchadosPainel() {
             )}
           </div>
         </div>
+        {verTodos && (
+          <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 text-xs text-amber-700 font-semibold">
+            <span className="inline-block w-2 h-2 rounded-full bg-amber-400 shrink-0" />
+            Modo "Ver Todos" — mostrando todas as Empresas, ignorando a restrição do seu grupo de acesso
+          </div>
+        )}
         <AuditoriaExternaNav />
       </div>
 
@@ -150,7 +199,7 @@ export default function AchadosPainel() {
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Empresa</label>
               <select value={filtros.empresa} onChange={e => setFiltros(p => ({ ...p, empresa: e.target.value }))} className="text-xs p-2 border border-slate-200 rounded-md min-w-[160px]">
                 <option value="">Todas</option>
-                {empresas.map(e => <option key={e.id} value={e.id}>{e.nome}</option>)}
+                {empresasVisiveis.map(e => <option key={e.id} value={e.id}>{e.nome}</option>)}
               </select>
             </div>
             <div className="flex flex-col gap-1">
@@ -240,7 +289,7 @@ export default function AchadosPainel() {
 
       {modalAchado && (
         <AchadoFormModal
-          ciclos={ciclos}
+          ciclos={ciclosVisiveis}
           achado={modalAchado === 'novo' ? null : modalAchado}
           userEmail={user?.email}
           onClose={() => setModalAchado(null)}
@@ -259,8 +308,15 @@ export default function AchadosPainel() {
       <AuditAiChatDrawer
         open={chatAberto}
         onClose={() => setChatAberto(false)}
-        achadosRelacionados={achados}
+        achadosRelacionados={achadosVisiveis}
       />
+
+      {modalImportarAberto && (
+        <ImportarDivergenciasModal
+          onClose={() => setModalImportarAberto(false)}
+          onImported={() => { setModalImportarAberto(false); loadDados() }}
+        />
+      )}
     </div>
   )
 }

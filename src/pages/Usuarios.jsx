@@ -1,7 +1,8 @@
-﻿import React, { useState, useEffect } from 'react'
+﻿import React, { useState, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { useSessionState } from '../hooks/useSessionState'
-import { Trash2, Plus, Edit2, Eye, EyeOff, X, UserCheck, Search, Copy, Check, UserPlus, Send } from 'lucide-react'
-import PermissionActionButtons from '../components/PermissionActionButtons'
+import { Trash2, Plus, Edit2, Eye, EyeOff, X, UserCheck, Search, UserPlus, Send, Link2, Settings } from 'lucide-react'
+import { SearchCombobox } from '../components/SearchCombobox'
 import { apiService } from '../services/api'
 import { supabase } from '../services/supabaseClient'
 import { useAuth } from '../context/AuthContext'
@@ -19,17 +20,97 @@ function traduzirErroSenha(msg = '') {
   return null
 }
 
+// Menu de ações por linha (engrenagem) — reúne Visualizar/Editar/Excluir/Reenviar e-mail/
+// Visualizar como num só botão em vez de vários ícones lado a lado. Mesmo padrão de portal
+// (document.body, position fixed) usado no SearchCombobox, pra não ficar cortado pelo
+// overflow-x-auto da tabela; alinhado pela direita do botão pra não estourar a borda da tela.
+function AcoesMenu({ acoes }) {
+  const [aberto, setAberto] = useState(false)
+  const [pos, setPos] = useState(null)
+  const ref = useRef(null)
+
+  useEffect(() => {
+    const fecharSeClicarFora = (e) => {
+      if (ref.current && !ref.current.contains(e.target) && !e.target.closest('[data-acoes-menu-panel]')) setAberto(false)
+    }
+    document.addEventListener('mousedown', fecharSeClicarFora)
+    return () => document.removeEventListener('mousedown', fecharSeClicarFora)
+  }, [])
+
+  const abrir = () => {
+    if (!aberto && ref.current) {
+      const r = ref.current.getBoundingClientRect()
+      setPos({ top: r.bottom + 4, right: window.innerWidth - r.right })
+    }
+    setAberto(v => !v)
+  }
+
+  useEffect(() => {
+    if (!aberto) return
+    const fechar = (e) => {
+      if (e.target?.closest?.('[data-acoes-menu-panel]')) return
+      setAberto(false)
+    }
+    window.addEventListener('scroll', fechar, true)
+    window.addEventListener('resize', fechar)
+    return () => {
+      window.removeEventListener('scroll', fechar, true)
+      window.removeEventListener('resize', fechar)
+    }
+  }, [aberto])
+
+  const visiveis = acoes.filter(Boolean)
+  if (visiveis.length === 0) return null
+
+  return (
+    <div ref={ref} className="relative inline-block">
+      <button
+        type="button"
+        onClick={abrir}
+        title="Ações"
+        className="inline-flex items-center justify-center p-1.5 rounded border border-slate-300 text-slate-500 bg-white hover:bg-slate-50 hover:text-slate-700 transition-colors"
+      >
+        <Settings size={14} />
+      </button>
+      {aberto && pos && createPortal(
+        <div
+          data-acoes-menu-panel
+          style={{ position: 'fixed', top: pos.top, right: pos.right }}
+          className="z-50 w-56 bg-white border border-slate-200 rounded-md shadow-lg overflow-hidden py-1"
+        >
+          {visiveis.map((a, i) => (
+            <button
+              key={i}
+              type="button"
+              disabled={a.disabled}
+              onClick={() => { setAberto(false); a.onClick() }}
+              className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                a.danger ? 'text-red-600 hover:bg-red-50' : 'text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              {a.icon}
+              {a.label}
+            </button>
+          ))}
+        </div>,
+        document.body
+      )}
+    </div>
+  )
+}
+
 export default function Usuarios() {
   const { isAdmin, iniciarVisualizacao, user } = useAuth()
   const [usuarios, setUsuarios] = useState([])
   const [grupos, setGrupos] = useState([])
+  const [cargos, setCargos] = useState([])
+  const [funcionarios, setFuncionarios] = useState([])
   const [showForm, setShowForm] = useSessionState('usr_showform', false)
   const [editingId, setEditingId] = useSessionState('usr_editid', null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [savedOk, setSavedOk] = useState(false)
   const [error, setError] = useState(null)
-  const [form, setForm] = useState({ nome: '', email: '', senha: '', senhaConfirm: '', grupo_id: '' })
+  const [form, setForm] = useState({ nome: '', email: '', senha: '', senhaConfirm: '', grupo_id: '', cargo_id: '', funcionario_id: '' })
   const [alterarSenha, setAlterarSenha] = useState(false)
   const [showSenha, setShowSenha] = useState(false)
   const [showSenhaConfirm, setShowSenhaConfirm] = useState(false)
@@ -38,11 +119,7 @@ export default function Usuarios() {
   const [itemVisualizado, setItemVisualizado] = useState(null)
   const [busca, setBusca] = useState('')
   const [conviteEnviado, setConviteEnviado] = useState(null) // { nome, email }
-  const [reenviandoId, setReenviandoId] = useState(null)
-  const [reenviadoId, setReenviadoId] = useState(null)
-  const [senhaParaCopia, setSenhaParaCopia] = useState('')
-  const [copiadoModal, setCopiadoModal] = useState(null) // 'whats' | 'email' | null
-  const abrirVisualizar = (item) => { setItemVisualizado(item); setModalVisualizarAberto(true); setSenhaParaCopia(''); setCopiadoModal(null) }
+  const abrirVisualizar = (item) => { setItemVisualizado(item); setModalVisualizarAberto(true) }
 
   useEffect(() => { loadData() }, [])
 
@@ -50,13 +127,17 @@ export default function Usuarios() {
     setLoading(true)
     setError(null)
     try {
-      const [usuariosData, gruposData, authStatus] = await Promise.all([
+      const [usuariosData, gruposData, cargosData, funcionariosData, authStatus] = await Promise.all([
         apiService.getUsuarios(),
         apiService.getGrupos(),
+        apiService.getCargos(),
+        apiService.getFuncionarios(),
         apiService.getAuthStatus(),
       ])
       setUsuarios(usuariosData)
       setGrupos(gruposData)
+      setCargos(cargosData.filter(c => c.ativo !== false))
+      setFuncionarios(funcionariosData.filter(f => f.ativo !== false))
       setAuthServiceConfigured(Boolean(authStatus.serviceRoleConfigured))
     } catch (err) {
       console.error('Erro ao carregar dados', err)
@@ -78,7 +159,7 @@ export default function Usuarios() {
     setSaving(true)
     try {
       if (editingId) {
-        await apiService.updateUsuario(editingId, form.nome, form.email, form.grupo_id || null)
+        await apiService.updateUsuario(editingId, form.nome, form.email, form.grupo_id || null, form.cargo_id || null, form.funcionario_id || null)
         if (alterarSenha && form.senha) {
           if (form.email === user?.email) {
             // Próprio usuário logado: usa a sessão atual, sem precisar do service key
@@ -90,14 +171,13 @@ export default function Usuarios() {
           }
         }
         loadData()
-        setSavedOk(true)
-        setTimeout(() => setSavedOk(false), 2500)
+        resetForm()
       } else {
         if (!authServiceConfigured) {
           throw new Error('Criação de usuário exige SUPABASE_SERVICE_KEY configurada no backend.')
         }
         const redirectTo = `${URL_PRODUCAO}/redefinir-senha`
-        await apiService.createUsuario(form.nome, form.email, form.grupo_id || null, redirectTo)
+        await apiService.createUsuario(form.nome, form.email, form.grupo_id || null, redirectTo, form.cargo_id || null, form.funcionario_id || null)
         setConviteEnviado({ nome: form.nome, email: form.email })
         resetForm()
         loadData()
@@ -111,28 +191,20 @@ export default function Usuarios() {
   }
 
   const handleEdit = (usuario) => {
-    setForm({ nome: usuario.nome, email: usuario.email, senha: '', senhaConfirm: '', grupo_id: usuario.grupo_id || '' })
+    setForm({ nome: usuario.nome, email: usuario.email, senha: '', senhaConfirm: '', grupo_id: usuario.grupo_id || '', cargo_id: usuario.cargo_id || '', funcionario_id: usuario.funcionario_id || '' })
     setEditingId(usuario.id)
     setAlterarSenha(false)
     setShowSenha(false)
     setShowSenhaConfirm(false)
-    setSenhaParaCopia('')
-    setCopiadoModal(null)
     setShowForm(true)
   }
 
   const handleReenviarConvite = async (usuario) => {
-    setReenviandoId(usuario.id)
-    setReenviadoId(null)
     try {
       await apiService.sendResetPasswordEmail(usuario.email, `${URL_PRODUCAO}/redefinir-senha`)
-      setReenviadoId(usuario.id)
       setConviteEnviado({ nome: usuario.nome, email: usuario.email, tipo: 'reenvio' })
-      setTimeout(() => setReenviadoId(null), 3000)
     } catch (err) {
       alert('Erro ao enviar e-mail: ' + (err.message || String(err)))
-    } finally {
-      setReenviandoId(null)
     }
   }
 
@@ -151,7 +223,7 @@ export default function Usuarios() {
   }
 
   const resetForm = () => {
-    setForm({ nome: '', email: '', senha: '', senhaConfirm: '', grupo_id: '' })
+    setForm({ nome: '', email: '', senha: '', senhaConfirm: '', grupo_id: '', cargo_id: '', funcionario_id: '' })
     setEditingId(null)
     setAlterarSenha(false)
     setShowSenha(false)
@@ -159,10 +231,10 @@ export default function Usuarios() {
     setShowForm(false)
   }
 
-  if (loading) return <div className="p-6 max-w-screen-xl">Carregando...</div>
+  if (loading) return <div className="p-6">Carregando...</div>
 
   if (error) return (
-    <div className="p-6 max-w-screen-xl">
+    <div className="p-6">
       <div className="bg-yellow-50 border border-yellow-200 rounded p-6">
         <h2 className="text-lg font-semibold mb-2">Erro ao carregar dados</h2>
         <p className="mb-4 text-sm text-slate-700">{error}</p>
@@ -174,7 +246,7 @@ export default function Usuarios() {
   const showSenhaSection = editingId && alterarSenha
 
   return (
-    <div className="p-6 max-w-screen-xl">
+    <div className="p-6">
       <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <h1 className="text-2xl font-bold text-slate-900">Usuários</h1>
         <div className="flex items-center gap-2">
@@ -242,6 +314,50 @@ export default function Usuarios() {
                   <option key={g.id} value={g.id}>{g.nome_grupo}{g.is_admin ? ' (Admin)' : ''}</option>
                 ))}
               </select>
+              <SearchCombobox
+                value={form.funcionario_id}
+                onChange={(id) => {
+                  const func = funcionarios.find(f => f.id === id)
+                  setForm(prev => ({ ...prev, funcionario_id: id, cargo_id: func ? (func.cargo_id || '') : prev.cargo_id }))
+                }}
+                placeholder="— Nenhum funcionário vinculado —"
+                emptyOptionLabel="— Nenhum funcionário vinculado —"
+                searchPlaceholder="Buscar funcionário, empresa ou cargo..."
+                notFoundLabel="Nenhum funcionário encontrado."
+                opcoes={[...funcionarios].sort((a, b) => (a.nome_funcionario || '').localeCompare(b.nome_funcionario || '', 'pt-BR'))}
+                getLabel={(f) => <>{f.nome_funcionario}{f.cargo_nome ? <span className="text-slate-400"> — {f.cargo_nome}</span> : ''}{f.empresa_nome ? <span className="text-slate-400"> — {f.empresa_nome}</span> : ''}</>}
+                getSearchText={(f) => `${f.nome_funcionario || ''} ${f.empresa_nome || ''} ${f.cargo_nome || ''} ${f.codigo_funcionario || ''}`}
+              />
+              <p className="text-[11px] text-slate-400 -mt-1">
+                Vincule o funcionário correspondente pra trazer o cargo dele automaticamente (busque por nome, empresa ou cargo).
+              </p>
+
+              {form.funcionario_id ? (
+                <div className="w-full flex items-center gap-1.5 px-3 py-2 border border-slate-200 rounded-md bg-slate-50 text-sm text-slate-600">
+                  <Link2 className="h-3.5 w-3.5 text-blue-500 shrink-0" title="Vinculado ao funcionário selecionado acima" />
+                  {cargos.find(c => c.id === form.cargo_id)?.nome_cargo || <span className="text-slate-400">— Sem cargo —</span>}
+                  {cargos.find(c => c.id === form.cargo_id)?.nome_empresa && (
+                    <span className="text-slate-400"> — {cargos.find(c => c.id === form.cargo_id).nome_empresa}</span>
+                  )}
+                </div>
+              ) : (
+                <SearchCombobox
+                  value={form.cargo_id}
+                  onChange={(id) => setForm({ ...form, cargo_id: id })}
+                  placeholder="— Sem cargo —"
+                  emptyOptionLabel="— Sem cargo —"
+                  searchPlaceholder="Buscar cargo ou empresa..."
+                  notFoundLabel="Nenhum cargo encontrado."
+                  opcoes={[...cargos].sort((a, b) => a.nome_cargo.localeCompare(b.nome_cargo, 'pt-BR') || (a.nome_empresa || '').localeCompare(b.nome_empresa || '', 'pt-BR'))}
+                  getLabel={(o) => <>{o.nome_cargo}{o.nome_empresa ? <span className="text-slate-400"> — {o.nome_empresa}</span> : ''}</>}
+                  getSearchText={(o) => `${o.nome_cargo} ${o.nome_empresa || ''}`}
+                />
+              )}
+              <p className="text-[11px] text-slate-400 -mt-1">
+                {form.funcionario_id
+                  ? 'Cargo definido pelo funcionário vinculado acima — pra trocar, vincule outro funcionário ou desvincule (Nenhum) pra escolher o cargo direto.'
+                  : 'O cargo define quais tarefas de fluxos (BPM) esse usuário pode assumir.'}
+              </p>
 
               {!editingId && (
                 <p className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
@@ -299,28 +415,14 @@ export default function Usuarios() {
               )}
 
               <div className="flex gap-2 pt-1 flex-wrap">
-                <button type="submit" disabled={saving} className={`px-4 py-2 rounded-md text-sm font-semibold transition-colors disabled:opacity-50 ${savedOk ? 'bg-emerald-500 text-white' : 'bg-green-600 hover:bg-green-700 text-white'}`}>
-                  {saving ? 'Salvando...' : savedOk ? '✓ Salvo!' : 'Salvar'}
+                <button type="submit" disabled={saving} className="px-4 py-2 rounded-md text-sm font-semibold transition-colors disabled:opacity-50 bg-green-600 hover:bg-green-700 text-white">
+                  {saving ? 'Salvando...' : 'Salvar'}
                 </button>
-                {editingId && (
-                  <button
-                    type="button"
-                    disabled={!form.senha.trim()}
-                    onClick={() => {
-                      const texto = `Olá, ${form.nome}!\n\nSeu acesso ao sistema 🌐 Portal de Gestão do Grupo Caiobá foi criado. Utilize as credenciais abaixo para entrar:\n\n📧 E-mail: ${form.email}\n🔑 Senha: ${form.senha}`
-                      navigator.clipboard.writeText(texto)
-                      setCopiadoModal('share')
-                      setTimeout(() => setCopiadoModal(null), 2500)
-                    }}
-                    className={`flex items-center gap-1.5 px-4 py-2 rounded-md text-sm font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${copiadoModal === 'share' ? 'bg-green-600 text-white' : 'bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-100'}`}
-                  >
-                    {copiadoModal === 'share' ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                    {copiadoModal === 'share' ? 'Copiado!' : 'Compartilhar acesso'}
+                {!editingId && (
+                  <button type="button" onClick={resetForm} className="bg-slate-200 text-slate-700 px-4 py-2 rounded-md hover:bg-slate-300 text-sm font-semibold">
+                    Cancelar
                   </button>
                 )}
-                <button type="button" onClick={resetForm} className="bg-slate-200 text-slate-700 px-4 py-2 rounded-md hover:bg-slate-300 text-sm font-semibold">
-                  {editingId ? 'Fechar' : 'Cancelar'}
-                </button>
               </div>
             </form>
           </div>
@@ -355,6 +457,7 @@ export default function Usuarios() {
               <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Nome</th>
               <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">E-mail</th>
               <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Grupo de Acesso</th>
+              <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Cargo</th>
               <th className="px-6 py-3 text-center text-sm font-semibold text-slate-700">Senha</th>
               <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Ações</th>
             </tr>
@@ -379,6 +482,12 @@ export default function Usuarios() {
                 <td className="px-6 py-3 text-sm text-slate-500 whitespace-nowrap">
                   {grupos.find(g => g.id === u.grupo_id)?.nome_grupo || <span className="text-slate-300">—</span>}
                 </td>
+                <td className="px-6 py-3 text-sm text-slate-500 whitespace-nowrap">
+                  <span className="inline-flex items-center gap-1.5">
+                    {u.funcionario_id && <Link2 className="h-3.5 w-3.5 text-blue-500 shrink-0" title="Cargo vinculado a um funcionário" />}
+                    {cargos.find(a => a.id === u.cargo_id)?.nome_cargo || <span className="text-slate-300">—</span>}
+                  </span>
+                </td>
                 <td className="px-6 py-3 text-center">
                   {senhaOk && (
                     <span title={`Senha atualizada há ${diasDesdeReset} dia(s)`} className="inline-block w-3 h-3 rounded-full bg-green-500 shadow-sm" />
@@ -390,35 +499,14 @@ export default function Usuarios() {
                     <span title="Sem registro de data" className="inline-block w-3 h-3 rounded-full bg-slate-300" />
                   )}
                 </td>
-                <td className="px-6 py-3 text-sm flex gap-2 items-center">
-                  <PermissionActionButtons
-                    menuPath="usuarios"
-                    onView={() => abrirVisualizar(u)}
-                    onEdit={() => handleEdit(u)}
-                    onDelete={() => handleDelete(u.id)}
-                  />
-                  <button
-                    onClick={() => handleReenviarConvite(u)}
-                    disabled={reenviandoId === u.id}
-                    title="Reenviar e-mail com o link de definição/redefinição de senha (aponta para o sistema em produção)"
-                    className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold border transition-colors disabled:opacity-50 whitespace-nowrap ${
-                      reenviadoId === u.id
-                        ? 'border-green-300 text-green-700 bg-green-50'
-                        : 'border-blue-300 text-blue-700 bg-blue-50 hover:bg-blue-100'
-                    }`}
-                  >
-                    {reenviadoId === u.id ? <Check size={13} /> : <Send size={13} />}
-                    {reenviandoId === u.id ? 'Enviando...' : reenviadoId === u.id ? 'Enviado!' : 'Reenviar e-mail'}
-                  </button>
-                  {isAdmin && u.email !== user?.email && (
-                    <button
-                      onClick={() => iniciarVisualizacao(u)}
-                      title={`Visualizar como ${u.nome}`}
-                      className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold border border-violet-300 text-violet-700 bg-violet-50 hover:bg-violet-100 transition-colors whitespace-nowrap"
-                    >
-                      <UserCheck size={13} /> Visualizar como
-                    </button>
-                  )}
+                <td className="px-6 py-3 text-sm">
+                  <AcoesMenu acoes={[
+                    { label: 'Visualizar', icon: <Eye size={14} />, onClick: () => abrirVisualizar(u) },
+                    { label: 'Editar', icon: <Edit2 size={14} />, onClick: () => handleEdit(u) },
+                    { label: 'Reenviar e-mail', icon: <Send size={14} />, onClick: () => handleReenviarConvite(u) },
+                    (isAdmin && u.email !== user?.email) && { label: `Visualizar como ${u.nome}`, icon: <UserCheck size={14} />, onClick: () => iniciarVisualizacao(u) },
+                    { label: 'Excluir', icon: <Trash2 size={14} />, onClick: () => handleDelete(u.id), danger: true },
+                  ]} />
                 </td>
               </tr>
               )
@@ -429,7 +517,7 @@ export default function Usuarios() {
                 (grupos.find(g => g.id === u.grupo_id)?.nome_grupo || '').toLowerCase().includes(busca.toLowerCase())
               ) : usuarios).length === 0 && (
               <tr>
-                <td colSpan={5} className="px-6 py-6 text-center text-sm text-slate-400">
+                <td colSpan={6} className="px-6 py-6 text-center text-sm text-slate-400">
                   {busca.trim() ? `Nenhum usuário encontrado para "${busca}".` : 'Nenhum usuário cadastrado.'}
                 </td>
               </tr>
@@ -463,6 +551,13 @@ export default function Usuarios() {
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Grupo de Acesso</span>
                 <span className="text-xs font-semibold text-slate-800">
                   {grupos.find(g => g.id === itemVisualizado.grupo_id)?.nome_grupo || '—'}
+                </span>
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Cargo</span>
+                <span className="text-xs font-semibold text-slate-800 inline-flex items-center gap-1.5">
+                  {itemVisualizado.funcionario_id && <Link2 className="h-3 w-3 text-blue-500 shrink-0" title="Cargo vinculado a um funcionário" />}
+                  {cargos.find(a => a.id === itemVisualizado.cargo_id)?.nome_cargo || '—'}
                 </span>
               </div>
 

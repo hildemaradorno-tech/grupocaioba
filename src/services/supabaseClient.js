@@ -109,7 +109,7 @@ export const apiService = {
   getUsuarios: async () => {
     const { data, error } = await supabase
       .from('usuarios')
-      .select('id, nome, email, ativo, criado_em, grupo_id, senha_atualizada_em')
+      .select('id, nome, email, ativo, criado_em, grupo_id, cargo_id, funcionario_id, senha_atualizada_em')
       .order('nome', { ascending: true })
     if (error) throw error
     return data || []
@@ -118,7 +118,7 @@ export const apiService = {
   getUsuarioById: async (id) => {
     const { data, error } = await supabase
       .from('usuarios')
-      .select('id, nome, email, grupo_id')
+      .select('id, nome, email, grupo_id, cargo_id, funcionario_id')
       .eq('id', id)
       .single()
     if (error) throw error
@@ -700,89 +700,6 @@ export const apiService = {
     return { success: true }
   },
 
-  // PLANO DMS — categorias de plano de manutenção (Óleos e Filtros, Dinâmico, Preventivo,
-  // Pleno...) e a tabela de valores por categoria + prazo (tempo em meses), base pro futuro
-  // cálculo de comissões desse plano.
-  getCategoriasPlanoDms: async () => {
-    const { data, error } = await supabase
-      .from('dim_categorias_plano_dms')
-      .select('*')
-      .order('nome', { ascending: true })
-    if (error) throw error
-    return data || []
-  },
-
-  createCategoriaPlanoDms: async ({ nome, ativo }) => {
-    const { data, error } = await supabase
-      .from('dim_categorias_plano_dms')
-      .insert([{ nome, ativo: ativo ?? true }])
-      .select()
-    if (error) throw error
-    return data?.[0]
-  },
-
-  updateCategoriaPlanoDms: async (id, { nome, ativo }) => {
-    const { data, error } = await supabase
-      .from('dim_categorias_plano_dms')
-      .update({ nome, ativo: ativo ?? true, atualizado_em: new Date().toISOString() })
-      .eq('id', id)
-      .select()
-    if (error) throw error
-    return data?.[0]
-  },
-
-  deleteCategoriaPlanoDms: async (id) => {
-    const { error } = await supabase.from('dim_categorias_plano_dms').delete().eq('id', id)
-    if (error) throw error
-    return { success: true }
-  },
-
-  getPlanoDmsValores: async () => {
-    const { data, error } = await supabase
-      .from('fato_plano_dms_valores')
-      .select('*')
-      .order('tempo_meses', { ascending: true })
-    if (error) throw error
-    return data || []
-  },
-
-  createPlanoDmsValor: async ({ categoria_id, tempo_meses, valor, ativo }) => {
-    const { data, error } = await supabase
-      .from('fato_plano_dms_valores')
-      .insert([{ categoria_id, tempo_meses, valor, ativo: ativo ?? true }])
-      .select()
-    if (error) throw error
-    return data?.[0]
-  },
-
-  updatePlanoDmsValor: async (id, { tempo_meses, valor, ativo }) => {
-    const { data, error } = await supabase
-      .from('fato_plano_dms_valores')
-      .update({ tempo_meses, valor, ativo: ativo ?? true, atualizado_em: new Date().toISOString() })
-      .eq('id', id)
-      .select()
-    if (error) throw error
-    return data?.[0]
-  },
-
-  deletePlanoDmsValor: async (id) => {
-    const { error } = await supabase.from('fato_plano_dms_valores').delete().eq('id', id)
-    if (error) throw error
-    return { success: true }
-  },
-
-  // Cálculo de Comissão Plano DMS: cruza O.S. P04 do SharePoint (período) com o arquivo de
-  // Chassi -> Plano vendido; devolve { matched, semPlano } cru (funcionário/política/valor são
-  // resolvidos no front, em CalculoPlanoDms.jsx).
-  calcularPlanoDms: async ({ ano, periodoInicio, periodoFim }) => {
-    const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
-    const params = new URLSearchParams({ ano, periodoInicio, periodoFim })
-    const res = await fetch(`${backendUrl}/api/plano-dms/calcular?${params}`)
-    const body = await res.json()
-    if (!res.ok) throw new Error(body.detalhe || body.error || 'Erro ao calcular Plano DMS')
-    return body
-  },
-
   // AGRUPAMENTO CARGOS
   getAgrupamentoCargos: async () => {
     const { data, error } = await supabase
@@ -963,12 +880,12 @@ export const apiService = {
     return { success: true }
   },
 
-  createUsuario: async (nome, email, grupo_id = null, redirectTo) => {
+  createUsuario: async (nome, email, grupo_id = null, redirectTo, cargo_id = null, funcionario_id = null) => {
     const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
     const res = await fetch(`${backendUrl}/api/auth/create-user`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ nome, email, grupo_id, redirectTo }),
+      body: JSON.stringify({ nome, email, grupo_id, redirectTo, cargo_id, funcionario_id }),
     })
     const body = await res.json()
     if (!res.ok) throw new Error(body.error || 'Erro ao criar usuário')
@@ -995,9 +912,11 @@ export const apiService = {
     return body
   },
 
-  updateUsuario: async (id, nome, email, grupo_id = undefined) => {
+  updateUsuario: async (id, nome, email, grupo_id = undefined, cargo_id = undefined, funcionario_id = undefined) => {
     const payload = { nome, email, atualizado_em: new Date().toISOString() }
     if (grupo_id !== undefined) payload.grupo_id = grupo_id || null
+    if (cargo_id !== undefined) payload.cargo_id = cargo_id || null
+    if (funcionario_id !== undefined) payload.funcionario_id = funcionario_id || null
     const { data, error } = await supabase
       .from('usuarios')
       .update(payload)
@@ -3332,16 +3251,92 @@ export const apiService = {
     return { success: true }
   },
 
+  // Restringe Gestão de Projetos por departamento. Modo TODOS/INDIVIDUAL igual ao de
+  // Cálculo de Comissões e Auditoria Externa: TODOS = sem restrição (inclusive
+  // departamentos futuros), INDIVIDUAL = só os nomes marcados em permissoes_depto_grupo.
+  // `modo` fica em grupos_acesso.projetos_depto_modo (default 'TODOS').
   getPermissoesDeptoPorGrupo: async (grupoId) => {
-    const { data, error } = await supabase.from('permissoes_depto_grupo').select('departamento_nome').eq('grupo_id', grupoId)
+    const [{ data, error }, { data: grupoRow, error: e2 }] = await Promise.all([
+      supabase.from('permissoes_depto_grupo').select('departamento_nome').eq('grupo_id', grupoId),
+      supabase.from('grupos_acesso').select('projetos_depto_modo').eq('id', grupoId).maybeSingle(),
+    ])
     if (error) throw error
-    return (data || []).map(r => r.departamento_nome)
+    if (e2) throw e2
+    return {
+      modo: grupoRow?.projetos_depto_modo === 'INDIVIDUAL' ? 'INDIVIDUAL' : 'TODOS',
+      valores: (data || []).map(r => r.departamento_nome),
+    }
   },
-  setPermissoesDeptoPorGrupo: async (grupoId, nomes) => {
-    const { error: delErr } = await supabase.from('permissoes_depto_grupo').delete().eq('grupo_id', grupoId)
+  setPermissoesDeptoPorGrupo: async (grupoId, modo, nomes) => {
+    const modoFinal = modo === 'INDIVIDUAL' ? 'INDIVIDUAL' : 'TODOS'
+    const [{ error: delErr }, { error: errModo }] = await Promise.all([
+      supabase.from('permissoes_depto_grupo').delete().eq('grupo_id', grupoId),
+      supabase.from('grupos_acesso').update({ projetos_depto_modo: modoFinal }).eq('id', grupoId),
+    ])
     if (delErr) throw delErr
-    if (nomes.length > 0) {
+    if (errModo) throw errModo
+    if (modoFinal === 'INDIVIDUAL' && nomes.length > 0) {
       const { error } = await supabase.from('permissoes_depto_grupo').insert(nomes.map(nome => ({ grupo_id: grupoId, departamento_nome: nome })))
+      if (error) throw error
+    }
+  },
+
+  // Restringe Auditoria Externa por departamento, independente de Projetos (antes as duas
+  // telas compartilhavam a mesma restrição). Modo TODOS/INDIVIDUAL igual ao de
+  // Cálculo de Comissões: TODOS = sem restrição (inclusive departamentos futuros),
+  // INDIVIDUAL = só os nomes marcados em permissoes_depto_grupo_auditoria.
+  // `modo` fica em grupos_acesso.auditoria_depto_modo (default 'TODOS').
+  getPermissoesDeptoAuditoriaPorGrupo: async (grupoId) => {
+    const [{ data, error }, { data: grupoRow, error: e2 }] = await Promise.all([
+      supabase.from('permissoes_depto_grupo_auditoria').select('departamento_nome').eq('grupo_id', grupoId),
+      supabase.from('grupos_acesso').select('auditoria_depto_modo').eq('id', grupoId).maybeSingle(),
+    ])
+    if (error) throw error
+    if (e2) throw e2
+    return {
+      modo: grupoRow?.auditoria_depto_modo === 'INDIVIDUAL' ? 'INDIVIDUAL' : 'TODOS',
+      valores: (data || []).map(r => r.departamento_nome),
+    }
+  },
+  setPermissoesDeptoAuditoriaPorGrupo: async (grupoId, modo, nomes) => {
+    const modoFinal = modo === 'INDIVIDUAL' ? 'INDIVIDUAL' : 'TODOS'
+    const [{ error: delErr }, { error: errModo }] = await Promise.all([
+      supabase.from('permissoes_depto_grupo_auditoria').delete().eq('grupo_id', grupoId),
+      supabase.from('grupos_acesso').update({ auditoria_depto_modo: modoFinal }).eq('id', grupoId),
+    ])
+    if (delErr) throw delErr
+    if (errModo) throw errModo
+    if (modoFinal === 'INDIVIDUAL' && nomes.length > 0) {
+      const { error } = await supabase.from('permissoes_depto_grupo_auditoria').insert(nomes.map(nome => ({ grupo_id: grupoId, departamento_nome: nome })))
+      if (error) throw error
+    }
+  },
+
+  // Mesma ideia acima, mas pra Empresa — Auditoria Externa não pode reaproveitar
+  // permissoes_empresa_grupo (usa dim_empresas.id) porque o Ciclo de Auditoria referencia
+  // proj_empresas.id, uma tabela diferente. `modo` fica em grupos_acesso.auditoria_empresa_modo.
+  getPermissoesEmpresaAuditoriaPorGrupo: async (grupoId) => {
+    const [{ data, error }, { data: grupoRow, error: e2 }] = await Promise.all([
+      supabase.from('permissoes_empresa_grupo_auditoria').select('empresa_id').eq('grupo_id', grupoId),
+      supabase.from('grupos_acesso').select('auditoria_empresa_modo').eq('id', grupoId).maybeSingle(),
+    ])
+    if (error) throw error
+    if (e2) throw e2
+    return {
+      modo: grupoRow?.auditoria_empresa_modo === 'INDIVIDUAL' ? 'INDIVIDUAL' : 'TODOS',
+      valores: (data || []).map(r => r.empresa_id),
+    }
+  },
+  setPermissoesEmpresaAuditoriaPorGrupo: async (grupoId, modo, ids) => {
+    const modoFinal = modo === 'INDIVIDUAL' ? 'INDIVIDUAL' : 'TODOS'
+    const [{ error: delErr }, { error: errModo }] = await Promise.all([
+      supabase.from('permissoes_empresa_grupo_auditoria').delete().eq('grupo_id', grupoId),
+      supabase.from('grupos_acesso').update({ auditoria_empresa_modo: modoFinal }).eq('id', grupoId),
+    ])
+    if (delErr) throw delErr
+    if (errModo) throw errModo
+    if (modoFinal === 'INDIVIDUAL' && ids.length > 0) {
+      const { error } = await supabase.from('permissoes_empresa_grupo_auditoria').insert(ids.map(empresa_id => ({ grupo_id: grupoId, empresa_id })))
       if (error) throw error
     }
   },
@@ -4634,7 +4629,7 @@ export const apiService = {
   getAuditExtAchados: async () => {
     const { data, error } = await supabase
       .from('audext_achados')
-      .select('*, audext_ciclos(id, periodo_competencia, empresa_id, proj_empresas(id, nome)), audext_impactos(id, nome)')
+      .select('*, audext_ciclos(id, periodo_competencia, empresa_id, proj_empresas(id, nome))')
       .order('criado_em', { ascending: false })
     if (error) throw error
     return data || []
@@ -4690,28 +4685,6 @@ export const apiService = {
   },
   deleteAuditExtTipoAcao: async (id) => {
     const { error } = await supabase.from('audext_tipos_acao').delete().eq('id', id)
-    if (error) throw error
-    return { success: true }
-  },
-
-  // IMPACTOS (cadastro usado na Divergência)
-  getAuditExtImpactos: async () => {
-    const { data, error } = await supabase.from('audext_impactos').select('*').order('nome', { ascending: true })
-    if (error) throw error
-    return data || []
-  },
-  createAuditExtImpacto: async ({ nome, ativo }) => {
-    const { data, error } = await supabase.from('audext_impactos').insert([{ nome, ativo: ativo ?? true }]).select()
-    if (error) throw error
-    return data?.[0]
-  },
-  updateAuditExtImpacto: async (id, { nome, ativo }) => {
-    const { data, error } = await supabase.from('audext_impactos').update({ nome, ativo: ativo ?? true }).eq('id', id).select()
-    if (error) throw error
-    return data?.[0]
-  },
-  deleteAuditExtImpacto: async (id) => {
-    const { error } = await supabase.from('audext_impactos').delete().eq('id', id)
     if (error) throw error
     return { success: true }
   },
@@ -5051,14 +5024,17 @@ export const apiService = {
     return { success: true, total: linhas.length }
   },
 
-  // truckpag_repasses é histórico cumulativo — cada importação soma novos lotes de
-  // repasse por cima dos anteriores (upsert pela chave natural do lote).
+  // truckpag_repasses também virou snapshot (substitui tudo a cada "Atualizar do SharePoint") —
+  // o arquivo contas-receber-daf.xlsx já traz o histórico acumulado inteiro a cada leitura (não só
+  // as novidades), então não tem por que manter via upsert: mais simples é limpar e inserir de
+  // novo, igual títulos/créditos, e garante que baixa/exclusão feita direto na planilha também
+  // reflete aqui (upsert nunca removia linha que sumiu da fonte).
   importarTruckPagRepasses: async (linhas) => {
+    const { error: delError } = await supabase.from('truckpag_repasses').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+    if (delError) throw delError
     const CHUNK = 500
     for (let i = 0; i < linhas.length; i += CHUNK) {
-      const { error } = await supabase
-        .from('truckpag_repasses')
-        .upsert(linhas.slice(i, i + CHUNK), { onConflict: 'numero_lote,nf_e,data_pagamento' })
+      const { error } = await supabase.from('truckpag_repasses').insert(linhas.slice(i, i + CHUNK))
       if (error) throw error
     }
     return { success: true, total: linhas.length }
@@ -5097,6 +5073,37 @@ export const apiService = {
   deleteTruckPagTipoSaldo: async (id) => {
     const { error } = await supabase.from('truckpag_config_tipos_saldo').delete().eq('id', id)
     if (error) throw error
+    return { success: true }
+  },
+
+  // Tolerância de valor pra vincular Repasse x Crédito (linha única, editada in-place).
+  getTruckPagToleranciaConciliacao: async () => {
+    const { data, error } = await supabase
+      .from('truckpag_config_conciliacao')
+      .select('*')
+      .limit(1)
+      .maybeSingle()
+    if (error) throw error
+    return data?.tolerancia_valor ?? 0.02
+  },
+
+  updateTruckPagToleranciaConciliacao: async (valor) => {
+    const { data: existente, error: selError } = await supabase
+      .from('truckpag_config_conciliacao')
+      .select('id')
+      .limit(1)
+      .maybeSingle()
+    if (selError) throw selError
+    if (existente) {
+      const { error } = await supabase
+        .from('truckpag_config_conciliacao')
+        .update({ tolerancia_valor: valor, atualizado_em: new Date().toISOString() })
+        .eq('id', existente.id)
+      if (error) throw error
+    } else {
+      const { error } = await supabase.from('truckpag_config_conciliacao').insert([{ tolerancia_valor: valor }])
+      if (error) throw error
+    }
     return { success: true }
   },
 }

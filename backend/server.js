@@ -15,7 +15,6 @@ import jwt from 'jsonwebtoken'
 import kpiRoutes       from './routes/kpi.js'
 import garantiasRoutes from './routes/garantias.js'
 import calculoComissaoRoutes from './routes/calculoComissao.js'
-import planoDmsRoutes from './routes/planoDms.js'
 import biMedidasRoutes from './routes/biMedidas.js'
 import rhFeriasRoutes from './routes/rhFerias.js'
 import hondaRoutes from './routes/honda.js'
@@ -39,9 +38,6 @@ app.use('/api/garantias', garantiasRoutes)
 
 // ── Rotas Fonte/Base de Cálculo (SharePoint genérico p/ comissões) ───────────
 app.use('/api/calculo-comissao', calculoComissaoRoutes)
-
-// ── Rotas Comissão Plano DMS (O.S. P04 x Chassi x Valor do Plano) ────────────
-app.use('/api/plano-dms', planoDmsRoutes)
 
 // ── Rotas Fonte BI / Medida BI (SharePoint genérico p/ dashboards de BI) ─────
 app.use('/api/bi-medidas', biMedidasRoutes)
@@ -249,7 +245,7 @@ async function start() {
     if (!supabaseAdmin) {
       return res.status(503).json({ error: 'SUPABASE_SERVICE_KEY não configurada no backend. Configure o arquivo backend/.env.' })
     }
-    const { nome, email, grupo_id, redirectTo } = req.body
+    const { nome, email, grupo_id, cargo_id, funcionario_id, redirectTo } = req.body
     if (!nome || !email) {
       return res.status(400).json({ error: 'Campos obrigatórios: nome, email' })
     }
@@ -264,6 +260,8 @@ async function start() {
     // 2. Insere perfil na tabela usuarios — sem senha_atualizada_em, pois ainda não definiu senha
     const perfilInsert = { id: authData.user.id, nome, email, ativo: true }
     if (grupo_id) perfilInsert.grupo_id = grupo_id
+    if (cargo_id) perfilInsert.cargo_id = cargo_id
+    if (funcionario_id) perfilInsert.funcionario_id = funcionario_id
     const { data, error } = await supabaseAdmin
       .from('usuarios')
       .insert([perfilInsert])

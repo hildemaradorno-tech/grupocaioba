@@ -1,21 +1,19 @@
 import React, { useEffect } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
-import { Palmtree, Wallet, PhoneCall, ClipboardCheck, BarChart2, Wrench } from 'lucide-react'
+import { Palmtree, Wallet, PhoneCall, ClipboardCheck, BarChart2 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useSessionState } from '../hooks/useSessionState'
 import Ferias from './Ferias'
 import CalculoComissoes from './CalculoComissoes'
 import SobreavisoPlantao from './SobreavisoPlantao'
 import HistoricoComissoes from './HistoricoComissoes'
-import CalculoPlanoDms from './CalculoPlanoDms'
 
-// Ordem confirmada com o usuário: Férias -> Sobreaviso/Plantão -> Cálculo de Comissões -> Plano
-// DMS -> Processamento de Comissões (por último).
+// Ordem confirmada com o usuário: Férias -> Sobreaviso/Plantão -> Cálculo de Comissões ->
+// Processamento de Comissões (por último).
 const ABAS = [
   { menuPath: 'ferias', label: 'Férias', icon: Palmtree, Componente: Ferias },
   { menuPath: 'sobreaviso-plantao', label: 'Sobreaviso/Plantão', icon: PhoneCall, Componente: SobreavisoPlantao },
   { menuPath: 'calculo-comissoes', label: 'Cálculo de Comissões', icon: Wallet, Componente: CalculoComissoes },
-  { menuPath: 'plano-dms-calculo', label: 'Plano DMS', icon: Wrench, Componente: CalculoPlanoDms },
   { menuPath: 'processamento-comissoes', label: 'Processamento de Comissões', icon: ClipboardCheck, Componente: HistoricoComissoes },
 ]
 
