@@ -187,17 +187,5 @@ export const MOCK_BLOCO3_PECAS = [
   },
 ]
 
-export const MOCK_BLOCO3_SERVICOS = [
-  {
-    tituloGerente: 'INDIVIDUAL',
-    cor: 'blue',
-    kpis: [
-      { id: 1, indicador: 'Faturamento Oficina (Serviços)', orientacao: '>', metrica: 'R$', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
-      { id: 2, indicador: 'Eficácia da Oficina',           orientacao: '>', metrica: '%',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
-      { id: 3, indicador: 'Produtividade da Oficina',      orientacao: '>', metrica: '%',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
-    ],
-  },
-]
-
 // ── ORÇAMENTO & BACKLOG ──────────────────────────────────────────────────────
 export const MOCK_ORCAMENTO_BACKLOG = []

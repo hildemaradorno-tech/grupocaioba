@@ -1,4 +1,4 @@
-﻿import React, { useMemo, useState } from 'react'
+﻿import React from 'react'
 import { Package } from 'lucide-react'
 import { MOCK_BLOCO3_PECAS } from '../../data/kpiMockData'
 import PeriodSelector, { usePeriodSelector } from '../../components/kpi/PeriodSelector'
@@ -125,17 +125,7 @@ export default function KpiBloco3Pecas() {
   const periodState = usePeriodSelector('bloco3-pecas')
   const { activePeriods } = periodState
   const { year } = useKpiYear()
-  const [activeTab, setActiveTabRaw] = useState(() => { try { return sessionStorage.getItem('b3p_tab') || 'gestores' } catch { return 'gestores' } })
-  const setActiveTab = (v) => { try { sessionStorage.setItem('b3p_tab', v) } catch {}; setActiveTabRaw(v) }
   const { data: quadros, loading, source } = useKpiData(fetchBloco3Pecas, MOCK_BLOCO3_PECAS, { year })
-
-  const visibleQuadros = useMemo(() => {
-    if (!quadros) return []
-    if (activeTab === 'vendedores') {
-      return quadros.filter(q => String(q.tituloGerente || '').toUpperCase().trim() === 'VENDEDOR')
-    }
-    return quadros.filter(q => String(q.tituloGerente || '').toUpperCase().trim() !== 'VENDEDOR')
-  }, [activeTab, quadros])
 
   return (
     <div className="p-6 space-y-5">
@@ -147,34 +137,12 @@ export default function KpiBloco3Pecas() {
         <DataSourceBadge source={source} loading={loading} />
       </div>
 
-      <div className="flex flex-wrap gap-2 rounded-xl border border-slate-200 bg-slate-50 p-2 shadow-sm">
-        {[
-          { key: 'gestores', label: 'Gestores' },
-          { key: 'vendedores', label: 'Vendedores' },
-        ].map(tab => (
-          <button
-            key={tab.key}
-            type="button"
-            onClick={() => setActiveTab(tab.key)}
-            className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${activeTab === tab.key ? 'bg-white text-slate-900 shadow' : 'text-slate-500 hover:bg-white hover:text-slate-900'}`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
       <PeriodSelector state={periodState} />
 
       <div className="space-y-6">
-        {visibleQuadros.length > 0 ? (
-          visibleQuadros.map((quadro, idx) => (
-            <QuadroTable key={idx} quadro={quadro} activePeriods={activePeriods} year={year} />
-          ))
-        ) : (
-          <div className="rounded-xl border border-dashed border-slate-300 bg-white p-6 text-sm text-slate-500">
-            Nenhum bloco disponível para a aba {activeTab === 'vendedores' ? 'Vendedores' : 'Gestores'}.
-          </div>
-        )}
+        {quadros.map((quadro, idx) => (
+          <QuadroTable key={idx} quadro={quadro} activePeriods={activePeriods} year={year} />
+        ))}
       </div>
     </div>
   )

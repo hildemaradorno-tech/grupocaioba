@@ -10,7 +10,6 @@ import {
   MOCK_BLOCO2,
   MOCK_BLOCO3_POS_VENDA,
   MOCK_BLOCO3_PECAS,
-  MOCK_BLOCO3_SERVICOS,
   MOCK_ORCAMENTO_BACKLOG,
 } from '../data/kpiMockData'
 
@@ -85,7 +84,6 @@ export async function fetchBloco1(p)        { return tryFetch('bloco1',         
 export async function fetchBloco2(p)        { return tryFetch('bloco2',           MOCK_BLOCO2,            p) }
 export async function fetchBloco3PosVenda(p){ return tryFetch('bloco3-pos-venda', MOCK_BLOCO3_POS_VENDA,  p) }
 export async function fetchBloco3Pecas(p)   { return tryFetch('bloco3-pecas',     MOCK_BLOCO3_PECAS,      p) }
-export async function fetchBloco3Servicos(p){ return tryFetch('bloco3-servicos',  MOCK_BLOCO3_SERVICOS,   p) }
 export async function fetchBacklog(p)       { return tryFetch('backlog',          MOCK_ORCAMENTO_BACKLOG, p) }
 
 export async function getStatus() {

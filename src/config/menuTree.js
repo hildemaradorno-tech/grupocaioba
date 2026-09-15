@@ -250,7 +250,6 @@ export const MENU_TREE = [
           { key: 'kpi/bloco2-operacional', label: 'Bloco 2 — Operacional' },
           { key: 'kpi/bloco3-pos-venda', label: 'Bloco 3 — Pós-Venda' },
           { key: 'kpi/bloco3-pecas', label: 'Bloco 3 — Peças' },
-          { key: 'kpi/bloco3-servicos', label: 'Bloco 3 — Serviços' },
           { key: 'kpi/orcamento-backlog', label: 'Orçamento & Backlog' },
           { key: 'kpi/auditoria', label: 'Auditoria de Fontes' },
         ],

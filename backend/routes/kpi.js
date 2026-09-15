@@ -182,18 +182,6 @@ const BLOCO3_PECAS_TEMPLATE = [
     ],
   },
   {
-    tituloGerente: 'VENDEDOR',
-    cor: 'indigo',
-    kpis: [
-      { id: 1, indicador: 'Faturamento Individual',                  orientacao: '>', metrica: 'R$',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
-      { id: 2, indicador: 'Margem Bruta',                            orientacao: '>', metrica: '%',   metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
-      { id: 3, indicador: 'Ticket Médio da Carteira',                orientacao: '>', metrica: 'R$',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
-      { id: 4, indicador: 'Positivação de Clientes (Inativos e Leads)', orientacao: '>', metrica: '%', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
-      { id: 5, indicador: 'Índice de Devoluções (Vendedor)',         orientacao: '<', metrica: '%',   metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
-      { id: 6, indicador: 'CRM — Contatos de Relacionamento',        orientacao: '>', metrica: 'qtd', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
-    ],
-  },
-  {
     tituloGerente: 'COMPRADOR',
     cor: 'violet',
     kpis: [

@@ -7,7 +7,6 @@ import KpiIndicadoresCorporativos from './KpiIndicadoresCorporativos'
 import KpiIndicadoresOperacionais from './KpiIndicadoresOperacionais'
 import KpiBloco3PosVenda from './KpiBloco3PosVenda'
 import KpiBloco3Pecas from './KpiBloco3Pecas'
-import KpiBloco3Servicos from './KpiBloco3Servicos'
 import KpiOrcamentoBacklog from './KpiOrcamentoBacklog'
 import KpiAuditoria from './KpiAuditoria'
 
@@ -17,7 +16,6 @@ const ABAS = [
   { key: 'bloco2', label: 'Operacional', icon: Activity, permKey: 'kpi/bloco2-operacional', Componente: KpiIndicadoresOperacionais },
   { key: 'bloco3-pos-venda', label: 'Pós-Venda', icon: Wrench, permKey: 'kpi/bloco3-pos-venda', Componente: KpiBloco3PosVenda },
   { key: 'bloco3-pecas', label: 'Peças', icon: Package, permKey: 'kpi/bloco3-pecas', Componente: KpiBloco3Pecas },
-  { key: 'bloco3-servicos', label: 'Serviços', icon: Wrench, permKey: 'kpi/bloco3-servicos', Componente: KpiBloco3Servicos },
   { key: 'orcamento-backlog', label: 'Orçamento & Backlog', icon: Wallet, permKey: 'kpi/orcamento-backlog', Componente: KpiOrcamentoBacklog },
   { key: 'auditoria', label: 'Auditoria de Fontes', icon: FlaskConical, permKey: 'kpi/auditoria', Componente: KpiAuditoria },
 ]
