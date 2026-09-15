@@ -13,11 +13,11 @@ import KpiAuditoria from './KpiAuditoria'
 
 const ABAS = [
   { key: 'resultados', label: 'Resultados', icon: BarChart2, permKey: 'kpi/resultados', Componente: KpiDashboardExecutivo },
-  { key: 'bloco1', label: 'Bloco 1 — Corporativo', icon: TrendingUp, permKey: 'kpi/bloco1-corporativo', Componente: KpiIndicadoresCorporativos },
-  { key: 'bloco2', label: 'Bloco 2 — Operacional', icon: Activity, permKey: 'kpi/bloco2-operacional', Componente: KpiIndicadoresOperacionais },
-  { key: 'bloco3-pos-venda', label: 'Bloco 3 — Pós-Venda', icon: Wrench, permKey: 'kpi/bloco3-pos-venda', Componente: KpiBloco3PosVenda },
-  { key: 'bloco3-pecas', label: 'Bloco 3 — Peças', icon: Package, permKey: 'kpi/bloco3-pecas', Componente: KpiBloco3Pecas },
-  { key: 'bloco3-servicos', label: 'Bloco 3 — Serviços', icon: Wrench, permKey: 'kpi/bloco3-servicos', Componente: KpiBloco3Servicos },
+  { key: 'bloco1', label: 'Corporativo', icon: TrendingUp, permKey: 'kpi/bloco1-corporativo', Componente: KpiIndicadoresCorporativos },
+  { key: 'bloco2', label: 'Operacional', icon: Activity, permKey: 'kpi/bloco2-operacional', Componente: KpiIndicadoresOperacionais },
+  { key: 'bloco3-pos-venda', label: 'Pós-Venda', icon: Wrench, permKey: 'kpi/bloco3-pos-venda', Componente: KpiBloco3PosVenda },
+  { key: 'bloco3-pecas', label: 'Peças', icon: Package, permKey: 'kpi/bloco3-pecas', Componente: KpiBloco3Pecas },
+  { key: 'bloco3-servicos', label: 'Serviços', icon: Wrench, permKey: 'kpi/bloco3-servicos', Componente: KpiBloco3Servicos },
   { key: 'orcamento-backlog', label: 'Orçamento & Backlog', icon: Wallet, permKey: 'kpi/orcamento-backlog', Componente: KpiOrcamentoBacklog },
   { key: 'auditoria', label: 'Auditoria de Fontes', icon: FlaskConical, permKey: 'kpi/auditoria', Componente: KpiAuditoria },
 ]

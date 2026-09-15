@@ -114,7 +114,7 @@ export default function KpiDashboardExecutivo() {
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-xl font-bold text-slate-800">Dashboard Executivo</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Atingimento por verticais de negócio — Matriz KPIs</p>
+          <p className="text-sm text-slate-500 mt-0.5">Atingimento por verticais de negócio</p>
         </div>
       </div>
 

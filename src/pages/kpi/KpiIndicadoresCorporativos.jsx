@@ -52,8 +52,8 @@ export default function KpiIndicadoresCorporativos() {
     <div className="p-6 space-y-5">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-slate-800">Bloco 1 — Indicadores Corporativos</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Saúde financeira e estratégica da empresa — Matriz KPIs</p>
+          <h1 className="text-xl font-bold text-slate-800">Indicadores Corporativos</h1>
+          <p className="text-sm text-slate-500 mt-0.5">Saúde financeira e estratégica da empresa</p>
         </div>
         <DataSourceBadge source={source} loading={loading} />
       </div>

@@ -80,8 +80,8 @@ export default function KpiIndicadoresOperacionais() {
     <div className="p-6 space-y-5">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-slate-800">Bloco 2 — Indicadores Operacionais</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Detalhamento por área e responsabilidade — Matriz KPIs</p>
+          <h1 className="text-xl font-bold text-slate-800">Indicadores Operacionais</h1>
+          <p className="text-sm text-slate-500 mt-0.5">Detalhamento por área e responsabilidade</p>
         </div>
         <DataSourceBadge source={source} loading={loading} />
       </div>

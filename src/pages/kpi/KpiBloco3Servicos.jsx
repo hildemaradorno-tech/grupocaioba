@@ -186,8 +186,8 @@ export default function KpiBloco3Servicos() {
     <div className="p-6 space-y-5">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between lg:gap-4">
         <div>
-          <h1 className="text-xl font-bold text-slate-800">Bloco 3 — Serviços</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Indicadores de desempenho de serviços da oficina — Matriz KPIs</p>
+          <h1 className="text-xl font-bold text-slate-800">Indicadores de Serviços</h1>
+          <p className="text-sm text-slate-500 mt-0.5">Indicadores de desempenho de serviços da oficina</p>
         </div>
         <DataSourceBadge source={source} loading={loading} />
       </div>

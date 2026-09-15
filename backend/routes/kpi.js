@@ -25,6 +25,7 @@ import {
   executarSincronizacao,
   sincronizacaoEmAndamento,
 } from '../services/kpiSyncService.js'
+import { getPesos, setPeso, aplicarPesos } from '../services/kpiPesos.js'
 
 const router = Router()
 
@@ -363,14 +364,33 @@ router.get('/bloco3-pos-venda', requireConfig, wrap(async (req, res) => {
   })
 
   // Injeta dados por quadro: GERENTE GERAL PÓS-VENDAS usa 'todas', casas usam a empresa mapeada
-  const quadros = BLOCO3_PV_TEMPLATE.map(quadro => {
+  let quadros = BLOCO3_PV_TEMPLATE.map(quadro => {
     const empresa = CASA_EMPRESA_MAP[quadro.tituloGerente] || 'todas'
     const pv    = pvByEmpresa[empresa] ?? pvByEmpresa['todas']
     const horas = horasByEmpresa[empresa] ?? null
     return mergeBloco3PV([quadro], pv, horas)[0]
   })
 
+  const pesos = await getPesos('bloco3-pos-venda')
+  quadros = aplicarPesos(quadros, pesos)
+
   res.json(quadros)
+}))
+
+// GET  /api/kpi/pesos?bloco=bloco3-pos-venda        — { 'tituloGerente|kpiId': peso }
+// PUT  /api/kpi/pesos { bloco, tituloGerente, kpiId, peso } — grava/atualiza um peso
+router.get('/pesos', wrap(async (req, res) => {
+  if (!req.query.bloco) return res.status(400).json({ error: 'parametro_obrigatorio', message: 'bloco é obrigatório.' })
+  res.json(await getPesos(req.query.bloco))
+}))
+
+router.put('/pesos', wrap(async (req, res) => {
+  const { bloco, tituloGerente, kpiId, peso } = req.body || {}
+  if (!bloco || !tituloGerente || kpiId == null || peso == null) {
+    return res.status(400).json({ error: 'parametros_invalidos', message: 'bloco, tituloGerente, kpiId e peso são obrigatórios.' })
+  }
+  await setPeso(bloco, tituloGerente, kpiId, peso)
+  res.json({ ok: true })
 }))
 
 router.get('/bloco3-pecas', requireConfig, wrap(async (req, res) => {

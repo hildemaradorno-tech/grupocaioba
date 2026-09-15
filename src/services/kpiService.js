@@ -116,3 +116,20 @@ export async function executarSincronizacaoAgora(usuarioEmail) {
   if (!res.ok) throw new Error(body.message || `HTTP ${res.status}`)
   return body
 }
+
+// ── Pesos dos indicadores (coluna "Peso") ─────────────────────────────────────
+
+export async function fetchPesos(bloco) {
+  return fetchWithTimeout(`${BASE}/pesos?bloco=${encodeURIComponent(bloco)}`, 15_000)
+}
+
+export async function salvarPeso({ bloco, tituloGerente, kpiId, peso }) {
+  const res = await fetch(`${BASE}/pesos`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ bloco, tituloGerente, kpiId, peso }),
+  })
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(body.message || `HTTP ${res.status}`)
+  return body
+}
