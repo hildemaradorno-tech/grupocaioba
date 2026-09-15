@@ -243,7 +243,7 @@ Resultado final = **Fonte A + Fonte B** (soma período a período)
 
 ---
 
-### GERENTE QUALIDADE
+### GERENTE DE QUALIDADE
 
 | # | Indicador | Status |
 |---|-----------|--------|

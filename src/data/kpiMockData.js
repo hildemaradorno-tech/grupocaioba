@@ -108,7 +108,7 @@ export const MOCK_BLOCO3_POS_VENDA = [
     ],
   },
   {
-    tituloGerente: 'GERENTE QUALIDADE',
+    tituloGerente: 'GERENTE DE QUALIDADE',
     cor: 'teal',
     kpis: [
       { id: 1, indicador: 'O.S. Garantia em Aberto',    orientacao: '<', metrica: 'qtd',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
