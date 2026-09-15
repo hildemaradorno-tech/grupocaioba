@@ -146,7 +146,7 @@ export const MENU_TREE = [
           { key: 'garantias-daf-titulos',   label: 'Garantias DAF a Receber' },
         ],
       },
-      { key: 'honda/garantias-a-receber', label: 'Contas a Receber HONDA' },
+      { key: 'honda/contas-a-receber', label: 'Contas a Receber HONDA' },
       {
         key: '_bpm',
         label: 'Cancelamento/Devolução NF-e',

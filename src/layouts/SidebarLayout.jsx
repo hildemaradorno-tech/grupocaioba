@@ -509,14 +509,14 @@ export default function SidebarLayout() {
       case '_controle-processos':
         return (
           <>
-            {(canView('garantias-daf-andamento') || canView('garantias-daf') || canView('garantias-daf-historicodeos') || canView('garantias-daf-titulos') || canView('honda/garantias-a-receber') || canView('bpm/nfe-cancelamento-devolucao')) && (
+            {(canView('garantias-daf-andamento') || canView('garantias-daf') || canView('garantias-daf-historicodeos') || canView('garantias-daf-titulos') || canView('honda/contas-a-receber') || canView('bpm/nfe-cancelamento-devolucao')) && (
               <FlyGroup label="Controle de Processos" />
             )}
             {/* Dashboard e as demais telas (Encerradas, Faturadas, a Receber) já ficam acessíveis como abas dentro de Garantias DAF. */}
             {(canView('garantias-daf-andamento') || canView('garantias-daf')) && (
               <FlyItem to={canView('garantias-daf-andamento') ? '/garantias-daf-andamento' : '/garantias-daf'} icon={ShieldCheck} onClose={closeFlyout}>Garantias DAF</FlyItem>
             )}
-            {canView('honda/garantias-a-receber') && <FlyItem to="/honda/garantias-a-receber" icon={Bike} onClose={closeFlyout}>Contas a Receber HONDA</FlyItem>}
+            {canView('honda/contas-a-receber') && <FlyItem to="/honda/contas-a-receber" icon={Bike} onClose={closeFlyout}>Contas a Receber HONDA</FlyItem>}
             {canView('bpm/nfe-cancelamento-devolucao') && <FlyItem to="/bpm/nfe-cancelamento-devolucao" icon={Workflow} onClose={closeFlyout}>Cancelamento/Devolução NF-e</FlyItem>}
       {(canView('truckpag/titulos') || canView('truckpag/conciliacao')) && (
         <FlyItem to="/truckpag/titulos" icon={Truck} onClose={closeFlyout}>Contas a Receber TruckPag</FlyItem>

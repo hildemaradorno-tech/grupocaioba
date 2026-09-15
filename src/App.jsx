@@ -219,7 +219,7 @@ export default function App() {
           { path: '/metas/total-grupo', element: <MetasTotalGrupo />, menuPath: '/metas/total-grupo' },
           { path: '/metas/gestao-aprovacao', element: <MetasGestaoAprovacao />, menuPath: '/metas/gestao-aprovacao' },
           { path: '/auditoria-os-aberto', element: <AuditoriaOsAberto />, menuPath: '/auditoria-os-aberto' },
-          { path: '/honda/garantias-a-receber', element: <HondaGarantiasReceber />, menuPath: 'honda/garantias-a-receber' },
+          { path: '/honda/contas-a-receber', element: <HondaGarantiasReceber />, menuPath: 'honda/contas-a-receber' },
           { path: '/bpm/processos', element: <BpmProcessos />, menuPath: 'bpm/processos' },
           { path: '/bpm/modelador', element: <BpmModelador />, menuPath: ['bpm/modelador', 'bpm/nfe-cancelamento-devolucao'] },
           { path: '/bpm/modelador/:id', element: <BpmModelador />, menuPath: ['bpm/modelador', 'bpm/nfe-cancelamento-devolucao'] },
