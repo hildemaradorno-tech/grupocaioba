@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useMemo } from 'react'
-import { Bike, RefreshCw, AlertTriangle, ShieldCheck, Wrench, Building2, Filter, ChevronDown, ChevronUp, X, Info } from 'lucide-react'
+import { Bike, RefreshCw, AlertTriangle, ShieldCheck, Wrench, Building2, Filter, ChevronDown, ChevronUp, X, Info, Wallet, CalendarClock, CalendarCheck2 } from 'lucide-react'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
 const CACHE_KEY = 'honda_garantias_a_receber_cache'
@@ -39,11 +39,11 @@ function formatarData(valor) {
   return null
 }
 
-// Só a coluna de vencimento (não emissão) recebe o destaque de vencida/vence hoje.
+// Só a coluna de vencimento (não emissão) recebe o destaque de vencido/vence hoje.
 const COLUNA_VENCIMENTO_RE = /vencim/i
 
-// Retorna 'vencidaMuito' (mais de 30 dias atrás) | 'vencida' (hoje ou atrasada) | 'amanha' | null.
-function statusVencimento(valor) {
+// Retorna 'vencido' (antes de hoje) | 'hoje' | 'a_vencer' (depois de hoje) | null.
+function statusPrazo(valor) {
   const formatada = formatarData(valor)
   if (!formatada) return null
   const [dia, mes, ano] = formatada.split('/').map(Number)
@@ -51,10 +51,9 @@ function statusVencimento(valor) {
   const hoje = new Date()
   const hojeSemHora = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate())
   const diffDias = Math.round((dataVenc.getTime() - hojeSemHora.getTime()) / 86400000)
-  if (diffDias < -30) return 'vencidaMuito'
-  if (diffDias <= 0) return 'vencida'
-  if (diffDias === 1) return 'amanha'
-  return null
+  if (diffDias < 0) return 'vencido'
+  if (diffDias === 0) return 'hoje'
+  return 'a_vencer'
 }
 
 // Colunas de valor monetário (ex: ValorParcela, Aberto) — formata como R$ 0,00.
@@ -106,14 +105,30 @@ function categoriaDoRegistro(row) {
   return null
 }
 
+// Uma aba por portador — mesma categorização usada em categoriaDoRegistro().
+const ABAS_PORTADOR = [
+  { key: 'garantias', label: 'Garantias', icon: ShieldCheck, activeBorder: 'border-sky-600', activeText: 'text-sky-700', activeBadge: 'bg-sky-50 text-sky-600' },
+  { key: 'revisoes', label: 'Revisões Gratuitas', icon: Wrench, activeBorder: 'border-amber-600', activeText: 'text-amber-700', activeBadge: 'bg-amber-50 text-amber-600' },
+  { key: 'seguradoras', label: 'Seguradoras', icon: Building2, activeBorder: 'border-emerald-600', activeText: 'text-emerald-700', activeBadge: 'bg-emerald-50 text-emerald-600' },
+]
+
+// Cards de resumo exibidos dentro da aba ativa — clicáveis, funcionam como filtro da tabela.
+// key: null = "Total" (limpa o filtro de prazo); os demais casam com a chave usada em statusPrazo().
+const CARDS_RESUMO = [
+  { key: null, label: 'Total', icon: Wallet, bg: 'bg-slate-50', border: 'border-slate-200', ring: 'ring-slate-400', labelColor: 'text-slate-500', qtdColor: 'text-slate-800', valorColor: 'text-slate-900', iconColor: 'text-slate-500' },
+  { key: 'vencido', label: 'Vencido', icon: AlertTriangle, bg: 'bg-red-50', border: 'border-red-200', ring: 'ring-red-400', labelColor: 'text-red-500', qtdColor: 'text-red-700', valorColor: 'text-red-800', iconColor: 'text-red-500' },
+  { key: 'hoje', label: 'Vence Hoje', icon: CalendarClock, bg: 'bg-amber-50', border: 'border-amber-200', ring: 'ring-amber-400', labelColor: 'text-amber-500', qtdColor: 'text-amber-700', valorColor: 'text-amber-800', iconColor: 'text-amber-500' },
+  { key: 'aVencer', label: 'A Vencer', icon: CalendarCheck2, bg: 'bg-emerald-50', border: 'border-emerald-200', ring: 'ring-emerald-400', labelColor: 'text-emerald-500', qtdColor: 'text-emerald-700', valorColor: 'text-emerald-800', iconColor: 'text-emerald-500' },
+]
+
 export default function HondaGarantiasReceber() {
   const cacheInicial = lerCache()
   const [dados, setDados] = useState(cacheInicial?.dados ?? null)
   const [ultimaConsulta, setUltimaConsulta] = useState(cacheInicial?.consultadoEm ?? null)
   const [loading, setLoading] = useState(false)
   const [erro, setErro] = useState(null)
-  const [filtroCategoria, setFiltroCategoria] = useState(null) // null | 'garantias' | 'revisoes' | 'seguradoras'
-  const [filtroVencimento, setFiltroVencimento] = useState(null) // null | 'vencidaMuito' | 'vencida' | 'amanha'
+  const [filtroCategoria, setFiltroCategoria] = useState('garantias') // 'garantias' | 'revisoes' | 'seguradoras' — aba ativa (sempre uma selecionada)
+  const [filtroPrazo, setFiltroPrazo] = useState(null) // null (Total) | 'vencido' | 'hoje' | 'aVencer' — card clicado
   const [sortCol, setSortCol] = useState(null)
   const [sortDir, setSortDir] = useState('asc')
   const [mostrarFiltroAvancado, setMostrarFiltroAvancado] = useState(false)
@@ -154,9 +169,9 @@ export default function HondaGarantiasReceber() {
   const listaCompleta = extrairLista(dados)
   const colunas = listaCompleta && listaCompleta.length > 0 ? Object.keys(listaCompleta[0]) : []
 
+  const colunaVencimento = colunas.find(c => COLUNA_VENCIMENTO_RE.test(c)) || null
   // Soma pela coluna "Aberto" (saldo em aberto) — cai para qualquer coluna de valor se não existir.
   const colunaValor = colunas.find(c => /aberto/i.test(c)) || colunas.find(c => /valor/i.test(c)) || null
-  const colunaVencimento = colunas.find(c => COLUNA_VENCIMENTO_RE.test(c)) || null
 
   // Colunas do filtro avançado.
   const colunaEmpresa = colunas.find(c => /empresa/i.test(c)) || null
@@ -173,68 +188,45 @@ export default function HondaGarantiasReceber() {
     setFiltroNotaFiscal('')
   }
 
-  // Base para os alertas: reflete o filtro de categoria ativo (cards), para que os alertas
-  // mostrem os valores apenas da categoria selecionada.
-  const baseParaAlertas = useMemo(() => {
-    if (!listaCompleta) return listaCompleta
-    if (!filtroCategoria) return listaCompleta
-    return listaCompleta.filter(row => categoriaDoRegistro(row) === filtroCategoria)
-  }, [listaCompleta, filtroCategoria])
-
-  // Base para os cards: reflete o filtro de vencimento ativo (alertas), para que os cards
-  // mostrem os valores apenas da situação de vencimento selecionada.
-  const baseParaCategorias = useMemo(() => {
-    if (!listaCompleta) return listaCompleta
-    if (!filtroVencimento || !colunaVencimento) return listaCompleta
-    return listaCompleta.filter(row => statusVencimento(row[colunaVencimento]) === filtroVencimento)
-  }, [listaCompleta, filtroVencimento, colunaVencimento])
-
-  const alertasVencimento = useMemo(() => {
-    const c = {
-      vencidaMuito: { qtd: 0, valor: 0 },
-      vencida: { qtd: 0, valor: 0 },
-      amanha: { qtd: 0, valor: 0 },
-    }
-    if (!baseParaAlertas || !colunaVencimento) return c
-    for (const row of baseParaAlertas) {
-      const st = statusVencimento(row[colunaVencimento])
-      if (st && c[st]) {
-        c[st].qtd += 1
-        c[st].valor += colunaValor ? (parseValor(row[colunaValor]) || 0) : 0
-      }
-    }
-    return c
-  }, [baseParaAlertas, colunaVencimento, colunaValor])
-
   const categorias = useMemo(() => {
-    const grupos = {
-      garantias: { qtd: 0, valor: 0 },
-      revisoes: { qtd: 0, valor: 0 },
-      seguradoras: { qtd: 0, valor: 0 },
-    }
-    if (!baseParaCategorias) return grupos
-    for (const row of baseParaCategorias) {
+    const grupos = { garantias: { qtd: 0 }, revisoes: { qtd: 0 }, seguradoras: { qtd: 0 } }
+    if (!listaCompleta) return grupos
+    for (const row of listaCompleta) {
       const cat = categoriaDoRegistro(row)
-      if (!cat) continue
-      grupos[cat].qtd += 1
-      grupos[cat].valor += colunaValor ? (parseValor(row[colunaValor]) || 0) : 0
+      if (cat) grupos[cat].qtd += 1
     }
     return grupos
-  }, [baseParaCategorias, colunaValor])
+  }, [listaCompleta])
 
-  const total = {
-    qtd: categorias.garantias.qtd + categorias.revisoes.qtd + categorias.seguradoras.qtd,
-    valor: categorias.garantias.valor + categorias.revisoes.valor + categorias.seguradoras.valor,
-  }
+  // Resumo (Total/Vencido/Vence Hoje/A Vencer) da aba ativa — não é afetado pelo filtro avançado,
+  // reflete só a categoria/portador selecionada.
+  const resumoAbaAtiva = useMemo(() => {
+    const grupos = {
+      total: { qtd: 0, valor: 0 },
+      vencido: { qtd: 0, valor: 0 },
+      hoje: { qtd: 0, valor: 0 },
+      aVencer: { qtd: 0, valor: 0 },
+    }
+    if (!listaCompleta) return grupos
+    for (const row of listaCompleta) {
+      if (categoriaDoRegistro(row) !== filtroCategoria) continue
+      const valor = colunaValor ? (parseValor(row[colunaValor]) || 0) : 0
+      grupos.total.qtd += 1
+      grupos.total.valor += valor
+      const st = colunaVencimento ? statusPrazo(row[colunaVencimento]) : null
+      const chave = st === 'vencido' ? 'vencido' : st === 'hoje' ? 'hoje' : st === 'a_vencer' ? 'aVencer' : null
+      if (chave) {
+        grupos[chave].qtd += 1
+        grupos[chave].valor += valor
+      }
+    }
+    return grupos
+  }, [listaCompleta, filtroCategoria, colunaValor, colunaVencimento])
 
-  // Filtro por card (categoria), por alerta (situação de vencimento) e pelo filtro avançado — combinam entre si.
+  // Filtro pela aba (categoria/portador) e pelo filtro avançado — combinam entre si.
   const lista = useMemo(() => {
     if (!listaCompleta) return listaCompleta
-    let filtrada = listaCompleta
-    if (filtroCategoria) filtrada = filtrada.filter(row => categoriaDoRegistro(row) === filtroCategoria)
-    if (filtroVencimento && colunaVencimento) {
-      filtrada = filtrada.filter(row => statusVencimento(row[colunaVencimento]) === filtroVencimento)
-    }
+    let filtrada = listaCompleta.filter(row => categoriaDoRegistro(row) === filtroCategoria)
     if (filtroEmpresa.trim() && colunaEmpresa) {
       const alvo = filtroEmpresa.trim().toLowerCase()
       filtrada = filtrada.filter(row => String(row[colunaEmpresa] ?? '').toLowerCase().includes(alvo))
@@ -255,11 +247,15 @@ export default function HondaGarantiasReceber() {
       const alvo = filtroNotaFiscal.trim().toLowerCase()
       filtrada = filtrada.filter(row => String(row[colunaNotaFiscal] ?? '').toLowerCase().includes(alvo))
     }
+    if (filtroPrazo && colunaVencimento) {
+      filtrada = filtrada.filter(row => {
+        const st = statusPrazo(row[colunaVencimento])
+        const chave = st === 'vencido' ? 'vencido' : st === 'hoje' ? 'hoje' : st === 'a_vencer' ? 'aVencer' : null
+        return chave === filtroPrazo
+      })
+    }
     return filtrada
-  }, [listaCompleta, filtroCategoria, filtroVencimento, colunaVencimento, filtroEmpresa, colunaEmpresa, filtroDocumento, colunaDocumento, filtroParcela, colunaParcela, filtroOrigemDocumento, colunaOrigemDocumento, filtroNotaFiscal, colunaNotaFiscal])
-
-  const alternarFiltro = (cat) => setFiltroCategoria(prev => prev === cat ? null : cat)
-  const alternarFiltroVencimento = (st) => setFiltroVencimento(prev => prev === st ? null : st)
+  }, [listaCompleta, filtroCategoria, filtroEmpresa, colunaEmpresa, filtroDocumento, colunaDocumento, filtroParcela, colunaParcela, filtroOrigemDocumento, colunaOrigemDocumento, filtroNotaFiscal, colunaNotaFiscal, filtroPrazo, colunaVencimento])
 
   // Sem ordenação manual escolhida, a tabela já vem ordenada pela coluna de vencimento (mais antigo/vencido primeiro).
   const sortColEfetivo = sortCol || colunaVencimento
@@ -292,7 +288,7 @@ export default function HondaGarantiasReceber() {
 
   return (
     <div className="p-6 space-y-5 max-w-screen-2xl">
-      <div className="flex items-center justify-between border-b border-slate-200 pb-4">
+      <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
             <Bike className="h-5 w-5 text-red-600" />
@@ -332,104 +328,51 @@ export default function HondaGarantiasReceber() {
         </div>
       )}
 
-      {listaCompleta && listaCompleta.length > 0 && (alertasVencimento.vencidaMuito.qtd > 0 || alertasVencimento.vencida.qtd > 0 || alertasVencimento.amanha.qtd > 0) && (
-        <div className="flex flex-col md:flex-row gap-2">
-          {alertasVencimento.vencidaMuito.qtd > 0 && (
-            <button
-              type="button"
-              onClick={() => alternarFiltroVencimento('vencidaMuito')}
-              className={`flex-1 flex items-center gap-3 bg-slate-900 border rounded-lg px-4 py-3 text-left transition-all hover:bg-slate-800 ${filtroVencimento === 'vencidaMuito' ? 'border-white ring-2 ring-offset-1 ring-slate-400' : 'border-slate-700'}`}
-            >
-              <AlertTriangle className="h-4 w-4 text-white shrink-0" />
-              <p className="text-xs text-white font-semibold flex-1">
-                {alertasVencimento.vencidaMuito.qtd} título(s) vencido(s) há mais de 30 dias
-                <span className="text-slate-300 font-normal"> — {fmtMoeda(alertasVencimento.vencidaMuito.valor)}</span>
-              </p>
-            </button>
-          )}
-          {alertasVencimento.vencida.qtd > 0 && (
-            <button
-              type="button"
-              onClick={() => alternarFiltroVencimento('vencida')}
-              className={`flex-1 flex items-center gap-3 bg-red-50 border rounded-lg px-4 py-3 text-left transition-all hover:bg-red-100 ${filtroVencimento === 'vencida' ? 'border-red-500 ring-2 ring-offset-1 ring-red-300' : 'border-red-300'}`}
-            >
-              <AlertTriangle className="h-4 w-4 text-red-600 shrink-0" />
-              <p className="text-xs text-red-700 font-semibold flex-1">
-                {alertasVencimento.vencida.qtd} título(s) vencido(s) (hoje ou até 30 dias)
-                <span className="text-red-500 font-normal"> — {fmtMoeda(alertasVencimento.vencida.valor)}</span>
-              </p>
-            </button>
-          )}
-          {alertasVencimento.amanha.qtd > 0 && (
-            <button
-              type="button"
-              onClick={() => alternarFiltroVencimento('amanha')}
-              className={`flex-1 flex items-center gap-3 bg-amber-50 border rounded-lg px-4 py-3 text-left transition-all hover:bg-amber-100 ${filtroVencimento === 'amanha' ? 'border-amber-500 ring-2 ring-offset-1 ring-amber-300' : 'border-amber-300'}`}
-            >
-              <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
-              <p className="text-xs text-amber-700 font-semibold flex-1">
-                {alertasVencimento.amanha.qtd} título(s) vencendo amanhã
-                <span className="text-amber-500 font-normal"> — {fmtMoeda(alertasVencimento.amanha.valor)}</span>
-              </p>
-            </button>
-          )}
-        </div>
-      )}
-
       {listaCompleta && listaCompleta.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <button
-            type="button"
-            onClick={() => alternarFiltro('garantias')}
-            className={`text-left rounded-lg border p-4 shadow-sm transition-all hover:shadow-md bg-sky-50 border-sky-200 ${filtroCategoria === 'garantias' ? 'ring-2 ring-offset-1 ring-sky-300 shadow-md' : ''}`}
-          >
-            <div className="flex items-center gap-1.5 mb-2">
-              <div className="p-1 rounded bg-sky-100"><ShieldCheck className="h-3.5 w-3.5 text-sky-600" /></div>
-              <p className="text-[10px] font-bold uppercase tracking-wide text-sky-500">Garantias</p>
-            </div>
-            <p className="text-2xl font-bold text-sky-700 leading-none">{categorias.garantias.qtd}</p>
-            <p className="text-[10px] text-sky-500 mt-0.5 mb-2">registro(s)</p>
-            <p className="text-sm font-bold text-sky-800 pt-2 border-t border-sky-200">{fmtMoeda(categorias.garantias.valor)}</p>
-          </button>
-          <button
-            type="button"
-            onClick={() => alternarFiltro('revisoes')}
-            className={`text-left rounded-lg border p-4 shadow-sm transition-all hover:shadow-md bg-amber-50 border-amber-200 ${filtroCategoria === 'revisoes' ? 'ring-2 ring-offset-1 ring-amber-300 shadow-md' : ''}`}
-          >
-            <div className="flex items-center gap-1.5 mb-2">
-              <div className="p-1 rounded bg-amber-100"><Wrench className="h-3.5 w-3.5 text-amber-600" /></div>
-              <p className="text-[10px] font-bold uppercase tracking-wide text-amber-500">Revisões Gratuitas</p>
-            </div>
-            <p className="text-2xl font-bold text-amber-700 leading-none">{categorias.revisoes.qtd}</p>
-            <p className="text-[10px] text-amber-500 mt-0.5 mb-2">registro(s)</p>
-            <p className="text-sm font-bold text-amber-800 pt-2 border-t border-amber-200">{fmtMoeda(categorias.revisoes.valor)}</p>
-          </button>
-          <button
-            type="button"
-            onClick={() => alternarFiltro('seguradoras')}
-            className={`text-left rounded-lg border p-4 shadow-sm transition-all hover:shadow-md bg-emerald-50 border-emerald-200 ${filtroCategoria === 'seguradoras' ? 'ring-2 ring-offset-1 ring-emerald-300 shadow-md' : ''}`}
-          >
-            <div className="flex items-center gap-1.5 mb-2">
-              <div className="p-1 rounded bg-emerald-100"><Building2 className="h-3.5 w-3.5 text-emerald-600" /></div>
-              <p className="text-[10px] font-bold uppercase tracking-wide text-emerald-500">Seguradoras</p>
-            </div>
-            <p className="text-2xl font-bold text-emerald-700 leading-none">{categorias.seguradoras.qtd}</p>
-            <p className="text-[10px] text-emerald-500 mt-0.5 mb-2">registro(s)</p>
-            <p className="text-sm font-bold text-emerald-800 pt-2 border-t border-emerald-200">{fmtMoeda(categorias.seguradoras.valor)}</p>
-          </button>
-          <button
-            type="button"
-            onClick={() => setFiltroCategoria(null)}
-            className={`text-left rounded-lg border p-4 shadow-sm transition-all hover:shadow-md bg-slate-100 border-slate-300 ${!filtroCategoria ? 'ring-2 ring-offset-1 ring-slate-400 shadow-md' : ''}`}
-          >
-            <div className="flex items-center gap-1.5 mb-2">
-              <div className="p-1 rounded bg-slate-200"><Bike className="h-3.5 w-3.5 text-slate-700" /></div>
-              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Total</p>
-            </div>
-            <p className="text-2xl font-bold text-slate-800 leading-none">{total.qtd}</p>
-            <p className="text-[10px] text-slate-500 mt-0.5 mb-2">registro(s)</p>
-            <p className="text-sm font-bold text-slate-900 pt-2 border-t border-slate-300">{fmtMoeda(total.valor)}</p>
-          </button>
+        <div className="!mt-2">
+          <div className="flex gap-1 border-b border-slate-200">
+            {ABAS_PORTADOR.map(aba => {
+              const info = categorias[aba.key]
+              const Icon = aba.icon
+              const ativo = filtroCategoria === aba.key
+              return (
+                <button
+                  key={aba.key}
+                  type="button"
+                  onClick={() => setFiltroCategoria(aba.key)}
+                  className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold border-b-2 -mb-px transition-colors ${ativo ? `${aba.activeBorder} ${aba.activeText}` : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                  {aba.label}
+                  <span className={`text-[10px] font-bold rounded-full px-1.5 leading-4 ${ativo ? aba.activeBadge : 'bg-slate-100 text-slate-400'}`}>{info.qtd}</span>
+                </button>
+              )
+            })}
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3">
+            {CARDS_RESUMO.map(cardCfg => {
+              const info = resumoAbaAtiva[cardCfg.key ?? 'total']
+              const CardIcon = cardCfg.icon
+              const ativo = filtroPrazo === cardCfg.key
+              return (
+                <button
+                  key={cardCfg.label}
+                  type="button"
+                  onClick={() => setFiltroPrazo(cardCfg.key)}
+                  className={`text-left rounded-lg border p-3 shadow-sm transition-all hover:shadow-md ${cardCfg.bg} ${cardCfg.border} ${ativo ? `ring-2 ring-offset-1 ${cardCfg.ring} shadow-md` : ''}`}
+                >
+                  <p className={`flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide ${cardCfg.labelColor}`}>
+                    <CardIcon className={`h-3.5 w-3.5 ${cardCfg.iconColor}`} />
+                    {cardCfg.label}
+                  </p>
+                  <p className={`text-xl font-bold leading-tight mt-1 ${cardCfg.qtdColor}`}>
+                    {info.qtd} <span className="text-[10px] font-normal">registro(s)</span>
+                  </p>
+                  <p className={`text-xs font-bold mt-1 ${cardCfg.valorColor}`}>{fmtMoeda(info.valor)}</p>
+                </button>
+              )
+            })}
+          </div>
         </div>
       )}
 
@@ -558,10 +501,9 @@ export default function HondaGarantiasReceber() {
                 {listaOrdenada.map((row, i) => (
                   <tr key={i} className="hover:bg-slate-50/70 transition-colors">
                     {colunas.map(c => {
-                      const status = COLUNA_VENCIMENTO_RE.test(c) ? statusVencimento(row[c]) : null
-                      const corVencimento = status === 'vencidaMuito' ? 'bg-slate-900 text-white font-semibold'
-                        : status === 'vencida' ? 'bg-red-100 text-red-700 font-semibold'
-                        : status === 'amanha' ? 'bg-amber-100 text-amber-700 font-semibold'
+                      const status = COLUNA_VENCIMENTO_RE.test(c) ? statusPrazo(row[c]) : null
+                      const corVencimento = status === 'vencido' ? 'bg-red-100 text-red-700 font-semibold'
+                        : status === 'hoje' ? 'bg-amber-100 text-amber-700 font-semibold'
                         : ''
                       return (
                         <td key={c} className={`p-3 whitespace-nowrap ${COLUNA_MOEDA_RE.test(c) ? 'text-right font-semibold text-slate-900' : ''} ${corVencimento}`}>
@@ -585,13 +527,13 @@ export default function HondaGarantiasReceber() {
       {lista && (
         <p className="text-[10px] text-slate-400">
           {lista.length} registro(s)
-          {(filtroCategoria || filtroVencimento || filtroAvancadoAtivo) && listaCompleta && (
+          {listaCompleta && (
             <>
               {' '}de {listaCompleta.length} · filtrado por{' '}
-              {filtroCategoria && <strong>{filtroCategoria === 'garantias' ? 'Garantias' : filtroCategoria === 'revisoes' ? 'Revisões Gratuitas' : 'Seguradoras'}</strong>}
-              {filtroCategoria && (filtroVencimento || filtroAvancadoAtivo) && ' + '}
-              {filtroVencimento && <strong>{filtroVencimento === 'vencidaMuito' ? 'Vencida há +30 dias' : filtroVencimento === 'vencida' ? 'Vencida' : 'Vence amanhã'}</strong>}
-              {filtroVencimento && filtroAvancadoAtivo && ' + '}
+              <strong>{filtroCategoria === 'garantias' ? 'Garantias' : filtroCategoria === 'revisoes' ? 'Revisões Gratuitas' : 'Seguradoras'}</strong>
+              {filtroPrazo && ' + '}
+              {filtroPrazo && <strong>{filtroPrazo === 'vencido' ? 'Vencido' : filtroPrazo === 'hoje' ? 'Vence Hoje' : 'A Vencer'}</strong>}
+              {filtroAvancadoAtivo && ' + '}
               {filtroAvancadoAtivo && <strong>Filtro Avançado</strong>}
             </>
           )}
