@@ -742,20 +742,38 @@ export default function AtaReuniao() {
     return (
       <div className="space-y-5">
         <div>
-          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide block mb-2">Usuários do sistema</label>
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">
+              Usuários do sistema
+              {form.participantesIds.size > 0 && (
+                <span className="ml-1.5 px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 text-[9px] font-bold">{form.participantesIds.size}</span>
+              )}
+            </label>
+            {form.participantesIds.size > 0 && (
+              <button
+                onClick={() => setForm(f => ({ ...f, participantesIds: new Set(), participantesNomes: [] }))}
+                className="text-[10px] text-red-500 hover:text-red-700 font-semibold transition-colors"
+              >
+                Limpar seleção
+              </button>
+            )}
+          </div>
           <input type="text" value={buscaPartic} onChange={e => setBuscaPartic(e.target.value)}
             placeholder="Buscar por nome ou e-mail..."
             className="w-full mb-2 text-xs px-2.5 py-1.5 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20 outline-none" />
-          <div className="border border-slate-200 rounded-md max-h-44 overflow-y-auto divide-y divide-slate-50">
-            {lista.map(u => (
-              <label key={u.id} className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-slate-50">
-                <input type="checkbox" checked={form.participantesIds.has(u.id)}
-                  onChange={() => togglePartic(u)}
-                  className="w-3.5 h-3.5 accent-blue-600 shrink-0" />
-                <span className="text-xs font-medium text-slate-700 flex-1 truncate">{u.nome}</span>
-                <span className="text-[10px] text-slate-400 truncate max-w-[160px]">{u.email}</span>
-              </label>
-            ))}
+          <div className="border border-slate-200 rounded-md max-h-44 overflow-y-auto divide-y divide-slate-100">
+            {lista.map(u => {
+              const selecionado = form.participantesIds.has(u.id)
+              return (
+                <label key={u.id} className={`flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors ${selecionado ? 'bg-blue-50 hover:bg-blue-100' : 'hover:bg-slate-50'}`}>
+                  <input type="checkbox" checked={selecionado}
+                    onChange={() => togglePartic(u)}
+                    className="w-3.5 h-3.5 accent-blue-600 shrink-0" />
+                  <span className={`text-xs flex-1 truncate ${selecionado ? 'font-bold text-blue-700' : 'font-medium text-slate-700'}`}>{u.nome}</span>
+                  <span className="text-[10px] text-slate-400 truncate max-w-[160px]">{u.email}</span>
+                </label>
+              )
+            })}
           </div>
         </div>
         <div>
