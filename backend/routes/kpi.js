@@ -87,7 +87,7 @@ const BLOCO3_PV_TEMPLATE = [
     tituloGerente: 'GERENTE FILIAL - DOURADOS',
     cor: 'violet',
     kpis: [
-      { id: 1, indicador: 'Faturamento Oficina (Serviços)',  orientacao: '>', metrica: 'R$', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      { id: 1, indicador: 'Faturamento Total Oficina (Peças + Serviços)',  orientacao: '>', metrica: 'R$', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
       { id: 2, indicador: 'Margem Bruta Serviços',           orientacao: '>', metrica: '%',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
       { id: 3, indicador: 'Margem Bruta Peças Oficina',      orientacao: '>', metrica: '%',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
       { id: 4, indicador: 'Eficácia da Oficina',             orientacao: '>', metrica: '%',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
@@ -274,6 +274,7 @@ function mergeBloco3PV(quadros, pv, horas = null) {
       }
       if (CASA_EMPRESA_MAP[quadro.tituloGerente]) {
         if (kpi.indicador === 'Faturamento Oficina (Serviços)') return injectPeriods(kpi, pv?.faturamentoBrutoServicos ?? {}, r)
+        if (kpi.indicador === 'Faturamento Total Oficina (Peças + Serviços)') return injectPeriods(kpi, sumPeriods(pv?.faturamentoOficina, pv?.faturamentoBrutoServicos), r)
         if (kpi.indicador === 'Faturamento Balcão')             return injectPeriods(kpi, pv?.faturamentoBalcao        ?? {}, r)
         if (kpi.indicador === 'Margem Bruta Peças Balcão')    return injectPeriods(kpi, pv?.margemBrutaPecasBalcao   ?? {}, p)
         if (kpi.indicador === 'Margem Bruta Serviços')          return injectPeriods(kpi, pv?.margemBrutaServicosRecep ?? {}, p)
