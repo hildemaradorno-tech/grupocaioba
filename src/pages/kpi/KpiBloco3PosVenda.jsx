@@ -1,4 +1,5 @@
 ﻿import React, { useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Wrench, Info } from 'lucide-react'
 import { MOCK_BLOCO3_POS_VENDA } from '../../data/kpiMockData'
 import PeriodSelector, { usePeriodSelector } from '../../components/kpi/PeriodSelector'
@@ -25,14 +26,41 @@ const EXPLICACOES = {
   'Produtividade da Oficina': 'Horas aplicadas/total (ROF042) ÷ Horas disponíveis (ROF096) × 100.',
 }
 
+// Tooltip renderizado via portal em document.body, com posição calculada pelo
+// ícone (getBoundingClientRect). Evita ficar cortado/coberto pelas colunas
+// sticky da tabela — um <div> absoluto normal ficava preso no stacking context
+// de cada linha (position: sticky por linha), sendo sobreposto pelas linhas seguintes.
 function InfoIndicador({ indicador }) {
   const texto = EXPLICACOES[indicador] || EXPLICACAO_PADRAO
+  const iconRef = React.useRef(null)
+  const [pos, setPos] = useState(null)
+
+  const mostrar = () => {
+    const r = iconRef.current?.getBoundingClientRect()
+    if (!r) return
+    setPos({
+      top: r.bottom + 6,
+      left: Math.min(r.left, window.innerWidth - 264),
+    })
+  }
+
   return (
-    <span className="relative inline-flex group/info align-middle ml-1.5">
+    <span
+      ref={iconRef}
+      className="relative inline-flex align-middle ml-1.5"
+      onMouseEnter={mostrar}
+      onMouseLeave={() => setPos(null)}
+    >
       <Info className="h-3.5 w-3.5 text-slate-400 hover:text-blue-500 cursor-help shrink-0" />
-      <span className="pointer-events-none absolute left-0 top-full mt-1.5 w-64 rounded-lg bg-slate-800 text-white text-[11px] leading-snug px-2.5 py-2 opacity-0 group-hover/info:opacity-100 transition-opacity z-30 whitespace-normal text-left shadow-lg">
-        {texto}
-      </span>
+      {pos && createPortal(
+        <div
+          className="fixed w-64 rounded-lg bg-slate-800 text-white text-[11px] leading-snug px-2.5 py-2 shadow-lg whitespace-normal text-left pointer-events-none"
+          style={{ top: pos.top, left: pos.left, zIndex: 9999 }}
+        >
+          {texto}
+        </div>,
+        document.body
+      )}
     </span>
   )
 }
