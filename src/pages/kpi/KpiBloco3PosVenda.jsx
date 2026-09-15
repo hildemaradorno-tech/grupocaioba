@@ -116,11 +116,6 @@ function QuadroTable({ quadro, activePeriods, year, onSalvarPeso }) {
       <div className={`px-5 py-3 flex items-center gap-2 ${headerCls}`}>
         <Wrench className="h-4 w-4 opacity-80" />
         <span className="text-sm font-bold tracking-wide">{quadro.tituloGerente}</span>
-        <span className={`ml-auto text-[11px] font-semibold px-2 py-0.5 rounded-full ${
-          totalOk ? 'bg-white/20 text-white' : 'bg-red-500 text-white'
-        }`} title="Soma dos pesos dos indicadores desse gerente — deve fechar em 100%">
-          Total pesos: {totalPeso}%{!totalOk && ' ⚠'}
-        </span>
       </div>
 
       <div className="overflow-x-auto">
@@ -138,7 +133,12 @@ function QuadroTable({ quadro, activePeriods, year, onSalvarPeso }) {
               ))}
             </tr>
             <tr className="bg-slate-50/60 border-b border-slate-200 text-[10px]">
-              <th colSpan={colSpanBase} />
+              <th colSpan={colSpanBase - 1} />
+              <th className="px-2 py-1 text-center" title="Soma dos pesos dos indicadores desse gerente — deve fechar em 100%">
+                <span className={`font-semibold ${totalOk ? 'text-slate-400' : 'text-red-600'}`}>
+                  {totalPeso}%{!totalOk && ' ⚠'}
+                </span>
+              </th>
               {activePeriods.map(p => (
                 <React.Fragment key={p}>
                   <th className="px-2 py-1.5 text-slate-400 font-medium border-l border-slate-200">Meta</th>
