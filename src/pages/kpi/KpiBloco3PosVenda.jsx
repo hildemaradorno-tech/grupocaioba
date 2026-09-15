@@ -30,7 +30,7 @@ function InfoIndicador({ indicador }) {
   return (
     <span className="relative inline-flex group/info align-middle ml-1.5">
       <Info className="h-3.5 w-3.5 text-slate-400 hover:text-blue-500 cursor-help shrink-0" />
-      <span className="pointer-events-none absolute left-1/2 -translate-x-1/2 top-full mt-1.5 w-64 rounded-lg bg-slate-800 text-white text-[11px] leading-snug px-2.5 py-2 opacity-0 group-hover/info:opacity-100 transition-opacity z-20 whitespace-normal text-left shadow-lg">
+      <span className="pointer-events-none absolute left-0 top-full mt-1.5 w-64 rounded-lg bg-slate-800 text-white text-[11px] leading-snug px-2.5 py-2 opacity-0 group-hover/info:opacity-100 transition-opacity z-30 whitespace-normal text-left shadow-lg">
         {texto}
       </span>
     </span>
