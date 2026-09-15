@@ -72,7 +72,7 @@ const BLOCO3_PV_TEMPLATE = [
     tituloGerente: 'GERENTE DE SERVIÇO - CAMPO GRANDE',
     cor: 'indigo',
     kpis: [
-      { id:  1, indicador: 'Faturamento Oficina (Serviços)',       orientacao: '>', metrica: 'R$',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      { id:  1, indicador: 'Faturamento Total Oficina (Peças + Serviços)', orientacao: '>', metrica: 'R$',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
       { id:  2, indicador: 'Margem Bruta Serviços',                orientacao: '>', metrica: '%',   metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
       { id:  3, indicador: 'Margem Bruta Peças Oficina',           orientacao: '>', metrica: '%',   metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
       { id:  4, indicador: 'Eficácia da Oficina',                  orientacao: '>', metrica: '%',   metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
