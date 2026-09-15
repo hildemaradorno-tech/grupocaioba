@@ -232,7 +232,7 @@ Resultado final = **Fonte A + Fonte B** (soma período a período)
 
 | # | Indicador | Status |
 |---|-----------|--------|
-| 1 | Faturamento Oficina (Serviços) | ⏳ Pendente |
+| 1 | Faturamento Total Oficina (Peças + Serviços) | ✅ Implementado |
 | 2 | Eficácia da Oficina | ⏳ Pendente |
 | 3 | Produtividade da Oficina | ⏳ Pendente |
 | 4 | Penetração Plano Manutenção | ⏳ Pendente |
