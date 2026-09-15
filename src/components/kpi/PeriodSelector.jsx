@@ -52,8 +52,8 @@ function ssSave(pageKey, field, value) {
 
 // ── hook ──────────────────────────────────────────────────────────────────────
 
-export function usePeriodSelector(pageKey) {
-  const [viewMode,  setViewModeRaw]  = React.useState(() => ssLoad(pageKey, 'viewMode', 'mensal'))
+export function usePeriodSelector(pageKey, defaultViewMode = 'mensal') {
+  const [viewMode,  setViewModeRaw]  = React.useState(() => ssLoad(pageKey, 'viewMode', defaultViewMode))
   const [visibleT,  setVisibleTRaw]  = React.useState(() => ssLoad(pageKey, 'visibleT', quarterDefault))
   const [visibleM,  setVisibleMRaw]  = React.useState(() => ssLoad(pageKey, 'visibleM', monthDefault))
   const [weekMonth, setWeekMonthRaw] = React.useState(() => ssLoad(pageKey, 'weekMonth', currentMonthKey))
@@ -77,8 +77,9 @@ export function usePeriodSelector(pageKey) {
     return next
   })
 
-  // Ao trocar de mês na visão semanal, pré-seleciona as semanas daquele mês
-  const handleSetWeekMonth = React.useCallback((mKey) => {
+  // Ao trocar de mês na visão semanal, pré-seleciona as semanas daquele mês.
+  // Só um mês por vez — sem multi-seleção aqui.
+  const setWeekMonth = React.useCallback((mKey) => {
     ssSave(pageKey, 'weekMonth', mKey)
     setWeekMonthRaw(mKey)
     setVisibleS(weekDefaultForMonth(mKey))
@@ -97,14 +98,14 @@ export function usePeriodSelector(pageKey) {
   const selectAllT = () => setVisibleT(Object.fromEntries(T_PERIODS.map(p => [p, true])))
   const clearAllT  = () => setVisibleT(Object.fromEntries(T_PERIODS.map(p => [p, false])))
   const selectAllM = () => setVisibleM(Object.fromEntries(M_PERIODS.map(p => [p, true])))
-  const clearAllM  = () => setVisibleM(Object.fromEntries(M_PERIODS.map(p => [p, false])))
+  const clearAllM  = () => setVisibleM(Object.fromEntries(M_PERIODS.map(p => [p, p === currentMonthKey()])))
   const selectAllS = () => setVisibleS(prev => ({ ...prev, ...Object.fromEntries((MONTH_WEEK_RANGES[weekMonth] || []).map(p => [p, true])) }))
   const clearAllS  = () => setVisibleS(prev => ({ ...prev, ...Object.fromEntries((MONTH_WEEK_RANGES[weekMonth] || []).map(p => [p, false])) }))
 
   return {
     viewMode, setViewMode,
     visibleT, visibleM, visibleS,
-    weekMonth, setWeekMonth: handleSetWeekMonth,
+    weekMonth, setWeekMonth,
     activePeriods,
     toggleT, toggleM, toggleS,
     selectAllT, clearAllT, selectAllM, clearAllM, selectAllS, clearAllS,
@@ -113,7 +114,7 @@ export function usePeriodSelector(pageKey) {
 
 // ── componente ────────────────────────────────────────────────────────────────
 
-export default function PeriodSelector({ state, hideLegend = false }) {
+export default function PeriodSelector({ state, hideLegend = false, modes = VIEW_MODES }) {
   const {
     viewMode, setViewMode,
     visibleT, visibleM, visibleS,
@@ -122,12 +123,17 @@ export default function PeriodSelector({ state, hideLegend = false }) {
     selectAllT, clearAllT, selectAllM, clearAllM, selectAllS, clearAllS,
   } = state
 
+  // Se o modo restaurado do storage não está mais disponível nessa tela (ex.: trimestral
+  // desativado aqui), cai pro primeiro modo permitido.
+  React.useEffect(() => {
+    if (!modes.includes(viewMode)) setViewMode(modes[0])
+  }, [modes, viewMode])
+
   const weekKeys = MONTH_WEEK_RANGES[weekMonth] || []
 
   const btnBase = 'px-2.5 py-1 rounded-full text-xs font-medium border transition-colors'
   const btnOn   = 'bg-blue-950 text-white border-blue-950'
   const btnOff  = 'bg-white text-slate-500 border-slate-300 hover:border-blue-400'
-  const modeOn  = 'bg-blue-700 text-white border-blue-700'
   const modeOff = 'bg-white text-slate-600 border-slate-300 hover:border-blue-400'
 
   return (
@@ -135,15 +141,52 @@ export default function PeriodSelector({ state, hideLegend = false }) {
       {/* Linha 1: seletor de modo + legenda */}
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-xs font-medium text-slate-500 shrink-0">Visão:</span>
-        {VIEW_MODES.map(m => (
-          <button
-            key={m}
-            onClick={() => setViewMode(m)}
-            className={`${btnBase} ${viewMode === m ? modeOn : modeOff}`}
-          >
-            {VIEW_LABELS_MAP[m]}
-          </button>
-        ))}
+        <select
+          value={viewMode}
+          onChange={e => setViewMode(e.target.value)}
+          className="bg-white text-slate-700 text-xs font-medium rounded-md px-2 py-1 border border-slate-300 focus:outline-none focus:border-blue-400 cursor-pointer"
+        >
+          {modes.map(m => (
+            <option key={m} value={m}>
+              {VIEW_LABELS_MAP[m]}
+            </option>
+          ))}
+        </select>
+
+        {viewMode === 'semanal' && (
+          <>
+            <span className="text-xs text-slate-400 ml-2 mr-1">Mês:</span>
+            {M_PERIODS.map(m => (
+              <button
+                key={m}
+                onClick={() => setWeekMonth(m)}
+                className={`${btnBase} ${weekMonth === m ? 'bg-indigo-700 text-white border-indigo-700' : modeOff}`}
+              >
+                {M_LABELS[m]}
+              </button>
+            ))}
+            <button
+              onClick={() => setWeekMonth(currentMonthKey())}
+              className="text-[10px] px-2 py-0.5 rounded border border-slate-300 text-slate-500 hover:border-red-400 hover:text-red-500 transition-colors"
+            >
+              Limpar
+            </button>
+          </>
+        )}
+
+        {viewMode === 'mensal' && (
+          <>
+            <span className="text-xs text-slate-400 ml-2 mr-1">Meses:</span>
+            {M_PERIODS.map(p => (
+              <button key={p} onClick={() => toggleM(p)} className={`${btnBase} ${visibleM[p] ? btnOn : btnOff}`}>
+                {M_LABELS[p]}
+              </button>
+            ))}
+            <button onClick={selectAllM} className="text-[10px] px-2 py-0.5 rounded border border-slate-300 text-slate-500 hover:border-blue-400 hover:text-blue-600 transition-colors">Todos</button>
+            <button onClick={clearAllM}  className="text-[10px] px-2 py-0.5 rounded border border-slate-300 text-slate-500 hover:border-red-400 hover:text-red-500 transition-colors">Limpar</button>
+          </>
+        )}
+
         {!hideLegend && (
           <span className="ml-auto flex items-center gap-3 text-xs text-slate-400">
             <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" /> ≥100%</span>
@@ -168,38 +211,9 @@ export default function PeriodSelector({ state, hideLegend = false }) {
         </div>
       )}
 
-      {/* Mensal: toggles Jan–Dez */}
-      {viewMode === 'mensal' && (
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-xs text-slate-400 mr-1">Meses:</span>
-          {M_PERIODS.map(p => (
-            <button key={p} onClick={() => toggleM(p)} className={`${btnBase} ${visibleM[p] ? btnOn : btnOff}`}>
-              {M_LABELS[p]}
-            </button>
-          ))}
-          <span className="w-px h-4 bg-slate-200 mx-1" />
-          <button onClick={selectAllM} className="text-[10px] px-2 py-0.5 rounded border border-slate-300 text-slate-500 hover:border-blue-400 hover:text-blue-600 transition-colors">Todos</button>
-          <button onClick={clearAllM}  className="text-[10px] px-2 py-0.5 rounded border border-slate-300 text-slate-500 hover:border-red-400 hover:text-red-500 transition-colors">Limpar</button>
-        </div>
-      )}
-
-      {/* Semanal: seletor de MÊS + semanas daquele mês */}
+      {/* Semanal: semanas do mês selecionado na linha de Visão */}
       {viewMode === 'semanal' && (
         <div className="flex flex-col gap-1.5">
-          {/* Seletor de mês */}
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-xs text-slate-400 mr-1">Mês:</span>
-            {M_PERIODS.map(m => (
-              <button
-                key={m}
-                onClick={() => setWeekMonth(m)}
-                className={`${btnBase} ${weekMonth === m ? 'bg-indigo-700 text-white border-indigo-700' : modeOff}`}
-              >
-                {M_LABELS[m]}
-              </button>
-            ))}
-          </div>
-          {/* Semanas do mês selecionado */}
           <div className="flex flex-wrap items-center gap-1">
             <span className="text-xs text-slate-400 mr-1">Semanas:</span>
             {weekKeys.map(p => (

@@ -10,7 +10,7 @@ Este arquivo documenta cada indicador da Matriz KPIs:
 
 ## BLOCO 3 — PÓS-VENDA
 
-### GERENTE GERAL
+### GERENTE GERAL PÓS-VENDAS
 
 | # | Indicador | Status |
 |---|-----------|--------|
@@ -196,7 +196,7 @@ Resultado final = **Fonte A + Fonte B** (soma período a período)
 
 ---
 
-### GERENTE CASA CAMPO GRANDE
+### GERENTE DE SERVIÇO - CAMPO GRANDE
 
 | # | Indicador | Status |
 |---|-----------|--------|
@@ -207,7 +207,7 @@ Resultado final = **Fonte A + Fonte B** (soma período a período)
 | 5 | Penetração Plano Manutenção | ⏳ Pendente |
 | 6 | Recusa de Garantia | ⏳ Pendente |
 
-### GERENTE CASA DOURADOS
+### GERENTE FILIAL - DOURADOS
 
 | # | Indicador | Status |
 |---|-----------|--------|
@@ -218,7 +218,7 @@ Resultado final = **Fonte A + Fonte B** (soma período a período)
 | 5 | Auditoria (Score) | ⏳ Pendente |
 | 6 | Recusa de Garantia | ⏳ Pendente |
 
-### GERENTE CASA TRÊS LAGOAS
+### GERENTE FILIAL - TRÊS LAGOAS
 
 | # | Indicador | Status |
 |---|-----------|--------|
@@ -228,7 +228,7 @@ Resultado final = **Fonte A + Fonte B** (soma período a período)
 | 4 | Penetração Plano Manutenção | ⏳ Pendente |
 | 5 | Recusa de Garantia | ⏳ Pendente |
 
-### GERENTE CASA CHAPADÃO DO SUL
+### GERENTE FILIAL - CHAPADÃO DO SUL
 
 | # | Indicador | Status |
 |---|-----------|--------|
@@ -238,7 +238,7 @@ Resultado final = **Fonte A + Fonte B** (soma período a período)
 | 4 | Penetração Plano Manutenção | ⏳ Pendente |
 | 5 | Recusa de Garantia | ⏳ Pendente |
 
-> Os indicadores por casa seguem a mesma lógica do GERENTE GERAL,
+> Os indicadores por casa seguem a mesma lógica do GERENTE GERAL PÓS-VENDAS,
 > filtrados por `NF_EmpresaCod` (1=Campo Grande, 2=Dourados, 12=Três Lagoas, 13=Chapadão do Sul)
 
 ---

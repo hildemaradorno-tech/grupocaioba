@@ -47,7 +47,7 @@ export const MOCK_BLOCO2 = [
 // ── BLOCO 3 — Pós-Venda ──────────────────────────────────────────────────────
 export const MOCK_BLOCO3_POS_VENDA = [
   {
-    tituloGerente: 'GERENTE GERAL',
+    tituloGerente: 'GERENTE GERAL PÓS-VENDAS',
     cor: 'blue',
     kpis: [
       { id: 1, indicador: 'Faturamento Total Oficina (Peças + Serviços)', orientacao: '>', metrica: 'R$', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
@@ -62,7 +62,7 @@ export const MOCK_BLOCO3_POS_VENDA = [
     ],
   },
   {
-    tituloGerente: 'GERENTE CASA CAMPO GRANDE',
+    tituloGerente: 'GERENTE DE SERVIÇO - CAMPO GRANDE',
     cor: 'indigo',
     kpis: [
       { id: 1, indicador: 'Faturamento Oficina (Serviços)',         orientacao: '>', metrica: 'R$', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
@@ -74,7 +74,7 @@ export const MOCK_BLOCO3_POS_VENDA = [
     ],
   },
   {
-    tituloGerente: 'GERENTE CASA DOURADOS',
+    tituloGerente: 'GERENTE FILIAL - DOURADOS',
     cor: 'violet',
     kpis: [
       { id: 1, indicador: 'Faturamento Oficina (Serviços)',         orientacao: '>', metrica: 'R$', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
@@ -86,7 +86,7 @@ export const MOCK_BLOCO3_POS_VENDA = [
     ],
   },
   {
-    tituloGerente: 'GERENTE CASA TRÊS LAGOAS',
+    tituloGerente: 'GERENTE FILIAL - TRÊS LAGOAS',
     cor: 'purple',
     kpis: [
       { id: 1, indicador: 'Faturamento Oficina (Serviços)',         orientacao: '>', metrica: 'R$', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
@@ -97,7 +97,7 @@ export const MOCK_BLOCO3_POS_VENDA = [
     ],
   },
   {
-    tituloGerente: 'GERENTE CASA CHAPADÃO DO SUL',
+    tituloGerente: 'GERENTE FILIAL - CHAPADÃO DO SUL',
     cor: 'fuchsia',
     kpis: [
       { id: 1, indicador: 'Faturamento Oficina (Serviços)',         orientacao: '>', metrica: 'R$', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },

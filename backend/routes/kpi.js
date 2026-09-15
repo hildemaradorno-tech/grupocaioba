@@ -53,7 +53,7 @@ const np = { meta: null, realizado: null }
 // ── Template Bloco 3 PV — QuadroGerente[] sem valores; preenchido pelo SharePoint ──
 const BLOCO3_PV_TEMPLATE = [
   {
-    tituloGerente: 'GERENTE GERAL',
+    tituloGerente: 'GERENTE GERAL PÓS-VENDAS',
     cor: 'blue',
     kpis: [
       { id: 1, indicador: 'Faturamento Total Oficina (Peças + Serviços)', orientacao: '>', metrica: 'R$',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
@@ -68,7 +68,7 @@ const BLOCO3_PV_TEMPLATE = [
     ],
   },
   {
-    tituloGerente: 'GERENTE CASA CAMPO GRANDE',
+    tituloGerente: 'GERENTE DE SERVIÇO - CAMPO GRANDE',
     cor: 'indigo',
     kpis: [
       { id:  1, indicador: 'Faturamento Oficina (Serviços)',       orientacao: '>', metrica: 'R$',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
@@ -83,7 +83,7 @@ const BLOCO3_PV_TEMPLATE = [
     ],
   },
   {
-    tituloGerente: 'GERENTE CASA DOURADOS',
+    tituloGerente: 'GERENTE FILIAL - DOURADOS',
     cor: 'violet',
     kpis: [
       { id: 1, indicador: 'Faturamento Oficina (Serviços)',  orientacao: '>', metrica: 'R$', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
@@ -101,7 +101,7 @@ const BLOCO3_PV_TEMPLATE = [
     ],
   },
   {
-    tituloGerente: 'GERENTE CASA TRÊS LAGOAS',
+    tituloGerente: 'GERENTE FILIAL - TRÊS LAGOAS',
     cor: 'purple',
     kpis: [
       { id: 1, indicador: 'Faturamento Oficina (Serviços)',  orientacao: '>', metrica: 'R$', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
@@ -119,7 +119,7 @@ const BLOCO3_PV_TEMPLATE = [
     ],
   },
   {
-    tituloGerente: 'GERENTE CASA CHAPADÃO DO SUL',
+    tituloGerente: 'GERENTE FILIAL - CHAPADÃO DO SUL',
     cor: 'fuchsia',
     kpis: [
       { id: 1, indicador: 'Faturamento Oficina (Serviços)',  orientacao: '>', metrica: 'R$', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
@@ -264,7 +264,7 @@ function mergeBloco3PV(quadros, pv, horas = null) {
 
   return quadros.map(quadro => {
     const kpis = quadro.kpis.map(kpi => {
-      if (quadro.tituloGerente === 'GERENTE GERAL') {
+      if (quadro.tituloGerente === 'GERENTE GERAL PÓS-VENDAS') {
         switch (kpi.id) {
           case 1: return injectPeriods(kpi, sumPeriods(pv?.faturamentoOficina, pv?.faturamentoBrutoServicos), r)
           case 2: return injectPeriods(kpi, pv?.margemBrutaServicosRecep, p)
@@ -362,7 +362,7 @@ router.get('/bloco3-pos-venda', requireConfig, wrap(async (req, res) => {
     horasByEmpresa[emp] = computeHoras(rof042Data, rof096Data)
   })
 
-  // Injeta dados por quadro: GERENTE GERAL usa 'todas', casas usam a empresa mapeada
+  // Injeta dados por quadro: GERENTE GERAL PÓS-VENDAS usa 'todas', casas usam a empresa mapeada
   const quadros = BLOCO3_PV_TEMPLATE.map(quadro => {
     const empresa = CASA_EMPRESA_MAP[quadro.tituloGerente] || 'todas'
     const pv    = pvByEmpresa[empresa] ?? pvByEmpresa['todas']

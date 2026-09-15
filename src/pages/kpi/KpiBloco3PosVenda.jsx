@@ -126,7 +126,7 @@ function QuadroTable({ quadro, activePeriods, year }) {
 
 export default function KpiBloco3PosVenda() {
   const { year } = useKpiYear()
-  const periodState = usePeriodSelector('bloco3-posvenda')
+  const periodState = usePeriodSelector('bloco3-posvenda', 'semanal')
   const { activePeriods } = periodState
   const { data: quadros, loading, source } = useKpiData(fetchBloco3PosVenda, MOCK_BLOCO3_POS_VENDA, { year })
 
@@ -135,12 +135,12 @@ export default function KpiBloco3PosVenda() {
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-xl font-bold text-slate-800">Bloco 3 — Pós-Venda</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Indicadores de performance da oficina — Matriz KPIs</p>
+          <p className="text-sm text-slate-500 mt-0.5">Indicadores de performance da oficina</p>
         </div>
         <DataSourceBadge source={source} loading={loading} />
       </div>
 
-      <PeriodSelector state={periodState} />
+      <PeriodSelector state={periodState} modes={['mensal', 'semanal']} />
 
       <div className="space-y-6">
         {quadros.map((quadro, idx) => (
