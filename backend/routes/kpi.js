@@ -409,7 +409,11 @@ router.get('/bloco3-pecas', requireConfig, wrap(async (req, res) => {
   let balcaoTodas = null
   try { balcaoTodas = await getExtratorComCache('BALCAO', extractBalcao, year, 'todas', null) } catch (_) { /* sem dados */ }
 
-  res.json(mergeBloco3Pecas(BLOCO3_PECAS_TEMPLATE, extractorData?.bloco3PecasRealizado, balcaoTodas))
+  let quadros = mergeBloco3Pecas(BLOCO3_PECAS_TEMPLATE, extractorData?.bloco3PecasRealizado, balcaoTodas)
+  const pesos = await getPesos('bloco3-pecas')
+  quadros = aplicarPesos(quadros, pesos)
+
+  res.json(quadros)
 }))
 
 router.get('/bloco2', requireConfig, wrap(async (req, res) => {

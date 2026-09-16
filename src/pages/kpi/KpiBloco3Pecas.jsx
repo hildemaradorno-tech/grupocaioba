@@ -1,12 +1,14 @@
-﻿import React from 'react'
+﻿import React, { useState } from 'react'
 import { Package } from 'lucide-react'
 import { MOCK_BLOCO3_PECAS } from '../../data/kpiMockData'
 import PeriodSelector, { usePeriodSelector } from '../../components/kpi/PeriodSelector'
 import { getPeriodData, getPeriodLabel } from '../../utils/kpiPeriods'
 import { useKpiData } from '../../hooks/useKpiData'
-import { fetchBloco3Pecas } from '../../services/kpiService'
+import { fetchBloco3Pecas, salvarPeso } from '../../services/kpiService'
 import DataSourceBadge from '../../components/kpi/DataSourceBadge'
 import { useKpiYear } from '../../context/KpiYearContext'
+
+const BLOCO_PESOS = 'bloco3-pecas'
 
 const COR_HEADER = {
   blue:   'bg-blue-700   text-white',
@@ -40,7 +42,7 @@ function fmtNum(v, metrica) {
   if (v === null || v === undefined) return '–'
   if (typeof v !== 'number') return v
   if (metrica === 'R$') return 'R$ ' + v.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
-  if (metrica === '%') return v.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%'
+  if (metrica === '%') return v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%'
   return v.toLocaleString('pt-BR', { maximumFractionDigits: 0 })
 }
 
@@ -51,9 +53,61 @@ function badgeClass(val) {
   return 'bg-red-100 text-red-700'
 }
 
-function QuadroTable({ quadro, activePeriods, year }) {
+// Input editável do "Peso" — grava no Supabase ao sair do campo (onBlur/Enter),
+// pra ficar igual pra qualquer usuário que abrir essa tela.
+function PesoInput({ value, onSave }) {
+  const [draft, setDraft]   = useState(value != null ? Math.round(value * 100) : '')
+  const [saving, setSaving] = useState(false)
+  const [erro, setErro]     = useState(false)
+
+  React.useEffect(() => {
+    setDraft(value != null ? Math.round(value * 100) : '')
+  }, [value])
+
+  const commit = async () => {
+    const atual = value != null ? Math.round(value * 100) : ''
+    if (draft === atual || draft === String(atual)) return
+    const num = draft === '' ? null : Math.max(0, Math.min(100, Number(draft)))
+    if (num === null || isNaN(num)) { setDraft(atual); return }
+    setSaving(true)
+    setErro(false)
+    try {
+      await onSave(num / 100)
+    } catch (err) {
+      console.warn('[KPI] Falha ao salvar peso:', err.message)
+      setErro(true)
+      setDraft(atual)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <span className="inline-flex items-center justify-center gap-0.5">
+      <input
+        type="number" min={0} max={100} step={1}
+        value={draft}
+        disabled={saving}
+        onChange={e => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur() }}
+        className={`w-12 text-center border rounded px-1 py-0.5 text-xs focus:outline-none focus:border-blue-400 disabled:opacity-50 ${
+          erro ? 'border-red-400' : 'border-slate-200'
+        }`}
+      />
+      <span className="text-slate-400">%</span>
+    </span>
+  )
+}
+
+function QuadroTable({ quadro, activePeriods, year, onSalvarPeso }) {
   const headerCls  = COR_HEADER[quadro.cor]    ?? COR_HEADER.blue
   const subheadCls = COR_SUBHEADER[quadro.cor] ?? COR_SUBHEADER.blue
+  const colSpanBase = 4
+
+  // Peso de cada indicador deve somar 100% dentro do quadro do gerente.
+  const totalPeso = Math.round(quadro.kpis.reduce((s, k) => s + (k.pesoObj ?? 0), 0) * 100)
+  const totalOk   = totalPeso === 100
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
@@ -77,7 +131,12 @@ function QuadroTable({ quadro, activePeriods, year }) {
               ))}
             </tr>
             <tr className="bg-slate-50/60 border-b border-slate-200 text-[10px]">
-              <th colSpan={4} />
+              <th colSpan={colSpanBase - 1} />
+              <th className="px-2 py-1 text-center" title="Soma dos pesos dos indicadores desse gerente — deve fechar em 100%">
+                <span className={`font-semibold ${totalOk ? 'text-slate-400' : 'text-red-600'}`}>
+                  {totalPeso}%{!totalOk && ' ⚠'}
+                </span>
+              </th>
               {activePeriods.map(p => (
                 <React.Fragment key={p}>
                   <th className="px-2 py-1.5 text-slate-400 font-medium border-l border-slate-200">Meta</th>
@@ -94,11 +153,13 @@ function QuadroTable({ quadro, activePeriods, year }) {
                 <td className="px-3 py-2.5 text-center text-slate-400 font-mono">{row.id}</td>
                 <td className="px-4 py-2.5 font-medium text-slate-700 sticky left-0 bg-white">{row.indicador}</td>
                 <td className="px-2 py-2.5 text-center font-bold text-slate-600">{row.orientacao}</td>
-                <td className="px-3 py-2.5 text-center text-slate-500">{(row.pesoObj * 100).toFixed(0)}%</td>
+                <td className="px-3 py-2.5 text-center text-slate-500">
+                  <PesoInput value={row.pesoObj} onSave={peso => onSalvarPeso(quadro.tituloGerente, row.id, peso)} />
+                </td>
                 {activePeriods.map(p => {
                   const d       = getPeriodData(row, p)
                   const ating   = calcAtingimento(row.orientacao, d.meta, d.realizado)
-                  const contrib = ating !== null ? ating * row.pesoObj : null
+                  const contrib = (ating !== null && row.pesoObj != null) ? ating * row.pesoObj : null
                   return (
                     <React.Fragment key={p}>
                       <td className="px-2 py-2.5 text-center text-slate-600 border-l border-slate-100">{fmtNum(d.meta, row.metrica)}</td>
@@ -127,6 +188,24 @@ export default function KpiBloco3Pecas() {
   const { year } = useKpiYear()
   const { data: quadros, loading, source } = useKpiData(fetchBloco3Pecas, MOCK_BLOCO3_PECAS, { year })
 
+  // Overlay otimista: aplicado por cima do que veio do backend assim que o usuário
+  // salva um peso, sem precisar esperar o próximo fetch pra refletir na tela.
+  const [pesosOverride, setPesosOverride] = useState({})
+
+  const handleSalvarPeso = async (tituloGerente, kpiId, peso) => {
+    const key = `${tituloGerente}|${kpiId}`
+    await salvarPeso({ bloco: BLOCO_PESOS, tituloGerente, kpiId, peso })
+    setPesosOverride(prev => ({ ...prev, [key]: peso }))
+  }
+
+  const quadrosComPeso = quadros.map(quadro => ({
+    ...quadro,
+    kpis: quadro.kpis.map(kpi => {
+      const key = `${quadro.tituloGerente}|${kpi.id}`
+      return key in pesosOverride ? { ...kpi, pesoObj: pesosOverride[key] } : kpi
+    }),
+  }))
+
   return (
     <div className="p-6 space-y-5">
       <div className="flex items-start justify-between gap-4">
@@ -140,8 +219,8 @@ export default function KpiBloco3Pecas() {
       <PeriodSelector state={periodState} />
 
       <div className="space-y-6">
-        {quadros.map((quadro, idx) => (
-          <QuadroTable key={idx} quadro={quadro} activePeriods={activePeriods} year={year} />
+        {quadrosComPeso.map((quadro, idx) => (
+          <QuadroTable key={idx} quadro={quadro} activePeriods={activePeriods} year={year} onSalvarPeso={handleSalvarPeso} />
         ))}
       </div>
     </div>
