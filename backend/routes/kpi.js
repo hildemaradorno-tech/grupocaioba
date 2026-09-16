@@ -297,9 +297,9 @@ function computeHoras(rof042, rof096) {
 
 /**
  * Injeta realizados do extractor nos quadros QuadroGerente[] do Bloco 3 Peças.
- * balcaoTodas = Balcão agregado de TODAS as lojas (mesma fonte do Indicador 8
- * da Auditoria — extractBalcao sem filtro de empresa), usado só no Faturamento
- * Total do GERENTE ATACADO PEÇAS.
+ * balcaoTodas = Balcão agregado de TODAS as lojas (mesma fonte dos Indicadores
+ * 8 e 9 da Auditoria — extractBalcao sem filtro de empresa), usado no
+ * Faturamento Total e na Margem Bruta de Peças Balcão do GERENTE ATACADO PEÇAS.
  */
 function mergeBloco3Pecas(quadros, pecas, balcaoTodas) {
   if (!pecas && !balcaoTodas) return quadros
@@ -310,6 +310,9 @@ function mergeBloco3Pecas(quadros, pecas, balcaoTodas) {
     const kpis = quadro.kpis.map(kpi => {
       if (quadro.tituloGerente === 'GERENTE ATACADO PEÇAS' && kpi.id === 1) {
         return injectPeriods(kpi, balcaoTodas?.liquido, r)
+      }
+      if (quadro.tituloGerente === 'GERENTE ATACADO PEÇAS' && kpi.id === 2) {
+        return injectPeriods(kpi, balcaoTodas?.margemPct, p)
       }
       if (pecas && (quadro.tituloGerente === 'GERENTE ATACADO PEÇAS' || quadro.tituloGerente === 'COORDENADOR ATACADO PEÇAS')) {
         switch (kpi.id) {
