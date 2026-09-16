@@ -161,7 +161,7 @@ const BLOCO3_PECAS_TEMPLATE = [
     tituloGerente: 'GERENTE ATACADO PEÇAS',
     cor: 'blue',
     kpis: [
-      { id: 1, indicador: 'Faturamento Total',                       orientacao: '>', metrica: 'R$',     metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      { id: 1, indicador: 'Faturamento Total Peças Balcão',           orientacao: '>', metrica: 'R$',     metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
       { id: 2, indicador: 'Margem Bruta de Peças',                   orientacao: '>', metrica: '%',      metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
       { id: 3, indicador: 'Faturamento TRP',                         orientacao: '>', metrica: 'R$',     metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
       { id: 4, indicador: 'Gestão de Clientes (Evolução Carteira)',  orientacao: '>', metrica: '%',      metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },

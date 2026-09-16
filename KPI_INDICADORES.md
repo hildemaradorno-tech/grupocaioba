@@ -288,7 +288,7 @@ Resultado final = **Fonte A + Fonte B** (soma período a período)
 
 | # | Indicador | Status |
 |---|-----------|--------|
-| 1 | Faturamento Total | ✅ Implementado |
+| 1 | Faturamento Total Peças Balcão | ✅ Implementado |
 | 2 | Margem Bruta de Peças | ⏳ Pendente |
 | 3 | Faturamento TRP | ⏳ Pendente |
 | 4 | Gestão de Clientes (Evolução Carteira) | ⏳ Pendente |
