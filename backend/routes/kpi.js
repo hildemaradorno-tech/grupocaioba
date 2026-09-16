@@ -182,6 +182,18 @@ const BLOCO3_PECAS_TEMPLATE = [
     ],
   },
   {
+    tituloGerente: 'VENDEDOR DE PEÇAS',
+    cor: 'indigo',
+    kpis: [
+      { id: 1, indicador: 'Faturamento Total Peças Balcão',            orientacao: '>', metrica: 'R$',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      { id: 2, indicador: 'Margem Bruta de Peças Balcão',              orientacao: '>', metrica: '%',   metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      { id: 3, indicador: 'Ticket Médio da Carteira',                  orientacao: '>', metrica: 'R$',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      { id: 4, indicador: 'Positivação de Clientes (Inativos e Leads)', orientacao: '>', metrica: '%',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      { id: 5, indicador: 'Índice de Devoluções (Vendedor)',           orientacao: '<', metrica: '%',   metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      { id: 6, indicador: 'CRM — Contatos de Relacionamento',          orientacao: '=', metrica: 'qtd', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+    ],
+  },
+  {
     tituloGerente: 'GERENTE DE COMPRAS',
     cor: 'violet',
     kpis: [
@@ -299,21 +311,22 @@ function computeHoras(rof042, rof096) {
  * Injeta realizados do extractor nos quadros QuadroGerente[] do Bloco 3 Peças.
  * balcaoTodas = Balcão agregado de TODAS as lojas (mesma fonte dos Indicadores
  * 8 e 9 da Auditoria — extractBalcao sem filtro de empresa), usado no
- * Faturamento Total Peças Balcão e Margem Bruta de Peças Balcão (GERENTE e
- * COORDENADOR ATACADO PEÇAS).
+ * Faturamento Total Peças Balcão e Margem Bruta de Peças Balcão (GERENTE,
+ * COORDENADOR e VENDEDOR DE PEÇAS).
  */
 function mergeBloco3Pecas(quadros, pecas, balcaoTodas) {
   if (!pecas && !balcaoTodas) return quadros
   const r = (v) => (v != null ? Math.round(v) : null)
   const p = (v) => (v != null ? v : null)
   const isAtacado = (t) => t === 'GERENTE ATACADO PEÇAS' || t === 'COORDENADOR ATACADO PEÇAS'
+  const usaBalcao = (t) => isAtacado(t) || t === 'VENDEDOR DE PEÇAS'
 
   return quadros.map(quadro => {
     const kpis = quadro.kpis.map(kpi => {
-      if (isAtacado(quadro.tituloGerente) && kpi.id === 1) {
+      if (usaBalcao(quadro.tituloGerente) && kpi.id === 1) {
         return injectPeriods(kpi, balcaoTodas?.liquido, r)
       }
-      if (isAtacado(quadro.tituloGerente) && kpi.id === 2) {
+      if (usaBalcao(quadro.tituloGerente) && kpi.id === 2) {
         return injectPeriods(kpi, balcaoTodas?.margemPct, p)
       }
       if (pecas && isAtacado(quadro.tituloGerente)) {
