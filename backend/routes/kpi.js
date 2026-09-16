@@ -175,7 +175,7 @@ const BLOCO3_PECAS_TEMPLATE = [
     cor: 'blue',
     kpis: [
       { id: 1, indicador: 'Faturamento Total Peças Balcão',           orientacao: '>', metrica: 'R$', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
-      { id: 2, indicador: 'Margem Bruta de Peças',                   orientacao: '>', metrica: '%',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      { id: 2, indicador: 'Margem Bruta de Peças Balcão',            orientacao: '>', metrica: '%',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
       { id: 3, indicador: 'Faturamento TRP',                         orientacao: '>', metrica: 'R$', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
       { id: 4, indicador: 'Ativação Clientes (Carteira Coordenador)', orientacao: '>', metrica: '%',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
       { id: 5, indicador: 'Gestão de Clientes (Evolução Carteira)',  orientacao: '>', metrica: '%',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
@@ -299,8 +299,8 @@ function computeHoras(rof042, rof096) {
  * Injeta realizados do extractor nos quadros QuadroGerente[] do Bloco 3 Peças.
  * balcaoTodas = Balcão agregado de TODAS as lojas (mesma fonte dos Indicadores
  * 8 e 9 da Auditoria — extractBalcao sem filtro de empresa), usado no
- * Faturamento Total Peças Balcão (GERENTE e COORDENADOR ATACADO PEÇAS) e na
- * Margem Bruta de Peças Balcão (só GERENTE ATACADO PEÇAS).
+ * Faturamento Total Peças Balcão e Margem Bruta de Peças Balcão (GERENTE e
+ * COORDENADOR ATACADO PEÇAS).
  */
 function mergeBloco3Pecas(quadros, pecas, balcaoTodas) {
   if (!pecas && !balcaoTodas) return quadros
@@ -313,13 +313,12 @@ function mergeBloco3Pecas(quadros, pecas, balcaoTodas) {
       if (isAtacado(quadro.tituloGerente) && kpi.id === 1) {
         return injectPeriods(kpi, balcaoTodas?.liquido, r)
       }
-      if (quadro.tituloGerente === 'GERENTE ATACADO PEÇAS' && kpi.id === 2) {
+      if (isAtacado(quadro.tituloGerente) && kpi.id === 2) {
         return injectPeriods(kpi, balcaoTodas?.margemPct, p)
       }
       if (pecas && isAtacado(quadro.tituloGerente)) {
         switch (kpi.id) {
-          case 2: return injectPeriods(kpi, pecas.margemBrutaPecas, p)
-          case 3: return injectPeriods(kpi, pecas.faturamentoTrp,   r)
+          case 3: return injectPeriods(kpi, pecas.faturamentoTrp, r)
         }
       }
       return kpi
