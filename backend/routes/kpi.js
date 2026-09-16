@@ -162,7 +162,7 @@ const BLOCO3_PECAS_TEMPLATE = [
     cor: 'blue',
     kpis: [
       { id: 1, indicador: 'Faturamento Total Peças Balcão',           orientacao: '>', metrica: 'R$',     metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
-      { id: 2, indicador: 'Margem Bruta de Peças',                   orientacao: '>', metrica: '%',      metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      { id: 2, indicador: 'Margem Bruta de Peças Balcão',            orientacao: '>', metrica: '%',      metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
       { id: 3, indicador: 'Faturamento TRP',                         orientacao: '>', metrica: 'R$',     metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
       { id: 4, indicador: 'Gestão de Clientes (Evolução Carteira)',  orientacao: '>', metrica: '%',      metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
       { id: 5, indicador: 'Giro de Estoque',                         orientacao: '>', metrica: 'índice', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
