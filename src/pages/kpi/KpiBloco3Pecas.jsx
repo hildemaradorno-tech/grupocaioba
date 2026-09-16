@@ -1,5 +1,6 @@
-﻿import React, { useState, useEffect, useMemo } from 'react'
-import { Package, X } from 'lucide-react'
+﻿import React, { useState, useEffect, useMemo, useRef } from 'react'
+import { createPortal } from 'react-dom'
+import { Package, X, ChevronDown } from 'lucide-react'
 import { MOCK_BLOCO3_PECAS } from '../../data/kpiMockData'
 import PeriodSelector, { usePeriodSelector } from '../../components/kpi/PeriodSelector'
 import { getPeriodData, getPeriodLabel } from '../../utils/kpiPeriods'
@@ -10,7 +11,6 @@ import { useKpiYear } from '../../context/KpiYearContext'
 
 const BLOCO_PESOS = 'bloco3-pecas'
 const QUADRO_VENDEDOR = 'VENDEDOR DE PEÇAS'
-const DATALIST_ID = 'kpi-pecas-vendedores'
 
 const COR_HEADER = {
   blue:   'bg-blue-700   text-white',
@@ -102,27 +102,98 @@ function PesoInput({ value, onSave }) {
   )
 }
 
-// Campo de busca por nome (datalist nativo = digita e já filtra as opções).
-// Só aplica o filtro quando o texto bate exatamente com um vendedor da lista
-// (evita disparar fetch a cada letra digitada); texto vazio = todos os vendedores.
-function VendedorSelector({ busca, onBuscaChange, onLimpar, aplicado }) {
+// Dropdown de busca próprio (não usa <input list>/<datalist> nativo — o navegador desenha a
+// lista de sugestões sem nenhum controle de estilo/posição, o que ficava estranho dentro da
+// tabela). O painel é montado via portal com position:fixed (mesmo padrão de DropdownAcao em
+// HistoricoComissoes.jsx) pra escapar do overflow-hidden/overflow-x-auto do card da tabela —
+// um simples position:absolute ficaria cortado ali dentro.
+function VendedorSelector({ vendedores, selecionado, onSelecionar, onLimpar }) {
+  const [aberto, setAberto] = useState(false)
+  const [busca, setBusca] = useState('')
+  const [pos, setPos] = useState(null)
+  const btnRef = useRef(null)
+  const painelRef = useRef(null)
+
+  const abrirNaPosicao = () => {
+    if (btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect()
+      setPos({ top: r.bottom + 4, left: r.left, width: Math.max(r.width, 224) })
+    }
+    setAberto(true)
+  }
+
+  useEffect(() => {
+    if (!aberto) return
+    const fechar = (e) => {
+      if (painelRef.current && painelRef.current.contains(e.target)) return
+      if (btnRef.current && btnRef.current.contains(e.target)) return
+      setAberto(false)
+    }
+    document.addEventListener('mousedown', fechar)
+    window.addEventListener('scroll', fechar, true)
+    window.addEventListener('resize', fechar)
+    return () => {
+      document.removeEventListener('mousedown', fechar)
+      window.removeEventListener('scroll', fechar, true)
+      window.removeEventListener('resize', fechar)
+    }
+  }, [aberto])
+
+  useEffect(() => { if (!aberto) setBusca('') }, [aberto])
+
+  const filtrados = useMemo(() => {
+    const alvo = busca.trim().toUpperCase()
+    if (!alvo) return vendedores
+    return vendedores.filter(v => v.toUpperCase().includes(alvo))
+  }, [busca, vendedores])
+
   return (
     <div className="flex items-center gap-1">
-      <input
-        list={DATALIST_ID}
-        type="text"
-        value={busca}
-        onChange={e => onBuscaChange(e.target.value)}
-        placeholder="Todos os vendedores"
-        className="w-full min-w-0 text-[11px] font-normal normal-case border border-slate-200 rounded px-2 py-1 bg-white text-slate-700 focus:outline-none focus:border-blue-400"
-      />
-      {busca && (
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={() => (aberto ? setAberto(false) : abrirNaPosicao())}
+        className="w-full min-w-0 flex items-center justify-between gap-1 text-[11px] font-normal normal-case border border-slate-200 rounded px-2 py-1 bg-white text-slate-700 hover:bg-slate-50 focus:outline-none focus:border-blue-400 transition-colors"
+      >
+        <span className={`truncate ${selecionado ? 'text-slate-700' : 'text-slate-400'}`}>{selecionado || 'Todos os vendedores'}</span>
+        <ChevronDown size={12} className="text-slate-400 shrink-0" />
+      </button>
+      {selecionado && (
         <button onClick={onLimpar} className="text-slate-400 hover:text-red-500 shrink-0" title="Limpar seleção">
           <X size={13} />
         </button>
       )}
-      {busca && !aplicado && (
-        <span className="text-amber-500 shrink-0" title="Nenhum vendedor encontrado com esse nome exato">?</span>
+      {aberto && pos && createPortal(
+        <div
+          ref={painelRef}
+          data-dropdown-vendedor-panel
+          style={{ position: 'fixed', top: pos.top, left: pos.left, width: pos.width }}
+          className="z-50 max-h-56 flex flex-col bg-white border border-slate-200 rounded-md shadow-lg overflow-hidden normal-case"
+        >
+          <input
+            type="text"
+            autoFocus
+            value={busca}
+            onChange={e => setBusca(e.target.value)}
+            placeholder="Buscar vendedor..."
+            className="w-full text-[11px] font-normal px-2 py-1.5 border-b border-slate-100 focus:outline-none"
+          />
+          <div className="overflow-y-auto py-1">
+            {filtrados.length === 0 ? (
+              <p className="px-2 py-1.5 text-[11px] text-slate-400">Nenhum vendedor encontrado.</p>
+            ) : filtrados.map(v => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => { onSelecionar(v); setAberto(false) }}
+                className={`w-full text-left px-2 py-1.5 text-[11px] font-normal hover:bg-slate-50 transition-colors ${v === selecionado ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-700'}`}
+              >
+                {v}
+              </button>
+            ))}
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   )
@@ -218,7 +289,7 @@ export default function KpiBloco3Pecas() {
   const { activePeriods } = periodState
   const { year } = useKpiYear()
 
-  // Lista de vendedores do Balcão pro seletor (datalist) do quadro VENDEDOR DE PEÇAS.
+  // Lista de vendedores do Balcão pro seletor do quadro VENDEDOR DE PEÇAS.
   const [vendedores, setVendedores] = useState([])
   useEffect(() => {
     let ativo = true
@@ -226,16 +297,10 @@ export default function KpiBloco3Pecas() {
     return () => { ativo = false }
   }, [year])
 
-  // Busca digitada livremente; só vira filtro de verdade quando bate exatamente
-  // (case-insensitive) com um nome da lista — evita disparar fetch a cada letra.
-  const [buscaVendedor, setBuscaVendedor] = useState('')
-  const vendedorAplicado = useMemo(() => {
-    const alvo = buscaVendedor.trim()
-    if (!alvo) return null
-    return vendedores.find(v => v.localeCompare(alvo, 'pt-BR', { sensitivity: 'base' }) === 0) || null
-  }, [buscaVendedor, vendedores])
+  // Seleção via dropdown (não texto livre) — sempre um nome exato da lista ou nenhum.
+  const [vendedorSelecionado, setVendedorSelecionado] = useState(null)
 
-  const { data: quadros, loading, source } = useKpiData(fetchBloco3Pecas, MOCK_BLOCO3_PECAS, { year, vendedor: vendedorAplicado || undefined })
+  const { data: quadros, loading, source } = useKpiData(fetchBloco3Pecas, MOCK_BLOCO3_PECAS, { year, vendedor: vendedorSelecionado || undefined })
 
   // Overlay otimista: aplicado por cima do que veio do backend assim que o usuário
   // salva um peso, sem precisar esperar o próximo fetch pra refletir na tela.
@@ -267,10 +332,6 @@ export default function KpiBloco3Pecas() {
 
       <PeriodSelector state={periodState} />
 
-      <datalist id={DATALIST_ID}>
-        {vendedores.map(v => <option key={v} value={v} />)}
-      </datalist>
-
       <div className="space-y-6">
         {quadrosComPeso.map((quadro, idx) => (
           <QuadroTable
@@ -281,10 +342,10 @@ export default function KpiBloco3Pecas() {
             onSalvarPeso={handleSalvarPeso}
             vendedorSelector={quadro.tituloGerente === QUADRO_VENDEDOR && (
               <VendedorSelector
-                busca={buscaVendedor}
-                onBuscaChange={setBuscaVendedor}
-                onLimpar={() => setBuscaVendedor('')}
-                aplicado={vendedorAplicado}
+                vendedores={vendedores}
+                selecionado={vendedorSelecionado}
+                onSelecionar={setVendedorSelecionado}
+                onLimpar={() => setVendedorSelecionado(null)}
               />
             )}
           />
