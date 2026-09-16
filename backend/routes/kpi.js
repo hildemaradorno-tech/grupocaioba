@@ -158,7 +158,7 @@ const BLOCO3_PV_TEMPLATE = [
 // ── Template Bloco 3 Peças — QuadroGerente[] sem valores; preenchido pelo SharePoint ─
 const BLOCO3_PECAS_TEMPLATE = [
   {
-    tituloGerente: 'GERENTE',
+    tituloGerente: 'GERENTE ATACADO PEÇAS',
     cor: 'blue',
     kpis: [
       { id: 1, indicador: 'Faturamento Total',                       orientacao: '>', metrica: 'R$',     metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
@@ -171,7 +171,7 @@ const BLOCO3_PECAS_TEMPLATE = [
     ],
   },
   {
-    tituloGerente: 'COORDENADOR',
+    tituloGerente: 'COORDENADOR ATACADO PEÇAS',
     cor: 'blue',
     kpis: [
       { id: 1, indicador: 'Faturamento Total',                       orientacao: '>', metrica: 'R$', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
@@ -182,7 +182,7 @@ const BLOCO3_PECAS_TEMPLATE = [
     ],
   },
   {
-    tituloGerente: 'COMPRADOR',
+    tituloGerente: 'GERENTE DE COMPRAS',
     cor: 'violet',
     kpis: [
       { id: 1, indicador: 'Giro de Estoque',                         orientacao: '>', metrica: 'índice', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
@@ -305,7 +305,7 @@ function mergeBloco3Pecas(quadros, pecas) {
 
   return quadros.map(quadro => {
     const kpis = quadro.kpis.map(kpi => {
-      if (quadro.tituloGerente === 'GERENTE' || quadro.tituloGerente === 'COORDENADOR') {
+      if (quadro.tituloGerente === 'GERENTE ATACADO PEÇAS' || quadro.tituloGerente === 'COORDENADOR ATACADO PEÇAS') {
         switch (kpi.id) {
           case 1: return injectPeriods(kpi, pecas.faturamentoTotal, r)
           case 2: return injectPeriods(kpi, pecas.margemBrutaPecas, p)

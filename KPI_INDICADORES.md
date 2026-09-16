@@ -284,7 +284,7 @@ Resultado final = **Fonte A + Fonte B** (soma período a período)
 
 ## BLOCO 3 — PEÇAS
 
-### GERENTE GERAL — PEÇAS
+### GERENTE ATACADO PEÇAS
 
 | # | Indicador | Status |
 |---|-----------|--------|
