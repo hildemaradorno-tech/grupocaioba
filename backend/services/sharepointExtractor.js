@@ -170,6 +170,7 @@ const C = {
   vlTotal:        47,  // valor total do item na NF
   percMargemGer:  56,  // % margem gerencial (0-1)
   produtoDes:     22,  // "0916851 - DAF EXTREME ..."
+  nomeVendedor:   24,  // NF_UsuNomVendedor — usado no seletor de vendedor do Balcão
 }
 
 // Mapa real de empresas (NF_EmpresaCod → nome canônico)
@@ -463,7 +464,9 @@ function parseBalcaoBuffer(buffer, meta) {
     const vlMargemContVendas     = ehVenda     ? vlMargemContRaw : 0
     const vlMargemContDevolucoes = ehDevolucao ? vlMargemContRaw : 0
 
-    result.push({ empresa, periodo, semanaKey, vlVendas, vlDevolucoes, vlMargemContVendas, vlMargemContDevolucoes, arquivo: meta.name })
+    const nomeVendedor = row[C.nomeVendedor] != null ? String(row[C.nomeVendedor]).trim() : ''
+
+    result.push({ empresa, periodo, semanaKey, vlVendas, vlDevolucoes, vlMargemContVendas, vlMargemContDevolucoes, nomeVendedor, arquivo: meta.name })
   }
   return result
 }
@@ -537,15 +540,18 @@ function consolidarBalcao(rows) {
   }
 }
 
-export async function extractBalcao(year = new Date().getFullYear(), empresaNome = null) {
-  const yearStr     = String(year)
-  const empresaNorm = empresaNome ? normalizeEmpresaNome(empresaNome).toUpperCase() : null
-  const cacheKey    = `balcao-${yearStr}-${empresaNorm || 'todas'}`
+// Baixa e faz parse de todas as linhas de Balcão do ano (cru, sem filtro de
+// empresa/vendedor) — cacheado por ano só, reaproveitado tanto por
+// extractBalcao quanto por listVendedoresBalcao pra não baixar os arquivos
+// de novo a cada combinação de filtro.
+async function getBalcaoRowsDoAno(year) {
+  const yearStr  = String(year)
+  const cacheKey = `balcao-raw-${yearStr}`
   const hit = cached(cacheKey)
   if (hit) return hit
 
   const allFiles = await listVendasProdutoFiles(year)
-  if (!allFiles.length) return null
+  if (!allFiles.length) return []
 
   const allRows = []
   const BATCH = 3
@@ -562,13 +568,45 @@ export async function extractBalcao(year = new Date().getFullYear(), empresaNome
   }
 
   const rowsDoAno = allRows.filter(r => r.periodo?.startsWith(yearStr))
-  const rows = empresaNorm
+  setCache(cacheKey, rowsDoAno)
+  return rowsDoAno
+}
+
+export async function extractBalcao(year = new Date().getFullYear(), empresaNome = null, vendedorNome = null) {
+  const yearStr      = String(year)
+  const empresaNorm  = empresaNome  ? normalizeEmpresaNome(empresaNome).toUpperCase() : null
+  const vendedorNorm = vendedorNome ? String(vendedorNome).trim().toUpperCase()       : null
+  const cacheKey     = `balcao-${yearStr}-${empresaNorm || 'todas'}-${vendedorNorm || 'todos'}`
+  const hit = cached(cacheKey)
+  if (hit) return hit
+
+  const rowsDoAno = await getBalcaoRowsDoAno(year)
+  if (!rowsDoAno.length) return null
+
+  let rows = empresaNorm
     ? rowsDoAno.filter(r => r.empresa.toUpperCase() === empresaNorm)
     : rowsDoAno
+  if (vendedorNorm) rows = rows.filter(r => r.nomeVendedor.toUpperCase() === vendedorNorm)
 
   const result = consolidarBalcao(rows)
   setCache(cacheKey, result)
   return result
+}
+
+// Lista de nomes de vendedor distintos no Balcão do ano (pro seletor da tela
+// de Peças) — opcionalmente filtrada por empresa.
+export async function listVendedoresBalcao(year = new Date().getFullYear(), empresaNome = null) {
+  const empresaNorm = empresaNome ? normalizeEmpresaNome(empresaNome).toUpperCase() : null
+  const rowsDoAno = await getBalcaoRowsDoAno(year)
+  const rows = empresaNorm
+    ? rowsDoAno.filter(r => r.empresa.toUpperCase() === empresaNorm)
+    : rowsDoAno
+
+  const nomes = new Set()
+  for (const r of rows) {
+    if (r.nomeVendedor) nomes.add(r.nomeVendedor)
+  }
+  return [...nomes].sort((a, b) => a.localeCompare(b, 'pt-BR'))
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

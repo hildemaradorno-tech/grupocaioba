@@ -49,6 +49,7 @@ function buildUrl(endpoint, params = {}) {
   const qs = new URLSearchParams()
   if (params.empresa && params.empresa !== 'todas') qs.set('empresa', params.empresa)
   if (params.mecanico && params.mecanico !== 'todos') qs.set('mecanico', params.mecanico)
+  if (params.vendedor) qs.set('vendedor', params.vendedor)
   if (params.year) qs.set('year', params.year)
   const q = qs.toString()
   return `${BASE}/${endpoint}${q ? `?${q}` : ''}`
@@ -85,6 +86,16 @@ export async function fetchBloco2(p)        { return tryFetch('bloco2',         
 export async function fetchBloco3PosVenda(p){ return tryFetch('bloco3-pos-venda', MOCK_BLOCO3_POS_VENDA,  p) }
 export async function fetchBloco3Pecas(p)   { return tryFetch('bloco3-pecas',     MOCK_BLOCO3_PECAS,      p) }
 export async function fetchBacklog(p)       { return tryFetch('backlog',          MOCK_ORCAMENTO_BACKLOG, p) }
+
+// Lista de vendedores do Balcão (pro seletor do quadro VENDEDOR DE PEÇAS)
+export async function fetchVendedoresBalcao(year) {
+  try {
+    const res = await fetchWithTimeout(`${BASE}/extractor/balcao/vendedores?year=${year}`, 30_000)
+    return res.vendedores || []
+  } catch {
+    return []
+  }
+}
 
 export async function getStatus() {
   try {

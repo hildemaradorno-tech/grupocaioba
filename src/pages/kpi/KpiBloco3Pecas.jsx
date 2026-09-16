@@ -1,14 +1,16 @@
-﻿import React, { useState } from 'react'
-import { Package } from 'lucide-react'
+﻿import React, { useState, useEffect, useMemo } from 'react'
+import { Package, X } from 'lucide-react'
 import { MOCK_BLOCO3_PECAS } from '../../data/kpiMockData'
 import PeriodSelector, { usePeriodSelector } from '../../components/kpi/PeriodSelector'
 import { getPeriodData, getPeriodLabel } from '../../utils/kpiPeriods'
 import { useKpiData } from '../../hooks/useKpiData'
-import { fetchBloco3Pecas, salvarPeso } from '../../services/kpiService'
+import { fetchBloco3Pecas, salvarPeso, fetchVendedoresBalcao } from '../../services/kpiService'
 import DataSourceBadge from '../../components/kpi/DataSourceBadge'
 import { useKpiYear } from '../../context/KpiYearContext'
 
 const BLOCO_PESOS = 'bloco3-pecas'
+const QUADRO_VENDEDOR = 'VENDEDOR DE PEÇAS'
+const DATALIST_ID = 'kpi-pecas-vendedores'
 
 const COR_HEADER = {
   blue:   'bg-blue-700   text-white',
@@ -100,10 +102,35 @@ function PesoInput({ value, onSave }) {
   )
 }
 
-function QuadroTable({ quadro, activePeriods, year, onSalvarPeso }) {
+// Campo de busca por nome (datalist nativo = digita e já filtra as opções).
+// Só aplica o filtro quando o texto bate exatamente com um vendedor da lista
+// (evita disparar fetch a cada letra digitada); texto vazio = todos os vendedores.
+function VendedorSelector({ busca, onBuscaChange, onLimpar, aplicado }) {
+  return (
+    <div className="flex items-center gap-1">
+      <input
+        list={DATALIST_ID}
+        type="text"
+        value={busca}
+        onChange={e => onBuscaChange(e.target.value)}
+        placeholder="Todos os vendedores"
+        className="w-full min-w-0 text-[11px] font-normal normal-case border border-slate-200 rounded px-2 py-1 bg-white text-slate-700 focus:outline-none focus:border-blue-400"
+      />
+      {busca && (
+        <button onClick={onLimpar} className="text-slate-400 hover:text-red-500 shrink-0" title="Limpar seleção">
+          <X size={13} />
+        </button>
+      )}
+      {busca && !aplicado && (
+        <span className="text-amber-500 shrink-0" title="Nenhum vendedor encontrado com esse nome exato">?</span>
+      )}
+    </div>
+  )
+}
+
+function QuadroTable({ quadro, activePeriods, year, onSalvarPeso, vendedorSelector }) {
   const headerCls  = COR_HEADER[quadro.cor]    ?? COR_HEADER.blue
   const subheadCls = COR_SUBHEADER[quadro.cor] ?? COR_SUBHEADER.blue
-  const colSpanBase = 4
 
   // Peso de cada indicador deve somar 100% dentro do quadro do gerente.
   const totalPeso = Math.round(quadro.kpis.reduce((s, k) => s + (k.pesoObj ?? 0), 0) * 100)
@@ -131,7 +158,11 @@ function QuadroTable({ quadro, activePeriods, year, onSalvarPeso }) {
               ))}
             </tr>
             <tr className="bg-slate-50/60 border-b border-slate-200 text-[10px]">
-              <th colSpan={colSpanBase - 1} />
+              <th />
+              <th className="px-4 py-1 sticky left-0 bg-inherit">
+                {vendedorSelector}
+              </th>
+              <th />
               <th className="px-2 py-1 text-center" title="Soma dos pesos dos indicadores desse gerente — deve fechar em 100%">
                 <span className={`font-semibold ${totalOk ? 'text-slate-400' : 'text-red-600'}`}>
                   {totalPeso}%{!totalOk && ' ⚠'}
@@ -186,7 +217,25 @@ export default function KpiBloco3Pecas() {
   const periodState = usePeriodSelector('bloco3-pecas')
   const { activePeriods } = periodState
   const { year } = useKpiYear()
-  const { data: quadros, loading, source } = useKpiData(fetchBloco3Pecas, MOCK_BLOCO3_PECAS, { year })
+
+  // Lista de vendedores do Balcão pro seletor (datalist) do quadro VENDEDOR DE PEÇAS.
+  const [vendedores, setVendedores] = useState([])
+  useEffect(() => {
+    let ativo = true
+    fetchVendedoresBalcao(year).then(lista => { if (ativo) setVendedores(lista) })
+    return () => { ativo = false }
+  }, [year])
+
+  // Busca digitada livremente; só vira filtro de verdade quando bate exatamente
+  // (case-insensitive) com um nome da lista — evita disparar fetch a cada letra.
+  const [buscaVendedor, setBuscaVendedor] = useState('')
+  const vendedorAplicado = useMemo(() => {
+    const alvo = buscaVendedor.trim()
+    if (!alvo) return null
+    return vendedores.find(v => v.localeCompare(alvo, 'pt-BR', { sensitivity: 'base' }) === 0) || null
+  }, [buscaVendedor, vendedores])
+
+  const { data: quadros, loading, source } = useKpiData(fetchBloco3Pecas, MOCK_BLOCO3_PECAS, { year, vendedor: vendedorAplicado || undefined })
 
   // Overlay otimista: aplicado por cima do que veio do backend assim que o usuário
   // salva um peso, sem precisar esperar o próximo fetch pra refletir na tela.
@@ -218,9 +267,27 @@ export default function KpiBloco3Pecas() {
 
       <PeriodSelector state={periodState} />
 
+      <datalist id={DATALIST_ID}>
+        {vendedores.map(v => <option key={v} value={v} />)}
+      </datalist>
+
       <div className="space-y-6">
         {quadrosComPeso.map((quadro, idx) => (
-          <QuadroTable key={idx} quadro={quadro} activePeriods={activePeriods} year={year} onSalvarPeso={handleSalvarPeso} />
+          <QuadroTable
+            key={idx}
+            quadro={quadro}
+            activePeriods={activePeriods}
+            year={year}
+            onSalvarPeso={handleSalvarPeso}
+            vendedorSelector={quadro.tituloGerente === QUADRO_VENDEDOR && (
+              <VendedorSelector
+                busca={buscaVendedor}
+                onBuscaChange={setBuscaVendedor}
+                onLimpar={() => setBuscaVendedor('')}
+                aplicado={vendedorAplicado}
+              />
+            )}
+          />
         ))}
       </div>
     </div>

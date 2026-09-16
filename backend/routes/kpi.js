@@ -16,6 +16,7 @@ import {
   listROF096Files,
   extractROF096,
   extractBalcao,
+  listVendedoresBalcao,
 } from '../services/sharepointExtractor.js'
 import { CASA_EMPRESA_MAP, EMPRESAS_SYNC } from '../services/kpiEmpresas.js'
 import {
@@ -309,25 +310,29 @@ function computeHoras(rof042, rof096) {
 
 /**
  * Injeta realizados do extractor nos quadros QuadroGerente[] do Bloco 3 Peças.
- * balcaoTodas = Balcão agregado de TODAS as lojas (mesma fonte dos Indicadores
- * 8 e 9 da Auditoria — extractBalcao sem filtro de empresa), usado no
- * Faturamento Total Peças Balcão e Margem Bruta de Peças Balcão (GERENTE,
- * COORDENADOR e VENDEDOR DE PEÇAS).
+ * balcaoTodas    = Balcão agregado de TODAS as lojas (mesma fonte dos Indicadores
+ *                  8 e 9 da Auditoria — extractBalcao sem filtro de empresa), usado
+ *                  no Faturamento Total Peças Balcão e Margem Bruta de Peças Balcão
+ *                  do GERENTE e COORDENADOR ATACADO PEÇAS.
+ * balcaoVendedor = mesma fonte, mas filtrada pelo vendedor selecionado na tela (ou
+ *                  igual a balcaoTodas quando nenhum vendedor está selecionado) —
+ *                  usado só no quadro VENDEDOR DE PEÇAS.
  */
-function mergeBloco3Pecas(quadros, pecas, balcaoTodas) {
+function mergeBloco3Pecas(quadros, pecas, balcaoTodas, balcaoVendedor) {
   if (!pecas && !balcaoTodas) return quadros
   const r = (v) => (v != null ? Math.round(v) : null)
   const p = (v) => (v != null ? v : null)
   const isAtacado = (t) => t === 'GERENTE ATACADO PEÇAS' || t === 'COORDENADOR ATACADO PEÇAS'
-  const usaBalcao = (t) => isAtacado(t) || t === 'VENDEDOR DE PEÇAS'
 
   return quadros.map(quadro => {
+    const ehVendedor = quadro.tituloGerente === 'VENDEDOR DE PEÇAS'
+    const balcaoFonte = ehVendedor ? balcaoVendedor : balcaoTodas
     const kpis = quadro.kpis.map(kpi => {
-      if (usaBalcao(quadro.tituloGerente) && kpi.id === 1) {
-        return injectPeriods(kpi, balcaoTodas?.liquido, r)
+      if ((isAtacado(quadro.tituloGerente) || ehVendedor) && kpi.id === 1) {
+        return injectPeriods(kpi, balcaoFonte?.liquido, r)
       }
-      if (usaBalcao(quadro.tituloGerente) && kpi.id === 2) {
-        return injectPeriods(kpi, balcaoTodas?.margemPct, p)
+      if ((isAtacado(quadro.tituloGerente) || ehVendedor) && kpi.id === 2) {
+        return injectPeriods(kpi, balcaoFonte?.margemPct, p)
       }
       if (pecas && isAtacado(quadro.tituloGerente)) {
         switch (kpi.id) {
@@ -413,20 +418,39 @@ router.get('/bloco3-pecas', requireConfig, wrap(async (req, res) => {
   const year    = parseInt(req.query.year) || new Date().getFullYear()
   const empresa = req.query.empresa || null
   const empresaChave = empresa || 'todas'
+  const vendedor = req.query.vendedor || null
 
   let extractorData = null
   try { extractorData = await getExtratorComCache('CONSOLIDADO', getConsolidatedKpiData, year, empresaChave, empresa) } catch (_) { /* sem dados */ }
 
-  // Faturamento Total do GERENTE ATACADO PEÇAS vem do Balcão agregando TODAS
-  // as lojas (Indicador 8 da Auditoria), independente do filtro de empresa da tela.
+  // Faturamento Total do GERENTE/COORDENADOR ATACADO PEÇAS vem do Balcão
+  // agregando TODAS as lojas (Indicador 8 da Auditoria), independente do
+  // filtro de empresa/vendedor da tela.
   let balcaoTodas = null
   try { balcaoTodas = await getExtratorComCache('BALCAO', extractBalcao, year, 'todas', null) } catch (_) { /* sem dados */ }
 
-  let quadros = mergeBloco3Pecas(BLOCO3_PECAS_TEMPLATE, extractorData?.bloco3PecasRealizado, balcaoTodas)
+  // Balcão filtrado pelo vendedor selecionado — só afeta o quadro VENDEDOR DE
+  // PEÇAS. Sem vendedor selecionado, cai no mesmo agregado de todas as lojas.
+  // Busca ao vivo (não passa pelo cache do sync agendado, que só cobre as
+  // combinações fonte/ano/empresa sincronizadas, sem recorte por vendedor).
+  let balcaoVendedor = balcaoTodas
+  if (vendedor) {
+    try { balcaoVendedor = await extractBalcao(year, null, vendedor) } catch (_) { balcaoVendedor = null }
+  }
+
+  let quadros = mergeBloco3Pecas(BLOCO3_PECAS_TEMPLATE, extractorData?.bloco3PecasRealizado, balcaoTodas, balcaoVendedor)
   const pesos = await getPesos('bloco3-pecas')
   quadros = aplicarPesos(quadros, pesos)
 
   res.json(quadros)
+}))
+
+// GET /api/kpi/extractor/balcao/vendedores?year=2026 — lista de vendedores do
+// Balcão pro seletor da tela de Peças (bloco VENDEDOR DE PEÇAS)
+router.get('/extractor/balcao/vendedores', requireConfig, wrap(async (req, res) => {
+  const year = parseInt(req.query.year) || new Date().getFullYear()
+  const vendedores = await listVendedoresBalcao(year, null)
+  res.json({ year, vendedores })
 }))
 
 router.get('/bloco2', requireConfig, wrap(async (req, res) => {
