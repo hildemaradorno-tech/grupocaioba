@@ -634,6 +634,11 @@ export default function BasesCalculo() {
                   {fonteSelecionada && !fonteSelecionada.pasta_sharepoint && (
                     <span className="text-[10px] text-amber-500">Esta Fonte ainda não tem arquivo do SharePoint configurado.</span>
                   )}
+                  {fonteSelecionada?.pasta_sharepoint && (
+                    <div className="text-[10px] text-slate-400 font-mono leading-relaxed break-all">
+                      {fonteSelecionada.pasta_sharepoint}{fonteSelecionada.usa_subpasta_ano && `/${fonteSelecionada.subpasta_padrao || '{ano}'}`}/{fonteSelecionada.prefixo_arquivo}*.xlsx
+                    </div>
+                  )}
                 </div>
 
                 {/* Nome */}
