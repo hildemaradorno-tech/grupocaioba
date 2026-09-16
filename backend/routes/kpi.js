@@ -299,24 +299,25 @@ function computeHoras(rof042, rof096) {
  * Injeta realizados do extractor nos quadros QuadroGerente[] do Bloco 3 Peças.
  * balcaoTodas = Balcão agregado de TODAS as lojas (mesma fonte dos Indicadores
  * 8 e 9 da Auditoria — extractBalcao sem filtro de empresa), usado no
- * Faturamento Total e na Margem Bruta de Peças Balcão do GERENTE ATACADO PEÇAS.
+ * Faturamento Total Peças Balcão (GERENTE e COORDENADOR ATACADO PEÇAS) e na
+ * Margem Bruta de Peças Balcão (só GERENTE ATACADO PEÇAS).
  */
 function mergeBloco3Pecas(quadros, pecas, balcaoTodas) {
   if (!pecas && !balcaoTodas) return quadros
   const r = (v) => (v != null ? Math.round(v) : null)
   const p = (v) => (v != null ? v : null)
+  const isAtacado = (t) => t === 'GERENTE ATACADO PEÇAS' || t === 'COORDENADOR ATACADO PEÇAS'
 
   return quadros.map(quadro => {
     const kpis = quadro.kpis.map(kpi => {
-      if (quadro.tituloGerente === 'GERENTE ATACADO PEÇAS' && kpi.id === 1) {
+      if (isAtacado(quadro.tituloGerente) && kpi.id === 1) {
         return injectPeriods(kpi, balcaoTodas?.liquido, r)
       }
       if (quadro.tituloGerente === 'GERENTE ATACADO PEÇAS' && kpi.id === 2) {
         return injectPeriods(kpi, balcaoTodas?.margemPct, p)
       }
-      if (pecas && (quadro.tituloGerente === 'GERENTE ATACADO PEÇAS' || quadro.tituloGerente === 'COORDENADOR ATACADO PEÇAS')) {
+      if (pecas && isAtacado(quadro.tituloGerente)) {
         switch (kpi.id) {
-          case 1: return injectPeriods(kpi, pecas.faturamentoTotal, r)
           case 2: return injectPeriods(kpi, pecas.margemBrutaPecas, p)
           case 3: return injectPeriods(kpi, pecas.faturamentoTrp,   r)
         }
