@@ -288,13 +288,17 @@ Resultado final = **Fonte A + Fonte B** (soma período a período)
 
 | # | Indicador | Status |
 |---|-----------|--------|
-| 1 | Faturamento Total Peças | ⏳ Pendente |
+| 1 | Faturamento Total | ✅ Implementado |
 | 2 | Margem Bruta de Peças | ⏳ Pendente |
 | 3 | Faturamento TRP | ⏳ Pendente |
 | 4 | Gestão de Clientes (Evolução Carteira) | ⏳ Pendente |
 | 5 | Giro de Estoque | ⏳ Pendente |
 | 6 | Resultado de Auditoria | ⏳ Pendente |
 | 7 | Obsoletos | ⏳ Pendente |
+
+Indicador 1 — Faturamento Total: usa a mesma fonte do **Indicador 8 da Auditoria**
+(Faturamento Total Peças Balcão — RPR001, VEN − DVE líquido), somando **todas as lojas**,
+independente do filtro de empresa selecionado na tela.
 
 ---
 

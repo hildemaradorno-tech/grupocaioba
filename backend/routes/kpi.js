@@ -297,15 +297,21 @@ function computeHoras(rof042, rof096) {
 
 /**
  * Injeta realizados do extractor nos quadros QuadroGerente[] do Bloco 3 Peças.
+ * balcaoTodas = Balcão agregado de TODAS as lojas (mesma fonte do Indicador 8
+ * da Auditoria — extractBalcao sem filtro de empresa), usado só no Faturamento
+ * Total do GERENTE ATACADO PEÇAS.
  */
-function mergeBloco3Pecas(quadros, pecas) {
-  if (!pecas) return quadros
+function mergeBloco3Pecas(quadros, pecas, balcaoTodas) {
+  if (!pecas && !balcaoTodas) return quadros
   const r = (v) => (v != null ? Math.round(v) : null)
   const p = (v) => (v != null ? v : null)
 
   return quadros.map(quadro => {
     const kpis = quadro.kpis.map(kpi => {
-      if (quadro.tituloGerente === 'GERENTE ATACADO PEÇAS' || quadro.tituloGerente === 'COORDENADOR ATACADO PEÇAS') {
+      if (quadro.tituloGerente === 'GERENTE ATACADO PEÇAS' && kpi.id === 1) {
+        return injectPeriods(kpi, balcaoTodas?.liquido, r)
+      }
+      if (pecas && (quadro.tituloGerente === 'GERENTE ATACADO PEÇAS' || quadro.tituloGerente === 'COORDENADOR ATACADO PEÇAS')) {
         switch (kpi.id) {
           case 1: return injectPeriods(kpi, pecas.faturamentoTotal, r)
           case 2: return injectPeriods(kpi, pecas.margemBrutaPecas, p)
@@ -395,7 +401,12 @@ router.get('/bloco3-pecas', requireConfig, wrap(async (req, res) => {
   let extractorData = null
   try { extractorData = await getExtratorComCache('CONSOLIDADO', getConsolidatedKpiData, year, empresaChave, empresa) } catch (_) { /* sem dados */ }
 
-  res.json(mergeBloco3Pecas(BLOCO3_PECAS_TEMPLATE, extractorData?.bloco3PecasRealizado))
+  // Faturamento Total do GERENTE ATACADO PEÇAS vem do Balcão agregando TODAS
+  // as lojas (Indicador 8 da Auditoria), independente do filtro de empresa da tela.
+  let balcaoTodas = null
+  try { balcaoTodas = await getExtratorComCache('BALCAO', extractBalcao, year, 'todas', null) } catch (_) { /* sem dados */ }
+
+  res.json(mergeBloco3Pecas(BLOCO3_PECAS_TEMPLATE, extractorData?.bloco3PecasRealizado, balcaoTodas))
 }))
 
 router.get('/bloco2', requireConfig, wrap(async (req, res) => {
