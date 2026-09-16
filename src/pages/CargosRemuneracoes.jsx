@@ -39,7 +39,9 @@ export default function CargosRemuneracoes() {
   // clicar no cargo (edita a primeira política dele) quanto ao clicar numa linha específica.
   const abrirEdicaoPolitica = (politicaId) => {
     if (!politicaId) return
-    navigate('/politica-comissao', { state: { editarPoliticaId: politicaId } })
+    // Vai direto pro destino final (não pela rota antiga /politica-comissao, que agora é só um
+    // redirect) — um redirect via <Navigate> não repassa o state da navegação original.
+    navigate('/regras-comissoes?aba=politica-comissao', { state: { editarPoliticaId: politicaId } })
   }
   const canEdit = hasPermission('cargos-remuneracoes', 'editar')
 
@@ -390,7 +392,7 @@ export default function CargosRemuneracoes() {
         </div>
         <div className="flex items-center gap-2">
           {canEditPolitica && (
-            <button onClick={() => navigate('/politica-comissao')} className="flex items-center gap-1.5 border border-slate-300 text-slate-700 hover:bg-slate-100 text-xs font-semibold px-3 py-2 rounded-md transition-colors">
+            <button onClick={() => navigate('/regras-comissoes?aba=politica-comissao')} className="flex items-center gap-1.5 border border-slate-300 text-slate-700 hover:bg-slate-100 text-xs font-semibold px-3 py-2 rounded-md transition-colors">
               <Briefcase className="h-3.5 w-3.5" /> Política de Comissões
             </button>
           )}

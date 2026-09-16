@@ -25,12 +25,7 @@ import AgrupamentoDepartamentos from './pages/AgrupamentoDepartamentos'
 import AgrupamentoCargos from './pages/AgrupamentoCargos'
 import Areas from './pages/Areas'
 import Segmentos from './pages/Segmentos'
-import PoliticaComissao from './pages/PoliticaComissao'
-import CargosRemuneracoes from './pages/CargosRemuneracoes'
-import FontesCalculo from './pages/FontesCalculo'
-import BasesCalculo from './pages/BasesCalculo'
-import Rubricas from './pages/Rubricas'
-import TiposProcesso from './pages/TiposProcesso'
+import RegrasComissoes from './pages/RegrasComissoes'
 import FolhaPagamentoDaf from './pages/FolhaPagamentoDaf'
 import Funcionarios from './pages/Funcionarios'
 import Feriados from './pages/Feriados'
@@ -191,12 +186,13 @@ export default function App() {
           { path: '/classificacao-compra', element: <ClassificacaoCompra />, menuPath: 'classificacao-compra' },
           { path: '/movimento-venda', element: <MovimentoVenda />, menuPath: 'movimento-venda' },
           { path: '/natureza-operacoes', element: <NaturezaOperacoes />, menuPath: 'natureza-operacoes' },
-          { path: '/politica-comissao', element: <PoliticaComissao />, menuPath: 'politica-comissao' },
-          { path: '/cargos-remuneracoes', element: <CargosRemuneracoes />, menuPath: 'cargos-remuneracoes' },
-          { path: '/fontes-calculo', element: <FontesCalculo />, menuPath: 'fontes-calculo' },
-          { path: '/bases-calculo', element: <BasesCalculo />, menuPath: 'bases-calculo' },
-          { path: '/rubricas', element: <Rubricas />, menuPath: 'rubricas' },
-          { path: '/tipos-processo', element: <TiposProcesso />, menuPath: 'tipos-processo' },
+          { path: '/regras-comissoes', element: <RegrasComissoes />, menuPath: ['fontes-calculo', 'bases-calculo', 'politica-comissao', 'cargos-remuneracoes', 'rubricas', 'tipos-processo'] },
+          { path: '/politica-comissao', element: <Navigate to="/regras-comissoes?aba=politica-comissao" replace /> },
+          { path: '/cargos-remuneracoes', element: <Navigate to="/regras-comissoes?aba=cargos-remuneracoes" replace /> },
+          { path: '/fontes-calculo', element: <Navigate to="/regras-comissoes?aba=fontes-calculo" replace /> },
+          { path: '/bases-calculo', element: <Navigate to="/regras-comissoes?aba=bases-calculo" replace /> },
+          { path: '/rubricas', element: <Navigate to="/regras-comissoes?aba=rubricas" replace /> },
+          { path: '/tipos-processo', element: <Navigate to="/regras-comissoes?aba=tipos-processo" replace /> },
           { path: '/folha-pagamento-daf', element: <FolhaPagamentoDaf />, menuPath: ['ferias', 'calculo-comissoes', 'processamento-comissoes', 'sobreaviso-plantao'] },
           { path: '/calculo-comissoes', element: <Navigate to="/folha-pagamento-daf?aba=calculo-comissoes" replace /> },
           { path: '/processamento-comissoes', element: <Navigate to="/folha-pagamento-daf?aba=processamento-comissoes" replace /> },

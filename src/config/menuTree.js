@@ -72,8 +72,13 @@ export const MENU_TREE = [
     label: 'Comissões',
     children: [
       {
+        // Permissões individuais mantidas (controlam quais abas aparecem em
+        // /regras-comissoes), mas o grupo inteiro navega direto pra página única — mesmo padrão
+        // já usado em Garantias DAF, Matriz KPIs e Folha de Pagamento - DAF (navTo faz o nó com
+        // children se comportar como link direto em vez de abrir uma sub-pasta).
         key: '_comissoes',
         label: 'Regras de Comissões',
+        navTo: 'regras-comissoes',
         children: [
           { key: 'fontes-calculo', label: 'Fonte de Cálculo' },
           { key: 'bases-calculo', label: 'Base de Cálculo' },

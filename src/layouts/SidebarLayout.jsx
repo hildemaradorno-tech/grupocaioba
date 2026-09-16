@@ -31,7 +31,7 @@ MENU_TREE.forEach(buildSectionLeaves)
 // ── Map route to section key ──────────────────────────────────────────────────
 function getActiveSectionKey(pathname) {
   if (pathname === '/usuarios' || pathname === '/grupos' || pathname === '/permissoes-matriz') return '_config'
-  if (pathname === '/folha-pagamento-daf' || pathname === '/politica-comissao' || pathname === '/fontes-calculo' || pathname === '/bases-calculo' || pathname === '/cargos-remuneracoes' || pathname === '/rubricas' || pathname === '/tipos-processo') return '_comissoes-calculo'
+  if (pathname === '/folha-pagamento-daf' || pathname === '/regras-comissoes') return '_comissoes-calculo'
   const cadastros = ['/segmentos','/agrup-empresas','/empresas','/areas','/agrup-departamentos',
     '/departamentos','/setores','/box','/agrup-cargos','/cargos','/organograma',
     '/movimento-venda','/natureza-operacoes','/tipos-produtos','/tipos-os',
@@ -454,13 +454,7 @@ export default function SidebarLayout() {
           <>
             {canViewSection('_comissoes') && (
               <>
-                <FlyGroup label="Regras de Comissões" />
-                {canView('fontes-calculo') && <FlyItem to="/fontes-calculo" icon={TableProperties} onClose={closeFlyout}>Fonte de Cálculo</FlyItem>}
-                {canView('bases-calculo') && <FlyItem to="/bases-calculo" icon={Calculator} onClose={closeFlyout}>Base de Cálculo</FlyItem>}
-                {canView('politica-comissao') && <FlyItem to="/politica-comissao" icon={ScrollText} onClose={closeFlyout}>Política de Comissões</FlyItem>}
-                {canView('cargos-remuneracoes') && <FlyItem to="/cargos-remuneracoes" icon={Briefcase} onClose={closeFlyout}>Cargos e Remunerações</FlyItem>}
-                {canView('rubricas') && <FlyItem to="/rubricas" icon={Hash} onClose={closeFlyout}>Rubrica</FlyItem>}
-                {canView('tipos-processo') && <FlyItem to="/tipos-processo" icon={ListChecks} onClose={closeFlyout}>Tipo de Processo</FlyItem>}
+                <FlyItem to="/regras-comissoes" icon={ScrollText} onClose={closeFlyout}>Regras de Comissões</FlyItem>
                 <div className="mx-3 my-2 border-t border-blue-800/50" />
               </>
             )}
