@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useKpiSourceStatus } from '../context/KpiSourceStatusContext'
 
 // Store module-level: persiste entre desmonte/remonte de componentes na mesma sessão.
 // Chave = (referência da função fetch, paramsKey) — garante unicidade por endpoint+params.
@@ -30,6 +31,12 @@ export function useKpiData(fetchFn, fallback, params = {}) {
   const [loading, setLoading] = useState(!stored)
   const [error,   setError]   = useState(null)
   const [source,  setSource]  = useState(stored?.source ?? null)
+
+  // Publica source/loading no context compartilhado — o badge "Dados sincronizados" mora no
+  // cabeçalho da Matriz KPIs (ao lado do Ano), não em cada aba; só a aba ativa fica montada
+  // por vez, então não há conflito entre publishers.
+  const { setStatus } = useKpiSourceStatus()
+  useEffect(() => { setStatus({ source, loading }) }, [source, loading, setStatus])
 
   const load = useCallback(async (extraParams = {}) => {
     const isForce = !!extraParams._forceReload

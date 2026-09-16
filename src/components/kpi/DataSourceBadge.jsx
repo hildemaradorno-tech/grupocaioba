@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { Cloud, Database, Loader2, AlertTriangle } from 'lucide-react'
+import { Cloud, Database, Loader2 } from 'lucide-react'
 import { getStatusSincronizacao } from '../../services/kpiService'
 
 // Fixa o fuso em Brasília — ver mesmo comentário em SincronizacaoDados.jsx.
@@ -29,7 +29,6 @@ export default function DataSourceBadge({ source, loading }) {
   }
 
   const isReal = source === 'sharepoint'
-  const comProblema = ultimaExecucao && (ultimaExecucao.status === 'PARCIAL' || ultimaExecucao.status === 'ERRO')
 
   return (
     <span className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${
@@ -37,7 +36,6 @@ export default function DataSourceBadge({ source, loading }) {
         ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
         : 'bg-amber-50 text-amber-700 border-amber-200'
     }`}>
-      {comProblema && <AlertTriangle className="h-3 w-3" />}
       {isReal ? <Cloud className="h-3 w-3" /> : <Database className="h-3 w-3" />}
       {isReal
         ? `Dados sincronizados${ultimaExecucao?.iniciado_em ? ` — ${formatDataHora(ultimaExecucao.iniciado_em)}` : ''}`

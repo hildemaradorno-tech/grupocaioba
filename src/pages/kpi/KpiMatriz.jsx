@@ -2,6 +2,8 @@ import React, { useState } from 'react'
 import { BarChart2, TrendingUp, Activity, Wrench, Package, Wallet, FlaskConical } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { useKpiYear, KPI_YEARS } from '../../context/KpiYearContext'
+import { useKpiSourceStatus } from '../../context/KpiSourceStatusContext'
+import DataSourceBadge from '../../components/kpi/DataSourceBadge'
 import KpiDashboardExecutivo from './KpiDashboardExecutivo'
 import KpiIndicadoresCorporativos from './KpiIndicadoresCorporativos'
 import KpiIndicadoresOperacionais from './KpiIndicadoresOperacionais'
@@ -25,6 +27,7 @@ export const KPI_MATRIZ_PERMS = ABAS.map(a => a.permKey)
 export default function KpiMatriz() {
   const { hasPermission } = useAuth()
   const { year, setYear } = useKpiYear()
+  const { status: sourceStatus } = useKpiSourceStatus()
   const abasVisiveis = ABAS.filter(a => hasPermission(a.permKey))
   const [aba, setAba] = useState(() => abasVisiveis[0]?.key)
   const abaAtual = abasVisiveis.find(a => a.key === aba) || abasVisiveis[0]
@@ -36,7 +39,8 @@ export default function KpiMatriz() {
           <h1 className="text-xl font-bold text-slate-800">Matriz KPIs</h1>
           <p className="text-sm text-slate-500 mt-0.5">Indicadores de desempenho consolidados por bloco</p>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-3 shrink-0">
+          {sourceStatus.source != null && <DataSourceBadge source={sourceStatus.source} loading={sourceStatus.loading} />}
           <span className="text-xs text-slate-500 font-medium">Ano:</span>
           <select
             value={year}

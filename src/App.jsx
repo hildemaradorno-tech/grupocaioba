@@ -2,6 +2,7 @@ import React, { useEffect } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { KpiYearProvider } from './context/KpiYearContext'
+import { KpiSourceStatusProvider } from './context/KpiSourceStatusContext'
 import { normalizePath } from './config/menuTree'
 import Login from './pages/Login'
 import RedefinirSenha from './pages/RedefinirSenha'
@@ -161,6 +162,7 @@ export default function App() {
   return (
     <AuthProvider>
     <KpiYearProvider>
+    <KpiSourceStatusProvider>
     <ProjetosFiltrosProvider>
     <Routes>
       <Route path="/login" element={<Login />} />
@@ -284,6 +286,7 @@ export default function App() {
       </Route>
     </Routes>
     </ProjetosFiltrosProvider>
+    </KpiSourceStatusProvider>
     </KpiYearProvider>
     </AuthProvider>
   )

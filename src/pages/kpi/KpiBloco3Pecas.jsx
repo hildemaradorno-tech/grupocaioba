@@ -6,7 +6,6 @@ import PeriodSelector, { usePeriodSelector } from '../../components/kpi/PeriodSe
 import { getPeriodData, getPeriodLabel } from '../../utils/kpiPeriods'
 import { useKpiData } from '../../hooks/useKpiData'
 import { fetchBloco3Pecas, salvarPeso, fetchVendedoresBalcao } from '../../services/kpiService'
-import DataSourceBadge from '../../components/kpi/DataSourceBadge'
 import { useKpiYear } from '../../context/KpiYearContext'
 
 const BLOCO_PESOS = 'bloco3-pecas'
@@ -300,7 +299,7 @@ export default function KpiBloco3Pecas() {
   // Seleção via dropdown (não texto livre) — sempre um nome exato da lista ou nenhum.
   const [vendedorSelecionado, setVendedorSelecionado] = useState(null)
 
-  const { data: quadros, loading, source } = useKpiData(fetchBloco3Pecas, MOCK_BLOCO3_PECAS, { year, vendedor: vendedorSelecionado || undefined })
+  const { data: quadros } = useKpiData(fetchBloco3Pecas, MOCK_BLOCO3_PECAS, { year, vendedor: vendedorSelecionado || undefined })
 
   // Overlay otimista: aplicado por cima do que veio do backend assim que o usuário
   // salva um peso, sem precisar esperar o próximo fetch pra refletir na tela.
@@ -322,12 +321,9 @@ export default function KpiBloco3Pecas() {
 
   return (
     <div className="p-6 space-y-5">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold text-slate-800">Indicadores de Peças</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Indicadores de performance de peças</p>
-        </div>
-        <DataSourceBadge source={source} loading={loading} />
+      <div>
+        <h1 className="text-xl font-bold text-slate-800">Indicadores de Peças</h1>
+        <p className="text-sm text-slate-500 mt-0.5">Indicadores de performance de peças</p>
       </div>
 
       <PeriodSelector state={periodState} />
