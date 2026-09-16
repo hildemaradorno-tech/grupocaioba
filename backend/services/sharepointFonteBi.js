@@ -70,8 +70,11 @@ export function parseMoney(val) {
   return isNaN(n) ? 0 : n
 }
 
+// Remove acentos além de trim+uppercase — arquivos do SharePoint às vezes gravam "CAIOBA
+// TRUCKS" sem acento, enquanto o cadastro (dim_empresas.empresa_fantasia) usa "CAIOBÁ TRUCKS";
+// sem isso, a comparação de nome de empresa falha silenciosamente e nenhuma linha bate.
 export function normalizaTexto(v) {
-  return String(v ?? '').trim().toUpperCase()
+  return String(v ?? '').trim().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
 }
 
 // A célula "casa" com uma sigla de Tipo de O.S. quando é igual a ela ou começa por ela seguida
