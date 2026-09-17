@@ -114,24 +114,35 @@ export default function GarantiasDafTitulos() {
     return m
   }, [garantias])
 
-  // Propaga só o Nº do Título (não a observação, que agora mora só em gar_titulos_observacoes)
-  // para a OS vinculada — mantém o "Nº Título" visível em Editar Garantia mesmo se o título
-  // sair do arquivo RFN003 (ex: já liquidado) antes de a OS ser reaberta.
+  // Propaga Nº Título / Nº Lançamento / Data de Vencimento (não a observação, que mora só em
+  // gar_titulos_observacoes) para a OS vinculada — mantém esses dados visíveis em Editar
+  // Garantia mesmo se o título sair do arquivo RFN003 (ex: já liquidado/pago).
   useEffect(() => {
-    if (titulosObs.length === 0 || titulosRows.length === 0 || garantias.length === 0) return
+    if (titulosRows.length === 0 || garantias.length === 0) return
     const garantiaById = new Map(garantias.map(g => [g.id, g]))
-    const nroTitulosComObs = new Set(titulosObs.map(o => o.nro_titulo))
-    for (const nroTitulo of nroTitulosComObs) {
-      const tituloRow = titulosRows.find(r => r.nro_titulo === nroTitulo)
-      if (!tituloRow) continue
+    for (const tituloRow of titulosRows) {
       const osKey = String(tituloRow.os_numero ?? '').trim()
+      if (!osKey) continue
       const garantiaId = garantiaIdByOS.get(osKey)
       if (!garantiaId) continue
       const g = garantiaById.get(garantiaId)
-      if (!g || g.numero_titulo === nroTitulo) continue
-      apiService.updateGarantia(garantiaId, { numero_titulo: nroTitulo }, user?.email, g.status_codigo).catch(() => {})
+      if (!g) continue
+      const novo = {
+        numero_titulo: tituloRow.nro_titulo || '',
+        titulo_nro_lancamento: tituloRow.nro_lancamento || '',
+        titulo_data_vencimento: tituloRow.data_vencimento || '',
+      }
+      const mudou = novo.numero_titulo !== (g.numero_titulo || '')
+        || novo.titulo_nro_lancamento !== (g.titulo_nro_lancamento || '')
+        || novo.titulo_data_vencimento !== (g.titulo_data_vencimento || '')
+      if (!mudou) continue
+      apiService.updateGarantia(garantiaId, {
+        numero_titulo: novo.numero_titulo || null,
+        titulo_nro_lancamento: novo.titulo_nro_lancamento || null,
+        titulo_data_vencimento: novo.titulo_data_vencimento || null,
+      }, user?.email, g.status_codigo).catch(() => {})
     }
-  }, [titulosObs, titulosRows, garantias, garantiaIdByOS, user])
+  }, [titulosRows, garantias, garantiaIdByOS, user])
 
   const temEnvioTitulo = useCallback((r) => {
     const osKey    = String(r.os_numero   || '').trim()

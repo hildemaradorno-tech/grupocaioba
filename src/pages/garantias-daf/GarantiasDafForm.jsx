@@ -77,6 +77,7 @@ const FORM_VAZIO = {
   numero_nf: '',
   data_emissao_nf: '', data_envio_fabrica: '',
   numero_titulo: '', titulo_observacao: '',
+  titulo_nro_lancamento: '', titulo_data_vencimento: '',
   nf_valor_produto: '', nf_valor_servico: '', nf_margem_contabil: '',
   previsao_pagamento: '', aceite_fabrica: '', data_ultima_verificacao: '',
   data_recusa: '', motivo_recusa_id: '', motivo_recusa_descricao: '', acao_tomada: '', plano_acao: '',
@@ -342,6 +343,29 @@ export default function GarantiasDafForm() {
           (nfNums.length === 0 || nfNums.includes(String(t.nota_fiscal ?? '').trim()))
         )
         setTituloEncontrado(match || null)
+
+        // Persiste Nº Título / Nº Lançamento / Data de Vencimento na própria OS — sem isso,
+        // esses dados só existem "ao vivo" e somem da tela assim que o título sai do RFN003
+        // (ex: já foi liquidado/pago).
+        if (match && modoEdicao && !modoVisualizar && id) {
+          const novoTitulo = {
+            numero_titulo: match.nro_titulo || '',
+            titulo_nro_lancamento: match.nro_lancamento || '',
+            titulo_data_vencimento: match.data_vencimento || '',
+          }
+          const mudou = novoTitulo.numero_titulo !== (form.numero_titulo || '')
+            || novoTitulo.titulo_nro_lancamento !== (form.titulo_nro_lancamento || '')
+            || novoTitulo.titulo_data_vencimento !== (form.titulo_data_vencimento || '')
+          if (mudou) {
+            apiService.updateGarantia(id, {
+              numero_titulo: novoTitulo.numero_titulo || null,
+              titulo_nro_lancamento: novoTitulo.titulo_nro_lancamento || null,
+              titulo_data_vencimento: novoTitulo.titulo_data_vencimento || null,
+            }, user?.email, form.status_codigo)
+              .then(() => setForm(prev => ({ ...prev, ...novoTitulo })))
+              .catch(() => {})
+          }
+        }
       })
       .catch(() => { if (!cancelado) setTituloEncontrado(null) })
     return () => { cancelado = true }
@@ -539,6 +563,7 @@ export default function GarantiasDafForm() {
         data_ultima_verificacao: nullIfEmpty(form.data_ultima_verificacao),
         data_recusa:            nullIfEmpty(form.data_recusa),
         nf_peca_data:           nullIfEmpty(form.nf_peca_data),
+        titulo_data_vencimento: nullIfEmpty(form.titulo_data_vencimento),
       }
       if (modoEdicao) {
         await apiService.updateGarantia(id, payload, user?.email, statusAnterior, wCamposOriginais)
@@ -1158,12 +1183,14 @@ export default function GarantiasDafForm() {
             </div>
 
               {/* Título a Receber localizado (RFN003) por OS + Nota Fiscal — abaixo de Data de Envio.
-                  Nº Título cai no fallback gravado na OS (numero_titulo) quando o título some do
-                  RFN003 (ex: já liquidado). Observações vêm direto de gar_titulos_observacoes,
-                  mesma fonte usada em "Editar Título" (Títulos a Receber). */}
+                  Nº Título / Nº Lançamento / Data de Vencimento caem no fallback gravado na OS
+                  quando o título some do RFN003 (ex: já liquidado). Observações vêm direto de
+                  gar_titulos_observacoes, mesma fonte usada em "Editar Título" (Títulos a Receber). */}
               {(() => {
                 const nroTitulo = tituloEncontrado?.nro_titulo || form.numero_titulo
                 if (!nroTitulo) return null
+                const nroLancamento = tituloEncontrado?.nro_lancamento || form.titulo_nro_lancamento
+                const dataVencimento = tituloEncontrado?.data_vencimento || form.titulo_data_vencimento
                 return (
                 <div className="space-y-2">
                   <div className="bg-indigo-50 border border-indigo-200 rounded-lg px-4 py-3 flex items-center gap-6 flex-wrap">
@@ -1172,16 +1199,16 @@ export default function GarantiasDafForm() {
                       <LabelField locked>Nº Título</LabelField>
                       <ReadOnlyField value={nroTitulo} />
                     </div>
-                    {tituloEncontrado && (
+                    {nroLancamento && (
                       <div className="flex items-center gap-2">
                         <LabelField locked>Nº Lançamento</LabelField>
-                        <ReadOnlyField value={tituloEncontrado.nro_lancamento} />
+                        <ReadOnlyField value={nroLancamento} />
                       </div>
                     )}
-                    {tituloEncontrado && (
+                    {dataVencimento && (
                       <div className="flex items-center gap-2">
                         <LabelField locked>Data de Vencimento</LabelField>
-                        <ReadOnlyField value={fmtDate(tituloEncontrado.data_vencimento)} />
+                        <ReadOnlyField value={fmtDate(dataVencimento)} />
                       </div>
                     )}
                   </div>
