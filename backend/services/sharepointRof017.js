@@ -117,6 +117,7 @@ export async function getAllFaturamentosRof017(dataInicio, dataFim, numeroOS = n
   const colChassi  = findCol('Veiculo_Chassi',      'VeiculoChassi')
   const colModelo  = findCol('Veiculo_ModeloVeiculoDes', 'ModeloVeiculo')
   const colCliente = findCol('NomPessoa',           'Proprietario_Veiculo')
+  const colEmpresa = findCol('Empresa_Nome',        'EmpresaNome')
   const colProd    = findCol('ProdValor')
   const colServ    = findCol('ServValor')
 
@@ -142,7 +143,7 @@ export async function getAllFaturamentosRof017(dataInicio, dataFim, numeroOS = n
     if (!osMap.has(key)) {
       osMap.set(key, {
         os_numero:            osNum,
-        empresa_nome:         '',
+        empresa_nome:         String(r[colEmpresa] ?? '').trim(),
         data_criacao:         toIsoDate(r[colDtCri]),
         nf_data_emissao:      toIsoDate(r[colDtFat]),
         data_liberacao:       toIsoDate(r[colDtEnc]),

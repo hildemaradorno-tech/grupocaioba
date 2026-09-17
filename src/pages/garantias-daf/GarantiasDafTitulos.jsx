@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
-  Search, RefreshCw, Loader2, Eye, X, ArrowUp, ArrowDown, Receipt, XCircle, Link2, Link2Off, AlertTriangle, Edit2, Info, BarChart2,
+  Search, RefreshCw, Loader2, Eye, X, ArrowDown, Receipt, XCircle, Link2, Link2Off, AlertTriangle, Info, BarChart2, Clock, Edit2,
 } from 'lucide-react'
 import { apiService } from '../../services/api'
 import { useAuth } from '../../context/AuthContext'
@@ -31,10 +31,13 @@ export default function GarantiasDafTitulos() {
   const [filtroOS, setFiltroOS]                     = useState(() => location.state?.osNumero || '')
   const [titulosEmpresa, setTitulosEmpresa]         = useState('')
   const [tiposCadastrados, setTiposCadastrados]     = useState([])
-  const [obsModal, setObsModal]                     = useState(null)
-  const [filtroEnvio, setFiltroEnvio]               = useState('todos')
-  const [filtroVinculo, setFiltroVinculo]           = useState('todos')
-  const [filtroSituacaoVencimento, setFiltroSituacaoVencimento] = useState(null) // null | 'vencido' | 'a_vencer'
+  // null | 'aguardando_pagamento' | 'os_nao_vinculado' | 'nf_nao_enviado'
+  const [filtroSituacao, setFiltroSituacao]         = useState(null)
+  const [filtroCritico, setFiltroCritico]           = useState(false)
+  const [filtroCardSemVinculo, setFiltroCardSemVinculo] = useState(false)
+  const [filtroCardVencido, setFiltroCardVencido]   = useState(false)
+  const [filtroCardVenceHoje, setFiltroCardVenceHoje] = useState(false)
+  const [filtroCardAVencer, setFiltroCardAVencer]   = useState(false)
   const [dataInicio, setDataInicio]                 = useState('')
   const [dataFim, setDataFim]                       = useState('')
   const [garantias, setGarantias]                   = useState([])
@@ -115,6 +118,9 @@ export default function GarantiasDafTitulos() {
     return m
   }, [garantias])
 
+  // Mapa id → garantia completa — usado pelo modal "Visualizar OS e Garantia"
+  const garantiaById = useMemo(() => new Map(garantias.map(g => [g.id, g])), [garantias])
+
   // Propaga Nº Título / Nº Lançamento / Data de Vencimento (não a observação, que mora só em
   // gar_titulos_observacoes) para a OS vinculada — mantém esses dados visíveis em Editar
   // Garantia mesmo se o título sair do arquivo RFN003 (ex: já liquidado/pago).
@@ -158,14 +164,28 @@ export default function GarantiasDafTitulos() {
 
   // Crítico: NF sem envio à fábrica e emitida há 4 dias ou mais (com base na data de Emissão).
   const ehCritico = (r) => !temEnvioTitulo(r) && (diasDesdeEmissao(r) ?? -1) >= 4
-  // Vencido / A Vencer: apenas pela coluna Atr. (atraso em relação ao vencimento) — independe de
-  // vínculo (OS identificada) ou envio à fábrica.
-  const ehVencido = (r) => r.atraso !== null && r.atraso !== undefined && r.atraso > 0
-  const ehAVencer = (r) => r.atraso !== null && r.atraso !== undefined && r.atraso <= 0
+
+  // Vencido / Vence Hoje / A Vencer: pela Data de Vencimento comparada à data de hoje — não pela
+  // coluna "Atr." do RFN003, que fica travada em 0 para títulos já vencidos (campo do Dealer.net
+  // não é recalculado a cada dia). Independe de vínculo (OS identificada) ou envio à fábrica.
+  const hojeISO = new Date().toISOString().slice(0, 10)
+  const ehVencido   = (r) => !!r.data_vencimento && r.data_vencimento < hojeISO
+  const ehVenceHoje = (r) => r.data_vencimento === hojeISO
+  const ehAVencer   = (r) => !!r.data_vencimento && r.data_vencimento > hojeISO
+
+  // Classifica a linha numa única "Situação" (mesma lógica exibida na coluna da tabela e no modal
+  // Visualizar). Ordem obrigatória: 1) OS precisa estar vinculada — sem isso, nem faz sentido
+  // olhar a NF; 2) só então verifica se a NF foi enviada à fábrica; 3) com os dois OK, é só
+  // "Aguard. Pagto" (a data exata de vencimento já aparece na coluna Vencto./Atr.).
+  const situacaoDeLinha = useCallback((r) => {
+    const vinculado = garantiasOsSet.has(String(r.os_numero ?? '').trim())
+    if (!vinculado) return 'os_nao_vinculado'
+    if (!temEnvioTitulo(r)) return 'nf_nao_enviado'
+    return 'aguardando_pagamento'
+  }, [garantiasOsSet, temEnvioTitulo])
 
   // Aplica somente os filtros de base (tipo cadastrado, empresa, período, busca) — usado para os
-  // cards Vencidos/A Vencer, que devem refletir apenas a data de vencimento, independente dos
-  // filtros de envio/vínculo.
+  // cards de alerta, que devem refletir contagens absolutas independentes dos filtros de situação.
   const aplicarFiltrosBase = useCallback((rows) => {
     let out = rows
     if (tiposCadastrados.length > 0)
@@ -185,60 +205,37 @@ export default function GarantiasDafTitulos() {
     )
   }, [tiposCadastrados, titulosEmpresa, dataInicio, dataFim, filtroOS, titulosBusca])
 
-  // Aplica os filtros de base e, opcionalmente, os filtros de envio/vínculo/situação de vencimento —
-  // usado para que os alertas reflitam os demais filtros ativos sem se auto-filtrar pela própria
-  // situação que eles representam.
-  const aplicarFiltrosComuns = useCallback((rows, { pularEnvio, pularVinculo, pularSituacaoVencimento } = {}) => {
+  // Aplica os filtros de base + o filtro de Situação (pill única) + os filtros dos cards de alerta.
+  const aplicarFiltrosComuns = useCallback((rows) => {
     let out = aplicarFiltrosBase(rows)
-    if (!pularEnvio && filtroEnvio !== 'todos') {
-      out = out.filter(r => {
-        const temEnvio = temEnvioTitulo(r)
-        if (filtroEnvio === 'enviados') return temEnvio
-        if (filtroEnvio === 'critico') return ehCritico(r)
-        return !temEnvio
-      })
-    }
-    if (!pularVinculo && filtroVinculo !== 'todos') {
-      out = out.filter(r => {
-        const vinculado = garantiasOsSet.has(String(r.os_numero ?? '').trim())
-        return filtroVinculo === 'vinculados' ? vinculado : !vinculado
-      })
-    }
-    if (!pularSituacaoVencimento && filtroSituacaoVencimento) {
-      out = out.filter(filtroSituacaoVencimento === 'vencido' ? ehVencido : ehAVencer)
+    if (filtroSituacao) out = out.filter(r => situacaoDeLinha(r) === filtroSituacao)
+    if (filtroCritico) out = out.filter(ehCritico)
+    if (filtroCardSemVinculo) out = out.filter(r => !garantiasOsSet.has(String(r.os_numero ?? '').trim()))
+    if (filtroCardVencido) out = out.filter(ehVencido)
+    if (filtroCardVenceHoje) out = out.filter(ehVenceHoje)
+    if (filtroCardAVencer) out = out.filter(ehAVencer)
+    // Os cards de vencimento (A Vencer/Vence Hoje/Vencido) ordenam a tabela pela Data de Vencimento.
+    if (filtroCardVencido || filtroCardVenceHoje || filtroCardAVencer) {
+      out = [...out].sort((a, b) => String(a.data_vencimento || '').localeCompare(String(b.data_vencimento || '')))
     }
     return out
-  }, [aplicarFiltrosBase, filtroEnvio, temEnvioTitulo, filtroVinculo, garantiasOsSet, filtroSituacaoVencimento])
+  }, [aplicarFiltrosBase, filtroSituacao, situacaoDeLinha, filtroCritico, filtroCardSemVinculo, garantiasOsSet, filtroCardVencido, filtroCardVenceHoje, filtroCardAVencer])
 
-  // Base do alerta de NF crítica: reflete empresa/período/busca/vínculo/situação de vencimento ativos, mas não o próprio filtro de envio.
-  const baseAlertaEnvio = useMemo(
-    () => aplicarFiltrosComuns(titulosRows, { pularEnvio: true }),
-    [titulosRows, aplicarFiltrosComuns]
-  )
-  const grpNfCritica = useMemo(
-    () => baseAlertaEnvio.filter(ehCritico),
-    [baseAlertaEnvio, temEnvioTitulo]
-  )
-
-  // Base do alerta de não vinculado: reflete empresa/período/busca/envio/situação de vencimento ativos, mas não o próprio filtro de vínculo.
-  const baseAlertaVinculo = useMemo(
-    () => aplicarFiltrosComuns(titulosRows, { pularVinculo: true }),
-    [titulosRows, aplicarFiltrosComuns]
-  )
-  // Títulos cuja OS ainda não está vinculada (cadastrada) em Histórico de O.S.
-  const grpNaoVinculado = useMemo(
-    () => baseAlertaVinculo.filter(r => !garantiasOsSet.has(String(r.os_numero ?? '').trim())),
-    [baseAlertaVinculo, garantiasOsSet]
-  )
-
-  // Base dos cards Vencidos/A Vencer: só os filtros de base (tipo/empresa/período/busca) — não
-  // considera envio/vínculo, conforme pedido: a classificação é só pela data de vencimento.
-  const baseVencimento = useMemo(
+  // Base dos cards de alerta: só os filtros de base (tipo/empresa/período/busca) — contagens
+  // absolutas, independentes da pill de Situação e dos próprios toggles dos cards.
+  const baseAlerta = useMemo(
     () => aplicarFiltrosBase(titulosRows),
     [titulosRows, aplicarFiltrosBase]
   )
-  const grpVencidos = useMemo(() => baseVencimento.filter(ehVencido), [baseVencimento])
-  const grpAVencer = useMemo(() => baseVencimento.filter(ehAVencer), [baseVencimento])
+  const grpNfCritica = useMemo(() => baseAlerta.filter(ehCritico), [baseAlerta])
+  // Títulos cuja OS ainda não está vinculada (cadastrada) em Histórico de O.S.
+  const grpNaoVinculado = useMemo(
+    () => baseAlerta.filter(r => !garantiasOsSet.has(String(r.os_numero ?? '').trim())),
+    [baseAlerta, garantiasOsSet]
+  )
+  const grpVencidos = useMemo(() => baseAlerta.filter(ehVencido), [baseAlerta])
+  const grpVenceHoje = useMemo(() => baseAlerta.filter(ehVenceHoje), [baseAlerta])
+  const grpAVencer = useMemo(() => baseAlerta.filter(ehAVencer), [baseAlerta])
 
   const titulosFiltrados = useMemo(
     () => aplicarFiltrosComuns(titulosRows),
@@ -248,9 +245,9 @@ export default function GarantiasDafTitulos() {
   // Indica se algum filtro que afeta os alertas (empresa/período/busca) está ativo — usado para
   // avisar que os números dos alertas já refletem esse recorte, e não a base total.
   const filtrosComunsAtivos = !!(titulosEmpresa || dataInicio || dataFim || filtroOS.trim() || titulosBusca.trim())
-  // Indica se há QUALQUER filtro ativo no painel (comuns + envio + vínculo + situação de vencimento) —
-  // usado para só mostrar o botão "Limpar todos os filtros" quando existir algo para limpar.
-  const algumFiltroAtivo = filtrosComunsAtivos || filtroEnvio !== 'todos' || filtroVinculo !== 'todos' || !!filtroSituacaoVencimento
+  // Indica se há QUALQUER filtro ativo no painel (comuns + situação + cards) — usado para só
+  // mostrar o botão "Limpar todos os filtros" quando existir algo para limpar.
+  const algumFiltroAtivo = filtrosComunsAtivos || !!filtroSituacao || filtroCritico || filtroCardSemVinculo || filtroCardVencido || filtroCardVenceHoje || filtroCardAVencer
 
   const totalValor = useMemo(() => titulosFiltrados.reduce((s, r) => s + (r.valor || 0), 0), [titulosFiltrados])
   const totalSaldo = useMemo(() => titulosFiltrados.reduce((s, r) => s + (r.saldo || 0), 0), [titulosFiltrados])
@@ -258,33 +255,44 @@ export default function GarantiasDafTitulos() {
   const valorGrpNfCritica = useMemo(() => grpNfCritica.reduce((s, r) => s + (r.valor || 0), 0), [grpNfCritica])
   const valorGrpNaoVinculado = useMemo(() => grpNaoVinculado.reduce((s, r) => s + (r.valor || 0), 0), [grpNaoVinculado])
   const valorGrpVencidos = useMemo(() => grpVencidos.reduce((s, r) => s + (r.valor || 0), 0), [grpVencidos])
+  const valorGrpVenceHoje = useMemo(() => grpVenceHoje.reduce((s, r) => s + (r.valor || 0), 0), [grpVenceHoje])
   const valorGrpAVencer = useMemo(() => grpAVencer.reduce((s, r) => s + (r.valor || 0), 0), [grpAVencer])
 
-  const toggleFiltroCritico = () => setFiltroEnvio(prev => prev === 'critico' ? 'todos' : 'critico')
-  const toggleFiltroNaoVinculado = () => setFiltroVinculo(prev => prev === 'nao_vinculados' ? 'todos' : 'nao_vinculados')
-  const toggleFiltroVencido = () => setFiltroSituacaoVencimento(prev => prev === 'vencido' ? null : 'vencido')
-  const toggleFiltroAVencer = () => setFiltroSituacaoVencimento(prev => prev === 'a_vencer' ? null : 'a_vencer')
+  const toggleFiltroCritico = () => setFiltroCritico(v => !v)
+  const toggleFiltroNaoVinculado = () => setFiltroCardSemVinculo(v => !v)
+  const toggleFiltroVencido = () => setFiltroCardVencido(v => !v)
+  const toggleFiltroVenceHoje = () => setFiltroCardVenceHoje(v => !v)
+  const toggleFiltroAVencer = () => setFiltroCardAVencer(v => !v)
+  const toggleFiltroSituacao = (valor) => setFiltroSituacao(prev => prev === valor ? null : valor)
 
   // Algum dos cards de alerta está selecionado como filtro — o card Resumo Geral limpa todos.
-  const algumCardFiltroAtivo = filtroEnvio === 'critico' || filtroVinculo === 'nao_vinculados' || !!filtroSituacaoVencimento
-  const limparFiltrosCards = () => { setFiltroEnvio('todos'); setFiltroVinculo('todos'); setFiltroSituacaoVencimento(null) }
+  const algumCardFiltroAtivo = filtroCritico || filtroCardSemVinculo || filtroCardVencido || filtroCardVenceHoje || filtroCardAVencer
+  const limparFiltrosCards = () => {
+    setFiltroSituacao(null)
+    setFiltroCritico(false)
+    setFiltroCardSemVinculo(false)
+    setFiltroCardVencido(false)
+    setFiltroCardVenceHoje(false)
+    setFiltroCardAVencer(false)
+  }
 
-  // Limpa todos os filtros do painel Filtros avançados (empresa, período, busca, envio, vínculo e situação de vencimento).
+  // Limpa todos os filtros do painel Filtros avançados (empresa, período, busca, situação e cards).
   const limparTodosFiltros = () => {
     setTitulosEmpresa('')
     setDataInicio('')
     setDataFim('')
     setFiltroOS('')
     setTitulosBusca('')
-    setFiltroEnvio('todos')
-    setFiltroVinculo('todos')
-    setFiltroSituacaoVencimento(null)
+    limparFiltrosCards()
   }
 
   // ── Edição de observações do título (gar_titulos_observacoes) ──────────
   const [modalEditarTitulo, setModalEditarTitulo] = useState(null) // linha do título sendo editado
 
   const abrirEdicaoTitulo = (row) => setModalEditarTitulo(row)
+
+  // ── Visualização da OS/Garantia vinculada, sem sair da tela de Títulos ──
+  const [modalVisualizarOS, setModalVisualizarOS] = useState(null) // garantia (gar_garantias) sendo visualizada
 
   return (
     <div className="p-6 space-y-5 max-w-screen-2xl">
@@ -441,49 +449,23 @@ export default function GarantiasDafTitulos() {
           )}
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 flex-wrap shrink-0">
           <button type="button"
-            onClick={() => setFiltroEnvio('todos')}
-            className={`whitespace-nowrap px-2.5 py-1 text-[11px] font-bold rounded-full border transition-colors ${filtroEnvio === 'todos' ? 'bg-slate-700 text-white border-slate-700' : 'bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200'}`}
+            onClick={() => setFiltroSituacao(null)}
+            className={`whitespace-nowrap px-2.5 py-1 text-[11px] font-bold rounded-full border transition-colors ${!filtroSituacao ? 'bg-slate-700 text-white border-slate-700' : 'bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200'}`}
           >Todos</button>
           <button type="button"
-            onClick={() => setFiltroEnvio('enviados')}
-            className={`whitespace-nowrap flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold rounded-full border transition-colors ${filtroEnvio === 'enviados' ? 'bg-green-600 text-white border-green-600' : 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100'}`}
-          ><ArrowUp className="h-3 w-3" /> Enviados</button>
+            onClick={() => toggleFiltroSituacao('os_nao_vinculado')}
+            className={`whitespace-nowrap flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold rounded-full border transition-colors ${filtroSituacao === 'os_nao_vinculado' ? 'bg-orange-600 text-white border-orange-600' : 'bg-orange-50 text-orange-700 border-orange-200 hover:bg-orange-100'}`}
+          ><Link2Off className="h-3 w-3" /> OS não vinculado</button>
           <button type="button"
-            onClick={() => setFiltroEnvio('nao_enviados')}
-            className={`whitespace-nowrap flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold rounded-full border transition-colors ${filtroEnvio === 'nao_enviados' ? 'bg-amber-600 text-white border-amber-600' : 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'}`}
-          ><ArrowDown className="h-3 w-3" /> Não enviados</button>
-        </div>
-
-        <div className="flex items-center gap-2 shrink-0">
+            onClick={() => toggleFiltroSituacao('nf_nao_enviado')}
+            className={`whitespace-nowrap flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold rounded-full border transition-colors ${filtroSituacao === 'nf_nao_enviado' ? 'bg-amber-600 text-white border-amber-600' : 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'}`}
+          ><ArrowDown className="h-3 w-3" /> NF não enviado</button>
           <button type="button"
-            onClick={() => setFiltroVinculo('todos')}
-            className={`whitespace-nowrap px-2.5 py-1 text-[11px] font-bold rounded-full border transition-colors ${filtroVinculo === 'todos' ? 'bg-slate-700 text-white border-slate-700' : 'bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200'}`}
-          >Todos</button>
-          <button type="button"
-            onClick={() => setFiltroVinculo('vinculados')}
-            className={`whitespace-nowrap flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold rounded-full border transition-colors ${filtroVinculo === 'vinculados' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100'}`}
-          ><Link2 className="h-3 w-3" /> Vinculados</button>
-          <button type="button"
-            onClick={() => setFiltroVinculo('nao_vinculados')}
-            className={`whitespace-nowrap flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold rounded-full border transition-colors ${filtroVinculo === 'nao_vinculados' ? 'bg-orange-600 text-white border-orange-600' : 'bg-orange-50 text-orange-700 border-orange-200 hover:bg-orange-100'}`}
-          ><Link2Off className="h-3 w-3" /> Não vinculados</button>
-        </div>
-
-        <div className="flex items-center gap-2 shrink-0">
-          <button type="button"
-            onClick={() => setFiltroSituacaoVencimento(null)}
-            className={`whitespace-nowrap px-2.5 py-1 text-[11px] font-bold rounded-full border transition-colors ${!filtroSituacaoVencimento ? 'bg-slate-700 text-white border-slate-700' : 'bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200'}`}
-          >Todos</button>
-          <button type="button"
-            onClick={toggleFiltroAVencer}
-            className={`whitespace-nowrap flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold rounded-full border transition-colors ${filtroSituacaoVencimento === 'a_vencer' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'}`}
-          ><Eye className="h-3 w-3" /> A Vencer</button>
-          <button type="button"
-            onClick={toggleFiltroVencido}
-            className={`whitespace-nowrap flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold rounded-full border transition-colors ${filtroSituacaoVencimento === 'vencido' ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-100 text-slate-700 border-slate-300 hover:bg-slate-200'}`}
-          ><AlertTriangle className="h-3 w-3" /> Vencidos</button>
+            onClick={() => toggleFiltroSituacao('aguardando_pagamento')}
+            className={`whitespace-nowrap flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold rounded-full border transition-colors ${filtroSituacao === 'aguardando_pagamento' ? 'bg-blue-600 text-white border-blue-600' : 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100'}`}
+          ><Clock className="h-3 w-3" /> Aguard. Pagto</button>
         </div>
         </div>
         )}
@@ -496,7 +478,7 @@ export default function GarantiasDafTitulos() {
             <button
               type="button"
               onClick={toggleFiltroNaoVinculado}
-              className={`flex-1 flex items-center gap-3 bg-orange-50 border rounded-lg px-4 py-3 text-left transition-all hover:bg-orange-100 ${filtroVinculo === 'nao_vinculados' ? 'border-orange-500 ring-2 ring-offset-1 ring-orange-300' : 'border-orange-300'}`}
+              className={`flex-1 flex items-center gap-3 bg-orange-50 border rounded-lg px-4 py-3 text-left transition-all hover:bg-orange-100 ${filtroCardSemVinculo ? 'border-orange-500 ring-2 ring-offset-1 ring-orange-300' : 'border-orange-300'}`}
             >
               <Link2Off className="h-4 w-4 text-orange-600 shrink-0" />
               <p className="text-xs text-orange-700 font-semibold flex-1">
@@ -511,7 +493,7 @@ export default function GarantiasDafTitulos() {
             <button
               type="button"
               onClick={toggleFiltroCritico}
-              className={`flex-1 flex items-center gap-3 bg-red-50 border rounded-lg px-4 py-3 text-left transition-all hover:bg-red-100 ${filtroEnvio === 'critico' ? 'border-red-500 ring-2 ring-offset-1 ring-red-300' : 'border-red-300'}`}
+              className={`flex-1 flex items-center gap-3 bg-red-50 border rounded-lg px-4 py-3 text-left transition-all hover:bg-red-100 ${filtroCritico ? 'border-red-500 ring-2 ring-offset-1 ring-red-300' : 'border-red-300'}`}
             >
               <ArrowDown className="h-4 w-4 text-red-600 shrink-0" />
               <p className="text-xs text-red-700 font-semibold flex-1">
@@ -524,13 +506,13 @@ export default function GarantiasDafTitulos() {
         </div>
       )}
 
-      {/* ── CARDS: A VENCER + VENCIDOS + RESUMO GERAL ── */}
-      <div className="grid grid-cols-3 gap-3">
+      {/* ── CARDS: A VENCER + VENCE HOJE + VENCIDOS + RESUMO GERAL ── */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {grpAVencer.length > 0 && (
           <button
             type="button"
             onClick={toggleFiltroAVencer}
-            className={`text-left rounded-lg border p-4 shadow-sm transition-all hover:shadow-md bg-emerald-50 border-emerald-200 ${filtroSituacaoVencimento === 'a_vencer' ? 'ring-2 ring-offset-1 ring-emerald-300 shadow-md' : ''}`}
+            className={`text-left rounded-lg border p-4 shadow-sm transition-all hover:shadow-md bg-emerald-50 border-emerald-200 ${filtroCardAVencer ? 'ring-2 ring-offset-1 ring-emerald-300 shadow-md' : ''}`}
           >
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-1.5">
@@ -545,22 +527,41 @@ export default function GarantiasDafTitulos() {
           </button>
         )}
 
+        {grpVenceHoje.length > 0 && (
+          <button
+            type="button"
+            onClick={toggleFiltroVenceHoje}
+            className={`text-left rounded-lg border p-4 shadow-sm transition-all hover:shadow-md bg-yellow-50 border-yellow-300 ${filtroCardVenceHoje ? 'ring-2 ring-offset-1 ring-yellow-400 shadow-md' : ''}`}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-1.5">
+                <div className="p-1 rounded bg-yellow-100"><Clock className="h-3.5 w-3.5 text-yellow-700" /></div>
+                <p className="text-[10px] font-bold uppercase tracking-wide text-yellow-600">Vence Hoje</p>
+              </div>
+              {filtrosComunsAtivos && <span className="px-1.5 py-0.5 bg-yellow-100 text-yellow-700 rounded text-[9px] font-bold">filtrado</span>}
+            </div>
+            <p className="text-2xl font-bold text-yellow-700 leading-none">{grpVenceHoje.length}</p>
+            <p className="text-[10px] text-yellow-600 mt-0.5 mb-2">título(s) · pela data de vencimento</p>
+            <p className="text-sm font-bold text-yellow-800 pt-2 border-t border-yellow-300">{fmtMoeda(valorGrpVenceHoje)}</p>
+          </button>
+        )}
+
         {grpVencidos.length > 0 && (
           <button
             type="button"
             onClick={toggleFiltroVencido}
-            className={`text-left rounded-lg border p-4 shadow-sm transition-all hover:shadow-md bg-slate-100 border-slate-300 ${filtroSituacaoVencimento === 'vencido' ? 'ring-2 ring-offset-1 ring-slate-400 shadow-md' : ''}`}
+            className={`text-left rounded-lg border p-4 shadow-sm transition-all hover:shadow-md bg-red-50 border-red-300 ${filtroCardVencido ? 'ring-2 ring-offset-1 ring-red-400 shadow-md' : ''}`}
           >
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-1.5">
-                <div className="p-1 rounded bg-slate-200"><AlertTriangle className="h-3.5 w-3.5 text-slate-700" /></div>
-                <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Vencidos</p>
+                <div className="p-1 rounded bg-red-100"><AlertTriangle className="h-3.5 w-3.5 text-red-700" /></div>
+                <p className="text-[10px] font-bold uppercase tracking-wide text-red-600">Vencidos</p>
               </div>
-              {filtrosComunsAtivos && <span className="px-1.5 py-0.5 bg-slate-200 text-slate-700 rounded text-[9px] font-bold">filtrado</span>}
+              {filtrosComunsAtivos && <span className="px-1.5 py-0.5 bg-red-100 text-red-700 rounded text-[9px] font-bold">filtrado</span>}
             </div>
-            <p className="text-2xl font-bold text-slate-800 leading-none">{grpVencidos.length}</p>
-            <p className="text-[10px] text-slate-500 mt-0.5 mb-2">título(s) · pela data de vencimento</p>
-            <p className="text-sm font-bold text-slate-900 pt-2 border-t border-slate-300">{fmtMoeda(valorGrpVencidos)}</p>
+            <p className="text-2xl font-bold text-red-700 leading-none">{grpVencidos.length}</p>
+            <p className="text-[10px] text-red-600 mt-0.5 mb-2">título(s) · pela data de vencimento</p>
+            <p className="text-sm font-bold text-red-900 pt-2 border-t border-red-300">{fmtMoeda(valorGrpVencidos)}</p>
           </button>
         )}
 
@@ -610,7 +611,8 @@ export default function GarantiasDafTitulos() {
           <table className="w-full text-left border-collapse" style={{ minWidth: '2600px' }}>
             <thead className="sticky top-0 z-10">
               <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[10px] font-bold uppercase tracking-wider">
-                <th className="p-3 w-10 text-center">Editar</th>
+                <th className="p-3 w-20 text-center">Ações</th>
+                <th className="p-3 w-24">Situação</th>
                 <th className="p-3 w-44">Empresa</th>
                 <th className="p-3 w-28">Data Envio</th>
                 <th className="p-3 w-28">Nro Título</th>
@@ -629,7 +631,6 @@ export default function GarantiasDafTitulos() {
                 <th className="p-3 w-48">Agente Cobrador</th>
                 <th className="p-3 w-28 text-right">Valor</th>
                 <th className="p-3 w-28 text-right">Saldo</th>
-                <th className="p-3 w-16 text-center">Obs.</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
@@ -640,28 +641,61 @@ export default function GarantiasDafTitulos() {
                   </td>
                 </tr>
               ) : titulosFiltrados.map((r, i) => {
-                const atrasado = r.atraso !== null && r.atraso > 0
+                const atrasado = ehVencido(r)
                 const { rps, nfse } = parseNFServico(r.nota_fiscal_servico)
                 const osKey    = String(r.os_numero   || '').trim()
                 const danfeKey = String(r.nota_fiscal || '').trim()
                 const dataEnvio = envioMap.get(`${osKey}||${danfeKey}`) ?? envioMap.get(osKey) ?? null
                 const garantiaId = garantiaIdByOS.get(osKey)
+                const semOS = !garantiaId
+                const semNF = !dataEnvio
+                const situacaoTitulo = semOS ? 'OS não vinculado'
+                  : semNF ? 'NF não enviado'
+                  : 'Aguard. Pagto'
+                const corSituacao = semOS ? 'bg-orange-100 text-orange-700'
+                  : semNF ? 'bg-amber-100 text-amber-700'
+                  : 'bg-blue-100 text-blue-700'
                 const irParaOS = () => {
                   if (garantiaId) navigate(`/garantias-daf/${garantiaId}`, { state: { from: '/garantias-daf-titulos' } })
                   else alert(`A OS ${osKey || ''} deste título ainda não está cadastrada em Histórico de O.S.`)
                 }
+                const abrirVisualizarOS = () => {
+                  if (!garantiaId) { alert(`A OS ${osKey || ''} deste título ainda não está cadastrada em Histórico de O.S.`); return }
+                  const g = garantiaById.get(garantiaId)
+                  if (g) setModalVisualizarOS(g)
+                }
                 return (
                   <tr key={i} className={`transition-colors hover:bg-slate-50/70 ${atrasado ? 'bg-red-50/30' : ''}`}>
-                    <td className="p-3 text-center">
-                      {canEditarTitulo && (
+                    <td className="p-3">
+                      <div className="flex items-center justify-center gap-1">
                         <button
-                          onClick={() => abrirEdicaoTitulo(r)}
+                          type="button"
+                          onClick={abrirVisualizarOS}
+                          className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
+                          title="Visualizar Ordem de Serviço e Garantia"
+                        >
+                          <Receipt className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => abrirEdicaoTitulo({ ...r, _dataEnvio: dataEnvio })}
                           className={`p-1 rounded transition-colors hover:bg-indigo-50 ${titulosComObsSet.has(r.nro_titulo) ? 'text-indigo-500 hover:text-indigo-700' : 'text-slate-400 hover:text-indigo-600'}`}
-                          title={titulosComObsSet.has(r.nro_titulo) ? 'Ver/editar observações do título' : 'Adicionar observação ao título'}
+                          title="Visualizar informações do título"
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={irParaOS}
+                          className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                          title="Editar Garantia — vincular OS e informar envio à fábrica"
                         >
                           <Edit2 className="h-3.5 w-3.5" />
                         </button>
-                      )}
+                      </div>
+                    </td>
+                    <td className="p-3 whitespace-nowrap">
+                      <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap ${corSituacao}`}>{situacaoTitulo}</span>
                     </td>
                     <td className="p-3 text-slate-600 truncate max-w-[160px]" title={r.empresa}>{r.empresa || '—'}</td>
                     <td className="p-3 whitespace-nowrap">
@@ -669,37 +703,7 @@ export default function GarantiasDafTitulos() {
                         ? <span className="font-semibold text-slate-700">{fmtData(dataEnvio)}</span>
                         : <span className="text-slate-300">—</span>}
                     </td>
-                    <td className="p-3">
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          type="button"
-                          onClick={irParaOS}
-                          className={`shrink-0 p-0.5 rounded transition-colors ${dataEnvio ? 'hover:bg-slate-100' : 'bg-amber-100 hover:bg-amber-200'}`}
-                          title={garantiaId
-                            ? (dataEnvio ? 'Enviado para fábrica — clique para editar' : 'Sem data de envio — clique para informar a data de envio')
-                            : 'OS não cadastrada em Garantias DAF — clique para detalhes'}
-                        >
-                          {dataEnvio
-                            ? <ArrowUp className="h-3.5 w-3.5 text-green-500" />
-                            : <ArrowDown className="h-3.5 w-3.5 text-amber-600" />
-                          }
-                        </button>
-                        <button
-                          type="button"
-                          onClick={irParaOS}
-                          className={`shrink-0 p-0.5 rounded transition-colors ${garantiaId ? 'hover:bg-slate-100' : 'bg-orange-100 hover:bg-orange-200'}`}
-                          title={garantiaId
-                            ? 'Vinculado a OS em Histórico de O.S. — clique para ver'
-                            : 'Não identificado em Histórico de O.S. — clique para detalhes'}
-                        >
-                          {garantiaId
-                            ? <Link2 className="h-3.5 w-3.5 text-indigo-500" />
-                            : <Link2Off className="h-3.5 w-3.5 text-orange-600" />
-                          }
-                        </button>
-                        <span className="font-mono font-bold text-slate-900">{r.nro_titulo || '—'}</span>
-                      </div>
-                    </td>
+                    <td className="p-3 font-mono font-bold text-slate-900 whitespace-nowrap">{r.nro_titulo || '—'}</td>
                     <td className="p-3 text-slate-500 whitespace-nowrap">{r.nro_lancamento || '—'}</td>
                     <td className="p-3 text-slate-500 whitespace-nowrap">{fmtData(r.data_emissao)}</td>
                     <td className="p-3 whitespace-nowrap">
@@ -721,17 +725,6 @@ export default function GarantiasDafTitulos() {
                     <td className="p-3 text-slate-600 truncate max-w-[180px]" title={r.agente_cobrador}>{r.agente_cobrador || '—'}</td>
                     <td className="p-3 text-right font-semibold text-slate-900 whitespace-nowrap">{r.valor > 0 ? fmtMoeda(r.valor) : '—'}</td>
                     <td className="p-3 text-right font-semibold text-blue-700 whitespace-nowrap">{r.saldo > 0 ? fmtMoeda(r.saldo) : '—'}</td>
-                    <td className="p-3 text-center">
-                      {r.observacao ? (
-                        <button
-                          onClick={() => setObsModal(r.observacao)}
-                          className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
-                          title="Ver observação do arquivo (RFN003)"
-                        >
-                          <Eye className="h-3.5 w-3.5" />
-                        </button>
-                      ) : '—'}
-                    </td>
                   </tr>
                 )
               })}
@@ -740,43 +733,50 @@ export default function GarantiasDafTitulos() {
         )}
       </div>
 
-      {/* Modal Observação */}
-      {obsModal && (
-        <div className="fixed top-0 right-0 bottom-0 left-16 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg border border-slate-200 w-[480px] shadow-xl overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
-              <h3 className="text-sm font-bold text-slate-900">Observação</h3>
-              <button onClick={() => setObsModal(null)} className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded transition-colors">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="p-5">
-              <p className="text-xs text-slate-700 leading-relaxed whitespace-pre-wrap">{obsModal}</p>
-            </div>
-            <div className="flex justify-end px-4 py-3 bg-slate-50 border-t border-slate-100">
-              <button onClick={() => setObsModal(null)} className="px-4 py-1.5 rounded-md text-xs font-semibold text-slate-600 hover:bg-slate-200/60 transition-colors">Fechar</button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Modal Editar Título */}
       {modalEditarTitulo && (() => {
-        const osKey = String(modalEditarTitulo.os_numero ?? '').trim()
+        const t = modalEditarTitulo
+        const osKey = String(t.os_numero ?? '').trim()
         const garantiaId = garantiaIdByOS.get(osKey)
+        const atrasado = ehVencido(t)
+        const semOSModal = !garantiaId
+        const semNFModal = !t._dataEnvio
+        const situacao = semOSModal ? 'OS não vinculado'
+          : semNFModal ? 'NF não enviado'
+          : 'Aguard. Pagto'
+        const { rps, nfse } = parseNFServico(t.nota_fiscal_servico)
+        const campos = [
+          { label: 'Situação',         valor: situacao, destaque: semOSModal || semNFModal || atrasado },
+          { label: 'Empresa',          valor: t.empresa },
+          { label: 'Data Envio',       valor: t._dataEnvio ? fmtData(t._dataEnvio) : '—' },
+          { label: 'Nro Lançamento',   valor: t.nro_lancamento },
+          { label: 'Emissão',          valor: fmtData(t.data_emissao) },
+          { label: 'Vencimento',       valor: fmtData(t.data_vencimento) },
+          { label: 'Atraso',           valor: t.atraso !== null ? `${t.atraso}d` : '—', destaque: atrasado },
+          { label: 'RPS',              valor: rps },
+          { label: 'NFSe',             valor: nfse },
+          { label: 'DANFE',            valor: t.nota_fiscal },
+          { label: 'Código Cliente',   valor: t.codigo_cliente },
+          { label: 'Tipo de Título',   valor: t.tipo_titulo },
+          { label: 'Conta Gerencial',  valor: t.conta_gerencial },
+          { label: 'Cliente/Fornecedor', valor: t.cliente_fornecedor, span: true },
+          { label: 'Agente Cobrador',  valor: t.agente_cobrador },
+          { label: 'Valor',            valor: t.valor > 0 ? fmtMoeda(t.valor) : '—' },
+          { label: 'Saldo',            valor: t.saldo > 0 ? fmtMoeda(t.saldo) : '—' },
+        ]
         return (
           <div className="fixed top-0 right-0 bottom-0 left-16 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg border border-slate-200 w-[480px] shadow-xl overflow-hidden">
-              <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
-                <h3 className="text-sm font-bold text-slate-900">Editar Título</h3>
+            <div className="bg-white rounded-lg border border-slate-200 w-[640px] max-h-[85vh] shadow-xl overflow-hidden flex flex-col">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 shrink-0">
+                <h3 className="text-sm font-bold text-slate-900">Título a Receber</h3>
                 <button onClick={() => setModalEditarTitulo(null)} className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded transition-colors">
                   <X className="h-4 w-4" />
                 </button>
               </div>
-              <div className="p-5 space-y-4">
+              <div className="p-5 space-y-4 overflow-y-auto">
                 <div className="flex items-center gap-4 text-xs text-slate-500">
-                  <span>Título: <strong className="text-slate-800 font-mono">{modalEditarTitulo.nro_titulo}</strong></span>
-                  <span>OS: <strong className="text-slate-800 font-mono">{modalEditarTitulo.os_numero || '—'}</strong></span>
+                  <span>Título: <strong className="text-slate-800 font-mono">{t.nro_titulo}</strong></span>
+                  <span>OS: <strong className="text-slate-800 font-mono">{t.os_numero || '—'}</strong></span>
                 </div>
                 {garantiaId ? (
                   <div className="flex items-center gap-1.5 text-[11px] text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-md px-2.5 py-1.5">
@@ -789,22 +789,141 @@ export default function GarantiasDafTitulos() {
                     Sem vínculo com OS — vincule a OS {osKey || 'deste título'} em Histórico de O.S. antes de adicionar observações. Toda informação do título deve estar gravada na OS.
                   </div>
                 )}
+                <div className="grid grid-cols-3 gap-x-4 gap-y-3 bg-slate-50 border border-slate-100 rounded-lg px-4 py-3">
+                  {campos.map(({ label, valor, span, destaque }) => (
+                    <div key={label} className={span ? 'col-span-3' : ''}>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">{label}</p>
+                      <p className={`text-xs font-semibold truncate ${destaque ? 'text-red-600' : 'text-slate-700'}`} title={valor || ''}>{valor || '—'}</p>
+                    </div>
+                  ))}
+                </div>
+                {t.observacao && (
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1 block">Observação do Arquivo (RFN003)</label>
+                    <p className="text-xs text-slate-700 leading-relaxed whitespace-pre-wrap bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">{t.observacao}</p>
+                  </div>
+                )}
                 <div>
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1 block">Observações</label>
                   <RegistroHistoricoPanel
-                    itens={titulosObs.filter(o => o.nro_titulo === modalEditarTitulo.nro_titulo)}
+                    itens={titulosObs.filter(o => o.nro_titulo === t.nro_titulo)}
                     podeEditar={canEditarTitulo}
                     bloqueado={!garantiaId}
                     bloqueadoMsg="Vincule este título a uma OS em Histórico de O.S. antes de adicionar observações."
                     placeholder="Adicionar nova observação..."
-                    onCreate={(texto) => apiService.createTituloObservacao(modalEditarTitulo.nro_titulo, texto, user?.email).then(loadTitulosObs)}
+                    onCreate={(texto) => apiService.createTituloObservacao(t.nro_titulo, texto, user?.email).then(loadTitulosObs)}
                     onUpdate={(id, texto) => apiService.updateTituloObservacao(id, texto, user?.email).then(loadTitulosObs)}
                     onDelete={(id) => apiService.deleteTituloObservacao(id).then(loadTitulosObs)}
                   />
                 </div>
               </div>
-              <div className="flex justify-end gap-2 px-4 py-3 bg-slate-50 border-t border-slate-100">
+              <div className="flex justify-end gap-2 px-4 py-3 bg-slate-50 border-t border-slate-100 shrink-0">
                 <button onClick={() => setModalEditarTitulo(null)} className="px-4 py-1.5 rounded-md text-xs font-semibold text-slate-600 hover:bg-slate-200/60 transition-colors">Fechar</button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* Modal Visualizar OS e Garantia — mesmo padrão do modal de Título, sem sair da tela */}
+      {modalVisualizarOS && (() => {
+        const g = modalVisualizarOS
+        const valorTotal = Number(g.valor_pecas || 0) + Number(g.valor_servicos || 0)
+        const camposAbertura = [
+          { label: 'Empresa',            valor: g.empresa_nome },
+          { label: 'Consultor',          valor: g.consultor_nome },
+          { label: 'Tipo de OS',         valor: g.tipo_garantia_descricao || g.tipo_os_sigla },
+          { label: 'Cliente',            valor: g.cliente, span: true },
+          { label: 'Chassi',             valor: g.chassi },
+          { label: 'Data Abertura OS',   valor: fmtData(g.data_abertura_os) },
+          { label: 'Data Fechamento OS', valor: fmtData(g.data_fechamento_os) },
+          { label: 'Nº SG',              valor: g.numero_sg },
+          { label: 'Data SG',            valor: fmtData(g.data_sg) },
+          { label: 'Valor Peças',        valor: g.valor_pecas > 0 ? fmtMoeda(g.valor_pecas) : '—' },
+          { label: 'Valor Serviços',     valor: g.valor_servicos > 0 ? fmtMoeda(g.valor_servicos) : '—' },
+          { label: 'Valor Total',        valor: valorTotal > 0 ? fmtMoeda(valorTotal) : '—' },
+        ]
+        const camposAnalise = [
+          { label: 'Status',                valor: g.status_codigo },
+          { label: 'Data Final Avaliação',  valor: fmtData(g.data_final_avaliacao) },
+          { label: 'SG Reapresentada',      valor: g.sg_reapresentada === 'S' ? 'Sim' : 'Não' },
+          ...(g.sg_reapresentada === 'S' ? [
+            { label: 'Nº SG (Reapresentação)', valor: g.numero_sg_reapresentacao },
+            { label: 'Data Reapresentação',    valor: fmtData(g.data_reapresentacao) },
+          ] : []),
+          { label: 'Motivo da Recusa',      valor: g.motivo_recusa_descricao, span: true },
+          { label: 'Nº NF Envio de Peça',   valor: g.nf_peca_numero },
+          { label: 'Data NF Envio de Peça', valor: fmtData(g.nf_peca_data) },
+        ]
+        const camposFaturamento = [
+          { label: 'Nº NF',              valor: g.numero_nf },
+          { label: 'Emissão NF',         valor: fmtData(g.data_emissao_nf) },
+          { label: 'Envio Fábrica',      valor: fmtData(g.data_envio_fabrica) },
+        ]
+        return (
+          <div className="fixed top-0 right-0 bottom-0 left-16 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg border border-slate-200 w-[640px] max-h-[85vh] shadow-xl overflow-hidden flex flex-col">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 shrink-0">
+                <h3 className="text-sm font-bold text-slate-900">Ordem de Serviço e Garantia — OS {g.numero_os}</h3>
+                <button onClick={() => setModalVisualizarOS(null)} className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded transition-colors">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="p-5 space-y-4 overflow-y-auto">
+                <div className="space-y-1.5">
+                  <p className="text-[11px] font-bold text-blue-600 uppercase tracking-wider">1 — Abertura</p>
+                  <div className="grid grid-cols-3 gap-x-4 gap-y-3 bg-slate-50 border border-slate-100 rounded-lg px-4 py-3">
+                    {camposAbertura.map(({ label, valor, span }) => (
+                      <div key={label} className={span ? 'col-span-3' : ''}>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">{label}</p>
+                        <p className="text-xs font-semibold text-slate-700 truncate" title={valor || ''}>{valor || '—'}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <p className="text-[11px] font-bold text-blue-600 uppercase tracking-wider">2 — Análise</p>
+                  <div className="grid grid-cols-3 gap-x-4 gap-y-3 bg-slate-50 border border-slate-100 rounded-lg px-4 py-3">
+                    {camposAnalise.map(({ label, valor, span }) => (
+                      <div key={label} className={span ? 'col-span-3' : ''}>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">{label}</p>
+                        <p className="text-xs font-semibold text-slate-700 truncate" title={valor || ''}>{valor || '—'}</p>
+                      </div>
+                    ))}
+                  </div>
+                  {g.observacoes && (
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1 block">Informações (Aguardando Material)</label>
+                      <p className="text-xs text-slate-700 leading-relaxed whitespace-pre-wrap bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">{g.observacoes}</p>
+                    </div>
+                  )}
+                  {g.resposta_shc && (
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1 block">Resposta SHC</label>
+                      <p className="text-xs text-slate-700 leading-relaxed whitespace-pre-wrap bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">{g.resposta_shc}</p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-1.5">
+                  <p className="text-[11px] font-bold text-indigo-600 uppercase tracking-wider">3 — Faturamento</p>
+                  <div className="grid grid-cols-3 gap-x-4 gap-y-3 bg-slate-50 border border-slate-100 rounded-lg px-4 py-3">
+                    {camposFaturamento.map(({ label, valor, span }) => (
+                      <div key={label} className={span ? 'col-span-3' : ''}>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">{label}</p>
+                        <p className="text-xs font-semibold text-slate-700 truncate" title={valor || ''}>{valor || '—'}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 px-4 py-3 bg-slate-50 border-t border-slate-100 shrink-0">
+                <button
+                  onClick={() => navigate(`/garantias-daf/${g.id}`, { state: { from: '/garantias-daf-titulos' } })}
+                  className="px-4 py-1.5 rounded-md text-xs font-semibold text-indigo-600 hover:bg-indigo-50 transition-colors"
+                >Abrir tela completa</button>
+                <button onClick={() => setModalVisualizarOS(null)} className="px-4 py-1.5 rounded-md text-xs font-semibold text-slate-600 hover:bg-slate-200/60 transition-colors">Fechar</button>
               </div>
             </div>
           </div>

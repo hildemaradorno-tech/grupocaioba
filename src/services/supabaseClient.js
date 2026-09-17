@@ -2727,6 +2727,7 @@ export const apiService = {
     if (filtros.empresa_id)           q = q.eq('empresa_id', filtros.empresa_id)
     if (filtros.empresa_ids?.length)  q = q.in('empresa_id', filtros.empresa_ids)
     if (filtros.chassi)               q = q.ilike('chassi', `%${filtros.chassi}%`)
+    if (filtros.cliente)              q = q.ilike('cliente', `%${filtros.cliente}%`)
     if (filtros.numero_nf)            q = q.ilike('numero_nf', `%${filtros.numero_nf}%`)
     if (filtros.numero_os)            q = q.eq('numero_os', filtros.numero_os.trim())
     if (filtros.data_inicio)          q = q.gte('data_abertura_os', filtros.data_inicio)

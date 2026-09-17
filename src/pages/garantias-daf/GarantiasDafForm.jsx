@@ -9,7 +9,6 @@ import {
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
 import { apiService } from '../../services/api'
 import { useAuth } from '../../context/AuthContext'
-import GarantiasNav from './GarantiasNav'
 import RegistroHistoricoPanel from './RegistroHistoricoPanel'
 
 const STATUS_OPTIONS = [
@@ -601,24 +600,35 @@ export default function GarantiasDafForm() {
     <div className="p-6 max-w-5xl space-y-5">
 
       {/* CABEÇALHO */}
-      <div className="flex items-center gap-3 border-b border-slate-200 pb-4">
-        <button onClick={() => navigate(voltarPara)} className="p-1.5 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors">
-          <ArrowLeft className="h-4 w-4" />
-        </button>
-        <div>
-          <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-            {modoEdicao ? `Editar Garantia — OS ${form.numero_os}` : 'Nova Garantia DAF'}
-            {modoVisualizar && (
-              <span className="flex items-center gap-1 px-2 py-0.5 bg-slate-100 text-slate-500 rounded-full text-[10px] font-bold uppercase tracking-wide">
-                <Eye className="h-3 w-3" /> Modo visualização
-              </span>
-            )}
-          </h1>
-          <p className="text-xs text-slate-500">
-            {modoVisualizar ? 'Somente leitura — nenhuma alteração será salva.' : 'Preencha as etapas conforme o avanço do processo.'}
-          </p>
-          <div className="mt-3"><GarantiasNav /></div>
+      <div className="flex items-start justify-between gap-3 border-b border-slate-200 pb-4">
+        <div className="flex items-center gap-3">
+          <button onClick={() => navigate(voltarPara)} className="p-1.5 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors">
+            <ArrowLeft className="h-4 w-4" />
+          </button>
+          <div>
+            <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+              {modoEdicao ? `Editar Garantia — OS ${form.numero_os}` : 'Nova Garantia DAF'}
+              {modoVisualizar && (
+                <span className="flex items-center gap-1 px-2 py-0.5 bg-slate-100 text-slate-500 rounded-full text-[10px] font-bold uppercase tracking-wide">
+                  <Eye className="h-3 w-3" /> Modo visualização
+                </span>
+              )}
+            </h1>
+            <p className="text-xs text-slate-500">
+              {modoVisualizar ? 'Somente leitura — nenhuma alteração será salva.' : 'Preencha as etapas conforme o avanço do processo.'}
+            </p>
+          </div>
         </div>
+        {modoEdicao && (form.empresa_nome || form.tipo_garantia_descricao) && (
+          <div className="shrink-0 flex flex-col items-end gap-1 pt-1">
+            {form.empresa_nome && (
+              <div className="text-right text-[11px] font-semibold text-slate-600">{form.empresa_nome}</div>
+            )}
+            {form.tipo_garantia_descricao && (
+              <div className="text-right text-[11px] font-semibold text-slate-600">{form.tipo_garantia_descricao}</div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* STEPPER */}
@@ -1218,21 +1228,21 @@ export default function GarantiasDafForm() {
                 return (
                 <div className="space-y-2">
                   <div className="bg-indigo-50 border border-indigo-200 rounded-lg px-4 py-3 flex items-center gap-6 flex-wrap">
-                    <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-wide shrink-0">Título a Receber Localizado</span>
-                    <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-wide shrink-0">Título a Receber</span>
+                    <div className="flex items-center gap-1.5 shrink-0">
                       <LabelField locked>Nº Título</LabelField>
-                      <ReadOnlyField value={nroTitulo} />
+                      <span className="text-xs font-semibold text-slate-600 whitespace-nowrap bg-slate-50 border border-slate-100 rounded-md px-2 py-1">{nroTitulo}</span>
                     </div>
                     {nroLancamento && (
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1.5 shrink-0">
                         <LabelField locked>Nº Lançamento</LabelField>
-                        <ReadOnlyField value={nroLancamento} />
+                        <span className="text-xs font-semibold text-slate-600 whitespace-nowrap bg-slate-50 border border-slate-100 rounded-md px-2 py-1">{nroLancamento}</span>
                       </div>
                     )}
                     {dataVencimento && (
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1.5 shrink-0">
                         <LabelField locked>Data de Vencimento</LabelField>
-                        <ReadOnlyField value={fmtDate(dataVencimento)} />
+                        <span className="text-xs font-semibold text-slate-600 whitespace-nowrap bg-slate-50 border border-slate-100 rounded-md px-2 py-1">{fmtDate(dataVencimento)}</span>
                       </div>
                     )}
                   </div>

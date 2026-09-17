@@ -41,7 +41,7 @@ const STATUS_MAP = {
 
 const fmt = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
-const FILTROS_VAZIOS = { numero_os: '', chassi: '', numero_nf: '', data_inicio: '', data_fim: '' }
+const FILTROS_VAZIOS = { numero_os: '', chassi: '', cliente: '', numero_nf: '', data_inicio: '', data_fim: '' }
 
 export default function GarantiasDafFaturadas() {
   const navigate = useNavigate()
@@ -59,7 +59,6 @@ export default function GarantiasDafFaturadas() {
   const [modalImportarFaturados, setModalImportarFaturados] = useState(false)
   const [filtroEmpresaDash, setFiltroEmpresaDash] = useSessionState('daf_fat_empresa', '')
   const [filtroTipoOsDash, setFiltroTipoOsDash] = useSessionState('daf_fat_tipo_os', '')
-  const [filtroConsultorDash, setFiltroConsultorDash] = useSessionState('daf_fat_consultor', '')
   const [selecionados, setSelecionados] = useState(new Set())
   const [excluindoLote, setExcluindoLote] = useState(false)
   const [sortCol, setSortCol] = useSessionState('daf_fat_sort_col', 'data_abertura_os')
@@ -172,22 +171,12 @@ export default function GarantiasDafFaturadas() {
     return [...set].sort((a, b) => a.localeCompare(b, 'pt-BR'))
   }, [dados])
 
-  const consultoresDisponiveis = useMemo(() => {
-    const set = new Set()
-    for (const d of dados) {
-      const nome = String(d.consultor_nome || '').trim()
-      if (nome) set.add(nome)
-    }
-    return [...set].sort((a, b) => a.localeCompare(b, 'pt-BR'))
-  }, [dados])
-
   const dadosBase = useMemo(() => {
     let list = dados
     if (filtroEmpresaDash) list = list.filter(d => empresaNome(d) === filtroEmpresaDash)
     if (filtroTipoOsDash) list = list.filter(d => tipoOsLabel(d) === filtroTipoOsDash)
-    if (filtroConsultorDash) list = list.filter(d => String(d.consultor_nome || '').trim() === filtroConsultorDash)
     return list
-  }, [dados, filtroEmpresaDash, filtroTipoOsDash, filtroConsultorDash, empresaFantasiaMap, sistemaNomeMap])
+  }, [dados, filtroEmpresaDash, filtroTipoOsDash, empresaFantasiaMap, sistemaNomeMap])
 
   const handleFiltroChange = (e) => {
     const { name, value } = e.target
@@ -200,9 +189,8 @@ export default function GarantiasDafFaturadas() {
     handleLimpar()
     setFiltroEmpresaDash('')
     setFiltroTipoOsDash('')
-    setFiltroConsultorDash('')
   }
-  const temFiltroAtivo = Object.values(filtros).some(v => !!v) || !!filtroEmpresaDash || !!filtroTipoOsDash || !!filtroConsultorDash
+  const temFiltroAtivo = Object.values(filtros).some(v => !!v) || !!filtroEmpresaDash || !!filtroTipoOsDash
 
   const toggleSelecionado = (id) => {
     setSelecionados(prev => {
@@ -330,7 +318,6 @@ export default function GarantiasDafFaturadas() {
             Filtros avançados
             {filtroEmpresaDash && <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px] font-bold">{filtroEmpresaDash}</span>}
             {filtroTipoOsDash && <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px] font-bold">{filtroTipoOsDash}</span>}
-            {filtroConsultorDash && <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px] font-bold">{filtroConsultorDash}</span>}
           </button>
           <div className="flex items-center gap-3">
             {temFiltroAtivo && (
@@ -350,8 +337,8 @@ export default function GarantiasDafFaturadas() {
         </div>
         {filtrosAbertos && (
           <form onSubmit={handleBuscar} className="px-4 pb-4 border-t border-slate-100">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3">
-              <div className="flex flex-col gap-1 md:col-span-2">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3">
+              <div className="flex flex-col gap-1">
                 <label className="text-[10px] font-bold text-slate-400 uppercase">Empresa</label>
                 <select
                   value={filtroEmpresaDash}
@@ -374,32 +361,7 @@ export default function GarantiasDafFaturadas() {
                 </select>
               </div>
               <div className="flex flex-col gap-1">
-                <label className="text-[10px] font-bold text-slate-400 uppercase">Consultor</label>
-                <select
-                  value={filtroConsultorDash}
-                  onChange={e => setFiltroConsultorDash(e.target.value)}
-                  className="text-xs p-1.5 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20 bg-white"
-                >
-                  <option value="">Todos os consultores</option>
-                  {consultoresDisponiveis.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mt-3">
-              {[
-                { name: 'numero_os', placeholder: 'Nº OS' },
-                { name: 'chassi', placeholder: 'Chassi' },
-                { name: 'numero_nf', placeholder: 'Nº NF' },
-              ].map(({ name, placeholder }) => (
-                <div key={name} className="flex flex-col gap-1">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase">{placeholder}</label>
-                  <input type="text" name={name} value={filtros[name]} onChange={handleFiltroChange}
-                    placeholder={placeholder}
-                    className="text-xs p-1.5 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20" />
-                </div>
-              ))}
-              <div className="flex flex-col gap-1 md:col-span-2">
-                <label className="text-[10px] font-bold text-slate-400 uppercase">Período</label>
+                <label className="text-[10px] font-bold text-slate-400 uppercase">Período (Data Abertura OS)</label>
                 <div className="flex gap-1">
                   <input type="date" name="data_inicio" value={filtros.data_inicio} onChange={handleFiltroChange}
                     className="flex-1 text-xs p-1.5 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20" />
@@ -407,6 +369,21 @@ export default function GarantiasDafFaturadas() {
                     className="flex-1 text-xs p-1.5 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20" />
                 </div>
               </div>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mt-3">
+              {[
+                { name: 'numero_os', placeholder: 'Nº OS', cls: '' },
+                { name: 'numero_nf', placeholder: 'Nº NF', cls: '' },
+                { name: 'chassi', placeholder: 'Chassi', cls: '' },
+                { name: 'cliente', placeholder: 'Proprietário', cls: 'md:col-span-3' },
+              ].map(({ name, placeholder, cls }) => (
+                <div key={name} className={`flex flex-col gap-1 ${cls}`}>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase">{placeholder}</label>
+                  <input type="text" name={name} value={filtros[name]} onChange={handleFiltroChange}
+                    placeholder={placeholder}
+                    className="text-xs p-1.5 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20" />
+                </div>
+              ))}
             </div>
             <div className="flex items-center gap-2 mt-3">
               <button type="submit" className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 transition-colors">
@@ -438,18 +415,15 @@ export default function GarantiasDafFaturadas() {
                     />
                   </th>
                 )}
+                <th className="p-3 whitespace-nowrap text-center">Ações</th>
                 {[
                   { col: 'numero_os',               label: 'Nº OS',                cls: 'whitespace-nowrap' },
+                  { col: 'numero_nf',                label: 'Nº NF',               cls: 'whitespace-nowrap' },
                   { col: 'empresa_nome',             label: 'Empresa',              cls: 'whitespace-nowrap min-w-[220px]' },
                   { col: 'tipo_garantia_descricao',  label: 'Tipo OS',              cls: 'whitespace-nowrap' },
-                  { col: 'consultor_nome',           label: 'Consultor',            cls: 'whitespace-nowrap' },
                   { col: 'cliente',                  label: 'Proprietário Veículo', cls: 'whitespace-nowrap min-w-[200px]' },
                   { col: 'chassi',                   label: 'Nº Chassi',            cls: 'whitespace-nowrap' },
                   { col: 'total',                    label: 'Total',                cls: 'whitespace-nowrap text-right' },
-                  { col: 'numero_sg',                label: 'Nº SG',               cls: 'whitespace-nowrap' },
-                  { col: 'numero_nf',                label: 'Nº NF',               cls: 'whitespace-nowrap' },
-                  { col: 'data_emissao_nf',          label: 'Emissão NF',          cls: 'whitespace-nowrap' },
-                  { col: 'data_envio_fabrica',       label: 'Envio Fábrica',       cls: 'whitespace-nowrap' },
                   { col: 'status_codigo',            label: 'Status',              cls: 'whitespace-nowrap w-full' },
                 ].map(({ col, label, cls }) => (
                   <th key={col} onClick={() => handleSort(col)}
@@ -462,12 +436,11 @@ export default function GarantiasDafFaturadas() {
                     </span>
                   </th>
                 ))}
-                <th className="p-3 whitespace-nowrap text-center sticky right-0 bg-slate-50 border-l border-slate-200">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
               {sortedDados.length === 0 ? (
-                <tr><td colSpan={canExcluirOS ? 14 : 13} className="p-10 text-center text-slate-400">Nenhuma garantia faturada encontrada.</td></tr>
+                <tr><td colSpan={canExcluirOS ? 10 : 9} className="p-10 text-center text-slate-400">Nenhuma garantia faturada encontrada.</td></tr>
               ) : sortedDados.map(item => {
                 const vt = Number(item.valor_pecas || 0) + Number(item.valor_servicos || 0)
                 const dc = diasSemEnvio(item)
@@ -488,8 +461,8 @@ export default function GarantiasDafFaturadas() {
                         />
                       </td>
                     )}
-                    <td className="p-3 whitespace-nowrap">
-                      <div className="flex items-center gap-1.5">
+                    <td className="p-3 text-center">
+                      <div className="flex items-center justify-center gap-1">
                         <button
                           type="button"
                           onClick={() => navigate(`/garantias-daf/${item.id}`, { state: { from: '/garantias-daf-historicodeos' } })}
@@ -516,24 +489,6 @@ export default function GarantiasDafFaturadas() {
                             : <Link2Off className="h-3.5 w-3.5 text-orange-600" />
                           }
                         </button>
-                        <span className="font-mono font-bold text-slate-900">{item.numero_os || '—'}</span>
-                      </div>
-                    </td>
-                    <td className="p-3 text-slate-700">{empresaNome(item)}</td>
-                    <td className="p-3 text-slate-600 whitespace-nowrap" title={item.tipo_garantia_descricao || item.tipo_os_sigla}>{item.tipo_garantia_descricao || item.tipo_os_sigla || '—'}</td>
-                    <td className="p-3 text-slate-600 whitespace-nowrap">{item.consultor_nome || '—'}</td>
-                    <td className="p-3 text-slate-700">{item.cliente || '—'}</td>
-                    <td className="p-3 font-mono text-slate-500 whitespace-nowrap">{item.chassi ? item.chassi.slice(-8) : '—'}</td>
-                    <td className="p-3 text-right font-semibold text-slate-900 whitespace-nowrap">{vt > 0 ? fmt(vt) : '—'}</td>
-                    <td className="p-3 font-mono text-slate-700 whitespace-nowrap">{item.numero_sg || '—'}</td>
-                    <td className="p-3 font-mono text-slate-700 whitespace-nowrap">{item.numero_nf || '—'}</td>
-                    <td className="p-3 text-slate-500 whitespace-nowrap">{item.data_emissao_nf ? new Date(item.data_emissao_nf + 'T12:00:00').toLocaleDateString('pt-BR') : '—'}</td>
-                    <td className="p-3 text-slate-500 whitespace-nowrap">{item.data_envio_fabrica ? new Date(item.data_envio_fabrica + 'T12:00:00').toLocaleDateString('pt-BR') : '—'}</td>
-                    <td className="p-3 whitespace-nowrap">
-                      <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap ${st.cor}`}>{st.label}</span>
-                    </td>
-                    <td className="p-3 text-center sticky right-0 bg-white border-l border-slate-100 shadow-[-4px_0_12px_rgba(0,0,0,0.03)]">
-                      <div className="flex items-center justify-center gap-1">
                         <button onClick={() => navigate(`/garantias-daf/${item.id}`, { state: { from: '/garantias-daf-historicodeos', modo: 'visualizar' } })} className="p-1 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors" title="Visualizar">
                           <Eye className="h-3.5 w-3.5" />
                         </button>
@@ -543,6 +498,18 @@ export default function GarantiasDafFaturadas() {
                           </button>
                         )}
                       </div>
+                    </td>
+                    <td className="p-3 whitespace-nowrap">
+                      <span className="font-mono font-bold text-slate-900">{item.numero_os || '—'}</span>
+                    </td>
+                    <td className="p-3 font-mono text-slate-700 whitespace-nowrap">{item.numero_nf || '—'}</td>
+                    <td className="p-3 text-slate-700">{empresaNome(item)}</td>
+                    <td className="p-3 text-slate-600 whitespace-nowrap" title={item.tipo_garantia_descricao || item.tipo_os_sigla}>{item.tipo_garantia_descricao || item.tipo_os_sigla || '—'}</td>
+                    <td className="p-3 text-slate-700 whitespace-nowrap">{item.cliente || '—'}</td>
+                    <td className="p-3 font-mono text-slate-500 whitespace-nowrap">{item.chassi ? item.chassi.slice(-8) : '—'}</td>
+                    <td className="p-3 text-right font-semibold text-slate-900 whitespace-nowrap">{vt > 0 ? fmt(vt) : '—'}</td>
+                    <td className="p-3 whitespace-nowrap">
+                      <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap ${st.cor}`}>{st.label}</span>
                     </td>
                   </tr>
                 )
