@@ -2,14 +2,15 @@
 import { useSessionState } from '../hooks/useSessionState'
 import { Plus, Trash2, X, AlertTriangle, ChevronRight, ChevronDown, Cog, Loader2, CheckCircle2, Sparkles, Pencil, Info } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import { SearchCombobox } from '../components/SearchCombobox'
 import { apiService } from '../services/api'
 
 const anoAtual = new Date().getFullYear()
 const ANOS = Array.from({ length: 7 }, (_, i) => anoAtual - 1 + i)
 const MESES_ABR = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
 
-const fmtBRL = (v) => { const n = Number(v); if (!v && v !== 0) return '—'; return n.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) }
-const fmtPct = (v) => { const n = Number(v); if (!n && n !== 0) return '—'; return n.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 2 }) + '%' }
+const fmtBRL = (v) => { const n = Number(v); if (!v && v !== 0) return '—'; return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', currencySign: 'accounting', minimumFractionDigits: 2, maximumFractionDigits: 2 }) }
+const fmtPct = (v) => { const n = Number(v); if (!n && n !== 0) return '—'; return n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%' }
 function parseBRL(s) { if (!s && s !== 0) return 0; const str = String(s).trim(); if (str.includes(',')) return parseFloat(str.replace(/\./g,'').replace(',','.')) || 0; return parseFloat(str) || 0 }
 
 function cellState(cur, apr) { const c = Number(cur)||0; if(c===0) return 'ok'; if(apr===null||apr===undefined) return 'new'; if(Math.abs(c-Number(apr))>0.001) return 'changed'; return 'ok' }
@@ -49,7 +50,7 @@ const mesesVazios = () => Array.from({ length: 12 }, (_, i) => ({ mes: i+1, perc
 function PctInput({ value, onChange }) {
   const [focused, setFocused] = useState(false)
   const [raw, setRaw] = useState('')
-  const fmt = (v) => { const n=Number(v); if(!n&&n!==0) return ''; return n.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:2}) }
+  const fmt = (v) => { const n=Number(v); if(!n&&n!==0) return ''; return n.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}) }
   const displayed = focused ? raw : (value||value===0 ? fmt(value) : '')
   return (
     <input type="text" inputMode="decimal" value={displayed}
@@ -70,7 +71,7 @@ export default function MetasServicosConsultor() {
   const [agrupamentosCargo, setAgrupamentosCargo] = useState([])
   const [funcionarios,  setFuncionarios]  = useState([])
   const [dados,         setDados]         = useState([])
-  const [totaisMec,     setTotaisMec]     = useState({}) // { empresaId: { mes: { servicos, pecas } } }
+  const [mecRows,       setMecRows]       = useState([]) // linhas brutas de fato_rascunho_metas_servicos_mecanico
   const [totaisTer,     setTotaisTer]     = useState({}) // { empresaId: { mes: servicos } }
   const [totaisFun,     setTotaisFun]     = useState({}) // { empresaId: { mes: { servicos, pecas } } }
   const [filtroVisu,    setFiltroVisu]    = useSessionState('msc_visu', 'total')
@@ -121,22 +122,15 @@ export default function MetasServicosConsultor() {
   const loadDados = async () => {
     setLoading(true); setError(null)
     try {
-      const [rows, todasEmpresas, terRows, funRows] = await Promise.all([
+      const [rows, todasEmpresas, terRows, funRows, mecRowsAll] = await Promise.all([
         apiService.getMetasConsultor(filtroEmpresa || null, filtroAno),
         apiService.getEmpresas(),
         apiService.getMetasTerceiros(filtroEmpresa || null, filtroAno),
         apiService.getMetasFunilaria(filtroEmpresa || null, filtroAno),
+        apiService.getMetasMecanico(filtroEmpresa || null, filtroAno),
       ])
       setDados(rows)
-      // Carrega totais do mecânico para todas as empresas (ou só a filtrada)
-      const empIds = filtroEmpresa
-        ? [filtroEmpresa]
-        : todasEmpresas.map(e => e.id)
-      const map = {}
-      await Promise.all(empIds.map(async eid => {
-        map[eid] = await apiService.getMetasMecanicoTotaisPorMes(eid, filtroAno)
-      }))
-      setTotaisMec(map)
+      setMecRows(mecRowsAll)
       // Terceiros: { empId: { mes: meta_servicos } }
       const terMap = {}
       terRows.forEach(r => {
@@ -157,8 +151,22 @@ export default function MetasServicosConsultor() {
     finally { setLoading(false) }
   }
 
-  const setoresConsultoria = useMemo(()=>new Set(setores.filter(s=>s.tipo_setor==='consultoria').map(s=>s.id)),[setores])
-  const boxesConsultoria   = useMemo(()=>boxes.filter(b=>(Array.isArray(b.setor_ids)?b.setor_ids:[b.setor_id]).some(sid=>setoresConsultoria.has(sid))).sort((a,b)=>(b.nome_box||'').localeCompare(a.nome_box||'')),[boxes,setoresConsultoria])
+  // Totais do mecânico SEMPRE por box (não a empresa toda somada) — cada box de mecânico (ex:
+  // Mecânica, Box Express) é uma referência de distribuição separada pros consultores. Resolve
+  // o box de cada linha pelo cadastro atual do funcionário, senão pelo box gravado na linha.
+  const totaisMec = useMemo(() => {
+    const map = {}
+    mecRows.forEach(r => {
+      const bId = funcionarios.find(f => f.id === r.colaborador_id)?.box_id || r.box_id
+      if (!bId) return
+      if (!map[r.empresa_id]) map[r.empresa_id] = {}
+      if (!map[r.empresa_id][bId]) map[r.empresa_id][bId] = {}
+      if (!map[r.empresa_id][bId][r.mes]) map[r.empresa_id][bId][r.mes] = { servicos: 0, pecas: 0 }
+      map[r.empresa_id][bId][r.mes].servicos += Number(r.meta_servicos) || 0
+      map[r.empresa_id][bId][r.mes].pecas    += Number(r.meta_pecas)    || 0
+    })
+    return map
+  }, [mecRows, funcionarios])
 
   const tree = useMemo(() => {
     // Lookup maps for O(1) resolution from dimension tables
@@ -208,14 +216,25 @@ export default function MetasServicosConsultor() {
       depts[did].nome = dNome
       const stMap=depts[did].setores
       if(!stMap[sId]) stMap[sId]={ nome:sNome, boxes:{} }
-      if(!stMap[sId].boxes[bId]) stMap[sId].boxes[bId]={ nome:bNome, colabs:{}, auto:false }
+      if(!stMap[sId].boxes[bId]) stMap[sId].boxes[bId]={ nome:bNome, colabs:{} }
       const coMap=stMap[sId].boxes[bId].colabs
       if(!coMap[colid]) coMap[colid]={ nome:coNome, meses:{} }
       const _isFun = bNome.toLowerCase().includes('funilaria') || bNome.toLowerCase().includes('pintura')
-      const _mec  = totaisMec[eid]?.[row.mes] || {}
+      const _mec  = totaisMec[eid]?.[bId]?.[row.mes] || {}
       const _ter  = Number(totaisTer[eid]?.[row.mes]) || 0
       const _fun  = totaisFun[eid]?.[row.mes] || {}
-      const _ref  = _isFun ? (_fun.servicos || 0) + (_fun.pecas || 0) : (_mec.servicos || 0) + _ter
+      // Referência respeita o filtro Total/Peças/Serviços — Terceiros não tem Peças, então some
+      // do filtro "Peças" e entra em "Serviços" (mesmo critério do resto da tela).
+      let _ref
+      if (_isFun) {
+        _ref = filtroVisu === 'servicos' ? (_fun.servicos || 0)
+             : filtroVisu === 'pecas'    ? (_fun.pecas    || 0)
+             : (_fun.servicos || 0) + (_fun.pecas || 0)
+      } else {
+        _ref = filtroVisu === 'servicos' ? (_mec.servicos || 0) + _ter
+             : filtroVisu === 'pecas'    ? (_mec.pecas    || 0)
+             : (_mec.servicos || 0) + (_mec.pecas || 0) + _ter
+      }
       const _metaCalc = _ref * ((Number(row.percentual) || 0) / 100)
       coMap[colid].meses[row.mes]={
         id:row.id, percentual:row.percentual,
@@ -223,38 +242,8 @@ export default function MetasServicosConsultor() {
         dias_uteis_reais:row.dias_uteis_reais,
       }
     })
-
-    // Injeta boxes de consultoria automaticamente para empresas com totais de mecânico
-    Object.keys(totaisMec).forEach(eid => {
-      const mecMap = totaisMec[eid] || {}
-      const temMec = Object.values(mecMap).some(v => Number(v) > 0)
-      if (!temMec) return
-      if (!t[eid]) {
-        const empLkp = empresas.find(e => e.id === eid)
-        const empNome = empLkp?.empresa_fantasia || empLkp?.nome_empresa || eid
-        t[eid] = { nome: empNome, depts: {} }
-      }
-      boxesConsultoria.forEach(bx => {
-        const bId   = bx.id
-        const bNome = boxMap[bId] || bx.nome_box || '—'
-        const setorId = (Array.isArray(bx.setor_ids) ? bx.setor_ids : [bx.setor_id]).find(sid => setoresConsultoria.has(sid))
-        if (!setorId || !setorMap[setorId]) return
-        const sNome = setorMap[setorId]
-        const setor = setores.find(s => s.id === setorId)
-        if (!setor) return
-        const dId = setor.departamento_id
-        if (!deptMap[dId]) return
-        const dNome = deptMap[dId]
-        const depts = t[eid].depts
-        if (!depts[dId]) depts[dId] = { nome: dNome, setores: {} }
-        if (!depts[dId].setores[setorId]) depts[dId].setores[setorId] = { nome: sNome, boxes: {} }
-        if (!depts[dId].setores[setorId].boxes[bId]) {
-          depts[dId].setores[setorId].boxes[bId] = { nome: bNome, colabs: {}, auto: true }
-        }
-      })
-    })
     return t
-  }, [dados, totaisMec, totaisTer, totaisFun, boxesConsultoria, setoresConsultoria, setores, departamentos, empresas, boxes, cargos, funcionarios])
+  }, [dados, totaisMec, totaisTer, totaisFun, filtroVisu, setores, departamentos, boxes, cargos, funcionarios])
 
   const toggle = (set, setter, key) => setter(prev => { const n=new Set(prev); n.has(key)?n.delete(key):n.add(key); return n })
 
@@ -380,14 +369,16 @@ export default function MetasServicosConsultor() {
   const boxSelecionadoNome = boxes.find(b => b.id === form.box_id)?.nome_box || ''
   const isFunBoxModal = boxSelecionadoNome.toLowerCase().includes('funilaria') || boxSelecionadoNome.toLowerCase().includes('pintura')
 
-  // Referência do modal: Funilaria/Pintura se box for funilaria, senão Mecânica (só do box
-  // selecionado, não da empresa toda) + Terceiros (Terceiros não tem box, então entra inteiro).
-  const refModalPorMes = useMemo(() => {
+  // Referência do modal, detalhada por Peças/Serviços/Terceiros: Funilaria/Pintura se box for
+  // funilaria, senão Mecânica (só do box selecionado, não da empresa toda) + Terceiros
+  // (Terceiros não tem box nem Peças, então entra inteiro só em Serviços).
+  const refModalDetalhePorMes = useMemo(() => {
     const result = {}
     if (isFunBoxModal) {
       const fun = totaisFun[form.empresa_id] || {}
       for (let m = 1; m <= 12; m++) {
-        result[m] = (fun[m]?.servicos || 0) + (fun[m]?.pecas || 0)
+        const pecas = fun[m]?.pecas || 0, servicos = fun[m]?.servicos || 0
+        result[m] = { pecas, servicos, terceiros: 0, total: pecas + servicos }
       }
     } else {
       const ter = totaisTer[form.empresa_id] || {}
@@ -396,18 +387,28 @@ export default function MetasServicosConsultor() {
         : []
       for (let m = 1; m <= 12; m++) {
         const doMes = rowsDoBox.filter(r => Number(r.mes) === m)
-        const servicos = doMes.reduce((s, r) => s + (Number(r.meta_servicos) || 0), 0)
-        const pecas    = doMes.reduce((s, r) => s + (Number(r.meta_pecas)    || 0), 0)
-        result[m] = servicos + pecas + (Number(ter[m]) || 0)
+        const servicos  = doMes.reduce((s, r) => s + (Number(r.meta_servicos) || 0), 0)
+        const pecas     = doMes.reduce((s, r) => s + (Number(r.meta_pecas)    || 0), 0)
+        const terceiros = Number(ter[m]) || 0
+        result[m] = { pecas, servicos, terceiros, total: pecas + servicos + terceiros }
       }
     }
     return result
   }, [mecRowsModal, totaisTer, totaisFun, funcionarios, form.empresa_id, form.box_id, isFunBoxModal])
 
-  // Calcula meta = (mecânico serviços + terceiros) do mês × percentual/100
+  // Calcula meta = referência do mês × percentual/100
   const calcMetaConsultor = (mes, percentual) => {
-    const ref = Number(refModalPorMes[mes]) || 0
+    const ref = refModalDetalhePorMes[mes]?.total || 0
     return ref * ((Number(percentual)||0) / 100)
+  }
+
+  // Meta do consultor detalhada: Peças isolado; Serviços já soma Terceiros (que não tem Peças)
+  const calcMetaConsultorDetalhe = (mes, percentual) => {
+    const ref = refModalDetalhePorMes[mes] || { pecas: 0, servicos: 0, terceiros: 0 }
+    const pct = (Number(percentual)||0) / 100
+    const pecas    = ref.pecas * pct
+    const servicos = (ref.servicos + ref.terceiros) * pct
+    return { pecas, servicos, total: pecas + servicos }
   }
 
   // Soma % já cadastrada para o mesmo Setor+Box+Empresa no mês (excluindo o consultor atual)
@@ -431,11 +432,20 @@ export default function MetasServicosConsultor() {
     if(!form.colaborador_id) { setErroModal('Selecione o Colaborador.'); return }
     setSalvando(true); setErroModal(null)
     try {
+      // Campos uuid não podem ir como string vazia — vira null (ex: Box "Nenhum", ou Cargo,
+      // que não tem mais seletor na tela desde que o nível de Cargo saiu da árvore).
+      const cleanPayload = {
+        ...form,
+        departamento_id: form.departamento_id || null,
+        setor_id:        form.setor_id        || null,
+        box_id:          form.box_id          || null,
+        cargo_id:        form.cargo_id        || null,
+      }
       for (const m of mesesForm) {
         const pct  = Number(m.percentual) || 0
         const meta = calcMetaConsultor(m.mes, pct)
         await apiService.upsertMetaConsultor({
-          ...form,
+          ...cleanPayload,
           colaborador_id: form.colaborador_id === 'A_CONTRATAR' ? '00000000-0000-0000-0000-000000000000' : form.colaborador_id,
           mes: m.mes, ano: Number(form.ano),
           percentual: pct, meta_faturamento: meta,
@@ -542,7 +552,6 @@ export default function MetasServicosConsultor() {
 
                     {grupoAberto && Object.entries(tree).map(([empId, emp]) => {
                       const empMeses=aggEmp(emp); const empTotal=sumArr(empMeses)
-                      const mecEmp=totaisMec[empId]||{}
                       // Todos os colabs desta empresa para calcular soma %
                       const allColabs = {}
                       Object.values(emp.depts).forEach(d=>Object.values(d.setores).forEach(st=>Object.values(st.boxes).forEach(bx=>Object.entries(bx.colabs).forEach(([id,co])=>{allColabs[id]=co}))))
@@ -586,12 +595,13 @@ export default function MetasServicosConsultor() {
                                       {expandedSetores.has(sKey) && Object.entries(setor.boxes).map(([bId, box]) => {
                                         const bKey=`${sKey}§${bId}`; const bMeses=aggBox(box); const bTotal=sumArr(bMeses)
                                         const pctBox = sumPctPorMes(box.colabs)
-                                        const isAuto = box.auto && Object.keys(box.colabs).length === 0
-                                        const mecRef = mecEmp || {}
+                                        const mecRef = totaisMec[empId]?.[bId] || {}
                                         const terRef = totaisTer[empId] || {}
                                         const funRef = totaisFun[empId] || {}
                                         const isFunBox = box.nome.toLowerCase().includes('funilaria')
-                                        const getAutoVal = (mes) => {
+                                        // Pool de referência do box (Mecânica+Terceiros ou Funilaria), usado só pra saber se
+                                        // faz sentido mostrar o indicador de % distribuído (denominador > 0).
+                                        const getPoolVal = (mes) => {
                                           if (isFunBox) {
                                             const f = funRef[mes] || {}
                                             if (filtroVisu === 'servicos') return f.servicos || 0
@@ -604,18 +614,17 @@ export default function MetasServicosConsultor() {
                                           if (filtroVisu === 'pecas')    return  m.pecas    || 0
                                           return (m.servicos || 0) + (m.pecas || 0) + t
                                         }
-                                        const autoTotal = Array.from({length:12},(_,i)=>getAutoVal(i+1)).reduce((s,v)=>s+v,0)
                                         return (
                                           <React.Fragment key={bId}>
-                                            <tr className={`cursor-pointer border-b border-slate-100 transition-colors ${isAuto?'bg-emerald-50/40 hover:bg-emerald-50':'bg-white hover:bg-amber-50/30'}`} onClick={()=>toggle(expandedBoxes,setExpandedBoxes,bKey)}>
-                                              <td className="px-3 py-1.5 sticky left-0 z-10 whitespace-nowrap" style={{background:'inherit'}}><div className="flex items-center gap-2 pl-16">{expandedBoxes.has(bKey)?<ChevronDown size={11}/>:<ChevronRight size={11}/>}<span className="text-slate-400 mr-0.5">Box:</span><span className={`font-semibold ${isAuto?'text-emerald-700':'text-slate-600'}`}>{box.nome}</span>{isAuto&&<span className="text-[9px] bg-emerald-100 text-emerald-600 px-1 rounded">auto</span>}</div></td>
+                                            <tr className="cursor-pointer border-b border-slate-100 bg-white hover:bg-amber-50/30 transition-colors" onClick={()=>toggle(expandedBoxes,setExpandedBoxes,bKey)}>
+                                              <td className="px-3 py-1.5 sticky left-0 z-10 whitespace-nowrap" style={{background:'inherit'}}><div className="flex items-center gap-2 pl-16">{expandedBoxes.has(bKey)?<ChevronDown size={11}/>:<ChevronRight size={11}/>}<span className="text-slate-400 mr-0.5">Box:</span><span className="font-semibold text-slate-600">{box.nome}</span></div></td>
                                               {Array.from({length:12},(_,i)=>{
-                                                const v = isAuto ? getAutoVal(i+1) : bMeses[i]
+                                                const v = bMeses[i]
                                                 const pct = pctBox[i]
-                                                const poolVal = getAutoVal(i+1)
+                                                const poolVal = getPoolVal(i+1)
                                                 return (
                                                   <td key={i} className="px-1 py-1.5 text-right whitespace-nowrap">
-                                                    <div className={`text-xs font-mono ${isAuto?'text-emerald-600':'text-slate-500'}`}>{v>0?fmtBRL(v):'—'}</div>
+                                                    <div className="text-xs font-mono text-slate-500">{v>0?fmtBRL(v):'—'}</div>
                                                     {poolVal > 0 && (
                                                       <div className={`text-[10px] font-semibold ${pct>=99.9?'text-green-600':pct>0?'text-amber-600':'text-red-500'}`}>
                                                         {fmtPct(pct)} distrib.
@@ -624,7 +633,7 @@ export default function MetasServicosConsultor() {
                                                   </td>
                                                 )
                                               })}
-                                              <td className="px-2 py-1.5 text-right text-xs font-semibold text-indigo-500 bg-indigo-50/40 whitespace-nowrap">{isAuto?fmtBRL(autoTotal):bTotal>0?fmtBRL(bTotal):'—'}</td>
+                                              <td className="px-2 py-1.5 text-right text-xs font-semibold text-indigo-500 bg-indigo-50/40 whitespace-nowrap">{bTotal>0?fmtBRL(bTotal):'—'}</td>
                                               <td colSpan="2"/>
                                             </tr>
 
@@ -717,11 +726,28 @@ export default function MetasServicosConsultor() {
                   </select></div>
               </div>
               <div><label className={LBL}>Consultor *</label>
-                <select name="colaborador_id" className={SEL} value={form.colaborador_id} onChange={handleFormChange} disabled={!form.empresa_id || modoModal !== 'incluir'}>
-                  <option value="">Selecione...</option>
-                  <option value="A_CONTRATAR">A contratar</option>
-                  {funcsEmp.map(f => <option key={f.id} value={f.id}>{f.nome_funcionario}</option>)}
-                </select></div>
+                {(!form.empresa_id || modoModal !== 'incluir') ? (
+                  <div className={`${SEL} bg-slate-100 text-slate-500 cursor-not-allowed`}>
+                    {form.colaborador_id === 'A_CONTRATAR' ? 'A contratar' : (form.colaborador_nome || '—')}
+                  </div>
+                ) : (
+                  <SearchCombobox
+                    value={form.colaborador_id}
+                    onChange={(id) => setForm(prev => ({
+                      ...prev,
+                      colaborador_id: id,
+                      colaborador_nome: id === 'A_CONTRATAR' ? 'A contratar' : (funcionarios.find(f => f.id === id)?.nome_funcionario || ''),
+                    }))}
+                    placeholder="Selecione..."
+                    emptyOptionLabel="Selecione..."
+                    searchPlaceholder="Buscar consultor pelo nome..."
+                    notFoundLabel="Nenhum consultor encontrado."
+                    opcoes={[{ id: 'A_CONTRATAR', nome_funcionario: 'A contratar' }, ...funcsEmp]}
+                    getLabel={(o) => o.nome_funcionario}
+                    getSearchText={(o) => o.nome_funcionario}
+                  />
+                )}
+              </div>
 
               {/* GRADE DE % POR MÊS */}
               <div>
@@ -736,15 +762,27 @@ export default function MetasServicosConsultor() {
                       </tr>
                     </thead>
                     <tbody>
-                      {/* Referência conforme box selecionado */}
-                      <tr>
-                        <td className="text-xs font-semibold text-emerald-600 px-1 whitespace-nowrap">{isFunBoxModal ? 'Ref. Funilaria/Pintura (R$)' : 'Ref. Mecânica + Terceiros (R$)'}</td>
-                        {Array.from({length:12},(_,i)=>{
-                          const v=refModalPorMes[i+1]||0
-                          return <td key={i} className="bg-emerald-50 border border-emerald-100 rounded p-1 text-right text-xs font-mono text-emerald-700">{v>0?fmtBRL(v):'—'}</td>
-                        })}
-                        <td className="bg-emerald-50 border border-emerald-200 rounded p-1 text-right text-xs font-bold text-emerald-700">{fmtBRL(Object.values(refModalPorMes).reduce((s,v)=>s+(Number(v)||0),0))}</td>
-                      </tr>
+                      {/* Referência conforme box selecionado, detalhada por Peças/Serviços/Terceiros/Total */}
+                      {[
+                        { key: 'pecas',     label: 'Ref. Peças (R$)' },
+                        { key: 'servicos',  label: 'Ref. Serviços (R$)' },
+                        { key: 'terceiros', label: 'Ref. Terceiros (R$)' },
+                        { key: 'total',     label: `Ref. Total ${isFunBoxModal ? 'Funilaria/Pintura' : 'Mecânica + Terceiros'} (R$)` },
+                      ].map(({ key, label }) => {
+                        const isTotal = key === 'total'
+                        return (
+                          <tr key={key}>
+                            <td className={`text-xs px-1 whitespace-nowrap ${isTotal ? 'font-bold text-emerald-700' : 'font-semibold text-emerald-600'}`}>{label}</td>
+                            {Array.from({length:12},(_,i)=>{
+                              const v = refModalDetalhePorMes[i+1]?.[key] || 0
+                              return <td key={i} className={`border rounded p-1 text-right text-xs font-mono ${isTotal ? 'bg-emerald-100 border-emerald-200 font-bold' : 'bg-emerald-50 border-emerald-100'} text-emerald-700`}>{v>0?fmtBRL(v):'—'}</td>
+                            })}
+                            <td className={`border rounded p-1 text-right text-xs font-bold text-emerald-700 ${isTotal ? 'bg-emerald-200 border-emerald-300' : 'bg-emerald-50 border-emerald-200'}`}>
+                              {fmtBRL(Array.from({length:12},(_,i)=>refModalDetalhePorMes[i+1]?.[key]||0).reduce((s,v)=>s+v,0))}
+                            </td>
+                          </tr>
+                        )
+                      })}
                       {/* Percentual */}
                       <tr>
                         <td className="text-xs font-semibold text-slate-500 px-1">% deste consultor</td>
@@ -767,15 +805,26 @@ export default function MetasServicosConsultor() {
                           {fmtPct(mesesForm.reduce((s,m)=>s+(Number(m.percentual)||0),0)/12)}
                         </td>
                       </tr>
-                      {/* Meta calculada */}
-                      <tr>
-                        <td className="text-xs font-bold text-indigo-700 px-1 whitespace-nowrap">Meta R$ (calculado)</td>
-                        {mesesForm.map((m,i)=>{
-                          const v=calcMetaConsultor(m.mes, m.percentual)
-                          return <td key={i} className="bg-indigo-50 border border-indigo-200 rounded p-1 text-right text-xs font-bold text-indigo-700">{v>0?fmtBRL(v):'—'}</td>
-                        })}
-                        <td className="bg-indigo-100 border border-indigo-300 rounded p-1 text-right text-xs font-bold text-indigo-800">{fmtBRL(mesesForm.reduce((s,m)=>s+calcMetaConsultor(m.mes,m.percentual),0))}</td>
-                      </tr>
+                      {/* Meta calculada do consultor, detalhada por Peças/Serviços/Total */}
+                      {[
+                        { key: 'pecas',    label: 'Meta Peças (R$)' },
+                        { key: 'servicos', label: 'Meta Serviços (R$)' },
+                        { key: 'total',    label: 'Meta Total (R$)' },
+                      ].map(({ key, label }) => {
+                        const isTotal = key === 'total'
+                        return (
+                          <tr key={key}>
+                            <td className={`text-xs px-1 whitespace-nowrap ${isTotal ? 'font-bold text-indigo-800' : 'font-semibold text-indigo-600'}`}>{label}</td>
+                            {mesesForm.map((m,i)=>{
+                              const v = calcMetaConsultorDetalhe(m.mes, m.percentual)[key]
+                              return <td key={i} className={`border rounded p-1 text-right text-xs font-bold ${isTotal ? 'bg-indigo-100 border-indigo-200 text-indigo-800' : 'bg-indigo-50 border-indigo-200 text-indigo-700'}`}>{v>0?fmtBRL(v):'—'}</td>
+                            })}
+                            <td className={`border rounded p-1 text-right text-xs font-bold ${isTotal ? 'bg-indigo-200 border-indigo-300 text-indigo-900' : 'bg-indigo-100 border-indigo-300 text-indigo-800'}`}>
+                              {fmtBRL(mesesForm.reduce((s,m)=>s+calcMetaConsultorDetalhe(m.mes,m.percentual)[key],0))}
+                            </td>
+                          </tr>
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>

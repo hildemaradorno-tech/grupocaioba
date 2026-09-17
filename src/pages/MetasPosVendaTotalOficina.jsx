@@ -21,7 +21,7 @@ const TIPOS_POOL = [
 const fmtBRL = (v) => {
   const n = Number(v)
   if (!n && n !== 0) return '—'
-  return n.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
+  return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', currencySign: 'accounting', minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 const sumArr = (a) => a.reduce((s, v) => s + v, 0)
 
@@ -860,9 +860,9 @@ export default function MetasPosVendaTotalOficina() {
                     </div>
                     <span className={`text-[10px] font-bold whitespace-nowrap ${!sobraOk ? 'text-red-600' : pctFaltaDistribuir > 0.05 ? 'text-emerald-700' : 'text-slate-400'}`}>
                       {!sobraOk
-                        ? `${Math.abs(sobraPct).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}% excede o pool!`
+                        ? `${Math.abs(sobraPct).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}% excede o pool!`
                         : pctFaltaDistribuir > 0.05
-                          ? `${pctFaltaDistribuir.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}% a distribuir`
+                          ? `${pctFaltaDistribuir.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}% a distribuir`
                           : '100% distribuído'}
                     </span>
                     <span className="text-[10px] text-slate-400 ml-1">
@@ -898,11 +898,11 @@ export default function MetasPosVendaTotalOficina() {
                           <td className="px-2 py-1.5 text-xs font-semibold text-amber-600 sticky left-0 bg-white whitespace-nowrap">Já Distribuído (%)</td>
                           {mesesConsultor.map((m, i) => (
                             <td key={i} className="bg-amber-50 border border-amber-100 rounded p-1 text-center text-xs text-amber-700">
-                              {m.distribuidoPct > 0 ? m.distribuidoPct.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%' : '—'}
+                              {m.distribuidoPct > 0 ? m.distribuidoPct.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%' : '—'}
                             </td>
                           ))}
                           <td className="bg-amber-100 border border-amber-200 rounded p-1 text-center text-xs font-bold text-amber-800">
-                            {(mesesConsultor.reduce((s, m) => s + m.distribuidoPct, 0) / 12).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '% méd.'}
+                            {(mesesConsultor.reduce((s, m) => s + m.distribuidoPct, 0) / 12).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '% méd.'}
                           </td>
                         </tr>
                         {/* Disponível % */}
@@ -910,11 +910,11 @@ export default function MetasPosVendaTotalOficina() {
                           <td className="px-2 py-1.5 text-xs font-semibold text-emerald-600 sticky left-0 bg-white whitespace-nowrap">Disponível (%)</td>
                           {mesesConsultor.map((m, i) => (
                             <td key={i} className={`border rounded p-1 text-center text-xs ${m.disponivelPct > 0 ? 'bg-emerald-50 border-emerald-100 text-emerald-700' : 'bg-slate-100 border-slate-200 text-slate-400'}`}>
-                              {m.disponivelPct > 0 ? m.disponivelPct.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%' : '—'}
+                              {m.disponivelPct > 0 ? m.disponivelPct.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%' : '—'}
                             </td>
                           ))}
                           <td className="bg-emerald-100 border border-emerald-200 rounded p-1 text-center text-xs font-bold text-emerald-800">
-                            {(mesesConsultor.reduce((s, m) => s + m.disponivelPct, 0) / 12).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '% méd.'}
+                            {(mesesConsultor.reduce((s, m) => s + m.disponivelPct, 0) / 12).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '% méd.'}
                           </td>
                         </tr>
                         {/* % Consultor — EDITÁVEL */}
@@ -954,7 +954,7 @@ export default function MetasPosVendaTotalOficina() {
                             </td>
                           ))}
                           <td className="bg-indigo-50 border-2 border-indigo-200 rounded p-1 text-center text-xs font-bold text-indigo-800">
-                            {mediaPctConsultor.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '% méd.'}
+                            {mediaPctConsultor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '% méd.'}
                           </td>
                         </tr>
                         {/* Meta Consultor (R$) — calculada */}
