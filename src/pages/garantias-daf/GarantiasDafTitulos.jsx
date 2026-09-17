@@ -27,7 +27,8 @@ export default function GarantiasDafTitulos() {
   const [titulosLoading, setTitulosLoading]         = useState(false)
   const [titulosRefreshing, setTitulosRefreshing]   = useState(false)
   const [titulosLastMod, setTitulosLastMod]         = useState(null)
-  const [titulosBusca, setTitulosBusca]             = useState(() => location.state?.osNumero || '')
+  const [titulosBusca, setTitulosBusca]             = useState('')
+  const [filtroOS, setFiltroOS]                     = useState(() => location.state?.osNumero || '')
   const [titulosEmpresa, setTitulosEmpresa]         = useState('')
   const [tiposCadastrados, setTiposCadastrados]     = useState([])
   const [obsModal, setObsModal]                     = useState(null)
@@ -172,16 +173,17 @@ export default function GarantiasDafTitulos() {
     if (titulosEmpresa) out = out.filter(r => r.empresa === titulosEmpresa)
     if (dataInicio) out = out.filter(r => r.data_emissao && r.data_emissao >= dataInicio)
     if (dataFim) out = out.filter(r => r.data_emissao && r.data_emissao <= dataFim)
+    const osQ = filtroOS.trim().toLowerCase()
+    if (osQ) out = out.filter(r => String(r.os_numero).toLowerCase().includes(osQ))
     const q = titulosBusca.trim().toLowerCase()
     if (!q) return out
     return out.filter(r =>
       String(r.nro_titulo).toLowerCase().includes(q) ||
       String(r.cliente_fornecedor).toLowerCase().includes(q) ||
-      String(r.os_numero).toLowerCase().includes(q) ||
       String(r.nota_fiscal).toLowerCase().includes(q) ||
       String(r.nota_fiscal_servico).toLowerCase().includes(q)
     )
-  }, [tiposCadastrados, titulosEmpresa, dataInicio, dataFim, titulosBusca])
+  }, [tiposCadastrados, titulosEmpresa, dataInicio, dataFim, filtroOS, titulosBusca])
 
   // Aplica os filtros de base e, opcionalmente, os filtros de envio/vínculo/situação de vencimento —
   // usado para que os alertas reflitam os demais filtros ativos sem se auto-filtrar pela própria
@@ -245,7 +247,7 @@ export default function GarantiasDafTitulos() {
 
   // Indica se algum filtro que afeta os alertas (empresa/período/busca) está ativo — usado para
   // avisar que os números dos alertas já refletem esse recorte, e não a base total.
-  const filtrosComunsAtivos = !!(titulosEmpresa || dataInicio || dataFim || titulosBusca.trim())
+  const filtrosComunsAtivos = !!(titulosEmpresa || dataInicio || dataFim || filtroOS.trim() || titulosBusca.trim())
   // Indica se há QUALQUER filtro ativo no painel (comuns + envio + vínculo + situação de vencimento) —
   // usado para só mostrar o botão "Limpar todos os filtros" quando existir algo para limpar.
   const algumFiltroAtivo = filtrosComunsAtivos || filtroEnvio !== 'todos' || filtroVinculo !== 'todos' || !!filtroSituacaoVencimento
@@ -272,6 +274,7 @@ export default function GarantiasDafTitulos() {
     setTitulosEmpresa('')
     setDataInicio('')
     setDataFim('')
+    setFiltroOS('')
     setTitulosBusca('')
     setFiltroEnvio('todos')
     setFiltroVinculo('todos')
@@ -347,6 +350,7 @@ export default function GarantiasDafTitulos() {
             <Search className="h-3.5 w-3.5 text-slate-400 shrink-0" />
             Filtros avançados
             {titulosEmpresa && <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px] font-bold">{titulosEmpresa}</span>}
+            {filtroOS && <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px] font-bold">OS {filtroOS}</span>}
             {titulosBusca && <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px] font-bold">"{titulosBusca}"</span>}
             <span className="text-slate-400">{filtrosAbertos ? '▲' : '▼'}</span>
           </button>
@@ -398,11 +402,30 @@ export default function GarantiasDafTitulos() {
           )}
         </div>
 
+        <div className="relative w-32 shrink-0">
+          <input
+            type="text"
+            placeholder="Nº OS"
+            value={filtroOS}
+            onChange={e => setFiltroOS(e.target.value)}
+            className="w-full pl-2 pr-7 py-1.5 text-xs border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20 outline-none"
+          />
+          {filtroOS && (
+            <button
+              onClick={() => setFiltroOS('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+              title="Limpar Nº OS"
+            >
+              <XCircle className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+
         <div className="relative flex-1 min-w-[220px]">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
           <input
             type="text"
-            placeholder="Buscar por título, cliente, OS, nota fiscal..."
+            placeholder="Buscar por título, cliente, nota fiscal..."
             value={titulosBusca}
             onChange={e => setTitulosBusca(e.target.value)}
             className="w-full pl-8 pr-8 py-1.5 text-xs border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20 outline-none"

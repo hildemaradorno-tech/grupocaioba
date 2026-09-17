@@ -180,12 +180,18 @@ export async function getRof017Colunas() {
 /**
  * Busca faturamento de uma OS no ROF017.
  * Filtra por OS_Numero + TipoOS_Sigla (ambos obrigatórios para evitar duplicatas).
+ * O arquivo ROF017 é composto por um arquivo por ano (2022 a 2026) concatenados — como o
+ * Dealer.net reaproveita a numeração de OS entre anos/ciclos distintos, um mesmo OS_Numero
+ * pode identificar OSs completamente diferentes (veículo/cliente/data diferentes) em anos
+ * diferentes. Quando o chassi da garantia é informado, ele é usado para desambiguar e
+ * garantir que só entrem NFs do OS/ano correto; sem chassi, cai no filtro antigo (OS+sigla).
  * Deduplica por NotaFiscal_Numero e retorna lista de NFs com data de faturamento.
  */
-export async function getFaturamentoPorOSRof017(numeroOS, tipoOS, tipoSigla) {
+export async function getFaturamentoPorOSRof017(numeroOS, tipoOS, tipoSigla, chassi) {
   const rows = await loadAllRows()
-  const osStr    = String(numeroOS   ?? '').trim()
-  const siglaStr = String(tipoSigla  ?? '').trim().toUpperCase()
+  const osStr     = String(numeroOS ?? '').trim()
+  const siglaStr  = String(tipoSigla ?? '').trim().toUpperCase()
+  const chassiStr = String(chassi ?? '').trim().toUpperCase()
 
   if (!osStr) return null
 
@@ -206,17 +212,31 @@ export async function getFaturamentoPorOSRof017(numeroOS, tipoOS, tipoSigla) {
   const colSigla      = findCol('TipoOS_Sigla', 'TipoOSSigla', 'Tipo_OS_Sigla', 'OS_TipoSigla', 'TipoSigla')
   const colNF         = findCol('NotaFiscal_Numero', 'NotaFiscalNumero', 'NF_Numero', 'NFNumero')
   const colData       = findCol('OSData_Faturamento', 'OSDataFaturamento', 'Data_Faturamento', 'DataFaturamento')
+  const colChassi     = findCol('Veiculo_Chassi', 'VeiculoChassi')
   const colProdValor  = findCol('ProdValor')
   const colProdMarg   = findCol('ProdMargem')
   const colServValor  = findCol('ServValor')
   const colServMarg   = findCol('ServMargem')
 
   // Filtra por OS_Numero
-  const candidatos = rows.filter(r => String(r[colOS] ?? '').trim() === osStr)
+  let candidatos = rows.filter(r => String(r[colOS] ?? '').trim() === osStr)
 
   if (candidatos.length === 0) {
     console.log(`[ROF017] OS ${osStr} não encontrada`)
     return { _notFound: true, siglas_disponiveis: [] }
+  }
+
+  // Desambigua reaproveitamento de número de OS entre anos/ciclos distintos do Dealer.net:
+  // se o chassi da garantia foi informado e existe pelo menos uma linha com esse chassi para
+  // este OS_Numero, restringe aos registros desse chassi antes de seguir — evita misturar NFs
+  // de uma OS de anos diferentes que reaproveitou o mesmo número.
+  if (chassiStr) {
+    const candidatosChassi = candidatos.filter(r => String(r[colChassi] ?? '').trim().toUpperCase() === chassiStr)
+    if (candidatosChassi.length > 0) {
+      candidatos = candidatosChassi
+    } else {
+      console.log(`[ROF017] OS ${osStr} — chassi "${chassiStr}" não encontrado entre as linhas da OS, mantendo todas (possível divergência de cadastro)`)
+    }
   }
 
   // Log das siglas disponíveis para esta OS (diagnóstico)
@@ -287,10 +307,11 @@ export async function getFaturamentoPorOSRof017(numeroOS, tipoOS, tipoSigla) {
     nf_valor_servico:   total_serv_valor  || null,
     nf_margem_contabil: total_prod_margem + total_serv_margem || null,
     _diag: {
-      colunas: { OS: colOS, Sigla: colSigla, NF: colNF, Data: colData },
+      colunas: { OS: colOS, Sigla: colSigla, NF: colNF, Data: colData, Chassi: colChassi },
       total_linhas_os:    candidatos.length,
       siglas_disponiveis: siglasDisponiveis,
       total_filtrados:    filtrados.length,
+      chassi_usado:       chassiStr || null,
     },
   }
 }

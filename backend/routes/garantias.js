@@ -106,15 +106,15 @@ router.get('/faturamento/colunas', wrap(async (req, res) => {
   res.json(info)
 }))
 
-// GET /api/garantias/faturamento/:numeroOS?tipoOS=...&tipoSigla=...
+// GET /api/garantias/faturamento/:numeroOS?tipoOS=...&tipoSigla=...&chassi=...
 // Busca dados de faturamento de uma OS no ROF017_FATURAMENTOPOROS
 router.get('/faturamento/:numeroOS', wrap(async (req, res) => {
   if (!isConfigured()) {
     return res.status(503).json({ error: 'sharepoint_not_configured', message: 'Credenciais Azure AD não configuradas.' })
   }
   const { numeroOS } = req.params
-  const { tipoOS, tipoSigla } = req.query
-  const data = await getFaturamentoPorOSRof017(numeroOS, tipoOS, tipoSigla)
+  const { tipoOS, tipoSigla, chassi } = req.query
+  const data = await getFaturamentoPorOSRof017(numeroOS, tipoOS, tipoSigla, chassi)
   if (!data || data._notFound) {
     return res.status(404).json({
       error: 'not_found',

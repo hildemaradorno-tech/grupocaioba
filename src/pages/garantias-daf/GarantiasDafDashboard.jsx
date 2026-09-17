@@ -377,6 +377,7 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
           const params = new URLSearchParams()
           params.set('tipoSigla', sigla)
           if (item.tipo_garantia_descricao?.trim()) params.set('tipoOS', item.tipo_garantia_descricao.trim())
+          if (item.chassi?.trim()) params.set('chassi', item.chassi.trim())
           const res = await fetch(`${BACKEND}/api/garantias/faturamento/${encodeURIComponent(item.numero_os.trim())}?${params}`)
 
           if (res.status === 404) { naoEncontrados++; continue }
