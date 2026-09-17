@@ -6,7 +6,7 @@ import {
 import { apiService } from '../../services/api'
 import { useAuth } from '../../context/AuthContext'
 import GarantiasNav from './GarantiasNav'
-import TituloObservacoesPanel from './TituloObservacoesPanel'
+import RegistroHistoricoPanel from './RegistroHistoricoPanel'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
 
@@ -768,13 +768,15 @@ export default function GarantiasDafTitulos() {
                 )}
                 <div>
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1 block">Observações</label>
-                  <TituloObservacoesPanel
-                    nroTitulo={modalEditarTitulo.nro_titulo}
-                    observacoes={titulosObs}
+                  <RegistroHistoricoPanel
+                    itens={titulosObs.filter(o => o.nro_titulo === modalEditarTitulo.nro_titulo)}
                     podeEditar={canEditarTitulo}
                     bloqueado={!garantiaId}
-                    userEmail={user?.email}
-                    onChange={loadTitulosObs}
+                    bloqueadoMsg="Vincule este título a uma OS em Histórico de O.S. antes de adicionar observações."
+                    placeholder="Adicionar nova observação..."
+                    onCreate={(texto) => apiService.createTituloObservacao(modalEditarTitulo.nro_titulo, texto, user?.email).then(loadTitulosObs)}
+                    onUpdate={(id, texto) => apiService.updateTituloObservacao(id, texto, user?.email).then(loadTitulosObs)}
+                    onDelete={(id) => apiService.deleteTituloObservacao(id).then(loadTitulosObs)}
                   />
                 </div>
               </div>

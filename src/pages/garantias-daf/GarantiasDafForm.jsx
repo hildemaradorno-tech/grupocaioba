@@ -10,7 +10,7 @@ const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
 import { apiService } from '../../services/api'
 import { useAuth } from '../../context/AuthContext'
 import GarantiasNav from './GarantiasNav'
-import TituloObservacoesPanel from './TituloObservacoesPanel'
+import RegistroHistoricoPanel from './RegistroHistoricoPanel'
 
 const STATUS_OPTIONS = [
   { value: 'A',  label: 'A — Em Análise no Setor de Garantia' },
@@ -255,6 +255,11 @@ export default function GarantiasDafForm() {
   const [tituloEncontrado, setTituloEncontrado] = useState(null) // título a receber (RFN003) localizado por OS + Nota Fiscal
   const [titulosObs, setTitulosObs] = useState([]) // histórico de observações (gar_titulos_observacoes)
   const loadTitulosObs = () => apiService.getTitulosObservacoes().then(setTitulosObs).catch(() => {})
+  const [respostasConcessionaria, setRespostasConcessionaria] = useState([]) // histórico de resposta concessionária (gar_garantias_respostas)
+  const loadRespostasConcessionaria = () => {
+    if (!id) return
+    apiService.getRespostasConcessionaria(id).then(setRespostasConcessionaria).catch(() => {})
+  }
 
   useEffect(() => {
     const init = async () => {
@@ -269,6 +274,7 @@ export default function GarantiasDafForm() {
         setTiposOS(tipos.filter(t => t.ativo))
         setFuncionarios(funcs.filter(f => f.ativo !== false && f.cargo_nome === 'Consultor de Serviços'))
         loadTitulosObs()
+        if (modoEdicao) loadRespostasConcessionaria()
 
         if (modoEdicao) {
           const [garantia, logData] = await Promise.all([
@@ -995,6 +1001,23 @@ export default function GarantiasDafForm() {
                 />
               </div>
 
+              {/* Resposta Concessionária — histórico com autor/data, abaixo de Resposta SHC */}
+              {modoEdicao && (
+                <div className="flex flex-col gap-1 col-span-3">
+                  <LabelField>Resposta Concessionária</LabelField>
+                  <div className="bg-slate-50 border border-slate-200 rounded-lg px-4 py-3">
+                    <RegistroHistoricoPanel
+                      itens={respostasConcessionaria}
+                      podeEditar={canEditarOS && !modoVisualizar}
+                      placeholder="Adicionar resposta da concessionária..."
+                      onCreate={(texto) => apiService.createRespostaConcessionaria(id, texto, user?.email).then(loadRespostasConcessionaria)}
+                      onUpdate={(itemId, texto) => apiService.updateRespostaConcessionaria(itemId, texto, user?.email).then(loadRespostasConcessionaria)}
+                      onDelete={(itemId) => apiService.deleteRespostaConcessionaria(itemId).then(loadRespostasConcessionaria)}
+                    />
+                  </div>
+                </div>
+              )}
+
             </div>
           </div>
         )}
@@ -1214,13 +1237,13 @@ export default function GarantiasDafForm() {
                   </div>
                   <div className="bg-indigo-50/60 border border-indigo-100 rounded-lg px-4 py-3">
                     <label className="text-[10px] font-bold text-indigo-400 uppercase tracking-wide mb-2 block">Observações do Título</label>
-                    <TituloObservacoesPanel
-                      nroTitulo={nroTitulo}
-                      observacoes={titulosObs}
+                    <RegistroHistoricoPanel
+                      itens={titulosObs.filter(o => o.nro_titulo === nroTitulo)}
                       podeEditar={canEditarOS && !modoVisualizar}
-                      bloqueado={false}
-                      userEmail={user?.email}
-                      onChange={loadTitulosObs}
+                      placeholder="Adicionar nova observação..."
+                      onCreate={(texto) => apiService.createTituloObservacao(nroTitulo, texto, user?.email).then(loadTitulosObs)}
+                      onUpdate={(id, texto) => apiService.updateTituloObservacao(id, texto, user?.email).then(loadTitulosObs)}
+                      onDelete={(id) => apiService.deleteTituloObservacao(id).then(loadTitulosObs)}
                     />
                   </div>
                 </div>

@@ -1,16 +1,19 @@
 import React, { useState } from 'react'
 import { Edit2, Trash2, Loader2, X, Check } from 'lucide-react'
-import { apiService } from '../../services/api'
 
 const fmtDataHora = (s) => {
   if (!s) return '—'
   try { return new Date(s).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) } catch { return s }
 }
 
-// Histórico de observações de um título (gar_titulos_observacoes) — usado tanto em
-// "Editar Título" (Títulos a Receber) quanto em "Editar Garantia" (mesma fonte de dados,
-// pela chave nro_titulo), para que as duas telas sempre mostrem a mesma informação.
-export default function TituloObservacoesPanel({ nroTitulo, observacoes, podeEditar, bloqueado, userEmail, onChange }) {
+// Histórico de entradas com autor/data, editáveis/excluíveis individualmente — usado tanto
+// para observações do título (Títulos a Receber / Editar Garantia) quanto para a Resposta
+// Concessionária (Editar Garantia). O chamador já filtra `itens` e fornece as funções de
+// criar/editar/excluir — o componente não sabe de onde vêm os dados.
+export default function RegistroHistoricoPanel({
+  itens, podeEditar, bloqueado, bloqueadoMsg, placeholder = 'Adicionar novo registro...',
+  onCreate, onUpdate, onDelete,
+}) {
   const [novoTexto, setNovoTexto] = useState('')
   const [salvandoNovo, setSalvandoNovo] = useState(false)
   const [editandoId, setEditandoId] = useState(null)
@@ -18,17 +21,16 @@ export default function TituloObservacoesPanel({ nroTitulo, observacoes, podeEdi
   const [salvandoId, setSalvandoId] = useState(null)
   const [excluindoId, setExcluindoId] = useState(null)
 
-  const lista = (observacoes || []).filter(o => o.nro_titulo === nroTitulo)
+  const lista = itens || []
 
   const adicionar = async () => {
-    if (!novoTexto.trim() || !nroTitulo) return
+    if (!novoTexto.trim()) return
     setSalvandoNovo(true)
     try {
-      await apiService.createTituloObservacao(nroTitulo, novoTexto.trim(), userEmail)
+      await onCreate(novoTexto.trim())
       setNovoTexto('')
-      await onChange()
     } catch (err) {
-      alert('Erro ao salvar observação: ' + (err.message || String(err)))
+      alert('Erro ao salvar: ' + (err.message || String(err)))
     } finally {
       setSalvandoNovo(false)
     }
@@ -41,24 +43,22 @@ export default function TituloObservacoesPanel({ nroTitulo, observacoes, podeEdi
     if (!textoEdicao.trim()) return
     setSalvandoId(id)
     try {
-      await apiService.updateTituloObservacao(id, textoEdicao.trim(), userEmail)
+      await onUpdate(id, textoEdicao.trim())
       setEditandoId(null)
-      await onChange()
     } catch (err) {
-      alert('Erro ao salvar observação: ' + (err.message || String(err)))
+      alert('Erro ao salvar: ' + (err.message || String(err)))
     } finally {
       setSalvandoId(null)
     }
   }
 
   const excluir = async (id) => {
-    if (!confirm('Excluir esta observação?')) return
+    if (!confirm('Excluir este registro?')) return
     setExcluindoId(id)
     try {
-      await apiService.deleteTituloObservacao(id)
-      await onChange()
+      await onDelete(id)
     } catch (err) {
-      alert('Erro ao excluir observação: ' + (err.message || String(err)))
+      alert('Erro ao excluir: ' + (err.message || String(err)))
     } finally {
       setExcluindoId(null)
     }
@@ -123,7 +123,7 @@ export default function TituloObservacoesPanel({ nroTitulo, observacoes, podeEdi
       {podeEditar && (
         bloqueado ? (
           <p className="text-[11px] text-orange-600 bg-orange-50 border border-orange-200 rounded-md px-2.5 py-1.5">
-            Vincule este título a uma OS em Histórico de O.S. antes de adicionar observações.
+            {bloqueadoMsg}
           </p>
         ) : (
           <div className="flex items-start gap-2">
@@ -131,7 +131,7 @@ export default function TituloObservacoesPanel({ nroTitulo, observacoes, podeEdi
               value={novoTexto}
               onChange={e => setNovoTexto(e.target.value)}
               rows={2}
-              placeholder="Adicionar nova observação..."
+              placeholder={placeholder}
               className="flex-1 text-xs p-2 border border-slate-200 rounded-md focus:ring-2 focus:ring-indigo-500/20 outline-none resize-none"
             />
             <button
@@ -146,7 +146,7 @@ export default function TituloObservacoesPanel({ nroTitulo, observacoes, podeEdi
       )}
 
       {lista.length === 0 && !podeEditar && (
-        <p className="text-[11px] text-slate-400">Nenhuma observação registrada.</p>
+        <p className="text-[11px] text-slate-400">Nenhum registro.</p>
       )}
     </div>
   )

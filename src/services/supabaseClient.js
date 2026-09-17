@@ -2882,6 +2882,45 @@ export const apiService = {
     return { success: true }
   },
 
+  // ══════════════════════════════════════════
+  // GARANTIAS — RESPOSTA CONCESSIONÁRIA (histórico, abaixo de Resposta SHC)
+  // ══════════════════════════════════════════
+
+  getRespostasConcessionaria: async (garantiaId) => {
+    const { data, error } = await supabase
+      .from('gar_garantias_respostas')
+      .select('*')
+      .eq('garantia_id', garantiaId)
+      .order('criado_em', { ascending: false })
+    if (error) throw error
+    return data || []
+  },
+
+  createRespostaConcessionaria: async (garantiaId, observacao, userEmail) => {
+    const { data, error } = await supabase
+      .from('gar_garantias_respostas')
+      .insert([{ garantia_id: garantiaId, observacao, atualizado_por: userEmail, atualizado_em: new Date().toISOString() }])
+      .select()
+    if (error) throw error
+    return data?.[0]
+  },
+
+  updateRespostaConcessionaria: async (id, observacao, userEmail) => {
+    const { data, error } = await supabase
+      .from('gar_garantias_respostas')
+      .update({ observacao, atualizado_por: userEmail, atualizado_em: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+    if (error) throw error
+    return data?.[0]
+  },
+
+  deleteRespostaConcessionaria: async (id) => {
+    const { error } = await supabase.from('gar_garantias_respostas').delete().eq('id', id)
+    if (error) throw error
+    return { success: true }
+  },
+
   /**
    * Sincroniza tipo_os_sigla em TODOS os registros a partir da própria tipo_garantia_descricao
    * já salva ("G03 - PLANO..." → "G03") — garante que a sigla sempre bata com o tipo da OS.
