@@ -105,12 +105,14 @@ export default function TruckPagConciliacao() {
           tipo: 'credito', key: `c-${c.id}`, empresa: c.empresa_desc, codigoEmpresa: '',
           contaGerencial: c.conta_gerencial_desc, codigoTesouraria: c.tesouraria_codigo, observacao: c.observacao,
           data: c.data_caixa, valorBruto: null, valorTaxa: null, valorLiquido: c.valor,
+          saldoDocto: c.saldo_docto_controlado ?? null,
         })
       }
       linhasBloco.push({
         tipo: 'repasse', key: `r-${g.chave}`, empresa: g.empresa, codigoEmpresa: g.codigoEmpresa,
         contaGerencial: '', codigoTesouraria: '', observacao: '', data: g.data_pagamento,
         valorBruto: g.totalBruto, valorTaxa: g.totalTaxa, valorLiquido: g.total,
+        saldoDocto: null,
         detalhe: g.linhas,
       })
       lista.push({ chave: g.chave, dataOrdenacao: g.data_pagamento || '', conciliado: !!g.creditoVinculado, linhas: linhasBloco })
@@ -123,6 +125,7 @@ export default function TruckPagConciliacao() {
           tipo: 'credito', key: `c-${c.id}`, empresa: c.empresa_desc, codigoEmpresa: '',
           contaGerencial: c.conta_gerencial_desc, codigoTesouraria: c.tesouraria_codigo, observacao: c.observacao,
           data: c.data_caixa, valorBruto: null, valorTaxa: null, valorLiquido: c.valor,
+          saldoDocto: c.saldo_docto_controlado ?? null,
         }],
       })
     }
@@ -182,6 +185,7 @@ export default function TruckPagConciliacao() {
     { key: 'valorBruto', label: 'Valor Bruto', numerico: true, formatar: (v) => v === null ? '—' : fmtMoeda(v) },
     { key: 'valorTaxa', label: 'Valor Taxa', numerico: true, formatar: (v) => v === null ? '—' : fmtMoeda(v) },
     { key: 'valorLiquido', label: 'Valor Líquido', numerico: true, formatar: fmtMoeda },
+    { key: 'saldoDocto', label: 'Saldo Atual', numerico: true, formatar: (v) => v === null ? '—' : fmtMoeda(v) },
     { key: 'contaGerencial', label: 'Conta Gerencial' },
     { key: 'codigoTesouraria', label: 'Código Tesouraria' },
   ]
@@ -206,7 +210,7 @@ export default function TruckPagConciliacao() {
             <button onClick={() => setConfigAberto(true)} title="Configurações" className="flex items-center justify-center border border-slate-200 text-slate-600 hover:bg-slate-50 p-2 rounded-md transition-colors">
               <Settings className="h-3.5 w-3.5" />
             </button>
-            <button onClick={sincronizar} disabled={sincronizando} title={sincronizando ? 'Atualizando...' : 'Atualizar do SharePoint'} className="flex items-center justify-center bg-blue-600 hover:bg-blue-700 text-white p-2 rounded-md shadow-sm transition-colors disabled:opacity-50">
+            <button onClick={sincronizar} disabled={sincronizando} title={sincronizando ? 'Atualizando...' : 'Atualizar todas as abas do SharePoint'} className="flex items-center justify-center bg-blue-600 hover:bg-blue-700 text-white p-2 rounded-md shadow-sm transition-colors disabled:opacity-50">
               <RefreshCw className={`h-4 w-4 ${sincronizando ? 'animate-spin' : ''}`} />
             </button>
             <button onClick={() => setRegrasAberto(true)} title="Regras de conciliação" className="flex items-center justify-center p-2 rounded-md text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 shadow-sm transition-colors">
@@ -267,35 +271,6 @@ export default function TruckPagConciliacao() {
         </button>
       </div>
 
-      <div className="bg-white rounded-lg border border-slate-200 shadow-sm">
-        <button type="button" onClick={() => setFiltrosAbertos(v => !v)} className="w-full flex items-center justify-between px-4 py-3 text-left">
-          <span className="flex items-center gap-2 text-xs font-semibold text-slate-600">
-            <Filter className="h-3.5 w-3.5 text-slate-400" />
-            Período (Repasses)
-            {filtroAtivo && <span className="text-[10px] font-bold text-blue-600 bg-blue-50 border border-blue-200 rounded-full px-2 py-0.5">ativo</span>}
-          </span>
-          {filtrosAbertos ? <ChevronUp className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
-        </button>
-        {filtrosAbertos && (
-          <div className="px-4 pb-4 pt-1 border-t border-slate-100">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3 max-w-md">
-              <div>
-                <label className="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1 block">De</label>
-                <input type="date" value={dataInicio} onChange={e => setDataInicio(e.target.value)} className="w-full text-xs border border-slate-200 rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300" />
-              </div>
-              <div>
-                <label className="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1 block">Até</label>
-                <input type="date" value={dataFim} onChange={e => setDataFim(e.target.value)} className="w-full text-xs border border-slate-200 rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300" />
-              </div>
-            </div>
-            {filtroAtivo && (
-              <button type="button" onClick={() => { setDataInicio(''); setDataFim('') }} className="mt-3 flex items-center gap-1 text-[10px] font-semibold text-slate-400 hover:text-slate-600">
-                <X className="h-3 w-3" /> Limpar período
-              </button>
-            )}
-          </div>
-        )}
-      </div>
 
       {loading ? (
         <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-16 flex items-center justify-center">
