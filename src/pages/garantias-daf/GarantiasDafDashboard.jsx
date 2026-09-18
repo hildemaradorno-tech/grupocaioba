@@ -970,142 +970,6 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
         </div>
       )}
 
-      {/* ── FILTROS AVANÇADOS ── */}
-      <div className="bg-white rounded-lg border border-slate-200 shadow-sm">
-        <div className="w-full flex items-center justify-between px-4 py-3 gap-3">
-          <button
-            onClick={() => setFiltrosAbertos(p => !p)}
-            className="flex-1 flex items-center gap-2 text-xs font-semibold text-slate-700 hover:text-slate-900 transition-colors min-w-0"
-          >
-            <Filter className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-            Filtros avançados
-            {filtroEmpresaDash && <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px] font-bold">{filtroEmpresaDash}</span>}
-            {filtroTipoOS && <span className="px-1.5 py-0.5 bg-indigo-100 text-indigo-700 rounded text-[10px] font-bold">{filtroTipoOS}</span>}
-            {filtroNaBase === 'sim' && <span className="px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-[10px] font-bold">● Encontrado</span>}
-            {filtroNaBase === 'nao' && <span className="px-1.5 py-0.5 bg-red-100 text-red-700 rounded text-[10px] font-bold">● Não encontrado</span>}
-            <span className="text-slate-400">{filtrosAbertos ? '▲' : '▼'}</span>
-          </button>
-          {!!(filtroEmpresaDash || filtroTipoOS || filtroNaBase || filtros.numero_os || filtros.chassi || filtros.data_inicio || filtros.data_fim) && (
-            <button
-              type="button"
-              onClick={() => { handleLimpar(); setFiltroEmpresaDash(''); setFiltroTipoOS(''); setFiltroNaBase('') }}
-              className="whitespace-nowrap flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold rounded-full border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 transition-colors shrink-0"
-            >
-              <XCircle className="h-3 w-3" /> Limpar filtros
-            </button>
-          )}
-        </div>
-        {filtrosAbertos && (
-          <form onSubmit={handleBuscar} className="px-4 pb-4 border-t border-slate-100">
-            {/* Linha 1: Empresa | Tipo de OS | Período */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3">
-              <div className="flex flex-col gap-1">
-                <label className="text-[10px] font-bold text-slate-400 uppercase">Empresa</label>
-                <select
-                  value={filtroEmpresaDash}
-                  onChange={e => { setFiltroEmpresaDash(e.target.value); setFiltroCard(null); setStatusFiltro('') }}
-                  className="text-xs p-1.5 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20 bg-white"
-                >
-                  <option value="">Todas as empresas</option>
-                  {empresasDisponiveis.map(e => <option key={e} value={e}>{e}</option>)}
-                </select>
-              </div>
-              <div className="flex flex-col gap-1">
-                <label className="text-[10px] font-bold text-slate-400 uppercase">Tipo de OS</label>
-                <select
-                  value={filtroTipoOS}
-                  onChange={e => { setFiltroTipoOS(e.target.value); setFiltroCard(null); setStatusFiltro('') }}
-                  className="text-xs p-1.5 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20 bg-white"
-                >
-                  <option value="">Todos os tipos</option>
-                  {tiposOsDisponiveis.map(t => <option key={t} value={t}>{t}</option>)}
-                </select>
-              </div>
-              <div className="flex flex-col gap-1">
-                <label className="text-[10px] font-bold text-slate-400 uppercase">Período</label>
-                <div className="flex gap-1">
-                  <input type="date" name="data_inicio" value={filtros.data_inicio} onChange={handleFiltroChange}
-                    className="flex-1 text-xs p-1.5 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20" />
-                  <input type="date" name="data_fim" value={filtros.data_fim} onChange={handleFiltroChange}
-                    className="flex-1 text-xs p-1.5 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20" />
-                </div>
-              </div>
-            </div>
-            {/* Linha 2: Nº OS | Chassi | No Arquivo SP */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3">
-              {[
-                { name: 'numero_os', placeholder: 'Nº OS' },
-                { name: 'chassi', placeholder: 'Chassi' },
-              ].map(({ name, placeholder }) => (
-                <div key={name} className="flex flex-col gap-1">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase">{placeholder}</label>
-                  <input type="text" name={name} value={filtros[name]} onChange={handleFiltroChange}
-                    placeholder={placeholder}
-                    className="text-xs p-1.5 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20" />
-                </div>
-              ))}
-              {!isAndamento && (
-                <div className="flex flex-col gap-1 col-span-2">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase">&nbsp;</label>
-                  <div className="flex gap-2 items-center h-[30px]">
-                    <button type="button"
-                      onClick={() => setFiltroNaBase('')}
-                      className={`whitespace-nowrap px-2.5 py-1 text-[11px] font-bold rounded-full border transition-colors ${filtroNaBase === '' ? 'bg-slate-700 text-white border-slate-700' : 'bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200'}`}
-                    >Todos</button>
-                    <button type="button"
-                      onClick={() => setFiltroNaBase('sim')}
-                      className={`whitespace-nowrap flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold rounded-full border transition-colors ${filtroNaBase === 'sim' ? 'bg-green-600 text-white border-green-600' : 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100'}`}
-                    ><span className="w-2 h-2 rounded-full bg-green-500 inline-block" /> Sharepoint</button>
-                    <button type="button"
-                      onClick={() => setFiltroNaBase('nao')}
-                      className={`whitespace-nowrap flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold rounded-full border transition-colors ${filtroNaBase === 'nao' ? 'bg-red-600 text-white border-red-600' : 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100'}`}
-                    ><span className="w-2 h-2 rounded-full bg-red-500 inline-block" /> Não encontrado</button>
-                  </div>
-                </div>
-              )}
-            </div>
-            <div className="flex items-center gap-2 mt-3">
-              <button type="submit" className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 transition-colors">
-                <Search className="h-3.5 w-3.5" /> Buscar
-              </button>
-              <button type="button" onClick={() => { handleLimpar(); setFiltroEmpresaDash(''); setFiltroTipoOS(''); setFiltroNaBase('') }} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-slate-600 hover:bg-slate-100 transition-colors">
-                <RotateCcw className="h-3.5 w-3.5" /> Limpar
-              </button>
-            </div>
-          </form>
-        )}
-      </div>
-
-      {/* ── FILTRO DE STATUS (somente Aberto) ── */}
-      {!isAndamento && <div className="bg-white rounded-lg border border-slate-200 shadow-sm px-4 py-3">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider shrink-0">Status:</span>
-          <button
-            onClick={() => { setStatusFiltro(''); setFiltroCard(null) }}
-            className={`text-[11px] font-bold px-2.5 py-1 rounded-full border transition-colors ${
-              !statusFiltro && !filtroCard ? 'bg-slate-700 text-white border-slate-700' : 'bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200'
-            }`}
-          >
-            Todos ({dadosBase.length})
-          </button>
-          {statusesPresentes.map(k => {
-            const count = dadosBase.filter(g => g.status_codigo === k).length
-            const { label, cor } = STATUS_MAP[k]
-            const ativo = statusFiltro === k
-            return (
-              <button key={k}
-                onClick={() => { setStatusFiltro(ativo ? '' : k); setFiltroCard(null) }}
-                className={`text-[11px] font-bold px-2.5 py-1 rounded-full border transition-colors ${
-                  ativo ? `${cor} border-current ring-2 ring-offset-1 ring-current/30` : `${cor} border-transparent opacity-70 hover:opacity-100`
-                }`}
-              >
-                {label} ({count})
-              </button>
-            )
-          })}
-        </div>
-      </div>}
-
       {/* ── CARDS RESUMO ANDAMENTO ── */}
       {isAndamento && !spLoading && spAndamentoFiltrado.length > 0 && (() => {
         const totalOS       = spAndamentoFiltrado.length
@@ -1266,6 +1130,142 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
           </div>
         )
       })()}
+
+      {/* ── FILTROS AVANÇADOS ── */}
+      <div className="bg-white rounded-lg border border-slate-200 shadow-sm">
+        <div className="w-full flex items-center justify-between px-4 py-3 gap-3">
+          <button
+            onClick={() => setFiltrosAbertos(p => !p)}
+            className="flex-1 flex items-center gap-2 text-xs font-semibold text-slate-700 hover:text-slate-900 transition-colors min-w-0"
+          >
+            <Filter className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+            Filtros avançados
+            {filtroEmpresaDash && <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px] font-bold">{filtroEmpresaDash}</span>}
+            {filtroTipoOS && <span className="px-1.5 py-0.5 bg-indigo-100 text-indigo-700 rounded text-[10px] font-bold">{filtroTipoOS}</span>}
+            {filtroNaBase === 'sim' && <span className="px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-[10px] font-bold">● Encontrado</span>}
+            {filtroNaBase === 'nao' && <span className="px-1.5 py-0.5 bg-red-100 text-red-700 rounded text-[10px] font-bold">● Não encontrado</span>}
+            <span className="text-slate-400">{filtrosAbertos ? '▲' : '▼'}</span>
+          </button>
+          {!!(filtroEmpresaDash || filtroTipoOS || filtroNaBase || filtros.numero_os || filtros.chassi || filtros.data_inicio || filtros.data_fim) && (
+            <button
+              type="button"
+              onClick={() => { handleLimpar(); setFiltroEmpresaDash(''); setFiltroTipoOS(''); setFiltroNaBase('') }}
+              className="whitespace-nowrap flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold rounded-full border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 transition-colors shrink-0"
+            >
+              <XCircle className="h-3 w-3" /> Limpar filtros
+            </button>
+          )}
+        </div>
+        {filtrosAbertos && (
+          <form onSubmit={handleBuscar} className="px-4 pb-4 border-t border-slate-100">
+            {/* Linha 1: Empresa | Tipo de OS | Período */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3">
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-bold text-slate-400 uppercase">Empresa</label>
+                <select
+                  value={filtroEmpresaDash}
+                  onChange={e => { setFiltroEmpresaDash(e.target.value); setFiltroCard(null); setStatusFiltro('') }}
+                  className="text-xs p-1.5 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20 bg-white"
+                >
+                  <option value="">Todas as empresas</option>
+                  {empresasDisponiveis.map(e => <option key={e} value={e}>{e}</option>)}
+                </select>
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-bold text-slate-400 uppercase">Tipo de OS</label>
+                <select
+                  value={filtroTipoOS}
+                  onChange={e => { setFiltroTipoOS(e.target.value); setFiltroCard(null); setStatusFiltro('') }}
+                  className="text-xs p-1.5 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20 bg-white"
+                >
+                  <option value="">Todos os tipos</option>
+                  {tiposOsDisponiveis.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-bold text-slate-400 uppercase">Período</label>
+                <div className="flex gap-1">
+                  <input type="date" name="data_inicio" value={filtros.data_inicio} onChange={handleFiltroChange}
+                    className="flex-1 text-xs p-1.5 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20" />
+                  <input type="date" name="data_fim" value={filtros.data_fim} onChange={handleFiltroChange}
+                    className="flex-1 text-xs p-1.5 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20" />
+                </div>
+              </div>
+            </div>
+            {/* Linha 2: Nº OS | Chassi | No Arquivo SP */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3">
+              {[
+                { name: 'numero_os', placeholder: 'Nº OS' },
+                { name: 'chassi', placeholder: 'Chassi' },
+              ].map(({ name, placeholder }) => (
+                <div key={name} className="flex flex-col gap-1">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase">{placeholder}</label>
+                  <input type="text" name={name} value={filtros[name]} onChange={handleFiltroChange}
+                    placeholder={placeholder}
+                    className="text-xs p-1.5 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20" />
+                </div>
+              ))}
+              {!isAndamento && (
+                <div className="flex flex-col gap-1 col-span-2">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase">&nbsp;</label>
+                  <div className="flex gap-2 items-center h-[30px]">
+                    <button type="button"
+                      onClick={() => setFiltroNaBase('')}
+                      className={`whitespace-nowrap px-2.5 py-1 text-[11px] font-bold rounded-full border transition-colors ${filtroNaBase === '' ? 'bg-slate-700 text-white border-slate-700' : 'bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200'}`}
+                    >Todos</button>
+                    <button type="button"
+                      onClick={() => setFiltroNaBase('sim')}
+                      className={`whitespace-nowrap flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold rounded-full border transition-colors ${filtroNaBase === 'sim' ? 'bg-green-600 text-white border-green-600' : 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100'}`}
+                    ><span className="w-2 h-2 rounded-full bg-green-500 inline-block" /> Sharepoint</button>
+                    <button type="button"
+                      onClick={() => setFiltroNaBase('nao')}
+                      className={`whitespace-nowrap flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold rounded-full border transition-colors ${filtroNaBase === 'nao' ? 'bg-red-600 text-white border-red-600' : 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100'}`}
+                    ><span className="w-2 h-2 rounded-full bg-red-500 inline-block" /> Não encontrado</button>
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="flex items-center gap-2 mt-3">
+              <button type="submit" className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 transition-colors">
+                <Search className="h-3.5 w-3.5" /> Buscar
+              </button>
+              <button type="button" onClick={() => { handleLimpar(); setFiltroEmpresaDash(''); setFiltroTipoOS(''); setFiltroNaBase('') }} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-slate-600 hover:bg-slate-100 transition-colors">
+                <RotateCcw className="h-3.5 w-3.5" /> Limpar
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+
+      {/* ── FILTRO DE STATUS (somente Aberto) ── */}
+      {!isAndamento && <div className="bg-white rounded-lg border border-slate-200 shadow-sm px-4 py-3">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider shrink-0">Status:</span>
+          <button
+            onClick={() => { setStatusFiltro(''); setFiltroCard(null) }}
+            className={`text-[11px] font-bold px-2.5 py-1 rounded-full border transition-colors ${
+              !statusFiltro && !filtroCard ? 'bg-slate-700 text-white border-slate-700' : 'bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200'
+            }`}
+          >
+            Todos ({dadosBase.length})
+          </button>
+          {statusesPresentes.map(k => {
+            const count = dadosBase.filter(g => g.status_codigo === k).length
+            const { label, cor } = STATUS_MAP[k]
+            const ativo = statusFiltro === k
+            return (
+              <button key={k}
+                onClick={() => { setStatusFiltro(ativo ? '' : k); setFiltroCard(null) }}
+                className={`text-[11px] font-bold px-2.5 py-1 rounded-full border transition-colors ${
+                  ativo ? `${cor} border-current ring-2 ring-offset-1 ring-current/30` : `${cor} border-transparent opacity-70 hover:opacity-100`
+                }`}
+              >
+                {label} ({count})
+              </button>
+            )
+          })}
+        </div>
+      </div>}
 
       {/* ── TABELA ANDAMENTO (SharePoint) ── */}
       {isAndamento && (
