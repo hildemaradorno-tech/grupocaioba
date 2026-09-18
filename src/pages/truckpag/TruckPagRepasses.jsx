@@ -815,7 +815,7 @@ export default function TruckPagRepasses() {
                 }`}
               >
                 <Link2Off className="h-3 w-3" />
-                Valor não identificado · {fmtMoeda(naoIdentificadoInfo.valor)} <span className="opacity-70">({naoIdentificadoInfo.qtd})</span>
+                Valor não identificado · {fmtMoeda(naoIdentificadoInfo.valor)}
               </button>
             )}
             {gruposPorDia.map(g => (
@@ -832,7 +832,7 @@ export default function TruckPagRepasses() {
               >
                 {g.statusBaixa === 'total' && <Lock className="h-3 w-3 shrink-0" title="Lote totalmente baixado" />}
                 {g.statusBaixa === 'parcial' && <Unlock className="h-3 w-3 shrink-0" title="Lote parcialmente baixado" />}
-                {fmtData(g.dataCredito)} · {fmtMoeda(g.valorCredito)} <span className="opacity-70">({g.qtd})</span>
+                {fmtData(g.dataCredito)} · {fmtMoeda(g.valorCredito)}
               </button>
             ))}
           </div>
