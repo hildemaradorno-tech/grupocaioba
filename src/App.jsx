@@ -99,6 +99,7 @@ import BiPossibilidades from './pages/bi/BiPossibilidades'
 import FontesBi from './pages/bi/FontesBi'
 import MedidasBi from './pages/bi/MedidasBi'
 import BiComissoes from './pages/bi/BiComissoes'
+import BiTruckPagDivergencias from './pages/bi/BiTruckPagDivergencias'
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth()
@@ -276,6 +277,7 @@ export default function App() {
           { path: '/bi/fontes', element: <FontesBi />, menuPath: 'bi/fontes' },
           { path: '/bi/medidas', element: <MedidasBi />, menuPath: 'bi/medidas' },
           { path: '/bi/comissoes', element: <BiComissoes />, menuPath: 'bi/comissoes' },
+          { path: '/bi/truckpag-divergencias', element: <BiTruckPagDivergencias />, menuPath: 'bi/truckpag-divergencias' },
         ].map(route => (
           <Route
             key={route.path}

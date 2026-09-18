@@ -243,6 +243,7 @@ export const MENU_TREE = [
       { key: 'bi/fontes', label: 'BI — Fontes' },
       { key: 'bi/medidas', label: 'BI — Medidas' },
       { key: 'bi/comissoes', label: 'BI — Comissões' },
+      { key: 'bi/truckpag-divergencias', label: 'BI — TruckPag Divergências' },
       {
         // Permissões individuais mantidas (controlam quais abas aparecem em /kpi/matriz),
         // mas o grupo inteiro navega direto pra página única — ver navTo no Home.jsx (TabelaMenu).

@@ -818,20 +818,6 @@ export default function TruckPagRepasses() {
                 Valor não identificado · {fmtMoeda(naoIdentificadoInfo.valor)} <span className="opacity-70">({naoIdentificadoInfo.qtd})</span>
               </button>
             )}
-            {qtdDivergentes > 0 && (
-              <button
-                type="button"
-                onClick={() => setFiltroDivergente(v => !v)}
-                title={`Filtrar ST Divergente (${qtdDivergentes})`}
-                className={`flex items-center justify-center p-1.5 rounded-md border transition-colors ${
-                  filtroDivergente
-                    ? 'bg-amber-500 border-amber-500 text-white'
-                    : 'bg-amber-50 border-amber-200 text-amber-600 hover:border-amber-300'
-                }`}
-              >
-                <AlertTriangle className="h-3.5 w-3.5" />
-              </button>
-            )}
             {gruposPorDia.map(g => (
               <button
                 key={g.chave}
@@ -872,6 +858,11 @@ export default function TruckPagRepasses() {
               <button type="button" onClick={alternarTodasExpandidas} className="flex items-center gap-1 text-[10px] font-semibold text-slate-500 hover:text-slate-700 bg-white border border-slate-200 rounded px-1.5 py-1">
                 {todosExpandidos ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
                 {todosExpandidos ? 'Recolher' : 'Expandir'}
+              </button>
+            )}
+            {qtdDivergentes > 0 && (
+              <button type="button" onClick={() => setFiltroDivergente(v => !v)} title="Filtrar Divergências" className={`flex items-center justify-center p-1.5 rounded-md border transition-colors ${filtroDivergente ? 'bg-amber-500 border-amber-500 text-white' : 'bg-amber-50 border-amber-200 text-amber-600 hover:border-amber-300'}`}>
+                <AlertTriangle className="h-3.5 w-3.5" />
               </button>
             )}
             <span className="flex items-center gap-2 text-[11px] font-semibold text-slate-600 bg-white border border-slate-200 rounded px-2 py-1">

@@ -5119,6 +5119,15 @@ export const apiService = {
     return { success: true, total: linhas.length }
   },
 
+  getTruckPagDivergencias: async ({ dataInicio, dataFim } = {}) => {
+    let q = supabase.from('truckpag_divergencias').select('*').order('registrado_em', { ascending: false })
+    if (dataInicio) q = q.gte('registrado_em', dataInicio + 'T00:00:00')
+    if (dataFim) q = q.lte('registrado_em', dataFim + 'T23:59:59')
+    const { data, error } = await q
+    if (error) throw error
+    return data || []
+  },
+
   gravarTruckPagDivergencias: async (linhas) => {
     const CHUNK = 500
     for (let i = 0; i < linhas.length; i += CHUNK) {
