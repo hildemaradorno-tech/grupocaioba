@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
-import { Download, RefreshCw, AlertTriangle, Filter, ChevronDown, ChevronUp, X, Link2, Link2Off, ArrowLeftRight, Wallet, Settings, List, HelpCircle } from 'lucide-react'
+import { RefreshCw, AlertTriangle, Filter, ChevronDown, ChevronUp, X, Link2, Link2Off, ArrowLeftRight, Wallet, Settings, List, HelpCircle } from 'lucide-react'
 import { apiService } from '../../services/api'
 import TruckPagNav from './TruckPagNav'
 import TruckPagConfigModal from './TruckPagConfigModal'
@@ -164,6 +164,7 @@ export default function TruckPagConciliacao() {
   const qtdCredito = linhasCreditoAtual.length
   const qtdVinculados = linhas.filter(l => l.vinculado).length
   const valorCredito = linhasCreditoAtual.reduce((s, l) => s + (l.valorLiquido || 0), 0)
+  const saldoDoctoTotal = creditosFiltrados.reduce((s, c) => s + (c.saldo_docto_controlado || 0), 0)
   const valorVinculado = linhasRepasseAtual.filter(l => l.vinculado).reduce((s, l) => s + (l.valorLiquido || 0), 0)
   // "Não conciliado" é só o lado do Saldo Concessionária (crédito) que não bateu com nenhum
   // repasse — não soma mais o lado do repasse, pra o card representar exclusivamente o crédito
@@ -206,7 +207,7 @@ export default function TruckPagConciliacao() {
               <Settings className="h-3.5 w-3.5" />
             </button>
             <button onClick={sincronizar} disabled={sincronizando} title={sincronizando ? 'Atualizando...' : 'Atualizar do SharePoint'} className="flex items-center justify-center bg-blue-600 hover:bg-blue-700 text-white p-2 rounded-md shadow-sm transition-colors disabled:opacity-50">
-              <Download className={`h-4 w-4 ${sincronizando ? 'animate-pulse' : ''}`} />
+              <RefreshCw className={`h-4 w-4 ${sincronizando ? 'animate-spin' : ''}`} />
             </button>
             <button onClick={() => setRegrasAberto(true)} title="Regras de conciliação" className="flex items-center justify-center p-2 rounded-md text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 shadow-sm transition-colors">
               <HelpCircle className="h-3.5 w-3.5 text-slate-500" />
@@ -236,6 +237,9 @@ export default function TruckPagConciliacao() {
           </div>
           <p className="text-2xl font-bold text-purple-700 leading-none">{fmtMoeda(valorCredito)}</p>
           <p className="text-[10px] text-purple-500 mt-0.5">{qtdCredito} crédito(s)</p>
+          {saldoDoctoTotal !== 0 && (
+            <p className="text-[10px] text-purple-400 mt-1">Saldo Atual: <span className="font-bold text-purple-600">{fmtMoeda(saldoDoctoTotal)}</span></p>
+          )}
         </button>
         <button
           type="button"

@@ -271,7 +271,7 @@ export default function TruckPagTitulos() {
               title={sincronizando ? 'Atualizando...' : 'Atualizar do SharePoint'}
               className="flex items-center justify-center bg-blue-600 hover:bg-blue-700 text-white p-2 rounded-md shadow-sm transition-colors disabled:opacity-50"
             >
-              <Download className={`h-4 w-4 ${sincronizando ? 'animate-pulse' : ''}`} />
+              <RefreshCw className={`h-4 w-4 ${sincronizando ? 'animate-spin' : ''}`} />
             </button>
             <button
               onClick={() => setRegrasAberto(true)}

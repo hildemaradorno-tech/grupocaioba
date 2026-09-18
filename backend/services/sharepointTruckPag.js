@@ -185,6 +185,7 @@ export async function getTruckPagCreditos() {
       observacao: String(r.Tesouraria_Observacao ?? '').trim(),
       nro_documento: String(r.Tesouraria_NroDocumento ?? '').trim(),
       valor: parseMoney(r.Tesouraria_Valor),
+      saldo_docto_controlado: parseMoney(r.Tesouraria_SaldoDoctoControlado),
     }))
     .filter(l => l.tesouraria_codigo)
 
