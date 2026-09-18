@@ -5119,6 +5119,15 @@ export const apiService = {
     return { success: true, total: linhas.length }
   },
 
+  gravarTruckPagDivergencias: async (linhas) => {
+    const CHUNK = 500
+    for (let i = 0; i < linhas.length; i += CHUNK) {
+      const { error } = await supabase.from('truckpag_divergencias').insert(linhas.slice(i, i + CHUNK))
+      if (error) throw error
+    }
+    return { success: true, total: linhas.length }
+  },
+
   // ── TruckPag — Configurações (Tipo de Saldo) ────────────────────────────
 
   getTruckPagTiposSaldo: async () => {

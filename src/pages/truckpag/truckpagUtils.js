@@ -149,6 +149,14 @@ function normalizarDoc(v) {
   return String(v ?? '').replace(/\D/g, '')
 }
 
+// Para CNPJ (14 dígitos), compara só a raiz (primeiros 8 dígitos) para não divergir por filial.
+// Para CPF (11 dígitos) ou qualquer outro doc, compara tudo.
+function docsBatem(a, b) {
+  if (!a || !b) return false
+  if (a.length === 14 && b.length === 14) return a.slice(0, 8) === b.slice(0, 8)
+  return a === b
+}
+
 // O relatório de títulos tem 2 colunas de nota fiscal (Nota Fiscal = peças, Nota Fiscal/Nota de
 // Serviço = serviço, dividida em RPS/NFS-e) mas o preenchimento vem inconsistente — número de
 // serviço aparece na coluna de peças e vice-versa. Pra não depender de qual coluna é qual, junta
@@ -223,7 +231,7 @@ export function conciliarTitulosRepasses(titulos, repasses, tolerancia = TOLERAN
 
       const graduacao = {}
       if (tituloDoc && repasseDoc) {
-        graduacao.documento = tituloDoc === repasseDoc
+        graduacao.documento = docsBatem(tituloDoc, repasseDoc)
       }
       if (tituloValor !== null && tituloValor !== undefined) {
         graduacao.valor = Math.abs(tituloValor - (r.valor_parcela_total || 0)) <= tolerancia

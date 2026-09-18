@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
-import { ArrowLeftRight, RefreshCw, AlertTriangle, ChevronDown, ChevronUp, X, CheckCircle2, XCircle, HelpCircle, Settings, Info, Link2, Link2Off, FileDown, FileText, Loader2, Archive, Lock, Unlock } from 'lucide-react'
+import { ArrowLeftRight, RefreshCw, AlertTriangle, ChevronDown, ChevronUp, X, CheckCircle2, XCircle, HelpCircle, Settings, Info, Link2, Link2Off, FileDown, FileText, Loader2, Archive, Lock, Unlock, ClipboardList } from 'lucide-react'
 import { apiService } from '../../services/api'
 import TruckPagNav from './TruckPagNav'
 import TruckPagRegrasModal from './TruckPagRegrasModal'
@@ -11,7 +11,7 @@ import {
   conciliarTitulosRepasses, tituloConciliadoPorRepasse,
   conciliarRepassesCreditos, filtrarCreditosPorTipoSaldo,
   codigoEmpresaPorNome, parcelaDoTitulo, notasFiscaisDoTitulo,
-  gerarArquivoBaixaTitulos, siglaEmpresaPorNome,
+  gerarArquivoBaixaTitulos, siglaEmpresaPorNome, LABEL_CAMPO_CONCILIACAO,
 } from './truckpagUtils'
 
 function hojeIso() {
@@ -64,6 +64,7 @@ export default function TruckPagRepasses() {
   const [ultimaAtualizacao, setUltimaAtualizacao] = useState(null)
   const [filtroGrupoRepasse, setFiltroGrupoRepasse] = useState(null)
   const [filtroNaoIdentificado, setFiltroNaoIdentificado] = useState(false)
+  const [filtroDivergente, setFiltroDivergente] = useState(false)
   const [sortCol, setSortCol] = useState('data_pagamento')
   const [sortDir, setSortDir] = useState('desc')
   const [expandidas, setExpandidas] = useState(() => new Set())
@@ -236,7 +237,7 @@ export default function TruckPagRepasses() {
           data_pagamento: g.data_pagamento,
           total: g.total,
           dataCredito: g.creditoVinculado.data_caixa,
-          valorCredito: g.creditoVinculado.valor,
+          valorCredito: g.creditoVinculado.saldo_docto_controlado ?? g.creditoVinculado.valor,
           qtd: g.linhas.length,
           statusBaixa,
         }
@@ -251,12 +252,15 @@ export default function TruckPagRepasses() {
     return { qtd: arr.length, valor: arr.reduce((s, l) => s + (l.valor_recebido || 0), 0) }
   }, [linhasVinculadas])
 
+  const qtdDivergentes = useMemo(() => linhasVinculadas.filter(l => l.statusConciliacao === 'divergente').length, [linhasVinculadas])
+
   const filtradas = useMemo(() => {
     let f = linhasVinculadas
     if (filtroGrupoRepasse) f = f.filter(l => `${l.estabelecimento}|${l.data_pagamento}` === filtroGrupoRepasse)
     if (filtroNaoIdentificado) f = f.filter(l => !l.conciliadoSaldo)
+    if (filtroDivergente) f = f.filter(l => l.statusConciliacao === 'divergente')
     return f
-  }, [linhasVinculadas, filtroGrupoRepasse, filtroNaoIdentificado])
+  }, [linhasVinculadas, filtroGrupoRepasse, filtroNaoIdentificado, filtroDivergente])
 
   const ordenadas = useMemo(() => {
     const arr = [...filtradas]
@@ -532,6 +536,158 @@ export default function TruckPagRepasses() {
     }
   }
 
+  const [gerandoRelatorio, setGerandoRelatorio] = useState(false)
+
+  const exportarRelatorioDivergencias = async () => {
+    const divergentes = linhasComConciliacao.filter(l => l.statusConciliacao === 'divergente')
+    if (!divergentes.length) return
+    setGerandoRelatorio(true)
+    try {
+      // Monta motivo detalhado comparando repasse × título campo a campo
+      const buildMotivo = (l) => {
+        const t = l.tituloEncontrado
+        if (!t || !t.camposDivergentes) return ''
+        const parts = []
+        if (t.camposDivergentes.valor === false)
+          parts.push(`Valor: repasse ${fmtMoeda(l.valor_parcela_total)} × título ${fmtMoeda(t.titulo_valor)}`)
+        if (t.camposDivergentes.saldo === false)
+          parts.push(`Saldo: recebido ${fmtMoeda(l.valor_recebido)} × título saldo ${fmtMoeda(t.titulo_saldo)}`)
+        if (t.camposDivergentes.documento === false)
+          parts.push(`CPF/CNPJ: repasse ${l.cnpj_cliente || '—'} × título ${t.titulo_pessoa_doc_ident || '—'}`)
+        if (t.camposDivergentes.parcela === false)
+          parts.push(`Parcela: repasse ${l.parcelas || '—'} × título ${parcelaDoTitulo(t.titulo_numero) || '—'}`)
+        return parts.join(' | ')
+      }
+
+      const buildCamposDivStr = (t) => {
+        if (!t?.camposDivergentes) return ''
+        return Object.entries(t.camposDivergentes)
+          .filter(([, v]) => v === false)
+          .map(([k]) => LABEL_CAMPO_CONCILIACAO[k] || k)
+          .join(', ')
+      }
+
+      // Grava no Supabase para análise histórica
+      const registros = divergentes.map(l => {
+        const { empresa, codigoEmpresa } = splitEstabelecimento(l.estabelecimento)
+        const t = l.tituloEncontrado
+        return {
+          empresa,
+          codigo_empresa: codigoEmpresa,
+          data_pagamento: l.data_pagamento || null,
+          nf_e: l.nf_e || null,
+          nfs_e: l.nfs_e || null,
+          parcelas: l.parcelas || null,
+          cnpj_cliente: l.cnpj_cliente || null,
+          nome_cliente: l.nome_cliente || null,
+          valor_parcela_total: l.valor_parcela_total ?? null,
+          valor_taxa: l.valor_taxa ?? null,
+          valor_recebido: l.valor_recebido ?? null,
+          campos_divergentes: buildCamposDivStr(t),
+          motivo: buildMotivo(l),
+          titulo_codigo: t?.titulo_codigo || null,
+          titulo_empresa: t?.titulo_empresa_nome || null,
+          titulo_valor: t?.titulo_valor ?? null,
+          titulo_saldo: t?.titulo_saldo ?? null,
+          titulo_doc: t?.titulo_pessoa_doc_ident || null,
+        }
+      })
+      await apiService.gravarTruckPagDivergencias(registros)
+
+      // Gera Excel
+      const { default: ExcelJS } = await import('exceljs')
+      const wb = new ExcelJS.Workbook()
+      wb.creator = 'Portal de Gestão'
+      const ws = wb.addWorksheet('Divergências')
+
+      const HEADER_FILL = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFB45309' } }
+      const HEADER_FONT = { bold: true, color: { argb: 'FFFFFFFF' }, size: 10 }
+      const BORDER = { style: 'thin', color: { argb: 'FFE2E8F0' } }
+      const BORDERS = { top: BORDER, left: BORDER, bottom: BORDER, right: BORDER }
+
+      ws.columns = [
+        { header: 'Data Registro', width: 18 },
+        { header: 'Empresa', width: 35 },
+        { header: 'Cód. Empresa', width: 14 },
+        { header: 'Data Pagto', width: 12 },
+        { header: 'Nº NF-e', width: 10 },
+        { header: 'Nº NFS-e', width: 10 },
+        { header: 'Parcelas', width: 10 },
+        { header: 'CNPJ do Cliente', width: 22 },
+        { header: 'Nome do Cliente', width: 30 },
+        { header: 'Valor Total Parcela', width: 20 },
+        { header: 'Valor Taxa', width: 14 },
+        { header: 'Valor Recebido', width: 16 },
+        { header: 'Campos Divergentes', width: 25 },
+        { header: 'Motivo Detalhado', width: 60 },
+        { header: 'Título (Lançamento)', width: 18 },
+        { header: 'Empresa Título', width: 30 },
+        { header: 'Valor Título', width: 14 },
+        { header: 'Saldo Título', width: 14 },
+        { header: 'CPF/CNPJ Título', width: 22 },
+      ]
+
+      const hr = ws.getRow(1)
+      hr.height = 20
+      hr.eachCell(cell => {
+        cell.fill = HEADER_FILL
+        cell.font = HEADER_FONT
+        cell.alignment = { vertical: 'middle', horizontal: 'center' }
+        cell.border = BORDERS
+      })
+
+      const agora = new Date().toLocaleString('pt-BR')
+      divergentes.forEach((l, idx) => {
+        const { empresa, codigoEmpresa } = splitEstabelecimento(l.estabelecimento)
+        const t = l.tituloEncontrado
+        const row = ws.addRow([
+          agora,
+          empresa,
+          codigoEmpresa,
+          l.data_pagamento ? fmtData(l.data_pagamento) : '',
+          l.nf_e || '',
+          l.nfs_e || '',
+          l.parcelas || '',
+          l.cnpj_cliente || '',
+          l.nome_cliente || '',
+          l.valor_parcela_total ?? '',
+          l.valor_taxa ?? '',
+          l.valor_recebido ?? '',
+          buildCamposDivStr(t),
+          buildMotivo(l),
+          t?.titulo_codigo || '',
+          t?.titulo_empresa_nome || '',
+          t?.titulo_valor ?? '',
+          t?.titulo_saldo ?? '',
+          t?.titulo_pessoa_doc_ident || '',
+        ])
+        row.height = 16
+        const bg = idx % 2 === 0 ? 'FFFFF8E1' : 'FFFFFFFF'
+        row.eachCell(cell => {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } }
+          cell.font = { size: 10 }
+          cell.alignment = { vertical: 'middle', wrapText: false }
+          cell.border = BORDERS
+        })
+        ;[10, 11, 12, 17, 18].forEach(col => {
+          row.getCell(col).numFmt = '"R$"#,##0.00'
+        })
+      })
+
+      const buf = await wb.xlsx.writeBuffer()
+      const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(blob)
+      a.download = `divergencias_truckpag_${hojeIso()}.xlsx`
+      a.click()
+      URL.revokeObjectURL(a.href)
+    } catch (err) {
+      setErro('Erro ao gerar relatório: ' + (err.message || String(err)))
+    } finally {
+      setGerandoRelatorio(false)
+    }
+  }
+
   const filtroAtivo = !!filtroGrupoRepasse
 
   const colunas = [
@@ -580,6 +736,12 @@ export default function TruckPagRepasses() {
               <span className="text-[10px] text-slate-400 whitespace-nowrap">
                 Atualizado em: <strong className="text-slate-500">{new Date(ultimaAtualizacao).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</strong>
               </span>
+            )}
+            {qtdDivergentes > 0 && (
+              <button onClick={exportarRelatorioDivergencias} disabled={gerandoRelatorio} title={`Exportar relatório de divergências (${qtdDivergentes})`} className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-md border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 transition-colors disabled:opacity-50">
+                {gerandoRelatorio ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ClipboardList className="h-3.5 w-3.5" />}
+                Relatório de Divergências
+              </button>
             )}
             <button onClick={() => setMostrarBaixados(true)} title="Depósitos já baixados" className="relative flex items-center justify-center border border-slate-200 text-slate-600 hover:bg-slate-50 p-2 rounded-md transition-colors">
               <Archive className="h-3.5 w-3.5" />
@@ -634,8 +796,8 @@ export default function TruckPagRepasses() {
             <label className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
               Saldo Concessionária (Data · Valor) — selecione o lote de pagamento
             </label>
-            {(filtroAtivo || filtroNaoIdentificado) && (
-              <button type="button" onClick={() => { setFiltroGrupoRepasse(null); setFiltroNaoIdentificado(false) }} className="flex items-center gap-1 text-[10px] font-semibold text-slate-400 hover:text-slate-600">
+            {(filtroAtivo || filtroNaoIdentificado || filtroDivergente) && (
+              <button type="button" onClick={() => { setFiltroGrupoRepasse(null); setFiltroNaoIdentificado(false); setFiltroDivergente(false) }} className="flex items-center gap-1 text-[10px] font-semibold text-slate-400 hover:text-slate-600">
                 <X className="h-3 w-3" /> Limpar filtro
               </button>
             )}
@@ -654,6 +816,20 @@ export default function TruckPagRepasses() {
               >
                 <Link2Off className="h-3 w-3" />
                 Valor não identificado · {fmtMoeda(naoIdentificadoInfo.valor)} <span className="opacity-70">({naoIdentificadoInfo.qtd})</span>
+              </button>
+            )}
+            {qtdDivergentes > 0 && (
+              <button
+                type="button"
+                onClick={() => setFiltroDivergente(v => !v)}
+                title={`Filtrar ST Divergente (${qtdDivergentes})`}
+                className={`flex items-center justify-center p-1.5 rounded-md border transition-colors ${
+                  filtroDivergente
+                    ? 'bg-amber-500 border-amber-500 text-white'
+                    : 'bg-amber-50 border-amber-200 text-amber-600 hover:border-amber-300'
+                }`}
+              >
+                <AlertTriangle className="h-3.5 w-3.5" />
               </button>
             )}
             {gruposPorDia.map(g => (
