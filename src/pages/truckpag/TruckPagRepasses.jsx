@@ -618,7 +618,7 @@ export default function TruckPagRepasses() {
         { header: 'Valor Total Parcela', width: 20 },
         { header: 'Valor Taxa', width: 14 },
         { header: 'Valor Recebido', width: 16 },
-        { header: 'Campos Divergentes', width: 25 },
+        { header: 'Motivo Divergência', width: 25 },
         { header: 'Motivo Detalhado', width: 60 },
         { header: 'Título (Lançamento)', width: 18 },
         { header: 'Empresa Título', width: 30 },
