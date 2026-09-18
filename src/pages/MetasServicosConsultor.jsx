@@ -9,7 +9,14 @@ const anoAtual = new Date().getFullYear()
 const ANOS = Array.from({ length: 7 }, (_, i) => anoAtual - 1 + i)
 const MESES_ABR = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
 
-const fmtBRL = (v) => { const n = Number(v); if (!v && v !== 0) return '—'; return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', currencySign: 'accounting', minimumFractionDigits: 2, maximumFractionDigits: 2 }) }
+// Moeda contábil: R$ na frente, negativo entre parênteses em vez de sinal de menos — o CLDR do
+// pt-BR não tem um padrão "accounting" próprio, então o parêntese é montado manualmente aqui.
+const fmtBRL = (v) => {
+  const n = Number(v)
+  if (!v && v !== 0) return '—'
+  const s = Math.abs(n).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return n < 0 ? `(${s})` : s
+}
 const fmtPct = (v) => { const n = Number(v); if (!n && n !== 0) return '—'; return n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%' }
 function parseBRL(s) { if (!s && s !== 0) return 0; const str = String(s).trim(); if (str.includes(',')) return parseFloat(str.replace(/\./g,'').replace(',','.')) || 0; return parseFloat(str) || 0 }
 
@@ -280,20 +287,25 @@ export default function MetasServicosConsultor() {
   const setoresDoDepto = useMemo(()=>setores.filter(s=>s.departamento_id===form.departamento_id && s.tipo_setor==='consultoria'),[setores,form.departamento_id])
   const boxesDoSetor   = useMemo(()=>boxes.filter(b=>(Array.isArray(b.setor_ids)?b.setor_ids:[b.setor_id]).includes(form.setor_id)),[boxes,form.setor_id])
   const cargosPorId = useMemo(()=>Object.fromEntries(cargos.map(c=>[c.id,c])),[cargos])
-  // "Adicionar Consultor" só deve oferecer funcionários com cargo no agrupamento
-  // "Consultores de Serviços" — evita listar gente de outras funções por engano.
+  // "Adicionar Consultor" oferece funcionários com cargo no agrupamento "Consultores de
+  // Serviços", mais o(s) cargo(s) de Coordenador de Funilaria (cargo isolado, fora desse
+  // agrupamento, mas que também distribui meta de consultor pro box de Funilaria/Pintura).
   const agrupamentoConsultoresId = useMemo(
     () => agrupamentosCargo.find(a => (a.nome_agrupamento_cargo || '').trim().toLowerCase() === 'consultores de serviços')?.id || null,
     [agrupamentosCargo]
   )
+  const isCargoConsultorOuCoordFunilaria = (cargoId) => {
+    const nome = (cargosPorId[cargoId]?.nome_cargo || '').trim().toLowerCase()
+    if (nome.includes('coordenador') && nome.includes('funilaria')) return true
+    return agrupamentoConsultoresId ? cargosPorId[cargoId]?.agrupamento_id === agrupamentoConsultoresId : true
+  }
   const funcsEmp = useMemo(() => {
     let l=funcionarios
     if(form.empresa_id) l=l.filter(f=>f.empresa_id===form.empresa_id)
     if(form.departamento_id) l=l.filter(f=>Array.isArray(f.departamento_ids)?f.departamento_ids.includes(form.departamento_id):f.departamento_id===form.departamento_id)
-    if(form.setor_id) l=l.filter(f=>Array.isArray(f.setor_ids)?f.setor_ids.includes(form.setor_id):f.setor_id===form.setor_id)
-    if(agrupamentoConsultoresId) l=l.filter(f=>cargosPorId[f.cargo_id]?.agrupamento_id===agrupamentoConsultoresId)
+    l=l.filter(f=>isCargoConsultorOuCoordFunilaria(f.cargo_id))
     return l
-  },[funcionarios,form.empresa_id,form.departamento_id,form.setor_id,cargosPorId,agrupamentoConsultoresId])
+  },[funcionarios,form.empresa_id,form.departamento_id,cargosPorId,agrupamentoConsultoresId])
 
   const handleFormChange = async (e) => {
     const { name, value } = e.target
@@ -531,7 +543,7 @@ export default function MetasServicosConsultor() {
                 </th>
                 {MESES_ABR.map(m => <th key={m} className="px-1 py-2.5 text-center font-semibold text-slate-600 uppercase border-b border-slate-200 w-24">{m}</th>)}
                 <th className="px-2 py-2.5 text-center font-semibold text-indigo-700 uppercase border-b border-slate-200 w-28 bg-indigo-50">Total Ano</th>
-                <th className="px-2 py-2.5 text-center font-semibold text-slate-600 uppercase border-b border-slate-200 w-36">Situação</th>
+                <th className="px-2 py-2.5 text-center font-semibold text-slate-600 uppercase border-b border-slate-200 w-40 whitespace-nowrap">Situação</th>
               </tr>
             </thead>
             <tbody>
@@ -583,13 +595,26 @@ export default function MetasServicosConsultor() {
 
                                 {expandedDepts.has(dKey) && Object.entries(dept.setores).map(([sId, setor]) => {
                                   const sKey=`${dKey}§${sId}`; const sMeses=aggSetor(setor); const sTotal=sumArr(sMeses)
+                                  // Situação por Setor (não mais por consultor individual): olha todos os
+                                  // meses com valor de todos os consultores desse setor — se algum não
+                                  // estiver aprovado, o setor inteiro fica "Aguard. Aprovação".
+                                  let setorTemValor = false, setorAprovado = true
+                                  Object.values(setor.boxes).forEach(bx => Object.values(bx.colabs).forEach(co => Object.values(co.meses).forEach(m => {
+                                    if (Number(m.meta_faturamento) > 0) {
+                                      setorTemValor = true
+                                      if (cellState(m.meta_faturamento, m.meta_aprovada) !== 'ok') setorAprovado = false
+                                    }
+                                  })))
+                                  const setorStatusLabel = setorAprovado ? 'APROVADO' : 'AGUARDANDO APROVACAO'
                                   return (
                                     <React.Fragment key={sId}>
                                       <tr className="cursor-pointer bg-slate-100 hover:bg-slate-200 transition-colors" onClick={()=>toggle(expandedSetores,setExpandedSetores,sKey)}>
                                         <td className="px-3 py-1.5 sticky left-0 bg-slate-100 z-10 whitespace-nowrap"><div className="flex items-center gap-2 pl-12">{expandedSetores.has(sKey)?<ChevronDown size={12}/>:<ChevronRight size={12}/>}<span className="text-slate-400 mr-0.5">Setor:</span><span className="font-semibold text-slate-700">{setor.nome}</span></div></td>
                                         {sMeses.map((v,i)=><td key={i} className="px-1 py-1.5 text-right text-xs text-slate-600 whitespace-nowrap">{v>0?fmtBRL(v):'—'}</td>)}
                                         <td className="px-2 py-1.5 text-right text-xs font-semibold text-indigo-600 bg-indigo-50/60 whitespace-nowrap">{sTotal>0?fmtBRL(sTotal):'—'}</td>
-                                        <td colSpan="2"/>
+                                        <td className="px-2 py-1.5 text-center whitespace-nowrap">
+                                          {setorTemValor && <span className={`px-2 py-0.5 rounded-full text-xs font-semibold whitespace-nowrap ${STATUS_CLS[setorStatusLabel]||'bg-slate-100 text-slate-500'}`}>{STATUS_DISPLAY[setorStatusLabel] || setorStatusLabel}</span>}
+                                        </td>
                                       </tr>
 
                                       {expandedSetores.has(sKey) && Object.entries(setor.boxes).map(([bId, box]) => {
@@ -639,9 +664,6 @@ export default function MetasServicosConsultor() {
 
                                             {expandedBoxes.has(bKey) && Object.entries(box.colabs).map(([colabId, colab]) => {
                                               const colMeses=aggColabs({x:colab}); const colTotal=sumArr(colMeses)
-                                              const mesesComValor=Object.values(colab.meses).filter(m=>Number(m.meta_faturamento)>0)
-                                              const aprovado=mesesComValor.length>0&&mesesComValor.every(m=>cellState(m.meta_faturamento,m.meta_aprovada)==='ok')
-                                              const statusLabel=aprovado?'APROVADO':'AGUARDANDO APROVACAO'
                                               return (
                                                 <tr key={colabId} className="border-b border-slate-100 hover:bg-indigo-50/30 transition-colors">
                                                   <td className="px-3 py-2 sticky left-0 bg-white z-10">
@@ -666,7 +688,7 @@ export default function MetasServicosConsultor() {
                                                     )
                                                   })}
                                                   <td className="px-2 py-2 text-right text-xs font-bold text-indigo-700 bg-indigo-50 whitespace-nowrap">{colTotal>0?fmtBRL(colTotal):'—'}</td>
-                                                  <td className="px-2 py-2 text-center"><span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${STATUS_CLS[statusLabel]||'bg-slate-100 text-slate-500'}`}>{STATUS_DISPLAY[statusLabel] || statusLabel}</span></td>
+                                                  <td/>
                                                 </tr>
                                               )
                                             })}
@@ -740,11 +762,21 @@ export default function MetasServicosConsultor() {
                     }))}
                     placeholder="Selecione..."
                     emptyOptionLabel="Selecione..."
-                    searchPlaceholder="Buscar consultor pelo nome..."
+                    searchPlaceholder="Buscar pelo nome ou cargo..."
                     notFoundLabel="Nenhum consultor encontrado."
                     opcoes={[{ id: 'A_CONTRATAR', nome_funcionario: 'A contratar' }, ...funcsEmp]}
-                    getLabel={(o) => o.nome_funcionario}
-                    getSearchText={(o) => o.nome_funcionario}
+                    getLabel={(o) => {
+                      if (o.id === 'A_CONTRATAR') return o.nome_funcionario
+                      const cargoNome = cargosPorId[o.cargo_id]?.nome_cargo
+                      return (
+                        <>
+                          {o.nome_funcionario}
+                          {cargoNome ? <span className="text-slate-400"> — {cargoNome}</span> : ''}
+                          {o.ativo === false && <span className="text-red-500 font-semibold"> (Inativo)</span>}
+                        </>
+                      )
+                    }}
+                    getSearchText={(o) => `${o.nome_funcionario} ${cargosPorId[o.cargo_id]?.nome_cargo || ''}`}
                   />
                 )}
               </div>

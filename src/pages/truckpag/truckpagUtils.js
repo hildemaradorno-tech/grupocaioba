@@ -168,8 +168,10 @@ export function notasFiscaisDoTitulo(t) {
 // sempre está preenchido e não é confiável como critério), pediu pra checar também se o Saldo do
 // título bate com o Valor Recebido do repasse (o que efetivamente cai na conta pra zerar o saldo)
 // e por fim pediu pra Parcela virar obrigatória também (se não bater, é "não encontrado", não
-// "divergente" — ver identidadeBate abaixo).
-const CAMPOS_GRADUACAO = ['valor', 'saldo']
+// "divergente" — ver identidadeBate abaixo). Depois disso, o CNPJ do Cliente deixou de ser
+// obrigatório pra virar candidato — passou pra CAMPOS_GRADUACAO junto com Valor/Saldo (ver
+// conciliarTitulosRepasses abaixo).
+const CAMPOS_GRADUACAO = ['documento', 'valor', 'saldo']
 
 // Concilia títulos × repasses. Nº NF-e e Nº NFS-e do repasse são checados contra TODAS as notas
 // do título (notasFiscaisDoTitulo) juntas, não campo a campo — a planilha de títulos vem com
@@ -179,15 +181,16 @@ const CAMPOS_GRADUACAO = ['valor', 'saldo']
 // Obrigatório pra virar candidato (a identidade do título, todos precisam bater — testado com
 // "basta 1 dos 3" e dava falso positivo: título achava repasse do mesmo CLIENTE mas sem nenhuma
 // nota fiscal em comum, só porque o CNPJ do cliente se repete em vários títulos dele): Código da
-// Empresa, CNPJ do cliente, Parcela E (Nº NF-e OU Nº NFS-e, pelo menos uma nota bate). Só depois
-// disso o status verde/amarelo olha pra CAMPOS_GRADUACAO (Valor, Saldo). 'exato' = todos os campos
-// de graduação comparáveis bateram (ou não houve nenhum comparável); 'divergente' = identidade
-// bate mas algum campo de graduação diverge; 'nao_encontrado' = nenhum repasse bate a identidade
-// completa (código + CNPJ + parcela + nota fiscal).
+// Empresa, Parcela E (Nº NF-e OU Nº NFS-e, pelo menos uma nota bate). CNPJ do Cliente NÃO é mais
+// obrigatório pra virar candidato — só entra depois, junto com CAMPOS_GRADUACAO (Documento, Valor,
+// Saldo), decidindo o status verde/amarelo. 'exato' = todos os campos de graduação comparáveis
+// bateram (ou não houve nenhum comparável); 'divergente' = identidade bate mas algum campo de
+// graduação diverge (inclusive CNPJ do Cliente); 'nao_encontrado' = nenhum repasse bate a
+// identidade completa (código + parcela + nota fiscal).
 //
-// `camposDivergentes` no retorno junta TUDO que foi comparado (código, CNPJ, NF-e, NFS-e, parcela
-// — só informativo pra tela, não entram na graduação — mais valor/saldo, que são os que decidem o
-// status), pra tela poder mostrar uma bolinha verde em qualquer campo que bateu.
+// `camposDivergentes` no retorno junta TUDO que foi comparado (código, NF-e, NFS-e, parcela — só
+// informativo pra tela, não entram na graduação — mais documento/valor/saldo, que são os que
+// decidem o status), pra tela poder mostrar uma bolinha verde em qualquer campo que bateu.
 //
 // `tolerancia` é a mesma configurável em Configurações → Tolerância de Valor (compartilhada com
 // conciliarRepassesCreditos) — usa TOLERANCIA_VINCULO como padrão só se o chamador não passar nada.
@@ -210,17 +213,18 @@ export function conciliarTitulosRepasses(titulos, repasses, tolerancia = TOLERAN
 
       const obrigatorios = {}
       if (tituloCodigo && repasseCodigo) obrigatorios.codigo = tituloCodigo === repasseCodigo
-      if (tituloDoc && repasseDoc) obrigatorios.documento = tituloDoc === repasseDoc
       if (repasseNF && notasTitulo.length) obrigatorios.notaFiscal = notasTitulo.includes(repasseNF)
       if (repasseNFSe && notasTitulo.length) obrigatorios.nfse = notasTitulo.includes(repasseNFSe)
       if (tituloParcela && repasseParcela) obrigatorios.parcela = tituloParcela === repasseParcela
 
       const notaBate = obrigatorios.notaFiscal === true || obrigatorios.nfse === true
-      const identidadeBate = obrigatorios.codigo === true && obrigatorios.documento === true
-        && obrigatorios.parcela === true && notaBate
+      const identidadeBate = obrigatorios.codigo === true && obrigatorios.parcela === true && notaBate
       if (!identidadeBate) continue // identidade incompleta — não é candidato
 
       const graduacao = {}
+      if (tituloDoc && repasseDoc) {
+        graduacao.documento = tituloDoc === repasseDoc
+      }
       if (tituloValor !== null && tituloValor !== undefined) {
         graduacao.valor = Math.abs(tituloValor - (r.valor_parcela_total || 0)) <= tolerancia
       }

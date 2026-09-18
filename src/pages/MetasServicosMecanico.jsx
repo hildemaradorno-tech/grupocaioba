@@ -3,16 +3,33 @@ import { useSessionState } from '../hooks/useSessionState'
 import { Plus, Trash2, X, AlertTriangle, ChevronRight, ChevronDown, Wrench, Loader2, CheckCircle2, Sparkles, Pencil, Edit2, Eye, ArrowRight } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import PermissionActionButtons from '../components/PermissionActionButtons'
+import { SearchCombobox } from '../components/SearchCombobox'
 import { apiService } from '../services/api'
 
 const anoAtual = new Date().getFullYear()
 const ANOS = Array.from({ length: 7 }, (_, i) => anoAtual - 1 + i)
 const MESES_ABR = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
 
-const fmtBRL = (v) => { const n = Number(v); if (!v && v !== 0) return '—'; return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', currencySign: 'accounting', minimumFractionDigits: 2, maximumFractionDigits: 2 }) }
+// Moeda contábil: R$ na frente, negativo entre parênteses em vez de sinal de menos — o CLDR do
+// pt-BR não tem um padrão "accounting" próprio (currencySign:'accounting' cai pro mesmo "-R$"),
+// então o parêntese é montado manualmente aqui.
+const fmtBRL = (v) => {
+  const n = Number(v)
+  if (!v && v !== 0) return '—'
+  const s = Math.abs(n).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return n < 0 ? `(${s})` : s
+}
 
 function parseBRL(s) { if (!s && s !== 0) return 0; const str = String(s).trim(); if (str.includes(',')) return parseFloat(str.replace(/\./g, '').replace(',', '.')) || 0; return parseFloat(str) || 0 }
-function formatBRL(n) { const num = Number(n); if (!num && num !== 0) return ''; return num.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', currencySign: 'accounting', minimumFractionDigits: 2, maximumFractionDigits: 2 }) }
+function formatBRL(n) {
+  const num = Number(n)
+  if (!num && num !== 0) return ''
+  const s = Math.abs(num).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return num < 0 ? `(${s})` : s
+}
+
+const STATUS_CLS     = { 'AGUARDANDO': 'bg-amber-100 text-amber-700', 'DISTRIBUIDO': 'bg-green-100 text-green-700' }
+const STATUS_DISPLAY = { 'AGUARDANDO': 'Aguard. Distribuição',       'DISTRIBUIDO': 'Valor Distribuído' }
 
 function cellState(cur, apr) { const c = Number(cur) || 0; if (c === 0) return 'ok'; if (apr === null || apr === undefined) return 'new'; if (Math.abs(c - Number(apr)) > 0.001) return 'changed'; return 'ok' }
 function pendingCountEmp(emp) {
@@ -357,6 +374,8 @@ export default function MetasServicosMecanico({ onDistribuir } = {}) {
     if (form.box_id)          l = l.filter(f => f.box_id === form.box_id)
     return l
   }, [funcionarios, form.empresa_id, form.departamento_id, form.setor_id, form.box_id])
+
+  const cargosPorId = useMemo(() => Object.fromEntries(cargos.map(c => [c.id, c])), [cargos])
 
   const handleFormChange = async (e) => {
     const { name, value } = e.target
@@ -849,7 +868,7 @@ export default function MetasServicosMecanico({ onDistribuir } = {}) {
 
   const vField = filtroVisu === 'pecas' ? 'meta_pecas' : filtroVisu === 'servicos' ? 'meta_servicos' : 'meta_faturamento'
   const grupoMeses = aggTree(tree, vField)
-  const NCOLS = 14 // nome + 12 meses + total
+  const NCOLS = 15 // nome + 12 meses + total + situação
 
   return (
     <div className="flex flex-col h-full p-6 gap-4">
@@ -942,6 +961,7 @@ export default function MetasServicosMecanico({ onDistribuir } = {}) {
                 </th>
                 {MESES_ABR.map(m => <th key={m} className="px-1 py-2.5 text-center font-semibold text-slate-600 uppercase border-b border-slate-200 w-24">{m}</th>)}
                 <th className="px-2 py-2.5 text-center font-semibold text-indigo-700 uppercase border-b border-slate-200 w-28 bg-indigo-50">Total Ano</th>
+                <th className="px-2 py-2.5 text-center font-semibold text-slate-600 uppercase border-b border-slate-200 w-40 whitespace-nowrap">Situação</th>
               </tr>
             </thead>
             <tbody>
@@ -960,6 +980,7 @@ export default function MetasServicosMecanico({ onDistribuir } = {}) {
                       </td>
                       {grupoMeses.map((v,i) => <td key={i} className="px-1 py-2.5 text-right text-xs font-bold text-blue-200 whitespace-nowrap">{v > 0 ? fmtBRL(v) : '—'}</td>)}
                       <td className="px-2 py-2.5 text-right text-xs font-bold text-amber-300 bg-blue-900 whitespace-nowrap">{grupoTotal > 0 ? fmtBRL(grupoTotal) : '—'}</td>
+                      <td/>
                     </tr>
 
                     {grupoAberto && Object.entries(tree).map(([empId, emp]) => {
@@ -975,6 +996,7 @@ export default function MetasServicosMecanico({ onDistribuir } = {}) {
                             </td>
                             {empMeses.map((v,i) => <td key={i} className="px-1 py-2 text-right text-xs font-semibold text-indigo-200 whitespace-nowrap">{v>0?fmtBRL(v):'—'}</td>)}
                             <td className="px-2 py-2 text-right text-xs font-bold text-amber-300 bg-indigo-800 whitespace-nowrap">{empTotal>0?fmtBRL(empTotal):'—'}</td>
+                            <td/>
                           </tr>
 
                           {expandedEmpresas.has(empId) && Object.entries(emp.depts).map(([deptId, dept]) => {
@@ -985,6 +1007,7 @@ export default function MetasServicosMecanico({ onDistribuir } = {}) {
                                   <td className="px-3 py-1.5 text-slate-800 font-bold sticky left-0 bg-slate-200 z-10 whitespace-nowrap"><div className="flex items-center gap-2 pl-8">{expandedDepts.has(dKey)?<ChevronDown size={13}/>:<ChevronRight size={13}/>}<span className="text-slate-500 font-normal mr-0.5">Departamento:</span><span className="font-bold">{dept.nome}</span></div></td>
                                   {dMeses.map((v,i) => <td key={i} className="px-1 py-1.5 text-right text-xs font-semibold text-slate-700 whitespace-nowrap">{v>0?fmtBRL(v):'—'}</td>)}
                                   <td className="px-2 py-1.5 text-right text-xs font-bold text-indigo-700 bg-indigo-50 whitespace-nowrap">{dTotal>0?fmtBRL(dTotal):'—'}</td>
+                                  <td/>
                                 </tr>
 
                                 {expandedDepts.has(dKey) && Object.entries(dept.setores).map(([sId, setor]) => {
@@ -1004,21 +1027,16 @@ export default function MetasServicosMecanico({ onDistribuir } = {}) {
                                             {expandedSetores.has(sKey)?<ChevronDown size={12}/>:<ChevronRight size={12}/>}
                                             <span className="text-slate-400 mr-0.5">Setor:</span>
                                             <span className="font-semibold text-slate-700">{setor.nome}</span>
-                                            {setorTemValor && (
-                                              <span className="relative group inline-flex shrink-0">
-                                                {setorDistribuido
-                                                  ? <CheckCircle2 size={14} className="text-green-600 cursor-help" />
-                                                  : <AlertTriangle size={14} className="text-amber-500 cursor-help" />
-                                                }
-                                                <span className="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-full mb-1.5 hidden group-hover:block whitespace-nowrap bg-slate-800 text-white text-[11px] font-normal px-2 py-1 rounded shadow-lg z-50">
-                                                  {setorDistribuido ? 'Meta do setor 100% distribuída entre os consultores' : 'Meta do setor aguardando distribuição entre os consultores'}
-                                                </span>
-                                              </span>
-                                            )}
                                           </div>
                                         </td>
                                         {sMeses.map((v,i) => <td key={i} className="px-1 py-1.5 text-right text-xs text-slate-600 whitespace-nowrap">{v>0?fmtBRL(v):'—'}</td>)}
                                         <td className="px-2 py-1.5 text-right text-xs font-semibold text-indigo-600 bg-indigo-50/60 whitespace-nowrap">{sTotal>0?fmtBRL(sTotal):'—'}</td>
+                                        <td className="px-2 py-1.5 text-center whitespace-nowrap">
+                                          {setorTemValor && (() => {
+                                            const statusLabel = setorDistribuido ? 'DISTRIBUIDO' : 'AGUARDANDO'
+                                            return <span className={`px-2 py-0.5 rounded-full text-xs font-semibold whitespace-nowrap ${STATUS_CLS[statusLabel]||'bg-slate-100 text-slate-500'}`}>{STATUS_DISPLAY[statusLabel] || statusLabel}</span>
+                                          })()}
+                                        </td>
                                       </tr>
 
                                       {expandedSetores.has(sKey) && Object.entries(setor.boxes).map(([bId, box]) => {
@@ -1029,6 +1047,7 @@ export default function MetasServicosMecanico({ onDistribuir } = {}) {
                                               <td className="px-3 py-1.5 sticky left-0 bg-white z-10 whitespace-nowrap"><div className="flex items-center gap-2 pl-16">{expandedBoxes.has(bKey)?<ChevronDown size={11}/>:<ChevronRight size={11}/>}<span className="text-slate-400 mr-0.5">Box:</span><span className="font-semibold text-slate-600">{box.nome}</span></div></td>
                                               {bMeses.map((v,i) => <td key={i} className="px-1 py-1.5 text-right text-xs text-slate-500 whitespace-nowrap">{v>0?fmtBRL(v):'—'}</td>)}
                                               <td className="px-2 py-1.5 text-right text-xs font-semibold text-indigo-500 bg-indigo-50/40 whitespace-nowrap">{bTotal>0?fmtBRL(bTotal):'—'}</td>
+                                              <td/>
                                             </tr>
 
                                             {expandedBoxes.has(bKey) && Object.entries(box.colabs).map(([colabId, colab]) => {
@@ -1055,6 +1074,7 @@ export default function MetasServicosMecanico({ onDistribuir } = {}) {
                                                     )
                                                   })}
                                                   <td className="px-2 py-2 text-right text-xs font-bold text-indigo-700 bg-indigo-50 whitespace-nowrap">{colTotal>0?fmtBRL(colTotal):'—'}</td>
+                                                  <td/>
                                                 </tr>
                                               )
                                             })}
@@ -1118,12 +1138,35 @@ export default function MetasServicosMecanico({ onDistribuir } = {}) {
               </div>
               <div className="grid grid-cols-3 gap-4 items-end">
                 <div className="col-span-2"><label className={LBL}>Colaborador *</label>
-                  <select name="colaborador_id" className={SEL} value={form.colaborador_id} onChange={handleFormChange} disabled={!form.empresa_id || modoModal === 'editar' || modoModal === 'visualizar'}>
-                    <option value="">Selecione...</option>
-                    <option value="A_CONTRATAR">A contratar</option>
-                    <option value="PROD_NAO_ASSOC_FUN">Produtivo Não Associado Funilaria</option>
-                    {funcsEmp.map(f => <option key={f.id} value={f.id}>{f.nome_funcionario}</option>)}
-                  </select>
+                  {(!form.empresa_id || modoModal === 'editar' || modoModal === 'visualizar') ? (
+                    <div className={`${SEL} bg-slate-100 text-slate-500 cursor-not-allowed`}>{form.colaborador_nome || '—'}</div>
+                  ) : (
+                    <SearchCombobox
+                      value={form.colaborador_id}
+                      onChange={(id) => handleFormChange({ target: { name: 'colaborador_id', value: id } })}
+                      placeholder="Selecione..."
+                      emptyOptionLabel="Selecione..."
+                      searchPlaceholder="Buscar pelo nome ou cargo..."
+                      notFoundLabel="Nenhum colaborador encontrado."
+                      opcoes={[
+                        { id: 'A_CONTRATAR', nome_funcionario: 'A contratar' },
+                        { id: 'PROD_NAO_ASSOC_FUN', nome_funcionario: 'Produtivo Não Associado Funilaria' },
+                        ...funcsEmp,
+                      ]}
+                      getLabel={(o) => {
+                        if (o.id === 'A_CONTRATAR' || o.id === 'PROD_NAO_ASSOC_FUN') return o.nome_funcionario
+                        const cargoNome = cargosPorId[o.cargo_id]?.nome_cargo
+                        return (
+                          <>
+                            {o.nome_funcionario}
+                            {cargoNome ? <span className="text-slate-400"> — {cargoNome}</span> : ''}
+                            {o.ativo === false && <span className="text-red-500 font-semibold"> (Inativo)</span>}
+                          </>
+                        )
+                      }}
+                      getSearchText={(o) => `${o.nome_funcionario} ${cargosPorId[o.cargo_id]?.nome_cargo || ''}`}
+                    />
+                  )}
                 </div>
                 <div>
                   <label className={LBL}>Data Admissão</label>

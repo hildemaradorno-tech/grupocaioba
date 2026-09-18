@@ -309,7 +309,7 @@ export default function GarantiasDafTitulos() {
                 <span className="absolute top-full left-0 mt-2 w-96 text-[10px] text-white bg-slate-700 rounded px-2 py-1.5 leading-relaxed opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 normal-case font-normal tracking-normal space-y-1">
                   <div>Fonte de dados: Relatório extraído do sistema Dealer.net através do sistema Robert Automation</div>
                   <div>RPA: Processo 2: Extração Relatórios Financeiro</div>
-                  <div>Nome do Arquivo: RFN003_PosicaoAnaliticoReceber_Excel.xls</div>
+                  <div>Nome do Arquivo: RFN003_PosicaoAnaliticoReceber_Excel (4 arquivos, um por unidade — busca por início do nome)</div>
                   <div>Pasta SharePoint: /Banco de Dados - DAF - Pós-Vendas/Financeiro - DAF</div>
                 </span>
               </span>

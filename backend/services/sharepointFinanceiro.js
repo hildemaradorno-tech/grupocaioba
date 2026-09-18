@@ -2,7 +2,10 @@ import * as XLSX from 'xlsx'
 import axios from 'axios'
 import { graphGet } from './graphClient.js'
 
-const FILE_PATH_TITULOS = '/Banco de Dados - DAF - Pós-Vendas/Financeiro - DAF/RFN003_PosicaoAnaliticoReceber_Excel.xls'
+const PASTA = '/Banco de Dados - DAF - Pós-Vendas/Financeiro - DAF'
+// RFN003 passou a vir como 1 arquivo POR UNIDADE (ex: "..._CAMPO GRANDE.xls", "..._DOURADOS.xls"),
+// não mais um arquivo único — por isso busca por início do nome, não path exato (ver downloadFile).
+const PREFIX_TITULOS = 'RFN003_PosicaoAnaliticoReceber_Excel'
 
 const CACHE_TTL_MS = 5 * 60 * 1000
 let _cache = null
@@ -58,17 +61,39 @@ function parseNum(val) {
   return isNaN(n) ? null : n
 }
 
+// Baixa TODOS os arquivos da pasta cujo nome começa com RFN003_PosicaoAnaliticoReceber_Excel_
+// (1 por unidade — Campo Grande, Chapadão, Dourados, Três Lagoas) e mescla as linhas. O arquivo
+// genérico sem sufixo de unidade (RFN003_PosicaoAnaliticoReceber_Excel.xls) é um resquício do
+// formato antigo (relatório único, antes da divisão por unidade) que continua sendo exportado na
+// mesma pasta — se incluído, duplica cada título que também aparece no arquivo da sua unidade
+// (com um "Atr." às vezes desatualizado, por ser gerado em momento diferente). Por isso é excluído
+// explicitamente: só entram arquivos com "_" logo após o prefixo (sufixo de unidade).
 async function downloadFile() {
   const driveId = process.env.SHAREPOINT_DRIVE_ID
   if (!driveId) throw new Error('SHAREPOINT_DRIVE_ID não configurado no ambiente')
-  const itemMeta = await graphGet(`/drives/${driveId}/root:${FILE_PATH_TITULOS}`)
-  const downloadUrl = itemMeta['@microsoft.graph.downloadUrl']
-  if (!downloadUrl) throw new Error('Não foi possível obter URL de download do arquivo SharePoint')
-  const lastModified = itemMeta.lastModifiedDateTime || null
-  const response = await axios.get(downloadUrl, { responseType: 'arraybuffer', timeout: 60_000 })
-  const workbook = XLSX.read(Buffer.from(response.data), { type: 'buffer', cellDates: true })
-  const sheet = workbook.Sheets[workbook.SheetNames[0]]
-  return { rows: XLSX.utils.sheet_to_json(sheet, { defval: '' }), lastModified }
+  const listagem = await graphGet(`/drives/${driveId}/root:${PASTA}:/children`)
+  const alvo = PREFIX_TITULOS.toLowerCase()
+  const arquivos = (listagem.value || []).filter(item => {
+    if (!item.file || !item.name) return false
+    const nome = item.name.toLowerCase()
+    if (!nome.startsWith(alvo)) return false
+    return nome.slice(alvo.length).startsWith('_')
+  })
+  if (arquivos.length === 0) throw new Error(`Nenhum arquivo encontrado começando com "${PREFIX_TITULOS}_" em ${PASTA}`)
+
+  const rows = []
+  let lastModified = null
+  for (const item of arquivos) {
+    const downloadUrl = item['@microsoft.graph.downloadUrl']
+    if (!downloadUrl) continue
+    const response = await axios.get(downloadUrl, { responseType: 'arraybuffer', timeout: 60_000 })
+    const workbook = XLSX.read(Buffer.from(response.data), { type: 'buffer', cellDates: true })
+    const sheet = workbook.Sheets[workbook.SheetNames[0]]
+    rows.push(...XLSX.utils.sheet_to_json(sheet, { defval: '' }))
+    const lm = item.lastModifiedDateTime || null
+    if (lm && (!lastModified || lm > lastModified)) lastModified = lm
+  }
+  return { rows, lastModified }
 }
 
 // Retorna { rows, lastModified } com títulos a receber

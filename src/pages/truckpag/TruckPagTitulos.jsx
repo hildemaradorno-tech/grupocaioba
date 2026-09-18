@@ -1,18 +1,13 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
-import { Truck, Download, RefreshCw, AlertTriangle, Filter, ChevronDown, ChevronUp, X, CheckCircle2, XCircle, HelpCircle, Settings, FileDown, FileText, Loader2 } from 'lucide-react'
+import { Truck, Download, RefreshCw, AlertTriangle, Filter, ChevronDown, ChevronUp, X, CheckCircle2, XCircle, HelpCircle, Settings, Info, Wallet, Clock, CalendarClock } from 'lucide-react'
 import { apiService } from '../../services/api'
 import TruckPagNav from './TruckPagNav'
 import TruckPagRegrasModal from './TruckPagRegrasModal'
 import TruckPagConfigModal from './TruckPagConfigModal'
 import {
   fmtMoeda, fmtData, sincronizarTudoTruckPag, conciliarTitulosRepasses, splitEstabelecimento,
-  codigoEmpresaPorNome, parcelaDoTitulo, notasFiscaisDoTitulo, gerarArquivoBaixaTitulos, siglaEmpresaPorNome,
+  codigoEmpresaPorNome, parcelaDoTitulo, notasFiscaisDoTitulo,
 } from './truckpagUtils'
-
-function hojeIso() {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
 
 const CONCILIACAO_INFO = {
   exato: { label: 'Identificado', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200', icon: CheckCircle2 },
@@ -50,6 +45,17 @@ function situacaoVencimento(diasAtraso) {
   return 'aVencer'
 }
 
+// Versão resumida de situacaoVencimento pros 4 cards do topo (Valor Total/Vencido/A Vencer/Vence
+// Hoje) — junta vencidaMuito+vencida num "Vencido" só, já que o detalhe de mais/menos 30 dias
+// continua aparecendo na cor da linha da tabela (ver situacaoVencimento), não precisa de card
+// separado pra isso.
+function situacaoResumida(diasAtraso) {
+  if (diasAtraso === null || diasAtraso === undefined) return null
+  if (diasAtraso > 0) return 'vencido'
+  if (diasAtraso === 0) return 'hoje'
+  return 'aVencer'
+}
+
 export default function TruckPagTitulos() {
   const [linhas, setLinhas] = useState([])
   const [repasses, setRepasses] = useState([])
@@ -59,20 +65,14 @@ export default function TruckPagTitulos() {
   const [erro, setErro] = useState(null)
   const [ultimaAtualizacao, setUltimaAtualizacao] = useState(null)
   const [filtroSituacao, setFiltroSituacao] = useState(null)
-  const [filtroConciliacao, setFiltroConciliacao] = useState(null) // null | 'exato' | 'divergente' | 'nao_encontrado'
   const [filtrosAbertos, setFiltrosAbertos] = useState(false)
   const [filtroEmpresa, setFiltroEmpresa] = useState('')
-  const [filtroVendedor, setFiltroVendedor] = useState('')
-  const [filtroTexto, setFiltroTexto] = useState('')
-  const [filtroGrupoRepasse, setFiltroGrupoRepasse] = useState(null)
+  const [filtroBusca, setFiltroBusca] = useState('')
   const [sortCol, setSortCol] = useState('titulo_data_venc')
   const [sortDir, setSortDir] = useState('asc')
   const [expandidas, setExpandidas] = useState(() => new Set())
   const [regrasAberto, setRegrasAberto] = useState(false)
   const [configAberto, setConfigAberto] = useState(false)
-  const [selecionados, setSelecionados] = useState(() => new Set())
-  const [dataExport, setDataExport] = useState(hojeIso)
-  const [processandoPdf, setProcessandoPdf] = useState(null)
 
   const alternarExpandida = (id) => {
     setExpandidas(prev => {
@@ -125,81 +125,40 @@ export default function TruckPagTitulos() {
   // Concilia cada título com os repasses — ver conciliarTitulosRepasses em truckpagUtils.js.
   const titulosConciliados = useMemo(() => conciliarTitulosRepasses(linhas, repasses, tolerancia), [linhas, repasses, tolerancia])
 
-  const alertas = useMemo(() => {
-    const c = { vencidaMuito: { qtd: 0, valor: 0 }, vencida: { qtd: 0, valor: 0 }, hoje: { qtd: 0, valor: 0 } }
+  // 4 cards do topo: Valor Total (todos os títulos) + os 3 baldes de vencimento resumido.
+  const resumoVencimento = useMemo(() => {
+    const c = {
+      total: { qtd: 0, valor: 0 },
+      vencido: { qtd: 0, valor: 0 },
+      aVencer: { qtd: 0, valor: 0 },
+      hoje: { qtd: 0, valor: 0 },
+    }
     for (const l of titulosConciliados) {
-      const st = situacaoVencimento(l.titulo_dias_atraso)
+      c.total.qtd += 1
+      c.total.valor += l.titulo_saldo || 0
+      const st = situacaoResumida(l.titulo_dias_atraso)
       if (st && c[st]) { c[st].qtd += 1; c[st].valor += l.titulo_saldo || 0 }
     }
     return c
   }, [titulosConciliados])
 
-  // Identificados mostra o valor que realmente caiu na nossa conta (repasse líquido); divergentes
-  // e não encontrados mostram o valor do próprio título, já que não há repasse confirmado pra eles.
-  const resumoConciliacao = useMemo(() => {
-    const c = {
-      exato: { qtd: 0, valor: 0 },
-      divergente: { qtd: 0, valor: 0 },
-      nao_encontrado: { qtd: 0, valor: 0 },
-    }
-    for (const l of titulosConciliados) {
-      const st = c[l.statusConciliacao]
-      st.qtd += 1
-      st.valor += l.statusConciliacao === 'exato'
-        ? (l.repasseMatch?.valor_recebido || 0)
-        : (l.titulo_valor || 0)
-    }
-    return c
-  }, [titulosConciliados])
-
-  // Agrupa por Estabelecimento + Data de Pagamento — mesmo agrupamento do depósito bancário usado
-  // na tela de Conciliação (Saldo), pra bater um chip só por dia (não um por lote/NF). O total é a
-  // soma de TODOS os repasses daquele dia (igual o extrato do saldo), mesmo que só parte deles
-  // tenha título vinculado; só entram na lista os dias que têm pelo menos 1 título vinculado.
-  const gruposPorRepasseDia = useMemo(() => {
-    const totais = new Map()
-    for (const r of repasses) {
-      const chave = `${r.estabelecimento}|${r.data_pagamento}`
-      if (!totais.has(chave)) {
-        const { empresa, codigoEmpresa } = splitEstabelecimento(r.estabelecimento)
-        totais.set(chave, { chave, empresa, codigoEmpresa, data_pagamento: r.data_pagamento, total: 0, qtd: 0 })
-      }
-      totais.get(chave).total += r.valor_recebido || 0
-    }
-    for (const l of titulosConciliados) {
-      if (!l.repasseMatch) continue
-      const chave = `${l.repasseMatch.estabelecimento}|${l.repasseMatch.data_pagamento}`
-      const g = totais.get(chave)
-      if (g) g.qtd += 1
-    }
-    return [...totais.values()]
-      .filter(g => g.qtd > 0)
-      .sort((a, b) => {
-        const cmpEmpresa = a.empresa.localeCompare(b.empresa, 'pt-BR')
-        if (cmpEmpresa !== 0) return cmpEmpresa
-        return String(a.data_pagamento).localeCompare(String(b.data_pagamento))
-      })
-  }, [repasses, titulosConciliados])
-
   const filtradas = useMemo(() => {
     let f = titulosConciliados
-    if (filtroSituacao) f = f.filter(l => situacaoVencimento(l.titulo_dias_atraso) === filtroSituacao)
-    if (filtroConciliacao) f = f.filter(l => l.statusConciliacao === filtroConciliacao)
-    if (filtroGrupoRepasse) f = f.filter(l => l.repasseMatch && `${l.repasseMatch.estabelecimento}|${l.repasseMatch.data_pagamento}` === filtroGrupoRepasse)
+    if (filtroSituacao) f = f.filter(l => situacaoResumida(l.titulo_dias_atraso) === filtroSituacao)
     if (filtroEmpresa.trim()) {
       const alvo = filtroEmpresa.trim().toLowerCase()
       f = f.filter(l => l.titulo_empresa_nome?.toLowerCase().includes(alvo))
     }
-    if (filtroVendedor.trim()) {
-      const alvo = filtroVendedor.trim().toLowerCase()
-      f = f.filter(l => l.titulo_vendedor_nome?.toLowerCase().includes(alvo))
-    }
-    if (filtroTexto.trim()) {
-      const alvo = filtroTexto.trim().toLowerCase()
-      f = f.filter(l => l.titulo_numero?.toLowerCase().includes(alvo) || l.titulo_os_numero?.toLowerCase().includes(alvo) || l.titulo_pessoa_nome?.toLowerCase().includes(alvo))
+    if (filtroBusca.trim()) {
+      const alvo = filtroBusca.trim().toLowerCase()
+      f = f.filter(l =>
+        String(l.titulo_codigo ?? '').toLowerCase().includes(alvo) ||
+        l.titulo_numero?.toLowerCase().includes(alvo) ||
+        notasFiscaisDoTitulo(l).some(nf => nf.toLowerCase().includes(alvo))
+      )
     }
     return f
-  }, [titulosConciliados, filtroSituacao, filtroConciliacao, filtroGrupoRepasse, filtroEmpresa, filtroVendedor, filtroTexto])
+  }, [titulosConciliados, filtroSituacao, filtroEmpresa, filtroBusca])
 
   const ordenadas = useMemo(() => {
     const arr = [...filtradas]
@@ -231,194 +190,9 @@ export default function TruckPagTitulos() {
     setExpandidas(todosExpandidos ? new Set() : new Set(idsExpansiveis))
   }
 
-  const alternarSelecao = (id) => {
-    setSelecionados(prev => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
-  const idsVisiveis = useMemo(() => ordenadas.map(l => l.id), [ordenadas])
-  const todosSelecionados = idsVisiveis.length > 0 && idsVisiveis.every(id => selecionados.has(id))
-  const alternarTodasSelecoes = () => {
-    setSelecionados(todosSelecionados ? new Set() : new Set(idsVisiveis))
-  }
-  const titulosSelecionados = useMemo(() => ordenadas.filter(l => selecionados.has(l.id)), [ordenadas, selecionados])
-  const valorSelecionado = titulosSelecionados.reduce((s, l) => s + (l.titulo_saldo || 0), 0)
-
-  // Nome do arquivo segue o padrão que o sistema de destino já aceita: "DDMMAAAA SIGLA Total
-  // Recebido R$ X.XXX,XX.txt". Data, sigla da empresa e total vêm do grupo "Repasse por dia"
-  // ativo no filtro (o mesmo depósito que o usuário clicou pra isolar os títulos) — não da soma
-  // dos títulos selecionados, que pode divergir um pouco do total do depósito.
-  const grupoRepasseAtivo = gruposPorRepasseDia.find(g => g.chave === filtroGrupoRepasse) || null
-
-  const exportarBaixa = () => {
-    const conteudo = gerarArquivoBaixaTitulos(titulosSelecionados, dataExport)
-    const nomeArquivo = grupoRepasseAtivo
-      ? `${grupoRepasseAtivo.data_pagamento.split('-').reverse().join('')} ${siglaEmpresaPorNome(grupoRepasseAtivo.empresa) || grupoRepasseAtivo.codigoEmpresa} Total Recebido ${fmtMoeda(grupoRepasseAtivo.total).replace(/ /g, ' ')}.txt`
-      : `baixa_titulos_${dataExport.split('-').reverse().join('')}.txt`
-    const blob = new Blob([conteudo], { type: 'text/plain;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = nomeArquivo
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
-  }
-
-  // PDF — mesmo pipeline (html2canvas + jsPDF) já usado em Cálculo/Histórico de Comissões: monta
-  // blocos HTML fora da tela, tira print de cada bloco e cola num A4 paisagem, quebrando página
-  // quando não cabe mais. Cada título vira um bloco com os campos da linha da tela + (se achou
-  // repasse) a mini-tabela "Repasse encontrado" logo abaixo, igual aparece quando expande na tela.
-  const gerarPdfTitulos = async (titulosParaPdf, sufixoArquivo) => {
-    if (titulosParaPdf.length === 0) return
-    setProcessandoPdf(sufixoArquivo)
-    setErro(null)
-    try {
-      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
-        import('html2canvas'),
-        import('jspdf'),
-      ])
-
-      const MARGIN = 24
-      const WRAP_W = 1500
-      const pdf = new jsPDF({ unit: 'pt', format: 'a4', orientation: 'landscape' })
-      const CW = pdf.internal.pageSize.getWidth() - 2 * MARGIN
-
-      const montarHtmlCabecalho = () => `
-        <div style="font-family:Arial,Helvetica,sans-serif;background:#fff;padding:20px 20px 0 20px;width:${WRAP_W}px;box-sizing:border-box;">
-          <div style="display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #1e293b;padding-bottom:12px;margin-bottom:16px;">
-            <div>
-              <div style="font-size:22px;font-weight:800;color:#0f172a;">Contas a Receber TruckPag — Títulos × Repasses</div>
-            </div>
-            <div style="text-align:right;font-size:13px;color:#475569;">
-              <div>${titulosParaPdf.length} título(s)</div>
-              <div>Gerado em: ${new Date().toLocaleString('pt-BR')}</div>
-            </div>
-          </div>
-        </div>`
-
-      const CORES_STATUS = {
-        exato: { bg: '#ecfdf5', border: '#a7f3d0', texto: '#047857' },
-        divergente: { bg: '#fffbeb', border: '#fde68a', texto: '#b45309' },
-        nao_encontrado: { bg: '#fef2f2', border: '#fecaca', texto: '#b91c1c' },
-      }
-
-      const montarHtmlTitulo = (t) => {
-        const cor = CORES_STATUS[t.statusConciliacao] || CORES_STATUS.nao_encontrado
-        const label = CONCILIACAO_INFO[t.statusConciliacao]?.label || t.statusConciliacao
-        const repasseHtml = t.repasseMatch ? `
-          <div style="margin:4px 0 10px 16px;">
-            <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#94a3b8;margin-bottom:2px;">Repasse encontrado</div>
-            <table style="width:calc(100% - 16px);border-collapse:collapse;font-size:11px;border:1px solid #e2e8f0;">
-              <thead>
-                <tr style="background:#f8fafc;color:#94a3b8;text-transform:uppercase;font-size:9px;">
-                  ${COLUNAS_REPASSE_DETALHE.map(c => `<th style="padding:5px 6px;text-align:${c.numerico ? 'right' : 'left'};border-bottom:1px solid #e2e8f0;">${c.label}</th>`).join('')}
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  ${COLUNAS_REPASSE_DETALHE.map(c => {
-                    const v = c.derivar ? c.derivar(t.repasseMatch) : t.repasseMatch[c.key]
-                    return `<td style="padding:5px 6px;text-align:${c.numerico ? 'right' : 'left'};color:#334155;">${c.formatar ? c.formatar(v) : (v ?? '—')}</td>`
-                  }).join('')}
-                </tr>
-              </tbody>
-            </table>
-          </div>` : ''
-        return `
-          <div style="font-family:Arial,Helvetica,sans-serif;background:#fff;padding:0 20px;width:${WRAP_W}px;box-sizing:border-box;margin-bottom:6px;">
-            <table style="width:100%;border-collapse:collapse;font-size:11px;border:1px solid ${cor.border};">
-              <thead>
-                <tr style="background:${cor.bg};color:${cor.texto};">
-                  <th colspan="12" style="padding:6px 8px;text-align:left;font-size:11px;font-weight:800;">
-                    ${label} — Título ${t.titulo_numero} · Lanç. ${t.titulo_codigo} · ${t.titulo_empresa_nome}
-                  </th>
-                </tr>
-                <tr style="background:#f8fafc;color:#94a3b8;text-transform:uppercase;font-size:9px;">
-                  <th style="padding:5px 6px;text-align:left;">Vencimento</th>
-                  <th style="padding:5px 6px;text-align:left;">Notas Fiscais</th>
-                  <th style="padding:5px 6px;text-align:left;">Parcela</th>
-                  <th style="padding:5px 6px;text-align:left;">CPF/CNPJ</th>
-                  <th style="padding:5px 6px;text-align:left;">Cliente</th>
-                  <th style="padding:5px 6px;text-align:left;">Emissão</th>
-                  <th style="padding:5px 6px;text-align:right;">Dias</th>
-                  <th style="padding:5px 6px;text-align:left;">Tipo</th>
-                  <th style="padding:5px 6px;text-align:right;">Valor</th>
-                  <th style="padding:5px 6px;text-align:right;">Saldo</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td style="padding:5px 6px;color:#334155;">${fmtData(t.titulo_data_venc)}</td>
-                  <td style="padding:5px 6px;color:#334155;">${notasFiscaisDoTitulo(t).join(' / ') || '—'}</td>
-                  <td style="padding:5px 6px;color:#334155;">${parcelaExibicao(t.titulo_numero)}</td>
-                  <td style="padding:5px 6px;color:#334155;">${t.titulo_pessoa_doc_ident || '—'}</td>
-                  <td style="padding:5px 6px;color:#334155;">${t.titulo_pessoa_nome || '—'}</td>
-                  <td style="padding:5px 6px;color:#334155;">${fmtData(t.titulo_data_emissao)}</td>
-                  <td style="padding:5px 6px;text-align:right;color:#334155;">${t.titulo_dias_atraso ?? '—'}</td>
-                  <td style="padding:5px 6px;color:#334155;">${t.tipo_titulo_descr || '—'}</td>
-                  <td style="padding:5px 6px;text-align:right;font-weight:700;color:#0f172a;">${fmtMoeda(t.titulo_valor)}</td>
-                  <td style="padding:5px 6px;text-align:right;font-weight:700;color:#0f172a;">${fmtMoeda(t.titulo_saldo)}</td>
-                </tr>
-              </tbody>
-            </table>
-            ${repasseHtml}
-          </div>`
-      }
-
-      const renderBloco = async (html) => {
-        const wrap = document.createElement('div')
-        wrap.style.cssText = `position:fixed;top:0;left:-9999px;width:${WRAP_W}px;background:#fff;z-index:-1;`
-        wrap.innerHTML = html
-        document.body.appendChild(wrap)
-        try {
-          return await html2canvas(wrap, { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff', width: WRAP_W })
-        } finally {
-          document.body.removeChild(wrap)
-        }
-      }
-
-      const GAP = 4
-      const pageBottom = pdf.internal.pageSize.getHeight() - MARGIN
-      let primeiraPagina = true
-      const iniciarPagina = () => {
-        if (!primeiraPagina) pdf.addPage()
-        primeiraPagina = false
-        return MARGIN
-      }
-      const colocarCanvas = (canvas, y) => {
-        const h = (canvas.height / canvas.width) * CW
-        pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', MARGIN, y, CW, h)
-        return h
-      }
-
-      let y = iniciarPagina()
-      y += colocarCanvas(await renderBloco(montarHtmlCabecalho()), y) + GAP
-
-      for (const t of titulosParaPdf) {
-        const canvas = await renderBloco(montarHtmlTitulo(t))
-        const h = (canvas.height / canvas.width) * CW
-        if (y + h > pageBottom) y = iniciarPagina()
-        y += colocarCanvas(canvas, y) + GAP
-      }
-
-      const nomeArquivo = `titulos_truckpag_${sufixoArquivo}_${hojeIso()}.pdf`
-      pdf.save(nomeArquivo)
-    } catch (err) {
-      console.error('Erro ao gerar PDF:', err)
-      setErro('Erro ao gerar PDF: ' + (err.message || String(err)))
-    } finally {
-      setProcessandoPdf(null)
-    }
-  }
-
   const totalSaldo = filtradas.reduce((s, l) => s + (l.titulo_saldo || 0), 0)
   const totalValor = filtradas.reduce((s, l) => s + (l.titulo_valor || 0), 0)
-  const filtroAvancadoAtivo = !!(filtroEmpresa.trim() || filtroVendedor.trim() || filtroGrupoRepasse)
+  const filtroAvancadoAtivo = !!(filtroEmpresa.trim() || filtroBusca.trim())
 
   const colunas = [
     { key: 'codigo_empresa_daf', label: 'Código', naoOrdenavel: true, derivar: (row) => codigoEmpresa(row.titulo_empresa_nome), campoInfo: 'codigo' },
@@ -429,7 +203,7 @@ export default function TruckPagTitulos() {
     // por isso mostra tudo junto numa coluna só, em vez de separar por campo de origem.
     { key: 'notas_fiscais', label: 'Notas Fiscais', naoOrdenavel: true, derivar: (row) => notasFiscaisDoTitulo(row).join(' / ') || '—', campoInfo: ['notaFiscal', 'nfse'] },
     { key: 'parcela_titulo', label: 'Parcela', naoOrdenavel: true, derivar: (row) => parcelaExibicao(row.titulo_numero), campoInfo: 'parcela' },
-    { key: 'titulo_pessoa_doc_ident', label: 'CPF/CNPJ', campoInfo: 'documento' },
+    { key: 'titulo_pessoa_doc_ident', label: 'CPF/CNPJ', campoGraduacao: 'documento' },
     { key: 'titulo_pessoa_nome', label: 'Cliente' },
     { key: 'titulo_numero', label: 'Título' },
     { key: 'titulo_codigo', label: 'Lançamento' },
@@ -467,6 +241,14 @@ export default function TruckPagTitulos() {
             <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
               <Truck className="h-5 w-5 text-blue-600" />
               Contas a Receber TruckPag
+              <span className="relative group cursor-help">
+                <Info className="h-3.5 w-3.5 text-slate-400" />
+                <span className="absolute top-full left-0 mt-2 w-96 text-[10px] text-white bg-slate-700 rounded px-2 py-1.5 leading-relaxed opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 normal-case font-normal tracking-normal space-y-1">
+                  <div>Fonte de dados: Posição analítica de títulos a receber (filtrado por Agente Cobrador = TRUCKPAG)</div>
+                  <div>Nome do Arquivo: RFN003_PosicaoAnaliticoReceber_Excel (4 arquivos, um por unidade — busca por início do nome)</div>
+                  <div>Pasta SharePoint: /Banco de Dados - DAF - Pós-Vendas/Financeiro - DAF</div>
+                </span>
+              </span>
             </h1>
             <p className="text-xs text-slate-500 mt-0.5">Posição de títulos em aberto (RFN003) — sincronizado do SharePoint.</p>
           </div>
@@ -512,68 +294,42 @@ export default function TruckPagTitulos() {
         </div>
       )}
 
-      {(alertas.vencidaMuito.qtd > 0 || alertas.vencida.qtd > 0 || alertas.hoje.qtd > 0) && (
-        <div className="flex flex-col md:flex-row gap-2">
-          {alertas.vencidaMuito.qtd > 0 && (
-            <button type="button" onClick={() => setFiltroSituacao(p => p === 'vencidaMuito' ? null : 'vencidaMuito')}
-              className={`flex-1 flex items-center gap-3 bg-slate-900 border rounded-lg px-4 py-3 text-left transition-all hover:bg-slate-800 ${filtroSituacao === 'vencidaMuito' ? 'border-white ring-2 ring-offset-1 ring-slate-400' : 'border-slate-700'}`}>
-              <AlertTriangle className="h-4 w-4 text-white shrink-0" />
-              <p className="text-xs text-white font-semibold flex-1">
-                {alertas.vencidaMuito.qtd} título(s) vencido(s) há mais de 30 dias
-                <span className="text-slate-300 font-normal"> — {fmtMoeda(alertas.vencidaMuito.valor)}</span>
-              </p>
-            </button>
-          )}
-          {alertas.vencida.qtd > 0 && (
-            <button type="button" onClick={() => setFiltroSituacao(p => p === 'vencida' ? null : 'vencida')}
-              className={`flex-1 flex items-center gap-3 bg-red-50 border rounded-lg px-4 py-3 text-left transition-all hover:bg-red-100 ${filtroSituacao === 'vencida' ? 'border-red-500 ring-2 ring-offset-1 ring-red-300' : 'border-red-300'}`}>
-              <AlertTriangle className="h-4 w-4 text-red-600 shrink-0" />
-              <p className="text-xs text-red-700 font-semibold flex-1">
-                {alertas.vencida.qtd} título(s) vencido(s) (até 30 dias)
-                <span className="text-red-500 font-normal"> — {fmtMoeda(alertas.vencida.valor)}</span>
-              </p>
-            </button>
-          )}
-          {alertas.hoje.qtd > 0 && (
-            <button type="button" onClick={() => setFiltroSituacao(p => p === 'hoje' ? null : 'hoje')}
-              className={`flex-1 flex items-center gap-3 bg-amber-50 border rounded-lg px-4 py-3 text-left transition-all hover:bg-amber-100 ${filtroSituacao === 'hoje' ? 'border-amber-500 ring-2 ring-offset-1 ring-amber-300' : 'border-amber-300'}`}>
-              <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
-              <p className="text-xs text-amber-700 font-semibold flex-1">
-                {alertas.hoje.qtd} título(s) vencendo hoje
-                <span className="text-amber-500 font-normal"> — {fmtMoeda(alertas.hoje.valor)}</span>
-              </p>
-            </button>
-          )}
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <button type="button" onClick={() => setFiltroConciliacao(p => p === 'exato' ? null : 'exato')}
-          className={`text-left rounded-lg border p-4 shadow-sm transition-all hover:shadow-md bg-emerald-50 border-emerald-200 ${filtroConciliacao === 'exato' ? 'ring-2 ring-offset-1 ring-emerald-300 shadow-md' : ''}`}>
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <button type="button" onClick={() => setFiltroSituacao(p => p === 'aVencer' ? null : 'aVencer')}
+          className={`text-left rounded-lg border p-4 shadow-sm transition-all hover:shadow-md bg-blue-50 border-blue-200 ${filtroSituacao === 'aVencer' ? 'ring-2 ring-offset-1 ring-blue-300 shadow-md' : ''}`}>
           <div className="flex items-center gap-1.5 mb-2">
-            <div className="p-1 rounded bg-emerald-100"><CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /></div>
-            <p className="text-[10px] font-bold uppercase tracking-wide text-emerald-500">Identificados</p>
+            <div className="p-1 rounded bg-blue-100"><Clock className="h-3.5 w-3.5 text-blue-600" /></div>
+            <p className="text-[10px] font-bold uppercase tracking-wide text-blue-500">A Vencer</p>
           </div>
-          <p className="text-2xl font-bold text-emerald-700 leading-none">{fmtMoeda(resumoConciliacao.exato.valor)}</p>
-          <p className="text-[10px] text-emerald-500 mt-0.5">{resumoConciliacao.exato.qtd} título(s) · saldo confirmado em nossa conta</p>
+          <p className="text-2xl font-bold text-blue-700 leading-none">{fmtMoeda(resumoVencimento.aVencer.valor)}</p>
+          <p className="text-[10px] text-blue-500 mt-0.5">{resumoVencimento.aVencer.qtd} título(s)</p>
         </button>
-        <button type="button" onClick={() => setFiltroConciliacao(p => p === 'divergente' ? null : 'divergente')}
-          className={`text-left rounded-lg border p-4 shadow-sm transition-all hover:shadow-md bg-amber-50 border-amber-200 ${filtroConciliacao === 'divergente' ? 'ring-2 ring-offset-1 ring-amber-300 shadow-md' : ''}`}>
+        <button type="button" onClick={() => setFiltroSituacao(p => p === 'hoje' ? null : 'hoje')}
+          className={`text-left rounded-lg border p-4 shadow-sm transition-all hover:shadow-md bg-amber-50 border-amber-200 ${filtroSituacao === 'hoje' ? 'ring-2 ring-offset-1 ring-amber-300 shadow-md' : ''}`}>
           <div className="flex items-center gap-1.5 mb-2">
-            <div className="p-1 rounded bg-amber-100"><AlertTriangle className="h-3.5 w-3.5 text-amber-600" /></div>
-            <p className="text-[10px] font-bold uppercase tracking-wide text-amber-500">Divergentes</p>
+            <div className="p-1 rounded bg-amber-100"><CalendarClock className="h-3.5 w-3.5 text-amber-600" /></div>
+            <p className="text-[10px] font-bold uppercase tracking-wide text-amber-500">Vence Hoje</p>
           </div>
-          <p className="text-2xl font-bold text-amber-700 leading-none">{fmtMoeda(resumoConciliacao.divergente.valor)}</p>
-          <p className="text-[10px] text-amber-500 mt-0.5">{resumoConciliacao.divergente.qtd} título(s) · achou repasse, algo diverge</p>
+          <p className="text-2xl font-bold text-amber-700 leading-none">{fmtMoeda(resumoVencimento.hoje.valor)}</p>
+          <p className="text-[10px] text-amber-500 mt-0.5">{resumoVencimento.hoje.qtd} título(s)</p>
         </button>
-        <button type="button" onClick={() => setFiltroConciliacao(p => p === 'nao_encontrado' ? null : 'nao_encontrado')}
-          className={`text-left rounded-lg border p-4 shadow-sm transition-all hover:shadow-md bg-red-50 border-red-200 ${filtroConciliacao === 'nao_encontrado' ? 'ring-2 ring-offset-1 ring-red-300 shadow-md' : ''}`}>
+        <button type="button" onClick={() => setFiltroSituacao(p => p === 'vencido' ? null : 'vencido')}
+          className={`text-left rounded-lg border p-4 shadow-sm transition-all hover:shadow-md bg-red-50 border-red-200 ${filtroSituacao === 'vencido' ? 'ring-2 ring-offset-1 ring-red-300 shadow-md' : ''}`}>
           <div className="flex items-center gap-1.5 mb-2">
-            <div className="p-1 rounded bg-red-100"><XCircle className="h-3.5 w-3.5 text-red-600" /></div>
-            <p className="text-[10px] font-bold uppercase tracking-wide text-red-500">Não encontrados</p>
+            <div className="p-1 rounded bg-red-100"><AlertTriangle className="h-3.5 w-3.5 text-red-600" /></div>
+            <p className="text-[10px] font-bold uppercase tracking-wide text-red-500">Vencido</p>
           </div>
-          <p className="text-2xl font-bold text-red-700 leading-none">{fmtMoeda(resumoConciliacao.nao_encontrado.valor)}</p>
-          <p className="text-[10px] text-red-500 mt-0.5">{resumoConciliacao.nao_encontrado.qtd} título(s) · sem repasse confirmado</p>
+          <p className="text-2xl font-bold text-red-700 leading-none">{fmtMoeda(resumoVencimento.vencido.valor)}</p>
+          <p className="text-[10px] text-red-500 mt-0.5">{resumoVencimento.vencido.qtd} título(s)</p>
+        </button>
+        <button type="button" onClick={() => setFiltroSituacao(null)}
+          className={`text-left rounded-lg border p-4 shadow-sm transition-all hover:shadow-md bg-slate-50 border-slate-200 ${filtroSituacao === null ? 'ring-2 ring-offset-1 ring-slate-300 shadow-md' : ''}`}>
+          <div className="flex items-center gap-1.5 mb-2">
+            <div className="p-1 rounded bg-slate-200"><Wallet className="h-3.5 w-3.5 text-slate-600" /></div>
+            <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Valor Total</p>
+          </div>
+          <p className="text-2xl font-bold text-slate-800 leading-none">{fmtMoeda(resumoVencimento.total.valor)}</p>
+          <p className="text-[10px] text-slate-500 mt-0.5">{resumoVencimento.total.qtd} título(s)</p>
         </button>
       </div>
 
@@ -588,48 +344,19 @@ export default function TruckPagTitulos() {
         </button>
         {filtrosAbertos && (
           <div className="px-4 pb-4 pt-1 border-t border-slate-100">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
-              <div>
-                <label className="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1 block">Buscar (título/OS/cliente)</label>
-                <input type="text" value={filtroTexto} onChange={e => setFiltroTexto(e.target.value)} placeholder="Filtrar..." className="w-full text-xs border border-slate-200 rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300" />
-              </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3 max-w-xl">
               <div>
                 <label className="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1 block">Empresa</label>
                 <input type="text" value={filtroEmpresa} onChange={e => setFiltroEmpresa(e.target.value)} placeholder="Filtrar..." className="w-full text-xs border border-slate-200 rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300" />
               </div>
               <div>
-                <label className="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1 block">Consultor/Vendedor</label>
-                <input type="text" value={filtroVendedor} onChange={e => setFiltroVendedor(e.target.value)} placeholder="Filtrar..." className="w-full text-xs border border-slate-200 rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300" />
+                <label className="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1 block whitespace-nowrap">Lançamento/Nº Título/Notas Fiscais</label>
+                <input type="text" value={filtroBusca} onChange={e => setFiltroBusca(e.target.value)} placeholder="Filtrar..." className="w-full text-xs border border-slate-200 rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300" />
               </div>
             </div>
 
-            {gruposPorRepasseDia.length > 0 && (
-              <div className="mt-4">
-                <label className="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1 block">
-                  Repasse por dia (Empresa · Data · Valor) — clique pra ver só os títulos daquele depósito
-                </label>
-                <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto custom-scrollbar-light pr-1">
-                  {gruposPorRepasseDia.map(g => (
-                    <button
-                      key={g.chave}
-                      type="button"
-                      onClick={() => setFiltroGrupoRepasse(p => p === g.chave ? null : g.chave)}
-                      title={`${g.qtd} título(s) vinculado(s)`}
-                      className={`text-[11px] font-semibold px-2 py-1 rounded-md border transition-colors ${
-                        filtroGrupoRepasse === g.chave
-                          ? 'bg-blue-600 border-blue-600 text-white'
-                          : 'bg-white border-slate-200 text-slate-600 hover:border-blue-300 hover:text-blue-700'
-                      }`}
-                    >
-                      {g.codigoEmpresa || '—'} · {g.empresa} · {fmtData(g.data_pagamento)} · {fmtMoeda(g.total)} <span className="opacity-70">({g.qtd})</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
             {filtroAvancadoAtivo && (
-              <button type="button" onClick={() => { setFiltroEmpresa(''); setFiltroVendedor(''); setFiltroGrupoRepasse(null) }} className="mt-3 flex items-center gap-1 text-[10px] font-semibold text-slate-400 hover:text-slate-600">
+              <button type="button" onClick={() => { setFiltroEmpresa(''); setFiltroBusca('') }} className="mt-3 flex items-center gap-1 text-[10px] font-semibold text-slate-400 hover:text-slate-600">
                 <X className="h-3 w-3" /> Limpar filtros
               </button>
             )}
@@ -658,43 +385,12 @@ export default function TruckPagTitulos() {
                 {todosExpandidos ? 'Recolher' : 'Expandir'}
               </button>
             )}
-            <button
-              type="button"
-              onClick={() => gerarPdfTitulos(ordenadas, 'todos')}
-              disabled={processandoPdf !== null}
-              className="flex items-center gap-1 text-[10px] font-semibold text-slate-500 hover:text-slate-700 bg-white border border-slate-200 rounded px-1.5 py-1 disabled:opacity-50"
-            >
-              {processandoPdf === 'todos' ? <Loader2 className="h-3 w-3 animate-spin" /> : <FileText className="h-3 w-3" />}
-              Baixar PDF ({ordenadas.length})
-            </button>
           </div>
-          {selecionados.size > 0 && (
-            <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-md px-2.5 py-1.5 shadow-sm">
-              <span className="text-[11px] font-semibold text-slate-600">{selecionados.size} selecionado(s) · {fmtMoeda(valorSelecionado)}</span>
-              <button
-                type="button"
-                onClick={() => gerarPdfTitulos(titulosSelecionados, 'selecionados')}
-                disabled={processandoPdf !== null}
-                className="flex items-center gap-1.5 border border-slate-200 text-slate-600 hover:bg-slate-50 text-xs font-semibold px-3 py-1.5 rounded-md transition-colors disabled:opacity-50"
-              >
-                {processandoPdf === 'selecionados' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />} PDF
-              </button>
-              <label className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Data Pagto</label>
-              <input type="date" value={dataExport} onChange={e => setDataExport(e.target.value)} className="text-xs border border-slate-200 rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300" />
-              <button type="button" onClick={exportarBaixa} className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-3 py-1.5 rounded-md shadow-sm transition-colors">
-                <FileDown className="h-3.5 w-3.5" /> Exportar Baixa
-              </button>
-            </div>
-          )}
         </div>
         <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-x-auto custom-scrollbar-light">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[10px] font-bold uppercase tracking-wider">
-                <th className="p-3 whitespace-nowrap">
-                  <input type="checkbox" checked={todosSelecionados} onChange={alternarTodasSelecoes} className="h-3.5 w-3.5 rounded border-slate-300 cursor-pointer" />
-                </th>
-                <th className="p-3 whitespace-nowrap" title="Situação da conciliação">ST</th>
                 {colunas.map(c => (
                   <th
                     key={c.key}
@@ -723,22 +419,11 @@ export default function TruckPagTitulos() {
                 const expandida = expandidas.has(row.id)
                 return (
                   <React.Fragment key={row.id}>
-                    <tr className="hover:bg-slate-50/70 transition-colors">
-                      <td className="p-3 whitespace-nowrap">
-                        <input type="checkbox" checked={selecionados.has(row.id)} onChange={() => alternarSelecao(row.id)} className="h-3.5 w-3.5 rounded border-slate-300 cursor-pointer" />
-                      </td>
-                      <td className="p-3 whitespace-nowrap">
-                        {row.repasseMatch ? (
-                          <button type="button" onClick={() => alternarExpandida(row.id)} title={conciliacaoInfo.label}
-                            className={`inline-flex items-center justify-center p-1 rounded-full border transition-colors ${conciliacaoInfo.cls} hover:brightness-95`}>
-                            {expandida ? <ChevronDown className="h-3 w-3" /> : <conciliacaoInfo.icon className="h-3 w-3" />}
-                          </button>
-                        ) : (
-                          <span title={conciliacaoInfo.label} className={`inline-flex items-center justify-center p-1 rounded-full border ${conciliacaoInfo.cls}`}>
-                            <conciliacaoInfo.icon className="h-3 w-3" />
-                          </span>
-                        )}
-                      </td>
+                    <tr
+                      onClick={row.repasseMatch ? () => alternarExpandida(row.id) : undefined}
+                      title={row.repasseMatch ? conciliacaoInfo.label : undefined}
+                      className={`hover:bg-slate-50/70 transition-colors ${row.repasseMatch ? 'cursor-pointer' : ''}`}
+                    >
                       {colunas.map(c => {
                         const valor = c.derivar ? c.derivar(row) : c.campoExtra ? row.dados_extra?.[c.campoExtra] : row[c.key]
                         const diverge = c.campoGraduacao && camposDivergentes && camposDivergentes[c.campoGraduacao] === false
@@ -762,8 +447,6 @@ export default function TruckPagTitulos() {
                     </tr>
                     {expandida && row.repasseMatch && (
                       <tr>
-                        <td className="p-0 bg-slate-50/70 border-b border-slate-100"></td>
-                        <td className="p-0 bg-slate-50/70 border-b border-slate-100"></td>
                         <td colSpan={colunas.length + colunasExtras.length} className="p-0 bg-slate-50/70 border-b border-slate-100">
                           <div className="py-3">
                             <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-2 px-3">Repasse encontrado — {fmtData(row.repasseMatch.data_pagamento)}</p>
@@ -807,7 +490,7 @@ export default function TruckPagTitulos() {
             </tbody>
             <tfoot>
               <tr className="bg-slate-50 border-t-2 border-slate-200 text-xs font-bold text-slate-700">
-                <td className="p-3" colSpan={colunas.length}>Total ({ordenadas.length} título(s)) · {selecionados.size > 0 ? `${selecionados.size} selecionado(s)` : ''}</td>
+                <td className="p-3" colSpan={colunas.length}>Total ({ordenadas.length} título(s))</td>
                 <td className="p-3 text-right">{fmtMoeda(totalValor)}</td>
                 <td className="p-3 text-right">{fmtMoeda(totalSaldo)}</td>
                 {colunasExtras.length > 0 && <td colSpan={colunasExtras.length}></td>}

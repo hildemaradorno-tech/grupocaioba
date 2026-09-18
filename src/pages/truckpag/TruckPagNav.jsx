@@ -4,7 +4,7 @@ import { Receipt, Link2, ArrowLeftRight } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 
 const LINKS = [
-  { to: '/truckpag/conciliacao', label: 'Conciliação', icon: Link2 },
+  { to: '/truckpag/conciliacao', label: 'Saldo Concessionária', icon: Link2 },
   { to: '/truckpag/repasses', label: 'Repasses', icon: ArrowLeftRight },
   { to: '/truckpag/titulos', label: 'Títulos', icon: Receipt },
 ]

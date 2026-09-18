@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { X, Settings, Layers, Plus, Trash2, Pencil, Check, AlertTriangle, Loader2, Scale } from 'lucide-react'
 import { apiService } from '../../services/api'
 
-// Categorias de configuração da tela de Conciliação TruckPag — o shell (lista de categorias à
+// Categorias de configuração da tela de Saldo Concessionária TruckPag — o shell (lista de categorias à
 // esquerda + painel à direita) fica pronto pra novas categorias além destas duas.
 const CATEGORIAS = [
   { key: 'tipos-saldo', label: 'Tipo de Saldo', icon: Layers },
@@ -54,7 +54,7 @@ function PainelTolerancia() {
         <h3 className="text-sm font-bold text-slate-800">Tolerância de Valor</h3>
         <p className="text-xs text-slate-500 mt-0.5">
           Diferença máxima (pra mais ou pra menos) entre o valor líquido de um repasse e o valor de um crédito não
-          identificado pra considerar os dois vinculados na tela de Conciliação. Ex: com tolerância de R$ 0,05, um
+          identificado pra considerar os dois vinculados na tela de Saldo Concessionária. Ex: com tolerância de R$ 0,05, um
           repasse de R$ 11.230,41 concilia com um crédito de R$ 11.230,45 (diferença de 4 centavos).
         </p>
       </div>
@@ -175,7 +175,7 @@ function PainelTiposSaldo() {
         <p className="text-xs text-slate-500 mt-0.5">
           Padrões de texto (contém, sem diferenciar maiúsculas/minúsculas) comparados contra a Observação de cada
           crédito da tesouraria. Só créditos cuja observação contiver algum destes padrões aparecem como
-          "Saldo Concessionária" na tela de Conciliação — ex: cadastrar <strong>TRUCKPA</strong> casa com
+          "Saldo Concessionária" na tela de Saldo Concessionária — ex: cadastrar <strong>TRUCKPA</strong> casa com
           "INTBAN -[2090007] PIX TRANSF TRUCKPA02/09 Imp[577] C[0]". Sem nenhum padrão cadastrado, todos os créditos aparecem.
         </p>
       </div>

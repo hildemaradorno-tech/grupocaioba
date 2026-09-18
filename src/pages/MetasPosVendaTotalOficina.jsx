@@ -18,10 +18,13 @@ const TIPOS_POOL = [
   { key: 'total',              label: 'Total (Mecânica + Funilaria + Terceiro)', sigla: 'TOT'     },
 ]
 
+// Moeda contábil: R$ na frente, negativo entre parênteses em vez de sinal de menos — o CLDR do
+// pt-BR não tem um padrão "accounting" próprio, então o parêntese é montado manualmente aqui.
 const fmtBRL = (v) => {
   const n = Number(v)
   if (!n && n !== 0) return '—'
-  return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', currencySign: 'accounting', minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const s = Math.abs(n).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return n < 0 ? `(${s})` : s
 }
 const sumArr = (a) => a.reduce((s, v) => s + v, 0)
 

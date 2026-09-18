@@ -3,7 +3,9 @@ import axios from 'axios'
 import { graphGet } from './graphClient.js'
 
 const PASTA = '/Banco de Dados - DAF - Pós-Vendas/Financeiro - DAF'
-const FILE_TITULOS = `${PASTA}/RFN003_PosicaoAnaliticoReceber_Excel.xls`
+// RFN003 passou a vir como 1 arquivo POR UNIDADE (ex: "..._CAMPO GRANDE.xls", "..._DOURADOS.xls"),
+// não mais um arquivo único — por isso busca por início do nome, não path exato.
+const PREFIX_TITULOS = 'RFN003_PosicaoAnaliticoReceber_Excel'
 const FILE_CREDITOS = `${PASTA}/RFN024_SALDOCREDITOSNAOIDENTIFICADOS.xlsx`
 const FILE_REPASSES = `${PASTA}/contas-receber-daf.xlsx`
 
@@ -79,24 +81,53 @@ async function downloadWorkbook(filePath) {
   return { workbook, lastModified }
 }
 
+// Baixa TODOS os arquivos da pasta cujo nome começa com `prefix` (case-insensitive) — usado
+// quando um relatório que já foi um arquivo único passa a vir quebrado em vários (ex: RFN003
+// virou 1 arquivo por unidade). Cada item da listagem já traz sua própria downloadUrl, sem
+// precisar de uma 2ª chamada por arquivo.
+async function downloadWorkbooksByPrefix(prefix) {
+  const driveId = process.env.SHAREPOINT_DRIVE_ID
+  if (!driveId) throw new Error('SHAREPOINT_DRIVE_ID não configurado no ambiente')
+  const listagem = await graphGet(`/drives/${driveId}/root:${PASTA}:/children`)
+  const alvo = prefix.toLowerCase()
+  const arquivos = (listagem.value || []).filter(item => item.file && item.name?.toLowerCase().startsWith(alvo))
+  if (arquivos.length === 0) throw new Error(`Nenhum arquivo encontrado começando com "${prefix}" em ${PASTA}`)
+
+  const resultados = []
+  for (const item of arquivos) {
+    const downloadUrl = item['@microsoft.graph.downloadUrl']
+    if (!downloadUrl) continue
+    const response = await axios.get(downloadUrl, { responseType: 'arraybuffer', timeout: 60_000 })
+    const workbook = XLSX.read(Buffer.from(response.data), { type: 'buffer', cellDates: true })
+    resultados.push({ workbook, lastModified: item.lastModifiedDateTime || null, nome: item.name })
+  }
+  return resultados
+}
+
 // Posição de títulos a receber TruckPag (RFN003) — substitui a tabela inteira a cada atualização.
-// O arquivo do SharePoint (relatório Analítico) traz TODOS os agentes cobradores da
-// concessionária (bancos, carteira, garantia etc.), não só TruckPag — precisa filtrar por
-// Agente Cobrador='TRUCKPAG'. Guarda a linha crua inteira em dados_extra (todas as colunas do
-// arquivo), além de mapear os campos já usados na conciliação título×repasse.
+// O relatório Analítico agora vem quebrado em 1 arquivo por unidade (Campo Grande, Chapadão,
+// Dourados, Três Lagoas — busca por início do nome, ver PREFIX_TITULOS), e cada arquivo ainda traz
+// TODOS os agentes cobradores daquela unidade (bancos, carteira, garantia etc.), não só TruckPag —
+// precisa filtrar por Agente Cobrador='TRUCKPAG'. Guarda a linha crua inteira em dados_extra (todas
+// as colunas do arquivo), além de mapear os campos já usados na conciliação título×repasse.
 export async function getTruckPagTitulos() {
   if (_cache.titulos !== null && (Date.now() - _cacheTs.titulos) < CACHE_TTL_MS) return _cache.titulos
 
-  const { workbook, lastModified } = await downloadWorkbook(FILE_TITULOS)
-  const sheet = workbook.Sheets[workbook.SheetNames[0]]
-  const raw = XLSX.utils.sheet_to_json(sheet, { defval: '' })
+  const arquivos = await downloadWorkbooksByPrefix(PREFIX_TITULOS)
 
-  const rows = raw
-    .filter(r => String(r['Agente Cobrador'] ?? '').trim().toUpperCase() === 'TRUCKPAG')
-    .map(r => {
+  const rows = []
+  let lastModified = null
+  for (const { workbook, lastModified: lm } of arquivos) {
+    const sheet = workbook.Sheets[workbook.SheetNames[0]]
+    const raw = XLSX.utils.sheet_to_json(sheet, { defval: '' })
+
+    for (const r of raw) {
+      if (String(r['Agente Cobrador'] ?? '').trim().toUpperCase() !== 'TRUCKPAG') continue
       const diasAtraso = parseNum(r['Atr.'])
-      return {
-        titulo_codigo: parseNum(r['Lanc.']),
+      const titulo_codigo = parseNum(r['Lanc.'])
+      if (!titulo_codigo) continue
+      rows.push({
+        titulo_codigo,
         titulo_numero: String(r['Nro Titulo'] ?? '').trim(),
         titulo_parcela: null,
         titulo_empresa_cod: null,
@@ -116,11 +147,23 @@ export async function getTruckPagTitulos() {
         titulo_vendedor_nome: String(r.Vendedor ?? '').trim(),
         is_vencido: (diasAtraso ?? 0) > 0,
         dados_extra: r,
-      }
-    })
-    .filter(l => l.titulo_codigo)
+      })
+    }
+    if (lm && (!lastModified || lm > lastModified)) lastModified = lm
+  }
 
-  _cache.titulos = { rows, lastModified }
+  // titulo_codigo (Lançamento) é UNIQUE no banco — é um número sequencial da concessionária
+  // inteira, não deveria repetir entre unidades, mas mantém a última ocorrência por segurança
+  // (mesmo padrão de dedup já usado em créditos/repasses), pra um eventual arquivo repetido não
+  // quebrar o insert inteiro por unique_violation.
+  const porCodigo = new Map()
+  for (const r of rows) porCodigo.set(r.titulo_codigo, r)
+  const rowsSemDuplicata = [...porCodigo.values()]
+  if (rowsSemDuplicata.length < rows.length) {
+    console.warn(`[TruckPag/titulos] ${rows.length - rowsSemDuplicata.length} título(s) duplicado(s) (mesmo titulo_codigo) removido(s) antes de importar.`)
+  }
+
+  _cache.titulos = { rows: rowsSemDuplicata, lastModified }
   _cacheTs.titulos = Date.now()
   return _cache.titulos
 }

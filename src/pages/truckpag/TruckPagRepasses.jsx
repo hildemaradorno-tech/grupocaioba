@@ -1,14 +1,23 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
-import { ArrowLeftRight, Download, RefreshCw, AlertTriangle, Filter, ChevronDown, ChevronUp, X, CheckCircle2, XCircle, HelpCircle, Settings } from 'lucide-react'
+import { ArrowLeftRight, RefreshCw, AlertTriangle, ChevronDown, ChevronUp, X, CheckCircle2, XCircle, HelpCircle, Settings, Info, Link2, Link2Off, FileDown, FileText, Loader2, Archive, Lock, Unlock } from 'lucide-react'
 import { apiService } from '../../services/api'
 import TruckPagNav from './TruckPagNav'
 import TruckPagRegrasModal from './TruckPagRegrasModal'
 import TruckPagConfigModal from './TruckPagConfigModal'
+import TruckPagRepasseDetalheModal from './TruckPagRepasseDetalheModal'
+import TruckPagBaixadosModal from './TruckPagBaixadosModal'
 import {
   fmtMoeda, fmtData, sincronizarTudoTruckPag, splitEstabelecimento,
   conciliarTitulosRepasses, tituloConciliadoPorRepasse,
+  conciliarRepassesCreditos, filtrarCreditosPorTipoSaldo,
   codigoEmpresaPorNome, parcelaDoTitulo, notasFiscaisDoTitulo,
+  gerarArquivoBaixaTitulos, siglaEmpresaPorNome,
 } from './truckpagUtils'
+
+function hojeIso() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
 
 // Colunas da mini-tabela de detalhe do título, exibida abaixo do repasse quando expandido.
 const COLUNAS_TITULO_DETALHE = [
@@ -21,7 +30,7 @@ const COLUNAS_TITULO_DETALHE = [
   // Largura soma as duas colunas de nota do repasse (Nº NF-e + Nº NFS-e), já que aqui virou 1 só.
   { key: 'notas_fiscais', label: 'Notas Fiscais', derivar: (t) => notasFiscaisDoTitulo(t).join(' / ') || '—', colunaRepasse: ['nf_e', 'nfs_e'], campoInfo: ['notaFiscal', 'nfse'] },
   { key: 'parcela', label: 'Parcela', derivar: (t) => parcelaDoTitulo(t.titulo_numero) || '—', campoInfo: 'parcela', colunaRepasse: 'parcelas' },
-  { key: 'titulo_pessoa_doc_ident', label: 'CPF/CNPJ', colunaRepasse: 'cnpj_cliente', campoInfo: 'documento' },
+  { key: 'titulo_pessoa_doc_ident', label: 'CPF/CNPJ', colunaRepasse: 'cnpj_cliente', campoGraduacao: 'documento' },
   { key: 'titulo_pessoa_nome', label: 'Cliente', colunaRepasse: 'nome_cliente' },
   { key: 'titulo_numero', label: 'Título' },
   { key: 'titulo_codigo', label: 'Lançamento' },
@@ -41,26 +50,30 @@ const CONCILIACAO_INFO = {
 }
 
 // Tela detalhada, linha a linha, de todos os repasses TruckPag (sem agrupar por depósito) — a
-// Conciliação já mostra os depósitos agrupados x créditos; aqui é o extrato completo, cru.
+// Saldo Concessionária já mostra os depósitos agrupados x créditos; aqui é o extrato completo, cru.
 export default function TruckPagRepasses() {
   const [linhas, setLinhas] = useState([])
   const [titulos, setTitulos] = useState([])
+  const [creditos, setCreditos] = useState([])
+  const [tiposSaldo, setTiposSaldo] = useState([])
+  const [baixas, setBaixas] = useState([])
   const [tolerancia, setTolerancia] = useState(0.02)
   const [loading, setLoading] = useState(true)
   const [sincronizando, setSincronizando] = useState(false)
   const [erro, setErro] = useState(null)
   const [ultimaAtualizacao, setUltimaAtualizacao] = useState(null)
-  const [filtrosAbertos, setFiltrosAbertos] = useState(false)
-  const [dataInicio, setDataInicio] = useState('')
-  const [dataFim, setDataFim] = useState('')
-  const [filtroTexto, setFiltroTexto] = useState('')
-  const [filtroConciliacao, setFiltroConciliacao] = useState(null) // null | 'exato' | 'divergente' | 'nao_encontrado'
   const [filtroGrupoRepasse, setFiltroGrupoRepasse] = useState(null)
+  const [filtroNaoIdentificado, setFiltroNaoIdentificado] = useState(false)
   const [sortCol, setSortCol] = useState('data_pagamento')
   const [sortDir, setSortDir] = useState('desc')
   const [expandidas, setExpandidas] = useState(() => new Set())
   const [regrasAberto, setRegrasAberto] = useState(false)
   const [configAberto, setConfigAberto] = useState(false)
+  const [selecionados, setSelecionados] = useState(() => new Set())
+  const [dataExport, setDataExport] = useState(hojeIso)
+  const [processandoPdf, setProcessandoPdf] = useState(false)
+  const [mostrarLinhasForaGrupo, setMostrarLinhasForaGrupo] = useState(false)
+  const [mostrarBaixados, setMostrarBaixados] = useState(false)
 
   // Larguras reais (medidas) das colunas da tabela de repasses que têm um par na mini-tabela
   // "Título encontrado" (marcado via `colunaRepasse` em COLUNAS_TITULO_DETALHE), pra essas colunas
@@ -113,20 +126,26 @@ export default function TruckPagRepasses() {
     setLoading(true)
     setErro(null)
     try {
-      const [r, t, tol] = await Promise.all([
-        apiService.getTruckPagRepasses({ dataInicio: dataInicio || undefined, dataFim: dataFim || undefined }),
+      const [r, t, tol, cred, tipos, baix] = await Promise.all([
+        apiService.getTruckPagRepasses(),
         apiService.getTruckPagTitulos(),
         apiService.getTruckPagToleranciaConciliacao(),
+        apiService.getTruckPagCreditos(),
+        apiService.getTruckPagTiposSaldo(),
+        apiService.getTruckPagBaixasTitulos(),
       ])
       setLinhas(r)
       setTitulos(t)
       setTolerancia(tol)
+      setCreditos(cred)
+      setTiposSaldo(tipos)
+      setBaixas(baix)
     } catch (e) {
       setErro(e.message || String(e))
     } finally {
       setLoading(false)
     }
-  }, [dataInicio, dataFim])
+  }, [])
 
   useEffect(() => { carregar() }, [carregar])
 
@@ -149,9 +168,23 @@ export default function TruckPagRepasses() {
 
   // Concilia títulos × repasses e inverte pro lado do repasse: pra cada linha aqui, qual título
   // (se algum) ficou casado com ela — verde = pode dar baixa, amarelo = achou título mas diverge
-  // em algo, vermelho = nenhum título confirma esse repasse.
+  // em algo. Repasses sem título encontrado (vermelho) não entram nessa tela — pedido do usuário
+  // pra não misturar repasse não vinculado no extrato (ver linhasVinculadas abaixo).
   const titulosConciliados = useMemo(() => conciliarTitulosRepasses(titulos, linhas, tolerancia), [titulos, linhas, tolerancia])
   const tituloPorRepasse = useMemo(() => tituloConciliadoPorRepasse(titulosConciliados), [titulosConciliados])
+
+  // Vínculo Repasse × Crédito — a MESMA conciliação da tela Saldo Concessionária (não é a mesma
+  // coisa que Título × Repasse acima): agrupa por estabelecimento+data (1 depósito) e casa o total
+  // do grupo com um crédito não identificado (RFN024, filtrado por Tipo de Saldo). Usado só pra
+  // rotular "Conciliado/Não conciliado" nos cards de Valor Bruto/Taxa/Líquido — pedido do usuário
+  // pra esses cards responderem "isso já foi identificado na tesouraria?", não "achou título?".
+  const creditosFiltrados = useMemo(() => filtrarCreditosPorTipoSaldo(creditos, tiposSaldo), [creditos, tiposSaldo])
+  const { grupos: gruposSaldo } = useMemo(() => conciliarRepassesCreditos(linhas, creditosFiltrados, tolerancia), [linhas, creditosFiltrados, tolerancia])
+  const vinculoSaldoPorChave = useMemo(() => {
+    const m = new Map()
+    for (const g of gruposSaldo) m.set(g.chave, !!g.creditoVinculado)
+    return m
+  }, [gruposSaldo])
 
   const linhasComConciliacao = useMemo(() => linhas.map(l => {
     const titulo = tituloPorRepasse.get(l.id)
@@ -159,58 +192,71 @@ export default function TruckPagRepasses() {
       ...l,
       statusConciliacao: titulo ? titulo.statusConciliacao : 'nao_encontrado',
       tituloEncontrado: titulo || null,
+      conciliadoSaldo: vinculoSaldoPorChave.get(`${l.estabelecimento}|${l.data_pagamento}`) || false,
     }
-  }), [linhas, tituloPorRepasse])
+  }), [linhas, tituloPorRepasse, vinculoSaldoPorChave])
 
-  const resumoConciliacao = useMemo(() => {
-    const c = { exato: { qtd: 0, valor: 0 }, divergente: { qtd: 0, valor: 0 }, nao_encontrado: { qtd: 0, valor: 0 } }
-    for (const l of linhasComConciliacao) {
-      const st = c[l.statusConciliacao]
-      st.qtd += 1
-      st.valor += l.valor_recebido || 0
-    }
-    return c
-  }, [linhasComConciliacao])
+  // Títulos que já foram exportados em "Exportar Baixa" (truckpag_baixas_titulos, ver botão
+  // "Baixados") — ficam escondidos da tela até o usuário trazer o grupo de volta.
+  const titulosCodigosBaixados = useMemo(() => new Set(baixas.map(b => b.titulo_codigo)), [baixas])
 
-  // Agrupa por Estabelecimento + Data de Pagamento (o mesmo depósito bancário, igual a tela de
-  // Conciliação/Saldo) — usado no filtro "Repasse por dia": clicar num chip mostra só as linhas
-  // daquele depósito específico.
+  // Base de toda a tela: só repasses com título vinculado (exato ou divergente) e cujo título
+  // ainda não foi baixado. Repasses sem título (nao_encontrado) e títulos já baixados ficam de
+  // fora daqui pra frente — não aparecem em cards, filtros, agrupamento "Repasse por dia" nem na
+  // tabela.
+  const linhasVinculadas = useMemo(() => linhasComConciliacao.filter(l =>
+    l.statusConciliacao !== 'nao_encontrado' && !(l.tituloEncontrado && titulosCodigosBaixados.has(l.tituloEncontrado.titulo_codigo))
+  ), [linhasComConciliacao, titulosCodigosBaixados])
+
+  // Chips do filtro "Repasse por dia" agora representam o SALDO CONCESSIONÁRIA (crédito da
+  // tesouraria, RFN024) que já bateu com um depósito de repasse — não mais o total do repasse
+  // fabricante somado. `dataCredito`/`valorCredito` (exibidos no chip) são os do próprio crédito,
+  // exatamente como aparecem no RFN024 — sem empresa no texto (pedido do usuário). O crédito casa
+  // só por VALOR (ver conciliarRepassesCreditos), então a data dele pode ser diferente da data do
+  // depósito de repasse — por isso mantém `data_pagamento`/`total` do repasse separados, usados só
+  // no nome do arquivo de baixa/PDF (não mudam de comportamento). Só entram grupos com crédito
+  // vinculado; `chave` continua sendo estabelecimento+data pra filtrar a tabela.
   const gruposPorDia = useMemo(() => {
-    const totais = new Map()
-    for (const l of linhas) {
-      const chave = `${l.estabelecimento}|${l.data_pagamento}`
-      if (!totais.has(chave)) {
-        const { empresa, codigoEmpresa } = splitEstabelecimento(l.estabelecimento)
-        totais.set(chave, { chave, empresa, codigoEmpresa, data_pagamento: l.data_pagamento, total: 0, qtd: 0 })
-      }
-      const g = totais.get(chave)
-      g.total += l.valor_recebido || 0
-      g.qtd += 1
-    }
-    return [...totais.values()].sort((a, b) => {
-      const cmpEmpresa = a.empresa.localeCompare(b.empresa, 'pt-BR')
-      if (cmpEmpresa !== 0) return cmpEmpresa
-      return String(a.data_pagamento).localeCompare(String(b.data_pagamento))
-    })
-  }, [linhas])
+    return gruposSaldo
+      .filter(g => g.creditoVinculado)
+      .map(g => {
+        // Status de baixa do lote: olha só as linhas do grupo que TÊM título vinculado (as sem
+        // título nunca entram em "Exportar Baixa", não contam pra essa conta). 'nenhum' = nada
+        // baixado ainda (sem cadeado), 'parcial' = uma parte (cadeado aberto), 'total' = todos os
+        // títulos do lote já foram baixados (cadeado fechado).
+        const titulosDoGrupo = g.linhas.map(l => tituloPorRepasse.get(l.id)).filter(Boolean)
+        const baixados = titulosDoGrupo.filter(t => titulosCodigosBaixados.has(t.titulo_codigo)).length
+        const statusBaixa = titulosDoGrupo.length === 0 || baixados === 0
+          ? 'nenhum'
+          : baixados === titulosDoGrupo.length ? 'total' : 'parcial'
+        return {
+          chave: g.chave,
+          empresa: g.empresa,
+          codigoEmpresa: g.codigoEmpresa,
+          data_pagamento: g.data_pagamento,
+          total: g.total,
+          dataCredito: g.creditoVinculado.data_caixa,
+          valorCredito: g.creditoVinculado.valor,
+          qtd: g.linhas.length,
+          statusBaixa,
+        }
+      })
+      .sort((a, b) => String(a.dataCredito ?? '').localeCompare(String(b.dataCredito ?? '')))
+  }, [gruposSaldo, tituloPorRepasse, titulosCodigosBaixados])
+
+  // "Valor não identificado" — linhas com título vinculado mas que ainda não bateram com nenhum
+  // crédito da tesouraria (mesmo ícone vermelho Link2Off da coluna Saldo).
+  const naoIdentificadoInfo = useMemo(() => {
+    const arr = linhasVinculadas.filter(l => !l.conciliadoSaldo)
+    return { qtd: arr.length, valor: arr.reduce((s, l) => s + (l.valor_recebido || 0), 0) }
+  }, [linhasVinculadas])
 
   const filtradas = useMemo(() => {
-    let f = linhasComConciliacao
-    if (filtroConciliacao) f = f.filter(l => l.statusConciliacao === filtroConciliacao)
+    let f = linhasVinculadas
     if (filtroGrupoRepasse) f = f.filter(l => `${l.estabelecimento}|${l.data_pagamento}` === filtroGrupoRepasse)
-    if (filtroTexto.trim()) {
-      const alvo = filtroTexto.trim().toLowerCase()
-      f = f.filter(l =>
-        l.numero_os?.toLowerCase().includes(alvo) ||
-        l.nf_e?.toLowerCase().includes(alvo) ||
-        l.nfs_e?.toLowerCase().includes(alvo) ||
-        l.numero_lote?.toLowerCase().includes(alvo) ||
-        l.nome_cliente?.toLowerCase().includes(alvo) ||
-        l.cnpj_cliente?.toLowerCase().includes(alvo)
-      )
-    }
+    if (filtroNaoIdentificado) f = f.filter(l => !l.conciliadoSaldo)
     return f
-  }, [linhasComConciliacao, filtroConciliacao, filtroGrupoRepasse, filtroTexto])
+  }, [linhasVinculadas, filtroGrupoRepasse, filtroNaoIdentificado])
 
   const ordenadas = useMemo(() => {
     const arr = [...filtradas]
@@ -232,6 +278,28 @@ export default function TruckPagRepasses() {
     else { setSortCol(col); setSortDir('asc') }
   }
 
+  // Total mostrado ao lado de "Expandir" — soma só as linhas REALMENTE visíveis na tabela
+  // (ordenadas/filtradas, só título-vinculados). Diferente de `totais` (mais abaixo), que soma
+  // TODAS as linhas do grupo/período pros cards Valor Bruto/Taxa/Líquido Recebido, inclusive as
+  // sem título — por isso os dois podem legitimamente divergir quando o grupo tem linha sem título.
+  const totaisTabela = useMemo(() => ordenadas.reduce((acc, l) => {
+    acc.bruto += l.valor_parcela_total || 0
+    acc.taxa += l.valor_taxa || 0
+    acc.liquido += l.valor_recebido || 0
+    return acc
+  }, { bruto: 0, taxa: 0, liquido: 0 }), [ordenadas])
+
+  // Linhas do depósito filtrado (chip "Saldo Concessionária" ativo) que NÃO entraram na tabela por
+  // não terem título vinculado — usadas pro alerta "faltam X linha(s) deste depósito" quando o
+  // Total exibido (só vinculados) não bate com o valor total do repasse (que inclui todas as
+  // linhas do depósito, com ou sem título).
+  const linhasForaDoGrupo = useMemo(() => {
+    if (!filtroGrupoRepasse) return []
+    return linhasComConciliacao.filter(l =>
+      `${l.estabelecimento}|${l.data_pagamento}` === filtroGrupoRepasse && l.statusConciliacao === 'nao_encontrado'
+    )
+  }, [linhasComConciliacao, filtroGrupoRepasse])
+
   // Só repasses com título encontrado têm o que expandir (o badge de "Sem título" não é clicável).
   const idsExpansiveis = useMemo(() => ordenadas.filter(l => l.tituloEncontrado).map(l => l.id), [ordenadas])
   const todosExpandidos = idsExpansiveis.length > 0 && idsExpansiveis.every(id => expandidas.has(id))
@@ -239,14 +307,232 @@ export default function TruckPagRepasses() {
     setExpandidas(todosExpandidos ? new Set() : new Set(idsExpansiveis))
   }
 
-  const totais = filtradas.reduce((acc, l) => {
-    acc.bruto += l.valor_parcela_total || 0
-    acc.taxa += l.valor_taxa || 0
-    acc.liquido += l.valor_recebido || 0
-    return acc
-  }, { bruto: 0, taxa: 0, liquido: 0 })
+  // Seleção + Exportar Baixa — mesma funcionalidade da tela Títulos, só que aqui a seleção é por
+  // repasse; toda linha visível já tem título vinculado (linhasVinculadas filtra os sem título),
+  // então dá pra gerar a baixa direto do título casado com cada repasse marcado.
+  const alternarSelecao = (id) => {
+    setSelecionados(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+  const idsVisiveis = useMemo(() => ordenadas.map(l => l.id), [ordenadas])
+  const todosSelecionados = idsVisiveis.length > 0 && idsVisiveis.every(id => selecionados.has(id))
+  const alternarTodasSelecoes = () => {
+    setSelecionados(todosSelecionados ? new Set() : new Set(idsVisiveis))
+  }
+  // Baixa usa o Valor Recebido do REPASSE (o que efetivamente caiu na conta, já líquido de taxa),
+  // não o titulo_saldo (saldo em aberto do título) — pedido do usuário: o arquivo de baixa deve
+  // dar baixa pelo valor que realmente entrou, não pelo valor que o título tinha em aberto.
+  const titulosSelecionados = useMemo(() => {
+    const porCodigo = new Map()
+    for (const l of ordenadas) {
+      if (!selecionados.has(l.id) || !l.tituloEncontrado) continue
+      porCodigo.set(l.tituloEncontrado.titulo_codigo, { ...l.tituloEncontrado, titulo_saldo: l.valor_recebido })
+    }
+    return [...porCodigo.values()]
+  }, [ordenadas, selecionados])
+  const valorSelecionado = titulosSelecionados.reduce((s, t) => s + (t.titulo_saldo || 0), 0)
 
-  const filtroAtivo = !!(dataInicio || dataFim || filtroGrupoRepasse)
+  // Registro que vai pra truckpag_baixas_titulos ao exportar — guarda estabelecimento/data do
+  // REPASSE (não do título), é o que o botão "Baixados" usa pra agrupar e "trazer de volta".
+  const baixaRecordsSelecionados = useMemo(() => {
+    const porCodigo = new Map()
+    for (const l of ordenadas) {
+      if (!selecionados.has(l.id) || !l.tituloEncontrado) continue
+      porCodigo.set(l.tituloEncontrado.titulo_codigo, {
+        titulo_codigo: l.tituloEncontrado.titulo_codigo,
+        titulo_numero: l.tituloEncontrado.titulo_numero,
+        estabelecimento: l.estabelecimento,
+        data_pagamento: l.data_pagamento,
+        valor: l.valor_recebido,
+      })
+    }
+    return [...porCodigo.values()]
+  }, [ordenadas, selecionados])
+
+  // Nome do arquivo segue o padrão já usado em Títulos: "DDMMAAAA SIGLA Total Recebido R$
+  // X.XXX,XX.txt" quando o filtro "Repasse por dia" está ativo (usa o total do depósito); senão
+  // um nome genérico com a data escolhida.
+  const grupoRepasseAtivo = gruposPorDia.find(g => g.chave === filtroGrupoRepasse) || null
+
+  // Gera o arquivo, marca os títulos exportados em truckpag_baixas_titulos (pra sumirem da tela)
+  // e recarrega os dados — as linhas exportadas somem sozinhas e a seleção esvazia.
+  const exportarBaixa = async () => {
+    const conteudo = gerarArquivoBaixaTitulos(titulosSelecionados, dataExport)
+    const nomeArquivo = grupoRepasseAtivo
+      ? `${grupoRepasseAtivo.data_pagamento.split('-').reverse().join('')} ${siglaEmpresaPorNome(grupoRepasseAtivo.empresa) || grupoRepasseAtivo.codigoEmpresa} Total Recebido ${fmtMoeda(grupoRepasseAtivo.total)}.txt`
+      : `baixa_repasses_${dataExport.split('-').reverse().join('')}.txt`
+    const blob = new Blob([conteudo], { type: 'text/plain;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = nomeArquivo
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+
+    try {
+      await apiService.registrarTruckPagBaixas(baixaRecordsSelecionados)
+      setSelecionados(new Set())
+      const novasBaixas = await apiService.getTruckPagBaixasTitulos()
+      setBaixas(novasBaixas)
+    } catch (e) {
+      setErro('Baixa exportada, mas falhou ao marcar como baixada: ' + (e.message || String(e)))
+    }
+  }
+
+  // PDF — mesmo pipeline (html2canvas + jsPDF) da tela Títulos: monta blocos HTML fora da tela,
+  // tira print de cada bloco e cola num A4 paisagem, quebrando página quando não cabe mais. Cada
+  // repasse selecionado vira um bloco com os campos da linha + (se achou) a mini-tabela "Título
+  // encontrado" logo abaixo, igual aparece quando expande na tela.
+  const gerarPdfRepasses = async (repassesParaPdf, sufixoArquivo) => {
+    if (repassesParaPdf.length === 0) return
+    setProcessandoPdf(true)
+    setErro(null)
+    try {
+      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
+        import('html2canvas'),
+        import('jspdf'),
+      ])
+
+      const MARGIN = 24
+      const WRAP_W = 1500
+      const pdf = new jsPDF({ unit: 'pt', format: 'a4', orientation: 'landscape' })
+      const CW = pdf.internal.pageSize.getWidth() - 2 * MARGIN
+
+      const montarHtmlCabecalho = () => `
+        <div style="font-family:Arial,Helvetica,sans-serif;background:#fff;padding:20px 20px 0 20px;width:${WRAP_W}px;box-sizing:border-box;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #1e293b;padding-bottom:12px;margin-bottom:16px;">
+            <div>
+              <div style="font-size:22px;font-weight:800;color:#0f172a;">Contas a Receber TruckPag — Repasses</div>
+            </div>
+            <div style="text-align:right;font-size:13px;color:#475569;">
+              <div>${repassesParaPdf.length} repasse(s)</div>
+              <div>Gerado em: ${new Date().toLocaleString('pt-BR')}</div>
+            </div>
+          </div>
+        </div>`
+
+      const CORES_STATUS = {
+        exato: { bg: '#ecfdf5', border: '#a7f3d0', texto: '#047857' },
+        divergente: { bg: '#fffbeb', border: '#fde68a', texto: '#b45309' },
+        nao_encontrado: { bg: '#fef2f2', border: '#fecaca', texto: '#b91c1c' },
+      }
+
+      const montarHtmlRepasse = (l) => {
+        const cor = CORES_STATUS[l.statusConciliacao] || CORES_STATUS.nao_encontrado
+        const label = CONCILIACAO_INFO[l.statusConciliacao]?.label || l.statusConciliacao
+        const saldoLabel = l.conciliadoSaldo ? 'Conciliado com o saldo' : 'Sem saldo conciliado'
+        const { empresa, codigoEmpresa } = splitEstabelecimento(l.estabelecimento)
+        const tituloHtml = l.tituloEncontrado ? `
+          <div style="margin:4px 0 10px 16px;">
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#94a3b8;margin-bottom:2px;">Título encontrado</div>
+            <table style="width:calc(100% - 16px);border-collapse:collapse;font-size:11px;border:1px solid #e2e8f0;">
+              <thead>
+                <tr style="background:#f8fafc;color:#94a3b8;text-transform:uppercase;font-size:9px;">
+                  ${COLUNAS_TITULO_DETALHE.map(c => `<th style="padding:5px 6px;text-align:${c.numerico ? 'right' : 'left'};border-bottom:1px solid #e2e8f0;">${c.label}</th>`).join('')}
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  ${COLUNAS_TITULO_DETALHE.map(c => {
+                    const v = c.derivar ? c.derivar(l.tituloEncontrado) : l.tituloEncontrado[c.key]
+                    return `<td style="padding:5px 6px;text-align:${c.numerico ? 'right' : 'left'};color:#334155;">${c.formatar ? c.formatar(v) : (v ?? '—')}</td>`
+                  }).join('')}
+                </tr>
+              </tbody>
+            </table>
+          </div>` : ''
+        return `
+          <div style="font-family:Arial,Helvetica,sans-serif;background:#fff;padding:0 20px;width:${WRAP_W}px;box-sizing:border-box;margin-bottom:6px;">
+            <table style="width:100%;border-collapse:collapse;font-size:11px;border:1px solid ${cor.border};">
+              <thead>
+                <tr style="background:${cor.bg};color:${cor.texto};">
+                  <th colspan="9" style="padding:6px 8px;text-align:left;font-size:11px;font-weight:800;">
+                    ${label} · ${saldoLabel} — ${codigoEmpresa || '—'} ${empresa} · Lote ${l.numero_lote}
+                  </th>
+                </tr>
+                <tr style="background:#f8fafc;color:#94a3b8;text-transform:uppercase;font-size:9px;">
+                  <th style="padding:5px 6px;text-align:left;">Data Pagto</th>
+                  <th style="padding:5px 6px;text-align:left;">Nº NF-e</th>
+                  <th style="padding:5px 6px;text-align:left;">Nº NFS-e</th>
+                  <th style="padding:5px 6px;text-align:left;">Parcela</th>
+                  <th style="padding:5px 6px;text-align:left;">CNPJ Cliente</th>
+                  <th style="padding:5px 6px;text-align:left;">Cliente</th>
+                  <th style="padding:5px 6px;text-align:right;">Valor Bruto</th>
+                  <th style="padding:5px 6px;text-align:right;">Taxa</th>
+                  <th style="padding:5px 6px;text-align:right;">Valor Recebido</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td style="padding:5px 6px;color:#334155;">${fmtData(l.data_pagamento)}</td>
+                  <td style="padding:5px 6px;color:#334155;">${l.nf_e || '—'}</td>
+                  <td style="padding:5px 6px;color:#334155;">${l.nfs_e || '—'}</td>
+                  <td style="padding:5px 6px;color:#334155;">${l.parcelas || '—'}</td>
+                  <td style="padding:5px 6px;color:#334155;">${l.cnpj_cliente || '—'}</td>
+                  <td style="padding:5px 6px;color:#334155;">${l.nome_cliente || '—'}</td>
+                  <td style="padding:5px 6px;text-align:right;color:#334155;">${fmtMoeda(l.valor_parcela_total)}</td>
+                  <td style="padding:5px 6px;text-align:right;color:#b91c1c;">${fmtMoeda(l.valor_taxa)}</td>
+                  <td style="padding:5px 6px;text-align:right;font-weight:700;color:#0f172a;">${fmtMoeda(l.valor_recebido)}</td>
+                </tr>
+              </tbody>
+            </table>
+            ${tituloHtml}
+          </div>`
+      }
+
+      const renderBloco = async (html) => {
+        const wrap = document.createElement('div')
+        wrap.style.cssText = `position:fixed;top:0;left:-9999px;width:${WRAP_W}px;background:#fff;z-index:-1;`
+        wrap.innerHTML = html
+        document.body.appendChild(wrap)
+        try {
+          return await html2canvas(wrap, { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff', width: WRAP_W })
+        } finally {
+          document.body.removeChild(wrap)
+        }
+      }
+
+      const GAP = 4
+      const pageBottom = pdf.internal.pageSize.getHeight() - MARGIN
+      let primeiraPagina = true
+      const iniciarPagina = () => {
+        if (!primeiraPagina) pdf.addPage()
+        primeiraPagina = false
+        return MARGIN
+      }
+      const colocarCanvas = (canvas, y) => {
+        const h = (canvas.height / canvas.width) * CW
+        pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', MARGIN, y, CW, h)
+        return h
+      }
+
+      let y = iniciarPagina()
+      y += colocarCanvas(await renderBloco(montarHtmlCabecalho()), y) + GAP
+
+      for (const l of repassesParaPdf) {
+        const canvas = await renderBloco(montarHtmlRepasse(l))
+        const h = (canvas.height / canvas.width) * CW
+        if (y + h > pageBottom) y = iniciarPagina()
+        y += colocarCanvas(canvas, y) + GAP
+      }
+
+      const nomeArquivo = `repasses_truckpag_${sufixoArquivo}_${hojeIso()}.pdf`
+      pdf.save(nomeArquivo)
+    } catch (err) {
+      console.error('Erro ao gerar PDF:', err)
+      setErro('Erro ao gerar PDF: ' + (err.message || String(err)))
+    } finally {
+      setProcessandoPdf(false)
+    }
+  }
+
+  const filtroAtivo = !!filtroGrupoRepasse
 
   const colunas = [
     { key: 'codigoEmpresa', label: 'Código Empresa', derivar: (l) => splitEstabelecimento(l.estabelecimento).codigoEmpresa, naoOrdenavel: true, campoInfo: 'codigo' },
@@ -255,7 +541,7 @@ export default function TruckPagRepasses() {
     { key: 'nf_e', label: 'Nº NF-e', campoInfo: 'notaFiscal' },
     { key: 'nfs_e', label: 'Nº NFS-e', campoInfo: 'nfse' },
     { key: 'parcelas', label: 'Parcelas', campoInfo: 'parcela' },
-    { key: 'cnpj_cliente', label: 'CNPJ do Cliente', campoInfo: 'documento' },
+    { key: 'cnpj_cliente', label: 'CNPJ do Cliente', campoGraduacao: 'documento' },
     { key: 'nome_cliente', label: 'Nome do Cliente' },
     { key: 'numero_os', label: 'Nº OS' },
     { key: 'numero_lote', label: 'Nº Lote' },
@@ -278,8 +564,16 @@ export default function TruckPagRepasses() {
             <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
               <ArrowLeftRight className="h-5 w-5 text-blue-600" />
               Repasses TruckPag
+              <span className="relative group cursor-help">
+                <Info className="h-3.5 w-3.5 text-slate-400" />
+                <span className="absolute top-full left-0 mt-2 w-96 text-[10px] text-white bg-slate-700 rounded px-2 py-1.5 leading-relaxed opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 normal-case font-normal tracking-normal space-y-1">
+                  <div>Fonte de dados: Relatório de repasses recebidos da TruckPag</div>
+                  <div>Nome do Arquivo: contas-receber-daf.xlsx</div>
+                  <div>Pasta SharePoint: /Banco de Dados - DAF - Pós-Vendas/Financeiro - DAF</div>
+                </span>
+              </span>
             </h1>
-            <p className="text-xs text-slate-500 mt-0.5">Extrato completo, linha a linha, de todos os repasses recebidos — sincronizado do SharePoint.</p>
+            <p className="text-xs text-slate-500 mt-0.5">Extrato linha a linha dos repasses recebidos com título vinculado — sincronizado do SharePoint.</p>
           </div>
           <div className="flex items-center gap-3">
             {ultimaAtualizacao && (
@@ -287,11 +581,19 @@ export default function TruckPagRepasses() {
                 Atualizado em: <strong className="text-slate-500">{new Date(ultimaAtualizacao).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</strong>
               </span>
             )}
+            <button onClick={() => setMostrarBaixados(true)} title="Depósitos já baixados" className="relative flex items-center justify-center border border-slate-200 text-slate-600 hover:bg-slate-50 p-2 rounded-md transition-colors">
+              <Archive className="h-3.5 w-3.5" />
+              {baixas.length > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 bg-slate-700 text-white text-[9px] font-bold leading-none rounded-full h-4 min-w-4 px-1 flex items-center justify-center">
+                  {baixas.length}
+                </span>
+              )}
+            </button>
             <button onClick={() => setConfigAberto(true)} title="Configurações" className="flex items-center justify-center border border-slate-200 text-slate-600 hover:bg-slate-50 p-2 rounded-md transition-colors">
               <Settings className="h-3.5 w-3.5" />
             </button>
             <button onClick={sincronizar} disabled={sincronizando} title={sincronizando ? 'Atualizando...' : 'Atualizar do SharePoint'} className="flex items-center justify-center bg-blue-600 hover:bg-blue-700 text-white p-2 rounded-md shadow-sm transition-colors disabled:opacity-50">
-              <Download className={`h-4 w-4 ${sincronizando ? 'animate-pulse' : ''}`} />
+              <RefreshCw className={`h-4 w-4 ${sincronizando ? 'animate-spin' : ''}`} />
             </button>
             <button onClick={() => setRegrasAberto(true)} title="Regras de conciliação" className="flex items-center justify-center p-2 rounded-md text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 shadow-sm transition-colors">
               <HelpCircle className="h-3.5 w-3.5 text-slate-500" />
@@ -302,6 +604,22 @@ export default function TruckPagRepasses() {
       </div>
       <TruckPagRegrasModal aberto={regrasAberto} onFechar={() => setRegrasAberto(false)} />
       {configAberto && <TruckPagConfigModal onClose={() => { setConfigAberto(false); carregar() }} />}
+      {mostrarBaixados && (
+        <TruckPagBaixadosModal
+          baixas={baixas}
+          onClose={() => setMostrarBaixados(false)}
+          onAlterado={async () => setBaixas(await apiService.getTruckPagBaixasTitulos())}
+        />
+      )}
+      {mostrarLinhasForaGrupo && linhasForaDoGrupo.length > 0 && (
+        <TruckPagRepasseDetalheModal
+          empresa={splitEstabelecimento(linhasForaDoGrupo[0].estabelecimento).empresa}
+          codigoEmpresa={splitEstabelecimento(linhasForaDoGrupo[0].estabelecimento).codigoEmpresa}
+          data={linhasForaDoGrupo[0].data_pagamento}
+          linhas={linhasForaDoGrupo}
+          onClose={() => setMostrarLinhasForaGrupo(false)}
+        />
+      )}
 
       {erro && (
         <div className="flex items-center gap-3 bg-red-50 border border-red-200 rounded-lg px-4 py-3">
@@ -310,114 +628,54 @@ export default function TruckPagRepasses() {
         </div>
       )}
 
-      {!loading && filtradas.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="bg-white rounded-lg border border-slate-200 p-4">
-            <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1">Valor Bruto</p>
-            <p className="text-lg font-bold text-slate-800">{fmtMoeda(totais.bruto)}</p>
-          </div>
-          <div className="bg-white rounded-lg border border-slate-200 p-4">
-            <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1">Taxa Administrativa</p>
-            <p className="text-lg font-bold text-red-600">{fmtMoeda(totais.taxa)}</p>
-          </div>
-          <div className="bg-white rounded-lg border border-emerald-200 bg-emerald-50 p-4">
-            <p className="text-[10px] font-bold uppercase tracking-wide text-emerald-600 mb-1">Valor Líquido Recebido</p>
-            <p className="text-lg font-bold text-emerald-800">{fmtMoeda(totais.liquido)}</p>
-          </div>
-        </div>
-      )}
-
-      {!loading && linhas.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <button type="button" onClick={() => setFiltroConciliacao(p => p === 'exato' ? null : 'exato')}
-            className={`text-left rounded-lg border p-4 shadow-sm transition-all hover:shadow-md bg-emerald-50 border-emerald-200 ${filtroConciliacao === 'exato' ? 'ring-2 ring-offset-1 ring-emerald-300 shadow-md' : ''}`}>
-            <div className="flex items-center gap-1.5 mb-2">
-              <div className="p-1 rounded bg-emerald-100"><CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /></div>
-              <p className="text-[10px] font-bold uppercase tracking-wide text-emerald-500">Identificado</p>
-            </div>
-            <p className="text-2xl font-bold text-emerald-700 leading-none">{fmtMoeda(resumoConciliacao.exato.valor)}</p>
-            <p className="text-[10px] text-emerald-500 mt-0.5">{resumoConciliacao.exato.qtd} repasse(s) · título confere</p>
-          </button>
-          <button type="button" onClick={() => setFiltroConciliacao(p => p === 'divergente' ? null : 'divergente')}
-            className={`text-left rounded-lg border p-4 shadow-sm transition-all hover:shadow-md bg-amber-50 border-amber-200 ${filtroConciliacao === 'divergente' ? 'ring-2 ring-offset-1 ring-amber-300 shadow-md' : ''}`}>
-            <div className="flex items-center gap-1.5 mb-2">
-              <div className="p-1 rounded bg-amber-100"><AlertTriangle className="h-3.5 w-3.5 text-amber-600" /></div>
-              <p className="text-[10px] font-bold uppercase tracking-wide text-amber-500">Divergentes</p>
-            </div>
-            <p className="text-2xl font-bold text-amber-700 leading-none">{fmtMoeda(resumoConciliacao.divergente.valor)}</p>
-            <p className="text-[10px] text-amber-500 mt-0.5">{resumoConciliacao.divergente.qtd} repasse(s) · achou título, algo diverge</p>
-          </button>
-          <button type="button" onClick={() => setFiltroConciliacao(p => p === 'nao_encontrado' ? null : 'nao_encontrado')}
-            className={`text-left rounded-lg border p-4 shadow-sm transition-all hover:shadow-md bg-red-50 border-red-200 ${filtroConciliacao === 'nao_encontrado' ? 'ring-2 ring-offset-1 ring-red-300 shadow-md' : ''}`}>
-            <div className="flex items-center gap-1.5 mb-2">
-              <div className="p-1 rounded bg-red-100"><XCircle className="h-3.5 w-3.5 text-red-600" /></div>
-              <p className="text-[10px] font-bold uppercase tracking-wide text-red-500">Sem Título</p>
-            </div>
-            <p className="text-2xl font-bold text-red-700 leading-none">{fmtMoeda(resumoConciliacao.nao_encontrado.valor)}</p>
-            <p className="text-[10px] text-red-500 mt-0.5">{resumoConciliacao.nao_encontrado.qtd} repasse(s) · nenhum título confirma</p>
-          </button>
-        </div>
-      )}
-
-      <div className="bg-white rounded-lg border border-slate-200 shadow-sm">
-        <button type="button" onClick={() => setFiltrosAbertos(v => !v)} className="w-full flex items-center justify-between px-4 py-3 text-left">
-          <span className="flex items-center gap-2 text-xs font-semibold text-slate-600">
-            <Filter className="h-3.5 w-3.5 text-slate-400" />
-            Filtros
-            {(filtroAtivo || filtroTexto.trim()) && <span className="text-[10px] font-bold text-blue-600 bg-blue-50 border border-blue-200 rounded-full px-2 py-0.5">ativo</span>}
-          </span>
-          {filtrosAbertos ? <ChevronUp className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
-        </button>
-        {filtrosAbertos && (
-          <div className="px-4 pb-4 pt-1 border-t border-slate-100">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3 max-w-2xl">
-              <div>
-                <label className="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1 block">Buscar (OS/NF/Lote/Cliente/CNPJ)</label>
-                <input type="text" value={filtroTexto} onChange={e => setFiltroTexto(e.target.value)} placeholder="Filtrar..." className="w-full text-xs border border-slate-200 rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300" />
-              </div>
-              <div>
-                <label className="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1 block">Data de</label>
-                <input type="date" value={dataInicio} onChange={e => setDataInicio(e.target.value)} className="w-full text-xs border border-slate-200 rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300" />
-              </div>
-              <div>
-                <label className="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1 block">Data até</label>
-                <input type="date" value={dataFim} onChange={e => setDataFim(e.target.value)} className="w-full text-xs border border-slate-200 rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300" />
-              </div>
-            </div>
-
-            {gruposPorDia.length > 0 && (
-              <div className="mt-4">
-                <label className="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1 block">
-                  Repasse por dia (Empresa · Data · Valor) — clique pra ver só as linhas daquele depósito
-                </label>
-                <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto custom-scrollbar-light pr-1">
-                  {gruposPorDia.map(g => (
-                    <button
-                      key={g.chave}
-                      type="button"
-                      onClick={() => setFiltroGrupoRepasse(p => p === g.chave ? null : g.chave)}
-                      title={`${g.qtd} linha(s)`}
-                      className={`text-[11px] font-semibold px-2 py-1 rounded-md border transition-colors ${
-                        filtroGrupoRepasse === g.chave
-                          ? 'bg-blue-600 border-blue-600 text-white'
-                          : 'bg-white border-slate-200 text-slate-600 hover:border-blue-300 hover:text-blue-700'
-                      }`}
-                    >
-                      {g.codigoEmpresa || '—'} · {g.empresa} · {fmtData(g.data_pagamento)} · {fmtMoeda(g.total)} <span className="opacity-70">({g.qtd})</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {(filtroAtivo || filtroTexto.trim()) && (
-              <button type="button" onClick={() => { setDataInicio(''); setDataFim(''); setFiltroTexto(''); setFiltroGrupoRepasse(null) }} className="mt-3 flex items-center gap-1 text-[10px] font-semibold text-slate-400 hover:text-slate-600">
-                <X className="h-3 w-3" /> Limpar filtros
+      {(gruposPorDia.length > 0 || naoIdentificadoInfo.qtd > 0) && (
+        <div className="bg-white rounded-lg border border-slate-200 shadow-sm px-4 py-3">
+          <div className="flex items-center justify-between mb-1">
+            <label className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+              Saldo Concessionária (Data · Valor) — selecione o lote de pagamento
+            </label>
+            {(filtroAtivo || filtroNaoIdentificado) && (
+              <button type="button" onClick={() => { setFiltroGrupoRepasse(null); setFiltroNaoIdentificado(false) }} className="flex items-center gap-1 text-[10px] font-semibold text-slate-400 hover:text-slate-600">
+                <X className="h-3 w-3" /> Limpar filtro
               </button>
             )}
           </div>
-        )}
-      </div>
+          <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto custom-scrollbar-light pr-1">
+            {naoIdentificadoInfo.qtd > 0 && (
+              <button
+                type="button"
+                onClick={() => setFiltroNaoIdentificado(v => !v)}
+                title={`${naoIdentificadoInfo.qtd} linha(s) sem crédito vinculado`}
+                className={`flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-md border transition-colors ${
+                  filtroNaoIdentificado
+                    ? 'bg-red-600 border-red-600 text-white'
+                    : 'bg-red-50 border-red-200 text-red-600 hover:border-red-300'
+                }`}
+              >
+                <Link2Off className="h-3 w-3" />
+                Valor não identificado · {fmtMoeda(naoIdentificadoInfo.valor)} <span className="opacity-70">({naoIdentificadoInfo.qtd})</span>
+              </button>
+            )}
+            {gruposPorDia.map(g => (
+              <button
+                key={g.chave}
+                type="button"
+                onClick={() => setFiltroGrupoRepasse(p => p === g.chave ? null : g.chave)}
+                title={`${g.qtd} linha(s) de repasse`}
+                className={`flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-md border transition-colors ${
+                  filtroGrupoRepasse === g.chave
+                    ? 'bg-blue-600 border-blue-600 text-white'
+                    : 'bg-white border-slate-200 text-slate-600 hover:border-blue-300 hover:text-blue-700'
+                }`}
+              >
+                {g.statusBaixa === 'total' && <Lock className="h-3 w-3 shrink-0" title="Lote totalmente baixado" />}
+                {g.statusBaixa === 'parcial' && <Unlock className="h-3 w-3 shrink-0" title="Lote parcialmente baixado" />}
+                {fmtData(g.dataCredito)} · {fmtMoeda(g.valorCredito)} <span className="opacity-70">({g.qtd})</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {loading ? (
         <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-16 flex flex-col items-center gap-3">
@@ -432,11 +690,53 @@ export default function TruckPagRepasses() {
         </div>
       ) : (
         <>
-        {idsExpansiveis.length > 0 && (
-          <div className="flex justify-start">
-            <button type="button" onClick={alternarTodasExpandidas} className="flex items-center gap-1 text-[10px] font-semibold text-slate-500 hover:text-slate-700 bg-white border border-slate-200 rounded px-1.5 py-1">
-              {todosExpandidos ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-              {todosExpandidos ? 'Recolher' : 'Expandir'}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            {idsExpansiveis.length > 0 && (
+              <button type="button" onClick={alternarTodasExpandidas} className="flex items-center gap-1 text-[10px] font-semibold text-slate-500 hover:text-slate-700 bg-white border border-slate-200 rounded px-1.5 py-1">
+                {todosExpandidos ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                {todosExpandidos ? 'Recolher' : 'Expandir'}
+              </button>
+            )}
+            <span className="flex items-center gap-2 text-[11px] font-semibold text-slate-600 bg-white border border-slate-200 rounded px-2 py-1">
+              <span>Total ({ordenadas.length})</span>
+              <span className="text-slate-800">{fmtMoeda(totaisTabela.bruto)}</span>
+              <span className="text-red-600">{fmtMoeda(totaisTabela.taxa)}</span>
+              <span className="text-emerald-700">{fmtMoeda(totaisTabela.liquido)}</span>
+            </span>
+          </div>
+          {selecionados.size > 0 && (
+            <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-md px-2.5 py-1.5 shadow-sm">
+              <span className="text-[11px] font-semibold text-slate-600">{selecionados.size} selecionado(s) · {fmtMoeda(valorSelecionado)}</span>
+              <label className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Data Pagto</label>
+              <input type="date" value={dataExport} onChange={e => setDataExport(e.target.value)} className="text-xs border border-slate-200 rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300" />
+              <button
+                type="button"
+                onClick={() => gerarPdfRepasses(ordenadas.filter(l => selecionados.has(l.id)), 'selecionados')}
+                disabled={processandoPdf}
+                className="flex items-center gap-1.5 border border-slate-200 text-slate-600 hover:bg-slate-50 text-xs font-semibold px-3 py-1.5 rounded-md transition-colors disabled:opacity-50"
+              >
+                {processandoPdf ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />} PDF
+              </button>
+              <button type="button" onClick={exportarBaixa} className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-3 py-1.5 rounded-md shadow-sm transition-colors">
+                <FileDown className="h-3.5 w-3.5" /> Exportar Baixa
+              </button>
+            </div>
+          )}
+        </div>
+        {linhasForaDoGrupo.length > 0 && (
+          <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-lg px-4 py-2.5">
+            <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
+            <p className="text-xs text-amber-700 font-semibold flex-1">
+              Este depósito tem {linhasForaDoGrupo.length} linha(s) sem título vinculado (
+              {fmtMoeda(linhasForaDoGrupo.reduce((s, l) => s + (l.valor_recebido || 0), 0))}) que não entram no Total acima.
+            </p>
+            <button
+              type="button"
+              onClick={() => setMostrarLinhasForaGrupo(true)}
+              className="shrink-0 flex items-center gap-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold px-3 py-1.5 rounded-md shadow-sm transition-colors"
+            >
+              Ver linha(s)
             </button>
           </div>
         )}
@@ -444,7 +744,11 @@ export default function TruckPagRepasses() {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[10px] font-bold uppercase tracking-wider">
-                <th className="p-3 whitespace-nowrap" title="Situação da conciliação">ST</th>
+                <th className="p-3 whitespace-nowrap">
+                  <input type="checkbox" checked={todosSelecionados} onChange={alternarTodasSelecoes} className="h-3.5 w-3.5 rounded border-slate-300 cursor-pointer" />
+                </th>
+                <th className="p-3 whitespace-nowrap" title="Situação da conciliação com título">ST</th>
+                <th className="p-3 whitespace-nowrap" title="Já bateu com algum crédito no saldo bancário (Saldo Concessionária)?">Saldo</th>
                 {colunas.map(c => (
                   <th
                     key={c.key}
@@ -471,6 +775,9 @@ export default function TruckPagRepasses() {
                   <React.Fragment key={l.id}>
                     <tr className="hover:bg-slate-50/70 transition-colors">
                       <td className="p-3 whitespace-nowrap">
+                        <input type="checkbox" checked={selecionados.has(l.id)} onChange={() => alternarSelecao(l.id)} className="h-3.5 w-3.5 rounded border-slate-300 cursor-pointer" />
+                      </td>
+                      <td className="p-3 whitespace-nowrap">
                         {l.tituloEncontrado ? (
                           <button type="button" onClick={() => alternarExpandida(l.id)} title={conciliacaoInfo.label}
                             className={`inline-flex items-center justify-center p-1 rounded-full border transition-colors ${conciliacaoInfo.cls} hover:brightness-95`}>
@@ -479,6 +786,17 @@ export default function TruckPagRepasses() {
                         ) : (
                           <span title={conciliacaoInfo.label} className={`inline-flex items-center justify-center p-1 rounded-full border ${conciliacaoInfo.cls}`}>
                             <conciliacaoInfo.icon className="h-3 w-3" />
+                          </span>
+                        )}
+                      </td>
+                      <td className="p-3 whitespace-nowrap">
+                        {l.conciliadoSaldo ? (
+                          <span title="Conciliado com o saldo bancário" className="inline-flex items-center justify-center p-1 rounded-full border bg-emerald-50 text-emerald-700 border-emerald-200">
+                            <Link2 className="h-3 w-3" />
+                          </span>
+                        ) : (
+                          <span title="Ainda não bateu com nenhum crédito do saldo bancário" className="inline-flex items-center justify-center p-1 rounded-full border bg-red-50 text-red-500 border-red-200">
+                            <Link2Off className="h-3 w-3" />
                           </span>
                         )}
                       </td>
@@ -499,6 +817,8 @@ export default function TruckPagRepasses() {
                     </tr>
                     {expandida && l.tituloEncontrado && (
                       <tr>
+                        <td className="p-0 bg-slate-50/70 border-b border-slate-100"></td>
+                        <td className="p-0 bg-slate-50/70 border-b border-slate-100"></td>
                         <td className="p-0 bg-slate-50/70 border-b border-slate-100"></td>
                         <td colSpan={colunas.length} className="p-0 bg-slate-50/70 border-b border-slate-100">
                           <div className="py-3">
@@ -545,15 +865,6 @@ export default function TruckPagRepasses() {
                 )
               })}
             </tbody>
-            <tfoot>
-              <tr className="bg-slate-50 border-t-2 border-slate-200 text-xs font-bold text-slate-700">
-                <td className="p-3" colSpan={16}>Total ({ordenadas.length})</td>
-                <td className="p-3 text-right">{fmtMoeda(totais.bruto)}</td>
-                <td className="p-3"></td>
-                <td className="p-3 text-right text-red-600">{fmtMoeda(totais.taxa)}</td>
-                <td className="p-3 text-right text-emerald-700">{fmtMoeda(totais.liquido)}</td>
-              </tr>
-            </tfoot>
           </table>
         </div>
         </>

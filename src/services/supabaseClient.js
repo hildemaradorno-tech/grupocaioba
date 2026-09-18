@@ -5185,4 +5185,39 @@ export const apiService = {
     }
     return { success: true }
   },
+
+  // ── TruckPag — Controle de Baixa de Títulos ─────────────────────────────
+  // Tabela separada de truckpag_titulos/truckpag_repasses (snapshots recriados a cada sync) —
+  // ver comentário na migration truckpag_baixas_titulos.sql.
+
+  getTruckPagBaixasTitulos: async () => {
+    const { data, error } = await supabase
+      .from('truckpag_baixas_titulos')
+      .select('*')
+      .order('baixado_em', { ascending: false })
+    if (error) throw error
+    return data || []
+  },
+
+  // registros: [{ titulo_codigo, titulo_numero, estabelecimento, data_pagamento, valor }]
+  registrarTruckPagBaixas: async (registros) => {
+    if (!registros || registros.length === 0) return { success: true }
+    const { error } = await supabase
+      .from('truckpag_baixas_titulos')
+      .upsert(registros, { onConflict: 'titulo_codigo' })
+    if (error) throw error
+    return { success: true }
+  },
+
+  // "Trazer de volta" — apaga o registro de baixa de todo um grupo (depósito), fazendo os
+  // títulos daquele grupo voltarem a aparecer normalmente na tela Repasses.
+  removerTruckPagBaixasPorGrupo: async (estabelecimento, dataPagamento) => {
+    const { error } = await supabase
+      .from('truckpag_baixas_titulos')
+      .delete()
+      .eq('estabelecimento', estabelecimento)
+      .eq('data_pagamento', dataPagamento)
+    if (error) throw error
+    return { success: true }
+  },
 }

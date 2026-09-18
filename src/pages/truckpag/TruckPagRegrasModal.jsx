@@ -3,7 +3,7 @@ import { X, CheckCircle2, AlertTriangle, XCircle, Link2 } from 'lucide-react'
 
 // Modal informativo (sem ação nenhuma) explicando a regra de conciliação — aberto pelo botão de
 // regras nas 3 telas do módulo. `variante` escolhe qual regra explicar, já que Títulos/Repasses
-// usam uma lógica (identidade título × repasse) e a aba Conciliação usa outra (repasse × crédito
+// usam uma lógica (identidade título × repasse) e a aba Saldo Concessionária usa outra (repasse × crédito
 // por valor).
 export default function TruckPagRegrasModal({ aberto, onFechar, variante = 'titulos-repasses' }) {
   if (!aberto) return null
@@ -14,7 +14,7 @@ export default function TruckPagRegrasModal({ aberto, onFechar, variante = 'titu
         {variante === 'repasses-creditos' ? (
           <>
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-sm font-bold text-slate-900">Regras de Conciliação — Repasses × Saldo</h2>
+              <h2 className="text-sm font-bold text-slate-900">Regras — Repasses × Saldo Concessionária</h2>
               <button onClick={onFechar} className="text-slate-400 hover:text-slate-600">
                 <X className="h-4 w-4" />
               </button>
@@ -59,9 +59,10 @@ export default function TruckPagRegrasModal({ aberto, onFechar, variante = 'titu
               <div className="bg-slate-50 border border-slate-200 rounded-md p-3">
                 <p className="font-bold text-slate-700 mb-1">1. Identidade obrigatória (pra virar candidato)</p>
                 <p>
-                  <strong>Código da Empresa</strong>, <strong>CNPJ do Cliente</strong> e <strong>Parcela</strong> precisam
-                  bater — E pelo menos uma <strong>Nota Fiscal</strong> (Nº NF-e ou Nº NFS-e) em comum entre título e
-                  repasse. Se faltar qualquer um desses, o título/repasse não é considerado um candidato.
+                  <strong>Código da Empresa</strong> e <strong>Parcela</strong> precisam bater — E pelo menos uma
+                  <strong> Nota Fiscal</strong> (Nº NF-e ou Nº NFS-e) em comum entre título e repasse. Se faltar
+                  qualquer um desses, o título/repasse não é considerado um candidato. O <strong>CNPJ do Cliente</strong> não
+                  entra mais aqui — só é conferido depois, junto com Valor e Saldo, pra decidir Identificado ou Divergente.
                 </p>
               </div>
 
@@ -69,7 +70,7 @@ export default function TruckPagRegrasModal({ aberto, onFechar, variante = 'titu
                 <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
                 <div>
                   <p className="font-bold text-emerald-700">Identificado</p>
-                  <p>Identidade completa bate, e <strong>Valor</strong> e <strong>Saldo</strong> também conferem com o repasse (dentro da tolerância configurada).</p>
+                  <p>Identidade obrigatória bate, e <strong>CNPJ do Cliente</strong>, <strong>Valor</strong> e <strong>Saldo</strong> também conferem com o repasse (dentro da tolerância configurada).</p>
                 </div>
               </div>
 
@@ -77,7 +78,7 @@ export default function TruckPagRegrasModal({ aberto, onFechar, variante = 'titu
                 <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
                 <div>
                   <p className="font-bold text-amber-700">Divergente</p>
-                  <p>Identidade completa bate, mas <strong>Valor</strong> ou <strong>Saldo</strong> não conferem (fora da tolerância).</p>
+                  <p>Identidade obrigatória bate, mas <strong>CNPJ do Cliente</strong>, <strong>Valor</strong> ou <strong>Saldo</strong> não conferem (fora da tolerância, no caso do CNPJ é diferente do repasse).</p>
                 </div>
               </div>
 
@@ -85,7 +86,7 @@ export default function TruckPagRegrasModal({ aberto, onFechar, variante = 'titu
                 <XCircle className="h-4 w-4 text-red-600 shrink-0 mt-0.5" />
                 <div>
                   <p className="font-bold text-red-700">Não encontrado / Sem título</p>
-                  <p>Nenhum repasse (ou título) bate a identidade completa (código + CNPJ + parcela + nota fiscal).</p>
+                  <p>Nenhum repasse (ou título) bate a identidade obrigatória (código + parcela + nota fiscal).</p>
                 </div>
               </div>
 

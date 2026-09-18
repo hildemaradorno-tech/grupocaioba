@@ -8,7 +8,7 @@ import TruckPagRegrasModal from './TruckPagRegrasModal'
 import { fmtMoeda, fmtData, sincronizarTudoTruckPag, conciliarRepassesCreditos, filtrarCreditosPorTipoSaldo } from './truckpagUtils'
 
 const TIPO_INFO = {
-  repasse: { label: 'Repasse DAF', cls: 'bg-blue-50 text-blue-700 border-blue-200', icon: ArrowLeftRight },
+  repasse: { label: 'Repasse Fabricante', cls: 'bg-blue-50 text-blue-700 border-blue-200', icon: ArrowLeftRight },
   credito: { label: 'Saldo Concessionária', cls: 'bg-purple-50 text-purple-700 border-purple-200', icon: Wallet },
 }
 
@@ -80,7 +80,7 @@ export default function TruckPagConciliacao() {
   // depósito bancário) e casa o total com o valor de um crédito não identificado.
   const { grupos, creditoParaGrupo } = useMemo(() => conciliarRepassesCreditos(repasses, creditosFiltrados, tolerancia), [repasses, creditosFiltrados, tolerancia])
 
-  // Linha por linha: cada depósito de repasse vira uma linha "Repasse DAF" e cada crédito uma
+  // Linha por linha: cada depósito de repasse vira uma linha "Repasse Fabricante" e cada crédito uma
   // linha "Saldo Concessionária" — usado só pros totais dos cards (a tabela em si é montada em
   // blocos, ver abaixo, pra poder juntar repasse + crédito conciliados lado a lado).
   const linhas = useMemo(() => {
@@ -89,19 +89,15 @@ export default function TruckPagConciliacao() {
     return [...linhasRepasse, ...linhasCredito]
   }, [grupos, creditosFiltrados, creditoParaGrupo])
 
-  // Monta blocos: cada depósito de repasse conciliado vem seguido imediatamente do crédito
-  // vinculado (as duas linhas juntas, uma abaixo da outra); repasses sem crédito e créditos sem
-  // repasse ficam como bloco de 1 linha só. `conciliado` marca o bloco inteiro pro ícone.
+  // Monta blocos: o crédito vinculado (Saldo Concessionária) vem primeiro, seguido imediatamente
+  // pelo depósito de repasse que ele concilia (as duas linhas juntas, uma abaixo da outra);
+  // repasses sem crédito e créditos sem repasse ficam como bloco de 1 linha só. `conciliado`
+  // marca o bloco inteiro pro ícone.
   const blocos = useMemo(() => {
     const usados = new Set()
     const lista = []
     for (const g of grupos) {
-      const linhasBloco = [{
-        tipo: 'repasse', key: `r-${g.chave}`, empresa: g.empresa, codigoEmpresa: g.codigoEmpresa,
-        contaGerencial: '', codigoTesouraria: '', observacao: '', data: g.data_pagamento,
-        valorBruto: g.totalBruto, valorTaxa: g.totalTaxa, valorLiquido: g.total,
-        detalhe: g.linhas,
-      }]
+      const linhasBloco = []
       if (g.creditoVinculado) {
         const c = g.creditoVinculado
         usados.add(c.id)
@@ -111,6 +107,12 @@ export default function TruckPagConciliacao() {
           data: c.data_caixa, valorBruto: null, valorTaxa: null, valorLiquido: c.valor,
         })
       }
+      linhasBloco.push({
+        tipo: 'repasse', key: `r-${g.chave}`, empresa: g.empresa, codigoEmpresa: g.codigoEmpresa,
+        contaGerencial: '', codigoTesouraria: '', observacao: '', data: g.data_pagamento,
+        valorBruto: g.totalBruto, valorTaxa: g.totalTaxa, valorLiquido: g.total,
+        detalhe: g.linhas,
+      })
       lista.push({ chave: g.chave, dataOrdenacao: g.data_pagamento || '', conciliado: !!g.creditoVinculado, linhas: linhasBloco })
     }
     for (const c of creditosFiltrados) {
@@ -159,16 +161,16 @@ export default function TruckPagConciliacao() {
 
   const linhasRepasseAtual = linhas.filter(l => l.tipo === 'repasse')
   const linhasCreditoAtual = linhas.filter(l => l.tipo === 'credito')
-  const qtdRepasse = linhasRepasseAtual.length
   const qtdCredito = linhasCreditoAtual.length
   const qtdVinculados = linhas.filter(l => l.vinculado).length
-  const qtdNaoVinculados = linhas.length - qtdVinculados
-  const valorRepasse = linhasRepasseAtual.reduce((s, l) => s + (l.valorLiquido || 0), 0)
   const valorCredito = linhasCreditoAtual.reduce((s, l) => s + (l.valorLiquido || 0), 0)
   const valorVinculado = linhasRepasseAtual.filter(l => l.vinculado).reduce((s, l) => s + (l.valorLiquido || 0), 0)
-  // Não vinculado soma os dois lados (repasse e crédito), já que aqui não formam par — cada um
-  // é um valor solto diferente, ao contrário do vinculado (que soma só um lado pra não dobrar).
-  const valorNaoVinculado = linhas.filter(l => !l.vinculado).reduce((s, l) => s + (l.valorLiquido || 0), 0)
+  // "Não conciliado" é só o lado do Saldo Concessionária (crédito) que não bateu com nenhum
+  // repasse — não soma mais o lado do repasse, pra o card representar exclusivamente o crédito
+  // ainda não identificado.
+  const linhasCreditoNaoVinculado = linhasCreditoAtual.filter(l => !l.vinculado)
+  const qtdNaoVinculados = linhasCreditoNaoVinculado.length
+  const valorNaoVinculado = linhasCreditoNaoVinculado.reduce((s, l) => s + (l.valorLiquido || 0), 0)
   const filtroAtivo = !!(dataInicio || dataFim)
 
   const colunas = [
@@ -190,9 +192,9 @@ export default function TruckPagConciliacao() {
           <div>
             <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
               <Link2 className="h-5 w-5 text-emerald-600" />
-              Conciliação
+              Saldo Concessionária
             </h1>
-            <p className="text-xs text-slate-500 mt-0.5">Repasses DAF x Saldo disponível na concessionária — vinculados pela soma do valor por estabelecimento/data.</p>
+            <p className="text-xs text-slate-500 mt-0.5">Repasses Fabricante x Saldo disponível na concessionária — vinculados pela soma do valor por estabelecimento/data.</p>
           </div>
           <div className="flex items-center gap-3">
             {ultimaAtualizacao && (
@@ -222,19 +224,7 @@ export default function TruckPagConciliacao() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <button
-          type="button"
-          onClick={() => setFiltroTipo(p => p === 'repasse' ? null : 'repasse')}
-          className={`text-left rounded-lg border p-4 shadow-sm transition-all hover:shadow-md bg-blue-50 border-blue-200 ${filtroTipo === 'repasse' ? 'ring-2 ring-offset-1 ring-blue-300 shadow-md' : ''}`}
-        >
-          <div className="flex items-center gap-1.5 mb-2">
-            <div className="p-1 rounded bg-blue-100"><ArrowLeftRight className="h-3.5 w-3.5 text-blue-600" /></div>
-            <p className="text-[10px] font-bold uppercase tracking-wide text-blue-500">Repasse DAF</p>
-          </div>
-          <p className="text-2xl font-bold text-blue-700 leading-none">{fmtMoeda(valorRepasse)}</p>
-          <p className="text-[10px] text-blue-500 mt-0.5">{qtdRepasse} depósito(s)</p>
-        </button>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <button
           type="button"
           onClick={() => setFiltroTipo(p => p === 'credito' ? null : 'credito')}
@@ -254,7 +244,7 @@ export default function TruckPagConciliacao() {
         >
           <div className="flex items-center gap-1.5 mb-2">
             <div className="p-1 rounded bg-emerald-100"><Link2 className="h-3.5 w-3.5 text-emerald-600" /></div>
-            <p className="text-[10px] font-bold uppercase tracking-wide text-emerald-500">Vinculados</p>
+            <p className="text-[10px] font-bold uppercase tracking-wide text-emerald-500">Conciliados</p>
           </div>
           <p className="text-2xl font-bold text-emerald-700 leading-none">{fmtMoeda(valorVinculado)}</p>
           <p className="text-[10px] text-emerald-500 mt-0.5">{qtdVinculados} de {linhas.length} linha(s)</p>
@@ -266,10 +256,10 @@ export default function TruckPagConciliacao() {
         >
           <div className="flex items-center gap-1.5 mb-2">
             <div className="p-1 rounded bg-red-100"><Link2Off className="h-3.5 w-3.5 text-red-500" /></div>
-            <p className="text-[10px] font-bold uppercase tracking-wide text-red-500">Não Vinculados</p>
+            <p className="text-[10px] font-bold uppercase tracking-wide text-red-500">Não conciliado</p>
           </div>
           <p className="text-2xl font-bold text-red-700 leading-none">{fmtMoeda(valorNaoVinculado)}</p>
-          <p className="text-[10px] text-red-500 mt-0.5">{qtdNaoVinculados} de {linhas.length} linha(s)</p>
+          <p className="text-[10px] text-red-500 mt-0.5">{qtdNaoVinculados} de {qtdCredito} crédito(s)</p>
         </button>
       </div>
 
@@ -316,7 +306,13 @@ export default function TruckPagConciliacao() {
       ) : (
         <>
           {blocosVinculados.length > 0 && (
-            <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-x-auto custom-scrollbar-light">
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <Link2 className="h-4 w-4 text-emerald-600" />
+                <h2 className="text-xs font-bold uppercase tracking-wide text-emerald-700">Conciliados</h2>
+                <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-0.5">{blocosVinculados.length}</span>
+              </div>
+              <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-x-auto custom-scrollbar-light">
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[10px] font-bold uppercase tracking-wider">
@@ -375,6 +371,7 @@ export default function TruckPagConciliacao() {
                   ))}
                 </tbody>
               </table>
+              </div>
             </div>
           )}
 
@@ -382,7 +379,7 @@ export default function TruckPagConciliacao() {
             <div>
               <div className="flex items-center gap-2 mb-2">
                 <Link2Off className="h-4 w-4 text-red-500" />
-                <h2 className="text-xs font-bold uppercase tracking-wide text-red-600">Não Vinculados</h2>
+                <h2 className="text-xs font-bold uppercase tracking-wide text-red-600">Não conciliados</h2>
                 <span className="text-[10px] font-bold text-red-500 bg-red-50 border border-red-200 rounded-full px-2 py-0.5">{blocosNaoVinculados.length}</span>
               </div>
               <div className="bg-white rounded-lg border border-red-200 shadow-sm overflow-x-auto custom-scrollbar-light">
