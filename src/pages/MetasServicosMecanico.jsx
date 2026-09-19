@@ -4,6 +4,7 @@ import { Plus, Trash2, X, AlertTriangle, ChevronRight, ChevronDown, Wrench, Load
 import { useAuth } from '../context/AuthContext'
 import PermissionActionButtons from '../components/PermissionActionButtons'
 import { SearchCombobox } from '../components/SearchCombobox'
+import { EmpresaMultiFilter, empresaParam, filtrarPorEmpresas, empresaUnica } from '../components/EmpresaMultiFilter'
 import { apiService } from '../services/api'
 
 const anoAtual = new Date().getFullYear()
@@ -118,7 +119,7 @@ export default function MetasServicosMecanico({ onDistribuir } = {}) {
   const { hasPermission } = useAuth()
   const canEdit = hasPermission('/metas/pos-vendas/servicos', 'editar')
   const canDelete = hasPermission('/metas/pos-vendas/servicos', 'excluir')
-  const [filtroEmpresa,  setFiltroEmpresa]  = useSessionState('mpvs_servicos_empresa', '')
+  const [filtroEmpresa,  setFiltroEmpresa]  = useSessionState('mpvs_servicos_empresas', [])
   const [filtroAno,      setFiltroAno]      = useSessionState('mpvs_servicos_ano', anoAtual)
   const [filtroMecanico, setFiltroMecanico] = useSessionState('msm_mecanico', '')
   const [filtroSetor,    setFiltroSetor]    = useSessionState('msm_setor', '')
@@ -271,11 +272,11 @@ export default function MetasServicosMecanico({ onDistribuir } = {}) {
     setLoading(true); setError(null)
     try {
       const [mec, cons] = await Promise.all([
-        apiService.getMetasMecanico(filtroEmpresa || null, filtroAno),
-        apiService.getMetasConsultor(filtroEmpresa || null, filtroAno),
+        apiService.getMetasMecanico(empresaParam(filtroEmpresa), filtroAno),
+        apiService.getMetasConsultor(empresaParam(filtroEmpresa), filtroAno),
       ])
-      setDados(mec)
-      setDadosConsultor(cons)
+      setDados(filtrarPorEmpresas(mec, filtroEmpresa))
+      setDadosConsultor(filtrarPorEmpresas(cons, filtroEmpresa))
     }
     catch (err) { setError(err.message || String(err)) }
     finally { setLoading(false) }
@@ -439,12 +440,13 @@ export default function MetasServicosMecanico({ onDistribuir } = {}) {
 
   const abrirIncluir = async () => {
     setModoModal('incluir')
-    const emp = empresas.find(e => e.id === filtroEmpresa)
+    const empIdUnica = empresaUnica(filtroEmpresa)
+    const emp = empresas.find(e => e.id === empIdUnica)
     const depOficina = departamentos.find(d => d.nome_departamento?.toLowerCase().includes('oficina'))
     setForm({
       ...FORM_VAZIO,
       ano: filtroAno,
-      empresa_id: filtroEmpresa,
+      empresa_id: empIdUnica,
       empresa_nome: emp ? (emp.empresa_fantasia||emp.nome_empresa) : '',
       departamento_id: depOficina?.id || '',
       departamento_nome: depOficina?.nome_departamento || '',
@@ -452,7 +454,7 @@ export default function MetasServicosMecanico({ onDistribuir } = {}) {
     setErroModal(null)
     let du = {}
     try {
-      if (filtroEmpresa) du = await apiService.getDiasUteisPorMes(filtroEmpresa, filtroAno)
+      if (empIdUnica) du = await apiService.getDiasUteisPorMes(empIdUnica, filtroAno)
     } catch { /* non-fatal */ }
     setDiasUteisMes(du)
     setMesesForm(mesesVazios(du))
@@ -901,10 +903,7 @@ export default function MetasServicosMecanico({ onDistribuir } = {}) {
         <div className="flex items-end gap-3">
           <div className="flex-1 max-w-xs">
             <label className={LBL}>Empresa</label>
-            <select className={SEL} value={filtroEmpresa} onChange={e => setFiltroEmpresa(e.target.value)}>
-              <option value="">Todas as empresas</option>
-              {empresas.map(e => <option key={e.id} value={e.id}>{e.empresa_fantasia||e.nome_empresa}</option>)}
-            </select>
+            <EmpresaMultiFilter value={filtroEmpresa} onChange={setFiltroEmpresa} empresas={empresas} />
           </div>
           <div className="w-28">
             <label className={LBL}>Ano</label>

@@ -3,6 +3,7 @@ import { useSessionState } from '../hooks/useSessionState'
 import { Plus, Trash2, X, AlertTriangle, ChevronRight, ChevronDown, Cog, Loader2, CheckCircle2, Sparkles, Pencil, Info } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { SearchCombobox } from '../components/SearchCombobox'
+import { EmpresaMultiFilter, empresaParam, filtrarPorEmpresas, empresaUnica } from '../components/EmpresaMultiFilter'
 import { apiService } from '../services/api'
 
 const anoAtual = new Date().getFullYear()
@@ -77,7 +78,7 @@ export default function MetasServicosConsultor() {
   const [filtroVisu,    setFiltroVisu]    = useSessionState('msc_visu', 'total')
   const [loading,       setLoading]       = useState(false)
   const [error,         setError]         = useState(null)
-  const [filtroEmpresa, setFiltroEmpresa] = useSessionState('mpvs_servicos_empresa', '')
+  const [filtroEmpresa, setFiltroEmpresa] = useSessionState('mpvs_servicos_empresas', [])
   const [filtroAno,     setFiltroAno]     = useSessionState('mpvs_servicos_ano', anoAtual)
   const { hasPermission } = useAuth()
   const canEdit = hasPermission('/metas/pos-vendas/servicos', 'editar')
@@ -121,13 +122,13 @@ export default function MetasServicosConsultor() {
     setLoading(true); setError(null)
     try {
       const [rows, todasEmpresas, terRows, funRows, mecRowsAll] = await Promise.all([
-        apiService.getMetasConsultor(filtroEmpresa || null, filtroAno),
+        apiService.getMetasConsultor(empresaParam(filtroEmpresa), filtroAno),
         apiService.getEmpresas(),
-        apiService.getMetasTerceiros(filtroEmpresa || null, filtroAno),
-        apiService.getMetasFunilaria(filtroEmpresa || null, filtroAno),
-        apiService.getMetasMecanico(filtroEmpresa || null, filtroAno),
+        apiService.getMetasTerceiros(empresaParam(filtroEmpresa), filtroAno),
+        apiService.getMetasFunilaria(empresaParam(filtroEmpresa), filtroAno),
+        apiService.getMetasMecanico(empresaParam(filtroEmpresa), filtroAno),
       ])
-      setDados(rows)
+      setDados(filtrarPorEmpresas(rows, filtroEmpresa))
       setMecRows(mecRowsAll)
       // Terceiros: { empId: { mes: meta_servicos } }
       const terMap = {}
@@ -300,13 +301,14 @@ export default function MetasServicosConsultor() {
   }
 
   const abrirIncluir = async () => {
-    const emp=empresas.find(e=>e.id===filtroEmpresa)
+    const empIdUnica=empresaUnica(filtroEmpresa)
+    const emp=empresas.find(e=>e.id===empIdUnica)
     const deptOficina=departamentos.find(d=>(d.nome_departamento||'').toUpperCase().includes('OFICINA'))
-    setForm({...FORM_VAZIO, ano:filtroAno, empresa_id:filtroEmpresa, empresa_nome:emp?(emp.empresa_fantasia||emp.nome_empresa):'', departamento_id:deptOficina?.id||'', departamento_nome:deptOficina?.nome_departamento||''})
+    setForm({...FORM_VAZIO, ano:filtroAno, empresa_id:empIdUnica, empresa_nome:emp?(emp.empresa_fantasia||emp.nome_empresa):'', departamento_id:deptOficina?.id||'', departamento_nome:deptOficina?.nome_departamento||''})
     setMesesForm(mesesVazios())
     setErroModal(null)
-    if(filtroEmpresa) {
-      try { setMecRowsModal(await apiService.getMetasMecanico(filtroEmpresa, filtroAno)) } catch {}
+    if(empIdUnica) {
+      try { setMecRowsModal(await apiService.getMetasMecanico(empIdUnica, filtroAno)) } catch {}
     } else { setMecRowsModal([]) }
     setModoModal('incluir')
     setModalAberto(true)
@@ -496,10 +498,7 @@ export default function MetasServicosConsultor() {
 
       <div className="flex items-end gap-3 bg-white border border-slate-200 rounded-xl p-4">
         <div className="flex-1 max-w-xs"><label className={LBL}>Empresa</label>
-          <select className={SEL} value={filtroEmpresa} onChange={e => setFiltroEmpresa(e.target.value)}>
-            <option value="">Todas as empresas</option>
-            {empresas.map(e => <option key={e.id} value={e.id}>{e.empresa_fantasia||e.nome_empresa}</option>)}
-          </select></div>
+          <EmpresaMultiFilter value={filtroEmpresa} onChange={setFiltroEmpresa} empresas={empresas} /></div>
         <div className="w-28"><label className={LBL}>Ano</label>
           <select className={SEL} value={filtroAno} onChange={e => setFiltroAno(Number(e.target.value))}>
             {ANOS.map(a => <option key={a} value={a}>{a}</option>)}

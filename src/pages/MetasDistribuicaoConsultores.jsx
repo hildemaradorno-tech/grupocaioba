@@ -4,6 +4,7 @@ import { Plus, Trash2, X, AlertTriangle, ChevronRight, ChevronDown, Users, Loade
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { apiService } from '../services/api'
+import { EmpresaMultiFilter, empresaParam, filtrarPorEmpresas, empresaUnica } from '../components/EmpresaMultiFilter'
 
 const anoAtual = new Date().getFullYear()
 const ANOS = Array.from({ length: 7 }, (_, i) => anoAtual - 1 + i)
@@ -76,7 +77,7 @@ export default function MetasDistribuicaoConsultores() {
 
   const [abaAtiva,        setAbaAtiva]        = useSessionState('mdc_aba', 'servicos')
   const [filtroVisu,      setFiltroVisu]      = useSessionState('mdc_visu', 'total')
-  const [filtroEmpresa,   setFiltroEmpresa]   = useSessionState('mdc_empresa', '')
+  const [filtroEmpresa,   setFiltroEmpresa]   = useSessionState('mdc_empresas', [])
   const { hasPermission } = useAuth()
   const canEdit = hasPermission('/metas/pos-vendas/distribuicao-consultores', 'editar')
   const canDelete = hasPermission('/metas/pos-vendas/distribuicao-consultores', 'excluir')
@@ -134,13 +135,13 @@ export default function MetasDistribuicaoConsultores() {
     setLoading(true); setError(null)
     try {
       const [rows, todasEmpresas, terRows, funRows] = await Promise.all([
-        apiService.getMetasConsultor(filtroEmpresa || null, filtroAno),
+        apiService.getMetasConsultor(empresaParam(filtroEmpresa), filtroAno),
         apiService.getEmpresas(),
-        apiService.getMetasTerceiros(filtroEmpresa || null, filtroAno),
-        apiService.getMetasFunilaria(filtroEmpresa || null, filtroAno),
+        apiService.getMetasTerceiros(empresaParam(filtroEmpresa), filtroAno),
+        apiService.getMetasFunilaria(empresaParam(filtroEmpresa), filtroAno),
       ])
-      setDados(rows)
-      const empIds = filtroEmpresa ? [filtroEmpresa] : todasEmpresas.map(e => e.id)
+      setDados(filtrarPorEmpresas(rows, filtroEmpresa))
+      const empIds = filtroEmpresa.length ? filtroEmpresa : todasEmpresas.map(e => e.id)
       const mecMap = {}
       await Promise.all(empIds.map(async eid => {
         mecMap[eid] = await apiService.getMetasMecanicoTotaisPorMes(eid, filtroAno)
@@ -453,8 +454,9 @@ export default function MetasDistribuicaoConsultores() {
   }
 
   const abrirIncluir = async () => {
-    const emp = empresas.find(e => e.id === filtroEmpresa)
-    const empBase = { ano: filtroAno, empresa_id: filtroEmpresa, empresa_nome: emp ? (emp.empresa_fantasia || emp.nome_empresa) : '' }
+    const empIdUnica = empresaUnica(filtroEmpresa)
+    const emp = empresas.find(e => e.id === empIdUnica)
+    const empBase = { ano: filtroAno, empresa_id: empIdUnica, empresa_nome: emp ? (emp.empresa_fantasia || emp.nome_empresa) : '' }
     setErroModal(null)
     if (abaAtiva === 'dms') {
       const deptOficina  = departamentos.find(d => (d.nome_departamento || '').toUpperCase().includes('OFICINA'))
@@ -517,8 +519,8 @@ export default function MetasDistribuicaoConsultores() {
         cargo_nome:        cargoAlvo?.nome_cargo          || '',
       })
       setMesesForm(mesesVazios())
-      if (filtroEmpresa && abaAtiva !== 'funilaria') {
-        try { const t = await apiService.getMetasMecanicoTotaisPorMes(filtroEmpresa, filtroAno); setMecTotaisModal(t) } catch {}
+      if (empIdUnica && abaAtiva !== 'funilaria') {
+        try { const t = await apiService.getMetasMecanicoTotaisPorMes(empIdUnica, filtroAno); setMecTotaisModal(t) } catch {}
       } else { setMecTotaisModal({}) }
       setModalAberto(true)
     }
@@ -991,10 +993,7 @@ export default function MetasDistribuicaoConsultores() {
         <div className="flex items-end gap-3">
           <div className="flex-1 max-w-xs">
             <label className={LBL}>Empresa</label>
-            <select className={SEL} value={filtroEmpresa} onChange={e => { setFiltroEmpresa(e.target.value); setFiltroDepto(''); setFiltroSetor(''); setFiltroBox(''); setFiltroCargo('') }}>
-              <option value="">Todas as empresas</option>
-              {empresas.map(e => <option key={e.id} value={e.id}>{e.empresa_fantasia || e.nome_empresa}</option>)}
-            </select>
+            <EmpresaMultiFilter value={filtroEmpresa} onChange={ids => { setFiltroEmpresa(ids); setFiltroDepto(''); setFiltroSetor(''); setFiltroBox(''); setFiltroCargo('') }} empresas={empresas} />
           </div>
           <div className="w-28">
             <label className={LBL}>Ano</label>

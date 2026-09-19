@@ -4,6 +4,7 @@ import { Plus, Trash2, Edit2, X, AlertTriangle, ChevronRight, ChevronDown, Targe
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import PermissionActionButtons from '../components/PermissionActionButtons'
+import { EmpresaMultiFilter, empresaParam, filtrarPorEmpresas, empresaUnica } from '../components/EmpresaMultiFilter'
 import { apiService } from '../services/api'
 
 const anoAtual = new Date().getFullYear()
@@ -242,7 +243,7 @@ export default function MetasPecas() {
   const { hasPermission } = useAuth()
   const canEdit = hasPermission('/metas/pos-vendas/pecas', 'editar')
 
-  const [filtroEmpresa, setFiltroEmpresa] = useSessionState('mp_empresa', '')
+  const [filtroEmpresa, setFiltroEmpresa] = useSessionState('mp_empresas', [])
   const [filtroAno,     setFiltroAno]     = useSessionState('mp_ano', anoAtual)
 
   const [grupoAberto,      setGrupoAberto]      = useState(true)
@@ -294,8 +295,8 @@ export default function MetasPecas() {
     setLoading(true)
     setError(null)
     try {
-      const rows = await apiService.getMetasPecas(filtroEmpresa || null, filtroAno)
-      setDados(rows)
+      const rows = await apiService.getMetasPecas(empresaParam(filtroEmpresa), filtroAno)
+      setDados(filtrarPorEmpresas(rows, filtroEmpresa))
     } catch (err) {
       setError(err.message || String(err))
     } finally {
@@ -521,13 +522,14 @@ export default function MetasPecas() {
 
   const abrirIncluir = () => {
     setModoModal('incluir')
-    const emp = empresas.find(e => e.id === filtroEmpresa)
-    const deptPecas = departamentos.find(d => d.nome_departamento.toLowerCase().includes('bal') && d.nome_departamento.toLowerCase().includes('pe'))
+    const empIdUnica = empresaUnica(filtroEmpresa)
+    const emp = empresas.find(e => e.id === empIdUnica)
+    const deptPecas =departamentos.find(d => d.nome_departamento.toLowerCase().includes('bal') && d.nome_departamento.toLowerCase().includes('pe'))
       || departamentos.find(d => d.nome_departamento.toLowerCase().includes('pe'))
     setForm({
       ...FORM_VAZIO,
       ano: filtroAno,
-      empresa_id: filtroEmpresa,
+      empresa_id: empIdUnica,
       empresa_nome: emp ? (emp.empresa_fantasia || emp.nome_empresa) : '',
       departamento_id: deptPecas?.id || '',
       departamento_nome: deptPecas?.nome_departamento || '',
@@ -535,9 +537,9 @@ export default function MetasPecas() {
     setMesesForm(mesesVazios())
     setErroModal(null)
     setModalAberto(true)
-    if (filtroEmpresa && filtroAno) {
+    if (empIdUnica && filtroAno) {
       setCarregandoDias(true)
-      apiService.getDiasUteisPorMes(filtroEmpresa, filtroAno)
+      apiService.getDiasUteisPorMes(empIdUnica, filtroAno)
         .then(diasMap => setMesesForm(prev => prev.map(m => ({ ...m, dias_uteis_reais: String(diasMap[m.mes] || '') }))))
         .catch(() => {})
         .finally(() => setCarregandoDias(false))
@@ -615,10 +617,7 @@ export default function MetasPecas() {
       <div className="flex items-end gap-3 bg-white border border-slate-200 rounded-xl p-4">
         <div className="flex-1 max-w-xs">
           <label className={LBL}>Empresa</label>
-          <select className={SEL} value={filtroEmpresa} onChange={e => setFiltroEmpresa(e.target.value)}>
-            <option value="">Todas as empresas</option>
-            {empresas.map(e => <option key={e.id} value={e.id}>{e.empresa_fantasia || e.nome_empresa}</option>)}
-          </select>
+          <EmpresaMultiFilter value={filtroEmpresa} onChange={setFiltroEmpresa} empresas={empresas} />
         </div>
         <div className="w-28">
           <label className={LBL}>Ano</label>

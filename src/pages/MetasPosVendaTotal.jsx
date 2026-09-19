@@ -3,6 +3,7 @@ import { useSessionState } from '../hooks/useSessionState'
 import { TrendingUp, ChevronRight, ChevronDown, Loader2, ClipboardCheck } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { apiService } from '../services/api'
+import { EmpresaMultiFilter, empresaParam, filtrarPorEmpresas } from '../components/EmpresaMultiFilter'
 
 const anoAtual = new Date().getFullYear()
 const ANOS = Array.from({ length: 7 }, (_, i) => anoAtual - 1 + i)
@@ -92,7 +93,7 @@ export default function MetasPosVendaTotal() {
   const [rowsFunilaria, setRowsFunilaria] = useState([])
   const [rowsTerceiros, setRowsTerceiros] = useState([])
   const [filtroAno,     setFiltroAno]     = useSessionState('mpvt_ano', anoAtual)
-  const [filtroEmpresa, setFiltroEmpresa] = useSessionState('mpvt_empresa', '')
+  const [filtroEmpresa, setFiltroEmpresa] = useSessionState('mpvt_empresas', [])
   const [filtroVisu,    setFiltroVisu]    = useSessionState('mpvt_visu', 'total')
   const [loading,       setLoading]       = useState(false)
   const [error,         setError]         = useState(null)
@@ -104,7 +105,7 @@ export default function MetasPosVendaTotal() {
   const loadAll = async () => {
     setLoading(true); setError(null)
     try {
-      const empId = filtroEmpresa || null
+      const empId = empresaParam(filtroEmpresa)
       const [emps, depts, sets, bxs, cargs, funcs, pecas, mecanico, consultor, terceiros, funilaria] = await Promise.all([
         apiService.getEmpresas(),
         apiService.getDepartamentos(),
@@ -125,11 +126,11 @@ export default function MetasPosVendaTotal() {
       setBoxes(bxs)
       setCargos(cargs)
       setFuncionarios(funcs)
-      setRowsPecas(pecas)
-      setRowsMecanico(mecanico)
-      setRowsConsultor(consultor)
-      setRowsTerceiros(terceiros)
-      setRowsFunilaria(funilaria)
+      setRowsPecas(filtrarPorEmpresas(pecas, filtroEmpresa))
+      setRowsMecanico(filtrarPorEmpresas(mecanico, filtroEmpresa))
+      setRowsConsultor(filtrarPorEmpresas(consultor, filtroEmpresa))
+      setRowsTerceiros(filtrarPorEmpresas(terceiros, filtroEmpresa))
+      setRowsFunilaria(filtrarPorEmpresas(funilaria, filtroEmpresa))
     } catch (err) { setError(err.message || String(err)) }
     finally { setLoading(false) }
   }
@@ -249,10 +250,10 @@ export default function MetasPosVendaTotal() {
   const tudoExpandido = expanded.size > 0 && Object.keys(tree).every(eId => expanded.has(`emp-${eId}`))
 
   useEffect(() => {
-    if (filtroEmpresa) {
+    if (filtroEmpresa.length) {
       setExpanded(prev => {
         const n = new Set(prev)
-        n.add(`emp-${filtroEmpresa}`)
+        filtroEmpresa.forEach(id => n.add(`emp-${id}`))
         return n
       })
     }
@@ -275,8 +276,8 @@ export default function MetasPosVendaTotal() {
     </td>,
   ]
 
-  const empList = filtroEmpresa
-    ? empresas.filter(e => e.id === filtroEmpresa)
+  const empList = filtroEmpresa.length
+    ? empresas.filter(e => filtroEmpresa.includes(e.id))
     : empresas
 
   const empRows = empList.flatMap(emp => {
@@ -433,10 +434,7 @@ export default function MetasPosVendaTotal() {
         <select value={filtroAno} onChange={e => setFiltroAno(Number(e.target.value))} className={SEL}>
           {ANOS.map(a => <option key={a} value={a}>{a}</option>)}
         </select>
-        <select value={filtroEmpresa} onChange={e => setFiltroEmpresa(e.target.value)} className={SEL}>
-          <option value="">Todas as empresas</option>
-          {empresas.map(e => <option key={e.id} value={e.id}>{e.empresa_fantasia || e.empresa_nome}</option>)}
-        </select>
+        <div className="w-64"><EmpresaMultiFilter value={filtroEmpresa} onChange={setFiltroEmpresa} empresas={empresas} /></div>
         <div className="flex rounded-lg border border-slate-300 overflow-hidden text-xs font-semibold">
           {[
             { key: 'total',    label: 'Total' },
