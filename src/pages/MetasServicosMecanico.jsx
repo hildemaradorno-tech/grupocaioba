@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext'
 import PermissionActionButtons from '../components/PermissionActionButtons'
 import { SearchCombobox } from '../components/SearchCombobox'
 import { EmpresaMultiFilter, empresaParam, filtrarPorEmpresas, empresaUnica } from '../components/EmpresaMultiFilter'
+import { valoresMetaMecanico } from '../utils/metasMecanico'
 import { apiService } from '../services/api'
 
 const anoAtual = new Date().getFullYear()
@@ -53,7 +54,8 @@ function calcMetaMes(m) {
   const vh = parseBRL(m.valor_hora)
   const cp = Number(m.coef_pecas) || 0
   const meta_servicos = Math.round(hm * vh)
-  const meta_pecas = Math.round(meta_servicos * cp)
+  // Peças = Serviços (como exibido) × coeficiente, sem arredondar o resultado.
+  const meta_pecas = meta_servicos * cp
   return { meta_servicos, meta_pecas, meta_faturamento: meta_servicos + meta_pecas }
 }
 
@@ -298,14 +300,7 @@ export default function MetasServicosMecanico({ onDistribuir } = {}) {
       if (!stMap[sId].boxes[bId]) stMap[sId].boxes[bId] = { nome: bNome, colabs: {} }
       const coMap = stMap[sId].boxes[bId].colabs
       if (!coMap[colid]) coMap[colid] = { nome: coNome, meses: {} }
-      const _hd = Number(row.horas_disponiveis) || 0
-      const _prod = Number(row.produtividade) || 0
-      const _vh = Number(row.valor_hora) || 0
-      const _cp = Number(row.coef_pecas) || 0
-      const _hm = _hd * (_prod / 100)
-      const isProdNaoAssocRow = colid === '00000000-0000-0000-0000-000000000001'
-      const _ms = isProdNaoAssocRow ? (Number(row.meta_servicos) || 0) : Math.round(_hm * _vh)
-      const _mp = isProdNaoAssocRow ? (Number(row.meta_pecas)    || 0) : Math.round(_ms * _cp)
+      const { meta_servicos: _ms, meta_pecas: _mp } = valoresMetaMecanico(row)
       coMap[colid].meses[row.mes] = {
         id: row.id,
         horas_disponiveis: row.horas_disponiveis,

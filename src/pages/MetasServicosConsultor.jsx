@@ -4,6 +4,7 @@ import { Plus, Trash2, X, AlertTriangle, ChevronRight, ChevronDown, Cog, Loader2
 import { useAuth } from '../context/AuthContext'
 import { SearchCombobox } from '../components/SearchCombobox'
 import { EmpresaMultiFilter, empresaParam, filtrarPorEmpresas, empresaUnica } from '../components/EmpresaMultiFilter'
+import { valoresMetaMecanico } from '../utils/metasMecanico'
 import { apiService } from '../services/api'
 
 const anoAtual = new Date().getFullYear()
@@ -18,6 +19,7 @@ const fmtBRL = (v) => {
   const s = Math.abs(n).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2, maximumFractionDigits: 2 })
   return n < 0 ? `(${s})` : s
 }
+const round2 = (v) => Math.round((Number(v) || 0) * 100 + 1e-7) / 100
 const fmtPct = (v) => { const n = Number(v); if (!n && n !== 0) return '—'; return n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%' }
 function parseBRL(s) { if (!s && s !== 0) return 0; const str = String(s).trim(); if (str.includes(',')) return parseFloat(str.replace(/\./g,'').replace(',','.')) || 0; return parseFloat(str) || 0 }
 
@@ -177,8 +179,9 @@ export default function MetasServicosConsultor() {
       if (!map[r.empresa_id]) map[r.empresa_id] = {}
       if (!map[r.empresa_id][sId]) map[r.empresa_id][sId] = {}
       if (!map[r.empresa_id][sId][r.mes]) map[r.empresa_id][sId][r.mes] = { servicos: 0, pecas: 0 }
-      map[r.empresa_id][sId][r.mes].servicos += Number(r.meta_servicos) || 0
-      map[r.empresa_id][sId][r.mes].pecas    += Number(r.meta_pecas)    || 0
+      const v = valoresMetaMecanico(r)
+      map[r.empresa_id][sId][r.mes].servicos += v.meta_servicos
+      map[r.empresa_id][sId][r.mes].pecas    += v.meta_pecas
     })
     return map
   }, [mecRows, funcionarios, boxToSetorMap])
@@ -223,17 +226,15 @@ export default function MetasServicosConsultor() {
       const _fun  = totaisFun[eid]?.[row.mes] || {}
       // Referência respeita o filtro Total/Peças/Serviços — Terceiros não tem Peças, então some
       // do filtro "Peças" e entra em "Serviços" (mesmo critério do resto da tela).
-      let _ref
-      if (_isFun) {
-        _ref = filtroVisu === 'servicos' ? (_fun.servicos || 0)
-             : filtroVisu === 'pecas'    ? (_fun.pecas    || 0)
-             : (_fun.servicos || 0) + (_fun.pecas || 0)
-      } else {
-        _ref = filtroVisu === 'servicos' ? (_mec.servicos || 0) + _ter
-             : filtroVisu === 'pecas'    ? (_mec.pecas    || 0)
-             : (_mec.servicos || 0) + (_mec.pecas || 0) + _ter
-      }
-      const _metaCalc = _ref * ((Number(row.percentual) || 0) / 100)
+      const _refPecas    = _isFun ? (_fun.pecas    || 0) : (_mec.pecas || 0)
+      const _refServicos = _isFun ? (_fun.servicos || 0) : (_mec.servicos || 0) + _ter
+      const _pct = (Number(row.percentual) || 0) / 100
+      const _metaPecas    = round2(_refPecas * _pct)
+      const _metaServicos = round2(_refServicos * _pct)
+      // Total = Serviços + Peças (mesmas partes exibidas), nunca calculado à parte.
+      const _metaCalc = filtroVisu === 'servicos' ? _metaServicos
+                      : filtroVisu === 'pecas'    ? _metaPecas
+                      : _metaServicos + _metaPecas
       coMap[colid].meses[row.mes]={
         id:row.id, percentual:row.percentual,
         meta_faturamento:_metaCalc, meta_aprovada:row.meta_aprovada??null,
@@ -378,8 +379,8 @@ export default function MetasServicosConsultor() {
         : []
       for (let m = 1; m <= 12; m++) {
         const doMes = rowsDoSetor.filter(r => Number(r.mes) === m)
-        const servicos  = doMes.reduce((s, r) => s + (Number(r.meta_servicos) || 0), 0)
-        const pecas     = doMes.reduce((s, r) => s + (Number(r.meta_pecas)    || 0), 0)
+        const servicos  = doMes.reduce((s, r) => s + valoresMetaMecanico(r).meta_servicos, 0)
+        const pecas     = doMes.reduce((s, r) => s + valoresMetaMecanico(r).meta_pecas, 0)
         const terceiros = Number(ter[m]) || 0
         result[m] = { pecas, servicos, terceiros, total: pecas + servicos + terceiros }
       }
@@ -387,20 +388,17 @@ export default function MetasServicosConsultor() {
     return result
   }, [mecRowsModal, totaisTer, totaisFun, funcionarios, form.empresa_id, form.setor_id, boxesDoSetor, isFunSetorModal])
 
-  // Calcula meta = referência do mês × percentual/100
-  const calcMetaConsultor = (mes, percentual) => {
-    const ref = refModalDetalhePorMes[mes]?.total || 0
-    return ref * ((Number(percentual)||0) / 100)
-  }
-
-  // Meta do consultor detalhada: Peças isolado; Serviços já soma Terceiros (que não tem Peças)
+  // Meta do consultor detalhada: Peças isolado; Serviços já soma Terceiros (que não tem Peças).
+  // Total é sempre a soma de Serviços + Peças (cada parte em centavos, como exibida/gravada).
   const calcMetaConsultorDetalhe = (mes, percentual) => {
     const ref = refModalDetalhePorMes[mes] || { pecas: 0, servicos: 0, terceiros: 0 }
     const pct = (Number(percentual)||0) / 100
-    const pecas    = ref.pecas * pct
-    const servicos = (ref.servicos + ref.terceiros) * pct
+    const pecas    = round2(ref.pecas * pct)
+    const servicos = round2((ref.servicos + ref.terceiros) * pct)
     return { pecas, servicos, total: pecas + servicos }
   }
+
+  const calcMetaConsultor = (mes, percentual) => calcMetaConsultorDetalhe(mes, percentual).total
 
   // Soma % já cadastrada para o mesmo Setor+Empresa no mês (excluindo o consultor atual) — roteia
   // cada linha pelo setor atual do box gravado nela (linhas antigas), pra não deixar escapar
