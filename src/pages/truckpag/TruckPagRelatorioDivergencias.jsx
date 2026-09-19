@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { FileText, Loader2 } from 'lucide-react'
 import { apiService } from '../../services/api'
 import {
-  fmtMoeda, fmtData, conciliarTitulosRepasses, splitEstabelecimento,
+  fmtMoeda, fmtData, conciliarTitulosRepasses, tituloConciliadoPorRepasse, splitEstabelecimento,
   codigoEmpresaPorNome, parcelaDoTitulo, notasFiscaisDoTitulo,
 } from './truckpagUtils'
 
@@ -96,7 +96,10 @@ export default function TruckPagRelatorioDivergencias() {
         apiService.getTruckPagRepasses(),
         apiService.getTruckPagToleranciaConciliacao(),
       ])
-      const divergentes = conciliarTitulosRepasses(titulos, repasses, tolerancia)
+      // Um título por repasse, igual à tela Repasses: se dois títulos casam com o mesmo repasse,
+      // fica só o melhor (Identificado tem prioridade sobre Divergente) — senão o relatório
+      // contaria a mesma linha de repasse duas vezes e não bateria com a tela.
+      const divergentes = [...tituloConciliadoPorRepasse(conciliarTitulosRepasses(titulos, repasses, tolerancia)).values()]
         .filter(t => t.statusConciliacao === 'divergente')
         .sort((a, b) =>
           String(a.titulo_empresa_nome).localeCompare(String(b.titulo_empresa_nome), 'pt-BR') ||
