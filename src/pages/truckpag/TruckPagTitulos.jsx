@@ -284,14 +284,14 @@ export default function TruckPagTitulos() {
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <button type="button" onClick={() => setFiltroSituacao(p => p === 'aVencer' ? null : 'aVencer')}
-          className={`text-left rounded-lg border p-4 shadow-sm transition-all hover:shadow-md bg-blue-50 border-blue-200 ${filtroSituacao === 'aVencer' ? 'ring-2 ring-offset-1 ring-blue-300 shadow-md' : ''}`}>
+        <button type="button" onClick={() => setFiltroSituacao(p => p === 'vencido' ? null : 'vencido')}
+          className={`text-left rounded-lg border p-4 shadow-sm transition-all hover:shadow-md bg-red-50 border-red-200 ${filtroSituacao === 'vencido' ? 'ring-2 ring-offset-1 ring-red-300 shadow-md' : ''}`}>
           <div className="flex items-center gap-1.5 mb-2">
-            <div className="p-1 rounded bg-blue-100"><Clock className="h-3.5 w-3.5 text-blue-600" /></div>
-            <p className="text-[10px] font-bold uppercase tracking-wide text-blue-500">A Vencer</p>
+            <div className="p-1 rounded bg-red-100"><AlertTriangle className="h-3.5 w-3.5 text-red-600" /></div>
+            <p className="text-[10px] font-bold uppercase tracking-wide text-red-500">Vencido</p>
           </div>
-          <p className="text-2xl font-bold text-blue-700 leading-none">{fmtMoeda(resumoVencimento.aVencer.valor)}</p>
-          <p className="text-[10px] text-blue-500 mt-0.5">{resumoVencimento.aVencer.qtd} título(s)</p>
+          <p className="text-2xl font-bold text-red-700 leading-none">{fmtMoeda(resumoVencimento.vencido.valor)}</p>
+          <p className="text-[10px] text-red-500 mt-0.5">{resumoVencimento.vencido.qtd} título(s)</p>
         </button>
         <button type="button" onClick={() => setFiltroSituacao(p => p === 'hoje' ? null : 'hoje')}
           className={`text-left rounded-lg border p-4 shadow-sm transition-all hover:shadow-md bg-amber-50 border-amber-200 ${filtroSituacao === 'hoje' ? 'ring-2 ring-offset-1 ring-amber-300 shadow-md' : ''}`}>
@@ -302,14 +302,14 @@ export default function TruckPagTitulos() {
           <p className="text-2xl font-bold text-amber-700 leading-none">{fmtMoeda(resumoVencimento.hoje.valor)}</p>
           <p className="text-[10px] text-amber-500 mt-0.5">{resumoVencimento.hoje.qtd} título(s)</p>
         </button>
-        <button type="button" onClick={() => setFiltroSituacao(p => p === 'vencido' ? null : 'vencido')}
-          className={`text-left rounded-lg border p-4 shadow-sm transition-all hover:shadow-md bg-red-50 border-red-200 ${filtroSituacao === 'vencido' ? 'ring-2 ring-offset-1 ring-red-300 shadow-md' : ''}`}>
+        <button type="button" onClick={() => setFiltroSituacao(p => p === 'aVencer' ? null : 'aVencer')}
+          className={`text-left rounded-lg border p-4 shadow-sm transition-all hover:shadow-md bg-blue-50 border-blue-200 ${filtroSituacao === 'aVencer' ? 'ring-2 ring-offset-1 ring-blue-300 shadow-md' : ''}`}>
           <div className="flex items-center gap-1.5 mb-2">
-            <div className="p-1 rounded bg-red-100"><AlertTriangle className="h-3.5 w-3.5 text-red-600" /></div>
-            <p className="text-[10px] font-bold uppercase tracking-wide text-red-500">Vencido</p>
+            <div className="p-1 rounded bg-blue-100"><Clock className="h-3.5 w-3.5 text-blue-600" /></div>
+            <p className="text-[10px] font-bold uppercase tracking-wide text-blue-500">A Vencer</p>
           </div>
-          <p className="text-2xl font-bold text-red-700 leading-none">{fmtMoeda(resumoVencimento.vencido.valor)}</p>
-          <p className="text-[10px] text-red-500 mt-0.5">{resumoVencimento.vencido.qtd} título(s)</p>
+          <p className="text-2xl font-bold text-blue-700 leading-none">{fmtMoeda(resumoVencimento.aVencer.valor)}</p>
+          <p className="text-[10px] text-blue-500 mt-0.5">{resumoVencimento.aVencer.qtd} título(s)</p>
         </button>
         <button type="button" onClick={() => setFiltroSituacao(null)}
           className={`text-left rounded-lg border p-4 shadow-sm transition-all hover:shadow-md bg-slate-50 border-slate-200 ${filtroSituacao === null ? 'ring-2 ring-offset-1 ring-slate-300 shadow-md' : ''}`}>

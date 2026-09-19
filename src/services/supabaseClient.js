@@ -5047,7 +5047,17 @@ export const apiService = {
       .select('*')
       .order('titulo_data_venc', { ascending: true })
     if (error) throw error
-    return data || []
+    // A coluna "Atr." do RFN003 (dias em atraso) não é confiável — fica em 0 pra títulos já
+    // vencidos —, então os dias em atraso e o is_vencido são recalculados aqui a partir da data
+    // de vencimento: positivo = vencido há N dias, 0 = vence hoje, negativo = a vencer.
+    const agora = new Date()
+    const hojeUtc = Date.UTC(agora.getFullYear(), agora.getMonth(), agora.getDate())
+    return (data || []).map(t => {
+      const m = String(t.titulo_data_venc ?? '').match(/^(\d{4})-(\d{2})-(\d{2})/)
+      if (!m) return t
+      const dias = Math.round((hojeUtc - Date.UTC(+m[1], +m[2] - 1, +m[3])) / 86400000)
+      return { ...t, titulo_dias_atraso: dias, is_vencido: dias > 0 }
+    })
   },
 
   getTruckPagCreditos: async () => {
