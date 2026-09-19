@@ -7,7 +7,7 @@ import TruckPagConfigModal from './TruckPagConfigModal'
 import TruckPagRelatorioDivergencias from './TruckPagRelatorioDivergencias'
 import {
   fmtMoeda, fmtData, sincronizarTudoTruckPag, conciliarTitulosRepasses, splitEstabelecimento,
-  codigoEmpresaPorNome, parcelaDoTitulo, notasFiscaisDoTitulo,
+  parcelaDoTitulo, notasFiscaisDoTitulo,
 } from './truckpagUtils'
 
 const CONCILIACAO_INFO = {
@@ -35,7 +35,6 @@ const COLUNAS_REPASSE_DETALHE = [
 ]
 
 // Wrappers de exibição — os helpers compartilhados retornam '' quando não há valor, aqui vira '—'.
-const codigoEmpresa = (nome) => codigoEmpresaPorNome(nome) || '—'
 const parcelaExibicao = (numero) => parcelaDoTitulo(numero) || '—'
 
 function situacaoVencimento(diasAtraso) {
@@ -192,21 +191,23 @@ export default function TruckPagTitulos() {
   const totalValor = filtradas.reduce((s, l) => s + (l.titulo_valor || 0), 0)
   const filtroAvancadoAtivo = !!(filtroEmpresa.trim() || filtroBusca.trim())
 
+  // Ordem pedida: Empresa, Título, Lançamento, CPF/CNPJ, Cliente, Emissão, Vencimento, Dias
+  // vencidos; o Código da empresa ficou oculto. Valor e Saldo continuam sendo as duas últimas
+  // (o rodapé de totais depende disso).
   const colunas = [
-    { key: 'codigo_empresa_daf', label: 'Código', naoOrdenavel: true, derivar: (row) => codigoEmpresa(row.titulo_empresa_nome), campoInfo: 'codigo' },
     { key: 'titulo_empresa_nome', label: 'Empresa' },
+    { key: 'titulo_numero', label: 'Título' },
+    { key: 'titulo_codigo', label: 'Lançamento' },
+    { key: 'titulo_pessoa_doc_ident', label: 'CPF/CNPJ', campoGraduacao: 'documento' },
+    { key: 'titulo_pessoa_nome', label: 'Cliente' },
+    { key: 'titulo_data_emissao', label: 'Emissão', formatar: fmtData },
     { key: 'titulo_data_venc', label: 'Vencimento', numerico: false, formatar: fmtData },
+    { key: 'titulo_dias_atraso', label: 'Dias Vencidos', numerico: true },
     // Nota Fiscal / Nota de Serviço (peças) e Nota Fiscal/Nota de Serviço (serviço) vêm com
     // preenchimento inconsistente na planilha (número de um às vezes cai na coluna do outro) —
     // por isso mostra tudo junto numa coluna só, em vez de separar por campo de origem.
     { key: 'notas_fiscais', label: 'Notas Fiscais', naoOrdenavel: true, derivar: (row) => notasFiscaisDoTitulo(row).join(' / ') || '—', campoInfo: ['notaFiscal', 'nfse'] },
     { key: 'parcela_titulo', label: 'Parcela', naoOrdenavel: true, derivar: (row) => parcelaExibicao(row.titulo_numero), campoInfo: 'parcela' },
-    { key: 'titulo_pessoa_doc_ident', label: 'CPF/CNPJ', campoGraduacao: 'documento' },
-    { key: 'titulo_pessoa_nome', label: 'Cliente' },
-    { key: 'titulo_numero', label: 'Título' },
-    { key: 'titulo_codigo', label: 'Lançamento' },
-    { key: 'titulo_data_emissao', label: 'Emissão', formatar: fmtData },
-    { key: 'titulo_dias_atraso', label: 'Dias', numerico: true },
     { key: 'tipo_titulo_descr', label: 'Tipo' },
     { key: 'agente_cobrador', label: 'Agente', campoExtra: 'Agente Cobrador', naoOrdenavel: true },
     { key: 'conta_gerencial', label: 'Conta Gerencial', campoExtra: 'Conta Gerencial', naoOrdenavel: true },
