@@ -272,11 +272,10 @@ export default function MetasServicosConsultor() {
   // pra somar a referência (Mecânica + Express, por ex.) de todos os boxes daquele setor.
   const boxesDoSetor   = useMemo(()=>boxes.filter(b=>(Array.isArray(b.setor_ids)?b.setor_ids:[b.setor_id]).includes(form.setor_id)),[boxes,form.setor_id])
   const cargosPorId = useMemo(()=>Object.fromEntries(cargos.map(c=>[c.id,c])),[cargos])
-  const funcsEmp = useMemo(() => {
-    let l=funcionarios
-    if(form.empresa_id) l=l.filter(f=>f.empresa_id===form.empresa_id)
-    return l
-  },[funcionarios,form.empresa_id])
+  // Todos os funcionários ativos da empresa selecionada, de qualquer departamento/setor/cargo.
+  const funcsEmp = useMemo(() =>
+    funcionarios.filter(f => f.empresa_id === form.empresa_id && f.ativo !== false),
+    [funcionarios, form.empresa_id])
 
   const handleFormChange = async (e) => {
     const { name, value } = e.target
@@ -292,9 +291,6 @@ export default function MetasServicosConsultor() {
     if(name==='departamento_id') { const dep=departamentos.find(x=>x.id===value); up.departamento_nome=dep?.nome_departamento||''; up.setor_id=''; up.setor_nome=''; up.cargo_id=''; up.cargo_nome='' }
     if(name==='setor_id') {
       const s=setores.find(x=>x.id===value); up.setor_nome=s?.nome_setor||''
-      // Em Incluir, trocar o setor limpa o consultor (a lista de consultores pode mudar);
-      // em Editar, o consultor já é fixo (não tem seletor), então não faz sentido limpar.
-      if (modoModal === 'incluir') { up.colaborador_id=''; up.colaborador_nome='' }
     }
     if(name==='cargo_id') { up.cargo_nome=cargos.find(x=>x.id===value)?.nome_cargo||'' }
     if(name==='colaborador_id') { up.colaborador_nome = value === 'A_CONTRATAR' ? 'A contratar' : (funcionarios.find(x=>x.id===value)?.nome_funcionario||'') }
@@ -737,7 +733,6 @@ export default function MetasServicosConsultor() {
                         <>
                           {o.nome_funcionario}
                           {cargoNome ? <span className="text-slate-400"> — {cargoNome}</span> : ''}
-                          {o.ativo === false && <span className="text-red-500 font-semibold"> (Inativo)</span>}
                         </>
                       )
                     }}

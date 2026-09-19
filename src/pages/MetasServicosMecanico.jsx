@@ -6,6 +6,7 @@ import PermissionActionButtons from '../components/PermissionActionButtons'
 import { SearchCombobox } from '../components/SearchCombobox'
 import { EmpresaMultiFilter, empresaParam, filtrarPorEmpresas, empresaUnica } from '../components/EmpresaMultiFilter'
 import { valoresMetaMecanico } from '../utils/metasMecanico'
+import { avaliarMeses, mensagemMesesIncompletos, LinhaStatusMes, AlertaMesesIncompletos } from '../components/StatusMesesForm'
 import { apiService } from '../services/api'
 
 const anoAtual = new Date().getFullYear()
@@ -365,14 +366,10 @@ export default function MetasServicosMecanico({ onDistribuir } = {}) {
     return lista
   }, [cargos, form.departamento_id, form.setor_id, form.box_id, setoresManutencao, boxes])
 
-  const funcsEmp = useMemo(() => {
-    let l = funcionarios
-    if (form.empresa_id)      l = l.filter(f => f.empresa_id === form.empresa_id)
-    if (form.departamento_id) l = l.filter(f => Array.isArray(f.departamento_ids) ? f.departamento_ids.includes(form.departamento_id) : f.departamento_id === form.departamento_id)
-    if (form.setor_id)        l = l.filter(f => Array.isArray(f.setor_ids) ? f.setor_ids.includes(form.setor_id) : f.setor_id === form.setor_id)
-    if (form.box_id)          l = l.filter(f => f.box_id === form.box_id)
-    return l
-  }, [funcionarios, form.empresa_id, form.departamento_id, form.setor_id, form.box_id])
+  // Todos os funcionários ativos da empresa selecionada, de qualquer departamento/setor/box/cargo.
+  const funcsEmp = useMemo(() =>
+    funcionarios.filter(f => f.empresa_id === form.empresa_id && f.ativo !== false),
+    [funcionarios, form.empresa_id])
 
   const cargosPorId = useMemo(() => Object.fromEntries(cargos.map(c => [c.id, c])), [cargos])
 
@@ -389,7 +386,7 @@ export default function MetasServicosMecanico({ onDistribuir } = {}) {
       setMesesForm(mesesVazios(du))
     }
     if (name === 'departamento_id') { const dep = departamentos.find(x => x.id === value); up.departamento_nome = dep?.nome_departamento||''; up.setor_id=''; up.setor_nome=''; up.box_id=''; up.box_nome=''; up.cargo_id=''; up.cargo_nome='' }
-    if (name === 'setor_id')  { const s = setores.find(x => x.id === value); up.setor_nome = s?.nome_setor||''; up.box_id=''; up.box_nome=''; up.colaborador_id=''; up.colaborador_nome='' }
+    if (name === 'setor_id')  { const s = setores.find(x => x.id === value); up.setor_nome = s?.nome_setor||''; up.box_id=''; up.box_nome='' }
     if (name === 'box_id')    { up.box_nome = boxes.find(x => x.id === value)?.nome_box||'' }
     if (name === 'cargo_id')  { up.cargo_nome = cargos.find(x => x.id === value)?.nome_cargo||'' }
     if (name === 'colaborador_id') {
@@ -416,20 +413,19 @@ export default function MetasServicosMecanico({ onDistribuir } = {}) {
         up.colaborador_nome = func?.nome_funcionario || ''
         up.data_admissao = func?.data_admissao || ''
         if (func) {
-          const deptId = Array.isArray(func.departamento_ids) ? func.departamento_ids[0] : (func.departamento_id || '')
-          const setorId = Array.isArray(func.setor_ids) ? func.setor_ids[0] : (func.setor_id || '')
-          const dept = departamentos.find(d => d.id === deptId)
-          const setor = setores.find(s => s.id === setorId)
-          const box = boxes.find(b => b.id === func.box_id)
-          const cargo = cargos.find(c => c.id === func.cargo_id)
-          up.departamento_id   = deptId
-          up.departamento_nome = dept?.nome_departamento || func.departamento_nome || ''
-          up.setor_id          = setorId
-          up.setor_nome        = setor?.nome_setor || func.setor_nome || ''
-          up.box_id            = func.box_id || ''
-          up.box_nome          = box?.nome_box || func.box_nome || ''
-          up.cargo_id          = func.cargo_id || ''
-          up.cargo_nome        = cargo?.nome_cargo || func.cargo_nome || ''
+          // Departamento continua o do formulário (qualquer funcionário da empresa pode ser escolhido).
+          // Setor/Box só são pré-preenchidos pelo cadastro quando pertencem a esse departamento.
+          const funcSetorIds = Array.isArray(func.setor_ids) ? func.setor_ids : (func.setor_id ? [func.setor_id] : [])
+          const setor = setoresDoDepto.find(s => funcSetorIds.includes(s.id))
+          if (setor) {
+            const box = boxes.find(b => b.id === func.box_id && (Array.isArray(b.setor_ids) ? b.setor_ids : [b.setor_id]).includes(setor.id))
+            up.setor_id   = setor.id
+            up.setor_nome = setor.nome_setor || ''
+            up.box_id     = box?.id || ''
+            up.box_nome   = box?.nome_box || ''
+          }
+          up.cargo_id   = func.cargo_id || ''
+          up.cargo_nome = cargosPorId[func.cargo_id]?.nome_cargo || func.cargo_nome || ''
         }
       }
     }
@@ -555,9 +551,26 @@ export default function MetasServicosMecanico({ onDistribuir } = {}) {
       return up
     }))
 
+  // Um mês entra "em uso" quando Valor Hora ou Coef. Peças foram informados (Dias a Trabalhar e Horas vêm do
+  // calendário e Produtividade tem padrão 100 ao editar, então não contam); aí todos os campos do mês são obrigatórios.
+  const avaliacaoMeses = avaliarMeses(mesesForm, {
+    gatilhos: [m => parseBRL(m.valor_hora) > 0, m => Number(m.coef_pecas) > 0],
+    obrigatorios: [
+      { label: 'Dias a Trabalhar', ok: m => Number(m.dias_a_trabalhar) > 0 },
+      { label: 'Produtividade',    ok: m => Number(m.produtividade) > 0 },
+      { label: 'Valor Hora',       ok: m => parseBRL(m.valor_hora) > 0 },
+      { label: 'Coef. Peças',      ok: m => m.coef_pecas !== '' && m.coef_pecas != null },
+    ],
+  }, isMesLocked)
+  const mostrarStatusMeses = modoModal !== 'visualizar' && form.colaborador_id && form.colaborador_id !== 'PROD_NAO_ASSOC_FUN'
+
   const handleSalvar = async () => {
     if (!form.empresa_id)     { setErroModal('Selecione a Empresa.'); return }
     if (!form.colaborador_id) { setErroModal('Selecione o Colaborador.'); return }
+    if (form.colaborador_id !== 'PROD_NAO_ASSOC_FUN') {
+      const msg = mensagemMesesIncompletos(avaliacaoMeses)
+      if (msg) { setErroModal(msg); return }
+    }
     setSalvando(true); setErroModal(null)
     try {
       const { data_admissao: _da, ...formPayload } = form
@@ -1157,7 +1170,6 @@ export default function MetasServicosMecanico({ onDistribuir } = {}) {
                           <>
                             {o.nome_funcionario}
                             {cargoNome ? <span className="text-slate-400"> — {cargoNome}</span> : ''}
-                            {o.ativo === false && <span className="text-red-500 font-semibold"> (Inativo)</span>}
                           </>
                         )
                       }}
@@ -1267,9 +1279,11 @@ export default function MetasServicosMecanico({ onDistribuir } = {}) {
                         })}
                         <td className="bg-indigo-100 border border-indigo-300 rounded p-1 text-right text-xs font-bold text-indigo-800">{fmtBRL(mesesForm.reduce((s,m,i)=>s+(isMesLocked(i)?0:calcMetaMes(m).meta_faturamento),0))}</td>
                       </tr>
+                      {mostrarStatusMeses && <LinhaStatusMes avaliacao={avaliacaoMeses} />}
                     </tbody>
                   </table>
                 </div>
+                {mostrarStatusMeses && <AlertaMesesIncompletos avaliacao={avaliacaoMeses} />}
               </div>}
             </div>
             {erroModal && <div className="mx-6 mb-2 flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm"><AlertTriangle size={15}/> {erroModal}</div>}

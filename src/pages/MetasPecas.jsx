@@ -3,6 +3,8 @@ import { useSessionState } from '../hooks/useSessionState'
 import { Plus, Trash2, Edit2, X, AlertTriangle, ChevronRight, ChevronDown, Target, Loader2, CheckCircle2, Sparkles, Pencil, Eye } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import PermissionActionButtons from '../components/PermissionActionButtons'
+import { SearchCombobox } from '../components/SearchCombobox'
+import { avaliarMeses, mensagemMesesIncompletos, LinhaStatusMes, AlertaMesesIncompletos } from '../components/StatusMesesForm'
 import { EmpresaMultiFilter, empresaParam, filtrarPorEmpresas, empresaUnica } from '../components/EmpresaMultiFilter'
 import { apiService } from '../services/api'
 
@@ -395,13 +397,12 @@ export default function MetasPecas() {
     boxes.filter(b => (Array.isArray(b.setor_ids) ? b.setor_ids : [b.setor_id]).includes(form.setor_id)),
     [boxes, form.setor_id])
 
-  const funcsEmp = useMemo(() => {
-    let lista = funcionarios
-    if (form.empresa_id)      lista = lista.filter(f => f.empresa_id === form.empresa_id)
-    if (form.departamento_id) lista = lista.filter(f => Array.isArray(f.departamento_ids) ? f.departamento_ids.includes(form.departamento_id) : f.departamento_id === form.departamento_id)
-    if (form.setor_id)        lista = lista.filter(f => Array.isArray(f.setor_ids) ? f.setor_ids.includes(form.setor_id) : f.setor_id === form.setor_id)
-    return lista
-  }, [funcionarios, form.empresa_id, form.departamento_id, form.setor_id])
+  const cargosPorId = useMemo(() => Object.fromEntries(cargos.map(c => [c.id, c])), [cargos])
+
+  // Todos os funcionários ativos da empresa selecionada, de qualquer departamento/setor/cargo.
+  const funcsEmp = useMemo(() =>
+    funcionarios.filter(f => f.empresa_id === form.empresa_id && f.ativo !== false),
+    [funcionarios, form.empresa_id])
 
   const handleFormChange = async (e) => {
     const { name, value } = e.target
@@ -421,7 +422,6 @@ export default function MetasPecas() {
       const s = setores.find(x => x.id === value)
       up.setor_nome = s?.nome_setor || ''
       up.box_id = ''; up.box_nome = ''
-      up.colaborador_id = ''; up.colaborador_nome = ''
     }
     if (name === 'box_id') { up.box_nome = boxes.find(x => x.id === value)?.nome_box || '' }
     if (name === 'colaborador_id') {
@@ -431,20 +431,19 @@ export default function MetasPecas() {
         const func = funcionarios.find(x => x.id === value)
         up.colaborador_nome = func?.nome_funcionario || ''
         if (func) {
-          const deptId = Array.isArray(func.departamento_ids) ? func.departamento_ids[0] : (func.departamento_id || '')
-          const setorId = Array.isArray(func.setor_ids) ? func.setor_ids[0] : (func.setor_id || '')
-          const dept = departamentos.find(d => d.id === deptId)
-          const setor = setores.find(s => s.id === setorId)
-          const box = boxes.find(b => b.id === func.box_id)
-          const cargo = cargos.find(c => c.id === func.cargo_id)
-          up.departamento_id   = deptId
-          up.departamento_nome = dept?.nome_departamento || func.departamento_nome || ''
-          up.setor_id          = setorId
-          up.setor_nome        = setor?.nome_setor || func.setor_nome || ''
-          up.box_id            = func.box_id || ''
-          up.box_nome          = box?.nome_box || func.box_nome || ''
-          up.cargo_id          = func.cargo_id || ''
-          up.cargo_nome        = cargo?.nome_cargo || func.cargo_nome || ''
+          // Departamento continua o do formulário (qualquer funcionário da empresa pode ser escolhido).
+          // Setor/Box só são pré-preenchidos pelo cadastro quando pertencem a esse departamento.
+          const funcSetorIds = Array.isArray(func.setor_ids) ? func.setor_ids : (func.setor_id ? [func.setor_id] : [])
+          const setor = setoresDoDepto.find(s => funcSetorIds.includes(s.id))
+          if (setor) {
+            const box = boxes.find(b => b.id === func.box_id && (Array.isArray(b.setor_ids) ? b.setor_ids : [b.setor_id]).includes(setor.id))
+            up.setor_id   = setor.id
+            up.setor_nome = setor.nome_setor || ''
+            up.box_id     = box?.id || ''
+            up.box_nome   = box?.nome_box || ''
+          }
+          up.cargo_id   = func.cargo_id || ''
+          up.cargo_nome = cargosPorId[func.cargo_id]?.nome_cargo || func.cargo_nome || ''
         }
       }
     }
@@ -526,10 +525,23 @@ export default function MetasPecas() {
     }
   }
 
+  // Um mês entra "em uso" quando a Meta R$ é informada (Dias Úteis vêm pré-preenchidos do calendário e não
+  // contam); aí Meta R$ e Dias Úteis são obrigatórios. Meses totalmente vazios são ignorados.
+  const avaliacaoMeses = avaliarMeses(mesesForm, {
+    gatilhos: [m => parseBRL(m.meta_faturamento) > 0],
+    obrigatorios: [
+      { label: 'Meta R$',    ok: m => parseBRL(m.meta_faturamento) > 0 },
+      { label: 'Dias Úteis', ok: m => Number(m.dias_uteis_reais) > 0 },
+    ],
+  })
+  const mostrarStatusMeses = modoModal !== 'visualizar' && !!form.colaborador_id
+
   const handleSalvarModal = async () => {
     if (!form.empresa_id)      { setErroModal('Selecione a Empresa.'); return }
     if (!form.departamento_id) { setErroModal('Selecione o Departamento.'); return }
     if (!form.colaborador_id)  { setErroModal('Selecione o Colaborador.'); return }
+    const msgMeses = mensagemMesesIncompletos(avaliacaoMeses)
+    if (msgMeses) { setErroModal(msgMeses); return }
     setSalvando(true); setErroModal(null)
     try {
       // Campos uuid não podem ir como string vazia — vira null (ex: Box "Nenhum", ou Cargo, que não
@@ -873,12 +885,32 @@ export default function MetasPecas() {
               {/* Colaborador */}
               <div>
                 <label className={LBL}>Colaborador *</label>
-                <select name="colaborador_id" className={SEL} value={form.colaborador_id} onChange={handleFormChange}
-                        disabled={!form.empresa_id || modoModal !== 'incluir'}>
-                  <option value="">Selecione...</option>
-                  <option value="A_CONTRATAR">A contratar</option>
-                  {funcsEmp.map(f => <option key={f.id} value={f.id}>{f.nome_funcionario}</option>)}
-                </select>
+                {(!form.empresa_id || modoModal !== 'incluir') ? (
+                  <div className={`${SEL} bg-slate-100 text-slate-500 cursor-not-allowed`}>
+                    {form.colaborador_id === 'A_CONTRATAR' ? 'A contratar' : (form.colaborador_nome || '—')}
+                  </div>
+                ) : (
+                  <SearchCombobox
+                    value={form.colaborador_id}
+                    onChange={(id) => handleFormChange({ target: { name: 'colaborador_id', value: id } })}
+                    placeholder="Selecione..."
+                    emptyOptionLabel="Selecione..."
+                    searchPlaceholder="Buscar pelo nome ou cargo..."
+                    notFoundLabel="Nenhum colaborador encontrado."
+                    opcoes={[{ id: 'A_CONTRATAR', nome_funcionario: 'A contratar' }, ...funcsEmp]}
+                    getLabel={(o) => {
+                      if (o.id === 'A_CONTRATAR') return o.nome_funcionario
+                      const cargoNome = cargosPorId[o.cargo_id]?.nome_cargo
+                      return (
+                        <>
+                          {o.nome_funcionario}
+                          {cargoNome ? <span className="text-slate-400"> — {cargoNome}</span> : ''}
+                        </>
+                      )
+                    }}
+                    getSearchText={(o) => `${o.nome_funcionario} ${cargosPorId[o.cargo_id]?.nome_cargo || ''}`}
+                  />
+                )}
               </div>
 
               {/* Grade 12 meses */}
@@ -976,9 +1008,11 @@ export default function MetasPecas() {
                           )
                         })()}
                       </tr>
+                      {mostrarStatusMeses && <LinhaStatusMes avaliacao={avaliacaoMeses} />}
                     </tbody>
                   </table>
                 </div>
+                {mostrarStatusMeses && <AlertaMesesIncompletos avaliacao={avaliacaoMeses} />}
               </div>}
             </div>
 
