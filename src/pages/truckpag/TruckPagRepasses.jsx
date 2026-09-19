@@ -1,18 +1,16 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { ArrowLeftRight, RefreshCw, AlertTriangle, ChevronDown, ChevronUp, X, CheckCircle2, XCircle, HelpCircle, Settings, Info, Link2, Link2Off, FileDown, FileText, Loader2, Archive, Lock, Unlock, BarChart2 } from 'lucide-react'
+import { ArrowLeftRight, RefreshCw, AlertTriangle, ChevronDown, ChevronUp, X, CheckCircle2, XCircle, HelpCircle, Settings, Info, Link2, Link2Off, FileDown, FileText, Loader2 } from 'lucide-react'
 import { apiService } from '../../services/api'
 import TruckPagNav from './TruckPagNav'
 import TruckPagRegrasModal from './TruckPagRegrasModal'
 import TruckPagConfigModal from './TruckPagConfigModal'
 import TruckPagRepasseDetalheModal from './TruckPagRepasseDetalheModal'
-import TruckPagBaixadosModal from './TruckPagBaixadosModal'
 import {
   fmtMoeda, fmtData, sincronizarTudoTruckPag, splitEstabelecimento,
   conciliarTitulosRepasses, tituloConciliadoPorRepasse,
   conciliarRepassesCreditos, filtrarCreditosPorTipoSaldo,
   codigoEmpresaPorNome, parcelaDoTitulo, notasFiscaisDoTitulo,
-  gerarArquivoBaixaTitulos, siglaEmpresaPorNome, LABEL_CAMPO_CONCILIACAO,
+  gerarArquivoBaixaTitulos, siglaEmpresaPorNome,
 } from './truckpagUtils'
 
 function hojeIso() {
@@ -53,12 +51,10 @@ const CONCILIACAO_INFO = {
 // Tela detalhada, linha a linha, de todos os repasses TruckPag (sem agrupar por depósito) — a
 // Saldo Concessionária já mostra os depósitos agrupados x créditos; aqui é o extrato completo, cru.
 export default function TruckPagRepasses() {
-  const navigate = useNavigate()
   const [linhas, setLinhas] = useState([])
   const [titulos, setTitulos] = useState([])
   const [creditos, setCreditos] = useState([])
   const [tiposSaldo, setTiposSaldo] = useState([])
-  const [baixas, setBaixas] = useState([])
   const [tolerancia, setTolerancia] = useState(0.02)
   const [loading, setLoading] = useState(true)
   const [sincronizando, setSincronizando] = useState(false)
@@ -76,7 +72,6 @@ export default function TruckPagRepasses() {
   const [dataExport, setDataExport] = useState(hojeIso)
   const [processandoPdf, setProcessandoPdf] = useState(false)
   const [mostrarLinhasForaGrupo, setMostrarLinhasForaGrupo] = useState(false)
-  const [mostrarBaixados, setMostrarBaixados] = useState(false)
 
   // Larguras reais (medidas) das colunas da tabela de repasses que têm um par na mini-tabela
   // "Título encontrado" (marcado via `colunaRepasse` em COLUNAS_TITULO_DETALHE), pra essas colunas
@@ -129,20 +124,18 @@ export default function TruckPagRepasses() {
     setLoading(true)
     setErro(null)
     try {
-      const [r, t, tol, cred, tipos, baix] = await Promise.all([
+      const [r, t, tol, cred, tipos] = await Promise.all([
         apiService.getTruckPagRepasses(),
         apiService.getTruckPagTitulos(),
         apiService.getTruckPagToleranciaConciliacao(),
         apiService.getTruckPagCreditos(),
         apiService.getTruckPagTiposSaldo(),
-        apiService.getTruckPagBaixasTitulos(),
       ])
       setLinhas(r)
       setTitulos(t)
       setTolerancia(tol)
       setCreditos(cred)
       setTiposSaldo(tipos)
-      setBaixas(baix)
     } catch (e) {
       setErro(e.message || String(e))
     } finally {
@@ -199,17 +192,12 @@ export default function TruckPagRepasses() {
     }
   }), [linhas, tituloPorRepasse, vinculoSaldoPorChave])
 
-  // Títulos que já foram exportados em "Exportar Baixa" (truckpag_baixas_titulos, ver botão
-  // "Baixados") — ficam escondidos da tela até o usuário trazer o grupo de volta.
-  const titulosCodigosBaixados = useMemo(() => new Set(baixas.map(b => b.titulo_codigo)), [baixas])
-
-  // Base de toda a tela: só repasses com título vinculado (exato ou divergente) e cujo título
-  // ainda não foi baixado. Repasses sem título (nao_encontrado) e títulos já baixados ficam de
-  // fora daqui pra frente — não aparecem em cards, filtros, agrupamento "Repasse por dia" nem na
-  // tabela.
+  // Base de toda a tela: só repasses com título vinculado (exato ou divergente). Repasses sem
+  // título (nao_encontrado) ficam de fora daqui pra frente — não aparecem em cards, filtros,
+  // agrupamento "Repasse por dia" nem na tabela.
   const linhasVinculadas = useMemo(() => linhasComConciliacao.filter(l =>
-    l.statusConciliacao !== 'nao_encontrado' && !(l.tituloEncontrado && titulosCodigosBaixados.has(l.tituloEncontrado.titulo_codigo))
-  ), [linhasComConciliacao, titulosCodigosBaixados])
+    l.statusConciliacao !== 'nao_encontrado'
+  ), [linhasComConciliacao])
 
   // Chips do filtro "Repasse por dia" agora representam o SALDO CONCESSIONÁRIA (crédito da
   // tesouraria, RFN024) que já bateu com um depósito de repasse — não mais o total do repasse
@@ -222,30 +210,18 @@ export default function TruckPagRepasses() {
   const gruposPorDia = useMemo(() => {
     return gruposSaldo
       .filter(g => g.creditoVinculado)
-      .map(g => {
-        // Status de baixa do lote: olha só as linhas do grupo que TÊM título vinculado (as sem
-        // título nunca entram em "Exportar Baixa", não contam pra essa conta). 'nenhum' = nada
-        // baixado ainda (sem cadeado), 'parcial' = uma parte (cadeado aberto), 'total' = todos os
-        // títulos do lote já foram baixados (cadeado fechado).
-        const titulosDoGrupo = g.linhas.map(l => tituloPorRepasse.get(l.id)).filter(Boolean)
-        const baixados = titulosDoGrupo.filter(t => titulosCodigosBaixados.has(t.titulo_codigo)).length
-        const statusBaixa = titulosDoGrupo.length === 0 || baixados === 0
-          ? 'nenhum'
-          : baixados === titulosDoGrupo.length ? 'total' : 'parcial'
-        return {
-          chave: g.chave,
-          empresa: g.empresa,
-          codigoEmpresa: g.codigoEmpresa,
-          data_pagamento: g.data_pagamento,
-          total: g.total,
-          dataCredito: g.creditoVinculado.data_caixa,
-          valorCredito: g.creditoVinculado.saldo_docto_controlado ?? g.creditoVinculado.valor,
-          qtd: g.linhas.length,
-          statusBaixa,
-        }
-      })
+      .map(g => ({
+        chave: g.chave,
+        empresa: g.empresa,
+        codigoEmpresa: g.codigoEmpresa,
+        data_pagamento: g.data_pagamento,
+        total: g.total,
+        dataCredito: g.creditoVinculado.data_caixa,
+        valorCredito: g.creditoVinculado.saldo_docto_controlado ?? g.creditoVinculado.valor,
+        qtd: g.linhas.length,
+      }))
       .sort((a, b) => String(a.dataCredito ?? '').localeCompare(String(b.dataCredito ?? '')))
-  }, [gruposSaldo, tituloPorRepasse, titulosCodigosBaixados])
+  }, [gruposSaldo])
 
   // "Valor não identificado" — linhas com título vinculado mas que ainda não bateram com nenhum
   // crédito da tesouraria (mesmo ícone vermelho Link2Off da coluna Saldo).
@@ -342,31 +318,12 @@ export default function TruckPagRepasses() {
   }, [ordenadas, selecionados])
   const valorSelecionado = titulosSelecionados.reduce((s, t) => s + (t.titulo_saldo || 0), 0)
 
-  // Registro que vai pra truckpag_baixas_titulos ao exportar — guarda estabelecimento/data do
-  // REPASSE (não do título), é o que o botão "Baixados" usa pra agrupar e "trazer de volta".
-  const baixaRecordsSelecionados = useMemo(() => {
-    const porCodigo = new Map()
-    for (const l of ordenadas) {
-      if (!selecionados.has(l.id) || !l.tituloEncontrado) continue
-      porCodigo.set(l.tituloEncontrado.titulo_codigo, {
-        titulo_codigo: l.tituloEncontrado.titulo_codigo,
-        titulo_numero: l.tituloEncontrado.titulo_numero,
-        estabelecimento: l.estabelecimento,
-        data_pagamento: l.data_pagamento,
-        valor: l.valor_recebido,
-      })
-    }
-    return [...porCodigo.values()]
-  }, [ordenadas, selecionados])
-
   // Nome do arquivo segue o padrão já usado em Títulos: "DDMMAAAA SIGLA Total Recebido R$
   // X.XXX,XX.txt" quando o filtro "Repasse por dia" está ativo (usa o total do depósito); senão
   // um nome genérico com a data escolhida.
   const grupoRepasseAtivo = gruposPorDia.find(g => g.chave === filtroGrupoRepasse) || null
 
-  // Gera o arquivo, marca os títulos exportados em truckpag_baixas_titulos (pra sumirem da tela)
-  // e recarrega os dados — as linhas exportadas somem sozinhas e a seleção esvazia.
-  const exportarBaixa = async () => {
+  const exportarBaixa = () => {
     const conteudo = gerarArquivoBaixaTitulos(titulosSelecionados, dataExport)
     const nomeArquivo = grupoRepasseAtivo
       ? `${grupoRepasseAtivo.data_pagamento.split('-').reverse().join('')} ${siglaEmpresaPorNome(grupoRepasseAtivo.empresa) || grupoRepasseAtivo.codigoEmpresa} Total Recebido ${fmtMoeda(grupoRepasseAtivo.total)}.txt`
@@ -380,15 +337,6 @@ export default function TruckPagRepasses() {
     a.click()
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
-
-    try {
-      await apiService.registrarTruckPagBaixas(baixaRecordsSelecionados)
-      setSelecionados(new Set())
-      const novasBaixas = await apiService.getTruckPagBaixasTitulos()
-      setBaixas(novasBaixas)
-    } catch (e) {
-      setErro('Baixa exportada, mas falhou ao marcar como baixada: ' + (e.message || String(e)))
-    }
   }
 
   // PDF — mesmo pipeline (html2canvas + jsPDF) da tela Títulos: monta blocos HTML fora da tela,
@@ -588,20 +536,6 @@ export default function TruckPagRepasses() {
                 Atualizado em: <strong className="text-slate-500">{new Date(ultimaAtualizacao).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</strong>
               </span>
             )}
-            {qtdDivergentes > 0 && (
-              <button onClick={() => navigate('/bi/truckpag-divergencias')} title="Ver divergências no BI" className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-md border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 transition-colors">
-                <BarChart2 className="h-3.5 w-3.5" />
-                BI Divergências
-              </button>
-            )}
-            <button onClick={() => setMostrarBaixados(true)} title="Depósitos já baixados" className="relative flex items-center justify-center border border-slate-200 text-slate-600 hover:bg-slate-50 p-2 rounded-md transition-colors">
-              <Archive className="h-3.5 w-3.5" />
-              {baixas.length > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 bg-slate-700 text-white text-[9px] font-bold leading-none rounded-full h-4 min-w-4 px-1 flex items-center justify-center">
-                  {baixas.length}
-                </span>
-              )}
-            </button>
             <button onClick={() => setConfigAberto(true)} title="Configurações" className="flex items-center justify-center border border-slate-200 text-slate-600 hover:bg-slate-50 p-2 rounded-md transition-colors">
               <Settings className="h-3.5 w-3.5" />
             </button>
@@ -617,13 +551,6 @@ export default function TruckPagRepasses() {
       </div>
       <TruckPagRegrasModal aberto={regrasAberto} onFechar={() => setRegrasAberto(false)} />
       {configAberto && <TruckPagConfigModal onClose={() => { setConfigAberto(false); carregar() }} />}
-      {mostrarBaixados && (
-        <TruckPagBaixadosModal
-          baixas={baixas}
-          onClose={() => setMostrarBaixados(false)}
-          onAlterado={async () => setBaixas(await apiService.getTruckPagBaixasTitulos())}
-        />
-      )}
       {mostrarLinhasForaGrupo && linhasForaDoGrupo.length > 0 && (
         <TruckPagRepasseDetalheModal
           empresa={splitEstabelecimento(linhasForaDoGrupo[0].estabelecimento).empresa}
@@ -681,8 +608,6 @@ export default function TruckPagRepasses() {
                     : 'bg-white border-slate-200 text-slate-600 hover:border-blue-300 hover:text-blue-700'
                 }`}
               >
-                {g.statusBaixa === 'total' && <Lock className="h-3 w-3 shrink-0" title="Lote totalmente baixado" />}
-                {g.statusBaixa === 'parcial' && <Unlock className="h-3 w-3 shrink-0" title="Lote parcialmente baixado" />}
                 {fmtData(g.dataCredito)} · {fmtMoeda(g.valorCredito)}
               </button>
             ))}
