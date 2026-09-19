@@ -124,7 +124,7 @@ export const MENU_TREE = [
         children: [
           { key: 'metas/pos-vendas/pecas', label: 'Peças', virtual: true },
           { key: 'metas/pos-vendas/servicos', label: 'Serviços' },
-          { key: 'metas/pos-vendas/total', label: 'Total Pós-Vendas' },
+          { key: 'metas/pos-vendas/total', label: 'Total Pós-Vendas', virtual: true },
           { key: 'metas/pos-vendas/distribuicao-consultores', label: 'Distribuição — Consultores', virtual: true },
         ],
       },

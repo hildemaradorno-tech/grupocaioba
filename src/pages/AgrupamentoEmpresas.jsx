@@ -6,6 +6,8 @@ import { useAuth } from '../context/AuthContext'
 import PermissionActionButtons from '../components/PermissionActionButtons'
 import { apiService } from '../services/api'
 
+const MARCAS = ['HONDA', 'DAF']
+
 export default function AgrupamentoEmpresas() {
   const location = useLocation()
   const navigate = useNavigate()
@@ -19,7 +21,7 @@ export default function AgrupamentoEmpresas() {
   const [modalExcluirAberto, setModalExcluirAberto] = useState(false)
   const [editingId, setEditingId] = useSessionState('agrup_emp_editid', null)
   const [idExcluir, setIdExcluir] = useState(null)
-  const [form, setForm] = useSessionState('agrup_emp_form', { nome_agrupamento: '', segmento_id: '', ativo: true })
+  const [form, setForm] = useSessionState('agrup_emp_form', { nome_agrupamento: '', segmento_id: '', marca: '', ativo: true })
   const [modalVisualizarAberto, setModalVisualizarAberto] = useState(false)
   const [itemVisualizado, setItemVisualizado] = useState(null)
   const { hasPermission } = useAuth()
@@ -50,13 +52,13 @@ export default function AgrupamentoEmpresas() {
 
   const abrirIncluir = () => {
     setEditingId(null)
-    setForm({ nome_agrupamento: '', segmento_id: segmentos[0]?.id || '', ativo: true })
+    setForm({ nome_agrupamento: '', segmento_id: segmentos[0]?.id || '', marca: '', ativo: true })
     setModalAberto(true)
   }
 
   const abrirEditar = (item) => {
     setEditingId(item.id)
-    setForm({ nome_agrupamento: item.nome_agrupamento || '', segmento_id: item.segmento_id || '', ativo: item.ativo ?? true })
+    setForm({ nome_agrupamento: item.nome_agrupamento || '', segmento_id: item.segmento_id || '', marca: item.marca || '', ativo: item.ativo ?? true })
     setModalAberto(true)
   }
 
@@ -80,7 +82,7 @@ export default function AgrupamentoEmpresas() {
     e.preventDefault()
     try {
       const segObj = segmentos.find(s => s.id === form.segmento_id)
-      const payload = { ...form, segmento_nome: segObj?.nome_segmento || '' }
+      const payload = { ...form, segmento_nome: (segObj?.nome_segmento || '').toUpperCase() }
       if (editingId) {
         await apiService.updateAgrupamentoEmpresa(editingId, payload)
       } else {
@@ -143,6 +145,7 @@ export default function AgrupamentoEmpresas() {
             <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[11px] font-semibold uppercase tracking-wider">
               <th className="p-3">Agrupamento</th>
               <th className="p-3 w-36">Segmento</th>
+              <th className="p-3 w-28">Marca</th>
               <th className="p-3">EMPRESAS</th>
               <th className="p-3 w-24 text-center">Ações</th>
             </tr>
@@ -150,7 +153,7 @@ export default function AgrupamentoEmpresas() {
           <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
             {items.length === 0 ? (
               <tr>
-                <td colSpan="4" className="p-6 text-center text-slate-400">Nenhum agrupamento cadastrado.</td>
+                <td colSpan="5" className="p-6 text-center text-slate-400">Nenhum agrupamento cadastrado.</td>
               </tr>
             ) : items.map((item) => {
               const empresasAgrupadas = empresas.filter(e => e.agrupamento_empresa_id === item.id)
@@ -164,7 +167,8 @@ export default function AgrupamentoEmpresas() {
                     <Building2 className="h-3.5 w-3.5 text-blue-500 shrink-0" />
                     {item.nome_agrupamento}
                   </td>
-                  <td className="p-3 text-slate-600">{item.segmento_nome || '-'}</td>
+                  <td className="p-3 text-slate-600">{item.segmento_nome?.toUpperCase() || '-'}</td>
+                  <td className="p-3 text-slate-600">{item.marca || '-'}</td>
                   <td className="p-3 text-slate-500 truncate max-w-[260px]" title={empresasTexto}>{empresasTexto}</td>
                   <td className="p-3">
                     <PermissionActionButtons
@@ -217,7 +221,20 @@ export default function AgrupamentoEmpresas() {
                   >
                     <option value="">Selecione um segmento</option>
                     {segmentos.map(s => (
-                      <option key={s.id} value={s.id}>{s.nome_segmento}</option>
+                      <option key={s.id} value={s.id}>{s.nome_segmento?.toUpperCase()}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Marca</label>
+                  <select
+                    value={form.marca || ''}
+                    onChange={(e) => setForm(prev => ({ ...prev, marca: e.target.value }))}
+                    className="w-full text-xs p-2 border border-slate-200 rounded-md bg-white font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                  >
+                    <option value="">Selecione uma marca</option>
+                    {MARCAS.map(m => (
+                      <option key={m} value={m}>{m}</option>
                     ))}
                   </select>
                 </div>
@@ -259,7 +276,11 @@ export default function AgrupamentoEmpresas() {
               </div>
               <div className="flex flex-col gap-0.5">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Segmento</span>
-                <span className="text-xs font-semibold text-slate-800">{itemVisualizado.segmento_nome || '-'}</span>
+                <span className="text-xs font-semibold text-slate-800">{itemVisualizado.segmento_nome?.toUpperCase() || '-'}</span>
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Marca</span>
+                <span className="text-xs font-semibold text-slate-800">{itemVisualizado.marca || '-'}</span>
               </div>
               <div className="flex flex-col gap-0.5">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Situação</span>

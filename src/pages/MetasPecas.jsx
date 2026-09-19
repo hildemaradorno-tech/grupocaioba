@@ -4,8 +4,10 @@ import { Plus, Trash2, Edit2, X, AlertTriangle, ChevronRight, ChevronDown, Targe
 import { useAuth } from '../context/AuthContext'
 import PermissionActionButtons from '../components/PermissionActionButtons'
 import { SearchCombobox } from '../components/SearchCombobox'
+import { agruparPorSegmento } from '../utils/segmentoMarca'
+import { LogoGrupo, LogoSegmento } from '../components/LogosMarca'
 import { avaliarMeses, mensagemMesesIncompletos, LinhaStatusMes, AlertaMesesIncompletos } from '../components/StatusMesesForm'
-import { EmpresaMultiFilter, empresaParam, filtrarPorEmpresas, empresaUnica } from '../components/EmpresaMultiFilter'
+import { EmpresaMultiFilter, empresaParam, filtrarPorEmpresas, empresaUnica, empresasDasMetas } from '../components/EmpresaMultiFilter'
 import { apiService } from '../services/api'
 
 const anoAtual = new Date().getFullYear()
@@ -249,6 +251,7 @@ export default function MetasPecas() {
 
   const [grupoAberto,      setGrupoAberto]      = useState(true)
   const [expandedEmpresas, setExpandedEmpresas] = useState(new Set())
+  const [segAbertos,      setSegAbertos]      = useState(new Set())
   const [expandedDepts,    setExpandedDepts]    = useState(new Set())
   const [expandedSetores,  setExpandedSetores]  = useState(new Set())
   const [expandedBoxes,    setExpandedBoxes]    = useState(new Set())
@@ -281,7 +284,7 @@ export default function MetasPecas() {
         apiService.getCargos(),
         apiService.getFuncionarios(),
       ])
-      setEmpresas(sortNome(emps, 'empresa_fantasia'))
+      setEmpresas(sortNome(empresasDasMetas(emps), 'empresa_fantasia'))
       setDepartamentos(sortNome(depts, 'nome_departamento'))
       setSetores(sortNome(sets, 'nome_setor'))
       setBoxes(sortNome(bxs, 'nome_box'))
@@ -366,12 +369,14 @@ export default function MetasPecas() {
     })
     setExpandedEmpresas(emps); setExpandedDepts(depts); setExpandedSetores(sets)
     setExpandedBoxes(bxs)
+    setSegAbertos(new Set(agruparPorSegmento(Object.entries(tree), empresas).map(([l]) => l)))
   }
 
   const recolherTudo = () => {
     setGrupoAberto(false)
     setExpandedEmpresas(new Set()); setExpandedDepts(new Set()); setExpandedSetores(new Set())
     setExpandedBoxes(new Set())
+    setSegAbertos(new Set())
   }
 
   // Save cell on blur
@@ -662,39 +667,54 @@ export default function MetasPecas() {
                 return (
                   <>
                     {/* ── GRUPO CAIOBÁ ── */}
-                    <tr className="cursor-pointer bg-blue-950 hover:bg-blue-900 transition-colors sticky top-[41px] z-10"
+                    <tr className="cursor-pointer bg-slate-300 hover:bg-slate-200 transition-colors sticky top-[41px] z-10"
                         onClick={() => setGrupoAberto(v => !v)}>
-                      <td className="px-3 py-2.5 text-white font-bold text-sm sticky left-0 bg-blue-950 z-10 whitespace-nowrap">
+                      <td className="px-3 py-2.5 text-slate-900 font-bold text-sm sticky left-0 bg-slate-300 z-10 whitespace-nowrap">
                         <div className="flex items-center gap-2">
                           {grupoAberto ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
-                          🏢 Grupo Caiobá
+                          Grupo Caiobá<LogoGrupo />
                         </div>
                       </td>
                       {grupoMeses.map((v, i) => (
-                        <td key={i} className="px-1 py-2.5 text-right text-xs font-bold text-blue-200 whitespace-nowrap">{v > 0 ? fmtBRL(v) : '—'}</td>
+                        <td key={i} className="px-1 py-2.5 text-right text-xs font-bold text-slate-800 whitespace-nowrap">{v > 0 ? fmtBRL(v) : '—'}</td>
                       ))}
-                      <td className="px-2 py-2.5 text-right text-xs font-bold text-amber-300 bg-blue-900 whitespace-nowrap">{grupoTotal > 0 ? fmtBRL(grupoTotal) : '—'}</td>
+                      <td className="px-2 py-2.5 text-right text-xs font-bold text-indigo-900 bg-slate-400 whitespace-nowrap">{grupoTotal > 0 ? fmtBRL(grupoTotal) : '—'}</td>
                       <td />
                     </tr>
 
-                    {grupoAberto && Object.entries(tree).map(([empId, emp]) => {
+                    {grupoAberto && agruparPorSegmento(Object.entries(tree), empresas).map(([segLabel, segEntries]) => {
+                      const segMeses = Array(12).fill(0)
+                      segEntries.forEach(([, e]) => aggEmp(e).forEach((v, i) => { segMeses[i] += v }))
+                      const segTotal = sumArr(segMeses)
+                      const segAberto = segAbertos.has(segLabel)
+                      return (
+                        <React.Fragment key={segLabel}>
+                          <tr className="cursor-pointer bg-sky-100 hover:bg-sky-50 transition-colors" onClick={() => toggle(segAbertos, setSegAbertos, segLabel)}>
+                            <td className="px-3 py-2 text-sky-950 font-bold sticky left-0 bg-sky-100 z-10 whitespace-nowrap">
+                              <div className="flex items-center gap-2 pl-2">{segAberto ? <ChevronDown size={14} /> : <ChevronRight size={14} />}{segLabel}<LogoSegmento rotulo={segLabel} /></div>
+                            </td>
+                            {segMeses.map((v, i) => <td key={i} className="px-1 py-2 text-right text-xs font-semibold text-sky-900 whitespace-nowrap">{v > 0 ? fmtBRL(v) : '—'}</td>)}
+                            <td className="px-2 py-2 text-right text-xs font-bold text-sky-900 bg-sky-200 whitespace-nowrap">{segTotal > 0 ? fmtBRL(segTotal) : '—'}</td>
+                            <td />
+                          </tr>
+                          {segAberto && segEntries.map(([empId, emp]) => {
                       const empMeses = aggEmp(emp)
                       const empTotal = sumArr(empMeses)
                       return (
                         <React.Fragment key={empId}>
                           {/* ── EMPRESA ── */}
-                          <tr className="cursor-pointer bg-indigo-700 hover:bg-indigo-600 transition-colors"
+                          <tr className="cursor-pointer bg-emerald-100 hover:bg-emerald-200 transition-colors"
                               onClick={() => toggle(expandedEmpresas, setExpandedEmpresas, empId)}>
-                            <td className="px-3 py-2 text-white font-bold sticky left-0 bg-indigo-700 z-10 whitespace-nowrap">
+                            <td className="px-3 py-2 text-emerald-950 font-bold sticky left-0 bg-emerald-100 z-10 whitespace-nowrap">
                               <div className="flex items-center gap-2 pl-4">
                                 {expandedEmpresas.has(empId) ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                                 {emp.nome}
                               </div>
                             </td>
                             {empMeses.map((v, i) => (
-                              <td key={i} className="px-1 py-2 text-right text-xs font-semibold text-indigo-200 whitespace-nowrap">{v > 0 ? fmtBRL(v) : '—'}</td>
+                              <td key={i} className="px-1 py-2 text-right text-xs font-semibold text-emerald-900 whitespace-nowrap">{v > 0 ? fmtBRL(v) : '—'}</td>
                             ))}
-                            <td className="px-2 py-2 text-right text-xs font-bold text-amber-300 bg-indigo-800 whitespace-nowrap">{empTotal > 0 ? fmtBRL(empTotal) : '—'}</td>
+                            <td className="px-2 py-2 text-right text-xs font-bold text-emerald-900 bg-emerald-200 whitespace-nowrap">{empTotal > 0 ? fmtBRL(empTotal) : '—'}</td>
                             <td />
                           </tr>
 
@@ -705,9 +725,9 @@ export default function MetasPecas() {
                             return (
                               <React.Fragment key={deptId}>
                                 {/* ── DEPARTAMENTO ── */}
-                                <tr className="cursor-pointer bg-slate-200 hover:bg-slate-300 transition-colors"
+                                <tr className="cursor-pointer bg-emerald-50 hover:bg-emerald-100 transition-colors"
                                     onClick={() => toggle(expandedDepts, setExpandedDepts, deptKey)}>
-                                  <td className="px-3 py-1.5 text-slate-800 font-bold sticky left-0 bg-slate-200 z-10 whitespace-nowrap">
+                                  <td className="px-3 py-1.5 text-slate-800 font-bold sticky left-0 bg-emerald-50 z-10 whitespace-nowrap">
                                     <div className="flex items-center gap-2 pl-8">
                                       {expandedDepts.has(deptKey) ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
                                       <span className="text-slate-500 font-normal mr-0.5">Departamento:</span>
@@ -738,9 +758,9 @@ export default function MetasPecas() {
                                   return (
                                     <React.Fragment key={sId}>
                                       {/* ── SETOR ── */}
-                                      <tr className="cursor-pointer bg-slate-100 hover:bg-slate-200 transition-colors"
+                                      <tr className="cursor-pointer bg-slate-50 hover:bg-slate-100 transition-colors"
                                           onClick={() => toggle(expandedSetores, setExpandedSetores, setKey)}>
-                                        <td className="px-3 py-1.5 sticky left-0 bg-slate-100 z-10 whitespace-nowrap">
+                                        <td className="px-3 py-1.5 sticky left-0 bg-slate-50 z-10 whitespace-nowrap">
                                           <div className="flex items-center gap-2 pl-12">
                                             {expandedSetores.has(setKey) ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
                                             <span className="text-slate-400 mr-0.5">Setor:</span>
@@ -820,6 +840,9 @@ export default function MetasPecas() {
                         </React.Fragment>
                       )
                     })}
+                        </React.Fragment>
+                      )
+                    })}
                   </>
                 )
               })()}
@@ -844,7 +867,7 @@ export default function MetasPecas() {
                   <label className={LBL}>Empresa *</label>
                   <select name="empresa_id" className={SEL} value={form.empresa_id} onChange={handleFormChange} disabled={modoModal !== 'incluir'}>
                     <option value="">Selecione...</option>
-                    {empresas.map(e => <option key={e.id} value={e.id}>{e.empresa_fantasia || e.nome_empresa}</option>)}
+                    {empresas.filter(e => ['DAF', 'HONDA'].includes(String(e.marca || '').toUpperCase())).map(e => <option key={e.id} value={e.id}>{e.empresa_fantasia || e.nome_empresa}</option>)}
                   </select>
                 </div>
                 <div>

@@ -5,7 +5,9 @@ import { useAuth } from '../context/AuthContext'
 import PermissionActionButtons from '../components/PermissionActionButtons'
 import { SearchCombobox } from '../components/SearchCombobox'
 import { EmpresaMultiFilter, empresaParam, filtrarPorEmpresas, empresaUnica } from '../components/EmpresaMultiFilter'
-import { valoresMetaMecanico } from '../utils/metasMecanico'
+import { valoresMetaMecanico, resolverPosicaoMecanico } from '../utils/metasMecanico'
+import { agruparPorSegmento } from '../utils/segmentoMarca'
+import { LogoGrupo, LogoSegmento } from '../components/LogosMarca'
 import { avaliarMeses, mensagemMesesIncompletos, LinhaStatusMes, AlertaMesesIncompletos } from '../components/StatusMesesForm'
 import { apiService } from '../services/api'
 
@@ -108,7 +110,7 @@ const mesesVazios = (diasUteis = {}) => Array.from({ length: 12 }, (_, i) => {
   return { mes: i+1, dias_uteis: du, dias_a_trabalhar: dat > 0 ? dat : '', horas_disponiveis: horas, produtividade: '', horas_meta: '', valor_hora: '', coef_servicos: '', coef_pecas: '', dias_uteis_reais: '' }
 })
 
-export default function MetasServicosMecanico({ onDistribuir } = {}) {
+export default function MetasServicosMecanico() {
   const [empresas,      setEmpresas]      = useState([])
   const [departamentos, setDepartamentos] = useState([])
   const [setores,       setSetores]       = useState([])
@@ -134,6 +136,7 @@ export default function MetasServicosMecanico({ onDistribuir } = {}) {
   const [expandedDepts,      setExpandedDepts]      = useState(new Set())
   const [expandedSetores,    setExpandedSetores]    = useState(new Set())
   const [expandedBoxes,      setExpandedBoxes]      = useState(new Set())
+  const [segAbertos,        setSegAbertos]        = useState(new Set())
 
   const [modalAberto,        setModalAberto]        = useState(false)
   const [modoModal,          setModoModal]          = useState('incluir') // 'incluir' | 'editar'
@@ -162,41 +165,9 @@ export default function MetasServicosMecanico({ onDistribuir } = {}) {
   // quando ele ainda existe em /funcionarios; senão pelo que foi gravado na própria linha
   // (colaborador "fantasma" ou excluído do cadastro). Usado tanto pra montar a árvore quanto
   // pros filtros de Setor/Box.
-  const resolverPosicao = useCallback((row) => {
-    const func = funcionarios.find(f => f.id === row.colaborador_id)
-    let cId, bId, sId, did
-    if (func) {
-      // Cadastro manda; mas se o funcionário está sem cargo/box/setor/departamento em /funcionarios,
-      // usa o que foi gravado na própria linha da meta (senão ele viraria um grupo "—" separado
-      // dos colegas de mesmo departamento/setor/box).
-      cId = func.cargo_id || row.cargo_id || '—'
-      const cargoTmp = cargos.find(c => c.id === cId)
-      bId = func.box_id || row.box_id || '—'
-      const boxTmp = boxes.find(b => b.id === bId)
-      const boxSetorIds   = boxTmp ? (Array.isArray(boxTmp.setor_ids) ? boxTmp.setor_ids : [boxTmp.setor_id]).filter(Boolean) : []
-      const cargoSetorIds = cargoTmp?.setor_ids || func.setor_ids || []
-      sId = boxSetorIds.find(sid => cargoSetorIds.includes(sid)) || boxSetorIds[0] || cargoSetorIds[0] || row.setor_id || '—'
-      const setorTmp = setores.find(s => s.id === sId)
-      did = setorTmp?.departamento_id || cargoTmp?.departamento_ids?.[0] || func.departamento_ids?.[0] || row.departamento_id || '—'
-    } else {
-      cId = row.cargo_id || '—'
-      bId = row.box_id   || '—'
-      sId = row.setor_id || '—'
-      did = row.departamento_id || '—'
-    }
-    const cargo = cargos.find(c => c.id === cId)
-    const box   = boxes.find(b => b.id === bId)
-    const setor = setores.find(s => s.id === sId)
-    const dept  = departamentos.find(d => d.id === did)
-    return {
-      func, cId, bId, sId, did,
-      dNome: dept?.nome_departamento || row.departamento_nome || did,
-      sNome: setor?.nome_setor       || row.setor_nome        || '—',
-      bNome: box?.nome_box           || row.box_nome          || '—',
-      cNome: cargo?.nome_cargo       || row.cargo_nome        || '—',
-      coNome: func?.nome_funcionario || row.colaborador_nome  || row.colaborador_id,
-    }
-  }, [funcionarios, cargos, boxes, setores, departamentos])
+  const resolverPosicao = useCallback(
+    (row) => resolverPosicaoMecanico(row, { funcionarios, cargos, boxes, setores, departamentos }),
+    [funcionarios, cargos, boxes, setores, departamentos])
 
   const mecanicosDisponiveis = useMemo(() => {
     const seen = new Set()
@@ -328,6 +299,7 @@ export default function MetasServicosMecanico({ onDistribuir } = {}) {
     setGrupoAberto(false)
     setExpandedEmpresas(new Set()); setExpandedDepts(new Set()); setExpandedSetores(new Set())
     setExpandedBoxes(new Set())
+    setSegAbertos(new Set())
   }
 
   // Índice 0-based do primeiro mês habilitado para preenchimento (baseado na data de admissão vs ano do form)
@@ -669,7 +641,7 @@ export default function MetasServicosMecanico({ onDistribuir } = {}) {
                 type="button"
                 title="Copiar para meses"
                 onClick={() => setCopyProdOpen(o => !o)}
-                className="ml-1 p-0.5 rounded bg-indigo-100 hover:bg-indigo-200 text-indigo-700 transition-colors"
+                className="ml-1 p-0.5 rounded bg-emerald-100 hover:bg-emerald-200 text-indigo-700 transition-colors"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
               </button>}
@@ -748,7 +720,7 @@ export default function MetasServicosMecanico({ onDistribuir } = {}) {
                     type="button"
                     title="Copiar para meses"
                     onClick={() => setCopyVHOpen(o => !o)}
-                    className="ml-1 p-0.5 rounded bg-indigo-100 hover:bg-indigo-200 text-indigo-700 transition-colors"
+                    className="ml-1 p-0.5 rounded bg-emerald-100 hover:bg-emerald-200 text-indigo-700 transition-colors"
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                   </button>}
@@ -802,7 +774,7 @@ export default function MetasServicosMecanico({ onDistribuir } = {}) {
                     type="button"
                     title="Copiar para meses"
                     onClick={() => setCopyCPOpen(o => !o)}
-                    className="ml-1 p-0.5 rounded bg-indigo-100 hover:bg-indigo-200 text-indigo-700 transition-colors"
+                    className="ml-1 p-0.5 rounded bg-emerald-100 hover:bg-emerald-200 text-indigo-700 transition-colors"
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                   </button>}
@@ -984,28 +956,41 @@ export default function MetasServicosMecanico({ onDistribuir } = {}) {
                 return (
                   <>
                     {/* GRUPO */}
-                    <tr className="cursor-pointer bg-blue-950 hover:bg-blue-900 transition-colors" onClick={() => setGrupoAberto(v => !v)}>
-                      <td className="px-3 py-2.5 text-white font-bold sticky left-0 bg-blue-950 z-10 whitespace-nowrap">
-                        <div className="flex items-center gap-2">{grupoAberto ? <ChevronDown size={15}/> : <ChevronRight size={15}/>}🏢 Grupo Caiobá</div>
+                    <tr className="cursor-pointer bg-slate-300 hover:bg-slate-200 transition-colors" onClick={() => setGrupoAberto(v => !v)}>
+                      <td className="px-3 py-2.5 text-slate-900 font-bold sticky left-0 bg-slate-300 z-10 whitespace-nowrap">
+                        <div className="flex items-center gap-2">{grupoAberto ? <ChevronDown size={15}/> : <ChevronRight size={15}/>}Grupo Caiobá<LogoGrupo /></div>
                       </td>
-                      {grupoMeses.map((v,i) => <td key={i} className="px-1 py-2.5 text-right text-xs font-bold text-blue-200 whitespace-nowrap">{v > 0 ? fmtBRL(v) : '—'}</td>)}
-                      <td className="px-2 py-2.5 text-right text-xs font-bold text-amber-300 bg-blue-900 whitespace-nowrap">{grupoTotal > 0 ? fmtBRL(grupoTotal) : '—'}</td>
+                      {grupoMeses.map((v,i) => <td key={i} className="px-1 py-2.5 text-right text-xs font-bold text-slate-800 whitespace-nowrap">{v > 0 ? fmtBRL(v) : '—'}</td>)}
+                      <td className="px-2 py-2.5 text-right text-xs font-bold text-indigo-900 bg-slate-400 whitespace-nowrap">{grupoTotal > 0 ? fmtBRL(grupoTotal) : '—'}</td>
                       <td/>
                     </tr>
 
-                    {grupoAberto && Object.entries(tree).map(([empId, emp]) => {
+                    {grupoAberto && agruparPorSegmento(Object.entries(tree), empresas).map(([segLabel, segEntries]) => {
+                      const segMeses = Array(12).fill(0)
+                      segEntries.forEach(([, e]) => aggEmp(e, vField).forEach((v, i) => { segMeses[i] += v }))
+                      const segTotal = sumArr(segMeses)
+                      const segAberto = segAbertos.has(segLabel)
+                      return (
+                        <React.Fragment key={segLabel}>
+                          <tr className="cursor-pointer bg-sky-100 hover:bg-sky-50 transition-colors" onClick={() => toggle(segAbertos, setSegAbertos, segLabel)}>
+                            <td className="px-3 py-2 text-sky-950 font-bold sticky left-0 bg-sky-100 z-10 whitespace-nowrap"><div className="flex items-center gap-2 pl-2">{segAberto ? <ChevronDown size={14}/> : <ChevronRight size={14}/>}{segLabel}<LogoSegmento rotulo={segLabel} /></div></td>
+                            {segMeses.map((v,i) => <td key={i} className="px-1 py-2 text-right text-xs font-semibold text-sky-900 whitespace-nowrap">{v>0?fmtBRL(v):'—'}</td>)}
+                            <td className="px-2 py-2 text-right text-xs font-bold text-sky-900 bg-sky-200 whitespace-nowrap">{segTotal>0?fmtBRL(segTotal):'—'}</td>
+                            <td/>
+                          </tr>
+                          {segAberto && segEntries.map(([empId, emp]) => {
                       const empMeses = aggEmp(emp, vField); const empTotal = sumArr(empMeses)
                       return (
                         <React.Fragment key={empId}>
-                          <tr className="cursor-pointer bg-indigo-700 hover:bg-indigo-600 transition-colors" onClick={() => toggle(expandedEmpresas, setExpandedEmpresas, empId)}>
-                            <td className="px-3 py-2 text-white font-bold sticky left-0 bg-indigo-700 z-10 whitespace-nowrap">
+                          <tr className="cursor-pointer bg-emerald-100 hover:bg-emerald-200 transition-colors" onClick={() => toggle(expandedEmpresas, setExpandedEmpresas, empId)}>
+                            <td className="px-3 py-2 text-emerald-950 font-bold sticky left-0 bg-emerald-100 z-10 whitespace-nowrap">
                               <div className="flex items-center gap-2 pl-4">
                                 {expandedEmpresas.has(empId) ? <ChevronDown size={14}/> : <ChevronRight size={14}/>}
                                 {emp.nome}
                               </div>
                             </td>
-                            {empMeses.map((v,i) => <td key={i} className="px-1 py-2 text-right text-xs font-semibold text-indigo-200 whitespace-nowrap">{v>0?fmtBRL(v):'—'}</td>)}
-                            <td className="px-2 py-2 text-right text-xs font-bold text-amber-300 bg-indigo-800 whitespace-nowrap">{empTotal>0?fmtBRL(empTotal):'—'}</td>
+                            {empMeses.map((v,i) => <td key={i} className="px-1 py-2 text-right text-xs font-semibold text-emerald-900 whitespace-nowrap">{v>0?fmtBRL(v):'—'}</td>)}
+                            <td className="px-2 py-2 text-right text-xs font-bold text-emerald-900 bg-emerald-200 whitespace-nowrap">{empTotal>0?fmtBRL(empTotal):'—'}</td>
                             <td/>
                           </tr>
 
@@ -1013,8 +998,8 @@ export default function MetasServicosMecanico({ onDistribuir } = {}) {
                             const dKey = `${empId}§${deptId}`; const dMeses = aggDept(dept, vField); const dTotal = sumArr(dMeses)
                             return (
                               <React.Fragment key={deptId}>
-                                <tr className="cursor-pointer bg-slate-200 hover:bg-slate-300 transition-colors" onClick={() => toggle(expandedDepts, setExpandedDepts, dKey)}>
-                                  <td className="px-3 py-1.5 text-slate-800 font-bold sticky left-0 bg-slate-200 z-10 whitespace-nowrap"><div className="flex items-center gap-2 pl-8">{expandedDepts.has(dKey)?<ChevronDown size={13}/>:<ChevronRight size={13}/>}<span className="text-slate-500 font-normal mr-0.5">Departamento:</span><span className="font-bold">{dept.nome}</span></div></td>
+                                <tr className="cursor-pointer bg-emerald-50 hover:bg-emerald-100 transition-colors" onClick={() => toggle(expandedDepts, setExpandedDepts, dKey)}>
+                                  <td className="px-3 py-1.5 text-slate-800 font-bold sticky left-0 bg-emerald-50 z-10 whitespace-nowrap"><div className="flex items-center gap-2 pl-8">{expandedDepts.has(dKey)?<ChevronDown size={13}/>:<ChevronRight size={13}/>}<span className="text-slate-500 font-normal mr-0.5">Departamento:</span><span className="font-bold">{dept.nome}</span></div></td>
                                   {dMeses.map((v,i) => <td key={i} className="px-1 py-1.5 text-right text-xs font-semibold text-slate-700 whitespace-nowrap">{v>0?fmtBRL(v):'—'}</td>)}
                                   <td className="px-2 py-1.5 text-right text-xs font-bold text-indigo-700 bg-indigo-50 whitespace-nowrap">{dTotal>0?fmtBRL(dTotal):'—'}</td>
                                   <td/>
@@ -1031,8 +1016,8 @@ export default function MetasServicosMecanico({ onDistribuir } = {}) {
                                   })
                                   return (
                                     <React.Fragment key={sId}>
-                                      <tr className="cursor-pointer bg-slate-100 hover:bg-slate-200 transition-colors" onClick={() => toggle(expandedSetores, setExpandedSetores, sKey)}>
-                                        <td className="px-3 py-1.5 sticky left-0 bg-slate-100 z-10 whitespace-nowrap">
+                                      <tr className="cursor-pointer bg-slate-50 hover:bg-slate-100 transition-colors" onClick={() => toggle(expandedSetores, setExpandedSetores, sKey)}>
+                                        <td className="px-3 py-1.5 sticky left-0 bg-slate-50 z-10 whitespace-nowrap">
                                           <div className="flex items-center gap-2 pl-12">
                                             {expandedSetores.has(sKey)?<ChevronDown size={12}/>:<ChevronRight size={12}/>}
                                             <span className="text-slate-400 mr-0.5">Setor:</span>
@@ -1101,6 +1086,9 @@ export default function MetasServicosMecanico({ onDistribuir } = {}) {
                         </React.Fragment>
                       )
                     })}
+                        </React.Fragment>
+                      )
+                    })}
                   </>
                 )
               })()}
@@ -1122,7 +1110,7 @@ export default function MetasServicosMecanico({ onDistribuir } = {}) {
                 <div className="col-span-3"><label className={LBL}>Empresa *</label>
                   <select name="empresa_id" className={SEL} value={form.empresa_id} onChange={handleFormChange} disabled={modoModal === 'editar' || modoModal === 'visualizar'}>
                     <option value="">Selecione...</option>
-                    {empresas.map(e => <option key={e.id} value={e.id}>{e.empresa_fantasia||e.nome_empresa}</option>)}
+                    {empresas.filter(e => ['DAF', 'HONDA'].includes(String(e.marca || '').toUpperCase())).map(e => <option key={e.id} value={e.id}>{e.empresa_fantasia||e.nome_empresa}</option>)}
                   </select></div>
                 <div><label className={LBL}>Ano *</label>
                   <select name="ano" className={SEL} value={form.ano} onChange={handleFormChange} disabled={modoModal === 'editar' || modoModal === 'visualizar'}>

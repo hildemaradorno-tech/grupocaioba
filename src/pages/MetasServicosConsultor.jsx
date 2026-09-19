@@ -5,6 +5,8 @@ import { useAuth } from '../context/AuthContext'
 import { SearchCombobox } from '../components/SearchCombobox'
 import { EmpresaMultiFilter, empresaParam, filtrarPorEmpresas, empresaUnica } from '../components/EmpresaMultiFilter'
 import { valoresMetaMecanico } from '../utils/metasMecanico'
+import { agruparPorSegmento } from '../utils/segmentoMarca'
+import { LogoGrupo, LogoSegmento } from '../components/LogosMarca'
 import { apiService } from '../services/api'
 
 const anoAtual = new Date().getFullYear()
@@ -90,6 +92,7 @@ export default function MetasServicosConsultor() {
   const [expandedEmpresas, setExpandedEmpresas] = useState(new Set())
   const [expandedDepts,    setExpandedDepts]    = useState(new Set())
   const [expandedSetores,  setExpandedSetores]  = useState(new Set())
+  const [segAbertos,      setSegAbertos]      = useState(new Set())
 
   const [modalAberto,        setModalAberto]        = useState(false)
   const [modoModal,          setModoModal]          = useState('incluir')
@@ -260,11 +263,13 @@ export default function MetasServicosConsultor() {
       })
     })
     setExpandedEmpresas(emps); setExpandedDepts(depts); setExpandedSetores(sets)
+    setSegAbertos(new Set(agruparPorSegmento(Object.entries(tree), empresas).map(([l]) => l)))
   }
 
   const recolherTudo = () => {
     setGrupoAberto(false)
     setExpandedEmpresas(new Set()); setExpandedDepts(new Set()); setExpandedSetores(new Set())
+    setSegAbertos(new Set())
   }
 
   const setoresDoDepto = useMemo(()=>setores.filter(s=>s.departamento_id===form.departamento_id && s.tipo_setor==='manutencao_reparo'),[setores,form.departamento_id])
@@ -535,24 +540,37 @@ export default function MetasServicosConsultor() {
                 const grupoTotal = sumArr(grupoMeses)
                 return (
                   <>
-                    <tr className="cursor-pointer bg-blue-950 hover:bg-blue-900 transition-colors sticky top-[41px] z-10" onClick={() => setGrupoAberto(v=>!v)}>
-                      <td className="px-3 py-2.5 text-white font-bold sticky left-0 bg-blue-950 z-10 whitespace-nowrap"><div className="flex items-center gap-2">{grupoAberto?<ChevronDown size={15}/>:<ChevronRight size={15}/>}🏢 Grupo Caiobá</div></td>
-                      {grupoMeses.map((v,i)=><td key={i} className="px-1 py-2.5 text-right text-xs font-bold text-blue-200 whitespace-nowrap">{v>0?fmtBRL(v):'—'}</td>)}
-                      <td className="px-2 py-2.5 text-right text-xs font-bold text-amber-300 bg-blue-900 whitespace-nowrap">{grupoTotal>0?fmtBRL(grupoTotal):'—'}</td>
+                    <tr className="cursor-pointer bg-slate-300 hover:bg-slate-200 transition-colors sticky top-[41px] z-10" onClick={() => setGrupoAberto(v=>!v)}>
+                      <td className="px-3 py-2.5 text-slate-900 font-bold sticky left-0 bg-slate-300 z-10 whitespace-nowrap"><div className="flex items-center gap-2">{grupoAberto?<ChevronDown size={15}/>:<ChevronRight size={15}/>}Grupo Caiobá<LogoGrupo /></div></td>
+                      {grupoMeses.map((v,i)=><td key={i} className="px-1 py-2.5 text-right text-xs font-bold text-slate-800 whitespace-nowrap">{v>0?fmtBRL(v):'—'}</td>)}
+                      <td className="px-2 py-2.5 text-right text-xs font-bold text-indigo-900 bg-slate-400 whitespace-nowrap">{grupoTotal>0?fmtBRL(grupoTotal):'—'}</td>
                       <td colSpan="2"/>
                     </tr>
 
-                    {grupoAberto && Object.entries(tree).map(([empId, emp]) => {
+                    {grupoAberto && agruparPorSegmento(Object.entries(tree), empresas).map(([segLabel, segEntries]) => {
+                      const segMeses = Array(12).fill(0)
+                      segEntries.forEach(([, e]) => aggEmp(e).forEach((v, i) => { segMeses[i] += v }))
+                      const segTotal = sumArr(segMeses)
+                      const segAberto = segAbertos.has(segLabel)
+                      return (
+                        <React.Fragment key={segLabel}>
+                          <tr className="cursor-pointer bg-sky-100 hover:bg-sky-50 transition-colors" onClick={() => toggle(segAbertos, setSegAbertos, segLabel)}>
+                            <td className="px-3 py-2 text-sky-950 font-bold sticky left-0 bg-sky-100 z-10 whitespace-nowrap"><div className="flex items-center gap-2 pl-2">{segAberto?<ChevronDown size={14}/>:<ChevronRight size={14}/>}{segLabel}<LogoSegmento rotulo={segLabel} /></div></td>
+                            {segMeses.map((v,i)=><td key={i} className="px-1 py-2 text-right text-xs font-semibold text-sky-900 whitespace-nowrap">{v>0?fmtBRL(v):'—'}</td>)}
+                            <td className="px-2 py-2 text-right text-xs font-bold text-sky-900 bg-sky-200 whitespace-nowrap">{segTotal>0?fmtBRL(segTotal):'—'}</td>
+                            <td colSpan="2"/>
+                          </tr>
+                          {segAberto && segEntries.map(([empId, emp]) => {
                       const empMeses=aggEmp(emp); const empTotal=sumArr(empMeses)
 
                       return (
                         <React.Fragment key={empId}>
-                          <tr className="cursor-pointer bg-indigo-700 hover:bg-indigo-600 transition-colors" onClick={() => toggle(expandedEmpresas,setExpandedEmpresas,empId)}>
-                            <td className="px-3 py-2 text-white font-bold sticky left-0 bg-indigo-700 z-10 whitespace-nowrap">
+                          <tr className="cursor-pointer bg-emerald-100 hover:bg-emerald-200 transition-colors" onClick={() => toggle(expandedEmpresas,setExpandedEmpresas,empId)}>
+                            <td className="px-3 py-2 text-emerald-950 font-bold sticky left-0 bg-emerald-100 z-10 whitespace-nowrap">
                               <div className="flex items-center gap-2 pl-4">{expandedEmpresas.has(empId)?<ChevronDown size={14}/>:<ChevronRight size={14}/>}{emp.nome}</div>
                             </td>
-                            {empMeses.map((v,i)=><td key={i} className="px-1 py-2 text-right text-xs font-semibold text-indigo-200 whitespace-nowrap">{v>0?fmtBRL(v):'—'}</td>)}
-                            <td className="px-2 py-2 text-right text-xs font-bold text-amber-300 bg-indigo-800 whitespace-nowrap">{empTotal>0?fmtBRL(empTotal):'—'}</td>
+                            {empMeses.map((v,i)=><td key={i} className="px-1 py-2 text-right text-xs font-semibold text-emerald-900 whitespace-nowrap">{v>0?fmtBRL(v):'—'}</td>)}
+                            <td className="px-2 py-2 text-right text-xs font-bold text-emerald-900 bg-emerald-200 whitespace-nowrap">{empTotal>0?fmtBRL(empTotal):'—'}</td>
                             <td colSpan="2"/>
                           </tr>
 
@@ -562,8 +580,8 @@ export default function MetasServicosConsultor() {
                             const dKey=`${empId}§${deptId}`; const dMeses=aggDept(dept); const dTotal=sumArr(dMeses)
                             return (
                               <React.Fragment key={deptId}>
-                                <tr className="cursor-pointer bg-slate-200 hover:bg-slate-300 transition-colors" onClick={()=>toggle(expandedDepts,setExpandedDepts,dKey)}>
-                                  <td className="px-3 py-1.5 text-slate-800 font-bold sticky left-0 bg-slate-200 z-10 whitespace-nowrap"><div className="flex items-center gap-2 pl-8">{expandedDepts.has(dKey)?<ChevronDown size={13}/>:<ChevronRight size={13}/>}<span className="text-slate-500 font-normal mr-0.5">Departamento:</span><span className="font-bold">{dept.nome}</span></div></td>
+                                <tr className="cursor-pointer bg-emerald-50 hover:bg-emerald-100 transition-colors" onClick={()=>toggle(expandedDepts,setExpandedDepts,dKey)}>
+                                  <td className="px-3 py-1.5 text-slate-800 font-bold sticky left-0 bg-emerald-50 z-10 whitespace-nowrap"><div className="flex items-center gap-2 pl-8">{expandedDepts.has(dKey)?<ChevronDown size={13}/>:<ChevronRight size={13}/>}<span className="text-slate-500 font-normal mr-0.5">Departamento:</span><span className="font-bold">{dept.nome}</span></div></td>
                                   {dMeses.map((v,i)=><td key={i} className="px-1 py-1.5 text-right text-xs font-semibold text-slate-700 whitespace-nowrap">{v>0?fmtBRL(v):'—'}</td>)}
                                   <td className="px-2 py-1.5 text-right text-xs font-bold text-indigo-700 bg-indigo-50 whitespace-nowrap">{dTotal>0?fmtBRL(dTotal):'—'}</td>
                                   <td colSpan="2"/>
@@ -605,8 +623,8 @@ export default function MetasServicosConsultor() {
                                   }
                                   return (
                                     <React.Fragment key={sId}>
-                                      <tr className="cursor-pointer bg-slate-100 hover:bg-slate-200 transition-colors" onClick={()=>toggle(expandedSetores,setExpandedSetores,sKey)}>
-                                        <td className="px-3 py-1.5 sticky left-0 bg-slate-100 z-10 whitespace-nowrap"><div className="flex items-center gap-2 pl-12">{expandedSetores.has(sKey)?<ChevronDown size={12}/>:<ChevronRight size={12}/>}<span className="text-slate-400 mr-0.5">Setor:</span><span className="font-semibold text-slate-700">{setor.nome}</span></div></td>
+                                      <tr className="cursor-pointer bg-slate-50 hover:bg-slate-100 transition-colors" onClick={()=>toggle(expandedSetores,setExpandedSetores,sKey)}>
+                                        <td className="px-3 py-1.5 sticky left-0 bg-slate-50 z-10 whitespace-nowrap"><div className="flex items-center gap-2 pl-12">{expandedSetores.has(sKey)?<ChevronDown size={12}/>:<ChevronRight size={12}/>}<span className="text-slate-400 mr-0.5">Setor:</span><span className="font-semibold text-slate-700">{setor.nome}</span></div></td>
                                         {sMeses.map((v,i)=>{
                                           const pct = pctSetor[i]
                                           const poolVal = getPoolVal(i+1)
@@ -666,6 +684,9 @@ export default function MetasServicosConsultor() {
                         </React.Fragment>
                       )
                     })}
+                        </React.Fragment>
+                      )
+                    })}
                   </>
                 )
               })()}
@@ -687,7 +708,7 @@ export default function MetasServicosConsultor() {
                 <div className="col-span-3"><label className={LBL}>Empresa *</label>
                   <select name="empresa_id" className={SEL} value={form.empresa_id} onChange={handleFormChange} disabled={modoModal !== 'incluir'}>
                     <option value="">Selecione...</option>
-                    {empresas.map(e=><option key={e.id} value={e.id}>{e.empresa_fantasia||e.nome_empresa}</option>)}
+                    {empresas.filter(e => ['DAF', 'HONDA'].includes(String(e.marca || '').toUpperCase())).map(e=><option key={e.id} value={e.id}>{e.empresa_fantasia||e.nome_empresa}</option>)}
                   </select></div>
                 <div><label className={LBL}>Ano</label>
                   <select name="ano" className={SEL} value={form.ano} onChange={handleFormChange} disabled={modoModal !== 'incluir'}>

@@ -847,13 +847,14 @@ export const apiService = {
     return { success: true }
   },
 
-  createAgrupamentoEmpresa: async ({ nome_agrupamento, segmento_id, segmento_nome, ativo }) => {
+  createAgrupamentoEmpresa: async ({ nome_agrupamento, segmento_id, segmento_nome, marca, ativo }) => {
     const { data, error } = await supabase
       .from('dim_agrupamento_empresas')
       .insert([{
         nome_agrupamento,
         segmento_id,
         segmento_nome,
+        marca: marca || null,
         ativo: ativo ?? true
       }])
       .select()
@@ -861,10 +862,10 @@ export const apiService = {
     return data?.[0]
   },
 
-  updateAgrupamentoEmpresa: async (id, { nome_agrupamento, segmento_id, segmento_nome, ativo }) => {
+  updateAgrupamentoEmpresa: async (id, { nome_agrupamento, segmento_id, segmento_nome, marca, ativo }) => {
     const { data, error } = await supabase
       .from('dim_agrupamento_empresas')
-      .update({ nome_agrupamento, segmento_id, segmento_nome, ativo: ativo ?? true, data_alteracao: new Date().toISOString() })
+      .update({ nome_agrupamento, segmento_id, segmento_nome, marca: marca || null, ativo: ativo ?? true, data_alteracao: new Date().toISOString() })
       .eq('id', id)
       .select()
     if (error) throw error
