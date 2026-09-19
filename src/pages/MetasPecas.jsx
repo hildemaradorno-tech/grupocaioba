@@ -713,6 +713,16 @@ export default function MetasPecas() {
                                   const setKey = `${deptKey}§${sId}`
                                   const setMeses = aggSetor(setor)
                                   const setTotal = sumArr(setMeses)
+                                  // Situação por Setor (não por colaborador): se algum mês com valor de qualquer
+                                  // colaborador do setor não estiver aprovado, o setor inteiro fica "Aguard. Aprovação".
+                                  let setorTemValor = false, setorAprovado = true
+                                  Object.values(setor.boxes).forEach(bx => Object.values(bx.colabs).forEach(co => Object.values(co.meses).forEach(m => {
+                                    if (Number(m.meta_faturamento) > 0) {
+                                      setorTemValor = true
+                                      if (cellState(m.meta_faturamento, m.meta_aprovada) !== 'ok') setorAprovado = false
+                                    }
+                                  })))
+                                  const setorStatusLabel = setorAprovado ? 'APROVADO' : 'AGUARDANDO APROVACAO'
                                   return (
                                     <React.Fragment key={sId}>
                                       {/* ── SETOR ── */}
@@ -729,7 +739,9 @@ export default function MetasPecas() {
                                           <td key={i} className="px-1 py-1.5 text-right text-xs text-slate-600 whitespace-nowrap">{v > 0 ? fmtBRL(v) : '—'}</td>
                                         ))}
                                         <td className="px-2 py-1.5 text-right text-xs font-semibold text-indigo-600 bg-indigo-50/60 whitespace-nowrap">{setTotal > 0 ? fmtBRL(setTotal) : '—'}</td>
-                                        <td />
+                                        <td className="px-2 py-1.5 text-center whitespace-nowrap" colSpan="2">
+                                          {setorTemValor && <span className={`px-2 py-0.5 rounded-full text-xs font-semibold whitespace-nowrap ${STATUS_CLS[setorStatusLabel] || 'bg-slate-100 text-slate-500'}`}>{STATUS_DISPLAY[setorStatusLabel] || setorStatusLabel}</span>}
+                                        </td>
                                       </tr>
 
                                       {expandedSetores.has(setKey) && Object.entries(setor.boxes).map(([bId, box]) => {
@@ -780,18 +792,7 @@ export default function MetasPecas() {
                                                   <td className="px-2 py-2 text-right text-xs font-bold text-indigo-700 bg-indigo-50 border-l border-indigo-100 whitespace-nowrap">
                                                     {colTotal > 0 ? fmtBRL(colTotal) : '—'}
                                                   </td>
-                                                  <td className="px-2 py-2 text-center whitespace-nowrap" colSpan="2">
-                                                    {(() => {
-                                                      const mesesComValor = Object.values(colab.meses).filter(m => Number(m.meta_faturamento) > 0)
-                                                      const aprovado = mesesComValor.length > 0 && mesesComValor.every(m => cellState(m.meta_faturamento, m.meta_aprovada) === 'ok')
-                                                      const label = aprovado ? 'APROVADO' : 'AGUARDANDO APROVACAO'
-                                                      return (
-                                                        <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${STATUS_CLS[label] || 'bg-slate-100 text-slate-500'}`}>
-                                                          {STATUS_DISPLAY[label] || label}
-                                                        </span>
-                                                      )
-                                                    })()}
-                                                  </td>
+                                                  <td colSpan="2" />
                                                 </tr>
                                               )
                                             })}
