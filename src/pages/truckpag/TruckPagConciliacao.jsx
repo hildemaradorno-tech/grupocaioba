@@ -200,11 +200,11 @@ export default function TruckPagConciliacao() {
             <p className="text-xs text-slate-500 mt-0.5">Repasses Fabricante x Saldo disponível na concessionária — vinculados pela soma do valor por estabelecimento/data.</p>
           </div>
           <div className="flex items-center gap-3">
-            <button onClick={() => setConfigAberto(true)} title="Configurações" className="flex items-center justify-center border border-slate-200 text-slate-600 hover:bg-slate-50 p-2 rounded-md transition-colors">
-              <Settings className="h-3.5 w-3.5" />
-            </button>
             <button onClick={sincronizar} disabled={sincronizando} title={sincronizando ? 'Atualizando...' : 'Atualizar todas as abas do SharePoint'} className="flex items-center justify-center bg-blue-600 hover:bg-blue-700 text-white p-2 rounded-md shadow-sm transition-colors disabled:opacity-50">
               <RefreshCw className={`h-4 w-4 ${sincronizando ? 'animate-spin' : ''}`} />
+            </button>
+            <button onClick={() => setConfigAberto(true)} title="Configurações" className="flex items-center justify-center border border-slate-200 text-slate-600 hover:bg-slate-50 p-2 rounded-md transition-colors">
+              <Settings className="h-3.5 w-3.5" />
             </button>
             <button onClick={() => setRegrasAberto(true)} title="Regras de conciliação" className="flex items-center justify-center p-2 rounded-md text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 shadow-sm transition-colors">
               <HelpCircle className="h-3.5 w-3.5 text-slate-500" />

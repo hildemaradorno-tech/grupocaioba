@@ -180,13 +180,6 @@ export default function TruckPagTitulos() {
     else { setSortCol(col); setSortDir('asc') }
   }
 
-  // Só títulos com repasse encontrado têm o que expandir.
-  const idsExpansiveis = useMemo(() => ordenadas.filter(l => l.repasseMatch).map(l => l.id), [ordenadas])
-  const todosExpandidos = idsExpansiveis.length > 0 && idsExpansiveis.every(id => expandidas.has(id))
-  const alternarTodasExpandidas = () => {
-    setExpandidas(todosExpandidos ? new Set() : new Set(idsExpansiveis))
-  }
-
   const totalSaldo = filtradas.reduce((s, l) => s + (l.titulo_saldo || 0), 0)
   const totalValor = filtradas.reduce((s, l) => s + (l.titulo_valor || 0), 0)
   const filtroAvancadoAtivo = !!(filtroEmpresa.trim() || filtroBusca.trim())
@@ -239,7 +232,7 @@ export default function TruckPagTitulos() {
           <div>
             <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
               <Truck className="h-5 w-5 text-blue-600" />
-              Contas a Receber TruckPag
+              Títulos a Receber
               <span className="relative group cursor-help">
                 <Info className="h-3.5 w-3.5 text-slate-400" />
                 <span className="absolute top-full left-0 mt-2 w-96 text-[10px] text-white bg-slate-700 rounded px-2 py-1.5 leading-relaxed opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 normal-case font-normal tracking-normal space-y-1">
@@ -367,16 +360,6 @@ export default function TruckPagTitulos() {
         </div>
       ) : (
         <>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            {idsExpansiveis.length > 0 && (
-              <button type="button" onClick={alternarTodasExpandidas} className="flex items-center gap-1 text-[10px] font-semibold text-slate-500 hover:text-slate-700 bg-white border border-slate-200 rounded px-1.5 py-1">
-                {todosExpandidos ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-                {todosExpandidos ? 'Recolher' : 'Expandir'}
-              </button>
-            )}
-          </div>
-        </div>
         <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-x-auto custom-scrollbar-light">
           <table className="w-full text-left border-collapse">
             <thead>

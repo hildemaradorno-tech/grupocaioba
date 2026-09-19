@@ -136,7 +136,7 @@ export default function TruckPagRelatorioDivergencias() {
         <div style="${FONT}background:#fff;padding:20px;width:${WRAP_W}px;box-sizing:border-box;">
           <div style="display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #1e293b;padding-bottom:12px;margin-bottom:14px;">
             <div>
-              <div style="font-size:24px;font-weight:800;color:#0f172a;">Relatório de Divergências — Contas a Receber TruckPag</div>
+              <div style="font-size:24px;font-weight:800;color:#0f172a;">Relatório de Divergências — Títulos a Receber</div>
               <div style="font-size:12px;color:#475569;margin-top:4px;">Títulos em aberto que foram localizados em um repasse recebido, mas cujos dados não conferem.</div>
             </div>
             <div style="text-align:right;font-size:12px;color:#475569;">Gerado em: ${new Date().toLocaleString('pt-BR')}</div>

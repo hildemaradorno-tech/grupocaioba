@@ -256,7 +256,7 @@ export default function TruckPagConfigModal({ onClose }) {
           <div className="flex items-center gap-3">
             <div className="p-2 bg-blue-100 rounded-lg"><Settings className="h-5 w-5 text-blue-600" /></div>
             <div>
-              <h2 className="text-sm font-bold text-slate-900">Configurações — Contas a Receber TruckPag</h2>
+              <h2 className="text-sm font-bold text-slate-900">Configurações — Títulos a Receber</h2>
               <p className="text-[11px] text-slate-500">Parâmetros usados pelo módulo, editáveis sem precisar de código novo.</p>
             </div>
           </div>

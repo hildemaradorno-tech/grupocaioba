@@ -360,7 +360,7 @@ export default function TruckPagRepasses() {
         <div style="font-family:Arial,Helvetica,sans-serif;background:#fff;padding:20px 20px 0 20px;width:${WRAP_W}px;box-sizing:border-box;">
           <div style="display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #1e293b;padding-bottom:12px;margin-bottom:16px;">
             <div>
-              <div style="font-size:22px;font-weight:800;color:#0f172a;">Contas a Receber TruckPag — Repasses</div>
+              <div style="font-size:22px;font-weight:800;color:#0f172a;">Títulos a Receber — Repasses</div>
             </div>
             <div style="text-align:right;font-size:13px;color:#475569;">
               <div>${repassesParaPdf.length} repasse(s)</div>
@@ -529,11 +529,11 @@ export default function TruckPagRepasses() {
             <p className="text-xs text-slate-500 mt-0.5">Extrato linha a linha dos repasses recebidos com título vinculado — sincronizado do SharePoint.</p>
           </div>
           <div className="flex items-center gap-3">
-            <button onClick={() => setConfigAberto(true)} title="Configurações" className="flex items-center justify-center border border-slate-200 text-slate-600 hover:bg-slate-50 p-2 rounded-md transition-colors">
-              <Settings className="h-3.5 w-3.5" />
-            </button>
             <button onClick={sincronizar} disabled={sincronizando} title={sincronizando ? 'Atualizando...' : 'Atualizar todas as abas do SharePoint'} className="flex items-center justify-center bg-blue-600 hover:bg-blue-700 text-white p-2 rounded-md shadow-sm transition-colors disabled:opacity-50">
               <RefreshCw className={`h-4 w-4 ${sincronizando ? 'animate-spin' : ''}`} />
+            </button>
+            <button onClick={() => setConfigAberto(true)} title="Configurações" className="flex items-center justify-center border border-slate-200 text-slate-600 hover:bg-slate-50 p-2 rounded-md transition-colors">
+              <Settings className="h-3.5 w-3.5" />
             </button>
             <button onClick={() => setRegrasAberto(true)} title="Regras de conciliação" className="flex items-center justify-center p-2 rounded-md text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 shadow-sm transition-colors">
               <HelpCircle className="h-3.5 w-3.5 text-slate-500" />

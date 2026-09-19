@@ -6,7 +6,7 @@ import { useAuth } from '../../context/AuthContext'
 const LINKS = [
   { to: '/truckpag/conciliacao', label: 'Saldo Concessionária', icon: Link2 },
   { to: '/truckpag/repasses', label: 'Repasses', icon: ArrowLeftRight },
-  { to: '/truckpag/titulos', label: 'Títulos', icon: Receipt },
+  { to: '/truckpag/titulos', label: 'Títulos a Receber', icon: Receipt },
 ]
 
 export default function TruckPagNav() {

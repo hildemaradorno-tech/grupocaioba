@@ -513,7 +513,7 @@ export default function SidebarLayout() {
             {canView('honda/contas-a-receber') && <FlyItem to="/honda/contas-a-receber" icon={Bike} onClose={closeFlyout}>Contas a Receber HONDA</FlyItem>}
             {canView('bpm/nfe-cancelamento-devolucao') && <FlyItem to="/bpm/nfe-cancelamento-devolucao" icon={Workflow} onClose={closeFlyout}>Cancelamento/Devolução NF-e</FlyItem>}
       {(canView('truckpag/titulos') || canView('truckpag/conciliacao')) && (
-        <FlyItem to="/truckpag/titulos" icon={Truck} onClose={closeFlyout}>Contas a Receber TruckPag</FlyItem>
+        <FlyItem to="/truckpag/titulos" icon={Truck} onClose={closeFlyout}>Títulos a Receber</FlyItem>
       )}
             {(canView('auditoria/responsaveis') || canView('auditoria/situacoes') || canView('auditoria-os-aberto')) && (
               <FlyGroup label="Cadastros de Auditoria" />
