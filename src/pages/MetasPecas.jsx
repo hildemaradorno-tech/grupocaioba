@@ -1,7 +1,6 @@
 ﻿import React, { useEffect, useState, useMemo, useCallback } from 'react'
 import { useSessionState } from '../hooks/useSessionState'
-import { Plus, Trash2, Edit2, X, AlertTriangle, ChevronRight, ChevronDown, Target, Loader2, CheckCircle2, Sparkles, Pencil, ClipboardCheck, Eye } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
+import { Plus, Trash2, Edit2, X, AlertTriangle, ChevronRight, ChevronDown, Target, Loader2, CheckCircle2, Sparkles, Pencil, Eye } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import PermissionActionButtons from '../components/PermissionActionButtons'
 import { EmpresaMultiFilter, empresaParam, filtrarPorEmpresas, empresaUnica } from '../components/EmpresaMultiFilter'
@@ -55,10 +54,12 @@ function pendingCountEmp(emp) {
   return n
 }
 
+// Moeda contábil: R$ na frente, negativo entre parênteses, 2 casas (mesmo padrão das abas de Serviços).
 const fmtBRL = (v) => {
   const n = Number(v)
   if (!v && v !== 0) return '—'
-  return n.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
+  const s = Math.abs(n).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return n < 0 ? `(${s})` : s
 }
 const calcMedia = (meta, dias) => {
   const m = Number(meta), d = Number(dias)
@@ -85,7 +86,6 @@ const FORM_VAZIO = {
   box_id: '', box_nome: '',
   cargo_id: '', cargo_nome: '',
   colaborador_id: '', colaborador_nome: '',
-  data_admissao: '',
   ano: anoAtual,
   status: 'AGUARDANDO APROVACAO',
 }
@@ -102,11 +102,11 @@ function parseBRL(str) {
   return parseFloat(s) || 0
 }
 
-// Formata número para exibição pt-BR durante edição (sem símbolo R$)
+// Exibição de valor em campo/célula (fora de edição): moeda contábil com 2 casas; vazio se não houver valor.
 function formatBRL(n) {
   const num = Number(n)
   if (!num && num !== 0) return ''
-  return num.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
+  return fmtBRL(num)
 }
 
 // Input de valor R$ com máscara pt-BR — edita como texto, salva como número
@@ -134,7 +134,7 @@ function MetaInput({ value, onChange, className = '' }) {
       onChange={handleChange}
       onFocus={handleFocus}
       onBlur={handleBlur}
-      placeholder="0"
+      placeholder="0,00"
       className={`w-full text-xs text-right outline-none bg-transparent text-slate-800 ${className}`}
     />
   )
@@ -211,8 +211,8 @@ function MetaCellInput({ rowId, value, onSave, estado }) {
         onChange={e => setRaw(e.target.value)}
         onFocus={handleFocus}
         onBlur={handleBlur}
-        placeholder="0"
-        className="w-full text-xs text-right border-0 outline-none bg-transparent text-slate-800"
+        placeholder="0,00"
+        className="w-full text-xs font-mono text-right border-0 outline-none bg-transparent text-slate-800"
       />
       {estado === 'new' && (
         <span className="absolute -top-1.5 -right-1.5 flex items-center justify-center w-3.5 h-3.5 rounded-full bg-blue-500 text-white" title="Novo valor">
@@ -229,7 +229,6 @@ function MetaCellInput({ rowId, value, onSave, estado }) {
 }
 
 export default function MetasPecas() {
-  const navigate = useNavigate()
   const [empresas,     setEmpresas]     = useState([])
   const [departamentos,setDepartamentos]= useState([])
   const [setores,      setSetores]      = useState([])
@@ -396,10 +395,6 @@ export default function MetasPecas() {
     boxes.filter(b => (Array.isArray(b.setor_ids) ? b.setor_ids : [b.setor_id]).includes(form.setor_id)),
     [boxes, form.setor_id])
 
-  const cargosDoDepto = useMemo(() =>
-    !form.departamento_id ? cargos : cargos.filter(c => (c.departamento_ids || []).includes(form.departamento_id)),
-    [cargos, form.departamento_id])
-
   const funcsEmp = useMemo(() => {
     let lista = funcionarios
     if (form.empresa_id)      lista = lista.filter(f => f.empresa_id === form.empresa_id)
@@ -407,16 +402,6 @@ export default function MetasPecas() {
     if (form.setor_id)        lista = lista.filter(f => Array.isArray(f.setor_ids) ? f.setor_ids.includes(form.setor_id) : f.setor_id === form.setor_id)
     return lista
   }, [funcionarios, form.empresa_id, form.departamento_id, form.setor_id])
-
-  const mesAdmissao = useMemo(() => {
-    if (!form.data_admissao) return 0
-    const [admAno, admMes] = form.data_admissao.split('-').map(Number)
-    if (admAno > Number(form.ano)) return 12
-    if (admAno < Number(form.ano)) return 0
-    return admMes - 1
-  }, [form.data_admissao, form.ano])
-
-  const isMesLocked = (i) => i < mesAdmissao
 
   const handleFormChange = async (e) => {
     const { name, value } = e.target
@@ -439,15 +424,12 @@ export default function MetasPecas() {
       up.colaborador_id = ''; up.colaborador_nome = ''
     }
     if (name === 'box_id') { up.box_nome = boxes.find(x => x.id === value)?.nome_box || '' }
-    if (name === 'cargo_id') { up.cargo_nome = cargos.find(x => x.id === value)?.nome_cargo || '' }
     if (name === 'colaborador_id') {
       if (value === 'A_CONTRATAR') {
         up.colaborador_nome = 'A contratar'
-        up.data_admissao = ''
       } else {
         const func = funcionarios.find(x => x.id === value)
         up.colaborador_nome = func?.nome_funcionario || ''
-        up.data_admissao = func?.data_admissao || ''
         if (func) {
           const deptId = Array.isArray(func.departamento_ids) ? func.departamento_ids[0] : (func.departamento_id || '')
           const setorId = Array.isArray(func.setor_ids) ? func.setor_ids[0] : (func.setor_id || '')
@@ -490,7 +472,6 @@ export default function MetasPecas() {
     )
     if (!rows.length) return
     const r0 = rows[0]
-    const func = funcionarios.find(f => f.id === colabId) || funcionarios.find(f => f.nome_funcionario === r0.colaborador_nome)
     setForm({
       ...FORM_VAZIO,
       empresa_id:       r0.empresa_id,
@@ -505,7 +486,6 @@ export default function MetasPecas() {
       cargo_nome:       r0.cargo_nome        || '',
       colaborador_id:   colabId,
       colaborador_nome: r0.colaborador_nome  || '',
-      data_admissao:    func?.data_admissao  || '',
       ano:              filtroAno,
     })
     setMesesForm(Array.from({ length: 12 }, (_, i) => {
@@ -552,9 +532,14 @@ export default function MetasPecas() {
     if (!form.colaborador_id)  { setErroModal('Selecione o Colaborador.'); return }
     setSalvando(true); setErroModal(null)
     try {
-      const { data_admissao: _da, ...formPayload } = form
+      // Campos uuid não podem ir como string vazia — vira null (ex: Box "Nenhum", ou Cargo, que não
+      // tem mais seletor no formulário).
+      const formPayload = {
+        ...form,
+        box_id:   form.box_id   || null,
+        cargo_id: form.cargo_id || null,
+      }
       for (const m of mesesForm) {
-        if (isMesLocked(m.mes - 1)) continue
         const meta  = Number(m.meta_faturamento) || 0
         const dias  = Number(m.dias_uteis_reais) || 0
         await apiService.upsertMetaPecas({
@@ -582,14 +567,6 @@ export default function MetasPecas() {
     }
   }
 
-  const totalColabs = useMemo(() =>
-    Object.values(tree).reduce((s, emp) =>
-      s + Object.values(emp.depts).reduce((sd, d) =>
-        sd + Object.values(d.setores).reduce((ss, st) =>
-          ss + Object.values(st.boxes).reduce((sb, bx) =>
-            sb + Object.keys(bx.colabs).length, 0), 0), 0), 0),
-    [tree])
-
   return (
     <div className="flex flex-col h-full p-6 gap-4">
       {/* CABEÇALHO */}
@@ -602,9 +579,6 @@ export default function MetasPecas() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={() => navigate('/metas/gestao-aprovacao')} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-indigo-300 bg-indigo-50 text-indigo-700 text-sm font-medium hover:bg-indigo-100 transition-colors">
-            <ClipboardCheck size={16} /> Gestão de Aprovação
-          </button>
           {canEdit && (
             <button onClick={abrirIncluir} className={BTN_PRI}>
               <Plus size={16} /> Adicionar Colaborador
@@ -624,9 +598,6 @@ export default function MetasPecas() {
           <select className={SEL} value={filtroAno} onChange={e => setFiltroAno(Number(e.target.value))}>
             {ANOS.map(a => <option key={a} value={a}>{a}</option>)}
           </select>
-        </div>
-        <div className="ml-auto self-end text-sm text-slate-500">
-          {Object.keys(tree).length} empresa(s) · {totalColabs} colaborador(es)
         </div>
       </div>
 
@@ -871,8 +842,8 @@ export default function MetasPecas() {
                 </div>
               </div>
 
-              {/* Departamento + Setor */}
-              <div className="grid grid-cols-2 gap-4">
+              {/* Departamento + Setor + Box */}
+              <div className="grid grid-cols-3 gap-4">
                 <div>
                   <label className={LBL}>Departamento</label>
                   <select name="departamento_id" className={SEL} value={form.departamento_id} onChange={handleFormChange} disabled>
@@ -888,47 +859,25 @@ export default function MetasPecas() {
                     {setoresDoDepto.map(s => <option key={s.id} value={s.id}>{s.nome_setor}</option>)}
                   </select>
                 </div>
-              </div>
-
-              {/* Box (condicional) + Cargo */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className={!form.setor_id ? 'opacity-40 pointer-events-none' : ''}>
-                  <label className={LBL}>Box {!form.setor_id && <span className="font-normal text-slate-400">(selecione o setor)</span>}</label>
+                <div>
+                  <label className={LBL}>Box</label>
                   <select name="box_id" className={SEL} value={form.box_id} onChange={handleFormChange}
                           disabled={!form.setor_id}>
                     <option value="">Nenhum</option>
                     {boxesDoSetor.map(b => <option key={b.id} value={b.id}>{b.nome_box}</option>)}
                   </select>
                 </div>
-                <div>
-                  <label className={LBL}>Cargo</label>
-                  <select name="cargo_id" className={SEL} value={form.cargo_id} onChange={handleFormChange}
-                          disabled={!form.departamento_id}>
-                    <option value="">Selecione...</option>
-                    {cargosDoDepto.map(c => <option key={c.id} value={c.id}>{c.nome_cargo}</option>)}
-                  </select>
-                </div>
               </div>
 
-              {/* Colaborador + Data Admissão */}
-              <div className="grid grid-cols-3 gap-4 items-end">
-                <div className="col-span-2">
-                  <label className={LBL}>Colaborador *</label>
-                  <select name="colaborador_id" className={SEL} value={form.colaborador_id} onChange={handleFormChange}
-                          disabled={!form.empresa_id || modoModal !== 'incluir'}>
-                    <option value="">Selecione...</option>
-                    <option value="A_CONTRATAR">A contratar</option>
-                    {funcsEmp.map(f => <option key={f.id} value={f.id}>{f.nome_funcionario}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className={LBL}>Data Admissão</label>
-                  <div className={`w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-slate-50 ${form.data_admissao ? 'text-slate-600' : 'text-slate-400 italic'}`}>
-                    {form.data_admissao
-                      ? (() => { const [y,m,d] = form.data_admissao.split('-'); return `${d}/${m}/${y}` })()
-                      : 'Selecione o colaborador'}
-                  </div>
-                </div>
+              {/* Colaborador */}
+              <div>
+                <label className={LBL}>Colaborador *</label>
+                <select name="colaborador_id" className={SEL} value={form.colaborador_id} onChange={handleFormChange}
+                        disabled={!form.empresa_id || modoModal !== 'incluir'}>
+                  <option value="">Selecione...</option>
+                  <option value="A_CONTRATAR">A contratar</option>
+                  {funcsEmp.map(f => <option key={f.id} value={f.id}>{f.nome_funcionario}</option>)}
+                </select>
               </div>
 
               {/* Grade 12 meses */}
@@ -963,9 +912,7 @@ export default function MetasPecas() {
                       <tr>
                         <td className="text-xs font-semibold text-slate-500 px-1">Meta R$</td>
                         {mesesForm.map((m, i) => (
-                          isMesLocked(i)
-                            ? <td key={i} className="bg-slate-100 border border-slate-200 rounded p-1 text-right text-xs text-slate-400 select-none px-2">—</td>
-                            : modoModal === 'visualizar'
+                          modoModal === 'visualizar'
                               ? <td key={i} className="bg-slate-100 border border-slate-200 rounded p-1 text-right text-xs text-slate-600 font-mono select-none px-2">
                                   {parseBRL(m.meta_faturamento) > 0 ? formatBRL(m.meta_faturamento) : '—'}
                                 </td>
@@ -984,9 +931,7 @@ export default function MetasPecas() {
                       <tr>
                         <td className="text-xs font-semibold text-slate-500 px-1">Dias Úteis</td>
                         {mesesForm.map((m, i) => (
-                          isMesLocked(i)
-                            ? <td key={i} className="bg-slate-100 border border-slate-200 rounded p-1 text-center text-xs text-slate-400 select-none">—</td>
-                            : modoModal === 'visualizar'
+                          modoModal === 'visualizar'
                               ? <td key={i} className="bg-slate-100 border border-slate-200 rounded p-1 text-center text-xs text-slate-600 select-none">
                                   {Number(m.dias_uteis_reais) > 0 ? formatDias(m.dias_uteis_reais) : '—'}
                                 </td>
