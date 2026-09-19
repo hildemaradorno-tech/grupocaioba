@@ -1,11 +1,12 @@
 import React, { useEffect, useState, useMemo } from 'react'
 import { useSessionState } from '../hooks/useSessionState'
-import { TrendingUp, ChevronRight, ChevronDown, Loader2 } from 'lucide-react'
+import { TrendingUp, ChevronRight, ChevronDown, Loader2, Calculator } from 'lucide-react'
 import { apiService } from '../services/api'
 import { EmpresaMultiFilter, empresaParam, filtrarPorEmpresas, empresasDasMetas } from '../components/EmpresaMultiFilter'
 import { valoresMetaMecanico, resolverPosicaoMecanico } from '../utils/metasMecanico'
 import { agruparPorSegmento } from '../utils/segmentoMarca'
 import { LogoGrupo, LogoSegmento } from '../components/LogosMarca'
+import CalculoFuncionarioModal from '../components/CalculoFuncionarioModal'
 
 const anoAtual = new Date().getFullYear()
 const ANOS = Array.from({ length: 7 }, (_, i) => anoAtual - 1 + i)
@@ -57,9 +58,10 @@ function buildUnifiedTree(allRows, deptMap, setorMap, boxMap, funcMap) {
     const setor = dept.setores[sId]
     if (!setor.boxes[bId]) setor.boxes[bId] = { nome: bNome, colabs: {} }
     const box = setor.boxes[bId]
-    if (!box.colabs[coId]) box.colabs[coId] = { nome: coNome, meses: Array(12).fill(0), tem: false, pend: false }
+    if (!box.colabs[coId]) box.colabs[coId] = { nome: coNome, meses: Array(12).fill(0), tem: false, pend: false, linhas: [] }
     const colab = box.colabs[coId]
     colab.meses[r.mes - 1] += val
+    colab.linhas.push(r)
     const grav = Number(r._grav ?? r.meta_faturamento) || 0
     if (grav) {
       colab.tem = true
@@ -109,6 +111,7 @@ export default function MetasPosVendaTotal() {
   const [rowsMecanico,  setRowsMecanico]  = useState([])
   const [rowsConsultor, setRowsConsultor] = useState([])
   const [rowsTerceiros, setRowsTerceiros] = useState([])
+  const [rowsFunilaria, setRowsFunilaria] = useState([])
   const [filtroAno,     setFiltroAno]     = useSessionState('mpvs_servicos_ano', anoAtual)
   const [filtroEmpresa, setFiltroEmpresa] = useSessionState('mpvs_servicos_empresas', [])
   const [filtroVisu,    setFiltroVisu]    = useSessionState('mpvs_servicos_visu', 'total')
@@ -117,6 +120,44 @@ export default function MetasPosVendaTotal() {
   const [expanded,      setExpanded]      = useState(new Set())
   const [segAbertos,   setSegAbertos]   = useState(new Set())
   const [grupoAberto,  setGrupoAberto]  = useState(true)
+  const [calcAberto,    setCalcAberto]    = useState(null)
+
+  // Referência do setor (Mecânica + Terceiros, ou Funilaria/Pintura) por mês — mesma regra da aba Consultor.
+  const referenciasConsultor = (empresaId, setorId, setorNome) => {
+    const refs = Array.from({ length: 12 }, () => ({ pecas: 0, servicos: 0, terceiros: 0 }))
+    const ehFun = /funilaria|pintura/i.test(setorNome || '')
+    if (ehFun) {
+      rowsFunilaria.filter(r => r.empresa_id === empresaId).forEach(r => {
+        refs[r.mes - 1].pecas += Number(r.meta_pecas) || 0
+        refs[r.mes - 1].servicos += Number(r.meta_servicos) || 0
+      })
+      return refs
+    }
+    const boxParaSetor = {}
+    boxes.forEach(b => {
+      const ids = Array.isArray(b.setor_ids) ? b.setor_ids : (b.setor_id ? [b.setor_id] : [])
+      const valido = ids.find(id => setores.some(s => s.id === id))
+      if (valido) boxParaSetor[b.id] = valido
+    })
+    rowsMecanico.filter(r => r.empresa_id === empresaId).forEach(r => {
+      const bId = funcionarios.find(f => f.id === r.colaborador_id)?.box_id || r.box_id
+      if (!bId || boxParaSetor[bId] !== setorId) return
+      const v = valoresMetaMecanico(r)
+      refs[r.mes - 1].servicos += v.meta_servicos
+      refs[r.mes - 1].pecas += v.meta_pecas
+    })
+    rowsTerceiros.filter(r => r.empresa_id === empresaId).forEach(r => { refs[r.mes - 1].terceiros += Number(r.meta_servicos) || 0 })
+    return refs
+  }
+
+  const abrirCalculo = (colab, eNome) => {
+    const primeira = colab.linhas[0]
+    const cons = colab.linhas.find(l => l._tipo === 'CONSULTOR')
+    setCalcAberto({
+      nome: colab.nome, empresa: eNome, empresaId: primeira?.empresa_id, ano: filtroAno, linhas: colab.linhas,
+      refs: cons ? referenciasConsultor(cons.empresa_id, cons._setorOrigemId ?? cons.setor_id, cons._setorOrigemNome ?? cons.setor_nome) : null,
+    })
+  }
 
   const tog    = (key) => setExpanded(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n })
   const isOpen = (key) => expanded.has(key)
@@ -125,7 +166,7 @@ export default function MetasPosVendaTotal() {
     setLoading(true); setError(null)
     try {
       const empId = empresaParam(filtroEmpresa)
-      const [emps, depts, sets, bxs, cargs, funcs, pecas, mecanico, consultor, terceiros] = await Promise.all([
+      const [emps, depts, sets, bxs, cargs, funcs, pecas, mecanico, consultor, terceiros, funilaria] = await Promise.all([
         apiService.getEmpresas(),
         apiService.getDepartamentos(),
         apiService.getSetores(),
@@ -136,6 +177,7 @@ export default function MetasPosVendaTotal() {
         apiService.getMetasMecanico(empId, filtroAno),
         apiService.getMetasConsultor(empId, filtroAno),
         apiService.getMetasTerceiros(empId, filtroAno),
+        apiService.getMetasFunilaria(empId, filtroAno),
       ])
       const sortedEmps = [...empresasDasMetas(emps)].sort((a,b) => (a.empresa_fantasia||'').localeCompare(b.empresa_fantasia||''))
       setEmpresas(sortedEmps)
@@ -148,6 +190,7 @@ export default function MetasPosVendaTotal() {
       setRowsMecanico(filtrarPorEmpresas(mecanico, filtroEmpresa))
       setRowsConsultor(filtrarPorEmpresas(consultor, filtroEmpresa))
       setRowsTerceiros(filtrarPorEmpresas(terceiros, filtroEmpresa))
+      setRowsFunilaria(filtrarPorEmpresas(funilaria, filtroEmpresa))
     } catch (err) { setError(err.message || String(err)) }
     finally { setLoading(false) }
   }
@@ -181,16 +224,20 @@ export default function MetasPosVendaTotal() {
   const consRowsNormalized = useMemo(() => {
     if (!consultoriaSetor) return rowsConsultor
     return rowsConsultor.map(r => {
-      const boxOrig = r.box_id ? boxes.find(b => b.id === r.box_id)
-        : boxes.find(b => (Array.isArray(b.setor_ids) ? b.setor_ids : [b.setor_id]).includes(r.setor_id))
+      // Consultor é ligado ao Setor (Mecânica / Funilaria-Pintura), não a um box: o nível de Box aqui leva o
+      // nome do setor de origem (linhas antigas ainda presas a um box mantêm o box gravado).
+      const setorOrigem = setores.find(s => s.id === r.setor_id)?.nome_setor || r.setor_nome || '—'
+      const boxAntigo = r.box_id ? boxes.find(b => b.id === r.box_id) : null
       return {
         ...r,
         departamento_id: consultoriaSetor.departamento_id || r.departamento_id,
         setor_id: consultoriaSetor.id, setor_nome: consultoriaSetor.nome_setor,
-        box_id: boxOrig?.id || '', box_nome: boxOrig?.nome_box || r.box_nome || r.setor_nome || '—',
+        box_id: boxAntigo?.id || `__cons__${r.setor_id || setorOrigem}`,
+        box_nome: boxAntigo?.nome_box || setorOrigem,
+        _setorOrigemId: r.setor_id, _setorOrigemNome: setorOrigem,
       }
     })
-  }, [rowsConsultor, consultoriaSetor, boxes])
+  }, [rowsConsultor, consultoriaSetor, boxes, setores])
 
   // Funilaria setor da tabela de dimensão
   const funSetorInfo = useMemo(() => {
@@ -222,7 +269,7 @@ export default function MetasPosVendaTotal() {
         box_id: '__terceiros__', box_nome: 'Terceiros',
         cargo_id: '__terceiros__', cargo_nome: 'Terceiros',
         colaborador_id: `__ter__${r.empresa_id}__${r.mes}`, colaborador_nome: r.empresa_nome || 'Meta Terceiros',
-        mes: r.mes, meta_faturamento: val,
+        mes: r.mes, meta_faturamento: val, meta_servicos: val,
         _grav: Number(r.meta_faturamento) || val,
         meta_aprovada: r.meta_aprovada,
       }]
@@ -232,7 +279,12 @@ export default function MetasPosVendaTotal() {
   // Árvore unificada: Peças + Consultor + Mecânico (inclui Produtivo Não Associado Funilaria) + Terceiros
   const tree = useMemo(
     () => buildUnifiedTree(
-      [...rowsPecas, ...consRowsNormalized, ...mecRowsNormalized, ...terRowsNormalized],
+      [
+        ...rowsPecas.map(r => ({ ...r, _tipo: 'PECAS' })),
+        ...consRowsNormalized.map(r => ({ ...r, _tipo: 'CONSULTOR' })),
+        ...mecRowsNormalized.map(r => ({ ...r, _tipo: 'MECANICO' })),
+        ...terRowsNormalized.map(r => ({ ...r, _tipo: 'TERCEIROS' })),
+      ],
       deptMap, setorMap, boxMap, funcMap
     ),
     [rowsPecas, consRowsNormalized, mecRowsNormalized, terRowsNormalized, deptMap, setorMap, boxMap, funcMap]
@@ -375,7 +427,15 @@ export default function MetasPosVendaTotal() {
               childRows.push(
                 <tr key={coKey} className="border-b border-slate-100 hover:bg-indigo-50/30">
                   <td className="pl-20 pr-2 py-1 text-xs text-slate-800 whitespace-nowrap font-semibold sticky left-0 bg-white">
-                    {colab.nome}
+                    <span className="inline-flex items-center gap-1.5">
+                      {colab.nome}
+                      {!String(coId).startsWith('__ter__') && (
+                        <button type="button" title="Ver cálculo" onClick={e => { e.stopPropagation(); abrirCalculo(colab, eNome) }}
+                          className="text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded p-0.5 transition-colors">
+                          <Calculator size={13} />
+                        </button>
+                      )}
+                    </span>
                   </td>
                   {mCells(colab.meses, coKey)}
                 </tr>
@@ -533,6 +593,7 @@ export default function MetasPosVendaTotal() {
           </tbody>
         </table>
       </div>
+      {calcAberto && <CalculoFuncionarioModal dados={calcAberto} onClose={() => setCalcAberto(null)} />}
     </div>
   )
 }
