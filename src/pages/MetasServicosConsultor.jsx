@@ -77,7 +77,7 @@ export default function MetasServicosConsultor() {
   const [mecRows,       setMecRows]       = useState([]) // linhas brutas de fato_rascunho_metas_servicos_mecanico
   const [totaisTer,     setTotaisTer]     = useState({}) // { empresaId: { mes: servicos } }
   const [totaisFun,     setTotaisFun]     = useState({}) // { empresaId: { mes: { servicos, pecas } } }
-  const [filtroVisu,    setFiltroVisu]    = useSessionState('msc_visu', 'total')
+  const [filtroVisu,    setFiltroVisu]    = useSessionState('mpvs_servicos_visu', 'total')
   const [loading,       setLoading]       = useState(false)
   const [error,         setError]         = useState(null)
   const [filtroEmpresa, setFiltroEmpresa] = useSessionState('mpvs_servicos_empresas', [])

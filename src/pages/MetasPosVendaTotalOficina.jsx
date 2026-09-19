@@ -45,7 +45,7 @@ export default function MetasPosVendaTotalOficina() {
   const [expandedSecs,   setExpandedSecs]   = useState(new Set())
 
 
-  const [filtroVisu, setFiltroVisu] = useSessionState('mpvto_visu', 'total')
+  const [filtroVisu, setFiltroVisu] = useSessionState('mpvs_servicos_visu', 'total')
 
   const [dadosConsultor,    setDadosConsultor]    = useState([])
   const [modalConsultor,    setModalConsultor]    = useState(false)

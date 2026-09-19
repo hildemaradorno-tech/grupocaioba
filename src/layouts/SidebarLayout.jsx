@@ -481,7 +481,6 @@ export default function SidebarLayout() {
             {canViewSection('_metas.pos-vendas') && (
               <>
                 <FlyGroup label="Pós-Vendas" />
-                {canView('metas/pos-vendas/pecas') && <FlyItem to="/metas/pos-vendas/pecas" icon={Package} onClose={closeFlyout}>Peças</FlyItem>}
                 {canView('metas/pos-vendas/servicos') && <FlyItem to="/metas/pos-vendas/servicos" icon={Cog} onClose={closeFlyout}>Serviços</FlyItem>}
                 {canView('metas/pos-vendas/total') && <FlyItem to="/metas/pos-vendas/total" icon={TrendingUp} onClose={closeFlyout}>Total Pós-Vendas</FlyItem>}
               </>

@@ -3,11 +3,13 @@ import { useSessionState } from '../hooks/useSessionState'
 import { Cog } from 'lucide-react'
 import MetasServicosMecanico from './MetasServicosMecanico'
 import MetasServicosConsultor from './MetasServicosConsultor'
+import MetasPecas from './MetasPecas'
 import MetasPosVendaTotalOficina from './MetasPosVendaTotalOficina'
 
 const ABAS = [
   { key: 'mecanico',     label: 'Mecânico' },
   { key: 'consultor',    label: 'Consultor' },
+  { key: 'pecas',        label: 'Peças' },
   { key: 'totaloficina', label: 'Total Oficina' },
 ]
 
@@ -37,6 +39,7 @@ export default function MetasPosVendaServicos() {
       <div className="flex-1 min-h-0 overflow-hidden">
         {aba === 'mecanico'     && <MetasServicosMecanico onDistribuir={() => setAba('totaloficina')} />}
         {aba === 'consultor'    && <MetasServicosConsultor />}
+        {aba === 'pecas'        && <MetasPecas />}
         {aba === 'totaloficina' && <MetasPosVendaTotalOficina />}
       </div>
     </div>

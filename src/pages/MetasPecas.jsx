@@ -243,8 +243,8 @@ export default function MetasPecas() {
   const { hasPermission } = useAuth()
   const canEdit = hasPermission('/metas/pos-vendas/pecas', 'editar')
 
-  const [filtroEmpresa, setFiltroEmpresa] = useSessionState('mp_empresas', [])
-  const [filtroAno,     setFiltroAno]     = useSessionState('mp_ano', anoAtual)
+  const [filtroEmpresa, setFiltroEmpresa] = useSessionState('mpvs_servicos_empresas', [])
+  const [filtroAno,     setFiltroAno]     = useSessionState('mpvs_servicos_ano', anoAtual)
 
   const [grupoAberto,      setGrupoAberto]      = useState(true)
   const [expandedEmpresas, setExpandedEmpresas] = useState(new Set())

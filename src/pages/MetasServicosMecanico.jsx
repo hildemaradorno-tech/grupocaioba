@@ -126,7 +126,7 @@ export default function MetasServicosMecanico({ onDistribuir } = {}) {
   const [filtroMecanico, setFiltroMecanico] = useSessionState('msm_mecanico', '')
   const [filtroSetor,    setFiltroSetor]    = useSessionState('msm_setor', '')
   const [filtroBox,      setFiltroBox]      = useSessionState('msm_box', '')
-  const [filtroVisu,     setFiltroVisu]     = useSessionState('msm_visu', 'total')
+  const [filtroVisu,     setFiltroVisu]     = useSessionState('mpvs_servicos_visu', 'total')
 
   const [grupoAberto,        setGrupoAberto]        = useState(true)
   const [expandedEmpresas,   setExpandedEmpresas]   = useState(new Set())
@@ -165,15 +165,18 @@ export default function MetasServicosMecanico({ onDistribuir } = {}) {
     const func = funcionarios.find(f => f.id === row.colaborador_id)
     let cId, bId, sId, did
     if (func) {
-      cId = func.cargo_id || '—'
+      // Cadastro manda; mas se o funcionário está sem cargo/box/setor/departamento em /funcionarios,
+      // usa o que foi gravado na própria linha da meta (senão ele viraria um grupo "—" separado
+      // dos colegas de mesmo departamento/setor/box).
+      cId = func.cargo_id || row.cargo_id || '—'
       const cargoTmp = cargos.find(c => c.id === cId)
-      bId = func.box_id || '—'
+      bId = func.box_id || row.box_id || '—'
       const boxTmp = boxes.find(b => b.id === bId)
       const boxSetorIds   = boxTmp ? (Array.isArray(boxTmp.setor_ids) ? boxTmp.setor_ids : [boxTmp.setor_id]).filter(Boolean) : []
       const cargoSetorIds = cargoTmp?.setor_ids || func.setor_ids || []
-      sId = boxSetorIds.find(sid => cargoSetorIds.includes(sid)) || boxSetorIds[0] || cargoSetorIds[0] || '—'
+      sId = boxSetorIds.find(sid => cargoSetorIds.includes(sid)) || boxSetorIds[0] || cargoSetorIds[0] || row.setor_id || '—'
       const setorTmp = setores.find(s => s.id === sId)
-      did = setorTmp?.departamento_id || cargoTmp?.departamento_ids?.[0] || func.departamento_ids?.[0] || '—'
+      did = setorTmp?.departamento_id || cargoTmp?.departamento_ids?.[0] || func.departamento_ids?.[0] || row.departamento_id || '—'
     } else {
       cId = row.cargo_id || '—'
       bId = row.box_id   || '—'
