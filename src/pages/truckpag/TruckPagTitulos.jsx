@@ -1,18 +1,14 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
-import { Truck, Download, RefreshCw, AlertTriangle, Filter, ChevronDown, ChevronUp, X, CheckCircle2, XCircle, HelpCircle, Settings, Info, Wallet, Clock, CalendarClock, FileText, Loader2 } from 'lucide-react'
+import { Truck, Download, RefreshCw, AlertTriangle, Filter, ChevronDown, ChevronUp, X, CheckCircle2, XCircle, HelpCircle, Settings, Info, Wallet, Clock, CalendarClock } from 'lucide-react'
 import { apiService } from '../../services/api'
 import TruckPagNav from './TruckPagNav'
 import TruckPagRegrasModal from './TruckPagRegrasModal'
 import TruckPagConfigModal from './TruckPagConfigModal'
+import TruckPagRelatorioDivergencias from './TruckPagRelatorioDivergencias'
 import {
   fmtMoeda, fmtData, sincronizarTudoTruckPag, conciliarTitulosRepasses, splitEstabelecimento,
-  codigoEmpresaPorNome, parcelaDoTitulo, notasFiscaisDoTitulo, LABEL_CAMPO_CONCILIACAO,
+  codigoEmpresaPorNome, parcelaDoTitulo, notasFiscaisDoTitulo,
 } from './truckpagUtils'
-
-function hojeIso() {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
 
 const CONCILIACAO_INFO = {
   exato: { label: 'Identificado', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200', icon: CheckCircle2 },
@@ -68,7 +64,6 @@ export default function TruckPagTitulos() {
   const [loading, setLoading] = useState(true)
   const [sincronizando, setSincronizando] = useState(false)
   const [erro, setErro] = useState(null)
-  const [ultimaAtualizacao, setUltimaAtualizacao] = useState(null)
   const [filtroSituacao, setFiltroSituacao] = useState(null)
   const [filtrosAbertos, setFiltrosAbertos] = useState(false)
   const [filtroEmpresa, setFiltroEmpresa] = useState('')
@@ -78,7 +73,6 @@ export default function TruckPagTitulos() {
   const [expandidas, setExpandidas] = useState(() => new Set())
   const [regrasAberto, setRegrasAberto] = useState(false)
   const [configAberto, setConfigAberto] = useState(false)
-  const [processandoRelatorio, setProcessandoRelatorio] = useState(false)
 
   const alternarExpandida = (id) => {
     setExpandidas(prev => {
@@ -118,8 +112,6 @@ export default function TruckPagTitulos() {
       const resultados = await sincronizarTudoTruckPag()
       const falhas = resultados.filter(r => !r.ok)
       if (falhas.length > 0) setErro(falhas.map(f => f.erro).join(' | '))
-      const minha = resultados.find(r => r.chave === 'titulos')
-      if (minha?.lastModified) setUltimaAtualizacao(minha.lastModified)
       await carregar()
     } catch (e) {
       setErro(e.message || String(e))
@@ -200,129 +192,6 @@ export default function TruckPagTitulos() {
   const totalValor = filtradas.reduce((s, l) => s + (l.titulo_valor || 0), 0)
   const filtroAvancadoAtivo = !!(filtroEmpresa.trim() || filtroBusca.trim())
 
-  // Divergências não ficam salvas em lugar nenhum — o relatório é gerado na hora, a partir do
-  // que está divergente agora (todos os títulos, não só os filtrados na tela).
-  const divergentesInfo = useMemo(() => titulosConciliados.filter(t => t.statusConciliacao === 'divergente'), [titulosConciliados])
-
-  // PDF — mesmo pipeline (html2canvas + jsPDF) usado no resto do módulo TruckPag: monta blocos
-  // HTML fora da tela, tira print de cada bloco e cola num A4 paisagem. Cada bloco é um título
-  // divergente, listando só os campos que NÃO bateram (valor do título ao lado do valor do
-  // repasse), pra facilitar identificar o que precisa de correção manual.
-  const gerarRelatorioDivergentes = async () => {
-    if (divergentesInfo.length === 0) return
-    setProcessandoRelatorio(true)
-    setErro(null)
-    try {
-      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
-        import('html2canvas'),
-        import('jspdf'),
-      ])
-
-      const MARGIN = 24
-      const WRAP_W = 1400
-      const pdf = new jsPDF({ unit: 'pt', format: 'a4', orientation: 'landscape' })
-      const CW = pdf.internal.pageSize.getWidth() - 2 * MARGIN
-
-      const montarHtmlCabecalho = () => `
-        <div style="font-family:Arial,Helvetica,sans-serif;background:#fff;padding:20px 20px 0 20px;width:${WRAP_W}px;box-sizing:border-box;">
-          <div style="display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #1e293b;padding-bottom:12px;margin-bottom:16px;">
-            <div>
-              <div style="font-size:22px;font-weight:800;color:#0f172a;">Contas a Receber TruckPag — Relatório de Divergências</div>
-            </div>
-            <div style="text-align:right;font-size:13px;color:#475569;">
-              <div>${divergentesInfo.length} título(s) divergente(s)</div>
-              <div>Gerado em: ${new Date().toLocaleString('pt-BR')}</div>
-            </div>
-          </div>
-        </div>`
-
-      // Valor do título × valor do repasse, só pros campos que entram na comparação — usado pra
-      // mostrar lado a lado o que exatamente diverge em cada campo marcado como false.
-      const CAMPO_VALORES = {
-        codigo: (t) => [codigoEmpresaPorNome(t.titulo_empresa_nome) || '—', splitEstabelecimento(t.repasseMatch?.estabelecimento).codigoEmpresa || '—'],
-        documento: (t) => [t.titulo_pessoa_doc_ident || '—', t.repasseMatch?.cnpj_cliente || '—'],
-        notaFiscal: (t) => [notasFiscaisDoTitulo(t).join(' / ') || '—', t.repasseMatch?.nf_e || '—'],
-        nfse: (t) => [notasFiscaisDoTitulo(t).join(' / ') || '—', t.repasseMatch?.nfs_e || '—'],
-        parcela: (t) => [parcelaDoTitulo(t.titulo_numero) || '—', t.repasseMatch?.parcelas || '—'],
-        valor: (t) => [fmtMoeda(t.titulo_valor), fmtMoeda(t.repasseMatch?.valor_parcela_total)],
-        saldo: (t) => [fmtMoeda(t.titulo_saldo), fmtMoeda(t.repasseMatch?.valor_parcela_total)],
-      }
-
-      const montarHtmlTitulo = (t) => {
-        const camposQueDivergem = Object.entries(t.camposDivergentes || {}).filter(([, v]) => v === false).map(([k]) => k)
-        const linhasCampos = camposQueDivergem.map(k => {
-          const [valorTitulo, valorRepasse] = (CAMPO_VALORES[k] || (() => ['—', '—']))(t)
-          return `<tr>
-            <td style="padding:5px 6px;font-weight:700;color:#334155;">${LABEL_CAMPO_CONCILIACAO[k] || k}</td>
-            <td style="padding:5px 6px;color:#334155;">${valorTitulo}</td>
-            <td style="padding:5px 6px;color:#334155;">${valorRepasse}</td>
-          </tr>`
-        }).join('')
-        return `
-          <div style="font-family:Arial,Helvetica,sans-serif;background:#fff;padding:0 20px;width:${WRAP_W}px;box-sizing:border-box;margin-bottom:6px;">
-            <table style="width:100%;border-collapse:collapse;font-size:11px;border:1px solid #fde68a;">
-              <thead>
-                <tr style="background:#fffbeb;color:#b45309;">
-                  <th colspan="3" style="padding:6px 8px;text-align:left;font-size:11px;font-weight:800;">
-                    Divergente — Título ${t.titulo_numero} · Lanç. ${t.titulo_codigo} · ${t.titulo_empresa_nome} · Cliente: ${t.titulo_pessoa_nome || '—'}
-                  </th>
-                </tr>
-                <tr style="background:#f8fafc;color:#94a3b8;text-transform:uppercase;font-size:9px;">
-                  <th style="padding:5px 6px;text-align:left;">Campo</th>
-                  <th style="padding:5px 6px;text-align:left;">Valor no Título</th>
-                  <th style="padding:5px 6px;text-align:left;">Valor no Repasse</th>
-                </tr>
-              </thead>
-              <tbody>${linhasCampos}</tbody>
-            </table>
-          </div>`
-      }
-
-      const renderBloco = async (html) => {
-        const wrap = document.createElement('div')
-        wrap.style.cssText = `position:fixed;top:0;left:-9999px;width:${WRAP_W}px;background:#fff;z-index:-1;`
-        wrap.innerHTML = html
-        document.body.appendChild(wrap)
-        try {
-          return await html2canvas(wrap, { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff', width: WRAP_W })
-        } finally {
-          document.body.removeChild(wrap)
-        }
-      }
-
-      const GAP = 4
-      const pageBottom = pdf.internal.pageSize.getHeight() - MARGIN
-      let primeiraPagina = true
-      const iniciarPagina = () => {
-        if (!primeiraPagina) pdf.addPage()
-        primeiraPagina = false
-        return MARGIN
-      }
-      const colocarCanvas = (canvas, y) => {
-        const h = (canvas.height / canvas.width) * CW
-        pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', MARGIN, y, CW, h)
-        return h
-      }
-
-      let y = iniciarPagina()
-      y += colocarCanvas(await renderBloco(montarHtmlCabecalho()), y) + GAP
-
-      for (const t of divergentesInfo) {
-        const canvas = await renderBloco(montarHtmlTitulo(t))
-        const h = (canvas.height / canvas.width) * CW
-        if (y + h > pageBottom) y = iniciarPagina()
-        y += colocarCanvas(canvas, y) + GAP
-      }
-
-      pdf.save(`divergencias_truckpag_${hojeIso()}.pdf`)
-    } catch (err) {
-      console.error('Erro ao gerar relatório:', err)
-      setErro('Erro ao gerar relatório: ' + (err.message || String(err)))
-    } finally {
-      setProcessandoRelatorio(false)
-    }
-  }
-
   const colunas = [
     { key: 'codigo_empresa_daf', label: 'Código', naoOrdenavel: true, derivar: (row) => codigoEmpresa(row.titulo_empresa_nome), campoInfo: 'codigo' },
     { key: 'titulo_empresa_nome', label: 'Empresa' },
@@ -382,11 +251,6 @@ export default function TruckPagTitulos() {
             <p className="text-xs text-slate-500 mt-0.5">Posição de títulos em aberto (RFN003) — sincronizado do SharePoint.</p>
           </div>
           <div className="flex items-center gap-3">
-            {ultimaAtualizacao && (
-              <span className="text-[10px] text-slate-400 whitespace-nowrap">
-                Atualizado em: <strong className="text-slate-500">{new Date(ultimaAtualizacao).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</strong>
-              </span>
-            )}
             <button onClick={sincronizar} disabled={sincronizando} title={sincronizando ? 'Atualizando...' : 'Atualizar todas as abas do SharePoint'} className="flex items-center justify-center bg-blue-600 hover:bg-blue-700 text-white p-2 rounded-md shadow-sm transition-colors disabled:opacity-50">
               <RefreshCw className={`h-4 w-4 ${sincronizando ? 'animate-spin' : ''}`} />
             </button>
@@ -404,16 +268,7 @@ export default function TruckPagTitulos() {
             >
               <HelpCircle className="h-3.5 w-3.5 text-slate-500" />
             </button>
-            {divergentesInfo.length > 0 && (
-              <button
-                onClick={gerarRelatorioDivergentes}
-                disabled={processandoRelatorio}
-                title={`Relatório de Divergências (PDF) — ${divergentesInfo.length} título(s)`}
-                className="flex items-center gap-1.5 p-2 rounded-md text-amber-700 border border-amber-200 bg-amber-50 hover:bg-amber-100 shadow-sm transition-colors disabled:opacity-50"
-              >
-                {processandoRelatorio ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
-              </button>
-            )}
+            <TruckPagRelatorioDivergencias />
           </div>
         </div>
         <TruckPagNav />

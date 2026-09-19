@@ -3,6 +3,7 @@ import { RefreshCw, AlertTriangle, Filter, ChevronDown, ChevronUp, X, Link2, Lin
 import { apiService } from '../../services/api'
 import TruckPagNav from './TruckPagNav'
 import TruckPagConfigModal from './TruckPagConfigModal'
+import TruckPagRelatorioDivergencias from './TruckPagRelatorioDivergencias'
 import TruckPagRepasseDetalheModal from './TruckPagRepasseDetalheModal'
 import TruckPagRegrasModal from './TruckPagRegrasModal'
 import { fmtMoeda, fmtData, sincronizarTudoTruckPag, conciliarRepassesCreditos, filtrarCreditosPorTipoSaldo } from './truckpagUtils'
@@ -20,7 +21,6 @@ export default function TruckPagConciliacao() {
   const [loading, setLoading] = useState(true)
   const [sincronizando, setSincronizando] = useState(false)
   const [erro, setErro] = useState(null)
-  const [ultimaAtualizacao, setUltimaAtualizacao] = useState(null)
   const [filtrosAbertos, setFiltrosAbertos] = useState(false)
   const [configAberto, setConfigAberto] = useState(false)
   const [regrasAberto, setRegrasAberto] = useState(false)
@@ -62,8 +62,6 @@ export default function TruckPagConciliacao() {
       const resultados = await sincronizarTudoTruckPag()
       const falhas = resultados.filter(r => !r.ok)
       if (falhas.length > 0) setErro(falhas.map(f => f.erro).join(' | '))
-      const datas = resultados.filter(r => r.ok && r.lastModified).map(r => r.lastModified)
-      if (datas.length > 0) setUltimaAtualizacao(datas.sort().at(-1))
       await carregar()
     } catch (e) {
       setErro(e.message || String(e))
@@ -202,11 +200,6 @@ export default function TruckPagConciliacao() {
             <p className="text-xs text-slate-500 mt-0.5">Repasses Fabricante x Saldo disponível na concessionária — vinculados pela soma do valor por estabelecimento/data.</p>
           </div>
           <div className="flex items-center gap-3">
-            {ultimaAtualizacao && (
-              <span className="text-[10px] text-slate-400 whitespace-nowrap">
-                Atualizado em: <strong className="text-slate-500">{new Date(ultimaAtualizacao).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</strong>
-              </span>
-            )}
             <button onClick={() => setConfigAberto(true)} title="Configurações" className="flex items-center justify-center border border-slate-200 text-slate-600 hover:bg-slate-50 p-2 rounded-md transition-colors">
               <Settings className="h-3.5 w-3.5" />
             </button>
@@ -216,6 +209,7 @@ export default function TruckPagConciliacao() {
             <button onClick={() => setRegrasAberto(true)} title="Regras de conciliação" className="flex items-center justify-center p-2 rounded-md text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 shadow-sm transition-colors">
               <HelpCircle className="h-3.5 w-3.5 text-slate-500" />
             </button>
+            <TruckPagRelatorioDivergencias />
           </div>
         </div>
         <TruckPagNav />

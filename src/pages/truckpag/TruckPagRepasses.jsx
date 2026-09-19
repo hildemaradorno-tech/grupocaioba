@@ -4,6 +4,7 @@ import { apiService } from '../../services/api'
 import TruckPagNav from './TruckPagNav'
 import TruckPagRegrasModal from './TruckPagRegrasModal'
 import TruckPagConfigModal from './TruckPagConfigModal'
+import TruckPagRelatorioDivergencias from './TruckPagRelatorioDivergencias'
 import TruckPagRepasseDetalheModal from './TruckPagRepasseDetalheModal'
 import {
   fmtMoeda, fmtData, sincronizarTudoTruckPag, splitEstabelecimento,
@@ -59,7 +60,6 @@ export default function TruckPagRepasses() {
   const [loading, setLoading] = useState(true)
   const [sincronizando, setSincronizando] = useState(false)
   const [erro, setErro] = useState(null)
-  const [ultimaAtualizacao, setUltimaAtualizacao] = useState(null)
   const [filtroGrupoRepasse, setFiltroGrupoRepasse] = useState(null)
   const [filtroNaoIdentificado, setFiltroNaoIdentificado] = useState(false)
   const [filtroDivergente, setFiltroDivergente] = useState(false)
@@ -152,8 +152,6 @@ export default function TruckPagRepasses() {
       const resultados = await sincronizarTudoTruckPag()
       const falhas = resultados.filter(r => !r.ok)
       if (falhas.length > 0) setErro(falhas.map(f => f.erro).join(' | '))
-      const minha = resultados.find(r => r.chave === 'repasses')
-      if (minha?.lastModified) setUltimaAtualizacao(minha.lastModified)
       await carregar()
     } catch (e) {
       setErro(e.message || String(e))
@@ -531,11 +529,6 @@ export default function TruckPagRepasses() {
             <p className="text-xs text-slate-500 mt-0.5">Extrato linha a linha dos repasses recebidos com título vinculado — sincronizado do SharePoint.</p>
           </div>
           <div className="flex items-center gap-3">
-            {ultimaAtualizacao && (
-              <span className="text-[10px] text-slate-400 whitespace-nowrap">
-                Atualizado em: <strong className="text-slate-500">{new Date(ultimaAtualizacao).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</strong>
-              </span>
-            )}
             <button onClick={() => setConfigAberto(true)} title="Configurações" className="flex items-center justify-center border border-slate-200 text-slate-600 hover:bg-slate-50 p-2 rounded-md transition-colors">
               <Settings className="h-3.5 w-3.5" />
             </button>
@@ -545,6 +538,7 @@ export default function TruckPagRepasses() {
             <button onClick={() => setRegrasAberto(true)} title="Regras de conciliação" className="flex items-center justify-center p-2 rounded-md text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 shadow-sm transition-colors">
               <HelpCircle className="h-3.5 w-3.5 text-slate-500" />
             </button>
+            <TruckPagRelatorioDivergencias />
           </div>
         </div>
         <TruckPagNav />
