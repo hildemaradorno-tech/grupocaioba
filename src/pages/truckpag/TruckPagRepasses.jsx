@@ -287,9 +287,9 @@ export default function TruckPagRepasses() {
 
   // O botão de filtro de divergências só aparece se a tabela (com os outros filtros aplicados)
   // tiver alguma linha divergente — ou se o próprio filtro estiver ligado, pra dar pra desligar.
-  const qtdDivergentes = useMemo(() => filtradasSemFiltroDivergente.filter(l => l.statusConciliacao === 'divergente').length, [filtradasSemFiltroDivergente])
+  const qtdDivergentes = useMemo(() => filtradasSemFiltroDivergente.filter(l => l.statusConciliacao !== 'exato').length, [filtradasSemFiltroDivergente])
   const filtradas = useMemo(
-    () => (filtroDivergente ? filtradasSemFiltroDivergente.filter(l => l.statusConciliacao === 'divergente') : filtradasSemFiltroDivergente),
+    () => (filtroDivergente ? filtradasSemFiltroDivergente.filter(l => l.statusConciliacao !== 'exato') : filtradasSemFiltroDivergente),
     [filtradasSemFiltroDivergente, filtroDivergente]
   )
 
@@ -391,6 +391,19 @@ export default function TruckPagRepasses() {
   // Títulos já exportados em "Exportar Baixa" (truckpag_baixas_titulos) — ícone cinza na coluna
   // Situação; título com repasse ainda não exportado fica com o ícone azul (disponível pra baixar).
   const titulosBaixados = useMemo(() => new Set(baixas.map(b => b.titulo_codigo)), [baixas])
+  // Baixa por lote (chip de Saldo Concessionária): quantos títulos do lote já foram exportados.
+  const baixaPorLote = useMemo(() => {
+    const m = new Map()
+    for (const l of linhasVinculadas) {
+      if (!l.tituloEncontrado) continue
+      const chave = `${l.estabelecimento}|${l.data_pagamento}`
+      const c = m.get(chave) || { total: 0, baixados: 0 }
+      c.total += 1
+      if (titulosBaixados.has(l.tituloEncontrado.titulo_codigo)) c.baixados += 1
+      m.set(chave, c)
+    }
+    return m
+  }, [linhasVinculadas, titulosBaixados])
   const valorSelecionado = titulosSelecionados.reduce((s, t) => s + (t.titulo_saldo || 0), 0)
   const titulosComExcedente = titulosSelecionados.filter(t => t.excedenteDeduzido > 0)
   const excedenteTotal = titulosComExcedente.reduce((s, t) => s + t.excedenteDeduzido, 0)
@@ -682,6 +695,21 @@ export default function TruckPagRepasses() {
                 }`}
               >
                 {fmtData(g.dataCredito)} · {fmtMoeda(g.valorCredito)}
+                {(() => {
+                  const b = baixaPorLote.get(g.chave)
+                  if (!b || b.total === 0) return null
+                  const tudoBaixado = b.baixados === b.total
+                  const selecionado = filtroGrupoRepasse === g.chave
+                  const cls = tudoBaixado
+                    ? (selecionado ? 'bg-white/20 text-white border-white/40' : 'bg-slate-100 text-slate-400 border-slate-200')
+                    : (selecionado ? 'bg-white text-blue-600 border-white' : 'bg-blue-50 text-blue-600 border-blue-200')
+                  return (
+                    <span title={tudoBaixado ? 'Baixa já exportada' : `Disponível para baixar — ${b.baixados} de ${b.total} já exportado(s)`}
+                      className={`inline-flex items-center justify-center p-0.5 rounded-full border ${cls}`}>
+                      <FileDown className="h-3 w-3" />
+                    </span>
+                  )
+                })()}
               </button>
             ))}
           </div>
@@ -710,7 +738,7 @@ export default function TruckPagRepasses() {
               </button>
             )}
             {(qtdDivergentes > 0 || filtroDivergente) && (
-              <button type="button" onClick={() => setFiltroDivergente(v => !v)} title="Filtrar Divergências" className={`flex items-center justify-center p-1.5 rounded-md border transition-colors ${filtroDivergente ? 'bg-amber-500 border-amber-500 text-white' : 'bg-amber-50 border-amber-200 text-amber-600 hover:border-amber-300'}`}>
+              <button type="button" onClick={() => setFiltroDivergente(v => !v)} title="Filtrar divergências e repasses sem título" className={`flex items-center justify-center p-1.5 rounded-md border transition-colors ${filtroDivergente ? 'bg-amber-500 border-amber-500 text-white' : 'bg-amber-50 border-amber-200 text-amber-600 hover:border-amber-300'}`}>
                 <AlertTriangle className="h-3.5 w-3.5" />
               </button>
             )}
@@ -804,15 +832,6 @@ export default function TruckPagRepasses() {
                             <Link2Off className="h-3 w-3" />
                           </span>
                         )}
-                        {l.tituloEncontrado && (titulosBaixados.has(l.tituloEncontrado.titulo_codigo) ? (
-                          <span title="Baixa já exportada" className="inline-flex items-center justify-center p-1 rounded-full border bg-slate-100 text-slate-400 border-slate-200">
-                            <FileDown className="h-3 w-3" />
-                          </span>
-                        ) : (
-                          <span title="Disponível para baixar" className="inline-flex items-center justify-center p-1 rounded-full border bg-blue-50 text-blue-600 border-blue-200">
-                            <FileDown className="h-3 w-3" />
-                          </span>
-                        ))}
                         </div>
                       </td>
                       {colunas.map(c => {
