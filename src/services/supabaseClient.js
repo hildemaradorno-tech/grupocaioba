@@ -5061,6 +5061,23 @@ export const apiService = {
     })
   },
 
+  // Títulos já exportados em "Exportar Baixa" (tabela separada, não é recriada no sync diário).
+  getTruckPagBaixasTitulos: async () => {
+    const { data, error } = await supabase.from('truckpag_baixas_titulos').select('titulo_codigo, baixado_em')
+    if (error) throw error
+    return data || []
+  },
+
+  // registros: [{ titulo_codigo, titulo_numero }]
+  registrarTruckPagBaixas: async (registros) => {
+    if (!registros || registros.length === 0) return { success: true }
+    const { error } = await supabase
+      .from('truckpag_baixas_titulos')
+      .upsert(registros.map(r => ({ ...r, baixado_em: new Date().toISOString() })), { onConflict: 'titulo_codigo' })
+    if (error) throw error
+    return { success: true }
+  },
+
   getTruckPagCreditos: async () => {
     const { data, error } = await supabase
       .from('truckpag_creditos_nao_identificados')

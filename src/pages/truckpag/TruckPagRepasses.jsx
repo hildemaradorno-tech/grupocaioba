@@ -82,6 +82,7 @@ export default function TruckPagRepasses() {
   const [titulos, setTitulos] = useState([])
   const [creditos, setCreditos] = useState([])
   const [tiposSaldo, setTiposSaldo] = useState([])
+  const [baixas, setBaixas] = useState([])
   const [tolerancia, setTolerancia] = useState(0.02)
   const [loading, setLoading] = useState(true)
   const [sincronizando, setSincronizando] = useState(false)
@@ -149,18 +150,20 @@ export default function TruckPagRepasses() {
     setLoading(true)
     setErro(null)
     try {
-      const [r, t, tol, cred, tipos] = await Promise.all([
+      const [r, t, tol, cred, tipos, baix] = await Promise.all([
         apiService.getTruckPagRepasses(),
         apiService.getTruckPagTitulos(),
         apiService.getTruckPagToleranciaConciliacao(),
         apiService.getTruckPagCreditos(),
         apiService.getTruckPagTiposSaldo(),
+        apiService.getTruckPagBaixasTitulos(),
       ])
       setLinhas(r)
       setTitulos(t)
       setTolerancia(tol)
       setCreditos(cred)
       setTiposSaldo(tipos)
+      setBaixas(baix)
     } catch (e) {
       setErro(e.message || String(e))
     } finally {
@@ -344,6 +347,9 @@ export default function TruckPagRepasses() {
     }
     return [...porCodigo.values()]
   }, [ordenadas, selecionados])
+  // Títulos já exportados em "Exportar Baixa" (truckpag_baixas_titulos) — ícone cinza na coluna
+  // Situação; título com repasse ainda não exportado fica com o ícone azul (disponível pra baixar).
+  const titulosBaixados = useMemo(() => new Set(baixas.map(b => b.titulo_codigo)), [baixas])
   const valorSelecionado = titulosSelecionados.reduce((s, t) => s + (t.titulo_saldo || 0), 0)
 
   // Nome do arquivo segue o padrão já usado em Títulos: "DDMMAAAA SIGLA Total Recebido R$
@@ -351,7 +357,7 @@ export default function TruckPagRepasses() {
   // um nome genérico com a data escolhida.
   const grupoRepasseAtivo = gruposPorDia.find(g => g.chave === filtroGrupoRepasse) || null
 
-  const exportarBaixa = () => {
+  const exportarBaixa = async () => {
     const conteudo = gerarArquivoBaixaTitulos(titulosSelecionados, dataExport)
     const nomeArquivo = grupoRepasseAtivo
       ? `${grupoRepasseAtivo.data_pagamento.split('-').reverse().join('')} ${siglaEmpresaPorNome(grupoRepasseAtivo.empresa) || grupoRepasseAtivo.codigoEmpresa} Total Recebido ${fmtMoeda(grupoRepasseAtivo.total)}.txt`
@@ -365,6 +371,15 @@ export default function TruckPagRepasses() {
     a.click()
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
+
+    // Marca os títulos exportados como baixados (ícone fica cinza) e limpa a seleção.
+    try {
+      await apiService.registrarTruckPagBaixas(titulosSelecionados.map(t => ({ titulo_codigo: t.titulo_codigo, titulo_numero: t.titulo_numero })))
+      setBaixas(await apiService.getTruckPagBaixasTitulos())
+      setSelecionados(new Set())
+    } catch (e) {
+      setErro('Arquivo gerado, mas falhou ao marcar os títulos como baixados: ' + (e.message || String(e)))
+    }
   }
 
   // PDF — mesmo pipeline (html2canvas + jsPDF) da tela Títulos: monta blocos HTML fora da tela,
@@ -689,8 +704,7 @@ export default function TruckPagRepasses() {
                 <th className="p-3 whitespace-nowrap">
                   <input type="checkbox" checked={todosSelecionados} onChange={alternarTodasSelecoes} className="h-3.5 w-3.5 rounded border-slate-300 cursor-pointer" />
                 </th>
-                <th className="p-3 whitespace-nowrap" title="Situação da conciliação com título">ST</th>
-                <th className="p-3 whitespace-nowrap" title="Já bateu com algum crédito no saldo bancário (Saldo Concessionária)?">Saldo</th>
+                <th className="p-3 whitespace-nowrap" title="1º: vínculo com título · 2º: vínculo com o saldo bancário (Saldo Concessionária) · 3º: baixa (azul = disponível para baixar, cinza = já baixado)">Situação</th>
                 {colunas.map(c => (
                   <th
                     key={c.key}
@@ -720,6 +734,7 @@ export default function TruckPagRepasses() {
                         <input type="checkbox" checked={selecionados.has(l.id)} onChange={() => alternarSelecao(l.id)} className="h-3.5 w-3.5 rounded border-slate-300 cursor-pointer" />
                       </td>
                       <td className="p-3 whitespace-nowrap">
+                        <div className="flex items-center gap-1.5">
                         {l.tituloEncontrado ? (
                           <button type="button" onClick={() => alternarExpandida(l.id)} title={conciliacaoInfo.label}
                             className={`inline-flex items-center justify-center p-1 rounded-full border transition-colors ${conciliacaoInfo.cls} hover:brightness-95`}>
@@ -730,8 +745,6 @@ export default function TruckPagRepasses() {
                             <conciliacaoInfo.icon className="h-3 w-3" />
                           </span>
                         )}
-                      </td>
-                      <td className="p-3 whitespace-nowrap">
                         {l.conciliadoSaldo ? (
                           <span title="Conciliado com o saldo bancário" className="inline-flex items-center justify-center p-1 rounded-full border bg-emerald-50 text-emerald-700 border-emerald-200">
                             <Link2 className="h-3 w-3" />
@@ -741,6 +754,16 @@ export default function TruckPagRepasses() {
                             <Link2Off className="h-3 w-3" />
                           </span>
                         )}
+                        {l.tituloEncontrado && (titulosBaixados.has(l.tituloEncontrado.titulo_codigo) ? (
+                          <span title="Baixa já exportada" className="inline-flex items-center justify-center p-1 rounded-full border bg-slate-100 text-slate-400 border-slate-200">
+                            <FileDown className="h-3 w-3" />
+                          </span>
+                        ) : (
+                          <span title="Disponível para baixar" className="inline-flex items-center justify-center p-1 rounded-full border bg-blue-50 text-blue-600 border-blue-200">
+                            <FileDown className="h-3 w-3" />
+                          </span>
+                        ))}
+                        </div>
                       </td>
                       {colunas.map(c => {
                         const valor = c.derivar ? c.derivar(l) : l[c.key]
@@ -759,7 +782,6 @@ export default function TruckPagRepasses() {
                     </tr>
                     {expandida && l.tituloEncontrado && (
                       <tr>
-                        <td className="p-0 bg-slate-50/70 border-b border-slate-100"></td>
                         <td className="p-0 bg-slate-50/70 border-b border-slate-100"></td>
                         <td className="p-0 bg-slate-50/70 border-b border-slate-100"></td>
                         <td colSpan={colunas.length} className="p-0 bg-slate-50/70 border-b border-slate-100">
