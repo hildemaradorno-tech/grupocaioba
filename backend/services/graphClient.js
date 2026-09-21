@@ -38,3 +38,20 @@ export async function graphGet(path) {
   })
   return res.data
 }
+
+// Escolhe quais arquivos de um relatório RFN003 usar, a partir da listagem da pasta. O relatório
+// já saiu como UM arquivo único (nome = prefixo) e como VÁRIOS por unidade (prefixo + "_" +
+// unidade); às vezes os dois coexistem na pasta, com o antigo desatualizado — usar os dois
+// duplicaria títulos. Regra: só um dos formatos existe → usa ele; os dois existem → usa o que
+// foi gerado mais recentemente.
+export function selecionarArquivosRelatorio(items, prefix) {
+  const alvo = prefix.toLowerCase()
+  const doRelatorio = (items || []).filter(i => i.file && i.name?.toLowerCase().startsWith(alvo))
+  const restoDoNome = (i) => i.name.toLowerCase().slice(alvo.length)
+  const porUnidade = doRelatorio.filter(i => restoDoNome(i).startsWith('_'))
+  const unico = doRelatorio.filter(i => !restoDoNome(i).startsWith('_'))
+  if (unico.length === 0) return porUnidade
+  if (porUnidade.length === 0) return unico
+  const maisRecente = (lista) => Math.max(...lista.map(i => Date.parse(i.lastModifiedDateTime) || 0))
+  return maisRecente(unico) > maisRecente(porUnidade) ? unico : porUnidade
+}

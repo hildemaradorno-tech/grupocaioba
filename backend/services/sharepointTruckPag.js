@@ -1,6 +1,6 @@
 import * as XLSX from 'xlsx'
 import axios from 'axios'
-import { graphGet } from './graphClient.js'
+import { graphGet, selecionarArquivosRelatorio } from './graphClient.js'
 
 const PASTA = '/Banco de Dados - DAF - Pós-Vendas/Financeiro - DAF'
 // RFN003 passou a vir como 1 arquivo POR UNIDADE (ex: "..._CAMPO GRANDE.xls", "..._DOURADOS.xls"),
@@ -89,8 +89,7 @@ async function downloadWorkbooksByPrefix(prefix) {
   const driveId = process.env.SHAREPOINT_DRIVE_ID
   if (!driveId) throw new Error('SHAREPOINT_DRIVE_ID não configurado no ambiente')
   const listagem = await graphGet(`/drives/${driveId}/root:${PASTA}:/children`)
-  const alvo = prefix.toLowerCase()
-  const arquivos = (listagem.value || []).filter(item => item.file && item.name?.toLowerCase().startsWith(alvo))
+  const arquivos = selecionarArquivosRelatorio(listagem.value, prefix)
   if (arquivos.length === 0) throw new Error(`Nenhum arquivo encontrado começando com "${prefix}" em ${PASTA}`)
 
   const resultados = []

@@ -1,10 +1,10 @@
 import * as XLSX from 'xlsx'
 import axios from 'axios'
-import { graphGet } from './graphClient.js'
+import { graphGet, selecionarArquivosRelatorio } from './graphClient.js'
 
 const PASTA = '/Banco de Dados - DAF - Pós-Vendas/Financeiro - DAF'
-// RFN003 passou a vir como 1 arquivo POR UNIDADE (ex: "..._CAMPO GRANDE.xls", "..._DOURADOS.xls"),
-// não mais um arquivo único — por isso busca por início do nome, não path exato (ver downloadFile).
+// RFN003 já saiu como 1 arquivo único e como 1 arquivo POR UNIDADE ("..._CAMPO GRANDE.xls" etc.) —
+// a escolha entre os formatos é feita por selecionarArquivosRelatorio (ver graphClient.js).
 const PREFIX_TITULOS = 'RFN003_PosicaoAnaliticoReceber_Excel'
 
 const CACHE_TTL_MS = 5 * 60 * 1000
@@ -61,25 +61,14 @@ function parseNum(val) {
   return isNaN(n) ? null : n
 }
 
-// Baixa TODOS os arquivos da pasta cujo nome começa com RFN003_PosicaoAnaliticoReceber_Excel_
-// (1 por unidade — Campo Grande, Chapadão, Dourados, Três Lagoas) e mescla as linhas. O arquivo
-// genérico sem sufixo de unidade (RFN003_PosicaoAnaliticoReceber_Excel.xls) é um resquício do
-// formato antigo (relatório único, antes da divisão por unidade) que continua sendo exportado na
-// mesma pasta — se incluído, duplica cada título que também aparece no arquivo da sua unidade
-// (com um "Atr." às vezes desatualizado, por ser gerado em momento diferente). Por isso é excluído
-// explicitamente: só entram arquivos com "_" logo após o prefixo (sufixo de unidade).
+// Baixa os arquivos do relatório RFN003 escolhidos por selecionarArquivosRelatorio (único ou por
+// unidade, o mais recente) e mescla as linhas. lastModified final é o mais recente entre eles.
 async function downloadFile() {
   const driveId = process.env.SHAREPOINT_DRIVE_ID
   if (!driveId) throw new Error('SHAREPOINT_DRIVE_ID não configurado no ambiente')
   const listagem = await graphGet(`/drives/${driveId}/root:${PASTA}:/children`)
-  const alvo = PREFIX_TITULOS.toLowerCase()
-  const arquivos = (listagem.value || []).filter(item => {
-    if (!item.file || !item.name) return false
-    const nome = item.name.toLowerCase()
-    if (!nome.startsWith(alvo)) return false
-    return nome.slice(alvo.length).startsWith('_')
-  })
-  if (arquivos.length === 0) throw new Error(`Nenhum arquivo encontrado começando com "${PREFIX_TITULOS}_" em ${PASTA}`)
+  const arquivos = selecionarArquivosRelatorio(listagem.value, PREFIX_TITULOS)
+  if (arquivos.length === 0) throw new Error(`Nenhum arquivo encontrado começando com "${PREFIX_TITULOS}" em ${PASTA}`)
 
   const rows = []
   let lastModified = null
