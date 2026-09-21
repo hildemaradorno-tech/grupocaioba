@@ -168,7 +168,7 @@ export default function MetasDistribuicaoConsultores() {
   const toggle = (set, setter, key) => setter(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n })
 
   const recolherTudo = () => {
-    setGrupoAberto(false)
+    setGrupoAberto(true)
     setExpandedEmpresas(new Set()); setExpandedDepts(new Set()); setExpandedSetores(new Set())
     setExpandedBoxes(new Set()); setExpandedCargos(new Set())
   }
@@ -981,7 +981,7 @@ export default function MetasDistribuicaoConsultores() {
             </div>
           )}
           <button onClick={() => navigate('/metas/gestao-aprovacao')} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-indigo-300 bg-indigo-50 text-indigo-700 text-sm font-medium hover:bg-indigo-100 transition-colors">
-            <ClipboardCheck size={16} /> Gestão de Aprovação
+            <ClipboardCheck size={16} /> Total Grupo
           </button>
           {canEdit && <button onClick={abrirIncluir} className={BTN_PRI}><Plus size={16}/> Adicionar Consultor</button>}
         </div>

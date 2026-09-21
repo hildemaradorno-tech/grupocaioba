@@ -116,7 +116,10 @@ const SituacaoNivel = ({ pend, tem }) => {
 
 const SEL = 'border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500'
 
-export default function MetasPosVendaTotal({ modoAprovacao = false, anoExterno = null, aoAlterarAprovacao = null } = {}) {
+// somenteAprovado: mesma árvore da Gestão de Aprovação, só leitura e apenas com o que já está aprovado (aba Geral do Total Grupo).
+export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = false, somenteAprovado = false, anoExterno = null, empresasExterno = null, aoAlterarAprovacao = null } = {}) {
+  const modoAprovacao = modoAprovacaoProp || somenteAprovado
+  const podeAgir = modoAprovacaoProp
   const { hasPermission, isAdminEfetivo, usuarioId, userNome } = useAuth()
   const canEdit = hasPermission('/metas/gestao-aprovacao', 'editar')
   const [empresas,      setEmpresas]      = useState([])
@@ -133,9 +136,9 @@ export default function MetasPosVendaTotal({ modoAprovacao = false, anoExterno =
   const [filtroAnoSalvo,     setFiltroAno]     = useSessionState('mpvs_servicos_ano', anoAtual)
   const [filtroEmpresaSalvo, setFiltroEmpresa] = useSessionState('mpvs_servicos_empresas', [])
   const [filtroVisuSalvo,    setFiltroVisu]    = useSessionState('mpvs_servicos_visu', 'total')
-  // Na Gestão de Aprovação a tela usa o ano da própria página, sem filtro de empresa e sempre com o total.
+  // Na Gestão de Aprovação a tela usa o ano e as empresas da própria página e sempre o total.
   const filtroAno     = anoExterno ?? filtroAnoSalvo
-  const filtroEmpresa = modoAprovacao ? SEM_FILTRO : filtroEmpresaSalvo
+  const filtroEmpresa = modoAprovacao ? (empresasExterno ?? SEM_FILTRO) : filtroEmpresaSalvo
   const filtroVisu    = modoAprovacao ? 'total' : filtroVisuSalvo
   const W1 = modoAprovacao ? 'w-[27rem] min-w-[27rem] max-w-[27rem]' : ''
   const [loading,       setLoading]       = useState(false)
@@ -187,10 +190,14 @@ export default function MetasPosVendaTotal({ modoAprovacao = false, anoExterno =
       setBoxes(bxs)
       setCargos(cargs)
       setFuncionarios(funcs)
-      setRowsPecas(filtrarPorEmpresas(pecas, filtroEmpresa))
-      setRowsMecanico(filtrarPorEmpresas(mecanico, filtroEmpresa))
-      setRowsConsultor(filtrarPorEmpresas(consultor, filtroEmpresa))
-      setRowsTerceiros(filtrarPorEmpresas(terceiros, filtroEmpresa))
+      // Só aprovado: descarta o mês que nunca foi aprovado ou que mudou depois da aprovação.
+      const aprov = (rows, valor = r => Number(r.meta_faturamento) || 0) =>
+        somenteAprovado ? rows.filter(r => { const v = valor(r); return v > 0 && !linhaPendente(v, r.meta_aprovada) }) : rows
+      const valorMecanico = r => { const v = valoresMetaMecanico(r); return v.meta_servicos + v.meta_pecas }
+      setRowsPecas(aprov(filtrarPorEmpresas(pecas, filtroEmpresa)))
+      setRowsMecanico(aprov(filtrarPorEmpresas(mecanico, filtroEmpresa), valorMecanico))
+      setRowsConsultor(aprov(filtrarPorEmpresas(consultor, filtroEmpresa)))
+      setRowsTerceiros(aprov(filtrarPorEmpresas(terceiros, filtroEmpresa)))
       setRowsFunilaria(filtrarPorEmpresas(funilaria, filtroEmpresa))
     } catch (err) { setError(err.message || String(err)) }
     finally { setLoading(false) }
@@ -230,25 +237,43 @@ export default function MetasPosVendaTotal({ modoAprovacao = false, anoExterno =
     [rowsPecas, rowsMecanico, rowsConsultor, rowsTerceiros, funcionarios, cargos, boxes, setores, departamentos, filtroVisu]
   )
 
-  const expandirTudo = () => {
-    const keys = new Set()
+  // Chaves de cada nível da árvore: Grupo > Segmento > Empresa > Departamento > Setor > Box.
+  const niveisChaves = () => {
+    const emps = [], depts = [], sets = [], bxs = []
     Object.entries(tree).forEach(([eId, emp]) => {
-      const eKey = `emp-${eId}`; keys.add(eKey)
+      const eKey = `emp-${eId}`; emps.push(eKey)
       Object.entries(emp.depts || {}).forEach(([dId, dept]) => {
-        const dKey = `${eKey}-d-${dId}`; keys.add(dKey)
+        const dKey = `${eKey}-d-${dId}`; depts.push(dKey)
         Object.entries(dept.setores || {}).forEach(([sId, setor]) => {
-          const sKey = `${dKey}-s-${sId}`; keys.add(sKey)
-          Object.keys(setor.boxes || {}).forEach(bId => keys.add(`${sKey}-b-${bId}`))
+          const sKey = `${dKey}-s-${sId}`; sets.push(sKey)
+          Object.keys(setor.boxes || {}).forEach(bId => bxs.push(`${sKey}-b-${bId}`))
         })
       })
     })
-    setExpanded(keys)
-    setGrupoAberto(true)
-    setSegAbertos(new Set(agruparPorSegmento(Object.entries(tree), empresas).map(([l]) => l)))
+    const segs = agruparPorSegmento(Object.entries(tree), empresas).map(([l]) => l)
+    return { segs, emps, depts, sets, bxs }
   }
 
-  const recolherTudo = () => { setExpanded(new Set()); setSegAbertos(new Set()); setGrupoAberto(false) }
-  const tudoExpandido = expanded.size > 0 && Object.keys(tree).every(eId => expanded.has(`emp-${eId}`))
+  // Expandir abre um nível por clique (Segmento, Empresa, Departamento, Setor, Box); Recolher fecha tudo até o
+  // agrupamento (Segmento - Marca), com o Grupo Caiobá aberto.
+  const expandirNivel = () => {
+    const n = niveisChaves()
+    const abrir = (chaves) => setExpanded(prev => new Set([...prev, ...chaves]))
+    if (!grupoAberto) { setGrupoAberto(true); return }
+    if (n.segs.some(l => !segAbertos.has(l))) { setSegAbertos(new Set(n.segs)); return }
+    if (n.emps.some(k => !expanded.has(k))) { abrir(n.emps); return }
+    if (n.depts.some(k => !expanded.has(k))) { abrir(n.depts); return }
+    if (n.sets.some(k => !expanded.has(k))) { abrir(n.sets); return }
+    abrir(n.bxs)
+  }
+
+  const recolherTudo = () => { setExpanded(new Set()); setSegAbertos(new Set()); setGrupoAberto(true) }
+  const tudoExpandido = (() => {
+    if (!grupoAberto) return false
+    const n = niveisChaves()
+    return n.segs.every(l => segAbertos.has(l)) && [...n.emps, ...n.depts, ...n.sets, ...n.bxs].every(k => expanded.has(k))
+  })()
+  const algoAberto = expanded.size > 0 || segAbertos.size > 0
 
   useEffect(() => {
     if (filtroEmpresa.length) {
@@ -361,7 +386,7 @@ export default function MetasPosVendaTotal({ modoAprovacao = false, anoExterno =
               : null
             const chaveAcao = `${eId}|${sId}`
             const info = { kind: ap.kind, empresaId: eId, empresaNome: eNome, setorId: sId, setorNome: setor.nome }
-            sSituacao = ap.kind ? (
+            sSituacao = (ap.kind && podeAgir) ? (
               <span className="inline-flex items-center gap-1">
                 <BotaoIconeTooltip Icone={CheckCircle2} tom="verde" dica="Aprovar este setor"
                   disabled={!canEdit || !ap.pend} carregando={acaoRodando === chaveAcao}
@@ -551,13 +576,20 @@ export default function MetasPosVendaTotal({ modoAprovacao = false, anoExterno =
                 <div className="flex items-center gap-2">
                   <span>Empresa</span>
                   {Object.keys(tree).length > 0 && (
-                    <button
-                      onClick={tudoExpandido ? recolherTudo : expandirTudo}
-                      title={tudoExpandido ? 'Recolher tudo' : 'Expandir tudo'}
-                      className="ml-1 px-1.5 py-0.5 rounded text-[10px] font-bold border border-slate-300 bg-white hover:bg-indigo-50 hover:border-indigo-400 hover:text-indigo-700 text-slate-500 transition-colors whitespace-nowrap"
-                    >
-                      {tudoExpandido ? '− Recolher' : '+ Expandir'}
-                    </button>
+                    <span className="inline-flex items-center gap-1">
+                      {!tudoExpandido && (
+                        <button onClick={expandirNivel} title="Expandir o próximo nível"
+                          className="ml-1 px-1.5 py-0.5 rounded text-[10px] font-bold border border-slate-300 bg-white hover:bg-indigo-50 hover:border-indigo-400 hover:text-indigo-700 text-slate-500 transition-colors whitespace-nowrap">
+                          + Expandir
+                        </button>
+                      )}
+                      {algoAberto && (
+                        <button onClick={recolherTudo} title="Recolher tudo"
+                          className="px-1.5 py-0.5 rounded text-[10px] font-bold border border-slate-300 bg-white hover:bg-indigo-50 hover:border-indigo-400 hover:text-indigo-700 text-slate-500 transition-colors whitespace-nowrap">
+                          − Recolher
+                        </button>
+                      )}
+                    </span>
                   )}
                 </div>
               </th>
@@ -570,7 +602,7 @@ export default function MetasPosVendaTotal({ modoAprovacao = false, anoExterno =
                 Total
               </th>
               <th className="px-2 py-2 text-center text-xs font-semibold text-slate-600 whitespace-nowrap">
-                {modoAprovacao ? 'Aprovação' : 'Situação'}
+                {podeAgir ? 'Ação' : somenteAprovado ? '' : 'Situação'}
               </th>
             </tr>
           </thead>
@@ -578,7 +610,7 @@ export default function MetasPosVendaTotal({ modoAprovacao = false, anoExterno =
             {!loading && empRows.length === 0 && (
               <tr>
                 <td colSpan={15} className="py-16 text-center text-slate-400 text-sm">
-                  Nenhum dado encontrado para os filtros selecionados.
+                  {somenteAprovado ? 'Nenhuma meta aprovada para o ano selecionado.' : 'Nenhum dado encontrado para os filtros selecionados.'}
                 </td>
               </tr>
             )}

@@ -10,6 +10,7 @@ import {
 import { useAuth } from '../context/AuthContext'
 import { apiService } from '../services/api'
 import MetasPosVendaTotal from './MetasPosVendaTotal'
+import { EmpresaMultiFilter, empresasDasMetas } from '../components/EmpresaMultiFilter'
 
 const anoAtual = new Date().getFullYear()
 const ANOS = Array.from({ length: 7 }, (_, i) => anoAtual - 1 + i)
@@ -29,7 +30,7 @@ const sumArr = (a) => a.reduce((s, v) => s + v, 0)
 const TIPOS = [
   { key: 'pecas',     grupo: 'pecas',    contabilizaTotal: true,  label: 'Peças',              labelCurto: 'Peças',     icon: Package,    color: 'blue',   nav: '/metas/pos-vendas/pecas' },
   { key: 'consultor', grupo: 'servicos', contabilizaTotal: true,  label: 'Serviços', labelCurto: 'Consultor', icon: Cog,        color: 'violet', nav: '/metas/pos-vendas/distribuicao-consultores' },
-  { key: 'mecanico',  grupo: 'servicos', contabilizaTotal: false, label: 'Serviços Mecânico',  labelCurto: 'Mecânico',  icon: Wrench,     color: 'indigo', nav: '/metas/pos-vendas/servicos/mecanico' },
+  { key: 'mecanico',  grupo: 'servicos', contabilizaTotal: false, label: 'Serviços Mecânico',  labelCurto: 'Mecânico',  icon: Wrench,     color: 'indigo', nav: '/metas/pos-vendas/servicos_pecas/mecanico' },
 ]
 
 const COLORS = {
@@ -66,6 +67,14 @@ export default function MetasGestaoAprovacao() {
   const canDelete = hasPermission('/metas/gestao-aprovacao', 'excluir')
 
   const [filtroAno, setFiltroAno] = useSessionState('mga_ano', anoAtual)
+  // Mesma seleção de empresas das demais telas de Metas.
+  const [filtroEmpresa, setFiltroEmpresa] = useSessionState('mpvs_servicos_empresas', [])
+  const [empresasLista, setEmpresasLista] = useState([])
+  useEffect(() => {
+    apiService.getEmpresas()
+      .then(emps => setEmpresasLista([...empresasDasMetas(emps)].sort((a, b) => (a.empresa_fantasia || '').localeCompare(b.empresa_fantasia || ''))))
+      .catch(() => {})
+  }, [])
   const [loading,   setLoading]   = useState(false)
   const [error,     setError]     = useState(null)
 
@@ -82,8 +91,8 @@ export default function MetasGestaoAprovacao() {
   const [modalConf,    setModalConf]    = useState(null)
 
   const [abaSalva,      setAbaAtiva]      = useSessionState('mga_aba', 'posvendas')
-  // Aba salva que não existe mais (Peças / Serviços foram agrupadas em Pós-Vendas) volta para Pós-Vendas.
-  const abaAtiva = ['posvendas', 'novos', 'usados', 'geral'].includes(abaSalva) ? abaSalva : 'posvendas'
+  // Aba salva que não existe mais (Novos / Usados foram unificadas em Vendas) volta para Pós-Vendas.
+  const abaAtiva = ['posvendas', 'vendas', 'geral'].includes(abaSalva) ? abaSalva : 'posvendas'
   const [expandedEmps,  setExpandedEmps]  = useState(new Set())
   const [expandedTipos, setExpandedTipos] = useState(new Set())
 
@@ -245,19 +254,16 @@ export default function MetasGestaoAprovacao() {
               <ClipboardCheck size={20} className="text-white" />
             </div>
             <div>
-              <h1 className="text-xl font-bold text-slate-800">Gestão de Aprovação — Metas</h1>
+              <h1 className="text-xl font-bold text-slate-800">Total Grupo — Gestão de Aprovação de Metas</h1>
               <p className="text-xs text-slate-400">Revise e autorize o planejamento antes da publicação para o Power BI</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <div className="w-64"><EmpresaMultiFilter value={filtroEmpresa} onChange={setFiltroEmpresa} empresas={empresasLista} /></div>
             <select value={filtroAno} onChange={e => setFiltroAno(Number(e.target.value))}
               className="border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
               {ANOS.map(a => <option key={a} value={a}>{a}</option>)}
             </select>
-            <button onClick={load} disabled={loading}
-              className="inline-flex items-center gap-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-sm font-semibold px-3 py-2 rounded-lg transition-colors disabled:opacity-50">
-              <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Atualizar
-            </button>
           </div>
         </div>
       </div>
@@ -289,9 +295,8 @@ export default function MetasGestaoAprovacao() {
         ════════════════════════════════════════════════════════════════== */}
         <div className="flex gap-1 bg-white border border-slate-200 rounded-xl p-1">
           {[
-            { key: 'posvendas', label: 'Pós-Vendas', icon: Wrench,   badge: [...resumo.pecas, ...resumo.mecanico, ...resumo.consultor].filter(isPendente).length },
-            { key: 'novos',    label: 'Novos',    icon: TrendingUp, badge: 0 },
-            { key: 'usados',   label: 'Usados',   icon: RefreshCw,  badge: 0 },
+            { key: 'posvendas', label: 'Pós-Vendas', icon: Wrench,   badge: [...resumo.pecas, ...resumo.mecanico, ...resumo.consultor].filter(r => !filtroEmpresa.length || filtroEmpresa.includes(r.empresa_id)).filter(isPendente).length },
+            { key: 'vendas',   label: 'Vendas',   icon: TrendingUp, badge: 0 },
             { key: 'geral',    label: 'Geral',    icon: BarChart3,  badge: 0 },
           ].map(({ key, label, icon: Icon, badge }) => (
             <button key={key} onClick={() => setAbaAtiva(key)}
@@ -316,36 +321,26 @@ export default function MetasGestaoAprovacao() {
 
         {/* FILA DE APROVAÇÃO: mesma árvore das telas de Serviços (Grupo > Segmento/Marca > Empresa > Departamento
             > Setor > Box > Funcionário), com o status ao lado do setor e a coluna final de aprovação. */}
-        {(abaAtiva === 'posvendas' || abaAtiva === 'geral') && (
-          <MetasPosVendaTotal modoAprovacao anoExterno={filtroAno} aoAlterarAprovacao={load} />
+        {abaAtiva === 'posvendas' && (
+          <MetasPosVendaTotal modoAprovacao anoExterno={filtroAno} empresasExterno={filtroEmpresa} aoAlterarAprovacao={load} />
+        )}
+
+        {/* GERAL: consolidado do grupo, só leitura e só com o que já foi aprovado. */}
+        {abaAtiva === 'geral' && (
+          <MetasPosVendaTotal key={`${filtroAno}|${ultimaPublicacao}|${kpi.totalPendItems}`} somenteAprovado anoExterno={filtroAno} empresasExterno={filtroEmpresa} />
         )}
 
         {/* ═══════════════════════════════════════════════════════════════
-            ABA: NOVOS
+            ABA: VENDAS (Novos + Usados)
         ════════════════════════════════════════════════════════════════== */}
-        {!loading && abaAtiva === 'novos' && (
+        {!loading && abaAtiva === 'vendas' && (
           <div className="flex flex-col items-center justify-center gap-4 py-24 bg-white border border-slate-200 rounded-xl">
             <div className="w-16 h-16 rounded-full bg-indigo-50 flex items-center justify-center">
               <TrendingUp size={32} className="text-indigo-300" />
             </div>
-            <p className="text-lg font-bold text-slate-600">Aprovação — Veículos Novos</p>
+            <p className="text-lg font-bold text-slate-600">Aprovação — Vendas</p>
             <p className="text-sm text-slate-400 text-center max-w-sm">
-              Em breve os valores, metas e responsáveis pela aprovação desta área serão definidos.
-            </p>
-          </div>
-        )}
-
-        {/* ═══════════════════════════════════════════════════════════════
-            ABA: USADOS
-        ════════════════════════════════════════════════════════════════== */}
-        {!loading && abaAtiva === 'usados' && (
-          <div className="flex flex-col items-center justify-center gap-4 py-24 bg-white border border-slate-200 rounded-xl">
-            <div className="w-16 h-16 rounded-full bg-indigo-50 flex items-center justify-center">
-              <RefreshCw size={32} className="text-indigo-300" />
-            </div>
-            <p className="text-lg font-bold text-slate-600">Aprovação — Veículos Usados</p>
-            <p className="text-sm text-slate-400 text-center max-w-sm">
-              Em breve os valores, metas e responsáveis pela aprovação desta área serão definidos.
+              Em breve os valores, metas e responsáveis pela aprovação desta área (Novos e Usados) serão definidos.
             </p>
           </div>
         )}

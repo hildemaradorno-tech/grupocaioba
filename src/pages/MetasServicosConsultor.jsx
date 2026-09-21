@@ -85,8 +85,8 @@ export default function MetasServicosConsultor() {
   const [filtroEmpresa, setFiltroEmpresa] = useSessionState('mpvs_servicos_empresas', [])
   const [filtroAno,     setFiltroAno]     = useSessionState('mpvs_servicos_ano', anoAtual)
   const { hasPermission } = useAuth()
-  const canEdit = hasPermission('/metas/pos-vendas/servicos', 'editar')
-  const canDelete = hasPermission('/metas/pos-vendas/servicos', 'excluir')
+  const canEdit = hasPermission('/metas/pos-vendas/servicos_pecas', 'editar')
+  const canDelete = hasPermission('/metas/pos-vendas/servicos_pecas', 'excluir')
 
   const [grupoAberto,      setGrupoAberto]      = useState(true)
   const [expandedEmpresas, setExpandedEmpresas] = useState(new Set())
@@ -267,7 +267,7 @@ export default function MetasServicosConsultor() {
   }
 
   const recolherTudo = () => {
-    setGrupoAberto(false)
+    setGrupoAberto(true)
     setExpandedEmpresas(new Set()); setExpandedDepts(new Set()); setExpandedSetores(new Set())
     setSegAbertos(new Set())
   }

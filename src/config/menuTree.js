@@ -110,26 +110,17 @@ export const MENU_TREE = [
     label: 'Planejamento de Metas',
     children: [
       {
-        key: '_metas.vendas',
-        label: 'Vendas',
+        key: '_metas.operacionais',
+        label: 'Operacionais',
         children: [
-          { key: 'metas/vendas/novos', label: 'Novos' },
-          { key: 'metas/vendas/seminovos', label: 'Seminovos' },
-          { key: 'metas/vendas/total', label: 'Total Vendas' },
-        ],
-      },
-      {
-        key: '_metas.pos-vendas',
-        label: 'Pós-Vendas',
-        children: [
+          { key: 'metas/vendas', label: 'Vendas' },
           { key: 'metas/pos-vendas/pecas', label: 'Peças', virtual: true },
-          { key: 'metas/pos-vendas/servicos', label: 'Serviços' },
+          { key: 'metas/pos-vendas/servicos_pecas', label: 'Pós-Vendas' },
           { key: 'metas/pos-vendas/total', label: 'Total Pós-Vendas', virtual: true },
           { key: 'metas/pos-vendas/distribuicao-consultores', label: 'Distribuição — Consultores', virtual: true },
         ],
       },
-      { key: 'metas/gestao-aprovacao', label: 'Gestão de Aprovação' },
-      { key: 'metas/total-grupo', label: 'Total Grupo' },
+      { key: 'metas/gestao-aprovacao', label: 'Total Grupo' },
     ],
   },
   {

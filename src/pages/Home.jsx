@@ -262,7 +262,7 @@ export default function Home() {
           quantidade={pendentes}
           resumo={`${pendentes} ${pendentes === 1 ? 'aprovação pendente' : 'aprovações pendentes'} de metas`}
           detalhe={`Há metas de ${ano} aguardando sua análise e aprovação antes de serem publicadas.`}
-          textoBotao="Ir para Gestão de Aprovação"
+          textoBotao="Ir para Total Grupo"
           onBotao={() => navigate('/metas/gestao-aprovacao')}
           extraConteudo={
             <select

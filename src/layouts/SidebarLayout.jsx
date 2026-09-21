@@ -470,29 +470,21 @@ export default function SidebarLayout() {
       case '_metas':
         return (
           <>
-            {canViewSection('_metas.vendas') && (
+            {canViewSection('_metas.operacionais') && (
               <>
-                <FlyGroup label="Vendas" />
-                {canView('metas/vendas/novos') && <FlyItem to="/metas/vendas/novos" icon={Car} onClose={closeFlyout}>Novos</FlyItem>}
-                {canView('metas/vendas/seminovos') && <FlyItem to="/metas/vendas/seminovos" icon={Car} onClose={closeFlyout}>Seminovos</FlyItem>}
-                {canView('metas/vendas/total') && <FlyItem to="/metas/vendas/total" icon={TrendingUp} onClose={closeFlyout}>Total Vendas</FlyItem>}
+                <FlyGroup label="Operacionais" />
+                {canView('metas/vendas') && <FlyItem to="/metas/vendas" icon={Car} onClose={closeFlyout}>Vendas</FlyItem>}
+                {canView('metas/pos-vendas/servicos_pecas') && <FlyItem to="/metas/pos-vendas/servicos_pecas" icon={Cog} onClose={closeFlyout}>Pós-Vendas</FlyItem>}
               </>
             )}
-            {canViewSection('_metas.pos-vendas') && (
-              <>
-                <FlyGroup label="Pós-Vendas" />
-                {canView('metas/pos-vendas/servicos') && <FlyItem to="/metas/pos-vendas/servicos" icon={Cog} onClose={closeFlyout}>Serviços</FlyItem>}
-              </>
-            )}
-            {(canView('metas/gestao-aprovacao') || canView('metas/total-grupo')) && (
+            {canView('metas/gestao-aprovacao') && (
               <>
                 <div className="mx-3 my-2 border-t border-blue-800/50" />
                 {canView('metas/gestao-aprovacao') && (
                   <FlyItem to="/metas/gestao-aprovacao" icon={ClipboardCheck} badge={pendingMetas} onClose={closeFlyout}>
-                    Gestão de Aprovação
+                    Total Grupo
                   </FlyItem>
                 )}
-                {canView('metas/total-grupo') && <FlyItem to="/metas/total-grupo" icon={Layers} onClose={closeFlyout}>Total Grupo</FlyItem>}
               </>
             )}
           </>

@@ -373,7 +373,7 @@ export default function MetasPecas() {
   }
 
   const recolherTudo = () => {
-    setGrupoAberto(false)
+    setGrupoAberto(true)
     setExpandedEmpresas(new Set()); setExpandedDepts(new Set()); setExpandedSetores(new Set())
     setExpandedBoxes(new Set())
     setSegAbertos(new Set())

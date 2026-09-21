@@ -122,8 +122,8 @@ export default function MetasServicosMecanico() {
   const [loading,       setLoading]       = useState(false)
   const [error,         setError]         = useState(null)
   const { hasPermission } = useAuth()
-  const canEdit = hasPermission('/metas/pos-vendas/servicos', 'editar')
-  const canDelete = hasPermission('/metas/pos-vendas/servicos', 'excluir')
+  const canEdit = hasPermission('/metas/pos-vendas/servicos_pecas', 'editar')
+  const canDelete = hasPermission('/metas/pos-vendas/servicos_pecas', 'excluir')
   const [filtroEmpresa,  setFiltroEmpresa]  = useSessionState('mpvs_servicos_empresas', [])
   const [filtroAno,      setFiltroAno]      = useSessionState('mpvs_servicos_ano', anoAtual)
   const [filtroMecanico, setFiltroMecanico] = useSessionState('msm_mecanico', '')
@@ -296,7 +296,7 @@ export default function MetasServicosMecanico() {
   const toggle = (set, setter, key) => setter(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n })
 
   const recolherTudo = () => {
-    setGrupoAberto(false)
+    setGrupoAberto(true)
     setExpandedEmpresas(new Set()); setExpandedDepts(new Set()); setExpandedSetores(new Set())
     setExpandedBoxes(new Set())
     setSegAbertos(new Set())

@@ -33,16 +33,13 @@ import Feriados from './pages/Feriados'
 import Calendario from './pages/Calendario'
 import SincronizacaoDados from './pages/SincronizacaoDados'
 import MetasPecas from './pages/MetasPecas'
-import MetasVendaNovos from './pages/MetasVendaNovos'
-import MetasVendaSeminovos from './pages/MetasVendaSeminovos'
+import MetasVendaAbas from './pages/MetasVendaAbas'
 import MetasPosVendaServicos from './pages/MetasPosVendaServicos'
 import MetasServicosMecanico from './pages/MetasServicosMecanico'
 import MetasServicosConsultor from './pages/MetasServicosConsultor'
 import MetasDistribuicaoConsultores from './pages/MetasDistribuicaoConsultores'
 import MetasGestaoAprovacao from './pages/MetasGestaoAprovacao'
-import MetasVendaTotal from './pages/MetasVendaTotal'
 import MetasPosVendaTotal from './pages/MetasPosVendaTotal'
-import MetasTotalGrupo from './pages/MetasTotalGrupo'
 import GarantiasDafDashboard from './pages/garantias-daf/GarantiasDafDashboard'
 import GarantiasDafFaturadas from './pages/garantias-daf/GarantiasDafFaturadas'
 import GarantiasDafTitulos from './pages/garantias-daf/GarantiasDafTitulos'
@@ -204,17 +201,14 @@ export default function App() {
           { path: '/feriados', element: <Feriados />, menuPath: 'feriados' },
           { path: '/calendario', element: <Calendario />, menuPath: 'calendario' },
           { path: '/sincronizacao-dados', element: <SincronizacaoDados />, menuPath: 'sincronizacao-dados' },
-          { path: '/metas/vendas/novos', element: <MetasVendaNovos />, menuPath: '/metas/vendas/novos' },
-          { path: '/metas/vendas/seminovos', element: <MetasVendaSeminovos />, menuPath: '/metas/vendas/seminovos' },
-          { path: '/metas/vendas/total', element: <MetasVendaTotal />, menuPath: '/metas/vendas/total' },
+          { path: '/metas/vendas', element: <MetasVendaAbas />, menuPath: '/metas/vendas' },
           { path: '/metas/pos-vendas/pecas', element: <MetasPecas />, menuPath: '/metas/pos-vendas/pecas' },
-          { path: '/metas/pos-vendas/servicos', element: <MetasPosVendaServicos />, menuPath: '/metas/pos-vendas/servicos' },
-          { path: '/metas/pos-vendas/servicos/mecanico', element: <MetasServicosMecanico />, menuPath: '/metas/pos-vendas/servicos' },
-          { path: '/metas/pos-vendas/servicos/consultor', element: <MetasServicosConsultor />, menuPath: '/metas/pos-vendas/servicos' },
+          { path: '/metas/pos-vendas/servicos_pecas', element: <MetasPosVendaServicos />, menuPath: '/metas/pos-vendas/servicos_pecas' },
+          { path: '/metas/pos-vendas/servicos_pecas/mecanico', element: <MetasServicosMecanico />, menuPath: '/metas/pos-vendas/servicos_pecas' },
+          { path: '/metas/pos-vendas/servicos_pecas/consultor', element: <MetasServicosConsultor />, menuPath: '/metas/pos-vendas/servicos_pecas' },
           { path: '/metas/pos-vendas/distribuicao-consultores', element: <MetasDistribuicaoConsultores />, menuPath: '/metas/pos-vendas/distribuicao-consultores' },
 
           { path: '/metas/pos-vendas/total', element: <MetasPosVendaTotal />, menuPath: '/metas/pos-vendas/total' },
-          { path: '/metas/total-grupo', element: <MetasTotalGrupo />, menuPath: '/metas/total-grupo' },
           { path: '/metas/gestao-aprovacao', element: <MetasGestaoAprovacao />, menuPath: '/metas/gestao-aprovacao' },
           { path: '/auditoria-os-aberto', element: <AuditoriaOsAberto />, menuPath: '/auditoria-os-aberto' },
           { path: '/honda/contas-a-receber', element: <HondaGarantiasReceber />, menuPath: 'honda/contas-a-receber' },
