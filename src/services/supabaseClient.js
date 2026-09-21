@@ -2247,6 +2247,35 @@ export const apiService = {
     return { success: true }
   },
 
+  // Aprovação de Peças por setor (a função approve_metas_pecas_setor está em supabase/migrations).
+  approveMetasPecasSetor: async (empresaId, ano, setorId) => {
+    const { error } = await supabase.rpc('approve_metas_pecas_setor', {
+      p_empresa_id: empresaId, p_ano: Number(ano), p_setor_id: setorId,
+    })
+    if (error) throw error
+    const { data: rows, error: errFetch } = await supabase.from('fato_rascunho_metas_pecas')
+      .select('empresa_id,empresa_nome,ano,mes,colaborador_id,colaborador_nome,departamento_id,departamento_nome,setor_id,setor_nome,cargo_id,cargo_nome,meta_faturamento,meta_aprovada')
+      .eq('empresa_id', empresaId).eq('ano', ano).eq('setor_id', setorId).not('meta_aprovada', 'is', null)
+    if (errFetch) throw errFetch
+    if (rows && rows.length > 0) {
+      const ts = new Date().toISOString()
+      const { error: errPub } = await supabase.from('fato_metas_publicadas')
+        .upsert(rows.map(r => _toRowPublicada(r, 'pecas', ts)), { onConflict: 'empresa_id,ano,mes,tipo,colaborador_id' })
+      if (errPub) throw errPub
+    }
+    return { success: true }
+  },
+  unapproveMetasPecasSetor: async (empresaId, ano, setorId) => {
+    const { error } = await supabase.from('fato_rascunho_metas_pecas')
+      .update({ meta_aprovada: null, aprovado_em: null })
+      .eq('empresa_id', empresaId).eq('ano', ano).eq('setor_id', setorId)
+    if (error) throw error
+    const { error: errDel } = await supabase.from('fato_metas_publicadas')
+      .delete().eq('empresa_id', empresaId).eq('ano', ano).eq('tipo', 'pecas').eq('setor_id', setorId)
+    if (errDel) throw errDel
+    return { success: true }
+  },
+
   getPendingApprovals: async () => {
     const { data, error } = await supabase.rpc('get_pending_metas_pecas')
     if (error) throw error
@@ -2578,9 +2607,9 @@ export const apiService = {
   // TOTAIS CONSOLIDADOS PARA VISÃO GERAL (aprovação)
   getResumoMetasAprovacao: async (ano) => {
     const [pecas, mecanico, consultor, funilaria, terceiros] = await Promise.all([
-      supabase.from('fato_rascunho_metas_pecas').select('empresa_id,empresa_nome,colaborador_nome,mes,meta_faturamento,meta_aprovada').eq('ano', ano).gt('meta_faturamento', 0),
-      supabase.from('fato_rascunho_metas_servicos_mecanico').select('empresa_id,empresa_nome,colaborador_nome,mes,meta_faturamento,meta_aprovada').eq('ano', ano).gt('meta_faturamento', 0),
-      supabase.from('fato_rascunho_metas_servicos_consultor').select('empresa_id,empresa_nome,colaborador_nome,mes,meta_faturamento,meta_aprovada').eq('ano', ano).gt('meta_faturamento', 0),
+      supabase.from('fato_rascunho_metas_pecas').select('empresa_id,empresa_nome,setor_nome,colaborador_nome,mes,meta_faturamento,meta_aprovada').eq('ano', ano).gt('meta_faturamento', 0),
+      supabase.from('fato_rascunho_metas_servicos_mecanico').select('empresa_id,empresa_nome,setor_nome,colaborador_nome,mes,meta_faturamento,meta_aprovada').eq('ano', ano).gt('meta_faturamento', 0),
+      supabase.from('fato_rascunho_metas_servicos_consultor').select('empresa_id,empresa_nome,setor_nome,colaborador_nome,mes,meta_faturamento,meta_aprovada').eq('ano', ano).gt('meta_faturamento', 0),
       supabase.from('fato_rascunho_metas_funilaria_pintura').select('empresa_id,empresa_nome,mes,meta_faturamento,meta_aprovada').eq('ano', ano).gt('meta_faturamento', 0),
       supabase.from('fato_rascunho_metas_terceiros').select('empresa_id,empresa_nome,mes,meta_faturamento,meta_aprovada').eq('ano', ano).gt('meta_faturamento', 0),
     ])

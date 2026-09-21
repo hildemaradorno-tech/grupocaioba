@@ -1,10 +1,14 @@
 import React, { useEffect, useState, useMemo } from 'react'
 import { useSessionState } from '../hooks/useSessionState'
-import { TrendingUp, ChevronRight, ChevronDown, Loader2, Calculator } from 'lucide-react'
+import { TrendingUp, ChevronRight, ChevronDown, Loader2, Calculator, CheckCircle2, Ban } from 'lucide-react'
+import { useAuth } from '../context/AuthContext'
+import BotaoIconeTooltip from '../components/BotaoIconeTooltip'
 import { apiService } from '../services/api'
 import { EmpresaMultiFilter, empresaParam, filtrarPorEmpresas, empresasDasMetas } from '../components/EmpresaMultiFilter'
 import { valoresMetaMecanico, resolverPosicaoMecanico } from '../utils/metasMecanico'
 import { agruparPorSegmento } from '../utils/segmentoMarca'
+import { referenciasConsultor } from '../utils/referenciasConsultor'
+import { aggColabs, aggBox, aggSetor, aggDept, aggEmp, aggDeptDedup, aggEmpDedup, montarArvoreTotal } from '../utils/totalPosVendas'
 import { LogoGrupo, LogoSegmento } from '../components/LogosMarca'
 import CalculoFuncionarioModal from '../components/CalculoFuncionarioModal'
 
@@ -24,53 +28,6 @@ const sumArr = (a) => a.reduce((s, v) => s + v, 0)
 const STATUS_CLS = { 'AGUARDANDO APROVACAO': 'bg-amber-100 text-amber-700', 'APROVADO': 'bg-green-100 text-green-700' }
 const STATUS_DISPLAY = { 'AGUARDANDO APROVACAO': 'Aguard. Aprovação', 'APROVADO': 'Aprovado' }
 
-// Mesmo critério da Gestão de Aprovação: mês com valor gravado é pendente se nunca foi aprovado ou mudou depois.
-const linhaPendente = (grav, aprovada) => {
-  if (!grav) return false
-  if (aprovada === null || aprovada === undefined) return true
-  return Math.abs(grav - Number(aprovada)) > 0.001
-}
-
-// Unified tree: empresa → dept → setor → box → colaborador
-// Nenhuma linha é descartada por box/setor que não existam mais no cadastro: cai no nome gravado.
-function buildUnifiedTree(allRows, deptMap, setorMap, boxMap, funcMap) {
-  const tree = {}
-  allRows.forEach(r => {
-    const eId   = r.empresa_id || '—'
-    const eNome = r.empresa_nome || eId
-    const dId   = r.departamento_id || r.departamento_nome || '—'
-    const sId   = r.setor_id   || r.setor_nome   || '—'
-    const bId   = r.box_id     || r.box_nome     || '—'
-    const coId  = r.colaborador_id || r.colaborador_nome || '—'
-
-    const dNome  = deptMap[r.departamento_id]  || r.departamento_nome  || '—'
-    const sNome  = setorMap[r.setor_id]         || r.setor_nome         || '—'
-    const bNome  = boxMap[r.box_id]             || r.box_nome           || '—'
-    const coNome = funcMap[r.colaborador_id]    || r.colaborador_nome   || '—'
-
-    const val = Number(r.meta_faturamento) || 0
-
-    if (!tree[eId]) tree[eId] = { nome: eNome, depts: {} }
-    const emp = tree[eId]
-    if (!emp.depts[dId]) emp.depts[dId] = { nome: dNome, setores: {} }
-    const dept = emp.depts[dId]
-    if (!dept.setores[sId]) dept.setores[sId] = { nome: sNome, boxes: {} }
-    const setor = dept.setores[sId]
-    if (!setor.boxes[bId]) setor.boxes[bId] = { nome: bNome, colabs: {} }
-    const box = setor.boxes[bId]
-    if (!box.colabs[coId]) box.colabs[coId] = { nome: coNome, meses: Array(12).fill(0), tem: false, pend: false, linhas: [] }
-    const colab = box.colabs[coId]
-    colab.meses[r.mes - 1] += val
-    colab.linhas.push(r)
-    const grav = Number(r._grav ?? r.meta_faturamento) || 0
-    if (grav) {
-      colab.tem = true
-      if (linhaPendente(grav, r.meta_aprovada)) colab.pend = true
-    }
-  })
-  return tree
-}
-
 // Situação do Setor: pendente se qualquer mês com valor de qualquer colaborador dele não estiver aprovado.
 const statusSetor = (setor) => {
   let tem = false, pend = false
@@ -81,26 +38,31 @@ const statusSetor = (setor) => {
   return { tem, label: pend ? 'AGUARDANDO APROVACAO' : 'APROVADO' }
 }
 
-const aggColabs = (colabs) => { const a = Array(12).fill(0); Object.values(colabs).forEach(c => c.meses.forEach((v,i)=>{ a[i]+=v })); return a }
-const aggBox    = (box)    => aggColabs(box.colabs)
-const aggSetor  = (setor)  => { const a = Array(12).fill(0); Object.values(setor.boxes).forEach(b => aggBox(b).forEach((v,i)=>{a[i]+=v})); return a }
-const aggDept   = (dept)   => { const a = Array(12).fill(0); Object.values(dept.setores).forEach(s => aggSetor(s).forEach((v,i)=>{a[i]+=v})); return a }
-const aggEmp    = (emp)    => { const a = Array(12).fill(0); Object.values(emp.depts).forEach(d => aggDept(d).forEach((v,i)=>{a[i]+=v})); return a }
-
-// O setor Consultores é só a distribuição de Mecânica + Funilaria (+ Terceiros) entre os consultores; somar
-// junto com eles contaria tudo duas vezes. O total do departamento exclui Consultores (que continua
-// aparecendo na árvore, para consulta).
-const ehConsultores = (s) => (s.nome || '').toLowerCase().includes('consultor')
-const aggDeptDedup = (dept) => {
-  const a = Array(12).fill(0)
-  Object.values(dept.setores).filter(s => !ehConsultores(s)).forEach(s => aggSetor(s).forEach((v,i) => { a[i] += v }))
-  return a
+// Aprovação por setor: só Peças e Consultores (o Mecânico está vinculado ao consultor e segue a aprovação dele).
+// kind: 'pecas' | 'consultor' | null (sem aprovação própria).
+const infoAprovacaoSetor = (setor, empNode) => {
+  const tipos = new Set()
+  Object.values(setor.boxes).forEach(b => Object.values(b.colabs).forEach(co => co.linhas.forEach(l => tipos.add(l._tipo))))
+  const kind = tipos.has('PECAS') ? 'pecas' : tipos.has('CONSULTOR') ? 'consultor' : null
+  if (!kind) return { kind: null }
+  const st = statusSetor(setor)
+  let pend = st.label === 'AGUARDANDO APROVACAO'
+  let tem = st.tem
+  if (kind === 'consultor') {
+    Object.values(empNode.depts).forEach(d => Object.values(d.setores).forEach(s2 => Object.values(s2.boxes).forEach(b => Object.values(b.colabs).forEach(co => {
+      if (co.linhas.some(l => l._tipo === 'MECANICO')) { if (co.tem) tem = true; if (co.pend) pend = true }
+    }))))
+  }
+  return { kind, pend, tem }
 }
-const aggEmpDedup = (emp) => { const a = Array(12).fill(0); Object.values(emp.depts).forEach(d => aggDeptDedup(d).forEach((v,i)=>{a[i]+=v})); return a }
+
+const SEM_FILTRO = []
 
 const SEL = 'border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500'
 
-export default function MetasPosVendaTotal() {
+export default function MetasPosVendaTotal({ modoAprovacao = false, anoExterno = null, aoAlterarAprovacao = null } = {}) {
+  const { hasPermission } = useAuth()
+  const canEdit = hasPermission('/metas/gestao-aprovacao', 'editar')
   const [empresas,      setEmpresas]      = useState([])
   const [departamentos, setDepartamentos] = useState([])
   const [setores,       setSetores]       = useState([])
@@ -112,50 +74,32 @@ export default function MetasPosVendaTotal() {
   const [rowsConsultor, setRowsConsultor] = useState([])
   const [rowsTerceiros, setRowsTerceiros] = useState([])
   const [rowsFunilaria, setRowsFunilaria] = useState([])
-  const [filtroAno,     setFiltroAno]     = useSessionState('mpvs_servicos_ano', anoAtual)
-  const [filtroEmpresa, setFiltroEmpresa] = useSessionState('mpvs_servicos_empresas', [])
-  const [filtroVisu,    setFiltroVisu]    = useSessionState('mpvs_servicos_visu', 'total')
+  const [filtroAnoSalvo,     setFiltroAno]     = useSessionState('mpvs_servicos_ano', anoAtual)
+  const [filtroEmpresaSalvo, setFiltroEmpresa] = useSessionState('mpvs_servicos_empresas', [])
+  const [filtroVisuSalvo,    setFiltroVisu]    = useSessionState('mpvs_servicos_visu', 'total')
+  // Na Gestão de Aprovação a tela usa o ano da própria página, sem filtro de empresa e sempre com o total.
+  const filtroAno     = anoExterno ?? filtroAnoSalvo
+  const filtroEmpresa = modoAprovacao ? SEM_FILTRO : filtroEmpresaSalvo
+  const filtroVisu    = modoAprovacao ? 'total' : filtroVisuSalvo
   const [loading,       setLoading]       = useState(false)
   const [error,         setError]         = useState(null)
   const [expanded,      setExpanded]      = useState(new Set())
   const [segAbertos,   setSegAbertos]   = useState(new Set())
   const [grupoAberto,  setGrupoAberto]  = useState(true)
   const [calcAberto,    setCalcAberto]    = useState(null)
+  const [confirmAcao,   setConfirmAcao]   = useState(null) // { acao, kind, empresaId, empresaNome, setorId, setorNome }
+  const [acaoRodando,   setAcaoRodando]   = useState(null) // chave do setor em andamento
 
   // Referência do setor (Mecânica + Terceiros, ou Funilaria/Pintura) por mês — mesma regra da aba Consultor.
-  const referenciasConsultor = (empresaId, setorId, setorNome) => {
-    const refs = Array.from({ length: 12 }, () => ({ pecas: 0, servicos: 0, terceiros: 0 }))
-    const ehFun = /funilaria|pintura/i.test(setorNome || '')
-    if (ehFun) {
-      rowsFunilaria.filter(r => r.empresa_id === empresaId).forEach(r => {
-        refs[r.mes - 1].pecas += Number(r.meta_pecas) || 0
-        refs[r.mes - 1].servicos += Number(r.meta_servicos) || 0
-      })
-      return refs
-    }
-    const boxParaSetor = {}
-    boxes.forEach(b => {
-      const ids = Array.isArray(b.setor_ids) ? b.setor_ids : (b.setor_id ? [b.setor_id] : [])
-      const valido = ids.find(id => setores.some(s => s.id === id))
-      if (valido) boxParaSetor[b.id] = valido
-    })
-    rowsMecanico.filter(r => r.empresa_id === empresaId).forEach(r => {
-      const bId = funcionarios.find(f => f.id === r.colaborador_id)?.box_id || r.box_id
-      if (!bId || boxParaSetor[bId] !== setorId) return
-      const v = valoresMetaMecanico(r)
-      refs[r.mes - 1].servicos += v.meta_servicos
-      refs[r.mes - 1].pecas += v.meta_pecas
-    })
-    rowsTerceiros.filter(r => r.empresa_id === empresaId).forEach(r => { refs[r.mes - 1].terceiros += Number(r.meta_servicos) || 0 })
-    return refs
-  }
+  const refsDoConsultor = (empresaId, setorId, setorNome) =>
+    referenciasConsultor(empresaId, setorId, setorNome, { rowsMecanico, rowsTerceiros, rowsFunilaria, funcionarios, boxes, setores })
 
   const abrirCalculo = (colab, eNome) => {
     const primeira = colab.linhas[0]
     const cons = colab.linhas.find(l => l._tipo === 'CONSULTOR')
     setCalcAberto({
       nome: colab.nome, empresa: eNome, empresaId: primeira?.empresa_id, ano: filtroAno, linhas: colab.linhas,
-      refs: cons ? referenciasConsultor(cons.empresa_id, cons._setorOrigemId ?? cons.setor_id, cons._setorOrigemNome ?? cons.setor_nome) : null,
+      refs: cons ? refsDoConsultor(cons.empresa_id, cons._setorOrigemId ?? cons.setor_id, cons._setorOrigemNome ?? cons.setor_nome) : null,
     })
   }
 
@@ -197,97 +141,32 @@ export default function MetasPosVendaTotal() {
 
   useEffect(() => { loadAll() }, [filtroEmpresa, filtroAno])
 
-  const deptMap  = useMemo(() => Object.fromEntries(departamentos.map(d => [d.id, d.nome_departamento])),  [departamentos])
-  const setorMap = useMemo(() => Object.fromEntries(setores.map(s => [s.id, s.nome_setor])),               [setores])
-  const boxMap   = useMemo(() => Object.fromEntries(boxes.map(b => [b.id, b.nome_box])),                   [boxes])
-  const funcMap  = useMemo(() => Object.fromEntries(funcionarios.map(f => [f.id, f.nome_funcionario])),    [funcionarios])
-
-  // Mecânico: mesma posição (departamento/setor/box/cargo pelo cadastro do funcionário) e mesmo cálculo da
-  // aba Metas - Mecânico, para os valores baterem exatamente.
-  const mecRowsNormalized = useMemo(() => {
-    const ctx = { funcionarios, cargos, boxes, setores, departamentos }
-    return rowsMecanico.map(r => {
-      const p = resolverPosicaoMecanico(r, ctx)
-      const { meta_servicos: ms, meta_pecas: mp } = valoresMetaMecanico(r)
-      const val = filtroVisu === 'servicos' ? ms : filtroVisu === 'pecas' ? mp : ms + mp
-      return {
-        ...r,
-        departamento_id: p.did, setor_id: p.sId, box_id: p.bId, cargo_id: p.cId,
-        meta_faturamento: val, _grav: ms + mp,
+  // Aprovar / Pendênciar um setor (Peças: só o setor; Serviços: consultores + mecânicos da empresa).
+  const executarAcao = async () => {
+    if (!confirmAcao) return
+    const { acao, kind, empresaId, setorId } = confirmAcao
+    setAcaoRodando(`${empresaId}|${setorId}`); setConfirmAcao(null)
+    try {
+      if (kind === 'pecas') {
+        if (acao === 'aprovar') await apiService.approveMetasPecasSetor(empresaId, filtroAno, setorId)
+        else await apiService.unapproveMetasPecasSetor(empresaId, filtroAno, setorId)
+      } else if (acao === 'aprovar') {
+        await apiService.approveMetasConsultorEmpresa(empresaId, filtroAno)
+        await apiService.approveMetasMecanicoEmpresa(empresaId, filtroAno)
+      } else {
+        await apiService.unapproveMetasConsultorEmpresa(empresaId, filtroAno)
+        await apiService.unapproveMetasMecanicoEmpresa(empresaId, filtroAno)
       }
-    })
-  }, [rowsMecanico, filtroVisu, funcionarios, cargos, boxes, setores, departamentos])
-
-  // Consultor: as linhas novas ficam ligadas direto a Mecânica/Funilaria; aqui elas voltam ao setor
-  // "Consultores" (distribuição), que aparece na árvore mas não entra no total (ver aggDeptDedup).
-  const consultoriaSetor = useMemo(() => setores.find(s => s.tipo_setor === 'consultoria') || null, [setores])
-  const consRowsNormalized = useMemo(() => {
-    if (!consultoriaSetor) return rowsConsultor
-    return rowsConsultor.map(r => {
-      // Consultor é ligado ao Setor (Mecânica / Funilaria-Pintura), não a um box: o nível de Box aqui leva o
-      // nome do setor de origem (linhas antigas ainda presas a um box mantêm o box gravado).
-      const setorOrigem = setores.find(s => s.id === r.setor_id)?.nome_setor || r.setor_nome || '—'
-      const boxAntigo = r.box_id ? boxes.find(b => b.id === r.box_id) : null
-      return {
-        ...r,
-        departamento_id: consultoriaSetor.departamento_id || r.departamento_id,
-        setor_id: consultoriaSetor.id, setor_nome: consultoriaSetor.nome_setor,
-        box_id: boxAntigo?.id || `__cons__${r.setor_id || setorOrigem}`,
-        box_nome: boxAntigo?.nome_box || setorOrigem,
-        _setorOrigemId: r.setor_id, _setorOrigemNome: setorOrigem,
-      }
-    })
-  }, [rowsConsultor, consultoriaSetor, boxes, setores])
-
-  // Funilaria setor da tabela de dimensão
-  const funSetorInfo = useMemo(() => {
-    const s = setores.find(s => (s.nome_setor || '').toLowerCase().includes('funilaria'))
-    if (!s) return null
-    return { id: s.id, nome: s.nome_setor, departamento_id: s.departamento_id }
-  }, [setores])
-
-  // Terceiros setor da tabela de dimensão
-  const terSetorInfo = useMemo(() => {
-    const s = setores.find(s => (s.nome_setor || '').toLowerCase().includes('terceiro'))
-    if (!s) return null
-    return { id: s.id, nome: s.nome_setor, departamento_id: s.departamento_id }
-  }, [setores])
-
-  const terRowsNormalized = useMemo(() => {
-    if (filtroVisu === 'pecas') return []
-    const sId   = terSetorInfo?.id   || '__terceiros__'
-    const sNome = terSetorInfo?.nome || 'Terceiros'
-    const dId   = terSetorInfo?.departamento_id || funSetorInfo?.departamento_id || '—'
-    const dNome = deptMap[dId] || '—'
-    return rowsTerceiros.flatMap(r => {
-      const val = Number(r.meta_servicos) || 0
-      if (val === 0) return []
-      return [{
-        empresa_id: r.empresa_id, empresa_nome: r.empresa_nome,
-        departamento_id: dId, departamento_nome: dNome,
-        setor_id: sId, setor_nome: sNome,
-        box_id: '__terceiros__', box_nome: 'Terceiros',
-        cargo_id: '__terceiros__', cargo_nome: 'Terceiros',
-        colaborador_id: `__ter__${r.empresa_id}__${r.mes}`, colaborador_nome: r.empresa_nome || 'Meta Terceiros',
-        mes: r.mes, meta_faturamento: val, meta_servicos: val,
-        _grav: Number(r.meta_faturamento) || val,
-        meta_aprovada: r.meta_aprovada,
-      }]
-    })
-  }, [rowsTerceiros, terSetorInfo, funSetorInfo, filtroVisu, deptMap])
+      await loadAll()
+      aoAlterarAprovacao?.()
+    } catch (err) { setError(err.message || String(err)) }
+    finally { setAcaoRodando(null) }
+  }
 
   // Árvore unificada: Peças + Consultor + Mecânico (inclui Produtivo Não Associado Funilaria) + Terceiros
   const tree = useMemo(
-    () => buildUnifiedTree(
-      [
-        ...rowsPecas.map(r => ({ ...r, _tipo: 'PECAS' })),
-        ...consRowsNormalized.map(r => ({ ...r, _tipo: 'CONSULTOR' })),
-        ...mecRowsNormalized.map(r => ({ ...r, _tipo: 'MECANICO' })),
-        ...terRowsNormalized.map(r => ({ ...r, _tipo: 'TERCEIROS' })),
-      ],
-      deptMap, setorMap, boxMap, funcMap
-    ),
-    [rowsPecas, consRowsNormalized, mecRowsNormalized, terRowsNormalized, deptMap, setorMap, boxMap, funcMap]
+    () => montarArvoreTotal({ rowsPecas, rowsMecanico, rowsConsultor, rowsTerceiros, funcionarios, cargos, boxes, setores, departamentos, filtroVisu }),
+    [rowsPecas, rowsMecanico, rowsConsultor, rowsTerceiros, funcionarios, cargos, boxes, setores, departamentos, filtroVisu]
   )
 
   const expandirTudo = () => {
@@ -386,9 +265,29 @@ export default function MetasPosVendaTotal() {
           if (sumArr(sVals) === 0) return
           const sKey = `${dKey}-s-${sId}`
           const sSit = statusSetor(setor)
-          const sSituacao = sSit.tem
+          let sSituacao = sSit.tem
             ? <span className={`px-2 py-0.5 rounded-full text-xs font-semibold whitespace-nowrap ${STATUS_CLS[sSit.label]}`}>{STATUS_DISPLAY[sSit.label]}</span>
             : null
+          let statusNome = null
+          if (modoAprovacao) {
+            // Status logo depois do nome do setor; ícones de Aprovar / Pendênciar na última coluna.
+            const ap = infoAprovacaoSetor(setor, empNode)
+            statusNome = ap.kind && ap.tem
+              ? <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap ${ap.pend ? STATUS_CLS['AGUARDANDO APROVACAO'] : STATUS_CLS['APROVADO']}`}>{ap.pend ? STATUS_DISPLAY['AGUARDANDO APROVACAO'] : STATUS_DISPLAY['APROVADO']}</span>
+              : null
+            const chaveAcao = `${eId}|${sId}`
+            const info = { kind: ap.kind, empresaId: eId, empresaNome: eNome, setorId: sId, setorNome: setor.nome }
+            sSituacao = ap.kind ? (
+              <span className="inline-flex items-center gap-1">
+                <BotaoIconeTooltip Icone={CheckCircle2} tom="verde" dica="Aprovar este setor"
+                  disabled={!canEdit || !ap.pend} carregando={acaoRodando === chaveAcao}
+                  onClick={() => setConfirmAcao({ ...info, acao: 'aprovar' })} />
+                <BotaoIconeTooltip Icone={Ban} tom="vermelho" dica="Pendenciar: voltar para aguardando aprovação"
+                  disabled={!canEdit} carregando={acaoRodando === chaveAcao}
+                  onClick={() => setConfirmAcao({ ...info, acao: 'pendenciar' })} />
+              </span>
+            ) : null
+          }
           childRows.push(
             <tr key={sKey} className="bg-slate-50 hover:bg-slate-100 cursor-pointer" onClick={e => { e.stopPropagation(); tog(sKey) }}>
               <td className="pl-14 pr-2 py-1 text-xs text-slate-700 whitespace-nowrap sticky left-0 bg-slate-50">
@@ -396,6 +295,7 @@ export default function MetasPosVendaTotal() {
                   {isOpen(sKey) ? <ChevronDown size={10}/> : <ChevronRight size={10}/>}
                   <span className="text-slate-400 mr-0.5">Setor:</span>
                   <span className="font-semibold">{setor.nome}</span>
+                  {statusNome}
                 </span>
               </td>
               {mCells(sVals, sKey, false, sSituacao)}
@@ -510,7 +410,9 @@ export default function MetasPosVendaTotal() {
   ]
 
   return (
-    <div className="flex flex-col h-full p-6 gap-4">
+    <div className={modoAprovacao ? 'flex flex-col gap-4' : 'flex flex-col h-full p-6 gap-4'}>
+      {modoAprovacao && loading && <div className="flex items-center gap-2 text-slate-400 text-sm"><Loader2 size={16} className="animate-spin" /> Carregando...</div>}
+      {!modoAprovacao && (<>
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -542,6 +444,7 @@ export default function MetasPosVendaTotal() {
         </div>
         {loading && <Loader2 size={18} className="animate-spin text-indigo-500" />}
       </div>
+      </>)}
 
       {error && (
         <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-2">
@@ -550,7 +453,7 @@ export default function MetasPosVendaTotal() {
       )}
 
       {/* Table */}
-      <div className="flex-1 overflow-auto rounded-xl border border-slate-200 bg-white">
+      <div className={`${modoAprovacao ? '' : 'flex-1'} overflow-auto rounded-xl border border-slate-200 bg-white`}>
         <table className="w-full border-collapse min-w-[1400px]">
           <thead className="sticky top-0 z-10 bg-slate-100 border-b border-slate-200">
             <tr>
@@ -577,7 +480,7 @@ export default function MetasPosVendaTotal() {
                 Total
               </th>
               <th className="px-2 py-2 text-center text-xs font-semibold text-slate-600 whitespace-nowrap">
-                Situação
+                {modoAprovacao ? 'Aprovação' : 'Situação'}
               </th>
             </tr>
           </thead>
@@ -594,6 +497,31 @@ export default function MetasPosVendaTotal() {
         </table>
       </div>
       {calcAberto && <CalculoFuncionarioModal dados={calcAberto} onClose={() => setCalcAberto(null)} />}
+
+      {confirmAcao && (
+        <div className="fixed top-0 right-0 bottom-0 left-16 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setConfirmAcao(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md" onClick={e => e.stopPropagation()}>
+            <div className="p-6">
+              <h2 className="text-lg font-bold text-slate-800 mb-2">{confirmAcao.acao === 'aprovar' ? 'Aprovar setor' : 'Pendenciar setor'}</h2>
+              <p className="text-sm text-slate-600">
+                {confirmAcao.acao === 'aprovar'
+                  ? <>Aprovar os valores de <strong>{confirmAcao.setorNome}</strong> em <strong>{confirmAcao.empresaNome}</strong> ({filtroAno})?</>
+                  : <>Os valores de <strong>{confirmAcao.setorNome}</strong> em <strong>{confirmAcao.empresaNome}</strong> ({filtroAno}) voltarão para <strong className="text-amber-700">aguardando aprovação</strong>.</>}
+              </p>
+              {confirmAcao.kind === 'consultor' && (
+                <p className="text-xs text-slate-500 mt-2">O serviço dos mecânicos está vinculado ao consultor: a ação vale para os consultores e mecânicos desta empresa.</p>
+              )}
+            </div>
+            <div className="flex gap-3 px-6 pb-6">
+              <button onClick={() => setConfirmAcao(null)} className="flex-1 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-sm font-semibold px-4 py-2 rounded-lg transition-colors">Cancelar</button>
+              <button onClick={executarAcao}
+                className={`flex-1 text-white text-sm font-bold px-4 py-2 rounded-lg transition-colors ${confirmAcao.acao === 'aprovar' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}`}>
+                {confirmAcao.acao === 'aprovar' ? 'Aprovar' : 'Pendenciar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

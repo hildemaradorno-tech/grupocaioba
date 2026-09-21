@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { apiService } from '../services/api'
+import MetasPosVendaTotal from './MetasPosVendaTotal'
 
 const anoAtual = new Date().getFullYear()
 const ANOS = Array.from({ length: 7 }, (_, i) => anoAtual - 1 + i)
@@ -17,7 +18,7 @@ const MESES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov'
 const fmtBRL = (v) => {
   const n = Number(v)
   if (!n && n !== 0) return '—'
-  return 'R$ ' + n.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
+  return 'R$ ' + n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 const fmtDate = (iso) => {
   if (!iso) return '—'
@@ -27,7 +28,7 @@ const sumArr = (a) => a.reduce((s, v) => s + v, 0)
 
 const TIPOS = [
   { key: 'pecas',     grupo: 'pecas',    contabilizaTotal: true,  label: 'Peças',              labelCurto: 'Peças',     icon: Package,    color: 'blue',   nav: '/metas/pos-vendas/pecas' },
-  { key: 'consultor', grupo: 'servicos', contabilizaTotal: true,  label: 'Consultores',         labelCurto: 'Consultor', icon: Cog,        color: 'violet', nav: '/metas/pos-vendas/distribuicao-consultores' },
+  { key: 'consultor', grupo: 'servicos', contabilizaTotal: true,  label: 'Serviços', labelCurto: 'Consultor', icon: Cog,        color: 'violet', nav: '/metas/pos-vendas/distribuicao-consultores' },
   { key: 'mecanico',  grupo: 'servicos', contabilizaTotal: false, label: 'Serviços Mecânico',  labelCurto: 'Mecânico',  icon: Wrench,     color: 'indigo', nav: '/metas/pos-vendas/servicos/mecanico' },
 ]
 
@@ -83,7 +84,6 @@ export default function MetasGestaoAprovacao() {
   const [abaSalva,      setAbaAtiva]      = useSessionState('mga_aba', 'posvendas')
   // Aba salva que não existe mais (Peças / Serviços foram agrupadas em Pós-Vendas) volta para Pós-Vendas.
   const abaAtiva = ['posvendas', 'novos', 'usados', 'geral'].includes(abaSalva) ? abaSalva : 'posvendas'
-  const [subAba,        setSubAba]        = useSessionState('mga_subaba', 'fila')
   const [expandedEmps,  setExpandedEmps]  = useState(new Set())
   const [expandedTipos, setExpandedTipos] = useState(new Set())
 
@@ -108,6 +108,7 @@ export default function MetasGestaoAprovacao() {
   }, [filtroAno])
 
   useEffect(() => { load() }, [load])
+
 
   // ── KPIs ──────────────────────────────────────────────────────────────────
   const kpi = useMemo(() => {
@@ -194,7 +195,11 @@ export default function MetasGestaoAprovacao() {
     try {
       if (tipo === 'pecas')     await apiService.approveMetasPecasEmpresa(empId, filtroAno)
       if (tipo === 'mecanico')  await apiService.approveMetasMecanicoEmpresa(empId, filtroAno)
-      if (tipo === 'consultor') await apiService.approveMetasConsultorEmpresa(empId, filtroAno)
+      if (tipo === 'consultor') {
+        // O serviço do mecânico está vinculado ao consultor: aprovar o consultor aprova os mecânicos junto.
+        await apiService.approveMetasConsultorEmpresa(empId, filtroAno)
+        await apiService.approveMetasMecanicoEmpresa(empId, filtroAno)
+      }
       await load()
     } catch (err) { setError(err.message || String(err)) }
     finally { setAprovando(null) }
@@ -213,7 +218,10 @@ export default function MetasGestaoAprovacao() {
     try {
       if (tipo === 'pecas')     await apiService.unapproveMetasPecasEmpresa(empId, filtroAno)
       if (tipo === 'mecanico')  await apiService.unapproveMetasMecanicoEmpresa(empId, filtroAno)
-      if (tipo === 'consultor') await apiService.unapproveMetasConsultorEmpresa(empId, filtroAno)
+      if (tipo === 'consultor') {
+        await apiService.unapproveMetasConsultorEmpresa(empId, filtroAno)
+        await apiService.unapproveMetasMecanicoEmpresa(empId, filtroAno)
+      }
       await load()
     } catch (err) { setError(err.message || String(err)) }
     finally { setNaoAprovando(null) }
@@ -300,203 +308,16 @@ export default function MetasGestaoAprovacao() {
           ))}
         </div>
 
-        {/* ── Sub-abas: Fila / Visão ── */}
-        {!['novos', 'usados'].includes(abaAtiva) && (
-          <div className="flex gap-1.5">
-            {[
-              { key: 'fila',  label: 'Fila de Aprovação',  icon: ClipboardCheck, badge: pendAba },
-              { key: 'visao', label: 'Visão Consolidada',   icon: BarChart3,      badge: 0 },
-            ].map(({ key, label, icon: Icon, badge }) => (
-              <button key={key} onClick={() => setSubAba(key)}
-                className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors
-                  ${subAba === key ? 'bg-slate-800 text-white shadow-sm' : 'bg-white border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700'}`}>
-                <Icon size={12} />
-                {label}
-                {badge > 0 && (
-                  <span className={`ml-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold ${subAba === key ? 'bg-white text-slate-800' : 'bg-amber-400 text-slate-900'}`}>
-                    {badge}
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
-        )}
-
         {loading && (
           <div className="flex items-center justify-center py-16">
             <div className="flex items-center gap-2 text-slate-400"><Loader2 size={20} className="animate-spin" /> Carregando...</div>
           </div>
         )}
 
-        {/* ═══════════════════════════════════════════════════════════════
-            ABAS: PEÇAS / SERVIÇOS — FILA DE APROVAÇÃO
-        ════════════════════════════════════════════════════════════════== */}
-        {!loading && subAba === 'fila' && (abaAtiva === 'posvendas' || abaAtiva === 'geral') && (
-          <div className="space-y-4">
-            {empresasAba.length === 0 ? (
-              <div className="flex flex-col items-center justify-center gap-3 py-16 bg-white border border-slate-200 rounded-xl">
-                <CheckCircle2 size={48} className="text-green-400" />
-                <p className="text-lg font-bold text-slate-700">Nenhum valor encontrado</p>
-                <p className="text-sm text-slate-400">Não há metas cadastradas para este ano.</p>
-                {kpi.totalRegistros === 0 && (
-                  <p className="text-xs text-slate-400 mt-1">Nenhuma meta cadastrada para {filtroAno}.</p>
-                )}
-              </div>
-            ) : (
-              empresasAba.map(emp => {
-                const empOpen = expandedEmps.has(emp.id)
-                const totalPend = tiposAba.reduce((s, t) => s + (emp.tipos[t.key]?.pendentes || 0), 0)
-                const totalR$ = tiposAba.filter(t => t.contabilizaTotal).reduce((s, t) => s + (emp.tipos[t.key]?.total || 0), 0)
-                return (
-                  <div key={emp.id} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                    {/* Cabeçalho da empresa */}
-                    <div className="flex items-center justify-between px-5 py-3.5 bg-slate-800 text-white cursor-pointer select-none"
-                         onClick={() => togEmp(emp.id)}>
-                      <div className="flex items-center gap-3 flex-wrap">
-                        <Building2 size={18} className="text-slate-400 shrink-0" />
-                        <span className="font-bold text-base">{emp.nome}</span>
-                        {totalPend > 0 ? (
-                          <span className="px-2.5 py-0.5 rounded-full bg-amber-400 text-slate-900 text-xs font-bold">
-                            {totalPend} pendente{totalPend !== 1 ? 's' : ''}
-                          </span>
-                        ) : (
-                          <span className="px-2.5 py-0.5 rounded-full bg-green-500 text-white text-xs font-bold">Aprovado</span>
-                        )}
-                        <span className="text-slate-300 text-sm font-semibold">{fmtBRL(totalR$)}</span>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <button
-                          onClick={e => { e.stopPropagation(); navigate('/metas/pos-vendas/total') }}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-white text-xs font-semibold transition-colors">
-                          <Eye size={12} /> Ver Total Pós-Vendas
-                        </button>
-                        {empOpen ? <ChevronDown size={18} className="text-slate-400" /> : <ChevronRight size={18} className="text-slate-400" />}
-                      </div>
-                    </div>
-
-                    {/* Tipos dentro da empresa */}
-                    {empOpen && (
-                      <div className="divide-y divide-slate-100">
-                        {tiposAba.map(tipo => {
-                          const info = emp.tipos[tipo.key]
-                          if (!info) return null
-                          const Icon = tipo.icon
-                          const cl = COLORS[tipo.color]
-                          const tipoKey = `${emp.id}|${tipo.key}`
-                          const tipoOpen = expandedTipos.has(tipoKey)
-                          const aprovandoEste = aprovando === tipoKey
-                          const mesArr = Array(12).fill(0)
-                          info.rows.forEach(r => { mesArr[r.mes - 1] += Number(r.meta_faturamento) || 0 })
-
-                          // Agrupa todos os valores (pendentes e aprovados) por colaborador para a mini-tabela
-                          const colabVals = {}
-                          info.rows.forEach(r => {
-                            const nome = r.colaborador_nome || r.empresa_nome
-                            if (!colabVals[nome]) colabVals[nome] = Array(12).fill(null)
-                            const atual = colabVals[nome][r.mes - 1] || { v: 0, pend: false }
-                            atual.v += Number(r.meta_faturamento) || 0
-                            if (isPendente(r)) atual.pend = true
-                            colabVals[nome][r.mes - 1] = atual
-                          })
-                          const colabNomes = Object.keys(colabVals)
-
-                          return (
-                            <div key={tipo.key} className={`${cl.bg}`}>
-                              {/* Linha do tipo */}
-                              <div className="flex items-center gap-3 px-5 py-3 cursor-pointer select-none"
-                                   onClick={() => togTipo(tipoKey)}>
-                                <span className={`w-7 h-7 rounded-lg ${cl.hdr} flex items-center justify-center shrink-0`}>
-                                  <Icon size={13} className="text-white" />
-                                </span>
-                                <span className={`font-semibold text-sm ${cl.text} flex-1`}>{tipo.label}</span>
-                                {info.pendentes > 0 ? (
-                                  <span className="px-2 py-0.5 rounded-full bg-amber-400 text-slate-900 text-[10px] font-bold">
-                                    {info.pendentes} pendente{info.pendentes !== 1 ? 's' : ''}
-                                  </span>
-                                ) : (
-                                  <span className="px-2 py-0.5 rounded-full bg-green-500 text-white text-[10px] font-bold">Aprovado</span>
-                                )}
-                                <span className={`text-xs font-semibold ${cl.text}`}>{fmtBRL(info.total)}</span>
-                                <button
-                                  onClick={e => { e.stopPropagation(); navigate(tipo.nav) }}
-                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-semibold transition-colors shrink-0">
-                                  <ArrowRight size={11} /> Detalhes
-                                </button>
-                                {canEdit && (
-                                  <button
-                                    onClick={e => { e.stopPropagation(); confirmarAprovacao(emp.id, emp.nome, tipo.key, info.pendentes, info.totalPendente) }}
-                                    disabled={!!aprovandoEste || info.pendentes === 0}
-                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors shrink-0 disabled:opacity-40 bg-green-600 hover:bg-green-700 text-white">
-                                    <AprovandoSpinner chave={tipoKey} />
-                                    Aprovar
-                                  </button>
-                                )}
-                                {canEdit && (
-                                  <button
-                                    onClick={e => { e.stopPropagation(); confirmarNaoAprovacao(emp.id, emp.nome, tipo.key, info.pendentes, info.total) }}
-                                    disabled={naoAprovando === tipoKey}
-                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors shrink-0 bg-red-600 hover:bg-red-700 text-white disabled:opacity-40">
-                                    {naoAprovando === tipoKey ? <Loader2 size={12} className="animate-spin" /> : <Ban size={12} />}
-                                    Pendênciar
-                                  </button>
-                                )}
-                                {tipoOpen ? <ChevronDown size={14} className={cl.text} /> : <ChevronRight size={14} className={cl.text} />}
-                              </div>
-
-                              {/* Mini-tabela de pendentes */}
-                              {tipoOpen && (
-                                <div className="px-5 pb-4">
-                                  {colabNomes.length === 0 ? (
-                                    <p className="text-xs text-slate-400 italic py-2">Nenhum valor neste tipo.</p>
-                                  ) : (
-                                    <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-                                      <div className="flex items-center gap-4 px-3 py-1.5 text-[11px] text-slate-500 border-b border-slate-100">
-                                        <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500" /> Pendente de aprovação</span>
-                                        <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-600" /> Aprovado</span>
-                                      </div>
-                                      <table className="text-xs border-separate border-spacing-0" style={{ minWidth: '1100px' }}>
-                                        <thead>
-                                          <tr className="bg-slate-50">
-                                            <th className="px-3 py-2 text-left font-semibold text-slate-500 sticky left-0 bg-slate-50 border-b border-slate-200 whitespace-nowrap">Colaborador / Empresa</th>
-                                            {MESES.map(m => <th key={m} className="px-2 py-2 text-center font-semibold text-slate-500 border-b border-slate-200 w-20">{m}</th>)}
-                                            <th className="px-2 py-2 text-center font-semibold text-indigo-700 border-b border-slate-200 w-24 bg-indigo-50">Total</th>
-                                          </tr>
-                                        </thead>
-                                        <tbody>
-                                          {colabNomes.map(nome => {
-                                            const vals = colabVals[nome]
-                                            const tot = vals.reduce((s, c) => s + (c?.v || 0), 0)
-                                            return (
-                                              <tr key={nome} className="border-b border-slate-100 hover:bg-amber-50/40">
-                                                <td className="px-3 py-2 font-semibold text-slate-700 sticky left-0 bg-white whitespace-nowrap border-b border-slate-100">{nome}</td>
-                                                {vals.map((c, i) => (
-                                                  <td key={i} className="px-2 py-2 text-right whitespace-nowrap">
-                                                    {c != null && c.v > 0
-                                                      ? <span className={`font-semibold ${c.pend ? 'text-amber-700' : 'text-green-700'}`}>{fmtBRL(c.v)}</span>
-                                                      : <span className="text-slate-200">—</span>
-                                                    }
-                                                  </td>
-                                                ))}
-                                                <td className="px-2 py-2 text-right font-bold text-indigo-700 bg-indigo-50 whitespace-nowrap">{fmtBRL(tot)}</td>
-                                              </tr>
-                                            )
-                                          })}
-                                        </tbody>
-                                      </table>
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          )
-                        })}
-                      </div>
-                    )}
-                  </div>
-                )
-              })
-            )}
-          </div>
+        {/* FILA DE APROVAÇÃO: mesma árvore das telas de Serviços (Grupo > Segmento/Marca > Empresa > Departamento
+            > Setor > Box > Funcionário), com o status ao lado do setor e a coluna final de aprovação. */}
+        {(abaAtiva === 'posvendas' || abaAtiva === 'geral') && (
+          <MetasPosVendaTotal modoAprovacao anoExterno={filtroAno} aoAlterarAprovacao={load} />
         )}
 
         {/* ═══════════════════════════════════════════════════════════════
@@ -526,137 +347,6 @@ export default function MetasGestaoAprovacao() {
             <p className="text-sm text-slate-400 text-center max-w-sm">
               Em breve os valores, metas e responsáveis pela aprovação desta área serão definidos.
             </p>
-          </div>
-        )}
-
-        {/* ═══════════════════════════════════════════════════════════════
-            ABA: GERAL — VISÃO CONSOLIDADA
-        ════════════════════════════════════════════════════════════════== */}
-        {!loading && subAba === 'visao' && !['novos', 'usados'].includes(abaAtiva) && (
-          <div className="space-y-4">
-            {/* Legenda */}
-            <div className="flex items-center gap-6 bg-white border border-slate-200 rounded-xl px-4 py-3 text-xs text-slate-600">
-              <span className="font-semibold text-slate-500">Legenda:</span>
-              <span className="flex items-center gap-1.5">
-                <span className="inline-block w-3 h-3 rounded-full bg-amber-400" /> Pendente de aprovação
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="inline-block w-3 h-3 rounded-full bg-green-400" /> Aprovado
-              </span>
-              <span className="flex items-center gap-1.5 ml-auto text-slate-400">
-                <Info size={12} /> Valores em R$ — clique na empresa para expandir
-              </span>
-            </div>
-
-            {empresasResumoAba.length === 0 ? (
-              <div className="flex flex-col items-center justify-center gap-3 py-16 bg-white border border-slate-200 rounded-xl">
-                <BarChart3 size={40} className="text-slate-300" />
-                <p className="text-slate-500 font-semibold">Nenhuma meta cadastrada para {filtroAno}.</p>
-              </div>
-            ) : (
-              empresasResumoAba.map(emp => {
-                const empOpen = expandedEmps.has(`geral-${emp.id}`)
-                const totalEmp = Object.values(emp.tipos).reduce((s, t) => s + t.total, 0)
-                const pendEmp  = Object.values(emp.tipos).reduce((s, t) => s + t.pendentes, 0)
-
-                return (
-                  <div key={emp.id} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                    {/* Cabeçalho empresa */}
-                    <div className="flex items-center justify-between px-5 py-3.5 bg-indigo-700 text-white cursor-pointer select-none"
-                         onClick={() => togEmp(`geral-${emp.id}`)}>
-                      <div className="flex items-center gap-3 flex-wrap">
-                        <Building2 size={17} className="text-indigo-300 shrink-0" />
-                        <span className="font-bold">{emp.nome}</span>
-                        <span className="text-indigo-200 text-sm font-semibold">{fmtBRL(totalEmp)}</span>
-                        {pendEmp > 0 && (
-                          <span className="px-2 py-0.5 rounded-full bg-amber-400 text-slate-900 text-[10px] font-bold">
-                            {pendEmp} pendente{pendEmp !== 1 ? 's' : ''}
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button onClick={e => { e.stopPropagation(); navigate('/metas/pos-vendas/total') }}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold">
-                          <Eye size={11} /> Ver Total
-                        </button>
-                        {empOpen ? <ChevronDown size={16} className="text-indigo-300" /> : <ChevronRight size={16} className="text-indigo-300" />}
-                      </div>
-                    </div>
-
-                    {empOpen && (
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-xs border-separate border-spacing-0" style={{ minWidth: '1200px' }}>
-                          <thead>
-                            <tr className="bg-slate-50">
-                              <th className="px-4 py-2 text-left font-semibold text-slate-500 uppercase tracking-wide border-b border-slate-200 w-44 sticky left-0 bg-slate-50 z-10">Tipo</th>
-                              {MESES.map(m => <th key={m} className="px-1 py-2 text-center font-semibold text-slate-500 uppercase tracking-wide border-b border-slate-200 w-20">{m}</th>)}
-                              <th className="px-2 py-2 text-center font-semibold text-indigo-700 uppercase border-b border-slate-200 w-28 bg-indigo-50">Total Ano</th>
-                              <th className="px-2 py-2 text-center font-semibold text-slate-500 uppercase border-b border-slate-200 w-24">Situação</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {tiposAba.map(tipo => {
-                              const info = emp.tipos[tipo.key]
-                              if (!info) return null
-                              const Icon = tipo.icon
-                              const cl = COLORS[tipo.color]
-                              const mesVals = Array.from({ length: 12 }, (_, i) => info.meses[i + 1] || 0)
-                              const tot = sumArr(mesVals)
-                              const aprovado = info.pendentes === 0
-                              return (
-                                <tr key={tipo.key} className={`border-b border-slate-100 hover:brightness-95 ${cl.bg}`}>
-                                  <td className={`px-4 py-2 sticky left-0 z-10 whitespace-nowrap border-b border-slate-100 ${cl.bg}`}>
-                                    <div className="flex items-center gap-2">
-                                      <span className={`w-6 h-6 rounded ${cl.hdr} flex items-center justify-center shrink-0`}>
-                                        <Icon size={11} className="text-white" />
-                                      </span>
-                                      <span className={`font-semibold ${cl.text}`}>{tipo.label}</span>
-                                    </div>
-                                  </td>
-                                  {mesVals.map((v, i) => (
-                                    <td key={i} className={`px-1 py-2 text-right whitespace-nowrap font-mono ${info.meses[i+1] ? (info.pendentes > 0 ? 'text-amber-700 font-semibold' : 'text-slate-600') : 'text-slate-200'}`}>
-                                      {v > 0 ? fmtBRL(v) : '—'}
-                                    </td>
-                                  ))}
-                                  <td className={`px-2 py-2 text-right font-bold whitespace-nowrap ${cl.text} bg-white/60`}>{tot > 0 ? fmtBRL(tot) : '—'}</td>
-                                  <td className="px-2 py-2 text-center whitespace-nowrap">
-                                    <div className="flex items-center justify-center gap-1.5">
-                                      {aprovado
-                                        ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-100 text-green-700 text-[10px] font-bold"><CheckCircle2 size={9}/> Aprovado</span>
-                                        : <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-[10px] font-bold"><AlertTriangle size={9}/> {info.pendentes} pend.</span>
-                                      }
-                                      {canEdit && aprovado && (
-                                        <button
-                                          onClick={() => confirmarNaoAprovacao(emp.id, emp.nome, tipo.key, 0, info.total)}
-                                          disabled={naoAprovando === `${emp.id}|${tipo.key}`}
-                                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-600 hover:bg-red-700 text-white text-[10px] font-bold transition-colors disabled:opacity-40">
-                                          {naoAprovando === `${emp.id}|${tipo.key}` ? <Loader2 size={8} className="animate-spin" /> : <Ban size={8}/>}
-                                          Reverter
-                                        </button>
-                                      )}
-                                    </div>
-                                  </td>
-                                </tr>
-                              )
-                            })}
-                            {/* Linha total */}
-                            <tr className="bg-indigo-50">
-                              <td className="px-4 py-2 font-bold text-indigo-800 sticky left-0 bg-indigo-50 z-10 whitespace-nowrap">TOTAL EMPRESA</td>
-                              {Array.from({ length: 12 }, (_, i) => {
-                                const v = tiposAba.reduce((s, t) => s + (emp.tipos[t.key]?.meses[i+1] || 0), 0)
-                                return <td key={i} className="px-1 py-2 text-right font-bold text-indigo-700 whitespace-nowrap">{v > 0 ? fmtBRL(v) : '—'}</td>
-                              })}
-                              <td className="px-2 py-2 text-right font-bold text-indigo-800 bg-indigo-100 whitespace-nowrap">{fmtBRL(totalEmp)}</td>
-                              <td />
-                            </tr>
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                  </div>
-                )
-              })
-            )}
           </div>
         )}
 
