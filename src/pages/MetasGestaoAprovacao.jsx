@@ -50,10 +50,10 @@ function isPendente(r) {
 function agruparPorEmpresa(rows) {
   const m = {}
   rows.forEach(r => {
-    if (!m[r.empresa_id]) m[r.empresa_id] = { nome: r.empresa_nome, rows: [], pendentes: 0, total: 0 }
+    if (!m[r.empresa_id]) m[r.empresa_id] = { nome: r.empresa_nome, rows: [], pendentes: 0, total: 0, totalPendente: 0 }
     m[r.empresa_id].rows.push(r)
     m[r.empresa_id].total += Number(r.meta_faturamento) || 0
-    if (isPendente(r)) m[r.empresa_id].pendentes++
+    if (isPendente(r)) { m[r.empresa_id].pendentes++; m[r.empresa_id].totalPendente += Number(r.meta_faturamento) || 0 }
   })
   return m
 }
@@ -80,7 +80,9 @@ export default function MetasGestaoAprovacao() {
   const [modalNaoAprovar, setModalNaoAprovar] = useState(null)
   const [modalConf,    setModalConf]    = useState(null)
 
-  const [abaAtiva,      setAbaAtiva]      = useSessionState('mga_aba', 'pecas')
+  const [abaSalva,      setAbaAtiva]      = useSessionState('mga_aba', 'posvendas')
+  // Aba salva que não existe mais (Peças / Serviços foram agrupadas em Pós-Vendas) volta para Pós-Vendas.
+  const abaAtiva = ['posvendas', 'novos', 'usados', 'geral'].includes(abaSalva) ? abaSalva : 'posvendas'
   const [subAba,        setSubAba]        = useSessionState('mga_subaba', 'fila')
   const [expandedEmps,  setExpandedEmps]  = useState(new Set())
   const [expandedTipos, setExpandedTipos] = useState(new Set())
@@ -124,17 +126,18 @@ export default function MetasGestaoAprovacao() {
   const tudo_aprovado = kpi.totalPendItems === 0 && kpi.totalRegistros > 0
 
   // ── Estrutura por empresa (para fila de aprovação) ─────────────────────
+  // Traz todos os valores do ano (pendentes e já aprovados); cada linha sabe se está pendente.
   const empresasComPendencia = useMemo(() => {
     const empMap = {}
     TIPOS.forEach(t => {
-      const grupos = agruparPorEmpresa(pending[t.key])
+      const grupos = agruparPorEmpresa(resumo[t.key])
       Object.entries(grupos).forEach(([empId, info]) => {
         if (!empMap[empId]) empMap[empId] = { id: empId, nome: info.nome, tipos: {} }
         empMap[empId].tipos[t.key] = info
       })
     })
     return Object.values(empMap).sort((a, b) => a.nome.localeCompare(b.nome))
-  }, [pending])
+  }, [resumo])
 
   // ── Estrutura por empresa para visão geral ────────────────────────────
   const empresasResumo = useMemo(() => {
@@ -154,7 +157,7 @@ export default function MetasGestaoAprovacao() {
 
   // ── Filtragem por aba ──────────────────────────────────────────────────
   const tiposAba = useMemo(() =>
-    abaAtiva === 'geral' ? TIPOS : TIPOS.filter(t => t.grupo === abaAtiva),
+    (abaAtiva === 'geral' || abaAtiva === 'posvendas') ? TIPOS : TIPOS.filter(t => t.grupo === abaAtiva),
     [abaAtiva]
   )
 
@@ -164,7 +167,7 @@ export default function MetasGestaoAprovacao() {
   )
 
   const empresasResumoAba = useMemo(() => {
-    if (abaAtiva === 'geral') return empresasResumo
+    if (abaAtiva === 'geral' || abaAtiva === 'posvendas') return empresasResumo
     return empresasResumo
       .map(emp => ({
         ...emp,
@@ -174,8 +177,8 @@ export default function MetasGestaoAprovacao() {
   }, [empresasResumo, tiposAba, abaAtiva])
 
   const pendAba = useMemo(() =>
-    tiposAba.reduce((s, t) => s + (pending[t.key]?.length || 0), 0),
-    [tiposAba, pending]
+    tiposAba.reduce((s, t) => s + (resumo[t.key] || []).filter(isPendente).length, 0),
+    [tiposAba, resumo]
   )
 
   // ── Aprovação ─────────────────────────────────────────────────────────
@@ -278,8 +281,7 @@ export default function MetasGestaoAprovacao() {
         ════════════════════════════════════════════════════════════════== */}
         <div className="flex gap-1 bg-white border border-slate-200 rounded-xl p-1">
           {[
-            { key: 'pecas',    label: 'Peças',    icon: Package,    badge: pending.pecas.length },
-            { key: 'servicos', label: 'Serviços', icon: Wrench,     badge: pending.mecanico.length + pending.consultor.length },
+            { key: 'posvendas', label: 'Pós-Vendas', icon: Wrench,   badge: [...resumo.pecas, ...resumo.mecanico, ...resumo.consultor].filter(isPendente).length },
             { key: 'novos',    label: 'Novos',    icon: TrendingUp, badge: 0 },
             { key: 'usados',   label: 'Usados',   icon: RefreshCw,  badge: 0 },
             { key: 'geral',    label: 'Geral',    icon: BarChart3,  badge: 0 },
@@ -329,13 +331,13 @@ export default function MetasGestaoAprovacao() {
         {/* ═══════════════════════════════════════════════════════════════
             ABAS: PEÇAS / SERVIÇOS — FILA DE APROVAÇÃO
         ════════════════════════════════════════════════════════════════== */}
-        {!loading && subAba === 'fila' && (abaAtiva === 'pecas' || abaAtiva === 'servicos' || abaAtiva === 'geral') && (
+        {!loading && subAba === 'fila' && (abaAtiva === 'posvendas' || abaAtiva === 'geral') && (
           <div className="space-y-4">
             {empresasAba.length === 0 ? (
               <div className="flex flex-col items-center justify-center gap-3 py-16 bg-white border border-slate-200 rounded-xl">
                 <CheckCircle2 size={48} className="text-green-400" />
-                <p className="text-lg font-bold text-slate-700">Fila de aprovação vazia</p>
-                <p className="text-sm text-slate-400">Nenhum valor aguardando sua autorização.</p>
+                <p className="text-lg font-bold text-slate-700">Nenhum valor encontrado</p>
+                <p className="text-sm text-slate-400">Não há metas cadastradas para este ano.</p>
                 {kpi.totalRegistros === 0 && (
                   <p className="text-xs text-slate-400 mt-1">Nenhuma meta cadastrada para {filtroAno}.</p>
                 )}
@@ -353,9 +355,13 @@ export default function MetasGestaoAprovacao() {
                       <div className="flex items-center gap-3 flex-wrap">
                         <Building2 size={18} className="text-slate-400 shrink-0" />
                         <span className="font-bold text-base">{emp.nome}</span>
-                        <span className="px-2.5 py-0.5 rounded-full bg-amber-400 text-slate-900 text-xs font-bold">
-                          {totalPend} pendente{totalPend !== 1 ? 's' : ''}
-                        </span>
+                        {totalPend > 0 ? (
+                          <span className="px-2.5 py-0.5 rounded-full bg-amber-400 text-slate-900 text-xs font-bold">
+                            {totalPend} pendente{totalPend !== 1 ? 's' : ''}
+                          </span>
+                        ) : (
+                          <span className="px-2.5 py-0.5 rounded-full bg-green-500 text-white text-xs font-bold">Aprovado</span>
+                        )}
                         <span className="text-slate-300 text-sm font-semibold">{fmtBRL(totalR$)}</span>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
@@ -382,14 +388,17 @@ export default function MetasGestaoAprovacao() {
                           const mesArr = Array(12).fill(0)
                           info.rows.forEach(r => { mesArr[r.mes - 1] += Number(r.meta_faturamento) || 0 })
 
-                          // Agrupa pendentes por colaborador para mini-tabela
-                          const colabPend = {}
-                          info.rows.filter(isPendente).forEach(r => {
+                          // Agrupa todos os valores (pendentes e aprovados) por colaborador para a mini-tabela
+                          const colabVals = {}
+                          info.rows.forEach(r => {
                             const nome = r.colaborador_nome || r.empresa_nome
-                            if (!colabPend[nome]) colabPend[nome] = Array(12).fill(null)
-                            colabPend[nome][r.mes - 1] = Number(r.meta_faturamento) || 0
+                            if (!colabVals[nome]) colabVals[nome] = Array(12).fill(null)
+                            const atual = colabVals[nome][r.mes - 1] || { v: 0, pend: false }
+                            atual.v += Number(r.meta_faturamento) || 0
+                            if (isPendente(r)) atual.pend = true
+                            colabVals[nome][r.mes - 1] = atual
                           })
-                          const colabNomes = Object.keys(colabPend)
+                          const colabNomes = Object.keys(colabVals)
 
                           return (
                             <div key={tipo.key} className={`${cl.bg}`}>
@@ -400,10 +409,12 @@ export default function MetasGestaoAprovacao() {
                                   <Icon size={13} className="text-white" />
                                 </span>
                                 <span className={`font-semibold text-sm ${cl.text} flex-1`}>{tipo.label}</span>
-                                {info.pendentes > 0 && (
+                                {info.pendentes > 0 ? (
                                   <span className="px-2 py-0.5 rounded-full bg-amber-400 text-slate-900 text-[10px] font-bold">
                                     {info.pendentes} pendente{info.pendentes !== 1 ? 's' : ''}
                                   </span>
+                                ) : (
+                                  <span className="px-2 py-0.5 rounded-full bg-green-500 text-white text-[10px] font-bold">Aprovado</span>
                                 )}
                                 <span className={`text-xs font-semibold ${cl.text}`}>{fmtBRL(info.total)}</span>
                                 <button
@@ -413,7 +424,7 @@ export default function MetasGestaoAprovacao() {
                                 </button>
                                 {canEdit && (
                                   <button
-                                    onClick={e => { e.stopPropagation(); confirmarAprovacao(emp.id, emp.nome, tipo.key, info.pendentes, info.total) }}
+                                    onClick={e => { e.stopPropagation(); confirmarAprovacao(emp.id, emp.nome, tipo.key, info.pendentes, info.totalPendente) }}
                                     disabled={!!aprovandoEste || info.pendentes === 0}
                                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors shrink-0 disabled:opacity-40 bg-green-600 hover:bg-green-700 text-white">
                                     <AprovandoSpinner chave={tipoKey} />
@@ -436,9 +447,13 @@ export default function MetasGestaoAprovacao() {
                               {tipoOpen && (
                                 <div className="px-5 pb-4">
                                   {colabNomes.length === 0 ? (
-                                    <p className="text-xs text-slate-400 italic py-2">Nenhum item pendente neste tipo.</p>
+                                    <p className="text-xs text-slate-400 italic py-2">Nenhum valor neste tipo.</p>
                                   ) : (
                                     <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+                                      <div className="flex items-center gap-4 px-3 py-1.5 text-[11px] text-slate-500 border-b border-slate-100">
+                                        <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500" /> Pendente de aprovação</span>
+                                        <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-600" /> Aprovado</span>
+                                      </div>
                                       <table className="text-xs border-separate border-spacing-0" style={{ minWidth: '1100px' }}>
                                         <thead>
                                           <tr className="bg-slate-50">
@@ -449,15 +464,15 @@ export default function MetasGestaoAprovacao() {
                                         </thead>
                                         <tbody>
                                           {colabNomes.map(nome => {
-                                            const vals = colabPend[nome]
-                                            const tot = vals.reduce((s, v) => s + (v || 0), 0)
+                                            const vals = colabVals[nome]
+                                            const tot = vals.reduce((s, c) => s + (c?.v || 0), 0)
                                             return (
                                               <tr key={nome} className="border-b border-slate-100 hover:bg-amber-50/40">
                                                 <td className="px-3 py-2 font-semibold text-slate-700 sticky left-0 bg-white whitespace-nowrap border-b border-slate-100">{nome}</td>
-                                                {vals.map((v, i) => (
+                                                {vals.map((c, i) => (
                                                   <td key={i} className="px-2 py-2 text-right whitespace-nowrap">
-                                                    {v != null && v > 0
-                                                      ? <span className="font-semibold text-amber-700">{fmtBRL(v)}</span>
+                                                    {c != null && c.v > 0
+                                                      ? <span className={`font-semibold ${c.pend ? 'text-amber-700' : 'text-green-700'}`}>{fmtBRL(c.v)}</span>
                                                       : <span className="text-slate-200">—</span>
                                                     }
                                                   </td>

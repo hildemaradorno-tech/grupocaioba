@@ -2578,9 +2578,9 @@ export const apiService = {
   // TOTAIS CONSOLIDADOS PARA VISÃO GERAL (aprovação)
   getResumoMetasAprovacao: async (ano) => {
     const [pecas, mecanico, consultor, funilaria, terceiros] = await Promise.all([
-      supabase.from('fato_rascunho_metas_pecas').select('empresa_id,empresa_nome,mes,meta_faturamento,meta_aprovada').eq('ano', ano).gt('meta_faturamento', 0),
-      supabase.from('fato_rascunho_metas_servicos_mecanico').select('empresa_id,empresa_nome,mes,meta_faturamento,meta_aprovada').eq('ano', ano).gt('meta_faturamento', 0),
-      supabase.from('fato_rascunho_metas_servicos_consultor').select('empresa_id,empresa_nome,mes,meta_faturamento,meta_aprovada').eq('ano', ano).gt('meta_faturamento', 0),
+      supabase.from('fato_rascunho_metas_pecas').select('empresa_id,empresa_nome,colaborador_nome,mes,meta_faturamento,meta_aprovada').eq('ano', ano).gt('meta_faturamento', 0),
+      supabase.from('fato_rascunho_metas_servicos_mecanico').select('empresa_id,empresa_nome,colaborador_nome,mes,meta_faturamento,meta_aprovada').eq('ano', ano).gt('meta_faturamento', 0),
+      supabase.from('fato_rascunho_metas_servicos_consultor').select('empresa_id,empresa_nome,colaborador_nome,mes,meta_faturamento,meta_aprovada').eq('ano', ano).gt('meta_faturamento', 0),
       supabase.from('fato_rascunho_metas_funilaria_pintura').select('empresa_id,empresa_nome,mes,meta_faturamento,meta_aprovada').eq('ano', ano).gt('meta_faturamento', 0),
       supabase.from('fato_rascunho_metas_terceiros').select('empresa_id,empresa_nome,mes,meta_faturamento,meta_aprovada').eq('ano', ano).gt('meta_faturamento', 0),
     ])
