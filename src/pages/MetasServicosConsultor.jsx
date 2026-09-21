@@ -48,7 +48,7 @@ const SEL = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm text-sl
 const BTN_PRI = 'inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors disabled:opacity-50'
 const BTN_SEC = 'inline-flex items-center gap-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-sm font-semibold px-4 py-2 rounded-lg transition-colors disabled:opacity-50'
 const STATUS_CLS = { 'AGUARDANDO APROVACAO': 'bg-amber-100 text-amber-700', 'APROVADO': 'bg-green-100 text-green-700' }
-const STATUS_DISPLAY = { 'AGUARDANDO APROVACAO': 'Aguard. Aprovação', 'APROVADO': 'Aprovado', 'REPROVADO': 'Reprovado' }
+const STATUS_DISPLAY = { 'AGUARDANDO APROVACAO': 'Pendente', 'APROVADO': 'Aprovado', 'REPROVADO': 'Reprovado' }
 
 const FORM_VAZIO = { empresa_id:'', empresa_nome:'', departamento_id:'', departamento_nome:'', setor_id:'', setor_nome:'', box_id:'', box_nome:'', cargo_id:'', cargo_nome:'', colaborador_id:'', colaborador_nome:'', ano: anoAtual }
 const mesesVazios = () => Array.from({ length: 12 }, (_, i) => ({ mes: i+1, percentual: '' }))
@@ -591,7 +591,7 @@ export default function MetasServicosConsultor() {
                                   const sKey=`${dKey}§${sId}`; const sMeses=aggSetor(setor); const sTotal=sumArr(sMeses)
                                   // Situação por Setor (não mais por consultor individual): olha todos os
                                   // meses com valor de todos os consultores desse setor — se algum não
-                                  // estiver aprovado, o setor inteiro fica "Aguard. Aprovação".
+                                  // estiver aprovado, o setor inteiro fica "Pendente".
                                   let setorTemValor = false, setorAprovado = true
                                   Object.values(setor.colabs).forEach(co => Object.values(co.meses).forEach(m => {
                                     if (Number(m.meta_faturamento) > 0) {

@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { resolverPosicaoMecanico } from '../utils/metasMecanico'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -93,16 +94,70 @@ const enriquecePoliticaFonteBase = (p) => ({
 // publicar automaticamente só aquela empresa+tipo+ano, sem precisar de um botão "Publicar"
 // separado. Campos que a tabela de origem não tiver (ex: colaborador_id em Terceiros) ficam
 // null, que é o valor esperado em fato_metas_publicadas mesmo.
-const _toRowPublicada = (r, tipo, ts) => ({
+const _uuidOuNull = (v) => (typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v)) ? v : null
+
+// Contexto usado para publicar: cadastros necessários para gravar a POSIÇÃO ATUAL do funcionário (a mesma
+// das telas) e o Segmento/Marca da empresa.
+const _contextoPublicacao = async () => {
+  const [funcionarios, cargos, boxes, setores, departamentos, empresas] = await Promise.all([
+    apiService.getFuncionarios(), apiService.getCargos(), apiService.getBox(),
+    apiService.getSetores(), apiService.getDepartamentos(), apiService.getEmpresas(),
+  ])
+  const boxParaSetor = {}
+  boxes.forEach(b => {
+    const ids = Array.isArray(b.setor_ids) ? b.setor_ids : (b.setor_id ? [b.setor_id] : [])
+    const valido = ids.find(id => setores.some(s => s.id === id))
+    if (valido) boxParaSetor[b.id] = valido
+  })
+  return { funcionarios, cargos, boxes, setores, departamentos, empresas, boxParaSetor }
+}
+
+// Departamento / setor / box / cargo publicados, na mesma regra das telas:
+//  - Mecânico: posição atual do funcionário no cadastro (com a linha da meta como reserva);
+//  - Consultor: setor da linha (Mecânica / Funilaria-Pintura; linha antiga presa a um box reroteia pro setor atual do box);
+//  - demais: o que está gravado na linha.
+const _posicaoPublicada = (r, tipo, ctx) => {
+  let did = r.departamento_id, sid = r.setor_id, bid = r.box_id, cid = r.cargo_id
+  if (ctx && tipo === 'mecanico') {
+    const p = resolverPosicaoMecanico(r, ctx)
+    did = p.did; sid = p.sId; bid = p.bId; cid = p.cId
+  } else if (ctx && tipo === 'consultor') {
+    sid = (r.box_id && ctx.boxParaSetor[r.box_id]) || r.setor_id
+    did = ctx.setores.find(x => x.id === sid)?.departamento_id || r.departamento_id
+  }
+  did = _uuidOuNull(did); sid = _uuidOuNull(sid); bid = _uuidOuNull(bid); cid = _uuidOuNull(cid)
+  const empresa = ctx?.empresas?.find(e => e.id === r.empresa_id)
+  return {
+    departamento_id: did, departamento_nome: ctx?.departamentos?.find(d => d.id === did)?.nome_departamento || r.departamento_nome || null,
+    setor_id: sid,        setor_nome:        ctx?.setores?.find(x => x.id === sid)?.nome_setor              || r.setor_nome        || null,
+    box_id: bid,          box_nome:          ctx?.boxes?.find(x => x.id === bid)?.nome_box                  || r.box_nome          || null,
+    cargo_id: cid,        cargo_nome:        ctx?.cargos?.find(x => x.id === cid)?.nome_cargo               || r.cargo_nome        || null,
+    segmento_nome: empresa?.segmento_nome || null, marca: empresa?.marca || null,
+  }
+}
+
+const _toRowPublicada = (r, tipo, ts, ctx) => ({
   empresa_id: r.empresa_id, empresa_nome: r.empresa_nome, ano: r.ano, mes: r.mes, tipo,
   colaborador_id: r.colaborador_id || null, colaborador_nome: r.colaborador_nome || null,
-  departamento_id: r.departamento_id || null, departamento_nome: r.departamento_nome || null,
-  setor_id: r.setor_id || null, setor_nome: r.setor_nome || null,
-  cargo_id: r.cargo_id || null, cargo_nome: r.cargo_nome || null,
+  ..._posicaoPublicada(r, tipo, ctx),
   meta_faturamento: r.meta_aprovada,
   meta_pecas: r.meta_pecas || null, meta_servicos: r.meta_servicos || null,
   publicado_em: ts,
 })
+
+// Meta já aprovada ou publicada não pode ser excluída: só é alterada (a alteração fica pendente até um diretor
+// aprovar) — ou o administrador limpa a aprovação na Gestão de Aprovação.
+const _bloquearExclusaoSeAprovada = async (tabela, tipo, filtros) => {
+  let q1 = supabase.from(tabela).select('id', { count: 'exact', head: true }).not('meta_aprovada', 'is', null)
+  let q2 = supabase.from('fato_metas_publicadas').select('id', { count: 'exact', head: true }).eq('tipo', tipo)
+  Object.entries(filtros).forEach(([k, v]) => { q1 = q1.eq(k, v); q2 = q2.eq(k, v) })
+  const [r1, r2] = await Promise.all([q1, q2])
+  if (r1.error) throw r1.error
+  if (r2.error) throw r2.error
+  if ((r1.count || 0) > 0 || (r2.count || 0) > 0) {
+    throw new Error('Metas já aprovadas ou publicadas não podem ser excluídas. Para mudar os valores, edite a meta: a alteração fica pendente até um diretor aprovar. Para limpar a aprovação, peça a um administrador (Gestão de Aprovação).')
+  }
+}
 
 export const apiService = {
   // USUÁRIOS
@@ -2235,13 +2290,14 @@ export const apiService = {
     // fato_rascunho_metas_pecas não tem colunas meta_pecas/meta_servicos (o registro inteiro já
     // É de peças) — só meta_faturamento mesmo, que é o que BiPossibilidades.jsx lê pra tipo='pecas'.
     const { data: rows, error: errFetch } = await supabase.from('fato_rascunho_metas_pecas')
-      .select('empresa_id,empresa_nome,ano,mes,colaborador_id,colaborador_nome,departamento_id,departamento_nome,setor_id,setor_nome,cargo_id,cargo_nome,meta_faturamento,meta_aprovada')
+      .select('empresa_id,empresa_nome,ano,mes,colaborador_id,colaborador_nome,departamento_id,departamento_nome,setor_id,setor_nome,box_id,box_nome,cargo_id,cargo_nome,meta_faturamento,meta_aprovada')
       .eq('empresa_id', empresaId).eq('ano', ano).not('meta_aprovada', 'is', null)
     if (errFetch) throw errFetch
     if (rows && rows.length > 0) {
       const ts = new Date().toISOString()
+      const ctx = await _contextoPublicacao()
       const { error: errPub } = await supabase.from('fato_metas_publicadas')
-        .upsert(rows.map(r => _toRowPublicada(r, 'pecas', ts)), { onConflict: 'empresa_id,ano,mes,tipo,colaborador_id' })
+        .upsert(rows.map(r => _toRowPublicada(r, 'pecas', ts, ctx)), { onConflict: 'empresa_id,ano,mes,tipo,colaborador_id' })
       if (errPub) throw errPub
     }
     return { success: true }
@@ -2254,13 +2310,14 @@ export const apiService = {
     })
     if (error) throw error
     const { data: rows, error: errFetch } = await supabase.from('fato_rascunho_metas_pecas')
-      .select('empresa_id,empresa_nome,ano,mes,colaborador_id,colaborador_nome,departamento_id,departamento_nome,setor_id,setor_nome,cargo_id,cargo_nome,meta_faturamento,meta_aprovada')
+      .select('empresa_id,empresa_nome,ano,mes,colaborador_id,colaborador_nome,departamento_id,departamento_nome,setor_id,setor_nome,box_id,box_nome,cargo_id,cargo_nome,meta_faturamento,meta_aprovada')
       .eq('empresa_id', empresaId).eq('ano', ano).eq('setor_id', setorId).not('meta_aprovada', 'is', null)
     if (errFetch) throw errFetch
     if (rows && rows.length > 0) {
       const ts = new Date().toISOString()
+      const ctx = await _contextoPublicacao()
       const { error: errPub } = await supabase.from('fato_metas_publicadas')
-        .upsert(rows.map(r => _toRowPublicada(r, 'pecas', ts)), { onConflict: 'empresa_id,ano,mes,tipo,colaborador_id' })
+        .upsert(rows.map(r => _toRowPublicada(r, 'pecas', ts, ctx)), { onConflict: 'empresa_id,ano,mes,tipo,colaborador_id' })
       if (errPub) throw errPub
     }
     return { success: true }
@@ -2270,9 +2327,6 @@ export const apiService = {
       .update({ meta_aprovada: null, aprovado_em: null })
       .eq('empresa_id', empresaId).eq('ano', ano).eq('setor_id', setorId)
     if (error) throw error
-    const { error: errDel } = await supabase.from('fato_metas_publicadas')
-      .delete().eq('empresa_id', empresaId).eq('ano', ano).eq('tipo', 'pecas').eq('setor_id', setorId)
-    if (errDel) throw errDel
     return { success: true }
   },
 
@@ -2298,6 +2352,7 @@ export const apiService = {
   },
 
   deleteMetasPecasColab: async (colaboradorId, empresaId, ano) => {
+    await _bloquearExclusaoSeAprovada('fato_rascunho_metas_pecas', 'pecas', { colaborador_id: colaboradorId, empresa_id: empresaId, ano })
     const { error } = await supabase
       .from('fato_rascunho_metas_pecas')
       .delete()
@@ -2329,12 +2384,14 @@ export const apiService = {
     return data?.[0]
   },
   deleteMetasMecanicoColab: async (colaboradorId, empresaId, ano) => {
+    await _bloquearExclusaoSeAprovada('fato_rascunho_metas_servicos_mecanico', 'mecanico', { colaborador_id: colaboradorId, empresa_id: empresaId, ano })
     const { error } = await supabase.from('fato_rascunho_metas_servicos_mecanico')
       .delete().eq('colaborador_id', colaboradorId).eq('empresa_id', empresaId).eq('ano', ano)
     if (error) throw error
     return { success: true }
   },
   deleteMetasMecanicoEmpresa: async (empresaId, ano) => {
+    await _bloquearExclusaoSeAprovada('fato_rascunho_metas_servicos_mecanico', 'mecanico', { empresa_id: empresaId, ano })
     const { error } = await supabase.from('fato_rascunho_metas_servicos_mecanico')
       .delete().eq('empresa_id', empresaId).eq('ano', ano)
     if (error) throw error
@@ -2346,13 +2403,14 @@ export const apiService = {
     if (error) throw error
 
     const { data: rows, error: errFetch } = await supabase.from('fato_rascunho_metas_servicos_mecanico')
-      .select('empresa_id,empresa_nome,ano,mes,colaborador_id,colaborador_nome,departamento_id,departamento_nome,setor_id,setor_nome,cargo_id,cargo_nome,meta_faturamento,meta_pecas,meta_servicos,meta_aprovada')
+      .select('empresa_id,empresa_nome,ano,mes,colaborador_id,colaborador_nome,departamento_id,departamento_nome,setor_id,setor_nome,box_id,box_nome,cargo_id,cargo_nome,meta_faturamento,meta_pecas,meta_servicos,meta_aprovada')
       .eq('empresa_id', empresaId).eq('ano', ano).not('meta_aprovada', 'is', null)
     if (errFetch) throw errFetch
     if (rows && rows.length > 0) {
       const ts = new Date().toISOString()
+      const ctx = await _contextoPublicacao()
       const { error: errPub } = await supabase.from('fato_metas_publicadas')
-        .upsert(rows.map(r => _toRowPublicada(r, 'mecanico', ts)), { onConflict: 'empresa_id,ano,mes,tipo,colaborador_id' })
+        .upsert(rows.map(r => _toRowPublicada(r, 'mecanico', ts, ctx)), { onConflict: 'empresa_id,ano,mes,tipo,colaborador_id' })
       if (errPub) throw errPub
     }
     return { success: true }
@@ -2385,12 +2443,14 @@ export const apiService = {
     return data?.[0]
   },
   deleteMetasConsultorColab: async (colaboradorId, empresaId, ano) => {
+    await _bloquearExclusaoSeAprovada('fato_rascunho_metas_servicos_consultor', 'consultor', { colaborador_id: colaboradorId, empresa_id: empresaId, ano })
     const { error } = await supabase.from('fato_rascunho_metas_servicos_consultor')
       .delete().eq('colaborador_id', colaboradorId).eq('empresa_id', empresaId).eq('ano', ano)
     if (error) throw error
     return { success: true }
   },
   deleteMetasConsultorEmpresa: async (empresaId, ano) => {
+    await _bloquearExclusaoSeAprovada('fato_rascunho_metas_servicos_consultor', 'consultor', { empresa_id: empresaId, ano })
     const { error } = await supabase.from('fato_rascunho_metas_servicos_consultor')
       .delete().eq('empresa_id', empresaId).eq('ano', ano)
     if (error) throw error
@@ -2402,13 +2462,14 @@ export const apiService = {
     if (error) throw error
 
     const { data: rows, error: errFetch } = await supabase.from('fato_rascunho_metas_servicos_consultor')
-      .select('empresa_id,empresa_nome,ano,mes,colaborador_id,colaborador_nome,departamento_id,departamento_nome,setor_id,setor_nome,cargo_id,cargo_nome,meta_faturamento,meta_aprovada')
+      .select('empresa_id,empresa_nome,ano,mes,colaborador_id,colaborador_nome,departamento_id,departamento_nome,setor_id,setor_nome,box_id,box_nome,cargo_id,cargo_nome,meta_faturamento,meta_aprovada')
       .eq('empresa_id', empresaId).eq('ano', ano).not('meta_aprovada', 'is', null)
     if (errFetch) throw errFetch
     if (rows && rows.length > 0) {
       const ts = new Date().toISOString()
+      const ctx = await _contextoPublicacao()
       const { error: errPub } = await supabase.from('fato_metas_publicadas')
-        .upsert(rows.map(r => _toRowPublicada(r, 'consultor', ts)), { onConflict: 'empresa_id,ano,mes,tipo,colaborador_id' })
+        .upsert(rows.map(r => _toRowPublicada(r, 'consultor', ts, ctx)), { onConflict: 'empresa_id,ano,mes,tipo,colaborador_id' })
       if (errPub) throw errPub
     }
     return { success: true }
@@ -2479,8 +2540,9 @@ export const apiService = {
     if (errFetch2) throw errFetch2
     if (aprovadas && aprovadas.length > 0) {
       const ts = new Date().toISOString()
+      const ctxPub = await _contextoPublicacao()
       const { error: errPub } = await supabase.from('fato_metas_publicadas')
-        .upsert(aprovadas.map(r => _toRowPublicada(r, 'terceiros', ts)), { onConflict: 'empresa_id,ano,mes,tipo,colaborador_id' })
+        .upsert(aprovadas.map(r => _toRowPublicada(r, 'terceiros', ts, ctxPub)), { onConflict: 'empresa_id,ano,mes,tipo,colaborador_id' })
       if (errPub) throw errPub
     }
     return { success: true }
@@ -2513,6 +2575,7 @@ export const apiService = {
     })
   },
   deleteMetasFunilariaEmpresa: async (empresaId, ano) => {
+    await _bloquearExclusaoSeAprovada('fato_rascunho_metas_funilaria_pintura', 'funilaria', { empresa_id: empresaId, ano })
     const { error } = await supabase.from('fato_rascunho_metas_funilaria_pintura')
       .delete().eq('empresa_id', empresaId).eq('ano', ano)
     if (error) throw error
@@ -2543,24 +2606,22 @@ export const apiService = {
         departamento_id: 'd549c5fc-79dd-4346-bfd9-cbef8e902a3f', departamento_nome: 'OFICINA',
         setor_id: '1dc0a6ce-ced3-4084-8eb9-14084821adbe', setor_nome: 'Funilaria/Pintura',
       }))
+      const ctxPub = await _contextoPublicacao()
       const { error: errPub } = await supabase.from('fato_metas_publicadas')
-        .upsert(comDepartamentoFixo.map(r => _toRowPublicada(r, 'funilaria', ts)), { onConflict: 'empresa_id,ano,mes,tipo,colaborador_id' })
+        .upsert(comDepartamentoFixo.map(r => _toRowPublicada(r, 'funilaria', ts, ctxPub)), { onConflict: 'empresa_id,ano,mes,tipo,colaborador_id' })
       if (errPub) throw errPub
     }
     return { success: true }
   },
 
-  // NÃO APROVAR — reverte meta_aprovada para null em cada tabela rascunho e remove a
-  // publicação correspondente de fato_metas_publicadas (aprovar publica na hora, então
-  // desaprovar precisa desfazer a publicação pra não deixar dado obsoleto indo pro Power BI).
+  // PENDENCIAR — só o administrador: limpa meta_aprovada (as telas de metas voltam a mostrar pendente).
+  // O que já foi publicado em fato_metas_publicadas NÃO é apagado: continua valendo no Power BI até um
+  // diretor aprovar de novo (aí a linha publicada é atualizada).
   unapproveMetasPecasEmpresa: async (empresaId, ano) => {
     const { error } = await supabase.from('fato_rascunho_metas_pecas')
       .update({ meta_aprovada: null, aprovado_em: null })
       .eq('empresa_id', empresaId).eq('ano', ano)
     if (error) throw error
-    const { error: errDel } = await supabase.from('fato_metas_publicadas')
-      .delete().eq('empresa_id', empresaId).eq('ano', ano).eq('tipo', 'pecas')
-    if (errDel) throw errDel
     return { success: true }
   },
   unapproveMetasMecanicoEmpresa: async (empresaId, ano) => {
@@ -2568,9 +2629,6 @@ export const apiService = {
       .update({ meta_aprovada: null, aprovado_em: null })
       .eq('empresa_id', empresaId).eq('ano', ano)
     if (error) throw error
-    const { error: errDel } = await supabase.from('fato_metas_publicadas')
-      .delete().eq('empresa_id', empresaId).eq('ano', ano).eq('tipo', 'mecanico')
-    if (errDel) throw errDel
     return { success: true }
   },
   unapproveMetasConsultorEmpresa: async (empresaId, ano) => {
@@ -2578,9 +2636,6 @@ export const apiService = {
       .update({ meta_aprovada: null, aprovado_em: null })
       .eq('empresa_id', empresaId).eq('ano', ano)
     if (error) throw error
-    const { error: errDel } = await supabase.from('fato_metas_publicadas')
-      .delete().eq('empresa_id', empresaId).eq('ano', ano).eq('tipo', 'consultor')
-    if (errDel) throw errDel
     return { success: true }
   },
   unapproveMetasFunilariaEmpresa: async (empresaId, ano) => {
@@ -2588,9 +2643,6 @@ export const apiService = {
       .update({ meta_aprovada: null, aprovado_em: null })
       .eq('empresa_id', empresaId).eq('ano', ano)
     if (error) throw error
-    const { error: errDel } = await supabase.from('fato_metas_publicadas')
-      .delete().eq('empresa_id', empresaId).eq('ano', ano).eq('tipo', 'funilaria')
-    if (errDel) throw errDel
     return { success: true }
   },
   unapproveMetasTerceirosEmpresa: async (empresaId, ano) => {
@@ -2598,9 +2650,6 @@ export const apiService = {
       .update({ meta_aprovada: null, aprovado_em: null })
       .eq('empresa_id', empresaId).eq('ano', ano)
     if (error) throw error
-    const { error: errDel } = await supabase.from('fato_metas_publicadas')
-      .delete().eq('empresa_id', empresaId).eq('ano', ano).eq('tipo', 'terceiros')
-    if (errDel) throw errDel
     return { success: true }
   },
 

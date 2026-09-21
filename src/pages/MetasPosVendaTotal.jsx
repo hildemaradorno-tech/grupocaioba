@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react'
 import { useSessionState } from '../hooks/useSessionState'
-import { TrendingUp, ChevronRight, ChevronDown, Loader2, Calculator, CheckCircle2, Ban } from 'lucide-react'
+import { TrendingUp, ChevronRight, ChevronDown, Loader2, Calculator, CheckCircle2, Ban, AlertTriangle } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import BotaoIconeTooltip from '../components/BotaoIconeTooltip'
 import { apiService } from '../services/api'
@@ -26,7 +26,7 @@ const fmtBRL = (v) => {
 const sumArr = (a) => a.reduce((s, v) => s + v, 0)
 
 const STATUS_CLS = { 'AGUARDANDO APROVACAO': 'bg-amber-100 text-amber-700', 'APROVADO': 'bg-green-100 text-green-700' }
-const STATUS_DISPLAY = { 'AGUARDANDO APROVACAO': 'Aguard. Aprovação', 'APROVADO': 'Aprovado' }
+const STATUS_DISPLAY = { 'AGUARDANDO APROVACAO': 'Pendente', 'APROVADO': 'Aprovado' }
 
 // Situação do Setor: pendente se qualquer mês com valor de qualquer colaborador dele não estiver aprovado.
 const statusSetor = (setor) => {
@@ -38,17 +38,25 @@ const statusSetor = (setor) => {
   return { tem, label: pend ? 'AGUARDANDO APROVACAO' : 'APROVADO' }
 }
 
-// Aprovação por setor: só Peças e Consultores (o Mecânico está vinculado ao consultor e segue a aprovação dele).
-// kind: 'pecas' | 'consultor' | null (sem aprovação própria).
+// Aprovação por setor. Peças aprova por setor. O Mecânico está vinculado ao consultor e segue a aprovação dele;
+// só quando a empresa não tem consultor (ex.: unidades de Motos) o Mecânico é aprovado por conta própria.
+// kind: 'pecas' | 'consultor' | 'mecanico' | null (sem aprovação própria).
 const infoAprovacaoSetor = (setor, empNode) => {
   const tipos = new Set()
   Object.values(setor.boxes).forEach(b => Object.values(b.colabs).forEach(co => co.linhas.forEach(l => tipos.add(l._tipo))))
-  const kind = tipos.has('PECAS') ? 'pecas' : tipos.has('CONSULTOR') ? 'consultor' : null
+  const empresaTemConsultor = Object.values(empNode.depts).some(d => Object.values(d.setores).some(s2 =>
+    Object.values(s2.boxes).some(b => Object.values(b.colabs).some(co => co.linhas.some(l => l._tipo === 'CONSULTOR')))))
+  const kind = tipos.has('PECAS') ? 'pecas'
+    : tipos.has('CONSULTOR') ? 'consultor'
+    : (tipos.has('MECANICO') && !empresaTemConsultor) ? 'mecanico'
+    : null
   if (!kind) return { kind: null }
   const st = statusSetor(setor)
   let pend = st.label === 'AGUARDANDO APROVACAO'
   let tem = st.tem
-  if (kind === 'consultor') {
+  if (kind === 'consultor' || kind === 'mecanico') {
+    // A situação considera todos os mecânicos da empresa (a aprovação vale para todos juntos).
+    if (kind === 'mecanico') { pend = false; tem = false }
     Object.values(empNode.depts).forEach(d => Object.values(d.setores).forEach(s2 => Object.values(s2.boxes).forEach(b => Object.values(b.colabs).forEach(co => {
       if (co.linhas.some(l => l._tipo === 'MECANICO')) { if (co.tem) tem = true; if (co.pend) pend = true }
     }))))
@@ -58,10 +66,33 @@ const infoAprovacaoSetor = (setor, empNode) => {
 
 const SEM_FILTRO = []
 
+// Selo de status do Setor / Departamento na Gestão de Aprovação: "Pendente" ou "Aprovado".
+const SeloStatus = ({ pend }) => (
+  <span className={`px-2 py-0.5 rounded-full text-[10px] font-normal whitespace-nowrap ${pend ? STATUS_CLS['AGUARDANDO APROVACAO'] : STATUS_CLS['APROVADO']}`}>
+    {pend ? STATUS_DISPLAY['AGUARDANDO APROVACAO'] : STATUS_DISPLAY['APROVADO']}
+  </span>
+)
+
+// Situação pequena dos níveis de agrupamento (Gestão de Aprovação): alerta "Pendente" se houver algo
+// pendente; "Aprovado" se houver valores e nada pendente; nada se o nível não tem aprovação própria.
+const SituacaoNivel = ({ pend, tem }) => {
+  if (pend) return (
+    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300 text-[10px] font-normal whitespace-nowrap">
+      <AlertTriangle size={10} /> Pendente
+    </span>
+  )
+  if (tem) return (
+    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-green-100 text-green-800 border border-green-300 text-[10px] font-normal whitespace-nowrap">
+      <CheckCircle2 size={10} /> Aprovado
+    </span>
+  )
+  return null
+}
+
 const SEL = 'border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500'
 
 export default function MetasPosVendaTotal({ modoAprovacao = false, anoExterno = null, aoAlterarAprovacao = null } = {}) {
-  const { hasPermission } = useAuth()
+  const { hasPermission, isAdminEfetivo } = useAuth()
   const canEdit = hasPermission('/metas/gestao-aprovacao', 'editar')
   const [empresas,      setEmpresas]      = useState([])
   const [departamentos, setDepartamentos] = useState([])
@@ -81,6 +112,7 @@ export default function MetasPosVendaTotal({ modoAprovacao = false, anoExterno =
   const filtroAno     = anoExterno ?? filtroAnoSalvo
   const filtroEmpresa = modoAprovacao ? SEM_FILTRO : filtroEmpresaSalvo
   const filtroVisu    = modoAprovacao ? 'total' : filtroVisuSalvo
+  const W1 = modoAprovacao ? 'w-[27rem] min-w-[27rem] max-w-[27rem]' : ''
   const [loading,       setLoading]       = useState(false)
   const [error,         setError]         = useState(null)
   const [expanded,      setExpanded]      = useState(new Set())
@@ -150,6 +182,9 @@ export default function MetasPosVendaTotal({ modoAprovacao = false, anoExterno =
       if (kind === 'pecas') {
         if (acao === 'aprovar') await apiService.approveMetasPecasSetor(empresaId, filtroAno, setorId)
         else await apiService.unapproveMetasPecasSetor(empresaId, filtroAno, setorId)
+      } else if (kind === 'mecanico') {
+        if (acao === 'aprovar') await apiService.approveMetasMecanicoEmpresa(empresaId, filtroAno)
+        else await apiService.unapproveMetasMecanicoEmpresa(empresaId, filtroAno)
       } else if (acao === 'aprovar') {
         await apiService.approveMetasConsultorEmpresa(empresaId, filtroAno)
         await apiService.approveMetasMecanicoEmpresa(empresaId, filtroAno)
@@ -235,18 +270,37 @@ export default function MetasPosVendaTotal({ modoAprovacao = false, anoExterno =
     const empOpen = isOpen(eKey)
     const childRows = []
 
+    // Empresa com algum setor (Peças / Consultores) pendente de aprovação, e se tem algo aprovável.
+    let temPend = false, temAprov = false
+    if (modoAprovacao && empNode) {
+      Object.values(empNode.depts).forEach(d => Object.values(d.setores).forEach(st => {
+        const ap = infoAprovacaoSetor(st, empNode)
+        if (ap.kind && ap.tem) { temAprov = true; if (ap.pend) temPend = true }
+      }))
+    }
+
     if (empOpen && empNode) {
       Object.entries(empNode.depts).forEach(([dId, dept]) => {
         const dVals = aggDeptDedup(dept)
         if (sumArr(dVals) === 0) return
         const dKey = `${eKey}-d-${dId}`
+        let dPend = false, dTem = false
+        if (modoAprovacao) {
+          Object.values(dept.setores).forEach(st => {
+            const ap = infoAprovacaoSetor(st, empNode)
+            if (ap.kind && ap.tem) { dTem = true; if (ap.pend) dPend = true }
+          })
+        }
         childRows.push(
           <tr key={dKey} className="bg-emerald-50 hover:bg-emerald-100 cursor-pointer" onClick={e => { e.stopPropagation(); tog(dKey) }}>
-            <td className="pl-8 pr-2 py-1.5 text-xs font-bold text-slate-800 whitespace-nowrap sticky left-0 bg-emerald-50">
-              <span className="flex items-center gap-1">
-                {isOpen(dKey) ? <ChevronDown size={11}/> : <ChevronRight size={11}/>}
-                <span className="text-slate-500 font-normal mr-0.5">Departamento:</span>
-                {dept.nome}
+            <td className={`pl-8 pr-2 py-1.5 text-xs font-bold text-slate-800 whitespace-nowrap sticky left-0 z-[5] bg-emerald-50 ${W1}`}>
+              <span className="flex items-center gap-1.5">
+                <span className={`inline-flex items-center gap-1 ${modoAprovacao ? 'w-[17.75rem] shrink-0' : ''}`}>
+                  {isOpen(dKey) ? <ChevronDown size={11}/> : <ChevronRight size={11}/>}
+                  <span className="text-slate-500 font-normal mr-0.5">Departamento:</span>
+                  {dept.nome}
+                </span>
+                {modoAprovacao && dTem && <SeloStatus pend={dPend} />}
               </span>
             </td>
             {mCells(dVals, dKey)}
@@ -273,7 +327,7 @@ export default function MetasPosVendaTotal({ modoAprovacao = false, anoExterno =
             // Status logo depois do nome do setor; ícones de Aprovar / Pendênciar na última coluna.
             const ap = infoAprovacaoSetor(setor, empNode)
             statusNome = ap.kind && ap.tem
-              ? <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap ${ap.pend ? STATUS_CLS['AGUARDANDO APROVACAO'] : STATUS_CLS['APROVADO']}`}>{ap.pend ? STATUS_DISPLAY['AGUARDANDO APROVACAO'] : STATUS_DISPLAY['APROVADO']}</span>
+              ? <SeloStatus pend={ap.pend} />
               : null
             const chaveAcao = `${eId}|${sId}`
             const info = { kind: ap.kind, empresaId: eId, empresaNome: eNome, setorId: sId, setorNome: setor.nome }
@@ -282,19 +336,22 @@ export default function MetasPosVendaTotal({ modoAprovacao = false, anoExterno =
                 <BotaoIconeTooltip Icone={CheckCircle2} tom="verde" dica="Aprovar este setor"
                   disabled={!canEdit || !ap.pend} carregando={acaoRodando === chaveAcao}
                   onClick={() => setConfirmAcao({ ...info, acao: 'aprovar' })} />
-                <BotaoIconeTooltip Icone={Ban} tom="vermelho" dica="Pendenciar: voltar para aguardando aprovação"
-                  disabled={!canEdit} carregando={acaoRodando === chaveAcao}
+                <BotaoIconeTooltip Icone={Ban} tom="vermelho"
+                  dica={isAdminEfetivo ? 'Pendenciar: limpar a aprovação (somente administrador)' : 'Somente o administrador pode pendenciar'}
+                  disabled={!canEdit || !isAdminEfetivo} carregando={acaoRodando === chaveAcao}
                   onClick={() => setConfirmAcao({ ...info, acao: 'pendenciar' })} />
               </span>
             ) : null
           }
           childRows.push(
             <tr key={sKey} className="bg-slate-50 hover:bg-slate-100 cursor-pointer" onClick={e => { e.stopPropagation(); tog(sKey) }}>
-              <td className="pl-14 pr-2 py-1 text-xs text-slate-700 whitespace-nowrap sticky left-0 bg-slate-50">
-                <span className="flex items-center gap-1">
-                  {isOpen(sKey) ? <ChevronDown size={10}/> : <ChevronRight size={10}/>}
-                  <span className="text-slate-400 mr-0.5">Setor:</span>
-                  <span className="font-semibold">{setor.nome}</span>
+              <td className={`pl-14 pr-2 py-1 text-xs text-slate-700 whitespace-nowrap sticky left-0 z-[5] bg-slate-50 ${W1}`}>
+                <span className="flex items-center gap-1.5">
+                  <span className={`inline-flex items-center gap-1 ${modoAprovacao ? 'w-[16.25rem] shrink-0' : ''}`}>
+                    {isOpen(sKey) ? <ChevronDown size={10}/> : <ChevronRight size={10}/>}
+                    <span className="text-slate-400 mr-0.5">Setor:</span>
+                    <span className="font-semibold">{setor.nome}</span>
+                  </span>
                   {statusNome}
                 </span>
               </td>
@@ -309,7 +366,7 @@ export default function MetasPosVendaTotal({ modoAprovacao = false, anoExterno =
             const bKey = `${sKey}-b-${bId}`
             childRows.push(
               <tr key={bKey} className="bg-white hover:bg-amber-50/30 cursor-pointer border-b border-slate-100" onClick={e => { e.stopPropagation(); tog(bKey) }}>
-                <td className="pl-[4.5rem] pr-2 py-1 text-xs text-slate-600 whitespace-nowrap sticky left-0 bg-white">
+                <td className={`pl-[4.5rem] pr-2 py-1 text-xs text-slate-600 whitespace-nowrap sticky left-0 z-[5] bg-white ${W1}`}>
                   <span className="flex items-center gap-1">
                     {isOpen(bKey) ? <ChevronDown size={10}/> : <ChevronRight size={10}/>}
                     <span className="text-slate-400 mr-0.5">Box:</span>
@@ -326,7 +383,7 @@ export default function MetasPosVendaTotal({ modoAprovacao = false, anoExterno =
               const coKey = `${bKey}-co-${coId}`
               childRows.push(
                 <tr key={coKey} className="border-b border-slate-100 hover:bg-indigo-50/30">
-                  <td className="pl-20 pr-2 py-1 text-xs text-slate-800 whitespace-nowrap font-semibold sticky left-0 bg-white">
+                  <td className={`pl-20 pr-2 py-1 text-xs text-slate-800 whitespace-nowrap font-semibold sticky left-0 z-[5] bg-white ${W1}`}>
                     <span className="inline-flex items-center gap-1.5">
                       {colab.nome}
                       {!String(coId).startsWith('__ter__') && (
@@ -350,10 +407,13 @@ export default function MetasPosVendaTotal({ modoAprovacao = false, anoExterno =
       <tr key={eKey}
         className="cursor-pointer hover:bg-emerald-200 border-t border-emerald-200 bg-emerald-100"
         onClick={() => tog(eKey)}>
-        <td className="pl-6 pr-2 py-2 text-sm font-bold text-emerald-950 whitespace-nowrap">
+        <td className={`pl-6 pr-2 py-2 text-sm font-bold text-emerald-950 whitespace-nowrap ${modoAprovacao ? 'sticky left-0 z-[5] bg-emerald-100' : ''} ${W1}`}>
           <span className="flex items-center gap-1.5">
-            {empOpen ? <ChevronDown size={13}/> : <ChevronRight size={13}/>}
-            {eNome}
+            <span className={`inline-flex items-center gap-1.5 ${modoAprovacao ? 'w-[18.25rem] shrink-0' : ''}`}>
+              {empOpen ? <ChevronDown size={13}/> : <ChevronRight size={13}/>}
+              {eNome}
+            </span>
+            {modoAprovacao && <SituacaoNivel pend={temPend} tem={temAprov} />}
           </span>
         </td>
         {vTotal.map((v,i) => (
@@ -368,7 +428,7 @@ export default function MetasPosVendaTotal({ modoAprovacao = false, anoExterno =
       </tr>,
       ...childRows,
     ]
-    return { emp, vTotal, linhas }
+    return { emp, vTotal, linhas, temPend, temAprov }
   })
 
   // Nível acima da Empresa: SEGMENTO - MARCA (ex.: MOTOS - HONDA).
@@ -379,8 +439,8 @@ export default function MetasPosVendaTotal({ modoAprovacao = false, anoExterno =
     return [
       <tr key={`seg-${segLabel}`} className="cursor-pointer bg-sky-100 hover:bg-sky-50 border-t-2 border-sky-300"
           onClick={() => setSegAbertos(prev => { const n = new Set(prev); n.has(segLabel) ? n.delete(segLabel) : n.add(segLabel); return n })}>
-        <td className="pl-3 pr-2 py-2 text-sm font-bold text-sky-950 whitespace-nowrap">
-          <span className="flex items-center gap-1.5">{segAberto ? <ChevronDown size={14}/> : <ChevronRight size={14}/>}{segLabel}<LogoSegmento rotulo={segLabel} /></span>
+        <td className={`pl-3 pr-2 py-2 text-sm font-bold text-sky-950 whitespace-nowrap ${modoAprovacao ? 'sticky left-0 z-[5] bg-sky-100' : ''} ${W1}`}>
+          <span className="flex items-center gap-1.5"><span className={`inline-flex items-center gap-1.5 ${modoAprovacao ? 'w-[19rem] shrink-0' : ''}`}>{segAberto ? <ChevronDown size={14}/> : <ChevronRight size={14}/>}{segLabel}<LogoSegmento rotulo={segLabel} /></span>{modoAprovacao && <SituacaoNivel pend={blocos.some(([, b]) => b.temPend)} tem={blocos.some(([, b]) => b.temAprov)} />}</span>
         </td>
         {segMeses.map((v, i) => (
           <td key={i} className="px-2 py-2 text-right text-xs font-semibold whitespace-nowrap text-sky-900">{v > 0 ? fmtBRL(v) : '—'}</td>
@@ -397,8 +457,8 @@ export default function MetasPosVendaTotal({ modoAprovacao = false, anoExterno =
   empBlocos.forEach(b => b.vTotal.forEach((v, i) => { grupoMeses[i] += v }))
   const empRows = segRows.length === 0 ? [] : [
     <tr key="grupo" className="cursor-pointer bg-slate-300 hover:bg-slate-200 transition-colors" onClick={() => setGrupoAberto(v => !v)}>
-      <td className="pl-3 pr-2 py-2.5 text-sm font-bold text-slate-900 whitespace-nowrap">
-        <span className="flex items-center gap-2">{grupoAberto ? <ChevronDown size={15}/> : <ChevronRight size={15}/>}Grupo Caiobá<LogoGrupo /></span>
+      <td className={`pl-3 pr-2 py-2.5 text-sm font-bold text-slate-900 whitespace-nowrap ${modoAprovacao ? 'sticky left-0 z-[5] bg-slate-300' : ''} ${W1}`}>
+        <span className="flex items-center gap-1.5"><span className={`inline-flex items-center gap-2 ${modoAprovacao ? 'w-[19rem] shrink-0' : ''}`}>{grupoAberto ? <ChevronDown size={15}/> : <ChevronRight size={15}/>}Grupo Caiobá<LogoGrupo /></span>{modoAprovacao && <SituacaoNivel pend={empBlocos.some(b => b.temPend)} tem={empBlocos.some(b => b.temAprov)} />}</span>
       </td>
       {grupoMeses.map((v, i) => (
         <td key={i} className="px-2 py-2.5 text-right text-xs font-bold whitespace-nowrap text-slate-800">{v > 0 ? fmtBRL(v) : '—'}</td>
@@ -457,7 +517,7 @@ export default function MetasPosVendaTotal({ modoAprovacao = false, anoExterno =
         <table className="w-full border-collapse min-w-[1400px]">
           <thead className="sticky top-0 z-10 bg-slate-100 border-b border-slate-200">
             <tr>
-              <th className="px-3 py-2 text-left text-xs font-semibold text-slate-600 whitespace-nowrap min-w-[260px]">
+              <th className={`px-3 py-2 text-left text-xs font-semibold text-slate-600 whitespace-nowrap ${modoAprovacao ? 'sticky left-0 z-20 bg-slate-100 ' + W1 : 'min-w-[260px]'}`}>
                 <div className="flex items-center gap-2">
                   <span>Empresa</span>
                   {Object.keys(tree).length > 0 && (
@@ -505,11 +565,14 @@ export default function MetasPosVendaTotal({ modoAprovacao = false, anoExterno =
               <h2 className="text-lg font-bold text-slate-800 mb-2">{confirmAcao.acao === 'aprovar' ? 'Aprovar setor' : 'Pendenciar setor'}</h2>
               <p className="text-sm text-slate-600">
                 {confirmAcao.acao === 'aprovar'
-                  ? <>Aprovar os valores de <strong>{confirmAcao.setorNome}</strong> em <strong>{confirmAcao.empresaNome}</strong> ({filtroAno})?</>
-                  : <>Os valores de <strong>{confirmAcao.setorNome}</strong> em <strong>{confirmAcao.empresaNome}</strong> ({filtroAno}) voltarão para <strong className="text-amber-700">aguardando aprovação</strong>.</>}
+                  ? <>Aprovar os valores de <strong>{confirmAcao.setorNome}</strong> em <strong>{confirmAcao.empresaNome}</strong> ({filtroAno})? Ao aprovar, os valores são publicados e espelhados no Power BI.</>
+                  : <>Os valores de <strong>{confirmAcao.setorNome}</strong> em <strong>{confirmAcao.empresaNome}</strong> ({filtroAno}) voltarão para <strong className="text-amber-700">pendente</strong>. O que já foi publicado no Power BI é mantido até um diretor aprovar de novo.</>}
               </p>
               {confirmAcao.kind === 'consultor' && (
                 <p className="text-xs text-slate-500 mt-2">O serviço dos mecânicos está vinculado ao consultor: a ação vale para os consultores e mecânicos desta empresa.</p>
+              )}
+              {confirmAcao.kind === 'mecanico' && (
+                <p className="text-xs text-slate-500 mt-2">Esta empresa não tem consultores: a ação vale para todos os setores de mecânico dela.</p>
               )}
             </div>
             <div className="flex gap-3 px-6 pb-6">

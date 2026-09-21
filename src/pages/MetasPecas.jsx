@@ -81,7 +81,7 @@ const STATUS_CLS = {
   'APROVADO':             'bg-green-100 text-green-700',
   'REPROVADO':            'bg-red-100 text-red-700',
 }
-const STATUS_DISPLAY = { 'AGUARDANDO APROVACAO': 'Aguard. Aprovação', 'APROVADO': 'Aprovado', 'REPROVADO': 'Reprovado' }
+const STATUS_DISPLAY = { 'AGUARDANDO APROVACAO': 'Pendente', 'APROVADO': 'Aprovado', 'REPROVADO': 'Reprovado' }
 
 const FORM_VAZIO = {
   empresa_id: '', empresa_nome: '',
@@ -746,7 +746,7 @@ export default function MetasPecas() {
                                   const setMeses = aggSetor(setor)
                                   const setTotal = sumArr(setMeses)
                                   // Situação por Setor (não por colaborador): se algum mês com valor de qualquer
-                                  // colaborador do setor não estiver aprovado, o setor inteiro fica "Aguard. Aprovação".
+                                  // colaborador do setor não estiver aprovado, o setor inteiro fica "Pendente".
                                   let setorTemValor = false, setorAprovado = true
                                   Object.values(setor.boxes).forEach(bx => Object.values(bx.colabs).forEach(co => Object.values(co.meses).forEach(m => {
                                     if (Number(m.meta_faturamento) > 0) {
