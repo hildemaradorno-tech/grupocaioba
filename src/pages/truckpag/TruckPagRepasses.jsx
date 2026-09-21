@@ -5,7 +5,6 @@ import TruckPagNav from './TruckPagNav'
 import TruckPagRegrasModal from './TruckPagRegrasModal'
 import TruckPagConfigModal from './TruckPagConfigModal'
 import TruckPagRelatorioDivergencias from './TruckPagRelatorioDivergencias'
-import TruckPagRepasseDetalheModal from './TruckPagRepasseDetalheModal'
 import {
   fmtMoeda, fmtData, sincronizarTudoTruckPag, splitEstabelecimento,
   conciliarTitulosRepasses, tituloConciliadoPorRepasse,
@@ -49,6 +48,33 @@ const CONCILIACAO_INFO = {
   nao_encontrado: { label: 'Sem título', cls: 'bg-red-50 text-red-700 border-red-200', icon: XCircle },
 }
 
+// Subconjunto de linhas cuja soma de valor_recebido fecha com `alvo` (±2 centavos) — usado pra
+// achar, dentro de um depósito, quais linhas sem título ainda compõem o saldo restante do crédito.
+// Programação dinâmica sobre centavos; devolve [] se nenhuma combinação fecha.
+function subconjuntoQueFecha(linhas, alvo) {
+  const alvoC = Math.round(alvo * 100)
+  if (alvoC <= 0) return []
+  const alcancado = new Map([[0, null]]) // soma → { de, idx }
+  linhas.forEach((l, idx) => {
+    const c = Math.round((l.valor_recebido || 0) * 100)
+    if (c <= 0) return
+    for (const soma of [...alcancado.keys()]) {
+      const nova = soma + c
+      if (nova <= alvoC + 2 && !alcancado.has(nova)) alcancado.set(nova, { de: soma, idx })
+    }
+  })
+  for (let d = 0; d <= 2; d++) {
+    for (const soma of [alvoC - d, alvoC + d]) {
+      if (!alcancado.has(soma) || soma === 0) continue
+      const achadas = []
+      let atual = soma
+      while (atual !== 0) { const p = alcancado.get(atual); achadas.push(linhas[p.idx]); atual = p.de }
+      return achadas
+    }
+  }
+  return []
+}
+
 // Tela detalhada, linha a linha, de todos os repasses TruckPag (sem agrupar por depósito) — a
 // Saldo Concessionária já mostra os depósitos agrupados x créditos; aqui é o extrato completo, cru.
 export default function TruckPagRepasses() {
@@ -71,7 +97,6 @@ export default function TruckPagRepasses() {
   const [selecionados, setSelecionados] = useState(() => new Set())
   const [dataExport, setDataExport] = useState(hojeIso)
   const [processandoPdf, setProcessandoPdf] = useState(false)
-  const [mostrarLinhasForaGrupo, setMostrarLinhasForaGrupo] = useState(false)
 
   // Larguras reais (medidas) das colunas da tabela de repasses que têm um par na mini-tabela
   // "Título encontrado" (marcado via `colunaRepasse` em COLUNAS_TITULO_DETALHE), pra essas colunas
@@ -216,6 +241,7 @@ export default function TruckPagRepasses() {
         total: g.total,
         dataCredito: g.creditoVinculado.data_caixa,
         valorCredito: g.creditoVinculado.saldo_docto_controlado ?? g.creditoVinculado.valor,
+        saldoRestante: g.creditoVinculado.saldo_docto_controlado ?? g.creditoVinculado.valor,
         qtd: g.linhas.length,
       }))
       .sort((a, b) => String(a.dataCredito ?? '').localeCompare(String(b.dataCredito ?? '')))
@@ -230,13 +256,28 @@ export default function TruckPagRepasses() {
 
   const qtdDivergentes = useMemo(() => linhasVinculadas.filter(l => l.statusConciliacao === 'divergente').length, [linhasVinculadas])
 
+  // Lote de pagamento selecionado: mostra só os repasses que ainda fazem parte do saldo do
+  // crédito (o valor exibido no chip). Um depósito grande pode já ter sido quase todo baixado — o
+  // que resta são as linhas com título ainda em aberto (vinculadas). Se o saldo restante não
+  // fecha só com elas, completa com as linhas sem título (X vermelho na coluna ST) que fecham a
+  // diferença. Sem lote, só os repasses com título.
   const filtradas = useMemo(() => {
     let f = linhasVinculadas
-    if (filtroGrupoRepasse) f = f.filter(l => `${l.estabelecimento}|${l.data_pagamento}` === filtroGrupoRepasse)
+    if (filtroGrupoRepasse) {
+      const doLote = linhasComConciliacao.filter(l => `${l.estabelecimento}|${l.data_pagamento}` === filtroGrupoRepasse)
+      const vinculadas = doLote.filter(l => l.tituloEncontrado)
+      const grupo = gruposPorDia.find(g => g.chave === filtroGrupoRepasse)
+      f = vinculadas
+      if (grupo?.saldoRestante != null) {
+        const somaVinculadas = vinculadas.reduce((acc, l) => acc + (l.valor_recebido || 0), 0)
+        const falta = grupo.saldoRestante - somaVinculadas
+        if (falta > tolerancia) f = [...vinculadas, ...subconjuntoQueFecha(doLote.filter(l => !l.tituloEncontrado), falta)]
+      }
+    }
     if (filtroNaoIdentificado) f = f.filter(l => !l.conciliadoSaldo)
     if (filtroDivergente) f = f.filter(l => l.statusConciliacao === 'divergente')
     return f
-  }, [linhasVinculadas, filtroGrupoRepasse, filtroNaoIdentificado, filtroDivergente])
+  }, [linhasComConciliacao, linhasVinculadas, gruposPorDia, tolerancia, filtroGrupoRepasse, filtroNaoIdentificado, filtroDivergente])
 
   const ordenadas = useMemo(() => {
     const arr = [...filtradas]
@@ -268,17 +309,6 @@ export default function TruckPagRepasses() {
     acc.liquido += l.valor_recebido || 0
     return acc
   }, { bruto: 0, taxa: 0, liquido: 0 }), [ordenadas])
-
-  // Linhas do depósito filtrado (chip "Saldo Concessionária" ativo) que NÃO entraram na tabela por
-  // não terem título vinculado — usadas pro alerta "faltam X linha(s) deste depósito" quando o
-  // Total exibido (só vinculados) não bate com o valor total do repasse (que inclui todas as
-  // linhas do depósito, com ou sem título).
-  const linhasForaDoGrupo = useMemo(() => {
-    if (!filtroGrupoRepasse) return []
-    return linhasComConciliacao.filter(l =>
-      `${l.estabelecimento}|${l.data_pagamento}` === filtroGrupoRepasse && l.statusConciliacao === 'nao_encontrado'
-    )
-  }, [linhasComConciliacao, filtroGrupoRepasse])
 
   // Só repasses com título encontrado têm o que expandir (o badge de "Sem título" não é clicável).
   const idsExpansiveis = useMemo(() => ordenadas.filter(l => l.tituloEncontrado).map(l => l.id), [ordenadas])
@@ -545,15 +575,6 @@ export default function TruckPagRepasses() {
       </div>
       <TruckPagRegrasModal aberto={regrasAberto} onFechar={() => setRegrasAberto(false)} />
       {configAberto && <TruckPagConfigModal onClose={() => { setConfigAberto(false); carregar() }} />}
-      {mostrarLinhasForaGrupo && linhasForaDoGrupo.length > 0 && (
-        <TruckPagRepasseDetalheModal
-          empresa={splitEstabelecimento(linhasForaDoGrupo[0].estabelecimento).empresa}
-          codigoEmpresa={splitEstabelecimento(linhasForaDoGrupo[0].estabelecimento).codigoEmpresa}
-          data={linhasForaDoGrupo[0].data_pagamento}
-          linhas={linhasForaDoGrupo}
-          onClose={() => setMostrarLinhasForaGrupo(false)}
-        />
-      )}
 
       {erro && (
         <div className="flex items-center gap-3 bg-red-50 border border-red-200 rounded-lg px-4 py-3">
@@ -661,22 +682,6 @@ export default function TruckPagRepasses() {
             </div>
           )}
         </div>
-        {linhasForaDoGrupo.length > 0 && (
-          <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-lg px-4 py-2.5">
-            <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
-            <p className="text-xs text-amber-700 font-semibold flex-1">
-              Este depósito tem {linhasForaDoGrupo.length} linha(s) sem título vinculado (
-              {fmtMoeda(linhasForaDoGrupo.reduce((s, l) => s + (l.valor_recebido || 0), 0))}) que não entram no Total acima.
-            </p>
-            <button
-              type="button"
-              onClick={() => setMostrarLinhasForaGrupo(true)}
-              className="shrink-0 flex items-center gap-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold px-3 py-1.5 rounded-md shadow-sm transition-colors"
-            >
-              Ver linha(s)
-            </button>
-          </div>
-        )}
         <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-x-auto custom-scrollbar-light">
           <table className="w-full text-left border-collapse">
             <thead>
