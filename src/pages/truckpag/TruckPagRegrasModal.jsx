@@ -59,10 +59,9 @@ export default function TruckPagRegrasModal({ aberto, onFechar, variante = 'titu
               <div className="bg-slate-50 border border-slate-200 rounded-md p-3">
                 <p className="font-bold text-slate-700 mb-1">1. Identidade obrigatória (pra virar candidato)</p>
                 <p>
-                  <strong>Código da Empresa</strong> e <strong>Parcela</strong> precisam bater — E pelo menos uma
+                  <strong>Código da Empresa</strong>, <strong>Parcela</strong> e <strong>CNPJ do Cliente</strong> precisam bater — E pelo menos uma
                   <strong> Nota Fiscal</strong> (Nº NF-e ou Nº NFS-e) em comum entre título e repasse. Se faltar
-                  qualquer um desses, o título/repasse não é considerado um candidato. O <strong>CNPJ do Cliente</strong> não
-                  entra mais aqui — só é conferido depois, junto com Valor e Saldo, pra decidir Identificado ou Divergente.
+                  qualquer um desses, o título/repasse não é considerado um candidato.
                 </p>
               </div>
 
@@ -70,7 +69,7 @@ export default function TruckPagRegrasModal({ aberto, onFechar, variante = 'titu
                 <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
                 <div>
                   <p className="font-bold text-emerald-700">Identificado</p>
-                  <p>Identidade obrigatória bate, e <strong>CNPJ do Cliente</strong>, <strong>Valor</strong> e <strong>Saldo</strong> também conferem com o repasse (dentro da tolerância configurada).</p>
+                  <p>Identidade obrigatória bate, e <strong>Valor</strong> e <strong>Saldo</strong> também conferem com o repasse (dentro da tolerância configurada).</p>
                 </div>
               </div>
 
@@ -78,7 +77,7 @@ export default function TruckPagRegrasModal({ aberto, onFechar, variante = 'titu
                 <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
                 <div>
                   <p className="font-bold text-amber-700">Divergente</p>
-                  <p>Identidade obrigatória bate, mas <strong>CNPJ do Cliente</strong>, <strong>Valor</strong> ou <strong>Saldo</strong> não conferem (fora da tolerância, no caso do CNPJ é diferente do repasse).</p>
+                  <p>Identidade obrigatória bate, mas <strong>Valor</strong> ou <strong>Saldo</strong> não conferem (fora da tolerância configurada).</p>
                 </div>
               </div>
 
@@ -86,7 +85,7 @@ export default function TruckPagRegrasModal({ aberto, onFechar, variante = 'titu
                 <XCircle className="h-4 w-4 text-red-600 shrink-0 mt-0.5" />
                 <div>
                   <p className="font-bold text-red-700">Não encontrado / Sem título</p>
-                  <p>Nenhum repasse (ou título) bate a identidade obrigatória (código + parcela + nota fiscal).</p>
+                  <p>Nenhum repasse (ou título) bate a identidade obrigatória (código + parcela + CNPJ do cliente + nota fiscal).</p>
                 </div>
               </div>
 
