@@ -142,8 +142,42 @@ const _toRowPublicada = (r, tipo, ts, ctx) => ({
   ..._posicaoPublicada(r, tipo, ctx),
   meta_faturamento: r.meta_aprovada,
   meta_pecas: r.meta_pecas || null, meta_servicos: r.meta_servicos || null,
+  aprovado_por: r.aprovado_por || null, aprovado_por_nome: r.aprovado_por_nome || null, aprovado_em: r.aprovado_em || null,
   publicado_em: ts,
 })
+
+// Histórico de aprovação (quem, quando, o quê): só inclui — a tabela não aceita alteração pelo sistema.
+const _registrarHistorico = async ({ evento, tipo, empresaId, empresaNome, ano, setorId = null, setorNome = null, usuario, linhas, valorTotal }) => {
+  const { error } = await supabase.from('metas_aprovacao_historico').insert([{
+    evento, tipo, empresa_id: empresaId, empresa_nome: empresaNome || null, ano: Number(ano),
+    setor_id: _uuidOuNull(setorId), setor_nome: setorNome || null,
+    usuario_id: usuario?.id || null, usuario_nome: usuario?.nome || null,
+    linhas, valor_total: valorTotal,
+  }])
+  if (error) throw error
+}
+
+// Pendenciar: limpa a aprovação (incluindo quem aprovou) e registra o evento. NÃO mexe no que já foi publicado.
+const _pendenciarComHistorico = async ({ tabela, tipo, empresaId, ano, setorId = null, usuario }) => {
+  let q = supabase.from(tabela).select('empresa_nome,setor_nome,meta_aprovada')
+    .eq('empresa_id', empresaId).eq('ano', ano).not('meta_aprovada', 'is', null)
+  if (setorId) q = q.eq('setor_id', setorId)
+  const { data: aprovadas, error: e0 } = await q
+  if (e0) throw e0
+  let up = supabase.from(tabela)
+    .update({ meta_aprovada: null, aprovado_em: null, aprovado_por: null, aprovado_por_nome: null })
+    .eq('empresa_id', empresaId).eq('ano', ano)
+  if (setorId) up = up.eq('setor_id', setorId)
+  const { error } = await up
+  if (error) throw error
+  if (aprovadas && aprovadas.length > 0) {
+    await _registrarHistorico({
+      evento: 'PENDENCIOU', tipo, empresaId, empresaNome: aprovadas[0].empresa_nome, ano,
+      setorId, setorNome: setorId ? aprovadas[0].setor_nome : null, usuario,
+      linhas: aprovadas.length, valorTotal: aprovadas.reduce((t, r) => t + (Number(r.meta_aprovada) || 0), 0),
+    })
+  }
+}
 
 // Meta já aprovada ou publicada não pode ser excluída: só é alterada (a alteração fica pendente até um diretor
 // aprovar) — ou o administrador limpa a aprovação na Gestão de Aprovação.
@@ -2280,17 +2314,19 @@ export const apiService = {
 
   // Aprova E publica na hora pra fato_metas_publicadas (só essa empresa+tipo+ano) — sem passo
   // separado de "Publicar", ver _toRowPublicada acima.
-  approveMetasPecasEmpresa: async (empresaId, ano) => {
+  approveMetasPecasEmpresa: async (empresaId, ano, usuario = null) => {
     const { error } = await supabase.rpc('approve_metas_pecas_empresa', {
       p_empresa_id: empresaId,
       p_ano: Number(ano),
+      p_usuario_id: usuario?.id || null,
+      p_usuario_nome: usuario?.nome || null,
     })
     if (error) throw error
 
     // fato_rascunho_metas_pecas não tem colunas meta_pecas/meta_servicos (o registro inteiro já
     // É de peças) — só meta_faturamento mesmo, que é o que BiPossibilidades.jsx lê pra tipo='pecas'.
     const { data: rows, error: errFetch } = await supabase.from('fato_rascunho_metas_pecas')
-      .select('empresa_id,empresa_nome,ano,mes,colaborador_id,colaborador_nome,departamento_id,departamento_nome,setor_id,setor_nome,box_id,box_nome,cargo_id,cargo_nome,meta_faturamento,meta_aprovada')
+      .select('empresa_id,empresa_nome,ano,mes,colaborador_id,colaborador_nome,departamento_id,departamento_nome,setor_id,setor_nome,box_id,box_nome,cargo_id,cargo_nome,meta_faturamento,meta_aprovada,aprovado_em,aprovado_por,aprovado_por_nome')
       .eq('empresa_id', empresaId).eq('ano', ano).not('meta_aprovada', 'is', null)
     if (errFetch) throw errFetch
     if (rows && rows.length > 0) {
@@ -2299,18 +2335,21 @@ export const apiService = {
       const { error: errPub } = await supabase.from('fato_metas_publicadas')
         .upsert(rows.map(r => _toRowPublicada(r, 'pecas', ts, ctx)), { onConflict: 'empresa_id,ano,mes,tipo,colaborador_id' })
       if (errPub) throw errPub
+      await _registrarHistorico({ evento: 'APROVOU', tipo: 'pecas', empresaId, empresaNome: rows[0].empresa_nome, ano, usuario,
+        linhas: rows.length, valorTotal: rows.reduce((t, r) => t + (Number(r.meta_aprovada) || 0), 0) })
     }
     return { success: true }
   },
 
   // Aprovação de Peças por setor (a função approve_metas_pecas_setor está em supabase/migrations).
-  approveMetasPecasSetor: async (empresaId, ano, setorId) => {
+  approveMetasPecasSetor: async (empresaId, ano, setorId, usuario = null) => {
     const { error } = await supabase.rpc('approve_metas_pecas_setor', {
       p_empresa_id: empresaId, p_ano: Number(ano), p_setor_id: setorId,
+      p_usuario_id: usuario?.id || null, p_usuario_nome: usuario?.nome || null,
     })
     if (error) throw error
     const { data: rows, error: errFetch } = await supabase.from('fato_rascunho_metas_pecas')
-      .select('empresa_id,empresa_nome,ano,mes,colaborador_id,colaborador_nome,departamento_id,departamento_nome,setor_id,setor_nome,box_id,box_nome,cargo_id,cargo_nome,meta_faturamento,meta_aprovada')
+      .select('empresa_id,empresa_nome,ano,mes,colaborador_id,colaborador_nome,departamento_id,departamento_nome,setor_id,setor_nome,box_id,box_nome,cargo_id,cargo_nome,meta_faturamento,meta_aprovada,aprovado_em,aprovado_por,aprovado_por_nome')
       .eq('empresa_id', empresaId).eq('ano', ano).eq('setor_id', setorId).not('meta_aprovada', 'is', null)
     if (errFetch) throw errFetch
     if (rows && rows.length > 0) {
@@ -2319,14 +2358,13 @@ export const apiService = {
       const { error: errPub } = await supabase.from('fato_metas_publicadas')
         .upsert(rows.map(r => _toRowPublicada(r, 'pecas', ts, ctx)), { onConflict: 'empresa_id,ano,mes,tipo,colaborador_id' })
       if (errPub) throw errPub
+      await _registrarHistorico({ evento: 'APROVOU', tipo: 'pecas', empresaId, empresaNome: rows[0].empresa_nome, ano, setorId, setorNome: rows[0].setor_nome, usuario,
+        linhas: rows.length, valorTotal: rows.reduce((t, r) => t + (Number(r.meta_aprovada) || 0), 0) })
     }
     return { success: true }
   },
-  unapproveMetasPecasSetor: async (empresaId, ano, setorId) => {
-    const { error } = await supabase.from('fato_rascunho_metas_pecas')
-      .update({ meta_aprovada: null, aprovado_em: null })
-      .eq('empresa_id', empresaId).eq('ano', ano).eq('setor_id', setorId)
-    if (error) throw error
+  unapproveMetasPecasSetor: async (empresaId, ano, setorId, usuario = null) => {
+    await _pendenciarComHistorico({ tabela: 'fato_rascunho_metas_pecas', tipo: 'pecas', empresaId, ano, setorId, usuario })
     return { success: true }
   },
 
@@ -2398,12 +2436,14 @@ export const apiService = {
     return { success: true }
   },
 
-  approveMetasMecanicoEmpresa: async (empresaId, ano) => {
-    const { error } = await supabase.rpc('approve_metas_mecanico_empresa', { p_empresa_id: empresaId, p_ano: Number(ano) })
+  approveMetasMecanicoEmpresa: async (empresaId, ano, usuario = null) => {
+    const { error } = await supabase.rpc('approve_metas_mecanico_empresa', {
+      p_empresa_id: empresaId, p_ano: Number(ano), p_usuario_id: usuario?.id || null, p_usuario_nome: usuario?.nome || null,
+    })
     if (error) throw error
 
     const { data: rows, error: errFetch } = await supabase.from('fato_rascunho_metas_servicos_mecanico')
-      .select('empresa_id,empresa_nome,ano,mes,colaborador_id,colaborador_nome,departamento_id,departamento_nome,setor_id,setor_nome,box_id,box_nome,cargo_id,cargo_nome,meta_faturamento,meta_pecas,meta_servicos,meta_aprovada')
+      .select('empresa_id,empresa_nome,ano,mes,colaborador_id,colaborador_nome,departamento_id,departamento_nome,setor_id,setor_nome,box_id,box_nome,cargo_id,cargo_nome,meta_faturamento,meta_pecas,meta_servicos,meta_aprovada,aprovado_em,aprovado_por,aprovado_por_nome')
       .eq('empresa_id', empresaId).eq('ano', ano).not('meta_aprovada', 'is', null)
     if (errFetch) throw errFetch
     if (rows && rows.length > 0) {
@@ -2412,6 +2452,8 @@ export const apiService = {
       const { error: errPub } = await supabase.from('fato_metas_publicadas')
         .upsert(rows.map(r => _toRowPublicada(r, 'mecanico', ts, ctx)), { onConflict: 'empresa_id,ano,mes,tipo,colaborador_id' })
       if (errPub) throw errPub
+      await _registrarHistorico({ evento: 'APROVOU', tipo: 'mecanico', empresaId, empresaNome: rows[0].empresa_nome, ano, usuario,
+        linhas: rows.length, valorTotal: rows.reduce((t, r) => t + (Number(r.meta_aprovada) || 0), 0) })
     }
     return { success: true }
   },
@@ -2457,12 +2499,14 @@ export const apiService = {
     return { success: true }
   },
 
-  approveMetasConsultorEmpresa: async (empresaId, ano) => {
-    const { error } = await supabase.rpc('approve_metas_consultor_empresa', { p_empresa_id: empresaId, p_ano: Number(ano) })
+  approveMetasConsultorEmpresa: async (empresaId, ano, usuario = null) => {
+    const { error } = await supabase.rpc('approve_metas_consultor_empresa', {
+      p_empresa_id: empresaId, p_ano: Number(ano), p_usuario_id: usuario?.id || null, p_usuario_nome: usuario?.nome || null,
+    })
     if (error) throw error
 
     const { data: rows, error: errFetch } = await supabase.from('fato_rascunho_metas_servicos_consultor')
-      .select('empresa_id,empresa_nome,ano,mes,colaborador_id,colaborador_nome,departamento_id,departamento_nome,setor_id,setor_nome,box_id,box_nome,cargo_id,cargo_nome,meta_faturamento,meta_aprovada')
+      .select('empresa_id,empresa_nome,ano,mes,colaborador_id,colaborador_nome,departamento_id,departamento_nome,setor_id,setor_nome,box_id,box_nome,cargo_id,cargo_nome,meta_faturamento,meta_aprovada,aprovado_em,aprovado_por,aprovado_por_nome')
       .eq('empresa_id', empresaId).eq('ano', ano).not('meta_aprovada', 'is', null)
     if (errFetch) throw errFetch
     if (rows && rows.length > 0) {
@@ -2471,6 +2515,8 @@ export const apiService = {
       const { error: errPub } = await supabase.from('fato_metas_publicadas')
         .upsert(rows.map(r => _toRowPublicada(r, 'consultor', ts, ctx)), { onConflict: 'empresa_id,ano,mes,tipo,colaborador_id' })
       if (errPub) throw errPub
+      await _registrarHistorico({ evento: 'APROVOU', tipo: 'consultor', empresaId, empresaNome: rows[0].empresa_nome, ano, usuario,
+        linhas: rows.length, valorTotal: rows.reduce((t, r) => t + (Number(r.meta_aprovada) || 0), 0) })
     }
     return { success: true }
   },
@@ -2617,25 +2663,16 @@ export const apiService = {
   // PENDENCIAR — só o administrador: limpa meta_aprovada (as telas de metas voltam a mostrar pendente).
   // O que já foi publicado em fato_metas_publicadas NÃO é apagado: continua valendo no Power BI até um
   // diretor aprovar de novo (aí a linha publicada é atualizada).
-  unapproveMetasPecasEmpresa: async (empresaId, ano) => {
-    const { error } = await supabase.from('fato_rascunho_metas_pecas')
-      .update({ meta_aprovada: null, aprovado_em: null })
-      .eq('empresa_id', empresaId).eq('ano', ano)
-    if (error) throw error
+  unapproveMetasPecasEmpresa: async (empresaId, ano, usuario = null) => {
+    await _pendenciarComHistorico({ tabela: 'fato_rascunho_metas_pecas', tipo: 'pecas', empresaId, ano, usuario })
     return { success: true }
   },
-  unapproveMetasMecanicoEmpresa: async (empresaId, ano) => {
-    const { error } = await supabase.from('fato_rascunho_metas_servicos_mecanico')
-      .update({ meta_aprovada: null, aprovado_em: null })
-      .eq('empresa_id', empresaId).eq('ano', ano)
-    if (error) throw error
+  unapproveMetasMecanicoEmpresa: async (empresaId, ano, usuario = null) => {
+    await _pendenciarComHistorico({ tabela: 'fato_rascunho_metas_servicos_mecanico', tipo: 'mecanico', empresaId, ano, usuario })
     return { success: true }
   },
-  unapproveMetasConsultorEmpresa: async (empresaId, ano) => {
-    const { error } = await supabase.from('fato_rascunho_metas_servicos_consultor')
-      .update({ meta_aprovada: null, aprovado_em: null })
-      .eq('empresa_id', empresaId).eq('ano', ano)
-    if (error) throw error
+  unapproveMetasConsultorEmpresa: async (empresaId, ano, usuario = null) => {
+    await _pendenciarComHistorico({ tabela: 'fato_rascunho_metas_servicos_consultor', tipo: 'consultor', empresaId, ano, usuario })
     return { success: true }
   },
   unapproveMetasFunilariaEmpresa: async (empresaId, ano) => {

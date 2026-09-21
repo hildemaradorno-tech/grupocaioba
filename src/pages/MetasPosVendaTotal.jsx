@@ -3,12 +3,13 @@ import { useSessionState } from '../hooks/useSessionState'
 import { TrendingUp, ChevronRight, ChevronDown, Loader2, Calculator, CheckCircle2, Ban, AlertTriangle } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import BotaoIconeTooltip from '../components/BotaoIconeTooltip'
+import TooltipTexto from '../components/TooltipTexto'
 import { apiService } from '../services/api'
 import { EmpresaMultiFilter, empresaParam, filtrarPorEmpresas, empresasDasMetas } from '../components/EmpresaMultiFilter'
 import { valoresMetaMecanico, resolverPosicaoMecanico } from '../utils/metasMecanico'
 import { agruparPorSegmento } from '../utils/segmentoMarca'
 import { referenciasConsultor } from '../utils/referenciasConsultor'
-import { aggColabs, aggBox, aggSetor, aggDept, aggEmp, aggDeptDedup, aggEmpDedup, montarArvoreTotal } from '../utils/totalPosVendas'
+import { aggColabs, aggBox, aggSetor, aggDept, aggEmp, aggDeptDedup, aggEmpDedup, montarArvoreTotal, linhaPendente } from '../utils/totalPosVendas'
 import { LogoGrupo, LogoSegmento } from '../components/LogosMarca'
 import CalculoFuncionarioModal from '../components/CalculoFuncionarioModal'
 
@@ -54,24 +55,48 @@ const infoAprovacaoSetor = (setor, empNode) => {
   const st = statusSetor(setor)
   let pend = st.label === 'AGUARDANDO APROVACAO'
   let tem = st.tem
+  const linhasAprov = []
+  if (kind !== 'mecanico') Object.values(setor.boxes).forEach(b => Object.values(b.colabs).forEach(co => co.linhas.forEach(l => { if (l._tipo === (kind === 'pecas' ? 'PECAS' : 'CONSULTOR')) linhasAprov.push(l) })))
   if (kind === 'consultor' || kind === 'mecanico') {
     // A situação considera todos os mecânicos da empresa (a aprovação vale para todos juntos).
     if (kind === 'mecanico') { pend = false; tem = false }
     Object.values(empNode.depts).forEach(d => Object.values(d.setores).forEach(s2 => Object.values(s2.boxes).forEach(b => Object.values(b.colabs).forEach(co => {
-      if (co.linhas.some(l => l._tipo === 'MECANICO')) { if (co.tem) tem = true; if (co.pend) pend = true }
+      if (co.linhas.some(l => l._tipo === 'MECANICO')) {
+        if (co.tem) tem = true
+        if (co.pend) pend = true
+        co.linhas.forEach(l => { if (l._tipo === 'MECANICO') linhasAprov.push(l) })
+      }
     }))))
   }
-  return { kind, pend, tem }
+  return { kind, pend, tem, ultimo: ultimaAprovacao(linhasAprov) }
 }
 
 const SEM_FILTRO = []
 
 // Selo de status do Setor / Departamento na Gestão de Aprovação: "Pendente" ou "Aprovado".
-const SeloStatus = ({ pend }) => (
-  <span className={`px-2 py-0.5 rounded-full text-[10px] font-normal whitespace-nowrap ${pend ? STATUS_CLS['AGUARDANDO APROVACAO'] : STATUS_CLS['APROVADO']}`}>
-    {pend ? STATUS_DISPLAY['AGUARDANDO APROVACAO'] : STATUS_DISPLAY['APROVADO']}
-  </span>
-)
+const textoAprovacao = (ap) => {
+  if (!ap?.em) return null
+  const quando = new Date(ap.em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
+  return ap.por ? `Aprovado por ${ap.por} em ${quando}` : `Aprovado em ${quando}`
+}
+const SeloStatus = ({ pend, aprovacao }) => {
+  const selo = (
+    <span className={`px-2 py-0.5 rounded-full text-[10px] font-normal whitespace-nowrap ${pend ? STATUS_CLS['AGUARDANDO APROVACAO'] : STATUS_CLS['APROVADO']}`}>
+      {pend ? STATUS_DISPLAY['AGUARDANDO APROVACAO'] : STATUS_DISPLAY['APROVADO']}
+    </span>
+  )
+  return pend ? selo : <TooltipTexto texto={textoAprovacao(aprovacao)}>{selo}</TooltipTexto>
+}
+// Aprovação mais recente entre as linhas já aprovadas (quem e quando).
+const ultimaAprovacao = (linhas) => {
+  let ult = null
+  linhas.forEach(l => {
+    const grav = Number(l._grav ?? l.meta_faturamento) || 0
+    if (!grav || linhaPendente(grav, l.meta_aprovada) || !l.aprovado_em) return
+    if (!ult || new Date(l.aprovado_em) > new Date(ult.em)) ult = { em: l.aprovado_em, por: l.aprovado_por_nome || null }
+  })
+  return ult
+}
 
 // Situação pequena dos níveis de agrupamento (Gestão de Aprovação): alerta "Pendente" se houver algo
 // pendente; "Aprovado" se houver valores e nada pendente; nada se o nível não tem aprovação própria.
@@ -92,7 +117,7 @@ const SituacaoNivel = ({ pend, tem }) => {
 const SEL = 'border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500'
 
 export default function MetasPosVendaTotal({ modoAprovacao = false, anoExterno = null, aoAlterarAprovacao = null } = {}) {
-  const { hasPermission, isAdminEfetivo } = useAuth()
+  const { hasPermission, isAdminEfetivo, usuarioId, userNome } = useAuth()
   const canEdit = hasPermission('/metas/gestao-aprovacao', 'editar')
   const [empresas,      setEmpresas]      = useState([])
   const [departamentos, setDepartamentos] = useState([])
@@ -177,20 +202,21 @@ export default function MetasPosVendaTotal({ modoAprovacao = false, anoExterno =
   const executarAcao = async () => {
     if (!confirmAcao) return
     const { acao, kind, empresaId, setorId } = confirmAcao
+    const usuario = { id: usuarioId, nome: userNome }
     setAcaoRodando(`${empresaId}|${setorId}`); setConfirmAcao(null)
     try {
       if (kind === 'pecas') {
-        if (acao === 'aprovar') await apiService.approveMetasPecasSetor(empresaId, filtroAno, setorId)
-        else await apiService.unapproveMetasPecasSetor(empresaId, filtroAno, setorId)
+        if (acao === 'aprovar') await apiService.approveMetasPecasSetor(empresaId, filtroAno, setorId, usuario)
+        else await apiService.unapproveMetasPecasSetor(empresaId, filtroAno, setorId, usuario)
       } else if (kind === 'mecanico') {
-        if (acao === 'aprovar') await apiService.approveMetasMecanicoEmpresa(empresaId, filtroAno)
-        else await apiService.unapproveMetasMecanicoEmpresa(empresaId, filtroAno)
+        if (acao === 'aprovar') await apiService.approveMetasMecanicoEmpresa(empresaId, filtroAno, usuario)
+        else await apiService.unapproveMetasMecanicoEmpresa(empresaId, filtroAno, usuario)
       } else if (acao === 'aprovar') {
-        await apiService.approveMetasConsultorEmpresa(empresaId, filtroAno)
-        await apiService.approveMetasMecanicoEmpresa(empresaId, filtroAno)
+        await apiService.approveMetasConsultorEmpresa(empresaId, filtroAno, usuario)
+        await apiService.approveMetasMecanicoEmpresa(empresaId, filtroAno, usuario)
       } else {
-        await apiService.unapproveMetasConsultorEmpresa(empresaId, filtroAno)
-        await apiService.unapproveMetasMecanicoEmpresa(empresaId, filtroAno)
+        await apiService.unapproveMetasConsultorEmpresa(empresaId, filtroAno, usuario)
+        await apiService.unapproveMetasMecanicoEmpresa(empresaId, filtroAno, usuario)
       }
       await loadAll()
       aoAlterarAprovacao?.()
@@ -284,11 +310,15 @@ export default function MetasPosVendaTotal({ modoAprovacao = false, anoExterno =
         const dVals = aggDeptDedup(dept)
         if (sumArr(dVals) === 0) return
         const dKey = `${eKey}-d-${dId}`
-        let dPend = false, dTem = false
+        let dPend = false, dTem = false, dUltimo = null
         if (modoAprovacao) {
           Object.values(dept.setores).forEach(st => {
             const ap = infoAprovacaoSetor(st, empNode)
-            if (ap.kind && ap.tem) { dTem = true; if (ap.pend) dPend = true }
+            if (ap.kind && ap.tem) {
+              dTem = true
+              if (ap.pend) dPend = true
+              if (ap.ultimo && (!dUltimo || new Date(ap.ultimo.em) > new Date(dUltimo.em))) dUltimo = ap.ultimo
+            }
           })
         }
         childRows.push(
@@ -300,7 +330,7 @@ export default function MetasPosVendaTotal({ modoAprovacao = false, anoExterno =
                   <span className="text-slate-500 font-normal mr-0.5">Departamento:</span>
                   {dept.nome}
                 </span>
-                {modoAprovacao && dTem && <SeloStatus pend={dPend} />}
+                {modoAprovacao && dTem && <SeloStatus pend={dPend} aprovacao={dUltimo} />}
               </span>
             </td>
             {mCells(dVals, dKey)}
@@ -327,7 +357,7 @@ export default function MetasPosVendaTotal({ modoAprovacao = false, anoExterno =
             // Status logo depois do nome do setor; ícones de Aprovar / Pendênciar na última coluna.
             const ap = infoAprovacaoSetor(setor, empNode)
             statusNome = ap.kind && ap.tem
-              ? <SeloStatus pend={ap.pend} />
+              ? <SeloStatus pend={ap.pend} aprovacao={ap.ultimo} />
               : null
             const chaveAcao = `${eId}|${sId}`
             const info = { kind: ap.kind, empresaId: eId, empresaNome: eNome, setorId: sId, setorNome: setor.nome }
