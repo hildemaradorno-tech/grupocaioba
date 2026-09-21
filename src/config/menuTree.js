@@ -163,7 +163,7 @@ export const MENU_TREE = [
       },
       {
         key: '_truckpag',
-        label: 'Títulos a Receber',
+        label: 'TruckPag a Receber',
         navTo: 'truckpag/titulos',
         children: [
           { key: 'truckpag/conciliacao', label: 'Conciliação' },
