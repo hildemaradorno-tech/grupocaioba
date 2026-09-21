@@ -463,7 +463,7 @@ export default function TruckPagTitulos() {
             </tbody>
             <tfoot>
               <tr className="bg-slate-50 border-t-2 border-slate-200 text-xs font-bold text-slate-700">
-                <td className="p-3" colSpan={colunas.length}>Total ({ordenadas.length} título(s))</td>
+                <td className="p-3" colSpan={colunas.length - 2}>Total ({ordenadas.length} título(s))</td>
                 <td className="p-3 text-right">{fmtMoeda(totalValor)}</td>
                 <td className="p-3 text-right">{fmtMoeda(totalSaldo)}</td>
                 {colunasExtras.length > 0 && <td colSpan={colunasExtras.length}></td>}

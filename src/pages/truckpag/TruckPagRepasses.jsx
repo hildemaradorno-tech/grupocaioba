@@ -18,6 +18,10 @@ function hojeIso() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+// Taxa de 3% aplicada sobre o Valor do título (arredondada em centavos).
+const TAXA_TITULO_PCT = 0.03
+const valorTaxaDoTitulo = (t) => Math.round((t.titulo_valor || 0) * TAXA_TITULO_PCT * 100) / 100
+
 // Colunas da mini-tabela de detalhe do título, exibida abaixo do repasse quando expandido.
 const COLUNAS_TITULO_DETALHE = [
   { key: 'codigo', label: 'Código', derivar: (t) => codigoEmpresaPorNome(t.titulo_empresa_nome) || '—', colunaRepasse: 'codigoEmpresa', campoInfo: 'codigo' },
@@ -37,6 +41,7 @@ const COLUNAS_TITULO_DETALHE = [
   { key: 'titulo_dias_atraso', label: 'Dias', numerico: true },
   { key: 'tipo_titulo_descr', label: 'Tipo' },
   { key: 'titulo_valor', label: 'Valor', numerico: true, formatar: fmtMoeda, campoGraduacao: 'valor' },
+  { key: 'valor_taxa', label: 'Valor Taxa', numerico: true, derivar: valorTaxaDoTitulo, formatar: fmtMoeda },
   { key: 'titulo_saldo', label: 'Saldo', numerico: true, formatar: fmtMoeda, campoGraduacao: 'saldo' },
 ]
 
@@ -257,14 +262,13 @@ export default function TruckPagRepasses() {
     return { qtd: arr.length, valor: arr.reduce((s, l) => s + (l.valor_recebido || 0), 0) }
   }, [linhasVinculadas])
 
-  const qtdDivergentes = useMemo(() => linhasVinculadas.filter(l => l.statusConciliacao === 'divergente').length, [linhasVinculadas])
 
   // Lote de pagamento selecionado: mostra só os repasses que ainda fazem parte do saldo do
   // crédito (o valor exibido no chip). Um depósito grande pode já ter sido quase todo baixado — o
   // que resta são as linhas com título ainda em aberto (vinculadas). Se o saldo restante não
   // fecha só com elas, completa com as linhas sem título (X vermelho na coluna ST) que fecham a
   // diferença. Sem lote, só os repasses com título.
-  const filtradas = useMemo(() => {
+  const filtradasSemFiltroDivergente = useMemo(() => {
     let f = linhasVinculadas
     if (filtroGrupoRepasse) {
       const doLote = linhasComConciliacao.filter(l => `${l.estabelecimento}|${l.data_pagamento}` === filtroGrupoRepasse)
@@ -278,9 +282,16 @@ export default function TruckPagRepasses() {
       }
     }
     if (filtroNaoIdentificado) f = f.filter(l => !l.conciliadoSaldo)
-    if (filtroDivergente) f = f.filter(l => l.statusConciliacao === 'divergente')
     return f
-  }, [linhasComConciliacao, linhasVinculadas, gruposPorDia, tolerancia, filtroGrupoRepasse, filtroNaoIdentificado, filtroDivergente])
+  }, [linhasComConciliacao, linhasVinculadas, gruposPorDia, tolerancia, filtroGrupoRepasse, filtroNaoIdentificado])
+
+  // O botão de filtro de divergências só aparece se a tabela (com os outros filtros aplicados)
+  // tiver alguma linha divergente — ou se o próprio filtro estiver ligado, pra dar pra desligar.
+  const qtdDivergentes = useMemo(() => filtradasSemFiltroDivergente.filter(l => l.statusConciliacao === 'divergente').length, [filtradasSemFiltroDivergente])
+  const filtradas = useMemo(
+    () => (filtroDivergente ? filtradasSemFiltroDivergente.filter(l => l.statusConciliacao === 'divergente') : filtradasSemFiltroDivergente),
+    [filtradasSemFiltroDivergente, filtroDivergente]
+  )
 
   const ordenadas = useMemo(() => {
     const arr = [...filtradas]
@@ -340,17 +351,49 @@ export default function TruckPagRepasses() {
   // não o titulo_saldo (saldo em aberto do título) — pedido do usuário: o arquivo de baixa deve
   // dar baixa pelo valor que realmente entrou, não pelo valor que o título tinha em aberto.
   const titulosSelecionados = useMemo(() => {
+    const selecionadas = ordenadas.filter(l => selecionados.has(l.id) && l.tituloEncontrado)
+
+    // Se o que foi recebido nas linhas selecionadas de um lote passa do Saldo Concessionária que
+    // ainda resta pro crédito daquele lote (ex.: recebido 2.430,44 e saldo 2.430,43), a diferença
+    // sai do valor de baixa — começando pela linha de maior valor — pra não baixar mais do que a
+    // concessionária tem de saldo. Só vale pra lote com crédito vinculado (tem saldoRestante).
+    const deducaoPorLinha = new Map()
+    const porLote = new Map()
+    for (const l of selecionadas) {
+      const chave = `${l.estabelecimento}|${l.data_pagamento}`
+      if (!porLote.has(chave)) porLote.set(chave, [])
+      porLote.get(chave).push(l)
+    }
+    for (const [chave, linhasLote] of porLote) {
+      const saldo = gruposPorDia.find(g => g.chave === chave)?.saldoRestante
+      if (saldo == null) continue
+      const totalLote = linhasLote.reduce((acc, l) => acc + (l.valor_recebido || 0), 0)
+      let excesso = Math.round((totalLote - saldo) * 100) / 100
+      for (const l of [...linhasLote].sort((x, y) => (y.valor_recebido || 0) - (x.valor_recebido || 0))) {
+        if (excesso <= 0) break
+        const d = Math.min(excesso, l.valor_recebido || 0)
+        deducaoPorLinha.set(l.id, d)
+        excesso = Math.round((excesso - d) * 100) / 100
+      }
+    }
+
     const porCodigo = new Map()
-    for (const l of ordenadas) {
-      if (!selecionados.has(l.id) || !l.tituloEncontrado) continue
-      porCodigo.set(l.tituloEncontrado.titulo_codigo, { ...l.tituloEncontrado, titulo_saldo: l.valor_recebido })
+    for (const l of selecionadas) {
+      const deducao = deducaoPorLinha.get(l.id) || 0
+      porCodigo.set(l.tituloEncontrado.titulo_codigo, {
+        ...l.tituloEncontrado,
+        titulo_saldo: Math.round(((l.valor_recebido || 0) - deducao) * 100) / 100,
+        excedenteDeduzido: deducao,
+      })
     }
     return [...porCodigo.values()]
-  }, [ordenadas, selecionados])
+  }, [ordenadas, selecionados, gruposPorDia])
   // Títulos já exportados em "Exportar Baixa" (truckpag_baixas_titulos) — ícone cinza na coluna
   // Situação; título com repasse ainda não exportado fica com o ícone azul (disponível pra baixar).
   const titulosBaixados = useMemo(() => new Set(baixas.map(b => b.titulo_codigo)), [baixas])
   const valorSelecionado = titulosSelecionados.reduce((s, t) => s + (t.titulo_saldo || 0), 0)
+  const titulosComExcedente = titulosSelecionados.filter(t => t.excedenteDeduzido > 0)
+  const excedenteTotal = titulosComExcedente.reduce((s, t) => s + t.excedenteDeduzido, 0)
 
   // Nome do arquivo segue o padrão já usado em Títulos: "DDMMAAAA SIGLA Total Recebido R$
   // X.XXX,XX.txt" quando o filtro "Repasse por dia" está ativo (usa o total do depósito); senão
@@ -666,7 +709,7 @@ export default function TruckPagRepasses() {
                 {todosExpandidos ? 'Recolher' : 'Expandir'}
               </button>
             )}
-            {qtdDivergentes > 0 && (
+            {(qtdDivergentes > 0 || filtroDivergente) && (
               <button type="button" onClick={() => setFiltroDivergente(v => !v)} title="Filtrar Divergências" className={`flex items-center justify-center p-1.5 rounded-md border transition-colors ${filtroDivergente ? 'bg-amber-500 border-amber-500 text-white' : 'bg-amber-50 border-amber-200 text-amber-600 hover:border-amber-300'}`}>
                 <AlertTriangle className="h-3.5 w-3.5" />
               </button>
@@ -681,6 +724,13 @@ export default function TruckPagRepasses() {
           {selecionados.size > 0 && (
             <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-md px-2.5 py-1.5 shadow-sm">
               <span className="text-[11px] font-semibold text-slate-600">{selecionados.size} selecionado(s) · {fmtMoeda(valorSelecionado)}</span>
+              {titulosComExcedente.length > 0 && (
+                <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5"
+                  title={titulosComExcedente.map(t => `${t.titulo_numero}: −${fmtMoeda(t.excedenteDeduzido)}`).join(' | ')}>
+                  <AlertTriangle className="h-3 w-3" />
+                  {titulosComExcedente.length} ajustado(s) ao saldo concessionária · −{fmtMoeda(excedenteTotal)}
+                </span>
+              )}
               <label className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Data Pagto</label>
               <input type="date" value={dataExport} onChange={e => setDataExport(e.target.value)} className="text-xs border border-slate-200 rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300" />
               <button
@@ -774,6 +824,7 @@ export default function TruckPagRepasses() {
                             <span className={`inline-flex items-center gap-1 ${c.numerico ? 'justify-end' : ''}`}>
                               {diverge && <AlertTriangle className="h-3 w-3 shrink-0" />}
                               {bate && <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" title="Confere com o título" />}
+                              {c.key === 'codigoEmpresa' && <span className="px-1 py-px rounded bg-slate-100 text-slate-500 text-[9px] font-bold uppercase tracking-wide">Repasse</span>}
                               {c.formatar ? c.formatar(valor) : (valor || '—')}
                             </span>
                           </td>
@@ -812,6 +863,7 @@ export default function TruckPagRepasses() {
                                           <span className={`inline-flex items-center gap-1 max-w-full ${c.numerico ? 'justify-end' : ''}`}>
                                             {diverge && <AlertTriangle className="h-3 w-3 shrink-0" />}
                                             {bate && <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" title="Confere com o repasse" />}
+                                            {c.key === 'codigo' && <span className="px-1 py-px rounded bg-blue-50 text-blue-600 text-[9px] font-bold uppercase tracking-wide">Título</span>}
                                             <span className="truncate">{c.formatar ? c.formatar(valor) : (valor ?? '—')}</span>
                                           </span>
                                         </td>
