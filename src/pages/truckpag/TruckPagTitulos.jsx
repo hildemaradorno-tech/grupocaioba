@@ -5,6 +5,7 @@ import TruckPagNav from './TruckPagNav'
 import TruckPagRegrasModal from './TruckPagRegrasModal'
 import TruckPagConfigModal from './TruckPagConfigModal'
 import TruckPagRelatorioDivergencias from './TruckPagRelatorioDivergencias'
+import TruckPagDataArquivo from './TruckPagDataArquivo'
 import {
   fmtMoeda, fmtData, sincronizarTudoTruckPag, conciliarTitulosRepasses, splitEstabelecimento,
   parcelaDoTitulo, notasFiscaisDoTitulo,
@@ -245,6 +246,7 @@ export default function TruckPagTitulos() {
             <p className="text-xs text-slate-500 mt-0.5">Posição de títulos em aberto (RFN003) — sincronizado do SharePoint.</p>
           </div>
           <div className="flex items-center gap-3">
+            <TruckPagDataArquivo chave="titulos" />
             <button onClick={sincronizar} disabled={sincronizando} title={sincronizando ? 'Atualizando...' : 'Atualizar todas as abas do SharePoint'} className="flex items-center justify-center bg-blue-600 hover:bg-blue-700 text-white p-2 rounded-md shadow-sm transition-colors disabled:opacity-50">
               <RefreshCw className={`h-4 w-4 ${sincronizando ? 'animate-spin' : ''}`} />
             </button>

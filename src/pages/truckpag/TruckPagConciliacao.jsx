@@ -4,6 +4,7 @@ import { apiService } from '../../services/api'
 import TruckPagNav from './TruckPagNav'
 import TruckPagConfigModal from './TruckPagConfigModal'
 import TruckPagRelatorioDivergencias from './TruckPagRelatorioDivergencias'
+import TruckPagDataArquivo from './TruckPagDataArquivo'
 import TruckPagRepasseDetalheModal from './TruckPagRepasseDetalheModal'
 import TruckPagRegrasModal from './TruckPagRegrasModal'
 import { fmtMoeda, fmtData, sincronizarTudoTruckPag, conciliarRepassesCreditos, filtrarCreditosPorTipoSaldo } from './truckpagUtils'
@@ -200,6 +201,7 @@ export default function TruckPagConciliacao() {
             <p className="text-xs text-slate-500 mt-0.5">Repasses Fabricante x Saldo disponível na concessionária — vinculados pela soma do valor por estabelecimento/data.</p>
           </div>
           <div className="flex items-center gap-3">
+            <TruckPagDataArquivo chave="creditos" />
             <button onClick={sincronizar} disabled={sincronizando} title={sincronizando ? 'Atualizando...' : 'Atualizar todas as abas do SharePoint'} className="flex items-center justify-center bg-blue-600 hover:bg-blue-700 text-white p-2 rounded-md shadow-sm transition-colors disabled:opacity-50">
               <RefreshCw className={`h-4 w-4 ${sincronizando ? 'animate-spin' : ''}`} />
             </button>

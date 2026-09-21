@@ -17,6 +17,16 @@ const FONTES_TRUCKPAG = [
   { chave: 'repasses', importar: (rows) => apiService.importarTruckPagRepasses(rows) },
 ]
 
+// Data de modificação do arquivo de cada fonte (vem do SharePoint junto com as linhas), guardada
+// no navegador pra continuar aparecendo depois de recarregar a tela.
+const chaveDataArquivo = (chave) => `truckpag_arquivo_modificado_${chave}`
+export function lerDataArquivoTruckPag(chave) {
+  try { return localStorage.getItem(chaveDataArquivo(chave)) } catch { return null }
+}
+function salvarDataArquivoTruckPag(chave, iso) {
+  try { if (iso) localStorage.setItem(chaveDataArquivo(chave), iso) } catch { /* sem storage: só não persiste */ }
+}
+
 // Atualiza as 3 fontes do SharePoint (títulos, créditos, repasses) de uma vez e grava no
 // Supabase — usado pelo botão "Atualizar do SharePoint" em qualquer uma das 3 telas, pra
 // nunca deixar uma fonte desatualizada em relação às outras. Cada fonte é tratada de forma
@@ -31,6 +41,7 @@ export async function sincronizarTudoTruckPag() {
       }
       const { rows, lastModified } = await r.json()
       await f.importar(rows)
+      salvarDataArquivoTruckPag(f.chave, lastModified)
       return { chave: f.chave, ok: true, lastModified }
     } catch (e) {
       return { chave: f.chave, ok: false, erro: e.message || String(e) }
