@@ -699,7 +699,9 @@ export default function TruckPagRepasses() {
                 {fmtData(g.dataCredito)} · {fmtMoeda(g.valorCredito)}
                 {(() => {
                   const b = baixaPorLote.get(g.chave)
-                  if (!b || b.total === 0) return null
+                  // Só aparece depois que ALGUM título do lote já foi baixado — antes disso, sem
+                  // ícone (pedido do usuário: não indicar "disponível pra baixar" de antemão).
+                  if (!b || b.baixados === 0) return null
                   const tudoBaixado = b.baixados === b.total
                   const selecionado = filtroGrupoRepasse === g.chave
                   const cls = tudoBaixado

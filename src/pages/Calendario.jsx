@@ -12,7 +12,6 @@ const SEL = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm text-sl
 const BTN_PRI = 'inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
 const BTN_SEC = 'inline-flex items-center gap-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-sm font-semibold px-4 py-2 rounded-lg transition-colors disabled:opacity-50'
 const BTN_DNG = 'inline-flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors disabled:opacity-50'
-const BTN_AMB = 'inline-flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors disabled:opacity-50'
 
 const MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
 const MESES_ABR = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
@@ -34,13 +33,110 @@ const nomeEmpresa = (e) => e.empresa_fantasia || e.nome_empresa
 
 const FILTROS_VAZIOS = { mes: '', dia_semana: '', descricao_evento: '', tipo_pausa: '' }
 
+// Botão compacto (só ícone) usado nas ações de cada card de empresa — o rótulo só aparece
+// ao passar o mouse (:hover via group), nunca ao clicar, pra não disputar espaço com o
+// resumo de dias úteis ao lado do nome da empresa.
+const VARIANTES_ICONE = {
+  sec: 'bg-white border-slate-300 hover:bg-slate-50 text-slate-700',
+  amb: 'bg-amber-500 hover:bg-amber-600 text-white border-amber-500',
+  dng: 'bg-red-600 hover:bg-red-700 text-white border-red-600',
+}
+
+function BotaoIconeHover({ icon, label, onClick, disabled, variante = 'sec' }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={label}
+      className={`group inline-flex items-center border text-sm font-semibold pl-2 pr-2 py-2 rounded-lg transition-colors overflow-hidden disabled:opacity-50 disabled:cursor-not-allowed ${VARIANTES_ICONE[variante]}`}
+    >
+      {icon}
+      <span className="max-w-0 group-hover:max-w-[170px] group-hover:pl-2 overflow-hidden whitespace-nowrap transition-all duration-200">
+        {label}
+      </span>
+    </button>
+  )
+}
+
+// Ações do card (Recalcular/Limpar) — ficam na linha do cabeçalho, ao lado do botão de
+// abrir detalhes, independente do card estar aberto ou fechado.
+function AcoesCalendarioEmpresa({ empresa, ano, canEdit, canDelete, onChanged }) {
+  const [processando, setProcessando] = useState(false)
+  const [modalLimpar, setModalLimpar] = useState(false)
+
+  if (!canEdit && !canDelete) return null
+
+  const recalcular = async () => {
+    setProcessando(true)
+    try {
+      await apiService.gerarCalendarioAnual(empresa.id, ano)
+      onChanged()
+    } catch (err) {
+      alert('Erro ao recalcular: ' + (err.message || String(err)))
+    } finally {
+      setProcessando(false)
+    }
+  }
+
+  const limpar = async () => {
+    try {
+      await apiService.limparCalendarioAno(empresa.id, ano)
+      onChanged()
+    } catch (err) {
+      alert('Erro ao limpar: ' + (err.message || String(err)))
+    } finally {
+      setModalLimpar(false)
+    }
+  }
+
+  return (
+    <>
+      <div className="flex items-center gap-2">
+        {canEdit && (
+          <BotaoIconeHover
+            icon={<RefreshCw size={15} className={processando ? 'animate-spin' : ''} />}
+            label="Recalcular com Feriados"
+            onClick={recalcular}
+            disabled={processando}
+            variante="amb"
+          />
+        )}
+        {canDelete && (
+          <BotaoIconeHover icon={<Trash2 size={15} />} label="Limpar Calendário do Ano" onClick={() => setModalLimpar(true)} variante="dng" />
+        )}
+      </div>
+      {modalLimpar && (
+        <div className="fixed top-0 right-0 bottom-0 left-16 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
+            <div className="p-6 text-center">
+              <div className="w-14 h-14 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Trash2 size={28} className="text-red-600" />
+              </div>
+              <h2 className="text-lg font-bold text-slate-800 mb-2">Limpar Calendário</h2>
+              <p className="text-sm text-slate-500">
+                Todos os dias gerados de <strong>{nomeEmpresa(empresa)}</strong> — <strong>{ano}</strong>{' '}
+                serão excluídos. Para reprocessar, use "Gerar Calendário Anual".
+              </p>
+            </div>
+            <div className="flex gap-3 px-6 pb-6">
+              <button onClick={() => setModalLimpar(false)} className={`${BTN_SEC} flex-1 justify-center`}>Cancelar</button>
+              <button onClick={limpar} className={`${BTN_DNG} flex-1 justify-center`}>
+                <Trash2 size={15} /> Limpar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
 // Detalhes do calendário de uma empresa — só é montado (e só busca dados) quando o card está aberto.
-function CalendarioEmpresaDetalhe({ empresa, ano, canEdit, canDelete, versao, onLimpo }) {
+function CalendarioEmpresaDetalhe({ empresa, ano, versao }) {
   const [dados, setDados] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [processando, setProcessando] = useState(false)
-  const [modalLimpar, setModalLimpar] = useState(false)
   const [colFiltros, setColFiltros] = useState(FILTROS_VAZIOS)
 
   const loadCalendario = useCallback(async () => {
@@ -56,42 +152,6 @@ function CalendarioEmpresaDetalhe({ empresa, ano, canEdit, canDelete, versao, on
   }, [empresa.id, ano])
 
   useEffect(() => { loadCalendario() }, [loadCalendario, versao])
-
-  const resumoMeses = useMemo(() => {
-    const map = {}
-    dados.forEach(row => {
-      const k = row.mes
-      if (!map[k]) map[k] = { mes: k, total: 0 }
-      map[k].total = Math.max(map[k].total, row.dias_total_mes ?? 0)
-    })
-    return Object.values(map).sort((a, b) => a.mes - b.mes)
-  }, [dados])
-  const totalDiasUteis = resumoMeses.reduce((s, m) => s + m.total, 0)
-
-  const gerar = async () => {
-    setProcessando(true)
-    setError(null)
-    try {
-      await apiService.gerarCalendarioAnual(empresa.id, ano)
-      await loadCalendario()
-    } catch (err) {
-      setError(err.message || String(err))
-    } finally {
-      setProcessando(false)
-    }
-  }
-
-  const handleLimpar = async () => {
-    try {
-      await apiService.limparCalendarioAno(empresa.id, ano)
-      setDados([])
-      onLimpo()
-    } catch (err) {
-      setError(err.message || String(err))
-    } finally {
-      setModalLimpar(false)
-    }
-  }
 
   const setColFiltro = (col, val) => setColFiltros(prev => ({ ...prev, [col]: val }))
 
@@ -126,55 +186,15 @@ function CalendarioEmpresaDetalhe({ empresa, ano, canEdit, canDelete, versao, on
 
   return (
     <div className="border-t border-slate-200 p-4 flex flex-col gap-3">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        {temFiltroColuna && (
-          <span className="text-sm text-slate-500">
-            {dadosFiltrados.length} <span className="text-indigo-600">filtrado(s)</span> de {dados.length} dias
-          </span>
-        )}
-        {dados.length > 0 && (
-          <div className="flex items-center gap-2 ml-auto">
-            <button onClick={loadCalendario} className={BTN_SEC} title="Recarregar"><RefreshCw size={15} /></button>
-            {canEdit && (
-              <button onClick={gerar} className={BTN_AMB} disabled={processando} title="Reprocessa todos os dias do ano cruzando novamente com os feriados cadastrados">
-                <RefreshCw size={16} className={processando ? 'animate-spin' : ''} /> Recalcular com Feriados
-              </button>
-            )}
-            {canDelete && (
-              <button onClick={() => setModalLimpar(true)} className={BTN_DNG}>
-                <Trash2 size={16} /> Limpar Calendário do Ano
-              </button>
-            )}
-          </div>
-        )}
-      </div>
+      {temFiltroColuna && (
+        <span className="text-sm text-slate-500">
+          {dadosFiltrados.length} <span className="text-indigo-600">filtrado(s)</span> de {dados.length} dias
+        </span>
+      )}
 
       {error && (
         <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm">
           <AlertTriangle size={16} /> {error}
-        </div>
-      )}
-
-      {dados.length > 0 && (
-        <div className="bg-white border border-slate-200 rounded-xl px-4 py-2 overflow-x-auto">
-          <table className="text-xs border-separate border-spacing-0">
-            <tbody>
-              <tr>
-                <td className="pr-4 py-1 text-xs font-semibold text-slate-500 whitespace-nowrap">Mês</td>
-                {resumoMeses.map(m => (
-                  <td key={m.mes} className="px-3 py-1 text-center font-semibold text-slate-600 uppercase whitespace-nowrap">{MESES_ABR[m.mes - 1]}</td>
-                ))}
-                <td className="px-3 py-1 text-center font-semibold text-indigo-700 whitespace-nowrap">Total</td>
-              </tr>
-              <tr>
-                <td className="pr-4 py-1 text-xs font-semibold text-slate-500 whitespace-nowrap">Dias Úteis</td>
-                {resumoMeses.map(m => (
-                  <td key={m.mes} className="px-3 py-1 text-center font-bold text-indigo-700 whitespace-nowrap">{m.total.toFixed(1)}</td>
-                ))}
-                <td className="px-3 py-1 text-center font-bold text-indigo-800 bg-indigo-50 rounded whitespace-nowrap">{totalDiasUteis.toFixed(1)}</td>
-              </tr>
-            </tbody>
-          </table>
         </div>
       )}
 
@@ -255,36 +275,13 @@ function CalendarioEmpresaDetalhe({ empresa, ano, canEdit, canDelete, versao, on
           </table>
         </div>
       </div>
-
-      {modalLimpar && (
-        <div className="fixed top-0 right-0 bottom-0 left-16 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
-            <div className="p-6 text-center">
-              <div className="w-14 h-14 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Trash2 size={28} className="text-red-600" />
-              </div>
-              <h2 className="text-lg font-bold text-slate-800 mb-2">Limpar Calendário</h2>
-              <p className="text-sm text-slate-500">
-                Todos os <strong>{dados.length} registros</strong> de <strong>{nomeEmpresa(empresa)}</strong> — <strong>{ano}</strong>{' '}
-                serão excluídos. Para reprocessar, use "Gerar Calendário Anual".
-              </p>
-            </div>
-            <div className="flex gap-3 px-6 pb-6">
-              <button onClick={() => setModalLimpar(false)} className={`${BTN_SEC} flex-1 justify-center`}>Cancelar</button>
-              <button onClick={handleLimpar} className={`${BTN_DNG} flex-1 justify-center`}>
-                <Trash2 size={15} /> Limpar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
 
 export default function Calendario() {
   const [empresas, setEmpresas] = useState([])
-  const [idsComCalendario, setIdsComCalendario] = useState(null)
+  const [resumoRaw, setResumoRaw] = useState(null)
   const [error, setError]       = useState(null)
 
   const [filtroAno, setFiltroAno] = useSessionState('cal_ano', anoAtual)
@@ -309,13 +306,31 @@ export default function Calendario() {
   }, [])
 
   useEffect(() => {
-    setIdsComCalendario(null)
-    apiService.getEmpresaIdsComCalendario(filtroAno)
-      .then(ids => setIdsComCalendario(new Set(ids)))
-      .catch(err => { setError(err.message || String(err)); setIdsComCalendario(new Set()) })
+    setResumoRaw(null)
+    apiService.getResumoDiasUteisPorEmpresa(filtroAno)
+      .then(rows => setResumoRaw(rows))
+      .catch(err => { setError(err.message || String(err)); setResumoRaw([]) })
   }, [filtroAno, versao])
 
-  const empresasComCalendario = idsComCalendario ? empresas.filter(e => idsComCalendario.has(e.id)) : []
+  // Mês/Dias Úteis por empresa, a partir das linhas enxutas buscadas acima — mesma
+  // agregação (max por mês) que já era feita dentro do card de detalhe.
+  const resumoPorEmpresa = useMemo(() => {
+    const porEmpresa = {}
+    ;(resumoRaw || []).forEach(r => {
+      const mesesMap = porEmpresa[r.empresa_id] || (porEmpresa[r.empresa_id] = {})
+      mesesMap[r.mes] = Math.max(mesesMap[r.mes] || 0, r.dias_total_mes ?? 0)
+    })
+    const result = {}
+    Object.entries(porEmpresa).forEach(([empresaId, mesesMap]) => {
+      const meses = Object.entries(mesesMap)
+        .map(([mes, total]) => ({ mes: Number(mes), total }))
+        .sort((a, b) => a.mes - b.mes)
+      result[empresaId] = { meses, total: meses.reduce((s, m) => s + m.total, 0) }
+    })
+    return result
+  }, [resumoRaw])
+
+  const empresasComCalendario = resumoRaw ? empresas.filter(e => resumoPorEmpresa[e.id]) : []
 
   const alternarAberta = (id) =>
     setAbertas(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
@@ -380,26 +395,52 @@ export default function Calendario() {
       <div className="flex flex-col gap-2">
         {empresasComCalendario.map(emp => {
           const aberta = abertas.includes(emp.id)
+          const resumo = resumoPorEmpresa[emp.id]
           return (
             <div key={emp.id} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-              <div className="flex items-center justify-between gap-3 px-4 py-3">
-                <div className="flex items-center gap-2 min-w-0">
+              <div className="flex items-center justify-between gap-3 px-4 py-3 flex-wrap">
+                <div className="flex items-center gap-2 shrink-0">
                   <Building2 size={16} className="text-indigo-500 shrink-0" />
-                  <span className="text-sm font-semibold text-slate-800 truncate">{nomeEmpresa(emp)}</span>
-                  {emp.sigla_empresa && <span className="text-xs text-slate-400">{emp.sigla_empresa}</span>}
+                  <span className="text-sm font-semibold text-slate-800 whitespace-nowrap">{nomeEmpresa(emp)}</span>
                 </div>
-                <button onClick={() => alternarAberta(emp.id)} className={BTN_SEC}>
-                  {aberta ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
-                  {aberta ? 'Fechar detalhes' : 'Abrir detalhes'}
-                </button>
+                {resumo && (
+                  <div className="flex-1 min-w-[280px] overflow-x-auto">
+                    <table className="text-xs border-separate border-spacing-0 mx-auto">
+                      <tbody>
+                        <tr>
+                          <td className="pr-3 py-1 text-xs font-semibold text-slate-500 whitespace-nowrap">Mês</td>
+                          {resumo.meses.map(m => (
+                            <td key={m.mes} className="px-2.5 py-1 text-center font-semibold text-slate-600 uppercase whitespace-nowrap">{MESES_ABR[m.mes - 1]}</td>
+                          ))}
+                          <td className="px-2.5 py-1 text-center font-semibold text-indigo-700 whitespace-nowrap">Total</td>
+                        </tr>
+                        <tr>
+                          <td className="pr-3 py-1 text-xs font-semibold text-slate-500 whitespace-nowrap">Dias Úteis</td>
+                          {resumo.meses.map(m => (
+                            <td key={m.mes} className="px-2.5 py-1 text-center font-bold text-indigo-700 whitespace-nowrap">{m.total.toFixed(1)}</td>
+                          ))}
+                          <td className="px-2.5 py-1 text-center font-bold text-indigo-800 bg-indigo-50 rounded whitespace-nowrap">{resumo.total.toFixed(1)}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                <div className="flex items-center gap-2 shrink-0">
+                  <AcoesCalendarioEmpresa empresa={emp} ano={filtroAno} canEdit={canEdit} canDelete={canDelete} onChanged={() => setVersao(v => v + 1)} />
+                  <BotaoIconeHover
+                    icon={aberta ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+                    label={aberta ? 'Fechar detalhes' : 'Abrir detalhes'}
+                    onClick={() => alternarAberta(emp.id)}
+                  />
+                </div>
               </div>
               {aberta && (
-                <CalendarioEmpresaDetalhe empresa={emp} ano={filtroAno} canEdit={canEdit} canDelete={canDelete} versao={versao} onLimpo={() => setVersao(v => v + 1)} />
+                <CalendarioEmpresaDetalhe empresa={emp} ano={filtroAno} versao={versao} />
               )}
             </div>
           )
         })}
-        {idsComCalendario && empresasComCalendario.length === 0 && !error && (
+        {resumoRaw && empresasComCalendario.length === 0 && !error && (
           <div className="text-center py-12 text-slate-400 text-sm">
             Nenhum calendário gerado para {filtroAno}. Use "Gerar Calendário Anual".
           </div>

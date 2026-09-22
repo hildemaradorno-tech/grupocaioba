@@ -2772,14 +2772,16 @@ export const apiService = {
     return data || []
   },
 
-  getEmpresaIdsComCalendario: async (ano) => {
+  // Linhas enxutas (só empresa/mês/total do mês) pra montar o resumo de dias úteis de
+  // TODAS as empresas de uma vez, sem precisar abrir o card de cada uma pra saber se tem
+  // calendário gerado no ano.
+  getResumoDiasUteisPorEmpresa: async (ano) => {
     const { data, error } = await supabase
       .from('fato_calendario')
-      .select('empresa_id')
+      .select('empresa_id, mes, dias_total_mes')
       .eq('ano', ano)
-      .eq('mes', 1)
     if (error) throw error
-    return [...new Set((data || []).map(r => r.empresa_id))]
+    return data || []
   },
 
   gerarCalendarioAnual: async (empresaId, ano) => {
