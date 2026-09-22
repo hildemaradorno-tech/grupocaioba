@@ -1,6 +1,6 @@
-import React, { useEffect, useState, useMemo, useCallback } from 'react'
+import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell, PieChart, Pie, Legend, LabelList } from 'recharts'
-import { AlertTriangle, CheckCircle2, ShieldAlert, Layers, CalendarClock, Users } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, ShieldAlert, Layers, CalendarClock, Users, ChevronDown, Check } from 'lucide-react'
 import { useSessionState } from '../../hooks/useSessionState'
 import { apiService } from '../../services/api'
 import AuditoriaExternaNav from './AuditoriaExternaNav'
@@ -67,6 +67,171 @@ function RankingColunas({ dados, cores, formatarValor }) {
   )
 }
 
+// Selo com o % Atingido (Valor Corrigido ÷ Total Apontado) do ciclo — oval
+// centralizada entre as duas colunas, acima da mais alta das duas.
+function VariacaoBadge({ x, y, width, height, value, index, dados }) {
+  const item = dados[index]
+  if (!item || !item.totalApontado) return null
+
+  const pct = Math.round((item.valorCorrigido / item.totalApontado) * 100)
+  const baseline = y + height
+  const escala = height / (value || 1)
+  const yEsquerdaTopo = baseline - item.totalApontado * escala
+  const topoMaisAlto = Math.min(y, yEsquerdaTopo)
+
+  const cor = '#4f46e5'
+  const texto = `${pct}%`
+  const pillW = Math.max(36, 16 + texto.length * 7)
+  const pillH = 18
+  const cx = x
+  const pillY = topoMaisAlto - 26
+
+  return (
+    <g>
+      <rect x={cx - pillW / 2} y={pillY} width={pillW} height={pillH} rx={pillH / 2} fill={cor} />
+      <text x={cx} y={pillY + pillH / 2 + 3.5} textAnchor="middle" fontSize={10} fontWeight="bold" fill="#fff">
+        {texto}
+      </text>
+    </g>
+  )
+}
+
+// Gráfico de colunas agrupadas — duas barras (Apontado x Corrigido) lado a lado
+// por categoria (ex: por Ciclo de Auditoria), em valor monetário, com selo de
+// variação % entre as duas colunas de cada ciclo.
+function ComparativoColunas({ dados }) {
+  if (dados.length === 0) return <p className="text-xs text-slate-400">Sem dados ainda.</p>
+  return (
+    <ResponsiveContainer width="100%" height={320}>
+      <BarChart data={dados} margin={{ top: 50, left: -12 }}>
+        <CartesianGrid strokeDasharray="3 3" vertical={false} />
+        <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={0} angle={-20} textAnchor="end" height={70} />
+        <YAxis allowDecimals={false} tick={{ fontSize: 10 }} tickFormatter={fmtMoeda} />
+        <Tooltip formatter={v => fmtMoeda(v)} />
+        <Legend wrapperStyle={{ fontSize: 10 }} />
+        <Bar dataKey="totalApontado" name="Total Apontado" fill="#e11d48" radius={[4, 4, 0, 0]}>
+          <LabelList dataKey="totalApontado" position="top" fontSize={10} fontWeight="bold" fill="#334155" formatter={fmtMoeda} />
+        </Bar>
+        <Bar dataKey="valorCorrigido" name="Valor Corrigido" fill="#059669" radius={[4, 4, 0, 0]}>
+          <LabelList dataKey="valorCorrigido" position="top" fontSize={10} fontWeight="bold" fill="#334155" formatter={fmtMoeda} />
+          <LabelList content={(props) => <VariacaoBadge {...props} dados={dados} />} />
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
+  )
+}
+
+// Seletor de Ciclo de Auditoria com múltipla seleção — botão com resumo do que
+// está selecionado, abre um painel com checkboxes (fecha ao clicar fora).
+function CicloMultiSelect({ ciclos, selecionados, onChange }) {
+  const [aberto, setAberto] = useState(false)
+  const ref = useRef(null)
+
+  useEffect(() => {
+    const onClickFora = (e) => { if (ref.current && !ref.current.contains(e.target)) setAberto(false) }
+    document.addEventListener('mousedown', onClickFora)
+    return () => document.removeEventListener('mousedown', onClickFora)
+  }, [])
+
+  const toggle = (id) => {
+    onChange(selecionados.includes(id) ? selecionados.filter(x => x !== id) : [...selecionados, id])
+  }
+
+  const resumo = selecionados.length === 0
+    ? 'Todos os ciclos (visão consolidada)'
+    : selecionados.length === 1
+      ? (() => { const c = ciclos.find(c => c.id === selecionados[0]); return c ? `${c.proj_empresas?.nome || '—'} · ${c.periodo_competencia}` : '1 ciclo selecionado' })()
+      : `${selecionados.length} ciclos selecionados`
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setAberto(v => !v)}
+        className="flex items-center gap-1.5 text-xs p-2 border border-slate-200 rounded-md min-w-[220px] max-w-[280px] font-medium text-slate-700 bg-white hover:bg-slate-50 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+      >
+        <span className="flex-1 text-left truncate">{resumo}</span>
+        <ChevronDown className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+      </button>
+      {aberto && (
+        <div className="absolute right-0 mt-1 w-72 bg-white border border-slate-200 rounded-lg shadow-lg z-20 py-1.5">
+          <div className="flex items-center justify-between px-3 py-1 border-b border-slate-100">
+            <button onClick={() => onChange(ciclos.map(c => c.id))} className="text-[10px] font-semibold text-blue-600 hover:text-blue-700">Selecionar todos</button>
+            <button onClick={() => onChange([])} className="text-[10px] font-semibold text-slate-400 hover:text-slate-600">Limpar</button>
+          </div>
+          <div className="max-h-64 overflow-y-auto">
+            {ciclos.length === 0 ? (
+              <p className="px-3 py-2 text-xs text-slate-400 italic">Nenhum ciclo cadastrado.</p>
+            ) : ciclos.map(c => (
+              <label key={c.id} className="flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 cursor-pointer">
+                <span className={`h-3.5 w-3.5 rounded border shrink-0 flex items-center justify-center ${selecionados.includes(c.id) ? 'bg-blue-600 border-blue-600' : 'border-slate-300'}`}>
+                  {selecionados.includes(c.id) && <Check className="h-2.5 w-2.5 text-white" />}
+                </span>
+                <input type="checkbox" className="hidden" checked={selecionados.includes(c.id)} onChange={() => toggle(c.id)} />
+                <span className="truncate">{c.proj_empresas?.nome || '—'} · {c.periodo_competencia}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Seletor de Empresa com múltipla seleção — mesmo padrão do CicloMultiSelect.
+function EmpresaMultiSelect({ empresas, selecionados, onChange }) {
+  const [aberto, setAberto] = useState(false)
+  const ref = useRef(null)
+
+  useEffect(() => {
+    const onClickFora = (e) => { if (ref.current && !ref.current.contains(e.target)) setAberto(false) }
+    document.addEventListener('mousedown', onClickFora)
+    return () => document.removeEventListener('mousedown', onClickFora)
+  }, [])
+
+  const toggle = (id) => {
+    onChange(selecionados.includes(id) ? selecionados.filter(x => x !== id) : [...selecionados, id])
+  }
+
+  const resumo = selecionados.length === 0
+    ? 'Todas as empresas'
+    : selecionados.length === 1
+      ? (empresas.find(e => e.id === selecionados[0])?.nome || '1 empresa selecionada')
+      : `${selecionados.length} empresas selecionadas`
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setAberto(v => !v)}
+        className="flex items-center gap-1.5 text-xs p-2 border border-slate-200 rounded-md min-w-[220px] max-w-[280px] font-medium text-slate-700 bg-white hover:bg-slate-50 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+      >
+        <span className="flex-1 text-left truncate">{resumo}</span>
+        <ChevronDown className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+      </button>
+      {aberto && (
+        <div className="absolute left-0 mt-1 w-72 bg-white border border-slate-200 rounded-lg shadow-lg z-20 py-1.5">
+          <div className="flex items-center justify-between px-3 py-1 border-b border-slate-100">
+            <button onClick={() => onChange(empresas.map(e => e.id))} className="text-[10px] font-semibold text-blue-600 hover:text-blue-700">Selecionar todas</button>
+            <button onClick={() => onChange([])} className="text-[10px] font-semibold text-slate-400 hover:text-slate-600">Limpar</button>
+          </div>
+          <div className="max-h-64 overflow-y-auto">
+            {empresas.length === 0 ? (
+              <p className="px-3 py-2 text-xs text-slate-400 italic">Nenhuma empresa cadastrada.</p>
+            ) : empresas.map(e => (
+              <label key={e.id} className="flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 cursor-pointer">
+                <span className={`h-3.5 w-3.5 rounded border shrink-0 flex items-center justify-center ${selecionados.includes(e.id) ? 'bg-blue-600 border-blue-600' : 'border-slate-300'}`}>
+                  {selecionados.includes(e.id) && <Check className="h-2.5 w-2.5 text-white" />}
+                </span>
+                <input type="checkbox" className="hidden" checked={selecionados.includes(e.id)} onChange={() => toggle(e.id)} />
+                <span className="truncate">{e.nome}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 
 export default function AuditoriaDashboard() {
   const { isAdminEfetivo, empresasPermitidasAuditoriaEfetivas, departamentosPermitidosAuditoriaEfetivos, hasActionOrDefault } = useAuth()
@@ -77,7 +242,8 @@ export default function AuditoriaDashboard() {
   const [planos, setPlanos] = useState([])
   const [ciclos, setCiclos] = useState([])
   const [loading, setLoading] = useState(true)
-  const [cicloId, setCicloId] = useSessionState('audext_dashboard_ciclo', '')
+  const [cicloIds, setCicloIds] = useSessionState('audext_dashboard_ciclos', [])
+  const [empresaIds, setEmpresaIds] = useSessionState('audext_dashboard_empresas', [])
 
   const empresasEfetivas = verTodos ? new Set() : empresasPermitidasAuditoriaEfetivas
   const departamentosEfetivos = verTodos ? new Set() : departamentosPermitidosAuditoriaEfetivos
@@ -140,18 +306,45 @@ export default function AuditoriaDashboard() {
     ciclos.filter(c => empresaNoEscopo(c.empresa_id, empresasEfetivas, isAdminEfetivo)),
     [ciclos, empresasEfetivas, isAdminEfetivo])
 
-  // Filtro por Ciclo de Auditoria — vazio = todos os ciclos (visão consolidada).
-  const achadosFiltrados = useMemo(() =>
-    cicloId ? achadosVisiveis.filter(a => a.ciclo_id === cicloId) : achadosVisiveis,
-    [achadosVisiveis, cicloId])
+  // Lista de empresas pro seletor — vem do campo "Empresa" da própria Ação (Plano
+  // de Ação), igual ao filtro avançado de lá (dim_empresas, não proj_empresas do Ciclo).
+  const empresasDisponiveis = useMemo(() => {
+    const m = new Map()
+    for (const p of planosVisiveis) {
+      if (p.dim_empresas?.id) m.set(p.dim_empresas.id, p.dim_empresas.empresa_fantasia || p.dim_empresas.nome_empresa)
+    }
+    return Array.from(m, ([id, nome]) => ({ id, nome })).sort((a, b) => (a.nome || '').localeCompare(b.nome || '', 'pt-BR'))
+  }, [planosVisiveis])
+
+  // Achados com pelo menos uma Ação na Empresa selecionada.
+  const achadoIdsComEmpresaSelecionada = useMemo(() => {
+    const set = new Set()
+    for (const p of planosVisiveis) {
+      if (p.empresa_id && empresaIds.includes(p.empresa_id)) set.add(p.achado_id)
+    }
+    return set
+  }, [planosVisiveis, empresaIds])
+
+  // Filtro por Ciclo de Auditoria e por Empresa (da Ação) — vazio = sem restrição.
+  const achadosFiltrados = useMemo(() => {
+    let base = achadosVisiveis
+    if (cicloIds.length > 0) base = base.filter(a => cicloIds.includes(a.ciclo_id))
+    if (empresaIds.length > 0) base = base.filter(a => achadoIdsComEmpresaSelecionada.has(a.id))
+    return base
+  }, [achadosVisiveis, cicloIds, empresaIds, achadoIdsComEmpresaSelecionada])
 
   const achadoIdsFiltrados = useMemo(() => new Set(achadosFiltrados.map(a => a.id)), [achadosFiltrados])
 
-  const planosFiltrados = useMemo(() =>
-    cicloId ? planosVisiveis.filter(p => achadoIdsFiltrados.has(p.achado_id)) : planosVisiveis,
-    [planosVisiveis, cicloId, achadoIdsFiltrados])
+  const planosFiltrados = useMemo(() => {
+    let base = planosVisiveis
+    if (cicloIds.length > 0 || empresaIds.length > 0) base = base.filter(p => achadoIdsFiltrados.has(p.achado_id))
+    if (empresaIds.length > 0) base = base.filter(p => empresaIds.includes(p.empresa_id))
+    return base
+  }, [planosVisiveis, cicloIds, empresaIds, achadoIdsFiltrados])
 
-  const cicloSelecionado = ciclosVisiveis.find(c => c.id === cicloId)
+  const ciclosSelecionados = useMemo(() =>
+    ciclosVisiveis.filter(c => cicloIds.includes(c.id)),
+    [ciclosVisiveis, cicloIds])
 
   // Uma divergência pode ter várias ações (planos de ação).
   const planosPorAchado = useMemo(() => {
@@ -170,6 +363,27 @@ export default function AuditoriaDashboard() {
     [achadosFiltrados, planosPorAchado])
 
   const naoResolvidas = totalDivergencias - resolvidas
+
+  // Total Apontado x Valor Corrigido, agrupado por Ciclo de Auditoria (Valor
+  // Corrigido é um campo da própria divergência, não soma de ações).
+  const apontadoXCorrigidoPorCiclo = useMemo(() => {
+    const m = new Map()
+    for (const a of achadosFiltrados) {
+      const c = a.audext_ciclos
+      const chave = a.ciclo_id
+      if (!m.has(chave)) {
+        m.set(chave, {
+          label: c ? `${c.proj_empresas?.nome || '—'} · ${c.periodo_competencia}` : 'Sem ciclo',
+          totalApontado: 0,
+          valorCorrigido: 0,
+        })
+      }
+      const g = m.get(chave)
+      g.totalApontado += Number(a.total_apontado || 0)
+      g.valorCorrigido += Number(a.valor_corrigido || 0)
+    }
+    return Array.from(m.values()).sort((a, b) => b.totalApontado - a.totalApontado)
+  }, [achadosFiltrados])
 
   // % de conclusão geral = média do % atingido (Valor Corrigido ÷ Total
   // Apontado) de cada divergência — automático.
@@ -244,15 +458,6 @@ export default function AuditoriaDashboard() {
                 <Users className="h-3.5 w-3.5" /> {verTodos ? '← Minha Visão' : 'Ver Todos'}
               </button>
             )}
-            <div className="flex flex-col gap-1">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1"><CalendarClock className="h-3 w-3" /> Ciclo de Auditoria</label>
-              <select value={cicloId} onChange={e => setCicloId(e.target.value)} className="text-xs p-2 border border-slate-200 rounded-md min-w-[220px] font-medium text-slate-700 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500">
-                <option value="">Todos os ciclos (visão consolidada)</option>
-                {ciclosVisiveis.map(c => (
-                  <option key={c.id} value={c.id}>{c.proj_empresas?.nome || '—'} · {c.periodo_competencia}</option>
-                ))}
-              </select>
-            </div>
           </div>
         </div>
         {verTodos && (
@@ -262,12 +467,28 @@ export default function AuditoriaDashboard() {
           </div>
         )}
         <AuditoriaExternaNav />
+        <div className="flex items-end gap-3 flex-wrap">
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1"><CalendarClock className="h-3 w-3" /> Ciclo de Auditoria</label>
+            <CicloMultiSelect ciclos={ciclosVisiveis} selecionados={cicloIds} onChange={setCicloIds} />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1">Empresa</label>
+            <EmpresaMultiSelect empresas={empresasDisponiveis} selecionados={empresaIds} onChange={setEmpresaIds} />
+          </div>
+        </div>
       </div>
 
       <div className="grid grid-cols-4 gap-3">
         <KpiCard
           icon={ShieldAlert} label="Total de Divergências" valor={totalDivergencias}
-          sub={cicloSelecionado ? `${cicloSelecionado.proj_empresas?.nome || '—'} · ${cicloSelecionado.periodo_competencia}` : `${ciclosVisiveis.length} ciclo(s) de auditoria`}
+          sub={
+            ciclosSelecionados.length === 1
+              ? `${ciclosSelecionados[0].proj_empresas?.nome || '—'} · ${ciclosSelecionados[0].periodo_competencia}`
+              : ciclosSelecionados.length > 1
+                ? `${ciclosSelecionados.length} ciclos selecionados`
+                : `${ciclosVisiveis.length} ciclo(s) de auditoria`
+          }
           cor={{ bg: 'bg-indigo-50', border: 'border-indigo-200', icoBg: 'bg-indigo-100', icoTxt: 'text-indigo-600', numTxt: 'text-indigo-700', labelTxt: 'text-indigo-500' }}
         />
         <KpiCard
@@ -285,6 +506,11 @@ export default function AuditoriaDashboard() {
           sub="Média do % atingido de todas as divergências"
           cor={{ bg: 'bg-amber-50', border: 'border-amber-200', icoBg: 'bg-amber-100', icoTxt: 'text-amber-600', numTxt: 'text-amber-700', labelTxt: 'text-amber-500' }}
         />
+      </div>
+
+      <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-4">
+        <h3 className="text-xs font-bold text-slate-700 mb-3">Total Apontado x Valor Corrigido — por Ciclo de Auditoria</h3>
+        <ComparativoColunas dados={apontadoXCorrigidoPorCiclo} />
       </div>
 
       <div className="grid grid-cols-2 gap-4">

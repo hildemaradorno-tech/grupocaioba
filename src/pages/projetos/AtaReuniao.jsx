@@ -15,6 +15,7 @@ const LOGO_URL = logoCaioba
 // ── helpers ───────────────────────────────────────────────────────────────────
 const dataHoje    = () => new Date().toISOString().split('T')[0]
 const dataPassada = (dias) => { const d = new Date(); d.setDate(d.getDate() - dias); return d.toISOString().split('T')[0] }
+const ultimaTerca = () => { const d = new Date(); const dow = d.getDay(); const diff = dow === 2 ? 7 : dow > 2 ? dow - 2 : dow + 5; d.setDate(d.getDate() - diff); return d.toISOString().split('T')[0] }
 const fmtData     = (d) => d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') : '—'
 const fmtDataExtenso = (d) =>
   d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' }) : '—'
@@ -40,11 +41,12 @@ const makeFormInit = () => ({
   participantesIds: new Set(),
   participantesNomes: [],
   participantesExternos: [''],
-  periodoIni: dataPassada(7),
+  periodoIni: ultimaTerca(),
   periodoFim: dataHoje(),
   concluidos: [],
   andamento: [],
   mapeados: [],
+  todosNaoConcluidos: [],
 })
 
 // ── serialização Supabase ↔ form ──────────────────────────────────────────────
@@ -62,7 +64,7 @@ const rowToForm = (row) => {
     participantesIds: new Set(d.participantesIds || []),
     participantesNomes: row.participantes_nomes || [],
     participantesExternos: d.participantesExternos?.length ? d.participantesExternos : [''],
-    periodoIni: row.periodo_ini || dataPassada(7),
+    periodoIni: ultimaTerca(),
     periodoFim: row.periodo_fim || dataHoje(),
     concluidos: (d.concluidos || []).map(p => ({
       ...p,
@@ -201,8 +203,8 @@ const AtaPreview = React.forwardRef(function AtaPreview({ form }, ref) {
       {/* Tarefas Concluídas no Período */}
       {(() => {
         const ini = form.periodoIni
-        const fim = form.periodoFim
-        const tarefasConc = andamento
+        const fim = form.data
+        const tarefasConc = (form.todosNaoConcluidos || [...form.andamento, ...form.mapeados])
           .flatMap(p => (p.proj_tarefas || [])
             .filter(t => t.status_kanban === 'concluido' && t.data_fim && (!ini || t.data_fim >= ini) && (!fim || t.data_fim <= fim))
             .map(t => ({
@@ -227,7 +229,7 @@ const AtaPreview = React.forwardRef(function AtaPreview({ form }, ref) {
 
         return (
           <section style={{ marginBottom: '22px' }}>
-            <div style={s.sectionBar('#0d9488')}>{++secNum}. Tarefas Concluídas no Período ({fmtData(ini)} a {fmtData(fim)})</div>
+            <div style={s.sectionBar('#0d9488')}>{++secNum}. Tarefas Concluídas desde a Última Reunião ({fmtData(ini)} a {fmtData(fim)})</div>
             {Object.entries(porDepto).sort(([a], [b]) => a.localeCompare(b)).map(([depto, ts]) => {
               const resps = [...new Set(ts.map(t => t.projetoResp).filter(Boolean))]
               return (
@@ -300,7 +302,7 @@ const AtaPreview = React.forwardRef(function AtaPreview({ form }, ref) {
 
         return (
           <section style={{ marginBottom: '22px' }}>
-            <div style={s.sectionBar('#d97706')}>{++secNum}. Projetos em Andamento — Tarefas para serem entregues até a próxima reunião</div>
+            <div style={s.sectionBar('#d97706')}>{++secNum}. Tarefas a Entregar até a Próxima Reunião ({fmtData(ini)} a {fmtData(fim)})</div>
             {tarefas.length === 0
               ? <p style={{ fontSize: '11px', color: '#94a3b8', fontStyle: 'italic' }}>Nenhuma tarefa com prazo neste período.</p>
               : Object.entries(porDepto).sort(([a], [b]) => a.localeCompare(b)).map(([depto, ts]) => {
@@ -502,6 +504,7 @@ export default function AtaReuniao() {
   const [todosUsuarios, setTodosUsuarios] = useState([])
   const [buscaPartic,   setBuscaPartic]   = useState('')
   const [abaStep3,      setAbaStep3]      = useState('concluidos')
+  const [tarefasSemanIni, setTarefasSemanIni] = useState(ultimaTerca)
   const [form, setForm] = useState(() => makeFormInit())
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
@@ -541,6 +544,7 @@ export default function AtaReuniao() {
           .filter(p => p.status === 'mapeado')
           .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
           .map(p => ({ ...p, incluido: noPeriodo(p.criado_em ? new Date(p.criado_em).toLocaleDateString('sv-SE') : '', ini, fim), obs: '' })),
+        todosNaoConcluidos: projetos.filter(p => p.status !== 'concluido'),
       }))
     } catch (err) {
       alert('Erro ao carregar dados: ' + err.message)
@@ -589,6 +593,7 @@ export default function AtaReuniao() {
             .filter(p => p.status === 'mapeado')
             .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
             .map(p => ({ ...p, incluido: noPeriodo(p.criado_em ? new Date(p.criado_em).toLocaleDateString('sv-SE') : '', ini, fim), obs: '' })),
+          todosNaoConcluidos: projetos.filter(p => p.status !== 'concluido'),
         }))
       } catch {
         // silently ignore
@@ -670,6 +675,7 @@ export default function AtaReuniao() {
             .filter(p => p.status === 'mapeado')
             .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
             .map(p => ({ ...p, incluido: noPeriodo(p.criado_em ? new Date(p.criado_em).toLocaleDateString('sv-SE') : '', ini, fim), obs: '' })),
+          todosNaoConcluidos: projetos.filter(p => p.status !== 'concluido'),
         }
       })
     } catch (err) {
@@ -911,24 +917,24 @@ export default function AtaReuniao() {
       <div className="space-y-4">
         {/* Período — varia por aba */}
         {abaStep3 === 'concluidos' && (
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-            <p className="text-[10px] font-bold text-blue-700 uppercase tracking-wide mb-2">Período</p>
+          <div className="bg-teal-50 border border-teal-200 rounded-lg p-3">
+            <p className="text-[10px] font-bold text-teal-700 uppercase tracking-wide mb-2">Data de conclusão</p>
             <div className="flex items-center gap-3 flex-wrap">
               <div className="flex items-center gap-2">
-                <span className="text-xs text-blue-700 shrink-0">De</span>
+                <span className="text-xs text-teal-700 shrink-0">De</span>
                 <input type="date" value={form.periodoIni}
                   onChange={e => mudarPeriodo('periodoIni', e.target.value)}
                   onClick={e => e.target.showPicker?.()}
-                  className="text-xs px-2 py-1 border border-blue-300 rounded bg-white focus:ring-2 focus:ring-blue-500/20 outline-none cursor-pointer" />
+                  className="text-xs px-2 py-1 border border-teal-300 rounded bg-white focus:ring-2 focus:ring-teal-500/20 outline-none cursor-pointer" />
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-xs text-blue-700 shrink-0">até</span>
+                <span className="text-xs text-teal-700 shrink-0">até</span>
                 <input type="date" value={form.periodoFim}
                   onChange={e => mudarPeriodo('periodoFim', e.target.value)}
                   onClick={e => e.target.showPicker?.()}
-                  className="text-xs px-2 py-1 border border-blue-300 rounded bg-white focus:ring-2 focus:ring-blue-500/20 outline-none cursor-pointer" />
+                  className="text-xs px-2 py-1 border border-teal-300 rounded bg-white focus:ring-2 focus:ring-teal-500/20 outline-none cursor-pointer" />
               </div>
-              <span className="text-[10px] text-blue-500">{countConc} projeto(s) concluído(s)</span>
+              <span className="text-[10px] text-teal-600">{countConc} projeto(s) no período</span>
             </div>
           </div>
         )}
@@ -946,19 +952,22 @@ export default function AtaReuniao() {
         )}
         {abaStep3 === 'andamento' && (
           <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-            <p className="text-[10px] font-bold text-amber-700 uppercase tracking-wide mb-2">Período — Esta reunião até a próxima</p>
+            <p className="text-[10px] font-bold text-amber-700 uppercase tracking-wide mb-2">Período de Conclusão</p>
             <div className="flex items-center gap-3 flex-wrap">
               <div className="flex items-center gap-2">
                 <span className="text-xs text-amber-700 shrink-0">De</span>
-                <span className="text-xs font-semibold text-amber-900">{form.data ? fmtData(form.data) : '—'}</span>
+                <input type="date" value={tarefasSemanIni}
+                  onChange={e => setTarefasSemanIni(e.target.value)}
+                  onClick={e => e.target.showPicker?.()}
+                  className="text-xs px-2 py-1 border border-amber-300 rounded bg-white focus:ring-2 focus:ring-amber-500/20 outline-none cursor-pointer" />
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-amber-700 shrink-0">até</span>
-                <span className="text-xs font-semibold text-amber-900">{form.proximaReuniao ? fmtData(form.proximaReuniao) : '—'}</span>
+                <input type="date" value={form.data}
+                  onChange={e => set('data', e.target.value)}
+                  onClick={e => e.target.showPicker?.()}
+                  className="text-xs px-2 py-1 border border-amber-300 rounded bg-white focus:ring-2 focus:ring-amber-500/20 outline-none cursor-pointer" />
               </div>
-              {!form.proximaReuniao && (
-                <span className="text-[10px] text-amber-500 italic">Defina a próxima reunião na Etapa 1</span>
-              )}
             </div>
           </div>
         )}
@@ -967,8 +976,8 @@ export default function AtaReuniao() {
         <div className="flex items-end justify-between border-b border-slate-200">
         <div className="flex gap-1">
           {[
-            { id: 'concluidos', label: `✅ Concluídos`, count: countConc },
-            { id: 'andamento',  label: `▶ Em Andamento`, count: countAnd },
+            { id: 'concluidos', label: `✅ Projetos`, count: countConc },
+            { id: 'andamento',  label: `📋 Tarefas da Semana`, count: countAnd },
             { id: 'mapeados',   label: `📋 Mapeados`, count: countMap },
           ].map(ab => (
             <button key={ab.id} onClick={() => setAbaStep3(ab.id)}
@@ -992,38 +1001,58 @@ export default function AtaReuniao() {
         <div className="space-y-5">
           {/* Concluídos */}
           {abaStep3 === 'concluidos' && <div>
-            <p className="text-[10px] font-bold text-teal-700 uppercase tracking-wide mb-2">✅ Concluídos no período ({countConc})</p>
-            {form.concluidos.filter(p => p.incluido).length === 0
-              ? <p className="text-xs text-slate-400 italic">Nenhum projeto concluído no período selecionado.</p>
-              : (
-                <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-                  {form.concluidos.filter(p => p.incluido).map((p) => {
-                    const pct = projPct(p)
+            {(() => {
+              const incluidos = form.concluidos.filter(p => p.incluido)
+              if (incluidos.length === 0)
+                return <p className="text-xs text-slate-400 italic">Nenhum projeto concluído no período selecionado.</p>
+              const porDepto = {}
+              incluidos.forEach(p => {
+                const depto = p.departamento_nome || '(Sem departamento)'
+                if (!porDepto[depto]) porDepto[depto] = []
+                porDepto[depto].push(p)
+              })
+              return (
+                <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
+                  {Object.entries(porDepto).sort(([a], [b]) => a.localeCompare(b, 'pt-BR')).map(([depto, ps]) => {
+                    const resps = [...new Set(ps.map(p => p.responsavel_nome).filter(Boolean))]
                     return (
-                      <div key={p.id} className="rounded-lg border p-3 border-teal-200 bg-teal-50/40">
-                        <p className="text-xs font-semibold text-slate-800 leading-tight">{p.nome}</p>
-                        <div className="flex flex-wrap items-center gap-1.5 mt-1">
-                          {projSistemas(p).map(s => (
-                            <span key={s} className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-100 text-indigo-700 whitespace-nowrap">{s}</span>
-                          ))}
-                          {pct > 0 && <span className="text-[10px] font-bold text-slate-500">{pct}%</span>}
+                      <div key={depto}>
+                        <div className="flex items-baseline gap-2 px-2 py-1 bg-teal-100 rounded-md mb-1">
+                          <span className="text-[10px] font-bold text-teal-800 uppercase tracking-wide">{depto}</span>
+                          {resps.length > 0 && <span className="text-[10px] text-teal-700">· Resp.: {resps.join(', ')}</span>}
                         </div>
-                        <p className="text-[10px] text-slate-500 mt-0.5">{projInfoStr(p)}</p>
+                        <div className="space-y-1 pl-1">
+                          {ps.map(p => {
+                            const pct = projPct(p)
+                            return (
+                              <div key={p.id} className="rounded-lg border p-2.5 border-teal-200 bg-teal-50/40">
+                                <p className="text-xs font-semibold text-slate-800 leading-tight">{p.nome}</p>
+                                <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                                  {projSistemas(p).map(s => (
+                                    <span key={s} className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-100 text-indigo-700 whitespace-nowrap">{s}</span>
+                                  ))}
+                                  {pct > 0 && <span className="text-[10px] font-bold text-slate-500">{pct}%</span>}
+                                  {dataFimConc(p) && <span className="text-[10px] text-slate-400">Concluído: {fmtData(dataFimConc(p))}</span>}
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
                       </div>
                     )
                   })}
                 </div>
               )
-            }
+            })()}
           </div>}
 
-          {/* Em Andamento */}
+          {/* Tarefas da Semana */}
           {abaStep3 === 'andamento' && <div className="space-y-4">
             {/* Tarefas no período — lista cronológica */}
             {(() => {
-              const ini = form.data
-              const fim = form.proximaReuniao
-              const tarefas = form.andamento
+              const ini = tarefasSemanIni
+              const fim = form.data
+              const tarefas = (form.todosNaoConcluidos || form.andamento)
                 .flatMap(p => (p.proj_tarefas || [])
                   .filter(t => t.data_fim && (!ini || t.data_fim >= ini) && (!fim || t.data_fim <= fim))
                   .map(t => ({
@@ -1050,7 +1079,6 @@ export default function AtaReuniao() {
 
               return (
                 <div>
-                  <p className="text-[10px] font-bold text-amber-700 uppercase tracking-wide mb-2">📋 Tarefas no período ({tarefas.length})</p>
                   <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
                     {Object.entries(porDepto).sort(([a], [b]) => a.localeCompare(b)).map(([depto, ts]) => {
                       const resps = [...new Set(ts.map(t => t.projetoResp).filter(Boolean))]

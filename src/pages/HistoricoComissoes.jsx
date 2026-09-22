@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { History, Search, Loader2, AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, Eye, X, RotateCcw, Truck, ShieldCheck, CheckCircle2, Circle, Download, Trash2, FileDown, LayoutGrid, UserPlus } from 'lucide-react'
+import { Search, Loader2, AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, Eye, X, RotateCcw, Truck, ShieldCheck, CheckCircle2, Circle, Download, Trash2, FileDown, LayoutGrid, UserPlus } from 'lucide-react'
 import { apiService } from '../services/api'
 import { buscaComCoringa } from '../utils/buscaTexto'
 import { passaEscopoComissao, departamentoSoVisualizacao } from '../utils/permissoesComissao'
@@ -1238,14 +1238,8 @@ export default function HistoricoComissoes() {
   return (
     <div className="p-6 space-y-4 max-w-screen-xl">
 
-      {/* CABEÇALHO */}
-      <div className="border-b border-slate-200 pb-4">
-        <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
-          <History className="h-5 w-5 text-blue-600" />
-          Processamento de Comissões
-        </h1>
-        <p className="text-xs text-slate-500">Escolha o ano/mês e os filtros, depois clique em Visualizar para ver os lotes já calculados.</p>
-      </div>
+      {/* Sem cabeçalho aqui: a página que hospeda esta tela (Comissões Pós-Vendas, em
+          FolhaPagamentoDaf.jsx) já mostra o título acima das abas. */}
 
       {erro && (
         <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-md px-3 py-2 text-red-700 text-xs leading-relaxed">

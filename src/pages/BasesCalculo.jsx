@@ -448,7 +448,6 @@ export default function BasesCalculo() {
       <div className="flex items-center justify-between border-b border-slate-200 pb-4">
         <div>
           <h1 className="text-xl font-bold text-slate-900 tracking-tight">Base de Cálculo</h1>
-          <p className="text-xs text-slate-500">Defina qual coluna e agregação extraem o valor de cada Fonte de Cálculo.</p>
         </div>
         {canEdit && (
           <button

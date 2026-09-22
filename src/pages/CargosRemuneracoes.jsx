@@ -388,7 +388,6 @@ export default function CargosRemuneracoes() {
             <Briefcase className="h-5 w-5 text-blue-600" />
             Cargos e Remunerações
           </h1>
-          <p className="text-xs text-slate-500">Relatório das políticas salariais por cargo — comissões, ganhos cadastrados e DSR.</p>
         </div>
         <div className="flex items-center gap-2">
           {canEditPolitica && (

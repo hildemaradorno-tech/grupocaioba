@@ -461,7 +461,7 @@ export default function SidebarLayout() {
             {(canView('ferias') || canView('calculo-comissoes') || canView('processamento-comissoes') || canView('sobreaviso-plantao')) && (
               <>
                 <div className="mx-3 my-2 border-t border-blue-800/50" />
-                <FlyItem to="/folha-pagamento-daf" icon={Wallet} onClose={closeFlyout}>Folha de Pagamento - DAF</FlyItem>
+                <FlyItem to="/folha-pagamento-daf" icon={Wallet} onClose={closeFlyout}>Comissões Pós-Vendas</FlyItem>
               </>
             )}
           </>

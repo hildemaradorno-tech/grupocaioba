@@ -94,7 +94,7 @@ export const MENU_TREE = [
         // padrão já usado em Garantias DAF e Matriz KPIs (navTo faz o nó com children se
         // comportar como link direto em vez de abrir uma sub-pasta).
         key: '_folha-pagamento-daf',
-        label: 'Folha de Pagamento - DAF',
+        label: 'Comissões Pós-Vendas',
         navTo: 'folha-pagamento-daf',
         children: [
           { key: 'ferias', label: 'Férias' },

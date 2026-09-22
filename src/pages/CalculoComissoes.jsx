@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useSessionState } from '../hooks/useSessionState'
-import { Wallet, PlayCircle, Loader2, AlertTriangle, Save, X, ShieldCheck, Lock, ArrowUp, ArrowDown, ArrowUpDown, Trash2, ChevronDown, ChevronRight, ChevronLeft, FileDown, RefreshCw, CheckCircle2 } from 'lucide-react'
+import { PlayCircle, Loader2, AlertTriangle, Save, X, ShieldCheck, Lock, ArrowUp, ArrowDown, ArrowUpDown, Trash2, ChevronDown, ChevronRight, ChevronLeft, FileDown } from 'lucide-react'
 import { apiService } from '../services/api'
 import { useAuth } from '../context/AuthContext'
 import { buscaComCoringa } from '../utils/buscaTexto'
 import { passaEscopoComissao, departamentoSoVisualizacao } from '../utils/permissoesComissao'
+import { useFeriasStatus } from '../context/FeriasStatusContext'
 
 // Sentinela pra funcionário sem departamento algum (departamento_ids vazio) — sem isso não tem
 // como selecionar essa "aba" na tela pra conferir/excluir o histórico desse grupo.
@@ -147,7 +148,12 @@ const tipoComissaoPorBase = (c) => {
   return null
 }
 
-export default function CalculoComissoes() {
+// agrupamentoNome escolhe qual Agrupamento de Empresas alimenta a aba de Empresa — a mesma tela
+// serve tanto "Cálculo de Comissões" (Caiobá Trucks) quanto sua duplicata pra Caiobá Motos, sem
+// duplicar ~1900 linhas de lógica de lote/departamento/PDF (só essa 1 filtragem muda entre as
+// duas). Chaves de sessão (período) ganham sufixo quando não é o padrão, pra cada aba guardar seu
+// próprio período sem um sobrescrever o outro no localStorage.
+export default function CalculoComissoes({ agrupamentoNome = 'Caiobá Trucks' } = {}) {
   const navigate = useNavigate()
   const { user, hasAction, hasPermission, comissaoEscopoEfetivo, comissaoNivelDepartamentoEfetivo } = useAuth()
   const podeCalcular = hasAction('calculo-comissoes', 'calcular')
@@ -157,8 +163,9 @@ export default function CalculoComissoes() {
   const podeExcluir = hasAction('calculo-comissoes', 'excluir')
   const usuarioLabel = user?.email || 'desconhecido'
 
-  const [periodoInicio, setPeriodoInicio] = useSessionState('calccom_ini', '')
-  const [periodoFim, setPeriodoFim] = useSessionState('calccom_fim', '')
+  const sufixoSessao = agrupamentoNome === 'Caiobá Trucks' ? '' : `_${agrupamentoNome.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`
+  const [periodoInicio, setPeriodoInicio] = useSessionState(`calccom_ini${sufixoSessao}`, '')
+  const [periodoFim, setPeriodoFim] = useSessionState(`calccom_fim${sufixoSessao}`, '')
 
   // Lote de aprovação do período (Rascunho -> Conferido -> Processado)
   const [lote, setLote] = useState(null)
@@ -468,6 +475,13 @@ export default function CalculoComissoes() {
   }, [])
   const feriasDesatualizada = !!(mesArquivoFerias && mesArquivoFerias < mesAtualReal)
   const feriasAtualizada = !!(mesArquivoFerias && mesArquivoFerias >= mesAtualReal)
+  // Publica pro título compartilhado da página (FolhaPagamentoDaf.jsx) poder mostrar o botão
+  // "Atualizar Férias"/"Férias Atualizadas" na mesma linha de "Comissões Pós-Vendas" — sem isso o
+  // botão ficava preso dentro desta tela, abaixo das abas.
+  const { setStatus: setFeriasStatus } = useFeriasStatus()
+  useEffect(() => {
+    setFeriasStatus({ desatualizada: feriasDesatualizada, atualizada: feriasAtualizada })
+  }, [feriasDesatualizada, feriasAtualizada, setFeriasStatus])
 
   // Férias importadas no menu Férias, indexadas por código do empregado + CNPJ da empresa.
   // O código NÃO basta sozinho: cada empresa numera seus funcionários do 1 em diante, então o
@@ -540,6 +554,10 @@ export default function CalculoComissoes() {
     return funcionariosAtivos
       .flatMap(func => {
         const empresa = empresasMap[func.empresa_id] || null
+        // Cada aba (Trucks/Motos) só enxerga funcionários de empresas do próprio agrupamento —
+        // sem isso, a contagem de "Calcular Comissões (N)" e tudo mais ficava misturando os dois
+        // grupos sempre que nenhuma Empresa estivesse selecionada ainda.
+        if (empresa?.agrupamento_nome !== agrupamentoNome) return []
         const cargo = cargosMap[func.cargo_id] || null
         const departamentoNomes = nomesDepartamentos(func.departamento_ids)
         const setorNomes = nomesSetores(func.setor_ids)
@@ -598,7 +616,7 @@ export default function CalculoComissoes() {
               .map(seg => ({ ...linha, segInicio: seg.inicio, segFim: seg.fim }))
           })
       })
-  }, [dados, periodoInicio, periodoFim, periodoValido, feriasPorCodigo, comissaoEscopoEfetivo])
+  }, [dados, periodoInicio, periodoFim, periodoValido, feriasPorCodigo, comissaoEscopoEfetivo, agrupamentoNome])
 
   // Filtros dinâmicos (facetados): as opções de cada seletor são calculadas aplicando todos os
   // OUTROS filtros ativos, menos o dele mesmo — ao filtrar Setor "Mecânica", o seletor de Cargos
@@ -623,11 +641,14 @@ export default function CalculoComissoes() {
     return true
   }), [candidatos, filtroFuncionario, filtroEmpresa, filtrosDepartamento, filtroSetor, filtroArea, filtroCargo, filtroAgrupamentoCargo, filtroComissoes])
 
-  // Só empresas do agrupamento Caiobá Trucks — Comissões DAF não se aplica a Caiobá Motos nem
-  // Outras Caiobá (Serviços ADM, Locações).
+  // Só empresas do agrupamento escolhido (prop agrupamentoNome) — cada aba (Trucks/Motos) só
+  // mexe nas empresas do próprio grupo, nunca nas do outro. Vem direto do cadastro (dados.empresas),
+  // não de candidatos — uma empresa sem nenhum funcionário com política configurada ainda (ex:
+  // agrupamento recém-começando, como Motos) precisa aparecer no seletor do mesmo jeito, pra dar
+  // pra escolher a empresa e ver a pendência, em vez de sumir da lista.
   const empresasUnicas = useMemo(() => juntaUnicos(
-    filtrarCandidatos('empresa').filter(c => c.empresa?.agrupamento_nome === 'Caiobá Trucks').map(c => c.empresa?.empresa_fantasia || c.empresa?.nome_empresa)
-  ), [filtrarCandidatos])
+    (dados?.empresas || []).filter(e => e.agrupamento_nome === agrupamentoNome && e.ativo !== false).map(e => e.empresa_fantasia || e.nome_empresa)
+  ), [dados, agrupamentoNome])
   // Departamentos "órfãos": já têm lote salvo pra empresa+período, mas nenhum funcionário
   // elegível neles HOJE (ex: o cargo foi remanejado pra outro departamento depois do cálculo).
   // Sem isso, o lote fica preso — nunca vira aba selecionável, então nunca dá pra excluir.
@@ -1325,35 +1346,9 @@ export default function CalculoComissoes() {
   return (
     <div className="p-6 space-y-4 max-w-screen-xl">
 
-      {/* CABEÇALHO */}
-      <div className="flex items-center justify-between border-b border-slate-200 pb-4">
-        <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
-            <Wallet className="h-5 w-5 text-blue-600" />
-            Cálculo de Comissões
-          </h1>
-        </div>
-        <div className="flex items-center gap-2">
-          {feriasDesatualizada && (
-            <button
-              onClick={() => navigate('/ferias')}
-              title="A data de modificação do arquivo de férias não é do mês do período selecionado — atualize antes de calcular (Calcular Comissões fica bloqueado até lá)"
-              className="flex items-center gap-1.5 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 hover:bg-amber-100 px-3 py-2 rounded-md transition-colors"
-            >
-              <RefreshCw className="h-4 w-4" /> Atualizar Férias
-            </button>
-          )}
-          {feriasAtualizada && (
-            <button
-              onClick={() => navigate('/ferias')}
-              title="O arquivo de férias já está atualizado com o mês do período selecionado"
-              className="flex items-center gap-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 px-3 py-2 rounded-md transition-colors"
-            >
-              <CheckCircle2 className="h-4 w-4" /> Férias Atualizadas
-            </button>
-          )}
-        </div>
-      </div>
+      {/* Sem cabeçalho aqui: a página que hospeda esta tela (Comissões Pós-Vendas, em
+          FolhaPagamentoDaf.jsx) já mostra o título e o botão de Férias acima das abas — ver
+          FeriasStatusContext, que esta tela alimenta. */}
 
       {erro && (
         <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-md px-3 py-2 text-red-700 text-xs leading-relaxed">

@@ -113,7 +113,6 @@ export default function Rubricas() {
       <div className="flex items-center justify-between border-b border-slate-200 pb-4">
         <div>
           <h1 className="text-xl font-bold text-slate-900 tracking-tight">Rubrica</h1>
-          <p className="text-xs text-slate-500">Códigos de rubrica usados no TXT de pagamento (Processamento de Comissões) — selecionáveis em Política de Comissão.</p>
         </div>
         {canEdit && (
           <button

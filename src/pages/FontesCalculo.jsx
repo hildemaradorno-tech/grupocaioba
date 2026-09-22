@@ -195,7 +195,6 @@ export default function FontesCalculo() {
       <div className="flex items-center justify-between border-b border-slate-200 pb-4">
         <div>
           <h1 className="text-xl font-bold text-slate-900 tracking-tight">Fonte de Cálculo</h1>
-          <p className="text-xs text-slate-500">Cadastre de qual arquivo do SharePoint cada evento de comissão lê seus dados.</p>
         </div>
         {canEdit && (
           <button
