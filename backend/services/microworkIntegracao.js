@@ -49,6 +49,49 @@ function montarFiltrosGarantiasReceber() {
   ].join(';')
 }
 
+// Primeiro e último dia do mês/ano informado, no formato AAAA-MM-DD exigido pela API.
+function primeiroUltimoDiaMes(ano, mes) {
+  const primeiro = new Date(ano, mes - 1, 1)
+  const ultimo = new Date(ano, mes, 0)
+  const fmt = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return { inicio: fmt(primeiro), fim: fmt(ultimo) }
+}
+
+// Consulta genérica, usada pelos relatórios cadastrados em dim_fontes_microwork (tela
+// Fonte MicroWork, dentro de Regras de Comissões). O período (Periododeconclusaoinicial/
+// Periododeconclusaofinal) é sempre o mês/ano escolhido na tela — dia 1 até o último dia do
+// mês — e é concatenado aqui no backend, nunca guardado no cadastro.
+export async function buscarRelatorioMicrowork({
+  idrelatorioconfiguracao, idrelatorioconsulta, idrelatorioconfiguracaoleiaute, idrelatoriousuarioleiaute,
+  ididioma, listaempresas, filtrosFixos, ano, mes,
+}) {
+  const token = process.env.MICROWORK_API_TOKEN
+  if (!token) throw new Error('MICROWORK_API_TOKEN não configurado no ambiente')
+
+  const { inicio, fim } = primeiroUltimoDiaMes(Number(ano), Number(mes))
+  const filtrosBase = (filtrosFixos || '').trim().replace(/;+$/, '')
+  const filtros = `${filtrosBase}${filtrosBase ? ';' : ''}Periododeconclusaoinicial=${inicio};Periododeconclusaofinal=${fim}`
+
+  const payload = {
+    idrelatorioconfiguracao,
+    idrelatorioconsulta,
+    idrelatorioconfiguracaoleiaute,
+    idrelatoriousuarioleiaute,
+    ididioma: ididioma ?? 1,
+    listaempresas: listaempresas || [],
+    filtros,
+  }
+
+  const response = await axios.post(API_URL, payload, {
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    timeout: 60_000,
+  })
+  return response.data
+}
+
 export async function buscarGarantiasReceberHonda() {
   const token = process.env.MICROWORK_API_TOKEN
   if (!token) throw new Error('MICROWORK_API_TOKEN não configurado no ambiente')
