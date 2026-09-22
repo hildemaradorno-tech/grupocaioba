@@ -327,11 +327,14 @@ export default function PlanoAcaoPainel() {
           {gruposPorCiclo.map(({ ciclo, linhas: linhasDoCiclo }) => {
             const cicloId = ciclo?.id
             const cicloExpandido = hasFiltroAtivo || ciclosExpandidos.has(cicloId)
+            const totalApontadoCiclo = linhasDoCiclo.reduce((s, l) => s + Number(l.achado.total_apontado || 0), 0)
+            const totalCorrigidoCiclo = linhasDoCiclo.reduce((s, l) => s + Number(l.achado.valor_corrigido || 0), 0)
+            const pctCorrigidoCiclo = totalApontadoCiclo > 0 ? Math.round((totalCorrigidoCiclo / totalApontadoCiclo) * 100) : 0
             return (
               <div key={cicloId || 'sem-ciclo'}>
                 {/* Cabeçalho do Ciclo — mesmo padrão do cabeçalho de departamento em Planejamento */}
                 <div
-                  className="px-5 py-3 flex items-center justify-between bg-slate-700 text-white gap-4 cursor-pointer select-none rounded-t-lg"
+                  className="px-5 py-3 flex items-center justify-between bg-slate-700 text-white gap-4 cursor-pointer select-none rounded-t-lg flex-wrap"
                   onClick={() => toggleCiclo(cicloId)}
                 >
                   <div className="flex items-center gap-3 min-w-0">
@@ -342,9 +345,17 @@ export default function PlanoAcaoPainel() {
                       {ciclo?.proj_empresas?.nome || '—'} · {ciclo?.periodo_competencia || '—'}
                     </span>
                   </div>
-                  <span className="text-xs opacity-80 font-medium shrink-0">
-                    {linhasDoCiclo.length} divergência{linhasDoCiclo.length !== 1 ? 's' : ''}
-                  </span>
+                  <div className="flex items-center gap-4 shrink-0">
+                    <span className="text-xs opacity-80 font-medium whitespace-nowrap">
+                      Total Apurado: <strong className="font-bold">{fmtMoeda(totalApontadoCiclo)}</strong>
+                    </span>
+                    <span className="text-xs opacity-80 font-medium whitespace-nowrap">
+                      Total Corrigido: <strong className="font-bold text-emerald-300">{fmtMoeda(totalCorrigidoCiclo)} ({pctCorrigidoCiclo}%)</strong>
+                    </span>
+                    <span className="text-xs opacity-80 font-medium shrink-0">
+                      {linhasDoCiclo.length} divergência{linhasDoCiclo.length !== 1 ? 's' : ''}
+                    </span>
+                  </div>
                 </div>
 
                 {cicloExpandido && (

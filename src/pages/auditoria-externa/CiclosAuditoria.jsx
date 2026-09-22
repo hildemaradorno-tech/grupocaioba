@@ -7,7 +7,7 @@ import { apiService } from '../../services/api'
 import AuditoriaExternaNav from './AuditoriaExternaNav'
 import ManifestacaoRichEditor from '../projetos/ManifestacaoRichEditor'
 import ImportarDivergenciasModal from './ImportarDivergenciasModal'
-import { CICLO_STATUS_MAP, Badge, fmtData, PercentualBar, calcularPercentualAtingidoAchado, empresaNoEscopo } from './auditExtConstants'
+import { CICLO_STATUS_MAP, Badge, fmtData, fmtMoeda, PercentualBar, calcularPercentualAtingidoAchado, empresaNoEscopo } from './auditExtConstants'
 
 const FORM_VAZIO = { empresa_id: '', periodo_competencia: '', firma_auditoria: '', data_apresentacao: '', status: 'em_andamento', observacoes: '' }
 
@@ -111,6 +111,18 @@ export default function CiclosAuditoria() {
     return resultado
   }, [achados, planos])
 
+  // Total Apurado/Corrigido do ciclo = soma dos valores das próprias divergências.
+  const totaisPorCiclo = useMemo(() => {
+    const m = new Map()
+    for (const a of achados) {
+      if (!m.has(a.ciclo_id)) m.set(a.ciclo_id, { apontado: 0, corrigido: 0 })
+      const t = m.get(a.ciclo_id)
+      t.apontado += Number(a.total_apontado || 0)
+      t.corrigido += Number(a.valor_corrigido || 0)
+    }
+    return m
+  }, [achados])
+
   // Excluir só é permitido quando o ciclo não tem nenhum achado/divergência
   // vinculado — evita apagar sem querer um ciclo com dados já cadastrados.
   const achadosPorCiclo = useMemo(() => {
@@ -213,23 +225,25 @@ export default function CiclosAuditoria() {
         <AuditoriaExternaNav />
       </div>
 
-      <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-x-auto">
         <table className="w-full table-auto text-left border-collapse">
           <thead>
-            <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[11px] font-semibold uppercase tracking-wider">
+            <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[11px] font-semibold uppercase tracking-wider whitespace-nowrap">
               <th className="p-3">Empresa</th>
               <th className="p-3">Período</th>
               <th className="p-3">Firma de Auditoria</th>
               <th className="p-3">Data da Apresentação</th>
               <th className="p-3">Data de Conclusão</th>
               <th className="p-3 w-32">Status</th>
+              <th className="p-3 text-right">Total Apurado</th>
+              <th className="p-3 text-right">Total Corrigido</th>
               <th className="p-3 w-32">% Atingido</th>
               <th className="p-3 w-24 text-center">Ações</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
+          <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700 whitespace-nowrap">
             {dadosVisiveis.length === 0 ? (
-              <tr><td colSpan="8" className="p-6 text-center text-slate-400">Nenhum ciclo de auditoria cadastrado.</td></tr>
+              <tr><td colSpan="10" className="p-6 text-center text-slate-400">Nenhum ciclo de auditoria cadastrado.</td></tr>
             ) : dadosVisiveis.map(item => (
               <tr key={item.id} className="hover:bg-slate-50/70 transition-colors">
                 <td className="p-3 text-slate-900 font-bold flex items-center gap-2"><CalendarClock className="h-3.5 w-3.5 text-indigo-500" /> {item.proj_empresas?.nome || '—'}</td>
@@ -238,6 +252,8 @@ export default function CiclosAuditoria() {
                 <td className="p-3">{fmtData(item.data_apresentacao)}</td>
                 <td className="p-3">{dataConclusaoPorCiclo.has(item.id) ? dataConclusaoPorCiclo.get(item.id).toLocaleDateString('pt-BR') : '—'}</td>
                 <td className="p-3"><Badge map={CICLO_STATUS_MAP} value={item.status} /></td>
+                <td className="p-3 text-right font-bold text-slate-800">{fmtMoeda(totaisPorCiclo.get(item.id)?.apontado || 0)}</td>
+                <td className="p-3 text-right font-bold text-emerald-700">{fmtMoeda(totaisPorCiclo.get(item.id)?.corrigido || 0)} <span className="text-slate-400 font-medium">({percentualPorCiclo.get(item.id) || 0}%)</span></td>
                 <td className="p-3">
                   <PercentualBar value={percentualPorCiclo.get(item.id) || 0} editable={false} onSave={() => {}} />
                 </td>
