@@ -2772,6 +2772,16 @@ export const apiService = {
     return data || []
   },
 
+  getEmpresaIdsComCalendario: async (ano) => {
+    const { data, error } = await supabase
+      .from('fato_calendario')
+      .select('empresa_id')
+      .eq('ano', ano)
+      .eq('mes', 1)
+    if (error) throw error
+    return [...new Set((data || []).map(r => r.empresa_id))]
+  },
+
   gerarCalendarioAnual: async (empresaId, ano) => {
     const { data, error } = await supabase.rpc('gerar_calendario_anual', {
       p_empresa_id: empresaId,

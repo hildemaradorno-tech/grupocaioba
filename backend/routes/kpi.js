@@ -27,6 +27,7 @@ import {
   sincronizacaoEmAndamento,
 } from '../services/kpiSyncService.js'
 import { getPesos, setPeso, aplicarPesos } from '../services/kpiPesos.js'
+import { getMetaPecasPeriodos } from '../services/kpiMetas.js'
 
 const router = Router()
 
@@ -247,7 +248,19 @@ function sumPeriods(a, b) {
   return result
 }
 
+// Injeta as metas aprovadas (kpiMetas.js) na coluna "Meta" de cada período,
+// preservando o realizado já injetado. metas = null deixa tudo como está.
+function injectMeta(kpi, metas) {
+  if (!metas) return kpi
+  const out = { ...kpi, metaAnual: metas.fy ?? kpi.metaAnual }
+  for (const k of ['q1', 'q2', 'q3', 'q4', 'fy', ...ALL_MONTHS, ...ALL_WEEKS]) {
+    out[k] = { ...(kpi[k] ?? { meta: null, realizado: null }), meta: metas[k] ?? null }
+  }
+  return out
+}
+
 function injectPeriods(kpi, src, fn) {
+  src = src ?? {}
   const base = {
     q1: { ...kpi.q1, realizado: fn(src.q1) },
     q2: { ...kpi.q2, realizado: fn(src.q2) },
@@ -317,8 +330,12 @@ function computeHoras(rof042, rof096) {
  * balcaoVendedor = mesma fonte, mas filtrada pelo vendedor selecionado na tela (ou
  *                  igual a balcaoTodas quando nenhum vendedor está selecionado) —
  *                  usado só no quadro VENDEDOR DE PEÇAS.
+ * metaTodos / metaVendedor = metas aprovadas de Peças (Total Grupo → Gestão de
+ *                  Aprovação) no mesmo recorte: soma de todos os vendedores ou só o
+ *                  vendedor selecionado. Alimentam a coluna Meta do Faturamento Total
+ *                  Peças Balcão.
  */
-function mergeBloco3Pecas(quadros, pecas, balcaoTodas, balcaoVendedor) {
+function mergeBloco3Pecas(quadros, pecas, balcaoTodas, balcaoVendedor, metaTodos, metaVendedor) {
   if (!pecas && !balcaoTodas) return quadros
   const r = (v) => (v != null ? Math.round(v) : null)
   const p = (v) => (v != null ? v : null)
@@ -327,9 +344,10 @@ function mergeBloco3Pecas(quadros, pecas, balcaoTodas, balcaoVendedor) {
   return quadros.map(quadro => {
     const ehVendedor = quadro.tituloGerente === 'VENDEDOR DE PEÇAS'
     const balcaoFonte = ehVendedor ? balcaoVendedor : balcaoTodas
+    const metaFonte   = ehVendedor ? metaVendedor   : metaTodos
     const kpis = quadro.kpis.map(kpi => {
       if ((isAtacado(quadro.tituloGerente) || ehVendedor) && kpi.id === 1) {
-        return injectPeriods(kpi, balcaoFonte?.liquido, r)
+        return injectMeta(injectPeriods(kpi, balcaoFonte?.liquido, r), metaFonte)
       }
       if ((isAtacado(quadro.tituloGerente) || ehVendedor) && kpi.id === 2) {
         return injectPeriods(kpi, balcaoFonte?.margemPct, p)
@@ -438,7 +456,17 @@ router.get('/bloco3-pecas', requireConfig, wrap(async (req, res) => {
     try { balcaoVendedor = await extractBalcao(year, null, vendedor) } catch (_) { balcaoVendedor = null }
   }
 
-  let quadros = mergeBloco3Pecas(BLOCO3_PECAS_TEMPLATE, extractorData?.bloco3PecasRealizado, balcaoTodas, balcaoVendedor)
+  // Metas aprovadas de Peças (tipo 'pecas' em fato_metas_publicadas): soma de
+  // todos os vendedores pros quadros Gerente/Coordenador e, no VENDEDOR DE
+  // PEÇAS, só a do vendedor selecionado (ou a soma quando não há seleção).
+  let metaTodos = null
+  try { metaTodos = await getMetaPecasPeriodos(year) } catch (_) { /* sem meta */ }
+  let metaVendedor = metaTodos
+  if (vendedor) {
+    try { metaVendedor = await getMetaPecasPeriodos(year, vendedor) } catch (_) { metaVendedor = null }
+  }
+
+  let quadros = mergeBloco3Pecas(BLOCO3_PECAS_TEMPLATE, extractorData?.bloco3PecasRealizado, balcaoTodas, balcaoVendedor, metaTodos, metaVendedor)
   const pesos = await getPesos('bloco3-pecas')
   quadros = aplicarPesos(quadros, pesos)
 
