@@ -23,3 +23,4 @@ Acesso*.txt
 
 # Cache local do Supabase CLI (project ref, pooler URL etc.)
 supabase/.temp
+.env.development.local
