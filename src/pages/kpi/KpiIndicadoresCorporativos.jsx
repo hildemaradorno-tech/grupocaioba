@@ -1,4 +1,4 @@
-﻿import React from 'react'
+﻿import React, { useMemo } from 'react'
 import PeriodSelector, { usePeriodSelector, PeriodLegend } from '../../components/kpi/PeriodSelector'
 import { getPeriodData, getPeriodLabel } from '../../utils/kpiPeriods'
 import { useKpiData } from '../../hooks/useKpiData'
@@ -16,6 +16,41 @@ const MOCK = [
   { indicador: 'Despesas Operacionais', orientacao: '<', metrica: 'R$', metaAnual: null, peso: null, origem: 'PEO', responsavel: 'Renan', q1: np, q2: np, q3: np, q4: np, fy: np },
 ]
 
+
+// Estrutura oficial dos indicadores corporativos: [indicador, métrica, orientação, nomes antigos equivalentes]
+const ESTRUTURA = [
+  ['Receita líquida total', 'R$', '>', ['Receita Líquida Total']],
+  ['Margem bruta total', 'R$', '>'],
+  ['Margem bruta %', '%', '>'],
+  ['Margem líquida total (CONTRIBUIÇÃO)', 'R$', '>', ['Margem Líquida Total']],
+  ['Margem líquida % (CONTRIBUIÇÃO)', '%', '>', ['Margem Líquida %']],
+  ['Despesas operacionais', 'R$', '<'],
+  ['Despesas operacionais % receita', '%', '<'],
+  ['EBITDA', 'R$', '>'],
+  ['Margem EBITDA', '%', '>'],
+  ['Resultado financeiro', 'R$', '>'],
+  ['Lucro líquido final (Resultado líquido)', 'R$', '>'],
+  ['Margem líquida final (Resultado líquido)', '%', '>'],
+  ['Absorção do pós-venda', '%', '>'],
+]
+
+const normTxt = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().toLowerCase()
+
+// Monta as linhas na ordem da estrutura, aproveitando meta/realizado/peso das linhas que já
+// vieram (mesmo nome, ou nome antigo equivalente); o restante fica vazio.
+function aplicarEstrutura(rows) {
+  const porNome = new Map()
+  for (const r of rows) if (!porNome.has(normTxt(r.indicador))) porNome.set(normTxt(r.indicador), r)
+  return ESTRUTURA.map(([indicador, metrica, orientacao, antigos = []]) => {
+    const base = [indicador, ...antigos].map(normTxt).map(n => porNome.get(n)).find(Boolean)
+    return {
+      metaAnual: null, peso: null, origem: '', responsavel: '', q1: np, q2: np, q3: np, q4: np, fy: np,
+      ...(base || {}),
+      indicador, metrica, orientacao,
+    }
+  })
+}
+
 function calcAtingimento(orientacao, meta, realizado) {
   if (realizado === null || meta === null || meta === 0) return null
   return orientacao === '<' ? meta / realizado : realizado / meta
@@ -23,7 +58,7 @@ function calcAtingimento(orientacao, meta, realizado) {
 
 function pct(val) {
   if (val === null || val === undefined) return '–'
-  return `${(val * 100).toFixed(1)}%`
+  return `${(val * 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`
 }
 
 function badgeClass(val) {
@@ -37,7 +72,7 @@ function fmtNum(v, metrica) {
   if (v === null || v === undefined) return '–'
   if (typeof v !== 'number') return v
   if (metrica === 'R$') return 'R$ ' + v.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
-  if (metrica === '%') return v.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%'
+  if (metrica === '%') return v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%'
   return v.toLocaleString('pt-BR', { maximumFractionDigits: 0 })
 }
 
@@ -45,7 +80,8 @@ export default function KpiIndicadoresCorporativos() {
   const periodState = usePeriodSelector('kpi-matriz')
   const { activePeriods } = periodState
   const { year } = useKpiYear()
-  const { data: rows } = useKpiData(fetchBloco1, MOCK, { year })
+  const { data: rawRows } = useKpiData(fetchBloco1, MOCK, { year })
+  const rows = useMemo(() => aplicarEstrutura(rawRows), [rawRows])
 
   return (
     <div className="p-6 space-y-5">

@@ -36,7 +36,7 @@ function calcAtingimento(orientacao, meta, realizado) {
 
 function pct(val) {
   if (val === null || val === undefined) return '–'
-  return `${(val * 100).toFixed(1)}%`
+  return `${(val * 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`
 }
 
 function pctAting(val) {

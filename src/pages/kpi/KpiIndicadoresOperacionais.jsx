@@ -106,7 +106,7 @@ function calcAtingimento(orientacao, meta, realizado) {
 
 function pct(val) {
   if (val === null || val === undefined) return '–'
-  return `${(val * 100).toFixed(1)}%`
+  return `${(val * 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`
 }
 
 function badgeClass(val) {
@@ -120,7 +120,7 @@ function fmtNum(v, metrica) {
   if (v === null || v === undefined) return '–'
   if (typeof v !== 'number') return v
   if (metrica === 'R$') return 'R$ ' + v.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
-  if (metrica === '%') return v.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%'
+  if (metrica === '%') return v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%'
   return v.toLocaleString('pt-BR', { maximumFractionDigits: 0 })
 }
 

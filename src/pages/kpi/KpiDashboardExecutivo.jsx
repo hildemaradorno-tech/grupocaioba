@@ -22,7 +22,7 @@ const MOCK_DATA = {
 
 function pct(val) {
   if (val === null || val === undefined) return '–'
-  return `${(val * 100).toFixed(1)}%`
+  return `${(val * 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`
 }
 
 function weightedAvg(rows, field) {

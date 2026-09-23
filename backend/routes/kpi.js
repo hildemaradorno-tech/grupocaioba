@@ -747,6 +747,56 @@ const EMPRESA_KEY_TO_RECEP = {
   'CHAPADÃO DO SUL':  'CAIOBA TRUCKS - CHAPADAO',
 }
 
+
+// Descrição de origem de cada linha da Auditoria de Fontes (botão "i" na tela): arquivo,
+// coluna usada e filtros aplicados. Letras/índices seguem o mapa C do sharepointExtractor.
+function infoAuditoria(row, empresaKey) {
+  const empresaTxt = empresaKey ? `Empresa: ${empresaKey}` : 'Empresa: todas (sem filtro)'
+  if (row.fonte === 'RESULTADO') {
+    return { arquivo: 'Calculado pelo portal', coluna: row.metrica, filtros: ['Resultado das linhas de fonte acima, no mesmo período e empresa.'] }
+  }
+  const f = row.fonte
+  const m = row.metrica || ''
+  if (/RPR001/.test(f)) {
+    const balcao = row.id === 8 || row.id === 9
+    const coluna = /VlMargemCont/.test(m) ? 'NFItem_VlMargemCont (coluna U)' : /VlTotal/.test(m) ? 'NFItem_VlTotal (coluna AV)' : m
+    const filtros = [
+      balcao ? 'Somente linhas SEM OS vinculada (NF_OsTipoDes, coluna H, em branco) — Balcão'
+             : 'Somente linhas COM OS vinculada (NF_OsTipoDes, coluna H, preenchida) — Oficina',
+      'Natureza da operação (coluna E): "VEN" = venda, "DVE"/"DEVOLU" = devolução; outras linhas são ignoradas',
+      'Linhas com valor total zerado são ignoradas',
+      'Período pela data de movimento (NF_DataMov, coluna AG)',
+      empresaTxt,
+    ]
+    if (row.id === 10) filtros.splice(2, 0, 'Somente tipo de produto (NFItem_ProdTipoCod, coluna AL) 2, 24, 27 ou 28 (TRP)')
+    if (/VEN/.test(m) && !/−/.test(m)) filtros.splice(2, 0, 'Considera só as linhas de venda (VEN)')
+    if (/DVE/.test(m) && !/−/.test(m)) filtros.splice(2, 0, 'Considera só as linhas de devolução (DVE)')
+    return { arquivo: 'RPR001_VENDAPRODUTO AAAA.MM.xlsx (Vendas de Produtos)', coluna, filtros }
+  }
+  if (/Recepcionista/.test(f)) {
+    return {
+      arquivo: 'REL_VENDARECEPCIONISTA_REPORT (pasta Vendas de Serviços)',
+      coluna: m === 'margem_servico' ? 'margem_servico' : 'tot_serv',
+      filtros: ['Período pela data de emissão (NotaFiscal_DataEmissao)', 'Linhas com valor zerado são ignoradas', empresaKey ? `Empresa (Empresa_Nome): ${empresaKey}` : 'Empresa: todas (sem filtro)'],
+    }
+  }
+  if (/ROF042/.test(f)) {
+    return {
+      arquivo: 'ROF042_FaturamentoServicosProdutivos_Excel (pasta Vendas Mecânicos)',
+      coluna: /Hr. Total/.test(m) ? 'Hr. Total (coluna P)' : 'Hr. Vend. (coluna Q)',
+      filtros: ['Período pela data NF Data (coluna AB)', 'Linhas cujo Produtivo (coluna B) é "Produtivo Não Associado ..." ficam de fora', 'Linhas sem horas e sem valor líquido são ignoradas', empresaTxt],
+    }
+  }
+  if (/ROF096/.test(f)) {
+    return {
+      arquivo: 'ROF096_FECHAMENTOCARTAOPRODUCAO (pasta Fechamento Cartão Produção)',
+      coluna: 'Horas disponíveis (coluna M)',
+      filtros: ['Período pela data (coluna D)', 'Linhas com horas disponíveis zeradas são ignoradas', empresaTxt],
+    }
+  }
+  return null
+}
+
 // GET /api/kpi/auditoria?year=2026&empresa=CAMPO+GRANDE  — valores brutos por fonte para conferência
 router.get('/auditoria', requireConfig, wrap(async (req, res) => {
   const year        = parseInt(req.query.year) || new Date().getFullYear()
@@ -768,9 +818,7 @@ router.get('/auditoria', requireConfig, wrap(async (req, res) => {
 
   const { auditoria: a } = extractorData
 
-  res.json({
-    year,
-    indicadores: [
+  const indicadores = [
       // ── Indicador 1 ──────────────────────────────────────────────────────
       { id: 1, indicador: 'Faturamento Total Oficina', fonte: 'Fonte A — RPR001',        metrica: 'NFItem_VlTotal — VEN',         tipo: 'R$', valores: a.ind1_fatVendas },
       { id: 1, indicador: 'Faturamento Total Oficina', fonte: 'Fonte A — RPR001',        metrica: 'NFItem_VlTotal — DVE',         tipo: 'R$', valores: a.ind1_fatDevolucoes },
@@ -852,7 +900,10 @@ router.get('/auditoria', requireConfig, wrap(async (req, res) => {
         }
         return r
       })() },
-    ],
+  ]
+  res.json({
+    year,
+    indicadores: indicadores.map(r => ({ ...r, info: infoAuditoria(r, empresaKey) })),
     metaData: extractorData.metaData,
   })
 }))

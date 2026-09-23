@@ -6,7 +6,6 @@ import PeriodSelector, { usePeriodSelector, PeriodLegend } from '../../component
 import { getPeriodData, getPeriodLabel } from '../../utils/kpiPeriods'
 import { useKpiData } from '../../hooks/useKpiData'
 import { fetchBloco3Servicos, salvarPeso, fetchConsultoresServicos, fetchMecanicos } from '../../services/kpiService'
-import DataSourceBadge from '../../components/kpi/DataSourceBadge'
 import { useKpiYear } from '../../context/KpiYearContext'
 
 const BLOCO_PESOS = 'bloco3-servicos'
@@ -30,7 +29,7 @@ function calcAtingimento(orientacao, meta, realizado) {
 
 function pct(val) {
   if (val === null || val === undefined) return '–'
-  return `${(val * 100).toFixed(1)}%`
+  return `${(val * 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`
 }
 
 function pctAting(val) {
@@ -301,7 +300,7 @@ export default function KpiBloco3Servicos() {
   const consultorFiltro = usePessoaFiltro(fetchConsultoresServicos, year)
   const mecanicoFiltro  = usePessoaFiltro(fetchMecanicos, year)
 
-  const { data: quadros, loading, source } = useKpiData(fetchBloco3Servicos, MOCK_BLOCO3_SERVICOS, {
+  const { data: quadros } = useKpiData(fetchBloco3Servicos, MOCK_BLOCO3_SERVICOS, {
     year,
     consultor: consultorFiltro.aplicado || undefined,
     mecanico: mecanicoFiltro.aplicado || undefined,
@@ -332,10 +331,7 @@ export default function KpiBloco3Servicos() {
           <h1 className="text-xl font-bold text-slate-800">Indicadores de Serviços</h1>
           <p className="text-sm text-slate-500 mt-0.5">Indicadores de performance de consultores e mecânicos da oficina</p>
         </div>
-        <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-2">
-          <PeriodLegend />
-          <DataSourceBadge source={source} loading={loading} />
-        </div>
+        <PeriodLegend />
       </div>
 
       <PeriodSelector state={periodState} inlineTrimestral hideLegend />

@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react'
-import { ChevronDown, ChevronRight } from 'lucide-react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
+import { createPortal } from 'react-dom'
+import { ChevronDown, ChevronRight, Info } from 'lucide-react'
 import PeriodSelector, { usePeriodSelector } from '../../components/kpi/PeriodSelector'
 import { getPeriodLabel } from '../../utils/kpiPeriods'
 import { useKpiYear } from '../../context/KpiYearContext'
@@ -32,6 +33,69 @@ const GROUP_COLORS = {
   8: { header: 'bg-amber-600',  row: 'bg-amber-50',  resultado: 'bg-amber-100 font-semibold' },
   9:  { header: 'bg-cyan-700',   row: 'bg-cyan-50',   resultado: 'bg-cyan-100 font-semibold' },
   10: { header: 'bg-pink-700',   row: 'bg-pink-50',   resultado: 'bg-pink-100 font-semibold' },
+}
+
+// Botão "i" com painel (portal, position:fixed) mostrando de onde a linha vem: arquivo, coluna
+// e filtros aplicados. Fecha ao clicar fora, rolar ou redimensionar.
+function InfoFonte({ info }) {
+  const [pos, setPos] = useState(null)
+  const btnRef = useRef(null)
+  const painelRef = useRef(null)
+  const aberto = !!pos
+
+  useEffect(() => {
+    if (!aberto) return
+    const fechar = (e) => {
+      if (painelRef.current?.contains(e.target) || btnRef.current?.contains(e.target)) return
+      setPos(null)
+    }
+    document.addEventListener('mousedown', fechar)
+    window.addEventListener('scroll', fechar, true)
+    window.addEventListener('resize', fechar)
+    return () => {
+      document.removeEventListener('mousedown', fechar)
+      window.removeEventListener('scroll', fechar, true)
+      window.removeEventListener('resize', fechar)
+    }
+  }, [aberto])
+
+  if (!info) return null
+  const abrir = () => {
+    const r = btnRef.current.getBoundingClientRect()
+    const largura = 340
+    setPos({ top: r.bottom + 6, left: Math.max(8, Math.min(r.left, window.innerWidth - largura - 8)), largura })
+  }
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={() => (aberto ? setPos(null) : abrir())}
+        className="ml-1.5 inline-flex align-middle text-slate-400 hover:text-blue-600 transition-colors"
+        title="De onde vem este valor"
+      >
+        <Info size={13} />
+      </button>
+      {aberto && createPortal(
+        <div
+          ref={painelRef}
+          style={{ position: 'fixed', top: pos.top, left: pos.left, width: pos.largura }}
+          className="z-50 bg-white border border-slate-200 rounded-lg shadow-lg p-3 text-[11px] text-slate-600 whitespace-normal normal-case font-normal"
+        >
+          <p className="font-semibold text-slate-700">Arquivo</p>
+          <p className="mb-1.5">{info.arquivo}</p>
+          <p className="font-semibold text-slate-700">Coluna utilizada</p>
+          <p className="mb-1.5">{info.coluna}</p>
+          <p className="font-semibold text-slate-700">Filtros</p>
+          <ul className="list-disc pl-4 space-y-0.5">
+            {info.filtros.map((f, i) => <li key={i}>{f}</li>)}
+          </ul>
+        </div>,
+        document.body
+      )}
+    </>
+  )
 }
 
 export default function KpiAuditoria() {
@@ -155,6 +219,7 @@ export default function KpiAuditoria() {
                             <tr key={i} className={rowClass}>
                               <td className={`px-4 py-2 sticky left-0 ${isResult ? colors.resultado : colors.row}`}>
                                 {isResult ? <span className="font-bold text-slate-800">RESULTADO</span> : row.fonte}
+                                <InfoFonte info={row.info} />
                               </td>
                               <td className="px-4 py-2 text-slate-600">{row.metrica}</td>
                               <td className="px-3 py-2 text-center">

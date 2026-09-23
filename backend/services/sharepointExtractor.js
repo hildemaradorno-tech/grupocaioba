@@ -1618,8 +1618,11 @@ export function parseROF042Buffer(buffer, meta) {
 
     const empresaNome = normalizeEmpresaNome(row[0])                                    // coluna A
     const produtivo   = row[1] != null ? String(row[1]).trim() : ''                     // coluna B — mecânico
-    const hrAplic     = safeNum(row[15])                                                // coluna P — Hr. Total
-    const hrVend      = safeNum(row[16])                                                // coluna Q
+    // Linhas "Produtivo Não Associado ..." não têm mecânico real: ficam fora das horas
+    // (Hr. Total e Hr. Vend.), mas o Vl Líquido delas continua somando.
+    const naoAssociado = /produtivo\s+n[aã]o\s+associado/i.test(produtivo)
+    const hrAplic     = naoAssociado ? 0 : safeNum(row[15])                             // coluna P — Hr. Total
+    const hrVend      = naoAssociado ? 0 : safeNum(row[16])                             // coluna Q
     const vlLiquido   = safeNum(row[21])                                                // coluna V — Vl Líquido
     // Coluna AB tem data+hora — converte para só data antes de extrair período
     const rawDate     = typeof row[27] === 'number' ? Math.floor(row[27]) : row[27]
