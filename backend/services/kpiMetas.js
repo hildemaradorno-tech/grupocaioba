@@ -204,3 +204,15 @@ export async function getMetaOficinaPeriodos(ano, { consultorNome = null, empres
   }
   return periodizarMetas(linhas, ano, base.calendario)
 }
+
+/**
+ * Meta de Faturamento Total Oficina (Serviços) do bloco MECÂNICO: tipo 'mecanico'
+ * filtrado pelo mecânico selecionado; sem seleção = soma de todos.
+ */
+export async function getMetaMecanicoPeriodos(ano, mecanicoNome = null) {
+  const base = await carregarBase(ano)
+  if (!base) return null
+  const alvo = mecanicoNome ? normNome(mecanicoNome) : null
+  const linhas = base.metas.filter(r => r.tipo === 'mecanico' && (!alvo || normNome(r.colaborador_nome) === alvo))
+  return periodizarMetas(linhas, ano, base.calendario)
+}

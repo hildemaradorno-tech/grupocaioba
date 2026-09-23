@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useMemo } from 'react'
-import { Wrench, X } from 'lucide-react'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
+import { createPortal } from 'react-dom'
+import { Wrench, X, ChevronDown } from 'lucide-react'
 import { MOCK_BLOCO3_SERVICOS } from '../../data/kpiMockData'
 import PeriodSelector, { usePeriodSelector } from '../../components/kpi/PeriodSelector'
 import { getPeriodData, getPeriodLabel } from '../../utils/kpiPeriods'
@@ -11,8 +12,6 @@ import { useKpiYear } from '../../context/KpiYearContext'
 const BLOCO_PESOS = 'bloco3-servicos'
 const QUADRO_CONSULTOR = 'CONSULTOR DE SERVIÇOS'
 const QUADRO_MECANICO  = 'MECÂNICO'
-const DATALIST_CONSULTOR = 'kpi-servicos-consultores'
-const DATALIST_MECANICO  = 'kpi-servicos-mecanicos'
 
 const COR_HEADER = {
   blue:   'bg-blue-700   text-white',
@@ -32,6 +31,11 @@ function calcAtingimento(orientacao, meta, realizado) {
 function pct(val) {
   if (val === null || val === undefined) return '–'
   return `${(val * 100).toFixed(1)}%`
+}
+
+function pctAting(val) {
+  if (val === null || val === undefined) return '–'
+  return `${(val * 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`
 }
 
 function fmtNum(v, metrica) {
@@ -96,27 +100,98 @@ function PesoInput({ value, onSave }) {
   )
 }
 
-// Campo de busca por nome (datalist nativo = digita e já filtra as opções).
-// Só aplica o filtro quando o texto bate exatamente com um nome da lista
-// (evita disparar fetch a cada letra digitada); texto vazio = todos.
-function PessoaSelector({ datalistId, busca, onBuscaChange, onLimpar, aplicado, placeholder }) {
+// Dropdown de busca próprio (não usa <input list>/<datalist> nativo — o navegador desenha a
+// lista de sugestões sem nenhum controle de estilo/posição, o que ficava estranho dentro da
+// tabela). O painel é montado via portal com position:fixed (mesmo padrão de DropdownAcao em
+// HistoricoComissoes.jsx) pra escapar do overflow-hidden/overflow-x-auto do card da tabela —
+// um simples position:absolute ficaria cortado ali dentro.
+function PessoaSelector({ lista, selecionado, onSelecionar, onLimpar, placeholderTodos, placeholderBusca, vazioMsg }) {
+  const [aberto, setAberto] = useState(false)
+  const [busca, setBusca] = useState('')
+  const [pos, setPos] = useState(null)
+  const btnRef = useRef(null)
+  const painelRef = useRef(null)
+
+  const abrirNaPosicao = () => {
+    if (btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect()
+      setPos({ top: r.bottom + 4, left: r.left, width: Math.max(r.width, 224) })
+    }
+    setAberto(true)
+  }
+
+  useEffect(() => {
+    if (!aberto) return
+    const fechar = (e) => {
+      if (painelRef.current && painelRef.current.contains(e.target)) return
+      if (btnRef.current && btnRef.current.contains(e.target)) return
+      setAberto(false)
+    }
+    document.addEventListener('mousedown', fechar)
+    window.addEventListener('scroll', fechar, true)
+    window.addEventListener('resize', fechar)
+    return () => {
+      document.removeEventListener('mousedown', fechar)
+      window.removeEventListener('scroll', fechar, true)
+      window.removeEventListener('resize', fechar)
+    }
+  }, [aberto])
+
+  useEffect(() => { if (!aberto) setBusca('') }, [aberto])
+
+  const filtrados = useMemo(() => {
+    const alvo = busca.trim().toUpperCase()
+    if (!alvo) return lista
+    return lista.filter(v => v.toUpperCase().includes(alvo))
+  }, [busca, lista])
+
   return (
     <div className="flex items-center gap-1">
-      <input
-        list={datalistId}
-        type="text"
-        value={busca}
-        onChange={e => onBuscaChange(e.target.value)}
-        placeholder={placeholder}
-        className="w-full min-w-0 text-[11px] font-normal normal-case border border-slate-200 rounded px-2 py-1 bg-white text-slate-700 focus:outline-none focus:border-blue-400"
-      />
-      {busca && (
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={() => (aberto ? setAberto(false) : abrirNaPosicao())}
+        className="w-full min-w-0 flex items-center justify-between gap-1 text-[11px] font-normal normal-case border border-slate-200 rounded px-2 py-1 bg-white text-slate-700 hover:bg-slate-50 focus:outline-none focus:border-blue-400 transition-colors"
+      >
+        <span className={`truncate ${selecionado ? 'text-slate-700' : 'text-slate-400'}`}>{selecionado || placeholderTodos}</span>
+        <ChevronDown size={12} className="text-slate-400 shrink-0" />
+      </button>
+      {selecionado && (
         <button onClick={onLimpar} className="text-slate-400 hover:text-red-500 shrink-0" title="Limpar seleção">
           <X size={13} />
         </button>
       )}
-      {busca && !aplicado && (
-        <span className="text-amber-500 shrink-0" title="Nenhum nome encontrado exatamente igual ao digitado">?</span>
+      {aberto && pos && createPortal(
+        <div
+          ref={painelRef}
+          data-dropdown-pessoa-panel
+          style={{ position: 'fixed', top: pos.top, left: pos.left, width: pos.width }}
+          className="z-50 max-h-56 flex flex-col bg-white border border-slate-200 rounded-md shadow-lg overflow-hidden normal-case"
+        >
+          <input
+            type="text"
+            autoFocus
+            value={busca}
+            onChange={e => setBusca(e.target.value)}
+            placeholder={placeholderBusca}
+            className="w-full text-[11px] font-normal px-2 py-1.5 border-b border-slate-100 focus:outline-none"
+          />
+          <div className="overflow-y-auto py-1">
+            {filtrados.length === 0 ? (
+              <p className="px-2 py-1.5 text-[11px] text-slate-400">{vazioMsg}</p>
+            ) : filtrados.map(v => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => { onSelecionar(v); setAberto(false) }}
+                className={`w-full text-left px-2 py-1.5 text-[11px] font-normal hover:bg-slate-50 transition-colors ${v === selecionado ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-700'}`}
+              >
+                {v}
+              </button>
+            ))}
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   )
@@ -191,7 +266,7 @@ function QuadroTable({ quadro, activePeriods, year, onSalvarPeso, pessoaSelector
                       <td className="px-2 py-2.5 text-center text-slate-600">{fmtNum(d.realizado, row.metrica)}</td>
                       <td className="px-2 py-2.5 text-center">
                         <span className={`inline-block px-1.5 py-0.5 rounded-full text-[10px] ${badgeClass(ating)}`}>
-                          {pct(ating)}
+                          {pctAting(ating)}
                         </span>
                       </td>
                       <td className="px-2 py-2.5 text-center text-slate-500">{pct(contrib)}</td>
@@ -207,8 +282,6 @@ function QuadroTable({ quadro, activePeriods, year, onSalvarPeso, pessoaSelector
   )
 }
 
-// Hook interno: busca a lista de nomes (consultor/mecânico) e mantém o estado
-// de busca + o nome que efetivamente bateu (exato, case-insensitive).
 function usePessoaFiltro(fetchLista, year) {
   const [lista, setLista] = useState([])
   useEffect(() => {
@@ -216,15 +289,8 @@ function usePessoaFiltro(fetchLista, year) {
     fetchLista(year).then(l => { if (ativo) setLista(l) })
     return () => { ativo = false }
   }, [year])
-
-  const [busca, setBusca] = useState('')
-  const aplicado = useMemo(() => {
-    const alvo = busca.trim()
-    if (!alvo) return null
-    return lista.find(v => v.localeCompare(alvo, 'pt-BR', { sensitivity: 'base' }) === 0) || null
-  }, [busca, lista])
-
-  return { lista, busca, setBusca, aplicado }
+  const [aplicado, setAplicado] = useState(null)
+  return { lista, aplicado, setAplicado }
 }
 
 export default function KpiBloco3Servicos() {
@@ -271,13 +337,6 @@ export default function KpiBloco3Servicos() {
 
       <PeriodSelector state={periodState} />
 
-      <datalist id={DATALIST_CONSULTOR}>
-        {consultorFiltro.lista.map(v => <option key={v} value={v} />)}
-      </datalist>
-      <datalist id={DATALIST_MECANICO}>
-        {mecanicoFiltro.lista.map(v => <option key={v} value={v} />)}
-      </datalist>
-
       <div className="space-y-6">
         {quadrosComPeso.map((quadro, idx) => {
           const ehConsultor = quadro.tituloGerente === QUADRO_CONSULTOR
@@ -293,12 +352,13 @@ export default function KpiBloco3Servicos() {
               icon={Wrench}
               pessoaSelector={filtro && (
                 <PessoaSelector
-                  datalistId={ehConsultor ? DATALIST_CONSULTOR : DATALIST_MECANICO}
-                  busca={filtro.busca}
-                  onBuscaChange={filtro.setBusca}
-                  onLimpar={() => filtro.setBusca('')}
-                  aplicado={filtro.aplicado}
-                  placeholder={ehConsultor ? 'Todos os consultores' : 'Todos os mecânicos'}
+                  lista={filtro.lista}
+                  selecionado={filtro.aplicado}
+                  onSelecionar={filtro.setAplicado}
+                  onLimpar={() => filtro.setAplicado(null)}
+                  placeholderTodos={ehConsultor ? 'Todos os consultores' : 'Todos os mecânicos'}
+                  placeholderBusca={ehConsultor ? 'Buscar consultor...' : 'Buscar mecânico...'}
+                  vazioMsg={ehConsultor ? 'Nenhum consultor encontrado.' : 'Nenhum mecânico encontrado.'}
                 />
               )}
             />

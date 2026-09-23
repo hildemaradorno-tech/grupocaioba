@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import { getSupabaseAdmin } from '../services/supabaseAdmin.js'
 import { isConfigured } from '../services/graphClient.js'
 import {
   getResultados, getBloco1, getBloco2,
@@ -35,7 +36,7 @@ import {
   sincronizacaoEmAndamento,
 } from '../services/kpiSyncService.js'
 import { getPesos, setPeso, aplicarPesos } from '../services/kpiPesos.js'
-import { getMetaPecasPeriodos, getMetaOficinaPeriodos } from '../services/kpiMetas.js'
+import { getMetaPecasPeriodos, getMetaOficinaPeriodos, getMetaMecanicoPeriodos } from '../services/kpiMetas.js'
 
 const router = Router()
 
@@ -408,7 +409,7 @@ const BLOCO_SERVICOS_TEMPLATE = [
  *                 'consultor' sem seleção = todos os tipos mecanico+funilaria+
  *                 terceiros; com consultor selecionado = só a meta dele).
  */
-function mergeBlocoServicos(quadros, consultorData, mecanicoData, metaConsultor) {
+function mergeBlocoServicos(quadros, consultorData, mecanicoData, metaConsultor, metaMecanico) {
   const r = (v) => (v != null ? Math.round(v) : null)
   const p = (v) => (v != null ? v : null)
 
@@ -427,7 +428,7 @@ function mergeBlocoServicos(quadros, consultorData, mecanicoData, metaConsultor)
     if (quadro.tituloGerente === 'MECÂNICO') {
       const kpis = quadro.kpis.map(kpi => {
         switch (kpi.id) {
-          case 1: return injectPeriods(kpi, mecanicoData?.vlLiquido ?? {}, r)
+          case 1: return injectMeta(injectPeriods(kpi, mecanicoData?.vlLiquido ?? {}, r), metaMecanico)
           case 2: return injectPeriods(kpi, mecanicoData?.eficacia ?? {}, p)
           case 3: return injectPeriods(kpi, mecanicoData?.produtividade ?? {}, p)
         }
@@ -560,11 +561,48 @@ router.get('/bloco3-pecas', requireConfig, wrap(async (req, res) => {
   res.json(quadros)
 }))
 
+// Só nomes de funcionários ATIVOS (cadastro dim_funcionarios: sem situação, "1" em
+// atividade ou "9" férias, e sem data de demissão) entram nos seletores de pessoa.
+const _ativosCache = { ts: 0, porNome: null }
+const normPessoa = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toUpperCase().replace(/s+/g, ' ')
+// setorTrecho (opcional): só quem está agrupado num setor cujo nome contém o trecho (ex.: 'mecanic').
+async function filtrarAtivos(nomes, setorTrecho = null) {
+  const admin = getSupabaseAdmin()
+  if (!admin) return nomes
+  if (!_ativosCache.porNome || Date.now() - _ativosCache.ts > 60_000) {
+    const { data: setores, error: eS } = await admin.from('dim_setores').select('id, nome_setor')
+    if (eS) return nomes
+    const nomeSetor = new Map((setores || []).map(x => [String(x.id), normPessoa(x.nome_setor)]))
+    const porNome = new Map()
+    for (let from = 0; ; from += 1000) {
+      const { data, error } = await admin.from('dim_funcionarios')
+        .select('nome_funcionario, situacao_funcionario, data_demissao, setor_ids').order('id').range(from, from + 999)
+      if (error) return nomes
+      for (const f of data || []) {
+        const sit = f.situacao_funcionario
+        if (f.data_demissao || !(!sit || sit === '1' || sit === '9')) continue
+        const k = normPessoa(f.nome_funcionario)
+        if (!porNome.has(k)) porNome.set(k, new Set())
+        for (const id of (f.setor_ids || [])) { const n = nomeSetor.get(String(id)); if (n) porNome.get(k).add(n) }
+      }
+      if (!data || data.length < 1000) break
+    }
+    _ativosCache.porNome = porNome
+    _ativosCache.ts = Date.now()
+  }
+  const trecho = setorTrecho ? normPessoa(setorTrecho) : null
+  return nomes.filter(n => {
+    const setores = _ativosCache.porNome.get(normPessoa(n))
+    if (!setores) return false
+    return !trecho || [...setores].some(x => x.includes(trecho))
+  })
+}
+
 // GET /api/kpi/extractor/balcao/vendedores?year=2026 — lista de vendedores do
 // Balcão pro seletor da tela de Peças (bloco VENDEDOR DE PEÇAS)
 router.get('/extractor/balcao/vendedores', requireConfig, wrap(async (req, res) => {
   const year = parseInt(req.query.year) || new Date().getFullYear()
-  const vendedores = await listVendedoresBalcao(year, null)
+  const vendedores = await filtrarAtivos(await listVendedoresBalcao(year, null))
   res.json({ year, vendedores })
 }))
 
@@ -596,11 +634,15 @@ router.get('/bloco3-servicos', requireConfig, wrap(async (req, res) => {
       : await getMetaOficinaPeriodos(year)
   } catch (_) { /* sem meta */ }
 
+  let metaMecanico = null
+  try { metaMecanico = await getMetaMecanicoPeriodos(year, mecanico) } catch (_) { /* sem meta */ }
+
   let quadros = mergeBlocoServicos(
     BLOCO_SERVICOS_TEMPLATE,
     { pecasOficina, servicos },
     { vlLiquido: rof042?.vlLiquido ?? null, eficacia: horas.eficacia, produtividade: horas.produtividade },
-    metaConsultor
+    metaConsultor,
+    metaMecanico
   )
   const pesos = await getPesos('bloco3-servicos')
   quadros = aplicarPesos(quadros, pesos)
@@ -613,7 +655,7 @@ router.get('/bloco3-servicos', requireConfig, wrap(async (req, res) => {
 router.get('/extractor/consultores', requireConfig, wrap(async (req, res) => {
   const year = parseInt(req.query.year) || new Date().getFullYear()
   const [a, b] = await Promise.all([listConsultoresOficina(year, null), listConsultoresServicos(year, null)])
-  const consultores = [...new Set([...a, ...b])].sort((x, y) => x.localeCompare(y, 'pt-BR'))
+  const consultores = (await filtrarAtivos([...new Set([...a, ...b])])).sort((x, y) => x.localeCompare(y, 'pt-BR'))
   res.json({ year, consultores })
 }))
 
@@ -622,7 +664,7 @@ router.get('/extractor/consultores', requireConfig, wrap(async (req, res) => {
 router.get('/extractor/mecanicos', requireConfig, wrap(async (req, res) => {
   const year = parseInt(req.query.year) || new Date().getFullYear()
   const [a, b] = await Promise.all([listMecanicosROF042(year, null), listMecanicosROF096(year, null)])
-  const mecanicos = [...new Set([...a, ...b])].sort((x, y) => x.localeCompare(y, 'pt-BR'))
+  const mecanicos = (await filtrarAtivos([...new Set([...a, ...b])], 'mecanic')).sort((x, y) => x.localeCompare(y, 'pt-BR'))
   res.json({ year, mecanicos })
 }))
 

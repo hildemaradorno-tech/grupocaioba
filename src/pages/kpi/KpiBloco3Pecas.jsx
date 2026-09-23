@@ -39,6 +39,11 @@ function pct(val) {
   return `${(val * 100).toFixed(1)}%`
 }
 
+function pctAting(val) {
+  if (val === null || val === undefined) return '–'
+  return `${(val * 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`
+}
+
 function fmtNum(v, metrica) {
   if (v === null || v === undefined) return '–'
   if (typeof v !== 'number') return v
@@ -267,7 +272,7 @@ function QuadroTable({ quadro, activePeriods, year, onSalvarPeso, vendedorSelect
                       <td className="px-2 py-2.5 text-center text-slate-600">{fmtNum(d.realizado, row.metrica)}</td>
                       <td className="px-2 py-2.5 text-center">
                         <span className={`inline-block px-1.5 py-0.5 rounded-full text-[10px] ${badgeClass(ating)}`}>
-                          {pct(ating)}
+                          {pctAting(ating)}
                         </span>
                       </td>
                       <td className="px-2 py-2.5 text-center text-slate-500">{pct(contrib)}</td>
