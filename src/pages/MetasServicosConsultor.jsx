@@ -1,6 +1,7 @@
 ﻿import React, { useEffect, useState, useMemo } from 'react'
 import { useSessionState } from '../hooks/useSessionState'
-import { Plus, Trash2, X, AlertTriangle, ChevronRight, ChevronDown, Cog, Loader2, CheckCircle2, Sparkles, Pencil, Info } from 'lucide-react'
+import { Plus, Trash2, X, AlertTriangle, ChevronRight, ChevronDown, Cog, Loader2, CheckCircle2, Sparkles, Pencil, Info, Search } from 'lucide-react'
+import BotaoAcaoRetratil from '../components/BotaoAcaoRetratil'
 import { useAuth } from '../context/AuthContext'
 import { SearchCombobox } from '../components/SearchCombobox'
 import { EmpresaMultiFilter, empresaParam, filtrarPorEmpresas, empresaUnica } from '../components/EmpresaMultiFilter'
@@ -68,7 +69,10 @@ function PctInput({ value, onChange }) {
   )
 }
 
-export default function MetasServicosConsultor() {
+// empresaExterna/anoExterno/filtroVisuExterno: quando a tela vem embutida como aba (Planejamento de Metas -
+// Pós-Vendas), Empresa/Ano/Total-Peças-Serviços ficam só no cabeçalho compartilhado das abas — aqui eles
+// substituem o valor salvo. aoDefinirBotaoAcao: registra o botão "+ Adicionar Consultor" nesse cabeçalho.
+export default function MetasServicosConsultor({ empresaExterna = null, anoExterno = null, filtroVisuExterno = null, setFiltroVisuExterno = null, aoDefinirBotaoAcao = null } = {}) {
   const [empresas,      setEmpresas]      = useState([])
   const [departamentos, setDepartamentos] = useState([])
   const [setores,       setSetores]       = useState([])
@@ -79,11 +83,18 @@ export default function MetasServicosConsultor() {
   const [mecRows,       setMecRows]       = useState([]) // linhas brutas de fato_rascunho_metas_servicos_mecanico
   const [totaisTer,     setTotaisTer]     = useState({}) // { empresaId: { mes: servicos } }
   const [totaisFun,     setTotaisFun]     = useState({}) // { empresaId: { mes: { servicos, pecas } } }
-  const [filtroVisu,    setFiltroVisu]    = useSessionState('mpvs_servicos_visu', 'total')
+  const [filtroVisuSalvo, setFiltroVisuSalvo] = useSessionState('mpvs_servicos_visu', 'total')
+  const filtroVisu    = filtroVisuExterno ?? filtroVisuSalvo
+  const setFiltroVisu = setFiltroVisuExterno ?? setFiltroVisuSalvo
   const [loading,       setLoading]       = useState(false)
   const [error,         setError]         = useState(null)
-  const [filtroEmpresa, setFiltroEmpresa] = useSessionState('mpvs_servicos_empresas', [])
-  const [filtroAno,     setFiltroAno]     = useSessionState('mpvs_servicos_ano', anoAtual)
+  const [filtroEmpresaSalva, setFiltroEmpresaSalva] = useSessionState('mpvs_servicos_empresas', [])
+  const [filtroAnoSalvo,     setFiltroAnoSalvo]     = useSessionState('mpvs_servicos_ano', anoAtual)
+  const filtroEmpresa = empresaExterna ?? filtroEmpresaSalva
+  const filtroAno     = anoExterno ?? filtroAnoSalvo
+  const filtrosExternos = empresaExterna != null || anoExterno != null
+  const [filtroSetor,    setFiltroSetor]    = useSessionState('msc_setor', '')
+  const [filtroConsultor,setFiltroConsultor]= useSessionState('msc_consultor', '') // busca por nome (texto livre)
   const { hasPermission } = useAuth()
   const canEdit = hasPermission('/metas/pos-vendas/servicos_pecas', 'editar')
   const canDelete = hasPermission('/metas/pos-vendas/servicos_pecas', 'excluir')
@@ -104,7 +115,7 @@ export default function MetasServicosConsultor() {
   const [salvando,           setSalvando]           = useState(false)
   const [erroModal,          setErroModal]          = useState(null)
   useEffect(() => { loadLookups() }, [])
-  useEffect(() => { loadDados() }, [filtroEmpresa, filtroAno])
+  useEffect(() => { setFiltroSetor(''); setFiltroConsultor(''); loadDados() }, [filtroEmpresa, filtroAno])
 
   const sortNome = (arr, f) => [...arr].sort((a,b)=>(a[f]||'').localeCompare(b[f]||''))
 
@@ -169,6 +180,37 @@ export default function MetasServicosConsultor() {
     return map
   }, [boxes, setores])
 
+  // Resolve setor/departamento de uma linha do consultor — mesma regra usada pra montar a árvore:
+  // linhas antigas (vinculadas a um Box) reroteiam pro setor atual daquele box; linhas novas já vêm
+  // com setor_id direto (Mecânica/Funilaria). Usado tanto na árvore quanto nos filtros de Departamento/Setor.
+  const resolverSetorDept = useMemo(() => {
+    const setorMap    = Object.fromEntries(setores.map(s => [s.id, s.nome_setor]))
+    const setorObjMap = Object.fromEntries(setores.map(s => [s.id, s]))
+    const deptMap      = Object.fromEntries(departamentos.map(d => [d.id, d.nome_departamento]))
+    return (row) => {
+      const sId = (row.box_id && boxToSetorMap[row.box_id])
+        || (row.setor_id && setorMap[row.setor_id] ? row.setor_id : null)
+        || row.setor_id || '—'
+      const did = setorObjMap[sId]?.departamento_id || row.departamento_id || '—'
+      return { sId, sNome: setorMap[sId] || row.setor_nome || '—', did, dNome: deptMap[did] || row.departamento_nome || '—' }
+    }
+  }, [setores, departamentos, boxToSetorMap])
+
+  const setoresDisponiveis = useMemo(() => {
+    const seen = new Map()
+    dados.forEach(r => { const { sId, sNome } = resolverSetorDept(r); if (sId !== '—' && !seen.has(sId)) seen.set(sId, sNome) })
+    return [...seen.entries()].map(([id, nome]) => ({ id, nome })).sort((a,b) => a.nome.localeCompare(b.nome))
+  }, [dados, resolverSetorDept])
+
+  const dadosFiltrados = useMemo(() => dados.filter(r => {
+    if (filtroConsultor && !(r.colaborador_nome || '').toLowerCase().includes(filtroConsultor.trim().toLowerCase())) return false
+    if (filtroSetor) {
+      const { sId } = resolverSetorDept(r)
+      if (sId !== filtroSetor) return false
+    }
+    return true
+  }), [dados, filtroConsultor, filtroSetor, resolverSetorDept])
+
   // Totais do mecânico SEMPRE por SETOR (não a empresa toda somada, mas também não por box
   // isolado) — o setor Mecânica agrega todos os boxes dele (ex: Mecânica + Express) como uma
   // única referência de distribuição pros consultores. Resolve o box de cada linha pelo cadastro
@@ -197,7 +239,7 @@ export default function MetasServicosConsultor() {
     const funcObjMap = Object.fromEntries(funcionarios.map(f => [f.id, f]))
 
     const t = {}
-    dados.forEach(row => {
+    dadosFiltrados.forEach(row => {
       const colid = row.colaborador_id
       const func  = funcObjMap[colid]
 
@@ -245,7 +287,7 @@ export default function MetasServicosConsultor() {
       }
     })
     return t
-  }, [dados, totaisMec, totaisTer, totaisFun, filtroVisu, setores, departamentos, boxToSetorMap, funcionarios])
+  }, [dadosFiltrados, totaisMec, totaisTer, totaisFun, filtroVisu, setores, departamentos, boxToSetorMap, funcionarios])
 
   const toggle = (set, setter, key) => setter(prev => { const n=new Set(prev); n.has(key)?n.delete(key):n.add(key); return n })
 
@@ -468,40 +510,46 @@ export default function MetasServicosConsultor() {
   const grupoMeses = aggTree(tree)
   const NCOLS = 15
 
+  // Registra o botão "+ Adicionar Consultor" no cabeçalho compartilhado das abas (mesma linha das abas).
+  const abrirIncluirRef = React.useRef(abrirIncluir)
+  abrirIncluirRef.current = abrirIncluir
+  useEffect(() => {
+    if (!aoDefinirBotaoAcao) return
+    aoDefinirBotaoAcao(canEdit
+      ? <BotaoAcaoRetratil texto="Adicionar Consultor" onClick={() => abrirIncluirRef.current()} />
+      : null)
+    return () => aoDefinirBotaoAcao(null)
+  }, [aoDefinirBotaoAcao, canEdit])
+
   return (
     <div className="flex flex-col h-full p-6 gap-4">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Cog size={24} className="text-indigo-600" />
-          <div>
-            <h1 className="text-2xl font-bold text-slate-800">Metas - Consultor Serviços</h1>
-            <p className="text-xs text-slate-400">Distribuição percentual sobre Mecânica + Terceiros</p>
+      <div className="flex flex-col gap-3 bg-white border border-slate-200 rounded-xl p-4">
+        <div className="flex items-end gap-3">
+          {!filtrosExternos && (
+            <>
+              <div className="flex-1 max-w-xs"><label className={LBL}>Empresa</label>
+                <EmpresaMultiFilter value={filtroEmpresa} onChange={setFiltroEmpresaSalva} empresas={empresas} /></div>
+              <div className="w-28"><label className={LBL}>Ano</label>
+                <select className={SEL} value={filtroAno} onChange={e => setFiltroAnoSalvo(Number(e.target.value))}>
+                  {ANOS.map(a => <option key={a} value={a}>{a}</option>)}
+                </select></div>
+            </>
+          )}
+          <div className="flex-1 max-w-xs">
+            <label className={LBL}>Setor</label>
+            <select className={SEL} value={filtroSetor} onChange={e => setFiltroSetor(e.target.value)}>
+              <option value="">Todos os setores</option>
+              {setoresDisponiveis.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
+            </select>
+          </div>
+          <div className="flex-1 max-w-xs">
+            <label className={LBL}>Consultor</label>
+            <div className="relative">
+              <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input type="text" className={`${SEL} pl-8`} placeholder="Buscar por nome..." value={filtroConsultor} onChange={e => setFiltroConsultor(e.target.value)} />
+            </div>
           </div>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="flex rounded-lg border border-slate-300 overflow-hidden text-xs font-semibold">
-            {[
-              { key: 'total',    label: 'Total' },
-              { key: 'pecas',    label: 'Peças' },
-              { key: 'servicos', label: 'Serviços' },
-            ].map(({ key, label }) => (
-              <button key={key} onClick={() => setFiltroVisu(key)}
-                className={`px-3 py-2 transition-colors ${filtroVisu === key ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
-                {label}
-              </button>
-            ))}
-          </div>
-          {canEdit && <button onClick={abrirIncluir} className={BTN_PRI}><Plus size={16}/> Adicionar Consultor</button>}
-        </div>
-      </div>
-
-      <div className="flex items-end gap-3 bg-white border border-slate-200 rounded-xl p-4">
-        <div className="flex-1 max-w-xs"><label className={LBL}>Empresa</label>
-          <EmpresaMultiFilter value={filtroEmpresa} onChange={setFiltroEmpresa} empresas={empresas} /></div>
-        <div className="w-28"><label className={LBL}>Ano</label>
-          <select className={SEL} value={filtroAno} onChange={e => setFiltroAno(Number(e.target.value))}>
-            {ANOS.map(a => <option key={a} value={a}>{a}</option>)}
-          </select></div>
       </div>
 
       {error && <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm"><AlertTriangle size={15}/> {error} <button onClick={()=>setError(null)} className="ml-auto"><X size={14}/></button></div>}
@@ -578,28 +626,30 @@ export default function MetasServicosConsultor() {
 
                           {expandedEmpresas.has(empId) && Object.entries(emp.depts).map(([deptId, dept]) => {
                             const dKey=`${empId}§${deptId}`; const dMeses=aggDept(dept); const dTotal=sumArr(dMeses)
+                            // Situação por Departamento (a aprovação é por departamento, não mais por setor):
+                            // olha todos os meses com valor de todos os setores/consultores dele — se algum
+                            // não estiver aprovado, o departamento inteiro fica "Pendente".
+                            let deptTemValor = false, deptAprovado = true
+                            Object.values(dept.setores).forEach(setor => Object.values(setor.colabs).forEach(co => Object.values(co.meses).forEach(m => {
+                              if (Number(m.meta_faturamento) > 0) {
+                                deptTemValor = true
+                                if (cellState(m.meta_faturamento, m.meta_aprovada) !== 'ok') deptAprovado = false
+                              }
+                            })))
+                            const deptStatusLabel = deptAprovado ? 'APROVADO' : 'AGUARDANDO APROVACAO'
                             return (
                               <React.Fragment key={deptId}>
                                 <tr className="cursor-pointer bg-emerald-50 hover:bg-emerald-100 transition-colors" onClick={()=>toggle(expandedDepts,setExpandedDepts,dKey)}>
                                   <td className="px-3 py-1.5 text-slate-800 font-bold sticky left-0 bg-emerald-50 z-10 whitespace-nowrap"><div className="flex items-center gap-2 pl-8">{expandedDepts.has(dKey)?<ChevronDown size={13}/>:<ChevronRight size={13}/>}<span className="text-slate-500 font-normal mr-0.5">Departamento:</span><span className="font-bold">{dept.nome}</span></div></td>
                                   {dMeses.map((v,i)=><td key={i} className="px-1 py-1.5 text-right text-xs font-semibold text-slate-700 whitespace-nowrap">{v>0?fmtBRL(v):'—'}</td>)}
                                   <td className="px-2 py-1.5 text-right text-xs font-bold text-indigo-700 bg-indigo-50 whitespace-nowrap">{dTotal>0?fmtBRL(dTotal):'—'}</td>
-                                  <td colSpan="2"/>
+                                  <td className="px-2 py-1.5 text-center whitespace-nowrap">
+                                    {deptTemValor && <span className={`px-2 py-0.5 rounded-full text-xs font-semibold whitespace-nowrap ${STATUS_CLS[deptStatusLabel]||'bg-slate-100 text-slate-500'}`}>{STATUS_DISPLAY[deptStatusLabel] || deptStatusLabel}</span>}
+                                  </td>
                                 </tr>
 
                                 {expandedDepts.has(dKey) && Object.entries(dept.setores).map(([sId, setor]) => {
                                   const sKey=`${dKey}§${sId}`; const sMeses=aggSetor(setor); const sTotal=sumArr(sMeses)
-                                  // Situação por Setor (não mais por consultor individual): olha todos os
-                                  // meses com valor de todos os consultores desse setor — se algum não
-                                  // estiver aprovado, o setor inteiro fica "Pendente".
-                                  let setorTemValor = false, setorAprovado = true
-                                  Object.values(setor.colabs).forEach(co => Object.values(co.meses).forEach(m => {
-                                    if (Number(m.meta_faturamento) > 0) {
-                                      setorTemValor = true
-                                      if (cellState(m.meta_faturamento, m.meta_aprovada) !== 'ok') setorAprovado = false
-                                    }
-                                  }))
-                                  const setorStatusLabel = setorAprovado ? 'APROVADO' : 'AGUARDANDO APROVACAO'
                                   const pctSetor = sumPctPorMes(setor.colabs)
                                   const mecRef = totaisMec[empId]?.[sId] || {}
                                   const terRef = totaisTer[empId] || {}
@@ -640,9 +690,8 @@ export default function MetasServicosConsultor() {
                                           )
                                         })}
                                         <td className="px-2 py-1.5 text-right text-xs font-semibold text-indigo-600 bg-indigo-50/60 whitespace-nowrap">{sTotal>0?fmtBRL(sTotal):'—'}</td>
-                                        <td className="px-2 py-1.5 text-center whitespace-nowrap">
-                                          {setorTemValor && <span className={`px-2 py-0.5 rounded-full text-xs font-semibold whitespace-nowrap ${STATUS_CLS[setorStatusLabel]||'bg-slate-100 text-slate-500'}`}>{STATUS_DISPLAY[setorStatusLabel] || setorStatusLabel}</span>}
-                                        </td>
+                                        {/* Situação fica só no Departamento — a aprovação é por departamento, não por setor. */}
+                                        <td />
                                       </tr>
 
                                       {expandedSetores.has(sKey) && Object.entries(setor.colabs).map(([colabId, colab]) => {

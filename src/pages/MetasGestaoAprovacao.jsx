@@ -205,9 +205,13 @@ export default function MetasGestaoAprovacao() {
       if (tipo === 'pecas')     await apiService.approveMetasPecasEmpresa(empId, filtroAno)
       if (tipo === 'mecanico')  await apiService.approveMetasMecanicoEmpresa(empId, filtroAno)
       if (tipo === 'consultor') {
-        // O serviço do mecânico está vinculado ao consultor: aprovar o consultor aprova os mecânicos junto.
+        // Mecânico, Funilaria e Terceiros estão vinculados ao consultor (o valor do
+        // consultor é a mesma meta de Oficina redistribuída entre eles): aprovar o
+        // consultor aprova os três juntos.
         await apiService.approveMetasConsultorEmpresa(empId, filtroAno)
         await apiService.approveMetasMecanicoEmpresa(empId, filtroAno)
+        await apiService.approveMetasFunilariaEmpresa(empId, filtroAno)
+        await apiService.approveMetasTerceirosEmpresa(empId, filtroAno)
       }
       await load()
     } catch (err) { setError(err.message || String(err)) }
@@ -230,6 +234,8 @@ export default function MetasGestaoAprovacao() {
       if (tipo === 'consultor') {
         await apiService.unapproveMetasConsultorEmpresa(empId, filtroAno)
         await apiService.unapproveMetasMecanicoEmpresa(empId, filtroAno)
+        await apiService.unapproveMetasFunilariaEmpresa(empId, filtroAno)
+        await apiService.unapproveMetasTerceirosEmpresa(empId, filtroAno)
       }
       await load()
     } catch (err) { setError(err.message || String(err)) }

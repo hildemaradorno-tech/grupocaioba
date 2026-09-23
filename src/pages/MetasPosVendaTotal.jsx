@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react'
 import { useSessionState } from '../hooks/useSessionState'
-import { TrendingUp, ChevronRight, ChevronDown, Loader2, Calculator, CheckCircle2, Ban, AlertTriangle } from 'lucide-react'
+import { TrendingUp, ChevronRight, ChevronDown, Loader2, Calculator, CheckCircle2, Ban, AlertTriangle, Search } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import BotaoIconeTooltip from '../components/BotaoIconeTooltip'
 import TooltipTexto from '../components/TooltipTexto'
@@ -29,22 +29,25 @@ const sumArr = (a) => a.reduce((s, v) => s + v, 0)
 const STATUS_CLS = { 'AGUARDANDO APROVACAO': 'bg-amber-100 text-amber-700', 'APROVADO': 'bg-green-100 text-green-700' }
 const STATUS_DISPLAY = { 'AGUARDANDO APROVACAO': 'Pendente', 'APROVADO': 'Aprovado' }
 
-// Situação do Setor: pendente se qualquer mês com valor de qualquer colaborador dele não estiver aprovado.
-const statusSetor = (setor) => {
+// Situação do Departamento (a aprovação é por departamento, não por setor): pendente se qualquer mês com
+// valor de qualquer colaborador de qualquer setor dele não estiver aprovado.
+const statusDept = (dept) => {
   let tem = false, pend = false
-  Object.values(setor.boxes).forEach(b => Object.values(b.colabs).forEach(co => {
+  Object.values(dept.setores).forEach(setor => Object.values(setor.boxes).forEach(b => Object.values(b.colabs).forEach(co => {
     if (co.tem) tem = true
     if (co.pend) pend = true
-  }))
+  })))
   return { tem, label: pend ? 'AGUARDANDO APROVACAO' : 'APROVADO' }
 }
 
-// Aprovação por setor. Peças aprova por setor. O Mecânico está vinculado ao consultor e segue a aprovação dele;
-// só quando a empresa não tem consultor (ex.: unidades de Motos) o Mecânico é aprovado por conta própria.
+// Aprovação por departamento. O departamento Oficina aprova Consultores + Mecânica + Funilaria/Pintura juntos
+// (o Mecânico está vinculado ao Consultor; só quando a empresa não tem consultor — ex.: unidades de Motos —
+// o Mecânico é aprovado por conta própria). Peças aprova pelo(s) setor(es) do departamento Balcão Peças.
 // kind: 'pecas' | 'consultor' | 'mecanico' | null (sem aprovação própria).
-const infoAprovacaoSetor = (setor, empNode) => {
+const infoAprovacaoDept = (dept, empNode) => {
+  const setorEntries = Object.entries(dept.setores)
   const tipos = new Set()
-  Object.values(setor.boxes).forEach(b => Object.values(b.colabs).forEach(co => co.linhas.forEach(l => tipos.add(l._tipo))))
+  setorEntries.forEach(([, s]) => Object.values(s.boxes).forEach(b => Object.values(b.colabs).forEach(co => co.linhas.forEach(l => tipos.add(l._tipo)))))
   const empresaTemConsultor = Object.values(empNode.depts).some(d => Object.values(d.setores).some(s2 =>
     Object.values(s2.boxes).some(b => Object.values(b.colabs).some(co => co.linhas.some(l => l._tipo === 'CONSULTOR')))))
   const kind = tipos.has('PECAS') ? 'pecas'
@@ -52,14 +55,28 @@ const infoAprovacaoSetor = (setor, empNode) => {
     : (tipos.has('MECANICO') && !empresaTemConsultor) ? 'mecanico'
     : null
   if (!kind) return { kind: null }
-  const st = statusSetor(setor)
-  let pend = st.label === 'AGUARDANDO APROVACAO'
-  let tem = st.tem
+  let pend = false, tem = false
   const linhasAprov = []
-  if (kind !== 'mecanico') Object.values(setor.boxes).forEach(b => Object.values(b.colabs).forEach(co => co.linhas.forEach(l => { if (l._tipo === (kind === 'pecas' ? 'PECAS' : 'CONSULTOR')) linhasAprov.push(l) })))
+  const setorIdsPecas = []
+  if (kind !== 'mecanico') {
+    // Peças: soma cada setor do departamento (normalmente só um). Consultor: os setores de origem
+    // (Mecânica / Funilaria) onde a distribuição do consultor está lançada.
+    const alvo = kind === 'pecas' ? 'PECAS' : 'CONSULTOR'
+    setorEntries.forEach(([sId, s]) => {
+      let sTem = false, sPend = false
+      Object.values(s.boxes).forEach(b => Object.values(b.colabs).forEach(co => {
+        if (co.linhas.some(l => l._tipo === alvo)) {
+          if (co.tem) sTem = true
+          if (co.pend) sPend = true
+          co.linhas.forEach(l => { if (l._tipo === alvo) linhasAprov.push(l) })
+        }
+      }))
+      if (sTem) { tem = true; if (kind === 'pecas') setorIdsPecas.push(sId) }
+      if (sPend) pend = true
+    })
+  }
   if (kind === 'consultor' || kind === 'mecanico') {
     // A situação considera todos os mecânicos da empresa (a aprovação vale para todos juntos).
-    if (kind === 'mecanico') { pend = false; tem = false }
     Object.values(empNode.depts).forEach(d => Object.values(d.setores).forEach(s2 => Object.values(s2.boxes).forEach(b => Object.values(b.colabs).forEach(co => {
       if (co.linhas.some(l => l._tipo === 'MECANICO')) {
         if (co.tem) tem = true
@@ -68,10 +85,44 @@ const infoAprovacaoSetor = (setor, empNode) => {
       }
     }))))
   }
-  return { kind, pend, tem, ultimo: ultimaAprovacao(linhasAprov) }
+  return { kind, pend, tem, ultimo: ultimaAprovacao(linhasAprov), setorIdsPecas }
 }
 
 const SEM_FILTRO = []
+
+// Corta a árvore pelos filtros de Departamento / Setor / Box / busca de Funcionário — os VALORES exibidos
+// (totais de cada linha, inclusive Empresa/Segmento/Grupo) passam a refletir só o que sobrou do corte.
+// A situação de aprovação (pend/aprovado, botões) nunca usa esta árvore podada — sempre a árvore cheia,
+// porque aprovar/pendenciar vale pro departamento inteiro, não só pro que está filtrado no momento.
+function arvorePorFiltro(tree, { depto, setor, box, busca }) {
+  if (!depto && !setor && !box && !busca) return tree
+  const termo = (busca || '').trim().toLowerCase()
+  const out = {}
+  Object.entries(tree).forEach(([eId, emp]) => {
+    const depts = {}
+    Object.entries(emp.depts || {}).forEach(([dId, dept]) => {
+      if (depto && dId !== depto) return
+      const setores = {}
+      Object.entries(dept.setores || {}).forEach(([sId, st]) => {
+        if (setor && sId !== setor) return
+        const boxesOut = {}
+        Object.entries(st.boxes || {}).forEach(([bId, bx]) => {
+          if (box && bId !== box) return
+          const colabs = {}
+          Object.entries(bx.colabs || {}).forEach(([coId, co]) => {
+            if (termo && !(co.nome || '').toLowerCase().includes(termo)) return
+            colabs[coId] = co
+          })
+          if (Object.keys(colabs).length) boxesOut[bId] = { ...bx, colabs }
+        })
+        if (Object.keys(boxesOut).length) setores[sId] = { ...st, boxes: boxesOut }
+      })
+      if (Object.keys(setores).length) depts[dId] = { ...dept, setores }
+    })
+    if (Object.keys(depts).length) out[eId] = { ...emp, depts }
+  })
+  return out
+}
 
 // Selo de status do Setor / Departamento na Gestão de Aprovação: "Pendente" ou "Aprovado".
 const textoAprovacao = (ap) => {
@@ -80,9 +131,13 @@ const textoAprovacao = (ap) => {
   return ap.por ? `Aprovado por ${ap.por} em ${quando}` : `Aprovado em ${quando}`
 }
 const SeloStatus = ({ pend, aprovacao }) => {
-  const selo = (
-    <span className={`px-2 py-0.5 rounded-full text-[10px] font-normal whitespace-nowrap ${pend ? STATUS_CLS['AGUARDANDO APROVACAO'] : STATUS_CLS['APROVADO']}`}>
-      {pend ? STATUS_DISPLAY['AGUARDANDO APROVACAO'] : STATUS_DISPLAY['APROVADO']}
+  const selo = pend ? (
+    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300 text-[10px] font-normal whitespace-nowrap">
+      <AlertTriangle size={10} /> Pendente
+    </span>
+  ) : (
+    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-green-100 text-green-800 border border-green-300 text-[10px] font-normal whitespace-nowrap">
+      <CheckCircle2 size={10} /> Aprovado
     </span>
   )
   return pend ? selo : <TooltipTexto texto={textoAprovacao(aprovacao)}>{selo}</TooltipTexto>
@@ -115,13 +170,16 @@ const SituacaoNivel = ({ pend, tem }) => {
 }
 
 const SEL = 'border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500'
+const LBL = 'block text-xs font-semibold text-slate-600 mb-1'
+const SEL2 = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500'
 
 // somenteAprovado: mesma árvore da Gestão de Aprovação, só leitura e apenas com o que já está aprovado (aba Geral do Total Grupo).
-export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = false, somenteAprovado = false, anoExterno = null, empresasExterno = null, aoAlterarAprovacao = null } = {}) {
+export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = false, somenteAprovado = false, anoExterno = null, empresasExterno = null, filtroVisuExterno = null, setFiltroVisuExterno = null, aoAlterarAprovacao = null } = {}) {
   const modoAprovacao = modoAprovacaoProp || somenteAprovado
   const podeAgir = modoAprovacaoProp
-  const { hasPermission, isAdminEfetivo, usuarioId, userNome } = useAuth()
+  const { hasPermission, hasAction, usuarioId, userNome } = useAuth()
   const canEdit = hasPermission('/metas/gestao-aprovacao', 'editar')
+  const podePendenciar = hasAction('/metas/gestao-aprovacao', 'pendenciar')
   const [empresas,      setEmpresas]      = useState([])
   const [departamentos, setDepartamentos] = useState([])
   const [setores,       setSetores]       = useState([])
@@ -135,11 +193,14 @@ export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = 
   const [rowsFunilaria, setRowsFunilaria] = useState([])
   const [filtroAnoSalvo,     setFiltroAno]     = useSessionState('mpvs_servicos_ano', anoAtual)
   const [filtroEmpresaSalvo, setFiltroEmpresa] = useSessionState('mpvs_servicos_empresas', [])
-  const [filtroVisuSalvo,    setFiltroVisu]    = useSessionState('mpvs_servicos_visu', 'total')
+  const [filtroVisuSalvo,    setFiltroVisuAntigo] = useSessionState('mpvs_servicos_visu', 'total')
   // Na Gestão de Aprovação a tela usa o ano e as empresas da própria página e sempre o total.
   const filtroAno     = anoExterno ?? filtroAnoSalvo
-  const filtroEmpresa = modoAprovacao ? (empresasExterno ?? SEM_FILTRO) : filtroEmpresaSalvo
-  const filtroVisu    = modoAprovacao ? 'total' : filtroVisuSalvo
+  const filtroEmpresa = empresasExterno ?? (modoAprovacao ? SEM_FILTRO : filtroEmpresaSalvo)
+  // Empresa/Ano vêm de fora (cabeçalho compartilhado das abas, ou da própria Gestão de Aprovação).
+  const filtrosExternos = anoExterno != null || empresasExterno != null
+  const filtroVisu    = modoAprovacao ? 'total' : (filtroVisuExterno ?? filtroVisuSalvo)
+  const setFiltroVisu = setFiltroVisuExterno ?? setFiltroVisuAntigo
   const W1 = modoAprovacao ? 'w-[27rem] min-w-[27rem] max-w-[27rem]' : ''
   const [loading,       setLoading]       = useState(false)
   const [error,         setError]         = useState(null)
@@ -205,16 +266,18 @@ export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = 
 
   useEffect(() => { loadAll() }, [filtroEmpresa, filtroAno])
 
-  // Aprovar / Pendênciar um setor (Peças: só o setor; Serviços: consultores + mecânicos da empresa).
+  // Aprovar / Pendênciar um departamento (Peças: os setores dele; Oficina: consultores + mecânicos da empresa).
   const executarAcao = async () => {
     if (!confirmAcao) return
-    const { acao, kind, empresaId, setorId } = confirmAcao
+    const { acao, kind, empresaId, deptId, setorIds } = confirmAcao
     const usuario = { id: usuarioId, nome: userNome }
-    setAcaoRodando(`${empresaId}|${setorId}`); setConfirmAcao(null)
+    setAcaoRodando(`${empresaId}|${deptId}`); setConfirmAcao(null)
     try {
       if (kind === 'pecas') {
-        if (acao === 'aprovar') await apiService.approveMetasPecasSetor(empresaId, filtroAno, setorId, usuario)
-        else await apiService.unapproveMetasPecasSetor(empresaId, filtroAno, setorId, usuario)
+        for (const sId of (setorIds || [])) {
+          if (acao === 'aprovar') await apiService.approveMetasPecasSetor(empresaId, filtroAno, sId, usuario)
+          else await apiService.unapproveMetasPecasSetor(empresaId, filtroAno, sId, usuario)
+        }
       } else if (kind === 'mecanico') {
         if (acao === 'aprovar') await apiService.approveMetasMecanicoEmpresa(empresaId, filtroAno, usuario)
         else await apiService.unapproveMetasMecanicoEmpresa(empresaId, filtroAno, usuario)
@@ -237,10 +300,50 @@ export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = 
     [rowsPecas, rowsMecanico, rowsConsultor, rowsTerceiros, funcionarios, cargos, boxes, setores, departamentos, filtroVisu]
   )
 
+  // Filtros de Departamento / Setor / Box / Funcionário (busca) — só na aba Total (não em modo Aprovação).
+  const [filtroDepto, setFiltroDepto] = useSessionState('mpvt_depto', '')
+  const [filtroSetorT,setFiltroSetorT]= useSessionState('mpvt_setor', '')
+  const [filtroBoxT,  setFiltroBoxT]  = useSessionState('mpvt_box', '')
+  const [filtroColab, setFiltroColab] = useSessionState('mpvt_colab', '')
+
+  const departamentosDisponiveis = useMemo(() => {
+    const seen = new Map()
+    Object.values(tree).forEach(emp => Object.entries(emp.depts || {}).forEach(([id, d]) => { if (!seen.has(id)) seen.set(id, d.nome) }))
+    return [...seen.entries()].map(([id, nome]) => ({ id, nome })).sort((a,b) => (a.nome||'').localeCompare(b.nome||''))
+  }, [tree])
+
+  const setoresTDisponiveis = useMemo(() => {
+    const seen = new Map()
+    Object.values(tree).forEach(emp => Object.entries(emp.depts || {}).forEach(([dId, d]) => {
+      if (filtroDepto && dId !== filtroDepto) return
+      Object.entries(d.setores || {}).forEach(([id, s]) => { if (!seen.has(id)) seen.set(id, s.nome) })
+    }))
+    return [...seen.entries()].map(([id, nome]) => ({ id, nome })).sort((a,b) => (a.nome||'').localeCompare(b.nome||''))
+  }, [tree, filtroDepto])
+
+  const boxesTDisponiveis = useMemo(() => {
+    const seen = new Map()
+    Object.values(tree).forEach(emp => Object.entries(emp.depts || {}).forEach(([dId, d]) => {
+      if (filtroDepto && dId !== filtroDepto) return
+      Object.entries(d.setores || {}).forEach(([sId, s]) => {
+        if (filtroSetorT && sId !== filtroSetorT) return
+        Object.entries(s.boxes || {}).forEach(([id, b]) => { if (!seen.has(id)) seen.set(id, b.nome) })
+      })
+    }))
+    return [...seen.entries()].map(([id, nome]) => ({ id, nome })).sort((a,b) => (a.nome||'').localeCompare(b.nome||''))
+  }, [tree, filtroDepto, filtroSetorT])
+
+  // Árvore filtrada por Departamento/Setor/Box/Funcionário — usada pra exibir (valores e navegação). A
+  // situação de aprovação usa sempre a árvore cheia (`tree`), buscada por eId/dId conforme necessário.
+  const treeFiltrada = useMemo(
+    () => arvorePorFiltro(tree, { depto: filtroDepto, setor: filtroSetorT, box: filtroBoxT, busca: filtroColab }),
+    [tree, filtroDepto, filtroSetorT, filtroBoxT, filtroColab]
+  )
+
   // Chaves de cada nível da árvore: Grupo > Segmento > Empresa > Departamento > Setor > Box.
   const niveisChaves = () => {
     const emps = [], depts = [], sets = [], bxs = []
-    Object.entries(tree).forEach(([eId, emp]) => {
+    Object.entries(treeFiltrada).forEach(([eId, emp]) => {
       const eKey = `emp-${eId}`; emps.push(eKey)
       Object.entries(emp.depts || {}).forEach(([dId, dept]) => {
         const dKey = `${eKey}-d-${dId}`; depts.push(dKey)
@@ -250,7 +353,7 @@ export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = 
         })
       })
     })
-    const segs = agruparPorSegmento(Object.entries(tree), empresas).map(([l]) => l)
+    const segs = agruparPorSegmento(Object.entries(treeFiltrada), empresas).map(([l]) => l)
     return { segs, emps, depts, sets, bxs }
   }
 
@@ -309,13 +412,17 @@ export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = 
   const empList = empresas
     .filter(e => empresasComValor.has(e.id))
     .filter(e => !filtroEmpresa.length || filtroEmpresa.includes(e.id))
+    .filter(e => !!treeFiltrada[e.id]) // some da lista quando os filtros de Departamento/Setor/Box/Funcionário não deixam nada
 
   const empBlocos = empList.map(emp => {
     const eId   = emp.id
     const eNome = emp.empresa_fantasia || emp.empresa_nome || eId
     const eKey  = `emp-${eId}`
 
-    const empNode = tree[eId]
+    // empNode (podado): usado pros valores exibidos, que refletem só o que passou nos filtros.
+    // empNodeFull (cheio): usado pra situação de aprovação, que é sempre do departamento inteiro.
+    const empNode = treeFiltrada[eId]
+    const empNodeFull = tree[eId]
     const vTotal  = empNode ? aggEmpDedup(empNode) : Array(12).fill(0)
 
     const empOpen = isOpen(eKey)
@@ -323,11 +430,11 @@ export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = 
 
     // Empresa com algum setor (Peças / Consultores) pendente de aprovação, e se tem algo aprovável.
     let temPend = false, temAprov = false
-    if (modoAprovacao && empNode) {
-      Object.values(empNode.depts).forEach(d => Object.values(d.setores).forEach(st => {
-        const ap = infoAprovacaoSetor(st, empNode)
+    if (modoAprovacao && empNodeFull) {
+      Object.values(empNodeFull.depts).forEach(d => {
+        const ap = infoAprovacaoDept(d, empNodeFull)
         if (ap.kind && ap.tem) { temAprov = true; if (ap.pend) temPend = true }
-      }))
+      })
     }
 
     if (empOpen && empNode) {
@@ -335,16 +442,35 @@ export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = 
         const dVals = aggDeptDedup(dept)
         if (sumArr(dVals) === 0) return
         const dKey = `${eKey}-d-${dId}`
-        let dPend = false, dTem = false, dUltimo = null
-        if (modoAprovacao) {
-          Object.values(dept.setores).forEach(st => {
-            const ap = infoAprovacaoSetor(st, empNode)
-            if (ap.kind && ap.tem) {
-              dTem = true
-              if (ap.pend) dPend = true
-              if (ap.ultimo && (!dUltimo || new Date(ap.ultimo.em) > new Date(dUltimo.em))) dUltimo = ap.ultimo
-            }
-          })
+        // Situação de aprovação sempre pelo departamento cheio (não pelo filtrado).
+        const deptFull = empNodeFull?.depts?.[dId]
+        let apDept = { kind: null }
+        if (modoAprovacao && deptFull) apDept = infoAprovacaoDept(deptFull, empNodeFull)
+        const dTem = !!(apDept.kind && apDept.tem)
+        const dPend = dTem && apDept.pend
+        // Ícones de Aprovar / Pendênciar ficam na linha do Departamento (a aprovação é por departamento).
+        // Fora do modo Aprovação, a mesma linha mostra o selo Pendente/Aprovado do departamento (situação
+        // por departamento em todas as abas — não mais por setor).
+        let dSituacao = null
+        if (apDept.kind && podeAgir) {
+          const chaveAcao = `${eId}|${dId}`
+          const info = { kind: apDept.kind, empresaId: eId, empresaNome: eNome, deptId: dId, deptNome: dept.nome, setorIds: apDept.setorIdsPecas }
+          dSituacao = (
+            <span className="inline-flex items-center gap-1">
+              <BotaoIconeTooltip Icone={CheckCircle2} tom="verde" dica="Aprovar este departamento"
+                disabled={!canEdit || !apDept.pend} carregando={acaoRodando === chaveAcao}
+                onClick={() => setConfirmAcao({ ...info, acao: 'aprovar' })} />
+              <BotaoIconeTooltip Icone={Ban} tom="vermelho"
+                dica={podePendenciar ? 'Pendenciar: limpar a aprovação' : 'Você não tem a ação Pendenciar liberada (Grupos de Acesso)'}
+                disabled={!canEdit || !podePendenciar} carregando={acaoRodando === chaveAcao}
+                onClick={() => setConfirmAcao({ ...info, acao: 'pendenciar' })} />
+            </span>
+          )
+        } else if (!modoAprovacao) {
+          const dSit = statusDept(dept)
+          dSituacao = dSit.tem
+            ? <span className={`px-2 py-0.5 rounded-full text-xs font-semibold whitespace-nowrap ${STATUS_CLS[dSit.label]}`}>{STATUS_DISPLAY[dSit.label]}</span>
+            : null
         }
         childRows.push(
           <tr key={dKey} className="bg-emerald-50 hover:bg-emerald-100 cursor-pointer" onClick={e => { e.stopPropagation(); tog(dKey) }}>
@@ -355,10 +481,10 @@ export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = 
                   <span className="text-slate-500 font-normal mr-0.5">Departamento:</span>
                   {dept.nome}
                 </span>
-                {modoAprovacao && dTem && <SeloStatus pend={dPend} aprovacao={dUltimo} />}
+                {modoAprovacao && dTem && <SeloStatus pend={dPend} aprovacao={apDept.ultimo} />}
               </span>
             </td>
-            {mCells(dVals, dKey)}
+            {mCells(dVals, dKey, false, dSituacao)}
           </tr>
         )
         if (!isOpen(dKey)) return
@@ -373,31 +499,6 @@ export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = 
           const sVals = aggSetor(setor)
           if (sumArr(sVals) === 0) return
           const sKey = `${dKey}-s-${sId}`
-          const sSit = statusSetor(setor)
-          let sSituacao = sSit.tem
-            ? <span className={`px-2 py-0.5 rounded-full text-xs font-semibold whitespace-nowrap ${STATUS_CLS[sSit.label]}`}>{STATUS_DISPLAY[sSit.label]}</span>
-            : null
-          let statusNome = null
-          if (modoAprovacao) {
-            // Status logo depois do nome do setor; ícones de Aprovar / Pendênciar na última coluna.
-            const ap = infoAprovacaoSetor(setor, empNode)
-            statusNome = ap.kind && ap.tem
-              ? <SeloStatus pend={ap.pend} aprovacao={ap.ultimo} />
-              : null
-            const chaveAcao = `${eId}|${sId}`
-            const info = { kind: ap.kind, empresaId: eId, empresaNome: eNome, setorId: sId, setorNome: setor.nome }
-            sSituacao = (ap.kind && podeAgir) ? (
-              <span className="inline-flex items-center gap-1">
-                <BotaoIconeTooltip Icone={CheckCircle2} tom="verde" dica="Aprovar este setor"
-                  disabled={!canEdit || !ap.pend} carregando={acaoRodando === chaveAcao}
-                  onClick={() => setConfirmAcao({ ...info, acao: 'aprovar' })} />
-                <BotaoIconeTooltip Icone={Ban} tom="vermelho"
-                  dica={isAdminEfetivo ? 'Pendenciar: limpar a aprovação (somente administrador)' : 'Somente o administrador pode pendenciar'}
-                  disabled={!canEdit || !isAdminEfetivo} carregando={acaoRodando === chaveAcao}
-                  onClick={() => setConfirmAcao({ ...info, acao: 'pendenciar' })} />
-              </span>
-            ) : null
-          }
           childRows.push(
             <tr key={sKey} className="bg-slate-50 hover:bg-slate-100 cursor-pointer" onClick={e => { e.stopPropagation(); tog(sKey) }}>
               <td className={`pl-14 pr-2 py-1 text-xs text-slate-700 whitespace-nowrap sticky left-0 z-[5] bg-slate-50 ${W1}`}>
@@ -407,10 +508,9 @@ export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = 
                     <span className="text-slate-400 mr-0.5">Setor:</span>
                     <span className="font-semibold">{setor.nome}</span>
                   </span>
-                  {statusNome}
                 </span>
               </td>
-              {mCells(sVals, sKey, false, sSituacao)}
+              {mCells(sVals, sKey)}
             </tr>
           )
           if (!isOpen(sKey)) return
@@ -462,7 +562,7 @@ export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = 
       <tr key={eKey}
         className="cursor-pointer hover:bg-emerald-200 border-t border-emerald-200 bg-emerald-100"
         onClick={() => tog(eKey)}>
-        <td className={`pl-6 pr-2 py-2 text-sm font-bold text-emerald-950 whitespace-nowrap ${modoAprovacao ? 'sticky left-0 z-[5] bg-emerald-100' : ''} ${W1}`}>
+        <td className={`pl-6 pr-2 py-2 text-sm font-bold text-emerald-950 whitespace-nowrap sticky left-0 z-[5] bg-emerald-100 ${W1}`}>
           <span className="flex items-center gap-1.5">
             <span className={`inline-flex items-center gap-1.5 ${modoAprovacao ? 'w-[18.25rem] shrink-0' : ''}`}>
               {empOpen ? <ChevronDown size={13}/> : <ChevronRight size={13}/>}
@@ -494,7 +594,7 @@ export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = 
     return [
       <tr key={`seg-${segLabel}`} className="cursor-pointer bg-sky-100 hover:bg-sky-50 border-t-2 border-sky-300"
           onClick={() => setSegAbertos(prev => { const n = new Set(prev); n.has(segLabel) ? n.delete(segLabel) : n.add(segLabel); return n })}>
-        <td className={`pl-3 pr-2 py-2 text-sm font-bold text-sky-950 whitespace-nowrap ${modoAprovacao ? 'sticky left-0 z-[5] bg-sky-100' : ''} ${W1}`}>
+        <td className={`pl-3 pr-2 py-2 text-sm font-bold text-sky-950 whitespace-nowrap sticky left-0 z-[5] bg-sky-100 ${W1}`}>
           <span className="flex items-center gap-1.5"><span className={`inline-flex items-center gap-1.5 ${modoAprovacao ? 'w-[19rem] shrink-0' : ''}`}>{segAberto ? <ChevronDown size={14}/> : <ChevronRight size={14}/>}{segLabel}<LogoSegmento rotulo={segLabel} /></span>{modoAprovacao && <SituacaoNivel pend={blocos.some(([, b]) => b.temPend)} tem={blocos.some(([, b]) => b.temAprov)} />}</span>
         </td>
         {segMeses.map((v, i) => (
@@ -512,7 +612,7 @@ export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = 
   empBlocos.forEach(b => b.vTotal.forEach((v, i) => { grupoMeses[i] += v }))
   const empRows = segRows.length === 0 ? [] : [
     <tr key="grupo" className="cursor-pointer bg-slate-300 hover:bg-slate-200 transition-colors" onClick={() => setGrupoAberto(v => !v)}>
-      <td className={`pl-3 pr-2 py-2.5 text-sm font-bold text-slate-900 whitespace-nowrap ${modoAprovacao ? 'sticky left-0 z-[5] bg-slate-300' : ''} ${W1}`}>
+      <td className={`pl-3 pr-2 py-2.5 text-sm font-bold text-slate-900 whitespace-nowrap sticky left-0 z-[5] bg-slate-300 ${W1}`}>
         <span className="flex items-center gap-1.5"><span className={`inline-flex items-center gap-2 ${modoAprovacao ? 'w-[19rem] shrink-0' : ''}`}>{grupoAberto ? <ChevronDown size={15}/> : <ChevronRight size={15}/>}Grupo Caiobá<LogoGrupo /></span>{modoAprovacao && <SituacaoNivel pend={empBlocos.some(b => b.temPend)} tem={empBlocos.some(b => b.temAprov)} />}</span>
       </td>
       {grupoMeses.map((v, i) => (
@@ -528,38 +628,82 @@ export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = 
     <div className={modoAprovacao ? 'flex flex-col gap-4' : 'flex flex-col h-full p-6 gap-4'}>
       {modoAprovacao && loading && <div className="flex items-center gap-2 text-slate-400 text-sm"><Loader2 size={16} className="animate-spin" /> Carregando...</div>}
       {!modoAprovacao && (<>
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <TrendingUp size={24} className="text-indigo-600" />
-          <div>
-            <h1 className="text-2xl font-bold text-slate-800">Total Pós-Vendas</h1>
-            <p className="text-xs text-slate-400">Consolidado de Peças · Consultores · Mecânicos · Terceiros</p>
+      {/* Cabeçalho e Empresa/Ano só aparecem quando a tela não está embutida numa página que já os tem
+          (ex.: acima das abas de Planejamento de Metas - Pós-Vendas). */}
+      {!filtrosExternos && (
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <TrendingUp size={24} className="text-indigo-600" />
+            <div>
+              <h1 className="text-2xl font-bold text-slate-800">Total Pós-Vendas</h1>
+              <p className="text-xs text-slate-400">Consolidado de Peças · Consultores · Mecânicos · Terceiros</p>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Filters */}
       <div className="flex items-center gap-3 flex-wrap">
-        <select value={filtroAno} onChange={e => setFiltroAno(Number(e.target.value))} className={SEL}>
-          {ANOS.map(a => <option key={a} value={a}>{a}</option>)}
-        </select>
-        <div className="w-64"><EmpresaMultiFilter value={filtroEmpresa} onChange={setFiltroEmpresa} empresas={empresas} /></div>
-        <div className="flex rounded-lg border border-slate-300 overflow-hidden text-xs font-semibold">
-          {[
-            { key: 'total',    label: 'Total' },
-            { key: 'pecas',    label: 'Peças' },
-            { key: 'servicos', label: 'Serviços' },
-          ].map(({ key, label }) => (
-            <button key={key} onClick={() => setFiltroVisu(key)}
-              className={`px-3 py-2 transition-colors ${filtroVisu === key ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
-              {label}
-            </button>
-          ))}
-        </div>
+        {!filtrosExternos && (
+          <>
+            <select value={filtroAno} onChange={e => setFiltroAno(Number(e.target.value))} className={SEL}>
+              {ANOS.map(a => <option key={a} value={a}>{a}</option>)}
+            </select>
+            <div className="w-64"><EmpresaMultiFilter value={filtroEmpresa} onChange={setFiltroEmpresa} empresas={empresas} /></div>
+          </>
+        )}
+        {!filtrosExternos && (
+          <div className="flex rounded-lg border border-slate-300 overflow-hidden text-xs font-semibold">
+            {[
+              { key: 'total',    label: 'Total' },
+              { key: 'pecas',    label: 'Peças' },
+              { key: 'servicos', label: 'Serviços' },
+            ].map(({ key, label }) => (
+              <button key={key} onClick={() => setFiltroVisu(key)}
+                className={`px-3 py-2 transition-colors ${filtroVisu === key ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
         {loading && <Loader2 size={18} className="animate-spin text-indigo-500" />}
       </div>
       </>)}
+
+      {/* Filtros de Departamento / Setor / Box e busca por Funcionário — em todas as abas, inclusive na
+          Gestão de Aprovação (só decidem o que aparece; não mudam valores nem a situação de aprovação). */}
+      <div className="flex flex-col gap-3 bg-white border border-slate-200 rounded-xl p-4">
+        <div className="flex items-end gap-3">
+          <div className="flex-1 max-w-xs">
+            <label className={LBL}>Departamento</label>
+            <select className={SEL2} value={filtroDepto} onChange={e => { setFiltroDepto(e.target.value); setFiltroSetorT(''); setFiltroBoxT('') }}>
+              <option value="">Todos os departamentos</option>
+              {departamentosDisponiveis.map(d => <option key={d.id} value={d.id}>{d.nome}</option>)}
+            </select>
+          </div>
+          <div className="flex-1 max-w-xs">
+            <label className={LBL}>Setor</label>
+            <select className={SEL2} value={filtroSetorT} onChange={e => { setFiltroSetorT(e.target.value); setFiltroBoxT('') }}>
+              <option value="">Todos os setores</option>
+              {setoresTDisponiveis.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
+            </select>
+          </div>
+          <div className="flex-1 max-w-xs">
+            <label className={LBL}>Box</label>
+            <select className={SEL2} value={filtroBoxT} onChange={e => setFiltroBoxT(e.target.value)}>
+              <option value="">Todos os boxes</option>
+              {boxesTDisponiveis.map(b => <option key={b.id} value={b.id}>{b.nome}</option>)}
+            </select>
+          </div>
+          <div className="flex-1 max-w-xs">
+            <label className={LBL}>Funcionário</label>
+            <div className="relative">
+              <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input type="text" className={`${SEL2} pl-8`} placeholder="Buscar por nome..." value={filtroColab} onChange={e => setFiltroColab(e.target.value)} />
+            </div>
+          </div>
+        </div>
+      </div>
 
       {error && (
         <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-2">
@@ -572,10 +716,10 @@ export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = 
         <table className="w-full border-collapse min-w-[1400px]">
           <thead className="sticky top-0 z-10 bg-slate-100 border-b border-slate-200">
             <tr>
-              <th className={`px-3 py-2 text-left text-xs font-semibold text-slate-600 whitespace-nowrap ${modoAprovacao ? 'sticky left-0 z-20 bg-slate-100 ' + W1 : 'min-w-[260px]'}`}>
+              <th className={`px-3 py-2 text-left text-xs font-semibold text-slate-600 whitespace-nowrap sticky left-0 z-20 bg-slate-100 ${modoAprovacao ? W1 : 'min-w-[260px]'}`}>
                 <div className="flex items-center gap-2">
                   <span>Empresa</span>
-                  {Object.keys(tree).length > 0 && (
+                  {Object.keys(treeFiltrada).length > 0 && (
                     <span className="inline-flex items-center gap-1">
                       {!tudoExpandido && (
                         <button onClick={expandirNivel} title="Expandir o próximo nível"
@@ -624,17 +768,17 @@ export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = 
         <div className="fixed top-0 right-0 bottom-0 left-16 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setConfirmAcao(null)}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md" onClick={e => e.stopPropagation()}>
             <div className="p-6">
-              <h2 className="text-lg font-bold text-slate-800 mb-2">{confirmAcao.acao === 'aprovar' ? 'Aprovar setor' : 'Pendenciar setor'}</h2>
+              <h2 className="text-lg font-bold text-slate-800 mb-2">{confirmAcao.acao === 'aprovar' ? 'Aprovar departamento' : 'Pendenciar departamento'}</h2>
               <p className="text-sm text-slate-600">
                 {confirmAcao.acao === 'aprovar'
-                  ? <>Aprovar os valores de <strong>{confirmAcao.setorNome}</strong> em <strong>{confirmAcao.empresaNome}</strong> ({filtroAno})? Ao aprovar, os valores são publicados e espelhados no Power BI.</>
-                  : <>Os valores de <strong>{confirmAcao.setorNome}</strong> em <strong>{confirmAcao.empresaNome}</strong> ({filtroAno}) voltarão para <strong className="text-amber-700">pendente</strong>. O que já foi publicado no Power BI é mantido até um diretor aprovar de novo.</>}
+                  ? <>Aprovar os valores do departamento <strong>{confirmAcao.deptNome}</strong> em <strong>{confirmAcao.empresaNome}</strong> ({filtroAno})? Ao aprovar, os valores são publicados e espelhados no Power BI.</>
+                  : <>Os valores do departamento <strong>{confirmAcao.deptNome}</strong> em <strong>{confirmAcao.empresaNome}</strong> ({filtroAno}) voltarão para <strong className="text-amber-700">pendente</strong>. O que já foi publicado no Power BI é mantido até uma nova aprovação.</>}
               </p>
               {confirmAcao.kind === 'consultor' && (
-                <p className="text-xs text-slate-500 mt-2">O serviço dos mecânicos está vinculado ao consultor: a ação vale para os consultores e mecânicos desta empresa.</p>
+                <p className="text-xs text-slate-500 mt-2">O serviço dos mecânicos está vinculado ao consultor: a ação vale para os consultores e mecânicos de todo o departamento Oficina desta empresa.</p>
               )}
               {confirmAcao.kind === 'mecanico' && (
-                <p className="text-xs text-slate-500 mt-2">Esta empresa não tem consultores: a ação vale para todos os setores de mecânico dela.</p>
+                <p className="text-xs text-slate-500 mt-2">Esta empresa não tem consultores: a ação vale para todos os mecânicos do departamento Oficina dela.</p>
               )}
             </div>
             <div className="flex gap-3 px-6 pb-6">

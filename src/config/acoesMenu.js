@@ -113,6 +113,12 @@ export const ACOES_POR_MENU = [
     ],
   },
   {
+    menuPath: 'metas/gestao-aprovacao',
+    acoes: [
+      { value: 'pendenciar', label: 'Pendenciar (reverter uma aprovação de meta)' },
+    ],
+  },
+  {
     menuPath: 'sobreaviso-plantao',
     acoes: [
       { value: 'editar',             label: 'Editar Lançamentos' },

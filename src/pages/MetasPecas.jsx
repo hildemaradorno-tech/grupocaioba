@@ -1,6 +1,7 @@
 ﻿import React, { useEffect, useState, useMemo, useCallback } from 'react'
 import { useSessionState } from '../hooks/useSessionState'
-import { Plus, Trash2, Edit2, X, AlertTriangle, ChevronRight, ChevronDown, Target, Loader2, CheckCircle2, Sparkles, Pencil, Eye } from 'lucide-react'
+import { Plus, Trash2, Edit2, X, AlertTriangle, ChevronRight, ChevronDown, Target, Loader2, CheckCircle2, Sparkles, Pencil, Eye, Search } from 'lucide-react'
+import BotaoAcaoRetratil from '../components/BotaoAcaoRetratil'
 import { useAuth } from '../context/AuthContext'
 import PermissionActionButtons from '../components/PermissionActionButtons'
 import { SearchCombobox } from '../components/SearchCombobox'
@@ -232,7 +233,10 @@ function MetaCellInput({ rowId, value, onSave, estado }) {
   )
 }
 
-export default function MetasPecas() {
+// empresaExterna/anoExterno: quando a tela vem embutida como aba (Planejamento de Metas - Pós-Vendas), o
+// seletor de Empresa/Ano fica só no cabeçalho compartilhado das abas — aqui eles substituem o valor salvo.
+// aoDefinirBotaoAcao: registra o botão "+ Adicionar Vendedor" no cabeçalho compartilhado das abas.
+export default function MetasPecas({ empresaExterna = null, anoExterno = null, aoDefinirBotaoAcao = null } = {}) {
   const [empresas,     setEmpresas]     = useState([])
   const [departamentos,setDepartamentos]= useState([])
   const [setores,      setSetores]      = useState([])
@@ -246,8 +250,15 @@ export default function MetasPecas() {
   const { hasPermission } = useAuth()
   const canEdit = hasPermission('/metas/pos-vendas/pecas', 'editar')
 
-  const [filtroEmpresa, setFiltroEmpresa] = useSessionState('mpvs_servicos_empresas', [])
-  const [filtroAno,     setFiltroAno]     = useSessionState('mpvs_servicos_ano', anoAtual)
+  const [filtroEmpresaSalva, setFiltroEmpresaSalva] = useSessionState('mpvs_servicos_empresas', [])
+  const [filtroAnoSalvo,     setFiltroAnoSalvo]     = useSessionState('mpvs_servicos_ano', anoAtual)
+  const filtroEmpresa = empresaExterna ?? filtroEmpresaSalva
+  const filtroAno     = anoExterno ?? filtroAnoSalvo
+  const filtrosExternos = empresaExterna != null || anoExterno != null
+
+  const [filtroSetor, setFiltroSetor] = useSessionState('mpc_setor', '')
+  const [filtroBox,   setFiltroBox]   = useSessionState('mpc_box', '')
+  const [filtroColab, setFiltroColab] = useSessionState('mpc_colab', '') // busca por nome (texto livre)
 
   const [grupoAberto,      setGrupoAberto]      = useState(true)
   const [expandedEmpresas, setExpandedEmpresas] = useState(new Set())
@@ -269,7 +280,7 @@ export default function MetasPecas() {
 
 
   useEffect(() => { loadLookups() }, [])
-  useEffect(() => { loadDados() }, [filtroEmpresa, filtroAno])
+  useEffect(() => { setFiltroSetor(''); setFiltroBox(''); setFiltroColab(''); loadDados() }, [filtroEmpresa, filtroAno])
 
   const sortNome = (arr, field) =>
     [...arr].sort((a, b) => (a[field] || '').localeCompare(b[field] || ''))
@@ -308,10 +319,36 @@ export default function MetasPecas() {
     }
   }
 
+  const setoresDisponiveis = useMemo(() => {
+    const seen = new Map()
+    dados.forEach(r => {
+      const nome = setores.find(s => s.id === r.setor_id)?.nome_setor || r.setor_nome
+      if (r.setor_id && !seen.has(r.setor_id)) seen.set(r.setor_id, nome)
+    })
+    return [...seen.entries()].map(([id, nome]) => ({ id, nome })).sort((a,b) => (a.nome||'').localeCompare(b.nome||''))
+  }, [dados, setores])
+
+  const boxesDisponiveis = useMemo(() => {
+    const seen = new Map()
+    dados.forEach(r => {
+      if (filtroSetor && r.setor_id !== filtroSetor) return
+      const nome = boxes.find(b => b.id === r.box_id)?.nome_box || r.box_nome
+      if (r.box_id && !seen.has(r.box_id)) seen.set(r.box_id, nome)
+    })
+    return [...seen.entries()].map(([id, nome]) => ({ id, nome })).sort((a,b) => (a.nome||'').localeCompare(b.nome||''))
+  }, [dados, boxes, filtroSetor])
+
+  const dadosFiltrados = useMemo(() => dados.filter(r => {
+    if (filtroColab && !(r.colaborador_nome || '').toLowerCase().includes(filtroColab.trim().toLowerCase())) return false
+    if (filtroSetor && r.setor_id !== filtroSetor) return false
+    if (filtroBox   && r.box_id   !== filtroBox)   return false
+    return true
+  }), [dados, filtroColab, filtroSetor, filtroBox])
+
   // Build tree: empresa > departamento > setor > box > cargo > colaborador > meses
   const tree = useMemo(() => {
     const t = {}
-    dados.forEach(row => {
+    dadosFiltrados.forEach(row => {
       const eid   = row.empresa_id
       const did   = row.departamento_id
       const sId   = row.setor_id   || row.setor_nome   || '—'
@@ -344,7 +381,7 @@ export default function MetasPecas() {
       }
     })
     return t
-  }, [dados, departamentos, setores, boxes, cargos, funcionarios])
+  }, [dadosFiltrados, departamentos, setores, boxes, cargos, funcionarios])
 
   const toggle = (set, setter, key) =>
     setter(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n })
@@ -584,37 +621,65 @@ export default function MetasPecas() {
     }
   }
 
+  // Registra o botão "+ Adicionar Vendedor" no cabeçalho compartilhado das abas (mesma linha das abas).
+  const abrirIncluirRef = React.useRef(abrirIncluir)
+  abrirIncluirRef.current = abrirIncluir
+  useEffect(() => {
+    if (!aoDefinirBotaoAcao) return
+    aoDefinirBotaoAcao(canEdit
+      ? <BotaoAcaoRetratil texto="Adicionar Vendedor" onClick={() => abrirIncluirRef.current()} />
+      : null)
+    return () => aoDefinirBotaoAcao(null)
+  }, [aoDefinirBotaoAcao, canEdit])
+
   return (
     <div className="flex flex-col h-full p-6 gap-4">
-      {/* CABEÇALHO */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Target size={24} className="text-indigo-600" />
-          <div>
-            <h1 className="text-2xl font-bold text-slate-800">Metas - Peças</h1>
-            <p className="text-xs text-slate-400">Pós-Vendas · Rascunho editável antes da aprovação</p>
+      {!filtrosExternos && (
+        <div className="flex items-center justify-end">
+          <div className="flex items-end gap-3">
+            <div className="w-64">
+              <label className={LBL}>Empresa</label>
+              <EmpresaMultiFilter value={filtroEmpresa} onChange={setFiltroEmpresaSalva} empresas={empresas} />
+            </div>
+            <div className="w-28">
+              <label className={LBL}>Ano</label>
+              <select className={SEL} value={filtroAno} onChange={e => setFiltroAnoSalvo(Number(e.target.value))}>
+                {ANOS.map(a => <option key={a} value={a}>{a}</option>)}
+              </select>
+            </div>
+            {canEdit && (
+              <button onClick={abrirIncluir} className={BTN_PRI}>
+                <Plus size={16} /> Adicionar Vendedor
+              </button>
+            )}
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          {canEdit && (
-            <button onClick={abrirIncluir} className={BTN_PRI}>
-              <Plus size={16} /> Adicionar Colaborador
-            </button>
-          )}
-        </div>
-      </div>
+      )}
 
       {/* FILTROS */}
-      <div className="flex items-end gap-3 bg-white border border-slate-200 rounded-xl p-4">
-        <div className="flex-1 max-w-xs">
-          <label className={LBL}>Empresa</label>
-          <EmpresaMultiFilter value={filtroEmpresa} onChange={setFiltroEmpresa} empresas={empresas} />
-        </div>
-        <div className="w-28">
-          <label className={LBL}>Ano</label>
-          <select className={SEL} value={filtroAno} onChange={e => setFiltroAno(Number(e.target.value))}>
-            {ANOS.map(a => <option key={a} value={a}>{a}</option>)}
-          </select>
+      <div className="flex flex-col gap-3 bg-white border border-slate-200 rounded-xl p-4">
+        <div className="flex items-end gap-3">
+          <div className="flex-1 max-w-xs">
+            <label className={LBL}>Setor</label>
+            <select className={SEL} value={filtroSetor} onChange={e => { setFiltroSetor(e.target.value); setFiltroBox('') }}>
+              <option value="">Todos os setores</option>
+              {setoresDisponiveis.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
+            </select>
+          </div>
+          <div className="flex-1 max-w-xs">
+            <label className={LBL}>Box</label>
+            <select className={SEL} value={filtroBox} onChange={e => setFiltroBox(e.target.value)}>
+              <option value="">Todos os boxes</option>
+              {boxesDisponiveis.map(b => <option key={b.id} value={b.id}>{b.nome}</option>)}
+            </select>
+          </div>
+          <div className="flex-1 max-w-xs">
+            <label className={LBL}>Colaborador</label>
+            <div className="relative">
+              <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input type="text" className={`${SEL} pl-8`} placeholder="Buscar por nome..." value={filtroColab} onChange={e => setFiltroColab(e.target.value)} />
+            </div>
+          </div>
         </div>
       </div>
 
@@ -659,7 +724,7 @@ export default function MetasPecas() {
                 </td></tr>
               ) : Object.keys(tree).length === 0 ? (
                 <tr><td colSpan="16" className="text-center py-16 text-slate-400">
-                  Nenhuma meta cadastrada. Clique em "Adicionar Colaborador" para começar.
+                  Nenhuma meta cadastrada. Clique em "Adicionar Vendedor" para começar.
                 </td></tr>
               ) : (() => {
                 const grupoMeses = aggTree(tree)
@@ -722,6 +787,17 @@ export default function MetasPecas() {
                             const deptKey = `${empId}§${deptId}`
                             const deptMeses = aggDept(dept)
                             const deptTotal = sumArr(deptMeses)
+                            // Situação por Departamento (a aprovação é por departamento, não por setor): se
+                            // algum mês com valor de qualquer setor/colaborador dele não estiver aprovado,
+                            // o departamento inteiro fica "Pendente".
+                            let deptTemValor = false, deptAprovado = true
+                            Object.values(dept.setores).forEach(setor => Object.values(setor.boxes).forEach(bx => Object.values(bx.colabs).forEach(co => Object.values(co.meses).forEach(m => {
+                              if (Number(m.meta_faturamento) > 0) {
+                                deptTemValor = true
+                                if (cellState(m.meta_faturamento, m.meta_aprovada) !== 'ok') deptAprovado = false
+                              }
+                            }))))
+                            const deptStatusLabel = deptAprovado ? 'APROVADO' : 'AGUARDANDO APROVACAO'
                             return (
                               <React.Fragment key={deptId}>
                                 {/* ── DEPARTAMENTO ── */}
@@ -738,23 +814,15 @@ export default function MetasPecas() {
                                     <td key={i} className="px-1 py-1.5 text-right text-xs font-semibold text-slate-700 whitespace-nowrap">{v > 0 ? fmtBRL(v) : '—'}</td>
                                   ))}
                                   <td className="px-2 py-1.5 text-right text-xs font-bold text-indigo-700 bg-indigo-50 whitespace-nowrap">{deptTotal > 0 ? fmtBRL(deptTotal) : '—'}</td>
-                                  <td />
+                                  <td className="px-2 py-1.5 text-center whitespace-nowrap" colSpan="2">
+                                    {deptTemValor && <span className={`px-2 py-0.5 rounded-full text-xs font-semibold whitespace-nowrap ${STATUS_CLS[deptStatusLabel] || 'bg-slate-100 text-slate-500'}`}>{STATUS_DISPLAY[deptStatusLabel] || deptStatusLabel}</span>}
+                                  </td>
                                 </tr>
 
                                 {expandedDepts.has(deptKey) && Object.entries(dept.setores).map(([sId, setor]) => {
                                   const setKey = `${deptKey}§${sId}`
                                   const setMeses = aggSetor(setor)
                                   const setTotal = sumArr(setMeses)
-                                  // Situação por Setor (não por colaborador): se algum mês com valor de qualquer
-                                  // colaborador do setor não estiver aprovado, o setor inteiro fica "Pendente".
-                                  let setorTemValor = false, setorAprovado = true
-                                  Object.values(setor.boxes).forEach(bx => Object.values(bx.colabs).forEach(co => Object.values(co.meses).forEach(m => {
-                                    if (Number(m.meta_faturamento) > 0) {
-                                      setorTemValor = true
-                                      if (cellState(m.meta_faturamento, m.meta_aprovada) !== 'ok') setorAprovado = false
-                                    }
-                                  })))
-                                  const setorStatusLabel = setorAprovado ? 'APROVADO' : 'AGUARDANDO APROVACAO'
                                   return (
                                     <React.Fragment key={sId}>
                                       {/* ── SETOR ── */}
@@ -771,9 +839,8 @@ export default function MetasPecas() {
                                           <td key={i} className="px-1 py-1.5 text-right text-xs text-slate-600 whitespace-nowrap">{v > 0 ? fmtBRL(v) : '—'}</td>
                                         ))}
                                         <td className="px-2 py-1.5 text-right text-xs font-semibold text-indigo-600 bg-indigo-50/60 whitespace-nowrap">{setTotal > 0 ? fmtBRL(setTotal) : '—'}</td>
-                                        <td className="px-2 py-1.5 text-center whitespace-nowrap" colSpan="2">
-                                          {setorTemValor && <span className={`px-2 py-0.5 rounded-full text-xs font-semibold whitespace-nowrap ${STATUS_CLS[setorStatusLabel] || 'bg-slate-100 text-slate-500'}`}>{STATUS_DISPLAY[setorStatusLabel] || setorStatusLabel}</span>}
-                                        </td>
+                                        {/* Situação fica só no Departamento — a aprovação é por departamento, não por setor. */}
+                                        <td colSpan="2" />
                                       </tr>
 
                                       {expandedSetores.has(setKey) && Object.entries(setor.boxes).map(([bId, box]) => {
@@ -856,7 +923,7 @@ export default function MetasPecas() {
         <div className="fixed top-0 right-0 bottom-0 left-16 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[95vh] flex flex-col">
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
-              <h2 className="text-lg font-bold text-slate-800">{modoModal === 'visualizar' ? 'Visualizar Colaborador — Metas Peças' : modoModal === 'editar' ? 'Editar Colaborador — Metas Peças' : 'Adicionar Colaborador — Metas Peças'}</h2>
+              <h2 className="text-lg font-bold text-slate-800">{modoModal === 'visualizar' ? 'Visualizar Colaborador — Metas Peças' : modoModal === 'editar' ? 'Editar Colaborador — Metas Peças' : 'Adicionar Vendedor — Metas Peças'}</h2>
               <button onClick={() => setModalAberto(false)} className="text-slate-400 hover:text-slate-600"><X size={20} /></button>
             </div>
 

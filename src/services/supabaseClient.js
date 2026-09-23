@@ -115,6 +115,10 @@ const _contextoPublicacao = async () => {
 // Departamento / setor / box / cargo publicados, na mesma regra das telas:
 //  - Mecânico: posição atual do funcionário no cadastro (com a linha da meta como reserva);
 //  - Consultor: setor da linha (Mecânica / Funilaria-Pintura; linha antiga presa a um box reroteia pro setor atual do box);
+//  - Funilaria / Terceiros: as tabelas de rascunho não têm setor/departamento gravado
+//    na linha (só empresa+mês) — resolve pelo setor do cadastro (Funilaria/Pintura,
+//    Terceiro), igual à árvore do Total Pós-Vendas (src/utils/totalPosVendas.js →
+//    setorPorNome), pra cair certo em Departamento = OFICINA;
 //  - demais: o que está gravado na linha.
 const _posicaoPublicada = (r, tipo, ctx) => {
   let did = r.departamento_id, sid = r.setor_id, bid = r.box_id, cid = r.cargo_id
@@ -124,6 +128,10 @@ const _posicaoPublicada = (r, tipo, ctx) => {
   } else if (ctx && tipo === 'consultor') {
     sid = (r.box_id && ctx.boxParaSetor[r.box_id]) || r.setor_id
     did = ctx.setores.find(x => x.id === sid)?.departamento_id || r.departamento_id
+  } else if (ctx && (tipo === 'funilaria' || tipo === 'terceiros')) {
+    const trecho = tipo === 'funilaria' ? 'funilaria' : 'terceiro'
+    const setor  = ctx.setores.find(s => (s.nome_setor || '').toLowerCase().includes(trecho))
+    if (setor) { sid = setor.id; did = setor.departamento_id }
   }
   did = _uuidOuNull(did); sid = _uuidOuNull(sid); bid = _uuidOuNull(bid); cid = _uuidOuNull(cid)
   const empresa = ctx?.empresas?.find(e => e.id === r.empresa_id)
@@ -1335,6 +1343,67 @@ export const apiService = {
       .eq('id', id)
     if (error) throw error
     return { success: true }
+  },
+
+  // FONTES MICROWORK (comissões — origem de dados via API do MicroWork Cloud)
+  getFontesMicrowork: async () => {
+    const { data, error } = await supabase
+      .from('dim_fontes_microwork')
+      .select('*')
+      .order('nome', { ascending: true })
+    if (error) throw error
+    return data || []
+  },
+
+  createFonteMicrowork: async (payload) => {
+    const { data, error } = await supabase
+      .from('dim_fontes_microwork')
+      .insert([{ ...payload, ativo: payload.ativo ?? true }])
+      .select()
+    if (error) throw error
+    return data?.[0]
+  },
+
+  updateFonteMicrowork: async (id, payload) => {
+    const { data, error } = await supabase
+      .from('dim_fontes_microwork')
+      .update({ ...payload, atualizado_em: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+    if (error) throw error
+    return data?.[0]
+  },
+
+  deleteFonteMicrowork: async (id) => {
+    const { error } = await supabase
+      .from('dim_fontes_microwork')
+      .delete()
+      .eq('id', id)
+    if (error) throw error
+    return { success: true }
+  },
+
+  // Chama o relatório MicroWork pro mês/ano informado (via backend, que guarda o token) —
+  // usado pelo botão "Testar" antes de decidir como guardar o retorno.
+  testarFonteMicrowork: async (fonte, { ano, mes }) => {
+    const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
+    const res = await fetch(`${backendUrl}/api/microwork/testar`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        idrelatorioconfiguracao: fonte.idrelatorioconfiguracao,
+        idrelatorioconsulta: fonte.idrelatorioconsulta,
+        idrelatorioconfiguracaoleiaute: fonte.idrelatorioconfiguracaoleiaute,
+        idrelatoriousuarioleiaute: fonte.idrelatoriousuarioleiaute,
+        ididioma: fonte.ididioma,
+        listaempresas: fonte.listaempresas,
+        filtros_fixos: fonte.filtros_fixos,
+        ano, mes,
+      }),
+    })
+    const body = await res.json()
+    if (!res.ok) throw new Error(body.message || body.error || 'Erro ao testar relatório MicroWork')
+    return body
   },
 
   // BASES DE CÁLCULO (comissões — coluna + agregação extraída da Fonte)

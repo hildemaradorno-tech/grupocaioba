@@ -610,6 +610,122 @@ export async function listVendedoresBalcao(year = new Date().getFullYear(), empr
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 5c. PARSER OFICINA/CONSULTOR — RPR001 linhas COM OS vinculada (NF_OsTipoDes
+//     preenchido); nessas linhas NF_UsuNomVendedor identifica o Consultor que
+//     atendeu a O.S. (confirmado: nomes distintos dos vendedores de Balcão).
+// ─────────────────────────────────────────────────────────────────────────────
+
+function parseOficinaConsultorBuffer(buffer, meta) {
+  const wb   = XLSX.read(buffer, { type: 'buffer', raw: true })
+  const ws   = wb.Sheets[wb.SheetNames[0]]
+  const data = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: true })
+  if (data.length < 2) return []
+
+  const periodoFallback = meta.year && meta.month
+    ? `${meta.year}-${String(meta.month).padStart(2, '0')}` : null
+
+  const result = []
+  for (const row of data.slice(1)) {
+    if (!row || row.length < 48) continue
+
+    // Somente linhas COM OS vinculada (NF_OsTipoDes preenchido) = Oficina
+    const osTipoDes = row[C.osTipoDes]
+    const temOS = osTipoDes !== undefined && osTipoDes !== null && String(osTipoDes).trim() !== ''
+    if (!temOS) continue
+
+    const natOp = row[C.natOperacao] ? String(row[C.natOperacao]).toUpperCase().trim() : ''
+    const ehVenda     = natOp.includes('VEN')
+    const ehDevolucao = natOp.includes('DVE') || natOp.includes('DEVOLU')
+    if (!ehVenda && !ehDevolucao) continue
+
+    const vlBruto = Number(row[C.vlTotal])
+    if (!vlBruto) continue
+
+    const periodo   = serialToYearMonth(row[C.dataMov]) || serialToYearMonth(row[C.dataEmis]) || periodoFallback
+    if (!periodo) continue
+    const semanaKey = serialToWeekKey(row[C.dataMov])   || serialToWeekKey(row[C.dataEmis])   || null
+
+    const empresaCod = safeNum(row[C.empresaCod])
+    const empresa    = EMPRESA_MAP[empresaCod] || normalizeEmpresaNome(row[C.empNome])
+
+    const vlVendas     = ehVenda     ? vlBruto : 0
+    const vlDevolucoes = ehDevolucao ? vlBruto : 0
+
+    const vlMargemContRaw        = safeNum(row[C.vlMargemCont])
+    const vlMargemContVendas     = ehVenda     ? vlMargemContRaw : 0
+    const vlMargemContDevolucoes = ehDevolucao ? vlMargemContRaw : 0
+
+    const nomeConsultor = row[C.nomeVendedor] != null ? String(row[C.nomeVendedor]).trim() : ''
+
+    result.push({ empresa, periodo, semanaKey, vlVendas, vlDevolucoes, vlMargemContVendas, vlMargemContDevolucoes, nomeConsultor, arquivo: meta.name })
+  }
+  return result
+}
+
+async function getOficinaConsultorRowsDoAno(year) {
+  const yearStr  = String(year)
+  const cacheKey = `oficina-consultor-raw-${yearStr}`
+  const hit = cached(cacheKey)
+  if (hit) return hit
+
+  const allFiles = await listVendasProdutoFiles(year)
+  if (!allFiles.length) return []
+
+  const allRows = []
+  const BATCH = 3
+  for (let i = 0; i < allFiles.length; i += BATCH) {
+    const results = await Promise.allSettled(
+      allFiles.slice(i, i + BATCH).map(async f => {
+        const buf = await downloadBuffer(f.downloadUrl)
+        return parseOficinaConsultorBuffer(buf, f)
+      })
+    )
+    for (const r of results) {
+      if (r.status === 'fulfilled') allRows.push(...r.value)
+    }
+  }
+
+  const rowsDoAno = allRows.filter(r => r.periodo?.startsWith(yearStr))
+  setCache(cacheKey, rowsDoAno)
+  return rowsDoAno
+}
+
+// Peças de Oficina (vendas − devoluções, e margem) filtradas por Consultor —
+// mesma consolidação do Balcão (consolidarBalcao é genérica: soma vendas,
+// devoluções e margem por período, independe do recorte Balcão/Oficina).
+export async function extractPecasOficinaPorConsultor(year = new Date().getFullYear(), empresaNome = null, consultorNome = null) {
+  const yearStr        = String(year)
+  const empresaNorm    = empresaNome   ? normalizeEmpresaNome(empresaNome).toUpperCase() : null
+  const consultorNorm  = consultorNome ? String(consultorNome).trim().toUpperCase()      : null
+  const cacheKey       = `oficina-consultor-${yearStr}-${empresaNorm || 'todas'}-${consultorNorm || 'todos'}`
+  const hit = cached(cacheKey)
+  if (hit) return hit
+
+  const rowsDoAno = await getOficinaConsultorRowsDoAno(year)
+  if (!rowsDoAno.length) return null
+
+  let rows = empresaNorm
+    ? rowsDoAno.filter(r => r.empresa.toUpperCase() === empresaNorm)
+    : rowsDoAno
+  if (consultorNorm) rows = rows.filter(r => r.nomeConsultor.toUpperCase() === consultorNorm)
+
+  const result = consolidarBalcao(rows)
+  setCache(cacheKey, result)
+  return result
+}
+
+// Lista de nomes de Consultor distintos nas linhas de Oficina do RPR001 (pro
+// seletor da tela de Serviços) — opcionalmente filtrada por empresa.
+export async function listConsultoresOficina(year = new Date().getFullYear(), empresaNome = null) {
+  const empresaNorm = empresaNome ? normalizeEmpresaNome(empresaNome).toUpperCase() : null
+  const rowsDoAno = await getOficinaConsultorRowsDoAno(year)
+  const rows = empresaNorm ? rowsDoAno.filter(r => r.empresa.toUpperCase() === empresaNorm) : rowsDoAno
+  const nomes = new Set()
+  for (const r of rows) if (r.nomeConsultor) nomes.add(r.nomeConsultor)
+  return [...nomes].sort((a, b) => a.localeCompare(b, 'pt-BR'))
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 6. CONSOLIDAÇÃO PARA OS KPIs
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1007,6 +1123,7 @@ function parseRecepcionistaBuffer(buffer, meta) {
   const colVal      = header.indexOf('tot_serv')
   const colMargem   = header.indexOf('margem_servico')
   const colEmpresa  = header.indexOf('Empresa_Nome')
+  const colUsuario  = header.indexOf('Usuario_Nome') // identifica o Consultor que atendeu a O.S.
 
   if (colDate === -1 || colVal === -1) {
     console.warn(`[Recep] Colunas não encontradas em ${meta.name}. Cabeçalho: ${header.slice(0, 20).join(', ')}`)
@@ -1023,7 +1140,8 @@ function parseRecepcionistaBuffer(buffer, meta) {
     if (!totServ || isNaN(totServ)) continue
     const margemServico = colMargem   !== -1 ? (Number(row[colMargem])  || 0) : 0
     const empresaNome   = colEmpresa  !== -1 ? normalizeEmpresaNome(row[colEmpresa]) : ''
-    result.push({ periodo, semanaKey, totServ, margemServico, empresaNome, arquivo: meta.name })
+    const nomeConsultor = colUsuario  !== -1 && row[colUsuario] != null ? String(row[colUsuario]).trim() : ''
+    result.push({ periodo, semanaKey, totServ, margemServico, empresaNome, nomeConsultor, arquivo: meta.name })
   }
   return result
 }
@@ -1133,6 +1251,38 @@ export async function extractServicosOficina(year = new Date().getFullYear(), em
   const result = consolidarServicos(rows)
   setCache(cacheKey, result)
   return result
+}
+
+// Mesma fonte de extractServicosOficina, mas filtrada pelo Consultor (Usuario_Nome)
+// que atendeu a O.S. — usado no bloco CONSULTOR DE SERVIÇOS da Matriz KPIs.
+export async function extractServicosPorConsultor(year = new Date().getFullYear(), empresaNome = null, consultorNome = null) {
+  const yearStr = String(year)
+  if (!VALID_YEARS.has(yearStr)) return null
+
+  const empresaNorm   = empresaNome   ? normalizeEmpresaNome(empresaNome).toUpperCase() : null
+  const consultorNorm = consultorNome ? String(consultorNome).trim().toUpperCase()      : null
+  const cacheKey = `servicos-consultor-${yearStr}-${empresaNorm || 'todas'}-${consultorNorm || 'todos'}`
+  const hit = cached(cacheKey)
+  if (hit) return hit
+
+  const allRows = await _loadAllRecepRows(year)
+  let rows = empresaNorm ? allRows.filter(r => r.empresaNome.toUpperCase() === empresaNorm) : allRows
+  if (consultorNorm) rows = rows.filter(r => r.nomeConsultor.toUpperCase() === consultorNorm)
+
+  const result = consolidarServicos(rows)
+  setCache(cacheKey, result)
+  return result
+}
+
+// Lista de nomes de Consultor distintos na Recepcionista (pro seletor da tela
+// de Serviços) — opcionalmente filtrada por empresa.
+export async function listConsultoresServicos(year = new Date().getFullYear(), empresaNome = null) {
+  const empresaNorm = empresaNome ? normalizeEmpresaNome(empresaNome).toUpperCase() : null
+  const allRows = await _loadAllRecepRows(year)
+  const rows = empresaNorm ? allRows.filter(r => r.empresaNome.toUpperCase() === empresaNorm) : allRows
+  const nomes = new Set()
+  for (const r of rows) if (r.nomeConsultor) nomes.add(r.nomeConsultor)
+  return [...nomes].sort((a, b) => a.localeCompare(b, 'pt-BR'))
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1274,13 +1424,14 @@ export function parseROF096Buffer(buffer, meta) {
     if (!row || row.length < 13) continue
 
     const empresaNome = normalizeEmpresaNome(row[1])                          // coluna B
+    const nomeMecanico = row[5] != null ? String(row[5]).trim() : ''          // coluna F — Usuario_Nome
     const disponiveis = safeNum(row[12])                                       // coluna M
     const periodo     = serialToYearMonth(row[3]) || periodoFallback           // coluna D
     const semanaKey   = serialToWeekKey(row[3]) || null
 
     if (!disponiveis) continue
 
-    result.push({ empresaNome, disponiveis, periodo, semanaKey, arquivo: meta.name })
+    result.push({ empresaNome, nomeMecanico, disponiveis, periodo, semanaKey, arquivo: meta.name })
   }
   return result
 }
@@ -1367,6 +1518,42 @@ export async function extractROF096(year = new Date().getFullYear(), empresaNome
   return result
 }
 
+// Mesma fonte de extractROF096, filtrada pelo mecânico (Usuario_Nome) — usado
+// como denominador (Horas Disponíveis) de Eficácia/Produtividade no bloco
+// MECÂNICO da Matriz KPIs.
+export async function extractROF096PorMecanico(year = new Date().getFullYear(), empresaNome = null, mecanicoNome = null) {
+  const yearStr      = String(year)
+  const empresaNorm  = empresaNome  ? normalizeEmpresaNome(empresaNome).toUpperCase() : null
+  const mecanicoNorm = mecanicoNome ? String(mecanicoNome).trim().toUpperCase()       : null
+
+  const cacheKey = `rof096-mecanico-${yearStr}-${empresaNorm || 'todas'}-${mecanicoNorm || 'todos'}`
+  const hit = cached(cacheKey)
+  if (hit) return hit
+
+  const allRows   = await _loadAllROF096Rows(year)
+  const rowsDoAno = allRows.filter(r => r.periodo?.startsWith(yearStr))
+  let rows = empresaNorm
+    ? rowsDoAno.filter(r => r.empresaNome.toUpperCase() === empresaNorm)
+    : rowsDoAno
+  if (mecanicoNorm) rows = rows.filter(r => r.nomeMecanico.toUpperCase() === mecanicoNorm)
+
+  const result = consolidarROF096(rows)
+  setCache(cacheKey, result)
+  return result
+}
+
+// Lista de nomes de mecânico distintos no ROF096 (Usuario_Nome) — pro seletor
+// da tela de Serviços.
+export async function listMecanicosROF096(year = new Date().getFullYear(), empresaNome = null) {
+  const empresaNorm = empresaNome ? normalizeEmpresaNome(empresaNome).toUpperCase() : null
+  const allRows   = await _loadAllROF096Rows(year)
+  const rowsDoAno = allRows.filter(r => r.periodo?.startsWith(String(year)))
+  const rows = empresaNorm ? rowsDoAno.filter(r => r.empresaNome.toUpperCase() === empresaNorm) : rowsDoAno
+  const nomes = new Set()
+  for (const r of rows) if (r.nomeMecanico) nomes.add(r.nomeMecanico)
+  return [...nomes].sort((a, b) => a.localeCompare(b, 'pt-BR'))
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 10. ROF042 — FaturamentoServicosProdutivos
 //    Pasta:   /Banco de Dados - DAF - Pós-Vendas/Vendas Mecânicos
@@ -1430,26 +1617,28 @@ export function parseROF042Buffer(buffer, meta) {
     if (!row || row.length < 28) continue
 
     const empresaNome = normalizeEmpresaNome(row[0])                                    // coluna A
+    const produtivo   = row[1] != null ? String(row[1]).trim() : ''                     // coluna B — mecânico
     const hrAplic     = safeNum(row[15])                                                // coluna P — Hr. Total
     const hrVend      = safeNum(row[16])                                                // coluna Q
+    const vlLiquido   = safeNum(row[21])                                                // coluna V — Vl Líquido
     // Coluna AB tem data+hora — converte para só data antes de extrair período
     const rawDate     = typeof row[27] === 'number' ? Math.floor(row[27]) : row[27]
     const periodo     = serialToYearMonth(rawDate)                                      // coluna AB — NF Data
     const semanaKey   = serialToWeekKey(rawDate) || null
 
     if (!periodo) continue
-    if (!hrAplic && !hrVend) continue
+    if (!hrAplic && !hrVend && !vlLiquido) continue
 
-    result.push({ empresaNome, hrAplic, hrVend, periodo, semanaKey, arquivo: meta.name })
+    result.push({ empresaNome, produtivo, hrAplic, hrVend, vlLiquido, periodo, semanaKey, arquivo: meta.name })
   }
   return result
 }
 
 /**
- * Consolida linhas ROF042 em { hrAplic, hrVend } por período.
+ * Consolida linhas ROF042 em { hrAplic, hrVend, vlLiquido } por período.
  */
 function consolidarROF042(rows) {
-  const qa = {}, qv = {}, ma = {}, mv = {}, sa = {}, sv = {}
+  const qa = {}, qv = {}, ql = {}, ma = {}, mv = {}, ml = {}, sa = {}, sv = {}, sl = {}
 
   for (const r of rows) {
     const q = quarter(r.periodo)
@@ -1457,12 +1646,14 @@ function consolidarROF042(rows) {
     const s = r.semanaKey
     qa[q] = (qa[q] || 0) + r.hrAplic
     qv[q] = (qv[q] || 0) + r.hrVend
-    if (m) { ma[m] = (ma[m] || 0) + r.hrAplic; mv[m] = (mv[m] || 0) + r.hrVend }
-    if (s) { sa[s] = (sa[s] || 0) + r.hrAplic; sv[s] = (sv[s] || 0) + r.hrVend }
+    ql[q] = (ql[q] || 0) + (r.vlLiquido || 0)
+    if (m) { ma[m] = (ma[m] || 0) + r.hrAplic; mv[m] = (mv[m] || 0) + r.hrVend; ml[m] = (ml[m] || 0) + (r.vlLiquido || 0) }
+    if (s) { sa[s] = (sa[s] || 0) + r.hrAplic; sv[s] = (sv[s] || 0) + r.hrVend; sl[s] = (sl[s] || 0) + (r.vlLiquido || 0) }
   }
 
   const fyA = rows.reduce((s, r) => s + r.hrAplic, 0) || null
   const fyV = rows.reduce((s, r) => s + r.hrVend,  0) || null
+  const fyL = rows.reduce((s, r) => s + (r.vlLiquido || 0), 0) || null
 
   const per = (monthly, weekly, fy) => ({
     q1: monthly.q1 ?? null, q2: monthly.q2 ?? null, q3: monthly.q3 ?? null, q4: monthly.q4 ?? null, fy,
@@ -1471,8 +1662,9 @@ function consolidarROF042(rows) {
   })
 
   return {
-    hrAplic: per(ma, sa, fyA),
-    hrVend:  per(mv, sv, fyV),
+    hrAplic:   per(ma, sa, fyA),
+    hrVend:    per(mv, sv, fyV),
+    vlLiquido: per(ml, sl, fyL),
     metaData: {
       totalArquivos: [...new Set(rows.map(r => r.arquivo))].length,
       totalLinhas:   rows.length,
@@ -1540,4 +1732,40 @@ export async function extractROF042(year = new Date().getFullYear(), empresaNome
   const result = consolidarROF042(rows)
   setCache(cacheKey, result)
   return result
+}
+
+// Mesma fonte de extractROF042, filtrada pelo mecânico (coluna "Produtivo") —
+// usado no bloco MECÂNICO da Matriz KPIs (Faturamento via vlLiquido, e
+// numerador de Eficácia/Produtividade via hrVend/hrAplic).
+export async function extractROF042PorMecanico(year = new Date().getFullYear(), empresaNome = null, mecanicoNome = null) {
+  const yearStr      = String(year)
+  const empresaNorm  = empresaNome  ? normalizeEmpresaNome(empresaNome).toUpperCase() : null
+  const mecanicoNorm = mecanicoNome ? String(mecanicoNome).trim().toUpperCase()       : null
+
+  const cacheKey = `rof042-mecanico-${yearStr}-${empresaNorm || 'todas'}-${mecanicoNorm || 'todos'}`
+  const hit = cached(cacheKey)
+  if (hit) return hit
+
+  const allRows   = await _loadAllROF042Rows(year)
+  const rowsDoAno = allRows.filter(r => r.periodo?.startsWith(yearStr))
+  let rows = empresaNorm
+    ? rowsDoAno.filter(r => r.empresaNome.toUpperCase() === empresaNorm)
+    : rowsDoAno
+  if (mecanicoNorm) rows = rows.filter(r => r.produtivo.toUpperCase() === mecanicoNorm)
+
+  const result = consolidarROF042(rows)
+  setCache(cacheKey, result)
+  return result
+}
+
+// Lista de nomes de mecânico distintos no ROF042 (coluna "Produtivo") — pro
+// seletor da tela de Serviços.
+export async function listMecanicosROF042(year = new Date().getFullYear(), empresaNome = null) {
+  const empresaNorm = empresaNome ? normalizeEmpresaNome(empresaNome).toUpperCase() : null
+  const allRows   = await _loadAllROF042Rows(year)
+  const rowsDoAno = allRows.filter(r => r.periodo?.startsWith(String(year)))
+  const rows = empresaNorm ? rowsDoAno.filter(r => r.empresaNome.toUpperCase() === empresaNorm) : rowsDoAno
+  const nomes = new Set()
+  for (const r of rows) if (r.produtivo) nomes.add(r.produtivo)
+  return [...nomes].sort((a, b) => a.localeCompare(b, 'pt-BR'))
 }

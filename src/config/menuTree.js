@@ -81,6 +81,7 @@ export const MENU_TREE = [
         navTo: 'regras-comissoes',
         children: [
           { key: 'fontes-calculo', label: 'Fonte de Cálculo' },
+          { key: 'fontes-microwork', label: 'Fonte MicroWork' },
           { key: 'bases-calculo', label: 'Base de Cálculo' },
           { key: 'politica-comissao', label: 'Política de Comissões' },
           { key: 'cargos-remuneracoes', label: 'Cargos e Remunerações' },
@@ -245,6 +246,7 @@ export const MENU_TREE = [
           { key: 'kpi/bloco1-corporativo', label: 'Bloco 1 — Corporativo' },
           { key: 'kpi/bloco2-operacional', label: 'Bloco 2 — Operacional' },
           { key: 'kpi/bloco3-pos-venda', label: 'Bloco 3 — Pós-Venda' },
+          { key: 'kpi/bloco3-servicos', label: 'Bloco 3 — Serviços' },
           { key: 'kpi/bloco3-pecas', label: 'Bloco 3 — Peças' },
           { key: 'kpi/orcamento-backlog', label: 'Orçamento & Backlog' },
           { key: 'kpi/auditoria', label: 'Auditoria de Fontes' },

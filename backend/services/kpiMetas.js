@@ -3,6 +3,10 @@
  * Metas / Total Grupo) convertidas para os períodos da Matriz KPIs
  * (q1..q4, fy, m01..m12, s01..s70), prontas para injetar na coluna "Meta".
  *
+ * Na Matriz KPIs a meta é sempre lida de fato_metas_publicadas — é o único
+ * lugar de verdade daqui; nunca ler as tabelas de rascunho/planejamento
+ * (fato_rascunho_metas_*) diretamente.
+ *
  * As metas são mensais. Trimestre/FY somam os meses; as semanas rateiam a meta
  * do mês pelos dias úteis de cada semana (fato_calendario da própria empresa;
  * sem calendário cadastrado cai em segunda a sexta).
@@ -53,6 +57,9 @@ function computeWeekRanges(year) {
   return ranges
 }
 
+// Todas as metas publicadas do ano, de qualquer tipo, mais o calendário —
+// cacheado por ano só, reaproveitado por qualquer indicador que precise
+// localizar uma meta (Peças, Total Oficina, futuros).
 async function carregarBase(ano) {
   const key = `base-${ano}`
   const hit = _cache.get(key)
@@ -63,8 +70,8 @@ async function carregarBase(ano) {
 
   const [metas, calendario] = await Promise.all([
     fetchTudo(() => supabaseAdmin.from('fato_metas_publicadas')
-      .select('empresa_id, mes, colaborador_nome, meta_faturamento')
-      .eq('ano', ano).eq('tipo', 'pecas').order('id')),
+      .select('empresa_id, empresa_nome, mes, tipo, colaborador_nome, meta_faturamento')
+      .eq('ano', ano).order('id')),
     fetchTudo(() => supabaseAdmin.from('fato_calendario')
       .select('empresa_id, data, dias_uteis')
       .eq('ano', ano).order('data')),
@@ -100,23 +107,17 @@ function diasUteisIntervalo(calEmpresaMes, ano, mes, inicio, fim) {
   return total
 }
 
-/**
- * Metas de faturamento de Peças (vendedores de mercadoria) por período.
- * vendedorNome = null → soma de todos os vendedores/empresas publicados.
- * Retorna null quando não há meta aprovada/publicada para o recorte.
- */
-export async function getMetaPecasPeriodos(ano, vendedorNome = null) {
-  const base = await carregarBase(ano)
-  if (!base) return null
-
-  const alvo = vendedorNome ? normNome(vendedorNome) : null
-  const linhas = base.metas.filter(r => !alvo || normNome(r.colaborador_nome) === alvo)
+// Recebe linhas já filtradas de fato_metas_publicadas (mesmo tipo/recorte) e
+// devolve nos períodos da Matriz KPIs: mês direto, trimestre/FY somando os
+// meses, semana rateando pelos dias úteis (fato_calendario da empresa da
+// linha; sem calendário cadastrado cai em segunda a sexta).
+function periodizarMetas(linhas, ano, calendario) {
   if (!linhas.length) return null
 
-  const calIdx = indexarCalendario(base.calendario)
+  const calIdx = indexarCalendario(calendario)
   const semanas = computeWeekRanges(ano)
 
-  // mês por empresa (soma dos vendedores)
+  // mês por empresa (soma de todas as linhas daquele recorte)
   const porEmpresaMes = {}
   for (const r of linhas) {
     const v = Number(r.meta_faturamento) || 0
@@ -152,4 +153,52 @@ export async function getMetaPecasPeriodos(ano, vendedorNome = null) {
   out.fy = anoVals.length ? anoVals.reduce((s, v) => s + v, 0) : null
   ALL_WEEKS.forEach(k => { out[k] = sem[k] ?? null })
   return out
+}
+
+/**
+ * Metas de faturamento de Peças (vendedores de mercadoria) por período.
+ * vendedorNome = null → soma de todos os vendedores/empresas publicados.
+ * Retorna null quando não há meta aprovada/publicada para o recorte.
+ */
+export async function getMetaPecasPeriodos(ano, vendedorNome = null) {
+  const base = await carregarBase(ano)
+  if (!base) return null
+
+  const alvo = vendedorNome ? normNome(vendedorNome) : null
+  const linhas = base.metas.filter(r => r.tipo === 'pecas' && (!alvo || normNome(r.colaborador_nome) === alvo))
+  return periodizarMetas(linhas, ano, base.calendario)
+}
+
+/**
+ * Meta de Faturamento Total Oficina (Peças + Serviços) por período.
+ *
+ * Sem consultorNome: soma os tipos mecanico + funilaria + terceiros — os três
+ * componentes reais da meta de Oficina (não inclui 'consultor', que é só a
+ * MESMA meta redistribuída entre os consultores pra tela de Distribuição de
+ * Consultores; somar os dois contaria a meta em dobro — ver ehConsultores()
+ * em src/utils/totalPosVendas.js).
+ *
+ * Com consultorNome: usa direto o tipo 'consultor' filtrado por esse
+ * colaborador — é a mesma meta de Oficina, só que já quebrada por consultor
+ * (não precisa e não deve somar mecanico/funilaria/terceiros nesse caso).
+ *
+ * empresaNome: restringe à empresa (casa) informada — usado nos quadros por
+ * casa do Pós-Venda; null = todas as empresas (Gerente Geral).
+ */
+export async function getMetaOficinaPeriodos(ano, { consultorNome = null, empresaNome = null } = {}) {
+  const base = await carregarBase(ano)
+  if (!base) return null
+
+  let linhas
+  if (consultorNome) {
+    const alvo = normNome(consultorNome)
+    linhas = base.metas.filter(r => r.tipo === 'consultor' && normNome(r.colaborador_nome) === alvo)
+  } else {
+    linhas = base.metas.filter(r => r.tipo === 'mecanico' || r.tipo === 'funilaria' || r.tipo === 'terceiros')
+  }
+  if (empresaNome) {
+    const alvoEmp = normNome(empresaNome)
+    linhas = linhas.filter(r => normNome(r.empresa_nome) === alvoEmp)
+  }
+  return periodizarMetas(linhas, ano, base.calendario)
 }

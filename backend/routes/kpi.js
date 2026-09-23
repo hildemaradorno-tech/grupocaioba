@@ -17,6 +17,14 @@ import {
   extractROF096,
   extractBalcao,
   listVendedoresBalcao,
+  extractPecasOficinaPorConsultor,
+  listConsultoresOficina,
+  extractServicosPorConsultor,
+  listConsultoresServicos,
+  extractROF042PorMecanico,
+  listMecanicosROF042,
+  extractROF096PorMecanico,
+  listMecanicosROF096,
 } from '../services/sharepointExtractor.js'
 import { CASA_EMPRESA_MAP, EMPRESAS_SYNC } from '../services/kpiEmpresas.js'
 import {
@@ -27,7 +35,7 @@ import {
   sincronizacaoEmAndamento,
 } from '../services/kpiSyncService.js'
 import { getPesos, setPeso, aplicarPesos } from '../services/kpiPesos.js'
-import { getMetaPecasPeriodos } from '../services/kpiMetas.js'
+import { getMetaPecasPeriodos, getMetaOficinaPeriodos } from '../services/kpiMetas.js'
 
 const router = Router()
 
@@ -277,7 +285,7 @@ function injectPeriods(kpi, src, fn) {
   return { ...kpi, ...base }
 }
 
-function mergeBloco3PV(quadros, pv, horas = null) {
+function mergeBloco3PV(quadros, pv, horas = null, meta = null) {
   if (!pv && !horas) return quadros
   const r = (v) => (v != null ? Math.round(v) : null)
   const p = (v) => (v != null ? v : null)
@@ -286,14 +294,14 @@ function mergeBloco3PV(quadros, pv, horas = null) {
     const kpis = quadro.kpis.map(kpi => {
       if (quadro.tituloGerente === 'GERENTE GERAL PÓS-VENDAS') {
         switch (kpi.id) {
-          case 1: return injectPeriods(kpi, sumPeriods(pv?.faturamentoOficina, pv?.faturamentoBrutoServicos), r)
+          case 1: return injectMeta(injectPeriods(kpi, sumPeriods(pv?.faturamentoOficina, pv?.faturamentoBrutoServicos), r), meta)
           case 2: return injectPeriods(kpi, pv?.margemBrutaServicosRecep, p)
           case 3: return injectPeriods(kpi, pv?.margemBrutaPecasOficina, p)
         }
       }
       if (CASA_EMPRESA_MAP[quadro.tituloGerente]) {
         if (kpi.indicador === 'Faturamento Oficina (Serviços)') return injectPeriods(kpi, pv?.faturamentoBrutoServicos ?? {}, r)
-        if (kpi.indicador === 'Faturamento Total Oficina (Peças + Serviços)') return injectPeriods(kpi, sumPeriods(pv?.faturamentoOficina, pv?.faturamentoBrutoServicos), r)
+        if (kpi.indicador === 'Faturamento Total Oficina (Peças + Serviços)') return injectMeta(injectPeriods(kpi, sumPeriods(pv?.faturamentoOficina, pv?.faturamentoBrutoServicos), r), meta)
         if (kpi.indicador === 'Faturamento Balcão')             return injectPeriods(kpi, pv?.faturamentoBalcao        ?? {}, r)
         if (kpi.indicador === 'Margem Bruta Peças Balcão')    return injectPeriods(kpi, pv?.margemBrutaPecasBalcao   ?? {}, p)
         if (kpi.indicador === 'Margem Bruta Serviços')          return injectPeriods(kpi, pv?.margemBrutaServicosRecep ?? {}, p)
@@ -363,6 +371,74 @@ function mergeBloco3Pecas(quadros, pecas, balcaoTodas, balcaoVendedor, metaTodos
   })
 }
 
+// ── Template Bloco 3 Serviços — CONSULTOR DE SERVIÇOS + MECÂNICO ────────────
+const BLOCO_SERVICOS_TEMPLATE = [
+  {
+    tituloGerente: 'CONSULTOR DE SERVIÇOS',
+    cor: 'blue',
+    kpis: [
+      { id: 1, indicador: 'Faturamento Total Oficina (Peças + Serviços)', orientacao: '>', metrica: 'R$', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      { id: 2, indicador: 'Margem Bruta Serviços',                        orientacao: '>', metrica: '%',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      { id: 3, indicador: 'Margem Bruta Peças Oficina',                   orientacao: '>', metrica: '%',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      { id: 4, indicador: 'Produtividade da Oficina',                     orientacao: '>', metrica: '%',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      { id: 5, indicador: 'O.S. aberta sem veículo na oficina',           orientacao: '<', metrica: '%',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      { id: 6, indicador: 'O.S. >= 30 dias (% do Valor)',                 orientacao: '<', metrica: '%',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+    ],
+  },
+  {
+    tituloGerente: 'MECÂNICO',
+    cor: 'indigo',
+    kpis: [
+      { id: 1, indicador: 'Faturamento Total Oficina (Serviços)', orientacao: '>', metrica: 'R$', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      { id: 2, indicador: 'Eficácia da Oficina',                  orientacao: '>', metrica: '%',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      { id: 3, indicador: 'Produtividade da Oficina',             orientacao: '>', metrica: '%',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+    ],
+  },
+]
+
+/**
+ * Injeta realizados nos quadros do Bloco 3 Serviços.
+ * consultorData = { pecasOficina, servicos } já filtrados pelo Consultor selecionado
+ *                 (ou agregado de todos, sem seleção) — RPR001 linhas de Oficina +
+ *                 Recepcionista, mesma dupla fonte do Faturamento Total Oficina do
+ *                 Gerente Geral Pós-Venda.
+ * mecanicoData  = { vlLiquido, eficacia, produtividade } já filtrados pelo Mecânico
+ *                 selecionado (ROF042 "Produtivo" + ROF096 "Usuario_Nome").
+ * metaConsultor = meta de Faturamento Total Oficina (fato_metas_publicadas, tipo
+ *                 'consultor' sem seleção = todos os tipos mecanico+funilaria+
+ *                 terceiros; com consultor selecionado = só a meta dele).
+ */
+function mergeBlocoServicos(quadros, consultorData, mecanicoData, metaConsultor) {
+  const r = (v) => (v != null ? Math.round(v) : null)
+  const p = (v) => (v != null ? v : null)
+
+  return quadros.map(quadro => {
+    if (quadro.tituloGerente === 'CONSULTOR DE SERVIÇOS') {
+      const kpis = quadro.kpis.map(kpi => {
+        switch (kpi.id) {
+          case 1: return injectMeta(injectPeriods(kpi, sumPeriods(consultorData?.pecasOficina?.liquido, consultorData?.servicos?.faturamentoBruto), r), metaConsultor)
+          case 2: return injectPeriods(kpi, consultorData?.servicos?.margemBruta ?? {}, p)
+          case 3: return injectPeriods(kpi, consultorData?.pecasOficina?.margemPct ?? {}, p)
+        }
+        return kpi
+      })
+      return { ...quadro, kpis }
+    }
+    if (quadro.tituloGerente === 'MECÂNICO') {
+      const kpis = quadro.kpis.map(kpi => {
+        switch (kpi.id) {
+          case 1: return injectPeriods(kpi, mecanicoData?.vlLiquido ?? {}, r)
+          case 2: return injectPeriods(kpi, mecanicoData?.eficacia ?? {}, p)
+          case 3: return injectPeriods(kpi, mecanicoData?.produtividade ?? {}, p)
+        }
+        return kpi
+      })
+      return { ...quadro, kpis }
+    }
+    return quadro
+  })
+}
+
 router.get('/status', (req, res) => {
   res.json({ configured: isConfigured(), sheets: SHEET_NAMES, cacheTtlMin: parseInt(process.env.KPI_CACHE_TTL_MIN || '10') })
 })
@@ -402,12 +478,23 @@ router.get('/bloco3-pos-venda', requireConfig, wrap(async (req, res) => {
     horasByEmpresa[emp] = computeHoras(rof042Data, rof096Data)
   })
 
+  // Meta de Faturamento Total Oficina: geral (todas as empresas) pro Gerente
+  // Geral, e uma por casa (empresa_nome em fato_metas_publicadas) pros
+  // quadros das casas.
+  const casasNomes = [...new Set(Object.values(CASA_EMPRESA_MAP))]
+  const [metaGeral, ...metasCasas] = await Promise.all([
+    getMetaOficinaPeriodos(year).catch(() => null),
+    ...casasNomes.map(nome => getMetaOficinaPeriodos(year, { empresaNome: nome }).catch(() => null)),
+  ])
+  const metaByEmpresa = Object.fromEntries(casasNomes.map((nome, i) => [nome, metasCasas[i]]))
+
   // Injeta dados por quadro: GERENTE GERAL PÓS-VENDAS usa 'todas', casas usam a empresa mapeada
   let quadros = BLOCO3_PV_TEMPLATE.map(quadro => {
     const empresa = CASA_EMPRESA_MAP[quadro.tituloGerente] || 'todas'
     const pv    = pvByEmpresa[empresa] ?? pvByEmpresa['todas']
     const horas = horasByEmpresa[empresa] ?? null
-    return mergeBloco3PV([quadro], pv, horas)[0]
+    const meta  = CASA_EMPRESA_MAP[quadro.tituloGerente] ? metaByEmpresa[empresa] : metaGeral
+    return mergeBloco3PV([quadro], pv, horas, meta)[0]
   })
 
   const pesos = await getPesos('bloco3-pos-venda')
@@ -479,6 +566,64 @@ router.get('/extractor/balcao/vendedores', requireConfig, wrap(async (req, res) 
   const year = parseInt(req.query.year) || new Date().getFullYear()
   const vendedores = await listVendedoresBalcao(year, null)
   res.json({ year, vendedores })
+}))
+
+router.get('/bloco3-servicos', requireConfig, wrap(async (req, res) => {
+  const year      = parseInt(req.query.year) || new Date().getFullYear()
+  const consultor = req.query.consultor || null
+  const mecanico  = req.query.mecanico || null
+
+  // Consultor: Peças de Oficina (RPR001) + Serviços (Recepcionista), mesma
+  // dupla fonte do Faturamento Total Oficina do Gerente Geral Pós-Venda —
+  // ao vivo, sem filtro de empresa (seletor da tela é só por pessoa).
+  let pecasOficina = null, servicos = null
+  try { pecasOficina = await extractPecasOficinaPorConsultor(year, null, consultor) } catch (_) { /* sem dados */ }
+  try { servicos     = await extractServicosPorConsultor(year, null, consultor) } catch (_) { /* sem dados */ }
+
+  // Mecânico: ROF042 (Vl Líquido + horas) e ROF096 (Horas Disponíveis) do
+  // mesmo mecânico selecionado.
+  let rof042 = null, rof096 = null
+  try { rof042 = await extractROF042PorMecanico(year, null, mecanico) } catch (_) { /* sem dados */ }
+  try { rof096 = await extractROF096PorMecanico(year, null, mecanico) } catch (_) { /* sem dados */ }
+  const horas = computeHoras(rof042, rof096)
+
+  // Meta de Faturamento Total Oficina: sem consultor selecionado, usa o total
+  // (mecanico+funilaria+terceiros); com consultor, a meta já quebrada por ele.
+  let metaConsultor = null
+  try {
+    metaConsultor = consultor
+      ? await getMetaOficinaPeriodos(year, { consultorNome: consultor })
+      : await getMetaOficinaPeriodos(year)
+  } catch (_) { /* sem meta */ }
+
+  let quadros = mergeBlocoServicos(
+    BLOCO_SERVICOS_TEMPLATE,
+    { pecasOficina, servicos },
+    { vlLiquido: rof042?.vlLiquido ?? null, eficacia: horas.eficacia, produtividade: horas.produtividade },
+    metaConsultor
+  )
+  const pesos = await getPesos('bloco3-servicos')
+  quadros = aplicarPesos(quadros, pesos)
+
+  res.json(quadros)
+}))
+
+// GET /api/kpi/extractor/consultores?year=2026 — lista de consultores (RPR001
+// Oficina + Recepcionista) pro seletor do bloco CONSULTOR DE SERVIÇOS
+router.get('/extractor/consultores', requireConfig, wrap(async (req, res) => {
+  const year = parseInt(req.query.year) || new Date().getFullYear()
+  const [a, b] = await Promise.all([listConsultoresOficina(year, null), listConsultoresServicos(year, null)])
+  const consultores = [...new Set([...a, ...b])].sort((x, y) => x.localeCompare(y, 'pt-BR'))
+  res.json({ year, consultores })
+}))
+
+// GET /api/kpi/extractor/mecanicos?year=2026 — lista de mecânicos (ROF042 +
+// ROF096) pro seletor do bloco MECÂNICO
+router.get('/extractor/mecanicos', requireConfig, wrap(async (req, res) => {
+  const year = parseInt(req.query.year) || new Date().getFullYear()
+  const [a, b] = await Promise.all([listMecanicosROF042(year, null), listMecanicosROF096(year, null)])
+  const mecanicos = [...new Set([...a, ...b])].sort((x, y) => x.localeCompare(y, 'pt-BR'))
+  res.json({ year, mecanicos })
 }))
 
 router.get('/bloco2', requireConfig, wrap(async (req, res) => {

@@ -1,9 +1,10 @@
 import React, { useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { TableProperties, Calculator, ScrollText, Briefcase, Hash, ListChecks, Info } from 'lucide-react'
+import { TableProperties, Calculator, ScrollText, Briefcase, Hash, ListChecks, Radio, Info } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useSessionState } from '../hooks/useSessionState'
 import FontesCalculo from './FontesCalculo'
+import FontesMicrowork from './FontesMicrowork'
 import BasesCalculo from './BasesCalculo'
 import PoliticaComissao from './PoliticaComissao'
 import CargosRemuneracoes from './CargosRemuneracoes'
@@ -13,6 +14,8 @@ import TiposProcesso from './TiposProcesso'
 const ABAS = [
   { menuPath: 'fontes-calculo', label: 'Fonte de Cálculo', icon: TableProperties, Componente: FontesCalculo,
     description: 'Cadastre de qual arquivo do SharePoint cada evento de comissão lê seus dados.' },
+  { menuPath: 'fontes-microwork', label: 'Fonte MicroWork', icon: Radio, Componente: FontesMicrowork,
+    description: 'Cadastre relatórios do MicroWork Cloud (via API) como fonte de dados de comissão.' },
   { menuPath: 'bases-calculo', label: 'Base de Cálculo', icon: Calculator, Componente: BasesCalculo,
     description: 'Defina qual coluna e agregação extraem o valor de cada Fonte de Cálculo.' },
   { menuPath: 'politica-comissao', label: 'Política de Comissões', icon: ScrollText, Componente: PoliticaComissao,
