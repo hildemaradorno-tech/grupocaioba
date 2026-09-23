@@ -70,7 +70,7 @@ async function carregarBase(ano) {
 
   const [metas, calendario] = await Promise.all([
     fetchTudo(() => supabaseAdmin.from('fato_metas_publicadas')
-      .select('empresa_id, empresa_nome, mes, tipo, colaborador_nome, meta_faturamento')
+      .select('empresa_id, empresa_nome, mes, tipo, colaborador_nome, meta_faturamento, meta_servicos')
       .eq('ano', ano).order('id')),
     fetchTudo(() => supabaseAdmin.from('fato_calendario')
       .select('empresa_id, data, dias_uteis')
@@ -206,13 +206,16 @@ export async function getMetaOficinaPeriodos(ano, { consultorNome = null, empres
 }
 
 /**
- * Meta de Faturamento Total Oficina (Serviços) do bloco MECÂNICO: tipo 'mecanico'
+ * Meta de Faturamento Total Oficina (Serviços) do bloco MECÂNICO: só a parcela de
+ * Serviços (meta_servicos, sem Peças) do tipo 'mecanico'
  * filtrado pelo mecânico selecionado; sem seleção = soma de todos.
  */
 export async function getMetaMecanicoPeriodos(ano, mecanicoNome = null) {
   const base = await carregarBase(ano)
   if (!base) return null
   const alvo = mecanicoNome ? normNome(mecanicoNome) : null
-  const linhas = base.metas.filter(r => r.tipo === 'mecanico' && (!alvo || normNome(r.colaborador_nome) === alvo))
+  const linhas = base.metas
+    .filter(r => r.tipo === 'mecanico' && (!alvo || normNome(r.colaborador_nome) === alvo))
+    .map(r => ({ ...r, meta_faturamento: r.meta_servicos }))
   return periodizarMetas(linhas, ano, base.calendario)
 }
