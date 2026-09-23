@@ -36,7 +36,7 @@ const GROUP_COLORS = {
 
 export default function KpiAuditoria() {
   const { year } = useKpiYear()
-  const periodState = usePeriodSelector('kpi-auditoria')
+  const periodState = usePeriodSelector('kpi-matriz')
   const { activePeriods } = periodState
 
   const [empresa, setEmpresa] = useSessionState('kpi_auditoria_empresa', 'todas')
@@ -93,7 +93,7 @@ export default function KpiAuditoria() {
       </div>
 
       <EmpresaSelector value={empresa} onChange={setEmpresa} />
-      <PeriodSelector state={periodState} hideLegend />
+      <PeriodSelector state={periodState} inlineTrimestral hideLegend />
 
       {meta && (
         <p className="text-xs text-slate-400">

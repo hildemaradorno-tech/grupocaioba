@@ -2,7 +2,7 @@
 import { createPortal } from 'react-dom'
 import { Wrench, Info } from 'lucide-react'
 import { MOCK_BLOCO3_POS_VENDA } from '../../data/kpiMockData'
-import PeriodSelector, { usePeriodSelector } from '../../components/kpi/PeriodSelector'
+import PeriodSelector, { usePeriodSelector, PeriodLegend } from '../../components/kpi/PeriodSelector'
 import { getPeriodData, getPeriodLabel } from '../../utils/kpiPeriods'
 import { useKpiData } from '../../hooks/useKpiData'
 import { fetchBloco3PosVenda, salvarPeso } from '../../services/kpiService'
@@ -248,7 +248,7 @@ function QuadroTable({ quadro, activePeriods, year, onSalvarPeso }) {
 
 export default function KpiBloco3PosVenda() {
   const { year } = useKpiYear()
-  const periodState = usePeriodSelector('bloco3-posvenda', 'semanal')
+  const periodState = usePeriodSelector('kpi-matriz')
   const { activePeriods } = periodState
   const { data: quadros } = useKpiData(fetchBloco3PosVenda, MOCK_BLOCO3_POS_VENDA, { year })
 
@@ -272,12 +272,15 @@ export default function KpiBloco3PosVenda() {
 
   return (
     <div className="p-6 space-y-5">
-      <div>
-        <h1 className="text-xl font-bold text-slate-800">Indicadores de Pós-Venda</h1>
-        <p className="text-sm text-slate-500 mt-0.5">Indicadores de performance da oficina</p>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-bold text-slate-800">Indicadores de Pós-Venda</h1>
+          <p className="text-sm text-slate-500 mt-0.5">Indicadores de performance da oficina</p>
+        </div>
+        <PeriodLegend />
       </div>
 
-      <PeriodSelector state={periodState} modes={['mensal', 'semanal']} />
+      <PeriodSelector state={periodState} inlineTrimestral hideLegend />
 
       <div className="space-y-6">
         {quadrosComPeso.map((quadro, idx) => (

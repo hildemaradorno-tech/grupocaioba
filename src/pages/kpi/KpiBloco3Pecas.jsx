@@ -2,7 +2,7 @@
 import { createPortal } from 'react-dom'
 import { Package, X, ChevronDown } from 'lucide-react'
 import { MOCK_BLOCO3_PECAS } from '../../data/kpiMockData'
-import PeriodSelector, { usePeriodSelector } from '../../components/kpi/PeriodSelector'
+import PeriodSelector, { usePeriodSelector, PeriodLegend } from '../../components/kpi/PeriodSelector'
 import { getPeriodData, getPeriodLabel } from '../../utils/kpiPeriods'
 import { useKpiData } from '../../hooks/useKpiData'
 import { fetchBloco3Pecas, salvarPeso, fetchVendedoresBalcao } from '../../services/kpiService'
@@ -289,7 +289,7 @@ function QuadroTable({ quadro, activePeriods, year, onSalvarPeso, vendedorSelect
 }
 
 export default function KpiBloco3Pecas() {
-  const periodState = usePeriodSelector('bloco3-pecas')
+  const periodState = usePeriodSelector('kpi-matriz')
   const { activePeriods } = periodState
   const { year } = useKpiYear()
 
@@ -326,12 +326,15 @@ export default function KpiBloco3Pecas() {
 
   return (
     <div className="p-6 space-y-5">
-      <div>
-        <h1 className="text-xl font-bold text-slate-800">Indicadores de Peças</h1>
-        <p className="text-sm text-slate-500 mt-0.5">Indicadores de performance de peças</p>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-bold text-slate-800">Indicadores de Peças</h1>
+          <p className="text-sm text-slate-500 mt-0.5">Indicadores de performance de peças</p>
+        </div>
+        <PeriodLegend />
       </div>
 
-      <PeriodSelector state={periodState} />
+      <PeriodSelector state={periodState} inlineTrimestral hideLegend />
 
       <div className="space-y-6">
         {quadrosComPeso.map((quadro, idx) => (

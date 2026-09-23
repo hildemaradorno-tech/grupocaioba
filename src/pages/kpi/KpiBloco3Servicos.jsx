@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { Wrench, X, ChevronDown } from 'lucide-react'
 import { MOCK_BLOCO3_SERVICOS } from '../../data/kpiMockData'
-import PeriodSelector, { usePeriodSelector } from '../../components/kpi/PeriodSelector'
+import PeriodSelector, { usePeriodSelector, PeriodLegend } from '../../components/kpi/PeriodSelector'
 import { getPeriodData, getPeriodLabel } from '../../utils/kpiPeriods'
 import { useKpiData } from '../../hooks/useKpiData'
 import { fetchBloco3Servicos, salvarPeso, fetchConsultoresServicos, fetchMecanicos } from '../../services/kpiService'
@@ -294,7 +294,7 @@ function usePessoaFiltro(fetchLista, year) {
 }
 
 export default function KpiBloco3Servicos() {
-  const periodState = usePeriodSelector('bloco3-servicos')
+  const periodState = usePeriodSelector('kpi-matriz')
   const { activePeriods } = periodState
   const { year } = useKpiYear()
 
@@ -332,10 +332,13 @@ export default function KpiBloco3Servicos() {
           <h1 className="text-xl font-bold text-slate-800">Indicadores de Serviços</h1>
           <p className="text-sm text-slate-500 mt-0.5">Indicadores de performance de consultores e mecânicos da oficina</p>
         </div>
-        <DataSourceBadge source={source} loading={loading} />
+        <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-2">
+          <PeriodLegend />
+          <DataSourceBadge source={source} loading={loading} />
+        </div>
       </div>
 
-      <PeriodSelector state={periodState} />
+      <PeriodSelector state={periodState} inlineTrimestral hideLegend />
 
       <div className="space-y-6">
         {quadrosComPeso.map((quadro, idx) => {

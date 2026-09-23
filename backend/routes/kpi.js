@@ -668,6 +668,15 @@ router.get('/extractor/mecanicos', requireConfig, wrap(async (req, res) => {
   res.json({ year, mecanicos })
 }))
 
+// Metas aprovadas (fato_metas_publicadas) por período pros indicadores da aba Operacional
+// que já têm meta na Gestão de Aprovação: hoje só o Faturamento total oficina (Peças + Serviços).
+router.get('/bloco2-metas', wrap(async (req, res) => {
+  const year = parseInt(req.query.year) || new Date().getFullYear()
+  let oficina = null
+  try { oficina = await getMetaOficinaPeriodos(year) } catch (_) { /* sem meta */ }
+  res.json({ year, faturamentoTotalOficina: oficina })
+}))
+
 router.get('/bloco2', requireConfig, wrap(async (req, res) => {
   const cache = await getCachePlanilha('bloco2')
   res.json(cache ?? await getBloco2())
@@ -897,5 +906,25 @@ router.use((err, req, res, _next) => {
   console.error('[KPI]', err.message)
   res.status(500).json({ error: 'sharepoint_error', message: err.message })
 })
+
+// Pré-aquece as fontes da aba Serviços/Peças (RPR001, Recepcionista, ROF042, ROF096) pra que
+// escolher um consultor/mecânico/vendedor na tela não espere o download do SharePoint.
+// Reaquece logo depois do TTL do cache do extrator (KPI_CACHE_TTL_MIN, padrão 15 min) vencer.
+async function aquecerFontesPessoa() {
+  if (!isConfigured()) return
+  const y = new Date().getFullYear()
+  await Promise.allSettled([
+    extractPecasOficinaPorConsultor(y, null, null),
+    extractServicosPorConsultor(y, null, null),
+    extractROF042PorMecanico(y, null, null),
+    extractROF096PorMecanico(y, null, null),
+    listVendedoresBalcao(y, null),
+  ])
+}
+if (process.env.KPI_AQUECER_PESSOA !== '0') {
+  const ttlMin = parseInt(process.env.KPI_CACHE_TTL_MIN || '15')
+  setTimeout(aquecerFontesPessoa, 5_000).unref()
+  setInterval(aquecerFontesPessoa, (ttlMin * 60 + 30) * 1000).unref()
+}
 
 export default router

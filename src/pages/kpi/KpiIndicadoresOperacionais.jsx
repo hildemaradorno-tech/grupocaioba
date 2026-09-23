@@ -1,10 +1,9 @@
-﻿import React, { useState, useMemo } from 'react'
-import { ChevronDown, ChevronRight } from 'lucide-react'
-import PeriodSelector, { usePeriodSelector } from '../../components/kpi/PeriodSelector'
+﻿import React, { useMemo, useState, useEffect } from 'react'
+import PeriodSelector, { usePeriodSelector, PeriodLegend } from '../../components/kpi/PeriodSelector'
 
 import { getPeriodData, getPeriodLabel } from '../../utils/kpiPeriods'
 import { useKpiData } from '../../hooks/useKpiData'
-import { fetchBloco2 } from '../../services/kpiService'
+import { fetchBloco2, fetchMetasOperacional } from '../../services/kpiService'
 import { useKpiYear } from '../../context/KpiYearContext'
 
 const np = { meta: null, realizado: null }
@@ -20,8 +19,85 @@ const MOCK = [
   { area: 'Pós-Vendas', responsabilidade: 'Peças',            indicador: 'Faturamento Peças (R$)',     orientacao: '>', metrica: 'R$',   metaAnual: null, pesoObj: null, pesoArea: null, origem: 'Dealernet',  responsavel: 'João',    q1: np, q2: np, q3: np, q4: np, fy: np },
 ]
 
-const AREAS = [...new Set(MOCK.map(r => r.area))]
-const RESPONSAVEIS = [...new Set(MOCK.map(r => r.responsavel))]
+// Estrutura oficial da Matriz Operacional (Área → Responsabilidade → Indicador).
+// [responsabilidade, indicador, métrica, orientação, { nivel: 1 = sub-indicador, antigos: [nomes antigos equivalentes] }]
+const ESTRUTURA = [
+  ['Vendas', [
+    ['Vendas Novos', [
+      ['Market Share TOTAL', '%', '>'], ['Market Share PESADOS', '%', '>'], ['Market Share MÉDIOS', '%', '>'],
+      ['Market Share VOC', '%', '>'], ['Margem Bruta novos', '%', '>'], ['Retail Novos', 'Unid.', '>'],
+      ['Stock age novos', 'Dias', '<'],
+    ]],
+    ['Vendas Usados', [
+      ['Margem Bruta usados', '%', '>'], ['Volume de vendas usados', 'Unid.', '>', { antigos: ['Volume de Vendas Seminovos'] }],
+      ['Stock Age usados', 'Dias', '<'],
+    ]],
+    ['CRM', [
+      ['Contatos de relacionamento', 'Unid.', '>'], ['Leads recebidos', 'Unid.', '>'], ['Prospecção', 'Unid.', '>'],
+      ['Conversão (Novos + Seminovos)', '%', '>'],
+    ]],
+    ['Consórcios', [['Cotas novas', 'Unid.', '>'], ['Retenção', '%', '>']]],
+    ['Paccar Financial', [['Past Due', '%', '<'], ['Paccar market share', '%', '>']]],
+  ]],
+  ['Pós Venda', [
+    ['Oficina', [
+      ['NPS Fábrica', 'Pts', '>'], ['NPS interna', 'Pts', '>'], ['Penetração Plano de Manutenção', '%', '>'],
+      ['Faturamento Total Oficina (Peças + Serviços)', 'R$', '>', { antigos: ['Faturamento Total Oficina (Peças + Serviços)'] }],
+      ['Margem Bruta Serviços (total)', '%', '>'],
+      ['DMS', '%', '>', { nivel: 1 }], ['Garantia', '%', '>', { nivel: 1 }], ['Clientes', '%', '>', { nivel: 1 }], ['Programa Frota', '%', '>', { nivel: 1 }],
+      ['Margem Bruta Peças Oficina', '%', '>'],
+      ['DMS', '%', '>', { nivel: 1 }], ['Garantia', '%', '>', { nivel: 1 }], ['Clientes', '%', '>', { nivel: 1 }], ['Programa Frota', '%', '>', { nivel: 1 }],
+      ['Agendamentos ativos', 'Unid.', '>'], ['Total agendamento', 'Unid.', '>'],
+      ['Passagem Total', 'Unid.', '>', { antigos: ['Passagens na Oficina'] }],
+      ['Ticketmédio OFICINA', 'R$', '>'], ['EFICIÊNCIA', '%', '>'], ['EFICÁCIA', '%', '>'], ['PRODUTIVIDADE', '%', '>'],
+    ]],
+    ['Auditoria', [
+      ['Auditoria padrão DOURADOS', '%', '>'], ['Auditoria padrão TRÊS LAGOAS', '%', '>'],
+      ['Auditoria padrão CAMPO GRANDE', '%', '>'], ['Auditoria padrão CHAPADÃO', '%', '>'],
+      ['Garantia em aberto (tempo médio) ou tempo de total OS', 'Dias', '<'],
+      ['O.S. aberta sem veículo na oficina', '%', '<'], ['O.S. >= 30 dias (% do Valor)', '%', '<'],
+      ['Tempo veículo oficina', 'Dias', '<'], ['Tempo veículo funilaria', 'Dias', '<'],
+    ]],
+    ['Dealer Development', [
+      ['Absorção de PV', '%', '>'], ['Recusa de Garantia', '%', '<'],
+      ['Treinamentos Técnicos (on-line)', 'Unid.', '>'], ['Treinamentos Técnicos (presencial)', 'Unid.', '>'],
+      ['Turnover geral', '%', '<'], ['Turnover técnicos', '%', '<'],
+    ]],
+  ]],
+  ['Peças', [
+    ['Paccar Parts', [
+      ['MDI service level', '%', '>'], ['Parts Whole Sales', 'R$', '>'], ['TRP Whole Sales', 'R$', '>'],
+      ['Giro de estoque', 'x', '>'], ['Obsoletos (1 ano)', '%', '<'], ['MB peças geral', '%', '>'],
+      ['MB peças atacado (balcão)', '%', '>'], ['Venda média por produtivo', 'R$', '>'], ['Devolução / Scrap', '%', '<'],
+      ['Disponibilidade', '%', '>'], ['Número de clientes ativos', 'Unid.', '>'], ['Ticket médio', 'R$', '>'],
+      ['Fluxo de caixa (Compra vs. Venda)', 'R$', '>'], ['Volume finan. Realizado', 'R$', '>'],
+    ]],
+    ['Auditoria', [['Conformidade Peças', '%', '>'], ['Conformidade Special Tools', '%', '>']]],
+  ]],
+]
+
+const normTxt = t => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/s+/g, ' ').trim().toLowerCase()
+
+// Monta as linhas na ordem da estrutura acima, aproveitando meta/realizado/peso das linhas que
+// já vieram (mesmo nome de indicador, ou nome antigo equivalente); o restante fica vazio.
+function aplicarEstrutura(rows) {
+  const porNome = new Map()
+  for (const r of rows) if (!porNome.has(normTxt(r.indicador))) porNome.set(normTxt(r.indicador), r)
+  const out = []
+  for (const [area, resps] of ESTRUTURA) {
+    for (const [responsabilidade, inds] of resps) {
+      for (const [indicador, metrica, orientacao, extra = {}] of inds) {
+        const base = extra.nivel ? null : [indicador, ...(extra.antigos || [])].map(normTxt).map(n => porNome.get(n)).find(Boolean)
+        out.push({
+          metaAnual: null, pesoObj: null, pesoArea: null, q1: np, q2: np, q3: np, q4: np, fy: np,
+          ...(base || {}),
+          area, responsabilidade, indicador, metrica, orientacao, nivel: extra.nivel || 0,
+        })
+      }
+    }
+  }
+  return out
+}
 
 function calcAtingimento(orientacao, meta, realizado) {
   if (realizado === null || meta === null || meta === 0) return null
@@ -49,119 +125,111 @@ function fmtNum(v, metrica) {
 }
 
 export default function KpiIndicadoresOperacionais() {
-  const periodState = usePeriodSelector('bloco2')
+  const periodState = usePeriodSelector('kpi-matriz')
   const { activePeriods } = periodState
   const { year } = useKpiYear()
-  const { data: allRows } = useKpiData(fetchBloco2, MOCK, { year })
+  const { data: rawRows } = useKpiData(fetchBloco2, MOCK, { year })
+  const [metasAprovadas, setMetasAprovadas] = useState(null)
+  useEffect(() => {
+    let ativo = true
+    fetchMetasOperacional(year).then(m => { if (ativo) setMetasAprovadas(m) })
+    return () => { ativo = false }
+  }, [year])
 
-  const [filterArea, setFilterArea] = useState('Todas')
-  const [filterResp, setFilterResp] = useState('Todos')
-  const [collapsedAreas, setCollapsedAreas] = useState({})
+  const allRows = useMemo(() => {
+    const rows = aplicarEstrutura(rawRows)
+    const metas = metasAprovadas?.faturamentoTotalOficina
+    if (!metas) return rows
+    return rows.map(r => {
+      if (normTxt(r.indicador) !== normTxt('Faturamento Total Oficina (Peças + Serviços)')) return r
+      const out = { ...r, metaAnual: metas.fy ?? r.metaAnual }
+      for (const key of Object.keys(metas)) out[key] = { ...(r[key] ?? { meta: null, realizado: null }), meta: metas[key] ?? null }
+      return out
+    })
+  }, [rawRows, metasAprovadas])
 
-  const filtered = useMemo(() =>
-    allRows.filter(r =>
-      (filterArea === 'Todas' || r.area === filterArea) &&
-      (filterResp === 'Todos' || r.responsavel === filterResp)
-    ), [allRows, filterArea, filterResp])
-
-  const grouped = useMemo(() => {
-    const g = {}
-    for (const row of filtered) {
-      if (!g[row.area]) g[row.area] = []
-      g[row.area].push(row)
+  // Linhas achatadas com rowspan de Área e Responsabilidade (células mescladas).
+  const blocos = useMemo(() => {
+    const out = allRows.map(r => ({ row: r, areaSpan: 0, respSpan: 0 }))
+    let i = 0
+    while (i < out.length) {
+      let j = i
+      while (j < out.length && out[j].row.area === out[i].row.area) j++
+      out[i].areaSpan = j - i
+      let k = i
+      while (k < j) {
+        let m = k
+        while (m < j && out[m].row.responsabilidade === out[k].row.responsabilidade) m++
+        out[k].respSpan = m - k
+        k = m
+      }
+      i = j
     }
-    return g
-  }, [filtered])
-
-  const toggleArea = (area) => setCollapsedAreas(prev => ({ ...prev, [area]: !prev[area] }))
+    const porArea = []
+    for (const l of out) {
+      const ult = porArea[porArea.length - 1]
+      if (ult && ult.area === l.row.area) ult.linhas.push(l)
+      else porArea.push({ area: l.row.area, linhas: [l] })
+    }
+    return porArea
+  }, [allRows])
 
   return (
     <div className="p-6 space-y-5">
-      <div>
-        <h1 className="text-xl font-bold text-slate-800">Indicadores Operacionais</h1>
-        <p className="text-sm text-slate-500 mt-0.5">Detalhamento por área e responsabilidade</p>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-bold text-slate-800">Indicadores Operacionais</h1>
+          <p className="text-sm text-slate-500 mt-0.5">Detalhamento por área e responsabilidade</p>
+        </div>
+        <PeriodLegend />
       </div>
 
-      <PeriodSelector state={periodState} />
+      <PeriodSelector state={periodState} inlineTrimestral hideLegend />
 
-      {/* Filtros de área/responsável */}
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-2">
-          <label className="text-xs text-slate-500 font-medium">Área:</label>
-          <select
-            value={filterArea}
-            onChange={e => setFilterArea(e.target.value)}
-            className="text-xs border border-slate-200 rounded-md px-2 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-400"
-          >
-            <option>Todas</option>
-            {AREAS.map(a => <option key={a}>{a}</option>)}
-          </select>
-        </div>
-        <div className="flex items-center gap-2">
-          <label className="text-xs text-slate-500 font-medium">Responsável:</label>
-          <select
-            value={filterResp}
-            onChange={e => setFilterResp(e.target.value)}
-            className="text-xs border border-slate-200 rounded-md px-2 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-400"
-          >
-            <option>Todos</option>
-            {RESPONSAVEIS.map(r => <option key={r}>{r}</option>)}
-          </select>
-        </div>
-      </div>
-
-      {/* Tabela agrupada por área */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs whitespace-nowrap">
-            <thead>
-              <tr className="bg-slate-50 border-b border-slate-200">
-                <th className="text-left px-4 py-2.5 font-medium text-slate-500 sticky left-0 bg-slate-50 min-w-[180px]">Indicador</th>
-                <th className="text-left px-3 py-2.5 font-medium text-slate-500 min-w-[130px]">Responsabilidade</th>
-                <th className="text-center px-2 py-2.5 font-medium text-slate-500">Or.</th>
-                <th className="text-center px-2 py-2.5 font-medium text-slate-500">P.Obj</th>
-                <th className="text-center px-2 py-2.5 font-medium text-slate-500">P.Área</th>
-                {activePeriods.map(p => (
-                  <th key={p} colSpan={4} className="text-center px-2 py-2.5 font-semibold text-blue-700 border-l border-slate-200">
-                    {getPeriodLabel(p, year)}
-                  </th>
-                ))}
-                <th className="text-center px-3 py-2.5 font-medium text-slate-500">Origem</th>
-                <th className="text-center px-3 py-2.5 font-medium text-slate-500">Resp.</th>
-              </tr>
-              <tr className="bg-slate-50/60 border-b border-slate-200 text-[10px]">
-                <th colSpan={5} />
-                {activePeriods.map(p => (
-                  <React.Fragment key={p}>
-                    <th className="px-2 py-1.5 text-slate-400 font-medium border-l border-slate-200">Meta</th>
-                    <th className="px-2 py-1.5 text-slate-400 font-medium">Real.</th>
-                    <th className="px-2 py-1.5 text-slate-400 font-medium">%Ating.</th>
-                    <th className="px-2 py-1.5 text-slate-400 font-medium">Contrib.</th>
-                  </React.Fragment>
-                ))}
-                <th colSpan={2} />
-              </tr>
-            </thead>
-            <tbody>
-              {Object.entries(grouped).map(([area, rows]) => (
-                <React.Fragment key={area}>
-                  <tr
-                    className="bg-blue-950/10 cursor-pointer hover:bg-blue-950/15 transition-colors"
-                    onClick={() => toggleArea(area)}
-                  >
-                    <td colSpan={100} className="px-4 py-2 font-bold text-blue-900 text-xs">
-                      <span className="flex items-center gap-2">
-                        {collapsedAreas[area] ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-                        {area}
-                        <span className="ml-1 text-slate-500 font-normal">({rows.length} indicadores)</span>
-                      </span>
-                    </td>
+      {/* Um bloco (card) por área, com Responsabilidade mesclada */}
+      <div className="space-y-6">
+        {blocos.map(({ area, linhas }) => (
+          <div key={area} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="px-5 py-3 bg-blue-700 text-white text-sm font-bold tracking-wide uppercase">{area}</div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs whitespace-nowrap">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200">
+                    <th className="text-center px-3 py-2.5 font-medium text-slate-500 sticky left-0 z-10 bg-slate-50 min-w-[150px] w-[150px]">Responsabilidade</th>
+                    <th className="text-left px-4 py-2.5 font-medium text-slate-500 sticky left-[150px] z-10 bg-slate-50 min-w-[220px]">Indicador</th>
+                    <th className="text-center px-2 py-2.5 font-medium text-slate-500">Orientação</th>
+                    <th className="text-center px-2 py-2.5 font-medium text-slate-500">Meta Anual</th>
+                    <th className="text-center px-2 py-2.5 font-medium text-slate-500 leading-tight">PESO /<br />OBJETIVO</th>
+                    <th className="text-center px-2 py-2.5 font-medium text-slate-500 leading-tight">PESO /<br />ÁREA</th>
+                    {activePeriods.map(p => (
+                      <th key={p} colSpan={4} className="text-center px-2 py-2.5 font-semibold text-blue-700 border-l border-slate-200">
+                        {getPeriodLabel(p, year)}
+                      </th>
+                    ))}
                   </tr>
-                  {!collapsedAreas[area] && rows.map((row, i) => (
-                    <tr key={i} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
-                      <td className="px-4 py-2.5 font-medium text-slate-700 sticky left-0 bg-white">{row.indicador}</td>
-                      <td className="px-3 py-2.5 text-slate-500">{row.responsabilidade}</td>
+                  <tr className="bg-slate-50/60 border-b border-slate-200 text-[10px]">
+                    <th colSpan={6} />
+                    {activePeriods.map(p => (
+                      <React.Fragment key={p}>
+                        <th className="px-2 py-1.5 text-slate-400 font-medium border-l border-slate-200">Meta</th>
+                        <th className="px-2 py-1.5 text-slate-400 font-medium">Real.</th>
+                        <th className="px-2 py-1.5 text-slate-400 font-medium">%Ating.</th>
+                        <th className="px-2 py-1.5 text-slate-400 font-medium">Contrib.</th>
+                      </React.Fragment>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {linhas.map(({ row, respSpan }, i) => (
+                    <tr key={i} className="border-b border-slate-200 hover:bg-slate-50 transition-colors">
+                      {respSpan > 0 && (
+                        <td rowSpan={respSpan} className="px-3 py-2 text-center text-slate-600 uppercase align-middle sticky left-0 z-10 bg-slate-100 border-r border-slate-200 min-w-[150px] w-[150px]">
+                          {row.responsabilidade}
+                        </td>
+                      )}
+                      <td className={`py-2.5 sticky left-[150px] z-10 bg-white min-w-[220px] ${row.nivel ? 'pl-10 pr-4 text-slate-500' : 'px-4 font-medium text-slate-700'}`}>{row.indicador}</td>
                       <td className="px-2 py-2.5 text-center font-bold text-slate-600">{row.orientacao}</td>
+                      <td className="px-2 py-2.5 text-center text-slate-600">{fmtNum(row.metaAnual, row.metrica)}</td>
                       <td className="px-2 py-2.5 text-center text-slate-500">{(row.pesoObj * 100).toFixed(0)}%</td>
                       <td className="px-2 py-2.5 text-center text-slate-500">{(row.pesoArea * 100).toFixed(0)}%</td>
                       {activePeriods.map(p => {
@@ -181,15 +249,13 @@ export default function KpiIndicadoresOperacionais() {
                           </React.Fragment>
                         )
                       })}
-                      <td className="px-3 py-2.5 text-center text-slate-500">{row.origem}</td>
-                      <td className="px-3 py-2.5 text-center text-slate-500">{row.responsavel}</td>
                     </tr>
                   ))}
-                </React.Fragment>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   )

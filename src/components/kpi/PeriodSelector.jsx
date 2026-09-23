@@ -48,6 +48,7 @@ function ssLoad(pageKey, field, fallback) {
 function ssSave(pageKey, field, value) {
   if (!pageKey) return
   try { localStorage.setItem(`period_${pageKey}_${field}`, JSON.stringify(value)) } catch {}
+  queueMicrotask(() => window.dispatchEvent(new CustomEvent('kpi-period-sync', { detail: { pageKey, field } })))
 }
 
 // ── hook ──────────────────────────────────────────────────────────────────────
@@ -58,6 +59,26 @@ export function usePeriodSelector(pageKey, defaultViewMode = 'mensal') {
   const [visibleM,  setVisibleMRaw]  = React.useState(() => ssLoad(pageKey, 'visibleM', monthDefault))
   const [weekMonth, setWeekMonthRaw] = React.useState(() => ssLoad(pageKey, 'weekMonth', currentMonthKey))
   const [visibleS,  setVisibleSRaw]  = React.useState(() => ssLoad(pageKey, 'visibleS', () => weekDefaultForMonth(currentMonthKey())))
+
+  // Abas que usam o mesmo pageKey compartilham a seleção: quando uma altera, as outras (montadas
+  // ao mesmo tempo ou abertas depois) refletem na hora.
+  React.useEffect(() => {
+    if (!pageKey) return
+    const setters = { viewMode: setViewModeRaw, visibleT: setVisibleTRaw, visibleM: setVisibleMRaw, weekMonth: setWeekMonthRaw, visibleS: setVisibleSRaw }
+    const onSync = (e) => {
+      if (e.detail?.pageKey !== pageKey) return
+      const set = setters[e.detail.field]
+      if (!set) return
+      try {
+        const raw = localStorage.getItem(`period_${pageKey}_${e.detail.field}`)
+        if (raw === null) return
+        const val = JSON.parse(raw)
+        set(prev => (JSON.stringify(prev) === raw ? prev : val))
+      } catch {}
+    }
+    window.addEventListener('kpi-period-sync', onSync)
+    return () => window.removeEventListener('kpi-period-sync', onSync)
+  }, [pageKey])
 
   const setViewMode = (v) => { ssSave(pageKey, 'viewMode', v); setViewModeRaw(v) }
 
@@ -116,9 +137,19 @@ export function usePeriodSelector(pageKey, defaultViewMode = 'mensal') {
   }
 }
 
+export function PeriodLegend() {
+  return (
+    <span className="flex items-center gap-3 text-xs text-slate-400 shrink-0">
+      <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" /> ≥100%</span>
+      <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-amber-400 inline-block" /> 80-99%</span>
+      <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block" /> &lt;80%</span>
+    </span>
+  )
+}
+
 // ── componente ────────────────────────────────────────────────────────────────
 
-export default function PeriodSelector({ state, hideLegend = false, modes = VIEW_MODES }) {
+export default function PeriodSelector({ state, hideLegend = false, modes = VIEW_MODES, inlineTrimestral = false }) {
   const {
     viewMode, setViewMode,
     visibleT, visibleM, visibleS,
@@ -134,6 +165,7 @@ export default function PeriodSelector({ state, hideLegend = false, modes = VIEW
   }, [modes, viewMode])
 
   const weekKeys = MONTH_WEEK_RANGES[weekMonth] || []
+  const [mesAberto, setMesAberto] = React.useState(false)
 
   const btnBase = 'px-2.5 py-1 rounded-full text-xs font-medium border transition-colors'
   const btnOn   = 'bg-blue-950 text-white border-blue-950'
@@ -160,21 +192,33 @@ export default function PeriodSelector({ state, hideLegend = false, modes = VIEW
         {viewMode === 'semanal' && (
           <>
             <span className="text-xs text-slate-400 ml-2 mr-1">Mês:</span>
-            {M_PERIODS.map(m => (
+            {mesAberto ? (
+              M_PERIODS.map(m => (
+                <button
+                  key={m}
+                  onClick={() => { setWeekMonth(m); setMesAberto(false) }}
+                  className={`${btnBase} ${weekMonth === m ? 'bg-indigo-700 text-white border-indigo-700' : modeOff}`}
+                >
+                  {M_LABELS[m]}
+                </button>
+              ))
+            ) : (
               <button
-                key={m}
-                onClick={() => setWeekMonth(m)}
-                className={`${btnBase} ${weekMonth === m ? 'bg-indigo-700 text-white border-indigo-700' : modeOff}`}
+                onClick={() => setMesAberto(true)}
+                title="Clique para escolher outro mês"
+                className={`${btnBase} bg-indigo-700 text-white border-indigo-700`}
               >
-                {M_LABELS[m]}
+                {M_LABELS[weekMonth]}
+              </button>
+            )}
+            <span className="text-xs text-slate-400 ml-2 mr-1">Semanas:</span>
+            {weekKeys.map(p => (
+              <button key={p} onClick={() => toggleS(p)} className={`${btnBase} ${visibleS[p] ? btnOn : btnOff}`}>
+                {S_LABELS[p]}
               </button>
             ))}
-            <button
-              onClick={() => setWeekMonth(currentMonthKey())}
-              className="text-[10px] px-2 py-0.5 rounded border border-slate-300 text-slate-500 hover:border-red-400 hover:text-red-500 transition-colors"
-            >
-              Limpar
-            </button>
+            <button onClick={selectAllS} className="text-[10px] px-2 py-0.5 rounded border border-slate-300 text-slate-500 hover:border-blue-400 hover:text-blue-600 transition-colors">Todos</button>
+            <button onClick={clearAllS}  className="text-[10px] px-2 py-0.5 rounded border border-slate-300 text-slate-500 hover:border-red-400 hover:text-red-500 transition-colors">Limpar</button>
           </>
         )}
 
@@ -196,6 +240,19 @@ export default function PeriodSelector({ state, hideLegend = false, modes = VIEW
           </>
         )}
 
+        {viewMode === 'trimestral' && inlineTrimestral && (
+        <>
+          <span className="text-xs text-slate-400 ml-2 mr-1">Períodos:</span>
+          {T_PERIODS.map(p => (
+            <button key={p} onClick={() => toggleT(p)} className={`${btnBase} ${visibleT[p] ? btnOn : btnOff}`}>
+              {T_LABELS[p]}
+            </button>
+          ))}
+          <button onClick={selectAllT} className="text-[10px] px-2 py-0.5 rounded border border-slate-300 text-slate-500 hover:border-blue-400 hover:text-blue-600 transition-colors">Todos</button>
+          <button onClick={clearAllT}  className="text-[10px] px-2 py-0.5 rounded border border-slate-300 text-slate-500 hover:border-red-400 hover:text-red-500 transition-colors">Limpar</button>
+        </>
+        )}
+
         {!hideLegend && (
           <span className="ml-auto flex items-center gap-3 text-xs text-slate-400">
             <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" /> ≥100%</span>
@@ -206,7 +263,7 @@ export default function PeriodSelector({ state, hideLegend = false, modes = VIEW
       </div>
 
       {/* Trimestral: toggles Q1–Q4–FY */}
-      {viewMode === 'trimestral' && (
+      {viewMode === 'trimestral' && !inlineTrimestral && (
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="text-xs text-slate-400 mr-1">Períodos:</span>
           {T_PERIODS.map(p => (
@@ -220,22 +277,6 @@ export default function PeriodSelector({ state, hideLegend = false, modes = VIEW
         </div>
       )}
 
-      {/* Semanal: semanas do mês selecionado na linha de Visão */}
-      {viewMode === 'semanal' && (
-        <div className="flex flex-col gap-1.5">
-          <div className="flex flex-wrap items-center gap-1">
-            <span className="text-xs text-slate-400 mr-1">Semanas:</span>
-            {weekKeys.map(p => (
-              <button key={p} onClick={() => toggleS(p)} className={`${btnBase} py-0.5 text-[10px] ${visibleS[p] ? btnOn : btnOff}`}>
-                {S_LABELS[p]}
-              </button>
-            ))}
-            <span className="w-px h-4 bg-slate-200 mx-1" />
-            <button onClick={selectAllS} className="text-[10px] px-2 py-0.5 rounded border border-slate-300 text-slate-500 hover:border-blue-400 hover:text-blue-600 transition-colors">Todos</button>
-            <button onClick={clearAllS}  className="text-[10px] px-2 py-0.5 rounded border border-slate-300 text-slate-500 hover:border-red-400 hover:text-red-500 transition-colors">Limpar</button>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

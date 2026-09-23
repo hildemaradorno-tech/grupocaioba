@@ -90,6 +90,16 @@ export async function fetchBloco3Pecas(p)   { return tryFetch('bloco3-pecas',   
 export async function fetchBloco3Servicos(p){ return tryFetch('bloco3-servicos',  MOCK_BLOCO3_SERVICOS,   p) }
 export async function fetchBacklog(p)       { return tryFetch('backlog',          MOCK_ORCAMENTO_BACKLOG, p) }
 
+// Metas aprovadas por período dos indicadores da aba Operacional (null se indisponível)
+export async function fetchMetasOperacional(year) {
+  try {
+    const res = await fetchWithTimeout(`${BASE}/bloco2-metas?year=${year}`, 30_000)
+    return res || null
+  } catch {
+    return null
+  }
+}
+
 // Lista de vendedores do Balcão (pro seletor do quadro VENDEDOR DE PEÇAS)
 export async function fetchVendedoresBalcao(year) {
   try {
