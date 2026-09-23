@@ -172,15 +172,17 @@ export async function getMetaPecasPeriodos(ano, vendedorNome = null) {
 /**
  * Meta de Faturamento Total Oficina (Peças + Serviços) por período.
  *
- * Sem consultorNome: soma os tipos mecanico + funilaria + terceiros — os três
- * componentes reais da meta de Oficina (não inclui 'consultor', que é só a
- * MESMA meta redistribuída entre os consultores pra tela de Distribuição de
- * Consultores; somar os dois contaria a meta em dobro — ver ehConsultores()
- * em src/utils/totalPosVendas.js).
+ * Sem consultorNome: usa o tipo 'mecanico' — é o único total de Oficina que
+ * aparece na tela de Gestão de Aprovação de Metas (TIPOS ali só tem pecas,
+ * consultor, mecanico; funilaria/terceiros não têm aba e não entram em
+ * nenhum total exibido lá, mesmo sendo aprovados junto em cascata). Não soma
+ * 'consultor' (é a MESMA meta redistribuída entre os consultores pra tela de
+ * Distribuição de Consultores — 1:1 com mecanico; somar os dois contaria em
+ * dobro) nem 'funilaria'/'terceiros' (aprovados em cascata mas fora do total
+ * de Oficina que o usuário vê/aprova nessa tela).
  *
  * Com consultorNome: usa direto o tipo 'consultor' filtrado por esse
- * colaborador — é a mesma meta de Oficina, só que já quebrada por consultor
- * (não precisa e não deve somar mecanico/funilaria/terceiros nesse caso).
+ * colaborador — é a mesma meta de Oficina, só que já quebrada por consultor.
  *
  * empresaNome: restringe à empresa (casa) informada — usado nos quadros por
  * casa do Pós-Venda; null = todas as empresas (Gerente Geral).
@@ -194,7 +196,7 @@ export async function getMetaOficinaPeriodos(ano, { consultorNome = null, empres
     const alvo = normNome(consultorNome)
     linhas = base.metas.filter(r => r.tipo === 'consultor' && normNome(r.colaborador_nome) === alvo)
   } else {
-    linhas = base.metas.filter(r => r.tipo === 'mecanico' || r.tipo === 'funilaria' || r.tipo === 'terceiros')
+    linhas = base.metas.filter(r => r.tipo === 'mecanico')
   }
   if (empresaNome) {
     const alvoEmp = normNome(empresaNome)
