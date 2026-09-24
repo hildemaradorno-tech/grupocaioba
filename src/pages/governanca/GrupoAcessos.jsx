@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useSessionState } from '../../hooks/useSessionState'
-import { Plus, X, Edit2, Trash2, ChevronRight, ChevronDown, Search, AlertTriangle, ShieldCheck } from 'lucide-react'
+import { Plus, X, Edit2, Trash2, ChevronRight, ChevronDown, Search, AlertTriangle, ShieldCheck, Upload } from 'lucide-react'
 import { apiService } from '../../services/api'
+import ImportarMenusModal from './ImportarMenusModal'
 
 const SISTEMAS = ['Dealer.net', 'MicroWork']
 
@@ -13,8 +14,6 @@ function LinhaMenu({ no, profundidade, ctx }) {
   const filhos = filhosTodos.filter(f => !ctx.idsVisiveisBusca || ctx.idsVisiveisBusca.has(f.id))
   const temFilhos = filhos.length > 0
   const expandido = ctx.idsVisiveisBusca ? true : ctx.expandidos.has(no.id)
-  const editando = ctx.editandoId === no.id
-  const adicionando = ctx.adicionandoFilhoDe === no.id
 
   return (
     <>
@@ -28,24 +27,7 @@ function LinhaMenu({ no, profundidade, ctx }) {
               </button>
             ) : <span className="w-4 h-4 inline-block shrink-0" />}
 
-            {editando ? (
-              <input
-                autoFocus
-                value={ctx.editandoNome}
-                onChange={e => ctx.setEditandoNome(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') ctx.salvarRenomeio(); if (e.key === 'Escape') ctx.cancelarEditar() }}
-                onBlur={ctx.salvarRenomeio}
-                className="text-xs p-1 border border-blue-300 rounded flex-1 min-w-0"
-              />
-            ) : (
-              <span className={`text-xs text-slate-700 truncate ${profundidade === 0 ? 'font-bold' : 'font-medium'}`}>{no.nome}</span>
-            )}
-
-            <div className="hidden group-hover:flex items-center gap-0.5 ml-auto pl-1 shrink-0">
-              <button onClick={() => ctx.iniciarAdicionarFilho(no.id)} title="Adicionar submenu" className="p-0.5 text-slate-400 hover:text-blue-600"><Plus className="h-3 w-3" /></button>
-              <button onClick={() => ctx.iniciarEditar(no)} title="Renomear" className="p-0.5 text-slate-400 hover:text-blue-600"><Edit2 className="h-3 w-3" /></button>
-              <button onClick={() => ctx.pedirExclusao(no)} title="Excluir" className="p-0.5 text-slate-400 hover:text-red-600"><Trash2 className="h-3 w-3" /></button>
-            </div>
+            <span className={`text-xs text-slate-700 truncate ${profundidade === 0 ? 'font-bold' : 'font-medium'}`}>{no.nome}</span>
           </div>
         </td>
         {ctx.grupos.map(g => (
@@ -59,25 +41,6 @@ function LinhaMenu({ no, profundidade, ctx }) {
           </td>
         ))}
       </tr>
-
-      {adicionando && (
-        <tr>
-          <td colSpan={ctx.grupos.length + 1} className="p-1.5 sticky left-0 bg-blue-50/40">
-            <div className="flex items-center gap-2" style={{ paddingLeft: (profundidade + 1) * 18 }}>
-              <input
-                autoFocus
-                value={ctx.novoNome}
-                onChange={e => ctx.setNovoNome(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') ctx.confirmarAdicionarFilho(); if (e.key === 'Escape') ctx.cancelarAdicionarFilho() }}
-                placeholder="Nome do novo submenu..."
-                className="text-xs p-1.5 border border-blue-200 rounded flex-1 max-w-xs"
-              />
-              <button onClick={ctx.confirmarAdicionarFilho} className="text-blue-600 hover:text-blue-700"><Plus className="h-3.5 w-3.5" /></button>
-              <button onClick={ctx.cancelarAdicionarFilho} className="text-slate-400 hover:text-slate-600"><X className="h-3.5 w-3.5" /></button>
-            </div>
-          </td>
-        </tr>
-      )}
 
       {expandido && filhos.map(f => <LinhaMenu key={f.id} no={f} profundidade={profundidade + 1} ctx={ctx} />)}
     </>
@@ -95,15 +58,11 @@ export default function GrupoAcessos() {
   const [expandidos, setExpandidos] = useState(new Set())
   const [busca, setBusca] = useState('')
 
-  const [editandoId, setEditandoId] = useState(null)
-  const [editandoNome, setEditandoNome] = useState('')
-  const [adicionandoFilhoDe, setAdicionandoFilhoDe] = useState(null)
-  const [novoNome, setNovoNome] = useState('')
-  const [confirmarExcluirMenu, setConfirmarExcluirMenu] = useState(null)
 
   const [modalGrupo, setModalGrupo] = useState(null) // { id, nome, descricao } | null
   const [confirmarExcluirGrupo, setConfirmarExcluirGrupo] = useState(null)
   const [salvando, setSalvando] = useState(false)
+  const [importarAberto, setImportarAberto] = useState(false)
 
   const carregar = async () => {
     setLoading(true)
@@ -179,55 +138,6 @@ export default function GrupoAcessos() {
     }
   }
 
-  const iniciarEditar = (no) => { setEditandoId(no.id); setEditandoNome(no.nome); setAdicionandoFilhoDe(null) }
-  const cancelarEditar = () => setEditandoId(null)
-  const salvarRenomeio = async () => {
-    if (!editandoId) return
-    const nomeNovo = editandoNome.trim()
-    const idAlvo = editandoId
-    setEditandoId(null)
-    if (!nomeNovo) return
-    try {
-      await apiService.updateGovernancaMenu(idAlvo, { nome: nomeNovo })
-      setMenus(prev => prev.map(m => m.id === idAlvo ? { ...m, nome: nomeNovo } : m))
-    } catch (err) {
-      alert('Erro ao renomear: ' + (err.message || String(err)))
-    }
-  }
-
-  const RAIZ = '__RAIZ__'
-  const iniciarAdicionarFilho = (paiId) => { setAdicionandoFilhoDe(paiId); setNovoNome(''); setEditandoId(null) }
-  const cancelarAdicionarFilho = () => setAdicionandoFilhoDe(null)
-  const confirmarAdicionarFilho = async () => {
-    const nomeNovo = novoNome.trim()
-    const paiId = adicionandoFilhoDe === RAIZ ? null : adicionandoFilhoDe
-    if (!nomeNovo) return
-    try {
-      const irmaos = filhosPorPai[paiId || 'raiz'] || []
-      const ordem = irmaos.length
-      const novo = await apiService.createGovernancaMenu({ sistema, pai_id: paiId, nome: nomeNovo, ordem })
-      setMenus(prev => [...prev, novo])
-      if (paiId) setExpandidos(prev => new Set(prev).add(paiId))
-      setAdicionandoFilhoDe(null)
-      setNovoNome('')
-    } catch (err) {
-      alert('Erro ao adicionar: ' + (err.message || String(err)))
-    }
-  }
-
-  const pedirExclusao = (no) => setConfirmarExcluirMenu(no)
-  const excluirMenu = async () => {
-    if (!confirmarExcluirMenu) return
-    try {
-      await apiService.deleteGovernancaMenu(confirmarExcluirMenu.id)
-      await carregar()
-    } catch (err) {
-      alert('Erro ao excluir: ' + (err.message || String(err)))
-    } finally {
-      setConfirmarExcluirMenu(null)
-    }
-  }
-
   const salvarGrupo = async (e) => {
     e.preventDefault()
     setSalvando(true)
@@ -262,9 +172,7 @@ export default function GrupoAcessos() {
 
   const ctx = {
     filhosPorPai, idsVisiveisBusca, expandidos, marcados, grupos,
-    editandoId, editandoNome, setEditandoNome, salvarRenomeio, cancelarEditar, iniciarEditar,
-    adicionandoFilhoDe, novoNome, setNovoNome, confirmarAdicionarFilho, cancelarAdicionarFilho, iniciarAdicionarFilho,
-    toggleExpandir, toggleMarcado, pedirExclusao,
+    toggleExpandir, toggleMarcado,
   }
 
   return (
@@ -276,13 +184,25 @@ export default function GrupoAcessos() {
           <h1 className="text-xl font-bold text-slate-900 tracking-tight">Grupo de Acessos</h1>
           <p className="text-xs text-slate-500">Matriz de menus/submenus × grupos de acesso cadastrados para cada sistema externo.</p>
         </div>
-        <button
-          onClick={() => setModalGrupo({ id: null, nome: '', descricao: '' })}
-          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-2 rounded-md shadow-sm transition-colors"
-        >
-          <Plus className="h-4 w-4" />
-          Novo Grupo de Acesso
-        </button>
+        <div className="flex items-center gap-2">
+          {sistema === 'Dealer.net' && (
+            <button
+              onClick={() => setImportarAberto(true)}
+              className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 text-xs font-semibold px-3 py-2 rounded-md shadow-sm transition-colors"
+              title="Importar do Excel os menus, submenus e botões que faltam no catálogo"
+            >
+              <Upload className="h-4 w-4" />
+              Importar Excel
+            </button>
+          )}
+          <button
+            onClick={() => setModalGrupo({ id: null, nome: '', descricao: '' })}
+            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-2 rounded-md shadow-sm transition-colors"
+          >
+            <Plus className="h-4 w-4" />
+            Novo Grupo de Acesso
+          </button>
+        </div>
       </div>
 
       {/* SISTEMA + BUSCA */}
@@ -327,7 +247,7 @@ export default function GrupoAcessos() {
             <thead className="sticky top-0 z-20">
               <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 text-[10px] font-bold uppercase tracking-wider">
                 <th className="p-2 sticky left-0 z-30 bg-slate-50 border-r border-slate-200" style={{ minWidth: 340 }}>
-                  Menu / Submenu ({menus.length})
+                  Menu / Submenu / Botões
                 </th>
                 {grupos.map(g => (
                   <th key={g.id} className="p-2 text-center border-l border-slate-100" style={{ minWidth: 110 }}>
@@ -345,7 +265,7 @@ export default function GrupoAcessos() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {raizMenus.length === 0 && !adicionandoFilhoDe && (
+              {raizMenus.length === 0 && (
                 <tr>
                   <td colSpan={grupos.length + 1} className="p-6 text-center text-slate-400">
                     Nenhum menu cadastrado para {sistema}.
@@ -355,29 +275,6 @@ export default function GrupoAcessos() {
               {raizMenus.map(no => <LinhaMenu key={no.id} no={no} profundidade={0} ctx={ctx} />)}
             </tbody>
           </table>
-          <div className="p-2 border-t border-slate-100">
-            {adicionandoFilhoDe === RAIZ ? (
-              <div className="flex items-center gap-2">
-                <input
-                  autoFocus
-                  value={novoNome}
-                  onChange={e => setNovoNome(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') confirmarAdicionarFilho(); if (e.key === 'Escape') cancelarAdicionarFilho() }}
-                  placeholder="Nome do novo menu de nível 1..."
-                  className="text-xs p-1.5 border border-blue-200 rounded flex-1 max-w-xs"
-                />
-                <button onClick={confirmarAdicionarFilho} className="text-blue-600 hover:text-blue-700"><Plus className="h-3.5 w-3.5" /></button>
-                <button onClick={cancelarAdicionarFilho} className="text-slate-400 hover:text-slate-600"><X className="h-3.5 w-3.5" /></button>
-              </div>
-            ) : (
-              <button
-                onClick={() => iniciarAdicionarFilho(RAIZ)}
-                className="flex items-center gap-1.5 text-[11px] font-semibold text-blue-600 hover:text-blue-700 px-2 py-1"
-              >
-                <Plus className="h-3.5 w-3.5" /> Novo menu de nível 1
-              </button>
-            )}
-          </div>
         </div>
       )}
 
@@ -444,27 +341,19 @@ export default function GrupoAcessos() {
         </div>
       )}
 
-      {/* CONFIRMAR EXCLUSÃO MENU */}
-      {confirmarExcluirMenu && (
-        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-5 flex flex-col gap-4">
-            <div className="flex items-start gap-3">
-              <div className="p-2 bg-red-50 text-red-600 rounded-full shrink-0"><AlertTriangle className="h-5 w-5" /></div>
-              <div>
-                <h3 className="text-sm font-bold text-slate-900">Excluir menu?</h3>
-                <p className="text-xs text-slate-500 mt-1">
-                  Tem certeza que deseja excluir <strong className="text-slate-800">"{confirmarExcluirMenu.nome}"</strong>? Todos os submenus dentro dele (se houver) e as marcações de acesso associadas também serão excluídos.
-                </p>
-              </div>
-            </div>
-            <div className="flex justify-end gap-2">
-              <button onClick={() => setConfirmarExcluirMenu(null)} className="px-3 py-1.5 rounded-md text-xs font-semibold text-slate-600 hover:bg-slate-100 transition-colors">Cancelar</button>
-              <button onClick={excluirMenu} className="px-3 py-1.5 rounded-md text-xs font-semibold bg-red-600 hover:bg-red-700 text-white transition-colors">Excluir</button>
-            </div>
-          </div>
-        </div>
+      {importarAberto && (
+        <ImportarMenusModal
+          sistema={sistema}
+          menus={menus}
+          marcados={marcados}
+          onClose={() => setImportarAberto(false)}
+          onImportado={async (res) => {
+            setImportarAberto(false)
+            await carregar()
+            alert(`Importação concluída: ${res.criados} criado(s), ${res.atualizados} atualizado(s) e ${res.excluidos} ramo(s) excluído(s).`)
+          }}
+        />
       )}
-
     </div>
   )
 }

@@ -7,6 +7,7 @@ import { getPeriodData, getPeriodLabel } from '../../utils/kpiPeriods'
 import { useKpiData } from '../../hooks/useKpiData'
 import { fetchBloco3Servicos, salvarPeso, fetchConsultoresServicos, fetchMecanicos } from '../../services/kpiService'
 import { useKpiYear } from '../../context/KpiYearContext'
+import { PosVendaQuadros } from './KpiBloco3PosVenda'
 
 const BLOCO_PESOS = 'bloco3-servicos'
 const QUADRO_CONSULTOR = 'CONSULTOR DE SERVIÇOS'
@@ -283,19 +284,16 @@ function QuadroTable({ quadro, activePeriods, year, onSalvarPeso, pessoaSelector
 
 function usePessoaFiltro(fetchLista, year) {
   const [lista, setLista] = useState([])
+  const [aplicado, setAplicado] = useState(null)
   useEffect(() => {
     let ativo = true
     fetchLista(year).then(l => { if (ativo) setLista(l) })
     return () => { ativo = false }
   }, [year])
-  const [aplicado, setAplicado] = useState(null)
   return { lista, aplicado, setAplicado }
 }
 
-export default function KpiBloco3Servicos() {
-  const periodState = usePeriodSelector('kpi-matriz')
-  const { activePeriods } = periodState
-  const { year } = useKpiYear()
+function ServicosQuadros({ year, activePeriods }) {
 
   const consultorFiltro = usePessoaFiltro(fetchConsultoresServicos, year)
   const mecanicoFiltro  = usePessoaFiltro(fetchMecanicos, year)
@@ -325,17 +323,6 @@ export default function KpiBloco3Servicos() {
   }))
 
   return (
-    <div className="p-6 space-y-5">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold text-slate-800">Indicadores de Serviços</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Indicadores de performance de consultores e mecânicos da oficina</p>
-        </div>
-        <PeriodLegend />
-      </div>
-
-      <PeriodSelector state={periodState} inlineTrimestral hideLegend />
-
       <div className="space-y-6">
         {quadrosComPeso.map((quadro, idx) => {
           const ehConsultor = quadro.tituloGerente === QUADRO_CONSULTOR
@@ -364,6 +351,29 @@ export default function KpiBloco3Servicos() {
           )
         })}
       </div>
+  )
+}
+
+// Aba única "Serviços": quadros de Pós-Venda (gerentes) primeiro; Consultor e Mecânico por último.
+export default function KpiBloco3Servicos() {
+  const periodState = usePeriodSelector('kpi-matriz')
+  const { activePeriods } = periodState
+  const { year } = useKpiYear()
+
+  return (
+    <div className="p-6 space-y-5">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-bold text-slate-800">Indicadores de Serviços</h1>
+          <p className="text-sm text-slate-500 mt-0.5">Indicadores de performance da oficina, consultores e mecânicos</p>
+        </div>
+        <PeriodLegend />
+      </div>
+
+      <PeriodSelector state={periodState} inlineTrimestral hideLegend />
+
+      <PosVendaQuadros year={year} activePeriods={activePeriods} />
+      <ServicosQuadros year={year} activePeriods={activePeriods} />
     </div>
   )
 }

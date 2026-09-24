@@ -28,6 +28,7 @@
  *   54 NFItem_VlBruto     | 55 NFItem_PercMargemCont   | 56 NFItem_PercMargemGer
  */
 
+import { getFiltroBoxOficina } from './boxFuncionarios.js'
 import { Client }                        from '@microsoft/microsoft-graph-client'
 import { ClientSecretCredential }         from '@azure/identity'
 import { TokenCredentialAuthenticationProvider }
@@ -1466,6 +1467,11 @@ function consolidarROF096(rows) {
 }
 
 async function _loadAllROF096Rows(year) {
+  const [rows, boxOk] = await Promise.all([_loadAllROF096RowsBrutas(year), getFiltroBoxOficina()])
+  return rows.filter(r => boxOk(r.nomeMecanico))
+}
+
+async function _loadAllROF096RowsBrutas(year) {
   const yearStr  = String(year)
   const cacheKey = `rof096-raw-${yearStr}`
   const hit = cached(cacheKey)
@@ -1683,6 +1689,11 @@ function consolidarROF042(rows) {
  * @param {string|null} empresaNome — nome canônico (ex: 'CAMPO GRANDE')
  */
 async function _loadAllROF042Rows(year) {
+  const [rows, boxOk] = await Promise.all([_loadAllROF042RowsBrutas(year), getFiltroBoxOficina()])
+  return rows.filter(r => boxOk(r.produtivo))
+}
+
+async function _loadAllROF042RowsBrutas(year) {
   const yearStr  = String(year)
   const cacheKey = `rof042-raw-${yearStr}`
   const hit = cached(cacheKey)

@@ -210,12 +210,12 @@ export async function getMetaOficinaPeriodos(ano, { consultorNome = null, empres
  * Serviços (meta_servicos, sem Peças) do tipo 'mecanico'
  * filtrado pelo mecânico selecionado; sem seleção = soma de todos.
  */
-export async function getMetaMecanicoPeriodos(ano, mecanicoNome = null) {
+export async function getMetaMecanicoPeriodos(ano, mecanicoNome = null, filtroNome = null) {
   const base = await carregarBase(ano)
   if (!base) return null
   const alvo = mecanicoNome ? normNome(mecanicoNome) : null
   const linhas = base.metas
-    .filter(r => r.tipo === 'mecanico' && (!alvo || normNome(r.colaborador_nome) === alvo))
+    .filter(r => r.tipo === 'mecanico' && (!alvo || normNome(r.colaborador_nome) === alvo) && (!filtroNome || filtroNome(r.colaborador_nome)))
     .map(r => ({ ...r, meta_faturamento: r.meta_servicos }))
   return periodizarMetas(linhas, ano, base.calendario)
 }

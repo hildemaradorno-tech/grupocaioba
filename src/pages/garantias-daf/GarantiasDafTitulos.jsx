@@ -385,22 +385,22 @@ export default function GarantiasDafTitulos() {
 
       {/* ── CARDS: A VENCER + VENCE HOJE + VENCIDOS + RESUMO GERAL ── */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        {grpAVencer.length > 0 && (
+        {grpVencidos.length > 0 && (
           <button
             type="button"
-            onClick={toggleFiltroAVencer}
-            className={`text-left rounded-lg border p-4 shadow-sm transition-all hover:shadow-md bg-emerald-50 border-emerald-200 ${filtroCardAVencer ? 'ring-2 ring-offset-1 ring-emerald-300 shadow-md' : ''}`}
+            onClick={toggleFiltroVencido}
+            className={`text-left rounded-lg border p-4 shadow-sm transition-all hover:shadow-md bg-red-50 border-red-300 ${filtroCardVencido ? 'ring-2 ring-offset-1 ring-red-400 shadow-md' : ''}`}
           >
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-1.5">
-                <div className="p-1 rounded bg-emerald-100"><Eye className="h-3.5 w-3.5 text-emerald-600" /></div>
-                <p className="text-[10px] font-bold uppercase tracking-wide text-emerald-500">A Vencer</p>
+                <div className="p-1 rounded bg-red-100"><AlertTriangle className="h-3.5 w-3.5 text-red-700" /></div>
+                <p className="text-[10px] font-bold uppercase tracking-wide text-red-600">Vencidos</p>
               </div>
-              {filtrosComunsAtivos && <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-700 rounded text-[9px] font-bold">filtrado</span>}
+              {filtrosComunsAtivos && <span className="px-1.5 py-0.5 bg-red-100 text-red-700 rounded text-[9px] font-bold">filtrado</span>}
             </div>
-            <p className="text-2xl font-bold text-emerald-700 leading-none">{grpAVencer.length}</p>
-            <p className="text-[10px] text-emerald-500 mt-0.5 mb-2">título(s) · pela data de vencimento</p>
-            <p className="text-sm font-bold text-emerald-800 pt-2 border-t border-emerald-200">{fmtMoeda(valorGrpAVencer)}</p>
+            <p className="text-2xl font-bold text-red-700 leading-none">{grpVencidos.length}</p>
+            <p className="text-[10px] text-red-600 mt-0.5 mb-2">título(s) · pela data de vencimento</p>
+            <p className="text-sm font-bold text-red-900 pt-2 border-t border-red-300">{fmtMoeda(valorGrpVencidos)}</p>
           </button>
         )}
 
@@ -423,22 +423,22 @@ export default function GarantiasDafTitulos() {
           </button>
         )}
 
-        {grpVencidos.length > 0 && (
+        {grpAVencer.length > 0 && (
           <button
             type="button"
-            onClick={toggleFiltroVencido}
-            className={`text-left rounded-lg border p-4 shadow-sm transition-all hover:shadow-md bg-red-50 border-red-300 ${filtroCardVencido ? 'ring-2 ring-offset-1 ring-red-400 shadow-md' : ''}`}
+            onClick={toggleFiltroAVencer}
+            className={`text-left rounded-lg border p-4 shadow-sm transition-all hover:shadow-md bg-emerald-50 border-emerald-200 ${filtroCardAVencer ? 'ring-2 ring-offset-1 ring-emerald-300 shadow-md' : ''}`}
           >
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-1.5">
-                <div className="p-1 rounded bg-red-100"><AlertTriangle className="h-3.5 w-3.5 text-red-700" /></div>
-                <p className="text-[10px] font-bold uppercase tracking-wide text-red-600">Vencidos</p>
+                <div className="p-1 rounded bg-emerald-100"><Eye className="h-3.5 w-3.5 text-emerald-600" /></div>
+                <p className="text-[10px] font-bold uppercase tracking-wide text-emerald-500">A Vencer</p>
               </div>
-              {filtrosComunsAtivos && <span className="px-1.5 py-0.5 bg-red-100 text-red-700 rounded text-[9px] font-bold">filtrado</span>}
+              {filtrosComunsAtivos && <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-700 rounded text-[9px] font-bold">filtrado</span>}
             </div>
-            <p className="text-2xl font-bold text-red-700 leading-none">{grpVencidos.length}</p>
-            <p className="text-[10px] text-red-600 mt-0.5 mb-2">título(s) · pela data de vencimento</p>
-            <p className="text-sm font-bold text-red-900 pt-2 border-t border-red-300">{fmtMoeda(valorGrpVencidos)}</p>
+            <p className="text-2xl font-bold text-emerald-700 leading-none">{grpAVencer.length}</p>
+            <p className="text-[10px] text-emerald-500 mt-0.5 mb-2">título(s) · pela data de vencimento</p>
+            <p className="text-sm font-bold text-emerald-800 pt-2 border-t border-emerald-200">{fmtMoeda(valorGrpAVencer)}</p>
           </button>
         )}
 

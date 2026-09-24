@@ -5,7 +5,7 @@ import {
   MONTH_WEEK_RANGES, S_LABELS,
 } from '../../utils/kpiPeriods'
 
-const VIEW_MODES = ['trimestral', 'mensal', 'semanal']
+const VIEW_MODES = ['mensal', 'trimestral']
 const VIEW_LABELS_MAP = { trimestral: 'Trimestral', mensal: 'Mensal', semanal: 'Semanal' }
 
 // ── helpers de data atual ────────────────────────────────────────────────────
@@ -108,7 +108,7 @@ export function usePeriodSelector(pageKey, defaultViewMode = 'mensal') {
 
   const activePeriods = React.useMemo(() => {
     if (viewMode === 'trimestral') return T_PERIODS.filter(p => visibleT[p])
-    if (viewMode === 'mensal')     return M_PERIODS.filter(p => visibleM[p])
+    if (viewMode === 'mensal')     return [...M_PERIODS.filter(p => visibleM[p]), ...(visibleM.fy ? ['fy'] : [])]
     return (MONTH_WEEK_RANGES[weekMonth] || []).filter(p => visibleS[p])
   }, [viewMode, visibleT, visibleM, weekMonth, visibleS])
 
@@ -117,13 +117,13 @@ export function usePeriodSelector(pageKey, defaultViewMode = 'mensal') {
   // esse mês da seleção atual (multi-seleção).
   const toggleM = (p, multi) => setVisibleM(prev => multi
     ? { ...prev, [p]: !prev[p] }
-    : Object.fromEntries(M_PERIODS.map(m => [m, m === p])))
+    : Object.fromEntries([...M_PERIODS, 'fy'].map(m => [m, m === p])))
   const toggleS = (p) => setVisibleS(prev => ({ ...prev, [p]: !prev[p] }))
 
   const selectAllT = () => setVisibleT(Object.fromEntries(T_PERIODS.map(p => [p, true])))
-  const clearAllT  = () => setVisibleT(Object.fromEntries(T_PERIODS.map(p => [p, false])))
-  const selectAllM = () => setVisibleM(Object.fromEntries(M_PERIODS.map(p => [p, true])))
-  const clearAllM  = () => setVisibleM(Object.fromEntries(M_PERIODS.map(p => [p, p === currentMonthKey()])))
+  const clearAllT  = () => setVisibleT(quarterDefault())
+  const selectAllM = () => setVisibleM(Object.fromEntries([...M_PERIODS, 'fy'].map(p => [p, true])))
+  const clearAllM  = () => setVisibleM(Object.fromEntries([...M_PERIODS, 'fy'].map(p => [p, p === currentMonthKey()])))
   const selectAllS = () => setVisibleS(prev => ({ ...prev, ...Object.fromEntries((MONTH_WEEK_RANGES[weekMonth] || []).map(p => [p, true])) }))
   const clearAllS  = () => setVisibleS(prev => ({ ...prev, ...Object.fromEntries((MONTH_WEEK_RANGES[weekMonth] || []).map(p => [p, false])) }))
 
@@ -235,6 +235,13 @@ export default function PeriodSelector({ state, hideLegend = false, modes = VIEW
                 {M_LABELS[p]}
               </button>
             ))}
+            <button
+              onClick={e => toggleM('fy', e.ctrlKey || e.metaKey)}
+              title="Total do ano (Ctrl+clique para somar à seleção)"
+              className={`${btnBase} ${visibleM.fy ? btnOn : btnOff}`}
+            >
+              Total do Ano
+            </button>
             <button onClick={selectAllM} className="text-[10px] px-2 py-0.5 rounded border border-slate-300 text-slate-500 hover:border-blue-400 hover:text-blue-600 transition-colors">Todos</button>
             <button onClick={clearAllM}  className="text-[10px] px-2 py-0.5 rounded border border-slate-300 text-slate-500 hover:border-red-400 hover:text-red-500 transition-colors">Limpar</button>
           </>

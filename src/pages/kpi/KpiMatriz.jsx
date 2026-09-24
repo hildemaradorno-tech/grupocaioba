@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { BarChart2, TrendingUp, Activity, Wrench, Settings, Package, Wallet, FlaskConical } from 'lucide-react'
+import { BarChart2, TrendingUp, Activity, Wrench, Package, Wallet, FlaskConical } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { useKpiYear, KPI_YEARS } from '../../context/KpiYearContext'
 import { useKpiSourceStatus } from '../../context/KpiSourceStatusContext'
@@ -7,7 +7,6 @@ import DataSourceBadge from '../../components/kpi/DataSourceBadge'
 import KpiDashboardExecutivo from './KpiDashboardExecutivo'
 import KpiIndicadoresCorporativos from './KpiIndicadoresCorporativos'
 import KpiIndicadoresOperacionais from './KpiIndicadoresOperacionais'
-import KpiBloco3PosVenda from './KpiBloco3PosVenda'
 import KpiBloco3Servicos from './KpiBloco3Servicos'
 import KpiBloco3Pecas from './KpiBloco3Pecas'
 import KpiOrcamentoBacklog from './KpiOrcamentoBacklog'
@@ -15,11 +14,10 @@ import KpiAuditoria from './KpiAuditoria'
 
 const ABAS = [
   { key: 'resultados', label: 'Resultados', icon: BarChart2, permKey: 'kpi/resultados', Componente: KpiDashboardExecutivo },
-  { key: 'bloco1', label: 'Corporativo', icon: TrendingUp, permKey: 'kpi/bloco1-corporativo', Componente: KpiIndicadoresCorporativos },
-  { key: 'bloco2', label: 'Operacional', icon: Activity, permKey: 'kpi/bloco2-operacional', Componente: KpiIndicadoresOperacionais },
-  { key: 'bloco3-pos-venda', label: 'Pós-Venda', icon: Settings, permKey: 'kpi/bloco3-pos-venda', Componente: KpiBloco3PosVenda },
-  { key: 'bloco3-servicos', label: 'Serviços', icon: Wrench, permKey: 'kpi/bloco3-servicos', Componente: KpiBloco3Servicos },
-  { key: 'bloco3-pecas', label: 'Peças', icon: Package, permKey: 'kpi/bloco3-pecas', Componente: KpiBloco3Pecas },
+  { key: 'bloco1', label: 'Bloco 1 - Corporativo', icon: TrendingUp, permKey: 'kpi/bloco1-corporativo', Componente: KpiIndicadoresCorporativos },
+  { key: 'bloco2', label: 'Bloco 2 - Departamental', icon: Activity, permKey: 'kpi/bloco2-operacional', Componente: KpiIndicadoresOperacionais },
+  { key: 'bloco3-servicos', label: 'Bloco 3 - Serviços', icon: Wrench, permKey: 'kpi/bloco3-servicos', Componente: KpiBloco3Servicos },
+  { key: 'bloco3-pecas', label: 'Bloco 3 - Peças', icon: Package, permKey: 'kpi/bloco3-pecas', Componente: KpiBloco3Pecas },
   { key: 'orcamento-backlog', label: 'Orçamento & Backlog', icon: Wallet, permKey: 'kpi/orcamento-backlog', Componente: KpiOrcamentoBacklog },
   { key: 'auditoria', label: 'Auditoria de Fontes', icon: FlaskConical, permKey: 'kpi/auditoria', Componente: KpiAuditoria },
 ]

@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import { getSupabaseAdmin } from '../services/supabaseAdmin.js'
+import { getFiltroBoxOficina } from '../services/boxFuncionarios.js'
 import { isConfigured } from '../services/graphClient.js'
 import {
   getResultados, getBloco1, getBloco2,
@@ -635,7 +636,7 @@ router.get('/bloco3-servicos', requireConfig, wrap(async (req, res) => {
   } catch (_) { /* sem meta */ }
 
   let metaMecanico = null
-  try { metaMecanico = await getMetaMecanicoPeriodos(year, mecanico) } catch (_) { /* sem meta */ }
+  try { metaMecanico = await getMetaMecanicoPeriodos(year, mecanico, await getFiltroBoxOficina()) } catch (_) { /* sem meta */ }
 
   let quadros = mergeBlocoServicos(
     BLOCO_SERVICOS_TEMPLATE,
@@ -754,6 +755,7 @@ function infoAuditoria(row) {
   if (row.fonte === 'RESULTADO') return null
   const f = row.fonte
   const m = row.metrica || ''
+  const boxFiltro = ['Somente produtivos dos boxes Mecânica e Box Express (pelo nome, no Cadastro de Funcionários; quem não está no cadastro ou não tem box fica de fora)']
   if (/RPR001/.test(f)) {
     const balcao = row.id === 8 || row.id === 9
     const coluna = /VlMargemCont/.test(m) ? 'NFItem_VlMargemCont (coluna U)' : /VlTotal/.test(m) ? 'NFItem_VlTotal (coluna AV)' : m
@@ -780,14 +782,14 @@ function infoAuditoria(row) {
     return {
       arquivo: 'ROF042_FaturamentoServicosProdutivos_Excel',
       coluna: /Hr. Total/.test(m) ? 'Hr. Total (coluna P)' : 'Hr. Vend. (coluna Q)',
-      filtros: ['Período pela data NF Data (coluna AB)', 'Linhas cujo Produtivo (coluna B) é "Produtivo Não Associado ..." ficam de fora', 'Linhas sem horas e sem valor líquido são ignoradas'],
+      filtros: ['Período pela data NF Data (coluna AB)', 'Linhas cujo Produtivo (coluna B) é "Produtivo Não Associado ..." ficam de fora', 'Linhas sem horas e sem valor líquido são ignoradas', ...boxFiltro],
     }
   }
   if (/ROF096/.test(f)) {
     return {
       arquivo: 'ROF096_FECHAMENTOCARTAOPRODUCAO',
       coluna: 'Horas disponíveis (coluna M)',
-      filtros: ['Período pela data (coluna D)', 'Linhas com horas disponíveis zeradas são ignoradas'],
+      filtros: ['Período pela data (coluna D)', 'Linhas com horas disponíveis zeradas são ignoradas', ...boxFiltro],
     }
   }
   return null

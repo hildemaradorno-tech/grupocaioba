@@ -2,7 +2,7 @@
 
 // ── Trimestral ───────────────────────────────────────────────────────────────
 export const T_PERIODS = ['q1', 'q2', 'q3', 'q4', 'fy']
-export const T_LABELS  = { q1:'Q1', q2:'Q2', q3:'Q3', q4:'Q4', fy:'FY' }
+export const T_LABELS  = { q1:'Q1', q2:'Q2', q3:'Q3', q4:'Q4', fy:'Total do Ano' }
 export const T_DEFAULT = { q1:true, q2:true, q3:true, q4:true, fy:true }
 
 // ── Mensal ───────────────────────────────────────────────────────────────────

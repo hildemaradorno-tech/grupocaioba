@@ -5095,6 +5095,7 @@ export const apiService = {
         .select('*')
         .eq('sistema', sistema)
         .order('ordem', { ascending: true })
+        .order('id', { ascending: true }) // desempate: só 'ordem' repete entre milhares de nós e a paginação duplicava/pulava linhas
         .range(inicio, inicio + PAGE - 1)
       if (error) throw error
       todos = todos.concat(data || [])
@@ -5121,6 +5122,42 @@ export const apiService = {
       .select()
     if (error) throw error
     return data?.[0]
+  },
+
+  // Aplica o plano de importação (RSG001/RSG003) no catálogo. `criar` vem com o pai antes do
+  // filho (pai = id real ou tempId de outro item criado); `atualizar` = [{ id, campos }] (campos
+  // pode trazer nome, ordem, tipo e pai_id — este também aceita tempId). A exclusão vai por
+  // último e só dos topos dos ramos; os filhos saem por cascata. Não é atômico, mas é
+  // idempotente: rodar a importação de novo termina o que faltou.
+  aplicarImportacaoGovernancaMenus: async ({ sistema, criar, atualizar, excluirIds }) => {
+    const idReal = new Map(criar.map(c => [c.tempId, crypto.randomUUID()]))
+    const resolver = (id) => (id ? (idReal.get(id) || id) : null)
+    const linhas = criar.map(c => ({
+      id: idReal.get(c.tempId),
+      sistema,
+      pai_id: resolver(c.pai),
+      nome: c.nome.trim(),
+      ordem: c.ordem || 0,
+      codigo: c.codigo,
+      tipo: c.tipo,
+    }))
+    for (let i = 0; i < linhas.length; i += 500) {
+      const { error } = await supabase.from('governanca_menus').insert(linhas.slice(i, i + 500))
+      if (error) throw error
+    }
+    for (let i = 0; i < atualizar.length; i += 25) {
+      await Promise.all(atualizar.slice(i, i + 25).map(async (u) => {
+        const patch = { ...u.campos }
+        if ('pai_id' in patch) patch.pai_id = resolver(patch.pai_id)
+        const { error } = await supabase.from('governanca_menus').update(patch).eq('id', u.id)
+        if (error) throw error
+      }))
+    }
+    for (let i = 0; i < excluirIds.length; i += 200) {
+      const { error } = await supabase.from('governanca_menus').delete().in('id', excluirIds.slice(i, i + 200))
+      if (error) throw error
+    }
+    return { criados: linhas.length, atualizados: atualizar.length, excluidos: excluirIds.length }
   },
 
   deleteGovernancaMenu: async (id) => {
@@ -5196,12 +5233,25 @@ export const apiService = {
   // Retorna todos os pares (grupo_id, menu_id) marcados para os grupos informados
   getGovernancaGrupoMenus: async (grupoIds) => {
     if (!grupoIds || grupoIds.length === 0) return []
-    const { data, error } = await supabase
-      .from('governanca_grupo_menus')
-      .select('grupo_id, menu_id')
-      .in('grupo_id', grupoIds)
-    if (error) throw error
-    return data || []
+    // Pagina (limite de 1000 linhas por requisição) com ordem estável — um grupo com muitos
+    // menus marcados passa disso e as marcações do final simplesmente não apareciam.
+    const PAGE = 1000
+    let inicio = 0
+    let todos = []
+    while (true) {
+      const { data, error } = await supabase
+        .from('governanca_grupo_menus')
+        .select('grupo_id, menu_id')
+        .in('grupo_id', grupoIds)
+        .order('grupo_id', { ascending: true })
+        .order('menu_id', { ascending: true })
+        .range(inicio, inicio + PAGE - 1)
+      if (error) throw error
+      todos = todos.concat(data || [])
+      if (!data || data.length < PAGE) break
+      inicio += PAGE
+    }
+    return todos
   },
 
   marcarGovernancaGrupoMenu: async (grupoId, menuId) => {

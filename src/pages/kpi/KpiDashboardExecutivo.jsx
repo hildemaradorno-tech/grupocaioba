@@ -48,7 +48,7 @@ function badgeClass(val) {
 }
 
 const PERIODS = ['q1', 'q2', 'q3', 'q4', 'fy']
-const PERIOD_LABELS = { q1: 'Q1', q2: 'Q2', q3: 'Q3', q4: 'Q4', fy: 'FY' }
+const PERIOD_LABELS = { q1: 'Q1', q2: 'Q2', q3: 'Q3', q4: 'Q4', fy: 'Total do Ano' }
 
 function VerticalTable({ title, rows }) {
   return (
