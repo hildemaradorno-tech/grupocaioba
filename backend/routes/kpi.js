@@ -750,11 +750,8 @@ const EMPRESA_KEY_TO_RECEP = {
 
 // Descrição de origem de cada linha da Auditoria de Fontes (botão "i" na tela): arquivo,
 // coluna usada e filtros aplicados. Letras/índices seguem o mapa C do sharepointExtractor.
-function infoAuditoria(row, empresaKey) {
-  const empresaTxt = empresaKey ? `Empresa: ${empresaKey}` : 'Empresa: todas (sem filtro)'
-  if (row.fonte === 'RESULTADO') {
-    return { arquivo: 'Calculado pelo portal', coluna: row.metrica, filtros: ['Resultado das linhas de fonte acima, no mesmo período e empresa.'] }
-  }
+function infoAuditoria(row) {
+  if (row.fonte === 'RESULTADO') return null
   const f = row.fonte
   const m = row.metrica || ''
   if (/RPR001/.test(f)) {
@@ -766,7 +763,6 @@ function infoAuditoria(row, empresaKey) {
       'Natureza da operação (coluna E): "VEN" = venda, "DVE"/"DEVOLU" = devolução; outras linhas são ignoradas',
       'Linhas com valor total zerado são ignoradas',
       'Período pela data de movimento (NF_DataMov, coluna AG)',
-      empresaTxt,
     ]
     if (row.id === 10) filtros.splice(2, 0, 'Somente tipo de produto (NFItem_ProdTipoCod, coluna AL) 2, 24, 27 ou 28 (TRP)')
     if (/VEN/.test(m) && !/−/.test(m)) filtros.splice(2, 0, 'Considera só as linhas de venda (VEN)')
@@ -775,23 +771,23 @@ function infoAuditoria(row, empresaKey) {
   }
   if (/Recepcionista/.test(f)) {
     return {
-      arquivo: 'REL_VENDARECEPCIONISTA_REPORT (pasta Vendas de Serviços)',
+      arquivo: 'REL_VENDARECEPCIONISTA_REPORT',
       coluna: m === 'margem_servico' ? 'margem_servico' : 'tot_serv',
-      filtros: ['Período pela data de emissão (NotaFiscal_DataEmissao)', 'Linhas com valor zerado são ignoradas', empresaKey ? `Empresa (Empresa_Nome): ${empresaKey}` : 'Empresa: todas (sem filtro)'],
+      filtros: ['Período pela data de emissão (NotaFiscal_DataEmissao)', 'Linhas com valor zerado são ignoradas'],
     }
   }
   if (/ROF042/.test(f)) {
     return {
-      arquivo: 'ROF042_FaturamentoServicosProdutivos_Excel (pasta Vendas Mecânicos)',
+      arquivo: 'ROF042_FaturamentoServicosProdutivos_Excel',
       coluna: /Hr. Total/.test(m) ? 'Hr. Total (coluna P)' : 'Hr. Vend. (coluna Q)',
-      filtros: ['Período pela data NF Data (coluna AB)', 'Linhas cujo Produtivo (coluna B) é "Produtivo Não Associado ..." ficam de fora', 'Linhas sem horas e sem valor líquido são ignoradas', empresaTxt],
+      filtros: ['Período pela data NF Data (coluna AB)', 'Linhas cujo Produtivo (coluna B) é "Produtivo Não Associado ..." ficam de fora', 'Linhas sem horas e sem valor líquido são ignoradas'],
     }
   }
   if (/ROF096/.test(f)) {
     return {
-      arquivo: 'ROF096_FECHAMENTOCARTAOPRODUCAO (pasta Fechamento Cartão Produção)',
+      arquivo: 'ROF096_FECHAMENTOCARTAOPRODUCAO',
       coluna: 'Horas disponíveis (coluna M)',
-      filtros: ['Período pela data (coluna D)', 'Linhas com horas disponíveis zeradas são ignoradas', empresaTxt],
+      filtros: ['Período pela data (coluna D)', 'Linhas com horas disponíveis zeradas são ignoradas'],
     }
   }
   return null
@@ -903,7 +899,7 @@ router.get('/auditoria', requireConfig, wrap(async (req, res) => {
   ]
   res.json({
     year,
-    indicadores: indicadores.map(r => ({ ...r, info: infoAuditoria(r, empresaKey) })),
+    indicadores: indicadores.map(r => ({ ...r, info: infoAuditoria(r) })),
     metaData: extractorData.metaData,
   })
 }))

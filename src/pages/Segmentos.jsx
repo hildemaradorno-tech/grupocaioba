@@ -17,9 +17,9 @@ export default function Segmentos() {
   const [form, setForm] = useSessionState('seg_form', { nome_segmento: '', ativo: true })
   const [modalVisualizarAberto, setModalVisualizarAberto] = useState(false)
   const [itemVisualizado, setItemVisualizado] = useState(null)
-  const { hasPermission } = useAuth()
-  const canEdit = hasPermission('segmentos', 'editar')
-  const canDelete = hasPermission('segmentos', 'excluir')
+  const { hasActionOrDefault } = useAuth()
+  const canEdit = hasActionOrDefault('segmentos', 'editar')
+  const canDelete = hasActionOrDefault('segmentos', 'excluir')
 
   const abrirVisualizar = (seg) => { setItemVisualizado(seg); setModalVisualizarAberto(true) }
 

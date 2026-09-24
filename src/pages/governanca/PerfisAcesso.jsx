@@ -31,9 +31,9 @@ export default function PerfisAcesso() {
   const [itemVisualizado, setItemVisualizado] = useState(null)
   const [salvando, setSalvando] = useState(false)
 
-  const { hasPermission } = useAuth()
-  const canEdit = hasPermission('governanca/perfis-acesso', 'editar')
-  const canDelete = hasPermission('governanca/perfis-acesso', 'excluir')
+  const { hasActionOrDefault } = useAuth()
+  const canEdit = hasActionOrDefault('governanca/perfis-acesso', 'editar')
+  const canDelete = hasActionOrDefault('governanca/perfis-acesso', 'excluir')
 
   useEffect(() => { loadData() }, [])
 

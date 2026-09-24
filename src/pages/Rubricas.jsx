@@ -20,9 +20,9 @@ export default function Rubricas() {
   const [erroModal, setErroModal] = useState(null)
   const [salvando, setSalvando] = useState(false)
 
-  const { hasPermission } = useAuth()
-  const canEdit = hasPermission('rubricas', 'editar')
-  const canDelete = hasPermission('rubricas', 'excluir')
+  const { hasActionOrDefault } = useAuth()
+  const canEdit = hasActionOrDefault('rubricas', 'editar')
+  const canDelete = hasActionOrDefault('rubricas', 'excluir')
 
   useEffect(() => { loadData() }, [])
 

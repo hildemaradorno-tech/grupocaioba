@@ -95,9 +95,9 @@ export default function MetasServicosConsultor({ empresaExterna = null, anoExter
   const filtrosExternos = empresaExterna != null || anoExterno != null
   const [filtroSetor,    setFiltroSetor]    = useSessionState('msc_setor', '')
   const [filtroConsultor,setFiltroConsultor]= useSessionState('msc_consultor', '') // busca por nome (texto livre)
-  const { hasPermission } = useAuth()
-  const canEdit = hasPermission('/metas/pos-vendas/servicos_pecas', 'editar')
-  const canDelete = hasPermission('/metas/pos-vendas/servicos_pecas', 'excluir')
+  const { hasActionOrDefault } = useAuth()
+  const canEdit = hasActionOrDefault('metas/pos-vendas/servicos_pecas', 'editar')
+  const canDelete = hasActionOrDefault('metas/pos-vendas/servicos_pecas', 'excluir')
 
   const [grupoAberto,      setGrupoAberto]      = useState(true)
   const [expandedEmpresas, setExpandedEmpresas] = useState(new Set())

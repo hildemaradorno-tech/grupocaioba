@@ -1596,42 +1596,15 @@ export const apiService = {
   // dim_bases_calculo/dim_regras_calculo. Mesmo motor (coluna + agregação + regras), tabelas
   // e rota backend (/api/bi-medidas) dedicadas.
 
-  // FONTES BI (arquivo/pasta do SharePoint)
+  // FONTES BI — unificadas com as Fontes de Cálculo (dim_fontes_calculo, cadastro em Regras de
+  // Comissões › Fonte de Cálculo). O BI só lê; criar/editar/excluir fonte é pela aba lá.
   getFontesBi: async () => {
     const { data, error } = await supabase
-      .from('dim_fontes_bi')
+      .from('dim_fontes_calculo')
       .select('*')
       .order('nome', { ascending: true })
     if (error) throw error
     return data || []
-  },
-
-  createFonteBi: async (payload) => {
-    const { data, error } = await supabase
-      .from('dim_fontes_bi')
-      .insert([{ ...payload, ativo: payload.ativo ?? true }])
-      .select()
-    if (error) throw error
-    return data?.[0]
-  },
-
-  updateFonteBi: async (id, payload) => {
-    const { data, error } = await supabase
-      .from('dim_fontes_bi')
-      .update({ ...payload, atualizado_em: new Date().toISOString() })
-      .eq('id', id)
-      .select()
-    if (error) throw error
-    return data?.[0]
-  },
-
-  deleteFonteBi: async (id) => {
-    const { error } = await supabase
-      .from('dim_fontes_bi')
-      .delete()
-      .eq('id', id)
-    if (error) throw error
-    return { success: true }
   },
 
   // Diagnóstico: lista as colunas reais de um arquivo do SharePoint (botão "Detectar Colunas")
@@ -1653,7 +1626,7 @@ export const apiService = {
   getMedidasBiComFonte: async () => {
     const { data, error } = await supabase
       .from('dim_medidas_bi')
-      .select('*, fonte_bi:dim_fontes_bi(id, nome, codigo, pasta_sharepoint, prefixo_arquivo, usa_subpasta_ano, linha_cabecalho, coluna_empresa, coluna_data, coluna_funcionario, campo_relacao_funcionario, coluna_tipo_os, coluna_natureza_operacao, coluna_movimento)')
+      .select('*, fonte_bi:dim_fontes_calculo(id, nome, codigo, pasta_sharepoint, prefixo_arquivo, usa_subpasta_ano, linha_cabecalho, coluna_empresa, coluna_data, coluna_funcionario, campo_relacao_funcionario, coluna_tipo_os, coluna_natureza_operacao, coluna_movimento)')
       .order('nome', { ascending: true })
     if (error) throw error
     return data || []
@@ -2289,32 +2262,39 @@ export const apiService = {
     return data || []
   },
 
-  createFeriado: async (payload) => {
-    const { data, error } = await supabase
-      .from('dim_calendario_feriados')
-      .insert([{ ...payload }])
-      .select()
-    if (error) throw error
-    return data?.[0]
-  },
-
-  updateFeriado: async (id, payload) => {
-    const { data, error } = await supabase
-      .from('dim_calendario_feriados')
-      .update({ ...payload, atualizado_em: new Date().toISOString() })
-      .eq('id', id)
-      .select()
-    if (error) throw error
-    return data?.[0]
-  },
-
-  deleteFeriado: async (id) => {
+  // Um feriado cadastrado uma vez pode valer pra várias empresas: no banco continua uma linha
+  // por empresa (o gerar_calendario_anual cruza por empresa_id + data), a tela é que agrupa.
+  // `empresas` = [{ id, nome }]; `base` = campos comuns (data, descrição, tipos, ano...).
+  createFeriadoEmpresas: async (base, empresas) => {
     const { error } = await supabase
       .from('dim_calendario_feriados')
-      .delete()
-      .eq('id', id)
+      .insert(empresas.map(e => ({ ...base, empresa_id: e.id, empresa_nome: e.nome })))
     if (error) throw error
-    return { success: true }
+  },
+
+  // `existentes` = linhas atuais do grupo (com id/empresa_id). Empresas novas ganham linha,
+  // as mantidas são atualizadas e as desmarcadas perdem a linha.
+  salvarFeriadoEmpresas: async (existentes, base, empresas) => {
+    const jaTem = new Set(existentes.map(r => r.empresa_id))
+    const selecionadas = new Set(empresas.map(e => e.id))
+    const novos = empresas.filter(e => !jaTem.has(e.id)).map(e => ({ ...base, empresa_id: e.id, empresa_nome: e.nome }))
+    const manter = existentes.filter(r => selecionadas.has(r.empresa_id)).map(r => r.id)
+    const remover = existentes.filter(r => !selecionadas.has(r.empresa_id)).map(r => r.id)
+    if (novos.length > 0) {
+      const { error } = await supabase.from('dim_calendario_feriados').insert(novos)
+      if (error) throw error
+    }
+    if (manter.length > 0) {
+      const { error } = await supabase
+        .from('dim_calendario_feriados')
+        .update({ ...base, atualizado_em: new Date().toISOString() })
+        .in('id', manter)
+      if (error) throw error
+    }
+    if (remover.length > 0) {
+      const { error } = await supabase.from('dim_calendario_feriados').delete().in('id', remover)
+      if (error) throw error
+    }
   },
 
   deleteFeriadosLote: async (ids) => {
@@ -2841,14 +2821,20 @@ export const apiService = {
     return data || []
   },
 
-  // Linhas enxutas (só empresa/mês/total do mês) pra montar o resumo de dias úteis de
-  // TODAS as empresas de uma vez, sem precisar abrir o card de cada uma pra saber se tem
-  // calendário gerado no ano.
+  // Resumo de dias úteis de TODAS as empresas de uma vez. Só busca o último dia de cada mês
+  // (onde dias_total_mes já está acumulado): 12 linhas por empresa em vez de 365 — o
+  // PostgREST corta em 1000 linhas, e com 3+ empresas o ano inteiro passava disso e as
+  // últimas empresas geradas simplesmente não apareciam.
   getResumoDiasUteisPorEmpresa: async (ano) => {
+    const ultimosDias = Array.from({ length: 12 }, (_, i) => {
+      const d = new Date(ano, i + 1, 0)
+      return `${ano}-${String(i + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    })
     const { data, error } = await supabase
       .from('fato_calendario')
       .select('empresa_id, mes, dias_total_mes')
       .eq('ano', ano)
+      .in('data', ultimosDias)
     if (error) throw error
     return data || []
   },

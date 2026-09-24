@@ -139,9 +139,9 @@ export default function Cargos() {
   const limparFiltros = () => setFiltros(FILTROS_VAZIOS)
   const temFiltro = Object.values(filtros).some(v => v.length > 0)
 
-  const { hasPermission } = useAuth()
-  const canEdit = hasPermission('cargos', 'editar')
-  const canDelete = hasPermission('cargos', 'excluir')
+  const { hasActionOrDefault } = useAuth()
+  const canEdit = hasActionOrDefault('cargos', 'editar')
+  const canDelete = hasActionOrDefault('cargos', 'excluir')
   const abrirVisualizar = (item) => { setItemVisualizado(item); setModalVisualizarAberto(true) }
 
   useEffect(() => { loadData() }, [])

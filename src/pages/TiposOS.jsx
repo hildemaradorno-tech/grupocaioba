@@ -69,9 +69,9 @@ export default function TiposOS() {
   const [form, setForm] = useSessionState('tos_form', FORM_VAZIO)
   const [modalVisualizarAberto, setModalVisualizarAberto] = useState(false)
   const [itemVisualizado, setItemVisualizado] = useState(null)
-  const { hasPermission } = useAuth()
-  const canEdit = hasPermission('tipos-os', 'editar')
-  const canDelete = hasPermission('tipos-os', 'excluir')
+  const { hasActionOrDefault } = useAuth()
+  const canEdit = hasActionOrDefault('tipos-os', 'editar')
+  const canDelete = hasActionOrDefault('tipos-os', 'excluir')
   const abrirVisualizar = (item) => { setItemVisualizado(item); setModalVisualizarAberto(true) }
 
   useEffect(() => { loadData() }, [])

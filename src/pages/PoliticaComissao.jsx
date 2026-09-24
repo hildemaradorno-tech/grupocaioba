@@ -183,9 +183,9 @@ export default function PoliticaComissao() {
   // cargo_id (política já existente) -> id da linha de fato_politica_comissao, capturado ao
   // abrir Editar — permite saber, ao salvar, quais linhas atualizar/criar/excluir do grupo.
   const [itensOriginais, setItensOriginais] = useState(new Map())
-  const { hasPermission } = useAuth()
-  const canEdit = hasPermission('politica-comissao', 'editar')
-  const canDelete = hasPermission('politica-comissao', 'excluir')
+  const { hasActionOrDefault } = useAuth()
+  const canEdit = hasActionOrDefault('politica-comissao', 'editar')
+  const canDelete = hasActionOrDefault('politica-comissao', 'excluir')
   const location = useLocation()
   const navigate = useNavigate()
 

@@ -18,8 +18,8 @@ export default function ProjStatus() {
   const [form, setForm] = useSessionState('proj_status_form', { nome: '', ativo: true })
   const [modalVisualizarAberto, setModalVisualizarAberto] = useState(false)
   const [itemVisualizado, setItemVisualizado] = useState(null)
-  const { hasPermission } = useAuth()
-  const canEdit = hasPermission('projetos/status', 'editar')
+  const { hasActionOrDefault } = useAuth()
+  const canEdit = hasActionOrDefault('projetos/status', 'editar')
 
   const abrirVisualizar = (item) => { setItemVisualizado(item); setModalVisualizarAberto(true) }
 

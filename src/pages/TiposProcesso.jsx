@@ -20,9 +20,9 @@ export default function TiposProcesso() {
   const [erroModal, setErroModal] = useState(null)
   const [salvando, setSalvando] = useState(false)
 
-  const { hasPermission } = useAuth()
-  const canEdit = hasPermission('tipos-processo', 'editar')
-  const canDelete = hasPermission('tipos-processo', 'excluir')
+  const { hasActionOrDefault } = useAuth()
+  const canEdit = hasActionOrDefault('tipos-processo', 'editar')
+  const canDelete = hasActionOrDefault('tipos-processo', 'excluir')
 
   useEffect(() => { loadData() }, [])
 

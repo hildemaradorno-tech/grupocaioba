@@ -5,7 +5,7 @@ import PeriodSelector, { usePeriodSelector } from '../../components/kpi/PeriodSe
 import { getPeriodLabel } from '../../utils/kpiPeriods'
 import { useKpiYear } from '../../context/KpiYearContext'
 import { useSessionState } from '../../hooks/useSessionState'
-import DataSourceBadge from '../../components/kpi/DataSourceBadge'
+import { useKpiSourceStatus } from '../../context/KpiSourceStatusContext'
 import EmpresaSelector from '../../components/kpi/EmpresaSelector'
 import { fetchAuditoria } from '../../services/kpiService'
 
@@ -112,6 +112,9 @@ export default function KpiAuditoria() {
   const [rows,       setRows]       = useState(initCached?.indicadores ?? [])
   const [loading,    setLoading]    = useState(!initCached)
   const [source,     setSource]     = useState(null)
+  // O selo "Dados sincronizados" mora no cabeçalho da Matriz KPIs; aqui só publica o status.
+  const { setStatus } = useKpiSourceStatus()
+  useEffect(() => { setStatus({ source, loading }) }, [source, loading, setStatus])
   const [meta,       setMeta]       = useState(initCached?.metaData    ?? null)
   const [openGroups, setOpenGroups] = useState({})
 
@@ -148,12 +151,9 @@ export default function KpiAuditoria() {
 
   return (
     <div className="p-6 space-y-5">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold text-slate-800">Auditoria de Fontes — KPIs</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Valores brutos por fonte para conferência — Bloco 3 Pós-Venda</p>
-        </div>
-        <DataSourceBadge source={source} loading={loading} />
+      <div>
+        <h1 className="text-xl font-bold text-slate-800">Auditoria de Fontes — KPIs</h1>
+        <p className="text-sm text-slate-500 mt-0.5">Valores brutos por fonte para conferência — Bloco 3 Pós-Venda</p>
       </div>
 
       <EmpresaSelector value={empresa} onChange={setEmpresa} />
@@ -219,7 +219,7 @@ export default function KpiAuditoria() {
                             <tr key={i} className={rowClass}>
                               <td className={`px-4 py-2 sticky left-0 ${isResult ? colors.resultado : colors.row}`}>
                                 {isResult ? <span className="font-bold text-slate-800">RESULTADO</span> : row.fonte}
-                                <InfoFonte info={row.info} />
+                                {!isResult && <InfoFonte info={row.info} />}
                               </td>
                               <td className="px-4 py-2 text-slate-600">{row.metrica}</td>
                               <td className="px-3 py-2 text-center">

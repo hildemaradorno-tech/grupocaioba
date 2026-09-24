@@ -19,8 +19,8 @@ export default function ProjEmpresas() {
   const [form, setForm] = useSessionState('proj_empresa_form', { nome: '', ativo: true })
   const [modalVisualizarAberto, setModalVisualizarAberto] = useState(false)
   const [itemVisualizado, setItemVisualizado] = useState(null)
-  const { hasPermission } = useAuth()
-  const canEdit = hasPermission('projetos/empresas', 'editar')
+  const { hasActionOrDefault } = useAuth()
+  const canEdit = hasActionOrDefault('projetos/empresas', 'editar')
 
   const abrirVisualizar = (item) => { setItemVisualizado(item); setModalVisualizarAberto(true) }
 

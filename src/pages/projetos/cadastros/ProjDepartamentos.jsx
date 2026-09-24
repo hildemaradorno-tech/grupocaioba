@@ -19,9 +19,9 @@ export default function ProjDepartamentos() {
   const [form, setForm] = useSessionState('proj_dept_form', { nome: '', ativo: true })
   const [modalVisualizarAberto, setModalVisualizarAberto] = useState(false)
   const [itemVisualizado, setItemVisualizado] = useState(null)
-  const { hasPermission } = useAuth()
-  const canEdit = hasPermission('proj-departamentos', 'editar')
-  const canDelete = hasPermission('proj-departamentos', 'excluir')
+  const { hasActionOrDefault } = useAuth()
+  const canEdit = hasActionOrDefault('projetos/departamentos', 'editar')
+  const canDelete = hasActionOrDefault('projetos/departamentos', 'excluir')
 
   const abrirVisualizar = (item) => { setItemVisualizado(item); setModalVisualizarAberto(true) }
 

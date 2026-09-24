@@ -28,9 +28,9 @@ export default function ProjFases() {
   const [modalVisualizarAberto, setModalVisualizarAberto] = useState(false)
   const [itemVisualizado, setItemVisualizado] = useState(null)
   const [editandoOrdem, setEditandoOrdem] = useState(null) // { id, valor }
-  const { hasPermission } = useAuth()
-  const canEdit = hasPermission('proj-fases', 'editar')
-  const canDelete = hasPermission('proj-fases', 'excluir')
+  const { hasActionOrDefault } = useAuth()
+  const canEdit = hasActionOrDefault('projetos/fases', 'editar')
+  const canDelete = hasActionOrDefault('projetos/fases', 'excluir')
 
   const abrirVisualizar = (item) => { setItemVisualizado(item); setModalVisualizarAberto(true) }
 

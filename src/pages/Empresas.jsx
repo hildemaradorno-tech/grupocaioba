@@ -62,9 +62,9 @@ export default function Empresas() {
     : sortDir === 'asc'
       ? <ArrowUp className="h-3 w-3 text-blue-500" />
       : <ArrowDown className="h-3 w-3 text-blue-500" />
-  const { hasPermission } = useAuth()
-  const canEdit = hasPermission('empresas', 'editar')
-  const canDelete = hasPermission('empresas', 'excluir')
+  const { hasActionOrDefault } = useAuth()
+  const canEdit = hasActionOrDefault('empresas', 'editar')
+  const canDelete = hasActionOrDefault('empresas', 'excluir')
   const abrirVisualizar = (item) => { setItemVisualizado(item); setModalVisualizarAberto(true) }
 
   useEffect(() => {

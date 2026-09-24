@@ -126,8 +126,8 @@ function StatusBadge({ status }) {
 }
 
 export default function SincronizacaoDados() {
-  const { hasPermission, user } = useAuth()
-  const canEdit = hasPermission('sincronizacao-dados', 'editar')
+  const { hasActionOrDefault, user } = useAuth()
+  const canEdit = hasActionOrDefault('sincronizacao-dados', 'editar')
 
   const [config, setConfig] = useState({ ativo: true })
   const [dias, setDias] = useState(diasVazios())

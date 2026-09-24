@@ -115,6 +115,8 @@ export const ACOES_POR_MENU = [
   {
     menuPath: 'metas/gestao-aprovacao',
     acoes: [
+      { value: 'editar', label: 'Incluir / Editar' },
+      { value: 'excluir', label: 'Excluir' },
       { value: 'pendenciar', label: 'Pendenciar (reverter uma aprovação de meta)' },
     ],
   },
@@ -124,6 +126,283 @@ export const ACOES_POR_MENU = [
       { value: 'editar',             label: 'Editar Lançamentos' },
       { value: 'excluir',            label: 'Excluir Lançamentos' },
       { value: 'configurar_valores', label: 'Configurar Valores (R$/dia e R$/deslocamento)' },
+    ],
+  },
+  {
+    menuPath: 'agrup-cargos',
+    acoes: [
+      { value: 'editar', label: 'Incluir / Editar' },
+      { value: 'excluir', label: 'Excluir' },
+    ],
+  },
+  {
+    menuPath: 'agrup-departamentos',
+    acoes: [
+      { value: 'editar', label: 'Incluir / Editar' },
+      { value: 'excluir', label: 'Excluir' },
+    ],
+  },
+  {
+    menuPath: 'agrup-empresas',
+    acoes: [
+      { value: 'editar', label: 'Incluir / Editar' },
+      { value: 'excluir', label: 'Excluir' },
+    ],
+  },
+  {
+    menuPath: 'areas',
+    acoes: [
+      { value: 'editar', label: 'Incluir / Editar' },
+      { value: 'excluir', label: 'Excluir' },
+    ],
+  },
+  {
+    menuPath: 'bases-calculo',
+    acoes: [
+      { value: 'editar', label: 'Incluir / Editar' },
+      { value: 'excluir', label: 'Excluir' },
+    ],
+  },
+  {
+    menuPath: 'bi/medidas',
+    acoes: [
+      { value: 'editar', label: 'Incluir / Editar' },
+      { value: 'excluir', label: 'Excluir' },
+    ],
+  },
+  {
+    menuPath: 'box',
+    acoes: [
+      { value: 'editar', label: 'Incluir / Editar' },
+      { value: 'excluir', label: 'Excluir' },
+    ],
+  },
+  {
+    menuPath: 'calendario',
+    acoes: [
+      { value: 'editar', label: 'Incluir / Editar' },
+      { value: 'excluir', label: 'Excluir' },
+    ],
+  },
+  {
+    menuPath: 'cargos',
+    acoes: [
+      { value: 'editar', label: 'Incluir / Editar' },
+      { value: 'excluir', label: 'Excluir' },
+    ],
+  },
+  {
+    menuPath: 'politica-comissao',
+    acoes: [
+      { value: 'editar', label: 'Incluir / Editar' },
+      { value: 'excluir', label: 'Excluir' },
+    ],
+  },
+  {
+    menuPath: 'cargos-remuneracoes',
+    acoes: [
+      { value: 'editar', label: 'Incluir / Editar' },
+    ],
+  },
+  {
+    menuPath: 'classificacao-compra',
+    acoes: [
+      { value: 'editar', label: 'Incluir / Editar' },
+      { value: 'excluir', label: 'Excluir' },
+    ],
+  },
+  {
+    menuPath: 'departamentos',
+    acoes: [
+      { value: 'editar', label: 'Incluir / Editar' },
+      { value: 'excluir', label: 'Excluir' },
+    ],
+  },
+  {
+    menuPath: 'empresas',
+    acoes: [
+      { value: 'editar', label: 'Incluir / Editar' },
+      { value: 'excluir', label: 'Excluir' },
+    ],
+  },
+  {
+    menuPath: 'feriados',
+    acoes: [
+      { value: 'editar', label: 'Incluir / Editar' },
+    ],
+  },
+  {
+    menuPath: 'ferias',
+    acoes: [
+      { value: 'editar', label: 'Incluir / Editar' },
+    ],
+  },
+  {
+    menuPath: 'fontes-calculo',
+    acoes: [
+      { value: 'editar', label: 'Incluir / Editar' },
+      { value: 'excluir', label: 'Excluir' },
+    ],
+  },
+  {
+    menuPath: 'fontes-microwork',
+    acoes: [
+      { value: 'editar', label: 'Incluir / Editar' },
+      { value: 'excluir', label: 'Excluir' },
+    ],
+  },
+  {
+    menuPath: 'fornecedores',
+    acoes: [
+      { value: 'editar', label: 'Incluir / Editar' },
+    ],
+  },
+  {
+    menuPath: 'funcionarios',
+    acoes: [
+      { value: 'editar', label: 'Incluir / Editar' },
+      { value: 'excluir', label: 'Excluir' },
+    ],
+  },
+  {
+    menuPath: 'governanca/perfis-acesso',
+    acoes: [
+      { value: 'editar', label: 'Incluir / Editar' },
+      { value: 'excluir', label: 'Excluir' },
+    ],
+  },
+  {
+    menuPath: 'metas/pos-vendas/distribuicao-consultores',
+    acoes: [
+      { value: 'editar', label: 'Incluir / Editar' },
+      { value: 'excluir', label: 'Excluir' },
+    ],
+  },
+  {
+    menuPath: 'metas/pos-vendas/pecas',
+    acoes: [
+      { value: 'editar', label: 'Incluir / Editar' },
+    ],
+  },
+  {
+    menuPath: 'metas/pos-vendas/servicos_pecas',
+    acoes: [
+      { value: 'editar', label: 'Incluir / Editar' },
+      { value: 'excluir', label: 'Excluir' },
+    ],
+  },
+  {
+    menuPath: 'movimento-venda',
+    acoes: [
+      { value: 'editar', label: 'Incluir / Editar' },
+      { value: 'excluir', label: 'Excluir' },
+    ],
+  },
+  {
+    menuPath: 'natureza-operacoes',
+    acoes: [
+      { value: 'editar', label: 'Incluir / Editar' },
+      { value: 'excluir', label: 'Excluir' },
+    ],
+  },
+  {
+    menuPath: 'projetos/areas',
+    acoes: [
+      { value: 'editar', label: 'Incluir / Editar' },
+    ],
+  },
+  {
+    menuPath: 'projetos/departamentos',
+    acoes: [
+      { value: 'editar', label: 'Incluir / Editar' },
+      { value: 'excluir', label: 'Excluir' },
+    ],
+  },
+  {
+    menuPath: 'projetos/empresas',
+    acoes: [
+      { value: 'editar', label: 'Incluir / Editar' },
+    ],
+  },
+  {
+    menuPath: 'projetos/fases',
+    acoes: [
+      { value: 'editar', label: 'Incluir / Editar' },
+      { value: 'excluir', label: 'Excluir' },
+    ],
+  },
+  {
+    menuPath: 'projetos/responsaveis',
+    acoes: [
+      { value: 'editar', label: 'Incluir / Editar' },
+      { value: 'excluir', label: 'Excluir' },
+    ],
+  },
+  {
+    menuPath: 'projetos/sistemas',
+    acoes: [
+      { value: 'editar', label: 'Incluir / Editar' },
+      { value: 'excluir', label: 'Excluir' },
+    ],
+  },
+  {
+    menuPath: 'projetos/status',
+    acoes: [
+      { value: 'editar', label: 'Incluir / Editar' },
+    ],
+  },
+  {
+    menuPath: 'projetos/templates',
+    acoes: [
+      { value: 'editar', label: 'Incluir / Editar' },
+    ],
+  },
+  {
+    menuPath: 'rubricas',
+    acoes: [
+      { value: 'editar', label: 'Incluir / Editar' },
+      { value: 'excluir', label: 'Excluir' },
+    ],
+  },
+  {
+    menuPath: 'segmentos',
+    acoes: [
+      { value: 'editar', label: 'Incluir / Editar' },
+      { value: 'excluir', label: 'Excluir' },
+    ],
+  },
+  {
+    menuPath: 'setores',
+    acoes: [
+      { value: 'editar', label: 'Incluir / Editar' },
+      { value: 'excluir', label: 'Excluir' },
+    ],
+  },
+  {
+    menuPath: 'sincronizacao-dados',
+    acoes: [
+      { value: 'editar', label: 'Incluir / Editar' },
+    ],
+  },
+  {
+    menuPath: 'tipos-os',
+    acoes: [
+      { value: 'editar', label: 'Incluir / Editar' },
+      { value: 'excluir', label: 'Excluir' },
+    ],
+  },
+  {
+    menuPath: 'tipos-processo',
+    acoes: [
+      { value: 'editar', label: 'Incluir / Editar' },
+      { value: 'excluir', label: 'Excluir' },
+    ],
+  },
+  {
+    menuPath: 'tipos-produtos',
+    acoes: [
+      { value: 'editar', label: 'Incluir / Editar' },
+      { value: 'excluir', label: 'Excluir' },
     ],
   },
 ]

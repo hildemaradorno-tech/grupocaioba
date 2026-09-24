@@ -80,13 +80,22 @@ export const MENU_TREE = [
         label: 'Regras de Comissões',
         navTo: 'regras-comissoes',
         children: [
-          { key: 'fontes-calculo', label: 'Fonte de Cálculo' },
-          { key: 'fontes-microwork', label: 'Fonte MicroWork' },
           { key: 'bases-calculo', label: 'Base de Cálculo' },
           { key: 'politica-comissao', label: 'Política de Comissões' },
           { key: 'cargos-remuneracoes', label: 'Cargos e Remunerações' },
           { key: 'rubricas', label: 'Rubrica' },
           { key: 'tipos-processo', label: 'Tipo de Processo' },
+        ],
+      },
+      {
+        // Mesmo padrão de Regras de Comissões: permissões individuais por aba, navTo direto pra
+        // página única /fontes-comissoes.
+        key: '_fontes-comissoes',
+        label: 'Fontes de Dados',
+        navTo: 'fontes-comissoes',
+        children: [
+          { key: 'fontes-calculo', label: 'Dealer.net' },
+          { key: 'fontes-microwork', label: 'MicroWork' },
         ],
       },
       {
@@ -104,6 +113,8 @@ export const MENU_TREE = [
           { key: 'sobreaviso-plantao', label: 'Sobreaviso/Plantão' },
         ],
       },
+      // Mesma key de antes (bi/medidas) pra não perder as permissões já concedidas.
+      { key: 'bi/medidas', label: 'Medidas BI' },
     ],
   },
   {
@@ -151,6 +162,8 @@ export const MENU_TREE = [
         children: [
           { key: 'bpm/nfe-cancelamento-devolucao', label: 'Solicitações' },
           { key: 'bpm/nfe-etapas', label: 'Etapas' },
+          { key: 'bpm/processos', label: 'Processos (BPM)' },
+          { key: 'bpm/modelador', label: 'Modelador de Processos' },
         ],
       },
       {
@@ -232,8 +245,6 @@ export const MENU_TREE = [
       { key: 'bi/garantias-daf', label: 'BI — Garantias DAF' },
       { key: 'bi/projetos', label: 'BI — Gestão de Projetos' },
       { key: 'bi/possibilidades', label: 'BI — Possibilidades' },
-      { key: 'bi/fontes', label: 'BI — Fontes' },
-      { key: 'bi/medidas', label: 'BI — Medidas' },
       { key: 'bi/comissoes', label: 'BI — Comissões' },
       {
         // Permissões individuais mantidas (controlam quais abas aparecem em /kpi/matriz),

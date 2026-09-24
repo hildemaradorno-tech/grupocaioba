@@ -27,9 +27,9 @@ export default function ClassificacaoCompra() {
 
   const [modalVisualizarAberto, setModalVisualizarAberto] = useState(false)
   const [itemVisualizado, setItemVisualizado] = useState(null)
-  const { hasPermission } = useAuth()
-  const canEdit = hasPermission('classificacao-compra', 'editar')
-  const canDelete = hasPermission('classificacao-compra', 'excluir')
+  const { hasActionOrDefault } = useAuth()
+  const canEdit = hasActionOrDefault('classificacao-compra', 'editar')
+  const canDelete = hasActionOrDefault('classificacao-compra', 'excluir')
   const abrirVisualizar = (item) => { setItemVisualizado(item); setModalVisualizarAberto(true) }
 
   const handleInputChange = (e) => {

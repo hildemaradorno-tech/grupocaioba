@@ -27,9 +27,9 @@ export default function ProjSistemas() {
   const [form, setForm] = useSessionState('proj_sis_form', { nome: '', ativo: true, cor: '#1e293b' })
   const [modalVisualizarAberto, setModalVisualizarAberto] = useState(false)
   const [itemVisualizado, setItemVisualizado] = useState(null)
-  const { hasPermission } = useAuth()
-  const canEdit = hasPermission('proj-sistemas', 'editar')
-  const canDelete = hasPermission('proj-sistemas', 'excluir')
+  const { hasActionOrDefault } = useAuth()
+  const canEdit = hasActionOrDefault('projetos/sistemas', 'editar')
+  const canDelete = hasActionOrDefault('projetos/sistemas', 'excluir')
 
   const abrirVisualizar = (item) => { setItemVisualizado(item); setModalVisualizarAberto(true) }
 

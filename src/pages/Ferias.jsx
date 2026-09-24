@@ -19,8 +19,8 @@ const fmtDataHora = (v) => v ? new Date(v).toLocaleString('pt-BR') : '-'
 const soDigitos = (v) => String(v || '').replace(/\D/g, '')
 
 export default function Ferias() {
-  const { user, hasPermission } = useAuth()
-  const canEdit = hasPermission('ferias', 'editar')
+  const { user, hasActionOrDefault } = useAuth()
+  const canEdit = hasActionOrDefault('ferias', 'editar')
   const usuarioLabel = user?.email || 'desconhecido'
 
   const [dados, setDados] = useState([])

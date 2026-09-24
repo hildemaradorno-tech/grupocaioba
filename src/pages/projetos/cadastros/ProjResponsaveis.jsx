@@ -25,9 +25,9 @@ export default function ProjResponsaveis() {
   const [modalAlertaNome, setModalAlertaNome] = useState(null) // { nomeAntigo, nomeNovo }
   const [copiado, setCopiado] = useState(false)
   const [usuarios, setUsuarios] = useState([])
-  const { hasPermission } = useAuth()
-  const canEdit = hasPermission('proj-responsaveis', 'editar')
-  const canDelete = hasPermission('proj-responsaveis', 'excluir')
+  const { hasActionOrDefault } = useAuth()
+  const canEdit = hasActionOrDefault('projetos/responsaveis', 'editar')
+  const canDelete = hasActionOrDefault('projetos/responsaveis', 'excluir')
 
   const abrirVisualizar = (item) => { setItemVisualizado(item); setModalVisualizarAberto(true) }
 

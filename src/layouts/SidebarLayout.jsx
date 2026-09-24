@@ -31,7 +31,7 @@ MENU_TREE.forEach(buildSectionLeaves)
 // ── Map route to section key ──────────────────────────────────────────────────
 function getActiveSectionKey(pathname) {
   if (pathname === '/usuarios' || pathname === '/grupos' || pathname === '/permissoes-matriz') return '_config'
-  if (pathname === '/folha-pagamento-daf' || pathname === '/regras-comissoes') return '_comissoes-calculo'
+  if (pathname === '/folha-pagamento-daf' || pathname === '/regras-comissoes' || pathname === '/fontes-comissoes' || pathname === '/bi/medidas') return '_comissoes-calculo'
   const cadastros = ['/segmentos','/agrup-empresas','/empresas','/areas','/agrup-departamentos',
     '/departamentos','/setores','/box','/agrup-cargos','/cargos','/organograma',
     '/movimento-venda','/natureza-operacoes','/tipos-produtos','/tipos-os',
@@ -452,11 +452,14 @@ export default function SidebarLayout() {
       case '_comissoes-calculo':
         return (
           <>
+            {(canView('fontes-calculo') || canView('fontes-microwork')) && (
+              <FlyItem to="/fontes-comissoes" icon={TableProperties} onClose={closeFlyout}>Fontes de Dados</FlyItem>
+            )}
+            {canView('bi/medidas') && (
+              <FlyItem to="/bi/medidas" icon={Ruler} onClose={closeFlyout}>Medidas BI</FlyItem>
+            )}
             {canViewSection('_comissoes') && (
-              <>
-                <FlyItem to="/regras-comissoes" icon={ScrollText} onClose={closeFlyout}>Regras de Comissões</FlyItem>
-                <div className="mx-3 my-2 border-t border-blue-800/50" />
-              </>
+              <FlyItem to="/regras-comissoes" icon={ScrollText} onClose={closeFlyout}>Regras de Comissões</FlyItem>
             )}
             {(canView('ferias') || canView('calculo-comissoes') || canView('processamento-comissoes') || canView('sobreaviso-plantao')) && (
               <>
@@ -562,8 +565,6 @@ export default function SidebarLayout() {
             {canView('bi/garantias-daf') && <FlyItem to="/bi/garantias-daf" icon={ShieldCheck} onClose={closeFlyout}>Garantias DAF</FlyItem>}
             {canView('bi/projetos') && <FlyItem to="/bi/projetos" icon={FolderKanban} onClose={closeFlyout}>Gestão de Projetos</FlyItem>}
             {canView('bi/possibilidades') && <FlyItem to="/bi/possibilidades" icon={Gauge} onClose={closeFlyout}>Possibilidades</FlyItem>}
-            {canView('bi/fontes') && <FlyItem to="/bi/fontes" icon={Database} onClose={closeFlyout}>Fontes</FlyItem>}
-            {canView('bi/medidas') && <FlyItem to="/bi/medidas" icon={Ruler} onClose={closeFlyout}>Medidas</FlyItem>}
             {canView('bi/comissoes') && <FlyItem to="/bi/comissoes" icon={Wallet} onClose={closeFlyout}>Comissões</FlyItem>}
             {canViewSection('_bi.kpis') && (
               <>
@@ -786,18 +787,6 @@ export default function SidebarLayout() {
           </div>
         )}
         <Outlet />
-
-        {/* Identificador da rota atual — no final do conteúdo de cada tela (não fixo, não
-            sobrepõe nada ao rolar a página), pra localizar rápido qual tela/arquivo ajustar
-            quando o usuário pedir uma mudança (informa o path exato usado no App.jsx).
-            Não mostra na Home. */}
-        {location.pathname !== '/' && (
-          <div className="flex justify-end px-4 py-3">
-            <span className="text-[10px] font-mono text-slate-400 bg-white border border-slate-200 px-1.5 py-0.5 rounded shadow-sm select-text">
-              {location.pathname}
-            </span>
-          </div>
-        )}
       </main>
 
       {trocarSenha && !impersonando && (

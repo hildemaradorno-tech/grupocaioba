@@ -1,25 +1,16 @@
 import React, { useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Calculator, ScrollText, Briefcase, Hash, ListChecks, Info } from 'lucide-react'
+import { Database, Info } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useSessionState } from '../hooks/useSessionState'
-import BasesCalculo from './BasesCalculo'
-import PoliticaComissao from './PoliticaComissao'
-import CargosRemuneracoes from './CargosRemuneracoes'
-import Rubricas from './Rubricas'
-import TiposProcesso from './TiposProcesso'
+import FontesCalculo from './FontesCalculo'
+import FontesMicrowork from './FontesMicrowork'
 
 const ABAS = [
-  { menuPath: 'bases-calculo', label: 'Base de Cálculo', icon: Calculator, Componente: BasesCalculo,
-    description: 'Defina qual coluna e agregação extraem o valor de cada Fonte de Cálculo.' },
-  { menuPath: 'politica-comissao', label: 'Política de Comissões', icon: ScrollText, Componente: PoliticaComissao,
-    description: 'Configure as regras de comissão por cargo: fonte e base de cálculo, faixas, vigência e rubrica de pagamento.' },
-  { menuPath: 'cargos-remuneracoes', label: 'Cargos e Remunerações', icon: Briefcase, Componente: CargosRemuneracoes,
-    description: 'Relatório das políticas salariais por cargo — comissões, ganhos cadastrados e DSR.' },
-  { menuPath: 'rubricas', label: 'Rubrica', icon: Hash, Componente: Rubricas,
-    description: 'Códigos de rubrica usados no TXT de pagamento (Processamento de Comissões) — selecionáveis em Política de Comissão.' },
-  { menuPath: 'tipos-processo', label: 'Tipo de Processo', icon: ListChecks, Componente: TiposProcesso,
-    description: 'Códigos de tipo de processo usados no TXT de pagamento (Processamento de Comissões) — selecionáveis em Política de Comissão.' },
+  { menuPath: 'fontes-calculo', label: 'Dealer.net', icon: Database, Componente: FontesCalculo,
+    description: 'Cadastre de qual arquivo do SharePoint cada evento de comissão lê seus dados.' },
+  { menuPath: 'fontes-microwork', label: 'MicroWork', icon: Database, Componente: FontesMicrowork,
+    description: 'Cadastre relatórios do MicroWork Cloud (via API) como fonte de dados de comissão.' },
 ]
 
 function InfoAba({ texto }) {
@@ -33,15 +24,13 @@ function InfoAba({ texto }) {
   )
 }
 
-export default function RegrasComissoes() {
+export default function FontesComissoes() {
   const { hasPermission } = useAuth()
   const [searchParams] = useSearchParams()
   const abasPermitidas = ABAS.filter(a => hasPermission(a.menuPath))
-  const [abaAtivaKey, setAbaAtivaKey] = useSessionState('regras_comissoes_aba', abasPermitidas[0]?.menuPath || '')
+  const [abaAtivaKey, setAbaAtivaKey] = useSessionState('fontes_comissoes_aba', abasPermitidas[0]?.menuPath || '')
 
-  // Só usa ?aba= pra pré-selecionar no primeiro load (sustenta os redirects das rotas antigas,
-  // ex: /politica-comissao -> /regras-comissoes?aba=politica-comissao) — depois disso quem manda
-  // é o clique nas abas / o que já estava salvo no localStorage.
+  // Só usa ?aba= pra pré-selecionar no primeiro load (sustenta os redirects das rotas antigas).
   useEffect(() => {
     const abaParam = searchParams.get('aba')
     if (abaParam && abasPermitidas.some(a => a.menuPath === abaParam)) setAbaAtivaKey(abaParam)
@@ -54,8 +43,8 @@ export default function RegrasComissoes() {
   return (
     <div className="h-full flex flex-col">
       <div className="px-6 pt-6 bg-white shrink-0">
-        <h1 className="text-xl font-bold text-slate-900 tracking-tight">Regras de Comissões</h1>
-        <p className="text-xs text-slate-500">Defina as regras e políticas de comissionamento por empresa, cargo e tipo de evento.</p>
+        <h1 className="text-xl font-bold text-slate-900 tracking-tight">Fontes de Dados</h1>
+        <p className="text-xs text-slate-500">Cadastre de onde vêm os dados usados no cálculo das comissões (SharePoint e MicroWork).</p>
       </div>
       <div className="flex items-center flex-wrap border-b border-slate-200 bg-white px-6 pt-4 shrink-0">
         {abasPermitidas.map(a => (

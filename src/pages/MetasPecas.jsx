@@ -247,8 +247,8 @@ export default function MetasPecas({ empresaExterna = null, anoExterno = null, a
   const [dados,   setDados]   = useState([])
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState(null)
-  const { hasPermission } = useAuth()
-  const canEdit = hasPermission('/metas/pos-vendas/pecas', 'editar')
+  const { hasActionOrDefault } = useAuth()
+  const canEdit = hasActionOrDefault('metas/pos-vendas/pecas', 'editar')
 
   const [filtroEmpresaSalva, setFiltroEmpresaSalva] = useSessionState('mpvs_servicos_empresas', [])
   const [filtroAnoSalvo,     setFiltroAnoSalvo]     = useSessionState('mpvs_servicos_ano', anoAtual)

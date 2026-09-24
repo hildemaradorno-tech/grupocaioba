@@ -271,9 +271,9 @@ export default function Funcionarios() {
   const [erroModal, setErroModal] = useState(null)
   const [buscandoPolitica, setBuscandoPolitica] = useState(false)
   const [sincronizando, setSincronizando] = useState(false)
-  const { hasPermission } = useAuth()
-  const canEdit = hasPermission('funcionarios', 'editar')
-  const canDelete = hasPermission('funcionarios', 'excluir')
+  const { hasActionOrDefault } = useAuth()
+  const canEdit = hasActionOrDefault('funcionarios', 'editar')
+  const canDelete = hasActionOrDefault('funcionarios', 'excluir')
 
   useEffect(() => { loadData() }, [])
 

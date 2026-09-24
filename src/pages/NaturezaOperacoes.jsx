@@ -28,9 +28,9 @@ export default function NaturezaOperacoes() {
   const [form, setForm] = useSessionState('natop_form', FORM_VAZIO)
   const [modalVisualizarAberto, setModalVisualizarAberto] = useState(false)
   const [itemVisualizado, setItemVisualizado] = useState(null)
-  const { hasPermission } = useAuth()
-  const canEdit = hasPermission('natureza-operacoes', 'editar')
-  const canDelete = hasPermission('natureza-operacoes', 'excluir')
+  const { hasActionOrDefault } = useAuth()
+  const canEdit = hasActionOrDefault('natureza-operacoes', 'editar')
+  const canDelete = hasActionOrDefault('natureza-operacoes', 'excluir')
   const abrirVisualizar = (item) => { setItemVisualizado(item); setModalVisualizarAberto(true) }
 
   useEffect(() => { loadData() }, [])

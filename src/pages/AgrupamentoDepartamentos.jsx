@@ -21,9 +21,9 @@ export default function AgrupamentoDepartamentos() {
   const [idExcluir, setIdExcluir] = useState(null)
   const [itemVisualizado, setItemVisualizado] = useState(null)
   const [form, setForm] = useSessionState('agrup_dep_form', { nome_agrupamento: '', area: '', ativo: true })
-  const { hasPermission } = useAuth()
-  const canEdit = hasPermission('agrup-departamentos', 'editar')
-  const canDelete = hasPermission('agrup-departamentos', 'excluir')
+  const { hasActionOrDefault } = useAuth()
+  const canEdit = hasActionOrDefault('agrup-departamentos', 'editar')
+  const canDelete = hasActionOrDefault('agrup-departamentos', 'excluir')
   const [salvando, setSalvando] = useState(false)
 
   useEffect(() => { loadData() }, [])

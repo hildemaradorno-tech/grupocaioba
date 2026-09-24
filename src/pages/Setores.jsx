@@ -25,9 +25,9 @@ export default function Setores() {
   const [tipoSetor, setTipoSetor] = useSessionState('set_tipo', '')
   const [modalVisualizarAberto, setModalVisualizarAberto] = useState(false)
   const [itemVisualizado, setItemVisualizado] = useState(null)
-  const { hasPermission } = useAuth()
-  const canEdit = hasPermission('setores', 'editar')
-  const canDelete = hasPermission('setores', 'excluir')
+  const { hasActionOrDefault } = useAuth()
+  const canEdit = hasActionOrDefault('setores', 'editar')
+  const canDelete = hasActionOrDefault('setores', 'excluir')
   const abrirVisualizar = (item) => { setItemVisualizado(item); setModalVisualizarAberto(true) }
 
   useEffect(() => { loadData() }, [])

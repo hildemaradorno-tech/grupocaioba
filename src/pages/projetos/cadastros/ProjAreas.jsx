@@ -19,8 +19,8 @@ export default function ProjAreas() {
   const [form, setForm] = useSessionState('proj_area_form', { nome: '', ativo: true })
   const [modalVisualizarAberto, setModalVisualizarAberto] = useState(false)
   const [itemVisualizado, setItemVisualizado] = useState(null)
-  const { hasPermission } = useAuth()
-  const canEdit = hasPermission('projetos/areas', 'editar')
+  const { hasActionOrDefault } = useAuth()
+  const canEdit = hasActionOrDefault('projetos/areas', 'editar')
 
   const abrirVisualizar = (item) => { setItemVisualizado(item); setModalVisualizarAberto(true) }
 

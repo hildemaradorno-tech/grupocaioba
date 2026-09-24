@@ -24,9 +24,9 @@ export default function AgrupamentoEmpresas() {
   const [form, setForm] = useSessionState('agrup_emp_form', { nome_agrupamento: '', segmento_id: '', marca: '', ativo: true })
   const [modalVisualizarAberto, setModalVisualizarAberto] = useState(false)
   const [itemVisualizado, setItemVisualizado] = useState(null)
-  const { hasPermission } = useAuth()
-  const canEdit = hasPermission('agrup-empresas', 'editar')
-  const canDelete = hasPermission('agrup-empresas', 'excluir')
+  const { hasActionOrDefault } = useAuth()
+  const canEdit = hasActionOrDefault('agrup-empresas', 'editar')
+  const canDelete = hasActionOrDefault('agrup-empresas', 'excluir')
   const abrirVisualizar = (item) => { setItemVisualizado(item); setModalVisualizarAberto(true) }
 
   useEffect(() => { loadData() }, [])

@@ -62,9 +62,9 @@ function agruparPorEmpresa(rows) {
 
 export default function MetasGestaoAprovacao() {
   const navigate = useNavigate()
-  const { hasPermission } = useAuth()
-  const canEdit = hasPermission('/metas/gestao-aprovacao', 'editar')
-  const canDelete = hasPermission('/metas/gestao-aprovacao', 'excluir')
+  const { hasActionOrDefault } = useAuth()
+  const canEdit = hasActionOrDefault('metas/gestao-aprovacao', 'editar')
+  const canDelete = hasActionOrDefault('metas/gestao-aprovacao', 'excluir')
 
   const [filtroAno, setFiltroAno] = useSessionState('mga_ano', anoAtual)
   // Mesma seleção de empresas das demais telas de Metas.

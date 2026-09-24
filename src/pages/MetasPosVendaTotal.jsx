@@ -177,8 +177,8 @@ const SEL2 = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm text-s
 export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = false, somenteAprovado = false, anoExterno = null, empresasExterno = null, filtroVisuExterno = null, setFiltroVisuExterno = null, aoAlterarAprovacao = null } = {}) {
   const modoAprovacao = modoAprovacaoProp || somenteAprovado
   const podeAgir = modoAprovacaoProp
-  const { hasPermission, hasAction, usuarioId, userNome } = useAuth()
-  const canEdit = hasPermission('/metas/gestao-aprovacao', 'editar')
+  const { hasActionOrDefault, hasAction, usuarioId, userNome } = useAuth()
+  const canEdit = hasActionOrDefault('metas/gestao-aprovacao', 'editar')
   const podePendenciar = hasAction('/metas/gestao-aprovacao', 'pendenciar')
   const [empresas,      setEmpresas]      = useState([])
   const [departamentos, setDepartamentos] = useState([])

@@ -134,9 +134,9 @@ export default function BasesCalculo() {
   const [erroCalcular, setErroCalcular] = useState(null)
   const [resultado, setResultado] = useState(null)
 
-  const { hasPermission } = useAuth()
-  const canEdit = hasPermission('bases-calculo', 'editar')
-  const canDelete = hasPermission('bases-calculo', 'excluir')
+  const { hasActionOrDefault } = useAuth()
+  const canEdit = hasActionOrDefault('bases-calculo', 'editar')
+  const canDelete = hasActionOrDefault('bases-calculo', 'excluir')
 
   useEffect(() => { loadData() }, [])
 

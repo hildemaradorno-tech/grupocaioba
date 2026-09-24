@@ -18,8 +18,8 @@ export default function Fornecedores() {
   const [form, setForm] = useState(FORM_VAZIO)
   const [modalVisualizarAberto, setModalVisualizarAberto] = useState(false)
   const [itemVisualizado, setItemVisualizado] = useState(null)
-  const { hasPermission } = useAuth()
-  const canEdit = hasPermission('fornecedores', 'editar')
+  const { hasActionOrDefault } = useAuth()
+  const canEdit = hasActionOrDefault('fornecedores', 'editar')
 
   useEffect(() => { loadDados(_cache.dados !== null) }, [])
   useEffect(() => { _cache.dados = dados }, [dados])

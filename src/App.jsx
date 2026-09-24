@@ -27,6 +27,7 @@ import AgrupamentoCargos from './pages/AgrupamentoCargos'
 import Areas from './pages/Areas'
 import Segmentos from './pages/Segmentos'
 import RegrasComissoes from './pages/RegrasComissoes'
+import FontesComissoes from './pages/FontesComissoes'
 import FolhaPagamentoDaf from './pages/FolhaPagamentoDaf'
 import Funcionarios from './pages/Funcionarios'
 import Feriados from './pages/Feriados'
@@ -93,7 +94,6 @@ import Organograma from './pages/Organograma'
 import BiGarantiasDaf from './pages/bi/BiGarantiasDaf'
 import BiProjetos from './pages/bi/BiProjetos'
 import BiPossibilidades from './pages/bi/BiPossibilidades'
-import FontesBi from './pages/bi/FontesBi'
 import MedidasBi from './pages/bi/MedidasBi'
 import BiComissoes from './pages/bi/BiComissoes'
 
@@ -185,11 +185,12 @@ export default function App() {
           { path: '/classificacao-compra', element: <ClassificacaoCompra />, menuPath: 'classificacao-compra' },
           { path: '/movimento-venda', element: <MovimentoVenda />, menuPath: 'movimento-venda' },
           { path: '/natureza-operacoes', element: <NaturezaOperacoes />, menuPath: 'natureza-operacoes' },
-          { path: '/regras-comissoes', element: <RegrasComissoes />, menuPath: ['fontes-calculo', 'fontes-microwork', 'bases-calculo', 'politica-comissao', 'cargos-remuneracoes', 'rubricas', 'tipos-processo'] },
+          { path: '/regras-comissoes', element: <RegrasComissoes />, menuPath: ['bases-calculo', 'politica-comissao', 'cargos-remuneracoes', 'rubricas', 'tipos-processo'] },
+          { path: '/fontes-comissoes', element: <FontesComissoes />, menuPath: ['fontes-calculo', 'fontes-microwork'] },
           { path: '/politica-comissao', element: <Navigate to="/regras-comissoes?aba=politica-comissao" replace /> },
           { path: '/cargos-remuneracoes', element: <Navigate to="/regras-comissoes?aba=cargos-remuneracoes" replace /> },
-          { path: '/fontes-calculo', element: <Navigate to="/regras-comissoes?aba=fontes-calculo" replace /> },
-          { path: '/fontes-microwork', element: <Navigate to="/regras-comissoes?aba=fontes-microwork" replace /> },
+          { path: '/fontes-calculo', element: <Navigate to="/fontes-comissoes?aba=fontes-calculo" replace /> },
+          { path: '/fontes-microwork', element: <Navigate to="/fontes-comissoes?aba=fontes-microwork" replace /> },
           { path: '/bases-calculo', element: <Navigate to="/regras-comissoes?aba=bases-calculo" replace /> },
           { path: '/rubricas', element: <Navigate to="/regras-comissoes?aba=rubricas" replace /> },
           { path: '/tipos-processo', element: <Navigate to="/regras-comissoes?aba=tipos-processo" replace /> },
@@ -268,7 +269,7 @@ export default function App() {
           { path: '/bi/garantias-daf', element: <BiGarantiasDaf />, menuPath: 'bi/garantias-daf' },
           { path: '/bi/projetos', element: <BiProjetos />, menuPath: 'bi/projetos' },
           { path: '/bi/possibilidades', element: <BiPossibilidades />, menuPath: 'bi/possibilidades' },
-          { path: '/bi/fontes', element: <FontesBi />, menuPath: 'bi/fontes' },
+          { path: '/bi/fontes', element: <Navigate to="/fontes-comissoes?aba=fontes-calculo" replace /> },
           { path: '/bi/medidas', element: <MedidasBi />, menuPath: 'bi/medidas' },
           { path: '/bi/comissoes', element: <BiComissoes />, menuPath: 'bi/comissoes' },
         ].map(route => (

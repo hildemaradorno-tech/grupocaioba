@@ -110,9 +110,9 @@ export default function FontesMicrowork() {
   const [erroTeste, setErroTeste] = useState(null)
   const [resultadoTeste, setResultadoTeste] = useState(null)
 
-  const { hasPermission } = useAuth()
-  const canEdit = hasPermission('fontes-microwork', 'editar')
-  const canDelete = hasPermission('fontes-microwork', 'excluir')
+  const { hasActionOrDefault } = useAuth()
+  const canEdit = hasActionOrDefault('fontes-microwork', 'editar')
+  const canDelete = hasActionOrDefault('fontes-microwork', 'excluir')
 
   useEffect(() => { loadData() }, [])
 

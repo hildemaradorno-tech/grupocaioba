@@ -9,8 +9,15 @@ const FORM_VAZIO = {
   nome: '', codigo: '', descricao: '',
   pasta_sharepoint: '', prefixo_arquivo: '', usa_subpasta_ano: false, subpasta_padrao: '', linha_cabecalho: 0,
   coluna_empresa: '', coluna_data: '', coluna_funcionario: '',
+  campo_relacao_funcionario: 'nome_funcionario',
+  coluna_tipo_os: '', coluna_natureza_operacao: '', coluna_movimento: '',
   ativo: true,
 }
+
+const CAMPOS_RELACAO_FUNCIONARIO = [
+  { value: 'nome_funcionario', label: 'Nome do Funcionário' },
+  { value: 'codigo_sistema_bi', label: 'Código no Sistema' },
+]
 
 const SEL = 'w-full text-xs p-2 border border-slate-200 rounded-md bg-white font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500'
 const INP = 'w-full text-xs p-2 border border-slate-200 rounded-md font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500'
@@ -36,9 +43,9 @@ export default function FontesCalculo() {
   const [colunasDetectadas, setColunasDetectadas] = useState(null)
   const [filtroColuna, setFiltroColuna] = useState('')
 
-  const { hasPermission } = useAuth()
-  const canEdit = hasPermission('fontes-calculo', 'editar')
-  const canDelete = hasPermission('fontes-calculo', 'excluir')
+  const { hasActionOrDefault } = useAuth()
+  const canEdit = hasActionOrDefault('fontes-calculo', 'editar')
+  const canDelete = hasActionOrDefault('fontes-calculo', 'excluir')
 
   useEffect(() => { loadData() }, [])
 
@@ -84,6 +91,10 @@ export default function FontesCalculo() {
       coluna_empresa: item.coluna_empresa || '',
       coluna_data: item.coluna_data || '',
       coluna_funcionario: item.coluna_funcionario || '',
+      campo_relacao_funcionario: item.campo_relacao_funcionario || 'nome_funcionario',
+      coluna_tipo_os: item.coluna_tipo_os || '',
+      coluna_natureza_operacao: item.coluna_natureza_operacao || '',
+      coluna_movimento: item.coluna_movimento || '',
       ativo: item.ativo ?? true,
     })
     setErroModal(null)
@@ -143,6 +154,10 @@ export default function FontesCalculo() {
         coluna_empresa: form.coluna_empresa || null,
         coluna_data: form.coluna_data || null,
         coluna_funcionario: form.coluna_funcionario || null,
+        campo_relacao_funcionario: form.campo_relacao_funcionario || 'nome_funcionario',
+        coluna_tipo_os: form.coluna_tipo_os || null,
+        coluna_natureza_operacao: form.coluna_natureza_operacao || null,
+        coluna_movimento: form.coluna_movimento || null,
         ativo: form.ativo,
       }
       if (editingId) {
@@ -395,6 +410,10 @@ export default function FontesCalculo() {
                               className="px-1.5 py-1 bg-slate-50 hover:bg-purple-100 text-slate-500 hover:text-purple-700 border-l border-slate-200" title="Usar como Coluna Funcionário">
                               Funcionário
                             </button>
+                            <button type="button" onClick={() => setForm(prev => ({ ...prev, coluna_tipo_os: col }))}
+                              className="px-1.5 py-1 bg-slate-50 hover:bg-amber-100 text-slate-500 hover:text-amber-700 border-l border-slate-200" title="Usar como Coluna Tipo de OS (BI)">
+                              Tipo OS
+                            </button>
                           </div>
                         ))}
                       </div>
@@ -426,6 +445,31 @@ export default function FontesCalculo() {
                     </span>
                   </label>
                   <input type="text" name="coluna_funcionario" value={form.coluna_funcionario} onChange={handleInputChange} placeholder="Ex: NF_UsuNomVendedor, Consultor_Nome, Produtivo_Nome" className={`${INP} font-mono`} />
+                </div>
+
+                {/* Colunas usadas só pelo BI (BI — Medidas / Possibilidades) */}
+                <div className="border border-slate-200 rounded-lg p-3 space-y-3 bg-slate-50/50">
+                  <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Dimensões para BI (opcionais)</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="flex flex-col gap-1.5">
+                      <label className={LBL}>Relacionar Funcionário por</label>
+                      <select name="campo_relacao_funcionario" value={form.campo_relacao_funcionario} onChange={handleInputChange} className={SEL}>
+                        {CAMPOS_RELACAO_FUNCIONARIO.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                      </select>
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <label className={LBL}>Coluna Tipo de OS</label>
+                      <input type="text" name="coluna_tipo_os" value={form.coluna_tipo_os} onChange={handleInputChange} placeholder="Ex: NF_OsTipo" className={`${INP} font-mono`} />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <label className={LBL}>Coluna Natureza de Operação</label>
+                      <input type="text" name="coluna_natureza_operacao" value={form.coluna_natureza_operacao} onChange={handleInputChange} placeholder="Ex: NaturezaOperacao" className={`${INP} font-mono`} />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <label className={LBL}>Coluna Tipo de Movimento</label>
+                      <input type="text" name="coluna_movimento" value={form.coluna_movimento} onChange={handleInputChange} placeholder="Ex: TipoMovimento" className={`${INP} font-mono`} />
+                    </div>
+                  </div>
                 </div>
 
                 {/* Ativo */}

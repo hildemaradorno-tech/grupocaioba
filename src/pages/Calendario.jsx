@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react'
 import { useSessionState } from '../hooks/useSessionState'
-import { CalendarDays, Play, Trash2, X, AlertTriangle, RefreshCw, ChevronDown, ChevronRight, Building2 } from 'lucide-react'
+import { CalendarDays, Play, Trash2, X, AlertTriangle, RefreshCw, ChevronDown, ChevronRight } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { apiService } from '../services/api'
 
@@ -33,61 +33,71 @@ const nomeEmpresa = (e) => e.empresa_fantasia || e.nome_empresa
 
 const FILTROS_VAZIOS = { mes: '', dia_semana: '', descricao_evento: '', tipo_pausa: '' }
 
-// Botão compacto (só ícone) usado nas ações de cada card de empresa — o rótulo só aparece
-// ao passar o mouse (:hover via group), nunca ao clicar, pra não disputar espaço com o
-// resumo de dias úteis ao lado do nome da empresa.
+// Botão compacto (só ícone). A descrição aparece como um rótulo flutuante só enquanto o
+// mouse está por cima — o botão em si nunca muda de tamanho. `posicao` define de que lado o
+// rótulo aparece (à esquerda quando o botão fica dentro de um card com overflow escondido).
 const VARIANTES_ICONE = {
   sec: 'bg-white border-slate-300 hover:bg-slate-50 text-slate-700',
+  pri: 'bg-indigo-600 hover:bg-indigo-700 text-white border-indigo-600',
   amb: 'bg-amber-500 hover:bg-amber-600 text-white border-amber-500',
   dng: 'bg-red-600 hover:bg-red-700 text-white border-red-600',
 }
 
-function BotaoIconeHover({ icon, label, onClick, disabled, variante = 'sec' }) {
+function BotaoIconeHover({ icon, label, onClick, disabled, variante = 'sec', posicao = 'baixo' }) {
+  const posRotulo = posicao === 'esquerda'
+    ? 'right-full mr-2 top-1/2 -translate-y-1/2'
+    : 'top-full mt-1.5 right-0'
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      title={label}
-      className={`group inline-flex items-center border text-sm font-semibold pl-2 pr-2 py-2 rounded-lg transition-colors overflow-hidden disabled:opacity-50 disabled:cursor-not-allowed ${VARIANTES_ICONE[variante]}`}
-    >
-      {icon}
-      <span className="max-w-0 group-hover:max-w-[170px] group-hover:pl-2 overflow-hidden whitespace-nowrap transition-all duration-200">
+    <div className="relative group">
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={disabled}
+        aria-label={label}
+        className={`inline-flex items-center justify-center border text-sm font-semibold p-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${VARIANTES_ICONE[variante]}`}
+      >
+        {icon}
+      </button>
+      <span className={`pointer-events-none absolute ${posRotulo} z-40 whitespace-nowrap rounded-md bg-slate-800 px-2 py-1 text-xs font-medium text-white opacity-0 shadow-lg transition-opacity duration-150 group-hover:opacity-100`}>
         {label}
       </span>
-    </button>
+    </div>
   )
 }
 
-// Ações do card (Recalcular/Limpar) — ficam na linha do cabeçalho, ao lado do botão de
-// abrir detalhes, independente do card estar aberto ou fechado.
-function AcoesCalendarioEmpresa({ empresa, ano, canEdit, canDelete, onChanged }) {
+// Ações Recalcular/Limpar — ficam no cabeçalho da página, ao lado de "Gerar Calendário
+// Anual", e valem para as empresas marcadas nos cards (sem nenhuma marcada, ficam desabilitadas).
+function AcoesCalendarioEmpresa({ empresas, ano, canEdit, canDelete, onChanged }) {
   const [processando, setProcessando] = useState(false)
   const [modalLimpar, setModalLimpar] = useState(false)
 
   if (!canEdit && !canDelete) return null
 
-  const recalcular = async () => {
-    setProcessando(true)
-    try {
-      await apiService.gerarCalendarioAnual(empresa.id, ano)
-      onChanged()
-    } catch (err) {
-      alert('Erro ao recalcular: ' + (err.message || String(err)))
-    } finally {
-      setProcessando(false)
+  const semEmpresa = empresas.length === 0
+
+  const executar = async (acao, rotuloErro) => {
+    const falhas = []
+    for (const emp of empresas) {
+      try {
+        await acao(emp.id, ano)
+      } catch (err) {
+        falhas.push(`${nomeEmpresa(emp)}: ${err.message || String(err)}`)
+      }
     }
+    onChanged()
+    if (falhas.length > 0) alert(`Erro ao ${rotuloErro}:\n${falhas.join('\n')}`)
+  }
+
+  const recalcular = async () => {
+    if (semEmpresa) return
+    setProcessando(true)
+    try { await executar(apiService.gerarCalendarioAnual, 'recalcular') } finally { setProcessando(false) }
   }
 
   const limpar = async () => {
-    try {
-      await apiService.limparCalendarioAno(empresa.id, ano)
-      onChanged()
-    } catch (err) {
-      alert('Erro ao limpar: ' + (err.message || String(err)))
-    } finally {
-      setModalLimpar(false)
-    }
+    if (semEmpresa) return
+    setModalLimpar(false)
+    await executar(apiService.limparCalendarioAno, 'limpar')
   }
 
   return (
@@ -96,17 +106,17 @@ function AcoesCalendarioEmpresa({ empresa, ano, canEdit, canDelete, onChanged })
         {canEdit && (
           <BotaoIconeHover
             icon={<RefreshCw size={15} className={processando ? 'animate-spin' : ''} />}
-            label="Recalcular com Feriados"
+            label={`Recalcular com Feriados${empresas.length ? ` (${empresas.length})` : ''}`}
             onClick={recalcular}
-            disabled={processando}
+            disabled={processando || semEmpresa}
             variante="amb"
           />
         )}
         {canDelete && (
-          <BotaoIconeHover icon={<Trash2 size={15} />} label="Limpar Calendário do Ano" onClick={() => setModalLimpar(true)} variante="dng" />
+          <BotaoIconeHover icon={<Trash2 size={15} />} label={`Limpar Calendário do Ano${empresas.length ? ` (${empresas.length})` : ''}`} onClick={() => setModalLimpar(true)} disabled={semEmpresa} variante="dng" />
         )}
       </div>
-      {modalLimpar && (
+      {modalLimpar && !semEmpresa && (
         <div className="fixed top-0 right-0 bottom-0 left-16 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
             <div className="p-6 text-center">
@@ -115,7 +125,8 @@ function AcoesCalendarioEmpresa({ empresa, ano, canEdit, canDelete, onChanged })
               </div>
               <h2 className="text-lg font-bold text-slate-800 mb-2">Limpar Calendário</h2>
               <p className="text-sm text-slate-500">
-                Todos os dias gerados de <strong>{nomeEmpresa(empresa)}</strong> — <strong>{ano}</strong>{' '}
+                Todos os dias gerados de{' '}
+                <strong>{empresas.length === 1 ? nomeEmpresa(empresas[0]) : `${empresas.length} empresas`}</strong> — <strong>{ano}</strong>{' '}
                 serão excluídos. Para reprocessar, use "Gerar Calendário Anual".
               </p>
             </div>
@@ -282,6 +293,7 @@ function CalendarioEmpresaDetalhe({ empresa, ano, versao }) {
 export default function Calendario() {
   const [empresas, setEmpresas] = useState([])
   const [resumoRaw, setResumoRaw] = useState(null)
+  const [empresaAcaoIds, setEmpresaAcaoIds] = useState([])
   const [error, setError]       = useState(null)
 
   const [filtroAno, setFiltroAno] = useSessionState('cal_ano', anoAtual)
@@ -295,9 +307,9 @@ export default function Calendario() {
   const [processando, setProcessando]       = useState(false)
   const [erroModal, setErroModal]           = useState(null)
 
-  const { hasPermission } = useAuth()
-  const canEdit = hasPermission('calendario', 'editar')
-  const canDelete = hasPermission('calendario', 'excluir')
+  const { hasActionOrDefault } = useAuth()
+  const canEdit = hasActionOrDefault('calendario', 'editar')
+  const canDelete = hasActionOrDefault('calendario', 'excluir')
 
   useEffect(() => {
     apiService.getEmpresas()
@@ -331,6 +343,12 @@ export default function Calendario() {
   }, [resumoRaw])
 
   const empresasComCalendario = resumoRaw ? empresas.filter(e => resumoPorEmpresa[e.id]) : []
+  // Empresas das ações Recalcular/Limpar; saem da seleção se o calendário delas deixar de existir.
+  const empresasAcao = empresasComCalendario.filter(e => empresaAcaoIds.includes(e.id))
+
+  const alternarEmpresaAcao = (id) =>
+    setEmpresaAcaoIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
+  const todasMarcadas = empresasComCalendario.length > 0 && empresasAcao.length === empresasComCalendario.length
 
   const alternarAberta = (id) =>
     setAbertas(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
@@ -370,11 +388,16 @@ export default function Calendario() {
             <p className="text-xs text-slate-400">Motor de dias úteis para Power BI</p>
           </div>
         </div>
-        {canEdit && (
-          <button onClick={abrirModalGerar} className={BTN_PRI}>
-            <Play size={16} /> Gerar Calendário Anual
-          </button>
-        )}
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          {(canEdit || canDelete) && (
+            <>
+              <AcoesCalendarioEmpresa empresas={empresasAcao} ano={filtroAno} canEdit={canEdit} canDelete={canDelete} onChanged={() => setVersao(v => v + 1)} />
+            </>
+          )}
+          {canEdit && (
+            <BotaoIconeHover icon={<Play size={15} />} label="Gerar Calendário" onClick={abrirModalGerar} variante="pri" />
+          )}
+        </div>
       </div>
 
       <div className="flex items-end gap-3 bg-white border border-slate-200 rounded-xl p-4">
@@ -384,6 +407,17 @@ export default function Calendario() {
             {ANOS.map(a => <option key={a} value={a}>{a}</option>)}
           </select>
         </div>
+        {empresasComCalendario.length > 0 && (
+          <label className="ml-auto flex items-center gap-2 text-sm text-slate-600 cursor-pointer select-none self-end pb-2">
+            <input
+              type="checkbox"
+              checked={todasMarcadas}
+              onChange={() => setEmpresaAcaoIds(todasMarcadas ? [] : empresasComCalendario.map(e => e.id))}
+              className="w-4 h-4 rounded accent-indigo-600"
+            />
+            Selecionar todas
+          </label>
+        )}
       </div>
 
       {error && (
@@ -399,37 +433,43 @@ export default function Calendario() {
           return (
             <div key={emp.id} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
               <div className="flex items-center justify-between gap-3 px-4 py-3 flex-wrap">
-                <div className="flex items-center gap-2 shrink-0">
-                  <Building2 size={16} className="text-indigo-500 shrink-0" />
-                  <span className="text-sm font-semibold text-slate-800 whitespace-nowrap">{nomeEmpresa(emp)}</span>
+                <div className="flex items-center gap-2 shrink-0 w-80 min-w-0">
+                  <input
+                    type="checkbox"
+                    checked={empresaAcaoIds.includes(emp.id)}
+                    onChange={() => alternarEmpresaAcao(emp.id)}
+                    className="w-4 h-4 rounded accent-indigo-600 shrink-0 cursor-pointer"
+                    title="Marcar para Recalcular / Limpar"
+                  />
+                  <span className="text-sm font-semibold text-slate-800 whitespace-nowrap truncate" title={nomeEmpresa(emp)}>{nomeEmpresa(emp)}</span>
                 </div>
                 {resumo && (
                   <div className="flex-1 min-w-[280px] overflow-x-auto">
-                    <table className="text-xs border-separate border-spacing-0 mx-auto">
+                    <table className="text-xs border-separate border-spacing-0 table-fixed">
                       <tbody>
                         <tr>
-                          <td className="pr-3 py-1 text-xs font-semibold text-slate-500 whitespace-nowrap">Mês</td>
+                          <td className="w-20 pr-3 py-1 text-xs font-semibold text-slate-500 whitespace-nowrap">Mês</td>
                           {resumo.meses.map(m => (
-                            <td key={m.mes} className="px-2.5 py-1 text-center font-semibold text-slate-600 uppercase whitespace-nowrap">{MESES_ABR[m.mes - 1]}</td>
+                            <td key={m.mes} className="w-14 py-1 text-center font-semibold text-slate-600 uppercase whitespace-nowrap">{MESES_ABR[m.mes - 1]}</td>
                           ))}
-                          <td className="px-2.5 py-1 text-center font-semibold text-indigo-700 whitespace-nowrap">Total</td>
+                          <td className="w-16 py-1 text-center font-semibold text-indigo-700 whitespace-nowrap">Total</td>
                         </tr>
                         <tr>
-                          <td className="pr-3 py-1 text-xs font-semibold text-slate-500 whitespace-nowrap">Dias Úteis</td>
+                          <td className="w-20 pr-3 py-1 text-xs font-semibold text-slate-500 whitespace-nowrap">Dias Úteis</td>
                           {resumo.meses.map(m => (
-                            <td key={m.mes} className="px-2.5 py-1 text-center font-bold text-indigo-700 whitespace-nowrap">{m.total.toFixed(1)}</td>
+                            <td key={m.mes} className="w-14 py-1 text-center font-bold text-indigo-700 whitespace-nowrap">{m.total.toFixed(1)}</td>
                           ))}
-                          <td className="px-2.5 py-1 text-center font-bold text-indigo-800 bg-indigo-50 rounded whitespace-nowrap">{resumo.total.toFixed(1)}</td>
+                          <td className="w-16 py-1 text-center font-bold text-indigo-800 bg-indigo-50 rounded whitespace-nowrap">{resumo.total.toFixed(1)}</td>
                         </tr>
                       </tbody>
                     </table>
                   </div>
                 )}
                 <div className="flex items-center gap-2 shrink-0">
-                  <AcoesCalendarioEmpresa empresa={emp} ano={filtroAno} canEdit={canEdit} canDelete={canDelete} onChanged={() => setVersao(v => v + 1)} />
                   <BotaoIconeHover
                     icon={aberta ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
                     label={aberta ? 'Fechar detalhes' : 'Abrir detalhes'}
+                    posicao="esquerda"
                     onClick={() => alternarAberta(emp.id)}
                   />
                 </div>

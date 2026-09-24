@@ -136,6 +136,8 @@ export default function MedidasBi() {
   const [filtroColunas, setFiltroColunas] = useState('')
 
   const [regras, setRegras] = useState([])
+  const [bases, setBases] = useState([]) // só pra "Copiar de uma Base" (cópia pontual, sem vínculo depois)
+  const [copiandoBase, setCopiandoBase] = useState(false)
   const [carregandoRegras, setCarregandoRegras] = useState(false)
 
   // Painel de conferência com corte por dimensão
@@ -161,9 +163,9 @@ export default function MedidasBi() {
   const [naturezas, setNaturezas] = useState([])
   const [movimentos, setMovimentos] = useState([])
 
-  const { hasPermission } = useAuth()
-  const canEdit = hasPermission('bi/medidas', 'editar')
-  const canDelete = hasPermission('bi/medidas', 'excluir')
+  const { hasActionOrDefault } = useAuth()
+  const canEdit = hasActionOrDefault('bi/medidas', 'editar')
+  const canDelete = hasActionOrDefault('bi/medidas', 'excluir')
 
   useEffect(() => { loadData() }, [])
 
@@ -172,7 +174,7 @@ export default function MedidasBi() {
     setError(null)
     try {
       const [
-        medidas, fontesData, emps, tipos, funcs, depts, sets, ags, naturezasData, movimentosData,
+        medidas, fontesData, emps, tipos, funcs, depts, sets, ags, naturezasData, movimentosData, basesData,
       ] = await Promise.all([
         apiService.getMedidasBiComFonte(),
         apiService.getFontesBi(),
@@ -184,7 +186,9 @@ export default function MedidasBi() {
         apiService.getAgrupamentoEmpresas().catch(() => []),
         apiService.getNaturezaOperacoes().catch(() => []),
         apiService.getMovimentoVenda().catch(() => []),
+        apiService.getBasesCalculo().catch(() => []),
       ])
+      setBases(basesData)
       setDados(medidas)
       setFontes(fontesData)
       setEmpresas([...emps].sort((a, b) => (a.empresa_fantasia || a.nome_empresa || '').localeCompare(b.empresa_fantasia || b.nome_empresa || '', 'pt-BR')))
@@ -262,6 +266,39 @@ export default function MedidasBi() {
       setErroModal('Erro ao carregar regras: ' + (err.message || String(err)))
     } finally {
       setCarregandoRegras(false)
+    }
+  }
+
+  // Copia (uma vez) uma Base de Cálculo pra dentro do formulário — Fonte, coluna, agregação, nome
+  // e regras (com condições). Não fica vínculo: a Medida salva é independente da Base.
+  const copiarDeBase = async (baseId) => {
+    const base = bases.find(b => b.id === baseId)
+    if (!base) return
+    setErroModal(null)
+    setCopiandoBase(true)
+    try {
+      const regrasDb = await apiService.getRegrasComCondicoes(base.id)
+      setForm(prev => ({
+        ...prev,
+        fonte_bi_id: base.fonte_calculo_id || prev.fonte_bi_id,
+        nome: base.nome || '',
+        descricao: base.descricao || '',
+        coluna_valor: base.coluna_valor || '',
+        tipo_agregacao: base.tipo_agregacao || 'SOMA',
+      }))
+      setRegras(regrasDb.map(r => ({
+        tempId: novoTempId(),
+        tipo_acao: r.tipo_acao,
+        coluna_alvo: r.coluna_alvo || '',
+        condicao_logica: r.condicao_logica || 'E',
+        condicoes: (r.condicoes || []).map(c => ({
+          tempId: novoTempId(), coluna: c.coluna || '', operador: c.operador || 'IGUAL', valor: c.valor || '',
+        })),
+      })))
+    } catch (err) {
+      setErroModal('Erro ao copiar da Base: ' + (err.message || String(err)))
+    } finally {
+      setCopiandoBase(false)
     }
   }
 
@@ -812,6 +849,21 @@ export default function MedidasBi() {
             </div>
             <form onSubmit={handleSalvar}>
               <div className="p-5 space-y-4 max-h-[74vh] overflow-y-auto custom-scrollbar">
+
+                {/* Copiar de uma Base de Cálculo (só ao incluir) — cópia pontual, sem vínculo depois */}
+                {!editingId && bases.length > 0 && (
+                  <div className="flex flex-col gap-1.5 border border-dashed border-slate-300 rounded-lg p-3 bg-slate-50/60">
+                    <label className={`${LBL} flex items-center gap-1.5`}>
+                      Copiar de uma Base (opcional)
+                      {copiandoBase && <Loader2 className="h-3 w-3 animate-spin text-slate-400" />}
+                    </label>
+                    <select value="" onChange={e => copiarDeBase(e.target.value)} disabled={copiandoBase} className={SEL}>
+                      <option value="">Escolha uma Base pra preencher Fonte, coluna, cálculo e regras…</option>
+                      {bases.map(b => <option key={b.id} value={b.id}>{b.nome}</option>)}
+                    </select>
+                    <p className="text-[10px] text-slate-400">Só copia os dados — a Medida fica independente da Base. Ajuste nome e Slot no BI antes de salvar.</p>
+                  </div>
+                )}
 
                 {/* Fonte */}
                 <div className="flex flex-col gap-1.5">

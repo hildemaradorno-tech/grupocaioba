@@ -20,9 +20,9 @@ export default function AgrupamentoCargos() {
   const [areaAgrupamento, setAreaAgrupamento] = useSessionState('agrup_cgo_area', '')
   const [modalVisualizarAberto, setModalVisualizarAberto] = useState(false)
   const [itemVisualizado, setItemVisualizado] = useState(null)
-  const { hasPermission } = useAuth()
-  const canEdit = hasPermission('agrup-cargos', 'editar')
-  const canDelete = hasPermission('agrup-cargos', 'excluir')
+  const { hasActionOrDefault } = useAuth()
+  const canEdit = hasActionOrDefault('agrup-cargos', 'editar')
+  const canDelete = hasActionOrDefault('agrup-cargos', 'excluir')
   const abrirVisualizar = (item) => { setItemVisualizado(item); setModalVisualizarAberto(true) }
 
   useEffect(() => { loadData() }, [])

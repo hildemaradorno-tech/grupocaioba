@@ -31,8 +31,8 @@ const valoresDaPolitica = (p) => {
 const FORM_GANHO_VAZIO = { cargo_id: '', descricao: '', metrica: '', tipo_valor: 'VALOR_FIXO', valor: '' }
 
 export default function CargosRemuneracoes() {
-  const { hasPermission } = useAuth()
-  const canEditPolitica = hasPermission('politica-comissao', 'editar')
+  const { hasActionOrDefault } = useAuth()
+  const canEditPolitica = hasActionOrDefault('politica-comissao', 'editar')
   const navigate = useNavigate()
 
   // Leva pra Política de Comissões já com a edição dessa política aberta — usado tanto ao
@@ -43,7 +43,7 @@ export default function CargosRemuneracoes() {
     // redirect) — um redirect via <Navigate> não repassa o state da navegação original.
     navigate('/regras-comissoes?aba=politica-comissao', { state: { editarPoliticaId: politicaId } })
   }
-  const canEdit = hasPermission('cargos-remuneracoes', 'editar')
+  const canEdit = hasActionOrDefault('cargos-remuneracoes', 'editar')
 
   const [cargos, setCargos] = useState([])
   const [politicas, setPoliticas] = useState([])

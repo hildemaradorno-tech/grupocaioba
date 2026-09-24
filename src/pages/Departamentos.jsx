@@ -28,9 +28,9 @@ export default function Departamentos() {
   const [area, setArea] = useSessionState('dep_area', '')
   const [modalVisualizarAberto, setModalVisualizarAberto] = useState(false)
   const [itemVisualizado, setItemVisualizado] = useState(null)
-  const { hasPermission } = useAuth()
-  const canEdit = hasPermission('departamentos', 'editar')
-  const canDelete = hasPermission('departamentos', 'excluir')
+  const { hasActionOrDefault } = useAuth()
+  const canEdit = hasActionOrDefault('departamentos', 'editar')
+  const canDelete = hasActionOrDefault('departamentos', 'excluir')
   const abrirVisualizar = (item) => { setItemVisualizado(item); setModalVisualizarAberto(true) }
 
   useEffect(() => {

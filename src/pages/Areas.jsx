@@ -23,9 +23,9 @@ export default function Areas() {
   const [erroModal, setErroModal] = useState(null)
   const [salvando, setSalvando] = useState(false)
 
-  const { hasPermission } = useAuth()
-  const canEdit = hasPermission('areas', 'editar')
-  const canDelete = hasPermission('areas', 'excluir')
+  const { hasActionOrDefault } = useAuth()
+  const canEdit = hasActionOrDefault('areas', 'editar')
+  const canDelete = hasActionOrDefault('areas', 'excluir')
 
   useEffect(() => { loadData() }, [])
 
