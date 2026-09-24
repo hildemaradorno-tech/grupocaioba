@@ -348,43 +348,45 @@ export default function GarantiasDafTitulos() {
         </div>
       </div>
 
-      {/* ── ALERTAS (lado a lado, clicáveis para filtrar) ── */}
-      {(grpNaoVinculado.length > 0 || grpNfCritica.length > 0) && (
-        <div className="flex flex-col md:flex-row gap-3">
-          {grpNaoVinculado.length > 0 && (
+      {/* ── CARDS: PENDÊNCIAS + VENCIDOS + VENCE HOJE + A VENCER + RESUMO GERAL ── */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        {(grpNaoVinculado.length > 0 || grpNfCritica.length > 0) && (
+          <div className="text-left rounded-lg border p-4 shadow-sm bg-slate-100 border-slate-300">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-1.5">
+                <div className="p-1 rounded bg-slate-200"><AlertTriangle className="h-3.5 w-3.5 text-slate-600" /></div>
+                <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Pendências</p>
+              </div>
+              {filtrosComunsAtivos && <span className="px-1.5 py-0.5 bg-slate-200 text-slate-700 rounded text-[9px] font-bold">filtrado</span>}
+            </div>
             <button
               type="button"
               onClick={toggleFiltroNaoVinculado}
-              className={`flex-1 flex items-center gap-3 bg-orange-50 border rounded-lg px-4 py-3 text-left transition-all hover:bg-orange-100 ${filtroCardSemVinculo ? 'border-orange-500 ring-2 ring-offset-1 ring-orange-300' : 'border-orange-300'}`}
+              className={`w-full text-left rounded-md px-2 py-1.5 mb-1.5 transition-all hover:bg-slate-200 ${filtroCardSemVinculo ? 'bg-slate-200 ring-2 ring-slate-400' : ''}`}
             >
-              <Link2Off className="h-4 w-4 text-orange-600 shrink-0" />
-              <p className="text-xs text-orange-700 font-semibold flex-1">
-                {grpNaoVinculado.length} título(s) · Não vinculado a Histórico de O.S.
-                <span className="text-orange-500 font-normal"> — {fmtMoeda(valorGrpNaoVinculado)}</span>
-                {filtrosComunsAtivos && <span className="ml-1.5 px-1.5 py-0.5 bg-orange-100 text-orange-700 rounded text-[9px] font-bold">filtrado</span>}
-              </p>
+              <div className="flex items-center gap-1.5">
+                <Link2Off className="h-3 w-3 text-slate-500 shrink-0" />
+                <span className="text-[9px] font-bold uppercase tracking-wide text-slate-500">Sem OS vinculada</span>
+              </div>
+              <p className="text-xs font-bold text-slate-800 leading-tight">{grpNaoVinculado.length} <span className="text-[9px] font-normal text-slate-500">título(s)</span></p>
+              <p className="text-[10px] font-semibold text-slate-600">{fmtMoeda(valorGrpNaoVinculado)}</p>
             </button>
-          )}
-
-          {grpNfCritica.length > 0 && (
             <button
               type="button"
               onClick={toggleFiltroCritico}
-              className={`flex-1 flex items-center gap-3 bg-red-50 border rounded-lg px-4 py-3 text-left transition-all hover:bg-red-100 ${filtroCritico ? 'border-red-500 ring-2 ring-offset-1 ring-red-300' : 'border-red-300'}`}
+              className={`w-full text-left rounded-md px-2 py-1.5 transition-all hover:bg-slate-200 ${filtroCritico ? 'bg-slate-200 ring-2 ring-slate-400' : ''}`}
+              title="NF sem envio à fábrica (Emissão ≥ 4 dias)"
             >
-              <ArrowDown className="h-4 w-4 text-red-600 shrink-0" />
-              <p className="text-xs text-red-700 font-semibold flex-1">
-                {grpNfCritica.length} título(s) · NF sem envio à fábrica (Emissão ≥ 4 dias)
-                <span className="text-red-500 font-normal"> — {fmtMoeda(valorGrpNfCritica)}</span>
-                {filtrosComunsAtivos && <span className="ml-1.5 px-1.5 py-0.5 bg-red-100 text-red-700 rounded text-[9px] font-bold">filtrado</span>}
-              </p>
+              <div className="flex items-center gap-1.5">
+                <ArrowDown className="h-3 w-3 text-slate-500 shrink-0" />
+                <span className="text-[9px] font-bold uppercase tracking-wide text-slate-500">NF sem envio</span>
+              </div>
+              <p className="text-xs font-bold text-slate-800 leading-tight">{grpNfCritica.length} <span className="text-[9px] font-normal text-slate-500">título(s)</span></p>
+              <p className="text-[10px] font-semibold text-slate-600">{fmtMoeda(valorGrpNfCritica)}</p>
             </button>
-          )}
-        </div>
-      )}
+          </div>
+        )}
 
-      {/* ── CARDS: A VENCER + VENCE HOJE + VENCIDOS + RESUMO GERAL ── */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {grpVencidos.length > 0 && (
           <button
             type="button"

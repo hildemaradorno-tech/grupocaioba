@@ -250,9 +250,16 @@ export default function GrupoAcessos() {
                   Menu / Submenu / Botões
                 </th>
                 {grupos.map(g => (
-                  <th key={g.id} className="p-2 text-center border-l border-slate-100" style={{ minWidth: 110 }}>
+                  <th key={g.id} className="p-2 text-center border-l border-slate-100 align-bottom" style={{ minWidth: 56 }}>
                     <div className="flex flex-col items-center gap-1">
-                      <span className="normal-case font-bold text-slate-700 truncate max-w-[100px]" title={g.nome}>{g.nome}</span>
+                      {/* Nome do grupo "de pé" (vertical, lido de baixo pra cima) pra caber inteiro na coluna estreita */}
+                      <span
+                        className="normal-case font-bold text-slate-700 whitespace-nowrap max-h-[260px] overflow-hidden"
+                        style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
+                        title={g.nome}
+                      >
+                        {g.nome}
+                      </span>
                       <div className="flex items-center gap-1">
                         <button onClick={() => setModalGrupo({ id: g.id, nome: g.nome, descricao: g.descricao || '' })}
                           title="Editar grupo" className="p-0.5 text-slate-400 hover:text-blue-600"><Edit2 className="h-3 w-3" /></button>
