@@ -107,6 +107,7 @@ const CODIGOS_EMPRESA = [
   { padrao: /DOURADOS/i, codigo: '60596' },
   { padrao: /TR[ÊE]S LAGOAS/i, codigo: '60962' },
   { padrao: /CAMPO GRANDE/i, codigo: '60515' },
+  { padrao: /CHAPAD[ÃA]O/i, codigo: '60965' },
 ]
 export function codigoEmpresaPorNome(nomeEmpresa) {
   const alvo = CODIGOS_EMPRESA.find(c => c.padrao.test(String(nomeEmpresa ?? '')))

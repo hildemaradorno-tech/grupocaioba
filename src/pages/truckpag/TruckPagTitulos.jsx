@@ -65,7 +65,6 @@ export default function TruckPagTitulos() {
   const [sincronizando, setSincronizando] = useState(false)
   const [erro, setErro] = useState(null)
   const [filtroSituacao, setFiltroSituacao] = useState(null)
-  const [filtrosAbertos, setFiltrosAbertos] = useState(false)
   const [filtroEmpresa, setFiltroEmpresa] = useState('')
   const [filtroBusca, setFiltroBusca] = useState('')
   const [sortCol, setSortCol] = useState('titulo_data_venc')
@@ -309,34 +308,19 @@ export default function TruckPagTitulos() {
         </button>
       </div>
 
-      <div className="bg-white rounded-lg border border-slate-200 shadow-sm">
-        <button type="button" onClick={() => setFiltrosAbertos(v => !v)} className="w-full flex items-center justify-between px-4 py-3 text-left">
-          <span className="flex items-center gap-2 text-xs font-semibold text-slate-600">
-            <Filter className="h-3.5 w-3.5 text-slate-400" />
-            Filtros
-            {filtroAvancadoAtivo && <span className="text-[10px] font-bold text-blue-600 bg-blue-50 border border-blue-200 rounded-full px-2 py-0.5">ativo</span>}
-          </span>
-          {filtrosAbertos ? <ChevronUp className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
-        </button>
-        {filtrosAbertos && (
-          <div className="px-4 pb-4 pt-1 border-t border-slate-100">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3 max-w-xl">
-              <div>
-                <label className="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1 block">Empresa</label>
-                <input type="text" value={filtroEmpresa} onChange={e => setFiltroEmpresa(e.target.value)} placeholder="Filtrar..." className="w-full text-xs border border-slate-200 rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300" />
-              </div>
-              <div>
-                <label className="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1 block whitespace-nowrap">Lançamento/Nº Título/Notas Fiscais</label>
-                <input type="text" value={filtroBusca} onChange={e => setFiltroBusca(e.target.value)} placeholder="Filtrar..." className="w-full text-xs border border-slate-200 rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300" />
-              </div>
-            </div>
-
-            {filtroAvancadoAtivo && (
-              <button type="button" onClick={() => { setFiltroEmpresa(''); setFiltroBusca('') }} className="mt-3 flex items-center gap-1 text-[10px] font-semibold text-slate-400 hover:text-slate-600">
-                <X className="h-3 w-3" /> Limpar filtros
-              </button>
-            )}
-          </div>
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="w-full sm:w-56">
+        <label className="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1 block">Empresa</label>
+        <input type="text" value={filtroEmpresa} onChange={e => setFiltroEmpresa(e.target.value)} placeholder="Filtrar..." className="w-full text-xs border border-slate-200 rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300" />
+        </div>
+        <div className="w-full sm:w-72">
+        <label className="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1 block whitespace-nowrap">Lançamento/Nº Título/Notas Fiscais</label>
+        <input type="text" value={filtroBusca} onChange={e => setFiltroBusca(e.target.value)} placeholder="Filtrar..." className="w-full text-xs border border-slate-200 rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300" />
+        </div>
+        {filtroAvancadoAtivo && (
+          <button type="button" onClick={() => { setFiltroEmpresa(''); setFiltroBusca('') }} className="flex items-center gap-1 text-[10px] font-semibold text-slate-400 hover:text-slate-600 pb-2">
+            <X className="h-3 w-3" /> Limpar filtros
+          </button>
         )}
       </div>
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
-import { ArrowLeftRight, Truck, RefreshCw, AlertTriangle, ChevronDown, ChevronUp, X, CheckCircle2, XCircle, HelpCircle, Settings, Info, Link2, Link2Off, FileDown, FileText, Loader2 } from 'lucide-react'
+import { ArrowLeftRight, Truck, Search, RefreshCw, AlertTriangle, ChevronDown, ChevronUp, X, CheckCircle2, XCircle, HelpCircle, Settings, Info, Link2, Link2Off, FileDown, FileText, Loader2 } from 'lucide-react'
 import { apiService } from '../../services/api'
 import TruckPagNav from './TruckPagNav'
 import TruckPagRegrasModal from './TruckPagRegrasModal'
@@ -96,6 +96,7 @@ export default function TruckPagRepasses() {
   const [filtroGrupoRepasse, setFiltroGrupoRepasse] = useState(null)
   const [filtroNaoIdentificado, setFiltroNaoIdentificado] = useState(false)
   const [filtroDivergente, setFiltroDivergente] = useState(false)
+  const [buscaNota, setBuscaNota] = useState('')
   const [sortCol, setSortCol] = useState('data_pagamento')
   const [sortDir, setSortDir] = useState('desc')
   const [expandidas, setExpandidas] = useState(() => new Set())
@@ -270,8 +271,14 @@ export default function TruckPagRepasses() {
   // fecha só com elas, completa com as linhas sem título (X vermelho na coluna ST) que fecham a
   // diferença. Sem lote, só os repasses com título.
   const filtradasSemFiltroDivergente = useMemo(() => {
+    // Com busca por nota fiscal, procura em TODOS os repasses (inclusive os sem título, que a tela
+    // normalmente esconde) — só respeita o lote escolhido, se houver, pra restringir.
+    const termo = buscaNota.trim()
     let f = linhasVinculadas
-    if (filtroGrupoRepasse) {
+    if (termo) {
+      f = linhasComConciliacao.filter(l => String(l.nf_e ?? '').includes(termo) || String(l.nfs_e ?? '').includes(termo))
+      if (filtroGrupoRepasse) f = f.filter(l => `${l.estabelecimento}|${l.data_pagamento}` === filtroGrupoRepasse)
+    } else if (filtroGrupoRepasse) {
       const doLote = linhasComConciliacao.filter(l => `${l.estabelecimento}|${l.data_pagamento}` === filtroGrupoRepasse)
       const vinculadas = doLote.filter(l => l.tituloEncontrado)
       const grupo = gruposPorDia.find(g => g.chave === filtroGrupoRepasse)
@@ -284,7 +291,7 @@ export default function TruckPagRepasses() {
     }
     if (filtroNaoIdentificado) f = f.filter(l => !l.conciliadoSaldo)
     return f
-  }, [linhasComConciliacao, linhasVinculadas, gruposPorDia, tolerancia, filtroGrupoRepasse, filtroNaoIdentificado])
+  }, [linhasComConciliacao, linhasVinculadas, gruposPorDia, tolerancia, filtroGrupoRepasse, filtroNaoIdentificado, buscaNota])
 
   // O botão de filtro de divergências só aparece se a tabela (com os outros filtros aplicados)
   // tiver alguma linha divergente — ou se o próprio filtro estiver ligado, pra dar pra desligar.
@@ -710,6 +717,22 @@ export default function TruckPagRepasses() {
           </div>
         </div>
       )}
+
+      <div className="relative w-64">
+        <Search className="h-3.5 w-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+        <input
+          type="text"
+          value={buscaNota}
+          onChange={e => setBuscaNota(e.target.value)}
+          placeholder="Buscar Nº NF-e / NFS-e"
+          className="w-full text-xs border border-slate-200 rounded-md pl-8 pr-7 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300"
+        />
+        {buscaNota && (
+          <button type="button" onClick={() => setBuscaNota('')} title="Limpar busca" className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+            <X className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
 
       {loading ? (
         <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-16 flex flex-col items-center gap-3">
