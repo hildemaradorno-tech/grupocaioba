@@ -388,10 +388,12 @@ export default function TruckPagRepasses() {
     const porCodigo = new Map()
     for (const l of selecionadas) {
       const deducao = deducaoPorLinha.get(l.id) || 0
+      // Título pago por mais de um repasse selecionado: a baixa sai uma vez só, com a soma dos recebidos.
+      const anterior = porCodigo.get(l.tituloEncontrado.titulo_codigo)
       porCodigo.set(l.tituloEncontrado.titulo_codigo, {
         ...l.tituloEncontrado,
-        titulo_saldo: Math.round(((l.valor_recebido || 0) - deducao) * 100) / 100,
-        excedenteDeduzido: deducao,
+        titulo_saldo: Math.round(((anterior?.titulo_saldo || 0) + (l.valor_recebido || 0) - deducao) * 100) / 100,
+        excedenteDeduzido: (anterior?.excedenteDeduzido || 0) + deducao,
       })
     }
     return [...porCodigo.values()]

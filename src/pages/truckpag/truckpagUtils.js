@@ -192,7 +192,7 @@ export function notasFiscaisDoTitulo(t) {
 // obrigatório pra virar candidato — passou pra CAMPOS_GRADUACAO junto com Valor/Saldo; depois o
 // usuário pediu de volta como obrigatório (ver conciliarTitulosRepasses abaixo), então aqui ficam
 // só Valor e Saldo.
-const CAMPOS_GRADUACAO = ['valor', 'saldo']
+const CAMPOS_GRADUACAO = ['documento', 'valor', 'saldo']
 
 // Concilia títulos × repasses. Nº NF-e e Nº NFS-e do repasse são checados contra TODAS as notas
 // do título (notasFiscaisDoTitulo) juntas, não campo a campo — a planilha de títulos vem com
@@ -203,9 +203,9 @@ const CAMPOS_GRADUACAO = ['valor', 'saldo']
 // "basta 1 dos 3" e dava falso positivo: título achava repasse do mesmo CLIENTE mas sem nenhuma
 // nota fiscal em comum, só porque o CNPJ do cliente se repete em vários títulos dele): Código da
 // Empresa, Parcela, CNPJ do Cliente (raiz do CNPJ, ver docsBatem) E (Nº NF-e OU Nº NFS-e, pelo
-// menos uma nota bate). Depois, CAMPOS_GRADUACAO (Valor, Saldo) decide o status verde/amarelo.
-// 'exato' = todos os campos de graduação comparáveis bateram (ou não houve nenhum comparável);
-// 'divergente' = identidade bate mas Valor ou Saldo diverge; 'nao_encontrado' = nenhum repasse
+// menos uma nota bate). Depois, CAMPOS_GRADUACAO (CNPJ completo, Valor, Saldo) decide o status
+// verde/amarelo. 'exato' = todos os campos de graduação comparáveis bateram (ou não houve nenhum
+// comparável); 'divergente' = identidade bate mas CNPJ completo, Valor ou Saldo diverge; 'nao_encontrado' = nenhum repasse
 // bate a identidade completa (código + parcela + CNPJ + nota fiscal).
 //
 // `camposDivergentes` no retorno junta TUDO que foi comparado (código, NF-e, NFS-e, parcela — só
@@ -224,6 +224,7 @@ export function conciliarTitulosRepasses(titulos, repasses, tolerancia = TOLERAN
     const notasTitulo = notasFiscaisDoTitulo(t)
 
     let melhor = null
+    const candidatos = []
     for (const r of repasses) {
       const repasseDoc = normalizarDoc(r.cnpj_cliente)
       const repasseNF = String(r.nf_e ?? '').trim()
@@ -236,13 +237,16 @@ export function conciliarTitulosRepasses(titulos, repasses, tolerancia = TOLERAN
       if (repasseNF && notasTitulo.length) obrigatorios.notaFiscal = notasTitulo.includes(repasseNF)
       if (repasseNFSe && notasTitulo.length) obrigatorios.nfse = notasTitulo.includes(repasseNFSe)
       if (tituloParcela && repasseParcela) obrigatorios.parcela = tituloParcela === repasseParcela
-      if (tituloDoc && repasseDoc) obrigatorios.documento = docsBatem(tituloDoc, repasseDoc)
+      // Identidade: só a RAIZ do CNPJ precisa bater (filial diferente não impede o par).
+      if (tituloDoc && repasseDoc) obrigatorios.documentoRaiz = docsBatem(tituloDoc, repasseDoc)
 
       const notaBate = obrigatorios.notaFiscal === true || obrigatorios.nfse === true
-      const identidadeBate = obrigatorios.codigo === true && obrigatorios.parcela === true && obrigatorios.documento === true && notaBate
+      const identidadeBate = obrigatorios.codigo === true && obrigatorios.parcela === true && obrigatorios.documentoRaiz === true && notaBate
       if (!identidadeBate) continue // identidade incompleta — não é candidato
 
       const graduacao = {}
+      // CNPJ/CPF completo (com filial e dígito) idêntico decide verde/amarelo, junto com Valor e Saldo.
+      graduacao.documento = tituloDoc === repasseDoc
       if (tituloValor !== null && tituloValor !== undefined) {
         graduacao.valor = Math.abs(tituloValor - (r.valor_parcela_total || 0)) <= tolerancia
       }
@@ -256,12 +260,38 @@ export function conciliarTitulosRepasses(titulos, repasses, tolerancia = TOLERAN
       const valores = Object.values(graduacao)
       const score = valores.filter(Boolean).length
       const total = valores.length
+      candidatos.push({ r, obrigatorios, graduacao })
       if (!melhor || score > melhor.score || (score === melhor.score && total < melhor.total)) {
         melhor = { r, obrigatorios, graduacao, score, total }
       }
     }
 
     if (!melhor) return { ...t, statusConciliacao: 'nao_encontrado', repasseMatch: null, camposDivergentes: null }
+
+    // Um título pode ser pago por MAIS DE UM repasse com a mesma identidade (ex.: uma parcela com
+    // NF-e de peças + NFS-e de serviço, cada uma num repasse). Se a soma dos valores desses
+    // repasses fecha com o Valor (e o Saldo) do título, todos eles ficam ligados ao título — em vez
+    // de só o primeiro achado ficar com ele e os outros aparecerem como "sem título". O status é
+    // 'divergente' (amarelo), porque o valor de cada repasse, isolado, difere do título (pedido do
+    // usuário: o pagamento veio dividido e isso precisa continuar chamando atenção).
+    if (candidatos.length > 1) {
+      const soma = candidatos.reduce((acc, c) => acc + (c.r.valor_parcela_total || 0), 0)
+      const valorBate = tituloValor !== null && tituloValor !== undefined && Math.abs(tituloValor - soma) <= tolerancia
+      const saldoBate = tituloSaldo === null || tituloSaldo === undefined || Math.abs(tituloSaldo - soma) <= tolerancia
+      if (valorBate && saldoBate) {
+        const graduacao = { valor: false }
+        if (tituloSaldo !== null && tituloSaldo !== undefined) graduacao.saldo = false
+        return {
+          ...t,
+          statusConciliacao: 'divergente',
+          repasseMatch: candidatos[0].r,
+          repassesMatch: candidatos.map(c => c.r),
+          camposDivergentes: { ...candidatos[0].obrigatorios, ...candidatos[0].graduacao, ...graduacao },
+          // Campos que bateram de cada repasse (as bolinhas verdes são por repasse: um tem só NF-e, o outro só NFS-e).
+          camposPorRepasse: Object.fromEntries(candidatos.map(c => [c.r.id, { ...c.obrigatorios, ...c.graduacao, ...graduacao }])),
+        }
+      }
+    }
     const status = melhor.score === melhor.total ? 'exato' : 'divergente'
     return { ...t, statusConciliacao: status, repasseMatch: melhor.r, camposDivergentes: { ...melhor.obrigatorios, ...melhor.graduacao } }
   })
@@ -307,9 +337,11 @@ export function tituloConciliadoPorRepasse(titulosConciliados) {
   const mapa = new Map()
   for (const t of titulosConciliados) {
     if (!t.repasseMatch) continue
-    const atual = mapa.get(t.repasseMatch.id)
-    if (!atual || (t.statusConciliacao === 'exato' && atual.statusConciliacao !== 'exato')) {
-      mapa.set(t.repasseMatch.id, t)
+    for (const r of (t.repassesMatch || [t.repasseMatch])) {
+      const atual = mapa.get(r.id)
+      if (!atual || (t.statusConciliacao === 'exato' && atual.statusConciliacao !== 'exato')) {
+        mapa.set(r.id, t.camposPorRepasse ? { ...t, repasseMatch: r, camposDivergentes: t.camposPorRepasse[r.id] } : t)
+      }
     }
   }
   return mapa
