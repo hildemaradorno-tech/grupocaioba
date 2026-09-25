@@ -70,7 +70,7 @@ async function carregarBase(ano) {
 
   const [metas, calendario] = await Promise.all([
     fetchTudo(() => supabaseAdmin.from('fato_metas_publicadas')
-      .select('empresa_id, empresa_nome, mes, tipo, colaborador_nome, meta_faturamento, meta_servicos')
+      .select('empresa_id, empresa_nome, mes, tipo, colaborador_nome, departamento_nome, meta_faturamento, meta_servicos')
       .eq('ano', ano).order('id')),
     fetchTudo(() => supabaseAdmin.from('fato_calendario')
       .select('empresa_id, data, dias_uteis')
@@ -166,6 +166,18 @@ export async function getMetaPecasPeriodos(ano, vendedorNome = null) {
 
   const alvo = vendedorNome ? normNome(vendedorNome) : null
   const linhas = base.metas.filter(r => r.tipo === 'pecas' && (!alvo || normNome(r.colaborador_nome) === alvo))
+  return periodizarMetas(linhas, ano, base.calendario)
+}
+
+/**
+ * Meta de Faturamento Balcão por período: metas de Peças do departamento Balcão (Total
+ * Pós-Vendas → Planejamento de Metas), somando os vendedores. empresaNome restringe à casa.
+ */
+export async function getMetaPecasBalcaoPeriodos(ano, { empresaNome = null } = {}) {
+  const base = await carregarBase(ano)
+  if (!base) return null
+  const alvoEmp = empresaNome ? normNome(empresaNome) : null
+  const linhas = base.metas.filter(r => r.tipo === 'pecas' && /balc/i.test(r.departamento_nome || '') && (!alvoEmp || normNome(r.empresa_nome) === alvoEmp))
   return periodizarMetas(linhas, ano, base.calendario)
 }
 
