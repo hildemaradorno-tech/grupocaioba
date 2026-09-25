@@ -1,6 +1,6 @@
 ﻿import React, { useEffect, useState, useMemo } from 'react'
 import { useSessionState } from '../hooks/useSessionState'
-import { Plus, Trash2, X, AlertTriangle, ChevronRight, ChevronDown, Cog, Loader2, CheckCircle2, Sparkles, Pencil, Info, Search } from 'lucide-react'
+import { Plus, Trash2, X, AlertTriangle, ChevronRight, ChevronDown, Cog, Loader2, CheckCircle2, Sparkles, Pencil, Info, Search, Copy } from 'lucide-react'
 import BotaoAcaoRetratil from '../components/BotaoAcaoRetratil'
 import { useAuth } from '../context/AuthContext'
 import { SearchCombobox } from '../components/SearchCombobox'
@@ -52,7 +52,27 @@ const STATUS_CLS = { 'AGUARDANDO APROVACAO': 'bg-amber-100 text-amber-700', 'APR
 const STATUS_DISPLAY = { 'AGUARDANDO APROVACAO': 'Pendente', 'APROVADO': 'Aprovado', 'REPROVADO': 'Reprovado' }
 
 const FORM_VAZIO = { empresa_id:'', empresa_nome:'', departamento_id:'', departamento_nome:'', setor_id:'', setor_nome:'', box_id:'', box_nome:'', cargo_id:'', cargo_nome:'', colaborador_id:'', colaborador_nome:'', ano: anoAtual }
-const mesesVazios = () => Array.from({ length: 12 }, (_, i) => ({ mes: i+1, percentual: '' }))
+const mesesVazios = () => Array.from({ length: 12 }, (_, i) => ({ mes: i+1, percentual: '', margem_pecas_pct: '', margem_servicos_pct: '', ticket_pecas: '', ticket_servicos: '' }))
+const numOuVazio = (v) => (v === null || v === undefined || v === '') ? '' : Number(v)
+const numOuNull  = (v) => (v === '' || v === null || v === undefined) ? null : (Number(v) || 0)
+// Passagens = Ref. Total do setor ÷ Ticket Total (0 quando não há ticket)
+const calcPassagens = (refTotal, ticketTotal) => (Number(ticketTotal) > 0 ? (Number(refTotal) || 0) / Number(ticketTotal) : 0)
+const fmtInt = (v) => Math.round(Number(v) || 0).toLocaleString('pt-BR', { maximumFractionDigits: 0 })
+
+// Input de valor em R$ (mesma máscara pt-BR das outras telas: edita como texto, guarda como número)
+function MoneyInput({ value, onChange }) {
+  const [focused, setFocused] = useState(false)
+  const [raw, setRaw] = useState('')
+  const displayed = focused ? raw : (value === '' || value == null ? '' : fmtBRL(value))
+  return (
+    <input type="text" inputMode="decimal" value={displayed}
+      onChange={e => setRaw(e.target.value)}
+      onFocus={() => { setRaw(value !== '' && value != null ? String(value).replace('.', ',') : ''); setFocused(true) }}
+      onBlur={() => { setFocused(false); onChange(raw.trim() === '' ? '' : parseBRL(raw)) }}
+      placeholder="0,00"
+      className="w-full text-xs text-right outline-none bg-transparent text-slate-800" />
+  )
+}
 
 function PctInput({ value, onChange }) {
   const [focused, setFocused] = useState(false)
@@ -388,7 +408,11 @@ export default function MetasServicosConsultor({ empresaExterna = null, anoExter
     })
     setMesesForm(Array.from({ length: 12 }, (_, i) => {
       const row = rows.find(r => Number(r.mes) === i + 1)
-      return { mes: i + 1, percentual: row?.percentual ?? '' }
+      return {
+        mes: i + 1, percentual: row?.percentual ?? '',
+        margem_pecas_pct: numOuVazio(row?.margem_pecas_pct), margem_servicos_pct: numOuVazio(row?.margem_servicos_pct),
+        ticket_pecas: numOuVazio(row?.ticket_pecas), ticket_servicos: numOuVazio(row?.ticket_servicos),
+      }
     }))
     setErroModal(null)
     if (empId) {
@@ -492,6 +516,12 @@ export default function MetasServicosConsultor({ empresaExterna = null, anoExter
           colaborador_id: form.colaborador_id === 'A_CONTRATAR' ? '00000000-0000-0000-0000-000000000000' : form.colaborador_id,
           mes: m.mes, ano: Number(form.ano),
           percentual: pct, meta_faturamento: meta,
+          margem_pecas_pct:    numOuNull(m.margem_pecas_pct),
+          margem_servicos_pct: numOuNull(m.margem_servicos_pct),
+          ticket_pecas:        numOuNull(m.ticket_pecas),
+          ticket_servicos:     numOuNull(m.ticket_servicos),
+          ticket_total:        (numOuNull(m.ticket_pecas) == null && numOuNull(m.ticket_servicos) == null) ? null : (Number(m.ticket_pecas) || 0) + (Number(m.ticket_servicos) || 0),
+          passagens:           Math.round(calcPassagens(refModalDetalhePorMes[m.mes]?.total, (Number(m.ticket_pecas) || 0) + (Number(m.ticket_servicos) || 0))),
           dias_uteis_reais: 0, media_diaria_venda: 0,
           status: 'AGUARDANDO APROVACAO',
         })
@@ -887,6 +917,99 @@ export default function MetasServicosConsultor({ empresaExterna = null, anoExter
                           </tr>
                         )
                       })}
+                      {/* Margem, tickets e passagens (gravados no Supabase junto do % do mês) */}
+                      {[
+                        { campo: 'margem_pecas_pct',    label: 'Meta Margem Peças (%)',    tipo: 'pct' },
+                        { campo: 'margem_servicos_pct', label: 'Meta Margem Serviços (%)', tipo: 'pct' },
+                        { campo: 'ticket_pecas',        label: 'Ticket Peças (R$)',        tipo: 'brl' },
+                        { campo: 'ticket_servicos',     label: 'Ticket Serviços (R$)',     tipo: 'brl' },
+                      ].map(({ campo, label, tipo }) => {
+                        const preenchidos = mesesForm.filter(m => m[campo] !== '' && m[campo] != null)
+                        let media = preenchidos.length ? preenchidos.reduce((s, m) => s + (Number(m[campo]) || 0), 0) / preenchidos.length : null
+                        let tituloAno = 'Média dos meses preenchidos'
+                        if (tipo === 'pct') {
+                          // Margem real do ano (cálculo inverso): Lucro do ano ÷ Ref. do ano — pesa cada mês pelo seu valor,
+                          // já que as margens de meta podem ser diferentes de um mês pro outro.
+                          const chaveRef = campo === 'margem_pecas_pct' ? 'pecas' : 'servicos'
+                          const refAno = mesesForm.reduce((s, m) => s + (refModalDetalhePorMes[m.mes]?.[chaveRef] || 0), 0)
+                          const lucroAno = mesesForm.reduce((s, m) => s + (refModalDetalhePorMes[m.mes]?.[chaveRef] || 0) * ((Number(m[campo]) || 0) / 100), 0)
+                          media = refAno > 0 && preenchidos.length ? (lucroAno / refAno) * 100 : null
+                          tituloAno = 'Margem real do ano = Lucro do ano ÷ Ref. do ano'
+                        }
+                        return (
+                          <React.Fragment key={campo}>
+                          <tr>
+                            <td className="text-xs font-semibold text-slate-600 px-1 whitespace-nowrap">
+                              <span className="inline-flex items-center gap-1">
+                                {label}
+                                {modoModal !== 'visualizar' && (
+                                  <button type="button" disabled={preenchidos.length === 0}
+                                    title={preenchidos.length ? 'Replicar o primeiro valor preenchido nos 12 meses' : 'Preencha um mês para poder replicar nos demais'}
+                                    onClick={() => { const v = preenchidos[0][campo]; setMesesForm(prev => prev.map(x => ({ ...x, [campo]: v }))) }}
+                                    className="text-indigo-500 hover:text-indigo-700 hover:bg-indigo-50 disabled:text-slate-300 disabled:hover:bg-transparent disabled:cursor-not-allowed rounded p-0.5 transition-colors">
+                                    <Copy size={13} />
+                                  </button>
+                                )}
+                              </span>
+                            </td>
+                            {mesesForm.map((m, i) => {
+                              if (modoModal === 'visualizar') {
+                                const v = m[campo]
+                                return <td key={i} className="bg-slate-100 border border-slate-200 rounded p-1 text-right text-xs text-slate-600 font-mono">{v === '' || v == null ? '—' : (tipo === 'pct' ? fmtPct(v) : fmtBRL(v))}</td>
+                              }
+                              return (
+                                <td key={i} className="border rounded p-1 bg-white border-slate-200">
+                                  {tipo === 'pct'
+                                    ? <PctInput value={m[campo]} onChange={v => setMesesForm(prev => prev.map((x, xi) => xi === i ? { ...x, [campo]: v } : x))} />
+                                    : <MoneyInput value={m[campo]} onChange={v => setMesesForm(prev => prev.map((x, xi) => xi === i ? { ...x, [campo]: v } : x))} />}
+                                </td>
+                              )
+                            })}
+                            <td className="bg-indigo-50 border border-indigo-200 rounded p-1 text-right text-xs font-bold text-indigo-700" title={tituloAno}>
+                              {media == null ? '—' : (tipo === 'pct' ? fmtPct(media) : fmtBRL(media))}
+                            </td>
+                          </tr>
+                          {/* Lucro (automático) logo depois das duas margens: Ref. (R$) do mês × Margem (%) */}
+                          {campo === 'margem_servicos_pct' && [
+                            { chave: 'pecas',    rotulo: 'Lucro Peças (R$)',    margem: 'margem_pecas_pct' },
+                            { chave: 'servicos', rotulo: 'Lucro Serviços (R$)', margem: 'margem_servicos_pct' },
+                          ].map(({ chave, rotulo, margem }) => {
+                            const lucros = mesesForm.map(m => (refModalDetalhePorMes[m.mes]?.[chave] || 0) * ((Number(m[margem]) || 0) / 100))
+                            return (
+                              <tr key={chave}>
+                                <td className="text-xs font-bold text-emerald-700 px-1 whitespace-nowrap" title={`Ref. ${chave === 'pecas' ? 'Peças' : 'Serviços'} (R$) × Meta Margem ${chave === 'pecas' ? 'Peças' : 'Serviços'} (%)`}>{rotulo}</td>
+                                {lucros.map((v, i) => <td key={i} className="border rounded p-1 text-right text-xs font-bold bg-emerald-50 border-emerald-200 text-emerald-700">{v > 0 ? fmtBRL(round2(v)) : '—'}</td>)}
+                                <td className="border rounded p-1 text-right text-xs font-bold bg-emerald-100 border-emerald-300 text-emerald-800">{fmtBRL(round2(lucros.reduce((a, v) => a + v, 0)))}</td>
+                              </tr>
+                            )
+                          })}
+                          </React.Fragment>
+                        )
+                      })}
+                      {/* Ticket Total = Ticket Peças + Ticket Serviços (automático) */}
+                      {(() => {
+                        const tt = mesesForm.map(m => (Number(m.ticket_pecas) || 0) + (Number(m.ticket_servicos) || 0))
+                        const comValor = tt.filter(v => v > 0)
+                        const media = comValor.length ? comValor.reduce((s, v) => s + v, 0) / comValor.length : null
+                        return (
+                          <tr>
+                            <td className="text-xs font-bold text-indigo-800 px-1 whitespace-nowrap">Ticket Total (R$)</td>
+                            {tt.map((v, i) => <td key={i} className="border rounded p-1 text-right text-xs font-bold bg-indigo-100 border-indigo-200 text-indigo-800">{v > 0 ? fmtBRL(v) : '—'}</td>)}
+                            <td className="border rounded p-1 text-right text-xs font-bold bg-indigo-200 border-indigo-300 text-indigo-900" title="Média dos meses preenchidos">{media == null ? '—' : fmtBRL(media)}</td>
+                          </tr>
+                        )
+                      })()}
+                      {/* Passagens = Ref. Total do setor ÷ Ticket Total (automático) */}
+                      {(() => {
+                        const ps = mesesForm.map(m => Math.round(calcPassagens(refModalDetalhePorMes[m.mes]?.total, (Number(m.ticket_pecas) || 0) + (Number(m.ticket_servicos) || 0))))
+                        return (
+                          <tr>
+                            <td className="text-xs font-bold text-emerald-700 px-1 whitespace-nowrap" title="Ref. Total ÷ Ticket Total">Passagens</td>
+                            {ps.map((v, i) => <td key={i} className="border rounded p-1 text-right text-xs font-bold bg-emerald-100 border-emerald-200 text-emerald-800">{v > 0 ? fmtInt(v) : '—'}</td>)}
+                            <td className="border rounded p-1 text-right text-xs font-bold bg-emerald-200 border-emerald-300 text-emerald-900">{fmtInt(ps.reduce((s, v) => s + v, 0))}</td>
+                          </tr>
+                        )
+                      })()}
                     </tbody>
                   </table>
                 </div>

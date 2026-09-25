@@ -244,6 +244,22 @@ function QuadroTable({ quadro, activePeriods, year, onSalvarPeso }) {
   )
 }
 
+// Ordem de exibição dos quadros de gerente por casa; os demais mantêm a ordem de origem.
+const ORDEM_CASAS = [
+  'GERENTE DE SERVIÇO - CAMPO GRANDE',
+  'GERENTE FILIAL - CHAPADÃO DO SUL',
+  'GERENTE FILIAL - DOURADOS',
+  'GERENTE FILIAL - TRÊS LAGOAS',
+]
+
+function ordenarCasas(quadros) {
+  const ini = quadros.findIndex(q => ORDEM_CASAS.includes(q.tituloGerente))
+  if (ini < 0) return quadros
+  const casas = ORDEM_CASAS.map(t => quadros.find(q => q.tituloGerente === t)).filter(Boolean)
+  const outros = quadros.filter(q => !ORDEM_CASAS.includes(q.tituloGerente))
+  return [...outros.slice(0, ini), ...casas, ...outros.slice(ini)]
+}
+
 export function PosVendaQuadros({ year, activePeriods }) {
   const { data: quadros } = useKpiData(fetchBloco3PosVenda, MOCK_BLOCO3_POS_VENDA, { year })
 
@@ -257,7 +273,7 @@ export function PosVendaQuadros({ year, activePeriods }) {
     setPesosOverride(prev => ({ ...prev, [key]: peso }))
   }
 
-  const quadrosComPeso = quadros.map(quadro => ({
+  const quadrosComPeso = ordenarCasas(quadros).map(quadro => ({
     ...quadro,
     kpis: quadro.kpis.map(kpi => {
       const key = `${quadro.tituloGerente}|${kpi.id}`

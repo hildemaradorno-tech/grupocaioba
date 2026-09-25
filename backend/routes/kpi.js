@@ -531,7 +531,7 @@ router.get('/bloco3-pecas', requireConfig, wrap(async (req, res) => {
   try { extractorData = await getExtratorComCache('CONSOLIDADO', getConsolidatedKpiData, year, empresaChave, empresa) } catch (_) { /* sem dados */ }
 
   // Faturamento Total do GERENTE/COORDENADOR ATACADO PEÇAS vem do Balcão
-  // agregando TODAS as lojas (Indicador 8 da Auditoria), independente do
+  // agregando TODAS as lojas (Indicador 9 da Auditoria), independente do
   // filtro de empresa/vendedor da tela.
   let balcaoTodas = null
   try { balcaoTodas = await getExtratorComCache('BALCAO', extractBalcao, year, 'todas', null) } catch (_) { /* sem dados */ }
@@ -757,7 +757,7 @@ function infoAuditoria(row) {
   const m = row.metrica || ''
   const boxFiltro = ['Somente produtivos dos boxes Mecânica e Box Express (pelo nome, no Cadastro de Funcionários; quem não está no cadastro ou não tem box fica de fora)']
   if (/RPR001/.test(f)) {
-    const balcao = row.id === 8 || row.id === 9
+    const balcao = row.id === 9 || row.id === 10
     const coluna = /VlMargemCont/.test(m) ? 'NFItem_VlMargemCont (coluna U)' : /VlTotal/.test(m) ? 'NFItem_VlTotal (coluna AV)' : m
     const filtros = [
       balcao ? 'Somente linhas SEM OS vinculada (NF_OsTipoDes, coluna H, em branco) — Balcão'
@@ -766,7 +766,7 @@ function infoAuditoria(row) {
       'Linhas com valor total zerado são ignoradas',
       'Período pela data de movimento (NF_DataMov, coluna AG)',
     ]
-    if (row.id === 10) filtros.splice(2, 0, 'Somente tipo de produto (NFItem_ProdTipoCod, coluna AL) 2, 24, 27 ou 28 (TRP)')
+    if (row.id === 11) filtros.splice(2, 0, 'Somente tipo de produto (NFItem_ProdTipoCod, coluna AL) 2, 24, 27 ou 28 (TRP)')
     if (/VEN/.test(m) && !/−/.test(m)) filtros.splice(2, 0, 'Considera só as linhas de venda (VEN)')
     if (/DVE/.test(m) && !/−/.test(m)) filtros.splice(2, 0, 'Considera só as linhas de devolução (DVE)')
     return { arquivo: 'RPR001_VENDAPRODUTO AAAA.MM.xlsx (Vendas de Produtos)', coluna, filtros }
@@ -850,24 +850,24 @@ router.get('/auditoria', requireConfig, wrap(async (req, res) => {
       { id: 5, indicador: 'Margem Bruta Peças Oficina', fonte: 'Fonte B — RPR001',         metrica: 'VEN − DVE (líquido)',         tipo: 'R$', valores: a.ind3_fatLiquido },
       { id: 5, indicador: 'Margem Bruta Peças Oficina', fonte: 'RESULTADO',                metrica: 'Fonte A ÷ Fonte B × 100',    tipo: '%',  valores: a.ind3_margem },
 
-      // ── Indicador 8 — Faturamento Total Peças Balcão ────────────────────
-      { id: 8, indicador: 'Faturamento Total Peças Balcão', fonte: 'Fonte A — RPR001', metrica: 'NFItem_VlTotal — VEN', tipo: 'R$', valores: blcData?.vendas      ?? {} },
-      { id: 8, indicador: 'Faturamento Total Peças Balcão', fonte: 'Fonte A — RPR001', metrica: 'NFItem_VlTotal — DVE', tipo: 'R$', valores: blcData?.devolucoes  ?? {} },
-      { id: 8, indicador: 'Faturamento Total Peças Balcão', fonte: 'RESULTADO',        metrica: 'VEN − DVE (líquido)', tipo: 'R$', valores: blcData?.liquido     ?? {} },
+      // ── Indicador 9 — Faturamento Total Peças Balcão ────────────────────
+      { id: 9, indicador: 'Faturamento Total Peças Balcão', fonte: 'Fonte A — RPR001', metrica: 'NFItem_VlTotal — VEN', tipo: 'R$', valores: blcData?.vendas      ?? {} },
+      { id: 9, indicador: 'Faturamento Total Peças Balcão', fonte: 'Fonte A — RPR001', metrica: 'NFItem_VlTotal — DVE', tipo: 'R$', valores: blcData?.devolucoes  ?? {} },
+      { id: 9, indicador: 'Faturamento Total Peças Balcão', fonte: 'RESULTADO',        metrica: 'VEN − DVE (líquido)', tipo: 'R$', valores: blcData?.liquido     ?? {} },
 
-      // ── Indicador 9 — Margem Bruta Peças Balcão ──────────────────────────
-      { id: 9, indicador: 'Margem Bruta Peças Balcão', fonte: 'Fonte A — RPR001', metrica: 'NFItem_VlMargemCont — VEN',    tipo: 'R$', valores: blcData?.margemContVendas     ?? {} },
-      { id: 9, indicador: 'Margem Bruta Peças Balcão', fonte: 'Fonte A — RPR001', metrica: 'NFItem_VlMargemCont — DVE',    tipo: 'R$', valores: blcData?.margemContDevolucoes  ?? {} },
-      { id: 9, indicador: 'Margem Bruta Peças Balcão', fonte: 'Fonte A — RPR001', metrica: 'VEN − DVE (líquido margem)',  tipo: 'R$', valores: blcData?.margemContLiquido     ?? {} },
-      { id: 9, indicador: 'Margem Bruta Peças Balcão', fonte: 'Fonte B — RPR001', metrica: 'NFItem_VlTotal — VEN',         tipo: 'R$', valores: blcData?.vendas               ?? {} },
-      { id: 9, indicador: 'Margem Bruta Peças Balcão', fonte: 'Fonte B — RPR001', metrica: 'NFItem_VlTotal — DVE',         tipo: 'R$', valores: blcData?.devolucoes            ?? {} },
-      { id: 9, indicador: 'Margem Bruta Peças Balcão', fonte: 'Fonte B — RPR001', metrica: 'VEN − DVE (líquido fat.)',     tipo: 'R$', valores: blcData?.liquido               ?? {} },
-      { id: 9, indicador: 'Margem Bruta Peças Balcão', fonte: 'RESULTADO',        metrica: 'Fonte A ÷ Fonte B × 100',     tipo: '%',  valores: blcData?.margemPct              ?? {} },
+      // ── Indicador 10 — Margem Bruta Peças Balcão ──────────────────────────
+      { id: 10, indicador: 'Margem Bruta Peças Balcão', fonte: 'Fonte A — RPR001', metrica: 'NFItem_VlMargemCont — VEN',    tipo: 'R$', valores: blcData?.margemContVendas     ?? {} },
+      { id: 10, indicador: 'Margem Bruta Peças Balcão', fonte: 'Fonte A — RPR001', metrica: 'NFItem_VlMargemCont — DVE',    tipo: 'R$', valores: blcData?.margemContDevolucoes  ?? {} },
+      { id: 10, indicador: 'Margem Bruta Peças Balcão', fonte: 'Fonte A — RPR001', metrica: 'VEN − DVE (líquido margem)',  tipo: 'R$', valores: blcData?.margemContLiquido     ?? {} },
+      { id: 10, indicador: 'Margem Bruta Peças Balcão', fonte: 'Fonte B — RPR001', metrica: 'NFItem_VlTotal — VEN',         tipo: 'R$', valores: blcData?.vendas               ?? {} },
+      { id: 10, indicador: 'Margem Bruta Peças Balcão', fonte: 'Fonte B — RPR001', metrica: 'NFItem_VlTotal — DVE',         tipo: 'R$', valores: blcData?.devolucoes            ?? {} },
+      { id: 10, indicador: 'Margem Bruta Peças Balcão', fonte: 'Fonte B — RPR001', metrica: 'VEN − DVE (líquido fat.)',     tipo: 'R$', valores: blcData?.liquido               ?? {} },
+      { id: 10, indicador: 'Margem Bruta Peças Balcão', fonte: 'RESULTADO',        metrica: 'Fonte A ÷ Fonte B × 100',     tipo: '%',  valores: blcData?.margemPct              ?? {} },
 
-      // ── Indicador 10 — Faturamento TRP ──────────────────────────────────
-      { id: 10, indicador: 'Faturamento TRP', fonte: 'Fonte A — RPR001', metrica: 'NFItem_VlTotal — VEN (ProdTipoCod 2,24,27,28)', tipo: 'R$', valores: a.ind10_trpVendas },
-      { id: 10, indicador: 'Faturamento TRP', fonte: 'Fonte A — RPR001', metrica: 'NFItem_VlTotal — DVE (ProdTipoCod 2,24,27,28)', tipo: 'R$', valores: a.ind10_trpDevolucoes },
-      { id: 10, indicador: 'Faturamento TRP', fonte: 'RESULTADO',        metrica: 'VEN − DVE (líquido)',                           tipo: 'R$', valores: a.ind10_trpLiquido },
+      // ── Indicador 11 — Faturamento TRP ──────────────────────────────────
+      { id: 11, indicador: 'Faturamento TRP', fonte: 'Fonte A — RPR001', metrica: 'NFItem_VlTotal — VEN (ProdTipoCod 2,24,27,28)', tipo: 'R$', valores: a.ind10_trpVendas },
+      { id: 11, indicador: 'Faturamento TRP', fonte: 'Fonte A — RPR001', metrica: 'NFItem_VlTotal — DVE (ProdTipoCod 2,24,27,28)', tipo: 'R$', valores: a.ind10_trpDevolucoes },
+      { id: 11, indicador: 'Faturamento TRP', fonte: 'RESULTADO',        metrica: 'VEN − DVE (líquido)',                           tipo: 'R$', valores: a.ind10_trpLiquido },
 
       // ── Indicador 6 — Eficácia da Oficina ───────────────────────────────
       { id: 6, indicador: 'Eficácia da Oficina', fonte: 'Fonte A — ROF042', metrica: 'Hr. Vend.',      tipo: 'h',  valores: rof042Data?.hrVend      ?? {} },
@@ -895,6 +895,21 @@ router.get('/auditoria', requireConfig, wrap(async (req, res) => {
         for (const k of keys) {
           const a = aplic[k] ?? null, d = disp[k] ?? null
           r[k] = (d != null && d > 0) ? (a ?? 0) / d * 100 : null
+        }
+        return r
+      })() },
+
+      // ── Indicador 8 — Eficiência da Oficina ─────────────────────────────
+      { id: 8, indicador: 'Eficiência da Oficina', fonte: 'Fonte A — ROF042', metrica: 'Hr. Vend.',  tipo: 'h', valores: rof042Data?.hrVend  ?? {} },
+      { id: 8, indicador: 'Eficiência da Oficina', fonte: 'Fonte B — ROF042', metrica: 'Hr. Total',  tipo: 'h', valores: rof042Data?.hrAplic ?? {} },
+      { id: 8, indicador: 'Eficiência da Oficina', fonte: 'RESULTADO',        metrica: 'Hr. Vend. ÷ Hr. Total × 100', tipo: '%', valores: (() => {
+        const vend = rof042Data?.hrVend  ?? {}
+        const gast = rof042Data?.hrAplic ?? {}
+        const keys = [...new Set([...Object.keys(vend), ...Object.keys(gast)])]
+        const r = {}
+        for (const k of keys) {
+          const v = vend[k] ?? null, g = gast[k] ?? null
+          r[k] = (g != null && g > 0) ? (v ?? 0) / g * 100 : null
         }
         return r
       })() },

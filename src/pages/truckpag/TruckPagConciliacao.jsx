@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
-import { RefreshCw, AlertTriangle, Filter, ChevronDown, ChevronUp, X, Link2, Link2Off, ArrowLeftRight, Wallet, Settings, List, HelpCircle } from 'lucide-react'
+import { RefreshCw, AlertTriangle, Filter, ChevronDown, ChevronUp, X, Link2, Link2Off, ArrowLeftRight, Wallet, Settings, List, HelpCircle, Info, Truck } from 'lucide-react'
 import { apiService } from '../../services/api'
 import TruckPagNav from './TruckPagNav'
 import TruckPagConfigModal from './TruckPagConfigModal'
@@ -195,10 +195,9 @@ export default function TruckPagConciliacao() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
-              <Link2 className="h-5 w-5 text-emerald-600" />
-              Saldo Concessionária
+              <Truck className="h-5 w-5 text-blue-600" />
+              TruckPag a Receber
             </h1>
-            <p className="text-xs text-slate-500 mt-0.5">Repasses Fabricante x Saldo disponível na concessionária — vinculados pela soma do valor por estabelecimento/data.</p>
           </div>
           <div className="flex items-center gap-3">
             <TruckPagDataArquivo chave="creditos" />

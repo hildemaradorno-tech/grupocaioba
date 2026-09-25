@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react'
 import { useSessionState } from '../../hooks/useSessionState'
-import { Plus, X, AlertTriangle, Search, CopyPlus, Rows, Clock, ClipboardList, RefreshCw, Link2, FileDown, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react'
+import { Plus, X, AlertTriangle, CopyPlus, Rows, Clock, ClipboardList, RefreshCw, Link2, FileDown, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import PermissionActionButtons from '../../components/PermissionActionButtons'
+import { MultiSearchCombobox } from '../../components/SearchCombobox'
 import { apiService } from '../../services/api'
 
 const DIAS_SEMANA = [
@@ -132,7 +133,10 @@ export default function RpaAgendamentos() {
       return arr.includes(codigo) ? arr.filter(c => c !== codigo) : [...arr, codigo]
     })
   }
-  const [busca, setBusca] = useSessionState('rpa_agend_busca', '')
+  // Seleção de processos (um, vários ou nenhum = todos)
+  const [filtroProc, setFiltroProc] = useSessionState('rpa_agend_filtro_proc', [])
+  const procsFiltro = Array.isArray(filtroProc) ? filtroProc : []
+  const procPassa = (id) => procsFiltro.length === 0 || procsFiltro.includes(id)
   const [visualizacao, setVisualizacao] = useSessionState('rpa_agend_visualizacao', 'rotina')
   const [sortRotina, setSortRotina] = useSessionState('rpa_agend_sort_rotina', { col: 'hora', dir: 'asc' })
   const [sortHorario, setSortHorario] = useSessionState('rpa_agend_sort_horario', { col: 'hora', dir: 'asc' })
@@ -615,7 +619,7 @@ export default function RpaAgendamentos() {
   const rotinasFiltradas = dados.filter(r => {
     if (filtroDept && r.departamento_id !== filtroDept) return false
     if (tiposFiltro.length && !(r.execucoes || []).some(e => tipoPassa(e.tipo))) return false
-    if (busca.trim() && !(r.processo || '').toUpperCase().includes(busca.trim().toUpperCase())) return false
+    if (!procPassa(r.processo_id)) return false
     return true
   })
 
@@ -756,19 +760,25 @@ export default function RpaAgendamentos() {
   const rotinasDoProcesso = (id) => dados.filter(r => r.processo_id === id).length
 
   // Processos ativos sem nenhum horário agendado (sem rotina ativa com
-  // execuções), respeitando os filtros de setor/tipo/busca da tela
+  // execuções), respeitando os filtros de setor/tipo/processo da tela
   const processosSemAgendamento = processos.filter(p => {
     if (!p.ativo) return false
     if (filtroDept && p.departamento_id !== filtroDept) return false
     if (!tipoPassa(p.tipo || 'RPA')) return false
-    if (busca.trim() && !(p.nome || '').toUpperCase().includes(busca.trim().toUpperCase())) return false
+    if (!procPassa(p.id)) return false
     return !dados.some(r => r.processo_id === p.id && r.ativo && (r.execucoes || []).length > 0)
+  }).sort((a, b) => cmpTexto(a.nome, b.nome))
+
+  // Opções do seletor de processos: acompanham os filtros de setor/tipo
+  const opcoesProcessoFiltro = processos.filter(p => {
+    if (filtroDept && p.departamento_id !== filtroDept) return false
+    return tipoPassa(p.tipo || 'RPA')
   }).sort((a, b) => cmpTexto(a.nome, b.nome))
 
   const processosFiltrados = processos.filter(p => {
     if (filtroDept && p.departamento_id !== filtroDept) return false
     if (!tipoPassa(p.tipo || 'RPA')) return false
-    if (busca.trim() && !(p.nome || '').toUpperCase().includes(busca.trim().toUpperCase())) return false
+    if (!procPassa(p.id)) return false
     return true
   }).sort((a, b) => {
     const dir = sortProc.dir === 'asc' ? 1 : -1
@@ -944,25 +954,19 @@ export default function RpaAgendamentos() {
             </button>
           ))}
         </div>
-        <div className="relative flex-1 min-w-44 max-w-64">
-          <Search className="h-3.5 w-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            value={busca}
-            onChange={e => setBusca(e.target.value)}
-            placeholder="Buscar processo/relatório..."
-            className="text-xs pl-8 pr-7 py-2 border border-slate-200 rounded-md font-medium text-slate-700 w-full focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+        <div className="w-full sm:w-[34rem] max-w-full text-xs">
+          <MultiSearchCombobox
+            value={procsFiltro}
+            onChange={setFiltroProc}
+            opcoes={opcoesProcessoFiltro}
+            placeholder="Todos os processos"
+            searchPlaceholder="Buscar processo/relatório..."
+            notFoundLabel="Nenhum processo encontrado"
+            getLabel={p => p.nome}
+            getSearchText={p => p.nome || ''}
+            resumo={sel => sel.length === 1 ? sel[0].nome : `${sel.length} processos selecionados`}
+            quebrarTexto
           />
-          {busca && (
-            <button
-              type="button"
-              onClick={() => setBusca('')}
-              title="Limpar busca"
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          )}
         </div>
       </div>
 

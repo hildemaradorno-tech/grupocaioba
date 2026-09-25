@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useSessionState } from '../../hooks/useSessionState'
-import { Plus, X, Edit2, Trash2, ChevronRight, ChevronDown, Search, AlertTriangle, ShieldCheck, Upload } from 'lucide-react'
+import { Plus, X, Edit2, Trash2, ChevronRight, ChevronDown, Search, AlertTriangle, ShieldCheck, Upload, Download, FileSpreadsheet, FileText } from 'lucide-react'
 import { apiService } from '../../services/api'
 import ImportarMenusModal from './ImportarMenusModal'
+import { montarDadosExport, exportarExcel, exportarPdf } from './exportarGrupoAcessos'
 
 const SISTEMAS = ['Dealer.net', 'MicroWork']
 
@@ -50,19 +51,30 @@ function LinhaMenu({ no, profundidade, ctx }) {
 export default function GrupoAcessos() {
   const [sistema, setSistema] = useSessionState('governanca_grupo_sistema', SISTEMAS[0])
   const [menus, setMenus] = useState([])
-  const [grupos, setGrupos] = useState([])
+  const [todosGrupos, setGrupos] = useState([])
   const [marcados, setMarcados] = useState(new Set())
   const [loading, setLoading] = useState(true)
   const [erro, setErro] = useState(null)
 
   const [expandidos, setExpandidos] = useState(new Set())
-  const [busca, setBusca] = useState('')
+  // Busca e filtro de grupos são de cada aba (Dealer.net / MicroWork): trocar de aba não mistura.
+  const [buscaPorSistema, setBuscaPorSistema] = useState({})
+  const [gruposFiltroPorSistema, setGruposFiltroPorSistema] = useState({})
+  const [seletorGruposAberto, setSeletorGruposAberto] = useState(false)
+  const busca = buscaPorSistema[sistema] || ''
+  const setBusca = (v) => setBuscaPorSistema(prev => ({ ...prev, [sistema]: v }))
+  const gruposFiltro = gruposFiltroPorSistema[sistema] || []
+  const setGruposFiltro = (ids) => setGruposFiltroPorSistema(prev => ({ ...prev, [sistema]: ids }))
+  // Colunas exibidas: todos os grupos da aba, ou só os escolhidos no seletor.
+  const grupos = gruposFiltro.length > 0 ? todosGrupos.filter(g => gruposFiltro.includes(g.id)) : todosGrupos
 
 
   const [modalGrupo, setModalGrupo] = useState(null) // { id, nome, descricao } | null
   const [confirmarExcluirGrupo, setConfirmarExcluirGrupo] = useState(null)
   const [salvando, setSalvando] = useState(false)
   const [importarAberto, setImportarAberto] = useState(false)
+  const [exportarAberto, setExportarAberto] = useState(false)
+  const [exportando, setExportando] = useState(false)
 
   const carregar = async () => {
     setLoading(true)
@@ -168,6 +180,23 @@ export default function GrupoAcessos() {
     }
   }
 
+  // Exporta a matriz como está na tela: sistema e busca atuais, só o que está marcado.
+  const exportar = async (formato) => {
+    setExportarAberto(false)
+    const dados = montarDadosExport({ menus, grupos, marcados, idsVisiveisBusca })
+    if (dados.linhas.length === 0) { alert('Não há nenhum item marcado para exportar com o filtro atual.'); return }
+    setExportando(true)
+    try {
+      const args = { sistema, busca: busca.trim(), dados }
+      if (formato === 'excel') await exportarExcel(args)
+      else await exportarPdf(args)
+    } catch (err) {
+      alert('Erro ao exportar: ' + (err.message || String(err)))
+    } finally {
+      setExportando(false)
+    }
+  }
+
   const raizMenus = (filhosPorPai['raiz'] || []).filter(f => !idsVisiveisBusca || idsVisiveisBusca.has(f.id))
 
   const ctx = {
@@ -185,6 +214,30 @@ export default function GrupoAcessos() {
           <p className="text-xs text-slate-500">Matriz de menus/submenus × grupos de acesso cadastrados para cada sistema externo.</p>
         </div>
         <div className="flex items-center gap-2">
+          <div className="relative">
+            <button
+              onClick={() => setExportarAberto(v => !v)}
+              disabled={loading || exportando || todosGrupos.length === 0}
+              className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 text-xs font-semibold px-3 py-2 rounded-md shadow-sm transition-colors disabled:opacity-50"
+              title="Exportar a matriz (só os itens marcados, respeitando a busca)"
+            >
+              <Download className="h-4 w-4" />
+              {exportando ? 'Exportando...' : 'Exportar'}
+            </button>
+            {exportarAberto && (
+              <>
+                <div className="fixed inset-0 z-30" onClick={() => setExportarAberto(false)} />
+                <div className="absolute right-0 top-full mt-1 w-44 bg-white border border-slate-200 rounded-md shadow-lg z-40 py-1">
+                  <button onClick={() => exportar('excel')} className="w-full flex items-center gap-2 px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 text-left">
+                    <FileSpreadsheet className="h-4 w-4 text-emerald-600" /> Excel (.xlsx)
+                  </button>
+                  <button onClick={() => exportar('pdf')} className="w-full flex items-center gap-2 px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 text-left">
+                    <FileText className="h-4 w-4 text-red-600" /> PDF
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
           {sistema === 'Dealer.net' && (
             <button
               onClick={() => setImportarAberto(true)}
@@ -205,27 +258,76 @@ export default function GrupoAcessos() {
         </div>
       </div>
 
-      {/* SISTEMA + BUSCA */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-1.5">
-          {SISTEMAS.map(s => (
-            <button
-              key={s}
-              onClick={() => setSistema(s)}
-              className={`px-3 py-1.5 rounded-full text-[11px] font-bold border transition-colors ${sistema === s ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'}`}
-            >
-              {s}
-            </button>
-          ))}
-        </div>
+      {/* SISTEMA */}
+      <div className="flex items-center gap-1.5">
+        {SISTEMAS.map(s => (
+          <button
+            key={s}
+            onClick={() => { setSistema(s); setSeletorGruposAberto(false) }}
+            className={`px-3 py-1.5 rounded-full text-[11px] font-bold border transition-colors ${sistema === s ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'}`}
+          >
+            {s}
+          </button>
+        ))}
+      </div>
+
+      {/* BUSCA + GRUPOS (valem só para a aba aberta) */}
+      <div className="flex items-center gap-3 flex-wrap">
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
           <input
             value={busca}
             onChange={e => setBusca(e.target.value)}
-            placeholder="Buscar menu..."
-            className="text-xs pl-8 pr-3 py-2 border border-slate-200 rounded-md w-64 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+            placeholder={`Buscar menu em ${sistema}...`}
+            className="text-xs pl-8 pr-3 py-2 border border-slate-200 rounded-md w-72 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
           />
+        </div>
+        <div className="relative">
+          <button
+            onClick={() => setSeletorGruposAberto(v => !v)}
+            disabled={todosGrupos.length === 0}
+            className="flex items-center justify-between gap-2 w-64 text-xs px-3 py-2 border border-slate-200 rounded-md bg-white hover:border-slate-300 disabled:opacity-50"
+          >
+            <span className="truncate text-slate-700">
+              {gruposFiltro.length === 0 || gruposFiltro.length === todosGrupos.length
+                ? 'Todos os grupos de acesso'
+                : gruposFiltro.length === 1
+                  ? todosGrupos.find(g => g.id === gruposFiltro[0])?.nome
+                  : `${gruposFiltro.length} grupos selecionados`}
+            </span>
+            <ChevronDown className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+          </button>
+          {seletorGruposAberto && (
+            <>
+              <div className="fixed inset-0 z-30" onClick={() => setSeletorGruposAberto(false)} />
+              <div className="absolute left-0 top-full mt-1 w-72 bg-white border border-slate-200 rounded-md shadow-lg z-40">
+                <div className="flex items-center justify-between px-3 py-2 border-b border-slate-100 text-[11px]">
+                  <button onClick={() => setGruposFiltro([])} className="text-blue-600 hover:underline">Todos os grupos</button>
+                  <span className="text-slate-400">{gruposFiltro.length === 0 ? todosGrupos.length : gruposFiltro.length}/{todosGrupos.length}</span>
+                </div>
+                <div className="max-h-64 overflow-y-auto py-1">
+                  {todosGrupos.map(g => {
+                    const marcado = gruposFiltro.length === 0 || gruposFiltro.includes(g.id)
+                    return (
+                      <label key={g.id} className="flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 cursor-pointer hover:bg-slate-50 select-none">
+                        <input
+                          type="checkbox"
+                          checked={marcado}
+                          onChange={() => {
+                            const base = gruposFiltro.length === 0 ? todosGrupos.map(x => x.id) : gruposFiltro
+                            const novo = marcado ? base.filter(x => x !== g.id) : [...base, g.id]
+                            setGruposFiltro(novo.length === todosGrupos.length || novo.length === 0 ? [] : novo)
+                          }}
+                          className="w-3.5 h-3.5 accent-blue-600"
+                        />
+                        <span className="truncate">{g.nome}</span>
+                      </label>
+                    )
+                  })}
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -237,7 +339,7 @@ export default function GrupoAcessos() {
           <p className="mb-4 text-sm text-slate-700">{erro}</p>
           <button onClick={carregar} className="bg-blue-600 text-white px-4 py-2 rounded-md">Tentar novamente</button>
         </div>
-      ) : grupos.length === 0 ? (
+      ) : todosGrupos.length === 0 ? (
         <div className="p-16 text-center text-sm text-slate-400 bg-white rounded-lg border border-slate-200">
           Nenhum grupo de acesso cadastrado para {sistema} ainda. Clique em "Novo Grupo de Acesso" para começar.
         </div>

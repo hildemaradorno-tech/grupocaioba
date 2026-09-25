@@ -107,7 +107,8 @@ export function SearchCombobox({ value, onChange, opcoes, placeholder, emptyOpti
 
 // Variante multi-seleção do combobox acima — cada opção marcada fica na lista (não fecha o
 // painel ao marcar, pra permitir selecionar vários seguidos), com um resumo no botão.
-export function MultiSearchCombobox({ value, onChange, opcoes, placeholder, searchPlaceholder, notFoundLabel, getLabel, getSearchText, resumo }) {
+// quebrarTexto: nomes longos quebram linha na lista em vez de serem cortados com "..."
+export function MultiSearchCombobox({ value, onChange, opcoes, placeholder, searchPlaceholder, notFoundLabel, getLabel, getSearchText, resumo, quebrarTexto = false }) {
   const [aberto, setAberto] = useState(false)
   const [busca, setBusca] = useState('')
   const [pos, setPos] = useState(null)
@@ -205,7 +206,7 @@ export function MultiSearchCombobox({ value, onChange, opcoes, placeholder, sear
                   <span className={`shrink-0 w-4 h-4 rounded border flex items-center justify-center ${marcado ? 'bg-blue-600 border-blue-600' : 'border-slate-300'}`}>
                     {marcado && <Check className="h-3 w-3 text-white" />}
                   </span>
-                  <span className="truncate">{getLabel(o)}</span>
+                  <span className={quebrarTexto ? 'break-words' : 'truncate'}>{getLabel(o)}</span>
                 </button>
               )
             })}

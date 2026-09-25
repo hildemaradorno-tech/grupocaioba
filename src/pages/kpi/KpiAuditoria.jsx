@@ -33,6 +33,7 @@ const GROUP_COLORS = {
   8: { header: 'bg-amber-600',  row: 'bg-amber-50',  resultado: 'bg-amber-100 font-semibold' },
   9:  { header: 'bg-cyan-700',   row: 'bg-cyan-50',   resultado: 'bg-cyan-100 font-semibold' },
   10: { header: 'bg-pink-700',   row: 'bg-pink-50',   resultado: 'bg-pink-100 font-semibold' },
+  11: { header: 'bg-lime-700',   row: 'bg-lime-50',   resultado: 'bg-lime-100 font-semibold' },
 }
 
 // Botão "i" com painel (portal, position:fixed) mostrando de onde a linha vem: arquivo, coluna

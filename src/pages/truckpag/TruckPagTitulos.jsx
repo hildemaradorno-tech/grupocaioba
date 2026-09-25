@@ -233,17 +233,8 @@ export default function TruckPagTitulos() {
           <div>
             <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
               <Truck className="h-5 w-5 text-blue-600" />
-              Títulos a Receber
-              <span className="relative group cursor-help">
-                <Info className="h-3.5 w-3.5 text-slate-400" />
-                <span className="absolute top-full left-0 mt-2 w-96 text-[10px] text-white bg-slate-700 rounded px-2 py-1.5 leading-relaxed opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 normal-case font-normal tracking-normal space-y-1">
-                  <div>Fonte de dados: Posição analítica de títulos a receber (filtrado por Agente Cobrador = TRUCKPAG)</div>
-                  <div>Nome do Arquivo: RFN003_PosicaoAnaliticoReceber_Excel (4 arquivos, um por unidade — busca por início do nome)</div>
-                  <div>Pasta SharePoint: /Banco de Dados - DAF - Pós-Vendas/Financeiro - DAF</div>
-                </span>
-              </span>
+              TruckPag a Receber
             </h1>
-            <p className="text-xs text-slate-500 mt-0.5">Posição de títulos em aberto (RFN003) — sincronizado do SharePoint.</p>
           </div>
           <div className="flex items-center gap-3">
             <TruckPagDataArquivo chave="titulos" />

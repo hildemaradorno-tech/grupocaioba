@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
-import { ArrowLeftRight, RefreshCw, AlertTriangle, ChevronDown, ChevronUp, X, CheckCircle2, XCircle, HelpCircle, Settings, Info, Link2, Link2Off, FileDown, FileText, Loader2 } from 'lucide-react'
+import { ArrowLeftRight, Truck, RefreshCw, AlertTriangle, ChevronDown, ChevronUp, X, CheckCircle2, XCircle, HelpCircle, Settings, Info, Link2, Link2Off, FileDown, FileText, Loader2 } from 'lucide-react'
 import { apiService } from '../../services/api'
 import TruckPagNav from './TruckPagNav'
 import TruckPagRegrasModal from './TruckPagRegrasModal'
@@ -617,18 +617,9 @@ export default function TruckPagRepasses() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
-              <ArrowLeftRight className="h-5 w-5 text-blue-600" />
-              Repasses TruckPag
-              <span className="relative group cursor-help">
-                <Info className="h-3.5 w-3.5 text-slate-400" />
-                <span className="absolute top-full left-0 mt-2 w-96 text-[10px] text-white bg-slate-700 rounded px-2 py-1.5 leading-relaxed opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 normal-case font-normal tracking-normal space-y-1">
-                  <div>Fonte de dados: Relatório de repasses recebidos da TruckPag</div>
-                  <div>Nome do Arquivo: contas-receber-daf.xlsx</div>
-                  <div>Pasta SharePoint: /Banco de Dados - DAF - Pós-Vendas/Financeiro - DAF</div>
-                </span>
-              </span>
+              <Truck className="h-5 w-5 text-blue-600" />
+              TruckPag a Receber
             </h1>
-            <p className="text-xs text-slate-500 mt-0.5">Extrato linha a linha dos repasses recebidos com título vinculado — sincronizado do SharePoint.</p>
           </div>
           <div className="flex items-center gap-3">
             <TruckPagDataArquivo chave="repasses" />
