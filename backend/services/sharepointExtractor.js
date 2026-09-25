@@ -1671,9 +1671,9 @@ function consolidarROF042(rows) {
   })
 
   return {
-    hrAplic:   per(ma, sa, fyA),
-    hrVend:    per(mv, sv, fyV),
-    vlLiquido: per(ml, sl, fyL),
+    hrAplic:   per({ ...ma, ...qa }, sa, fyA),
+    hrVend:    per({ ...mv, ...qv }, sv, fyV),
+    vlLiquido: per({ ...ml, ...ql }, sl, fyL),
     metaData: {
       totalArquivos: [...new Set(rows.map(r => r.arquivo))].length,
       totalLinhas:   rows.length,
