@@ -359,3 +359,42 @@ export async function getMetaMargemOficinaPeriodos(ano, { empresaNome = null, co
     servicos: temS ? razaoPeriodos(lucroS, metaS, ano) : null,
   }
 }
+
+/**
+ * Meta de Margem Bruta de Peças Balcão (%) por período: linha Indicadores → Margem Peças (%) do
+ * departamento Balcão da Total Pós-Vendas. Margem ponderada = soma(meta × margem %) ÷ soma(meta) dos
+ * vendedores do Balcão (planejamento de Peças). A margem % só existe no planejamento, então entram
+ * só linhas hoje APROVADAS (meta_aprovada = meta_faturamento).
+ * empresaNome: só a casa; vendedorNome: só esse vendedor; ambos null = todos.
+ */
+export async function getMetaMargemBalcaoPeriodos(ano, { empresaNome = null, vendedorNome = null } = {}) {
+  const key = `margem-balcao-${ano}`
+  let linhas
+  const hit = _cache.get(key)
+  if (hit && Date.now() - hit.ts < TTL_MS) linhas = hit.data
+  else {
+    const admin = getSupabaseAdmin()
+    if (!admin) return null
+    linhas = await fetchTudo(() => admin.from('fato_rascunho_metas_pecas')
+      .select('id, empresa_nome, departamento_nome, colaborador_nome, mes, meta_faturamento, meta_aprovada, margem_pecas_pct')
+      .eq('ano', ano).order('id'))
+    _cache.set(key, { data: linhas, ts: Date.now() })
+  }
+
+  const alvoEmp = empresaNome ? normNome(empresaNome) : null
+  const alvoVen = vendedorNome ? normNome(vendedorNome) : null
+  const lucro = Array(12).fill(0), meta = Array(12).fill(0)
+  for (const r of linhas) {
+    if (!/balc/i.test(r.departamento_nome || '')) continue
+    if (alvoEmp && normNome(r.empresa_nome) !== alvoEmp) continue
+    if (alvoVen && normNome(r.colaborador_nome) !== alvoVen) continue
+    if (r.margem_pecas_pct == null || r.margem_pecas_pct === '') continue
+    const fat = Number(r.meta_faturamento) || 0
+    if (r.meta_aprovada == null || Math.abs(fat - Number(r.meta_aprovada)) > 0.001) continue
+    const i = (Number(r.mes) || 1) - 1
+    lucro[i] += fat * (Number(r.margem_pecas_pct) / 100)
+    meta[i] += fat
+  }
+  if (!meta.some(v => v > 0)) return null
+  return razaoPeriodos(lucro, meta, ano)
+}

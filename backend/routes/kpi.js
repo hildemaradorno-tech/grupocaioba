@@ -37,7 +37,7 @@ import {
   sincronizacaoEmAndamento,
 } from '../services/kpiSyncService.js'
 import { getPesos, setPeso, aplicarPesos } from '../services/kpiPesos.js'
-import { getMetaPecasPeriodos, getMetaOficinaPeriodos, getMetaMecanicoPeriodos, getMetaMargemOficinaPeriodos, getMetaPecasBalcaoPeriodos } from '../services/kpiMetas.js'
+import { getMetaPecasPeriodos, getMetaOficinaPeriodos, getMetaMecanicoPeriodos, getMetaMargemOficinaPeriodos, getMetaPecasBalcaoPeriodos, getMetaMargemBalcaoPeriodos } from '../services/kpiMetas.js'
 
 const router = Router()
 
@@ -287,7 +287,7 @@ function injectPeriods(kpi, src, fn) {
   return { ...kpi, ...base }
 }
 
-function mergeBloco3PV(quadros, pv, horas = null, meta = null, margem = null, metaBalcao = null) {
+function mergeBloco3PV(quadros, pv, horas = null, meta = null, margem = null, metaBalcao = null, margemBalcao = null) {
   if (!pv && !horas) return quadros
   const r = (v) => (v != null ? Math.round(v) : null)
   const p = (v) => (v != null ? v : null)
@@ -305,7 +305,7 @@ function mergeBloco3PV(quadros, pv, horas = null, meta = null, margem = null, me
         if (kpi.indicador === 'Faturamento Oficina (Serviços)') return injectPeriods(kpi, pv?.faturamentoBrutoServicos ?? {}, r)
         if (kpi.indicador === 'Faturamento Total Oficina (Peças + Serviços)') return injectMeta(injectPeriods(kpi, sumPeriods(pv?.faturamentoOficina, pv?.faturamentoBrutoServicos), r), meta)
         if (kpi.indicador === 'Faturamento Balcão')             return injectMeta(injectPeriods(kpi, pv?.faturamentoBalcao        ?? {}, r), metaBalcao)
-        if (kpi.indicador === 'Margem Bruta Peças Balcão')    return injectPeriods(kpi, pv?.margemBrutaPecasBalcao   ?? {}, p)
+        if (kpi.indicador === 'Margem Bruta Peças Balcão')    return injectMeta(injectPeriods(kpi, pv?.margemBrutaPecasBalcao   ?? {}, p), margemBalcao)
         if (kpi.indicador === 'Margem Bruta Serviços')          return injectMeta(injectPeriods(kpi, pv?.margemBrutaServicosRecep ?? {}, p), margem?.servicos)
         if (kpi.indicador === 'Margem Bruta Peças Oficina')     return injectMeta(injectPeriods(kpi, pv?.margemBrutaPecasOficina  ?? {}, p), margem?.pecas)
         if (kpi.indicador === 'Eficácia da Oficina')            return horas ? injectPeriods(kpi, horas.eficacia,      p) : kpi
@@ -345,7 +345,7 @@ function computeHoras(rof042, rof096) {
  *                  vendedor selecionado. Alimentam a coluna Meta do Faturamento Total
  *                  Peças Balcão.
  */
-function mergeBloco3Pecas(quadros, pecas, balcaoTodas, balcaoVendedor, metaTodos, metaVendedor) {
+function mergeBloco3Pecas(quadros, pecas, balcaoTodas, balcaoVendedor, metaTodos, metaVendedor, margemTodos = null, margemVendedor = null) {
   if (!pecas && !balcaoTodas) return quadros
   const r = (v) => (v != null ? Math.round(v) : null)
   const p = (v) => (v != null ? v : null)
@@ -355,12 +355,13 @@ function mergeBloco3Pecas(quadros, pecas, balcaoTodas, balcaoVendedor, metaTodos
     const ehVendedor = quadro.tituloGerente === 'VENDEDOR DE PEÇAS'
     const balcaoFonte = ehVendedor ? balcaoVendedor : balcaoTodas
     const metaFonte   = ehVendedor ? metaVendedor   : metaTodos
+    const margemFonte = ehVendedor ? margemVendedor : margemTodos
     const kpis = quadro.kpis.map(kpi => {
       if ((isAtacado(quadro.tituloGerente) || ehVendedor) && kpi.id === 1) {
         return injectMeta(injectPeriods(kpi, balcaoFonte?.liquido, r), metaFonte)
       }
       if ((isAtacado(quadro.tituloGerente) || ehVendedor) && kpi.id === 2) {
-        return injectPeriods(kpi, balcaoFonte?.margemPct, p)
+        return injectMeta(injectPeriods(kpi, balcaoFonte?.margemPct, p), margemFonte)
       }
       if (pecas && isAtacado(quadro.tituloGerente)) {
         switch (kpi.id) {
@@ -496,6 +497,8 @@ router.get('/bloco3-pos-venda', requireConfig, wrap(async (req, res) => {
   const margemByEmpresa = Object.fromEntries(casasNomes.map((nome, i) => [nome, margensCasas[i]]))
   const metasBalcao = await Promise.all(casasNomes.map(nome => getMetaPecasBalcaoPeriodos(year, { empresaNome: nome }).catch(() => null)))
   const balcaoByEmpresa = Object.fromEntries(casasNomes.map((nome, i) => [nome, metasBalcao[i]]))
+  const margensBalcao = await Promise.all(casasNomes.map(nome => getMetaMargemBalcaoPeriodos(year, { empresaNome: nome }).catch(() => null)))
+  const margemBalcaoByEmpresa = Object.fromEntries(casasNomes.map((nome, i) => [nome, margensBalcao[i]]))
 
   // Injeta dados por quadro: GERENTE GERAL PÓS-VENDAS usa 'todas', casas usam a empresa mapeada
   let quadros = BLOCO3_PV_TEMPLATE.map(quadro => {
@@ -505,7 +508,8 @@ router.get('/bloco3-pos-venda', requireConfig, wrap(async (req, res) => {
     const meta  = CASA_EMPRESA_MAP[quadro.tituloGerente] ? metaByEmpresa[empresa] : metaGeral
     const margem = CASA_EMPRESA_MAP[quadro.tituloGerente] ? margemByEmpresa[empresa] : margemGeral
     const metaBalcao = CASA_EMPRESA_MAP[quadro.tituloGerente] ? balcaoByEmpresa[empresa] : null
-    return mergeBloco3PV([quadro], pv, horas, meta, margem, metaBalcao)[0]
+    const margemBalcao = CASA_EMPRESA_MAP[quadro.tituloGerente] ? margemBalcaoByEmpresa[empresa] : null
+    return mergeBloco3PV([quadro], pv, horas, meta, margem, metaBalcao, margemBalcao)[0]
   })
 
   const pesos = await getPesos('bloco3-pos-venda')
@@ -564,7 +568,16 @@ router.get('/bloco3-pecas', requireConfig, wrap(async (req, res) => {
     try { metaVendedor = await getMetaPecasPeriodos(year, vendedor) } catch (_) { metaVendedor = null }
   }
 
-  let quadros = mergeBloco3Pecas(BLOCO3_PECAS_TEMPLATE, extractorData?.bloco3PecasRealizado, balcaoTodas, balcaoVendedor, metaTodos, metaVendedor)
+  // Margem de Peças Balcão planejada (departamento Balcão da Total Pós-Vendas): todos os vendedores
+  // pros quadros Gerente/Coordenador; no VENDEDOR DE PEÇAS, só o selecionado.
+  let margemTodos = null, margemVendedor = null
+  try { margemTodos = await getMetaMargemBalcaoPeriodos(year) } catch (_) { /* sem meta */ }
+  margemVendedor = margemTodos
+  if (vendedor) {
+    try { margemVendedor = await getMetaMargemBalcaoPeriodos(year, { vendedorNome: vendedor }) } catch (_) { margemVendedor = null }
+  }
+
+  let quadros = mergeBloco3Pecas(BLOCO3_PECAS_TEMPLATE, extractorData?.bloco3PecasRealizado, balcaoTodas, balcaoVendedor, metaTodos, metaVendedor, margemTodos, margemVendedor)
   const pesos = await getPesos('bloco3-pecas')
   quadros = aplicarPesos(quadros, pesos)
 
@@ -574,7 +587,7 @@ router.get('/bloco3-pecas', requireConfig, wrap(async (req, res) => {
 // Só nomes de funcionários ATIVOS (cadastro dim_funcionarios: sem situação, "1" em
 // atividade ou "9" férias, e sem data de demissão) entram nos seletores de pessoa.
 const _ativosCache = { ts: 0, porNome: null }
-const normPessoa = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toUpperCase().replace(/s+/g, ' ')
+const normPessoa = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toUpperCase().replace(/\s+/g, ' ')
 // setorTrecho (opcional): só quem está agrupado num setor cujo nome contém o trecho (ex.: 'mecanic').
 async function filtrarAtivos(nomes, setorTrecho = null) {
   const admin = getSupabaseAdmin()
