@@ -1,6 +1,6 @@
 ﻿import React, { useEffect, useState, useMemo, useCallback } from 'react'
 import { useSessionState } from '../hooks/useSessionState'
-import { Plus, Trash2, Edit2, X, AlertTriangle, ChevronRight, ChevronDown, Target, Loader2, CheckCircle2, Sparkles, Pencil, Eye, Search } from 'lucide-react'
+import { Plus, Trash2, Edit2, X, AlertTriangle, ChevronRight, ChevronDown, Target, Loader2, CheckCircle2, Sparkles, Pencil, Eye, Search, Copy } from 'lucide-react'
 import BotaoAcaoRetratil from '../components/BotaoAcaoRetratil'
 import { useAuth } from '../context/AuthContext'
 import PermissionActionButtons from '../components/PermissionActionButtons'
@@ -96,7 +96,26 @@ const FORM_VAZIO = {
 }
 
 const mesesVazios = () =>
-  Array.from({ length: 12 }, (_, i) => ({ mes: i + 1, meta_faturamento: '', dias_uteis_reais: '' }))
+  Array.from({ length: 12 }, (_, i) => ({ mes: i + 1, meta_faturamento: '', dias_uteis_reais: '', margem_pecas_pct: '' }))
+
+const numOuVazio = (v) => (v === null || v === undefined || v === '') ? '' : Number(v)
+const fmtPctMargem = (v) => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%'
+
+// Input de percentual (mesmo modelo da tela Metas - Consultor)
+function PctInput({ value, onChange }) {
+  const [focused, setFocused] = useState(false)
+  const [raw, setRaw] = useState('')
+  const fmt = (v) => { const n = Number(v); if (!n && n !== 0) return ''; return n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }
+  const displayed = focused ? raw : (value || value === 0 ? fmt(value) : '')
+  return (
+    <input type="text" inputMode="decimal" value={displayed}
+      onChange={e => setRaw(e.target.value)}
+      onFocus={() => { setRaw(value != null ? String(value).replace('.', ',') : ''); setFocused(true) }}
+      onBlur={() => { setFocused(false); onChange(parseFloat(String(raw).replace(',', '.')) || 0) }}
+      placeholder="0,0"
+      className="w-full text-xs text-center outline-none bg-transparent text-slate-800" />
+  )
+}
 
 // Converte string pt-BR para número (aceita "999.999,99" ou "999999.99")
 function parseBRL(str) {
@@ -531,7 +550,7 @@ export default function MetasPecas({ empresaExterna = null, anoExterno = null, a
     })
     setMesesForm(Array.from({ length: 12 }, (_, i) => {
       const row = rows.find(r => Number(r.mes) === i + 1)
-      return { mes: i + 1, meta_faturamento: row?.meta_faturamento ?? '', dias_uteis_reais: row?.dias_uteis_reais ?? '' }
+      return { mes: i + 1, meta_faturamento: row?.meta_faturamento ?? '', dias_uteis_reais: row?.dias_uteis_reais ?? '', margem_pecas_pct: numOuVazio(row?.margem_pecas_pct) }
     }))
     setErroModal(null)
     setModoModal(modo)
@@ -601,6 +620,7 @@ export default function MetasPecas({ empresaExterna = null, anoExterno = null, a
           colaborador_id: form.colaborador_id === 'A_CONTRATAR' ? '00000000-0000-0000-0000-000000000000' : form.colaborador_id,
           mes: m.mes, ano: Number(form.ano),
           meta_faturamento: meta, dias_uteis_reais: dias,
+          margem_pecas_pct: (m.margem_pecas_pct === '' || m.margem_pecas_pct == null) ? null : (Number(m.margem_pecas_pct) || 0),
           media_diaria_venda: calcMedia(meta, dias),
         })
       }
@@ -1098,6 +1118,51 @@ export default function MetasPecas({ empresaExterna = null, anoExterno = null, a
                           )
                         })()}
                       </tr>
+                      {/* Meta Margem Peças (%) — digitável por mês (gravada no Supabase) */}
+                      {(() => {
+                        const preenchidos = mesesForm.filter(m => m.margem_pecas_pct !== '' && m.margem_pecas_pct != null)
+                        const metaAno = mesesForm.reduce((s, m) => s + (parseBRL(m.meta_faturamento) || 0), 0)
+                        const lucroAno = mesesForm.reduce((s, m) => s + (parseBRL(m.meta_faturamento) || 0) * ((Number(m.margem_pecas_pct) || 0) / 100), 0)
+                        const margemAno = metaAno > 0 && preenchidos.length ? (lucroAno / metaAno) * 100 : null
+                        return (
+                          <tr>
+                            <td className="text-xs font-semibold text-slate-600 px-1 whitespace-nowrap">
+                              <span className="inline-flex items-center gap-1">
+                                Meta Margem Peças (%)
+                                {modoModal !== 'visualizar' && (
+                                  <button type="button" disabled={preenchidos.length === 0}
+                                    title={preenchidos.length ? 'Replicar o primeiro valor preenchido nos 12 meses' : 'Preencha um mês para poder replicar nos demais'}
+                                    onClick={() => { const v = preenchidos[0].margem_pecas_pct; setMesesForm(prev => prev.map(x => ({ ...x, margem_pecas_pct: v }))) }}
+                                    className="text-indigo-500 hover:text-indigo-700 hover:bg-indigo-50 disabled:text-slate-300 disabled:hover:bg-transparent disabled:cursor-not-allowed rounded p-0.5 transition-colors">
+                                    <Copy size={13} />
+                                  </button>
+                                )}
+                              </span>
+                            </td>
+                            {mesesForm.map((m, i) => (
+                              modoModal === 'visualizar'
+                                ? <td key={i} className="bg-slate-100 border border-slate-200 rounded p-1 text-right text-xs text-slate-600 font-mono">{m.margem_pecas_pct === '' || m.margem_pecas_pct == null ? '—' : fmtPctMargem(m.margem_pecas_pct)}</td>
+                                : <td key={i} className="border rounded p-1 bg-white border-slate-200">
+                                    <PctInput value={m.margem_pecas_pct} onChange={v => setMesesForm(prev => prev.map((x, xi) => xi === i ? { ...x, margem_pecas_pct: v } : x))} />
+                                  </td>
+                            ))}
+                            <td className="bg-indigo-50 border border-indigo-200 rounded p-1 text-right text-xs font-bold text-indigo-700" title="Margem real do ano = Lucro do ano ÷ Meta do ano">
+                              {margemAno == null ? '—' : fmtPctMargem(margemAno)}
+                            </td>
+                          </tr>
+                        )
+                      })()}
+                      {/* Lucro Peças (R$) = Meta R$ × Meta Margem Peças (%) (automático) */}
+                      {(() => {
+                        const lucros = mesesForm.map(m => (parseBRL(m.meta_faturamento) || 0) * ((Number(m.margem_pecas_pct) || 0) / 100))
+                        return (
+                          <tr>
+                            <td className="text-xs font-bold text-emerald-700 px-1 whitespace-nowrap" title="Meta R$ × Meta Margem Peças (%)">Lucro Peças (R$)</td>
+                            {lucros.map((v, i) => <td key={i} className="border rounded p-1 text-right text-xs font-bold bg-emerald-50 border-emerald-200 text-emerald-700">{v > 0 ? fmtBRL(v) : '—'}</td>)}
+                            <td className="border rounded p-1 text-right text-xs font-bold bg-emerald-100 border-emerald-300 text-emerald-800">{fmtBRL(lucros.reduce((a, v) => a + v, 0))}</td>
+                          </tr>
+                        )
+                      })()}
                       {mostrarStatusMeses && <LinhaStatusMes avaliacao={avaliacaoMeses} />}
                     </tbody>
                   </table>

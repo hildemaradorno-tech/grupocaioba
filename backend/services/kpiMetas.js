@@ -219,3 +219,131 @@ export async function getMetaMecanicoPeriodos(ano, mecanicoNome = null, filtroNo
     .map(r => ({ ...r, meta_faturamento: r.meta_servicos }))
   return periodizarMetas(linhas, ano, base.calendario)
 }
+
+// ── Margem Bruta (Serviços / Peças Oficina) — Indicadores do departamento Oficina ─────────────────
+// Mesma conta da linha "Indicadores" do departamento Oficina na tela Total Pós-Vendas: margem
+// ponderada = soma dos Lucros ÷ soma das Metas de cada consultor, onde
+//   Meta do consultor = referência do setor de origem × % do consultor
+//   Lucro             = Meta × margem % informada no planejamento do consultor.
+// Peças usa ref.pecas; Serviços usa ref.servicos + ref.terceiros. A margem % só existe nas tabelas de
+// planejamento (não é publicada), então entram apenas linhas de consultor hoje APROVADAS
+// (meta_aprovada = meta_faturamento), respeitando a regra de só mostrar meta aprovada.
+const PROD_NAO_ASSOCIADA_ID = '00000000-0000-0000-0000-000000000001'
+
+function valoresMetaMecanico(row) {
+  if (row.colaborador_id === PROD_NAO_ASSOCIADA_ID) {
+    return { meta_servicos: Number(row.meta_servicos) || 0, meta_pecas: Number(row.meta_pecas) || 0 }
+  }
+  const hm = (Number(row.horas_disponiveis) || 0) * ((Number(row.produtividade) || 0) / 100)
+  const vh = Number(row.valor_hora) || 0
+  const cp = Number(row.coef_pecas) || 0
+  const meta_servicos = Math.round(hm * vh)
+  return { meta_servicos, meta_pecas: meta_servicos * cp }
+}
+
+async function carregarBaseMargem(ano) {
+  const key = `margem-${ano}`
+  const hit = _cache.get(key)
+  if (hit && Date.now() - hit.ts < TTL_MS) return hit.data
+  const admin = getSupabaseAdmin()
+  if (!admin) return null
+
+  const rasc = (tabela, cols) => fetchTudo(() => admin.from(tabela).select(cols).eq('ano', ano).order('id'))
+  const [consultor, mecanico, terceiros, funilaria, funcionarios, boxes, setores] = await Promise.all([
+    rasc('fato_rascunho_metas_servicos_consultor', 'id, empresa_id, empresa_nome, colaborador_nome, setor_id, setor_nome, box_id, mes, percentual, meta_faturamento, meta_aprovada, margem_pecas_pct, margem_servicos_pct'),
+    rasc('fato_rascunho_metas_servicos_mecanico', 'id, empresa_id, colaborador_id, box_id, mes, horas_disponiveis, produtividade, valor_hora, coef_pecas, meta_servicos, meta_pecas'),
+    rasc('fato_rascunho_metas_terceiros', 'id, empresa_id, mes, meta_servicos'),
+    rasc('fato_rascunho_metas_funilaria_pintura', 'id, empresa_id, mes, meta_pecas, meta_servicos'),
+    fetchTudo(() => admin.from('dim_funcionarios').select('id, box_id').order('id')),
+    fetchTudo(() => admin.from('dim_box').select('*').order('id')),
+    fetchTudo(() => admin.from('dim_setores').select('id, nome_setor').order('id')),
+  ])
+  const data = { consultor, mecanico, terceiros, funilaria, funcionarios, boxes, setores }
+  _cache.set(key, { data, ts: Date.now() })
+  return data
+}
+
+function razaoPeriodos(lucro, meta, ano) {
+  const pct = (l, m) => (m > 0 ? (l / m) * 100 : null)
+  const out = {}
+  ALL_MONTHS.forEach((k, i) => { out[k] = pct(lucro[i], meta[i]) })
+  for (const [q, ms] of Object.entries(QUARTERS)) {
+    out[q] = pct(ms.reduce((s, m) => s + lucro[m - 1], 0), ms.reduce((s, m) => s + meta[m - 1], 0))
+  }
+  out.fy = pct(lucro.reduce((s, v) => s + v, 0), meta.reduce((s, v) => s + v, 0))
+  const semanas = computeWeekRanges(ano)
+  ALL_WEEKS.forEach(k => { out[k] = semanas[k] ? out[ALL_MONTHS[semanas[k].mes - 1]] : null })
+  return out
+}
+
+/**
+ * Metas de Margem Bruta Serviços e Margem Bruta Peças Oficina (%) por período.
+ * empresaNome: só consultores dessa empresa; consultorNome: só esse consultor; ambos null = todos.
+ * Retorna { servicos, pecas } ou null quando não há nenhuma margem aprovada no recorte.
+ */
+export async function getMetaMargemOficinaPeriodos(ano, { empresaNome = null, consultorNome = null } = {}) {
+  const base = await carregarBaseMargem(ano)
+  if (!base) return null
+
+  const alvoEmp = empresaNome ? normNome(empresaNome) : null
+  const alvoCon = consultorNome ? normNome(consultorNome) : null
+
+  const boxParaSetor = {}
+  for (const b of base.boxes) {
+    const ids = Array.isArray(b.setor_ids) ? b.setor_ids : (b.setor_id ? [b.setor_id] : [])
+    const valido = ids.find(id => base.setores.some(s => s.id === id))
+    if (valido) boxParaSetor[b.id] = valido
+  }
+  const boxDoFuncionario = new Map(base.funcionarios.map(f => [f.id, f.box_id]))
+  const nomeSetor = new Map(base.setores.map(s => [s.id, s.nome_setor]))
+
+  const refCache = {}
+  const referencias = (empresaId, setorId, setorNome) => {
+    const ck = `${empresaId}|${setorId}`
+    if (refCache[ck]) return refCache[ck]
+    const refs = Array.from({ length: 12 }, () => ({ pecas: 0, servicos: 0, terceiros: 0 }))
+    if (/funilaria|pintura/i.test(setorNome || '')) {
+      base.funilaria.filter(r => r.empresa_id === empresaId).forEach(r => {
+        refs[r.mes - 1].pecas += Number(r.meta_pecas) || 0
+        refs[r.mes - 1].servicos += Number(r.meta_servicos) || 0
+      })
+    } else {
+      base.mecanico.filter(r => r.empresa_id === empresaId).forEach(r => {
+        const bId = boxDoFuncionario.get(r.colaborador_id) || r.box_id
+        if (!bId || boxParaSetor[bId] !== setorId) return
+        const v = valoresMetaMecanico(r)
+        refs[r.mes - 1].servicos += v.meta_servicos
+        refs[r.mes - 1].pecas += v.meta_pecas
+      })
+      base.terceiros.filter(r => r.empresa_id === empresaId).forEach(r => { refs[r.mes - 1].terceiros += Number(r.meta_servicos) || 0 })
+    }
+    return (refCache[ck] = refs)
+  }
+
+  const lucroP = Array(12).fill(0), metaP = Array(12).fill(0), lucroS = Array(12).fill(0), metaS = Array(12).fill(0)
+  for (const r of base.consultor) {
+    if (alvoEmp && normNome(r.empresa_nome) !== alvoEmp) continue
+    if (alvoCon && normNome(r.colaborador_nome) !== alvoCon) continue
+    const aprovado = r.meta_aprovada != null && Math.abs((Number(r.meta_faturamento) || 0) - Number(r.meta_aprovada)) <= 0.001
+    if (!aprovado) continue
+    const setorId = (r.box_id && boxParaSetor[r.box_id]) || r.setor_id
+    const i = (Number(r.mes) || 1) - 1
+    const ref = referencias(r.empresa_id, setorId, nomeSetor.get(setorId) || r.setor_nome)[i]
+    const pct = (Number(r.percentual) || 0) / 100
+    if (r.margem_pecas_pct != null && r.margem_pecas_pct !== '') {
+      lucroP[i] += ref.pecas * pct * (Number(r.margem_pecas_pct) / 100)
+      metaP[i] += ref.pecas * pct
+    }
+    if (r.margem_servicos_pct != null && r.margem_servicos_pct !== '') {
+      lucroS[i] += (ref.servicos + ref.terceiros) * pct * (Number(r.margem_servicos_pct) / 100)
+      metaS[i] += (ref.servicos + ref.terceiros) * pct
+    }
+  }
+
+  const temP = metaP.some(v => v > 0), temS = metaS.some(v => v > 0)
+  if (!temP && !temS) return null
+  return {
+    pecas: temP ? razaoPeriodos(lucroP, metaP, ano) : null,
+    servicos: temS ? razaoPeriodos(lucroS, metaS, ano) : null,
+  }
+}

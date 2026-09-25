@@ -37,7 +37,7 @@ import {
   sincronizacaoEmAndamento,
 } from '../services/kpiSyncService.js'
 import { getPesos, setPeso, aplicarPesos } from '../services/kpiPesos.js'
-import { getMetaPecasPeriodos, getMetaOficinaPeriodos, getMetaMecanicoPeriodos } from '../services/kpiMetas.js'
+import { getMetaPecasPeriodos, getMetaOficinaPeriodos, getMetaMecanicoPeriodos, getMetaMargemOficinaPeriodos } from '../services/kpiMetas.js'
 
 const router = Router()
 
@@ -287,7 +287,7 @@ function injectPeriods(kpi, src, fn) {
   return { ...kpi, ...base }
 }
 
-function mergeBloco3PV(quadros, pv, horas = null, meta = null) {
+function mergeBloco3PV(quadros, pv, horas = null, meta = null, margem = null) {
   if (!pv && !horas) return quadros
   const r = (v) => (v != null ? Math.round(v) : null)
   const p = (v) => (v != null ? v : null)
@@ -297,8 +297,8 @@ function mergeBloco3PV(quadros, pv, horas = null, meta = null) {
       if (quadro.tituloGerente === 'GERENTE GERAL PÓS-VENDAS') {
         switch (kpi.id) {
           case 1: return injectMeta(injectPeriods(kpi, sumPeriods(pv?.faturamentoOficina, pv?.faturamentoBrutoServicos), r), meta)
-          case 2: return injectPeriods(kpi, pv?.margemBrutaServicosRecep, p)
-          case 3: return injectPeriods(kpi, pv?.margemBrutaPecasOficina, p)
+          case 2: return injectMeta(injectPeriods(kpi, pv?.margemBrutaServicosRecep, p), margem?.servicos)
+          case 3: return injectMeta(injectPeriods(kpi, pv?.margemBrutaPecasOficina, p), margem?.pecas)
         }
       }
       if (CASA_EMPRESA_MAP[quadro.tituloGerente]) {
@@ -306,8 +306,8 @@ function mergeBloco3PV(quadros, pv, horas = null, meta = null) {
         if (kpi.indicador === 'Faturamento Total Oficina (Peças + Serviços)') return injectMeta(injectPeriods(kpi, sumPeriods(pv?.faturamentoOficina, pv?.faturamentoBrutoServicos), r), meta)
         if (kpi.indicador === 'Faturamento Balcão')             return injectPeriods(kpi, pv?.faturamentoBalcao        ?? {}, r)
         if (kpi.indicador === 'Margem Bruta Peças Balcão')    return injectPeriods(kpi, pv?.margemBrutaPecasBalcao   ?? {}, p)
-        if (kpi.indicador === 'Margem Bruta Serviços')          return injectPeriods(kpi, pv?.margemBrutaServicosRecep ?? {}, p)
-        if (kpi.indicador === 'Margem Bruta Peças Oficina')     return injectPeriods(kpi, pv?.margemBrutaPecasOficina  ?? {}, p)
+        if (kpi.indicador === 'Margem Bruta Serviços')          return injectMeta(injectPeriods(kpi, pv?.margemBrutaServicosRecep ?? {}, p), margem?.servicos)
+        if (kpi.indicador === 'Margem Bruta Peças Oficina')     return injectMeta(injectPeriods(kpi, pv?.margemBrutaPecasOficina  ?? {}, p), margem?.pecas)
         if (kpi.indicador === 'Eficácia da Oficina')            return horas ? injectPeriods(kpi, horas.eficacia,      p) : kpi
         if (kpi.indicador === 'Produtividade da Oficina')       return horas ? injectPeriods(kpi, horas.produtividade, p) : kpi
       }
@@ -410,7 +410,7 @@ const BLOCO_SERVICOS_TEMPLATE = [
  *                 'consultor' sem seleção = todos os tipos mecanico+funilaria+
  *                 terceiros; com consultor selecionado = só a meta dele).
  */
-function mergeBlocoServicos(quadros, consultorData, mecanicoData, metaConsultor, metaMecanico) {
+function mergeBlocoServicos(quadros, consultorData, mecanicoData, metaConsultor, metaMecanico, margemConsultor = null) {
   const r = (v) => (v != null ? Math.round(v) : null)
   const p = (v) => (v != null ? v : null)
 
@@ -419,8 +419,8 @@ function mergeBlocoServicos(quadros, consultorData, mecanicoData, metaConsultor,
       const kpis = quadro.kpis.map(kpi => {
         switch (kpi.id) {
           case 1: return injectMeta(injectPeriods(kpi, sumPeriods(consultorData?.pecasOficina?.liquido, consultorData?.servicos?.faturamentoBruto), r), metaConsultor)
-          case 2: return injectPeriods(kpi, consultorData?.servicos?.margemBruta ?? {}, p)
-          case 3: return injectPeriods(kpi, consultorData?.pecasOficina?.margemPct ?? {}, p)
+          case 2: return injectMeta(injectPeriods(kpi, consultorData?.servicos?.margemBruta ?? {}, p), margemConsultor?.servicos)
+          case 3: return injectMeta(injectPeriods(kpi, consultorData?.pecasOficina?.margemPct ?? {}, p), margemConsultor?.pecas)
         }
         return kpi
       })
@@ -489,6 +489,11 @@ router.get('/bloco3-pos-venda', requireConfig, wrap(async (req, res) => {
     ...casasNomes.map(nome => getMetaOficinaPeriodos(year, { empresaNome: nome }).catch(() => null)),
   ])
   const metaByEmpresa = Object.fromEntries(casasNomes.map((nome, i) => [nome, metasCasas[i]]))
+  const [margemGeral, ...margensCasas] = await Promise.all([
+    getMetaMargemOficinaPeriodos(year).catch(() => null),
+    ...casasNomes.map(nome => getMetaMargemOficinaPeriodos(year, { empresaNome: nome }).catch(() => null)),
+  ])
+  const margemByEmpresa = Object.fromEntries(casasNomes.map((nome, i) => [nome, margensCasas[i]]))
 
   // Injeta dados por quadro: GERENTE GERAL PÓS-VENDAS usa 'todas', casas usam a empresa mapeada
   let quadros = BLOCO3_PV_TEMPLATE.map(quadro => {
@@ -496,7 +501,8 @@ router.get('/bloco3-pos-venda', requireConfig, wrap(async (req, res) => {
     const pv    = pvByEmpresa[empresa] ?? pvByEmpresa['todas']
     const horas = horasByEmpresa[empresa] ?? null
     const meta  = CASA_EMPRESA_MAP[quadro.tituloGerente] ? metaByEmpresa[empresa] : metaGeral
-    return mergeBloco3PV([quadro], pv, horas, meta)[0]
+    const margem = CASA_EMPRESA_MAP[quadro.tituloGerente] ? margemByEmpresa[empresa] : margemGeral
+    return mergeBloco3PV([quadro], pv, horas, meta, margem)[0]
   })
 
   const pesos = await getPesos('bloco3-pos-venda')
@@ -635,6 +641,9 @@ router.get('/bloco3-servicos', requireConfig, wrap(async (req, res) => {
       : await getMetaOficinaPeriodos(year)
   } catch (_) { /* sem meta */ }
 
+  let margemConsultor = null
+  try { margemConsultor = await getMetaMargemOficinaPeriodos(year, { consultorNome: consultor }) } catch (_) { /* sem meta */ }
+
   let metaMecanico = null
   try { metaMecanico = await getMetaMecanicoPeriodos(year, mecanico, await getFiltroBoxOficina()) } catch (_) { /* sem meta */ }
 
@@ -643,7 +652,8 @@ router.get('/bloco3-servicos', requireConfig, wrap(async (req, res) => {
     { pecasOficina, servicos },
     { vlLiquido: rof042?.vlLiquido ?? null, eficacia: horas.eficacia, produtividade: horas.produtividade },
     metaConsultor,
-    metaMecanico
+    metaMecanico,
+    margemConsultor
   )
   const pesos = await getPesos('bloco3-servicos')
   quadros = aplicarPesos(quadros, pesos)

@@ -7,8 +7,10 @@ import TooltipTexto from '../components/TooltipTexto'
 import { apiService } from '../services/api'
 import { EmpresaMultiFilter, empresaParam, filtrarPorEmpresas, empresasDasMetas } from '../components/EmpresaMultiFilter'
 import { valoresMetaMecanico, resolverPosicaoMecanico } from '../utils/metasMecanico'
+
+const PROD_NAO_ASSOCIADA_ID = '00000000-0000-0000-0000-000000000001'
 import { agruparPorSegmento } from '../utils/segmentoMarca'
-import { referenciasConsultor } from '../utils/referenciasConsultor'
+import { referenciasConsultor, setorOrigemConsultor } from '../utils/referenciasConsultor'
 import { aggColabs, aggBox, aggSetor, aggDept, aggEmp, aggDeptDedup, aggEmpDedup, montarArvoreTotal, linhaPendente } from '../utils/totalPosVendas'
 import { LogoGrupo, LogoSegmento } from '../components/LogosMarca'
 import CalculoFuncionarioModal from '../components/CalculoFuncionarioModal'
@@ -25,6 +27,8 @@ const fmtBRL = (v) => {
   return n < 0 ? `(${s})` : s
 }
 const sumArr = (a) => a.reduce((s, v) => s + v, 0)
+const fmtHoras = (v) => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+const fmtPctInd = (v) => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%'
 
 const STATUS_CLS = { 'AGUARDANDO APROVACAO': 'bg-amber-100 text-amber-700', 'APROVADO': 'bg-green-100 text-green-700' }
 const STATUS_DISPLAY = { 'AGUARDANDO APROVACAO': 'Pendente', 'APROVADO': 'Aprovado' }
@@ -488,6 +492,107 @@ export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = 
           </tr>
         )
         if (!isOpen(dKey)) return
+
+        // Indicadores do departamento Oficina: soma de todos os mecânicos (Horas Disponíveis, Horas Meta e
+        // Produtividade = Horas Meta ÷ Horas Disponíveis). Respeita os filtros de Setor/Box/Funcionário.
+        // No Balcão Peças, a linha Indicadores traz só a Margem Peças (%), calculada com os vendedores.
+        const ehOficinaInd = (dept.nome || '').toLowerCase().includes('oficina')
+        const ehBalcaoInd  = /balc/i.test(dept.nome || '')
+        if (ehOficinaInd || ehBalcaoInd) {
+          const hd = Array(12).fill(0), hm = Array(12).fill(0)
+          const termoInd = (filtroColab || '').trim().toLowerCase()
+          rowsMecanico.forEach(r => {
+            if (r.empresa_id !== eId || r.colaborador_id === PROD_NAO_ASSOCIADA_ID) return
+            const pos = resolverPosicaoMecanico(r, { funcionarios, cargos, boxes, setores, departamentos })
+            if (pos.did !== dId) return
+            if (filtroSetorT && pos.sId !== filtroSetorT) return
+            if (filtroBoxT && pos.bId !== filtroBoxT) return
+            if (termoInd && !(pos.coNome || '').toLowerCase().includes(termoInd)) return
+            const h = Number(r.horas_disponiveis) || 0
+            const i = (Number(r.mes) || 1) - 1
+            hd[i] += h
+            hm[i] += h * ((Number(r.produtividade) || 0) / 100)
+          })
+          // Margens (consultores): soma dos Lucros ÷ soma das Metas de todos os consultores (não é média das margens).
+          // Lucro de cada consultor = Meta dele (Ref. × % do consultor) × Margem %; assim, se todos têm a mesma
+          // margem, o resultado é essa margem. Só entram os meses em que o consultor preencheu a margem.
+          const lucroP = Array(12).fill(0), metaP = Array(12).fill(0), lucroS = Array(12).fill(0), metaS = Array(12).fill(0)
+          const refCache = {}
+          const ctxRef = { rowsMecanico, rowsTerceiros, rowsFunilaria, funcionarios, boxes, setores }
+          rowsConsultor.forEach(r => {
+            if (r.empresa_id !== eId) return
+            if (termoInd && !(r.colaborador_nome || '').toLowerCase().includes(termoInd)) return
+            const so = setorOrigemConsultor(r, { boxes, setores })
+            const ck = `${eId}|${so.id}`
+            if (!refCache[ck]) refCache[ck] = referenciasConsultor(eId, so.id, so.nome, ctxRef)
+            const i = (Number(r.mes) || 1) - 1
+            const ref = refCache[ck][i]
+            const pct = (Number(r.percentual) || 0) / 100
+            if (r.margem_pecas_pct != null && r.margem_pecas_pct !== '') {
+              lucroP[i] += ref.pecas * pct * (Number(r.margem_pecas_pct) / 100)
+              metaP[i]  += ref.pecas * pct
+            }
+            if (r.margem_servicos_pct != null && r.margem_servicos_pct !== '') {
+              lucroS[i] += (ref.servicos + ref.terceiros) * pct * (Number(r.margem_servicos_pct) / 100)
+              metaS[i]  += (ref.servicos + ref.terceiros) * pct
+            }
+          })
+          const razaoPct = (l, m) => l.map((v, i) => (m[i] > 0 ? (v / m[i]) * 100 : 0))
+          // Balcão Peças: a margem vem dos vendedores (Metas - Peças): soma dos Lucros (Meta × Margem) ÷ soma das Metas.
+          if (ehBalcaoInd) {
+            lucroP.fill(0); metaP.fill(0)
+            rowsPecas.forEach(r => {
+              if (r.empresa_id !== eId || r.departamento_id !== dId) return
+              if (termoInd && !(r.colaborador_nome || '').toLowerCase().includes(termoInd)) return
+              if (r.margem_pecas_pct == null || r.margem_pecas_pct === '') return
+              const meta = Number(r.meta_faturamento) || 0
+              const i = (Number(r.mes) || 1) - 1
+              lucroP[i] += meta * (Number(r.margem_pecas_pct) / 100)
+              metaP[i]  += meta
+            })
+          }
+          const margP = razaoPct(lucroP, metaP), margS = razaoPct(lucroS, metaS)
+          const margPAno = sumArr(metaP) > 0 ? (sumArr(lucroP) / sumArr(metaP)) * 100 : 0
+          const margSAno = sumArr(metaS) > 0 ? (sumArr(lucroS) / sumArr(metaS)) * 100 : 0
+          if (ehOficinaInd ? (sumArr(hd) > 0 || margPAno > 0 || margSAno > 0) : margPAno > 0) {
+            const iKey = `${dKey}-ind`
+            const prod = hd.map((h, i) => (h > 0 ? (hm[i] / h) * 100 : 0))
+            const prodAno = sumArr(hd) > 0 ? (sumArr(hm) / sumArr(hd)) * 100 : 0
+            const celulas = (vals, fmt, total, chave) => [
+              ...vals.map((v, i) => <td key={`${chave}-${i}`} className="px-2 py-1 text-right text-xs whitespace-nowrap text-slate-700">{v > 0 ? fmt(v) : <span className="text-slate-300">—</span>}</td>),
+              <td key={`${chave}-tot`} className="px-2 py-1 text-right text-xs font-semibold whitespace-nowrap bg-slate-50 text-slate-700">{total > 0 ? fmt(total) : <span className="text-slate-300">—</span>}</td>,
+              <td key={`${chave}-sit`} />,
+            ]
+            childRows.push(
+              <tr key={iKey} className="bg-slate-50 hover:bg-slate-100 cursor-pointer" onClick={e => { e.stopPropagation(); tog(iKey) }}>
+                <td className={`pl-14 pr-2 py-1 text-xs text-slate-700 whitespace-nowrap sticky left-0 z-[5] bg-slate-50 ${W1}`}>
+                  <span className="flex items-center gap-1.5">
+                    {isOpen(iKey) ? <ChevronDown size={10}/> : <ChevronRight size={10}/>}
+                    <span className="font-semibold">Indicadores</span>
+                  </span>
+                </td>
+                {celulas(Array(12).fill(0), fmtHoras, 0, `${iKey}-h`)}
+              </tr>
+            )
+            if (isOpen(iKey)) {
+              const linhasInd = ehBalcaoInd ? [
+                { chave: 'mp', rotulo: 'Margem Peças (%)', vals: margP, fmt: fmtPctInd, total: margPAno },
+              ] : [
+                { chave: 'hd', rotulo: 'Horas Disponíveis', vals: hd, fmt: fmtHoras, total: sumArr(hd) },
+                { chave: 'hm', rotulo: 'Horas Meta', vals: hm, fmt: fmtHoras, total: sumArr(hm) },
+                { chave: 'pr', rotulo: 'Produtividade (%)', vals: prod, fmt: fmtPctInd, total: prodAno },
+                { chave: 'mp', rotulo: 'Margem Peças (%)', vals: margP, fmt: fmtPctInd, total: margPAno },
+                { chave: 'ms', rotulo: 'Margem Serviços (%)', vals: margS, fmt: fmtPctInd, total: margSAno },
+              ]
+              linhasInd.forEach(l => childRows.push(
+                <tr key={`${iKey}-${l.chave}`} className="bg-white border-b border-slate-100">
+                  <td className={`pl-[4.5rem] pr-2 py-1 text-xs text-slate-600 whitespace-nowrap font-semibold sticky left-0 z-[5] bg-white ${W1}`}>{l.rotulo}</td>
+                  {celulas(l.vals, l.fmt, l.total, `${iKey}-${l.chave}`)}
+                </tr>
+              ))
+            }
+          }
+        }
 
         const setorEntries = Object.entries(dept.setores).sort(([,a],[,b]) => {
           const aFun = (a.nome || '').toLowerCase().includes('funilaria') ? 1 : 0
