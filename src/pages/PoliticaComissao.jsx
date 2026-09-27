@@ -23,6 +23,7 @@ const FORM_VAZIO = {
   comissao_total: '',
   comissao_valor: '',
   usa_faixa: 'NÃO',
+  regra_comissao_id: '',
   comissao_todas_empresas: false,
   detalhar_por_empresa: false,
   vig_inicio: '',
@@ -39,7 +40,7 @@ const fmtDate = (v) => {
 }
 
 const SEL = 'w-full text-xs p-2 border border-slate-200 rounded-md bg-white font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500'
-const INP = 'w-full text-xs p-2 border border-slate-200 rounded-md font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500'
+const INP = 'w-full text-xs p-2 border border-slate-200 rounded-md font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed'
 const LBL = 'text-[11px] font-bold text-slate-500 uppercase tracking-wide'
 
 // Dropdown com checkbox por cargo (código + nome + empresa, pra diferenciar o mesmo cargo em
@@ -165,6 +166,8 @@ export default function PoliticaComissao() {
   const [empresas, setEmpresas] = useState([])
   const [cargos, setCargos] = useState([])
   const [fontesCalculo, setFontesCalculo] = useState([])
+  const [fontesMw, setFontesMw] = useState([])
+  const [regrasComissao, setRegrasComissao] = useState([])
   const [basesCalculo, setBasesCalculo] = useState([])
   const [rubricas, setRubricas] = useState([])
   const [tiposProcesso, setTiposProcesso] = useState([])
@@ -200,7 +203,6 @@ export default function PoliticaComissao() {
   // Filtro de texto por coluna + ordenação A-Z/Z-A clicando no cabeçalho.
   const [colFiltro, setColFiltro] = useState({ empresa: '', cargo: '', descricao: '' })
   const temFiltroColuna = Object.values(colFiltro).some(Boolean)
-  const [filtrosAbertos, setFiltrosAbertos] = useSessionState('polcom_filtros_abertos', false)
   const limparFiltroColuna = () => setColFiltro({ empresa: '', cargo: '', descricao: '' })
   const [ordenacao, setOrdenacao] = useState({ coluna: 'cargo', direcao: 'asc' })
   const alternarOrdenacao = (coluna) => setOrdenacao(prev => prev.coluna === coluna
@@ -240,6 +242,8 @@ export default function PoliticaComissao() {
         comissao_total: primeiro.comissao_total,
         comissao_valor: primeiro.comissao_valor,
         usa_faixa: primeiro.usa_faixa,
+        regra_comissao_id: primeiro.regra_comissao_id,
+        regra_comissao: primeiro.regra_comissao,
         comissao_todas_empresas: primeiro.comissao_todas_empresas,
         detalhar_por_empresa: primeiro.detalhar_por_empresa,
         vig_inicio: primeiro.vig_inicio,
@@ -304,7 +308,8 @@ export default function PoliticaComissao() {
     setLoading(true)
     setError(null)
     try {
-      const [politicas, emps, carg, fontes, bases, rubs, tiposProc] = await Promise.all([
+      const [politicas, emps, carg, fontes, bases, rubs, tiposProc, fontesMwData, regrasData] = await Promise.all([
+
         apiService.getPoliticaComissao(),
         apiService.getEmpresas(),
         apiService.getCargos(),
@@ -312,7 +317,11 @@ export default function PoliticaComissao() {
         apiService.getBasesCalculo(),
         apiService.getRubricas(),
         apiService.getTiposProcesso(),
+        apiService.getFontesMicrowork(),
+        apiService.getRegrasComissao(),
       ])
+      setFontesMw(fontesMwData)
+      setRegrasComissao(regrasData)
       setDados(politicas)
       setEmpresas([...emps].sort((a, b) => (a.empresa_fantasia || '').localeCompare(b.empresa_fantasia || '', 'pt-BR')))
       setCargos([...carg].sort((a, b) => (a.nome_cargo || '').localeCompare(b.nome_cargo || '', 'pt-BR')))
@@ -351,10 +360,14 @@ export default function PoliticaComissao() {
 
   // Base de Cálculo é sempre de uma Fonte específica — trocar a Fonte limpa a Base selecionada
   // se ela não pertencer mais à nova Fonte (evita salvar uma combinação Fonte/Base inconsistente).
+  // Valor da Fonte no select: id da Fonte de Cálculo (SharePoint) ou `mw:<id>` (Fonte MicroWork).
+  const baseDaFonte = (b, fonteVal) => String(fonteVal).startsWith('mw:')
+    ? b.fonte_microwork_id === String(fonteVal).slice(3)
+    : b.fonte_calculo_id === fonteVal
   const handleFonteChange = (e) => {
     const novaFonteId = e.target.value
     setForm(prev => {
-      const baseAindaValida = basesCalculo.some(b => b.id === prev.base_calculo_id && b.fonte_calculo_id === novaFonteId)
+      const baseAindaValida = basesCalculo.some(b => b.id === prev.base_calculo_id && baseDaFonte(b, novaFonteId))
       return { ...prev, fonte_calculo_id: novaFonteId, base_calculo_id: baseAindaValida ? prev.base_calculo_id : '' }
     })
   }
@@ -374,7 +387,7 @@ export default function PoliticaComissao() {
       descricao_comissao: grupo.descricao_comissao || '',
       codigo_rubrica: grupo.codigo_rubrica || '',
       tipo_processo: grupo.tipo_processo || '',
-      fonte_calculo_id: grupo.fonte_calculo_id || '',
+      fonte_calculo_id: grupo.fonte_calculo_id || (grupo.base_calculo?.fonte_microwork_id ? `mw:${grupo.base_calculo.fonte_microwork_id}` : ''),
       base_calculo_id: grupo.base_calculo_id || '',
       nivel_calculo: grupo.nivel_calculo || '',
       comissao_servicos: grupo.comissao_servicos ?? '',
@@ -382,6 +395,7 @@ export default function PoliticaComissao() {
       comissao_total: grupo.comissao_total ?? '',
       comissao_valor: grupo.comissao_valor ?? '',
       usa_faixa: grupo.usa_faixa || 'NÃO',
+      regra_comissao_id: grupo.regra_comissao_id || '',
       comissao_todas_empresas: grupo.comissao_todas_empresas ?? false,
       detalhar_por_empresa: grupo.detalhar_por_empresa ?? false,
       vig_inicio: grupo.vig_inicio || '',
@@ -439,6 +453,7 @@ export default function PoliticaComissao() {
           comissao_total: item.comissao_total,
           comissao_valor: item.comissao_valor,
           usa_faixa: item.usa_faixa || 'NÃO',
+          regra_comissao_id: item.regra_comissao_id || null,
           comissao_todas_empresas: item.comissao_todas_empresas ?? false,
           detalhar_por_empresa: item.detalhar_por_empresa ?? false,
           vig_inicio: item.vig_inicio || null,
@@ -462,15 +477,19 @@ export default function PoliticaComissao() {
       // Dedupe defensivo — cada cargo (que já carrega sua empresa) só pode entrar uma vez na
       // política, senão vira lançamento duplicado (mesmo cargo+empresa com 2 linhas idênticas).
       const { cargo_ids: cargoIdsForm, ...resto } = form
+      const usaRegra = form.usa_faixa === 'SIM'
       const cargo_ids = [...new Set(cargoIdsForm)]
       const payloadBase = {
         ...resto,
-        fonte_calculo_id: form.fonte_calculo_id || null,
+        fonte_calculo_id: (form.fonte_calculo_id && !String(form.fonte_calculo_id).startsWith('mw:')) ? form.fonte_calculo_id : null,
         base_calculo_id: form.base_calculo_id || null,
-        comissao_servicos: form.comissao_servicos !== '' ? parseFloat(form.comissao_servicos) : null,
-        comissao_pecas: form.comissao_pecas !== '' ? parseFloat(form.comissao_pecas) : null,
-        comissao_total: form.comissao_total !== '' ? parseFloat(form.comissao_total) : null,
-        comissao_valor: form.comissao_valor !== '' ? parseFloat(form.comissao_valor) : null,
+        // Usa Regra = SIM: o percentual vem das faixas da Regra (sobre o valor da Base), então
+        // os campos fixos ficam nulos e a Regra escolhida é gravada.
+        regra_comissao_id: form.usa_faixa === 'SIM' ? (form.regra_comissao_id || null) : null,
+        comissao_servicos: !usaRegra && form.comissao_servicos !== '' ? parseFloat(form.comissao_servicos) : null,
+        comissao_pecas: !usaRegra && form.comissao_pecas !== '' ? parseFloat(form.comissao_pecas) : null,
+        comissao_total: !usaRegra && form.comissao_total !== '' ? parseFloat(form.comissao_total) : null,
+        comissao_valor: !usaRegra && form.comissao_valor !== '' ? parseFloat(form.comissao_valor) : null,
         vig_inicio: form.vig_inicio || null,
         vig_fim: form.vig_fim || null,
       }
@@ -564,69 +583,43 @@ export default function PoliticaComissao() {
   return (
     <div className="p-6 space-y-4 max-w-[1700px]">
 
-      {/* CABEÇALHO */}
-      <div className="flex items-center justify-end border-b border-slate-200 pb-4">
-        <div className="flex items-center gap-2">
-          {canEdit && (
-            <button
-              onClick={abrirIncluir}
-              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-2 rounded-md shadow-sm transition-colors"
-            >
-              <Plus className="h-4 w-4" />
-              Incluir Política
-            </button>
-          )}
+      {/* CABEÇALHO + FILTROS (Cargo e Descrição na mesma linha do Incluir Política) */}
+      <div className="flex items-end gap-3 flex-wrap border-b border-slate-200 pb-4">
+        <div className="flex flex-col gap-1 w-64">
+          <label className="text-[10px] font-bold text-slate-400 uppercase">Empresa</label>
+          <select value={colFiltro.empresa} onChange={e => setColFiltro(p => ({ ...p, empresa: e.target.value }))}
+            className="w-full px-2 py-2 text-xs border border-slate-200 rounded-md bg-white focus:outline-none focus:border-blue-400">
+            <option value="">Todas</option>
+            {empresasDisponiveis.map(a => <option key={a} value={a}>{a}</option>)}
+          </select>
         </div>
-      </div>
-
-      {/* FILTROS AVANÇADOS — retrátil */}
-      <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
-        <button
-          type="button"
-          onClick={() => setFiltrosAbertos(v => !v)}
-          className="w-full flex items-center gap-2 px-4 py-3 hover:bg-slate-50 transition-colors"
-        >
-          {filtrosAbertos ? <ChevronDown className="h-3.5 w-3.5 text-slate-400" /> : <ChevronRight className="h-3.5 w-3.5 text-slate-400" />}
-          <SlidersHorizontal className="h-3.5 w-3.5 text-slate-400" />
-          <span className="text-xs font-bold text-slate-700">Filtros Avançados</span>
-          {temFiltroColuna && (
-            <span className="px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 text-[10px] font-bold">ativo</span>
-          )}
-          {temFiltroColuna && (
-            <span
-              role="button"
-              tabIndex={0}
-              onClick={(e) => { e.stopPropagation(); limparFiltroColuna() }}
-              className="ml-auto flex items-center gap-1 text-[11px] font-semibold text-slate-400 hover:text-red-600 transition-colors"
-            >
-              <X className="h-3 w-3" /> Limpar
-            </span>
-          )}
-        </button>
-        {filtrosAbertos && (
-          <div className="px-4 pb-4 grid grid-cols-3 gap-3 border-t border-slate-100 pt-3">
-            <div className="flex flex-col gap-1">
-              <label className="text-[10px] font-bold text-slate-400 uppercase">Empresa</label>
-              <select value={colFiltro.empresa} onChange={e => setColFiltro(p => ({ ...p, empresa: e.target.value }))}
-                className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded-md bg-white focus:outline-none focus:border-blue-400">
-                <option value="">Todas</option>
-                {empresasDisponiveis.map(a => <option key={a} value={a}>{a}</option>)}
-              </select>
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-[10px] font-bold text-slate-400 uppercase">Cargo</label>
-              <select value={colFiltro.cargo} onChange={e => setColFiltro(p => ({ ...p, cargo: e.target.value }))}
-                className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded-md bg-white focus:outline-none focus:border-blue-400">
-                <option value="">Todos</option>
-                {cargosDisponiveis.map(c => <option key={c} value={c}>{codigoPorNomeCargo(c) ? `${codigoPorNomeCargo(c)} — ${c}` : c}</option>)}
-              </select>
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-[10px] font-bold text-slate-400 uppercase">Descrição da Comissão</label>
-              <input type="text" placeholder="Filtrar..." value={colFiltro.descricao} onChange={e => setColFiltro(p => ({ ...p, descricao: e.target.value }))}
-                className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded-md focus:outline-none focus:border-blue-400" />
-            </div>
-          </div>
+        <div className="flex flex-col gap-1 w-72">
+          <label className="text-[10px] font-bold text-slate-400 uppercase">Cargo</label>
+          <select value={colFiltro.cargo} onChange={e => setColFiltro(p => ({ ...p, cargo: e.target.value }))}
+            className="w-full px-2 py-2 text-xs border border-slate-200 rounded-md bg-white focus:outline-none focus:border-blue-400">
+            <option value="">Todos</option>
+            {cargosDisponiveis.map(c => <option key={c} value={c}>{codigoPorNomeCargo(c) ? `${codigoPorNomeCargo(c)} — ${c}` : c}</option>)}
+          </select>
+        </div>
+        <div className="flex flex-col gap-1 w-72">
+          <label className="text-[10px] font-bold text-slate-400 uppercase">Descrição da Comissão</label>
+          <input type="text" placeholder="Filtrar..." value={colFiltro.descricao} onChange={e => setColFiltro(p => ({ ...p, descricao: e.target.value }))}
+            className="w-full px-2 py-2 text-xs border border-slate-200 rounded-md focus:outline-none focus:border-blue-400" />
+        </div>
+        {temFiltroColuna && (
+          <button type="button" onClick={limparFiltroColuna}
+            className="flex items-center gap-1 text-[11px] font-semibold text-slate-400 hover:text-red-600 transition-colors pb-2.5">
+            <X className="h-3 w-3" /> Limpar
+          </button>
+        )}
+        {canEdit && (
+          <button
+            onClick={abrirIncluir}
+            className="ml-auto flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-2 rounded-md shadow-sm transition-colors"
+          >
+            <Plus className="h-4 w-4" />
+            Incluir Política
+          </button>
         )}
       </div>
 
@@ -647,6 +640,7 @@ export default function PoliticaComissao() {
               </th>
               <th className="p-3 min-w-[100px]">Rubrica</th>
               <th className="p-3 min-w-[110px]">Tipo de Processo</th>
+              <th className="p-3 min-w-[80px] text-center">Tipo</th>
               <th className="p-3 min-w-[110px] text-right">
                 <button onClick={() => alternarOrdenacao('servicos')} className="flex items-center gap-1 ml-auto hover:text-slate-700 transition-colors">
                   {iconeOrdenacao('servicos')} % Serviços
@@ -678,7 +672,7 @@ export default function PoliticaComissao() {
           <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
             {gruposExibidos.length === 0 ? (
               <tr>
-                <td colSpan="10" className="p-6 text-center text-slate-400">
+                <td colSpan="11" className="p-6 text-center text-slate-400">
                   {grupos.length === 0 ? 'Nenhuma política de comissão cadastrada.' : 'Nenhuma política encontrada para os filtros aplicados.'}
                 </td>
               </tr>
@@ -725,6 +719,25 @@ export default function PoliticaComissao() {
                       </span>
                     )
                   })() : '-'}
+                </td>
+                <td className="p-3 min-w-[80px] text-center">
+                  {grupo.usa_faixa === 'SIM' ? (
+                    <span className="relative group inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-bold cursor-help">
+                      Regra
+                      {grupo.regra_comissao?.faixas?.length > 0 && (
+                        <span className="absolute left-0 top-full mt-1 hidden group-hover:block w-56 bg-slate-800 text-white text-[11px] font-normal font-sans rounded-md p-2 shadow-xl z-30 leading-relaxed whitespace-normal text-left">
+                          <div className="font-bold mb-1">{grupo.regra_comissao.nome}</div>
+                          {[...grupo.regra_comissao.faixas].sort((a, b) => a.ordem - b.ordem).map((f, i) => (
+                            <div key={i} className="font-mono">{f.operador} {fmtBRL(f.valor)} → {fmtPct(f.percentual)}</div>
+                          ))}
+                        </span>
+                      )}
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-orange-50 text-orange-700 border border-orange-200 text-[10px] font-bold">
+                      Fixa
+                    </span>
+                  )}
                 </td>
                 <td className="p-3 min-w-[110px] text-right font-mono">{fmtPct(grupo.comissao_servicos)}</td>
                 <td className="p-3 min-w-[100px] text-right font-mono">{fmtPct(grupo.comissao_pecas)}</td>
@@ -864,13 +877,14 @@ export default function PoliticaComissao() {
                     <select required name="fonte_calculo_id" value={form.fonte_calculo_id} onChange={handleFonteChange} className={SEL}>
                       <option value="">Selecione</option>
                       {fontesCalculo.filter(f => f.ativo).map(f => <option key={f.id} value={f.id}>{f.nome}</option>)}
+                      {fontesMw.filter(f => f.ativo).map(f => <option key={f.id} value={`mw:${f.id}`}>MicroWork — {f.nome}</option>)}
                     </select>
                   </div>
                   <div className="flex flex-col gap-1.5">
                     <label className={LBL}>Base de Cálculo *</label>
                     <select required name="base_calculo_id" value={form.base_calculo_id} onChange={handleInputChange} disabled={!form.fonte_calculo_id} className={`${SEL} disabled:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed`}>
                       <option value="">{form.fonte_calculo_id ? 'Selecione' : 'Selecione a Fonte primeiro'}</option>
-                      {basesCalculo.filter(b => b.ativo && b.fonte_calculo_id === form.fonte_calculo_id).map(b => <option key={b.id} value={b.id}>{b.nome}</option>)}
+                      {basesCalculo.filter(b => b.ativo && baseDaFonte(b, form.fonte_calculo_id)).map(b => <option key={b.id} value={b.id}>{b.nome}</option>)}
                     </select>
                   </div>
                   <div className="flex flex-col gap-1.5">
@@ -898,21 +912,21 @@ export default function PoliticaComissao() {
                   <div className="flex flex-col gap-1.5">
                     <label className={LBL}>% Serviços</label>
                     <div className="relative">
-                      <input type="number" step="0.01" min="0" max="100" name="comissao_servicos" value={form.comissao_servicos} onChange={handleInputChange} onBlur={() => formatarDuasCasas('comissao_servicos')} placeholder="0.00" className={`${INP} pr-6`} />
+                      <input type="number" step="0.01" min="0" max="100" name="comissao_servicos" value={form.comissao_servicos} onChange={handleInputChange} disabled={form.usa_faixa === 'SIM'} onBlur={() => formatarDuasCasas('comissao_servicos')} placeholder="0.00" className={`${INP} pr-6`} />
                       <span className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 text-[10px] pointer-events-none">%</span>
                     </div>
                   </div>
                   <div className="flex flex-col gap-1.5">
                     <label className={LBL}>% Peças</label>
                     <div className="relative">
-                      <input type="number" step="0.01" min="0" max="100" name="comissao_pecas" value={form.comissao_pecas} onChange={handleInputChange} onBlur={() => formatarDuasCasas('comissao_pecas')} placeholder="0.00" className={`${INP} pr-6`} />
+                      <input type="number" step="0.01" min="0" max="100" name="comissao_pecas" value={form.comissao_pecas} onChange={handleInputChange} disabled={form.usa_faixa === 'SIM'} onBlur={() => formatarDuasCasas('comissao_pecas')} placeholder="0.00" className={`${INP} pr-6`} />
                       <span className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 text-[10px] pointer-events-none">%</span>
                     </div>
                   </div>
                   <div className="flex flex-col gap-1.5">
                     <label className={LBL}>% Total</label>
                     <div className="relative">
-                      <input type="number" step="0.01" min="0" max="100" name="comissao_total" value={form.comissao_total} onChange={handleInputChange} onBlur={() => formatarDuasCasas('comissao_total')} placeholder="0.00" className={`${INP} pr-6`} />
+                      <input type="number" step="0.01" min="0" max="100" name="comissao_total" value={form.comissao_total} onChange={handleInputChange} disabled={form.usa_faixa === 'SIM'} onBlur={() => formatarDuasCasas('comissao_total')} placeholder="0.00" className={`${INP} pr-6`} />
                       <span className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 text-[10px] pointer-events-none">%</span>
                     </div>
                   </div>
@@ -923,6 +937,7 @@ export default function PoliticaComissao() {
                       <input
                         type="number" step="0.01" min="0" name="comissao_valor"
                         value={form.comissao_valor} onChange={handleInputChange}
+                        disabled={form.usa_faixa === 'SIM'}
                         onBlur={() => formatarDuasCasas('comissao_valor')}
                         placeholder="0,00" className={`${INP} pl-8`}
                       />
@@ -930,14 +945,30 @@ export default function PoliticaComissao() {
                   </div>
                 </div>
 
-                {/* Usa Faixa + Vigência */}
-                <div className="grid grid-cols-3 gap-4">
+                {/* Usa Regra + Regra + Vigência */}
+                <div className={`grid gap-4 ${form.usa_faixa === 'SIM' ? 'grid-cols-4' : 'grid-cols-3'}`}>
                   <div className="flex flex-col gap-1.5">
-                    <label className={LBL}>Usa Faixa *</label>
-                    <select required name="usa_faixa" value={form.usa_faixa} onChange={handleInputChange} className={SEL}>
+                    <label className={LBL}>Usa Regra *</label>
+                    <select required name="usa_faixa" value={form.usa_faixa}
+                      onChange={e => setForm(prev => e.target.value === 'SIM'
+                        ? { ...prev, usa_faixa: 'SIM', comissao_servicos: '', comissao_pecas: '', comissao_total: '', comissao_valor: '' }
+                        : { ...prev, usa_faixa: 'NÃO', regra_comissao_id: '' })}
+                      className={SEL}>
                       {USA_FAIXA_OPCOES.map(o => <option key={o} value={o}>{o}</option>)}
                     </select>
                   </div>
+                  {form.usa_faixa === 'SIM' && (
+                    <div className="flex flex-col gap-1.5">
+                      <label className={LBL}>Regra</label>
+                      <select name="regra_comissao_id" value={form.regra_comissao_id} onChange={handleInputChange} className={SEL}>
+                        <option value="">Selecione a regra</option>
+                        {regrasComissao.filter(r => r.ativo || r.id === form.regra_comissao_id).map(r => <option key={r.id} value={r.id}>{r.nome}</option>)}
+                      </select>
+                      {!form.regra_comissao_id && (
+                        <span className="text-[10px] text-slate-400">Sem regra selecionada aqui, cadastre-a na aba Regras — lá você escolhe esta política pra vincular.</span>
+                      )}
+                    </div>
+                  )}
                   <div className="flex flex-col gap-1.5">
                     <label className={LBL}>Vigência Início</label>
                     <input type="date" name="vig_inicio" value={form.vig_inicio} onChange={handleInputChange} className={INP} />
@@ -1040,9 +1071,9 @@ export default function PoliticaComissao() {
                 <span className="text-xs font-semibold text-slate-800">{itemVisualizado.nivel_calculo || '-'}</span>
               </div>
               <div className="flex flex-col gap-0.5">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Usa Faixa</span>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Usa Regra</span>
                 <span className={`inline-flex w-fit items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${itemVisualizado.usa_faixa === 'SIM' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-slate-100 text-slate-500 border-slate-200'}`}>
-                  {itemVisualizado.usa_faixa || 'NÃO'}
+                  {itemVisualizado.usa_faixa === 'SIM' ? `SIM — ${itemVisualizado.regra_comissao?.nome || ''}` : 'NÃO'}
                 </span>
               </div>
               <div className="flex flex-col gap-0.5">

@@ -495,7 +495,7 @@ export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = 
 
         // Indicadores do departamento Oficina: soma de todos os mecânicos (Horas Disponíveis, Horas Meta e
         // Produtividade = Horas Meta ÷ Horas Disponíveis). Respeita os filtros de Setor/Box/Funcionário.
-        // No Balcão Peças, a linha Indicadores traz só a Margem Peças (%), calculada com os vendedores.
+        // No Balcão Peças, a linha Indicadores traz a Margem Peças (%) e os Faturamentos por marca, calculados com os vendedores.
         const ehOficinaInd = (dept.nome || '').toLowerCase().includes('oficina')
         const ehBalcaoInd  = /balc/i.test(dept.nome || '')
         if (ehOficinaInd || ehBalcaoInd) {
@@ -539,8 +539,20 @@ export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = 
           })
           const razaoPct = (l, m) => l.map((v, i) => (m[i] > 0 ? (v / m[i]) * 100 : 0))
           // Balcão Peças: a margem vem dos vendedores (Metas - Peças): soma dos Lucros (Meta × Margem) ÷ soma das Metas.
+          // Faturamentos (Balcão Peças): distribuição da Meta R$ dos vendedores por marca — DAF/TRP/Outros ou HONDA/HAMP/Outros.
+          const fatM = Array(12).fill(0), fatP = Array(12).fill(0), fatO = Array(12).fill(0)
+          const ehHondaInd = String(emp.marca || '').toUpperCase().includes('HONDA')
+          const rotFat = ehHondaInd ? { m: 'HONDA', p: 'HAMP' } : { m: 'DAF', p: 'TRP' }
           if (ehBalcaoInd) {
             lucroP.fill(0); metaP.fill(0)
+            rowsPecas.forEach(r => {
+              if (r.empresa_id !== eId || r.departamento_id !== dId) return
+              if (termoInd && !(r.colaborador_nome || '').toLowerCase().includes(termoInd)) return
+              const i = (Number(r.mes) || 1) - 1
+              const fm = Number(r.fat_marca) || 0, fp = Number(r.fat_parceira) || 0
+              fatM[i] += fm; fatP[i] += fp
+              fatO[i] += (r.fat_outros != null && r.fat_outros !== '') ? Number(r.fat_outros) || 0 : ((fm || fp) ? Math.max(0, (Number(r.meta_faturamento) || 0) - fm - fp) : 0)
+            })
             rowsPecas.forEach(r => {
               if (r.empresa_id !== eId || r.departamento_id !== dId) return
               if (termoInd && !(r.colaborador_nome || '').toLowerCase().includes(termoInd)) return
@@ -554,7 +566,7 @@ export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = 
           const margP = razaoPct(lucroP, metaP), margS = razaoPct(lucroS, metaS)
           const margPAno = sumArr(metaP) > 0 ? (sumArr(lucroP) / sumArr(metaP)) * 100 : 0
           const margSAno = sumArr(metaS) > 0 ? (sumArr(lucroS) / sumArr(metaS)) * 100 : 0
-          if (ehOficinaInd ? (sumArr(hd) > 0 || margPAno > 0 || margSAno > 0) : margPAno > 0) {
+          if (ehOficinaInd ? (sumArr(hd) > 0 || margPAno > 0 || margSAno > 0) : (margPAno > 0 || sumArr(fatM) + sumArr(fatP) + sumArr(fatO) > 0)) {
             const iKey = `${dKey}-ind`
             const prod = hd.map((h, i) => (h > 0 ? (hm[i] / h) * 100 : 0))
             const prodAno = sumArr(hd) > 0 ? (sumArr(hm) / sumArr(hd)) * 100 : 0
@@ -575,8 +587,12 @@ export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = 
               </tr>
             )
             if (isOpen(iKey)) {
+              const fmtRS = (v) => fmtBRL(v)
               const linhasInd = ehBalcaoInd ? [
                 { chave: 'mp', rotulo: 'Margem Peças (%)', vals: margP, fmt: fmtPctInd, total: margPAno },
+                { chave: 'fm', rotulo: `Faturamento ${rotFat.m}`, vals: fatM, fmt: fmtRS, total: sumArr(fatM) },
+                { chave: 'fp', rotulo: `Faturamento ${rotFat.p}`, vals: fatP, fmt: fmtRS, total: sumArr(fatP) },
+                { chave: 'fo', rotulo: 'Faturamento Outros', vals: fatO, fmt: fmtRS, total: sumArr(fatO) },
               ] : [
                 { chave: 'hd', rotulo: 'Horas Disponíveis', vals: hd, fmt: fmtHoras, total: sumArr(hd) },
                 { chave: 'hm', rotulo: 'Horas Meta', vals: hm, fmt: fmtHoras, total: sumArr(hm) },

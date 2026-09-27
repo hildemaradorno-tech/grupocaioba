@@ -307,14 +307,21 @@ export async function lerArquivoComoAoA(downloadUrl, linhaCabecalho) {
 // Processa UM arquivo: parse em modo dense (array, não dicionário de endereços)
 // + iteração linha a linha somando/contando em variáveis locais — nunca cria
 // um objeto por linha nem mantém uma cópia "projetada" do arquivo em memória.
-async function agregarArquivo(downloadUrl, { linhaCabecalho, colunaEmpresa, colunaData, colunaValor, tipoAgregacao, empresaAlvo, dataInicio, dataFim, regras }, acc) {
-  const aoa = await lerArquivoComoAoA(downloadUrl, linhaCabecalho)
+async function agregarArquivo(downloadUrl, params, acc) {
+  const aoa = await lerArquivoComoAoA(downloadUrl, params.linhaCabecalho)
+  agregarAoA(aoa, params, acc)
+}
+
+// Agrega um array-de-arrays (linha 0 = cabeçalho). Exportada pra fonte MicroWork reaproveitar
+// exatamente a mesma lógica de filtro/regras/agregação do SharePoint.
+export function agregarAoA(aoa, { colunaEmpresa, colunaData, colunaValor, tipoAgregacao, empresaAlvo, dataInicio, dataFim, regras }, acc) {
   if (aoa.length === 0) return
 
   const cabecalho = aoa[0]
   const idxEmpresa = cabecalho.indexOf(colunaEmpresa)
   const idxData = cabecalho.indexOf(colunaData)
-  const idxValor = cabecalho.indexOf(colunaValor)
+  // Coluna do Valor aceita somar mais de uma coluna, separadas por "+" (ex: "totalservico+totalrevisao").
+  const idxsValor = colunaValor.split('+').map(c => cabecalho.indexOf(c.trim())).filter(i => i >= 0)
 
   // Resolve nomes de coluna das regras -> índice numérico UMA VEZ por arquivo (não por linha).
   const regrasResolvidas = (regras || []).map(regra => ({
@@ -346,7 +353,7 @@ async function agregarArquivo(downloadUrl, { linhaCabecalho, colunaEmpresa, colu
       if (dataFim && iso > dataFim) continue
     }
 
-    let valorTrabalho = idxValor >= 0 ? parseMoney(r[idxValor]) : 0
+    let valorTrabalho = idxsValor.reduce((soma, idx) => soma + parseMoney(r[idx]), 0)
     if (regrasResolvidas.length > 0) {
       const { valor, filtrada } = aplicarRegras(r, valorTrabalho, regrasResolvidas)
       if (filtrada) continue

@@ -81,11 +81,12 @@ async function verificarFechamentoCiclo(cicloId) {
 const SELECT_POLITICA_COM_FONTE_BASE = `
   *,
   fonte_calculo:dim_fontes_calculo(id, nome, codigo, pasta_sharepoint, prefixo_arquivo, usa_subpasta_ano, subpasta_padrao, linha_cabecalho, coluna_empresa, coluna_data, coluna_funcionario),
-  base_calculo:dim_bases_calculo(id, nome, codigo, coluna_valor, tipo_agregacao)
+  base_calculo:dim_bases_calculo(id, nome, codigo, coluna_valor, tipo_agregacao, fonte_microwork_id, fonte_microwork:dim_fontes_microwork(*)),
+  regra_comissao:dim_regras_comissao(id, nome, tipo_faixa, meta_tipo, base_politica_ids, faixas:dim_regras_comissao_faixas(ordem, operador, valor, percentual))
 `
 const enriquecePoliticaFonteBase = (p) => ({
   ...p,
-  tipo_evento_nome: p.fonte_calculo?.nome || null,
+  tipo_evento_nome: p.fonte_calculo?.nome || p.base_calculo?.fonte_microwork?.nome || null,
   base_tipo_nome: p.base_calculo?.nome || null,
 })
 
@@ -1398,12 +1399,93 @@ export const apiService = {
         ididioma: fonte.ididioma,
         listaempresas: fonte.listaempresas,
         filtros_fixos: fonte.filtros_fixos,
+        campo_periodo_inicio: fonte.campo_periodo_inicio,
+        campo_periodo_fim: fonte.campo_periodo_fim,
         ano, mes,
       }),
     })
     const body = await res.json()
     if (!res.ok) throw new Error(body.message || body.error || 'Erro ao testar relatório MicroWork')
     return body
+  },
+
+  // REGRAS DE COMISSÃO POR FAIXA (sempre em cima do valor da Base de Cálculo)
+  getRegrasComissao: async () => {
+    const { data, error } = await supabase
+      .from('dim_regras_comissao')
+      .select('*, faixas:dim_regras_comissao_faixas(id, ordem, operador, valor, percentual)')
+      .order('nome', { ascending: true })
+    if (error) throw error
+    return (data || []).map(r => ({ ...r, faixas: [...(r.faixas || [])].sort((a, b) => a.ordem - b.ordem) }))
+  },
+
+  // Cria/atualiza a regra e substitui todas as faixas (delete + insert) — faixas: [{ operador, valor, percentual }]
+  salvarRegraComissao: async (id, { nome, descricao, ativo, tipo_faixa, meta_tipo, base_politica_ids }, faixas) => {
+    let regraId = id
+    const campos = { nome, descricao: descricao || null, ativo: ativo ?? true, tipo_faixa: tipo_faixa || 'VALOR', meta_tipo: tipo_faixa === 'PERCENTUAL_META' ? (meta_tipo || null) : null, base_politica_ids: tipo_faixa === 'PERCENTUAL_META' ? (base_politica_ids || []) : [] }
+    if (id) {
+      const { error } = await supabase.from('dim_regras_comissao')
+        .update({ ...campos, atualizado_em: new Date().toISOString() }).eq('id', id)
+      if (error) throw error
+      const { error: e2 } = await supabase.from('dim_regras_comissao_faixas').delete().eq('regra_id', id)
+      if (e2) throw e2
+    } else {
+      const { data, error } = await supabase.from('dim_regras_comissao')
+        .insert([campos]).select()
+      if (error) throw error
+      regraId = data[0].id
+    }
+    if (faixas.length > 0) {
+      const { error } = await supabase.from('dim_regras_comissao_faixas').insert(
+        faixas.map((f, i) => ({ regra_id: regraId, ordem: i, operador: f.operador, valor: f.valor, percentual: f.percentual })))
+      if (error) throw error
+    }
+    return regraId
+  },
+
+  // Metas publicadas (Planejamento de Metas) de vários funcionários, num mês/ano e tipos
+  // específicos — usado pela Regra por % de Meta Atingida (fato_metas_publicadas.meta_faturamento
+  // é sempre a meta daquele tipo, independente da categoria). Chave do mapa: "colaboradorId|tipo".
+  getMetasFuncionariosPeriodo: async (colaboradorIds, ano, mes, tipos) => {
+    if (!colaboradorIds?.length || !tipos?.length) return {}
+    const { data, error } = await supabase
+      .from('fato_metas_publicadas')
+      .select('colaborador_id, tipo, meta_faturamento')
+      .eq('ano', ano).eq('mes', mes)
+      .in('colaborador_id', colaboradorIds)
+      .in('tipo', tipos)
+    if (error) throw error
+    const mapa = {}
+    for (const r of data || []) mapa[`${r.colaborador_id}|${r.tipo}`] = Number(r.meta_faturamento) || 0
+    return mapa
+  },
+
+  // Vincula a Regra às Políticas escolhidas (grupoIds = grupo_politica_id ou id da linha sem grupo)
+  // e desvincula as que estavam antes e saíram da lista. Política com regra: usa_faixa = SIM e
+  // os percentuais/valor fixos ficam nulos (o percentual vem das faixas).
+  vincularPoliticasRegra: async (regraId, grupoIds, grupoIdsAnteriores = []) => {
+    const filtro = (ids) => `grupo_politica_id.in.(${ids.join(',')}),id.in.(${ids.join(',')})`
+    const agora = new Date().toISOString()
+    if (grupoIds.length > 0) {
+      const { error } = await supabase.from('fato_politica_comissao')
+        .update({ regra_comissao_id: regraId, usa_faixa: 'SIM', comissao_servicos: null, comissao_pecas: null, comissao_total: null, comissao_valor: null, atualizado_em: agora })
+        .or(filtro(grupoIds))
+      if (error) throw error
+    }
+    const removidos = grupoIdsAnteriores.filter(g => !grupoIds.includes(g))
+    if (removidos.length > 0) {
+      const { error } = await supabase.from('fato_politica_comissao')
+        .update({ regra_comissao_id: null, usa_faixa: 'NÃO', atualizado_em: agora })
+        .eq('regra_comissao_id', regraId)
+        .or(filtro(removidos))
+      if (error) throw error
+    }
+  },
+
+  deleteRegraComissao: async (id) => {
+    const { error } = await supabase.from('dim_regras_comissao').delete().eq('id', id)
+    if (error) throw error
+    return { success: true }
   },
 
   // BASES DE CÁLCULO (comissões — coluna + agregação extraída da Fonte)
@@ -1421,7 +1503,7 @@ export const apiService = {
   getBasesCalculoComFonte: async () => {
     const { data, error } = await supabase
       .from('dim_bases_calculo')
-      .select('*, fonte_calculo:dim_fontes_calculo(id, nome, codigo, pasta_sharepoint, prefixo_arquivo, usa_subpasta_ano, subpasta_padrao, linha_cabecalho, coluna_empresa, coluna_data, coluna_funcionario)')
+      .select('*, fonte_calculo:dim_fontes_calculo(id, nome, codigo, pasta_sharepoint, prefixo_arquivo, usa_subpasta_ano, subpasta_padrao, linha_cabecalho, coluna_empresa, coluna_data, coluna_funcionario), fonte_microwork:dim_fontes_microwork(id, nome)')
       .order('nome', { ascending: true })
     if (error) throw error
     return data || []
@@ -1471,16 +1553,30 @@ export const apiService = {
     return body
   },
 
+  // Colunas reais do relatório de uma Fonte MicroWork (botão "Detectar Colunas" da Base)
+  getColunasFonteMicrowork: async (fonte, { ano, mes } = {}) => {
+    const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
+    const res = await fetch(`${backendUrl}/api/microwork/colunas`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fonte, ano, mes }),
+    })
+    const body = await res.json()
+    if (!res.ok) throw new Error(body.message || body.error || 'Erro ao detectar colunas do MicroWork')
+    return body
+  },
+
   // Painel de conferência: calcula o valor agregado para uma empresa/período específicos,
   // aplicando as Regras de Cálculo da Base (se houver). POST porque `regras` é uma lista
   // aninhada de tamanho variável.
-  previewCalculoComissao: async ({ pasta, prefixo, usaSubpastaAno, subpastaPadrao, linhaCabecalho, colunaEmpresa, colunaData, colunaValor, tipoAgregacao, empresaNome, dataInicio, dataFim, regras }) => {
+  previewCalculoComissao: async ({ pasta, prefixo, usaSubpastaAno, subpastaPadrao, linhaCabecalho, colunaEmpresa, colunaData, colunaValor, tipoAgregacao, empresaNome, dataInicio, dataFim, regras, microwork }) => {
     const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
     const res = await fetch(`${backendUrl}/api/calculo-comissao/preview`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         pasta, prefixo,
+        microwork: microwork || null,
         usaSubpastaAno: !!usaSubpastaAno,
         subpastaPadrao: subpastaPadrao || null,
         linhaCabecalho: linhaCabecalho || 0,
@@ -1893,6 +1989,24 @@ export const apiService = {
     const { data, error } = await query.maybeSingle()
     if (error) throw error
     return data || null
+  },
+
+  // Lote mais recente de empresa+departamento cujo período está DENTRO do intervalo informado —
+  // fallback quando o usuário olha o mês inteiro mas o cálculo foi gerado até uma data anterior
+  // (ex: 01/09 a 25/09 visto no filtro 01/09 a 30/09).
+  getLoteContidoNoPeriodo: async (periodoInicio, periodoFim, empresaId, departamentoId) => {
+    if (!empresaId || !departamentoId) return null
+    const { data, error } = await supabase
+      .from('fato_comissoes_lotes')
+      .select('*')
+      .gte('periodo_inicio', periodoInicio)
+      .lte('periodo_fim', periodoFim)
+      .eq('empresa_id', empresaId)
+      .eq('departamento_id', departamentoId)
+      .order('periodo_fim', { ascending: false })
+      .limit(1)
+    if (error) throw error
+    return data?.[0] || null
   },
 
   // TODOS os lotes de uma empresa num período, de qualquer departamento — usado só pra achar

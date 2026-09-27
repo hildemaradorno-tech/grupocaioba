@@ -64,13 +64,16 @@ function primeiroUltimoDiaMes(ano, mes) {
 export async function buscarRelatorioMicrowork({
   idrelatorioconfiguracao, idrelatorioconsulta, idrelatorioconfiguracaoleiaute, idrelatoriousuarioleiaute,
   ididioma, listaempresas, filtrosFixos, ano, mes,
+  // Nem todo relatório usa o mesmo nome de campo pro período — cada Fonte MicroWork configura
+  // o seu (dim_fontes_microwork.campo_periodo_inicio/fim); default mantém o nome genérico de sempre.
+  campoPeriodoInicio = 'Periododeconclusaoinicial', campoPeriodoFim = 'Periododeconclusaofinal',
 }) {
   const token = process.env.MICROWORK_API_TOKEN
   if (!token) throw new Error('MICROWORK_API_TOKEN não configurado no ambiente')
 
   const { inicio, fim } = primeiroUltimoDiaMes(Number(ano), Number(mes))
   const filtrosBase = (filtrosFixos || '').trim().replace(/;+$/, '')
-  const filtros = `${filtrosBase}${filtrosBase ? ';' : ''}Periododeconclusaoinicial=${inicio};Periododeconclusaofinal=${fim}`
+  const filtros = `${filtrosBase}${filtrosBase ? ';' : ''}${campoPeriodoInicio}=${inicio};${campoPeriodoFim}=${fim}`
 
   const payload = {
     idrelatorioconfiguracao,

@@ -1,4 +1,5 @@
-import React, { useEffect, useState, useMemo } from 'react'
+import React, { useEffect, useState, useMemo, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { useSessionState } from '../hooks/useSessionState'
 import { Plus, X, AlertTriangle, Calculator, Eye, Search, Loader2, PlayCircle, Trash2, ArrowUp, ArrowDown, ListPlus, Copy, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
@@ -59,7 +60,7 @@ const novaCondicao = () => ({ tempId: novoTempId(), coluna: '', operador: 'IGUAL
 const novaRegra = () => ({ tempId: novoTempId(), tipo_acao: 'FILTRAR', coluna_alvo: '', condicao_logica: 'E', condicoes: [novaCondicao()] })
 
 const FORM_VAZIO = {
-  fonte_calculo_id: '', nome: '', codigo: '', descricao: '',
+  sistema: '', fonte_microwork_id: '', fonte_calculo_id: '', nome: '', codigo: '', descricao: '',
   coluna_valor: '', tipo_agregacao: 'SOMA', ativo: true,
 }
 
@@ -98,9 +99,67 @@ function CampoColuna({ value, onChange, colunas, layoutClass, opcional }) {
   )
 }
 
+// Seletor com várias opções marcáveis. A lista abre num portal (position:fixed) porque o painel
+// de conferência tem overflow-hidden e cortaria um dropdown normal.
+function MultiSelectEmpresas({ opcoes, selecionados, onToggle, onLimpar, onTodas, placeholder }) {
+  const [aberto, setAberto] = useState(false)
+  const [pos, setPos] = useState(null)
+  const btnRef = useRef(null)
+  const listaRef = useRef(null)
+  const abrir = () => {
+    const r = btnRef.current.getBoundingClientRect()
+    const abaixo = window.innerHeight - r.bottom - 12
+    const acima = r.top - 12
+    // Pouco espaço embaixo (tela curta): abre pra cima; a altura sempre cabe na janela.
+    const paraCima = abaixo < 220 && acima > abaixo
+    const maxHeight = Math.max(140, Math.min(288, paraCima ? acima : abaixo))
+    setPos({ left: r.left, width: Math.max(r.width, 260), maxHeight, ...(paraCima ? { bottom: window.innerHeight - r.top + 4 } : { top: r.bottom + 4 }) })
+    setAberto(true)
+  }
+  useEffect(() => {
+    if (!aberto) return
+    // Rolar a própria lista não pode fechá-la — só rolagem da página.
+    const fechar = (e) => { if (e?.type === 'scroll' && listaRef.current?.contains(e.target)) return; setAberto(false) }
+    window.addEventListener('scroll', fechar, true)
+    window.addEventListener('resize', fechar)
+    return () => { window.removeEventListener('scroll', fechar, true); window.removeEventListener('resize', fechar) }
+  }, [aberto])
+  const nomes = opcoes.filter(o => selecionados.includes(o.id)).map(o => o.label)
+  const texto = nomes.length === 0 ? placeholder : nomes.length <= 2 ? nomes.join(', ') : `${nomes.length} empresas selecionadas`
+  return (
+    <>
+      <button ref={btnRef} type="button" onClick={() => (aberto ? setAberto(false) : abrir())}
+        className={`${SEL} text-left flex items-center justify-between gap-2`}>
+        <span className={`truncate ${nomes.length === 0 ? 'text-slate-500' : ''}`}>{texto}</span>
+        <span className="text-slate-400 text-[10px]">▾</span>
+      </button>
+      {aberto && pos && createPortal(
+        <>
+          <div className="fixed inset-0 z-[60]" onClick={() => setAberto(false)} />
+          <div ref={listaRef} className="fixed z-[70] bg-white border border-slate-200 rounded-md shadow-xl overflow-y-auto"
+            style={{ left: pos.left, top: pos.top, bottom: pos.bottom, width: pos.width, maxHeight: pos.maxHeight }}>
+            <div className="flex items-center justify-between px-3 py-2 border-b border-slate-100 sticky top-0 bg-white">
+              <button type="button" onClick={onTodas} className="text-[11px] font-semibold text-blue-600 hover:underline">Marcar todas</button>
+              <button type="button" onClick={onLimpar} className="text-[11px] font-semibold text-slate-400 hover:text-red-600">Limpar</button>
+            </div>
+            {opcoes.map(o => (
+              <label key={o.id} className="flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 cursor-pointer">
+                <input type="checkbox" checked={selecionados.includes(o.id)} onChange={() => onToggle(o.id)} className="w-3.5 h-3.5" />
+                {o.label}
+              </label>
+            ))}
+          </div>
+        </>,
+        document.body
+      )}
+    </>
+  )
+}
+
 export default function BasesCalculo() {
   const [dados, setDados] = useState([])
   const [fontes, setFontes] = useState([])
+  const [fontesMw, setFontesMw] = useState([])
   const [empresas, setEmpresas] = useState([])
   const [setoresOS, setSetoresOS] = useState([])
   const [loading, setLoading] = useState(true)
@@ -126,10 +185,17 @@ export default function BasesCalculo() {
   const [carregandoRegras, setCarregandoRegras] = useState(false)
 
   // Painel de conferência
+  const [filtroSistema, setFiltroSistema] = useSessionState('basecalc_filtro_sistema', '')
   const [confBaseId, setConfBaseId] = useSessionState('basecalc_conf_base', '')
-  const [confEmpresaId, setConfEmpresaId] = useSessionState('basecalc_conf_empresa', '')
-  const [confDataInicio, setConfDataInicio] = useSessionState('basecalc_conf_ini', '')
-  const [confDataFim, setConfDataFim] = useSessionState('basecalc_conf_fim', '')
+  const [confEmpresaIds, setConfEmpresaIds] = useSessionState('basecalc_conf_empresas', [])
+  // Período padrão da conferência = mês atual (1º dia até o último dia).
+  const mesAtual = (() => {
+    const h = new Date()
+    const f = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    return { ini: f(new Date(h.getFullYear(), h.getMonth(), 1)), fim: f(new Date(h.getFullYear(), h.getMonth() + 1, 0)) }
+  })()
+  const [confDataInicio, setConfDataInicio] = useState(mesAtual.ini)
+  const [confDataFim, setConfDataFim] = useState(mesAtual.fim)
   const [calculando, setCalculando] = useState(false)
   const [erroCalcular, setErroCalcular] = useState(null)
   const [resultado, setResultado] = useState(null)
@@ -140,32 +206,20 @@ export default function BasesCalculo() {
 
   useEffect(() => { loadData() }, [])
 
-  // Data Início/Fim do painel de conferência sempre abrem no mês ANTERIOR ao atual — é o mês
-  // que normalmente já está fechado no ERP e pronto pra conferir, então evita o usuário ter
-  // que ajustar manualmente toda vez (sobrescreve qualquer valor salvo de sessão anterior).
-  useEffect(() => {
-    const hoje = new Date()
-    const mesAnterior = new Date(hoje.getFullYear(), hoje.getMonth() - 1, 1)
-    const ano = mesAnterior.getFullYear()
-    const mes = mesAnterior.getMonth()
-    const pad = (n) => String(n).padStart(2, '0')
-    const ultimoDia = new Date(ano, mes + 1, 0).getDate()
-    setConfDataInicio(`${ano}-${pad(mes + 1)}-01`)
-    setConfDataFim(`${ano}-${pad(mes + 1)}-${pad(ultimoDia)}`)
-  }, [])
-
   const loadData = async () => {
     setLoading(true)
     setError(null)
     try {
-      const [bases, fontesData, emps, tiposOS] = await Promise.all([
+      const [bases, fontesData, fontesMwData, emps, tiposOS] = await Promise.all([
         apiService.getBasesCalculoComFonte(),
         apiService.getFontesCalculo(),
+        apiService.getFontesMicrowork(),
         apiService.getEmpresas(),
         apiService.getTiposOS().catch(() => []),
       ])
       setDados(bases)
       setFontes(fontesData)
+      setFontesMw(fontesMwData)
       setEmpresas([...emps].sort((a, b) => (a.empresa_fantasia || a.nome_empresa || '').localeCompare(b.empresa_fantasia || b.nome_empresa || '', 'pt-BR')))
       // Setores únicos do cadastro de Tipos de O.S. — opções do operador "Setor da O.S.".
       setSetoresOS([...new Set(tiposOS.map(t => (t.setor_servico || '').trim()).filter(Boolean))]
@@ -177,7 +231,15 @@ export default function BasesCalculo() {
     }
   }
 
+  const fonteMwSelecionada = useMemo(() => fontesMw.find(f => f.id === form.fonte_microwork_id) || null, [fontesMw, form.fonte_microwork_id])
   const fonteSelecionada = useMemo(() => fontes.find(f => f.id === form.fonte_calculo_id) || null, [fontes, form.fonte_calculo_id])
+
+  // Base antiga sem Sistema gravado: deduz pela fonte vinculada (SharePoint = Dealer.net).
+  const dadosFiltrados = useMemo(() => dados.filter(b => {
+    if (!filtroSistema) return true
+    const sis = b.sistema || (b.fonte_calculo_id ? 'Dealer.net' : b.fonte_microwork_id ? 'MicroWork Cloud' : '')
+    return sis === filtroSistema
+  }), [dados, filtroSistema])
 
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target
@@ -197,6 +259,8 @@ export default function BasesCalculo() {
   const abrirEditar = async (item) => {
     setEditingId(item.id)
     setForm({
+      sistema: item.sistema || (item.fonte_calculo_id ? 'Dealer.net' : item.fonte_microwork_id ? 'MicroWork Cloud' : ''),
+      fonte_microwork_id: item.fonte_microwork_id || '',
       fonte_calculo_id: item.fonte_calculo_id || '',
       nome: item.nome || '',
       codigo: item.codigo || '',
@@ -280,7 +344,9 @@ export default function BasesCalculo() {
         nomeCopia = `${item.nome} (Cópia ${n})`
       }
       const criada = await apiService.createBaseCalculo({
-        fonte_calculo_id: item.fonte_calculo_id,
+        sistema: item.sistema || null,
+        fonte_calculo_id: item.fonte_calculo_id || null,
+        fonte_microwork_id: item.fonte_microwork_id || null,
         nome: nomeCopia,
         codigo: gerarCodigo(nomeCopia),
         descricao: item.descricao || null,
@@ -308,12 +374,13 @@ export default function BasesCalculo() {
   }
 
   const handleDetectarColunas = async () => {
-    if (!fonteSelecionada?.pasta_sharepoint || !fonteSelecionada?.prefixo_arquivo) return
+    const ehMw = form.sistema === 'MicroWork Cloud'
+    if (ehMw ? !fonteMwSelecionada : (!fonteSelecionada?.pasta_sharepoint || !fonteSelecionada?.prefixo_arquivo)) return
     setDetectando(true)
     setErroDetectar(null)
     setColunasDetectadas(null)
     try {
-      const info = await apiService.getColunasFonteCalculo({
+      const info = ehMw ? await apiService.getColunasFonteMicrowork(fonteMwSelecionada) : await apiService.getColunasFonteCalculo({
         pasta: fonteSelecionada.pasta_sharepoint,
         prefixo: fonteSelecionada.prefixo_arquivo,
         usaSubpastaAno: fonteSelecionada.usa_subpasta_ano,
@@ -348,7 +415,9 @@ export default function BasesCalculo() {
     setErroModal(null)
     try {
       const payload = {
-        fonte_calculo_id: form.fonte_calculo_id,
+        sistema: form.sistema || null,
+        fonte_calculo_id: form.sistema === 'MicroWork Cloud' ? null : form.fonte_calculo_id,
+        fonte_microwork_id: form.sistema === 'MicroWork Cloud' ? form.fonte_microwork_id : null,
         nome: form.nome,
         // Código sempre acompanha o Nome (criação E edição). Desde a troca do vínculo
         // Política↔Base pra ID, o código é só um rótulo interno — regenerar ao renomear não
@@ -389,31 +458,35 @@ export default function BasesCalculo() {
   }
 
   const baseConferencia = useMemo(() => dados.find(b => b.id === confBaseId) || null, [dados, confBaseId])
-  const empresaConferencia = useMemo(() => empresas.find(e => e.id === confEmpresaId) || null, [empresas, confEmpresaId])
+  const empresasConferencia = useMemo(() => empresas.filter(e => confEmpresaIds.includes(e.id)), [empresas, confEmpresaIds])
+  const toggleEmpresaConf = (id) => setConfEmpresaIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
+  const nomeEmpresaConf = (e) => e.nome_empresa_sistema || e.empresa_fantasia || e.nome_empresa
 
   const handleCalcular = async () => {
     if (!baseConferencia) return
-    const fonte = baseConferencia.fonte_calculo
-    if (!fonte?.pasta_sharepoint || !fonte?.prefixo_arquivo || !baseConferencia.coluna_valor) {
-      setErroCalcular('Esta Base (ou sua Fonte) ainda não tem arquivo/coluna do SharePoint configurados.')
+    const fonteMw = baseConferencia.fonte_microwork_id ? fontesMw.find(f => f.id === baseConferencia.fonte_microwork_id) : null
+    const fonte = fonteMw ? {} : baseConferencia.fonte_calculo
+    if ((!fonteMw && (!fonte?.pasta_sharepoint || !fonte?.prefixo_arquivo)) || !baseConferencia.coluna_valor) {
+      setErroCalcular('Esta Base (ou sua Fonte) ainda não tem arquivo/coluna configurados.')
       return
     }
     setCalculando(true)
     setErroCalcular(null)
     setResultado(null)
     try {
-      const empresaLabel = empresaConferencia
-        ? (empresaConferencia.nome_empresa_sistema || empresaConferencia.empresa_fantasia || empresaConferencia.nome_empresa)
-        : null
       const regrasDaBase = await apiService.getRegrasParaCalculo(baseConferencia.id)
-      const res = await apiService.previewCalculoComissao({
+      // Sem empresa marcada = todas (uma consulta sem filtro); com 1+ marcadas = uma consulta por
+      // empresa, somadas no total (Média é ponderada pelas linhas de cada empresa).
+      const alvos = empresasConferencia.length > 0 ? empresasConferencia.map(e => ({ nome: nomeEmpresaConf(e), label: e.empresa_fantasia || e.nome_empresa })) : [{ nome: null, label: 'Todas' }]
+      const consultar = (empresaLabel) => apiService.previewCalculoComissao({
+        microwork: fonteMw || null,
         pasta: fonte.pasta_sharepoint,
         prefixo: fonte.prefixo_arquivo,
         usaSubpastaAno: fonte.usa_subpasta_ano,
         subpastaPadrao: fonte.subpasta_padrao,
         linhaCabecalho: fonte.linha_cabecalho,
-        colunaEmpresa: fonte.coluna_empresa,
-        colunaData: fonte.coluna_data,
+        colunaEmpresa: (fonteMw || fonte).coluna_empresa,
+        colunaData: (fonteMw || fonte).coluna_data,
         colunaValor: baseConferencia.coluna_valor,
         tipoAgregacao: baseConferencia.tipo_agregacao,
         empresaNome: empresaLabel,
@@ -421,7 +494,20 @@ export default function BasesCalculo() {
         dataFim: confDataFim,
         regras: regrasDaBase,
       })
-      setResultado(res)
+      const respostas = await Promise.all(alvos.map(a => consultar(a.nome)))
+      const totalFiltradas = respostas.reduce((acc, r) => acc + (r.total_linhas_filtradas || 0), 0)
+      const agreg = baseConferencia.tipo_agregacao
+      const valor = agreg === 'MEDIA'
+        ? (totalFiltradas > 0 ? respostas.reduce((acc, r) => acc + (r.valor || 0) * (r.total_linhas_filtradas || 0), 0) / totalFiltradas : 0)
+        : respostas.reduce((acc, r) => acc + (r.valor || 0), 0)
+      const semLinhas = respostas.find(r => r.empresas_disponiveis_amostra?.length > 0)
+      setResultado({
+        valor,
+        total_linhas_filtradas: totalFiltradas,
+        total_linhas_fonte: Math.max(...respostas.map(r => r.total_linhas_fonte || 0)),
+        empresas_disponiveis_amostra: semLinhas?.empresas_disponiveis_amostra,
+        porEmpresa: alvos.length > 1 ? alvos.map((a, i) => ({ label: a.label, valor: respostas[i].valor, linhas: respostas[i].total_linhas_filtradas })) : null,
+      })
     } catch (err) {
       setErroCalcular(err.message || String(err))
     } finally {
@@ -446,8 +532,13 @@ export default function BasesCalculo() {
 
       {/* CABEÇALHO */}
       <div className="flex items-center justify-between border-b border-slate-200 pb-4">
-        <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Base de Cálculo</h1>
+        <div className="flex items-center gap-2">
+          <label className={LBL}>Sistema</label>
+          <select value={filtroSistema} onChange={e => setFiltroSistema(e.target.value)} className={`${SEL_SM} w-44`}>
+            <option value="">Todos</option>
+            <option value="Dealer.net">Dealer.net</option>
+            <option value="MicroWork Cloud">MicroWork Cloud</option>
+          </select>
         </div>
         {canEdit && (
           <button
@@ -462,10 +553,11 @@ export default function BasesCalculo() {
 
       {/* TABELA */}
       <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-x-auto">
-        <table className="w-full text-left border-collapse min-w-[760px]">
+        <table className="w-full text-left border-collapse min-w-[760px] whitespace-nowrap">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[11px] font-semibold uppercase tracking-wider">
               <th className="p-3">Nome</th>
+              <th className="p-3 w-32">Sistema</th>
               <th className="p-3">Fonte de Cálculo</th>
               <th className="p-3 w-40">Coluna Valor</th>
               <th className="p-3 w-28 text-center">Tipo de Cálculo</th>
@@ -474,11 +566,11 @@ export default function BasesCalculo() {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
-            {dados.length === 0 ? (
+            {dadosFiltrados.length === 0 ? (
               <tr>
-                <td colSpan="6" className="p-6 text-center text-slate-400">Nenhuma Base de Cálculo cadastrada.</td>
+                <td colSpan="7" className="p-6 text-center text-slate-400">Nenhuma Base de Cálculo cadastrada.</td>
               </tr>
-            ) : dados.map((item) => (
+            ) : dadosFiltrados.map((item) => (
               <tr key={item.id} className="hover:bg-slate-50/70 transition-colors">
                 <td className="p-3 font-bold text-slate-900">
                   <div className="flex items-center gap-2">
@@ -486,7 +578,8 @@ export default function BasesCalculo() {
                     {item.nome}
                   </div>
                 </td>
-                <td className="p-3 text-slate-700">{item.fonte_calculo?.nome || '-'}</td>
+                <td className="p-3 text-slate-600">{item.sistema || '-'}</td>
+                <td className="p-3 text-slate-700">{item.fonte_calculo?.nome || item.fonte_microwork?.nome || '-'}</td>
                 <td className="p-3 text-slate-600 font-mono text-[11px]">{item.coluna_valor || '-'}</td>
                 <td className="p-3 text-center">
                   <span className="px-2 py-0.5 rounded text-[10px] font-bold border bg-indigo-50 text-indigo-700 border-indigo-200">{item.tipo_agregacao}</span>
@@ -541,13 +634,17 @@ export default function BasesCalculo() {
             </div>
             <div className="flex flex-col gap-1.5">
               <label className={LBL}>Empresa</label>
-              <select className={SEL} value={confEmpresaId} onChange={e => setConfEmpresaId(e.target.value)}>
-                <option value="">Todas</option>
-                {empresas.map(e => <option key={e.id} value={e.id}>{e.empresa_fantasia || e.nome_empresa}</option>)}
-              </select>
-              {empresaConferencia && !empresaConferencia.nome_empresa_sistema && (
+              <MultiSelectEmpresas
+                opcoes={empresas.map(e => ({ id: e.id, label: e.empresa_fantasia || e.nome_empresa }))}
+                selecionados={confEmpresaIds}
+                onToggle={toggleEmpresaConf}
+                onLimpar={() => setConfEmpresaIds([])}
+                onTodas={() => setConfEmpresaIds(empresas.map(e => e.id))}
+                placeholder="Todas"
+              />
+              {empresasConferencia.some(e => !e.nome_empresa_sistema) && (
                 <span className="text-[10px] text-amber-500">
-                  Esta empresa não tem "Nome Empresa no Sistema" cadastrado — o filtro pode não encontrar nenhuma linha.
+                  Alguma empresa selecionada não tem "Nome Empresa no Sistema" cadastrado — o filtro pode não encontrar linhas.
                 </span>
               )}
             </div>
@@ -590,6 +687,17 @@ export default function BasesCalculo() {
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Linhas no Arquivo</span>
                 <span className="text-sm font-mono font-semibold text-slate-700">{resultado.total_linhas_fonte?.toLocaleString('pt-BR')}</span>
               </div>
+              {resultado.porEmpresa && (
+                <div className="w-full flex flex-wrap gap-2 border-t border-emerald-200 pt-3">
+                  {resultado.porEmpresa.map(p => (
+                    <div key={p.label} className="rounded bg-white border border-emerald-200 px-2 py-1 text-[11px]">
+                      <span className="font-semibold text-slate-700">{p.label}</span>
+                      <span className="ml-2 font-mono text-emerald-700">{fmtValor(p.valor, baseConferencia?.tipo_agregacao)}</span>
+                      <span className="ml-2 text-slate-400">{(p.linhas || 0).toLocaleString('pt-BR')} linhas</span>
+                    </div>
+                  ))}
+                </div>
+              )}
               {resultado.empresas_disponiveis_amostra?.length > 0 && (
                 <div className="w-full flex flex-col gap-1 border-t border-emerald-200 pt-3">
                   <span className="text-[10px] font-bold text-amber-600 uppercase tracking-wide">
@@ -623,13 +731,30 @@ export default function BasesCalculo() {
             <form onSubmit={handleSalvar}>
               <div className="p-5 space-y-4 max-h-[74vh] overflow-y-auto custom-scrollbar">
 
+                {/* Sistema */}
+                <div className="flex flex-col gap-1.5">
+                  <label className={LBL}>Sistema *</label>
+                  <select required name="sistema" value={form.sistema} onChange={e => setForm(prev => ({ ...prev, sistema: e.target.value, fonte_calculo_id: '', fonte_microwork_id: '' }))} className={SEL}>
+                    <option value="">Selecione o sistema</option>
+                    <option value="Dealer.net">Dealer.net</option>
+                    <option value="MicroWork Cloud">MicroWork Cloud</option>
+                  </select>
+                </div>
+
                 {/* Fonte */}
                 <div className="flex flex-col gap-1.5">
-                  <label className={LBL}>Fonte de Cálculo *</label>
-                  <select required name="fonte_calculo_id" value={form.fonte_calculo_id} onChange={handleInputChange} className={SEL}>
-                    <option value="">Selecione a fonte</option>
-                    {fontes.map(f => <option key={f.id} value={f.id}>{f.nome}</option>)}
-                  </select>
+                  <label className={LBL}>Fonte de Dados *</label>
+                  {form.sistema === 'MicroWork Cloud' ? (
+                    <select required name="fonte_microwork_id" value={form.fonte_microwork_id} onChange={handleInputChange} className={SEL}>
+                      <option value="">Selecione a fonte</option>
+                      {fontesMw.map(f => <option key={f.id} value={f.id}>{f.nome}</option>)}
+                    </select>
+                  ) : (
+                    <select required name="fonte_calculo_id" value={form.fonte_calculo_id} onChange={handleInputChange} disabled={!form.sistema} className={`${SEL} disabled:bg-slate-50 disabled:text-slate-400`}>
+                      <option value="">{form.sistema ? 'Selecione a fonte' : 'Selecione o sistema primeiro'}</option>
+                      {fontes.map(f => <option key={f.id} value={f.id}>{f.nome}</option>)}
+                    </select>
+                  )}
                   {fonteSelecionada && !fonteSelecionada.pasta_sharepoint && (
                     <span className="text-[10px] text-amber-500">Esta Fonte ainda não tem arquivo do SharePoint configurado.</span>
                   )}
@@ -653,10 +778,11 @@ export default function BasesCalculo() {
                 </div>
 
                 {/* Coluna Valor + Agregação */}
-                <div className="grid grid-cols-2 gap-4 items-end">
+                <div className="grid grid-cols-2 gap-4 items-start">
                   <div className="flex flex-col gap-1.5">
                     <label className={LBL}>Coluna do Valor</label>
                     <input type="text" name="coluna_valor" value={form.coluna_valor} onChange={handleInputChange} placeholder="Ex: NotaFiscal_ValorProduto" className={`${INP} font-mono`} />
+                    <span className="text-[10px] text-slate-400">Some duas ou mais colunas juntando com "+" (ex: totalservico+totalrevisao) — clique nos nomes detectados abaixo pra montar.</span>
                   </div>
                   <div className="flex flex-col gap-1.5">
                     <label className={LBL}>Tipo de Cálculo *</label>
@@ -670,7 +796,7 @@ export default function BasesCalculo() {
                   <button
                     type="button"
                     onClick={handleDetectarColunas}
-                    disabled={!fonteSelecionada?.pasta_sharepoint || !fonteSelecionada?.prefixo_arquivo || detectando}
+                    disabled={(form.sistema === 'MicroWork Cloud' ? !fonteMwSelecionada : (!fonteSelecionada?.pasta_sharepoint || !fonteSelecionada?.prefixo_arquivo)) || detectando}
                     className="flex items-center gap-1.5 text-[11px] font-semibold text-indigo-700 bg-indigo-100 hover:bg-indigo-200 disabled:opacity-40 disabled:cursor-not-allowed px-2.5 py-1.5 rounded-md transition-colors"
                   >
                     {detectando ? <Loader2 className="h-3 w-3 animate-spin" /> : <Search className="h-3 w-3" />}
@@ -689,12 +815,25 @@ export default function BasesCalculo() {
 
                 {colunasDetectadas && colunasDetectadas.colunas.length > 0 && (
                   <div className="flex flex-wrap gap-1.5 border-t border-slate-100 pt-3">
-                    {colunasDetectadas.colunas.map(col => (
-                      <button key={col} type="button" onClick={() => setForm(prev => ({ ...prev, coluna_valor: col }))}
-                        className="px-2 py-1 rounded border border-slate-200 bg-white hover:bg-blue-50 hover:border-blue-300 text-[10px] font-mono text-slate-700 hover:text-blue-700 transition-colors">
-                        {col}
-                      </button>
-                    ))}
+                    {colunasDetectadas.colunas.map(col => {
+                      const colunasAtuais = form.coluna_valor ? form.coluna_valor.split('+').map(c => c.trim()).filter(Boolean) : []
+                      const selecionada = colunasAtuais.includes(col)
+                      return (
+                        <button key={col} type="button"
+                          onClick={() => setForm(prev => {
+                            const atuais = prev.coluna_valor ? prev.coluna_valor.split('+').map(c => c.trim()).filter(Boolean) : []
+                            const novas = atuais.includes(col) ? atuais.filter(c => c !== col) : [...atuais, col]
+                            return { ...prev, coluna_valor: novas.join('+') }
+                          })}
+                          className={`px-2 py-1 rounded border text-[10px] font-mono transition-colors ${
+                            selecionada
+                              ? 'bg-blue-600 border-blue-600 text-white'
+                              : 'border-slate-200 bg-white hover:bg-blue-50 hover:border-blue-300 text-slate-700 hover:text-blue-700'
+                          }`}>
+                          {col}
+                        </button>
+                      )
+                    })}
                   </div>
                 )}
 
@@ -867,8 +1006,12 @@ export default function BasesCalculo() {
                 </span>
               </div>
               <div className="flex flex-col gap-0.5">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Sistema</span>
+                <span className="text-xs font-semibold text-slate-800">{itemVisualizado.sistema || '-'}</span>
+              </div>
+              <div className="flex flex-col gap-0.5">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Fonte de Cálculo</span>
-                <span className="text-xs font-semibold text-slate-800">{itemVisualizado.fonte_calculo?.nome || '-'}</span>
+                <span className="text-xs font-semibold text-slate-800">{itemVisualizado.fonte_calculo?.nome || itemVisualizado.fonte_microwork?.nome || '-'}</span>
               </div>
               <div className="col-span-2 flex flex-col gap-0.5">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Descrição</span>

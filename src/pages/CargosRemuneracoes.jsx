@@ -382,13 +382,7 @@ export default function CargosRemuneracoes() {
     <div className="p-6 space-y-4 max-w-[1500px]">
 
       {/* CABEÇALHO */}
-      <div className="flex items-center justify-between border-b border-slate-200 pb-4">
-        <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
-            <Briefcase className="h-5 w-5 text-blue-600" />
-            Cargos e Remunerações
-          </h1>
-        </div>
+      <div className="flex items-center justify-end border-b border-slate-200 pb-4">
         <div className="flex items-center gap-2">
           {canEditPolitica && (
             <button onClick={() => navigate('/regras-comissoes?aba=politica-comissao')} className="flex items-center gap-1.5 border border-slate-300 text-slate-700 hover:bg-slate-100 text-xs font-semibold px-3 py-2 rounded-md transition-colors">

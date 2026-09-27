@@ -1017,7 +1017,7 @@ export default function Funcionarios() {
               className="flex items-center gap-2 border border-slate-300 text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-semibold px-3 py-2 rounded-md transition-colors"
             >
               {sincronizando ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-              Atualizar Departamentos
+              Atualizar Funcionários
             </button>
           )}
           {canEdit && (

@@ -96,7 +96,7 @@ const FORM_VAZIO = {
 }
 
 const mesesVazios = () =>
-  Array.from({ length: 12 }, (_, i) => ({ mes: i + 1, meta_faturamento: '', dias_uteis_reais: '', margem_pecas_pct: '' }))
+  Array.from({ length: 12 }, (_, i) => ({ mes: i + 1, meta_faturamento: '', dias_uteis_reais: '', margem_pecas_pct: '', fat_marca: '', fat_parceira: '' }))
 
 const numOuVazio = (v) => (v === null || v === undefined || v === '') ? '' : Number(v)
 const fmtPctMargem = (v) => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%'
@@ -296,6 +296,9 @@ export default function MetasPecas({ empresaExterna = null, anoExterno = null, a
   const [carregandoDias,    setCarregandoDias]    = useState(false)
   const [salvando,          setSalvando]          = useState(false)
   const [erroModal,         setErroModal]         = useState(null)
+  const [distAberto,        setDistAberto]        = useState(false)
+  const [distPctMarca,      setDistPctMarca]      = useState('')
+  const [distPctParceira,   setDistPctParceira]   = useState('')
 
 
   useEffect(() => { loadLookups() }, [])
@@ -550,7 +553,7 @@ export default function MetasPecas({ empresaExterna = null, anoExterno = null, a
     })
     setMesesForm(Array.from({ length: 12 }, (_, i) => {
       const row = rows.find(r => Number(r.mes) === i + 1)
-      return { mes: i + 1, meta_faturamento: row?.meta_faturamento ?? '', dias_uteis_reais: row?.dias_uteis_reais ?? '', margem_pecas_pct: numOuVazio(row?.margem_pecas_pct) }
+      return { mes: i + 1, meta_faturamento: row?.meta_faturamento ?? '', dias_uteis_reais: row?.dias_uteis_reais ?? '', margem_pecas_pct: numOuVazio(row?.margem_pecas_pct), fat_marca: numOuVazio(row?.fat_marca), fat_parceira: numOuVazio(row?.fat_parceira) }
     }))
     setErroModal(null)
     setModoModal(modo)
@@ -612,6 +615,14 @@ export default function MetasPecas({ empresaExterna = null, anoExterno = null, a
         box_id:   form.box_id   || null,
         cargo_id: form.cargo_id || null,
       }
+      const mesesFatEstourados = mesesForm
+        .filter(m => (Number(m.fat_marca) || 0) + (Number(m.fat_parceira) || 0) > (Number(m.meta_faturamento) || 0) + 0.005)
+        .map(m => MESES_ABR[m.mes - 1])
+      if (mesesFatEstourados.length) {
+        setErroModal(`Faturamento ${rotulosFat.marca} + ${rotulosFat.parceira} ultrapassa a Meta R$ em: ${mesesFatEstourados.join(', ')}. Ajuste antes de salvar.`)
+        setSalvando(false)
+        return
+      }
       for (const m of mesesForm) {
         const meta  = Number(m.meta_faturamento) || 0
         const dias  = Number(m.dias_uteis_reais) || 0
@@ -621,6 +632,9 @@ export default function MetasPecas({ empresaExterna = null, anoExterno = null, a
           mes: m.mes, ano: Number(form.ano),
           meta_faturamento: meta, dias_uteis_reais: dias,
           margem_pecas_pct: (m.margem_pecas_pct === '' || m.margem_pecas_pct == null) ? null : (Number(m.margem_pecas_pct) || 0),
+          fat_marca:    (m.fat_marca === '' || m.fat_marca == null) ? null : (Number(m.fat_marca) || 0),
+          fat_parceira: (m.fat_parceira === '' || m.fat_parceira == null) ? null : (Number(m.fat_parceira) || 0),
+          fat_outros:   ((m.fat_marca === '' || m.fat_marca == null) && (m.fat_parceira === '' || m.fat_parceira == null)) ? null : Math.max(0, meta - (Number(m.fat_marca) || 0) - (Number(m.fat_parceira) || 0)),
           media_diaria_venda: calcMedia(meta, dias),
         })
       }
@@ -639,6 +653,23 @@ export default function MetasPecas({ empresaExterna = null, anoExterno = null, a
       setError(err.message || String(err))
       setModalExcluirAberto(false)
     }
+  }
+
+  // Rótulos das linhas de faturamento conforme a marca da empresa: DAF → DAF / TRP; HONDA → HONDA / HAMP.
+  const marcaEmpresaModal = String(empresas.find(e => e.id === form.empresa_id)?.marca || '').toUpperCase()
+  const rotulosFat = marcaEmpresaModal.includes('HONDA') ? { marca: 'HONDA', parceira: 'HAMP' } : { marca: 'DAF', parceira: 'TRP' }
+
+  // Distribui a Meta R$ de cada mês (com valor) pelos percentuais informados; "Outros" fica com o restante.
+  const aplicarDistribuicaoPct = () => {
+    const pm = Number(distPctMarca) || 0, pp = Number(distPctParceira) || 0
+    setMesesForm(prev => prev.map(m => {
+      const meta = parseBRL(m.meta_faturamento) || 0
+      if (meta <= 0) return m
+      const marca = Math.round(meta * pm) / 100
+      const parceira = Math.round(meta * pp) / 100
+      return { ...m, fat_marca: marca, fat_parceira: parceira }
+    }))
+    setDistAberto(false)
   }
 
   // Registra o botão "+ Adicionar Vendedor" no cabeçalho compartilhado das abas (mesma linha das abas).
@@ -1163,6 +1194,48 @@ export default function MetasPecas({ empresaExterna = null, anoExterno = null, a
                           </tr>
                         )
                       })()}
+                      {/* Distribuição da Meta R$ em três linhas de faturamento (gravadas no Supabase) */}
+                      {[
+                        { campo: 'fat_marca',    label: `Faturamento ${rotulosFat.marca}` },
+                        { campo: 'fat_parceira', label: `Faturamento ${rotulosFat.parceira}` },
+                      ].map(({ campo, label }) => (
+                        <tr key={campo}>
+                          <td className="text-xs font-semibold text-slate-600 px-1 whitespace-nowrap">
+                            <span className="inline-flex items-center gap-1">
+                              {label}
+                              {campo === 'fat_marca' && modoModal !== 'visualizar' && (
+                                <button type="button" onClick={() => { setDistPctMarca(''); setDistPctParceira(''); setDistAberto(true) }}
+                                  title="Distribuir a Meta R$ dos 3 faturamentos por percentual"
+                                  className="inline-flex items-center justify-center w-5 h-5 text-[11px] font-bold text-indigo-600 border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 rounded transition-colors">
+                                  %
+                                </button>
+                              )}
+                            </span>
+                          </td>
+                          {mesesForm.map((m, i) => {
+                            const estourou = (Number(m.fat_marca) || 0) + (Number(m.fat_parceira) || 0) > (parseBRL(m.meta_faturamento) || 0) + 0.005
+                            return modoModal === 'visualizar'
+                              ? <td key={i} className="bg-slate-100 border border-slate-200 rounded p-1 text-right text-xs text-slate-600 font-mono px-2">{m[campo] === '' || m[campo] == null ? '—' : formatBRL(m[campo])}</td>
+                              : <td key={i} className={`border rounded p-1 ${estourou ? 'bg-red-50 border-red-300' : 'bg-white border-slate-200'}`}>
+                                  <MetaInput value={m[campo]} onChange={val => setMesesForm(prev => prev.map((x, xi) => xi === i ? { ...x, [campo]: val } : x))} />
+                                </td>
+                          })}
+                          <td className="bg-indigo-50 border border-indigo-200 rounded p-1 text-right text-xs font-bold text-indigo-700 font-mono">
+                            {formatBRL(mesesForm.reduce((a, m) => a + (Number(m[campo]) || 0), 0)) || '—'}
+                          </td>
+                        </tr>
+                      ))}
+                      {/* Faturamento Outros = Meta R$ − marca − parceira (automático) */}
+                      {(() => {
+                        const outros = mesesForm.map(m => Math.max(0, (parseBRL(m.meta_faturamento) || 0) - (Number(m.fat_marca) || 0) - (Number(m.fat_parceira) || 0)))
+                        return (
+                          <tr>
+                            <td className="text-xs font-bold text-slate-600 px-1 whitespace-nowrap" title="Meta R$ − Faturamento marca − Faturamento parceira">Faturamento Outros</td>
+                            {outros.map((v, i) => <td key={i} className="border rounded p-1 text-right text-xs font-bold bg-slate-100 border-slate-200 text-slate-600">{v > 0 ? fmtBRL(v) : '—'}</td>)}
+                            <td className="border rounded p-1 text-right text-xs font-bold bg-slate-200 border-slate-300 text-slate-700">{fmtBRL(outros.reduce((a, v) => a + v, 0))}</td>
+                          </tr>
+                        )
+                      })()}
                       {mostrarStatusMeses && <LinhaStatusMes avaliacao={avaliacaoMeses} />}
                     </tbody>
                   </table>
@@ -1170,6 +1243,35 @@ export default function MetasPecas({ empresaExterna = null, anoExterno = null, a
                 {mostrarStatusMeses && <AlertaMesesIncompletos avaliacao={avaliacaoMeses} />}
               </div>}
             </div>
+
+            {distAberto && (() => {
+              const pm = Number(distPctMarca) || 0, pp = Number(distPctParceira) || 0
+              const restante = Math.round((100 - pm - pp) * 100) / 100
+              const invalido = pm < 0 || pp < 0 || restante < 0
+              return (
+                <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[60] p-4" onClick={() => setDistAberto(false)}>
+                  <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-5" onClick={e => e.stopPropagation()}>
+                    <h3 className="text-base font-bold text-slate-800 mb-1">Distribuir Meta R$ por %</h3>
+                    <p className="text-xs text-slate-500 mb-3">Aplica nos meses que têm Meta R$. Outros fica com o restante.</p>
+                    <div className="space-y-2">
+                      <label className="flex items-center justify-between gap-3 text-sm text-slate-700">Faturamento {rotulosFat.marca} (%)
+                        <input type="number" min="0" max="100" step="0.01" value={distPctMarca} onChange={e => setDistPctMarca(e.target.value)} className="w-24 border border-slate-300 rounded-lg px-2 py-1 text-right text-sm" placeholder="0" />
+                      </label>
+                      <label className="flex items-center justify-between gap-3 text-sm text-slate-700">Faturamento {rotulosFat.parceira} (%)
+                        <input type="number" min="0" max="100" step="0.01" value={distPctParceira} onChange={e => setDistPctParceira(e.target.value)} className="w-24 border border-slate-300 rounded-lg px-2 py-1 text-right text-sm" placeholder="0" />
+                      </label>
+                      <div className={`flex items-center justify-between gap-3 text-sm font-semibold ${invalido ? 'text-red-600' : 'text-indigo-700'}`}>Faturamento Outros (%)
+                        <span className="w-24 text-right">{invalido ? 'passou de 100%' : restante.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      </div>
+                    </div>
+                    <div className="flex justify-end gap-2 mt-4">
+                      <button type="button" onClick={() => setDistAberto(false)} className={BTN_SEC}>Cancelar</button>
+                      <button type="button" disabled={invalido} onClick={aplicarDistribuicaoPct} className={BTN_PRI}>Aplicar</button>
+                    </div>
+                  </div>
+                </div>
+              )
+            })()}
 
             {erroModal && (
               <div className="mx-6 mb-2 flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm">

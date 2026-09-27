@@ -15,12 +15,13 @@ import {
   listarArquivos, lerArquivoComoAoA, toIsoDate, parseMoney, normalizaTexto,
   avaliaCondicoes, aplicarRegras, anosDoIntervalo,
 } from './sharepointFonteCalculo.js'
+import { lerAoAMicrowork, mesesDoIntervalo } from './microworkFonteCalculo.js'
 
 // Chave de agrupamento: itens que compartilham arquivo+colunas+regras podem
 // ser calculados numa única leitura do arquivo.
 function chaveGrupo(item) {
   return [
-    item.pastaSharepoint, item.prefixoArquivo, item.usaSubpastaAno, item.subpastaPadrao || '', item.linhaCabecalho || 0,
+    item.microwork ? `mw:${item.microwork.id}` : '', item.pastaSharepoint, item.prefixoArquivo, item.usaSubpastaAno, item.subpastaPadrao || '', item.linhaCabecalho || 0,
     item.colunaEmpresa, item.colunaData, item.colunaValor, item.colunaFuncionario || '',
     item.tipoAgregacao, JSON.stringify(item.regras || []),
   ].join('|')
@@ -35,7 +36,8 @@ function agregarArquivoParaGrupo(aoa, linha0, itensDoGrupo, colunaEmpresa, colun
   const cabecalho = aoa[0]
   const idxEmpresa = cabecalho.indexOf(colunaEmpresa)
   const idxData = cabecalho.indexOf(colunaData)
-  const idxValor = cabecalho.indexOf(colunaValor)
+  // Coluna do Valor aceita somar mais de uma coluna, separadas por "+" (ex: "totalservico+totalrevisao").
+  const idxsValor = colunaValor.split('+').map(c => cabecalho.indexOf(c.trim())).filter(i => i >= 0)
   const idxFuncionario = colunaFuncionario ? cabecalho.indexOf(colunaFuncionario) : -1
 
   const regrasResolvidas = (regrasCru || []).map(regra => ({
@@ -96,7 +98,7 @@ function agregarArquivoParaGrupo(aoa, linha0, itensDoGrupo, colunaEmpresa, colun
 
     // Coluna de valor e regras são as mesmas pro grupo inteiro (é a chave de agrupamento) —
     // calcula uma vez por LINHA, não uma vez por item, evitando trabalho repetido.
-    let valorTrabalho = idxValor >= 0 ? parseMoney(r[idxValor]) : 0
+    let valorTrabalho = idxsValor.reduce((soma, idx) => soma + parseMoney(r[idx]), 0)
     if (regrasResolvidas.length > 0) {
       const resultado = aplicarRegras(r, valorTrabalho, regrasResolvidas)
       if (resultado.filtrada) continue
@@ -162,6 +164,20 @@ export async function calcularLote(itens) {
     // (sem isso, uma pasta com 1 arquivo por ano/mês era lida por inteiro em toda chamada).
     const dataInicioGrupo = itensDoGrupo.reduce((min, it) => (!min || (it.dataInicio && it.dataInicio < min)) ? it.dataInicio : min, null)
     const dataFimGrupo = itensDoGrupo.reduce((max, it) => (!max || (it.dataFim && it.dataFim > max)) ? it.dataFim : max, null)
+
+    if (base.microwork) {
+      // Fonte MicroWork: a API consulta mês a mês — lê cada mês do intervalo do grupo uma vez.
+      for (const { ano, mes } of mesesDoIntervalo(dataInicioGrupo, dataFimGrupo)) {
+        const aoa = await lerAoAMicrowork(base.microwork, ano, mes)
+        agregarArquivoParaGrupo(
+          aoa, 0, itensDoGrupo,
+          base.colunaEmpresa, base.colunaData, base.colunaValor, base.colunaFuncionario,
+          base.regras, base.tipoAgregacao, contadorGrupo
+        )
+      }
+      for (const item of itensDoGrupo) item._acc.totalLinhas = contadorGrupo.totalLinhas
+      continue
+    }
 
     for (const ano of anos) {
       const files = await listarArquivos({

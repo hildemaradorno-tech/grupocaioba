@@ -1,14 +1,20 @@
 import React, { useEffect, useState } from 'react'
 import { useSessionState } from '../hooks/useSessionState'
-import { Plus, X, AlertTriangle, Radio, Eye, Loader2, PlayCircle, Info, Search } from 'lucide-react'
+import { Plus, X, AlertTriangle, Radio, Eye, Loader2, PlayCircle, Info, Search, Copy } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import PermissionActionButtons from '../components/PermissionActionButtons'
 import { apiService } from '../services/api'
+
+// No banco os filtros ficam numa string "Chave=Valor;Chave=Valor" (formato que o MicroWork exige);
+// no formulário aparecem um por linha, e o ";" é só o separador na gravação.
+const filtrosParaLinhas = (txt) => (txt || '').split(/[;\n]+/).map(f => f.trim()).filter(Boolean).map(f => `${f};`).join('\n')
+const linhasParaFiltros = (txt) => (txt || '').split(/[;\n]+/).map(f => f.trim()).filter(Boolean).join(';')
 
 const FORM_VAZIO = {
   nome: '', descricao: '',
   idrelatorioconfiguracao: '', idrelatorioconsulta: '', idrelatorioconfiguracaoleiaute: '', idrelatoriousuarioleiaute: '',
   ididioma: 1, listaempresas: '', filtros_fixos: '',
+  campo_periodo_inicio: 'Periododeconclusaoinicial', campo_periodo_fim: 'Periododeconclusaofinal',
   coluna_empresa: '', coluna_data: '', coluna_funcionario: '',
   ativo: true,
 }
@@ -51,18 +57,32 @@ function parseRequisicaoMicrowork(texto) {
   // inteiro mesmo com quebras de linha/indentação no meio.
   const filtrosMatch = texto.match(/"filtros"\s*:\s*"([\s\S]*)"\s*\}/)
   let filtrosFixos = ''
+  // Detecta o par de campos do período (ex: "Periododeconclusaoinicial"/"...final", ou
+  // "DataConclusaoInicial"/"DataConclusaoFinal" — o nome muda por relatório): qualquer par cuja
+  // chave termine em "Inicial"/"Final" com valor em formato de data (YYYY-MM-DD) é o período —
+  // sai do Filtros Fixos (senão travaria o cálculo num intervalo fixo) e o nome real do campo é
+  // devolvido pra ficar configurado na Fonte, em vez do nome genérico assumido por padrão.
+  let campoPeriodoInicio = null
+  let campoPeriodoFim = null
   if (filtrosMatch) {
     const semEspacos = filtrosMatch[1].replace(/\s+/g, '')
-    filtrosFixos = semEspacos
-      .split(';')
-      .filter(Boolean)
-      .filter(par => !/^Periododeconclusao(Inicial|Final)=/i.test(par))
-      .join(';')
+    const pares = semEspacos.split(';').filter(Boolean)
+    const restantes = []
+    for (const par of pares) {
+      const m = par.match(/^(.+?)(Inicial|Final)=(\d{4}-\d{2}-\d{2})$/)
+      if (m) {
+        if (m[2] === 'Inicial') campoPeriodoInicio = `${m[1]}Inicial`
+        else campoPeriodoFim = `${m[1]}Final`
+        continue
+      }
+      restantes.push(par)
+    }
+    filtrosFixos = restantes.join(';')
   }
 
   const ok = !!(idrelatorioconfiguracao && idrelatorioconsulta && idrelatorioconfiguracaoleiaute && idrelatoriousuarioleiaute)
 
-  return { idrelatorioconfiguracao, idrelatorioconsulta, idrelatorioconfiguracaoleiaute, idrelatoriousuarioleiaute, ididioma, listaempresas, filtrosFixos, ok }
+  return { idrelatorioconfiguracao, idrelatorioconsulta, idrelatorioconfiguracaoleiaute, idrelatoriousuarioleiaute, ididioma, listaempresas, filtrosFixos, campoPeriodoInicio, campoPeriodoFim, ok }
 }
 
 // A resposta do MicroWork vem como array na raiz (ou, pra alguns relatórios, dentro de uma
@@ -158,7 +178,9 @@ export default function FontesMicrowork() {
       idrelatoriousuarioleiaute: item.idrelatoriousuarioleiaute ?? '',
       ididioma: item.ididioma ?? 1,
       listaempresas: (item.listaempresas || []).join(', '),
-      filtros_fixos: item.filtros_fixos || '',
+      filtros_fixos: filtrosParaLinhas(item.filtros_fixos),
+      campo_periodo_inicio: item.campo_periodo_inicio || 'Periododeconclusaoinicial',
+      campo_periodo_fim: item.campo_periodo_fim || 'Periododeconclusaofinal',
       coluna_empresa: item.coluna_empresa || '',
       coluna_data: item.coluna_data || '',
       coluna_funcionario: item.coluna_funcionario || '',
@@ -193,7 +215,7 @@ export default function FontesMicrowork() {
         idrelatoriousuarioleiaute: parseInt(form.idrelatoriousuarioleiaute, 10),
         ididioma: parseInt(form.ididioma, 10) || 1,
         listaempresas: parseListaEmpresas(form.listaempresas),
-        filtros_fixos: form.filtros_fixos,
+        filtros_fixos: linhasParaFiltros(form.filtros_fixos),
       }
       const resultado = await apiService.testarFonteMicrowork(fonteParaTeste, { ano: agoraDetec.getFullYear(), mes: agoraDetec.getMonth() + 1 })
       const lista = extrairLista(resultado)
@@ -229,7 +251,11 @@ export default function FontesMicrowork() {
       idrelatoriousuarioleiaute: r.idrelatoriousuarioleiaute,
       ididioma: r.ididioma,
       listaempresas: r.listaempresas.join(', '),
-      filtros_fixos: r.filtrosFixos,
+      filtros_fixos: filtrosParaLinhas(r.filtrosFixos),
+      // Se o filtro colado tinha um par Inicial/Final com data (ex: DataConclusaoInicial/Final),
+      // usa o nome real detectado em vez do padrão genérico — evita repetir o problema de uma
+      // Fonte travada num período fixo por causa de um nome de campo diferente do esperado.
+      ...(r.campoPeriodoInicio && r.campoPeriodoFim ? { campo_periodo_inicio: r.campoPeriodoInicio, campo_periodo_fim: r.campoPeriodoFim } : {}),
     }))
     setColarOk(true)
   }
@@ -244,6 +270,21 @@ export default function FontesMicrowork() {
   const abrirVisualizar = (item) => {
     setItemVisualizado(item)
     setModalVisualizarAberto(true)
+  }
+
+  const [duplicandoId, setDuplicandoId] = useState(null)
+  const handleDuplicar = async (item) => {
+    setDuplicandoId(item.id)
+    setError(null)
+    try {
+      const { id, criado_em, atualizado_em, ...resto } = item
+      await apiService.createFonteMicrowork({ ...resto, nome: `${item.nome} (Cópia)` })
+      await loadData()
+    } catch (err) {
+      alert('Erro ao duplicar: ' + (err.message || String(err)))
+    } finally {
+      setDuplicandoId(null)
+    }
   }
 
   const abrirTestar = (item) => {
@@ -266,7 +307,9 @@ export default function FontesMicrowork() {
         idrelatoriousuarioleiaute: parseInt(form.idrelatoriousuarioleiaute, 10),
         ididioma: parseInt(form.ididioma, 10) || 1,
         listaempresas: parseListaEmpresas(form.listaempresas),
-        filtros_fixos: form.filtros_fixos || null,
+        filtros_fixos: linhasParaFiltros(form.filtros_fixos) || null,
+        campo_periodo_inicio: form.campo_periodo_inicio || 'Periododeconclusaoinicial',
+        campo_periodo_fim: form.campo_periodo_fim || 'Periododeconclusaofinal',
         coluna_empresa: form.coluna_empresa || null,
         coluna_data: form.coluna_data || null,
         coluna_funcionario: form.coluna_funcionario || null,
@@ -325,10 +368,7 @@ export default function FontesMicrowork() {
     <div className="p-6 space-y-4 max-w-screen-xl">
 
       {/* CABEÇALHO */}
-      <div className="flex items-center justify-between border-b border-slate-200 pb-4">
-        <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Fonte MicroWork</h1>
-        </div>
+      <div className="flex items-center justify-end border-b border-slate-200 pb-4">
         {canEdit && (
           <button
             onClick={abrirIncluir}
@@ -385,6 +425,17 @@ export default function FontesMicrowork() {
                       onEdit={canEdit ? () => abrirEditar(item) : undefined}
                       onDelete={canDelete ? () => abrirExcluir(item) : undefined}
                     />
+                    {canEdit && (
+                      <button
+                        type="button"
+                        onClick={() => handleDuplicar(item)}
+                        disabled={duplicandoId === item.id}
+                        title="Duplicar Fonte MicroWork"
+                        className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        {duplicandoId === item.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Copy className="h-3.5 w-3.5" />}
+                      </button>
+                    )}
                   </div>
                 </td>
               </tr>
@@ -489,12 +540,30 @@ export default function FontesMicrowork() {
                         <span className="relative group cursor-help">
                           <Info className="h-3 w-3 text-slate-400" />
                           <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-72 text-[10px] text-white bg-slate-700 rounded px-2 py-1.5 leading-relaxed opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 text-center normal-case font-normal tracking-normal">
-                            Cole os filtros do relatório no formato Chave=Valor;Chave=Valor — sem incluir Periododeconclusaoinicial/Periododeconclusaofinal, que o sistema calcula sozinho a partir do mês/ano escolhido ao testar/rodar.
+                            Um filtro por linha, no formato Chave=Valor (se colar com ";" entre eles, viram uma linha cada) — sem incluir Periododeconclusaoinicial/Periododeconclusaofinal, que o sistema calcula sozinho a partir do mês/ano escolhido ao testar/rodar.
                           </span>
                         </span>
                       </label>
-                      <textarea name="filtros_fixos" value={form.filtros_fixos} onChange={handleInputChange} rows={4}
-                        placeholder="TipoMercadoria=null;ConsiderarTecnico=True;..." className={`${INP} font-mono resize-y`} />
+                      <textarea name="filtros_fixos" value={form.filtros_fixos} onChange={handleInputChange} rows={8}
+                        placeholder={'TipoMercadoria=null;\nConsiderarTecnico=True;'} className={`${INP} font-mono resize-y`} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="flex flex-col gap-1.5">
+                        <label className={`${LBL} flex items-center gap-1`}>
+                          Campo Período Início
+                          <span className="relative group cursor-help">
+                            <Info className="h-3 w-3 text-slate-400" />
+                            <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-72 text-[10px] text-white bg-slate-700 rounded px-2 py-1.5 leading-relaxed opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 text-center normal-case font-normal tracking-normal">
+                              Nome do campo que este relatório usa pra filtrar a data inicial (varia por relatório — ex: "Periododeconclusaoinicial" ou "DataConclusaoInicial"). O sistema preenche esse campo sozinho com o 1º dia do mês escolhido ao testar/calcular — não coloque valor fixo em Filtros Fixos.
+                            </span>
+                          </span>
+                        </label>
+                        <input type="text" name="campo_periodo_inicio" value={form.campo_periodo_inicio} onChange={handleInputChange} placeholder="Periododeconclusaoinicial" className={`${INP} font-mono`} />
+                      </div>
+                      <div className="flex flex-col gap-1.5">
+                        <label className={LBL}>Campo Período Fim</label>
+                        <input type="text" name="campo_periodo_fim" value={form.campo_periodo_fim} onChange={handleInputChange} placeholder="Periododeconclusaofinal" className={`${INP} font-mono`} />
+                      </div>
                     </div>
 
                     <div className="flex items-center gap-2 pt-1">
@@ -613,15 +682,15 @@ export default function FontesMicrowork() {
       {/* MODAL: VISUALIZAR */}
       {modalVisualizarAberto && itemVisualizado && (
         <div className="fixed top-0 right-0 bottom-0 left-16 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg border border-slate-200 w-full max-w-[600px] shadow-xl overflow-hidden">
-            <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50">
+          <div className="bg-white rounded-lg border border-slate-200 w-full max-w-[600px] max-h-[90vh] shadow-xl overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50 shrink-0">
               <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                 <Eye className="h-4 w-4 text-slate-500" />
                 Visualizar Fonte MicroWork
               </h3>
               <button onClick={() => setModalVisualizarAberto(false)} className="text-slate-400 hover:text-slate-600"><X className="h-4 w-4" /></button>
             </div>
-            <div className="p-5 grid grid-cols-2 gap-x-6 gap-y-4">
+            <div className="p-5 grid grid-cols-2 gap-x-6 gap-y-4 overflow-y-auto min-h-0">
               <div className="col-span-2 flex flex-col gap-0.5">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Nome</span>
                 <span className="text-sm font-bold text-slate-900">{itemVisualizado.nome}</span>
@@ -666,12 +735,20 @@ export default function FontesMicrowork() {
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Coluna Funcionário</span>
                 <span className="text-xs font-mono font-semibold text-slate-800">{itemVisualizado.coluna_funcionario || '-'}</span>
               </div>
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Campo Período Início</span>
+                <span className="text-xs font-mono font-semibold text-slate-800">{itemVisualizado.campo_periodo_inicio || 'Periododeconclusaoinicial'}</span>
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Campo Período Fim</span>
+                <span className="text-xs font-mono font-semibold text-slate-800">{itemVisualizado.campo_periodo_fim || 'Periododeconclusaofinal'}</span>
+              </div>
               <div className="col-span-2 flex flex-col gap-0.5">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Filtros fixos</span>
-                <span className="text-xs font-mono font-semibold text-slate-800 break-all whitespace-pre-wrap">{itemVisualizado.filtros_fixos || '-'}</span>
+                <span className="text-xs font-mono font-semibold text-slate-800 break-all whitespace-pre-wrap">{filtrosParaLinhas(itemVisualizado.filtros_fixos) || '-'}</span>
               </div>
             </div>
-            <div className="flex justify-end p-3 bg-slate-50 border-t border-slate-100">
+            <div className="flex justify-end p-3 bg-slate-50 border-t border-slate-100 shrink-0">
               <button onClick={() => setModalVisualizarAberto(false)} className="px-3 py-1.5 rounded-md text-xs font-semibold text-slate-600 hover:bg-slate-200/60 transition-colors">
                 Fechar
               </button>

@@ -110,10 +110,7 @@ export default function TiposProcesso() {
   return (
     <div className="p-6 space-y-4 max-w-screen-xl">
 
-      <div className="flex items-center justify-between border-b border-slate-200 pb-4">
-        <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Tipo de Processo</h1>
-        </div>
+      <div className="flex items-center justify-end border-b border-slate-200 pb-4">
         {canEdit && (
           <button
             onClick={abrirIncluir}

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useSessionState } from '../hooks/useSessionState'
-import { PlayCircle, Loader2, AlertTriangle, Save, X, ShieldCheck, Lock, ArrowUp, ArrowDown, ArrowUpDown, Trash2, ChevronDown, ChevronRight, ChevronLeft, FileDown } from 'lucide-react'
+import { PlayCircle, Loader2, AlertTriangle, Save, X, ShieldCheck, Lock, ArrowUp, ArrowDown, ArrowUpDown, Trash2, ChevronDown, ChevronRight, ChevronLeft, FileDown, Calculator } from 'lucide-react'
 import { apiService } from '../services/api'
 import { useAuth } from '../context/AuthContext'
 import { buscaComCoringa } from '../utils/buscaTexto'
@@ -122,9 +122,66 @@ const fmtValorBase = (c, v) => {
   return fmtBRL(v)
 }
 
+// Faixas da Regra da política (na ordem cadastrada), marcando a que foi aplicada (mesmo percentual
+// calculado da linha) — usado na tela e no PDF pra mostrar a regra completa.
+// Mesmos "tipo" gravados em fato_metas_publicadas pelas telas de Planejamento de Metas — usados
+// pela Regra por % de Meta Atingida (ver RegrasFaixas.jsx, onde a Meta de Referência é escolhida).
+const TIPOS_META_LABEL = { pecas: 'Peças', mecanico: 'Serviços — Mecânico', consultor: 'Serviços — Consultor', funilaria: 'Funilaria/Pintura', terceiros: 'Terceiros' }
+
+const faixasDaRegra = (politica, percentualAplicado) => {
+  if (politica?.usa_faixa !== 'SIM') return []
+  const porMeta = politica.regra_comissao?.tipo_faixa === 'PERCENTUAL_META'
+  return [...(politica.regra_comissao?.faixas || [])]
+    .sort((a, b) => a.ordem - b.ordem)
+    .map(f => ({
+      texto: `${f.operador} ${porMeta ? `${parseFloat(f.valor).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}% da meta` : fmtBRL(parseFloat(f.valor))}`,
+      percentual: `${parseFloat(f.percentual).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 })}%`,
+      aplicada: percentualAplicado != null && parseFloat(f.percentual) === parseFloat(percentualAplicado),
+    }))
+}
+
+// Regras distintas (por id) usadas pelas políticas das linhas de um grupo — mostradas uma vez
+// antes dos funcionários, em vez de repetir a regra inteira em cada consultor.
+const regrasDoGrupo = (itens) => {
+  const mapa = new Map()
+  for (const c of itens) {
+    const r = c.politica?.usa_faixa === 'SIM' ? c.politica.regra_comissao : null
+    if (r?.id && !mapa.has(r.id)) mapa.set(r.id, { id: r.id, nome: r.nome, faixas: faixasDaRegra(c.politica, null) })
+  }
+  return [...mapa.values()]
+}
+
 // Aplica o percentual/valor fixo da política sobre um valor base já apurado — usado tanto pro
 // total da linha quanto pro detalhamento por empresa (mesma regra, valor base diferente).
-function calcularComissaoSobre(c, valorBase) {
+function calcularComissaoSobre(c, valorBase, metaMap, baseComissaoMetaMap) {
+  // Política com Regra (faixas sobre o valor da Base): a primeira faixa, na ordem cadastrada,
+  // que casa com o valor apurado (ou com o % de meta atingida) define o percentual, aplicado
+  // sobre o valor todo da Base.
+  if (c.politica.usa_faixa === 'SIM' && c.politica.regra_comissao?.faixas?.length) {
+    const regra = c.politica.regra_comissao
+    const casaComValor = (f, alvo) => {
+      const v = parseFloat(f.valor)
+      return f.operador === '>=' ? alvo >= v : f.operador === '>' ? alvo > v : f.operador === '<=' ? alvo <= v : alvo < v
+    }
+    if (regra.tipo_faixa === 'PERCENTUAL_META') {
+      // Sem meta cadastrada (Planejamento de Metas) pro funcionário/mês/tipo: vira pendência —
+      // nunca calcula como se a meta fosse 0, que pagaria a faixa mais baixa por engano.
+      const meta = metaMap?.[`${c.func.id}|${regra.meta_tipo}`]
+      if (!meta || meta <= 0) return { percentual: null, valorFixo: null, valorComissao: null, semMeta: true }
+      const percentualAtingido = (valorBase / meta) * 100
+      const faixa = [...regra.faixas].sort((a, b) => a.ordem - b.ordem).find(f => casaComValor(f, percentualAtingido))
+      const percentual = faixa ? parseFloat(faixa.percentual) : 0
+      // O valor apurado da própria Base (ex: Faturamento Total) só serve pra achar QUAL % se
+      // aplica (via % atingido da Meta) — a comissão em si é essa % em cima da soma das políticas
+      // marcadas em "Políticas que formam a Base da Comissão" (cadastro da Regra), do mesmo
+      // funcionário, não do valor apurado aqui.
+      const baseComissao = baseComissaoMetaMap?.get(`${c.func.id}::${regra.id}`) ?? 0
+      return { percentual, valorFixo: null, valorComissao: baseComissao * (percentual / 100), percentualAtingido, meta, valorApurado: valorBase, baseComissao }
+    }
+    const faixa = [...regra.faixas].sort((a, b) => a.ordem - b.ordem).find(f => casaComValor(f, valorBase))
+    const percentual = faixa ? parseFloat(faixa.percentual) : 0
+    return { percentual, valorFixo: null, valorComissao: valorBase * (percentual / 100) }
+  }
   const tipo = tipoComissaoPorBase(c)
   const percentualPorNome = tipo === '% Peças' ? c.politica.comissao_pecas
     : tipo === '% Serviços' ? c.politica.comissao_servicos
@@ -184,6 +241,7 @@ export default function CalculoComissoes({ agrupamentoNome = 'Caiobá Trucks' } 
   const [calculando, setCalculando] = useState(false)
   const [salvando, setSalvando] = useState(false)
   const [salvo, setSalvo] = useState(false)
+  const [regraModal, setRegraModal] = useState(null) // { nome, baseNome, faixas } da regra aberta na telinha
   const [valoresPorFuncionario, setValoresPorFuncionario] = useState({})
   // Detalhamento por empresa (política Nível EMPRESA com "Detalhar por empresa" marcado) —
   // chaveLinha(c) -> [{ empresa, valorBase, valorComissao }]. Só existe em memória depois de
@@ -299,6 +357,9 @@ export default function CalculoComissoes({ agrupamentoNome = 'Caiobá Trucks' } 
           const todos = await apiService.getLotesPorEmpresaPeriodo(periodoInicio, periodoFim, empresaSelecionadaId)
           loteAtual = todos.find(l => (l.departamento_nome || SEM_DEPARTAMENTO) === departamentoUnicoSelecionado) || null
         }
+        // Sem lote exato: usa o lote gerado com um período menor dentro do intervalo (mês visto
+        // inteiro, cálculo feito só até uma data anterior).
+        if (!loteAtual) loteAtual = await apiService.getLoteContidoNoPeriodo(periodoInicio, periodoFim, empresaSelecionadaId, departamentoSelecionadoId)
         if (!cancelado) setLote(loteAtual)
       } catch (err) {
         if (!cancelado) setErro(err.message || String(err))
@@ -347,6 +408,19 @@ export default function CalculoComissoes({ agrupamentoNome = 'Caiobá Trucks' } 
           }
           if (s.detalhe_empresas) detalhePorLinha[chave] = s.detalhe_empresas
         }
+        // Valor gerado com um período menor que o filtro atual (ex: 01/09 a 25/09 visto em
+        // 01/09 a 30/09): também vale pra linha do período cheio — o mais recente por
+        // funcionário+política (salvos vem por calculado_em desc). A linha guarda o período
+        // original (periodoInicio/periodoFim) pra tela mostrar de quando foi gerado.
+        const cheia = {}
+        for (const s of salvos) {
+          const k = `${s.funcionario_id}::${s.politica_id}::${periodoInicio}::${periodoFim}`
+          if (porLinha[k] || cheia[k]) continue
+          const orig = `${s.funcionario_id}::${s.politica_id}::${s.periodo_inicio || ''}::${s.periodo_fim || ''}`
+          cheia[k] = porLinha[orig]
+          if (detalhePorLinha[orig]) detalhePorLinha[k] = detalhePorLinha[orig]
+        }
+        Object.assign(porLinha, cheia)
         setValoresPorFuncionario(porLinha)
         setDetalhePorEmpresa(detalhePorLinha)
         if (salvos.length > 0) setSalvo(true)
@@ -538,9 +612,13 @@ export default function CalculoComissoes({ agrupamentoNome = 'Caiobá Trucks' } 
       empresasPorAgrupamento.get(e.agrupamento_empresa_id).push(e)
     }
     const nomeSistema = (e) => e ? (e.nome_empresa_sistema || e.empresa_fantasia || e.nome_empresa) : null
+    // Nomes que servem pra achar a empresa dentro do arquivo/relatório de origem: o "Nome Empresa
+    // no Sistema" de sempre, OU a Sigla — alguns relatórios do MicroWork trazem a empresa como
+    // sigla curta (ex: "CGR"), não o nome completo. Qualquer um dos dois bate com a linha.
+    const nomesParaFiltro = (e) => e ? [nomeSistema(e), e.sigla_empresa].filter(Boolean) : []
     // Política com "Comissão sobre todas as empresas" marcada ignora o filtro de empresa por
     // completo (mesmo em nível INDIVIDUAL) — soma o faturamento de TODAS as empresas cadastradas.
-    const todasEmpresasNomes = [...new Set(empresas.map(nomeSistema).filter(Boolean))]
+    const todasEmpresasNomes = [...new Set(empresas.flatMap(nomesParaFiltro))]
 
     const nomesDepartamentos = (ids) => (ids || []).map(id => departamentosMap[id]?.nome_departamento).filter(Boolean)
     const nomesSetores = (ids) => (ids || []).map(id => setoresMap[id]?.nome_setor).filter(Boolean)
@@ -583,10 +661,13 @@ export default function CalculoComissoes({ agrupamentoNome = 'Caiobá Trucks' } 
 
         return politicasCandidatas
           .map(politica => {
-            const fonte = politica.fonte_calculo || null
             const baseCalc = politica.base_calculo || null
+            // Base ligada a uma Fonte MicroWork (sem Fonte SharePoint): usa a fonte do relatório.
+            const fonteMw = baseCalc?.fonte_microwork || null
+            const fonte = politica.fonte_calculo || (fonteMw ? { ...fonteMw, _microwork: true } : null)
             if (!fonte || !baseCalc) return null
-            if (!fonte.pasta_sharepoint || !fonte.prefixo_arquivo || !baseCalc.coluna_valor) return null
+            if (!fonte._microwork && (!fonte.pasta_sharepoint || !fonte.prefixo_arquivo)) return null
+            if (!baseCalc.coluna_valor) return null
             if (politica.nivel_calculo === 'INDIVIDUAL' && !fonte.coluna_funcionario) return null
 
             // "Comissão sobre todas as empresas" sobrepõe o Nível de Cálculo: soma TODAS as
@@ -596,8 +677,8 @@ export default function CalculoComissoes({ agrupamentoNome = 'Caiobá Trucks' } 
             const empresaNomes = politica.comissao_todas_empresas
               ? todasEmpresasNomes
               : politica.nivel_calculo === 'EMPRESA' && empresa?.agrupamento_empresa_id
-              ? [...new Set((empresasPorAgrupamento.get(empresa.agrupamento_empresa_id) || []).map(nomeSistema).filter(Boolean))]
-              : [empresaNome]
+              ? [...new Set((empresasPorAgrupamento.get(empresa.agrupamento_empresa_id) || []).flatMap(nomesParaFiltro))]
+              : nomesParaFiltro(empresa)
 
             return { ...base, politica, fonte, base: baseCalc, empresaNome, empresaNomes, status: 'OK' }
           })
@@ -612,8 +693,15 @@ export default function CalculoComissoes({ agrupamentoNome = 'Caiobá Trucks' } 
             if (feriasFunc.length === 0 || func.recebe_comissao_ferias) {
               return [{ ...linha, segInicio: periodoInicio, segFim: periodoFim }]
             }
-            return subtraiFerias(periodoInicio, periodoFim, feriasFunc)
-              .map(seg => ({ ...linha, segInicio: seg.inicio, segFim: seg.fim }))
+            const segmentos = subtraiFerias(periodoInicio, periodoFim, feriasFunc)
+            // Regra por % de Meta Atingida: a meta é mensal — não vira 2+ "prêmios" separados
+            // por causa de férias no meio do mês. Fica 1 linha só (período cheio), mas o cálculo
+            // por trás ainda lê cada pedaço sem os dias de férias e SOMA os valores antes de
+            // comparar com a meta (ver segmentosLeitura em handleCalcular).
+            if (linha.politica.usa_faixa === 'SIM' && linha.politica.regra_comissao?.tipo_faixa === 'PERCENTUAL_META') {
+              return [{ ...linha, segInicio: periodoInicio, segFim: periodoFim, segmentosLeitura: segmentos }]
+            }
+            return segmentos.map(seg => ({ ...linha, segInicio: seg.inicio, segFim: seg.fim }))
           })
       })
   }, [dados, periodoInicio, periodoFim, periodoValido, feriasPorCodigo, comissaoEscopoEfetivo, agrupamentoNome])
@@ -721,7 +809,7 @@ export default function CalculoComissoes({ agrupamentoNome = 'Caiobá Trucks' } 
       try {
         const entradas = await Promise.all(departamentosUnicos.map(async (nome) => {
           const deptId = dados.departamentos.find(d => d.nome_departamento === nome)?.id || null
-          const lote = deptId ? await apiService.getLoteComissoes(periodoInicio, periodoFim, empresaSelecionadaId, deptId) : null
+          const lote = deptId ? (await apiService.getLoteComissoes(periodoInicio, periodoFim, empresaSelecionadaId, deptId) || await apiService.getLoteContidoNoPeriodo(periodoInicio, periodoFim, empresaSelecionadaId, deptId)) : null
           return [nome, lote]
         }))
         if (!cancelado) setLotesPorDepartamento(Object.fromEntries(entradas))
@@ -778,7 +866,7 @@ export default function CalculoComissoes({ agrupamentoNome = 'Caiobá Trucks' } 
       try {
         const lotes = await Promise.all(combinacoesEmpresaDepartamento.map(async ({ empresaId, deptNome }) => {
           const deptId = dados.departamentos.find(d => d.nome_departamento === deptNome)?.id || null
-          return deptId ? apiService.getLoteComissoes(periodoInicio, periodoFim, empresaId, deptId) : null
+          return deptId ? (await apiService.getLoteComissoes(periodoInicio, periodoFim, empresaId, deptId) || await apiService.getLoteContidoNoPeriodo(periodoInicio, periodoFim, empresaId, deptId)) : null
         }))
         if (!cancelado) setLotesTodasEmpresas(lotes)
       } catch (err) {
@@ -802,7 +890,8 @@ export default function CalculoComissoes({ agrupamentoNome = 'Caiobá Trucks' } 
     [combinacoesEmpresaDepartamento, lotesTodasEmpresas]
   )
 
-  const candidatosFiltrados = useMemo(() => filtrarCandidatos(null), [filtrarCandidatos])
+  // Sem empresa selecionada não lista funcionários — a Empresa é obrigatória.
+  const candidatosFiltrados = useMemo(() => filtroEmpresa ? filtrarCandidatos(null) : [], [filtrarCandidatos, filtroEmpresa])
 
   // Se uma seleção ficar sem opção depois de mudar outro filtro (ex: Cargo "Mecânico" e o Setor
   // muda pra Vendas), limpa o filtro incompatível em vez de deixar a lista zerada sem explicação.
@@ -837,9 +926,13 @@ export default function CalculoComissoes({ agrupamentoNome = 'Caiobá Trucks' } 
   // de Comissões), Pendente (nunca calculado), ou o status do lote pra quem já foi calculado.
   const statusLinha = (c) => {
     const liberado = !!lote?.funcionarios_liberados_reprocessamento?.includes(c.func.id)
-    const calculado = !!valoresPorFuncionario[chaveLinha(c)]
+    const res = valoresPorFuncionario[chaveLinha(c)]
+    const calculado = !!res
     if (liberado) return { label: 'Aguardando Reprocessamento', className: 'bg-amber-100 text-amber-700' }
     if (!calculado) return { label: 'Pendente', className: 'bg-slate-100 text-slate-500' }
+    // Regra por % de Meta sem meta cadastrada pro funcionário/mês: fica visivelmente diferente
+    // de "Pendente" (nunca foi calculado) — aqui já foi calculado, só falta a Meta pra resolver.
+    if (res.semMeta) return { label: 'Sem Meta', className: 'bg-amber-100 text-amber-700' }
     // Com exatamente 1 departamento marcado usa o `lote` único já carregado; em modo combinado
     // (0 ou 2+ marcados) não tem um lote só pra apontar, então olha o lote do(s) departamento(s)
     // do próprio candidato — de lotesPorDepartamento (empresa marcada) ou, sem empresa nenhuma
@@ -872,6 +965,7 @@ export default function CalculoComissoes({ agrupamentoNome = 'Caiobá Trucks' } 
       }))
 
       const itemBase = (c) => ({
+        microwork: c.fonte._microwork ? c.fonte : null,
         pasta: c.fonte.pasta_sharepoint,
         prefixo: c.fonte.prefixo_arquivo,
         usaSubpastaAno: c.fonte.usa_subpasta_ano,
@@ -890,7 +984,19 @@ export default function CalculoComissoes({ agrupamentoNome = 'Caiobá Trucks' } 
         dataFim: c.segFim || periodoFim,
       })
 
-      const itens = elegiveisFiltrados.map(c => ({ id: chaveLinha(c), ...itemBase(c), empresaNomes: c.empresaNomes }))
+      // Candidato com segmentosLeitura (Regra por % de Meta + férias no meio do mês): manda UM
+      // item por pedaço sem férias, cada um com id próprio (senão o lote não saberia separar as
+      // leituras) — os resultados são somados manualmente logo abaixo, numa única linha.
+      const segmentosPorLinha = new Map() // chaveLinha(c) -> [{ tempId, inicio, fim }]
+      const itens = elegiveisFiltrados.flatMap(c => {
+        if (Array.isArray(c.segmentosLeitura) && c.segmentosLeitura.length > 0) {
+          const chave = chaveLinha(c)
+          const lista = c.segmentosLeitura.map((seg, i) => ({ tempId: `${chave}::SEG::${i}`, inicio: seg.inicio, fim: seg.fim }))
+          segmentosPorLinha.set(chave, lista)
+          return lista.map(({ tempId, inicio, fim }) => ({ id: tempId, ...itemBase(c), dataInicio: inicio, dataFim: fim, empresaNomes: c.empresaNomes }))
+        }
+        return [{ id: chaveLinha(c), ...itemBase(c), empresaNomes: c.empresaNomes }]
+      })
 
       // "Detalhar por empresa": só faz sentido no Nível EMPRESA (soma várias empresas num total
       // só) — pra cada uma dessas linhas, manda UM item por empresa do Agrupamento, além do item
@@ -911,19 +1017,93 @@ export default function CalculoComissoes({ agrupamentoNome = 'Caiobá Trucks' } 
       const resultados = await apiService.calcularComissoesLote([...itens, ...itensDetalhe])
       const resultadosPorId = new Map(resultados.map(r => [r.id, r]))
 
+      // Junta os segmentos de leitura (por férias) de volta numa única linha: soma os valores,
+      // guarda o detalhamento por período (mostrado na telinha da Regra) sob a chave real da
+      // linha — dali em diante essa linha se comporta como qualquer outra (1 resultado só).
+      const segmentosResolvidos = {}
+      segmentosPorLinha.forEach((lista, chave) => {
+        let soma = 0, totalFonte = 0, totalFiltradas = 0
+        const detalhe = []
+        lista.forEach(({ tempId, inicio, fim }) => {
+          const r = resultadosPorId.get(tempId)
+          if (!r) return
+          soma += r.valor ?? 0
+          totalFonte = Math.max(totalFonte, r.total_linhas_fonte ?? 0)
+          totalFiltradas += r.total_linhas_filtradas ?? 0
+          detalhe.push({ dataInicio: inicio, dataFim: fim, valorBase: r.valor ?? 0 })
+        })
+        resultadosPorId.set(chave, { id: chave, valor: soma, total_linhas_fonte: totalFonte, total_linhas_filtradas: totalFiltradas })
+        segmentosResolvidos[chave] = detalhe
+      })
+
+      // Políticas com Regra por % de Meta Atingida: busca a meta publicada (Planejamento de
+      // Metas) de cada funcionário envolvido, agrupando por mês/ano (normalmente 1 grupo só —
+      // só varia se um funcionário tiver segmento de férias cruzando virada de mês) — sem meta
+      // cadastrada vira pendência, nunca calcula como se a meta fosse 0.
+      const precisamMeta = elegiveisFiltrados
+        .filter(c => c?.politica?.usa_faixa === 'SIM' && c.politica.regra_comissao?.tipo_faixa === 'PERCENTUAL_META' && c.politica.regra_comissao?.meta_tipo)
+      let metaMap = {}
+      if (precisamMeta.length > 0) {
+        const grupos = new Map()
+        precisamMeta.forEach(c => {
+          const iso = c.segInicio || periodoInicio
+          const chaveGrupo = iso.slice(0, 7)
+          if (!grupos.has(chaveGrupo)) grupos.set(chaveGrupo, { ano: Number(iso.slice(0, 4)), mes: Number(iso.slice(5, 7)), colaboradorIds: new Set(), tipos: new Set() })
+          const g = grupos.get(chaveGrupo)
+          g.colaboradorIds.add(c.func.id)
+          g.tipos.add(c.politica.regra_comissao.meta_tipo)
+        })
+        const partes = await Promise.all([...grupos.values()].map(g =>
+          apiService.getMetasFuncionariosPeriodo([...g.colaboradorIds], g.ano, g.mes, [...g.tipos])
+        ))
+        metaMap = Object.assign({}, ...partes)
+      }
+
+      // Base da comissão do Prêmio (Regra por % de Meta): soma do VALOR DE COMISSÃO já calculado
+      // (não o valor apurado bruto) das políticas marcadas em "Políticas que formam a Base da
+      // Comissão" (cadastro da Regra, aba Regras) — o valor apurado da própria Base do Prêmio
+      // (ex: Faturamento Total) só serve pra achar a %.
+      // Chave por funcionário+regra (não só funcionário) pra suportar 2+ Prêmios diferentes.
+      const baseComissaoMetaMap = new Map()
+      if (precisamMeta.length > 0) {
+        precisamMeta.forEach(premio => {
+          const ids = new Set(premio.politica.regra_comissao.base_politica_ids || [])
+          if (ids.size === 0) return
+          let soma = 0
+          elegiveisFiltrados.forEach(c => {
+            if (c.func.id !== premio.func.id) return
+            const grupoId = c.politica.grupo_politica_id || c.politica.id
+            if (!ids.has(grupoId)) return
+            const r = resultadosPorId.get(chaveLinha(c))
+            if (!r) return
+            // Soma o VALOR DA COMISSÃO já calculada dessa política (% ou R$ Valor dela mesma
+            // aplicado sobre o valor apurado), não o valor apurado bruto — o Prêmio é um bônus
+            // em cima do que já foi ganho de comissão, não do faturamento/produção em si.
+            soma += calcularComissaoSobre(c, r.valor ?? 0, metaMap, baseComissaoMetaMap).valorComissao ?? 0
+          })
+          baseComissaoMetaMap.set(`${premio.func.id}::${premio.politica.regra_comissao.id}`, soma)
+        })
+      }
+
       setValoresPorFuncionario(prev => {
         const novo = { ...prev }
-        itens.forEach(item => {
-          const r = resultadosPorId.get(item.id)
-          const c = elegiveisFiltrados.find(e => chaveLinha(e) === item.id)
-          if (!r || !c) return
-          const valorBase = r.valor ?? 0
-          const { percentual, valorFixo, valorComissao } = calcularComissaoSobre(c, valorBase)
-          novo[r.id] = {
-            valorBase, valorComissao, percentual, valorFixo,
+        elegiveisFiltrados.forEach(c => {
+          const chave = chaveLinha(c)
+          const r = resultadosPorId.get(chave)
+          if (!r) return
+          const valorApurado = r.valor ?? 0
+          const { percentual, valorFixo, valorComissao, semMeta, percentualAtingido, meta, baseComissao } = calcularComissaoSobre(c, valorApurado, metaMap, baseComissaoMetaMap)
+          novo[chave] = {
+            // Pro Prêmio (% Meta), "Base Comissão" na tabela é o que a % realmente multiplicou
+            // (Individual+Equipe) — o valor apurado da própria Base fica só no campo valorApurado,
+            // usado na telinha da Regra pra mostrar contra o que a Meta foi comparada.
+            valorBase: baseComissao != null ? baseComissao : valorApurado,
+            valorApurado: baseComissao != null ? valorApurado : undefined,
+            valorComissao, percentual, valorFixo, semMeta, percentualAtingido, meta,
             totalLinhasFonte: r.total_linhas_fonte, totalLinhasFiltradas: r.total_linhas_filtradas,
             periodoInicio: c.segInicio || periodoInicio,
             periodoFim: c.segFim || periodoFim,
+            segmentos: segmentosResolvidos[chave] || null,
           }
         })
         return novo
@@ -937,7 +1117,7 @@ export default function CalculoComissoes({ agrupamentoNome = 'Caiobá Trucks' } 
             const r = resultadosPorId.get(id)
             if (!r) return
             const valorBase = r.valor ?? 0
-            const { valorComissao } = calcularComissaoSobre(c, valorBase)
+            const { valorComissao } = calcularComissaoSobre(c, valorBase, metaMap, baseComissaoMetaMap)
             const chave = chaveLinha(c)
             if (!porLinha.has(chave)) porLinha.set(chave, [])
             porLinha.get(chave).push({ empresa: empresaNome, valorBase, valorComissao })
@@ -954,7 +1134,7 @@ export default function CalculoComissoes({ agrupamentoNome = 'Caiobá Trucks' } 
   }
 
   const qtdCalculados = useMemo(() =>
-    candidatosFiltrados.filter(c => c.status === 'OK' && valoresPorFuncionario[chaveLinha(c)]).length,
+    candidatosFiltrados.filter(c => c.status === 'OK' && valoresPorFuncionario[chaveLinha(c)] && !valoresPorFuncionario[chaveLinha(c)].semMeta).length,
     [candidatosFiltrados, valoresPorFuncionario])
 
   // Valores/textos de cada coluna da tabela — usados tanto pro filtro por coluna quanto pra ordenação.
@@ -967,7 +1147,7 @@ export default function CalculoComissoes({ agrupamentoNome = 'Caiobá Trucks' } 
   const numeroValorFixo = c => c.politica.comissao_valor != null ? parseFloat(c.politica.comissao_valor) : null
   const numeroValorComissao = c => valoresPorFuncionario[chaveLinha(c)]?.valorComissao ?? null
 
-  const [ordenacao, setOrdenacao] = useState({ coluna: null, direcao: 'asc' })
+  const [ordenacao, setOrdenacao] = useState({ coluna: 'comissao', direcao: 'asc' })
   const alternarOrdenacao = (coluna) => setOrdenacao(prev => prev.coluna === coluna
     ? { coluna, direcao: prev.direcao === 'asc' ? 'desc' : 'asc' }
     : { coluna, direcao: 'asc' })
@@ -987,9 +1167,22 @@ export default function CalculoComissoes({ agrupamentoNome = 'Caiobá Trucks' } 
       if (vb == null) return -1
       return dir * (va - vb)
     }
+    // Ordem de exibição das comissões: Individual primeiro, Equipe depois, Empresa por último —
+    // e Prêmios (Regra por % de Meta Atingida) sempre no final, mesmo quando o Nível de Cálculo
+    // deles é INDIVIDUAL (ex: "Prêmio s/Meta Individual Atingida" vem depois das comissões
+    // normais de Individual, não junto).
+    const prioridadeComissao = (c) => {
+      if (c.politica.usa_faixa === 'SIM' && c.politica.regra_comissao?.tipo_faixa === 'PERCENTUAL_META') return 3
+      if (c.politica.nivel_calculo === 'INDIVIDUAL') return 0
+      if (c.politica.nivel_calculo === 'EQUIPE') return 1
+      return 2 // EMPRESA e qualquer outro nível
+    }
     const comparadores = {
       nome: (a, b) => dir * textoNome(a).localeCompare(textoNome(b), 'pt-BR'),
-      comissao: (a, b) => dir * textoComissao(a).localeCompare(textoComissao(b), 'pt-BR'),
+      comissao: (a, b) => {
+        const diff = prioridadeComissao(a) - prioridadeComissao(b)
+        return diff !== 0 ? dir * diff : dir * textoComissao(a).localeCompare(textoComissao(b), 'pt-BR')
+      },
       valor: comparadorNumerico(numeroValor),
       servicos: comparadorNumerico(numeroServicos),
       pecas: comparadorNumerico(numeroPecas),
@@ -1020,9 +1213,16 @@ export default function CalculoComissoes({ agrupamentoNome = 'Caiobá Trucks' } 
         if (!porEmpresa.has(nomeEmpresa)) porEmpresa.set(nomeEmpresa, [])
         porEmpresa.get(nomeEmpresa).push(c)
       }
+      // Nunca intercala linhas de funcionários diferentes: agrupa por funcionário primeiro
+      // (sempre por nome, pra manter cada um num bloco só) e só usa a ordenação escolhida no
+      // cabeçalho (ex: Individual/Equipe/Empresa/Prêmio) para ordenar as linhas DENTRO do
+      // bloco de cada funcionário — senão, comissões com a mesma descrição (ex: "Comissão
+      // s/Time Oficina") de técnicos diferentes ficavam juntas, misturando os dois.
+      const comparadorSemMisturarFuncionarios = (a, b) =>
+        a.func.id !== b.func.id ? textoNome(a).localeCompare(textoNome(b), 'pt-BR') : comparador(a, b)
       return [...porEmpresa.entries()]
         .sort((a, b) => a[0].localeCompare(b[0], 'pt-BR'))
-        .map(([nomeEmpresa, itensEmpresa]) => ({ nomeEmpresa, itens: itensEmpresa.sort(comparador) }))
+        .map(([nomeEmpresa, itensEmpresa]) => ({ nomeEmpresa, itens: itensEmpresa.sort(comparadorSemMisturarFuncionarios) }))
     }
 
     return [...gruposDepto.entries()]
@@ -1072,13 +1272,13 @@ export default function CalculoComissoes({ agrupamentoNome = 'Caiobá Trucks' } 
       ? elegiveisFiltrados
       : candidatosFiltrados
     const registrosSemLote = candidatosParaSalvar
-      .filter(c => c.status === 'OK' && valoresPorFuncionario[chaveLinha(c)])
+      .filter(c => c.status === 'OK' && valoresPorFuncionario[chaveLinha(c)] && !valoresPorFuncionario[chaveLinha(c)].semMeta)
       .map(c => {
         const r = valoresPorFuncionario[chaveLinha(c)]
         return {
           funcionario_id: c.func.id,
           politica_id: c.politica.id,
-          fonte_calculo_id: c.fonte.id,
+          fonte_calculo_id: c.fonte._microwork ? null : c.fonte.id,
           base_calculo_id: c.base.id,
           periodo_inicio: r.periodoInicio,
           periodo_fim: r.periodoFim,
@@ -1226,13 +1426,13 @@ export default function CalculoComissoes({ agrupamentoNome = 'Caiobá Trucks' } 
             return `
               <tr>
                 <td style="padding:6px 8px;font-weight:700;border-bottom:1px solid #e2e8f0;white-space:nowrap;">${ehPrimeiraLinhaDoFunc ? nomeComCodigo : ''}</td>
-                <td style="padding:6px 8px;border-bottom:1px solid #e2e8f0;">${c.politica.descricao_comissao || c.politica.nivel_calculo || ''}${tipoComissaoPorBase(c) ? ` <span style="font-style:italic;color:#94a3b8;">(${tipoComissaoPorBase(c)})</span>` : ''}${c.segInicio && c.segFim ? ` <span style="font-size:11px;font-weight:700;color:#2563eb;">${fmtDiaMes(c.segInicio)} a ${fmtDiaMes(c.segFim)}</span>` : ''}${detalheEmpresasHtml}</td>
+                <td style="padding:6px 8px;border-bottom:1px solid #e2e8f0;">${c.politica.descricao_comissao || c.politica.nivel_calculo || ''}${tipoComissaoPorBase(c) ? ` <span style="font-style:italic;color:#94a3b8;">(${tipoComissaoPorBase(c)})</span>` : ''}${c.segInicio && c.segFim ? ` <span style="font-size:11px;font-weight:700;color:#2563eb;">${fmtDiaMes(res?.periodoInicio || c.segInicio)} a ${fmtDiaMes(res?.periodoFim || c.segFim)}</span>` : ''}${detalheEmpresasHtml}</td>
                 <td style="padding:6px 8px;text-align:right;border-bottom:1px solid #e2e8f0;">${res ? fmtValorBase(c, res.valorBase) : '—'}</td>
                 <td style="padding:6px 8px;text-align:right;border-bottom:1px solid #e2e8f0;">${fmtPct(c.politica.comissao_servicos)}</td>
                 <td style="padding:6px 8px;text-align:right;border-bottom:1px solid #e2e8f0;">${fmtPct(c.politica.comissao_pecas)}</td>
                 <td style="padding:6px 8px;text-align:right;border-bottom:1px solid #e2e8f0;">${fmtPct(c.politica.comissao_total)}</td>
                 <td style="padding:6px 8px;text-align:right;border-bottom:1px solid #e2e8f0;">${fmtBRL(c.politica.comissao_valor != null ? parseFloat(c.politica.comissao_valor) : null)}</td>
-                <td style="padding:6px 8px;text-align:right;font-weight:600;color:#1e293b;border-bottom:1px solid #e2e8f0;">${res ? fmtBRL(res.valorComissao) : '—'}</td>
+                <td style="padding:6px 8px;text-align:right;font-weight:600;color:#1e293b;border-bottom:1px solid #e2e8f0;">${res ? (res.semMeta ? '<span style=\"color:#d97706;font-weight:600;\">Sem meta</span>' : fmtBRL(res.valorComissao)) : '—'}</td>
               </tr>${mostrarSubtotal ? `
               <tr style="background:#ecfdf5;">
                 <td colspan="7" style="padding:5px 8px;text-align:right;font-weight:700;color:#334155;">Total ${c.func.nome_funcionario}</td>
@@ -1251,6 +1451,7 @@ export default function CalculoComissoes({ agrupamentoNome = 'Caiobá Trucks' } 
               ${THEAD_HTML}
               <tbody>
                 <tr><td colspan="8" style="padding:5px 8px;background:#f1f5f9;font-weight:700;font-size:12px;text-transform:uppercase;color:#334155;">${nomeCargoComCodigo}</td></tr>
+                ${regrasDoGrupo(grupo.itens).map(r => `<tr><td colspan="8" style="padding:5px 8px 5px 20px;background:#eef2ff;font-size:11px;"><div style="font-weight:700;color:#4338ca;">Regra: ${r.nome}</div>${r.faixas.map(f => `<div style="font-family:monospace;color:#475569;">${f.texto} → ${f.percentual}</div>`).join('')}</td></tr>`).join('')}
                 ${linhasEmpresas}
               </tbody>
             </table>
@@ -1756,7 +1957,7 @@ export default function CalculoComissoes({ agrupamentoNome = 'Caiobá Trucks' } 
                 <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
                   {candidatosFiltrados.length === 0 ? (
                     <tr>
-                      <td colSpan="8" className="p-6 text-center text-slate-400">Nenhum funcionário para os filtros aplicados.</td>
+                      <td colSpan="8" className="p-6 text-center text-slate-400">{filtroEmpresa ? 'Nenhum funcionário para os filtros aplicados.' : 'Selecione uma Empresa para listar os funcionários.'}</td>
                     </tr>
                   ) : gruposPorCargo.map(grupoDepto => (
                     <React.Fragment key={grupoDepto.nomeDepartamento}>
@@ -1825,10 +2026,26 @@ export default function CalculoComissoes({ agrupamentoNome = 'Caiobá Trucks' } 
                                   </td>
                                   <td className="px-3 py-1.5 whitespace-nowrap">
                                     {c.politica.descricao_comissao || c.politica.nivel_calculo}
+                                    {c.politica.usa_faixa === 'SIM' && c.politica.regra_comissao?.id && (
+                                      <button type="button"
+                                        onClick={() => setRegraModal({
+                                          nome: c.politica.regra_comissao.nome, baseNome: c.base?.nome,
+                                          faixas: faixasDaRegra(c.politica, res?.percentual),
+                                          porMeta: c.politica.regra_comissao.tipo_faixa === 'PERCENTUAL_META',
+                                          metaTipoLabel: TIPOS_META_LABEL[c.politica.regra_comissao.meta_tipo] || c.politica.regra_comissao.meta_tipo,
+                                          semMeta: res?.semMeta, meta: res?.meta, percentualAtingido: res?.percentualAtingido,
+                                          valorApurado: res?.valorApurado ?? res?.valorBase, baseComissao: res?.valorApurado != null ? res?.valorBase : null,
+                                          segmentos: res?.segmentos,
+                                        })}
+                                        title="Ver a regra desta comissão"
+                                        className="ml-1.5 align-middle inline-flex items-center justify-center w-5 h-5 rounded border border-indigo-200 bg-white text-indigo-600 hover:bg-indigo-50 transition-colors">
+                                        <Calculator className="h-3 w-3" />
+                                      </button>
+                                    )}
                                     {tipoComissaoPorBase(c) && <span className="italic text-slate-400"> ({tipoComissaoPorBase(c)})</span>}
                                     {c.segInicio && c.segFim && (
                                       <span className="ml-1.5 text-[10px] font-semibold text-blue-600 whitespace-nowrap">
-                                        {fmtDiaMes(c.segInicio)} a {fmtDiaMes(c.segFim)}
+                                        {fmtDiaMes(res?.periodoInicio || c.segInicio)} a {fmtDiaMes(res?.periodoFim || c.segFim)}
                                       </span>
                                     )}
                                     {(c.politica?.codigo_rubrica || c.politica?.tipo_processo) && (
@@ -1855,9 +2072,9 @@ export default function CalculoComissoes({ agrupamentoNome = 'Caiobá Trucks' } 
                                   <td className="px-3 py-1.5 text-right font-mono">{res ? fmtValorBase(c, res.valorBase) : '—'}</td>
                                   <td className="px-3 py-1.5 text-right font-mono">{fmtPct(c.politica.comissao_servicos)}</td>
                                   <td className="px-3 py-1.5 text-right font-mono">{fmtPct(c.politica.comissao_pecas)}</td>
-                                  <td className="px-3 py-1.5 text-right font-mono">{fmtPct(c.politica.comissao_total)}</td>
+                                  <td className="px-3 py-1.5 text-right font-mono">{c.politica.usa_faixa === 'SIM' ? fmtPct(res?.percentual) : fmtPct(c.politica.comissao_total)}</td>
                                   <td className="px-3 py-1.5 text-right font-mono">{fmtBRL(c.politica.comissao_valor != null ? parseFloat(c.politica.comissao_valor) : null)}</td>
-                                  <td className="px-3 py-1.5 text-right font-mono font-semibold text-slate-800">{res ? fmtBRL(res.valorComissao) : '—'}</td>
+                                  <td className="px-3 py-1.5 text-right font-mono font-semibold text-slate-800">{res ? (res.semMeta ? <span className="font-sans font-semibold text-amber-600 text-[11px]" title="Sem meta cadastrada em Planejamento de Metas pra este funcionário/mês">Sem meta</span> : fmtBRL(res.valorComissao)) : '—'}</td>
                                 </tr>
                                 {mostrarSubtotal && (
                                   <tr className="bg-emerald-50/50">
@@ -1881,6 +2098,82 @@ export default function CalculoComissoes({ agrupamentoNome = 'Caiobá Trucks' } 
             </div>
           </div>
         </>
+      )}
+
+      {/* TELINHA DA REGRA (aberta pelo ícone de calculadora ao lado da comissão) */}
+      {regraModal && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setRegraModal(null)}>
+          <div className="bg-white rounded-lg border border-slate-200 w-full max-w-[420px] shadow-xl overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50">
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <Calculator className="h-4 w-4 text-indigo-600" /> Regra da Comissão
+              </h3>
+              <button onClick={() => setRegraModal(null)} className="text-slate-400 hover:text-slate-600"><X className="h-4 w-4" /></button>
+            </div>
+            <div className="p-5 space-y-3">
+              <div className="text-sm font-bold text-slate-800">{regraModal.nome}</div>
+              {regraModal.baseNome && (
+                <div className="text-[11px] text-slate-500">Base de Cálculo: <span className="font-semibold text-slate-700">{regraModal.baseNome}</span></div>
+              )}
+              {regraModal.porMeta && (
+                <div className="text-[11px] text-slate-500">Meta de Referência: <span className="font-semibold text-slate-700">{regraModal.metaTipoLabel}</span></div>
+              )}
+              {regraModal.porMeta && regraModal.semMeta && (
+                <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 text-amber-700 text-[11px] leading-relaxed">
+                  <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" /> Sem meta cadastrada em Planejamento de Metas pra este funcionário/mês — comissão pendente.
+                </div>
+              )}
+              <div className="rounded-md border border-slate-200 divide-y divide-slate-100">
+                {regraModal.faixas.map((f, i) => (
+                  <div key={i} className={`flex items-center justify-between px-3 py-2 text-xs ${f.aplicada ? 'bg-indigo-50' : ''}`}>
+                    <span className={`font-mono ${f.aplicada ? 'font-bold text-indigo-700' : 'text-slate-600'}`}>{f.aplicada ? '▸ ' : ''}{f.texto}</span>
+                    <span className={`font-mono font-bold ${f.aplicada ? 'text-indigo-700' : 'text-slate-500'}`}>{f.percentual}</span>
+                  </div>
+                ))}
+              </div>
+              {/* Valores apurados da Base do Prêmio (usados só pra achar a %, comparando com a
+                  Meta) — um por período quando há segmentos (ex: férias no meio do mês). */}
+              {regraModal.porMeta && !regraModal.semMeta && (
+                <div className="rounded-md border border-sky-200 overflow-hidden">
+                  <div className="px-3 py-1.5 bg-sky-50 border-b border-sky-100 text-[10px] font-bold text-sky-700 uppercase tracking-wide">Valores apurados (comparados com a Meta)</div>
+                  <div className="divide-y divide-slate-100">
+                    {(regraModal.segmentos?.length > 0 ? regraModal.segmentos : [{ dataInicio: null, dataFim: null, valorBase: regraModal.valorApurado }]).map((s, i) => (
+                      <div key={i} className="flex items-center justify-between px-3 py-1.5 text-[11px]">
+                        <span className="font-mono text-slate-500">{s.dataInicio && s.dataFim ? `${fmtDiaMes(s.dataInicio)} a ${fmtDiaMes(s.dataFim)}` : 'Período apurado'}</span>
+                        <span className="font-mono font-semibold text-slate-700">{fmtBRL(s.valorBase)}</span>
+                      </div>
+                    ))}
+                    <div className="flex items-center justify-between px-3 py-1.5 bg-slate-50 text-[11px]">
+                      <span className="font-semibold text-slate-600">Meta</span>
+                      <span className="font-mono font-semibold text-slate-700">{fmtBRL(regraModal.meta)}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between px-3 py-2 bg-sky-50 border-t border-sky-100 text-[11px] font-bold">
+                    <span className="text-slate-700">Total apurado · % Atingido</span>
+                    <span>
+                      <span className="text-slate-800">{fmtBRL(regraModal.valorApurado)}</span>
+                      <span className="mx-1.5 text-slate-300">·</span>
+                      <span className="text-sky-700">{regraModal.percentualAtingido?.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%</span>
+                    </span>
+                  </div>
+                </div>
+              )}
+              {/* Base da Comissão em R$: soma das políticas marcadas no cadastro da Regra — é
+                  isso, não o valor apurado acima, que multiplica pela % pra dar o valor pago. */}
+              {regraModal.porMeta && !regraModal.semMeta && regraModal.baseComissao != null && (
+                <div className="rounded-md border border-emerald-200 bg-emerald-50/60 px-3 py-2 text-[11px] text-slate-600 flex items-center justify-between">
+    <span>Base da Comissão (soma das comissões das políticas selecionadas na Regra)</span>
+                  <span className="font-mono font-bold text-emerald-700">{fmtBRL(regraModal.baseComissao)}</span>
+                </div>
+              )}
+              <div className="text-[10px] text-slate-400">
+                {regraModal.porMeta
+                  ? 'O percentual da primeira faixa cujo % de meta atingida casar é aplicado sobre a Base da Comissão (não sobre o valor apurado acima).'
+                  : 'O percentual da primeira faixa que casar com o valor da Base é aplicado sobre o valor todo.'}
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
     </div>

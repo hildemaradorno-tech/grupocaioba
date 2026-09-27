@@ -1,25 +1,28 @@
 import React, { useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Calculator, ScrollText, Briefcase, Hash, ListChecks, Info } from 'lucide-react'
+import { Calculator, Percent, ScrollText, Briefcase, Hash, ListChecks, Info } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useSessionState } from '../hooks/useSessionState'
 import BasesCalculo from './BasesCalculo'
+import RegrasFaixas from './RegrasFaixas'
 import PoliticaComissao from './PoliticaComissao'
 import CargosRemuneracoes from './CargosRemuneracoes'
 import Rubricas from './Rubricas'
 import TiposProcesso from './TiposProcesso'
 
 const ABAS = [
-  { menuPath: 'bases-calculo', label: 'Base de Cálculo', icon: Calculator, Componente: BasesCalculo,
-    description: 'Defina qual coluna e agregação extraem o valor de cada Fonte de Cálculo.' },
-  { menuPath: 'politica-comissao', label: 'Política de Comissões', icon: ScrollText, Componente: PoliticaComissao,
-    description: 'Configure as regras de comissão por cargo: fonte e base de cálculo, faixas, vigência e rubrica de pagamento.' },
-  { menuPath: 'cargos-remuneracoes', label: 'Cargos e Remunerações', icon: Briefcase, Componente: CargosRemuneracoes,
-    description: 'Relatório das políticas salariais por cargo — comissões, ganhos cadastrados e DSR.' },
   { menuPath: 'rubricas', label: 'Rubrica', icon: Hash, Componente: Rubricas,
     description: 'Códigos de rubrica usados no TXT de pagamento (Processamento de Comissões) — selecionáveis em Política de Comissão.' },
   { menuPath: 'tipos-processo', label: 'Tipo de Processo', icon: ListChecks, Componente: TiposProcesso,
     description: 'Códigos de tipo de processo usados no TXT de pagamento (Processamento de Comissões) — selecionáveis em Política de Comissão.' },
+  { menuPath: 'bases-calculo', label: 'Base de Cálculo', icon: Calculator, Componente: BasesCalculo,
+    description: 'Defina qual coluna e agregação extraem o valor de cada Fonte de Cálculo.' },
+  { menuPath: 'politica-comissao', label: 'Política de Comissões', icon: ScrollText, Componente: PoliticaComissao,
+    description: 'Configure as regras de comissão por cargo: fonte e base de cálculo, faixas, vigência e rubrica de pagamento.' },
+  { menuPath: 'regras-faixas', label: 'Regras', icon: Percent, Componente: RegrasFaixas,
+    description: 'Cadastre regras de comissão por faixa (ex: >= R$ 25.000 paga 0,60%; abaixo disso 0,50%), sempre sobre o valor da Base de Cálculo.' },
+  { menuPath: 'cargos-remuneracoes', label: 'Cargos e Remunerações', icon: Briefcase, Componente: CargosRemuneracoes,
+    description: 'Relatório das políticas salariais por cargo — comissões, ganhos cadastrados e DSR.' },
 ]
 
 function InfoAba({ texto }) {

@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { isConfigured } from '../services/graphClient.js'
 import { getColunas, preview } from '../services/sharepointFonteCalculo.js'
 import { calcularLote } from '../services/calculoComissoesLote.js'
+import { previewMicrowork } from '../services/microworkFonteCalculo.js'
 
 const router = Router()
 
@@ -34,6 +35,19 @@ router.get('/colunas', wrap(async (req, res) => {
 // aplicando as Regras de Cálculo da Base (se houver). POST (não GET) porque `regras`
 // é uma lista aninhada de tamanho variável — não cabe bem em querystring.
 router.post('/preview', wrap(async (req, res) => {
+  if (req.body?.microwork) {
+    if (!process.env.MICROWORK_API_TOKEN) return res.status(503).json({ error: 'microwork_not_configured', message: 'MICROWORK_API_TOKEN não configurado no ambiente.' })
+    const b = req.body
+    if (!b.colunaValor) return res.status(400).json({ error: 'Base de Cálculo sem coluna de valor configurada.' })
+    const resultado = await previewMicrowork({
+      fonte: b.microwork,
+      colunaEmpresa: b.colunaEmpresa, colunaData: b.colunaData, colunaValor: b.colunaValor,
+      tipoAgregacao: b.tipoAgregacao || 'SOMA',
+      empresaNome: b.empresaNome || null, dataInicio: b.dataInicio || null, dataFim: b.dataFim || null,
+      regras: Array.isArray(b.regras) ? b.regras : [],
+    })
+    return res.json(resultado)
+  }
   if (!isConfigured()) return res.status(503).json({ error: 'sharepoint_not_configured' })
   const {
     pasta, prefixo, usaSubpastaAno, subpastaPadrao, linhaCabecalho,
@@ -69,14 +83,19 @@ router.post('/preview', wrap(async (req, res) => {
 // Calcula vários funcionários de uma vez, agrupando por arquivo pra ler cada um só uma vez
 // (ver calculoComissoesLote.js) — usado pelo Cálculo de Comissões em lote.
 router.post('/lote', wrap(async (req, res) => {
-  if (!isConfigured()) return res.status(503).json({ error: 'sharepoint_not_configured' })
   const { itens } = req.body || {}
+  const temSharepoint = Array.isArray(itens) && itens.some(it => !it.microwork)
+  if (temSharepoint && !isConfigured()) return res.status(503).json({ error: 'sharepoint_not_configured' })
+  if (Array.isArray(itens) && itens.some(it => it.microwork) && !process.env.MICROWORK_API_TOKEN) {
+    return res.status(503).json({ error: 'microwork_not_configured', message: 'MICROWORK_API_TOKEN não configurado no ambiente.' })
+  }
   if (!Array.isArray(itens) || itens.length === 0) {
     return res.status(400).json({ error: 'Parâmetro obrigatório: itens (array não vazio)' })
   }
 
   const itensNormalizados = itens.map(it => ({
     id: it.id,
+    microwork: it.microwork || null,
     pastaSharepoint: it.pasta,
     prefixoArquivo: it.prefixo,
     usaSubpastaAno: !!it.usaSubpastaAno,
@@ -94,7 +113,7 @@ router.post('/lote', wrap(async (req, res) => {
     dataFim: it.dataFim || null,
   }))
 
-  const faltando = itensNormalizados.find(it => !it.pastaSharepoint || !it.prefixoArquivo || !it.colunaValor)
+  const faltando = itensNormalizados.find(it => (!it.microwork && (!it.pastaSharepoint || !it.prefixoArquivo)) || !it.colunaValor)
   if (faltando) {
     return res.status(400).json({ error: `Item "${faltando.id}" sem arquivo ou coluna de valor configurados.` })
   }

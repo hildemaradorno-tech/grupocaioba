@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { useSessionState } from '../hooks/useSessionState'
-import { Plus, X, AlertTriangle, Database, Eye, Search, Loader2, Info } from 'lucide-react'
+import { Plus, X, AlertTriangle, Database, Eye, Search, Loader2, Info, Copy } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import PermissionActionButtons from '../components/PermissionActionButtons'
 import { apiService } from '../services/api'
@@ -37,6 +37,7 @@ export default function FontesCalculo() {
   const [form, setForm] = useSessionState('fontecalc_form', FORM_VAZIO)
   const [erroModal, setErroModal] = useState(null)
   const [erroExcluir, setErroExcluir] = useState(null)
+  const [duplicandoId, setDuplicandoId] = useState(null)
 
   const [detectando, setDetectando] = useState(false)
   const [erroDetectar, setErroDetectar] = useState(null)
@@ -114,6 +115,33 @@ export default function FontesCalculo() {
   const abrirVisualizar = (item) => {
     setItemVisualizado(item)
     setModalVisualizarAberto(true)
+  }
+
+  const handleDuplicar = async (item) => {
+    setDuplicandoId(item.id)
+    setError(null)
+    try {
+      // Acha um sufixo livre: "(Cópia)", "(Cópia 2)"... conferindo Nome e Código, já que os dois
+      // são digitados livremente aqui (sem geração automática como em Base de Cálculo).
+      const nomesExistentes = new Set(dados.map(f => (f.nome || '').trim().toLowerCase()))
+      const codigosExistentes = new Set(dados.map(f => f.codigo).filter(Boolean))
+      let nomeCopia = `${item.nome} (Cópia)`
+      let codigoCopia = `${item.codigo}_COPIA`
+      for (let n = 2; nomesExistentes.has(nomeCopia.trim().toLowerCase()) || codigosExistentes.has(codigoCopia); n++) {
+        nomeCopia = `${item.nome} (Cópia ${n})`
+        codigoCopia = `${item.codigo}_COPIA${n}`
+      }
+      const { id, criado_em, atualizado_em, ...resto } = item
+      await apiService.createFonteCalculo({ ...resto, nome: nomeCopia, codigo: codigoCopia })
+      await loadData()
+    } catch (err) {
+      const msg = err.message || String(err)
+      alert(msg.includes('duplicate key') || msg.includes('unique')
+        ? 'Já existe uma Fonte com nome/código equivalente ao da cópia. Renomeie a existente e tente de novo.'
+        : 'Erro ao duplicar: ' + msg)
+    } finally {
+      setDuplicandoId(null)
+    }
   }
 
   const handleDetectarColunas = async () => {
@@ -207,10 +235,7 @@ export default function FontesCalculo() {
     <div className="p-6 space-y-4 max-w-screen-xl">
 
       {/* CABEÇALHO */}
-      <div className="flex items-center justify-between border-b border-slate-200 pb-4">
-        <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Fonte de Cálculo</h1>
-        </div>
+      <div className="flex items-center justify-end border-b border-slate-200 pb-4">
         {canEdit && (
           <button
             onClick={abrirIncluir}
@@ -261,12 +286,25 @@ export default function FontesCalculo() {
                   </span>
                 </td>
                 <td className="p-3">
-                  <PermissionActionButtons
-                    menuPath="fontes-calculo"
-                    onView={() => abrirVisualizar(item)}
-                    onEdit={() => abrirEditar(item)}
-                    onDelete={() => abrirExcluir(item)}
-                  />
+                  <div className="flex items-center gap-1.5">
+                    <PermissionActionButtons
+                      menuPath="fontes-calculo"
+                      onView={() => abrirVisualizar(item)}
+                      onEdit={() => abrirEditar(item)}
+                      onDelete={() => abrirExcluir(item)}
+                    />
+                    {canEdit && (
+                      <button
+                        type="button"
+                        onClick={() => handleDuplicar(item)}
+                        disabled={duplicandoId === item.id}
+                        title="Duplicar Fonte de Cálculo"
+                        className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        {duplicandoId === item.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Copy className="h-3.5 w-3.5" />}
+                      </button>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}

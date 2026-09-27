@@ -2,7 +2,7 @@
 import { createPortal } from 'react-dom'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useSessionState } from '../hooks/useSessionState'
-import { Plus, X, AlertTriangle, Briefcase, CheckSquare, Square, Eye, ArrowUp, ArrowDown, ArrowUpDown, FileSpreadsheet, ChevronDown } from 'lucide-react'
+import { Plus, X, AlertTriangle, Briefcase, CheckSquare, Square, Eye, ArrowUp, ArrowDown, ArrowUpDown, FileSpreadsheet, ChevronDown, RefreshCw, Loader2 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import PermissionActionButtons from '../components/PermissionActionButtons'
 import { apiService } from '../services/api'
@@ -143,6 +143,39 @@ export default function Cargos() {
   const canEdit = hasActionOrDefault('cargos', 'editar')
   const canDelete = hasActionOrDefault('cargos', 'excluir')
   const abrirVisualizar = (item) => { setItemVisualizado(item); setModalVisualizarAberto(true) }
+
+  const [sincronizando, setSincronizando] = useState(false)
+  const arraysIguaisIgnorandoOrdem = (a, b) => {
+    const sa = [...(a || [])].sort()
+    const sb = [...(b || [])].sort()
+    return sa.length === sb.length && sa.every((v, i) => v === sb[i])
+  }
+  // Mesma sincronização do botão "Atualizar Funcionários" em Funcionarios.jsx — reaplica o
+  // Departamento/Setor do Cargo em quem ainda está com o dado antigo. Duplicado aqui (não
+  // importado de lá) porque cada tela carrega seus próprios dados independentemente.
+  const handleSincronizarFuncionarios = async () => {
+    setSincronizando(true)
+    try {
+      const funcionarios = await apiService.getFuncionarios()
+      let atualizados = 0
+      for (const item of funcionarios) {
+        const cargo = dados.find(c => c.id === item.cargo_id)
+        if (!cargo) continue
+        const deptoIdsCargo = cargo.departamento_ids || []
+        const setorIdsCargo = cargo.setor_ids || []
+        if (arraysIguaisIgnorandoOrdem(deptoIdsCargo, item.departamento_ids) && arraysIguaisIgnorandoOrdem(setorIdsCargo, item.setor_ids)) continue
+        await apiService.updateFuncionario(item.id, { departamento_ids: deptoIdsCargo, setor_ids: setorIdsCargo })
+        atualizados++
+      }
+      alert(atualizados > 0
+        ? `${atualizados} funcionário(s) atualizado(s) com o departamento/setor mais recente do cargo.`
+        : 'Todos os funcionários já estavam com o departamento/setor em dia.')
+    } catch (err) {
+      alert('Erro ao sincronizar: ' + (err.message || String(err)))
+    } finally {
+      setSincronizando(false)
+    }
+  }
 
   useEffect(() => { loadData() }, [])
 
@@ -441,6 +474,15 @@ export default function Cargos() {
         </div>
         {canEdit && (
           <div className="flex items-center gap-2">
+            <button
+              onClick={handleSincronizarFuncionarios}
+              disabled={sincronizando}
+              title="Reaplica o Departamento/Setor mais recente do Cargo em quem ainda está com o dado antigo"
+              className="flex items-center gap-2 border border-slate-300 text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-semibold px-3 py-2 rounded-md transition-colors"
+            >
+              {sincronizando ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              Atualizar Funcionários
+            </button>
             <button
               onClick={() => setModalImportarAberto(true)}
               className="flex items-center gap-2 border border-slate-300 text-slate-700 hover:bg-slate-100 text-xs font-semibold px-3 py-2 rounded-md transition-colors"
