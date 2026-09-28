@@ -185,7 +185,7 @@ export default function App() {
           { path: '/classificacao-compra', element: <ClassificacaoCompra />, menuPath: 'classificacao-compra' },
           { path: '/movimento-venda', element: <MovimentoVenda />, menuPath: 'movimento-venda' },
           { path: '/natureza-operacoes', element: <NaturezaOperacoes />, menuPath: 'natureza-operacoes' },
-          { path: '/regras-comissoes', element: <RegrasComissoes />, menuPath: ['rubricas', 'tipos-processo', 'bases-calculo', 'politica-comissao', 'regras-faixas', 'cargos-remuneracoes'] },
+          { path: '/regras-comissoes', element: <RegrasComissoes />, menuPath: ['tipos-processo', 'rubricas', 'bases-calculo', 'politica-comissao', 'regras-faixas', 'cargos-remuneracoes'] },
           { path: '/fontes-comissoes', element: <FontesComissoes />, menuPath: ['fontes-calculo', 'fontes-microwork'] },
           { path: '/politica-comissao', element: <Navigate to="/regras-comissoes?aba=politica-comissao" replace /> },
           { path: '/cargos-remuneracoes', element: <Navigate to="/regras-comissoes?aba=cargos-remuneracoes" replace /> },

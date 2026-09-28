@@ -738,19 +738,19 @@ export const apiService = {
     return data || []
   },
 
-  createRubrica: async ({ codigo, descricao, ativo }) => {
+  createRubrica: async ({ codigo, descricao, ativo, empresa_ids }) => {
     const { data, error } = await supabase
       .from('dim_rubricas')
-      .insert([{ codigo, descricao: descricao || null, ativo: ativo ?? true }])
+      .insert([{ codigo, descricao: descricao || null, ativo: ativo ?? true, empresa_ids: empresa_ids || [] }])
       .select()
     if (error) throw error
     return data?.[0]
   },
 
-  updateRubrica: async (id, { codigo, descricao, ativo }) => {
+  updateRubrica: async (id, { codigo, descricao, ativo, empresa_ids }) => {
     const { data, error } = await supabase
       .from('dim_rubricas')
-      .update({ codigo, descricao: descricao || null, ativo: ativo ?? true })
+      .update({ codigo, descricao: descricao || null, ativo: ativo ?? true, empresa_ids: empresa_ids || [] })
       .eq('id', id)
       .select()
     if (error) throw error
@@ -3029,6 +3029,8 @@ export const apiService = {
     if (filtros.numero_os)            q = q.eq('numero_os', filtros.numero_os.trim())
     if (filtros.data_inicio)          q = q.gte('data_abertura_os', filtros.data_inicio)
     if (filtros.data_fim)             q = q.lte('data_abertura_os', filtros.data_fim)
+    if (filtros.data_fechamento_inicio) q = q.gte('data_fechamento_os', filtros.data_fechamento_inicio)
+    if (filtros.data_fechamento_fim)    q = q.lte('data_fechamento_os', filtros.data_fechamento_fim)
     if (filtros.sem_fechamento)       q = q.is('data_fechamento_os', null)
     const { data, error } = await q
     if (error) throw error

@@ -1,11 +1,120 @@
 ﻿import React, { useEffect, useState, useMemo, useRef } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
+import { createPortal } from 'react-dom'
 import { useSessionState } from '../hooks/useSessionState'
-import { Plus, X, AlertTriangle, BadgePercent, Eye, ArrowUp, ArrowDown, ArrowUpDown, SlidersHorizontal, ChevronDown, ChevronRight, Copy, Loader2, Info, Search } from 'lucide-react'
+import { Plus, X, AlertTriangle, BadgePercent, Eye, Edit2, Trash2, Settings, ArrowUp, ArrowDown, ArrowUpDown, SlidersHorizontal, ChevronDown, ChevronRight, Copy, Loader2, Info, Search } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
-import PermissionActionButtons from '../components/PermissionActionButtons'
 import { apiService } from '../services/api'
 import { buscaComCoringa } from '../utils/buscaTexto'
+
+// Seletor de várias opções (usado no filtro de Empresa da lista) — mesmo padrão já usado em
+// Cálculo de Comissões, Histórico de Comissões, Cargos e Funcionários.
+function FiltroMultiSelect({ placeholder, opcoes, selecionados, onChange, labelFor }) {
+  const [aberto, setAberto] = useState(false)
+  const ref = useRef(null)
+  useEffect(() => {
+    const fechar = (e) => { if (ref.current && !ref.current.contains(e.target)) setAberto(false) }
+    document.addEventListener('mousedown', fechar)
+    return () => document.removeEventListener('mousedown', fechar)
+  }, [])
+  const toggle = (v) => onChange(selecionados.includes(v) ? selecionados.filter(x => x !== v) : [...selecionados, v])
+  const rotulo = labelFor || ((v) => v)
+  const texto = selecionados.length === 0 ? placeholder : selecionados.length === 1 ? rotulo(selecionados[0]) : `${selecionados.length} selecionados`
+  return (
+    <div ref={ref} className="relative">
+      <button type="button" onClick={() => setAberto(v => !v)}
+        className="w-full flex items-center justify-between gap-1 px-2 py-2 text-xs border border-slate-200 rounded-md bg-white hover:bg-slate-50 focus:outline-none focus:border-blue-400 transition-colors">
+        <span className={`truncate ${selecionados.length === 0 ? 'text-slate-400' : 'text-slate-700 font-semibold'}`}>{texto}</span>
+        <span className="flex items-center gap-0.5 shrink-0">
+          {selecionados.length > 0 && (
+            <span role="button" tabIndex={0} title="Limpar"
+              onClick={e => { e.stopPropagation(); onChange([]) }}
+              onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); onChange([]) } }}
+              className="p-0.5 text-slate-400 hover:text-red-600 rounded transition-colors">
+              <X className="h-3 w-3" />
+            </span>
+          )}
+          <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
+        </span>
+      </button>
+      {aberto && (
+        <div className="absolute z-50 mt-1 min-w-full w-max max-w-sm max-h-60 overflow-y-auto bg-white border border-slate-200 rounded-md shadow-xl py-1">
+          {opcoes.length === 0
+            ? <p className="px-3 py-2 text-xs text-slate-400">Nenhuma opção.</p>
+            : opcoes.map(op => (
+              <label key={op} className="flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-slate-50 cursor-pointer select-none">
+                <input type="checkbox" checked={selecionados.includes(op)} onChange={() => toggle(op)} className="w-3.5 h-3.5 rounded accent-blue-600 shrink-0" />
+                <span className="whitespace-nowrap">{rotulo(op)}</span>
+              </label>
+            ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Menu de Ações da linha, atrás de um botão de engrenagem — evita 4 ícones soltos na tabela.
+// O painel abre via portal (position:fixed na posição real do botão) porque a tabela rola na
+// horizontal (overflow-x-auto) — pela regra do CSS, isso faz o overflow-y virar "auto" também,
+// cortando um menu "absolute" comum assim que ele passa da altura do container.
+function AcoesPoliticaDropdown({ onVer, onEditar, onExcluir, onDuplicar, duplicando }) {
+  const [aberto, setAberto] = useState(false)
+  const [pos, setPos] = useState(null)
+  const btnRef = useRef(null)
+  const painelRef = useRef(null)
+
+  useEffect(() => {
+    if (!aberto) return
+    const fechar = (e) => {
+      if (painelRef.current?.contains(e.target)) return
+      if (btnRef.current?.contains(e.target)) return
+      setAberto(false)
+    }
+    document.addEventListener('mousedown', fechar)
+    window.addEventListener('scroll', fechar, true)
+    window.addEventListener('resize', fechar)
+    return () => {
+      document.removeEventListener('mousedown', fechar)
+      window.removeEventListener('scroll', fechar, true)
+      window.removeEventListener('resize', fechar)
+    }
+  }, [aberto])
+
+  if (!onVer && !onEditar && !onExcluir && !onDuplicar) return null
+
+  const abrir = () => {
+    const r = btnRef.current.getBoundingClientRect()
+    setPos({ left: r.left, top: r.bottom + 4 })
+    setAberto(true)
+  }
+
+  const item = (onClick, Icon, texto, extraClass = '', disabled = false) => (
+    <button type="button" disabled={disabled} onClick={() => { setAberto(false); onClick() }}
+      className={`w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors ${extraClass}`}>
+      <Icon className="h-3.5 w-3.5 shrink-0" /> {texto}
+    </button>
+  )
+
+  return (
+    <>
+      <button ref={btnRef} type="button" onClick={() => (aberto ? setAberto(false) : abrir())}
+        className={`p-1.5 rounded transition-colors ${aberto ? 'bg-slate-100 text-slate-700' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'}`}
+        title="Ações">
+        <Settings className="h-4 w-4" />
+      </button>
+      {aberto && pos && createPortal(
+        <div ref={painelRef} className="fixed z-50 w-44 bg-white border border-slate-200 rounded-md shadow-xl py-1"
+          style={{ left: pos.left, top: pos.top }}>
+          {onVer && item(onVer, Eye, 'Visualizar', 'text-slate-700')}
+          {onEditar && item(onEditar, Edit2, 'Editar', 'text-blue-700')}
+          {onDuplicar && item(onDuplicar, duplicando ? Loader2 : Copy, duplicando ? 'Duplicando...' : 'Duplicar', `text-indigo-700 ${duplicando ? '[&_svg]:animate-spin' : ''}`, duplicando)}
+          {onExcluir && item(onExcluir, Trash2, 'Excluir', 'text-red-600')}
+        </div>,
+        document.body
+      )}
+    </>
+  )
+}
 
 const NIVEIS_CALCULO = ['EMPRESA', 'EQUIPE', 'INDIVIDUAL']
 const USA_FAIXA_OPCOES = ['NÃO', 'SIM']
@@ -200,10 +309,21 @@ export default function PoliticaComissao() {
   // fato_politica_comissao não guarda o código do cargo — busca no cadastro de Cargos pra exibir.
   const codigoDoCargo = (cargoId) => cargos.find(c => c.id === cargoId)?.codigo_cargo || ''
 
+  // Rubrica: só mostra as que atendem a(s) empresa(s) do(s) cargo(s) já marcados (Rubricas.jsx →
+  // "Empresas que atendem"). Rubrica sem nenhuma empresa marcada lá vale pra todas. Sem cargo
+  // nenhum selecionado ainda, mostra todas — não tem por onde filtrar.
+  const empresaIdsDosCargosSelecionados = useMemo(() =>
+    [...new Set(form.cargo_ids.map(id => cargos.find(c => c.id === id)?.empresa_id).filter(Boolean))],
+    [form.cargo_ids, cargos])
+  const rubricasDisponiveis = useMemo(() => {
+    if (empresaIdsDosCargosSelecionados.length === 0) return rubricas
+    return rubricas.filter(r => !r.empresa_ids || r.empresa_ids.length === 0 || r.empresa_ids.some(id => empresaIdsDosCargosSelecionados.includes(id)))
+  }, [rubricas, empresaIdsDosCargosSelecionados])
+
   // Filtro de texto por coluna + ordenação A-Z/Z-A clicando no cabeçalho.
-  const [colFiltro, setColFiltro] = useState({ empresa: '', cargo: '', descricao: '' })
-  const temFiltroColuna = Object.values(colFiltro).some(Boolean)
-  const limparFiltroColuna = () => setColFiltro({ empresa: '', cargo: '', descricao: '' })
+  const [colFiltro, setColFiltro] = useState({ empresa: [], cargo: [], descricao: '' })
+  const temFiltroColuna = colFiltro.empresa.length > 0 || colFiltro.cargo.length > 0 || !!colFiltro.descricao
+  const limparFiltroColuna = () => setColFiltro({ empresa: [], cargo: [], descricao: '' })
   const [ordenacao, setOrdenacao] = useState({ coluna: 'cargo', direcao: 'asc' })
   const alternarOrdenacao = (coluna) => setOrdenacao(prev => prev.coluna === coluna
     ? { coluna, direcao: prev.direcao === 'asc' ? 'desc' : 'asc' }
@@ -261,21 +381,43 @@ export default function PoliticaComissao() {
   const numeroTotal = (grupo) => grupo.comissao_total != null ? parseFloat(grupo.comissao_total) : null
   const numeroValor = (grupo) => grupo.comissao_valor != null ? parseFloat(grupo.comissao_valor) : null
 
-  // Opções dos seletores = só o que realmente aparece na tabela principal.
+  // Opções dos seletores = só o que aparece considerando os OUTROS filtros ativos (facetado,
+  // mesmo padrão já usado em Cálculo de Comissões) — filtrar por Empresa só lista Cargos que
+  // ainda têm política nessa empresa, e filtrar por Cargo só lista Empresas com esse cargo.
+  const gruposSemFiltro = (ignorar) => grupos.filter(grupo => {
+    if (ignorar !== 'empresa' && colFiltro.empresa.length > 0 && !grupo.empresasNomes.some(n => colFiltro.empresa.includes(n))) return false
+    if (ignorar !== 'cargo' && colFiltro.cargo.length > 0 && !grupo.cargosNomes.some(n => colFiltro.cargo.includes(n))) return false
+    if (ignorar !== 'descricao' && colFiltro.descricao && !buscaComCoringa(textoDescricao(grupo), colFiltro.descricao)) return false
+    return true
+  })
   const empresasDisponiveis = useMemo(() =>
-    [...new Set(grupos.flatMap(g => g.empresasNomes))].sort((a, b) => a.localeCompare(b, 'pt-BR')),
-    [grupos])
+    [...new Set(gruposSemFiltro('empresa').flatMap(g => g.empresasNomes))].sort((a, b) => a.localeCompare(b, 'pt-BR')),
+    [grupos, colFiltro.cargo, colFiltro.descricao])
   const cargosDisponiveis = useMemo(() =>
-    [...new Set(grupos.flatMap(g => g.cargosNomes))].sort((a, b) => a.localeCompare(b, 'pt-BR')),
-    [grupos])
+    [...new Set(gruposSemFiltro('cargo').flatMap(g => g.cargosNomes))].sort((a, b) => a.localeCompare(b, 'pt-BR')),
+    [grupos, colFiltro.empresa, colFiltro.descricao])
   // Filtro continua batendo pelo NOME (é o que fato_politica_comissao.cargo_nome guarda) — o
   // código aqui é só pra exibir junto no rótulo da opção, buscado no cadastro de Cargos.
-  const codigoPorNomeCargo = (nome) => cargos.find(c => c.nome_cargo === nome)?.codigo_cargo || ''
+  // O mesmo nome de cargo pode existir em várias empresas com códigos diferentes (ex: "TECNICO
+  // MECANICO" = 6 em Barretos, 56 em Campo Grande) — com uma Empresa já selecionada no filtro,
+  // mostra o código DAQUELA empresa; sem empresa selecionada (ou sem cargo daquele nome nela),
+  // mostra todos os códigos distintos juntos, pra não fingir que só existe um.
+  const codigoPorNomeCargo = (nome) => {
+    const candidatos = cargos.filter(c => c.nome_cargo === nome)
+    if (candidatos.length === 0) return ''
+    // Só dá pra escolher um código específico quando exatamente 1 empresa está no filtro —
+    // com 0 ou 2+ empresas marcadas, mostra todos os códigos distintos juntos.
+    if (colFiltro.empresa.length === 1) {
+      const doFiltro = candidatos.find(c => c.nome_empresa === colFiltro.empresa[0])
+      if (doFiltro) return doFiltro.codigo_cargo || ''
+    }
+    return [...new Set(candidatos.map(c => c.codigo_cargo).filter(Boolean))].join('/')
+  }
 
   const gruposExibidos = useMemo(() => {
     const filtrados = grupos.filter(grupo => {
-      if (colFiltro.empresa && !grupo.empresasNomes.includes(colFiltro.empresa)) return false
-      if (colFiltro.cargo && !grupo.cargosNomes.includes(colFiltro.cargo)) return false
+      if (colFiltro.empresa.length > 0 && !grupo.empresasNomes.some(n => colFiltro.empresa.includes(n))) return false
+      if (colFiltro.cargo.length > 0 && !grupo.cargosNomes.some(n => colFiltro.cargo.includes(n))) return false
       if (colFiltro.descricao && !buscaComCoringa(textoDescricao(grupo), colFiltro.descricao)) return false
       return true
     })
@@ -587,19 +729,14 @@ export default function PoliticaComissao() {
       <div className="flex items-end gap-3 flex-wrap border-b border-slate-200 pb-4">
         <div className="flex flex-col gap-1 w-64">
           <label className="text-[10px] font-bold text-slate-400 uppercase">Empresa</label>
-          <select value={colFiltro.empresa} onChange={e => setColFiltro(p => ({ ...p, empresa: e.target.value }))}
-            className="w-full px-2 py-2 text-xs border border-slate-200 rounded-md bg-white focus:outline-none focus:border-blue-400">
-            <option value="">Todas</option>
-            {empresasDisponiveis.map(a => <option key={a} value={a}>{a}</option>)}
-          </select>
+          <FiltroMultiSelect placeholder="Todas" opcoes={empresasDisponiveis} selecionados={colFiltro.empresa}
+            onChange={vs => setColFiltro(p => ({ ...p, empresa: vs }))} />
         </div>
         <div className="flex flex-col gap-1 w-72">
           <label className="text-[10px] font-bold text-slate-400 uppercase">Cargo</label>
-          <select value={colFiltro.cargo} onChange={e => setColFiltro(p => ({ ...p, cargo: e.target.value }))}
-            className="w-full px-2 py-2 text-xs border border-slate-200 rounded-md bg-white focus:outline-none focus:border-blue-400">
-            <option value="">Todos</option>
-            {cargosDisponiveis.map(c => <option key={c} value={c}>{codigoPorNomeCargo(c) ? `${codigoPorNomeCargo(c)} — ${c}` : c}</option>)}
-          </select>
+          <FiltroMultiSelect placeholder="Todos" opcoes={cargosDisponiveis} selecionados={colFiltro.cargo}
+            onChange={vs => setColFiltro(p => ({ ...p, cargo: vs }))}
+            labelFor={c => codigoPorNomeCargo(c) ? `${codigoPorNomeCargo(c)} — ${c}` : c} />
         </div>
         <div className="flex flex-col gap-1 w-72">
           <label className="text-[10px] font-bold text-slate-400 uppercase">Descrição da Comissão</label>
@@ -628,6 +765,7 @@ export default function PoliticaComissao() {
         <table className="w-full text-left border-collapse min-w-[1500px]">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[11px] font-semibold uppercase tracking-wider">
+              <th className="p-3 w-12 text-center">Ações</th>
               <th className="p-3 min-w-[280px]">
                 <button onClick={() => alternarOrdenacao('descricao')} className="flex items-center gap-1 hover:text-slate-700 transition-colors">
                   Descrição da Comissão {iconeOrdenacao('descricao')}
@@ -666,7 +804,6 @@ export default function PoliticaComissao() {
                   Vigência {iconeOrdenacao('vigencia')}
                 </button>
               </th>
-              <th className="p-3 w-24 text-center">Ações</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
@@ -678,6 +815,15 @@ export default function PoliticaComissao() {
               </tr>
             ) : gruposExibidos.map((grupo) => (
               <tr key={grupo.grupoId} className="hover:bg-slate-50/70 transition-colors align-top">
+                <td className="p-3 w-12 text-center">
+                  <AcoesPoliticaDropdown
+                    onVer={() => abrirVisualizar(grupo)}
+                    onEditar={() => abrirEditar(grupo)}
+                    onExcluir={() => abrirExcluir(grupo)}
+                    onDuplicar={canEdit ? () => handleDuplicar(grupo) : null}
+                    duplicando={duplicandoId === grupo.grupoId}
+                  />
+                </td>
                 <td className="p-3 min-w-[280px] text-slate-600 whitespace-nowrap">{grupo.descricao_comissao || '-'}</td>
                 <td className="p-3 min-w-[320px]">
                   <div className="flex flex-col gap-1">
@@ -746,27 +892,6 @@ export default function PoliticaComissao() {
                 <td className="p-3 min-w-[110px] font-mono text-[11px] text-slate-600">
                   <div>{fmtDate(grupo.vig_inicio)}</div>
                   <div className="text-slate-400">{fmtDate(grupo.vig_fim)}</div>
-                </td>
-                <td className="p-3">
-                  <div className="flex items-center justify-center gap-1.5">
-                    <PermissionActionButtons
-                      menuPath="politica-comissao"
-                      onView={() => abrirVisualizar(grupo)}
-                      onEdit={() => abrirEditar(grupo)}
-                      onDelete={() => abrirExcluir(grupo)}
-                    />
-                    {canEdit && (
-                      <button
-                        type="button"
-                        onClick={() => handleDuplicar(grupo)}
-                        disabled={duplicandoId === grupo.grupoId}
-                        title="Duplicar Política de Comissão"
-                        className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        {duplicandoId === grupo.grupoId ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Copy className="h-3.5 w-3.5" />}
-                      </button>
-                    )}
-                  </div>
                 </td>
               </tr>
             ))}
@@ -844,11 +969,14 @@ export default function PoliticaComissao() {
                     </label>
                     <select name="codigo_rubrica" value={form.codigo_rubrica} onChange={handleInputChange} className={SEL}>
                       <option value="">Selecione...</option>
-                      {form.codigo_rubrica && !rubricas.some(r => r.codigo === form.codigo_rubrica) && (
+                      {form.codigo_rubrica && !rubricasDisponiveis.some(r => r.codigo === form.codigo_rubrica) && (
                         <option value={form.codigo_rubrica}>{form.codigo_rubrica}</option>
                       )}
-                      {rubricas.map(r => <option key={r.id} value={r.codigo}>{r.codigo}{r.descricao ? ` — ${r.descricao}` : ''}</option>)}
+                      {rubricasDisponiveis.map(r => <option key={r.id} value={r.codigo}>{r.codigo}{r.descricao ? ` — ${r.descricao}` : ''}</option>)}
                     </select>
+                    {empresaIdsDosCargosSelecionados.length > 0 && rubricasDisponiveis.length < rubricas.length && (
+                      <span className="text-[10px] text-slate-400">Mostrando só as rubricas que atendem a empresa do(s) cargo(s) selecionado(s).</span>
+                    )}
                   </div>
                   <div className="flex flex-col gap-1.5">
                     <label className={`${LBL} flex items-center gap-1`}>

@@ -260,9 +260,22 @@ export default function GarantiasDafTitulos() {
 
   const toggleFiltroCritico = () => setFiltroCritico(v => !v)
   const toggleFiltroNaoVinculado = () => setFiltroCardSemVinculo(v => !v)
-  const toggleFiltroVencido = () => setFiltroCardVencido(v => !v)
-  const toggleFiltroVenceHoje = () => setFiltroCardVenceHoje(v => !v)
-  const toggleFiltroAVencer = () => setFiltroCardAVencer(v => !v)
+  // Vencidos/Vence Hoje/A Vencer são mutuamente exclusivos — ativar um desativa os outros dois.
+  const toggleFiltroVencido = () => {
+    setFiltroCardVencido(v => !v)
+    setFiltroCardVenceHoje(false)
+    setFiltroCardAVencer(false)
+  }
+  const toggleFiltroVenceHoje = () => {
+    setFiltroCardVenceHoje(v => !v)
+    setFiltroCardVencido(false)
+    setFiltroCardAVencer(false)
+  }
+  const toggleFiltroAVencer = () => {
+    setFiltroCardAVencer(v => !v)
+    setFiltroCardVencido(false)
+    setFiltroCardVenceHoje(false)
+  }
   const toggleFiltroSituacao = (valor) => setFiltroSituacao(prev => prev === valor ? null : valor)
 
   // Algum dos cards de alerta está selecionado como filtro — o card Resumo Geral limpa todos.

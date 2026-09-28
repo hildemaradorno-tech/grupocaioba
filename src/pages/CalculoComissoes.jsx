@@ -128,15 +128,17 @@ const fmtValorBase = (c, v) => {
 // pela Regra por % de Meta Atingida (ver RegrasFaixas.jsx, onde a Meta de Referência é escolhida).
 const TIPOS_META_LABEL = { pecas: 'Peças', mecanico: 'Serviços — Mecânico', consultor: 'Serviços — Consultor', funilaria: 'Funilaria/Pintura', terceiros: 'Terceiros' }
 
-const faixasDaRegra = (politica, percentualAplicado) => {
+const faixasDaRegra = (politica, valorAplicado) => {
   if (politica?.usa_faixa !== 'SIM') return []
-  const porMeta = politica.regra_comissao?.tipo_faixa === 'PERCENTUAL_META'
+  const tipoFaixa = politica.regra_comissao?.tipo_faixa
+  const porMeta = tipoFaixa !== 'VALOR'
+  const fixo = tipoFaixa === 'VALOR_FIXO_META'
   return [...(politica.regra_comissao?.faixas || [])]
     .sort((a, b) => a.ordem - b.ordem)
     .map(f => ({
       texto: `${f.operador} ${porMeta ? `${parseFloat(f.valor).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}% da meta` : fmtBRL(parseFloat(f.valor))}`,
-      percentual: `${parseFloat(f.percentual).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 })}%`,
-      aplicada: percentualAplicado != null && parseFloat(f.percentual) === parseFloat(percentualAplicado),
+      percentual: fixo ? fmtBRL(parseFloat(f.percentual)) : `${parseFloat(f.percentual).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 })}%`,
+      aplicada: valorAplicado != null && parseFloat(f.percentual) === parseFloat(valorAplicado),
     }))
 }
 
@@ -163,13 +165,19 @@ function calcularComissaoSobre(c, valorBase, metaMap, baseComissaoMetaMap) {
       const v = parseFloat(f.valor)
       return f.operador === '>=' ? alvo >= v : f.operador === '>' ? alvo > v : f.operador === '<=' ? alvo <= v : alvo < v
     }
-    if (regra.tipo_faixa === 'PERCENTUAL_META') {
+    if (regra.tipo_faixa === 'PERCENTUAL_META' || regra.tipo_faixa === 'VALOR_FIXO_META') {
       // Sem meta cadastrada (Planejamento de Metas) pro funcionário/mês/tipo: vira pendência —
       // nunca calcula como se a meta fosse 0, que pagaria a faixa mais baixa por engano.
       const meta = metaMap?.[`${c.func.id}|${regra.meta_tipo}`]
       if (!meta || meta <= 0) return { percentual: null, valorFixo: null, valorComissao: null, semMeta: true }
       const percentualAtingido = (valorBase / meta) * 100
       const faixa = [...regra.faixas].sort((a, b) => a.ordem - b.ordem).find(f => casaComValor(f, percentualAtingido))
+      if (regra.tipo_faixa === 'VALOR_FIXO_META') {
+        // Paga um valor FIXO em R$ conforme a faixa de % atingido — não multiplica nada, não
+        // depende de nenhuma outra política.
+        const valorFixoFaixa = faixa ? parseFloat(faixa.percentual) : 0
+        return { percentual: null, valorFixo: valorFixoFaixa, valorComissao: valorFixoFaixa, percentualAtingido, meta, valorApurado: valorBase }
+      }
       const percentual = faixa ? parseFloat(faixa.percentual) : 0
       // O valor apurado da própria Base (ex: Faturamento Total) só serve pra achar QUAL % se
       // aplica (via % atingido da Meta) — a comissão em si é essa % em cima da soma das políticas
@@ -698,7 +706,7 @@ export default function CalculoComissoes({ agrupamentoNome = 'Caiobá Trucks' } 
             // por causa de férias no meio do mês. Fica 1 linha só (período cheio), mas o cálculo
             // por trás ainda lê cada pedaço sem os dias de férias e SOMA os valores antes de
             // comparar com a meta (ver segmentosLeitura em handleCalcular).
-            if (linha.politica.usa_faixa === 'SIM' && linha.politica.regra_comissao?.tipo_faixa === 'PERCENTUAL_META') {
+            if (linha.politica.usa_faixa === 'SIM' && linha.politica.regra_comissao?.tipo_faixa !== 'VALOR' && linha.politica.regra_comissao) {
               return [{ ...linha, segInicio: periodoInicio, segFim: periodoFim, segmentosLeitura: segmentos }]
             }
             return segmentos.map(seg => ({ ...linha, segInicio: seg.inicio, segFim: seg.fim }))
@@ -1041,7 +1049,7 @@ export default function CalculoComissoes({ agrupamentoNome = 'Caiobá Trucks' } 
       // só varia se um funcionário tiver segmento de férias cruzando virada de mês) — sem meta
       // cadastrada vira pendência, nunca calcula como se a meta fosse 0.
       const precisamMeta = elegiveisFiltrados
-        .filter(c => c?.politica?.usa_faixa === 'SIM' && c.politica.regra_comissao?.tipo_faixa === 'PERCENTUAL_META' && c.politica.regra_comissao?.meta_tipo)
+        .filter(c => c?.politica?.usa_faixa === 'SIM' && c.politica.regra_comissao?.tipo_faixa !== 'VALOR' && c.politica.regra_comissao?.meta_tipo)
       let metaMap = {}
       if (precisamMeta.length > 0) {
         const grupos = new Map()
@@ -1172,7 +1180,7 @@ export default function CalculoComissoes({ agrupamentoNome = 'Caiobá Trucks' } 
     // deles é INDIVIDUAL (ex: "Prêmio s/Meta Individual Atingida" vem depois das comissões
     // normais de Individual, não junto).
     const prioridadeComissao = (c) => {
-      if (c.politica.usa_faixa === 'SIM' && c.politica.regra_comissao?.tipo_faixa === 'PERCENTUAL_META') return 3
+      if (c.politica.usa_faixa === 'SIM' && c.politica.regra_comissao?.tipo_faixa !== 'VALOR' && c.politica.regra_comissao) return 3
       if (c.politica.nivel_calculo === 'INDIVIDUAL') return 0
       if (c.politica.nivel_calculo === 'EQUIPE') return 1
       return 2 // EMPRESA e qualquer outro nível
@@ -2030,8 +2038,9 @@ export default function CalculoComissoes({ agrupamentoNome = 'Caiobá Trucks' } 
                                       <button type="button"
                                         onClick={() => setRegraModal({
                                           nome: c.politica.regra_comissao.nome, baseNome: c.base?.nome,
-                                          faixas: faixasDaRegra(c.politica, res?.percentual),
-                                          porMeta: c.politica.regra_comissao.tipo_faixa === 'PERCENTUAL_META',
+                                          faixas: faixasDaRegra(c.politica, c.politica.regra_comissao.tipo_faixa === 'VALOR_FIXO_META' ? res?.valorFixo : res?.percentual),
+                                          porMeta: c.politica.regra_comissao.tipo_faixa !== 'VALOR',
+                                          tipoFaixa: c.politica.regra_comissao.tipo_faixa,
                                           metaTipoLabel: TIPOS_META_LABEL[c.politica.regra_comissao.meta_tipo] || c.politica.regra_comissao.meta_tipo,
                                           semMeta: res?.semMeta, meta: res?.meta, percentualAtingido: res?.percentualAtingido,
                                           valorApurado: res?.valorApurado ?? res?.valorBase, baseComissao: res?.valorApurado != null ? res?.valorBase : null,
@@ -2131,9 +2140,11 @@ export default function CalculoComissoes({ agrupamentoNome = 'Caiobá Trucks' } 
                   </div>
                 ))}
               </div>
-              {/* Valores apurados da Base do Prêmio (usados só pra achar a %, comparando com a
-                  Meta) — um por período quando há segmentos (ex: férias no meio do mês). */}
-              {regraModal.porMeta && !regraModal.semMeta && (
+              {/* Valores apurados da Base do Prêmio e a Meta comparada — sempre que a Regra
+                  envolver Meta, mesmo sem meta cadastrada (aí dá pra ver o que já foi realizado,
+                  mesmo sem saber ainda em qual faixa/classificação vai cair). Um valor por
+                  período quando há segmentos (ex: férias no meio do mês). */}
+              {regraModal.porMeta && (
                 <div className="rounded-md border border-sky-200 overflow-hidden">
                   <div className="px-3 py-1.5 bg-sky-50 border-b border-sky-100 text-[10px] font-bold text-sky-700 uppercase tracking-wide">Valores apurados (comparados com a Meta)</div>
                   <div className="divide-y divide-slate-100">
@@ -2145,7 +2156,9 @@ export default function CalculoComissoes({ agrupamentoNome = 'Caiobá Trucks' } 
                     ))}
                     <div className="flex items-center justify-between px-3 py-1.5 bg-slate-50 text-[11px]">
                       <span className="font-semibold text-slate-600">Meta</span>
-                      <span className="font-mono font-semibold text-slate-700">{fmtBRL(regraModal.meta)}</span>
+                      <span className={`font-mono font-semibold ${regraModal.semMeta ? 'text-amber-600' : 'text-slate-700'}`}>
+                        {regraModal.semMeta ? 'Não cadastrada' : fmtBRL(regraModal.meta)}
+                      </span>
                     </div>
                   </div>
                   <div className="flex items-center justify-between px-3 py-2 bg-sky-50 border-t border-sky-100 text-[11px] font-bold">
@@ -2153,7 +2166,9 @@ export default function CalculoComissoes({ agrupamentoNome = 'Caiobá Trucks' } 
                     <span>
                       <span className="text-slate-800">{fmtBRL(regraModal.valorApurado)}</span>
                       <span className="mx-1.5 text-slate-300">·</span>
-                      <span className="text-sky-700">{regraModal.percentualAtingido?.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%</span>
+                      <span className="text-sky-700">
+                        {regraModal.semMeta ? '—' : `${regraModal.percentualAtingido?.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`}
+                      </span>
                     </span>
                   </div>
                 </div>
@@ -2167,7 +2182,9 @@ export default function CalculoComissoes({ agrupamentoNome = 'Caiobá Trucks' } 
                 </div>
               )}
               <div className="text-[10px] text-slate-400">
-                {regraModal.porMeta
+                {regraModal.tipoFaixa === 'VALOR_FIXO_META'
+                  ? 'A primeira faixa cujo % de meta atingida casar paga esse valor FIXO em R$ — não multiplica nem depende de nenhuma outra política.'
+                  : regraModal.porMeta
                   ? 'O percentual da primeira faixa cujo % de meta atingida casar é aplicado sobre a Base da Comissão (não sobre o valor apurado acima).'
                   : 'O percentual da primeira faixa que casar com o valor da Base é aplicado sobre o valor todo.'}
               </div>

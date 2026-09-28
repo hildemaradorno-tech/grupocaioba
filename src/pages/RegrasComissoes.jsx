@@ -11,10 +11,10 @@ import Rubricas from './Rubricas'
 import TiposProcesso from './TiposProcesso'
 
 const ABAS = [
-  { menuPath: 'rubricas', label: 'Rubrica', icon: Hash, Componente: Rubricas,
-    description: 'Códigos de rubrica usados no TXT de pagamento (Processamento de Comissões) — selecionáveis em Política de Comissão.' },
   { menuPath: 'tipos-processo', label: 'Tipo de Processo', icon: ListChecks, Componente: TiposProcesso,
     description: 'Códigos de tipo de processo usados no TXT de pagamento (Processamento de Comissões) — selecionáveis em Política de Comissão.' },
+  { menuPath: 'rubricas', label: 'Rubrica', icon: Hash, Componente: Rubricas,
+    description: 'Códigos de rubrica usados no TXT de pagamento (Processamento de Comissões) — selecionáveis em Política de Comissão.' },
   { menuPath: 'bases-calculo', label: 'Base de Cálculo', icon: Calculator, Componente: BasesCalculo,
     description: 'Defina qual coluna e agregação extraem o valor de cada Fonte de Cálculo.' },
   { menuPath: 'politica-comissao', label: 'Política de Comissões', icon: ScrollText, Componente: PoliticaComissao,

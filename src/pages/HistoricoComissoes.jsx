@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { Search, Loader2, AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, Eye, X, RotateCcw, Truck, ShieldCheck, CheckCircle2, Circle, Download, Trash2, FileDown, LayoutGrid, UserPlus } from 'lucide-react'
+import { Search, Loader2, AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, Eye, X, RotateCcw, Truck, ShieldCheck, CheckCircle2, Circle, Download, Trash2, FileDown, LayoutGrid, UserPlus, SlidersHorizontal } from 'lucide-react'
 import { apiService } from '../services/api'
 import { buscaComCoringa } from '../utils/buscaTexto'
 import { passaEscopoComissao, departamentoSoVisualizacao } from '../utils/permissoesComissao'
@@ -1255,7 +1255,7 @@ export default function HistoricoComissoes() {
         <>
           {/* PERÍODO */}
           <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-4">
-            <div className="grid grid-cols-5 gap-3 items-end">
+            <div className="grid grid-cols-7 gap-3 items-end">
               <div className="flex flex-col gap-1.5">
                 <label className={LBL}>Ano</label>
                 <select value={ano} onChange={e => setAno(e.target.value)} className={`${SEL} w-full`}>
@@ -1278,15 +1278,22 @@ export default function HistoricoComissoes() {
                   </button>
                 </div>
               </div>
+              <div className="col-span-2 flex flex-col gap-1.5">
+                <label className={LBL}>Empresa</label>
+                <select value={filtroEmpresa} onChange={e => setFiltroEmpresa(e.target.value)} className={`${SEL} w-full`}>
+                  <option value="">Todas</option>
+                  {empresasUnicas.map(e => <option key={e} value={e}>{e}</option>)}
+                </select>
+              </div>
               <div className="col-span-2 flex justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setFiltrosAbertos(v => !v)}
-                  className="flex items-center gap-1.5 border border-slate-200 text-slate-600 hover:bg-slate-50 text-xs font-semibold px-3 py-2 rounded-md transition-colors"
+                  title="Filtros Avançados"
+                  className="relative shrink-0 p-2 border border-slate-200 rounded-md text-slate-600 hover:bg-slate-50 transition-colors"
                 >
-                  {filtrosAbertos ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-                  Filtros Avançados
-                  {temFiltroAtivo && <span className="px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 text-[10px] font-bold">ativo</span>}
+                  <SlidersHorizontal className="h-4 w-4" />
+                  {temFiltroAtivo && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-blue-600 border-2 border-white" />}
                 </button>
                 <button
                   onClick={handleVisualizar}
@@ -1304,14 +1311,7 @@ export default function HistoricoComissoes() {
           {filtrosAbertos && (
             <div className="bg-white rounded-lg border border-slate-200 shadow-sm">
               <div className="px-4 pt-4 pb-4 space-y-3">
-                <div className="grid grid-cols-3 gap-x-4 gap-y-3">
-                  <div className="flex flex-col gap-1">
-                    <label className={LBL}>Empresa</label>
-                    <select value={filtroEmpresa} onChange={e => setFiltroEmpresa(e.target.value)} className={`${SEL} w-full`}>
-                      <option value="">Todas</option>
-                      {empresasUnicas.map(e => <option key={e} value={e}>{e}</option>)}
-                    </select>
-                  </div>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-3">
                   <div className="flex flex-col gap-1">
                     <label className={LBL}>Área</label>
                     <select value={filtroArea} onChange={e => setFiltroArea(e.target.value)} className={`${SEL} w-full`}>

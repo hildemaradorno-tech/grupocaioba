@@ -5,7 +5,7 @@ import {
   Search, Edit2, Trash2, ShieldAlert, FileText,
   Activity, Clock, AlertTriangle, Filter, RotateCcw, Download, RefreshCw,
   Bell, ChevronDown, ChevronUp, CheckCircle, XCircle, Send, BarChart2,
-  CheckSquare, Square, Loader2, Info, Eye,
+  CheckSquare, Square, Loader2, Info, Eye, X,
 } from 'lucide-react'
 import { apiService } from '../../services/api'
 import { useAuth } from '../../context/AuthContext'
@@ -56,7 +56,7 @@ const diffDias = (a, b) => {
   return Math.max(0, Math.round((new Date(b) - new Date(a)) / 86400000))
 }
 
-const FILTROS_VAZIOS = { numero_os: '', chassi: '', data_inicio: '', data_fim: '' }
+const FILTROS_VAZIOS = { numero_os: '', chassi: '', data_inicio: '', data_fim: '', data_fechamento_inicio: '', data_fechamento_fim: '' }
 
 function CardGrupo({ icon: Icon, label, count, valor, diasMedio, ativo, onClick, st }) {
   return (
@@ -116,6 +116,7 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
   const [idExcluir, setIdExcluir] = useState(null)
   const [nomeExcluir, setNomeExcluir] = useState('')
   const [filtroMais14, setFiltroMais14] = useState(false)
+  const [filtroTipoOSCard, setFiltroTipoOSCard] = useState('') // sigla clicada no card "Tipos de OS" (Na Oficina)
   const [selecionados, setSelecionados] = useState(new Set())
   const [modalExcluirLote, setModalExcluirLote] = useState(false)
   const [excluindoLote, setExcluindoLote] = useState(false)
@@ -282,7 +283,13 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
     let rows = [...spRowsEnriquecidos]
     if (siglasGarantia.size > 0) rows = rows.filter(r => siglasGarantia.has(tipoCode(r.tipo_os_sigla)))
     if (filtros.numero_os?.trim()) rows = rows.filter(r => r.os_numero.includes(filtros.numero_os.trim()))
-    if (filtros.chassi?.trim()) rows = rows.filter(r => r.veiculo_chassi.toLowerCase().includes(filtros.chassi.toLowerCase().trim()))
+    if (filtros.chassi?.trim()) {
+      const q = filtros.chassi.toLowerCase().trim()
+      rows = rows.filter(r =>
+        r.veiculo_chassi.toLowerCase().includes(q) ||
+        (r.veiculo_placa || '').toLowerCase().includes(q)
+      )
+    }
     if (filtroEmpresaDash) rows = rows.filter(r => r._empresa === filtroEmpresaDash)
     if (filtros.data_inicio) rows = rows.filter(r => r.data_criacao >= filtros.data_inicio)
     if (filtros.data_fim) rows = rows.filter(r => r.data_criacao <= filtros.data_fim)
@@ -298,9 +305,10 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
     const diasAberto = (r) => r.data_criacao
       ? Math.floor((new Date() - new Date(r.data_criacao + 'T12:00:00')) / 86400000)
       : -1
-    const base = filtroMais14
+    let base = filtroMais14
       ? spAndamentoFiltrado.filter(r => diasAberto(r) > 14)
       : spAndamentoFiltrado
+    if (filtroTipoOSCard) base = base.filter(r => (r.tipo_os_sigla?.trim() || '—') === filtroTipoOSCard)
     const arr = [...base]
     arr.sort((a, b) => {
       if (sortColAnd === 'total') {
@@ -315,7 +323,7 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
       return sortDirAnd === 'asc' ? cmp : -cmp
     })
     return arr
-  }, [spAndamentoFiltrado, filtroMais14, sortColAnd, sortDirAnd])
+  }, [spAndamentoFiltrado, filtroMais14, filtroTipoOSCard, sortColAnd, sortDirAnd])
 
   const tiposOsDisponiveis = useMemo(
     () => Array.from(new Set(dadosTodos.map(d => d.tipo_garantia_descricao).filter(Boolean))).sort(),
@@ -863,6 +871,15 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
                   Última importação — conferir os dados trazidos automaticamente.
                 </p>
               </div>
+              {!spLoading && pendFechadas.length > 0 && (
+                <button
+                  onClick={handleImportarLote}
+                  className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md bg-blue-600 hover:bg-blue-700 text-white transition-colors"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  Importar
+                </button>
+              )}
               <button
                 onClick={() => { setFiltroCard(prev => prev === 'novos_importados' ? null : 'novos_importados'); setStatusFiltro('') }}
                 className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${filtroCard === 'novos_importados' ? 'bg-green-700 text-white' : 'bg-green-600 hover:bg-green-700 text-white'}`}
@@ -988,7 +1005,7 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
           r.data_criacao && Math.floor((hoje - new Date(r.data_criacao + 'T12:00:00')) / 86400000) > 14
         ).length
         return (
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-3 gap-3 items-stretch">
             {/* Card Tipos de OS */}
             {(() => {
               const tipoMap = new Map()
@@ -1013,7 +1030,10 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
                       <FileText className="h-4 w-4 text-indigo-600" />
                     </div>
                     <span className="text-xs font-bold text-indigo-600 uppercase tracking-wide">Tipos de OS</span>
-                    <span className="ml-auto text-[10px] text-slate-400">{tipos.length} tipos</span>
+                    {filtroTipoOSCard
+                      ? <span className="ml-auto flex items-center gap-1 px-1.5 py-0.5 bg-indigo-100 text-indigo-700 rounded text-[9px] font-bold">{filtroTipoOSCard}</span>
+                      : <span className="ml-auto text-[10px] text-slate-400">{tipos.length} tipos</span>
+                    }
                   </div>
                   <div className="divide-y divide-slate-50">
                     {/* Header */}
@@ -1024,12 +1044,18 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
                       <div className="text-right">Serviços</div>
                     </div>
                     {tipos.map(t => (
-                      <div key={t.sigla} className="grid grid-cols-[1fr_40px_90px_90px] gap-2 py-1.5 text-[10px] hover:bg-slate-50/70">
+                      <button
+                        type="button"
+                        key={t.sigla}
+                        onClick={() => setFiltroTipoOSCard(prev => prev === t.sigla ? '' : t.sigla)}
+                        title={`Filtrar a tabela abaixo por ${t.sigla}`}
+                        className={`grid grid-cols-[1fr_40px_90px_90px] gap-2 py-1.5 text-[10px] w-full text-left transition-colors ${filtroTipoOSCard === t.sigla ? 'bg-indigo-50' : 'hover:bg-slate-50/70'}`}
+                      >
                         <div className="font-semibold text-slate-700 truncate" title={t.desc}>{t.sigla}</div>
                         <div className="text-center font-bold text-indigo-600">{t.count}</div>
                         <div className="text-right font-mono text-slate-600">{fmt(t.produto)}</div>
                         <div className="text-right font-mono text-slate-600">{fmt(t.servico)}</div>
-                      </div>
+                      </button>
                     ))}
                   </div>
                   {tipos.length > 1 && (
@@ -1043,13 +1069,23 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
                 </div>
               )
             })()}
-            {/* Card totais */}
-            <div className="bg-sky-50 border border-sky-200 rounded-lg p-4">
+            {/* Card totais — clica para limpar os filtros aplicados pelos cards (Tipo de OS, +14 dias) */}
+            <button
+              type="button"
+              onClick={() => { setFiltroTipoOSCard(''); setFiltroMais14(false) }}
+              title={(filtroTipoOSCard || filtroMais14) ? 'Limpar filtros dos cards' : undefined}
+              className={`w-full h-full self-stretch flex flex-col items-stretch justify-start text-left bg-sky-50 border border-sky-200 rounded-lg p-4 transition-colors ${(filtroTipoOSCard || filtroMais14) ? 'hover:bg-sky-100 cursor-pointer' : 'cursor-default'}`}
+            >
               <div className="flex items-center gap-2 mb-3">
                 <div className="p-1.5 bg-sky-100 rounded">
                   <Activity className="h-4 w-4 text-sky-600" />
                 </div>
                 <span className="text-xs font-bold text-sky-600 uppercase tracking-wide">Resumo Na Oficina</span>
+                {(filtroTipoOSCard || filtroMais14) && (
+                  <span className="ml-auto flex items-center gap-1 px-1.5 py-0.5 bg-sky-100 text-sky-700 rounded text-[9px] font-bold">
+                    <X className="h-2.5 w-2.5" /> limpar
+                  </span>
+                )}
               </div>
               <div className="flex flex-col gap-2 text-xs">
                 <div className="flex justify-between items-center border-b border-sky-100 pb-2">
@@ -1069,7 +1105,7 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
                   <span className="font-bold font-mono text-sky-800">{fmt(totalGeral)}</span>
                 </div>
               </div>
-            </div>
+            </button>
             {/* Card +14 dias */}
             {(() => {
               const rows14 = spAndamentoFiltrado.filter(r =>
@@ -1146,7 +1182,7 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
             {filtroNaBase === 'nao' && <span className="px-1.5 py-0.5 bg-red-100 text-red-700 rounded text-[10px] font-bold">● Não encontrado</span>}
             <span className="text-slate-400">{filtrosAbertos ? '▲' : '▼'}</span>
           </button>
-          {!!(filtroEmpresaDash || filtroTipoOS || filtroNaBase || filtros.numero_os || filtros.chassi || filtros.data_inicio || filtros.data_fim) && (
+          {!!(filtroEmpresaDash || filtroTipoOS || filtroNaBase || filtros.numero_os || filtros.chassi || filtros.data_inicio || filtros.data_fim || filtros.data_fechamento_inicio || filtros.data_fechamento_fim) && (
             <button
               type="button"
               onClick={() => { handleLimpar(); setFiltroEmpresaDash(''); setFiltroTipoOS(''); setFiltroNaBase('') }}
@@ -1158,8 +1194,8 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
         </div>
         {filtrosAbertos && (
           <form onSubmit={handleBuscar} className="px-4 pb-4 border-t border-slate-100">
-            {/* Linha 1: Empresa | Tipo de OS | Período */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3">
+            {/* Linha 1: Empresa | Tipo de OS (com Garantista) */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3">
               <div className="flex flex-col gap-1">
                 <label className="text-[10px] font-bold text-slate-400 uppercase">Empresa</label>
                 <select
@@ -1171,19 +1207,21 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
                   {empresasDisponiveis.map(e => <option key={e} value={e}>{e}</option>)}
                 </select>
               </div>
+              {!isAndamento && (
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase">Tipo de OS</label>
+                  <select
+                    value={filtroTipoOS}
+                    onChange={e => { setFiltroTipoOS(e.target.value); setFiltroCard(null); setStatusFiltro('') }}
+                    className="text-xs p-1.5 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20 bg-white"
+                  >
+                    <option value="">Todos os tipos</option>
+                    {tiposOsDisponiveis.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+              )}
               <div className="flex flex-col gap-1">
-                <label className="text-[10px] font-bold text-slate-400 uppercase">Tipo de OS</label>
-                <select
-                  value={filtroTipoOS}
-                  onChange={e => { setFiltroTipoOS(e.target.value); setFiltroCard(null); setStatusFiltro('') }}
-                  className="text-xs p-1.5 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20 bg-white"
-                >
-                  <option value="">Todos os tipos</option>
-                  {tiposOsDisponiveis.map(t => <option key={t} value={t}>{t}</option>)}
-                </select>
-              </div>
-              <div className="flex flex-col gap-1">
-                <label className="text-[10px] font-bold text-slate-400 uppercase">Período</label>
+                <label className="text-[10px] font-bold text-slate-400 uppercase">Período (Abertura)</label>
                 <div className="flex gap-1">
                   <input type="date" name="data_inicio" value={filtros.data_inicio} onChange={handleFiltroChange}
                     className="flex-1 text-xs p-1.5 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20" />
@@ -1191,12 +1229,23 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
                     className="flex-1 text-xs p-1.5 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20" />
                 </div>
               </div>
+              {!isAndamento && (
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase">Período (Fechamento)</label>
+                  <div className="flex gap-1">
+                    <input type="date" name="data_fechamento_inicio" value={filtros.data_fechamento_inicio} onChange={handleFiltroChange}
+                      className="flex-1 text-xs p-1.5 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20" />
+                    <input type="date" name="data_fechamento_fim" value={filtros.data_fechamento_fim} onChange={handleFiltroChange}
+                      className="flex-1 text-xs p-1.5 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20" />
+                  </div>
+                </div>
+              )}
             </div>
-            {/* Linha 2: Nº OS | Chassi | No Arquivo SP */}
+            {/* Linha 2: Nº OS | Chassi */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3">
               {[
                 { name: 'numero_os', placeholder: 'Nº OS' },
-                { name: 'chassi', placeholder: 'Chassi' },
+                { name: 'chassi', placeholder: isAndamento ? 'Chassi / Placa' : 'Chassi' },
               ].map(({ name, placeholder }) => (
                 <div key={name} className="flex flex-col gap-1">
                   <label className="text-[10px] font-bold text-slate-400 uppercase">{placeholder}</label>
@@ -1205,25 +1254,6 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
                     className="text-xs p-1.5 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20" />
                 </div>
               ))}
-              {!isAndamento && (
-                <div className="flex flex-col gap-1 col-span-2">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase">&nbsp;</label>
-                  <div className="flex gap-2 items-center h-[30px]">
-                    <button type="button"
-                      onClick={() => setFiltroNaBase('')}
-                      className={`whitespace-nowrap px-2.5 py-1 text-[11px] font-bold rounded-full border transition-colors ${filtroNaBase === '' ? 'bg-slate-700 text-white border-slate-700' : 'bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200'}`}
-                    >Todos</button>
-                    <button type="button"
-                      onClick={() => setFiltroNaBase('sim')}
-                      className={`whitespace-nowrap flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold rounded-full border transition-colors ${filtroNaBase === 'sim' ? 'bg-green-600 text-white border-green-600' : 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100'}`}
-                    ><span className="w-2 h-2 rounded-full bg-green-500 inline-block" /> Sharepoint</button>
-                    <button type="button"
-                      onClick={() => setFiltroNaBase('nao')}
-                      className={`whitespace-nowrap flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold rounded-full border transition-colors ${filtroNaBase === 'nao' ? 'bg-red-600 text-white border-red-600' : 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100'}`}
-                    ><span className="w-2 h-2 rounded-full bg-red-500 inline-block" /> Não encontrado</button>
-                  </div>
-                </div>
-              )}
             </div>
             <div className="flex items-center gap-2 mt-3">
               <button type="submit" className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 transition-colors">
@@ -1278,13 +1308,14 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
                 <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[10px] font-bold uppercase tracking-wider">
                   {[
                     { col: 'os_numero',            label: 'Nº OS',                cls: 'w-20' },
-                    { col: 'empresa_nome',          label: 'Empresa',              cls: 'w-[18%]' },
+                    { col: 'empresa_nome',          label: 'Empresa',              cls: 'w-[24%]' },
                     { col: 'data_criacao',          label: 'Data Criação',         cls: 'w-24' },
                     { col: 'dias_aberto',           label: 'Dias',                 cls: 'w-14 text-right' },
-                    { col: 'tipo_os_sigla',         label: 'Tipo OS',              cls: 'w-[14%]' },
-                    { col: 'consultor_nome',        label: 'Consultor',            cls: 'w-[14%]' },
-                    { col: 'proprietario_veiculo',  label: 'Proprietário Veículo', cls: 'w-[18%]' },
+                    { col: 'tipo_os_sigla',         label: 'Tipo OS',              cls: 'w-[13%]' },
+                    { col: 'consultor_nome',        label: 'Consultor',            cls: 'w-[13%]' },
+                    { col: 'proprietario_veiculo',  label: 'Proprietário Veículo', cls: 'w-[15%]' },
                     { col: 'veiculo_chassi',        label: 'Nº Chassi',            cls: 'w-24' },
+                    { col: 'veiculo_placa',         label: 'Placa',                cls: 'w-20' },
                     { col: 'total',                 label: 'Total',                cls: 'w-24 text-right' },
                   ].map(({ col, label, cls }) => (
                     <th key={col} onClick={() => handleSortAnd(col)}
@@ -1301,7 +1332,7 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
                 {spAndamentoOrdenado.length === 0 ? (
-                  <tr><td colSpan="9" className="p-10 text-center text-slate-400">
+                  <tr><td colSpan="10" className="p-10 text-center text-slate-400">
                     {spRows.length === 0 ? 'SharePoint não configurado ou sem dados disponíveis.' : 'Nenhuma OS na oficina encontrada.'}
                   </td></tr>
                 ) : spAndamentoOrdenado.map((r, idx) => {
@@ -1313,13 +1344,14 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
                   return (
                   <tr key={`${r.os_numero}_${r.tipo_os_sigla}_${idx}`} className="hover:bg-slate-50/70 transition-colors">
                     <td className="p-3 font-mono font-bold text-slate-900 truncate">{r.os_numero || '—'}</td>
-                    <td className="p-3 text-slate-700 truncate" title={spEmpresaNome(r)}>{spEmpresaNome(r)}</td>
+                    <td className="p-3 text-slate-700 whitespace-nowrap">{spEmpresaNome(r)}</td>
                     <td className="p-3 text-slate-500 truncate">{r.data_criacao ? new Date(r.data_criacao + 'T12:00:00').toLocaleDateString('pt-BR') : '—'}</td>
                     <td className={`p-3 text-right truncate ${diasCor}`}>{diasAberto !== null ? `${diasAberto}d` : '—'}</td>
                     <td className="p-3 text-slate-600 truncate" title={r.tipo_os_descricao || tipoOsDescMap.get(r.tipo_os_sigla?.trim()) || r.tipo_os_sigla || ''}>{r.tipo_os_descricao || tipoOsDescMap.get(r.tipo_os_sigla?.trim()) || r.tipo_os_sigla || '—'}</td>
                     <td className="p-3 text-slate-600 truncate" title={r.consultor_nome || ''}>{r.consultor_nome || '—'}</td>
                     <td className="p-3 text-slate-700 truncate" title={r.proprietario_veiculo || ''}>{r.proprietario_veiculo || '—'}</td>
                     <td className="p-3 font-mono text-slate-500 truncate">{r.veiculo_chassi ? r.veiculo_chassi.slice(-8) : '—'}</td>
+                    <td className="p-3 font-mono text-slate-500 truncate">{r.veiculo_placa || '—'}</td>
                     <td className="p-3 text-right font-semibold text-slate-900 truncate">{r.total > 0 ? fmt(r.total) : '—'}</td>
                   </tr>
                   )
@@ -1421,6 +1453,9 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
                       </td>
                       <td className="p-3 text-center sticky right-0 bg-white border-l border-slate-100 shadow-[-4px_0_12px_rgba(0,0,0,0.03)]">
                         <div className="flex items-center justify-center gap-1">
+                          <button onClick={() => navigate(`/garantias-daf/${item.id}`, { state: { modo: 'visualizar' } })} className="p-1 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors" title="Visualizar">
+                            <Eye className="h-3.5 w-3.5" />
+                          </button>
                           {canEditarOS && (
                             <button onClick={() => navigate(`/garantias-daf/${item.id}`)} className="p-1 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors" title="Editar">
                               <Edit2 className="h-3.5 w-3.5" />

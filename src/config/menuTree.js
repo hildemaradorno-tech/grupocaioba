@@ -80,8 +80,8 @@ export const MENU_TREE = [
         label: 'Regras de Comissões',
         navTo: 'regras-comissoes',
         children: [
-          { key: 'rubricas', label: 'Rubrica' },
           { key: 'tipos-processo', label: 'Tipo de Processo' },
+          { key: 'rubricas', label: 'Rubrica' },
           { key: 'bases-calculo', label: 'Base de Cálculo' },
           { key: 'politica-comissao', label: 'Política de Comissões' },
           { key: 'regras-faixas', label: 'Regras' },

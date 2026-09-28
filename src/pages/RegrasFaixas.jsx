@@ -43,12 +43,15 @@ const duasCasas = (v) => {
 const novaFaixa = () => ({ operador: '>=', valor: '', percentual: '' })
 const FORM_VAZIO = {
   descricao: '', ativo: true, politicaId: '',
-  tipo_faixa: 'VALOR', meta_tipo: '', basePoliticaIds: [],
+  tipo_faixa: 'VALOR', meta_tipo: '', basePoliticaIds: [],  // 'VALOR' | 'PERCENTUAL_META' | 'VALOR_FIXO_META'
   faixas: [novaFaixa(), { operador: '<', valor: '', percentual: '' }],
 }
 
-// Texto de uma faixa, no formato certo pro tipo (R$ absoluto, ou % de meta atingida).
-const fmtFaixaValor = (tipoFaixa, valor) => tipoFaixa === 'PERCENTUAL_META' ? fmtPct(valor) : fmtBRL(valor)
+// Texto do limiar da faixa (coluna esquerda): R$ absoluto (Valor da Base) ou % de meta atingida
+// (Regra por % ou por Valor Fixo — as duas comparam com a Meta).
+const fmtFaixaLimiar = (tipoFaixa, valor) => tipoFaixa === 'VALOR' ? fmtBRL(valor) : fmtPct(valor)
+// Texto do que é pago quando a faixa casa: % (Regra por %) ou R$ fixo (Regra por Valor Fixo).
+const fmtFaixaPago = (tipoFaixa, valor) => tipoFaixa === 'VALOR_FIXO_META' ? fmtBRL(valor) : fmtPct(valor)
 
 export default function RegrasFaixas() {
   const [dados, setDados] = useState([])
@@ -61,6 +64,8 @@ export default function RegrasFaixas() {
   const [erroModal, setErroModal] = useState(null)
   const [salvando, setSalvando] = useState(false)
   const [buscaPolitica, setBuscaPolitica] = useState('')
+  const [filtroEmpresaPolitica, setFiltroEmpresaPolitica] = useState('')
+  const [filtroCargoPolitica, setFiltroCargoPolitica] = useState('')
   const [listaPoliticaAberta, setListaPoliticaAberta] = useState(false)
   const [buscaBasePolitica, setBuscaBasePolitica] = useState('')
   const [politicas, setPoliticas] = useState([]) // [{ id (grupo), titulo, detalhe, regraId, regraNome }]
@@ -91,6 +96,7 @@ export default function RegrasFaixas() {
           id, regraId: p.regra_comissao_id || null, regraNome: p.regra_comissao?.nome || null,
           baseNome: p.base_calculo?.nome || null,
           titulo: p.descricao_comissao || 'Sem descrição',
+          cargos, empresas,
           detalhe: [cargos.join(', '), empresas.join(', ')].filter(Boolean).join(' — '),
         }
       }).sort((a, b) => a.titulo.localeCompare(b.titulo, 'pt-BR')))
@@ -107,6 +113,8 @@ export default function RegrasFaixas() {
     setForm({ ...FORM_VAZIO, faixas: [novaFaixa(), { operador: '<', valor: '', percentual: '' }] })
     setErroModal(null)
     setBuscaPolitica('')
+    setFiltroEmpresaPolitica('')
+    setFiltroCargoPolitica('')
     setBuscaBasePolitica('')
     setListaPoliticaAberta(false)
     setModalAberto(true)
@@ -125,6 +133,8 @@ export default function RegrasFaixas() {
     })
     setErroModal(null)
     setBuscaPolitica('')
+    setFiltroEmpresaPolitica('')
+    setFiltroCargoPolitica('')
     setBuscaBasePolitica('')
     setListaPoliticaAberta(false)
     setModalAberto(true)
@@ -136,7 +146,7 @@ export default function RegrasFaixas() {
   const handleSalvar = async (e) => {
     e.preventDefault()
     setErroModal(null)
-    if (form.tipo_faixa === 'PERCENTUAL_META' && !form.meta_tipo) return setErroModal('Selecione a Meta de Referência.')
+    if (form.tipo_faixa !== 'VALOR' && !form.meta_tipo) return setErroModal('Selecione a Meta de Referência.')
     const faixas = form.faixas.map(f => ({ operador: f.operador, valor: lerNumero(f.valor), percentual: lerNumero(f.percentual) }))
     if (faixas.length === 0) return setErroModal('Informe ao menos uma faixa.')
     if (faixas.some(f => Number.isNaN(f.valor) || Number.isNaN(f.percentual))) return setErroModal('Preencha o valor e o percentual de todas as faixas.')
@@ -215,22 +225,24 @@ export default function RegrasFaixas() {
                 </td>
                 <td className="p-3 text-slate-700">{politicas.find(p => p.regraId === item.id)?.baseNome || <span className="text-slate-300">—</span>}</td>
                 <td className="p-3 text-center">
-                  {item.tipo_faixa === 'PERCENTUAL_META' ? (
-                    <span className="relative group inline-flex items-center px-1.5 py-0.5 rounded-full bg-sky-50 text-sky-700 border border-sky-200 text-[10px] font-bold cursor-help">
-                      % Meta
+                  {item.tipo_faixa === 'VALOR' ? (
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200 text-[10px] font-bold">R$ Valor</span>
+                  ) : (
+                    <span className={`relative group inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold cursor-help border ${item.tipo_faixa === 'VALOR_FIXO_META' ? 'bg-violet-50 text-violet-700 border-violet-200' : 'bg-sky-50 text-sky-700 border-sky-200'}`}>
+                      {item.tipo_faixa === 'VALOR_FIXO_META' ? 'R$ Fixo/Meta' : '% Meta'}
                       <span className="absolute left-1/2 -translate-x-1/2 top-full mt-1 hidden group-hover:block w-52 bg-slate-800 text-white text-[11px] font-normal font-sans rounded-md p-2 shadow-xl z-30 leading-relaxed whitespace-normal text-left">
-                        Compara o % atingido (valor da Base ÷ meta) — Meta de Referência: {labelTipoMeta(item.meta_tipo)}
+                        {item.tipo_faixa === 'VALOR_FIXO_META'
+                          ? `Paga um valor fixo em R$ conforme o % de meta atingida — Meta de Referência: ${labelTipoMeta(item.meta_tipo)}`
+                          : `Compara o % atingido (valor da Base ÷ meta) — Meta de Referência: ${labelTipoMeta(item.meta_tipo)}`}
                       </span>
                     </span>
-                  ) : (
-                    <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200 text-[10px] font-bold">R$ Valor</span>
                   )}
                 </td>
                 <td className="p-3">
                   <div className="flex flex-col gap-1">
                     {item.faixas.map((f, i) => (
                       <span key={f.id || i} className="text-[11px] font-mono text-slate-600">
-                        {f.operador} {fmtFaixaValor(item.tipo_faixa, f.valor)} <span className="text-slate-400">→</span> <span className="font-bold text-slate-800">{fmtPct(f.percentual)}</span>
+                        {f.operador} {fmtFaixaLimiar(item.tipo_faixa, f.valor)} <span className="text-slate-400">→</span> <span className="font-bold text-slate-800">{fmtFaixaPago(item.tipo_faixa, f.percentual)}</span>
                       </span>
                     ))}
                   </div>
@@ -264,12 +276,55 @@ export default function RegrasFaixas() {
               <div className="p-5 space-y-4 flex-1 min-h-0 overflow-y-auto">
                 <div className="flex flex-col gap-1.5">
                   <label className={LBL}>Política de Comissão *</label>
-                  {/* Campo de filtro + lista: digite para filtrar por política, cargo ou empresa */}
+                  {/* Filtros de Empresa/Cargo + busca por texto — os três juntos, pra achar a política rápido */}
+                  {(() => {
+                    // Facetado: escolher uma Empresa estreita os Cargos pra só os dela, e vice-versa.
+                    const empresasOpcoes = [...new Set(
+                      politicas.filter(p => !filtroCargoPolitica || p.cargos.includes(filtroCargoPolitica)).flatMap(p => p.empresas)
+                    )].sort((a, b) => a.localeCompare(b, 'pt-BR'))
+                    const cargosOpcoes = [...new Set(
+                      politicas.filter(p => !filtroEmpresaPolitica || p.empresas.includes(filtroEmpresaPolitica)).flatMap(p => p.cargos)
+                    )].sort((a, b) => a.localeCompare(b, 'pt-BR'))
+                    return (
+                      <div className="grid grid-cols-2 gap-2">
+                        <select disabled={somenteLeitura} value={filtroEmpresaPolitica}
+                          onChange={e => {
+                            const valor = e.target.value
+                            // Se o Cargo já escolhido não existir mais nessa Empresa, limpa — senão
+                            // a lista de políticas ficaria vazia sem nenhuma explicação visível.
+                            const cargosDaEmpresa = [...new Set(politicas.filter(p => !valor || p.empresas.includes(valor)).flatMap(p => p.cargos))]
+                            setFiltroEmpresaPolitica(valor)
+                            if (filtroCargoPolitica && !cargosDaEmpresa.includes(filtroCargoPolitica)) setFiltroCargoPolitica('')
+                            setListaPoliticaAberta(true)
+                          }}
+                          className={INP}>
+                          <option value="">Todas as empresas</option>
+                          {empresasOpcoes.map(e => <option key={e} value={e}>{e}</option>)}
+                        </select>
+                        <select disabled={somenteLeitura} value={filtroCargoPolitica}
+                          onChange={e => {
+                            const valor = e.target.value
+                            const empresasDoCargo = [...new Set(politicas.filter(p => !valor || p.cargos.includes(valor)).flatMap(p => p.empresas))]
+                            setFiltroCargoPolitica(valor)
+                            if (filtroEmpresaPolitica && !empresasDoCargo.includes(filtroEmpresaPolitica)) setFiltroEmpresaPolitica('')
+                            setListaPoliticaAberta(true)
+                          }}
+                          className={INP}>
+                          <option value="">Todos os cargos</option>
+                          {cargosOpcoes.map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                      </div>
+                    )
+                  })()}
                   {(() => {
                     const sel = politicas.find(p => p.id === form.politicaId)
                     const rotulo = (p) => `${p.titulo}${p.detalhe ? ` — ${p.detalhe}` : ''}`
                     const termo = buscaPolitica.trim().toLowerCase()
-                    const filtradas = politicas.filter(p => !termo || rotulo(p).toLowerCase().includes(termo))
+                    const filtradas = politicas.filter(p =>
+                      (!termo || rotulo(p).toLowerCase().includes(termo)) &&
+                      (!filtroEmpresaPolitica || p.empresas.includes(filtroEmpresaPolitica)) &&
+                      (!filtroCargoPolitica || p.cargos.includes(filtroCargoPolitica))
+                    )
                     return (
                       <>
                         <input
@@ -305,9 +360,9 @@ export default function RegrasFaixas() {
                       <span className="font-bold text-indigo-700 uppercase tracking-wide text-[10px]">Base de Cálculo</span>
                       <div className="font-semibold text-slate-800">{politicas.find(p => p.id === form.politicaId).baseNome || 'Nenhuma base definida na política'}</div>
                       <div className="text-slate-400">
-                        {form.tipo_faixa === 'PERCENTUAL_META'
-                          ? 'As faixas comparam o % atingido (valor apurado dessa Base ÷ Meta cadastrada em Planejamento de Metas), não o valor em R$.'
-                          : 'As faixas abaixo são comparadas com o valor apurado dessa Base.'}
+                        {form.tipo_faixa === 'VALOR'
+                          ? 'As faixas abaixo são comparadas com o valor apurado dessa Base.'
+                          : 'As faixas comparam o % atingido (valor apurado dessa Base ÷ Meta cadastrada em Planejamento de Metas), não o valor em R$.'}
                       </div>
                     </div>
                   )}
@@ -323,17 +378,18 @@ export default function RegrasFaixas() {
                   <input type="text" disabled={somenteLeitura} value={form.descricao} onChange={e => setForm(p => ({ ...p, descricao: e.target.value }))} className={INP} />
                 </div>
 
-                <div className={`grid gap-4 ${form.tipo_faixa === 'PERCENTUAL_META' ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                <div className={`grid gap-4 ${form.tipo_faixa !== 'VALOR' ? 'grid-cols-2' : 'grid-cols-1'}`}>
                   <div className="flex flex-col gap-1.5">
                     <label className={LBL}>Tipo de Faixa *</label>
                     <select disabled={somenteLeitura} value={form.tipo_faixa}
                       onChange={e => setForm(prev => ({ ...prev, tipo_faixa: e.target.value, meta_tipo: e.target.value === 'VALOR' ? '' : prev.meta_tipo }))}
                       className={INP}>
                       <option value="VALOR">Valor da Base (R$)</option>
-                      <option value="PERCENTUAL_META">% da Meta Atingida</option>
+                      <option value="PERCENTUAL_META">% da Meta Atingida (aplica um % sobre a comissão)</option>
+                      <option value="VALOR_FIXO_META">Meta Atingida — Valor Fixo por Faixa</option>
                     </select>
                   </div>
-                  {form.tipo_faixa === 'PERCENTUAL_META' && (
+                  {form.tipo_faixa !== 'VALOR' && (
                     <div className="flex flex-col gap-1.5">
                       <label className={LBL}>Meta de Referência *</label>
                       <select required disabled={somenteLeitura} value={form.meta_tipo} onChange={e => setForm(p => ({ ...p, meta_tipo: e.target.value }))} className={INP}>
@@ -344,8 +400,61 @@ export default function RegrasFaixas() {
                   )}
                 </div>
 
+                <div className="flex flex-col gap-2">
+                  <label className={LBL}>Faixas {form.tipo_faixa === 'VALOR' ? '— sobre o valor da Base de Cálculo' : '— sobre o % da Meta Atingida'} *</label>
+                  <span className="text-[10px] text-slate-400 leading-relaxed">
+                    {form.tipo_faixa === 'VALOR'
+                      ? 'A primeira faixa (de cima para baixo) que casar com o valor apurado da Base define o percentual, aplicado sobre o valor todo da Base. Pode ter quantas faixas precisar.'
+                      : form.tipo_faixa === 'VALOR_FIXO_META'
+                      ? 'A primeira faixa (de cima para baixo) cujo percentual de meta atingida casar define o valor FIXO em R$ pago de bonificação — não depende de nenhuma outra política. Pode ter quantas faixas precisar.'
+                      : 'A primeira faixa (de cima para baixo) cujo percentual de meta atingida casar define o percentual de comissão, aplicado sobre o valor todo da Base. Pode ter quantas faixas precisar.'}
+                  </span>
+                  {form.faixas.map((f, i) => (
+                    <div key={i} className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2 items-center">
+                      <select disabled={somenteLeitura} value={f.operador} onChange={e => setFaixa(i, 'operador', e.target.value)} className={INP}>
+                        {OPERADORES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                      </select>
+                      <div className="relative">
+                        {form.tipo_faixa === 'VALOR' ? (
+                          <input type="text" inputMode="decimal" disabled={somenteLeitura} value={f.valor} onChange={e => setFaixa(i, 'valor', e.target.value)} onBlur={e => setFaixa(i, 'valor', duasCasas(e.target.value))} placeholder="25000,00" className={`${INP} pl-7 font-mono`} />
+                        ) : (
+                          <input type="text" inputMode="decimal" disabled={somenteLeitura} value={f.valor} onChange={e => setFaixa(i, 'valor', e.target.value)} onBlur={e => setFaixa(i, 'valor', duasCasas(e.target.value))} placeholder="100,00" className={`${INP} pr-6 font-mono`} />
+                        )}
+                        {form.tipo_faixa === 'VALOR'
+                          ? <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-slate-400">R$</span>
+                          : <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-slate-400">% meta</span>}
+                      </div>
+                      <div className="relative">
+                        {form.tipo_faixa === 'VALOR_FIXO_META' ? (
+                          <>
+                            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-slate-400">R$</span>
+                            <input type="text" inputMode="decimal" disabled={somenteLeitura} value={f.percentual} onChange={e => setFaixa(i, 'percentual', e.target.value)} onBlur={e => setFaixa(i, 'percentual', duasCasas(e.target.value))} placeholder="200,00" className={`${INP} pl-7 font-mono`} />
+                          </>
+                        ) : (
+                          <>
+                            <input type="text" inputMode="decimal" disabled={somenteLeitura} value={f.percentual} onChange={e => setFaixa(i, 'percentual', e.target.value)} onBlur={e => setFaixa(i, 'percentual', duasCasas(e.target.value))} placeholder="0,60" className={`${INP} pr-6 font-mono`} />
+                            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-slate-400">%</span>
+                          </>
+                        )}
+                      </div>
+                      {!somenteLeitura && (
+                        <button type="button" onClick={() => setForm(p => ({ ...p, faixas: p.faixas.filter((_, idx) => idx !== i) }))} className="text-slate-400 hover:text-red-600 p-1">
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  {!somenteLeitura && (
+                    <button type="button" onClick={() => setForm(p => ({ ...p, faixas: [...p.faixas, novaFaixa()] }))}
+                      className="self-start flex items-center gap-1 text-[11px] font-semibold text-blue-600 hover:underline">
+                      <Plus className="h-3 w-3" /> Adicionar faixa
+                    </button>
+                  )}
+                </div>
+
                 {form.tipo_faixa === 'PERCENTUAL_META' && (
                   <div className="flex flex-col gap-2">
+                    {/* Só faz sentido pra % da Meta — Valor Fixo por Faixa paga um R$ direto, sem multiplicar nada. */}
                     <label className={LBL}>Políticas que formam a Base da Comissão ({form.basePoliticaIds.length})</label>
                     <span className="text-[10px] text-slate-400 leading-relaxed">
                       O valor apurado da Base de Cálculo desta Regra só serve pra achar a % (comparando com a Meta) — a comissão em R$ é essa % aplicada sobre a SOMA do valor de comissão já calculado das políticas marcadas abaixo (não o valor apurado bruto delas), do mesmo funcionário e período.
@@ -380,47 +489,6 @@ export default function RegrasFaixas() {
                     )}
                   </div>
                 )}
-
-                <div className="flex flex-col gap-2">
-                  <label className={LBL}>Faixas {form.tipo_faixa === 'PERCENTUAL_META' ? '— sobre o % da Meta Atingida' : '— sobre o valor da Base de Cálculo'} *</label>
-                  <span className="text-[10px] text-slate-400 leading-relaxed">
-                    {form.tipo_faixa === 'PERCENTUAL_META'
-                      ? 'A primeira faixa (de cima para baixo) cujo percentual de meta atingida casar define o percentual de comissão, aplicado sobre o valor todo da Base. Pode ter quantas faixas precisar.'
-                      : 'A primeira faixa (de cima para baixo) que casar com o valor apurado da Base define o percentual, aplicado sobre o valor todo da Base. Pode ter quantas faixas precisar.'}
-                  </span>
-                  {form.faixas.map((f, i) => (
-                    <div key={i} className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2 items-center">
-                      <select disabled={somenteLeitura} value={f.operador} onChange={e => setFaixa(i, 'operador', e.target.value)} className={INP}>
-                        {OPERADORES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                      </select>
-                      <div className="relative">
-                        {form.tipo_faixa === 'PERCENTUAL_META' ? (
-                          <input type="text" inputMode="decimal" disabled={somenteLeitura} value={f.valor} onChange={e => setFaixa(i, 'valor', e.target.value)} onBlur={e => setFaixa(i, 'valor', duasCasas(e.target.value))} placeholder="100,00" className={`${INP} pr-6 font-mono`} />
-                        ) : (
-                          <input type="text" inputMode="decimal" disabled={somenteLeitura} value={f.valor} onChange={e => setFaixa(i, 'valor', e.target.value)} onBlur={e => setFaixa(i, 'valor', duasCasas(e.target.value))} placeholder="25000,00" className={`${INP} pl-7 font-mono`} />
-                        )}
-                        {form.tipo_faixa === 'PERCENTUAL_META'
-                          ? <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-slate-400">% meta</span>
-                          : <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-slate-400">R$</span>}
-                      </div>
-                      <div className="relative">
-                        <input type="text" inputMode="decimal" disabled={somenteLeitura} value={f.percentual} onChange={e => setFaixa(i, 'percentual', e.target.value)} onBlur={e => setFaixa(i, 'percentual', duasCasas(e.target.value))} placeholder="0,60" className={`${INP} pr-6 font-mono`} />
-                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-slate-400">%</span>
-                      </div>
-                      {!somenteLeitura && (
-                        <button type="button" onClick={() => setForm(p => ({ ...p, faixas: p.faixas.filter((_, idx) => idx !== i) }))} className="text-slate-400 hover:text-red-600 p-1">
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                  {!somenteLeitura && (
-                    <button type="button" onClick={() => setForm(p => ({ ...p, faixas: [...p.faixas, novaFaixa()] }))}
-                      className="self-start flex items-center gap-1 text-[11px] font-semibold text-blue-600 hover:underline">
-                      <Plus className="h-3 w-3" /> Adicionar faixa
-                    </button>
-                  )}
-                </div>
 
                 <label className="flex items-center gap-2 text-xs text-slate-700">
                   <input type="checkbox" disabled={somenteLeitura} checked={form.ativo} onChange={e => setForm(p => ({ ...p, ativo: e.target.checked }))} className="w-4 h-4" /> Ativa

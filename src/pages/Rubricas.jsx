@@ -5,8 +5,11 @@ import { useAuth } from '../context/AuthContext'
 import PermissionActionButtons from '../components/PermissionActionButtons'
 import { apiService } from '../services/api'
 
+const FORM_VAZIO = { codigo: '', descricao: '', ativo: true, empresa_ids: [] }
+
 export default function Rubricas() {
   const [dados, setDados] = useState([])
+  const [empresas, setEmpresas] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
@@ -16,7 +19,8 @@ export default function Rubricas() {
   const [editingId, setEditingId] = useSessionState('rubricas_editid', null)
   const [idExcluir, setIdExcluir] = useState(null)
   const [itemVisualizado, setItemVisualizado] = useState(null)
-  const [form, setForm] = useSessionState('rubricas_form', { codigo: '', descricao: '', ativo: true })
+  const [form, setForm] = useSessionState('rubricas_form', FORM_VAZIO)
+  const [buscaEmpresa, setBuscaEmpresa] = useState('')
   const [erroModal, setErroModal] = useState(null)
   const [salvando, setSalvando] = useState(false)
 
@@ -30,7 +34,9 @@ export default function Rubricas() {
     setLoading(true)
     setError(null)
     try {
-      setDados(await apiService.getRubricas())
+      const [rubricas, emps] = await Promise.all([apiService.getRubricas(), apiService.getEmpresas()])
+      setDados(rubricas)
+      setEmpresas([...emps].sort((a, b) => (a.empresa_fantasia || a.nome_empresa || '').localeCompare(b.empresa_fantasia || b.nome_empresa || '', 'pt-BR')))
     } catch (err) {
       setError(err.message || String(err))
     } finally {
@@ -38,17 +44,22 @@ export default function Rubricas() {
     }
   }
 
+  const nomeEmpresa = (e) => e.empresa_fantasia || e.nome_empresa
+  const nomesEmpresas = (ids) => (ids || []).map(id => empresas.find(e => e.id === id)).filter(Boolean).map(nomeEmpresa)
+
   const abrirIncluir = () => {
     setEditingId(null)
-    setForm({ codigo: '', descricao: '', ativo: true })
+    setForm(FORM_VAZIO)
     setErroModal(null)
+    setBuscaEmpresa('')
     setModalAberto(true)
   }
 
   const abrirEditar = (item) => {
     setEditingId(item.id)
-    setForm({ codigo: item.codigo, descricao: item.descricao || '', ativo: item.ativo ?? true })
+    setForm({ codigo: item.codigo, descricao: item.descricao || '', ativo: item.ativo ?? true, empresa_ids: item.empresa_ids || [] })
     setErroModal(null)
+    setBuscaEmpresa('')
     setModalAberto(true)
   }
 
@@ -59,6 +70,11 @@ export default function Rubricas() {
   }
 
   const abrirVisualizar = (item) => { setItemVisualizado(item); setModalVisualizarAberto(true) }
+
+  const toggleEmpresa = (id) => setForm(prev => ({
+    ...prev,
+    empresa_ids: prev.empresa_ids.includes(id) ? prev.empresa_ids.filter(x => x !== id) : [...prev.empresa_ids, id],
+  }))
 
   const handleSalvar = async (e) => {
     e.preventDefault()
@@ -128,6 +144,7 @@ export default function Rubricas() {
             <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[11px] font-semibold uppercase tracking-wider">
               <th className="p-3 w-32">Código</th>
               <th className="p-3">Descrição</th>
+              <th className="p-3">Empresas</th>
               <th className="p-3 w-28 text-center">Situação</th>
               <th className="p-3 w-24 text-center">Ações</th>
             </tr>
@@ -135,7 +152,7 @@ export default function Rubricas() {
           <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
             {dados.length === 0 ? (
               <tr>
-                <td colSpan="4" className="p-6 text-center text-slate-400">Nenhuma rubrica cadastrada.</td>
+                <td colSpan="5" className="p-6 text-center text-slate-400">Nenhuma rubrica cadastrada.</td>
               </tr>
             ) : dados.map((item) => (
               <tr key={item.id} className="hover:bg-slate-50/70 transition-colors">
@@ -145,7 +162,18 @@ export default function Rubricas() {
                     {item.codigo}
                   </div>
                 </td>
-                <td className="p-3 text-slate-600">{item.descricao || '-'}</td>
+                <td className="p-3 text-slate-600 whitespace-nowrap">{item.descricao || '-'}</td>
+                <td className="p-3 text-slate-600">
+                  {(item.empresa_ids || []).length === 0 ? (
+                    <span className="text-slate-300">Todas</span>
+                  ) : (
+                    <div className="flex flex-wrap gap-1">
+                      {nomesEmpresas(item.empresa_ids).map(n => (
+                        <span key={n} className="px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200 text-[10px] font-semibold text-slate-600">{n}</span>
+                      ))}
+                    </div>
+                  )}
+                </td>
                 <td className="p-3 text-center">
                   <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${item.ativo ? 'bg-green-50 text-green-700 border-green-200' : 'bg-slate-100 text-slate-500 border-slate-200'}`}>
                     {item.ativo ? 'Ativo' : 'Inativo'}
@@ -167,9 +195,9 @@ export default function Rubricas() {
 
       {/* MODAL: INCLUIR / EDITAR */}
       {modalAberto && (
-        <div className="fixed top-0 right-0 bottom-0 left-16 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg border border-slate-200 w-[400px] shadow-xl overflow-hidden">
-            <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50">
+        <div className="fixed top-0 right-0 bottom-0 left-16 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg border border-slate-200 w-full max-w-[460px] max-h-[90vh] shadow-xl overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50 shrink-0">
               <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                 <Hash className="h-4 w-4 text-indigo-600" />
                 {editingId ? 'Editar Rubrica' : 'Incluir Nova Rubrica'}
@@ -178,8 +206,8 @@ export default function Rubricas() {
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <form onSubmit={handleSalvar}>
-              <div className="p-5 space-y-4">
+            <form onSubmit={handleSalvar} className="flex flex-col flex-1 min-h-0">
+              <div className="p-5 space-y-4 flex-1 min-h-0 overflow-y-auto">
                 <div className="flex flex-col gap-1.5">
                   <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Código *</label>
                   <input
@@ -201,6 +229,27 @@ export default function Rubricas() {
                     className="w-full text-xs p-2 border border-slate-200 rounded-md font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                   />
                 </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">
+                    Empresas que atendem ({form.empresa_ids.length === 0 ? 'todas' : form.empresa_ids.length})
+                  </label>
+                  <span className="text-[10px] text-slate-400 leading-relaxed">Nenhuma empresa marcada = vale pra todas.</span>
+                  <input type="text" value={buscaEmpresa} onChange={e => setBuscaEmpresa(e.target.value)}
+                    placeholder="Buscar empresa..."
+                    className="w-full text-xs p-2 border border-slate-200 rounded-md font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
+                  <div className="border border-slate-200 rounded-md max-h-40 overflow-y-auto divide-y divide-slate-100">
+                    {empresas
+                      .filter(e => !buscaEmpresa.trim() || nomeEmpresa(e).toLowerCase().includes(buscaEmpresa.trim().toLowerCase()))
+                      .sort((a, b) => Number(form.empresa_ids.includes(b.id)) - Number(form.empresa_ids.includes(a.id)))
+                      .map(e => (
+                        <label key={e.id} className={`flex items-center gap-2 px-3 py-2 text-xs cursor-pointer hover:bg-slate-50 ${form.empresa_ids.includes(e.id) ? 'bg-emerald-50/60' : ''}`}>
+                          <input type="checkbox" className="w-3.5 h-3.5" checked={form.empresa_ids.includes(e.id)} onChange={() => toggleEmpresa(e.id)} />
+                          <span className="font-medium text-slate-700">{nomeEmpresa(e)}</span>
+                        </label>
+                      ))}
+                    {empresas.length === 0 && <div className="px-3 py-3 text-[11px] text-slate-400">Nenhuma empresa cadastrada.</div>}
+                  </div>
+                </div>
                 <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer">
                   <input
                     type="checkbox"
@@ -212,11 +261,11 @@ export default function Rubricas() {
                 </label>
               </div>
               {erroModal && (
-                <div className="mx-5 mb-3 flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-red-700 text-xs">
+                <div className="mx-5 mb-3 flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-red-700 text-xs shrink-0">
                   <AlertTriangle className="h-3.5 w-3.5 shrink-0" /> {erroModal}
                 </div>
               )}
-              <div className="flex items-center justify-end gap-2 p-3 bg-slate-50 border-t border-slate-100">
+              <div className="flex items-center justify-end gap-2 p-3 bg-slate-50 border-t border-slate-100 shrink-0">
                 <button type="button" onClick={() => setModalAberto(false)}
                   className="px-3 py-1.5 rounded-md text-xs font-semibold text-slate-600 hover:bg-slate-200/60 transition-colors">
                   Cancelar
@@ -247,6 +296,18 @@ export default function Rubricas() {
               <div className="flex flex-col gap-0.5">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Descrição</span>
                 <span className="text-xs font-semibold text-slate-800">{itemVisualizado.descricao || '-'}</span>
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Empresas que atendem</span>
+                {(itemVisualizado.empresa_ids || []).length === 0 ? (
+                  <span className="text-xs font-semibold text-slate-800">Todas</span>
+                ) : (
+                  <div className="flex flex-wrap gap-1 mt-0.5">
+                    {nomesEmpresas(itemVisualizado.empresa_ids).map(n => (
+                      <span key={n} className="px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200 text-[10px] font-semibold text-slate-700">{n}</span>
+                    ))}
+                  </div>
+                )}
               </div>
               <div className="flex flex-col gap-0.5">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Situação</span>
