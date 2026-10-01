@@ -990,7 +990,6 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
       {/* ── CARDS RESUMO ANDAMENTO ── */}
       {isAndamento && !spLoading && spAndamentoFiltrado.length > 0 && (() => {
         const totalOS       = spAndamentoFiltrado.length
-        const osDistintas   = new Set(spAndamentoFiltrado.map(r => r.os_numero)).size
         // Deduplica por (OS, tipo) — evita duplicar quando mesma OS aparece várias vezes no mesmo tipo
         const dedupMap = new Map()
         for (const r of spAndamentoFiltrado) {
@@ -1000,7 +999,6 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
         const rowsDedup     = Array.from(dedupMap.values())
         const totalPecas    = rowsDedup.reduce((s, r) => s + (r.produto  || 0), 0)
         const totalServicos = rowsDedup.reduce((s, r) => s + (r.servico  || 0), 0)
-        const totalGeral    = totalPecas + totalServicos
         const mais14        = spAndamentoFiltrado.filter(r =>
           r.data_criacao && Math.floor((hoje - new Date(r.data_criacao + 'T12:00:00')) / 86400000) > 14
         ).length
@@ -1024,7 +1022,7 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
               const tipos = Array.from(tipoMap.values())
                 .sort((a, b) => a.sigla.localeCompare(b.sigla, 'pt-BR'))
               return (
-                <div className="bg-white border border-slate-200 rounded-lg p-4 flex flex-col">
+                <div className="col-span-2 bg-white border border-slate-200 rounded-lg p-4 flex flex-col">
                   <div className="flex items-center gap-2 mb-3">
                     <div className="p-1.5 bg-indigo-100 rounded">
                       <FileText className="h-4 w-4 text-indigo-600" />
@@ -1037,11 +1035,12 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
                   </div>
                   <div className="divide-y divide-slate-50">
                     {/* Header */}
-                    <div className="grid grid-cols-[1fr_40px_90px_90px] gap-2 pb-1.5 text-[9px] font-bold text-slate-400 uppercase tracking-wider">
+                    <div className="grid grid-cols-[1fr_40px_90px_90px_90px] gap-2 pb-1.5 text-[9px] font-bold text-slate-400 uppercase tracking-wider">
                       <div>Tipo</div>
                       <div className="text-center">Qtd</div>
                       <div className="text-right">Peças</div>
                       <div className="text-right">Serviços</div>
+                      <div className="text-right">Total</div>
                     </div>
                     {tipos.map(t => (
                       <button
@@ -1049,63 +1048,28 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
                         key={t.sigla}
                         onClick={() => setFiltroTipoOSCard(prev => prev === t.sigla ? '' : t.sigla)}
                         title={`Filtrar a tabela abaixo por ${t.sigla}`}
-                        className={`grid grid-cols-[1fr_40px_90px_90px] gap-2 py-1.5 text-[10px] w-full text-left transition-colors ${filtroTipoOSCard === t.sigla ? 'bg-indigo-50' : 'hover:bg-slate-50/70'}`}
+                        className={`grid grid-cols-[1fr_40px_90px_90px_90px] gap-2 py-1.5 text-[10px] w-full text-left transition-colors ${filtroTipoOSCard === t.sigla ? 'bg-indigo-50' : 'hover:bg-slate-50/70'}`}
                       >
-                        <div className="font-semibold text-slate-700 truncate" title={t.desc}>{t.sigla}</div>
+                        <div className="font-semibold text-slate-700 whitespace-nowrap">{t.desc}</div>
                         <div className="text-center font-bold text-indigo-600">{t.count}</div>
                         <div className="text-right font-mono text-slate-600">{fmt(t.produto)}</div>
                         <div className="text-right font-mono text-slate-600">{fmt(t.servico)}</div>
+                        <div className="text-right font-mono font-semibold text-slate-700">{fmt(t.produto + t.servico)}</div>
                       </button>
                     ))}
                   </div>
                   {tipos.length > 1 && (
-                    <div className="grid grid-cols-[1fr_40px_90px_90px] gap-2 pt-2 mt-1 border-t border-slate-200 text-[10px] font-bold">
+                    <div className="grid grid-cols-[1fr_40px_90px_90px_90px] gap-2 pt-2 mt-1 border-t border-slate-200 text-[10px] font-bold">
                       <div className="text-slate-500">Total</div>
                       <div className="text-center text-indigo-700">{totalOS}</div>
                       <div className="text-right font-mono text-slate-700">{fmt(totalPecas)}</div>
                       <div className="text-right font-mono text-slate-700">{fmt(totalServicos)}</div>
+                      <div className="text-right font-mono text-indigo-700">{fmt(totalPecas + totalServicos)}</div>
                     </div>
                   )}
                 </div>
               )
             })()}
-            {/* Card totais — clica para limpar os filtros aplicados pelos cards (Tipo de OS, +14 dias) */}
-            <button
-              type="button"
-              onClick={() => { setFiltroTipoOSCard(''); setFiltroMais14(false) }}
-              title={(filtroTipoOSCard || filtroMais14) ? 'Limpar filtros dos cards' : undefined}
-              className={`w-full h-full self-stretch flex flex-col items-stretch justify-start text-left bg-sky-50 border border-sky-200 rounded-lg p-4 transition-colors ${(filtroTipoOSCard || filtroMais14) ? 'hover:bg-sky-100 cursor-pointer' : 'cursor-default'}`}
-            >
-              <div className="flex items-center gap-2 mb-3">
-                <div className="p-1.5 bg-sky-100 rounded">
-                  <Activity className="h-4 w-4 text-sky-600" />
-                </div>
-                <span className="text-xs font-bold text-sky-600 uppercase tracking-wide">Resumo Na Oficina</span>
-                {(filtroTipoOSCard || filtroMais14) && (
-                  <span className="ml-auto flex items-center gap-1 px-1.5 py-0.5 bg-sky-100 text-sky-700 rounded text-[9px] font-bold">
-                    <X className="h-2.5 w-2.5" /> limpar
-                  </span>
-                )}
-              </div>
-              <div className="flex flex-col gap-2 text-xs">
-                <div className="flex justify-between items-center border-b border-sky-100 pb-2">
-                  <span className="text-sky-400">Total OS Distintas</span>
-                  <span className="font-bold text-sky-700 text-base">{osDistintas}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-sky-400">Peças</span>
-                  <span className="font-mono font-semibold text-sky-700">{fmt(totalPecas)}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-sky-400">Serviços</span>
-                  <span className="font-mono font-semibold text-sky-700">{fmt(totalServicos)}</span>
-                </div>
-                <div className="flex justify-between items-center border-t border-sky-200 pt-2 mt-1">
-                  <span className="font-bold text-sky-600">Total Geral</span>
-                  <span className="font-bold font-mono text-sky-800">{fmt(totalGeral)}</span>
-                </div>
-              </div>
-            </button>
             {/* Card +14 dias */}
             {(() => {
               const rows14 = spAndamentoFiltrado.filter(r =>

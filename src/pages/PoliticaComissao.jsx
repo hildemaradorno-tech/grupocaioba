@@ -122,7 +122,10 @@ const USA_FAIXA_OPCOES = ['NÃO', 'SIM']
 const FORM_VAZIO = {
   cargo_ids: [],
   descricao_comissao: '',
-  codigo_rubrica: '',
+  // Rubrica pode variar por empresa dentro da MESMA política (ex: mesma comissão, código
+  // diferente em cada loja) — chave = empresa_id do cargo (ou '' antes de marcar algum cargo /
+  // quando só há 1 empresa envolvida), valor = código da rubrica daquela empresa.
+  rubricaPorEmpresa: {},
   tipo_processo: '11',
   fonte_calculo_id: '',
   base_calculo_id: '',
@@ -315,10 +318,19 @@ export default function PoliticaComissao() {
   const empresaIdsDosCargosSelecionados = useMemo(() =>
     [...new Set(form.cargo_ids.map(id => cargos.find(c => c.id === id)?.empresa_id).filter(Boolean))],
     [form.cargo_ids, cargos])
-  const rubricasDisponiveis = useMemo(() => {
-    if (empresaIdsDosCargosSelecionados.length === 0) return rubricas
-    return rubricas.filter(r => !r.empresa_ids || r.empresa_ids.length === 0 || r.empresa_ids.some(id => empresaIdsDosCargosSelecionados.includes(id)))
-  }, [rubricas, empresaIdsDosCargosSelecionados])
+  // Rubricas que atendem uma empresa específica (sem empresa marcada em Rubricas.jsx = vale
+  // pra todas) — usado pra montar 1 seletor de Rubrica por empresa envolvida na política.
+  const rubricasDaEmpresa = (empresaId) =>
+    rubricas.filter(r => !r.empresa_ids || r.empresa_ids.length === 0 || r.empresa_ids.includes(empresaId))
+  // Chaves dos seletores de Rubrica a mostrar: 1 por empresa dos cargos já marcados, ou uma
+  // chave só (vazia) antes de marcar qualquer cargo — nesse caso mostra todas as rubricas.
+  const chavesRubricaEmpresa = empresaIdsDosCargosSelecionados.length > 0 ? empresaIdsDosCargosSelecionados : ['']
+  const rubricasParaChave = (chave) => chave ? rubricasDaEmpresa(chave) : rubricas
+  // Valor digitado antes de escolher os cargos (chave '') serve de ponto de partida quando só
+  // há 1 empresa envolvida — evita perder o que a pessoa já tinha escolhido.
+  const valorRubrica = (chave) => form.rubricaPorEmpresa[chave] ??
+    (chavesRubricaEmpresa.length === 1 ? form.rubricaPorEmpresa[''] : undefined) ?? ''
+  const setRubricaDaChave = (chave, valor) => setForm(prev => ({ ...prev, rubricaPorEmpresa: { ...prev.rubricaPorEmpresa, [chave]: valor } }))
 
   // Filtro de texto por coluna + ordenação A-Z/Z-A clicando no cabeçalho.
   const [colFiltro, setColFiltro] = useState({ empresa: [], cargo: [], descricao: '' })
@@ -344,13 +356,20 @@ export default function PoliticaComissao() {
     }
     return [...mapa.entries()].map(([grupoId, itens]) => {
       const primeiro = itens[0]
+      // 1 código por empresa distinta no grupo — se todas as empresas usam o MESMO código,
+      // codigo_rubrica volta a valer como antes (um valor só); se variam, fica null e a tela
+      // mostra o detalhamento por empresa em rubricasPorEmpresa.
+      const rubricasPorEmpresa = [...new Map(itens.map(i => [i.empresa_id || i.id, { empresaId: i.empresa_id, empresaNome: i.empresa_nome, codigo: i.codigo_rubrica || null }])).values()]
+      const codigosUnicos = [...new Set(rubricasPorEmpresa.map(r => r.codigo).filter(Boolean))]
       return {
         grupoId,
         itens,
         cargosNomes: [...new Set(itens.map(i => i.cargo_nome).filter(Boolean))],
         empresasNomes: [...new Set(itens.map(i => i.empresa_nome).filter(Boolean))],
         descricao_comissao: primeiro.descricao_comissao,
-        codigo_rubrica: primeiro.codigo_rubrica,
+        codigo_rubrica: codigosUnicos.length === 1 ? codigosUnicos[0] : null,
+        rubricasPorEmpresa,
+        rubricaVariaPorEmpresa: codigosUnicos.length > 1,
         tipo_processo: primeiro.tipo_processo,
         fonte_calculo_id: primeiro.fonte_calculo_id,
         base_calculo_id: primeiro.base_calculo_id,
@@ -527,7 +546,10 @@ export default function PoliticaComissao() {
     setForm({
       cargo_ids: grupo.itens.map(i => i.cargo_id).filter(Boolean),
       descricao_comissao: grupo.descricao_comissao || '',
-      codigo_rubrica: grupo.codigo_rubrica || '',
+      // 1 valor por empresa (chave = empresa_id, ou '' se o item não tiver empresa) — se os
+      // cargos daquela empresa tiverem códigos diferentes entre si (não deveria, mas por
+      // segurança), fica valendo o do último item lido.
+      rubricaPorEmpresa: Object.fromEntries(grupo.itens.map(i => [i.empresa_id || '', i.codigo_rubrica || ''])),
       tipo_processo: grupo.tipo_processo || '',
       fonte_calculo_id: grupo.fonte_calculo_id || (grupo.base_calculo?.fonte_microwork_id ? `mw:${grupo.base_calculo.fonte_microwork_id}` : ''),
       base_calculo_id: grupo.base_calculo_id || '',
@@ -618,7 +640,7 @@ export default function PoliticaComissao() {
     try {
       // Dedupe defensivo — cada cargo (que já carrega sua empresa) só pode entrar uma vez na
       // política, senão vira lançamento duplicado (mesmo cargo+empresa com 2 linhas idênticas).
-      const { cargo_ids: cargoIdsForm, ...resto } = form
+      const { cargo_ids: cargoIdsForm, rubricaPorEmpresa, ...resto } = form
       const usaRegra = form.usa_faixa === 'SIM'
       const cargo_ids = [...new Set(cargoIdsForm)]
       const payloadBase = {
@@ -640,6 +662,10 @@ export default function PoliticaComissao() {
       const montarLinha = (cargoId) => {
         const cargo = cargos.find(c => c.id === cargoId)
         const empresa = empresas.find(e => e.id === cargo?.empresa_id)
+        const chaveRubrica = cargo?.empresa_id || ''
+        // Código da rubrica DA EMPRESA desse cargo — cai pro valor digitado em '' (antes de
+        // marcar algum cargo) quando não há um código específico pra essa empresa ainda.
+        const codigoRubrica = rubricaPorEmpresa[chaveRubrica] || rubricaPorEmpresa[''] || null
         return {
           ...payloadBase,
           cargo_id: cargoId,
@@ -648,6 +674,7 @@ export default function PoliticaComissao() {
           empresa_nome: empresa?.empresa_fantasia || empresa?.nome_empresa || null,
           agrupamento_empresa_id: empresa?.agrupamento_empresa_id || null,
           agrupamento_nome: empresa?.agrupamento_nome || null,
+          codigo_rubrica: codigoRubrica,
         }
       }
 
@@ -725,8 +752,24 @@ export default function PoliticaComissao() {
   return (
     <div className="p-6 space-y-4 max-w-[1700px]">
 
-      {/* CABEÇALHO + FILTROS (Cargo e Descrição na mesma linha do Incluir Política) */}
-      <div className="flex items-end gap-3 flex-wrap border-b border-slate-200 pb-4">
+      <div className="flex items-center justify-between border-b border-slate-200 pb-4">
+        <div>
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Política de Comissões</h1>
+          <p className="text-xs text-slate-500">Cadastre a comissão de cada cargo: quanto paga (% ou valor fixo), de onde vem o valor apurado e a rubrica usada na hora de gerar o pagamento.</p>
+        </div>
+        {canEdit && (
+          <button
+            onClick={abrirIncluir}
+            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-2 rounded-md shadow-sm transition-colors"
+          >
+            <Plus className="h-4 w-4" />
+            Incluir Política
+          </button>
+        )}
+      </div>
+
+      {/* FILTROS */}
+      <div className="flex items-end gap-3 flex-wrap">
         <div className="flex flex-col gap-1 w-64">
           <label className="text-[10px] font-bold text-slate-400 uppercase">Empresa</label>
           <FiltroMultiSelect placeholder="Todas" opcoes={empresasDisponiveis} selecionados={colFiltro.empresa}
@@ -749,15 +792,6 @@ export default function PoliticaComissao() {
             <X className="h-3 w-3" /> Limpar
           </button>
         )}
-        {canEdit && (
-          <button
-            onClick={abrirIncluir}
-            className="ml-auto flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-2 rounded-md shadow-sm transition-colors"
-          >
-            <Plus className="h-4 w-4" />
-            Incluir Política
-          </button>
-        )}
       </div>
 
       {/* TABELA */}
@@ -776,7 +810,6 @@ export default function PoliticaComissao() {
                   Cargos {iconeOrdenacao('cargo')}
                 </button>
               </th>
-              <th className="p-3 min-w-[100px]">Rubrica</th>
               <th className="p-3 min-w-[110px]">Tipo de Processo</th>
               <th className="p-3 min-w-[80px] text-center">Tipo</th>
               <th className="p-3 min-w-[110px] text-right">
@@ -809,7 +842,7 @@ export default function PoliticaComissao() {
           <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
             {gruposExibidos.length === 0 ? (
               <tr>
-                <td colSpan="11" className="p-6 text-center text-slate-400">
+                <td colSpan="10" className="p-6 text-center text-slate-400">
                   {grupos.length === 0 ? 'Nenhuma política de comissão cadastrada.' : 'Nenhuma política encontrada para os filtros aplicados.'}
                 </td>
               </tr>
@@ -824,7 +857,30 @@ export default function PoliticaComissao() {
                     duplicando={duplicandoId === grupo.grupoId}
                   />
                 </td>
-                <td className="p-3 min-w-[280px] text-slate-600 whitespace-nowrap">{grupo.descricao_comissao || '-'}</td>
+                <td className="p-3 min-w-[280px] text-slate-600 whitespace-nowrap">
+                  {grupo.descricao_comissao || '-'}
+                  {grupo.rubricaVariaPorEmpresa ? (
+                    <div className="flex flex-col gap-0.5 mt-1">
+                      {grupo.rubricasPorEmpresa.map(r => (
+                        <span key={r.empresaId || r.empresaNome} className="text-[10px] font-normal text-slate-400" title={r.empresaNome || ''}>
+                          Rubrica <span className="font-mono text-slate-500">{r.codigo || '-'}</span> ({r.empresaNome || 'sem empresa'})
+                        </span>
+                      ))}
+                    </div>
+                  ) : grupo.codigo_rubrica ? (() => {
+                    const desc = rubricas.find(r => r.codigo === grupo.codigo_rubrica)?.descricao
+                    return (
+                      <div className={`text-[10px] font-normal text-slate-400 mt-1 relative group w-fit ${desc ? 'cursor-help' : ''}`}>
+                        Rubrica <span className="font-mono text-slate-500">{grupo.codigo_rubrica}</span>
+                        {desc && (
+                          <span className="absolute left-0 top-full mt-1 hidden group-hover:block w-56 bg-slate-800 text-white text-[11px] font-normal rounded-md p-2 shadow-xl z-30 leading-relaxed whitespace-normal normal-case">
+                            {desc}
+                          </span>
+                        )}
+                      </div>
+                    )
+                  })() : null}
+                </td>
                 <td className="p-3 min-w-[320px]">
                   <div className="flex flex-col gap-1">
                     {grupo.itens.map(i => (
@@ -835,21 +891,6 @@ export default function PoliticaComissao() {
                       </span>
                     ))}
                   </div>
-                </td>
-                <td className="p-3 min-w-[100px] font-mono text-slate-600">
-                  {grupo.codigo_rubrica ? (() => {
-                    const desc = rubricas.find(r => r.codigo === grupo.codigo_rubrica)?.descricao
-                    return (
-                      <span className={`relative group ${desc ? 'cursor-help' : ''}`}>
-                        {grupo.codigo_rubrica}
-                        {desc && (
-                          <span className="absolute left-0 top-full mt-1 hidden group-hover:block w-56 bg-slate-800 text-white text-[11px] font-normal font-sans rounded-md p-2 shadow-xl z-30 leading-relaxed whitespace-normal">
-                            {desc}
-                          </span>
-                        )}
-                      </span>
-                    )
-                  })() : '-'}
                 </td>
                 <td className="p-3 min-w-[110px] font-mono text-slate-600">
                   {grupo.tipo_processo ? (() => {
@@ -944,19 +985,21 @@ export default function PoliticaComissao() {
                   )}
                 </div>
 
-                {/* Descrição + Código da Rubrica + Tipo do Processo */}
-                <div className="grid grid-cols-4 gap-4">
-                  <div className="col-span-2 flex flex-col gap-1.5">
-                    <label className={LBL}>Descrição da Comissão</label>
-                    <input
-                      type="text"
-                      name="descricao_comissao"
-                      value={form.descricao_comissao}
-                      onChange={handleInputChange}
-                      placeholder="Descreva a política de comissão"
-                      className={INP}
-                    />
-                  </div>
+                {/* Descrição */}
+                <div className="flex flex-col gap-1.5">
+                  <label className={LBL}>Descrição da Comissão</label>
+                  <input
+                    type="text"
+                    name="descricao_comissao"
+                    value={form.descricao_comissao}
+                    onChange={handleInputChange}
+                    placeholder="Descreva a política de comissão"
+                    className={INP}
+                  />
+                </div>
+
+                {/* Código da Rubrica + Tipo do Processo — logo abaixo da Descrição */}
+                <div className="grid grid-cols-2 gap-4">
                   <div className="flex flex-col gap-1.5">
                     <label className={`${LBL} flex items-center gap-1`}>
                       Código da Rubrica
@@ -964,19 +1007,31 @@ export default function PoliticaComissao() {
                         <Info className="h-3.5 w-3.5 text-blue-500" />
                         <span className="absolute right-0 top-full mt-1 hidden group-hover:block w-72 bg-slate-800 text-white text-[11px] font-normal rounded-md p-3 shadow-xl z-30 leading-relaxed">
                           Código da rubrica no sistema Domínio — usado só na hora de gerar o TXT de importação de lançamentos em Processamento de Comissões (Processar p/ Pagamento). Sem selecionar, essa comissão fica de fora do TXT. Cadastre novos códigos em Regras de Comissões → Rubrica.
+                          {chavesRubricaEmpresa.length > 1 && ' Quando os cargos marcados cobrem mais de uma empresa, dá pra usar um código diferente em cada uma.'}
                         </span>
                       </span>
                     </label>
-                    <select name="codigo_rubrica" value={form.codigo_rubrica} onChange={handleInputChange} className={SEL}>
-                      <option value="">Selecione...</option>
-                      {form.codigo_rubrica && !rubricasDisponiveis.some(r => r.codigo === form.codigo_rubrica) && (
-                        <option value={form.codigo_rubrica}>{form.codigo_rubrica}</option>
-                      )}
-                      {rubricasDisponiveis.map(r => <option key={r.id} value={r.codigo}>{r.codigo}{r.descricao ? ` — ${r.descricao}` : ''}</option>)}
-                    </select>
-                    {empresaIdsDosCargosSelecionados.length > 0 && rubricasDisponiveis.length < rubricas.length && (
-                      <span className="text-[10px] text-slate-400">Mostrando só as rubricas que atendem a empresa do(s) cargo(s) selecionado(s).</span>
-                    )}
+                    <div className="flex flex-col gap-1.5">
+                      {chavesRubricaEmpresa.map(chave => {
+                        const opcoes = rubricasParaChave(chave)
+                        const valorAtual = valorRubrica(chave)
+                        const nomeDaEmpresa = chave ? (empresas.find(e => e.id === chave)?.empresa_fantasia || empresas.find(e => e.id === chave)?.nome_empresa) : null
+                        return (
+                          <div key={chave || '__sem_empresa__'} className={chavesRubricaEmpresa.length > 1 ? 'flex items-center gap-2' : ''}>
+                            {nomeDaEmpresa && (
+                              <span className="text-[10px] font-semibold text-slate-500 w-40 shrink-0 truncate" title={nomeDaEmpresa}>{nomeDaEmpresa}</span>
+                            )}
+                            <select value={valorAtual} onChange={e => setRubricaDaChave(chave, e.target.value)} className={SEL}>
+                              <option value="">Selecione...</option>
+                              {valorAtual && !opcoes.some(r => r.codigo === valorAtual) && (
+                                <option value={valorAtual}>{valorAtual}</option>
+                              )}
+                              {opcoes.map(r => <option key={r.id} value={r.codigo}>{r.codigo}{r.descricao ? ` — ${r.descricao}` : ''}</option>)}
+                            </select>
+                          </div>
+                        )
+                      })}
+                    </div>
                   </div>
                   <div className="flex flex-col gap-1.5">
                     <label className={`${LBL} flex items-center gap-1`}>
@@ -1180,7 +1235,17 @@ export default function PoliticaComissao() {
               </div>
               <div className="flex flex-col gap-0.5">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Código da Rubrica</span>
-                <span className="text-xs font-semibold text-slate-800">{itemVisualizado.codigo_rubrica || '-'}</span>
+                {itemVisualizado.rubricaVariaPorEmpresa ? (
+                  <div className="flex flex-col gap-0.5 mt-0.5">
+                    {itemVisualizado.rubricasPorEmpresa.map(r => (
+                      <span key={r.empresaId || r.empresaNome} className="text-xs font-semibold text-slate-800">
+                        {r.codigo || '-'} <span className="font-normal text-slate-400">({r.empresaNome || 'sem empresa'})</span>
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <span className="text-xs font-semibold text-slate-800">{itemVisualizado.codigo_rubrica || '-'}</span>
+                )}
               </div>
               <div className="flex flex-col gap-0.5">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Tipo do Processo</span>

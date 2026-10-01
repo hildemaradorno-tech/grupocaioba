@@ -26,9 +26,18 @@ import AgrupamentoDepartamentos from './pages/AgrupamentoDepartamentos'
 import AgrupamentoCargos from './pages/AgrupamentoCargos'
 import Areas from './pages/Areas'
 import Segmentos from './pages/Segmentos'
-import RegrasComissoes from './pages/RegrasComissoes'
-import FontesComissoes from './pages/FontesComissoes'
-import FolhaPagamentoDaf from './pages/FolhaPagamentoDaf'
+import TiposProcesso from './pages/TiposProcesso'
+import Rubricas from './pages/Rubricas'
+import BasesCalculo from './pages/BasesCalculo'
+import PoliticaComissao from './pages/PoliticaComissao'
+import RegrasFaixas from './pages/RegrasFaixas'
+import CargosRemuneracoes from './pages/CargosRemuneracoes'
+import FontesCalculo from './pages/FontesCalculo'
+import FontesMicrowork from './pages/FontesMicrowork'
+import Ferias from './pages/Ferias'
+import SobreavisoPlantao from './pages/SobreavisoPlantao'
+import CalculoComissoes from './pages/CalculoComissoes'
+import HistoricoComissoes from './pages/HistoricoComissoes'
 import Funcionarios from './pages/Funcionarios'
 import Feriados from './pages/Feriados'
 import Calendario from './pages/Calendario'
@@ -68,7 +77,6 @@ import ProjFases from './pages/projetos/cadastros/ProjFases'
 import ProjResponsaveis from './pages/projetos/cadastros/ProjResponsaveis'
 import ProjSistemas from './pages/projetos/cadastros/ProjSistemas'
 import ProjEmpresas from './pages/projetos/cadastros/ProjEmpresas'
-import ProjDepartamentos from './pages/projetos/cadastros/ProjDepartamentos'
 import ProjAreas from './pages/projetos/cadastros/ProjAreas'
 import ProjStatus from './pages/projetos/cadastros/ProjStatus'
 import ProjTemplates from './pages/projetos/cadastros/ProjTemplates'
@@ -80,6 +88,7 @@ import AchadosPainel from './pages/auditoria-externa/AchadosPainel'
 import PlanoAcaoPainel from './pages/auditoria-externa/PlanoAcaoPainel'
 import CiclosAuditoria from './pages/auditoria-externa/CiclosAuditoria'
 import TiposAcaoAuditoria from './pages/auditoria-externa/TiposAcaoAuditoria'
+import TiposDivergenciaAuditoria from './pages/auditoria-externa/TiposDivergenciaAuditoria'
 import { ProjetosFiltrosProvider } from './context/ProjetosFiltrosContext'
 import Fornecedores from './pages/Fornecedores'
 import KpiMatriz, { KPI_MATRIZ_PERMS } from './pages/kpi/KpiMatriz'
@@ -96,6 +105,7 @@ import BiProjetos from './pages/bi/BiProjetos'
 import BiPossibilidades from './pages/bi/BiPossibilidades'
 import MedidasBi from './pages/bi/MedidasBi'
 import BiComissoes from './pages/bi/BiComissoes'
+import BiCampanha from './pages/bi/BiCampanha'
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth()
@@ -185,20 +195,30 @@ export default function App() {
           { path: '/classificacao-compra', element: <ClassificacaoCompra />, menuPath: 'classificacao-compra' },
           { path: '/movimento-venda', element: <MovimentoVenda />, menuPath: 'movimento-venda' },
           { path: '/natureza-operacoes', element: <NaturezaOperacoes />, menuPath: 'natureza-operacoes' },
-          { path: '/regras-comissoes', element: <RegrasComissoes />, menuPath: ['tipos-processo', 'rubricas', 'bases-calculo', 'politica-comissao', 'regras-faixas', 'cargos-remuneracoes'] },
-          { path: '/fontes-comissoes', element: <FontesComissoes />, menuPath: ['fontes-calculo', 'fontes-microwork'] },
-          { path: '/politica-comissao', element: <Navigate to="/regras-comissoes?aba=politica-comissao" replace /> },
-          { path: '/cargos-remuneracoes', element: <Navigate to="/regras-comissoes?aba=cargos-remuneracoes" replace /> },
-          { path: '/fontes-calculo', element: <Navigate to="/fontes-comissoes?aba=fontes-calculo" replace /> },
-          { path: '/fontes-microwork', element: <Navigate to="/fontes-comissoes?aba=fontes-microwork" replace /> },
-          { path: '/bases-calculo', element: <Navigate to="/regras-comissoes?aba=bases-calculo" replace /> },
-          { path: '/rubricas', element: <Navigate to="/regras-comissoes?aba=rubricas" replace /> },
-          { path: '/tipos-processo', element: <Navigate to="/regras-comissoes?aba=tipos-processo" replace /> },
-          { path: '/folha-pagamento-daf', element: <FolhaPagamentoDaf />, menuPath: ['ferias', 'calculo-comissoes', 'processamento-comissoes', 'sobreaviso-plantao'] },
-          { path: '/calculo-comissoes', element: <Navigate to="/folha-pagamento-daf?aba=calculo-comissoes" replace /> },
-          { path: '/processamento-comissoes', element: <Navigate to="/folha-pagamento-daf?aba=processamento-comissoes" replace /> },
-          { path: '/ferias', element: <Navigate to="/folha-pagamento-daf?aba=ferias" replace /> },
-          { path: '/sobreaviso-plantao', element: <Navigate to="/folha-pagamento-daf?aba=sobreaviso-plantao" replace /> },
+          // Regras de Comissões virou um agrupamento de menu (sem aba/tela única) — cada item
+          // abaixo é uma tela própria, na mesma ordem de cima pra baixo do menu lateral.
+          { path: '/tipos-processo', element: <TiposProcesso />, menuPath: 'tipos-processo' },
+          { path: '/rubricas', element: <Rubricas />, menuPath: 'rubricas' },
+          { path: '/bases-calculo', element: <BasesCalculo />, menuPath: 'bases-calculo' },
+          { path: '/politica-comissao', element: <PoliticaComissao />, menuPath: 'politica-comissao' },
+          { path: '/regras-faixas', element: <RegrasFaixas />, menuPath: 'regras-faixas' },
+          { path: '/cargos-remuneracoes', element: <CargosRemuneracoes />, menuPath: 'cargos-remuneracoes' },
+          // Link antigo (tela única com abas) — manda pro primeiro item da sequência.
+          { path: '/regras-comissoes', element: <Navigate to="/tipos-processo" replace /> },
+          // Fontes de Dados virou agrupamento de menu dentro de BI - Dashboard (sem aba/tela
+          // única), mesmo padrão de Regras de Comissões.
+          { path: '/fontes-calculo', element: <FontesCalculo />, menuPath: 'fontes-calculo' },
+          { path: '/fontes-microwork', element: <FontesMicrowork />, menuPath: 'fontes-microwork' },
+          { path: '/fontes-comissoes', element: <Navigate to="/fontes-calculo" replace /> },
+          // Comissões Pós-Vendas virou agrupamento de menu (sem aba/tela única), mesmo padrão
+          // de Regras de Comissões — ordem de cima pra baixo do menu lateral.
+          { path: '/ferias', element: <Ferias />, menuPath: 'ferias' },
+          { path: '/sobreaviso-plantao', element: <SobreavisoPlantao />, menuPath: 'sobreaviso-plantao' },
+          { path: '/calculo-comissoes', element: <CalculoComissoes />, menuPath: 'calculo-comissoes' },
+          { path: '/calculo-comissoes-motos', element: <CalculoComissoes agrupamentoNome="Caiobá Motos" titulo="Comissões - HONDA" />, menuPath: 'calculo-comissoes' },
+          { path: '/processamento-comissoes', element: <HistoricoComissoes />, menuPath: 'processamento-comissoes' },
+          // Link antigo (tela única com abas) — manda pro primeiro item da sequência.
+          { path: '/folha-pagamento-daf', element: <Navigate to="/ferias" replace /> },
           { path: '/funcionarios', element: <Funcionarios />, menuPath: 'funcionarios' },
           { path: '/feriados', element: <Feriados />, menuPath: 'feriados' },
           { path: '/calendario', element: <Calendario />, menuPath: 'calendario' },
@@ -245,12 +265,12 @@ export default function App() {
           { path: '/auditoria-externa/plano-acao', element: <PlanoAcaoPainel />, menuPath: 'auditoria-externa/plano-acao' },
           { path: '/auditoria-externa/ciclos', element: <CiclosAuditoria />, menuPath: 'auditoria-externa/ciclos' },
           { path: '/auditoria-externa/tipos-acao', element: <TiposAcaoAuditoria />, menuPath: 'auditoria-externa/tipos-acao' },
+          { path: '/auditoria-externa/tipos-divergencia', element: <TiposDivergenciaAuditoria />, menuPath: 'auditoria-externa/tipos-divergencia' },
           { path: '/fornecedores', element: <Fornecedores />, menuPath: 'fornecedores' },
           { path: '/projetos/novo', element: <ProjetoEditor />, menuPath: 'projetos' },
           { path: '/projetos/detalhe/:id/editar', element: <ProjetoEditor />, menuPath: 'projetos' },
           { path: '/projetos/detalhe/:id', element: <ProjetoDetalhe />, menuPath: 'projetos' },
           { path: '/projetos/empresas', element: <ProjEmpresas />, menuPath: '/projetos/empresas' },
-          { path: '/projetos/departamentos', element: <ProjDepartamentos />, menuPath: '/projetos/departamentos' },
           { path: '/projetos/areas', element: <ProjAreas />, menuPath: '/projetos/areas' },
           { path: '/projetos/status', element: <ProjStatus />, menuPath: '/projetos/status' },
           { path: '/projetos/sistemas', element: <ProjSistemas />, menuPath: '/projetos/sistemas' },
@@ -269,9 +289,10 @@ export default function App() {
           { path: '/bi/garantias-daf', element: <BiGarantiasDaf />, menuPath: 'bi/garantias-daf' },
           { path: '/bi/projetos', element: <BiProjetos />, menuPath: 'bi/projetos' },
           { path: '/bi/possibilidades', element: <BiPossibilidades />, menuPath: 'bi/possibilidades' },
-          { path: '/bi/fontes', element: <Navigate to="/fontes-comissoes?aba=fontes-calculo" replace /> },
+          { path: '/bi/fontes', element: <Navigate to="/fontes-calculo" replace /> },
           { path: '/bi/medidas', element: <MedidasBi />, menuPath: 'bi/medidas' },
           { path: '/bi/comissoes', element: <BiComissoes />, menuPath: 'bi/comissoes' },
+          { path: '/bi/campanha', element: <BiCampanha />, menuPath: 'bi/campanha' },
         ].map(route => (
           <Route
             key={route.path}

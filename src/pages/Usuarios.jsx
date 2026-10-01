@@ -37,10 +37,22 @@ function AcoesMenu({ acoes }) {
     return () => document.removeEventListener('mousedown', fecharSeClicarFora)
   }, [])
 
+  const LARGURA_PAINEL = 224 // w-56
+  const ALTURA_ITEM = 37 // px-3 py-2 + ícone/texto text-sm
+
   const abrir = () => {
     if (!aberto && ref.current) {
       const r = ref.current.getBoundingClientRect()
-      setPos({ top: r.bottom + 4, right: window.innerWidth - r.right })
+      const alturaPainel = visiveis.length * ALTURA_ITEM + 8 // + py-1 do painel
+      // Alinha pela esquerda do botão (abre pra direita); só alinha pela direita se não couber
+      // (coluna de Ações agora fica no início da tabela, perto da borda esquerda da tela).
+      const cabeNaDireita = r.left + LARGURA_PAINEL <= window.innerWidth - 8
+      // Abre pra baixo por padrão; se não couber (linha perto do fim da tela), abre pra cima.
+      const cabeEmbaixo = r.bottom + 4 + alturaPainel <= window.innerHeight - 8
+      const top = cabeEmbaixo ? r.bottom + 4 : Math.max(8, r.top - 4 - alturaPainel)
+      setPos(cabeNaDireita
+        ? { top, left: r.left }
+        : { top, right: window.innerWidth - r.right })
     }
     setAberto(v => !v)
   }
@@ -75,7 +87,7 @@ function AcoesMenu({ acoes }) {
       {aberto && pos && createPortal(
         <div
           data-acoes-menu-panel
-          style={{ position: 'fixed', top: pos.top, right: pos.right }}
+          style={{ position: 'fixed', top: pos.top, left: pos.left, right: pos.right }}
           className="z-50 w-56 bg-white border border-slate-200 rounded-md shadow-lg overflow-hidden py-1"
         >
           {visiveis.map((a, i) => (
@@ -454,12 +466,12 @@ export default function Usuarios() {
         <table className="w-full">
           <thead className="bg-slate-100 border-b border-slate-200">
             <tr>
+              <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Ações</th>
               <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Nome</th>
               <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">E-mail</th>
               <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Grupo de Acesso</th>
               <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Cargo</th>
               <th className="px-6 py-3 text-center text-sm font-semibold text-slate-700">Senha</th>
-              <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Ações</th>
             </tr>
           </thead>
           <tbody>
@@ -477,6 +489,15 @@ export default function Usuarios() {
               const senhaVencida = diasDesdeReset !== null && diasDesdeReset > 30
               return (
               <tr key={u.id} className="border-b border-slate-200 hover:bg-slate-50">
+                <td className="px-6 py-3 text-sm">
+                  <AcoesMenu acoes={[
+                    { label: 'Visualizar', icon: <Eye size={14} />, onClick: () => abrirVisualizar(u) },
+                    { label: 'Editar', icon: <Edit2 size={14} />, onClick: () => handleEdit(u) },
+                    { label: 'Reenviar e-mail', icon: <Send size={14} />, onClick: () => handleReenviarConvite(u) },
+                    (isAdmin && u.email !== user?.email) && { label: `Visualizar como ${u.nome}`, icon: <UserCheck size={14} />, onClick: () => iniciarVisualizacao(u) },
+                    { label: 'Excluir', icon: <Trash2 size={14} />, onClick: () => handleDelete(u.id), danger: true },
+                  ]} />
+                </td>
                 <td className="px-6 py-3 text-sm text-slate-900 whitespace-nowrap">{u.nome}</td>
                 <td className="px-6 py-3 text-sm text-slate-600">{u.email}</td>
                 <td className="px-6 py-3 text-sm text-slate-500 whitespace-nowrap">
@@ -498,15 +519,6 @@ export default function Usuarios() {
                   {diasDesdeReset === null && (
                     <span title="Sem registro de data" className="inline-block w-3 h-3 rounded-full bg-slate-300" />
                   )}
-                </td>
-                <td className="px-6 py-3 text-sm">
-                  <AcoesMenu acoes={[
-                    { label: 'Visualizar', icon: <Eye size={14} />, onClick: () => abrirVisualizar(u) },
-                    { label: 'Editar', icon: <Edit2 size={14} />, onClick: () => handleEdit(u) },
-                    { label: 'Reenviar e-mail', icon: <Send size={14} />, onClick: () => handleReenviarConvite(u) },
-                    (isAdmin && u.email !== user?.email) && { label: `Visualizar como ${u.nome}`, icon: <UserCheck size={14} />, onClick: () => iniciarVisualizacao(u) },
-                    { label: 'Excluir', icon: <Trash2 size={14} />, onClick: () => handleDelete(u.id), danger: true },
-                  ]} />
                 </td>
               </tr>
               )

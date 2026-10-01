@@ -113,6 +113,13 @@ export const ACOES_POR_MENU = [
     ],
   },
   {
+    menuPath: 'auditoria-externa/tipos-divergencia',
+    acoes: [
+      { value: 'editar',  label: 'Criar / Editar Tipo de Divergência' },
+      { value: 'excluir', label: 'Excluir Tipo de Divergência' },
+    ],
+  },
+  {
     menuPath: 'metas/gestao-aprovacao',
     acoes: [
       { value: 'editar', label: 'Incluir / Editar' },
@@ -309,13 +316,6 @@ export const ACOES_POR_MENU = [
     menuPath: 'projetos/areas',
     acoes: [
       { value: 'editar', label: 'Incluir / Editar' },
-    ],
-  },
-  {
-    menuPath: 'projetos/departamentos',
-    acoes: [
-      { value: 'editar', label: 'Incluir / Editar' },
-      { value: 'excluir', label: 'Excluir' },
     ],
   },
   {

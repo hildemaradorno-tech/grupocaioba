@@ -1,10 +1,72 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useSessionState } from '../hooks/useSessionState'
-import { Plus, X, AlertTriangle, Calculator, Eye, Search, Loader2, PlayCircle, Trash2, ArrowUp, ArrowDown, ListPlus, Copy, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Plus, X, AlertTriangle, Calculator, Eye, Edit2, Settings, Search, Loader2, PlayCircle, Trash2, ArrowUp, ArrowDown, ListPlus, Copy, ChevronLeft, ChevronRight, Info } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
-import PermissionActionButtons from '../components/PermissionActionButtons'
 import { apiService } from '../services/api'
+
+// Menu de Ações da linha, atrás de um botão de engrenagem — evita vários ícones soltos na
+// tabela. O painel abre via portal (position:fixed na posição real do botão) porque a tabela
+// rola na horizontal (overflow-x-auto) — pela regra do CSS, isso faz o overflow-y virar "auto"
+// também, cortando um menu "absolute" comum assim que ele passa da altura do container.
+function AcoesDropdown({ onVer, onEditar, onExcluir, onDuplicar, duplicando }) {
+  const [aberto, setAberto] = useState(false)
+  const [pos, setPos] = useState(null)
+  const btnRef = useRef(null)
+  const painelRef = useRef(null)
+
+  useEffect(() => {
+    if (!aberto) return
+    const fechar = (e) => {
+      if (painelRef.current?.contains(e.target)) return
+      if (btnRef.current?.contains(e.target)) return
+      setAberto(false)
+    }
+    document.addEventListener('mousedown', fechar)
+    window.addEventListener('scroll', fechar, true)
+    window.addEventListener('resize', fechar)
+    return () => {
+      document.removeEventListener('mousedown', fechar)
+      window.removeEventListener('scroll', fechar, true)
+      window.removeEventListener('resize', fechar)
+    }
+  }, [aberto])
+
+  if (!onVer && !onEditar && !onExcluir && !onDuplicar) return null
+
+  const abrir = () => {
+    const r = btnRef.current.getBoundingClientRect()
+    setPos({ left: r.left, top: r.bottom + 4 })
+    setAberto(true)
+  }
+
+  const item = (onClick, Icon, texto, extraClass = '', disabled = false) => (
+    <button type="button" disabled={disabled} onClick={() => { setAberto(false); onClick() }}
+      className={`w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors ${extraClass}`}>
+      <Icon className="h-3.5 w-3.5 shrink-0" /> {texto}
+    </button>
+  )
+
+  return (
+    <>
+      <button ref={btnRef} type="button" onClick={() => (aberto ? setAberto(false) : abrir())}
+        className={`p-1.5 rounded transition-colors ${aberto ? 'bg-slate-100 text-slate-700' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'}`}
+        title="Ações">
+        <Settings className="h-4 w-4" />
+      </button>
+      {aberto && pos && createPortal(
+        <div ref={painelRef} className="fixed z-50 w-44 bg-white border border-slate-200 rounded-md shadow-xl py-1"
+          style={{ left: pos.left, top: pos.top }}>
+          {onVer && item(onVer, Eye, 'Visualizar', 'text-slate-700')}
+          {onEditar && item(onEditar, Edit2, 'Editar', 'text-blue-700')}
+          {onDuplicar && item(onDuplicar, duplicando ? Loader2 : Copy, duplicando ? 'Duplicando...' : 'Duplicar', `text-indigo-700 ${duplicando ? '[&_svg]:animate-spin' : ''}`, duplicando)}
+          {onExcluir && item(onExcluir, Trash2, 'Excluir', 'text-red-600')}
+        </div>,
+        document.body
+      )}
+    </>
+  )
+}
 
 const TIPOS_AGREGACAO = [
   { value: 'SOMA', label: 'Soma' },
@@ -55,13 +117,26 @@ const gerarCodigo = (nome) => (nome || '')
   .replace(/[^A-Z0-9]+/g, '_')
   .replace(/^_+|_+$/g, '')
 
+// Campo numérico do Desconto, sempre com 2 casas após a vírgula (14,25 fica 14,25; 14 vira
+// 14,00). Vírgula = decimal (pontos são milhar); sem vírgula, um ponto com até 2 dígitos é decimal.
+const lerNumeroBase = (v) => {
+  const t = String(v).trim()
+  if (!t) return NaN
+  if (t.includes(',')) return parseFloat(t.replace(/\./g, '').replace(',', '.'))
+  return /^\d+\.\d{1,2}$/.test(t) ? parseFloat(t) : parseFloat(t.replace(/\./g, ''))
+}
+const duasCasasBase = (v) => {
+  const n = lerNumeroBase(v)
+  return Number.isNaN(n) ? '' : n.toFixed(2).replace('.', ',')
+}
+
 const novoTempId = () => `tmp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
 const novaCondicao = () => ({ tempId: novoTempId(), coluna: '', operador: 'IGUAL', valor: '' })
 const novaRegra = () => ({ tempId: novoTempId(), tipo_acao: 'FILTRAR', coluna_alvo: '', condicao_logica: 'E', condicoes: [novaCondicao()] })
 
 const FORM_VAZIO = {
   sistema: '', fonte_microwork_id: '', fonte_calculo_id: '', nome: '', codigo: '', descricao: '',
-  coluna_valor: '', tipo_agregacao: 'SOMA', ativo: true,
+  coluna_valor: '', coluna_tipo_movimento: '', tipo_agregacao: 'SOMA', desconto_percentual: '', ativo: true,
 }
 
 const SEL = 'w-full text-xs p-2 border border-slate-200 rounded-md bg-white font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500'
@@ -266,7 +341,9 @@ export default function BasesCalculo() {
       codigo: item.codigo || '',
       descricao: item.descricao || '',
       coluna_valor: item.coluna_valor || '',
+      coluna_tipo_movimento: item.coluna_tipo_movimento || '',
       tipo_agregacao: item.tipo_agregacao || 'SOMA',
+      desconto_percentual: item.desconto_percentual ? duasCasasBase(item.desconto_percentual) : '',
       ativo: item.ativo ?? true,
     })
     setErroModal(null)
@@ -351,7 +428,9 @@ export default function BasesCalculo() {
         codigo: gerarCodigo(nomeCopia),
         descricao: item.descricao || null,
         coluna_valor: item.coluna_valor || null,
+        coluna_tipo_movimento: item.coluna_tipo_movimento || null,
         tipo_agregacao: item.tipo_agregacao,
+        desconto_percentual: item.desconto_percentual || 0,
         ativo: item.ativo,
       })
       const regrasParaCopia = regrasOriginais.map((r, i) => ({
@@ -413,6 +492,10 @@ export default function BasesCalculo() {
   const handleSalvar = async (e) => {
     e.preventDefault()
     setErroModal(null)
+    if (form.desconto_percentual && Number.isNaN(lerNumeroBase(form.desconto_percentual))) {
+      setErroModal('Desconto sobre o valor apurado inválido.')
+      return
+    }
     try {
       const payload = {
         sistema: form.sistema || null,
@@ -425,7 +508,9 @@ export default function BasesCalculo() {
         codigo: gerarCodigo(form.nome),
         descricao: form.descricao || null,
         coluna_valor: form.coluna_valor || null,
+        coluna_tipo_movimento: form.coluna_tipo_movimento || null,
         tipo_agregacao: form.tipo_agregacao,
+        desconto_percentual: form.desconto_percentual ? lerNumeroBase(form.desconto_percentual) : 0,
         ativo: form.ativo,
       }
       let baseId = editingId
@@ -501,8 +586,13 @@ export default function BasesCalculo() {
         ? (totalFiltradas > 0 ? respostas.reduce((acc, r) => acc + (r.valor || 0) * (r.total_linhas_filtradas || 0), 0) / totalFiltradas : 0)
         : respostas.reduce((acc, r) => acc + (r.valor || 0), 0)
       const semLinhas = respostas.find(r => r.empresas_disponiveis_amostra?.length > 0)
+      // Desconto sobre o valor apurado (ex: 14,25% de imposto) — mostra bruto e líquido aqui
+      // também, senão a conferência bateria diferente do que o Cálculo de Comissões usa de fato.
+      const descontoPct = parseFloat(baseConferencia.desconto_percentual) || 0
       setResultado({
-        valor,
+        valor: descontoPct > 0 ? valor * (1 - descontoPct / 100) : valor,
+        valorBruto: descontoPct > 0 ? valor : null,
+        descontoPct,
         total_linhas_filtradas: totalFiltradas,
         total_linhas_fonte: Math.max(...respostas.map(r => r.total_linhas_fonte || 0)),
         empresas_disponiveis_amostra: semLinhas?.empresas_disponiveis_amostra,
@@ -530,15 +620,10 @@ export default function BasesCalculo() {
   return (
     <div className="p-6 space-y-4 max-w-screen-xl">
 
-      {/* CABEÇALHO */}
       <div className="flex items-center justify-between border-b border-slate-200 pb-4">
-        <div className="flex items-center gap-2">
-          <label className={LBL}>Sistema</label>
-          <select value={filtroSistema} onChange={e => setFiltroSistema(e.target.value)} className={`${SEL_SM} w-44`}>
-            <option value="">Todos</option>
-            <option value="Dealer.net">Dealer.net</option>
-            <option value="MicroWork Cloud">MicroWork Cloud</option>
-          </select>
+        <div>
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Base de Cálculo</h1>
+          <p className="text-xs text-slate-500">Defina qual coluna e agregação extraem o valor de cada Fonte de Cálculo.</p>
         </div>
         {canEdit && (
           <button
@@ -551,18 +636,28 @@ export default function BasesCalculo() {
         )}
       </div>
 
+      {/* FILTRO */}
+      <div className="flex items-center gap-2">
+        <label className={LBL}>Sistema</label>
+        <select value={filtroSistema} onChange={e => setFiltroSistema(e.target.value)} className={`${SEL_SM} w-44`}>
+          <option value="">Todos</option>
+          <option value="Dealer.net">Dealer.net</option>
+          <option value="MicroWork Cloud">MicroWork Cloud</option>
+        </select>
+      </div>
+
       {/* TABELA */}
       <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-x-auto">
         <table className="w-full text-left border-collapse min-w-[760px] whitespace-nowrap">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[11px] font-semibold uppercase tracking-wider">
+              <th className="p-3 w-12 text-center">Ações</th>
               <th className="p-3">Nome</th>
               <th className="p-3 w-32">Sistema</th>
               <th className="p-3">Fonte de Cálculo</th>
               <th className="p-3 w-40">Coluna Valor</th>
               <th className="p-3 w-28 text-center">Tipo de Cálculo</th>
               <th className="p-3 w-20 text-center">Ativo</th>
-              <th className="p-3 w-24 text-center">Ações</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
@@ -572,10 +667,23 @@ export default function BasesCalculo() {
               </tr>
             ) : dadosFiltrados.map((item) => (
               <tr key={item.id} className="hover:bg-slate-50/70 transition-colors">
+                <td className="p-3 w-12 text-center">
+                  <AcoesDropdown
+                    onVer={() => abrirVisualizar(item)}
+                    onEditar={() => abrirEditar(item)}
+                    onExcluir={() => abrirExcluir(item)}
+                    onDuplicar={canEdit ? () => handleDuplicar(item) : null}
+                    duplicando={duplicandoId === item.id}
+                  />
+                </td>
                 <td className="p-3 font-bold text-slate-900">
                   <div className="flex items-center gap-2">
                     <Calculator className="h-3.5 w-3.5 text-blue-400 shrink-0" />
                     {item.nome}
+                    {!!item.desconto_percentual && (
+                      <Info className="h-3.5 w-3.5 text-amber-500 shrink-0" strokeWidth={2.5}
+                        title={`Desconto de ${Number(item.desconto_percentual).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}% sobre o valor apurado — aplicado antes de qualquer cálculo de comissão que usar esta Base.`} />
+                    )}
                   </div>
                 </td>
                 <td className="p-3 text-slate-600">{item.sistema || '-'}</td>
@@ -588,27 +696,6 @@ export default function BasesCalculo() {
                   <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${item.ativo ? 'bg-green-50 text-green-700 border-green-200' : 'bg-slate-100 text-slate-500 border-slate-200'}`}>
                     {item.ativo ? 'Sim' : 'Não'}
                   </span>
-                </td>
-                <td className="p-3">
-                  <div className="flex items-center justify-center gap-1.5">
-                    <PermissionActionButtons
-                      menuPath="bases-calculo"
-                      onView={() => abrirVisualizar(item)}
-                      onEdit={() => abrirEditar(item)}
-                      onDelete={() => abrirExcluir(item)}
-                    />
-                    {canEdit && (
-                      <button
-                        type="button"
-                        onClick={() => handleDuplicar(item)}
-                        disabled={duplicandoId === item.id}
-                        title="Duplicar Base de Cálculo (copia as Regras de Cálculo também)"
-                        className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        {duplicandoId === item.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Copy className="h-3.5 w-3.5" />}
-                      </button>
-                    )}
-                  </div>
                 </td>
               </tr>
             ))}
@@ -676,8 +763,13 @@ export default function BasesCalculo() {
           {resultado && (
             <div className="rounded-md border border-emerald-200 bg-emerald-50/40 p-4 flex flex-wrap items-center gap-6">
               <div className="flex flex-col gap-0.5">
-                <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wide">Valor Calculado</span>
+                <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wide">
+                  {resultado.valorBruto != null ? `Valor Líquido (desconto de ${resultado.descontoPct.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}% já aplicado)` : 'Valor Calculado'}
+                </span>
                 <span className="text-xl font-mono font-bold text-emerald-800">{fmtValor(resultado.valor, baseConferencia?.tipo_agregacao)}</span>
+                {resultado.valorBruto != null && (
+                  <span className="text-[11px] text-slate-400">Bruto: <span className="font-mono">{fmtValor(resultado.valorBruto, baseConferencia?.tipo_agregacao)}</span></span>
+                )}
               </div>
               <div className="flex flex-col gap-0.5">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Linhas Filtradas</span>
@@ -789,6 +881,41 @@ export default function BasesCalculo() {
                     <select required name="tipo_agregacao" value={form.tipo_agregacao} onChange={handleInputChange} className={SEL}>
                       {TIPOS_AGREGACAO.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                     </select>
+                  </div>
+                </div>
+
+                {/* Coluna Tipo de Movimento (opcional) */}
+                <div className="flex flex-col gap-1.5">
+                  <label className={`${LBL} flex items-center gap-1`}>
+                    Coluna Tipo de Movimento (opcional)
+                    <span className="relative group cursor-help normal-case tracking-normal font-normal">
+                      <span className="text-slate-400">ⓘ</span>
+                      <span className="absolute left-0 top-full mt-1 hidden group-hover:block w-64 bg-slate-800 text-white text-[11px] font-normal rounded-md p-2.5 shadow-xl z-30 leading-relaxed">
+                        Coluna que classifica cada linha (ex: "VENDA POR O.S", "DEVOLUÇÃO...") — quando preenchida, a calculadora em Cálculo de Comissões mostra o total de Venda e de Devolução separados, além do total usado como base.
+                      </span>
+                    </span>
+                  </label>
+                  <CampoColuna value={form.coluna_tipo_movimento} onChange={v => setForm(prev => ({ ...prev, coluna_tipo_movimento: v }))}
+                    colunas={colunasDetectadas?.colunas} opcional />
+                </div>
+
+                {/* Desconto sobre o valor apurado */}
+                <div className="flex flex-col gap-1.5">
+                  <label className={`${LBL} flex items-center gap-1`}>
+                    Desconto sobre o valor apurado (%)
+                    <span className="relative group cursor-help normal-case tracking-normal font-normal">
+                      <span className="text-slate-400">ⓘ</span>
+                      <span className="absolute left-0 top-full mt-1 hidden group-hover:block w-64 bg-slate-800 text-white text-[11px] font-normal rounded-md p-2.5 shadow-xl z-30 leading-relaxed">
+                        Ex: 14,25% de imposto de venda — tira esse % do valor bruto lido dessa Base ANTES de qualquer cálculo (Política com % fixo, R$ Valor, ou qualquer Regra por faixa). Vale sempre que essa Base for usada. Deixe em branco ou 0 pra não descontar nada.
+                      </span>
+                    </span>
+                  </label>
+                  <div className="relative w-40">
+                    <input type="text" inputMode="decimal" name="desconto_percentual" value={form.desconto_percentual}
+                      onChange={handleInputChange}
+                      onBlur={e => setForm(prev => ({ ...prev, desconto_percentual: e.target.value ? duasCasasBase(e.target.value) : '' }))}
+                      placeholder="0,00" className={`${INP} pr-6 font-mono`} />
+                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-slate-400">%</span>
                   </div>
                 </div>
 
@@ -1022,8 +1149,16 @@ export default function BasesCalculo() {
                 <span className="text-xs font-mono font-semibold text-slate-800">{itemVisualizado.coluna_valor || '-'}</span>
               </div>
               <div className="flex flex-col gap-0.5">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Coluna Tipo de Movimento</span>
+                <span className="text-xs font-mono font-semibold text-slate-800">{itemVisualizado.coluna_tipo_movimento || '-'}</span>
+              </div>
+              <div className="flex flex-col gap-0.5">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Tipo de Cálculo</span>
                 <span className="text-xs font-semibold text-slate-800">{itemVisualizado.tipo_agregacao}</span>
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Desconto sobre o valor apurado</span>
+                <span className="text-xs font-semibold text-slate-800">{itemVisualizado.desconto_percentual ? `${Number(itemVisualizado.desconto_percentual).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}%` : '-'}</span>
               </div>
               <div className="flex flex-col gap-0.5">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Ativo</span>

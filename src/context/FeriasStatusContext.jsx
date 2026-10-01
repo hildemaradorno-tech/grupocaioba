@@ -1,10 +1,8 @@
 import React, { createContext, useContext, useState } from 'react'
 
-// O botão "Atualizar Férias"/"Férias Atualizadas" mora no título compartilhado da página
-// (FolhaPagamentoDaf.jsx, ao lado de "Comissões Pós-Vendas"), só quando a aba ativa é uma das de
-// Cálculo de Comissões — mas quem sabe se o arquivo de férias está desatualizado é o próprio
-// CalculoComissoes.jsx (também usa isso pra bloquear o botão Calcular). Mesmo padrão de
-// KpiSourceStatusContext: a aba ativa publica aqui, o pai lê sem precisar subir o fetch inteiro.
+// O botão "Atualizar Férias"/"Férias Atualizadas" mora no cabeçalho de CalculoComissoes.jsx —
+// mas quem sabe se o arquivo de férias está desatualizado é o próprio CalculoComissoes.jsx
+// (também usa isso pra bloquear o botão Calcular). Mesmo padrão de KpiSourceStatusContext.
 const FeriasStatusContext = createContext(null)
 
 export function FeriasStatusProvider({ children }) {

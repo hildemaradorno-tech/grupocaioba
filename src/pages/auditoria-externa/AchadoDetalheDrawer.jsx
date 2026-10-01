@@ -85,12 +85,20 @@ export default function AchadoDetalheDrawer({ achado, onClose }) {
 
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
           <div className="grid grid-cols-2 gap-4 text-xs">
-            {achado.motivo && (
-              <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1">Motivo</p>
-                <p className="text-slate-700">{achado.motivo}</p>
-              </div>
-            )}
+            <div>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1">Ciclo de Auditoria</p>
+              <p className="text-slate-700">
+                {achado.audext_ciclos ? `${achado.audext_ciclos.proj_empresas?.nome || '—'} · ${achado.audext_ciclos.periodo_competencia || '—'}` : '—'}
+              </p>
+            </div>
+            <div>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1">Tipo de Divergência</p>
+              <p className="text-slate-700">{achado.audext_tipos_divergencia?.nome || '—'}</p>
+            </div>
+            <div>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1">Motivo</p>
+              <p className="text-slate-700">{achado.motivo || '—'}</p>
+            </div>
             <div>
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1">Fundamentação Técnica</p>
               <p className="text-slate-700">{achado.fundamentacao_tecnica || '—'}</p>
@@ -103,12 +111,10 @@ export default function AchadoDetalheDrawer({ achado, onClose }) {
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1">Valor Corrigido</p>
               <p className="text-emerald-700 font-bold text-sm">{fmtMoeda(achado.valor_corrigido)}</p>
             </div>
-            {achado.impactos && (
-              <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1">Impactos</p>
-                <p className="text-slate-700 whitespace-pre-wrap">{achado.impactos}</p>
-              </div>
-            )}
+            <div className="col-span-2">
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1">Impactos</p>
+              <p className="text-slate-700 whitespace-pre-wrap">{achado.impactos || '—'}</p>
+            </div>
             <div className="col-span-2 grid grid-cols-2 gap-4">
               <div>
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1">Fatos Apontados</p>
@@ -123,18 +129,16 @@ export default function AchadoDetalheDrawer({ achado, onClose }) {
                   : <p className="text-slate-700">—</p>}
               </div>
             </div>
-            {achado.evidencias && (
-              <div className="col-span-2">
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1">Evidências</p>
-                <p className="text-slate-700 whitespace-pre-wrap">{achado.evidencias}</p>
-              </div>
-            )}
-            {achado.evidencias_imagens_urls?.length > 0 && (
-              <div className="col-span-2">
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1">Imagens de Evidência</p>
-                <EvidenciaUploader pastaId={achado.id} urls={achado.evidencias_imagens_urls} onChange={() => {}} readOnly />
-              </div>
-            )}
+            <div className="col-span-2">
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1">Evidências</p>
+              <p className="text-slate-700 whitespace-pre-wrap">{achado.evidencias || '—'}</p>
+            </div>
+            <div className="col-span-2">
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1">Imagens de Evidência</p>
+              {achado.evidencias_imagens_urls?.length > 0
+                ? <EvidenciaUploader pastaId={achado.id} urls={achado.evidencias_imagens_urls} onChange={() => {}} readOnly />
+                : <p className="text-slate-700">—</p>}
+            </div>
           </div>
 
           {canUsarIA && <DiagnosticoIA achado={achado} />}

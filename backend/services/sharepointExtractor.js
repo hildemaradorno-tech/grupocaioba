@@ -252,7 +252,8 @@ function weekOfYear(year, month, day) {
  * Converte serial Excel para chave de semana (ex: 's27').
  * Esquema: dia 1 → 1º domingo; semanas seguintes: seg → dom; mês corta a última.
  */
-function serialToWeekKey(v) {
+// Converte o valor de data vindo do Excel (serial, Date ou texto DD/MM/AAAA / AAAA-MM-DD) em Date UTC.
+function excelParaData(v) {
   if (v === null || v === undefined || v === '') return null
   let date
   if (typeof v === 'number') {
@@ -274,9 +275,21 @@ function serialToWeekKey(v) {
       }
     }
   }
-  if (!date || isNaN(date.getTime())) return null
+  return date && !isNaN(date.getTime()) ? date : null
+}
+
+function serialToWeekKey(v) {
+  const date = excelParaData(v)
+  if (!date) return null
   const w = weekOfYear(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate())
   return `s${String(w).padStart(2, '0')}`
+}
+
+// Dia como número AAAAMMDD (ex.: 20260801) — número em vez de string pra pesar menos por linha.
+// Usado pela Campanha Pós-Venda (fato_campanha_diario), que monta as semanas a partir do dia.
+function serialToDia(v) {
+  const d = excelParaData(v)
+  return d ? d.getUTCFullYear() * 10000 + (d.getUTCMonth() + 1) * 100 + d.getUTCDate() : null
 }
 
 /**
@@ -1125,6 +1138,11 @@ function parseRecepcionistaBuffer(buffer, meta) {
   const colMargem   = header.indexOf('margem_servico')
   const colEmpresa  = header.indexOf('Empresa_Nome')
   const colUsuario  = header.indexOf('Usuario_Nome') // identifica o Consultor que atendeu a O.S.
+  // Campos extras usados só pela Campanha Pós-Venda (fato_campanha_diario)
+  const colUsuCod   = header.indexOf('Usuario_Codigo')
+  const colOs       = header.indexOf('OS_Codigo')
+  const colPec      = header.indexOf('tot_pec')
+  const colMargPec  = header.indexOf('margem_peca')
 
   if (colDate === -1 || colVal === -1) {
     console.warn(`[Recep] Colunas não encontradas em ${meta.name}. Cabeçalho: ${header.slice(0, 20).join(', ')}`)
@@ -1137,12 +1155,19 @@ function parseRecepcionistaBuffer(buffer, meta) {
     const periodo   = serialToYearMonth(row[colDate])
     if (!periodo) continue
     const semanaKey = serialToWeekKey(row[colDate]) || null
-    const totServ = Number(row[colVal])
-    if (!totServ || isNaN(totServ)) continue
+    const totServ = Number(row[colVal]) || 0
+    const totPec  = colPec !== -1 ? (Number(row[colPec]) || 0) : 0
+    // Antes só entravam linhas com serviço; OS só de peças também conta pra Campanha. Nas
+    // consolidações de serviço essas linhas somam 0 (totServ = 0), então o KPI não muda.
+    if (!totServ && !totPec) continue
     const margemServico = colMargem   !== -1 ? (Number(row[colMargem])  || 0) : 0
     const empresaNome   = colEmpresa  !== -1 ? normalizeEmpresaNome(row[colEmpresa]) : ''
     const nomeConsultor = colUsuario  !== -1 && row[colUsuario] != null ? String(row[colUsuario]).trim() : ''
-    result.push({ periodo, semanaKey, totServ, margemServico, empresaNome, nomeConsultor, arquivo: meta.name })
+    const dia           = serialToDia(row[colDate])
+    const codConsultor  = colUsuCod  !== -1 && row[colUsuCod] != null ? String(row[colUsuCod]).trim() : ''
+    const os            = colOs      !== -1 ? (Number(row[colOs]) || null) : null
+    const margemPeca    = colMargPec !== -1 ? (Number(row[colMargPec]) || 0) : 0
+    result.push({ periodo, semanaKey, totServ, margemServico, empresaNome, nomeConsultor, dia, codConsultor, os, totPec, margemPeca, arquivo: meta.name })
   }
   return result
 }
@@ -1429,10 +1454,11 @@ export function parseROF096Buffer(buffer, meta) {
     const disponiveis = safeNum(row[12])                                       // coluna M
     const periodo     = serialToYearMonth(row[3]) || periodoFallback           // coluna D
     const semanaKey   = serialToWeekKey(row[3]) || null
+    const dia         = serialToDia(row[3])                                    // Campanha Pós-Venda
 
     if (!disponiveis) continue
 
-    result.push({ empresaNome, nomeMecanico, disponiveis, periodo, semanaKey, arquivo: meta.name })
+    result.push({ empresaNome, nomeMecanico, disponiveis, periodo, semanaKey, dia, arquivo: meta.name })
   }
   return result
 }
@@ -1634,11 +1660,12 @@ export function parseROF042Buffer(buffer, meta) {
     const rawDate     = typeof row[27] === 'number' ? Math.floor(row[27]) : row[27]
     const periodo     = serialToYearMonth(rawDate)                                      // coluna AB — NF Data
     const semanaKey   = serialToWeekKey(rawDate) || null
+    const dia         = serialToDia(rawDate)                                            // Campanha Pós-Venda
 
     if (!periodo) continue
     if (!hrAplic && !hrVend && !vlLiquido) continue
 
-    result.push({ empresaNome, produtivo, hrAplic, hrVend, vlLiquido, periodo, semanaKey, arquivo: meta.name })
+    result.push({ empresaNome, produtivo, hrAplic, hrVend, vlLiquido, periodo, semanaKey, dia, arquivo: meta.name })
   }
   return result
 }
@@ -1782,4 +1809,18 @@ export async function listMecanicosROF042(year = new Date().getFullYear(), empre
   const nomes = new Set()
   for (const r of rows) if (r.produtivo) nomes.add(r.produtivo)
   return [...nomes].sort((a, b) => a.localeCompare(b, 'pt-BR'))
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CAMPANHA PÓS-VENDA — linhas brutas do ano (com dia) pra fato_campanha_diario
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Reaproveita os mesmos loaders (e o mesmo cache em memória) da Matriz KPIs — quando o sync
+// roda depois das fontes do extrator, os arquivos já estão em cache e nada é baixado de novo.
+// Sequencial de propósito (mesma disciplina de memória do resto do módulo).
+export async function getLinhasCampanha(year = new Date().getFullYear()) {
+  const recep  = await _loadAllRecepRows(year)
+  const rof042 = await _loadAllROF042Rows(year)
+  const rof096 = await _loadAllROF096Rows(year)
+  return { recep, rof042, rof096 }
 }

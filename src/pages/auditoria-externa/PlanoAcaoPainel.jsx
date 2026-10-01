@@ -1,6 +1,7 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react'
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
-import { Plus, Edit2, Trash2, CheckCircle2, RotateCcw, Clock, User, Eye, ChevronRight, ChevronDown, Filter, Users } from 'lucide-react'
+import { Plus, Edit2, Trash2, CheckCircle2, RotateCcw, Clock, User, Eye, ChevronRight, ChevronDown, Users, Settings, Filter } from 'lucide-react'
 import { useSessionState } from '../../hooks/useSessionState'
 import { useAuth } from '../../context/AuthContext'
 import { apiService } from '../../services/api'
@@ -13,7 +14,76 @@ import { STATUS_PLANO_MAP, Badge, fmtData, fmtMoeda, PercentualBar, compararPorC
 
 const PROXIMO_STATUS = { pendente: 'em_andamento', em_andamento: 'concluido', concluido: 'validado_auditoria' }
 const ANTERIOR_STATUS = { em_andamento: 'pendente', concluido: 'em_andamento', validado_auditoria: 'concluido' }
-const FILTROS_VAZIOS = { tipoAcaoId: '', empresaId: '', departamentoId: '', responsavelId: '', status: '' }
+const FILTROS_VAZIOS = { tipoAcaoId: '', tipoDivergenciaId: '', empresaId: '', departamentoId: '', responsavelId: '', status: '' }
+
+// Menu de ações da linha (Ação do Plano) — botão de engrenagem que abre um
+// painel com todas as ações disponíveis, em vez de vários ícones lado a lado.
+// Renderizado via portal (fora da tabela com scroll horizontal) pra não ficar
+// cortado pelo overflow do container.
+function AcoesPlanoDropdown({ itens }) {
+  const [aberto, setAberto] = useState(false)
+  const [pos, setPos] = useState(null)
+  const botaoRef = useRef(null)
+  const painelRef = useRef(null)
+
+  const fechar = useCallback(() => setAberto(false), [])
+
+  useEffect(() => {
+    if (!aberto) return
+    const onClickFora = (e) => {
+      if (botaoRef.current?.contains(e.target) || painelRef.current?.contains(e.target)) return
+      fechar()
+    }
+    document.addEventListener('mousedown', onClickFora)
+    window.addEventListener('scroll', fechar, true)
+    window.addEventListener('resize', fechar)
+    return () => {
+      document.removeEventListener('mousedown', onClickFora)
+      window.removeEventListener('scroll', fechar, true)
+      window.removeEventListener('resize', fechar)
+    }
+  }, [aberto, fechar])
+
+  const disponiveis = itens.filter(Boolean)
+  if (disponiveis.length === 0) return null
+
+  const abrir = () => {
+    const rect = botaoRef.current.getBoundingClientRect()
+    setPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right })
+    setAberto(true)
+  }
+
+  return (
+    <>
+      <button
+        ref={botaoRef}
+        onClick={() => (aberto ? fechar() : abrir())}
+        className="p-1.5 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors"
+        title="Mais ações"
+      >
+        <Settings className="h-3.5 w-3.5" />
+      </button>
+      {aberto && pos && createPortal(
+        <div
+          ref={painelRef}
+          style={{ position: 'fixed', top: pos.top, right: pos.right }}
+          className="w-52 bg-white border border-slate-200 rounded-lg shadow-lg z-50 py-1"
+        >
+          {disponiveis.map((item, i) => (
+            <button
+              key={i}
+              onClick={() => { fechar(); item.onClick() }}
+              className={`w-full flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-left transition-colors ${item.cor || 'text-slate-700 hover:bg-slate-50'}`}
+            >
+              <item.icon className="h-3.5 w-3.5 shrink-0" /> {item.label}
+            </button>
+          ))}
+        </div>,
+        document.body
+      )}
+    </>
+  )
+}
 
 export default function PlanoAcaoPainel() {
   const { user, hasPermission, hasActionOrDefault, isAdminEfetivo, empresasPermitidasAuditoriaEfetivas, departamentosPermitidosAuditoriaEfetivos } = useAuth()
@@ -38,7 +108,7 @@ export default function PlanoAcaoPainel() {
   const empresasEfetivas = verTodos ? new Set() : empresasPermitidasAuditoriaEfetivas
   const departamentosEfetivos = verTodos ? new Set() : departamentosPermitidosAuditoriaEfetivos
   const [filtros, setFiltros] = useSessionState('audext_plano_acao_filtros', FILTROS_VAZIOS)
-  const [filtrosAbertos, setFiltrosAbertos] = useSessionState('audext_plano_acao_filtros_abertos', false)
+  const [filtrosAbertos, setFiltrosAbertos] = useState(false)
   const [modalPlano, setModalPlano] = useState(null) // null | { tipo: 'novo', achadoId } | { tipo: 'editar', plano }
   const [achadoDetalhe, setAchadoDetalhe] = useState(null)
   const [achadoEditar, setAchadoEditar] = useState(null)
@@ -116,6 +186,14 @@ export default function PlanoAcaoPainel() {
     return Array.from(m, ([id, nome]) => ({ id, nome })).sort((a, b) => (a.nome || '').localeCompare(b.nome || '', 'pt-BR'))
   }
   const tiposAcaoDisponiveis = useMemo(() => opcoesUnicas('audext_tipos_acao', 'nome'), [planosVisiveis])
+  // Tipo de Divergência é campo do achado (não da ação) — deriva de achadosVisiveis.
+  const tiposDivergenciaDisponiveis = useMemo(() => {
+    const m = new Map()
+    for (const a of achadosVisiveis) {
+      if (a.audext_tipos_divergencia?.id) m.set(a.audext_tipos_divergencia.id, a.audext_tipos_divergencia.nome)
+    }
+    return Array.from(m, ([id, nome]) => ({ id, nome })).sort((a, b) => (a.nome || '').localeCompare(b.nome || '', 'pt-BR'))
+  }, [achadosVisiveis])
   const empresasDisponiveis = useMemo(() => {
     const m = new Map()
     for (const p of planosVisiveis) {
@@ -149,12 +227,15 @@ export default function PlanoAcaoPainel() {
       if (!planosPorAchado.has(p.achado_id)) planosPorAchado.set(p.achado_id, [])
       planosPorAchado.get(p.achado_id).push(p)
     }
-    let base = [...achadosVisiveis]
+    const achadosBase = filtros.tipoDivergenciaId
+      ? achadosVisiveis.filter(a => a.tipo_divergencia_id === filtros.tipoDivergenciaId)
+      : achadosVisiveis
+    let base = [...achadosBase]
       .sort(compararPorCodigo)
       .map(a => ({ achado: a, planosDoAchado: planosPorAchado.get(a.id) || [] }))
     if (hasFiltroAtivo) base = base.filter(l => l.planosDoAchado.length > 0)
     return base
-  }, [achadosVisiveis, planosVisiveis, hasFiltroAtivo, planoPassaFiltro])
+  }, [achadosVisiveis, planosVisiveis, hasFiltroAtivo, planoPassaFiltro, filtros.tipoDivergenciaId])
 
   // Divergências agrupadas por Ciclo de Auditoria.
   const gruposPorCiclo = useMemo(() => {
@@ -264,7 +345,7 @@ export default function PlanoAcaoPainel() {
             onClick={() => setFiltrosAbertos(v => !v)}
             className={`flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-semibold border transition-colors shrink-0 ${filtrosAbertos || hasFiltroAtivo ? 'bg-slate-700 text-white border-slate-700' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
           >
-            <Filter className="h-3.5 w-3.5" /> Filtro Avançado
+            <Filter className="h-3.5 w-3.5" /> Filtros avançados
             {hasFiltroAtivo && (
               <span className="ml-0.5 px-1.5 py-0.5 rounded-full text-[10px] bg-indigo-600 text-white font-bold leading-none">
                 {Object.values(filtros).filter(Boolean).length}
@@ -273,48 +354,57 @@ export default function PlanoAcaoPainel() {
           </button>
         </div>
         {filtrosAbertos && (
-          <div className="bg-white border border-slate-200 rounded-lg p-4 flex flex-wrap items-end gap-3">
-            <div className="flex flex-col gap-1">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Tipo de Ação</label>
-              <select value={filtros.tipoAcaoId} onChange={e => setFiltros(p => ({ ...p, tipoAcaoId: e.target.value }))} className="text-xs p-2 border border-slate-200 rounded-md min-w-[160px]">
-                <option value="">Todos</option>
-                {tiposAcaoDisponiveis.map(t => <option key={t.id} value={t.id}>{t.nome}</option>)}
-              </select>
-            </div>
+        <div className="bg-white border border-slate-200 rounded-lg p-4">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div className="flex flex-col gap-1">
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Empresa</label>
-              <select value={filtros.empresaId} onChange={e => setFiltros(p => ({ ...p, empresaId: e.target.value }))} className="text-xs p-2 border border-slate-200 rounded-md min-w-[160px]">
+              <select value={filtros.empresaId} onChange={e => setFiltros(p => ({ ...p, empresaId: e.target.value }))} className="w-full text-xs p-2 border border-slate-200 rounded-md">
                 <option value="">Todas</option>
                 {empresasDisponiveis.map(e => <option key={e.id} value={e.id}>{e.nome}</option>)}
               </select>
             </div>
             <div className="flex flex-col gap-1">
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Departamento</label>
-              <select value={filtros.departamentoId} onChange={e => setFiltros(p => ({ ...p, departamentoId: e.target.value }))} className="text-xs p-2 border border-slate-200 rounded-md min-w-[160px]">
+              <select value={filtros.departamentoId} onChange={e => setFiltros(p => ({ ...p, departamentoId: e.target.value }))} className="w-full text-xs p-2 border border-slate-200 rounded-md">
                 <option value="">Todos</option>
                 {departamentosDisponiveis.map(d => <option key={d.id} value={d.id}>{d.nome}</option>)}
               </select>
             </div>
             <div className="flex flex-col gap-1">
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Responsável</label>
-              <select value={filtros.responsavelId} onChange={e => setFiltros(p => ({ ...p, responsavelId: e.target.value }))} className="text-xs p-2 border border-slate-200 rounded-md min-w-[160px]">
+              <select value={filtros.responsavelId} onChange={e => setFiltros(p => ({ ...p, responsavelId: e.target.value }))} className="w-full text-xs p-2 border border-slate-200 rounded-md">
                 <option value="">Todos</option>
                 {responsaveisDisponiveis.map(r => <option key={r.id} value={r.id}>{r.nome}</option>)}
               </select>
             </div>
             <div className="flex flex-col gap-1">
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Status</label>
-              <select value={filtros.status} onChange={e => setFiltros(p => ({ ...p, status: e.target.value }))} className="text-xs p-2 border border-slate-200 rounded-md min-w-[160px]">
+              <select value={filtros.status} onChange={e => setFiltros(p => ({ ...p, status: e.target.value }))} className="w-full text-xs p-2 border border-slate-200 rounded-md">
                 <option value="">Todos</option>
                 {statusDisponiveis.map(([value, s]) => <option key={value} value={value}>{s.label}</option>)}
               </select>
             </div>
-            {hasFiltroAtivo && (
-              <button onClick={handleLimparFiltros} className="flex items-center gap-1 text-[11px] font-semibold text-slate-500 hover:text-slate-700 px-2 py-1.5">
-                <RotateCcw className="h-3 w-3" /> Limpar filtros
-              </button>
-            )}
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Tipo de Ação</label>
+              <select value={filtros.tipoAcaoId} onChange={e => setFiltros(p => ({ ...p, tipoAcaoId: e.target.value }))} className="w-full text-xs p-2 border border-slate-200 rounded-md">
+                <option value="">Todos</option>
+                {tiposAcaoDisponiveis.map(t => <option key={t.id} value={t.id}>{t.nome}</option>)}
+              </select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Tipo de Divergência</label>
+              <select value={filtros.tipoDivergenciaId} onChange={e => setFiltros(p => ({ ...p, tipoDivergenciaId: e.target.value }))} className="w-full text-xs p-2 border border-slate-200 rounded-md">
+                <option value="">Todos</option>
+                {tiposDivergenciaDisponiveis.map(t => <option key={t.id} value={t.id}>{t.nome}</option>)}
+              </select>
+            </div>
           </div>
+          {hasFiltroAtivo && (
+            <button onClick={handleLimparFiltros} className="flex items-center gap-1 text-[11px] font-semibold text-slate-500 hover:text-slate-700 px-2 py-1.5 mt-2">
+              <RotateCcw className="h-3 w-3" /> Limpar filtros
+            </button>
+          )}
+        </div>
         )}
       </div>
 
@@ -330,6 +420,7 @@ export default function PlanoAcaoPainel() {
             const totalApontadoCiclo = linhasDoCiclo.reduce((s, l) => s + Number(l.achado.total_apontado || 0), 0)
             const totalCorrigidoCiclo = linhasDoCiclo.reduce((s, l) => s + Number(l.achado.valor_corrigido || 0), 0)
             const pctCorrigidoCiclo = totalApontadoCiclo > 0 ? Math.round((totalCorrigidoCiclo / totalApontadoCiclo) * 100) : 0
+            const diferencaCiclo = totalApontadoCiclo - totalCorrigidoCiclo
             return (
               <div key={cicloId || 'sem-ciclo'}>
                 {/* Cabeçalho do Ciclo — mesmo padrão do cabeçalho de departamento em Planejamento */}
@@ -345,14 +436,17 @@ export default function PlanoAcaoPainel() {
                       {ciclo?.proj_empresas?.nome || '—'} · {ciclo?.periodo_competencia || '—'}
                     </span>
                   </div>
-                  <div className="flex items-center gap-4 shrink-0">
-                    <span className="text-xs opacity-80 font-medium whitespace-nowrap">
-                      Total Apurado: <strong className="font-bold">{fmtMoeda(totalApontadoCiclo)}</strong>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <span className="text-[10px] opacity-80 font-medium whitespace-nowrap">
+                      Apontado: <strong className="font-bold">{fmtMoeda(totalApontadoCiclo)}</strong>
                     </span>
-                    <span className="text-xs opacity-80 font-medium whitespace-nowrap">
-                      Total Corrigido: <strong className="font-bold text-emerald-300">{fmtMoeda(totalCorrigidoCiclo)} ({pctCorrigidoCiclo}%)</strong>
+                    <span className="text-[10px] opacity-80 font-medium whitespace-nowrap">
+                      Corrigido: <strong className="font-bold text-emerald-300">{fmtMoeda(totalCorrigidoCiclo)} ({pctCorrigidoCiclo}%)</strong>
                     </span>
-                    <span className="text-xs opacity-80 font-medium shrink-0">
+                    <span className="text-[10px] opacity-80 font-medium whitespace-nowrap">
+                      Diferença: <strong className="font-bold">{fmtMoeda(diferencaCiclo)}</strong>
+                    </span>
+                    <span className="text-[10px] opacity-80 font-medium shrink-0">
                       {linhasDoCiclo.length} divergência{linhasDoCiclo.length !== 1 ? 's' : ''}
                     </span>
                   </div>
@@ -379,6 +473,12 @@ export default function PlanoAcaoPainel() {
                       <span className="font-bold text-slate-900 text-[13px]">{achado.titulo}</span>
                     </div>
                     <p className="text-[10px] text-slate-500 mt-0.5">
+                      {achado.audext_tipos_divergencia?.nome && (
+                        <>
+                          Tipo de Divergência: <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 font-semibold">{achado.audext_tipos_divergencia.nome}</span>
+                          {' · '}
+                        </>
+                      )}
                       Total Apontado: <strong className="text-slate-700">{fmtMoeda(achado.total_apontado)}</strong>
                       {' · '}
                       <span className="text-emerald-700 font-bold">Corrigido: {fmtMoeda(achado.valor_corrigido)}</span>
@@ -399,31 +499,13 @@ export default function PlanoAcaoPainel() {
                   <div className="w-28 shrink-0" onClick={e => e.stopPropagation()}>
                     <PercentualBar value={calcularPercentualAtingidoAchado(achado)} editable={false} onSave={() => {}} />
                   </div>
-                  <button
-                    onClick={e => { e.stopPropagation(); setAchadoDetalhe(achado) }}
-                    className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded transition-colors shrink-0"
-                    title="Visualizar Divergência"
-                  >
-                    <Eye className="h-3.5 w-3.5" />
-                  </button>
-                  {canEditarAchado && (
-                    <button
-                      onClick={e => { e.stopPropagation(); setAchadoEditar(achado) }}
-                      className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-100 rounded transition-colors shrink-0"
-                      title="Editar Divergência"
-                    >
-                      <Edit2 className="h-3.5 w-3.5" />
-                    </button>
-                  )}
-                  {canEditar && (
-                    <button
-                      onClick={e => { e.stopPropagation(); setModalPlano({ tipo: 'novo', achadoId: achado.id }) }}
-                      className="flex items-center gap-1 text-[11px] font-semibold text-blue-600 hover:text-blue-800 shrink-0 whitespace-nowrap"
-                      title="Adicionar Ação"
-                    >
-                      <Plus className="h-3.5 w-3.5" /> Ação
-                    </button>
-                  )}
+                  <div className="shrink-0" onClick={e => e.stopPropagation()}>
+                    <AcoesPlanoDropdown itens={[
+                      { icon: Eye, label: 'Visualizar', onClick: () => setAchadoDetalhe(achado) },
+                      canEditarAchado && { icon: Edit2, label: 'Editar', onClick: () => setAchadoEditar(achado) },
+                      canEditar && { icon: Plus, label: 'Adicionar Ação', onClick: () => setModalPlano({ tipo: 'novo', achadoId: achado.id }) },
+                    ]} />
+                  </div>
                 </div>
 
                 {/* Tabela de Ações da Divergência — só existe/aparece quando expandida */}
@@ -441,7 +523,7 @@ export default function PlanoAcaoPainel() {
                           <th className="px-3 py-2 text-right w-28">Total Apontado</th>
                           <th className="px-3 py-2 text-right w-28">Valor Corrigido</th>
                           <th className="px-3 py-2 text-left w-36">Status / % Atingido</th>
-                          <th className="px-2 py-2 w-28 text-center">Ações</th>
+                          <th className="px-2 py-2 w-24 text-center">Ações</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -462,7 +544,7 @@ export default function PlanoAcaoPainel() {
                               </td>
                               <td className="px-3 py-2.5 text-slate-600 whitespace-nowrap">{(plano.dim_empresas?.empresa_fantasia || plano.dim_empresas?.nome_empresa) || <span className="text-slate-300">—</span>}</td>
                               <td className="px-3 py-2.5 text-slate-600">{plano.proj_departamentos?.nome || <span className="text-slate-300">—</span>}</td>
-                              <td className="px-3 py-2.5 text-slate-600">
+                              <td className="px-3 py-2.5 text-slate-600 whitespace-nowrap">
                                 {plano.proj_responsaveis?.nome ? (
                                   <span className="flex items-center gap-1"><User className="h-3 w-3" /> {plano.proj_responsaveis.nome}</span>
                                 ) : <span className="text-slate-300">—</span>}
@@ -482,13 +564,11 @@ export default function PlanoAcaoPainel() {
                               </td>
                               <td className="px-2 py-2.5">
                                 <div className="flex items-center justify-center gap-1.5">
-                                  <button onClick={() => setPlanoDetalhe(plano)} className="p-1.5 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors" title="Visualizar"><Eye className="h-3.5 w-3.5" /></button>
-                                  {canEditar && (
-                                    <button onClick={() => setModalPlano({ tipo: 'editar', plano })} className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors" title="Editar"><Edit2 className="h-3.5 w-3.5" /></button>
-                                  )}
-                                  {canExcluirPlano && (
-                                    <button onClick={() => handleExcluir(plano)} className="p-1.5 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded transition-colors" title="Excluir"><Trash2 className="h-3.5 w-3.5" /></button>
-                                  )}
+                                  <AcoesPlanoDropdown itens={[
+                                    { icon: Eye, label: 'Visualizar', onClick: () => setPlanoDetalhe(plano) },
+                                    canEditar && { icon: Edit2, label: 'Editar', onClick: () => setModalPlano({ tipo: 'editar', plano }) },
+                                    canExcluirPlano && { icon: Trash2, label: 'Excluir', onClick: () => handleExcluir(plano), cor: 'text-red-600 hover:bg-red-50' },
+                                  ]} />
                                   {podeVoltar && (
                                     <button onClick={() => handleVoltar(plano)} className="p-1.5 text-slate-500 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors" title={`Voltar para ${STATUS_PLANO_MAP[anterior].label}`}>
                                       <RotateCcw className="h-3.5 w-3.5" />

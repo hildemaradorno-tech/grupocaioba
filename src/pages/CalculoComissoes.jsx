@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useSessionState } from '../hooks/useSessionState'
-import { PlayCircle, Loader2, AlertTriangle, Save, X, ShieldCheck, Lock, ArrowUp, ArrowDown, ArrowUpDown, Trash2, ChevronDown, ChevronRight, ChevronLeft, FileDown, Calculator } from 'lucide-react'
+import { PlayCircle, Loader2, AlertTriangle, Save, X, ShieldCheck, Lock, ArrowUp, ArrowDown, ArrowUpDown, Trash2, ChevronDown, ChevronRight, ChevronLeft, FileDown, Calculator, Wallet, RefreshCw, CheckCircle2 } from 'lucide-react'
 import { apiService } from '../services/api'
 import { useAuth } from '../context/AuthContext'
 import { buscaComCoringa } from '../utils/buscaTexto'
 import { passaEscopoComissao, departamentoSoVisualizacao } from '../utils/permissoesComissao'
-import { useFeriasStatus } from '../context/FeriasStatusContext'
+import { FeriasStatusProvider, useFeriasStatus } from '../context/FeriasStatusContext'
 
 // Sentinela pra funcionário sem departamento algum (departamento_ids vazio) — sem isso não tem
 // como selecionar essa "aba" na tela pra conferir/excluir o histórico desse grupo.
@@ -19,6 +19,37 @@ const ROTULO_ACAO_HISTORICO = {
   PROCESSADO: 'Processado p/ pagamento',
   REPROCESSAMENTO_AUTORIZADO: 'Reprocessamento autorizado',
   REPROCESSAMENTO_SALVO: 'Correção salva — conferência do DP reaberta',
+}
+
+// Botão "Atualizar Férias"/"Férias Atualizadas" no cabeçalho — esta tela publica o status em
+// FeriasStatusContext (mesmo padrão de KpiSourceStatusContext) e mostra aqui, já que virou
+// página própria (antes ficava no título compartilhado de FolhaPagamentoDaf.jsx).
+function BotaoStatusFerias() {
+  const navigate = useNavigate()
+  const { status } = useFeriasStatus()
+  if (status.desatualizada) {
+    return (
+      <button
+        onClick={() => navigate('/ferias')}
+        title="A data de modificação do arquivo de férias não é do mês do período selecionado — atualize antes de calcular (Calcular Comissões fica bloqueado até lá)"
+        className="flex items-center gap-1.5 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 hover:bg-amber-100 px-3 py-2 rounded-md transition-colors"
+      >
+        <RefreshCw className="h-4 w-4" /> Atualizar Férias
+      </button>
+    )
+  }
+  if (status.atualizada) {
+    return (
+      <button
+        onClick={() => navigate('/ferias')}
+        title="O arquivo de férias já está atualizado com o mês do período selecionado"
+        className="flex items-center gap-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 px-3 py-2 rounded-md transition-colors"
+      >
+        <CheckCircle2 className="h-4 w-4" /> Férias Atualizadas
+      </button>
+    )
+  }
+  return null
 }
 
 function FiltroMultiSelect({ placeholder, opcoes, selecionados, onChange }) {
@@ -156,6 +187,13 @@ const regrasDoGrupo = (itens) => {
 // Aplica o percentual/valor fixo da política sobre um valor base já apurado — usado tanto pro
 // total da linha quanto pro detalhamento por empresa (mesma regra, valor base diferente).
 function calcularComissaoSobre(c, valorBase, metaMap, baseComissaoMetaMap) {
+  // Desconto configurado na própria Base de Cálculo (ex: 14,25% de imposto de venda) — vale
+  // SEMPRE que essa Base for usada (política com % fixo, R$ Valor, ou qualquer Regra por faixa),
+  // tirando esse % do valor bruto lido antes de qualquer cálculo. A partir daqui trabalha com o
+  // valor LÍQUIDO; 0/sem desconto = líquido igual ao bruto (comportamento de sempre).
+  const descontoPct = parseFloat(c.base?.desconto_percentual) || 0
+  const valorLiquido = descontoPct > 0 ? valorBase * (1 - descontoPct / 100) : valorBase
+
   // Política com Regra (faixas sobre o valor da Base): a primeira faixa, na ordem cadastrada,
   // que casa com o valor apurado (ou com o % de meta atingida) define o percentual, aplicado
   // sobre o valor todo da Base.
@@ -169,14 +207,14 @@ function calcularComissaoSobre(c, valorBase, metaMap, baseComissaoMetaMap) {
       // Sem meta cadastrada (Planejamento de Metas) pro funcionário/mês/tipo: vira pendência —
       // nunca calcula como se a meta fosse 0, que pagaria a faixa mais baixa por engano.
       const meta = metaMap?.[`${c.func.id}|${regra.meta_tipo}`]
-      if (!meta || meta <= 0) return { percentual: null, valorFixo: null, valorComissao: null, semMeta: true }
-      const percentualAtingido = (valorBase / meta) * 100
+      if (!meta || meta <= 0) return { percentual: null, valorFixo: null, valorComissao: null, semMeta: true, valorApurado: valorLiquido, valorBruto: valorBase, descontoPct }
+      const percentualAtingido = (valorLiquido / meta) * 100
       const faixa = [...regra.faixas].sort((a, b) => a.ordem - b.ordem).find(f => casaComValor(f, percentualAtingido))
       if (regra.tipo_faixa === 'VALOR_FIXO_META') {
         // Paga um valor FIXO em R$ conforme a faixa de % atingido — não multiplica nada, não
         // depende de nenhuma outra política.
         const valorFixoFaixa = faixa ? parseFloat(faixa.percentual) : 0
-        return { percentual: null, valorFixo: valorFixoFaixa, valorComissao: valorFixoFaixa, percentualAtingido, meta, valorApurado: valorBase }
+        return { percentual: null, valorFixo: valorFixoFaixa, valorComissao: valorFixoFaixa, percentualAtingido, meta, valorApurado: valorLiquido, valorBruto: valorBase, descontoPct }
       }
       const percentual = faixa ? parseFloat(faixa.percentual) : 0
       // O valor apurado da própria Base (ex: Faturamento Total) só serve pra achar QUAL % se
@@ -184,11 +222,11 @@ function calcularComissaoSobre(c, valorBase, metaMap, baseComissaoMetaMap) {
       // marcadas em "Políticas que formam a Base da Comissão" (cadastro da Regra), do mesmo
       // funcionário, não do valor apurado aqui.
       const baseComissao = baseComissaoMetaMap?.get(`${c.func.id}::${regra.id}`) ?? 0
-      return { percentual, valorFixo: null, valorComissao: baseComissao * (percentual / 100), percentualAtingido, meta, valorApurado: valorBase, baseComissao }
+      return { percentual, valorFixo: null, valorComissao: baseComissao * (percentual / 100), percentualAtingido, meta, valorApurado: valorLiquido, valorBruto: valorBase, descontoPct, baseComissao }
     }
-    const faixa = [...regra.faixas].sort((a, b) => a.ordem - b.ordem).find(f => casaComValor(f, valorBase))
+    const faixa = [...regra.faixas].sort((a, b) => a.ordem - b.ordem).find(f => casaComValor(f, valorLiquido))
     const percentual = faixa ? parseFloat(faixa.percentual) : 0
-    return { percentual, valorFixo: null, valorComissao: valorBase * (percentual / 100) }
+    return { percentual, valorFixo: null, valorComissao: valorLiquido * (percentual / 100), valorApurado: valorLiquido, valorBruto: valorBase, descontoPct }
   }
   const tipo = tipoComissaoPorBase(c)
   const percentualPorNome = tipo === '% Peças' ? c.politica.comissao_pecas
@@ -199,9 +237,9 @@ function calcularComissaoSobre(c, valorBase, metaMap, baseComissaoMetaMap) {
   // R$ Valor é um multiplicador por unidade apurada (ex: R$ 0,60 por hora vendida):
   // comissão = Valor × R$ Valor. Os percentuais continuam sendo Valor × %.
   const valorComissao = valorFixo != null
-    ? valorBase * parseFloat(valorFixo)
-    : percentual != null ? valorBase * (parseFloat(percentual) / 100) : 0
-  return { percentual, valorFixo, valorComissao }
+    ? valorLiquido * parseFloat(valorFixo)
+    : percentual != null ? valorLiquido * (parseFloat(percentual) / 100) : 0
+  return { percentual, valorFixo, valorComissao, valorApurado: valorLiquido, valorBruto: valorBase, descontoPct }
 }
 
 // Se o Nome da Base indicar Peças/Serviços, devolve o rótulo correspondente — usado tanto pra
@@ -218,7 +256,7 @@ const tipoComissaoPorBase = (c) => {
 // duplicar ~1900 linhas de lógica de lote/departamento/PDF (só essa 1 filtragem muda entre as
 // duas). Chaves de sessão (período) ganham sufixo quando não é o padrão, pra cada aba guardar seu
 // próprio período sem um sobrescrever o outro no localStorage.
-export default function CalculoComissoes({ agrupamentoNome = 'Caiobá Trucks' } = {}) {
+function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo = 'Comissões - DAF' } = {}) {
   const navigate = useNavigate()
   const { user, hasAction, hasPermission, comissaoEscopoEfetivo, comissaoNivelDepartamentoEfetivo } = useAuth()
   const podeCalcular = hasAction('calculo-comissoes', 'calcular')
@@ -250,6 +288,7 @@ export default function CalculoComissoes({ agrupamentoNome = 'Caiobá Trucks' } 
   const [salvando, setSalvando] = useState(false)
   const [salvo, setSalvo] = useState(false)
   const [regraModal, setRegraModal] = useState(null) // { nome, baseNome, faixas } da regra aberta na telinha
+  const [colunaModal, setColunaModal] = useState(null) // { baseNome, colunas: [{coluna,valor}], total } — Base sem Regra, com Venda/Devolução separadas
   const [valoresPorFuncionario, setValoresPorFuncionario] = useState({})
   // Detalhamento por empresa (política Nível EMPRESA com "Detalhar por empresa" marcado) —
   // chaveLinha(c) -> [{ empresa, valorBase, valorComissao }]. Só existe em memória depois de
@@ -557,9 +596,8 @@ export default function CalculoComissoes({ agrupamentoNome = 'Caiobá Trucks' } 
   }, [])
   const feriasDesatualizada = !!(mesArquivoFerias && mesArquivoFerias < mesAtualReal)
   const feriasAtualizada = !!(mesArquivoFerias && mesArquivoFerias >= mesAtualReal)
-  // Publica pro título compartilhado da página (FolhaPagamentoDaf.jsx) poder mostrar o botão
-  // "Atualizar Férias"/"Férias Atualizadas" na mesma linha de "Comissões Pós-Vendas" — sem isso o
-  // botão ficava preso dentro desta tela, abaixo das abas.
+  // Publica pro BotaoStatusFerias (cabeçalho desta própria tela) mostrar "Atualizar Férias"/
+  // "Férias Atualizadas".
   const { setStatus: setFeriasStatus } = useFeriasStatus()
   useEffect(() => {
     setFeriasStatus({ desatualizada: feriasDesatualizada, atualizada: feriasAtualizada })
@@ -983,6 +1021,7 @@ export default function CalculoComissoes({ agrupamentoNome = 'Caiobá Trucks' } 
         colunaData: c.fonte.coluna_data,
         colunaFuncionario: c.fonte.coluna_funcionario || null,
         colunaValor: c.base.coluna_valor,
+        colunaTipoMovimento: c.base.coluna_tipo_movimento || null,
         tipoAgregacao: c.base.tipo_agregacao,
         regras: regrasPorBase[c.base.id] || [],
         funcionarioNome: c.politica.nivel_calculo === 'INDIVIDUAL' ? c.func.nome_funcionario : null,
@@ -1099,15 +1138,19 @@ export default function CalculoComissoes({ agrupamentoNome = 'Caiobá Trucks' } 
           const chave = chaveLinha(c)
           const r = resultadosPorId.get(chave)
           if (!r) return
-          const valorApurado = r.valor ?? 0
-          const { percentual, valorFixo, valorComissao, semMeta, percentualAtingido, meta, baseComissao } = calcularComissaoSobre(c, valorApurado, metaMap, baseComissaoMetaMap)
+          const valorLido = r.valor ?? 0
+          const { percentual, valorFixo, valorComissao, semMeta, percentualAtingido, meta, baseComissao, valorApurado, valorBruto, descontoPct } = calcularComissaoSobre(c, valorLido, metaMap, baseComissaoMetaMap)
           novo[chave] = {
-            // Pro Prêmio (% Meta), "Base Comissão" na tabela é o que a % realmente multiplicou
-            // (Individual+Equipe) — o valor apurado da própria Base fica só no campo valorApurado,
-            // usado na telinha da Regra pra mostrar contra o que a Meta foi comparada.
-            valorBase: baseComissao != null ? baseComissao : valorApurado,
+            // Pro Prêmio (% Meta/Valor Fixo), "Base Comissão" na tabela é o que a % realmente
+            // multiplicou (Individual+Equipe) — o valor apurado (já líquido, se a Regra tiver
+            // Desconto) fica só no campo valorApurado, usado na telinha pra mostrar contra o que
+            // a Meta foi comparada. Sem Prêmio, valorBase já É o valor apurado (líquido, se houver
+            // desconto) — antes não tinha desconto nenhum, então isso não muda nada de antes.
+            valorBase: baseComissao != null ? baseComissao : (valorApurado ?? valorLido),
             valorApurado: baseComissao != null ? valorApurado : undefined,
+            valorBruto, descontoPct,
             valorComissao, percentual, valorFixo, semMeta, percentualAtingido, meta,
+            valorPorColuna: r.valor_por_coluna || r.valor_por_movimento || null,
             totalLinhasFonte: r.total_linhas_fonte, totalLinhasFiltradas: r.total_linhas_filtradas,
             periodoInicio: c.segInicio || periodoInicio,
             periodoFim: c.segFim || periodoFim,
@@ -1555,9 +1598,17 @@ export default function CalculoComissoes({ agrupamentoNome = 'Caiobá Trucks' } 
   return (
     <div className="p-6 space-y-4 max-w-screen-xl">
 
-      {/* Sem cabeçalho aqui: a página que hospeda esta tela (Comissões Pós-Vendas, em
-          FolhaPagamentoDaf.jsx) já mostra o título e o botão de Férias acima das abas — ver
-          FeriasStatusContext, que esta tela alimenta. */}
+      {/* CABEÇALHO */}
+      <div className="flex items-center justify-between border-b border-slate-200 pb-4">
+        <div>
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
+            <Wallet className="h-5 w-5 text-blue-600" />
+            {titulo}
+          </h1>
+          <p className="text-xs text-slate-500">Calcule, confira e envie pra aprovação as comissões do período — por empresa e departamento.</p>
+        </div>
+        <BotaoStatusFerias />
+      </div>
 
       {erro && (
         <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-md px-3 py-2 text-red-700 text-xs leading-relaxed">
@@ -2044,10 +2095,23 @@ export default function CalculoComissoes({ agrupamentoNome = 'Caiobá Trucks' } 
                                           metaTipoLabel: TIPOS_META_LABEL[c.politica.regra_comissao.meta_tipo] || c.politica.regra_comissao.meta_tipo,
                                           semMeta: res?.semMeta, meta: res?.meta, percentualAtingido: res?.percentualAtingido,
                                           valorApurado: res?.valorApurado ?? res?.valorBase, baseComissao: res?.valorApurado != null ? res?.valorBase : null,
-                                          segmentos: res?.segmentos,
+                                          valorBruto: res?.valorBruto, descontoPct: res?.descontoPct,
+                                          segmentos: res?.segmentos, valorPorColuna: res?.valorPorColuna,
                                         })}
                                         title="Ver a regra desta comissão"
                                         className="ml-1.5 align-middle inline-flex items-center justify-center w-5 h-5 rounded border border-indigo-200 bg-white text-indigo-600 hover:bg-indigo-50 transition-colors">
+                                        <Calculator className="h-3 w-3" />
+                                      </button>
+                                    )}
+                                    {!(c.politica.usa_faixa === 'SIM' && c.politica.regra_comissao?.id) && res?.valorPorColuna?.length > 0 && (
+                                      <button type="button"
+                                        onClick={() => setColunaModal({
+                                          baseNome: c.base?.nome,
+                                          colunas: res.valorPorColuna,
+                                          total: res.valorBase,
+                                        })}
+                                        title="Ver Venda/Devolução separadas desta Base"
+                                        className="ml-1.5 align-middle inline-flex items-center justify-center w-5 h-5 rounded border border-blue-200 bg-white text-blue-600 hover:bg-blue-50 transition-colors">
                                         <Calculator className="h-3 w-3" />
                                       </button>
                                     )}
@@ -2140,20 +2204,51 @@ export default function CalculoComissoes({ agrupamentoNome = 'Caiobá Trucks' } 
                   </div>
                 ))}
               </div>
+              {/* Entradas/Saídas (ou Venda/Devolução, Serviço/Revisão etc.) que compõem o valor
+                  apurado dessa Base — mesmo detalhamento da calculadora das comissões sem Regra,
+                  só que aqui embutido na telinha da Regra. */}
+              {regraModal.valorPorColuna?.length > 0 && (
+                <div className="rounded-md border border-slate-200 divide-y divide-slate-100">
+                  {regraModal.valorPorColuna.map((col, i) => (
+                    <div key={i} className="flex items-center justify-between px-3 py-2 text-xs">
+                      <span className="font-mono text-slate-600">{col.coluna}</span>
+                      <span className="font-mono font-semibold text-slate-700">{fmtBRL(col.valor)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
               {/* Valores apurados da Base do Prêmio e a Meta comparada — sempre que a Regra
                   envolver Meta, mesmo sem meta cadastrada (aí dá pra ver o que já foi realizado,
                   mesmo sem saber ainda em qual faixa/classificação vai cair). Um valor por
-                  período quando há segmentos (ex: férias no meio do mês). */}
+                  período quando há segmentos (ex: férias no meio do mês) — sempre em BRUTO (é o
+                  que foi lido de cada arquivo); o Desconto (se a Regra tiver) e o valor líquido
+                  aparecem depois, já no total. */}
               {regraModal.porMeta && (
                 <div className="rounded-md border border-sky-200 overflow-hidden">
                   <div className="px-3 py-1.5 bg-sky-50 border-b border-sky-100 text-[10px] font-bold text-sky-700 uppercase tracking-wide">Valores apurados (comparados com a Meta)</div>
                   <div className="divide-y divide-slate-100">
-                    {(regraModal.segmentos?.length > 0 ? regraModal.segmentos : [{ dataInicio: null, dataFim: null, valorBase: regraModal.valorApurado }]).map((s, i) => (
+                    {(regraModal.segmentos?.length > 0 ? regraModal.segmentos : [{ dataInicio: null, dataFim: null, valorBase: regraModal.valorBruto }]).map((s, i) => (
                       <div key={i} className="flex items-center justify-between px-3 py-1.5 text-[11px]">
                         <span className="font-mono text-slate-500">{s.dataInicio && s.dataFim ? `${fmtDiaMes(s.dataInicio)} a ${fmtDiaMes(s.dataFim)}` : 'Período apurado'}</span>
                         <span className="font-mono font-semibold text-slate-700">{fmtBRL(s.valorBase)}</span>
                       </div>
                     ))}
+                    {!!regraModal.descontoPct && (
+                      <>
+                        <div className="flex items-center justify-between px-3 py-1.5 text-[11px]">
+                          <span className="text-slate-500">Total bruto</span>
+                          <span className="font-mono font-semibold text-slate-700">{fmtBRL(regraModal.valorBruto)}</span>
+                        </div>
+                        <div className="flex items-center justify-between px-3 py-1.5 text-[11px]">
+                          <span className="text-amber-600">Desconto ({fmtPct(regraModal.descontoPct)})</span>
+                          <span className="font-mono font-semibold text-amber-600">− {fmtBRL(regraModal.valorBruto - regraModal.valorApurado)}</span>
+                        </div>
+                        <div className="flex items-center justify-between px-3 py-1.5 text-[11px]">
+                          <span className="font-semibold text-slate-600">Valor líquido</span>
+                          <span className="font-mono font-bold text-slate-800">{fmtBRL(regraModal.valorApurado)}</span>
+                        </div>
+                      </>
+                    )}
                     <div className="flex items-center justify-between px-3 py-1.5 bg-slate-50 text-[11px]">
                       <span className="font-semibold text-slate-600">Meta</span>
                       <span className={`font-mono font-semibold ${regraModal.semMeta ? 'text-amber-600' : 'text-slate-700'}`}>
@@ -2162,7 +2257,7 @@ export default function CalculoComissoes({ agrupamentoNome = 'Caiobá Trucks' } 
                     </div>
                   </div>
                   <div className="flex items-center justify-between px-3 py-2 bg-sky-50 border-t border-sky-100 text-[11px] font-bold">
-                    <span className="text-slate-700">Total apurado · % Atingido</span>
+                    <span className="text-slate-700">{regraModal.descontoPct ? 'Comparado (líquido) · % Atingido' : 'Total apurado · % Atingido'}</span>
                     <span>
                       <span className="text-slate-800">{fmtBRL(regraModal.valorApurado)}</span>
                       <span className="mx-1.5 text-slate-300">·</span>
@@ -2171,6 +2266,15 @@ export default function CalculoComissoes({ agrupamentoNome = 'Caiobá Trucks' } 
                       </span>
                     </span>
                   </div>
+                </div>
+              )}
+              {/* Valor bruto → Desconto → líquido pra Regra por Valor da Base (sem Meta) — a
+                  faixa e a comissão foram calculadas sobre o líquido, não sobre o bruto lido. */}
+              {!regraModal.porMeta && !!regraModal.descontoPct && (
+                <div className="rounded-md border border-amber-200 bg-amber-50/60 px-3 py-2 text-[11px] text-slate-600 space-y-1">
+                  <div className="flex items-center justify-between"><span>Valor bruto apurado</span><span className="font-mono font-semibold text-slate-700">{fmtBRL(regraModal.valorBruto)}</span></div>
+                  <div className="flex items-center justify-between"><span className="text-amber-600">Desconto ({fmtPct(regraModal.descontoPct)})</span><span className="font-mono font-semibold text-amber-600">− {fmtBRL(regraModal.valorBruto - regraModal.valorApurado)}</span></div>
+                  <div className="flex items-center justify-between"><span className="font-semibold text-slate-700">Valor líquido (usado na faixa)</span><span className="font-mono font-bold text-slate-800">{fmtBRL(regraModal.valorApurado)}</span></div>
                 </div>
               )}
               {/* Base da Comissão em R$: soma das políticas marcadas no cadastro da Regra — é
@@ -2193,6 +2297,44 @@ export default function CalculoComissoes({ agrupamentoNome = 'Caiobá Trucks' } 
         </div>
       )}
 
+      {colunaModal && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setColunaModal(null)}>
+          <div className="bg-white rounded-lg border border-slate-200 w-full max-w-[380px] shadow-xl overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50">
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <Calculator className="h-4 w-4 text-blue-600" /> Venda / Devolução
+              </h3>
+              <button onClick={() => setColunaModal(null)} className="text-slate-400 hover:text-slate-600"><X className="h-4 w-4" /></button>
+            </div>
+            <div className="p-5 space-y-3">
+              {colunaModal.baseNome && (
+                <div className="text-[11px] text-slate-500">Base de Cálculo: <span className="font-semibold text-slate-700">{colunaModal.baseNome}</span></div>
+              )}
+              <div className="rounded-md border border-slate-200 divide-y divide-slate-100">
+                {colunaModal.colunas.map((col, i) => (
+                  <div key={i} className="flex items-center justify-between px-3 py-2 text-xs">
+                    <span className="font-mono text-slate-600">{col.coluna}</span>
+                    <span className="font-mono font-semibold text-slate-700">{fmtBRL(col.valor)}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="flex items-center justify-between px-3 py-2 rounded-md bg-blue-50 border border-blue-200 text-xs font-bold">
+                <span className="text-slate-700">Total (Base de Cálculo)</span>
+                <span className="font-mono text-blue-700">{fmtBRL(colunaModal.total)}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
+  )
+}
+
+export default function CalculoComissoes(props) {
+  return (
+    <FeriasStatusProvider>
+      <CalculoComissoesConteudo {...props} />
+    </FeriasStatusProvider>
   )
 }

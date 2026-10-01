@@ -22,7 +22,7 @@ import { lerAoAMicrowork, mesesDoIntervalo } from './microworkFonteCalculo.js'
 function chaveGrupo(item) {
   return [
     item.microwork ? `mw:${item.microwork.id}` : '', item.pastaSharepoint, item.prefixoArquivo, item.usaSubpastaAno, item.subpastaPadrao || '', item.linhaCabecalho || 0,
-    item.colunaEmpresa, item.colunaData, item.colunaValor, item.colunaFuncionario || '',
+    item.colunaEmpresa, item.colunaData, item.colunaValor, item.colunaTipoMovimento || '', item.colunaFuncionario || '',
     item.tipoAgregacao, JSON.stringify(item.regras || []),
   ].join('|')
 }
@@ -30,7 +30,7 @@ function chaveGrupo(item) {
 // Processa UM arquivo, acumulando em paralelo para todos os itens do grupo que passam
 // pelo arquivo (via mapas de lookup por empresa e por empresa+funcionário — O(1) por linha,
 // não um loop sobre os itens a cada linha).
-function agregarArquivoParaGrupo(aoa, linha0, itensDoGrupo, colunaEmpresa, colunaData, colunaValor, colunaFuncionario, regrasCru, tipoAgregacao, contadorGrupo) {
+function agregarArquivoParaGrupo(aoa, linha0, itensDoGrupo, colunaEmpresa, colunaData, colunaValor, colunaTipoMovimento, colunaFuncionario, regrasCru, tipoAgregacao, contadorGrupo) {
   if (aoa.length === 0) return
 
   const cabecalho = aoa[0]
@@ -39,6 +39,15 @@ function agregarArquivoParaGrupo(aoa, linha0, itensDoGrupo, colunaEmpresa, colun
   // Coluna do Valor aceita somar mais de uma coluna, separadas por "+" (ex: "totalservico+totalrevisao").
   const idxsValor = colunaValor.split('+').map(c => cabecalho.indexOf(c.trim())).filter(i => i >= 0)
   const idxFuncionario = colunaFuncionario ? cabecalho.indexOf(colunaFuncionario) : -1
+  // Sem Regras de Cálculo (filtros de linha) e com mais de uma coluna somada (ex:
+  // "totalvenda+totaldevolucao"), dá pra rastrear o total de CADA coluna separada — usado pela
+  // telinha de calculadora em Cálculo de Comissões pra mostrar Venda x Devolução, não só o líquido.
+  const rastrearColunas = (!regrasCru || regrasCru.length === 0) && idxsValor.length > 1
+  // Coluna Tipo de Movimento (opcional, independe de Regras de Cálculo e de quantas colunas a
+  // Coluna do Valor soma): agrupa o total por CADA valor distinto dessa coluna (ex: "SAÍDA"/
+  // "ENTRADA", ou "VENDA"/"DEVOLUÇÃO"...) — sem lista fixa de categorias, o que aparecer na
+  // coluna vira um balde, além do total combinado de sempre.
+  const idxTipoMovimento = colunaTipoMovimento ? cabecalho.indexOf(colunaTipoMovimento) : -1
 
   const regrasResolvidas = (regrasCru || []).map(regra => ({
     tipoAcao: regra.tipo_acao,
@@ -98,12 +107,24 @@ function agregarArquivoParaGrupo(aoa, linha0, itensDoGrupo, colunaEmpresa, colun
 
     // Coluna de valor e regras são as mesmas pro grupo inteiro (é a chave de agrupamento) —
     // calcula uma vez por LINHA, não uma vez por item, evitando trabalho repetido.
-    let valorTrabalho = idxsValor.reduce((soma, idx) => soma + parseMoney(r[idx]), 0)
+    let valsColuna = null
+    let valorTrabalho
+    if (rastrearColunas) {
+      valsColuna = idxsValor.map(idx => parseMoney(r[idx]))
+      valorTrabalho = valsColuna[0] + valsColuna[1]
+      for (let vi = 2; vi < valsColuna.length; vi++) valorTrabalho += valsColuna[vi]
+    } else {
+      valorTrabalho = idxsValor.reduce((soma, idx) => soma + parseMoney(r[idx]), 0)
+    }
     if (regrasResolvidas.length > 0) {
       const resultado = aplicarRegras(r, valorTrabalho, regrasResolvidas)
       if (resultado.filtrada) continue
       valorTrabalho = resultado.valor
     }
+    // Categoria da linha (já filtrada/transformada pelas Regras de Cálculo, se houver) pelo texto
+    // da Coluna Tipo de Movimento — o mesmo valorTrabalho que compõe o total combinado vai pro
+    // balde certo, então a soma de todas as categorias sempre bate com o total.
+    const categoriaMovimento = idxTipoMovimento >= 0 ? (String(r[idxTipoMovimento] ?? '').trim() || '(vazio)') : null
 
     const dataVal = idxData >= 0 ? r[idxData] : undefined
     const dataIso = toIsoDate(dataVal)
@@ -117,7 +138,15 @@ function agregarArquivoParaGrupo(aoa, linha0, itensDoGrupo, colunaEmpresa, colun
           if (item.dataFim && dataIso > item.dataFim) continue
         }
         item._acc.totalFiltradas++
-        if (tipoAgregacao !== 'CONTAGEM') item._acc.soma += valorTrabalho
+        if (tipoAgregacao !== 'CONTAGEM') {
+          item._acc.soma += valorTrabalho
+          if (valsColuna && item._acc.somaPorColuna) {
+            for (let ci = 0; ci < valsColuna.length; ci++) item._acc.somaPorColuna[ci] += valsColuna[ci]
+          }
+          if (categoriaMovimento && item._acc.somaPorMovimento) {
+            item._acc.somaPorMovimento.set(categoriaMovimento, (item._acc.somaPorMovimento.get(categoriaMovimento) || 0) + valorTrabalho)
+          }
+        }
       }
     }
     if (candidatosIndividual) {
@@ -129,7 +158,15 @@ function agregarArquivoParaGrupo(aoa, linha0, itensDoGrupo, colunaEmpresa, colun
           if (item.dataFim && dataIso > item.dataFim) continue
         }
         item._acc.totalFiltradas++
-        if (tipoAgregacao !== 'CONTAGEM') item._acc.soma += valorTrabalho
+        if (tipoAgregacao !== 'CONTAGEM') {
+          item._acc.soma += valorTrabalho
+          if (valsColuna && item._acc.somaPorColuna) {
+            for (let ci = 0; ci < valsColuna.length; ci++) item._acc.somaPorColuna[ci] += valsColuna[ci]
+          }
+          if (categoriaMovimento && item._acc.somaPorMovimento) {
+            item._acc.somaPorMovimento.set(categoriaMovimento, (item._acc.somaPorMovimento.get(categoriaMovimento) || 0) + valorTrabalho)
+          }
+        }
       }
     }
   }
@@ -142,7 +179,16 @@ function agregarArquivoParaGrupo(aoa, linha0, itensDoGrupo, colunaEmpresa, colun
 //   empresa), dataInicio, dataFim }]
 // Retorna: [{ id, valor, total_linhas_fonte, total_linhas_filtradas }] na mesma ordem de entrada.
 export async function calcularLote(itens) {
-  for (const item of itens) item._acc = { totalLinhas: 0, totalFiltradas: 0, soma: 0 }
+  for (const item of itens) {
+    // Sem Regras de Cálculo e com mais de uma coluna somada (ex: "totalvenda+totaldevolucao"),
+    // guarda o total de cada coluna separado — usado pela calculadora de Venda x Devolução no front.
+    const partesColuna = (item.regras || []).length === 0 ? (item.colunaValor || '').split('+').map(s => s.trim()).filter(Boolean) : []
+    item._acc = {
+      totalLinhas: 0, totalFiltradas: 0, soma: 0,
+      somaPorColuna: partesColuna.length > 1 ? new Array(partesColuna.length).fill(0) : null, partesColuna,
+      somaPorMovimento: item.colunaTipoMovimento ? new Map() : null,
+    }
+  }
 
   const grupos = new Map()
   for (const item of itens) {
@@ -171,7 +217,7 @@ export async function calcularLote(itens) {
         const aoa = await lerAoAMicrowork(base.microwork, ano, mes)
         agregarArquivoParaGrupo(
           aoa, 0, itensDoGrupo,
-          base.colunaEmpresa, base.colunaData, base.colunaValor, base.colunaFuncionario,
+          base.colunaEmpresa, base.colunaData, base.colunaValor, base.colunaTipoMovimento, base.colunaFuncionario,
           base.regras, base.tipoAgregacao, contadorGrupo
         )
       }
@@ -192,7 +238,7 @@ export async function calcularLote(itens) {
         const aoa = await lerArquivoComoAoA(downloadUrl, linha0)
         agregarArquivoParaGrupo(
           aoa, linha0, itensDoGrupo,
-          base.colunaEmpresa, base.colunaData, base.colunaValor, base.colunaFuncionario,
+          base.colunaEmpresa, base.colunaData, base.colunaValor, base.colunaTipoMovimento, base.colunaFuncionario,
           base.regras, base.tipoAgregacao, contadorGrupo
         )
       }
@@ -208,11 +254,24 @@ export async function calcularLote(itens) {
       : item.tipoAgregacao === 'MEDIA'
         ? (acc.totalFiltradas > 0 ? acc.soma / acc.totalFiltradas : 0)
         : acc.soma
+    const valorPorColuna = acc.somaPorColuna
+      ? acc.partesColuna.map((coluna, i) => ({
+          coluna,
+          valor: item.tipoAgregacao === 'MEDIA' ? (acc.totalFiltradas > 0 ? acc.somaPorColuna[i] / acc.totalFiltradas : 0) : acc.somaPorColuna[i],
+        }))
+      : null
+    // Ordem alfabética pelo nome da categoria, pra ficar estável entre chamadas (Map preserva
+    // ordem de inserção, que varia conforme a ordem das linhas no arquivo).
+    const valorPorMovimento = acc.somaPorMovimento
+      ? [...acc.somaPorMovimento.entries()].sort((a, b) => a[0].localeCompare(b[0], 'pt-BR')).map(([coluna, valor]) => ({ coluna, valor }))
+      : null
     return {
       id: item.id,
       valor,
       total_linhas_fonte: acc.totalLinhas,
       total_linhas_filtradas: acc.totalFiltradas,
+      valor_por_coluna: valorPorColuna,
+      valor_por_movimento: valorPorMovimento,
     }
   })
 }

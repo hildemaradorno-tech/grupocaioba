@@ -14,6 +14,7 @@ const fmtBRL = (v) => {
 }
 const FORMATOS = {
   brl:  fmtBRL,
+  num0: (v) => fmtNum(v, 0),
   num1: (v) => fmtNum(v, 1),
   num2: (v) => fmtNum(v, 2),
   pct:  (v) => fmtNum(v, 2) + '%',
@@ -67,6 +68,15 @@ function montarSecoes(linhas, { diasUteis = {}, refs = null } = {}) {
     const arred = (x) => Math.round((Number(x) || 0) * 100 + 1e-7) / 100
     const metaPecas = ref.map((x, i) => (x == null ? null : arred(x.pecas * pct[i] / 100)))
     const metaServ = ref.map((x, i) => (x == null ? null : arred((x.servicos + x.terceiros) * pct[i] / 100)))
+    const numOuNull = (r, campo) => (r == null || r[campo] == null || r[campo] === '') ? null : Number(r[campo])
+    const margemP = dos(cons, r => numOuNull(r, 'margem_pecas_pct'))
+    const margemS = dos(cons, r => numOuNull(r, 'margem_servicos_pct'))
+    const lucroP = metaPecas.map((m, i) => (m == null || margemP[i] == null) ? null : arred(m * margemP[i] / 100))
+    const lucroS = metaServ.map((m, i) => (m == null || margemS[i] == null) ? null : arred(m * margemS[i] / 100))
+    const ticketP = dos(cons, r => numOuNull(r, 'ticket_pecas'))
+    const ticketS = dos(cons, r => numOuNull(r, 'ticket_servicos'))
+    const ticketT = ticketP.map((p, i) => (p == null && ticketS[i] == null) ? null : (p || 0) + (ticketS[i] || 0))
+    const passagens = dos(cons, r => numOuNull(r, 'passagens'))
     secoes.push({ titulo: 'Consultor (distribuição)', linhas: [
       linha('Ref. Peças (R$)', 'Peças do setor (Mecânica ou Funilaria/Pintura) no mês', dos(ref, x => x.pecas), 'brl', { soma: true }),
       linha('Ref. Serviços (R$)', 'Serviços do setor (Mecânica ou Funilaria/Pintura) no mês', dos(ref, x => x.servicos), 'brl', { soma: true }),
@@ -76,6 +86,14 @@ function montarSecoes(linhas, { diasUteis = {}, refs = null } = {}) {
       linha('Meta Peças (R$)', 'Ref. Peças × %', metaPecas, 'brl', { soma: true }),
       linha('Meta Serviços (R$)', '(Ref. Serviços + Ref. Terceiros) × %', metaServ, 'brl', { soma: true }),
       linha('Meta Total (R$)', 'Meta Peças + Meta Serviços', metaPecas.map((x, i) => (x == null ? null : x + metaServ[i])), 'brl', { soma: true, destaque: true }),
+      linha('Meta Margem Peças (%)', 'lançada na meta do consultor', margemP, 'pct'),
+      linha('Lucro Peças (R$)', 'Meta Peças × Meta Margem Peças', lucroP, 'brl', { soma: true }),
+      linha('Meta Margem Serviços (%)', 'lançada na meta do consultor', margemS, 'pct'),
+      linha('Lucro Serviços (R$)', 'Meta Serviços × Meta Margem Serviços', lucroS, 'brl', { soma: true }),
+      linha('Ticket Peças (R$)', 'lançado na meta do consultor', ticketP, 'brl'),
+      linha('Ticket Serviços (R$)', 'lançado na meta do consultor', ticketS, 'brl'),
+      linha('Ticket Total (R$)', 'Ticket Peças + Ticket Serviços', ticketT, 'brl'),
+      linha('Passagens', 'Ref. Total ÷ Ticket Total', passagens, 'num0', { soma: true }),
     ] })
   }
 

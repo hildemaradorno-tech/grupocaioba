@@ -111,7 +111,7 @@ export default function CiclosAuditoria() {
     return resultado
   }, [achados, planos])
 
-  // Total Apurado/Corrigido do ciclo = soma dos valores das próprias divergências.
+  // Total Apontado/Corrigido do ciclo = soma dos valores das próprias divergências.
   const totaisPorCiclo = useMemo(() => {
     const m = new Map()
     for (const a of achados) {
@@ -235,7 +235,7 @@ export default function CiclosAuditoria() {
               <th className="p-3">Data da Apresentação</th>
               <th className="p-3">Data de Conclusão</th>
               <th className="p-3 w-32">Status</th>
-              <th className="p-3 text-right">Total Apurado</th>
+              <th className="p-3 text-right">Total Apontado</th>
               <th className="p-3 text-right">Total Corrigido</th>
               <th className="p-3 w-32">% Atingido</th>
               <th className="p-3 w-24 text-center">Ações</th>

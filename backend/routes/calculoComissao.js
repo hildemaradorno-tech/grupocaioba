@@ -104,6 +104,7 @@ router.post('/lote', wrap(async (req, res) => {
     colunaEmpresa: it.colunaEmpresa,
     colunaData: it.colunaData,
     colunaValor: it.colunaValor,
+    colunaTipoMovimento: it.colunaTipoMovimento || null,
     colunaFuncionario: it.colunaFuncionario || null,
     tipoAgregacao: it.tipoAgregacao || 'SOMA',
     regras: Array.isArray(it.regras) ? it.regras : [],

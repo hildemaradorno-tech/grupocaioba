@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { X } from 'lucide-react'
 import { apiService } from '../../services/api'
 import { useAuth } from '../../context/AuthContext'
@@ -7,16 +7,18 @@ import EvidenciaUploader from './EvidenciaUploader'
 import { MoedaInput, fmtMoeda } from './auditExtConstants'
 
 const FORM_VAZIO = {
-  ciclo_id: '', titulo: '', motivo: '', total_apontado: '',
+  ciclo_id: '', titulo: '', tipo_divergencia_id: '', motivo: '', total_apontado: '',
   fundamentacao_tecnica: '', impactos: '', fatos_apontados: '', recomendacoes: '', evidencias: '',
 }
 
 export default function AchadoFormModal({ ciclos, achado, cicloIdPadrao, onClose, onSaved, userEmail }) {
   const { hasActionOrDefault } = useAuth()
   const canGerenciarEvidencias = hasActionOrDefault('auditoria-externa/divergencias', 'gerenciar_evidencias')
+  const [tiposDivergencia, setTiposDivergencia] = useState([])
   const [form, setForm] = useState(achado ? {
     ciclo_id: achado.ciclo_id || '',
     titulo: achado.titulo || '',
+    tipo_divergencia_id: achado.tipo_divergencia_id || '',
     motivo: achado.motivo || '',
     total_apontado: achado.total_apontado ?? '',
     fundamentacao_tecnica: achado.fundamentacao_tecnica || '',
@@ -25,6 +27,12 @@ export default function AchadoFormModal({ ciclos, achado, cicloIdPadrao, onClose
     recomendacoes: achado.recomendacoes || '',
     evidencias: achado.evidencias || '',
   } : { ...FORM_VAZIO, ciclo_id: cicloIdPadrao || '' })
+
+  useEffect(() => {
+    apiService.getAuditExtTiposDivergencia()
+      .then(lista => setTiposDivergencia(lista.filter(t => t.ativo !== false)))
+      .catch(() => {})
+  }, [])
   const [imagensUrls, setImagensUrls] = useState(achado?.evidencias_imagens_urls || [])
   // ID estável gerado antes de salvar — permite anexar imagens já na criação
   // (sem isso, não haveria achado.id pra montar a pasta de upload antes do
@@ -37,7 +45,7 @@ export default function AchadoFormModal({ ciclos, achado, cicloIdPadrao, onClose
     if (!hasActionOrDefault('auditoria-externa/divergencias', 'editar_achado')) return
     if (!form.ciclo_id) { alert('Selecione o ciclo de auditoria.'); return }
     setSalvando(true)
-    const payload = { ...form, total_apontado: Number(form.total_apontado || 0), evidencias_imagens_urls: imagensUrls }
+    const payload = { ...form, tipo_divergencia_id: form.tipo_divergencia_id || null, total_apontado: Number(form.total_apontado || 0), evidencias_imagens_urls: imagensUrls }
     try {
       if (achado) await apiService.updateAuditExtAchado(achado.id, payload)
       else await apiService.createAuditExtAchado({ ...payload, id: novoAchadoId }, userEmail)
@@ -72,6 +80,16 @@ export default function AchadoFormModal({ ciclos, achado, cicloIdPadrao, onClose
               <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Título *</label>
               <input type="text" required value={form.titulo} onChange={e => setForm(p => ({ ...p, titulo: e.target.value }))}
                 placeholder="Ex: Inconsistências em Contas a Receber" className="w-full text-xs p-2 border border-slate-200 rounded-md font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Tipo de Divergência</label>
+              <select value={form.tipo_divergencia_id} onChange={e => setForm(p => ({ ...p, tipo_divergencia_id: e.target.value }))}
+                className="w-full text-xs p-2 border border-slate-200 rounded-md font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500">
+                <option value="">— Selecione —</option>
+                {tiposDivergencia.map(t => (
+                  <option key={t.id} value={t.id}>{t.nome}</option>
+                ))}
+              </select>
             </div>
             <div className="flex flex-col gap-1.5">
               <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Motivo</label>

@@ -10,7 +10,7 @@ import AuditAiChatDrawer from './AuditAiChatDrawer'
 import ImportarDivergenciasModal from './ImportarDivergenciasModal'
 import { fmtMoeda, compararPorCodigo, empresaNoEscopo, departamentoNoEscopo } from './auditExtConstants'
 
-const FILTROS_VAZIOS = { empresa: '', norma: '' }
+const FILTROS_VAZIOS = { empresa: '', tipoDivergenciaId: '', motivo: '', impactos: '' }
 
 export default function AchadosPainel() {
   const { user, hasActionOrDefault, isAdminEfetivo, empresasPermitidasAuditoriaEfetivas, departamentosPermitidosAuditoriaEfetivos } = useAuth()
@@ -31,7 +31,7 @@ export default function AchadosPainel() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [filtros, setFiltros] = useSessionState('audext_achados_filtros', FILTROS_VAZIOS)
-  const [filtrosAbertos, setFiltrosAbertos] = useSessionState('audext_achados_filtros_abertos', false)
+  const [filtrosAbertos, setFiltrosAbertos] = useState(false)
   const [modalAchado, setModalAchado] = useState(null) // null | 'novo' | item
   const [achadoDetalhe, setAchadoDetalhe] = useState(null)
   const [chatAberto, setChatAberto] = useState(false)
@@ -84,15 +84,20 @@ export default function AchadosPainel() {
     ciclos.filter(c => empresaNoEscopo(c.empresa_id, empresasEfetivas, isAdminEfetivo)),
     [ciclos, empresasEfetivas, isAdminEfetivo])
 
-  const normasDisponiveis = useMemo(() =>
-    Array.from(new Set(achadosVisiveis.map(a => a.fundamentacao_tecnica).filter(Boolean))).sort(),
-    [achadosVisiveis]
-  )
+  const tiposDivergenciaDisponiveis = useMemo(() => {
+    const m = new Map()
+    for (const a of achadosVisiveis) {
+      if (a.audext_tipos_divergencia?.id) m.set(a.audext_tipos_divergencia.id, a.audext_tipos_divergencia.nome)
+    }
+    return Array.from(m, ([id, nome]) => ({ id, nome })).sort((a, b) => (a.nome || '').localeCompare(b.nome || '', 'pt-BR'))
+  }, [achadosVisiveis])
 
   const achadosFiltrados = useMemo(() => {
     let base = achadosVisiveis
     if (filtros.empresa) base = base.filter(a => a.audext_ciclos?.empresa_id === filtros.empresa)
-    if (filtros.norma) base = base.filter(a => a.fundamentacao_tecnica === filtros.norma)
+    if (filtros.tipoDivergenciaId) base = base.filter(a => a.tipo_divergencia_id === filtros.tipoDivergenciaId)
+    if (filtros.motivo) base = base.filter(a => (a.motivo || '').toLowerCase().includes(filtros.motivo.toLowerCase()))
+    if (filtros.impactos) base = base.filter(a => (a.impactos || '').toLowerCase().includes(filtros.impactos.toLowerCase()))
     return [...base].sort(compararPorCodigo)
   }, [achadosVisiveis, filtros])
 
@@ -183,18 +188,22 @@ export default function AchadosPainel() {
             Modo "Ver Todos" — mostrando todas as Empresas, ignorando a restrição do seu grupo de acesso
           </div>
         )}
-        <AuditoriaExternaNav />
-      </div>
-
-      <div>
-        <button
-          onClick={() => setFiltrosAbertos(v => !v)}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${filtrosAbertos ? 'bg-slate-700 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
-        >
-          <Filter className="h-3.5 w-3.5" /> Filtros avançados
-        </button>
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <AuditoriaExternaNav />
+          <button
+            onClick={() => setFiltrosAbertos(v => !v)}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-semibold border transition-colors shrink-0 ${filtrosAbertos || hasFiltroAtivo ? 'bg-slate-700 text-white border-slate-700' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
+          >
+            <Filter className="h-3.5 w-3.5" /> Filtros avançados
+            {hasFiltroAtivo && (
+              <span className="ml-0.5 px-1.5 py-0.5 rounded-full text-[10px] bg-indigo-600 text-white font-bold leading-none">
+                {Object.values(filtros).filter(Boolean).length}
+              </span>
+            )}
+          </button>
+        </div>
         {filtrosAbertos && (
-          <div className="mt-2 bg-white border border-slate-200 rounded-lg p-4 flex flex-wrap items-end gap-3">
+          <div className="bg-white border border-slate-200 rounded-lg p-4 flex flex-wrap items-end gap-3">
             <div className="flex flex-col gap-1">
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Empresa</label>
               <select value={filtros.empresa} onChange={e => setFiltros(p => ({ ...p, empresa: e.target.value }))} className="text-xs p-2 border border-slate-200 rounded-md min-w-[160px]">
@@ -203,11 +212,21 @@ export default function AchadosPainel() {
               </select>
             </div>
             <div className="flex flex-col gap-1">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Norma Contábil</label>
-              <select value={filtros.norma} onChange={e => setFiltros(p => ({ ...p, norma: e.target.value }))} className="text-xs p-2 border border-slate-200 rounded-md min-w-[180px]">
-                <option value="">Todas</option>
-                {normasDisponiveis.map(n => <option key={n} value={n}>{n}</option>)}
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Tipo de Divergência</label>
+              <select value={filtros.tipoDivergenciaId} onChange={e => setFiltros(p => ({ ...p, tipoDivergenciaId: e.target.value }))} className="text-xs p-2 border border-slate-200 rounded-md min-w-[180px]">
+                <option value="">Todos</option>
+                {tiposDivergenciaDisponiveis.map(t => <option key={t.id} value={t.id}>{t.nome}</option>)}
               </select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Motivo</label>
+              <input type="text" value={filtros.motivo} onChange={e => setFiltros(p => ({ ...p, motivo: e.target.value }))}
+                placeholder="Buscar por motivo..." className="text-xs p-2 border border-slate-200 rounded-md min-w-[180px]" />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Impactos</label>
+              <input type="text" value={filtros.impactos} onChange={e => setFiltros(p => ({ ...p, impactos: e.target.value }))}
+                placeholder="Buscar por impactos..." className="text-xs p-2 border border-slate-200 rounded-md min-w-[180px]" />
             </div>
             {hasFiltroAtivo && (
               <button onClick={handleLimparFiltros} className="flex items-center gap-1 text-[11px] font-semibold text-slate-500 hover:text-slate-700 px-2 py-1.5">
@@ -230,6 +249,7 @@ export default function AchadosPainel() {
             const totalApontadoCiclo = achadosDoCiclo.reduce((s, a) => s + Number(a.total_apontado || 0), 0)
             const totalCorrigidoCiclo = achadosDoCiclo.reduce((s, a) => s + Number(a.valor_corrigido || 0), 0)
             const pctCorrigidoCiclo = totalApontadoCiclo > 0 ? Math.round((totalCorrigidoCiclo / totalApontadoCiclo) * 100) : 0
+            const diferencaCiclo = totalApontadoCiclo - totalCorrigidoCiclo
             return (
               <div key={cicloId || 'sem-ciclo'}>
                 {/* Cabeçalho do Ciclo — mesmo padrão do cabeçalho de departamento em Planejamento */}
@@ -245,14 +265,17 @@ export default function AchadosPainel() {
                       {ciclo?.proj_empresas?.nome || '—'} · {ciclo?.periodo_competencia || '—'}
                     </span>
                   </div>
-                  <div className="flex items-center gap-4 shrink-0">
-                    <span className="text-xs opacity-80 font-medium whitespace-nowrap">
-                      Total Apurado: <strong className="font-bold">{fmtMoeda(totalApontadoCiclo)}</strong>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <span className="text-[10px] opacity-80 font-medium whitespace-nowrap">
+                      Apontado: <strong className="font-bold">{fmtMoeda(totalApontadoCiclo)}</strong>
                     </span>
-                    <span className="text-xs opacity-80 font-medium whitespace-nowrap">
-                      Total Corrigido: <strong className="font-bold text-emerald-300">{fmtMoeda(totalCorrigidoCiclo)} ({pctCorrigidoCiclo}%)</strong>
+                    <span className="text-[10px] opacity-80 font-medium whitespace-nowrap">
+                      Corrigido: <strong className="font-bold text-emerald-300">{fmtMoeda(totalCorrigidoCiclo)} ({pctCorrigidoCiclo}%)</strong>
                     </span>
-                    <span className="text-xs opacity-80 font-medium shrink-0">
+                    <span className="text-[10px] opacity-80 font-medium whitespace-nowrap">
+                      Diferença: <strong className="font-bold">{fmtMoeda(diferencaCiclo)}</strong>
+                    </span>
+                    <span className="text-[10px] opacity-80 font-medium shrink-0">
                       {achadosDoCiclo.length} divergência{achadosDoCiclo.length !== 1 ? 's' : ''}
                     </span>
                   </div>
@@ -265,6 +288,7 @@ export default function AchadosPainel() {
                         <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[10px] font-bold uppercase tracking-wider">
                           <th className="p-3">Código</th>
                           <th className="p-3">Título</th>
+                          <th className="p-3">Tipo de Divergência</th>
                           <th className="p-3 text-right">Total Apontado</th>
                           <th className="p-3 w-24 text-center">Ações</th>
                         </tr>
@@ -274,6 +298,7 @@ export default function AchadosPainel() {
                           <tr key={a.id} className="hover:bg-slate-50/70 transition-colors cursor-pointer" onClick={() => setAchadoDetalhe(a)}>
                             <td className="p-3 font-bold text-slate-900 flex items-center gap-1.5"><ShieldAlert className="h-3.5 w-3.5 text-indigo-500" /> {a.numero_codigo}</td>
                             <td className="p-3">{a.titulo}</td>
+                            <td className="p-3 text-slate-600">{a.audext_tipos_divergencia?.nome || <span className="text-slate-300">—</span>}</td>
                             <td className="p-3 text-right font-bold">{fmtMoeda(a.total_apontado)}</td>
                             <td className="p-3" onClick={e => e.stopPropagation()}>
                               <div className="flex items-center justify-center gap-1.5">

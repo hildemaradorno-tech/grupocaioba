@@ -55,6 +55,13 @@ export const MENU_TREE = [
               { key: 'fornecedores', label: 'Fornecedores' },
             ],
           },
+          {
+            key: '_cadastros.auditoria-externa',
+            label: 'Auditoria Externa',
+            children: [
+              { key: 'auditoria-externa/tipos-divergencia', label: 'Tipos de Divergência' },
+            ],
+          },
         ],
       },
       {
@@ -72,13 +79,10 @@ export const MENU_TREE = [
     label: 'Comissões',
     children: [
       {
-        // Permissões individuais mantidas (controlam quais abas aparecem em
-        // /regras-comissoes), mas o grupo inteiro navega direto pra página única — mesmo padrão
-        // já usado em Garantias DAF, Matriz KPIs e Folha de Pagamento - DAF (navTo faz o nó com
-        // children se comportar como link direto em vez de abrir uma sub-pasta).
+        // Agrupamento de menu (sem navTo) — cada item abaixo é uma tela própria, não mais abas
+        // de uma página única. Ordem de cima pra baixo no menu lateral = ordem desta lista.
         key: '_comissoes',
         label: 'Regras de Comissões',
-        navTo: 'regras-comissoes',
         children: [
           { key: 'tipos-processo', label: 'Tipo de Processo' },
           { key: 'rubricas', label: 'Rubrica' },
@@ -89,33 +93,19 @@ export const MENU_TREE = [
         ],
       },
       {
-        // Mesmo padrão de Regras de Comissões: permissões individuais por aba, navTo direto pra
-        // página única /fontes-comissoes.
-        key: '_fontes-comissoes',
-        label: 'Fontes de Dados',
-        navTo: 'fontes-comissoes',
-        children: [
-          { key: 'fontes-calculo', label: 'Dealer.net' },
-          { key: 'fontes-microwork', label: 'MicroWork' },
-        ],
-      },
-      {
-        // Permissões individuais mantidas (controlam quais abas aparecem em
-        // /folha-pagamento-daf), mas o grupo inteiro navega direto pra página única — mesmo
-        // padrão já usado em Garantias DAF e Matriz KPIs (navTo faz o nó com children se
-        // comportar como link direto em vez de abrir uma sub-pasta).
+        // Agrupamento de menu (sem navTo) — cada item abaixo é uma tela própria, não mais abas
+        // de uma página única. Comissões - DAF e Comissões - HONDA são 2 telas separadas no menu
+        // (rotas /calculo-comissoes e /calculo-comissoes-motos) mas compartilham a mesma
+        // permissão 'calculo-comissoes' (a diferença entre elas é só o agrupamento de empresas).
         key: '_folha-pagamento-daf',
         label: 'Comissões Pós-Vendas',
-        navTo: 'folha-pagamento-daf',
         children: [
           { key: 'ferias', label: 'Férias' },
+          { key: 'sobreaviso-plantao', label: 'Sobreaviso/Plantão' },
           { key: 'calculo-comissoes', label: 'Cálculo de Comissões' },
           { key: 'processamento-comissoes', label: 'Processamento de Comissões' },
-          { key: 'sobreaviso-plantao', label: 'Sobreaviso/Plantão' },
         ],
       },
-      // Mesma key de antes (bi/medidas) pra não perder as permissões já concedidas.
-      { key: 'bi/medidas', label: 'Medidas BI' },
     ],
   },
   {
@@ -221,7 +211,6 @@ export const MENU_TREE = [
         label: 'Cadastros',
         children: [
           { key: 'projetos/empresas', label: 'Empresas' },
-          { key: 'projetos/departamentos', label: 'Departamentos' },
           { key: 'projetos/areas', label: 'Áreas' },
           { key: 'projetos/sistemas', label: 'Sistemas' },
           { key: 'projetos/responsaveis', label: 'Responsáveis' },
@@ -247,6 +236,19 @@ export const MENU_TREE = [
       { key: 'bi/projetos', label: 'BI — Gestão de Projetos' },
       { key: 'bi/possibilidades', label: 'BI — Possibilidades' },
       { key: 'bi/comissoes', label: 'BI — Comissões' },
+      { key: 'bi/campanha', label: 'BI — Campanha Pós-Venda' },
+      {
+        // Agrupamento de menu (sem navTo) — cada item abaixo é uma tela própria, não mais abas
+        // de uma página única. Movido de Comissões pra cá junto com Medidas BI.
+        key: '_bi.fontes-dados',
+        label: 'Fontes de Dados',
+        children: [
+          { key: 'fontes-calculo', label: 'Dealer.net' },
+          { key: 'fontes-microwork', label: 'MicroWork' },
+          // Mesma key de antes (bi/medidas) pra não perder as permissões já concedidas.
+          { key: 'bi/medidas', label: 'Medidas BI' },
+        ],
+      },
       {
         // Permissões individuais mantidas (controlam quais abas aparecem em /kpi/matriz),
         // mas o grupo inteiro navega direto pra página única — ver navTo no Home.jsx (TabelaMenu).

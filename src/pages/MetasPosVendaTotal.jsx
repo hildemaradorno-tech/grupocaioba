@@ -29,6 +29,7 @@ const fmtBRL = (v) => {
 const sumArr = (a) => a.reduce((s, v) => s + v, 0)
 const fmtHoras = (v) => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
 const fmtPctInd = (v) => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%'
+const fmtIntInd = (v) => Math.round(Number(v) || 0).toLocaleString('pt-BR', { maximumFractionDigits: 0 })
 
 const STATUS_CLS = { 'AGUARDANDO APROVACAO': 'bg-amber-100 text-amber-700', 'APROVADO': 'bg-green-100 text-green-700' }
 const STATUS_DISPLAY = { 'AGUARDANDO APROVACAO': 'Pendente', 'APROVADO': 'Aprovado' }
@@ -517,6 +518,9 @@ export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = 
           // Lucro de cada consultor = Meta dele (Ref. × % do consultor) × Margem %; assim, se todos têm a mesma
           // margem, o resultado é essa margem. Só entram os meses em que o consultor preencheu a margem.
           const lucroP = Array(12).fill(0), metaP = Array(12).fill(0), lucroS = Array(12).fill(0), metaS = Array(12).fill(0)
+          // Ticket Médio da Oficina: soma do Faturamento (Ref.) de todos os consultores ÷ soma das Passagens deles
+          // (não é média dos tickets individuais). Passagens da Oficina = soma das Passagens de cada consultor.
+          const refPTot = Array(12).fill(0), refSTot = Array(12).fill(0), passagensTot = Array(12).fill(0)
           const refCache = {}
           const ctxRef = { rowsMecanico, rowsTerceiros, rowsFunilaria, funcionarios, boxes, setores }
           rowsConsultor.forEach(r => {
@@ -535,6 +539,13 @@ export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = 
             if (r.margem_servicos_pct != null && r.margem_servicos_pct !== '') {
               lucroS[i] += (ref.servicos + ref.terceiros) * pct * (Number(r.margem_servicos_pct) / 100)
               metaS[i]  += (ref.servicos + ref.terceiros) * pct
+            }
+            if (r.passagens != null && r.passagens !== '') {
+              // Faturamento de cada consultor (Ref × % dele) — soma, entre os consultores de um setor, o Ref
+              // inteiro (sem dobrar), já que as % deles se completam até 100% daquele setor.
+              refPTot[i] += ref.pecas * pct
+              refSTot[i] += (ref.servicos + ref.terceiros) * pct
+              passagensTot[i] += Number(r.passagens) || 0
             }
           })
           const razaoPct = (l, m) => l.map((v, i) => (m[i] > 0 ? (v / m[i]) * 100 : 0))
@@ -566,7 +577,14 @@ export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = 
           const margP = razaoPct(lucroP, metaP), margS = razaoPct(lucroS, metaS)
           const margPAno = sumArr(metaP) > 0 ? (sumArr(lucroP) / sumArr(metaP)) * 100 : 0
           const margSAno = sumArr(metaS) > 0 ? (sumArr(lucroS) / sumArr(metaS)) * 100 : 0
-          if (ehOficinaInd ? (sumArr(hd) > 0 || margPAno > 0 || margSAno > 0) : (margPAno > 0 || sumArr(fatM) + sumArr(fatP) + sumArr(fatO) > 0)) {
+          // Ticket Médio da Oficina = Faturamento (Ref.) ÷ Passagens, ambos somados entre os consultores.
+          const ticketPMedio = refPTot.map((v, i) => (passagensTot[i] > 0 ? v / passagensTot[i] : 0))
+          const ticketSMedio = refSTot.map((v, i) => (passagensTot[i] > 0 ? v / passagensTot[i] : 0))
+          const ticketTMedio = refPTot.map((v, i) => (passagensTot[i] > 0 ? (v + refSTot[i]) / passagensTot[i] : 0))
+          const ticketPAno = sumArr(passagensTot) > 0 ? sumArr(refPTot) / sumArr(passagensTot) : 0
+          const ticketSAno = sumArr(passagensTot) > 0 ? sumArr(refSTot) / sumArr(passagensTot) : 0
+          const ticketTAno = sumArr(passagensTot) > 0 ? (sumArr(refPTot) + sumArr(refSTot)) / sumArr(passagensTot) : 0
+          if (ehOficinaInd ? (sumArr(hd) > 0 || margPAno > 0 || margSAno > 0 || sumArr(passagensTot) > 0) : (margPAno > 0 || sumArr(fatM) + sumArr(fatP) + sumArr(fatO) > 0)) {
             const iKey = `${dKey}-ind`
             const prod = hd.map((h, i) => (h > 0 ? (hm[i] / h) * 100 : 0))
             const prodAno = sumArr(hd) > 0 ? (sumArr(hm) / sumArr(hd)) * 100 : 0
@@ -599,6 +617,10 @@ export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = 
                 { chave: 'pr', rotulo: 'Produtividade (%)', vals: prod, fmt: fmtPctInd, total: prodAno },
                 { chave: 'mp', rotulo: 'Margem Peças (%)', vals: margP, fmt: fmtPctInd, total: margPAno },
                 { chave: 'ms', rotulo: 'Margem Serviços (%)', vals: margS, fmt: fmtPctInd, total: margSAno },
+                { chave: 'tp', rotulo: 'Ticket Médio Peças (R$)', vals: ticketPMedio, fmt: fmtRS, total: ticketPAno },
+                { chave: 'ts', rotulo: 'Ticket Médio Serviços (R$)', vals: ticketSMedio, fmt: fmtRS, total: ticketSAno },
+                { chave: 'tt', rotulo: 'Ticket Médio Total (R$)', vals: ticketTMedio, fmt: fmtRS, total: ticketTAno },
+                { chave: 'ps', rotulo: 'Passagens', vals: passagensTot, fmt: fmtIntInd, total: sumArr(passagensTot) },
               ]
               linhasInd.forEach(l => childRows.push(
                 <tr key={`${iKey}-${l.chave}`} className="bg-white border-b border-slate-100">

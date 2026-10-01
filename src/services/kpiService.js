@@ -159,6 +159,14 @@ export async function executarSincronizacaoAgora(usuarioEmail) {
   return body
 }
 
+// Só o passo da Campanha Pós-Venda (lê SharePoint e grava fato_campanha_diario).
+export async function sincronizarCampanha(year) {
+  const res = await fetch(`${BASE}/sync/campanha?year=${year}`, { method: 'POST' })
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(body.message || `HTTP ${res.status}`)
+  return body
+}
+
 // ── Pesos dos indicadores (coluna "Peso") ─────────────────────────────────────
 
 export async function fetchPesos(bloco) {

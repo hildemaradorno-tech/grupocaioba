@@ -39,23 +39,20 @@ const parseDataBR = (s) => {
 
 const hojeISO = () => new Date().toISOString().slice(0, 10)
 
-// ── Modo "Atualizar Demissões" — relatório "RELAÇÃO DE EMPREGADOS ADMITIDOS E DEMITIDOS" do
-// ERP: mistura os dois tipos de registro num arquivo só, diferenciados pela coluna "tipo"
-// ('1' = demitido, tem data de demissão preenchida; '2' = admitido, sem demissão — ignorado
-// aqui). Tem CNPJ (cgce_emp), então casa empresa+código igual ao modo Cadastro — mais
-// confiável que o relatório anterior (que só tinha nome de empresa, sem CNPJ).
+// ── Modo "Atualizar Demissões" — relatório "demitidos" do ERP: já vem filtrado só com quem foi
+// desligado (coluna "situacao" = 8), com CNPJ (cgce_emp) e a data de desligamento em
+// "datasituacao". Casa empresa+código igual ao modo Cadastro.
 const COL_DEM_CNPJ = 'cgce_emp'
 const COL_DEM_CODIGO = 'i_empregados'
 const COL_DEM_NOME = 'nome'
-const COL_DEM_DATA = 'demissao'
-const COL_DEM_TIPO = 'tipo'
-const TIPO_DEMITIDO = '1'
+const COL_DEM_DATA = 'datasituacao'
+const COL_DEM_SITUACAO = 'situacao'
 
 function construirLinhasDemissao(excelRows, funcionarios, empresas) {
   const vistos = new Set()
   const unicos = []
   for (const r of excelRows) {
-    if (norm(r[COL_DEM_TIPO]) !== TIPO_DEMITIDO) continue
+    if (norm(r[COL_DEM_SITUACAO]) !== SITUACAO_DEMITIDO) continue
     const cnpj = soDigitos(r[COL_DEM_CNPJ])
     const codigo = norm(r[COL_DEM_CODIGO])
     const nome = norm(r[COL_DEM_NOME])
@@ -304,7 +301,7 @@ export default function ImportarFuncionariosModal({ funcionarios, empresas, carg
         const cabecalho = Object.keys(raw[0])
 
         if (modo === 'demissoes') {
-          const faltandoDem = [COL_DEM_CNPJ, COL_DEM_CODIGO, COL_DEM_NOME, COL_DEM_DATA, COL_DEM_TIPO].filter(c => !cabecalho.includes(c))
+          const faltandoDem = [COL_DEM_CNPJ, COL_DEM_CODIGO, COL_DEM_NOME, COL_DEM_DATA, COL_DEM_SITUACAO].filter(c => !cabecalho.includes(c))
           if (faltandoDem.length > 0) {
             setErroArquivo(`Colunas não encontradas no arquivo:\n${faltandoDem.join(', ')}`)
             return
@@ -573,7 +570,7 @@ export default function ImportarFuncionariosModal({ funcionarios, empresas, carg
               <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
                 <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-2">Colunas obrigatórias (export do ERP)</p>
                 <div className="flex flex-wrap gap-1.5">
-                  {(modo === 'demissoes' ? [COL_DEM_CNPJ, COL_DEM_CODIGO, COL_DEM_NOME, COL_DEM_DATA, COL_DEM_TIPO] : [COL_CNPJ, COL_CODIGO, COL_NOME, COL_CARGO]).map(c => (
+                  {(modo === 'demissoes' ? [COL_DEM_CNPJ, COL_DEM_CODIGO, COL_DEM_NOME, COL_DEM_DATA, COL_DEM_SITUACAO] : [COL_CNPJ, COL_CODIGO, COL_NOME, COL_CARGO]).map(c => (
                     <span key={c} className="px-2 py-0.5 bg-white border border-slate-200 rounded text-[10px] font-mono text-slate-600">{c}</span>
                   ))}
                 </div>

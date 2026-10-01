@@ -11,7 +11,8 @@ import {
   ClipboardList, Home, FolderKanban, CircleDot, FileText, CalendarDays, DollarSign, Truck, LayoutGrid,
   Calculator, BookOpen, GraduationCap,
   KeyRound, Eye, EyeOff, X, AlertTriangle, Bike, Network, PieChart, Share2, RefreshCw, Gauge, Ruler,
-  ShieldAlert, Landmark, Database, Hash, ListChecks, ExternalLink, Workflow,
+  ShieldAlert, Landmark, Database, Hash, ListChecks, ExternalLink, Workflow, Trophy, Percent,
+  Palmtree, PhoneCall,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import TrocarSenhaObrigatoria from '../pages/TrocarSenhaObrigatoria'
@@ -31,7 +32,10 @@ MENU_TREE.forEach(buildSectionLeaves)
 // ── Map route to section key ──────────────────────────────────────────────────
 function getActiveSectionKey(pathname) {
   if (pathname === '/usuarios' || pathname === '/grupos' || pathname === '/permissoes-matriz') return '_config'
-  if (pathname === '/folha-pagamento-daf' || pathname === '/regras-comissoes' || pathname === '/fontes-comissoes' || pathname === '/bi/medidas') return '_comissoes-calculo'
+  if (pathname === '/tipos-processo' || pathname === '/rubricas' || pathname === '/bases-calculo' ||
+    pathname === '/politica-comissao' || pathname === '/regras-faixas' || pathname === '/cargos-remuneracoes' ||
+    pathname === '/ferias' || pathname === '/sobreaviso-plantao' || pathname === '/calculo-comissoes' ||
+    pathname === '/calculo-comissoes-motos' || pathname === '/processamento-comissoes') return '_comissoes-calculo'
   const cadastros = ['/segmentos','/agrup-empresas','/empresas','/areas','/agrup-departamentos',
     '/departamentos','/setores','/box','/agrup-cargos','/cargos','/organograma',
     '/movimento-venda','/natureza-operacoes','/tipos-produtos','/tipos-os',
@@ -41,7 +45,7 @@ function getActiveSectionKey(pathname) {
   if (pathname.startsWith('/garantias-daf') || pathname.startsWith('/auditoria-os-aberto') || pathname.startsWith('/auditoria') || pathname.startsWith('/garantia') || pathname.startsWith('/honda') || pathname.startsWith('/truckpag') || pathname.startsWith('/bpm')) return '_controle-processos'
   if (pathname.startsWith('/projetos') || pathname.startsWith('/auditoria-externa')) return '_gestao-projetos'
   if (pathname.startsWith('/calculadoras')) return '_calculadoras'
-  if (pathname.startsWith('/bi') || pathname.startsWith('/kpi')) return '_bi'
+  if (pathname.startsWith('/bi') || pathname.startsWith('/kpi') || pathname === '/fontes-calculo' || pathname === '/fontes-microwork') return '_bi'
   if (pathname.startsWith('/documentacoes') || pathname.startsWith('/rpa') || pathname.startsWith('/ecossistema')) return '_documentacoes'
   if (pathname.startsWith('/treinamentos')) return '_treinamentos'
   if (pathname.startsWith('/governanca')) return '_config'
@@ -416,6 +420,13 @@ export default function SidebarLayout() {
                 {canView('fornecedores') && <FlyItem to="/fornecedores" icon={Truck} onClose={closeFlyout}>Fornecedores</FlyItem>}
               </>
             )}
+            {canViewSection('_cadastros.auditoria-externa') && (
+              <>
+                <div className="mx-3 my-2 border-t border-blue-800/50" />
+                <FlyGroup label="Auditoria Externa" />
+                {canView('auditoria-externa/tipos-divergencia') && <FlyItem to="/auditoria-externa/tipos-divergencia" icon={ShieldAlert} onClose={closeFlyout}>Tipos de Divergência</FlyItem>}
+              </>
+            )}
             {canViewSection('_governanca') && (
               <>
                 <div className="mx-3 my-2 border-t border-blue-800/50" />
@@ -452,19 +463,26 @@ export default function SidebarLayout() {
       case '_comissoes-calculo':
         return (
           <>
-            {(canView('fontes-calculo') || canView('fontes-microwork')) && (
-              <FlyItem to="/fontes-comissoes" icon={TableProperties} onClose={closeFlyout}>Fontes de Dados</FlyItem>
-            )}
-            {canView('bi/medidas') && (
-              <FlyItem to="/bi/medidas" icon={Ruler} onClose={closeFlyout}>Medidas BI</FlyItem>
-            )}
             {canViewSection('_comissoes') && (
-              <FlyItem to="/regras-comissoes" icon={ScrollText} onClose={closeFlyout}>Regras de Comissões</FlyItem>
+              <>
+                <FlyGroup label="Regras de Comissões" />
+                {canView('tipos-processo') && <FlyItem to="/tipos-processo" icon={ListChecks} onClose={closeFlyout}>Tipo de Processo</FlyItem>}
+                {canView('rubricas') && <FlyItem to="/rubricas" icon={Hash} onClose={closeFlyout}>Rubrica</FlyItem>}
+                {canView('bases-calculo') && <FlyItem to="/bases-calculo" icon={Calculator} onClose={closeFlyout}>Base de Cálculo</FlyItem>}
+                {canView('politica-comissao') && <FlyItem to="/politica-comissao" icon={ScrollText} onClose={closeFlyout}>Política de Comissões</FlyItem>}
+                {canView('regras-faixas') && <FlyItem to="/regras-faixas" icon={Percent} onClose={closeFlyout}>Regras</FlyItem>}
+                {canView('cargos-remuneracoes') && <FlyItem to="/cargos-remuneracoes" icon={Briefcase} onClose={closeFlyout}>Cargos e Remunerações</FlyItem>}
+              </>
             )}
             {(canView('ferias') || canView('calculo-comissoes') || canView('processamento-comissoes') || canView('sobreaviso-plantao')) && (
               <>
                 <div className="mx-3 my-2 border-t border-blue-800/50" />
-                <FlyItem to="/folha-pagamento-daf" icon={Wallet} onClose={closeFlyout}>Comissões Pós-Vendas</FlyItem>
+                <FlyGroup label="Comissões Pós-Vendas" />
+                {canView('ferias') && <FlyItem to="/ferias" icon={Palmtree} onClose={closeFlyout}>Férias</FlyItem>}
+                {canView('sobreaviso-plantao') && <FlyItem to="/sobreaviso-plantao" icon={PhoneCall} onClose={closeFlyout}>Sobreaviso/Plantão</FlyItem>}
+                {canView('calculo-comissoes') && <FlyItem to="/calculo-comissoes" icon={Wallet} onClose={closeFlyout}>Comissões - DAF</FlyItem>}
+                {canView('calculo-comissoes') && <FlyItem to="/calculo-comissoes-motos" icon={Wallet} onClose={closeFlyout}>Comissões - HONDA</FlyItem>}
+                {canView('processamento-comissoes') && <FlyItem to="/processamento-comissoes" icon={ClipboardCheck} onClose={closeFlyout}>Processamento de Comissões</FlyItem>}
               </>
             )}
           </>
@@ -536,7 +554,6 @@ export default function SidebarLayout() {
               </>
             )}
             {canView('projetos/empresas') && <FlyItem to="/projetos/empresas" icon={Building2} onClose={closeFlyout}>Empresas</FlyItem>}
-            {canView('projetos/departamentos') && <FlyItem to="/projetos/departamentos" icon={Layers} onClose={closeFlyout}>Departamentos</FlyItem>}
             {canView('projetos/areas') && <FlyItem to="/projetos/areas" icon={Tag} onClose={closeFlyout}>Áreas</FlyItem>}
             {canView('projetos/sistemas') && <FlyItem to="/projetos/sistemas" icon={BoxIcon} onClose={closeFlyout}>Sistemas</FlyItem>}
             {canView('projetos/responsaveis') && <FlyItem to="/projetos/responsaveis" icon={Users} onClose={closeFlyout}>Responsáveis</FlyItem>}
@@ -566,6 +583,16 @@ export default function SidebarLayout() {
             {canView('bi/projetos') && <FlyItem to="/bi/projetos" icon={FolderKanban} onClose={closeFlyout}>Gestão de Projetos</FlyItem>}
             {canView('bi/possibilidades') && <FlyItem to="/bi/possibilidades" icon={Gauge} onClose={closeFlyout}>Possibilidades</FlyItem>}
             {canView('bi/comissoes') && <FlyItem to="/bi/comissoes" icon={Wallet} onClose={closeFlyout}>Comissões</FlyItem>}
+            {canView('bi/campanha') && <FlyItem to="/bi/campanha" icon={Trophy} onClose={closeFlyout}>Campanha Pós-Venda</FlyItem>}
+            {canViewSection('_bi.fontes-dados') && (
+              <>
+                <div className="mx-3 my-2 border-t border-blue-800/50" />
+                <FlyGroup label="Fontes de Dados" />
+                {canView('fontes-calculo') && <FlyItem to="/fontes-calculo" icon={TableProperties} onClose={closeFlyout}>Dealer.net</FlyItem>}
+                {canView('fontes-microwork') && <FlyItem to="/fontes-microwork" icon={TableProperties} onClose={closeFlyout}>MicroWork</FlyItem>}
+                {canView('bi/medidas') && <FlyItem to="/bi/medidas" icon={Ruler} onClose={closeFlyout}>Medidas BI</FlyItem>}
+              </>
+            )}
             {canViewSection('_bi.kpis') && (
               <>
                 <div className="mx-3 my-2 border-t border-blue-800/50" />

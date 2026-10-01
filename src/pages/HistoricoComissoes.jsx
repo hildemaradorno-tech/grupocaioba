@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { Search, Loader2, AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, Eye, X, RotateCcw, Truck, ShieldCheck, CheckCircle2, Circle, Download, Trash2, FileDown, LayoutGrid, UserPlus, SlidersHorizontal } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { Search, Loader2, AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, Eye, X, RotateCcw, Truck, ShieldCheck, CheckCircle2, Circle, Download, Trash2, FileDown, LayoutGrid, UserPlus, SlidersHorizontal, ClipboardCheck, BarChart2 } from 'lucide-react'
 import { apiService } from '../services/api'
 import { buscaComCoringa } from '../utils/buscaTexto'
 import { passaEscopoComissao, departamentoSoVisualizacao } from '../utils/permissoesComissao'
@@ -427,7 +428,8 @@ function LoteCard({ grupo, expandido, onToggleExpand, selecionados, onToggleSele
 }
 
 export default function HistoricoComissoes() {
-  const { user, hasAction, comissaoEscopoEfetivo, comissaoNivelDepartamentoEfetivo } = useAuth()
+  const { user, hasAction, hasPermission, comissaoEscopoEfetivo, comissaoNivelDepartamentoEfetivo } = useAuth()
+  const navigate = useNavigate()
   const podeConfirmarConferenciaDp = hasAction('processamento-comissoes', 'confirmar_conferencia')
   const podeProcessar = hasAction('processamento-comissoes', 'processar')
   const podeExcluirLote = hasAction('processamento-comissoes', 'excluir')
@@ -1238,8 +1240,24 @@ export default function HistoricoComissoes() {
   return (
     <div className="p-6 space-y-4 max-w-screen-xl">
 
-      {/* Sem cabeçalho aqui: a página que hospeda esta tela (Comissões Pós-Vendas, em
-          FolhaPagamentoDaf.jsx) já mostra o título acima das abas. */}
+      {/* CABEÇALHO */}
+      <div className="flex items-center justify-between border-b border-slate-200 pb-4">
+        <div>
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
+            <ClipboardCheck className="h-5 w-5 text-blue-600" />
+            Processamento de Comissões
+          </h1>
+          <p className="text-xs text-slate-500">Confira, aprove e processe os lotes de comissão calculados — gera o TXT de pagamento no final do fluxo.</p>
+        </div>
+        {hasPermission('bi/comissoes') && (
+          <button
+            onClick={() => navigate('/bi/comissoes')}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-slate-700 border border-slate-200 bg-white hover:bg-slate-50 shadow-sm transition-colors"
+          >
+            <BarChart2 className="h-3.5 w-3.5 text-indigo-500" /> Ir para Dashboard
+          </button>
+        )}
+      </div>
 
       {erro && (
         <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-md px-3 py-2 text-red-700 text-xs leading-relaxed">

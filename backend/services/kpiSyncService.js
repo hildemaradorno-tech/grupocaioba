@@ -14,6 +14,7 @@ import {
   extractBalcao,
 } from './sharepointExtractor.js'
 import { EMPRESAS_SYNC } from './kpiEmpresas.js'
+import { sincronizarCampanhaDiario } from './campanhaDiarioSync.js'
 
 const FONTES_PLANILHA = [
   { chave: 'resultados', fn: getResultados },
@@ -102,6 +103,16 @@ async function _executar(origem, usuarioEmail) {
     }
   }
 
+  // Campanha Pós-Venda: roda por último — os arquivos já estão no cache em memória do extrator.
+  try {
+    const { linhas } = await sincronizarCampanhaDiario(supabaseAdmin, ano)
+    detalhes.campanha = { ok: true, linhas }
+    sucessos++
+  } catch (err) {
+    detalhes.campanha = { ok: false, erro: err.message }
+    falhas++
+  }
+
   const status = falhas === 0 ? 'SUCESSO' : (sucessos === 0 ? 'ERRO' : 'PARCIAL')
   await supabaseAdmin
     .from('kpi_sync_execucoes')
@@ -109,6 +120,19 @@ async function _executar(origem, usuarioEmail) {
     .eq('id', execucao.id)
 
   return { execucaoId: execucao.id, status, detalhes }
+}
+
+// Só o passo da Campanha (botão "Atualizar números" do BI Campanha). Usa a mesma trava da
+// sincronização completa — nunca roda junto com ela.
+export async function executarSincronizacaoCampanha(ano = new Date().getFullYear()) {
+  if (!getSupabaseAdmin()) throw new Error('SUPABASE_URL/SUPABASE_SERVICE_KEY não configurados no backend.')
+  if (emExecucao) throw new Error('Já existe uma sincronização em andamento.')
+  emExecucao = true
+  try {
+    return await sincronizarCampanhaDiario(getSupabaseAdmin(), ano)
+  } finally {
+    emExecucao = false
+  }
 }
 
 export async function getCachePlanilha(chave) {

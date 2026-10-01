@@ -368,7 +368,14 @@ export default function FontesMicrowork() {
     <div className="p-6 space-y-4 max-w-screen-xl">
 
       {/* CABEÇALHO */}
-      <div className="flex items-center justify-end border-b border-slate-200 pb-4">
+      <div className="flex items-center justify-between border-b border-slate-200 pb-4">
+        <div>
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
+            <Radio className="h-5 w-5 text-blue-600" />
+            MicroWork
+          </h1>
+          <p className="text-xs text-slate-500">Cadastre relatórios do MicroWork Cloud (via API) como fonte de dados de comissão.</p>
+        </div>
         {canEdit && (
           <button
             onClick={abrirIncluir}

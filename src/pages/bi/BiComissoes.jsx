@@ -324,7 +324,7 @@ export default function BiComissoes() {
         </div>
         {hasPermission('processamento-comissoes') && (
           <button
-            onClick={() => navigate('/folha-pagamento-daf?aba=processamento-comissoes')}
+            onClick={() => navigate('/processamento-comissoes')}
             className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-semibold text-slate-700 border border-slate-200 bg-white hover:bg-slate-50 shadow-sm transition-colors"
           >
             <ExternalLink className="h-3.5 w-3.5 text-indigo-500" /> Ir para Processamento de Comissões

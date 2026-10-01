@@ -96,6 +96,23 @@ function VariacaoBadge({ x, y, width, height, value, index, dados }) {
   )
 }
 
+// Tooltip customizado do ComparativoColunas — além de Apontado/Corrigido,
+// mostra a Diferença entre os dois valores do ciclo.
+function ComparativoTooltip({ active, payload, label }) {
+  if (!active || !payload || payload.length === 0) return null
+  const item = payload[0]?.payload
+  if (!item) return null
+  const diferenca = Number(item.totalApontado || 0) - Number(item.valorCorrigido || 0)
+  return (
+    <div className="bg-white border border-slate-200 rounded-lg shadow-lg px-3 py-2 text-xs">
+      <p className="font-bold text-slate-700 mb-1">{label}</p>
+      <p className="text-rose-600">Total Apontado: <strong>{fmtMoeda(item.totalApontado)}</strong></p>
+      <p className="text-emerald-600">Valor Corrigido: <strong>{fmtMoeda(item.valorCorrigido)}</strong></p>
+      <p className="text-slate-500 border-t border-slate-100 mt-1 pt-1">Diferença: <strong className="text-slate-700">{fmtMoeda(diferenca)}</strong></p>
+    </div>
+  )
+}
+
 // Gráfico de colunas agrupadas — duas barras (Apontado x Corrigido) lado a lado
 // por categoria (ex: por Ciclo de Auditoria), em valor monetário, com selo de
 // variação % entre as duas colunas de cada ciclo.
@@ -107,7 +124,7 @@ function ComparativoColunas({ dados }) {
         <CartesianGrid strokeDasharray="3 3" vertical={false} />
         <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={0} angle={-20} textAnchor="end" height={70} />
         <YAxis allowDecimals={false} tick={{ fontSize: 10 }} tickFormatter={fmtMoeda} />
-        <Tooltip formatter={v => fmtMoeda(v)} />
+        <Tooltip content={<ComparativoTooltip />} />
         <Legend wrapperStyle={{ fontSize: 10 }} />
         <Bar dataKey="totalApontado" name="Total Apontado" fill="#e11d48" radius={[4, 4, 0, 0]}>
           <LabelList dataKey="totalApontado" position="top" fontSize={10} fontWeight="bold" fill="#334155" formatter={fmtMoeda} />
@@ -115,6 +132,36 @@ function ComparativoColunas({ dados }) {
         <Bar dataKey="valorCorrigido" name="Valor Corrigido" fill="#059669" radius={[4, 4, 0, 0]}>
           <LabelList dataKey="valorCorrigido" position="top" fontSize={10} fontWeight="bold" fill="#334155" formatter={fmtMoeda} />
           <LabelList content={(props) => <VariacaoBadge {...props} dados={dados} />} />
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
+  )
+}
+
+// Rótulo combinado — quantidade + valor apontado, os dois na mesma barra.
+function QuantidadeValorLabel({ x, y, width, value, index, dados }) {
+  const item = dados[index]
+  if (!item) return null
+  return (
+    <text x={x + width / 2} y={y - 6} textAnchor="middle" fontSize={10} fontWeight="bold" fill="#334155">
+      {item.quantidade} un. · {fmtMoeda(item.valor)}
+    </text>
+  )
+}
+
+// Uma barra por Tipo de Divergência — altura = Valor Apontado (R$), com a
+// quantidade de ocorrências junto no mesmo rótulo, acima da barra.
+function QuantidadeValorColunas({ dados }) {
+  if (dados.length === 0) return <p className="text-xs text-slate-400">Sem dados ainda.</p>
+  return (
+    <ResponsiveContainer width="100%" height={320}>
+      <BarChart data={dados} margin={{ top: 24, left: -12 }}>
+        <CartesianGrid strokeDasharray="3 3" vertical={false} />
+        <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={0} angle={-20} textAnchor="end" height={70} />
+        <YAxis allowDecimals={false} tick={{ fontSize: 10 }} tickFormatter={fmtMoeda} />
+        <Tooltip formatter={(v, n, p) => [`${p.payload.quantidade} un. · ${fmtMoeda(v)}`, 'Valor Apontado']} />
+        <Bar dataKey="valor" fill="#6366f1" radius={[4, 4, 0, 0]}>
+          <LabelList content={(props) => <QuantidadeValorLabel {...props} dados={dados} />} />
         </Bar>
       </BarChart>
     </ResponsiveContainer>
@@ -427,6 +474,19 @@ export default function AuditoriaDashboard() {
     return Array.from(m.entries()).map(([label, qtd]) => ({ label, qtd })).sort((a, b) => b.qtd - a.qtd)
   }, [planosFiltrados])
 
+  // Quantidade de divergências e soma do Total Apontado (R$) por Tipo de Divergência.
+  const porTipoDivergencia = useMemo(() => {
+    const m = new Map()
+    for (const a of achadosFiltrados) {
+      const nome = a.audext_tipos_divergencia?.nome || 'Não definido'
+      if (!m.has(nome)) m.set(nome, { label: nome, quantidade: 0, valor: 0 })
+      const g = m.get(nome)
+      g.quantidade += 1
+      g.valor += Number(a.total_apontado || 0)
+    }
+    return Array.from(m.values()).sort((a, b) => b.valor - a.valor)
+  }, [achadosFiltrados])
+
   // Total Apontado (R$) somado por texto de Impacto — cada divergência entra no
   // grupo do texto exato preenchido no campo "Impactos" (texto livre).
   const porImpacto = useMemo(() => {
@@ -546,6 +606,11 @@ export default function AuditoriaDashboard() {
           <h3 className="text-xs font-bold text-slate-700 mb-3">Impactos das Divergências</h3>
           <RankingColunas dados={porImpacto} cores={PIE_CORES_IMPACTO} formatarValor={fmtMoeda} />
         </div>
+      </div>
+
+      <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-4">
+        <h3 className="text-xs font-bold text-slate-700 mb-3">Divergências por Tipo de Divergência — Quantidade x Valor Apontado</h3>
+        <QuantidadeValorColunas dados={porTipoDivergencia} />
       </div>
     </div>
   )

@@ -193,7 +193,11 @@ export default function RegrasFaixas() {
 
   return (
     <div className="p-6 space-y-4 max-w-screen-xl">
-      <div className="flex items-center justify-end border-b border-slate-200 pb-4">
+      <div className="flex items-center justify-between border-b border-slate-200 pb-4">
+        <div>
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Regras</h1>
+          <p className="text-xs text-slate-500">Cadastre regras de comissão por faixa (ex: {'>='} R$ 25.000 paga 0,60%; abaixo disso 0,50%), sempre sobre o valor da Base de Cálculo.</p>
+        </div>
         {canEdit && (
           <button onClick={abrirIncluir}
             className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-2 rounded-md shadow-sm transition-colors">

@@ -81,8 +81,8 @@ async function verificarFechamentoCiclo(cicloId) {
 const SELECT_POLITICA_COM_FONTE_BASE = `
   *,
   fonte_calculo:dim_fontes_calculo(id, nome, codigo, pasta_sharepoint, prefixo_arquivo, usa_subpasta_ano, subpasta_padrao, linha_cabecalho, coluna_empresa, coluna_data, coluna_funcionario),
-  base_calculo:dim_bases_calculo(id, nome, codigo, coluna_valor, tipo_agregacao, fonte_microwork_id, fonte_microwork:dim_fontes_microwork(*)),
-  regra_comissao:dim_regras_comissao(id, nome, tipo_faixa, meta_tipo, base_politica_ids, faixas:dim_regras_comissao_faixas(ordem, operador, valor, percentual))
+  base_calculo:dim_bases_calculo(id, nome, codigo, coluna_valor, coluna_tipo_movimento, tipo_agregacao, desconto_percentual, fonte_microwork_id, fonte_microwork:dim_fontes_microwork(*)),
+  regra_comissao:dim_regras_comissao(id, nome, tipo_faixa, meta_tipo, base_politica_ids, desconto_percentual, faixas:dim_regras_comissao_faixas(ordem, operador, valor, percentual))
 `
 const enriquecePoliticaFonteBase = (p) => ({
   ...p,
@@ -1420,9 +1420,11 @@ export const apiService = {
   },
 
   // Cria/atualiza a regra e substitui todas as faixas (delete + insert) — faixas: [{ operador, valor, percentual }]
-  salvarRegraComissao: async (id, { nome, descricao, ativo, tipo_faixa, meta_tipo, base_politica_ids }, faixas) => {
+  salvarRegraComissao: async (id, { nome, descricao, ativo, tipo_faixa, meta_tipo, base_politica_ids, desconto_percentual }, faixas) => {
     let regraId = id
-    const campos = { nome, descricao: descricao || null, ativo: ativo ?? true, tipo_faixa: tipo_faixa || 'VALOR', meta_tipo: tipo_faixa === 'PERCENTUAL_META' ? (meta_tipo || null) : null, base_politica_ids: tipo_faixa === 'PERCENTUAL_META' ? (base_politica_ids || []) : [] }
+    // meta_tipo vale pros dois tipos que comparam com Meta (% e Valor Fixo); base_politica_ids
+    // só faz sentido no tipo por % (Valor Fixo paga direto, sem multiplicar por nenhuma política).
+    const campos = { nome, descricao: descricao || null, ativo: ativo ?? true, tipo_faixa: tipo_faixa || 'VALOR', meta_tipo: tipo_faixa !== 'VALOR' ? (meta_tipo || null) : null, base_politica_ids: tipo_faixa === 'PERCENTUAL_META' ? (base_politica_ids || []) : [], desconto_percentual: desconto_percentual || 0 }
     if (id) {
       const { error } = await supabase.from('dim_regras_comissao')
         .update({ ...campos, atualizado_em: new Date().toISOString() }).eq('id', id)
@@ -2935,6 +2937,56 @@ export const apiService = {
     return data || []
   },
 
+  // CAMPANHA PÓS-VENDA (BI — Campanha Pós-Venda)
+  // Realizado por dia × empresa × pessoa, gravado pelo sync do backend (fato_campanha_diario).
+  // Um mês inteiro das 4 empresas cabe em poucas centenas de linhas.
+  getCampanhaDiario: async (ano, mes) => {
+    const { data, error } = await supabase
+      .from('fato_campanha_diario')
+      .select('data, empresa, tipo, pessoa_nome, pessoa_codigo, serv_valor, pecas_valor, pecas_margem, os_codigos, horas_aplicadas, horas_vendidas, horas_disponiveis, atualizado_em')
+      .eq('ano', ano)
+      .eq('mes', mes)
+    if (error) throw error
+    return data || []
+  },
+
+  // Metas APROVADAS do mês (Gestão de Aprovação de Metas → fato_metas_publicadas) de consultores
+  // e mecânicos + margem de peças e ticket médio aprovados no planejamento do consultor (só existem no rascunho;
+  // vale apenas a linha hoje aprovada: meta_aprovada = meta_faturamento).
+  getCampanhaMetasAprovadas: async (ano, mes) => {
+    const [pub, rasc] = await Promise.all([
+      supabase.from('fato_metas_publicadas')
+        .select('empresa_id, empresa_nome, tipo, colaborador_id, colaborador_nome, setor_nome, meta_faturamento, meta_pecas, meta_servicos, aprovado_em, aprovado_por_nome')
+        .eq('ano', ano).eq('mes', mes).in('tipo', ['consultor', 'mecanico']),
+      supabase.from('fato_rascunho_metas_servicos_consultor')
+        .select('empresa_id, colaborador_nome, setor_nome, percentual, meta_faturamento, meta_aprovada, margem_pecas_pct, ticket_total, ticket_pecas, ticket_servicos')
+        .eq('ano', ano).eq('mes', mes),
+    ])
+    if (pub.error) throw pub.error
+    if (rasc.error) throw rasc.error
+    return { publicadas: pub.data || [], rascunhoConsultor: rasc.data || [] }
+  },
+
+  // Regras vigentes no mês: a do próprio mês ou, se não houver, a do último mês salvo antes dele.
+  getCampanhaRegras: async (ano, mes) => {
+    const { data, error } = await supabase
+      .from('fato_campanha_regras')
+      .select('ano, mes, dados, atualizado_em, atualizado_por')
+      .or(`ano.lt.${ano},and(ano.eq.${ano},mes.lte.${mes})`)
+      .order('ano', { ascending: false })
+      .order('mes', { ascending: false })
+      .limit(1)
+    if (error) throw error
+    return data?.[0] || null
+  },
+
+  salvarCampanhaRegras: async (ano, mes, dados, usuarioEmail = null) => {
+    const { error } = await supabase
+      .from('fato_campanha_regras')
+      .upsert({ ano, mes, dados, atualizado_em: new Date().toISOString(), atualizado_por: usuarioEmail }, { onConflict: 'ano,mes' })
+    if (error) throw error
+  },
+
   // Resumo de dias úteis de TODAS as empresas de uma vez. Só busca o último dia de cada mês
   // (onde dias_total_mes já está acumulado): 12 linhas por empresa em vez de 365 — o
   // PostgREST corta em 1000 linhas, e com 3+ empresas o ano inteiro passava disso e as
@@ -3569,25 +3621,15 @@ export const apiService = {
     return { success: true }
   },
 
+  // Departamento de Gestão de Projetos/Auditoria Externa foi unificado com o
+  // cadastro único de Departamentos (dim_departamentos, gerenciado em
+  // Configurações) — proj_departamentos não existe mais. Mantido o nome do
+  // método e o formato { id, nome, ativo } pra não precisar mexer em quem já
+  // chama getProjDepartamentos() (Grupos.jsx, ProjetoForm.jsx, PlanoAcaoFormModal.jsx etc.).
   getProjDepartamentos: async () => {
-    const { data, error } = await supabase.from('proj_departamentos').select('*').order('nome', { ascending: true })
+    const { data, error } = await supabase.from('dim_departamentos').select('id, nome_departamento, ativo').order('nome_departamento', { ascending: true })
     if (error) throw error
-    return data || []
-  },
-  createProjDepartamento: async ({ nome, ativo }) => {
-    const { data, error } = await supabase.from('proj_departamentos').insert([{ nome, ativo: ativo ?? true }]).select()
-    if (error) throw error
-    return data?.[0]
-  },
-  updateProjDepartamento: async (id, { nome, ativo }) => {
-    const { data, error } = await supabase.from('proj_departamentos').update({ nome, ativo: ativo ?? true }).eq('id', id).select()
-    if (error) throw error
-    return data?.[0]
-  },
-  deleteProjDepartamento: async (id) => {
-    const { error } = await supabase.from('proj_departamentos').delete().eq('id', id)
-    if (error) throw error
-    return { success: true }
+    return (data || []).map(d => ({ id: d.id, nome: d.nome_departamento, ativo: d.ativo }))
   },
 
   // Restringe Gestão de Projetos por departamento. Modo TODOS/INDIVIDUAL igual ao de
@@ -5007,7 +5049,7 @@ export const apiService = {
   getAuditExtAchados: async () => {
     const { data, error } = await supabase
       .from('audext_achados')
-      .select('*, audext_ciclos(id, periodo_competencia, empresa_id, proj_empresas(id, nome))')
+      .select('*, audext_ciclos(id, periodo_competencia, empresa_id, proj_empresas(id, nome)), audext_tipos_divergencia(id, nome)')
       .order('criado_em', { ascending: false })
     if (error) throw error
     return data || []
@@ -5067,6 +5109,29 @@ export const apiService = {
     return { success: true }
   },
 
+  // TIPOS DE DIVERGÊNCIA (cadastro usado em Nova/Editar Divergência — em
+  // Configurações > Cadastro de Tabelas > Auditoria Externa)
+  getAuditExtTiposDivergencia: async () => {
+    const { data, error } = await supabase.from('audext_tipos_divergencia').select('*').order('nome', { ascending: true })
+    if (error) throw error
+    return data || []
+  },
+  createAuditExtTipoDivergencia: async ({ nome, ativo }) => {
+    const { data, error } = await supabase.from('audext_tipos_divergencia').insert([{ nome, ativo: ativo ?? true }]).select()
+    if (error) throw error
+    return data?.[0]
+  },
+  updateAuditExtTipoDivergencia: async (id, { nome, ativo }) => {
+    const { data, error } = await supabase.from('audext_tipos_divergencia').update({ nome, ativo: ativo ?? true }).eq('id', id).select()
+    if (error) throw error
+    return data?.[0]
+  },
+  deleteAuditExtTipoDivergencia: async (id) => {
+    const { error } = await supabase.from('audext_tipos_divergencia').delete().eq('id', id)
+    if (error) throw error
+    return { success: true }
+  },
+
   // Evidências (imagens) — bucket público "auditoria-evidencias", controle de
   // upload/edição/exclusão feito pela aplicação (mesmo padrão do resto do módulo).
   uploadAuditExtEvidencia: async (pastaId, file) => {
@@ -5089,7 +5154,7 @@ export const apiService = {
   getAuditExtPlanosAcao: async () => {
     const { data, error } = await supabase
       .from('audext_planos_acao')
-      .select('*, audext_achados(id, numero_codigo, titulo, classificacao_risco), proj_responsaveis(id, nome), proj_departamentos(id, nome), audext_tipos_acao(id, nome), dim_empresas(id, empresa_fantasia, nome_empresa)')
+      .select('*, audext_achados(id, numero_codigo, titulo, classificacao_risco), proj_responsaveis(id, nome), proj_departamentos:dim_departamentos(id, nome:nome_departamento), audext_tipos_acao(id, nome), dim_empresas(id, empresa_fantasia, nome_empresa)')
       .order('criado_em', { ascending: false })
     if (error) throw error
     return data || []

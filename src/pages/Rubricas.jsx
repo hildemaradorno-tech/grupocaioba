@@ -1,11 +1,56 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useSessionState } from '../hooks/useSessionState'
-import { Plus, X, AlertTriangle, Hash, Eye } from 'lucide-react'
+import { Plus, X, AlertTriangle, Hash, Eye, Search, ArrowUp, ArrowDown, ArrowUpDown, ChevronDown } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import PermissionActionButtons from '../components/PermissionActionButtons'
 import { apiService } from '../services/api'
 
 const FORM_VAZIO = { codigo: '', descricao: '', ativo: true, empresa_ids: [] }
+
+// Seletor de uma, várias ou todas as empresas (filtro da lista) — mesmo padrão já usado em
+// Cálculo de Comissões, Histórico de Comissões, Cargos, Funcionários e Política de Comissão.
+function FiltroMultiSelect({ placeholder, opcoes, selecionados, onChange }) {
+  const [aberto, setAberto] = useState(false)
+  const ref = useRef(null)
+  useEffect(() => {
+    const fechar = (e) => { if (ref.current && !ref.current.contains(e.target)) setAberto(false) }
+    document.addEventListener('mousedown', fechar)
+    return () => document.removeEventListener('mousedown', fechar)
+  }, [])
+  const toggle = (v) => onChange(selecionados.includes(v) ? selecionados.filter(x => x !== v) : [...selecionados, v])
+  const texto = selecionados.length === 0 ? placeholder : selecionados.length === 1 ? selecionados[0] : `${selecionados.length} selecionadas`
+  return (
+    <div ref={ref} className="relative">
+      <button type="button" onClick={() => setAberto(v => !v)}
+        className="w-full flex items-center justify-between gap-1 px-2 py-2 text-xs border border-slate-200 rounded-md bg-white hover:bg-slate-50 focus:outline-none focus:border-blue-400 transition-colors">
+        <span className={`truncate ${selecionados.length === 0 ? 'text-slate-400' : 'text-slate-700 font-semibold'}`}>{texto}</span>
+        <span className="flex items-center gap-0.5 shrink-0">
+          {selecionados.length > 0 && (
+            <span role="button" tabIndex={0} title="Limpar"
+              onClick={e => { e.stopPropagation(); onChange([]) }}
+              onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); onChange([]) } }}
+              className="p-0.5 text-slate-400 hover:text-red-600 rounded transition-colors">
+              <X className="h-3 w-3" />
+            </span>
+          )}
+          <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
+        </span>
+      </button>
+      {aberto && (
+        <div className="absolute z-50 mt-1 min-w-full w-max max-w-sm max-h-60 overflow-y-auto bg-white border border-slate-200 rounded-md shadow-xl py-1">
+          {opcoes.length === 0
+            ? <p className="px-3 py-2 text-xs text-slate-400">Nenhuma opção.</p>
+            : opcoes.map(op => (
+              <label key={op} className="flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-slate-50 cursor-pointer select-none">
+                <input type="checkbox" checked={selecionados.includes(op)} onChange={() => toggle(op)} className="w-3.5 h-3.5 rounded accent-blue-600 shrink-0" />
+                <span className="whitespace-nowrap">{op}</span>
+              </label>
+            ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 export default function Rubricas() {
   const [dados, setDados] = useState([])
@@ -23,6 +68,9 @@ export default function Rubricas() {
   const [buscaEmpresa, setBuscaEmpresa] = useState('')
   const [erroModal, setErroModal] = useState(null)
   const [salvando, setSalvando] = useState(false)
+  const [busca, setBusca] = useState('')
+  const [ordenacao, setOrdenacao] = useState({ coluna: 'codigo', direcao: 'asc' })
+  const [filtroEmpresas, setFiltroEmpresas] = useState([])
 
   const { hasActionOrDefault } = useAuth()
   const canEdit = hasActionOrDefault('rubricas', 'editar')
@@ -45,7 +93,40 @@ export default function Rubricas() {
   }
 
   const nomeEmpresa = (e) => e.empresa_fantasia || e.nome_empresa
+  const formatarCnpj = (v) => {
+    const d = String(v || '').replace(/\D/g, '')
+    if (d.length !== 14) return v || ''
+    return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}`
+  }
   const nomesEmpresas = (ids) => (ids || []).map(id => empresas.find(e => e.id === id)).filter(Boolean).map(nomeEmpresa)
+
+  const alternarOrdenacao = (coluna) => setOrdenacao(prev => prev.coluna === coluna
+    ? { coluna, direcao: prev.direcao === 'asc' ? 'desc' : 'asc' }
+    : { coluna, direcao: 'asc' })
+  const iconeOrdenacao = (coluna) => ordenacao.coluna !== coluna
+    ? <ArrowUpDown className="h-3 w-3 opacity-30" />
+    : ordenacao.direcao === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+
+  const empresasOpcoes = useMemo(() => empresas.map(nomeEmpresa), [empresas])
+
+  const dadosFiltrados = useMemo(() => {
+    const termo = busca.trim().toLowerCase()
+    let filtrados = !termo ? dados : dados.filter(item =>
+      (item.codigo || '').toLowerCase().includes(termo) || (item.descricao || '').toLowerCase().includes(termo)
+    )
+    if (filtroEmpresas.length > 0) {
+      filtrados = filtrados.filter(item =>
+        (item.empresa_ids || []).length === 0 || nomesEmpresas(item.empresa_ids).some(n => filtroEmpresas.includes(n))
+      )
+    }
+    const dir = ordenacao.direcao === 'asc' ? 1 : -1
+    if (ordenacao.coluna === 'ativo') {
+      return [...filtrados].sort((a, b) => dir * ((a.ativo ? 1 : 0) - (b.ativo ? 1 : 0)))
+    }
+    const campo = ordenacao.coluna === 'descricao' ? 'descricao' : 'codigo'
+    // localeCompare com numeric:true faz ordenação "natural" (6 < 56 < 315), em vez de lexicográfica pura.
+    return [...filtrados].sort((a, b) => dir * (a[campo] || '').localeCompare(b[campo] || '', 'pt-BR', { numeric: true, sensitivity: 'base' }))
+  }, [dados, busca, ordenacao, filtroEmpresas, empresas])
 
   const abrirIncluir = () => {
     setEditingId(null)
@@ -89,12 +170,7 @@ export default function Rubricas() {
       await loadData()
       setModalAberto(false)
     } catch (err) {
-      const msg = err.message || String(err)
-      if (msg.includes('duplicate key') || msg.includes('unique')) {
-        setErroModal(`Já existe uma rubrica com o código "${form.codigo}".`)
-      } else {
-        setErroModal('Erro ao salvar: ' + msg)
-      }
+      setErroModal('Erro ao salvar: ' + (err.message || String(err)))
     } finally {
       setSalvando(false)
     }
@@ -126,7 +202,11 @@ export default function Rubricas() {
   return (
     <div className="p-6 space-y-4 max-w-screen-xl">
 
-      <div className="flex items-center justify-end border-b border-slate-200 pb-4">
+      <div className="flex items-center justify-between border-b border-slate-200 pb-4">
+        <div>
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Rubrica</h1>
+          <p className="text-xs text-slate-500">Códigos de rubrica usados no TXT de pagamento (Processamento de Comissões) — selecionáveis em Política de Comissão.</p>
+        </div>
         {canEdit && (
           <button
             onClick={abrirIncluir}
@@ -138,23 +218,47 @@ export default function Rubricas() {
         )}
       </div>
 
+      <div className="flex items-center gap-3">
+        <div className="relative w-72">
+          <Search className="h-3.5 w-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+          <input type="text" value={busca} onChange={e => setBusca(e.target.value)}
+            placeholder="Buscar por código ou descrição..."
+            className="w-full text-xs pl-8 pr-2 py-2 border border-slate-200 rounded-md font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
+        </div>
+        <div className="w-56">
+          <FiltroMultiSelect placeholder="Todas as empresas" opcoes={empresasOpcoes} selecionados={filtroEmpresas} onChange={setFiltroEmpresas} />
+        </div>
+      </div>
+
       <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
         <table className="w-full text-left border-collapse">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[11px] font-semibold uppercase tracking-wider">
-              <th className="p-3 w-32">Código</th>
-              <th className="p-3">Descrição</th>
+              <th className="p-3 w-32">
+                <button onClick={() => alternarOrdenacao('codigo')} className="flex items-center gap-1 hover:text-slate-700 transition-colors">
+                  Código {iconeOrdenacao('codigo')}
+                </button>
+              </th>
+              <th className="p-3">
+                <button onClick={() => alternarOrdenacao('descricao')} className="flex items-center gap-1 hover:text-slate-700 transition-colors">
+                  Descrição {iconeOrdenacao('descricao')}
+                </button>
+              </th>
               <th className="p-3">Empresas</th>
-              <th className="p-3 w-28 text-center">Situação</th>
+              <th className="p-3 w-28 text-center">
+                <button onClick={() => alternarOrdenacao('ativo')} className="flex items-center gap-1 mx-auto hover:text-slate-700 transition-colors">
+                  Situação {iconeOrdenacao('ativo')}
+                </button>
+              </th>
               <th className="p-3 w-24 text-center">Ações</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
-            {dados.length === 0 ? (
+            {dadosFiltrados.length === 0 ? (
               <tr>
-                <td colSpan="5" className="p-6 text-center text-slate-400">Nenhuma rubrica cadastrada.</td>
+                <td colSpan="5" className="p-6 text-center text-slate-400">{busca ? 'Nenhuma rubrica encontrada.' : 'Nenhuma rubrica cadastrada.'}</td>
               </tr>
-            ) : dados.map((item) => (
+            ) : dadosFiltrados.map((item) => (
               <tr key={item.id} className="hover:bg-slate-50/70 transition-colors">
                 <td className="p-3 text-slate-900 font-bold font-mono">
                   <div className="flex items-center gap-2">
@@ -230,21 +334,46 @@ export default function Rubricas() {
                   />
                 </div>
                 <div className="flex flex-col gap-1.5">
-                  <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">
-                    Empresas que atendem ({form.empresa_ids.length === 0 ? 'todas' : form.empresa_ids.length})
-                  </label>
+                  <div className="flex items-center gap-1.5">
+                    <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">
+                      Empresas que atendem ({form.empresa_ids.length === 0 ? 'todas' : form.empresa_ids.length})
+                    </label>
+                    {form.empresa_ids.length > 0 && (
+                      <button type="button" onClick={() => setForm(prev => ({ ...prev, empresa_ids: [] }))}
+                        title="Limpar seleção (volta a valer pra todas)"
+                        className="text-slate-400 hover:text-red-600 transition-colors">
+                        <X className="h-3 w-3" />
+                      </button>
+                    )}
+                  </div>
                   <span className="text-[10px] text-slate-400 leading-relaxed">Nenhuma empresa marcada = vale pra todas.</span>
-                  <input type="text" value={buscaEmpresa} onChange={e => setBuscaEmpresa(e.target.value)}
-                    placeholder="Buscar empresa..."
-                    className="w-full text-xs p-2 border border-slate-200 rounded-md font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
+                  <div className="relative">
+                    <input type="text" value={buscaEmpresa} onChange={e => setBuscaEmpresa(e.target.value)}
+                      placeholder="Buscar por nome ou CNPJ..."
+                      className="w-full text-xs p-2 pr-7 border border-slate-200 rounded-md font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
+                    {buscaEmpresa && (
+                      <button type="button" onClick={() => setBuscaEmpresa('')}
+                        title="Limpar busca"
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-600 transition-colors">
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
                   <div className="border border-slate-200 rounded-md max-h-40 overflow-y-auto divide-y divide-slate-100">
                     {empresas
-                      .filter(e => !buscaEmpresa.trim() || nomeEmpresa(e).toLowerCase().includes(buscaEmpresa.trim().toLowerCase()))
+                      .filter(e => {
+                        const termo = buscaEmpresa.trim().toLowerCase()
+                        if (!termo) return true
+                        const termoDigitos = termo.replace(/\D/g, '')
+                        return nomeEmpresa(e).toLowerCase().includes(termo) ||
+                          (termoDigitos && String(e.cnpj || '').replace(/\D/g, '').includes(termoDigitos))
+                      })
                       .sort((a, b) => Number(form.empresa_ids.includes(b.id)) - Number(form.empresa_ids.includes(a.id)))
                       .map(e => (
                         <label key={e.id} className={`flex items-center gap-2 px-3 py-2 text-xs cursor-pointer hover:bg-slate-50 ${form.empresa_ids.includes(e.id) ? 'bg-emerald-50/60' : ''}`}>
                           <input type="checkbox" className="w-3.5 h-3.5" checked={form.empresa_ids.includes(e.id)} onChange={() => toggleEmpresa(e.id)} />
                           <span className="font-medium text-slate-700">{nomeEmpresa(e)}</span>
+                          {e.cnpj && <span className="text-[10px] text-slate-400 font-mono">{formatarCnpj(e.cnpj)}</span>}
                         </label>
                       ))}
                     {empresas.length === 0 && <div className="px-3 py-3 text-[11px] text-slate-400">Nenhuma empresa cadastrada.</div>}

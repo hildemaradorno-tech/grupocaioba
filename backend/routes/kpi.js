@@ -34,6 +34,7 @@ import {
   getCacheExtrator,
   getStatusSincronizacao,
   executarSincronizacao,
+  executarSincronizacaoCampanha,
   sincronizacaoEmAndamento,
 } from '../services/kpiSyncService.js'
 import { getPesos, setPeso, aplicarPesos } from '../services/kpiPesos.js'
@@ -742,6 +743,17 @@ router.post('/sync/executar', requireConfig, (req, res) => {
     .catch(err => console.error('[KPI Sync] Erro na sincronização manual:', err.message))
   res.status(202).json({ message: 'Sincronização iniciada.' })
 })
+
+// POST /api/kpi/sync/campanha?year=2026 — só o passo da Campanha Pós-Venda (fato_campanha_diario).
+// Espera terminar (normalmente segundos, quando os arquivos já estão no cache do extrator).
+router.post('/sync/campanha', requireConfig, wrap(async (req, res) => {
+  if (sincronizacaoEmAndamento()) {
+    return res.status(409).json({ error: 'sincronizacao_em_andamento', message: 'Já existe uma sincronização em andamento. Tente em alguns minutos.' })
+  }
+  const ano = parseInt(req.query.year) || new Date().getFullYear()
+  const resultado = await executarSincronizacaoCampanha(ano)
+  res.json({ ok: true, ano, ...resultado })
+}))
 
 router.post('/cache/invalidate', requireConfig, (req, res) => {
   invalidateCache()

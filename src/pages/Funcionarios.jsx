@@ -256,7 +256,8 @@ export default function Funcionarios() {
   // colFiltros persiste no localStorage — quem já usava a tela antes do filtro de CNPJ
   // existir tem um objeto salvo sem essa chave, então nunca confia direto em
   // colFiltros.cnpj (undefined quebraria .length/.includes); sempre usa cnpjFiltro.
-  const [colFiltros, setColFiltros] = useSessionState('func_colfiltros', { nome: '', empresa: [], cnpj: [], cargo: [], departamento: [], setor: [], ativo: [] })
+  const [colFiltros, setColFiltros] = useSessionState('func_colfiltros', { nome: '', empresa: [], cnpj: [], codigo: [], cargo: [], departamento: [], setor: [], ativo: [] })
+  const codigoFiltro = colFiltros.codigo || []
   const cnpjFiltro = colFiltros.cnpj || []
   const departamentoFiltro = colFiltros.departamento || []
   const setorFiltro = colFiltros.setor || []
@@ -855,6 +856,7 @@ export default function Funcionarios() {
   // no filtro, em vez de simplesmente sumir do seletor sem dar como localizar esses registros.
   const SEM_DEPARTAMENTO = 'Sem departamento'
   const SEM_SETOR = 'Sem setor'
+  const SEM_CODIGO = 'Sem código'
   // Departamento/Setor são definidos no Cargo — o funcionário só guarda uma cópia desses ids
   // (gravada da última vez que o cadastro dele foi salvo). Se o Cargo mudar de
   // departamento/setor depois, essa cópia fica desatualizada, então sempre prioriza o valor
@@ -881,11 +883,17 @@ export default function Funcionarios() {
     (ignorar === 'nome' || !colFiltros.nome || (f.nome_funcionario || '').toLowerCase().includes(colFiltros.nome.toLowerCase())) &&
     (ignorar === 'empresa' || colFiltros.empresa.length === 0 || colFiltros.empresa.includes(f.empresa_nome)) &&
     (ignorar === 'cnpj' || cnpjFiltro.length === 0 || cnpjFiltro.includes(getCnpj(f))) &&
+    (ignorar === 'codigo' || codigoFiltro.length === 0 || codigoFiltro.includes(f.codigo_funcionario || SEM_CODIGO)) &&
     (ignorar === 'cargo' || colFiltros.cargo.length === 0 || colFiltros.cargo.includes(f.cargo_nome)) &&
     (ignorar === 'departamento' || departamentoFiltro.length === 0 || getDeptLabels(f).some(v => departamentoFiltro.includes(v))) &&
     (ignorar === 'setor' || setorFiltro.length === 0 || getSetorLabelsF(f).some(v => setorFiltro.includes(v))) &&
     (ignorar === 'ativo' || colFiltros.ativo.length === 0 || colFiltros.ativo.includes(statusInfo(f).label))
-  ), [dados, colFiltros, cnpjFiltro, departamentoFiltro, setorFiltro, departamentos, setores, cargos, getCnpj])
+  ), [dados, colFiltros, cnpjFiltro, codigoFiltro, departamentoFiltro, setorFiltro, departamentos, setores, cargos, getCnpj])
+
+  const codigoOpcoes = useMemo(() => {
+    const base = filtrarComExcecao('codigo')
+    return comSemOpcao(base.map(f => f.codigo_funcionario), SEM_CODIGO, base.some(f => !f.codigo_funcionario))
+  }, [filtrarComExcecao])
 
   const empresasUnicas = useMemo(() =>
     [...new Set(filtrarComExcecao('empresa').map(f => f.empresa_nome).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR')),
@@ -1096,7 +1104,14 @@ export default function Funcionarios() {
               <th className="p-3 w-24 text-center">Ações</th>
             </tr>
             <tr className="bg-white border-b border-slate-100">
-              <th className="px-2 py-1.5 w-20" />
+              <th className="px-2 py-1.5 w-20">
+                <FiltroMultiSelect
+                  placeholder="Todos"
+                  opcoes={codigoOpcoes}
+                  selecionados={codigoFiltro}
+                  onChange={v => setCol('codigo', v)}
+                />
+              </th>
               <th className="px-2 py-1.5">
                 <div className="relative">
                   <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-slate-300 pointer-events-none" />
@@ -1168,8 +1183,8 @@ export default function Funcionarios() {
               </th>
               <th className="px-2 py-1.5 w-24 text-center">
                 <button
-                  onClick={() => setColFiltros({ nome: '', empresa: [], cnpj: [], cargo: [], departamento: [], setor: [], ativo: [] })}
-                  disabled={!colFiltros.nome && colFiltros.empresa.length === 0 && cnpjFiltro.length === 0 && colFiltros.cargo.length === 0 && departamentoFiltro.length === 0 && setorFiltro.length === 0 && colFiltros.ativo.length === 0}
+                  onClick={() => setColFiltros({ nome: '', empresa: [], cnpj: [], codigo: [], cargo: [], departamento: [], setor: [], ativo: [] })}
+                  disabled={!colFiltros.nome && colFiltros.empresa.length === 0 && cnpjFiltro.length === 0 && codigoFiltro.length === 0 && colFiltros.cargo.length === 0 && departamentoFiltro.length === 0 && setorFiltro.length === 0 && colFiltros.ativo.length === 0}
                   className="flex items-center gap-1 mx-auto text-[11px] font-semibold text-slate-400 hover:text-red-600 disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:text-slate-400 transition-colors"
                   title="Limpar todos os filtros"
                 >
@@ -1183,7 +1198,7 @@ export default function Funcionarios() {
             {dadosFiltrados.length === 0 ? (
               <tr>
                 <td colSpan="12" className="p-6 text-center text-slate-400">
-                  {(colFiltros.nome || colFiltros.empresa.length > 0 || cnpjFiltro.length > 0 || colFiltros.cargo.length > 0 || departamentoFiltro.length > 0 || setorFiltro.length > 0 || colFiltros.ativo.length > 0)
+                  {(colFiltros.nome || colFiltros.empresa.length > 0 || cnpjFiltro.length > 0 || codigoFiltro.length > 0 || colFiltros.cargo.length > 0 || departamentoFiltro.length > 0 || setorFiltro.length > 0 || colFiltros.ativo.length > 0)
                     ? 'Nenhum funcionário encontrado para os filtros aplicados.' : 'Nenhum funcionário cadastrado.'}
                 </td>
               </tr>
