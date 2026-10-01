@@ -1596,7 +1596,7 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
   }
 
   return (
-    <div className="min-h-full p-6 space-y-4 max-w-screen-xl">
+    <div className="min-h-full w-full p-6 space-y-4">
 
       {/* CABEÇALHO */}
       <div className="flex items-center justify-between border-b border-slate-200 pb-4">
