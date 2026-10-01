@@ -1596,7 +1596,7 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
   }
 
   return (
-    <div className="p-6 space-y-4 max-w-screen-xl">
+    <div className="min-h-full p-6 space-y-4 max-w-screen-xl">
 
       {/* CABEÇALHO */}
       <div className="flex items-center justify-between border-b border-slate-200 pb-4">
@@ -1748,7 +1748,7 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
                 <Lock className="h-3 w-3" />
                 {elegiveisFiltrados.length > 0
                   ? `Este período já foi ${lote.status === 'PROCESSADO' ? 'processado' : lote.status === 'CONFERIDO_DP' ? 'conferido pelo DP' : 'conferido'} — só ${elegiveisFiltrados.length} funcionário(s) liberado(s) pra reprocessamento em Processamento de Comissões ficam recalculáveis agora.`
-                  : `Este período já foi ${lote.status === 'PROCESSADO' ? 'processado' : lote.status === 'CONFERIDO_DP' ? 'conferido pelo DP' : 'conferido'} — peça ao RH/DP pra liberar o reprocessamento em Processamento de Comissões antes de recalcular.`}
+                  : `Este período já foi ${lote.status === 'PROCESSADO' ? 'processado' : lote.status === 'CONFERIDO_DP' ? 'conferido pelo DP' : 'conferido'} — peça ao RH/DP pra liberar o reprocessamento antes de recalcular.`}
               </p>
             )}
             {filtrosAbertos && (
