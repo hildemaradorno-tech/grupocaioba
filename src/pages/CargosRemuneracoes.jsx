@@ -377,7 +377,7 @@ export default function CargosRemuneracoes() {
   if (loading) return <div className="p-6 text-xs text-slate-500">Carregando...</div>
 
   return (
-    <div className="p-6 space-y-4 max-w-[1500px]">
+    <div className="min-h-full w-full p-6 space-y-4">
 
       {/* CABEÇALHO */}
       <div className="flex items-center justify-between border-b border-slate-200 pb-4">
