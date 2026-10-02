@@ -9,17 +9,22 @@ import { buscaComCoringa } from '../utils/buscaTexto'
 
 // Seletor de várias opções (usado no filtro de Empresa da lista) — mesmo padrão já usado em
 // Cálculo de Comissões, Histórico de Comissões, Cargos e Funcionários.
-function FiltroMultiSelect({ placeholder, opcoes, selecionados, onChange, labelFor }) {
+function FiltroMultiSelect({ placeholder, opcoes, selecionados, onChange, labelFor, comBusca }) {
   const [aberto, setAberto] = useState(false)
+  const [busca, setBusca] = useState('')
   const ref = useRef(null)
   useEffect(() => {
     const fechar = (e) => { if (ref.current && !ref.current.contains(e.target)) setAberto(false) }
     document.addEventListener('mousedown', fechar)
     return () => document.removeEventListener('mousedown', fechar)
   }, [])
+  useEffect(() => { if (!aberto) setBusca('') }, [aberto])
   const toggle = (v) => onChange(selecionados.includes(v) ? selecionados.filter(x => x !== v) : [...selecionados, v])
   const rotulo = labelFor || ((v) => v)
   const texto = selecionados.length === 0 ? placeholder : selecionados.length === 1 ? rotulo(selecionados[0]) : `${selecionados.length} selecionados`
+  const opcoesFiltradas = comBusca && busca.trim()
+    ? opcoes.filter(op => buscaComCoringa(rotulo(op), busca))
+    : opcoes
   return (
     <div ref={ref} className="relative">
       <button type="button" onClick={() => setAberto(v => !v)}
@@ -38,15 +43,27 @@ function FiltroMultiSelect({ placeholder, opcoes, selecionados, onChange, labelF
         </span>
       </button>
       {aberto && (
-        <div className="absolute z-50 mt-1 min-w-full w-max max-w-sm max-h-60 overflow-y-auto bg-white border border-slate-200 rounded-md shadow-xl py-1">
-          {opcoes.length === 0
-            ? <p className="px-3 py-2 text-xs text-slate-400">Nenhuma opção.</p>
-            : opcoes.map(op => (
-              <label key={op} className="flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-slate-50 cursor-pointer select-none">
-                <input type="checkbox" checked={selecionados.includes(op)} onChange={() => toggle(op)} className="w-3.5 h-3.5 rounded accent-blue-600 shrink-0" />
-                <span className="whitespace-nowrap">{rotulo(op)}</span>
-              </label>
-            ))}
+        <div className="absolute z-50 mt-1 min-w-full w-max max-w-sm max-h-72 flex flex-col bg-white border border-slate-200 rounded-md shadow-xl overflow-hidden">
+          {comBusca && (
+            <div className="relative shrink-0 p-1.5 border-b border-slate-100">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-300 pointer-events-none" />
+              <input
+                type="text" autoFocus value={busca} onChange={e => setBusca(e.target.value)}
+                onClick={e => e.stopPropagation()} placeholder="Buscar..."
+                className="w-full text-xs pl-7 pr-2 py-1.5 border border-slate-200 rounded-md focus:outline-none focus:border-blue-400"
+              />
+            </div>
+          )}
+          <div className="overflow-y-auto py-1">
+            {opcoesFiltradas.length === 0
+              ? <p className="px-3 py-2 text-xs text-slate-400">Nenhuma opção.</p>
+              : opcoesFiltradas.map(op => (
+                <label key={op} className="flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-slate-50 cursor-pointer select-none">
+                  <input type="checkbox" checked={selecionados.includes(op)} onChange={() => toggle(op)} className="w-3.5 h-3.5 rounded accent-blue-600 shrink-0" />
+                  <span className="whitespace-nowrap">{rotulo(op)}</span>
+                </label>
+              ))}
+          </div>
         </div>
       )}
     </div>
@@ -779,7 +796,8 @@ export default function PoliticaComissao() {
           <label className="text-[10px] font-bold text-slate-400 uppercase">Cargo</label>
           <FiltroMultiSelect placeholder="Todos" opcoes={cargosDisponiveis} selecionados={colFiltro.cargo}
             onChange={vs => setColFiltro(p => ({ ...p, cargo: vs }))}
-            labelFor={c => codigoPorNomeCargo(c) ? `${codigoPorNomeCargo(c)} — ${c}` : c} />
+            labelFor={c => codigoPorNomeCargo(c) ? `${codigoPorNomeCargo(c)} — ${c}` : c}
+            comBusca />
         </div>
         <div className="flex flex-col gap-1 w-72">
           <label className="text-[10px] font-bold text-slate-400 uppercase">Descrição da Comissão</label>
@@ -810,7 +828,6 @@ export default function PoliticaComissao() {
                   Cargos {iconeOrdenacao('cargo')}
                 </button>
               </th>
-              <th className="p-3 min-w-[110px]">Tipo de Processo</th>
               <th className="p-3 min-w-[80px] text-center">Tipo</th>
               <th className="p-3 min-w-[110px] text-right">
                 <button onClick={() => alternarOrdenacao('servicos')} className="flex items-center gap-1 ml-auto hover:text-slate-700 transition-colors">
@@ -842,7 +859,7 @@ export default function PoliticaComissao() {
           <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
             {gruposExibidos.length === 0 ? (
               <tr>
-                <td colSpan="10" className="p-6 text-center text-slate-400">
+                <td colSpan="9" className="p-6 text-center text-slate-400">
                   {grupos.length === 0 ? 'Nenhuma política de comissão cadastrada.' : 'Nenhuma política encontrada para os filtros aplicados.'}
                 </td>
               </tr>
@@ -859,27 +876,6 @@ export default function PoliticaComissao() {
                 </td>
                 <td className="p-3 min-w-[280px] text-slate-600 whitespace-nowrap">
                   {grupo.descricao_comissao || '-'}
-                  {grupo.rubricaVariaPorEmpresa ? (
-                    <div className="flex flex-col gap-0.5 mt-1">
-                      {grupo.rubricasPorEmpresa.map(r => (
-                        <span key={r.empresaId || r.empresaNome} className="text-[10px] font-normal text-slate-400" title={r.empresaNome || ''}>
-                          Rubrica <span className="font-mono text-slate-500">{r.codigo || '-'}</span> ({r.empresaNome || 'sem empresa'})
-                        </span>
-                      ))}
-                    </div>
-                  ) : grupo.codigo_rubrica ? (() => {
-                    const desc = rubricas.find(r => r.codigo === grupo.codigo_rubrica)?.descricao
-                    return (
-                      <div className={`text-[10px] font-normal text-slate-400 mt-1 relative group w-fit ${desc ? 'cursor-help' : ''}`}>
-                        Rubrica <span className="font-mono text-slate-500">{grupo.codigo_rubrica}</span>
-                        {desc && (
-                          <span className="absolute left-0 top-full mt-1 hidden group-hover:block w-56 bg-slate-800 text-white text-[11px] font-normal rounded-md p-2 shadow-xl z-30 leading-relaxed whitespace-normal normal-case">
-                            {desc}
-                          </span>
-                        )}
-                      </div>
-                    )
-                  })() : null}
                 </td>
                 <td className="p-3 min-w-[320px]">
                   <div className="flex flex-col gap-1">
@@ -891,21 +887,6 @@ export default function PoliticaComissao() {
                       </span>
                     ))}
                   </div>
-                </td>
-                <td className="p-3 min-w-[110px] font-mono text-slate-600">
-                  {grupo.tipo_processo ? (() => {
-                    const desc = tiposProcesso.find(t => t.codigo === grupo.tipo_processo)?.descricao
-                    return (
-                      <span className={`relative group ${desc ? 'cursor-help' : ''}`}>
-                        {grupo.tipo_processo}
-                        {desc && (
-                          <span className="absolute left-0 top-full mt-1 hidden group-hover:block w-56 bg-slate-800 text-white text-[11px] font-normal font-sans rounded-md p-2 shadow-xl z-30 leading-relaxed whitespace-normal">
-                            {desc}
-                          </span>
-                        )}
-                      </span>
-                    )
-                  })() : '-'}
                 </td>
                 <td className="p-3 min-w-[80px] text-center">
                   {grupo.usa_faixa === 'SIM' ? (
@@ -1237,19 +1218,32 @@ export default function PoliticaComissao() {
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Código da Rubrica</span>
                 {itemVisualizado.rubricaVariaPorEmpresa ? (
                   <div className="flex flex-col gap-0.5 mt-0.5">
-                    {itemVisualizado.rubricasPorEmpresa.map(r => (
-                      <span key={r.empresaId || r.empresaNome} className="text-xs font-semibold text-slate-800">
-                        {r.codigo || '-'} <span className="font-normal text-slate-400">({r.empresaNome || 'sem empresa'})</span>
-                      </span>
-                    ))}
+                    {itemVisualizado.rubricasPorEmpresa.map(r => {
+                      const desc = r.codigo ? rubricas.find(rb => rb.codigo === r.codigo)?.descricao : null
+                      return (
+                        <span key={r.empresaId || r.empresaNome} className="text-xs font-semibold text-slate-800">
+                          {r.codigo || '-'}{desc && <span className="font-normal text-slate-500"> — {desc}</span>} <span className="font-normal text-slate-400">({r.empresaNome || 'sem empresa'})</span>
+                        </span>
+                      )
+                    })}
                   </div>
                 ) : (
-                  <span className="text-xs font-semibold text-slate-800">{itemVisualizado.codigo_rubrica || '-'}</span>
+                  <span className="text-xs font-semibold text-slate-800">
+                    {itemVisualizado.codigo_rubrica || '-'}
+                    {itemVisualizado.codigo_rubrica && rubricas.find(rb => rb.codigo === itemVisualizado.codigo_rubrica)?.descricao && (
+                      <span className="font-normal text-slate-500"> — {rubricas.find(rb => rb.codigo === itemVisualizado.codigo_rubrica).descricao}</span>
+                    )}
+                  </span>
                 )}
               </div>
               <div className="flex flex-col gap-0.5">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Tipo do Processo</span>
-                <span className="text-xs font-semibold text-slate-800">{itemVisualizado.tipo_processo || '-'}</span>
+                <span className="text-xs font-semibold text-slate-800">
+                  {itemVisualizado.tipo_processo || '-'}
+                  {itemVisualizado.tipo_processo && tiposProcesso.find(t => t.codigo === itemVisualizado.tipo_processo)?.descricao && (
+                    <span className="font-normal text-slate-500"> — {tiposProcesso.find(t => t.codigo === itemVisualizado.tipo_processo).descricao}</span>
+                  )}
+                </span>
               </div>
               <div className="flex flex-col gap-0.5">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Fonte de Cálculo</span>

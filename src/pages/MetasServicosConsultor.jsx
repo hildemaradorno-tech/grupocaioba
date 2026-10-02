@@ -2,6 +2,7 @@
 import { useSessionState } from '../hooks/useSessionState'
 import { Plus, Trash2, X, AlertTriangle, ChevronRight, ChevronDown, Cog, Loader2, CheckCircle2, Sparkles, Pencil, Info, Search, Copy } from 'lucide-react'
 import BotaoAcaoRetratil from '../components/BotaoAcaoRetratil'
+import SeletorMeses, { CssMesesOcultos } from '../components/SeletorMeses'
 import { useAuth } from '../context/AuthContext'
 import { SearchCombobox } from '../components/SearchCombobox'
 import { EmpresaMultiFilter, empresaParam, filtrarPorEmpresas, empresaUnica } from '../components/EmpresaMultiFilter'
@@ -115,6 +116,7 @@ export default function MetasServicosConsultor({ empresaExterna = null, anoExter
   const filtrosExternos = empresaExterna != null || anoExterno != null
   const [filtroSetor,    setFiltroSetor]    = useSessionState('msc_setor', '')
   const [filtroConsultor,setFiltroConsultor]= useSessionState('msc_consultor', '') // busca por nome (texto livre)
+  const [mesesSel,       setMesesSel]       = useSessionState('mpvs_servicos_meses', [])
   const { hasActionOrDefault } = useAuth()
   const canEdit = hasActionOrDefault('metas/pos-vendas/servicos_pecas', 'editar')
   const canDelete = hasActionOrDefault('metas/pos-vendas/servicos_pecas', 'excluir')
@@ -392,6 +394,10 @@ export default function MetasServicosConsultor({ empresaExterna = null, anoExter
       || (r0.setor_id && setores.find(s => s.id === r0.setor_id) ? r0.setor_id : null)
       || r0.setor_id || ''
     const r0Setor = setores.find(s => s.id === r0SId)
+    // Linhas antigas foram gravadas sem cargo_id (bug já corrigido na origem) — resolve pelo
+    // cadastro atual do funcionário como fallback, pra não perder a posição ao reabrir/editar.
+    const r0Func = funcionarios.find(f => f.id === r0.colaborador_id)
+    const r0CargoId = r0.cargo_id || r0Func?.cargo_id || ''
     setForm({
       ...FORM_VAZIO,
       empresa_id:       r0.empresa_id,
@@ -400,8 +406,8 @@ export default function MetasServicosConsultor({ empresaExterna = null, anoExter
       departamento_nome:r0.departamento_nome|| '',
       setor_id:         r0SId,
       setor_nome:       r0Setor?.nome_setor || r0.setor_nome || '',
-      cargo_id:         r0.cargo_id          || '',
-      cargo_nome:       r0.cargo_nome        || '',
+      cargo_id:         r0CargoId,
+      cargo_nome:       r0.cargo_nome || cargosPorId[r0CargoId]?.nome_cargo || '',
       colaborador_id:   r0.colaborador_id,
       colaborador_nome: r0.colaborador_nome  || '',
       ano:              filtroAno,
@@ -510,12 +516,12 @@ export default function MetasServicosConsultor({ empresaExterna = null, anoExter
       }
       for (const m of mesesForm) {
         const pct  = Number(m.percentual) || 0
-        const meta = calcMetaConsultor(m.mes, pct)
+        const { pecas: metaPecas, servicos: metaServicos, total: meta } = calcMetaConsultorDetalhe(m.mes, pct)
         await apiService.upsertMetaConsultor({
           ...cleanPayload,
           colaborador_id: form.colaborador_id === 'A_CONTRATAR' ? '00000000-0000-0000-0000-000000000000' : form.colaborador_id,
           mes: m.mes, ano: Number(form.ano),
-          percentual: pct, meta_faturamento: meta,
+          percentual: pct, meta_faturamento: meta, meta_pecas: metaPecas, meta_servicos: metaServicos,
           margem_pecas_pct:    numOuNull(m.margem_pecas_pct),
           margem_servicos_pct: numOuNull(m.margem_servicos_pct),
           ticket_pecas:        numOuNull(m.ticket_pecas),
@@ -580,14 +586,16 @@ export default function MetasServicosConsultor({ empresaExterna = null, anoExter
             </div>
           </div>
         </div>
+        <SeletorMeses selecionados={mesesSel} onChange={setMesesSel} />
       </div>
 
       {error && <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm"><AlertTriangle size={15}/> {error} <button onClick={()=>setError(null)} className="ml-auto"><X size={14}/></button></div>}
 
       {/* TABELA TREE */}
+      <CssMesesOcultos escopo="tabela-metas-consultor" selecionados={mesesSel} />
       <div className="flex-1 bg-white border border-slate-200 rounded-xl overflow-hidden flex flex-col min-h-0">
         <div className="overflow-auto flex-1">
-          <table className="text-xs border-separate border-spacing-0" style={{ minWidth: '1700px' }}>
+          <table className="tabela-metas-consultor text-xs border-separate border-spacing-0" style={{ minWidth: '1700px' }}>
             <thead className="bg-slate-50 sticky top-0 z-20">
               <tr>
                 <th className="px-3 py-2.5 text-left font-semibold text-slate-600 uppercase border-b border-slate-200 w-60 sticky left-0 bg-slate-50 z-10">
@@ -816,11 +824,16 @@ export default function MetasServicosConsultor({ empresaExterna = null, anoExter
                 ) : (
                   <SearchCombobox
                     value={form.colaborador_id}
-                    onChange={(id) => setForm(prev => ({
-                      ...prev,
-                      colaborador_id: id,
-                      colaborador_nome: id === 'A_CONTRATAR' ? 'A contratar' : (funcionarios.find(f => f.id === id)?.nome_funcionario || ''),
-                    }))}
+                    onChange={(id) => {
+                      const func = id === 'A_CONTRATAR' ? null : funcionarios.find(f => f.id === id)
+                      setForm(prev => ({
+                        ...prev,
+                        colaborador_id: id,
+                        colaborador_nome: id === 'A_CONTRATAR' ? 'A contratar' : (func?.nome_funcionario || ''),
+                        cargo_id: func?.cargo_id || '',
+                        cargo_nome: cargosPorId[func?.cargo_id]?.nome_cargo || '',
+                      }))
+                    }}
                     placeholder="Selecione..."
                     emptyOptionLabel="Selecione..."
                     searchPlaceholder="Buscar pelo nome ou cargo..."

@@ -1,8 +1,7 @@
 /**
- * Sincronização agendada dos dados de KPI/Matriz KPIs: lê o SharePoint uma
- * vez (reaproveitando as mesmas funções de sharepointKpi.js/sharepointExtractor.js
- * que os endpoints ao vivo já usam) e grava o resultado no Supabase, para as
- * telas pararem de acessar o SharePoint a cada carregamento.
+ * Sincronização manual dos dados de KPI/Matriz KPIs: lê o SharePoint uma vez
+ * (reaproveitando as mesmas funções dos endpoints ao vivo) e grava o resultado
+ * no Supabase para as telas consumirem o cache.
  */
 import { getSupabaseAdmin } from './supabaseAdmin.js'
 import { getResultados, getBloco1, getBloco2, getBacklog } from './sharepointKpi.js'
@@ -158,12 +157,11 @@ export async function getCacheExtrator(fonte, ano, empresa) {
 export async function getStatusSincronizacao() {
   const supabaseAdmin = getSupabaseAdmin()
   if (!supabaseAdmin) return { configurado: false }
-  const { data: config } = await supabaseAdmin.from('kpi_sync_config').select('*').eq('id', 1).maybeSingle()
   const { data: ultimaExecucao } = await supabaseAdmin
     .from('kpi_sync_execucoes')
     .select('*')
     .order('iniciado_em', { ascending: false })
     .limit(1)
     .maybeSingle()
-  return { configurado: true, ativo: config?.ativo ?? true, ultimaExecucao: ultimaExecucao || null }
+  return { configurado: true, ultimaExecucao: ultimaExecucao || null }
 }

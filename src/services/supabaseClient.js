@@ -82,7 +82,7 @@ const SELECT_POLITICA_COM_FONTE_BASE = `
   *,
   fonte_calculo:dim_fontes_calculo(id, nome, codigo, pasta_sharepoint, prefixo_arquivo, usa_subpasta_ano, subpasta_padrao, linha_cabecalho, coluna_empresa, coluna_data, coluna_funcionario),
   base_calculo:dim_bases_calculo(id, nome, codigo, coluna_valor, coluna_tipo_movimento, tipo_agregacao, desconto_percentual, fonte_microwork_id, fonte_microwork:dim_fontes_microwork(*)),
-  regra_comissao:dim_regras_comissao(id, nome, tipo_faixa, meta_tipo, base_politica_ids, desconto_percentual, faixas:dim_regras_comissao_faixas(ordem, operador, valor, percentual))
+  regra_comissao:dim_regras_comissao(id, nome, tipo_faixa, meta_tipo, base_politica_ids, meta_equipe_agrupamento_ids, meta_campo, desconto_percentual, faixas:dim_regras_comissao_faixas(ordem, operador, valor, percentual))
 `
 const enriquecePoliticaFonteBase = (p) => ({
   ...p,
@@ -1420,11 +1420,16 @@ export const apiService = {
   },
 
   // Cria/atualiza a regra e substitui todas as faixas (delete + insert) — faixas: [{ operador, valor, percentual }]
-  salvarRegraComissao: async (id, { nome, descricao, ativo, tipo_faixa, meta_tipo, base_politica_ids, desconto_percentual }, faixas) => {
+  salvarRegraComissao: async (id, { nome, descricao, ativo, tipo_faixa, meta_tipo, base_politica_ids, meta_equipe_agrupamento_ids, meta_campo, desconto_percentual }, faixas) => {
     let regraId = id
     // meta_tipo vale pros dois tipos que comparam com Meta (% e Valor Fixo); base_politica_ids
     // só faz sentido no tipo por % (Valor Fixo paga direto, sem multiplicar por nenhuma política).
-    const campos = { nome, descricao: descricao || null, ativo: ativo ?? true, tipo_faixa: tipo_faixa || 'VALOR', meta_tipo: tipo_faixa !== 'VALOR' ? (meta_tipo || null) : null, base_politica_ids: tipo_faixa === 'PERCENTUAL_META' ? (base_politica_ids || []) : [], desconto_percentual: desconto_percentual || 0 }
+    // meta_equipe_agrupamento_ids também vale pros dois tipos por Meta — quando preenchido, a
+    // Meta comparada é a soma das metas publicadas de todos os cargos desses Agrupamentos de
+    // Cargos, não a do próprio funcionário. meta_campo escolhe qual parte da meta publicada
+    // comparar (Total/Peças/Serviços) — alguns tipos (Consultor, Mecânico, Funilaria) guardam a
+    // meta já separada em meta_pecas/meta_servicos dentro do mesmo registro.
+    const campos = { nome, descricao: descricao || null, ativo: ativo ?? true, tipo_faixa: tipo_faixa || 'VALOR', meta_tipo: tipo_faixa !== 'VALOR' ? (meta_tipo || null) : null, base_politica_ids: tipo_faixa === 'PERCENTUAL_META' ? (base_politica_ids || []) : [], meta_equipe_agrupamento_ids: tipo_faixa !== 'VALOR' ? (meta_equipe_agrupamento_ids || []) : [], meta_campo: tipo_faixa !== 'VALOR' ? (meta_campo || 'total') : 'total', desconto_percentual: desconto_percentual || 0 }
     if (id) {
       const { error } = await supabase.from('dim_regras_comissao')
         .update({ ...campos, atualizado_em: new Date().toISOString() }).eq('id', id)
@@ -1452,14 +1457,52 @@ export const apiService = {
     if (!colaboradorIds?.length || !tipos?.length) return {}
     const { data, error } = await supabase
       .from('fato_metas_publicadas')
-      .select('colaborador_id, tipo, meta_faturamento')
+      .select('colaborador_id, tipo, meta_faturamento, meta_pecas, meta_servicos')
       .eq('ano', ano).eq('mes', mes)
       .in('colaborador_id', colaboradorIds)
       .in('tipo', tipos)
     if (error) throw error
     const mapa = {}
-    for (const r of data || []) mapa[`${r.colaborador_id}|${r.tipo}`] = Number(r.meta_faturamento) || 0
+    // Guarda os 3 campos — quem consome escolhe (via regra.meta_campo) se compara com o total
+    // ou só a parte de Peças/Serviços da meta (ex: Consultor tem as duas dentro da mesma meta).
+    for (const r of data || []) mapa[`${r.colaborador_id}|${r.tipo}`] = {
+      total: Number(r.meta_faturamento) || 0,
+      pecas: Number(r.meta_pecas) || 0,
+      servicos: Number(r.meta_servicos) || 0,
+    }
     return mapa
+  },
+
+  // "Meta de Equipe" de uma Regra (meta_equipe_agrupamento_ids preenchido): soma as metas
+  // publicadas de TODOS os funcionários da MESMA empresa cujo cargo pertence a algum desses
+  // Agrupamentos de Cargos, no mês/ano — usado quando quem recebe a comissão (ex: um
+  // coordenador) não tem meta própria cadastrada, e a meta dele é a soma do time da própria loja
+  // (não de todas as lojas que têm cargos nesse agrupamento). Resolve os cargos do agrupamento
+  // na hora (não é uma lista congelada) — se um cargo mudar de agrupamento depois, a soma acompanha.
+  getMetaEquipePeriodo: async (agrupamentoIds, empresaId, ano, mes, tipo) => {
+    const vazio = { total: 0, pecas: 0, servicos: 0 }
+    if (!agrupamentoIds?.length || !empresaId || !tipo) return vazio
+    const { data: cargosDoAgrupamento, error: eCargos } = await supabase
+      .from('dim_cargos')
+      .select('id')
+      .in('agrupamento_id', agrupamentoIds)
+      .eq('empresa_id', empresaId)
+    if (eCargos) throw eCargos
+    const cargoIds = (cargosDoAgrupamento || []).map(c => c.id)
+    if (cargoIds.length === 0) return vazio
+    const { data, error } = await supabase
+      .from('fato_metas_publicadas')
+      .select('meta_faturamento, meta_pecas, meta_servicos')
+      .eq('ano', ano).eq('mes', mes).eq('tipo', tipo)
+      .in('cargo_id', cargoIds)
+    if (error) throw error
+    // Soma os 3 campos — quem consome escolhe (via regra.meta_campo) comparar com o total ou só
+    // a parte de Peças/Serviços da meta somada da equipe.
+    return (data || []).reduce((acc, r) => ({
+      total: acc.total + (Number(r.meta_faturamento) || 0),
+      pecas: acc.pecas + (Number(r.meta_pecas) || 0),
+      servicos: acc.servicos + (Number(r.meta_servicos) || 0),
+    }), vazio)
   },
 
   // Vincula a Regra às Políticas escolhidas (grupoIds = grupo_politica_id ou id da linha sem grupo)
@@ -1980,41 +2023,41 @@ export const apiService = {
   // sem travar ou apagar o trabalho de outro gerente em outra empresa)
   // Rascunho (calculado/salvo) -> Conferido (Gerente) -> Processado (RH) -> RH pode
   // autorizar reprocessamento, o que reabre o lote como Rascunho de novo.
-  getLoteComissoes: async (periodoInicio, periodoFim, empresaId, departamentoId) => {
+  getLoteComissoes: async (periodoInicio, periodoFim, empresaId, setorId) => {
     let query = supabase
       .from('fato_comissoes_lotes')
       .select('*')
       .eq('periodo_inicio', periodoInicio)
       .eq('periodo_fim', periodoFim)
     query = empresaId ? query.eq('empresa_id', empresaId) : query.is('empresa_id', null)
-    query = departamentoId ? query.eq('departamento_id', departamentoId) : query.is('departamento_id', null)
+    query = setorId ? query.eq('setor_id', setorId) : query.is('setor_id', null)
     const { data, error } = await query.maybeSingle()
     if (error) throw error
     return data || null
   },
 
-  // Lote mais recente de empresa+departamento cujo período está DENTRO do intervalo informado —
+  // Lote mais recente de empresa+setor cujo período está DENTRO do intervalo informado —
   // fallback quando o usuário olha o mês inteiro mas o cálculo foi gerado até uma data anterior
   // (ex: 01/09 a 25/09 visto no filtro 01/09 a 30/09).
-  getLoteContidoNoPeriodo: async (periodoInicio, periodoFim, empresaId, departamentoId) => {
-    if (!empresaId || !departamentoId) return null
+  getLoteContidoNoPeriodo: async (periodoInicio, periodoFim, empresaId, setorId) => {
+    if (!empresaId || !setorId) return null
     const { data, error } = await supabase
       .from('fato_comissoes_lotes')
       .select('*')
       .gte('periodo_inicio', periodoInicio)
       .lte('periodo_fim', periodoFim)
       .eq('empresa_id', empresaId)
-      .eq('departamento_id', departamentoId)
+      .eq('setor_id', setorId)
       .order('periodo_fim', { ascending: false })
       .limit(1)
     if (error) throw error
     return data?.[0] || null
   },
 
-  // TODOS os lotes de uma empresa num período, de qualquer departamento — usado só pra achar
-  // lotes "órfãos": um departamento que já teve cálculo salvo mas hoje não tem mais nenhum
-  // funcionário elegível nele (ex: o cargo foi remanejado pra outro departamento depois do
-  // cálculo). Sem isso, esse lote fica preso — nunca aparece como aba pra selecionar e excluir.
+  // TODOS os lotes de uma empresa num período, de qualquer setor — usado só pra achar lotes
+  // "órfãos": um setor que já teve cálculo salvo mas hoje não tem mais nenhum funcionário
+  // elegível nele (ex: o cargo foi remanejado pra outro setor depois do cálculo). Sem isso, esse
+  // lote fica preso — nunca aparece como aba pra selecionar e excluir.
   getLotesPorEmpresaPeriodo: async (periodoInicio, periodoFim, empresaId) => {
     if (!empresaId) return []
     const { data, error } = await supabase
@@ -2042,14 +2085,16 @@ export const apiService = {
 
   // Cria o lote (Rascunho) se não existir, ou atualiza o snapshot enquanto ainda for Rascunho.
   // Se já estiver Conferido/Processado, não mexe no lote (precisa de Autorizar Reprocessamento antes).
-  salvarLoteRascunho: async ({ periodoInicio, periodoFim, empresaId, empresaNome, departamentoId, departamentoNome, qtdFuncionarios, valorTotal, usuario }) => {
-    const existente = await apiService.getLoteComissoes(periodoInicio, periodoFim, empresaId, departamentoId)
+  // departamentoId/departamentoNome são só informativos (o departamento "pai" do setor, resolvido
+  // por quem chama) — não entram na trava de unicidade, que agora é por setor.
+  salvarLoteRascunho: async ({ periodoInicio, periodoFim, empresaId, empresaNome, setorId, setorNome, departamentoId, departamentoNome, qtdFuncionarios, valorTotal, usuario }) => {
+    const existente = await apiService.getLoteComissoes(periodoInicio, periodoFim, empresaId, setorId)
     if (existente && existente.status !== 'RASCUNHO') return existente
 
     if (existente) {
       const { data, error } = await supabase
         .from('fato_comissoes_lotes')
-        .update({ qtd_funcionarios: qtdFuncionarios, valor_total: valorTotal, atualizado_em: new Date().toISOString() })
+        .update({ qtd_funcionarios: qtdFuncionarios, valor_total: valorTotal, departamento_id: departamentoId || null, departamento_nome: departamentoNome || null, atualizado_em: new Date().toISOString() })
         .eq('id', existente.id)
         .select()
       if (error) throw error
@@ -2058,7 +2103,7 @@ export const apiService = {
 
     const { data, error } = await supabase
       .from('fato_comissoes_lotes')
-      .insert([{ periodo_inicio: periodoInicio, periodo_fim: periodoFim, empresa_id: empresaId || null, empresa_nome: empresaNome || null, departamento_id: departamentoId || null, departamento_nome: departamentoNome || null, status: 'RASCUNHO', qtd_funcionarios: qtdFuncionarios, valor_total: valorTotal }])
+      .insert([{ periodo_inicio: periodoInicio, periodo_fim: periodoFim, empresa_id: empresaId || null, empresa_nome: empresaNome || null, setor_id: setorId || null, setor_nome: setorNome || null, departamento_id: departamentoId || null, departamento_nome: departamentoNome || null, status: 'RASCUNHO', qtd_funcionarios: qtdFuncionarios, valor_total: valorTotal }])
       .select()
     if (error) throw error
     const lote = data?.[0]
@@ -2094,16 +2139,44 @@ export const apiService = {
     return lote
   },
 
-  processarLote: async (loteId, usuario) => {
+  processarLote: async (loteId, usuario, funcionarioIds, todosFuncionarioIds) => {
+    const { data: atual, error: erroAtual } = await supabase
+      .from('fato_comissoes_lotes')
+      .select('status, funcionarios_processados, funcionarios_conferidos_dp, funcionarios_liberados_reprocessamento, valor_total')
+      .eq('id', loteId)
+      .single()
+    if (erroAtual) throw erroAtual
+    if (!['CONFERIDO_DP', 'PROCESSAMENTO_PARCIAL'].includes(atual?.status)) {
+      throw new Error('O lote não está aguardando processamento nem em processamento parcial.')
+    }
+
+    const idsSelecionados = [...new Set(funcionarioIds || [])]
+    const idsRevisados = new Set(atual.funcionarios_conferidos_dp || [])
+    const idsEmReprocessamento = new Set(atual.funcionarios_liberados_reprocessamento || [])
+    const idsInvalidos = idsSelecionados.filter(id => !idsRevisados.has(id) || idsEmReprocessamento.has(id))
+    if (idsSelecionados.length === 0 || idsInvalidos.length > 0) {
+      throw new Error('Selecione funcionários revisados e sem reprocessamento pendente.')
+    }
+
+    const processados = new Set([...(atual.funcionarios_processados || []), ...idsSelecionados])
+    const idsDoLote = [...new Set(todosFuncionarioIds || [])]
+    const loteCompleto = idsDoLote.length > 0 && idsDoLote.every(id => processados.has(id))
+    const status = loteCompleto ? 'PROCESSADO' : 'PROCESSAMENTO_PARCIAL'
     const agora = new Date().toISOString()
     const { data, error } = await supabase
       .from('fato_comissoes_lotes')
-      .update({ status: 'PROCESSADO', processado_por: usuario, processado_em: agora, atualizado_em: agora })
+      .update({
+        status,
+        funcionarios_processados: [...processados],
+        processado_por: usuario,
+        processado_em: agora,
+        atualizado_em: agora,
+      })
       .eq('id', loteId)
       .select()
     if (error) throw error
     const lote = data?.[0]
-    await supabase.from('fato_comissoes_lotes_historico').insert([{ lote_id: loteId, acao: 'PROCESSADO', usuario, valor_no_momento: lote?.valor_total }])
+    await supabase.from('fato_comissoes_lotes_historico').insert([{ lote_id: loteId, acao: status, usuario, valor_no_momento: lote?.valor_total }])
     return lote
   },
 
@@ -2120,10 +2193,11 @@ export const apiService = {
     // confere de novo); Conferido -> Rascunho (Gerente recalcula). Preserva as etapas
     // anteriores já feitas — só quem fez a última etapa precisa agir de novo.
     const update = { atualizado_em: new Date().toISOString() }
-    if (atual?.status === 'PROCESSADO') {
+    if (atual?.status === 'PROCESSADO' || atual?.status === 'PROCESSAMENTO_PARCIAL') {
       update.status = 'CONFERIDO_DP'
       update.processado_por = null
       update.processado_em = null
+      update.funcionarios_processados = []
     } else if (atual?.status === 'CONFERIDO_DP') {
       update.status = 'CONFERIDO'
       update.conferido_dp_por = null
@@ -2139,6 +2213,7 @@ export const apiService = {
       update.processado_em = null
       update.funcionarios_liberados_reprocessamento = []
       update.funcionarios_conferidos_dp = []
+      update.funcionarios_processados = []
     }
     const { data, error } = await supabase
       .from('fato_comissoes_lotes')
@@ -2157,15 +2232,16 @@ export const apiService = {
   liberarReprocessamentoLote: async (loteId, funcionarioIds, usuario) => {
     const { data: atual, error: eGet } = await supabase
       .from('fato_comissoes_lotes')
-      .select('funcionarios_liberados_reprocessamento, funcionarios_conferidos_dp, valor_total')
+      .select('funcionarios_liberados_reprocessamento, funcionarios_conferidos_dp, funcionarios_processados, valor_total')
       .eq('id', loteId)
       .single()
     if (eGet) throw eGet
     const uniao = [...new Set([...(atual?.funcionarios_liberados_reprocessamento || []), ...funcionarioIds])]
     const conferidosDpRestantes = (atual?.funcionarios_conferidos_dp || []).filter(id => !funcionarioIds.includes(id))
+    const processadosRestantes = (atual?.funcionarios_processados || []).filter(id => !funcionarioIds.includes(id))
     const { data, error } = await supabase
       .from('fato_comissoes_lotes')
-      .update({ funcionarios_liberados_reprocessamento: uniao, funcionarios_conferidos_dp: conferidosDpRestantes, atualizado_em: new Date().toISOString() })
+      .update({ funcionarios_liberados_reprocessamento: uniao, funcionarios_conferidos_dp: conferidosDpRestantes, funcionarios_processados: processadosRestantes, atualizado_em: new Date().toISOString() })
       .eq('id', loteId)
       .select()
     if (error) throw error
@@ -2184,14 +2260,15 @@ export const apiService = {
   destravarFuncionariosSalvosLote: async (loteId, funcionarioIdsSalvos, usuario) => {
     const { data: atual, error: eGet } = await supabase
       .from('fato_comissoes_lotes')
-      .select('funcionarios_liberados_reprocessamento, funcionarios_conferidos_dp, status, valor_total')
+      .select('funcionarios_liberados_reprocessamento, funcionarios_conferidos_dp, funcionarios_processados, status, valor_total')
       .eq('id', loteId)
       .single()
     if (eGet) throw eGet
     const restantes = (atual?.funcionarios_liberados_reprocessamento || []).filter(id => !funcionarioIdsSalvos.includes(id))
     const conferidosDpRestantes = (atual?.funcionarios_conferidos_dp || []).filter(id => !funcionarioIdsSalvos.includes(id))
-    const precisaVoltarPraConferido = atual?.status === 'CONFERIDO_DP' || atual?.status === 'PROCESSADO'
-    const update = { funcionarios_liberados_reprocessamento: restantes, funcionarios_conferidos_dp: conferidosDpRestantes, atualizado_em: new Date().toISOString() }
+    const processadosRestantes = (atual?.funcionarios_processados || []).filter(id => !funcionarioIdsSalvos.includes(id))
+    const precisaVoltarPraConferido = atual?.status === 'CONFERIDO_DP' || atual?.status === 'PROCESSAMENTO_PARCIAL' || atual?.status === 'PROCESSADO'
+    const update = { funcionarios_liberados_reprocessamento: restantes, funcionarios_conferidos_dp: conferidosDpRestantes, funcionarios_processados: processadosRestantes, atualizado_em: new Date().toISOString() }
     if (precisaVoltarPraConferido) {
       update.status = 'CONFERIDO'
       update.conferido_dp_por = null
@@ -2671,7 +2748,7 @@ export const apiService = {
     if (error) throw error
 
     const { data: rows, error: errFetch } = await supabase.from('fato_rascunho_metas_servicos_consultor')
-      .select('empresa_id,empresa_nome,ano,mes,colaborador_id,colaborador_nome,departamento_id,departamento_nome,setor_id,setor_nome,box_id,box_nome,cargo_id,cargo_nome,meta_faturamento,meta_aprovada,aprovado_em,aprovado_por,aprovado_por_nome')
+      .select('empresa_id,empresa_nome,ano,mes,colaborador_id,colaborador_nome,departamento_id,departamento_nome,setor_id,setor_nome,box_id,box_nome,cargo_id,cargo_nome,meta_faturamento,meta_pecas,meta_servicos,meta_aprovada,aprovado_em,aprovado_por,aprovado_por_nome')
       .eq('empresa_id', empresaId).eq('ano', ano).not('meta_aprovada', 'is', null)
     if (errFetch) throw errFetch
     if (rows && rows.length > 0) {
@@ -3722,15 +3799,15 @@ export const apiService = {
     }
   },
 
-  // Escopo de acesso exclusivo do módulo Cálculo de Comissões (5 dimensões independentes,
+  // Escopo de acesso exclusivo do módulo Cálculo de Comissões (empresa + setor,
   // cada uma TODOS ou INDIVIDUAL) — separado da restrição de Empresa usada em Garantias DAF.
   getPermissoesComissaoGrupo: async (grupoId) => {
-    const dims = ['empresa', 'area', 'departamento', 'setor', 'agrupamento_cargo']
-    const [{ data: modos, error: e1 }, { data: valores, error: e2 }, { data: grupoRow, error: e3 }, { data: nivelDepto, error: e4 }] = await Promise.all([
+    const dims = ['empresa', 'setor']
+    const [{ data: modos, error: e1 }, { data: valores, error: e2 }, { data: grupoRow, error: e3 }, { data: nivelSetor, error: e4 }] = await Promise.all([
       supabase.from('permissoes_comissao_modo').select('dimensao, modo').eq('grupo_id', grupoId),
       supabase.from('permissoes_comissao_valor').select('dimensao, valor').eq('grupo_id', grupoId),
       supabase.from('grupos_acesso').select('comissao_escopo_habilitado').eq('id', grupoId).maybeSingle(),
-      supabase.from('permissoes_comissao_departamento_nivel').select('departamento_id, nivel_acesso, responsavel').eq('grupo_id', grupoId),
+      supabase.from('permissoes_comissao_setor_nivel').select('setor_id, nivel_acesso, responsavel').eq('grupo_id', grupoId),
     ])
     if (e1) throw e1
     if (e2) throw e2
@@ -3744,28 +3821,25 @@ export const apiService = {
         valores: (valores || []).filter(v => v.dimensao === dim).map(v => v.valor),
       }
     }
-    // Nível de acesso (editar/visualizar) + marcação de responsável, por departamento —
-    // ausência de linha pra um departamento = 'editar' + não-responsável (ver migração).
-    escopo.departamentoNivel = Object.fromEntries(
-      (nivelDepto || []).map(r => [r.departamento_id, { nivel_acesso: r.nivel_acesso, responsavel: !!r.responsavel }])
+    // Nível de acesso (editar/visualizar) + marcação de responsável, por setor.
+    escopo.setorNivel = Object.fromEntries(
+      (nivelSetor || []).map(r => [r.setor_id, { nivel_acesso: r.nivel_acesso, responsavel: !!r.responsavel }])
     )
     return escopo
   },
 
   // `habilitado` é a trava mestre (grupos_acesso.comissao_escopo_habilitado): enquanto
-  // false, o grupo não enxerga nenhum funcionário em Cálculo de Comissões, independente
-  // de como as 5 dimensões estiverem configuradas. `departamentoNivel` é
-  // { [departamento_id]: { nivel_acesso, responsavel } } — só persiste os departamentos que
-  // ainda estão marcados em escopo.departamento.valores (Individual) e que fujam do default
-  // ('editar' + não-responsável), pra manter a tabela enxuta.
-  setPermissoesComissaoGrupo: async (grupoId, escopo, habilitado, departamentoNivel) => {
+  // false, o grupo não enxerga nenhum funcionário em Cálculo de Comissões. `setorNivel` é
+  // { [setor_id]: { nivel_acesso, responsavel } } e só persiste níveis/responsáveis que não
+  // sejam o padrão ('editar' + não-responsável).
+  setPermissoesComissaoGrupo: async (grupoId, escopo, habilitado, setorNivel) => {
     // 'empresa' é controlada por permissoes_empresa_grupo (Acesso por Empresa), não aqui
-    const dims = ['area', 'departamento', 'setor', 'agrupamento_cargo']
+    const dims = ['setor']
     const [{ error: delModo }, { error: delValor }, { error: errHab }, { error: delNivel }] = await Promise.all([
       supabase.from('permissoes_comissao_modo').delete().eq('grupo_id', grupoId),
       supabase.from('permissoes_comissao_valor').delete().eq('grupo_id', grupoId),
       supabase.from('grupos_acesso').update({ comissao_escopo_habilitado: !!habilitado }).eq('id', grupoId),
-      supabase.from('permissoes_comissao_departamento_nivel').delete().eq('grupo_id', grupoId),
+      supabase.from('permissoes_comissao_setor_nivel').delete().eq('grupo_id', grupoId),
     ])
     if (delModo) throw delModo
     if (delValor) throw delValor
@@ -3784,27 +3858,29 @@ export const apiService = {
       if (insValor) throw insValor
     }
 
-    const departamentosVisiveis = new Set(escopo.departamento?.modo === 'INDIVIDUAL' ? (escopo.departamento?.valores || []) : [])
-    const nivelRows = Object.entries(departamentoNivel || {})
-      .filter(([depId, v]) => departamentosVisiveis.has(depId) && (v?.nivel_acesso === 'visualizar' || v?.responsavel))
-      .map(([depId, v]) => ({ grupo_id: grupoId, departamento_id: depId, nivel_acesso: v?.nivel_acesso === 'visualizar' ? 'visualizar' : 'editar', responsavel: !!v?.responsavel }))
+    // Individual: só os setores marcados guardam nível. Todos: todo setor está liberado, então
+    // qualquer setor pode ter Visualizar/Responsável configurado.
+    const setorIndividual = escopo.setor?.modo === 'INDIVIDUAL'
+    const setoresVisiveis = new Set(setorIndividual ? (escopo.setor?.valores || []) : [])
+    const nivelRows = Object.entries(setorNivel || {})
+      .filter(([setorId, v]) => (!setorIndividual || setoresVisiveis.has(setorId)) && (v?.nivel_acesso === 'visualizar' || v?.responsavel))
+      .map(([setorId, v]) => ({ grupo_id: grupoId, setor_id: setorId, nivel_acesso: v?.nivel_acesso === 'visualizar' ? 'visualizar' : 'editar', responsavel: !!v?.responsavel }))
     if (nivelRows.length > 0) {
-      const { error: insNivel } = await supabase.from('permissoes_comissao_departamento_nivel').insert(nivelRows)
+      const { error: insNivel } = await supabase.from('permissoes_comissao_setor_nivel').insert(nivelRows)
       if (insNivel) throw insNivel
     }
   },
 
-  // Departamentos marcados como "Responsável" — { [departamento_id]: { [empresa_id]: [nomes] } }.
-  // Um mesmo Departamento (ex: "Estoque de Peças") pode existir em várias lojas ao mesmo tempo
-  // (dim_departamentos.empresa_ids), cada uma com seu próprio gerente/grupo — por isso o
+  // Setores marcados como "Responsável" — { [setor_id]: { [empresa_id]: [nomes] } }.
+  // Um mesmo setor pode existir em várias lojas ao mesmo tempo — por isso o
   // resultado é bucketizado por Empresa também, usando o "Acesso por Empresa" de CADA grupo
   // marcado como responsável, pra não misturar o responsável de uma loja com o de outra que só
   // compartilha o mesmo departamento. Grupo sem nenhuma empresa liberada não aparece em lugar
   // nenhum (fail-closed, mesmo critério de comissaoEscopoEfetivo).
-  getResponsaveisComissaoDepartamentos: async () => {
+  getResponsaveisComissaoSetores: async () => {
     const { data: linhas, error: e1 } = await supabase
-      .from('permissoes_comissao_departamento_nivel')
-      .select('grupo_id, departamento_id')
+      .from('permissoes_comissao_setor_nivel')
+      .select('grupo_id, setor_id')
       .eq('responsavel', true)
     if (e1) throw e1
     if (!linhas || linhas.length === 0) return {}
@@ -3831,10 +3907,10 @@ export const apiService = {
       if (nomes.length === 0) continue
       const empresaIds = empresasPorGrupo.get(l.grupo_id) || []
       if (empresaIds.length === 0) continue
-      if (!mapa[l.departamento_id]) mapa[l.departamento_id] = {}
+      if (!mapa[l.setor_id]) mapa[l.setor_id] = {}
       for (const empresaId of empresaIds) {
-        if (!mapa[l.departamento_id][empresaId]) mapa[l.departamento_id][empresaId] = []
-        mapa[l.departamento_id][empresaId].push(...nomes)
+        if (!mapa[l.setor_id][empresaId]) mapa[l.setor_id][empresaId] = []
+        mapa[l.setor_id][empresaId].push(...nomes)
       }
     }
     for (const depId of Object.keys(mapa)) {
@@ -4683,65 +4759,6 @@ export const apiService = {
     const { data, error } = await supabase.from('rpa_rotina_execucoes').insert(linhas).select()
     if (error) throw error
     return data || []
-  },
-
-  // ── Sincronização de Dados (agendamento do KPI Dashboard / Matriz KPIs) ─────
-  getKpiSyncConfig: async () => {
-    const { data, error } = await supabase.from('kpi_sync_config').select('*').eq('id', 1).maybeSingle()
-    if (error) throw error
-    return data || { id: 1, ativo: true }
-  },
-
-  setKpiSyncAtivo: async (ativo) => {
-    const { data, error } = await supabase.from('kpi_sync_config').update({ ativo }).eq('id', 1).select()
-    if (error) throw error
-    return data?.[0]
-  },
-
-  getKpiSyncHorariosSemana: async () => {
-    const { data, error } = await supabase
-      .from('kpi_sync_horarios_semana')
-      .select('*')
-      .order('dia_semana', { ascending: true })
-      .order('hora', { ascending: true })
-    if (error) throw error
-    return data || []
-  },
-
-  // Substitui todos os horários semanais de uma vez (delete + insert em lote)
-  salvarKpiSyncHorariosSemana: async (horarios) => {
-    const { error: delError } = await supabase.from('kpi_sync_horarios_semana').delete().gte('dia_semana', 0)
-    if (delError) throw delError
-    const linhas = (horarios || []).filter(h => h.hora).map(h => ({ dia_semana: h.dia_semana, hora: h.hora, ativo: h.ativo ?? true }))
-    if (!linhas.length) return []
-    const { data, error } = await supabase.from('kpi_sync_horarios_semana').insert(linhas).select()
-    if (error) throw error
-    return data || []
-  },
-
-  getKpiSyncDatasEspecificas: async () => {
-    const { data, error } = await supabase
-      .from('kpi_sync_datas_especificas')
-      .select('*')
-      .order('data', { ascending: true })
-      .order('hora', { ascending: true })
-    if (error) throw error
-    return data || []
-  },
-
-  createKpiSyncDataEspecifica: async ({ data: dataAgendamento, hora }) => {
-    const { data, error } = await supabase
-      .from('kpi_sync_datas_especificas')
-      .insert([{ data: dataAgendamento, hora }])
-      .select()
-    if (error) throw error
-    return data?.[0]
-  },
-
-  deleteKpiSyncDataEspecifica: async (id) => {
-    const { error } = await supabase.from('kpi_sync_datas_especificas').delete().eq('id', id)
-    if (error) throw error
-    return { success: true }
   },
 
   // ── Grade de Treinamentos ───────────────────────────────────────────────────

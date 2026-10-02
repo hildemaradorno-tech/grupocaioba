@@ -13,7 +13,8 @@
 
 import {
   listarArquivos, lerArquivoComoAoA, toIsoDate, parseMoney, normalizaTexto,
-  avaliaCondicoes, aplicarRegras, anosDoIntervalo,
+  avaliaCondicoes, aplicarRegras, anosDoIntervalo, resolverRegrasSetorFuncionario,
+  fusoHorarioFonteCalculo,
 } from './sharepointFonteCalculo.js'
 import { lerAoAMicrowork, mesesDoIntervalo } from './microworkFonteCalculo.js'
 
@@ -30,7 +31,7 @@ function chaveGrupo(item) {
 // Processa UM arquivo, acumulando em paralelo para todos os itens do grupo que passam
 // pelo arquivo (via mapas de lookup por empresa e por empresa+funcionário — O(1) por linha,
 // não um loop sobre os itens a cada linha).
-function agregarArquivoParaGrupo(aoa, linha0, itensDoGrupo, colunaEmpresa, colunaData, colunaValor, colunaTipoMovimento, colunaFuncionario, regrasCru, tipoAgregacao, contadorGrupo) {
+function agregarArquivoParaGrupo(aoa, linha0, itensDoGrupo, colunaEmpresa, colunaData, colunaValor, colunaTipoMovimento, colunaFuncionario, regrasCru, tipoAgregacao, contadorGrupo, fusoHorario) {
   if (aoa.length === 0) return
 
   const cabecalho = aoa[0]
@@ -57,6 +58,7 @@ function agregarArquivoParaGrupo(aoa, linha0, itensDoGrupo, colunaEmpresa, colun
       idxColuna: cabecalho.indexOf(c.coluna),
       operador: c.operador,
       valor: c.valor,
+      funcionariosSetor: c.funcionariosSetor,
     })),
   }))
 
@@ -127,7 +129,7 @@ function agregarArquivoParaGrupo(aoa, linha0, itensDoGrupo, colunaEmpresa, colun
     const categoriaMovimento = idxTipoMovimento >= 0 ? (String(r[idxTipoMovimento] ?? '').trim() || '(vazio)') : null
 
     const dataVal = idxData >= 0 ? r[idxData] : undefined
-    const dataIso = toIsoDate(dataVal)
+    const dataIso = toIsoDate(dataVal, fusoHorario)
 
     if (candidatosEmpresa) {
       for (let k = 0; k < candidatosEmpresa.length; k++) {
@@ -179,6 +181,10 @@ function agregarArquivoParaGrupo(aoa, linha0, itensDoGrupo, colunaEmpresa, colun
 //   empresa), dataInicio, dataFim }]
 // Retorna: [{ id, valor, total_linhas_fonte, total_linhas_filtradas }] na mesma ordem de entrada.
 export async function calcularLote(itens) {
+  await Promise.all(itens.map(async item => {
+    item.regras = await resolverRegrasSetorFuncionario(item.regras || [])
+  }))
+
   for (const item of itens) {
     // Sem Regras de Cálculo e com mais de uma coluna somada (ex: "totalvenda+totaldevolucao"),
     // guarda o total de cada coluna separado — usado pela calculadora de Venda x Devolução no front.
@@ -199,6 +205,7 @@ export async function calcularLote(itens) {
 
   for (const [, itensDoGrupo] of grupos) {
     const base = itensDoGrupo[0]
+    const fusoHorario = fusoHorarioFonteCalculo(base.pastaSharepoint, base.prefixoArquivo)
     const anos = base.usaSubpastaAno
       ? [...new Set(itensDoGrupo.flatMap(it => anosDoIntervalo(it.dataInicio, it.dataFim)))]
       : [null]
@@ -218,7 +225,7 @@ export async function calcularLote(itens) {
         agregarArquivoParaGrupo(
           aoa, 0, itensDoGrupo,
           base.colunaEmpresa, base.colunaData, base.colunaValor, base.colunaTipoMovimento, base.colunaFuncionario,
-          base.regras, base.tipoAgregacao, contadorGrupo
+          base.regras, base.tipoAgregacao, contadorGrupo, fusoHorario
         )
       }
       for (const item of itensDoGrupo) item._acc.totalLinhas = contadorGrupo.totalLinhas
@@ -239,7 +246,7 @@ export async function calcularLote(itens) {
         agregarArquivoParaGrupo(
           aoa, linha0, itensDoGrupo,
           base.colunaEmpresa, base.colunaData, base.colunaValor, base.colunaTipoMovimento, base.colunaFuncionario,
-          base.regras, base.tipoAgregacao, contadorGrupo
+          base.regras, base.tipoAgregacao, contadorGrupo, fusoHorario
         )
       }
     }

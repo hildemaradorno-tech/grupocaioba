@@ -44,7 +44,7 @@ export function AuthProvider({ children }) {
   const [comissaoEscopoHabilitado, setComissaoEscopoHabilitado] = useState(false)
   // Nível de acesso extra por Departamento (Map<departamento_id, 'editar'|'visualizar'>) —
   // ausência de entrada = 'editar' (sem restrição), somado às Ações já existentes.
-  const [comissaoNivelDepartamento, setComissaoNivelDepartamento] = useState(new Map())
+  const [comissaoNivelSetor, setComissaoNivelSetor] = useState(new Map())
   const [userNome, setUserNome] = useState('')
   const [usuarioId, setUsuarioId] = useState(null) // usuarios.id (≠ auth.users.id)
   const [userCargoId, setUserCargoId] = useState(null)
@@ -67,7 +67,7 @@ export function AuthProvider({ children }) {
   const [impersonandoEmpresasAuditoria, setImpersonandoEmpresasAuditoria] = useState(new Set())
   const [impersonandoComissaoEscopo, setImpersonandoComissaoEscopo] = useState(escopoComissaoTudoLiberado())
   const [impersonandoComissaoEscopoHabilitado, setImpersonandoComissaoEscopoHabilitado] = useState(false)
-  const [impersonandoComissaoNivelDepartamento, setImpersonandoComissaoNivelDepartamento] = useState(new Map())
+  const [impersonandoComissaoNivelSetor, setImpersonandoComissaoNivelSetor] = useState(new Map())
   const [impersonandoCargoId, setImpersonandoCargoId] = useState(null)
   const [impersonandoAgrupamentoCargoId, setImpersonandoAgrupamentoCargoId] = useState(null)
 
@@ -81,7 +81,7 @@ export function AuthProvider({ children }) {
       setEmpresasPermitidasAuditoria(new Set())
       setComissaoEscopo(escopoComissaoTudoLiberado())
       setComissaoEscopoHabilitado(false)
-      setComissaoNivelDepartamento(new Map())
+      setComissaoNivelSetor(new Map())
       setUserNome('')
       setUsuarioId(null)
       setUserCargoId(null)
@@ -175,19 +175,19 @@ export function AuthProvider({ children }) {
       // Busca isolada e best-effort: um problema aqui (coluna/tabela ainda não migrada, etc.)
       // nunca deve derrubar as permissões básicas já carregadas acima.
       try {
-        const [{ data: modos }, { data: valores }, { data: grupoComissao }, { data: nivelDepto }] = await Promise.all([
+        const [{ data: modos }, { data: valores }, { data: grupoComissao }, { data: nivelSetor }] = await Promise.all([
           supabase.from('permissoes_comissao_modo').select('dimensao, modo').eq('grupo_id', perfil.grupo_id),
           supabase.from('permissoes_comissao_valor').select('dimensao, valor').eq('grupo_id', perfil.grupo_id),
           supabase.from('grupos_acesso').select('comissao_escopo_habilitado').eq('id', perfil.grupo_id).maybeSingle(),
-          supabase.from('permissoes_comissao_departamento_nivel').select('departamento_id, nivel_acesso').eq('grupo_id', perfil.grupo_id),
+          supabase.from('permissoes_comissao_setor_nivel').select('setor_id, nivel_acesso').eq('grupo_id', perfil.grupo_id),
         ])
         setComissaoEscopo(montarComissaoEscopo(modos, valores))
         setComissaoEscopoHabilitado(!!grupoComissao?.comissao_escopo_habilitado)
-        setComissaoNivelDepartamento(new Map((nivelDepto || []).map(r => [r.departamento_id, r.nivel_acesso])))
+        setComissaoNivelSetor(new Map((nivelSetor || []).map(r => [r.setor_id, r.nivel_acesso])))
       } catch {
         setComissaoEscopo(escopoComissaoTudoLiberado())
         setComissaoEscopoHabilitado(false)
-        setComissaoNivelDepartamento(new Map())
+        setComissaoNivelSetor(new Map())
       }
 
       try {
@@ -262,7 +262,7 @@ export function AuthProvider({ children }) {
         setImpersonandoAcoes(new Set())
         setImpersonandoComissaoEscopo(escopoComissaoTudoLiberado())
         setImpersonandoComissaoEscopoHabilitado(false)
-        setImpersonandoComissaoNivelDepartamento(new Map())
+        setImpersonandoComissaoNivelSetor(new Map())
         return
       }
 
@@ -288,19 +288,19 @@ export function AuthProvider({ children }) {
 
       // Best-effort — nunca deve impedir a visualização como o usuário mesmo se falhar.
       try {
-        const [{ data: modos }, { data: valores }, { data: grupoComissao }, { data: nivelDepto }] = await Promise.all([
+        const [{ data: modos }, { data: valores }, { data: grupoComissao }, { data: nivelSetor }] = await Promise.all([
           supabase.from('permissoes_comissao_modo').select('dimensao, modo').eq('grupo_id', perfil.grupo_id),
           supabase.from('permissoes_comissao_valor').select('dimensao, valor').eq('grupo_id', perfil.grupo_id),
           supabase.from('grupos_acesso').select('comissao_escopo_habilitado').eq('id', perfil.grupo_id).maybeSingle(),
-          supabase.from('permissoes_comissao_departamento_nivel').select('departamento_id, nivel_acesso').eq('grupo_id', perfil.grupo_id),
+          supabase.from('permissoes_comissao_setor_nivel').select('setor_id, nivel_acesso').eq('grupo_id', perfil.grupo_id),
         ])
         setImpersonandoComissaoEscopo(montarComissaoEscopo(modos, valores))
         setImpersonandoComissaoEscopoHabilitado(!!grupoComissao?.comissao_escopo_habilitado)
-        setImpersonandoComissaoNivelDepartamento(new Map((nivelDepto || []).map(r => [r.departamento_id, r.nivel_acesso])))
+        setImpersonandoComissaoNivelSetor(new Map((nivelSetor || []).map(r => [r.setor_id, r.nivel_acesso])))
       } catch {
         setImpersonandoComissaoEscopo(escopoComissaoTudoLiberado())
         setImpersonandoComissaoEscopoHabilitado(false)
-        setImpersonandoComissaoNivelDepartamento(new Map())
+        setImpersonandoComissaoNivelSetor(new Map())
       }
     } catch (err) {
       console.error('[Auth] Erro ao iniciar visualização:', err)
@@ -318,7 +318,7 @@ export function AuthProvider({ children }) {
     setImpersonandoAcoes(new Set())
     setImpersonandoComissaoEscopo(escopoComissaoTudoLiberado())
     setImpersonandoComissaoEscopoHabilitado(false)
-    setImpersonandoComissaoNivelDepartamento(new Map())
+    setImpersonandoComissaoNivelSetor(new Map())
     setImpersonandoCargoId(null)
     setImpersonandoAgrupamentoCargoId(null)
   }
@@ -435,12 +435,11 @@ export function AuthProvider({ children }) {
     return { ...escopo, empresa: { modo: 'INDIVIDUAL', valores: emps } }
   }, [isAdminEfetivo, impersonando, impersonandoComissaoEscopoHabilitado, comissaoEscopoHabilitado, impersonandoComissaoEscopo, comissaoEscopo, empresasPermitidas, impersonandoEmpresas])
 
-  // Nível de acesso extra por Departamento "em vigor" — admin (real ou impersonando) nunca é
-  // restringido (Map vazio = sempre 'editar', via departamentoSoVisualizacao em permissoesComissao.js).
-  const comissaoNivelDepartamentoEfetivo = useMemo(() => {
+  // Nível de acesso extra por Setor — admin (real ou impersonando) nunca é restringido.
+  const comissaoNivelSetorEfetivo = useMemo(() => {
     if (isAdminEfetivo) return new Map()
-    return impersonando ? impersonandoComissaoNivelDepartamento : comissaoNivelDepartamento
-  }, [isAdminEfetivo, impersonando, impersonandoComissaoNivelDepartamento, comissaoNivelDepartamento])
+    return impersonando ? impersonandoComissaoNivelSetor : comissaoNivelSetor
+  }, [isAdminEfetivo, impersonando, impersonandoComissaoNivelSetor, comissaoNivelSetor])
 
   // Cargo "em vigor" (considera visualização como outro usuário) e o Agrupamento resolvido a
   // partir dele — usado pra saber se a pessoa pode assumir uma tarefa do BPM restrita a um
@@ -456,7 +455,7 @@ export function AuthProvider({ children }) {
       isAdmin, isAdminEfetivo, empresasPermitidas, empresasPermitidasEfetivas,
       departamentosPermitidos, departamentosPermitidosEfetivos, projetosDeptoModoEfetivo,
       departamentosPermitidosAuditoriaEfetivos, empresasPermitidasAuditoriaEfetivas,
-      comissaoEscopoEfetivo, comissaoNivelDepartamentoEfetivo,
+      comissaoEscopoEfetivo, comissaoNivelSetorEfetivo,
       trocarSenha, marcarSenhaTrocada,
       impersonando, iniciarVisualizacao, encerrarVisualizacao,
     }}>

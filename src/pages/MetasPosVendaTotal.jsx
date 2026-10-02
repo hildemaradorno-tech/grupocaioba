@@ -6,6 +6,7 @@ import BotaoIconeTooltip from '../components/BotaoIconeTooltip'
 import TooltipTexto from '../components/TooltipTexto'
 import { apiService } from '../services/api'
 import { EmpresaMultiFilter, empresaParam, filtrarPorEmpresas, empresasDasMetas } from '../components/EmpresaMultiFilter'
+import SeletorMeses, { CssMesesOcultos } from '../components/SeletorMeses'
 import { valoresMetaMecanico, resolverPosicaoMecanico } from '../utils/metasMecanico'
 
 const PROD_NAO_ASSOCIADA_ID = '00000000-0000-0000-0000-000000000001'
@@ -310,6 +311,7 @@ export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = 
   const [filtroSetorT,setFiltroSetorT]= useSessionState('mpvt_setor', '')
   const [filtroBoxT,  setFiltroBoxT]  = useSessionState('mpvt_box', '')
   const [filtroColab, setFiltroColab] = useSessionState('mpvt_colab', '')
+  const [mesesSel,    setMesesSel]    = useSessionState('mpvs_servicos_meses', [])
 
   const departamentosDisponiveis = useMemo(() => {
     const seen = new Map()
@@ -846,6 +848,7 @@ export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = 
             </div>
           </div>
         </div>
+        <SeletorMeses selecionados={mesesSel} onChange={setMesesSel} />
       </div>
 
       {error && (
@@ -855,8 +858,9 @@ export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = 
       )}
 
       {/* Table */}
+      <CssMesesOcultos escopo="tabela-metas-total" selecionados={mesesSel} />
       <div className={`${modoAprovacao ? '' : 'flex-1'} overflow-auto rounded-xl border border-slate-200 bg-white`}>
-        <table className="w-full border-collapse min-w-[1400px]">
+        <table className="tabela-metas-total w-full border-collapse min-w-[1400px]">
           <thead className="sticky top-0 z-10 bg-slate-100 border-b border-slate-200">
             <tr>
               <th className={`px-3 py-2 text-left text-xs font-semibold text-slate-600 whitespace-nowrap sticky left-0 z-20 bg-slate-100 ${modoAprovacao ? W1 : 'min-w-[260px]'}`}>

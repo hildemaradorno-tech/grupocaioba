@@ -8,15 +8,16 @@ const KpiSourceStatusContext = createContext(null)
 
 export function KpiSourceStatusProvider({ children }) {
   const [status, setStatus] = useState({ source: null, loading: false })
+  const [refreshToken, setRefreshToken] = useState(0)
   return (
-    <KpiSourceStatusContext.Provider value={{ status, setStatus }}>
+    <KpiSourceStatusContext.Provider value={{ status, setStatus, refreshToken, refreshData: () => setRefreshToken(v => v + 1) }}>
       {children}
     </KpiSourceStatusContext.Provider>
   )
 }
 
 // Fora do provider (ou aba sem useKpiData) devolve um no-op — nunca quebra quem chama.
-const NOOP = { status: { source: null, loading: false }, setStatus: () => {} }
+const NOOP = { status: { source: null, loading: false }, setStatus: () => {}, refreshToken: 0, refreshData: () => {} }
 
 export function useKpiSourceStatus() {
   return useContext(KpiSourceStatusContext) || NOOP

@@ -15,7 +15,6 @@ export const MENU_TREE = [
           { key: 'calendario', label: 'Calendário' },
         ],
       },
-      { key: 'sincronizacao-dados', label: 'Sincronização de Dados' },
       {
         key: '_cadastros',
         label: 'Cadastro de Tabelas',

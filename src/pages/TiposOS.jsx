@@ -219,17 +219,13 @@ export default function TiposOS() {
     const boxObj    = boxes.find(b => normForMatch(b.nome_box) === normForMatch(boxRaw))
     const classMatch = CLASSIFICACOES_OPTS.find(c => normForMatch(c) === normForMatch(classRaw))
     const tipoMatch  = TIPOS_INTERNO_OPTS.find(t => normForMatch(t) === normForMatch(tipoRaw))
-    // Match por código numérico E tipo_os.
-    // Se o tipo_os do Excel está preenchido, exige que ambos coincidam —
-    // evita confundir OSes diferentes que compartilham o mesmo número de código.
-    // Se tipo_os está em branco no Excel, usa só o código (fallback de banco).
-    const normalizedTipoOs = normForMatch(tipoOs)
-    const existing = codigo > 0
-      ? dados.find(d => {
-          if (Number(d.codigo) !== codigo) return false
-          if (normalizedTipoOs) return normForMatch(d.tipo_os) === normalizedTipoOs
-          return true
-        })
+    // Match por Sigla — é o identificador que não muda mesmo quando o texto do Tipo de O.S. é
+    // reescrito ou o Código é reaproveitado para outra coisa (confirmado em 02/10/2026: casar
+    // por código + texto gerou duplicidade quando só a descrição mudou). Sigla igual = mesmo
+    // registro, atualiza; sigla nova = inclusão.
+    const normalizedSigla = normForMatch(sigla)
+    const existing = normalizedSigla
+      ? dados.find(d => normForMatch(d.sigla) === normalizedSigla)
       : null
 
     // Para campos em branco no Excel, usa o valor do banco se existir o registro
@@ -326,6 +322,11 @@ export default function TiposOS() {
       }
       return { ...row, overrides: ov }
     }))
+    // Corrigir um campo marca a linha pra importar — sem isso, consertar uma linha com erro
+    // não a selecionava, o contador do botão Importar ficava em (0) e o clique não fazia nada,
+    // sem avisar o usuário (erro reportado em 01/10/2026: parecia concluir mas nada era salvo).
+    const key = importRows[idx]?._key
+    if (key) setImportSelected(prev => new Set(prev).add(key))
   }
 
   const handleDoImport = async () => {
@@ -795,12 +796,18 @@ export default function TiposOS() {
           tipo_setor_servico: uniq(newRows.map(r => getFinal(r).tipo_setor_servico)),
         }
 
+        // Contagem por status pros botões de filtro — Novo/Atualizar/Igual/Erro, todos visíveis
+        // por padrão (importFilter vazio = sem restrição); marcar um ou mais isola só aqueles.
+        const statusCounts = { new: 0, update: 0, same: 0, error: 0 }
+        importRows.forEach(r => { statusCounts[getRowStatus(r)]++ })
+        const toggleStatusFilter = (s) => setImportFilter(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s])
+
         const visibleRows = importRows
           .filter(r => {
             // Linha editada manualmente: nunca some
             if (Object.keys(r.overrides).length > 0) return true
-            // Mostra apenas novos
-            return getRowStatus(r) === 'new'
+            if (importFilter.length === 0) return true
+            return importFilter.includes(getRowStatus(r))
           })
           .filter(r => {
             // Linha editada: não aplica filtro avançado para não sumir durante edição
@@ -951,6 +958,28 @@ export default function TiposOS() {
 
               {/* Barra de resumo — counts informativos + filtros avançados */}
               <div className="flex items-center gap-3 px-4 py-2 bg-white border-b border-slate-100 shrink-0">
+                {[
+                  ['new', 'Novo', 'bg-blue-50 text-blue-700 border-blue-200'],
+                  ['update', 'Atualizar', 'bg-amber-50 text-amber-700 border-amber-200'],
+                  ['same', 'Igual', 'bg-slate-100 text-slate-500 border-slate-200'],
+                  ['error', 'Erro', 'bg-red-50 text-red-700 border-red-200'],
+                ].map(([key, label, cls]) => statusCounts[key] > 0 && (
+                  <button
+                    key={key}
+                    onClick={() => toggleStatusFilter(key)}
+                    title={importFilter.length === 0 || importFilter.includes(key) ? `Clique para ocultar "${label}"` : `Clique para mostrar "${label}"`}
+                    className={`px-2 py-0.5 rounded text-[10px] font-bold border whitespace-nowrap transition-opacity shrink-0 ${cls} ${
+                      importFilter.length > 0 && !importFilter.includes(key) ? 'opacity-30' : ''
+                    }`}
+                  >
+                    {label} ({statusCounts[key]})
+                  </button>
+                ))}
+                {importFilter.length > 0 && (
+                  <button onClick={() => setImportFilter([])} className="text-[10px] text-slate-500 hover:text-slate-700 underline font-semibold shrink-0">
+                    Mostrar todos
+                  </button>
+                )}
                 <button
                   onClick={() => setImportAdvOpen(p => !p)}
                   className={`flex items-center gap-1.5 px-2 py-0.5 rounded border text-[11px] font-semibold transition-all select-none shrink-0

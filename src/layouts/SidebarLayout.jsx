@@ -39,7 +39,7 @@ function getActiveSectionKey(pathname) {
   const cadastros = ['/segmentos','/agrup-empresas','/empresas','/areas','/agrup-departamentos',
     '/departamentos','/setores','/box','/agrup-cargos','/cargos','/organograma',
     '/movimento-venda','/natureza-operacoes','/tipos-produtos','/tipos-os',
-    '/classificacao-compra','/funcionarios','/feriados','/calendario','/sincronizacao-dados']
+    '/classificacao-compra','/funcionarios','/feriados','/calendario']
   if (cadastros.includes(pathname)) return '_config'
   if (pathname.startsWith('/metas')) return '_metas'
   if (pathname.startsWith('/garantias-daf') || pathname.startsWith('/auditoria-os-aberto') || pathname.startsWith('/auditoria') || pathname.startsWith('/garantia') || pathname.startsWith('/honda') || pathname.startsWith('/truckpag') || pathname.startsWith('/bpm')) return '_controle-processos'
@@ -372,12 +372,6 @@ export default function SidebarLayout() {
                 {canView('calendario') && <FlyItem to="/calendario" icon={Calendar} onClose={closeFlyout}>Calendário</FlyItem>}
               </>
             )}
-            {canView('sincronizacao-dados') && (
-              <>
-                <div className="mx-3 my-2 border-t border-blue-800/50" />
-                <FlyItem to="/sincronizacao-dados" icon={RefreshCw} onClose={closeFlyout}>Sincronização de Dados</FlyItem>
-              </>
-            )}
             {canViewSection('_cadastros.gerais') && (
               <>
                 <div className="mx-3 my-2 border-t border-blue-800/50" />
@@ -449,12 +443,6 @@ export default function SidebarLayout() {
                 <FlyGroup label="Gestão de Tempo" />
                 {canView('feriados') && <FlyItem to="/feriados" icon={CalendarX} onClose={closeFlyout}>Feriados</FlyItem>}
                 {canView('calendario') && <FlyItem to="/calendario" icon={Calendar} onClose={closeFlyout}>Calendário</FlyItem>}
-              </>
-            )}
-            {canView('sincronizacao-dados') && (
-              <>
-                <div className="mx-3 my-2 border-t border-blue-800/50" />
-                <FlyItem to="/sincronizacao-dados" icon={RefreshCw} onClose={closeFlyout}>Sincronização de Dados</FlyItem>
               </>
             )}
           </>

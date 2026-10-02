@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { Cloud, Database, Loader2 } from 'lucide-react'
 import { getStatusSincronizacao } from '../../services/kpiService'
 
-// Fixa o fuso em Brasília — ver mesmo comentário em SincronizacaoDados.jsx.
+// Fixa o fuso em Brasília para manter o horário exibido consistente.
 function formatDataHora(iso) {
   if (!iso) return null
   return new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Sao_Paulo' })
@@ -12,12 +12,12 @@ function formatDataHora(iso) {
 // sincronização. A atualização em si é comandada exclusivamente pelo botão
 // "Atualizar Agora" da tela Sincronização de Dados — não existe mais recarga
 // por tela individual.
-export default function DataSourceBadge({ source, loading }) {
+export default function DataSourceBadge({ source, loading, refreshKey = 0 }) {
   const [ultimaExecucao, setUltimaExecucao] = useState(null)
 
   useEffect(() => {
     getStatusSincronizacao().then(st => setUltimaExecucao(st?.ultimaExecucao ?? null))
-  }, [])
+  }, [refreshKey])
 
   if (loading) {
     return (

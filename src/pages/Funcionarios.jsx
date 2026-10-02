@@ -879,7 +879,27 @@ export default function Funcionarios() {
   // Filtros dinâmicos (facetados): as opções de cada seletor são calculadas aplicando todos os
   // OUTROS filtros ativos, menos o dele mesmo — mesmo padrão usado em Cargos/Cargos e Remunerações.
   // Só estreita as OPÇÕES exibidas; nunca mexe na seleção que o usuário já fez nos outros filtros.
-  const filtrarComExcecao = useMemo(() => (ignorar) => dados.filter(f =>
+  const normalizarChaveFuncionario = (valor) => String(valor || '')
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .toUpperCase()
+
+  // Mantém o registro histórico no banco, mas evita mostrar o mesmo funcionário duas vezes
+  // quando há um cadastro ativo com o mesmo nome, empresa e cargo.
+  const dadosParaListagem = useMemo(() => {
+    const chave = (f) => `${normalizarChaveFuncionario(f.nome_funcionario)}::${f.empresa_id || ''}::${f.cargo_id || ''}`
+    const ativos = new Set(dados
+      .filter(f => !f.data_demissao && (!f.situacao_funcionario || f.situacao_funcionario === '1' || f.situacao_funcionario === '9'))
+      .map(chave))
+    return dados.filter(f => {
+      const demitido = f.situacao_funcionario === SITUACAO_DEMITIDO || !!f.data_demissao
+      return !demitido || !ativos.has(chave(f))
+    })
+  }, [dados])
+
+  const filtrarComExcecao = useMemo(() => (ignorar) => dadosParaListagem.filter(f =>
     (ignorar === 'nome' || !colFiltros.nome || (f.nome_funcionario || '').toLowerCase().includes(colFiltros.nome.toLowerCase())) &&
     (ignorar === 'empresa' || colFiltros.empresa.length === 0 || colFiltros.empresa.includes(f.empresa_nome)) &&
     (ignorar === 'cnpj' || cnpjFiltro.length === 0 || cnpjFiltro.includes(getCnpj(f))) &&
@@ -888,7 +908,7 @@ export default function Funcionarios() {
     (ignorar === 'departamento' || departamentoFiltro.length === 0 || getDeptLabels(f).some(v => departamentoFiltro.includes(v))) &&
     (ignorar === 'setor' || setorFiltro.length === 0 || getSetorLabelsF(f).some(v => setorFiltro.includes(v))) &&
     (ignorar === 'ativo' || colFiltros.ativo.length === 0 || colFiltros.ativo.includes(statusInfo(f).label))
-  ), [dados, colFiltros, cnpjFiltro, codigoFiltro, departamentoFiltro, setorFiltro, departamentos, setores, cargos, getCnpj])
+  ), [dadosParaListagem, colFiltros, cnpjFiltro, codigoFiltro, departamentoFiltro, setorFiltro, departamentos, setores, cargos, getCnpj])
 
   const codigoOpcoes = useMemo(() => {
     const base = filtrarComExcecao('codigo')

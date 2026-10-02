@@ -1,4 +1,4 @@
-export const DIMENSOES_COMISSAO = ['empresa', 'area', 'departamento', 'setor', 'agrupamento_cargo']
+export const DIMENSOES_COMISSAO = ['empresa', 'setor']
 
 // Escopo "sem nenhuma restrição" — usado como padrão pra admin (real ou impersonando).
 export function escopoComissaoTudoLiberado() {
@@ -12,17 +12,14 @@ export function escopoComissaoTudoBloqueado() {
   return Object.fromEntries(DIMENSOES_COMISSAO.map(dim => [dim, { modo: 'INDIVIDUAL', valores: new Set() }]))
 }
 
-const DIMENSOES_MULTI = new Set(['area', 'departamento', 'setor'])
+const DIMENSOES_MULTI = new Set(['setor'])
 const CAMPO_CANDIDATO = {
   empresa: 'empresaId',
-  area: 'areaNomes',
-  departamento: 'departamentoIds',
   setor: 'setorIds',
-  agrupamento_cargo: 'agrupamentoCargoId',
 }
 
-// candidato: { empresaId, areaNomes:[], departamentoIds:[], setorIds:[], agrupamentoCargoId }
-// escopo: comissaoEscopoEfetivo do AuthContext — { [dimensao]: { modo, valores:Set } }
+// candidato: { empresaId, setorIds:[] }
+// escopo: comissaoEscopoEfetivo — empresa (controlada pelo acesso geral) + setor.
 // Cada dimensão em modo INDIVIDUAL precisa passar; TODOS (ou dimensão ausente) nunca bloqueia.
 // Dimensões multi-valor (área/departamento/setor) passam com qualquer sobreposição; um
 // candidato sem nenhum valor cadastrado numa dimensão em modo INDIVIDUAL é reprovado
@@ -43,11 +40,11 @@ export function passaEscopoComissao(candidato, escopo) {
   return true
 }
 
-// nivelPorDepartamento: Map<departamento_id, 'editar'|'visualizar'> (comissaoNivelDepartamentoEfetivo
-// do AuthContext) — ausência de entrada = 'editar' (sem restrição extra), mesmo padrão de
-// "dimensão ausente nunca bloqueia" usado acima. Departamento nulo (nada selecionado/aplicável)
+// nivelPorSetor: Map<setor_id, 'editar'|'visualizar'> (comissaoNivelSetorEfetivo do
+// AuthContext) — ausência de entrada = 'editar' (sem restrição extra), mesmo padrão de
+// "dimensão ausente nunca bloqueia" usado acima. Setor nulo (nada selecionado/aplicável)
 // também nunca bloqueia.
-export function departamentoSoVisualizacao(departamentoId, nivelPorDepartamento) {
-  if (!departamentoId || !nivelPorDepartamento) return false
-  return nivelPorDepartamento.get(departamentoId) === 'visualizar'
+export function setorSoVisualizacao(setorId, nivelPorSetor) {
+  if (!setorId || !nivelPorSetor) return false
+  return nivelPorSetor.get(setorId) === 'visualizar'
 }

@@ -4,6 +4,7 @@ import { useSessionState } from '../hooks/useSessionState'
 import { Plus, X, AlertTriangle, Calculator, Eye, Edit2, Settings, Search, Loader2, PlayCircle, Trash2, ArrowUp, ArrowDown, ListPlus, Copy, ChevronLeft, ChevronRight, Info } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { apiService } from '../services/api'
+import { buscaComCoringa } from '../utils/buscaTexto'
 
 // Menu de Ações da linha, atrás de um botão de engrenagem — evita vários ícones soltos na
 // tabela. O painel abre via portal (position:fixed na posição real do botão) porque a tabela
@@ -98,12 +99,17 @@ const OPERADORES = [
   { value: 'NAO_COMECA_COM', label: 'Não começa com' },
   { value: 'SETOR_OS_IGUAL', label: 'Setor da O.S. é' },
   { value: 'SETOR_OS_DIFERENTE', label: 'Setor da O.S. não é' },
+  { value: 'SETOR_FUNC_IGUAL', label: 'Setor do Funcionário é' },
+  { value: 'SETOR_FUNC_DIFERENTE', label: 'Setor do Funcionário não é' },
   { value: 'EM_BRANCO', label: 'Está em branco' },
   { value: 'NAO_EM_BRANCO', label: 'Não está em branco' },
 ]
 // Operadores cujo valor é um SETOR (escolhido do cadastro de Tipos de O.S.), não texto livre —
 // a coluna da condição deve ser a que traz a sigla/tipo da O.S. no arquivo.
 const OPERADORES_SETOR_OS = ['SETOR_OS_IGUAL', 'SETOR_OS_DIFERENTE']
+// Setor do FUNCIONÁRIO (cadastro de Setores usado em Funcionários/Cargos) — a coluna da
+// condição deve ser a que traz o nome do funcionário/produtivo no arquivo.
+const OPERADORES_SETOR_FUNC = ['SETOR_FUNC_IGUAL', 'SETOR_FUNC_DIFERENTE']
 const OPERADORES_SEM_VALOR = ['EM_BRANCO', 'NAO_EM_BRANCO']
 
 // Código não é mais editável na tela — é gerado automaticamente a partir do Nome só na
@@ -237,6 +243,7 @@ export default function BasesCalculo() {
   const [fontesMw, setFontesMw] = useState([])
   const [empresas, setEmpresas] = useState([])
   const [setoresOS, setSetoresOS] = useState([])
+  const [setoresFunc, setSetoresFunc] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [duplicandoId, setDuplicandoId] = useState(null)
@@ -261,6 +268,7 @@ export default function BasesCalculo() {
 
   // Painel de conferência
   const [filtroSistema, setFiltroSistema] = useSessionState('basecalc_filtro_sistema', '')
+  const [filtroBusca, setFiltroBusca] = useState('')
   const [confBaseId, setConfBaseId] = useSessionState('basecalc_conf_base', '')
   const [confEmpresaIds, setConfEmpresaIds] = useSessionState('basecalc_conf_empresas', [])
   // Período padrão da conferência = mês atual (1º dia até o último dia).
@@ -285,12 +293,13 @@ export default function BasesCalculo() {
     setLoading(true)
     setError(null)
     try {
-      const [bases, fontesData, fontesMwData, emps, tiposOS] = await Promise.all([
+      const [bases, fontesData, fontesMwData, emps, tiposOS, setoresDim] = await Promise.all([
         apiService.getBasesCalculoComFonte(),
         apiService.getFontesCalculo(),
         apiService.getFontesMicrowork(),
         apiService.getEmpresas(),
         apiService.getTiposOS().catch(() => []),
+        apiService.getSetores().catch(() => []),
       ])
       setDados(bases)
       setFontes(fontesData)
@@ -299,6 +308,9 @@ export default function BasesCalculo() {
       // Setores únicos do cadastro de Tipos de O.S. — opções do operador "Setor da O.S.".
       setSetoresOS([...new Set(tiposOS.map(t => (t.setor_servico || '').trim()).filter(Boolean))]
         .sort((a, b) => a.localeCompare(b, 'pt-BR')))
+      // Setores do cadastro de Funcionários/Cargos — o ID vincula com dim_funcionarios.setor_ids.
+      setSetoresFunc(setoresDim.filter(s => s.ativo !== false && s.nome_setor).sort((a, b) =>
+        a.nome_setor.localeCompare(b.nome_setor, 'pt-BR')))
     } catch (err) {
       setError(err.message || String(err))
     } finally {
@@ -311,10 +323,13 @@ export default function BasesCalculo() {
 
   // Base antiga sem Sistema gravado: deduz pela fonte vinculada (SharePoint = Dealer.net).
   const dadosFiltrados = useMemo(() => dados.filter(b => {
-    if (!filtroSistema) return true
-    const sis = b.sistema || (b.fonte_calculo_id ? 'Dealer.net' : b.fonte_microwork_id ? 'MicroWork Cloud' : '')
-    return sis === filtroSistema
-  }), [dados, filtroSistema])
+    if (filtroSistema) {
+      const sis = b.sistema || (b.fonte_calculo_id ? 'Dealer.net' : b.fonte_microwork_id ? 'MicroWork Cloud' : '')
+      if (sis !== filtroSistema) return false
+    }
+    if (filtroBusca.trim() && !buscaComCoringa(`${b.codigo || ''} ${b.nome || ''}`, filtroBusca)) return false
+    return true
+  }), [dados, filtroSistema, filtroBusca])
 
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target
@@ -644,6 +659,16 @@ export default function BasesCalculo() {
           <option value="Dealer.net">Dealer.net</option>
           <option value="MicroWork Cloud">MicroWork Cloud</option>
         </select>
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-300 pointer-events-none" />
+          <input
+            type="text"
+            value={filtroBusca}
+            onChange={e => setFiltroBusca(e.target.value)}
+            placeholder="Buscar por código ou nome..."
+            className="w-64 text-xs py-2 pl-8 pr-2 border border-slate-200 rounded-md bg-white font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+          />
+        </div>
       </div>
 
       {/* TABELA */}
@@ -1059,6 +1084,19 @@ export default function BasesCalculo() {
                                       <option value="">Selecione o setor...</option>
                                       {cond.valor && !setoresOS.includes(cond.valor) && <option value={cond.valor}>{cond.valor}</option>}
                                       {setoresOS.map(s => <option key={s} value={s}>{s}</option>)}
+                                    </select>
+                                  ) : OPERADORES_SETOR_FUNC.includes(cond.operador) ? (
+                                    <select
+                                      value={cond.valor}
+                                      onChange={e => atualizarCondicao(regra.tempId, cond.tempId, { valor: e.target.value })}
+                                      title="Setor vindo do cadastro de Funcionários/Cargos — no cálculo, vira a lista de funcionários desse setor"
+                                      className={`${SEL_SM} flex-1 min-w-[120px]`}
+                                    >
+                                      <option value="">Selecione o setor...</option>
+                                      {cond.valor && !setoresFunc.some(s => String(s.id) === String(cond.valor)) && (
+                                        <option value={cond.valor}>{cond.valor}</option>
+                                      )}
+                                      {setoresFunc.map(s => <option key={s.id} value={s.id}>{s.nome_setor}</option>)}
                                     </select>
                                   ) : !OPERADORES_SEM_VALOR.includes(cond.operador) && (
                                     <input

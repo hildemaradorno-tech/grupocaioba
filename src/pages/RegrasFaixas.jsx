@@ -23,6 +23,18 @@ const TIPOS_META = [
 ]
 const labelTipoMeta = (v) => TIPOS_META.find(t => t.value === v)?.label || v
 
+// Algumas metas publicadas (Consultor, Mecânico, Funilaria) guardam a meta já separada em
+// Total/Peças/Serviços dentro do mesmo registro — meta_campo escolhe qual parte comparar.
+const CAMPOS_META = [
+  { value: 'total', label: 'Total (Peças + Serviços)' },
+  { value: 'pecas', label: 'Só Peças' },
+  { value: 'servicos', label: 'Só Serviços' },
+]
+const labelCampoMeta = (v) => CAMPOS_META.find(c => c.value === v)?.label || v
+// Só estes tipos guardam a meta publicada já separada em meta_pecas/meta_servicos — pros demais
+// (Peças, Terceiros) só existe o Total, então o seletor de Composição da Meta nem aparece.
+const TIPOS_COM_CAMPO_META = ['consultor', 'mecanico', 'funilaria']
+
 const LBL = 'text-[11px] font-bold text-slate-500 uppercase tracking-wide'
 const INP = 'w-full text-xs p-2 border border-slate-200 rounded-md font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 disabled:bg-slate-50 disabled:text-slate-500'
 
@@ -43,7 +55,7 @@ const duasCasas = (v) => {
 const novaFaixa = () => ({ operador: '>=', valor: '', percentual: '' })
 const FORM_VAZIO = {
   descricao: '', ativo: true, politicaId: '',
-  tipo_faixa: 'VALOR', meta_tipo: '', basePoliticaIds: [],  // 'VALOR' | 'PERCENTUAL_META' | 'VALOR_FIXO_META'
+  tipo_faixa: 'VALOR', meta_tipo: '', metaCampo: 'total', basePoliticaIds: [], metaEquipeAgrupamentoIds: [],  // 'VALOR' | 'PERCENTUAL_META' | 'VALOR_FIXO_META'
   faixas: [novaFaixa(), { operador: '<', valor: '', percentual: '' }],
 }
 
@@ -69,6 +81,8 @@ export default function RegrasFaixas() {
   const [listaPoliticaAberta, setListaPoliticaAberta] = useState(false)
   const [buscaBasePolitica, setBuscaBasePolitica] = useState('')
   const [politicas, setPoliticas] = useState([]) // [{ id (grupo), titulo, detalhe, regraId, regraNome }]
+  const [agrupamentoCargos, setAgrupamentoCargos] = useState([])
+  const [buscaAgrupamentoEquipe, setBuscaAgrupamentoEquipe] = useState('')
 
   const { hasActionOrDefault } = useAuth()
   const canEdit = hasActionOrDefault('regras-faixas', 'editar')
@@ -79,8 +93,11 @@ export default function RegrasFaixas() {
     setLoading(true)
     setError(null)
     try {
-      const [regras, linhas] = await Promise.all([apiService.getRegrasComissao(), apiService.getPoliticaComissao()])
+      const [regras, linhas, agrupamentosDb] = await Promise.all([
+        apiService.getRegrasComissao(), apiService.getPoliticaComissao(), apiService.getAgrupamentoCargos(),
+      ])
       setDados(regras)
+      setAgrupamentoCargos(agrupamentosDb.filter(a => a.ativo !== false))
       // Uma "Política" na tela = um grupo (grupo_politica_id) de linhas por cargo.
       const mapa = new Map()
       for (const p of linhas) {
@@ -116,6 +133,7 @@ export default function RegrasFaixas() {
     setFiltroEmpresaPolitica('')
     setFiltroCargoPolitica('')
     setBuscaBasePolitica('')
+    setBuscaAgrupamentoEquipe('')
     setListaPoliticaAberta(false)
     setModalAberto(true)
   }
@@ -128,7 +146,9 @@ export default function RegrasFaixas() {
       politicaId: politicas.find(p => p.regraId === item.id)?.id || '',
       tipo_faixa: item.tipo_faixa || 'VALOR',
       meta_tipo: item.meta_tipo || '',
+      metaCampo: item.meta_campo || 'total',
       basePoliticaIds: item.base_politica_ids || [],
+      metaEquipeAgrupamentoIds: item.meta_equipe_agrupamento_ids || [],
       faixas: (item.faixas || []).map(f => ({ operador: f.operador, valor: duasCasas(f.valor), percentual: duasCasas(f.percentual) })),
     })
     setErroModal(null)
@@ -136,6 +156,7 @@ export default function RegrasFaixas() {
     setFiltroEmpresaPolitica('')
     setFiltroCargoPolitica('')
     setBuscaBasePolitica('')
+    setBuscaAgrupamentoEquipe('')
     setListaPoliticaAberta(false)
     setModalAberto(true)
   }
@@ -157,7 +178,8 @@ export default function RegrasFaixas() {
       const politica = politicas.find(p => p.id === form.politicaId)
       const regraId = await apiService.salvarRegraComissao(editingId, {
         nome: politica?.titulo || 'Regra', descricao: form.descricao, ativo: form.ativo,
-        tipo_faixa: form.tipo_faixa, meta_tipo: form.meta_tipo, base_politica_ids: form.basePoliticaIds,
+        tipo_faixa: form.tipo_faixa, meta_tipo: form.meta_tipo, meta_campo: form.metaCampo, base_politica_ids: form.basePoliticaIds,
+        meta_equipe_agrupamento_ids: form.metaEquipeAgrupamentoIds,
       }, faixas)
       await apiService.vincularPoliticasRegra(regraId, form.politicaId ? [form.politicaId] : [], anteriores)
       await loadData()
@@ -236,8 +258,8 @@ export default function RegrasFaixas() {
                       {item.tipo_faixa === 'VALOR_FIXO_META' ? 'R$ Fixo/Meta' : '% Meta'}
                       <span className="absolute left-1/2 -translate-x-1/2 top-full mt-1 hidden group-hover:block w-52 bg-slate-800 text-white text-[11px] font-normal font-sans rounded-md p-2 shadow-xl z-30 leading-relaxed whitespace-normal text-left">
                         {item.tipo_faixa === 'VALOR_FIXO_META'
-                          ? `Paga um valor fixo em R$ conforme o % de meta atingida — Meta de Referência: ${labelTipoMeta(item.meta_tipo)}`
-                          : `Compara o % atingido (valor da Base ÷ meta) — Meta de Referência: ${labelTipoMeta(item.meta_tipo)}`}
+                          ? `Paga um valor fixo em R$ conforme o % de meta atingida — Meta de Referência: ${labelTipoMeta(item.meta_tipo)}${item.meta_campo && item.meta_campo !== 'total' ? ` (${labelCampoMeta(item.meta_campo)})` : ''}`
+                          : `Compara o % atingido (valor da Base ÷ meta) — Meta de Referência: ${labelTipoMeta(item.meta_tipo)}${item.meta_campo && item.meta_campo !== 'total' ? ` (${labelCampoMeta(item.meta_campo)})` : ''}`}
                       </span>
                     </span>
                   )}
@@ -389,20 +411,78 @@ export default function RegrasFaixas() {
                       onChange={e => setForm(prev => ({ ...prev, tipo_faixa: e.target.value, meta_tipo: e.target.value === 'VALOR' ? '' : prev.meta_tipo }))}
                       className={INP}>
                       <option value="VALOR">Valor da Base (R$)</option>
-                      <option value="PERCENTUAL_META">% da Meta Atingida (aplica um % sobre a comissão)</option>
+                      <option value="PERCENTUAL_META">% da Meta Atingida (aplica um % sobre o valor apurado)</option>
                       <option value="VALOR_FIXO_META">Meta Atingida — Valor Fixo por Faixa</option>
                     </select>
                   </div>
                   {form.tipo_faixa !== 'VALOR' && (
                     <div className="flex flex-col gap-1.5">
                       <label className={LBL}>Meta de Referência *</label>
-                      <select required disabled={somenteLeitura} value={form.meta_tipo} onChange={e => setForm(p => ({ ...p, meta_tipo: e.target.value }))} className={INP}>
+                      <select required disabled={somenteLeitura} value={form.meta_tipo} onChange={e => setForm(p => ({ ...p, meta_tipo: e.target.value, metaCampo: TIPOS_COM_CAMPO_META.includes(e.target.value) ? p.metaCampo : 'total' }))} className={INP}>
                         <option value="">Selecione</option>
                         {TIPOS_META.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                       </select>
                     </div>
                   )}
                 </div>
+
+                {form.tipo_faixa !== 'VALOR' && (
+                  <div className="flex flex-col gap-1.5">
+                    <label className={LBL}>Composição da Meta</label>
+                    <select
+                      disabled={somenteLeitura || !TIPOS_COM_CAMPO_META.includes(form.meta_tipo)}
+                      value={TIPOS_COM_CAMPO_META.includes(form.meta_tipo) ? form.metaCampo : 'total'}
+                      onChange={e => setForm(p => ({ ...p, metaCampo: e.target.value }))}
+                      className={INP}>
+                      {CAMPOS_META.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                    </select>
+                    <span className="text-[10px] text-slate-400 leading-relaxed">
+                      {TIPOS_COM_CAMPO_META.includes(form.meta_tipo)
+                        ? 'Essa meta vem com Peças e Serviços separados no mesmo registro — escolha se a comparação usa o Total ou só uma das partes (ex: comissão sobre Peças da Oficina deve comparar só com a meta de Peças do consultor, não com o total dele). Não muda a Meta de Referência acima — continua a mesma (ex: Consultor).'
+                        : `A Meta de Referência "${labelTipoMeta(form.meta_tipo) || '(nenhuma selecionada)'}" não separa Peças de Serviços — só existe o Total.`}
+                    </span>
+                  </div>
+                )}
+
+                {form.tipo_faixa !== 'VALOR' && (
+                  <div className="flex flex-col gap-1.5">
+                    <label className={LBL}>
+                      Meta de Equipe ({form.metaEquipeAgrupamentoIds.length === 0 ? 'nenhum agrupamento — usa a meta do próprio funcionário' : `${form.metaEquipeAgrupamentoIds.length} agrupamento(s)`})
+                    </label>
+                    <span className="text-[10px] text-slate-400 leading-relaxed">
+                      Marque o(s) Agrupamento(s) de Cargos cujas metas devem ser SOMADAS (todos os cargos deles) e comparadas aqui, no lugar da meta do próprio funcionário — use quando quem recebe a comissão (ex: um coordenador) não tem meta própria cadastrada, e a meta dele é a soma do time.
+                    </span>
+                    {!somenteLeitura && (
+                      <input type="text" value={buscaAgrupamentoEquipe} onChange={e => setBuscaAgrupamentoEquipe(e.target.value)}
+                        placeholder="Buscar agrupamento de cargos..." className={INP} />
+                    )}
+                    <div className="border border-slate-200 rounded-md max-h-40 overflow-y-auto divide-y divide-slate-100">
+                      {(() => {
+                        const termo = buscaAgrupamentoEquipe.trim().toLowerCase()
+                        const agrupamentosFiltrados = agrupamentoCargos
+                          .filter(a => !termo || (a.nome_agrupamento_cargo || '').toLowerCase().includes(termo))
+                          .sort((a, b) => Number(form.metaEquipeAgrupamentoIds.includes(b.id)) - Number(form.metaEquipeAgrupamentoIds.includes(a.id)))
+                        if (agrupamentosFiltrados.length === 0) {
+                          return <div className="px-3 py-3 text-[11px] text-slate-400">{agrupamentoCargos.length === 0 ? 'Nenhum agrupamento de cargos cadastrado.' : 'Nenhum agrupamento encontrado pra esse filtro.'}</div>
+                        }
+                        return agrupamentosFiltrados.map(a => {
+                          const marcado = form.metaEquipeAgrupamentoIds.includes(a.id)
+                          return (
+                            <label key={a.id} className={`flex items-center gap-2 px-3 py-2 text-xs cursor-pointer hover:bg-slate-50 ${marcado ? 'bg-indigo-50/60' : ''} ${somenteLeitura ? 'cursor-default' : ''}`}>
+                              <input type="checkbox" className="w-3.5 h-3.5" checked={marcado} disabled={somenteLeitura}
+                                onChange={() => setForm(prev => ({
+                                  ...prev,
+                                  metaEquipeAgrupamentoIds: marcado ? prev.metaEquipeAgrupamentoIds.filter(id => id !== a.id) : [...prev.metaEquipeAgrupamentoIds, a.id],
+                                }))} />
+                              <span className="font-medium text-slate-700">{a.nome_agrupamento_cargo}</span>
+                              {a.area && <span className="text-slate-400">({a.area})</span>}
+                            </label>
+                          )
+                        })
+                      })()}
+                    </div>
+                  </div>
+                )}
 
                 <div className="flex flex-col gap-2">
                   <label className={LBL}>Faixas {form.tipo_faixa === 'VALOR' ? '— sobre o valor da Base de Cálculo' : '— sobre o % da Meta Atingida'} *</label>
@@ -459,9 +539,9 @@ export default function RegrasFaixas() {
                 {form.tipo_faixa === 'PERCENTUAL_META' && (
                   <div className="flex flex-col gap-2">
                     {/* Só faz sentido pra % da Meta — Valor Fixo por Faixa paga um R$ direto, sem multiplicar nada. */}
-                    <label className={LBL}>Políticas que formam a Base da Comissão ({form.basePoliticaIds.length})</label>
+                    <label className={LBL}>Políticas que formam a Base da Comissão ({form.basePoliticaIds.length}) — opcional</label>
                     <span className="text-[10px] text-slate-400 leading-relaxed">
-                      O valor apurado da Base de Cálculo desta Regra só serve pra achar a % (comparando com a Meta) — a comissão em R$ é essa % aplicada sobre a SOMA do valor de comissão já calculado das políticas marcadas abaixo (não o valor apurado bruto delas), do mesmo funcionário e período.
+                      Sem marcar nada (padrão): a % é aplicada direto sobre o valor apurado desta própria Base de Cálculo — o mesmo valor comparado com a Meta acima. Marque políticas aqui só quando a comissão em R$ precisar ser um bônus em cima do valor de comissão JÁ CALCULADO de outras políticas (ex: Prêmio sobre o que o time já ganhou), em vez do valor apurado bruto.
                     </span>
                     <input type="text" disabled={somenteLeitura} value={buscaBasePolitica} onChange={e => setBuscaBasePolitica(e.target.value)}
                       placeholder="Buscar política, cargo ou empresa..." className={INP} />
@@ -488,9 +568,6 @@ export default function RegrasFaixas() {
                         ))
                       })()}
                     </div>
-                    {form.basePoliticaIds.length === 0 && (
-                      <span className="text-[10px] text-amber-600">Sem nenhuma política marcada, a comissão sempre sairá R$ 0,00.</span>
-                    )}
                   </div>
                 )}
 

@@ -42,7 +42,6 @@ import HistoricoComissoes from './pages/HistoricoComissoes'
 import Funcionarios from './pages/Funcionarios'
 import Feriados from './pages/Feriados'
 import Calendario from './pages/Calendario'
-import SincronizacaoDados from './pages/SincronizacaoDados'
 import MetasPecas from './pages/MetasPecas'
 import MetasVendaAbas from './pages/MetasVendaAbas'
 import MetasPosVendaServicos from './pages/MetasPosVendaServicos'
@@ -227,7 +226,7 @@ export default function App() {
           { path: '/funcionarios', element: <Funcionarios />, menuPath: 'funcionarios' },
           { path: '/feriados', element: <Feriados />, menuPath: 'feriados' },
           { path: '/calendario', element: <Calendario />, menuPath: 'calendario' },
-          { path: '/sincronizacao-dados', element: <SincronizacaoDados />, menuPath: 'sincronizacao-dados' },
+          { path: '/sincronizacao-dados', element: <Navigate to="/kpi/matriz" replace /> },
           { path: '/metas/vendas', element: <MetasVendaAbas />, menuPath: '/metas/vendas' },
           { path: '/metas/pos-vendas/pecas', element: <MetasPecas />, menuPath: '/metas/pos-vendas/pecas' },
           { path: '/metas/pos-vendas/servicos_pecas', element: <MetasPosVendaServicos />, menuPath: '/metas/pos-vendas/servicos_pecas' },

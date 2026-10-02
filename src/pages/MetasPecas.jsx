@@ -2,6 +2,7 @@
 import { useSessionState } from '../hooks/useSessionState'
 import { Plus, Trash2, Edit2, X, AlertTriangle, ChevronRight, ChevronDown, Target, Loader2, CheckCircle2, Sparkles, Pencil, Eye, Search, Copy } from 'lucide-react'
 import BotaoAcaoRetratil from '../components/BotaoAcaoRetratil'
+import SeletorMeses, { CssMesesOcultos } from '../components/SeletorMeses'
 import { useAuth } from '../context/AuthContext'
 import PermissionActionButtons from '../components/PermissionActionButtons'
 import { SearchCombobox } from '../components/SearchCombobox'
@@ -278,6 +279,7 @@ export default function MetasPecas({ empresaExterna = null, anoExterno = null, a
   const [filtroSetor, setFiltroSetor] = useSessionState('mpc_setor', '')
   const [filtroBox,   setFiltroBox]   = useSessionState('mpc_box', '')
   const [filtroColab, setFiltroColab] = useSessionState('mpc_colab', '') // busca por nome (texto livre)
+  const [mesesSel,    setMesesSel]    = useSessionState('mpvs_servicos_meses', [])
 
   const [grupoAberto,      setGrupoAberto]      = useState(true)
   const [expandedEmpresas, setExpandedEmpresas] = useState(new Set())
@@ -732,6 +734,7 @@ export default function MetasPecas({ empresaExterna = null, anoExterno = null, a
             </div>
           </div>
         </div>
+        <SeletorMeses selecionados={mesesSel} onChange={setMesesSel} />
       </div>
 
       {error && (
@@ -742,9 +745,10 @@ export default function MetasPecas({ empresaExterna = null, anoExterno = null, a
       )}
 
       {/* TREE TABLE */}
+      <CssMesesOcultos escopo="tabela-metas-pecas" selecionados={mesesSel} />
       <div className="flex-1 bg-white border border-slate-200 rounded-xl overflow-hidden flex flex-col min-h-0">
         <div className="overflow-auto flex-1">
-          <table className="text-xs border-separate border-spacing-0" style={{ minWidth: '1700px' }}>
+          <table className="tabela-metas-pecas text-xs border-separate border-spacing-0" style={{ minWidth: '1700px' }}>
             <thead className="bg-slate-50 sticky top-0 z-20">
               <tr>
                 <th className="px-3 py-2.5 text-left font-semibold text-slate-600 uppercase tracking-wide border-b border-slate-200 w-60 sticky left-0 bg-slate-50 z-10">

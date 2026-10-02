@@ -1,9 +1,10 @@
 import React, { useState } from 'react'
-import { BarChart2, TrendingUp, Activity, Wrench, Package, Wallet, FlaskConical } from 'lucide-react'
+import { BarChart2, TrendingUp, Activity, Wrench, Package, Wallet, FlaskConical, RefreshCw } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { useKpiYear, KPI_YEARS } from '../../context/KpiYearContext'
 import { useKpiSourceStatus } from '../../context/KpiSourceStatusContext'
 import DataSourceBadge from '../../components/kpi/DataSourceBadge'
+import { getStatusSincronizacao, executarSincronizacaoAgora } from '../../services/kpiService'
 import KpiDashboardExecutivo from './KpiDashboardExecutivo'
 import KpiIndicadoresCorporativos from './KpiIndicadoresCorporativos'
 import KpiIndicadoresOperacionais from './KpiIndicadoresOperacionais'
@@ -25,12 +26,47 @@ const ABAS = [
 export const KPI_MATRIZ_PERMS = ABAS.map(a => a.permKey)
 
 export default function KpiMatriz() {
-  const { hasPermission } = useAuth()
+  const { hasPermission, hasActionOrDefault, user } = useAuth()
   const { year, setYear } = useKpiYear()
-  const { status: sourceStatus } = useKpiSourceStatus()
+  const { status: sourceStatus, refreshToken, refreshData } = useKpiSourceStatus()
+  const [sincronizando, setSincronizando] = useState(false)
+  const [mensagemSync, setMensagemSync] = useState('')
   const abasVisiveis = ABAS.filter(a => hasPermission(a.permKey))
   const [aba, setAba] = useState(() => abasVisiveis[0]?.key)
   const abaAtual = abasVisiveis.find(a => a.key === aba) || abasVisiveis[0]
+  const podeSincronizar = hasActionOrDefault('sincronizacao-dados', 'editar')
+
+  const atualizarKpis = async () => {
+    setSincronizando(true)
+    setMensagemSync('')
+    try {
+      const anterior = await getStatusSincronizacao()
+      const idAnterior = anterior?.ultimaExecucao?.id
+      await executarSincronizacaoAgora(user?.email)
+
+      const inicio = Date.now()
+      let execucaoFinalizada = null
+      while (Date.now() - inicio < 30 * 60 * 1000) {
+        await new Promise(resolve => setTimeout(resolve, 5000))
+        const atual = await getStatusSincronizacao()
+        const ultima = atual?.ultimaExecucao
+        if (ultima && ultima.id !== idAnterior && ultima.status !== 'EXECUTANDO') {
+          execucaoFinalizada = ultima
+          break
+        }
+      }
+
+      if (!execucaoFinalizada) throw new Error('A sincronização ainda não terminou. Atualize a página mais tarde para consultar os dados.')
+      if (execucaoFinalizada.status === 'ERRO') throw new Error('A sincronização terminou com erro. Os dados não foram atualizados.')
+
+      refreshData()
+      setMensagemSync(execucaoFinalizada.status === 'PARCIAL' ? 'Atualização parcial concluída.' : 'KPIs atualizados.')
+    } catch (err) {
+      setMensagemSync(err.message || 'Não foi possível atualizar os KPIs.')
+    } finally {
+      setSincronizando(false)
+    }
+  }
 
   return (
     <div className="flex flex-col h-full">
@@ -40,7 +76,14 @@ export default function KpiMatriz() {
           <p className="text-sm text-slate-500 mt-0.5">Indicadores de desempenho consolidados por bloco</p>
         </div>
         <div className="flex items-center gap-3 shrink-0">
-          {sourceStatus.source != null && <DataSourceBadge source={sourceStatus.source} loading={sourceStatus.loading} />}
+          {sourceStatus.source != null && <DataSourceBadge source={sourceStatus.source} loading={sourceStatus.loading} refreshKey={refreshToken} />}
+          {podeSincronizar && (
+            <button type="button" onClick={atualizarKpis} disabled={sincronizando}
+              className="inline-flex items-center gap-1.5 rounded-md border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60">
+              <RefreshCw className={`h-3.5 w-3.5 ${sincronizando ? 'animate-spin' : ''}`} />
+              {sincronizando ? 'Sincronizando...' : 'Atualizar KPIs'}
+            </button>
+          )}
           <span className="text-xs text-slate-500 font-medium">Ano:</span>
           <select
             value={year}
@@ -51,6 +94,7 @@ export default function KpiMatriz() {
           </select>
         </div>
       </div>
+      {mensagemSync && <p role="status" className="px-6 pt-2 text-xs text-slate-600">{mensagemSync}</p>}
 
       {abaAtual ? (
         <>

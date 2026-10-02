@@ -26,20 +26,34 @@
 import * as XLSX from 'xlsx'
 import axios from 'axios'
 import { graphGet } from './graphClient.js'
+import { getSupabaseAdmin } from './supabaseAdmin.js'
 
 const CACHE_TTL_MS = 5 * 60 * 1000
 const _cache = new Map() // chave composta -> { resultado, ts } — cacheia só o resultado agregado, nunca as linhas
+const CACHE_SETOR_FUNC_TTL_MS = 60 * 1000
+let _cacheSetoresFuncionarios = { ts: 0, dados: null }
 
 export function clearFonteCalculoCache() {
   _cache.clear()
 }
 
-// Converte qualquer valor de data do Excel para 'YYYY-MM-DD'
-export function toIsoDate(val) {
+function dataIsoNoFuso(data, fusoHorario) {
+  const partes = new Intl.DateTimeFormat('en-CA', {
+    timeZone: fusoHorario,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(data)
+  const p = Object.fromEntries(partes.map(parte => [parte.type, parte.value]))
+  return `${p.year}-${p.month}-${p.day}`
+}
+
+// Converte qualquer valor de data do Excel para 'YYYY-MM-DD'.
+// fusoHorario só é informado por fontes cujos timestamps representam horário local.
+export function toIsoDate(val, fusoHorario = null) {
   if (val === null || val === undefined || val === '') return null
   try {
     if (val instanceof Date) {
       if (isNaN(val.getTime())) return null
+      if (fusoHorario) return dataIsoNoFuso(val, fusoHorario)
       const y = val.getUTCFullYear()
       const m = String(val.getUTCMonth() + 1).padStart(2, '0')
       const d = String(val.getUTCDate()).padStart(2, '0')
@@ -57,9 +71,16 @@ export function toIsoDate(val) {
     }
     const s = String(val).trim()
     if (!s) return null
-    const br = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+    const br = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[ T]\d{1,2}:\d{2}(?::\d{2}(?:\.\d+)?)?)?$/)
     if (br) return `${br[3]}-${br[2].padStart(2, '0')}-${br[1].padStart(2, '0')}`
-    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10)
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+      if (fusoHorario && /T.*(?:Z|[+-]\d{2}:?\d{2})$/i.test(s)) {
+        const d = new Date(s)
+        if (isNaN(d.getTime())) return null
+        return dataIsoNoFuso(d, fusoHorario)
+      }
+      return s.slice(0, 10)
+    }
     const d = new Date(s)
     if (isNaN(d.getTime())) return null
     return d.toISOString().slice(0, 10)
@@ -82,6 +103,72 @@ export function normalizaTexto(v) {
   return String(v ?? '').trim().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
 }
 
+export function fusoHorarioFonteCalculo(pastaSharepoint, prefixoArquivo) {
+  const pasta = normalizaTexto(pastaSharepoint).replace(/\\/g, '/')
+  if (prefixoArquivo === 'RPR001_VENDAPRODUTO' && pasta.includes('/BANCO DE DADOS - DAF - POS-VENDAS/VENDAS DE PRODUTOS')) {
+    return 'America/Campo_Grande'
+  }
+  return null
+}
+
+async function carregarFuncionariosPorSetor() {
+  if (_cacheSetoresFuncionarios.dados && Date.now() - _cacheSetoresFuncionarios.ts < CACHE_SETOR_FUNC_TTL_MS) {
+    return _cacheSetoresFuncionarios.dados
+  }
+  const admin = getSupabaseAdmin()
+  if (!admin) throw new Error('Supabase não configurado para consultar setores dos funcionários')
+
+  const { data: setores, error: erroSetores } = await admin.from('dim_setores').select('id, nome_setor')
+  if (erroSetores) throw erroSetores
+  const idsPorNome = new Map()
+  for (const setor of setores || []) {
+    const nome = normalizaTexto(setor.nome_setor)
+    if (!nome) continue
+    if (!idsPorNome.has(nome)) idsPorNome.set(nome, [])
+    idsPorNome.get(nome).push(String(setor.id))
+  }
+
+  const nomesPorSetor = new Map()
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await admin.from('dim_funcionarios')
+      .select('nome_funcionario, setor_ids').order('id').range(from, from + 999)
+    if (error) throw error
+    for (const funcionario of data || []) {
+      const nome = normalizaTexto(funcionario.nome_funcionario)
+      if (!nome) continue
+      for (const setorId of Array.isArray(funcionario.setor_ids) ? funcionario.setor_ids : []) {
+        const id = String(setorId)
+        if (!nomesPorSetor.has(id)) nomesPorSetor.set(id, new Set())
+        nomesPorSetor.get(id).add(nome)
+      }
+    }
+    if (!data || data.length < 1000) break
+  }
+
+  const dados = { nomesPorSetor, idsPorNome }
+  _cacheSetoresFuncionarios = { ts: Date.now(), dados }
+  return dados
+}
+
+export async function resolverRegrasSetorFuncionario(regras = []) {
+  const temRegraSetor = regras.some(regra => (regra.condicoes || []).some(c =>
+    c.operador === 'SETOR_FUNC_IGUAL' || c.operador === 'SETOR_FUNC_DIFERENTE'))
+  if (!temRegraSetor) return regras
+
+  const { nomesPorSetor, idsPorNome } = await carregarFuncionariosPorSetor()
+  return regras.map(regra => ({
+    ...regra,
+    condicoes: (regra.condicoes || []).map(c => {
+      if (c.operador !== 'SETOR_FUNC_IGUAL' && c.operador !== 'SETOR_FUNC_DIFERENTE') return c
+      const valor = String(c.valor ?? '').trim()
+      const ids = nomesPorSetor.has(valor) ? [valor] : (idsPorNome.get(normalizaTexto(valor)) || [])
+      const funcionarios = new Set()
+      for (const id of ids) for (const nome of nomesPorSetor.get(id) || []) funcionarios.add(nome)
+      return { ...c, funcionariosSetor: [...funcionarios] }
+    }),
+  }))
+}
+
 // A célula "casa" com uma sigla de Tipo de O.S. quando é igual a ela ou começa por ela seguida
 // de um caractere não alfanumérico — "V01" casa com "V01" e "V01 - SERVIÇO CLIENTE", mas
 // "V1" NÃO casa com "V10 ..." (fronteira de palavra).
@@ -94,7 +181,7 @@ function casaSiglaOS(cellNorm, siglaNorm) {
 }
 
 // Avalia uma cláusula de condição contra o valor bruto de uma célula (já resolvida por índice).
-function avaliaClausula(valorBruto, operador, valorEsperado) {
+function avaliaClausula(valorBruto, operador, valorEsperado, funcionariosSetor) {
   switch (operador) {
     case 'EM_BRANCO': return normalizaTexto(valorBruto) === ''
     case 'NAO_EM_BRANCO': return normalizaTexto(valorBruto) !== ''
@@ -114,6 +201,12 @@ function avaliaClausula(valorBruto, operador, valorEsperado) {
       const cell = normalizaTexto(valorBruto)
       return !String(valorEsperado || '').split('|').some(s => casaSiglaOS(cell, normalizaTexto(s)))
     }
+    case 'SETOR_FUNC_IGUAL':
+    case 'SETOR_FUNC_DIFERENTE': {
+      if (!Array.isArray(funcionariosSetor) || funcionariosSetor.length === 0) return false
+      const corresponde = funcionariosSetor.includes(normalizaTexto(valorBruto))
+      return operador === 'SETOR_FUNC_IGUAL' ? corresponde : !corresponde
+    }
     default: return false
   }
 }
@@ -125,13 +218,13 @@ export function avaliaCondicoes(r, condicoes, logica) {
   if (logica === 'OU') {
     for (let i = 0; i < condicoes.length; i++) {
       const c = condicoes[i]
-      if (avaliaClausula(c.idxColuna >= 0 ? r[c.idxColuna] : undefined, c.operador, c.valor)) return true
+      if (avaliaClausula(c.idxColuna >= 0 ? r[c.idxColuna] : undefined, c.operador, c.valor, c.funcionariosSetor)) return true
     }
     return false
   }
   for (let i = 0; i < condicoes.length; i++) {
     const c = condicoes[i]
-    if (!avaliaClausula(c.idxColuna >= 0 ? r[c.idxColuna] : undefined, c.operador, c.valor)) return false
+    if (!avaliaClausula(c.idxColuna >= 0 ? r[c.idxColuna] : undefined, c.operador, c.valor, c.funcionariosSetor)) return false
   }
   return true
 }
@@ -314,7 +407,7 @@ async function agregarArquivo(downloadUrl, params, acc) {
 
 // Agrega um array-de-arrays (linha 0 = cabeçalho). Exportada pra fonte MicroWork reaproveitar
 // exatamente a mesma lógica de filtro/regras/agregação do SharePoint.
-export function agregarAoA(aoa, { colunaEmpresa, colunaData, colunaValor, tipoAgregacao, empresaAlvo, dataInicio, dataFim, regras }, acc) {
+export function agregarAoA(aoa, { colunaEmpresa, colunaData, colunaValor, tipoAgregacao, empresaAlvo, dataInicio, dataFim, regras, fusoHorario }, acc) {
   if (aoa.length === 0) return
 
   const cabecalho = aoa[0]
@@ -332,6 +425,7 @@ export function agregarAoA(aoa, { colunaEmpresa, colunaData, colunaValor, tipoAg
       idxColuna: cabecalho.indexOf(c.coluna),
       operador: c.operador,
       valor: c.valor,
+      funcionariosSetor: c.funcionariosSetor,
     })),
   }))
 
@@ -347,7 +441,7 @@ export function agregarAoA(aoa, { colunaEmpresa, colunaData, colunaValor, tipoAg
     }
     if (dataInicio || dataFim) {
       const dataVal = idxData >= 0 ? r[idxData] : undefined
-      const iso = toIsoDate(dataVal)
+      const iso = toIsoDate(dataVal, fusoHorario)
       if (!iso) continue
       if (dataInicio && iso < dataInicio) continue
       if (dataFim && iso > dataFim) continue
@@ -370,8 +464,10 @@ export function agregarAoA(aoa, { colunaEmpresa, colunaData, colunaValor, tipoAg
 // Combina listagem de arquivos + leitura em streaming + agregação, usado pelo painel de conferência.
 // Cacheia só o RESULTADO final (números), nunca as linhas do arquivo.
 export async function preview({ pastaSharepoint, prefixoArquivo, usaSubpastaAno, subpastaPadrao, linhaCabecalho, colunaEmpresa, colunaData, colunaValor, tipoAgregacao, empresaNome, dataInicio, dataFim, regras }) {
+  regras = await resolverRegrasSetorFuncionario(regras || [])
+  const fusoHorario = fusoHorarioFonteCalculo(pastaSharepoint, prefixoArquivo)
   const empresaAlvo = empresaNome ? normalizaTexto(empresaNome) : null
-  const key = [pastaSharepoint, prefixoArquivo, usaSubpastaAno, subpastaPadrao, linhaCabecalho || 0, colunaEmpresa, colunaData, colunaValor, tipoAgregacao, empresaAlvo, dataInicio, dataFim, JSON.stringify(regras || [])].join('|')
+  const key = [pastaSharepoint, prefixoArquivo, usaSubpastaAno, subpastaPadrao, linhaCabecalho || 0, colunaEmpresa, colunaData, colunaValor, tipoAgregacao, empresaAlvo, dataInicio, dataFim, fusoHorario, JSON.stringify(regras || [])].join('|')
   const cached = _cache.get(key)
   if (cached && (Date.now() - cached.ts) < CACHE_TTL_MS) return cached.resultado
 
@@ -383,7 +479,7 @@ export async function preview({ pastaSharepoint, prefixoArquivo, usaSubpastaAno,
     for (const file of files) {
       const downloadUrl = file['@microsoft.graph.downloadUrl']
       if (!downloadUrl) continue
-      await agregarArquivo(downloadUrl, { linhaCabecalho, colunaEmpresa, colunaData, colunaValor, tipoAgregacao, empresaAlvo, dataInicio, dataFim, regras }, acc)
+      await agregarArquivo(downloadUrl, { linhaCabecalho, colunaEmpresa, colunaData, colunaValor, tipoAgregacao, empresaAlvo, dataInicio, dataFim, regras, fusoHorario }, acc)
     }
   }
 

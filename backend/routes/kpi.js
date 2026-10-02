@@ -724,15 +724,15 @@ router.get('/backlog', requireConfig, wrap(async (_, res) => {
   res.json(cache ?? await getBacklog())
 }))
 
-// ── Sincronização agendada ────────────────────────────────────────────────────
+// ── Sincronização manual da Matriz KPIs ───────────────────────────────────────
 
-// GET /api/kpi/sync/status — config atual + última execução (agendada ou manual)
+// GET /api/kpi/sync/status — última execução manual
 router.get('/sync/status', wrap(async (_, res) => {
   const status = await getStatusSincronizacao()
   res.json({ ...status, executandoAgora: sincronizacaoEmAndamento() })
 }))
 
-// POST /api/kpi/sync/executar — dispara "Atualizar Agora"; roda em background e
+// POST /api/kpi/sync/executar — dispara "Atualizar KPIs"; roda em background e
 // responde de imediato (o passe completo pode levar minutos) — o frontend faz
 // polling de /sync/status até ultimaExecucao.finalizado_em aparecer.
 router.post('/sync/executar', requireConfig, (req, res) => {

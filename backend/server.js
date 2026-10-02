@@ -23,13 +23,16 @@ import truckpagRoutes from './routes/truckpag.js'
 import googleCalendarRoutes from './routes/googleCalendar.js'
 import projetosManifestacoesRoutes from './routes/projetosManifestacoes.js'
 import auditAiRoutes from './routes/auditAi.js'
-import { iniciarSchedulerKpi } from './services/kpiSyncScheduler.js'
 import { iniciarSchedulerManifestacao } from './services/manifestacaoScheduler.js'
 
 const app = express()
 app.use(cors({ origin: '*', methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'], allowedHeaders: ['Content-Type','Authorization'] }))
 app.options('*', cors())
-app.use(express.json())
+// Limite padrão do express.json() é 100kb — pouco pra "Calcular Comissões" em lote (um item por
+// política×funcionário, cada um já carregando as Regras de Cálculo da Base) quando o
+// departamento tem muita gente (ex: Oficina com 40+ funcionários já estourava "request entity
+// too large").
+app.use(express.json({ limit: '20mb' }))
 
 // ── Rotas da Matriz KPIs (SharePoint / Microsoft Graph) ──────────────────────
 app.use('/api/kpi', kpiRoutes)
@@ -379,7 +382,6 @@ async function start() {
     console.log(`✓ Servidor rodando em http://localhost:${PORT}`)
   })
 
-  iniciarSchedulerKpi()
   iniciarSchedulerManifestacao()
 }
 

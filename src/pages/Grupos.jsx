@@ -135,12 +135,15 @@ function TreeNode({ node, selected, onToggle, disabled, defaultOpen = false, sel
 // ── Seletor de dimensão de escopo (Cálculo de Comissões) — Todos ou Individual ────────────
 
 // `nivelPorValor`/`onNivelChange`/`onToggleResponsavel` são opcionais e só usados na instância
-// de Departamento — quando presentes, cada opção MARCADA ganha um seletor Editar/Visualizar +
+// de Setor — quando presentes, cada opção MARCADA (ou todas, no modo "Todos") ganha um seletor Editar/Visualizar +
 // checkbox Responsável ao lado (nível de acesso extra, some-se às Ações já existentes; ver
-// `departamentoSoVisualizacao` em utils/permissoesComissao.js).
+// `setorSoVisualizacao` em utils/permissoesComissao.js).
 function SeletorDimensaoComissao({ label, escopo, opcoes, disabled, onModoChange, onToggleValor, onSelecionarTodos, onLimpar, nivelPorValor, onNivelChange, onToggleResponsavel }) {
   const modo = escopo?.modo || 'TODOS'
   const valores = escopo?.valores || new Set()
+  // Com nível (instância de Setor), "Todos" também lista as opções — todas liberadas, sem
+  // checkbox, só pra escolher Editar/Visualizar/Responsável em cada uma.
+  const modoTodos = modo === 'TODOS' && !!onNivelChange
   // Lista de opções recolhida por padrão quando marcado Individual — evita que a tela de
   // Permissões de Acesso fique enorme quando há muitos departamentos/setores/cargos.
   const [expandido, setExpandido] = useState(false)
@@ -167,7 +170,7 @@ function SeletorDimensaoComissao({ label, escopo, opcoes, disabled, onModoChange
           </button>
         </div>
       </div>
-      {modo === 'INDIVIDUAL' && !disabled && (
+      {(modo === 'INDIVIDUAL' || onNivelChange) && !disabled && (
         <>
           {opcoes.length > 0 && (
             <div className="flex items-center gap-2 mb-1.5">
@@ -179,11 +182,17 @@ function SeletorDimensaoComissao({ label, escopo, opcoes, disabled, onModoChange
                 {expandido ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
                 {expandido ? 'Recolher' : 'Expandir'}
               </button>
-              <span className="text-slate-300">|</span>
-              <button type="button" onClick={onSelecionarTodos} className="text-[11px] text-blue-600 hover:underline">Selecionar todos</button>
-              <span className="text-slate-300">|</span>
-              <button type="button" onClick={onLimpar} className="text-[11px] text-slate-500 hover:underline">Desmarcar todos</button>
-              <span className="ml-auto text-[11px] text-slate-400">{valores.size}/{opcoes.length}</span>
+              {modoTodos ? (
+                <span className="text-[11px] text-slate-400">Todos liberados — escolha Editar/Visualizar em cada um</span>
+              ) : (
+                <>
+                  <span className="text-slate-300">|</span>
+                  <button type="button" onClick={onSelecionarTodos} className="text-[11px] text-blue-600 hover:underline">Selecionar todos</button>
+                  <span className="text-slate-300">|</span>
+                  <button type="button" onClick={onLimpar} className="text-[11px] text-slate-500 hover:underline">Desmarcar todos</button>
+                  <span className="ml-auto text-[11px] text-slate-400">{valores.size}/{opcoes.length}</span>
+                </>
+              )}
             </div>
           )}
           {(expandido || opcoes.length === 0) && (
@@ -191,20 +200,24 @@ function SeletorDimensaoComissao({ label, escopo, opcoes, disabled, onModoChange
             {opcoes.length === 0 ? (
               <p className="text-xs text-slate-400 py-1">Nenhuma opção cadastrada.</p>
             ) : opcoes.map(op => {
-              const marcado = valores.has(op.valor)
+              const marcado = modoTodos || valores.has(op.valor)
               const nivel = nivelPorValor?.[op.valor]?.nivel_acesso === 'visualizar' ? 'visualizar' : 'editar'
               const responsavel = !!nivelPorValor?.[op.valor]?.responsavel
               return (
                 <div key={op.valor} className="flex items-center justify-between gap-2 px-2 py-1 rounded hover:bg-slate-50">
-                  <label className="flex items-center gap-1.5 text-xs cursor-pointer select-none min-w-0">
-                    <input
-                      type="checkbox"
-                      checked={marcado}
-                      onChange={() => onToggleValor(op.valor)}
-                      className="w-3 h-3 rounded accent-blue-600 shrink-0"
-                    />
-                    <span className="truncate">{op.label}</span>
-                  </label>
+                  {modoTodos ? (
+                    <span className="text-xs truncate min-w-0 pl-1">{op.label}</span>
+                  ) : (
+                    <label className="flex items-center gap-1.5 text-xs cursor-pointer select-none min-w-0">
+                      <input
+                        type="checkbox"
+                        checked={marcado}
+                        onChange={() => onToggleValor(op.valor)}
+                        className="w-3 h-3 rounded accent-blue-600 shrink-0"
+                      />
+                      <span className="truncate">{op.label}</span>
+                    </label>
+                  )}
                   {marcado && onNivelChange && (
                     <div className="flex items-center gap-2 shrink-0">
                       <div className="inline-flex rounded-md border border-slate-200 overflow-hidden text-[10px] font-semibold">
@@ -281,11 +294,11 @@ export default function Grupos() {
   const [empresas, setEmpresas] = useState([])
   const [comissaoEscopo, setComissaoEscopo] = useState(escopoComissaoTudoLiberado())
   const [comissaoHabilitado, setComissaoHabilitado] = useState(false)
-  // Nível de acesso extra por Departamento — { [departamento_id]: { nivel_acesso: 'editar'|'visualizar', responsavel: bool } }
-  const [comissaoDepartamentoNivel, setComissaoDepartamentoNivel] = useState({})
+  // Nível de acesso extra por Setor — { [setor_id]: { nivel_acesso: 'editar'|'visualizar', responsavel: bool } }
+  const [comissaoSetorNivel, setComissaoSetorNivel] = useState({})
+  // Departamentos só pra identificar o setor na lista (nome de setor pode repetir entre departamentos)
   const [departamentosComissao, setDepartamentosComissao] = useState([])
   const [setoresComissao, setSetoresComissao] = useState([])
-  const [agrupamentosCargoComissao, setAgrupamentosCargoComissao] = useState([])
   const [isAdmin, setIsAdmin] = useState(false)
   const [loadingPerms, setLoadingPerms] = useState(false)
   const [savingPerms, setSavingPerms] = useState(false)
@@ -432,7 +445,7 @@ export default function Grupos() {
         apiService.setPermissoesGrupo(novoGrupo.id, { is_admin: grupo.is_admin, paths }),
         apiService.setPermissoesGrupoAcoes(novoGrupo.id, acoes.map(a => ({ menu_path: a.menu_path, acao: a.acao }))),
         apiService.setPermissoesEmpresasGrupo(novoGrupo.id, empIds),
-        apiService.setPermissoesComissaoGrupo(novoGrupo.id, comissaoEscopoRaw, comissaoEscopoRaw.habilitado),
+        apiService.setPermissoesComissaoGrupo(novoGrupo.id, comissaoEscopoRaw, comissaoEscopoRaw.habilitado, comissaoEscopoRaw.setorNivel),
       ])
 
       setGrupos(prev => [...prev, { ...novoGrupo, is_admin: grupo.is_admin }].sort((a, b) => a.nome_grupo.localeCompare(b.nome_grupo, 'pt-BR')))
@@ -458,14 +471,13 @@ export default function Grupos() {
     setTreeDefaultOpen(false)
     setTreeKey(k => k + 1)
     try {
-      const [paths, acoes, empIds, emps, deptosDim, setoresDim, agrupCargos, comissaoEscopoRaw, deptosProj, projDeptos, deptosAudit, projEmps, empresasAudit] = await Promise.all([
+      const [paths, acoes, empIds, emps, deptosDim, setoresDim, comissaoEscopoRaw, deptosProj, projDeptos, deptosAudit, projEmps, empresasAudit] = await Promise.all([
         apiService.getPermissoesGrupo(grupo.id),
         apiService.getPermissoesGrupoAcoes(grupo.id),
         apiService.getPermissoesEmpresasGrupo(grupo.id),
         apiService.getEmpresas(),
         apiService.getDepartamentos(),
         apiService.getSetores(),
-        apiService.getAgrupamentoCargos(),
         apiService.getPermissoesComissaoGrupo(grupo.id),
         apiService.getPermissoesDeptoPorGrupo(grupo.id),
         apiService.getProjDepartamentos(),
@@ -490,13 +502,12 @@ export default function Grupos() {
       setEmpresas(emps.filter(e => e.ativo !== false).sort((a, b) => (a.nome_empresa || '').localeCompare(b.nome_empresa || '', 'pt-BR')))
       setDepartamentosComissao(deptosDim.filter(d => d.ativo !== false))
       setSetoresComissao(setoresDim.filter(s => s.ativo !== false))
-      setAgrupamentosCargoComissao(agrupCargos.filter(a => a.ativo !== false))
       setComissaoEscopo(Object.fromEntries(DIMENSOES_COMISSAO.map(dim => [
         dim,
         { modo: comissaoEscopoRaw[dim]?.modo === 'INDIVIDUAL' ? 'INDIVIDUAL' : 'TODOS', valores: new Set(comissaoEscopoRaw[dim]?.valores || []) },
       ])))
       setComissaoHabilitado(!!comissaoEscopoRaw.habilitado)
-      setComissaoDepartamentoNivel(comissaoEscopoRaw.departamentoNivel || {})
+      setComissaoSetorNivel(comissaoEscopoRaw.setorNivel || {})
     } catch (err) {
       alert('Erro ao carregar permissões: ' + err.message)
       setSelectedPaths(new Set())
@@ -512,7 +523,7 @@ export default function Grupos() {
       setAuditoriaEmpresaModo('TODOS')
       setComissaoEscopo(escopoComissaoTudoLiberado())
       setComissaoHabilitado(false)
-      setComissaoDepartamentoNivel({})
+      setComissaoSetorNivel({})
     } finally {
       setLoadingPerms(false)
     }
@@ -602,11 +613,11 @@ export default function Grupos() {
     setComissaoEscopo(prev => ({ ...prev, [dim]: { ...prev[dim], valores: new Set() } }))
   }
 
-  const handleDepartamentoNivelChange = (depId, nivel) => {
-    setComissaoDepartamentoNivel(prev => ({ ...prev, [depId]: { ...prev[depId], nivel_acesso: nivel } }))
+  const handleSetorNivelChange = (setorId, nivel) => {
+    setComissaoSetorNivel(prev => ({ ...prev, [setorId]: { ...prev[setorId], nivel_acesso: nivel } }))
   }
-  const handleDepartamentoToggleResponsavel = (depId) => {
-    setComissaoDepartamentoNivel(prev => ({ ...prev, [depId]: { ...prev[depId], responsavel: !prev[depId]?.responsavel } }))
+  const handleSetorToggleResponsavel = (setorId) => {
+    setComissaoSetorNivel(prev => ({ ...prev, [setorId]: { ...prev[setorId], responsavel: !prev[setorId]?.responsavel } }))
   }
 
   const handleSavePerms = async () => {
@@ -631,7 +642,7 @@ export default function Grupos() {
           isAdmin
             ? { modo: 'TODOS', valores: [] }
             : { modo: comissaoEscopo[dim]?.modo || 'TODOS', valores: [...(comissaoEscopo[dim]?.valores || [])] },
-        ])), comissaoHabilitado, isAdmin ? {} : comissaoDepartamentoNivel),
+        ])), comissaoHabilitado, isAdmin ? {} : comissaoSetorNivel),
       ])
       setGrupos(prev => prev.map(g => g.id === editingId ? { ...g, is_admin: isAdmin } : g))
       setSiglasPorGrupo(prev => ({
@@ -1021,17 +1032,16 @@ export default function Grupos() {
 
       {/* ── Acesso à Cálculo de Comissões ── */}
       {!loadingPerms && (isAdmin || [...selectedPaths].some(p => p.startsWith('calculo-comissoes') || p.startsWith('processamento-comissoes'))) && (() => {
-        const opcoesDepartamento = departamentosComissao.map(d => ({
-          valor: d.id,
-          label: d.area
-            ? <>{d.nome_departamento} <em className="italic text-slate-400 font-normal">({d.area})</em></>
-            : d.nome_departamento,
-        }))
-        const opcoesSetor = setoresComissao.map(s => ({ valor: s.id, label: s.nome_setor }))
-        const opcoesAgrupamentoCargo = agrupamentosCargoComissao.map(a => ({ valor: a.id, label: a.nome_agrupamento_cargo }))
-        const opcoesArea = [...new Set(departamentosComissao.map(d => d.area).filter(Boolean))]
-          .sort((a, b) => a.localeCompare(b, 'pt-BR'))
-          .map(a => ({ valor: a, label: a }))
+        const departamentosPorId = Object.fromEntries(departamentosComissao.map(d => [d.id, d]))
+        const opcoesSetor = setoresComissao
+          .map(s => ({ s, depto: departamentosPorId[s.departamento_id]?.nome_departamento || '' }))
+          .sort((a, b) => (a.s.nome_setor || '').localeCompare(b.s.nome_setor || '', 'pt-BR') || a.depto.localeCompare(b.depto, 'pt-BR'))
+          .map(({ s, depto }) => ({
+            valor: s.id,
+            label: depto
+              ? <>{s.nome_setor} <em className="italic text-slate-400 font-normal">({depto})</em></>
+              : s.nome_setor,
+          }))
         return (
           <div className="bg-white rounded-lg shadow border border-slate-200 overflow-hidden mt-4">
             <div className="px-5 py-4 border-b border-slate-100 flex items-start justify-between gap-4">
@@ -1039,11 +1049,12 @@ export default function Grupos() {
                 <h2 className="text-base font-bold text-slate-900">Acesso à Cálculo de Comissões</h2>
                 <p className="text-xs text-slate-500 mt-0.5">
                   Restringe quais funcionários este grupo pode ver/calcular em Cálculo de Comissões e Processamento de Comissões,
-                  por Área, Departamento, Setor e Agrupamento de Cargos. "Todos" não restringe; "Individual" libera
-                  só os valores marcados. A restrição por Empresa é definida em <strong>Acesso por Empresa</strong> acima.
-                  Em Departamento (Individual), cada um marcado pode ficar como <strong>Editar</strong> (respeita as Ações
-                  já marcadas neste grupo) ou <strong>Visualizar</strong> (desliga os botões de ação só nesse departamento,
-                  mesmo com a Ação marcada) — e pode ser sinalizado como <strong>Responsável</strong>, só pra identificação.
+                  por Setor. "Todos" libera todos os setores; "Individual" libera só os setores marcados (os demais nem
+                  aparecem como aba). A restrição por Empresa é definida em <strong>Acesso por Empresa</strong> acima.
+                  Cada setor liberado pode ficar como <strong>Editar</strong> (respeita as Ações
+                  já marcadas neste grupo) ou <strong>Visualizar</strong> (desliga os botões de ação só nesse setor,
+                  mesmo com a Ação marcada) — e pode ser sinalizado como <strong>Responsável</strong> pela geração das
+                  comissões daquele setor.
                   {isAdmin && <span className="block mt-1 text-amber-600 font-medium">Administrador vê tudo automaticamente.</span>}
                   {!isAdmin && !comissaoHabilitado && (
                     <span className="block mt-1 text-red-600 font-medium">Desabilitado: este grupo não enxerga nenhum funcionário — só acessa a tela.</span>
@@ -1069,35 +1080,14 @@ export default function Grupos() {
             {(isAdmin || comissaoHabilitado) && (
             <div className="px-5 py-1 divide-y divide-slate-100">
               <SeletorDimensaoComissao
-                label="Área" escopo={comissaoEscopo.area} opcoes={opcoesArea} disabled={isAdmin}
-                onModoChange={m => handleComissaoModoChange('area', m)}
-                onToggleValor={v => handleComissaoToggleValor('area', v)}
-                onSelecionarTodos={() => handleComissaoSelecionarTodos('area', opcoesArea)}
-                onLimpar={() => handleComissaoLimpar('area')}
-              />
-              <SeletorDimensaoComissao
-                label="Departamento" escopo={comissaoEscopo.departamento} opcoes={opcoesDepartamento} disabled={isAdmin}
-                onModoChange={m => handleComissaoModoChange('departamento', m)}
-                onToggleValor={v => handleComissaoToggleValor('departamento', v)}
-                onSelecionarTodos={() => handleComissaoSelecionarTodos('departamento', opcoesDepartamento)}
-                onLimpar={() => handleComissaoLimpar('departamento')}
-                nivelPorValor={comissaoDepartamentoNivel}
-                onNivelChange={handleDepartamentoNivelChange}
-                onToggleResponsavel={handleDepartamentoToggleResponsavel}
-              />
-              <SeletorDimensaoComissao
                 label="Setor" escopo={comissaoEscopo.setor} opcoes={opcoesSetor} disabled={isAdmin}
                 onModoChange={m => handleComissaoModoChange('setor', m)}
                 onToggleValor={v => handleComissaoToggleValor('setor', v)}
                 onSelecionarTodos={() => handleComissaoSelecionarTodos('setor', opcoesSetor)}
                 onLimpar={() => handleComissaoLimpar('setor')}
-              />
-              <SeletorDimensaoComissao
-                label="Agrupamento de Cargos" escopo={comissaoEscopo.agrupamento_cargo} opcoes={opcoesAgrupamentoCargo} disabled={isAdmin}
-                onModoChange={m => handleComissaoModoChange('agrupamento_cargo', m)}
-                onToggleValor={v => handleComissaoToggleValor('agrupamento_cargo', v)}
-                onSelecionarTodos={() => handleComissaoSelecionarTodos('agrupamento_cargo', opcoesAgrupamentoCargo)}
-                onLimpar={() => handleComissaoLimpar('agrupamento_cargo')}
+                nivelPorValor={comissaoSetorNivel}
+                onNivelChange={handleSetorNivelChange}
+                onToggleResponsavel={handleSetorToggleResponsavel}
               />
             </div>
             )}

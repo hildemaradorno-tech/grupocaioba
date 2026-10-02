@@ -4,13 +4,12 @@ import { useSessionState } from '../hooks/useSessionState'
 import { PlayCircle, Loader2, AlertTriangle, Save, X, ShieldCheck, Lock, ArrowUp, ArrowDown, ArrowUpDown, Trash2, ChevronDown, ChevronRight, ChevronLeft, FileDown, Calculator, Wallet, RefreshCw, CheckCircle2 } from 'lucide-react'
 import { apiService } from '../services/api'
 import { useAuth } from '../context/AuthContext'
-import { buscaComCoringa } from '../utils/buscaTexto'
-import { passaEscopoComissao, departamentoSoVisualizacao } from '../utils/permissoesComissao'
+import { passaEscopoComissao, setorSoVisualizacao } from '../utils/permissoesComissao'
 import { FeriasStatusProvider, useFeriasStatus } from '../context/FeriasStatusContext'
 
-// Sentinela pra funcionário sem departamento algum (departamento_ids vazio) — sem isso não tem
-// como selecionar essa "aba" na tela pra conferir/excluir o histórico desse grupo.
-const SEM_DEPARTAMENTO = 'Sem departamento'
+// Sentinela pra funcionário sem setor algum (setor_ids vazio) — sem isso não tem como
+// selecionar essa "aba" na tela pra conferir/excluir o histórico desse grupo.
+const SEM_SETOR = 'Sem setor'
 
 const ROTULO_ACAO_HISTORICO = {
   CRIADO: 'Cálculo realizado',
@@ -50,39 +49,6 @@ function BotaoStatusFerias() {
     )
   }
   return null
-}
-
-function FiltroMultiSelect({ placeholder, opcoes, selecionados, onChange }) {
-  const [aberto, setAberto] = useState(false)
-  const ref = useRef(null)
-  useEffect(() => {
-    const fechar = (e) => { if (ref.current && !ref.current.contains(e.target)) setAberto(false) }
-    document.addEventListener('mousedown', fechar)
-    return () => document.removeEventListener('mousedown', fechar)
-  }, [])
-  const toggle = (v) => onChange(selecionados.includes(v) ? selecionados.filter(x => x !== v) : [...selecionados, v])
-  const texto = selecionados.length === 0 ? placeholder : selecionados.length === 1 ? selecionados[0] : `${selecionados.length} selecionados`
-  return (
-    <div ref={ref} className="relative">
-      <button type="button" onClick={() => setAberto(v => !v)}
-        className="w-full flex items-center justify-between gap-1 px-2 py-2 text-xs border border-slate-200 rounded-md bg-white hover:bg-slate-50 focus:outline-none focus:border-blue-400 transition-colors">
-        <span className={`truncate ${selecionados.length === 0 ? 'text-slate-400' : 'text-slate-700 font-semibold'}`}>{texto}</span>
-        <ChevronDown className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-      </button>
-      {aberto && (
-        <div className="absolute z-50 mt-1 min-w-full w-max max-w-sm max-h-60 overflow-y-auto bg-white border border-slate-200 rounded-md shadow-xl py-1">
-          {opcoes.length === 0
-            ? <p className="px-3 py-2 text-xs text-slate-400">Nenhuma opção.</p>
-            : opcoes.map(op => (
-              <label key={op} className="flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-slate-50 cursor-pointer select-none">
-                <input type="checkbox" checked={selecionados.includes(op)} onChange={() => toggle(op)} className="w-3.5 h-3.5 rounded accent-blue-600 shrink-0" />
-                <span className="whitespace-nowrap">{op}</span>
-              </label>
-            ))}
-        </div>
-      )}
-    </div>
-  )
 }
 
 const SEL = 'text-xs p-2 border border-slate-200 rounded-md bg-white font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 w-auto min-w-[160px]'
@@ -152,12 +118,16 @@ const fmtValorBase = (c, v) => {
   if (baseEmHoras(c)) return `HR ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
   return fmtBRL(v)
 }
+const detalheEmpresaSemValor = (d) =>
+  Math.round(Math.abs(Number(d.valorBase) || 0) * 100) === 0 &&
+  Math.round(Math.abs(Number(d.valorComissao) || 0) * 100) === 0
 
 // Faixas da Regra da política (na ordem cadastrada), marcando a que foi aplicada (mesmo percentual
 // calculado da linha) — usado na tela e no PDF pra mostrar a regra completa.
 // Mesmos "tipo" gravados em fato_metas_publicadas pelas telas de Planejamento de Metas — usados
 // pela Regra por % de Meta Atingida (ver RegrasFaixas.jsx, onde a Meta de Referência é escolhida).
 const TIPOS_META_LABEL = { pecas: 'Peças', mecanico: 'Serviços — Mecânico', consultor: 'Serviços — Consultor', funilaria: 'Funilaria/Pintura', terceiros: 'Terceiros' }
+const CAMPO_META_LABEL = { pecas: ' · só Peças', servicos: ' · só Serviços' }
 
 const faixasDaRegra = (politica, valorAplicado) => {
   if (politica?.usa_faixa !== 'SIM') return []
@@ -206,7 +176,17 @@ function calcularComissaoSobre(c, valorBase, metaMap, baseComissaoMetaMap) {
     if (regra.tipo_faixa === 'PERCENTUAL_META' || regra.tipo_faixa === 'VALOR_FIXO_META') {
       // Sem meta cadastrada (Planejamento de Metas) pro funcionário/mês/tipo: vira pendência —
       // nunca calcula como se a meta fosse 0, que pagaria a faixa mais baixa por engano.
-      const meta = metaMap?.[`${c.func.id}|${regra.meta_tipo}`]
+      // "Meta de Equipe" (regra.meta_equipe_agrupamento_ids): a meta comparada é a soma das
+      // metas publicadas (da MESMA empresa do funcionário) de todos os cargos desses
+      // Agrupamentos de Cargos, guardada sob a chave "EQUIPE::<regraId>::<empresaId>" no mesmo
+      // metaMap — não a meta do próprio funcionário (ex: coordenador sem meta própria cadastrada).
+      // Cada entrada do metaMap guarda os 3 campos possíveis da meta publicada (total/pecas/
+      // servicos) — regra.meta_campo escolhe qual comparar (ex: comissão só sobre Peças não deve
+      // contar a parte de Serviços da meta do consultor).
+      const metaObj = regra.meta_equipe_agrupamento_ids?.length > 0
+        ? metaMap?.[`EQUIPE::${regra.id}::${c.func.empresa_id}`]
+        : metaMap?.[`${c.func.id}|${regra.meta_tipo}`]
+      const meta = metaObj?.[regra.meta_campo || 'total']
       if (!meta || meta <= 0) return { percentual: null, valorFixo: null, valorComissao: null, semMeta: true, valorApurado: valorLiquido, valorBruto: valorBase, descontoPct }
       const percentualAtingido = (valorLiquido / meta) * 100
       const faixa = [...regra.faixas].sort((a, b) => a.ordem - b.ordem).find(f => casaComValor(f, percentualAtingido))
@@ -217,12 +197,15 @@ function calcularComissaoSobre(c, valorBase, metaMap, baseComissaoMetaMap) {
         return { percentual: null, valorFixo: valorFixoFaixa, valorComissao: valorFixoFaixa, percentualAtingido, meta, valorApurado: valorLiquido, valorBruto: valorBase, descontoPct }
       }
       const percentual = faixa ? parseFloat(faixa.percentual) : 0
-      // O valor apurado da própria Base (ex: Faturamento Total) só serve pra achar QUAL % se
-      // aplica (via % atingido da Meta) — a comissão em si é essa % em cima da soma das políticas
-      // marcadas em "Políticas que formam a Base da Comissão" (cadastro da Regra), do mesmo
-      // funcionário, não do valor apurado aqui.
-      const baseComissao = baseComissaoMetaMap?.get(`${c.func.id}::${regra.id}`) ?? 0
-      return { percentual, valorFixo: null, valorComissao: baseComissao * (percentual / 100), percentualAtingido, meta, valorApurado: valorLiquido, valorBruto: valorBase, descontoPct, baseComissao }
+      // Com "Políticas que formam a Base da Comissão" marcadas (cadastro da Regra): a % é
+      // aplicada sobre a SOMA do valor de comissão já calculado dessas políticas (ex: Prêmio em
+      // cima do que o time já ganhou de comissão individual), não sobre o valor apurado aqui.
+      // Sem nenhuma marcada (caso mais comum): a % é aplicada direto sobre o valor apurado desta
+      // própria Base de Cálculo (o mesmo valor comparado com a Meta acima) — não depende de
+      // nenhuma outra política.
+      const temBaseDeOutrasPoliticas = (regra.base_politica_ids || []).length > 0
+      const baseComissao = temBaseDeOutrasPoliticas ? (baseComissaoMetaMap?.get(`${c.func.id}::${regra.id}`) ?? 0) : valorLiquido
+      return { percentual, valorFixo: null, valorComissao: baseComissao * (percentual / 100), percentualAtingido, meta, valorApurado: valorLiquido, valorBruto: valorBase, descontoPct, baseComissao: temBaseDeOutrasPoliticas ? baseComissao : null }
     }
     const faixa = [...regra.faixas].sort((a, b) => a.ordem - b.ordem).find(f => casaComValor(f, valorLiquido))
     const percentual = faixa ? parseFloat(faixa.percentual) : 0
@@ -258,7 +241,7 @@ const tipoComissaoPorBase = (c) => {
 // próprio período sem um sobrescrever o outro no localStorage.
 function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo = 'Comissões - DAF' } = {}) {
   const navigate = useNavigate()
-  const { user, hasAction, hasPermission, comissaoEscopoEfetivo, comissaoNivelDepartamentoEfetivo } = useAuth()
+  const { user, hasAction, hasPermission, comissaoEscopoEfetivo, comissaoNivelSetorEfetivo } = useAuth()
   const podeCalcular = hasAction('calculo-comissoes', 'calcular')
   const podeSalvar = hasAction('calculo-comissoes', 'salvar')
   const podeConferir = hasAction('calculo-comissoes', 'conferir')
@@ -297,20 +280,14 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
 
   // Filtros aplicados ANTES de calcular — servem pra escolher quem entra na conta,
   // e também são a base pra quando os acessos por setor/gerente forem liberados depois.
-  const [filtroFuncionario, setFiltroFuncionario] = useState('')
   const [filtroEmpresa, setFiltroEmpresa] = useState('')
-  // Departamento é multi-select pra VISUALIZAR (a tabela combina os departamentos marcados),
-  // mas as ações do fluxo de aprovação (Calcular/Salvar/Conferir/Processar/Excluir) só liberam
-  // com exatamente 1 marcado — cada departamento tem seu próprio lote, então mais de um por vez
-  // não tem um lote único pra apontar (ver departamentoUnicoSelecionado).
-  const [filtrosDepartamento, setFiltrosDepartamento] = useState([])
-  const [filtroSetor, setFiltroSetor] = useState('')
-  const [filtroArea, setFiltroArea] = useState('')
-  const [filtroCargo, setFiltroCargo] = useState('')
-  const [filtroAgrupamentoCargo, setFiltroAgrupamentoCargo] = useState('')
-  const [filtroComissoes, setFiltroComissoes] = useState([])
-  const [filtrosAbertos, setFiltrosAbertos] = useState(false)
+  // Setor é seleção única (array de 0 ou 1 elemento, igual Empresa) — sem nenhum marcado, a
+  // tabela mostra a visão combinada de todos; com um marcado, libera as ações do fluxo de
+  // aprovação (Calcular/Salvar/Conferir/Processar/Excluir) daquele setor (ver setorUnicoSelecionado).
+  const [filtrosSetor, setFiltrosSetor] = useState([])
   const [gerandoPDF, setGerandoPDF] = useState(false)
+  const [pdfModalAberto, setPdfModalAberto] = useState(false)
+  const [pdfSetoresSelecionados, setPdfSetoresSelecionados] = useState([])
 
   const periodoValido = periodoInicio && periodoFim && periodoInicio <= periodoFim && mesmoMes(periodoInicio, periodoFim)
   const periodoMesesDiferentes = periodoInicio && periodoFim && !mesmoMes(periodoInicio, periodoFim)
@@ -353,60 +330,57 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
     return achada?.id || null
   }, [filtroEmpresa, dados])
 
-  // Só existe "o" departamento selecionado quando exatamente 1 estiver marcado — com 0 ou 2+,
+  // Só existe "o" setor selecionado quando exatamente 1 estiver marcado — com 0 ou 2+,
   // não há um lote único pra apontar, então as ações do fluxo de aprovação ficam bloqueadas
   // (a tabela continua mostrando a visão combinada normalmente).
-  const departamentoUnicoSelecionado = filtrosDepartamento.length === 1 ? filtrosDepartamento[0] : null
+  const setorUnicoSelecionado = filtrosSetor.length === 1 ? filtrosSetor[0] : null
 
-  // Departamento selecionado (2ª aba, dentro da empresa) — mesmo padrão, um nível mais fundo:
-  // vários gerentes na mesma loja, cada um responsável por um departamento, cada um com seu
-  // próprio lote no mesmo período+empresa (ver salvarLoteRascunho/getLoteComissoes).
-  const departamentoSelecionadoId = useMemo(() => {
-    if (!departamentoUnicoSelecionado || !dados) return null
-    const achado = dados.departamentos.find(d => d.nome_departamento === departamentoUnicoSelecionado)
-    return achado?.id || null
-  }, [departamentoUnicoSelecionado, dados])
+  // Setor selecionado (2ª aba, dentro da empresa) — mesmo padrão, um nível mais fundo: vários
+  // gerentes na mesma loja, cada um responsável por um setor, cada um com seu próprio lote no
+  // mesmo período+empresa (ver salvarLoteRascunho/getLoteComissoes).
+  const setorSelecionadoObj = useMemo(() => {
+    if (!setorUnicoSelecionado || !dados) return null
+    return dados.setores.find(s => s.nome_setor === setorUnicoSelecionado) || null
+  }, [setorUnicoSelecionado, dados])
+  const setorSelecionadoId = setorSelecionadoObj?.id || null
 
-  // Nível de acesso extra por Departamento (Grupos de Acesso → Acesso à Cálculo de Comissões):
-  // "Visualizar" desliga Calcular/Salvar/Conferir/Salvar PDF/Excluir só neste departamento,
-  // mesmo com a Ação correspondente marcada pro grupo — soma-se às Ações, não as substitui.
-  const departamentoSomenteVisualizacao = departamentoSoVisualizacao(departamentoSelecionadoId, comissaoNivelDepartamentoEfetivo)
+  // Nível de acesso extra por Setor (Grupos de Acesso → Acesso à Cálculo de Comissões).
+  const setorSomenteVisualizacao = setorSoVisualizacao(setorSelecionadoId, comissaoNivelSetorEfetivo)
 
-  // Busca o lote de aprovação (da empresa+departamento selecionados) sempre que Data Início/
-  // Fim/Empresa/Departamento mudam. Só existe um lote pra apontar quando exatamente 1
-  // departamento está marcado — com 0 ou 2+ marcados fica null (não tem workflow único pra
-  // exibir, mas a tabela e os valores salvos continuam aparecendo normalmente).
+  // Busca o lote de aprovação (da empresa+setor selecionados) sempre que Data Início/Fim/
+  // Empresa/Setor mudam. Só existe um lote pra apontar quando exatamente 1 setor está marcado —
+  // com 0 ou 2+ marcados fica null (não tem workflow único pra exibir, mas a tabela e os
+  // valores salvos continuam aparecendo normalmente).
   useEffect(() => {
     setLote(null)
     setHistoricoLote([])
     setMostrarHistoricoLote(false)
-    // Sem isso, sair do "if" abaixo (empresa/departamento desmarcados no meio de uma busca em
+    // Sem isso, sair do "if" abaixo (empresa/setor desmarcados no meio de uma busca em
     // andamento) deixava carregandoLoteObj travado em true pra sempre — a busca cancelada não
     // reseta o próprio flag (o cancelamento existe só pra não sobrescrever o estado com uma
     // resposta atrasada), e o "return" antecipado também não passava por ali.
     setCarregandoLoteObj(false)
-    if (!periodoValido || !filtroEmpresa || !departamentoUnicoSelecionado) return
+    if (!periodoValido || !filtroEmpresa || !setorUnicoSelecionado) return
     let cancelado = false
     ;(async () => {
       setCarregandoLoteObj(true)
       try {
-        // Alguns lotes antigos foram salvos com departamento_id nulo mesmo tendo um
-        // departamento_nome válido (dado legado) — a busca por id não acha esses. E o
-        // pseudo-departamento "Sem Departamento" nunca tem id de verdade pra buscar por id
-        // (buscar por id nulo pegaria TODOS os lotes-sem-id da empresa de uma vez, o que
-        // já causou "JSON object requested, multiple (or no) rows returned" aqui). Então:
-        // busca por id só quando há um id real; senão (ou se não achar), cai pro fallback
-        // que traz todos os lotes da empresa+período e casa pelo nome do departamento.
-        let loteAtual = departamentoSelecionadoId
-          ? await apiService.getLoteComissoes(periodoInicio, periodoFim, empresaSelecionadaId, departamentoSelecionadoId)
+        // Alguns lotes antigos foram salvos com setor_id nulo mesmo tendo um setor_nome válido
+        // (dado legado) — a busca por id não acha esses. E o pseudo-setor "Sem Setor" nunca tem
+        // id de verdade pra buscar por id (buscar por id nulo pegaria TODOS os lotes-sem-id da
+        // empresa de uma vez, o que já causou "JSON object requested, multiple (or no) rows
+        // returned" aqui). Então: busca por id só quando há um id real; senão (ou se não achar),
+        // cai pro fallback que traz todos os lotes da empresa+período e casa pelo nome do setor.
+        let loteAtual = setorSelecionadoId
+          ? await apiService.getLoteComissoes(periodoInicio, periodoFim, empresaSelecionadaId, setorSelecionadoId)
           : null
         if (!loteAtual) {
           const todos = await apiService.getLotesPorEmpresaPeriodo(periodoInicio, periodoFim, empresaSelecionadaId)
-          loteAtual = todos.find(l => (l.departamento_nome || SEM_DEPARTAMENTO) === departamentoUnicoSelecionado) || null
+          loteAtual = todos.find(l => (l.setor_nome || SEM_SETOR) === setorUnicoSelecionado) || null
         }
         // Sem lote exato: usa o lote gerado com um período menor dentro do intervalo (mês visto
         // inteiro, cálculo feito só até uma data anterior).
-        if (!loteAtual) loteAtual = await apiService.getLoteContidoNoPeriodo(periodoInicio, periodoFim, empresaSelecionadaId, departamentoSelecionadoId)
+        if (!loteAtual) loteAtual = await apiService.getLoteContidoNoPeriodo(periodoInicio, periodoFim, empresaSelecionadaId, setorSelecionadoId)
         if (!cancelado) setLote(loteAtual)
       } catch (err) {
         if (!cancelado) setErro(err.message || String(err))
@@ -415,7 +389,7 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
       }
     })()
     return () => { cancelado = true }
-  }, [periodoInicio, periodoFim, periodoValido, filtroEmpresa, empresaSelecionadaId, departamentoUnicoSelecionado, departamentoSelecionadoId])
+  }, [periodoInicio, periodoFim, periodoValido, filtroEmpresa, empresaSelecionadaId, setorUnicoSelecionado, setorSelecionadoId])
 
   // Busca os valores já salvos desse período — independente de quantas empresas/departamentos
   // estão marcados (0, 1 ou vários), já que getComissoesCalculadas não é escopado por
@@ -515,23 +489,22 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
   // Reprocessamento — os dois têm status 'RASCUNHO'). Conferido/Processado ficam travados.
   // Também funciona no estado órfão (valores salvos sem lote — ex: a criação do lote falhou).
   const handleExcluirHistorico = async () => {
-    if (!filtroEmpresa || !departamentoUnicoSelecionado) return
+    if (!filtroEmpresa || !setorUnicoSelecionado) return
     if (lote ? lote.status !== 'RASCUNHO' : !salvo) return
-    if (!window.confirm(`Excluir o histórico salvo de ${filtroEmpresa} / ${departamentoUnicoSelecionado} neste período? Os valores calculados e o rascunho serão apagados — essa ação não pode ser desfeita.`)) return
+    if (!window.confirm(`Excluir o histórico salvo de ${filtroEmpresa} / ${setorUnicoSelecionado} neste período? Os valores calculados e o rascunho serão apagados — essa ação não pode ser desfeita.`)) return
     setProcessandoAcao('excluir')
     setErro(null)
     try {
-      // Só os funcionários desta empresa+departamento — pra não apagar o que outro gerente já
-      // salvou de outra empresa/departamento no mesmo período (o lote é por período+empresa+
-      // departamento, mas os valores calculados em fato_comissoes_calculadas não têm essas
-      // colunas direto, só via funcionario_id). "Sem departamento" é departamento_ids vazio, não
-      // um id de verdade — não dá pra comparar com .includes(departamentoSelecionadoId) (que
-      // aqui é null e nunca bateria com nada).
+      // Só os funcionários desta empresa+setor — pra não apagar o que outro gerente já salvou de
+      // outra empresa/setor no mesmo período (o lote é por período+empresa+setor, mas os valores
+      // calculados em fato_comissoes_calculadas não têm essas colunas direto, só via
+      // funcionario_id). "Sem setor" é setor_ids vazio, não um id de verdade — não dá pra
+      // comparar com .includes(setorSelecionadoId) (que aqui é null e nunca bateria com nada).
       const funcionarioIds = (dados?.funcionarios || [])
         .filter(f => {
           if (f.empresa_id !== empresaSelecionadaId) return false
-          if (departamentoUnicoSelecionado === SEM_DEPARTAMENTO) return (f.departamento_ids || []).length === 0
-          return (f.departamento_ids || []).includes(departamentoSelecionadoId)
+          if (setorUnicoSelecionado === SEM_SETOR) return (f.setor_ids || []).length === 0
+          return (f.setor_ids || []).includes(setorSelecionadoId)
         })
         .map(f => f.id)
       await apiService.excluirHistoricoLote(lote?.id || null, periodoInicio, periodoFim, funcionarioIds)
@@ -554,7 +527,7 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
       setCarregandoLista(true)
       setErro(null)
       try {
-        const [funcionarios, empresas, cargos, departamentos, setores, politicas, ferias] = await Promise.all([
+        const [funcionarios, empresas, cargos, departamentos, setores, politicas, ferias, rubricas, tiposProcesso] = await Promise.all([
           apiService.getFuncionarios(),
           apiService.getEmpresas(),
           apiService.getCargos(),
@@ -564,8 +537,10 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
           // Férias são só informativas ao lado do nome — se a tabela ainda não existir/estiver
           // vazia, não pode derrubar o cálculo de comissões inteiro.
           apiService.getFerias().catch(() => []),
+          apiService.getRubricas(),
+          apiService.getTiposProcesso(),
         ])
-        setDados({ funcionarios, empresas, cargos, departamentos, setores, politicas, ferias })
+        setDados({ funcionarios, empresas, cargos, departamentos, setores, politicas, ferias, rubricas, tiposProcesso })
       } catch (err) {
         setErro(err.message || String(err))
       } finally {
@@ -584,10 +559,10 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
     apiService.getInfoArquivoFerias().then(setInfoArquivoFerias).catch(() => setInfoArquivoFerias(null))
   }, [])
 
-  // Departamentos marcados como "Responsável" em Grupos de Acesso — { [departamento_id]: [nomes] }.
-  const [responsaveisPorDepartamento, setResponsaveisPorDepartamento] = useState({})
+  // Setores marcados como "Responsável" em Grupos de Acesso — { [setor_id]: { [empresa_id]: [nomes] } }.
+  const [responsaveisPorSetor, setResponsaveisPorSetor] = useState({})
   useEffect(() => {
-    apiService.getResponsaveisComissaoDepartamentos().then(setResponsaveisPorDepartamento).catch(() => setResponsaveisPorDepartamento({}))
+    apiService.getResponsaveisComissaoSetores().then(setResponsaveisPorSetor).catch(() => setResponsaveisPorSetor({}))
   }, [])
   const mesArquivoFerias = infoArquivoFerias?.dataModificacao?.slice(0, 7) || null
   const mesAtualReal = useMemo(() => {
@@ -628,6 +603,12 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
     return lista.filter(f => f.inicio_gozo && f.fim_gozo && f.inicio_gozo <= periodoFim && f.fim_gozo >= periodoInicio)
   }
 
+
+  // Descrição da Rubrica/Tipo do Processo cadastrados em Regras de Comissões — mostrada junto do
+  // código na coluna Comissão, mesmo padrão já usado em Visualizar Política de Comissão e em
+  // Processamento de Comissões.
+  const rubricasPorCodigo = useMemo(() => Object.fromEntries((dados?.rubricas || []).map(r => [r.codigo, r])), [dados])
+  const tiposProcessoPorCodigo = useMemo(() => Object.fromEntries((dados?.tiposProcesso || []).map(t => [t.codigo, t])), [dados])
 
   // Monta a lista de candidatos (funcionário + política/fonte/base resolvidas, ou motivo de exclusão)
   const candidatos = useMemo(() => {
@@ -740,12 +721,22 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
               return [{ ...linha, segInicio: periodoInicio, segFim: periodoFim }]
             }
             const segmentos = subtraiFerias(periodoInicio, periodoFim, feriasFunc)
+            // Férias cobrindo o período inteiro: não sobra nenhum dia pra apurar. Em vez de sumir
+            // da tela sem explicação (o que parece bug/cadastro errado), mostra 1 linha sinalizada
+            // (status próprio, fora de elegiveisFiltrados — nunca calcula nem entra no lote), pra
+            // ficar claro que é "sem comissão porque está de férias o mês inteiro".
+            if (segmentos.length === 0) {
+              return [{ ...linha, segInicio: periodoInicio, segFim: periodoFim, status: 'FERIAS_MES_INTEIRO' }]
+            }
             // Regra por % de Meta Atingida: a meta é mensal — não vira 2+ "prêmios" separados
-            // por causa de férias no meio do mês. Fica 1 linha só (período cheio), mas o cálculo
-            // por trás ainda lê cada pedaço sem os dias de férias e SOMA os valores antes de
-            // comparar com a meta (ver segmentosLeitura em handleCalcular).
+            // por causa de férias no meio do mês. Fica 1 linha só, mas a etiqueta de período
+            // mostra o intervalo realmente lido (sem os dias de férias — mesmo critério das
+            // demais linhas do funcionário), não o mês cheio; o cálculo por trás já lia cada
+            // pedaço sem férias e soma os valores antes de comparar com a meta (segmentosLeitura).
             if (linha.politica.usa_faixa === 'SIM' && linha.politica.regra_comissao?.tipo_faixa !== 'VALOR' && linha.politica.regra_comissao) {
-              return [{ ...linha, segInicio: periodoInicio, segFim: periodoFim, segmentosLeitura: segmentos }]
+              const segInicio = segmentos[0]?.inicio || periodoInicio
+              const segFim = segmentos[segmentos.length - 1]?.fim || periodoFim
+              return [{ ...linha, segInicio, segFim, segmentosLeitura: segmentos }]
             }
             return segmentos.map(seg => ({ ...linha, segInicio: seg.inicio, segFim: seg.fim }))
           })
@@ -753,27 +744,20 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
   }, [dados, periodoInicio, periodoFim, periodoValido, feriasPorCodigo, comissaoEscopoEfetivo, agrupamentoNome])
 
   // Filtros dinâmicos (facetados): as opções de cada seletor são calculadas aplicando todos os
-  // OUTROS filtros ativos, menos o dele mesmo — ao filtrar Setor "Mecânica", o seletor de Cargos
-  // só lista cargos de quem está na Mecânica, e assim por diante entre todos os seletores.
+  // OUTROS filtros ativos, menos o dele mesmo.
   const filtrarCandidatos = useMemo(() => (ignorar) => candidatos.filter(c => {
-    if (ignorar !== 'funcionario' && filtroFuncionario && !buscaComCoringa(c.func.nome_funcionario, filtroFuncionario)) return false
     if (ignorar !== 'empresa' && filtroEmpresa && (c.empresa?.empresa_fantasia || c.empresa?.nome_empresa) !== filtroEmpresa) return false
-    // Departamento é subordinado à Empresa nesta tela (não um facet do mesmo nível) — nunca
-    // deve estreitar de volta a lista de Empresas. Sem essa exceção, marcar um departamento
-    // "órfão" (só com lote salvo, sem candidato elegível hoje — ver departamentosComLote)
-    // zerava empresasUnicas e a Empresa selecionada era limpa sozinha pelo efeito de
-    // auto-limpeza de filtro inválido logo abaixo.
-    if (ignorar !== 'departamento' && ignorar !== 'empresa' && filtrosDepartamento.length > 0) {
-      const nomesOuSemDepto = c.departamentoNomes.length > 0 ? c.departamentoNomes : [SEM_DEPARTAMENTO]
-      if (!nomesOuSemDepto.some(n => filtrosDepartamento.includes(n))) return false
+    // Setor é subordinado à Empresa nesta tela (não um facet do mesmo nível) — nunca deve
+    // estreitar de volta a lista de Empresas. Sem essa exceção, marcar um setor "órfão" (só com
+    // lote salvo, sem candidato elegível hoje — ver setoresComLote) zerava empresasUnicas e a
+    // Empresa selecionada era limpa sozinha pelo efeito de auto-limpeza de filtro inválido logo
+    // abaixo.
+    if (ignorar !== 'setor' && ignorar !== 'empresa' && filtrosSetor.length > 0) {
+      const nomesOuSemSetor = c.setorNomes.length > 0 ? c.setorNomes : [SEM_SETOR]
+      if (!nomesOuSemSetor.some(n => filtrosSetor.includes(n))) return false
     }
-    if (ignorar !== 'setor' && filtroSetor && !c.setorNomes.includes(filtroSetor)) return false
-    if (ignorar !== 'area' && filtroArea && !c.areaNomes.includes(filtroArea)) return false
-    if (ignorar !== 'cargo' && filtroCargo && c.cargo?.nome_cargo !== filtroCargo) return false
-    if (ignorar !== 'agrupCargo' && filtroAgrupamentoCargo && c.cargo?.nome_agrupamento_cargo !== filtroAgrupamentoCargo) return false
-    if (ignorar !== 'comissoes' && filtroComissoes.length > 0 && !filtroComissoes.includes(c.politica?.descricao_comissao)) return false
     return true
-  }), [candidatos, filtroFuncionario, filtroEmpresa, filtrosDepartamento, filtroSetor, filtroArea, filtroCargo, filtroAgrupamentoCargo, filtroComissoes])
+  }), [candidatos, filtroEmpresa, filtrosSetor])
 
   // Só empresas do agrupamento escolhido (prop agrupamentoNome) — cada aba (Trucks/Motos) só
   // mexe nas empresas do próprio grupo, nunca nas do outro. Vem direto do cadastro (dados.empresas),
@@ -783,117 +767,110 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
   const empresasUnicas = useMemo(() => juntaUnicos(
     (dados?.empresas || []).filter(e => e.agrupamento_nome === agrupamentoNome && e.ativo !== false).map(e => e.empresa_fantasia || e.nome_empresa)
   ), [dados, agrupamentoNome])
-  // Departamentos "órfãos": já têm lote salvo pra empresa+período, mas nenhum funcionário
-  // elegível neles HOJE (ex: o cargo foi remanejado pra outro departamento depois do cálculo).
-  // Sem isso, o lote fica preso — nunca vira aba selecionável, então nunca dá pra excluir.
-  const [departamentosComLote, setDepartamentosComLote] = useState([])
+  // Setores "órfãos": já têm lote salvo pra empresa+período, mas nenhum funcionário elegível
+  // neles HOJE (ex: o cargo foi remanejado pra outro setor depois do cálculo). Sem isso, o lote
+  // fica preso — nunca vira aba selecionável, então nunca dá pra excluir.
+  const [setoresComLote, setSetoresComLote] = useState([])
   useEffect(() => {
-    if (!periodoValido || !filtroEmpresa || !empresaSelecionadaId) { setDepartamentosComLote([]); return }
+    if (!periodoValido || !filtroEmpresa || !empresaSelecionadaId) { setSetoresComLote([]); return }
     let cancelado = false
     ;(async () => {
       try {
         const lotes = await apiService.getLotesPorEmpresaPeriodo(periodoInicio, periodoFim, empresaSelecionadaId)
-        // Nome salvo no lote é um retrato do momento em que foi criado — se o departamento foi
+        // Nome salvo no lote é um retrato do momento em que foi criado — se o setor foi
         // renomeado depois, resolve pelo id (cadastro atual) primeiro, senão duplica aba com o
-        // nome antigo ao lado do nome novo pro mesmo departamento.
-        if (!cancelado) setDepartamentosComLote(lotes.map(l => {
-          const nomeAtual = l.departamento_id ? dados?.departamentos.find(d => d.id === l.departamento_id)?.nome_departamento : null
-          return nomeAtual || l.departamento_nome || SEM_DEPARTAMENTO
+        // nome antigo ao lado do nome novo pro mesmo setor.
+        if (!cancelado) setSetoresComLote(lotes.map(l => {
+          const nomeAtual = l.setor_id ? dados?.setores.find(s => s.id === l.setor_id)?.nome_setor : null
+          return nomeAtual || l.setor_nome || SEM_SETOR
         }))
       } catch {
-        if (!cancelado) setDepartamentosComLote([])
+        if (!cancelado) setSetoresComLote([])
       }
     })()
     return () => { cancelado = true }
   }, [filtroEmpresa, empresaSelecionadaId, periodoInicio, periodoFim, periodoValido, dados])
 
   // Cobre o caso mais órfão de todos: valor calculado e salvo, mas nem lote foi criado (aparece
-  // em Processamento de Comissões como "Sem lote"). Nesse caso nem departamentosComLote enxerga
-  // — cruza direto os funcionários com valor salvo neste período contra o cadastro de
-  // funcionários (sem exigir política/elegibilidade viva), pra sempre existir uma aba pra
-  // selecionar e excluir.
-  const departamentosComValorSalvo = useMemo(() => {
+  // em Processamento de Comissões como "Sem lote"). Nesse caso nem setoresComLote enxerga — cruza
+  // direto os funcionários com valor salvo neste período contra o cadastro de funcionários (sem
+  // exigir política/elegibilidade viva), pra sempre existir uma aba pra selecionar e excluir.
+  const setoresComValorSalvo = useMemo(() => {
     if (!filtroEmpresa || !empresaSelecionadaId || !dados) return []
     const funcionarioIdsComValor = new Set(Object.keys(valoresPorFuncionario).map(chave => chave.split('::')[0]))
     if (funcionarioIdsComValor.size === 0) return []
     const nomes = new Set()
     for (const f of dados.funcionarios || []) {
       if (f.empresa_id !== empresaSelecionadaId || !funcionarioIdsComValor.has(f.id)) continue
-      const deptNomes = (f.departamento_ids || []).map(id => dados.departamentos.find(d => d.id === id)?.nome_departamento).filter(Boolean)
-      if (deptNomes.length === 0) nomes.add(SEM_DEPARTAMENTO)
-      else deptNomes.forEach(n => nomes.add(n))
+      const setNomes = (f.setor_ids || []).map(id => dados.setores.find(s => s.id === id)?.nome_setor).filter(Boolean)
+      if (setNomes.length === 0) nomes.add(SEM_SETOR)
+      else setNomes.forEach(n => nomes.add(n))
     }
     return [...nomes]
   }, [filtroEmpresa, empresaSelecionadaId, dados, valoresPorFuncionario])
 
-  const departamentosUnicos = useMemo(() => juntaUnicos([
-    ...filtrarCandidatos('departamento').flatMap(c => c.departamentoNomes.length > 0 ? c.departamentoNomes : [SEM_DEPARTAMENTO]),
-    ...departamentosComLote,
-    ...departamentosComValorSalvo,
-  ]), [filtrarCandidatos, departamentosComLote, departamentosComValorSalvo])
+  // Abas de Setor respeitam o escopo de Setor do grupo (Grupos de Acesso) — sem isso, setores com
+  // lote/valor salvo no período (ou o 2º setor de um funcionário liberado) viravam aba mesmo fora
+  // do que foi liberado. Filtra por nome porque a aba é por nome (setores homônimos de
+  // departamentos diferentes passam se qualquer um deles estiver liberado).
+  const setorNomePermitido = useMemo(() => {
+    const cfg = comissaoEscopoEfetivo?.setor
+    if (!cfg || cfg.modo !== 'INDIVIDUAL') return () => true
+    const nomes = new Set((dados?.setores || []).filter(s => cfg.valores.has(s.id)).map(s => s.nome_setor))
+    return (nome) => nomes.has(nome)
+  }, [comissaoEscopoEfetivo, dados])
 
-  const setoresUnicos = useMemo(() => juntaUnicos(filtrarCandidatos('setor').flatMap(c => c.setorNomes)), [filtrarCandidatos])
-  const areasUnicas = useMemo(() => juntaUnicos(filtrarCandidatos('area').flatMap(c => c.areaNomes)), [filtrarCandidatos])
-  const cargosUnicos = useMemo(() => juntaUnicos(filtrarCandidatos('cargo').map(c => c.cargo?.nome_cargo)), [filtrarCandidatos])
-  const agrupamentosCargoUnicos = useMemo(() => juntaUnicos(filtrarCandidatos('agrupCargo').map(c => c.cargo?.nome_agrupamento_cargo)), [filtrarCandidatos])
-  const comissoesUnicas = useMemo(() => juntaUnicos(filtrarCandidatos('comissoes').map(c => c.politica?.descricao_comissao)), [filtrarCandidatos])
+  const setoresUnicos = useMemo(() => juntaUnicos([
+    ...filtrarCandidatos('setor').flatMap(c => c.setorNomes.length > 0 ? c.setorNomes : [SEM_SETOR]),
+    ...setoresComLote,
+    ...setoresComValorSalvo,
+  ]).filter(setorNomePermitido), [filtrarCandidatos, setoresComLote, setoresComValorSalvo, setorNomePermitido])
 
-  // Lote de CADA departamento da empresa selecionada, no período atual — busca todos de uma vez
-  // (não só os marcados) porque serve pra duas coisas: sinalizar nas próprias abas quais
-  // departamentos ainda não fecharam (bolinha antes do nome) e liberar o Salvar PDF em modo
-  // "vários" (quando os marcados, ou todos se nenhum estiver marcado, já estão Conferidos).
-  const [lotesPorDepartamento, setLotesPorDepartamento] = useState({}) // nome_departamento -> lote | null
-  const [carregandoLotesDepartamentos, setCarregandoLotesDepartamentos] = useState(false)
+
+  // Lote de CADA setor da empresa selecionada, no período atual — busca todos de uma vez (não só
+  // os marcados) porque serve pra duas coisas: sinalizar nas próprias abas quais setores ainda
+  // não fecharam (bolinha antes do nome) e liberar o Salvar PDF em modo "vários" (quando os
+  // marcados, ou todos se nenhum estiver marcado, já estão Conferidos).
+  const [lotesPorSetor, setLotesPorSetor] = useState({}) // nome_setor -> lote | null
+  const [carregandoLotesSetores, setCarregandoLotesSetores] = useState(false)
   useEffect(() => {
-    if (!periodoValido || !filtroEmpresa || departamentosUnicos.length === 0 || !dados) {
-      setLotesPorDepartamento({})
+    if (!periodoValido || !filtroEmpresa || setoresUnicos.length === 0 || !dados) {
+      setLotesPorSetor({})
       return
     }
     let cancelado = false
     ;(async () => {
-      setCarregandoLotesDepartamentos(true)
+      setCarregandoLotesSetores(true)
       try {
-        const entradas = await Promise.all(departamentosUnicos.map(async (nome) => {
-          const deptId = dados.departamentos.find(d => d.nome_departamento === nome)?.id || null
-          const lote = deptId ? (await apiService.getLoteComissoes(periodoInicio, periodoFim, empresaSelecionadaId, deptId) || await apiService.getLoteContidoNoPeriodo(periodoInicio, periodoFim, empresaSelecionadaId, deptId)) : null
+        const entradas = await Promise.all(setoresUnicos.map(async (nome) => {
+          const setId = dados.setores.find(s => s.nome_setor === nome)?.id || null
+          const lote = setId ? (await apiService.getLoteComissoes(periodoInicio, periodoFim, empresaSelecionadaId, setId) || await apiService.getLoteContidoNoPeriodo(periodoInicio, periodoFim, empresaSelecionadaId, setId)) : null
           return [nome, lote]
         }))
-        if (!cancelado) setLotesPorDepartamento(Object.fromEntries(entradas))
+        if (!cancelado) setLotesPorSetor(Object.fromEntries(entradas))
       } catch (err) {
         if (!cancelado) setErro(err.message || String(err))
       } finally {
-        if (!cancelado) setCarregandoLotesDepartamentos(false)
+        if (!cancelado) setCarregandoLotesSetores(false)
       }
     })()
     return () => { cancelado = true }
-  }, [departamentosUnicos, periodoInicio, periodoFim, periodoValido, filtroEmpresa, empresaSelecionadaId, dados])
-
-  // Departamentos considerados pelo modo "vários" do Salvar PDF: os marcados nas abas, ou — se
-  // nenhum estiver marcado — TODOS os departamentos disponíveis pra empresa selecionada (sem
-  // aba marcada a tabela já mostra a visão combinada de todo mundo, então o PDF acompanha).
-  const departamentosParaPDF = filtrosDepartamento.length > 0 ? filtrosDepartamento : departamentosUnicos
-  // Fora do caso "exatamente 1 departamento marcado" (que já usa o `lote` único), o Salvar PDF
-  // só libera quando TODOS os departamentos considerados já estiverem com Comissões Conferidas
-  // (mesma garantia de nunca mandar rascunho pro RH que já vale pro modo de 1 departamento só).
-  const todosDepartamentosConferidos = filtrosDepartamento.length !== 1
-    && departamentosParaPDF.length > 0
-    && departamentosParaPDF.every(nome => lotesPorDepartamento[nome] && lotesPorDepartamento[nome].status !== 'RASCUNHO')
+  }, [setoresUnicos, periodoInicio, periodoFim, periodoValido, filtroEmpresa, empresaSelecionadaId, dados])
 
   // Modo "todas as empresas" do Salvar PDF — só existe quando NENHUMA empresa está marcada (o
-  // que já implica nenhum departamento marcado, já que as abas de Departamento só aparecem
-  // depois de escolher uma empresa). Todas as combinações empresa+departamento que têm algum
-  // candidato com política resolvida, usadas pra checar se TODAS já estão Conferidas antes de
-  // liberar o PDF combinado.
-  const combinacoesEmpresaDepartamento = useMemo(() => {
+  // que já implica nenhum setor marcado, já que as abas de Setor só aparecem depois de escolher
+  // uma empresa). Todas as combinações empresa+setor que têm algum candidato com política
+  // resolvida, usadas pra checar se TODAS já estão Conferidas antes de liberar o PDF combinado.
+  const combinacoesEmpresaSetor = useMemo(() => {
     if (filtroEmpresa) return []
-    const vistos = new Map() // `${empresaId}::${deptNome}` -> { empresaId, empresaNome, deptNome }
+    const vistos = new Map() // `${empresaId}::${setNome}` -> { empresaId, empresaNome, setNome }
     for (const c of candidatos) {
       const empresaId = c.func.empresa_id
       const empresaNome = c.empresa?.empresa_fantasia || c.empresa?.nome_empresa
       if (!empresaId || !empresaNome) continue
-      for (const deptNome of c.departamentoNomes || []) {
-        const chave = `${empresaId}::${deptNome}`
-        if (!vistos.has(chave)) vistos.set(chave, { empresaId, empresaNome, deptNome })
+      for (const setNome of c.setorNomes || []) {
+        const chave = `${empresaId}::${setNome}`
+        if (!vistos.has(chave)) vistos.set(chave, { empresaId, empresaNome, setNome })
       }
     }
     return [...vistos.values()]
@@ -902,7 +879,7 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
   const [lotesTodasEmpresas, setLotesTodasEmpresas] = useState([])
   const [carregandoLotesTodasEmpresas, setCarregandoLotesTodasEmpresas] = useState(false)
   useEffect(() => {
-    if (filtroEmpresa || !periodoValido || combinacoesEmpresaDepartamento.length === 0 || !dados) {
+    if (filtroEmpresa || !periodoValido || combinacoesEmpresaSetor.length === 0 || !dados) {
       setLotesTodasEmpresas([])
       return
     }
@@ -910,9 +887,9 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
     ;(async () => {
       setCarregandoLotesTodasEmpresas(true)
       try {
-        const lotes = await Promise.all(combinacoesEmpresaDepartamento.map(async ({ empresaId, deptNome }) => {
-          const deptId = dados.departamentos.find(d => d.nome_departamento === deptNome)?.id || null
-          return deptId ? (await apiService.getLoteComissoes(periodoInicio, periodoFim, empresaId, deptId) || await apiService.getLoteContidoNoPeriodo(periodoInicio, periodoFim, empresaId, deptId)) : null
+        const lotes = await Promise.all(combinacoesEmpresaSetor.map(async ({ empresaId, setNome }) => {
+          const setId = dados.setores.find(s => s.nome_setor === setNome)?.id || null
+          return setId ? (await apiService.getLoteComissoes(periodoInicio, periodoFim, empresaId, setId) || await apiService.getLoteContidoNoPeriodo(periodoInicio, periodoFim, empresaId, setId)) : null
         }))
         if (!cancelado) setLotesTodasEmpresas(lotes)
       } catch (err) {
@@ -922,40 +899,58 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
       }
     })()
     return () => { cancelado = true }
-  }, [filtroEmpresa, combinacoesEmpresaDepartamento, periodoInicio, periodoFim, periodoValido, dados])
-  const todasEmpresasConferidas = !filtroEmpresa
-    && combinacoesEmpresaDepartamento.length > 0
-    && lotesTodasEmpresas.length === combinacoesEmpresaDepartamento.length
-    && lotesTodasEmpresas.every(l => l && l.status !== 'RASCUNHO')
-  // Mesmo lookup de combinacoesEmpresaDepartamento/lotesTodasEmpresas, só que indexado por
-  // empresa+departamento — usado em statusLinha pra resolver o status de cada funcionário na
-  // visão "Todas as Empresas" (sem isso, todo mundo aparecia preso em "Aguardando Gerente"
-  // mesmo já Conferido/Processado, porque lotesPorDepartamento só é buscado com empresa marcada).
+  }, [filtroEmpresa, combinacoesEmpresaSetor, periodoInicio, periodoFim, periodoValido, dados])
+  // Mesmo lookup de combinacoesEmpresaSetor/lotesTodasEmpresas, só que indexado por
+  // empresa+setor — usado em statusLinha pra resolver o status de cada funcionário na visão
+  // "Todas as Empresas" (sem isso, todo mundo aparecia preso em "Aguardando Gerente" mesmo já
+  // Conferido/Processado, porque lotesPorSetor só é buscado com empresa marcada).
   const lotesTodasEmpresasPorChave = useMemo(
-    () => Object.fromEntries(combinacoesEmpresaDepartamento.map((combo, i) => [`${combo.empresaId}::${combo.deptNome}`, lotesTodasEmpresas[i]])),
-    [combinacoesEmpresaDepartamento, lotesTodasEmpresas]
+    () => Object.fromEntries(combinacoesEmpresaSetor.map((combo, i) => [`${combo.empresaId}::${combo.setNome}`, lotesTodasEmpresas[i]])),
+    [combinacoesEmpresaSetor, lotesTodasEmpresas]
   )
+
+  const chaveSetorPdf = (empresaId, nomeSetor) => {
+    const setorId = dados?.setores.find(s => s.nome_setor === nomeSetor)?.id
+    return `${empresaId}::${setorId || nomeSetor}`
+  }
+
+  const setoresFechadosParaPdf = useMemo(() => {
+    if (!periodoValido || !dados) return []
+    const opcoes = []
+    const adicionarSeFechado = (empresaId, empresaNome, nomeSetor, loteFechado) => {
+      const setor = dados.setores.find(s => s.nome_setor === nomeSetor)
+      if (!loteFechado || loteFechado.status === 'RASCUNHO' || !setor?.id) return
+      if (setorSoVisualizacao(setor.id, comissaoNivelSetorEfetivo)) return
+      opcoes.push({ key: `${empresaId}::${setor.id}`, empresaId, empresaNome, nomeSetor })
+    }
+
+    if (filtroEmpresa) {
+      for (const nomeSetor of setoresUnicos) {
+        adicionarSeFechado(empresaSelecionadaId, filtroEmpresa, nomeSetor, lotesPorSetor[nomeSetor])
+      }
+    } else {
+      combinacoesEmpresaSetor.forEach((combo, i) => {
+        adicionarSeFechado(combo.empresaId, combo.empresaNome, combo.setNome, lotesTodasEmpresas[i])
+      })
+    }
+    return opcoes.sort((a, b) => a.empresaNome.localeCompare(b.empresaNome, 'pt-BR') || a.nomeSetor.localeCompare(b.nomeSetor, 'pt-BR'))
+  }, [periodoValido, dados, filtroEmpresa, empresaSelecionadaId, setoresUnicos, lotesPorSetor, combinacoesEmpresaSetor, lotesTodasEmpresas, comissaoNivelSetorEfetivo])
+
+  const carregandoStatusPdf = filtroEmpresa ? carregandoLotesSetores : carregandoLotesTodasEmpresas
+  const abrirModalExportar = () => {
+    setPdfSetoresSelecionados([])
+    setPdfModalAberto(true)
+  }
 
   // Sem empresa selecionada não lista funcionários — a Empresa é obrigatória.
   const candidatosFiltrados = useMemo(() => filtroEmpresa ? filtrarCandidatos(null) : [], [filtrarCandidatos, filtroEmpresa])
 
-  // Se uma seleção ficar sem opção depois de mudar outro filtro (ex: Cargo "Mecânico" e o Setor
-  // muda pra Vendas), limpa o filtro incompatível em vez de deixar a lista zerada sem explicação.
+  // Se a Empresa ou o Setor selecionados ficarem sem opção depois de recarregar os dados, limpa
+  // o filtro incompatível em vez de deixar a lista zerada sem explicação.
   useEffect(() => {
     if (filtroEmpresa && !empresasUnicas.includes(filtroEmpresa)) setFiltroEmpresa('')
-    if (filtrosDepartamento.some(d => !departamentosUnicos.includes(d))) setFiltrosDepartamento(prev => prev.filter(d => departamentosUnicos.includes(d)))
-    if (filtroSetor && !setoresUnicos.includes(filtroSetor)) setFiltroSetor('')
-    if (filtroArea && !areasUnicas.includes(filtroArea)) setFiltroArea('')
-    if (filtroCargo && !cargosUnicos.includes(filtroCargo)) setFiltroCargo('')
-    if (filtroAgrupamentoCargo && !agrupamentosCargoUnicos.includes(filtroAgrupamentoCargo)) setFiltroAgrupamentoCargo('')
-    if (filtroComissoes.length > 0) setFiltroComissoes(prev => prev.filter(v => comissoesUnicas.includes(v)))
-  }, [empresasUnicas, departamentosUnicos, setoresUnicos, areasUnicas, cargosUnicos, agrupamentosCargoUnicos, comissoesUnicas])
-
-  // Empresa e Departamento ficam de fora daqui de propósito — agora são as abas obrigatórias
-  // do card de Período, não filtros secundários; "Limpar filtros" do painel Avançados não deve
-  // derrubar nenhuma das duas abas.
-  const temFiltroAtivo = !!(filtroFuncionario || filtroSetor || filtroArea || filtroCargo || filtroAgrupamentoCargo || filtroComissoes.length > 0)
-  const limparFiltros = () => { setFiltroFuncionario(''); setFiltroSetor(''); setFiltroArea(''); setFiltroCargo(''); setFiltroAgrupamentoCargo(''); setFiltroComissoes([]) }
+    if (filtrosSetor.some(s => !setoresUnicos.includes(s))) setFiltrosSetor(prev => prev.filter(s => setoresUnicos.includes(s)))
+  }, [empresasUnicas, setoresUnicos])
 
   // Com o lote bloqueado (Conferido/Processado), só quem estiver liberado pra reprocessamento
   // parcial (autorizado em Histórico de Comissões) continua elegível — sem liberação nenhuma,
@@ -968,6 +963,12 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
     return base.filter(c => liberados.has(c.func.id))
   }, [candidatosFiltrados, loteBloqueado, lote])
 
+  // Quem está de férias o período inteiro não entra no cálculo de verdade (não tem Base pra
+  // apurar) — mas "Calcular" ainda grava uma linha zerada pra esses, só pra ficar registrado
+  // que a pessoa estava de férias naquele mês (em vez de simplesmente não existir nenhum
+  // registro salvo pra ela).
+  const feriasParaZerar = useMemo(() => candidatosFiltrados.filter(c => c.status === 'FERIAS_MES_INTEIRO'), [candidatosFiltrados])
+
   // Status da linha (badge antes do código): Reprocessar (liberado parcialmente em Histórico
   // de Comissões), Pendente (nunca calculado), ou o status do lote pra quem já foi calculado.
   const statusLinha = (c) => {
@@ -979,17 +980,16 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
     // Regra por % de Meta sem meta cadastrada pro funcionário/mês: fica visivelmente diferente
     // de "Pendente" (nunca foi calculado) — aqui já foi calculado, só falta a Meta pra resolver.
     if (res.semMeta) return { label: 'Sem Meta', className: 'bg-amber-100 text-amber-700' }
-    // Com exatamente 1 departamento marcado usa o `lote` único já carregado; em modo combinado
-    // (0 ou 2+ marcados) não tem um lote só pra apontar, então olha o lote do(s) departamento(s)
-    // do próprio candidato — de lotesPorDepartamento (empresa marcada) ou, sem empresa nenhuma
-    // selecionada, de lotesTodasEmpresasPorChave (empresa+departamento do próprio candidato).
-    // Sem isso, todo mundo aparecia preso em "Aguardando Gerente" na visão sem empresa, mesmo já
-    // Conferido/Processado.
-    const statusEfetivo = departamentoUnicoSelecionado
+    // Com exatamente 1 setor marcado usa o `lote` único já carregado; em modo combinado (0 ou 2+
+    // marcados) não tem um lote só pra apontar, então olha o lote do(s) setor(es) do próprio
+    // candidato — de lotesPorSetor (empresa marcada) ou, sem empresa nenhuma selecionada, de
+    // lotesTodasEmpresasPorChave (empresa+setor do próprio candidato). Sem isso, todo mundo
+    // aparecia preso em "Aguardando Gerente" na visão sem empresa, mesmo já Conferido/Processado.
+    const statusEfetivo = setorUnicoSelecionado
       ? lote?.status
       : filtroEmpresa
-        ? (c.departamentoNomes || []).map(n => lotesPorDepartamento[n]?.status).find(Boolean)
-        : (c.departamentoNomes || []).map(n => lotesTodasEmpresasPorChave[`${c.func.empresa_id}::${n}`]?.status).find(Boolean)
+        ? (c.setorNomes || []).map(n => lotesPorSetor[n]?.status).find(Boolean)
+        : (c.setorNomes || []).map(n => lotesTodasEmpresasPorChave[`${c.func.empresa_id}::${n}`]?.status).find(Boolean)
     // Mesmos rótulos usados em Processamento de Comissões (STATUS_LOTE_INFO), pra identificar de
     // cara em que etapa do fluxo aquele funcionário está sem precisar trocar de aba.
     if (statusEfetivo === 'PROCESSADO') return { label: 'Processado', className: 'bg-emerald-100 text-emerald-700' }
@@ -999,11 +999,29 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
   }
 
   const handleCalcular = async () => {
-    if (!periodoValido || elegiveisFiltrados.length === 0) return
+    if (!periodoValido || (elegiveisFiltrados.length === 0 && feriasParaZerar.length === 0)) return
     setCalculando(true)
     setErro(null)
     setSalvo(false)
     try {
+      // Quem está de férias o período inteiro: zera direto, sem chamar o motor de cálculo (não
+      // tem Base nenhuma pra ler — 0 dias no período).
+      if (feriasParaZerar.length > 0) {
+        setValoresPorFuncionario(prev => {
+          const novo = { ...prev }
+          feriasParaZerar.forEach(c => {
+            novo[chaveLinha(c)] = {
+              valorBase: 0, valorComissao: 0, percentual: null, valorFixo: null, semMeta: false,
+              percentualAtingido: null, meta: null, valorPorColuna: null,
+              totalLinhasFonte: null, totalLinhasFiltradas: null,
+              periodoInicio: c.segInicio || periodoInicio, periodoFim: c.segFim || periodoFim,
+              segmentos: null,
+            }
+          })
+          return novo
+        })
+      }
+      if (elegiveisFiltrados.length === 0) return
       const baseIdsUnicos = [...new Set(elegiveisFiltrados.map(c => c.base.id))]
       const regrasPorBase = {}
       await Promise.all(baseIdsUnicos.map(async (baseId) => {
@@ -1092,18 +1110,38 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
       let metaMap = {}
       if (precisamMeta.length > 0) {
         const grupos = new Map()
+        const regrasEquipePorChave = new Map() // "regraId::empresaId" -> { regra, empresaId }
         precisamMeta.forEach(c => {
           const iso = c.segInicio || periodoInicio
           const chaveGrupo = iso.slice(0, 7)
-          if (!grupos.has(chaveGrupo)) grupos.set(chaveGrupo, { ano: Number(iso.slice(0, 4)), mes: Number(iso.slice(5, 7)), colaboradorIds: new Set(), tipos: new Set() })
+          if (!grupos.has(chaveGrupo)) grupos.set(chaveGrupo, { ano: Number(iso.slice(0, 4)), mes: Number(iso.slice(5, 7)), colaboradorIds: new Set(), tipos: new Set(), regraEquipeChaves: new Set() })
           const g = grupos.get(chaveGrupo)
-          g.colaboradorIds.add(c.func.id)
-          g.tipos.add(c.politica.regra_comissao.meta_tipo)
+          const regra = c.politica.regra_comissao
+          // "Meta de Equipe": não busca a meta do próprio funcionário — busca (uma vez por
+          // Regra+Empresa) a soma das metas dos cargos DA MESMA EMPRESA nos Agrupamentos
+          // marcados em RegrasFaixas.jsx (times de lojas diferentes não se misturam).
+          if (regra.meta_equipe_agrupamento_ids?.length > 0) {
+            const chaveEquipe = `${regra.id}::${c.func.empresa_id}`
+            g.regraEquipeChaves.add(chaveEquipe)
+            regrasEquipePorChave.set(chaveEquipe, { regra, empresaId: c.func.empresa_id })
+          } else {
+            g.colaboradorIds.add(c.func.id)
+          }
+          g.tipos.add(regra.meta_tipo)
         })
-        const partes = await Promise.all([...grupos.values()].map(g =>
-          apiService.getMetasFuncionariosPeriodo([...g.colaboradorIds], g.ano, g.mes, [...g.tipos])
-        ))
-        metaMap = Object.assign({}, ...partes)
+        const partesIndividuais = await Promise.all(
+          [...grupos.values()].filter(g => g.colaboradorIds.size > 0).map(g =>
+            apiService.getMetasFuncionariosPeriodo([...g.colaboradorIds], g.ano, g.mes, [...g.tipos])
+          )
+        )
+        const partesEquipe = await Promise.all(
+          [...grupos.values()].flatMap(g => [...g.regraEquipeChaves].map(async chaveEquipe => {
+            const { regra, empresaId } = regrasEquipePorChave.get(chaveEquipe)
+            const soma = await apiService.getMetaEquipePeriodo(regra.meta_equipe_agrupamento_ids, empresaId, g.ano, g.mes, regra.meta_tipo)
+            return { [`EQUIPE::${chaveEquipe}`]: soma }
+          }))
+        )
+        metaMap = Object.assign({}, ...partesIndividuais, ...partesEquipe)
       }
 
       // Base da comissão do Prêmio (Regra por % de Meta): soma do VALOR DE COMISSÃO já calculado
@@ -1185,7 +1223,7 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
   }
 
   const qtdCalculados = useMemo(() =>
-    candidatosFiltrados.filter(c => c.status === 'OK' && valoresPorFuncionario[chaveLinha(c)] && !valoresPorFuncionario[chaveLinha(c)].semMeta).length,
+    candidatosFiltrados.filter(c => (c.status === 'OK' || c.status === 'FERIAS_MES_INTEIRO') && valoresPorFuncionario[chaveLinha(c)] && !valoresPorFuncionario[chaveLinha(c)].semMeta).length,
     [candidatosFiltrados, valoresPorFuncionario])
 
   // Valores/textos de cada coluna da tabela — usados tanto pro filtro por coluna quanto pra ordenação.
@@ -1206,10 +1244,13 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
     ? <ArrowUpDown className="h-3 w-3 opacity-30" />
     : ordenacao.direcao === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
 
-  // Agrupa por Departamento e, dentro dele, por Cargo — sempre expandido, sem botão de
-  // abrir/fechar. Ordenação escolhida no cabeçalho da coluna se aplica DENTRO de cada
-  // grupo de cargo, preservando o agrupamento.
-  const gruposPorCargo = useMemo(() => {
+  // Agrupa por Setor e, dentro dele, por Cargo — sempre expandido, sem botão de abrir/fechar.
+  // Ordenação escolhida no cabeçalho da coluna se aplica DENTRO de cada grupo de cargo,
+  // preservando o agrupamento.
+  // Agrupa uma lista de candidatos por Setor e, dentro dele, por Cargo (e por Empresa dentro do
+  // Cargo) — função separada da memorização pra poder reaproveitar com listas diferentes:
+  // candidatosFiltrados (tela/PDF do setor atual) e "todos os setores da empresa" (PDF em lote).
+  const agruparPorSetorECargo = (lista) => {
     const dir = ordenacao.direcao === 'desc' ? -1 : 1
     const comparadorNumerico = (fn) => (a, b) => {
       const va = fn(a); const vb = fn(b)
@@ -1243,11 +1284,11 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
     }
     const comparador = comparadores[ordenacao.coluna] || comparadores.nome
 
-    const gruposDepto = new Map()
-    for (const c of candidatosFiltrados) {
-      const nomeDepartamento = c.departamentoNomes?.join(', ') || 'Sem Departamento'
-      if (!gruposDepto.has(nomeDepartamento)) gruposDepto.set(nomeDepartamento, new Map())
-      const gruposCargo = gruposDepto.get(nomeDepartamento)
+    const gruposSetor = new Map()
+    for (const c of lista) {
+      const nomeSetor = c.setorNomes?.join(', ') || SEM_SETOR
+      if (!gruposSetor.has(nomeSetor)) gruposSetor.set(nomeSetor, new Map())
+      const gruposCargo = gruposSetor.get(nomeSetor)
       const nomeCargo = c.cargo?.nome_cargo || 'Sem Cargo'
       if (!gruposCargo.has(nomeCargo)) gruposCargo.set(nomeCargo, [])
       gruposCargo.get(nomeCargo).push(c)
@@ -1276,54 +1317,50 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
         .map(([nomeEmpresa, itensEmpresa]) => ({ nomeEmpresa, itens: itensEmpresa.sort(comparadorSemMisturarFuncionarios) }))
     }
 
-    return [...gruposDepto.entries()]
+    return [...gruposSetor.entries()]
       .sort((a, b) => a[0].localeCompare(b[0], 'pt-BR'))
-      .map(([nomeDepartamento, gruposCargo]) => ({
-        nomeDepartamento,
+      .map(([nomeSetor, gruposCargo]) => ({
+        nomeSetor,
         cargos: [...gruposCargo.entries()]
           .sort((a, b) => a[0].localeCompare(b[0], 'pt-BR'))
           .map(([nomeCargo, itens]) => ({ nomeCargo, itens, empresas: agruparPorEmpresa(itens) })),
       }))
-  }, [candidatosFiltrados, ordenacao, valoresPorFuncionario])
+  }
 
-  // Agrupamento alternativo, só pro modo "todas as empresas" do Salvar PDF (nenhuma empresa
-  // marcada): agrupa por Departamento + Empresa juntos (não só Departamento) — sem isso, duas
-  // lojas com um departamento de mesmo nome (ex: "OFICINA" em Campo Grande E em Chapadão)
-  // cairiam na mesma página/Total, misturando os valores das duas lojas. Mesmo formato de item
-  // que gruposPorCargo (nomeDepartamento + cargos com empresas), pra reaproveitar o mesmo
-  // gerador de HTML do PDF sem duplicar código.
-  const gruposPorEmpresaDepartamento = useMemo(() => {
-    if (filtroEmpresa) return []
-    const porChave = new Map() // `${nomeEmpresa}::${nomeDepartamento}` -> { nomeEmpresa, nomeDepartamento, cargosMap }
-    for (const c of candidatosFiltrados) {
+  const gruposPorCargo = useMemo(() => agruparPorSetorECargo(candidatosFiltrados), [candidatosFiltrados, ordenacao, valoresPorFuncionario])
+
+  // Agrupa por Setor + Empresa para que setores de mesmo nome em lojas diferentes não se misturem.
+  const agruparPorEmpresaSetor = (lista) => {
+    const porChave = new Map() // `${nomeEmpresa}::${nomeSetor}` -> { nomeEmpresa, nomeSetor, cargosMap }
+    for (const c of lista) {
       const nomeEmpresa = c.empresa?.empresa_fantasia || c.empresa?.nome_empresa || 'Sem Empresa'
-      const nomeDepartamento = c.departamentoNomes?.join(', ') || 'Sem Departamento'
-      const chave = `${nomeEmpresa}::${nomeDepartamento}`
-      if (!porChave.has(chave)) porChave.set(chave, { nomeEmpresa, nomeDepartamento, cargosMap: new Map() })
+      const nomeSetor = c.setorNomes?.join(', ') || SEM_SETOR
+      const chave = `${nomeEmpresa}::${nomeSetor}`
+      if (!porChave.has(chave)) porChave.set(chave, { nomeEmpresa, nomeSetor, cargosMap: new Map() })
       const grupo = porChave.get(chave)
       const nomeCargo = c.cargo?.nome_cargo || 'Sem Cargo'
       if (!grupo.cargosMap.has(nomeCargo)) grupo.cargosMap.set(nomeCargo, [])
       grupo.cargosMap.get(nomeCargo).push(c)
     }
     return [...porChave.values()]
-      .sort((a, b) => a.nomeEmpresa.localeCompare(b.nomeEmpresa, 'pt-BR') || a.nomeDepartamento.localeCompare(b.nomeDepartamento, 'pt-BR'))
-      .map(({ nomeEmpresa, nomeDepartamento, cargosMap }) => ({
-        nomeDepartamento: `${nomeDepartamento} — ${nomeEmpresa}`,
+      .sort((a, b) => a.nomeEmpresa.localeCompare(b.nomeEmpresa, 'pt-BR') || a.nomeSetor.localeCompare(b.nomeSetor, 'pt-BR'))
+      .map(({ nomeEmpresa, nomeSetor, cargosMap }) => ({
+        nomeSetor: `${nomeSetor} — ${nomeEmpresa}`,
         cargos: [...cargosMap.entries()]
           .sort((a, b) => a[0].localeCompare(b[0], 'pt-BR'))
           .map(([nomeCargo, itens]) => ({ nomeCargo, itens, empresas: [{ nomeEmpresa, itens }] })),
       }))
-  }, [filtroEmpresa, candidatosFiltrados])
+  }
 
   const handleSalvar = async () => {
-    if (!filtroEmpresa || !departamentoUnicoSelecionado) return
+    if (!filtroEmpresa || !setorUnicoSelecionado) return
     // Com o lote bloqueado, só salva quem estiver liberado pra reprocessamento parcial
     // (elegiveisFiltrados já filtra isso) — o resto continua intocado.
     const candidatosParaSalvar = loteBloqueado
       ? elegiveisFiltrados
       : candidatosFiltrados
     const registrosSemLote = candidatosParaSalvar
-      .filter(c => c.status === 'OK' && valoresPorFuncionario[chaveLinha(c)] && !valoresPorFuncionario[chaveLinha(c)].semMeta)
+      .filter(c => (c.status === 'OK' || c.status === 'FERIAS_MES_INTEIRO') && valoresPorFuncionario[chaveLinha(c)] && !valoresPorFuncionario[chaveLinha(c)].semMeta)
       .map(c => {
         const r = valoresPorFuncionario[chaveLinha(c)]
         return {
@@ -1340,6 +1377,19 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
           total_linhas_fonte: r.totalLinhasFonte ?? null,
           total_linhas_filtradas: r.totalLinhasFiltradas ?? null,
           detalhe_empresas: detalhePorEmpresa[chaveLinha(c)] || null,
+          // Mesmo detalhamento usado pela calculadora aqui (ícone "Regra da Comissão" / Venda-
+          // Devolução) — sem persistir isso, Processamento de Comissões não teria como mostrar
+          // a mesma calculadora depois de já ter salvo o cálculo.
+          detalhe_calculo: {
+            valorApurado: r.valorApurado ?? null,
+            valorBruto: r.valorBruto ?? null,
+            descontoPct: r.descontoPct ?? null,
+            valorFixo: r.valorFixo ?? null,
+            percentualAtingido: r.percentualAtingido ?? null,
+            meta: r.meta ?? null,
+            valorPorColuna: r.valorPorColuna ?? null,
+            segmentos: r.segmentos ?? null,
+          },
         }
       })
     if (registrosSemLote.length === 0) return
@@ -1356,7 +1406,8 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
         const valorTotalLote = registrosSemLote.reduce((acc, r) => acc + (r.valor_comissao || 0), 0)
         loteAtualizado = await apiService.salvarLoteRascunho({
           periodoInicio, periodoFim, empresaId: empresaSelecionadaId, empresaNome: filtroEmpresa,
-          departamentoId: departamentoSelecionadoId, departamentoNome: departamentoUnicoSelecionado,
+          setorId: setorSelecionadoId, setorNome: setorUnicoSelecionado,
+          departamentoId: departamentoDoSetorSelecionadoId, departamentoNome: setorSelecionadoObj?.departamento_id ? dados?.departamentos.find(d => d.id === setorSelecionadoObj.departamento_id)?.nome_departamento : null,
           qtdFuncionarios: registrosSemLote.length, valorTotal: valorTotalLote, usuario: usuarioLabel,
         })
       }
@@ -1380,13 +1431,22 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
     }
   }
 
-  // Documento pra mandar pro RH computar o pagamento — uma página por Departamento, cada uma
-  // com os Cargos/funcionários e o total do departamento no rodapé.
+  // Documento pra mandar pro RH computar o pagamento — uma página por Setor, cada uma com os
+  // Cargos/funcionários e o total do setor no rodapé. A seleção vem do modal de setores fechados.
   const handleSalvarPDF = async () => {
-    // Sem empresa marcada, cada página combina Departamento+Empresa (gruposPorEmpresaDepartamento)
-    // pra não somar o Total de departamentos de mesmo nome em lojas diferentes; com empresa
-    // marcada, continua uma página por Departamento (gruposPorCargo), como já era.
-    const gruposParaPDF = filtroEmpresa ? gruposPorCargo : gruposPorEmpresaDepartamento
+    const opcoesSelecionadas = setoresFechadosParaPdf.filter(opcao => pdfSetoresSelecionados.includes(opcao.key))
+    const chavesSelecionadas = new Set(opcoesSelecionadas.map(opcao => opcao.key))
+    const candidatosDaEmpresa = filtroEmpresa
+      ? candidatos.filter(c => c.func.empresa_id === empresaSelecionadaId)
+      : candidatos
+    const candidatosParaPDF = candidatosDaEmpresa.map(c => {
+      const setoresIncluidos = (c.setorNomes || [SEM_SETOR]).filter(nomeSetor =>
+        chavesSelecionadas.has(chaveSetorPdf(c.func.empresa_id, nomeSetor)))
+      return setoresIncluidos.length > 0 ? { ...c, setorNomes: setoresIncluidos } : null
+    }).filter(Boolean)
+    const gruposParaPDF = filtroEmpresa
+      ? agruparPorSetorECargo(candidatosParaPDF)
+      : agruparPorEmpresaSetor(candidatosParaPDF)
     if (gruposParaPDF.length === 0) {
       setErro('Sem dados pra exportar — calcule as comissões primeiro.')
       return
@@ -1410,7 +1470,7 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
 
       // Cabeçalho de tabela repetido em cada bloco de cargo — cada cargo vira um bloco
       // independente (própria tabela com seu próprio thead), pra poder ser paginado sozinho
-      // sem depender do resto do departamento.
+      // sem depender do resto do setor.
       const THEAD_HTML = `
         <thead>
           <tr style="background:#1e293b;color:#fff;text-transform:uppercase;font-size:11px;">
@@ -1425,30 +1485,30 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
           </tr>
         </thead>`
 
-      // Empresa(s) do departamento — quase sempre uma só; se houver mais de uma no mesmo
-      // departamento, mostra todas separadas por vírgula.
-      const nomesEmpresaDoDepto = (grupoDepto) => [...new Set(
-        grupoDepto.cargos.flatMap(g => g.itens)
+      // Empresa(s) do setor — quase sempre uma só; se houver mais de uma no mesmo setor, mostra
+      // todas separadas por vírgula.
+      const nomesEmpresaDoSetor = (grupoSetor) => [...new Set(
+        grupoSetor.cargos.flatMap(g => g.itens)
           .map(c => c.empresa?.empresa_fantasia || c.empresa?.nome_empresa || c.empresaNome)
           .filter(Boolean)
       )].join(', ')
 
-      // Bloco de cabeçalho (empresa/departamento/período) — repetido no topo de cada página
-      // nova que o departamento precisar abrir, com um aviso de "continuação" pra deixar claro
-      // que é o mesmo departamento continuando, não um novo.
-      const montarHtmlCabecalho = (grupoDepto, continuacao) => `
+      // Bloco de cabeçalho (empresa/setor/período) — repetido no topo de cada página nova que o
+      // setor precisar abrir, com um aviso de "continuação" pra deixar claro que é o mesmo setor
+      // continuando, não um novo.
+      const montarHtmlCabecalho = (grupoSetor, continuacao) => `
         <div style="font-family:Arial,Helvetica,sans-serif;background:#fff;padding:20px 20px 0 20px;width:${WRAP_W}px;box-sizing:border-box;">
           <div style="display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #1e293b;padding-bottom:12px;margin-bottom:16px;">
             <div>
               <div style="font-size:22px;font-weight:800;color:#0f172a;">Cálculo de Comissões</div>
-              <div style="font-size:15px;font-weight:700;color:#1e293b;margin-top:2px;">${nomesEmpresaDoDepto(grupoDepto)}</div>
+              <div style="font-size:15px;font-weight:700;color:#1e293b;margin-top:2px;">${nomesEmpresaDoSetor(grupoSetor)}</div>
             </div>
             <div style="text-align:right;font-size:13px;color:#475569;">
               <div>Período: ${periodoLabel}</div>
               <div>Gerado em: ${new Date().toLocaleString('pt-BR')}</div>
             </div>
           </div>
-          <div style="font-size:14px;font-weight:700;color:#334155;margin-bottom:8px;">${grupoDepto.nomeDepartamento}${continuacao ? ' <span style="font-weight:400;font-style:italic;color:#94a3b8;">(continuação)</span>' : ''}</div>
+          <div style="font-size:14px;font-weight:700;color:#334155;margin-bottom:8px;">${grupoSetor.nomeSetor}${continuacao ? ' <span style="font-weight:400;font-style:italic;color:#94a3b8;">(continuação)</span>' : ''}</div>
         </div>`
 
       // Um bloco por Cargo — tabela própria e independente, pra poder cair numa página nova
@@ -1466,8 +1526,9 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
               ? linhasMesmoFunc.reduce((acc, x) => acc + (valoresPorFuncionario[chaveLinha(x)]?.valorComissao || 0), 0)
               : null
             const nomeComCodigo = c.func.codigo_funcionario ? `${c.func.codigo_funcionario} — ${c.func.nome_funcionario}` : c.func.nome_funcionario
-            const detalheEmpresasHtml = c.politica.detalhar_por_empresa && detalhePorEmpresa[chaveLinha(c)]
-              ? detalhePorEmpresa[chaveLinha(c)].map(d => `
+            const detalhesEmpresa = (detalhePorEmpresa[chaveLinha(c)] || []).filter(d => !detalheEmpresaSemValor(d))
+            const detalheEmpresasHtml = c.politica.detalhar_por_empresa && detalhesEmpresa.length > 0
+              ? detalhesEmpresa.map(d => `
                   <div style="font-size:10px;font-weight:400;color:#94a3b8;margin-top:2px;">
                     ${d.empresa}: Base <span style="color:#64748b;">${fmtValorBase(c, d.valorBase)}</span>
                     <span style="color:#cbd5e1;"> &rarr; </span>
@@ -1509,13 +1570,13 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
           </div>`
       }
 
-      const montarHtmlRodape = (grupoDepto, totalDepto) => `
+      const montarHtmlRodape = (grupoSetor, totalSetor) => `
         <div style="font-family:Arial,Helvetica,sans-serif;background:#fff;padding:0 20px 20px 20px;width:${WRAP_W}px;box-sizing:border-box;">
           <table style="width:100%;border-collapse:collapse;font-size:13px;">
             <tfoot>
               <tr style="border-top:2px solid #1e293b;">
-                <td colspan="7" style="padding:10px 8px;text-align:right;font-weight:800;color:#0f172a;">Total ${grupoDepto.nomeDepartamento}</td>
-                <td style="padding:10px 8px;text-align:right;font-weight:800;color:#047857;">${fmtBRL(totalDepto)}</td>
+                <td colspan="7" style="padding:10px 8px;text-align:right;font-weight:800;color:#0f172a;">Total ${grupoSetor.nomeSetor}</td>
+                <td style="padding:10px 8px;text-align:right;font-weight:800;color:#047857;">${fmtBRL(totalSetor)}</td>
               </tr>
             </tfoot>
           </table>
@@ -1535,8 +1596,8 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
 
       // Empacota os blocos (cabeçalho / cada cargo / rodapé) nas páginas — quando um cargo não
       // cabe mais no espaço restante da página atual, abre página nova (repetindo o cabeçalho
-      // do departamento com "(continuação)") em vez de espremer tudo numa imagem só. A quebra
-      // sempre acontece ENTRE cargos, nunca no meio de um.
+      // do setor com "(continuação)") em vez de espremer tudo numa imagem só. A quebra sempre
+      // acontece ENTRE cargos, nunca no meio de um.
       const GAP = 6
       const pageBottom = pdf.internal.pageSize.getHeight() - MARGIN
       let primeiraPaginaGeral = true
@@ -1551,42 +1612,43 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
         return h
       }
 
-      for (const grupoDepto of gruposParaPDF) {
-        const totalDepto = grupoDepto.cargos.flatMap(g => g.itens)
+      for (const grupoSetor of gruposParaPDF) {
+        const totalSetor = grupoSetor.cargos.flatMap(g => g.itens)
           .reduce((acc, c) => acc + (valoresPorFuncionario[chaveLinha(c)]?.valorComissao || 0), 0)
 
         let y = iniciarPagina()
-        y += colocarCanvas(await renderBloco(montarHtmlCabecalho(grupoDepto, false)), y) + GAP
+        y += colocarCanvas(await renderBloco(montarHtmlCabecalho(grupoSetor, false)), y) + GAP
 
-        for (const grupo of grupoDepto.cargos) {
+        for (const grupo of grupoSetor.cargos) {
           const cargoCanvas = await renderBloco(montarHtmlBlocoCargo(grupo))
           const cargoH = (cargoCanvas.height / cargoCanvas.width) * CW
           if (y + cargoH > pageBottom) {
             y = iniciarPagina()
-            y += colocarCanvas(await renderBloco(montarHtmlCabecalho(grupoDepto, true)), y) + GAP
+            y += colocarCanvas(await renderBloco(montarHtmlCabecalho(grupoSetor, true)), y) + GAP
           }
           y += colocarCanvas(cargoCanvas, y) + GAP
         }
 
-        const footerCanvas = await renderBloco(montarHtmlRodape(grupoDepto, totalDepto))
+        const footerCanvas = await renderBloco(montarHtmlRodape(grupoSetor, totalSetor))
         const footerH = (footerCanvas.height / footerCanvas.width) * CW
         if (y + footerH > pageBottom) y = iniciarPagina()
         colocarCanvas(footerCanvas, y)
       }
 
       // Nome do arquivo sem acento/espaço/caractere especial (evita problema de download em
-      // alguns navegadores/SOs) — inclui empresa e departamento(s) pra identificar o PDF sem
-      // precisar abrir, já que agora dá pra gerar um por vez ou vários juntos.
+      // alguns navegadores/SOs) — inclui empresa e setor(es) pra identificar o PDF sem precisar
+      // abrir, já que agora dá pra gerar um por vez ou vários juntos.
       const paraNomeArquivo = (s) => (s || '')
         .normalize('NFD').replace(/[̀-ͯ]/g, '')
         .replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '')
-      const nomeDepartamentoArquivo = departamentoUnicoSelecionado
-        ? departamentoUnicoSelecionado
-        : (filtrosDepartamento.length > 0 ? filtrosDepartamento.join('-') : 'Todos_Departamentos')
+      const nomeSetorArquivo = opcoesSelecionadas.length === 1
+        ? `${opcoesSelecionadas[0].empresaNome}_${opcoesSelecionadas[0].nomeSetor}`
+        : `Setores_${opcoesSelecionadas.length}`
       const nomeArquivo = filtroEmpresa
-        ? ['Comissoes', periodoInicio, periodoFim, filtroEmpresa, nomeDepartamentoArquivo].filter(Boolean).map(paraNomeArquivo).join('_')
-        : ['Comissoes', periodoInicio, periodoFim, 'Todas_Empresas'].filter(Boolean).map(paraNomeArquivo).join('_')
+        ? ['Comissoes', periodoInicio, periodoFim, filtroEmpresa, nomeSetorArquivo].filter(Boolean).map(paraNomeArquivo).join('_')
+        : ['Comissoes', periodoInicio, periodoFim, 'Todas_Empresas', nomeSetorArquivo].filter(Boolean).map(paraNomeArquivo).join('_')
       pdf.save(`${nomeArquivo}.pdf`)
+      setPdfModalAberto(false)
     } catch (err) {
       console.error('Erro ao gerar PDF:', err)
       setErro('Erro ao gerar PDF: ' + (err.message || String(err)))
@@ -1605,7 +1667,7 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
             <Wallet className="h-5 w-5 text-blue-600" />
             {titulo}
           </h1>
-          <p className="text-xs text-slate-500">Calcule, confira e envie pra aprovação as comissões do período — por empresa e departamento.</p>
+          <p className="text-xs text-slate-500">Calcule, confira e envie pra aprovação as comissões do período — por empresa e setor.</p>
         </div>
         <BotaoStatusFerias />
       </div>
@@ -1660,42 +1722,31 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
                   </button>
                 </div>
               </div>
-              {/* Filtros Avançados — fica nesta mesma linha, empurrado pra direita. */}
-              <button
-                type="button"
-                onClick={() => setFiltrosAbertos(v => !v)}
-                className="ml-auto flex items-center gap-2 px-3 py-2 border border-slate-200 rounded-md text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-colors"
-              >
-                {filtrosAbertos ? <ChevronDown className="h-3.5 w-3.5 text-slate-400" /> : <ChevronRight className="h-3.5 w-3.5 text-slate-400" />}
-                Filtros Avançados
-                {temFiltroAtivo && <span className="px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 text-[10px] font-bold">ativo</span>}
-              </button>
             </div>
             {periodoMesesDiferentes && (
               <p className="text-[11px] text-amber-600 mb-3">Data Início e Data Fim precisam estar dentro do mesmo mês.</p>
             )}
-            {/* Abas de Departamento — multi-select pra VISUALIZAR (a tabela combina os
-                departamentos marcados); cada botão marcado mostra um X pra desmarcar só ele.
-                As ações do fluxo de aprovação (Calcular/Salvar/Conferir/Processar/Excluir) só
-                liberam com exatamente 1 marcado — cada departamento tem seu próprio lote, então
-                mais de um por vez não tem um lote único pra apontar. */}
+            {/* Abas de Setor — seleção única (clicar troca de setor; clicar no já marcado
+                desmarca e volta pra visão combinada de todos). Cada setor tem seu próprio lote,
+                então as ações do fluxo de aprovação (Calcular/Salvar/Conferir/Processar/Excluir)
+                só liberam com um setor marcado. */}
             {filtroEmpresa && (
-              <div className="flex flex-wrap items-center gap-1.5 mb-3 pb-3 border-b border-slate-100">
-                <label className={`${LBL} mr-1`}>Departamento</label>
-                {departamentosUnicos.map(nome => {
-                  const selecionado = filtrosDepartamento.includes(nome)
-                  const loteDept = lotesPorDepartamento[nome]
-                  const fechado = !!(loteDept && loteDept.status !== 'RASCUNHO')
-                  const tituloBolinha = carregandoLotesDepartamentos
+              <div className="flex flex-wrap items-center gap-1.5 mb-3">
+                <label className={`${LBL} mr-1`}>Setor</label>
+                {setoresUnicos.map(nome => {
+                  const selecionado = filtrosSetor.includes(nome)
+                  const loteSetor = lotesPorSetor[nome]
+                  const fechado = !!(loteSetor && loteSetor.status !== 'RASCUNHO')
+                  const tituloBolinha = carregandoLotesSetores
                     ? 'Verificando status...'
                     : fechado
-                      ? `Fechado (${loteDept.status === 'PROCESSADO' ? 'Processado' : loteDept.status === 'CONFERIDO_DP' ? 'Conferido pelo DP' : 'Conferido'})`
+                      ? `Fechado (${loteSetor.status === 'PROCESSADO' ? 'Processado' : loteSetor.status === 'CONFERIDO_DP' ? 'Conferido pelo DP' : 'Conferido'})`
                       : 'Ainda não fechado (Rascunho ou nunca calculado)'
                   return (
                     <button
                       key={nome}
                       type="button"
-                      onClick={() => setFiltrosDepartamento(prev => prev.includes(nome) ? prev.filter(d => d !== nome) : [...prev, nome])}
+                      onClick={() => setFiltrosSetor(prev => prev.includes(nome) ? [] : [nome])}
                       title={tituloBolinha}
                       className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold border transition-colors ${
                         selecionado
@@ -1703,7 +1754,7 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
                           : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
                       }`}
                     >
-                      {carregandoLotesDepartamentos
+                      {carregandoLotesSetores
                         ? <span className="inline-block w-1.5 h-1.5 rounded-full shrink-0 bg-slate-300" />
                         : fechado
                           ? <Lock className="h-3 w-3 shrink-0 text-emerald-500" />
@@ -1713,35 +1764,21 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
                     </button>
                   )
                 })}
-                {departamentoSomenteVisualizacao && (
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold border shrink-0 bg-slate-100 text-slate-500 border-slate-200" title="Este departamento está liberado só pra visualização (Grupos de Acesso) — sem botões de ação.">
+                {setorSomenteVisualizacao && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold border shrink-0 bg-slate-100 text-slate-500 border-slate-200" title="Este setor está liberado só pra visualização (Grupos de Acesso) — sem botões de ação.">
                     Somente Visualização
                   </span>
                 )}
-                {departamentoSelecionadoId && empresaSelecionadaId && responsaveisPorDepartamento[departamentoSelecionadoId]?.[empresaSelecionadaId]?.length > 0 && (
-                  <span className="text-[11px] text-slate-400 ml-1">
-                    Responsável: <strong className="text-slate-600 font-semibold">{responsaveisPorDepartamento[departamentoSelecionadoId][empresaSelecionadaId].join(', ')}</strong>
-                  </span>
-                )}
-                {filtrosDepartamento.length > 0 && (
+                {filtrosSetor.length > 0 && (
                   <button
                     type="button"
-                    onClick={() => setFiltrosDepartamento([])}
+                    onClick={() => setFiltrosSetor([])}
                     className="flex items-center gap-1 text-[11px] font-semibold text-slate-400 hover:text-red-600 transition-colors ml-1"
                   >
                     <X className="h-3 w-3" /> Limpar seleção
                   </button>
                 )}
-                <span className="flex items-center gap-1 text-[10px] text-slate-400 ml-1">
-                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400" /> aberto
-                  <Lock className="h-3 w-3 text-emerald-500 ml-1.5" /> fechado
-                </span>
               </div>
-            )}
-            {filtroEmpresa && filtrosDepartamento.length > 1 && (
-              <p className="flex items-center gap-1.5 text-[11px] text-amber-600 mb-3">
-                <Lock className="h-3 w-3" /> Vários departamentos selecionados — mostrando a visão combinada. Selecione só um pra liberar Calcular/Salvar/Conferir (o Salvar PDF libera com vários, desde que todos já estejam Conferidos).
-              </p>
             )}
             {loteBloqueado && (
               <p className="flex items-center gap-1.5 text-[11px] text-amber-600 mt-2">
@@ -1750,76 +1787,6 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
                   ? `Este período já foi ${lote.status === 'PROCESSADO' ? 'processado' : lote.status === 'CONFERIDO_DP' ? 'conferido pelo DP' : 'conferido'} — só ${elegiveisFiltrados.length} funcionário(s) liberado(s) pra reprocessamento em Processamento de Comissões ficam recalculáveis agora.`
                   : `Este período já foi ${lote.status === 'PROCESSADO' ? 'processado' : lote.status === 'CONFERIDO_DP' ? 'conferido pelo DP' : 'conferido'} — peça ao RH/DP pra liberar o reprocessamento antes de recalcular.`}
               </p>
-            )}
-            {filtrosAbertos && (
-              <div className="border-t border-slate-100 mt-3 pt-4 space-y-3">
-                {/* Linha 1 */}
-                <div className="grid grid-cols-3 gap-x-4 gap-y-3">
-                  <div className="flex flex-col gap-1">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Área</label>
-                    <select value={filtroArea} onChange={e => setFiltroArea(e.target.value)} className="w-full text-xs p-2 border border-slate-200 rounded-md bg-white font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500">
-                      <option value="">Todas</option>
-                      {areasUnicas.map(a => <option key={a} value={a}>{a}</option>)}
-                    </select>
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Setor</label>
-                    <select value={filtroSetor} onChange={e => setFiltroSetor(e.target.value)} className="w-full text-xs p-2 border border-slate-200 rounded-md bg-white font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500">
-                      <option value="">Todos</option>
-                      {setoresUnicos.map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Agrupamento de Cargos</label>
-                    <select value={filtroAgrupamentoCargo} onChange={e => setFiltroAgrupamentoCargo(e.target.value)} className="w-full text-xs p-2 border border-slate-200 rounded-md bg-white font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500">
-                      <option value="">Todos</option>
-                      {agrupamentosCargoUnicos.map(a => <option key={a} value={a}>{a}</option>)}
-                    </select>
-                  </div>
-                </div>
-
-                {/* Linha 2 */}
-                <div className="grid grid-cols-3 gap-x-4 gap-y-3">
-                  <div className="flex flex-col gap-1">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Cargo</label>
-                    <select value={filtroCargo} onChange={e => setFiltroCargo(e.target.value)} className="w-full text-xs p-2 border border-slate-200 rounded-md bg-white font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500">
-                      <option value="">Todos</option>
-                      {cargosUnicos.map(c => <option key={c} value={c}>{c}</option>)}
-                    </select>
-                  </div>
-                </div>
-
-                {/* Linha 3 */}
-                <div className="grid grid-cols-3 gap-x-4 gap-y-3">
-                  <div className="flex flex-col gap-1">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Funcionário</label>
-                    <input
-                      type="text"
-                      value={filtroFuncionario}
-                      onChange={e => setFiltroFuncionario(e.target.value)}
-                      placeholder="Buscar pelo nome..."
-                      className="w-full text-xs p-2 border border-slate-200 rounded-md font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-white"
-                    />
-                  </div>
-                  <div className="col-span-2 flex flex-col gap-1">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Comissão</label>
-                    <FiltroMultiSelect
-                      placeholder="Todas as Comissões"
-                      opcoes={comissoesUnicas}
-                      selecionados={filtroComissoes}
-                      onChange={setFiltroComissoes}
-                    />
-                  </div>
-                </div>
-
-                {temFiltroAtivo && (
-                  <div className="flex items-center justify-end pt-1 border-t border-slate-100">
-                    <button onClick={limparFiltros} className="flex items-center gap-1 text-[11px] font-semibold text-slate-400 hover:text-red-600 transition-colors">
-                      <X className="h-3 w-3" /> Limpar filtros
-                    </button>
-                  </div>
-                )}
-              </div>
             )}
           </div>
 
@@ -1838,6 +1805,11 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
                       : 'bg-slate-100 text-slate-500 border-slate-200'
                     }`}>
                       {lote.status === 'PROCESSADO' ? 'Processado' : lote.status === 'CONFERIDO_DP' ? 'Aguardando Processamento' : lote.status === 'CONFERIDO' ? 'Aguardando DP' : 'Aguardando Gerente'}
+                    </span>
+                  )}
+                  {setorSelecionadoId && empresaSelecionadaId && responsaveisPorSetor[setorSelecionadoId]?.[empresaSelecionadaId]?.length > 0 && (
+                    <span className="text-[11px] text-slate-400">
+                      Responsável: <strong className="text-slate-600 font-semibold">{responsaveisPorSetor[setorSelecionadoId][empresaSelecionadaId].join(', ')}</strong>
                     </span>
                   )}
                 </div>
@@ -1873,8 +1845,8 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
                       {podeCalcular && (
                         <button
                           onClick={handleCalcular}
-                          disabled={!filtroEmpresa || !departamentoUnicoSelecionado || !periodoValido || calculando || elegiveisFiltrados.length === 0 || feriasDesatualizada || departamentoSomenteVisualizacao}
-                          title={departamentoSomenteVisualizacao ? 'Este departamento está liberado só pra visualização — peça pra alguém com edição fazer isso.' : feriasDesatualizada ? 'O arquivo de férias está desatualizado pro mês do período selecionado — atualize em Férias antes de calcular.' : undefined}
+                          disabled={!filtroEmpresa || !setorUnicoSelecionado || !periodoValido || calculando || (elegiveisFiltrados.length === 0 && feriasParaZerar.length === 0) || feriasDesatualizada || setorSomenteVisualizacao}
+                          title={setorSomenteVisualizacao ? 'Este setor está liberado só pra visualização — peça pra alguém com edição fazer isso.' : feriasDesatualizada ? 'O arquivo de férias está desatualizado pro mês do período selecionado — atualize em Férias antes de calcular.' : undefined}
                           className={
                             feriasDesatualizada
                               ? 'flex items-center gap-1.5 bg-amber-100 border border-amber-300 text-amber-700 cursor-not-allowed text-xs font-semibold px-3 py-1.5 rounded-md shadow-sm transition-colors'
@@ -1882,14 +1854,14 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
                           }
                         >
                           {calculando ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : feriasDesatualizada ? <AlertTriangle className="h-3.5 w-3.5" /> : <PlayCircle className="h-3.5 w-3.5" />}
-                          {feriasDesatualizada ? 'Férias Desatualizadas' : `Calcular Comissões (${elegiveisFiltrados.length})`}
+                          {feriasDesatualizada ? 'Férias Desatualizadas' : `Calcular Comissões (${elegiveisFiltrados.length + feriasParaZerar.length})`}
                         </button>
                       )}
                       {podeSalvar && (
                         <button
                           onClick={handleSalvar}
-                          disabled={!filtroEmpresa || !departamentoUnicoSelecionado || elegiveisFiltrados.length === 0 || qtdCalculados === 0 || salvando || (salvo && lote?.status === 'RASCUNHO') || departamentoSomenteVisualizacao}
-                          title={departamentoSomenteVisualizacao ? 'Este departamento está liberado só pra visualização — peça pra alguém com edição fazer isso.' : undefined}
+                          disabled={!filtroEmpresa || !setorUnicoSelecionado || (elegiveisFiltrados.length === 0 && feriasParaZerar.length === 0) || qtdCalculados === 0 || salvando || (salvo && lote?.status === 'RASCUNHO') || setorSomenteVisualizacao}
+                          title={setorSomenteVisualizacao ? 'Este setor está liberado só pra visualização — peça pra alguém com edição fazer isso.' : undefined}
                           className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold px-3 py-1.5 rounded-md shadow-sm transition-colors"
                         >
                           {salvando ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
@@ -1899,8 +1871,8 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
                       {podeConferir && (
                         <button
                           onClick={handleConferir}
-                          disabled={!filtroEmpresa || !departamentoUnicoSelecionado || !(lote?.status === 'RASCUNHO' && salvo) || processandoAcao === 'conferir' || departamentoSomenteVisualizacao}
-                          title={departamentoSomenteVisualizacao ? 'Este departamento está liberado só pra visualização — peça pra alguém com edição fazer isso.' : undefined}
+                          disabled={!filtroEmpresa || !setorUnicoSelecionado || !(lote?.status === 'RASCUNHO' && salvo) || processandoAcao === 'conferir' || setorSomenteVisualizacao}
+                          title={setorSomenteVisualizacao ? 'Este setor está liberado só pra visualização — peça pra alguém com edição fazer isso.' : undefined}
                           className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold px-3 py-1.5 rounded-md shadow-sm transition-colors"
                         >
                           {processandoAcao === 'conferir' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />}
@@ -1908,28 +1880,70 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
                         </button>
                       )}
                       {podeSalvarPDF && (
-                        <button
-                          onClick={handleSalvarPDF}
-                          disabled={
-                            (!filtroEmpresa
-                              ? (carregandoLotesTodasEmpresas || !todasEmpresasConferidas)
-                              : (departamentoUnicoSelecionado
-                                  ? (!lote || lote.status === 'RASCUNHO' || departamentoSomenteVisualizacao)
-                                  : (carregandoLotesDepartamentos || !todosDepartamentosConferidos))) ||
-                            gerandoPDF || (filtroEmpresa ? gruposPorCargo.length === 0 : gruposPorEmpresaDepartamento.length === 0)
-                          }
-                          title={departamentoUnicoSelecionado && departamentoSomenteVisualizacao ? 'Este departamento está liberado só pra visualização — peça pra alguém com edição fazer isso.' : "Baixa o PDF com uma página por Departamento, pra enviar ao RH — disponível depois de Comissões Conferidas. Pode marcar vários departamentos (ou nenhum, pra todos os da empresa; ou nenhuma empresa, pra todas as lojas juntas) pra baixar tudo num PDF só, desde que já estejam Conferidos."}
-                          className="flex items-center gap-1.5 border border-slate-300 text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-semibold px-3 py-1.5 rounded-md transition-colors"
-                        >
-                          {gerandoPDF ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileDown className="h-3.5 w-3.5" />}
-                          Salvar PDF
-                        </button>
+                        <>
+                          <button
+                            type="button"
+                            onClick={abrirModalExportar}
+                            disabled={carregandoStatusPdf || setoresFechadosParaPdf.length === 0 || gerandoPDF}
+                            title={setoresFechadosParaPdf.length === 0 && !carregandoStatusPdf ? 'Não há setores fechados disponíveis para exportação.' : undefined}
+                            className="flex items-center gap-1.5 border border-slate-300 text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-semibold px-3 py-1.5 rounded-md transition-colors"
+                          >
+                            <FileDown className="h-3.5 w-3.5" />
+                            Exportar
+                          </button>
+                          {pdfModalAberto && (
+                            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onClick={() => !gerandoPDF && setPdfModalAberto(false)}>
+                              <div role="dialog" aria-modal="true" aria-labelledby="selecionar-setores-pdf" className="w-full max-w-lg overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl" onClick={e => e.stopPropagation()}>
+                                <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-4 py-3">
+                                  <h2 id="selecionar-setores-pdf" className="text-sm font-bold text-slate-900">Exportar comissões</h2>
+                                  <button type="button" disabled={gerandoPDF} onClick={() => setPdfModalAberto(false)} className="rounded p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-700 disabled:opacity-40" aria-label="Fechar">
+                                    <X className="h-4 w-4" />
+                                  </button>
+                                </div>
+                                <div className="space-y-3 p-4">
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <span className="text-xs font-semibold text-slate-600">Setores fechados</span>
+                                    <div className="flex items-center gap-3">
+                                      <button type="button" disabled={gerandoPDF || setoresFechadosParaPdf.length === 0} onClick={() => setPdfSetoresSelecionados(setoresFechadosParaPdf.map(s => s.key))} className="text-[11px] font-semibold text-blue-600 hover:underline disabled:opacity-40">Selecionar todos</button>
+                                      <button type="button" disabled={gerandoPDF || pdfSetoresSelecionados.length === 0} onClick={() => setPdfSetoresSelecionados([])} className="text-[11px] font-semibold text-slate-500 hover:text-red-600 disabled:opacity-40">Limpar</button>
+                                    </div>
+                                  </div>
+                                  <div className="max-h-72 divide-y divide-slate-100 overflow-y-auto rounded-md border border-slate-200">
+                                    {carregandoStatusPdf ? (
+                                      <p className="px-3 py-4 text-xs text-slate-400">Carregando setores fechados...</p>
+                                    ) : setoresFechadosParaPdf.length === 0 ? (
+                                      <p className="px-3 py-4 text-xs text-slate-400">Nenhum setor fechado disponível.</p>
+                                    ) : setoresFechadosParaPdf.map(opcao => (
+                                      <label key={opcao.key} className="flex cursor-pointer items-center gap-2.5 px-3 py-2.5 text-xs text-slate-700 hover:bg-slate-50">
+                                        <input
+                                          type="checkbox"
+                                          checked={pdfSetoresSelecionados.includes(opcao.key)}
+                                          disabled={gerandoPDF}
+                                          onChange={() => setPdfSetoresSelecionados(prev => prev.includes(opcao.key) ? prev.filter(k => k !== opcao.key) : [...prev, opcao.key])}
+                                          className="h-3.5 w-3.5"
+                                        />
+                                        <span>{opcao.empresaNome} — {opcao.nomeSetor}</span>
+                                      </label>
+                                    ))}
+                                  </div>
+                                </div>
+                                <div className="flex items-center justify-end gap-2 border-t border-slate-100 bg-slate-50 p-3">
+                                  <button type="button" disabled={gerandoPDF} onClick={() => setPdfModalAberto(false)} className="rounded-md px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-200 disabled:opacity-40">Cancelar</button>
+                                  <button type="button" onClick={handleSalvarPDF} disabled={gerandoPDF || pdfSetoresSelecionados.length === 0 || carregandoStatusPdf} className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40">
+                                    {gerandoPDF ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileDown className="h-3.5 w-3.5" />}
+                                    Salvar PDF
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </>
                       )}
                       {podeExcluir && (lote ? lote.status === 'RASCUNHO' : salvo) && (
                         <button
                           onClick={handleExcluirHistorico}
-                          disabled={!filtroEmpresa || !departamentoUnicoSelecionado || processandoAcao === 'excluir' || departamentoSomenteVisualizacao}
-                          title={departamentoSomenteVisualizacao ? 'Este departamento está liberado só pra visualização — peça pra alguém com edição fazer isso.' : "Só pode excluir enquanto o período estiver em Rascunho"}
+                          disabled={!filtroEmpresa || !setorUnicoSelecionado || processandoAcao === 'excluir' || setorSomenteVisualizacao}
+                          title={setorSomenteVisualizacao ? 'Este setor está liberado só pra visualização — peça pra alguém com edição fazer isso.' : "Só pode excluir enquanto o período estiver em Rascunho"}
                           className="flex items-center gap-1.5 border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-40 text-xs font-semibold px-3 py-1.5 rounded-md transition-colors ml-auto"
                         >
                           {processandoAcao === 'excluir' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
@@ -2018,14 +2032,14 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
                     <tr>
                       <td colSpan="8" className="p-6 text-center text-slate-400">{filtroEmpresa ? 'Nenhum funcionário para os filtros aplicados.' : 'Selecione uma Empresa para listar os funcionários.'}</td>
                     </tr>
-                  ) : gruposPorCargo.map(grupoDepto => (
-                    <React.Fragment key={grupoDepto.nomeDepartamento}>
+                  ) : gruposPorCargo.map(grupoSetor => (
+                    <React.Fragment key={grupoSetor.nomeSetor}>
                       <tr className="bg-indigo-100">
                         <td colSpan="8" className="px-3 py-2 font-bold text-indigo-900 text-[11px] uppercase tracking-wide">
-                          {grupoDepto.nomeDepartamento}
+                          {grupoSetor.nomeSetor}
                         </td>
                       </tr>
-                      {grupoDepto.cargos.map(grupo => (
+                      {grupoSetor.cargos.map(grupo => (
                         <React.Fragment key={grupo.nomeCargo}>
                           <tr className="bg-slate-100">
                             <td colSpan="8" className="px-3 py-1.5 pl-6 font-bold text-slate-700 text-[11px] uppercase tracking-wide">
@@ -2057,6 +2071,7 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
                             const totalFunc = mostrarSubtotal
                               ? linhasMesmoFunc.reduce((acc, x) => acc + (valoresPorFuncionario[chaveLinha(x)]?.valorComissao || 0), 0)
                               : null
+                            const detalhesEmpresa = (detalhePorEmpresa[chaveLinha(c)] || []).filter(d => !detalheEmpresaSemValor(d))
                             return (
                               <React.Fragment key={chaveLinha(c)}>
                                 <tr className="hover:bg-slate-50/70 transition-colors">
@@ -2085,14 +2100,14 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
                                   </td>
                                   <td className="px-3 py-1.5 whitespace-nowrap">
                                     {c.politica.descricao_comissao || c.politica.nivel_calculo}
-                                    {c.politica.usa_faixa === 'SIM' && c.politica.regra_comissao?.id && (
+                                    {c.politica.usa_faixa === 'SIM' && c.politica.regra_comissao?.id ? (
                                       <button type="button"
                                         onClick={() => setRegraModal({
                                           nome: c.politica.regra_comissao.nome, baseNome: c.base?.nome,
                                           faixas: faixasDaRegra(c.politica, c.politica.regra_comissao.tipo_faixa === 'VALOR_FIXO_META' ? res?.valorFixo : res?.percentual),
                                           porMeta: c.politica.regra_comissao.tipo_faixa !== 'VALOR',
                                           tipoFaixa: c.politica.regra_comissao.tipo_faixa,
-                                          metaTipoLabel: TIPOS_META_LABEL[c.politica.regra_comissao.meta_tipo] || c.politica.regra_comissao.meta_tipo,
+                                          metaTipoLabel: (TIPOS_META_LABEL[c.politica.regra_comissao.meta_tipo] || c.politica.regra_comissao.meta_tipo) + (CAMPO_META_LABEL[c.politica.regra_comissao.meta_campo] || '') + (c.politica.regra_comissao.meta_equipe_agrupamento_ids?.length > 0 ? ' (soma da equipe)' : ''),
                                           semMeta: res?.semMeta, meta: res?.meta, percentualAtingido: res?.percentualAtingido,
                                           valorApurado: res?.valorApurado ?? res?.valorBase, baseComissao: res?.valorApurado != null ? res?.valorBase : null,
                                           valorBruto: res?.valorBruto, descontoPct: res?.descontoPct,
@@ -2102,15 +2117,20 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
                                         className="ml-1.5 align-middle inline-flex items-center justify-center w-5 h-5 rounded border border-indigo-200 bg-white text-indigo-600 hover:bg-indigo-50 transition-colors">
                                         <Calculator className="h-3 w-3" />
                                       </button>
-                                    )}
-                                    {!(c.politica.usa_faixa === 'SIM' && c.politica.regra_comissao?.id) && res?.valorPorColuna?.length > 0 && (
+                                    ) : (
                                       <button type="button"
                                         onClick={() => setColunaModal({
                                           baseNome: c.base?.nome,
-                                          colunas: res.valorPorColuna,
-                                          total: res.valorBase,
+                                          colunas: res?.valorPorColuna || [],
+                                          total: res?.valorBase,
+                                          fmtTotal: (v) => fmtValorBase(c, v),
+                                          percentual: res?.percentual,
+                                          valorFixo: res?.valorFixo,
+                                          valorComissao: res?.valorComissao,
+                                          periodoInicio: res?.periodoInicio || c.segInicio,
+                                          periodoFim: res?.periodoFim || c.segFim,
                                         })}
-                                        title="Ver Venda/Devolução separadas desta Base"
+                                        title="Ver a base de cálculo desta comissão"
                                         className="ml-1.5 align-middle inline-flex items-center justify-center w-5 h-5 rounded border border-blue-200 bg-white text-blue-600 hover:bg-blue-50 transition-colors">
                                         <Calculator className="h-3 w-3" />
                                       </button>
@@ -2123,16 +2143,24 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
                                     )}
                                     {(c.politica?.codigo_rubrica || c.politica?.tipo_processo) && (
                                       <div className="text-[10px] font-normal text-slate-400 mt-0.5">
-                                        {c.politica?.codigo_rubrica && <>Rubrica <span className="font-mono text-slate-500">{c.politica.codigo_rubrica}</span></>}
+                                        {c.politica?.codigo_rubrica && (
+                                          <>Rubrica <span className="font-mono text-slate-500">{c.politica.codigo_rubrica}</span>
+                                            {rubricasPorCodigo[c.politica.codigo_rubrica]?.descricao && <> — {rubricasPorCodigo[c.politica.codigo_rubrica].descricao}</>}
+                                          </>
+                                        )}
                                         {c.politica?.codigo_rubrica && c.politica?.tipo_processo && <span className="mx-1">·</span>}
-                                        {c.politica?.tipo_processo && <>Tipo <span className="font-mono text-slate-500">{c.politica.tipo_processo}</span></>}
+                                        {c.politica?.tipo_processo && (
+                                          <>Tipo <span className="font-mono text-slate-500">{c.politica.tipo_processo}</span>
+                                            {tiposProcessoPorCodigo[c.politica.tipo_processo]?.descricao && <> — {tiposProcessoPorCodigo[c.politica.tipo_processo].descricao}</>}
+                                          </>
+                                        )}
                                       </div>
                                     )}
                                     {/* Detalhamento por empresa (Nível EMPRESA + checkbox marcado na Política) —
                                         uma linha por empresa, abaixo da descrição, pra auditar de onde veio o total. */}
-                                    {c.politica.detalhar_por_empresa && detalhePorEmpresa[chaveLinha(c)] && (
+                                    {c.politica.detalhar_por_empresa && detalhesEmpresa.length > 0 && (
                                       <div className="mt-1 space-y-0.5">
-                                        {detalhePorEmpresa[chaveLinha(c)].map(d => (
+                                        {detalhesEmpresa.map(d => (
                                           <div key={d.empresa} className="text-[10px] font-normal text-slate-400">
                                             {d.empresa}: Base <span className="text-slate-500">{fmtValorBase(c, d.valorBase)}</span>
                                             <span className="text-slate-300"> → </span>
@@ -2302,7 +2330,7 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
           <div className="bg-white rounded-lg border border-slate-200 w-full max-w-[380px] shadow-xl overflow-hidden" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50">
               <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                <Calculator className="h-4 w-4 text-blue-600" /> Venda / Devolução
+                <Calculator className="h-4 w-4 text-blue-600" /> Base de Cálculo
               </h3>
               <button onClick={() => setColunaModal(null)} className="text-slate-400 hover:text-slate-600"><X className="h-4 w-4" /></button>
             </div>
@@ -2310,18 +2338,47 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
               {colunaModal.baseNome && (
                 <div className="text-[11px] text-slate-500">Base de Cálculo: <span className="font-semibold text-slate-700">{colunaModal.baseNome}</span></div>
               )}
-              <div className="rounded-md border border-slate-200 divide-y divide-slate-100">
-                {colunaModal.colunas.map((col, i) => (
-                  <div key={i} className="flex items-center justify-between px-3 py-2 text-xs">
-                    <span className="font-mono text-slate-600">{col.coluna}</span>
-                    <span className="font-mono font-semibold text-slate-700">{fmtBRL(col.valor)}</span>
+              {colunaModal.periodoInicio && colunaModal.periodoFim && (
+                <div className="text-[11px] text-slate-500">Período: <span className="font-semibold text-slate-700">{fmtDiaMes(colunaModal.periodoInicio)} a {fmtDiaMes(colunaModal.periodoFim)}</span></div>
+              )}
+              {colunaModal.total == null ? (
+                <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 text-amber-700 text-[11px] leading-relaxed">
+                  <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" /> Ainda não foi calculado neste período.
+                </div>
+              ) : (
+                <>
+                  {colunaModal.colunas.length > 0 && (
+                    <div className="rounded-md border border-slate-200 divide-y divide-slate-100">
+                      {colunaModal.colunas.map((col, i) => (
+                        <div key={i} className="flex items-center justify-between px-3 py-2 text-xs">
+                          <span className="font-mono text-slate-600">{col.coluna}</span>
+                          <span className="font-mono font-semibold text-slate-700">{(colunaModal.fmtTotal || fmtBRL)(col.valor)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between px-3 py-2 rounded-md bg-blue-50 border border-blue-200 text-xs font-bold">
+                    <span className="text-slate-700">Total (Base de Cálculo)</span>
+                    <span className="font-mono text-blue-700">{(colunaModal.fmtTotal || fmtBRL)(colunaModal.total)}</span>
                   </div>
-                ))}
-              </div>
-              <div className="flex items-center justify-between px-3 py-2 rounded-md bg-blue-50 border border-blue-200 text-xs font-bold">
-                <span className="text-slate-700">Total (Base de Cálculo)</span>
-                <span className="font-mono text-blue-700">{fmtBRL(colunaModal.total)}</span>
-              </div>
+                  {colunaModal.percentual != null && (
+                    <div className="flex items-center justify-between px-3 py-2 text-xs">
+                      <span className="text-slate-500">% Aplicado</span>
+                      <span className="font-mono font-semibold text-slate-700">{fmtPct(colunaModal.percentual)}</span>
+                    </div>
+                  )}
+                  {colunaModal.valorFixo != null && (
+                    <div className="flex items-center justify-between px-3 py-2 text-xs">
+                      <span className="text-slate-500">R$ Valor</span>
+                      <span className="font-mono font-semibold text-slate-700">{fmtBRL(colunaModal.valorFixo)}</span>
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between px-3 py-2 rounded-md bg-emerald-50 border border-emerald-200 text-xs font-bold">
+                    <span className="text-slate-700">Valor da Comissão</span>
+                    <span className="font-mono text-emerald-700">{fmtBRL(colunaModal.valorComissao)}</span>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>
