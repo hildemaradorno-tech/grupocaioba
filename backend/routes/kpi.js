@@ -4,7 +4,7 @@ import { getFiltroBoxOficina } from '../services/boxFuncionarios.js'
 import { isConfigured } from '../services/graphClient.js'
 import {
   getResultados, getBloco1, getBloco2,
-  getBloco3PosVenda, getBloco3Pecas, getBacklog,
+  getBacklog,
   invalidateCache, SHEET_NAMES,
 } from '../services/sharepointKpi.js'
 import {

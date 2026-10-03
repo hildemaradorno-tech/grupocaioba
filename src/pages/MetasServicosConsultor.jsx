@@ -1,6 +1,6 @@
 ﻿import React, { useEffect, useState, useMemo } from 'react'
 import { useSessionState } from '../hooks/useSessionState'
-import { Plus, Trash2, X, AlertTriangle, ChevronRight, ChevronDown, Cog, Loader2, CheckCircle2, Sparkles, Pencil, Info, Search, Copy } from 'lucide-react'
+import { Trash2, X, AlertTriangle, ChevronRight, ChevronDown, Loader2, Sparkles, Pencil, Info, Search, Copy } from 'lucide-react'
 import BotaoAcaoRetratil from '../components/BotaoAcaoRetratil'
 import SeletorMeses, { CssMesesOcultos } from '../components/SeletorMeses'
 import { useAuth } from '../context/AuthContext'
@@ -104,9 +104,8 @@ export default function MetasServicosConsultor({ empresaExterna = null, anoExter
   const [mecRows,       setMecRows]       = useState([]) // linhas brutas de fato_rascunho_metas_servicos_mecanico
   const [totaisTer,     setTotaisTer]     = useState({}) // { empresaId: { mes: servicos } }
   const [totaisFun,     setTotaisFun]     = useState({}) // { empresaId: { mes: { servicos, pecas } } }
-  const [filtroVisuSalvo, setFiltroVisuSalvo] = useSessionState('mpvs_servicos_visu', 'total')
+  const [filtroVisuSalvo] = useSessionState('mpvs_servicos_visu', 'total')
   const filtroVisu    = filtroVisuExterno ?? filtroVisuSalvo
-  const setFiltroVisu = setFiltroVisuExterno ?? setFiltroVisuSalvo
   const [loading,       setLoading]       = useState(false)
   const [error,         setError]         = useState(null)
   const [filtroEmpresaSalva, setFiltroEmpresaSalva] = useSessionState('mpvs_servicos_empresas', [])
@@ -159,9 +158,8 @@ export default function MetasServicosConsultor({ empresaExterna = null, anoExter
   const loadDados = async () => {
     setLoading(true); setError(null)
     try {
-      const [rows, todasEmpresas, terRows, funRows, mecRowsAll] = await Promise.all([
+      const [rows, terRows, funRows, mecRowsAll] = await Promise.all([
         apiService.getMetasConsultor(empresaParam(filtroEmpresa), filtroAno),
-        apiService.getEmpresas(),
         apiService.getMetasTerceiros(empresaParam(filtroEmpresa), filtroAno),
         apiService.getMetasFunilaria(empresaParam(filtroEmpresa), filtroAno),
         apiService.getMetasMecanico(empresaParam(filtroEmpresa), filtroAno),
@@ -428,7 +426,6 @@ export default function MetasServicosConsultor({ empresaExterna = null, anoExter
     setModalAberto(true)
   }
 
-  const abrirEditar     = (empId, colabId) => _abrirModalConsultor(empId, colabId, 'editar')
   const abrirVisualizar = (empId, colabId) => _abrirModalConsultor(empId, colabId, 'visualizar')
 
   const isFunSetorModal = (form.setor_nome||'').toLowerCase().includes('funilaria') || (form.setor_nome||'').toLowerCase().includes('pintura')
@@ -471,7 +468,6 @@ export default function MetasServicosConsultor({ empresaExterna = null, anoExter
     return { pecas, servicos, total: pecas + servicos }
   }
 
-  const calcMetaConsultor = (mes, percentual) => calcMetaConsultorDetalhe(mes, percentual).total
 
   // Soma % já cadastrada para o mesmo Setor+Empresa no mês (excluindo o consultor atual) — roteia
   // cada linha pelo setor atual do box gravado nela (linhas antigas), pra não deixar escapar

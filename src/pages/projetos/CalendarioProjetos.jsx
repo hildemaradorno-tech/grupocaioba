@@ -20,7 +20,7 @@ function tarefaPassaFiltroData(t, ini, fim, tipo) {
   return true
 }
 import { useNavigate, useLocation } from 'react-router-dom'
-import { ArrowLeft, ChevronLeft, ChevronRight, CalendarDays, RotateCcw, List, FileDown, FolderOpen, Users, CheckCircle2, PlayCircle, X, Filter, Activity, CheckCircle, AlertTriangle, Layers, BarChart2, Eye, PartyPopper } from 'lucide-react'
+import { ChevronLeft, ChevronRight, CalendarDays, FileDown, FolderOpen, Users, CheckCircle2, PlayCircle, X, Activity, CheckCircle, AlertTriangle, Layers, BarChart2, Eye, PartyPopper } from 'lucide-react'
 import ProjetosNav from './ProjetosNav'
 import jsPDF from 'jspdf'
 import html2canvas from 'html2canvas'
@@ -100,7 +100,7 @@ const addDaysLocal = (d, n) => { const dt = new Date(d); dt.setDate(dt.getDate()
 export default function CalendarioProjetos({ abaInicial = 'lista' }) {
   const navigate = useNavigate()
   const location = useLocation()
-  const { isAdmin, empresasPermitidas, departamentosPermitidosEfetivos, projetosDeptoModoEfetivo, hasActionOrDefault, hasPermission, user } = useAuth()
+  const { isAdmin, empresasPermitidas, departamentosPermitidosEfetivos, hasActionOrDefault, hasPermission, user } = useAuth()
   const ctx = useProjetosFiltros()
   const { modoVerTodos, setModoVerTodos } = ctx
   const canVerTodos       = !isAdmin && hasActionOrDefault('projetos', 'ver_todos_projetos')
@@ -119,28 +119,20 @@ export default function CalendarioProjetos({ abaInicial = 'lista' }) {
   const [projetos, setProjetos] = useState(getProjetosCache() ?? [])
   const [loading, setLoading]   = useState(getProjetosCache() === null)
   const [tooltip, setTooltip]   = useState(null) // { tarefa, x, y }
-  const [filtroResponsavel,        setFiltroResponsavel]        = useState('')
-  const [filtroResponsavelProjeto, setFiltroResponsavelProjeto] = useState('')
-  const [filtroDepartamento,       setFiltroDepartamento]       = useState('')
+  const [filtroResponsavel]        = useState('')
+  const [filtroResponsavelProjeto] = useState('')
+  const [filtroDepartamento]       = useState('')
   const filtroDataIni      = ctx.filtroDataIni
-  const setFiltroDataIni   = ctx.setFiltroDataIni
   const filtroDataFim      = ctx.filtroDataFim
-  const setFiltroDataFim   = ctx.setFiltroDataFim
-  const filtroDataTipo     = ctx.filtroDataTipo
-  const setFiltroDataTipo  = ctx.setFiltroDataTipo
   const filtroDataProjIni  = ctx.filtroDataProjIni
   const filtroDataProjFim  = ctx.filtroDataProjFim
-  const filtroStatusLista   = ctx.filtroStatusTarefa
-  const setFiltroStatusLista   = ctx.setFiltroStatusTarefa
-  const filtroStatusProjeto = ctx.filtroStatusProjeto
-  const setFiltroStatusProjeto = ctx.setFiltroStatusProjeto
-  const [visualizacaoLista,  setVisualizacaoLista]   = useState('data') // 'data' | 'projeto' | 'responsavel'
+  const [visualizacaoLista]   = useState('data') // 'data' | 'projeto' | 'responsavel'
   const [filtroStatusCard, setFiltroStatusCard] = useState(new Set(['mapeado', 'programado', 'em_andamento', 'pausado']))
   const [gerandoPDF, setGerandoPDF] = useState(false)
   const [googleConnected, setGoogleConnected] = useState(false)
   const [googleEmail, setGoogleEmail]         = useState(null)
   const [googleEvents, setGoogleEvents]       = useState([])
-  const [loadingGoogle, setLoadingGoogle]     = useState(false)
+  const [, setLoadingGoogle]     = useState(false)
   const [modalEditarTarefa, setModalEditarTarefa] = useState(null)
   const [modalConcluir, setModalConcluir] = useState(null) // { tarefa, dataFim }
   const [modalConcluirProjeto, setModalConcluirProjeto] = useState(null) // projeto object
@@ -304,19 +296,6 @@ export default function CalendarioProjetos({ abaInicial = 'lista' }) {
     )
   }, [projetosGlobal, ctx.filtroRespTarefa, filtroDataProjIni, filtroDataProjFim])
 
-  // Listas únicas ordenadas para os filtros
-  const responsaveis = useMemo(() =>
-    [...new Set(tarefas.map(t => t.responsavel_nome).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR')),
-    [tarefas]
-  )
-  const responsaveisProjeto = useMemo(() =>
-    [...new Set(tarefas.map(t => t.projeto_responsavel_nome).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR')),
-    [tarefas]
-  )
-  const departamentos = useMemo(() =>
-    [...new Set(tarefas.map(t => t.departamento_nome).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR')),
-    [tarefas]
-  )
 
   // Tarefas após aplicar os filtros de responsável e departamento
   const tarefasFiltradas = useMemo(() =>

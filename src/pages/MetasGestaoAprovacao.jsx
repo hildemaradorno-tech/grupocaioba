@@ -1,20 +1,13 @@
 ﻿import React, { useEffect, useState, useMemo, useCallback } from 'react'
 import { useSessionState } from '../hooks/useSessionState'
-import { useNavigate } from 'react-router-dom'
-import {
-  ClipboardCheck, AlertTriangle, CheckCircle2, Loader2, Sparkles, Pencil,
-  ArrowRight, RefreshCw, Building2, ChevronDown, ChevronRight,
-  Package, Wrench, TrendingUp,
-  BarChart3, Cog, Eye, XCircle, Info, Ban,
-} from 'lucide-react'
-import { useAuth } from '../context/AuthContext'
+
+import { ClipboardCheck, AlertTriangle, CheckCircle2, Loader2, Package, Wrench, TrendingUp, BarChart3, Cog, XCircle, Ban } from 'lucide-react'
 import { apiService } from '../services/api'
 import MetasPosVendaTotal from './MetasPosVendaTotal'
 import { EmpresaMultiFilter, empresasDasMetas } from '../components/EmpresaMultiFilter'
 
 const anoAtual = new Date().getFullYear()
 const ANOS = Array.from({ length: 7 }, (_, i) => anoAtual - 1 + i)
-const MESES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
 
 const fmtBRL = (v) => {
   const n = Number(v)
@@ -25,7 +18,6 @@ const fmtDate = (iso) => {
   if (!iso) return '—'
   return new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
 }
-const sumArr = (a) => a.reduce((s, v) => s + v, 0)
 
 const TIPOS = [
   { key: 'pecas',     grupo: 'pecas',    contabilizaTotal: true,  label: 'Peças',              labelCurto: 'Peças',     icon: Package,    color: 'blue',   nav: '/metas/pos-vendas/pecas' },
@@ -33,13 +25,6 @@ const TIPOS = [
   { key: 'mecanico',  grupo: 'servicos', contabilizaTotal: false, label: 'Serviços Mecânico',  labelCurto: 'Mecânico',  icon: Wrench,     color: 'indigo', nav: '/metas/pos-vendas/servicos_pecas/mecanico' },
 ]
 
-const COLORS = {
-  blue:   { bg: 'bg-blue-50',   border: 'border-blue-200',   text: 'text-blue-700',   hdr: 'bg-blue-600',   badge: 'bg-blue-100 text-blue-700',   btn: 'bg-blue-600 hover:bg-blue-700 text-white' },
-  indigo: { bg: 'bg-indigo-50', border: 'border-indigo-200', text: 'text-indigo-700', hdr: 'bg-indigo-600', badge: 'bg-indigo-100 text-indigo-700', btn: 'bg-indigo-600 hover:bg-indigo-700 text-white' },
-  violet: { bg: 'bg-violet-50', border: 'border-violet-200', text: 'text-violet-700', hdr: 'bg-violet-600', badge: 'bg-violet-100 text-violet-700', btn: 'bg-violet-600 hover:bg-violet-700 text-white' },
-  orange: { bg: 'bg-orange-50', border: 'border-orange-200', text: 'text-orange-700', hdr: 'bg-orange-500', badge: 'bg-orange-100 text-orange-700', btn: 'bg-orange-600 hover:bg-orange-700 text-white' },
-  teal:   { bg: 'bg-teal-50',   border: 'border-teal-200',   text: 'text-teal-700',   hdr: 'bg-teal-600',   badge: 'bg-teal-100 text-teal-700',   btn: 'bg-teal-600 hover:bg-teal-700 text-white' },
-}
 
 function isPendente(r) {
   const cur = Number(r.meta_faturamento) || 0
@@ -48,23 +33,8 @@ function isPendente(r) {
   return Math.abs(cur - Number(r.meta_aprovada)) > 0.001
 }
 
-// Agrupa dados de um tipo por empresa → { [empId]: { nome, rows, pendentes } }
-function agruparPorEmpresa(rows) {
-  const m = {}
-  rows.forEach(r => {
-    if (!m[r.empresa_id]) m[r.empresa_id] = { nome: r.empresa_nome, rows: [], pendentes: 0, total: 0, totalPendente: 0 }
-    m[r.empresa_id].rows.push(r)
-    m[r.empresa_id].total += Number(r.meta_faturamento) || 0
-    if (isPendente(r)) { m[r.empresa_id].pendentes++; m[r.empresa_id].totalPendente += Number(r.meta_faturamento) || 0 }
-  })
-  return m
-}
 
 export default function MetasGestaoAprovacao() {
-  const navigate = useNavigate()
-  const { hasActionOrDefault } = useAuth()
-  const canEdit = hasActionOrDefault('metas/gestao-aprovacao', 'editar')
-  const canDelete = hasActionOrDefault('metas/gestao-aprovacao', 'excluir')
 
   const [filtroAno, setFiltroAno] = useSessionState('mga_ano', anoAtual)
   // Mesma seleção de empresas das demais telas de Metas.
@@ -85,19 +55,15 @@ export default function MetasGestaoAprovacao() {
   // Última publicação
   const [ultimaPublicacao, setUltimaPublicacao] = useState(null)
 
-  const [aprovando,      setAprovando]      = useState(null) // 'empId|tipo'
-  const [naoAprovando,   setNaoAprovando]   = useState(null) // 'empId|tipo'
+  const [, setAprovando]      = useState(null) // 'empId|tipo'
+  const [, setNaoAprovando]   = useState(null) // 'empId|tipo'
   const [modalNaoAprovar, setModalNaoAprovar] = useState(null)
   const [modalConf,    setModalConf]    = useState(null)
 
   const [abaSalva,      setAbaAtiva]      = useSessionState('mga_aba', 'posvendas')
   // Aba salva que não existe mais (Novos / Usados foram unificadas em Vendas) volta para Pós-Vendas.
   const abaAtiva = ['posvendas', 'vendas', 'geral'].includes(abaSalva) ? abaSalva : 'posvendas'
-  const [expandedEmps,  setExpandedEmps]  = useState(new Set())
-  const [expandedTipos, setExpandedTipos] = useState(new Set())
 
-  const togEmp  = (id) => setExpandedEmps(p  => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n })
-  const togTipo = (id) => setExpandedTipos(p => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n })
 
   const load = useCallback(async () => {
     setLoading(true); setError(null)
@@ -135,70 +101,16 @@ export default function MetasGestaoAprovacao() {
 
   const tudo_aprovado = kpi.totalPendItems === 0 && kpi.totalRegistros > 0
 
-  // ── Estrutura por empresa (para fila de aprovação) ─────────────────────
-  // Traz todos os valores do ano (pendentes e já aprovados); cada linha sabe se está pendente.
-  const empresasComPendencia = useMemo(() => {
-    const empMap = {}
-    TIPOS.forEach(t => {
-      const grupos = agruparPorEmpresa(resumo[t.key])
-      Object.entries(grupos).forEach(([empId, info]) => {
-        if (!empMap[empId]) empMap[empId] = { id: empId, nome: info.nome, tipos: {} }
-        empMap[empId].tipos[t.key] = info
-      })
-    })
-    return Object.values(empMap).sort((a, b) => a.nome.localeCompare(b.nome))
-  }, [resumo])
 
-  // ── Estrutura por empresa para visão geral ────────────────────────────
-  const empresasResumo = useMemo(() => {
-    const empMap = {}
-    TIPOS.forEach(t => {
-      resumo[t.key].forEach(r => {
-        if (!empMap[r.empresa_id]) empMap[r.empresa_id] = { id: r.empresa_id, nome: r.empresa_nome, tipos: {} }
-        if (!empMap[r.empresa_id].tipos[t.key]) empMap[r.empresa_id].tipos[t.key] = { meses: {}, total: 0, pendentes: 0 }
-        const mes = empMap[r.empresa_id].tipos[t.key].meses
-        mes[r.mes] = (mes[r.mes] || 0) + (Number(r.meta_faturamento) || 0)
-        empMap[r.empresa_id].tipos[t.key].total += Number(r.meta_faturamento) || 0
-        if (isPendente(r)) empMap[r.empresa_id].tipos[t.key].pendentes++
-      })
-    })
-    return Object.values(empMap).sort((a, b) => a.nome.localeCompare(b.nome))
-  }, [resumo])
 
-  // ── Filtragem por aba ──────────────────────────────────────────────────
-  const tiposAba = useMemo(() =>
-    (abaAtiva === 'geral' || abaAtiva === 'posvendas') ? TIPOS : TIPOS.filter(t => t.grupo === abaAtiva),
-    [abaAtiva]
-  )
 
-  const empresasAba = useMemo(() =>
-    empresasComPendencia.filter(emp => tiposAba.some(t => emp.tipos[t.key])),
-    [empresasComPendencia, tiposAba]
-  )
 
-  const empresasResumoAba = useMemo(() => {
-    if (abaAtiva === 'geral' || abaAtiva === 'posvendas') return empresasResumo
-    return empresasResumo
-      .map(emp => ({
-        ...emp,
-        tipos: Object.fromEntries(tiposAba.map(t => [t.key, emp.tipos[t.key]]).filter(([, v]) => v != null))
-      }))
-      .filter(emp => Object.keys(emp.tipos).length > 0)
-  }, [empresasResumo, tiposAba, abaAtiva])
 
-  const pendAba = useMemo(() =>
-    tiposAba.reduce((s, t) => s + (resumo[t.key] || []).filter(isPendente).length, 0),
-    [tiposAba, resumo]
-  )
 
-  // ── Aprovação ─────────────────────────────────────────────────────────
-  const confirmarAprovacao = (empId, empNome, tipo, count, totalR$) => {
-    setModalConf({ empId, empNome, tipo, count, totalR$ })
-  }
 
   const handleAprovar = async () => {
     if (!modalConf) return
-    const { empId, empNome, tipo, ano } = modalConf
+    const { empId, tipo } = modalConf
     const chave = `${empId}|${tipo}`
     setAprovando(chave); setModalConf(null)
     try {
@@ -218,10 +130,6 @@ export default function MetasGestaoAprovacao() {
     finally { setAprovando(null) }
   }
 
-  // ── Pendênciar — reverte meta_aprovada para null ─────────────────────
-  const confirmarNaoAprovacao = (empId, empNome, tipo, count, totalR$) => {
-    setModalNaoAprovar({ empId, empNome, tipo, count, totalR$ })
-  }
 
   const handleNaoAprovar = async () => {
     if (!modalNaoAprovar) return
@@ -242,10 +150,6 @@ export default function MetasGestaoAprovacao() {
     finally { setNaoAprovando(null) }
   }
 
-  // ── Render helpers ────────────────────────────────────────────────────
-  const AprovandoSpinner = ({ chave }) => aprovando === chave
-    ? <Loader2 size={12} className="animate-spin" />
-    : <CheckCircle2 size={12} />
 
   return (
     <div className="flex flex-col h-full bg-slate-50">

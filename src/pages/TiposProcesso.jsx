@@ -22,7 +22,6 @@ export default function TiposProcesso() {
 
   const { hasActionOrDefault } = useAuth()
   const canEdit = hasActionOrDefault('tipos-processo', 'editar')
-  const canDelete = hasActionOrDefault('tipos-processo', 'excluir')
 
   useEffect(() => { loadData() }, [])
 

@@ -1,10 +1,10 @@
 ﻿import React, { useEffect, useState, useMemo, useCallback } from 'react'
 import { useSessionState } from '../hooks/useSessionState'
-import { Plus, Trash2, X, AlertTriangle, ChevronRight, ChevronDown, Wrench, Loader2, CheckCircle2, Sparkles, Pencil, Edit2, Eye, ArrowRight, Search } from 'lucide-react'
+import { Trash2, X, AlertTriangle, ChevronRight, ChevronDown, Loader2, Sparkles, Pencil, Edit2, Search } from 'lucide-react'
 import BotaoAcaoRetratil from '../components/BotaoAcaoRetratil'
 import SeletorMeses, { CssMesesOcultos } from '../components/SeletorMeses'
 import { useAuth } from '../context/AuthContext'
-import PermissionActionButtons from '../components/PermissionActionButtons'
+
 import { SearchCombobox } from '../components/SearchCombobox'
 import { EmpresaMultiFilter, empresaParam, filtrarPorEmpresas, empresaUnica } from '../components/EmpresaMultiFilter'
 import { valoresMetaMecanico, resolverPosicaoMecanico } from '../utils/metasMecanico'
@@ -39,11 +39,6 @@ const STATUS_CLS     = { 'AGUARDANDO': 'bg-amber-100 text-amber-700', 'DISTRIBUI
 const STATUS_DISPLAY = { 'AGUARDANDO': 'Aguard. Distribuição',       'DISTRIBUIDO': 'Valor Distribuído' }
 
 function cellState(cur, apr) { const c = Number(cur) || 0; if (c === 0) return 'ok'; if (apr === null || apr === undefined) return 'new'; if (Math.abs(c - Number(apr)) > 0.001) return 'changed'; return 'ok' }
-function pendingCountEmp(emp) {
-  let n = 0
-  Object.values(emp.depts).forEach(d => Object.values(d.setores).forEach(st => Object.values(st.boxes).forEach(bx => Object.values(bx.colabs).forEach(co => Object.values(co.meses).forEach(m => { if (cellState(m.meta_faturamento, m.meta_aprovada) !== 'ok') n++ })))))
-  return n
-}
 
 function aggColabs(cm, f='meta_faturamento') { const a = Array(12).fill(0); Object.values(cm).forEach(c => Object.entries(c.meses).forEach(([m, d]) => { a[+m-1] += Number(d[f])||0 })); return a }
 function aggBox(bx, f)    { const a = Array(12).fill(0); Object.values(bx.colabs).forEach(c => aggColabs({x:c},f).forEach((v,i)=>{a[i]+=v})); return a }
@@ -138,9 +133,8 @@ export default function MetasServicosMecanico({ empresaExterna = null, anoExtern
   const [filtroSetor,    setFiltroSetor]    = useSessionState('msm_setor', '')
   const [filtroBox,      setFiltroBox]      = useSessionState('msm_box', '')
   const [mesesSel,       setMesesSel]       = useSessionState('mpvs_servicos_meses', [])
-  const [filtroVisuSalvo, setFiltroVisuSalvo] = useSessionState('mpvs_servicos_visu', 'total')
+  const [filtroVisuSalvo] = useSessionState('mpvs_servicos_visu', 'total')
   const filtroVisu    = filtroVisuExterno ?? filtroVisuSalvo
-  const setFiltroVisu = setFiltroVisuExterno ?? setFiltroVisuSalvo
 
   const [grupoAberto,        setGrupoAberto]        = useState(true)
   const [expandedEmpresas,   setExpandedEmpresas]   = useState(new Set())
@@ -157,7 +151,7 @@ export default function MetasServicosMecanico({ empresaExterna = null, anoExtern
   const [colabExcluir,       setColabExcluir]       = useState(null)
   const [salvando,           setSalvando]           = useState(false)
   const [erroModal,          setErroModal]          = useState(null)
-  const [diasUteisMes,       setDiasUteisMes]       = useState({})
+  const [, setDiasUteisMes]       = useState({})
   const [copyProdOpen,       setCopyProdOpen]       = useState(false)
   const [copyProdSel,        setCopyProdSel]        = useState(new Set(Array.from({length:12},(_,i)=>i)))
   const [copyProdVal,        setCopyProdVal]        = useState('')
@@ -267,7 +261,7 @@ export default function MetasServicosMecanico({ empresaExterna = null, anoExtern
     dadosFiltrados.forEach(row => {
       const eid   = row.empresa_id
       const colid = row.colaborador_id
-      const { cId, bId, sId, did, dNome, sNome, bNome, coNome } = resolverPosicao(row)
+      const { bId, sId, did, dNome, sNome, bNome, coNome } = resolverPosicao(row)
 
       if (!t[eid]) t[eid] = { nome: row.empresa_nome || eid, depts: {} }
       const depts = t[eid].depts
@@ -319,27 +313,6 @@ export default function MetasServicosMecanico({ empresaExterna = null, anoExtern
 
   const setoresDoDepto = useMemo(() => setores.filter(s => s.departamento_id === form.departamento_id && s.tipo_setor === 'manutencao_reparo'), [setores, form.departamento_id])
   const boxesDoSetor   = useMemo(() => boxes.filter(b => (Array.isArray(b.setor_ids) ? b.setor_ids : [b.setor_id]).includes(form.setor_id)), [boxes, form.setor_id])
-  const setoresManutencao = useMemo(() => new Set(setores.filter(s => s.tipo_setor === 'manutencao_reparo').map(s => s.id)), [setores])
-  const cargosDoDepto  = useMemo(() => {
-    let lista = !form.departamento_id ? cargos : cargos.filter(c => (c.departamento_ids||[]).includes(form.departamento_id))
-    lista = lista.filter(c => (c.setores_rel||[]).some(r => setoresManutencao.has(r.setor_id)))
-    if (form.setor_id) {
-      lista = lista.filter(c =>
-        (c.setor_ids||[]).includes(form.setor_id) ||
-        (c.setores_rel||[]).some(r => r.setor_id === form.setor_id)
-      )
-    }
-    if (form.box_id) {
-      const box = boxes.find(b => b.id === form.box_id)
-      if (box?.setor_ids?.length) {
-        lista = lista.filter(c =>
-          (c.setor_ids||[]).some(sid => box.setor_ids.includes(sid)) ||
-          (c.setores_rel||[]).some(r => box.setor_ids.includes(r.setor_id))
-        )
-      }
-    }
-    return lista
-  }, [cargos, form.departamento_id, form.setor_id, form.box_id, setoresManutencao, boxes])
 
   // Todos os funcionários ativos da empresa selecionada, de qualquer departamento/setor/box/cargo.
   const funcsEmp = useMemo(() =>

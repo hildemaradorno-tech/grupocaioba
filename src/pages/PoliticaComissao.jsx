@@ -2,7 +2,7 @@
 import { useLocation, useNavigate } from 'react-router-dom'
 import { createPortal } from 'react-dom'
 import { useSessionState } from '../hooks/useSessionState'
-import { Plus, X, AlertTriangle, BadgePercent, Eye, Edit2, Trash2, Settings, ArrowUp, ArrowDown, ArrowUpDown, SlidersHorizontal, ChevronDown, ChevronRight, Copy, Loader2, Info, Search } from 'lucide-react'
+import { Plus, X, AlertTriangle, BadgePercent, Eye, Edit2, Trash2, Settings, ArrowUp, ArrowDown, ArrowUpDown, ChevronDown, Copy, Loader2, Info, Search } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { apiService } from '../services/api'
 import { buscaComCoringa } from '../utils/buscaTexto'
@@ -308,7 +308,7 @@ export default function PoliticaComissao() {
   const [modalExcluirAberto, setModalExcluirAberto] = useState(false)
   const [modalVisualizarAberto, setModalVisualizarAberto] = useState(false)
   const [editingId, setEditingId] = useSessionState('polcom_editid', null)
-  const [idExcluir, setIdExcluir] = useState(null)
+  const [, setIdExcluir] = useState(null)
   const [itemVisualizado, setItemVisualizado] = useState(null)
   const [salvando, setSalvando] = useState(false)
   const [form, setForm] = useSessionState('polcom_form', FORM_VAZIO)
@@ -317,7 +317,6 @@ export default function PoliticaComissao() {
   const [itensOriginais, setItensOriginais] = useState(new Map())
   const { hasActionOrDefault } = useAuth()
   const canEdit = hasActionOrDefault('politica-comissao', 'editar')
-  const canDelete = hasActionOrDefault('politica-comissao', 'excluir')
   const location = useLocation()
   const navigate = useNavigate()
 

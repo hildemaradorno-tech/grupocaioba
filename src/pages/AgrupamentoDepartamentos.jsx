@@ -23,7 +23,6 @@ export default function AgrupamentoDepartamentos() {
   const [form, setForm] = useSessionState('agrup_dep_form', { nome_agrupamento: '', area: '', ativo: true })
   const { hasActionOrDefault } = useAuth()
   const canEdit = hasActionOrDefault('agrup-departamentos', 'editar')
-  const canDelete = hasActionOrDefault('agrup-departamentos', 'excluir')
   const [salvando, setSalvando] = useState(false)
 
   useEffect(() => { loadData() }, [])

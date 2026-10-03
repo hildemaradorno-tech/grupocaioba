@@ -27,7 +27,6 @@ export default function Setores() {
   const [itemVisualizado, setItemVisualizado] = useState(null)
   const { hasActionOrDefault } = useAuth()
   const canEdit = hasActionOrDefault('setores', 'editar')
-  const canDelete = hasActionOrDefault('setores', 'excluir')
   const abrirVisualizar = (item) => { setItemVisualizado(item); setModalVisualizarAberto(true) }
 
   useEffect(() => { loadData() }, [])

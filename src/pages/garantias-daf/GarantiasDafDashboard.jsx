@@ -1,12 +1,7 @@
 ﻿import React, { useEffect, useState, useCallback, useMemo } from 'react'
 import { useSessionState } from '../../hooks/useSessionState'
 import { useNavigate } from 'react-router-dom'
-import {
-  Search, Edit2, Trash2, ShieldAlert, FileText,
-  Activity, Clock, AlertTriangle, Filter, RotateCcw, Download, RefreshCw,
-  Bell, ChevronDown, ChevronUp, CheckCircle, XCircle, Send, BarChart2,
-  CheckSquare, Square, Loader2, Info, Eye, X,
-} from 'lucide-react'
+import { Search, Edit2, Trash2, ShieldAlert, FileText, Activity, Clock, AlertTriangle, Filter, RotateCcw, Download, RefreshCw, CheckCircle, XCircle, BarChart2, CheckSquare, Square, Loader2, Info, Eye } from 'lucide-react'
 import { apiService } from '../../services/api'
 import { useAuth } from '../../context/AuthContext'
 import GarantiasNav from './GarantiasNav'
@@ -51,10 +46,6 @@ function getStatusDisplay(item) {
 }
 
 const fmt = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-const diffDias = (a, b) => {
-  if (!a || !b) return null
-  return Math.max(0, Math.round((new Date(b) - new Date(a)) / 86400000))
-}
 
 const FILTROS_VAZIOS = { numero_os: '', chassi: '', data_inicio: '', data_fim: '', data_fechamento_inicio: '', data_fechamento_fim: '' }
 
@@ -101,7 +92,6 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
   const [sortDir, setSortDir] = useSessionState(`${pfx}_sort_dir`, 'asc')
   const [sortColAnd, setSortColAnd] = useSessionState(`${pfx}_and_sort_col`, 'os_numero')
   const [sortDirAnd, setSortDirAnd] = useSessionState(`${pfx}_and_sort_dir`, 'asc')
-  const [alertaAberto, setAlertaAberto] = useState(true)
   const [modalExcluir, setModalExcluir] = useState(false)
   const [importandoPend, setImportandoPend] = useState(false)
   const [progressoImportPend, setProgressoImportPend] = useState(null) // { atual, total }
@@ -239,21 +229,7 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
     return spSet.has(key)
   }
 
-  // Mapa OS → id Supabase (para botão editar na view andamento)
-  const supabaseIdByOS = useMemo(
-    () => new Map(dadosTodos.map(d => [String(d.numero_os).trim(), d.id])),
-    [dadosTodos]
-  )
 
-  // Mapa OS → empresa (nome fantasia) vinda do Supabase — fonte confiável para filtro
-  const osEmpresaMap = useMemo(() => {
-    const m = new Map()
-    for (const d of dadosTodos) {
-      const os = String(d.numero_os || '').trim()
-      if (os) m.set(os, empresaNome(d))
-    }
-    return m
-  }, [dadosTodos, empresaNome])
 
   // Pré-computa _empresa direto do SharePoint, sem cruzamento com Supabase
   const spRowsEnriquecidos = useMemo(() => spRows.map(r => ({
@@ -561,8 +537,6 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
     setStatusFiltro('')
   }
 
-  // ── Cálculos ─────────────────────────────────────────
-  const STATUSES_FINAIS = ['FA', 'FR', 'Z']
   const STATUS_ANDAMENTO_GRUPO = ['B','C','E','G','M','N','P','Q','R','S','T','U','V','W','X','Y']
   const hoje = new Date()
 
@@ -582,7 +556,6 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
   const grpAnd15     = grpAndamento.filter(g => diasParado(g) >= 14)
   const grpAprovada  = dadosBase.filter(g => g.status_codigo === 'FA')
   const grpRecusas   = dadosBase.filter(g => ['FR','Z'].includes(g.status_codigo))
-  const grpNfEnviar  = dadosBase.filter(g => g.status_codigo === 'E')
 
   const sumValor = (arr) => arr.reduce((s, g) => s + Number(g.valor_pecas||0) + Number(g.valor_servicos||0), 0)
 
@@ -595,12 +568,6 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
     return Math.round(arr.reduce((s, g) => s + diasParado(g), 0) / arr.length)
   }
 
-  // Notificações
-  const processosAtivos  = dadosBase.filter(g => !STATUSES_FINAIS.includes(g.status_codigo))
-  const alertasCriticos  = processosAtivos.filter(g => diasParado(g) >= 30).sort((a, b) => diasParado(b) - diasParado(a))
-  const alertasAlerta    = processosAtivos.filter(g => diasParado(g) >= 21 && diasParado(g) < 30).sort((a, b) => diasParado(b) - diasParado(a))
-  const alertasAtencao   = processosAtivos.filter(g => diasParado(g) >= 14 && diasParado(g) <= 20).sort((a, b) => diasParado(b) - diasParado(a))
-  const totalAlertas = alertasCriticos.length + alertasAlerta.length + alertasAtencao.length
 
   const statusesPresentes = Object.keys(STATUS_MAP).filter(k => dadosBase.some(g => g.status_codigo === k))
 

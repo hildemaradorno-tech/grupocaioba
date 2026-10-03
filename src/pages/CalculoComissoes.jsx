@@ -1,28 +1,23 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useSessionState } from '../hooks/useSessionState'
-import { PlayCircle, Loader2, AlertTriangle, Save, X, ShieldCheck, Lock, ArrowUp, ArrowDown, ArrowUpDown, Trash2, ChevronDown, ChevronRight, ChevronLeft, FileDown, Calculator, Wallet, RefreshCw, CheckCircle2 } from 'lucide-react'
+import { PlayCircle, Loader2, AlertTriangle, Save, X, ShieldCheck, Lock, ArrowUp, ArrowDown, ArrowUpDown, Trash2, ChevronRight, ChevronLeft, FileDown, Calculator, Wallet, RefreshCw, CheckCircle2 } from 'lucide-react'
 import { apiService } from '../services/api'
 import { useAuth } from '../context/AuthContext'
 import { passaEscopoComissao, setorSoVisualizacao } from '../utils/permissoesComissao'
 import { FeriasStatusProvider, useFeriasStatus } from '../context/FeriasStatusContext'
+import { fmtBRL, fmtPct, fmtDiaMes, TIPOS_META_LABEL, CAMPO_META_LABEL, faixasDaRegra, ROTULO_ACAO_HISTORICO } from '../utils/comissoesFormat'
+import { gerarPdfComissoes, paraNomeArquivo } from '../utils/comissoesPdf'
+import { funcionarioAtivoComissao, resolvePoliticas, fonteDaPolitica, politicaConfigurada } from '../utils/comissoesElegibilidade'
 
 // Sentinela pra funcionário sem setor algum (setor_ids vazio) — sem isso não tem como
 // selecionar essa "aba" na tela pra conferir/excluir o histórico desse grupo.
 const SEM_SETOR = 'Sem setor'
 
-const ROTULO_ACAO_HISTORICO = {
-  CRIADO: 'Cálculo realizado',
-  CONFERIDO: 'Conferido',
-  CONFERIDO_DP: 'Conferido pelo DP',
-  PROCESSADO: 'Processado p/ pagamento',
-  REPROCESSAMENTO_AUTORIZADO: 'Reprocessamento autorizado',
-  REPROCESSAMENTO_SALVO: 'Correção salva — conferência do DP reaberta',
-}
 
 // Botão "Atualizar Férias"/"Férias Atualizadas" no cabeçalho — esta tela publica o status em
 // FeriasStatusContext (mesmo padrão de KpiSourceStatusContext) e mostra aqui, já que virou
-// página própria (antes ficava no título compartilhado de FolhaPagamentoDaf.jsx).
+// página própria.
 function BotaoStatusFerias() {
   const navigate = useNavigate()
   const { status } = useFeriasStatus()
@@ -51,37 +46,18 @@ function BotaoStatusFerias() {
   return null
 }
 
-const SEL = 'text-xs p-2 border border-slate-200 rounded-md bg-white font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 w-auto min-w-[160px]'
-const INP = 'w-full text-xs p-2 border border-slate-200 rounded-md font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500'
 const LBL = 'text-[11px] font-bold text-slate-500 uppercase tracking-wide'
 
-const fmtBRL = (v) => v == null ? '-' : v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const fmtData = (v) => v ? String(v).split('-').reverse().join('/') : ''
 const soDigitos = (v) => String(v || '').replace(/\D/g, '')
-const fmtPct = (v) => v == null ? '-' : `${parseFloat(v).toFixed(2)}%`
 const mesmoMes = (a, b) => a && b && a.slice(0, 7) === b.slice(0, 7)
 const juntaUnicos = (arr) => [...new Set(arr.filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'))
-
-// Mesma lógica de match funcionário -> política já usada em Funcionarios.jsx: cargo +
-// agrupamento de empresa, com fallback só pro cargo se não achar por agrupamento. Retorna
-// TODAS as políticas que baterem (não só a primeira) — um cargo pode ter uma política pra
-// Peças e outra pra Serviços, cada uma com sua própria Fonte/Base, e os valores se somam.
-function resolvePoliticas(funcionario, politicas, empresasMap) {
-  if (!funcionario.cargo_id) return []
-  const agrupId = empresasMap[funcionario.empresa_id]?.agrupamento_empresa_id || null
-  const porAgrupamento = agrupId
-    ? politicas.filter(p => p.cargo_id === funcionario.cargo_id && p.agrupamento_empresa_id === agrupId && p.ativo !== false)
-    : []
-  if (porAgrupamento.length > 0) return porAgrupamento
-  return politicas.filter(p => p.cargo_id === funcionario.cargo_id && p.ativo !== false)
-}
 
 // Chave única de uma linha (funcionário + política + segmento de apuração) — um funcionário
 // pode ter várias linhas: uma por Política do cargo dele E uma por segmento de datas quando as
 // férias quebram o período em pedaços (quem não recebe comissão de férias).
 const chaveLinha = (c) => `${c.func.id}::${c.politica.id}::${c.segInicio || ''}::${c.segFim || ''}`
 
-const fmtDiaMes = (iso) => iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : ''
 
 const addDias = (iso, n) => {
   const [y, m, d] = iso.split('-').map(Number)
@@ -112,6 +88,7 @@ function subtraiFerias(inicio, fim, feriasList) {
 // "R$"; bases de horas aparecem como HR; as demais (SOMA em R$, ex: faturamento) como moeda.
 const baseEmContagem = (c) => c.base?.tipo_agregacao === 'CONTAGEM'
 const baseEmHoras = (c) => /hora/.test((c.base?.nome || '').toLowerCase())
+
 const fmtValorBase = (c, v) => {
   if (v == null) return '-'
   if (baseEmContagem(c)) return v.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
@@ -122,26 +99,6 @@ const detalheEmpresaSemValor = (d) =>
   Math.round(Math.abs(Number(d.valorBase) || 0) * 100) === 0 &&
   Math.round(Math.abs(Number(d.valorComissao) || 0) * 100) === 0
 
-// Faixas da Regra da política (na ordem cadastrada), marcando a que foi aplicada (mesmo percentual
-// calculado da linha) — usado na tela e no PDF pra mostrar a regra completa.
-// Mesmos "tipo" gravados em fato_metas_publicadas pelas telas de Planejamento de Metas — usados
-// pela Regra por % de Meta Atingida (ver RegrasFaixas.jsx, onde a Meta de Referência é escolhida).
-const TIPOS_META_LABEL = { pecas: 'Peças', mecanico: 'Serviços — Mecânico', consultor: 'Serviços — Consultor', funilaria: 'Funilaria/Pintura', terceiros: 'Terceiros' }
-const CAMPO_META_LABEL = { pecas: ' · só Peças', servicos: ' · só Serviços' }
-
-const faixasDaRegra = (politica, valorAplicado) => {
-  if (politica?.usa_faixa !== 'SIM') return []
-  const tipoFaixa = politica.regra_comissao?.tipo_faixa
-  const porMeta = tipoFaixa !== 'VALOR'
-  const fixo = tipoFaixa === 'VALOR_FIXO_META'
-  return [...(politica.regra_comissao?.faixas || [])]
-    .sort((a, b) => a.ordem - b.ordem)
-    .map(f => ({
-      texto: `${f.operador} ${porMeta ? `${parseFloat(f.valor).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}% da meta` : fmtBRL(parseFloat(f.valor))}`,
-      percentual: fixo ? fmtBRL(parseFloat(f.percentual)) : `${parseFloat(f.percentual).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 })}%`,
-      aplicada: valorAplicado != null && parseFloat(f.percentual) === parseFloat(valorAplicado),
-    }))
-}
 
 // Regras distintas (por id) usadas pelas políticas das linhas de um grupo — mostradas uma vez
 // antes dos funcionários, em vez de repetir a regra inteira em cada consultor.
@@ -240,8 +197,7 @@ const tipoComissaoPorBase = (c) => {
 // duas). Chaves de sessão (período) ganham sufixo quando não é o padrão, pra cada aba guardar seu
 // próprio período sem um sobrescrever o outro no localStorage.
 function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo = 'Comissões - DAF' } = {}) {
-  const navigate = useNavigate()
-  const { user, hasAction, hasPermission, comissaoEscopoEfetivo, comissaoNivelSetorEfetivo } = useAuth()
+  const { user, hasAction, comissaoEscopoEfetivo, comissaoNivelSetorEfetivo } = useAuth()
   const podeCalcular = hasAction('calculo-comissoes', 'calcular')
   const podeSalvar = hasAction('calculo-comissoes', 'salvar')
   const podeConferir = hasAction('calculo-comissoes', 'conferir')
@@ -343,6 +299,7 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
     return dados.setores.find(s => s.nome_setor === setorUnicoSelecionado) || null
   }, [setorUnicoSelecionado, dados])
   const setorSelecionadoId = setorSelecionadoObj?.id || null
+  const departamentoDoSetorSelecionadoId = setorSelecionadoObj?.departamento_id || null
 
   // Nível de acesso extra por Setor (Grupos de Acesso → Acesso à Cálculo de Comissões).
   const setorSomenteVisualizacao = setorSoVisualizacao(setorSelecionadoId, comissaoNivelSetorEfetivo)
@@ -618,12 +575,7 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
     // e situação vazia, "1 - Trabalhando" ou "9 - Férias" (exclui Demitido e qualquer outro
     // Afastado — doença etc). Quem está de férias sempre aparece na tabela — `recebe_comissao_ferias`
     // só decide se os dias de férias são descontados do período calculado, não se ele some da lista.
-    const SITUACAO_FERIAS = '9'
-    const funcionariosAtivos = funcionarios.filter(f => {
-      if (f.data_demissao) return false
-      if (!f.situacao_funcionario || f.situacao_funcionario === '1' || f.situacao_funcionario === SITUACAO_FERIAS) return true
-      return false
-    })
+    const funcionariosAtivos = funcionarios.filter(funcionarioAtivoComissao)
     const empresasMap = Object.fromEntries(empresas.map(e => [e.id, e]))
     const cargosMap = Object.fromEntries(cargos.map(c => [c.id, c]))
     const departamentosMap = Object.fromEntries(departamentos.map(d => [d.id, d]))
@@ -688,14 +640,9 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
 
         return politicasCandidatas
           .map(politica => {
-            const baseCalc = politica.base_calculo || null
-            // Base ligada a uma Fonte MicroWork (sem Fonte SharePoint): usa a fonte do relatório.
-            const fonteMw = baseCalc?.fonte_microwork || null
-            const fonte = politica.fonte_calculo || (fonteMw ? { ...fonteMw, _microwork: true } : null)
-            if (!fonte || !baseCalc) return null
-            if (!fonte._microwork && (!fonte.pasta_sharepoint || !fonte.prefixo_arquivo)) return null
-            if (!baseCalc.coluna_valor) return null
-            if (politica.nivel_calculo === 'INDIVIDUAL' && !fonte.coluna_funcionario) return null
+            if (!politicaConfigurada(politica)) return null
+            const baseCalc = politica.base_calculo
+            const fonte = fonteDaPolitica(politica)
 
             // "Comissão sobre todas as empresas" sobrepõe o Nível de Cálculo: soma TODAS as
             // empresas cadastradas, não só o Agrupamento do funcionário. Senão, nível EMPRESA
@@ -1407,7 +1354,7 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
         loteAtualizado = await apiService.salvarLoteRascunho({
           periodoInicio, periodoFim, empresaId: empresaSelecionadaId, empresaNome: filtroEmpresa,
           setorId: setorSelecionadoId, setorNome: setorUnicoSelecionado,
-          departamentoId: departamentoDoSetorSelecionadoId, departamentoNome: setorSelecionadoObj?.departamento_id ? dados?.departamentos.find(d => d.id === setorSelecionadoObj.departamento_id)?.nome_departamento : null,
+          departamentoId: departamentoDoSetorSelecionadoId, departamentoNome: departamentoDoSetorSelecionadoId ? dados?.departamentos.find(d => d.id === departamentoDoSetorSelecionadoId)?.nome_departamento : null,
           qtdFuncionarios: registrosSemLote.length, valorTotal: valorTotalLote, usuario: usuarioLabel,
         })
       }
@@ -1454,200 +1401,74 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
     setGerandoPDF(true)
     setErro(null)
     try {
-      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
-        import('html2canvas'),
-        import('jspdf'),
-      ])
-
-      const MARGIN = 24
-      const WRAP_W = 1600
-      const pdf = new jsPDF({ unit: 'pt', format: 'a4', orientation: 'landscape' })
-      const CW = pdf.internal.pageSize.getWidth() - 2 * MARGIN
-
-      const periodoLabel = periodoInicio && periodoFim
-        ? `${periodoInicio.split('-').reverse().join('/')} a ${periodoFim.split('-').reverse().join('/')}`
-        : '—'
-
-      // Cabeçalho de tabela repetido em cada bloco de cargo — cada cargo vira um bloco
-      // independente (própria tabela com seu próprio thead), pra poder ser paginado sozinho
-      // sem depender do resto do setor.
-      const THEAD_HTML = `
-        <thead>
-          <tr style="background:#1e293b;color:#fff;text-transform:uppercase;font-size:11px;">
-            <th style="padding:7px 8px;text-align:left;">Funcionário</th>
-            <th style="padding:7px 8px;text-align:left;">Comissão</th>
-            <th style="padding:7px 8px;text-align:right;">Base Comissão</th>
-            <th style="padding:7px 8px;text-align:right;">% Serviços</th>
-            <th style="padding:7px 8px;text-align:right;">% Peças</th>
-            <th style="padding:7px 8px;text-align:right;">% Total</th>
-            <th style="padding:7px 8px;text-align:right;">R$ Valor</th>
-            <th style="padding:7px 8px;text-align:right;">Valor Comissão</th>
-          </tr>
-        </thead>`
-
-      // Empresa(s) do setor — quase sempre uma só; se houver mais de uma no mesmo setor, mostra
-      // todas separadas por vírgula.
-      const nomesEmpresaDoSetor = (grupoSetor) => [...new Set(
-        grupoSetor.cargos.flatMap(g => g.itens)
-          .map(c => c.empresa?.empresa_fantasia || c.empresa?.nome_empresa || c.empresaNome)
-          .filter(Boolean)
-      )].join(', ')
-
-      // Bloco de cabeçalho (empresa/setor/período) — repetido no topo de cada página nova que o
-      // setor precisar abrir, com um aviso de "continuação" pra deixar claro que é o mesmo setor
-      // continuando, não um novo.
-      const montarHtmlCabecalho = (grupoSetor, continuacao) => `
-        <div style="font-family:Arial,Helvetica,sans-serif;background:#fff;padding:20px 20px 0 20px;width:${WRAP_W}px;box-sizing:border-box;">
-          <div style="display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #1e293b;padding-bottom:12px;margin-bottom:16px;">
-            <div>
-              <div style="font-size:22px;font-weight:800;color:#0f172a;">Cálculo de Comissões</div>
-              <div style="font-size:15px;font-weight:700;color:#1e293b;margin-top:2px;">${nomesEmpresaDoSetor(grupoSetor)}</div>
-            </div>
-            <div style="text-align:right;font-size:13px;color:#475569;">
-              <div>Período: ${periodoLabel}</div>
-              <div>Gerado em: ${new Date().toLocaleString('pt-BR')}</div>
-            </div>
-          </div>
-          <div style="font-size:14px;font-weight:700;color:#334155;margin-bottom:8px;">${grupoSetor.nomeSetor}${continuacao ? ' <span style="font-weight:400;font-style:italic;color:#94a3b8;">(continuação)</span>' : ''}</div>
-        </div>`
-
-      // Um bloco por Cargo — tabela própria e independente, pra poder cair numa página nova
-      // sem quebrar uma linha de funcionário ao meio (a quebra sempre acontece ENTRE cargos).
-      const montarHtmlBlocoCargo = (grupo) => {
-        const linhasEmpresas = grupo.empresas.map((empresaGrupo, idxEmpresa) => {
-          const linhasFunc = empresaGrupo.itens.map(c => {
-            const res = valoresPorFuncionario[chaveLinha(c)]
-            const linhasMesmoFunc = empresaGrupo.itens.filter(x => x.func.id === c.func.id)
-            const ehPrimeiraLinhaDoFunc = linhasMesmoFunc[0] === c
-            const ehUltimaLinhaDoFunc = linhasMesmoFunc[linhasMesmoFunc.length - 1] === c
-            // Subtotal em TODO funcionário, mesmo com uma linha só — facilita a conferência do RH.
-            const mostrarSubtotal = ehUltimaLinhaDoFunc
-            const totalFunc = mostrarSubtotal
-              ? linhasMesmoFunc.reduce((acc, x) => acc + (valoresPorFuncionario[chaveLinha(x)]?.valorComissao || 0), 0)
-              : null
-            const nomeComCodigo = c.func.codigo_funcionario ? `${c.func.codigo_funcionario} — ${c.func.nome_funcionario}` : c.func.nome_funcionario
-            const detalhesEmpresa = (detalhePorEmpresa[chaveLinha(c)] || []).filter(d => !detalheEmpresaSemValor(d))
-            const detalheEmpresasHtml = c.politica.detalhar_por_empresa && detalhesEmpresa.length > 0
-              ? detalhesEmpresa.map(d => `
-                  <div style="font-size:10px;font-weight:400;color:#94a3b8;margin-top:2px;">
-                    ${d.empresa}: Base <span style="color:#64748b;">${fmtValorBase(c, d.valorBase)}</span>
-                    <span style="color:#cbd5e1;"> &rarr; </span>
-                    Comissão <span style="color:#059669;font-weight:600;">${fmtBRL(d.valorComissao)}</span>
-                  </div>`).join('')
-              : ''
-            return `
-              <tr>
-                <td style="padding:6px 8px;font-weight:700;border-bottom:1px solid #e2e8f0;white-space:nowrap;">${ehPrimeiraLinhaDoFunc ? nomeComCodigo : ''}</td>
-                <td style="padding:6px 8px;border-bottom:1px solid #e2e8f0;">${c.politica.descricao_comissao || c.politica.nivel_calculo || ''}${tipoComissaoPorBase(c) ? ` <span style="font-style:italic;color:#94a3b8;">(${tipoComissaoPorBase(c)})</span>` : ''}${c.segInicio && c.segFim ? ` <span style="font-size:11px;font-weight:700;color:#2563eb;">${fmtDiaMes(res?.periodoInicio || c.segInicio)} a ${fmtDiaMes(res?.periodoFim || c.segFim)}</span>` : ''}${detalheEmpresasHtml}</td>
-                <td style="padding:6px 8px;text-align:right;border-bottom:1px solid #e2e8f0;">${res ? fmtValorBase(c, res.valorBase) : '—'}</td>
-                <td style="padding:6px 8px;text-align:right;border-bottom:1px solid #e2e8f0;">${fmtPct(c.politica.comissao_servicos)}</td>
-                <td style="padding:6px 8px;text-align:right;border-bottom:1px solid #e2e8f0;">${fmtPct(c.politica.comissao_pecas)}</td>
-                <td style="padding:6px 8px;text-align:right;border-bottom:1px solid #e2e8f0;">${fmtPct(c.politica.comissao_total)}</td>
-                <td style="padding:6px 8px;text-align:right;border-bottom:1px solid #e2e8f0;">${fmtBRL(c.politica.comissao_valor != null ? parseFloat(c.politica.comissao_valor) : null)}</td>
-                <td style="padding:6px 8px;text-align:right;font-weight:600;color:#1e293b;border-bottom:1px solid #e2e8f0;">${res ? (res.semMeta ? '<span style=\"color:#d97706;font-weight:600;\">Sem meta</span>' : fmtBRL(res.valorComissao)) : '—'}</td>
-              </tr>${mostrarSubtotal ? `
-              <tr style="background:#ecfdf5;">
-                <td colspan="7" style="padding:5px 8px;text-align:right;font-weight:700;color:#334155;">Total ${c.func.nome_funcionario}</td>
-                <td style="padding:5px 8px;text-align:right;font-weight:700;color:#047857;">${fmtBRL(totalFunc)}</td>
-              </tr>` : ''}`
-          }).join('')
-          return `
-            <tr><td colspan="8" style="padding:8px 8px 4px 20px;background:#f8fafc;font-weight:600;font-size:10px;text-transform:uppercase;color:#64748b;${idxEmpresa > 0 ? 'border-top:2px dashed #94a3b8;' : ''}">${empresaGrupo.nomeEmpresa}</td></tr>
-            ${linhasFunc}`
-        }).join('')
-        const codigoCargo = grupo.itens[0]?.cargo?.codigo_cargo
-        const nomeCargoComCodigo = codigoCargo ? `${grupo.nomeCargo} (${codigoCargo})` : grupo.nomeCargo
-        return `
-          <div style="font-family:Arial,Helvetica,sans-serif;background:#fff;padding:0 20px;width:${WRAP_W}px;box-sizing:border-box;">
-            <table style="width:100%;border-collapse:collapse;font-size:13px;">
-              ${THEAD_HTML}
-              <tbody>
-                <tr><td colspan="8" style="padding:5px 8px;background:#f1f5f9;font-weight:700;font-size:12px;text-transform:uppercase;color:#334155;">${nomeCargoComCodigo}</td></tr>
-                ${regrasDoGrupo(grupo.itens).map(r => `<tr><td colspan="8" style="padding:5px 8px 5px 20px;background:#eef2ff;font-size:11px;"><div style="font-weight:700;color:#4338ca;">Regra: ${r.nome}</div>${r.faixas.map(f => `<div style="font-family:monospace;color:#475569;">${f.texto} → ${f.percentual}</div>`).join('')}</td></tr>`).join('')}
-                ${linhasEmpresas}
-              </tbody>
-            </table>
-          </div>`
-      }
-
-      const montarHtmlRodape = (grupoSetor, totalSetor) => `
-        <div style="font-family:Arial,Helvetica,sans-serif;background:#fff;padding:0 20px 20px 20px;width:${WRAP_W}px;box-sizing:border-box;">
-          <table style="width:100%;border-collapse:collapse;font-size:13px;">
-            <tfoot>
-              <tr style="border-top:2px solid #1e293b;">
-                <td colspan="7" style="padding:10px 8px;text-align:right;font-weight:800;color:#0f172a;">Total ${grupoSetor.nomeSetor}</td>
-                <td style="padding:10px 8px;text-align:right;font-weight:800;color:#047857;">${fmtBRL(totalSetor)}</td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>`
-
-      const renderBloco = async (html) => {
-        const wrap = document.createElement('div')
-        wrap.style.cssText = `position:fixed;top:0;left:-9999px;width:${WRAP_W}px;background:#fff;z-index:-1;`
-        wrap.innerHTML = html
-        document.body.appendChild(wrap)
-        try {
-          return await html2canvas(wrap, { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff', width: WRAP_W })
-        } finally {
-          document.body.removeChild(wrap)
+      const valorDe = (c) => valoresPorFuncionario[chaveLinha(c)]?.valorComissao || 0
+      // Monta os dados já formatados pro PDF padrão de comissões (utils/comissoesPdf.js).
+      const setores = gruposParaPDF.map(grupoSetor => {
+        const itensSetor = grupoSetor.cargos.flatMap(g => g.itens)
+        return {
+          // Empresa(s) do setor — quase sempre uma só; se houver mais de uma no mesmo setor,
+          // mostra todas separadas por vírgula.
+          empresasLabel: [...new Set(itensSetor
+            .map(c => c.empresa?.empresa_fantasia || c.empresa?.nome_empresa || c.empresaNome)
+            .filter(Boolean))].join(', '),
+          nomeSetor: grupoSetor.nomeSetor,
+          total: itensSetor.reduce((acc, c) => acc + valorDe(c), 0),
+          cargos: grupoSetor.cargos.map(grupo => {
+            const codigoCargo = grupo.itens[0]?.cargo?.codigo_cargo
+            return {
+              titulo: codigoCargo ? `${grupo.nomeCargo} (${codigoCargo})` : grupo.nomeCargo,
+              regras: regrasDoGrupo(grupo.itens),
+              empresas: grupo.empresas.map(empresaGrupo => {
+                const porFuncionario = new Map()
+                for (const c of empresaGrupo.itens) {
+                  if (!porFuncionario.has(c.func.id)) porFuncionario.set(c.func.id, [])
+                  porFuncionario.get(c.func.id).push(c)
+                }
+                return {
+                  nomeEmpresa: empresaGrupo.nomeEmpresa,
+                  funcionarios: [...porFuncionario.values()].map(itens => {
+                    const f = itens[0].func
+                    return {
+                      nome: f.codigo_funcionario ? `${f.codigo_funcionario} — ${f.nome_funcionario}` : f.nome_funcionario,
+                      nomeCurto: f.nome_funcionario,
+                      total: itens.reduce((acc, c) => acc + valorDe(c), 0),
+                      linhas: itens.map(c => {
+                        const res = valoresPorFuncionario[chaveLinha(c)]
+                        return {
+                          comissao: c.politica.descricao_comissao || c.politica.nivel_calculo || '',
+                          tipo: tipoComissaoPorBase(c),
+                          periodo: c.segInicio && c.segFim ? `${fmtDiaMes(res?.periodoInicio || c.segInicio)} a ${fmtDiaMes(res?.periodoFim || c.segFim)}` : '',
+                          detalhes: c.politica.detalhar_por_empresa
+                            ? (detalhePorEmpresa[chaveLinha(c)] || []).filter(d => !detalheEmpresaSemValor(d))
+                              .map(d => ({ empresa: d.empresa, base: fmtValorBase(c, d.valorBase), comissao: fmtBRL(d.valorComissao) }))
+                            : [],
+                          base: res ? fmtValorBase(c, res.valorBase) : '—',
+                          pctServicos: fmtPct(c.politica.comissao_servicos),
+                          pctPecas: fmtPct(c.politica.comissao_pecas),
+                          pctTotal: fmtPct(c.politica.comissao_total),
+                          valorFixo: fmtBRL(c.politica.comissao_valor != null ? parseFloat(c.politica.comissao_valor) : null),
+                          valorComissao: res ? fmtBRL(res.valorComissao) : '—',
+                          semMeta: !!res?.semMeta,
+                        }
+                      }),
+                    }
+                  }),
+                }
+              }),
+            }
+          }),
         }
-      }
+      })
 
-      // Empacota os blocos (cabeçalho / cada cargo / rodapé) nas páginas — quando um cargo não
-      // cabe mais no espaço restante da página atual, abre página nova (repetindo o cabeçalho
-      // do setor com "(continuação)") em vez de espremer tudo numa imagem só. A quebra sempre
-      // acontece ENTRE cargos, nunca no meio de um.
-      const GAP = 6
-      const pageBottom = pdf.internal.pageSize.getHeight() - MARGIN
-      let primeiraPaginaGeral = true
-      const iniciarPagina = () => {
-        if (!primeiraPaginaGeral) pdf.addPage()
-        primeiraPaginaGeral = false
-        return MARGIN
-      }
-      const colocarCanvas = (canvas, y) => {
-        const h = (canvas.height / canvas.width) * CW
-        pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', MARGIN, y, CW, h)
-        return h
-      }
-
-      for (const grupoSetor of gruposParaPDF) {
-        const totalSetor = grupoSetor.cargos.flatMap(g => g.itens)
-          .reduce((acc, c) => acc + (valoresPorFuncionario[chaveLinha(c)]?.valorComissao || 0), 0)
-
-        let y = iniciarPagina()
-        y += colocarCanvas(await renderBloco(montarHtmlCabecalho(grupoSetor, false)), y) + GAP
-
-        for (const grupo of grupoSetor.cargos) {
-          const cargoCanvas = await renderBloco(montarHtmlBlocoCargo(grupo))
-          const cargoH = (cargoCanvas.height / cargoCanvas.width) * CW
-          if (y + cargoH > pageBottom) {
-            y = iniciarPagina()
-            y += colocarCanvas(await renderBloco(montarHtmlCabecalho(grupoSetor, true)), y) + GAP
-          }
-          y += colocarCanvas(cargoCanvas, y) + GAP
-        }
-
-        const footerCanvas = await renderBloco(montarHtmlRodape(grupoSetor, totalSetor))
-        const footerH = (footerCanvas.height / footerCanvas.width) * CW
-        if (y + footerH > pageBottom) y = iniciarPagina()
-        colocarCanvas(footerCanvas, y)
-      }
-
-      // Nome do arquivo sem acento/espaço/caractere especial (evita problema de download em
-      // alguns navegadores/SOs) — inclui empresa e setor(es) pra identificar o PDF sem precisar
-      // abrir, já que agora dá pra gerar um por vez ou vários juntos.
-      const paraNomeArquivo = (s) => (s || '')
-        .normalize('NFD').replace(/[̀-ͯ]/g, '')
-        .replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+      // Nome do arquivo inclui empresa e setor(es) pra identificar o PDF sem precisar abrir, já
+      // que dá pra gerar um por vez ou vários juntos.
       const nomeSetorArquivo = opcoesSelecionadas.length === 1
         ? `${opcoesSelecionadas[0].empresaNome}_${opcoesSelecionadas[0].nomeSetor}`
         : `Setores_${opcoesSelecionadas.length}`
       const nomeArquivo = filtroEmpresa
         ? ['Comissoes', periodoInicio, periodoFim, filtroEmpresa, nomeSetorArquivo].filter(Boolean).map(paraNomeArquivo).join('_')
         : ['Comissoes', periodoInicio, periodoFim, 'Todas_Empresas', nomeSetorArquivo].filter(Boolean).map(paraNomeArquivo).join('_')
-      pdf.save(`${nomeArquivo}.pdf`)
+      await gerarPdfComissoes({ setores, periodoInicio, periodoFim, nomeArquivo })
       setPdfModalAberto(false)
     } catch (err) {
       console.error('Erro ao gerar PDF:', err)

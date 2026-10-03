@@ -141,7 +141,6 @@ export default function Cargos() {
 
   const { hasActionOrDefault } = useAuth()
   const canEdit = hasActionOrDefault('cargos', 'editar')
-  const canDelete = hasActionOrDefault('cargos', 'excluir')
   const abrirVisualizar = (item) => { setItemVisualizado(item); setModalVisualizarAberto(true) }
 
   const [sincronizando, setSincronizando] = useState(false)

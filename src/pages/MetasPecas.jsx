@@ -1,10 +1,10 @@
 ﻿import React, { useEffect, useState, useMemo, useCallback } from 'react'
 import { useSessionState } from '../hooks/useSessionState'
-import { Plus, Trash2, Edit2, X, AlertTriangle, ChevronRight, ChevronDown, Target, Loader2, CheckCircle2, Sparkles, Pencil, Eye, Search, Copy } from 'lucide-react'
+import { Plus, Trash2, Edit2, X, AlertTriangle, ChevronRight, ChevronDown, Loader2, Sparkles, Pencil, Search, Copy } from 'lucide-react'
 import BotaoAcaoRetratil from '../components/BotaoAcaoRetratil'
 import SeletorMeses, { CssMesesOcultos } from '../components/SeletorMeses'
 import { useAuth } from '../context/AuthContext'
-import PermissionActionButtons from '../components/PermissionActionButtons'
+
 import { SearchCombobox } from '../components/SearchCombobox'
 import { agruparPorSegmento } from '../utils/segmentoMarca'
 import { LogoGrupo, LogoSegmento } from '../components/LogosMarca'
@@ -43,22 +43,6 @@ function cellState(meta_faturamento, meta_aprovada) {
   return 'ok'
 }
 
-// Conta células pendentes (new ou changed) em toda a sub-árvore de uma empresa
-function pendingCountEmp(emp) {
-  let n = 0
-  Object.values(emp.depts).forEach(d =>
-    Object.values(d.setores).forEach(st =>
-      Object.values(st.boxes).forEach(bx =>
-        Object.values(bx.colabs).forEach(co =>
-          Object.values(co.meses).forEach(m => {
-            if (cellState(m.meta_faturamento, m.meta_aprovada) !== 'ok') n++
-          })
-        )
-      )
-    )
-  )
-  return n
-}
 
 // Moeda contábil: R$ na frente, negativo entre parênteses, 2 casas (mesmo padrão das abas de Serviços).
 const fmtBRL = (v) => {
@@ -193,29 +177,6 @@ function DiasInput({ value, onChange }) {
   )
 }
 
-// Célula inline editável (Dias Úteis — 1 casa decimal)
-function CellInput({ rowId, field, value, align = 'right', onSave }) {
-  const [focused, setFocused] = useState(false)
-  const [raw, setRaw] = useState('')
-  useEffect(() => { if (!focused) setRaw('') }, [value, focused])
-
-  const displayed = focused ? raw : (value || value === 0 ? formatDias(value) : '')
-  const handleFocus = () => { setRaw(value != null ? String(value).replace('.', ',') : ''); setFocused(true) }
-  const handleBlur = () => { setFocused(false); onSave(rowId, field, parseFloat(String(raw).replace(',', '.')) || 0) }
-
-  return (
-    <input
-      type="text"
-      inputMode="decimal"
-      value={displayed}
-      onChange={e => setRaw(e.target.value)}
-      onFocus={handleFocus}
-      onBlur={handleBlur}
-      placeholder="0,0"
-      className={`w-full text-xs border-0 outline-none bg-transparent text-slate-800 ${align === 'right' ? 'text-right' : 'text-center'}`}
-    />
-  )
-}
 
 // Célula Meta R$ inline editável com máscara pt-BR + indicador de estado
 function MetaCellInput({ rowId, value, onSave, estado }) {
@@ -377,13 +338,11 @@ export default function MetasPecas({ empresaExterna = null, anoExterno = null, a
       const did   = row.departamento_id
       const sId   = row.setor_id   || row.setor_nome   || '—'
       const bId   = row.box_id     || row.box_nome     || '—'
-      const cId   = row.cargo_id   || row.cargo_nome   || '—'
       const colid = row.colaborador_id
 
       const dNome  = departamentos.find(d => d.id === did)?.nome_departamento   || row.departamento_nome || did
       const sNome  = setores.find(s => s.id === row.setor_id)?.nome_setor        || row.setor_nome        || '—'
       const bNome  = boxes.find(b => b.id === row.box_id)?.nome_box              || row.box_nome          || '—'
-      const cNome  = cargos.find(c => c.id === row.cargo_id)?.nome_cargo         || row.cargo_nome        || '—'
       const coNome = funcionarios.find(f => f.id === colid)?.nome_funcionario    || row.colaborador_nome  || colid
 
       if (!t[eid]) t[eid] = { nome: row.empresa_nome || eid, depts: {} }
@@ -415,7 +374,7 @@ export default function MetasPecas({ empresaExterna = null, anoExterno = null, a
 
   const expandirTudo = () => {
     setGrupoAberto(true)
-    const emps = new Set(), depts = new Set(), sets = new Set(), bxs = new Set(), cars = new Set()
+    const emps = new Set(), depts = new Set(), sets = new Set(), bxs = new Set()
     Object.entries(tree).forEach(([eid, emp]) => {
       emps.add(eid)
       Object.entries(emp.depts).forEach(([did, dept]) => {
@@ -563,7 +522,6 @@ export default function MetasPecas({ empresaExterna = null, anoExterno = null, a
   }
 
   const abrirVisualizar = (empId, colabId) => _abrirModal(empId, colabId, 'visualizar')
-  const abrirEditar     = (empId, colabId) => _abrirModal(empId, colabId, 'editar')
 
   const abrirIncluir = () => {
     setModoModal('incluir')

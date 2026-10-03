@@ -127,10 +127,6 @@ export const pesoSemana = (s, uid) => s.pesos?.[uid] ?? 0
 export const pesoTotal = (cfg, uid) => cfg.semanas.reduce((acc, s) => acc + pesoSemana(s, uid), 0)
 export const unidadeById = (id, cfg = CAMPANHA) => cfg.unidades.find((u) => u.id === id)
 
-export function criarLancamentos() {
-  return { pessoas: {}, unidades: {} }
-}
-
 export function faixa(at, cfg = CAMPANHA) {
   let paga = 0
   for (const f of cfg.faixas) if (at >= f.min) paga = f.paga

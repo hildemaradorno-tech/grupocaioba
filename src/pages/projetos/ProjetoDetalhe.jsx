@@ -18,13 +18,6 @@ const STATUS_MAP = {
   concluido:    { label: 'Concluído',    cor: 'bg-teal-700 text-white' },
 }
 
-const STATUS_COR = {
-  mapeado:      '#94a3b8',
-  programado:   '#3b82f6',
-  em_andamento: '#f59e0b',
-  pausado:      '#a855f7',
-  concluido:    '#0d9488',
-}
 
 
 const TASK_KPI_CFG = {
@@ -49,11 +42,6 @@ function CardKpi({ icon: Icon, label, count, ativo, onClick, st }) {
 }
 
 const fmtData = (d) => d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') : '—'
-const getTextColor = (hex) => {
-  const h = hex || '#1e293b'
-  const r = parseInt(h.slice(1,3),16), g = parseInt(h.slice(3,5),16), b = parseInt(h.slice(5,7),16)
-  return (0.299*r + 0.587*g + 0.114*b)/255 > 0.5 ? '#1e293b' : '#ffffff'
-}
 
 export default function ProjetoDetalhe() {
   const { id } = useParams()
@@ -111,7 +99,6 @@ export default function ProjetoDetalhe() {
   const [salvandoEtapa, setSalvandoEtapa] = useState(null)   // id enquanto salva
   const [modalMover, setModalMover] = useState(null)         // tarefa a mover
   const [editProgresso, setEditProgresso] = useState(null)   // { id, value }
-  const [gerandoPDF, setGerandoPDF] = useState(false)
   const [projetosLista, setProjetosLista] = useState([])
   const [projetoDestinoId, setProjetoDestinoId] = useState('')
   const [buscaProjeto, setBuscaProjeto] = useState('')
@@ -463,79 +450,6 @@ const abrirModalMover = async (tarefa) => {
     finally { setEditProgresso(null) }
   }
 
-  const handleSalvarPDF = async () => {
-    const cabEl = document.getElementById('projeto-detalhe-cabecalho')
-    const tabEl = document.getElementById('projeto-detalhe-tabela')
-    if (!cabEl && !tabEl) return
-    setGerandoPDF(true)
-    try {
-      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
-        import('html2canvas'),
-        import('jspdf'),
-      ])
-      const MARGIN = 20
-      const GAP    = 8
-      const pdf = new jsPDF({ unit: 'pt', format: 'a4', orientation: 'landscape' })
-      const CW = pdf.internal.pageSize.getWidth()  - 2 * MARGIN
-      const CH = pdf.internal.pageSize.getHeight() - 2 * MARGIN
-      const WRAP_W = 1600
-
-      const capture = async (el) => {
-        const wrap = document.createElement('div')
-        wrap.style.cssText = `position:fixed;top:0;left:-9999px;width:${WRAP_W}px;background:white;z-index:-1;`
-        const clone = el.cloneNode(true)
-        clone.querySelectorAll('.no-print').forEach(e => { e.style.display = 'none' })
-        clone.querySelectorAll('table').forEach(t => { t.style.fontSize = '13px' })
-        wrap.appendChild(clone)
-        document.body.appendChild(wrap)
-        try {
-          return await html2canvas(clone, { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff', width: WRAP_W })
-        } finally {
-          document.body.removeChild(wrap)
-        }
-      }
-
-      const getH = (c) => (c.height / c.width) * CW
-      const place = (c, y) => {
-        const h = getH(c)
-        pdf.addImage(c.toDataURL('image/jpeg', 0.93), 'JPEG', MARGIN, y, CW, h)
-        return h
-      }
-      const placeSliced = (c, startY) => {
-        const pageHpx = Math.floor(c.width * CH / CW)
-        let srcY = 0; let y = startY
-        while (srcY < c.height) {
-          if (srcY > 0) { pdf.addPage(); y = MARGIN }
-          const sliceH = Math.min(pageHpx, c.height - srcY)
-          const slice = document.createElement('canvas')
-          slice.width = c.width; slice.height = Math.ceil(sliceH)
-          const ctx2 = slice.getContext('2d')
-          ctx2.fillStyle = '#fff'
-          ctx2.fillRect(0, 0, slice.width, slice.height)
-          ctx2.drawImage(c, 0, -srcY)
-          pdf.addImage(slice.toDataURL('image/jpeg', 0.93), 'JPEG', MARGIN, y, CW, (sliceH / c.width) * CW)
-          y += (sliceH / c.width) * CW + 2
-          srcY += pageHpx
-        }
-        return y
-      }
-
-      let y = MARGIN
-      if (cabEl) { y += place(await capture(cabEl), y) + GAP }
-      if (tabEl) {
-        const tabC = await capture(tabEl)
-        if (y + getH(tabC) <= MARGIN + CH) place(tabC, y)
-        else placeSliced(tabC, y)
-      }
-
-      pdf.save(`Projeto - ${projeto.nome}.pdf`)
-    } catch (err) {
-      console.error('Erro ao gerar PDF:', err)
-      alert('Erro ao gerar PDF. Tente novamente.')
-    } finally {
-      setGerandoPDF(false)
-    }
-  }
 
   const sistemaCorMap      = Object.fromEntries(sistemas.map(s => [s.nome, s.cor || '#1e293b']))
   const sistemaCorTextoMap = Object.fromEntries(sistemas.map(s => [s.nome, s.cor_texto || null]))

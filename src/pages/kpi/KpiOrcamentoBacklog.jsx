@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react'
-import { CalendarDays, CheckCircle2, Clock3, AlertCircle } from 'lucide-react'
+import { CheckCircle2, Clock3, AlertCircle } from 'lucide-react'
 import { useSessionState } from '../../hooks/useSessionState'
 
 // Sem dados mock — itens carregados do SharePoint quando configurado

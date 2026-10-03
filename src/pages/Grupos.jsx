@@ -3,7 +3,7 @@ import { useSessionState } from '../hooks/useSessionState'
 import { Plus, Edit2, Trash2, ShieldCheck, ShieldOff, ChevronDown, ChevronRight, Check, Save, ArrowLeft, Copy, Users, X, UserPlus, UserMinus, Search, Eye, Building2 } from 'lucide-react'
 import { apiService } from '../services/api'
 import { MENU_TREE, getLeafKeys, ALL_LEAF_KEYS } from '../config/menuTree'
-import { ACOES_POR_MENU, ACOES_POR_PATH } from '../config/acoesMenu'
+import { ACOES_POR_PATH } from '../config/acoesMenu'
 import { DIMENSOES_COMISSAO, escopoComissaoTudoLiberado } from '../utils/permissoesComissao'
 
 // Departamento é só informativo — identifica na tabela a qual área do Grupo Caiobá

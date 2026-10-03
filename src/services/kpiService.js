@@ -5,13 +5,11 @@
  */
 
 import {
-  MOCK_RESULTADOS,
   MOCK_BLOCO1,
   MOCK_BLOCO2,
   MOCK_BLOCO3_POS_VENDA,
   MOCK_BLOCO3_PECAS,
   MOCK_BLOCO3_SERVICOS,
-  MOCK_ORCAMENTO_BACKLOG,
 } from '../data/kpiMockData'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
@@ -82,13 +80,11 @@ async function tryFetch(endpoint, mockData, params = {}) {
 // ── API pública ──────────────────────────────────────────────────────────────
 
 export async function fetchAuditoria(p)     { return tryFetch('auditoria',         null,                   p) }
-export async function fetchResultados(p)    { return tryFetch('resultados',       MOCK_RESULTADOS,        p) }
 export async function fetchBloco1(p)        { return tryFetch('bloco1',           MOCK_BLOCO1,            p) }
 export async function fetchBloco2(p)        { return tryFetch('bloco2',           MOCK_BLOCO2,            p) }
 export async function fetchBloco3PosVenda(p){ return tryFetch('bloco3-pos-venda', MOCK_BLOCO3_POS_VENDA,  p) }
 export async function fetchBloco3Pecas(p)   { return tryFetch('bloco3-pecas',     MOCK_BLOCO3_PECAS,      p) }
 export async function fetchBloco3Servicos(p){ return tryFetch('bloco3-servicos',  MOCK_BLOCO3_SERVICOS,   p) }
-export async function fetchBacklog(p)       { return tryFetch('backlog',          MOCK_ORCAMENTO_BACKLOG, p) }
 
 // Metas aprovadas por período dos indicadores da aba Operacional (null se indisponível)
 export async function fetchMetasOperacional(year) {
@@ -130,14 +126,6 @@ export async function fetchMecanicos(year) {
   }
 }
 
-export async function getStatus() {
-  try {
-    return await fetchWithTimeout(`${BASE}/status`)
-  } catch {
-    return { configured: false, source: 'offline' }
-  }
-}
-
 // ── Sincronização agendada ────────────────────────────────────────────────────
 
 export async function getStatusSincronizacao() {
@@ -168,10 +156,6 @@ export async function sincronizarCampanha(year) {
 }
 
 // ── Pesos dos indicadores (coluna "Peso") ─────────────────────────────────────
-
-export async function fetchPesos(bloco) {
-  return fetchWithTimeout(`${BASE}/pesos?bloco=${encodeURIComponent(bloco)}`, 15_000)
-}
 
 export async function salvarPeso({ bloco, tituloGerente, kpiId, peso }) {
   const res = await fetch(`${BASE}/pesos`, {

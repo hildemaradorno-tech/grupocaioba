@@ -34,16 +34,6 @@ export async function obterDefinicao(id) {
   return data
 }
 
-export async function listarDefinicoesPublicadas() {
-  const { data, error } = await supabase
-    .from('bpm_process_definitions')
-    .select('id, chave, nome, descricao, versao, status')
-    .eq('status', 'publicado')
-    .order('nome', { ascending: true })
-  if (error) throw error
-  return data || []
-}
-
 // Salva uma definição: cria uma nova (versão 1, como rascunho) ou atualiza uma existente no
 // lugar — inclusive uma já publicada. Editar uma publicada não mexe na versão nem no status;
 // como o motor lê o bpmn_xml direto da definição a cada passo, isso também muda o comportamento
@@ -268,32 +258,7 @@ export async function completarTarefa({ taskId, decisao, dadosTarefa, userId }) 
   return { instanciaId: instancia.id, ...efeito }
 }
 
-// ── Minhas tarefas / comentários ──────────────────────────────────────────────
-
-export async function listarMinhasTarefas({ userId }) {
-  const { data, error } = await supabase
-    .from('bpm_tasks')
-    .select('*, bpm_process_instances(id, titulo, process_definition_id, bpm_process_definitions(nome))')
-    .eq('status', 'aberta')
-    .eq('responsavel_user_id', userId)
-    .order('criada_em', { ascending: true })
-  if (error) throw error
-  return data || []
-}
-
-// Tarefas em aberto sem responsável definido por usuário (só por papel) — fila geral.
-export async function listarTarefasPorPapeis({ papeis }) {
-  if (!papeis || !papeis.length) return []
-  const { data, error } = await supabase
-    .from('bpm_tasks')
-    .select('*, bpm_process_instances(id, titulo, process_definition_id, bpm_process_definitions(nome))')
-    .eq('status', 'aberta')
-    .is('responsavel_user_id', null)
-    .in('responsavel_papel', papeis)
-    .order('criada_em', { ascending: true })
-  if (error) throw error
-  return data || []
-}
+// ── Tarefas / comentários ─────────────────────────────────────────────────────
 
 // Só permite assumir se a tarefa não exigir agrupamento de cargos nenhum, ou se o agrupamento
 // do CARGO do usuário (usuarios.cargo_id é um cargo específico; o agrupamento dele é resolvido

@@ -151,7 +151,6 @@ export const MENU_TREE = [
         navTo: 'bpm/nfe-cancelamento-devolucao',
         children: [
           { key: 'bpm/nfe-cancelamento-devolucao', label: 'Solicitações' },
-          { key: 'bpm/nfe-etapas', label: 'Etapas' },
           { key: 'bpm/processos', label: 'Processos (BPM)' },
           { key: 'bpm/modelador', label: 'Modelador de Processos' },
         ],
@@ -234,7 +233,6 @@ export const MENU_TREE = [
       { key: 'bi/garantias-daf', label: 'BI — Garantias DAF' },
       { key: 'bi/projetos', label: 'BI — Gestão de Projetos' },
       { key: 'bi/possibilidades', label: 'BI — Possibilidades' },
-      { key: 'bi/comissoes', label: 'BI — Comissões' },
       { key: 'bi/campanha', label: 'BI — Campanha Pós-Venda' },
       {
         // Agrupamento de menu (sem navTo) — cada item abaixo é uma tela própria, não mais abas

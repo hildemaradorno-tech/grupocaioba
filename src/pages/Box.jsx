@@ -25,7 +25,6 @@ export default function Box() {
   const [itemVisualizado, setItemVisualizado] = useState(null)
   const { hasActionOrDefault } = useAuth()
   const canEdit = hasActionOrDefault('box', 'editar')
-  const canDelete = hasActionOrDefault('box', 'excluir')
   const abrirVisualizar = (item) => { setItemVisualizado(item); setModalVisualizarAberto(true) }
 
   useEffect(() => { loadData() }, [])

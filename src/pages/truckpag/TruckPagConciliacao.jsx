@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
-import { RefreshCw, AlertTriangle, Filter, ChevronDown, ChevronUp, X, Link2, Link2Off, ArrowLeftRight, Wallet, Settings, List, HelpCircle, Info, Truck } from 'lucide-react'
+import { RefreshCw, AlertTriangle, Link2, Link2Off, ArrowLeftRight, Wallet, Settings, List, HelpCircle, Truck } from 'lucide-react'
 import { apiService } from '../../services/api'
 import TruckPagNav from './TruckPagNav'
 import TruckPagConfigModal from './TruckPagConfigModal'
@@ -22,12 +22,11 @@ export default function TruckPagConciliacao() {
   const [loading, setLoading] = useState(true)
   const [sincronizando, setSincronizando] = useState(false)
   const [erro, setErro] = useState(null)
-  const [filtrosAbertos, setFiltrosAbertos] = useState(false)
   const [configAberto, setConfigAberto] = useState(false)
   const [regrasAberto, setRegrasAberto] = useState(false)
   const [detalheRepasse, setDetalheRepasse] = useState(null) // { empresa, data, linhas } | null
-  const [dataInicio, setDataInicio] = useState('')
-  const [dataFim, setDataFim] = useState('')
+  const [dataInicio] = useState('')
+  const [dataFim] = useState('')
   const [filtroTipo, setFiltroTipo] = useState(null) // null | 'repasse' | 'credito'
   const [filtroConciliado, setFiltroConciliado] = useState(null) // null | true | false
   const [sortDir, setSortDir] = useState('desc')
@@ -174,7 +173,6 @@ export default function TruckPagConciliacao() {
   const linhasCreditoNaoVinculado = linhasCreditoAtual.filter(l => !l.vinculado)
   const qtdNaoVinculados = linhasCreditoNaoVinculado.length
   const valorNaoVinculado = linhasCreditoNaoVinculado.reduce((s, l) => s + (l.valorLiquido || 0), 0)
-  const filtroAtivo = !!(dataInicio || dataFim)
 
   const colunas = [
     { key: 'empresa', label: 'Empresa' },

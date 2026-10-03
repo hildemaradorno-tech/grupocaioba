@@ -147,36 +147,6 @@ export async function getBloco2() {
   })).filter(r => r.indicador)
 }
 
-export async function getBloco3PosVenda() {
-  const rows = await fetchSheet(SHEET_NAMES.bloco3PV)
-  return rowsToObjects(rows).map((o, i) => ({
-    id:         parseInt(o['#'] ?? o['ID'] ?? i + 1),
-    gerente:    col(o, 'GERENTE GERAL', 'GERENTE'),
-    orientacao: col(o, 'ORIENTAÇÃO', 'ORIENTACAO') || '>',
-    metrica:    col(o, 'MÉTRICA', 'METRICA') || '%',
-    metaAnual:  num(o['META ANUAL']),
-    pesoObj:    num(o['PESO / OBJETIVO'] ?? o['PESO/OBJETIVO'] ?? o['PESO']),
-    q1: periodCols(o, 'Q1'), q2: periodCols(o, 'Q2'),
-    q3: periodCols(o, 'Q3'), q4: periodCols(o, 'Q4'),
-    fy: periodCols(o, 'FY'),
-  })).filter(r => r.gerente)
-}
-
-export async function getBloco3Pecas() {
-  const rows = await fetchSheet(SHEET_NAMES.bloco3Pecas)
-  return rowsToObjects(rows).map((o, i) => ({
-    id:         parseInt(o['#'] ?? o['ID'] ?? i + 1),
-    gerente:    col(o, 'GERENTE', 'GERENTE GERAL'),
-    orientacao: col(o, 'ORIENTAÇÃO', 'ORIENTACAO') || '>',
-    metrica:    col(o, 'MÉTRICA', 'METRICA') || '%',
-    metaAnual:  num(o['META ANUAL']),
-    pesoObj:    num(o['PESO / OBJETIVO'] ?? o['PESO/OBJETIVO'] ?? o['PESO']),
-    q1: periodCols(o, 'Q1'), q2: periodCols(o, 'Q2'),
-    q3: periodCols(o, 'Q3'), q4: periodCols(o, 'Q4'),
-    fy: periodCols(o, 'FY'),
-  })).filter(r => r.gerente)
-}
-
 export async function getBacklog() {
   const rows = await fetchSheet(SHEET_NAMES.backlog)
   return rowsToObjects(rows).map(o => ({

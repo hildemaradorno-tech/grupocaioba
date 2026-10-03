@@ -1,19 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom'
-import {
-  Settings, TableProperties, Users, ShieldCheck,
-  Building2, Layers, FolderTree, Box as BoxIcon, Briefcase, Tag,
-  Wrench, Package, TrendingUp, FileCheck2,
-  BadgePercent, ScrollText, Clock, CalendarX, Calendar,
-  Target, ShoppingBag, Car, Cog, ClipboardCheck, UserCheck,
-  LogOut, BarChart2, Wallet,
-  ClipboardList, Home, FolderKanban, CircleDot, FileText, CalendarDays, DollarSign, Truck, LayoutGrid,
-  Calculator, BookOpen, GraduationCap,
-  KeyRound, Eye, EyeOff, X, AlertTriangle, Bike, Network, PieChart, Share2, RefreshCw, Gauge, Ruler,
-  ShieldAlert, Landmark, Database, Hash, ListChecks, ExternalLink, Workflow, Trophy, Percent,
-  Palmtree, PhoneCall, Settings2,
-} from 'lucide-react'
+import { Settings, TableProperties, Users, ShieldCheck, Building2, Layers, FolderTree, Box as BoxIcon, Briefcase, Tag, Wrench, Package, TrendingUp, FileCheck2, ScrollText, Clock, CalendarX, Calendar, Target, ShoppingBag, Car, Cog, ClipboardCheck, UserCheck, LogOut, BarChart2, Wallet, ClipboardList, Home, FolderKanban, CircleDot, FileText, Truck, Calculator, BookOpen, GraduationCap, KeyRound, Eye, EyeOff, X, AlertTriangle, Bike, Network, PieChart, Share2, Gauge, Ruler, ShieldAlert, Landmark, Hash, ListChecks, ExternalLink, Workflow, Trophy, Percent, Palmtree, PhoneCall, Settings2 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import TrocarSenhaObrigatoria from '../pages/TrocarSenhaObrigatoria'
 import { supabase } from '../services/supabaseClient'
@@ -571,7 +559,6 @@ export default function SidebarLayout() {
             {canView('bi/garantias-daf') && <FlyItem to="/bi/garantias-daf" icon={ShieldCheck} onClose={closeFlyout}>Garantias DAF</FlyItem>}
             {canView('bi/projetos') && <FlyItem to="/bi/projetos" icon={FolderKanban} onClose={closeFlyout}>Gestão de Projetos</FlyItem>}
             {canView('bi/possibilidades') && <FlyItem to="/bi/possibilidades" icon={Gauge} onClose={closeFlyout}>Possibilidades</FlyItem>}
-            {canView('bi/comissoes') && <FlyItem to="/bi/comissoes" icon={Wallet} onClose={closeFlyout}>Comissões</FlyItem>}
             {canView('bi/campanha') && <FlyItem to="/bi/campanha" icon={Trophy} onClose={closeFlyout}>Campanha Pós-Venda</FlyItem>}
             {canViewSection('_bi.fontes-dados') && (
               <>

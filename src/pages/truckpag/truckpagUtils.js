@@ -181,18 +181,6 @@ export function notasFiscaisDoTitulo(t) {
   return [...new Set([tituloNF, tituloNumero, rps, nfse].filter(Boolean))]
 }
 
-// Campos que decidem verde/amarelo, depois que o candidato já passou pela obrigatoriedade abaixo.
-// Pedido do usuário: "obrigatórios CNPJ do cliente, Nº NF-e ou Nº NFS-e para entrar na validação;
-// aí para ser verde: todos devem ser iguais; amarelo: alguma divergência nesses campos Nº OS,
-// Parcelas, Valor total parcela". Depois, o usuário pediu pra tirar Nº OS da regra (o campo nem
-// sempre está preenchido e não é confiável como critério), pediu pra checar também se o Saldo do
-// título bate com o Valor Recebido do repasse (o que efetivamente cai na conta pra zerar o saldo)
-// e por fim pediu pra Parcela virar obrigatória também (se não bater, é "não encontrado", não
-// "divergente" — ver identidadeBate abaixo). Depois disso, o CNPJ do Cliente deixou de ser
-// obrigatório pra virar candidato — passou pra CAMPOS_GRADUACAO junto com Valor/Saldo; depois o
-// usuário pediu de volta como obrigatório (ver conciliarTitulosRepasses abaixo), então aqui ficam
-// só Valor e Saldo.
-const CAMPOS_GRADUACAO = ['documento', 'valor', 'saldo']
 
 // Concilia títulos × repasses. Nº NF-e e Nº NFS-e do repasse são checados contra TODAS as notas
 // do título (notasFiscaisDoTitulo) juntas, não campo a campo — a planilha de títulos vem com

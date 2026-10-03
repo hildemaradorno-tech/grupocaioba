@@ -24,7 +24,6 @@ router.post('/:id/enviar-convites', wrap(async (req, res) => {
   if (!Array.isArray(destinatarios) || destinatarios.length === 0) return res.json({ enviados: 0 })
 
   const fmtData = (d) => d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') : '—'
-  const projetoId = req.params.id
   const link = 'https://portalgestaocaioba.pages.dev/projetos/manifestacoes'
 
   let enviados = 0

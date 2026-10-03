@@ -64,7 +64,6 @@ export default function Empresas() {
       : <ArrowDown className="h-3 w-3 text-blue-500" />
   const { hasActionOrDefault } = useAuth()
   const canEdit = hasActionOrDefault('empresas', 'editar')
-  const canDelete = hasActionOrDefault('empresas', 'excluir')
   const abrirVisualizar = (item) => { setItemVisualizado(item); setModalVisualizarAberto(true) }
 
   useEffect(() => {

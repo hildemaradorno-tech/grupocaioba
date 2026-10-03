@@ -25,7 +25,6 @@ export default function Areas() {
 
   const { hasActionOrDefault } = useAuth()
   const canEdit = hasActionOrDefault('areas', 'editar')
-  const canDelete = hasActionOrDefault('areas', 'excluir')
 
   useEffect(() => { loadData() }, [])
 

@@ -25,10 +25,6 @@ import { graphGet } from './graphClient.js'
 const CACHE_TTL_MS = 15 * 60 * 1000
 const _cache = new Map() // chave composta -> { resultado, ts } — cacheia só o resultado agregado, nunca as linhas
 
-export function clearFonteBiCache() {
-  _cache.clear()
-}
-
 // Converte qualquer valor de data do Excel para 'YYYY-MM-DD'
 export function toIsoDate(val) {
   if (val === null || val === undefined || val === '') return null

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react'
+import React, { useEffect, useState, useCallback, useMemo } from 'react'
 import { ClipboardList, Download, ChevronDown, Save, AlertTriangle, Building2, ShieldAlert, Trash2, Calendar, User, Banknote, Search, XCircle, X } from 'lucide-react'
 import { apiService } from '../../services/api'
 import { useAuth } from '../../context/AuthContext'
@@ -225,7 +225,6 @@ export default function AuditoriaOsAberto() {
       await apiService.deleteAuditoria(auditoriaId)
       setAuditoriaId('')
       setRows([])
-      setPendentes({})
       setModalExcluir(false)
       await loadApoio()
     } catch (e) { setErro(e.message || String(e)); setModalExcluir(false) }

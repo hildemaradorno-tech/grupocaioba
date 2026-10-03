@@ -1,10 +1,6 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import {
-  Plus, Search, Edit2, Trash2, FolderKanban, Filter, RotateCcw,
-  Activity, CheckCircle, AlertTriangle, Layers, ShieldAlert,
-  ChevronRight, ChevronDown, Loader2, X, CheckCircle2, CalendarCheck, Copy, BarChart2, Download, Eye,
-} from 'lucide-react'
+import { Plus, Edit2, Trash2, FolderKanban, Activity, CheckCircle, AlertTriangle, Layers, ShieldAlert, ChevronRight, ChevronDown, Loader2, X, CheckCircle2, Copy, BarChart2, Download, Eye } from 'lucide-react'
 import { apiService } from '../../services/api'
 import { useAuth } from '../../context/AuthContext'
 import { useProjetosFiltros, aplicarFiltrosGlobais, _projetosSession } from '../../context/ProjetosFiltrosContext'
@@ -132,9 +128,8 @@ function CardKpi({ icon: Icon, label, count, ativo, onClick, st }) {
 
 export default function ProjetosDashboard() {
   const navigate = useNavigate()
-  const { isAdmin, isAdminEfetivo, empresasPermitidas, departamentosPermitidosEfetivos, projetosDeptoModoEfetivo, hasActionOrDefault, hasPermission, user, usuarioId, userNome, impersonando } = useAuth()
+  const { isAdmin, isAdminEfetivo, empresasPermitidas, departamentosPermitidosEfetivos, projetosDeptoModoEfetivo, hasActionOrDefault, hasPermission, user, usuarioId, impersonando } = useAuth()
   const idEfetivo   = impersonando?.id    || usuarioId
-  const nomeEfetivo = impersonando?.nome  || userNome
   const ctx = useProjetosFiltros()
   const { modoVerTodos, setModoVerTodos } = ctx
   // Botão "Ver Todos" aparece SOMENTE quando o flag ver_todos_projetos está marcado no grupo
@@ -149,16 +144,16 @@ export default function ProjetosDashboard() {
   const hoje2 = new Date().toISOString().split('T')[0]
 
   const [dados, setDados] = useState(() => _dash.dados ?? [])
-  const [empresas, setEmpresas] = useState(() => _dash.empresas)
+  const [, setEmpresas] = useState(() => _dash.empresas)
   const [responsaveis, setResponsaveis] = useState(null)
   const [sistemas, setSistemas] = useState(() => _dash.sistemas)
   const [fases, setFases] = useState(() => _dash.fases)
   const [areas, setAreas] = useState(() => _dash.areas)
-  const [departamentos, setDepartamentos] = useState(() => _dash.departamentos)
+  const [, setDepartamentos] = useState(() => _dash.departamentos)
   const [loading, setLoading] = useState(() => _dash.dados === null)
   const [error, setError] = useState(null)
-  const [filtros, setFiltros] = useState(() => _dash.filtros ?? FILTROS_VAZIOS)
-  const [filtrosAbertos, setFiltrosAbertos] = useState(() => _dash.filtrosAbertos)
+  const [filtros] = useState(() => _dash.filtros ?? FILTROS_VAZIOS)
+  const [filtrosAbertos] = useState(() => _dash.filtrosAbertos)
   const [filtroCards, setFiltroCards] = useState(() => new Set())
   const [filtroCardProjetos, setFiltroCardProjetos] = useState(() => new Set(['mapeado', 'programado', 'em_andamento', 'pausado']))
   const [sortConfig, setSortConfig] = useState(() => {
@@ -180,14 +175,12 @@ export default function ProjetosDashboard() {
   const [modalExcluirTarefa, setModalExcluirTarefa] = useState(null)
   const [filtroAtrasadas, setFiltroAtrasadas] = useState(false)
   const [filtroHoje, setFiltroHoje] = useState(false)
-  const [filtroRespProjeto, setFiltroRespProjeto] = useState(() => _dash.filtroRespProjeto ?? '')
+  const [filtroRespProjeto] = useState(() => _dash.filtroRespProjeto ?? '')
   const filtroRespTarefa = ctx.filtroRespTarefa
   const filtroFase      = ctx.filtroFase
   const filtroSistema   = ctx.filtroSistema
   const filtroDataTermIni     = ctx.filtroDataIni
-  const setFiltroDataTermIni  = ctx.setFiltroDataIni
   const filtroDataTermFim     = ctx.filtroDataFim
-  const setFiltroDataTermFim  = ctx.setFiltroDataFim
   const filtroDataProjTermIni = ctx.filtroDataProjIni
   const filtroDataProjTermFim = ctx.filtroDataProjFim
   const [deliberacoesExpandidas, setDeliberacoesExpandidas] = useState(() => new Set(_dash.deliberacoesExpandidas))
@@ -403,19 +396,8 @@ export default function ProjetosDashboard() {
   })()
 
   const anyExpanded = expandidos.size > 0
-  const qtdAtrasadas = dadosGlobal.reduce((total, p) =>
-    total + (p.proj_tarefas || []).filter(t =>
-      t.status_kanban !== 'concluido' && t.data_fim && t.data_fim < hojeISO
-    ).length,
-  0)
-  const qtdHoje = dadosGlobal.reduce((total, p) =>
-    total + (p.proj_tarefas || []).filter(t =>
-      t.status_kanban !== 'concluido' && t.data_fim === hojeISO
-    ).length,
-  0)
   const sistemaCorMap     = Object.fromEntries(sistemas.map(s => [s.nome, s.cor || '#1e293b']))
   const sistemaCorTextoMap = Object.fromEntries(sistemas.map(s => [s.nome, s.cor_texto || null]))
-  const faseCorMap = Object.fromEntries(fases.map(f => [f.nome, f.cor || '#1e293b']))
 
   const handleRecolherTodos = () => { setExpandidos(new Set()); setDeptosExpandidos(new Set()); setStatusesRecolhidos(new Set(STATUS_ORDER)) }
 
@@ -439,14 +421,6 @@ export default function ProjetosDashboard() {
         import('jspdf'),
       ])
 
-      // Mapeamento de cores inline (sem Tailwind) para o PDF
-      const KANBAN_CSS = {
-        mapeado:      { bg: '#f1f5f9', color: '#64748b' },
-        programado:   { bg: '#dbeafe', color: '#2563eb' },
-        em_andamento: { bg: '#fef3c7', color: '#d97706' },
-        pausado:      { bg: '#f3e8ff', color: '#9333ea' },
-        concluido:    { bg: '#ccfbf1', color: '#0f766e' },
-      }
 
       // WRAP_W=960 · pdfW=297 A4 landscape → 1px=0,207mm → 10px≈5,9pt
       // Estrutura: wrap sem padding lateral → dept/status são full-width naturalmente
@@ -738,13 +712,6 @@ export default function ProjetosDashboard() {
     }))
   }
 
-  const handleFiltroChange = (e) => {
-    const { name, value } = e.target
-    const novos = { ...filtros, [name]: value }
-    setFiltros(novos)
-    loadData(novos)
-  }
-  const handleLimpar = () => { setFiltros(FILTROS_VAZIOS); setFiltroRespProjeto(''); setFiltroRespTarefa(''); setFiltroDataTermIni(''); setFiltroDataTermFim(''); ctx.limparFiltros(); loadData(FILTROS_VAZIOS) }
 
   const prePopularDelibs = (tarefas) => {
     setDeliberacoesPorTarefa(prev => {
@@ -798,7 +765,6 @@ export default function ProjetosDashboard() {
   }
 
   const [duplicando, setDuplicando] = useState(null) // id do projeto sendo duplicado
-  const [tarefasSelecionadas, setTarefasSelecionadas] = useState({}) // { [projetoId]: Set<tarefaId> }
 
   const duplicarProjeto = async (p) => {
     if (duplicando) return
@@ -830,35 +796,8 @@ export default function ProjetosDashboard() {
     }
   }
 
-  const toggleSelecionarTarefa = (projetoId, tarefaId) => {
-    setTarefasSelecionadas(prev => {
-      const sel = new Set(prev[projetoId] || [])
-      if (sel.has(tarefaId)) sel.delete(tarefaId)
-      else sel.add(tarefaId)
-      return { ...prev, [projetoId]: sel }
-    })
-  }
 
-  const toggleSelecionarTodas = (projetoId, tarefas) => {
-    setTarefasSelecionadas(prev => {
-      const sel = prev[projetoId] || new Set()
-      const todas = tarefas.map(t => t.id)
-      const todasSel = todas.length > 0 && todas.every(id => sel.has(id))
-      return { ...prev, [projetoId]: todasSel ? new Set() : new Set(todas) }
-    })
-  }
 
-  const excluirTarefasSelecionadas = async (projetoId) => {
-    const sel = tarefasSelecionadas[projetoId]
-    if (!sel || sel.size === 0) return
-    if (!window.confirm(`Excluir ${sel.size} tarefa(s) selecionada(s)? Esta ação não pode ser desfeita.`)) return
-    try {
-      await Promise.all([...sel].map(id => apiService.deleteTarefa(id)))
-      const atualizadas = await apiService.getTarefas(projetoId)
-      setTarefasPorProjeto(prev => ({ ...prev, [projetoId]: atualizadas }))
-      setTarefasSelecionadas(prev => ({ ...prev, [projetoId]: new Set() }))
-    } catch (err) { alert('Erro ao excluir: ' + (err.message || String(err))) }
-  }
 
   const abrirEditTarefa = async (t) => {
     setEditForm({ ...t })
@@ -1258,7 +1197,6 @@ export default function ProjetosDashboard() {
                     </tr>
                   </React.Fragment>
                 )
-                const st = STATUS_MAP[p.status] || { label: p.status, cor: 'bg-slate-100 text-slate-500' }
                 const atrasado = isAtrasado(p)
                 const expandido = expandidos.has(p.id)
                 const tsDatas = p.proj_tarefas || []

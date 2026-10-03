@@ -22,7 +22,6 @@ export default function AgrupamentoCargos() {
   const [itemVisualizado, setItemVisualizado] = useState(null)
   const { hasActionOrDefault } = useAuth()
   const canEdit = hasActionOrDefault('agrup-cargos', 'editar')
-  const canDelete = hasActionOrDefault('agrup-cargos', 'excluir')
   const abrirVisualizar = (item) => { setItemVisualizado(item); setModalVisualizarAberto(true) }
 
   useEffect(() => { loadData() }, [])

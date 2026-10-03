@@ -1,25 +1,6 @@
 // Estruturas de fallback da Matriz KPIs.
 // Todos os valores numéricos são null — os dados reais vêm do SharePoint.
 
-// ── RESULTADOS (Painel Executivo) ───────────────────────────────────────────
-export const MOCK_RESULTADOS = {
-  Vendas: [
-    { bloco: 'Companhia',    peso: null, q1: null, q2: null, q3: null, q4: null, fy: null },
-    { bloco: 'Departamento', peso: null, q1: null, q2: null, q3: null, q4: null, fy: null },
-    { bloco: 'Individual',   peso: null, q1: null, q2: null, q3: null, q4: null, fy: null },
-  ],
-  'Pós-Vendas': [
-    { bloco: 'Companhia',    peso: null, q1: null, q2: null, q3: null, q4: null, fy: null },
-    { bloco: 'Departamento', peso: null, q1: null, q2: null, q3: null, q4: null, fy: null },
-    { bloco: 'Individual',   peso: null, q1: null, q2: null, q3: null, q4: null, fy: null },
-  ],
-  Peças: [
-    { bloco: 'Companhia',    peso: null, q1: null, q2: null, q3: null, q4: null, fy: null },
-    { bloco: 'Departamento', peso: null, q1: null, q2: null, q3: null, q4: null, fy: null },
-    { bloco: 'Individual',   peso: null, q1: null, q2: null, q3: null, q4: null, fy: null },
-  ],
-}
-
 const np = { meta: null, realizado: null }
 
 // ── BLOCO 1 — Indicadores Corporativos/Financeiros ──────────────────────────
@@ -211,6 +192,3 @@ export const MOCK_BLOCO3_SERVICOS = [
     ],
   },
 ]
-
-// ── ORÇAMENTO & BACKLOG ──────────────────────────────────────────────────────
-export const MOCK_ORCAMENTO_BACKLOG = []

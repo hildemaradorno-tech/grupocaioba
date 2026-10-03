@@ -14,7 +14,6 @@ const LOGO_URL = logoCaioba
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 const dataHoje    = () => new Date().toISOString().split('T')[0]
-const dataPassada = (dias) => { const d = new Date(); d.setDate(d.getDate() - dias); return d.toISOString().split('T')[0] }
 const ultimaTerca = () => { const d = new Date(); const dow = d.getDay(); const diff = dow === 2 ? 7 : dow > 2 ? dow - 2 : dow + 5; d.setDate(d.getDate() - diff); return d.toISOString().split('T')[0] }
 const fmtData     = (d) => d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') : '—'
 const fmtDataExtenso = (d) =>
@@ -297,8 +296,6 @@ const AtaPreview = React.forwardRef(function AtaPreview({ form }, ref) {
           porDepto[depto].push(t)
         })
 
-        const statusLabel = { mapeado: 'Mapeado', programado: 'Programado', em_andamento: 'Em Andamento', pausado: 'Pausado', concluido: 'Concluído' }
-        const statusColor = { mapeado: '#64748b', programado: '#2563eb', em_andamento: '#d97706', pausado: '#7c3aed', concluido: '#0d9488' }
 
         return (
           <section style={{ marginBottom: '22px' }}>
@@ -903,15 +900,6 @@ export default function AtaReuniao() {
     const projSistemas = (p) =>
       (p.sistemas_nomes?.length ? p.sistemas_nomes : p.sistema_nome ? [p.sistema_nome] : [])
 
-    const projInfoStr = (p) => {
-      const local = [p.departamento_nome, p.area_nome].filter(Boolean).join(' › ')
-      const dataFim = dataFimConc(p)
-      const parts = []
-      if (local) parts.push(local)
-      if (p.responsavel_nome) parts.push(`Resp.: ${p.responsavel_nome}`)
-      if (dataFim) parts.push(`Concluído: ${fmtData(dataFim)}`)
-      return parts.join('  ·  ')
-    }
 
     return (
       <div className="space-y-4">

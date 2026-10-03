@@ -33,10 +33,6 @@ const _cache = new Map() // chave composta -> { resultado, ts } — cacheia só 
 const CACHE_SETOR_FUNC_TTL_MS = 60 * 1000
 let _cacheSetoresFuncionarios = { ts: 0, dados: null }
 
-export function clearFonteCalculoCache() {
-  _cache.clear()
-}
-
 function dataIsoNoFuso(data, fusoHorario) {
   const partes = new Intl.DateTimeFormat('en-CA', {
     timeZone: fusoHorario,

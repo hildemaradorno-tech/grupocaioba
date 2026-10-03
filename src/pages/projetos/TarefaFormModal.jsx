@@ -102,7 +102,7 @@ export default function TarefaFormModal({ projetoId, tarefa, initialValues, tare
   const [salvandoDelib, setSalvandoDelib] = useState(false)
   const [templates, setTemplates] = useState([])
   const [ocupacao, setOcupacao] = useState([])
-  const [carregandoOcup, setCarregandoOcup] = useState(false)
+  const [, setCarregandoOcup] = useState(false)
   const nomeRef = useRef(null)
 
   // Re-deriva _id a partir do _nome sempre que os arrays de opções chegam/mudam.

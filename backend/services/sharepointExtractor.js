@@ -924,26 +924,6 @@ export function consolidarParaKpi(rows) {
     ...Object.fromEntries(ALL_WEEKS.map(s  => [s,  pctCont(ss[s]?.[bucket])])),
   })
 
-  // Ind 3: numerador = vlMargemCont do lucroBucket, denominador = vlTotal do fatBucket
-  const pctContCross = (lb, fb) => {
-    const lucro = lucroLiquidoBucket(lb)
-    const fat   = fatLiquidoBucket(fb)
-    return fat > 0 ? (lucro / fat) * 100 : null
-  }
-  const qPctContCross = (lucroBucket, fatBucket) => ({
-    q1: pctContCross(qs.q1?.[lucroBucket], qs.q1?.[fatBucket]),
-    q2: pctContCross(qs.q2?.[lucroBucket], qs.q2?.[fatBucket]),
-    q3: pctContCross(qs.q3?.[lucroBucket], qs.q3?.[fatBucket]),
-    q4: pctContCross(qs.q4?.[lucroBucket], qs.q4?.[fatBucket]),
-    fy: (() => {
-      const lucro = ['q1','q2','q3','q4'].reduce((s, q) => s + (lucroLiquidoBucket(qs[q]?.[lucroBucket]) ?? 0), 0)
-      const fat   = ['q1','q2','q3','q4'].reduce((s, q) => s + (fatLiquidoBucket(qs[q]?.[fatBucket]) ?? 0), 0)
-      return fat > 0 ? (lucro / fat) * 100 : null
-    })(),
-    ...Object.fromEntries(ALL_MONTHS.map(m => [m, pctContCross(ms[m]?.[lucroBucket], ms[m]?.[fatBucket])])),
-    ...Object.fromEntries(ALL_WEEKS.map(s  => [s,  pctContCross(ss[s]?.[lucroBucket], ss[s]?.[fatBucket])])),
-  })
-
   // Agrupamento mensal para drill-down
   const porPeriodoMensal = {}
   for (const r of rows) {

@@ -27,7 +27,6 @@ export default function ProjResponsaveis() {
   const [usuarios, setUsuarios] = useState([])
   const { hasActionOrDefault } = useAuth()
   const canEdit = hasActionOrDefault('projetos/responsaveis', 'editar')
-  const canDelete = hasActionOrDefault('projetos/responsaveis', 'excluir')
 
   const abrirVisualizar = (item) => { setItemVisualizado(item); setModalVisualizarAberto(true) }
 
@@ -167,7 +166,7 @@ export default function ProjResponsaveis() {
                     <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${item.ativo ? 'bg-green-50 text-green-700 border-green-200' : 'bg-slate-100 text-slate-500 border-slate-200'}`}>{item.ativo ? 'Ativo' : 'Inativo'}</span>
                   </td>
                   <td className="p-3">
-                    <PermissionActionButtons menuPath="proj-responsaveis" onView={() => abrirVisualizar(item)} onEdit={() => abrirEditar(item)} onDelete={() => abrirExcluir(item)} />
+                    <PermissionActionButtons menuPath="projetos/responsaveis" onView={() => abrirVisualizar(item)} onEdit={() => abrirEditar(item)} onDelete={() => abrirExcluir(item)} />
                   </td>
                 </tr>
               )

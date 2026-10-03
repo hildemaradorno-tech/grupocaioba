@@ -9,7 +9,6 @@ import { useKpiSourceStatus } from '../../context/KpiSourceStatusContext'
 import EmpresaSelector from '../../components/kpi/EmpresaSelector'
 import { fetchAuditoria } from '../../services/kpiService'
 
-const PERIOD_KEYS = ['q1','q2','q3','q4','fy','m01','m02','m03','m04','m05','m06','m07','m08','m09','m10','m11','m12']
 
 // Store module-level — persiste entre navegações; evita spinner ao voltar para a página
 const _cache = new Map()
@@ -175,7 +174,6 @@ export default function KpiAuditoria() {
           {Object.entries(grouped).map(([id, group]) => {
             const colors  = GROUP_COLORS[id] || GROUP_COLORS[1]
             const isOpen  = !!openGroups[id]
-            const result  = group.rows.find(r => r.fonte === 'RESULTADO')
             return (
               <div key={id} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                 {/* Cabeçalho clicável */}

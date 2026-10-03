@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import { Link } from 'react-router-dom'
-import { Workflow, Plus, Edit2, UploadCloud, PlayCircle, ListChecks, AlertTriangle, Loader2, Trash2, ShieldAlert, FileWarning } from 'lucide-react'
+import { Workflow, Plus, Edit2, UploadCloud, PlayCircle, AlertTriangle, Loader2, Trash2, ShieldAlert, FileWarning } from 'lucide-react'
 import { listarDefinicoes, listarInstancias, publicarDefinicao, excluirInstancia, excluirDefinicao } from '../../services/bpm/bpmService'
 
 const STATUS_DEFINICAO = {

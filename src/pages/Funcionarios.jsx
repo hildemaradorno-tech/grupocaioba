@@ -1,6 +1,6 @@
 ﻿import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
-import { Plus, Edit2, Trash2, X, AlertTriangle, Users, Eye, BadgePercent, Search, Info, ChevronDown, ArrowUp, ArrowDown, ArrowUpDown, FileDown, FileSpreadsheet, RefreshCw, Loader2 } from 'lucide-react'
+import { Plus, X, AlertTriangle, Users, Eye, BadgePercent, Search, Info, ChevronDown, ArrowUp, ArrowDown, ArrowUpDown, FileDown, FileSpreadsheet, RefreshCw, Loader2 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import PermissionActionButtons from '../components/PermissionActionButtons'
 import { apiService } from '../services/api'
@@ -274,7 +274,6 @@ export default function Funcionarios() {
   const [sincronizando, setSincronizando] = useState(false)
   const { hasActionOrDefault } = useAuth()
   const canEdit = hasActionOrDefault('funcionarios', 'editar')
-  const canDelete = hasActionOrDefault('funcionarios', 'excluir')
 
   useEffect(() => { loadData() }, [])
 

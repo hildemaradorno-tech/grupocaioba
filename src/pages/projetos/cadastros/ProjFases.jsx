@@ -1,18 +1,11 @@
 import React, { useEffect, useState } from 'react'
 import { useSessionState } from '../../../hooks/useSessionState'
-import { Plus, X, AlertTriangle, Eye, Milestone } from 'lucide-react'
+import { Plus, X, AlertTriangle, Eye } from 'lucide-react'
 import { useAuth } from '../../../context/AuthContext'
 import PermissionActionButtons from '../../../components/PermissionActionButtons'
 import { apiService } from '../../../services/api'
 import { clearProjLookups } from '../../../services/projLookups'
 
-function getTextColor(hex) {
-  const h = hex || '#1e293b'
-  const r = parseInt(h.slice(1, 3), 16)
-  const g = parseInt(h.slice(3, 5), 16)
-  const b = parseInt(h.slice(5, 7), 16)
-  return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.5 ? '#1e293b' : '#ffffff'
-}
 
 const _cache = { dados: null }
 
@@ -30,7 +23,6 @@ export default function ProjFases() {
   const [editandoOrdem, setEditandoOrdem] = useState(null) // { id, valor }
   const { hasActionOrDefault } = useAuth()
   const canEdit = hasActionOrDefault('projetos/fases', 'editar')
-  const canDelete = hasActionOrDefault('projetos/fases', 'excluir')
 
   const abrirVisualizar = (item) => { setItemVisualizado(item); setModalVisualizarAberto(true) }
 
@@ -184,7 +176,7 @@ export default function ProjFases() {
                   <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${item.ativo ? 'bg-green-50 text-green-700 border-green-200' : 'bg-slate-100 text-slate-500 border-slate-200'}`}>{item.ativo ? 'Ativo' : 'Inativo'}</span>
                 </td>
                 <td className="p-3">
-                  <PermissionActionButtons menuPath="proj-fases" onView={() => abrirVisualizar(item)} onEdit={() => abrirEditar(item)} onDelete={() => abrirExcluir(item)} />
+                  <PermissionActionButtons menuPath="projetos/fases" onView={() => abrirVisualizar(item)} onEdit={() => abrirEditar(item)} onDelete={() => abrirExcluir(item)} />
                 </td>
               </tr>
             ))}

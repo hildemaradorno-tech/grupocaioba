@@ -6,7 +6,7 @@ import {
 import { supabase } from '../services/supabaseClient'
 import { apiService } from '../services/api'
 import { MENU_TREE, getLeafKeys } from '../config/menuTree'
-import { ACOES_POR_MENU, ACOES_POR_PATH } from '../config/acoesMenu'
+import { ACOES_POR_PATH } from '../config/acoesMenu'
 import { MultiSearchCombobox } from '../components/SearchCombobox'
 
 // ── Flatten MENU_TREE into display rows ──────────────────────────────────────

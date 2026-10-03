@@ -12,7 +12,7 @@ import { valoresMetaMecanico, resolverPosicaoMecanico } from '../utils/metasMeca
 const PROD_NAO_ASSOCIADA_ID = '00000000-0000-0000-0000-000000000001'
 import { agruparPorSegmento } from '../utils/segmentoMarca'
 import { referenciasConsultor, setorOrigemConsultor } from '../utils/referenciasConsultor'
-import { aggColabs, aggBox, aggSetor, aggDept, aggEmp, aggDeptDedup, aggEmpDedup, montarArvoreTotal, linhaPendente } from '../utils/totalPosVendas'
+import { aggBox, aggSetor, aggDeptDedup, aggEmpDedup, montarArvoreTotal, linhaPendente } from '../utils/totalPosVendas'
 import { LogoGrupo, LogoSegmento } from '../components/LogosMarca'
 import CalculoFuncionarioModal from '../components/CalculoFuncionarioModal'
 

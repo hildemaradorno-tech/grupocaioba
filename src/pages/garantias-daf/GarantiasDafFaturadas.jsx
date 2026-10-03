@@ -128,27 +128,8 @@ export default function GarantiasDafFaturadas() {
     return item.empresa_nome || '—'
   }
 
-  const tipoCode = (s) => String(s || '').trim().split(' ')[0].toUpperCase()
   const tipoOsLabel = (item) => item.tipo_garantia_descricao || item.tipo_os_sigla || '—'
 
-  const importadosSet = useMemo(
-    () => new Set(dadosTodos.map(d =>
-      `${String(d.numero_os).trim()}||${tipoCode(d.tipo_os_sigla) || tipoCode(d.tipo_garantia_descricao)}`
-    )),
-    [dadosTodos]
-  )
-  const importadosSemTipo = useMemo(
-    () => new Set(
-      dadosTodos
-        .filter(d => !tipoCode(d.tipo_os_sigla) && !tipoCode(d.tipo_garantia_descricao))
-        .map(d => String(d.numero_os).trim())
-    ),
-    [dadosTodos]
-  )
-  const importadosTodosPorOS = useMemo(
-    () => new Set(dadosTodos.map(d => String(d.numero_os).trim())),
-    [dadosTodos]
-  )
 
   const empresasDisponiveis = useMemo(() => {
     const seen = new Set()

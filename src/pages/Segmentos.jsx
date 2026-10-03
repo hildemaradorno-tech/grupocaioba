@@ -19,7 +19,6 @@ export default function Segmentos() {
   const [itemVisualizado, setItemVisualizado] = useState(null)
   const { hasActionOrDefault } = useAuth()
   const canEdit = hasActionOrDefault('segmentos', 'editar')
-  const canDelete = hasActionOrDefault('segmentos', 'excluir')
 
   const abrirVisualizar = (seg) => { setItemVisualizado(seg); setModalVisualizarAberto(true) }
 

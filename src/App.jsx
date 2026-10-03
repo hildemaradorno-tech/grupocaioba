@@ -63,7 +63,6 @@ import BpmNovaInstancia from './pages/bpm/BpmNovaInstancia'
 import BpmInstancia from './pages/bpm/BpmInstancia'
 import NfeCancelamentoDevolucao from './pages/bpm/NfeCancelamentoDevolucao'
 import NfeSolicitacaoDetalhe from './pages/bpm/NfeSolicitacaoDetalhe'
-import NfeEtapasConfig from './pages/bpm/NfeEtapasConfig'
 import TruckPagTitulos from './pages/truckpag/TruckPagTitulos'
 import TruckPagConciliacao from './pages/truckpag/TruckPagConciliacao'
 import TruckPagRepasses from './pages/truckpag/TruckPagRepasses'
@@ -104,7 +103,6 @@ import BiGarantiasDaf from './pages/bi/BiGarantiasDaf'
 import BiProjetos from './pages/bi/BiProjetos'
 import BiPossibilidades from './pages/bi/BiPossibilidades'
 import MedidasBi from './pages/bi/MedidasBi'
-import BiComissoes from './pages/bi/BiComissoes'
 import BiCampanha from './pages/bi/BiCampanha'
 
 function ProtectedRoute({ children }) {
@@ -246,7 +244,6 @@ export default function App() {
           { path: '/bpm/instancias/:id', element: <BpmInstancia />, menuPath: ['bpm/processos', 'bpm/nfe-cancelamento-devolucao'] },
           { path: '/bpm/nfe-cancelamento-devolucao', element: <NfeCancelamentoDevolucao />, menuPath: 'bpm/nfe-cancelamento-devolucao' },
           { path: '/bpm/nfe-solicitacoes/:id', element: <NfeSolicitacaoDetalhe />, menuPath: 'bpm/nfe-cancelamento-devolucao' },
-          { path: '/bpm/nfe-etapas', element: <NfeEtapasConfig />, menuPath: 'bpm/nfe-etapas' },
           { path: '/truckpag/titulos', element: <TruckPagTitulos />, menuPath: 'truckpag/titulos' },
           { path: '/truckpag/conciliacao', element: <TruckPagConciliacao />, menuPath: 'truckpag/conciliacao' },
           { path: '/truckpag/repasses', element: <TruckPagRepasses />, menuPath: 'truckpag/repasses' },
@@ -295,7 +292,6 @@ export default function App() {
           { path: '/bi/possibilidades', element: <BiPossibilidades />, menuPath: 'bi/possibilidades' },
           { path: '/bi/fontes', element: <Navigate to="/fontes-calculo" replace /> },
           { path: '/bi/medidas', element: <MedidasBi />, menuPath: 'bi/medidas' },
-          { path: '/bi/comissoes', element: <BiComissoes />, menuPath: 'bi/comissoes' },
           { path: '/bi/campanha', element: <BiCampanha />, menuPath: 'bi/campanha' },
         ].map(route => (
           <Route

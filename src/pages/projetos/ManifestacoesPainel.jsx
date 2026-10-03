@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Loader2, Clock, Send, Eye, Lock, ChevronDown, ChevronUp, Plus, X, Trash2 } from 'lucide-react'
+import { Loader2, Clock, Send, Eye, ChevronDown, ChevronUp, Plus, X, Trash2 } from 'lucide-react'
 import { apiService } from '../../services/api'
 import { useAuth } from '../../context/AuthContext'
 import ProjetosNav from './ProjetosNav'
@@ -39,9 +39,7 @@ function getTextColor(hex) {
 export default function ManifestacoesPainel() {
   const navigate = useNavigate()
   const { hasActionOrDefault, isAdmin, impersonando } = useAuth()
-  const canResponder = hasActionOrDefault('projetos/manifestacoes', 'responder_manifestacao')
   const canEncerrar  = hasActionOrDefault('projetos/manifestacoes', 'encerrar_periodo')
-  const podeVerTodos = isAdmin || canResponder || canEncerrar
 
   const [projetos, setProjetos] = useState([])
   const [convidadoIds, setConvidadoIds] = useState(new Set())

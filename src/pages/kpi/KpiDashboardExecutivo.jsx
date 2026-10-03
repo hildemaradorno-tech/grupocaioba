@@ -33,12 +33,6 @@ function weightedAvg(rows, field) {
   return valid.reduce((s, r) => s + r[field] * r.peso, 0) / totalPeso
 }
 
-function colorClass(val) {
-  if (val === null) return 'text-slate-400'
-  if (val >= 1.0) return 'text-emerald-600 font-semibold'
-  if (val >= 0.8) return 'text-amber-500 font-semibold'
-  return 'text-red-600 font-semibold'
-}
 
 function badgeClass(val) {
   if (val === null) return 'bg-slate-100 text-slate-400'

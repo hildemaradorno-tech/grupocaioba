@@ -6,6 +6,14 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
+// Cabeçalho de autenticação pras rotas do backend que exigem sessão (validada no servidor com o
+// mesmo access_token do Supabase Auth).
+const authHeaders = async () => {
+  const { data } = await supabase.auth.getSession()
+  const token = data.session?.access_token
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
 // ── Auditoria Externa — fechamento automático de Ciclo ───────────────────────
 // O status do ciclo não é mais editável manualmente: fica "em_andamento" até
 // que TODAS as Divergências (achados) do ciclo tenham um Plano de Ação
@@ -211,16 +219,6 @@ export const apiService = {
       .order('nome', { ascending: true })
     if (error) throw error
     return data || []
-  },
-
-  getUsuarioById: async (id) => {
-    const { data, error } = await supabase
-      .from('usuarios')
-      .select('id, nome, email, grupo_id, cargo_id, funcionario_id')
-      .eq('id', id)
-      .single()
-    if (error) throw error
-    return data
   },
 
   // GRUPOS DE ACESSO
@@ -1592,7 +1590,7 @@ export const apiService = {
       ...(subpastaPadrao ? { subpastaPadrao } : {}),
       ...(ano ? { ano: String(ano) } : {}),
     })
-    const res = await fetch(`${backendUrl}/api/calculo-comissao/colunas?${qs}`)
+    const res = await fetch(`${backendUrl}/api/calculo-comissao/colunas?${qs}`, { headers: await authHeaders() })
     const body = await res.json()
     if (!res.ok) throw new Error(body.error || 'Erro ao detectar colunas do arquivo SharePoint')
     return body
@@ -1618,7 +1616,7 @@ export const apiService = {
     const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
     const res = await fetch(`${backendUrl}/api/calculo-comissao/preview`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
       body: JSON.stringify({
         pasta, prefixo,
         microwork: microwork || null,
@@ -1724,7 +1722,7 @@ export const apiService = {
     const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
     const res = await fetch(`${backendUrl}/api/calculo-comissao/lote`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
       body: JSON.stringify({ itens }),
     })
     const body = await res.json()
@@ -2070,19 +2068,6 @@ export const apiService = {
     return data || []
   },
 
-  // TODOS os lotes de um período, de qualquer empresa/departamento — usado no painel "Visão
-  // Geral" de Processamento de Comissões, que lista todas as lojas/departamentos e quem já
-  // conferiu, independente de já ter algum resultado calculado carregado na tela.
-  getLotesPorPeriodo: async (periodoInicio, periodoFim) => {
-    const { data, error } = await supabase
-      .from('fato_comissoes_lotes')
-      .select('*')
-      .eq('periodo_inicio', periodoInicio)
-      .eq('periodo_fim', periodoFim)
-    if (error) throw error
-    return data || []
-  },
-
   // Cria o lote (Rascunho) se não existir, ou atualiza o snapshot enquanto ainda for Rascunho.
   // Se já estiver Conferido/Processado, não mexe no lote (precisa de Autorizar Reprocessamento antes).
   // departamentoId/departamentoNome são só informativos (o departamento "pai" do setor, resolvido
@@ -2177,6 +2162,40 @@ export const apiService = {
     if (error) throw error
     const lote = data?.[0]
     await supabase.from('fato_comissoes_lotes_historico').insert([{ lote_id: loteId, acao: status, usuario, valor_no_momento: lote?.valor_total }])
+    return lote
+  },
+
+  // Desfaz o pagamento processado de funcionários (ou de todo o lote, se funcionarioIds vier vazio):
+  // eles voltam a "Aguardando Processamento". Sem ninguém processado sobrando, o lote volta pra
+  // Conferido pelo DP; senão fica em Processamento Parcial.
+  desprocessarLote: async (loteId, funcionarioIds, usuario) => {
+    const { data: atual, error: erroAtual } = await supabase
+      .from('fato_comissoes_lotes')
+      .select('status, funcionarios_processados, valor_total')
+      .eq('id', loteId)
+      .single()
+    if (erroAtual) throw erroAtual
+    if (!['PROCESSAMENTO_PARCIAL', 'PROCESSADO'].includes(atual?.status)) {
+      throw new Error('O lote não tem pagamento processado pra desfazer.')
+    }
+    const processadosAtuais = atual.funcionarios_processados || []
+    const desfazer = new Set(funcionarioIds?.length ? funcionarioIds : processadosAtuais)
+    const restantes = processadosAtuais.filter(id => !desfazer.has(id))
+    const status = restantes.length === 0 ? 'CONFERIDO_DP' : 'PROCESSAMENTO_PARCIAL'
+    const agora = new Date().toISOString()
+    const { data, error } = await supabase
+      .from('fato_comissoes_lotes')
+      .update({
+        status,
+        funcionarios_processados: restantes,
+        ...(restantes.length === 0 ? { processado_por: null, processado_em: null } : {}),
+        atualizado_em: agora,
+      })
+      .eq('id', loteId)
+      .select()
+    if (error) throw error
+    const lote = data?.[0]
+    await supabase.from('fato_comissoes_lotes_historico').insert([{ lote_id: loteId, acao: 'PROCESSAMENTO_DESFEITO', usuario, valor_no_momento: lote?.valor_total }])
     return lote
   },
 
@@ -2325,20 +2344,6 @@ export const apiService = {
       .select('*')
       .eq('lote_id', loteId)
       .order('data_hora', { ascending: false })
-    if (error) throw error
-    return data || []
-  },
-
-  // Todos os eventos de vários lotes de uma vez, mais antigo primeiro — usado no painel "Linha
-  // do Tempo" de Processamento de Comissões, que mostra quem fez o quê e quando em ordem, pra
-  // todos os lotes do período (não só 1).
-  getHistoricoLotesPorIds: async (loteIds) => {
-    if (!loteIds || loteIds.length === 0) return []
-    const { data, error } = await supabase
-      .from('fato_comissoes_lotes_historico')
-      .select('*')
-      .in('lote_id', loteIds)
-      .order('data_hora', { ascending: true })
     if (error) throw error
     return data || []
   },
@@ -2547,13 +2552,6 @@ export const apiService = {
     return data?.[0]
   },
 
-  deleteMetasPecasEmpresa: async (empresaId, ano) => {
-    const { error } = await supabase.from('fato_rascunho_metas_pecas')
-      .delete().eq('empresa_id', empresaId).eq('ano', ano)
-    if (error) throw error
-    return { success: true }
-  },
-
   // Aprova E publica na hora pra fato_metas_publicadas (só essa empresa+tipo+ano) — sem passo
   // separado de "Publicar", ver _toRowPublicada acima.
   approveMetasPecasEmpresa: async (empresaId, ano, usuario = null) => {
@@ -2657,23 +2655,10 @@ export const apiService = {
     if (error) throw error
     return data?.[0]
   },
-  updateMetaMecanico: async (id, payload) => {
-    const { data, error } = await supabase.from('fato_rascunho_metas_servicos_mecanico')
-      .update({ ...payload, atualizado_em: new Date().toISOString() }).eq('id', id).select()
-    if (error) throw error
-    return data?.[0]
-  },
   deleteMetasMecanicoColab: async (colaboradorId, empresaId, ano) => {
     await _bloquearExclusaoSeAprovada('fato_rascunho_metas_servicos_mecanico', 'mecanico', { colaborador_id: colaboradorId, empresa_id: empresaId, ano })
     const { error } = await supabase.from('fato_rascunho_metas_servicos_mecanico')
       .delete().eq('colaborador_id', colaboradorId).eq('empresa_id', empresaId).eq('ano', ano)
-    if (error) throw error
-    return { success: true }
-  },
-  deleteMetasMecanicoEmpresa: async (empresaId, ano) => {
-    await _bloquearExclusaoSeAprovada('fato_rascunho_metas_servicos_mecanico', 'mecanico', { empresa_id: empresaId, ano })
-    const { error } = await supabase.from('fato_rascunho_metas_servicos_mecanico')
-      .delete().eq('empresa_id', empresaId).eq('ano', ano)
     if (error) throw error
     return { success: true }
   },
@@ -2733,13 +2718,6 @@ export const apiService = {
     if (error) throw error
     return { success: true }
   },
-  deleteMetasConsultorEmpresa: async (empresaId, ano) => {
-    await _bloquearExclusaoSeAprovada('fato_rascunho_metas_servicos_consultor', 'consultor', { empresa_id: empresaId, ano })
-    const { error } = await supabase.from('fato_rascunho_metas_servicos_consultor')
-      .delete().eq('empresa_id', empresaId).eq('ano', ano)
-    if (error) throw error
-    return { success: true }
-  },
 
   approveMetasConsultorEmpresa: async (empresaId, ano, usuario = null) => {
     const { error } = await supabase.rpc('approve_metas_consultor_empresa', {
@@ -2785,12 +2763,6 @@ export const apiService = {
     if (error) throw error
     return data || []
   },
-  upsertMetaFunilaria: async (payload) => {
-    const { data, error } = await supabase.from('fato_rascunho_metas_funilaria_pintura')
-      .upsert([{ ...payload }], { onConflict: 'empresa_id,mes,ano' }).select()
-    if (error) throw error
-    return data?.[0]
-  },
   // METAS — TERCEIROS
   getMetasTerceiros: async (empresaId, ano) => {
     let q = supabase.from('fato_rascunho_metas_terceiros').select('*').eq('ano', ano).order('empresa_nome').order('mes')
@@ -2798,18 +2770,6 @@ export const apiService = {
     const { data, error } = await q
     if (error) throw error
     return data || []
-  },
-  upsertMetaTerceiros: async (payload) => {
-    const { data, error } = await supabase.from('fato_rascunho_metas_terceiros')
-      .upsert([{ ...payload }], { onConflict: 'empresa_id,mes,ano' }).select()
-    if (error) throw error
-    return data?.[0]
-  },
-  deleteMetasTerceirosEmpresa: async (empresaId, ano) => {
-    const { error } = await supabase.from('fato_rascunho_metas_terceiros')
-      .delete().eq('empresa_id', empresaId).eq('ano', ano)
-    if (error) throw error
-    return { success: true }
   },
 
   approveMetasTerceirosEmpresa: async (empresaId, ano) => {
@@ -2833,40 +2793,6 @@ export const apiService = {
         .upsert(aprovadas.map(r => _toRowPublicada(r, 'terceiros', ts, ctxPub)), { onConflict: 'empresa_id,ano,mes,tipo,colaborador_id' })
       if (errPub) throw errPub
     }
-    return { success: true }
-  },
-  getPendingApprovalsTerceiros: async () => {
-    const { data, error } = await supabase
-      .from('fato_rascunho_metas_terceiros')
-      .select('*').gt('meta_faturamento', 0).order('empresa_nome').order('mes')
-    if (error) throw error
-    return (data || []).filter(r => {
-      const cur = Number(r.meta_faturamento) || 0
-      if (cur === 0) return false
-      if (r.meta_aprovada === null || r.meta_aprovada === undefined) return true
-      return Math.abs(cur - Number(r.meta_aprovada)) > 0.001
-    })
-  },
-
-  getPendingApprovalsFunilaria: async () => {
-    const { data, error } = await supabase
-      .from('fato_rascunho_metas_funilaria_pintura')
-      .select('*')
-      .gt('meta_faturamento', 0)
-      .order('empresa_nome').order('mes')
-    if (error) throw error
-    return (data || []).filter(r => {
-      const cur = Number(r.meta_faturamento) || 0
-      if (cur === 0) return false
-      if (r.meta_aprovada === null || r.meta_aprovada === undefined) return true
-      return Math.abs(cur - Number(r.meta_aprovada)) > 0.001
-    })
-  },
-  deleteMetasFunilariaEmpresa: async (empresaId, ano) => {
-    await _bloquearExclusaoSeAprovada('fato_rascunho_metas_funilaria_pintura', 'funilaria', { empresa_id: empresaId, ano })
-    const { error } = await supabase.from('fato_rascunho_metas_funilaria_pintura')
-      .delete().eq('empresa_id', empresaId).eq('ano', ano)
-    if (error) throw error
     return { success: true }
   },
 
@@ -3246,23 +3172,6 @@ export const apiService = {
     return { success: true }
   },
 
-  deleteAllGarantias: async () => {
-    // Só apaga OS Faturadas (status E = NF Emitida, F = Enviado à Fábrica)
-    // OS Abertas (status A) não são afetadas
-    const { data: faturadas, error: errFetch } = await supabase
-      .from('gar_garantias')
-      .select('id')
-      .in('status_codigo', ['E', 'F'])
-    if (errFetch) throw errFetch
-    const ids = (faturadas || []).map(r => r.id)
-    if (ids.length === 0) return { success: true, deleted: 0 }
-    const { error: errLog } = await supabase.from('gar_garantias_log').delete().in('garantia_id', ids)
-    if (errLog) throw errLog
-    const { error } = await supabase.from('gar_garantias').delete().in('status_codigo', ['E', 'F'])
-    if (error) throw error
-    return { success: true, deleted: ids.length }
-  },
-
   getGarantiaLog: async (garantiaId) => {
     const { data, error } = await supabase
       .from('gar_garantias_log')
@@ -3348,86 +3257,6 @@ export const apiService = {
     const { error } = await supabase.from('gar_garantias_respostas').delete().eq('id', id)
     if (error) throw error
     return { success: true }
-  },
-
-  /**
-   * Sincroniza tipo_os_sigla em TODOS os registros a partir da própria tipo_garantia_descricao
-   * já salva ("G03 - PLANO..." → "G03") — garante que a sigla sempre bata com o tipo da OS.
-   * Fallback (só quando a descrição não tem código extraível): usa o ROF001_OSABERTA, mas
-   * somente se a OS aparecer uma única vez no arquivo (evita pegar a sigla de outro tipo/linha
-   * da mesma OS quando ela tem múltiplas linhas no ROF001).
-   * Retorna { atualizados, semSigla, erros, total }.
-   */
-  sincronizarTipoOsSigla: async (rof001Rows = []) => {
-    // Mapa simples: os_numero → tipo_os_sigla (só usado quando a OS aparece 1x no arquivo — sem ambiguidade de tipo)
-    const rof001MapSimples = new Map()
-    const contagemPorOS = new Map()
-    for (const r of rof001Rows) {
-      const osNum = String(r.os_numero ?? '').trim()
-      const sigla = String(r.tipo_os_sigla ?? '').trim()
-      if (!osNum || !sigla) continue
-      contagemPorOS.set(osNum, (contagemPorOS.get(osNum) || 0) + 1)
-      if (!rof001MapSimples.has(osNum)) rof001MapSimples.set(osNum, sigla)
-    }
-
-    // Busca TODOS os registros (força re-sync, não só os vazios)
-    const PAGE = 1000
-    const todos = []
-    let from = 0
-    while (true) {
-      const { data, error } = await supabase
-        .from('gar_garantias')
-        .select('id, numero_os, tipo_os_sigla, tipo_garantia_descricao')
-        .range(from, from + PAGE - 1)
-      if (error) throw error
-      todos.push(...(data || []))
-      if (!data || data.length < PAGE) break
-      from += PAGE
-    }
-
-    let atualizados = 0
-    let semSigla = 0
-    const erros = []
-
-    for (const rec of todos) {
-      const osNum = String(rec.numero_os ?? '').trim()
-
-      // 1. Fonte primária: a sigla embutida na própria descrição já salva ("G03 - PLANO..." → "G03").
-      //    Uma OS pode ter múltiplas linhas no ROF001 (uma por tipo de serviço/peça); usar a descrição
-      //    do próprio registro garante que a sigla bata com o tipo realmente importado para essa OS,
-      //    evitando pegar a sigla de outra linha/tipo da mesma OS.
-      let sigla = ''
-      const descTrim = rec.tipo_garantia_descricao?.trim() || ''
-      if (descTrim) {
-        const candidato = descTrim.split(' ')[0]
-        if (/^[A-Z]\d{2,3}$/i.test(candidato)) sigla = candidato.toUpperCase()
-      }
-
-      // 2. Fallback: sem sigla na descrição e a OS aparece só 1x no ROF001 → sem ambiguidade, usa direto
-      if (!sigla && contagemPorOS.get(osNum) === 1) sigla = rof001MapSimples.get(osNum) || ''
-
-      if (!sigla) { semSigla++; continue }
-
-      // Só atualiza se o valor for diferente do atual
-      if (rec.tipo_os_sigla?.trim() === sigla) continue
-
-      const { error } = await supabase
-        .from('gar_garantias')
-        .update({ tipo_os_sigla: sigla })
-        .eq('id', rec.id)
-      if (error) { erros.push({ id: rec.id, os: osNum, erro: error.message }); continue }
-      atualizados++
-    }
-
-    return { atualizados, semSigla, erros, total: todos.length }
-  },
-
-  getGarantiasDashboard: async () => {
-    const { data, error } = await supabase
-      .from('gar_garantias')
-      .select('status_codigo, valor_pecas, valor_servicos, data_abertura_os, data_lancamento, data_emissao_nf')
-    if (error) throw error
-    return data || []
   },
 
   // ══════════════════════════════════════════
@@ -4138,16 +3967,6 @@ export const apiService = {
     return data?.[0]
   },
 
-  updateTarefaStatusKanban: async (id, statusKanban, ordem) => {
-    const { data, error } = await supabase
-      .from('proj_tarefas')
-      .update({ status_kanban: statusKanban, ordem, atualizado_em: new Date().toISOString() })
-      .eq('id', id)
-      .select()
-    if (error) throw error
-    return data?.[0]
-  },
-
   deleteTarefa: async (id) => {
     await supabase.from('proj_deliberacoes').delete().eq('tarefa_id', id)
     const { error } = await supabase.from('proj_tarefas').delete().eq('id', id)
@@ -4236,27 +4055,6 @@ export const apiService = {
     return data || []
   },
 
-  // Sem filtro de projeto — usado no painel geral (visão do responsável)
-  getManifestacoesPendentes: async () => {
-    const { data, error } = await supabase
-      .from('proj_manifestacoes')
-      .select('*, proj_projetos(id, nome)')
-      .in('status', ['Pendente', 'Em Análise'])
-      .order('data_hora_envio', { ascending: true })
-    if (error) throw error
-    return data || []
-  },
-
-  getManifestoesRespondidas: async () => {
-    const { data, error } = await supabase
-      .from('proj_manifestacoes')
-      .select('*, proj_projetos(id, nome)')
-      .eq('status', 'Respondido')
-      .order('data_hora_resposta', { ascending: false })
-    if (error) throw error
-    return data || []
-  },
-
   deleteManifestacao: async (id) => {
     const { error } = await supabase.from('proj_manifestacoes').delete().eq('id', id)
     if (error) throw error
@@ -4278,16 +4076,6 @@ export const apiService = {
     const { data, error } = await supabase
       .from('proj_manifestacoes')
       .update({ tipo_manifestacao, texto_manifestacao })
-      .eq('id', id)
-      .select()
-    if (error) throw error
-    return data?.[0]
-  },
-
-  updateManifestacaoStatus: async (id, status) => {
-    const { data, error } = await supabase
-      .from('proj_manifestacoes')
-      .update({ status })
       .eq('id', id)
       .select()
     if (error) throw error
@@ -4514,64 +4302,6 @@ export const apiService = {
     const { error } = await supabase.from('proj_templates').delete().eq('id', id)
     if (error) throw error
     return { success: true }
-  },
-
-  // ── Custos de Projetos ────────────────────────────────────────────────────
-  getCustosProjetos: async () => {
-    const { data, error } = await supabase
-      .from('proj_custos')
-      .select('*, proj_projetos(nome), fornecedores(nome)')
-      .order('data_inicio', { ascending: true })
-    if (error) throw error
-    return data || []
-  },
-
-  createCustoProjeto: async (payload, userEmail) => {
-    const { data, error } = await supabase
-      .from('proj_custos')
-      .insert([{ ...payload, criado_por: userEmail, criado_em: new Date().toISOString() }])
-      .select()
-    if (error) throw error
-    return data?.[0]
-  },
-
-  updateCustoProjeto: async (id, payload) => {
-    const { data, error } = await supabase
-      .from('proj_custos')
-      .update(payload)
-      .eq('id', id)
-      .select()
-    if (error) throw error
-    return data?.[0]
-  },
-
-  deleteCustoProjeto: async (id) => {
-    const { error } = await supabase.from('proj_custos').delete().eq('id', id)
-    if (error) throw error
-    return { success: true }
-  },
-
-  getConfirmacoesCusto: async (ano) => {
-    const { data, error } = await supabase
-      .from('proj_custos_pagamentos')
-      .select('*')
-      .eq('ano', ano)
-    if (error) throw error
-    return data || []
-  },
-
-  upsertConfirmacaoCusto: async (custo_id, ano, mes, confirmado, userEmail, valor_pago) => {
-    const { data, error } = await supabase
-      .from('proj_custos_pagamentos')
-      .upsert({
-        custo_id, ano, mes, confirmado,
-        valor_pago:       confirmado && valor_pago != null ? valor_pago : null,
-        data_confirmacao: confirmado ? new Date().toISOString() : null,
-        confirmado_por:   confirmado ? userEmail : null,
-      }, { onConflict: 'custo_id,ano,mes' })
-      .select()
-    if (error) throw error
-    return data?.[0]
   },
 
   // ── Fornecedores ──────────────────────────────────────────────────────────
@@ -5303,25 +5033,6 @@ export const apiService = {
     return todos
   },
 
-  createGovernancaMenu: async ({ sistema, pai_id, nome, ordem }) => {
-    const { data, error } = await supabase
-      .from('governanca_menus')
-      .insert([{ sistema, pai_id: pai_id || null, nome: nome.trim(), ordem: ordem || 0 }])
-      .select()
-    if (error) throw error
-    return data?.[0]
-  },
-
-  updateGovernancaMenu: async (id, { nome }) => {
-    const { data, error } = await supabase
-      .from('governanca_menus')
-      .update({ nome: nome.trim() })
-      .eq('id', id)
-      .select()
-    if (error) throw error
-    return data?.[0]
-  },
-
   // Aplica o plano de importação (RSG001/RSG003) no catálogo. `criar` vem com o pai antes do
   // filho (pai = id real ou tempId de outro item criado); `atualizar` = [{ id, campos }] (campos
   // pode trazer nome, ordem, tipo e pai_id — este também aceita tempId). A exclusão vai por
@@ -5358,12 +5069,6 @@ export const apiService = {
     return { criados: linhas.length, atualizados: atualizar.length, excluidos: excluirIds.length }
   },
 
-  deleteGovernancaMenu: async (id) => {
-    const { error } = await supabase.from('governanca_menus').delete().eq('id', id)
-    if (error) throw error
-    return { success: true }
-  },
-
   getGovernancaPerfis: async (sistema) => {
     const { data, error } = await supabase
       .from('governanca_perfis')
@@ -5395,35 +5100,6 @@ export const apiService = {
 
   deleteGovernancaPerfil: async (id) => {
     const { error } = await supabase.from('governanca_perfis').delete().eq('id', id)
-    if (error) throw error
-    return { success: true }
-  },
-
-  // Retorna todos os pares (perfil_id, menu_id) marcados para os perfis informados
-  getGovernancaPerfilMenus: async (perfilIds) => {
-    if (!perfilIds || perfilIds.length === 0) return []
-    const { data, error } = await supabase
-      .from('governanca_perfil_menus')
-      .select('perfil_id, menu_id')
-      .in('perfil_id', perfilIds)
-    if (error) throw error
-    return data || []
-  },
-
-  marcarGovernancaPerfilMenu: async (perfilId, menuId) => {
-    const { error } = await supabase
-      .from('governanca_perfil_menus')
-      .upsert([{ perfil_id: perfilId, menu_id: menuId }], { onConflict: 'perfil_id,menu_id' })
-    if (error) throw error
-    return { success: true }
-  },
-
-  desmarcarGovernancaPerfilMenu: async (perfilId, menuId) => {
-    const { error } = await supabase
-      .from('governanca_perfil_menus')
-      .delete()
-      .eq('perfil_id', perfilId)
-      .eq('menu_id', menuId)
     if (error) throw error
     return { success: true }
   },

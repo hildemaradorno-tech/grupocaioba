@@ -30,7 +30,6 @@ export default function NaturezaOperacoes() {
   const [itemVisualizado, setItemVisualizado] = useState(null)
   const { hasActionOrDefault } = useAuth()
   const canEdit = hasActionOrDefault('natureza-operacoes', 'editar')
-  const canDelete = hasActionOrDefault('natureza-operacoes', 'excluir')
   const abrirVisualizar = (item) => { setItemVisualizado(item); setModalVisualizarAberto(true) }
 
   useEffect(() => { loadData() }, [])

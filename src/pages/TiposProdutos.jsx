@@ -60,7 +60,6 @@ export default function TiposProdutos() {
   const [itemVisualizado, setItemVisualizado] = useState(null)
   const { hasActionOrDefault } = useAuth()
   const canEdit = hasActionOrDefault('tipos-produtos', 'editar')
-  const canDelete = hasActionOrDefault('tipos-produtos', 'excluir')
   const abrirVisualizar = (item) => { setItemVisualizado(item); setModalVisualizarAberto(true) }
 
   useEffect(() => { loadData() }, [])

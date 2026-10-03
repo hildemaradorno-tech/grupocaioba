@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
-import { ArrowLeftRight, Truck, Search, RefreshCw, AlertTriangle, ChevronDown, ChevronUp, X, CheckCircle2, XCircle, HelpCircle, Settings, Info, Link2, Link2Off, FileDown, FileText, Loader2 } from 'lucide-react'
+import { ArrowLeftRight, Truck, Search, RefreshCw, AlertTriangle, ChevronDown, ChevronUp, X, CheckCircle2, XCircle, HelpCircle, Settings, Link2, Link2Off, FileDown, FileText, Loader2 } from 'lucide-react'
 import { apiService } from '../../services/api'
 import TruckPagNav from './TruckPagNav'
 import TruckPagRegrasModal from './TruckPagRegrasModal'

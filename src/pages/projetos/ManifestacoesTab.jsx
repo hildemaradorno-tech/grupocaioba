@@ -16,11 +16,6 @@ const TIPO_COR = {
   'De Acordo': 'bg-teal-100 text-teal-700',
 }
 
-const STATUS_COR = {
-  'Pendente':    'bg-slate-100 text-slate-600',
-  'Em Análise':  'bg-amber-100 text-amber-700',
-  'Respondido':  'bg-teal-100 text-teal-700',
-}
 
 const fmtData = (d) => d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') : '—'
 const fmtDataHora = (d) => d ? new Date(d).toLocaleString('pt-BR') : '—'
@@ -136,10 +131,6 @@ export default function ManifestacoesTab({ projeto, onReload, convidados = [], m
     }
   }
 
-  const marcarEmAnalise = async (m) => {
-    await apiService.updateManifestacaoStatus(m.id, 'Em Análise')
-    await carregar()
-  }
 
   const reabrirPeriodo = async () => {
     if (!window.confirm('Reabrir o Período de Manifestação? O projeto voltará à fase de Manifestação.')) return

@@ -165,7 +165,6 @@ export default function MedidasBi() {
 
   const { hasActionOrDefault } = useAuth()
   const canEdit = hasActionOrDefault('bi/medidas', 'editar')
-  const canDelete = hasActionOrDefault('bi/medidas', 'excluir')
 
   useEffect(() => { loadData() }, [])
 

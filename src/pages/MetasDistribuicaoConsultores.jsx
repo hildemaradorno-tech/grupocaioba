@@ -80,7 +80,6 @@ export default function MetasDistribuicaoConsultores() {
   const [filtroEmpresa,   setFiltroEmpresa]   = useSessionState('mdc_empresas', [])
   const { hasActionOrDefault } = useAuth()
   const canEdit = hasActionOrDefault('metas/pos-vendas/distribuicao-consultores', 'editar')
-  const canDelete = hasActionOrDefault('metas/pos-vendas/distribuicao-consultores', 'excluir')
   const [filtroAno,       setFiltroAno]       = useSessionState('mdc_ano', anoAtual)
   const [filtroDepto,     setFiltroDepto]     = useState('')
   const [filtroSetor,     setFiltroSetor]     = useState('')
@@ -204,10 +203,6 @@ export default function MetasDistribuicaoConsultores() {
     return true
   }), [dadosAbaAtiva, filtroDepto, filtroSetor, filtroBox, filtroCargo, filtroProdutivo])
 
-  const optsDepto  = useMemo(() => [...new Set(dadosAbaAtiva.map(r => r.departamento_nome).filter(Boolean))].sort(), [dadosAbaAtiva])
-  const optsSetor  = useMemo(() => [...new Set(dadosAbaAtiva.map(r => r.setor_nome).filter(Boolean))].sort(),        [dadosAbaAtiva])
-  const optsBox    = useMemo(() => [...new Set(dadosAbaAtiva.map(r => r.box_nome).filter(Boolean))].sort(),          [dadosAbaAtiva])
-  const optsCargo  = useMemo(() => [...new Set(dadosAbaAtiva.map(r => r.cargo_nome).filter(Boolean))].sort(),        [dadosAbaAtiva])
 
   const tree = useMemo(() => {
     // Lookup maps from dimension tables — nomes sempre atualizados
@@ -304,15 +299,6 @@ export default function MetasDistribuicaoConsultores() {
 
   const sumArr = (a) => a.reduce((s, v) => s + v, 0)
 
-  const aggColabsMeses = (colabsMap) => {
-    const a = Array(12).fill(0)
-    Object.values(colabsMap).forEach(c => Object.entries(c.meses).forEach(([m, d]) => { a[+m - 1] += Number(d.meta_faturamento) || 0 }))
-    return a
-  }
-  const aggCargo = (ca) => aggColabsMeses(ca.colabs)
-  const aggBox   = (bx) => { const a = Array(12).fill(0); Object.values(bx.cargos).forEach(c => aggCargo(c).forEach((v, i) => { a[i] += v })); return a }
-  const aggSetor = (st) => { const a = Array(12).fill(0); Object.values(st.boxes).forEach(b => aggBox(b).forEach((v, i) => { a[i] += v })); return a }
-  const aggDept  = (d)  => { const a = Array(12).fill(0); Object.values(d.setores).forEach(s => aggSetor(s).forEach((v, i) => { a[i] += v })); return a }
 
   const empresasComRef = useMemo(() => {
     const all = new Set()

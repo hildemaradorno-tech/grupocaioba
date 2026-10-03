@@ -74,7 +74,6 @@ export default function Rubricas() {
 
   const { hasActionOrDefault } = useAuth()
   const canEdit = hasActionOrDefault('rubricas', 'editar')
-  const canDelete = hasActionOrDefault('rubricas', 'excluir')
 
   useEffect(() => { loadData() }, [])
 

@@ -1,7 +1,6 @@
 import { Router } from 'express'
 import { isConfigured } from '../services/graphClient.js'
 import { getOsAbertasGarantia, clearGarantiasCache, getRof001Colunas, getRof001EncerradaColunas, getOsAbertasGeral, getOsEncerradas, clearEncerradasCache } from '../services/sharepointGarantias.js'
-import { getAllFaturamentos, clearFaturamentoCache } from '../services/sharepointFaturamento.js'
 import { getAllFaturamentosRof017, getFaturamentoPorOSRof017, getRof017Colunas, clearRof017Cache } from '../services/sharepointRof017.js'
 import { getRfn003Colunas, getTitulosAReceber, clearFinanceiroCache } from '../services/sharepointFinanceiro.js'
 

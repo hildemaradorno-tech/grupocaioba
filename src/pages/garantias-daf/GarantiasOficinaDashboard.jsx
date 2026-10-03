@@ -309,7 +309,6 @@ export default function GarantiasOficinaDashboard({ onLastModified }) {
   const [filtroTipo, setFiltroTipo] = useState(null)
   const [filtroEmpresaOficina, setFiltroEmpresaOficina] = useState(null)
   const [filtroCluster, setFiltroCluster] = useState(null) // { ix, iy } — cruzamento dias × valor selecionado no cluster map
-  const toggleFiltroBucket = (key) => setFiltroBucket(prev => prev === key ? null : key)
   const toggleFiltroTipo = (label) => setFiltroTipo(prev => prev === label ? null : label)
   const toggleFiltroEmpresaOficina = (label) => setFiltroEmpresaOficina(prev => prev === label ? null : label)
   const toggleFiltroCluster = (ix, iy) => setFiltroCluster(prev => (prev && prev.ix === ix && prev.iy === iy) ? null : { ix, iy })
@@ -343,20 +342,6 @@ export default function GarantiasOficinaDashboard({ onLastModified }) {
     return out
   }
 
-  const baseBucketOficina = useMemo(
-    () => aplicarFiltrosOficina(oficinaRowsGarantia, { pularBucket: true }),
-    [oficinaRowsGarantia, filtroTipo, filtroEmpresaOficina, filtroCluster]
-  )
-  const bucketsOficina = useMemo(() => {
-    const counts = BUCKETS_OFICINA.map(b => ({ ...b, qtd: 0, valor: 0 }))
-    for (const r of baseBucketOficina) {
-      const d = diasNaOficina(r)
-      if (d === null) continue
-      const bucket = counts.find(b => d >= b.min && d <= b.max)
-      if (bucket) { bucket.qtd += 1; bucket.valor += Number(r.total || 0) }
-    }
-    return counts
-  }, [baseBucketOficina])
 
   const baseTipoOficina = useMemo(
     () => aplicarFiltrosOficina(oficinaRowsGarantia, { pularTipo: true }),

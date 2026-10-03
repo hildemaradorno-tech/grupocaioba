@@ -126,7 +126,7 @@ export function AuthProvider({ children }) {
         return
       }
 
-      const [{ data: grupo, error: e2 },{ data: perms, error: e3 }, { data: empPerms, error: e4 }, { data: acoes }, { data: deptoPerms }, { data: deptoAuditPerms }, { data: empAuditPerms }] = await Promise.all([
+      const [{ data: grupo, error: e2 },{ data: perms, error: e3 }, { data: empPerms }, { data: acoes }, { data: deptoPerms }, { data: deptoAuditPerms }, { data: empAuditPerms }] = await Promise.all([
         supabase.from('grupos_acesso').select('is_admin, auditoria_depto_modo, projetos_depto_modo, auditoria_empresa_modo').eq('id', perfil.grupo_id).single(),
         supabase.from('permissoes_grupo').select('menu_path').eq('grupo_id', perfil.grupo_id),
         supabase.from('permissoes_empresa_grupo').select('empresa_id').eq('grupo_id', perfil.grupo_id),

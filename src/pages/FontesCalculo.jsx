@@ -46,7 +46,6 @@ export default function FontesCalculo() {
 
   const { hasActionOrDefault } = useAuth()
   const canEdit = hasActionOrDefault('fontes-calculo', 'editar')
-  const canDelete = hasActionOrDefault('fontes-calculo', 'excluir')
 
   useEffect(() => { loadData() }, [])
 

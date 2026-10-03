@@ -1,73 +1,20 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { useNavigate } from 'react-router-dom'
-import { Search, Loader2, AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, Eye, X, RotateCcw, Truck, ShieldCheck, CheckCircle2, Circle, Download, Trash2, FileDown, LayoutGrid, SlidersHorizontal, ClipboardCheck, BarChart2, Calculator } from 'lucide-react'
+import { Search, Loader2, AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, Eye, X, RotateCcw, Truck, ShieldCheck, CheckCircle2, Circle, Download, Trash2, ClipboardCheck, Calculator, History } from 'lucide-react'
 import { apiService } from '../services/api'
-import { buscaComCoringa } from '../utils/buscaTexto'
 import { passaEscopoComissao, setorSoVisualizacao } from '../utils/permissoesComissao'
 import { useAuth } from '../context/AuthContext'
+import { fmtBRL, fmtPct, fmtDiaMes, TIPOS_META_LABEL, CAMPO_META_LABEL, faixasDaRegra, ROTULO_ACAO_HISTORICO } from '../utils/comissoesFormat'
+import { gerarPdfComissoes, paraNomeArquivo } from '../utils/comissoesPdf'
+import { AGRUPAMENTOS_COMISSAO, funcionarioAtivoComissao, resolvePoliticas, politicaConfigurada } from '../utils/comissoesElegibilidade'
 
-function FiltroMultiSelect({ placeholder, opcoes, selecionados, onChange }) {
-  const [aberto, setAberto] = useState(false)
-  const ref = useRef(null)
-  useEffect(() => {
-    const fechar = (e) => { if (ref.current && !ref.current.contains(e.target)) setAberto(false) }
-    document.addEventListener('mousedown', fechar)
-    return () => document.removeEventListener('mousedown', fechar)
-  }, [])
-  const toggle = (v) => onChange(selecionados.includes(v) ? selecionados.filter(x => x !== v) : [...selecionados, v])
-  const texto = selecionados.length === 0 ? placeholder : selecionados.length === 1 ? selecionados[0] : `${selecionados.length} selecionados`
-  return (
-    <div ref={ref} className="relative">
-      <button type="button" onClick={() => setAberto(v => !v)}
-        className="w-full flex items-center justify-between gap-1 px-2 py-2 text-xs border border-slate-200 rounded-md bg-white hover:bg-slate-50 focus:outline-none focus:border-blue-400 transition-colors">
-        <span className={`truncate ${selecionados.length === 0 ? 'text-slate-400' : 'text-slate-700 font-semibold'}`}>{texto}</span>
-        <ChevronDown className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-      </button>
-      {aberto && (
-        <div className="absolute z-50 mt-1 min-w-full w-max max-w-sm max-h-60 overflow-y-auto bg-white border border-slate-200 rounded-md shadow-xl py-1">
-          {opcoes.length === 0
-            ? <p className="px-3 py-2 text-xs text-slate-400">Nenhuma opção.</p>
-            : opcoes.map(op => (
-              <label key={op} className="flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-slate-50 cursor-pointer select-none">
-                <input type="checkbox" checked={selecionados.includes(op)} onChange={() => toggle(op)} className="w-3.5 h-3.5 rounded accent-blue-600 shrink-0" />
-                <span className="whitespace-nowrap">{op}</span>
-              </label>
-            ))}
-        </div>
-      )}
-    </div>
-  )
-}
 
 const SEL = 'text-xs p-2 border border-slate-200 rounded-md bg-white font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500'
-const INP = 'text-xs p-2 border border-slate-200 rounded-md font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500'
 const LBL = 'text-[11px] font-bold text-slate-500 uppercase tracking-wide'
 
-const fmtBRL = (v) => v == null ? '-' : v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const fmtData = (v) => v ? String(v).split('-').reverse().join('/') : ''
-const fmtPct = (v) => v == null ? '-' : `${parseFloat(v).toFixed(2)}%`
-const fmtDiaMes = (iso) => iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : ''
 
-const TIPOS_META_LABEL = { pecas: 'Peças', mecanico: 'Serviços — Mecânico', consultor: 'Serviços — Consultor', funilaria: 'Funilaria/Pintura', terceiros: 'Terceiros' }
-const CAMPO_META_LABEL = { pecas: ' · só Peças', servicos: ' · só Serviços' }
 
-// Mesma lógica de Cálculo de Comissões — reconstrói as faixas da Regra pra telinha da
-// calculadora, marcando qual faixa foi aplicada (percentual/valor já vem salvo em
-// detalhe_calculo, calculado na hora em que o lote foi salvo).
-const faixasDaRegra = (politica, valorAplicado) => {
-  if (politica?.usa_faixa !== 'SIM') return []
-  const tipoFaixa = politica.regra_comissao?.tipo_faixa
-  const porMeta = tipoFaixa !== 'VALOR'
-  const fixo = tipoFaixa === 'VALOR_FIXO_META'
-  return [...(politica.regra_comissao?.faixas || [])]
-    .sort((a, b) => a.ordem - b.ordem)
-    .map(f => ({
-      texto: `${f.operador} ${porMeta ? `${parseFloat(f.valor).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}% da meta` : fmtBRL(parseFloat(f.valor))}`,
-      percentual: fixo ? fmtBRL(parseFloat(f.percentual)) : `${parseFloat(f.percentual).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 })}%`,
-      aplicada: valorAplicado != null && parseFloat(f.percentual) === parseFloat(valorAplicado),
-    }))
-}
 const juntaUnicos = (arr) => [...new Set(arr.filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'))
 // O arquivo do RH traz o CNPJ só com dígitos; no cadastro de Empresas ele pode estar formatado —
 // compara sempre pelos dígitos, mesmo padrão já usado em Férias/Cálculo de Comissões.
@@ -193,11 +140,14 @@ function DropdownAcao({ label, icon: Icon, carregando, disabled, title, classNam
   )
 }
 
-// Um card por lote (Empresa + Setor + Período) — clicar expande e mostra os funcionários
-// dele. Os botões de ação (Confirmar Conferência / Processar / Autorizar Reprocessamento) já
-// sabem exatamente qual lote é o seu, direto pelo card — sem precisar resolver "qual lote está
-// selecionado/visível" como antes.
-function LoteCard({ grupo, expandido, onToggleExpand, selecionados, onToggleSelecionado, onToggleSelecionarTodos, loteSelecionadoProcessamento, onToggleLoteProcessamento, podeProcessar, podeConfirmarConferenciaDp, podeExcluirLote, processandoAcao, onConfirmarConferencia, onAutorizarReprocessamento, onExcluir, onVisualizar, onToggleConferidoDp, onBaixarNovamente, onBaixarSelecionados }) {
+// Colunas da tabela de lotes (seleção, expandir, Status, Empresa, Área, Setor, Responsável) —
+// a linha expandida ocupa todas. Ações do lote ficam na barra acima da tabela.
+const COLUNAS_LOTE = 8
+
+// Uma linha por lote (Empresa + Setor + Período) — o botão de expandir abre logo abaixo as
+// comissões individuais dos funcionários dele. Os botões de ação (Conferido DP / Reprocessar /
+// Excluir) já sabem exatamente qual lote é o seu, direto pela linha.
+function LoteLinha({ grupo, expandido, onToggleExpand, selecionados, onToggleSelecionado, onToggleSelecionarTodos, loteSelecionadoProcessamento, onToggleLoteProcessamento, podeProcessar, podeConfirmarConferenciaDp, podeExcluirLote, processandoAcao, onVisualizar, onToggleConferidoDp, onVerHistorico }) {
   const { lote, status } = grupo
   // Enquanto tiver alguém "Aguardando Reprocessamento" dentro de um lote já Processado, o badge
   // não pode dizer "Processado" liso — dá a entender que está tudo certo. Mostra "Processado
@@ -211,222 +161,172 @@ function LoteCard({ grupo, expandido, onToggleExpand, selecionados, onToggleSele
   // grupo.soVisualizacao: departamento liberado só pra visualização (Grupos de Acesso) — soma-se
   // às Ações já marcadas pro grupo, desligando toda ação neste lote específico.
   const podeSelecionar = podeProcessar && !!status && status !== 'RASCUNHO' && !grupo.soVisualizacao
-  const podeSelecionarLoteProcessamento = podeProcessar && ['CONFERIDO_DP', 'PROCESSAMENTO_PARCIAL'].includes(status) && !grupo.soVisualizacao
+  // Lote selecionável pra qualquer ação da barra de cima (Conferido DP, Pagamento Processado,
+  // Processar Selecionados) — cada uma valida o status do lote escolhido antes de agir.
+  const podeSelecionarLote = !grupo.soVisualizacao && !grupo.semCalculo && (
+    ((podeProcessar || podeConfirmarConferenciaDp) && ['CONFERIDO', 'CONFERIDO_DP', 'PROCESSAMENTO_PARCIAL', 'PROCESSADO'].includes(status)) ||
+    (podeExcluirLote && (!status || status === 'RASCUNHO'))
+  )
   const podeMarcarRevisado = (podeConfirmarConferenciaDp || podeProcessar) && !!lote && !grupo.soVisualizacao
-  const todosRevisados = grupo.funcionarios.length > 0 && grupo.funcionarios.every(f => lote?.funcionarios_conferidos_dp?.includes(f.funcionario_id))
-  const podeBaixarIndividual = podeProcessar && (status === 'CONFERIDO_DP' || status === 'PROCESSADO') && !grupo.soVisualizacao
-  // Ações por funcionário (baixar TXT / Salvar PDF individual) só liberam pra quem já foi
-  // marcado como revisado E não está aguardando reprocessamento — enquanto isso, só quem já
-  // está pronto pode ser baixado/gerado, sem precisar esperar o lote inteiro ficar em dia.
-  const funcionarioLiberadoParaAcao = (f) =>
-    podeBaixarIndividual &&
-    !!lote?.funcionarios_conferidos_dp?.includes(f.funcionario_id) &&
-    !lote?.funcionarios_liberados_reprocessamento?.includes(f.funcionario_id)
-  // Selecionou alguém (mesmo checkbox usado pra Autorizar Reprocessamento) e todo mundo
-  // selecionado já está liberado (revisado + sem reprocessamento pendente) — libera baixar/
-  // gerar PDF só desse grupo, sem depender do lote inteiro estar em dia.
-  const podeAgirNaSelecao = podeBaixarIndividual && selecionadosDoLote.length > 0 && selecionadosDoLote.every(funcionarioLiberadoParaAcao)
-  // Só dá pra excluir enquanto ninguém confirmou nada ainda (Rascunho) ou nem chegou a virar
-  // lote (status null, "Sem lote") — igual à regra de Excluir Histórico em Cálculo de Comissões.
-  const podeExcluirEsteLote = podeExcluirLote && (!status || status === 'RASCUNHO') && !grupo.soVisualizacao
-  const processandoExcluir = processandoAcao === `excluir-${grupo.loteId}`
-  const processandoConfirmar = processandoAcao === `confirmar-${grupo.loteId}`
-  const processandoReprocessar = processandoAcao === `reprocessar-${grupo.loteId}`
-  const processandoPdfSelecionados = processandoAcao === `pdf-sel-${grupo.loteId}`
 
   return (
-    <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
-      <div className="w-full flex flex-nowrap items-start justify-between gap-3 px-4 py-3">
-        {podeSelecionarLoteProcessamento && (
-          <input
-            type="checkbox"
-            aria-label={`Selecionar lote ${grupo.empresaNome} — ${grupo.setorNome} para processamento`}
-            checked={loteSelecionadoProcessamento}
-            onClick={e => e.stopPropagation()}
-            onChange={onToggleLoteProcessamento}
-            className="mt-1 h-3.5 w-3.5 shrink-0 rounded accent-blue-600"
-          />
-        )}
-        <button type="button" onClick={onToggleExpand} className="flex items-center gap-2 min-w-0 flex-1 text-left hover:opacity-80 transition-opacity">
-          {expandido ? <ChevronDown className="h-4 w-4 text-slate-400 shrink-0" /> : <ChevronRight className="h-4 w-4 text-slate-400 shrink-0" />}
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-sm font-bold text-slate-900">{grupo.setorNome}</span>
-              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border shrink-0 ${statusInfo.className}`}>{statusInfo.label}</span>
-              {grupo.soVisualizacao && (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold border shrink-0 bg-slate-100 text-slate-500 border-slate-200" title="Este departamento está liberado só pra visualização (Grupos de Acesso) — sem botões de ação.">
-                  Somente Visualização
-                </span>
-              )}
-              {grupo.responsavelNomes.length > 0 && (
-                <span className="text-[11px] text-slate-400">Responsável: <strong className="text-slate-500 font-semibold">{grupo.responsavelNomes.join(', ')}</strong></span>
-              )}
-              {podeConfirmarConferenciaDp && status === 'CONFERIDO' && (
-                <span className="text-[11px] text-slate-400">
-                  <strong className={todosRevisados ? 'text-emerald-600' : 'text-amber-600'}>
-                    {(lote?.funcionarios_conferidos_dp || []).filter(id => grupo.funcionarios.some(f => f.funcionario_id === id)).length}/{grupo.funcionarios.length} revisados
-                  </strong>
-                </span>
-              )}
-            </div>
-            {(lote?.conferido_por || lote?.conferido_dp_por || lote?.processado_por) && (
-              <div className="text-[11px] text-slate-400 mt-3 whitespace-nowrap">
-                {lote?.conferido_por && <>Conferido por <strong className="text-slate-500">{lote.conferido_por}</strong></>}
-                {lote?.conferido_dp_por && <>{lote?.conferido_por && <> · </>}DP: <strong className="text-slate-500">{lote.conferido_dp_por}</strong></>}
-                {lote?.processado_por && <>{(lote?.conferido_por || lote?.conferido_dp_por) && <> · </>}Processado por <strong className="text-slate-500">{lote.processado_por}</strong></>}
-              </div>
+    <>
+      <tr className={`border-b border-slate-100 align-top transition-colors ${expandido ? 'bg-blue-50/40' : 'hover:bg-slate-50'}`}>
+        <td className="pl-4 pr-1 py-2.5 w-8">
+          {podeSelecionarLote && (
+            <input
+              type="checkbox"
+              aria-label={`Selecionar lote ${grupo.empresaNome} — ${grupo.setorNome} para processamento`}
+              checked={loteSelecionadoProcessamento}
+              onChange={onToggleLoteProcessamento}
+              className="mt-1 h-3.5 w-3.5 rounded accent-blue-600"
+            />
+          )}
+        </td>
+        <td className="px-1 py-2.5 w-8">
+          <button
+            type="button"
+            onClick={onToggleExpand}
+            title={expandido ? 'Recolher comissões individuais' : 'Ver comissões individuais deste lote'}
+            className="p-1 rounded-md text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+          >
+            {expandido ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+          </button>
+        </td>
+        <td className="px-3 py-2.5">
+          <div className="flex flex-col items-start gap-1">
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border whitespace-nowrap ${statusInfo.className}`}>{statusInfo.label}</span>
+            {grupo.soVisualizacao && (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold border whitespace-nowrap bg-slate-100 text-slate-500 border-slate-200" title="Este departamento está liberado só pra visualização (Grupos de Acesso) — sem botões de ação.">
+                Somente Visualização
+              </span>
             )}
           </div>
-        </button>
-        <div className="flex items-center gap-2 shrink-0">
-          {podeConfirmarConferenciaDp && status === 'CONFERIDO' && (
-            <button
-              onClick={() => onConfirmarConferencia(lote)}
-              disabled={processandoConfirmar || !todosRevisados || grupo.soVisualizacao}
-              title={grupo.soVisualizacao ? 'Este departamento está liberado só pra visualização — peça pra alguém com edição fazer isso.' : !todosRevisados ? 'Marque todos os funcionários como revisados (expanda o lote) pra liberar' : ''}
-              className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold px-3 py-1.5 rounded-md shadow-sm transition-colors"
-            >
-              {processandoConfirmar ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />}
-              Conferido DP
-            </button>
-          )}
-          {podeProcessar && status === 'PROCESSADO' && (
-            <DropdownAcao
-              label="Pagamento Processado"
-              icon={Truck}
-              disabled={!todosRevisados || grupo.soVisualizacao}
-              title={grupo.soVisualizacao ? 'Este departamento está liberado só pra visualização — peça pra alguém com edição fazer isso.' : !todosRevisados ? 'Há funcionário pendente de revisão ou aguardando reprocessamento' : 'Pagamento já processado — baixar de novo'}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
-              opcoes={[
-                { icon: Download, label: 'Salvar em TXT', onClick: () => onBaixarNovamente(lote) },
-              ]}
-            />
-          )}
-          {podeAgirNaSelecao && (
-            <DropdownAcao
-              label={`Baixar Selecionados (${selecionadosDoLote.length})`}
-              icon={processandoPdfSelecionados ? Loader2 : Download}
-              carregando={processandoPdfSelecionados}
-              disabled={processandoPdfSelecionados}
-              title="Baixar TXT só dos funcionários marcados no checkbox"
-              className="border border-slate-300 text-slate-700 hover:bg-slate-100"
-              opcoes={[
-                { icon: Download, label: 'Salvar em TXT', onClick: () => onBaixarSelecionados(grupo) },
-              ]}
-            />
-          )}
-          {podeProcessar && !!status && status !== 'RASCUNHO' && (
-            <button
-              onClick={() => onAutorizarReprocessamento(grupo)}
-              disabled={processandoReprocessar || selecionadosDoLote.length === 0 || grupo.soVisualizacao}
-              title={grupo.soVisualizacao ? 'Este departamento está liberado só pra visualização — peça pra alguém com edição fazer isso.' : selecionadosDoLote.length === 0 ? 'Selecione ao menos 1 funcionário (na lista expandida) pra reprocessar' : ''}
-              className="flex items-center gap-1.5 border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-semibold px-3 py-1.5 rounded-md transition-colors"
-            >
-              {processandoReprocessar ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
-              {selecionadosDoLote.length === 0 ? 'Autorizar Reprocessamento' : todosSelecionados ? 'Reprocessar (Lote Inteiro)' : `Reprocessar (${selecionadosDoLote.length})`}
-            </button>
-          )}
-          {podeExcluirEsteLote && (
-            <button
-              onClick={() => onExcluir(grupo)}
-              disabled={processandoExcluir}
-              title="Apaga os valores calculados e reabre o período pra recalcular do zero"
-              className="flex items-center gap-1.5 border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-semibold px-3 py-1.5 rounded-md transition-colors"
-            >
-              {processandoExcluir ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-              Excluir
-            </button>
-          )}
-        </div>
-      </div>
-      {expandido && (
-        <div className="border-t border-slate-100 overflow-x-auto">
-          <table className="w-full text-left border-collapse min-w-[700px]">
-            <thead>
-              <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[11px] font-semibold uppercase tracking-wider">
-                {podeSelecionar && (
-                  <th className="p-3">
-                    <input type="checkbox" checked={todosSelecionados} onChange={onToggleSelecionarTodos} className="w-3.5 h-3.5 rounded accent-blue-600" />
-                  </th>
-                )}
-                <th className="p-3"></th>
-                {podeMarcarRevisado && <th className="p-3">Revisado</th>}
-                <th className="p-3">Status</th>
-                <th className="p-3">Funcionário</th>
-                <th className="p-3">Cargo</th>
-                <th className="p-3 text-right">Valor Comissão</th>
-                <th className="p-3">Calculado em</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
-              {grupo.funcionarios.map(f => (
-                <tr key={f.funcionario_id}>
-                  {podeSelecionar && (
-                    <td className="p-3">
-                      <input
-                        type="checkbox"
-                        checked={selecionados.has(f.funcionario_id)}
-                        onChange={() => onToggleSelecionado(f.funcionario_id)}
-                        className="w-3.5 h-3.5 rounded accent-blue-600"
-                      />
-                    </td>
-                  )}
-                  <td className="p-3">
-                    <button onClick={() => onVisualizar(f)} title="Visualizar cálculo"
-                      className="p-1.5 rounded-md text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
-                      <Eye className="h-4 w-4" />
-                    </button>
-                  </td>
-                  {podeMarcarRevisado && (() => {
-                    const aguardandoReprocessamento = !!lote?.funcionarios_liberados_reprocessamento?.includes(f.funcionario_id)
-                    const revisado = !!lote?.funcionarios_conferidos_dp?.includes(f.funcionario_id)
-                    return (
+        </td>
+        <td className="px-3 py-2.5 font-semibold text-slate-900 whitespace-nowrap">{grupo.empresaNome}</td>
+        <td className="px-3 py-2.5 whitespace-nowrap">{grupo.areaNome || '—'}</td>
+        <td className="px-3 py-2.5 whitespace-nowrap">
+          <button type="button" onClick={onToggleExpand} className="font-semibold text-slate-900 hover:text-blue-600 text-left transition-colors">
+            {grupo.setorNome}
+          </button>
+        </td>
+        <td className="px-3 py-2.5">{grupo.responsavelNomes.length > 0 ? grupo.responsavelNomes.join(', ') : '—'}</td>
+        <td className="px-3 py-2.5">
+          <button
+            type="button"
+            onClick={() => onVerHistorico(grupo)}
+            disabled={!lote}
+            title={lote ? 'Histórico do lote' : 'Lote ainda não foi criado — sem histórico'}
+            className="p-1.5 rounded-md text-slate-500 hover:text-blue-600 hover:bg-blue-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            <History className="h-4 w-4" />
+          </button>
+        </td>
+      </tr>
+      {expandido && grupo.semCalculo && (
+        <tr className="border-b border-slate-200 bg-slate-50/70">
+          <td colSpan={COLUNAS_LOTE} className="px-4 py-3 text-xs text-slate-500">
+            Ainda sem cálculo salvo neste período — o gerente precisa calcular e salvar em Comissões.
+          </td>
+        </tr>
+      )}
+      {expandido && !grupo.semCalculo && (
+        <tr className="border-b border-slate-200 bg-slate-50/70">
+          <td colSpan={COLUNAS_LOTE} className="px-4 py-3">
+            <div className="bg-white rounded-md border border-slate-200 overflow-x-auto">
+              <table className="w-full text-left border-collapse min-w-[700px]">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[11px] font-semibold uppercase tracking-wider">
+                    {podeSelecionar && (
+                      <th className="p-3">
+                        <input type="checkbox" checked={todosSelecionados} onChange={onToggleSelecionarTodos} className="w-3.5 h-3.5 rounded accent-blue-600" />
+                      </th>
+                    )}
+                    <th className="p-3"></th>
+                    {podeMarcarRevisado && <th className="p-3">Revisado</th>}
+                    <th className="p-3">Status</th>
+                    <th className="p-3">Funcionário</th>
+                    <th className="p-3">Cargo</th>
+                    <th className="p-3 text-right">Valor Comissão</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
+                  {grupo.funcionarios.map(f => (
+                    <tr key={f.funcionario_id}>
+                      {podeSelecionar && (
+                        <td className="p-3">
+                          <input
+                            type="checkbox"
+                            checked={selecionados.has(f.funcionario_id)}
+                            onChange={() => onToggleSelecionado(f.funcionario_id)}
+                            className="w-3.5 h-3.5 rounded accent-blue-600"
+                          />
+                        </td>
+                      )}
                       <td className="p-3">
-                        <button
-                          type="button"
-                          onClick={() => !aguardandoReprocessamento && onToggleConferidoDp(grupo.loteId, f.funcionario_id)}
-                          disabled={aguardandoReprocessamento}
-                          title={aguardandoReprocessamento ? 'Aguardando Reprocessamento — recalcule e salve em Cálculo de Comissões DAF antes de revisar' : revisado ? 'Revisado — clique pra desmarcar' : 'Marcar como revisado'}
-                          className="p-1 rounded-md hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent transition-colors"
-                        >
-                          {revisado
-                            ? <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                            : <Circle className="h-4 w-4 text-slate-300" />}
+                        <button onClick={() => onVisualizar(f)} title="Visualizar cálculo"
+                          className="p-1.5 rounded-md text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
+                          <Eye className="h-4 w-4" />
                         </button>
                       </td>
-                    )
-                  })()}
-                  <td className="p-3">
-                    {lote?.funcionarios_liberados_reprocessamento?.includes(f.funcionario_id) ? (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold border whitespace-nowrap bg-amber-100 text-amber-700 border-amber-200">
-                        Aguardando Reprocessamento
-                      </span>
-                    ) : (
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border whitespace-nowrap ${statusInfo.className}`}>
-                        {statusInfo.label}
-                      </span>
-                    )}
-                  </td>
-                  <td className="p-3 font-bold text-slate-900 whitespace-nowrap">{f.funcionarioNome}</td>
-                  <td className="p-3 whitespace-nowrap">
-                    {f.cargoCodigo && <span className="font-mono text-[10px] text-slate-400 mr-1">{f.cargoCodigo}</span>}
-                    {f.cargoNome}
-                  </td>
-                  <td className="p-3 text-right font-mono font-bold text-emerald-700">{fmtBRL(f.valorComissaoTotal)}</td>
-                  <td className="p-3 font-mono text-[11px] text-slate-500 whitespace-nowrap">{new Date(f.calculadoEmMax).toLocaleString('pt-BR')}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                      {podeMarcarRevisado && (() => {
+                        const aguardandoReprocessamento = !!lote?.funcionarios_liberados_reprocessamento?.includes(f.funcionario_id)
+                        const revisado = !!lote?.funcionarios_conferidos_dp?.includes(f.funcionario_id)
+                        return (
+                          <td className="p-3">
+                            <button
+                              type="button"
+                              onClick={() => !aguardandoReprocessamento && onToggleConferidoDp(grupo.loteId, f.funcionario_id)}
+                              disabled={aguardandoReprocessamento}
+                              title={aguardandoReprocessamento ? 'Aguardando Reprocessamento — recalcule e salve em Cálculo de Comissões DAF antes de revisar' : revisado ? 'Revisado — clique pra desmarcar' : 'Marcar como revisado'}
+                              className="p-1 rounded-md hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent transition-colors"
+                            >
+                              {revisado
+                                ? <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                                : <Circle className="h-4 w-4 text-slate-300" />}
+                            </button>
+                          </td>
+                        )
+                      })()}
+                      <td className="p-3">
+                        {(() => {
+                          // Status de cada funcionário: o do lote só vale pra quem ainda não foi
+                          // processado — num processamento parcial, quem já saiu fica "Processado"
+                          // e o restante "Aguardando Processamento".
+                          const info = lote?.funcionarios_liberados_reprocessamento?.includes(f.funcionario_id)
+                            ? { label: 'Aguardando Reprocessamento', className: 'bg-amber-100 text-amber-700 border-amber-200' }
+                            : lote?.funcionarios_processados?.includes(f.funcionario_id)
+                              ? { label: 'Processado', className: 'bg-emerald-50 text-emerald-700 border-emerald-200' }
+                              : (status === 'PROCESSAMENTO_PARCIAL' || status === 'CONFERIDO_DP')
+                                ? { label: 'Aguardando Processamento', className: 'bg-indigo-50 text-indigo-700 border-indigo-200' }
+                                : statusInfo
+                          return (
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border whitespace-nowrap ${info.className}`}>
+                              {info.label}
+                            </span>
+                          )
+                        })()}
+                      </td>
+                      <td className="p-3 font-bold text-slate-900 whitespace-nowrap">{f.funcionarioNome}</td>
+                      <td className="p-3 whitespace-nowrap">
+                        {f.cargoCodigo && <span className="font-mono text-[10px] text-slate-400 mr-1">{f.cargoCodigo}</span>}
+                        {f.cargoNome}
+                      </td>
+                      <td className="p-3 text-right font-mono font-bold text-emerald-700">{fmtBRL(f.valorComissaoTotal)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </td>
+        </tr>
       )}
-    </div>
+    </>
   )
 }
 
 export default function HistoricoComissoes() {
-  const { user, hasAction, hasPermission, comissaoEscopoEfetivo, comissaoNivelSetorEfetivo } = useAuth()
-  const navigate = useNavigate()
+  const { user, hasAction, comissaoEscopoEfetivo, comissaoNivelSetorEfetivo } = useAuth()
   const podeConfirmarConferenciaDp = hasAction('processamento-comissoes', 'confirmar_conferencia')
   const podeProcessar = hasAction('processamento-comissoes', 'processar')
   const podeExcluirLote = hasAction('processamento-comissoes', 'excluir')
@@ -448,6 +348,18 @@ export default function HistoricoComissoes() {
   const [jaBuscou, setJaBuscou] = useState(false)
   const [resultados, setResultados] = useState([])
   const [detalheAberto, setDetalheAberto] = useState(null)
+  const [historicoAberto, setHistoricoAberto] = useState(null) // { grupo, itens: null | [] }
+  const abrirHistoricoLote = async (grupo) => {
+    if (!grupo.lote) return
+    setHistoricoAberto({ grupo, itens: null })
+    try {
+      const itens = await apiService.getHistoricoLote(grupo.lote.id)
+      setHistoricoAberto({ grupo, itens })
+    } catch (err) {
+      setErro(err.message || String(err))
+      setHistoricoAberto(null)
+    }
+  }
   // Mesma calculadora de Cálculo de Comissões, lendo o detalhe_calculo já salvo (não recalcula
   // nada aqui) — regraModal = "Regra da Comissão" (políticas com faixa), colunaModal = Venda/
   // Devolução (políticas sem faixa, quando a Base tem Coluna Tipo de Movimento ou soma 2+ colunas).
@@ -460,15 +372,10 @@ export default function HistoricoComissoes() {
   const [filtroStatusLote, setFiltroStatusLote] = useState('')
   const [processandoAcao, setProcessandoAcao] = useState(null)
 
-  const [filtroFuncionario, setFiltroFuncionario] = useState('')
   const [filtroEmpresa, setFiltroEmpresa] = useState('')
-  const [filtroDepartamento, setFiltroDepartamento] = useState('')
-  const [filtroSetor, setFiltroSetor] = useState('')
   const [filtroArea, setFiltroArea] = useState('')
-  const [filtroCargo, setFiltroCargo] = useState('')
-  const [filtroAgrupamentoCargo, setFiltroAgrupamentoCargo] = useState('')
-  const [filtroComissoes, setFiltroComissoes] = useState([])
-  const [filtrosAbertos, setFiltrosAbertos] = useState(false)
+  const [filtroSetor, setFiltroSetor] = useState('')
+  const [filtroResponsavel, setFiltroResponsavel] = useState('')
 
   useEffect(() => {
     (async () => {
@@ -501,14 +408,6 @@ export default function HistoricoComissoes() {
     apiService.getResponsaveisComissaoSetores().then(setResponsaveisPorSetor).catch(() => setResponsaveisPorSetor({}))
   }, [])
 
-  // Painel "Visão Geral" — todas as Empresas/Departamentos do período (calculado ou não), com
-  // Responsável e sinalizador de conferido/pendente, independente do que já está carregado
-  // pelos filtros da tela (que só trazem o que já foi calculado).
-  const [painelAberto, setPainelAberto] = useState(false)
-  const [painelLotes, setPainelLotes] = useState([])
-  const [carregandoPainel, setCarregandoPainel] = useState(false)
-  const [painelFiltroStatus, setPainelFiltroStatus] = useState('') // '' | 'pendente' | 'conferido'
-
   const mapas = useMemo(() => {
     if (!dados) return null
     const { funcionarios, empresas, cargos, departamentos, setores, politicas } = dados
@@ -527,12 +426,11 @@ export default function HistoricoComissoes() {
   // Opções dos filtros vêm dos cadastros completos (não dependem de já ter buscado um período),
   // pra dar pra pré-filtrar antes de clicar em Visualizar.
   const empresasUnicas = useMemo(() => juntaUnicos((dados?.empresas || []).map(e => e.empresa_fantasia || e.nome_empresa)), [dados])
-  const departamentosUnicos = useMemo(() => juntaUnicos((dados?.departamentos || []).map(d => d.nome_departamento)), [dados])
   const setoresUnicas = useMemo(() => juntaUnicos((dados?.setores || []).map(s => s.nome_setor)), [dados])
   const areasUnicas = useMemo(() => juntaUnicos((dados?.departamentos || []).map(d => d.area)), [dados])
-  const cargosUnicos = useMemo(() => juntaUnicos((dados?.cargos || []).map(c => c.nome_cargo)), [dados])
-  const agrupamentosCargoUnicos = useMemo(() => juntaUnicos((dados?.cargos || []).map(c => c.nome_agrupamento_cargo)), [dados])
-  const comissoesUnicas = useMemo(() => juntaUnicos((dados?.politicas || []).map(p => p.descricao_comissao)), [dados])
+  const responsaveisUnicos = useMemo(() => juntaUnicos(
+    Object.values(responsaveisPorSetor || {}).flatMap(porEmpresa => Object.values(porEmpresa || {}).flat())
+  ), [responsaveisPorSetor])
 
   // Férias importadas, indexadas por código do empregado + CNPJ da empresa — mesmo padrão de
   // Cálculo de Comissões, usado no Detalhe do Cálculo pra mostrar o período de férias de quem
@@ -567,75 +465,6 @@ export default function HistoricoComissoes() {
     setAno(String(data.getFullYear()))
     setMes(String(data.getMonth() + 1).padStart(2, '0'))
   }
-
-  const handleAbrirPainel = async () => {
-    setPainelAberto(true)
-    setPainelFiltroStatus('')
-    setCarregandoPainel(true)
-    try {
-      const lotes = await apiService.getLotesPorPeriodo(periodoInicio, periodoFim)
-      setPainelLotes(lotes)
-    } catch (err) {
-      setErro(err.message || String(err))
-    } finally {
-      setCarregandoPainel(false)
-    }
-  }
-
-  // Combos Empresa × Setor (todo setor com pelo menos 1 funcionário ativo nele, dentro de um
-  // departamento de Pós-Vendas) pro painel "Visão Geral" — mostra mesmo quem nunca teve cálculo
-  // salvo neste período (não tem lote = Pendente), e respeita o escopo de acesso do usuário
-  // (mesmo critério de Cálculo de Comissões). O lote agora é por Setor (não mais por
-  // Departamento inteiro) — Responsável/nível de acesso também são configurados por Setor.
-  const painelCombos = useMemo(() => {
-    if (!dados) return []
-    const { funcionarios, empresas, departamentos, setores } = dados
-    const empresasMap = Object.fromEntries(empresas.map(e => [e.id, e]))
-    const departamentosMap = Object.fromEntries(departamentos.map(d => [d.id, d]))
-    const setoresMap = Object.fromEntries(setores.map(s => [s.id, s]))
-    const SITUACAO_FERIAS = '9'
-    const funcionariosAtivos = funcionarios.filter(f => {
-      if (f.data_demissao) return false
-      return !f.situacao_funcionario || f.situacao_funcionario === '1' || f.situacao_funcionario === SITUACAO_FERIAS
-    })
-    // Combos (Empresa, Setor) direto de quem está alocado — mesmo critério de antes
-    // (Empresa, Departamento), um nível mais fundo.
-    const combosMap = new Map()
-    for (const f of funcionariosAtivos) {
-      const empresa = empresasMap[f.empresa_id]
-      if (!empresa || empresa.ativo === false || empresa.agrupamento_nome !== 'Caiobá Trucks') continue
-      for (const setId of f.setor_ids || []) {
-        const setor = setoresMap[setId]
-        if (!setor || setor.ativo === false) continue
-        const depto = setor.departamento_id ? departamentosMap[setor.departamento_id] : null
-        if (!depto || depto.ativo === false || depto.area !== 'Pós-Vendas') continue
-        combosMap.set(`${empresa.id}|${setId}`, { empresa, setor, depto })
-      }
-    }
-    const combos = []
-    for (const { empresa, setor, depto } of combosMap.values()) {
-      // Visão é por Setor, sem um cargo específico pra checar — um grupo restrito por
-      // Agrupamento de Cargos (Individual) não vê nada aqui (fail-closed, mesma lógica de
-      // passaEscopoComissao: sem cargo não dá pra provar que pertence ao liberado).
-      if (!passaEscopoComissao({
-        empresaId: empresa.id,
-        areaNomes: depto?.area ? [depto.area] : [],
-        departamentoIds: depto ? [depto.id] : [],
-        setorIds: [setor.id],
-        agrupamentoCargoId: null,
-      }, comissaoEscopoEfetivo)) continue
-      const lote = painelLotes.find(l => l.empresa_id === empresa.id && l.setor_id === setor.id)
-      combos.push({
-        chave: `${empresa.id}|${setor.id}`,
-        empresaNome: empresa.empresa_fantasia || empresa.nome_empresa,
-        setorNome: setor.nome_setor,
-        responsavelNomes: responsaveisPorSetor[setor.id]?.[empresa.id] || [],
-        conferido: !!lote && lote.status !== 'RASCUNHO',
-        statusLabel: !lote ? 'Nunca calculado' : STATUS_LOTE_INFO[lote.status]?.label || lote.status,
-      })
-    }
-    return combos.sort((a, b) => (a.empresaNome + a.setorNome).localeCompare(b.empresaNome + b.setorNome, 'pt-BR'))
-  }, [dados, painelLotes, responsaveisPorSetor, comissaoEscopoEfetivo])
 
   const handleVisualizar = async () => {
     if (!mapas) return
@@ -696,20 +525,7 @@ export default function HistoricoComissoes() {
     return () => { cancelado = true }
   }, [loteIdsResultados])
 
-  const resultadosFiltrados = useMemo(() => resultados.filter(r => {
-    if (filtroFuncionario && !buscaComCoringa(r.funcionarioNome, filtroFuncionario)) return false
-    if (filtroEmpresa && r.empresaNome !== filtroEmpresa) return false
-    if (filtroDepartamento && !r.departamentoNomes.includes(filtroDepartamento)) return false
-    if (filtroSetor && !r.setorNomes.includes(filtroSetor)) return false
-    if (filtroArea && !r.areaNomes.includes(filtroArea)) return false
-    if (filtroCargo && r.cargoNome !== filtroCargo) return false
-    if (filtroAgrupamentoCargo && r.agrupamentoCargoNome !== filtroAgrupamentoCargo) return false
-    if (filtroComissoes.length > 0 && !filtroComissoes.includes(r.comissaoDescricao)) return false
-    return true
-  }), [resultados, filtroFuncionario, filtroEmpresa, filtroDepartamento, filtroSetor, filtroArea, filtroCargo, filtroAgrupamentoCargo, filtroComissoes])
-
-  const temFiltroAtivo = !!(filtroFuncionario || filtroEmpresa || filtroDepartamento || filtroSetor || filtroArea || filtroCargo || filtroAgrupamentoCargo || filtroComissoes.length > 0)
-  const limparFiltros = () => { setFiltroFuncionario(''); setFiltroEmpresa(''); setFiltroDepartamento(''); setFiltroSetor(''); setFiltroArea(''); setFiltroCargo(''); setFiltroAgrupamentoCargo(''); setFiltroComissoes([]) }
+  const resultadosFiltrados = useMemo(() => resultados.filter(r => !filtroEmpresa || r.empresaNome === filtroEmpresa), [resultados, filtroEmpresa])
 
   // Agrupa os resultados por LOTE e, dentro de cada lote, por funcionário — a tela é organizada
   // por lote (card expansível), então essa é a estrutura principal de renderização. Valor Base e
@@ -728,7 +544,7 @@ export default function HistoricoComissoes() {
     // setor dele (funcionário em 2 setores) — lote de setor fora do escopo não aparece.
     const escopoSetor = comissaoEscopoEfetivo?.setor
     const lotePermitido = (g) => !escopoSetor || escopoSetor.modo !== 'INDIVIDUAL' || !g.lote?.setor_id || escopoSetor.valores.has(g.lote.setor_id)
-    return [...porLote.values()].filter(lotePermitido).map(g => {
+    const comLote = [...porLote.values()].filter(lotePermitido).map(g => {
       const funcionarios = [...g.funcionariosMap.entries()].map(([funcionario_id, registros]) => {
         const base = registros[0]
         return {
@@ -743,7 +559,6 @@ export default function HistoricoComissoes() {
           calculadoEmMax: registros.reduce((max, r) => (!max || r.calculado_em > max) ? r.calculado_em : max, null),
         }
       }).sort((a, b) => a.funcionarioNome.localeCompare(b.funcionarioNome, 'pt-BR'))
-      const valorTotalLote = funcionarios.reduce((s, f) => s + f.valorComissaoTotal, 0)
       // Nome de Empresa/Setor salvo no lote é um retrato do momento em que ele foi criado — se o
       // cadastro for renomeado depois (ex: Setores), o lote antigo continuaria com o nome velho.
       // Resolve pelo id (cadastro atual) primeiro, e só cai pro nome salvo no lote como fallback
@@ -756,35 +571,149 @@ export default function HistoricoComissoes() {
         status: g.lote?.status || null,
         empresaNome: (empresaCadastro?.empresa_fantasia || empresaCadastro?.nome_empresa) || g.lote?.empresa_nome || funcionarios[0]?.empresaNome || 'Empresa',
         setorNome: setorCadastro?.nome_setor || g.lote?.setor_nome || 'Sem setor',
+        // Área = área do departamento "pai" do setor (cadastro atual); lote legado sem setor cai
+        // no departamento salvo no próprio lote.
+        areaNome: mapas?.departamentosMap[setorCadastro?.departamento_id || g.lote?.departamento_id]?.area || null,
         // Nível de acesso extra por Setor (Grupos de Acesso) — "Visualizar" desliga os
         // botões de ação deste lote, mesmo com a Ação marcada pro grupo (soma-se às Ações).
         soVisualizacao: setorSoVisualizacao(g.lote?.setor_id, comissaoNivelSetorEfetivo),
         responsavelNomes: (g.lote?.setor_id && g.lote?.empresa_id && responsaveisPorSetor[g.lote.setor_id]?.[g.lote.empresa_id]) || [],
         funcionarios,
-        qtdFuncionarios: funcionarios.length,
-        valorTotalLote,
       }
-    }).sort((a, b) => (a.empresaNome + a.setorNome).localeCompare(b.empresaNome + b.setorNome, 'pt-BR'))
-  }, [resultadosFiltrados, lotesMap, mapas, comissaoNivelSetorEfetivo, responsaveisPorSetor, comissaoEscopoEfetivo])
+    })
+
+    // Empresa × Setor que aparecem nas telas Comissões - DAF / HONDA (funcionário ativo com
+    // política configurada, dentro do escopo do usuário) mas ainda sem cálculo salvo no período —
+    // entram como "Aguardando Gerente", sem lote e sem ação, só pra mostrar a pendência.
+    const pendentes = []
+    if (jaBuscou && dados && mapas) {
+      // Comparado por empresa + NOME do setor, igual às abas da tela de Cálculo: setores de mesmo
+      // nome em departamentos diferentes (ex: "Geral" de GERAL e de PÓS-VENDAS) viram uma aba e um
+      // lote só lá.
+      const jaTem = new Set(comLote.filter(g => g.lote?.empresa_id).map(g => `${g.lote.empresa_id}|${g.setorNome}`))
+      const vistos = new Set()
+      for (const func of dados.funcionarios) {
+        if (!funcionarioAtivoComissao(func)) continue
+        const empresa = mapas.empresasMap[func.empresa_id]
+        if (!empresa || empresa.ativo === false || !AGRUPAMENTOS_COMISSAO.includes(empresa.agrupamento_nome)) continue
+        const cargo = mapas.cargosMap[func.cargo_id]
+        const areaNomes = [...new Set((func.departamento_ids || []).map(id => mapas.departamentosMap[id]?.area).filter(Boolean))]
+        if (!passaEscopoComissao({ empresaId: func.empresa_id, areaNomes, departamentoIds: func.departamento_ids, setorIds: func.setor_ids, agrupamentoCargoId: cargo?.agrupamento_id }, comissaoEscopoEfetivo)) continue
+        if (!resolvePoliticas(func, dados.politicas, mapas.empresasMap).some(politicaConfigurada)) continue
+        const empresaNome = empresa.empresa_fantasia || empresa.nome_empresa
+        if (filtroEmpresa && empresaNome !== filtroEmpresa) continue
+        for (const setorId of func.setor_ids || []) {
+          const setor = mapas.setoresMap[setorId]
+          if (!setor || setor.ativo === false) continue
+          const chave = `${empresa.id}|${setor.nome_setor}`
+          if (jaTem.has(chave) || vistos.has(chave)) continue
+          const depto = mapas.departamentosMap[setor.departamento_id]
+          if (escopoSetor?.modo === 'INDIVIDUAL' && !escopoSetor.valores.has(setorId)) continue
+          vistos.add(chave)
+          pendentes.push({
+            loteId: `pendente-${chave}`,
+            lote: null,
+            status: 'RASCUNHO',
+            semCalculo: true,
+            empresaNome,
+            setorNome: setor.nome_setor,
+            areaNome: depto?.area || null,
+            soVisualizacao: setorSoVisualizacao(setorId, comissaoNivelSetorEfetivo),
+            responsavelNomes: responsaveisPorSetor[setorId]?.[empresa.id] || [],
+            funcionarios: [],
+          })
+        }
+      }
+    }
+
+    // Área, Setor e Responsável filtram pelo próprio lote (as colunas da tabela).
+    return [...comLote, ...pendentes]
+      .filter(g => (!filtroArea || g.areaNome === filtroArea)
+        && (!filtroSetor || g.setorNome === filtroSetor)
+        && (!filtroResponsavel || g.responsavelNomes.includes(filtroResponsavel)))
+      .sort((a, b) => (a.empresaNome + a.setorNome).localeCompare(b.empresaNome + b.setorNome, 'pt-BR'))
+  }, [resultadosFiltrados, lotesMap, mapas, dados, jaBuscou, comissaoNivelSetorEfetivo, responsaveisPorSetor, comissaoEscopoEfetivo,
+    filtroEmpresa, filtroArea, filtroSetor, filtroResponsavel])
 
   const lotesVisiveis = useMemo(() => (
     filtroStatusLote ? lotesAgrupados.filter(l => l.status === filtroStatusLote) : lotesAgrupados
   ), [lotesAgrupados, filtroStatusLote])
 
-  // Agrupa os cards por Empresa (já vêm ordenados por empresaNome+setorNome) — um cabeçalho de
-  // Empresa só, com os cards de Setor dela embaixo, em vez de repetir o nome da empresa em cada card.
-  const lotesPorEmpresa = useMemo(() => {
-    const grupos = []
-    let atual = null
-    for (const grupo of lotesVisiveis) {
-      if (!atual || atual.empresaNome !== grupo.empresaNome) {
-        atual = { empresaNome: grupo.empresaNome, lotes: [] }
-        grupos.push(atual)
+  // Lote único marcado (checkbox) — alimenta Conferido DP e Pagamento Processado da barra.
+  const lotesMarcados = useMemo(() => lotesAgrupados.filter(g => lotesSelecionadosProcessamento.has(g.loteId)), [lotesAgrupados, lotesSelecionadosProcessamento])
+  const loteUnicoSelecionado = lotesMarcados.length === 1 ? lotesMarcados[0] : null
+  const temLoteElegivelProcessamento = lotesMarcados.some(g => ['CONFERIDO_DP', 'PROCESSAMENTO_PARCIAL'].includes(g.status) && !g.soVisualizacao)
+  // Mesmo critério de handleProcessarSelecionados: funcionário marcado precisa estar revisado, sem
+  // reprocessamento pendente e ainda não processado.
+  const temFuncionarioElegivelProcessamento = lotesAgrupados.some(g => ['CONFERIDO_DP', 'PROCESSAMENTO_PARCIAL'].includes(g.status) && !g.soVisualizacao
+    && g.funcionarios.some(f => selecionados.has(f.funcionario_id)
+      && !!g.lote?.funcionarios_conferidos_dp?.includes(f.funcionario_id)
+      && !g.lote?.funcionarios_liberados_reprocessamento?.includes(f.funcionario_id)
+      && !g.lote?.funcionarios_processados?.includes(f.funcionario_id)))
+  const temAlgoElegivelProcessamento = temLoteElegivelProcessamento || temFuncionarioElegivelProcessamento
+  // Ações por funcionário (Baixar Selecionados / Reprocessar): o lote é o dos funcionários marcados,
+  // mesmo sem marcar o checkbox do lote — só vale quando todos os marcados estão no mesmo lote.
+  const lotesComFuncionarioMarcado = lotesAgrupados.filter(g => g.funcionarios.some(f => selecionados.has(f.funcionario_id)))
+  const grupoFuncionarios = lotesComFuncionarioMarcado.length === 1 ? lotesComFuncionarioMarcado[0] : null
+  const selecionadosDoLoteUnico = grupoFuncionarios ? grupoFuncionarios.funcionarios.filter(f => selecionados.has(f.funcionario_id)) : []
+  // Lote dos botões de lote (Conferido DP / Pagamento Processado): o marcado no checkbox, ou o dos
+  // funcionários marcados quando todos eles estão no mesmo lote.
+  const grupoAcaoLote = loteUnicoSelecionado ?? grupoFuncionarios
+  // Alvos de Exportar e Voltar Processamento (aceitam vários lotes): em cada lote, os funcionários
+  // marcados; sem nenhum marcado nele, o lote inteiro quando o checkbox do lote está marcado.
+  const alvos = lotesAgrupados.map(g => {
+    const marcados = g.funcionarios.filter(f => selecionados.has(f.funcionario_id))
+    if (marcados.length > 0) return { grupo: g, funcionarios: marcados, loteInteiro: false }
+    if (lotesSelecionadosProcessamento.has(g.loteId)) return { grupo: g, funcionarios: g.funcionarios, loteInteiro: true }
+    return null
+  }).filter(Boolean)
+  // Seleção com lotes de CNPJs diferentes não libera nenhuma ação da barra.
+  const cnpjDoLote = (g) => soDigitos(mapas?.empresasMap[g.lote?.empresa_id]?.cnpj) || g.lote?.empresa_id || g.empresaNome
+  const selecaoMesmoCnpj = new Set(alvos.map(a => cnpjDoLote(a.grupo))).size <= 1
+  const processadoNoLote = (g, f) => !!g.lote?.funcionarios_processados?.includes(f.funcionario_id)
+  const alvosVoltar = alvos
+    .map(a => ({ ...a, ids: a.funcionarios.filter(f => processadoNoLote(a.grupo, f)).map(f => f.funcionario_id) }))
+    .filter(a => a.ids.length > 0 && !a.grupo.soVisualizacao)
+  const podeVoltarProcessamento = podeProcessar && alvosVoltar.length > 0
+  const handleVoltarProcessamento = async () => {
+    const quantidade = alvosVoltar.reduce((soma, a) => soma + a.ids.length, 0)
+    if (!window.confirm(`Desfazer o pagamento processado de ${quantidade} funcionário(s)${alvosVoltar.length > 1 ? ` em ${alvosVoltar.length} lotes` : ''}? Eles voltam a Aguardando Processamento.`)) return
+    setProcessandoAcao('desprocessar')
+    setErro(null)
+    try {
+      for (const a of alvosVoltar) {
+        await apiService.desprocessarLote(a.grupo.lote.id, a.ids, usuarioLabel)
       }
-      atual.lotes.push(grupo)
+      setSelecionados(new Set())
+      setLotesSelecionadosProcessamento(new Set())
+      await handleVisualizar()
+    } catch (err) {
+      setErro(err.message || String(err))
+    } finally {
+      setProcessandoAcao(null)
     }
-    return grupos
-  }, [lotesVisiveis])
+  }
+  const grupoAcaoRevisado = !!grupoAcaoLote && grupoAcaoLote.funcionarios.length > 0
+    && grupoAcaoLote.funcionarios.every(f => grupoAcaoLote.lote?.funcionarios_conferidos_dp?.includes(f.funcionario_id))
+  // Exportar: todos os alvos revisados e sem reprocessamento pendente. TXT só quando já processados.
+  const podeExportar = podeProcessar && alvos.length > 0 && alvos.every(({ grupo, funcionarios }) =>
+    ['CONFERIDO_DP', 'PROCESSAMENTO_PARCIAL', 'PROCESSADO'].includes(grupo.status) && !grupo.soVisualizacao && funcionarios.length > 0
+    && funcionarios.every(f => !!grupo.lote?.funcionarios_conferidos_dp?.includes(f.funcionario_id)
+      && !grupo.lote?.funcionarios_liberados_reprocessamento?.includes(f.funcionario_id)))
+  const podeExportarTxt = podeExportar && alvos.every(({ grupo, funcionarios }) => funcionarios.every(f => processadoNoLote(grupo, f)))
+  // Reprocessar age num lote só: os funcionários marcados dele, ou o lote marcado inteiro.
+  const grupoAlvo = grupoFuncionarios ?? loteUnicoSelecionado
+  const statusAlvo = grupoAlvo?.status
+  const funcionariosAlvo = selecionadosDoLoteUnico.length > 0 ? selecionadosDoLoteUnico : (grupoAlvo?.funcionarios || [])
+  // Já processado não reprocessa por aqui — usa o Voltar Processamento.
+  const alvoJaProcessado = funcionariosAlvo.length > 0 && funcionariosAlvo.every(f => processadoNoLote(grupoAlvo, f))
+  const podeReprocessarLoteUnico = !!grupoAlvo && podeProcessar && !!statusAlvo && statusAlvo !== 'RASCUNHO' && funcionariosAlvo.length > 0 && !grupoAlvo.soVisualizacao && !alvoJaProcessado
+  // Lote único marcado (checkbox) — Conferido DP, Pagamento Processado e Excluir.
+  const statusLoteUnico = loteUnicoSelecionado?.status
+  const podeExcluirLoteUnico = !!loteUnicoSelecionado && podeExcluirLote && (!statusLoteUnico || statusLoteUnico === 'RASCUNHO') && !loteUnicoSelecionado.soVisualizacao
+  const processandoExcluirLoteUnico = !!loteUnicoSelecionado && processandoAcao === `excluir-${loteUnicoSelecionado.loteId}`
+  const processandoReprocessarLoteUnico = !!grupoAlvo && processandoAcao === `reprocessar-${grupoAlvo.loteId}`
+
 
   const mesLabel = MESES.find(m => m.v === mes)?.label || mes
 
@@ -852,7 +781,9 @@ export default function HistoricoComissoes() {
   const handleAutorizarReprocessamento = async (grupo) => {
     const lote = grupo.lote
     if (!lote) return
-    const selecionadosDoLote = grupo.funcionarios.filter(f => selecionados.has(f.funcionario_id))
+    const marcados = grupo.funcionarios.filter(f => selecionados.has(f.funcionario_id))
+    // Lote marcado no checkbox sem funcionário marcado vale pro lote inteiro.
+    const selecionadosDoLote = marcados.length > 0 ? marcados : grupo.funcionarios
     if (selecionadosDoLote.length === 0) return
     const ehLoteInteiro = selecionadosDoLote.length === grupo.funcionarios.length
     setProcessandoAcao(`reprocessar-${lote.id}`)
@@ -918,8 +849,10 @@ export default function HistoricoComissoes() {
     if (!digitos || digitos.length > tamanho) return null
     return digitos.padStart(tamanho, '0')
   }
-  const montarTxtPagamento = (loteId, funcionarioIds = null) => {
-    const registros = resultados.filter(r => r.lote_id === loteId && (!funcionarioIds || funcionarioIds.includes(r.funcionario_id)))
+  // itens: [{ loteId, funcionarioIds }] — funcionarioIds null = lote inteiro. Vários lotes saem no
+  // mesmo arquivo.
+  const montarTxtPagamento = (itens) => {
+    const registros = resultados.filter(r => itens.some(i => r.lote_id === i.loteId && (!i.funcionarioIds || i.funcionarioIds.includes(r.funcionario_id))))
     const problemas = []
     // O Domínio espera 1 lançamento por rubrica — um funcionário pode ter várias políticas
     // (comissões) diferentes caindo na MESMA rubrica (ex: duas comissões com Rubrica 318), então
@@ -962,13 +895,19 @@ export default function HistoricoComissoes() {
     return { conteudo: linhas.join('\n'), totalLancamentos: linhas.length, problemas }
   }
 
-  const baixarTxtPagamento = (lote, funcionarioIds = null, sufixoArquivo = null) => {
-    const { conteudo, totalLancamentos, problemas } = montarTxtPagamento(lote.id, funcionarioIds)
+  // Um TXT só pra tudo que foi pedido (um ou vários lotes, ou funcionários avulsos). itens: [{ lote,
+  // funcionarioIds }] — funcionarioIds null = lote inteiro.
+  const baixarTxtPagamento = (itens) => {
+    const { conteudo, totalLancamentos, problemas } = montarTxtPagamento(itens.map(i => ({ loteId: i.lote.id, funcionarioIds: i.funcionarioIds })))
     if (totalLancamentos > 0) {
-      const paraNomeArquivo = (s) => (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '')
-      const nomeArquivo = ['Lancamentos', periodoInicio, periodoFim, lote.empresa_nome, lote.setor_nome, sufixoArquivo]
+      const empresas = [...new Set(itens.map(i => i.lote.empresa_nome).filter(Boolean))]
+      const parcial = itens.some(i => i.funcionarioIds)
+      const partesNome = itens.length === 1
+        ? [itens[0].lote.empresa_nome, itens[0].lote.setor_nome, parcial ? 'selecionados' : null]
+        : [empresas.join('_'), `Setores_${itens.length}`, parcial ? 'selecionados' : null]
+      const nomeArquivo = ['Lancamentos', periodoInicio, periodoFim, ...partesNome]
         .filter(Boolean).map(paraNomeArquivo).join('_')
-      const blob = new Blob([conteudo], { type: 'text/plain;charset=utf-8' })
+    const blob = new Blob([conteudo], { type: 'text/plain;charset=utf-8' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
@@ -983,9 +922,8 @@ export default function HistoricoComissoes() {
     }
   }
 
-  // Só muda o status pra Processado — não baixa nada sozinho. Quem chama (o botão "Pagamento
-  // Processado" do card) abre o menu de Salvar em TXT/PDF logo em seguida, só quando retorna
-  // true (confirmado e sem erro).
+  // Muda o status pra Processado e já baixa UM TXT de pagamento com tudo o que foi processado
+  // agora (todos os lotes/funcionários marcados juntos).
   const handleProcessarSelecionados = async () => {
     const lotesEscolhidos = new Set(lotesSelecionadosProcessamento)
     const funcionariosEscolhidos = new Set(selecionados)
@@ -1015,10 +953,18 @@ export default function HistoricoComissoes() {
 
     setProcessandoAcao('processar-selecionados')
     setErro(null)
+    const processados = []
     try {
       for (const item of trabalhos) {
         await apiService.processarLote(item.grupo.loteId, usuarioLabel, item.ids, item.todosIds)
+        processados.push({ lote: item.grupo.lote, funcionarioIds: item.ids.length === item.todosIds.length ? null : item.ids })
       }
+    } catch (err) {
+      setErro(err.message || String(err))
+    }
+    try {
+      // TXT sai dos registros já carregados, antes de recarregar a tela.
+      if (processados.length > 0) baixarTxtPagamento(processados)
       setSelecionados(new Set())
       setLotesSelecionadosProcessamento(new Set())
       await handleVisualizar()
@@ -1029,204 +975,104 @@ export default function HistoricoComissoes() {
     }
   }
 
-  // Baixa o TXT do lote — usado tanto na primeira vez (logo depois de processar) quanto pra
-  // baixar de novo depois (ex: o arquivo se perdeu ou precisa reenviar pro banco).
-  const handleBaixarNovamente = (lote) => {
-    if (!lote) return
-    baixarTxtPagamento(lote)
+  // Baixa de novo o TXT de pagamento (ex: o arquivo se perdeu ou precisa reenviar pro banco) — dos
+  // funcionários marcados, ou do lote marcado inteiro.
+  const handleExportarTxt = (alvosExport) => {
+    baixarTxtPagamento(alvosExport.map(a => ({ lote: a.grupo.lote, funcionarioIds: a.loteInteiro ? null : a.funcionarios.map(f => f.funcionario_id) })))
   }
 
-  // Baixa/gera PDF só dos funcionários marcados no checkbox (mesma seleção usada pra Autorizar
-  // Reprocessamento) — pensado pra quando parte do lote já está pronta (revisada) mas não todo
-  // mundo, sem precisar clicar um por um nos ícones individuais.
-  const handleBaixarSelecionados = (grupo) => {
-    const selecionadosDoLote = grupo.funcionarios.filter(f => selecionados.has(f.funcionario_id))
-    if (!grupo.lote || selecionadosDoLote.length === 0) return
-    baixarTxtPagamento(grupo.lote, selecionadosDoLote.map(f => f.funcionario_id), 'selecionados')
-  }
-  const handleSalvarPdfSelecionados = (grupo) => {
-    const selecionadosDoLote = grupo.funcionarios.filter(f => selecionados.has(f.funcionario_id))
-    if (selecionadosDoLote.length === 0) return
-    gerarESalvarPdf(grupo, selecionadosDoLote, `pdf-sel-${grupo.loteId}`, 'selecionados')
-  }
-
-  // Mesmo relatório do "Salvar PDF" de Cálculo de Comissões, mas escopado a UM lote já salvo
-  // (um lote = uma Empresa + um Setor, então não precisa da lógica de agrupar vários
-  // setores/empresas que aquele botão tem). Não muda status nem depende dele.
-  // Gera o PDF pro conjunto de funcionários informado — usado tanto pro lote inteiro (Salvar
-  // PDF do card) quanto pra um funcionário só (botão individual, escape hatch pra quem não
-  // pode esperar o lote inteiro ficar revisado, ex: alguém precisou de reprocessamento).
-  const gerarESalvarPdf = async (grupo, funcionariosParaPdf, chaveProcessando, sufixoArquivo) => {
-    if (funcionariosParaPdf.length === 0) return
-    setProcessandoAcao(chaveProcessando)
+  // Exporta em PDF os funcionários marcados (ou o lote marcado inteiro) no mesmo layout padrão do
+  // Cálculo de Comissões (utils/comissoesPdf.js).
+  const handleExportarPdf = async (alvosExport) => {
+    const blocos = alvosExport.map(({ grupo, funcionarios }) => {
+      const ids = new Set(funcionarios.map(f => f.funcionario_id))
+      const registros = resultados
+        .filter(r => r.lote_id === grupo.loteId && ids.has(r.funcionario_id))
+        .sort((a, b) => (a.funcionarioNome || '').localeCompare(b.funcionarioNome || '', 'pt-BR')
+          || (a.periodo_inicio || '').localeCompare(b.periodo_inicio || ''))
+      return { grupo, registros }
+    }).filter(b => b.registros.length > 0)
+    if (blocos.length === 0) {
+      setErro('Sem valores calculados pra exportar.')
+      return
+    }
+    setProcessandoAcao('exportar-pdf')
     setErro(null)
     try {
-      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
-        import('html2canvas'),
-        import('jspdf'),
-      ])
-
-      const MARGIN = 24
-      const WRAP_W = 1600
-      const pdf = new jsPDF({ unit: 'pt', format: 'a4', orientation: 'landscape' })
-      const CW = pdf.internal.pageSize.getWidth() - 2 * MARGIN
-      const periodoLabel = `${periodoInicio.split('-').reverse().join('/')} a ${periodoFim.split('-').reverse().join('/')}`
-
-      const THEAD_HTML = `
-        <thead>
-          <tr style="background:#1e293b;color:#fff;text-transform:uppercase;font-size:11px;">
-            <th style="padding:7px 8px;text-align:left;">Funcionário</th>
-            <th style="padding:7px 8px;text-align:left;">Comissão</th>
-            <th style="padding:7px 8px;text-align:right;">Base Comissão</th>
-            <th style="padding:7px 8px;text-align:right;">% Serviços</th>
-            <th style="padding:7px 8px;text-align:right;">% Peças</th>
-            <th style="padding:7px 8px;text-align:right;">% Total</th>
-            <th style="padding:7px 8px;text-align:right;">R$ Valor</th>
-            <th style="padding:7px 8px;text-align:right;">Valor Comissão</th>
-          </tr>
-        </thead>`
-
-      const montarHtmlCabecalho = (continuacao) => `
-        <div style="font-family:Arial,Helvetica,sans-serif;background:#fff;padding:20px 20px 0 20px;width:${WRAP_W}px;box-sizing:border-box;">
-          <div style="display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #1e293b;padding-bottom:12px;margin-bottom:16px;">
-            <div>
-              <div style="font-size:22px;font-weight:800;color:#0f172a;">Processamento de Comissões</div>
-              <div style="font-size:15px;font-weight:700;color:#1e293b;margin-top:2px;">${grupo.empresaNome}</div>
-            </div>
-            <div style="text-align:right;font-size:13px;color:#475569;">
-              <div>Período: ${periodoLabel}</div>
-              <div>Gerado em: ${new Date().toLocaleString('pt-BR')}</div>
-            </div>
-          </div>
-          <div style="font-size:14px;font-weight:700;color:#334155;margin-bottom:8px;">${grupo.setorNome}${continuacao ? ' <span style="font-weight:400;font-style:italic;color:#94a3b8;">(continuação)</span>' : ''}</div>
-        </div>`
-
-      // Um lote já é uma Empresa+Setor só — só falta agrupar os funcionários por Cargo (mesmo
-      // recorte visual do PDF de Cálculo de Comissões).
+      const montarSetor = ({ grupo, registros }) => {
       const porCargo = new Map()
-      for (const f of funcionariosParaPdf) {
-        const chave = f.cargoNome || '-'
-        if (!porCargo.has(chave)) porCargo.set(chave, { nomeCargo: chave, codigoCargo: f.cargoCodigo, funcionarios: [] })
-        porCargo.get(chave).funcionarios.push(f)
+      for (const r of registros) {
+        const titulo = r.cargoCodigo ? `${r.cargoNome} (${r.cargoCodigo})` : r.cargoNome
+        if (!porCargo.has(titulo)) porCargo.set(titulo, [])
+        porCargo.get(titulo).push(r)
       }
-      const gruposCargo = [...porCargo.values()].sort((a, b) => a.nomeCargo.localeCompare(b.nomeCargo, 'pt-BR'))
-
-      const montarHtmlBlocoCargo = (grupoCargo) => {
-        const linhasFunc = grupoCargo.funcionarios.map(f => {
-          const linhas = f.registros.map((r, i) => {
-            const nomeComCodigo = r.func?.codigo_funcionario ? `${r.func.codigo_funcionario} — ${f.funcionarioNome}` : f.funcionarioNome
-            // Detalhamento por empresa (Nível EMPRESA + "detalhar por empresa" marcado na
-            // Política) — mesmo bloco que já existe no PDF de Cálculo de Comissões, pra
-            // auditar de onde veio o total quando a comissão soma mais de uma empresa.
-            const detalheEmpresasHtml = Array.isArray(r.detalhe_empresas) && r.detalhe_empresas.length > 0
-              ? r.detalhe_empresas.map(d => `
-                  <div style="font-size:10px;font-weight:400;color:#94a3b8;margin-top:2px;">
-                    ${d.empresa}: Base <span style="color:#64748b;">${fmtValorBase(r.politica?.base_calculo, d.valorBase)}</span>
-                    <span style="color:#cbd5e1;"> &rarr; </span>
-                    Comissão <span style="color:#059669;font-weight:600;">${fmtBRL(d.valorComissao)}</span>
-                  </div>`).join('')
-              : ''
-            return `
-              <tr>
-                <td style="padding:6px 8px;font-weight:700;border-bottom:1px solid #e2e8f0;white-space:nowrap;">${i === 0 ? nomeComCodigo : ''}</td>
-                <td style="padding:6px 8px;border-bottom:1px solid #e2e8f0;">${r.comissaoDescricao || '-'}${tipoComissaoPorBase(r.politica?.base_calculo) ? ` <span style="font-style:italic;color:#94a3b8;">(${tipoComissaoPorBase(r.politica?.base_calculo)})</span>` : ''}${detalheEmpresasHtml}</td>
-                <td style="padding:6px 8px;text-align:right;border-bottom:1px solid #e2e8f0;">${fmtValorBase(r.politica?.base_calculo, r.valor_base)}</td>
-                <td style="padding:6px 8px;text-align:right;border-bottom:1px solid #e2e8f0;">${fmtPct(r.politica?.comissao_servicos)}</td>
-                <td style="padding:6px 8px;text-align:right;border-bottom:1px solid #e2e8f0;">${fmtPct(r.politica?.comissao_pecas)}</td>
-                <td style="padding:6px 8px;text-align:right;border-bottom:1px solid #e2e8f0;">${fmtPct(r.politica?.comissao_total)}</td>
-                <td style="padding:6px 8px;text-align:right;border-bottom:1px solid #e2e8f0;">${fmtBRL(r.politica?.comissao_valor != null ? parseFloat(r.politica.comissao_valor) : null)}</td>
-                <td style="padding:6px 8px;text-align:right;font-weight:600;color:#1e293b;border-bottom:1px solid #e2e8f0;">${fmtBRL(r.valor_comissao)}</td>
-              </tr>`
-          }).join('')
-          const subtotal = f.registros.length > 1 ? `
-            <tr style="background:#ecfdf5;">
-              <td colspan="7" style="padding:5px 8px;text-align:right;font-weight:700;color:#334155;">Total ${f.funcionarioNome}</td>
-              <td style="padding:5px 8px;text-align:right;font-weight:700;color:#047857;">${fmtBRL(f.valorComissaoTotal)}</td>
-            </tr>` : ''
-          return linhas + subtotal
-        }).join('')
-        const nomeCargoComCodigo = grupoCargo.codigoCargo ? `${grupoCargo.nomeCargo} (${grupoCargo.codigoCargo})` : grupoCargo.nomeCargo
-        return `
-          <div style="font-family:Arial,Helvetica,sans-serif;background:#fff;padding:0 20px;width:${WRAP_W}px;box-sizing:border-box;">
-            <table style="width:100%;border-collapse:collapse;font-size:13px;">
-              ${THEAD_HTML}
-              <tbody>
-                <tr><td colspan="8" style="padding:5px 8px;background:#f1f5f9;font-weight:700;font-size:12px;text-transform:uppercase;color:#334155;">${nomeCargoComCodigo}</td></tr>
-                ${linhasFunc}
-              </tbody>
-            </table>
-          </div>`
-      }
-
-      const montarHtmlRodape = (total) => `
-        <div style="font-family:Arial,Helvetica,sans-serif;background:#fff;padding:0 20px 20px 20px;width:${WRAP_W}px;box-sizing:border-box;">
-          <table style="width:100%;border-collapse:collapse;font-size:13px;">
-            <tfoot>
-              <tr style="border-top:2px solid #1e293b;">
-                <td colspan="7" style="padding:10px 8px;text-align:right;font-weight:800;color:#0f172a;">Total ${grupo.setorNome}</td>
-                <td style="padding:10px 8px;text-align:right;font-weight:800;color:#047857;">${fmtBRL(total)}</td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>`
-
-      const renderBloco = async (html) => {
-        const wrap = document.createElement('div')
-        wrap.style.cssText = `position:fixed;top:0;left:-9999px;width:${WRAP_W}px;background:#fff;z-index:-1;`
-        wrap.innerHTML = html
-        document.body.appendChild(wrap)
-        try {
-          return await html2canvas(wrap, { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff', width: WRAP_W })
-        } finally {
-          document.body.removeChild(wrap)
+      const cargos = [...porCargo.entries()]
+        .sort((a, b) => a[0].localeCompare(b[0], 'pt-BR'))
+        .map(([titulo, itens]) => {
+          const regras = new Map()
+          for (const r of itens) {
+            const regra = r.politica?.usa_faixa === 'SIM' ? r.politica.regra_comissao : null
+            if (regra?.id && !regras.has(regra.id)) regras.set(regra.id, { nome: regra.nome, faixas: faixasDaRegra(r.politica, null) })
+          }
+          const porFuncionario = new Map()
+          for (const r of itens) {
+            if (!porFuncionario.has(r.funcionario_id)) porFuncionario.set(r.funcionario_id, [])
+            porFuncionario.get(r.funcionario_id).push(r)
+          }
+          return {
+            titulo,
+            regras: [...regras.values()],
+            empresas: [{
+              nomeEmpresa: grupo.empresaNome,
+              funcionarios: [...porFuncionario.values()].map(linhas => {
+                const f = linhas[0].func
+                return {
+                  nome: f?.codigo_funcionario ? `${f.codigo_funcionario} — ${linhas[0].funcionarioNome}` : linhas[0].funcionarioNome,
+                  nomeCurto: linhas[0].funcionarioNome,
+                  total: linhas.reduce((acc, r) => acc + (r.valor_comissao || 0), 0),
+                  linhas: linhas.map(r => {
+                    const baseCalculo = r.politica?.base_calculo
+                    return {
+                      comissao: r.comissaoDescricao,
+                      tipo: tipoComissaoPorBase(baseCalculo),
+                      periodo: r.periodo_inicio && r.periodo_fim ? `${fmtDiaMes(r.periodo_inicio)} a ${fmtDiaMes(r.periodo_fim)}` : '',
+                      detalhes: (Array.isArray(r.detalhe_empresas) ? r.detalhe_empresas : [])
+                        .filter(d => Math.round(Math.abs(Number(d.valorBase) || 0) * 100) !== 0 || Math.round(Math.abs(Number(d.valorComissao) || 0) * 100) !== 0)
+                        .map(d => ({ empresa: d.empresa, base: fmtValorBase(baseCalculo, d.valorBase), comissao: fmtBRL(d.valorComissao) })),
+                      base: fmtValorBase(baseCalculo, r.valor_base),
+                      pctServicos: fmtPct(r.politica?.comissao_servicos),
+                      pctPecas: fmtPct(r.politica?.comissao_pecas),
+                      pctTotal: fmtPct(r.politica?.comissao_total),
+                      valorFixo: fmtBRL(r.politica?.comissao_valor != null ? parseFloat(r.politica.comissao_valor) : null),
+                      valorComissao: fmtBRL(r.valor_comissao),
+                      // Regra por % de meta sem meta cadastrada é salva sem valor de comissão.
+                      semMeta: r.valor_comissao == null && r.politica?.usa_faixa === 'SIM' && !!r.politica.regra_comissao && r.politica.regra_comissao.tipo_faixa !== 'VALOR',
+                    }
+                  }),
+                }
+              }),
+            }],
+          }
+        })
+        return {
+          empresasLabel: grupo.empresaNome,
+          nomeSetor: grupo.setorNome,
+          total: registros.reduce((acc, r) => acc + (r.valor_comissao || 0), 0),
+          cargos,
         }
       }
-
-      const GAP = 6
-      const pageBottom = pdf.internal.pageSize.getHeight() - MARGIN
-      let primeiraPagina = true
-      const iniciarPagina = () => {
-        if (!primeiraPagina) pdf.addPage()
-        primeiraPagina = false
-        return MARGIN
-      }
-      const colocarCanvas = (canvas, y) => {
-        const h = (canvas.height / canvas.width) * CW
-        pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', MARGIN, y, CW, h)
-        return h
-      }
-
-      let y = iniciarPagina()
-      y += colocarCanvas(await renderBloco(montarHtmlCabecalho(false)), y) + GAP
-
-      for (const grupoCargo of gruposCargo) {
-        const cargoCanvas = await renderBloco(montarHtmlBlocoCargo(grupoCargo))
-        const cargoH = (cargoCanvas.height / cargoCanvas.width) * CW
-        if (y + cargoH > pageBottom) {
-          y = iniciarPagina()
-          y += colocarCanvas(await renderBloco(montarHtmlCabecalho(true)), y) + GAP
-        }
-        y += colocarCanvas(cargoCanvas, y) + GAP
-      }
-
-      const totalPdf = funcionariosParaPdf.reduce((s, f) => s + f.valorComissaoTotal, 0)
-      const footerCanvas = await renderBloco(montarHtmlRodape(totalPdf))
-      const footerH = (footerCanvas.height / footerCanvas.width) * CW
-      if (y + footerH > pageBottom) y = iniciarPagina()
-      colocarCanvas(footerCanvas, y)
-
-      const paraNomeArquivo = (s) => (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '')
-      const nomeArquivo = ['Comissoes', periodoInicio, periodoFim, grupo.empresaNome, grupo.setorNome, sufixoArquivo].filter(Boolean).map(paraNomeArquivo).join('_')
-      pdf.save(`${nomeArquivo}.pdf`)
+      const setores = blocos.map(montarSetor)
+      const partesNome = blocos.length === 1
+        ? [blocos[0].grupo.empresaNome, blocos[0].grupo.setorNome]
+        : [[...new Set(blocos.map(b => b.grupo.empresaNome))].join('_'), `Setores_${blocos.length}`]
+      const nomeArquivo = ['Comissoes', periodoInicio, periodoFim, ...partesNome].filter(Boolean).map(paraNomeArquivo).join('_')
+      await gerarPdfComissoes({ setores, periodoInicio, periodoFim, nomeArquivo })
     } catch (err) {
-      console.error('Erro ao gerar PDF:', err)
       setErro('Erro ao gerar PDF: ' + (err.message || String(err)))
     } finally {
       setProcessandoAcao(null)
     }
   }
-
-  const handleSalvarPdfLote = (grupo) => gerarESalvarPdf(grupo, grupo.funcionarios, `pdf-${grupo.loteId}`, null)
 
   // Período de férias do funcionário aberto no Detalhe do Cálculo, se ele esteve de férias
   // durante o período selecionado na tela — desde que quem está de férias passou a aparecer
@@ -1254,14 +1100,30 @@ export default function HistoricoComissoes() {
           </h1>
           <p className="text-xs text-slate-500">Confira, aprove e processe os lotes de comissão calculados — gera o TXT de pagamento no final do fluxo.</p>
         </div>
-        {hasPermission('bi/comissoes') && (
-          <button
-            onClick={() => navigate('/bi/comissoes')}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-slate-700 border border-slate-200 bg-white hover:bg-slate-50 shadow-sm transition-colors"
-          >
-            <BarChart2 className="h-3.5 w-3.5 text-indigo-500" /> Ir para Dashboard
-          </button>
-        )}
+        <div className="flex items-end gap-2">
+          <div className="flex flex-col gap-1.5">
+            <label className={LBL}>Ano</label>
+            <select value={ano} onChange={e => setAno(e.target.value)} className={SEL}>
+              {ANOS.map(a => <option key={a} value={a}>{a}</option>)}
+            </select>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label className={LBL}>Mês</label>
+            <div className="flex items-center gap-1">
+              <select value={mes} onChange={e => setMes(e.target.value)} className={`${SEL} w-32`}>
+                {MESES.map(m => <option key={m.v} value={m.v}>{m.label}</option>)}
+              </select>
+              <button type="button" onClick={() => mudarMes(-1)} title="Mês anterior"
+                className="shrink-0 p-2 border border-slate-200 rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition-colors">
+                <ChevronLeft className="h-3.5 w-3.5" />
+              </button>
+              <button type="button" onClick={() => mudarMes(1)} title="Próximo mês"
+                className="shrink-0 p-2 border border-slate-200 rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition-colors">
+                <ChevronRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
 
       {erro && (
@@ -1278,29 +1140,7 @@ export default function HistoricoComissoes() {
         <>
           {/* PERÍODO */}
           <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-4">
-            <div className="grid grid-cols-7 gap-3 items-end">
-              <div className="flex flex-col gap-1.5">
-                <label className={LBL}>Ano</label>
-                <select value={ano} onChange={e => setAno(e.target.value)} className={`${SEL} w-full`}>
-                  {ANOS.map(a => <option key={a} value={a}>{a}</option>)}
-                </select>
-              </div>
-              <div className="col-span-2 flex flex-col gap-1.5">
-                <label className={LBL}>Mês</label>
-                <div className="flex items-center gap-1">
-                  <select value={mes} onChange={e => setMes(e.target.value)} className={`${SEL} w-full`}>
-                    {MESES.map(m => <option key={m.v} value={m.v}>{m.label}</option>)}
-                  </select>
-                  <button type="button" onClick={() => mudarMes(-1)} title="Mês anterior"
-                    className="shrink-0 p-2 border border-slate-200 rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition-colors">
-                    <ChevronLeft className="h-3.5 w-3.5" />
-                  </button>
-                  <button type="button" onClick={() => mudarMes(1)} title="Próximo mês"
-                    className="shrink-0 p-2 border border-slate-200 rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition-colors">
-                    <ChevronRight className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              </div>
+            <div className="grid grid-cols-9 gap-3 items-end">
               <div className="col-span-2 flex flex-col gap-1.5">
                 <label className={LBL}>Empresa</label>
                 <select value={filtroEmpresa} onChange={e => setFiltroEmpresa(e.target.value)} className={`${SEL} w-full`}>
@@ -1308,20 +1148,32 @@ export default function HistoricoComissoes() {
                   {empresasUnicas.map(e => <option key={e} value={e}>{e}</option>)}
                 </select>
               </div>
-              <div className="col-span-2 flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setFiltrosAbertos(v => !v)}
-                  title="Filtros Avançados"
-                  className="relative shrink-0 p-2 border border-slate-200 rounded-md text-slate-600 hover:bg-slate-50 transition-colors"
-                >
-                  <SlidersHorizontal className="h-4 w-4" />
-                  {temFiltroAtivo && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-blue-600 border-2 border-white" />}
-                </button>
+              <div className="col-span-2 flex flex-col gap-1.5">
+                <label className={LBL}>Área</label>
+                <select value={filtroArea} onChange={e => setFiltroArea(e.target.value)} className={`${SEL} w-full`}>
+                  <option value="">Todas</option>
+                  {areasUnicas.map(a => <option key={a} value={a}>{a}</option>)}
+                </select>
+              </div>
+              <div className="col-span-2 flex flex-col gap-1.5">
+                <label className={LBL}>Setor</label>
+                <select value={filtroSetor} onChange={e => setFiltroSetor(e.target.value)} className={`${SEL} w-full`}>
+                  <option value="">Todos</option>
+                  {setoresUnicas.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div className="col-span-2 flex flex-col gap-1.5">
+                <label className={LBL}>Responsável</label>
+                <select value={filtroResponsavel} onChange={e => setFiltroResponsavel(e.target.value)} className={`${SEL} w-full`}>
+                  <option value="">Todos</option>
+                  {responsaveisUnicos.map(r => <option key={r} value={r}>{r}</option>)}
+                </select>
+              </div>
+              <div className="col-span-1 flex justify-end">
                 <button
                   onClick={handleVisualizar}
                   disabled={buscando || !mapas}
-                  className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold px-4 py-2 rounded-md shadow-sm transition-colors"
+                  className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold px-3 py-2 rounded-md shadow-sm transition-colors"
                 >
                   {buscando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
                   Visualizar
@@ -1330,84 +1182,88 @@ export default function HistoricoComissoes() {
             </div>
           </div>
 
-          {/* FILTROS AVANÇADOS — retrátil, alternado pelo botão no card de Período acima */}
-          {filtrosAbertos && (
-            <div className="bg-white rounded-lg border border-slate-200 shadow-sm">
-              <div className="px-4 pt-4 pb-4 space-y-3">
-                <div className="grid grid-cols-2 gap-x-4 gap-y-3">
-                  <div className="flex flex-col gap-1">
-                    <label className={LBL}>Área</label>
-                    <select value={filtroArea} onChange={e => setFiltroArea(e.target.value)} className={`${SEL} w-full`}>
-                      <option value="">Todas</option>
-                      {areasUnicas.map(a => <option key={a} value={a}>{a}</option>)}
-                    </select>
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    <label className={LBL}>Departamento</label>
-                    <select value={filtroDepartamento} onChange={e => setFiltroDepartamento(e.target.value)} className={`${SEL} w-full`}>
-                      <option value="">Todos</option>
-                      {departamentosUnicos.map(d => <option key={d} value={d}>{d}</option>)}
-                    </select>
-                  </div>
-                </div>
-                <div className="grid grid-cols-3 gap-x-4 gap-y-3">
-                  <div className="flex flex-col gap-1">
-                    <label className={LBL}>Setor</label>
-                    <select value={filtroSetor} onChange={e => setFiltroSetor(e.target.value)} className={`${SEL} w-full`}>
-                      <option value="">Todos</option>
-                      {setoresUnicas.map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    <label className={LBL}>Agrupamento de Cargos</label>
-                    <select value={filtroAgrupamentoCargo} onChange={e => setFiltroAgrupamentoCargo(e.target.value)} className={`${SEL} w-full`}>
-                      <option value="">Todos</option>
-                      {agrupamentosCargoUnicos.map(a => <option key={a} value={a}>{a}</option>)}
-                    </select>
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    <label className={LBL}>Cargo</label>
-                    <select value={filtroCargo} onChange={e => setFiltroCargo(e.target.value)} className={`${SEL} w-full`}>
-                      <option value="">Todos</option>
-                      {cargosUnicos.map(c => <option key={c} value={c}>{c}</option>)}
-                    </select>
-                  </div>
-                </div>
-                <div className="grid grid-cols-3 gap-x-4 gap-y-3">
-                  <div className="flex flex-col gap-1">
-                    <label className={LBL}>Funcionário</label>
-                    <input
-                      type="text"
-                      value={filtroFuncionario}
-                      onChange={e => setFiltroFuncionario(e.target.value)}
-                      placeholder="Buscar pelo nome..."
-                      className={`${INP} w-full bg-white`}
-                    />
-                  </div>
-                  <div className="col-span-2 flex flex-col gap-1">
-                    <label className={LBL}>Comissão</label>
-                    <FiltroMultiSelect
-                      placeholder="Todas as Comissões"
-                      opcoes={comissoesUnicas}
-                      selecionados={filtroComissoes}
-                      onChange={setFiltroComissoes}
-                    />
-                  </div>
-                </div>
-                {temFiltroAtivo && (
-                  <div className="flex items-center justify-end pt-1 border-t border-slate-100">
-                    <button onClick={limparFiltros} className="text-[11px] font-semibold text-slate-500 hover:text-red-600 transition-colors">Limpar filtros</button>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
           {/* RESULTADOS — um card por lote (Empresa + Setor + Período) */}
           {jaBuscou && (
             <div className="space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="text-sm font-bold text-slate-900">Processamento — {mesLabel}/{ano}</span>
+                {/* Ações de lote: marque o checkbox de UM lote pra liberar Conferido DP (status
+                    Conferido) ou Pagamento Processado (status Processado). Processar Selecionados
+                    usa os lotes/funcionários marcados (ver handleProcessarSelecionados). */}
+                <div className="flex flex-wrap items-center gap-2">
+                  {selecaoMesmoCnpj && podeConfirmarConferenciaDp && grupoAcaoLote?.status === 'CONFERIDO' && (
+                    <button
+                      type="button"
+                      onClick={() => handleConfirmarConferenciaDp(grupoAcaoLote.lote)}
+                      disabled={processandoAcao === `confirmar-${grupoAcaoLote.lote?.id}` || !grupoAcaoRevisado || grupoAcaoLote.soVisualizacao}
+                      title={grupoAcaoLote.soVisualizacao ? 'Este departamento está liberado só pra visualização — peça pra alguém com edição fazer isso.' : !grupoAcaoRevisado ? 'Marque todos os funcionários como revisados (expanda o lote) pra liberar' : ''}
+                      className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold px-3 py-1.5 rounded-md shadow-sm transition-colors"
+                    >
+                      {processandoAcao === `confirmar-${grupoAcaoLote.lote?.id}` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />}
+                      Conferido DP
+                    </button>
+                  )}
+                  {selecaoMesmoCnpj && podeExcluirLoteUnico && (
+                    <button
+                      type="button"
+                      onClick={() => handleExcluirLote(loteUnicoSelecionado)}
+                      disabled={processandoExcluirLoteUnico}
+                      title="Apaga os valores calculados e reabre o período pra recalcular do zero"
+                      className="flex items-center gap-1.5 border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-semibold px-3 py-1.5 rounded-md transition-colors"
+                    >
+                      {processandoExcluirLoteUnico ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                      Excluir
+                    </button>
+                  )}
+                  {selecaoMesmoCnpj && podeReprocessarLoteUnico && (
+                    <button
+                      type="button"
+                      onClick={() => handleAutorizarReprocessamento(grupoAlvo)}
+                      disabled={processandoReprocessarLoteUnico}
+                      title="Libera o reprocessamento dos funcionários marcados (ou do lote inteiro, se todos estiverem marcados)"
+                      className="flex items-center gap-1.5 border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-semibold px-3 py-1.5 rounded-md transition-colors"
+                    >
+                      {processandoReprocessarLoteUnico ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
+                      Reprocessar
+                    </button>
+                  )}
+                  {selecaoMesmoCnpj && podeProcessar && temAlgoElegivelProcessamento && (
+                    <button
+                      type="button"
+                      onClick={handleProcessarSelecionados}
+                      disabled={processandoAcao === 'processar-selecionados'}
+                      title="Processa o pagamento dos lotes/funcionários marcados — lotes incompletos ficam como Processamento Parcial"
+                      className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold px-3 py-1.5 rounded-md shadow-sm transition-colors"
+                    >
+                      {processandoAcao === 'processar-selecionados' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Truck className="h-3.5 w-3.5" />}
+                      Processar
+                    </button>
+                  )}
+                  {selecaoMesmoCnpj && podeVoltarProcessamento && (
+                    <button
+                      type="button"
+                      onClick={handleVoltarProcessamento}
+                      disabled={processandoAcao === 'desprocessar'}
+                      title="Desfaz o pagamento processado dos funcionários marcados (ou do lote marcado) — voltam a Aguardando Processamento"
+                      className="flex items-center gap-1.5 border border-amber-300 text-amber-700 hover:bg-amber-50 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-semibold px-3 py-1.5 rounded-md transition-colors"
+                    >
+                      {processandoAcao === 'desprocessar' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
+                      Voltar Processamento
+                    </button>
+                  )}
+                  {selecaoMesmoCnpj && podeExportar && (
+                    <DropdownAcao
+                      label="Exportar"
+                      icon={Download}
+                      title="Exporta os funcionários marcados (ou o lote marcado inteiro)"
+                      className="border border-slate-300 text-slate-700 hover:bg-slate-100"
+                      opcoes={[
+                        { icon: Download, label: 'Salvar em PDF', onClick: () => handleExportarPdf(alvos) },
+                        ...(podeExportarTxt ? [{ icon: Download, label: 'Salvar em TXT', onClick: () => handleExportarTxt(alvos) }] : []),
+                      ]}
+                    />
+                  )}
+                </div>
               </div>
 
               {!buscando && lotesAgrupados.length > 0 && (
@@ -1429,14 +1285,6 @@ export default function HistoricoComissoes() {
                       </button>
                     )
                   })}
-                  <button
-                    type="button"
-                    onClick={handleAbrirPainel}
-                    title="Todas as lojas e setores do período, com Responsável e sinalizador de conferido/pendente"
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 transition-colors ml-auto"
-                  >
-                    <LayoutGrid className="h-3.5 w-3.5" /> Visão Geral
-                  </button>
                 </div>
               )}
 
@@ -1445,12 +1293,23 @@ export default function HistoricoComissoes() {
               ) : lotesVisiveis.length === 0 ? (
                 <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-4 text-xs text-slate-400">Nenhum lote encontrado para este período/filtros.</div>
               ) : (
-                lotesPorEmpresa.map(({ empresaNome, lotes }) => (
-                  <div key={empresaNome} className="space-y-2">
-                    <div className="text-xs font-bold text-slate-500 uppercase tracking-wide pt-1">{empresaNome}</div>
-                    <div className="space-y-3">
-                      {lotes.map(grupo => (
-                        <LoteCard
+                <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-x-auto">
+                  <table className="w-full text-left border-collapse min-w-[1000px]">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[11px] font-semibold uppercase tracking-wider">
+                        <th className="pl-4 pr-1 py-2.5 w-8"></th>
+                        <th className="px-1 py-2.5 w-8"></th>
+                        <th className="px-3 py-2.5">Status</th>
+                        <th className="px-3 py-2.5">Empresa</th>
+                        <th className="px-3 py-2.5">Área</th>
+                        <th className="px-3 py-2.5">Setor</th>
+                        <th className="px-3 py-2.5">Responsável</th>
+                        <th className="px-3 py-2.5 w-12"></th>
+                      </tr>
+                    </thead>
+                    <tbody className="text-xs font-medium text-slate-700">
+                      {lotesVisiveis.map(grupo => (
+                        <LoteLinha
                           key={grupo.loteId}
                           grupo={grupo}
                           expandido={lotesExpandidos.has(grupo.loteId)}
@@ -1458,25 +1317,20 @@ export default function HistoricoComissoes() {
                           selecionados={selecionados}
                           onToggleSelecionado={toggleSelecionado}
                           onToggleSelecionarTodos={() => toggleSelecionarTodosDoLote(grupo)}
+                          loteSelecionadoProcessamento={lotesSelecionadosProcessamento.has(grupo.loteId)}
+                          onToggleLoteProcessamento={() => toggleSelecionarLoteProcessamento(grupo.loteId)}
                           podeProcessar={podeProcessar}
                           podeConfirmarConferenciaDp={podeConfirmarConferenciaDp}
                           podeExcluirLote={podeExcluirLote}
                           processandoAcao={processandoAcao}
-                          onConfirmarConferencia={handleConfirmarConferenciaDp}
-                          onProcessar={handleProcessarPagamento}
-                          onAutorizarReprocessamento={handleAutorizarReprocessamento}
-                          onExcluir={handleExcluirLote}
                           onVisualizar={setDetalheAberto}
                           onToggleConferidoDp={handleToggleConferidoDp}
-                          onBaixarNovamente={handleBaixarNovamente}
-                          onSalvarPdf={handleSalvarPdfLote}
-                          onBaixarSelecionados={handleBaixarSelecionados}
-                          onSalvarPdfSelecionados={handleSalvarPdfSelecionados}
+                          onVerHistorico={abrirHistoricoLote}
                         />
                       ))}
-                    </div>
-                  </div>
-                ))
+                    </tbody>
+                  </table>
+                </div>
               )}
             </div>
           )}
@@ -1484,6 +1338,37 @@ export default function HistoricoComissoes() {
       )}
 
       {/* DETALHE DO CÁLCULO — mesma visualização de linha usada na tabela de Cálculo de Comissões */}
+      {historicoAberto && (
+        <div className="fixed top-0 right-0 bottom-0 left-16 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setHistoricoAberto(null)}>
+          <div className="bg-white rounded-xl border border-slate-200 w-full max-w-2xl max-h-[80vh] shadow-2xl flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-slate-50 shrink-0">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900">Histórico do lote</h3>
+                <p className="text-[11px] text-slate-400 mt-0.5">{historicoAberto.grupo.empresaNome} — {historicoAberto.grupo.setorNome}</p>
+              </div>
+              <button onClick={() => setHistoricoAberto(null)} className="text-slate-400 hover:text-slate-600"><X className="h-4 w-4" /></button>
+            </div>
+            <div className="p-5 overflow-y-auto">
+              {historicoAberto.itens === null ? (
+                <div className="text-xs text-slate-400 flex items-center gap-1.5"><Loader2 className="h-3 w-3 animate-spin" /> Carregando...</div>
+              ) : historicoAberto.itens.length === 0 ? (
+                <p className="text-[11px] text-slate-400">Nenhum evento registrado ainda.</p>
+              ) : (
+                <div className="space-y-2">
+                  {historicoAberto.itens.map(h => (
+                    <div key={h.id} className="flex flex-wrap items-center gap-2 text-[11px] text-slate-600">
+                      <span className="font-bold text-slate-800">{ROTULO_ACAO_HISTORICO[h.acao] || h.acao}</span>
+                      <span>{h.usuario}</span>
+                      <span className="text-slate-400">{new Date(h.data_hora).toLocaleString('pt-BR')}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {detalheAberto && (
         <div className="fixed top-0 right-0 bottom-0 left-16 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setDetalheAberto(null)}>
           <div className="bg-white rounded-xl border border-slate-200 w-fit min-w-0 max-w-full max-h-[85vh] shadow-2xl flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
@@ -1756,76 +1641,6 @@ export default function HistoricoComissoes() {
                 <span className="text-slate-700">Total (Base de Cálculo)</span>
                 <span className="font-mono text-blue-700">{fmtBRL(colunaModal.total)}</span>
               </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* PAINEL "VISÃO GERAL" — todas as Empresas/Setores do período, com Responsável e
-          sinalizador de conferido (verde) / pendente (vermelho), independente de filtro. */}
-      {painelAberto && (
-        <div className="fixed top-0 right-0 bottom-0 left-16 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setPainelAberto(false)}>
-          <div className="bg-white rounded-xl border border-slate-200 w-full max-w-2xl max-h-[85vh] shadow-2xl flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-slate-50 shrink-0">
-              <div>
-                <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2"><LayoutGrid className="h-4 w-4 text-blue-600" /> Visão Geral — {mesLabel}/{ano}</h3>
-                <p className="text-[11px] text-slate-400 mt-0.5">Todas as lojas e setores do período, com o responsável e se já foi conferido.</p>
-              </div>
-              <button onClick={() => setPainelAberto(false)} className="text-slate-400 hover:text-slate-600"><X className="h-4 w-4" /></button>
-            </div>
-            {!carregandoPainel && painelCombos.length > 0 && (
-              <div className="flex flex-wrap items-center gap-1.5 px-5 py-2.5 border-b border-slate-100 shrink-0">
-                {[
-                  { value: '', label: 'Todos', qtd: painelCombos.length },
-                  { value: 'pendente', label: 'Pendentes', qtd: painelCombos.filter(c => !c.conferido).length },
-                  { value: 'conferido', label: 'Conferidos', qtd: painelCombos.filter(c => c.conferido).length },
-                ].map(chip => (
-                  <button
-                    key={chip.value || 'todos'}
-                    type="button"
-                    onClick={() => setPainelFiltroStatus(chip.value)}
-                    className={`px-2.5 py-1 rounded-md text-[11px] font-semibold border transition-colors ${
-                      painelFiltroStatus === chip.value
-                        ? 'bg-blue-600 border-blue-600 text-white'
-                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-                    }`}
-                  >
-                    {chip.label} ({chip.qtd})
-                  </button>
-                ))}
-              </div>
-            )}
-            <div className="overflow-y-auto">
-              {carregandoPainel ? (
-                <div className="p-6 text-xs text-slate-400 flex items-center gap-1.5"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Carregando...</div>
-              ) : painelCombos.length === 0 ? (
-                <p className="p-6 text-xs text-slate-400 text-center">Nenhum setor com funcionário elegível pra este período, dentro do seu acesso.</p>
-              ) : (
-                <table className="w-full text-left border-collapse">
-                  <thead className="sticky top-0 bg-white">
-                    <tr className="border-b border-slate-200 text-slate-400 text-[10px] font-semibold uppercase tracking-wider">
-                      <th className="px-4 py-2">Empresa</th>
-                      <th className="px-4 py-2">Setor</th>
-                      <th className="px-4 py-2">Responsável</th>
-                      <th className="px-4 py-2 text-center">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 text-xs">
-                    {painelCombos
-                      .filter(c => !painelFiltroStatus || (painelFiltroStatus === 'conferido' ? c.conferido : !c.conferido))
-                      .map(c => (
-                      <tr key={c.chave} className="hover:bg-slate-50/60">
-                        <td className="px-4 py-2 font-semibold text-slate-800 whitespace-nowrap">{c.empresaNome}</td>
-                        <td className="px-4 py-2 text-slate-600 whitespace-nowrap">{c.setorNome}</td>
-                        <td className="px-4 py-2 text-slate-500">{c.responsavelNomes.length > 0 ? c.responsavelNomes.join(', ') : '—'}</td>
-                        <td className="px-4 py-2 text-center" title={c.statusLabel}>
-                          <span className={`inline-block w-2.5 h-2.5 rounded-full ${c.conferido ? 'bg-emerald-500' : 'bg-red-500'}`} />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
             </div>
           </div>
         </div>

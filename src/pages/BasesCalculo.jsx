@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useSessionState } from '../hooks/useSessionState'
-import { Plus, X, AlertTriangle, Calculator, Eye, Edit2, Settings, Search, Loader2, PlayCircle, Trash2, ArrowUp, ArrowDown, ListPlus, Copy, ChevronLeft, ChevronRight, Info } from 'lucide-react'
+import { Plus, X, AlertTriangle, Calculator, Eye, Edit2, Settings, Search, Loader2, PlayCircle, Trash2, ArrowUp, ArrowDown, ListPlus, Copy, Info } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { apiService } from '../services/api'
 import { buscaComCoringa } from '../utils/buscaTexto'
@@ -285,7 +285,6 @@ export default function BasesCalculo() {
 
   const { hasActionOrDefault } = useAuth()
   const canEdit = hasActionOrDefault('bases-calculo', 'editar')
-  const canDelete = hasActionOrDefault('bases-calculo', 'excluir')
 
   useEffect(() => { loadData() }, [])
 

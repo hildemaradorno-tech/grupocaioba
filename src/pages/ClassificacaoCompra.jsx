@@ -29,7 +29,6 @@ export default function ClassificacaoCompra() {
   const [itemVisualizado, setItemVisualizado] = useState(null)
   const { hasActionOrDefault } = useAuth()
   const canEdit = hasActionOrDefault('classificacao-compra', 'editar')
-  const canDelete = hasActionOrDefault('classificacao-compra', 'excluir')
   const abrirVisualizar = (item) => { setItemVisualizado(item); setModalVisualizarAberto(true) }
 
   const handleInputChange = (e) => {

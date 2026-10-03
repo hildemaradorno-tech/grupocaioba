@@ -1,6 +1,6 @@
 ﻿import React, { useEffect, useState, useMemo, useRef } from 'react'
 import { useSessionState } from '../hooks/useSessionState'
-import { Plus, X, Wrench, ShieldAlert, Eye, ArrowUp, ArrowDown, ArrowUpDown, FileSpreadsheet, Upload, AlertTriangle, CheckCircle2, RefreshCw, SlidersHorizontal } from 'lucide-react'
+import { Plus, X, Wrench, ShieldAlert, Eye, ArrowUp, ArrowDown, ArrowUpDown, FileSpreadsheet, Upload, AlertTriangle, RefreshCw, SlidersHorizontal } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import PermissionActionButtons from '../components/PermissionActionButtons'
 import { apiService } from '../services/api'
@@ -71,7 +71,6 @@ export default function TiposOS() {
   const [itemVisualizado, setItemVisualizado] = useState(null)
   const { hasActionOrDefault } = useAuth()
   const canEdit = hasActionOrDefault('tipos-os', 'editar')
-  const canDelete = hasActionOrDefault('tipos-os', 'excluir')
   const abrirVisualizar = (item) => { setItemVisualizado(item); setModalVisualizarAberto(true) }
 
   useEffect(() => { loadData() }, [])

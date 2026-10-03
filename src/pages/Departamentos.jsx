@@ -30,7 +30,6 @@ export default function Departamentos() {
   const [itemVisualizado, setItemVisualizado] = useState(null)
   const { hasActionOrDefault } = useAuth()
   const canEdit = hasActionOrDefault('departamentos', 'editar')
-  const canDelete = hasActionOrDefault('departamentos', 'excluir')
   const abrirVisualizar = (item) => { setItemVisualizado(item); setModalVisualizarAberto(true) }
 
   useEffect(() => {
@@ -164,12 +163,6 @@ export default function Departamentos() {
     </div>
   )
 
-  const renderEmpresasVinculadas = (ids) => {
-    return ids.map(id => {
-      const emp = empresasCadastradas.find(e => e.id === id)
-      return emp ? (emp.empresa_fantasia || emp.nome_empresa || emp.sigla_empresa) : ''
-    }).filter(Boolean).sort((a, b) => a.localeCompare(b, 'pt-BR')).join(', ')
-  }
 
   return (
     <div className="p-6 space-y-4 max-w-screen-xl">

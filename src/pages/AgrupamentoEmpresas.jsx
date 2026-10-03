@@ -26,7 +26,6 @@ export default function AgrupamentoEmpresas() {
   const [itemVisualizado, setItemVisualizado] = useState(null)
   const { hasActionOrDefault } = useAuth()
   const canEdit = hasActionOrDefault('agrup-empresas', 'editar')
-  const canDelete = hasActionOrDefault('agrup-empresas', 'excluir')
   const abrirVisualizar = (item) => { setItemVisualizado(item); setModalVisualizarAberto(true) }
 
   useEffect(() => { loadData() }, [])

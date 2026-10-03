@@ -56,10 +56,6 @@ const STATUS_SOLICITACAO = {
   cancelado: { label: 'Cancelado', cls: 'bg-slate-100 text-slate-500' },
 }
 
-function fmtData(iso) {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleDateString('pt-BR', { timeZone: 'UTC' })
-}
 
 function fmtDataHora(iso) {
   if (!iso) return '—'

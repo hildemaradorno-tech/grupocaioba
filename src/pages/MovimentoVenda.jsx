@@ -29,7 +29,6 @@ export default function MovimentoVenda() {
   const [itemVisualizado, setItemVisualizado] = useState(null)
   const { hasActionOrDefault } = useAuth()
   const canEdit = hasActionOrDefault('movimento-venda', 'editar')
-  const canDelete = hasActionOrDefault('movimento-venda', 'excluir')
   const abrirVisualizar = (item) => { setItemVisualizado(item); setModalVisualizarAberto(true) }
 
   const handleInputChange = (e) => {

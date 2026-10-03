@@ -6,8 +6,7 @@ import LinkExt from '@tiptap/extension-link'
 import Placeholder from '@tiptap/extension-placeholder'
 import { TextStyle } from '@tiptap/extension-text-style'
 import { Color } from '@tiptap/extension-color'
-import { Bold, Italic, Underline, List, ListOrdered, Link as LinkIcon, Smile, CaseSensitive } from 'lucide-react'
-
+import { Bold, Italic, Underline, List, ListOrdered, Link as LinkIcon, CaseSensitive } from 'lucide-react'
 const CORES = [
   { label: 'Automático', value: null },
   { label: 'Preto',      value: '#0f172a' },

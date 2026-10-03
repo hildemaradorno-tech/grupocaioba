@@ -13,7 +13,7 @@
 
 import {
   listarArquivos, lerArquivoComoAoA, toIsoDate, parseMoney, normalizaTexto,
-  avaliaCondicoes, aplicarRegras, anosDoIntervalo, resolverRegrasSetorFuncionario,
+  aplicarRegras, anosDoIntervalo, resolverRegrasSetorFuncionario,
   fusoHorarioFonteCalculo,
 } from './sharepointFonteCalculo.js'
 import { lerAoAMicrowork, mesesDoIntervalo } from './microworkFonteCalculo.js'

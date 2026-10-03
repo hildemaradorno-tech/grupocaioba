@@ -3,18 +3,12 @@
 // ── Trimestral ───────────────────────────────────────────────────────────────
 export const T_PERIODS = ['q1', 'q2', 'q3', 'q4', 'fy']
 export const T_LABELS  = { q1:'Q1', q2:'Q2', q3:'Q3', q4:'Q4', fy:'Total do Ano' }
-export const T_DEFAULT = { q1:true, q2:true, q3:true, q4:true, fy:true }
 
 // ── Mensal ───────────────────────────────────────────────────────────────────
 export const M_PERIODS = ['m01','m02','m03','m04','m05','m06','m07','m08','m09','m10','m11','m12']
 export const M_LABELS  = {
   m01:'Jan', m02:'Fev', m03:'Mar', m04:'Abr', m05:'Mai', m06:'Jun',
   m07:'Jul', m08:'Ago', m09:'Set', m10:'Out', m11:'Nov', m12:'Dez',
-}
-// Jan-Mai 2026 visíveis por padrão (meses já transcorridos)
-export const M_DEFAULT = {
-  m01:true, m02:true, m03:true, m04:true, m05:true,
-  m06:false, m07:false, m08:false, m09:false, m10:false, m11:false, m12:false,
 }
 
 // ── Semanal ──────────────────────────────────────────────────────────────────

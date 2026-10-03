@@ -584,7 +584,6 @@ export default function GarantiasDafForm() {
     finally { setSalvando(false) }
   }
 
-  const delta1 = diffDias(form.data_abertura_os, form.data_lancamento)
   const delta2 = diffDias(form.data_emissao_nf, form.data_envio_fabrica)
   const valorTotal = (parseFloat(form.valor_pecas) || 0) + (parseFloat(form.valor_servicos) || 0)
   const mostrarRecusa = form.status_codigo === 'FR'
