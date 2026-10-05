@@ -21,7 +21,7 @@ const LINKS = [
     info: [
       'Extrato linha a linha dos repasses recebidos com título vinculado — sincronizado do SharePoint.',
       'Fonte de dados: Relatório de repasses recebidos da TruckPag',
-      'Nome do Arquivo: contas-receber-daf.xlsx',
+      'Nome do Arquivo: contas-receber-daf (todos os arquivos que começam com esse nome, ex.: contas-receber-daf 2026.10)',
       PASTA,
     ],
   },

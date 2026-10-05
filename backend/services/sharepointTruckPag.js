@@ -7,7 +7,9 @@ const PASTA = '/Banco de Dados - DAF - Pós-Vendas/Financeiro - DAF'
 // não mais um arquivo único — por isso busca por início do nome, não path exato.
 const PREFIX_TITULOS = 'RFN003_PosicaoAnaliticoReceber_Excel'
 const FILE_CREDITOS = `${PASTA}/RFN024_SALDOCREDITOSNAOIDENTIFICADOS.xlsx`
-const FILE_REPASSES = `${PASTA}/contas-receber-daf.xlsx`
+// Repasses (contas-receber-daf) são vários arquivos com o mesmo começo de nome — ex: "contas-receber-daf
+// 2026", "contas-receber-daf 2026.10" —, e o sufixo muda por período. Todos são lidos e juntados.
+const PREFIX_REPASSES = 'contas-receber-daf'
 
 const CACHE_TTL_MS = 5 * 60 * 1000
 const _cache = { titulos: null, creditos: null, repasses: null }
@@ -90,6 +92,27 @@ async function downloadWorkbooksByPrefix(prefix) {
   if (!driveId) throw new Error('SHAREPOINT_DRIVE_ID não configurado no ambiente')
   const listagem = await graphGet(`/drives/${driveId}/root:${PASTA}:/children`)
   const arquivos = selecionarArquivosRelatorio(listagem.value, prefix)
+  if (arquivos.length === 0) throw new Error(`Nenhum arquivo encontrado começando com "${prefix}" em ${PASTA}`)
+
+  const resultados = []
+  for (const item of arquivos) {
+    const downloadUrl = item['@microsoft.graph.downloadUrl']
+    if (!downloadUrl) continue
+    const response = await axios.get(downloadUrl, { responseType: 'arraybuffer', timeout: 60_000 })
+    const workbook = XLSX.read(Buffer.from(response.data), { type: 'buffer', cellDates: true })
+    resultados.push({ workbook, lastModified: item.lastModifiedDateTime || null, nome: item.name })
+  }
+  return resultados
+}
+
+// Baixa TODOS os arquivos da pasta que começam com `prefix` (sem escolher um grupo só, como faz
+// selecionarArquivosRelatorio) — usado nos repasses, que se dividem em vários arquivos por período.
+async function downloadAllWorkbooksByPrefix(prefix) {
+  const driveId = process.env.SHAREPOINT_DRIVE_ID
+  if (!driveId) throw new Error('SHAREPOINT_DRIVE_ID não configurado no ambiente')
+  const listagem = await graphGet(`/drives/${driveId}/root:${PASTA}:/children`)
+  const alvo = prefix.toLowerCase()
+  const arquivos = (listagem.value || []).filter(i => i.file && i.name?.toLowerCase().startsWith(alvo))
   if (arquivos.length === 0) throw new Error(`Nenhum arquivo encontrado começando com "${prefix}" em ${PASTA}`)
 
   const resultados = []
@@ -241,92 +264,98 @@ function normalizarCabecalho(v) {
 export async function getTruckPagRepasses() {
   if (_cache.repasses !== null && (Date.now() - _cacheTs.repasses) < CACHE_TTL_MS) return _cache.repasses
 
-  const { workbook, lastModified } = await downloadWorkbook(FILE_REPASSES)
-  const sheet = workbook.Sheets[workbook.SheetNames[0]]
-  const linhas = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' })
+  const arquivos = await downloadAllWorkbooksByPrefix(PREFIX_REPASSES)
 
   const rows = []
   const blocosIgnorados = []
-  let i = 0
   let estabelecimentosEncontrados = 0
   let subBlocosEncontrados = 0
-  let estabelecimentoAtual = null
+  let lastModified = null
 
-  while (i < linhas.length) {
-    const primeiraCelula = normalizarCabecalho(linhas[i]?.[0])
+  for (const arquivo of arquivos) {
+    const { workbook } = arquivo
+    if (arquivo.lastModified && (!lastModified || arquivo.lastModified > lastModified)) lastModified = arquivo.lastModified
+    const sheet = workbook.Sheets[workbook.SheetNames[0]]
+    const linhas = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' })
+    let i = 0
+    let estabelecimentoAtual = null
 
-    if (primeiraCelula === 'estabelecimento') {
-      estabelecimentosEncontrados++
-      estabelecimentoAtual = String(linhas[i + 1]?.[0] ?? '').trim()
-      i += 2
-      continue
-    }
+    while (i < linhas.length) {
+      const primeiraCelula = normalizarCabecalho(linhas[i]?.[0])
 
-    if (primeiraCelula === 'data pagamento' && estabelecimentoAtual) {
-      subBlocosEncontrados++
-      const dataPagamento = toIsoDate(linhas[i + 1]?.[0])
-      const cabecalho = (linhas[i + 2] || []).map(c => normalizarCabecalho(c))
-      const colIdx = (nome) => cabecalho.indexOf(normalizarCabecalho(nome))
-      const idx = {
-        nfE: colIdx('Nº NF-e'),
-        nfsE: colIdx('Nº NFS-e'),
-        os: colIdx('Nº OS'),
-        lote: colIdx('Nº lote'),
-        parcelas: colIdx('Parcelas'),
-        cnpj: colIdx('CNPJ do cliente'),
-        nome: colIdx('Nome do cliente'),
-        valorOS: colIdx('Valor OS'),
-        valorNfE: colIdx('Valor NF-e'),
-        valorParcelaNfE: colIdx('Valor parcela NF-e'),
-        valorNfsE: colIdx('Valor NFS-e'),
-        valorParcelaNfsE: colIdx('Valor parcela NFS-e'),
-        valorTotalParcela: colIdx('Valor total parcela'),
-        taxaPct: colIdx('Taxa adm (%)'),
-        valorTaxa: colIdx('Valor taxa'),
-        valorRecebido: colIdx('Valor recebido'),
+      if (primeiraCelula === 'estabelecimento') {
+        estabelecimentosEncontrados++
+        estabelecimentoAtual = String(linhas[i + 1]?.[0] ?? '').trim()
+        i += 2
+        continue
       }
 
-      let j = i + 3
-      // Só exige data de pagamento e a coluna de lote (chave da linha) — as demais colunas são
-      // opcionais (ficam null se a planilha não trouxer), pra um cabeçalho ligeiramente diferente
-      // não descartar o sub-bloco inteiro silenciosamente.
-      if (dataPagamento && idx.lote !== -1) {
-        for (; j < linhas.length; j++) {
-          const r = linhas[j]
-          if (linhaEmBranco(r)) break
-          const c0 = normalizarCabecalho(r[0])
-          if (c0 === 'estabelecimento' || c0 === 'data pagamento') break
-          const lote = String(r[idx.lote] ?? '').trim()
-          if (!lote) continue
-          rows.push({
-            estabelecimento: estabelecimentoAtual,
-            data_pagamento: dataPagamento,
-            nf_e: String(r[idx.nfE] ?? '').trim(),
-            nfs_e: String(r[idx.nfsE] ?? '').trim(),
-            numero_os: String(r[idx.os] ?? '').trim(),
-            numero_lote: lote,
-            parcelas: String(r[idx.parcelas] ?? '').trim(),
-            cnpj_cliente: String(r[idx.cnpj] ?? '').trim(),
-            nome_cliente: String(r[idx.nome] ?? '').trim(),
-            valor_os: parseMoney(r[idx.valorOS]),
-            valor_nf_e: parseMoney(r[idx.valorNfE]),
-            valor_parcela_nf_e: parseMoney(r[idx.valorParcelaNfE]),
-            valor_nfs_e: parseMoney(r[idx.valorNfsE]),
-            valor_parcela_nfs_e: parseMoney(r[idx.valorParcelaNfsE]),
-            valor_parcela_total: parseMoney(r[idx.valorTotalParcela]),
-            taxa_adm_pct: parsePercent(r[idx.taxaPct]),
-            valor_taxa: parseMoney(r[idx.valorTaxa]),
-            valor_recebido: parseMoney(r[idx.valorRecebido]),
-          })
+      if (primeiraCelula === 'data pagamento' && estabelecimentoAtual) {
+        subBlocosEncontrados++
+        const dataPagamento = toIsoDate(linhas[i + 1]?.[0])
+        const cabecalho = (linhas[i + 2] || []).map(c => normalizarCabecalho(c))
+        const colIdx = (nome) => cabecalho.indexOf(normalizarCabecalho(nome))
+        const idx = {
+          nfE: colIdx('Nº NF-e'),
+          nfsE: colIdx('Nº NFS-e'),
+          os: colIdx('Nº OS'),
+          lote: colIdx('Nº lote'),
+          parcelas: colIdx('Parcelas'),
+          cnpj: colIdx('CNPJ do cliente'),
+          nome: colIdx('Nome do cliente'),
+          valorOS: colIdx('Valor OS'),
+          valorNfE: colIdx('Valor NF-e'),
+          valorParcelaNfE: colIdx('Valor parcela NF-e'),
+          valorNfsE: colIdx('Valor NFS-e'),
+          valorParcelaNfsE: colIdx('Valor parcela NFS-e'),
+          valorTotalParcela: colIdx('Valor total parcela'),
+          taxaPct: colIdx('Taxa adm (%)'),
+          valorTaxa: colIdx('Valor taxa'),
+          valorRecebido: colIdx('Valor recebido'),
         }
-      } else {
-        blocosIgnorados.push({ linha: i + 1, estabelecimento: estabelecimentoAtual, dataPagamento, colunaLoteEncontrada: idx.lote !== -1 })
-      }
-      i = j
-      continue
-    }
 
-    i++
+        let j = i + 3
+        // Só exige data de pagamento e a coluna de lote (chave da linha) — as demais colunas são
+        // opcionais (ficam null se a planilha não trouxer), pra um cabeçalho ligeiramente diferente
+        // não descartar o sub-bloco inteiro silenciosamente.
+        if (dataPagamento && idx.lote !== -1) {
+          for (; j < linhas.length; j++) {
+            const r = linhas[j]
+            if (linhaEmBranco(r)) break
+            const c0 = normalizarCabecalho(r[0])
+            if (c0 === 'estabelecimento' || c0 === 'data pagamento') break
+            const lote = String(r[idx.lote] ?? '').trim()
+            if (!lote) continue
+            rows.push({
+              estabelecimento: estabelecimentoAtual,
+              data_pagamento: dataPagamento,
+              nf_e: String(r[idx.nfE] ?? '').trim(),
+              nfs_e: String(r[idx.nfsE] ?? '').trim(),
+              numero_os: String(r[idx.os] ?? '').trim(),
+              numero_lote: lote,
+              parcelas: String(r[idx.parcelas] ?? '').trim(),
+              cnpj_cliente: String(r[idx.cnpj] ?? '').trim(),
+              nome_cliente: String(r[idx.nome] ?? '').trim(),
+              valor_os: parseMoney(r[idx.valorOS]),
+              valor_nf_e: parseMoney(r[idx.valorNfE]),
+              valor_parcela_nf_e: parseMoney(r[idx.valorParcelaNfE]),
+              valor_nfs_e: parseMoney(r[idx.valorNfsE]),
+              valor_parcela_nfs_e: parseMoney(r[idx.valorParcelaNfsE]),
+              valor_parcela_total: parseMoney(r[idx.valorTotalParcela]),
+              taxa_adm_pct: parsePercent(r[idx.taxaPct]),
+              valor_taxa: parseMoney(r[idx.valorTaxa]),
+              valor_recebido: parseMoney(r[idx.valorRecebido]),
+            })
+          }
+        } else {
+          blocosIgnorados.push({ linha: i + 1, estabelecimento: estabelecimentoAtual, dataPagamento, colunaLoteEncontrada: idx.lote !== -1 })
+        }
+        i = j
+        continue
+      }
+
+      i++
+    }
   }
 
   if (estabelecimentosEncontrados === 0) throw new Error('Formato do arquivo de repasse não reconhecido — nenhum bloco "Estabelecimento" encontrado.')
