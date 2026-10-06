@@ -159,6 +159,7 @@ const _toRowPublicada = (r, tipo, ts, ctx) => ({
   ..._posicaoPublicada(r, tipo, ctx),
   meta_faturamento: r.meta_aprovada,
   meta_pecas: r.meta_pecas || null, meta_servicos: r.meta_servicos || null,
+  ...(tipo === 'pecas' ? { fat_parceira: r.fat_parceira ?? null } : {}),
   aprovado_por: r.aprovado_por || null, aprovado_por_nome: r.aprovado_por_nome || null, aprovado_em: r.aprovado_em || null,
   publicado_em: ts,
 })
@@ -2968,6 +2969,17 @@ export const apiService = {
     if (pub.error) throw pub.error
     if (rasc.error) throw rasc.error
     return { publicadas: pub.data || [], rascunhoConsultor: rasc.data || [] }
+  },
+
+  // Blocos 1 (Corporativo) e 2 (Departamental) da Matriz KPIs, gravados pelo sync da Matriz
+  // (planilha de KPIs do SharePoint → kpi_cache_planilhas). Vazio enquanto o sync não preencher.
+  getKpiCachePlanilhas: async (chaves) => {
+    const { data, error } = await supabase
+      .from('kpi_cache_planilhas')
+      .select('chave, dados, atualizado_em')
+      .in('chave', chaves)
+    if (error) throw error
+    return Object.fromEntries((data || []).map((r) => [r.chave, r]))
   },
 
   // Regras vigentes no mês: a do próprio mês ou, se não houver, a do último mês salvo antes dele.

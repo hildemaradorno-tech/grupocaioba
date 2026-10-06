@@ -15,6 +15,7 @@ const LOGO_URL = logoCaioba
 // ── helpers ───────────────────────────────────────────────────────────────────
 const dataHoje    = () => new Date().toISOString().split('T')[0]
 const ultimaTerca = () => { const d = new Date(); const dow = d.getDay(); const diff = dow === 2 ? 7 : dow > 2 ? dow - 2 : dow + 5; d.setDate(d.getDate() - diff); return d.toISOString().split('T')[0] }
+const diaAntes    = (d) => { if (!d) return ''; const dt = new Date(d + 'T12:00:00'); dt.setDate(dt.getDate() - 1); return dt.toISOString().split('T')[0] }
 const fmtData     = (d) => d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') : '—'
 const fmtDataExtenso = (d) =>
   d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' }) : '—'
@@ -41,7 +42,7 @@ const makeFormInit = () => ({
   participantesNomes: [],
   participantesExternos: [''],
   periodoIni: ultimaTerca(),
-  periodoFim: dataHoje(),
+  periodoFim: diaAntes(dataHoje()),
   concluidos: [],
   andamento: [],
   mapeados: [],
@@ -64,7 +65,7 @@ const rowToForm = (row) => {
     participantesNomes: row.participantes_nomes || [],
     participantesExternos: d.participantesExternos?.length ? d.participantesExternos : [''],
     periodoIni: ultimaTerca(),
-    periodoFim: row.periodo_fim || dataHoje(),
+    periodoFim: diaAntes(row.data) || diaAntes(dataHoje()),
     concluidos: (d.concluidos || []).map(p => ({
       ...p,
       tarefasIncluidas: new Set(p.tarefasIncluidas || []),
@@ -113,7 +114,7 @@ const AtaPreview = React.forwardRef(function AtaPreview({ form }, ref) {
   const s = {
     page:       { width: '794px', backgroundColor: '#ffffff', fontFamily: "'Segoe UI', Arial, sans-serif", color: '#1e293b', padding: '48px 56px', boxSizing: 'border-box' },
     sectionBar: (cor) => ({ fontSize: '11px', fontWeight: '700', color: '#1e3a5f', textTransform: 'uppercase', letterSpacing: '0.8px', borderLeft: `3px solid ${cor}`, paddingLeft: '10px', marginBottom: '10px' }),
-    th:         (cor) => ({ padding: '7px 10px', textAlign: 'left', color: cor, fontWeight: '700', fontSize: '10px', textTransform: 'uppercase', border: '1px solid #e2e8f0' }),
+    th:         (cor) => ({ padding: '7px 10px', textAlign: 'left', color: cor, fontWeight: '700', fontSize: '10px', textTransform: 'uppercase', border: '1px solid #e2e8f0', whiteSpace: 'nowrap' }),
     td:         { padding: '7px 10px', border: '1px solid #e2e8f0' },
   }
 
@@ -199,163 +200,122 @@ const AtaPreview = React.forwardRef(function AtaPreview({ form }, ref) {
         </section>
       )}
 
-      {/* Tarefas Concluídas no Período */}
+      {/* Tarefas Concluídas + A Entregar — agrupadas por projeto */}
       {(() => {
-        const ini = form.periodoIni
-        const fim = form.data
-        const tarefasConc = (form.todosNaoConcluidos || [...form.andamento, ...form.mapeados])
+        const iniConc = form.periodoIni
+        const fimConc = form.data
+        const iniEntr = form.data
+        const fimEntr = form.proximaReuniao
+        const fonte = form.todosNaoConcluidos?.length ? form.todosNaoConcluidos : [...(form.andamento || []), ...(form.mapeados || [])]
+        const tarefasConc = fonte
           .flatMap(p => (p.proj_tarefas || [])
-            .filter(t => t.status_kanban === 'concluido' && t.data_fim && (!ini || t.data_fim >= ini) && (!fim || t.data_fim <= fim))
-            .map(t => ({
-              ...t,
-              projetoNome:   p.nome,
-              projetoResp:   p.responsavel_nome,
-              projetoDepto:  p.departamento_nome,
-              projetoArea:   p.area_nome,
-              projetoSistema: p.sistema_nome,
-            }))
+            .filter(t => t.status_kanban === 'concluido' && t.data_fim && (!iniConc || t.data_fim >= iniConc) && (!fimConc || t.data_fim <= fimConc))
+            .map(t => ({ ...t, projetoNome: p.nome, projetoResp: p.responsavel_nome, projetoDepto: p.departamento_nome, projetoArea: p.area_nome, projetoSistema: p.sistema_nome }))
           )
           .sort((a, b) => (a.data_fim || '').localeCompare(b.data_fim || ''))
-
-        if (tarefasConc.length === 0) return null
-
-        const porDepto = {}
-        tarefasConc.forEach(t => {
-          const depto = t.projetoDepto || '(Sem departamento)'
-          if (!porDepto[depto]) porDepto[depto] = []
-          porDepto[depto].push(t)
-        })
-
+        const tarefasEntr = andamento
+          .flatMap(p => (p.proj_tarefas || [])
+            .filter(t => t.data_fim && (!iniEntr || t.data_fim >= iniEntr) && (!fimEntr || t.data_fim <= fimEntr))
+            .map(t => ({ ...t, projetoNome: p.nome, projetoResp: p.responsavel_nome, projetoDepto: p.departamento_nome, projetoArea: p.area_nome, projetoSistema: p.sistema_nome }))
+          )
+          .sort((a, b) => (a.data_fim || '').localeCompare(b.data_fim || ''))
+        if (tarefasConc.length === 0 && tarefasEntr.length === 0) return null
+        const todosProjetos = [...new Set([...tarefasConc, ...tarefasEntr].map(t => t.projetoNome || '(Sem projeto)'))].sort((a, b) => a.localeCompare(b, 'pt-BR'))
         return (
           <section style={{ marginBottom: '22px' }}>
-            <div style={s.sectionBar('#0d9488')}>{++secNum}. Tarefas Concluídas desde a Última Reunião ({fmtData(ini)} a {fmtData(fim)})</div>
-            {Object.entries(porDepto).sort(([a], [b]) => a.localeCompare(b)).map(([depto, ts]) => {
-              const resps = [...new Set(ts.map(t => t.projetoResp).filter(Boolean))]
+            <div style={s.sectionBar('#0d9488')}>{++secNum}. Tarefas por Projeto</div>
+            {todosProjetos.map(proj => {
+              const conc = tarefasConc.filter(t => (t.projetoNome || '(Sem projeto)') === proj)
+              const entr = tarefasEntr.filter(t => (t.projetoNome || '(Sem projeto)') === proj)
+              const resp = conc[0]?.projetoResp || entr[0]?.projetoResp
+              const depto = conc[0]?.projetoDepto || entr[0]?.projetoDepto
               return (
-                <div key={depto} style={{ marginBottom: '10px' }}>
-                  <div style={{ background: '#f0fdf4', borderLeft: '3px solid #0d9488', padding: '5px 10px', borderRadius: '4px', marginBottom: '5px', display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-                    <span style={{ fontSize: '10px', fontWeight: '700', color: '#064e3b', textTransform: 'uppercase', letterSpacing: '0.6px' }}>{depto}</span>
-                    {resps.length > 0 && <span style={{ fontSize: '9px', color: '#047857' }}>· Resp.: {resps.join(', ')}</span>}
+                <div key={proj} style={{ marginBottom: '14px' }}>
+                  {/* Cabeçalho do projeto */}
+                  <div style={{ background: '#f1f5f9', borderLeft: '3px solid #475569', padding: '5px 10px', borderRadius: '4px', marginBottom: '6px' }}>
+                    <div style={{ fontSize: '10px', fontWeight: '700', color: '#1e293b', textTransform: 'uppercase', letterSpacing: '0.6px' }}>{proj}</div>
+                    {(resp || depto) && (
+                      <div style={{ fontSize: '9px', color: '#64748b', marginTop: '1px' }}>
+                        {[resp && `Resp.: ${resp}`, depto].filter(Boolean).join(' · ')}
+                      </div>
+                    )}
                   </div>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px' }}>
-                    <thead>
-                      <tr style={{ background: '#f0fdf4' }}>
-                        <th style={{ ...s.th('#047857'), width: '90px' }}>Concluído em</th>
-                        <th style={{ ...s.th('#047857') }}>Tarefa</th>
-                        <th style={{ ...s.th('#047857'), width: '130px' }}>Projeto</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {ts.map((t, i) => (
-                        <tr key={t.id} style={{ background: i % 2 === 0 ? '#fff' : '#f8fafc' }}>
-                          <td style={{ ...s.td, width: '90px', color: '#475569', whiteSpace: 'nowrap' }}>{fmtData(t.data_fim)}</td>
-                          <td style={s.td}>
-                            <div style={{ fontWeight: '600' }}>{t.nome}</div>
-                            {[t.projetoArea, t.projetoSistema].filter(Boolean).length > 0 && (
-                              <div style={{ fontSize: '9px', color: '#64748b', marginTop: '2px' }}>
-                                {[t.projetoArea, t.projetoSistema].filter(Boolean).join(' › ')}
-                              </div>
-                            )}
-                          </td>
-                          <td style={{ ...s.td, color: '#475569', fontSize: '9px' }}>{t.projetoNome}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  {/* Concluídas — verde */}
+                  {conc.length > 0 && (
+                    <div style={{ marginBottom: '6px' }}>
+                      <div style={{ fontSize: '9px', fontWeight: '700', color: '#047857', textTransform: 'uppercase', letterSpacing: '0.5px', background: '#dcfce7', padding: '3px 8px', marginBottom: '3px', borderRadius: '3px' }}>
+                        ✓ Concluídas — {fmtData(iniConc)} a {fmtData(fimConc)}
+                      </div>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px' }}>
+                        <thead>
+                          <tr style={{ background: '#f0fdf4' }}>
+                            <th style={{ ...s.th('#047857'), width: '110px' }}>Concluído em</th>
+                            <th style={{ ...s.th('#047857') }}>Tarefa</th>
+                            <th style={{ ...s.th('#047857'), width: '110px' }}>Responsável</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {conc.map((t, i) => (
+                            <tr key={t.id} style={{ background: i % 2 === 0 ? '#fff' : '#f8fafc' }}>
+                              <td style={{ ...s.td, width: '110px', color: '#475569', whiteSpace: 'nowrap' }}>{fmtData(t.data_fim)}</td>
+                              <td style={s.td}>
+                                <div style={{ fontWeight: '600' }}>{t.nome}</div>
+                                {[t.projetoArea, t.projetoSistema].filter(Boolean).length > 0 && (
+                                  <div style={{ fontSize: '9px', color: '#64748b', marginTop: '2px' }}>{[t.projetoArea, t.projetoSistema].filter(Boolean).join(' › ')}</div>
+                                )}
+                              </td>
+                              <td style={{ ...s.td, width: '110px', color: '#475569', fontSize: '9px', verticalAlign: 'top' }}>{t.responsavel_nome || '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                  {/* A Entregar — âmbar */}
+                  {entr.length > 0 && (
+                    <div>
+                      <div style={{ fontSize: '9px', fontWeight: '700', color: '#92400e', textTransform: 'uppercase', letterSpacing: '0.5px', background: '#fef3c7', padding: '3px 8px', marginBottom: '3px', borderRadius: '3px' }}>
+                        → A Entregar — {fmtData(iniEntr)} a {fmtData(fimEntr)}
+                      </div>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px' }}>
+                        <thead>
+                          <tr style={{ background: '#fef3c7' }}>
+                            <th style={{ ...s.th('#92400e'), width: '110px' }}>Término</th>
+                            <th style={{ ...s.th('#92400e') }}>Tarefa</th>
+                            <th style={{ ...s.th('#92400e'), width: '110px' }}>Responsável</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {entr.map((t, i) => (
+                            <tr key={t.id} style={{ background: i % 2 === 0 ? '#fff' : '#fffbeb' }}>
+                              <td style={{ ...s.td, width: '110px', fontWeight: '700', color: '#b45309', whiteSpace: 'nowrap', verticalAlign: 'top' }}>{fmtData(t.data_fim)}</td>
+                              <td style={s.td}>
+                                <div style={{ fontWeight: '600', color: '#1e293b' }}>{t.nome}</div>
+                                {[t.projetoArea, t.projetoSistema].filter(Boolean).length > 0 && (
+                                  <div style={{ fontSize: '8px', color: '#94a3b8', marginTop: '1px' }}>{[t.projetoArea, t.projetoSistema].filter(Boolean).join(' › ')}</div>
+                                )}
+                                {t.proj_deliberacoes?.length > 0 && (
+                                  <div style={{ marginTop: '5px', paddingTop: '5px', borderTop: '1px dashed #fcd34d' }}>
+                                    <div style={{ fontSize: '8px', fontWeight: '700', color: '#92400e', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '3px' }}>Deliberações</div>
+                                    {t.proj_deliberacoes.map(d => (
+                                      <div key={d.id} style={{ display: 'flex', gap: '6px', fontSize: '9px', marginBottom: '2px', alignItems: 'flex-start' }}>
+                                        <span style={{ color: '#b45309', fontWeight: '600', whiteSpace: 'nowrap', flexShrink: 0 }}>{fmtData(d.data)}</span>
+                                        <span style={{ color: '#374151', lineHeight: '1.4' }}>{d.texto}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </td>
+                              <td style={{ ...s.td, width: '110px', fontSize: '9px', color: '#475569', verticalAlign: 'top' }}>{t.responsavel_nome || '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
               )
             })}
-          </section>
-        )
-      })()}
-
-      {/* Projetos em Andamento — Tarefas no período */}
-      {(() => {
-        const ini = form.data
-        const fim = form.proximaReuniao
-        const tarefas = andamento
-          .flatMap(p => (p.proj_tarefas || [])
-            .filter(t => t.data_fim && (!ini || t.data_fim >= ini) && (!fim || t.data_fim <= fim))
-            .map(t => ({
-              ...t,
-              projetoNome:   p.nome,
-              projetoResp:   p.responsavel_nome,
-              projetoDepto:  p.departamento_nome,
-              projetoArea:   p.area_nome,
-              projetoSistema: p.sistema_nome,
-            }))
-          )
-          .sort((a, b) => (a.data_fim || '').localeCompare(b.data_fim || ''))
-
-        if (andamento.length === 0 && tarefas.length === 0) return null
-
-        const porDepto = {}
-        tarefas.forEach(t => {
-          const depto = t.projetoDepto || '(Sem departamento)'
-          if (!porDepto[depto]) porDepto[depto] = []
-          porDepto[depto].push(t)
-        })
-
-
-        return (
-          <section style={{ marginBottom: '22px' }}>
-            <div style={s.sectionBar('#d97706')}>{++secNum}. Tarefas a Entregar até a Próxima Reunião ({fmtData(ini)} a {fmtData(fim)})</div>
-            {tarefas.length === 0
-              ? <p style={{ fontSize: '11px', color: '#94a3b8', fontStyle: 'italic' }}>Nenhuma tarefa com prazo neste período.</p>
-              : Object.entries(porDepto).sort(([a], [b]) => a.localeCompare(b)).map(([depto, ts]) => {
-                const resps = [...new Set(ts.map(t => t.projetoResp).filter(Boolean))]
-                return (
-                  <div key={depto} style={{ marginBottom: '10px' }}>
-                    <div style={{ background: '#fef3c7', borderLeft: '3px solid #d97706', padding: '5px 10px', borderRadius: '4px', marginBottom: '5px', display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-                      <span style={{ fontSize: '10px', fontWeight: '700', color: '#92400e', textTransform: 'uppercase', letterSpacing: '0.6px' }}>{depto}</span>
-                      {resps.length > 0 && <span style={{ fontSize: '9px', color: '#b45309' }}>· Resp.: {resps.join(', ')}</span>}
-                    </div>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px' }}>
-                      <thead>
-                        <tr style={{ background: '#fef3c7' }}>
-                          <th style={{ ...s.th('#92400e'), width: '90px' }}>Término</th>
-                          <th style={{ ...s.th('#92400e') }}>Tarefa</th>
-                          <th style={{ ...s.th('#92400e'), width: '120px' }}>Responsável</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {ts.map((t, i) => (
-                          <tr key={t.id} style={{ background: i % 2 === 0 ? '#fff' : '#fffbeb' }}>
-                            <td style={{ ...s.td, width: '90px', fontWeight: '700', color: '#b45309', whiteSpace: 'nowrap', verticalAlign: 'top' }}>{fmtData(t.data_fim)}</td>
-                            <td style={s.td}>
-                              <div style={{ fontWeight: '600', color: '#1e293b' }}>{t.nome}</div>
-                              <div style={{ marginTop: '2px' }}>
-                                <span style={{ fontSize: '8px', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', marginRight: '3px' }}>Projeto</span>
-                                <span style={{ fontWeight: '600', fontSize: '9px', color: '#92400e' }}>{t.projetoNome}</span>
-                              </div>
-                              {[t.projetoArea, t.projetoSistema].filter(Boolean).length > 0 && (
-                                <div style={{ fontSize: '8px', color: '#94a3b8', marginTop: '1px' }}>
-                                  {[t.projetoArea, t.projetoSistema].filter(Boolean).join(' › ')}
-                                </div>
-                              )}
-                              {t.proj_deliberacoes?.length > 0 && (
-                                <div style={{ marginTop: '5px', paddingTop: '5px', borderTop: '1px dashed #fcd34d' }}>
-                                  <div style={{ fontSize: '8px', fontWeight: '700', color: '#92400e', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '3px' }}>Deliberações</div>
-                                  {t.proj_deliberacoes.map(d => (
-                                    <div key={d.id} style={{ display: 'flex', gap: '6px', fontSize: '9px', marginBottom: '2px', alignItems: 'flex-start' }}>
-                                      <span style={{ color: '#b45309', fontWeight: '600', whiteSpace: 'nowrap', flexShrink: 0 }}>{fmtData(d.data)}</span>
-                                      <span style={{ color: '#374151', lineHeight: '1.4' }}>{d.texto}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </td>
-                            <td style={{ ...s.td, width: '120px', fontSize: '9px', color: '#475569', verticalAlign: 'top' }}>
-                              {t.responsavel_nome || '—'}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )
-              })
-            }
           </section>
         )
       })()}
@@ -483,6 +443,7 @@ export default function AtaReuniao() {
   const [carregandoLista, setCarregandoLista] = useState(true)
   const [confirmDelete, setConfirmDelete]     = useState(null)
   const [ataVisualizar, setAtaVisualizar]     = useState(null) // row da ata aberta no modal A4
+  const [zoomVisual,    setZoomVisual]        = useState(1)
 
   useEffect(() => {
     apiService.getAtasReuniao()
@@ -502,6 +463,7 @@ export default function AtaReuniao() {
   const [buscaPartic,   setBuscaPartic]   = useState('')
   const [abaStep3,      setAbaStep3]      = useState('concluidos')
   const [tarefasSemanIni, setTarefasSemanIni] = useState(ultimaTerca)
+  const [tarefasSemanFim, setTarefasSemanFim] = useState(() => diaAntes(dataHoje()))
   const [form, setForm] = useState(() => makeFormInit())
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
@@ -555,6 +517,7 @@ export default function AtaReuniao() {
     const f = rowToForm(ata)
     setAtaEditandoId(ata.id)
     setForm(f)
+    setTarefasSemanFim(diaAntes(f.data))
     setEtapa(1)
     setBuscaPartic('')
     setModalAberto(true)
@@ -577,7 +540,7 @@ export default function AtaReuniao() {
         setForm(prev => ({
           ...prev,
           periodoIni: ini,
-          periodoFim: fim,
+          periodoFim: diaAntes(f.data),
           concluidos: projetos
             .filter(p => p.status === 'concluido')
             .sort((a, b) => (b.data_fim_real || b.data_fim_prevista || '').localeCompare(a.data_fim_real || a.data_fim_prevista || ''))
@@ -603,12 +566,14 @@ export default function AtaReuniao() {
   // ── visualizar ata salva (modal A4 limpo, sem wizard) ────────────────────
   const visualizarAta = (ata) => {
     setAtaVisualizar(ata)
+    setZoomVisual(1)
   }
 
   // ── download direto (sem abrir modal) ────────────────────────────────────
   const downloadAtaDireto = async (ata) => {
     const f = rowToForm(ata)
     setForm(f)
+    setTarefasSemanFim(diaAntes(f.data))
     await new Promise(r => setTimeout(r, 150))
     await gerarPdf(f.data)
   }
@@ -951,8 +916,8 @@ export default function AtaReuniao() {
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-amber-700 shrink-0">até</span>
-                <input type="date" value={form.data}
-                  onChange={e => set('data', e.target.value)}
+                <input type="date" value={tarefasSemanFim}
+                  onChange={e => setTarefasSemanFim(e.target.value)}
                   onClick={e => e.target.showPicker?.()}
                   className="text-xs px-2 py-1 border border-amber-300 rounded bg-white focus:ring-2 focus:ring-amber-500/20 outline-none cursor-pointer" />
               </div>
@@ -1039,7 +1004,7 @@ export default function AtaReuniao() {
             {/* Tarefas no período — lista cronológica */}
             {(() => {
               const ini = tarefasSemanIni
-              const fim = form.data
+              const fim = tarefasSemanFim
               const tarefas = (form.todosNaoConcluidos || form.andamento)
                 .flatMap(p => (p.proj_tarefas || [])
                   .filter(t => t.data_fim && (!ini || t.data_fim >= ini) && (!fim || t.data_fim <= fim))
@@ -1374,10 +1339,22 @@ export default function AtaReuniao() {
         const fv = rowToForm(ataVisualizar)
         return (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-2xl shadow-2xl flex flex-col" style={{ maxWidth: '860px', width: '100%', maxHeight: '96vh' }}>
+            <div className="bg-white rounded-2xl shadow-2xl flex flex-col" style={{ maxWidth: '1060px', width: '100%', maxHeight: '96vh' }}>
               <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100 shrink-0">
                 <span className="text-sm font-bold text-slate-800">Ata — {fmtData(ataVisualizar.data)}</span>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-3">
+                  {/* Controles de zoom */}
+                  <div className="flex items-center gap-1 bg-slate-100 rounded-lg px-1 py-0.5">
+                    <button onClick={() => setZoomVisual(v => Math.max(0.5, +(v - 0.1).toFixed(1)))}
+                      className="w-6 h-6 flex items-center justify-center text-slate-500 hover:text-slate-800 hover:bg-white rounded transition-colors text-base font-bold leading-none"
+                      title="Diminuir zoom">−</button>
+                    <button onClick={() => setZoomVisual(1)}
+                      className="min-w-[46px] text-center text-[11px] font-semibold text-slate-600 hover:text-blue-600 transition-colors px-1"
+                      title="Restaurar 100%">{Math.round(zoomVisual * 100)}%</button>
+                    <button onClick={() => setZoomVisual(v => Math.min(2, +(v + 0.1).toFixed(1)))}
+                      className="w-6 h-6 flex items-center justify-center text-slate-500 hover:text-slate-800 hover:bg-white rounded transition-colors text-base font-bold leading-none"
+                      title="Aumentar zoom">+</button>
+                  </div>
                   <button onClick={() => { setAtaVisualizar(null); editarAta(ataVisualizar) }}
                     className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-amber-700 border border-amber-200 hover:bg-amber-50 rounded-lg transition-colors">
                     <Pencil className="h-3.5 w-3.5" /> Atualizar Ata
@@ -1394,8 +1371,8 @@ export default function AtaReuniao() {
                   </button>
                 </div>
               </div>
-              <div className="overflow-auto p-4" style={{ background: '#e5e7eb' }}>
-                <div className="mx-auto shadow-lg" style={{ width: '794px' }}>
+              <div className="overflow-auto p-8" style={{ background: '#e5e7eb' }}>
+                <div className="mx-auto shadow-lg" style={{ width: '794px', zoom: zoomVisual }}>
                   <AtaPreview form={fv} />
                 </div>
               </div>

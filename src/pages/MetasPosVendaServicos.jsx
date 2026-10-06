@@ -17,6 +17,7 @@ const ABAS = [
   { key: 'consultor',    label: 'Consultor' },
   { key: 'pecas',        label: 'Peças' },
   { key: 'total',        label: 'Total' },
+  { key: 'grupo',        label: 'Grupo' },
 ]
 
 export default function MetasPosVendaServicos() {
@@ -99,6 +100,7 @@ export default function MetasPosVendaServicos() {
         {aba === 'consultor'    && <MetasServicosConsultor empresaExterna={filtroEmpresa} anoExterno={filtroAno} filtroVisuExterno={filtroVisu} setFiltroVisuExterno={setFiltroVisu} aoDefinirBotaoAcao={setBotaoAcao} />}
         {aba === 'pecas'        && <MetasPecas empresaExterna={filtroEmpresa} anoExterno={filtroAno} aoDefinirBotaoAcao={setBotaoAcao} />}
         {aba === 'total'        && <MetasPosVendaTotal empresasExterno={filtroEmpresa} anoExterno={filtroAno} filtroVisuExterno={filtroVisu} setFiltroVisuExterno={setFiltroVisu} />}
+        {aba === 'grupo'        && <MetasPosVendaTotal visao="grupoDAF" empresasExterno={filtroEmpresa} anoExterno={filtroAno} filtroVisuExterno={filtroVisu} setFiltroVisuExterno={setFiltroVisu} />}
       </div>
     </div>
   )

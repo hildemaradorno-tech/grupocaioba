@@ -7,9 +7,12 @@ import AuditoriaExternaNav from './AuditoriaExternaNav'
 import { useAuth } from '../../context/AuthContext'
 import { calcularPercentualAtingidoAchado, statusAgregadoAchado, achadoResolvido, empresaNoEscopo, departamentoNoEscopo, fmtMoeda } from './auditExtConstants'
 
-function KpiCard({ icon: Icon, label, valor, sub, cor }) {
+function KpiCard({ icon: Icon, label, valor, sub, cor, aoClicar, ativo }) {
   return (
-    <div className={`rounded-lg border p-4 shadow-sm ${cor.bg} ${cor.border}`}>
+    <div
+      onClick={aoClicar}
+      className={`rounded-lg border p-4 shadow-sm ${cor.bg} ${cor.border} ${aoClicar ? 'cursor-pointer transition-shadow hover:shadow-md' : ''} ${ativo ? 'ring-2 ring-indigo-500' : ''}`}
+    >
       <div className="flex items-center gap-1.5 mb-2">
         <div className={`p-1 rounded ${cor.icoBg}`}><Icon className={`h-3.5 w-3.5 ${cor.icoTxt}`} /></div>
         <p className={`text-[10px] font-bold uppercase tracking-wide ${cor.labelTxt}`}>{label}</p>
@@ -24,11 +27,14 @@ const PIE_CORES_DEPARTAMENTO = ['#2563eb', '#0ea5e9', '#14b8a6', '#0d9488', '#63
 const PIE_CORES_TIPO_ACAO = ['#7c3aed', '#c026d3', '#db2777', '#f97316', '#ea580c', '#a855f7', '#e11d48', '#d946ef']
 const PIE_CORES_IMPACTO = ['#b91c1c', '#ea580c', '#ca8a04', '#65a30d', '#0f766e', '#1d4ed8', '#7c3aed', '#be185d']
 const STATUS_COR_CHART = { sem_plano: '#94a3b8', pendente: '#94a3b8', em_andamento: '#3b82f6', concluido: '#10b981', validado_auditoria: '#4f46e5' }
+const STATUS_LABEL = { sem_plano: 'Sem Plano', pendente: 'Pendente', em_andamento: 'Em Andamento', concluido: 'Concluído' }
+const LABEL_DIM = { status: 'Status', departamento: 'Departamento', tipoAcao: 'Tipo de Ação', tipoDivergencia: 'Tipo de Divergência', impacto: 'Impacto', ciclo: 'Ciclo de Auditoria', resolucao: 'Situação' }
+const LABEL_RESOLUCAO = { resolvida: 'Resolvidas', naoResolvida: 'Não Resolvidas' }
 
 // Gráfico de pizza por contagem, usado em "por Departamento" / "por Tipo de Ação".
 // Por fora de cada fatia mostra o % do total; passando o mouse (tooltip) mostra
-// só a quantidade.
-function RankingPie({ dados, cores }) {
+// só a quantidade. Clicar numa fatia filtra o painel inteiro.
+function RankingPie({ dados, cores, aoClicar, destaque }) {
   if (dados.length === 0) return <p className="text-xs text-slate-400">Sem dados ainda.</p>
   return (
     <ResponsiveContainer width="100%" height={240}>
@@ -36,8 +42,9 @@ function RankingPie({ dados, cores }) {
         <Pie
           data={dados} dataKey="qtd" nameKey="label" cx="50%" cy="48%" outerRadius={70}
           label={({ percent }) => `${Math.round(percent * 100)}%`}
+          onClick={(e) => aoClicar && aoClicar(e?.payload ?? e)}
         >
-          {dados.map((d, i) => <Cell key={i} fill={cores[i % cores.length]} />)}
+          {dados.map((d, i) => <Cell key={i} fill={cores[i % cores.length]} fillOpacity={destaque && !destaque(d) ? 0.35 : 1} style={{ cursor: aoClicar ? 'pointer' : 'default' }} />)}
         </Pie>
         <Tooltip formatter={(v, n, p) => [v, p.payload.label]} />
         <Legend wrapperStyle={{ fontSize: 10 }} />
@@ -48,7 +55,7 @@ function RankingPie({ dados, cores }) {
 
 // Gráfico de colunas (barras verticais) por contagem — ou, quando `formatarValor`
 // é passado, por valor monetário (ex: "Impacto" em R$ por texto de impacto).
-function RankingColunas({ dados, cores, formatarValor }) {
+function RankingColunas({ dados, cores, formatarValor, aoClicar, destaque }) {
   if (dados.length === 0) return <p className="text-xs text-slate-400">Sem dados ainda.</p>
   const fmt = formatarValor || (v => v)
   return (
@@ -58,9 +65,9 @@ function RankingColunas({ dados, cores, formatarValor }) {
         <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={0} angle={-20} textAnchor="end" height={60} />
         <YAxis allowDecimals={false} tick={{ fontSize: 10 }} tickFormatter={fmt} />
         <Tooltip formatter={(v, n, p) => [fmt(v), p.payload.label]} />
-        <Bar dataKey="qtd" radius={[4, 4, 0, 0]}>
+        <Bar dataKey="qtd" radius={[4, 4, 0, 0]} onClick={(e) => aoClicar && aoClicar(e?.payload ?? e)}>
           <LabelList dataKey="qtd" position="top" fontSize={11} fontWeight="bold" fill="#334155" formatter={fmt} />
-          {dados.map((d, i) => <Cell key={i} fill={cores[i % cores.length]} />)}
+          {dados.map((d, i) => <Cell key={i} fill={cores[i % cores.length]} fillOpacity={destaque && !destaque(d) ? 0.35 : 1} style={{ cursor: aoClicar ? 'pointer' : 'default' }} />)}
         </Bar>
       </BarChart>
     </ResponsiveContainer>
@@ -116,7 +123,7 @@ function ComparativoTooltip({ active, payload, label }) {
 // Gráfico de colunas agrupadas — duas barras (Apontado x Corrigido) lado a lado
 // por categoria (ex: por Ciclo de Auditoria), em valor monetário, com selo de
 // variação % entre as duas colunas de cada ciclo.
-function ComparativoColunas({ dados }) {
+function ComparativoColunas({ dados, aoClicar }) {
   if (dados.length === 0) return <p className="text-xs text-slate-400">Sem dados ainda.</p>
   return (
     <ResponsiveContainer width="100%" height={320}>
@@ -126,10 +133,10 @@ function ComparativoColunas({ dados }) {
         <YAxis allowDecimals={false} tick={{ fontSize: 10 }} tickFormatter={fmtMoeda} />
         <Tooltip content={<ComparativoTooltip />} />
         <Legend wrapperStyle={{ fontSize: 10 }} />
-        <Bar dataKey="totalApontado" name="Total Apontado" fill="#e11d48" radius={[4, 4, 0, 0]}>
+        <Bar dataKey="totalApontado" name="Total Apontado" fill="#e11d48" radius={[4, 4, 0, 0]} onClick={(e) => aoClicar && aoClicar(e?.payload ?? e)} cursor="pointer">
           <LabelList dataKey="totalApontado" position="top" fontSize={10} fontWeight="bold" fill="#334155" formatter={fmtMoeda} />
         </Bar>
-        <Bar dataKey="valorCorrigido" name="Valor Corrigido" fill="#059669" radius={[4, 4, 0, 0]}>
+        <Bar dataKey="valorCorrigido" name="Valor Corrigido" fill="#059669" radius={[4, 4, 0, 0]} onClick={(e) => aoClicar && aoClicar(e?.payload ?? e)} cursor="pointer">
           <LabelList dataKey="valorCorrigido" position="top" fontSize={10} fontWeight="bold" fill="#334155" formatter={fmtMoeda} />
           <LabelList content={(props) => <VariacaoBadge {...props} dados={dados} />} />
         </Bar>
@@ -151,7 +158,7 @@ function QuantidadeValorLabel({ x, y, width, value, index, dados }) {
 
 // Uma barra por Tipo de Divergência — altura = Valor Apontado (R$), com a
 // quantidade de ocorrências junto no mesmo rótulo, acima da barra.
-function QuantidadeValorColunas({ dados }) {
+function QuantidadeValorColunas({ dados, aoClicar, destaque }) {
   if (dados.length === 0) return <p className="text-xs text-slate-400">Sem dados ainda.</p>
   return (
     <ResponsiveContainer width="100%" height={320}>
@@ -160,7 +167,8 @@ function QuantidadeValorColunas({ dados }) {
         <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={0} angle={-20} textAnchor="end" height={70} />
         <YAxis allowDecimals={false} tick={{ fontSize: 10 }} tickFormatter={fmtMoeda} />
         <Tooltip formatter={(v, n, p) => [`${p.payload.quantidade} un. · ${fmtMoeda(v)}`, 'Valor Apontado']} />
-        <Bar dataKey="valor" fill="#6366f1" radius={[4, 4, 0, 0]}>
+        <Bar dataKey="valor" radius={[4, 4, 0, 0]} onClick={(e) => aoClicar && aoClicar(e?.payload ?? e)}>
+          {dados.map((d, i) => <Cell key={i} fill="#6366f1" fillOpacity={destaque && !destaque(d) ? 0.35 : 1} style={{ cursor: aoClicar ? 'pointer' : 'default' }} />)}
           <LabelList content={(props) => <QuantidadeValorLabel {...props} dados={dados} />} />
         </Bar>
       </BarChart>
@@ -372,22 +380,60 @@ export default function AuditoriaDashboard() {
     return set
   }, [planosVisiveis, empresaIds])
 
-  // Filtro por Ciclo de Auditoria e por Empresa (da Ação) — vazio = sem restrição.
+  // Clique num gráfico vira filtro do painel inteiro (gráficos e cards). Clicar de
+  // novo no mesmo item limpa o filtro.
+  const [filtroGrafico, setFiltroGrafico] = useState(null) // null | { dim, valor }
+  const alternarFiltroGrafico = (dim, valor) =>
+    setFiltroGrafico(prev => (prev && prev.dim === dim && prev.valor === valor ? null : { dim, valor }))
+  const destaque = (dim, chave) => (item) =>
+    !filtroGrafico || filtroGrafico.dim !== dim || filtroGrafico.valor === chave(item)
+
+  const planosVisiveisDoAchado = useMemo(() => {
+    const m = new Map()
+    for (const p of planosVisiveis) {
+      if (!m.has(p.achado_id)) m.set(p.achado_id, [])
+      m.get(p.achado_id).push(p)
+    }
+    return m
+  }, [planosVisiveis])
+
+  const statusLabelDoAchado = (achadoId) => {
+    const st = statusAgregadoAchado(planosVisiveisDoAchado.get(achadoId))
+    const chave = st === 'validado_auditoria' ? 'concluido' : (st || 'sem_plano')
+    return STATUS_LABEL[chave]
+  }
+
+  // Filtro por Ciclo de Auditoria, Empresa (da Ação) e clique em gráfico.
   const achadosFiltrados = useMemo(() => {
     let base = achadosVisiveis
     if (cicloIds.length > 0) base = base.filter(a => cicloIds.includes(a.ciclo_id))
     if (empresaIds.length > 0) base = base.filter(a => achadoIdsComEmpresaSelecionada.has(a.id))
+    if (filtroGrafico) {
+      const { dim, valor } = filtroGrafico
+      base = base.filter(a => {
+        if (dim === 'status') return statusLabelDoAchado(a.id) === valor
+        if (dim === 'impacto') return ((a.impactos || '').trim() || 'Não informado') === valor
+        if (dim === 'tipoDivergencia') return (a.audext_tipos_divergencia?.nome || 'Não definido') === valor
+        if (dim === 'ciclo') return a.ciclo_id === valor
+        if (dim === 'resolucao') return achadoResolvido(planosVisiveisDoAchado.get(a.id)) === (valor === 'resolvida')
+        if (dim === 'departamento') return (planosVisiveisDoAchado.get(a.id) || []).some(p => (p.proj_departamentos?.nome || 'Não atribuído') === valor)
+        if (dim === 'tipoAcao') return (planosVisiveisDoAchado.get(a.id) || []).some(p => (p.audext_tipos_acao?.nome || 'Não definido') === valor)
+        return true
+      })
+    }
     return base
-  }, [achadosVisiveis, cicloIds, empresaIds, achadoIdsComEmpresaSelecionada])
+  }, [achadosVisiveis, cicloIds, empresaIds, achadoIdsComEmpresaSelecionada, filtroGrafico, planosVisiveisDoAchado])
 
   const achadoIdsFiltrados = useMemo(() => new Set(achadosFiltrados.map(a => a.id)), [achadosFiltrados])
 
   const planosFiltrados = useMemo(() => {
     let base = planosVisiveis
-    if (cicloIds.length > 0 || empresaIds.length > 0) base = base.filter(p => achadoIdsFiltrados.has(p.achado_id))
+    if (cicloIds.length > 0 || empresaIds.length > 0 || filtroGrafico) base = base.filter(p => achadoIdsFiltrados.has(p.achado_id))
     if (empresaIds.length > 0) base = base.filter(p => empresaIds.includes(p.empresa_id))
+    if (filtroGrafico?.dim === 'departamento') base = base.filter(p => (p.proj_departamentos?.nome || 'Não atribuído') === filtroGrafico.valor)
+    if (filtroGrafico?.dim === 'tipoAcao') base = base.filter(p => (p.audext_tipos_acao?.nome || 'Não definido') === filtroGrafico.valor)
     return base
-  }, [planosVisiveis, cicloIds, empresaIds, achadoIdsFiltrados])
+  }, [planosVisiveis, cicloIds, empresaIds, achadoIdsFiltrados, filtroGrafico])
 
   const ciclosSelecionados = useMemo(() =>
     ciclosVisiveis.filter(c => cicloIds.includes(c.id)),
@@ -421,6 +467,7 @@ export default function AuditoriaDashboard() {
       if (!m.has(chave)) {
         m.set(chave, {
           label: c ? `${c.proj_empresas?.nome || '—'} · ${c.periodo_competencia}` : 'Sem ciclo',
+          cicloId: chave,
           totalApontado: 0,
           valorCorrigido: 0,
         })
@@ -450,8 +497,7 @@ export default function AuditoriaDashboard() {
       const chave = st === 'validado_auditoria' ? 'concluido' : (st || 'sem_plano')
       m[chave]++
     }
-    const labels = { sem_plano: 'Sem Plano', pendente: 'Pendente', em_andamento: 'Em Andamento', concluido: 'Concluído' }
-    return Object.entries(m).map(([k, qtd]) => ({ status: labels[k], qtd, cor: STATUS_COR_CHART[k] }))
+    return Object.entries(m).map(([k, qtd]) => ({ status: STATUS_LABEL[k], qtd, cor: STATUS_COR_CHART[k] }))
   }, [achadosFiltrados, planosPorAchado])
 
   // Em quais departamentos tiveram mais ações (cada ação conta pro seu departamento).
@@ -550,16 +596,22 @@ export default function AuditoriaDashboard() {
                 : `${ciclosVisiveis.length} ciclo(s) de auditoria`
           }
           cor={{ bg: 'bg-indigo-50', border: 'border-indigo-200', icoBg: 'bg-indigo-100', icoTxt: 'text-indigo-600', numTxt: 'text-indigo-700', labelTxt: 'text-indigo-500' }}
+          aoClicar={() => setFiltroGrafico(null)}
+          ativo={!filtroGrafico}
         />
         <KpiCard
           icon={AlertTriangle} label="Não Resolvidas" valor={naoResolvidas}
           sub={`de ${totalDivergencias} divergência(s) no total`}
           cor={{ bg: 'bg-rose-50', border: 'border-rose-200', icoBg: 'bg-rose-100', icoTxt: 'text-rose-600', numTxt: 'text-rose-700', labelTxt: 'text-rose-500' }}
+          aoClicar={() => alternarFiltroGrafico('resolucao', 'naoResolvida')}
+          ativo={filtroGrafico?.dim === 'resolucao' && filtroGrafico.valor === 'naoResolvida'}
         />
         <KpiCard
           icon={CheckCircle2} label="Divergências Resolvidas" valor={resolvidas}
           sub={`Concluídas ou validadas de ${totalDivergencias}`}
           cor={{ bg: 'bg-emerald-50', border: 'border-emerald-200', icoBg: 'bg-emerald-100', icoTxt: 'text-emerald-600', numTxt: 'text-emerald-700', labelTxt: 'text-emerald-500' }}
+          aoClicar={() => alternarFiltroGrafico('resolucao', 'resolvida')}
+          ativo={filtroGrafico?.dim === 'resolucao' && filtroGrafico.valor === 'resolvida'}
         />
         <KpiCard
           icon={Layers} label="% de Conclusão Geral" valor={`${percentualGeral}%`}
@@ -568,9 +620,20 @@ export default function AuditoriaDashboard() {
         />
       </div>
 
+      {filtroGrafico && (
+        <div className="flex items-center justify-between gap-3 bg-indigo-50 border border-indigo-200 rounded-md px-3 py-2 text-xs text-indigo-700 font-semibold">
+          <span>
+            Filtrado por {LABEL_DIM[filtroGrafico.dim]}: <strong>{filtroGrafico.dim === 'ciclo'
+              ? (apontadoXCorrigidoPorCiclo.find(x => x.cicloId === filtroGrafico.valor)?.label || filtroGrafico.valor)
+              : filtroGrafico.dim === 'resolucao' ? LABEL_RESOLUCAO[filtroGrafico.valor] : filtroGrafico.valor}</strong>
+          </span>
+          <button onClick={() => setFiltroGrafico(null)} className="px-2 py-1 rounded bg-white border border-indigo-200 hover:bg-indigo-100 transition-colors">Limpar filtro</button>
+        </div>
+      )}
+
       <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-4">
         <h3 className="text-xs font-bold text-slate-700 mb-3">Total Apontado x Valor Corrigido — por Ciclo de Auditoria</h3>
-        <ComparativoColunas dados={apontadoXCorrigidoPorCiclo} />
+        <ComparativoColunas dados={apontadoXCorrigidoPorCiclo} aoClicar={(item) => alternarFiltroGrafico('ciclo', item.cicloId)} />
       </div>
 
       <div className="grid grid-cols-2 gap-4">
@@ -582,9 +645,9 @@ export default function AuditoriaDashboard() {
               <XAxis type="number" allowDecimals={false} tick={{ fontSize: 10 }} />
               <YAxis type="category" dataKey="status" tick={{ fontSize: 11 }} width={100} />
               <Tooltip formatter={v => [`${v} divergência(s) (${totalDivergencias ? Math.round((v / totalDivergencias) * 100) : 0}% do total)`, '']} />
-              <Bar dataKey="qtd" radius={[0, 4, 4, 0]}>
+              <Bar dataKey="qtd" radius={[0, 4, 4, 0]} onClick={(e) => alternarFiltroGrafico('status', (e?.payload ?? e).status)}>
                 <LabelList dataKey="qtd" position="right" fontSize={11} fontWeight="bold" fill="#334155" />
-                {statusData.map((d, i) => <Cell key={i} fill={d.cor} />)}
+                {statusData.map((d, i) => <Cell key={i} fill={d.cor} fillOpacity={filtroGrafico && !(filtroGrafico.dim === 'status' && filtroGrafico.valor === d.status) ? 0.35 : 1} style={{ cursor: 'pointer' }} />)}
               </Bar>
             </BarChart>
           </ResponsiveContainer>
@@ -592,25 +655,25 @@ export default function AuditoriaDashboard() {
 
         <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-4">
           <h3 className="text-xs font-bold text-slate-700 mb-3">Divergências por Tipo de Ação Tomada</h3>
-          <RankingColunas dados={porTipoAcao} cores={PIE_CORES_TIPO_ACAO} />
+          <RankingColunas dados={porTipoAcao} cores={PIE_CORES_TIPO_ACAO} aoClicar={(item) => alternarFiltroGrafico('tipoAcao', item.label)} destaque={destaque('tipoAcao', i => i.label)} />
         </div>
       </div>
 
       <div className="grid grid-cols-2 gap-4">
         <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-4">
           <h3 className="text-xs font-bold text-slate-700 mb-3">Divergências por Departamento</h3>
-          <RankingPie dados={porDepartamento} cores={PIE_CORES_DEPARTAMENTO} />
+          <RankingPie dados={porDepartamento} cores={PIE_CORES_DEPARTAMENTO} aoClicar={(item) => alternarFiltroGrafico('departamento', item.label)} destaque={destaque('departamento', i => i.label)} />
         </div>
 
         <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-4">
           <h3 className="text-xs font-bold text-slate-700 mb-3">Impactos das Divergências</h3>
-          <RankingColunas dados={porImpacto} cores={PIE_CORES_IMPACTO} formatarValor={fmtMoeda} />
+          <RankingColunas dados={porImpacto} cores={PIE_CORES_IMPACTO} formatarValor={fmtMoeda} aoClicar={(item) => alternarFiltroGrafico('impacto', item.label)} destaque={destaque('impacto', i => i.label)} />
         </div>
       </div>
 
       <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-4">
         <h3 className="text-xs font-bold text-slate-700 mb-3">Divergências por Tipo de Divergência — Quantidade x Valor Apontado</h3>
-        <QuantidadeValorColunas dados={porTipoDivergencia} />
+        <QuantidadeValorColunas dados={porTipoDivergencia} aoClicar={(item) => alternarFiltroGrafico('tipoDivergencia', item.label)} destaque={destaque('tipoDivergencia', i => i.label)} />
       </div>
     </div>
   )

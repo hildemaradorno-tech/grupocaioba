@@ -22,7 +22,7 @@ const FORMATOS = {
 
 // Monta as seções (uma por origem do valor) com o cálculo mês a mês do funcionário.
 // Cada linha de meta recebe um _tipo ('MECANICO' | 'CONSULTOR' | 'PECAS') da tela de origem.
-function montarSecoes(linhas, { diasUteis = {}, refs = null } = {}) {
+function montarSecoes(linhas, { diasUteis = {}, refs = null, rotulosFat = { marca: 'DAF', parceira: 'TRP' } } = {}) {
   const porTipo = (t) => {
     const a = Array(12).fill(null)
     linhas.filter(l => l._tipo === t).forEach(l => { a[l.mes - 1] = l })
@@ -99,16 +99,29 @@ function montarSecoes(linhas, { diasUteis = {}, refs = null } = {}) {
 
   const pec = porTipo('PECAS')
   if (pec.some(Boolean)) {
+    const numN = (r, c) => (r == null || r[c] == null || r[c] === '') ? null : Number(r[c])
     const meta = dos(pec, r => Number(r.meta_faturamento) || 0)
     const dias = dos(pec, r => Number(r.dias_uteis_reais) || 0)
     const somaMeta = meta.reduce((a, x) => a + (x || 0), 0)
     const somaDias = dias.reduce((a, x) => a + (x || 0), 0)
+    const margem = dos(pec, r => numN(r, 'margem_pecas_pct'))
+    const lucro = meta.map((m, i) => (margem[i] == null ? null : Math.round(m * margem[i]) / 100))
+    const somaLucro = lucro.reduce((a, x) => a + (x || 0), 0)
+    const fatM = dos(pec, r => numN(r, 'fat_marca'))
+    const fatP = dos(pec, r => numN(r, 'fat_parceira'))
+    const fatO = pec.map((r, i) => (r == null ? null : (numN(r, 'fat_outros') ?? (fatM[i] == null && fatP[i] == null ? null : Math.max(0, meta[i] - (fatM[i] || 0) - (fatP[i] || 0))))))
     secoes.push({ titulo: 'Peças', linhas: [
       linha('Meta (R$)', 'valor lançado', meta, 'brl', { soma: true, destaque: true }),
       linha('Dias Úteis', 'calendário da empresa', dias, 'num1', { soma: true }),
       linha('Média Diária (R$)', 'Meta ÷ Dias Úteis',
         meta.map((m, i) => (m == null ? null : (dias[i] > 0 ? m / dias[i] : 0))), 'brl',
         { totalFn: () => (somaDias > 0 ? somaMeta / somaDias : 0) }),
+      linha('Meta Margem Peças (%)', 'lançada na meta do vendedor; Total Ano = Lucro do ano ÷ Meta do ano', margem, 'pct',
+        { totalFn: () => (somaMeta > 0 ? (somaLucro / somaMeta) * 100 : null) }),
+      linha('Lucro Peças (R$)', 'Meta (R$) × Meta Margem Peças (%)', lucro, 'brl', { soma: true }),
+      linha(`Faturamento ${rotulosFat.marca} (R$)`, 'valor lançado na distribuição do vendedor', fatM, 'brl', { soma: true }),
+      linha(`Faturamento ${rotulosFat.parceira} (R$)`, 'valor lançado na distribuição do vendedor', fatP, 'brl', { soma: true }),
+      linha('Faturamento Outros (R$)', 'Meta − marca − parceira (ou valor gravado)', fatO, 'brl', { soma: true }),
     ] })
   }
   return secoes
@@ -146,7 +159,7 @@ export default function CalculoFuncionarioModal({ dados, onClose }) {
     }
     return () => { vivo = false }
   }, [dados.empresaId, dados.ano])
-  const secoes = montarSecoes(dados.linhas, { diasUteis, refs: dados.refs })
+  const secoes = montarSecoes(dados.linhas, { diasUteis, refs: dados.refs, rotulosFat: dados.rotulosFat })
   return (
     <div className="fixed top-0 right-0 bottom-0 left-16 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[92vh] flex flex-col" onClick={e => e.stopPropagation()}>

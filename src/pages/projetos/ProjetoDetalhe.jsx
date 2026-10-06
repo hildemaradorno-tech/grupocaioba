@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
-import { ArrowLeft, Edit2, Plus, Trash2, ShieldAlert, ArrowRight, Copy, MessageSquare, CheckCircle2, FolderInput, PlayCircle, Loader2, PartyPopper, RotateCcw, Eye, Filter, Activity, CheckCircle, AlertTriangle, Layers, X, Flag, ClipboardList } from 'lucide-react'
+import { ArrowLeft, Edit2, Plus, Trash2, ShieldAlert, ArrowRight, Copy, MessageSquare, CheckCircle2, FolderInput, PlayCircle, Loader2, PartyPopper, RotateCcw, Eye, Filter, Activity, CheckCircle, AlertTriangle, Layers, X, Flag, ClipboardList, ChevronRight } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { useProjetosFiltros } from '../../context/ProjetosFiltrosContext'
 import { apiService } from '../../services/api'
@@ -103,6 +103,8 @@ export default function ProjetoDetalhe() {
   const [projetoDestinoId, setProjetoDestinoId] = useState('')
   const [buscaProjeto, setBuscaProjeto] = useState('')
   const [movendoTarefa, setMovendoTarefa] = useState(false)
+  const [delibExpanded, setDelibExpanded] = useState(new Set())
+  const toggleDelib = (id) => setDelibExpanded(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
   const [convidados, setConvidados] = useState([])
   const [manifestacoesIniciais, setManifestoesIniciais] = useState([])
   const isConvidadoManif     = convidados.some(c => c.usuario_id === usuarioId)
@@ -878,15 +880,24 @@ const abrirModalMover = async (tarefa) => {
                       )}
                     </div>
                     {t.proj_deliberacoes?.length > 0 && (
-                      <div className="mt-1.5 space-y-1">
-                        {t.proj_deliberacoes.map(d => (
-                          <div key={d.id} className="flex gap-1.5 text-[10px] bg-amber-50 border border-amber-200 rounded px-2 py-1">
-                            <span className="text-amber-600 font-semibold shrink-0 whitespace-nowrap">
-                              {d.data ? new Date(d.data + 'T12:00:00').toLocaleDateString('pt-BR') : '—'}
-                            </span>
-                            <span className="text-slate-600 leading-snug">{d.texto}</span>
+                      <div className="mt-1">
+                        <button type="button" onClick={() => toggleDelib(t.id)}
+                          className="flex items-center gap-0.5 text-[10px] text-amber-600 hover:text-amber-800 font-semibold leading-none py-0.5">
+                          <ChevronRight className={`h-3 w-3 transition-transform duration-150 ${delibExpanded.has(t.id) ? 'rotate-90' : ''}`} />
+                          {t.proj_deliberacoes.length} deliberaç{t.proj_deliberacoes.length === 1 ? 'ão' : 'ões'}
+                        </button>
+                        {delibExpanded.has(t.id) && (
+                          <div className="mt-1 space-y-1">
+                            {t.proj_deliberacoes.map(d => (
+                              <div key={d.id} className="flex gap-1.5 text-[10px] bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                                <span className="text-amber-600 font-semibold shrink-0 whitespace-nowrap">
+                                  {d.data ? new Date(d.data + 'T12:00:00').toLocaleDateString('pt-BR') : '—'}
+                                </span>
+                                <span className="text-slate-600 leading-snug">{d.texto}</span>
+                              </div>
+                            ))}
                           </div>
-                        ))}
+                        )}
                       </div>
                     )}
                   </td>

@@ -671,7 +671,8 @@ function parseOficinaConsultorBuffer(buffer, meta) {
 
     const nomeConsultor = row[C.nomeVendedor] != null ? String(row[C.nomeVendedor]).trim() : ''
 
-    result.push({ empresa, periodo, semanaKey, vlVendas, vlDevolucoes, vlMargemContVendas, vlMargemContDevolucoes, nomeConsultor, arquivo: meta.name })
+    const osNum = safeNum(row[C.osNum])
+    result.push({ empresa, periodo, semanaKey, vlVendas, vlDevolucoes, vlMargemContVendas, vlMargemContDevolucoes, nomeConsultor, osNum, arquivo: meta.name })
   }
   return result
 }
@@ -723,9 +724,24 @@ export async function extractPecasOficinaPorConsultor(year = new Date().getFullY
     : rowsDoAno
   if (consultorNorm) rows = rows.filter(r => r.nomeConsultor.toUpperCase() === consultorNorm)
 
-  const result = consolidarBalcao(rows)
+  const result = { ...consolidarBalcao(rows), passagens: contarOsPorPeriodo(rows) }
   setCache(cacheKey, result)
   return result
+}
+
+// OS únicas (passagens) por período: cada OS conta uma vez em cada trimestre/mês/semana/ano em que aparece.
+function contarOsPorPeriodo(rows) {
+  const porQ = {}, porM = {}, porS = {}, ano = new Set()
+  for (const r of rows) {
+    if (!r.osNum) continue
+    ano.add(r.osNum)
+    const q = quarter(r.periodo), m = mesKey(r.periodo), s = r.semanaKey
+    ;(porQ[q] ??= new Set()).add(r.osNum)
+    if (m) (porM[m] ??= new Set()).add(r.osNum)
+    if (s) (porS[s] ??= new Set()).add(r.osNum)
+  }
+  const cont = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, v.size]))
+  return { ...cont(porQ), fy: ano.size || null, ...cont(porM), ...cont(porS) }
 }
 
 // Lista de nomes de Consultor distintos nas linhas de Oficina do RPR001 (pro
@@ -1005,6 +1021,7 @@ export function consolidarParaKpi(rows) {
         return r
       })(),
       ind3_margem: qPctCont('TOTAL'),
+      ind12_passagens: qOsCount('OFI'),
 
       // Indicador 10 — Faturamento TRP (ProdTipoCod ∈ {2,24,27,28}, NF_OsTipoDes <> branco)
       ind10_trpVendas:     qv('TRP_TIPOS', 'vlVendas'),

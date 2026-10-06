@@ -158,7 +158,7 @@ function PesoInput({ value, onSave }) {
   )
 }
 
-function QuadroTable({ quadro, activePeriods, year, onSalvarPeso }) {
+function QuadroTable({ quadro, activePeriods, mesTotalKey, year, onSalvarPeso }) {
   const headerCls   = COR_HEADER[quadro.cor]   ?? COR_HEADER.blue
   const subheadCls  = COR_SUBHEADER[quadro.cor] ?? COR_SUBHEADER.blue
   const colSpanBase = 4
@@ -185,17 +185,13 @@ function QuadroTable({ quadro, activePeriods, year, onSalvarPeso }) {
               <th className="text-center px-3 py-2.5 font-medium text-slate-500">Peso</th>
               {activePeriods.map(p => (
                 <th key={p} colSpan={4} className="text-center px-2 py-2.5 font-semibold text-blue-700 border-l border-slate-200">
-                  {getPeriodLabel(p, year)}
+                  {p === mesTotalKey ? 'MTD' : getPeriodLabel(p, year)}
                 </th>
               ))}
             </tr>
             <tr className="bg-slate-50/60 border-b border-slate-200 text-[10px]">
               <th colSpan={colSpanBase - 1} />
-              <th className="px-2 py-1 text-center" title="Soma dos pesos dos indicadores desse gerente — deve fechar em 100%">
-                <span className={`font-semibold ${totalOk ? 'text-slate-400' : 'text-red-600'}`}>
-                  {totalPeso}%{!totalOk && ' ⚠'}
-                </span>
-              </th>
+              <th className="px-2 py-1" />
               {activePeriods.map(p => (
                 <React.Fragment key={p}>
                   <th className="px-2 py-1.5 text-slate-400 font-medium border-l border-slate-200">Meta</th>
@@ -238,6 +234,28 @@ function QuadroTable({ quadro, activePeriods, year, onSalvarPeso }) {
               </tr>
             ))}
           </tbody>
+          <tfoot>
+            <tr className="border-t-2 border-slate-300 bg-slate-50 font-semibold text-slate-700">
+              <td className="text-center px-3 py-2" />
+              <td className="px-4 py-2 sticky left-0 bg-slate-50">Total</td>
+              <td className="text-center px-2 py-2" />
+              <td className="text-center px-3 py-2">{totalPeso}%</td>
+              {activePeriods.map(p => {
+                const contribs = quadro.kpis.map(row => {
+                  const d = getPeriodData(row, p)
+                  const a = calcAtingimento(row.orientacao, d.meta, d.realizado)
+                  return (a !== null && row.pesoObj != null) ? a * row.pesoObj : null
+                }).filter(v => v !== null)
+                const total = contribs.length ? contribs.reduce((s, v) => s + v, 0) : null
+                return (
+                  <React.Fragment key={p}>
+                    <td colSpan={3} className="border-l border-slate-200" />
+                    <td className="px-2 py-2 text-center">{pct(total)}</td>
+                  </React.Fragment>
+                )
+              })}
+            </tr>
+          </tfoot>
         </table>
       </div>
     </div>
@@ -260,7 +278,7 @@ function ordenarCasas(quadros) {
   return [...outros.slice(0, ini), ...casas, ...outros.slice(ini)]
 }
 
-export function PosVendaQuadros({ year, activePeriods }) {
+export function PosVendaQuadros({ year, activePeriods, mesTotalKey }) {
   const { data: quadros } = useKpiData(fetchBloco3PosVenda, MOCK_BLOCO3_POS_VENDA, { year })
 
   // Overlay otimista: aplicado por cima do que veio do backend assim que o usuário
@@ -284,7 +302,7 @@ export function PosVendaQuadros({ year, activePeriods }) {
   return (
       <div className="space-y-6">
         {quadrosComPeso.map((quadro, idx) => (
-          <QuadroTable key={idx} quadro={quadro} activePeriods={activePeriods} year={year} onSalvarPeso={handleSalvarPeso} />
+          <QuadroTable key={idx} quadro={quadro} activePeriods={activePeriods} mesTotalKey={mesTotalKey} year={year} onSalvarPeso={handleSalvarPeso} />
         ))}
       </div>
   )

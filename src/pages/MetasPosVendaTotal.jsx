@@ -180,7 +180,7 @@ const LBL = 'block text-xs font-semibold text-slate-600 mb-1'
 const SEL2 = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500'
 
 // somenteAprovado: mesma árvore da Gestão de Aprovação, só leitura e apenas com o que já está aprovado (aba Geral do Total Grupo).
-export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = false, somenteAprovado = false, anoExterno = null, empresasExterno = null, filtroVisuExterno = null, setFiltroVisuExterno = null, aoAlterarAprovacao = null } = {}) {
+export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = false, somenteAprovado = false, anoExterno = null, empresasExterno = null, filtroVisuExterno = null, setFiltroVisuExterno = null, aoAlterarAprovacao = null, visao = 'padrao' } = {}) {
   const modoAprovacao = modoAprovacaoProp || somenteAprovado
   const podeAgir = modoAprovacaoProp
   const { hasActionOrDefault, hasAction, usuarioId, userNome } = useAuth()
@@ -221,11 +221,13 @@ export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = 
   const refsDoConsultor = (empresaId, setorId, setorNome) =>
     referenciasConsultor(empresaId, setorId, setorNome, { rowsMecanico, rowsTerceiros, rowsFunilaria, funcionarios, boxes, setores })
 
-  const abrirCalculo = (colab, eNome) => {
+  const abrirCalculo = (colab, eNome, eMarca = '') => {
     const primeira = colab.linhas[0]
     const cons = colab.linhas.find(l => l._tipo === 'CONSULTOR')
+    const marcaU = String(eMarca || '').toUpperCase()
     setCalcAberto({
       nome: colab.nome, empresa: eNome, empresaId: primeira?.empresa_id, ano: filtroAno, linhas: colab.linhas,
+      rotulosFat: marcaU.includes('HONDA') ? { marca: 'HONDA', parceira: 'HAMP' } : { marca: 'DAF', parceira: 'TRP' },
       refs: cons ? refsDoConsultor(cons.empresa_id, cons._setorOrigemId ?? cons.setor_id, cons._setorOrigemNome ?? cons.setor_nome) : null,
     })
   }
@@ -301,10 +303,42 @@ export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = 
   }
 
   // Árvore unificada: Peças + Consultor + Mecânico (inclui Produtivo Não Associado Funilaria) + Terceiros
-  const tree = useMemo(
+  const treeBase = useMemo(
     () => montarArvoreTotal({ rowsPecas, rowsMecanico, rowsConsultor, rowsTerceiros, funcionarios, cargos, boxes, setores, departamentos, filtroVisu }),
     [rowsPecas, rowsMecanico, rowsConsultor, rowsTerceiros, funcionarios, cargos, boxes, setores, departamentos, filtroVisu]
   )
+
+  // Visão Grupo (aba Grupo): todas as empresas DAF viram uma única linha "CAIOBÁ TRUCKS - DAF", com os
+  // departamentos agregados entre elas. Os filtros de Empresa continuam valendo para escolher quais entram.
+  const ehVisaoGrupo = visao === 'grupoDAF'
+  const idsDAF = useMemo(() => empresas
+    .filter(e => String(e.marca || '').trim().toUpperCase() === 'DAF')
+    .filter(e => !filtroEmpresa.length || filtroEmpresa.includes(e.id))
+    .map(e => e.id), [empresas, filtroEmpresa])
+  const idsDAFSet = useMemo(() => new Set(idsDAF), [idsDAF])
+  const tree = useMemo(() => {
+    if (!ehVisaoGrupo) return treeBase
+    const mergeDepts = (dst, src) => Object.entries(src || {}).forEach(([dId, d]) => {
+      if (!dst[dId]) dst[dId] = { nome: d.nome, setores: {} }
+      Object.entries(d.setores || {}).forEach(([sId, st]) => {
+        if (!dst[dId].setores[sId]) dst[dId].setores[sId] = { nome: st.nome, boxes: {} }
+        Object.entries(st.boxes || {}).forEach(([bId, bx]) => {
+          const dstBox = dst[dId].setores[sId].boxes
+          if (!dstBox[bId]) dstBox[bId] = { nome: bx.nome, colabs: {} }
+          Object.entries(bx.colabs || {}).forEach(([coId, co]) => { dstBox[bId].colabs[`${co.__emp || ''}|${coId}`] = co })
+        })
+      })
+    })
+    const depts = {}
+    idsDAF.forEach(eid => {
+      const emp = treeBase[eid]
+      if (!emp) return
+      // marca o empresa de origem em cada colaborador, para a chave ficar única entre empresas
+      Object.values(emp.depts || {}).forEach(d => Object.values(d.setores || {}).forEach(st => Object.values(st.boxes || {}).forEach(bx => Object.values(bx.colabs || {}).forEach(co => { co.__emp = eid }))))
+      mergeDepts(depts, emp.depts)
+    })
+    return Object.keys(depts).length ? { GRUPO_DAF: { nome: 'CAIOBÁ TRUCKS - DAF', depts } } : {}
+  }, [ehVisaoGrupo, treeBase, idsDAF])
 
   // Filtros de Departamento / Setor / Box / Funcionário (busca) — só na aba Total (não em modo Aprovação).
   const [filtroDepto, setFiltroDepto] = useSessionState('mpvt_depto', '')
@@ -360,7 +394,7 @@ export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = 
         })
       })
     })
-    const segs = agruparPorSegmento(Object.entries(treeFiltrada), empresas).map(([l]) => l)
+    const segs = ehVisaoGrupo ? [] : agruparPorSegmento(Object.entries(treeFiltrada), empresas).map(([l]) => l)
     return { segs, emps, depts, sets, bxs }
   }
 
@@ -416,10 +450,12 @@ export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = 
     return ids
   }, [rowsPecas, rowsConsultor, rowsMecanico])
 
-  const empList = empresas
-    .filter(e => empresasComValor.has(e.id))
-    .filter(e => !filtroEmpresa.length || filtroEmpresa.includes(e.id))
-    .filter(e => !!treeFiltrada[e.id]) // some da lista quando os filtros de Departamento/Setor/Box/Funcionário não deixam nada
+  const empList = ehVisaoGrupo
+    ? (tree.GRUPO_DAF ? [{ id: 'GRUPO_DAF', empresa_fantasia: 'CAIOBÁ TRUCKS - DAF', marca: 'DAF' }] : [])
+    : empresas
+      .filter(e => empresasComValor.has(e.id))
+      .filter(e => !filtroEmpresa.length || filtroEmpresa.includes(e.id))
+      .filter(e => !!treeFiltrada[e.id]) // some da lista quando os filtros de Departamento/Setor/Box/Funcionário não deixam nada
 
   const empBlocos = empList.map(emp => {
     const eId   = emp.id
@@ -500,12 +536,13 @@ export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = 
         // Produtividade = Horas Meta ÷ Horas Disponíveis). Respeita os filtros de Setor/Box/Funcionário.
         // No Balcão Peças, a linha Indicadores traz a Margem Peças (%) e os Faturamentos por marca, calculados com os vendedores.
         const ehOficinaInd = (dept.nome || '').toLowerCase().includes('oficina')
+        const empOk = (id) => (ehVisaoGrupo ? idsDAFSet.has(id) : id === eId)
         const ehBalcaoInd  = /balc/i.test(dept.nome || '')
         if (ehOficinaInd || ehBalcaoInd) {
           const hd = Array(12).fill(0), hm = Array(12).fill(0)
           const termoInd = (filtroColab || '').trim().toLowerCase()
           rowsMecanico.forEach(r => {
-            if (r.empresa_id !== eId || r.colaborador_id === PROD_NAO_ASSOCIADA_ID) return
+            if (!empOk(r.empresa_id) || r.colaborador_id === PROD_NAO_ASSOCIADA_ID) return
             const pos = resolverPosicaoMecanico(r, { funcionarios, cargos, boxes, setores, departamentos })
             if (pos.did !== dId) return
             if (filtroSetorT && pos.sId !== filtroSetorT) return
@@ -526,11 +563,11 @@ export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = 
           const refCache = {}
           const ctxRef = { rowsMecanico, rowsTerceiros, rowsFunilaria, funcionarios, boxes, setores }
           rowsConsultor.forEach(r => {
-            if (r.empresa_id !== eId) return
+            if (!empOk(r.empresa_id)) return
             if (termoInd && !(r.colaborador_nome || '').toLowerCase().includes(termoInd)) return
             const so = setorOrigemConsultor(r, { boxes, setores })
-            const ck = `${eId}|${so.id}`
-            if (!refCache[ck]) refCache[ck] = referenciasConsultor(eId, so.id, so.nome, ctxRef)
+            const ck = `${r.empresa_id}|${so.id}`
+            if (!refCache[ck]) refCache[ck] = referenciasConsultor(r.empresa_id, so.id, so.nome, ctxRef)
             const i = (Number(r.mes) || 1) - 1
             const ref = refCache[ck][i]
             const pct = (Number(r.percentual) || 0) / 100
@@ -559,7 +596,7 @@ export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = 
           if (ehBalcaoInd) {
             lucroP.fill(0); metaP.fill(0)
             rowsPecas.forEach(r => {
-              if (r.empresa_id !== eId || r.departamento_id !== dId) return
+              if (!empOk(r.empresa_id) || r.departamento_id !== dId) return
               if (termoInd && !(r.colaborador_nome || '').toLowerCase().includes(termoInd)) return
               const i = (Number(r.mes) || 1) - 1
               const fm = Number(r.fat_marca) || 0, fp = Number(r.fat_parceira) || 0
@@ -567,7 +604,7 @@ export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = 
               fatO[i] += (r.fat_outros != null && r.fat_outros !== '') ? Number(r.fat_outros) || 0 : ((fm || fp) ? Math.max(0, (Number(r.meta_faturamento) || 0) - fm - fp) : 0)
             })
             rowsPecas.forEach(r => {
-              if (r.empresa_id !== eId || r.departamento_id !== dId) return
+              if (!empOk(r.empresa_id) || r.departamento_id !== dId) return
               if (termoInd && !(r.colaborador_nome || '').toLowerCase().includes(termoInd)) return
               if (r.margem_pecas_pct == null || r.margem_pecas_pct === '') return
               const meta = Number(r.meta_faturamento) || 0
@@ -634,6 +671,9 @@ export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = 
           }
         }
 
+        // Visão Grupo: abaixo do departamento só os Indicadores (sem setores, boxes e colaboradores).
+        if (ehVisaoGrupo) return
+
         const setorEntries = Object.entries(dept.setores).sort(([,a],[,b]) => {
           const aFun = (a.nome || '').toLowerCase().includes('funilaria') ? 1 : 0
           const bFun = (b.nome || '').toLowerCase().includes('funilaria') ? 1 : 0
@@ -687,7 +727,7 @@ export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = 
                     <span className="inline-flex items-center gap-1.5">
                       {colab.nome}
                       {!String(coId).startsWith('__ter__') && (
-                        <button type="button" title="Ver cálculo" onClick={e => { e.stopPropagation(); abrirCalculo(colab, eNome) }}
+                        <button type="button" title="Ver cálculo" onClick={e => { e.stopPropagation(); abrirCalculo(colab, eNome, emp.marca) }}
                           className="text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded p-0.5 transition-colors">
                           <Calculator size={13} />
                         </button>
@@ -755,7 +795,7 @@ export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = 
   // Primeiro nível: Grupo Caiobá (soma das empresas exibidas), igual às outras abas.
   const grupoMeses = Array(12).fill(0)
   empBlocos.forEach(b => b.vTotal.forEach((v, i) => { grupoMeses[i] += v }))
-  const empRows = segRows.length === 0 ? [] : [
+  const empRows = ehVisaoGrupo ? empBlocos.flatMap(b => b.linhas) : segRows.length === 0 ? [] : [
     <tr key="grupo" className="cursor-pointer bg-slate-300 hover:bg-slate-200 transition-colors" onClick={() => setGrupoAberto(v => !v)}>
       <td className={`pl-3 pr-2 py-2.5 text-sm font-bold text-slate-900 whitespace-nowrap sticky left-0 z-[5] bg-slate-300 ${W1}`}>
         <span className="flex items-center gap-1.5"><span className={`inline-flex items-center gap-2 ${modoAprovacao ? 'w-[19rem] shrink-0' : ''}`}>{grupoAberto ? <ChevronDown size={15}/> : <ChevronRight size={15}/>}Grupo Caiobá<LogoGrupo /></span>{modoAprovacao && <SituacaoNivel pend={empBlocos.some(b => b.temPend)} tem={empBlocos.some(b => b.temAprov)} />}</span>

@@ -20,16 +20,16 @@ export const CAMPANHA = {
     { min: 1.1, paga: 1.2, label: '110% ou mais' },
   ],
   unidades: [
-    { id: 'CG', nome: 'Campo Grande', empresaErp: 'CAMPO GRANDE', pagaAbaixo100: true, empresaId: '6e140292-fb21-4ade-8d23-c66aa00890b6',
+    { id: 'CG', nome: 'Campo Grande', empresaErp: 'CAMPO GRANDE', quadroMatriz: 'Gerente de Serviço - Campo Grande', pagaAbaixo100: true, empresaId: '6e140292-fb21-4ade-8d23-c66aa00890b6',
       metas: { serv: 0, pecas: 0, ticket: 0, mb: 0, prod: 0 },
       metasGG: { serv: 0, pecas: 0 } },
-    { id: 'DOU', nome: 'Dourados', empresaErp: 'DOURADOS', pagaAbaixo100: false, empresaId: '68c7177b-7023-42c4-9312-c632a6e977ef',
+    { id: 'DOU', nome: 'Dourados', empresaErp: 'DOURADOS', quadroMatriz: 'Gerente Filial - Dourados', pagaAbaixo100: false, empresaId: '68c7177b-7023-42c4-9312-c632a6e977ef',
       metas: { serv: 0, pecas: 0, ticket: 0, mb: 0, prod: 0 },
       metasGG: { serv: 0, pecas: 0 } },
-    { id: 'TL', nome: 'Três Lagoas', empresaErp: 'TRÊS LAGOAS', pagaAbaixo100: false, empresaId: '55c54058-758f-4c52-8ce4-a04e004423f8',
+    { id: 'TL', nome: 'Três Lagoas', empresaErp: 'TRÊS LAGOAS', quadroMatriz: 'Gerente Filial - Três Lagoas', pagaAbaixo100: false, empresaId: '55c54058-758f-4c52-8ce4-a04e004423f8',
       metas: { serv: 0, pecas: 0, ticket: 0, mb: 0, prod: 0 },
       metasGG: { serv: 0, pecas: 0 } },
-    { id: 'CS', nome: 'Chapadão do Sul', empresaErp: 'CHAPADÃO DO SUL', pagaAbaixo100: false, empresaId: '2f5bce5c-9039-4d0c-99f1-32f5f7d702a5',
+    { id: 'CS', nome: 'Chapadão do Sul', empresaErp: 'CHAPADÃO DO SUL', quadroMatriz: 'Gerente Filial - Chapadão do Sul', pagaAbaixo100: false, empresaId: '2f5bce5c-9039-4d0c-99f1-32f5f7d702a5',
       metas: { serv: 0, pecas: 0, ticket: 0, mb: 0, prod: 0 },
       metasGG: { serv: 0, pecas: 0 } },
   ],
@@ -404,6 +404,14 @@ export function metaDoConsultor(metasUnidade, funcionario) {
 // antes dele e, se não houver nenhum, este padrão. Tudo em fração (0.5 = 50%).
 export const FAIXAS_IDS = ['f80', 'f90', 'f100', 'f110']
 export const REGRAS_PADRAO = {
+  // 'semanal' = Regulamento da Campanha (jul/2026): cada semana paga sua parcela.
+  // 'trimestral' = Programa Rumo à Alta Performance (4º tri/2026): acompanha semana/mês e paga só no
+  //   fechamento do trimestre, aplicando a faixa do trimestre sobre o bônus de cada mês.
+  modelo: 'semanal',
+  programa: 'Regulamento da Campanha de Bônus — Pós-Venda (julho/2026)',
+  // Avaliação por blocos da Matriz KPIs (aba Resultados, vertical Pós-Vendas):
+  // Bloco 1 = Companhia, Bloco 2 = Departamento (Pós-Vendas), Bloco 3 = Individual (a função).
+  pesosBlocos: { companhia: 0.2, departamento: 0.3, individual: 0.5 },
   semanaMinSegSex: 3,
   faixas: [
     { id: 'f80', min: 0.8, paga: 0.5 },
@@ -462,9 +470,12 @@ export const REGRAS_PADRAO = {
       metaProdutividade: { CG: 0.6, DOU: 0.58, TL: 0.55, CS: 0.4 },
       metaMargem: { CG: 0.3, DOU: 0.3, TL: 0.3, CS: 0.3 },
       // Cargos que fazem o papel de Gerente de Pós-Venda em cada unidade.
-      cargos: { CG: ['GERENTE DE POS VENDAS'], DOU: ['GERENTE DE POS VENDAS'], TL: ['GERENTE DE FILIAL - TRUCKS TRES LAGOAS'], CS: ['GERENTE DE FILIAL'] },
+      cargos: { CG: ['GERENTE DE POS VENDAS'], DOU: ['GERENTE DE FILIAL - TRUCKS DOURADOS'], TL: ['GERENTE DE FILIAL - TRUCKS TRES LAGOAS'], CS: ['GERENTE DE FILIAL'] },
     },
     gerenteGeral: {
+      // Quem participa: ativos do agrupamento 'Gerente Geral' das empresas Trucks nestes cargos.
+      agrupamento: 'Gerente Geral',
+      cargos: ['GERENTE GERAL DE POS-VENDAS'],
       valores: {
         CG: { f80: 1500, f90: 1500, f100: 2000, f110: 2500 },
         DOU: { f80: 500, f90: 500, f100: 1000, f110: 1000 },
@@ -512,3 +523,105 @@ export const PONTOS_A_CONFIRMAR = [
   ['Valores fixos por faixa (Chefe e Gerente Geral)', 'São valores do mês inteiro; cada semana paga o valor da faixa ÷ nº de semanas.'],
   ['Supermeta', 'O atingimento composto não tem teto por indicador; a supermeta (110% ou mais) paga 120% do bônus da semana.'],
 ]
+
+
+// ======================================================================================
+// Programa Rumo à Alta Performance — 4º trimestre/2026 (documentosexemplos/REDE DE CONCESSIONÁRIAS…)
+// ======================================================================================
+// Mesmas funções, pesos, metas e bônus-alvo (cláusula 4ª: 'sem alteração'); muda a forma de pagar:
+// bônus do mês (X) = valor-alvo integral, só registrado; no fechamento do trimestre a faixa do
+// atingimento trimestral é aplicada sobre a soma dos X. Condições de pagamento (cláusula 5ª) valem
+// para o trimestre inteiro — qualquer uma descumprida perde o prêmio do trimestre.
+export const REGRAS_TRIMESTRAL_4T_2026 = mesclarRegras(REGRAS_PADRAO, {
+  modelo: 'trimestral',
+  programa: 'Programa Rumo à Alta Performance — 4º trimestre/2026',
+  trimestre: { ano: 2026, meses: [10, 11, 12], pagamento: '2027-01-05' },
+  // Régua do trimestre (cláusula 2ª): 80–90% → 50%; 90,01–99,99% → 75%; 100–105% → 100%; acima de 105% → 120%.
+  faixas: [
+    { id: 'f80', min: 0.8, paga: 0.5 },
+    { id: 'f90', min: 0.9001, paga: 0.75 },
+    { id: 'f100', min: 1.0, paga: 1.0 },
+    { id: 'f110', min: 1.0501, paga: 1.2 },
+  ],
+  // O programa não restringe faixas por unidade.
+  faixasPorUnidade: {
+    CG: { f80: true, f90: true, f100: true, f110: true },
+    DOU: { f80: true, f90: true, f100: true, f110: true },
+    TL: { f80: true, f90: true, f100: true, f110: true },
+    CS: { f80: true, f90: true, f100: true, f110: true },
+  },
+  // Atingimento do trimestre: do próprio colaborador ou consolidado da unidade (o exemplo da
+  // cláusula 2ª fala na unidade; as metas são individuais — ver pontos a confirmar).
+  baseTrimestre: 'colaborador',
+  // Condições de pagamento do trimestre (cláusula 5ª).
+  gates: {
+    indiceRetornoMax: 0.02,
+    margemMinimaPecas: 0.3,
+    faltasMax: 1,
+    atrasosMax: 3,
+    semPenalidadeDisciplinar: true,
+    satisfacaoAcimaDaMeta: true,
+    semRetornoProcedente: true,
+  },
+})
+
+// Pontos do programa trimestral em que o texto não é claro.
+export const PONTOS_A_CONFIRMAR_TRIMESTRAL = [
+  ['Atingimento do trimestre: colaborador ou unidade', 'A cláusula 2ª diz que vale o "percentual consolidado do trimestre" e o exemplo fala na unidade consolidar 100%, mas as metas são individuais. Padrão: atingimento do próprio colaborador. Dá para trocar para "unidade" na aba Regras.'],
+  ['Limites das faixas', '"80,00% a 90,00%" inclui 90,00%; "90,01% a 99,99%" começa em 90,01%; "acima de 105,00%" começa em 105,01%. As faixas foram cadastradas assim.'],
+  ['Bônus do mês (X)', 'É o bônus-alvo integral da função na unidade (ex.: R$ 1.500,00 do Consultor em CG). Não há pagamento semanal nem mensal; o mês só registra o X.'],
+  ['Travas antigas do Mecânico', 'Retornos e atrasos passam a ser condições do trimestre (cláusula 5ª). A eficiência abaixo de 120% continua como meta do Mecânico (metas sem alteração).'],
+  ['Satisfação e conduta', 'Nota da pesquisa acima da meta da filial e ausência de penalidade disciplinar não vêm de nenhum sistema: precisam ser informadas pela liderança no fechamento.'],
+]
+
+/**
+ * Junta as metas aprovadas de vários meses (trimestre) de uma unidade, no mesmo formato de
+ * metasAprovadasDaUnidade: valores em R$ somados; margem e ticket ponderados pelo faturamento.
+ */
+export function combinarMetasUnidade(lista) {
+  const somaFat = (a, b) => ({ fat: a.fat + b.fat, serv: a.serv + b.serv, pecas: a.pecas + b.pecas })
+  const zero = { fat: 0, serv: 0, pecas: 0 }
+  const porPessoa = new Map()
+  let gg = zero, oficina = zero, funilaria = zero, aprovadoEm = null, aprovadoPor = null
+  for (const m of lista) {
+    gg = somaFat(gg, m.unidade.gg)
+    oficina = somaFat(oficina, m.unidade.oficina)
+    funilaria = somaFat(funilaria, m.unidade.funilaria)
+    if (m.aprovadoEm && (!aprovadoEm || m.aprovadoEm > aprovadoEm)) { aprovadoEm = m.aprovadoEm; aprovadoPor = m.aprovadoPor }
+    for (const c of m.consultores) {
+      const k = c.funcionarioId || c.nomeNorm
+      const a = porPessoa.get(k) || { ...c, fat: 0, serv: 0, pecas: 0, _mb: 0, _mbFat: 0, _tk: 0, _tkFat: 0 }
+      a.fat += c.fat; a.serv += c.serv; a.pecas += c.pecas
+      if (c.mb != null) { a._mb += c.mb * c.fat; a._mbFat += c.fat }
+      if (c.ticket != null) { a._tk += c.ticket * c.fat; a._tkFat += c.fat }
+      a.percentual = c.percentual ?? a.percentual
+      porPessoa.set(k, a)
+    }
+  }
+  const consultores = [...porPessoa.values()].map(({ _mb, _mbFat, _tk, _tkFat, ...c }) => ({
+    ...c,
+    mb: _mbFat ? _mb / _mbFat : null,
+    ticket: _tkFat ? _tk / _tkFat : null,
+  })).sort((a, b) => a.nome.localeCompare(b.nome))
+  return { consultores, unidade: { gg, oficina, funilaria }, aprovadoEm, aprovadoPor }
+}
+
+
+// ======================================================================================
+// Blocos 1 e 2 da Matriz KPIs (planilha de KPIs do SharePoint → kpi_cache_planilhas)
+// ======================================================================================
+// Só existem por trimestre (Q1–Q4) e ano. Atingimento do bloco = média dos indicadores
+// (realizado ÷ meta; orientação '<' inverte) ponderada pelo peso de cada indicador.
+export const trimestreDoMes = (mes) => `q${Math.ceil(Number(mes) / 3)}`
+export function atingimentoBlocoMatriz(linhas, q, filtro = () => true) {
+  let soma = 0, pesos = 0
+  for (const r of linhas || []) {
+    if (!filtro(r)) continue
+    const peso = Number(r.peso ?? r.pesoObj) || 0
+    const meta = Number(r[q]?.meta), real = Number(r[q]?.realizado)
+    if (!peso || !meta || !real || isNaN(meta) || isNaN(real)) continue
+    soma += peso * (r.orientacao === '<' ? meta / real : real / meta)
+    pesos += peso
+  }
+  return pesos ? soma / pesos : null
+}

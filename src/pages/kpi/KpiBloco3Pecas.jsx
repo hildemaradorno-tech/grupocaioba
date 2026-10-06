@@ -2,7 +2,7 @@
 import { createPortal } from 'react-dom'
 import { Package, X, ChevronDown } from 'lucide-react'
 import { MOCK_BLOCO3_PECAS } from '../../data/kpiMockData'
-import PeriodSelector, { usePeriodSelector, PeriodLegend } from '../../components/kpi/PeriodSelector'
+import PeriodSelector, { usePeriodSelector, PeriodLegend, MODES_COM_SEMANAL } from '../../components/kpi/PeriodSelector'
 import { getPeriodData, getPeriodLabel } from '../../utils/kpiPeriods'
 import { useKpiData } from '../../hooks/useKpiData'
 import { fetchBloco3Pecas, salvarPeso, fetchVendedoresBalcao } from '../../services/kpiService'
@@ -203,7 +203,7 @@ function VendedorSelector({ vendedores, selecionado, onSelecionar, onLimpar }) {
   )
 }
 
-function QuadroTable({ quadro, activePeriods, year, onSalvarPeso, vendedorSelector }) {
+function QuadroTable({ quadro, activePeriods, mesTotalKey, year, onSalvarPeso, vendedorSelector }) {
   const headerCls  = COR_HEADER[quadro.cor]    ?? COR_HEADER.blue
   const subheadCls = COR_SUBHEADER[quadro.cor] ?? COR_SUBHEADER.blue
 
@@ -228,7 +228,7 @@ function QuadroTable({ quadro, activePeriods, year, onSalvarPeso, vendedorSelect
               <th className="text-center px-3 py-2.5 font-medium text-slate-500">Peso</th>
               {activePeriods.map(p => (
                 <th key={p} colSpan={4} className="text-center px-2 py-2.5 font-semibold text-blue-700 border-l border-slate-200">
-                  {getPeriodLabel(p, year)}
+                  {p === mesTotalKey ? 'MTD' : getPeriodLabel(p, year)}
                 </th>
               ))}
             </tr>
@@ -238,11 +238,7 @@ function QuadroTable({ quadro, activePeriods, year, onSalvarPeso, vendedorSelect
                 {vendedorSelector}
               </th>
               <th />
-              <th className="px-2 py-1 text-center" title="Soma dos pesos dos indicadores desse gerente — deve fechar em 100%">
-                <span className={`font-semibold ${totalOk ? 'text-slate-400' : 'text-red-600'}`}>
-                  {totalPeso}%{!totalOk && ' ⚠'}
-                </span>
-              </th>
+              <th className="px-2 py-1" />
               {activePeriods.map(p => (
                 <React.Fragment key={p}>
                   <th className="px-2 py-1.5 text-slate-400 font-medium border-l border-slate-200">Meta</th>
@@ -282,6 +278,28 @@ function QuadroTable({ quadro, activePeriods, year, onSalvarPeso, vendedorSelect
               </tr>
             ))}
           </tbody>
+          <tfoot>
+            <tr className="border-t-2 border-slate-300 bg-slate-50 font-semibold text-slate-700">
+              <td className="text-center px-3 py-2" />
+              <td className="px-4 py-2 sticky left-0 bg-slate-50">Total</td>
+              <td className="text-center px-2 py-2" />
+              <td className="text-center px-3 py-2">{totalPeso}%</td>
+              {activePeriods.map(p => {
+                const contribs = quadro.kpis.map(row => {
+                  const d = getPeriodData(row, p)
+                  const a = calcAtingimento(row.orientacao, d.meta, d.realizado)
+                  return (a !== null && row.pesoObj != null) ? a * row.pesoObj : null
+                }).filter(v => v !== null)
+                const total = contribs.length ? contribs.reduce((s, v) => s + v, 0) : null
+                return (
+                  <React.Fragment key={p}>
+                    <td colSpan={3} className="border-l border-slate-200" />
+                    <td className="px-2 py-2 text-center">{pct(total)}</td>
+                  </React.Fragment>
+                )
+              })}
+            </tr>
+          </tfoot>
         </table>
       </div>
     </div>
@@ -334,7 +352,7 @@ export default function KpiBloco3Pecas() {
         <PeriodLegend />
       </div>
 
-      <PeriodSelector state={periodState} inlineTrimestral hideLegend />
+      <PeriodSelector state={periodState} inlineTrimestral hideLegend modes={MODES_COM_SEMANAL} />
 
       <div className="space-y-6">
         {quadrosComPeso.map((quadro, idx) => (
@@ -342,6 +360,7 @@ export default function KpiBloco3Pecas() {
             key={idx}
             quadro={quadro}
             activePeriods={activePeriods}
+            mesTotalKey={periodState.mesTotalKey}
             year={year}
             onSalvarPeso={handleSalvarPeso}
             vendedorSelector={quadro.tituloGerente === QUADRO_VENDEDOR && (

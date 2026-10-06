@@ -51,6 +51,8 @@ function buildUrl(endpoint, params = {}) {
   if (params.vendedor) qs.set('vendedor', params.vendedor)
   if (params.consultor) qs.set('consultor', params.consultor)
   if (params.year) qs.set('year', params.year)
+  if (params.refresh) qs.set('refresh', '1')
+  if (params.indicador) qs.set('indicador', params.indicador)
   const q = qs.toString()
   return `${BASE}/${endpoint}${q ? `?${q}` : ''}`
 }

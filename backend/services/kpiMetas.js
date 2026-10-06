@@ -70,7 +70,7 @@ async function carregarBase(ano) {
 
   const [metas, calendario] = await Promise.all([
     fetchTudo(() => supabaseAdmin.from('fato_metas_publicadas')
-      .select('empresa_id, empresa_nome, mes, tipo, colaborador_nome, departamento_nome, meta_faturamento, meta_servicos')
+      .select('empresa_id, empresa_nome, mes, tipo, colaborador_nome, departamento_nome, meta_faturamento, meta_servicos, fat_parceira')
       .eq('ano', ano).order('id')),
     fetchTudo(() => supabaseAdmin.from('fato_calendario')
       .select('empresa_id, data, dias_uteis')
@@ -397,4 +397,18 @@ export async function getMetaMargemBalcaoPeriodos(ano, { empresaNome = null, ven
   }
   if (!meta.some(v => v > 0)) return null
   return razaoPeriodos(lucro, meta, ano)
+}
+
+/**
+ * Meta de Faturamento TRP (marca parceira, em Peças) por período: parcela TRP da Meta R$ dos vendedores
+ * publicada em fato_metas_publicadas.fat_parceira. vendedorNome = null → soma de todos.
+ */
+export async function getMetaTrpPeriodos(ano, { vendedorNome = null } = {}) {
+  const base = await carregarBase(ano)
+  if (!base) return null
+  const alvo = vendedorNome ? normNome(vendedorNome) : null
+  const linhas = base.metas
+    .filter(r => r.tipo === 'pecas' && r.fat_parceira != null && (!alvo || normNome(r.colaborador_nome) === alvo))
+    .map(r => ({ ...r, meta_faturamento: r.fat_parceira }))
+  return periodizarMetas(linhas, ano, base.calendario)
 }

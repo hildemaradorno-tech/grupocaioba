@@ -38,7 +38,7 @@ import {
   sincronizacaoEmAndamento,
 } from '../services/kpiSyncService.js'
 import { getPesos, setPeso, aplicarPesos } from '../services/kpiPesos.js'
-import { getMetaPecasPeriodos, getMetaOficinaPeriodos, getMetaMecanicoPeriodos, getMetaMargemOficinaPeriodos, getMetaPecasBalcaoPeriodos, getMetaMargemBalcaoPeriodos } from '../services/kpiMetas.js'
+import { getMetaPecasPeriodos, getMetaOficinaPeriodos, getMetaMecanicoPeriodos, getMetaMargemOficinaPeriodos, getMetaPecasBalcaoPeriodos, getMetaMargemBalcaoPeriodos, getMetaTrpPeriodos } from '../services/kpiMetas.js'
 
 const router = Router()
 
@@ -346,7 +346,7 @@ function computeHoras(rof042, rof096) {
  *                  vendedor selecionado. Alimentam a coluna Meta do Faturamento Total
  *                  Peças Balcão.
  */
-function mergeBloco3Pecas(quadros, pecas, balcaoTodas, balcaoVendedor, metaTodos, metaVendedor, margemTodos = null, margemVendedor = null) {
+function mergeBloco3Pecas(quadros, pecas, balcaoTodas, balcaoVendedor, metaTodos, metaVendedor, margemTodos = null, margemVendedor = null, trpTodos = null) {
   if (!pecas && !balcaoTodas) return quadros
   const r = (v) => (v != null ? Math.round(v) : null)
   const p = (v) => (v != null ? v : null)
@@ -366,7 +366,7 @@ function mergeBloco3Pecas(quadros, pecas, balcaoTodas, balcaoVendedor, metaTodos
       }
       if (pecas && isAtacado(quadro.tituloGerente)) {
         switch (kpi.id) {
-          case 3: return injectPeriods(kpi, pecas.faturamentoTrp, r)
+          case 3: return injectMeta(injectPeriods(kpi, pecas.faturamentoTrp, r), trpTodos)
         }
       }
       return kpi
@@ -387,6 +387,7 @@ const BLOCO_SERVICOS_TEMPLATE = [
       { id: 4, indicador: 'Produtividade da Oficina',                     orientacao: '>', metrica: '%',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
       { id: 5, indicador: 'O.S. aberta sem veículo na oficina',           orientacao: '<', metrica: '%',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
       { id: 6, indicador: 'O.S. >= 30 dias (% do Valor)',                 orientacao: '<', metrica: '%',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      { id: 7, indicador: 'Ticket Médio da Oficina',                      orientacao: '>', metrica: 'R$', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
     ],
   },
   {
@@ -412,6 +413,17 @@ const BLOCO_SERVICOS_TEMPLATE = [
  *                 'consultor' sem seleção = todos os tipos mecanico+funilaria+
  *                 terceiros; com consultor selecionado = só a meta dele).
  */
+// Ticket médio do consultor = faturamento da oficina (peças líquidas + serviços) ÷ OS únicas (passagens).
+function ticketMedioConsultor(consultorData) {
+  const fat = sumPeriods(consultorData?.pecasOficina?.liquido, consultorData?.servicos?.faturamentoBruto) ?? {}
+  const pas = consultorData?.pecasOficina?.passagens ?? {}
+  const out = {}
+  for (const k of new Set([...Object.keys(fat), ...Object.keys(pas)])) {
+    out[k] = (pas[k] > 0 && fat[k] != null) ? fat[k] / pas[k] : null
+  }
+  return out
+}
+
 function mergeBlocoServicos(quadros, consultorData, mecanicoData, metaConsultor, metaMecanico, margemConsultor = null) {
   const r = (v) => (v != null ? Math.round(v) : null)
   const p = (v) => (v != null ? v : null)
@@ -423,6 +435,7 @@ function mergeBlocoServicos(quadros, consultorData, mecanicoData, metaConsultor,
           case 1: return injectMeta(injectPeriods(kpi, sumPeriods(consultorData?.pecasOficina?.liquido, consultorData?.servicos?.faturamentoBruto), r), metaConsultor)
           case 2: return injectMeta(injectPeriods(kpi, consultorData?.servicos?.margemBruta ?? {}, p), margemConsultor?.servicos)
           case 3: return injectMeta(injectPeriods(kpi, consultorData?.pecasOficina?.margemPct ?? {}, p), margemConsultor?.pecas)
+          case 7: return injectPeriods(kpi, ticketMedioConsultor(consultorData), r)
         }
         return kpi
       })
@@ -578,7 +591,10 @@ router.get('/bloco3-pecas', requireConfig, wrap(async (req, res) => {
     try { margemVendedor = await getMetaMargemBalcaoPeriodos(year, { vendedorNome: vendedor }) } catch (_) { margemVendedor = null }
   }
 
-  let quadros = mergeBloco3Pecas(BLOCO3_PECAS_TEMPLATE, extractorData?.bloco3PecasRealizado, balcaoTodas, balcaoVendedor, metaTodos, metaVendedor, margemTodos, margemVendedor)
+  let trpTodos = null
+  try { trpTodos = await getMetaTrpPeriodos(year) } catch (_) { /* sem meta */ }
+
+  let quadros = mergeBloco3Pecas(BLOCO3_PECAS_TEMPLATE, extractorData?.bloco3PecasRealizado, balcaoTodas, balcaoVendedor, metaTodos, metaVendedor, margemTodos, margemVendedor, trpTodos)
   const pesos = await getPesos('bloco3-pecas')
   quadros = aplicarPesos(quadros, pesos)
 
@@ -789,6 +805,64 @@ const EMPRESA_KEY_TO_RECEP = {
 
 // Descrição de origem de cada linha da Auditoria de Fontes (botão "i" na tela): arquivo,
 // coluna usada e filtros aplicados. Letras/índices seguem o mapa C do sharepointExtractor.
+// ── Mesclagem de várias empresas no Auditoria de Fontes ──────────────────────
+// Mapas por período (q1..q4, fy, meses, semanas) são somados; percentuais são
+// recalculados a partir das somas (lucro ÷ faturamento), nunca somados.
+function somarMapas(mapas) {
+  const chaves = new Set(mapas.flatMap(m => Object.keys(m || {})))
+  const out = {}
+  for (const k of chaves) {
+    const vals = mapas.map(m => m?.[k]).filter(v => typeof v === 'number')
+    out[k] = vals.length ? vals.reduce((s, v) => s + v, 0) : null
+  }
+  return out
+}
+function razaoMapas(num, den) {
+  const out = {}
+  for (const k of new Set([...Object.keys(num || {}), ...Object.keys(den || {})])) {
+    const n = num?.[k], d = den?.[k]
+    out[k] = (typeof d === 'number' && d > 0 && typeof n === 'number') ? (n / d) * 100 : null
+  }
+  return out
+}
+function mesclarFontes(partes) {
+  const primeiroMeta = (campo) => partes.map(p => p[campo]?.metaData).find(Boolean) ?? null
+  const ext = partes.map(p => p.extractorData).filter(Boolean)
+  const srv = partes.map(p => p.servicosData).filter(Boolean)
+  const r42 = partes.map(p => p.rof042Data).filter(Boolean)
+  const r96 = partes.map(p => p.rof096Data).filter(Boolean)
+  const blc = partes.map(p => p.blcData).filter(Boolean)
+  const campos = (lista, nomes) => Object.fromEntries(nomes.map(n => [n, somarMapas(lista.map(x => x[n]))]))
+
+  let extractorData = null
+  if (ext.length) {
+    const auds = ext.map(e => e.auditoria ?? {})
+    const chaves = new Set(auds.flatMap(a => Object.keys(a)))
+    const aud = {}
+    for (const k of chaves) {
+      if (/_margem$/.test(k)) continue
+      aud[k] = somarMapas(auds.map(a => a[k]))
+    }
+    aud.ind3_margem = razaoMapas(aud.ind3_lucroLiquido, aud.ind3_fatLiquido)
+    extractorData = { auditoria: aud, metaData: ext.find(e => e.metaData)?.metaData ?? null }
+  }
+  let servicosData = null
+  if (srv.length) {
+    const c = campos(srv, ['faturamentoBruto', 'margemBrutaRs'])
+    servicosData = { ...c, margemBruta: razaoMapas(c.margemBrutaRs, c.faturamentoBruto), metaData: primeiroMeta('servicosData') }
+  }
+  let rof042Data = null
+  if (r42.length) rof042Data = { ...campos(r42, ['hrVend', 'hrAplic', 'vlLiquido']), metaData: primeiroMeta('rof042Data') }
+  let rof096Data = null
+  if (r96.length) rof096Data = { ...campos(r96, ['disponiveis']), metaData: primeiroMeta('rof096Data') }
+  let blcData = null
+  if (blc.length) {
+    const c = campos(blc, ['vendas', 'devolucoes', 'liquido', 'margemContVendas', 'margemContDevolucoes', 'margemContLiquido'])
+    blcData = { ...c, margemPct: razaoMapas(c.margemContLiquido, c.liquido), metaData: primeiroMeta('blcData') }
+  }
+  return { extractorData, servicosData, rof042Data, rof096Data, blcData }
+}
+
 function infoAuditoria(row) {
   if (row.fonte === 'RESULTADO') return null
   const f = row.fonte
@@ -836,23 +910,41 @@ function infoAuditoria(row) {
 // GET /api/kpi/auditoria?year=2026&empresa=CAMPO+GRANDE  — valores brutos por fonte para conferência
 router.get('/auditoria', requireConfig, wrap(async (req, res) => {
   const year        = parseInt(req.query.year) || new Date().getFullYear()
-  const empresaKey  = req.query.empresa && req.query.empresa !== 'todas' ? req.query.empresa : null
-  const empresaRecep = empresaKey ? EMPRESA_KEY_TO_RECEP[empresaKey.toUpperCase()] ?? null : null
+  if (req.query.refresh === '1') clearExtractorCache()
+  // empresas: uma, várias (separadas por vírgula) ou nenhuma = todas.
+  const lista = String(req.query.empresas || req.query.empresa || '')
+    .split(',').map(e => e.trim()).filter(e => e && e !== 'todas')
+  const indicadorId = parseInt(req.query.indicador) || null
+  const precisa = (fontes) => !indicadorId || fontes.includes(indicadorId)
+  const USA = { consolidado: [1, 2, 5, 11, 12], servicos: [1, 3, 4, 12], rof042: [6, 7, 8], rof096: [6, 7], balcao: [9, 10] }
 
-  let extractorData = null, servicosData = null, rof042Data = null, rof096Data = null, blcData = null
-  try {
-    ;[extractorData, servicosData, rof042Data, rof096Data, blcData] = await Promise.allSettled([
-      getConsolidatedKpiData(year, empresaKey),
-      extractServicosOficina(year, empresaRecep),
-      extractROF042(year, empresaKey),
-      extractROF096(year, empresaKey),
-      extractBalcao(year, empresaKey),
-    ]).then(rs => rs.map(r => r.status === 'fulfilled' ? r.value : null))
-  } catch (_) {}
+  const buscarFontes = async (empresaKey) => {
+    const empresaRecep = empresaKey ? EMPRESA_KEY_TO_RECEP[empresaKey.toUpperCase()] ?? null : null
+    const pedidos = [
+      precisa(USA.consolidado) ? getConsolidatedKpiData(year, empresaKey) : null,
+      precisa(USA.servicos)    ? extractServicosOficina(year, empresaRecep) : null,
+      precisa(USA.rof042)      ? extractROF042(year, empresaKey) : null,
+      precisa(USA.rof096)      ? extractROF096(year, empresaKey) : null,
+      precisa(USA.balcao)      ? extractBalcao(year, empresaKey) : null,
+    ]
+    const [extractorData, servicosData, rof042Data, rof096Data, blcData] = await Promise.allSettled(
+      pedidos.map(p => p ?? Promise.resolve(null))
+    ).then(rs => rs.map(r => r.status === 'fulfilled' ? r.value : null))
+    return { extractorData, servicosData, rof042Data, rof096Data, blcData }
+  }
 
-  if (!extractorData) return res.status(404).json({ error: 'Sem dados para o ano solicitado.' })
+  let fontes
+  if (lista.length <= 1) {
+    fontes = await buscarFontes(lista[0] ?? null)
+  } else {
+    const partes = await Promise.all(lista.map(buscarFontes))
+    fontes = mesclarFontes(partes)
+  }
+  const { extractorData, servicosData, rof042Data, rof096Data, blcData } = fontes
 
-  const { auditoria: a } = extractorData
+  if (precisa(USA.consolidado) && !extractorData) return res.status(404).json({ error: 'Sem dados para o ano solicitado.' })
+
+  const a = extractorData?.auditoria ?? {}
 
   const indicadores = [
       // ── Indicador 1 ──────────────────────────────────────────────────────
@@ -861,7 +953,7 @@ router.get('/auditoria', requireConfig, wrap(async (req, res) => {
       { id: 1, indicador: 'Faturamento Total Oficina', fonte: 'Fonte A — RPR001',        metrica: 'VEN − DVE (líquido)',          tipo: 'R$', valores: a.ind1_fatLiquido },
       { id: 1, indicador: 'Faturamento Total Oficina', fonte: 'Fonte B — Recepcionista', metrica: 'tot_serv',                     tipo: 'R$', valores: servicosData?.faturamentoBruto ?? {} },
       { id: 1, indicador: 'Faturamento Total Oficina', fonte: 'RESULTADO',               metrica: 'Fonte A líquido + Fonte B',    tipo: 'R$', valores: (() => {
-        const a1 = a.ind1_fatLiquido, b1 = servicosData?.faturamentoBruto ?? {}
+        const a1 = a.ind1_fatLiquido ?? {}, b1 = servicosData?.faturamentoBruto ?? {}
         const r = {}; for (const k of Object.keys(a1)) r[k] = (a1[k] ?? 0) + (b1[k] ?? 0); return r
       })() },
 
@@ -903,6 +995,21 @@ router.get('/auditoria', requireConfig, wrap(async (req, res) => {
       { id: 10, indicador: 'Margem Bruta Peças Balcão', fonte: 'RESULTADO',        metrica: 'Fonte A ÷ Fonte B × 100',     tipo: '%',  valores: blcData?.margemPct              ?? {} },
 
       // ── Indicador 11 — Faturamento TRP ──────────────────────────────────
+      // ── Indicador 12 — Ticket Médio da Oficina (Faturamento Total Oficina ÷ Passagens) ──
+      { id: 12, indicador: 'Ticket Médio da Oficina', fonte: 'Fonte A — Faturamento Total Oficina', metrica: 'Fonte A líquido + Fonte B', tipo: 'R$', valores: (() => {
+        const a1 = a.ind1_fatLiquido ?? {}, b1 = servicosData?.faturamentoBruto ?? {}
+        const r = {}; for (const k of new Set([...Object.keys(a1), ...Object.keys(b1)])) r[k] = (a1[k] ?? 0) + (b1[k] ?? 0); return r
+      })() },
+      { id: 12, indicador: 'Ticket Médio da Oficina', fonte: 'Fonte B — RPR001', metrica: 'OS únicas (passagens na oficina)', tipo: 'un', valores: a.ind12_passagens ?? {} },
+      { id: 12, indicador: 'Ticket Médio da Oficina', fonte: 'RESULTADO', metrica: 'Fonte A ÷ Fonte B', tipo: 'R$', valores: (() => {
+        const fat = (() => { const a1 = a.ind1_fatLiquido ?? {}, b1 = servicosData?.faturamentoBruto ?? {}; const r = {}; for (const k of new Set([...Object.keys(a1), ...Object.keys(b1)])) r[k] = (a1[k] ?? 0) + (b1[k] ?? 0); return r })()
+        const pas = a.ind12_passagens ?? {}
+        const r = {}
+        for (const k of new Set([...Object.keys(fat), ...Object.keys(pas)])) r[k] = (pas[k] > 0 && fat[k] != null) ? fat[k] / pas[k] : null
+        return r
+      })() },
+
+      // ── Indicador 11 — Faturamento TRP ──
       { id: 11, indicador: 'Faturamento TRP', fonte: 'Fonte A — RPR001', metrica: 'NFItem_VlTotal — VEN (ProdTipoCod 2,24,27,28)', tipo: 'R$', valores: a.ind10_trpVendas },
       { id: 11, indicador: 'Faturamento TRP', fonte: 'Fonte A — RPR001', metrica: 'NFItem_VlTotal — DVE (ProdTipoCod 2,24,27,28)', tipo: 'R$', valores: a.ind10_trpDevolucoes },
       { id: 11, indicador: 'Faturamento TRP', fonte: 'RESULTADO',        metrica: 'VEN − DVE (líquido)',                           tipo: 'R$', valores: a.ind10_trpLiquido },
@@ -954,8 +1061,8 @@ router.get('/auditoria', requireConfig, wrap(async (req, res) => {
   ]
   res.json({
     year,
-    indicadores: indicadores.map(r => ({ ...r, info: infoAuditoria(r) })),
-    metaData: extractorData.metaData,
+    indicadores: indicadores.filter(r => !indicadorId || r.id === indicadorId).map(r => ({ ...r, info: infoAuditoria(r) })),
+    metaData: (extractorData ?? rof042Data ?? rof096Data ?? blcData ?? servicosData)?.metaData ?? null,
   })
 }))
 
@@ -1008,25 +1115,5 @@ router.use((err, req, res, _next) => {
   console.error('[KPI]', err.message)
   res.status(500).json({ error: 'sharepoint_error', message: err.message })
 })
-
-// Pré-aquece as fontes da aba Serviços/Peças (RPR001, Recepcionista, ROF042, ROF096) pra que
-// escolher um consultor/mecânico/vendedor na tela não espere o download do SharePoint.
-// Reaquece logo depois do TTL do cache do extrator (KPI_CACHE_TTL_MIN, padrão 15 min) vencer.
-async function aquecerFontesPessoa() {
-  if (!isConfigured()) return
-  const y = new Date().getFullYear()
-  await Promise.allSettled([
-    extractPecasOficinaPorConsultor(y, null, null),
-    extractServicosPorConsultor(y, null, null),
-    extractROF042PorMecanico(y, null, null),
-    extractROF096PorMecanico(y, null, null),
-    listVendedoresBalcao(y, null),
-  ])
-}
-if (process.env.KPI_AQUECER_PESSOA !== '0') {
-  const ttlMin = parseInt(process.env.KPI_CACHE_TTL_MIN || '15')
-  setTimeout(aquecerFontesPessoa, 5_000).unref()
-  setInterval(aquecerFontesPessoa, (ttlMin * 60 + 30) * 1000).unref()
-}
 
 export default router

@@ -2,10 +2,11 @@ import React from 'react'
 import {
   T_PERIODS, T_LABELS,
   M_PERIODS, M_LABELS,
-  MONTH_WEEK_RANGES, S_LABELS,
+  MONTH_WEEK_RANGES, S_LABELS, 
 } from '../../utils/kpiPeriods'
 
 const VIEW_MODES = ['mensal', 'trimestral']
+export const MODES_COM_SEMANAL = ['mensal', 'trimestral', 'semanal']
 const VIEW_LABELS_MAP = { trimestral: 'Trimestral', mensal: 'Mensal', semanal: 'Semanal' }
 
 // ── helpers de data atual ────────────────────────────────────────────────────
@@ -109,7 +110,8 @@ export function usePeriodSelector(pageKey, defaultViewMode = 'mensal') {
   const activePeriods = React.useMemo(() => {
     if (viewMode === 'trimestral') return T_PERIODS.filter(p => visibleT[p])
     if (viewMode === 'mensal')     return [...M_PERIODS.filter(p => visibleM[p]), ...(visibleM.fy ? ['fy'] : [])]
-    return (MONTH_WEEK_RANGES[weekMonth] || []).filter(p => visibleS[p])
+    // Visão semanal: semanas selecionadas + (se o pill MTD estiver ligado) a coluna do total do mês.
+    return [...(MONTH_WEEK_RANGES[weekMonth] || []).filter(p => visibleS[p]), ...(visibleS.mtd ? [weekMonth] : [])]
   }, [viewMode, visibleT, visibleM, weekMonth, visibleS])
 
   const toggleT = (p) => setVisibleT(prev => ({ ...prev, [p]: !prev[p] }))
@@ -132,6 +134,7 @@ export function usePeriodSelector(pageKey, defaultViewMode = 'mensal') {
     visibleT, visibleM, visibleS,
     weekMonth, setWeekMonth,
     activePeriods,
+    mesTotalKey: viewMode === 'semanal' && visibleS.mtd ? weekMonth : null,
     toggleT, toggleM, toggleS,
     selectAllT, clearAllT, selectAllM, clearAllM, selectAllS, clearAllS,
   }
@@ -217,6 +220,7 @@ export default function PeriodSelector({ state, hideLegend = false, modes = VIEW
                 {S_LABELS[p]}
               </button>
             ))}
+            <button onClick={() => toggleS('mtd')} title="Coluna com o total do mês" className={`${btnBase} ${visibleS.mtd ? btnOn : btnOff}`}>MTD</button>
             <button onClick={selectAllS} className="text-[10px] px-2 py-0.5 rounded border border-slate-300 text-slate-500 hover:border-blue-400 hover:text-blue-600 transition-colors">Todos</button>
             <button onClick={clearAllS}  className="text-[10px] px-2 py-0.5 rounded border border-slate-300 text-slate-500 hover:border-red-400 hover:text-red-500 transition-colors">Limpar</button>
           </>
