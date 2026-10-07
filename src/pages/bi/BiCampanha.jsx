@@ -4,7 +4,7 @@ import { apiService } from '../../services/api'
 import { sincronizarCampanha } from '../../services/kpiService'
 import { useAuth } from '../../context/AuthContext'
 import {
-  CAMPANHA, REGRAS_PADRAO, faixasDe, combinarMetasUnidade, trimestreDoMes, atingimentoBlocoMatriz, montarSemanas, pesoSemana, pesoTotal, pctTxt,
+  CAMPANHA, REGRAS_PADRAO, faixasDe, trimestreDoMes, atingimentoBlocoMatriz, montarSemanas, pesoSemana, pesoTotal, pctTxt,
   mesclarRegras, metasAprovadasDaUnidade, metaDoConsultor,
 } from '../../utils/campanhaPosVenda'
 
@@ -172,7 +172,6 @@ export default function BiCampanha() {
     setRegras(novas)
     setOrigemRegras({ ano: Number(ano), mes: Number(mes), unidade, atualizado_em: new Date().toISOString(), atualizado_por: user?.email || null })
   }
-  const nomeMesDe = (m) => MESES.find((x) => Number(x.v) === Number(m))?.label
 
   const { semanas, semCalendario } = useMemo(
     () => montarSemanas(Number(ano), Number(mes), calendarios, CAMPANHA),
@@ -217,27 +216,6 @@ export default function BiCampanha() {
   const consultores = useMemo(() => consultoresDaUnidade(funcionarios, u), [funcionarios, u])
   const metasUnidade = useMemo(() => metasAprovadasDaUnidade(metasAprovadas, u.empresaId), [metasAprovadas, u.empresaId])
 
-  // Programa trimestral: realizado e metas aprovadas do 1º mês do trimestre até o mês escolhido
-  // (acumulado), para a visão "Trimestre" da Apuração.
-  const tri = regras.modelo === 'trimestral' && regras.trimestre && Number(ano) === Number(regras.trimestre.ano)
-    && regras.trimestre.meses.includes(Number(mes)) ? regras.trimestre : null
-  const mesesTri = tri ? tri.meses.filter((m) => m <= Number(mes)) : []
-  const chaveTri = mesesTri.join(',')
-  const [dadosTri, setDadosTri] = useState(null)
-  useEffect(() => {
-    if (!chaveTri) { setDadosTri(null); return undefined }
-    let vivo = true
-    setDadosTri(null)
-    const meses = chaveTri.split(',').map(Number)
-    Promise.all(meses.map((m) => Promise.all([apiService.getCampanhaDiario(Number(ano), m), apiService.getCampanhaMetasAprovadas(Number(ano), m)])))
-      .then((res) => { if (vivo) setDadosTri({ diario: res.flatMap((r) => r[0]), metas: res.map((r) => r[1]) }) })
-      .catch(() => { if (vivo) setDadosTri({ diario: [], metas: [] }) })
-    return () => { vivo = false }
-  }, [ano, chaveTri, recarregar])
-  const metasTri = useMemo(
-    () => (dadosTri ? combinarMetasUnidade(dadosTri.metas.map((a) => metasAprovadasDaUnidade(a, u.empresaId))) : null),
-    [dadosTri, u.empresaId],
-  )
   // Blocos 1 e 2 da Matriz KPIs (só existem por trimestre): trimestre do mês escolhido.
   const [kpiBlocos, setKpiBlocos] = useState({})
   useEffect(() => {
@@ -251,7 +229,6 @@ export default function BiCampanha() {
     pesos: regras.pesosBlocos,
   }), [kpiBlocos, qMatriz, regras.pesosBlocos])
 
-  const rotuloTri = mesesTri.length ? `Trimestre acumulado · ${nomeMesDe(mesesTri[0])} a ${nomeMesDe(mesesTri[mesesTri.length - 1])}` : null
   const mecanicos = useMemo(() => mecanicosDaUnidade(funcionarios, u, regras), [funcionarios, u, regras])
   const chefes = useMemo(() => porCargosDaUnidade(funcionarios, u, regras, 'chefe'), [funcionarios, u, regras])
   const gerentes = useMemo(() => porCargosDaUnidade(funcionarios, u, regras, 'gerente'), [funcionarios, u, regras])
@@ -261,10 +238,6 @@ export default function BiCampanha() {
   const metasPorUnidade = useMemo(
     () => Object.fromEntries(CAMPANHA.unidades.map((x) => [x.id, metasAprovadasDaUnidade(metasAprovadas, x.empresaId)])),
     [metasAprovadas],
-  )
-  const metasTriPorUnidade = useMemo(
-    () => (dadosTri ? Object.fromEntries(CAMPANHA.unidades.map((x) => [x.id, combinarMetasUnidade(dadosTri.metas.map((a) => metasAprovadasDaUnidade(a, x.empresaId)))])) : null),
-    [dadosTri],
   )
 
   return (
@@ -338,9 +311,8 @@ export default function BiCampanha() {
       )}
       {aba === 'apuracao' && (
         <AbaApuracao campanha={campanha} regras={regras} unidade={unidade} ehTrucks={ehTrucks} diario={diario} consultores={consultores} mecanicos={mecanicos} chefes={chefes} gerentes={gerentes}
-          gerentesGerais={gerentesGerais} metasPorUnidade={metasPorUnidade} metasTriPorUnidade={metasTriPorUnidade}
-          rotuloTri={rotuloTri} diarioTri={dadosTri?.diario ?? null} metasTri={metasTri}
-          blocosMatriz={blocosMatriz} nomeMes={nomeMes}
+          gerentesGerais={gerentesGerais} metasPorUnidade={metasPorUnidade}
+          blocosMatriz={blocosMatriz}
           metasUnidade={metasUnidade} funcionarios={funcionarios} erroFunc={erroFunc} />
       )}
       {aba === 'resultado' && <AbaResultado />}
@@ -349,35 +321,24 @@ export default function BiCampanha() {
 }
 
 // ======================================================================================
-// Apuração — um bloco por função; unidade e período (semana ou mês) valem para todos
+// Apuração — só o Bloco 3 (Individual) por enquanto (Blocos 1 e 2 ainda não têm dados).
+// Uma coluna por semana do mês (mesmas semanas da Matriz KPIs) com a contribuição da semana e,
+// no fim, o Total = soma das contribuições das semanas.
 // ======================================================================================
 function AbaApuracao({ campanha, regras, unidade, ehTrucks, diario, consultores, mecanicos, chefes, gerentes, metasUnidade, funcionarios, erroFunc,
-  gerentesGerais, metasPorUnidade, metasTriPorUnidade, rotuloTri, diarioTri, metasTri, blocosMatriz }) {
-  // Período avaliado: o mês escolhido no topo; no programa trimestral, o trimestre acumulado até ele.
-  const periodo = rotuloTri ? 'TRI' : 'MES'
-  const noTri = periodo === 'TRI'
-  const diarioUsado = noTri ? diarioTri : diario
-  const metasUsadas = noTri ? (metasTri || metasUnidade) : metasUnidade
-  const comum = { campanha, regras, unidade, periodo, diario: diarioUsado, blocosMatriz }
+  gerentesGerais, metasPorUnidade, blocosMatriz }) {
+  const comum = { campanha, regras, unidade, diario, blocosMatriz, carregandoFunc: funcionarios === null }
 
   return (
     <div className="space-y-5">
       {ehTrucks ? (
-        <BlocoGerenteGeral {...comum} gerentesGerais={gerentesGerais}
-          metasPorUnidade={noTri ? (metasTriPorUnidade || metasPorUnidade) : metasPorUnidade} carregandoFunc={funcionarios === null} />
+        <BlocoGerenteGeral {...comum} gerentesGerais={gerentesGerais} metasPorUnidade={metasPorUnidade} />
       ) : (
       <>
-      <BlocoConsultores {...comum}
-        consultores={consultores} metasUnidade={metasUsadas} carregandoFunc={funcionarios === null} erroFunc={erroFunc} />
-
-      <BlocoMecanicos {...comum}
-        mecanicos={mecanicos} carregandoFunc={funcionarios === null} />
-
-      <BlocoChefe {...comum} chefes={chefes}
-        mecanicos={mecanicos} consultores={consultores} metasUnidade={metasUsadas} carregandoFunc={funcionarios === null} />
-
-      <BlocoGerente {...comum} gerentes={gerentes}
-        mecanicos={mecanicos} consultores={consultores} metasUnidade={metasUsadas} carregandoFunc={funcionarios === null} />
+      <BlocoConsultores {...comum} consultores={consultores} metasUnidade={metasUnidade} erroFunc={erroFunc} />
+      <BlocoMecanicos {...comum} mecanicos={mecanicos} />
+      <BlocoChefe {...comum} chefes={chefes} mecanicos={mecanicos} consultores={consultores} metasUnidade={metasUnidade} />
+      <BlocoGerente {...comum} gerentes={gerentes} mecanicos={mecanicos} consultores={consultores} metasUnidade={metasUnidade} />
       </>
       )}
     </div>
@@ -385,9 +346,10 @@ function AbaApuracao({ campanha, regras, unidade, ehTrucks, diario, consultores,
 }
 
 // ======================================================================================
-// Blocos de cargo da Apuração — resumo por pessoa: indicador, contribuição e bloco da Matriz KPIs
-// Contribuição = peso do indicador × atingimento do indicador (realizado ÷ meta), como na coluna
-// de contribuição da Matriz KPIs. A soma das contribuições é o atingimento que define a faixa.
+// Blocos de cargo da Apuração — por pessoa e por semana: atingimento do Bloco 3 (soma peso ×
+// atingimento de cada indicador, com a meta do mês proporcional aos dias úteis da semana).
+// Contribuição da semana = peso do Bloco 3 × atingimento da semana × peso da semana
+// (dias úteis da semana ÷ dias úteis do mês) — por isso a soma das semanas fecha o mês.
 // ======================================================================================
 
 const MATRIZ = {
@@ -399,26 +361,23 @@ const MATRIZ = {
   unidade: (u, indicador) => `Bloco 3 - Serviços › ${u.quadroMatriz} › ${indicador}`,
 }
 
-// Contexto do período escolhido (semana ou mês) para uma unidade.
-function periodoDaUnidade(campanha, unidade, periodo) {
-  const u = campanha.unidades.find((x) => x.id === unidade)
+const unidadeDe = (campanha, unidade) => campanha.unidades.find((x) => x.id === unidade)
+// Peso da semana na unidade: dias úteis da semana ÷ dias úteis do mês (calendário da empresa).
+function fracaoSemana(campanha, unidade, s) {
   const pt = pesoTotal(campanha, unidade)
-  const mensal = periodo === 'MES' || periodo === 'TRI'
-  const sem = campanha.semanas.find((s) => s.id === periodo)
-  const fr = mensal ? 1 : (pt ? pesoSemana(sem, unidade) / pt : 0)
-  return { u, mensal, sem, fr }
+  return pt ? pesoSemana(s, unidade) / pt : 0
 }
+const dentro = (r, s) => r.data >= s.inicio && r.data <= s.fim
 
-// Realizado da unidade no período (usado por Chefe e Gerente): horas dos mecânicos da campanha
+// Realizado da unidade na semana (usado por Chefe e Gerente): horas dos mecânicos da campanha
 // e faturamento/margem dos consultores da campanha, somados de fato_campanha_diario.
-function realizadoDaUnidade(diario, u, mensal, sem, mecanicos, consultores) {
+function realizadoDaUnidade(diario, u, s, mecanicos, consultores) {
   const nomesMec = new Set(mecanicos.map((m) => m.nomeErp))
   const nomesCons = new Set(consultores.map((c) => c.nomeErp))
   const codigosCons = new Set(consultores.map((c) => c.codigo).filter(Boolean))
   const t = { vend: 0, aplic: 0, disp: 0, serv: 0, pecas: 0, margem: 0 }
   for (const r of diario || []) {
-    if (r.empresa !== u.empresaErp) continue
-    if (!mensal && (r.data < sem.inicio || r.data > sem.fim)) continue
+    if (r.empresa !== u.empresaErp || !dentro(r, s)) continue
     if (r.tipo === 'mecanico' && nomesMec.has(r.pessoa_nome)) {
       t.vend += Number(r.horas_vendidas) || 0
       t.aplic += Number(r.horas_aplicadas) || 0
@@ -464,20 +423,16 @@ function Info({ titulo, children }) {
   )
 }
 
-// Card de uma função: uma linha por pessoa e os blocos da Matriz KPIs em colunas. Cada célula
-// mostra a contribuição do bloco (peso do bloco × atingimento do bloco); o Bloco 3 é o
-// atingimento da função (soma peso × atingimento de cada indicador — detalhe no tooltip).
-function ResumoContribuicao({ titulo, cor, pessoas, carregando, vazio, blocosMatriz, matrizB3 }) {
+// Atingimento do Bloco 3 = soma peso × atingimento dos indicadores (null se faltar algum).
+const atingimentoB3 = (itens) => (itens.some((it) => it.atingimento == null) ? null : itens.reduce((a, it) => a + it.peso * it.atingimento, 0))
+
+// Card de uma função: uma linha por pessoa, uma coluna por semana com a contribuição do Bloco 3
+// na semana, e o Total = soma das semanas. linhas: [{ id, nome, alerta?, semanas: [{ fr, itens }] }]
+function ResumoSemanal({ titulo, cor, campanha, linhas, carregando, vazio, blocosMatriz, matrizB3 }) {
   const VAZIO = <span className="text-slate-300">—</span>
-  const P = blocosMatriz.pesos || {}
-  const q = blocosMatriz.q.toUpperCase()
-  const cols = [
-    { k: 'companhia', titulo: 'Bloco 1 · Companhia', origem: `Matriz KPIs › Bloco 1 - Corporativo (${q})` },
-    { k: 'departamento', titulo: 'Bloco 2 · Departamento', origem: `Matriz KPIs › Bloco 2 - Departamental › Pós-Vendas (${q})` },
-    { k: 'individual', titulo: 'Bloco 3 · Individual', origem: `Matriz KPIs › ${matrizB3}` },
-  ]
-  const TD = 'p-2 text-right whitespace-nowrap tabular-nums'
-  const G = 'border-l border-slate-200'
+  const pesoB3 = blocosMatriz.pesos?.individual || 0
+  const semanas = campanha.semanas
+  const TD = 'p-2 text-right whitespace-nowrap tabular-nums border-l border-slate-200'
   return (
     <div className={CARD}>
       <div className="p-4 pb-3">
@@ -487,40 +442,50 @@ function ResumoContribuicao({ titulo, cor, pessoas, carregando, vazio, blocosMat
       </div>
       {carregando ? (
         <p className="px-4 pb-4 text-xs text-slate-500 flex items-center gap-2"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Carregando…</p>
-      ) : !pessoas.length ? (
+      ) : !linhas.length ? (
         <p className="px-4 pb-4 text-xs text-slate-500">{vazio}</p>
       ) : (
         <div className="overflow-x-auto">
-          {/* Larguras fixas: as colunas dos blocos ficam alinhadas em todas as tabelas de cargo. */}
+          {/* Larguras fixas: as colunas ficam alinhadas em todas as tabelas de cargo. */}
           <table className="w-full min-w-[56rem] table-fixed text-xs border-collapse">
             <colgroup>
-              <col className="w-[32%]" />
-              {cols.map((c) => <col key={c.k} className="w-[19.5%]" />)}
-              <col className="w-[9.5%]" />
+              <col className="w-[28%]" />
+              {semanas.map((s) => <col key={s.id} />)}
+              <col className="w-[11%]" />
             </colgroup>
             <thead>
-              <tr className="bg-slate-50 border-y border-slate-200">
-                <th className={`${TH} text-left align-bottom`}>Nome</th>
-                {cols.map((c) => (
-                  <th key={c.k} className={`${TH} text-right align-bottom ${G}`}>
-                    <span className="inline-flex items-center gap-1">
-                      {c.titulo} ({pctTxt(P[c.k] || 0)})
-                      <Info titulo={c.titulo}>{c.origem}</Info>
-                    </span>
+              <tr className="bg-slate-50 border-t border-slate-200">
+                <th rowSpan={2} className={`${TH} text-left align-bottom border-b border-slate-200`}>Nome</th>
+                <th colSpan={semanas.length} className={`${TH} text-center border-l border-slate-200`}>
+                  <span className="inline-flex items-center gap-1">
+                    Bloco 3 · Individual ({pctTxt(pesoB3)}) — contribuição por semana
+                    <Info titulo="Bloco 3 · Individual">
+                      Matriz KPIs › {matrizB3}. Contribuição da semana = peso do Bloco 3 × atingimento da semana × peso da
+                      semana (dias úteis da semana ÷ dias úteis do mês). O Total é a soma das semanas.
+                    </Info>
+                  </span>
+                </th>
+                <th rowSpan={2} className={`${TH} text-right align-bottom border-l border-b border-slate-200`}>Total</th>
+              </tr>
+              <tr className="bg-slate-50 border-b border-slate-200">
+                {semanas.map((s, i) => (
+                  <th key={s.id} className={`${TH} text-right border-l border-slate-200`} title={s.label}>
+                    Sem {i + 1}
+                    <span className="block text-[9px] font-medium normal-case tracking-normal text-slate-400">{s.label}</span>
                   </th>
                 ))}
-                <th className={`${TH} text-right align-bottom ${G}`}>Total</th>
               </tr>
             </thead>
             <tbody>
-              {pessoas.map((p) => {
-                const contribs = p.itens.map((it) => (it.atingimento == null ? null : it.peso * it.atingimento))
-                const individual = contribs.some((c) => c == null) ? null : contribs.reduce((a, c) => a + c, 0)
-                const ating = { companhia: blocosMatriz.companhia, departamento: blocosMatriz.departamento, individual }
-                const contrib = Object.fromEntries(cols.map((c) => [c.k, ating[c.k] == null ? null : (P[c.k] || 0) * ating[c.k]]))
-                const disponiveis = cols.filter((c) => contrib[c.k] != null)
-                const total = disponiveis.length ? disponiveis.reduce((a, c) => a + contrib[c.k], 0) : null
-                const detalheB3 = p.itens.map((it, i) => `${it.indicador} ${pctTxt(it.peso)} × ${it.atingimento == null ? '—' : pctTxt(it.atingimento)} = ${contribs[i] == null ? '—' : pctTxt(contribs[i])}`).join('\n')
+              {linhas.map((p) => {
+                const cels = p.semanas.map((w) => {
+                  const ating = atingimentoB3(w.itens)
+                  // Semana sem dia útil não conta (contribuição 0, sem marcar como parcial).
+                  if (!w.fr) return { ating, contrib: 0, semDiaUtil: true }
+                  return { ating, contrib: ating == null ? null : pesoB3 * ating * w.fr }
+                })
+                const parcial = cels.some((c) => c.contrib == null)
+                const total = cels.reduce((a, c) => a + (c.contrib || 0), 0)
                 return (
                   <tr key={p.id} className="border-b border-slate-100">
                     <td className="p-2 font-medium text-slate-800 whitespace-nowrap truncate" title={p.nome}>
@@ -529,17 +494,20 @@ function ResumoContribuicao({ titulo, cor, pessoas, carregando, vazio, blocosMat
                         <span className="ml-2 text-[10px] font-semibold px-1.5 py-px rounded border bg-red-50 text-red-700 border-red-200" title={p.alerta}>Mês zerado</span>
                       )}
                     </td>
-                    {cols.map((c) => (
-                      <td key={c.k} className={`${TD} ${G}`}
-                        title={c.k === 'individual'
-                          ? `Atingimento da função: ${individual == null ? '—' : pctTxt(individual)}\n${detalheB3}`
-                          : ating[c.k] == null ? 'Sem dados deste bloco na Matriz KPIs para o trimestre' : `Atingimento do bloco: ${pctTxt(ating[c.k])}`}>
-                        {contrib[c.k] == null ? VAZIO : pctTxt(contrib[c.k])}
-                      </td>
-                    ))}
-                    <td className={`${TD} ${G} font-bold ${COR_TOTAL.real}`}
-                      title={disponiveis.length < cols.length ? 'Parcial: só soma os blocos com dados' : undefined}>
-                      {total == null ? VAZIO : <span className={corPct(total)}>{pctTxt(total)}{disponiveis.length < cols.length ? '*' : ''}</span>}
+                    {cels.map((c, i) => {
+                      const w = p.semanas[i]
+                      const detalhe = w.itens.map((it) => `${it.indicador} ${pctTxt(it.peso)} × ${it.atingimento == null ? '—' : pctTxt(it.atingimento)}`).join('\n')
+                      return (
+                        <td key={semanas[i].id} className={TD}
+                          title={c.semDiaUtil ? 'Semana sem dia útil'
+                            : `Atingimento da semana: ${c.ating == null ? '—' : pctTxt(c.ating)}\nPeso da semana: ${pctTxt(w.fr)}\n${detalhe}`}>
+                          {c.semDiaUtil || c.contrib == null ? VAZIO : pctTxt(c.contrib)}
+                        </td>
+                      )
+                    })}
+                    <td className={`${TD} font-bold ${COR_TOTAL.real}`}
+                      title={parcial ? 'Parcial: semanas sem meta ou sem dados ficaram de fora da soma' : 'Soma das contribuições das semanas'}>
+                      <span className={corPct(pesoB3 ? total / pesoB3 : 0)}>{pctTxt(total)}{parcial ? '*' : ''}</span>
                     </td>
                   </tr>
                 )
@@ -552,16 +520,16 @@ function ResumoContribuicao({ titulo, cor, pessoas, carregando, vazio, blocosMat
   )
 }
 
-function BlocoConsultores({ campanha, regras, unidade, periodo, diario, blocosMatriz, consultores, metasUnidade, carregandoFunc, erroFunc }) {
-  const { u, mensal, sem, fr } = periodoDaUnidade(campanha, unidade, periodo)
+function BlocoConsultores({ campanha, regras, unidade, diario, blocosMatriz, consultores, metasUnidade, carregandoFunc, erroFunc }) {
+  const u = unidadeDe(campanha, unidade)
   const { agrupamentoCargo: agrupamento, departamento } = CAMPANHA.funcoes.consultor
   const { pesos } = regras.funcoes.consultor
 
-  const porPessoa = useMemo(() => {
+  // Faturamento / margem / OS por consultor, uma Map por semana.
+  const porSemana = useMemo(() => campanha.semanas.map((s) => {
     const m = new Map()
     for (const r of diario || []) {
-      if (r.tipo !== 'consultor' || r.empresa !== u.empresaErp) continue
-      if (!mensal && (r.data < sem.inicio || r.data > sem.fim)) continue
+      if (r.tipo !== 'consultor' || r.empresa !== u.empresaErp || !dentro(r, s)) continue
       let a = m.get(r.pessoa_nome)
       if (!a) { a = { serv: 0, pecas: 0, margem: 0, os: new Set(), codigo: r.pessoa_codigo }; m.set(r.pessoa_nome, a) }
       a.serv += Number(r.serv_valor) || 0
@@ -570,29 +538,36 @@ function BlocoConsultores({ campanha, regras, unidade, periodo, diario, blocosMa
       for (const os of r.os_codigos || []) a.os.add(os)
     }
     return m
-  }, [diario, u.empresaErp, mensal, sem])
+  }), [diario, u.empresaErp, campanha.semanas])
 
-  const pessoas = consultores.map((c) => {
+  const linhas = consultores.map((c) => {
     const meta = metaDoConsultor(metasUnidade, c)
-    const erp = porPessoa.get(c.nomeErp) || (c.codigo && [...porPessoa.values()].find((a) => a.codigo === c.codigo)) || null
-    const realTot = (erp?.serv || 0) + (erp?.pecas || 0)
-    const ticket = erp && erp.os.size ? realTot / erp.os.size : 0
-    const mb = erp && erp.pecas ? erp.margem / erp.pecas : 0
     return {
       id: c.id,
       nome: c.nome,
-      itens: [
-        { indicador: 'Faturamento', peso: pesos.faturamento, atingimento: meta ? div(realTot, meta.fat * fr) : null, matriz: MATRIZ.consultorFat },
-        { indicador: 'Ticket médio', peso: pesos.ticket, atingimento: meta?.ticket ? div(ticket, meta.ticket) : null, matriz: MATRIZ.semMatriz },
-        { indicador: 'Margem de peças', peso: pesos.margem, atingimento: meta?.mb ? div(mb, meta.mb) : null, matriz: MATRIZ.consultorMargem },
-      ],
+      semanas: campanha.semanas.map((s, i) => {
+        const fr = fracaoSemana(campanha, unidade, s)
+        const pp = porSemana[i]
+        const erp = pp.get(c.nomeErp) || (c.codigo && [...pp.values()].find((a) => a.codigo === c.codigo)) || null
+        const realTot = (erp?.serv || 0) + (erp?.pecas || 0)
+        const ticket = erp && erp.os.size ? realTot / erp.os.size : 0
+        const mb = erp && erp.pecas ? erp.margem / erp.pecas : 0
+        return {
+          fr,
+          itens: [
+            { indicador: 'Faturamento', peso: pesos.faturamento, atingimento: meta ? div(realTot, meta.fat * fr) : null, matriz: MATRIZ.consultorFat },
+            { indicador: 'Ticket médio', peso: pesos.ticket, atingimento: meta?.ticket ? div(ticket, meta.ticket) : null, matriz: MATRIZ.semMatriz },
+            { indicador: 'Margem de peças', peso: pesos.margem, atingimento: meta?.mb ? div(mb, meta.mb) : null, matriz: MATRIZ.consultorMargem },
+          ],
+        }
+      }),
     }
   })
 
   return (
     <>
       {erroFunc && <p className="text-xs text-red-600">Não foi possível carregar os funcionários: {erroFunc}</p>}
-      <ResumoContribuicao titulo="Consultores de Serviços" cor={CORES_FUNCAO.consultor} pessoas={pessoas}
+      <ResumoSemanal titulo="Consultores de Serviços" cor={CORES_FUNCAO.consultor} campanha={campanha} linhas={linhas}
         blocosMatriz={blocosMatriz} matrizB3="Bloco 3 - Serviços › Consultor de Serviços"
         carregando={carregandoFunc || diario === null}
         vazio={`Nenhum funcionário "1 - Trabalhando" de ${u.nome} com cargo no agrupamento "${agrupamento}" e departamento ${departamento}. Confira o cadastro em Funcionários.`} />
@@ -600,15 +575,16 @@ function BlocoConsultores({ campanha, regras, unidade, periodo, diario, blocosMa
   )
 }
 
-function BlocoMecanicos({ campanha, regras, unidade, periodo, diario, blocosMatriz, mecanicos, carregandoFunc }) {
-  const { u, mensal, sem } = periodoDaUnidade(campanha, unidade, periodo)
+function BlocoMecanicos({ campanha, regras, unidade, diario, blocosMatriz, mecanicos, carregandoFunc }) {
+  const u = unidadeDe(campanha, unidade)
   const R = regras.funcoes.mecanico
   const metaProd = R.metaProdutividade?.[unidade] || 0
   const eficMax = R.travas.eficienciaMax
 
-  // Horas por mecânico no período e no mês inteiro (a trava de eficiência usa o mês).
-  const { noPeriodo, noMes } = useMemo(() => {
-    const noPeriodo = new Map(), noMes = new Map()
+  // Horas por mecânico em cada semana e no mês inteiro (a trava de eficiência usa o mês).
+  const { porSemana, noMes } = useMemo(() => {
+    const porSemana = campanha.semanas.map(() => new Map())
+    const noMes = new Map()
     const somar = (m, r) => {
       let a = m.get(r.pessoa_nome)
       if (!a) { a = { aplic: 0, vend: 0, disp: 0 }; m.set(r.pessoa_nome, a) }
@@ -619,86 +595,99 @@ function BlocoMecanicos({ campanha, regras, unidade, periodo, diario, blocosMatr
     for (const r of diario || []) {
       if (r.tipo !== 'mecanico' || r.empresa !== u.empresaErp) continue
       somar(noMes, r)
-      if (mensal || (r.data >= sem.inicio && r.data <= sem.fim)) somar(noPeriodo, r)
+      campanha.semanas.forEach((s, i) => { if (dentro(r, s)) somar(porSemana[i], r) })
     }
-    return { noPeriodo, noMes }
-  }, [diario, u.empresaErp, mensal, sem])
+    return { porSemana, noMes }
+  }, [diario, u.empresaErp, campanha.semanas])
 
-  const pessoas = mecanicos.map((m) => {
-    const h = noPeriodo.get(m.nomeErp) || { aplic: 0, vend: 0, disp: 0 }
+  const linhas = mecanicos.map((m) => {
     const hMes = noMes.get(m.nomeErp) || { aplic: 0, vend: 0, disp: 0 }
-    const prod = div(h.vend, h.disp)
     const eficMes = div(hMes.vend, hMes.aplic)
     const trava = eficMax > 0 && eficMes != null && eficMes >= eficMax
     return {
       id: m.id,
       nome: m.nome,
       alerta: trava ? `Eficiência do mês ${pctTxt(eficMes)} — a partir de ${pctTxt(eficMax)} zera o bônus do mês` : null,
-      itens: [
-        { indicador: 'Produtividade', peso: 1, atingimento: metaProd && prod != null ? prod / metaProd : null, matriz: MATRIZ.mecanicoProd },
-      ],
+      semanas: campanha.semanas.map((s, i) => {
+        const h = porSemana[i].get(m.nomeErp) || { aplic: 0, vend: 0, disp: 0 }
+        const prod = div(h.vend, h.disp)
+        return {
+          fr: fracaoSemana(campanha, unidade, s),
+          itens: [
+            { indicador: 'Produtividade', peso: 1, atingimento: metaProd ? (prod ?? 0) / metaProd : null, matriz: MATRIZ.mecanicoProd },
+          ],
+        }
+      }),
     }
   })
 
   return (
-    <ResumoContribuicao titulo="Mecânicos" cor={CORES_FUNCAO.mecanico} pessoas={pessoas}
+    <ResumoSemanal titulo="Mecânicos" cor={CORES_FUNCAO.mecanico} campanha={campanha} linhas={linhas}
       blocosMatriz={blocosMatriz} matrizB3="Bloco 3 - Serviços › Mecânico"
       carregando={carregandoFunc || diario === null}
       vazio={`Nenhum mecânico "1 - Trabalhando" de ${u.nome} nos cargos definidos na aba Regras. Confira o cadastro em Funcionários ou os cargos na regra do Mecânico.`} />
   )
 }
 
-function BlocoChefe({ campanha, regras, unidade, periodo, diario, blocosMatriz, chefes, mecanicos, consultores, metasUnidade, carregandoFunc }) {
-  const { u, mensal, sem, fr } = periodoDaUnidade(campanha, unidade, periodo)
+function BlocoChefe({ campanha, regras, unidade, diario, blocosMatriz, chefes, mecanicos, consultores, metasUnidade, carregandoFunc }) {
+  const u = unidadeDe(campanha, unidade)
   const R = regras.funcoes.chefe
   const metaProd = R.metaProdutividade?.[unidade] || 0
-  const real = useMemo(() => realizadoDaUnidade(diario, u, mensal, sem, mecanicos, consultores),
-    [diario, u, mensal, sem, mecanicos, consultores])
-  const prod = div(R.baseProdutividade === 'aplicadas' ? real.aplic : real.vend, real.disp)
-  const metaServ = (metasUnidade.unidade.oficina.serv || 0) * fr
+  const reais = useMemo(() => campanha.semanas.map((s) => realizadoDaUnidade(diario, u, s, mecanicos, consultores)),
+    [diario, u, campanha.semanas, mecanicos, consultores])
 
   if (R.participa?.[unidade] === false) {
-    return <ResumoContribuicao titulo="Chefe de Oficina" cor={CORES_FUNCAO.chefe} pessoas={[]} blocosMatriz={blocosMatriz} matrizB3=""
+    return <ResumoSemanal titulo="Chefe de Oficina" cor={CORES_FUNCAO.chefe} campanha={campanha} linhas={[]} blocosMatriz={blocosMatriz} matrizB3=""
       vazio="Esta unidade não tem Chefe de Oficina (ajuste na aba Regras, cartão do Chefe)." />
   }
-  const pessoas = chefes.map((c) => ({
-    id: c.id,
-    nome: c.nome,
-    itens: [
-      { indicador: 'Produtividade geral', peso: R.pesos.produtividade, atingimento: metaProd && prod != null ? prod / metaProd : null, matriz: MATRIZ.unidade(u, 'Produtividade da Oficina') },
-      { indicador: 'Faturamento de serviços', peso: R.pesos.servicos, atingimento: div(real.serv, metaServ), matriz: MATRIZ.mecanicoServ },
-    ],
-  }))
+  const semanas = campanha.semanas.map((s, i) => {
+    const fr = fracaoSemana(campanha, unidade, s)
+    const real = reais[i]
+    const prod = div(R.baseProdutividade === 'aplicadas' ? real.aplic : real.vend, real.disp)
+    const metaServ = (metasUnidade.unidade.oficina.serv || 0) * fr
+    return {
+      fr,
+      itens: [
+        { indicador: 'Produtividade geral', peso: R.pesos.produtividade, atingimento: metaProd ? (prod ?? 0) / metaProd : null, matriz: MATRIZ.unidade(u, 'Produtividade da Oficina') },
+        { indicador: 'Faturamento de serviços', peso: R.pesos.servicos, atingimento: div(real.serv, metaServ), matriz: MATRIZ.mecanicoServ },
+      ],
+    }
+  })
+  const linhas = chefes.map((c) => ({ id: c.id, nome: c.nome, semanas }))
   return (
-    <ResumoContribuicao titulo="Chefe de Oficina" cor={CORES_FUNCAO.chefe} pessoas={pessoas}
+    <ResumoSemanal titulo="Chefe de Oficina" cor={CORES_FUNCAO.chefe} campanha={campanha} linhas={linhas}
       blocosMatriz={blocosMatriz} matrizB3={`Bloco 3 - Serviços › ${u.quadroMatriz}`}
       carregando={carregandoFunc || diario === null}
       vazio={`Nenhum funcionário "1 - Trabalhando" de ${u.nome} nos cargos de Chefe definidos na aba Regras. Confira o cadastro em Funcionários ou os cargos na regra do Chefe.`} />
   )
 }
 
-function BlocoGerente({ campanha, regras, unidade, periodo, diario, blocosMatriz, gerentes, mecanicos, consultores, metasUnidade, carregandoFunc }) {
-  const { u, mensal, sem, fr } = periodoDaUnidade(campanha, unidade, periodo)
+function BlocoGerente({ campanha, regras, unidade, diario, blocosMatriz, gerentes, mecanicos, consultores, metasUnidade, carregandoFunc }) {
+  const u = unidadeDe(campanha, unidade)
   const R = regras.funcoes.gerente
   const metaProd = R.metaProdutividade?.[unidade] || 0
   const metaMargem = R.metaMargem?.[unidade] || 0
-  const real = useMemo(() => realizadoDaUnidade(diario, u, mensal, sem, mecanicos, consultores),
-    [diario, u, mensal, sem, mecanicos, consultores])
-  const prod = div(regras.funcoes.chefe.baseProdutividade === 'aplicadas' ? real.aplic : real.vend, real.disp)
-  const mb = div(real.margem, real.pecas)
-  const metaTot = ((metasUnidade.unidade.oficina.pecas || 0) + (metasUnidade.unidade.oficina.serv || 0)) * fr
+  const reais = useMemo(() => campanha.semanas.map((s) => realizadoDaUnidade(diario, u, s, mecanicos, consultores)),
+    [diario, u, campanha.semanas, mecanicos, consultores])
 
-  const pessoas = gerentes.map((g) => ({
-    id: g.id,
-    nome: g.nome,
-    itens: [
-      { indicador: 'Faturamento', peso: R.pesos.faturamento, atingimento: div(real.serv + real.pecas, metaTot), matriz: MATRIZ.unidade(u, 'Faturamento Total Oficina (Peças + Serviços)') },
-      { indicador: 'Produtividade geral', peso: R.pesos.produtividade, atingimento: metaProd && prod != null ? prod / metaProd : null, matriz: MATRIZ.unidade(u, 'Produtividade da Oficina') },
-      { indicador: 'Margem de peças', peso: R.pesos.margem, atingimento: metaMargem && mb != null ? mb / metaMargem : null, matriz: MATRIZ.unidade(u, 'Margem Bruta Peças Oficina') },
-    ],
-  }))
+  const semanas = campanha.semanas.map((s, i) => {
+    const fr = fracaoSemana(campanha, unidade, s)
+    const real = reais[i]
+    const prod = div(regras.funcoes.chefe.baseProdutividade === 'aplicadas' ? real.aplic : real.vend, real.disp)
+    const mb = div(real.margem, real.pecas)
+    const metaTot = ((metasUnidade.unidade.oficina.pecas || 0) + (metasUnidade.unidade.oficina.serv || 0)) * fr
+    return {
+      fr,
+      itens: [
+        { indicador: 'Faturamento', peso: R.pesos.faturamento, atingimento: div(real.serv + real.pecas, metaTot), matriz: MATRIZ.unidade(u, 'Faturamento Total Oficina (Peças + Serviços)') },
+        { indicador: 'Produtividade geral', peso: R.pesos.produtividade, atingimento: metaProd ? (prod ?? 0) / metaProd : null, matriz: MATRIZ.unidade(u, 'Produtividade da Oficina') },
+        { indicador: 'Margem de peças', peso: R.pesos.margem, atingimento: metaMargem ? (mb ?? 0) / metaMargem : null, matriz: MATRIZ.unidade(u, 'Margem Bruta Peças Oficina') },
+      ],
+    }
+  })
+  const linhas = gerentes.map((g) => ({ id: g.id, nome: g.nome, semanas }))
   return (
-    <ResumoContribuicao titulo={unidade === 'CG' ? 'Gerente de Serviços' : 'Gerente de Filial'} cor={CORES_FUNCAO.gerente} pessoas={pessoas}
+    <ResumoSemanal titulo={unidade === 'CG' ? 'Gerente de Serviços' : 'Gerente de Filial'} cor={CORES_FUNCAO.gerente} campanha={campanha} linhas={linhas}
       blocosMatriz={blocosMatriz} matrizB3={`Bloco 3 - Serviços › ${u.quadroMatriz}`}
       carregando={carregandoFunc || diario === null}
       vazio={`Nenhum funcionário "1 - Trabalhando" de ${u.nome} nos cargos de Gerente definidos na aba Regras. Confira o cadastro em Funcionários ou os cargos na regra do Gerente.`} />
@@ -707,27 +696,34 @@ function BlocoGerente({ campanha, regras, unidade, periodo, diario, blocosMatriz
 
 // Gerente Geral de Pós-Vendas (botão CAIOBÁ TRUCKS): avaliado em cada unidade separadamente.
 // Bloco 3 = faturamento total da unidade (peças + serviços de todos os consultores da unidade no
-// ERP) ÷ meta da unidade aprovada no Planejamento de Metas (total dos mecânicos, com Funilaria).
-function BlocoGerenteGeral({ campanha, regras, periodo, diario, blocosMatriz, gerentesGerais, metasPorUnidade, carregandoFunc }) {
-  const mensal = periodo === 'MES' || periodo === 'TRI'
-  const realPorEmpresa = useMemo(() => {
+// ERP) ÷ meta da unidade aprovada no Planejamento de Metas (total dos mecânicos, com Funilaria),
+// proporcional aos dias úteis da semana naquela unidade.
+function BlocoGerenteGeral({ campanha, regras, diario, blocosMatriz, gerentesGerais, metasPorUnidade, carregandoFunc }) {
+  // Faturamento por semana × empresa ERP.
+  const realPorSemana = useMemo(() => campanha.semanas.map((s) => {
     const m = {}
     for (const r of diario || []) {
-      if (r.tipo !== 'consultor') continue
+      if (r.tipo !== 'consultor' || !dentro(r, s)) continue
       m[r.empresa] = (m[r.empresa] || 0) + (Number(r.serv_valor) || 0) + (Number(r.pecas_valor) || 0)
     }
     return m
-  }, [diario])
-  const pessoas = gerentesGerais.flatMap((g) => campanha.unidades.map((x) => {
+  }), [diario, campanha.semanas])
+  const linhas = gerentesGerais.flatMap((g) => campanha.unidades.map((x) => {
     const meta = metasPorUnidade?.[x.id]?.unidade?.gg?.fat || 0
     return {
       id: `${g.id}-${x.id}`,
       nome: `${g.nome} · ${x.nome}`,
-      itens: [{ indicador: 'Faturamento total da unidade', peso: 1, atingimento: mensal ? div(realPorEmpresa[x.empresaErp] || 0, meta) : null, matriz: '' }],
+      semanas: campanha.semanas.map((s, i) => {
+        const fr = fracaoSemana(campanha, x.id, s)
+        return {
+          fr,
+          itens: [{ indicador: 'Faturamento total da unidade', peso: 1, atingimento: div(realPorSemana[i][x.empresaErp] || 0, meta * fr), matriz: '' }],
+        }
+      }),
     }
   }))
   return (
-    <ResumoContribuicao titulo="Gerente Geral de Pós-Vendas" cor="#475569" pessoas={pessoas}
+    <ResumoSemanal titulo="Gerente Geral de Pós-Vendas" cor="#475569" campanha={campanha} linhas={linhas}
       blocosMatriz={blocosMatriz} matrizB3="Bloco 3 - Serviços › Gerente Geral Pós-Vendas"
       carregando={carregandoFunc || diario === null}
       vazio={`Nenhum funcionário "1 - Trabalhando" das empresas Trucks no agrupamento "${regras.funcoes.gerenteGeral.agrupamento}" com cargo de Gerente Geral de Pós-Vendas. Confira o cadastro em Funcionários.`} />

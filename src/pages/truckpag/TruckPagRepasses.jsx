@@ -681,7 +681,7 @@ export default function TruckPagRepasses() {
                 }`}
               >
                 <Link2Off className="h-3 w-3" />
-                Valor não identificado · {fmtMoeda(naoIdentificadoInfo.valor)}
+                Sem Saldo Concessionária · {fmtMoeda(naoIdentificadoInfo.valor)}
               </button>
             )}
             {gruposPorDia.map(g => (
