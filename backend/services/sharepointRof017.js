@@ -98,8 +98,15 @@ async function loadAllRows() {
 }
 
 /**
- * Retorna uma linha por OS+TipoOS_Sigla com valores somados de todos os itens.
+ * Retorna uma linha por OS+TipoOS_Sigla+Chassi com valores somados de todos os itens.
  * Usado pelo modal "Importar OS Faturadas".
+ *
+ * O chassi entra na chave de deduplicação porque o Dealer.net reaproveita números de OS entre
+ * unidades/anos diferentes (o arquivo ROF017 é um arquivo por ano, concatenados) — sem o chassi,
+ * duas OS de veículos/clientes totalmente distintos que coincidem em número+sigla (ex: OS 1627/G03
+ * em 2024 na unidade Dourados e de novo em 2026 na unidade Três Lagoas) caíam na mesma linha: os
+ * valores financeiros de ambos os trabalhos eram somados juntos, e só a empresa/cliente/chassi do
+ * primeiro arquivo processado ficava visível — escondendo a OS mais recente da busca.
  */
 export async function getAllFaturamentosRof017(dataInicio, dataFim, numeroOS = null) {
   const rows = await loadAllRows()
@@ -137,8 +144,9 @@ export async function getAllFaturamentosRof017(dataInicio, dataFim, numeroOS = n
       if (dataFim   && dc > dataFim)    continue
     }
 
-    const sigla = String(r[colSigla] ?? '').trim()
-    const key   = `${osNum}||${sigla}`
+    const sigla  = String(r[colSigla] ?? '').trim()
+    const chassi = String(r[colChassi] ?? '').trim()
+    const key    = `${osNum}||${sigla}||${chassi}`
 
     if (!osMap.has(key)) {
       osMap.set(key, {
@@ -151,7 +159,7 @@ export async function getAllFaturamentosRof017(dataInicio, dataFim, numeroOS = n
         tipo_os_descricao:    sigla,
         consultor_nome:       '',
         proprietario_veiculo: String(r[colCliente] ?? '').trim(),
-        chassi:               String(r[colChassi]  ?? '').trim(),
+        chassi,
         modelo_veiculo:       String(r[colModelo]  ?? '').trim(),
         nf_valor_produto:     0,
         nf_valor_servico:     0,
