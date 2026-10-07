@@ -121,6 +121,7 @@ async function downloadAllWorkbooksByPrefix(prefix) {
     if (!downloadUrl) continue
     const response = await axios.get(downloadUrl, { responseType: 'arraybuffer', timeout: 60_000 })
     const workbook = XLSX.read(Buffer.from(response.data), { type: 'buffer', cellDates: true })
+    console.log(`[TruckPag] lendo arquivo ${item.name}`)
     resultados.push({ workbook, lastModified: item.lastModifiedDateTime || null, nome: item.name })
   }
   return resultados

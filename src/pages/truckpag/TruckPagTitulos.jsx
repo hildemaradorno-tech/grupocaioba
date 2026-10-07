@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react'
-import { Truck, RefreshCw, AlertTriangle, X, CheckCircle2, XCircle, HelpCircle, Settings, Wallet, Clock, CalendarClock } from 'lucide-react'
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { Truck, ChevronDown, RefreshCw, AlertTriangle, X, CheckCircle2, XCircle, HelpCircle, Settings, Wallet, Clock, CalendarClock } from 'lucide-react'
 import { apiService } from '../../services/api'
 import TruckPagNav from './TruckPagNav'
 import TruckPagRegrasModal from './TruckPagRegrasModal'
@@ -65,7 +65,10 @@ export default function TruckPagTitulos() {
   const [sincronizando, setSincronizando] = useState(false)
   const [erro, setErro] = useState(null)
   const [filtroSituacao, setFiltroSituacao] = useState(null)
-  const [filtroEmpresa, setFiltroEmpresa] = useState('')
+  // Lista de empresas selecionadas (vazia = todas). Nomes exatos de titulo_empresa_nome.
+  const [filtroEmpresas, setFiltroEmpresas] = useState([])
+  const [empresaAberta, setEmpresaAberta] = useState(false)
+  const seletorEmpresaRef = useRef(null)
   const [filtroBusca, setFiltroBusca] = useState('')
   const [sortCol, setSortCol] = useState('titulo_data_venc')
   const [sortDir, setSortDir] = useState('asc')
@@ -142,10 +145,7 @@ export default function TruckPagTitulos() {
   const filtradas = useMemo(() => {
     let f = titulosConciliados
     if (filtroSituacao) f = f.filter(l => situacaoResumida(l.titulo_dias_atraso) === filtroSituacao)
-    if (filtroEmpresa.trim()) {
-      const alvo = filtroEmpresa.trim().toLowerCase()
-      f = f.filter(l => l.titulo_empresa_nome?.toLowerCase().includes(alvo))
-    }
+    if (filtroEmpresas.length > 0) f = f.filter(l => filtroEmpresas.includes(l.titulo_empresa_nome))
     if (filtroBusca.trim()) {
       const alvo = filtroBusca.trim().toLowerCase()
       f = f.filter(l =>
@@ -155,7 +155,7 @@ export default function TruckPagTitulos() {
       )
     }
     return f
-  }, [titulosConciliados, filtroSituacao, filtroEmpresa, filtroBusca])
+  }, [titulosConciliados, filtroSituacao, filtroEmpresas, filtroBusca])
 
   const ordenadas = useMemo(() => {
     const arr = [...filtradas]
@@ -182,7 +182,29 @@ export default function TruckPagTitulos() {
 
   const totalSaldo = filtradas.reduce((s, l) => s + (l.titulo_saldo || 0), 0)
   const totalValor = filtradas.reduce((s, l) => s + (l.titulo_valor || 0), 0)
-  const filtroAvancadoAtivo = !!(filtroEmpresa.trim() || filtroBusca.trim())
+  const filtroAvancadoAtivo = !!(filtroEmpresas.length > 0 || filtroBusca.trim())
+
+  // Empresas disponíveis = as que aparecem nos títulos carregados, em ordem alfabética.
+  const empresasDisponiveis = useMemo(
+    () => [...new Set(linhas.map(l => l.titulo_empresa_nome).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR')),
+    [linhas]
+  )
+
+  // Fecha o seletor ao clicar fora dele.
+  useEffect(() => {
+    if (!empresaAberta) return
+    const fechar = (e) => { if (seletorEmpresaRef.current && !seletorEmpresaRef.current.contains(e.target)) setEmpresaAberta(false) }
+    document.addEventListener('mousedown', fechar)
+    return () => document.removeEventListener('mousedown', fechar)
+  }, [empresaAberta])
+
+  const alternarEmpresa = (nome) => {
+    setFiltroEmpresas(prev => prev.includes(nome) ? prev.filter(n => n !== nome) : [...prev, nome])
+  }
+
+  const rotuloEmpresas = filtroEmpresas.length === 0
+    ? 'Todas as empresas'
+    : filtroEmpresas.length === 1 ? filtroEmpresas[0] : `${filtroEmpresas.length} empresas selecionadas`
 
   // Ordem pedida: Empresa, Título, Lançamento, CPF/CNPJ, Cliente, Emissão, Vencimento, Dias
   // vencidos; o Código da empresa ficou oculto. Valor e Saldo continuam sendo as duas últimas
@@ -309,16 +331,34 @@ export default function TruckPagTitulos() {
       </div>
 
       <div className="flex flex-wrap items-end gap-3">
-        <div className="w-full sm:w-56">
-        <label className="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1 block">Empresa</label>
-        <input type="text" value={filtroEmpresa} onChange={e => setFiltroEmpresa(e.target.value)} placeholder="Filtrar..." className="w-full text-xs border border-slate-200 rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300" />
+        <div className="w-full sm:w-72 relative" ref={seletorEmpresaRef}>
+          <label className="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1 block">Empresa</label>
+          <button type="button" onClick={() => setEmpresaAberta(v => !v)} className="w-full flex items-center justify-between text-xs text-left border border-slate-200 rounded-md px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300">
+            <span className="truncate">{rotuloEmpresas}</span>
+            <ChevronDown className={`h-3.5 w-3.5 text-slate-400 shrink-0 transition-transform ${empresaAberta ? 'rotate-180' : ''}`} />
+          </button>
+          {empresaAberta && (
+            <div className="absolute z-20 mt-1 w-full bg-white border border-slate-200 rounded-md shadow-lg py-1 max-h-72 overflow-y-auto">
+              <button type="button" onClick={() => setFiltroEmpresas([])} className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-xs text-left hover:bg-slate-50 ${filtroEmpresas.length === 0 ? 'font-semibold text-blue-700' : 'text-slate-700'}`}>
+                <input type="checkbox" readOnly checked={filtroEmpresas.length === 0} className="h-3.5 w-3.5 rounded border-slate-300 pointer-events-none" />
+                Todas
+              </button>
+              <div className="border-t border-slate-100 my-1" />
+              {empresasDisponiveis.map(nome => (
+                <label key={nome} className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs text-slate-700 hover:bg-slate-50 cursor-pointer">
+                  <input type="checkbox" checked={filtroEmpresas.includes(nome)} onChange={() => alternarEmpresa(nome)} className="h-3.5 w-3.5 rounded border-slate-300" />
+                  <span className="truncate">{nome}</span>
+                </label>
+              ))}
+            </div>
+          )}
         </div>
         <div className="w-full sm:w-72">
         <label className="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1 block whitespace-nowrap">Lançamento/Nº Título/Notas Fiscais</label>
         <input type="text" value={filtroBusca} onChange={e => setFiltroBusca(e.target.value)} placeholder="Filtrar..." className="w-full text-xs border border-slate-200 rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300" />
         </div>
         {filtroAvancadoAtivo && (
-          <button type="button" onClick={() => { setFiltroEmpresa(''); setFiltroBusca('') }} className="flex items-center gap-1 text-[10px] font-semibold text-slate-400 hover:text-slate-600 pb-2">
+          <button type="button" onClick={() => { setFiltroEmpresas([]); setFiltroBusca('') }} className="flex items-center gap-1 text-[10px] font-semibold text-slate-400 hover:text-slate-600 pb-2">
             <X className="h-3 w-3" /> Limpar filtros
           </button>
         )}

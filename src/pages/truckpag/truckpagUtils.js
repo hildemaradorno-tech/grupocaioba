@@ -190,11 +190,13 @@ export function notasFiscaisDoTitulo(t) {
 // Obrigatório pra virar candidato (a identidade do título, todos precisam bater — testado com
 // "basta 1 dos 3" e dava falso positivo: título achava repasse do mesmo CLIENTE mas sem nenhuma
 // nota fiscal em comum, só porque o CNPJ do cliente se repete em vários títulos dele): Código da
-// Empresa, Parcela, CNPJ do Cliente (raiz do CNPJ, ver docsBatem) E (Nº NF-e OU Nº NFS-e, pelo
-// menos uma nota bate). Depois, CAMPOS_GRADUACAO (CNPJ completo, Valor, Saldo) decide o status
-// verde/amarelo. 'exato' = todos os campos de graduação comparáveis bateram (ou não houve nenhum
-// comparável); 'divergente' = identidade bate mas CNPJ completo, Valor ou Saldo diverge; 'nao_encontrado' = nenhum repasse
-// bate a identidade completa (código + parcela + CNPJ + nota fiscal).
+// Empresa, Parcela E (Nº NF-e OU Nº NFS-e, pelo menos uma nota bate). O CNPJ do Cliente NÃO entra
+// na identidade: se for diferente, o par ainda existe e fica 'divergente' (pedido do usuário — o
+// título em aberto precisa aparecer ligado ao repasse mesmo quando o CNPJ que pagou é outro).
+// Depois, CAMPOS_GRADUACAO (CNPJ completo, Valor, Saldo) decide o status verde/amarelo. 'exato' =
+// todos os campos de graduação comparáveis bateram (ou não houve nenhum comparável); 'divergente' =
+// identidade bate mas CNPJ completo, Valor ou Saldo diverge; 'nao_encontrado' = nenhum repasse bate
+// código + parcela + nota fiscal.
 //
 // `camposDivergentes` no retorno junta TUDO que foi comparado (código, NF-e, NFS-e, parcela — só
 // informativo pra tela, não entram na graduação — mais documento/valor/saldo, que são os que
@@ -225,16 +227,14 @@ export function conciliarTitulosRepasses(titulos, repasses, tolerancia = TOLERAN
       if (repasseNF && notasTitulo.length) obrigatorios.notaFiscal = notasTitulo.includes(repasseNF)
       if (repasseNFSe && notasTitulo.length) obrigatorios.nfse = notasTitulo.includes(repasseNFSe)
       if (tituloParcela && repasseParcela) obrigatorios.parcela = tituloParcela === repasseParcela
-      // Identidade: só a RAIZ do CNPJ precisa bater (filial diferente não impede o par).
-      if (tituloDoc && repasseDoc) obrigatorios.documentoRaiz = docsBatem(tituloDoc, repasseDoc)
 
       const notaBate = obrigatorios.notaFiscal === true || obrigatorios.nfse === true
-      const identidadeBate = obrigatorios.codigo === true && obrigatorios.parcela === true && obrigatorios.documentoRaiz === true && notaBate
+      const identidadeBate = obrigatorios.codigo === true && obrigatorios.parcela === true && notaBate
       if (!identidadeBate) continue // identidade incompleta — não é candidato
 
       const graduacao = {}
       // CNPJ/CPF completo (com filial e dígito) idêntico decide verde/amarelo, junto com Valor e Saldo.
-      graduacao.documento = tituloDoc === repasseDoc
+      if (tituloDoc && repasseDoc) graduacao.documento = docsBatem(tituloDoc, repasseDoc) && tituloDoc === repasseDoc
       if (tituloValor !== null && tituloValor !== undefined) {
         graduacao.valor = Math.abs(tituloValor - (r.valor_parcela_total || 0)) <= tolerancia
       }

@@ -4404,6 +4404,7 @@ export const apiService = {
           processo: proc.nome,
           departamento_id: proc.departamento_id,
           departamento_nome: proc.departamento_nome,
+          ativo: proc.ativo,
         })
         .eq('processo_id', id)
         .select('id')
@@ -4416,11 +4417,38 @@ export const apiService = {
           .in('rotina_id', rotinaIds)
         if (execError) throw execError
       }
+      // Quem deixou de ser RPA não pode mais ser "RPA vinculado" de um relatório
+      if (proc.tipo !== 'RPA') {
+        const { error: vincError } = await supabase
+          .from('rpa_processos')
+          .update({ rpa_vinculado_id: null, rpa_vinculado_nome: null })
+          .eq('rpa_vinculado_id', id)
+        if (vincError) throw vincError
+      }
+      // Nome do RPA mudou: atualiza a cópia denormalizada nos relatórios vinculados
+      const { error: nomeError } = await supabase
+        .from('rpa_processos')
+        .update({ rpa_vinculado_nome: proc.nome })
+        .eq('rpa_vinculado_id', id)
+      if (nomeError) throw nomeError
     }
     return proc
   },
 
+  // Bloqueia a exclusão se houver rotinas (a FK é SET NULL: sem a trava as
+  // rotinas ficariam órfãs) e limpa o nome denormalizado dos vínculos.
   deleteRpaProcesso: async (id) => {
+    const { count, error: cntError } = await supabase
+      .from('rpa_rotinas')
+      .select('id', { count: 'exact', head: true })
+      .eq('processo_id', id)
+    if (cntError) throw cntError
+    if (count > 0) throw new Error('Este processo está em uso por rotinas. Exclua as rotinas antes ou apenas inative o processo.')
+    const { error: vincError } = await supabase
+      .from('rpa_processos')
+      .update({ rpa_vinculado_id: null, rpa_vinculado_nome: null })
+      .eq('rpa_vinculado_id', id)
+    if (vincError) throw vincError
     const { error } = await supabase.from('rpa_processos').delete().eq('id', id)
     if (error) throw error
     return { success: true }
@@ -4462,7 +4490,15 @@ export const apiService = {
       .select()
     if (error) throw error
     const rotina = data?.[0]
-    if (rotina) await apiService.salvarRpaRotinaExecucoes(rotina.id, execucoes)
+    if (rotina) {
+      try {
+        await apiService.salvarRpaRotinaExecucoes(rotina.id, execucoes)
+      } catch (err) {
+        // não deixa uma rotina vazia para trás se os horários falharem
+        await supabase.from('rpa_rotinas').delete().eq('id', rotina.id)
+        throw err
+      }
+    }
     return rotina
   },
 
@@ -4490,17 +4526,15 @@ export const apiService = {
     return { success: true }
   },
 
-  // Substitui todas as execuções/dias de uma rotina (delete + insert em lote)
+  // Substitui todas as execuções/dias de uma rotina — função SQL transacional
+  // (rpa_salvar_execucoes): se algo falhar, os horários anteriores permanecem.
   salvarRpaRotinaExecucoes: async (rotinaId, execucoes) => {
-    const { error: delError } = await supabase.from('rpa_rotina_execucoes').delete().eq('rotina_id', rotinaId)
-    if (delError) throw delError
     const linhas = (execucoes || [])
       .filter(e => e.hora)
-      .map(e => ({ rotina_id: rotinaId, dia_semana: e.dia_semana, hora: e.hora, tipo: e.tipo || null }))
-    if (!linhas.length) return []
-    const { data, error } = await supabase.from('rpa_rotina_execucoes').insert(linhas).select()
+      .map(e => ({ dia_semana: e.dia_semana, hora: e.hora, tipo: e.tipo || null }))
+    const { error } = await supabase.rpc('rpa_salvar_execucoes', { p_rotina_id: rotinaId, p_execucoes: linhas })
     if (error) throw error
-    return data || []
+    return linhas
   },
 
   // ── Grade de Treinamentos ───────────────────────────────────────────────────

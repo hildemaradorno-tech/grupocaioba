@@ -55,7 +55,9 @@ function ssSave(pageKey, field, value) {
 // ── hook ──────────────────────────────────────────────────────────────────────
 
 export function usePeriodSelector(pageKey, defaultViewMode = 'mensal') {
-  const [viewMode,  setViewModeRaw]  = React.useState(() => ssLoad(pageKey, 'viewMode', defaultViewMode))
+  // Visão sempre abre em Mensal (não lê do localStorage) — só os meses/semanas/trimestres
+  // marcados ficam guardados entre sessões.
+  const [viewMode,  setViewModeRaw]  = React.useState(defaultViewMode)
   const [visibleT,  setVisibleTRaw]  = React.useState(() => ssLoad(pageKey, 'visibleT', quarterDefault))
   const [visibleM,  setVisibleMRaw]  = React.useState(() => ssLoad(pageKey, 'visibleM', monthDefault))
   const [weekMonth, setWeekMonthRaw] = React.useState(() => ssLoad(pageKey, 'weekMonth', currentMonthKey))

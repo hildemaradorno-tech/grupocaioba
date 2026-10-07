@@ -715,20 +715,6 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
               >
                 <RefreshCw className={`h-3.5 w-3.5 ${spLoading ? 'animate-spin' : ''}`} />
               </button>
-              {!spLoading && (importandoPend || pendFechadas.length > 0) && (
-                <button
-                  onClick={handleImportarLote}
-                  disabled={importandoPend}
-                  className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold px-3 py-2 rounded-md shadow-sm border border-slate-200 transition-colors disabled:opacity-50 whitespace-nowrap shrink-0"
-                >
-                  {importandoPend
-                    ? <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />
-                    : <Download className="h-4 w-4 text-blue-500" />}
-                  {importandoPend
-                    ? `Importando ${progressoImportPend?.atual ?? 0}/${progressoImportPend?.total ?? 0}`
-                    : 'Importar'}
-                </button>
-              )}
               {canExcluirOS && selecionados.size > 0 && (
                 <button
                   onClick={() => setModalExcluirLote(true)}
@@ -805,9 +791,16 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
                   {pendFechadas.length} OS disponíve{pendFechadas.length === 1 ? 'l' : 'is'} para importar do SharePoint
                 </p>
                 <p className="text-[10px] text-blue-600 mt-0.5">
-                  Ordens de serviço fechadas ainda não importadas para o sistema — use o botão "Importar" no topo da tela.
+                  Ordens de serviço fechadas ainda não importadas para o sistema.
                 </p>
               </div>
+              <button
+                onClick={handleImportarLote}
+                className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md bg-blue-600 hover:bg-blue-700 text-white transition-colors"
+              >
+                <Download className="h-3.5 w-3.5" />
+                Importar
+              </button>
             </div>
           )}
           {importandoPend && (
@@ -838,15 +831,6 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
                   Última importação — conferir os dados trazidos automaticamente.
                 </p>
               </div>
-              {!spLoading && pendFechadas.length > 0 && (
-                <button
-                  onClick={handleImportarLote}
-                  className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md bg-blue-600 hover:bg-blue-700 text-white transition-colors"
-                >
-                  <Download className="h-3.5 w-3.5" />
-                  Importar
-                </button>
-              )}
               <button
                 onClick={() => { setFiltroCard(prev => prev === 'novos_importados' ? null : 'novos_importados'); setStatusFiltro('') }}
                 className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${filtroCard === 'novos_importados' ? 'bg-green-700 text-white' : 'bg-green-600 hover:bg-green-700 text-white'}`}

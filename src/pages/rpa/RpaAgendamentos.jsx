@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react'
 import { useSessionState } from '../../hooks/useSessionState'
-import { Plus, X, AlertTriangle, CopyPlus, Rows, Clock, ClipboardList, RefreshCw, Link2, FileDown, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react'
+import { Settings, Pencil, CalendarClock, Trash2, Plus, X, AlertTriangle, CopyPlus, Rows, Clock, ClipboardList, RefreshCw, Link2, FileDown, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
-import PermissionActionButtons from '../../components/PermissionActionButtons'
 import { MultiSearchCombobox } from '../../components/SearchCombobox'
 import { apiService } from '../../services/api'
+import { ACOES_POR_PATH } from '../../config/acoesMenu'
 
 const DIAS_SEMANA = [
   { n: 1, curto: 'Seg', label: 'Segunda-feira' },
@@ -54,6 +54,13 @@ const horaParaMS = (hora, tipo) => {
 const tooltipHoraReal = (hora, tipo) =>
   ehBrasilia(tipo) && hora ? `Horário configurado (Brasília): ${formatHora(hora)}` : undefined
 
+// Dia da semana (1=Seg..7=Dom) em MS. Horário de Brasília entre 00:00 e 00:59
+// vira 23:xx do dia anterior em MS — o dia também precisa recuar.
+const diaParaMS = (dia, hora, tipo) => {
+  if (!hora || !ehBrasilia(tipo)) return dia
+  return parseInt(hora.split(':')[0], 10) === 0 ? (dia === 1 ? 7 : dia - 1) : dia
+}
+
 // Soma N minutos a uma hora "HH:MM" (passa da meia-noite se necessário)
 const somarMinutos = (hora, minutos) => {
   if (!hora) return hora
@@ -64,6 +71,13 @@ const somarMinutos = (hora, minutos) => {
 
 // Traduz erros do Postgres/Supabase para mensagens amigáveis (ex.: violação
 // de UNIQUE vira "já se encontra cadastrado").
+// Hora "HH:MM" + minutos, devolvendo também quantos dias avançou (0 ou 1)
+const somarMinutosComDia = (hora, minutos) => {
+  const [h, m] = hora.split(':').map(Number)
+  const total = h * 60 + m + (Number.isFinite(minutos) ? minutos : 15)
+  return { hora: somarMinutos(hora, minutos), avancaDias: Math.floor(total / (24 * 60)) }
+}
+
 const msgErro = (err, entidade = 'registro') => {
   const m = err?.message || String(err)
   if (err?.code === '23505' || m.includes('duplicate key')) return `Este ${entidade} já se encontra cadastrado.`
@@ -113,16 +127,88 @@ function ThSort({ label, col, sort, onSort, center, className = '' }) {
   )
 }
 
-const _cache = { dados: null, departamentos: null, processos: null }
+// Engrenagem da coluna Ações: abre a lista com todas as opções da linha. O menu usa
+// position: fixed para não ser cortado pelo overflow da tabela. Itens com `acao`
+// ('editar'/'excluir') respeitam a permissão configurada em Grupos de Acesso.
+function AcoesMenu({ itens }) {
+  const { hasActionOrDefault } = useAuth()
+  const [pos, setPos] = useState(null)
+
+  useEffect(() => {
+    if (!pos) return
+    const fechar = () => setPos(null)
+    const onKey = (e) => { if (e.key === 'Escape') fechar() }
+    window.addEventListener('keydown', onKey)
+    window.addEventListener('scroll', fechar, true)
+    window.addEventListener('resize', fechar)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('scroll', fechar, true)
+      window.removeEventListener('resize', fechar)
+    }
+  }, [pos])
+
+  const permite = (acao) => !acao
+    || !(ACOES_POR_PATH['rpa/agendamentos'] || []).some(a => a.value === acao)
+    || hasActionOrDefault('rpa/agendamentos', acao)
+  const visiveis = itens.filter(i => i.onClick && permite(i.acao))
+  if (!visiveis.length) return null
+
+  const abrir = (e) => {
+    const r = e.currentTarget.getBoundingClientRect()
+    setPos({ top: r.bottom + 4, left: r.left })
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={abrir}
+        title="Ações"
+        className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+      >
+        <Settings className="h-4 w-4" />
+      </button>
+      {pos && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setPos(null)} />
+          <div style={{ top: pos.top, left: pos.left }} className="fixed z-50 w-60 bg-white border border-slate-200 rounded-md shadow-lg py-1 text-xs font-medium">
+            {visiveis.map(i => (
+              <button
+                key={i.label}
+                type="button"
+                onClick={() => { setPos(null); i.onClick() }}
+                className={`w-full flex items-center gap-2 px-3 py-2 text-left transition-colors ${i.perigo ? 'text-red-600 hover:bg-red-50' : 'text-slate-700 hover:bg-slate-50'}`}
+              >
+                <i.icon className="h-3.5 w-3.5 shrink-0" /> {i.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </>
+  )
+}
+
+const _cache = { uid: null, dados: null, departamentos: null, processos: null }
 
 export default function RpaAgendamentos() {
+  const { hasPermission, user } = useAuth()
+  const uid = user?.id ?? user?.email ?? null
+  // cache em memória só vale para o mesmo usuário (troca de login sem recarregar a página)
+  if (_cache.uid !== uid) Object.assign(_cache, { uid, dados: null, departamentos: null, processos: null })
   const [dados, setDados] = useState(() => _cache.dados ?? [])
   const [departamentos, setDepartamentos] = useState(() => _cache.departamentos ?? [])
   const [processos, setProcessos] = useState(() => _cache.processos ?? [])
   const [loading, setLoading] = useState(() => _cache.dados === null)
   const [error, setError] = useState(null)
+  const [erroRecarga, setErroRecarga] = useState(null)
 
-  const [filtroDept, setFiltroDept] = useSessionState('rpa_agend_filtro_dept', '')
+  // O filtro de setor guarda o NOME do setor: boa parte das rotinas/processos tem só o nome
+  // gravado (departamento_id nulo), então comparar por id escondia esses registros.
+  const [filtroDept, setFiltroDept] = useSessionState('rpa_agend_filtro_setor', '')
+  const nomeSetor = (id, nome) => nome || departamentos.find(d => d.id === id)?.nome_departamento || ''
+  const setorPassa = (id, nome) => !filtroDept || nomeSetor(id, nome) === filtroDept
   const [filtroTipo, setFiltroTipo] = useSessionState('rpa_agend_filtro_tipo', [])
   // Seleção múltipla de tipos; compatível com o valor antigo (string) salvo no navegador
   const tiposFiltro = Array.isArray(filtroTipo) ? filtroTipo : (filtroTipo ? [filtroTipo] : [])
@@ -183,7 +269,6 @@ export default function RpaAgendamentos() {
   const [diasTemplate, setDiasTemplate] = useState(() => new Set())
   const [execSelecionadas, setExecSelecionadas] = useState(() => new Set())
 
-  const { hasPermission } = useAuth()
   const canEdit = hasPermission('rpa/agendamentos')
 
   useEffect(() => { loadDados(_cache.dados !== null) }, [])
@@ -202,8 +287,10 @@ export default function RpaAgendamentos() {
       setDados(rotinas)
       setDepartamentos(deps.filter(d => d.ativo))
       setProcessos(procs)
+      setErroRecarga(null)
     } catch (err) {
       if (!silent) setError(err.message || String(err))
+      else setErroRecarga(err.message || String(err))
     } finally {
       if (!silent) setLoading(false)
     }
@@ -501,6 +588,15 @@ export default function RpaAgendamentos() {
         ativo: novoProcessoAtivoHeader,
       }
       if (procEditId) {
+        const atual = processos.find(p => p.id === procEditId)
+        if (atual && ehBrasilia(atual.tipo) !== ehBrasilia(novoProcessoTipoHeader) && rotinasDoProcesso(procEditId) > 0) {
+          const ok = window.confirm(
+            `Trocar o tipo de ${atual.tipo} para ${novoProcessoTipoHeader} muda o fuso dos horários já agendados ` +
+            `(Power BI é em horário de Brasília; RPA e Fabric, em MS). Os horários gravados serão reinterpretados ` +
+            `e deslocados em 1h na tela — revise-os depois. Deseja continuar?`
+          )
+          if (!ok) return
+        }
         await apiService.updateRpaProcesso(procEditId, payload)
         await loadDados(true)
       } else {
@@ -548,7 +644,12 @@ export default function RpaAgendamentos() {
       pdf.setTextColor(120, 120, 120)
       pdf.text(`Gerado em ${new Date().toLocaleString('pt-BR')}`, MARGIN, MARGIN + 24)
 
-      const canvas = await html2canvas(el, { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff' })
+      const canvas = await html2canvas(el, {
+        scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff',
+        // a tabela fica num contêiner com overflow-x: captura a largura inteira, não só a visível
+        width: el.scrollWidth, windowWidth: el.scrollWidth,
+        onclone: (doc) => { const c = doc.getElementById('rpa-atualizacao-tabela'); if (c) c.style.overflow = 'visible' },
+      })
       let sy = 0
       let primeira = true
       while (sy < canvas.height) {
@@ -582,14 +683,60 @@ export default function RpaAgendamentos() {
     }
   }
 
+  // Outros processos (rotinas ativas) agendados no mesmo dia e horário, comparando em
+  // horário de MS (PBI é convertido de Brasília) — ou seja, os que "batem de frente".
+  const outrosNoMesmoHorario = (processoId, diaN, hora, tipo) => {
+    if (!hora) return []
+    const alvoH = formatHora(horaParaMS(hora, tipo))
+    const alvoD = diaParaMS(diaN, hora, tipo)
+    const nomes = new Set()
+    dados.forEach(r => {
+      if (!r.ativo || r.processo_id === processoId) return
+      ;(r.execucoes || []).forEach(e => {
+        if (e.hora && formatHora(horaParaMS(e.hora, e.tipo)) === alvoH && diaParaMS(e.dia_semana, e.hora, e.tipo) === alvoD) {
+          nomes.add(r.processo || '—')
+        }
+      })
+    })
+    return [...nomes]
+  }
+
+  // Texto descrevendo a rotina que já existe para o processo: situação, horários e coincidências
+  const descreverRotinaExistente = (processoId) => {
+    const r = dados.find(x => x.processo_id === processoId)
+    if (!r) return ''
+    const execs = (r.execucoes || []).filter(e => e.hora)
+    const situacao = !r.ativo ? ' (está INATIVA)' : execs.length === 0 ? ' (está sem horários)' : ''
+    const horas = [...new Set(execs.map(e => formatHora(horaParaMS(e.hora, e.tipo))))].sort()
+    const coincide = []
+    execs.forEach(e => {
+      const dia = DIAS_SEMANA.find(d => d.n === diaParaMS(e.dia_semana, e.hora, e.tipo))
+      outrosNoMesmoHorario(processoId, e.dia_semana, e.hora, e.tipo).forEach(nome => {
+        coincide.push(`${nome} (${dia?.curto} ${formatHora(horaParaMS(e.hora, e.tipo))})`)
+      })
+    })
+    return `${situacao}${horas.length ? ` — horários atuais (MS): ${horas.join(', ')}` : ''}` +
+      (coincide.length ? `. Coincide com: ${coincide.slice(0, 5).join('; ')}${coincide.length > 5 ? ` e mais ${coincide.length - 5}` : ''}` : '')
+  }
+
   const handleSalvar = async (e) => {
     e.preventDefault()
-    // Todas as execuções assumem o tipo do processo selecionado
+    // Dia marcado sem nenhum horário preenchido seria descartado em silêncio
+    const diaSemHora = DIAS_SEMANA.find(d => form.dias[d.n].ativo && !form.dias[d.n].execucoes.some(oc => oc.hora))
+    if (diaSemHora) {
+      setErroRotina(`Preencha o horário de ${diaSemHora.label} ou desmarque o dia.`)
+      return
+    }
+    // Uma rotina por processo: evita duplicar o agendamento
+    if (!editingId && dados.some(r => r.processo_id === form.processo_id)) {
+      setErroRotina(`Este processo já possui rotina${descreverRotinaExistente(form.processo_id)}. Edite a rotina existente para ajustar os horários.`)
+      return
+    }
+    // Todas as execuções assumem o tipo do processo selecionado (horários repetidos no mesmo dia são unificados)
     const execucoes = DIAS_SEMANA
       .filter(d => form.dias[d.n].ativo)
-      .flatMap(d => form.dias[d.n].execucoes
-        .filter(oc => oc.hora)
-        .map(oc => ({ dia_semana: d.n, hora: oc.hora, tipo: form.tipo || 'RPA' })))
+      .flatMap(d => [...new Set(form.dias[d.n].execucoes.filter(oc => oc.hora).map(oc => oc.hora.slice(0, 5)))]
+        .map(hora => ({ dia_semana: d.n, hora, tipo: form.tipo || 'RPA' })))
 
     setSalvando(true)
     setErroRotina(null)
@@ -617,7 +764,7 @@ export default function RpaAgendamentos() {
   }
 
   const rotinasFiltradas = dados.filter(r => {
-    if (filtroDept && r.departamento_id !== filtroDept) return false
+    if (!setorPassa(r.departamento_id, r.departamento_nome)) return false
     if (tiposFiltro.length && !(r.execucoes || []).some(e => tipoPassa(e.tipo))) return false
     if (!procPassa(r.processo_id)) return false
     return true
@@ -636,7 +783,7 @@ export default function RpaAgendamentos() {
         .forEach(oc => {
           const key = `${formatHora(horaParaMS(oc.hora, oc.tipo))}|${oc.tipo || ''}`
           if (!porHora[key]) porHora[key] = { rotina: r, hora: oc.hora, tipo: oc.tipo, tempo, dias: {} }
-          porHora[key].dias[d.n] = oc
+          porHora[key].dias[diaParaMS(d.n, oc.hora, oc.tipo)] = oc
         })
     })
     const linhas = Object.values(porHora)
@@ -673,11 +820,21 @@ export default function RpaAgendamentos() {
   const rpasVinculados = new Set(
     processos.filter(p => ehRelatorio(p.tipo) && p.ativo && p.rpa_vinculado_id).map(p => p.rpa_vinculado_id)
   )
+  // Só esconde o RPA da aba Atualização se o relatório vinculado tem agenda ativa;
+  // sem ela, o RPA sumiria sozinho.
+  const comAgenda = new Set(
+    dados.filter(r => r.ativo && (r.execucoes || []).length > 0).map(r => r.processo_id)
+  )
+  const rpasEscondidosAtu = new Set(
+    processos
+      .filter(p => ehRelatorio(p.tipo) && p.ativo && p.rpa_vinculado_id && comAgenda.has(p.id))
+      .map(p => p.rpa_vinculado_id)
+  )
 
   const linhasAtualizacao = (() => {
     const porProcesso = {}
     rotinasFiltradas.forEach(r => {
-      if (r.processo_id && rpasVinculados.has(r.processo_id)) return
+      if (r.processo_id && rpasEscondidosAtu.has(r.processo_id)) return
       const key = r.processo_id || r.processo || r.id
       if (!porProcesso[key]) {
         porProcesso[key] = {
@@ -691,8 +848,9 @@ export default function RpaAgendamentos() {
         ;(r.porDia[d.n] || []).forEach(oc => {
           if (!tipoPassa(oc.tipo)) return
           if (!oc.hora) return
-          if (!porProcesso[key].porDia[d.n]) porProcesso[key].porDia[d.n] = []
-          porProcesso[key].porDia[d.n].push(oc)
+          const diaMS = diaParaMS(d.n, oc.hora, oc.tipo)
+          if (!porProcesso[key].porDia[diaMS]) porProcesso[key].porDia[diaMS] = []
+          porProcesso[key].porDia[diaMS].push(oc)
         })
       })
     })
@@ -706,10 +864,12 @@ export default function RpaAgendamentos() {
         const relatorio = ocs.filter(o => ehRelatorio(o.tipo))
         const base = relatorio.length ? relatorio : ocs
         base.forEach(oc => {
-          const horaAtu = somarMinutos(formatHora(horaParaMS(oc.hora, oc.tipo)), p.tempo)
-          if (!porDiaAtu[d.n]) porDiaAtu[d.n] = []
-          if (!porDiaAtu[d.n].some(x => x.horaAtu === horaAtu)) {
-            porDiaAtu[d.n].push({ horaAtu, tipo: oc.tipo, horaBase: oc.hora })
+          const { hora: horaAtu, avancaDias } = somarMinutosComDia(formatHora(horaParaMS(oc.hora, oc.tipo)), p.tempo)
+          // pronto depois da meia-noite: aparece no dia seguinte
+          const diaAtu = ((d.n - 1 + avancaDias) % 7) + 1
+          if (!porDiaAtu[diaAtu]) porDiaAtu[diaAtu] = []
+          if (!porDiaAtu[diaAtu].some(x => x.horaAtu === horaAtu)) {
+            porDiaAtu[diaAtu].push({ horaAtu, tipo: oc.tipo, horaBase: oc.hora })
           }
           if (!horasMap.has(horaAtu)) horasMap.set(horaAtu, { horaAtu, tipo: oc.tipo, horaBase: oc.hora })
         })
@@ -763,7 +923,7 @@ export default function RpaAgendamentos() {
   // execuções), respeitando os filtros de setor/tipo/processo da tela
   const processosSemAgendamento = processos.filter(p => {
     if (!p.ativo) return false
-    if (filtroDept && p.departamento_id !== filtroDept) return false
+    if (!setorPassa(p.departamento_id, p.departamento_nome)) return false
     if (!tipoPassa(p.tipo || 'RPA')) return false
     if (!procPassa(p.id)) return false
     return !dados.some(r => r.processo_id === p.id && r.ativo && (r.execucoes || []).length > 0)
@@ -771,12 +931,12 @@ export default function RpaAgendamentos() {
 
   // Opções do seletor de processos: acompanham os filtros de setor/tipo
   const opcoesProcessoFiltro = processos.filter(p => {
-    if (filtroDept && p.departamento_id !== filtroDept) return false
+    if (!setorPassa(p.departamento_id, p.departamento_nome)) return false
     return tipoPassa(p.tipo || 'RPA')
   }).sort((a, b) => cmpTexto(a.nome, b.nome))
 
   const processosFiltrados = processos.filter(p => {
-    if (filtroDept && p.departamento_id !== filtroDept) return false
+    if (!setorPassa(p.departamento_id, p.departamento_nome)) return false
     if (!tipoPassa(p.tipo || 'RPA')) return false
     if (!procPassa(p.id)) return false
     return true
@@ -809,16 +969,23 @@ export default function RpaAgendamentos() {
               rotina: r, dias: new Set(),
             }
           }
-          grupos[key].dias.add(d.n)
+          grupos[key].dias.add(diaParaMS(d.n, oc.hora, oc.tipo))
         })
       })
     })
     return Object.values(grupos).sort((a, b) => {
       const dir = sortHorario.dir === 'asc' ? 1 : -1
       // Compara no horário de MS (o que é exibido), não no configurado
+      // col 'rpa' / 'rel': linhas do outro tipo vão para o fim
+      const horaDe = (g) => {
+        if (!g.hora) return '99:99'
+        if (sortHorario.col === 'rpa' && ehRelatorio(g.tipo)) return '99:99'
+        if (sortHorario.col === 'rel' && !ehRelatorio(g.tipo)) return '99:99'
+        return horaParaMS(g.hora, g.tipo).slice(0, 5)
+      }
       const cmpHora = () => {
-        const ha = a.hora ? horaParaMS(a.hora, a.tipo).slice(0, 5) : '99:99'
-        const hb = b.hora ? horaParaMS(b.hora, b.tipo).slice(0, 5) : '99:99'
+        const ha = horaDe(a)
+        const hb = horaDe(b)
         return ha === hb ? 0 : (ha < hb ? -1 : 1)
       }
       let v
@@ -830,6 +997,23 @@ export default function RpaAgendamentos() {
       return v !== 0 ? v * dir : cmpTexto(a.processo, b.processo)
     })
   })()
+
+  // Setores do seletor: só os que aparecem na tabela abaixo (respeitando tipo e
+  // processo escolhidos), identificados pelo nome exibido na coluna Setor; o setor
+  // já selecionado nunca some da lista.
+  const nomesSetores = new Set()
+  const addSetor = (id, nome) => { const n = nomeSetor(id, nome); if (n) nomesSetores.add(n) }
+  if (visualizacao === 'processos') {
+    processos.filter(p => tipoPassa(p.tipo || 'RPA') && procPassa(p.id)).forEach(p => addSetor(p.departamento_id, p.departamento_nome))
+  } else {
+    dados.filter(r =>
+      procPassa(r.processo_id) &&
+      (r.execucoes || []).some(e => tipoPassa(e.tipo)) &&
+      !(visualizacao === 'atualizacao' && r.processo_id && rpasEscondidosAtu.has(r.processo_id))
+    ).forEach(r => addSetor(r.departamento_id, r.departamento_nome))
+  }
+  if (filtroDept) nomesSetores.add(filtroDept)
+  const setoresDisponiveis = [...nomesSetores].sort(cmpTexto)
 
   if (loading) return <div className="p-6">Carregando...</div>
 
@@ -874,6 +1058,14 @@ export default function RpaAgendamentos() {
         </div>
       </div>
 
+      {erroRecarga && (
+        <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 rounded-md px-3 py-2 text-xs font-semibold">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          <span className="flex-1">Não foi possível atualizar os dados — o que aparece pode estar desatualizado. ({erroRecarga})</span>
+          <button type="button" onClick={() => loadDados(true)} className="underline hover:text-red-900">Tentar novamente</button>
+        </div>
+      )}
+
       {/* Filtros */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-1 bg-slate-100 rounded-md p-1">
@@ -914,16 +1106,6 @@ export default function RpaAgendamentos() {
             <ClipboardList className="h-3.5 w-3.5" /> Processos
           </button>
         </div>
-        <select
-          value={filtroDept}
-          onChange={e => setFiltroDept(e.target.value)}
-          className="text-xs p-2 border border-slate-200 rounded-md font-medium text-slate-700 bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-        >
-          <option value="">Todos os setores</option>
-          {departamentos.map(d => (
-            <option key={d.id} value={d.id}>{d.nome_departamento}</option>
-          ))}
-        </select>
         <div className="flex items-center gap-1 bg-slate-100 rounded-md p-1">
           <button
             type="button"
@@ -968,6 +1150,16 @@ export default function RpaAgendamentos() {
             quebrarTexto
           />
         </div>
+        <select
+          value={filtroDept}
+          onChange={e => setFiltroDept(e.target.value)}
+          className="text-xs p-2 border border-slate-200 rounded-md font-medium text-slate-700 bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+        >
+          <option value="">Todos os setores</option>
+          {setoresDisponiveis.map(n => (
+            <option key={n} value={n}>{n}</option>
+          ))}
+        </select>
       </div>
 
       {/* Alerta: processos/relatórios cadastrados sem agendamento */}
@@ -985,7 +1177,7 @@ export default function RpaAgendamentos() {
               <button
                 key={p.id}
                 type="button"
-                onClick={() => abrirIncluirComProcesso(p)}
+                onClick={() => abrirAgendamentoDoProcesso(p)}
                 title="Criar rotina para este processo"
                 className="inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold bg-white border border-amber-200 text-amber-800 hover:bg-amber-100 hover:border-amber-400 transition-colors"
               >
@@ -1006,13 +1198,13 @@ export default function RpaAgendamentos() {
         <table className="w-full table-auto text-left border-collapse min-w-[1350px]">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[11px] font-semibold uppercase tracking-wider">
+              <th className="p-3 w-14 text-center">Ações</th>
               <ThSort label="Processo / Relatório" col="processo" sort={sortRotina} onSort={toggleSortRotina} className="min-w-[300px]" />
               <ThSort label="Setor" col="setor" sort={sortRotina} onSort={toggleSortRotina} />
               <ThSort label="Tipo" col="tipo" sort={sortRotina} onSort={toggleSortRotina} />
               {DIAS_SEMANA.map(d => (
                 <th key={d.n} className="p-3 whitespace-nowrap">{d.curto}</th>
               ))}
-              <th className="p-3 w-20 text-center">Ações</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
@@ -1022,6 +1214,13 @@ export default function RpaAgendamentos() {
               const proc = processos.find(p => p.id === linha.rotina.processo_id)
               return (
               <tr key={`${linha.rotina.id}|${linha.hora || ''}|${linha.tipo || ''}`} className={`hover:bg-slate-50/70 transition-colors ${!linha.rotina.ativo ? 'opacity-50' : ''}`}>
+                <td className="p-3 align-top text-center">
+                  <AcoesMenu itens={canEdit ? [
+                    { label: 'Editar horários da rotina', icon: CalendarClock, onClick: () => abrirEditar(linha.rotina), acao: 'editar' },
+                    { label: 'Editar processo / relatório', icon: Pencil, onClick: proc ? () => abrirEditarProcesso(proc) : null, acao: 'editar' },
+                    { label: 'Excluir rotina', icon: Trash2, onClick: () => abrirExcluir(linha.rotina), acao: 'excluir', perigo: true },
+                  ] : []} />
+                </td>
                 <td className="p-3 align-top font-bold text-slate-800">
                   <span className="inline-flex items-center gap-1.5">
                     {canEdit ? (
@@ -1084,9 +1283,6 @@ export default function RpaAgendamentos() {
                     </td>
                   )
                 })}
-                <td className="p-3">
-                  <PermissionActionButtons menuPath="rpa/agendamentos" onEdit={canEdit && proc ? () => abrirEditarProcesso(proc) : undefined} onDelete={canEdit ? () => abrirExcluir(linha.rotina) : undefined} />
-                </td>
               </tr>
               )
             })}
@@ -1102,8 +1298,8 @@ export default function RpaAgendamentos() {
         <table className="w-full table-auto text-left border-collapse min-w-[1000px]">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[11px] font-semibold uppercase tracking-wider">
-              <ThSort label="RPA" col="hora" sort={sortHorario} onSort={toggleSortHorario} />
-              <ThSort label="PBI / FAB" col="hora" sort={sortHorario} onSort={toggleSortHorario} />
+              <ThSort label="RPA" col="rpa" sort={sortHorario} onSort={toggleSortHorario} />
+              <ThSort label="PBI / FAB" col="rel" sort={sortHorario} onSort={toggleSortHorario} />
               <ThSort label="Setor" col="setor" sort={sortHorario} onSort={toggleSortHorario} />
               {DIAS_SEMANA.map(d => (
                 <th key={d.n} className="p-3 whitespace-nowrap">{d.curto}</th>
@@ -1246,12 +1442,12 @@ export default function RpaAgendamentos() {
         <table className="w-full table-auto text-left border-collapse min-w-[700px]">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[11px] font-semibold uppercase tracking-wider">
+              <th className="p-3 w-14 text-center">Ações</th>
               <ThSort label="Processo / Relatório" col="nome" sort={sortProc} onSort={toggleSortProc} />
               <ThSort label="Setor" col="setor" sort={sortProc} onSort={toggleSortProc} />
               <ThSort label="Tipo" col="tipo" sort={sortProc} onSort={toggleSortProc} />
               <ThSort label="Rotinas" col="rotinas" sort={sortProc} onSort={toggleSortProc} center />
               <ThSort label="Status" col="status" sort={sortProc} onSort={toggleSortProc} />
-              <th className="p-3 w-20 text-center">Ações</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
@@ -1259,6 +1455,13 @@ export default function RpaAgendamentos() {
               <tr><td colSpan={6} className="p-6 text-center text-slate-400">Nenhum processo/relatório cadastrado.</td></tr>
             ) : processosFiltrados.map(p => (
               <tr key={p.id} className={`hover:bg-slate-50/70 transition-colors ${!p.ativo ? 'opacity-50' : ''}`}>
+                <td className="p-3 text-center">
+                  <AcoesMenu itens={canEdit ? [
+                    { label: 'Editar horários de agendamento', icon: CalendarClock, onClick: () => abrirAgendamentoDoProcesso(p), acao: 'editar' },
+                    { label: 'Editar processo / relatório', icon: Pencil, onClick: () => abrirEditarProcesso(p), acao: 'editar' },
+                    { label: 'Excluir processo / relatório', icon: Trash2, onClick: () => abrirExcluirProcesso(p), acao: 'excluir', perigo: true },
+                  ] : []} />
+                </td>
                 <td className="p-3 font-bold text-slate-800">
                   <span className="inline-flex items-center gap-1.5">
                     {canEdit ? (
@@ -1298,9 +1501,6 @@ export default function RpaAgendamentos() {
                   }`}>
                     {p.ativo ? 'Ativo' : 'Inativo'}
                   </span>
-                </td>
-                <td className="p-3">
-                  <PermissionActionButtons menuPath="rpa/agendamentos" onEdit={canEdit ? () => abrirEditarProcesso(p) : undefined} onDelete={canEdit ? () => abrirExcluirProcesso(p) : undefined} />
                 </td>
               </tr>
             ))}
@@ -1544,6 +1744,14 @@ export default function RpaAgendamentos() {
                                   className="w-24 shrink-0 text-xs p-1.5 border border-slate-200 rounded-md font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                                 />
                                 <span className="text-[9px] text-slate-400 shrink-0">{ehBrasilia(form.tipo) ? 'Brasília' : 'MS'}</span>
+                                {(() => {
+                                  const outros = outrosNoMesmoHorario(form.processo_id, d.n, oc.hora, form.tipo)
+                                  return outros.length ? (
+                                    <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5" title={outros.join(', ')}>
+                                      Mesmo horário: {outros.slice(0, 2).join('; ')}{outros.length > 2 ? ` e mais ${outros.length - 2}` : ''}
+                                    </span>
+                                  ) : null
+                                })()}
                                 {dia.execucoes.length > 1 && (
                                   <button type="button" onClick={() => removeOcorrencia(d.n, idx)} className="text-slate-400 hover:text-red-600 transition-colors" title="Remover horário">
                                     <X className="h-3.5 w-3.5" />

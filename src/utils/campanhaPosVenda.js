@@ -276,34 +276,27 @@ const ddmm = (d) => `${String(d.getUTCDate()).padStart(2, '0')}/${String(d.getUT
 const diaUtilPadrao = (d) => (isoDia(d) <= 5 ? 1 : isoDia(d) === 6 ? 0.5 : 0)
 
 /**
- * Semanas reais (segunda a domingo) do mês, numeradas no ano. Semana da ponta com menos de 3
- * dias de segunda a sexta é juntada à vizinha (ex.: sáb 01/08 entra na semana de 03 a 08/08).
+ * Semanas do mês iguais às da Matriz KPIs (src/utils/kpiPeriods.js → computeWeekSchema): a semana 1
+ * vai do dia 1 até o primeiro sábado; as demais vão de domingo a sábado (a última termina no fim
+ * do mês). Semanas curtas NÃO são juntadas.
  * @param {number} ano
  * @param {number} mes 1–12
  * @param {Record<string, Array>} calendarios unidadeId -> linhas de fato_calendario do ano
  * @returns {{ semanas: Array, semCalendario: string[] }}
  */
-export function montarSemanas(ano, mes, calendarios, cfg = CAMPANHA, minSegSex = 3) {
+export function montarSemanas(ano, mes, calendarios, cfg = CAMPANHA) {
   const dias = []
   const ultimo = new Date(Date.UTC(ano, mes, 0)).getUTCDate()
   for (let d = 1; d <= ultimo; d++) dias.push(new Date(Date.UTC(ano, mes - 1, d)))
 
-  let grupos = []
-  for (const d of dias) {
-    const n = numeroSemanaISO(d)
-    const g = grupos[grupos.length - 1]
-    if (g && g.numero === n) g.dias.push(d)
-    else grupos.push({ numero: n, dias: [d] })
-  }
-  const segASex = (g) => g.dias.filter((d) => isoDia(d) <= 5).length
-  if (grupos.length > 1 && segASex(grupos[0]) < minSegSex) {
-    grupos[1] = { numero: grupos[1].numero, dias: [...grupos[0].dias, ...grupos[1].dias] }
-    grupos = grupos.slice(1)
-  }
-  const n = grupos.length
-  if (n > 1 && segASex(grupos[n - 1]) < minSegSex) {
-    grupos[n - 2] = { numero: grupos[n - 2].numero, dias: [...grupos[n - 2].dias, ...grupos[n - 1].dias] }
-    grupos = grupos.slice(0, -1)
+  // Mesma regra da Matriz KPIs: dia 1 → 1º sábado; depois domingo → sábado (ou fim do mês).
+  const grupos = []
+  let inicio = 1
+  while (inicio <= ultimo) {
+    const dow = new Date(Date.UTC(ano, mes - 1, inicio)).getUTCDay() // 0 = domingo … 6 = sábado
+    const fim = Math.min(inicio + (6 - dow), ultimo)
+    grupos.push({ numero: numeroSemanaISO(dias[inicio - 1]), dias: dias.slice(inicio - 1, fim) })
+    inicio = fim + 1
   }
 
   // dias úteis por data, por unidade (calendário da empresa; sem calendário -> regra padrão)
@@ -316,8 +309,7 @@ export function montarSemanas(ano, mes, calendarios, cfg = CAMPANHA, minSegSex =
   }
 
   const semanas = grupos.map((g, i) => {
-    const uteis = g.dias.filter((d) => isoDia(d) !== 7)
-    const ini = uteis[0] || g.dias[0], fim = uteis[uteis.length - 1] || g.dias[g.dias.length - 1]
+    const ini = g.dias[0], fim = g.dias[g.dias.length - 1]
     const pesos = Object.fromEntries(cfg.unidades.map((u) => [u.id,
       g.dias.reduce((acc, d) => acc + (diaUtil[u.id] ? (diaUtil[u.id][iso(d)] ?? 0) : diaUtilPadrao(d)), 0)]))
     return {
@@ -503,10 +495,13 @@ export function mesclarRegras(padrao, salvo) {
  * faixa não é paga na unidade, a semana não paga (regulamento item 7: "sem pagamento em 80%").
  * @returns {{ faixa: object|null, paga: number }}
  */
+// Faixas de uma aba (empresa ou 'TRUCKS'): as próprias, salvas na aba Regras; senão as gerais.
+export const faixasDe = (regras, chave) => regras.faixasUnidade?.[chave] || regras.faixas
+
 export function faixaDaUnidade(at, regras, unidadeId) {
   if (at == null || isNaN(at)) return { faixa: null, paga: 0 }
   let faixa = null
-  for (const f of [...regras.faixas].sort((a, b) => a.min - b.min)) if (at >= f.min) faixa = f
+  for (const f of [...faixasDe(regras, unidadeId)].sort((a, b) => a.min - b.min)) if (at >= f.min) faixa = f
   if (!faixa) return { faixa: null, paga: 0 }
   const pagaNaUnidade = regras.faixasPorUnidade?.[unidadeId]?.[faixa.id] !== false
   return { faixa, paga: pagaNaUnidade ? faixa.paga : 0 }

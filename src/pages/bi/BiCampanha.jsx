@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { Trophy, Calculator, BookOpen, BarChart2, Loader2, RefreshCw, Info as InfoIcon } from 'lucide-react'
+import { Trophy, Calculator, BookOpen, BarChart2, Loader2, RefreshCw, Info as InfoIcon, Lock, Unlock } from 'lucide-react'
 import { apiService } from '../../services/api'
 import { sincronizarCampanha } from '../../services/kpiService'
+import { useAuth } from '../../context/AuthContext'
 import {
-  CAMPANHA, REGRAS_PADRAO, combinarMetasUnidade, trimestreDoMes, atingimentoBlocoMatriz, montarSemanas, pesoSemana, pesoTotal, pctTxt,
+  CAMPANHA, REGRAS_PADRAO, faixasDe, combinarMetasUnidade, trimestreDoMes, atingimentoBlocoMatriz, montarSemanas, pesoSemana, pesoTotal, pctTxt,
   mesclarRegras, metasAprovadasDaUnidade, metaDoConsultor,
 } from '../../utils/campanhaPosVenda'
 
@@ -92,6 +93,7 @@ function gerentesGeraisTrucks(funcionarios, regras) {
 }
 
 export default function BiCampanha() {
+  const { user } = useAuth()
   const [aba, setAba] = useState('regras')
   const [unidade, setUnidade] = useState('CG')
 
@@ -163,11 +165,16 @@ export default function BiCampanha() {
       .catch(() => { if (vivo) setRegras(REGRAS_PADRAO) })
     return () => { vivo = false }
   }, [ano, mes])
+  // Grava as regras inteiras para o mês escolhido (os meses seguintes herdam).
+  const salvarRegras = async (novas) => {
+    await apiService.salvarCampanhaRegras(Number(ano), Number(mes), novas, user?.email || null)
+    setRegras(novas)
+  }
   const nomeMesDe = (m) => MESES.find((x) => Number(x.v) === Number(m))?.label
 
-  const { semanas } = useMemo(
-    () => montarSemanas(Number(ano), Number(mes), calendarios, CAMPANHA, regras.semanaMinSegSex),
-    [ano, mes, calendarios, regras.semanaMinSegSex],
+  const { semanas, semCalendario } = useMemo(
+    () => montarSemanas(Number(ano), Number(mes), calendarios, CAMPANHA),
+    [ano, mes, calendarios],
   )
   // Todas as metas vêm do Planejamento de Metas aprovado (metasAprovadasDaUnidade).
   const campanha = useMemo(() => ({ ...CAMPANHA, semanas }), [semanas])
@@ -322,7 +329,10 @@ export default function BiCampanha() {
         ))}
       </div>
 
-      {aba === 'regras' && <AbaRegras />}
+      {aba === 'regras' && (
+        <AbaRegras campanha={campanha} unidade={unidade} semCalendario={semCalendario} nomeMes={nomeMes} ano={ano}
+          regras={regras} onSalvar={salvarRegras} />
+      )}
       {aba === 'apuracao' && (
         <AbaApuracao campanha={campanha} regras={regras} unidade={unidade} ehTrucks={ehTrucks} diario={diario} consultores={consultores} mecanicos={mecanicos} chefes={chefes} gerentes={gerentes}
           gerentesGerais={gerentesGerais} metasPorUnidade={metasPorUnidade} metasTriPorUnidade={metasTriPorUnidade}
@@ -737,12 +747,291 @@ function AbaResultado() {
 // ======================================================================================
 // Regras — em reconstrução
 // ======================================================================================
-function AbaRegras() {
+const diasFmt = (v) => (Number(v) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+
+// Valor em dinheiro: mostra R$ 1.500,00; ao clicar, edita como 1500,00 (vírgula ou ponto aceitos).
+const moedaTxt = (v) => (Number(v) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const lerMoeda = (txt) => {
+  const limpo = String(txt).replace(/[^\d,.-]/g, '')
+  const n = limpo.includes(',') ? parseFloat(limpo.replace(/\./g, '').replace(',', '.')) : parseFloat(limpo)
+  return isNaN(n) ? 0 : n
+}
+function MoedaInput({ value, onChange, disabled = false, vazio = false, rotulo }) {
+  const [texto, setTexto] = useState(null) // null = fora de edição (mostra formatado)
   return (
-    <div className={`${CARD} p-10 flex flex-col items-center justify-center gap-2 text-center`}>
-      <BookOpen className="h-8 w-8 text-slate-300" />
-      <p className="text-sm font-semibold text-slate-700">Regras</p>
-      <p className="text-xs text-slate-500">Esta aba está sendo reconstruída.</p>
+    <span className="inline-flex items-center gap-1">
+      <span className="text-slate-400 text-xs">R$</span>
+      <input type="text" inputMode="decimal" disabled={disabled} aria-label={rotulo}
+        className="w-28 text-xs text-right tabular-nums p-1.5 border border-slate-200 rounded bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 disabled:bg-slate-50 disabled:text-slate-400"
+        value={vazio ? '' : (texto ?? moedaTxt(value))}
+        onFocus={(e) => { setTexto(moedaTxt(value)); e.target.select() }}
+        onChange={(e) => { setTexto(e.target.value); onChange(lerMoeda(e.target.value)) }}
+        onBlur={() => setTexto(null)} />
+    </span>
+  )
+}
+
+// Botão de cadeado ao lado de um campo: travado = campo sem valor e não editável.
+function Cadeado({ travado, onClick, rotulo, dica, desabilitado = false }) {
+  return (
+    <button type="button" onClick={onClick} disabled={desabilitado} title={dica}
+      aria-label={`${travado ? 'Destravar' : 'Travar'} ${rotulo}`} aria-pressed={travado}
+      className={`h-7 w-7 shrink-0 inline-flex items-center justify-center rounded-md border transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${
+        travado ? 'bg-slate-700 border-slate-700 text-white hover:bg-slate-800' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+      }`}>
+      {travado ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}
+    </button>
+  )
+}
+
+// Percentual: mostra 50,00 %; edita em número (50 ou 50,5) e guarda em fração (0.5).
+function PctInput({ value, onChange, rotulo }) {
+  const [texto, setTexto] = useState(null)
+  const fmt = (v) => ((Number(v) || 0) * 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return (
+    <span className="inline-flex items-center gap-1">
+      <input type="text" inputMode="decimal" aria-label={rotulo}
+        className="w-24 text-xs text-right tabular-nums p-1.5 border border-slate-200 rounded bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+        value={texto ?? fmt(value)}
+        onFocus={(e) => { setTexto(fmt(value)); e.target.select() }}
+        onChange={(e) => { setTexto(e.target.value); onChange(lerMoeda(e.target.value) / 100) }}
+        onBlur={() => setTexto(null)} />
+      <span className="text-slate-400 text-xs">%</span>
+    </span>
+  )
+}
+
+// Cópia imutável de obj com o valor trocado no caminho (ex.: ['funcoes', 'consultor', 'alvo', 'CG']).
+function comValor(obj, caminho, valor) {
+  if (!caminho.length) return valor
+  const [k, ...resto] = caminho
+  const copia = Array.isArray(obj) ? [...obj] : { ...(obj || {}) }
+  copia[k] = comValor(copia[k], resto, valor)
+  return copia
+}
+
+// Linhas do quadro Bônus-alvo da empresa selecionada: onde fica a Meta e a Supermeta de cada função.
+// Funções com bônus-alvo (alvo[unidade]) guardam a Supermeta em supermeta[unidade] (sem valor salvo,
+// vale 120% da Meta, como no regulamento). Chefe e Gerente Geral usam o valor fixo das faixas 100 e 120.
+function linhasBonus(regras, unidade, unidades) {
+  const F = regras.funcoes
+  if (unidade === 'TRUCKS') {
+    return unidades.map((u) => ({
+      k: `gg-${u.id}`, nome: `Gerente Geral · ${u.nome}`,
+      meta: ['funcoes', 'gerenteGeral', 'valores', u.id, 'f100'],
+      supermeta: ['funcoes', 'gerenteGeral', 'valores', u.id, 'f110'],
+    }))
+  }
+  const porAlvo = (k, nome, semSupermeta = false) => ((F[k]?.alvo?.[unidade] || 0) > 0
+    ? [{ k, nome, meta: ['funcoes', k, 'alvo', unidade], supermeta: ['funcoes', k, 'supermeta', unidade], padraoSuper: !semSupermeta }]
+    : [])
+  return [
+    ...porAlvo('consultor', 'Consultor Técnico'),
+    ...porAlvo('mecanico', 'Mecânico'),
+    ...porAlvo('box', 'Mecânico Box Express', true),
+    ...(F.chefe?.participa?.[unidade] !== false
+      ? [{ k: 'chefe', nome: 'Chefe de Oficina', meta: ['funcoes', 'chefe', 'valores', 'f100'], supermeta: ['funcoes', 'chefe', 'valores', 'f110'] }]
+      : []),
+    ...porAlvo('prog', 'Programação / Apontamento'),
+    ...porAlvo('gerente', unidade === 'CG' ? 'Gerente de Serviços' : 'Gerente de Filial'),
+  ]
+}
+const lerCaminho = (obj, caminho) => caminho.reduce((o, k) => (o == null ? undefined : o[k]), obj)
+
+// Semanas do mês escolhido e dias úteis de cada uma (Calendário de cada empresa: sábado = 0,5,
+// feriado = 0) + Bônus-alvo editável (Meta e Supermeta) da empresa selecionada.
+function AbaRegras({ campanha, unidade, semCalendario, nomeMes, ano, regras, onSalvar }) {
+  const unidades = unidade === 'TRUCKS' ? campanha.unidades : campanha.unidades.filter((u) => u.id === unidade)
+  const semCal = unidades.filter((u) => semCalendario.includes(u.id))
+
+  // Rascunho do Bônus-alvo: acompanha as regras carregadas do mês; salvar grava para o mês escolhido.
+  const [rascunho, setRascunho] = useState(regras)
+  const [salvando, setSalvando] = useState(false)
+  const [msg, setMsg] = useState(null)
+  useEffect(() => { setRascunho(regras); setMsg(null) }, [regras])
+  const alterado = JSON.stringify(rascunho) !== JSON.stringify(regras)
+  const linhas = linhasBonus(rascunho, unidade, campanha.unidades)
+  const valorSuper = (l) => {
+    const v = lerCaminho(rascunho, l.supermeta)
+    return v == null && l.padraoSuper ? (Number(lerCaminho(rascunho, l.meta)) || 0) * 1.2 : v
+  }
+  const alterar = (caminho, v) => { setRascunho((r) => comValor(r, caminho, v)); setMsg(null) }
+  const salvar = async () => {
+    setSalvando(true)
+    try {
+      await onSalvar(rascunho)
+      setMsg({ erro: false, txt: `Salvo para ${nomeMes}/${ano}.` })
+    } catch (err) {
+      setMsg({ erro: true, txt: `Não foi possível salvar: ${err.message || err}` })
+    } finally {
+      setSalvando(false)
+    }
+  }
+
+  // Salvar/Descartar (topo da aba) gravam todas as regras da aba de uma vez: Bônus-alvo e Faixas.
+  const botoesSalvar = (
+    <div className="flex items-center gap-2">
+      {msg && <span className={`text-xs ${msg.erro ? 'text-red-600' : 'text-emerald-700'}`}>{msg.txt}</span>}
+      {alterado && (
+        <button onClick={() => { setRascunho(regras); setMsg(null) }}
+          className="px-3 py-1.5 rounded-md text-xs font-semibold text-slate-700 border border-slate-200 bg-white hover:bg-slate-50">
+          Descartar
+        </button>
+      )}
+      <button onClick={salvar} disabled={salvando || !alterado}
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50">
+        {salvando && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Salvar
+      </button>
+    </div>
+  )
+
+  // Faixas de pagamento DA ABA (empresa ou CAIOBÁ TRUCKS), gravadas em faixasUnidade[aba]; sem faixas
+  // próprias, a aba mostra as gerais e a 1ª edição cria a cópia dela. "De" e "Percentual" editáveis;
+  // "Até" = início da faixa seguinte − 0,01% (a última é "ou mais").
+  const faixas = [...(faixasDe(rascunho, unidade) || [])].sort((a, b) => a.min - b.min)
+  const setFaixa = (id, campo, v) => alterar(['faixasUnidade', unidade],
+    faixasDe(rascunho, unidade).map((x) => (x.id === id ? { ...x, [campo]: v } : x)))
+
+  return (
+    <div className="space-y-5">
+      {/* Um só Salvar para a aba inteira: grava Bônus-alvo e Faixas de pagamento do mês. */}
+      <div className="flex items-center justify-end gap-2">{botoesSalvar}</div>
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-5 items-stretch">
+      <section className={`${CARD} p-4 space-y-3`}>
+        <h2 className="text-sm font-bold text-slate-900">Semanas de {nomeMes}/{ano}</h2>
+        {semCal.length > 0 && (
+          <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+            Calendário de {ano} não gerado para {semCal.map((u) => u.nome).join(', ')} — usando seg–sex = 1 e sábado = 0,5 até ser gerado.
+          </p>
+        )}
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs border-collapse">
+            <thead>
+              <tr className="bg-slate-50 border-y border-slate-200">
+                <th className={`${TH} text-left`}>Semana</th>
+                <th className={`${TH} text-left`}>Período</th>
+                {unidades.map((u) => (
+                  <th key={u.id} className={`${TH} text-right`}>{unidades.length > 1 ? u.nome : 'Dias úteis'}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {campanha.semanas.map((s) => (
+                <tr key={s.id} className="border-b border-slate-100">
+                  <td className="p-2 font-semibold text-slate-700 whitespace-nowrap">Sem {s.id.slice(1)}</td>
+                  <td className="p-2 text-slate-600 whitespace-nowrap">{s.label}</td>
+                  {unidades.map((u) => (
+                    <td key={u.id} className="p-2 text-right tabular-nums">{diasFmt(pesoSemana(s, u.id))}</td>
+                  ))}
+                </tr>
+              ))}
+              <tr className="bg-slate-50 font-semibold">
+                <td className="p-2 text-slate-900" colSpan={2}>Total do mês</td>
+                {unidades.map((u) => (
+                  <td key={u.id} className="p-2 text-right tabular-nums">{diasFmt(pesoTotal(campanha, u.id))}</td>
+                ))}
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className={`${CARD} p-4 space-y-3`}>
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <h2 className="text-sm font-bold text-slate-900">Bônus-alvo</h2>
+        </div>
+        {linhas.length === 0 ? (
+          <p className="text-xs text-slate-500">Nenhuma função com bônus nesta empresa.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs border-collapse">
+              <thead>
+                <tr className="bg-slate-50 border-y border-slate-200">
+                  <th className={`${TH} text-left`}>Função</th>
+                  <th className={`${TH} text-right`}>Meta</th>
+                  <th className={`${TH} text-right`}>Supermeta</th>
+                </tr>
+              </thead>
+              <tbody>
+                {linhas.map((l) => {
+                  // Travas em bonusBloqueado[unidade]: '<linha>:meta' e '<linha>:super' (o antigo
+                  // '<linha>' = true trava as duas). Meta travada trava também a Supermeta. Campo travado
+                  // fica vazio (sem valor); o valor digitado antes fica guardado e volta ao destravar.
+                  const travas = rascunho.bonusBloqueado?.[unidade] || {}
+                  const metaTravada = !!travas[`${l.k}:meta`] || travas[l.k] === true
+                  const superTravada = metaTravada || !!travas[`${l.k}:super`]
+                  const travar = (campo, valor) => {
+                    let t = { ...travas }
+                    delete t[l.k] // formato antigo
+                    if (campo === 'meta') t = { ...t, [`${l.k}:meta`]: valor, [`${l.k}:super`]: valor }
+                    else t = { ...t, [`${l.k}:super`]: valor }
+                    alterar(['bonusBloqueado', unidade], t)
+                  }
+                  return (
+                    <tr key={l.k} className={`border-b border-slate-100 last:border-0 ${metaTravada ? 'bg-slate-50' : ''}`}>
+                      <td className={`p-2 font-medium whitespace-nowrap ${metaTravada ? 'text-slate-400' : 'text-slate-700'}`}>{l.nome}</td>
+                      <td className="p-1.5 text-right">
+                        <span className="inline-flex items-center gap-1.5">
+                          <MoedaInput rotulo={`Meta — ${l.nome}`} vazio={metaTravada} disabled={metaTravada}
+                            value={lerCaminho(rascunho, l.meta) ?? 0} onChange={(v) => alterar(l.meta, v)} />
+                          <Cadeado travado={metaTravada} rotulo={`Meta — ${l.nome}`} onClick={() => travar('meta', !metaTravada)}
+                            dica={metaTravada ? 'Destravar a Meta (a Supermeta também é destravada)' : 'Travar a Meta sem valor (a Supermeta também é travada)'} />
+                        </span>
+                      </td>
+                      <td className="p-1.5 text-right">
+                        {l.supermeta && (
+                          <span className="inline-flex items-center gap-1.5">
+                            <MoedaInput rotulo={`Supermeta — ${l.nome}`} vazio={superTravada} disabled={superTravada}
+                              value={valorSuper(l) ?? 0} onChange={(v) => alterar(l.supermeta, v)} />
+                            <Cadeado travado={superTravada} rotulo={`Supermeta — ${l.nome}`} desabilitado={metaTravada}
+                              onClick={() => travar('super', !superTravada)}
+                              dica={metaTravada ? 'Travada junto com a Meta' : superTravada ? 'Destravar a Supermeta' : 'Travar a Supermeta sem valor'} />
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+    </div>
+
+      <section className={`${CARD} p-4 space-y-3`}>
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <h2 className="text-sm font-bold text-slate-900">Faixas de pagamento</h2>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs border-collapse">
+            <thead>
+              <tr className="bg-slate-50 border-y border-slate-200">
+                <th className={`${TH} text-left`}>Faixa de atingimento — de</th>
+                <th className={`${TH} text-left`}>Até</th>
+                <th className={`${TH} text-left`}>Percentual aplicado sobre o bônus</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="border-b border-slate-100 text-slate-500">
+                <td className="p-2">abaixo de {faixas.length ? pctTxt(faixas[0].min) : '—'}</td>
+                <td className="p-2" />
+                <td className="p-2 tabular-nums">0,00%</td>
+              </tr>
+              {faixas.map((f, i) => {
+                const prox = faixas[i + 1]
+                return (
+                  <tr key={f.id} className="border-b border-slate-100 last:border-0">
+                    <td className="p-1.5"><PctInput rotulo="Faixa de atingimento — de" value={f.min} onChange={(v) => setFaixa(f.id, 'min', v)} /></td>
+                    <td className="p-2 tabular-nums text-slate-600 whitespace-nowrap">{prox ? pctTxt(Math.max(prox.min - 0.0001, f.min)) : 'ou mais'}</td>
+                    <td className="p-1.5"><PctInput rotulo="Percentual aplicado sobre o bônus" value={f.paga} onChange={(v) => setFaixa(f.id, 'paga', v)} /></td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      </section>
     </div>
   )
 }

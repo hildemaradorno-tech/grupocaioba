@@ -466,6 +466,7 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
         .map(f => f.id)
       await apiService.excluirHistoricoLote(lote?.id || null, periodoInicio, periodoFim, funcionarioIds)
       setLote(null)
+      setLotesPorSetor(prev => ({ ...prev, [setorUnicoSelecionado]: null }))
       setHistoricoLote([])
       setMostrarHistoricoLote(false)
       setValoresPorFuncionario({})
@@ -855,6 +856,14 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
     () => Object.fromEntries(combinacoesEmpresaSetor.map((combo, i) => [`${combo.empresaId}::${combo.setNome}`, lotesTodasEmpresas[i]])),
     [combinacoesEmpresaSetor, lotesTodasEmpresas]
   )
+
+  // Ações no lote do setor aberto (Salvar, Conferir...) devolvem o lote atualizado em `lote`, mas
+  // a bolinha das abas e o Exportar leem lotesPorSetor, buscado só ao trocar empresa/período.
+  // Espelha o lote aberto ali na hora, sem precisar recarregar a página.
+  useEffect(() => {
+    if (!lote || !setorUnicoSelecionado || lote.empresa_id !== empresaSelecionadaId) return
+    setLotesPorSetor(prev => (prev[setorUnicoSelecionado] === lote ? prev : { ...prev, [setorUnicoSelecionado]: lote }))
+  }, [lote, setorUnicoSelecionado, empresaSelecionadaId])
 
   const chaveSetorPdf = (empresaId, nomeSetor) => {
     const setorId = dados?.setores.find(s => s.nome_setor === nomeSetor)?.id
