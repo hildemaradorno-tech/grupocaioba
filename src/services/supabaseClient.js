@@ -2983,22 +2983,30 @@ export const apiService = {
   },
 
   // Regras vigentes no mês: a do próprio mês ou, se não houver, a do último mês salvo antes dele.
-  getCampanhaRegras: async (ano, mes) => {
-    const { data, error } = await supabase
-      .from('fato_campanha_regras')
-      .select('ano, mes, dados, atualizado_em, atualizado_por')
-      .or(`ano.lt.${ano},and(ano.eq.${ano},mes.lte.${mes})`)
-      .order('ano', { ascending: false })
-      .order('mes', { ascending: false })
-      .limit(1)
-    if (error) throw error
-    return data?.[0] || null
+  // Regras são gravadas por EMPRESA + mês + ano (unidade: CG, DOU, TL, CS, TRUCKS). Vigente para a
+  // empresa: a última gravação dela com (ano, mês) <= o escolhido; sem nenhuma, a última GERAL
+  // (gravações antigas, de antes da separação por empresa); sem nenhuma, null (padrão do sistema).
+  getCampanhaRegras: async (ano, mes, unidade) => {
+    const ultima = async (u) => {
+      const { data, error } = await supabase
+        .from('fato_campanha_regras')
+        .select('ano, mes, unidade, dados, atualizado_em, atualizado_por')
+        .eq('unidade', u)
+        .or(`ano.lt.${ano},and(ano.eq.${ano},mes.lte.${mes})`)
+        .order('ano', { ascending: false })
+        .order('mes', { ascending: false })
+        .limit(1)
+      if (error) throw error
+      return data?.[0] || null
+    }
+    return (await ultima(unidade)) || (await ultima('GERAL'))
   },
 
-  salvarCampanhaRegras: async (ano, mes, dados, usuarioEmail = null) => {
+  salvarCampanhaRegras: async (ano, mes, unidade, dados, usuarioEmail = null) => {
     const { error } = await supabase
       .from('fato_campanha_regras')
-      .upsert({ ano, mes, dados, atualizado_em: new Date().toISOString(), atualizado_por: usuarioEmail }, { onConflict: 'ano,mes' })
+      .upsert({ ano, mes, unidade, dados, atualizado_em: new Date().toISOString(), atualizado_por: usuarioEmail },
+        { onConflict: 'ano,mes,unidade' })
     if (error) throw error
   },
 

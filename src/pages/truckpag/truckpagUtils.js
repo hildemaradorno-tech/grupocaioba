@@ -66,6 +66,7 @@ export function splitEstabelecimento(estabelecimento) {
 // Valor — pra mais ou pra menos). Cada crédito só pode ser usado uma vez. Retorna os grupos de
 // repasse (cada um já com totalBruto/totalTaxa/total líquido e `creditoVinculado` ou null) e um
 // Map crédito.id → grupo, pra consulta do lado dos créditos.
+const LIMITE_DIF_UNIDADE_DATA = 1.00
 export function conciliarRepassesCreditos(repasses, creditos, tolerancia = TOLERANCIA_VINCULO) {
   const gruposMap = new Map()
   for (const r of repasses) {
@@ -89,7 +90,24 @@ export function conciliarRepassesCreditos(repasses, creditos, tolerancia = TOLER
   for (const g of grupos) {
     const match = creditosDisponiveis.find(c => !c.usado && Math.abs((c.valor || 0) - g.total) <= tolerancia)
     g.creditoVinculado = match || null
+    g.vinculoPorUnidadeData = false
     if (match) match.usado = true
+  }
+
+  // 2ª passada: repasse que sobrou sem crédito casa com um crédito da MESMA unidade e MESMA data
+  // (data do caixa = data de pagamento), mesmo passando da tolerância, desde que a diferença seja
+  // pequena (até LIMITE_DIF_UNIDADE_DATA) e só exista 1 candidato — ex: repasse R$ 57.765,87 ×
+  // crédito R$ 57.765,81 de Campo Grande em 05/10. A tela marca esses vínculos com alerta.
+  for (const g of grupos) {
+    if (g.creditoVinculado || !g.codigoEmpresa || !g.data_pagamento) continue
+    const candidatos = creditosDisponiveis.filter(c => !c.usado
+      && c.data_caixa === g.data_pagamento
+      && codigoEmpresaPorNome(c.empresa_desc) === g.codigoEmpresa
+      && Math.abs((c.valor || 0) - g.total) <= LIMITE_DIF_UNIDADE_DATA)
+    if (candidatos.length !== 1) continue
+    g.creditoVinculado = candidatos[0]
+    g.vinculoPorUnidadeData = true
+    candidatos[0].usado = true
   }
 
   const creditoParaGrupo = new Map()

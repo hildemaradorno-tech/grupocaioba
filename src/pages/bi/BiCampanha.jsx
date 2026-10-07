@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { Trophy, Calculator, BookOpen, BarChart2, Loader2, RefreshCw, Info as InfoIcon, Lock, Unlock } from 'lucide-react'
+import { Trophy, Calculator, BookOpen, BarChart2, Loader2, RefreshCw, Info as InfoIcon, Lock, Unlock, Plus, Trash2 } from 'lucide-react'
 import { apiService } from '../../services/api'
 import { sincronizarCampanha } from '../../services/kpiService'
 import { useAuth } from '../../context/AuthContext'
@@ -155,20 +155,22 @@ export default function BiCampanha() {
     }
   }
 
-  // Regras vigentes no mês (fato_campanha_regras): as do mês, senão as do último mês salvo,
-  // senão o padrão do regulamento.
+  // Regras vigentes da EMPRESA selecionada no mês (fato_campanha_regras, por empresa + mês + ano):
+  // as do mês, senão as do último mês salvo da empresa, senão a regra geral, senão o padrão.
   const [regras, setRegras] = useState(REGRAS_PADRAO)
+  const [origemRegras, setOrigemRegras] = useState(null) // linha de onde vieram (ano, mes, unidade…)
   useEffect(() => {
     let vivo = true
-    apiService.getCampanhaRegras(Number(ano), Number(mes))
-      .then((linha) => { if (vivo) setRegras(mesclarRegras(REGRAS_PADRAO, linha?.dados)) })
-      .catch(() => { if (vivo) setRegras(REGRAS_PADRAO) })
+    apiService.getCampanhaRegras(Number(ano), Number(mes), unidade)
+      .then((linha) => { if (vivo) { setRegras(mesclarRegras(REGRAS_PADRAO, linha?.dados)); setOrigemRegras(linha) } })
+      .catch(() => { if (vivo) { setRegras(REGRAS_PADRAO); setOrigemRegras(null) } })
     return () => { vivo = false }
-  }, [ano, mes])
-  // Grava as regras inteiras para o mês escolhido (os meses seguintes herdam).
+  }, [ano, mes, unidade])
+  // Grava as regras da empresa selecionada para o mês escolhido (os meses seguintes dela herdam).
   const salvarRegras = async (novas) => {
-    await apiService.salvarCampanhaRegras(Number(ano), Number(mes), novas, user?.email || null)
+    await apiService.salvarCampanhaRegras(Number(ano), Number(mes), unidade, novas, user?.email || null)
     setRegras(novas)
+    setOrigemRegras({ ano: Number(ano), mes: Number(mes), unidade, atualizado_em: new Date().toISOString(), atualizado_por: user?.email || null })
   }
   const nomeMesDe = (m) => MESES.find((x) => Number(x.v) === Number(m))?.label
 
@@ -331,7 +333,8 @@ export default function BiCampanha() {
 
       {aba === 'regras' && (
         <AbaRegras campanha={campanha} unidade={unidade} semCalendario={semCalendario} nomeMes={nomeMes} ano={ano}
-          regras={regras} onSalvar={salvarRegras} />
+          regras={regras} onSalvar={salvarRegras} origemRegras={origemRegras}
+          nomeEmpresa={unidade === 'TRUCKS' ? 'CAIOBÁ TRUCKS' : (nomeEmpresa[u.empresaId] || u.nome)} />
       )}
       {aba === 'apuracao' && (
         <AbaApuracao campanha={campanha} regras={regras} unidade={unidade} ehTrucks={ehTrucks} diario={diario} consultores={consultores} mecanicos={mecanicos} chefes={chefes} gerentes={gerentes}
@@ -838,9 +841,20 @@ function linhasBonus(regras, unidade, unidades) {
 }
 const lerCaminho = (obj, caminho) => caminho.reduce((o, k) => (o == null ? undefined : o[k]), obj)
 
+// De onde vieram as regras mostradas na aba (gravação da empresa, regra geral ou padrão).
+function textoOrigem(origem, nomeMes, ano) {
+  if (!origem) return 'padrão do regulamento (nada salvo ainda).'
+  const mesOrigem = MESES[Number(origem.mes) - 1]?.label
+  if (origem.unidade === 'GERAL') return `regra geral de ${mesOrigem}/${origem.ano} (esta empresa ainda não salvou regras próprias).`
+  if (Number(origem.ano) === Number(ano) && mesOrigem === nomeMes) {
+    return `gravadas para este mês${origem.atualizado_por ? ` por ${origem.atualizado_por}` : ''}.`
+  }
+  return `herdadas de ${mesOrigem}/${origem.ano} (último mês salvo desta empresa).`
+}
+
 // Semanas do mês escolhido e dias úteis de cada uma (Calendário de cada empresa: sábado = 0,5,
 // feriado = 0) + Bônus-alvo editável (Meta e Supermeta) da empresa selecionada.
-function AbaRegras({ campanha, unidade, semCalendario, nomeMes, ano, regras, onSalvar }) {
+function AbaRegras({ campanha, unidade, semCalendario, nomeMes, ano, regras, onSalvar, origemRegras, nomeEmpresa }) {
   const unidades = unidade === 'TRUCKS' ? campanha.unidades : campanha.unidades.filter((u) => u.id === unidade)
   const semCal = unidades.filter((u) => semCalendario.includes(u.id))
 
@@ -860,7 +874,7 @@ function AbaRegras({ campanha, unidade, semCalendario, nomeMes, ano, regras, onS
     setSalvando(true)
     try {
       await onSalvar(rascunho)
-      setMsg({ erro: false, txt: `Salvo para ${nomeMes}/${ano}.` })
+      setMsg({ erro: false, txt: `Salvo para ${nomeEmpresa} — ${nomeMes}/${ano}.` })
     } catch (err) {
       setMsg({ erro: true, txt: `Não foi possível salvar: ${err.message || err}` })
     } finally {
@@ -887,15 +901,30 @@ function AbaRegras({ campanha, unidade, semCalendario, nomeMes, ano, regras, onS
 
   // Faixas de pagamento DA ABA (empresa ou CAIOBÁ TRUCKS), gravadas em faixasUnidade[aba]; sem faixas
   // próprias, a aba mostra as gerais e a 1ª edição cria a cópia dela. "De" e "Percentual" editáveis;
-  // "Até" = início da faixa seguinte − 0,01% (a última é "ou mais").
-  const faixas = [...(faixasDe(rascunho, unidade) || [])].sort((a, b) => a.min - b.min)
+  // Faixa = atingimento >= "De" e < início da faixa seguinte (a última não tem limite).
+  // Ordem fixa (1ª, 2ª, 3ª, 4ª faixa) — sem reordenar pelo valor, senão a linha "pula" enquanto se digita.
+  const faixas = faixasDe(rascunho, unidade) || []
   const setFaixa = (id, campo, v) => alterar(['faixasUnidade', unidade],
     faixasDe(rascunho, unidade).map((x) => (x.id === id ? { ...x, [campo]: v } : x)))
+  // Quantidade de faixas livre por mês/aba: "+" acrescenta no fim; lixeira remove (fica ao menos uma).
+  const adicionarFaixa = () => {
+    const atuais = faixasDe(rascunho, unidade) || []
+    const ultima = atuais[atuais.length - 1]
+    const nova = { id: `f${Date.now().toString(36)}`, min: ultima ? Math.round((ultima.min + 0.1) * 10000) / 10000 : 0.8, paga: 1, base: 'meta' }
+    alterar(['faixasUnidade', unidade], [...atuais, nova])
+  }
+  const removerFaixa = (id) => alterar(['faixasUnidade', unidade], (faixasDe(rascunho, unidade) || []).filter((x) => x.id !== id))
 
   return (
     <div className="space-y-5">
-      {/* Um só Salvar para a aba inteira: grava Bônus-alvo e Faixas de pagamento do mês. */}
-      <div className="flex items-center justify-end gap-2">{botoesSalvar}</div>
+      {/* Um só Salvar para a aba inteira: grava as regras DESTA empresa para o mês/ano escolhido. */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <p className="text-xs text-slate-600">
+          <b className="text-slate-800">Regras de {nomeEmpresa} · {nomeMes}/{ano}:</b>{' '}
+          {textoOrigem(origemRegras, nomeMes, ano)}
+        </p>
+        {botoesSalvar}
+      </div>
     <div className="grid grid-cols-1 md:grid-cols-2 gap-5 items-stretch">
       <section className={`${CARD} p-4 space-y-3`}>
         <h2 className="text-sm font-bold text-slate-900">Semanas de {nomeMes}/{ano}</h2>
@@ -972,20 +1001,20 @@ function AbaRegras({ campanha, unidade, semCalendario, nomeMes, ano, regras, onS
                       <td className={`p-2 font-medium whitespace-nowrap ${metaTravada ? 'text-slate-400' : 'text-slate-700'}`}>{l.nome}</td>
                       <td className="p-1.5 text-right">
                         <span className="inline-flex items-center gap-1.5">
-                          <MoedaInput rotulo={`Meta — ${l.nome}`} vazio={metaTravada} disabled={metaTravada}
-                            value={lerCaminho(rascunho, l.meta) ?? 0} onChange={(v) => alterar(l.meta, v)} />
                           <Cadeado travado={metaTravada} rotulo={`Meta — ${l.nome}`} onClick={() => travar('meta', !metaTravada)}
                             dica={metaTravada ? 'Destravar a Meta (a Supermeta também é destravada)' : 'Travar a Meta sem valor (a Supermeta também é travada)'} />
+                          <MoedaInput rotulo={`Meta — ${l.nome}`} vazio={metaTravada} disabled={metaTravada}
+                            value={lerCaminho(rascunho, l.meta) ?? 0} onChange={(v) => alterar(l.meta, v)} />
                         </span>
                       </td>
                       <td className="p-1.5 text-right">
                         {l.supermeta && (
                           <span className="inline-flex items-center gap-1.5">
-                            <MoedaInput rotulo={`Supermeta — ${l.nome}`} vazio={superTravada} disabled={superTravada}
-                              value={valorSuper(l) ?? 0} onChange={(v) => alterar(l.supermeta, v)} />
                             <Cadeado travado={superTravada} rotulo={`Supermeta — ${l.nome}`} desabilitado={metaTravada}
                               onClick={() => travar('super', !superTravada)}
                               dica={metaTravada ? 'Travada junto com a Meta' : superTravada ? 'Destravar a Supermeta' : 'Travar a Supermeta sem valor'} />
+                            <MoedaInput rotulo={`Supermeta — ${l.nome}`} vazio={superTravada} disabled={superTravada}
+                              value={valorSuper(l) ?? 0} onChange={(v) => alterar(l.supermeta, v)} />
                           </span>
                         )}
                       </td>
@@ -1007,30 +1036,52 @@ function AbaRegras({ campanha, unidade, semCalendario, nomeMes, ano, regras, onS
           <table className="w-full text-xs border-collapse">
             <thead>
               <tr className="bg-slate-50 border-y border-slate-200">
-                <th className={`${TH} text-left`}>Faixa de atingimento — de</th>
-                <th className={`${TH} text-left`}>Até</th>
+                <th className={`${TH} text-left`}>Atingimento ≥</th>
+                <th className={`${TH} text-left`}>e menor que</th>
                 <th className={`${TH} text-left`}>Percentual aplicado sobre o bônus</th>
+                <th className={`${TH} text-left`}>Aplicar sobre</th>
+                <th className={`${TH} w-10`} aria-label="Remover" />
               </tr>
             </thead>
             <tbody>
               <tr className="border-b border-slate-100 text-slate-500">
-                <td className="p-2">abaixo de {faixas.length ? pctTxt(faixas[0].min) : '—'}</td>
-                <td className="p-2" />
+                <td className="p-2">—</td>
+                <td className="p-2 tabular-nums">&lt; {faixas.length ? pctTxt(faixas[0].min) : '—'}</td>
                 <td className="p-2 tabular-nums">0,00%</td>
+                <td className="p-2" />
+                <td className="p-2" />
               </tr>
               {faixas.map((f, i) => {
                 const prox = faixas[i + 1]
                 return (
                   <tr key={f.id} className="border-b border-slate-100 last:border-0">
-                    <td className="p-1.5"><PctInput rotulo="Faixa de atingimento — de" value={f.min} onChange={(v) => setFaixa(f.id, 'min', v)} /></td>
-                    <td className="p-2 tabular-nums text-slate-600 whitespace-nowrap">{prox ? pctTxt(Math.max(prox.min - 0.0001, f.min)) : 'ou mais'}</td>
+                    <td className="p-1.5"><PctInput rotulo="Atingimento maior ou igual a" value={f.min} onChange={(v) => setFaixa(f.id, 'min', v)} /></td>
+                    <td className="p-2 tabular-nums text-slate-600 whitespace-nowrap">{prox ? <>&lt; {pctTxt(prox.min)}</> : 'sem limite'}</td>
                     <td className="p-1.5"><PctInput rotulo="Percentual aplicado sobre o bônus" value={f.paga} onChange={(v) => setFaixa(f.id, 'paga', v)} /></td>
+                    <td className="p-1.5">
+                      <select aria-label="Aplicar o percentual sobre" value={f.base || 'meta'} onChange={(e) => setFaixa(f.id, 'base', e.target.value)}
+                        className="text-xs p-1.5 border border-slate-200 rounded bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500">
+                        <option value="meta">Meta</option>
+                        <option value="supermeta">Supermeta</option>
+                      </select>
+                    </td>
+                    <td className="p-1.5 text-center">
+                      <button type="button" onClick={() => removerFaixa(f.id)} disabled={faixas.length <= 1}
+                        title="Remover esta faixa" aria-label={`Remover faixa a partir de ${pctTxt(f.min)}`}
+                        className="h-7 w-7 inline-flex items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 hover:bg-red-50 hover:text-red-600 hover:border-red-200 disabled:opacity-40 disabled:cursor-not-allowed">
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </td>
                   </tr>
                 )
               })}
             </tbody>
           </table>
         </div>
+        <button type="button" onClick={adicionarFaixa}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-blue-700 border border-blue-200 bg-blue-50 hover:bg-blue-100">
+          <Plus className="h-3.5 w-3.5" /> Adicionar faixa
+        </button>
       </section>
     </div>
   )

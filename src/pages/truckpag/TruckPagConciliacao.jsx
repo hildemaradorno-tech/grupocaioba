@@ -113,7 +113,9 @@ export default function TruckPagConciliacao() {
         saldoDocto: null,
         detalhe: g.linhas,
       })
-      lista.push({ chave: g.chave, dataOrdenacao: g.data_pagamento || '', conciliado: !!g.creditoVinculado, linhas: linhasBloco })
+      // Vinculado pela tolerância mas sem bater centavo a centavo: guarda a diferença pro alerta.
+      const diferenca = g.creditoVinculado ? Math.round(((g.creditoVinculado.valor || 0) - g.total) * 100) / 100 : 0
+      lista.push({ chave: g.chave, dataOrdenacao: g.data_pagamento || '', conciliado: !!g.creditoVinculado, diferenca, porUnidadeData: !!g.vinculoPorUnidadeData, linhas: linhasBloco })
     }
     for (const c of creditosFiltrados) {
       if (usados.has(c.id)) continue
@@ -159,6 +161,7 @@ export default function TruckPagConciliacao() {
   // pares certos).
   const blocosVinculados = useMemo(() => blocosOrdenados.filter(b => b.conciliado), [blocosOrdenados])
   const blocosNaoVinculados = useMemo(() => blocosOrdenados.filter(b => !b.conciliado), [blocosOrdenados])
+  const qtdComDiferenca = blocosVinculados.filter(b => b.diferenca !== 0).length
 
   const linhasRepasseAtual = linhas.filter(l => l.tipo === 'repasse')
   const linhasCreditoAtual = linhas.filter(l => l.tipo === 'credito')
@@ -283,6 +286,14 @@ export default function TruckPagConciliacao() {
                 <Link2 className="h-4 w-4 text-emerald-600" />
                 <h2 className="text-xs font-bold uppercase tracking-wide text-emerald-700">Conciliados</h2>
                 <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-0.5">{blocosVinculados.length}</span>
+                {qtdComDiferenca > 0 && (
+                  <span
+                    title="Conciliados, mas o crédito e o repasse não batem centavo a centavo"
+                    className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5"
+                  >
+                    <AlertTriangle className="h-3 w-3" /> {qtdComDiferenca} com diferença de valor
+                  </span>
+                )}
               </div>
               <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-x-auto custom-scrollbar-light">
               <table className="w-full text-left border-collapse">
@@ -330,10 +341,24 @@ export default function TruckPagConciliacao() {
                                   <List className="h-4 w-4" />
                                 </button>
                               )}
+                              {l.tipo === 'credito' && bloco.diferenca !== 0 && (
+                                <span
+                                  title={`${bloco.porUnidadeData ? 'Conciliado por mesma unidade e mesma data (acima da tolerância de valor)' : 'Conciliado pela tolerância de valor'}: o crédito difere do repasse em ${fmtMoeda(Math.abs(bloco.diferenca))} (${bloco.diferenca > 0 ? 'crédito maior' : 'crédito menor'} que o repasse)`}
+                                  aria-label="Conciliado com diferença de valor"
+                                  className="inline-flex text-amber-500"
+                                >
+                                  <AlertTriangle className="h-4 w-4" />
+                                </span>
+                              )}
                             </td>
                             {colunas.map(c => (
                               <td key={c.key} className={`p-3 whitespace-nowrap ${c.numerico ? 'text-right font-semibold text-slate-900' : ''}`}>
                                 {c.formatar ? c.formatar(l[c.key]) : (l[c.key] || '—')}
+                                {c.key === 'valorLiquido' && l.tipo === 'credito' && bloco.diferenca !== 0 && (
+                                  <span className="block text-[10px] font-bold text-amber-600">
+                                    dif. {bloco.diferenca > 0 ? '+' : '−'}{fmtMoeda(Math.abs(bloco.diferenca))}
+                                  </span>
+                                )}
                               </td>
                             ))}
                           </tr>
