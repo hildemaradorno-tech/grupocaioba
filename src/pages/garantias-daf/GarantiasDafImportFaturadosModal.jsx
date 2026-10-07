@@ -27,13 +27,12 @@ function defaultPeriodo() {
 
 async function fetchFaturados(dataInicio, dataFim, numeroOS = null) {
   const params = new URLSearchParams()
-  if (numeroOS) {
-    // Quando OS específica: backend retorna todos os tipos dela sem filtrar data
-    params.set('numeroOS', numeroOS)
-  } else {
-    if (dataInicio) params.set('dataInicio', dataInicio)
-    if (dataFim)    params.set('dataFim',    dataFim)
-  }
+  if (numeroOS) params.set('numeroOS', numeroOS)
+  // O período some os arquivos (anos) que o backend baixa — útil mesmo buscando por Nº OS
+  // específica, já que o usuário já indicou em qual período procurar. Sem período informado,
+  // a busca por Nº OS continua olhando todos os anos (OS pode ter sido reaproveitada).
+  if (dataInicio) params.set('dataInicio', dataInicio)
+  if (dataFim)    params.set('dataFim',    dataFim)
 
   const res = await fetch(`${BACKEND_URL}/api/garantias/faturados?${params}`)
   if (!res.ok) {

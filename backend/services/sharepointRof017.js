@@ -13,16 +13,21 @@ const FOLDER_PATH = '/Banco de Dados - DAF - Pós-Vendas/Relatório Geral OS'
 const FILE_PREFIX = 'ROF017_FATURAMENTOPOROS'
 
 const CACHE_TTL_MS = 5 * 60 * 1000
-let _cache = null
-let _cacheTs = 0
+// Cache por arquivo (por ano) — permite carregar só o(s) ano(s) pedido(s) em vez de sempre
+// baixar e parsear todos os arquivos (um por ano, ~30-50 mil linhas cada).
+const _fileRowsCache = new Map() // nome do arquivo -> { rows, ts }
+let _fileListCache = null
+let _fileListTs = 0
 
 export function clearRof017Cache() {
-  _cache = null
-  _cacheTs = 0
+  _fileRowsCache.clear()
+  _fileListCache = null
+  _fileListTs = 0
 }
 
-function isCacheValid() {
-  return _cache !== null && (Date.now() - _cacheTs) < CACHE_TTL_MS
+function extrairAno(nomeArquivo) {
+  const m = nomeArquivo.match(/(\d{4})/)
+  return m ? Number(m[1]) : null
 }
 
 function toIsoDate(val) {
@@ -56,8 +61,8 @@ function toIsoDate(val) {
   } catch { return null }
 }
 
-async function loadAllRows() {
-  if (isCacheValid()) return _cache
+async function listarArquivos() {
+  if (_fileListCache && (Date.now() - _fileListTs) < CACHE_TTL_MS) return _fileListCache
 
   const driveId = process.env.SHAREPOINT_DRIVE_ID
   if (!driveId) throw new Error('SHAREPOINT_DRIVE_ID não configurado no ambiente')
@@ -69,29 +74,47 @@ async function loadAllRows() {
     throw new Error(`Nenhum arquivo "${FILE_PREFIX}*.xlsx" encontrado em: ${FOLDER_PATH}`)
   }
 
-  console.log(`[ROF017] ${files.length} arquivo(s): ${files.map(f => f.name).join(', ')}`)
+  _fileListCache = files
+  _fileListTs = Date.now()
+  return files
+}
 
-  const allRows = []
-  for (const file of files) {
-    const downloadUrl = file['@microsoft.graph.downloadUrl']
-    if (!downloadUrl) {
-      console.warn(`[ROF017] Sem URL de download para ${file.name}, pulando.`)
-      continue
-    }
-    const response = await axios.get(downloadUrl, { responseType: 'arraybuffer', timeout: 60_000 })
-    const workbook = XLSX.read(Buffer.from(response.data), { type: 'buffer', cellDates: true })
-    const sheet = workbook.Sheets[workbook.SheetNames[0]]
-    const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' })
-    console.log(`[ROF017] ${rows.length} linhas de ${file.name}`)
-    allRows.push(...rows)
+async function carregarArquivo(file) {
+  const cached = _fileRowsCache.get(file.name)
+  if (cached && (Date.now() - cached.ts) < CACHE_TTL_MS) return cached.rows
+
+  const downloadUrl = file['@microsoft.graph.downloadUrl']
+  if (!downloadUrl) {
+    console.warn(`[ROF017] Sem URL de download para ${file.name}, pulando.`)
+    return []
   }
+  const response = await axios.get(downloadUrl, { responseType: 'arraybuffer', timeout: 60_000 })
+  const workbook = XLSX.read(Buffer.from(response.data), { type: 'buffer', cellDates: true })
+  const sheet = workbook.Sheets[workbook.SheetNames[0]]
+  const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' })
+  console.log(`[ROF017] ${rows.length} linhas de ${file.name}`)
+  _fileRowsCache.set(file.name, { rows, ts: Date.now() })
+  return rows
+}
 
-  _cache = allRows
-  _cacheTs = Date.now()
+// anos: array opcional de anos (ex: [2026]) para carregar só os arquivos correspondentes —
+// usado quando a busca já tem um período definido (ambos dataInicio/dataFim), evitando baixar e
+// parsear todos os arquivos (um por ano, dezenas de milhares de linhas cada) à toa. Sem o filtro
+// (busca por Nº OS, que pode estar em qualquer ano), carrega todos como antes.
+async function loadAllRows(anos = null) {
+  const files = await listarArquivos()
+  const alvo = anos ? files.filter(f => anos.includes(extrairAno(f.name))) : files
+  const useFiles = alvo.length > 0 ? alvo : files
 
-  if (allRows.length > 0) {
+  console.log(`[ROF017] ${useFiles.length}/${files.length} arquivo(s)${anos ? ` (anos: ${anos.join(', ')})` : ''}: ${useFiles.map(f => f.name).join(', ')}`)
+
+  // Baixa/parseia os arquivos em paralelo — sequencial custava a soma do tempo de cada arquivo,
+  // em paralelo custa só o tempo do mais lento.
+  const porArquivo = await Promise.all(useFiles.map(carregarArquivo))
+  const allRows = porArquivo.flat()
+
+  if (allRows.length > 0 && !anos) {
     console.log('[ROF017] Colunas:', Object.keys(allRows[0]).join(' | '))
-    console.log('[ROF017] Amostra:', JSON.stringify(allRows[0]))
   }
 
   return allRows
@@ -109,7 +132,21 @@ async function loadAllRows() {
  * primeiro arquivo processado ficava visível — escondendo a OS mais recente da busca.
  */
 export async function getAllFaturamentosRof017(dataInicio, dataFim, numeroOS = null) {
-  const rows = await loadAllRows()
+  // Restringe aos arquivos (anos) do período quando AMBAS as datas (início e fim) são informadas —
+  // vale tanto pra busca geral quanto pra busca por Nº OS: se o usuário já informou o período, é
+  // ele quem está escolhendo em quais anos procurar (mesmo contrato de um filtro combinado). Sem
+  // período, a busca por Nº OS continua olhando todos os anos, pois o Dealer.net reaproveita
+  // números de OS entre anos/unidades diferentes (ver OS 1627/1457 nas notas desta função).
+  let anos = null
+  if (dataInicio && dataFim) {
+    const anoIni = Number(String(dataInicio).slice(0, 4))
+    const anoFim = Number(String(dataFim).slice(0, 4))
+    if (Number.isFinite(anoIni) && Number.isFinite(anoFim) && anoIni <= anoFim) {
+      anos = []
+      for (let a = anoIni; a <= anoFim; a++) anos.push(a)
+    }
+  }
+  const rows = await loadAllRows(anos)
 
   const p = rows[0] || {}
   const keys = Object.keys(p)

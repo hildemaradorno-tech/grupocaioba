@@ -276,13 +276,6 @@ export default function GarantiasDafFaturadas() {
               <XCircle className="h-4 w-4" /> Excluir selecionadas ({selecionados.size})
             </button>
           )}
-          <button
-            onClick={() => setModalImportarFaturados(true)}
-            title="Importar OS"
-            className="flex items-center justify-center p-2 bg-white hover:bg-slate-50 text-slate-700 rounded-md shadow-sm border border-slate-200 transition-colors"
-          >
-            <Download className="h-4 w-4 text-green-500" />
-          </button>
         </div>
         </div>
         <GarantiasNav />
@@ -372,6 +365,9 @@ export default function GarantiasDafFaturadas() {
               </button>
               <button type="button" onClick={handleLimparTudo} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-slate-600 hover:bg-slate-100 transition-colors">
                 <RotateCcw className="h-3.5 w-3.5" /> Limpar
+              </button>
+              <button type="button" onClick={() => setModalImportarFaturados(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-green-600 hover:bg-green-700 transition-colors">
+                <Download className="h-3.5 w-3.5" /> Importar
               </button>
             </div>
           </form>
