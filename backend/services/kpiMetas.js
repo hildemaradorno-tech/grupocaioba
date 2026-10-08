@@ -70,7 +70,7 @@ async function carregarBase(ano) {
 
   const [metas, calendario] = await Promise.all([
     fetchTudo(() => supabaseAdmin.from('fato_metas_publicadas')
-      .select('empresa_id, empresa_nome, mes, tipo, colaborador_nome, departamento_nome, meta_faturamento, meta_servicos, fat_parceira')
+      .select('empresa_id, empresa_nome, mes, tipo, colaborador_nome, departamento_nome, meta_faturamento, meta_servicos, fat_parceira, ticket_total, passagens')
       .eq('ano', ano).order('id')),
     fetchTudo(() => supabaseAdmin.from('fato_calendario')
       .select('empresa_id, data, dias_uteis')
@@ -411,4 +411,29 @@ export async function getMetaTrpPeriodos(ano, { vendedorNome = null } = {}) {
     .filter(r => r.tipo === 'pecas' && r.fat_parceira != null && (!alvo || normNome(r.colaborador_nome) === alvo))
     .map(r => ({ ...r, meta_faturamento: r.fat_parceira }))
   return periodizarMetas(linhas, ano, base.calendario)
+}
+
+/**
+ * Meta de Ticket Médio da Oficina (R$/OS) do(s) consultor(es): publicada como ticket_total
+ * (planejamento) por consultor/empresa/mês, junto com o total de passagens (OS) do mês. O
+ * agregado (vários consultores/empresas) é ponderado pelas passagens de cada um — não é
+ * média simples dos tickets — para bater com a conta real (Faturamento ÷ Passagens).
+ * vendedorNome aqui = consultorNome; empresaNome restringe à casa; ambos null = todos.
+ */
+export async function getMetaTicketMedioPeriodos(ano, { consultorNome = null, empresaNome = null } = {}) {
+  const base = await carregarBase(ano)
+  if (!base) return null
+  const alvoCon = consultorNome ? normNome(consultorNome) : null
+  const alvoEmp = empresaNome ? normNome(empresaNome) : null
+  const linhas = base.metas
+    .filter(r => r.tipo === 'consultor' && r.ticket_total != null && r.passagens != null
+      && (!alvoCon || normNome(r.colaborador_nome) === alvoCon)
+      && (!alvoEmp || normNome(r.empresa_nome) === alvoEmp))
+    .map(r => ({ ...r, meta_faturamento: Number(r.ticket_total) * Number(r.passagens) }))
+  const fat = periodizarMetas(linhas, ano, base.calendario)
+  const pas = periodizarMetas(linhas.map(r => ({ ...r, meta_faturamento: Number(r.passagens) })), ano, base.calendario)
+  if (!fat || !pas) return null
+  const out = {}
+  for (const k of Object.keys(fat)) out[k] = (pas[k] > 0 && fat[k] != null) ? fat[k] / pas[k] : null
+  return out
 }

@@ -559,7 +559,6 @@ export default function SidebarLayout() {
             {canView('bi/garantias-daf') && <FlyItem to="/bi/garantias-daf" icon={ShieldCheck} onClose={closeFlyout}>Garantias DAF</FlyItem>}
             {canView('bi/projetos') && <FlyItem to="/bi/projetos" icon={FolderKanban} onClose={closeFlyout}>Gestão de Projetos</FlyItem>}
             {canView('bi/possibilidades') && <FlyItem to="/bi/possibilidades" icon={Gauge} onClose={closeFlyout}>Possibilidades</FlyItem>}
-            {canView('bi/campanha') && <FlyItem to="/bi/campanha" icon={Trophy} onClose={closeFlyout}>Campanha Pós-Venda</FlyItem>}
             {canViewSection('_bi.fontes-dados') && (
               <>
                 <div className="mx-3 my-2 border-t border-blue-800/50" />
@@ -575,6 +574,8 @@ export default function SidebarLayout() {
                 <FlyItem to="/kpi/matriz" icon={BarChart2} onClose={closeFlyout}>Matriz KPIs</FlyItem>
               </>
             )}
+            {/* Campanha Pós-Venda logo abaixo da Matriz KPIs (usa os blocos da Matriz). */}
+            {canView('bi/campanha') && <FlyItem to="/bi/campanha" icon={Trophy} onClose={closeFlyout}>Campanha Pós-Venda</FlyItem>}
           </>
         )
 

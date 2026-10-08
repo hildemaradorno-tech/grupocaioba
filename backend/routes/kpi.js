@@ -38,7 +38,7 @@ import {
   sincronizacaoEmAndamento,
 } from '../services/kpiSyncService.js'
 import { getPesos, setPeso, aplicarPesos } from '../services/kpiPesos.js'
-import { getMetaPecasPeriodos, getMetaOficinaPeriodos, getMetaMecanicoPeriodos, getMetaMargemOficinaPeriodos, getMetaPecasBalcaoPeriodos, getMetaMargemBalcaoPeriodos, getMetaTrpPeriodos } from '../services/kpiMetas.js'
+import { getMetaPecasPeriodos, getMetaOficinaPeriodos, getMetaMecanicoPeriodos, getMetaMargemOficinaPeriodos, getMetaPecasBalcaoPeriodos, getMetaMargemBalcaoPeriodos, getMetaTrpPeriodos, getMetaTicketMedioPeriodos } from '../services/kpiMetas.js'
 
 const router = Router()
 
@@ -424,7 +424,7 @@ function ticketMedioConsultor(consultorData) {
   return out
 }
 
-function mergeBlocoServicos(quadros, consultorData, mecanicoData, metaConsultor, metaMecanico, margemConsultor = null) {
+function mergeBlocoServicos(quadros, consultorData, mecanicoData, metaConsultor, metaMecanico, margemConsultor = null, metaTicket = null) {
   const r = (v) => (v != null ? Math.round(v) : null)
   const p = (v) => (v != null ? v : null)
 
@@ -435,7 +435,7 @@ function mergeBlocoServicos(quadros, consultorData, mecanicoData, metaConsultor,
           case 1: return injectMeta(injectPeriods(kpi, sumPeriods(consultorData?.pecasOficina?.liquido, consultorData?.servicos?.faturamentoBruto), r), metaConsultor)
           case 2: return injectMeta(injectPeriods(kpi, consultorData?.servicos?.margemBruta ?? {}, p), margemConsultor?.servicos)
           case 3: return injectMeta(injectPeriods(kpi, consultorData?.pecasOficina?.margemPct ?? {}, p), margemConsultor?.pecas)
-          case 7: return injectPeriods(kpi, ticketMedioConsultor(consultorData), r)
+          case 7: return injectMeta(injectPeriods(kpi, ticketMedioConsultor(consultorData), r), metaTicket)
         }
         return kpi
       })
@@ -677,6 +677,9 @@ router.get('/bloco3-servicos', requireConfig, wrap(async (req, res) => {
   let margemConsultor = null
   try { margemConsultor = await getMetaMargemOficinaPeriodos(year, { consultorNome: consultor }) } catch (_) { /* sem meta */ }
 
+  let metaTicket = null
+  try { metaTicket = await getMetaTicketMedioPeriodos(year, { consultorNome: consultor }) } catch (_) { /* sem meta */ }
+
   let metaMecanico = null
   try { metaMecanico = await getMetaMecanicoPeriodos(year, mecanico, await getFiltroBoxOficina()) } catch (_) { /* sem meta */ }
 
@@ -686,7 +689,8 @@ router.get('/bloco3-servicos', requireConfig, wrap(async (req, res) => {
     { vlLiquido: rof042?.vlLiquido ?? null, eficacia: horas.eficacia, produtividade: horas.produtividade },
     metaConsultor,
     metaMecanico,
-    margemConsultor
+    margemConsultor,
+    metaTicket
   )
   const pesos = await getPesos('bloco3-servicos')
   quadros = aplicarPesos(quadros, pesos)

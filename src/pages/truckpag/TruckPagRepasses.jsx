@@ -55,8 +55,9 @@ const CONCILIACAO_INFO = {
 }
 
 // Subconjunto de linhas cuja soma de valor_recebido fecha com `alvo` (±2 centavos) — usado pra
-// achar, dentro de um depósito, quais linhas sem título ainda compõem o saldo restante do crédito.
-// Programação dinâmica sobre centavos; devolve [] se nenhuma combinação fecha.
+// achar, dentro de um depósito, quais linhas ainda compõem o saldo restante do crédito (o crédito
+// pode já estar parcialmente baixado em outro sistema, então o saldo restante é menor que o total
+// do depósito). Programação dinâmica sobre centavos; devolve [] se nenhuma combinação fecha.
 function subconjuntoQueFecha(linhas, alvo) {
   const alvoC = Math.round(alvo * 100)
   if (alvoC <= 0) return []
@@ -279,6 +280,12 @@ export default function TruckPagRepasses() {
       f = linhasComConciliacao.filter(l => String(l.nf_e ?? '').includes(termo) || String(l.nfs_e ?? '').includes(termo))
       if (filtroGrupoRepasse) f = f.filter(l => `${l.estabelecimento}|${l.data_pagamento}` === filtroGrupoRepasse)
     } else if (filtroGrupoRepasse) {
+      // O depósito (estabelecimento+data) pode juntar o dia inteiro de repasses, mas o crédito já
+      // pode estar quase todo baixado em outro sistema — o chip mostra só o SALDO RESTANTE do
+      // crédito, não o total do dia. Por isso não mostra o depósito inteiro: pega as linhas com
+      // título ainda ligadas a esse depósito e, se não fecharem o saldo restante sozinhas, completa
+      // com o subconjunto (vinculado ou não) que fecha a diferença — assim só aparece o que de fato
+      // compõe esse saldo, não repasses de meses de diferença que também caíram no mesmo dia/unidade.
       const doLote = linhasComConciliacao.filter(l => `${l.estabelecimento}|${l.data_pagamento}` === filtroGrupoRepasse)
       const vinculadas = doLote.filter(l => l.tituloEncontrado)
       const grupo = gruposPorDia.find(g => g.chave === filtroGrupoRepasse)
@@ -286,7 +293,21 @@ export default function TruckPagRepasses() {
       if (grupo?.saldoRestante != null) {
         const somaVinculadas = vinculadas.reduce((acc, l) => acc + (l.valor_recebido || 0), 0)
         const falta = grupo.saldoRestante - somaVinculadas
-        if (falta > tolerancia) f = [...vinculadas, ...subconjuntoQueFecha(doLote.filter(l => !l.tituloEncontrado), falta)]
+        if (falta > tolerancia) {
+          const semTitulo = doLote.filter(l => !l.tituloEncontrado)
+          const fechou = subconjuntoQueFecha(semTitulo, falta)
+          // Nenhuma combinação fecha o valor exato: ainda assim mostra o repasse sem título mais
+          // próximo do que falta, pra dar pra identificar/conferir manualmente, em vez de sumir com
+          // tudo (pedido do usuário) — ex: falta R$ 717,74 e o repasse mais perto é R$ 717,80.
+          const extra = fechou.length > 0
+            ? fechou
+            : semTitulo.length > 0
+              ? [semTitulo.reduce((perto, l) => Math.abs((l.valor_recebido || 0) - falta) < Math.abs((perto.valor_recebido || 0) - falta) ? l : perto)]
+              : []
+          f = [...vinculadas, ...extra]
+        } else if (falta < -tolerancia) {
+          f = subconjuntoQueFecha(doLote, grupo.saldoRestante)
+        }
       }
     }
     if (filtroNaoIdentificado) f = f.filter(l => !l.conciliadoSaldo)

@@ -1,11 +1,13 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { Trophy, Calculator, BookOpen, BarChart2, Loader2, RefreshCw, Info as InfoIcon, Lock, Unlock, Plus, Trash2 } from 'lucide-react'
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { Trophy, Calculator, BookOpen, BarChart2, Loader2, RefreshCw, Info as InfoIcon, Lock, Unlock, Plus, Trash2, Eraser, Copy, Settings } from 'lucide-react'
+import { createPortal } from 'react-dom'
 import { apiService } from '../../services/api'
-import { sincronizarCampanha } from '../../services/kpiService'
+import { fetchBloco3Servicos } from '../../services/kpiService'
+import { useSincronizacaoKpi } from '../../hooks/useSincronizacaoKpi'
 import { useAuth } from '../../context/AuthContext'
 import {
   CAMPANHA, REGRAS_PADRAO, faixasDe, trimestreDoMes, atingimentoBlocoMatriz, montarSemanas, pesoSemana, pesoTotal, pctTxt,
-  mesclarRegras, metasAprovadasDaUnidade, metaDoConsultor,
+  mesclarRegras, metasAprovadasDaUnidade, metaDoConsultor, semanasMatrizDoMes, contribSemanaMatriz,
 } from '../../utils/campanhaPosVenda'
 
 // BI da Campanha de Bônus do Pós-Venda.
@@ -16,8 +18,8 @@ import {
 // Realizado vem de fato_campanha_diario (1 linha por dia × empresa × pessoa), gravada pelo
 // sync da Matriz KPIs no backend — a tela nunca lê o SharePoint, só essa tabela pequena.
 
-const LBL = 'text-[11px] font-bold text-slate-500 uppercase tracking-wide'
-const SEL = 'text-xs p-2 border border-slate-200 rounded-md bg-white font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500'
+// Seletores do topo (Ano/Mês) no mesmo modelo da Matriz KPIs.
+const SEL_TOPO = 'bg-white text-slate-700 text-sm rounded-md px-2 py-1.5 border border-slate-300 focus:outline-none focus:border-blue-400 cursor-pointer'
 const MESES = [
   { v: '01', label: 'Janeiro' }, { v: '02', label: 'Fevereiro' }, { v: '03', label: 'Março' },
   { v: '04', label: 'Abril' }, { v: '05', label: 'Maio' }, { v: '06', label: 'Junho' },
@@ -27,7 +29,6 @@ const MESES = [
 const TH = 'p-2 text-[10px] font-bold uppercase tracking-wider text-slate-400'
 const CARD = 'rounded-lg border border-slate-200 bg-white shadow-sm'
 
-const dataHora = (iso) => (iso ? new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—')
 
 const CORES_FUNCAO = {
   consultor: '#2563eb', mecanico: '#0891b2', box: '#64748b', chefe: '#7c3aed', prog: '#d97706', gerente: '#059669',
@@ -95,6 +96,7 @@ function gerentesGeraisTrucks(funcionarios, regras) {
 export default function BiCampanha() {
   const { user } = useAuth()
   const [aba, setAba] = useState('regras')
+  const [slotAcoes, setSlotAcoes] = useState(null) // elemento à direita das abas (Salvar + engrenagem da aba Regras)
   const [unidade, setUnidade] = useState('CG')
 
   // Período: ano atual + 10 seguintes. Abre no mês atual; funciona para qualquer mês.
@@ -134,26 +136,10 @@ export default function BiCampanha() {
       .catch((err) => { if (vivo) { setErroDados(err.message || String(err)); setDiario([]) } })
     return () => { vivo = false }
   }, [ano, mes, recarregar])
-  const atualizadoEm = useMemo(
-    () => (diario || []).reduce((max, r) => (r.atualizado_em > max ? r.atualizado_em : max), ''),
-    [diario],
-  )
 
-  // "Atualizar números": roda só o passo da Campanha no backend e relê a tabela.
-  const [sincronizando, setSincronizando] = useState(false)
-  const [erroSync, setErroSync] = useState(null)
-  const atualizarNumeros = async () => {
-    setSincronizando(true)
-    setErroSync(null)
-    try {
-      await sincronizarCampanha(Number(ano))
-      setRecarregar((n) => n + 1)
-    } catch (err) {
-      setErroSync(err.message || String(err))
-    } finally {
-      setSincronizando(false)
-    }
-  }
+  // "Atualizar números" = a mesma atualização da Matriz KPIs (Matriz + Campanha, um processo só no
+  // backend). Ao terminar — iniciada aqui, na Matriz ou por outra pessoa — relê os dados da tela.
+  const sync = useSincronizacaoKpi((status) => { if (status !== 'ERRO') setRecarregar((n) => n + 1) })
 
   // Regras vigentes da EMPRESA selecionada no mês (fato_campanha_regras, por empresa + mês + ano):
   // as do mês, senão as do último mês salvo da empresa, senão a regra geral, senão o padrão.
@@ -179,8 +165,6 @@ export default function BiCampanha() {
   )
   // Todas as metas vêm do Planejamento de Metas aprovado (metasAprovadasDaUnidade).
   const campanha = useMemo(() => ({ ...CAMPANHA, semanas }), [semanas])
-  const proximo = new Date(Number(ano), Number(mes), 1)
-  const pagamentoTxt = `${MESES[proximo.getMonth()].label}/${proximo.getFullYear()}`
 
   // Funcionários ativos + agrupamento do cargo + departamentos (null = carregando).
   const [funcionarios, setFuncionarios] = useState(null)
@@ -242,33 +226,37 @@ export default function BiCampanha() {
 
   return (
     <div className="p-6 space-y-5 max-w-screen-2xl">
-      <div className="flex items-start justify-between gap-3 border-b border-slate-200 pb-4 flex-wrap">
-        <div>
+      <div className="flex items-start justify-between gap-4 border-b border-slate-200 pb-4">
+        <div className="min-w-0 flex-1">
           <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
             <Trophy className="h-5 w-5 text-blue-600" /> BI — Campanha Pós-Venda
           </h1>
           <p className="text-xs text-slate-500 mt-1 max-w-3xl">
-            Campanha {nomeMes}/{ano} · {semanas.length} semanas · pagamento em {pagamentoTxt}.
-            {' '}Números atualizados em {atualizadoEm ? dataHora(atualizadoEm) : '—'}.
+            Objetivo: calcular, de forma transparente, o bônus da campanha de cada colaborador do Pós-Venda,
+            premiando quem atinge as metas da Matriz KPIs semana a semana.
           </p>
-          {erroSync && <p className="text-xs text-red-600 mt-1">Não foi possível atualizar os números: {erroSync}</p>}
+          {sync.mensagem && <p role="status" className="text-xs text-slate-600 mt-1">{sync.mensagem}</p>}
           {erroDados && <p className="text-xs text-red-600 mt-1">Não foi possível carregar os dados: {erroDados}</p>}
         </div>
-        <div className="flex items-end gap-2">
-          <button onClick={atualizarNumeros} disabled={sincronizando}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-semibold text-slate-700 border border-slate-200 bg-white hover:bg-slate-50 shadow-sm disabled:opacity-60">
-            <RefreshCw className={`h-3.5 w-3.5 ${sincronizando ? 'animate-spin' : ''}`} />
-            {sincronizando ? 'Atualizando…' : 'Atualizar números'}
+        {/* Mesmo modelo do topo da Matriz KPIs: botão só com o ícone + "Ano:" / "Mês:" ao lado. */}
+        <div className="flex items-center gap-3 shrink-0">
+          {/* Mesma atualização do botão da Matriz KPIs (Matriz + Campanha). Travado em todas as telas
+              enquanto qualquer pessoa estiver atualizando. */}
+          <button type="button" onClick={() => sync.iniciar(user?.email)} disabled={sync.executando}
+            title={sync.executando ? `Atualizando…${sync.porQuem ? ` (iniciada por ${sync.porQuem})` : ''} — aguarde terminar` : 'Atualizar números'}
+            aria-label={sync.executando ? 'Atualizando' : 'Atualizar números'}
+            className="inline-flex items-center justify-center rounded-md border border-blue-200 bg-blue-50 p-1.5 text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60">
+            <RefreshCw className={`h-4 w-4 ${sync.executando ? 'animate-spin' : ''}`} />
           </button>
-          <label className="flex flex-col gap-1">
-            <span className={LBL}>Ano</span>
-            <select className={SEL} value={ano} onChange={(e) => setAno(e.target.value)}>
+          <label className="flex items-center gap-2">
+            <span className="text-xs text-slate-500 font-medium">Ano:</span>
+            <select className={SEL_TOPO} value={ano} onChange={(e) => setAno(e.target.value)}>
               {ANOS.map((a) => <option key={a} value={a}>{a}</option>)}
             </select>
           </label>
-          <label className="flex flex-col gap-1">
-            <span className={LBL}>Mês</span>
-            <select className={SEL} value={mes} onChange={(e) => setMes(e.target.value)}>
+          <label className="flex items-center gap-2">
+            <span className="text-xs text-slate-500 font-medium">Mês:</span>
+            <select className={SEL_TOPO} value={mes} onChange={(e) => setMes(e.target.value)}>
               {MESES.map((m) => <option key={m.v} value={m.v}>{m.label}</option>)}
             </select>
           </label>
@@ -302,20 +290,27 @@ export default function BiCampanha() {
             <Icon className="h-3.5 w-3.5" /> {label}
           </button>
         ))}
+        {/* Espaço à direita da linha das abas: a aba Regras coloca aqui o Salvar e a engrenagem. */}
+        <div ref={setSlotAcoes} className="ml-auto flex items-center gap-2 pb-1.5" />
       </div>
 
       {aba === 'regras' && (
-        <AbaRegras campanha={campanha} unidade={unidade} semCalendario={semCalendario} nomeMes={nomeMes} ano={ano}
+        <AbaRegras slotAcoes={slotAcoes} campanha={campanha} unidade={unidade} semCalendario={semCalendario} nomeMes={nomeMes} ano={ano} mes={mes}
           regras={regras} onSalvar={salvarRegras} origemRegras={origemRegras}
           nomeEmpresa={unidade === 'TRUCKS' ? 'CAIOBÁ TRUCKS' : (nomeEmpresa[u.empresaId] || u.nome)} />
       )}
       {aba === 'apuracao' && (
         <AbaApuracao campanha={campanha} regras={regras} unidade={unidade} ehTrucks={ehTrucks} diario={diario} consultores={consultores} mecanicos={mecanicos} chefes={chefes} gerentes={gerentes}
           gerentesGerais={gerentesGerais} metasPorUnidade={metasPorUnidade}
-          blocosMatriz={blocosMatriz}
-          metasUnidade={metasUnidade} funcionarios={funcionarios} erroFunc={erroFunc} />
+          blocosMatriz={blocosMatriz} ano={ano} mes={mes}
+          metasUnidade={metasUnidade} funcionarios={funcionarios} erroFunc={erroFunc} versaoDados={recarregar} />
       )}
-      {aba === 'resultado' && <AbaResultado />}
+      {aba === 'resultado' && (
+        <AbaApuracao modo="resultado" campanha={campanha} regras={regras} unidade={unidade} ehTrucks={ehTrucks} diario={diario} consultores={consultores} mecanicos={mecanicos} chefes={chefes} gerentes={gerentes}
+          gerentesGerais={gerentesGerais} metasPorUnidade={metasPorUnidade}
+          blocosMatriz={blocosMatriz} ano={ano} mes={mes}
+          metasUnidade={metasUnidade} funcionarios={funcionarios} erroFunc={erroFunc} versaoDados={recarregar} />
+      )}
     </div>
   )
 }
@@ -326,10 +321,12 @@ export default function BiCampanha() {
 // no fim, o Total = soma das contribuições das semanas.
 // ======================================================================================
 function AbaApuracao({ campanha, regras, unidade, ehTrucks, diario, consultores, mecanicos, chefes, gerentes, metasUnidade, funcionarios, erroFunc,
-  gerentesGerais, metasPorUnidade, blocosMatriz }) {
-  const comum = { campanha, regras, unidade, diario, blocosMatriz, carregandoFunc: funcionarios === null }
+  gerentesGerais, metasPorUnidade, blocosMatriz, ano, mes, modo = 'apuracao', versaoDados = 0 }) {
+  const comum = { campanha, regras, unidade, diario, blocosMatriz, ano, mes, versaoDados, carregandoFunc: funcionarios === null }
+  const ctx = useMemo(() => ({ faixas: faixasDe(regras, unidade) || [], regras, unidade, modo }), [regras, unidade, modo])
 
   return (
+    <FaixasCtx.Provider value={ctx}>
     <div className="space-y-5">
       {ehTrucks ? (
         <BlocoGerenteGeral {...comum} gerentesGerais={gerentesGerais} metasPorUnidade={metasPorUnidade} />
@@ -342,14 +339,43 @@ function AbaApuracao({ campanha, regras, unidade, ehTrucks, diario, consultores,
       </>
       )}
     </div>
+    </FaixasCtx.Provider>
   )
+}
+
+// Faixas de pagamento e regras da empresa selecionada + modo da tabela: 'apuracao' (Contrib. e
+// Faixa por semana) ou 'resultado' (Cálculo e Valor bônus por semana).
+const FaixasCtx = createContext({ faixas: [], regras: null, unidade: null, modo: 'apuracao' })
+
+// Bônus-alvo (aba Regras) de uma linha do quadro Bônus-alvo, já com as travas: Meta travada = sem
+// bônus; Supermeta travada = Supermeta sem valor. Sem linha (função sem bônus na empresa) = 0.
+function bonusAlvoDe(regras, unidade, chave) {
+  const l = linhasBonus(regras, unidade, CAMPANHA.unidades).find((x) => x.k === chave)
+  if (!l) return { meta: 0, supermeta: 0 }
+  const travas = regras.bonusBloqueado?.[unidade] || {}
+  const metaTravada = !!travas[`${chave}:meta`] || travas[chave] === true
+  const superTravada = metaTravada || !!travas[`${chave}:super`]
+  const meta = Number(lerCaminho(regras, l.meta)) || 0
+  const sv = lerCaminho(regras, l.supermeta)
+  const supermeta = sv == null && l.padraoSuper ? meta * 1.2 : Number(sv) || 0
+  return { meta: metaTravada ? 0 : meta, supermeta: superTravada ? 0 : supermeta }
+}
+
+// Faixa em que o valor cai: a de maior "Atingimento ≥" que o valor alcança; o limite superior é o
+// início da faixa seguinte (mesma leitura da tabela Faixas de pagamento da aba Regras).
+function faixaDoValor(v, faixas) {
+  if (v == null || !faixas.length) return null
+  const ord = [...faixas].sort((a, b) => a.min - b.min)
+  let i = -1
+  ord.forEach((f, k) => { if (v >= f.min) i = k })
+  if (i < 0) return { abaixo: true, min: ord[0].min }
+  return { ...ord[i], max: ord[i + 1]?.min ?? null }
 }
 
 // ======================================================================================
 // Blocos de cargo da Apuração — por pessoa e por semana: atingimento do Bloco 3 (soma peso ×
 // atingimento de cada indicador, com a meta do mês proporcional aos dias úteis da semana).
-// Contribuição da semana = peso do Bloco 3 × atingimento da semana × peso da semana
-// (dias úteis da semana ÷ dias úteis do mês) — por isso a soma das semanas fecha o mês.
+// Contribuição da semana = soma peso × atingimento dos indicadores (escala da linha Total da Matriz).
 // ======================================================================================
 
 const MATRIZ = {
@@ -426,13 +452,109 @@ function Info({ titulo, children }) {
 // Atingimento do Bloco 3 = soma peso × atingimento dos indicadores (null se faltar algum).
 const atingimentoB3 = (itens) => (itens.some((it) => it.atingimento == null) ? null : itens.reduce((a, it) => a + it.peso * it.atingimento, 0))
 
-// Card de uma função: uma linha por pessoa, uma coluna por semana com a contribuição do Bloco 3
-// na semana, e o Total = soma das semanas. linhas: [{ id, nome, alerta?, semanas: [{ fr, itens }] }]
-function ResumoSemanal({ titulo, cor, campanha, linhas, carregando, vazio, blocosMatriz, matrizB3 }) {
-  const VAZIO = <span className="text-slate-300">—</span>
-  const pesoB3 = blocosMatriz.pesos?.individual || 0
+// Atingimento e contribuição de cada semana de uma linha (pessoa).
+function celulasDaLinha(p, pesoB3) {
+  return p.semanas.map((w) => {
+    // Bloco Consultores: a contribuição já vem pronta da Matriz KPIs (linha Total
+    // do quadro), sem multiplicar por peso do bloco/semana de novo.
+    if (Object.prototype.hasOwnProperty.call(w, 'contribDireta')) {
+      return { ating: w.contribDireta, contrib: w.contribDireta }
+    }
+    // Demais cargos: contribuição da semana = soma peso × atingimento dos indicadores (mesma escala
+    // da linha Total da Matriz KPIs), comparável direto com as Faixas de pagamento.
+    const ating = atingimentoB3(w.itens)
+    // Semana sem dia útil não conta.
+    if (!w.fr) return { ating, contrib: null, semDiaUtil: true }
+    return { ating, contrib: ating }
+  })
+}
+
+// Total do mês de uma linha: Consultores = valor mensal da Matriz KPIs; demais = média das semanas
+// ponderada pelos dias úteis (mesma escala das semanas). parcial = alguma semana sem dados.
+function totalDaLinha(p, cels) {
+  if (Object.prototype.hasOwnProperty.call(p, 'totalDireto')) return { total: p.totalDireto, parcial: p.totalDireto == null }
+  let soma = 0, pesos = 0, parcial = false
+  cels.forEach((c, i) => {
+    if (c.semDiaUtil) return
+    if (c.contrib == null) { parcial = true; return }
+    const fr = p.semanas[i].fr || 0
+    soma += c.contrib * fr
+    pesos += fr
+  })
+  return { total: pesos ? soma / pesos : null, parcial }
+}
+
+const moedaBR = (v) => (Number(v) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+
+// Botão ⓘ do Resultado: abre o passo a passo do cálculo da semana. O quadro usa posição fixa (na
+// tela), para não ser cortado pela rolagem horizontal da tabela. Fecha ao clicar fora, Esc ou rolar.
+function InfoCalculo({ titulo, children }) {
+  const [pos, setPos] = useState(null) // null = fechado
+  const btn = useRef(null)
+  const quadro = useRef(null)
+  useEffect(() => {
+    if (!pos) return undefined
+    const fora = (e) => {
+      if (quadro.current?.contains(e.target) || btn.current?.contains(e.target)) return
+      setPos(null)
+    }
+    const fechar = () => setPos(null)
+    const esc = (e) => { if (e.key === 'Escape') setPos(null) }
+    document.addEventListener('mousedown', fora)
+    document.addEventListener('keydown', esc)
+    window.addEventListener('scroll', fechar, true)
+    window.addEventListener('resize', fechar)
+    return () => {
+      document.removeEventListener('mousedown', fora)
+      document.removeEventListener('keydown', esc)
+      window.removeEventListener('scroll', fechar, true)
+      window.removeEventListener('resize', fechar)
+    }
+  }, [pos])
+  const abrir = () => {
+    if (pos) { setPos(null); return }
+    const r = btn.current.getBoundingClientRect()
+    const largura = 300
+    const left = Math.max(8, Math.min(r.left, window.innerWidth - largura - 8))
+    const abaixo = r.bottom + 260 < window.innerHeight
+    setPos(abaixo ? { left, top: r.bottom + 6 } : { left, bottom: window.innerHeight - r.top + 6 })
+  }
+  return (
+    <>
+      <button ref={btn} type="button" onClick={abrir} aria-expanded={!!pos} aria-label={`Como foi calculado: ${titulo}`}
+        className="h-4 w-4 shrink-0 inline-flex items-center justify-center rounded-full text-blue-600 hover:bg-blue-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400">
+        <InfoIcon className="h-3.5 w-3.5" />
+      </button>
+      {pos && (
+        <div ref={quadro} role="dialog" aria-label={titulo} style={{ position: 'fixed', width: 300, ...pos }}
+          className="z-50 rounded-lg border border-slate-200 bg-white shadow-lg p-3 text-xs leading-relaxed text-slate-600 text-left whitespace-normal font-normal">
+          <p className="text-[12px] font-bold text-slate-800 mb-1.5">{titulo}</p>
+          {children}
+        </div>
+      )}
+    </>
+  )
+}
+
+// Linha "rótulo ........ valor" do quadro de cálculo.
+function LinhaCalc({ rotulo, valor, destaque = false }) {
+  return (
+    <div className={`flex items-baseline justify-between gap-3 py-0.5 ${destaque ? 'border-t border-slate-200 mt-1 pt-1.5 font-bold text-slate-900' : ''}`}>
+      <span className={destaque ? '' : 'text-slate-500'}>{rotulo}</span>
+      <span className="tabular-nums text-right">{valor}</span>
+    </div>
+  )
+}
+
+// Resultado: mesma tabela da Apuração, uma coluna por semana com o Valor do bônus e um ⓘ com o
+// cálculo: contribuição da semana → faixa (aba Regras) → % aplicado sobre o bônus × bônus-alvo da
+// semana (Meta ou Supermeta, conforme "Aplicar sobre"; valor do mês ÷ nº de semanas do mês).
+// Total = soma dos valores das semanas.
+function ResultadoSemanal({ titulo, cor, campanha, linhas, carregando, vazio, pesoB3, faixas, regras, unidade, chaveBonus, matrizB3 }) {
   const semanas = campanha.semanas
-  const TD = 'p-2 text-right whitespace-nowrap tabular-nums border-l border-slate-200'
+  const nSem = semanas.length || 1
+  const TD = 'p-2 text-right whitespace-nowrap tabular-nums'
+  const rotuloFaixaTxt = (fx) => (fx.max == null ? `≥ ${pctTxt(fx.min)}` : `${pctTxt(fx.min)} a < ${pctTxt(fx.max)}`)
   return (
     <div className={CARD}>
       <div className="p-4 pb-3">
@@ -446,10 +568,9 @@ function ResumoSemanal({ titulo, cor, campanha, linhas, carregando, vazio, bloco
         <p className="px-4 pb-4 text-xs text-slate-500">{vazio}</p>
       ) : (
         <div className="overflow-x-auto">
-          {/* Larguras fixas: as colunas ficam alinhadas em todas as tabelas de cargo. */}
           <table className="w-full min-w-[56rem] table-fixed text-xs border-collapse">
             <colgroup>
-              <col className="w-[28%]" />
+              <col className="w-[26%]" />
               {semanas.map((s) => <col key={s.id} />)}
               <col className="w-[11%]" />
             </colgroup>
@@ -458,10 +579,11 @@ function ResumoSemanal({ titulo, cor, campanha, linhas, carregando, vazio, bloco
                 <th rowSpan={2} className={`${TH} text-left align-bottom border-b border-slate-200`}>Nome</th>
                 <th colSpan={semanas.length} className={`${TH} text-center border-l border-slate-200`}>
                   <span className="inline-flex items-center gap-1">
-                    Bloco 3 · Individual ({pctTxt(pesoB3)}) — contribuição por semana
-                    <Info titulo="Bloco 3 · Individual">
-                      Matriz KPIs › {matrizB3}. Contribuição da semana = peso do Bloco 3 × atingimento da semana × peso da
-                      semana (dias úteis da semana ÷ dias úteis do mês). O Total é a soma das semanas.
+                    Bloco 3 - Serviços ({pctTxt(pesoB3)}) — bônus por semana
+                    <Info titulo="Bloco 3 - Serviços">
+                      Matriz KPIs › {matrizB3}. A contribuição da semana define a faixa (Faixas de pagamento da aba Regras);
+                      bônus da semana = % aplicado sobre o bônus × Meta ou Supermeta da semana (valor do mês ÷ nº de semanas).
+                      Clique no ⓘ de cada semana para ver o cálculo.
                     </Info>
                   </span>
                 </th>
@@ -478,14 +600,16 @@ function ResumoSemanal({ titulo, cor, campanha, linhas, carregando, vazio, bloco
             </thead>
             <tbody>
               {linhas.map((p) => {
-                const cels = p.semanas.map((w) => {
-                  const ating = atingimentoB3(w.itens)
-                  // Semana sem dia útil não conta (contribuição 0, sem marcar como parcial).
-                  if (!w.fr) return { ating, contrib: 0, semDiaUtil: true }
-                  return { ating, contrib: ating == null ? null : pesoB3 * ating * w.fr }
+                const alvo = bonusAlvoDe(regras, p.unidadeBonus ? 'TRUCKS' : unidade, p.chaveBonus || chaveBonus)
+                const cels = celulasDaLinha(p, pesoB3)
+                const calc = cels.map((c) => {
+                  const fx = c.semDiaUtil ? null : faixaDoValor(c.contrib, faixas)
+                  if (!fx || fx.abaixo || p.alerta) return { fx, valor: 0 }
+                  const mensal = fx.base === 'supermeta' ? alvo.supermeta : alvo.meta
+                  const base = mensal / nSem
+                  return { fx, mensal, base, valor: base * (fx.paga || 0) }
                 })
-                const parcial = cels.some((c) => c.contrib == null)
-                const total = cels.reduce((a, c) => a + (c.contrib || 0), 0)
+                const total = calc.reduce((a, c) => a + c.valor, 0)
                 return (
                   <tr key={p.id} className="border-b border-slate-100">
                     <td className="p-2 font-medium text-slate-800 whitespace-nowrap truncate" title={p.nome}>
@@ -494,20 +618,46 @@ function ResumoSemanal({ titulo, cor, campanha, linhas, carregando, vazio, bloco
                         <span className="ml-2 text-[10px] font-semibold px-1.5 py-px rounded border bg-red-50 text-red-700 border-red-200" title={p.alerta}>Mês zerado</span>
                       )}
                     </td>
-                    {cels.map((c, i) => {
-                      const w = p.semanas[i]
-                      const detalhe = w.itens.map((it) => `${it.indicador} ${pctTxt(it.peso)} × ${it.atingimento == null ? '—' : pctTxt(it.atingimento)}`).join('\n')
+                    {calc.map((k, i) => {
+                      const c = cels[i]
+                      const nomeBase = k.fx?.base === 'supermeta' ? 'Supermeta' : 'Meta'
+                      let corpo
+                      if (c.semDiaUtil) corpo = <p>Semana sem dia útil — não entra no cálculo.</p>
+                      else if (c.contrib == null) corpo = <p>Sem contribuição calculada nesta semana (sem meta ou sem dados).</p>
+                      else if (p.alerta) corpo = <><LinhaCalc rotulo="Contribuição da semana" valor={pctTxt(c.contrib)} /><p className="mt-1 text-red-600">{p.alerta}</p></>
+                      else if (k.fx?.abaixo) {
+                        corpo = (
+                          <>
+                            <LinhaCalc rotulo="Contribuição da semana" valor={pctTxt(c.contrib)} />
+                            <LinhaCalc rotulo="1ª faixa a partir de" valor={pctTxt(k.fx.min)} />
+                            <LinhaCalc rotulo="Valor do bônus" valor={`${moedaBR(0)} (sem faixa)`} destaque />
+                          </>
+                        )
+                      } else {
+                        corpo = (
+                          <>
+                            <LinhaCalc rotulo="Contribuição da semana" valor={pctTxt(c.contrib)} />
+                            <LinhaCalc rotulo="Faixa" valor={rotuloFaixaTxt(k.fx)} />
+                            <LinhaCalc rotulo="% aplicado sobre o bônus" valor={pctTxt(k.fx.paga)} />
+                            <LinhaCalc rotulo="Aplicar sobre" valor={nomeBase} />
+                            <LinhaCalc rotulo={`${nomeBase} do mês`} valor={moedaBR(k.mensal)} />
+                            <LinhaCalc rotulo={`${nomeBase} da semana (÷ ${nSem})`} valor={moedaBR(k.base)} />
+                            <LinhaCalc rotulo={`${pctTxt(k.fx.paga)} × ${moedaBR(k.base)}`} valor={moedaBR(k.valor)} destaque />
+                          </>
+                        )
+                      }
                       return (
-                        <td key={semanas[i].id} className={TD}
-                          title={c.semDiaUtil ? 'Semana sem dia útil'
-                            : `Atingimento da semana: ${c.ating == null ? '—' : pctTxt(c.ating)}\nPeso da semana: ${pctTxt(w.fr)}\n${detalhe}`}>
-                          {c.semDiaUtil || c.contrib == null ? VAZIO : pctTxt(c.contrib)}
+                        <td key={semanas[i].id} className={`${TD} border-l border-slate-200`}>
+                          <span className="inline-flex items-center justify-end gap-1.5 w-full">
+                            <InfoCalculo titulo={`${p.nome} · Sem ${i + 1} (${semanas[i].label})`}>{corpo}</InfoCalculo>
+                            <span className={`font-semibold ${k.valor > 0 ? 'text-slate-900' : 'text-slate-400'}`}>{moedaBR(k.valor)}</span>
+                          </span>
                         </td>
                       )
                     })}
-                    <td className={`${TD} font-bold ${COR_TOTAL.real}`}
-                      title={parcial ? 'Parcial: semanas sem meta ou sem dados ficaram de fora da soma' : 'Soma das contribuições das semanas'}>
-                      <span className={corPct(pesoB3 ? total / pesoB3 : 0)}>{pctTxt(total)}{parcial ? '*' : ''}</span>
+                    <td className={`${TD} border-l border-slate-200 font-bold ${COR_TOTAL.real} ${total > 0 ? 'text-emerald-700' : 'text-slate-500'}`}
+                      title="Soma dos valores de bônus das semanas">
+                      {moedaBR(total)}
                     </td>
                   </tr>
                 )
@@ -520,56 +670,187 @@ function ResumoSemanal({ titulo, cor, campanha, linhas, carregando, vazio, bloco
   )
 }
 
-function BlocoConsultores({ campanha, regras, unidade, diario, blocosMatriz, consultores, metasUnidade, carregandoFunc, erroFunc }) {
+// Card de uma função: uma linha por pessoa, uma coluna por semana com a contribuição do Bloco 3
+// na semana, e o Total = soma das semanas. linhas: [{ id, nome, alerta?, semanas: [{ fr, itens }] }]
+function ResumoSemanal({ titulo, cor, campanha, linhas, carregando, vazio, blocosMatriz, matrizB3, chaveBonus }) {
+  const VAZIO = <span className="text-slate-300">—</span>
+  const pesoB3 = blocosMatriz.pesos?.individual || 0
+  const semanas = campanha.semanas
+  const { faixas, regras, unidade, modo } = useContext(FaixasCtx)
+  if (modo === 'resultado') {
+    return <ResultadoSemanal titulo={titulo} cor={cor} campanha={campanha} linhas={linhas} carregando={carregando} vazio={vazio}
+      pesoB3={pesoB3} faixas={faixas} regras={regras} unidade={unidade} chaveBonus={chaveBonus} matrizB3={matrizB3} />
+  }
+  const TD = 'p-2 text-right whitespace-nowrap tabular-nums border-l border-slate-200'
+  const TDF = 'p-2 text-center whitespace-nowrap tabular-nums'
+  const rotuloFaixa = (fx) => (fx.max == null ? `≥ ${pctTxt(fx.min)}` : `${pctTxt(fx.min)} a < ${pctTxt(fx.max)}`)
+  return (
+    <div className={CARD}>
+      <div className="p-4 pb-3">
+        <p className="text-sm font-bold text-slate-900 flex items-center gap-2">
+          <span className="h-2.5 w-2.5 rounded-sm" style={{ background: cor }} /> {titulo}
+        </p>
+      </div>
+      {carregando ? (
+        <p className="px-4 pb-4 text-xs text-slate-500 flex items-center gap-2"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Carregando…</p>
+      ) : !linhas.length ? (
+        <p className="px-4 pb-4 text-xs text-slate-500">{vazio}</p>
+      ) : (
+        <div className="overflow-x-auto">
+          {/* Larguras fixas: as colunas ficam alinhadas em todas as tabelas de cargo. */}
+          <table className="w-full min-w-[80rem] table-fixed text-xs border-collapse">
+            <colgroup>
+              <col className="w-[16%]" />
+              {semanas.map((s) => <React.Fragment key={s.id}><col className="w-[6%]" /><col /></React.Fragment>)}
+              <col className="w-[7%]" />
+            </colgroup>
+            <thead>
+              <tr className="bg-slate-50 border-t border-slate-200">
+                <th rowSpan={3} className={`${TH} text-left align-bottom border-b border-slate-200`}>Nome</th>
+                <th colSpan={semanas.length * 2} className={`${TH} text-center border-l border-slate-200`}>
+                  <span className="inline-flex items-center gap-1">
+                    Bloco 3 - Serviços ({pctTxt(pesoB3)}) — contribuição por semana
+                    <Info titulo="Bloco 3 - Serviços">
+                      Matriz KPIs › {matrizB3}. Contribuição da semana = soma de peso × atingimento de cada indicador
+                      (como a linha Total da Matriz). A Faixa é a da tabela Faixas de pagamento em que essa contribuição cai.
+                    </Info>
+                  </span>
+                </th>
+                <th rowSpan={3} className={`${TH} text-right align-bottom border-l border-b border-slate-200`}>Total</th>
+              </tr>
+              <tr className="bg-slate-50">
+                {semanas.map((s, i) => (
+                  <th key={s.id} colSpan={2} className={`${TH} text-center border-l border-slate-200`} title={s.label}>
+                    Sem {i + 1}
+                    <span className="block text-[9px] font-medium normal-case tracking-normal text-slate-400">{s.label}</span>
+                  </th>
+                ))}
+              </tr>
+              <tr className="bg-slate-50 border-b border-slate-200">
+                {semanas.map((s) => (
+                  <React.Fragment key={s.id}>
+                    <th className={`${TH} text-right border-l border-slate-200`} title="Contribuição">Contrib.</th>
+                    <th className={`${TH} text-center`} title="Faixa de pagamento (aba Regras) em que o valor da semana se encaixa">Faixa</th>
+                  </React.Fragment>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {linhas.map((p) => {
+                const cels = celulasDaLinha(p, pesoB3)
+                const temTotalDireto = Object.prototype.hasOwnProperty.call(p, 'totalDireto')
+                const { total, parcial } = totalDaLinha(p, cels)
+                return (
+                  <tr key={p.id} className="border-b border-slate-100">
+                    <td className="p-2 font-medium text-slate-800 whitespace-nowrap truncate" title={p.nome}>
+                      {p.nome}
+                      {p.alerta && (
+                        <span className="ml-2 text-[10px] font-semibold px-1.5 py-px rounded border bg-red-50 text-red-700 border-red-200" title={p.alerta}>Mês zerado</span>
+                      )}
+                    </td>
+                    {cels.map((c, i) => {
+                      const w = p.semanas[i]
+                      const detalhe = w.itens.map((it) => `${it.indicador} ${pctTxt(it.peso)} × ${it.atingimento == null ? '—' : pctTxt(it.atingimento)}`).join('\n')
+                      const temContribDireta = Object.prototype.hasOwnProperty.call(w, 'contribDireta')
+                      const linhaAting = `Atingimento da semana: ${c.ating == null ? '—' : pctTxt(c.ating)}`
+                      const linhaPeso = temContribDireta ? 'Contribuição da semana (Matriz KPIs)' : 'Contribuição = soma peso × atingimento dos indicadores'
+                      const tituloCel = c.semDiaUtil ? 'Semana sem dia útil' : `${linhaAting}\n${linhaPeso}\n${detalhe}`
+                      // Faixa pelo valor da contribuição da semana.
+                      const fx = c.semDiaUtil ? null : faixaDoValor(c.contrib, faixas)
+                      return (
+                        <React.Fragment key={semanas[i].id}>
+                          <td className={TD} title={tituloCel}>
+                            {c.semDiaUtil || c.contrib == null ? VAZIO : pctTxt(c.contrib)}
+                          </td>
+                          <td className={TDF}
+                            title={!fx ? undefined : fx.abaixo
+                              ? `Abaixo da 1ª faixa (${pctTxt(fx.min)}) — não paga`
+                              : `Faixa ${rotuloFaixa(fx)} · paga ${pctTxt(fx.paga)} do bônus da ${fx.base === 'supermeta' ? 'Supermeta' : 'Meta'}`}>
+                            {!fx ? VAZIO : fx.abaixo
+                              ? <span className="text-[10px] font-semibold text-red-600">Sem faixa</span>
+                              : (
+                                <span className={`inline-block text-[10px] font-semibold px-1.5 py-px rounded border ${fx.base === 'supermeta' ? 'bg-violet-50 text-violet-700 border-violet-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>
+                                  {rotuloFaixa(fx)}
+                                </span>
+                              )}
+                          </td>
+                        </React.Fragment>
+                      )
+                    })}
+                    <td className={`${TD} font-bold ${COR_TOTAL.real}`}
+                      title={parcial ? (temTotalDireto ? 'Sem meta ou sem dados no mês' : 'Parcial: semanas sem meta ou sem dados ficaram de fora') : (temTotalDireto ? 'Contribuição do mês (Matriz KPIs)' : 'Contribuição do mês: média das semanas ponderada pelos dias úteis')}>
+                      {total == null ? VAZIO : <span className={corPct(total)}>{pctTxt(total)}{parcial ? '*' : ''}</span>}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function BlocoConsultores({ campanha, unidade, blocosMatriz, consultores, carregandoFunc, erroFunc, ano, mes, versaoDados = 0 }) {
   const u = unidadeDe(campanha, unidade)
   const { agrupamentoCargo: agrupamento, departamento } = CAMPANHA.funcoes.consultor
-  const { pesos } = regras.funcoes.consultor
 
-  // Faturamento / margem / OS por consultor, uma Map por semana.
-  const porSemana = useMemo(() => campanha.semanas.map((s) => {
-    const m = new Map()
-    for (const r of diario || []) {
-      if (r.tipo !== 'consultor' || r.empresa !== u.empresaErp || !dentro(r, s)) continue
-      let a = m.get(r.pessoa_nome)
-      if (!a) { a = { serv: 0, pecas: 0, margem: 0, os: new Set(), codigo: r.pessoa_codigo }; m.set(r.pessoa_nome, a) }
-      a.serv += Number(r.serv_valor) || 0
-      a.pecas += Number(r.pecas_valor) || 0
-      a.margem += Number(r.pecas_margem) || 0
-      for (const os of r.os_codigos || []) a.os.add(os)
-    }
-    return m
-  }), [diario, u.empresaErp, campanha.semanas])
+  // Semanas da Matriz KPIs (s01..s70) do mês escolhido, na mesma ordem das colunas Sem 1, Sem 2...
+  const sKeys = useMemo(() => semanasMatrizDoMes(ano, mes), [ano, mes])
+  const mKey = `m${String(mes).padStart(2, '0')}`
+
+  // Contribuição de cada consultor em cada semana: lida ao vivo do quadro CONSULTOR DE SERVIÇOS
+  // da Matriz KPIs (mesma linha "Total" da tabela), filtrado pelo nome do consultor — não é mais
+  // recalculada aqui a partir de fato_campanha_diario.
+  const [porConsultor, setPorConsultor] = useState(new Map())
+  const [carregandoMatriz, setCarregandoMatriz] = useState(false)
+  useEffect(() => {
+    let ativo = true
+    // Sem consultores/semanas: desliga o "Carregando…" (senão fica preso se uma carga anterior foi
+    // cancelada no meio, ex.: troca de empresa).
+    if (!consultores.length || !sKeys.length) { setPorConsultor(new Map()); setCarregandoMatriz(false); return undefined }
+    setCarregandoMatriz(true)
+    const vazio = () => ({ semanas: sKeys.map(() => ({ contrib: null, itens: [] })), mensal: { contrib: null, itens: [] } })
+    // Limite por consultor: se o backend não responder em 60 s, a linha fica "—" em vez de travar a tabela.
+    const comLimite = (p) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('tempo esgotado')), 60_000))])
+    Promise.all(consultores.map(async (c) => {
+      try {
+        // Depois de uma atualização (versaoDados > 0), ignora o cache em memória e lê de novo.
+        const res = await comLimite(fetchBloco3Servicos({ year: Number(ano), consultor: c.nome, _forceReload: versaoDados > 0 }))
+        // Backend fora do ar → kpiService devolve dados de EXEMPLO (mock): não usar como realizado.
+        if (res?.source === 'mock') return [c.id, vazio()]
+        const quadro = (res?.data || []).find((q) => q.tituloGerente === 'CONSULTOR DE SERVIÇOS')
+        return [c.id, { semanas: sKeys.map((sKey) => contribSemanaMatriz(quadro, sKey)), mensal: contribSemanaMatriz(quadro, mKey) }]
+      } catch {
+        return [c.id, vazio()]
+      }
+    }))
+      .then((entradas) => { if (ativo) setPorConsultor(new Map(entradas)) })
+      .finally(() => { if (ativo) setCarregandoMatriz(false) })
+    return () => { ativo = false }
+  }, [consultores, ano, sKeys, mKey, versaoDados])
 
   const linhas = consultores.map((c) => {
-    const meta = metaDoConsultor(metasUnidade, c)
+    const dados = porConsultor.get(c.id)
+    const semanasMatriz = dados?.semanas || sKeys.map(() => ({ contrib: null, itens: [] }))
     return {
       id: c.id,
       nome: c.nome,
-      semanas: campanha.semanas.map((s, i) => {
-        const fr = fracaoSemana(campanha, unidade, s)
-        const pp = porSemana[i]
-        const erp = pp.get(c.nomeErp) || (c.codigo && [...pp.values()].find((a) => a.codigo === c.codigo)) || null
-        const realTot = (erp?.serv || 0) + (erp?.pecas || 0)
-        const ticket = erp && erp.os.size ? realTot / erp.os.size : 0
-        const mb = erp && erp.pecas ? erp.margem / erp.pecas : 0
-        return {
-          fr,
-          itens: [
-            { indicador: 'Faturamento', peso: pesos.faturamento, atingimento: meta ? div(realTot, meta.fat * fr) : null, matriz: MATRIZ.consultorFat },
-            { indicador: 'Ticket médio', peso: pesos.ticket, atingimento: meta?.ticket ? div(ticket, meta.ticket) : null, matriz: MATRIZ.semMatriz },
-            { indicador: 'Margem de peças', peso: pesos.margem, atingimento: meta?.mb ? div(mb, meta.mb) : null, matriz: MATRIZ.consultorMargem },
-          ],
-        }
-      }),
+      totalDireto: dados?.mensal?.contrib ?? null,
+      semanas: campanha.semanas.map((s, i) => ({
+        itens: semanasMatriz[i]?.itens || [],
+        contribDireta: semanasMatriz[i]?.contrib ?? null,
+      })),
     }
   })
 
   return (
     <>
       {erroFunc && <p className="text-xs text-red-600">Não foi possível carregar os funcionários: {erroFunc}</p>}
-      <ResumoSemanal titulo="Consultores de Serviços" cor={CORES_FUNCAO.consultor} campanha={campanha} linhas={linhas}
+      <ResumoSemanal titulo="Consultores de Serviços" cor={CORES_FUNCAO.consultor} campanha={campanha} linhas={linhas} chaveBonus="consultor"
         blocosMatriz={blocosMatriz} matrizB3="Bloco 3 - Serviços › Consultor de Serviços"
-        carregando={carregandoFunc || diario === null}
+        carregando={carregandoFunc || carregandoMatriz}
         vazio={`Nenhum funcionário "1 - Trabalhando" de ${u.nome} com cargo no agrupamento "${agrupamento}" e departamento ${departamento}. Confira o cadastro em Funcionários.`} />
     </>
   )
@@ -622,7 +903,7 @@ function BlocoMecanicos({ campanha, regras, unidade, diario, blocosMatriz, mecan
   })
 
   return (
-    <ResumoSemanal titulo="Mecânicos" cor={CORES_FUNCAO.mecanico} campanha={campanha} linhas={linhas}
+    <ResumoSemanal titulo="Mecânicos" cor={CORES_FUNCAO.mecanico} campanha={campanha} linhas={linhas} chaveBonus="mecanico"
       blocosMatriz={blocosMatriz} matrizB3="Bloco 3 - Serviços › Mecânico"
       carregando={carregandoFunc || diario === null}
       vazio={`Nenhum mecânico "1 - Trabalhando" de ${u.nome} nos cargos definidos na aba Regras. Confira o cadastro em Funcionários ou os cargos na regra do Mecânico.`} />
@@ -655,7 +936,7 @@ function BlocoChefe({ campanha, regras, unidade, diario, blocosMatriz, chefes, m
   })
   const linhas = chefes.map((c) => ({ id: c.id, nome: c.nome, semanas }))
   return (
-    <ResumoSemanal titulo="Chefe de Oficina" cor={CORES_FUNCAO.chefe} campanha={campanha} linhas={linhas}
+    <ResumoSemanal titulo="Chefe de Oficina" cor={CORES_FUNCAO.chefe} campanha={campanha} linhas={linhas} chaveBonus="chefe"
       blocosMatriz={blocosMatriz} matrizB3={`Bloco 3 - Serviços › ${u.quadroMatriz}`}
       carregando={carregandoFunc || diario === null}
       vazio={`Nenhum funcionário "1 - Trabalhando" de ${u.nome} nos cargos de Chefe definidos na aba Regras. Confira o cadastro em Funcionários ou os cargos na regra do Chefe.`} />
@@ -687,7 +968,7 @@ function BlocoGerente({ campanha, regras, unidade, diario, blocosMatriz, gerente
   })
   const linhas = gerentes.map((g) => ({ id: g.id, nome: g.nome, semanas }))
   return (
-    <ResumoSemanal titulo={unidade === 'CG' ? 'Gerente de Serviços' : 'Gerente de Filial'} cor={CORES_FUNCAO.gerente} campanha={campanha} linhas={linhas}
+    <ResumoSemanal titulo={unidade === 'CG' ? 'Gerente de Serviços' : 'Gerente de Filial'} cor={CORES_FUNCAO.gerente} campanha={campanha} linhas={linhas} chaveBonus="gerente"
       blocosMatriz={blocosMatriz} matrizB3={`Bloco 3 - Serviços › ${u.quadroMatriz}`}
       carregando={carregandoFunc || diario === null}
       vazio={`Nenhum funcionário "1 - Trabalhando" de ${u.nome} nos cargos de Gerente definidos na aba Regras. Confira o cadastro em Funcionários ou os cargos na regra do Gerente.`} />
@@ -713,6 +994,8 @@ function BlocoGerenteGeral({ campanha, regras, diario, blocosMatriz, gerentesGer
     return {
       id: `${g.id}-${x.id}`,
       nome: `${g.nome} · ${x.nome}`,
+      chaveBonus: `gg-${x.id}`, // linha "Gerente Geral · <unidade>" do Bônus-alvo de CAIOBÁ TRUCKS
+      unidadeBonus: x.id, // dias úteis da semana pelo calendário da unidade
       semanas: campanha.semanas.map((s, i) => {
         const fr = fracaoSemana(campanha, x.id, s)
         return {
@@ -727,19 +1010,6 @@ function BlocoGerenteGeral({ campanha, regras, diario, blocosMatriz, gerentesGer
       blocosMatriz={blocosMatriz} matrizB3="Bloco 3 - Serviços › Gerente Geral Pós-Vendas"
       carregando={carregandoFunc || diario === null}
       vazio={`Nenhum funcionário "1 - Trabalhando" das empresas Trucks no agrupamento "${regras.funcoes.gerenteGeral.agrupamento}" com cargo de Gerente Geral de Pós-Vendas. Confira o cadastro em Funcionários.`} />
-  )
-}
-
-// ======================================================================================
-// Resultado — a definir
-// ======================================================================================
-function AbaResultado() {
-  return (
-    <div className={`${CARD} p-10 flex flex-col items-center justify-center gap-2 text-center`}>
-      <BarChart2 className="h-8 w-8 text-slate-300" />
-      <p className="text-sm font-semibold text-slate-700">Resultado</p>
-      <p className="text-xs text-slate-500">Esta aba ainda será montada.</p>
-    </div>
   )
 }
 
@@ -837,20 +1107,116 @@ function linhasBonus(regras, unidade, unidades) {
 }
 const lerCaminho = (obj, caminho) => caminho.reduce((o, k) => (o == null ? undefined : o[k]), obj)
 
-// De onde vieram as regras mostradas na aba (gravação da empresa, regra geral ou padrão).
-function textoOrigem(origem, nomeMes, ano) {
-  if (!origem) return 'padrão do regulamento (nada salvo ainda).'
-  const mesOrigem = MESES[Number(origem.mes) - 1]?.label
-  if (origem.unidade === 'GERAL') return `regra geral de ${mesOrigem}/${origem.ano} (esta empresa ainda não salvou regras próprias).`
-  if (Number(origem.ano) === Number(ano) && mesOrigem === nomeMes) {
-    return `gravadas para este mês${origem.atualizado_por ? ` por ${origem.atualizado_por}` : ''}.`
-  }
-  return `herdadas de ${mesOrigem}/${origem.ano} (último mês salvo desta empresa).`
-}
 
 // Semanas do mês escolhido e dias úteis de cada uma (Calendário de cada empresa: sábado = 0,5,
 // feriado = 0) + Bônus-alvo editável (Meta e Supermeta) da empresa selecionada.
-function AbaRegras({ campanha, unidade, semCalendario, nomeMes, ano, regras, onSalvar, origemRegras, nomeEmpresa }) {
+// Texto para os colaboradores entenderem a campanha (topo da aba Regras). Não é editável: é montado
+// a partir das regras da empresa/mês (nº de semanas etc.) e acompanha o que for sendo configurado.
+// As faixas reais ficam só na tabela Faixas de pagamento abaixo; aqui vai apenas um exemplo.
+function ComoFunciona({ nSemanas }) {
+  const passo = 'flex gap-3'
+  const num = 'h-6 w-6 shrink-0 rounded-full bg-blue-600 text-white text-[11px] font-bold flex items-center justify-center'
+  return (
+    <section className={`${CARD} p-5 space-y-4 bg-gradient-to-br from-blue-50/60 to-white`}>
+      <div>
+        <h2 className="text-base font-bold text-slate-900">🏆 Como funciona a Campanha Pós-Venda</h2>
+        <p className="text-xs text-slate-600 mt-1">
+          A campanha premia, semana a semana, quem alcança os resultados do seu cargo. Quanto melhor o seu resultado na semana, maior o bônus. 💪
+        </p>
+      </div>
+
+      <ol className="space-y-3 text-xs text-slate-700 leading-relaxed">
+        <li className={passo}>
+          <span className={num}>1</span>
+          <div>
+            <b>🎯 Suas metas.</b> Cada cargo é avaliado pelos indicadores do <b>Bloco 3 - Serviços</b> da Matriz KPIs,
+            com as metas aprovadas no Planejamento de Metas ou definidas na própria Matriz KPIs.
+          </div>
+        </li>
+        <li className={passo}>
+          <span className={num}>2</span>
+          <div>
+            <b>📅 Apuração toda semana.</b> O mês poderá ter <b>4 ou 5 semanas</b> (as mesmas da Matriz KPIs, veja a tabela abaixo).
+            Em cada semana é calculada a <b>soma da contribuição</b>, que será o valor extraído de contribuição de cada
+            indicador que possuir valores de pesos.
+          </div>
+        </li>
+        <li className={passo}>
+          <span className={num}>3</span>
+          <div>
+            <b>📊 Faixa de pagamento.</b> A contribuição da semana mostra em qual faixa você ficou, e cada faixa
+            diz quanto do bônus você recebe — sobre a <b>Meta</b> ✅ ou, nas faixas mais altas, sobre a <b>Supermeta</b> 🚀.
+            Por exemplo: se a sua contribuição na semana foi de 85% e a faixa de 80% a 90% paga 50% da Meta, você recebe
+            50% do bônus da Meta naquela semana. As faixas do mês estão na tabela <b>Faixas de pagamento</b>, mais abaixo.
+          </div>
+        </li>
+        <li className={passo}>
+          <span className={num}>4</span>
+          <div>
+            <b>💰 Valor da semana.</b> Bônus da semana = <b>% aplicado sobre o bônus × bônus-alvo da semana</b>.
+            O bônus-alvo da semana é o valor do mês (Meta ou Supermeta, tabela Bônus-alvo) dividido pela quantidade de semanas do mês.
+            {' '}Abaixo da 1ª faixa, a semana não paga.
+          </div>
+        </li>
+        <li className={passo}>
+          <span className={num}>5</span>
+          <div>
+            <b>➕ Total do mês.</b> O bônus do mês é a <b>soma das semanas</b> — uma semana fraca não apaga as boas. 😉
+            O pagamento é feito no mês seguinte.
+          </div>
+        </li>
+      </ol>
+
+      <div className="rounded-md border border-blue-100 bg-white px-3 py-2 text-xs text-slate-700">
+        <b>🧮 Exemplo:</b> Meta do mês R$ 1.500,00 em {nSemanas} semanas = R$ {moedaTxt(1500 / (nSemanas || 1))} por semana.
+        Contribuição de 85% na semana → faixa que paga 50% da Meta → 50% × R$ {moedaTxt(1500 / (nSemanas || 1))} =
+        <b> R$ {moedaTxt((1500 / (nSemanas || 1)) * 0.5)}</b> naquela semana.
+      </div>
+
+      <ul className="space-y-1 text-[11px] text-slate-500">
+        <li>⚠️ Participa quem está com o cadastro <b>“1 - Trabalhando”</b> durante a campanha.</li>
+        <li>⚠️ Mecânicos com eficiência do mês acima do limite da regra têm o bônus do mês zerado.</li>
+        <li>ℹ️ Os resultados de cada semana podem ser acompanhados nas abas <b>Apuração</b> e <b>Resultado</b>.</li>
+      </ul>
+    </section>
+  )
+}
+
+// Botão de engrenagem com um menu de ações (fecha ao clicar fora ou Esc).
+function MenuEngrenagem({ itens }) {
+  const [aberto, setAberto] = useState(false)
+  const ref = useRef(null)
+  useEffect(() => {
+    if (!aberto) return undefined
+    const fora = (e) => { if (ref.current && !ref.current.contains(e.target)) setAberto(false) }
+    const esc = (e) => { if (e.key === 'Escape') setAberto(false) }
+    document.addEventListener('mousedown', fora)
+    document.addEventListener('keydown', esc)
+    return () => { document.removeEventListener('mousedown', fora); document.removeEventListener('keydown', esc) }
+  }, [aberto])
+  return (
+    <div ref={ref} className="relative">
+      <button type="button" onClick={() => setAberto((v) => !v)} aria-expanded={aberto} aria-haspopup="menu"
+        title="Mais ações" aria-label="Mais ações"
+        className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white p-1.5 text-slate-600 hover:bg-slate-50">
+        <Settings className="h-4 w-4" />
+      </button>
+      {aberto && (
+        <div role="menu" className="absolute right-0 top-full mt-1 z-30 w-64 rounded-lg border border-slate-200 bg-white shadow-lg py-1">
+          {itens.map(({ rotulo, icone: Icone, onClick, desabilitado, dica }) => (
+            <button key={rotulo} type="button" role="menuitem" disabled={desabilitado} title={dica}
+              onClick={() => { setAberto(false); onClick() }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 text-left disabled:opacity-50">
+              <Icone className={`h-3.5 w-3.5 text-slate-500 ${desabilitado ? 'animate-spin' : ''}`} /> {rotulo}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function AbaRegras({ slotAcoes, campanha, unidade, semCalendario, nomeMes, ano, mes, regras, onSalvar, origemRegras, nomeEmpresa }) {
   const unidades = unidade === 'TRUCKS' ? campanha.unidades : campanha.unidades.filter((u) => u.id === unidade)
   const semCal = unidades.filter((u) => semCalendario.includes(u.id))
 
@@ -866,6 +1232,9 @@ function AbaRegras({ campanha, unidade, semCalendario, nomeMes, ano, regras, onS
     return v == null && l.padraoSuper ? (Number(lerCaminho(rascunho, l.meta)) || 0) * 1.2 : v
   }
   const alterar = (caminho, v) => { setRascunho((r) => comValor(r, caminho, v)); setMsg(null) }
+  // Bônus-alvo é do mês: por semana = valor ÷ nº de semanas do mês (5 semanas ÷ 5, 4 semanas ÷ 4).
+  const nSemanas = campanha.semanas.length || 1
+  const porSemana = (v) => `R$ ${moedaTxt((Number(v) || 0) / nSemanas)}`
   const salvar = async () => {
     setSalvando(true)
     try {
@@ -878,7 +1247,44 @@ function AbaRegras({ campanha, unidade, semCalendario, nomeMes, ano, regras, onS
     }
   }
 
-  // Salvar/Descartar (topo da aba) gravam todas as regras da aba de uma vez: Bônus-alvo e Faixas.
+  // Zerar valores: Meta e Supermeta de todas as linhas do Bônus-alvo desta empresa = 0 (faixas e
+  // travas ficam como estão). Só altera o rascunho — vale depois de Salvar.
+  const zerarValores = () => {
+    let r = rascunho
+    for (const l of linhasBonus(rascunho, unidade, campanha.unidades)) {
+      r = comValor(r, l.meta, 0)
+      if (l.supermeta) r = comValor(r, l.supermeta, 0)
+    }
+    setRascunho(r)
+    setMsg({ erro: false, txt: 'Valores zerados — clique em Salvar para gravar.' })
+  }
+
+  // Copiar do mês anterior: traz as regras gravadas desta empresa no mês anterior (Bônus-alvo,
+  // travas e Faixas). Sem nada salvo lá, usa a última regra salva antes dele. Vale depois de Salvar.
+  const [copiando, setCopiando] = useState(false)
+  const anterior = Number(mes) === 1 ? { ano: Number(ano) - 1, mes: 12 } : { ano: Number(ano), mes: Number(mes) - 1 }
+  const nomeMesAnterior = `${MESES[anterior.mes - 1].label}/${anterior.ano}`
+  const copiarMesAnterior = async () => {
+    setCopiando(true)
+    setMsg(null)
+    try {
+      const linha = await apiService.getCampanhaRegras(anterior.ano, anterior.mes, unidade)
+      if (!linha?.dados) {
+        setMsg({ erro: true, txt: `Nada salvo em ${nomeMesAnterior} para ${nomeEmpresa}.` })
+        return
+      }
+      setRascunho(mesclarRegras(REGRAS_PADRAO, linha.dados))
+      const deOnde = linha.unidade === 'GERAL' ? 'regra geral' : nomeEmpresa
+      setMsg({ erro: false, txt: `Copiado de ${MESES[Number(linha.mes) - 1]?.label}/${linha.ano} (${deOnde}) — clique em Salvar para gravar.` })
+    } catch (err) {
+      setMsg({ erro: true, txt: `Não foi possível copiar: ${err.message || err}` })
+    } finally {
+      setCopiando(false)
+    }
+  }
+
+  // Salvar/Descartar gravam todas as regras da aba de uma vez (Bônus-alvo e Faixas). Ficam na linha
+  // das abas (slotAcoes, via portal), com a engrenagem de Zerar valores / Copiar do mês anterior.
   const botoesSalvar = (
     <div className="flex items-center gap-2">
       {msg && <span className={`text-xs ${msg.erro ? 'text-red-600' : 'text-emerald-700'}`}>{msg.txt}</span>}
@@ -892,6 +1298,10 @@ function AbaRegras({ campanha, unidade, semCalendario, nomeMes, ano, regras, onS
         className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50">
         {salvando && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Salvar
       </button>
+      <MenuEngrenagem itens={[
+        { rotulo: 'Zerar valores', icone: Eraser, onClick: zerarValores, dica: 'Meta e Supermeta do Bônus-alvo = R$ 0,00' },
+        { rotulo: 'Copiar do mês anterior', icone: copiando ? Loader2 : Copy, onClick: copiarMesAnterior, desabilitado: copiando, dica: `Copiar as regras de ${nomeMesAnterior}` },
+      ]} />
     </div>
   )
 
@@ -913,15 +1323,10 @@ function AbaRegras({ campanha, unidade, semCalendario, nomeMes, ano, regras, onS
 
   return (
     <div className="space-y-5">
-      {/* Um só Salvar para a aba inteira: grava as regras DESTA empresa para o mês/ano escolhido. */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <p className="text-xs text-slate-600">
-          <b className="text-slate-800">Regras de {nomeEmpresa} · {nomeMes}/{ano}:</b>{' '}
-          {textoOrigem(origemRegras, nomeMes, ano)}
-        </p>
-        {botoesSalvar}
-      </div>
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-5 items-stretch">
+      {/* Um só Salvar para a aba inteira (na linha das abas): grava as regras DESTA empresa para o mês/ano. */}
+      {slotAcoes ? createPortal(botoesSalvar, slotAcoes) : <div className="flex justify-end">{botoesSalvar}</div>}
+      <ComoFunciona nSemanas={nSemanas} />
+    <div className="grid grid-cols-1 gap-5">
       <section className={`${CARD} p-4 space-y-3`}>
         <h2 className="text-sm font-bold text-slate-900">Semanas de {nomeMes}/{ano}</h2>
         {semCal.length > 0 && (
@@ -943,7 +1348,9 @@ function AbaRegras({ campanha, unidade, semCalendario, nomeMes, ano, regras, onS
             <tbody>
               {campanha.semanas.map((s) => (
                 <tr key={s.id} className="border-b border-slate-100">
-                  <td className="p-2 font-semibold text-slate-700 whitespace-nowrap">Sem {s.id.slice(1)}</td>
+                  <td className="p-2 font-semibold text-slate-700 whitespace-nowrap">
+                    Sem {s.id.slice(1)} <span className="font-normal text-slate-400">(Semana {s.numero})</span>
+                  </td>
                   <td className="p-2 text-slate-600 whitespace-nowrap">{s.label}</td>
                   {unidades.map((u) => (
                     <td key={u.id} className="p-2 text-right tabular-nums">{diasFmt(pesoSemana(s, u.id))}</td>
@@ -974,7 +1381,9 @@ function AbaRegras({ campanha, unidade, semCalendario, nomeMes, ano, regras, onS
                 <tr className="bg-slate-50 border-y border-slate-200">
                   <th className={`${TH} text-left`}>Função</th>
                   <th className={`${TH} text-right`}>Meta</th>
+                  <th className={`${TH} text-right`} title={`Meta ÷ ${nSemanas} semanas do mês`}>Meta / semana</th>
                   <th className={`${TH} text-right`}>Supermeta</th>
+                  <th className={`${TH} text-right`} title={`Supermeta ÷ ${nSemanas} semanas do mês`}>Supermeta / semana</th>
                 </tr>
               </thead>
               <tbody>
@@ -1003,6 +1412,9 @@ function AbaRegras({ campanha, unidade, semCalendario, nomeMes, ano, regras, onS
                             value={lerCaminho(rascunho, l.meta) ?? 0} onChange={(v) => alterar(l.meta, v)} />
                         </span>
                       </td>
+                      <td className="p-2 text-right tabular-nums whitespace-nowrap text-slate-600">
+                        {metaTravada ? '—' : porSemana(lerCaminho(rascunho, l.meta))}
+                      </td>
                       <td className="p-1.5 text-right">
                         {l.supermeta && (
                           <span className="inline-flex items-center gap-1.5">
@@ -1013,6 +1425,9 @@ function AbaRegras({ campanha, unidade, semCalendario, nomeMes, ano, regras, onS
                               value={valorSuper(l) ?? 0} onChange={(v) => alterar(l.supermeta, v)} />
                           </span>
                         )}
+                      </td>
+                      <td className="p-2 text-right tabular-nums whitespace-nowrap text-slate-600">
+                        {!l.supermeta || superTravada ? '—' : porSemana(valorSuper(l))}
                       </td>
                     </tr>
                   )
@@ -1034,7 +1449,7 @@ function AbaRegras({ campanha, unidade, semCalendario, nomeMes, ano, regras, onS
               <tr className="bg-slate-50 border-y border-slate-200">
                 <th className={`${TH} text-left`}>Atingimento ≥</th>
                 <th className={`${TH} text-left`}>e menor que</th>
-                <th className={`${TH} text-left`}>Percentual aplicado sobre o bônus</th>
+                <th className={`${TH} text-left`}>% aplicado sobre o bônus</th>
                 <th className={`${TH} text-left`}>Aplicar sobre</th>
                 <th className={`${TH} w-10`} aria-label="Remover" />
               </tr>
@@ -1053,7 +1468,7 @@ function AbaRegras({ campanha, unidade, semCalendario, nomeMes, ano, regras, onS
                   <tr key={f.id} className="border-b border-slate-100 last:border-0">
                     <td className="p-1.5"><PctInput rotulo="Atingimento maior ou igual a" value={f.min} onChange={(v) => setFaixa(f.id, 'min', v)} /></td>
                     <td className="p-2 tabular-nums text-slate-600 whitespace-nowrap">{prox ? <>&lt; {pctTxt(prox.min)}</> : 'sem limite'}</td>
-                    <td className="p-1.5"><PctInput rotulo="Percentual aplicado sobre o bônus" value={f.paga} onChange={(v) => setFaixa(f.id, 'paga', v)} /></td>
+                    <td className="p-1.5"><PctInput rotulo="% aplicado sobre o bônus" value={f.paga} onChange={(v) => setFaixa(f.id, 'paga', v)} /></td>
                     <td className="p-1.5">
                       <select aria-label="Aplicar o percentual sobre" value={f.base || 'meta'} onChange={(e) => setFaixa(f.id, 'base', e.target.value)}
                         className="text-xs p-1.5 border border-slate-200 rounded bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500">

@@ -200,10 +200,13 @@ export function notasFiscaisDoTitulo(t) {
 }
 
 
-// Concilia títulos × repasses. Nº NF-e e Nº NFS-e do repasse são checados contra TODAS as notas
-// do título (notasFiscaisDoTitulo) juntas, não campo a campo — a planilha de títulos vem com
-// número de serviço às vezes na coluna de peças e vice-versa, então tentar casar campo específico
-// contra campo específico perdia conciliações válidas.
+// Concilia títulos × repasses. Nº NF-e do repasse é checado contra TODAS as notas do título
+// (notasFiscaisDoTitulo) juntas, não campo a campo — a planilha de títulos vem com número de
+// serviço às vezes na coluna de peças e vice-versa, então tentar casar campo específico contra
+// campo específico perdia conciliações válidas. Já o Nº NFS-e do repasse é checado só contra o
+// NÚMERO DA NOTA do título (o que vem DEPOIS da barra em "RPS / NFS-e", ex.: "25733 / 26465" →
+// 26465) — NUNCA contra o RPS (antes da barra), que é só um número de controle interno e pode
+// coincidir por acaso com o número do título de outro documento (pedido do usuário).
 //
 // Obrigatório pra virar candidato (a identidade do título, todos precisam bater — testado com
 // "basta 1 dos 3" e dava falso positivo: título achava repasse do mesmo CLIENTE mas sem nenhuma
@@ -230,6 +233,7 @@ export function conciliarTitulosRepasses(titulos, repasses, tolerancia = TOLERAN
     const tituloSaldo = t.titulo_saldo
     const tituloCodigo = codigoEmpresaPorNome(t.titulo_empresa_nome)
     const notasTitulo = notasFiscaisDoTitulo(t)
+    const tituloNfseReal = splitNfeServico(t.titulo_nota_fiscal_elet_serv_numero).nfse
 
     let melhor = null
     const candidatos = []
@@ -243,7 +247,7 @@ export function conciliarTitulosRepasses(titulos, repasses, tolerancia = TOLERAN
       const obrigatorios = {}
       if (tituloCodigo && repasseCodigo) obrigatorios.codigo = tituloCodigo === repasseCodigo
       if (repasseNF && notasTitulo.length) obrigatorios.notaFiscal = notasTitulo.includes(repasseNF)
-      if (repasseNFSe && notasTitulo.length) obrigatorios.nfse = notasTitulo.includes(repasseNFSe)
+      if (repasseNFSe && tituloNfseReal) obrigatorios.nfse = repasseNFSe === tituloNfseReal
       if (tituloParcela && repasseParcela) obrigatorios.parcela = tituloParcela === repasseParcela
 
       const notaBate = obrigatorios.notaFiscal === true || obrigatorios.nfse === true

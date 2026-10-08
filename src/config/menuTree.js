@@ -233,7 +233,6 @@ export const MENU_TREE = [
       { key: 'bi/garantias-daf', label: 'BI — Garantias DAF' },
       { key: 'bi/projetos', label: 'BI — Gestão de Projetos' },
       { key: 'bi/possibilidades', label: 'BI — Possibilidades' },
-      { key: 'bi/campanha', label: 'BI — Campanha Pós-Venda' },
       {
         // Agrupamento de menu (sem navTo) — cada item abaixo é uma tela própria, não mais abas
         // de uma página única. Movido de Comissões pra cá junto com Medidas BI.
@@ -262,6 +261,8 @@ export const MENU_TREE = [
           { key: 'kpi/auditoria', label: 'Auditoria de Fontes' },
         ],
       },
+      // Logo abaixo da Matriz KPIs (a campanha usa os blocos da Matriz).
+      { key: 'bi/campanha', label: 'BI — Campanha Pós-Venda' },
     ],
   },
   {

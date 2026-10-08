@@ -8,6 +8,8 @@
 // quando virar tabela no Supabase, só a origem de CAMPANHA/lançamentos muda.
 
 
+import { computeWeekSchema } from './kpiPeriods'
+
 // Regras valem para qualquer mês/ano selecionado na tela (mês e pagamento vêm do seletor).
 export const CAMPANHA = {
   // Semanas NÃO são fixas: montarSemanas() gera a partir do mês selecionado e do Calendário
@@ -318,6 +320,42 @@ export function montarSemanas(ano, mes, calendarios, cfg = CAMPANHA) {
     }
   })
   return { semanas, semCalendario }
+}
+
+// ======================================================================================
+// Contribuição semanal lida direto da Matriz KPIs (Bloco 3 - Serviços › quadro do consultor)
+// — mesma linha "Total" da tabela: soma peso × atingimento dos indicadores com peso configurado
+// (kpi_pesos), por semana. As semanas aqui são sempre as mesmas s01..s70 da Matriz (não as "Sem
+// 1..5" locais do mês de montarSemanas) — use semanasMatrizDoMes para converter mês → lista de
+// chaves, na mesma ordem (Sem 1 = primeira chave, Sem 2 = segunda, ...).
+// ======================================================================================
+
+// Chaves de semana da Matriz KPIs (s01..s70) do mês, na ordem (Sem 1, Sem 2, ...).
+export function semanasMatrizDoMes(ano, mes) {
+  const mKey = `m${String(mes).padStart(2, '0')}`
+  return computeWeekSchema(Number(ano)).MONTH_WEEK_RANGES[mKey] || []
+}
+
+function calcAtingimentoMatriz(orientacao, meta, realizado) {
+  if (realizado == null || meta == null || meta === 0) return null
+  return orientacao === '<' ? meta / realizado : realizado / meta
+}
+
+// quadro = um item do array devolvido por fetchBloco3Servicos (ex.: tituloGerente === 'CONSULTOR
+// DE SERVIÇOS'), já filtrado pela pessoa certa. sKey = uma chave 's42' etc. de semanasMatrizDoMes.
+export function contribSemanaMatriz(quadro, sKey) {
+  if (!quadro) return { contrib: null, itens: [] }
+  const itens = []
+  let soma = 0
+  let temAlgum = false
+  for (const kpi of quadro.kpis || []) {
+    if (kpi.pesoObj == null) continue
+    const d = kpi[sKey] || {}
+    const atingimento = calcAtingimentoMatriz(kpi.orientacao, d.meta ?? null, d.realizado ?? null)
+    itens.push({ indicador: kpi.indicador, peso: kpi.pesoObj, atingimento })
+    if (atingimento != null) { soma += kpi.pesoObj * atingimento; temAlgum = true }
+  }
+  return { contrib: temAlgum ? soma : null, itens }
 }
 
 // ======================================================================================

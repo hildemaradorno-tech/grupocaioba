@@ -160,6 +160,7 @@ const _toRowPublicada = (r, tipo, ts, ctx) => ({
   meta_faturamento: r.meta_aprovada,
   meta_pecas: r.meta_pecas || null, meta_servicos: r.meta_servicos || null,
   ...(tipo === 'pecas' ? { fat_parceira: r.fat_parceira ?? null } : {}),
+  ...(tipo === 'consultor' ? { ticket_total: r.ticket_total ?? null, passagens: r.passagens ?? null } : {}),
   aprovado_por: r.aprovado_por || null, aprovado_por_nome: r.aprovado_por_nome || null, aprovado_em: r.aprovado_em || null,
   publicado_em: ts,
 })
