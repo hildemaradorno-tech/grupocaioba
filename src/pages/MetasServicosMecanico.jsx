@@ -342,7 +342,7 @@ export default function MetasServicosMecanico({ empresaExterna = null, anoExtern
         up.colaborador_nome = 'A contratar'
         up.data_admissao = ''
       } else if (value === 'PROD_NAO_ASSOC_FUN') {
-        up.colaborador_nome = 'Produtivo Não Associado Funilaria'
+        up.colaborador_nome = 'Produtivo Não Associado'
         up.data_admissao = ''
         const setorFun = setores.find(s => s.nome_setor?.toLowerCase().includes('funilaria'))
         if (setorFun) {
@@ -1131,7 +1131,7 @@ export default function MetasServicosMecanico({ empresaExterna = null, anoExtern
                       notFoundLabel="Nenhum colaborador encontrado."
                       opcoes={[
                         { id: 'A_CONTRATAR', nome_funcionario: 'A contratar' },
-                        { id: 'PROD_NAO_ASSOC_FUN', nome_funcionario: 'Produtivo Não Associado Funilaria' },
+                        { id: 'PROD_NAO_ASSOC_FUN', nome_funcionario: 'Produtivo Não Associado' },
                         ...funcsEmp,
                       ]}
                       getLabel={(o) => {
@@ -1179,8 +1179,8 @@ export default function MetasServicosMecanico({ empresaExterna = null, anoExtern
                         <tr>
                           <td className="text-xs font-semibold text-emerald-700 px-1 whitespace-nowrap">Meta Serviços (R$)</td>
                           {mesesForm.map((m, i) => (
-                            <td key={i} className={`border rounded p-1 ${modoModal === 'editar' ? 'bg-white border-emerald-300' : 'bg-emerald-50 border-emerald-100'}`}>
-                              {modoModal === 'editar'
+                            <td key={i} className={`border rounded p-1 ${modoModal !== 'visualizar' ? 'bg-white border-emerald-300' : 'bg-emerald-50 border-emerald-100'}`}>
+                              {modoModal !== 'visualizar'
                                 ? <BRLInput value={m.meta_servicos} onChange={v => setMesesForm(prev => prev.map((x,xi) => xi===i ? {...x, meta_servicos: v} : x))} />
                                 : <span className="text-xs text-right block text-emerald-700 font-mono">{m.meta_servicos > 0 ? fmtBRL(m.meta_servicos) : '—'}</span>
                               }
@@ -1191,8 +1191,8 @@ export default function MetasServicosMecanico({ empresaExterna = null, anoExtern
                         <tr>
                           <td className="text-xs font-semibold text-blue-700 px-1 whitespace-nowrap">Meta Peças (R$)</td>
                           {mesesForm.map((m, i) => (
-                            <td key={i} className={`border rounded p-1 ${modoModal === 'editar' ? 'bg-white border-blue-300' : 'bg-blue-50 border-blue-100'}`}>
-                              {modoModal === 'editar'
+                            <td key={i} className={`border rounded p-1 ${modoModal !== 'visualizar' ? 'bg-white border-blue-300' : 'bg-blue-50 border-blue-100'}`}>
+                              {modoModal !== 'visualizar'
                                 ? <BRLInput value={m.meta_pecas} onChange={v => setMesesForm(prev => prev.map((x,xi) => xi===i ? {...x, meta_pecas: v} : x))} />
                                 : <span className="text-xs text-right block text-blue-700 font-mono">{m.meta_pecas > 0 ? fmtBRL(m.meta_pecas) : '—'}</span>
                               }
