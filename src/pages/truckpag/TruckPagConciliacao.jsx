@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
-import { RefreshCw, AlertTriangle, Link2, Link2Off, ArrowLeftRight, Wallet, Settings, List, HelpCircle, Truck } from 'lucide-react'
+import { RefreshCw, AlertTriangle, Link2, Link2Off, ArrowLeftRight, Wallet, Settings, List, HelpCircle, Truck, ChevronDown, ChevronUp } from 'lucide-react'
 import { apiService } from '../../services/api'
 import TruckPagNav from './TruckPagNav'
 import TruckPagConfigModal from './TruckPagConfigModal'
@@ -30,6 +30,9 @@ export default function TruckPagConciliacao() {
   const [filtroTipo, setFiltroTipo] = useState(null) // null | 'repasse' | 'credito'
   const [filtroConciliado, setFiltroConciliado] = useState(null) // null | true | false
   const [sortDir, setSortDir] = useState('desc')
+  // Não conciliados, separado por tipo — cada bloco abre/fecha independente (começa aberto).
+  const [abertoNCRepasse, setAbertoNCRepasse] = useState(false)
+  const [abertoNCCredito, setAbertoNCCredito] = useState(false)
 
   const carregar = useCallback(async () => {
     setLoading(true)
@@ -163,6 +166,11 @@ export default function TruckPagConciliacao() {
   const blocosNaoVinculados = useMemo(() => blocosOrdenados.filter(b => !b.conciliado), [blocosOrdenados])
   const qtdComDiferenca = blocosVinculados.filter(b => b.diferenca !== 0).length
 
+  // Não conciliados separado por tipo: bloco sem crédito vinculado só tem linha de repasse,
+  // bloco de crédito sobrando só tem linha de crédito (ver montagem de `blocos` acima).
+  const naoVinculadosRepasse = useMemo(() => blocosNaoVinculados.filter(b => b.linhas[0]?.tipo === 'repasse'), [blocosNaoVinculados])
+  const naoVinculadosCredito = useMemo(() => blocosNaoVinculados.filter(b => b.linhas[0]?.tipo === 'credito'), [blocosNaoVinculados])
+
   const linhasRepasseAtual = linhas.filter(l => l.tipo === 'repasse')
   const linhasCreditoAtual = linhas.filter(l => l.tipo === 'credito')
   const qtdCredito = linhasCreditoAtual.length
@@ -189,6 +197,11 @@ export default function TruckPagConciliacao() {
     { key: 'contaGerencial', label: 'Conta Gerencial' },
     { key: 'codigoTesouraria', label: 'Código Tesouraria' },
   ]
+  // Colunas específicas de cada tipo nas tabelas de "Não conciliados" separadas — evita mostrar
+  // em cada linha colunas que são sempre "—" pro tipo (repasse não tem saldo/conta gerencial,
+  // crédito não tem valor bruto/taxa).
+  const colunasRepasse = colunas.filter(c => !['observacao', 'saldoDocto', 'contaGerencial', 'codigoTesouraria'].includes(c.key))
+  const colunasCredito = colunas.filter(c => !['codigoEmpresa', 'valorBruto', 'valorTaxa'].includes(c.key))
 
   return (
     <div className="p-6 space-y-5 max-w-screen-2xl">
@@ -372,20 +385,25 @@ export default function TruckPagConciliacao() {
             </div>
           )}
 
-          {blocosNaoVinculados.length > 0 && (
+          {naoVinculadosRepasse.length > 0 && (
             <div>
-              <div className="flex items-center gap-2 mb-2">
-                <Link2Off className="h-4 w-4 text-red-500" />
-                <h2 className="text-xs font-bold uppercase tracking-wide text-red-600">Não conciliados</h2>
-                <span className="text-[10px] font-bold text-red-500 bg-red-50 border border-red-200 rounded-full px-2 py-0.5">{blocosNaoVinculados.length}</span>
-              </div>
+              <button
+                type="button"
+                onClick={() => setAbertoNCRepasse(v => !v)}
+                className="flex items-center gap-2 mb-2 group"
+              >
+                {abertoNCRepasse ? <ChevronUp className="h-3.5 w-3.5 text-red-400" /> : <ChevronDown className="h-3.5 w-3.5 text-red-400" />}
+                <ArrowLeftRight className="h-4 w-4 text-red-500" />
+                <h2 className="text-xs font-bold uppercase tracking-wide text-red-600 group-hover:text-red-700">Não conciliados — Repasse Fabricante</h2>
+                <span className="text-[10px] font-bold text-red-500 bg-red-50 border border-red-200 rounded-full px-2 py-0.5">{naoVinculadosRepasse.length}</span>
+              </button>
+              {abertoNCRepasse && (
               <div className="bg-white rounded-lg border border-red-200 shadow-sm overflow-x-auto custom-scrollbar-light">
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="bg-red-50/60 border-b border-red-200 text-red-400 text-[10px] font-bold uppercase tracking-wider">
-                      <th className="p-3 whitespace-nowrap">Tipo</th>
                       <th className="p-3 whitespace-nowrap text-center">Detalhes</th>
-                      {colunas.map(c => (
+                      {colunasRepasse.map(c => (
                         <th
                           key={c.key}
                           onClick={c.key === 'data' ? () => setSortDir(d => (d === 'asc' ? 'desc' : 'asc')) : undefined}
@@ -400,41 +418,84 @@ export default function TruckPagConciliacao() {
                     </tr>
                   </thead>
                   <tbody className="text-xs font-medium text-slate-700">
-                    {blocosNaoVinculados.map((bloco) => (
-                      <React.Fragment key={bloco.chave}>
-                        {bloco.linhas.map((l) => {
-                          const tipoInfo = TIPO_INFO[l.tipo]
-                          return (
-                            <tr key={l.key} className="hover:bg-red-50/40 transition-colors border-b border-slate-100">
-                              <td className="p-3 whitespace-nowrap">
-                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${tipoInfo.cls}`}>
-                                  <tipoInfo.icon className="h-3 w-3" /> {tipoInfo.label}
-                                </span>
-                              </td>
-                              <td className="p-3 whitespace-nowrap text-center">
-                                {l.tipo === 'repasse' && l.detalhe && (
-                                  <button
-                                    onClick={() => setDetalheRepasse({ empresa: l.empresa, codigoEmpresa: l.codigoEmpresa, data: l.data, linhas: l.detalhe })}
-                                    title="Ver linhas do repasse"
-                                    className="text-slate-400 hover:text-blue-600 transition-colors"
-                                  >
-                                    <List className="h-4 w-4" />
-                                  </button>
-                                )}
-                              </td>
-                              {colunas.map(c => (
-                                <td key={c.key} className={`p-3 whitespace-nowrap ${c.numerico ? 'text-right font-semibold text-slate-900' : ''}`}>
-                                  {c.formatar ? c.formatar(l[c.key]) : (l[c.key] || '—')}
-                                </td>
-                              ))}
-                            </tr>
-                          )
-                        })}
-                      </React.Fragment>
-                    ))}
+                    {naoVinculadosRepasse.map((bloco) => {
+                      const l = bloco.linhas[0]
+                      return (
+                        <tr key={bloco.chave} className="hover:bg-red-50/40 transition-colors border-b border-slate-100">
+                          <td className="p-3 whitespace-nowrap text-center">
+                            {l.detalhe && (
+                              <button
+                                onClick={() => setDetalheRepasse({ empresa: l.empresa, codigoEmpresa: l.codigoEmpresa, data: l.data, linhas: l.detalhe })}
+                                title="Ver linhas do repasse"
+                                className="text-slate-400 hover:text-blue-600 transition-colors"
+                              >
+                                <List className="h-4 w-4" />
+                              </button>
+                            )}
+                          </td>
+                          {colunasRepasse.map(c => (
+                            <td key={c.key} className={`p-3 whitespace-nowrap ${c.numerico ? 'text-right font-semibold text-slate-900' : ''}`}>
+                              {c.formatar ? c.formatar(l[c.key]) : (l[c.key] || '—')}
+                            </td>
+                          ))}
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>
+              )}
+            </div>
+          )}
+
+          {naoVinculadosCredito.length > 0 && (
+            <div>
+              <button
+                type="button"
+                onClick={() => setAbertoNCCredito(v => !v)}
+                className="flex items-center gap-2 mb-2 group"
+              >
+                {abertoNCCredito ? <ChevronUp className="h-3.5 w-3.5 text-red-400" /> : <ChevronDown className="h-3.5 w-3.5 text-red-400" />}
+                <Wallet className="h-4 w-4 text-red-500" />
+                <h2 className="text-xs font-bold uppercase tracking-wide text-red-600 group-hover:text-red-700">Não conciliados — Saldo Concessionária</h2>
+                <span className="text-[10px] font-bold text-red-500 bg-red-50 border border-red-200 rounded-full px-2 py-0.5">{naoVinculadosCredito.length}</span>
+              </button>
+              {abertoNCCredito && (
+              <div className="bg-white rounded-lg border border-red-200 shadow-sm overflow-x-auto custom-scrollbar-light">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-red-50/60 border-b border-red-200 text-red-400 text-[10px] font-bold uppercase tracking-wider">
+                      {colunasCredito.map(c => (
+                        <th
+                          key={c.key}
+                          onClick={c.key === 'data' ? () => setSortDir(d => (d === 'asc' ? 'desc' : 'asc')) : undefined}
+                          className={`p-3 whitespace-nowrap ${c.numerico ? 'text-right' : ''} ${c.key === 'data' ? 'cursor-pointer select-none hover:bg-red-100 hover:text-red-600 transition-colors' : ''}`}
+                        >
+                          <span className={`flex items-center gap-1 ${c.numerico ? 'justify-end' : ''}`}>
+                            {c.label}
+                            {c.key === 'data' && <span className="text-red-300">{sortDir === 'asc' ? '▲' : '▼'}</span>}
+                          </span>
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="text-xs font-medium text-slate-700">
+                    {naoVinculadosCredito.map((bloco) => {
+                      const l = bloco.linhas[0]
+                      return (
+                        <tr key={bloco.chave} className="hover:bg-red-50/40 transition-colors border-b border-slate-100">
+                          {colunasCredito.map(c => (
+                            <td key={c.key} className={`p-3 whitespace-nowrap ${c.numerico ? 'text-right font-semibold text-slate-900' : ''}`}>
+                              {c.formatar ? c.formatar(l[c.key]) : (l[c.key] || '—')}
+                            </td>
+                          ))}
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              )}
             </div>
           )}
         </>
