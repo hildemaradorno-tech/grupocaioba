@@ -102,7 +102,6 @@ export default function MetasServicosConsultor({ empresaExterna = null, anoExter
   const [funcionarios,  setFuncionarios]  = useState([])
   const [dados,         setDados]         = useState([])
   const [mecRows,       setMecRows]       = useState([]) // linhas brutas de fato_rascunho_metas_servicos_mecanico
-  const [totaisTer,     setTotaisTer]     = useState({}) // { empresaId: { mes: servicos } }
   const [totaisFun,     setTotaisFun]     = useState({}) // { empresaId: { mes: { servicos, pecas } } }
   const [filtroVisuSalvo] = useSessionState('mpvs_servicos_visu', 'total')
   const filtroVisu    = filtroVisuExterno ?? filtroVisuSalvo
@@ -158,21 +157,13 @@ export default function MetasServicosConsultor({ empresaExterna = null, anoExter
   const loadDados = async () => {
     setLoading(true); setError(null)
     try {
-      const [rows, terRows, funRows, mecRowsAll] = await Promise.all([
+      const [rows, funRows, mecRowsAll] = await Promise.all([
         apiService.getMetasConsultor(empresaParam(filtroEmpresa), filtroAno),
-        apiService.getMetasTerceiros(empresaParam(filtroEmpresa), filtroAno),
         apiService.getMetasFunilaria(empresaParam(filtroEmpresa), filtroAno),
         apiService.getMetasMecanico(empresaParam(filtroEmpresa), filtroAno),
       ])
       setDados(filtrarPorEmpresas(rows, filtroEmpresa))
       setMecRows(mecRowsAll)
-      // Terceiros: { empId: { mes: meta_servicos } }
-      const terMap = {}
-      terRows.forEach(r => {
-        if (!terMap[r.empresa_id]) terMap[r.empresa_id] = {}
-        terMap[r.empresa_id][r.mes] = (terMap[r.empresa_id][r.mes] || 0) + (Number(r.meta_servicos) || 0)
-      })
-      setTotaisTer(terMap)
       // Funilaria: { empId: { mes: { servicos, pecas } } }
       const funMap = {}
       funRows.forEach(r => {
@@ -251,6 +242,24 @@ export default function MetasServicosConsultor({ empresaExterna = null, anoExter
     return map
   }, [mecRows, funcionarios, boxToSetorMap])
 
+  // Terceiros: lançados na aba Mecânico com Setor "Terceiro" (sem Box — "Produtivo Não Associado" ou
+  // outro colaborador). Antes vinha de uma tabela própria (fato_rascunho_metas_terceiros) que não é
+  // mais usada; agora soma direto os lançamentos de Mecânico desse setor, igual Mecânica/Funilaria.
+  const totaisTer = useMemo(() => {
+    const map = {}
+    const setorNomeMap = Object.fromEntries(setores.map(s => [s.id, s.nome_setor]))
+    mecRows.forEach(r => {
+      const bId = funcionarios.find(f => f.id === r.colaborador_id)?.box_id || r.box_id
+      const sId = (bId && boxToSetorMap[bId]) || r.setor_id
+      const sNome = setorNomeMap[sId] || r.setor_nome || ''
+      if (!/terceiro/i.test(sNome)) return
+      if (!map[r.empresa_id]) map[r.empresa_id] = {}
+      const v = valoresMetaMecanico(r)
+      map[r.empresa_id][r.mes] = (map[r.empresa_id][r.mes] || 0) + v.meta_servicos + v.meta_pecas
+    })
+    return map
+  }, [mecRows, funcionarios, boxToSetorMap, setores])
+
   const tree = useMemo(() => {
     // Lookup maps for O(1) resolution from dimension tables
     const deptMap    = Object.fromEntries(departamentos.map(d => [d.id, d.nome_departamento]))
@@ -291,8 +300,12 @@ export default function MetasServicosConsultor({ empresaExterna = null, anoExter
       const _fun  = totaisFun[eid]?.[row.mes] || {}
       // Referência respeita o filtro Total/Peças/Serviços — Terceiros não tem Peças, então some
       // do filtro "Peças" e entra em "Serviços" (mesmo critério do resto da tela).
+      // Terceiros só entram quando o setor do consultor for Mecânica (nunca em Funilaria/Pintura nem
+      // em outros setores como Lavagem/Elétrica — padrão fixo; se um dia precisar de Terceiro na
+      // Funilaria, ele entra por Box, não por este cálculo).
+      const _entraTerceiro = /mec[âa]nica/i.test(sNome)
       const _refPecas    = _isFun ? (_fun.pecas    || 0) : (_mec.pecas || 0)
-      const _refServicos = _isFun ? (_fun.servicos || 0) : (_mec.servicos || 0) + _ter
+      const _refServicos = (_isFun ? (_fun.servicos || 0) : (_mec.servicos || 0)) + (_entraTerceiro ? _ter : 0)
       const _pct = (Number(row.percentual) || 0) / 100
       const _metaPecas    = round2(_refPecas * _pct)
       const _metaServicos = round2(_refServicos * _pct)
@@ -307,7 +320,7 @@ export default function MetasServicosConsultor({ empresaExterna = null, anoExter
       }
     })
     return t
-  }, [dadosFiltrados, totaisMec, totaisTer, totaisFun, filtroVisu, setores, departamentos, boxToSetorMap, funcionarios])
+  }, [dadosFiltrados, totaisMec, totaisTer, totaisFun, filtroVisu, setores, departamentos, boxToSetorMap, funcionarios, empresas])
 
   const toggle = (set, setter, key) => setter(prev => { const n=new Set(prev); n.has(key)?n.delete(key):n.add(key); return n })
 
@@ -334,7 +347,10 @@ export default function MetasServicosConsultor({ empresaExterna = null, anoExter
     setSegAbertos(new Set())
   }
 
-  const setoresDoDepto = useMemo(()=>setores.filter(s=>s.departamento_id===form.departamento_id && s.tipo_setor==='manutencao_reparo'),[setores,form.departamento_id])
+  // "Terceiro" é só o setor usado pra lançar valores na aba Mecânico (sem Box própria); não é um setor
+  // de distribuição de consultor — o valor dele entra automático em Mecânica ou Funilaria via o switch
+  // da empresa (Terceiro vai para), nunca aparece como opção aqui.
+  const setoresDoDepto = useMemo(()=>setores.filter(s=>s.departamento_id===form.departamento_id && s.tipo_setor==='manutencao_reparo' && !/terceiro/i.test(s.nome_setor||'')),[setores,form.departamento_id])
   // Boxes do setor selecionado — não aparece mais como campo no formulário, só usado internamente
   // pra somar a referência (Mecânica + Express, por ex.) de todos os boxes daquele setor.
   const boxesDoSetor   = useMemo(()=>boxes.filter(b=>(Array.isArray(b.setor_ids)?b.setor_ids:[b.setor_id]).includes(form.setor_id)),[boxes,form.setor_id])
@@ -429,12 +445,15 @@ export default function MetasServicosConsultor({ empresaExterna = null, anoExter
   const abrirVisualizar = (empId, colabId) => _abrirModalConsultor(empId, colabId, 'visualizar')
 
   const isFunSetorModal = (form.setor_nome||'').toLowerCase().includes('funilaria') || (form.setor_nome||'').toLowerCase().includes('pintura')
+  const isMecSetorModal = /mec[âa]nica/i.test(form.setor_nome || '')
 
   // Referência do modal, detalhada por Peças/Serviços/Terceiros: Funilaria/Pintura se setor for
-  // funilaria, senão soma TODOS os boxes do setor Mecânica selecionado (ex: Mecânica + Express,
-  // não a empresa toda) + Terceiros (Terceiros não tem box nem Peças, então entra só em Serviços).
+  // funilaria, senão soma TODOS os boxes do setor selecionado (ex: Mecânica + Express, não a empresa
+  // toda) + Terceiros só quando o setor selecionado for Mecânica (Terceiros não tem box nem Peças,
+  // então entra só em Serviços; em outros setores como Lavagem/Elétrica não entra).
   const refModalDetalhePorMes = useMemo(() => {
     const result = {}
+    const ter = totaisTer[form.empresa_id] || {}
     if (isFunSetorModal) {
       const fun = totaisFun[form.empresa_id] || {}
       for (let m = 1; m <= 12; m++) {
@@ -442,7 +461,6 @@ export default function MetasServicosConsultor({ empresaExterna = null, anoExter
         result[m] = { pecas, servicos, terceiros: 0, total: pecas + servicos }
       }
     } else {
-      const ter = totaisTer[form.empresa_id] || {}
       const boxIdsDoSetor = new Set(boxesDoSetor.map(b => b.id))
       const rowsDoSetor = form.setor_id
         ? mecRowsModal.filter(r => boxIdsDoSetor.has(funcionarios.find(f => f.id === r.colaborador_id)?.box_id || r.box_id))
@@ -451,12 +469,12 @@ export default function MetasServicosConsultor({ empresaExterna = null, anoExter
         const doMes = rowsDoSetor.filter(r => Number(r.mes) === m)
         const servicos  = doMes.reduce((s, r) => s + valoresMetaMecanico(r).meta_servicos, 0)
         const pecas     = doMes.reduce((s, r) => s + valoresMetaMecanico(r).meta_pecas, 0)
-        const terceiros = Number(ter[m]) || 0
+        const terceiros = isMecSetorModal ? (Number(ter[m]) || 0) : 0
         result[m] = { pecas, servicos, terceiros, total: pecas + servicos + terceiros }
       }
     }
     return result
-  }, [mecRowsModal, totaisTer, totaisFun, funcionarios, form.empresa_id, form.setor_id, boxesDoSetor, isFunSetorModal])
+  }, [mecRowsModal, totaisTer, totaisFun, funcionarios, form.empresa_id, form.setor_id, boxesDoSetor, isFunSetorModal, isMecSetorModal])
 
   // Meta do consultor detalhada: Peças isolado; Serviços já soma Terceiros (que não tem Peças).
   // Total é sempre a soma de Serviços + Peças (cada parte em centavos, como exibida/gravada).
@@ -868,7 +886,7 @@ export default function MetasServicosConsultor({ empresaExterna = null, anoExter
                         { key: 'pecas',     label: 'Ref. Peças (R$)' },
                         { key: 'servicos',  label: 'Ref. Serviços (R$)' },
                         { key: 'terceiros', label: 'Ref. Terceiros (R$)' },
-                        { key: 'total',     label: `Ref. Total ${isFunSetorModal ? 'Funilaria/Pintura' : 'Mecânica + Terceiros'} (R$)` },
+                        { key: 'total',     label: `Ref. Total ${form.setor_nome || ''}${isMecSetorModal ? ' + Terceiro' : ''} (R$)` },
                       ].map(({ key, label }) => {
                         const isTotal = key === 'total'
                         return (

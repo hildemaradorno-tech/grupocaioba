@@ -909,6 +909,16 @@ export const apiService = {
     return data?.[0]
   },
 
+  // Switch único por empresa: pra qual setor (Mecânica ou Funilaria/Pintura) vai o valor de Terceiro
+  // (aba Mecânico, Setor "Terceiro") na Referência dos consultores. null = não entra em nenhum dos dois.
+  // Único pra não contar em dobro, e pra Consultor/Total sempre baterem (mesma fonte pros dois).
+  updateEmpresaTerceirosSetor: async (id, terceirosSetor) => {
+    const { data, error } = await supabase.from('dim_empresas')
+      .update({ terceiros_setor: terceirosSetor || null }).eq('id', id).select()
+    if (error) throw error
+    return data?.[0]
+  },
+
   updateEmpresa: async (id, { agrupamento_empresa_id, agrupamento_nome, segmento_id, segmento_nome, codigo_empresa, codigo_empresa_dominio, sigla_empresa, nome_empresa, empresa_fantasia, marca, cnpj, codigo_concessionaria, nome_empresa_sistema, sistema_dms, numero_filial, ativo }) => {
     const { data, error } = await supabase
       .from('dim_empresas')
