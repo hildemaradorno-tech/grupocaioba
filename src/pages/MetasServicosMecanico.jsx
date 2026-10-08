@@ -848,7 +848,7 @@ export default function MetasServicosMecanico({ empresaExterna = null, anoExtern
         <div className="flex items-end gap-3">
           {!filtrosExternos && (
             <>
-              <div className="flex-1 max-w-xs">
+              <div className="flex-1 max-w-sm">
                 <label className={LBL}>Empresa</label>
                 <EmpresaMultiFilter value={filtroEmpresa} onChange={setFiltroEmpresaSalva} empresas={empresas} />
               </div>

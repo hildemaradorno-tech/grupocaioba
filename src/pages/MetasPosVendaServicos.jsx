@@ -40,8 +40,6 @@ export default function MetasPosVendaServicos() {
       .catch(() => {})
   }, [])
 
-  useEffect(() => { setBotaoAcao(null) }, [aba])
-
   return (
     <div className="flex flex-col h-full">
       {/* Título da página + Empresa / Ano */}
@@ -51,21 +49,22 @@ export default function MetasPosVendaServicos() {
           <h1 className="text-2xl font-bold text-slate-800">Planejamento de Metas - Pós-Vendas</h1>
         </div>
         <div className="flex items-center gap-2">
-          <div className="w-64"><EmpresaMultiFilter value={filtroEmpresa} onChange={setFiltroEmpresa} empresas={empresas} /></div>
+          <div className="w-96"><EmpresaMultiFilter value={filtroEmpresa} onChange={setFiltroEmpresa} empresas={empresas} /></div>
           <select value={filtroAno} onChange={e => setFiltroAno(Number(e.target.value))} className={SEL}>
             {ANOS.map(a => <option key={a} value={a}>{a}</option>)}
           </select>
         </div>
       </div>
 
-      {/* Abas + Total/Peças/Serviços + botão de ação da aba, tudo na mesma linha */}
+      {/* Abas + Total/Peças/Serviços + botão de ação da aba, tudo na mesma linha quando cabe; em telas
+          estreitas o grupo da direita quebra pra uma 2ª linha (nunca fica escondido ou cortado). */}
       <div className="flex items-center justify-between border-b border-slate-200 bg-white px-6 pt-1 gap-3 flex-wrap">
-        <div className="flex gap-1">
+        <div className="flex gap-1 shrink-0">
           {ABAS.map(({ key, label }) => (
             <button
               key={key}
               onClick={() => setAba(key)}
-              className={`px-4 py-2 text-sm font-semibold rounded-t-lg transition-colors border-b-2 -mb-px ${
+              className={`px-4 py-2 text-sm font-semibold rounded-t-lg transition-colors border-b-2 -mb-px whitespace-nowrap ${
                 aba === key
                   ? 'border-indigo-600 text-indigo-700 bg-indigo-50'
                   : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'
@@ -75,16 +74,16 @@ export default function MetasPosVendaServicos() {
             </button>
           ))}
         </div>
-        <div className="flex items-center gap-3 pb-2">
+        <div className="flex items-center gap-3 pb-2 shrink-0">
           {aba !== 'pecas' && (
-            <div className="flex rounded-lg border border-slate-300 overflow-hidden text-xs font-semibold">
+            <div className="flex rounded-lg border border-slate-300 overflow-hidden text-xs font-semibold shrink-0">
               {[
                 { key: 'total',    label: 'Total' },
                 { key: 'pecas',    label: 'Peças' },
                 { key: 'servicos', label: 'Serviços' },
               ].map(({ key, label }) => (
                 <button key={key} onClick={() => setFiltroVisu(key)}
-                  className={`px-3 py-2 transition-colors ${filtroVisu === key ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
+                  className={`px-3 py-2 transition-colors whitespace-nowrap ${filtroVisu === key ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
                   {label}
                 </button>
               ))}

@@ -38,6 +38,7 @@ import {
   sincronizacaoEmAndamento,
 } from '../services/kpiSyncService.js'
 import { getPesos, setPeso, aplicarPesos } from '../services/kpiPesos.js'
+import { getMetasManuais, setMetaManual, aplicarMetasManuais } from '../services/kpiMetasManuais.js'
 import { getMetaPecasPeriodos, getMetaOficinaPeriodos, getMetaMecanicoPeriodos, getMetaMargemOficinaPeriodos, getMetaPecasBalcaoPeriodos, getMetaMargemBalcaoPeriodos, getMetaTrpPeriodos, getMetaTicketMedioPeriodos } from '../services/kpiMetas.js'
 
 const router = Router()
@@ -529,6 +530,9 @@ router.get('/bloco3-pos-venda', requireConfig, wrap(async (req, res) => {
   const pesos = await getPesos('bloco3-pos-venda')
   quadros = aplicarPesos(quadros, pesos)
 
+  const metasManuais = await getMetasManuais('bloco3-pos-venda', year)
+  quadros = aplicarMetasManuais(quadros, metasManuais)
+
   res.json(quadros)
 }))
 
@@ -545,6 +549,23 @@ router.put('/pesos', wrap(async (req, res) => {
     return res.status(400).json({ error: 'parametros_invalidos', message: 'bloco, tituloGerente, kpiId e peso são obrigatórios.' })
   }
   await setPeso(bloco, tituloGerente, kpiId, peso)
+  res.json({ ok: true })
+}))
+
+// GET  /api/kpi/metas-manuais?bloco=bloco3-pos-venda&ano=2026 — { 'tituloGerente|kpiId': { m01: valor, ... } }
+// PUT  /api/kpi/metas-manuais { bloco, tituloGerente, kpiId, ano, mes, valor } — grava/atualiza uma meta digitada
+router.get('/metas-manuais', wrap(async (req, res) => {
+  if (!req.query.bloco) return res.status(400).json({ error: 'parametro_obrigatorio', message: 'bloco é obrigatório.' })
+  const ano = parseInt(req.query.ano) || new Date().getFullYear()
+  res.json(await getMetasManuais(req.query.bloco, ano))
+}))
+
+router.put('/metas-manuais', wrap(async (req, res) => {
+  const { bloco, tituloGerente, kpiId, ano, mes, valor } = req.body || {}
+  if (!bloco || !tituloGerente || kpiId == null || !ano || !mes || valor == null) {
+    return res.status(400).json({ error: 'parametros_invalidos', message: 'bloco, tituloGerente, kpiId, ano, mes e valor são obrigatórios.' })
+  }
+  await setMetaManual(bloco, tituloGerente, kpiId, ano, mes, valor)
   res.json({ ok: true })
 }))
 
@@ -694,6 +715,9 @@ router.get('/bloco3-servicos', requireConfig, wrap(async (req, res) => {
   )
   const pesos = await getPesos('bloco3-servicos')
   quadros = aplicarPesos(quadros, pesos)
+
+  const metasManuais = await getMetasManuais('bloco3-servicos', year)
+  quadros = aplicarMetasManuais(quadros, metasManuais)
 
   res.json(quadros)
 }))

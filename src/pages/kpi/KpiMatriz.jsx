@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { BarChart2, TrendingUp, Activity, Wrench, Package, Wallet, RefreshCw, Database } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { useKpiYear, KPI_YEARS } from '../../context/KpiYearContext'
@@ -27,6 +28,14 @@ export const KPI_MATRIZ_PERMS = ABAS.map(a => a.permKey)
 
 export default function KpiMatriz() {
   const { hasPermission, hasActionOrDefault, user } = useAuth()
+  // Sempre que entra na Matriz KPIs: visão Mensal no mês atual. Limpa a seleção de período guardada
+  // (antes das abas montarem — elas leem esses valores ao iniciar). Trocar de aba dentro da Matriz
+  // continua mantendo o período escolhido.
+  useState(() => {
+    for (const campo of ['viewMode', 'visibleT', 'visibleM', 'weekMonth', 'visibleS']) {
+      try { localStorage.removeItem(`period_kpi-matriz_${campo}`) } catch { /* sem localStorage */ }
+    }
+  })
   const { year, setYear } = useKpiYear()
   const { status: sourceStatus, refreshToken, refreshData } = useKpiSourceStatus()
   // Atualização compartilhada com o BI Campanha Pós-Venda (Matriz + Campanha, um processo só no
@@ -34,7 +43,12 @@ export default function KpiMatriz() {
   // e ao terminar a Matriz recarrega os dados.
   const sync = useSincronizacaoKpi((status) => { if (status !== 'ERRO') refreshData() })
   const abasVisiveis = ABAS.filter(a => hasPermission(a.permKey))
-  const [aba, setAba] = useState(() => abasVisiveis[0]?.key)
+  // ?aba=bloco3-servicos (ex.: link da Campanha Pós-Venda) abre direto nessa aba, se o usuário puder vê-la.
+  const [params] = useSearchParams()
+  const [aba, setAba] = useState(() => {
+    const pedida = params.get('aba')
+    return abasVisiveis.some(a => a.key === pedida) ? pedida : abasVisiveis[0]?.key
+  })
   const abaAtual = abasVisiveis.find(a => a.key === aba) || abasVisiveis[0]
   const podeSincronizar = hasActionOrDefault('sincronizacao-dados', 'editar')
 

@@ -834,7 +834,7 @@ export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = 
             <select value={filtroAno} onChange={e => setFiltroAno(Number(e.target.value))} className={SEL}>
               {ANOS.map(a => <option key={a} value={a}>{a}</option>)}
             </select>
-            <div className="w-64"><EmpresaMultiFilter value={filtroEmpresa} onChange={setFiltroEmpresa} empresas={empresas} /></div>
+            <div className="w-96"><EmpresaMultiFilter value={filtroEmpresa} onChange={setFiltroEmpresa} empresas={empresas} /></div>
           </>
         )}
         {!filtrosExternos && (

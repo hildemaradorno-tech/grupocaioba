@@ -2983,24 +2983,24 @@ export const apiService = {
     return Object.fromEntries((data || []).map((r) => [r.chave, r]))
   },
 
-  // Regras vigentes no mês: a do próprio mês ou, se não houver, a do último mês salvo antes dele.
-  // Regras são gravadas por EMPRESA + mês + ano (unidade: CG, DOU, TL, CS, TRUCKS). Vigente para a
-  // empresa: a última gravação dela com (ano, mês) <= o escolhido; sem nenhuma, a última GERAL
-  // (gravações antigas, de antes da separação por empresa); sem nenhuma, null (padrão do sistema).
+  // Regras de UMA empresa em UM mês/ano (unidade: CG, DOU, TL, CS, TRUCKS). Cada mês é independente:
+  // só vale o que foi salvo para aquele mês — não herda meses anteriores (antes herdava, e zerar/salvar
+  // um mês afetava os seguintes). Sem gravação da empresa no mês, usa a GERAL do mesmo mês (gravações
+  // antigas, de antes da separação por empresa); sem nenhuma, null (padrão do sistema). Para trazer
+  // valores de outro mês, a aba Regras tem "Copiar do mês anterior".
   getCampanhaRegras: async (ano, mes, unidade) => {
-    const ultima = async (u) => {
+    const doMes = async (u) => {
       const { data, error } = await supabase
         .from('fato_campanha_regras')
         .select('ano, mes, unidade, dados, atualizado_em, atualizado_por')
         .eq('unidade', u)
-        .or(`ano.lt.${ano},and(ano.eq.${ano},mes.lte.${mes})`)
-        .order('ano', { ascending: false })
-        .order('mes', { ascending: false })
-        .limit(1)
+        .eq('ano', ano)
+        .eq('mes', mes)
+        .maybeSingle()
       if (error) throw error
-      return data?.[0] || null
+      return data || null
     }
-    return (await ultima(unidade)) || (await ultima('GERAL'))
+    return (await doMes(unidade)) || (await doMes('GERAL'))
   },
 
   salvarCampanhaRegras: async (ano, mes, unidade, dados, usuarioEmail = null) => {

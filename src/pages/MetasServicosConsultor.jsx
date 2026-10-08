@@ -559,7 +559,7 @@ export default function MetasServicosConsultor({ empresaExterna = null, anoExter
         <div className="flex items-end gap-3">
           {!filtrosExternos && (
             <>
-              <div className="flex-1 max-w-xs"><label className={LBL}>Empresa</label>
+              <div className="flex-1 max-w-sm"><label className={LBL}>Empresa</label>
                 <EmpresaMultiFilter value={filtroEmpresa} onChange={setFiltroEmpresaSalva} empresas={empresas} /></div>
               <div className="w-28"><label className={LBL}>Ano</label>
                 <select className={SEL} value={filtroAno} onChange={e => setFiltroAnoSalvo(Number(e.target.value))}>

@@ -648,7 +648,7 @@ export default function MetasPecas({ empresaExterna = null, anoExterno = null, a
       {!filtrosExternos && (
         <div className="flex items-center justify-end">
           <div className="flex items-end gap-3">
-            <div className="w-64">
+            <div className="w-80">
               <label className={LBL}>Empresa</label>
               <EmpresaMultiFilter value={filtroEmpresa} onChange={setFiltroEmpresaSalva} empresas={empresas} />
             </div>

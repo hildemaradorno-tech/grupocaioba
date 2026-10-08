@@ -157,6 +157,19 @@ export async function sincronizarCampanha(year) {
   return body
 }
 
+// ── Metas digitadas manualmente (indicadores sem fonte automática, ex.: Eficácia/
+//    Produtividade da Oficina) — mesmo padrão do salvarPeso, mas mês a mês.
+export async function salvarMetaManual({ bloco, tituloGerente, kpiId, ano, mes, valor }) {
+  const res = await fetch(`${BASE}/metas-manuais`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ bloco, tituloGerente, kpiId, ano, mes, valor }),
+  })
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(body.message || `HTTP ${res.status}`)
+  return body
+}
+
 // ── Pesos dos indicadores (coluna "Peso") ─────────────────────────────────────
 
 export async function salvarPeso({ bloco, tituloGerente, kpiId, peso }) {
