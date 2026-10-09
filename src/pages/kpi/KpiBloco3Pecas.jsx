@@ -228,7 +228,7 @@ function QuadroTable({ quadro, activePeriods, mesTotalKey, year, onSalvarPeso, v
               <th className="text-center px-3 py-2.5 font-medium text-slate-500">Peso</th>
               {activePeriods.map(p => (
                 <th key={p} colSpan={4} className="text-center px-2 py-2.5 font-semibold text-blue-700 border-l border-slate-200">
-                  {p === mesTotalKey ? 'MTD' : getPeriodLabel(p, year)}
+                  {p === mesTotalKey ? 'Total' : getPeriodLabel(p, year)}
                 </th>
               ))}
             </tr>

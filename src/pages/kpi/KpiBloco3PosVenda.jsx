@@ -355,7 +355,7 @@ function QuadroTable({ quadro, activePeriods, mesTotalKey, year, onSalvarPeso, o
               <th className="text-center px-3 py-2.5 font-medium text-slate-500">Peso</th>
               {activePeriods.map(p => (
                 <th key={p} colSpan={4} className="text-center px-2 py-2.5 font-semibold text-blue-700 border-l border-slate-200">
-                  {p === mesTotalKey ? 'MTD' : getPeriodLabel(p, year)}
+                  {p === mesTotalKey ? 'Total' : getPeriodLabel(p, year)}
                 </th>
               ))}
             </tr>
@@ -456,7 +456,7 @@ function ordenarCasas(quadros) {
   return [...outros.slice(0, ini), ...casas, ...outros.slice(ini)]
 }
 
-export function PosVendaQuadros({ year, activePeriods, mesTotalKey, somenteLeitura = false }) {
+export function PosVendaQuadros({ year, activePeriods, mesTotalKey, somenteLeitura = false, apenas = null }) {
   const { data: quadros } = useKpiData(fetchBloco3PosVenda, MOCK_BLOCO3_POS_VENDA, { year })
 
   // Overlay otimista: aplicado por cima do que veio do backend assim que o usuário
@@ -508,7 +508,7 @@ export function PosVendaQuadros({ year, activePeriods, mesTotalKey, somenteLeitu
 
   return (
       <div className="space-y-6">
-        {quadrosComPeso.map((quadro, idx) => (
+        {quadrosComPeso.filter(q => !apenas || q.tituloGerente === apenas).map((quadro, idx) => (
           <QuadroTable key={idx} quadro={quadro} activePeriods={activePeriods} mesTotalKey={mesTotalKey} year={year} onSalvarPeso={handleSalvarPeso} onSalvarMetaManual={handleSalvarMetaManual} onSalvarMetasVarios={handleSalvarMetasVarios} somenteLeitura={somenteLeitura} />
         ))}
       </div>

@@ -424,8 +424,11 @@ const div = (a, b) => (b ? a / b : null)
 
 // Botão (ícone de documento) que abre um pop-up só de leitura com o Bloco 3 - Serviços da Matriz
 // KPIs — de onde vêm os valores das tabelas —, na visão Semanal do ano/mês escolhidos na Campanha.
-function LinkBloco3() {
+// pessoas: nomes do bloco na Campanha (só da empresa selecionada) — o seletor do pop-up lista só esses.
+function LinkBloco3({ matrizB3, pessoas }) {
   const { ano, mes } = useContext(FaixasCtx)
+  // Quadro da Matriz deste bloco: "Bloco 3 - Serviços › Consultor de Serviços" → "CONSULTOR DE SERVIÇOS".
+  const quadro = String(matrizB3 || '').split('› ')[1]?.toUpperCase() || null
   const [aberto, setAberto] = useState(false)
   useEffect(() => {
     if (!aberto) return undefined
@@ -455,7 +458,7 @@ function LinkBloco3() {
               </button>
             </div>
             <div className="flex-1 overflow-auto p-5">
-              <Bloco3ServicosVisualizacao ano={Number(ano)} mes={Number(mes)} />
+              <Bloco3ServicosVisualizacao ano={Number(ano)} mes={Number(mes)} quadro={quadro} pessoas={pessoas} />
             </div>
           </div>
         </div>,
@@ -628,7 +631,7 @@ function ResultadoSemanal({ titulo, cor, campanha, linhas, carregando, vazio, pe
                 <th colSpan={semanas.length} className={`${TH} text-center border-l border-slate-200`}>
                   <span className="inline-flex items-center gap-1">
                     Bloco 3 - Serviços ({pctTxt(pesoB3)}) — bônus por semana
-                    <LinkBloco3 />
+                    <LinkBloco3 matrizB3={matrizB3} pessoas={linhas.map((l) => l.nome)} />
                   </span>
                 </th>
                 <th rowSpan={2} className={`${TH} text-right align-bottom border-l border-b border-slate-200`}>Total</th>
@@ -760,7 +763,7 @@ function ResumoSemanal({ titulo, cor, campanha, linhas, carregando, vazio, bloco
                 <th colSpan={semanas.length * 2} className={`${TH} text-center border-l border-slate-200`}>
                   <span className="inline-flex items-center gap-1">
                     Bloco 3 - Serviços ({pctTxt(pesoB3)}) — contribuição por semana
-                    <LinkBloco3 />
+                    <LinkBloco3 matrizB3={matrizB3} pessoas={linhas.map((l) => l.nome)} />
                   </span>
                 </th>
                 <th rowSpan={3} className={`${TH} text-right align-bottom border-l border-b border-slate-200`}>Total</th>
@@ -1236,10 +1239,7 @@ function ComoFunciona({ nSemanas }) {
       </div>
 
       <ul className="space-y-1 text-[11px] text-slate-500">
-        <li>⚠️ Participa quem está com o cadastro <b>“1 - Trabalhando”</b> durante a campanha.</li>
-        <li>⚠️ Mecânicos com eficiência do mês acima do limite da regra têm o bônus do mês zerado.</li>
-        <li>ℹ️ Os resultados de cada semana podem ser acompanhados nas abas <b>Apuração</b> e <b>Resultado</b>.</li>
-      </ul>
+        <li>⚠️ Participa quem está com o cadastro <b>“1 - Trabalhando”</b> durante a campanha.</li>      </ul>
       </>)}
     </section>
   )

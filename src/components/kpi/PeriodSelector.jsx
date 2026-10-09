@@ -112,7 +112,7 @@ export function usePeriodSelector(pageKey, defaultViewMode = 'mensal') {
   const activePeriods = React.useMemo(() => {
     if (viewMode === 'trimestral') return T_PERIODS.filter(p => visibleT[p])
     if (viewMode === 'mensal')     return [...M_PERIODS.filter(p => visibleM[p]), ...(visibleM.fy ? ['fy'] : [])]
-    // Visão semanal: semanas selecionadas + (se o pill MTD estiver ligado) a coluna do total do mês.
+    // Visão semanal: semanas selecionadas + (se o pill Total estiver ligado) a coluna do total do mês.
     return [...(MONTH_WEEK_RANGES[weekMonth] || []).filter(p => visibleS[p]), ...(visibleS.mtd ? [weekMonth] : [])]
   }, [viewMode, visibleT, visibleM, weekMonth, visibleS])
 
@@ -222,7 +222,7 @@ export default function PeriodSelector({ state, hideLegend = false, modes = VIEW
                 {S_LABELS[p]}
               </button>
             ))}
-            <button onClick={() => toggleS('mtd')} title="Coluna com o total do mês" className={`${btnBase} ${visibleS.mtd ? btnOn : btnOff}`}>MTD</button>
+            <button onClick={() => toggleS('mtd')} title="Coluna com o total do mês" className={`${btnBase} ${visibleS.mtd ? btnOn : btnOff}`}>Total</button>
             <button onClick={selectAllS} className="text-[10px] px-2 py-0.5 rounded border border-slate-300 text-slate-500 hover:border-blue-400 hover:text-blue-600 transition-colors">Todos</button>
             <button onClick={clearAllS}  className="text-[10px] px-2 py-0.5 rounded border border-slate-300 text-slate-500 hover:border-red-400 hover:text-red-500 transition-colors">Limpar</button>
           </>

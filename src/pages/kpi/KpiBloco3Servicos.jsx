@@ -392,7 +392,7 @@ function QuadroTable({ quadro, activePeriods, mesTotalKey, year, onSalvarPeso, o
               <th className="text-center px-3 py-2.5 font-medium text-slate-500">Peso</th>
               {activePeriods.map(p => (
                 <th key={p} colSpan={4} className="text-center px-2 py-2.5 font-semibold text-blue-700 border-l border-slate-200">
-                  {p === mesTotalKey ? 'MTD' : getPeriodLabel(p, year)}
+                  {p === mesTotalKey ? 'Total' : getPeriodLabel(p, year)}
                 </th>
               ))}
             </tr>
@@ -491,7 +491,13 @@ function usePessoaFiltro(fetchLista, year) {
   return { lista, aplicado, setAplicado }
 }
 
-function ServicosQuadros({ year, activePeriods, mesTotalKey, somenteLeitura = false }) {
+// Nome normalizado (sem acento, maiúsculo, espaços simples) para comparar listas de pessoas.
+const normNomePessoa = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/\s+/g, ' ').trim()
+
+// pessoasPermitidas (opcional): só esses nomes aparecem nos seletores de Consultor/Mecânico — usado no
+// pop-up da Campanha Pós-Venda, para listar só as pessoas da empresa selecionada lá.
+function ServicosQuadros({ year, activePeriods, mesTotalKey, somenteLeitura = false, apenas = null, pessoasPermitidas = null }) {
+  const permitidos = pessoasPermitidas ? new Set(pessoasPermitidas.map(normNomePessoa)) : null
 
   const consultorFiltro = usePessoaFiltro(fetchConsultoresServicos, year)
   const mecanicoFiltro  = usePessoaFiltro(fetchMecanicos, year)
@@ -551,7 +557,7 @@ function ServicosQuadros({ year, activePeriods, mesTotalKey, somenteLeitura = fa
 
   return (
       <div className="space-y-6">
-        {quadrosComPeso.map((quadro, idx) => {
+        {quadrosComPeso.filter(q => !apenas || q.tituloGerente === apenas).map((quadro, idx) => {
           const ehConsultor = quadro.tituloGerente === QUADRO_CONSULTOR
           const ehMecanico  = quadro.tituloGerente === QUADRO_MECANICO
           const filtro      = ehConsultor ? consultorFiltro : ehMecanico ? mecanicoFiltro : null
@@ -569,7 +575,7 @@ function ServicosQuadros({ year, activePeriods, mesTotalKey, somenteLeitura = fa
               icon={Wrench}
               pessoaSelector={filtro && (
                 <PessoaSelector
-                  lista={filtro.lista}
+                  lista={permitidos ? filtro.lista.filter(n => permitidos.has(normNomePessoa(n))) : filtro.lista}
                   selecionado={filtro.aplicado}
                   onSelecionar={filtro.setAplicado}
                   onLimpar={() => filtro.setAplicado(null)}
@@ -612,9 +618,10 @@ export default function KpiBloco3Servicos() {
 // Visualização do Bloco 3 - Serviços só para consulta (pop-up da Campanha Pós-Venda): sem edição de
 // peso/meta, na visão Semanal do ano/mês recebidos. Seleção de período própria (não grava nem altera
 // a seleção da Matriz KPIs).
-export function Bloco3ServicosVisualizacao({ ano, mes }) {
+export function Bloco3ServicosVisualizacao({ ano, mes, quadro = null, pessoas = null }) {
   const periodState = usePeriodSelector(null, 'semanal')
   const { activePeriods, setWeekMonth } = periodState
+  const doServicos = quadro === QUADRO_CONSULTOR || quadro === QUADRO_MECANICO
   useEffect(() => {
     if (mes >= 1 && mes <= 12) setWeekMonth(`m${String(mes).padStart(2, '0')}`)
   }, [mes]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -625,8 +632,9 @@ export function Bloco3ServicosVisualizacao({ ano, mes }) {
         <PeriodSelector state={periodState} inlineTrimestral hideLegend modes={MODES_COM_SEMANAL} />
         <PeriodLegend />
       </div>
-      <PosVendaQuadros year={ano} activePeriods={activePeriods} mesTotalKey={periodState.mesTotalKey} somenteLeitura />
-      <ServicosQuadros year={ano} activePeriods={activePeriods} mesTotalKey={periodState.mesTotalKey} somenteLeitura />
+      {/* quadro: só o quadro do bloco de onde o pop-up foi aberto (ex.: CONSULTOR DE SERVIÇOS). */}
+      {(!quadro || !doServicos) && <PosVendaQuadros year={ano} activePeriods={activePeriods} mesTotalKey={periodState.mesTotalKey} somenteLeitura apenas={quadro} />}
+      {(!quadro || doServicos) && <ServicosQuadros year={ano} activePeriods={activePeriods} mesTotalKey={periodState.mesTotalKey} somenteLeitura apenas={quadro} pessoasPermitidas={pessoas} />}
     </div>
   )
 }

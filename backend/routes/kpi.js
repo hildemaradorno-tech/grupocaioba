@@ -667,11 +667,80 @@ router.get('/extractor/balcao/vendedores', requireConfig, wrap(async (req, res) 
   res.json({ year, vendedores })
 }))
 
+// ── Bloco 3 - Serviços: resposta com cache "devolve na hora, atualiza por trás" ─────────────────
+// Montar os quadros lê os arquivos do SharePoint (cache do extrator dura KPI_CACHE_TTL_MIN, 15 min);
+// com o cache frio, cada pedido levava ~3 min (Campanha Pós-Venda pede 1 por consultor e ficava em
+// "Carregando…"). Agora a base (quadros já com realizado e metas, ANTES de pesos/metas manuais) fica
+// em memória e em kpi_cache_planilhas (sobrevive a reinício do backend): o pedido devolve a última
+// base na hora e, se ela tiver mais de BLOCO3_SERV_TTL_MS, recalcula em segundo plano. Pesos e metas
+// manuais são aplicados a cada pedido, então edições na Matriz aparecem na hora. ?refresh=1 força o
+// recálculo e espera.
+const BLOCO3_SERV_TTL_MS = parseInt(process.env.KPI_CACHE_TTL_MIN || '15') * 60 * 1000
+const _b3ServMem = new Map()      // chave → { ts, base }
+const _b3ServCalculando = new Map() // chave → Promise (um recálculo por chave de cada vez)
+
+async function lerBaseBloco3Servicos(chave) {
+  const admin = getSupabaseAdmin()
+  if (!admin) return null
+  try {
+    const { data } = await admin.from('kpi_cache_planilhas').select('dados, atualizado_em').eq('chave', chave).maybeSingle()
+    return data?.dados ? { ts: new Date(data.atualizado_em).getTime(), base: data.dados } : null
+  } catch { return null }
+}
+
+async function gravarBaseBloco3Servicos(chave, base) {
+  const admin = getSupabaseAdmin()
+  if (!admin) return
+  try { await admin.from('kpi_cache_planilhas').upsert({ chave, dados: base, atualizado_em: new Date().toISOString() }) } catch { /* só cache */ }
+}
+
+function recalcularBaseBloco3Servicos(chave, year, consultor, mecanico) {
+  if (!_b3ServCalculando.has(chave)) {
+    const p = montarBaseBloco3Servicos(year, consultor, mecanico)
+      .then(async (base) => {
+        _b3ServMem.set(chave, { ts: Date.now(), base })
+        await gravarBaseBloco3Servicos(chave, base)
+        return base
+      })
+      .finally(() => _b3ServCalculando.delete(chave))
+    _b3ServCalculando.set(chave, p)
+  }
+  return _b3ServCalculando.get(chave)
+}
+
 router.get('/bloco3-servicos', requireConfig, wrap(async (req, res) => {
   const year      = parseInt(req.query.year) || new Date().getFullYear()
   const consultor = req.query.consultor || null
   const mecanico  = req.query.mecanico || null
+  const chave = `bloco3-servicos|${year}|${consultor || ''}|${mecanico || ''}`
 
+  let base
+  if (req.query.refresh) {
+    base = await recalcularBaseBloco3Servicos(chave, year, consultor, mecanico)
+  } else {
+    let hit = _b3ServMem.get(chave)
+    if (!hit) {
+      hit = await lerBaseBloco3Servicos(chave)
+      if (hit) _b3ServMem.set(chave, hit)
+    }
+    if (hit) {
+      base = hit.base
+      if (Date.now() - hit.ts > BLOCO3_SERV_TTL_MS) {
+        recalcularBaseBloco3Servicos(chave, year, consultor, mecanico)
+          .catch(err => console.error('[bloco3-servicos] recálculo em segundo plano falhou:', err.message))
+      }
+    } else {
+      base = await recalcularBaseBloco3Servicos(chave, year, consultor, mecanico)
+    }
+  }
+
+  let quadros = aplicarPesos(base, await getPesos('bloco3-servicos'))
+  quadros = aplicarMetasManuais(quadros, await getMetasManuais('bloco3-servicos', year))
+  res.json(quadros)
+}))
+
+// Quadros do Bloco 3 - Serviços com realizado e metas (sem pesos/metas manuais — aplicados na rota).
+async function montarBaseBloco3Servicos(year, consultor, mecanico) {
   // Consultor: Peças de Oficina (RPR001) + Serviços (Recepcionista), mesma
   // dupla fonte do Faturamento Total Oficina do Gerente Geral Pós-Venda —
   // ao vivo, sem filtro de empresa (seletor da tela é só por pessoa).
@@ -704,7 +773,7 @@ router.get('/bloco3-servicos', requireConfig, wrap(async (req, res) => {
   let metaMecanico = null
   try { metaMecanico = await getMetaMecanicoPeriodos(year, mecanico, await getFiltroBoxOficina()) } catch (_) { /* sem meta */ }
 
-  let quadros = mergeBlocoServicos(
+  return mergeBlocoServicos(
     BLOCO_SERVICOS_TEMPLATE,
     { pecasOficina, servicos },
     { vlLiquido: rof042?.vlLiquido ?? null, eficacia: horas.eficacia, produtividade: horas.produtividade },
@@ -713,14 +782,7 @@ router.get('/bloco3-servicos', requireConfig, wrap(async (req, res) => {
     margemConsultor,
     metaTicket
   )
-  const pesos = await getPesos('bloco3-servicos')
-  quadros = aplicarPesos(quadros, pesos)
-
-  const metasManuais = await getMetasManuais('bloco3-servicos', year)
-  quadros = aplicarMetasManuais(quadros, metasManuais)
-
-  res.json(quadros)
-}))
+}
 
 // GET /api/kpi/extractor/consultores?year=2026 — lista de consultores (RPR001
 // Oficina + Recepcionista) pro seletor do bloco CONSULTOR DE SERVIÇOS
