@@ -124,6 +124,14 @@ function mapOsRow(row) {
   }
 }
 
+// Só metadados do ROF001_OSABERTA (sem baixar o Excel) — data de atualização para a Auditoria
+export async function getOsAbertasInfo() {
+  const driveId = process.env.SHAREPOINT_DRIVE_ID
+  if (!driveId) throw new Error('SHAREPOINT_DRIVE_ID não configurado no ambiente')
+  const itemMeta = await graphGet(`/drives/${driveId}/root:${FILE_PATH}`)
+  return { nome: itemMeta.name || null, lastModified: itemMeta.lastModifiedDateTime || null }
+}
+
 // Retorna { rows, lastModified } do ROF001_OSABERTA sem filtro de fechamento
 export async function getOsAbertasGeral() {
   const { rows, lastModified } = await downloadExcel(FILE_PATH)

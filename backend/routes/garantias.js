@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { isConfigured } from '../services/graphClient.js'
-import { getOsAbertasGarantia, clearGarantiasCache, getRof001Colunas, getRof001EncerradaColunas, getOsAbertasGeral, getOsEncerradas, clearEncerradasCache } from '../services/sharepointGarantias.js'
+import { getOsAbertasGarantia, clearGarantiasCache, getRof001Colunas, getRof001EncerradaColunas, getOsAbertasGeral, getOsAbertasInfo, getOsEncerradas, clearEncerradasCache } from '../services/sharepointGarantias.js'
 import { getAllFaturamentosRof017, getFaturamentoPorOSRof017, getRof017Colunas, clearRof017Cache } from '../services/sharepointRof017.js'
 import { getRfn003Colunas, getTitulosAReceber, clearFinanceiroCache } from '../services/sharepointFinanceiro.js'
 
@@ -13,6 +13,12 @@ router.get('/sharepoint/aberta', wrap(async (req, res) => {
   if (!isConfigured()) return res.status(503).json({ error: 'sharepoint_not_configured' })
   const { rows, lastModified } = await getOsAbertasGeral()
   res.json({ rows, lastModified })
+}))
+
+// GET /api/garantias/sharepoint/aberta/info — só a data de atualização do ROF001_OSABERTA (sem baixar)
+router.get('/sharepoint/aberta/info', wrap(async (req, res) => {
+  if (!isConfigured()) return res.status(503).json({ error: 'sharepoint_not_configured' })
+  res.json(await getOsAbertasInfo())
 }))
 
 // POST /api/garantias/sharepoint/aberta/refresh — força nova leitura do ROF001_OSABERTA

@@ -15,6 +15,7 @@ const LOGO_URL = logoCaioba
 // ── helpers ───────────────────────────────────────────────────────────────────
 const dataHoje    = () => new Date().toISOString().split('T')[0]
 const ultimaTerca = () => { const d = new Date(); const dow = d.getDay(); const diff = dow === 2 ? 7 : dow > 2 ? dow - 2 : dow + 5; d.setDate(d.getDate() - diff); return d.toISOString().split('T')[0] }
+const ultimaTercaAntes = (dateStr) => { const d = dateStr ? new Date(dateStr + 'T12:00:00') : new Date(); const dow = d.getDay(); const diff = dow === 2 ? 7 : dow > 2 ? dow - 2 : dow + 5; d.setDate(d.getDate() - diff); return d.toISOString().split('T')[0] }
 const diaAntes    = (d) => { if (!d) return ''; const dt = new Date(d + 'T12:00:00'); dt.setDate(dt.getDate() - 1); return dt.toISOString().split('T')[0] }
 const fmtData     = (d) => d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') : '—'
 const fmtDataExtenso = (d) =>
@@ -64,7 +65,7 @@ const rowToForm = (row) => {
     participantesIds: new Set(d.participantesIds || []),
     participantesNomes: row.participantes_nomes || [],
     participantesExternos: d.participantesExternos?.length ? d.participantesExternos : [''],
-    periodoIni: ultimaTerca(),
+    periodoIni: ultimaTercaAntes(row.data),
     periodoFim: diaAntes(row.data) || diaAntes(dataHoje()),
     concluidos: (d.concluidos || []).map(p => ({
       ...p,
@@ -200,117 +201,101 @@ const AtaPreview = React.forwardRef(function AtaPreview({ form }, ref) {
         </section>
       )}
 
-      {/* Tarefas Concluídas + A Entregar — agrupadas por projeto */}
+      {/* Tarefas por Semana — agrupadas por projeto */}
       {(() => {
-        const iniConc = form.periodoIni
-        const fimConc = form.data
-        const iniEntr = form.data
-        const fimEntr = form.proximaReuniao
+        const iniPassada = form.periodoIni
+        const fimPassada = diaAntes(form.data)
+        const iniProxima = form.data
+        const fimProxima = form.proximaReuniao
         const fonte = form.todosNaoConcluidos?.length ? form.todosNaoConcluidos : [...(form.andamento || []), ...(form.mapeados || [])]
-        const tarefasConc = fonte
+        const fonteTotal = [...fonte, ...(form.concluidos || [])]
+        const toTask = (p) => (t) => ({ ...t, projetoNome: p.nome, projetoResp: p.responsavel_nome, projetoDepto: p.departamento_nome, projetoArea: p.area_nome, projetoSistema: p.sistema_nome })
+        const tarefasPassada = fonteTotal
           .flatMap(p => (p.proj_tarefas || [])
-            .filter(t => t.status_kanban === 'concluido' && t.data_fim && (!iniConc || t.data_fim >= iniConc) && (!fimConc || t.data_fim <= fimConc))
-            .map(t => ({ ...t, projetoNome: p.nome, projetoResp: p.responsavel_nome, projetoDepto: p.departamento_nome, projetoArea: p.area_nome, projetoSistema: p.sistema_nome }))
-          )
+            .filter(t => t.data_fim && (!iniPassada || t.data_fim >= iniPassada) && t.data_fim <= fimPassada)
+            .map(toTask(p)))
           .sort((a, b) => (a.data_fim || '').localeCompare(b.data_fim || ''))
-        const tarefasEntr = andamento
+        const tarefasProxima = fonte
           .flatMap(p => (p.proj_tarefas || [])
-            .filter(t => t.data_fim && (!iniEntr || t.data_fim >= iniEntr) && (!fimEntr || t.data_fim <= fimEntr))
-            .map(t => ({ ...t, projetoNome: p.nome, projetoResp: p.responsavel_nome, projetoDepto: p.departamento_nome, projetoArea: p.area_nome, projetoSistema: p.sistema_nome }))
-          )
+            .filter(t => t.data_fim && t.data_fim >= iniProxima && (!fimProxima || t.data_fim <= fimProxima))
+            .map(toTask(p)))
           .sort((a, b) => (a.data_fim || '').localeCompare(b.data_fim || ''))
-        if (tarefasConc.length === 0 && tarefasEntr.length === 0) return null
-        const todosProjetos = [...new Set([...tarefasConc, ...tarefasEntr].map(t => t.projetoNome || '(Sem projeto)'))].sort((a, b) => a.localeCompare(b, 'pt-BR'))
+        if (tarefasPassada.length === 0 && tarefasProxima.length === 0) return null
+        const statusBadge = (sk) => {
+          const cfg = { concluido: { label: 'Concluído', bg: '#dcfce7', color: '#047857' }, em_andamento: { label: 'Em Andamento', bg: '#fef3c7', color: '#92400e' }, programado: { label: 'Programado', bg: '#dbeafe', color: '#1d4ed8' }, pausado: { label: 'Pausado', bg: '#f3e8ff', color: '#7e22ce' }, mapeado: { label: 'Mapeado', bg: '#f1f5f9', color: '#475569' } }[sk]
+          if (!cfg) return null
+          return <span style={{ fontSize: '8px', fontWeight: '700', padding: '1px 5px', borderRadius: '3px', background: cfg.bg, color: cfg.color, whiteSpace: 'nowrap' }}>{cfg.label}</span>
+        }
+        const todosProjetos = [...new Set([...tarefasPassada, ...tarefasProxima].map(t => t.projetoNome || '(Sem projeto)'))].sort((a, b) => a.localeCompare(b, 'pt-BR'))
+        const tabelaTarefas = (tarefas, corHeader, bgRow) => (
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px', marginBottom: '6px' }}>
+            <thead>
+              <tr>
+                <th style={{ ...s.th(corHeader), width: '90px' }}>Prazo</th>
+                <th style={{ ...s.th(corHeader) }}>Tarefa</th>
+                <th style={{ ...s.th(corHeader), width: '110px' }}>Responsável</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tarefas.map((t, i) => (
+                <tr key={t.id} style={{ background: i % 2 === 0 ? '#fff' : bgRow }}>
+                  <td style={{ ...s.td, width: '90px', color: '#475569', whiteSpace: 'nowrap', verticalAlign: 'top' }}>{fmtData(t.data_fim)}</td>
+                  <td style={s.td}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                      <span style={{ fontWeight: '600' }}>{t.nome}</span>
+                      {statusBadge(t.status_kanban)}
+                    </div>
+                    {[t.projetoArea, t.projetoSistema].filter(Boolean).length > 0 && (
+                      <div style={{ fontSize: '9px', color: '#64748b', marginTop: '2px' }}>{[t.projetoArea, t.projetoSistema].filter(Boolean).join(' › ')}</div>
+                    )}
+                    {t.proj_deliberacoes?.length > 0 && (
+                      <div style={{ marginTop: '5px', paddingTop: '5px', borderTop: '1px dashed #e2e8f0' }}>
+                        {t.proj_deliberacoes.map(d => (
+                          <div key={d.id} style={{ display: 'flex', gap: '6px', fontSize: '9px', marginBottom: '2px', alignItems: 'flex-start' }}>
+                            <span style={{ color: '#b45309', fontWeight: '600', whiteSpace: 'nowrap', flexShrink: 0 }}>{fmtData(d.data)}</span>
+                            <span style={{ color: '#374151', lineHeight: '1.4' }}>{d.texto}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </td>
+                  <td style={{ ...s.td, width: '110px', fontSize: '9px', color: '#475569', verticalAlign: 'top' }}>{t.responsavel_nome || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )
         return (
           <section style={{ marginBottom: '22px' }}>
             <div style={s.sectionBar('#0d9488')}>{++secNum}. Tarefas por Projeto</div>
             {todosProjetos.map(proj => {
-              const conc = tarefasConc.filter(t => (t.projetoNome || '(Sem projeto)') === proj)
-              const entr = tarefasEntr.filter(t => (t.projetoNome || '(Sem projeto)') === proj)
-              const resp = conc[0]?.projetoResp || entr[0]?.projetoResp
-              const depto = conc[0]?.projetoDepto || entr[0]?.projetoDepto
+              const passada = tarefasPassada.filter(t => (t.projetoNome || '(Sem projeto)') === proj)
+              const proxima = tarefasProxima.filter(t => (t.projetoNome || '(Sem projeto)') === proj)
+              const ref = passada[0] || proxima[0]
               return (
-                <div key={proj} style={{ marginBottom: '14px' }}>
-                  {/* Cabeçalho do projeto */}
+                <div key={proj} style={{ marginBottom: '16px' }}>
                   <div style={{ background: '#f1f5f9', borderLeft: '3px solid #475569', padding: '5px 10px', borderRadius: '4px', marginBottom: '6px' }}>
                     <div style={{ fontSize: '10px', fontWeight: '700', color: '#1e293b', textTransform: 'uppercase', letterSpacing: '0.6px' }}>{proj}</div>
-                    {(resp || depto) && (
+                    {(ref?.projetoResp || ref?.projetoDepto) && (
                       <div style={{ fontSize: '9px', color: '#64748b', marginTop: '1px' }}>
-                        {[resp && `Resp.: ${resp}`, depto].filter(Boolean).join(' · ')}
+                        {[ref.projetoResp && `Resp.: ${ref.projetoResp}`, ref.projetoDepto].filter(Boolean).join(' · ')}
                       </div>
                     )}
                   </div>
-                  {/* Concluídas — verde */}
-                  {conc.length > 0 && (
-                    <div style={{ marginBottom: '6px' }}>
-                      <div style={{ fontSize: '9px', fontWeight: '700', color: '#047857', textTransform: 'uppercase', letterSpacing: '0.5px', background: '#dcfce7', padding: '3px 8px', marginBottom: '3px', borderRadius: '3px' }}>
-                        ✓ Concluídas — {fmtData(iniConc)} a {fmtData(fimConc)}
+                  {passada.length > 0 && (
+                    <div style={{ marginBottom: '4px' }}>
+                      <div style={{ fontSize: '9px', fontWeight: '700', color: '#92400e', textTransform: 'uppercase', letterSpacing: '0.5px', background: '#fef3c7', padding: '3px 8px', marginBottom: '3px', borderRadius: '3px' }}>
+                        Semana Passada — {fmtData(iniPassada)} a {fmtData(fimPassada)}
                       </div>
-                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px' }}>
-                        <thead>
-                          <tr style={{ background: '#f0fdf4' }}>
-                            <th style={{ ...s.th('#047857'), width: '110px' }}>Concluído em</th>
-                            <th style={{ ...s.th('#047857') }}>Tarefa</th>
-                            <th style={{ ...s.th('#047857'), width: '110px' }}>Responsável</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {conc.map((t, i) => (
-                            <tr key={t.id} style={{ background: i % 2 === 0 ? '#fff' : '#f8fafc' }}>
-                              <td style={{ ...s.td, width: '110px', color: '#475569', whiteSpace: 'nowrap' }}>{fmtData(t.data_fim)}</td>
-                              <td style={s.td}>
-                                <div style={{ fontWeight: '600' }}>{t.nome}</div>
-                                {[t.projetoArea, t.projetoSistema].filter(Boolean).length > 0 && (
-                                  <div style={{ fontSize: '9px', color: '#64748b', marginTop: '2px' }}>{[t.projetoArea, t.projetoSistema].filter(Boolean).join(' › ')}</div>
-                                )}
-                              </td>
-                              <td style={{ ...s.td, width: '110px', color: '#475569', fontSize: '9px', verticalAlign: 'top' }}>{t.responsavel_nome || '—'}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                      {tabelaTarefas(passada, '#92400e', '#fffbeb')}
                     </div>
                   )}
-                  {/* A Entregar — âmbar */}
-                  {entr.length > 0 && (
+                  {proxima.length > 0 && (
                     <div>
-                      <div style={{ fontSize: '9px', fontWeight: '700', color: '#92400e', textTransform: 'uppercase', letterSpacing: '0.5px', background: '#fef3c7', padding: '3px 8px', marginBottom: '3px', borderRadius: '3px' }}>
-                        → A Entregar — {fmtData(iniEntr)} a {fmtData(fimEntr)}
+                      <div style={{ fontSize: '9px', fontWeight: '700', color: '#1e40af', textTransform: 'uppercase', letterSpacing: '0.5px', background: '#dbeafe', padding: '3px 8px', marginBottom: '3px', borderRadius: '3px' }}>
+                        Próxima Semana — {fmtData(iniProxima)} a {fmtData(fimProxima)}
                       </div>
-                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px' }}>
-                        <thead>
-                          <tr style={{ background: '#fef3c7' }}>
-                            <th style={{ ...s.th('#92400e'), width: '110px' }}>Término</th>
-                            <th style={{ ...s.th('#92400e') }}>Tarefa</th>
-                            <th style={{ ...s.th('#92400e'), width: '110px' }}>Responsável</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {entr.map((t, i) => (
-                            <tr key={t.id} style={{ background: i % 2 === 0 ? '#fff' : '#fffbeb' }}>
-                              <td style={{ ...s.td, width: '110px', fontWeight: '700', color: '#b45309', whiteSpace: 'nowrap', verticalAlign: 'top' }}>{fmtData(t.data_fim)}</td>
-                              <td style={s.td}>
-                                <div style={{ fontWeight: '600', color: '#1e293b' }}>{t.nome}</div>
-                                {[t.projetoArea, t.projetoSistema].filter(Boolean).length > 0 && (
-                                  <div style={{ fontSize: '8px', color: '#94a3b8', marginTop: '1px' }}>{[t.projetoArea, t.projetoSistema].filter(Boolean).join(' › ')}</div>
-                                )}
-                                {t.proj_deliberacoes?.length > 0 && (
-                                  <div style={{ marginTop: '5px', paddingTop: '5px', borderTop: '1px dashed #fcd34d' }}>
-                                    <div style={{ fontSize: '8px', fontWeight: '700', color: '#92400e', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '3px' }}>Deliberações</div>
-                                    {t.proj_deliberacoes.map(d => (
-                                      <div key={d.id} style={{ display: 'flex', gap: '6px', fontSize: '9px', marginBottom: '2px', alignItems: 'flex-start' }}>
-                                        <span style={{ color: '#b45309', fontWeight: '600', whiteSpace: 'nowrap', flexShrink: 0 }}>{fmtData(d.data)}</span>
-                                        <span style={{ color: '#374151', lineHeight: '1.4' }}>{d.texto}</span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
-                              </td>
-                              <td style={{ ...s.td, width: '110px', fontSize: '9px', color: '#475569', verticalAlign: 'top' }}>{t.responsavel_nome || '—'}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                      {tabelaTarefas(proxima, '#1e40af', '#eff6ff')}
                     </div>
                   )}
                 </div>
@@ -463,7 +448,7 @@ export default function AtaReuniao() {
   const [buscaPartic,   setBuscaPartic]   = useState('')
   const [abaStep3,      setAbaStep3]      = useState('concluidos')
   const [tarefasSemanIni, setTarefasSemanIni] = useState(ultimaTerca)
-  const [tarefasSemanFim, setTarefasSemanFim] = useState(() => diaAntes(dataHoje()))
+  const [tarefasSemanFim, setTarefasSemanFim] = useState('')
   const [form, setForm] = useState(() => makeFormInit())
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
@@ -517,14 +502,22 @@ export default function AtaReuniao() {
     const f = rowToForm(ata)
     setAtaEditandoId(ata.id)
     setForm(f)
-    setTarefasSemanFim(diaAntes(f.data))
+    setTarefasSemanIni(ultimaTercaAntes(f.data))
+    setTarefasSemanFim(f.proximaReuniao || '')
     setEtapa(1)
     setBuscaPartic('')
     setModalAberto(true)
 
-    // Carrega usuários em paralelo
+    // Carrega usuários; sincroniza nomes a partir dos IDs selecionados quando carrega
     apiService.getUsuarios()
-      .then(us => setTodosUsuarios(us.filter(u => u.ativo !== false)))
+      .then(us => {
+        const users = us.filter(u => u.ativo !== false)
+        setTodosUsuarios(users)
+        setForm(f => f.participantesIds.size === 0 ? f : {
+          ...f,
+          participantesNomes: users.filter(u => f.participantesIds.has(u.id)).map(u => u.nome),
+        })
+      })
       .catch(() => {})
 
     // Se a ata foi salva sem projetos (ex.: salvo no step 1 antes do carregamento),
@@ -573,7 +566,8 @@ export default function AtaReuniao() {
   const downloadAtaDireto = async (ata) => {
     const f = rowToForm(ata)
     setForm(f)
-    setTarefasSemanFim(diaAntes(f.data))
+    setTarefasSemanIni(ultimaTercaAntes(f.data))
+    setTarefasSemanFim(f.proximaReuniao || '')
     await new Promise(r => setTimeout(r, 150))
     await gerarPdf(f.data)
   }
@@ -593,7 +587,11 @@ export default function AtaReuniao() {
   const salvarAta = async () => {
     setSalvando(true)
     try {
-      const payload = formToPayload(form, userNome)
+      // Garante que nomes estejam sincronizados com IDs selecionados
+      const nomesSync = todosUsuarios.length > 0 && form.participantesIds.size > 0
+        ? todosUsuarios.filter(u => form.participantesIds.has(u.id)).map(u => u.nome)
+        : form.participantesNomes
+      const payload = formToPayload({ ...form, participantesNomes: nomesSync }, userNome)
       if (ataEditandoId) {
         const updated = await apiService.updateAtaReuniao(ataEditandoId, payload)
         setAtas(prev => prev.map(a => a.id === ataEditandoId ? updated : a))
@@ -904,22 +902,40 @@ export default function AtaReuniao() {
           </div>
         )}
         {abaStep3 === 'andamento' && (
-          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-            <p className="text-[10px] font-bold text-amber-700 uppercase tracking-wide mb-2">Período de Conclusão</p>
-            <div className="flex items-center gap-3 flex-wrap">
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-amber-700 shrink-0">De</span>
-                <input type="date" value={tarefasSemanIni}
-                  onChange={e => setTarefasSemanIni(e.target.value)}
-                  onClick={e => e.target.showPicker?.()}
-                  className="text-xs px-2 py-1 border border-amber-300 rounded bg-white focus:ring-2 focus:ring-amber-500/20 outline-none cursor-pointer" />
+          <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+            <div className="flex flex-wrap gap-5">
+              <div>
+                <p className="text-[10px] font-bold text-amber-700 uppercase tracking-wide mb-1.5">Semana Passada</p>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs text-amber-700 shrink-0">De</span>
+                    <input type="date" value={tarefasSemanIni}
+                      onChange={e => setTarefasSemanIni(e.target.value)}
+                      onClick={e => e.target.showPicker?.()}
+                      className="text-xs px-2 py-1 border border-amber-300 rounded bg-white focus:ring-2 focus:ring-amber-500/20 outline-none cursor-pointer" />
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs text-amber-700 shrink-0">até</span>
+                    <span className="text-xs font-semibold text-amber-900">{fmtData(diaAntes(form.data))}</span>
+                  </div>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-amber-700 shrink-0">até</span>
-                <input type="date" value={tarefasSemanFim}
-                  onChange={e => setTarefasSemanFim(e.target.value)}
-                  onClick={e => e.target.showPicker?.()}
-                  className="text-xs px-2 py-1 border border-amber-300 rounded bg-white focus:ring-2 focus:ring-amber-500/20 outline-none cursor-pointer" />
+              <div className="w-px bg-slate-300 self-stretch" />
+              <div>
+                <p className="text-[10px] font-bold text-blue-700 uppercase tracking-wide mb-1.5">Próxima Semana</p>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs text-blue-700 shrink-0">De</span>
+                    <span className="text-xs font-semibold text-blue-900">{fmtData(form.data)}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs text-blue-700 shrink-0">até</span>
+                    <input type="date" value={tarefasSemanFim}
+                      onChange={e => setTarefasSemanFim(e.target.value)}
+                      onClick={e => e.target.showPicker?.()}
+                      className="text-xs px-2 py-1 border border-blue-300 rounded bg-white focus:ring-2 focus:ring-blue-500/20 outline-none cursor-pointer" />
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -999,99 +1015,121 @@ export default function AtaReuniao() {
             })()}
           </div>}
 
-          {/* Tarefas da Semana */}
+          {/* Tarefas da Semana — Semana Passada + Próxima Semana por projeto */}
           {abaStep3 === 'andamento' && <div className="space-y-4">
-            {/* Tarefas no período — lista cronológica */}
             {(() => {
-              const ini = tarefasSemanIni
-              const fim = tarefasSemanFim
-              const tarefas = (form.todosNaoConcluidos || form.andamento)
-                .flatMap(p => (p.proj_tarefas || [])
-                  .filter(t => t.data_fim && (!ini || t.data_fim >= ini) && (!fim || t.data_fim <= fim))
-                  .map(t => ({
-                    ...t,
-                    projetoNome:      p.nome,
-                    projetoResp:      p.responsavel_nome,
+              const fonte = form.todosNaoConcluidos?.length
+                ? form.todosNaoConcluidos
+                : [...(form.andamento || []), ...(form.mapeados || [])]
+              const fimPassada = diaAntes(form.data)
+              const iniProxima = form.data
 
-                    projetoDepto:     p.departamento_nome,
-                    projetoArea:      p.area_nome,
-                    projetoSistema:   p.sistema_nome,
-                  }))
-                )
-                .sort((a, b) => (a.data_fim || '').localeCompare(b.data_fim || ''))
-              if (tarefas.length === 0)
-                return <p className="text-xs text-slate-400 italic">Nenhuma tarefa com prazo neste período.</p>
-
-              // Agrupar por departamento mantendo ordem cronológica dentro de cada grupo
-              const porDepto = {}
-              tarefas.forEach(t => {
-                const depto = t.projetoDepto || '(Sem departamento)'
-                if (!porDepto[depto]) porDepto[depto] = []
-                porDepto[depto].push(t)
+              const toTask = (p) => (t) => ({
+                ...t,
+                projetoNome:   p.nome,
+                projetoResp:   p.responsavel_nome,
+                projetoDepto:  p.departamento_nome,
+                projetoArea:   p.area_nome,
+                projetoSistema: p.sistema_nome,
               })
 
-              return (
-                <div>
-                  <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
-                    {Object.entries(porDepto).sort(([a], [b]) => a.localeCompare(b)).map(([depto, ts]) => {
-                      const resps = [...new Set(ts.map(t => t.projetoResp).filter(Boolean))]
-                      return (
-                        <div key={depto}>
-                          <div className="flex items-baseline gap-2 px-2 py-1 bg-amber-100 rounded-md mb-1">
-                            <span className="text-[10px] font-bold text-amber-800 uppercase tracking-wide">{depto}</span>
-                            {resps.length > 0 && (
-                              <span className="text-[10px] text-amber-700">· Resp.: {resps.join(', ')}</span>
-                            )}
+              const tarefasPassada = fonte
+                .flatMap(p => (p.proj_tarefas || [])
+                  .filter(t => t.data_fim && (!tarefasSemanIni || t.data_fim >= tarefasSemanIni) && t.data_fim <= fimPassada)
+                  .map(toTask(p)))
+                .sort((a, b) => (a.data_fim || '').localeCompare(b.data_fim || ''))
+
+              const tarefasProxima = fonte
+                .flatMap(p => (p.proj_tarefas || [])
+                  .filter(t => t.data_fim && t.data_fim >= iniProxima && (!tarefasSemanFim || t.data_fim <= tarefasSemanFim))
+                  .map(toTask(p)))
+                .sort((a, b) => (a.data_fim || '').localeCompare(b.data_fim || ''))
+
+              const statusCfg = {
+                mapeado:      { label: 'Mapeado',      cls: 'bg-slate-100 text-slate-600' },
+                programado:   { label: 'Programado',   cls: 'bg-blue-100 text-blue-700' },
+                em_andamento: { label: 'Em Andamento', cls: 'bg-amber-100 text-amber-700' },
+                pausado:      { label: 'Pausado',      cls: 'bg-purple-100 text-purple-700' },
+                concluido:    { label: 'Concluído',    cls: 'bg-teal-100 text-teal-700' },
+              }
+
+              const tarefaCard = (t) => (
+                <div key={t.id} className="flex items-start gap-3 px-3 py-2 rounded-lg border border-slate-100 bg-white">
+                  <span className="text-[11px] font-bold text-slate-500 shrink-0 w-20">{fmtData(t.data_fim)}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <p className="text-xs font-semibold text-slate-800 leading-tight">{t.nome}</p>
+                      {t.status_kanban && (() => {
+                        const cfg = statusCfg[t.status_kanban] || { label: t.status_kanban, cls: 'bg-slate-100 text-slate-500' }
+                        return <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold whitespace-nowrap ${cfg.cls}`}>{cfg.label}</span>
+                      })()}
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-0.5">
+                      {[t.projetoArea, t.projetoSistema].filter(Boolean).join(' › ')}
+                      {t.responsavel_nome ? `  ·  Resp.: ${t.responsavel_nome}` : ''}
+                    </p>
+                    {t.proj_deliberacoes?.length > 0 && (
+                      <div className="mt-1.5 pt-1.5 border-t border-slate-100">
+                        {t.proj_deliberacoes.map(d => (
+                          <div key={d.id} className="flex gap-2 text-[10px] mb-0.5">
+                            <span className="text-amber-600 font-semibold shrink-0 whitespace-nowrap">{fmtData(d.data)}</span>
+                            <span className="text-slate-500 leading-snug">{d.texto}</span>
                           </div>
-                          <div className="space-y-1 pl-1">
-                            {ts.map(t => (
-                              <div key={t.id} className="flex items-start gap-3 px-3 py-2 rounded-lg border border-amber-100 bg-amber-50/30">
-                                <span className="text-[11px] font-bold text-amber-700 shrink-0 w-20">{fmtData(t.data_fim)}</span>
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-1.5 flex-wrap">
-                                    <p className="text-xs font-semibold text-slate-800 leading-tight">{t.nome}</p>
-                                    {t.status_kanban && (() => {
-                                      const cfg = {
-                                        mapeado:      { label: 'Mapeado',      cls: 'bg-slate-100 text-slate-600' },
-                                        programado:   { label: 'Programado',   cls: 'bg-blue-100 text-blue-700' },
-                                        em_andamento: { label: 'Em Andamento', cls: 'bg-amber-100 text-amber-700' },
-                                        pausado:      { label: 'Pausado',      cls: 'bg-purple-100 text-purple-700' },
-                                        concluido:    { label: 'Concluído',    cls: 'bg-teal-100 text-teal-700' },
-                                      }[t.status_kanban] || { label: t.status_kanban, cls: 'bg-slate-100 text-slate-500' }
-                                      return <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold whitespace-nowrap ${cfg.cls}`}>{cfg.label}</span>
-                                    })()}
-                                  </div>
-                                  <p className="text-[11px] font-bold text-slate-700 mt-1">
-                                    <span className="text-[9px] font-semibold text-slate-400 uppercase tracking-wide mr-1">Projeto</span>
-                                    {t.projetoNome}
-                                  </p>
-                                  <p className="text-[10px] text-slate-400 mt-0.5">
-                                    {[t.projetoArea, t.projetoSistema].filter(Boolean).join(' › ')}
-                                    {t.responsavel_nome ? `  ·  Resp.: ${t.responsavel_nome}` : ''}
-                                  </p>
-                                  {t.proj_deliberacoes?.length > 0 && (
-                                    <div className="mt-2 pt-2 border-t border-amber-200">
-                                      <p className="text-[9px] font-bold text-amber-700 uppercase tracking-wide mb-1">Deliberações</p>
-                                      {t.proj_deliberacoes.map(d => (
-                                        <div key={d.id} className="flex gap-2 text-[10px] mb-1">
-                                          <span className="text-amber-600 font-semibold shrink-0 whitespace-nowrap">{fmtData(d.data)}</span>
-                                          <span className="text-slate-600 leading-snug">{d.texto}</span>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )
+
+              const secaoProjetos = (tarefas, emptyMsg) => {
+                if (tarefas.length === 0)
+                  return <p className="text-xs text-slate-400 italic pl-1">{emptyMsg}</p>
+                const porProj = {}
+                tarefas.forEach(t => {
+                  const k = t.projetoNome || '(Sem projeto)'
+                  if (!porProj[k]) porProj[k] = []
+                  porProj[k].push(t)
+                })
+                return (
+                  <div className="space-y-3">
+                    {Object.entries(porProj).sort(([a], [b]) => a.localeCompare(b, 'pt-BR')).map(([proj, ts]) => (
+                      <div key={proj}>
+                        <div className="flex items-baseline gap-2 px-2 py-1 bg-slate-100 rounded-md mb-1">
+                          <span className="text-[10px] font-bold text-slate-700 uppercase tracking-wide">{proj}</span>
+                          {ts[0]?.projetoResp && <span className="text-[10px] text-slate-500">· {ts[0].projetoResp}</span>}
+                          {ts[0]?.projetoDepto && <span className="text-[10px] text-slate-400">· {ts[0].projetoDepto}</span>}
                         </div>
-                      )
-                    })}
+                        <div className="space-y-1 pl-1">{ts.map(tarefaCard)}</div>
+                      </div>
+                    ))}
+                  </div>
+                )
+              }
+
+              return (
+                <div className="space-y-5 max-h-[480px] overflow-y-auto pr-1">
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full uppercase tracking-wide">
+                        Semana Passada · {fmtData(tarefasSemanIni)} – {fmtData(fimPassada)}
+                      </span>
+                      <span className="text-[10px] text-slate-400">({tarefasPassada.length} tarefa{tarefasPassada.length !== 1 ? 's' : ''})</span>
+                    </div>
+                    {secaoProjetos(tarefasPassada, 'Nenhuma tarefa com prazo na semana passada.')}
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-[10px] font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full uppercase tracking-wide">
+                        Próxima Semana · {fmtData(iniProxima)} – {fmtData(tarefasSemanFim)}
+                      </span>
+                      <span className="text-[10px] text-slate-400">({tarefasProxima.length} tarefa{tarefasProxima.length !== 1 ? 's' : ''})</span>
+                    </div>
+                    {secaoProjetos(tarefasProxima, 'Nenhuma tarefa com prazo até a próxima reunião.')}
                   </div>
                 </div>
               )
             })()}
-
           </div>}
 
           {/* Mapeados */}

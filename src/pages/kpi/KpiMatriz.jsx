@@ -50,7 +50,7 @@ export default function KpiMatriz() {
     return abasVisiveis.some(a => a.key === pedida) ? pedida : abasVisiveis[0]?.key
   })
   const abaAtual = abasVisiveis.find(a => a.key === aba) || abasVisiveis[0]
-  const podeSincronizar = hasActionOrDefault('sincronizacao-dados', 'editar')
+  const podeSincronizar = hasActionOrDefault('kpi/resultados', 'editar')
 
   return (
     <div className="flex flex-col h-full">
@@ -63,7 +63,7 @@ export default function KpiMatriz() {
           {sourceStatus.source != null && <DataSourceBadge source={sourceStatus.source} loading={sourceStatus.loading} refreshKey={refreshToken} />}
           {podeSincronizar && (
             <button type="button" onClick={() => sync.iniciar(user?.email)} disabled={sync.executando}
-              title={sync.executando ? `Atualização em andamento${sync.porQuem ? ` (iniciada por ${sync.porQuem})` : ''} — aguarde terminar` : 'Atualizar dados (Matriz KPIs e Campanha Pós-Venda)'}
+              title={sync.executando ? `Atualização em andamento${sync.porQuem ? ` (iniciada por ${sync.porQuem})` : ''} — aguarde terminar` : 'Atualizar dados (Matriz KPIs e Campanha Pós-Venda - DAF)'}
               aria-label="Atualizar dados"
               className="inline-flex items-center justify-center rounded-md border border-blue-200 bg-blue-50 p-1.5 text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60">
               <RefreshCw className={`h-4 w-4 ${sync.executando ? 'animate-spin' : ''}`} />

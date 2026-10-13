@@ -51,7 +51,7 @@ app.use('/api/bi-medidas', biMedidasRoutes)
 app.use('/api/rh-ferias', rhFeriasRoutes)
 
 // ── Rotas Honda (integração MicroWork Cloud) ──────────────────────────────────
-app.use('/api/honda', hondaRoutes)
+app.use('/api/honda', authMiddleware, hondaRoutes)
 
 // ── Rotas MicroWork Cloud genéricas (relatórios cadastrados em dim_fontes_microwork) ─────────
 app.use('/api/microwork', microworkRoutes)

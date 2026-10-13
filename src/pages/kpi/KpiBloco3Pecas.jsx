@@ -7,6 +7,7 @@ import { getPeriodData, getPeriodLabel } from '../../utils/kpiPeriods'
 import { useKpiData } from '../../hooks/useKpiData'
 import { fetchBloco3Pecas, salvarPeso, fetchVendedoresBalcao } from '../../services/kpiService'
 import { useKpiYear } from '../../context/KpiYearContext'
+import { useAuth } from '../../context/AuthContext'
 
 const BLOCO_PESOS = 'bloco3-pecas'
 const QUADRO_VENDEDOR = 'VENDEDOR DE PEÇAS'
@@ -203,7 +204,7 @@ function VendedorSelector({ vendedores, selecionado, onSelecionar, onLimpar }) {
   )
 }
 
-function QuadroTable({ quadro, activePeriods, mesTotalKey, year, onSalvarPeso, vendedorSelector }) {
+function QuadroTable({ quadro, activePeriods, mesTotalKey, year, onSalvarPeso, vendedorSelector, somenteLeitura = false }) {
   const headerCls  = COR_HEADER[quadro.cor]    ?? COR_HEADER.blue
   const subheadCls = COR_SUBHEADER[quadro.cor] ?? COR_SUBHEADER.blue
 
@@ -256,7 +257,9 @@ function QuadroTable({ quadro, activePeriods, mesTotalKey, year, onSalvarPeso, v
                 <td className="px-4 py-2.5 font-medium text-slate-700 sticky left-0 bg-white">{row.indicador}</td>
                 <td className="px-2 py-2.5 text-center font-bold text-slate-600">{row.orientacao}</td>
                 <td className="px-3 py-2.5 text-center text-slate-500">
-                  <PesoInput value={row.pesoObj} onSave={peso => onSalvarPeso(quadro.tituloGerente, row.id, peso)} />
+                  {somenteLeitura
+                    ? (row.pesoObj != null ? `${Math.round(row.pesoObj * 100)}%` : '—')
+                    : <PesoInput value={row.pesoObj} onSave={peso => onSalvarPeso(quadro.tituloGerente, row.id, peso)} />}
                 </td>
                 {activePeriods.map(p => {
                   const d       = getPeriodData(row, p)
@@ -310,6 +313,8 @@ export default function KpiBloco3Pecas() {
   const periodState = usePeriodSelector('kpi-matriz')
   const { activePeriods } = periodState
   const { year } = useKpiYear()
+  const { hasActionOrDefault } = useAuth()
+  const canEdit = hasActionOrDefault('kpi/bloco3-pecas', 'editar')
 
   // Lista de vendedores do Balcão pro seletor do quadro VENDEDOR DE PEÇAS.
   const [vendedores, setVendedores] = useState([])
@@ -363,6 +368,7 @@ export default function KpiBloco3Pecas() {
             mesTotalKey={periodState.mesTotalKey}
             year={year}
             onSalvarPeso={handleSalvarPeso}
+            somenteLeitura={!canEdit}
             vendedorSelector={quadro.tituloGerente === QUADRO_VENDEDOR && (
               <VendedorSelector
                 vendedores={vendedores}

@@ -94,11 +94,37 @@ function gerentesGeraisTrucks(funcionarios, regras) {
     .sort((a, b) => a.nome.localeCompare(b.nome))
 }
 
+// ── Permissões (Configurações › Grupos de Acessos / Matriz de Permissões) ────────────────────────
+// Abas e empresas são itens de menu (marcar = pode ver); botões são ações da aba (acoesMenu.js).
+export const CAMPANHA_ABAS = [
+  { k: 'regras', label: 'Regras', icon: BookOpen, perm: 'bi/campanha/regras' },
+  { k: 'apuracao', label: 'Apuração', icon: Calculator, perm: 'bi/campanha/apuracao' },
+  { k: 'resultado', label: 'Resultado', icon: BarChart2, perm: 'bi/campanha/resultado' },
+]
+export const CAMPANHA_ABAS_PERMS = CAMPANHA_ABAS.map((a) => a.perm)
+const PERM_EMPRESA = { TRUCKS: 'bi/campanha/empresa-trucks', CG: 'bi/campanha/empresa-cg', DOU: 'bi/campanha/empresa-dou', TL: 'bi/campanha/empresa-tl', CS: 'bi/campanha/empresa-cs' }
+
 export default function BiCampanha() {
-  const { user } = useAuth()
-  const [aba, setAba] = useState('regras')
+  const { user, hasPermission, hasActionOrDefault } = useAuth()
+  const abasVisiveis = CAMPANHA_ABAS.filter((a) => hasPermission(a.perm))
+  const empresasVisiveis = [{ id: 'TRUCKS', nome: 'CAIOBÁ TRUCKS' }, ...CAMPANHA.unidades].filter((x) => hasPermission(PERM_EMPRESA[x.id]))
+  const [aba, setAba] = useState(() => abasVisiveis[0]?.k || 'regras')
   const [slotAcoes, setSlotAcoes] = useState(null) // elemento à direita das abas (Salvar + engrenagem da aba Regras)
-  const [unidade, setUnidade] = useState('CG')
+  // Sempre abre SEM empresa: o usuário escolhe no seletor do topo e só então as informações aparecem.
+  const [unidade, setUnidade] = useState('')
+  // Se a aba/empresa aberta não estiver liberada (permissões carregadas depois), vai para a primeira liberada.
+  useEffect(() => {
+    if (abasVisiveis.length && !abasVisiveis.some((a) => a.k === aba)) setAba(abasVisiveis[0].k)
+    if (unidade && !empresasVisiveis.some((x) => x.id === unidade)) setUnidade('')
+  }) // eslint-disable-line react-hooks/exhaustive-deps
+  const podeAtualizar = hasActionOrDefault('bi/campanha/apuracao', 'atualizar_numeros') || hasActionOrDefault('bi/campanha/resultado', 'atualizar_numeros')
+  const permRegras = {
+    editar: hasActionOrDefault('bi/campanha/regras', 'editar'),
+    zerar: hasActionOrDefault('bi/campanha/regras', 'zerar'),
+    zerarTodas: hasActionOrDefault('bi/campanha/regras', 'zerar_todas'),
+    copiarMes: hasActionOrDefault('bi/campanha/regras', 'copiar_mes_anterior'),
+    copiarTodas: hasActionOrDefault('bi/campanha/regras', 'copiar_todas'),
+  }
 
   // Período: ano atual + 10 seguintes. Abre no mês atual; funciona para qualquer mês.
   const hoje = new Date()
@@ -148,6 +174,7 @@ export default function BiCampanha() {
   const [origemRegras, setOrigemRegras] = useState(null) // linha de onde vieram (ano, mes, unidade…)
   useEffect(() => {
     let vivo = true
+    if (!unidade) { setRegras(REGRAS_PADRAO); setOrigemRegras(null); return undefined }
     apiService.getCampanhaRegras(Number(ano), Number(mes), unidade)
       .then((linha) => { if (vivo) { setRegras(mesclarRegras(REGRAS_PADRAO, linha?.dados)); setOrigemRegras(linha) } })
       .catch(() => { if (vivo) { setRegras(REGRAS_PADRAO); setOrigemRegras(null) } })
@@ -230,25 +257,24 @@ export default function BiCampanha() {
       <div className="flex items-start justify-between gap-4 border-b border-slate-200 pb-4">
         <div className="min-w-0 flex-1">
           <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
-            <Trophy className="h-5 w-5 text-blue-600" /> BI — Campanha Pós-Venda
+            <Trophy className="h-5 w-5 text-blue-600" /> Campanha Pós-Venda - DAF
           </h1>
-          <p className="text-xs text-slate-500 mt-1 max-w-3xl">
-            Objetivo: calcular, de forma transparente, o bônus da campanha de cada colaborador do Pós-Venda,
-            premiando quem atinge as metas da Matriz KPIs semana a semana.
-          </p>
           {sync.mensagem && <p role="status" className="text-xs text-slate-600 mt-1">{sync.mensagem}</p>}
           {erroDados && <p className="text-xs text-red-600 mt-1">Não foi possível carregar os dados: {erroDados}</p>}
         </div>
         {/* Mesmo modelo do topo da Matriz KPIs: botão só com o ícone + "Ano:" / "Mês:" ao lado. */}
         <div className="flex items-center gap-3 shrink-0">
-          {/* Mesma atualização do botão da Matriz KPIs (Matriz + Campanha). Travado em todas as telas
-              enquanto qualquer pessoa estiver atualizando. */}
-          <button type="button" onClick={() => sync.iniciar(user?.email)} disabled={sync.executando}
-            title={sync.executando ? `Atualizando…${sync.porQuem ? ` (iniciada por ${sync.porQuem})` : ''} — aguarde terminar` : 'Atualizar números'}
-            aria-label={sync.executando ? 'Atualizando' : 'Atualizar números'}
-            className="inline-flex items-center justify-center rounded-md border border-blue-200 bg-blue-50 p-1.5 text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60">
-            <RefreshCw className={`h-4 w-4 ${sync.executando ? 'animate-spin' : ''}`} />
-          </button>
+          {/* Empresa (antes do Ano) — vale para todas as abas; só as liberadas no grupo de acesso.
+              Largura mínima para caber o nome inteiro (ex.: CAIOBÁ TRUCKS - CHAPADÃO). */}
+          {empresasVisiveis.length > 0 && (
+            <label className="flex items-center gap-2">
+              <span className="text-xs text-slate-500 font-medium">Empresa:</span>
+              <select className={`${SEL_TOPO} min-w-[18rem] ${unidade ? '' : 'border-blue-400 ring-2 ring-blue-500/20 text-slate-500'}`} value={unidade} onChange={(e) => setUnidade(e.target.value)}>
+                <option value="" disabled>Selecione uma empresa</option>
+                {empresasVisiveis.map((x) => <option key={x.id} value={x.id}>{nomeEmpresa[x.empresaId] || x.nome}</option>)}
+              </select>
+            </label>
+          )}
           <label className="flex items-center gap-2">
             <span className="text-xs text-slate-500 font-medium">Ano:</span>
             <select className={SEL_TOPO} value={ano} onChange={(e) => setAno(e.target.value)}>
@@ -261,26 +287,19 @@ export default function BiCampanha() {
               {MESES.map((m) => <option key={m.v} value={m.v}>{m.label}</option>)}
             </select>
           </label>
+          {/* Mesma atualização do botão da Matriz KPIs (Matriz + Campanha). Travado em todas as telas
+              enquanto qualquer pessoa estiver atualizando. */}
+          {podeAtualizar && <button type="button" onClick={() => sync.iniciar(user?.email)} disabled={sync.executando}
+            title={sync.executando ? `Atualizando…${sync.porQuem ? ` (iniciada por ${sync.porQuem})` : ''} — aguarde terminar` : 'Atualizar números'}
+            aria-label={sync.executando ? 'Atualizando' : 'Atualizar números'}
+            className="inline-flex items-center justify-center rounded-md border border-blue-200 bg-blue-50 p-1.5 text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60">
+            <RefreshCw className={`h-4 w-4 ${sync.executando ? 'animate-spin' : ''}`} />
+          </button>}
         </div>
       </div>
 
-      {/* Empresa selecionada vale para todas as abas */}
-      <div className="flex flex-wrap gap-1.5">
-        {[{ id: 'TRUCKS', nome: 'CAIOBÁ TRUCKS' }, ...CAMPANHA.unidades].map((x) => (
-          <button
-            key={x.id}
-            onClick={() => setUnidade(x.id)}
-            className={`px-3 py-1.5 rounded-md text-xs font-semibold border transition-colors ${
-              unidade === x.id ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-            }`}
-          >
-            {nomeEmpresa[x.empresaId] || x.nome}
-          </button>
-        ))}
-      </div>
-
       <div className="flex gap-1 border-b border-slate-200">
-        {[['regras', 'Regras', BookOpen], ['apuracao', 'Apuração', Calculator], ['resultado', 'Resultado', BarChart2]].map(([k, label, Icon]) => (
+        {abasVisiveis.map(({ k, label, icon: Icon }) => (
           <button
             key={k}
             onClick={() => setAba(k)}
@@ -295,19 +314,31 @@ export default function BiCampanha() {
         <div ref={setSlotAcoes} className="ml-auto flex items-center gap-2 pb-1.5" />
       </div>
 
-      {aba === 'regras' && (
-        <AbaRegras slotAcoes={slotAcoes}
+      {!empresasVisiveis.length && (
+        <p className={`${CARD} p-6 text-sm text-slate-600`}>
+          Nenhuma empresa da campanha está liberada para o seu grupo de acesso. Peça a liberação em Configurações › Grupos de Acessos.
+        </p>
+      )}
+      {!!empresasVisiveis.length && !unidade && (
+        <div className={`${CARD} p-10 flex flex-col items-center justify-center gap-2 text-center`}>
+          <Trophy className="h-8 w-8 text-slate-300" />
+          <p className="text-sm font-semibold text-slate-700">Selecione uma empresa</p>
+          <p className="text-xs text-slate-500">Escolha a empresa no seletor <b>Empresa</b>, no canto superior direito, para ver as informações da campanha.</p>
+        </div>
+      )}
+      {!!empresasVisiveis.length && !!unidade && aba === 'regras' && (
+        <AbaRegras slotAcoes={slotAcoes} permRegras={permRegras}
           onSalvarOutra={(destino, dados) => apiService.salvarCampanhaRegras(Number(ano), Number(mes), destino, dados, user?.email || null)} campanha={campanha} unidade={unidade} semCalendario={semCalendario} nomeMes={nomeMes} ano={ano} mes={mes}
           regras={regras} onSalvar={salvarRegras} origemRegras={origemRegras}
           nomeEmpresa={unidade === 'TRUCKS' ? 'CAIOBÁ TRUCKS' : (nomeEmpresa[u.empresaId] || u.nome)} />
       )}
-      {aba === 'apuracao' && (
+      {!!empresasVisiveis.length && !!unidade && aba === 'apuracao' && (
         <AbaApuracao campanha={campanha} regras={regras} unidade={unidade} ehTrucks={ehTrucks} diario={diario} consultores={consultores} mecanicos={mecanicos} chefes={chefes} gerentes={gerentes}
           gerentesGerais={gerentesGerais} metasPorUnidade={metasPorUnidade}
           blocosMatriz={blocosMatriz} ano={ano} mes={mes}
           metasUnidade={metasUnidade} funcionarios={funcionarios} erroFunc={erroFunc} versaoDados={recarregar} />
       )}
-      {aba === 'resultado' && (
+      {!!empresasVisiveis.length && !!unidade && aba === 'resultado' && (
         <AbaApuracao modo="resultado" campanha={campanha} regras={regras} unidade={unidade} ehTrucks={ehTrucks} diario={diario} consultores={consultores} mecanicos={mecanicos} chefes={chefes} gerentes={gerentes}
           gerentesGerais={gerentesGerais} metasPorUnidade={metasPorUnidade}
           blocosMatriz={blocosMatriz} ano={ano} mes={mes}
@@ -426,7 +457,9 @@ const div = (a, b) => (b ? a / b : null)
 // KPIs — de onde vêm os valores das tabelas —, na visão Semanal do ano/mês escolhidos na Campanha.
 // pessoas: nomes do bloco na Campanha (só da empresa selecionada) — o seletor do pop-up lista só esses.
 function LinkBloco3({ matrizB3, pessoas }) {
-  const { ano, mes } = useContext(FaixasCtx)
+  const { ano, mes, modo } = useContext(FaixasCtx)
+  const { hasActionOrDefault } = useAuth()
+  const podeVer = hasActionOrDefault(modo === 'resultado' ? 'bi/campanha/resultado' : 'bi/campanha/apuracao', 'ver_matriz')
   // Quadro da Matriz deste bloco: "Bloco 3 - Serviços › Consultor de Serviços" → "CONSULTOR DE SERVIÇOS".
   const quadro = String(matrizB3 || '').split('› ')[1]?.toUpperCase() || null
   const [aberto, setAberto] = useState(false)
@@ -436,6 +469,7 @@ function LinkBloco3({ matrizB3, pessoas }) {
     document.addEventListener('keydown', esc)
     return () => document.removeEventListener('keydown', esc)
   }, [aberto])
+  if (!podeVer) return null
   return (
     <>
       <button type="button" onClick={() => setAberto(true)}
@@ -465,35 +499,6 @@ function LinkBloco3({ matrizB3, pessoas }) {
         document.body,
       )}
     </>
-  )
-}
-
-// Botão ⓘ: abre um quadro curto com a informação (fecha ao clicar fora ou com Esc).
-function Info({ titulo, children }) {
-  const [aberto, setAberto] = useState(false)
-  const ref = useRef(null)
-  useEffect(() => {
-    if (!aberto) return undefined
-    const fora = (e) => { if (ref.current && !ref.current.contains(e.target)) setAberto(false) }
-    const esc = (e) => { if (e.key === 'Escape') setAberto(false) }
-    document.addEventListener('mousedown', fora)
-    document.addEventListener('keydown', esc)
-    return () => { document.removeEventListener('mousedown', fora); document.removeEventListener('keydown', esc) }
-  }, [aberto])
-  return (
-    <span ref={ref} className="relative inline-flex align-middle">
-      <button type="button" onClick={() => setAberto((v) => !v)} aria-expanded={aberto} aria-label={`Origem: ${titulo}`}
-        className="h-4 w-4 inline-flex items-center justify-center rounded-full text-blue-600 hover:bg-blue-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400">
-        <InfoIcon className="h-3.5 w-3.5" />
-      </button>
-      {aberto && (
-        <span role="dialog" aria-label={titulo}
-          className="absolute z-30 right-0 top-5 w-72 max-w-[80vw] rounded-lg border border-slate-200 bg-white shadow-lg p-3 text-xs leading-relaxed text-slate-600 font-normal normal-case tracking-normal text-left whitespace-normal">
-          <span className="block text-[12px] font-bold text-slate-800 mb-1">{titulo}</span>
-          {children}
-        </span>
-      )}
-    </span>
   )
 }
 
@@ -602,6 +607,8 @@ function LinhaCalc({ rotulo, valor, destaque = false }) {
 // semana (Meta ou Supermeta, conforme "Aplicar sobre"; valor do mês ÷ nº de semanas do mês).
 // Total = soma dos valores das semanas.
 function ResultadoSemanal({ titulo, cor, campanha, linhas, carregando, vazio, pesoB3, faixas, regras, unidade, chaveBonus, matrizB3 }) {
+  const { hasActionOrDefault } = useAuth()
+  const podeVerCalculo = hasActionOrDefault('bi/campanha/resultado', 'ver_calculo')
   const semanas = campanha.semanas
   const nSem = semanas.length || 1
   const TD = 'p-2 text-right whitespace-nowrap tabular-nums'
@@ -702,7 +709,7 @@ function ResultadoSemanal({ titulo, cor, campanha, linhas, carregando, vazio, pe
                       return (
                         <td key={semanas[i].id} className={`${TD} border-l border-slate-200`}>
                           <span className="inline-flex items-center justify-end gap-1.5 w-full">
-                            <InfoCalculo titulo={`${p.nome} · Sem ${i + 1} (${semanas[i].label})`}>{corpo}</InfoCalculo>
+                            {podeVerCalculo && <InfoCalculo titulo={`${p.nome} · Sem ${i + 1} (${semanas[i].label})`}>{corpo}</InfoCalculo>}
                             <span className={`font-semibold ${k.valor > 0 ? 'text-slate-900' : 'text-slate-400'}`}>{moedaBR(k.valor)}</span>
                           </span>
                         </td>
@@ -1181,7 +1188,7 @@ function ComoFunciona({ nSemanas }) {
     <section className={`rounded-lg border border-emerald-300 shadow-sm p-5 bg-gradient-to-br from-emerald-50 to-green-50/40 ${aberto ? 'space-y-4' : ''}`}>
       <button type="button" onClick={() => setAberto((v) => !v)} aria-expanded={aberto}
         className="w-full flex items-center justify-between gap-3 text-left">
-        <h2 className="text-base font-bold text-emerald-900">🏆 Como funciona a Campanha Pós-Venda</h2>
+        <h2 className="text-base font-bold text-emerald-900">🏆 Como funciona a Campanha Pós-Venda - DAF</h2>
         <ChevronDown className={`h-4 w-4 text-emerald-700 transition-transform ${aberto ? 'rotate-180' : ''}`} />
       </button>
       {aberto && (<>
@@ -1295,6 +1302,7 @@ function MenuEngrenagem({ itens }) {
     document.addEventListener('keydown', esc)
     return () => { document.removeEventListener('mousedown', fora); document.removeEventListener('keydown', esc) }
   }, [aberto])
+  if (!itens.length) return null // nenhuma ação liberada para o grupo: sem engrenagem
   return (
     <div ref={ref} className="relative">
       <button type="button" onClick={() => setAberto((v) => !v)} aria-expanded={aberto} aria-haspopup="menu"
@@ -1317,7 +1325,7 @@ function MenuEngrenagem({ itens }) {
   )
 }
 
-function AbaRegras({ onSalvarOutra, slotAcoes, campanha, unidade, semCalendario, nomeMes, ano, mes, regras, onSalvar, origemRegras, nomeEmpresa }) {
+function AbaRegras({ permRegras = {}, onSalvarOutra, slotAcoes, campanha, unidade, semCalendario, nomeMes, ano, mes, regras, onSalvar, origemRegras, nomeEmpresa }) {
   const unidades = unidade === 'TRUCKS' ? campanha.unidades : campanha.unidades.filter((u) => u.id === unidade)
   const semCal = unidades.filter((u) => semCalendario.includes(u.id))
 
@@ -1449,35 +1457,38 @@ function AbaRegras({ onSalvarOutra, slotAcoes, campanha, unidade, semCalendario,
   const botoesSalvar = (
     <div className="flex items-center gap-2">
       {msg && <span className={`text-xs ${msg.erro ? 'text-red-600' : 'text-emerald-700'}`}>{msg.txt}</span>}
-      {alterado && (
+      {permRegras.editar && alterado && (
         <button onClick={() => { setRascunho(regras); setMsg(null) }}
           className="px-3 py-1.5 rounded-md text-xs font-semibold text-slate-700 border border-slate-200 bg-white hover:bg-slate-50">
           Descartar
         </button>
       )}
-      <button onClick={salvar} disabled={salvando || !alterado}
+      {permRegras.editar && <button onClick={salvar} disabled={salvando || !alterado}
         className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50">
         {salvando && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Salvar
-      </button>
+      </button>}
       <MenuEngrenagem itens={[
         {
+          permitido: permRegras.zerar && permRegras.editar,
           rotulo: 'Zerar valores (só esta empresa)', icone: Eraser, onClick: zerarValores,
           dica: `Limpa Regras-chave, Bônus-alvo (cadeados fechados) e Faixas desta empresa só em ${nomeMes}/${ano}`,
         },
         {
+          permitido: permRegras.zerarTodas,
           rotulo: 'Zerar valores de todas as empresas', icone: zerandoTodas ? Loader2 : Eraser, onClick: zerarTodas,
           desabilitado: zerandoTodas,
           dica: `Zera e grava todas as empresas só em ${nomeMes}/${ano}`,
         },
-        { rotulo: 'Copiar do mês anterior (só esta empresa)', icone: copiando ? Loader2 : Copy, onClick: copiarMesAnterior, desabilitado: copiando, dica: `Copiar as regras de ${nomeMesAnterior} desta empresa` },
+        { permitido: permRegras.copiarMes && permRegras.editar, rotulo: 'Copiar do mês anterior (só esta empresa)', icone: copiando ? Loader2 : Copy, onClick: copiarMesAnterior, desabilitado: copiando, dica: `Copiar as regras de ${nomeMesAnterior} desta empresa` },
         {
+          permitido: permRegras.copiarTodas,
           rotulo: 'Copiar valores para todas as empresas', icone: copiandoTodas ? Loader2 : CopyPlus, onClick: copiarParaTodas,
           desabilitado: copiandoTodas || unidade === 'TRUCKS',
           dica: unidade === 'TRUCKS'
             ? 'Disponível nas abas das empresas (CAIOBÁ TRUCKS tem só o Gerente Geral)'
             : `Grava Regras-chave, Bônus-alvo e Faixas desta tela em ${outrasEmpresas.map((x) => x.nome).join(', ')} — ${nomeMes}/${ano}`,
         },
-      ]} />
+      ].filter((it) => it.permitido)} />
     </div>
   )
 
@@ -1502,6 +1513,10 @@ function AbaRegras({ onSalvarOutra, slotAcoes, campanha, unidade, semCalendario,
       {/* Um só Salvar para a aba inteira (na linha das abas): grava as regras DESTA empresa para o mês/ano. */}
       {slotAcoes ? createPortal(botoesSalvar, slotAcoes) : <div className="flex justify-end">{botoesSalvar}</div>}
       <ComoFunciona nSemanas={nSemanas} />
+      {!permRegras.editar && (
+        <p className="text-xs text-slate-500">🔒 Somente visualização — seu grupo de acesso não pode editar as regras.</p>
+      )}
+      <fieldset disabled={!permRegras.editar} className="contents">
     <div className="grid grid-cols-1 gap-5">
     {/* Semanas e Regras-chave lado a lado; Bônus-alvo e Faixas abaixo. */}
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-stretch">
@@ -1718,6 +1733,7 @@ function AbaRegras({ onSalvarOutra, slotAcoes, campanha, unidade, semCalendario,
           <Plus className="h-3.5 w-3.5" /> Adicionar faixa
         </button>
       </section>
+      </fieldset>
     </div>
   )
 }

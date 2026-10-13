@@ -3294,28 +3294,6 @@ export const apiService = {
   // AUDITORIA DE O.S.
   // ══════════════════════════════════════════
 
-  // ── Responsáveis ──
-  getAuditoriaResponsaveis: async () => {
-    const { data, error } = await supabase.from('aud_responsaveis').select('*').order('nome')
-    if (error) throw error
-    return data || []
-  },
-  createAuditoriaResponsavel: async ({ nome, ativo }) => {
-    const { data, error } = await supabase.from('aud_responsaveis').insert([{ nome, ativo }]).select()
-    if (error) throw error
-    return data?.[0]
-  },
-  updateAuditoriaResponsavel: async (id, { nome, ativo }) => {
-    const { data, error } = await supabase.from('aud_responsaveis')
-      .update({ nome, ativo, atualizado_em: new Date().toISOString() }).eq('id', id).select()
-    if (error) throw error
-    return data?.[0]
-  },
-  deleteAuditoriaResponsavel: async (id) => {
-    const { error } = await supabase.from('aud_responsaveis').delete().eq('id', id)
-    if (error) throw error
-    return { success: true }
-  },
 
   // ── Situações ──
   getAuditoriaSituacoes: async () => {
@@ -5247,6 +5225,63 @@ export const apiService = {
       .upsert(registros.map(r => ({ ...r, baixado_em: new Date().toISOString() })), { onConflict: 'titulo_codigo' })
     if (error) throw error
     return { success: true }
+  },
+
+  // ── Contas a Receber HONDA — anotações manuais por título ───────────────────
+  getHondaAnotacoes: async () => {
+    const { data, error } = await supabase.from('honda_contas_receber_anotacoes').select('*')
+    if (error) throw error
+    return data || []
+  },
+
+  // registro: { chave, categoria, empresa, documento, parcela, nota_fiscal, numero_sinistro, status_seguro, situacao }
+  salvarHondaAnotacao: async (registro) => {
+    const { error } = await supabase
+      .from('honda_contas_receber_anotacoes')
+      .upsert({ ...registro, atualizado_em: new Date().toISOString() }, { onConflict: 'chave' })
+    if (error) throw error
+    return { success: true }
+  },
+
+  getHondaStatus: async () => {
+    const { data, error } = await supabase
+      .from('honda_contas_receber_status')
+      .select('*')
+      .order('ordem', { ascending: true })
+      .order('nome', { ascending: true })
+    if (error) throw error
+    return data || []
+  },
+
+  // status: { id?, nome, cor, ordem, ativo }
+  salvarHondaStatus: async (status) => {
+    const { id, ...campos } = status
+    const q = supabase.from('honda_contas_receber_status')
+    const { error } = id ? await q.update(campos).eq('id', id) : await q.insert(campos)
+    if (error) throw error
+    return { success: true }
+  },
+
+  excluirHondaStatus: async (id) => {
+    const { error } = await supabase.from('honda_contas_receber_status').delete().eq('id', id)
+    if (error) throw error
+    return { success: true }
+  },
+
+  // Apaga as anotações cujo título não consta mais na API (pago/baixado). Recebe as chaves ainda em aberto.
+  limparHondaAnotacoesBaixadas: async (chavesEmAberto) => {
+    const emAberto = new Set(chavesEmAberto)
+    const { data, error } = await supabase.from('honda_contas_receber_anotacoes').select('chave')
+    if (error) throw error
+    const obsoletas = (data || []).map(r => r.chave).filter(c => !emAberto.has(c))
+    for (let i = 0; i < obsoletas.length; i += 100) {
+      const { error: errDel } = await supabase
+        .from('honda_contas_receber_anotacoes')
+        .delete()
+        .in('chave', obsoletas.slice(i, i + 100))
+      if (errDel) throw errDel
+    }
+    return { removidas: obsoletas.length }
   },
 
   getTruckPagCreditos: async () => {

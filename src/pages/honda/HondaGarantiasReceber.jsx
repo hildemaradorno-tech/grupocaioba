@@ -1,5 +1,6 @@
-import React, { useState, useCallback, useMemo } from 'react'
-import { Bike, RefreshCw, AlertTriangle, ShieldCheck, Wrench, Building2, Filter, ChevronDown, ChevronUp, X, Info, Wallet, CalendarClock, CalendarCheck2 } from 'lucide-react'
+import React, { useState, useCallback, useMemo, useEffect } from 'react'
+import { Bike, RefreshCw, AlertTriangle, ShieldCheck, Wrench, Building2, X, Info, Wallet, CalendarClock, CalendarCheck2, Settings, Plus, Trash2 } from 'lucide-react'
+import { supabase, apiService } from '../../services/supabaseClient'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
 const CACHE_KEY = 'honda_garantias_a_receber_cache'
@@ -64,7 +65,9 @@ function parseValor(valor) {
   if (valor === null || valor === undefined || valor === '') return null
   if (typeof valor === 'number') return valor
   const s = String(valor).trim()
-  const normalizado = /,\d{1,2}$/.test(s) ? s.replace(/\./g, '').replace(',', '.') : s
+  // BR: vírgula decimal ("1.234,56") ou só milhares com ponto ("1.234", "1.234.567").
+  const ehBR = /,\d{1,2}$/.test(s) || /^-?\d{1,3}(\.\d{3})+$/.test(s)
+  const normalizado = ehBR ? s.replace(/\./g, '').replace(',', '.') : s
   const n = parseFloat(normalizado)
   return isNaN(n) ? null : n
 }
@@ -102,7 +105,70 @@ function categoriaDoRegistro(row) {
   if (portador.includes('REVIS')) return 'revisoes'
   if (portador.includes('SEGUR')) return 'seguradoras'
   if (portador.includes('GARANT')) return 'garantias'
-  return null
+  return null // fora das 3 categorias — descartado da tela
+}
+
+// Valor de uma coluna do registro: tenta o nome exato primeiro, depois o padrão mais solto
+// (ignorando colunas que casem com `excluir`, ex: "ValorParcela" não é a Parcela).
+function valorColuna(row, exato, solto, excluir) {
+  const chaves = Object.keys(row)
+  const k = chaves.find(c => exato.test(c)) || chaves.find(c => solto.test(c) && !(excluir && excluir.test(c)))
+  return k ? String(row[k] ?? '').trim() : ''
+}
+
+// Chave do título nas anotações: Empresa|Documento|Parcela|NotaFiscal.
+function dadosChave(row) {
+  return {
+    empresa: valorColuna(row, /^empresa$/i, /fantasia|empresa/i, /cod|c[oó]digo|id/i),
+    documento: valorColuna(row, /^documento$/i, /documento/i, /origem|fiscal|tipo/i),
+    parcela: valorColuna(row, /^parcela$/i, /parcela/i, /valor|total|qtd|quant/i),
+    nota_fiscal: valorColuna(row, /^nota.?fiscal$/i, /nota.?fiscal/i),
+  }
+}
+
+// Nº da OS vem na coluna OrigemDocumento (ex: "O.S: 383465"); null se o título não é de OS.
+function osDoRegistro(row) {
+  const origem = valorColuna(row, /^origem.?documento$/i, /origem.?documento/i)
+  const m = origem.match(/O\.?\s?S\.?\s*:?\s*(\d+)/i)
+  return m ? m[1] : null
+}
+
+// Uma OS de garantia pode ter duas notas (peças e serviços): a anotação é por Empresa + OS, então
+// as duas notas compartilham Status/Situação. Sem OS, cai para Empresa|Documento|Parcela|NotaFiscal.
+function chaveDoRegistro(row) {
+  const d = dadosChave(row)
+  const os = osDoRegistro(row)
+  if (os) return ['OS', d.empresa, os].join('|')
+  return [d.empresa, d.documento, d.parcela, d.nota_fiscal].join('|')
+}
+
+// Cores disponíveis no cadastro de Status (chave gravada em honda_contas_receber_status.cor).
+const CORES_STATUS = {
+  slate: { label: 'Cinza', badge: 'bg-slate-100 text-slate-700 border-slate-200', dot: 'bg-slate-400' },
+  sky: { label: 'Azul', badge: 'bg-sky-50 text-sky-700 border-sky-200', dot: 'bg-sky-500' },
+  amber: { label: 'Amarelo', badge: 'bg-amber-50 text-amber-700 border-amber-200', dot: 'bg-amber-500' },
+  emerald: { label: 'Verde', badge: 'bg-emerald-50 text-emerald-700 border-emerald-200', dot: 'bg-emerald-500' },
+  red: { label: 'Vermelho', badge: 'bg-red-50 text-red-700 border-red-200', dot: 'bg-red-500' },
+  violet: { label: 'Roxo', badge: 'bg-violet-50 text-violet-700 border-violet-200', dot: 'bg-violet-500' },
+}
+
+function StatusBadge({ status }) {
+  if (!status) return <span className="text-slate-300">—</span>
+  const cor = CORES_STATUS[status.cor] || CORES_STATUS.slate
+  return <span className={`inline-block whitespace-nowrap shrink-0 text-[10px] font-bold border rounded-full px-2 py-0.5 ${cor.badge}`}>{status.nome}</span>
+}
+
+const INPUT_CLS = 'text-xs border border-slate-200 rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300'
+
+// Seletor de Status (cadastrados na engrenagem). Só lista ativos, mais o status já escolhido mesmo se inativo.
+function SeletorStatus({ valor, statusLista, onChange, className = '' }) {
+  const opcoes = statusLista.filter(s => s.ativo || s.id === valor)
+  return (
+    <select value={valor || ''} onChange={(e) => onChange(e.target.value || null)} className={`${INPUT_CLS} bg-white ${className}`}>
+      <option value="">— Sem status —</option>
+      {opcoes.map(s => <option key={s.id} value={s.id}>{s.nome}{s.ativo ? '' : ' (inativo)'}</option>)}
+    </select>
+  )
 }
 
 // Uma aba por portador — mesma categorização usada em categoriaDoRegistro().
@@ -112,6 +178,11 @@ const ABAS_PORTADOR = [
   { key: 'seguradoras', label: 'Seguradoras', icon: Building2, activeBorder: 'border-emerald-600', activeText: 'text-emerald-700', activeBadge: 'bg-emerald-50 text-emerald-600' },
 ]
 
+const LABEL_CATEGORIA = Object.fromEntries(ABAS_PORTADOR.map(a => [a.key, a.label]))
+const LABEL_CATEGORIA_SINGULAR = { garantias: 'Garantia', revisoes: 'Revisão Gratuita', seguradoras: 'Seguradora' }
+const LINHAS_POR_PAGINA = 200
+const SEM_STATUS = '__sem_status__'
+
 // Cards de resumo exibidos dentro da aba ativa — clicáveis, funcionam como filtro da tabela.
 // key: null = "Total" (limpa o filtro de prazo); os demais casam com a chave usada em statusPrazo().
 const CARDS_RESUMO = [
@@ -120,6 +191,185 @@ const CARDS_RESUMO = [
   { key: 'hoje', label: 'Vence Hoje', icon: CalendarClock, bg: 'bg-amber-50', border: 'border-amber-200', ring: 'ring-amber-400', labelColor: 'text-amber-500', qtdColor: 'text-amber-700', valorColor: 'text-amber-800', iconColor: 'text-amber-500' },
   { key: 'aVencer', label: 'A Vencer', icon: CalendarCheck2, bg: 'bg-emerald-50', border: 'border-emerald-200', ring: 'ring-emerald-400', labelColor: 'text-emerald-500', qtdColor: 'text-emerald-700', valorColor: 'text-emerald-800', iconColor: 'text-emerald-500' },
 ]
+
+function ModalBase({ titulo, onClose, children, largura = 'max-w-lg' }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onClick={onClose}>
+      <div className={`bg-white rounded-lg shadow-xl w-full ${largura} max-h-[85vh] flex flex-col`} onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-3 border-b border-slate-200">
+          <h2 className="text-sm font-bold text-slate-800">{titulo}</h2>
+          <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-600"><X className="h-4 w-4" /></button>
+        </div>
+        <div className="p-5 overflow-y-auto">{children}</div>
+      </div>
+    </div>
+  )
+}
+
+// Engrenagem ao lado de "Atualizar": cadastro dos Status usados no seletor das abas.
+function ModalCadastroStatus({ statusLista, onClose, onChanged, onErro }) {
+  const [novoNome, setNovoNome] = useState('')
+  const [novaCor, setNovaCor] = useState('sky')
+  const [ocupado, setOcupado] = useState(false)
+
+  const executar = async (fn) => {
+    setOcupado(true)
+    try { await fn(); await onChanged() } catch (e) {
+      onErro(e.code === '23505' ? 'Já existe um status com esse nome.' : `Erro ao salvar status: ${e.message || e}`)
+    } finally { setOcupado(false) }
+  }
+
+  const adicionar = () => {
+    const nome = novoNome.trim()
+    if (!nome) return
+    executar(async () => {
+      await apiService.salvarHondaStatus({ nome, cor: novaCor, ordem: statusLista.length, ativo: true })
+      setNovoNome('')
+    })
+  }
+
+  return (
+    <ModalBase titulo="Status — Contas a Receber HONDA" onClose={onClose}>
+      <p className="text-[11px] text-slate-500 mb-3">Os status cadastrados aqui aparecem no seletor de cada título, nas abas.</p>
+      <div className="flex gap-2 mb-4">
+        <input
+          type="text"
+          value={novoNome}
+          onChange={(e) => setNovoNome(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') adicionar() }}
+          placeholder="Novo status..."
+          className={`${INPUT_CLS} flex-1`}
+        />
+        <select value={novaCor} onChange={(e) => setNovaCor(e.target.value)} className={`${INPUT_CLS} bg-white`}>
+          {Object.entries(CORES_STATUS).map(([k, c]) => <option key={k} value={k}>{c.label}</option>)}
+        </select>
+        <button type="button" onClick={adicionar} disabled={ocupado || !novoNome.trim()} className="flex items-center gap-1 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold px-3 rounded-md disabled:opacity-50">
+          <Plus className="h-3.5 w-3.5" /> Adicionar
+        </button>
+      </div>
+      {statusLista.length === 0 ? (
+        <p className="text-xs text-slate-400 text-center py-6">Nenhum status cadastrado.</p>
+      ) : (
+        <ul className="divide-y divide-slate-100 border border-slate-200 rounded-md">
+          {statusLista.map(s => (
+            <li key={s.id} className="flex items-center gap-2 px-3 py-2">
+              <StatusBadge status={s} />
+              <input
+                type="text"
+                defaultValue={s.nome}
+                key={s.nome}
+                onBlur={(e) => { const nome = e.target.value.trim(); if (nome && nome !== s.nome) executar(() => apiService.salvarHondaStatus({ id: s.id, nome })) }}
+                onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
+                className={`${INPUT_CLS} flex-1 min-w-0`}
+              />
+              <select value={s.cor} onChange={(e) => executar(() => apiService.salvarHondaStatus({ id: s.id, cor: e.target.value }))} className={`${INPUT_CLS} bg-white`}>
+                {Object.entries(CORES_STATUS).map(([k, c]) => <option key={k} value={k}>{c.label}</option>)}
+              </select>
+              <label className="flex items-center gap-1 text-[10px] text-slate-500 cursor-pointer">
+                <input type="checkbox" checked={s.ativo} onChange={(e) => executar(() => apiService.salvarHondaStatus({ id: s.id, ativo: e.target.checked }))} />
+                Ativo
+              </label>
+              <button
+                type="button"
+                title="Excluir status"
+                onClick={() => { if (window.confirm(`Excluir o status "${s.nome}"? Os títulos que o usam ficarão sem status.`)) executar(() => apiService.excluirHondaStatus(s.id)) }}
+                className="text-slate-300 hover:text-red-600"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </ModalBase>
+  )
+}
+
+// Engrenagem da linha: Status (seletor) + Situação do título.
+// `titulos`: todas as linhas da API que compartilham a anotação (mesma OS), incluindo a clicada.
+function ModalEditarTitulo({ row, titulos, categoria, anotacao, statusLista, onSalvar, onClose }) {
+  const os = osDoRegistro(row)
+  const [statusId, setStatusId] = useState(anotacao?.status_id ?? null)
+  const [situacao, setSituacao] = useState(anotacao?.situacao ?? '')
+  const [sinistro, setSinistro] = useState(anotacao?.numero_sinistro ?? '')
+  const [salvando, setSalvando] = useState(false)
+  const d = dadosChave(row)
+  const temSinistro = categoria === 'seguradoras'
+
+  const salvar = async () => {
+    setSalvando(true)
+    const campos = { status_id: statusId, situacao: situacao.trim() }
+    if (temSinistro) campos.numero_sinistro = sinistro.trim()
+    const ok = await onSalvar(row, categoria, campos)
+    setSalvando(false)
+    if (ok) onClose()
+  }
+
+  return (
+    <ModalBase titulo={`Editar ${LABEL_CATEGORIA_SINGULAR[categoria] || 'título'}`} onClose={onClose} largura="max-w-4xl">
+      <div className="text-[11px] bg-slate-50 border border-slate-200 rounded-md p-3 mb-4">
+        <div className="flex flex-wrap gap-x-6 gap-y-1">
+          <div><span className="font-bold text-slate-400 uppercase text-[10px]">Empresa: </span><span className="text-slate-700">{d.empresa || '—'}</span></div>
+          {os && <div><span className="font-bold text-slate-400 uppercase text-[10px]">O.S.: </span><span className="text-slate-700">{os}</span></div>}
+        </div>
+        <div className="flex flex-wrap gap-x-6 gap-y-1 mt-1">
+          <div><span className="font-bold text-slate-400 uppercase text-[10px]">Origem: </span><span className="text-slate-700">{valorColuna(row, /^origem$/i, /^origem$/i) || '—'}</span></div>
+          <div><span className="font-bold text-slate-400 uppercase text-[10px]">Portador: </span><span className="text-slate-700">{valorColuna(row, /^portador$/i, /^portador$/i) || '—'}</span></div>
+        </div>
+        <table className="w-full mt-2 text-left">
+          <thead>
+            <tr className="text-[10px] font-bold uppercase text-slate-400 whitespace-nowrap">
+              <th className="pl-2 pr-3 py-1">Documento / Parcela</th>
+              <th className="py-1">Nota Fiscal</th>
+              <th className="py-1 pl-3">Emissão</th>
+              <th className="py-1 text-right">Valor Parcela</th>
+              <th className="py-1 pl-3 text-right">Aberto</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody className="text-slate-700">
+            {titulos.map((t, i) => {
+              const atual = t === row // linha cuja engrenagem foi clicada
+              return (
+                <tr key={i} className={`border-t border-slate-200 ${atual ? 'bg-blue-100/70 font-semibold text-blue-900' : ''}`}>
+                  <td className="pl-2 pr-3 py-1">{valorColuna(t, /^documento.?parcela$/i, /documento.?parcela/i) || dadosChave(t).documento || '—'}</td>
+                  <td className="py-1">{dadosChave(t).nota_fiscal || '—'}</td>
+                  <td className="py-1 pl-3 whitespace-nowrap">{formatarData(valorColuna(t, /^emiss[aã]o$/i, /emiss/i)) || '—'}</td>
+                  <td className="py-1 pl-3 text-right whitespace-nowrap">{formatarMoeda(valorColuna(t, /^valor.?parcela$/i, /valor.?parcela/i)) || '—'}</td>
+                  <td className="py-1 pl-3 text-right whitespace-nowrap">{formatarMoeda(valorColuna(t, /^aberto$/i, /aberto/i)) || '—'}</td>
+                  <td className="py-1 pr-2 text-right">
+                    {atual && <span className="text-[10px] font-bold text-blue-600 bg-white border border-blue-200 rounded-full px-2 py-0.5">◀ selecionada</span>}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+      {os && titulos.length > 1 && (
+        <p className="text-[11px] text-blue-600 bg-blue-50 border border-blue-200 rounded-md px-3 py-2 mb-4">
+          O Status e a Situação valem para todas as notas fiscais desta OS (peças e serviços).
+        </p>
+      )}
+      {temSinistro && (
+        <>
+          <label className="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1 block">Nº do Sinistro</label>
+          <input type="text" value={sinistro} onChange={(e) => setSinistro(e.target.value)} className={`${INPUT_CLS} w-full mb-4 !py-1.5`} placeholder="Número do sinistro..." />
+        </>
+      )}
+      <label className="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1 block">Status</label>
+      <SeletorStatus valor={statusId} statusLista={statusLista} onChange={setStatusId} className="w-full mb-4 !py-1.5" />
+      <label className="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1 block">Situação</label>
+      <textarea value={situacao} onChange={(e) => setSituacao(e.target.value)} rows={4} className={`${INPUT_CLS} w-full mb-4`} placeholder="Descreva a situação..." />
+      <div className="flex justify-end gap-2">
+        <button type="button" onClick={onClose} className="text-xs font-semibold text-slate-500 hover:text-slate-700 px-3 py-1.5">Cancelar</button>
+        <button type="button" onClick={salvar} disabled={salvando} className="bg-red-600 hover:bg-red-700 text-white text-xs font-semibold px-4 py-1.5 rounded-md disabled:opacity-50">
+          {salvando ? 'Salvando...' : 'Salvar'}
+        </button>
+      </div>
+    </ModalBase>
+  )
+}
 
 export default function HondaGarantiasReceber() {
   const cacheInicial = lerCache()
@@ -131,12 +381,61 @@ export default function HondaGarantiasReceber() {
   const [filtroPrazo, setFiltroPrazo] = useState(null) // null (Total) | 'vencido' | 'hoje' | 'aVencer' — card clicado
   const [sortCol, setSortCol] = useState(null)
   const [sortDir, setSortDir] = useState('asc')
-  const [mostrarFiltroAvancado, setMostrarFiltroAvancado] = useState(false)
   const [filtroEmpresa, setFiltroEmpresa] = useState('')
-  const [filtroDocumento, setFiltroDocumento] = useState('')
-  const [filtroParcela, setFiltroParcela] = useState('')
-  const [filtroOrigemDocumento, setFiltroOrigemDocumento] = useState('')
-  const [filtroNotaFiscal, setFiltroNotaFiscal] = useState('')
+  const [filtroBusca, setFiltroBusca] = useState('')
+  const [filtroStatus, setFiltroStatus] = useState('') // '' (todos) | SEM_STATUS | id do status
+  const [paginasVisiveis, setPaginasVisiveis] = useState(1)
+  const [anotacoes, setAnotacoes] = useState({}) // chave do título -> linha de honda_contas_receber_anotacoes
+  const [statusLista, setStatusLista] = useState([])
+  const [mostrarCadastroStatus, setMostrarCadastroStatus] = useState(false)
+  const [tituloEditando, setTituloEditando] = useState(null) // linha da API aberta no editor (engrenagem da linha)
+
+  const carregarAnotacoes = useCallback(async () => {
+    try {
+      const linhas = await apiService.getHondaAnotacoes()
+      setAnotacoes(Object.fromEntries(linhas.map(l => [l.chave, l])))
+    } catch (e) {
+      setErro(`Não foi possível carregar as anotações: ${e.message || e}`)
+    }
+  }, [])
+
+  // Ao entrar na tela, as anotações já vêm do Supabase (sem precisar clicar em Atualizar).
+  useEffect(() => { carregarAnotacoes() }, [carregarAnotacoes])
+
+  const carregarStatus = useCallback(async () => {
+    try {
+      setStatusLista(await apiService.getHondaStatus())
+    } catch (e) {
+      setErro(`Não foi possível carregar os status: ${e.message || e}`)
+    }
+  }, [])
+  useEffect(() => { carregarStatus() }, [carregarStatus])
+
+  const statusPorId = useMemo(() => Object.fromEntries(statusLista.map(s => [s.id, s])), [statusLista])
+
+  // campos: { numero_sinistro?, status_id?, situacao? } — só os informados mudam; o resto da anotação é preservado.
+  const salvarAnotacao = async (row, categoria, campos) => {
+    const chave = chaveDoRegistro(row)
+    const atual = anotacoes[chave] || {}
+    const normalizados = Object.fromEntries(Object.entries(campos).map(([k, v]) => [k, v || null]))
+    const registro = {
+      chave,
+      categoria,
+      ...dadosChave(row),
+      numero_sinistro: atual.numero_sinistro ?? null,
+      status_id: atual.status_id ?? null,
+      situacao: atual.situacao ?? null,
+      ...normalizados,
+    }
+    try {
+      await apiService.salvarHondaAnotacao(registro)
+      setAnotacoes(prev => ({ ...prev, [chave]: { ...prev[chave], ...registro } }))
+      return true
+    } catch (e) {
+      setErro(`Não foi possível salvar a anotação: ${e.message || e}`)
+      return false
+    }
+  }
 
   const handleSort = (col) => {
     if (sortColEfetivo === col) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))
@@ -149,24 +448,49 @@ export default function HondaGarantiasReceber() {
     setLoading(true)
     setErro(null)
     try {
-      const r = await fetch(`${BACKEND_URL}/api/honda/contas-a-receber`)
+      const { data: sessao } = await supabase.auth.getSession()
+      const token = sessao.session?.access_token
+      const r = await fetch(`${BACKEND_URL}/api/honda/contas-a-receber`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      })
       if (!r.ok) {
         const body = await r.json().catch(() => ({}))
-        throw new Error(body.message || `Erro ${r.status} ao consultar a API.`)
+        throw new Error(body.message || body.error || `Erro ${r.status} ao consultar a API.`)
       }
       const data = await r.json()
       const agora = new Date().toISOString()
       setDados(data)
       setUltimaConsulta(agora)
-      localStorage.setItem(CACHE_KEY, JSON.stringify({ dados: data, consultadoEm: agora }))
+      setPaginasVisiveis(1)
+      // Títulos que saíram da API (pagos/baixados) perdem a anotação; os que seguem em aberto mantêm.
+      // Só limpa se a API trouxe títulos — resposta vazia/estranha nunca apaga nada.
+      const emAberto = (extrairLista(data) || []).filter(row => categoriaDoRegistro(row) !== null)
+      if (emAberto.length > 0) {
+        try {
+          await apiService.limparHondaAnotacoesBaixadas(emAberto.map(chaveDoRegistro))
+          await carregarAnotacoes()
+        } catch (e) {
+          setErro(`Consulta atualizada, mas a limpeza das anotações falhou: ${e.message || e}`)
+        }
+      }
+      // Cache é só conveniência: se estourar a cota do localStorage, a consulta continua válida.
+      try {
+        localStorage.setItem(CACHE_KEY, JSON.stringify({ dados: data, consultadoEm: agora }))
+      } catch {
+        try { localStorage.removeItem(CACHE_KEY) } catch { /* ignora */ }
+      }
     } catch (e) {
       setErro(e.message || String(e))
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [carregarAnotacoes])
 
-  const listaCompleta = extrairLista(dados)
+  // Só Garantias, Revisões Gratuitas e Seguradoras — o restante é descartado.
+  const listaCompleta = useMemo(() => {
+    const bruta = extrairLista(dados)
+    return bruta ? bruta.filter(row => categoriaDoRegistro(row) !== null) : null
+  }, [dados])
   const colunas = listaCompleta && listaCompleta.length > 0 ? Object.keys(listaCompleta[0]) : []
 
   const colunaVencimento = colunas.find(c => COLUNA_VENCIMENTO_RE.test(c)) || null
@@ -174,26 +498,58 @@ export default function HondaGarantiasReceber() {
   const colunaValor = colunas.find(c => /aberto/i.test(c)) || colunas.find(c => /valor/i.test(c)) || null
 
   // Colunas do filtro avançado.
-  const colunaEmpresa = colunas.find(c => /empresa/i.test(c)) || null
-  const colunaDocumento = colunas.find(c => /^documento$/i.test(c)) || null
-  const colunaParcela = colunas.find(c => /parcela/i.test(c)) || null
-  const colunaOrigemDocumento = colunas.find(c => /origem/i.test(c)) || null
-  const colunaNotaFiscal = colunas.find(c => /nota.?fiscal/i.test(c)) || null
-  const filtroAvancadoAtivo = !!(filtroEmpresa.trim() || filtroDocumento.trim() || filtroParcela.trim() || filtroOrigemDocumento.trim() || filtroNotaFiscal.trim())
+  // A API devolve a empresa em "NomeFantasia" (não há coluna "Empresa").
+  const colunaEmpresa = colunas.find(c => /^empresa$/i.test(c)) || colunas.find(c => /fantasia|empresa/i.test(c) && !/cod|c[oó]digo|id/i.test(c)) || null
+  // Colunas varridas pelo campo Buscar: nota fiscal, origem do documento, documento e parcela (sem as de valor).
+  const colunasBusca = colunas.filter(c => /nota.?fiscal|origem|documento|parcela/i.test(c) && !/valor/i.test(c))
+  const chaveColunasBusca = colunasBusca.join('|') // dependência estável para o useMemo da lista
+  // Origem, Portador, ValorParcela, DocumentoParcela e Emissão só aparecem dentro da janela de edição (engrenagem).
+  const colunasTabela = colunas.filter(c => !/^(origem|portador|valor.?parcela|documento.?parcela|emiss[aã]o)$/i.test(c))
+
+  // A engrenagem da linha (aba Garantias) fica antes de "Nome Fantasia"; sem essa coluna, vai para o início.
+  const colunaAntesEngrenagem = colunas.find(c => /fantasia/i.test(c)) || colunas[0] || null
+  const filtroAvancadoAtivo = !!(filtroEmpresa.trim() || filtroStatus || filtroBusca.trim())
   const limparFiltroAvancado = () => {
     setFiltroEmpresa('')
-    setFiltroDocumento('')
-    setFiltroParcela('')
-    setFiltroOrigemDocumento('')
-    setFiltroNotaFiscal('')
+    setFiltroStatus('')
+    setFiltroBusca('')
   }
+
+  // Empresas presentes na aba ativa — alimentam o seletor do filtro Empresa.
+  const opcoesEmpresa = useMemo(() => {
+    if (!listaCompleta || !colunaEmpresa) return []
+    const set = new Set()
+    for (const row of listaCompleta) {
+      if (categoriaDoRegistro(row) !== filtroCategoria) continue
+      const v = String(row[colunaEmpresa] ?? '').trim()
+      if (v) set.add(v)
+    }
+    return [...set].sort((a, b) => a.localeCompare(b, 'pt-BR', { numeric: true }))
+  }, [listaCompleta, colunaEmpresa, filtroCategoria])
+
+  // Status presentes nos títulos da aba ativa.
+  const opcoesStatus = useMemo(() => {
+    if (!listaCompleta) return { ids: [], temSem: false }
+    const ids = new Set()
+    let temSem = false
+    for (const row of listaCompleta) {
+      if (categoriaDoRegistro(row) !== filtroCategoria) continue
+      const id = anotacoes[chaveDoRegistro(row)]?.status_id
+      if (id && statusPorId[id]) ids.add(id)
+      else temSem = true
+    }
+    const ordenados = [...ids].sort((a, b) => statusPorId[a].nome.localeCompare(statusPorId[b].nome, 'pt-BR'))
+    return { ids: ordenados, temSem }
+  }, [listaCompleta, filtroCategoria, anotacoes, statusPorId])
+
+  // Ao trocar de aba, a empresa/status escolhidos podem não existir nela.
+  useEffect(() => { setFiltroEmpresa(''); setFiltroStatus('') }, [filtroCategoria])
 
   const categorias = useMemo(() => {
     const grupos = { garantias: { qtd: 0 }, revisoes: { qtd: 0 }, seguradoras: { qtd: 0 } }
     if (!listaCompleta) return grupos
     for (const row of listaCompleta) {
-      const cat = categoriaDoRegistro(row)
-      if (cat) grupos[cat].qtd += 1
+      grupos[categoriaDoRegistro(row)].qtd += 1
     }
     return grupos
   }, [listaCompleta])
@@ -228,24 +584,17 @@ export default function HondaGarantiasReceber() {
     if (!listaCompleta) return listaCompleta
     let filtrada = listaCompleta.filter(row => categoriaDoRegistro(row) === filtroCategoria)
     if (filtroEmpresa.trim() && colunaEmpresa) {
-      const alvo = filtroEmpresa.trim().toLowerCase()
-      filtrada = filtrada.filter(row => String(row[colunaEmpresa] ?? '').toLowerCase().includes(alvo))
+      filtrada = filtrada.filter(row => String(row[colunaEmpresa] ?? '').trim() === filtroEmpresa)
     }
-    if (filtroDocumento.trim() && colunaDocumento) {
-      const alvo = filtroDocumento.trim().toLowerCase()
-      filtrada = filtrada.filter(row => String(row[colunaDocumento] ?? '').toLowerCase().includes(alvo))
+    if (filtroStatus) {
+      filtrada = filtrada.filter(row => {
+        const id = anotacoes[chaveDoRegistro(row)]?.status_id
+        return filtroStatus === SEM_STATUS ? !(id && statusPorId[id]) : id === filtroStatus
+      })
     }
-    if (filtroParcela.trim() && colunaParcela) {
-      const alvo = filtroParcela.trim().toLowerCase()
-      filtrada = filtrada.filter(row => String(row[colunaParcela] ?? '').toLowerCase().includes(alvo))
-    }
-    if (filtroOrigemDocumento.trim() && colunaOrigemDocumento) {
-      const alvo = filtroOrigemDocumento.trim().toLowerCase()
-      filtrada = filtrada.filter(row => String(row[colunaOrigemDocumento] ?? '').toLowerCase().includes(alvo))
-    }
-    if (filtroNotaFiscal.trim() && colunaNotaFiscal) {
-      const alvo = filtroNotaFiscal.trim().toLowerCase()
-      filtrada = filtrada.filter(row => String(row[colunaNotaFiscal] ?? '').toLowerCase().includes(alvo))
+    if (filtroBusca.trim() && colunasBusca.length > 0) {
+      const alvo = filtroBusca.trim().toLowerCase()
+      filtrada = filtrada.filter(row => colunasBusca.some(c => String(row[c] ?? '').toLowerCase().includes(alvo)))
     }
     if (filtroPrazo && colunaVencimento) {
       filtrada = filtrada.filter(row => {
@@ -255,7 +604,10 @@ export default function HondaGarantiasReceber() {
       })
     }
     return filtrada
-  }, [listaCompleta, filtroCategoria, filtroEmpresa, colunaEmpresa, filtroDocumento, colunaDocumento, filtroParcela, colunaParcela, filtroOrigemDocumento, colunaOrigemDocumento, filtroNotaFiscal, colunaNotaFiscal, filtroPrazo, colunaVencimento])
+  }, [listaCompleta, filtroCategoria, filtroEmpresa, colunaEmpresa, filtroStatus, anotacoes, statusPorId, filtroBusca, chaveColunasBusca, filtroPrazo, colunaVencimento])
+
+  // Qualquer mudança de filtro/aba/ordenação volta para a primeira página.
+  useEffect(() => { setPaginasVisiveis(1) }, [lista, sortCol, sortDir])
 
   // Sem ordenação manual escolhida, a tabela já vem ordenada pela coluna de vencimento (mais antigo/vencido primeiro).
   const sortColEfetivo = sortCol || colunaVencimento
@@ -311,6 +663,14 @@ export default function HondaGarantiasReceber() {
             </span>
           )}
           <button
+            type="button"
+            onClick={() => setMostrarCadastroStatus(true)}
+            title="Cadastro de Status"
+            className="p-2 rounded-md border border-slate-200 bg-white text-slate-500 hover:text-slate-800 hover:bg-slate-50 transition-colors"
+          >
+            <Settings className="h-4 w-4" />
+          </button>
+          <button
             onClick={carregar}
             disabled={loading}
             className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold px-4 py-2 rounded-md shadow-sm transition-colors disabled:opacity-50"
@@ -320,6 +680,26 @@ export default function HondaGarantiasReceber() {
           </button>
         </div>
       </div>
+
+      {mostrarCadastroStatus && (
+        <ModalCadastroStatus
+          statusLista={statusLista}
+          onClose={() => setMostrarCadastroStatus(false)}
+          onChanged={carregarStatus}
+          onErro={setErro}
+        />
+      )}
+      {tituloEditando && (
+        <ModalEditarTitulo
+          row={tituloEditando}
+          titulos={(listaCompleta || []).filter(r => chaveDoRegistro(r) === chaveDoRegistro(tituloEditando))}
+          categoria={filtroCategoria}
+          anotacao={anotacoes[chaveDoRegistro(tituloEditando)]}
+          statusLista={statusLista}
+          onSalvar={salvarAnotacao}
+          onClose={() => setTituloEditando(null)}
+        />
+      )}
 
       {erro && (
         <div className="flex items-center gap-3 bg-red-50 border border-red-200 rounded-lg px-4 py-3">
@@ -378,70 +758,38 @@ export default function HondaGarantiasReceber() {
 
       {listaCompleta && listaCompleta.length > 0 && (
         <div className="bg-white rounded-lg border border-slate-200 shadow-sm">
-          <button
-            type="button"
-            onClick={() => setMostrarFiltroAvancado(v => !v)}
-            className="w-full flex items-center justify-between px-4 py-3 text-left"
-          >
-            <span className="flex items-center gap-2 text-xs font-semibold text-slate-600">
-              <Filter className="h-3.5 w-3.5 text-slate-400" />
-              Filtro Avançado
-              {filtroAvancadoAtivo && (
-                <span className="text-[10px] font-bold text-blue-600 bg-blue-50 border border-blue-200 rounded-full px-2 py-0.5">ativo</span>
-              )}
-            </span>
-            {mostrarFiltroAvancado ? <ChevronUp className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
-          </button>
-          {mostrarFiltroAvancado && (
-            <div className="px-4 pb-4 pt-1 border-t border-slate-100">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 mt-3">
+          <div className="px-4 py-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                 <div>
                   <label className="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1 block">Empresa</label>
-                  <input
-                    type="text"
+                  <select
                     value={filtroEmpresa}
                     onChange={(e) => setFiltroEmpresa(e.target.value)}
-                    placeholder="Filtrar..."
-                    className="w-full text-xs border border-slate-200 rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300"
-                  />
+                    className="w-full text-xs border border-slate-200 rounded-md px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300"
+                  >
+                    <option value="">Todas</option>
+                    {opcoesEmpresa.map(e => <option key={e} value={e}>{e}</option>)}
+                  </select>
                 </div>
                 <div>
-                  <label className="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1 block">Documento</label>
-                  <input
-                    type="text"
-                    value={filtroDocumento}
-                    onChange={(e) => setFiltroDocumento(e.target.value)}
-                    placeholder="Filtrar..."
-                    className="w-full text-xs border border-slate-200 rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300"
-                  />
+                  <label className="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1 block">Status</label>
+                  <select
+                    value={filtroStatus}
+                    onChange={(e) => setFiltroStatus(e.target.value)}
+                    className="w-full text-xs border border-slate-200 rounded-md px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300"
+                  >
+                    <option value="">Todos</option>
+                    {opcoesStatus.ids.map(id => <option key={id} value={id}>{statusPorId[id].nome}</option>)}
+                    {opcoesStatus.temSem && <option value={SEM_STATUS}>— Sem status —</option>}
+                  </select>
                 </div>
-                <div>
-                  <label className="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1 block">Parcela</label>
+                <div className="lg:col-span-2">
+                  <label className="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1 block">Buscar</label>
                   <input
                     type="text"
-                    value={filtroParcela}
-                    onChange={(e) => setFiltroParcela(e.target.value)}
-                    placeholder="Filtrar..."
-                    className="w-full text-xs border border-slate-200 rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300"
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1 block">Origem Documento</label>
-                  <input
-                    type="text"
-                    value={filtroOrigemDocumento}
-                    onChange={(e) => setFiltroOrigemDocumento(e.target.value)}
-                    placeholder="Filtrar..."
-                    className="w-full text-xs border border-slate-200 rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300"
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1 block">Nota Fiscal</label>
-                  <input
-                    type="text"
-                    value={filtroNotaFiscal}
-                    onChange={(e) => setFiltroNotaFiscal(e.target.value)}
-                    placeholder="Filtrar..."
+                    value={filtroBusca}
+                    onChange={(e) => setFiltroBusca(e.target.value)}
+                    placeholder="Nota fiscal, origem do documento, documento ou parcela..."
                     className="w-full text-xs border border-slate-200 rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300"
                   />
                 </div>
@@ -452,11 +800,10 @@ export default function HondaGarantiasReceber() {
                   onClick={limparFiltroAvancado}
                   className="mt-3 flex items-center gap-1 text-[10px] font-semibold text-slate-400 hover:text-slate-600"
                 >
-                  <X className="h-3 w-3" /> Limpar filtro avançado
+                  <X className="h-3 w-3" /> Limpar filtros
                 </button>
               )}
-            </div>
-          )}
+          </div>
         </div>
       )}
 
@@ -481,40 +828,85 @@ export default function HondaGarantiasReceber() {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[10px] font-bold uppercase tracking-wider">
-                  {colunas.map(c => (
-                    <th
-                      key={c}
-                      onClick={() => handleSort(c)}
-                      className={`p-3 whitespace-nowrap cursor-pointer select-none hover:bg-slate-100 hover:text-slate-600 transition-colors ${COLUNA_MOEDA_RE.test(c) ? 'text-right' : ''}`}
-                    >
-                      <span className={`flex items-center gap-1 ${COLUNA_MOEDA_RE.test(c) ? 'justify-end' : ''}`}>
-                        {c}
-                        <span className={sortColEfetivo === c ? 'text-blue-500' : 'text-slate-300'}>
-                          {sortColEfetivo === c ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}
+                  {colunasTabela.map(c => (
+                    <React.Fragment key={c}>
+                      {c === colunaAntesEngrenagem && <th className="p-3 bg-blue-50/50" />}
+                      <th
+                        onClick={() => handleSort(c)}
+                        className={`p-3 whitespace-nowrap cursor-pointer select-none hover:bg-slate-100 hover:text-slate-600 transition-colors ${COLUNA_MOEDA_RE.test(c) ? 'text-right' : ''}`}
+                      >
+                        <span className={`flex items-center gap-1 ${COLUNA_MOEDA_RE.test(c) ? 'justify-end' : ''}`}>
+                          {c}
+                          <span className={sortColEfetivo === c ? 'text-blue-500' : 'text-slate-300'}>
+                            {sortColEfetivo === c ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}
+                          </span>
                         </span>
-                      </span>
-                    </th>
+                      </th>
+                    </React.Fragment>
+                  ))}
+                  {(filtroCategoria === 'seguradoras' ? ['Nº Sinistro', 'Status', 'Situação'] : ['Status', 'Situação']).map(l => (
+                    <th key={l} className="p-3 whitespace-nowrap text-blue-500 bg-blue-50/50">{l}</th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
-                {listaOrdenada.map((row, i) => (
-                  <tr key={i} className="hover:bg-slate-50/70 transition-colors">
-                    {colunas.map(c => {
+                {listaOrdenada.slice(0, paginasVisiveis * LINHAS_POR_PAGINA).map((row, i) => (
+                  <tr key={`${chaveDoRegistro(row)}#${i}`} className="hover:bg-slate-50/70 transition-colors">
+                    {colunasTabela.map(c => {
                       const status = COLUNA_VENCIMENTO_RE.test(c) ? statusPrazo(row[c]) : null
                       const corVencimento = status === 'vencido' ? 'bg-red-100 text-red-700 font-semibold'
                         : status === 'hoje' ? 'bg-amber-100 text-amber-700 font-semibold'
                         : ''
                       return (
-                        <td key={c} className={`p-3 whitespace-nowrap ${COLUNA_MOEDA_RE.test(c) ? 'text-right font-semibold text-slate-900' : ''} ${corVencimento}`}>
-                          {formatarCelula(c, row[c])}
-                        </td>
+                        <React.Fragment key={c}>
+                          {c === colunaAntesEngrenagem && (
+                            <td className="p-2 bg-blue-50/30">
+                              <button type="button" title="Editar status e situação" onClick={() => setTituloEditando(row)} className="p-1.5 rounded-md text-slate-400 hover:text-red-600 hover:bg-white">
+                                <Settings className="h-4 w-4" />
+                              </button>
+                            </td>
+                          )}
+                          <td className={`p-3 whitespace-nowrap ${COLUNA_MOEDA_RE.test(c) ? 'text-right font-semibold text-slate-900' : ''} ${corVencimento}`}>
+                            {formatarCelula(c, row[c])}
+                          </td>
+                        </React.Fragment>
                       )
                     })}
+                    {(() => {
+                      const an = anotacoes[chaveDoRegistro(row)]
+                      return (
+                        <>
+                          {filtroCategoria === 'seguradoras' && (
+                            <td className="p-3 whitespace-nowrap bg-blue-50/30">{an?.numero_sinistro || '—'}</td>
+                          )}
+                          <td className="p-3 whitespace-nowrap bg-blue-50/30"><StatusBadge status={statusPorId[an?.status_id]} /></td>
+                          <td className="p-3 bg-blue-50/30 min-w-[14rem] max-w-[20rem] whitespace-pre-wrap break-words">{an?.situacao || '—'}</td>
+                        </>
+                      )
+                    })()}
                   </tr>
                 ))}
               </tbody>
             </table>
+            {listaOrdenada.length > paginasVisiveis * LINHAS_POR_PAGINA && (
+              <div className="flex items-center justify-center gap-3 p-3 border-t border-slate-100 text-xs text-slate-500">
+                Exibindo {paginasVisiveis * LINHAS_POR_PAGINA} de {listaOrdenada.length}
+                <button
+                  type="button"
+                  onClick={() => setPaginasVisiveis(p => p + 1)}
+                  className="font-semibold text-blue-600 hover:text-blue-700"
+                >
+                  Mostrar mais {LINHAS_POR_PAGINA}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPaginasVisiveis(Math.ceil(listaOrdenada.length / LINHAS_POR_PAGINA))}
+                  className="font-semibold text-slate-400 hover:text-slate-600"
+                >
+                  Mostrar todos
+                </button>
+              </div>
+            )}
           </div>
         )
       ) : (
@@ -530,11 +922,11 @@ export default function HondaGarantiasReceber() {
           {listaCompleta && (
             <>
               {' '}de {listaCompleta.length} · filtrado por{' '}
-              <strong>{filtroCategoria === 'garantias' ? 'Garantias' : filtroCategoria === 'revisoes' ? 'Revisões Gratuitas' : 'Seguradoras'}</strong>
+              <strong>{LABEL_CATEGORIA[filtroCategoria]}</strong>
               {filtroPrazo && ' + '}
               {filtroPrazo && <strong>{filtroPrazo === 'vencido' ? 'Vencido' : filtroPrazo === 'hoje' ? 'Vence Hoje' : 'A Vencer'}</strong>}
               {filtroAvancadoAtivo && ' + '}
-              {filtroAvancadoAtivo && <strong>Filtro Avançado</strong>}
+              {filtroAvancadoAtivo && <strong>Filtros</strong>}
             </>
           )}
           {' '}— período de 01/01/2020 até a data da última consulta.

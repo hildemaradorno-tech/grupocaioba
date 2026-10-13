@@ -168,7 +168,8 @@ export default function KpiAuditoria() {
   const [empresas, setEmpresas] = useSessionState('kpi_auditoria_empresas', [])
   const empKey = empresas.length ? empresas.join(',') : 'todas'
   const toggleEmpresa = (k) => setEmpresas(prev => prev.includes(k) ? prev.filter(x => x !== k) : [...prev, k])
-  const [indicadorId, setIndicadorId] = useSessionState('kpi_auditoria_indicador_v2', null)
+  // Não guarda no navegador — ao entrar na tela, sempre vem sem indicador selecionado.
+  const [indicadorId, setIndicadorId] = useState(null)
 
   // Inicializa do store para exibir dados imediatamente ao voltar à página
   const initKey    = `${year}:todas:${indicadorId}`

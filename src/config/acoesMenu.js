@@ -378,6 +378,32 @@ export const ACOES_POR_MENU = [
       { value: 'excluir', label: 'Excluir' },
     ],
   },
+  // Campanha Pós-Venda (BI) — botões de cada aba.
+  {
+    menuPath: 'bi/campanha/regras',
+    acoes: [
+      { value: 'editar',              label: 'Editar e Salvar Regras (Regras-chave, Bônus-alvo, Faixas)' },
+      { value: 'zerar',               label: 'Zerar Valores (só a empresa aberta)' },
+      { value: 'zerar_todas',         label: 'Zerar Valores de Todas as Empresas' },
+      { value: 'copiar_mes_anterior', label: 'Copiar do Mês Anterior (só a empresa aberta)' },
+      { value: 'copiar_todas',        label: 'Copiar Valores para Todas as Empresas' },
+    ],
+  },
+  {
+    menuPath: 'bi/campanha/apuracao',
+    acoes: [
+      { value: 'atualizar_numeros', label: 'Atualizar Números (sincroniza Matriz KPIs + Campanha)' },
+      { value: 'ver_matriz',        label: 'Ver Bloco 3 da Matriz KPIs (pop-up)' },
+    ],
+  },
+  {
+    menuPath: 'bi/campanha/resultado',
+    acoes: [
+      { value: 'atualizar_numeros', label: 'Atualizar Números (sincroniza Matriz KPIs + Campanha)' },
+      { value: 'ver_matriz',        label: 'Ver Bloco 3 da Matriz KPIs (pop-up)' },
+      { value: 'ver_calculo',       label: 'Ver Cálculo do Bônus de cada Semana (ⓘ)' },
+    ],
+  },
   {
     menuPath: 'sincronizacao-dados',
     acoes: [
@@ -403,6 +429,24 @@ export const ACOES_POR_MENU = [
     acoes: [
       { value: 'editar', label: 'Incluir / Editar' },
       { value: 'excluir', label: 'Excluir' },
+    ],
+  },
+  {
+    menuPath: 'kpi/resultados',
+    acoes: [
+      { value: 'editar', label: 'Atualizar Dados (botão Sincronizar da Matriz)' },
+    ],
+  },
+  {
+    menuPath: 'kpi/bloco3-servicos',
+    acoes: [
+      { value: 'editar', label: 'Editar Peso e Meta Manual' },
+    ],
+  },
+  {
+    menuPath: 'kpi/bloco3-pecas',
+    acoes: [
+      { value: 'editar', label: 'Editar Peso' },
     ],
   },
 ]

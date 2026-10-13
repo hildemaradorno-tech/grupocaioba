@@ -22,7 +22,7 @@ function hojeISO() {
 }
 
 // Filtros do relatório "Garantias a Receber" (Honda). Data inicial é fixa (2020-01-01);
-// data final é sempre a data atual no momento da chamada (1º acesso da tela e clique em "Atualizar").
+// data final é sempre a data atual no momento da chamada (clique em "Atualizar" na tela).
 function montarFiltrosGarantiasReceber() {
   return [
     'DocumentoCancelado=False',

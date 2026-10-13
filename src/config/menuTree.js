@@ -169,7 +169,6 @@ export const MENU_TREE = [
         key: '_auditoria.cadastros',
         label: 'Cadastros de Auditoria',
         children: [
-          { key: 'auditoria/responsaveis', label: 'Responsáveis' },
           { key: 'auditoria/situacoes', label: 'Situações' },
           { key: 'auditoria-os-aberto', label: 'Auditoria O.S. Aberta' },
         ],
@@ -254,15 +253,32 @@ export const MENU_TREE = [
         children: [
           { key: 'kpi/resultados', label: 'Resultados' },
           { key: 'kpi/bloco1-corporativo', label: 'Bloco 1 — Corporativo' },
-          { key: 'kpi/bloco2-operacional', label: 'Bloco 2 — Operacional' },
+          { key: 'kpi/bloco2-operacional', label: 'Bloco 2 — Departamental' },
           { key: 'kpi/bloco3-servicos', label: 'Bloco 3 — Serviços' },
           { key: 'kpi/bloco3-pecas', label: 'Bloco 3 — Peças' },
           { key: 'kpi/orcamento-backlog', label: 'Orçamento & Backlog' },
-          { key: 'kpi/auditoria', label: 'Auditoria de Fontes' },
+          { key: 'kpi/auditoria', label: 'Fontes' },
         ],
       },
-      // Logo abaixo da Matriz KPIs (a campanha usa os blocos da Matriz).
-      { key: 'bi/campanha', label: 'BI — Campanha Pós-Venda' },
+      // Logo abaixo da Matriz KPIs (a campanha usa os blocos da Matriz). Mesmo padrão da Matriz:
+      // o grupo navega direto pra página única; cada aba e cada empresa é uma permissão própria
+      // (ver CAMPANHA_ABAS / PERM_EMPRESA em BiCampanha.jsx) e os botões são ações em acoesMenu.js.
+      // Precisa de pelo menos 1 aba E 1 empresa para usar a tela.
+      {
+        key: '_bi.campanha',
+        label: 'Campanha Pós-Venda - DAF',
+        navTo: 'bi/campanha',
+        children: [
+          { key: 'bi/campanha/regras', label: 'Aba Regras' },
+          { key: 'bi/campanha/apuracao', label: 'Aba Apuração' },
+          { key: 'bi/campanha/resultado', label: 'Aba Resultado' },
+          { key: 'bi/campanha/empresa-trucks', label: 'Empresa CAIOBÁ TRUCKS (Gerente Geral)' },
+          { key: 'bi/campanha/empresa-cg', label: 'Empresa Campo Grande' },
+          { key: 'bi/campanha/empresa-dou', label: 'Empresa Dourados' },
+          { key: 'bi/campanha/empresa-tl', label: 'Empresa Três Lagoas' },
+          { key: 'bi/campanha/empresa-cs', label: 'Empresa Chapadão do Sul' },
+        ],
+      },
     ],
   },
   {

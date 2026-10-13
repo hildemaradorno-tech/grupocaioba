@@ -503,10 +503,9 @@ export default function SidebarLayout() {
       {(canView('truckpag/titulos') || canView('truckpag/conciliacao')) && (
         <FlyItem to={canView('truckpag/conciliacao') ? "/truckpag/conciliacao" : "/truckpag/titulos"} icon={Truck} onClose={closeFlyout}>TruckPag a Receber</FlyItem>
       )}
-            {(canView('auditoria/responsaveis') || canView('auditoria/situacoes') || canView('auditoria-os-aberto')) && (
+            {(canView('auditoria/situacoes') || canView('auditoria-os-aberto')) && (
               <FlyGroup label="Cadastros de Auditoria" />
             )}
-            {canView('auditoria/responsaveis') && <FlyItem to="/auditoria/responsaveis" icon={Users} onClose={closeFlyout}>Responsáveis</FlyItem>}
             {canView('auditoria/situacoes') && <FlyItem to="/auditoria/situacoes" icon={Tag} onClose={closeFlyout}>Situações</FlyItem>}
             {canView('auditoria-os-aberto') && <FlyItem to="/auditoria-os-aberto" icon={ClipboardList} onClose={closeFlyout}>Auditoria O.S. Aberta</FlyItem>}
             {canView('garantia/tipo-titulo') && <FlyGroup label="Cadastros de Garantia" />}
@@ -575,7 +574,7 @@ export default function SidebarLayout() {
               </>
             )}
             {/* Campanha Pós-Venda logo abaixo da Matriz KPIs (usa os blocos da Matriz). */}
-            {canView('bi/campanha') && <FlyItem to="/bi/campanha" icon={Trophy} onClose={closeFlyout}>Campanha Pós-Venda</FlyItem>}
+            {['bi/campanha/regras', 'bi/campanha/apuracao', 'bi/campanha/resultado'].some(canView) && <FlyItem to="/bi/campanha" icon={Trophy} onClose={closeFlyout}>Campanha Pós-Venda - DAF</FlyItem>}
           </>
         )
 

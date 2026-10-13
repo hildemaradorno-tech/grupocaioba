@@ -66,7 +66,6 @@ import NfeSolicitacaoDetalhe from './pages/bpm/NfeSolicitacaoDetalhe'
 import TruckPagTitulos from './pages/truckpag/TruckPagTitulos'
 import TruckPagConciliacao from './pages/truckpag/TruckPagConciliacao'
 import TruckPagRepasses from './pages/truckpag/TruckPagRepasses'
-import AuditoriaResponsaveis from './pages/auditoria/AuditoriaResponsaveis'
 import AuditoriaSituacoes from './pages/auditoria/AuditoriaSituacoes'
 import TipoTituloGarantia from './pages/garantia/TipoTituloGarantia'
 import ProjetosDashboard from './pages/projetos/ProjetosDashboard'
@@ -103,7 +102,7 @@ import BiGarantiasDaf from './pages/bi/BiGarantiasDaf'
 import BiProjetos from './pages/bi/BiProjetos'
 import BiPossibilidades from './pages/bi/BiPossibilidades'
 import MedidasBi from './pages/bi/MedidasBi'
-import BiCampanha from './pages/bi/BiCampanha'
+import BiCampanha, { CAMPANHA_ABAS_PERMS } from './pages/bi/BiCampanha'
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth()
@@ -247,7 +246,6 @@ export default function App() {
           { path: '/truckpag/titulos', element: <TruckPagTitulos />, menuPath: 'truckpag/titulos' },
           { path: '/truckpag/conciliacao', element: <TruckPagConciliacao />, menuPath: 'truckpag/conciliacao' },
           { path: '/truckpag/repasses', element: <TruckPagRepasses />, menuPath: 'truckpag/repasses' },
-          { path: '/auditoria/responsaveis', element: <AuditoriaResponsaveis />, menuPath: 'auditoria/responsaveis' },
           { path: '/auditoria/situacoes', element: <AuditoriaSituacoes />, menuPath: 'auditoria/situacoes' },
           { path: '/garantia/tipo-titulo', element: <TipoTituloGarantia />, menuPath: 'garantia/tipo-titulo' },
           { path: '/garantias-daf-andamento', element: <GarantiasDafDashboard key="andamento" variante="andamento" />, menuPath: '/garantias-daf-andamento' },
@@ -292,7 +290,7 @@ export default function App() {
           { path: '/bi/possibilidades', element: <BiPossibilidades />, menuPath: 'bi/possibilidades' },
           { path: '/bi/fontes', element: <Navigate to="/fontes-calculo" replace /> },
           { path: '/bi/medidas', element: <MedidasBi />, menuPath: 'bi/medidas' },
-          { path: '/bi/campanha', element: <BiCampanha />, menuPath: 'bi/campanha' },
+          { path: '/bi/campanha', element: <BiCampanha />, menuPath: CAMPANHA_ABAS_PERMS },
         ].map(route => (
           <Route
             key={route.path}

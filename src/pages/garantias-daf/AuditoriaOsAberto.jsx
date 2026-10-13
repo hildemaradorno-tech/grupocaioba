@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react'
-import { ClipboardList, Download, ChevronDown, Save, AlertTriangle, Building2, ShieldAlert, Trash2, Calendar, User, Banknote, Search, XCircle, X } from 'lucide-react'
+import { ClipboardList, Download, ChevronDown, Save, AlertTriangle, Building2, ShieldAlert, Trash2, Calendar, User, Banknote, Search, XCircle, X, Clock, ClipboardCheck, FileText } from 'lucide-react'
 import { apiService } from '../../services/api'
 import { useAuth } from '../../context/AuthContext'
 
@@ -15,6 +15,12 @@ const primeiroUltimoNome = (nome) => {
 const diasOficina = (criacao, auditoria) => {
   if (!criacao || !auditoria) return null
   return Math.floor((new Date(auditoria + 'T12:00:00') - new Date(criacao + 'T12:00:00')) / 86400000)
+}
+
+// Pendente ("P" na coluna Auto): 30+ dias na oficina ou Na Oficina = Não
+const isPendente = (row) => {
+  const d = diasOficina(row.data_criacao, row.data_auditoria)
+  return (d !== null && d >= 30) || row.na_oficina === false
 }
 
 export default function AuditoriaOsAberto() {
@@ -53,16 +59,38 @@ export default function AuditoriaOsAberto() {
   // ── Busca por Nº OS / Placa / Chassi ──
   const [buscaOs, setBuscaOs] = useState('')
 
+  // ── Modo de tela: conferência (checagem física no pátio) ou relatório (visão completa) ──
+  const [modo, setModo] = useState('conferencia') // conferencia | relatorio
+
+  // ── Data de atualização do arquivo ROF001_OSABERTA (fonte da importação) ──
+  const [arquivoAtualizadoEm, setArquivoAtualizadoEm] = useState(null)
+  const [arquivoInfoStatus, setArquivoInfoStatus] = useState('carregando') // carregando | ok | erro
+
+  useEffect(() => {
+    fetch(`${BACKEND}/api/garantias/sharepoint/aberta/info`)
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(d => { setArquivoAtualizadoEm(d.lastModified); setArquivoInfoStatus('ok') })
+      .catch(() => setArquivoInfoStatus('erro'))
+  }, [BACKEND])
+
   const loadApoio = useCallback(async () => {
-    const [emps, resp, sit, auds] = await Promise.all([
+    const [emps, funcs, cargos, sit, auds] = await Promise.all([
       apiService.getEmpresas(),
-      apiService.getAuditoriaResponsaveis(),
+      apiService.getFuncionarios(),
+      apiService.getCargos(),
       apiService.getAuditoriaSituacoes(),
       apiService.getAuditorias(),
     ])
     const empsFiltradas = isAdmin ? emps : emps.filter(e => empresasPermitidas.has(e.id))
     setEmpresas(empsFiltradas)
-    const respAtivos = resp.filter(r => r.ativo)
+    // Responsável pela auditoria = funcionários ativos cujo cargo está no agrupamento "Gerentes" ou "Gerente Geral"
+    const AGRUPAMENTOS_RESPONSAVEL = ['gerentes', 'gerente geral']
+    const cargosGerentes = new Set(
+      cargos.filter(c => AGRUPAMENTOS_RESPONSAVEL.includes((c.nome_agrupamento_cargo || '').trim().toLowerCase())).map(c => c.id)
+    )
+    const respAtivos = funcs
+      .filter(f => f.ativo && cargosGerentes.has(f.cargo_id))
+      .map(f => ({ id: f.id, nome: f.nome_funcionario, empresa_id: f.empresa_id, cargo_nome: f.cargo_nome }))
     setResponsaveis(respAtivos)
     setSituacoes(sit.filter(s => s.ativo))
     setAuditorias(auds)
@@ -70,6 +98,12 @@ export default function AuditoriaOsAberto() {
   }, [isAdmin, empresasPermitidas])
 
   useEffect(() => { loadApoio() }, [loadApoio])
+
+  // Gerentes da empresa selecionada (opções de Responsável na importação)
+  const responsaveisEmpresa = useMemo(
+    () => responsaveis.filter(r => r.empresa_id === filtroEmpresaId),
+    [responsaveis, filtroEmpresaId]
+  )
 
   // Auditorias filtradas pela empresa selecionada
   const auditoriasFiltradas = useMemo(() => {
@@ -118,6 +152,7 @@ export default function AuditoriaOsAberto() {
     try {
       const r = await fetch(`${BACKEND}/api/garantias/sharepoint/aberta`)
       const data = r.ok ? await r.json() : { rows: [] }
+      if (data.lastModified) { setArquivoAtualizadoEm(data.lastModified); setArquivoInfoStatus('ok') }
       const spTodos = Array.isArray(data) ? data : (data.rows ?? [])
       if (!Array.isArray(spTodos)) { setErro('Resposta inválida do servidor.'); return }
 
@@ -163,7 +198,13 @@ export default function AuditoriaOsAberto() {
         responsavel_nome: respSel?.nome || null,
         na_oficina:       false,
       }))
-      await apiService.createAuditoriaOsLote(linhas)
+      try {
+        await apiService.createAuditoriaOsLote(linhas)
+      } catch (e) {
+        // Desfaz o cabeçalho para não deixar auditoria vazia
+        await apiService.deleteAuditoria(auditoria.id).catch(() => {})
+        throw e
+      }
       await loadApoio()
       setAuditoriaId(auditoria.id)
     } catch (e) { setErro(e.message || String(e)) }
@@ -219,6 +260,27 @@ export default function AuditoriaOsAberto() {
     }
   }
 
+  // Seletor Na Oficina (Sim/Não) — usado nos dois modos de tela
+  const renderNaOficina = (row) => (
+    <select
+      value={row.na_oficina === true ? 'sim' : row.na_oficina === false ? 'nao' : ''}
+      onChange={e => {
+        const v = e.target.value === 'sim' ? true : e.target.value === 'nao' ? false : null
+        handleMudarNaOficina(row, v)
+      }}
+      className={`text-xs p-1 border rounded-md outline-none focus:outline-none focus:ring-0 w-20 font-semibold ${
+        row.na_oficina === true ? 'bg-green-100 border-green-300 text-green-700'
+        : row.na_oficina === false ? 'bg-red-100 border-red-300 text-red-700'
+        : 'bg-white border-slate-200 text-slate-700'
+      }`}
+    >
+      {/* Opções com fundo branco próprio — senão herdam a cor do select e se confundem */}
+      <option value="" className="bg-white text-slate-500">—</option>
+      <option value="sim" className="bg-white text-green-700 font-semibold">Sim</option>
+      <option value="nao" className="bg-white text-red-700 font-semibold">Não</option>
+    </select>
+  )
+
   const handleExcluirAuditoria = async () => {
     setExcluindo(true); setErro(null)
     try {
@@ -234,15 +296,21 @@ export default function AuditoriaOsAberto() {
   const auditoriaAtual = useMemo(() => auditorias.find(a => a.id === auditoriaId), [auditorias, auditoriaId])
   const totalValorOS = useMemo(() => rows.reduce((acc, r) => acc + (Number(r.total) || 0), 0), [rows])
 
+  // Modo Relatório mostra só as OS pendentes; Modo Conferência mostra todas
+  const rowsDoModo = useMemo(
+    () => modo === 'relatorio' ? rows.filter(isPendente) : rows,
+    [rows, modo]
+  )
+
   const rowsFiltradas = useMemo(() => {
     const q = buscaOs.trim().toLowerCase()
-    if (!q) return rows
-    return rows.filter(r =>
+    if (!q) return rowsDoModo
+    return rowsDoModo.filter(r =>
       String(r.os_numero || '').toLowerCase().includes(q) ||
       String(r.veiculo_placa || '').toLowerCase().includes(q) ||
       String(r.veiculo_chassi || '').toLowerCase().includes(q)
     )
-  }, [rows, buscaOs])
+  }, [rowsDoModo, buscaOs])
 
   return (
     <div className="p-6 space-y-5 max-w-screen-2xl">
@@ -258,7 +326,19 @@ export default function AuditoriaOsAberto() {
             Selecione a empresa, importe as OS do SharePoint e acompanhe por auditoria.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
+          <div
+            className="flex items-center gap-1.5 text-[11px] text-slate-500"
+            title="Data de atualização do arquivo ROF001_OSABERTA no SharePoint, usado na importação"
+          >
+            <Clock className="h-3.5 w-3.5 text-slate-400" />
+            <span>Arquivo atualizado em</span>
+            <strong className={arquivoInfoStatus === 'erro' ? 'text-red-600' : 'text-slate-700'}>
+              {arquivoInfoStatus === 'carregando' ? '...'
+                : arquivoInfoStatus === 'erro' || !arquivoAtualizadoEm ? 'indisponível'
+                : new Date(arquivoAtualizadoEm).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+            </strong>
+          </div>
           <button
             onClick={handleAbrirImport}
             disabled={importando || !filtroEmpresaId}
@@ -282,11 +362,11 @@ export default function AuditoriaOsAberto() {
 
       {/* FILTROS — Empresa + Auditoria */}
       <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-4">
-        <div className="flex items-end gap-4 flex-wrap">
+        <div className="flex items-start gap-4 flex-wrap">
 
           {/* Empresa */}
           <div className="flex flex-col gap-1 min-w-[260px]">
-            <label className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1">
+            <label className="h-4 text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1">
               <Building2 className="h-3 w-3" /> Empresa
             </label>
             <div className="relative">
@@ -306,7 +386,7 @@ export default function AuditoriaOsAberto() {
 
           {/* Auditoria */}
           <div className="flex flex-col gap-1 min-w-[300px]">
-            <label className="text-[10px] font-bold text-slate-400 uppercase">Data da Auditoria</label>
+            <label className="h-4 text-[10px] font-bold text-slate-400 uppercase flex items-center">Data da Auditoria</label>
             <div className="relative">
               <select
                 value={auditoriaId}
@@ -330,7 +410,7 @@ export default function AuditoriaOsAberto() {
 
           {/* Info auditoria selecionada + botão excluir */}
           {auditoriaAtual && (
-            <div className="flex items-center gap-4 text-xs text-slate-500 pb-0.5 flex-wrap">
+            <div className="flex items-center gap-4 text-xs text-slate-500 self-end pb-2 flex-wrap">
               <span className="flex items-center gap-1">
                 <Calendar className="h-3.5 w-3.5 text-slate-400" />
                 <strong className="text-slate-700">{fmtDate(auditoriaAtual.data_auditoria)}</strong>
@@ -363,8 +443,8 @@ export default function AuditoriaOsAberto() {
 
       {/* BUSCA */}
       {auditoriaId && rows.length > 0 && (
-        <div className="bg-white rounded-lg border border-slate-200 shadow-sm px-4 py-3">
-          <div className="relative max-w-md">
+        <div className="bg-white rounded-lg border border-slate-200 shadow-sm px-4 py-3 flex items-center justify-between gap-4 flex-wrap">
+          <div className="relative flex-1 max-w-md">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
             <input
               type="text"
@@ -383,6 +463,25 @@ export default function AuditoriaOsAberto() {
               </button>
             )}
           </div>
+
+          {/* Modo de tela */}
+          <div className="flex items-center bg-slate-100 rounded-md p-0.5">
+            {[
+              { id: 'conferencia', label: 'Modo Conferência', icon: ClipboardCheck },
+              { id: 'relatorio', label: 'Modo Relatório', icon: FileText },
+            ].map(m => (
+              <button
+                key={m.id}
+                onClick={() => setModo(m.id)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold transition-colors ${
+                  modo === m.id ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                <m.icon className="h-3.5 w-3.5" />
+                {m.label}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
@@ -393,10 +492,37 @@ export default function AuditoriaOsAberto() {
             <div className="p-10 text-center text-xs text-slate-400">Carregando OS da auditoria...</div>
           ) : rows.length === 0 ? (
             <div className="p-10 text-center text-xs text-slate-400">Nenhuma OS nesta auditoria.</div>
+          ) : rowsDoModo.length === 0 ? (
+            <div className="p-10 text-center text-xs text-slate-400">Nenhuma OS pendente nesta auditoria.</div>
           ) : rowsFiltradas.length === 0 ? (
             <div className="p-10 text-center text-xs text-slate-400">
               Nenhuma OS encontrada para "{buscaOs.trim()}".
             </div>
+          ) : modo === 'conferencia' ? (
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[10px] font-bold uppercase tracking-wider">
+                  <th className="p-3 whitespace-nowrap">Nº OS</th>
+                  <th className="p-3 whitespace-nowrap">Placa</th>
+                  <th className="p-3 whitespace-nowrap">Chassi</th>
+                  <th className="p-3 whitespace-nowrap min-w-[280px]">Proprietário</th>
+                  <th className="p-3 whitespace-nowrap min-w-[160px]">Modelo</th>
+                  <th className="p-3 whitespace-nowrap text-center w-28">Na Oficina</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
+                {rowsFiltradas.map(row => (
+                  <tr key={row.id} className="transition-colors hover:bg-slate-50/70">
+                    <td className="p-3 font-mono font-bold text-slate-900 whitespace-nowrap">{row.os_numero || '—'}</td>
+                    <td className="p-3 font-mono text-slate-700 whitespace-nowrap font-semibold">{row.veiculo_placa || '—'}</td>
+                    <td className="p-3 font-mono text-slate-500 whitespace-nowrap">{row.veiculo_chassi || '—'}</td>
+                    <td className="p-3 text-slate-700">{row.proprietario_veiculo || '—'}</td>
+                    <td className="p-3 text-slate-600">{row.veiculo_modelo || '—'}</td>
+                    <td className="p-3 text-center">{renderNaOficina(row)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           ) : (
             <table className="w-full text-left border-collapse">
               <thead>
@@ -427,9 +553,7 @@ export default function AuditoriaOsAberto() {
                       {/* Auto — P (vermelho) quando dias >= 30 ou Na Oficina = Não */}
                       <td className="p-3 text-center">
                         {(() => {
-                          const d = diasOficina(row.data_criacao, row.data_auditoria)
-                          const isPen = (d !== null && d >= 30) || row.na_oficina === false
-                          return isPen
+                          return isPendente(row)
                             ? <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700">P</span>
                             : <span className="text-slate-300 text-[10px]">—</span>
                         })()}
@@ -449,22 +573,7 @@ export default function AuditoriaOsAberto() {
 
                       {/* Na Oficina */}
                       <td className="p-3 text-center" onClick={e => e.stopPropagation()}>
-                        <select
-                          value={row.na_oficina === true ? 'sim' : row.na_oficina === false ? 'nao' : ''}
-                          onChange={e => {
-                            const v = e.target.value === 'sim' ? true : e.target.value === 'nao' ? false : null
-                            handleMudarNaOficina(row, v)
-                          }}
-                          className={`text-xs p-1 border rounded-md focus:ring-2 focus:ring-indigo-500/20 w-20 font-semibold ${
-                            row.na_oficina === true ? 'bg-green-100 border-green-300 text-green-700'
-                            : row.na_oficina === false ? 'bg-red-100 border-red-300 text-red-700'
-                            : 'bg-white border-slate-200 text-slate-700'
-                          }`}
-                        >
-                          <option value="">—</option>
-                          <option value="sim">Sim</option>
-                          <option value="nao">Não</option>
-                        </select>
+                        {renderNaOficina(row)}
                       </td>
 
                       <td className="p-3 whitespace-nowrap text-slate-600">{primeiroUltimoNome(row.consultor_nome)}</td>
@@ -491,7 +600,9 @@ export default function AuditoriaOsAberto() {
 
       {auditoriaId && !loading && (
         <p className="text-[10px] text-slate-400">
-          {rowsFiltradas.length} de {rows.length} OS — auditoria de {auditoriaAtual ? fmtDate(auditoriaAtual.data_auditoria) : ''}
+          {modo === 'relatorio'
+            ? `${rowsFiltradas.length} OS pendentes de ${rows.length}`
+            : `${rowsFiltradas.length} de ${rows.length} OS`} — auditoria de {auditoriaAtual ? fmtDate(auditoriaAtual.data_auditoria) : ''}
           {auditoriaAtual?.empresa_nome ? ` · ${auditoriaAtual.empresa_nome}` : ''}
         </p>
       )}
@@ -576,14 +687,16 @@ export default function AuditoriaOsAberto() {
                     className="w-full text-xs p-2.5 pr-8 border border-slate-200 rounded-md focus:ring-2 focus:ring-indigo-500/20 bg-white appearance-none"
                   >
                     <option value="">— Sem responsável definido —</option>
-                    {responsaveis.map(r => (
-                      <option key={r.id} value={r.id}>{r.nome}</option>
+                    {responsaveisEmpresa.map(r => (
+                      <option key={r.id} value={r.id}>{r.nome}{r.cargo_nome ? ` — ${r.cargo_nome}` : ''}</option>
                     ))}
                   </select>
                   <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
                 </div>
                 <p className="text-[10px] text-slate-400">
-                  O responsável será pré-preenchido em todas as OS importadas. Pode ser alterado individualmente depois.
+                  {responsaveisEmpresa.length === 0
+                    ? 'Nenhum funcionário ativo dos agrupamentos Gerentes / Gerente Geral nesta empresa (verifique em Funcionários / Cargos).'
+                    : 'Funcionários ativos dos agrupamentos Gerentes e Gerente Geral desta empresa. O responsável será gravado em todas as OS importadas.'}
                 </p>
               </div>
             </div>

@@ -7,6 +7,7 @@ import { getPeriodData, getPeriodLabel, M_PERIODS, M_LABELS } from '../../utils/
 import { useKpiData } from '../../hooks/useKpiData'
 import { fetchBloco3Servicos, salvarPeso, salvarMetaManual, fetchConsultoresServicos, fetchMecanicos } from '../../services/kpiService'
 import { useKpiYear } from '../../context/KpiYearContext'
+import { useAuth } from '../../context/AuthContext'
 import { PosVendaQuadros } from './KpiBloco3PosVenda'
 
 const BLOCO_PESOS = 'bloco3-servicos'
@@ -596,6 +597,8 @@ export default function KpiBloco3Servicos() {
   const periodState = usePeriodSelector('kpi-matriz')
   const { activePeriods } = periodState
   const { year } = useKpiYear()
+  const { hasActionOrDefault } = useAuth()
+  const canEdit = hasActionOrDefault('kpi/bloco3-servicos', 'editar')
 
   return (
     <div className="p-6 space-y-5">
@@ -609,8 +612,8 @@ export default function KpiBloco3Servicos() {
 
       <PeriodSelector state={periodState} inlineTrimestral hideLegend modes={MODES_COM_SEMANAL} />
 
-      <PosVendaQuadros year={year} activePeriods={activePeriods} mesTotalKey={periodState.mesTotalKey} />
-      <ServicosQuadros year={year} activePeriods={activePeriods} mesTotalKey={periodState.mesTotalKey} />
+      <PosVendaQuadros year={year} activePeriods={activePeriods} mesTotalKey={periodState.mesTotalKey} somenteLeitura={!canEdit} />
+      <ServicosQuadros year={year} activePeriods={activePeriods} mesTotalKey={periodState.mesTotalKey} somenteLeitura={!canEdit} />
     </div>
   )
 }
