@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
-import { Plus, Edit2, Trash2, CheckCircle2, RotateCcw, Clock, User, Eye, ChevronRight, ChevronDown, Users, Settings, Filter } from 'lucide-react'
+import { Plus, Edit2, Trash2, CheckCircle2, RotateCcw, Clock, User, Eye, ChevronRight, ChevronDown, Users, Settings, Building2, Layers, CircleDot, Tag, ShieldAlert, CalendarClock } from 'lucide-react'
 import { useSessionState } from '../../hooks/useSessionState'
 import { useAuth } from '../../context/AuthContext'
 import { apiService } from '../../services/api'
@@ -14,7 +14,7 @@ import { STATUS_PLANO_MAP, Badge, fmtData, fmtMoeda, PercentualBar, compararPorC
 
 const PROXIMO_STATUS = { pendente: 'em_andamento', em_andamento: 'concluido', concluido: 'validado_auditoria' }
 const ANTERIOR_STATUS = { em_andamento: 'pendente', concluido: 'em_andamento', validado_auditoria: 'concluido' }
-const FILTROS_VAZIOS = { tipoAcaoId: '', tipoDivergenciaId: '', empresaId: '', departamentoId: '', responsavelId: '', status: '' }
+const FILTROS_VAZIOS = { cicloId: '', tipoAcaoId: '', tipoDivergenciaId: '', empresaId: '', departamentoId: '', responsavelId: '', status: '' }
 
 // Menu de ações da linha (Ação do Plano) — botão de engrenagem que abre um
 // painel com todas as ações disponíveis, em vez de vários ícones lado a lado.
@@ -108,7 +108,6 @@ export default function PlanoAcaoPainel() {
   const empresasEfetivas = verTodos ? new Set() : empresasPermitidasAuditoriaEfetivas
   const departamentosEfetivos = verTodos ? new Set() : departamentosPermitidosAuditoriaEfetivos
   const [filtros, setFiltros] = useSessionState('audext_plano_acao_filtros', FILTROS_VAZIOS)
-  const [filtrosAbertos, setFiltrosAbertos] = useState(false)
   const [modalPlano, setModalPlano] = useState(null) // null | { tipo: 'novo', achadoId } | { tipo: 'editar', plano }
   const [achadoDetalhe, setAchadoDetalhe] = useState(null)
   const [achadoEditar, setAchadoEditar] = useState(null)
@@ -227,15 +226,15 @@ export default function PlanoAcaoPainel() {
       if (!planosPorAchado.has(p.achado_id)) planosPorAchado.set(p.achado_id, [])
       planosPorAchado.get(p.achado_id).push(p)
     }
-    const achadosBase = filtros.tipoDivergenciaId
-      ? achadosVisiveis.filter(a => a.tipo_divergencia_id === filtros.tipoDivergenciaId)
-      : achadosVisiveis
+    let achadosBase = achadosVisiveis
+    if (filtros.cicloId) achadosBase = achadosBase.filter(a => a.ciclo_id === filtros.cicloId)
+    if (filtros.tipoDivergenciaId) achadosBase = achadosBase.filter(a => a.tipo_divergencia_id === filtros.tipoDivergenciaId)
     let base = [...achadosBase]
       .sort(compararPorCodigo)
       .map(a => ({ achado: a, planosDoAchado: planosPorAchado.get(a.id) || [] }))
     if (hasFiltroAtivo) base = base.filter(l => l.planosDoAchado.length > 0)
     return base
-  }, [achadosVisiveis, planosVisiveis, hasFiltroAtivo, planoPassaFiltro, filtros.tipoDivergenciaId])
+  }, [achadosVisiveis, planosVisiveis, hasFiltroAtivo, planoPassaFiltro, filtros.cicloId, filtros.tipoDivergenciaId])
 
   // Divergências agrupadas por Ciclo de Auditoria.
   const gruposPorCiclo = useMemo(() => {
@@ -316,7 +315,7 @@ export default function PlanoAcaoPainel() {
           <div className="flex items-center gap-2 shrink-0">
             {canVerTodos && (
               <button
-                onClick={() => setVerTodos(v => !v)}
+                onClick={() => { setVerTodos(v => !v); if (!verTodos) handleLimparFiltros() }}
                 className={`flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-semibold border transition-colors whitespace-nowrap ${verTodos ? 'bg-amber-50 text-amber-700 border-amber-300' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 shadow-sm'}`}
                 title={verTodos ? 'Voltar para minha visão' : 'Ver todas as Empresas e Departamentos'}
               >
@@ -339,60 +338,53 @@ export default function PlanoAcaoPainel() {
             Modo "Ver Todos" — mostrando todas as Empresas e Departamentos, ignorando a restrição do seu grupo de acesso
           </div>
         )}
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <AuditoriaExternaNav />
-          <button
-            onClick={() => setFiltrosAbertos(v => !v)}
-            className={`flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-semibold border transition-colors shrink-0 ${filtrosAbertos || hasFiltroAtivo ? 'bg-slate-700 text-white border-slate-700' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
-          >
-            <Filter className="h-3.5 w-3.5" /> Filtros avançados
-            {hasFiltroAtivo && (
-              <span className="ml-0.5 px-1.5 py-0.5 rounded-full text-[10px] bg-indigo-600 text-white font-bold leading-none">
-                {Object.values(filtros).filter(Boolean).length}
-              </span>
-            )}
-          </button>
-        </div>
-        {filtrosAbertos && (
+        <AuditoriaExternaNav />
         <div className="bg-white border border-slate-200 rounded-lg p-4">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div className="flex flex-col gap-1">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Empresa</label>
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1"><CalendarClock className="h-3 w-3" /> Ciclo de Auditoria</label>
+              <select value={filtros.cicloId} onChange={e => setFiltros(p => ({ ...p, cicloId: e.target.value }))} className="w-full text-xs p-2 border border-slate-200 rounded-md">
+                <option value="">Todos</option>
+                {ciclosVisiveis.map(c => <option key={c.id} value={c.id}>{c.proj_empresas?.nome || '—'} · {c.periodo_competencia}</option>)}
+              </select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1"><Building2 className="h-3 w-3" /> Empresa</label>
               <select value={filtros.empresaId} onChange={e => setFiltros(p => ({ ...p, empresaId: e.target.value }))} className="w-full text-xs p-2 border border-slate-200 rounded-md">
                 <option value="">Todas</option>
                 {empresasDisponiveis.map(e => <option key={e.id} value={e.id}>{e.nome}</option>)}
               </select>
             </div>
             <div className="flex flex-col gap-1">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Departamento</label>
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1"><Layers className="h-3 w-3" /> Departamento</label>
               <select value={filtros.departamentoId} onChange={e => setFiltros(p => ({ ...p, departamentoId: e.target.value }))} className="w-full text-xs p-2 border border-slate-200 rounded-md">
                 <option value="">Todos</option>
                 {departamentosDisponiveis.map(d => <option key={d.id} value={d.id}>{d.nome}</option>)}
               </select>
             </div>
             <div className="flex flex-col gap-1">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Responsável</label>
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1"><User className="h-3 w-3" /> Responsável</label>
               <select value={filtros.responsavelId} onChange={e => setFiltros(p => ({ ...p, responsavelId: e.target.value }))} className="w-full text-xs p-2 border border-slate-200 rounded-md">
                 <option value="">Todos</option>
                 {responsaveisDisponiveis.map(r => <option key={r.id} value={r.id}>{r.nome}</option>)}
               </select>
             </div>
             <div className="flex flex-col gap-1">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Status</label>
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1"><CircleDot className="h-3 w-3" /> Status</label>
               <select value={filtros.status} onChange={e => setFiltros(p => ({ ...p, status: e.target.value }))} className="w-full text-xs p-2 border border-slate-200 rounded-md">
                 <option value="">Todos</option>
                 {statusDisponiveis.map(([value, s]) => <option key={value} value={value}>{s.label}</option>)}
               </select>
             </div>
             <div className="flex flex-col gap-1">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Tipo de Ação</label>
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1"><Tag className="h-3 w-3" /> Tipo de Ação</label>
               <select value={filtros.tipoAcaoId} onChange={e => setFiltros(p => ({ ...p, tipoAcaoId: e.target.value }))} className="w-full text-xs p-2 border border-slate-200 rounded-md">
                 <option value="">Todos</option>
                 {tiposAcaoDisponiveis.map(t => <option key={t.id} value={t.id}>{t.nome}</option>)}
               </select>
             </div>
             <div className="flex flex-col gap-1">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Tipo de Divergência</label>
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1"><ShieldAlert className="h-3 w-3" /> Tipo de Divergência</label>
               <select value={filtros.tipoDivergenciaId} onChange={e => setFiltros(p => ({ ...p, tipoDivergenciaId: e.target.value }))} className="w-full text-xs p-2 border border-slate-200 rounded-md">
                 <option value="">Todos</option>
                 {tiposDivergenciaDisponiveis.map(t => <option key={t.id} value={t.id}>{t.nome}</option>)}
@@ -405,7 +397,6 @@ export default function PlanoAcaoPainel() {
             </button>
           )}
         </div>
-        )}
       </div>
 
       {loading ? (

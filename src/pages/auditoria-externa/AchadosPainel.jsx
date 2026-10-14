@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react'
 import { useSessionState } from '../../hooks/useSessionState'
-import { Plus, Filter, RotateCcw, Edit2, Trash2, Sparkles, ShieldAlert, Eye, ChevronRight, ChevronDown, Upload, Users } from 'lucide-react'
+import { Plus, RotateCcw, Edit2, Trash2, Sparkles, ShieldAlert, Eye, ChevronRight, ChevronDown, Upload, Users, Building2, MessageSquare, Zap } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { apiService } from '../../services/api'
 import AuditoriaExternaNav from './AuditoriaExternaNav'
@@ -31,7 +31,6 @@ export default function AchadosPainel() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [filtros, setFiltros] = useSessionState('audext_achados_filtros', FILTROS_VAZIOS)
-  const [filtrosAbertos, setFiltrosAbertos] = useState(false)
   const [modalAchado, setModalAchado] = useState(null) // null | 'novo' | item
   const [achadoDetalhe, setAchadoDetalhe] = useState(null)
   const [chatAberto, setChatAberto] = useState(false)
@@ -158,7 +157,7 @@ export default function AchadosPainel() {
           <div className="flex items-center gap-2">
             {canVerTodos && (
               <button
-                onClick={() => setVerTodos(v => !v)}
+                onClick={() => { setVerTodos(v => !v); if (!verTodos) handleLimparFiltros() }}
                 className={`flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-semibold border transition-colors whitespace-nowrap ${verTodos ? 'bg-amber-50 text-amber-700 border-amber-300' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 shadow-sm'}`}
                 title={verTodos ? 'Voltar para minha visão' : 'Ver todas as Empresas'}
               >
@@ -188,43 +187,29 @@ export default function AchadosPainel() {
             Modo "Ver Todos" — mostrando todas as Empresas, ignorando a restrição do seu grupo de acesso
           </div>
         )}
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <AuditoriaExternaNav />
-          <button
-            onClick={() => setFiltrosAbertos(v => !v)}
-            className={`flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-semibold border transition-colors shrink-0 ${filtrosAbertos || hasFiltroAtivo ? 'bg-slate-700 text-white border-slate-700' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
-          >
-            <Filter className="h-3.5 w-3.5" /> Filtros avançados
-            {hasFiltroAtivo && (
-              <span className="ml-0.5 px-1.5 py-0.5 rounded-full text-[10px] bg-indigo-600 text-white font-bold leading-none">
-                {Object.values(filtros).filter(Boolean).length}
-              </span>
-            )}
-          </button>
-        </div>
-        {filtrosAbertos && (
-          <div className="bg-white border border-slate-200 rounded-lg p-4 flex flex-wrap items-end gap-3">
+        <AuditoriaExternaNav />
+        <div className="bg-white border border-slate-200 rounded-lg p-4 flex flex-wrap items-end gap-3">
             <div className="flex flex-col gap-1">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Empresa</label>
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1"><Building2 className="h-3 w-3" /> Empresa</label>
               <select value={filtros.empresa} onChange={e => setFiltros(p => ({ ...p, empresa: e.target.value }))} className="text-xs p-2 border border-slate-200 rounded-md min-w-[160px]">
                 <option value="">Todas</option>
                 {empresasVisiveis.map(e => <option key={e.id} value={e.id}>{e.nome}</option>)}
               </select>
             </div>
             <div className="flex flex-col gap-1">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Tipo de Divergência</label>
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1"><ShieldAlert className="h-3 w-3" /> Tipo de Divergência</label>
               <select value={filtros.tipoDivergenciaId} onChange={e => setFiltros(p => ({ ...p, tipoDivergenciaId: e.target.value }))} className="text-xs p-2 border border-slate-200 rounded-md min-w-[180px]">
                 <option value="">Todos</option>
                 {tiposDivergenciaDisponiveis.map(t => <option key={t.id} value={t.id}>{t.nome}</option>)}
               </select>
             </div>
             <div className="flex flex-col gap-1">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Motivo</label>
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1"><MessageSquare className="h-3 w-3" /> Motivo</label>
               <input type="text" value={filtros.motivo} onChange={e => setFiltros(p => ({ ...p, motivo: e.target.value }))}
                 placeholder="Buscar por motivo..." className="text-xs p-2 border border-slate-200 rounded-md min-w-[180px]" />
             </div>
             <div className="flex flex-col gap-1">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Impactos</label>
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1"><Zap className="h-3 w-3" /> Impactos</label>
               <input type="text" value={filtros.impactos} onChange={e => setFiltros(p => ({ ...p, impactos: e.target.value }))}
                 placeholder="Buscar por impactos..." className="text-xs p-2 border border-slate-200 rounded-md min-w-[180px]" />
             </div>
@@ -234,7 +219,6 @@ export default function AchadosPainel() {
               </button>
             )}
           </div>
-        )}
       </div>
 
       {loading ? (

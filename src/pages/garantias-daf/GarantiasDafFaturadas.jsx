@@ -2,9 +2,9 @@ import React, { useEffect, useState, useCallback, useMemo } from 'react'
 import { useSessionState } from '../../hooks/useSessionState'
 import { useNavigate } from 'react-router-dom'
 import {
-  Search, Edit2, Eye, ShieldAlert,
+  Search, Eye, ShieldAlert,
   Filter, RotateCcw, Download,
-  XCircle, ArrowUp, ArrowDown, Link2, Link2Off, Info,
+  XCircle, Info,
 } from 'lucide-react'
 import { apiService } from '../../services/api'
 import { useAuth } from '../../context/AuthContext'
@@ -46,7 +46,6 @@ const FILTROS_VAZIOS = { numero_os: '', chassi: '', cliente: '', numero_nf: '', 
 export default function GarantiasDafFaturadas() {
   const navigate = useNavigate()
   const { isAdmin, empresasPermitidas, hasActionOrDefault } = useAuth()
-  const canEditarOS = hasActionOrDefault('garantias-daf-historicodeos', 'editar')
   const canExcluirOS = hasActionOrDefault('garantias-daf-historicodeos', 'excluir')
 
   const [dados, setDados] = useState([])
@@ -400,8 +399,7 @@ export default function GarantiasDafFaturadas() {
                   { col: 'tipo_garantia_descricao',  label: 'Tipo OS',              cls: 'whitespace-nowrap' },
                   { col: 'cliente',                  label: 'Proprietário Veículo', cls: 'whitespace-nowrap min-w-[200px]' },
                   { col: 'chassi',                   label: 'Nº Chassi',            cls: 'whitespace-nowrap' },
-                  { col: 'total',                    label: 'Total',                cls: 'whitespace-nowrap text-right' },
-                  { col: 'status_codigo',            label: 'Status',              cls: 'whitespace-nowrap w-full' },
+                  { col: 'total',                    label: 'Total',                cls: 'whitespace-nowrap text-right w-full' },
                 ].map(({ col, label, cls }) => (
                   <th key={col} onClick={() => handleSort(col)}
                     className={`p-3 ${cls} cursor-pointer select-none hover:bg-slate-100 hover:text-slate-600 transition-colors`}>
@@ -417,15 +415,10 @@ export default function GarantiasDafFaturadas() {
             </thead>
             <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
               {sortedDados.length === 0 ? (
-                <tr><td colSpan={canExcluirOS ? 10 : 9} className="p-10 text-center text-slate-400">Nenhuma garantia faturada encontrada.</td></tr>
+                <tr><td colSpan={canExcluirOS ? 9 : 8} className="p-10 text-center text-slate-400">Nenhuma garantia faturada encontrada.</td></tr>
               ) : sortedDados.map(item => {
                 const vt = Number(item.valor_pecas || 0) + Number(item.valor_servicos || 0)
                 const dc = diasSemEnvio(item)
-                // Status E usa a mesma cor do card correspondente: âmbar (Nota Fiscal a Enviar) ou
-                // vermelho (Crítico — Sem Envio >5d), conforme os dias desde a emissão da NF.
-                const st = item.status_codigo === 'E'
-                  ? { label: STATUS_MAP.E.label, cor: dc !== null && dc > 5 ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700' }
-                  : STATUS_MAP[item.status_codigo] || { label: item.status_codigo, cor: 'bg-slate-100 text-slate-500' }
                 return (
                   <tr key={item.id} className={`hover:bg-slate-50/70 transition-colors ${dc !== null && dc > 5 ? 'bg-red-50/40' : ''} ${selecionados.has(item.id) ? 'bg-blue-50/60' : ''}`}>
                     {canExcluirOS && (
@@ -440,40 +433,9 @@ export default function GarantiasDafFaturadas() {
                     )}
                     <td className="p-3 text-center">
                       <div className="flex items-center justify-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => navigate(`/garantias-daf/${item.id}`, { state: { from: '/garantias-daf-historicodeos' } })}
-                          className={`shrink-0 p-0.5 rounded transition-colors ${item.data_envio_fabrica ? 'hover:bg-slate-100' : 'bg-amber-100 hover:bg-amber-200'}`}
-                          title={item.data_envio_fabrica
-                            ? `Enviado para fábrica em ${fmtData(item.data_envio_fabrica)} — clique para editar`
-                            : 'Ainda não enviado para fábrica — clique para informar a data de envio'}
-                        >
-                          {item.data_envio_fabrica
-                            ? <ArrowUp className="h-3.5 w-3.5 text-green-500" />
-                            : <ArrowDown className="h-3.5 w-3.5 text-amber-600" />
-                          }
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => navigate('/garantias-daf-titulos', { state: { osNumero: item.numero_os } })}
-                          className={`shrink-0 p-0.5 rounded transition-colors ${titulosOsSet.has(String(item.numero_os ?? '').trim()) ? 'hover:bg-slate-100' : 'bg-orange-100 hover:bg-orange-200'}`}
-                          title={titulosOsSet.has(String(item.numero_os ?? '').trim())
-                            ? 'Vinculado a título em Títulos a Receber — clique para ver'
-                            : 'Sem vínculo em Títulos a Receber — clique para conferir'}
-                        >
-                          {titulosOsSet.has(String(item.numero_os ?? '').trim())
-                            ? <Link2 className="h-3.5 w-3.5 text-indigo-500" />
-                            : <Link2Off className="h-3.5 w-3.5 text-orange-600" />
-                          }
-                        </button>
                         <button onClick={() => navigate(`/garantias-daf/${item.id}`, { state: { from: '/garantias-daf-historicodeos', modo: 'visualizar' } })} className="p-1 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors" title="Visualizar">
                           <Eye className="h-3.5 w-3.5" />
                         </button>
-                        {canEditarOS && (
-                          <button onClick={() => navigate(`/garantias-daf/${item.id}`, { state: { from: '/garantias-daf-historicodeos' } })} className="p-1 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors" title="Editar">
-                            <Edit2 className="h-3.5 w-3.5" />
-                          </button>
-                        )}
                       </div>
                     </td>
                     <td className="p-3 whitespace-nowrap">
@@ -485,9 +447,6 @@ export default function GarantiasDafFaturadas() {
                     <td className="p-3 text-slate-700 whitespace-nowrap">{item.cliente || '—'}</td>
                     <td className="p-3 font-mono text-slate-500 whitespace-nowrap">{item.chassi ? item.chassi.slice(-8) : '—'}</td>
                     <td className="p-3 text-right font-semibold text-slate-900 whitespace-nowrap">{vt > 0 ? fmt(vt) : '—'}</td>
-                    <td className="p-3 whitespace-nowrap">
-                      <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap ${st.cor}`}>{st.label}</span>
-                    </td>
                   </tr>
                 )
               })}

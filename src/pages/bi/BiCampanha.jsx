@@ -415,6 +415,9 @@ function AbaApuracao({ campanha, regras, unidade, ehTrucks, diario, consultores,
 // Resultado); aqui só se soma o acumulado do período — sem regra extra de liberação do acumulado.
 // Cada mês do período é calculado com os dados e as regras DAQUELE mês (MesPagamento, invisível).
 // ======================================================================================
+// Blocos 1 (Corporativo) e 2 (Departamental): regras ainda não criadas — não pagam no Pagamento.
+const BLOCOS_1_2_COM_REGRA = false
+
 const PERIODICIDADES = [
   { v: 'semanal', label: 'Semanal' },
   { v: 'mensal', label: 'Mensal' },
@@ -437,7 +440,7 @@ function mesesDoPeriodo(periodicidade, mes) {
 
 // Um mês do período de pagamento, calculado por inteiro (dados, regras e pessoas daquele mês) sem
 // desenhar nada: usa a mesma Apuração em modo "coleta", que devolve o bônus de cada pessoa.
-function MesPagamento({ ano, mes, unidade, funcionarios, erroFunc, calendarios, versaoDados, onColeta }) {
+function MesPagamento({ ano, mes, unidade, funcionarios, erroFunc, calendarios, versaoDados, onColeta, onSemRegras }) {
   const [diario, setDiario] = useState(null)
   const [metasAprovadas, setMetasAprovadas] = useState(null)
   const [regras, setRegras] = useState(null)
@@ -452,6 +455,7 @@ function MesPagamento({ ano, mes, unidade, funcionarios, erroFunc, calendarios, 
       .then(([linhas, aprovadas, linhaRegras]) => {
         if (!vivo) return
         setRegras(mesclarRegras(REGRAS_PADRAO, linhaRegras?.dados))
+        onSemRegras?.(mes, !linhaRegras?.dados) // sem regras salvas → o mês não paga (Pagamento)
         setMetasAprovadas(aprovadas)
         setDiario(linhas)
       })
@@ -495,6 +499,12 @@ function AbaPagamento({ ano, mes, unidade, periodicidade, funcionarios, erroFunc
   const onColeta = useCallback((m, titulo, dados) => {
     setColeta((c) => ({ ...c, [m]: { ...(c[m] || {}), [titulo]: dados } }))
   }, [])
+  // Meses do período SEM regras salvas para a empresa: não pagam nada (senão entrariam os valores
+  // do padrão do sistema, que ninguém configurou).
+  const [semRegras, setSemRegras] = useState({})
+  useEffect(() => { setSemRegras({}) }, [ano, chaveMeses, unidade, versaoDados])
+  const onSemRegras = useCallback((m, sem) => setSemRegras((x) => ({ ...x, [m]: sem })), [])
+  const mesesSemRegras = meses.filter((m) => semRegras[m])
 
   const nomeMesN = (m) => MESES[m - 1]?.label
   const hoje = new Date()
@@ -533,10 +543,15 @@ function AbaPagamento({ ano, mes, unidade, periodicidade, funcionarios, erroFunc
       <div className="hidden" aria-hidden="true">
         {meses.map((m) => (
           <MesPagamento key={`${ano}-${m}-${unidade}-${versaoDados}`} ano={ano} mes={m} unidade={unidade} funcionarios={funcionarios} erroFunc={erroFunc}
-            calendarios={calendarios} versaoDados={versaoDados} onColeta={onColeta} />
+            calendarios={calendarios} versaoDados={versaoDados} onColeta={onColeta} onSemRegras={onSemRegras} />
         ))}
       </div>
 
+      {mesesSemRegras.length > 0 && (
+        <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
+          ⚠️ Sem regras salvas para esta empresa em <b>{mesesSemRegras.map(nomeMesN).join(', ')}</b> — {mesesSemRegras.length > 1 ? 'esses meses não pagam' : 'esse mês não paga'} até as regras serem criadas e salvas na aba Regras.
+        </p>
+      )}
       {!mesesProntos && (
         <div className={`${CARD} p-6 text-xs text-slate-500 flex items-center gap-2`}>
           <Loader2 className="h-3.5 w-3.5 animate-spin" /> Calculando os valores de {meses.map(nomeMesN).join(', ')}…
@@ -548,6 +563,7 @@ function AbaPagamento({ ano, mes, unidade, periodicidade, funcionarios, erroFunc
         const pessoas = new Map()
         for (const m of meses) for (const l of coleta[m][titulo]?.linhas || []) if (!pessoas.has(l.id)) pessoas.set(l.id, l.nome)
         const valor = (id, col) => {
+          if (semRegras[col.mes]) return null
           const l = (coleta[col.mes][titulo]?.linhas || []).find((x) => x.id === id)
           if (!l) return null
           return col.semana != null ? (l.semanas[col.semana] ?? 0) : l.total
@@ -566,15 +582,16 @@ function AbaPagamento({ ano, mes, unidade, periodicidade, funcionarios, erroFunc
                 <table className="w-full table-fixed text-xs border-collapse">
                   <colgroup>
                     <col className="w-[24%]" />
+                    <col className="w-[11%]" /><col className="w-[11%]" />
                     {colunas.map((c) => <col key={c.k} />)}
-                    <col className="w-[9%]" /><col className="w-[9%]" /><col className="w-[12%]" />
+                    <col className="w-[12%]" />
                   </colgroup>
                   <thead>
                     <tr className="bg-slate-50 border-t border-slate-200">
                       <th rowSpan={2} className={`${TH} text-left align-bottom border-b border-slate-200`}>Nome</th>
-                      <th colSpan={colunas.length} className={`${TH} text-center border-l border-slate-200`}>Bloco 3 - Serviços</th>
                       <th rowSpan={2} className={`${TH} text-right align-bottom border-l border-b border-slate-200`}>Bloco 1 - Corporativo</th>
                       <th rowSpan={2} className={`${TH} text-right align-bottom border-l border-b border-slate-200`}>Bloco 2 - Departamental</th>
+                      <th colSpan={colunas.length} className={`${TH} text-center border-l border-slate-200`}>Bloco 3 - Serviços</th>
                       <th rowSpan={2} className={`${TH} text-right align-bottom border-l border-b border-slate-200`}>Total a pagar</th>
                     </tr>
                     <tr className="bg-slate-50 border-b border-slate-200">
@@ -590,20 +607,22 @@ function AbaPagamento({ ano, mes, unidade, periodicidade, funcionarios, erroFunc
                     {[...pessoas].map(([id, nome]) => {
                       const vals = colunas.map((c) => valor(id, c))
                       // Blocos 1 e 2: soma da parte de cada mês do período em que a pessoa estava.
-                      const doMes = meses.map((m) => (coleta[m][titulo]?.linhas || []).find((x) => x.id === id)).filter(Boolean)
-                      const b1 = doMes.length ? doMes.reduce((a, l) => a + (l.b1 || 0), 0) : null
-                      const b2 = doMes.length ? doMes.reduce((a, l) => a + (l.b2 || 0), 0) : null
+                      const doMes = meses.filter((m) => !semRegras[m]).map((m) => (coleta[m][titulo]?.linhas || []).find((x) => x.id === id)).filter(Boolean)
+                      // Blocos 1 e 2 ainda SEM regras criadas: não pagam ("—"). Quando as regras existirem,
+                      // ligar BLOCOS_1_2_COM_REGRA — a parte da Meta de cada mês é paga integralmente.
+                      const b1 = BLOCOS_1_2_COM_REGRA && doMes.length ? doMes.reduce((a, l) => a + (l.b1 || 0), 0) : null
+                      const b2 = BLOCOS_1_2_COM_REGRA && doMes.length ? doMes.reduce((a, l) => a + (l.b2 || 0), 0) : null
                       const total = vals.reduce((a, v) => a + (v || 0), 0) + (b1 || 0) + (b2 || 0)
                       return (
                         <tr key={id} className="border-b border-slate-100">
                           <td className="p-2 font-medium text-slate-800 truncate" title={nome}>{nome}</td>
+                          <td className={`${TD} ${b1 > 0 ? 'text-slate-900 font-semibold' : 'text-slate-400'}`} title={BLOCOS_1_2_COM_REGRA ? "Bloco 1 - Corporativo: parte da Meta paga integralmente" : "Bloco 1 - Corporativo: regras ainda não criadas"}>{b1 == null ? VAZIO : moedaBR(b1)}</td>
+                          <td className={`${TD} ${b2 > 0 ? 'text-slate-900 font-semibold' : 'text-slate-400'}`} title={BLOCOS_1_2_COM_REGRA ? "Bloco 2 - Departamental: parte da Meta paga integralmente" : "Bloco 2 - Departamental: regras ainda não criadas"}>{b2 == null ? VAZIO : moedaBR(b2)}</td>
                           {vals.map((v, i) => (
                             <td key={colunas[i].k} className={`${TD} ${v > 0 ? 'text-slate-900 font-semibold' : 'text-slate-400'}`}>
                               {v == null ? VAZIO : moedaBR(v)}
                             </td>
                           ))}
-                          <td className={`${TD} ${b1 > 0 ? 'text-slate-900 font-semibold' : 'text-slate-400'}`} title="Bloco 1 - Corporativo: parte da Meta paga integralmente">{b1 == null ? VAZIO : moedaBR(b1)}</td>
-                          <td className={`${TD} ${b2 > 0 ? 'text-slate-900 font-semibold' : 'text-slate-400'}`} title="Bloco 2 - Departamental: parte da Meta paga integralmente">{b2 == null ? VAZIO : moedaBR(b2)}</td>
                           <td className={`${TD} font-bold ${COR_TOTAL.real} ${total > 0 ? 'text-emerald-700' : 'text-slate-500'}`}>{moedaBR(total)}</td>
                         </tr>
                       )

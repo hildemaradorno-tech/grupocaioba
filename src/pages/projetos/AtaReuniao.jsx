@@ -772,9 +772,13 @@ export default function AtaReuniao() {
 
   const renderStep2 = () => {
     const q = buscaPartic.toLowerCase().trim()
-    const lista = q
+    const filtrados = q
       ? todosUsuarios.filter(u => u.nome?.toLowerCase().includes(q) || u.email?.toLowerCase().includes(q))
       : todosUsuarios
+    // Selecionados primeiro, depois os demais em ordem alfabética
+    const selecionados = filtrados.filter(u => form.participantesIds.has(u.id))
+    const naoSelecionados = filtrados.filter(u => !form.participantesIds.has(u.id))
+    const lista = [...selecionados, ...naoSelecionados]
     return (
       <div className="space-y-5">
         <div>
@@ -794,9 +798,18 @@ export default function AtaReuniao() {
               </button>
             )}
           </div>
-          <input type="text" value={buscaPartic} onChange={e => setBuscaPartic(e.target.value)}
-            placeholder="Buscar por nome ou e-mail..."
-            className="w-full mb-2 text-xs px-2.5 py-1.5 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20 outline-none" />
+          <div className="relative mb-2">
+            <input type="text" value={buscaPartic} onChange={e => setBuscaPartic(e.target.value)}
+              placeholder="Buscar por nome ou e-mail..."
+              className="w-full text-xs px-2.5 py-1.5 pr-7 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20 outline-none" />
+            {buscaPartic && (
+              <button onClick={() => setBuscaPartic('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 transition-colors"
+                title="Limpar busca">
+                <XIcon className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
           <div className="border border-slate-200 rounded-md max-h-44 overflow-y-auto divide-y divide-slate-100">
             {lista.map(u => {
               const selecionado = form.participantesIds.has(u.id)

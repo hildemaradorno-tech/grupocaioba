@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell, PieChart, Pie, Legend, LabelList } from 'recharts'
-import { AlertTriangle, CheckCircle2, ShieldAlert, Layers, CalendarClock, Users, ChevronDown, Check } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, ShieldAlert, Layers, CalendarClock, Users, ChevronDown, Check, Building2 } from 'lucide-react'
 import { useSessionState } from '../../hooks/useSessionState'
 import { apiService } from '../../services/api'
 import AuditoriaExternaNav from './AuditoriaExternaNav'
@@ -208,7 +208,7 @@ function CicloMultiSelect({ ciclos, selecionados, onChange }) {
         <ChevronDown className="h-3.5 w-3.5 text-slate-400 shrink-0" />
       </button>
       {aberto && (
-        <div className="absolute right-0 mt-1 w-72 bg-white border border-slate-200 rounded-lg shadow-lg z-20 py-1.5">
+        <div className="absolute left-0 mt-1 w-72 bg-white border border-slate-200 rounded-lg shadow-lg z-20 py-1.5">
           <div className="flex items-center justify-between px-3 py-1 border-b border-slate-100">
             <button onClick={() => onChange(ciclos.map(c => c.id))} className="text-[10px] font-semibold text-blue-600 hover:text-blue-700">Selecionar todos</button>
             <button onClick={() => onChange([])} className="text-[10px] font-semibold text-slate-400 hover:text-slate-600">Limpar</button>
@@ -579,7 +579,7 @@ export default function AuditoriaDashboard() {
             <CicloMultiSelect ciclos={ciclosVisiveis} selecionados={cicloIds} onChange={setCicloIds} />
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1">Empresa</label>
+            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1"><Building2 className="h-3 w-3" /> Empresa</label>
             <EmpresaMultiSelect empresas={empresasDisponiveis} selecionados={empresaIds} onChange={setEmpresaIds} />
           </div>
         </div>

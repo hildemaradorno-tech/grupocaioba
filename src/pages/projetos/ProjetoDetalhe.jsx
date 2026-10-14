@@ -838,7 +838,7 @@ const abrirModalMover = async (tarefa) => {
                         className="text-[11px] p-1 border border-indigo-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300/40 w-28"
                       >
                         <option value="">— Sem etapa —</option>
-                        {Array.from({ length: 20 }, (_, i) => i + 1).map(n => {
+                        {Array.from({ length: Math.max(20, tarefas.length + 5) }, (_, i) => i + 1).map(n => {
                           const emUso = tarefas.some(x => x.id !== t.id && x.etapa === n)
                           return (
                             <option key={n} value={n}>
