@@ -28,6 +28,7 @@
  *   54 NFItem_VlBruto     | 55 NFItem_PercMargemCont   | 56 NFItem_PercMargemGer
  */
 
+import { numeroSemanaDoDia } from './kpiSemanas.js'
 import { getFiltroBoxOficina } from './boxFuncionarios.js'
 import { Client }                        from '@microsoft/microsoft-graph-client'
 import { ClientSecretCredential }         from '@azure/identity'
@@ -230,22 +231,10 @@ function classificarItem(row) {
   return 'PECAS'
 }
 
-/**
- * Retorna o número global da semana para uma data.
- * Regra: dia 1 do mês abre a semana → fecha no 1º sábado do mês.
- * Demais semanas: dom→sab (ou fim do mês).
- */
+// Número global da semana de uma data — regra única em kpiSemanas.js (semana parcial do começo/fim
+// do mês só conta sozinha se tiver quarta-feira; senão junta com a vizinha).
 function weekOfYear(year, month, day) {
-  let offset = 0
-  for (let m = 1; m < month; m++) {
-    const dow1 = new Date(Date.UTC(year, m - 1, 1)).getUTCDay()
-    const dim  = new Date(Date.UTC(year, m, 0)).getUTCDate()
-    const fs   = dow1 === 6 ? 1 : 1 + (6 - dow1)    // dia do 1º sábado
-    offset    += 1 + (dim > fs ? Math.ceil((dim - fs) / 7) : 0)
-  }
-  const dow1 = new Date(Date.UTC(year, month - 1, 1)).getUTCDay()
-  const fs   = dow1 === 6 ? 1 : 1 + (6 - dow1)
-  return offset + (day <= fs ? 1 : 1 + Math.ceil((day - fs) / 7))
+  return numeroSemanaDoDia(year, month, day)
 }
 
 /**

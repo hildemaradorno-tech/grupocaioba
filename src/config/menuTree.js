@@ -272,6 +272,7 @@ export const MENU_TREE = [
           { key: 'bi/campanha/regras', label: 'Aba Regras' },
           { key: 'bi/campanha/apuracao', label: 'Aba Apuração' },
           { key: 'bi/campanha/resultado', label: 'Aba Resultado' },
+          { key: 'bi/campanha/pagamento', label: 'Aba Pagamento' },
           { key: 'bi/campanha/empresa-trucks', label: 'Empresa CAIOBÁ TRUCKS (Gerente Geral)' },
           { key: 'bi/campanha/empresa-cg', label: 'Empresa Campo Grande' },
           { key: 'bi/campanha/empresa-dou', label: 'Empresa Dourados' },

@@ -8,7 +8,7 @@
 // quando virar tabela no Supabase, só a origem de CAMPANHA/lançamentos muda.
 
 
-import { computeWeekSchema } from './kpiPeriods'
+import { computeWeekSchema, semanasDoMes } from './kpiPeriods'
 
 // Regras valem para qualquer mês/ano selecionado na tela (mês e pagamento vêm do seletor).
 export const CAMPANHA = {
@@ -266,21 +266,15 @@ export function pctTxt(v) {
 // Semanas do mês a partir do calendário
 // ======================================================================================
 const isoDia = (d) => d.getUTCDay() || 7 // 1 = segunda … 7 = domingo
-function numeroSemanaISO(d) {
-  const t = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()))
-  t.setUTCDate(t.getUTCDate() + 4 - isoDia(t)) // quinta-feira da mesma semana define o ano ISO
-  const inicioAno = new Date(Date.UTC(t.getUTCFullYear(), 0, 1))
-  return Math.ceil(((t - inicioAno) / 86400000 + 1) / 7)
-}
 const iso = (d) => d.toISOString().slice(0, 10)
 const ddmm = (d) => `${String(d.getUTCDate()).padStart(2, '0')}/${String(d.getUTCMonth() + 1).padStart(2, '0')}`
 // Regra padrão só quando a empresa não tem calendário gerado: seg–sex 1, sábado 0,5, domingo 0.
 const diaUtilPadrao = (d) => (isoDia(d) <= 5 ? 1 : isoDia(d) === 6 ? 0.5 : 0)
 
 /**
- * Semanas do mês iguais às da Matriz KPIs (src/utils/kpiPeriods.js → computeWeekSchema): a semana 1
- * vai do dia 1 até o primeiro sábado; as demais vão de domingo a sábado (a última termina no fim
- * do mês). Semanas curtas NÃO são juntadas.
+ * Semanas do mês iguais às da Matriz KPIs (src/utils/kpiPeriods.js → semanasDoMes): domingo a
+ * sábado; semana parcial do começo/fim do mês só conta sozinha se tiver quarta-feira, senão junta
+ * com a vizinha. Numeradas por mês: Sem 1, Sem 2…
  * @param {number} ano
  * @param {number} mes 1–12
  * @param {Record<string, Array>} calendarios unidadeId -> linhas de fato_calendario do ano
@@ -291,15 +285,8 @@ export function montarSemanas(ano, mes, calendarios, cfg = CAMPANHA) {
   const ultimo = new Date(Date.UTC(ano, mes, 0)).getUTCDate()
   for (let d = 1; d <= ultimo; d++) dias.push(new Date(Date.UTC(ano, mes - 1, d)))
 
-  // Mesma regra da Matriz KPIs: dia 1 → 1º sábado; depois domingo → sábado (ou fim do mês).
-  const grupos = []
-  let inicio = 1
-  while (inicio <= ultimo) {
-    const dow = new Date(Date.UTC(ano, mes - 1, inicio)).getUTCDay() // 0 = domingo … 6 = sábado
-    const fim = Math.min(inicio + (6 - dow), ultimo)
-    grupos.push({ numero: numeroSemanaISO(dias[inicio - 1]), dias: dias.slice(inicio - 1, fim) })
-    inicio = fim + 1
-  }
+  // Mesma regra da Matriz KPIs (semanasDoMes em kpiPeriods.js).
+  const grupos = semanasDoMes(ano, mes).map(({ inicio, fim }) => ({ dias: dias.slice(inicio - 1, fim) }))
 
   // dias úteis por data, por unidade (calendário da empresa; sem calendário -> regra padrão)
   const semCalendario = []
@@ -315,7 +302,7 @@ export function montarSemanas(ano, mes, calendarios, cfg = CAMPANHA) {
     const pesos = Object.fromEntries(cfg.unidades.map((u) => [u.id,
       g.dias.reduce((acc, d) => acc + (diaUtil[u.id] ? (diaUtil[u.id][iso(d)] ?? 0) : diaUtilPadrao(d)), 0)]))
     return {
-      id: `S${i + 1}`, numero: g.numero, inicio: iso(g.dias[0]), fim: iso(g.dias[g.dias.length - 1]),
+      id: `S${i + 1}`, numero: i + 1, inicio: iso(g.dias[0]), fim: iso(g.dias[g.dias.length - 1]),
       label: `${ddmm(ini)} a ${ddmm(fim)}`, pesos,
     }
   })

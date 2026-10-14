@@ -574,7 +574,7 @@ export default function SidebarLayout() {
               </>
             )}
             {/* Campanha Pós-Venda logo abaixo da Matriz KPIs (usa os blocos da Matriz). */}
-            {['bi/campanha/regras', 'bi/campanha/apuracao', 'bi/campanha/resultado'].some(canView) && <FlyItem to="/bi/campanha" icon={Trophy} onClose={closeFlyout}>Campanha Pós-Venda - DAF</FlyItem>}
+            {['bi/campanha/regras', 'bi/campanha/apuracao', 'bi/campanha/resultado', 'bi/campanha/pagamento'].some(canView) && <FlyItem to="/bi/campanha" icon={Trophy} onClose={closeFlyout}>Campanha Pós-Venda - DAF</FlyItem>}
           </>
         )
 

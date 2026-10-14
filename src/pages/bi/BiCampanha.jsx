@@ -1,5 +1,5 @@
-import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
-import { Trophy, Calculator, BookOpen, BarChart2, Loader2, RefreshCw, Info as InfoIcon, Lock, Unlock, Plus, Trash2, Eraser, Copy, CopyPlus, Settings, FileText, X, ChevronDown } from 'lucide-react'
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { Trophy, Calculator, BookOpen, BarChart2, Loader2, RefreshCw, Info as InfoIcon, Lock, Unlock, Plus, Trash2, Eraser, Copy, CopyPlus, Settings, FileText, X, ChevronDown, Banknote, Save } from 'lucide-react'
 import { Bloco3ServicosVisualizacao } from '../kpi/KpiBloco3Servicos'
 import { createPortal } from 'react-dom'
 import { apiService } from '../../services/api'
@@ -100,6 +100,7 @@ export const CAMPANHA_ABAS = [
   { k: 'regras', label: 'Regras', icon: BookOpen, perm: 'bi/campanha/regras' },
   { k: 'apuracao', label: 'Apuração', icon: Calculator, perm: 'bi/campanha/apuracao' },
   { k: 'resultado', label: 'Resultado', icon: BarChart2, perm: 'bi/campanha/resultado' },
+  { k: 'pagamento', label: 'Pagamento', icon: Banknote, perm: 'bi/campanha/pagamento' },
 ]
 export const CAMPANHA_ABAS_PERMS = CAMPANHA_ABAS.map((a) => a.perm)
 const PERM_EMPRESA = { TRUCKS: 'bi/campanha/empresa-trucks', CG: 'bi/campanha/empresa-cg', DOU: 'bi/campanha/empresa-dou', TL: 'bi/campanha/empresa-tl', CS: 'bi/campanha/empresa-cs' }
@@ -117,7 +118,7 @@ export default function BiCampanha() {
     if (abasVisiveis.length && !abasVisiveis.some((a) => a.k === aba)) setAba(abasVisiveis[0].k)
     if (unidade && !empresasVisiveis.some((x) => x.id === unidade)) setUnidade('')
   }) // eslint-disable-line react-hooks/exhaustive-deps
-  const podeAtualizar = hasActionOrDefault('bi/campanha/apuracao', 'atualizar_numeros') || hasActionOrDefault('bi/campanha/resultado', 'atualizar_numeros')
+  const podeAtualizar = hasActionOrDefault('bi/campanha/apuracao', 'atualizar_numeros') // botão só na aba Apuração
   const permRegras = {
     editar: hasActionOrDefault('bi/campanha/regras', 'editar'),
     zerar: hasActionOrDefault('bi/campanha/regras', 'zerar'),
@@ -186,6 +187,30 @@ export default function BiCampanha() {
     setRegras(novas)
     setOrigemRegras({ ano: Number(ano), mes: Number(mes), unidade, atualizado_em: new Date().toISOString(), atualizado_por: user?.email || null })
   }
+
+  // Periodicidade de pagamento: só é escolhida no mês de ORIGEM do período (1º mês do bimestre /
+  // trimestre, calendário fixo). Nos meses seguintes ela vem travada do mês de origem.
+  const [periodicidadeOrigem, setPeriodicidadeOrigem] = useState({}) // { mês de origem: periodicidade }
+  useEffect(() => {
+    let vivo = true
+    setPeriodicidadeOrigem({})
+    if (!unidade) return undefined
+    const m = Number(mes)
+    const origens = [...new Set([inicioTrimestre(m), inicioBimestre(m)])].filter((o) => o !== m)
+    Promise.all(origens.map((o) => apiService.getCampanhaRegras(Number(ano), o, unidade).catch(() => null)))
+      .then((linhas) => {
+        if (vivo) setPeriodicidadeOrigem(Object.fromEntries(origens.map((o, i) => [o, periodicidadeDe(mesclarRegras(REGRAS_PADRAO, linhas[i]?.dados))])))
+      })
+    return () => { vivo = false }
+  }, [ano, mes, unidade, regras])
+  const travaPeriodicidade = useMemo(() => {
+    const m = Number(mes)
+    const q0 = inicioTrimestre(m), b0 = inicioBimestre(m)
+    if (q0 !== m && periodicidadeOrigem[q0] === 'trimestral') return { periodicidade: 'trimestral', mesOrigem: q0 }
+    if (b0 !== m && periodicidadeOrigem[b0] === 'bimestral') return { periodicidade: 'bimestral', mesOrigem: b0 }
+    return null
+  }, [mes, periodicidadeOrigem])
+  const periodicidadeEfetiva = travaPeriodicidade ? travaPeriodicidade.periodicidade : periodicidadeDe(regras)
 
   const { semanas, semCalendario } = useMemo(
     () => montarSemanas(Number(ano), Number(mes), calendarios, CAMPANHA),
@@ -287,14 +312,6 @@ export default function BiCampanha() {
               {MESES.map((m) => <option key={m.v} value={m.v}>{m.label}</option>)}
             </select>
           </label>
-          {/* Mesma atualização do botão da Matriz KPIs (Matriz + Campanha). Travado em todas as telas
-              enquanto qualquer pessoa estiver atualizando. */}
-          {podeAtualizar && <button type="button" onClick={() => sync.iniciar(user?.email)} disabled={sync.executando}
-            title={sync.executando ? `Atualizando…${sync.porQuem ? ` (iniciada por ${sync.porQuem})` : ''} — aguarde terminar` : 'Atualizar números'}
-            aria-label={sync.executando ? 'Atualizando' : 'Atualizar números'}
-            className="inline-flex items-center justify-center rounded-md border border-blue-200 bg-blue-50 p-1.5 text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60">
-            <RefreshCw className={`h-4 w-4 ${sync.executando ? 'animate-spin' : ''}`} />
-          </button>}
         </div>
       </div>
 
@@ -310,8 +327,19 @@ export default function BiCampanha() {
             <Icon className="h-3.5 w-3.5" /> {label}
           </button>
         ))}
-        {/* Espaço à direita da linha das abas: a aba Regras coloca aqui o Salvar e a engrenagem. */}
-        <div ref={setSlotAcoes} className="ml-auto flex items-center gap-2 pb-1.5" />
+        {/* Direita da linha das abas: Atualizar números (só na aba Apuração) e, na aba Regras, o
+            Salvar e a engrenagem (colocados no slot via portal). */}
+        <div className="ml-auto flex items-center gap-2 pb-1.5">
+          {/* Mesma atualização do botão da Matriz KPIs (Matriz + Campanha). Travado em todas as telas
+              enquanto qualquer pessoa estiver atualizando. */}
+          {aba === 'apuracao' && podeAtualizar && <button type="button" onClick={() => sync.iniciar(user?.email)} disabled={sync.executando}
+            title={sync.executando ? `Atualizando…${sync.porQuem ? ` (iniciada por ${sync.porQuem})` : ''} — aguarde terminar` : 'Atualizar números'}
+            aria-label={sync.executando ? 'Atualizando' : 'Atualizar números'}
+            className="inline-flex items-center justify-center rounded-md border border-blue-200 bg-blue-50 p-1.5 text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60">
+            <RefreshCw className={`h-4 w-4 ${sync.executando ? 'animate-spin' : ''}`} />
+          </button>}
+          <div ref={setSlotAcoes} className="flex items-center gap-2" />
+        </div>
       </div>
 
       {!empresasVisiveis.length && (
@@ -327,7 +355,7 @@ export default function BiCampanha() {
         </div>
       )}
       {!!empresasVisiveis.length && !!unidade && aba === 'regras' && (
-        <AbaRegras slotAcoes={slotAcoes} permRegras={permRegras}
+        <AbaRegras slotAcoes={slotAcoes} permRegras={permRegras} travaPeriodicidade={travaPeriodicidade}
           onSalvarOutra={(destino, dados) => apiService.salvarCampanhaRegras(Number(ano), Number(mes), destino, dados, user?.email || null)} campanha={campanha} unidade={unidade} semCalendario={semCalendario} nomeMes={nomeMes} ano={ano} mes={mes}
           regras={regras} onSalvar={salvarRegras} origemRegras={origemRegras}
           nomeEmpresa={unidade === 'TRUCKS' ? 'CAIOBÁ TRUCKS' : (nomeEmpresa[u.empresaId] || u.nome)} />
@@ -337,6 +365,10 @@ export default function BiCampanha() {
           gerentesGerais={gerentesGerais} metasPorUnidade={metasPorUnidade}
           blocosMatriz={blocosMatriz} ano={ano} mes={mes}
           metasUnidade={metasUnidade} funcionarios={funcionarios} erroFunc={erroFunc} versaoDados={recarregar} />
+      )}
+      {!!empresasVisiveis.length && !!unidade && aba === 'pagamento' && (
+        <AbaPagamento ano={ano} mes={mes} unidade={unidade} periodicidade={periodicidadeEfetiva} funcionarios={funcionarios} erroFunc={erroFunc}
+          calendarios={calendarios} versaoDados={recarregar} />
       )}
       {!!empresasVisiveis.length && !!unidade && aba === 'resultado' && (
         <AbaApuracao modo="resultado" campanha={campanha} regras={regras} unidade={unidade} ehTrucks={ehTrucks} diario={diario} consultores={consultores} mecanicos={mecanicos} chefes={chefes} gerentes={gerentes}
@@ -354,9 +386,9 @@ export default function BiCampanha() {
 // no fim, o Total = soma das contribuições das semanas.
 // ======================================================================================
 function AbaApuracao({ campanha, regras, unidade, ehTrucks, diario, consultores, mecanicos, chefes, gerentes, metasUnidade, funcionarios, erroFunc,
-  gerentesGerais, metasPorUnidade, blocosMatriz, ano, mes, modo = 'apuracao', versaoDados = 0 }) {
+  gerentesGerais, metasPorUnidade, blocosMatriz, ano, mes, modo = 'apuracao', versaoDados = 0, onColeta = null }) {
   const comum = { campanha, regras, unidade, diario, blocosMatriz, ano, mes, versaoDados, carregandoFunc: funcionarios === null }
-  const ctx = useMemo(() => ({ faixas: faixasDe(regras, unidade) || [], regras, unidade, modo, ano, mes }), [regras, unidade, modo, ano, mes])
+  const ctx = useMemo(() => ({ faixas: faixasDe(regras, unidade) || [], regras, unidade, modo, ano, mes, onColeta }), [regras, unidade, modo, ano, mes, onColeta])
 
   return (
     <FaixasCtx.Provider value={ctx}>
@@ -373,6 +405,217 @@ function AbaApuracao({ campanha, regras, unidade, ehTrucks, diario, consultores,
       )}
     </div>
     </FaixasCtx.Provider>
+  )
+}
+
+// ======================================================================================
+// Pagamento — só os valores a pagar, por período e por bloco. A periodicidade vem da regra-chave
+// "Pagamento" (aba Regras do mês selecionado): semanal, mensal, bimestral ou trimestral (bimestres e
+// trimestres no calendário fixo). O bônus continua apurado semana a semana (mesmo cálculo da aba
+// Resultado); aqui só se soma o acumulado do período — sem regra extra de liberação do acumulado.
+// Cada mês do período é calculado com os dados e as regras DAQUELE mês (MesPagamento, invisível).
+// ======================================================================================
+const PERIODICIDADES = [
+  { v: 'semanal', label: 'Semanal' },
+  { v: 'mensal', label: 'Mensal' },
+  { v: 'bimestral', label: 'Bimestral' },
+  { v: 'trimestral', label: 'Trimestral' },
+]
+const periodicidadeDe = (regras) => regras?.regrasChave?.periodicidadePagamento || 'mensal'
+
+// 1º mês do trimestre / bimestre (calendário fixo) que contém o mês m (1–12).
+const inicioTrimestre = (m) => m - ((m - 1) % 3)
+const inicioBimestre = (m) => m - ((m - 1) % 2)
+
+// Meses (1–12) do período de pagamento que contém o mês escolhido (calendário fixo).
+function mesesDoPeriodo(periodicidade, mes) {
+  const m = Number(mes)
+  if (periodicidade === 'bimestral') { const ini = m - ((m - 1) % 2); return [ini, ini + 1] }
+  if (periodicidade === 'trimestral') { const ini = m - ((m - 1) % 3); return [ini, ini + 1, ini + 2] }
+  return [m]
+}
+
+// Um mês do período de pagamento, calculado por inteiro (dados, regras e pessoas daquele mês) sem
+// desenhar nada: usa a mesma Apuração em modo "coleta", que devolve o bônus de cada pessoa.
+function MesPagamento({ ano, mes, unidade, funcionarios, erroFunc, calendarios, versaoDados, onColeta }) {
+  const [diario, setDiario] = useState(null)
+  const [metasAprovadas, setMetasAprovadas] = useState(null)
+  const [regras, setRegras] = useState(null)
+  useEffect(() => {
+    let vivo = true
+    setDiario(null)
+    Promise.all([
+      apiService.getCampanhaDiario(Number(ano), mes),
+      apiService.getCampanhaMetasAprovadas(Number(ano), mes),
+      apiService.getCampanhaRegras(Number(ano), mes, unidade).catch(() => null),
+    ])
+      .then(([linhas, aprovadas, linhaRegras]) => {
+        if (!vivo) return
+        setRegras(mesclarRegras(REGRAS_PADRAO, linhaRegras?.dados))
+        setMetasAprovadas(aprovadas)
+        setDiario(linhas)
+      })
+      .catch(() => { if (vivo) { setRegras(REGRAS_PADRAO); setMetasAprovadas(null); setDiario([]) } })
+    return () => { vivo = false }
+  }, [ano, mes, unidade, versaoDados])
+
+  const { semanas } = useMemo(() => montarSemanas(Number(ano), mes, calendarios, CAMPANHA), [ano, mes, calendarios])
+  const campanha = useMemo(() => ({ ...CAMPANHA, semanas }), [semanas])
+  const u = campanha.unidades.find((x) => x.id === unidade) || campanha.unidades[0]
+  const r = regras || REGRAS_PADRAO
+  const consultores = useMemo(() => consultoresDaUnidade(funcionarios, u), [funcionarios, u])
+  const mecanicos = useMemo(() => mecanicosDaUnidade(funcionarios, u, r), [funcionarios, u, r])
+  const chefes = useMemo(() => porCargosDaUnidade(funcionarios, u, r, 'chefe'), [funcionarios, u, r])
+  const gerentes = useMemo(() => porCargosDaUnidade(funcionarios, u, r, 'gerente'), [funcionarios, u, r])
+  const gerentesGerais = useMemo(() => gerentesGeraisTrucks(funcionarios, r), [funcionarios, r])
+  const metasUnidade = useMemo(() => metasAprovadasDaUnidade(metasAprovadas, u.empresaId), [metasAprovadas, u.empresaId])
+  const metasPorUnidade = useMemo(
+    () => Object.fromEntries(CAMPANHA.unidades.map((x) => [x.id, metasAprovadasDaUnidade(metasAprovadas, x.empresaId)])),
+    [metasAprovadas],
+  )
+  const blocosMatriz = useMemo(() => ({ q: trimestreDoMes(String(mes).padStart(2, '0')), pesos: r.pesosBlocos }), [mes, r.pesosBlocos])
+  const coleta = useCallback((titulo, dados) => onColeta(mes, titulo, dados), [mes, onColeta])
+
+  if (!regras) return null
+  return (
+    <AbaApuracao modo="coleta" onColeta={coleta} campanha={campanha} regras={regras} unidade={unidade} ehTrucks={unidade === 'TRUCKS'}
+      diario={diario} consultores={consultores} mecanicos={mecanicos} chefes={chefes} gerentes={gerentes}
+      gerentesGerais={gerentesGerais} metasPorUnidade={metasPorUnidade} blocosMatriz={blocosMatriz}
+      ano={ano} mes={String(mes).padStart(2, '0')} metasUnidade={metasUnidade} funcionarios={funcionarios} erroFunc={erroFunc}
+      versaoDados={versaoDados} />
+  )
+}
+
+function AbaPagamento({ ano, mes, unidade, periodicidade, funcionarios, erroFunc, calendarios, versaoDados }) {
+  const meses = mesesDoPeriodo(periodicidade, mes)
+  const chaveMeses = meses.join(',')
+  // coleta[mes][tituloDoBloco] = { cor, semanas, linhas } | null (carregando)
+  const [coleta, setColeta] = useState({})
+  useEffect(() => { setColeta({}) }, [ano, chaveMeses, unidade, versaoDados])
+  const onColeta = useCallback((m, titulo, dados) => {
+    setColeta((c) => ({ ...c, [m]: { ...(c[m] || {}), [titulo]: dados } }))
+  }, [])
+
+  const nomeMesN = (m) => MESES[m - 1]?.label
+  const hoje = new Date()
+  const emAberto = (m) => Number(ano) > hoje.getFullYear() || (Number(ano) === hoje.getFullYear() && m > hoje.getMonth() + 1)
+  const ultimo = meses[meses.length - 1]
+  const pagamentoEm = ultimo === 12 ? `${nomeMesN(1)}/${Number(ano) + 1}` : `${nomeMesN(ultimo + 1)}/${ano}`
+  const rotuloPeriodo = periodicidade === 'trimestral' ? `${Math.ceil(meses[0] / 3)}º trimestre/${ano} (${nomeMesN(meses[0])} a ${nomeMesN(ultimo)})`
+    : periodicidade === 'bimestral' ? `${Math.ceil(meses[0] / 2)}º bimestre/${ano} (${nomeMesN(meses[0])} e ${nomeMesN(ultimo)})`
+      : `${nomeMesN(meses[0])}/${ano}`
+
+  // Blocos (cargos) na ordem em que aparecem; carregando enquanto algum mês não entregou o bloco.
+  const titulos = []
+  for (const m of meses) for (const t of Object.keys(coleta[m] || {})) if (!titulos.includes(t)) titulos.push(t)
+  const mesesProntos = meses.every((m) => coleta[m] && Object.keys(coleta[m]).length && Object.values(coleta[m]).every(Boolean))
+
+  // Colunas do Bloco 3: semanal = semanas do mês; demais = um mês por coluna.
+  const colunas = periodicidade === 'semanal'
+    ? (Object.values(coleta[meses[0]] || {}).find(Boolean)?.semanas || []).map((label, i) => ({ k: `s${i}`, titulo: `Sem ${i + 1}`, sub: label, mes: meses[0], semana: i }))
+    : meses.map((m) => ({ k: `m${m}`, titulo: nomeMesN(m), sub: emAberto(m) ? 'em aberto' : '', mes: m }))
+
+  const TD = 'p-2 text-right whitespace-nowrap tabular-nums border-l border-slate-200'
+  const VAZIO = <span className="text-slate-300">—</span>
+  return (
+    <div className="space-y-5">
+      <div className={`${CARD} p-4 flex flex-wrap items-center justify-between gap-2`}>
+        <p className="text-sm text-slate-700">
+          <b>Pagamento {PERIODICIDADES.find((p) => p.v === periodicidade)?.label.toLowerCase()}</b> · {rotuloPeriodo}
+        </p>
+        <p className="text-xs text-slate-500">
+          {periodicidade === 'semanal' ? 'Cada semana é paga após o seu fechamento.' : `Valor acumulado do período, pago em ${pagamentoEm}.`}
+          {' '}Periodicidade definida em Regras › Regras-chave.
+        </p>
+      </div>
+
+      {/* Cálculo de cada mês do período (invisível) */}
+      <div className="hidden" aria-hidden="true">
+        {meses.map((m) => (
+          <MesPagamento key={`${ano}-${m}-${unidade}-${versaoDados}`} ano={ano} mes={m} unidade={unidade} funcionarios={funcionarios} erroFunc={erroFunc}
+            calendarios={calendarios} versaoDados={versaoDados} onColeta={onColeta} />
+        ))}
+      </div>
+
+      {!mesesProntos && (
+        <div className={`${CARD} p-6 text-xs text-slate-500 flex items-center gap-2`}>
+          <Loader2 className="h-3.5 w-3.5 animate-spin" /> Calculando os valores de {meses.map(nomeMesN).join(', ')}…
+        </div>
+      )}
+      {mesesProntos && titulos.map((titulo) => {
+        const cor = meses.map((m) => coleta[m][titulo]?.cor).find(Boolean)
+        // Pessoas de todos os meses do período (quem saiu/entrou aparece com "—" no mês em que não estava).
+        const pessoas = new Map()
+        for (const m of meses) for (const l of coleta[m][titulo]?.linhas || []) if (!pessoas.has(l.id)) pessoas.set(l.id, l.nome)
+        const valor = (id, col) => {
+          const l = (coleta[col.mes][titulo]?.linhas || []).find((x) => x.id === id)
+          if (!l) return null
+          return col.semana != null ? (l.semanas[col.semana] ?? 0) : l.total
+        }
+        return (
+          <div key={titulo} className={CARD}>
+            <div className="p-4 pb-3">
+              <p className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <span className="h-2.5 w-2.5 rounded-sm" style={{ background: cor }} /> {titulo}
+              </p>
+            </div>
+            {!pessoas.size ? (
+              <p className="px-4 pb-4 text-xs text-slate-500">Ninguém neste bloco no período.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full table-fixed text-xs border-collapse">
+                  <colgroup>
+                    <col className="w-[24%]" />
+                    {colunas.map((c) => <col key={c.k} />)}
+                    <col className="w-[9%]" /><col className="w-[9%]" /><col className="w-[12%]" />
+                  </colgroup>
+                  <thead>
+                    <tr className="bg-slate-50 border-t border-slate-200">
+                      <th rowSpan={2} className={`${TH} text-left align-bottom border-b border-slate-200`}>Nome</th>
+                      <th colSpan={colunas.length} className={`${TH} text-center border-l border-slate-200`}>Bloco 3 - Serviços</th>
+                      <th rowSpan={2} className={`${TH} text-right align-bottom border-l border-b border-slate-200`}>Bloco 1 - Corporativo</th>
+                      <th rowSpan={2} className={`${TH} text-right align-bottom border-l border-b border-slate-200`}>Bloco 2 - Departamental</th>
+                      <th rowSpan={2} className={`${TH} text-right align-bottom border-l border-b border-slate-200`}>Total a pagar</th>
+                    </tr>
+                    <tr className="bg-slate-50 border-b border-slate-200">
+                      {colunas.map((c) => (
+                        <th key={c.k} className={`${TH} text-right border-l border-slate-200`}>
+                          {c.titulo}
+                          {c.sub && <span className="block text-[9px] font-medium normal-case tracking-normal text-slate-400">{c.sub}</span>}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...pessoas].map(([id, nome]) => {
+                      const vals = colunas.map((c) => valor(id, c))
+                      // Blocos 1 e 2: soma da parte de cada mês do período em que a pessoa estava.
+                      const doMes = meses.map((m) => (coleta[m][titulo]?.linhas || []).find((x) => x.id === id)).filter(Boolean)
+                      const b1 = doMes.length ? doMes.reduce((a, l) => a + (l.b1 || 0), 0) : null
+                      const b2 = doMes.length ? doMes.reduce((a, l) => a + (l.b2 || 0), 0) : null
+                      const total = vals.reduce((a, v) => a + (v || 0), 0) + (b1 || 0) + (b2 || 0)
+                      return (
+                        <tr key={id} className="border-b border-slate-100">
+                          <td className="p-2 font-medium text-slate-800 truncate" title={nome}>{nome}</td>
+                          {vals.map((v, i) => (
+                            <td key={colunas[i].k} className={`${TD} ${v > 0 ? 'text-slate-900 font-semibold' : 'text-slate-400'}`}>
+                              {v == null ? VAZIO : moedaBR(v)}
+                            </td>
+                          ))}
+                          <td className={`${TD} ${b1 > 0 ? 'text-slate-900 font-semibold' : 'text-slate-400'}`} title="Bloco 1 - Corporativo: parte da Meta paga integralmente">{b1 == null ? VAZIO : moedaBR(b1)}</td>
+                          <td className={`${TD} ${b2 > 0 ? 'text-slate-900 font-semibold' : 'text-slate-400'}`} title="Bloco 2 - Departamental: parte da Meta paga integralmente">{b2 == null ? VAZIO : moedaBR(b2)}</td>
+                          <td className={`${TD} font-bold ${COR_TOTAL.real} ${total > 0 ? 'text-emerald-700' : 'text-slate-500'}`}>{moedaBR(total)}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </div>
   )
 }
 
@@ -602,6 +845,45 @@ function LinhaCalc({ rotulo, valor, destaque = false }) {
   )
 }
 
+// Bônus de uma pessoa no mês, semana a semana (usado pelo Resultado e pelo Pagamento):
+// contribuição da semana → faixa → % aplicado × bônus-alvo da semana do Bloco 3 (Meta ou Supermeta
+// × % do Bloco 3 na divisão do bônus ÷ nº de semanas). Regra-chave de atingimento mínimo do mês (bloqueio) e "Mês zerado" (alerta) zeram tudo.
+function bonusDaLinha(p, { pesoB3, faixas, regras, unidade, chaveBonus, nSem }) {
+  const alvo = bonusAlvoDe(regras, p.unidadeBonus ? 'TRUCKS' : unidade, p.chaveBonus || chaveBonus)
+  const cels = celulasDaLinha(p, pesoB3)
+  const bloqueio = bloqueioAtingimentoMinimo(regras, totalDaLinha(p, cels).total)
+  const calc = cels.map((c) => {
+    const fx = c.semDiaUtil ? null : faixaDoValor(c.contrib, faixas)
+    if (!fx || fx.abaixo || p.alerta || bloqueio) return { fx, valor: 0 }
+    const mensal = fx.base === 'supermeta' ? alvo.supermeta : alvo.meta
+    const parteB3 = mensal * (pesoB3 || 0) // parte do bônus do Bloco 3 (divisão em Bônus-alvo)
+    const base = parteB3 / (nSem || 1)
+    return { fx, mensal, parteB3, base, valor: base * (fx.paga || 0) }
+  })
+  return { cels, bloqueio, calc, total: calc.reduce((a, c) => a + c.valor, 0) }
+}
+
+// Modo "coleta" (aba Pagamento): não desenha nada — calcula o bônus de cada pessoa do bloco no mês
+// e entrega para a aba Pagamento (ctx.onColeta). null = ainda carregando.
+function ColetaBonus({ titulo, cor, campanha, linhas, carregando, pesoB3, faixas, regras, unidade, chaveBonus, onColeta }) {
+  const nSem = campanha.semanas.length || 1
+  const dados = carregando ? null : {
+    cor,
+    semanas: campanha.semanas.map((sm) => sm.label),
+    linhas: linhas.map((p) => {
+      const r = bonusDaLinha(p, { pesoB3, faixas, regras, unidade, chaveBonus, nSem })
+      // Blocos 1 e 2: parte da Meta do mês, paga integralmente (sem faixas), só por mês.
+      const meta = bonusAlvoDe(regras, p.unidadeBonus ? 'TRUCKS' : unidade, p.chaveBonus || chaveBonus).meta
+      const b1 = meta * (Number(regras?.pesosBlocos?.companhia) || 0)
+      const b2 = meta * (Number(regras?.pesosBlocos?.departamento) || 0)
+      return { id: p.id, nome: p.nome, semanas: r.calc.map((c) => c.valor), total: r.total, b1, b2 }
+    }),
+  }
+  const chave = JSON.stringify(dados)
+  useEffect(() => { onColeta?.(titulo, dados) }, [chave]) // eslint-disable-line react-hooks/exhaustive-deps
+  return null
+}
+
 // Resultado: mesma tabela da Apuração, uma coluna por semana com o Valor do bônus e um ⓘ com o
 // cálculo: contribuição da semana → faixa (aba Regras) → % aplicado sobre o bônus × bônus-alvo da
 // semana (Meta ou Supermeta, conforme "Aplicar sobre"; valor do mês ÷ nº de semanas do mês).
@@ -654,18 +936,7 @@ function ResultadoSemanal({ titulo, cor, campanha, linhas, carregando, vazio, pe
             </thead>
             <tbody>
               {linhas.map((p) => {
-                const alvo = bonusAlvoDe(regras, p.unidadeBonus ? 'TRUCKS' : unidade, p.chaveBonus || chaveBonus)
-                const cels = celulasDaLinha(p, pesoB3)
-                // Regra-chave: atingimento do mês (mesmo Total da Apuração) abaixo do mínimo → nada liberado.
-                const bloqueio = bloqueioAtingimentoMinimo(regras, totalDaLinha(p, cels).total)
-                const calc = cels.map((c) => {
-                  const fx = c.semDiaUtil ? null : faixaDoValor(c.contrib, faixas)
-                  if (!fx || fx.abaixo || p.alerta || bloqueio) return { fx, valor: 0 }
-                  const mensal = fx.base === 'supermeta' ? alvo.supermeta : alvo.meta
-                  const base = mensal / nSem
-                  return { fx, mensal, base, valor: base * (fx.paga || 0) }
-                })
-                const total = calc.reduce((a, c) => a + c.valor, 0)
+                const { cels, bloqueio, calc, total } = bonusDaLinha(p, { pesoB3, faixas, regras, unidade, chaveBonus, nSem })
                 return (
                   <tr key={p.id} className="border-b border-slate-100">
                     <td className="p-2 font-medium text-slate-800 leading-tight [&>span]:mt-1 [&>span]:ml-0 [&>span]:inline-block" title={p.nome}>
@@ -701,7 +972,8 @@ function ResultadoSemanal({ titulo, cor, campanha, linhas, carregando, vazio, pe
                             <LinhaCalc rotulo="% aplicado sobre o bônus" valor={pctTxt(k.fx.paga)} />
                             <LinhaCalc rotulo="Aplicar sobre" valor={nomeBase} />
                             <LinhaCalc rotulo={`${nomeBase} do mês`} valor={moedaBR(k.mensal)} />
-                            <LinhaCalc rotulo={`${nomeBase} da semana (÷ ${nSem})`} valor={moedaBR(k.base)} />
+                            <LinhaCalc rotulo={`Parte do Bloco 3 (${pctTxt(pesoB3)})`} valor={moedaBR(k.parteB3)} />
+                            <LinhaCalc rotulo={`Bloco 3 por semana (÷ ${nSem})`} valor={moedaBR(k.base)} />
                             <LinhaCalc rotulo={`${pctTxt(k.fx.paga)} × ${moedaBR(k.base)}`} valor={moedaBR(k.valor)} destaque />
                           </>
                         )
@@ -736,7 +1008,11 @@ function ResumoSemanal({ titulo, cor, campanha, linhas, carregando, vazio, bloco
   const VAZIO = <span className="text-slate-300">—</span>
   const pesoB3 = blocosMatriz.pesos?.individual || 0
   const semanas = campanha.semanas
-  const { faixas, regras, unidade, modo } = useContext(FaixasCtx)
+  const { faixas, regras, unidade, modo, onColeta } = useContext(FaixasCtx)
+  if (modo === 'coleta') {
+    return <ColetaBonus titulo={titulo} cor={cor} campanha={campanha} linhas={linhas} carregando={carregando}
+      pesoB3={pesoB3} faixas={faixas} regras={regras} unidade={unidade} chaveBonus={chaveBonus} onColeta={onColeta} />
+  }
   if (modo === 'resultado') {
     return <ResultadoSemanal titulo={titulo} cor={cor} campanha={campanha} linhas={linhas} carregando={carregando} vazio={vazio}
       pesoB3={pesoB3} faixas={faixas} regras={regras} unidade={unidade} chaveBonus={chaveBonus} matrizB3={matrizB3} />
@@ -1175,10 +1451,10 @@ const lerCaminho = (obj, caminho) => caminho.reduce((o, k) => (o == null ? undef
 
 // Semanas do mês escolhido e dias úteis de cada uma (Calendário de cada empresa: sábado = 0,5,
 // feriado = 0) + Bônus-alvo editável (Meta e Supermeta) da empresa selecionada.
-// Texto para os colaboradores entenderem a campanha (topo da aba Regras). Não é editável: é montado
-// a partir das regras da empresa/mês (nº de semanas etc.) e acompanha o que for sendo configurado.
-// As faixas reais ficam só na tabela Faixas de pagamento abaixo; aqui vai apenas um exemplo.
-function ComoFunciona({ nSemanas }) {
+// Texto para os colaboradores entenderem a campanha (topo da aba Regras). Não é editável e é GERAL:
+// descreve como as regras funcionam, sem depender da empresa ou do mês escolhido (valores reais
+// ficam nas tabelas da aba; aqui só exemplos).
+function ComoFunciona() {
   // Abre/fecha ao clicar no título; sempre começa fechado.
   const [aberto, setAberto] = useState(false)
   const passo = 'flex gap-3'
@@ -1209,8 +1485,9 @@ function ComoFunciona({ nSemanas }) {
         <li className={passo}>
           <span className={num}>2</span>
           <div>
-            <b>📅 Apuração toda semana.</b> O mês poderá ter <b>4 ou 5 semanas</b> (as mesmas da Matriz KPIs, veja a tabela abaixo).
-            Em cada semana é calculada a <b>soma da contribuição</b>, que será o valor extraído de contribuição de cada
+            <b>📅 Apuração toda semana.</b> As semanas vão de domingo a sábado, as mesmas da Matriz KPIs (veja a tabela abaixo).
+            Uma semana incompleta no começo ou no fim do mês só conta sozinha se tiver uma quarta-feira; senão, é somada à
+            semana vizinha — por isso o mês poderá ter <b>4 ou 5 semanas</b>. Em cada semana é calculada a <b>soma da contribuição</b>, que será o valor extraído de contribuição de cada
             indicador que possuir valores de pesos.
           </div>
         </li>
@@ -1226,27 +1503,32 @@ function ComoFunciona({ nSemanas }) {
         <li className={passo}>
           <span className={num}>4</span>
           <div>
-            <b>💰 Valor da semana.</b> Bônus da semana = <b>% aplicado sobre o bônus × bônus-alvo da semana</b>.
-            O bônus-alvo da semana é o valor do mês (Meta ou Supermeta, tabela Bônus-alvo) dividido pela quantidade de semanas do mês.
+            <b>💰 Valor da semana.</b> O bônus-alvo do mês (Meta ou Supermeta, tabela <b>Bônus-alvo - Serviços</b>) é dividido
+            entre os blocos da Matriz KPIs — por exemplo, Bloco 1 - Corporativo 20%, Bloco 2 - Departamental 30% e
+            Bloco 3 - Serviços 50%. As partes do Bloco 1 e do Bloco 2 são pagas <b>integralmente</b>, por mês. A parte do
+            Bloco 3, dividida pela quantidade de semanas do mês, é o bônus-alvo da semana, e segue as faixas:
+            bônus da semana = <b>% aplicado sobre o bônus × bônus-alvo da semana</b>.
           </div>
         </li>
         <li className={passo}>
           <span className={num}>5</span>
           <div>
-            <b>➕ Total do mês.</b> O bônus do mês é a <b>soma das semanas</b> — uma semana fraca não apaga as boas. 😉
-            O pagamento é feito no mês seguinte.
+            <b>➕ Pagamento.</b> O bônus é a <b>soma das semanas</b> — uma semana fraca não apaga as boas. 😉 O valor acumulado
+            é pago conforme a <b>forma de pagamento</b> definida nas Regras-chave: semanal, mensal, bimestral ou trimestral.
           </div>
         </li>
       </ol>
 
       <div className="rounded-md border border-blue-100 bg-white px-3 py-2 text-xs text-slate-700">
-        <b>🧮 Exemplo:</b> Meta do mês R$ 1.500,00 em {nSemanas} semanas = R$ {moedaTxt(1500 / (nSemanas || 1))} por semana.
-        Contribuição de 85% na semana → faixa que paga 50% da Meta → 50% × R$ {moedaTxt(1500 / (nSemanas || 1))} =
-        <b> R$ {moedaTxt((1500 / (nSemanas || 1)) * 0.5)}</b> naquela semana.
+        <b>🧮 Exemplo:</b> Meta do mês R$ 1.500,00 → parte do Bloco 3 - Serviços (50%) = R$ 750,00 → em 5 semanas =
+        R$ 150,00 por semana. Contribuição de 85% na semana → faixa que paga 50% da Meta → 50% × R$ 150,00 =
+        <b> R$ 75,00</b> naquela semana.
       </div>
 
       <ul className="space-y-1 text-[11px] text-slate-500">
-        <li>⚠️ Participa quem está com o cadastro <b>“1 - Trabalhando”</b> durante a campanha.</li>      </ul>
+        <li>⚠️ Participa quem está com o cadastro <b>“1 - Trabalhando”</b> durante a campanha.</li>
+        <li>⚠️ Quando ativada nas Regras-chave, as bonificações só são liberadas se o <b>% de atingimento do mês</b> alcançar o mínimo definido.</li>
+      </ul>
       </>)}
     </section>
   )
@@ -1325,7 +1607,7 @@ function MenuEngrenagem({ itens }) {
   )
 }
 
-function AbaRegras({ permRegras = {}, onSalvarOutra, slotAcoes, campanha, unidade, semCalendario, nomeMes, ano, mes, regras, onSalvar, origemRegras, nomeEmpresa }) {
+function AbaRegras({ travaPeriodicidade = null, permRegras = {}, onSalvarOutra, slotAcoes, campanha, unidade, semCalendario, nomeMes, ano, mes, regras, onSalvar, origemRegras, nomeEmpresa }) {
   const unidades = unidade === 'TRUCKS' ? campanha.unidades : campanha.unidades.filter((u) => u.id === unidade)
   const semCal = unidades.filter((u) => semCalendario.includes(u.id))
 
@@ -1344,6 +1626,23 @@ function AbaRegras({ permRegras = {}, onSalvarOutra, slotAcoes, campanha, unidad
   // Bônus-alvo é do mês: por semana = valor ÷ nº de semanas do mês (5 semanas ÷ 5, 4 semanas ÷ 4).
   const nSemanas = campanha.semanas.length || 1
   const porSemana = (v) => `R$ ${moedaTxt((Number(v) || 0) / nSemanas)}`
+  // Divisão do bônus entre os blocos (Bloco 1/2/3 da Matriz) — precisa somar 100%.
+  const pb = rascunho.pesosBlocos || {}
+  const somaBlocos = (Number(pb.companhia) || 0) + (Number(pb.departamento) || 0) + (Number(pb.individual) || 0)
+  const somaBlocosOk = Math.abs(somaBlocos - 1) < 0.0001
+  // Células B1, B2 e B3 de Meta/Supermeta: valor do mês (parte do bloco) e, embaixo, por semana.
+  const BLOCOS_BONUS = [['companhia', 'B1'], ['departamento', 'B2'], ['individual', 'B3']]
+  const celulasBlocos = (v) => BLOCOS_BONUS.map(([k, rot]) => {
+    const cls = `p-2 text-right tabular-nums whitespace-nowrap ${k === 'individual' ? 'text-blue-800 bg-blue-50/40' : 'text-slate-600'}`
+    if (v == null) return <td key={k} className={cls}>—</td>
+    const parte = (Number(v) || 0) * (Number(pb[k]) || 0)
+    return (
+      <td key={k} className={cls} title={`${rot} (${pctTxt(Number(pb[k]) || 0)})`}>
+        R$ {moedaTxt(parte)}
+        {k === 'individual' && <span className="block text-[10px] text-slate-400">R$ {moedaTxt(parte / nSemanas)}/sem</span>}
+      </td>
+    )
+  })
   const salvar = async () => {
     setSalvando(true)
     try {
@@ -1441,6 +1740,7 @@ function AbaRegras({ permRegras = {}, onSalvarOutra, slotAcoes, campanha, unidad
         if (rascunho.funcoes?.chefe?.valores) r = comValor(r, ['funcoes', 'chefe', 'valores'], rascunho.funcoes.chefe.valores)
         r = comValor(r, ['bonusBloqueado', destino.id], travasOrigem)
         r = comValor(r, ['regrasChave'], rascunho.regrasChave || {})
+        if (rascunho.pesosBlocos) r = comValor(r, ['pesosBlocos'], rascunho.pesosBlocos)
         r = comValor(r, ['faixasUnidade', destino.id], faixasDe(rascunho, unidade) || [])
         await onSalvarOutra(destino.id, r)
       }
@@ -1458,14 +1758,16 @@ function AbaRegras({ permRegras = {}, onSalvarOutra, slotAcoes, campanha, unidad
     <div className="flex items-center gap-2">
       {msg && <span className={`text-xs ${msg.erro ? 'text-red-600' : 'text-emerald-700'}`}>{msg.txt}</span>}
       {permRegras.editar && alterado && (
-        <button onClick={() => { setRascunho(regras); setMsg(null) }}
-          className="px-3 py-1.5 rounded-md text-xs font-semibold text-slate-700 border border-slate-200 bg-white hover:bg-slate-50">
-          Descartar
+        // Só ícones (lixeira = Descartar, disquete = Salvar); o nome aparece ao passar o mouse.
+        <button type="button" onClick={() => { setRascunho(regras); setMsg(null) }} title="Descartar" aria-label="Descartar"
+          className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white p-1.5 text-slate-600 hover:bg-red-50 hover:text-red-600 hover:border-red-200">
+          <Trash2 className="h-4 w-4" />
         </button>
       )}
-      {permRegras.editar && <button onClick={salvar} disabled={salvando || !alterado}
-        className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50">
-        {salvando && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Salvar
+      {permRegras.editar && <button type="button" onClick={salvar} disabled={salvando || !alterado}
+        title={salvando ? 'Salvando…' : 'Salvar'} aria-label="Salvar"
+        className="inline-flex items-center justify-center rounded-md border border-blue-600 bg-blue-600 p-1.5 text-white hover:bg-blue-700 disabled:opacity-50">
+        {salvando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
       </button>}
       <MenuEngrenagem itens={[
         {
@@ -1512,11 +1814,12 @@ function AbaRegras({ permRegras = {}, onSalvarOutra, slotAcoes, campanha, unidad
     <div className="space-y-5">
       {/* Um só Salvar para a aba inteira (na linha das abas): grava as regras DESTA empresa para o mês/ano. */}
       {slotAcoes ? createPortal(botoesSalvar, slotAcoes) : <div className="flex justify-end">{botoesSalvar}</div>}
-      <ComoFunciona nSemanas={nSemanas} />
+      <ComoFunciona />
       {!permRegras.editar && (
         <p className="text-xs text-slate-500">🔒 Somente visualização — seu grupo de acesso não pode editar as regras.</p>
       )}
-      <fieldset disabled={!permRegras.editar} className="contents">
+      {/* Bloco normal (não "contents"): assim o espaçamento entre os quadros da aba funciona. */}
+      <fieldset disabled={!permRegras.editar} className="space-y-5 min-w-0">
     <div className="grid grid-cols-1 gap-5">
     {/* Semanas e Regras-chave lado a lado; Bônus-alvo e Faixas abaixo. */}
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-stretch">
@@ -1542,7 +1845,7 @@ function AbaRegras({ permRegras = {}, onSalvarOutra, slotAcoes, campanha, unidad
               {campanha.semanas.map((s) => (
                 <tr key={s.id} className="border-b border-slate-100">
                   <td className="p-2 font-semibold text-slate-700 whitespace-nowrap">
-                    Sem {s.id.slice(1)} <span className="font-normal text-slate-400">(Semana {s.numero})</span>
+                    Sem {s.id.slice(1)}
                   </td>
                   <td className="p-2 text-slate-600 whitespace-nowrap">{s.label}</td>
                   {unidades.map((u) => (
@@ -1570,7 +1873,7 @@ function AbaRegras({ permRegras = {}, onSalvarOutra, slotAcoes, campanha, unidad
             <thead>
               <tr className="bg-slate-50 border-y border-slate-200">
                 <th className={`${TH} text-left`}>Regra</th>
-                <th className={`${TH} text-right`}>Valor</th>
+                <th className={`${TH} text-left`}>Valor</th>
                 <th className={`${TH} text-center w-28`}>Considerar</th>
               </tr>
             </thead>
@@ -1583,7 +1886,7 @@ function AbaRegras({ permRegras = {}, onSalvarOutra, slotAcoes, campanha, unidad
                     <td className={`p-2 ${ativo ? 'text-slate-700' : 'text-slate-400'}`}>
                       Para liberar as bonificações semanais, o <b>% de atingimento do mês</b> precisa ser de no mínimo
                     </td>
-                    <td className="p-1.5 text-right">
+                    <td className="p-1.5 text-left">
                       <span className={`inline-flex items-center gap-1 ${ativo ? '' : 'opacity-50 pointer-events-none'}`}>
                         <PctInput rotulo="% de atingimento mínimo para liberar as bonificações" value={r.valor}
                           onChange={(v) => alterar(['regrasChave', 'atingimentoMinimo', 'valor'], v)} />
@@ -1601,6 +1904,48 @@ function AbaRegras({ permRegras = {}, onSalvarOutra, slotAcoes, campanha, unidad
                   </tr>
                 )
               })()}
+              {/* Periodicidade do pagamento (aba Pagamento): o bônus continua apurado por semana; aqui
+                  só se define de quanto em quanto tempo o acumulado é pago — sem regra extra de
+                  liberação do acumulado. Gravado em regrasChave.periodicidadePagamento. */}
+              <tr className="border-b border-slate-100 last:border-0">
+                <td className="p-2 text-slate-700">
+                  <b>Forma de pagamento</b> do bônus
+                  {travaPeriodicidade && (
+                    <span className="block text-[10px] text-slate-500 mt-0.5">
+                      Definido em {MESES[travaPeriodicidade.mesOrigem - 1]?.label} (1º mês do {travaPeriodicidade.periodicidade === 'trimestral' ? 'trimestre' : 'bimestre'})
+                    </span>
+                  )}
+                </td>
+                <td className="p-1.5 text-left">
+                  {/* Só o mês de ORIGEM escolhe: Trimestral só em jan/abr/jul/out, Bimestral só em
+                      jan/mar/mai/jul/set/nov. Meses seguintes de um período ficam travados. */}
+                  <span className="inline-flex flex-col items-start gap-0.5">
+                    <span className="inline-flex items-center gap-1">
+                      <select aria-label="Periodicidade do pagamento" disabled={!!travaPeriodicidade}
+                        value={travaPeriodicidade ? travaPeriodicidade.periodicidade : periodicidadeDe(rascunho)}
+                        onChange={(e) => alterar(['regrasChave', 'periodicidadePagamento'], e.target.value)}
+                        className="w-24 text-xs p-1.5 border border-slate-200 rounded bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 disabled:bg-slate-50 disabled:text-slate-500">
+                        {PERIODICIDADES.map((p) => {
+                          const mm = Number(mes)
+                          const foraDaOrigem = !travaPeriodicidade && ((p.v === 'trimestral' && inicioTrimestre(mm) !== mm) || (p.v === 'bimestral' && inicioBimestre(mm) !== mm))
+                          return <option key={p.v} value={p.v} disabled={foraDaOrigem}>{p.label}</option>
+                        })}
+                      </select>
+                    </span>
+                  </span>
+                </td>
+                <td className="p-2 text-center">
+                  <span className="inline-flex items-center gap-1">
+                    {/* Meses que fazem parte do período escolhido, ex.: OUT/NOV/DEZ */}
+                    <span className="text-[11px] font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded px-1.5 py-0.5 whitespace-nowrap"
+                      title="Meses que fazem parte deste período de pagamento">
+                      {mesesDoPeriodo(travaPeriodicidade ? travaPeriodicidade.periodicidade : periodicidadeDe(rascunho), mes)
+                        .map((x) => MESES[x - 1]?.label.slice(0, 3).toUpperCase()).join('/')}
+                    </span>
+                    {travaPeriodicidade && <Lock className="h-3.5 w-3.5 text-slate-400" aria-hidden="true" />}
+                  </span>
+                </td>
+              </tr>
             </tbody>
           </table>
         </div>
@@ -1609,7 +1954,23 @@ function AbaRegras({ permRegras = {}, onSalvarOutra, slotAcoes, campanha, unidad
 
       <section className={`${CARD} p-4 space-y-3`}>
         <div className="flex items-center justify-between gap-2 flex-wrap">
-          <h2 className="text-sm font-bold text-slate-900">Bônus-alvo</h2>
+          <h2 className="text-sm font-bold text-slate-900">Bônus-alvo - Serviços</h2>
+        </div>
+        {/* Divisão do bônus entre os blocos da Matriz (iguais para todas as funções; gravado em
+            regras.pesosBlocos). A parte de cada bloco é a base de cálculo daquele bloco — hoje só o
+            Bloco 3 tem dados (Resultado e Pagamento usam a parte do Bloco 3). */}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-600">
+          <span className="font-semibold text-slate-700">Divisão do bônus:</span>
+          {[['companhia', 'Bloco 1 - Corporativo'], ['departamento', 'Bloco 2 - Departamental'], ['individual', 'Bloco 3 - Serviços']].map(([k, rot]) => (
+            <label key={k} className="inline-flex items-center gap-1.5">
+              <span>{rot}</span>
+              <PctInput rotulo={`% do bônus para o ${rot}`} value={rascunho.pesosBlocos?.[k] ?? 0}
+                onChange={(v) => alterar(['pesosBlocos', k], v)} />
+            </label>
+          ))}
+          <span className={`font-semibold ${somaBlocosOk ? 'text-emerald-700' : 'text-red-600'}`}>
+            = {pctTxt(somaBlocos)} {somaBlocosOk ? '✔' : '(precisa somar 100%)'}
+          </span>
         </div>
         {linhas.length === 0 ? (
           <p className="text-xs text-slate-500">Nenhuma função com bônus nesta empresa.</p>
@@ -1617,12 +1978,20 @@ function AbaRegras({ permRegras = {}, onSalvarOutra, slotAcoes, campanha, unidad
           <div className="overflow-x-auto">
             <table className="w-full text-xs border-collapse">
               <thead>
-                <tr className="bg-slate-50 border-y border-slate-200">
-                  <th className={`${TH} text-left`}>Função</th>
-                  <th className={`${TH} text-right`}>Meta</th>
-                  <th className={`${TH} text-right`} title={`Meta ÷ ${nSemanas} semanas do mês`}>Meta / semana</th>
-                  <th className={`${TH} text-right`}>Supermeta</th>
-                  <th className={`${TH} text-right`} title={`Supermeta ÷ ${nSemanas} semanas do mês`}>Supermeta / semana</th>
+                <tr className="bg-slate-50 border-t border-slate-200">
+                  <th rowSpan={2} className={`${TH} text-left align-bottom border-b border-slate-200`}>Função</th>
+                  <th colSpan={4} className={`${TH} text-center border-l border-slate-200`}>Meta</th>
+                  <th colSpan={4} className={`${TH} text-center border-l border-slate-200`}>Supermeta</th>
+                </tr>
+                <tr className="bg-slate-50 border-b border-slate-200">
+                  {['meta', 'super'].map((g) => (
+                    <React.Fragment key={g}>
+                      <th className={`${TH} text-right border-l border-slate-200`} title="Valor do mês">Total</th>
+                      {BLOCOS_BONUS.map(([k, rot]) => (
+                        <th key={k} className={`${TH} text-right ${k === 'individual' ? 'bg-blue-50/60' : ''}`} title={k === 'individual' ? `Parte do ${rot} (mês e, embaixo, ÷ ${nSemanas} semanas)` : `Parte do ${rot} no mês (paga integralmente)`}>{rot}</th>
+                      ))}
+                    </React.Fragment>
+                  ))}
                 </tr>
               </thead>
               <tbody>
@@ -1643,7 +2012,7 @@ function AbaRegras({ permRegras = {}, onSalvarOutra, slotAcoes, campanha, unidad
                   return (
                     <tr key={l.k} className={`border-b border-slate-100 last:border-0 ${metaTravada ? 'bg-slate-50' : ''}`}>
                       <td className={`p-2 font-medium whitespace-nowrap ${metaTravada ? 'text-slate-400' : 'text-slate-700'}`}>{l.nome}</td>
-                      <td className="p-1.5 text-right">
+                      <td className="p-1.5 text-right border-l border-slate-100">
                         <span className="inline-flex items-center gap-1.5">
                           <Cadeado travado={metaTravada} rotulo={`Meta — ${l.nome}`} onClick={() => travar('meta', !metaTravada)}
                             dica={metaTravada ? 'Destravar a Meta (a Supermeta também é destravada)' : 'Travar a Meta sem valor (a Supermeta também é travada)'} />
@@ -1651,10 +2020,8 @@ function AbaRegras({ permRegras = {}, onSalvarOutra, slotAcoes, campanha, unidad
                             value={lerCaminho(rascunho, l.meta) ?? 0} onChange={(v) => alterar(l.meta, v)} />
                         </span>
                       </td>
-                      <td className="p-2 text-right tabular-nums whitespace-nowrap text-slate-600">
-                        {metaTravada ? '—' : porSemana(lerCaminho(rascunho, l.meta))}
-                      </td>
-                      <td className="p-1.5 text-right">
+                      {celulasBlocos(metaTravada ? null : lerCaminho(rascunho, l.meta))}
+                      <td className="p-1.5 text-right border-l border-slate-100">
                         {l.supermeta && (
                           <span className="inline-flex items-center gap-1.5">
                             <Cadeado travado={superTravada} rotulo={`Supermeta — ${l.nome}`} desabilitado={metaTravada}
@@ -1665,9 +2032,7 @@ function AbaRegras({ permRegras = {}, onSalvarOutra, slotAcoes, campanha, unidad
                           </span>
                         )}
                       </td>
-                      <td className="p-2 text-right tabular-nums whitespace-nowrap text-slate-600">
-                        {!l.supermeta || superTravada ? '—' : porSemana(valorSuper(l))}
-                      </td>
+                      {celulasBlocos(!l.supermeta || superTravada ? null : valorSuper(l))}
                     </tr>
                   )
                 })}

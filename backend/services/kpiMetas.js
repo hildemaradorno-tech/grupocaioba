@@ -11,6 +11,7 @@
  * do mês pelos dias úteis de cada semana (fato_calendario da própria empresa;
  * sem calendário cadastrado cai em segunda a sexta).
  */
+import { semanasDoAno } from './kpiSemanas.js'
 import { getSupabaseAdmin } from './supabaseAdmin.js'
 
 const ALL_MONTHS = Array.from({ length: 12 }, (_, i) => `m${String(i + 1).padStart(2, '0')}`)
@@ -36,25 +37,10 @@ async function fetchTudo(montarQuery) {
   return out
 }
 
-// Mesma regra de semanas do frontend (src/utils/kpiPeriods.js → computeWeekSchema):
-// o dia 1 abre a semana e ela fecha no 1º sábado; as demais vão de domingo a sábado
-// (ou até o fim do mês) — toda semana pertence a um único mês.
+// Semanas do ano — regra única em kpiSemanas.js (a mesma do frontend, src/utils/kpiPeriods.js):
+// domingo a sábado; semana parcial do começo/fim do mês só conta sozinha se tiver quarta-feira.
 function computeWeekRanges(year) {
-  const ranges = {}
-  let n = 1
-  for (let m = 1; m <= 12; m++) {
-    const dim      = new Date(Date.UTC(year, m, 0)).getUTCDate()
-    const dow1     = new Date(Date.UTC(year, m - 1, 1)).getUTCDay()
-    const firstSat = dow1 === 6 ? 1 : 1 + (6 - dow1)
-    let start = 1
-    while (start <= dim) {
-      const end = start === 1 ? Math.min(firstSat, dim) : Math.min(start + 6, dim)
-      ranges[`s${String(n).padStart(2, '0')}`] = { mes: m, inicio: start, fim: end }
-      n++
-      start = end + 1
-    }
-  }
-  return ranges
+  return semanasDoAno(year)
 }
 
 // Todas as metas publicadas do ano, de qualquer tipo, mais o calendário —

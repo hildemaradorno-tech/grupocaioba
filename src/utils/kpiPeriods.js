@@ -12,9 +12,39 @@ export const M_LABELS  = {
 }
 
 // ── Semanal ──────────────────────────────────────────────────────────────────
-// Regra: o dia 1 do mês abre a semana → termina no primeiro sábado daquele mês.
-// Semanas seguintes: domingo → sábado (7 dias) ou último dia do mês, o que vier primeiro.
-// O número total de semanas varia por ano (≈ 58-65).
+// Regra (a MESMA do backend — backend/services/kpiSemanas.js; mudar nos dois lugares):
+// cada mês é cortado em semanas de domingo a sábado (a 1ª começa no dia 1, a última termina no fim
+// do mês). Semana PARCIAL do começo ou do fim do mês só conta sozinha se tiver uma quarta-feira;
+// sem quarta, é anexada à vizinha (a do começo junta com a seguinte, a do fim com a anterior).
+// As chaves s01, s02… seguem numeradas no ano (dados do backend), mas o RÓTULO é por mês: Sem 1, Sem 2…
+
+function temQuarta(year, m, inicio, fim) {
+  for (let d = inicio; d <= fim; d++) if (new Date(Date.UTC(year, m - 1, d)).getUTCDay() === 3) return true
+  return false
+}
+
+// Semanas de um mês: [{ inicio, fim }] (dias do mês).
+export function semanasDoMes(year, m) {
+  const dim = new Date(Date.UTC(year, m, 0)).getUTCDate()
+  const p = []
+  let inicio = 1
+  while (inicio <= dim) {
+    const dow = new Date(Date.UTC(year, m - 1, inicio)).getUTCDay() // 0=Dom..6=Sab
+    const fim = Math.min(inicio + (6 - dow), dim)                    // até o sábado (ou fim do mês)
+    p.push({ inicio, fim })
+    inicio = fim + 1
+  }
+  if (p.length > 1 && p[0].fim - p[0].inicio < 6 && !temQuarta(year, m, p[0].inicio, p[0].fim)) {
+    p[1].inicio = p[0].inicio
+    p.shift()
+  }
+  const ult = p[p.length - 1]
+  if (p.length > 1 && ult.fim - ult.inicio < 6 && !temQuarta(year, m, ult.inicio, ult.fim)) {
+    p[p.length - 2].fim = ult.fim
+    p.pop()
+  }
+  return p
+}
 
 export function computeWeekSchema(year) {
   const allWeeks     = []
@@ -27,25 +57,16 @@ export function computeWeekSchema(year) {
 
   for (let m = 1; m <= 12; m++) {
     const mKey     = `m${String(m).padStart(2, '0')}`
-    const dim      = new Date(Date.UTC(year, m, 0)).getUTCDate()    // dias no mês
-    const dow1     = new Date(Date.UTC(year, m - 1, 1)).getUTCDay() // 0=Dom..6=Sab
-    const firstSat = dow1 === 6 ? 1 : 1 + (6 - dow1)               // dia do 1º sábado
-
     const mWeeks = []
-    let start = 1
-    while (start <= dim) {
-      const end = start === 1
-        ? Math.min(firstSat, dim)      // semana 1: dia 1 → primeiro sábado
-        : Math.min(start + 6, dim)     // demais: dom → sab (ou fim do mês)
+    semanasDoMes(year, m).forEach(({ inicio: start, fim: end }, i) => {
       const key = `s${String(n).padStart(2, '0')}`
       allWeeks.push(key)
-      labels[key] = `S${String(n).padStart(2, '0')}`
+      labels[key] = `Sem ${i + 1}` // número da semana DENTRO do mês (igual à Campanha Pós-Venda)
       dateRanges[key] = { startDay: start, startMonth: m, endDay: end, endMonth: m }
       mWeeks.push(key)
       w2m[key] = mKey
       n++
-      start = end + 1
-    }
+    })
     mwRanges[mKey] = mWeeks
     wpm[mKey]      = mWeeks.length
   }

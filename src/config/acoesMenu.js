@@ -399,7 +399,6 @@ export const ACOES_POR_MENU = [
   {
     menuPath: 'bi/campanha/resultado',
     acoes: [
-      { value: 'atualizar_numeros', label: 'Atualizar Números (sincroniza Matriz KPIs + Campanha)' },
       { value: 'ver_matriz',        label: 'Ver Bloco 3 da Matriz KPIs (pop-up)' },
       { value: 'ver_calculo',       label: 'Ver Cálculo do Bônus de cada Semana (ⓘ)' },
     ],
