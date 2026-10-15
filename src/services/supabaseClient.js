@@ -3352,6 +3352,13 @@ export const apiService = {
     if (error) throw error
     return data?.[0]
   },
+  updateAuditoriaStatus: async (id, status, userEmail, procedimento) => {
+    const { data, error } = await supabase.from('aud_auditorias')
+      .update({ status, status_atualizado_em: new Date().toISOString(), status_atualizado_por: userEmail || null, ultimo_procedimento: procedimento || null })
+      .eq('id', id).select()
+    if (error) throw error
+    return data?.[0]
+  },
   deleteAuditoria: async (id) => {
     // Apaga as OS filhas primeiro (garante exclusão mesmo sem CASCADE)
     const { error: e1 } = await supabase.from('aud_auditoria_os').delete().eq('auditoria_id', id)

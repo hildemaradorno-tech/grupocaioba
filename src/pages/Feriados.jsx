@@ -1,8 +1,10 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react'
 import { useSessionState } from '../hooks/useSessionState'
-import { Plus, X, AlertTriangle, Copy, CheckSquare, Square, Calendar, Trash2, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react'
+import { Plus, X, AlertTriangle, Copy, CheckSquare, Square, Calendar, Trash2, ArrowUp, ArrowDown, ArrowUpDown, Download } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import PermissionActionButtons from '../components/PermissionActionButtons'
+import SeletorEmpresasAgrupado from '../components/SeletorEmpresasAgrupado'
+import ImportarFeriadosModal from './ImportarFeriadosModal'
 import { apiService } from '../services/api'
 
 const TIPOS_PAUSA   = ['FERIADO', 'PARADA PARCIAL', 'PARADA TOTAL']
@@ -93,6 +95,7 @@ export default function Feriados() {
   const [ordem, setOrdem] = useState({ campo: 'data_feriado', dir: 'asc' })
 
   const [modalAberto, setModalAberto]                 = useState(false)
+  const [modalImportarAberto, setModalImportarAberto] = useState(false)
   const [modalDuplicarAberto, setModalDuplicarAberto] = useState(false)
   const [modo, setModo]                               = useState('incluir')
   const [ocorrenciaEditando, setOcorrenciaEditando]     = useState(null)
@@ -215,13 +218,6 @@ export default function Feriados() {
       return
     }
     setForm(prev => ({ ...prev, [name]: value }))
-  }
-
-  const toggleEmpresaForm = (id) => {
-    setForm(prev => ({
-      ...prev,
-      empresa_ids: prev.empresa_ids.includes(id) ? prev.empresa_ids.filter(x => x !== id) : [...prev.empresa_ids, id],
-    }))
   }
 
   const handleSalvar = async () => {
@@ -347,6 +343,11 @@ export default function Feriados() {
           <button onClick={handleDuplicar} className={BTN_SEC}>
             <Copy size={16} /> Duplicar Ano
           </button>
+          {canEdit && (
+            <button onClick={() => setModalImportarAberto(true)} className={BTN_SEC}>
+              <Download size={16} /> Importar Feriados
+            </button>
+          )}
           {canEdit && (
             <button onClick={abrirIncluir} className={BTN_PRI}>
               <Plus size={16} /> Incluir Feriado
@@ -505,19 +506,11 @@ export default function Feriados() {
                     <span className="text-slate-400">{form.empresa_ids.length}/{empresas.length}</span>
                   </div>
                 </div>
-                <div className="border border-slate-300 rounded-lg max-h-44 overflow-y-auto divide-y divide-slate-100">
-                  {empresas.map(e => (
-                    <label key={e.id} className="flex items-center gap-2 px-3 py-1.5 text-sm text-slate-700 cursor-pointer hover:bg-slate-50 select-none">
-                      <input
-                        type="checkbox"
-                        checked={form.empresa_ids.includes(e.id)}
-                        onChange={() => toggleEmpresaForm(e.id)}
-                        className="w-3.5 h-3.5 rounded accent-indigo-600"
-                      />
-                      {nomeEmpresa(e)}
-                    </label>
-                  ))}
-                </div>
+                <SeletorEmpresasAgrupado
+                  empresas={empresas}
+                  selecionados={form.empresa_ids}
+                  onChange={ids => setForm(prev => ({ ...prev, empresa_ids: ids }))}
+                />
               </div>
 
               {/* Data */}
@@ -639,6 +632,20 @@ export default function Feriados() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* MODAL IMPORTAR FERIADOS (base: joaopbini/feriados-brasil, via GitHub) */}
+      {modalImportarAberto && (
+        <ImportarFeriadosModal
+          empresas={empresas}
+          ocorrencias={ocorrencias}
+          anoPadrao={filtroAno || anoAtual}
+          onClose={() => setModalImportarAberto(false)}
+          onImportado={async () => {
+            setModalImportarAberto(false)
+            await loadData()
+          }}
+        />
       )}
     </div>
   )

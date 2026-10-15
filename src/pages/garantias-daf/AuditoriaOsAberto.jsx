@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react'
-import { ClipboardList, Download, ChevronDown, Save, AlertTriangle, Building2, ShieldAlert, Trash2, Calendar, User, Banknote, Search, XCircle, X, Clock, ClipboardCheck, FileText } from 'lucide-react'
+import { ClipboardList, Download, ChevronDown, Save, AlertTriangle, Building2, ShieldAlert, Trash2, Calendar, User, Banknote, Search, XCircle, X, Clock, ClipboardCheck, FileText, List, ThumbsUp, CheckCircle2 } from 'lucide-react'
 import { apiService } from '../../services/api'
 import { useAuth } from '../../context/AuthContext'
 
@@ -23,6 +23,16 @@ const isPendente = (row) => {
   return (d !== null && d >= 30) || row.na_oficina === false
 }
 
+// Respondida: Situação, Observação e Dt. Previsão preenchidas (o modal exige os três)
+const isRespondida = (row) => !!(row.situacao_id && (row.observacao || '').trim() && row.data_previsao)
+
+// Status da AUDITORIA (aud_auditorias.status) — toda auditoria passa pelas 3 etapas, em ordem
+const ETAPAS_AUDITORIA = [
+  { id: 'conferencia', label: 'Modo Conferência', icon: ClipboardCheck },
+  { id: 'a_responder', label: 'Modo Relatório — A Responder', icon: FileText },
+  { id: 'respondido', label: 'Modo Relatório — Respondido', icon: CheckCircle2 },
+]
+
 export default function AuditoriaOsAberto() {
   const { user, isAdmin, empresasPermitidas } = useAuth()
   const BACKEND = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
@@ -31,6 +41,7 @@ export default function AuditoriaOsAberto() {
   const [empresas, setEmpresas] = useState([])
   const [responsaveis, setResponsaveis] = useState([])
   const [situacoes, setSituacoes] = useState([])
+  const [nomePorEmail, setNomePorEmail] = useState(new Map())
 
   // ── Filtro e seleção de auditoria ──
   const [filtroEmpresaId, setFiltroEmpresaId] = useState('')
@@ -60,13 +71,18 @@ export default function AuditoriaOsAberto() {
   const [buscaOs, setBuscaOs] = useState('')
 
   // ── Modo de tela: conferência (checagem física no pátio) ou relatório (visão completa) ──
-  const [modo, setModo] = useState('conferencia') // conferencia | relatorio
+  const [relatorioVerTodos, setRelatorioVerTodos] = useState(false) // relatório: só pendentes (padrão) ou todas
+
+  // ── Mudança de status da auditoria (confirmação) ──
+  const [modalStatus, setModalStatus] = useState(null) // { para, titulo, texto }
+  const [salvandoStatus, setSalvandoStatus] = useState(false)
 
   // ── Data de atualização do arquivo ROF001_OSABERTA (fonte da importação) ──
   const [arquivoAtualizadoEm, setArquivoAtualizadoEm] = useState(null)
   const [arquivoInfoStatus, setArquivoInfoStatus] = useState('carregando') // carregando | ok | erro
 
-  useEffect(() => {
+  const carregarArquivoInfo = useCallback(() => {
+    setArquivoInfoStatus('carregando')
     fetch(`${BACKEND}/api/garantias/sharepoint/aberta/info`)
       .then(r => r.ok ? r.json() : Promise.reject())
       .then(d => { setArquivoAtualizadoEm(d.lastModified); setArquivoInfoStatus('ok') })
@@ -94,6 +110,10 @@ export default function AuditoriaOsAberto() {
     setResponsaveis(respAtivos)
     setSituacoes(sit.filter(s => s.ativo))
     setAuditorias(auds)
+    // e-mail → nome do usuário (para "quem fez o quê"); se não puder ler, mostra o e-mail
+    apiService.getUsuarios()
+      .then(us => setNomePorEmail(new Map(us.filter(u => u.email).map(u => [u.email.toLowerCase(), u.nome]))))
+      .catch(() => {})
     return { emps: empsFiltradas, respAtivos }
   }, [isAdmin, empresasPermitidas])
 
@@ -138,6 +158,7 @@ export default function AuditoriaOsAberto() {
   const handleAbrirImport = () => {
     if (!filtroEmpresaId) { setErro('Selecione uma empresa antes de importar.'); return }
     setResponsavelImportId('')
+    carregarArquivoInfo()
     setModalImportar(true)
   }
 
@@ -196,7 +217,7 @@ export default function AuditoriaOsAberto() {
         servico:             sp.Servico              || sp.servico             || 0,
         responsavel_id:   respSel?.id   || null,
         responsavel_nome: respSel?.nome || null,
-        na_oficina:       false,
+        na_oficina:       null, // "—" = ainda não conferida; Sim/Não é marcado na conferência
       }))
       try {
         await apiService.createAuditoriaOsLote(linhas)
@@ -296,11 +317,30 @@ export default function AuditoriaOsAberto() {
   const auditoriaAtual = useMemo(() => auditorias.find(a => a.id === auditoriaId), [auditorias, auditoriaId])
   const totalValorOS = useMemo(() => rows.reduce((acc, r) => acc + (Number(r.total) || 0), 0), [rows])
 
-  // Modo Relatório mostra só as OS pendentes; Modo Conferência mostra todas
+  // Status da auditoria define a tela:
+  //  conferencia            → tabela de conferência (todas as OS)
+  //  a_responder/respondido → tabela de relatório (só pendentes; "Ver todas" inclui as não pendentes)
+  const statusAud = auditoriaAtual?.status || 'conferencia'
+  const etapaIdx = ETAPAS_AUDITORIA.findIndex(e => e.id === statusAud)
+  const emConferencia = statusAud === 'conferencia'
+  const soPendentes = !emConferencia && !relatorioVerTodos
+  const pendentesSemResposta = useMemo(() => rows.filter(r => isPendente(r) && !isRespondida(r)).length, [rows])
   const rowsDoModo = useMemo(
-    () => modo === 'relatorio' ? rows.filter(isPendente) : rows,
-    [rows, modo]
+    () => soPendentes ? rows.filter(isPendente) : rows,
+    [rows, soPendentes]
   )
+
+  const handleMudarStatus = async () => {
+    if (!modalStatus || !auditoriaAtual) return
+    setSalvandoStatus(true)
+    try {
+      const atualizada = await apiService.updateAuditoriaStatus(auditoriaAtual.id, modalStatus.para, user?.email || '', modalStatus.procedimento)
+      setAuditorias(prev => prev.map(a => a.id === auditoriaAtual.id ? { ...a, ...atualizada } : a))
+      setRelatorioVerTodos(false)
+      setModalStatus(null)
+    } catch (e) { setErro(e.message || String(e)); setModalStatus(null) }
+    finally { setSalvandoStatus(false) }
+  }
 
   const rowsFiltradas = useMemo(() => {
     const q = buscaOs.trim().toLowerCase()
@@ -326,28 +366,80 @@ export default function AuditoriaOsAberto() {
             Selecione a empresa, importe as OS do SharePoint e acompanhe por auditoria.
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          <div
-            className="flex items-center gap-1.5 text-[11px] text-slate-500"
-            title="Data de atualização do arquivo ROF001_OSABERTA no SharePoint, usado na importação"
-          >
-            <Clock className="h-3.5 w-3.5 text-slate-400" />
-            <span>Arquivo atualizado em</span>
-            <strong className={arquivoInfoStatus === 'erro' ? 'text-red-600' : 'text-slate-700'}>
-              {arquivoInfoStatus === 'carregando' ? '...'
-                : arquivoInfoStatus === 'erro' || !arquivoAtualizadoEm ? 'indisponível'
-                : new Date(arquivoAtualizadoEm).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-            </strong>
+        <div className="flex items-end gap-3 flex-wrap justify-end">
+          {/* Empresa */}
+          <div className="flex flex-col gap-1 w-[240px]">
+            <label className="h-4 text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1">
+              <Building2 className="h-3 w-3" /> Empresa
+            </label>
+            <div className="relative">
+              <select
+                value={filtroEmpresaId}
+                onChange={e => { setFiltroEmpresaId(e.target.value); setAuditoriaId('') }}
+                className="w-full h-9 text-xs px-2 pr-8 border border-slate-300 rounded-md focus:ring-2 focus:ring-indigo-500/20 bg-white appearance-none font-semibold"
+              >
+                <option value="">— Selecione uma empresa —</option>
+                {empresas.map(e => (
+                  <option key={e.id} value={e.id}>{e.nome_empresa_sistema || e.nome_empresa}</option>
+                ))}
+              </select>
+              <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+            </div>
           </div>
-          <button
-            onClick={handleAbrirImport}
-            disabled={importando || !filtroEmpresaId}
-            title={!filtroEmpresaId ? 'Selecione uma empresa antes de importar' : ''}
-            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold px-4 py-2 rounded-md shadow-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            <Download className={`h-4 w-4 ${importando ? 'animate-bounce' : ''}`} />
-            {importando ? 'Importando...' : 'Inserir Auditoria'}
-          </button>
+
+          {/* Auditoria */}
+          <div className="flex flex-col gap-1 w-[220px]">
+            <label className="h-4 text-[10px] font-bold text-slate-400 uppercase flex items-center">Data da Auditoria</label>
+            <div className="relative">
+              <select
+                value={auditoriaId}
+                onChange={e => setAuditoriaId(e.target.value)}
+                disabled={!filtroEmpresaId}
+                className="w-full h-9 text-xs px-2 pr-8 border border-slate-300 rounded-md focus:ring-2 focus:ring-indigo-500/20 bg-white appearance-none disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <option value="">— Selecione uma auditoria —</option>
+                {auditoriasFiltradas.map(a => (
+                  <option key={a.id} value={a.id}>
+                    {fmtDate(a.data_auditoria)} — {a.total_os} OS · {{ conferencia: 'Conferência', a_responder: 'A Responder', respondido: 'Respondido' }[a.status || 'conferencia']}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+            </div>
+          </div>
+
+          {/* Excluir auditoria — só ícone, aparece quando há auditoria selecionada */}
+          {auditoriaAtual && (
+            <div className="relative group">
+              <button
+                onClick={() => setModalExcluir(true)}
+                aria-label="Excluir auditoria"
+                className="flex items-center justify-center h-9 w-9 rounded-md text-red-600 bg-white border border-red-200 hover:bg-red-50 shadow-sm transition-colors"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+              <span className="pointer-events-none absolute right-0 top-full mt-1.5 z-20 whitespace-nowrap rounded-md bg-slate-800 px-2.5 py-1.5 text-[11px] font-semibold text-white shadow-lg opacity-0 group-hover:opacity-100 transition-opacity">
+                Excluir auditoria de {fmtDate(auditoriaAtual.data_auditoria)}
+              </span>
+            </div>
+          )}
+
+          {/* Botão só com ícone; a função aparece num balão ao passar o mouse (funciona mesmo desabilitado) */}
+          <div className="relative group">
+            <button
+              onClick={handleAbrirImport}
+              disabled={importando || !filtroEmpresaId}
+              aria-label="Inserir Auditoria"
+              className="flex items-center justify-center h-9 w-9 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md shadow-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Download className={`h-4 w-4 ${importando ? 'animate-bounce' : ''}`} />
+            </button>
+            <span className="pointer-events-none absolute right-0 top-full mt-1.5 z-20 whitespace-nowrap rounded-md bg-slate-800 px-2.5 py-1.5 text-[11px] font-semibold text-white shadow-lg opacity-0 group-hover:opacity-100 transition-opacity">
+              {importando ? 'Importando...'
+                : !filtroEmpresaId ? 'Inserir Auditoria — selecione uma empresa antes'
+                : 'Inserir Auditoria (importar OS do SharePoint)'}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -360,86 +452,111 @@ export default function AuditoriaOsAberto() {
         </div>
       )}
 
-      {/* FILTROS — Empresa + Auditoria */}
-      <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-4">
-        <div className="flex items-start gap-4 flex-wrap">
+      {/* Aviso: empresa sem auditoria */}
+      {filtroEmpresaId && auditoriasFiltradas.length === 0 && (
+        <p className="text-xs text-slate-500">Nenhuma auditoria para esta empresa. Use o botão de inserir auditoria (ícone de download) no topo.</p>
+      )}
 
-          {/* Empresa */}
-          <div className="flex flex-col gap-1 min-w-[260px]">
-            <label className="h-4 text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1">
-              <Building2 className="h-3 w-3" /> Empresa
-            </label>
-            <div className="relative">
-              <select
-                value={filtroEmpresaId}
-                onChange={e => { setFiltroEmpresaId(e.target.value); setAuditoriaId('') }}
-                className="w-full text-xs p-2 pr-8 border border-slate-300 rounded-md focus:ring-2 focus:ring-indigo-500/20 bg-white appearance-none font-semibold"
-              >
-                <option value="">— Selecione uma empresa —</option>
-                {empresas.map(e => (
-                  <option key={e.id} value={e.id}>{e.nome_empresa_sistema || e.nome_empresa}</option>
-                ))}
-              </select>
-              <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
-            </div>
+      {/* Status da auditoria — etapas (concluída / atual / próxima) + ação para avançar */}
+      {auditoriaAtual && (
+        <div className="bg-white rounded-lg border border-slate-200 shadow-sm px-4 py-3 flex items-center justify-between gap-4 flex-wrap">
+          <div className="flex flex-col gap-1.5">
+          {/* Linha 1: status + quantidade de OS + valor */}
+          <div className="flex items-center gap-4 flex-wrap">
+          <span className="text-[10px] font-bold text-slate-400 uppercase">Status da Auditoria</span>
+          {(() => {
+            const et = ETAPAS_AUDITORIA[etapaIdx] || ETAPAS_AUDITORIA[0]
+            return (
+              <span className="flex items-center gap-1.5 text-sm font-semibold text-indigo-700">
+                <et.icon className="h-4 w-4" />
+                {et.label}
+              </span>
+            )
+          })()}
+
+          <span className="hidden sm:block h-5 w-px bg-slate-200" />
+
+          {/* Quantidade de OS e valor total */}
+          <span className="flex items-center gap-1 text-xs text-slate-500">
+            <ClipboardList className="h-3.5 w-3.5 text-slate-400" />
+            <strong className="text-slate-700">{auditoriaAtual.total_os}</strong> OS
+          </span>
+          {!loading && rows.length > 0 && (
+            <span className="flex items-center gap-1 text-xs text-slate-500">
+              <Banknote className="h-3.5 w-3.5 text-slate-400" />
+              <strong className="text-slate-700">{fmt(totalValorOS)}</strong>
+            </span>
+          )}
           </div>
 
-          {/* Auditoria */}
-          <div className="flex flex-col gap-1 min-w-[300px]">
-            <label className="h-4 text-[10px] font-bold text-slate-400 uppercase flex items-center">Data da Auditoria</label>
-            <div className="relative">
-              <select
-                value={auditoriaId}
-                onChange={e => setAuditoriaId(e.target.value)}
-                disabled={!filtroEmpresaId}
-                className="w-full text-xs p-2 pr-8 border border-slate-200 rounded-md focus:ring-2 focus:ring-indigo-500/20 bg-white appearance-none disabled:opacity-50 disabled:cursor-not-allowed"
+          {/* Linha 2 (abaixo do status): último procedimento — o quê, quem e quando (sem mudança de status = importação) */}
+          {(() => {
+            const a = auditoriaAtual
+            const mudou = !!a.status_atualizado_em
+            const email = (mudou ? a.status_atualizado_por : a.importado_por) || ''
+            const nome = nomePorEmail.get(email.toLowerCase()) || email || '—'
+            const quando = mudou ? a.status_atualizado_em : a.criado_em
+            const proc = mudou ? (a.ultimo_procedimento || 'Status alterado') : 'Importada'
+            const dataHora = quando
+              ? new Date(quando).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+              : '—'
+            return (
+              <span className="flex items-center gap-1.5 text-xs text-slate-500 flex-wrap">
+                <User className="h-3.5 w-3.5 text-slate-400" />
+                <strong className="text-slate-700">{proc}</strong>
+                por <strong className="text-slate-700">{nome}</strong>
+                em {dataHora}
+              </span>
+            )
+          })()}
+          </div>
+
+          <div className="flex items-center gap-2">
+            {statusAud === 'a_responder' && (
+              <button
+                onClick={() => setModalStatus({ para: 'conferencia', procedimento: 'Voltou para Conferência', titulo: 'Voltar para Conferência', texto: 'A auditoria volta para o Modo Conferência. Nada do que foi preenchido é apagado.' })}
+                className="px-3 py-1.5 rounded-md text-xs font-semibold text-slate-500 hover:bg-slate-100 transition-colors"
               >
-                <option value="">— Selecione uma auditoria —</option>
-                {auditoriasFiltradas.map(a => (
-                  <option key={a.id} value={a.id}>
-                    {fmtDate(a.data_auditoria)} — {a.total_os} OS
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
-            </div>
-            {filtroEmpresaId && auditoriasFiltradas.length === 0 && (
-              <p className="text-[10px] text-slate-400 mt-0.5">Nenhuma auditoria para esta empresa. Clique em "Inserir Auditoria".</p>
+                Voltar etapa
+              </button>
+            )}
+            {statusAud === 'conferencia' && (
+              <button
+                onClick={() => setModalStatus({ para: 'a_responder', procedimento: 'Conferido', titulo: 'Conferido', texto: 'Confirma que a conferência foi concluída? A auditoria passa para o Modo Relatório — A Responder, com as OS pendentes para responder.' })}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-green-600 hover:bg-green-700 shadow-sm transition-colors"
+              >
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                Conferido
+              </button>
+            )}
+            {statusAud === 'a_responder' && (
+              <div className="relative group">
+                <button
+                  onClick={() => setModalStatus({ para: 'respondido', procedimento: 'Respondido', titulo: 'Concluir respostas', texto: 'A auditoria passa para Modo Relatório — Respondido (concluída).' })}
+                  disabled={pendentesSemResposta > 0}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Concluir respostas →
+                </button>
+                {pendentesSemResposta > 0 && (
+                  <span className="pointer-events-none absolute right-0 top-full mt-1.5 z-20 whitespace-nowrap rounded-md bg-slate-800 px-2.5 py-1.5 text-[11px] font-semibold text-white shadow-lg opacity-0 group-hover:opacity-100 transition-opacity">
+                    Faltam {pendentesSemResposta} OS pendentes sem resposta
+                  </span>
+                )}
+              </div>
+            )}
+            {statusAud === 'respondido' && (
+              <button
+                onClick={() => setModalStatus({ para: 'a_responder', procedimento: 'Reaberta', titulo: 'Reabrir auditoria', texto: 'A auditoria volta para Modo Relatório — A Responder.' })}
+                className="px-3 py-1.5 rounded-md text-xs font-semibold text-slate-500 hover:bg-slate-100 transition-colors"
+              >
+                Reabrir
+              </button>
             )}
           </div>
-
-          {/* Info auditoria selecionada + botão excluir */}
-          {auditoriaAtual && (
-            <div className="flex items-center gap-4 text-xs text-slate-500 self-end pb-2 flex-wrap">
-              <span className="flex items-center gap-1">
-                <Calendar className="h-3.5 w-3.5 text-slate-400" />
-                <strong className="text-slate-700">{fmtDate(auditoriaAtual.data_auditoria)}</strong>
-              </span>
-              <span className="flex items-center gap-1">
-                <ClipboardList className="h-3.5 w-3.5 text-slate-400" />
-                <strong className="text-slate-700">{auditoriaAtual.total_os}</strong> OS
-              </span>
-              {!loading && rows.length > 0 && (
-                <span className="flex items-center gap-1">
-                  <Banknote className="h-3.5 w-3.5 text-slate-400" />
-                  <strong className="text-slate-700">{fmt(totalValorOS)}</strong>
-                </span>
-              )}
-              <span className="flex items-center gap-1">
-                <User className="h-3.5 w-3.5 text-slate-400" />
-                {auditoriaAtual.importado_por || '—'}
-              </span>
-              <button
-                onClick={() => setModalExcluir(true)}
-                className="flex items-center gap-1 ml-2 px-2.5 py-1 rounded-md text-[10px] font-semibold text-red-600 border border-red-200 hover:bg-red-50 transition-colors"
-              >
-                <Trash2 className="h-3 w-3" />
-                Excluir auditoria
-              </button>
-            </div>
-          )}
         </div>
-      </div>
+      )}
+
 
       {/* BUSCA */}
       {auditoriaId && rows.length > 0 && (
@@ -464,23 +581,22 @@ export default function AuditoriaOsAberto() {
             )}
           </div>
 
-          {/* Modo de tela */}
-          <div className="flex items-center bg-slate-100 rounded-md p-0.5">
-            {[
-              { id: 'conferencia', label: 'Modo Conferência', icon: ClipboardCheck },
-              { id: 'relatorio', label: 'Modo Relatório', icon: FileText },
-            ].map(m => (
-              <button
-                key={m.id}
-                onClick={() => setModo(m.id)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold transition-colors ${
-                  modo === m.id ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                }`}
-              >
-                <m.icon className="h-3.5 w-3.5" />
-                {m.label}
-              </button>
-            ))}
+          {/* A Responder: alterna entre só pendentes e todas as OS sem resposta */}
+          <div className="flex items-center gap-2">
+          {!emConferencia && (
+            <button
+              onClick={() => setRelatorioVerTodos(v => !v)}
+              title={relatorioVerTodos ? 'Mostrar só as OS pendentes' : 'Mostrar pendentes e não pendentes'}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold border transition-colors ${
+                relatorioVerTodos
+                  ? 'bg-indigo-600 border-indigo-600 text-white hover:bg-indigo-700'
+                  : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              <List className="h-3.5 w-3.5" />
+              {relatorioVerTodos ? 'Ver só pendentes' : 'Ver todas'}
+            </button>
+          )}
           </div>
         </div>
       )}
@@ -493,12 +609,14 @@ export default function AuditoriaOsAberto() {
           ) : rows.length === 0 ? (
             <div className="p-10 text-center text-xs text-slate-400">Nenhuma OS nesta auditoria.</div>
           ) : rowsDoModo.length === 0 ? (
-            <div className="p-10 text-center text-xs text-slate-400">Nenhuma OS pendente nesta auditoria.</div>
+            <div className="p-10 text-center text-xs text-slate-400">
+              Nenhuma OS pendente nesta auditoria.
+            </div>
           ) : rowsFiltradas.length === 0 ? (
             <div className="p-10 text-center text-xs text-slate-400">
               Nenhuma OS encontrada para "{buscaOs.trim()}".
             </div>
-          ) : modo === 'conferencia' ? (
+          ) : emConferencia ? (
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[10px] font-bold uppercase tracking-wider">
@@ -555,7 +673,7 @@ export default function AuditoriaOsAberto() {
                         {(() => {
                           return isPendente(row)
                             ? <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700">P</span>
-                            : <span className="text-slate-300 text-[10px]">—</span>
+                            : <span className="inline-flex px-1.5 py-0.5 rounded bg-green-100 text-green-700" title="OK — não pendente"><ThumbsUp className="h-3 w-3" /></span>
                         })()}
                       </td>
                       <td className="p-3 whitespace-nowrap text-slate-500">{fmtDate(row.data_criacao)}</td>
@@ -600,8 +718,8 @@ export default function AuditoriaOsAberto() {
 
       {auditoriaId && !loading && (
         <p className="text-[10px] text-slate-400">
-          {modo === 'relatorio'
-            ? `${rowsFiltradas.length} OS pendentes de ${rows.length}`
+          {soPendentes
+            ? `${rowsFiltradas.length} OS pendentes de ${rows.length}${statusAud === 'a_responder' ? ` · ${pendentesSemResposta} sem resposta` : ''}`
             : `${rowsFiltradas.length} de ${rows.length} OS`} — auditoria de {auditoriaAtual ? fmtDate(auditoriaAtual.data_auditoria) : ''}
           {auditoriaAtual?.empresa_nome ? ` · ${auditoriaAtual.empresa_nome}` : ''}
         </p>
@@ -614,6 +732,38 @@ export default function AuditoriaOsAberto() {
           </div>
           <p className="text-sm font-semibold text-slate-500">Selecione uma empresa para começar</p>
           <p className="text-xs text-slate-400">Depois escolha uma auditoria existente ou importe novas OS.</p>
+        </div>
+      )}
+
+      {/* MODAL MUDAR STATUS DA AUDITORIA */}
+      {modalStatus && auditoriaAtual && (
+        <div className="fixed top-0 right-0 bottom-0 left-16 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg border border-slate-200 w-[420px] shadow-xl overflow-hidden">
+            <div className="p-5 space-y-1">
+              <h3 className="text-sm font-bold text-slate-900">{modalStatus.titulo}</h3>
+              <p className="text-xs text-slate-500">
+                Auditoria de <strong className="text-slate-700">{fmtDate(auditoriaAtual.data_auditoria)}</strong>
+                {auditoriaAtual.empresa_nome ? ` — ${auditoriaAtual.empresa_nome}` : ''}.
+              </p>
+              <p className="text-xs text-slate-600 pt-1">{modalStatus.texto}</p>
+            </div>
+            <div className="flex items-center justify-end gap-2 p-3 bg-slate-50 border-t border-slate-100">
+              <button
+                onClick={() => setModalStatus(null)}
+                disabled={salvandoStatus}
+                className="px-3 py-1.5 rounded-md text-xs font-semibold text-slate-600 hover:bg-slate-200/60 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleMudarStatus}
+                disabled={salvandoStatus}
+                className="px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm transition-colors disabled:opacity-50"
+              >
+                {salvandoStatus ? 'Salvando...' : 'Confirmar'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -670,6 +820,18 @@ export default function AuditoriaOsAberto() {
                   <h3 className="text-sm font-bold text-slate-900">Importar OS do SharePoint</h3>
                   <p className="text-xs text-slate-500 mt-0.5">
                     Empresa: <strong className="text-slate-700">{(() => { const e = empresas.find(e => e.id === filtroEmpresaId); return e?.nome_empresa_sistema || e?.nome_empresa })()}</strong>
+                  </p>
+                  <p
+                    className="text-xs text-slate-500 mt-0.5 flex items-center gap-1"
+                    title="Data de atualização do arquivo ROF001_OSABERTA no SharePoint, usado na importação"
+                  >
+                    <Clock className="h-3.5 w-3.5 text-slate-400" />
+                    Arquivo atualizado em
+                    <strong className={arquivoInfoStatus === 'erro' ? 'text-red-600' : 'text-slate-700'}>
+                      {arquivoInfoStatus === 'carregando' ? '...'
+                        : arquivoInfoStatus === 'erro' || !arquivoAtualizadoEm ? 'indisponível'
+                        : new Date(arquivoAtualizadoEm).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    </strong>
                   </p>
                 </div>
               </div>
