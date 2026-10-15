@@ -292,14 +292,17 @@ function ModalEditarTitulo({ row, titulos, categoria, anotacao, statusLista, onS
   const [statusId, setStatusId] = useState(anotacao?.status_id ?? null)
   const [situacao, setSituacao] = useState(anotacao?.situacao ?? '')
   const [sinistro, setSinistro] = useState(anotacao?.numero_sinistro ?? '')
+  const [sg, setSg] = useState(anotacao?.numero_sg ?? '')
   const [salvando, setSalvando] = useState(false)
   const d = dadosChave(row)
   const temSinistro = categoria === 'seguradoras'
+  const temSg = categoria === 'garantias'
 
   const salvar = async () => {
     setSalvando(true)
     const campos = { status_id: statusId, situacao: situacao.trim() }
     if (temSinistro) campos.numero_sinistro = sinistro.trim()
+    if (temSg) campos.numero_sg = sg.trim()
     const ok = await onSalvar(row, categoria, campos)
     setSalvando(false)
     if (ok) onClose()
@@ -350,6 +353,12 @@ function ModalEditarTitulo({ row, titulos, categoria, anotacao, statusLista, onS
         <p className="text-[11px] text-blue-600 bg-blue-50 border border-blue-200 rounded-md px-3 py-2 mb-4">
           O Status e a Situação valem para todas as notas fiscais desta OS (peças e serviços).
         </p>
+      )}
+      {temSg && (
+        <>
+          <label className="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1 block">Nº da SG</label>
+          <input type="text" value={sg} onChange={(e) => setSg(e.target.value)} className={`${INPUT_CLS} w-full mb-4 !py-1.5`} placeholder="Número da SG..." />
+        </>
       )}
       {temSinistro && (
         <>
@@ -423,6 +432,7 @@ export default function HondaGarantiasReceber() {
       categoria,
       ...dadosChave(row),
       numero_sinistro: atual.numero_sinistro ?? null,
+      numero_sg: atual.numero_sg ?? null,
       status_id: atual.status_id ?? null,
       situacao: atual.situacao ?? null,
       ...normalizados,
@@ -844,7 +854,7 @@ export default function HondaGarantiasReceber() {
                       </th>
                     </React.Fragment>
                   ))}
-                  {(filtroCategoria === 'seguradoras' ? ['Nº Sinistro', 'Status', 'Situação'] : ['Status', 'Situação']).map(l => (
+                  {(filtroCategoria === 'seguradoras' ? ['Nº Sinistro', 'Status', 'Situação'] : filtroCategoria === 'garantias' ? ['Nº SG', 'Status', 'Situação'] : ['Status', 'Situação']).map(l => (
                     <th key={l} className="p-3 whitespace-nowrap text-blue-500 bg-blue-50/50">{l}</th>
                   ))}
                 </tr>
@@ -878,6 +888,9 @@ export default function HondaGarantiasReceber() {
                         <>
                           {filtroCategoria === 'seguradoras' && (
                             <td className="p-3 whitespace-nowrap bg-blue-50/30">{an?.numero_sinistro || '—'}</td>
+                          )}
+                          {filtroCategoria === 'garantias' && (
+                            <td className="p-3 whitespace-nowrap bg-blue-50/30">{an?.numero_sg || '—'}</td>
                           )}
                           <td className="p-3 whitespace-nowrap bg-blue-50/30"><StatusBadge status={statusPorId[an?.status_id]} /></td>
                           <td className="p-3 bg-blue-50/30 min-w-[14rem] max-w-[20rem] whitespace-pre-wrap break-words">{an?.situacao || '—'}</td>
