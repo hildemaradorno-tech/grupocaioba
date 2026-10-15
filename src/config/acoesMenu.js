@@ -72,6 +72,14 @@ export const ACOES_POR_MENU = [
     ],
   },
   {
+    menuPath: 'auditoria-os-aberto',
+    acoes: [
+      // Admin reabre qualquer auditoria sem limite; quem tem esta ação reabre só a última da empresa, 1 vez
+      { value: 'reabrir', label: 'Reabrir Auditoria (só a última da empresa, 1 vez)' },
+      { value: 'editar_na_oficina', label: 'Editar Auditoria (alterar Na Oficina fora do Modo Conferência)' },
+    ],
+  },
+  {
     menuPath: 'auditoria-externa/dashboard',
     acoes: [
       { value: 'ver_todos', label: 'Ver Todos (ignorar restrição de Empresa/Departamento do grupo)' },

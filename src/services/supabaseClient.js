@@ -3352,9 +3352,20 @@ export const apiService = {
     if (error) throw error
     return data?.[0]
   },
-  updateAuditoriaStatus: async (id, status, userEmail, procedimento) => {
+  updateAuditoriaStatus: async (id, status, userEmail, procedimento, prazoResposta) => {
+    const agora = new Date().toISOString()
+    const por = userEmail || null
+    // Carimbo de cada etapa: avançar grava quem/quando; voltar limpa as etapas desfeitas.
+    // A Responder sempre recebe um prazo (Conferido ou Reaberta); voltar para Conferência limpa o prazo.
+    const etapas = {
+      a_responder: procedimento === 'Conferido'
+        ? { conferido_por: por, conferido_em: agora, respondido_por: null, respondido_em: null, prazo_resposta: prazoResposta || null }
+        : { respondido_por: null, respondido_em: null, prazo_resposta: prazoResposta || null },   // Reaberta
+      respondido_total: { respondido_por: por, respondido_em: agora },
+      conferencia: { conferido_por: null, conferido_em: null, respondido_por: null, respondido_em: null, prazo_resposta: null },
+    }[status] || {}
     const { data, error } = await supabase.from('aud_auditorias')
-      .update({ status, status_atualizado_em: new Date().toISOString(), status_atualizado_por: userEmail || null, ultimo_procedimento: procedimento || null })
+      .update({ status, status_atualizado_em: agora, status_atualizado_por: por, ultimo_procedimento: procedimento || null, ...etapas })
       .eq('id', id).select()
     if (error) throw error
     return data?.[0]
@@ -3368,6 +3379,26 @@ export const apiService = {
     return { success: true }
   },
 
+  // ── Histórico de reaberturas ──
+  getAuditoriaReaberturas: async (auditoriaId) => {
+    const { data, error } = await supabase.from('aud_auditoria_reaberturas')
+      .select('*').eq('auditoria_id', auditoriaId).order('reaberto_em', { ascending: true }) // linha do tempo: fechamentos e reaberturas
+    if (error) throw error
+    return data || []
+  },
+  createAuditoriaReabertura: async (row) => {
+    const { data, error } = await supabase.from('aud_auditoria_reaberturas').insert([row]).select()
+    if (error) throw error
+    return data?.[0]
+  },
+
+  // Encerra auditorias com prazo de resposta vencido (Respondido Total/Parcial). Também roda via pg_cron.
+  encerrarPrazosAuditoria: async () => {
+    const { data, error } = await supabase.rpc('aud_encerrar_prazos')
+    if (error) throw error
+    return data || 0
+  },
+
   // ── OS por auditoria ──
   getAuditoriaOs: async (auditoriaId) => {
     const { data, error } = await supabase.from('aud_auditoria_os')
@@ -3378,6 +3409,14 @@ export const apiService = {
   createAuditoriaOsLote: async (rows) => {
     if (!rows.length) return []
     const { data, error } = await supabase.from('aud_auditoria_os').insert(rows).select()
+    if (error) throw error
+    return data || []
+  },
+  updateAuditoriaOsLote: async (ids, payload, userEmail) => {
+    if (!ids.length) return []
+    const { data, error } = await supabase.from('aud_auditoria_os')
+      .update({ ...payload, atualizado_em: new Date().toISOString(), atualizado_por: userEmail })
+      .in('id', ids).select()
     if (error) throw error
     return data || []
   },
