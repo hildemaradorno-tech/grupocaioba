@@ -285,7 +285,7 @@ const AtaPreview = React.forwardRef(function AtaPreview({ form }, ref) {
                   {passada.length > 0 && (
                     <div style={{ marginBottom: '4px' }}>
                       <div style={{ fontSize: '9px', fontWeight: '700', color: '#92400e', textTransform: 'uppercase', letterSpacing: '0.5px', background: '#fef3c7', padding: '3px 8px', marginBottom: '3px', borderRadius: '3px' }}>
-                        Semana Passada — {fmtData(iniPassada)} a {fmtData(fimPassada)}
+                        Semana Anterior — {fmtData(iniPassada)} a {fmtData(fimPassada)}
                       </div>
                       {tabelaTarefas(passada, '#92400e', '#fffbeb')}
                     </div>
@@ -918,7 +918,7 @@ export default function AtaReuniao() {
           <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
             <div className="flex flex-wrap gap-5">
               <div>
-                <p className="text-[10px] font-bold text-amber-700 uppercase tracking-wide mb-1.5">Semana Passada</p>
+                <p className="text-[10px] font-bold text-amber-700 uppercase tracking-wide mb-1.5">Semana Anterior</p>
                 <div className="flex items-center gap-2 flex-wrap">
                   <div className="flex items-center gap-1.5">
                     <span className="text-xs text-amber-700 shrink-0">De</span>
@@ -1125,7 +1125,7 @@ export default function AtaReuniao() {
                   <div>
                     <div className="flex items-center gap-2 mb-2">
                       <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full uppercase tracking-wide">
-                        Semana Passada · {fmtData(tarefasSemanIni)} – {fmtData(fimPassada)}
+                        Semana Anterior · {fmtData(tarefasSemanIni)} – {fmtData(fimPassada)}
                       </span>
                       <span className="text-[10px] text-slate-400">({tarefasPassada.length} tarefa{tarefasPassada.length !== 1 ? 's' : ''})</span>
                     </div>

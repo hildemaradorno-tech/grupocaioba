@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Save, Plus, Edit2, Trash2, X, Loader2, Copy, ArrowRight, CheckCircle2, PlayCircle, FolderInput, RotateCcw, PartyPopper } from 'lucide-react'
+import { ArrowLeft, Save, Plus, Edit2, Trash2, X, Loader2, Copy, ArrowRight, CheckCircle2, PlayCircle, FolderInput, RotateCcw, PartyPopper, Settings } from 'lucide-react'
 import { apiService } from '../../services/api'
 import { useAuth } from '../../context/AuthContext'
 import { useProjetosFiltros } from '../../context/ProjetosFiltrosContext'
@@ -339,6 +339,8 @@ export default function ProjetoEditor() {
 
   const [modalConcluir, setModalConcluir] = useState(null)
   const [modalConcluirProjeto, setModalConcluirProjeto] = useState(false)
+  const [menuAcoesEditor, setMenuAcoesEditor] = useState(null)
+  const [menuAcoesEditorPos, setMenuAcoesEditorPos] = useState({ top: 0, right: 0 })
 
   const handleIniciarTarefa = async (t) => {
     try {
@@ -808,16 +810,14 @@ export default function ProjetoEditor() {
                                   : <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-slate-50 text-slate-300 group-hover:bg-indigo-50 group-hover:text-indigo-400 transition-colors border border-slate-200 text-base">+</span>}
                               </button>
                             )}
-                            <p className="text-sm font-semibold text-slate-800 leading-snug">
-                              {t.nome}
-                              {t.sistema_nome && (
-                                <span className="inline-flex items-center ml-2 px-2 py-0.5 rounded text-[10px] font-bold align-middle" style={{ backgroundColor: sistemaCorMap[t.sistema_nome] || '#1e293b', color: sistemaCorTextoMap[t.sistema_nome] || getTextColor(sistemaCorMap[t.sistema_nome] || '#1e293b') }}>
-                                  {t.sistema_nome}
-                                </span>
-                              )}
-                            </p>
+                            <p className="text-sm font-semibold text-slate-800 leading-snug">{t.nome}</p>
                           </div>
                           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1.5 text-xs text-slate-500">
+                            {t.sistema_nome && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold" style={{ backgroundColor: sistemaCorMap[t.sistema_nome] || '#1e293b', color: sistemaCorTextoMap[t.sistema_nome] || getTextColor(sistemaCorMap[t.sistema_nome] || '#1e293b') }}>
+                                {t.sistema_nome}
+                              </span>
+                            )}
                             <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold ${kt.cor}`}>{kt.label}</span>
                             {t.progresso_pct != null && <span>{t.progresso_pct}%</span>}
                             {t.area_nome && <span>Área: {t.area_nome}</span>}
@@ -849,22 +849,45 @@ export default function ProjetoEditor() {
                               <CheckCircle2 className="h-3.5 w-3.5" />
                             </button>
                           )}
-                          <button onClick={() => handleProximaEtapa(t)}
-                            className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors" title="Próxima Etapa">
-                            <ArrowRight className="h-3.5 w-3.5" />
+                          <button
+                            onClick={(e) => {
+                              if (menuAcoesEditor === t.id) { setMenuAcoesEditor(null); return }
+                              const rect = e.currentTarget.getBoundingClientRect()
+                              const spaceBelow = window.innerHeight - rect.bottom
+                              const right = window.innerWidth - rect.right
+                              if (spaceBelow < 260 || rect.top > window.innerHeight * 0.6) {
+                                setMenuAcoesEditorPos({ bottom: window.innerHeight - rect.top + 4, right, top: undefined })
+                              } else {
+                                setMenuAcoesEditorPos({ top: rect.bottom + 4, right, bottom: undefined })
+                              }
+                              setMenuAcoesEditor(t.id)
+                            }}
+                            className={`p-1.5 rounded transition-colors ${menuAcoesEditor === t.id ? 'bg-slate-100 text-slate-700' : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'}`}
+                            title="Ações"
+                          >
+                            <Settings className="h-3.5 w-3.5" />
                           </button>
-                          <button onClick={() => handleDuplicar(t)}
-                            className="p-1.5 text-slate-400 hover:text-teal-600 hover:bg-teal-50 rounded transition-colors" title="Duplicar">
-                            <Copy className="h-3.5 w-3.5" />
-                          </button>
-                          <button onClick={() => setModalTarefa({ tarefa: t })}
-                            className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors" title="Editar">
-                            <Edit2 className="h-3.5 w-3.5" />
-                          </button>
-                          <button onClick={() => handleDeleteTarefa(t.id)}
-                            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors" title="Excluir">
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
+                          {menuAcoesEditor === t.id && (
+                            <>
+                              <div className="fixed inset-0 z-10" onClick={() => setMenuAcoesEditor(null)} />
+                              <div className="fixed z-20 bg-white border border-slate-200 rounded-lg shadow-lg py-1 min-w-[160px]"
+                                style={{ top: menuAcoesEditorPos.top, bottom: menuAcoesEditorPos.bottom, right: menuAcoesEditorPos.right }}>
+                                <button onClick={() => { setModalTarefa({ tarefa: t }); setMenuAcoesEditor(null) }} className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-blue-50 hover:text-blue-700">
+                                  <Edit2 className="h-3.5 w-3.5 shrink-0" /> Editar
+                                </button>
+                                <button onClick={() => { handleProximaEtapa(t); setMenuAcoesEditor(null) }} className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-indigo-50 hover:text-indigo-700">
+                                  <ArrowRight className="h-3.5 w-3.5 shrink-0" /> Próxima Etapa
+                                </button>
+                                <button onClick={() => { handleDuplicar(t); setMenuAcoesEditor(null) }} className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-teal-50 hover:text-teal-700">
+                                  <Copy className="h-3.5 w-3.5 shrink-0" /> Duplicar
+                                </button>
+                                <div className="my-1 border-t border-slate-100" />
+                                <button onClick={() => { handleDeleteTarefa(t.id); setMenuAcoesEditor(null) }} className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-red-600 hover:bg-red-50">
+                                  <Trash2 className="h-3.5 w-3.5 shrink-0" /> Excluir
+                                </button>
+                              </div>
+                            </>
+                          )}
                         </div>
                       </div>
                   </div>

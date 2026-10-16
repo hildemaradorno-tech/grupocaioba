@@ -95,6 +95,59 @@ export async function buscarRelatorioMicrowork({
   return response.data
 }
 
+// ── OS em aberto (Auditoria O.S. Aberta — empresas do agrupamento Caiobá Motos) ──
+// Relatório MicroWork de ordens de serviço em aberto (OSSituacao=1,8,2,7,5,6). O período de
+// emissão vai de 2015-01-01 até hoje, para pegar toda OS ainda aberta. A empresa é o
+// dim_empresas.codigo_empresa (= id da empresa no MicroWork: 4 Campo Grande, 9 Barretos).
+function montarFiltrosOsAbertas() {
+  return [
+    'SomenteMercadoriaOriginalFabrica=False', 'ConsiderarTecnico=True', 'SituacaoConcluidaNF=null', 'VeiculoCliente=null',
+    `Periododeemissaofinal=${hojeISO()}`, 'Periododeemissaoinicial=2015-01-01',
+    'Modelo=null', 'Tipodeordemdeservico=null', 'Consultor=null', 'Tiposervico=null', 'Tecnico=null', 'NumeroOS=null',
+    'Segmento=null', 'OSSituacao=1,8,2,7,5,6', 'ItensServicosCancelados=False', 'Municipio=null', 'NaoIncluirPessoa=null',
+    'TipoRecepcao=null', 'EstadoVeiculo=null', 'TipoOrdemServicoInterno=null', 'TipoBaixaDocumento=null',
+    'NomeEmissaoDocumento=null', 'TipoVeiculoOS=null', 'Pessoa=null', 'Tipoitem=3,1,4,2', 'TipoDeVeiculoModelo=null',
+    'GrupoDoModelo=null', 'NumeroContratoFrotista=', 'EquipeAtendimentoFrotista=null', 'SomenteManutencaoFrotista=False',
+    'FontePagadora=null', 'NumeroColeta=',
+  ].join(';')
+}
+
+// Devolve as OS no mesmo formato das linhas do SharePoint (ROF001_OSABERTA) usado na importação.
+export async function buscarOsAbertasMicrowork(codigoEmpresa) {
+  const token = process.env.MICROWORK_API_TOKEN
+  if (!token) throw new Error('MICROWORK_API_TOKEN não configurado no ambiente')
+
+  const payload = {
+    idrelatorioconfiguracao: 190,
+    idrelatorioconsulta: 95,
+    idrelatorioconfiguracaoleiaute: 190,
+    idrelatoriousuarioleiaute: 563,
+    ididioma: 1,
+    listaempresas: [Number(codigoEmpresa)],
+    filtros: montarFiltrosOsAbertas(),
+  }
+  const response = await axios.post(API_URL, payload, {
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    timeout: 60_000,
+  })
+  const linhas = Array.isArray(response.data) ? response.data : []
+  return linhas.map(l => ({
+    os_numero:            String(l.numero ?? '').trim(),
+    empresa_nome:         String(l.fantasiaempresa ?? '').trim(),
+    data_criacao:         l.datahoraemissao ? String(l.datahoraemissao).slice(0, 10) : null,
+    consultor_nome:       String(l.pessoaconsultor ?? '').trim(),
+    proprietario_veiculo: String(l.pessoa ?? '').trim(),
+    modelo_veiculo:       String(l.modelo ?? '').trim(),
+    veiculo_placa:        String(l.placa ?? '').trim(),
+    veiculo_chassi:       String(l.chassi ?? '').trim(),
+    tipo_os_descricao:    String(l.ostipo ?? '').trim(),
+    tipo_os_sigla:        '',
+    total:                Number(l.valortotal) || 0,
+    produto:              0,
+    servico:              0,
+  })).filter(r => r.os_numero !== '')
+}
+
 export async function buscarGarantiasReceberHonda() {
   const token = process.env.MICROWORK_API_TOKEN
   if (!token) throw new Error('MICROWORK_API_TOKEN não configurado no ambiente')

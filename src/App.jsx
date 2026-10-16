@@ -66,7 +66,6 @@ import NfeSolicitacaoDetalhe from './pages/bpm/NfeSolicitacaoDetalhe'
 import TruckPagTitulos from './pages/truckpag/TruckPagTitulos'
 import TruckPagConciliacao from './pages/truckpag/TruckPagConciliacao'
 import TruckPagRepasses from './pages/truckpag/TruckPagRepasses'
-import AuditoriaSituacoes from './pages/auditoria/AuditoriaSituacoes'
 import TipoTituloGarantia from './pages/garantia/TipoTituloGarantia'
 import ProjetosDashboard from './pages/projetos/ProjetosDashboard'
 import ProjetoDetalhe from './pages/projetos/ProjetoDetalhe'
@@ -246,7 +245,6 @@ export default function App() {
           { path: '/truckpag/titulos', element: <TruckPagTitulos />, menuPath: 'truckpag/titulos' },
           { path: '/truckpag/conciliacao', element: <TruckPagConciliacao />, menuPath: 'truckpag/conciliacao' },
           { path: '/truckpag/repasses', element: <TruckPagRepasses />, menuPath: 'truckpag/repasses' },
-          { path: '/auditoria/situacoes', element: <AuditoriaSituacoes />, menuPath: 'auditoria/situacoes' },
           { path: '/garantia/tipo-titulo', element: <TipoTituloGarantia />, menuPath: 'garantia/tipo-titulo' },
           { path: '/garantias-daf-andamento', element: <GarantiasDafDashboard key="andamento" variante="andamento" />, menuPath: '/garantias-daf-andamento' },
           { path: '/garantias-daf', element: <GarantiasDafDashboard key="aberto" />, menuPath: '/garantias-daf' },

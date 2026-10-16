@@ -503,10 +503,6 @@ export default function SidebarLayout() {
       {(canView('truckpag/titulos') || canView('truckpag/conciliacao')) && (
         <FlyItem to={canView('truckpag/conciliacao') ? "/truckpag/conciliacao" : "/truckpag/titulos"} icon={Truck} onClose={closeFlyout}>TruckPag a Receber</FlyItem>
       )}
-            {(canView('auditoria/situacoes') || canView('auditoria-os-aberto')) && (
-              <FlyGroup label="Cadastros de Auditoria" />
-            )}
-            {canView('auditoria/situacoes') && <FlyItem to="/auditoria/situacoes" icon={Tag} onClose={closeFlyout}>Situações</FlyItem>}
             {canView('auditoria-os-aberto') && <FlyItem to="/auditoria-os-aberto" icon={ClipboardList} onClose={closeFlyout}>Auditoria O.S. Aberta</FlyItem>}
             {canView('garantia/tipo-titulo') && <FlyGroup label="Cadastros de Garantia" />}
             {canView('garantia/tipo-titulo') && <FlyItem to="/garantia/tipo-titulo" icon={FileText} onClose={closeFlyout}>Tipo de Título Garantia</FlyItem>}

@@ -165,14 +165,7 @@ export const MENU_TREE = [
           { key: 'truckpag/titulos', label: 'Títulos a Receber' },
         ],
       },
-      {
-        key: '_auditoria.cadastros',
-        label: 'Cadastros de Auditoria',
-        children: [
-          { key: 'auditoria/situacoes', label: 'Situações' },
-          { key: 'auditoria-os-aberto', label: 'Auditoria O.S. Aberta' },
-        ],
-      },
+      { key: 'auditoria-os-aberto', label: 'Auditoria O.S. Aberta' },
       {
         key: '_garantia.cadastros',
         label: 'Cadastros de Garantia',

@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react'
-import { ClipboardList, Download, ChevronDown, Save, AlertTriangle, Building2, ShieldAlert, Trash2, Calendar, User, Banknote, Search, XCircle, X, Clock, ClipboardCheck, FileText, List, ThumbsUp, CheckCircle2, ShieldCheck, ArrowUpDown, ArrowUp, ArrowDown, Settings, RotateCcw, History, Pencil } from 'lucide-react'
+import { ClipboardList, Download, ChevronDown, Save, AlertTriangle, Building2, ShieldAlert, Trash2, Calendar, User, Banknote, Search, XCircle, X, Clock, ClipboardCheck, FileText, List, ThumbsUp, CheckCircle2, ShieldCheck, ArrowUpDown, ArrowUp, ArrowDown, Settings, RotateCcw, History, Pencil, Tag } from 'lucide-react'
 import { apiService } from '../../services/api'
 import { useAuth } from '../../context/AuthContext'
+import AuditoriaSituacoes from '../auditoria/AuditoriaSituacoes'
 
 const fmt = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const fmtDate = (d) => d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') : '—'
@@ -16,6 +17,9 @@ const diasOficina = (criacao, auditoria) => {
   if (!criacao || !auditoria) return null
   return Math.floor((new Date(auditoria + 'T12:00:00') - new Date(criacao + 'T12:00:00')) / 86400000)
 }
+
+// Fonte da importação por agrupamento: Caiobá Motos → API MicroWork; Caiobá Trucks → SharePoint
+const fonteMicrowork = (e) => (e?.agrupamento_nome || '').trim().toLowerCase() === 'caiobá motos'
 
 // Nome exibido no seletor de empresa: nome fantasia (ex.: "CAIOBÁ MOTOS - CAMPO GRANDE"); reserva: nome do sistema
 const nomeSeletorEmpresa = (e) => e.empresa_fantasia || e.nome_empresa_sistema || e.nome_empresa || ''
@@ -92,6 +96,9 @@ export default function AuditoriaOsAberto() {
   const [buscaEditar, setBuscaEditar] = useState('')
   const [salvandoEdicao, setSalvandoEdicao] = useState(false)
 
+  // ── Cadastro de Situações (engrenagem) ──
+  const [modalSituacoes, setModalSituacoes] = useState(false)
+
   // ── Histórico de reaberturas da auditoria selecionada ──
   const [reaberturas, setReaberturas] = useState([])
   const [modalHistorico, setModalHistorico] = useState(false)
@@ -162,14 +169,20 @@ export default function AuditoriaOsAberto() {
   )
 
   // Auditorias filtradas pela empresa selecionada
+  // Auditorias de uma empresa, da mais recente para a mais antiga (por id; nome como reserva p/ registros antigos)
+  const auditoriasDaEmpresa = (empresaId) => {
+    const emp = empresas.find(e => e.id === empresaId)
+    if (!emp) return []
+    return auditorias
+      .filter(a => a.empresa_id === emp.id || a.empresa_nome === emp.nome_empresa || a.empresa_nome === emp.nome_empresa_sistema)
+      .sort((a, b) => `${b.data_auditoria || ''}|${b.criado_em || ''}`.localeCompare(`${a.data_auditoria || ''}|${a.criado_em || ''}`))
+  }
+
   const auditoriasFiltradas = useMemo(() => {
     if (!filtroEmpresaId) return auditorias
-    const emp = empresas.find(e => e.id === filtroEmpresaId)
-    if (!emp) return auditorias
-    return auditorias.filter(a =>
-      a.empresa_nome === emp.nome_empresa || a.empresa_nome === emp.nome_empresa_sistema
-    )
-  }, [auditorias, filtroEmpresaId, empresas])
+    if (!empresas.some(e => e.id === filtroEmpresaId)) return auditorias
+    return auditoriasDaEmpresa(filtroEmpresaId)
+  }, [auditorias, filtroEmpresaId, empresas]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Quando empresa muda, limpa auditoria se não pertence a ela
   useEffect(() => {
@@ -191,10 +204,11 @@ export default function AuditoriaOsAberto() {
   }, [auditoriaId, loadRows])
 
   // ── Abre modal de importação ──
+  const empresaImportMicrowork = fonteMicrowork(empresas.find(e => e.id === filtroEmpresaId))
   const handleAbrirImport = () => {
     if (!filtroEmpresaId) { setErro('Selecione uma empresa antes de importar.'); return }
     setResponsavelImportId('')
-    carregarArquivoInfo()
+    if (!empresaImportMicrowork) carregarArquivoInfo() // data do arquivo só faz sentido para o SharePoint (Trucks)
     setModalImportar(true)
   }
 
@@ -207,25 +221,37 @@ export default function AuditoriaOsAberto() {
     setModalImportar(false)
     setImportando(true); setErro(null)
     try {
-      const r = await fetch(`${BACKEND}/api/garantias/sharepoint/aberta`)
-      const data = r.ok ? await r.json() : { rows: [] }
-      if (data.lastModified) { setArquivoAtualizadoEm(data.lastModified); setArquivoInfoStatus('ok') }
-      const spTodos = Array.isArray(data) ? data : (data.rows ?? [])
-      if (!Array.isArray(spTodos)) { setErro('Resposta inválida do servidor.'); return }
-
-      // Filtra apenas OS da empresa selecionada
       const nomeExibicao = empSel.nome_empresa_sistema || empSel.nome_empresa
-      const spRows = spTodos.filter(sp => {
-        const n = (sp.empresa_nome || '').toLowerCase()
-        return n === (empSel.nome_empresa || '').toLowerCase()
-          || n === (empSel.nome_empresa_sistema || '').toLowerCase()
-      })
+      let spRows
 
-      if (spRows.length === 0) {
-        setErro(`Nenhuma OS encontrada para "${nomeExibicao}" no SharePoint.`); return
+      if (fonteMicrowork(empSel)) {
+        // Caiobá Motos → API MicroWork (OS em aberto), já filtrada pela empresa (codigo_empresa)
+        const r = await fetch(`${BACKEND}/api/microwork/os-aberta?empresa=${empSel.codigo_empresa}`)
+        const data = await r.json().catch(() => ({}))
+        if (!r.ok) throw new Error(data.message || data.error || `Erro ao consultar o MicroWork (HTTP ${r.status})`)
+        spRows = data.rows || []
+        if (spRows.length === 0) { setErro(`Nenhuma OS em aberto encontrada para "${nomeExibicao}" no MicroWork.`); return }
+      } else {
+        // Caiobá Trucks → SharePoint (ROF001_OSABERTA)
+        const r = await fetch(`${BACKEND}/api/garantias/sharepoint/aberta`)
+        const data = await r.json().catch(() => ({}))
+        if (!r.ok) throw new Error(data.message || data.error || `Erro ao ler o SharePoint (HTTP ${r.status})`)
+        if (data.lastModified) { setArquivoAtualizadoEm(data.lastModified); setArquivoInfoStatus('ok') }
+        const spTodos = Array.isArray(data) ? data : (data.rows ?? [])
+        if (!Array.isArray(spTodos)) { setErro('Resposta inválida do servidor.'); return }
+
+        // Filtra apenas OS da empresa selecionada
+        spRows = spTodos.filter(sp => {
+          const n = (sp.empresa_nome || '').toLowerCase()
+          return n === (empSel.nome_empresa || '').toLowerCase()
+            || n === (empSel.nome_empresa_sistema || '').toLowerCase()
+        })
+        if (spRows.length === 0) { setErro(`Nenhuma OS encontrada para "${nomeExibicao}" no SharePoint.`); return }
       }
 
-      const hoje = new Date().toISOString().slice(0, 10)
+      // Data local (não UTC) — importação à noite não cai no dia seguinte
+      const d = new Date()
+      const hoje = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
       const auditoria = await apiService.createAuditoria({
         data_auditoria: hoje,
         importado_por: user?.email || '',
@@ -409,6 +435,8 @@ export default function AuditoriaOsAberto() {
     if (soReaberturas.some(r => !r.por_admin)) return { pode: false, motivo: 'Já reaberta uma vez — somente o Admin pode reabrir novamente' }
     return { pode: true, motivo: 'Volta para A Responder com novo prazo (permitido 1 vez)' }
   })()
+  const podeCadastrarSituacoes = isAdminEfetivo || hasAction('auditoria-os-aberto', 'cadastrar_situacoes')
+
   // ── Editar auditoria: quem pode e salvar ──
   const editar = (() => {
     if (!auditoriaAtual) return { pode: false, motivo: 'Selecione uma auditoria' }
@@ -667,7 +695,11 @@ export default function AuditoriaOsAberto() {
             <div className="relative">
               <select
                 value={filtroEmpresaId}
-                onChange={e => { setFiltroEmpresaId(e.target.value); setAuditoriaId('') }}
+                onChange={e => {
+                  // Já seleciona a última auditoria realizada da empresa; sem auditoria → "Selecione uma auditoria"
+                  setFiltroEmpresaId(e.target.value)
+                  setAuditoriaId(e.target.value ? (auditoriasDaEmpresa(e.target.value)[0]?.id || '') : '')
+                }}
                 className="w-full h-9 text-xs px-2 pr-8 border border-slate-300 rounded-md focus:ring-2 focus:ring-indigo-500/20 bg-white appearance-none font-semibold"
               >
                 <option value="">— Selecione uma empresa —</option>
@@ -721,7 +753,7 @@ export default function AuditoriaOsAberto() {
                   {[
                     {
                       id: 'inserir', icon: Download, label: 'Inserir auditoria',
-                      desc: importando ? 'Importando...' : !filtroEmpresaId ? 'Selecione uma empresa antes' : 'Importar OS do SharePoint',
+                      desc: importando ? 'Importando...' : !filtroEmpresaId ? 'Selecione uma empresa antes' : empresaImportMicrowork ? 'Importar OS do MicroWork (API)' : 'Importar OS do SharePoint',
                       disabled: importando || !filtroEmpresaId, onClick: handleAbrirImport, cor: 'text-indigo-600',
                     },
                     {
@@ -733,6 +765,11 @@ export default function AuditoriaOsAberto() {
                       id: 'reabrir', icon: RotateCcw, label: 'Reabrir auditoria',
                       desc: reabrir.motivo,
                       disabled: !reabrir.pode, onClick: () => abrirModalPrazo('Reaberta'), cor: 'text-amber-600',
+                    },
+                    {
+                      id: 'situacoes', icon: Tag, label: 'Situações de auditoria',
+                      desc: podeCadastrarSituacoes ? 'Cadastrar / editar as situações das OS' : 'Sem permissão para cadastrar situações',
+                      disabled: !podeCadastrarSituacoes, onClick: () => setModalSituacoes(true), cor: 'text-violet-600',
                     },
                     {
                       id: 'excluir', icon: Trash2, label: 'Excluir auditoria',
@@ -880,7 +917,6 @@ export default function AuditoriaOsAberto() {
                 <p className="text-sm font-bold">
                   {new Date(prazoMs).toLocaleDateString('pt-BR')} às {new Date(prazoMs).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
                 </p>
-                <p className="text-xs font-semibold">{restanteTexto}</p>
               </div>
             </div>
           )}
@@ -1401,6 +1437,28 @@ export default function AuditoriaOsAberto() {
         )
       })()}
 
+      {/* MODAL SITUAÇÕES DE AUDITORIA (cadastro, aberto pela engrenagem) */}
+      {modalSituacoes && (
+        <div className="fixed top-0 right-0 bottom-0 left-16 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-slate-50 rounded-lg border border-slate-200 w-full max-w-6xl max-h-[92vh] shadow-xl overflow-hidden flex flex-col">
+            <div className="p-4 bg-white border-b border-slate-100 flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                  <Tag className="h-4 w-4 text-violet-600" /> Situações de Auditoria
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">Cadastro de situações para classificar as OS nas auditorias.</p>
+              </div>
+              <button onClick={() => setModalSituacoes(false)} className="p-1 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="p-4 overflow-y-auto">
+              <AuditoriaSituacoes embedded onChange={lista => setSituacoes(lista.filter(s => s.ativo))} />
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* MODAL HISTÓRICO DE REABERTURAS */}
       {modalHistorico && auditoriaAtual && (
         <div className="fixed top-0 right-0 bottom-0 left-16 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -1576,10 +1634,18 @@ export default function AuditoriaOsAberto() {
                   <Download className="h-5 w-5" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-bold text-slate-900">Importar OS do SharePoint</h3>
+                  <h3 className="text-sm font-bold text-slate-900">
+                    {empresaImportMicrowork ? 'Importar OS do MicroWork' : 'Importar OS do SharePoint'}
+                  </h3>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    Empresa: <strong className="text-slate-700">{(() => { const e = empresas.find(e => e.id === filtroEmpresaId); return e?.nome_empresa_sistema || e?.nome_empresa })()}</strong>
+                    Empresa: <strong className="text-slate-700">{(() => { const e = empresas.find(e => e.id === filtroEmpresaId); return e ? nomeSeletorEmpresa(e) : '' })()}</strong>
                   </p>
+                  {empresaImportMicrowork ? (
+                    <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-1">
+                      <Clock className="h-3.5 w-3.5 text-slate-400" />
+                      Fonte: <strong className="text-slate-700">API MicroWork — consulta em tempo real</strong>
+                    </p>
+                  ) : (
                   <p
                     className="text-xs text-slate-500 mt-0.5 flex items-center gap-1"
                     title="Data de atualização do arquivo ROF001_OSABERTA no SharePoint, usado na importação"
@@ -1592,6 +1658,7 @@ export default function AuditoriaOsAberto() {
                         : new Date(arquivoAtualizadoEm).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                     </strong>
                   </p>
+                  )}
                 </div>
               </div>
             </div>

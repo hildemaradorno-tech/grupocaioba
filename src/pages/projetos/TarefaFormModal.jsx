@@ -316,7 +316,29 @@ export default function TarefaFormModal({ projetoId, tarefa, initialValues, tare
           {error && <div className="bg-red-50 border border-red-200 rounded-md p-2 text-xs text-red-700">{error}</div>}
 
           <div className="flex flex-col gap-1">
-            <label className="text-[10px] font-bold text-slate-500 uppercase">Nome da Tarefa *</label>
+            <div className="flex items-center justify-between">
+              <label className="text-[10px] font-bold text-slate-500 uppercase">Nome da Tarefa *</label>
+              <div className="flex gap-1">
+                {[{ label: 'B', title: 'Negrito (**texto**)', marker: '**', cls: 'font-bold' }, { label: 'I', title: 'Itálico (*texto*)', marker: '*', cls: 'italic' }].map(({ label, title, marker, cls }) => (
+                  <button key={label} type="button" title={title}
+                    onMouseDown={e => {
+                      e.preventDefault()
+                      const el = nomeRef.current; if (!el) return
+                      const start = el.selectionStart; const end = el.selectionEnd
+                      const val = el.value
+                      const sel = val.slice(start, end)
+                      const novo = val.slice(0, start) + marker + sel + marker + val.slice(end)
+                      setForm(prev => ({ ...prev, nome: novo }))
+                      setTimeout(() => {
+                        el.focus()
+                        el.setSelectionRange(start + marker.length, start + marker.length + sel.length)
+                      }, 0)
+                    }}
+                    className={`w-5 h-5 flex items-center justify-center text-[11px] ${cls} text-slate-600 border border-slate-200 rounded hover:bg-slate-100 transition-colors`}
+                  >{label}</button>
+                ))}
+              </div>
+            </div>
             <textarea ref={nomeRef} name="nome" value={form.nome} onChange={handleChange} rows={5}
               className="w-full text-xs p-2 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20 resize-none" />
             {templates.length > 0 && (

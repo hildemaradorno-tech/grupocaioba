@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
-import { ArrowLeft, Edit2, Plus, Trash2, ShieldAlert, ArrowRight, Copy, MessageSquare, CheckCircle2, FolderInput, PlayCircle, Loader2, PartyPopper, RotateCcw, Eye, Filter, Activity, CheckCircle, AlertTriangle, Layers, X, Flag, ClipboardList, ChevronRight } from 'lucide-react'
+import { ArrowLeft, Edit2, Plus, Trash2, ShieldAlert, ArrowRight, Copy, MessageSquare, CheckCircle2, FolderInput, PlayCircle, Loader2, PartyPopper, RotateCcw, Eye, Filter, Activity, CheckCircle, AlertTriangle, Layers, X, Flag, ClipboardList, ChevronRight, Settings } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { useProjetosFiltros } from '../../context/ProjetosFiltrosContext'
 import { apiService } from '../../services/api'
@@ -9,6 +9,28 @@ import TarefaFormModal from './TarefaFormModal'
 import DeliberacoesModal from './DeliberacoesModal'
 import ManifestacoesTab from './ManifestacoesTab'
 import IniciarFaseModal from './IniciarFaseModal'
+
+const renderNome = (nome) => {
+  if (!nome) return null
+  const parseLine = (line, baseKey) => {
+    const parts = []
+    const regex = /(\*\*(.+?)\*\*)|(\*(.+?)\*)/g
+    let last = 0; let match; let k = baseKey
+    while ((match = regex.exec(line)) !== null) {
+      if (match.index > last) parts.push(line.slice(last, match.index))
+      if (match[1]) parts.push(<strong key={k++}>{match[2]}</strong>)
+      else parts.push(<em key={k++}>{match[4]}</em>)
+      last = regex.lastIndex
+    }
+    if (last < line.length) parts.push(line.slice(last))
+    return parts
+  }
+  return nome.split('\n').reduce((acc, line, i) => {
+    if (i > 0) acc.push(<br key={`br${i}`} />)
+    acc.push(...parseLine(line, i * 1000))
+    return acc
+  }, [])
+}
 
 const STATUS_MAP = {
   mapeado:      { label: 'Mapeado',      cor: 'bg-slate-100 text-slate-600' },
@@ -105,6 +127,10 @@ export default function ProjetoDetalhe() {
   const [movendoTarefa, setMovendoTarefa] = useState(false)
   const [delibExpanded, setDelibExpanded] = useState(new Set())
   const toggleDelib = (id) => setDelibExpanded(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
+  const [menuAcoes, setMenuAcoes] = useState(null) // id da tarefa com menu aberto
+  const [menuAcoesPos, setMenuAcoesPos] = useState({ top: 0, right: 0 })
+  const [menuProjeto, setMenuProjeto] = useState(false)
+  const [menuProjetoPos, setMenuProjetoPos] = useState({ top: 0, right: 0 })
   const [convidados, setConvidados] = useState([])
   const [manifestacoesIniciais, setManifestoesIniciais] = useState([])
   const isConvidadoManif     = convidados.some(c => c.usuario_id === usuarioId)
@@ -548,14 +574,36 @@ const abrirModalMover = async (tarefa) => {
               <Flag className="h-3.5 w-3.5" /> Iniciar Fase
             </button>
           )}
-          {canEditar && (
+          <div className="relative">
             <button
-              onClick={() => navigate(`/projetos/detalhe/${id}/editar`)}
-              className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold px-3 py-2 rounded-md shadow-sm border border-slate-200 transition-colors whitespace-nowrap"
+              onClick={(e) => {
+                if (menuProjeto) { setMenuProjeto(false); return }
+                const rect = e.currentTarget.getBoundingClientRect()
+                setMenuProjetoPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right })
+                setMenuProjeto(true)
+              }}
+              className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-md shadow-sm border transition-colors whitespace-nowrap ${menuProjeto ? 'bg-slate-100 border-slate-300 text-slate-700' : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'}`}
+              title="Ações do Projeto"
             >
-              <Edit2 className="h-3.5 w-3.5" /> Editar Projeto
+              <Settings className="h-3.5 w-3.5" />
             </button>
-          )}
+            {menuProjeto && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setMenuProjeto(false)} />
+                <div className="fixed z-20 bg-white border border-slate-200 rounded-lg shadow-lg py-1 min-w-[170px]"
+                  style={{ top: menuProjetoPos.top, right: menuProjetoPos.right }}>
+                  {canEditar && (
+                    <button
+                      onClick={() => { navigate(`/projetos/detalhe/${id}/editar`); setMenuProjeto(false) }}
+                      className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-blue-50 hover:text-blue-700"
+                    >
+                      <Edit2 className="h-3.5 w-3.5 shrink-0" /> Editar Projeto
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
@@ -867,7 +915,7 @@ const abrirModalMover = async (tarefa) => {
                   </td>
                   <td className="p-3 leading-snug" style={{ whiteSpace: 'normal' }}>
                     <div className="flex items-start gap-1.5">
-                      <span className="font-bold text-slate-900 flex-1">{t.nome}</span>
+                      <span className="text-slate-800 flex-1">{renderNome(t.nome)}</span>
                       {canDeliberacao && (
                         <button onClick={() => setModalDelib(t)} className="shrink-0 mt-0.5 p-0.5 relative text-slate-300 hover:text-amber-500 transition-colors" title={t.proj_deliberacoes?.length > 0 ? `${t.proj_deliberacoes.length} deliberação(ões)` : 'Deliberações'}>
                           <MessageSquare className={`h-3.5 w-3.5 ${t.proj_deliberacoes?.length > 0 ? 'text-amber-500' : ''}`} />
@@ -956,49 +1004,79 @@ const abrirModalMover = async (tarefa) => {
                   </td>
                   <td className="p-3 text-slate-500 whitespace-nowrap">{t.empresa_nome || '—'}</td>
                   <td className="no-print p-3 text-center">
-                    <div className="flex items-center justify-center gap-1">
+                    <div className="relative flex items-center justify-center gap-1">
                       {canIniciarTarefa && t.status_kanban === 'programado' && (
-                        <button
-                          onClick={() => handleIniciarTarefa(t)}
-                          className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
-                          title="Iniciar tarefa"
-                        >
+                        <button onClick={() => handleIniciarTarefa(t)} className="p-1.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors" title="Iniciar tarefa">
                           <PlayCircle className="h-3.5 w-3.5" />
                         </button>
                       )}
                       {canConcluirTarefa && t.status_kanban === 'em_andamento' && (
-                        <button
-                          onClick={() => setModalConcluir({ tarefa: t, dataFim: hojeISO })}
-                          className="p-1 text-slate-400 hover:text-teal-600 hover:bg-teal-50 rounded transition-colors"
-                          title="Concluir tarefa"
-                        >
+                        <button onClick={() => setModalConcluir({ tarefa: t, dataFim: hojeISO })} className="p-1.5 rounded text-slate-400 hover:text-teal-600 hover:bg-teal-50 transition-colors" title="Concluir tarefa">
                           <CheckCircle2 className="h-3.5 w-3.5" />
                         </button>
                       )}
-                      {canEditarTarefa && (
-                        <button onClick={() => handleProximaEtapa(t)} className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors" title="Próxima Etapa">
-                          <ArrowRight className="h-3.5 w-3.5" />
-                        </button>
-                      )}
-                      {canDuplicarTarefa && (
-                        <button onClick={() => handleDuplicar(t)} className="p-1 text-slate-400 hover:text-teal-600 hover:bg-teal-50 rounded transition-colors" title="Duplicar">
-                          <Copy className="h-3.5 w-3.5" />
-                        </button>
-                      )}
-                      {canEditarTarefa && (
-                        <button onClick={() => setModalTarefa({ tarefa: t })} className="p-1 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors" title="Editar">
-                          <Edit2 className="h-3.5 w-3.5" />
-                        </button>
-                      )}
-                      {canMoverTarefa && (
-                        <button onClick={() => abrirModalMover(t)} className="p-1 text-slate-400 hover:text-violet-600 hover:bg-violet-50 rounded transition-colors" title="Mover para outro projeto">
-                          <FolderInput className="h-3.5 w-3.5" />
-                        </button>
-                      )}
-                      {canExcluirTarefa && (
-                        <button onClick={() => setModalExcluir(t)} className="p-1 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded transition-colors" title="Excluir">
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
+                      <button
+                        onClick={(e) => {
+                          if (menuAcoes === t.id) { setMenuAcoes(null); return }
+                          const rect = e.currentTarget.getBoundingClientRect()
+                          const right = window.innerWidth - rect.right
+                          const spaceBelow = window.innerHeight - rect.bottom
+                          if (spaceBelow < 260 || rect.top > window.innerHeight * 0.6) {
+                            setMenuAcoesPos({ bottom: window.innerHeight - rect.top + 4, right, top: undefined })
+                          } else {
+                            setMenuAcoesPos({ top: rect.bottom + 4, right, bottom: undefined })
+                          }
+                          setMenuAcoes(t.id)
+                        }}
+                        className={`p-1.5 rounded transition-colors ${menuAcoes === t.id ? 'bg-slate-100 text-slate-700' : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'}`}
+                        title="Ações"
+                      >
+                        <Settings className="h-3.5 w-3.5" />
+                      </button>
+                      {menuAcoes === t.id && (
+                        <>
+                          <div className="fixed inset-0 z-10" onClick={() => setMenuAcoes(null)} />
+                          <div className="fixed z-20 bg-white border border-slate-200 rounded-lg shadow-lg py-1 min-w-[160px]" style={{ top: menuAcoesPos.top, bottom: menuAcoesPos.bottom, right: menuAcoesPos.right }}>
+                            {canIniciarTarefa && t.status_kanban === 'programado' && (
+                              <button onClick={() => { handleIniciarTarefa(t); setMenuAcoes(null) }} className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-blue-50 hover:text-blue-700">
+                                <PlayCircle className="h-3.5 w-3.5 shrink-0" /> Iniciar Tarefa
+                              </button>
+                            )}
+                            {canConcluirTarefa && t.status_kanban === 'em_andamento' && (
+                              <button onClick={() => { setModalConcluir({ tarefa: t, dataFim: hojeISO }); setMenuAcoes(null) }} className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-teal-50 hover:text-teal-700">
+                                <CheckCircle2 className="h-3.5 w-3.5 shrink-0" /> Concluir Tarefa
+                              </button>
+                            )}
+                            {canEditarTarefa && (
+                              <button onClick={() => { setModalTarefa({ tarefa: t }); setMenuAcoes(null) }} className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-blue-50 hover:text-blue-700">
+                                <Edit2 className="h-3.5 w-3.5 shrink-0" /> Editar
+                              </button>
+                            )}
+                            {canEditarTarefa && (
+                              <button onClick={() => { handleProximaEtapa(t); setMenuAcoes(null) }} className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-indigo-50 hover:text-indigo-700">
+                                <ArrowRight className="h-3.5 w-3.5 shrink-0" /> Próxima Etapa
+                              </button>
+                            )}
+                            {canDuplicarTarefa && (
+                              <button onClick={() => { handleDuplicar(t); setMenuAcoes(null) }} className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-teal-50 hover:text-teal-700">
+                                <Copy className="h-3.5 w-3.5 shrink-0" /> Duplicar
+                              </button>
+                            )}
+                            {canMoverTarefa && (
+                              <button onClick={() => { abrirModalMover(t); setMenuAcoes(null) }} className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-violet-50 hover:text-violet-700">
+                                <FolderInput className="h-3.5 w-3.5 shrink-0" /> Mover para Projeto
+                              </button>
+                            )}
+                            {canExcluirTarefa && (
+                              <>
+                                <div className="my-1 border-t border-slate-100" />
+                                <button onClick={() => { setModalExcluir(t); setMenuAcoes(null) }} className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-red-600 hover:bg-red-50">
+                                  <Trash2 className="h-3.5 w-3.5 shrink-0" /> Excluir
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </>
                       )}
                     </div>
                   </td>

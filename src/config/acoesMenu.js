@@ -77,6 +77,7 @@ export const ACOES_POR_MENU = [
       // Admin reabre qualquer auditoria sem limite; quem tem esta ação reabre só a última da empresa, 1 vez
       { value: 'reabrir', label: 'Reabrir Auditoria (só a última da empresa, 1 vez)' },
       { value: 'editar_na_oficina', label: 'Editar Auditoria (alterar Na Oficina fora do Modo Conferência)' },
+      { value: 'cadastrar_situacoes', label: 'Cadastrar Situações de Auditoria (engrenagem)' },
     ],
   },
   {

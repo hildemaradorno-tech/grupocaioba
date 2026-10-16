@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { isMicroworkConfigured, buscarRelatorioMicrowork } from '../services/microworkIntegracao.js'
+import { isMicroworkConfigured, buscarRelatorioMicrowork, buscarOsAbertasMicrowork } from '../services/microworkIntegracao.js'
 import { getColunasMicrowork } from '../services/microworkFonteCalculo.js'
 
 const router = Router()
@@ -43,6 +43,18 @@ router.post('/colunas', wrap(async (req, res) => {
   const hoje = new Date()
   const info = await getColunasMicrowork(fonte, Number(ano) || hoje.getFullYear(), Number(mes) || hoje.getMonth() + 1)
   res.json(info)
+}))
+
+// GET /api/microwork/os-aberta?empresa=4 — OS em aberto da empresa (Auditoria O.S. Aberta, agrupamento Motos).
+// empresa = dim_empresas.codigo_empresa (id da empresa no MicroWork).
+router.get('/os-aberta', wrap(async (req, res) => {
+  if (!isMicroworkConfigured()) {
+    return res.status(503).json({ error: 'microwork_not_configured', message: 'MICROWORK_API_TOKEN não configurado no ambiente.' })
+  }
+  const empresa = Number(req.query.empresa)
+  if (!empresa) return res.status(400).json({ error: 'empresa_obrigatoria', message: 'Informe o código da empresa (codigo_empresa).' })
+  const rows = await buscarOsAbertasMicrowork(empresa)
+  res.json({ rows, consultadoEm: new Date().toISOString() })
 }))
 
 export default router

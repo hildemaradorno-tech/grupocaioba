@@ -14,7 +14,9 @@ const CORES = [
 
 const VAZIO = { nome: '', cor: 'bg-slate-100 text-slate-700', ativo: true }
 
-export default function AuditoriaSituacoes() {
+// Cadastro de Situações — aberto pela engrenagem da Auditoria O.S. Aberta (embedded = dentro de janela).
+// onChange: avisa a tela da auditoria para recarregar a lista de situações.
+export default function AuditoriaSituacoes({ embedded = false, onChange }) {
   const [lista, setLista] = useState([])
   const [loading, setLoading] = useState(true)
   const [form, setForm] = useState(VAZIO)
@@ -26,7 +28,7 @@ export default function AuditoriaSituacoes() {
 
   const load = async () => {
     setLoading(true)
-    try { setLista(await apiService.getAuditoriaSituacoes()) }
+    try { const l = await apiService.getAuditoriaSituacoes(); setLista(l); onChange?.(l) }
     catch (e) { setErro(e.message || String(e)) }
     finally { setLoading(false) }
   }
@@ -60,13 +62,15 @@ export default function AuditoriaSituacoes() {
   }
 
   return (
-    <div className="p-6 space-y-5 max-w-3xl">
-      <div className="border-b border-slate-200 pb-4">
-        <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
-          <Tag className="h-5 w-5 text-indigo-600" /> Situações de Auditoria
-        </h1>
-        <p className="text-xs text-slate-500 mt-0.5">Cadastro de situações para classificar as OS nas auditorias.</p>
-      </div>
+    <div className={embedded ? 'space-y-4' : 'p-6 space-y-5 max-w-3xl'}>
+      {!embedded && (
+        <div className="border-b border-slate-200 pb-4">
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
+            <Tag className="h-5 w-5 text-indigo-600" /> Situações de Auditoria
+          </h1>
+          <p className="text-xs text-slate-500 mt-0.5">Cadastro de situações para classificar as OS nas auditorias.</p>
+        </div>
+      )}
 
       {/* Erro */}
       {erro && (
@@ -157,7 +161,7 @@ export default function AuditoriaSituacoes() {
                 <tr key={item.id} className="hover:bg-slate-50/70 transition-colors">
                   <td className="p-3 font-semibold">{item.nome}</td>
                   <td className="p-3 text-center">
-                    <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold ${item.cor || 'bg-slate-100 text-slate-700'}`}>{item.nome}</span>
+                    <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap ${item.cor || 'bg-slate-100 text-slate-700'}`}>{item.nome}</span>
                   </td>
                   <td className="p-3 text-center">
                     <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold ${item.ativo ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
@@ -182,7 +186,7 @@ export default function AuditoriaSituacoes() {
       </div>
 
       {modalExcluir && (
-        <div className="fixed top-0 right-0 bottom-0 left-16 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50">
+        <div className="fixed top-0 right-0 bottom-0 left-16 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[60]">
           <div className="bg-white rounded-lg border border-slate-200 w-[400px] shadow-xl overflow-hidden">
             <div className="p-4 flex items-start gap-3">
               <div className="p-2 bg-red-50 text-red-600 rounded-full shrink-0"><ShieldAlert className="h-5 w-5" /></div>
