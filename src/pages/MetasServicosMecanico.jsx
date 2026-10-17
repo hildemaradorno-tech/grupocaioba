@@ -1,6 +1,6 @@
 ﻿import React, { useEffect, useState, useMemo, useCallback } from 'react'
 import { useSessionState } from '../hooks/useSessionState'
-import { Trash2, X, AlertTriangle, ChevronRight, ChevronDown, Loader2, Sparkles, Pencil, Edit2, Search } from 'lucide-react'
+import { Trash2, X, AlertTriangle, ChevronRight, ChevronDown, Loader2, Sparkles, Pencil, Edit2, Search, CalendarDays } from 'lucide-react'
 import BotaoAcaoRetratil from '../components/BotaoAcaoRetratil'
 import SeletorMeses, { CssMesesOcultos } from '../components/SeletorMeses'
 import { useAuth } from '../context/AuthContext'
@@ -564,6 +564,134 @@ export default function MetasServicosMecanico({ empresaExterna = null, anoExtern
     catch (err) { setError(err.message || String(err)); setModalExcluirAberto(false) }
   }
 
+  // ── EDITAR POR MÊS: abre todos os mecânicos de um Setor num único mês pra editar de uma vez,
+  // sem precisar entrar colaborador a colaborador. Mesmos campos/cálculo/validação do modal normal,
+  // só que a linha é o colaborador (não o mês) — reaproveita os mesmos campos-base e upsertMetaMecanico.
+  const PROD_NAO_ASSOC_ID = '00000000-0000-0000-0000-000000000001'
+  const [modalMesAberto, setModalMesAberto] = useState(false)
+  const [mesEdSetorId,   setMesEdSetorId]   = useState('')
+  const [mesEdMes,       setMesEdMes]       = useState(null)
+  const [mesEdLinhas,    setMesEdLinhas]    = useState([])
+  const [salvandoMes,    setSalvandoMes]    = useState(false)
+  const [erroMes,        setErroMes]        = useState(null)
+
+  const abrirEditarPorMes = () => {
+    setMesEdSetorId(''); setMesEdMes(null); setMesEdLinhas([]); setErroMes(null)
+    setModalMesAberto(true)
+  }
+
+  const isMesLockedColab = (dataAdmissao, mes) => {
+    if (!dataAdmissao) return false
+    const [admAno, admMes] = dataAdmissao.split('-').map(Number)
+    if (admAno > Number(filtroAno)) return true
+    if (admAno < Number(filtroAno)) return false
+    return mes < admMes
+  }
+
+  useEffect(() => {
+    if (!modalMesAberto || !mesEdSetorId || !mesEdMes) { setMesEdLinhas([]); return }
+    const empId = empresaUnica(filtroEmpresa)
+    if (!empId) { setMesEdLinhas([]); return }
+    const porColab = new Map()
+    dados.forEach(r => {
+      if (String(r.empresa_id) !== String(empId)) return
+      const pos = resolverPosicao(r)
+      if (pos.sId !== mesEdSetorId) return
+      if (!porColab.has(r.colaborador_id)) porColab.set(r.colaborador_id, { pos, rows: [] })
+      porColab.get(r.colaborador_id).rows.push(r)
+    })
+    const semId = (v) => (!v || v === '—') ? '' : v
+    const linhas = [...porColab.entries()].map(([colabId, { pos, rows }]) => {
+      const rowMes = rows.find(r => Number(r.mes) === mesEdMes)
+      const isProdNaoAssoc = colabId === PROD_NAO_ASSOC_ID
+      const base = {
+        colaborador_id: colabId,
+        colaborador_nome: pos.coNome || rows[0]?.colaborador_nome || colabId,
+        isProdNaoAssoc,
+        departamento_id: semId(pos.did), departamento_nome: pos.dNome,
+        setor_id: semId(pos.sId), setor_nome: pos.sNome,
+        box_id: isProdNaoAssoc ? (rowMes?.box_id || rows[0]?.box_id || '') : semId(pos.bId),
+        box_nome: isProdNaoAssoc ? (rowMes?.box_nome || rows[0]?.box_nome || '') : pos.bNome,
+        cargo_id: isProdNaoAssoc ? (rowMes?.cargo_id || rows[0]?.cargo_id || '') : semId(pos.cId),
+        cargo_nome: isProdNaoAssoc ? (rowMes?.cargo_nome || rows[0]?.cargo_nome || '') : pos.cNome,
+        _rowId: rowMes?.id || null, _dirty: false,
+      }
+      if (isProdNaoAssoc) {
+        return { ...base, meta_servicos: rowMes ? (Number(rowMes.meta_servicos) || 0) : 0, meta_pecas: rowMes ? (Number(rowMes.meta_pecas) || 0) : 0 }
+      }
+      const hd = rowMes ? (Number(rowMes.horas_disponiveis) || 0) : 0
+      return {
+        ...base,
+        locked: isMesLockedColab(pos.func?.data_admissao, mesEdMes),
+        dias_a_trabalhar: hd > 0 ? hd / 8 : '',
+        produtividade: rowMes?.produtividade ?? '',
+        valor_hora: rowMes?.valor_hora ?? '',
+        coef_servicos: rowMes?.coef_servicos ?? '',
+        coef_pecas: rowMes?.coef_pecas ?? '',
+      }
+    }).sort((a, b) => (a.colaborador_nome || '').localeCompare(b.colaborador_nome || ''))
+    setMesEdLinhas(linhas)
+  }, [modalMesAberto, mesEdSetorId, mesEdMes, dados, filtroEmpresa, resolverPosicao])
+
+  const setLinhaMesCampo = (colabId, campo, valor) =>
+    setMesEdLinhas(prev => prev.map(l => l.colaborador_id === colabId ? { ...l, [campo]: valor, _dirty: true } : l))
+
+  const calcMetaLinhaMes = (l) => {
+    if (l.isProdNaoAssoc) return { meta_servicos: Number(l.meta_servicos) || 0, meta_pecas: Number(l.meta_pecas) || 0 }
+    const dias = Number(l.dias_a_trabalhar) || 0
+    const horas_disponiveis = dias > 0 ? dias * 8 : 0
+    const prod = Number(l.produtividade) || 0
+    const horas_meta = horas_disponiveis > 0 && prod > 0 ? horas_disponiveis * (prod / 100) : 0
+    const meta_servicos = Math.round(horas_meta * parseBRL(l.valor_hora))
+    return { meta_servicos, meta_pecas: meta_servicos * (Number(l.coef_pecas) || 0) }
+  }
+
+  const linhasIncompletasMes = mesEdLinhas.filter(l => {
+    if (l.isProdNaoAssoc || l.locked) return false
+    const emUso = parseBRL(l.valor_hora) > 0 || (Number(l.coef_pecas) || 0) > 0
+    if (!emUso) return false
+    return !(Number(l.dias_a_trabalhar) > 0) || !(Number(l.produtividade) > 0) || !(parseBRL(l.valor_hora) > 0) || l.coef_pecas === '' || l.coef_pecas == null
+  })
+
+  const salvarMesEmLote = async () => {
+    if (linhasIncompletasMes.length) {
+      setErroMes('Há colaboradores com informações incompletas — preencha todos os campos ou deixe totalmente vazio: ' + linhasIncompletasMes.map(l => l.colaborador_nome).join(', ') + '.')
+      return
+    }
+    setSalvandoMes(true); setErroMes(null)
+    try {
+      const empId = empresaUnica(filtroEmpresa)
+      const emp = empresas.find(e => e.id === empId)
+      for (const l of mesEdLinhas) {
+        if (!l.isProdNaoAssoc && l.locked) continue
+        const { meta_servicos, meta_pecas } = calcMetaLinhaMes(l)
+        const meta_faturamento = meta_servicos + meta_pecas
+        const dias = l.isProdNaoAssoc ? 0 : (Number(l.dias_a_trabalhar) || 0)
+        await apiService.upsertMetaMecanico({
+          empresa_id: empId, empresa_nome: emp ? (emp.empresa_fantasia || emp.nome_empresa) : '',
+          departamento_id: l.departamento_id || null, departamento_nome: l.departamento_nome || '',
+          setor_id: l.setor_id || null, setor_nome: l.setor_nome || '',
+          box_id: l.box_id || null, box_nome: l.box_nome || '',
+          cargo_id: l.cargo_id || null, cargo_nome: l.cargo_nome || '',
+          colaborador_id: l.colaborador_id, colaborador_nome: l.colaborador_nome,
+          mes: mesEdMes, ano: Number(filtroAno),
+          horas_disponiveis: l.isProdNaoAssoc ? 0 : (dias > 0 ? dias * 8 : 0),
+          valor_hora: l.isProdNaoAssoc ? 0 : parseBRL(l.valor_hora),
+          produtividade: l.isProdNaoAssoc ? 0 : (Number(l.produtividade) || 0),
+          coef_servicos: l.isProdNaoAssoc ? 0 : (Number(l.coef_servicos) || 0),
+          coef_pecas: l.isProdNaoAssoc ? 0 : (Number(l.coef_pecas) || 0),
+          meta_servicos, meta_pecas, meta_faturamento,
+          dias_uteis_reais: dias,
+          media_diaria_venda: meta_faturamento > 0 && dias > 0 ? meta_faturamento / dias : 0,
+          status: 'AGUARDANDO APROVACAO',
+        })
+      }
+      setModalMesAberto(false)
+      await loadDados()
+    } catch (err) { setErroMes(err.message || String(err)) }
+    finally { setSalvandoMes(false) }
+  }
+
   // ── RENDER ROWS ──
   const fmt1 = (v) => { const n = Number(v); if (!n && n !== 0) return '—'; return n.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) }
 
@@ -831,13 +959,18 @@ export default function MetasServicosMecanico({ empresaExterna = null, anoExtern
   const grupoMeses = aggTree(tree, vField)
   const NCOLS = 15 // nome + 12 meses + total + situação
 
-  // Registra o botão "+ Adicionar Mecânico" no cabeçalho compartilhado das abas (mesma linha das abas).
+  // Registra os botões "+ Adicionar Mecânico" e "Editar por Mês" no cabeçalho compartilhado das abas.
   const abrirIncluirRef = React.useRef(abrirIncluir)
   abrirIncluirRef.current = abrirIncluir
+  const abrirEditarPorMesRef = React.useRef(abrirEditarPorMes)
+  abrirEditarPorMesRef.current = abrirEditarPorMes
   useEffect(() => {
     if (!aoDefinirBotaoAcao) return
     aoDefinirBotaoAcao(canEdit
-      ? <BotaoAcaoRetratil texto="Adicionar Mecânico" onClick={() => abrirIncluirRef.current()} />
+      ? <div className="flex items-center gap-2">
+          <BotaoAcaoRetratil texto="Editar por Mês" Icone={CalendarDays} className="!bg-white !text-indigo-700 border border-indigo-300 hover:!bg-indigo-50" onClick={() => abrirEditarPorMesRef.current()} />
+          <BotaoAcaoRetratil texto="Adicionar Mecânico" onClick={() => abrirIncluirRef.current()} />
+        </div>
       : null)
     return () => aoDefinirBotaoAcao(null)
   }, [aoDefinirBotaoAcao, canEdit])
@@ -1303,6 +1436,131 @@ export default function MetasServicosMecanico({ empresaExterna = null, anoExtern
             <div className="flex gap-3 px-6 pb-6">
               <button onClick={() => setModalExcluirAberto(false)} className={`${BTN_SEC} flex-1 justify-center`}>Cancelar</button>
               <button onClick={handleExcluir} className="inline-flex items-center justify-center gap-2 flex-1 bg-red-600 hover:bg-red-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors"><Trash2 size={15}/> Excluir</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* EDITAR POR MÊS: todos os mecânicos de um Setor, um único mês, numa grade só */}
+      {modalMesAberto && (
+        <div className="fixed top-0 right-0 bottom-0 left-16 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[95vh] flex flex-col">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+              <h2 className="text-lg font-bold text-slate-800">Editar Mecânicos por Mês</h2>
+              <button onClick={() => setModalMesAberto(false)} className="text-slate-400 hover:text-slate-600"><X size={20}/></button>
+            </div>
+            <div className="overflow-auto flex-1 p-6 space-y-4">
+              {!empresaUnica(filtroEmpresa) ? (
+                <div className="flex items-center justify-center py-10 text-slate-400 text-sm border border-dashed border-slate-200 rounded-xl">
+                  Selecione uma única empresa no filtro do topo pra usar a edição por mês.
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div><label className={LBL}>Setor *</label>
+                      <select className={SEL} value={mesEdSetorId} onChange={e => setMesEdSetorId(e.target.value)}>
+                        <option value="">Selecione...</option>
+                        {setoresDisponiveis.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
+                      </select></div>
+                    <div><label className={LBL}>Mês *</label>
+                      <select className={SEL} value={mesEdMes ?? ''} onChange={e => setMesEdMes(e.target.value ? Number(e.target.value) : null)}>
+                        <option value="">Selecione...</option>
+                        {MESES_ABR.map((m, i) => <option key={i} value={i+1}>{m}</option>)}
+                      </select></div>
+                  </div>
+
+                  {!mesEdSetorId || !mesEdMes ? (
+                    <div className="flex items-center justify-center py-10 text-slate-400 text-sm border border-dashed border-slate-200 rounded-xl">
+                      Selecione o Setor e o Mês pra listar os mecânicos.
+                    </div>
+                  ) : mesEdLinhas.length === 0 ? (
+                    <div className="flex items-center justify-center py-10 text-slate-400 text-sm border border-dashed border-slate-200 rounded-xl">
+                      Nenhum mecânico encontrado neste setor.
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto border border-slate-200 rounded-lg">
+                      <table className="border-separate border-spacing-1 p-1 w-full">
+                        <thead>
+                          <tr>
+                            <th className="text-left text-xs text-slate-500 font-semibold px-1 sticky left-0 bg-white">Colaborador</th>
+                            <th className="w-28 text-center text-xs font-bold text-slate-700 bg-slate-100 border border-slate-200 rounded px-1 py-1">Dias a Trabalhar</th>
+                            <th className="w-28 text-center text-xs font-bold text-slate-700 bg-slate-100 border border-slate-200 rounded px-1 py-1">Produtividade (%)</th>
+                            <th className="w-28 text-center text-xs font-bold text-slate-700 bg-slate-100 border border-slate-200 rounded px-1 py-1">Valor Hora (R$)</th>
+                            <th className="w-24 text-center text-xs font-bold text-slate-700 bg-slate-100 border border-slate-200 rounded px-1 py-1">Coef. Peças</th>
+                            <th className="w-28 text-center text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1 py-1">Meta Serviços (R$)</th>
+                            <th className="w-28 text-center text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1 py-1">Meta Peças (R$)</th>
+                            <th className="w-28 text-center text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded px-1 py-1">Meta Total (R$)</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {mesEdLinhas.map(l => {
+                            const calc = calcMetaLinhaMes(l)
+                            if (l.locked) return (
+                              <tr key={l.colaborador_id}>
+                                <td className="text-xs text-slate-700 px-1 whitespace-nowrap sticky left-0 bg-white">{l.colaborador_nome}</td>
+                                <td colSpan={7} className="bg-slate-50 border border-slate-200 rounded p-1 text-center text-xs text-slate-400 italic">Antes da admissão — travado</td>
+                              </tr>
+                            )
+                            return (
+                              <tr key={l.colaborador_id}>
+                                <td className="text-xs text-slate-700 px-1 whitespace-nowrap sticky left-0 bg-white">{l.colaborador_nome}</td>
+                                {l.isProdNaoAssoc ? (
+                                  <td colSpan={4} className="bg-slate-50 border border-slate-200 rounded p-1 text-center text-xs text-slate-400">—</td>
+                                ) : (
+                                  <>
+                                    <td className="bg-white border border-slate-200 rounded p-1"><NumInput value={l.dias_a_trabalhar} onChange={v => setLinhaMesCampo(l.colaborador_id, 'dias_a_trabalhar', v)} decimais={1} placeholder="0,0" /></td>
+                                    <td className="bg-white border border-slate-200 rounded p-1"><NumInput value={l.produtividade} onChange={v => setLinhaMesCampo(l.colaborador_id, 'produtividade', v)} decimais={2} placeholder="0,00" /></td>
+                                    <td className="bg-white border border-slate-200 rounded p-1"><BRLInput value={l.valor_hora} onChange={v => setLinhaMesCampo(l.colaborador_id, 'valor_hora', v)} decimais={2} /></td>
+                                    <td className="bg-white border border-slate-200 rounded p-1"><NumInput value={l.coef_pecas} onChange={v => setLinhaMesCampo(l.colaborador_id, 'coef_pecas', v)} decimais={1} placeholder="0,0" /></td>
+                                  </>
+                                )}
+                                {l.isProdNaoAssoc ? (
+                                  <>
+                                    <td className="bg-white border border-emerald-200 rounded p-1"><BRLInput value={l.meta_servicos} onChange={v => setLinhaMesCampo(l.colaborador_id, 'meta_servicos', v)} /></td>
+                                    <td className="bg-white border border-emerald-200 rounded p-1"><BRLInput value={l.meta_pecas} onChange={v => setLinhaMesCampo(l.colaborador_id, 'meta_pecas', v)} /></td>
+                                  </>
+                                ) : (
+                                  <>
+                                    <td className="bg-emerald-50 border border-emerald-100 rounded p-1 text-right text-xs font-mono text-emerald-700">{calc.meta_servicos > 0 ? fmtBRL(calc.meta_servicos) : '—'}</td>
+                                    <td className="bg-emerald-50 border border-emerald-100 rounded p-1 text-right text-xs font-mono text-emerald-700">{calc.meta_pecas > 0 ? fmtBRL(calc.meta_pecas) : '—'}</td>
+                                  </>
+                                )}
+                                <td className="bg-indigo-50 border border-indigo-100 rounded p-1 text-right text-xs font-mono font-semibold text-indigo-700">{(calc.meta_servicos + calc.meta_pecas) > 0 ? fmtBRL(calc.meta_servicos + calc.meta_pecas) : '—'}</td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                        <tfoot>
+                          <tr>
+                            <td className="text-xs font-bold text-slate-700 px-1 whitespace-nowrap sticky left-0 bg-white">Total</td>
+                            <td colSpan={4} className="bg-slate-50 border border-slate-200 rounded p-1" />
+                            <td className="bg-emerald-100 border border-emerald-300 rounded p-1 text-right text-xs font-bold text-emerald-800">
+                              {(() => { const t = mesEdLinhas.reduce((s, l) => s + (l.locked ? 0 : calcMetaLinhaMes(l).meta_servicos), 0); return t > 0 ? fmtBRL(t) : '—' })()}
+                            </td>
+                            <td className="bg-emerald-100 border border-emerald-300 rounded p-1 text-right text-xs font-bold text-emerald-800">
+                              {(() => { const t = mesEdLinhas.reduce((s, l) => s + (l.locked ? 0 : calcMetaLinhaMes(l).meta_pecas), 0); return t > 0 ? fmtBRL(t) : '—' })()}
+                            </td>
+                            <td className="bg-indigo-100 border border-indigo-300 rounded p-1 text-right text-xs font-bold text-indigo-800">
+                              {(() => { const t = mesEdLinhas.reduce((s, l) => { if (l.locked) return s; const c = calcMetaLinhaMes(l); return s + c.meta_servicos + c.meta_pecas }, 0); return t > 0 ? fmtBRL(t) : '—' })()}
+                            </td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  )}
+                </>
+              )}
+              {erroMes && (
+                <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm">
+                  <AlertTriangle size={15} /> {erroMes}
+                </div>
+              )}
+            </div>
+            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-200">
+              <button onClick={() => setModalMesAberto(false)} className={BTN_SEC} disabled={salvandoMes}>Cancelar</button>
+              <button onClick={salvarMesEmLote} className={BTN_PRI} disabled={salvandoMes || !mesEdSetorId || !mesEdMes || mesEdLinhas.length === 0}>
+                {salvandoMes ? <><Loader2 size={15} className="animate-spin"/> Salvando...</> : 'Salvar Mês'}
+              </button>
             </div>
           </div>
         </div>

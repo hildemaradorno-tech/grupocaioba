@@ -1,6 +1,6 @@
 ﻿import React, { useEffect, useState, useMemo, useCallback } from 'react'
 import { useSessionState } from '../hooks/useSessionState'
-import { Plus, Trash2, Edit2, X, AlertTriangle, ChevronRight, ChevronDown, Loader2, Sparkles, Pencil, Search, Copy } from 'lucide-react'
+import { Plus, Trash2, Edit2, X, AlertTriangle, ChevronRight, ChevronDown, Loader2, Sparkles, Pencil, Search, Copy, RefreshCw, CalendarDays } from 'lucide-react'
 import BotaoAcaoRetratil from '../components/BotaoAcaoRetratil'
 import SeletorMeses, { CssMesesOcultos } from '../components/SeletorMeses'
 import { useAuth } from '../context/AuthContext'
@@ -228,6 +228,7 @@ export default function MetasPecas({ empresaExterna = null, anoExterno = null, a
   const [dados,   setDados]   = useState([])
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState(null)
+  const [atualizandoDias, setAtualizandoDias] = useState(false)
   const { hasActionOrDefault } = useAuth()
   const canEdit = hasActionOrDefault('metas/pos-vendas/pecas', 'editar')
 
@@ -288,6 +289,24 @@ export default function MetasPecas({ empresaExterna = null, anoExterno = null, a
       setFuncionarios(sortNome(funcs, 'nome_funcionario'))
     } catch (err) {
       setError(err.message || String(err))
+    }
+  }
+
+  // Relê o calendário (já recalculado em Calendário > Recalcular com Feriados) e regrava Dias Úteis de
+  // todos os vendedores da empresa/ano — não mexe na Meta R$, então não derruba aprovação já dada.
+  const atualizarDiasUteis = async () => {
+    const empId = empresaUnica(filtroEmpresa)
+    if (!empId) return
+    const empNome = empresas.find(e => e.id === empId)?.empresa_fantasia || empresas.find(e => e.id === empId)?.nome_empresa || ''
+    if (!window.confirm(`Atualizar os Dias Úteis de todos os vendedores de ${empNome} em ${filtroAno} com os dados do Calendário?\n\nA Meta R$ não muda.`)) return
+    setAtualizandoDias(true)
+    try {
+      await apiService.atualizarDiasUteisPecas(empId, filtroAno)
+      await loadDados()
+    } catch (err) {
+      setError(err.message || String(err))
+    } finally {
+      setAtualizandoDias(false)
     }
   }
 
@@ -619,6 +638,102 @@ export default function MetasPecas({ empresaExterna = null, anoExterno = null, a
   const marcaEmpresaModal = String(empresas.find(e => e.id === form.empresa_id)?.marca || '').toUpperCase()
   const rotulosFat = marcaEmpresaModal.includes('HONDA') ? { marca: 'HONDA', parceira: 'HAMP' } : { marca: 'DAF', parceira: 'TRP' }
 
+  // ── EDITAR POR MÊS: todos os vendedores de um Setor, um único mês, numa grade só — mesmos
+  // campos/cálculo/validação do modal normal, só que a linha é o colaborador (não o mês).
+  const [modalMesAberto, setModalMesAberto] = useState(false)
+  const [mesEdSetorId,   setMesEdSetorId]   = useState('')
+  const [mesEdMes,       setMesEdMes]       = useState(null)
+  const [mesEdLinhas,    setMesEdLinhas]    = useState([])
+  const [salvandoMes,    setSalvandoMes]    = useState(false)
+  const [erroMes,        setErroMes]        = useState(null)
+
+  const abrirEditarPorMes = () => {
+    setMesEdSetorId(''); setMesEdMes(null); setMesEdLinhas([]); setErroMes(null)
+    setModalMesAberto(true)
+  }
+
+  const empIdMes = empresaUnica(filtroEmpresa)
+  const marcaEmpMes = String(empresas.find(e => e.id === empIdMes)?.marca || '').toUpperCase()
+  const rotulosFatMes = marcaEmpMes.includes('HONDA') ? { marca: 'HONDA', parceira: 'HAMP' } : { marca: 'DAF', parceira: 'TRP' }
+
+  useEffect(() => {
+    if (!modalMesAberto || !mesEdSetorId || !mesEdMes || !empIdMes) { setMesEdLinhas([]); return }
+    const porColab = new Map()
+    dados.forEach(r => {
+      if (String(r.empresa_id) !== String(empIdMes)) return
+      if (r.setor_id !== mesEdSetorId) return
+      if (!porColab.has(r.colaborador_id)) porColab.set(r.colaborador_id, [])
+      porColab.get(r.colaborador_id).push(r)
+    })
+    const linhas = [...porColab.entries()].map(([colabId, rows]) => {
+      const rowMes = rows.find(r => Number(r.mes) === mesEdMes)
+      const func = funcionarios.find(f => f.id === colabId)
+      const base = rows[0]
+      return {
+        colaborador_id: colabId,
+        colaborador_nome: func?.nome_funcionario || base?.colaborador_nome || colabId,
+        departamento_id: base?.departamento_id || '', departamento_nome: base?.departamento_nome || '',
+        setor_id: mesEdSetorId, setor_nome: base?.setor_nome || '',
+        box_id: base?.box_id || '', box_nome: base?.box_nome || '',
+        cargo_id: base?.cargo_id || func?.cargo_id || '', cargo_nome: base?.cargo_nome || cargosPorId[func?.cargo_id]?.nome_cargo || '',
+        meta_faturamento: numOuVazio(rowMes?.meta_faturamento),
+        dias_uteis_reais: numOuVazio(rowMes?.dias_uteis_reais),
+        margem_pecas_pct: numOuVazio(rowMes?.margem_pecas_pct),
+        fat_marca: numOuVazio(rowMes?.fat_marca),
+        fat_parceira: numOuVazio(rowMes?.fat_parceira),
+      }
+    }).sort((a, b) => (a.colaborador_nome || '').localeCompare(b.colaborador_nome || ''))
+    setMesEdLinhas(linhas)
+  }, [modalMesAberto, mesEdSetorId, mesEdMes, empIdMes, dados, funcionarios, cargosPorId])
+
+  const setLinhaMesCampo = (colabId, campo, valor) =>
+    setMesEdLinhas(prev => prev.map(l => l.colaborador_id === colabId ? { ...l, [campo]: valor } : l))
+
+  const linhasIncompletasMes = mesEdLinhas.filter(l => {
+    const emUso = parseBRL(l.meta_faturamento) > 0
+    if (!emUso) return false
+    return !(parseBRL(l.meta_faturamento) > 0) || !(Number(l.dias_uteis_reais) > 0)
+  })
+  const linhasFatEstouradasMes = mesEdLinhas.filter(l => (Number(l.fat_marca) || 0) + (Number(l.fat_parceira) || 0) > (Number(l.meta_faturamento) || 0) + 0.005)
+
+  const salvarMesEmLote = async () => {
+    if (linhasIncompletasMes.length) {
+      setErroMes('Há colaboradores com informações incompletas — preencha Meta R$ e Dias Úteis ou deixe totalmente vazio: ' + linhasIncompletasMes.map(l => l.colaborador_nome).join(', ') + '.')
+      return
+    }
+    if (linhasFatEstouradasMes.length) {
+      setErroMes(`Faturamento ${rotulosFatMes.marca} + ${rotulosFatMes.parceira} ultrapassa a Meta R$ em: ` + linhasFatEstouradasMes.map(l => l.colaborador_nome).join(', ') + '.')
+      return
+    }
+    setSalvandoMes(true); setErroMes(null)
+    try {
+      const emp = empresas.find(e => e.id === empIdMes)
+      for (const l of mesEdLinhas) {
+        const meta = Number(l.meta_faturamento) || 0
+        const dias = Number(l.dias_uteis_reais) || 0
+        await apiService.upsertMetaPecas({
+          empresa_id: empIdMes, empresa_nome: emp ? (emp.empresa_fantasia || emp.nome_empresa) : '',
+          departamento_id: l.departamento_id || null, departamento_nome: l.departamento_nome || '',
+          setor_id: l.setor_id || null, setor_nome: l.setor_nome || '',
+          box_id: l.box_id || null, box_nome: l.box_nome || '',
+          cargo_id: l.cargo_id || null, cargo_nome: l.cargo_nome || '',
+          colaborador_id: l.colaborador_id, colaborador_nome: l.colaborador_nome,
+          mes: mesEdMes, ano: Number(filtroAno),
+          meta_faturamento: meta, dias_uteis_reais: dias,
+          margem_pecas_pct: (l.margem_pecas_pct === '' || l.margem_pecas_pct == null) ? null : (Number(l.margem_pecas_pct) || 0),
+          fat_marca:    (l.fat_marca === '' || l.fat_marca == null) ? null : (Number(l.fat_marca) || 0),
+          fat_parceira: (l.fat_parceira === '' || l.fat_parceira == null) ? null : (Number(l.fat_parceira) || 0),
+          fat_outros:   ((l.fat_marca === '' || l.fat_marca == null) && (l.fat_parceira === '' || l.fat_parceira == null)) ? null : Math.max(0, meta - (Number(l.fat_marca) || 0) - (Number(l.fat_parceira) || 0)),
+          media_diaria_venda: calcMedia(meta, dias),
+          status: 'AGUARDANDO APROVACAO',
+        })
+      }
+      setModalMesAberto(false)
+      await loadDados()
+    } catch (err) { setErroMes(err.message || String(err)) }
+    finally { setSalvandoMes(false) }
+  }
+
   // Distribui a Meta R$ de cada mês (com valor) pelos percentuais informados; "Outros" fica com o restante.
   const aplicarDistribuicaoPct = () => {
     const pm = Number(distPctMarca) || 0, pp = Number(distPctParceira) || 0
@@ -632,13 +747,18 @@ export default function MetasPecas({ empresaExterna = null, anoExterno = null, a
     setDistAberto(false)
   }
 
-  // Registra o botão "+ Adicionar Vendedor" no cabeçalho compartilhado das abas (mesma linha das abas).
+  // Registra os botões "+ Adicionar Vendedor" e "Editar por Mês" no cabeçalho compartilhado das abas.
   const abrirIncluirRef = React.useRef(abrirIncluir)
   abrirIncluirRef.current = abrirIncluir
+  const abrirEditarPorMesRef = React.useRef(abrirEditarPorMes)
+  abrirEditarPorMesRef.current = abrirEditarPorMes
   useEffect(() => {
     if (!aoDefinirBotaoAcao) return
     aoDefinirBotaoAcao(canEdit
-      ? <BotaoAcaoRetratil texto="Adicionar Vendedor" onClick={() => abrirIncluirRef.current()} />
+      ? <div className="flex items-center gap-2">
+          <BotaoAcaoRetratil texto="Editar por Mês" Icone={CalendarDays} className="!bg-white !text-indigo-700 border border-indigo-300 hover:!bg-indigo-50" onClick={() => abrirEditarPorMesRef.current()} />
+          <BotaoAcaoRetratil texto="Adicionar Vendedor" onClick={() => abrirIncluirRef.current()} />
+        </div>
       : null)
     return () => aoDefinirBotaoAcao(null)
   }, [aoDefinirBotaoAcao, canEdit])
@@ -691,6 +811,14 @@ export default function MetasPecas({ empresaExterna = null, anoExterno = null, a
               <input type="text" className={`${SEL} pl-8`} placeholder="Buscar por nome..." value={filtroColab} onChange={e => setFiltroColab(e.target.value)} />
             </div>
           </div>
+          {canEdit && empresaUnica(filtroEmpresa) && (
+            <button onClick={atualizarDiasUteis} disabled={atualizandoDias}
+              title="Relê o calendário e regrava os Dias Úteis de todos os vendedores desta empresa/ano (não mexe na Meta R$)"
+              className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-indigo-50 hover:border-indigo-400 hover:text-indigo-700 transition-colors disabled:opacity-50 whitespace-nowrap">
+              {atualizandoDias ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+              Atualizar Dias Úteis
+            </button>
+          )}
         </div>
         <SeletorMeses selecionados={mesesSel} onChange={setMesesSel} />
       </div>
@@ -1293,6 +1421,121 @@ export default function MetasPecas({ empresaExterna = null, anoExterno = null, a
               <button onClick={() => setModalExcluirAberto(false)} className={`${BTN_SEC} flex-1 justify-center`}>Cancelar</button>
               <button onClick={handleExcluirColab} className={`${BTN_DNG} flex-1 justify-center`}>
                 <Trash2 size={15} /> Excluir
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* EDITAR POR MÊS: todos os vendedores de um Setor, um único mês, numa grade só */}
+      {modalMesAberto && (
+        <div className="fixed top-0 right-0 bottom-0 left-16 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[95vh] flex flex-col">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+              <h2 className="text-lg font-bold text-slate-800">Editar Vendedores por Mês</h2>
+              <button onClick={() => setModalMesAberto(false)} className="text-slate-400 hover:text-slate-600"><X size={20}/></button>
+            </div>
+            <div className="overflow-auto flex-1 p-6 space-y-4">
+              {!empIdMes ? (
+                <div className="flex items-center justify-center py-10 text-slate-400 text-sm border border-dashed border-slate-200 rounded-xl">
+                  Selecione uma única empresa no filtro do topo pra usar a edição por mês.
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div><label className={LBL}>Setor *</label>
+                      <select className={SEL} value={mesEdSetorId} onChange={e => setMesEdSetorId(e.target.value)}>
+                        <option value="">Selecione...</option>
+                        {setoresDisponiveis.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
+                      </select></div>
+                    <div><label className={LBL}>Mês *</label>
+                      <select className={SEL} value={mesEdMes ?? ''} onChange={e => setMesEdMes(e.target.value ? Number(e.target.value) : null)}>
+                        <option value="">Selecione...</option>
+                        {MESES_ABR.map((m, i) => <option key={i} value={i+1}>{m}</option>)}
+                      </select></div>
+                  </div>
+
+                  {!mesEdSetorId || !mesEdMes ? (
+                    <div className="flex items-center justify-center py-10 text-slate-400 text-sm border border-dashed border-slate-200 rounded-xl">
+                      Selecione o Setor e o Mês pra listar os vendedores.
+                    </div>
+                  ) : mesEdLinhas.length === 0 ? (
+                    <div className="flex items-center justify-center py-10 text-slate-400 text-sm border border-dashed border-slate-200 rounded-xl">
+                      Nenhum vendedor encontrado neste setor.
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto border border-slate-200 rounded-lg">
+                      <table className="border-separate border-spacing-1 p-1 w-full">
+                        <thead>
+                          <tr>
+                            <th className="text-left text-xs text-slate-500 font-semibold px-1 sticky left-0 bg-white">Colaborador</th>
+                            <th className="w-28 text-center text-xs font-bold text-slate-700 bg-slate-100 border border-slate-200 rounded px-1 py-1">Meta R$</th>
+                            <th className="w-24 text-center text-xs font-bold text-slate-700 bg-slate-100 border border-slate-200 rounded px-1 py-1">Dias Úteis</th>
+                            <th className="w-24 text-center text-xs font-bold text-slate-700 bg-slate-100 border border-slate-200 rounded px-1 py-1">Meta Margem Peças (%)</th>
+                            <th className="w-28 text-center text-xs font-bold text-slate-700 bg-slate-100 border border-slate-200 rounded px-1 py-1">Faturamento {rotulosFatMes.marca}</th>
+                            <th className="w-28 text-center text-xs font-bold text-slate-700 bg-slate-100 border border-slate-200 rounded px-1 py-1">Faturamento {rotulosFatMes.parceira}</th>
+                            <th className="w-28 text-center text-xs font-bold text-slate-500 bg-slate-50 border border-slate-200 rounded px-1 py-1">Faturamento Outros</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {mesEdLinhas.map(l => {
+                            const meta = Number(l.meta_faturamento) || 0
+                            const outros = ((l.fat_marca === '' || l.fat_marca == null) && (l.fat_parceira === '' || l.fat_parceira == null)) ? null : Math.max(0, meta - (Number(l.fat_marca) || 0) - (Number(l.fat_parceira) || 0))
+                            const estourado = (Number(l.fat_marca) || 0) + (Number(l.fat_parceira) || 0) > meta + 0.005
+                            return (
+                              <tr key={l.colaborador_id}>
+                                <td className="text-xs text-slate-700 px-1 whitespace-nowrap sticky left-0 bg-white">{l.colaborador_nome}</td>
+                                <td className="bg-white border border-slate-200 rounded p-1"><MetaInput value={l.meta_faturamento} onChange={v => setLinhaMesCampo(l.colaborador_id, 'meta_faturamento', v)} /></td>
+                                <td className="bg-white border border-slate-200 rounded p-1"><DiasInput value={l.dias_uteis_reais} onChange={v => setLinhaMesCampo(l.colaborador_id, 'dias_uteis_reais', v)} /></td>
+                                <td className="bg-white border border-slate-200 rounded p-1"><PctInput value={l.margem_pecas_pct} onChange={v => setLinhaMesCampo(l.colaborador_id, 'margem_pecas_pct', v)} /></td>
+                                <td className={`bg-white border rounded p-1 ${estourado ? 'border-red-300' : 'border-slate-200'}`}><MetaInput value={l.fat_marca} onChange={v => setLinhaMesCampo(l.colaborador_id, 'fat_marca', v)} /></td>
+                                <td className={`bg-white border rounded p-1 ${estourado ? 'border-red-300' : 'border-slate-200'}`}><MetaInput value={l.fat_parceira} onChange={v => setLinhaMesCampo(l.colaborador_id, 'fat_parceira', v)} /></td>
+                                <td className="bg-slate-50 border border-slate-200 rounded p-1 text-right text-xs font-mono text-slate-500">{outros > 0 ? formatBRL(outros) : '—'}</td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                        <tfoot>
+                          <tr>
+                            <td className="text-xs font-bold text-slate-700 px-1 whitespace-nowrap sticky left-0 bg-white">Total</td>
+                            <td className="bg-indigo-100 border border-indigo-300 rounded p-1 text-right text-xs font-bold text-indigo-800">
+                              {(() => { const t = mesEdLinhas.reduce((s, l) => s + (Number(l.meta_faturamento) || 0), 0); return t > 0 ? formatBRL(t) : '—' })()}
+                            </td>
+                            <td className="bg-slate-50 border border-slate-200 rounded p-1" />
+                            <td className="bg-slate-50 border border-slate-200 rounded p-1" />
+                            <td className="bg-emerald-100 border border-emerald-300 rounded p-1 text-right text-xs font-bold text-emerald-800">
+                              {(() => { const t = mesEdLinhas.reduce((s, l) => s + (Number(l.fat_marca) || 0), 0); return t > 0 ? formatBRL(t) : '—' })()}
+                            </td>
+                            <td className="bg-emerald-100 border border-emerald-300 rounded p-1 text-right text-xs font-bold text-emerald-800">
+                              {(() => { const t = mesEdLinhas.reduce((s, l) => s + (Number(l.fat_parceira) || 0), 0); return t > 0 ? formatBRL(t) : '—' })()}
+                            </td>
+                            <td className="bg-slate-100 border border-slate-300 rounded p-1 text-right text-xs font-bold text-slate-600">
+                              {(() => {
+                                const t = mesEdLinhas.reduce((s, l) => {
+                                  const meta = Number(l.meta_faturamento) || 0
+                                  const o = ((l.fat_marca === '' || l.fat_marca == null) && (l.fat_parceira === '' || l.fat_parceira == null)) ? 0 : Math.max(0, meta - (Number(l.fat_marca) || 0) - (Number(l.fat_parceira) || 0))
+                                  return s + o
+                                }, 0)
+                                return t > 0 ? formatBRL(t) : '—'
+                              })()}
+                            </td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  )}
+                </>
+              )}
+              {erroMes && (
+                <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm">
+                  <AlertTriangle size={15} /> {erroMes}
+                </div>
+              )}
+            </div>
+            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-200">
+              <button onClick={() => setModalMesAberto(false)} className={BTN_SEC} disabled={salvandoMes}>Cancelar</button>
+              <button onClick={salvarMesEmLote} className={BTN_PRI} disabled={salvandoMes || !mesEdSetorId || !mesEdMes || mesEdLinhas.length === 0}>
+                {salvandoMes ? <><Loader2 size={15} className="animate-spin"/> Salvando...</> : 'Salvar Mês'}
               </button>
             </div>
           </div>

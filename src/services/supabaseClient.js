@@ -2564,6 +2564,39 @@ export const apiService = {
     return data?.[0]
   },
 
+  // Rele o calendário (fato_calendario, já recalculado em Calendário > Recalcular com Feriados) e regrava
+  // Dias Úteis de todos os vendedores da empresa/ano. Não mexe na Meta R$, então não afeta aprovação.
+  atualizarDiasUteisPecas: async (empresaId, ano) => {
+    const { data: cal, error: errCal } = await supabase
+      .from('fato_calendario')
+      .select('mes, dias_uteis')
+      .eq('empresa_id', empresaId)
+      .eq('ano', ano)
+    if (errCal) throw errCal
+    const duPorMes = {}
+    for (let m = 1; m <= 12; m++) duPorMes[m] = 0
+    ;(cal || []).forEach(r => { duPorMes[r.mes] = (duPorMes[r.mes] || 0) + Number(r.dias_uteis || 0) })
+
+    const { data: rows, error: errRows } = await supabase
+      .from('fato_rascunho_metas_pecas')
+      .select('id, mes, meta_faturamento')
+      .eq('empresa_id', empresaId)
+      .eq('ano', ano)
+    if (errRows) throw errRows
+
+    for (const r of (rows || [])) {
+      const dias = duPorMes[r.mes] || 0
+      const meta = Number(r.meta_faturamento) || 0
+      const media = (meta > 0 && dias > 0) ? meta / dias : 0
+      const { error } = await supabase
+        .from('fato_rascunho_metas_pecas')
+        .update({ dias_uteis_reais: dias, media_diaria_venda: media, atualizado_em: new Date().toISOString() })
+        .eq('id', r.id)
+      if (error) throw error
+    }
+    return (rows || []).length
+  },
+
   // Aprova E publica na hora pra fato_metas_publicadas (só essa empresa+tipo+ano) — sem passo
   // separado de "Publicar", ver _toRowPublicada acima.
   approveMetasPecasEmpresa: async (empresaId, ano, usuario = null) => {
@@ -3375,6 +3408,26 @@ export const apiService = {
     const { error: e1 } = await supabase.from('aud_auditoria_os').delete().eq('auditoria_id', id)
     if (e1) throw e1
     const { error } = await supabase.from('aud_auditorias').delete().eq('id', id)
+    if (error) throw error
+    return { success: true }
+  },
+
+  // ── Programação de auditorias automáticas (executadas pelo backend, node-cron) ──
+  getAuditoriaAgendamentos: async () => {
+    const { data, error } = await supabase.from('aud_agendamentos').select('*').order('criado_em')
+    if (error) throw error
+    return data || []
+  },
+  saveAuditoriaAgendamento: async (id, payload, userEmail) => {
+    const q = id
+      ? supabase.from('aud_agendamentos').update({ ...payload, atualizado_em: new Date().toISOString() }).eq('id', id)
+      : supabase.from('aud_agendamentos').insert([{ ...payload, criado_por: userEmail || null }])
+    const { data, error } = await q.select()
+    if (error) throw error
+    return data?.[0]
+  },
+  deleteAuditoriaAgendamento: async (id) => {
+    const { error } = await supabase.from('aud_agendamentos').delete().eq('id', id)
     if (error) throw error
     return { success: true }
   },

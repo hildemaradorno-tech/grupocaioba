@@ -1,6 +1,6 @@
 ﻿import React, { useEffect, useState, useMemo } from 'react'
 import { useSessionState } from '../hooks/useSessionState'
-import { Trash2, X, AlertTriangle, ChevronRight, ChevronDown, Loader2, Sparkles, Pencil, Info, Search, Copy } from 'lucide-react'
+import { Trash2, X, AlertTriangle, ChevronRight, ChevronDown, Loader2, Sparkles, Pencil, Info, Search, Copy, CalendarDays } from 'lucide-react'
 import BotaoAcaoRetratil from '../components/BotaoAcaoRetratil'
 import SeletorMeses, { CssMesesOcultos } from '../components/SeletorMeses'
 import { useAuth } from '../context/AuthContext'
@@ -131,6 +131,7 @@ export default function MetasServicosConsultor({ empresaExterna = null, anoExter
   const [form,               setForm]               = useState(FORM_VAZIO)
   const [mesesForm,          setMesesForm]          = useState(mesesVazios())
   const [mecRowsModal,       setMecRowsModal]       = useState([])
+  const [diasUteisModal,     setDiasUteisModal]     = useState({})
   const [colabExcluir,       setColabExcluir]       = useState(null)
   const [salvando,           setSalvando]           = useState(false)
   const [erroModal,          setErroModal]          = useState(null)
@@ -369,7 +370,8 @@ export default function MetasServicosConsultor({ empresaExterna = null, anoExter
       // Carrega linhas de mecânico desta empresa (pra filtrar pelo box selecionado)
       if(value && filtroAno) {
         try { setMecRowsModal(await apiService.getMetasMecanico(value, filtroAno)) } catch {}
-      } else { setMecRowsModal([]) }
+        try { setDiasUteisModal(await apiService.getDiasUteisPorMes(value, filtroAno)) } catch {}
+      } else { setMecRowsModal([]); setDiasUteisModal({}) }
     }
     if(name==='departamento_id') { const dep=departamentos.find(x=>x.id===value); up.departamento_nome=dep?.nome_departamento||''; up.setor_id=''; up.setor_nome=''; up.cargo_id=''; up.cargo_nome='' }
     if(name==='setor_id') {
@@ -389,7 +391,8 @@ export default function MetasServicosConsultor({ empresaExterna = null, anoExter
     setErroModal(null)
     if(empIdUnica) {
       try { setMecRowsModal(await apiService.getMetasMecanico(empIdUnica, filtroAno)) } catch {}
-    } else { setMecRowsModal([]) }
+      try { setDiasUteisModal(await apiService.getDiasUteisPorMes(empIdUnica, filtroAno)) } catch {}
+    } else { setMecRowsModal([]); setDiasUteisModal({}) }
     setModoModal('incluir')
     setModalAberto(true)
   }
@@ -437,7 +440,8 @@ export default function MetasServicosConsultor({ empresaExterna = null, anoExter
     setErroModal(null)
     if (empId) {
       try { setMecRowsModal(await apiService.getMetasMecanico(empId, filtroAno)) } catch {}
-    } else { setMecRowsModal([]) }
+      try { setDiasUteisModal(await apiService.getDiasUteisPorMes(empId, filtroAno)) } catch {}
+    } else { setMecRowsModal([]); setDiasUteisModal({}) }
     setModoModal(modo)
     setModalAberto(true)
   }
@@ -560,13 +564,132 @@ export default function MetasServicosConsultor({ empresaExterna = null, anoExter
   const grupoMeses = aggTree(tree)
   const NCOLS = 15
 
-  // Registra o botão "+ Adicionar Consultor" no cabeçalho compartilhado das abas (mesma linha das abas).
+  // ── EDITAR POR MÊS: todos os consultores de um Setor, um único mês, numa grade só — mesmos
+  // campos/cálculo do modal normal (um por colaborador em vez de um por mês). A Ref. do setor
+  // (totaisMec/totaisTer/totaisFun) já é calculada por Setor+Mês (não por colaborador), então dá
+  // pra calcular uma vez só e compartilhar entre todas as linhas da grade.
+  const [modalMesAberto, setModalMesAberto] = useState(false)
+  const [mesEdSetorId,   setMesEdSetorId]   = useState('')
+  const [mesEdMes,       setMesEdMes]       = useState(null)
+  const [mesEdLinhas,    setMesEdLinhas]    = useState([])
+  const [salvandoMes,    setSalvandoMes]    = useState(false)
+  const [erroMes,        setErroMes]        = useState(null)
+
+  const abrirEditarPorMes = () => {
+    setMesEdSetorId(''); setMesEdMes(null); setMesEdLinhas([]); setErroMes(null)
+    setModalMesAberto(true)
+  }
+
+  const mesEdSetorNome = setoresDisponiveis.find(s => s.id === mesEdSetorId)?.nome || ''
+
+  const mesEdRef = useMemo(() => {
+    const empId = empresaUnica(filtroEmpresa)
+    if (!empId || !mesEdSetorId || !mesEdMes) return { pecas: 0, servicos: 0 }
+    const isFun = /funilaria|pintura/i.test(mesEdSetorNome)
+    const mec = totaisMec[empId]?.[mesEdSetorId]?.[mesEdMes] || {}
+    const ter = Number(totaisTer[empId]?.[mesEdMes]) || 0
+    const fun = totaisFun[empId]?.[mesEdMes] || {}
+    const entraTerceiro = /mec[âa]nica/i.test(mesEdSetorNome)
+    const pecas = isFun ? (fun.pecas || 0) : (mec.pecas || 0)
+    const servicos = (isFun ? (fun.servicos || 0) : (mec.servicos || 0)) + (entraTerceiro ? ter : 0)
+    return { pecas, servicos }
+  }, [filtroEmpresa, mesEdSetorId, mesEdMes, mesEdSetorNome, totaisMec, totaisTer, totaisFun])
+
+  useEffect(() => {
+    if (!modalMesAberto || !mesEdSetorId || !mesEdMes) { setMesEdLinhas([]); return }
+    const empId = empresaUnica(filtroEmpresa)
+    if (!empId) { setMesEdLinhas([]); return }
+    const porColab = new Map()
+    dados.forEach(r => {
+      if (String(r.empresa_id) !== String(empId)) return
+      const { sId, sNome, did, dNome } = resolverSetorDept(r)
+      if (sId !== mesEdSetorId) return
+      if (!porColab.has(r.colaborador_id)) porColab.set(r.colaborador_id, { sNome, did, dNome, rows: [] })
+      porColab.get(r.colaborador_id).rows.push(r)
+    })
+    const linhas = [...porColab.entries()].map(([colabId, { sNome, did, dNome, rows }]) => {
+      const rowMes = rows.find(r => Number(r.mes) === mesEdMes)
+      const func = funcionarios.find(f => f.id === colabId)
+      const cargoId = rowMes?.cargo_id || rows[0]?.cargo_id || func?.cargo_id || ''
+      return {
+        colaborador_id: colabId,
+        colaborador_nome: func?.nome_funcionario || rows[0]?.colaborador_nome || colabId,
+        departamento_id: did, departamento_nome: dNome,
+        setor_id: mesEdSetorId, setor_nome: sNome,
+        cargo_id: cargoId, cargo_nome: cargosPorId[cargoId]?.nome_cargo || rows[0]?.cargo_nome || '',
+        percentual: rowMes?.percentual ?? '',
+        margem_pecas_pct: numOuVazio(rowMes?.margem_pecas_pct),
+        margem_servicos_pct: numOuVazio(rowMes?.margem_servicos_pct),
+        ticket_pecas: numOuVazio(rowMes?.ticket_pecas),
+        ticket_servicos: numOuVazio(rowMes?.ticket_servicos),
+      }
+    }).sort((a, b) => (a.colaborador_nome || '').localeCompare(b.colaborador_nome || ''))
+    setMesEdLinhas(linhas)
+  }, [modalMesAberto, mesEdSetorId, mesEdMes, dados, filtroEmpresa, resolverSetorDept, funcionarios, cargosPorId])
+
+  const setLinhaMesCampo = (colabId, campo, valor) =>
+    setMesEdLinhas(prev => prev.map(l => l.colaborador_id === colabId ? { ...l, [campo]: valor } : l))
+
+  const calcMetaLinhaConsultor = (l) => {
+    const pct = (Number(l.percentual) || 0) / 100
+    const pecas = round2(mesEdRef.pecas * pct)
+    const servicos = round2(mesEdRef.servicos * pct)
+    return { pecas, servicos, total: pecas + servicos }
+  }
+
+  const pctTotalLinhasMes = mesEdLinhas.reduce((s, l) => s + (Number(l.percentual) || 0), 0)
+  const pctMesEstourado = pctTotalLinhasMes > 100.01
+
+  const salvarMesEmLote = async () => {
+    if (pctMesEstourado) {
+      setErroMes(`A soma das % ultrapassa 100% do setor (${pctTotalLinhasMes.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%). Ajuste antes de salvar.`)
+      return
+    }
+    setSalvandoMes(true); setErroMes(null)
+    try {
+      const empId = empresaUnica(filtroEmpresa)
+      const emp = empresas.find(e => e.id === empId)
+      const refTotalSetor = mesEdRef.pecas + mesEdRef.servicos
+      for (const l of mesEdLinhas) {
+        const pct = Number(l.percentual) || 0
+        const { pecas: metaPecas, servicos: metaServicos, total: meta } = calcMetaLinhaConsultor(l)
+        await apiService.upsertMetaConsultor({
+          empresa_id: empId, empresa_nome: emp ? (emp.empresa_fantasia || emp.nome_empresa) : '',
+          departamento_id: l.departamento_id || null, departamento_nome: l.departamento_nome || '',
+          setor_id: l.setor_id || null, setor_nome: l.setor_nome || '',
+          box_id: null,
+          cargo_id: l.cargo_id || null, cargo_nome: l.cargo_nome || '',
+          colaborador_id: l.colaborador_id, colaborador_nome: l.colaborador_nome,
+          mes: mesEdMes, ano: Number(filtroAno),
+          percentual: pct, meta_faturamento: meta, meta_pecas: metaPecas, meta_servicos: metaServicos,
+          margem_pecas_pct:    numOuNull(l.margem_pecas_pct),
+          margem_servicos_pct: numOuNull(l.margem_servicos_pct),
+          ticket_pecas:        numOuNull(l.ticket_pecas),
+          ticket_servicos:     numOuNull(l.ticket_servicos),
+          ticket_total:        (numOuNull(l.ticket_pecas) == null && numOuNull(l.ticket_servicos) == null) ? null : (Number(l.ticket_pecas) || 0) + (Number(l.ticket_servicos) || 0),
+          passagens:           Math.round(calcPassagens(refTotalSetor, (Number(l.ticket_pecas) || 0) + (Number(l.ticket_servicos) || 0))),
+          dias_uteis_reais: 0, media_diaria_venda: 0,
+          status: 'AGUARDANDO APROVACAO',
+        })
+      }
+      setModalMesAberto(false)
+      await loadDados()
+    } catch (err) { setErroMes(err.message || String(err)) }
+    finally { setSalvandoMes(false) }
+  }
+
+  // Registra os botões "+ Adicionar Consultor" e "Editar por Mês" no cabeçalho compartilhado das abas.
   const abrirIncluirRef = React.useRef(abrirIncluir)
   abrirIncluirRef.current = abrirIncluir
+  const abrirEditarPorMesRef = React.useRef(abrirEditarPorMes)
+  abrirEditarPorMesRef.current = abrirEditarPorMes
   useEffect(() => {
     if (!aoDefinirBotaoAcao) return
     aoDefinirBotaoAcao(canEdit
-      ? <BotaoAcaoRetratil texto="Adicionar Consultor" onClick={() => abrirIncluirRef.current()} />
+      ? <div className="flex items-center gap-2">
+          <BotaoAcaoRetratil texto="Editar por Mês" Icone={CalendarDays} className="!bg-white !text-indigo-700 border border-indigo-300 hover:!bg-indigo-50" onClick={() => abrirEditarPorMesRef.current()} />
+          <BotaoAcaoRetratil texto="Adicionar Consultor" onClick={() => abrirIncluirRef.current()} />
+        </div>
       : null)
     return () => aoDefinirBotaoAcao(null)
   }, [aoDefinirBotaoAcao, canEdit])
@@ -881,6 +1004,17 @@ export default function MetasServicosConsultor({ empresaExterna = null, anoExter
                       </tr>
                     </thead>
                     <tbody>
+                      {/* Dias Úteis — referência do calendário, igual à aba Mecânico (não é gravado aqui) */}
+                      <tr>
+                        <td className="text-xs font-semibold text-slate-500 px-1 whitespace-nowrap">Dias Úteis</td>
+                        {Array.from({length:12},(_,i)=>{
+                          const v = diasUteisModal[i+1] ?? ''
+                          return <td key={i} className="bg-slate-100 border border-slate-200 rounded p-1 text-center text-xs text-slate-600 font-mono select-none">{v !== '' && v !== 0 ? Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '—'}</td>
+                        })}
+                        <td className="bg-indigo-50 border border-indigo-200 rounded p-1 text-right text-xs font-semibold text-slate-600">
+                          {(() => { const t = Array.from({length:12},(_,i)=>Number(diasUteisModal[i+1])||0).reduce((s,v)=>s+v,0); return t > 0 ? t.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '—' })()}
+                        </td>
+                      </tr>
                       {/* Referência conforme box selecionado, detalhada por Peças/Serviços/Terceiros/Total */}
                       {[
                         { key: 'pecas',     label: 'Ref. Peças (R$)' },
@@ -1085,6 +1219,119 @@ export default function MetasServicosConsultor({ empresaExterna = null, anoExter
             <div className="flex gap-3 px-6 pb-6">
               <button onClick={()=>setModalExcluirAberto(false)} className={`${BTN_SEC} flex-1 justify-center`}>Cancelar</button>
               <button onClick={handleExcluir} className="inline-flex items-center justify-center gap-2 flex-1 bg-red-600 hover:bg-red-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors"><Trash2 size={15}/> Excluir</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* EDITAR POR MÊS: todos os consultores de um Setor, um único mês, numa grade só */}
+      {modalMesAberto && (
+        <div className="fixed top-0 right-0 bottom-0 left-16 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[95vh] flex flex-col">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+              <h2 className="text-lg font-bold text-slate-800">Editar Consultores por Mês</h2>
+              <button onClick={() => setModalMesAberto(false)} className="text-slate-400 hover:text-slate-600"><X size={20}/></button>
+            </div>
+            <div className="overflow-auto flex-1 p-6 space-y-4">
+              {!empresaUnica(filtroEmpresa) ? (
+                <div className="flex items-center justify-center py-10 text-slate-400 text-sm border border-dashed border-slate-200 rounded-xl">
+                  Selecione uma única empresa no filtro do topo pra usar a edição por mês.
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div><label className={LBL}>Setor *</label>
+                      <select className={SEL} value={mesEdSetorId} onChange={e => setMesEdSetorId(e.target.value)}>
+                        <option value="">Selecione...</option>
+                        {setoresDisponiveis.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
+                      </select></div>
+                    <div><label className={LBL}>Mês *</label>
+                      <select className={SEL} value={mesEdMes ?? ''} onChange={e => setMesEdMes(e.target.value ? Number(e.target.value) : null)}>
+                        <option value="">Selecione...</option>
+                        {MESES_ABR.map((m, i) => <option key={i} value={i+1}>{m}</option>)}
+                      </select></div>
+                  </div>
+
+                  {!mesEdSetorId || !mesEdMes ? (
+                    <div className="flex items-center justify-center py-10 text-slate-400 text-sm border border-dashed border-slate-200 rounded-xl">
+                      Selecione o Setor e o Mês pra listar os consultores.
+                    </div>
+                  ) : mesEdLinhas.length === 0 ? (
+                    <div className="flex items-center justify-center py-10 text-slate-400 text-sm border border-dashed border-slate-200 rounded-xl">
+                      Nenhum consultor encontrado neste setor.
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex items-center gap-4 text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                        <span>Ref. Peças: <strong className="text-slate-700">{fmtBRL(mesEdRef.pecas)}</strong></span>
+                        <span>Ref. Serviços: <strong className="text-slate-700">{fmtBRL(mesEdRef.servicos)}</strong></span>
+                        <span className={pctMesEstourado ? 'text-red-600 font-bold' : ''}>% distribuída no setor: <strong>{pctTotalLinhasMes.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</strong> / 100%</span>
+                      </div>
+                      <div className="overflow-x-auto border border-slate-200 rounded-lg">
+                        <table className="border-separate border-spacing-1 p-1 w-full">
+                          <thead>
+                            <tr>
+                              <th className="text-left text-xs text-slate-500 font-semibold px-1 sticky left-0 bg-white">Colaborador</th>
+                              <th className="w-24 text-center text-xs font-bold text-slate-700 bg-slate-100 border border-slate-200 rounded px-1 py-1">% Distribuição</th>
+                              <th className="w-24 text-center text-xs font-bold text-slate-700 bg-slate-100 border border-slate-200 rounded px-1 py-1">Meta Margem Peças (%)</th>
+                              <th className="w-24 text-center text-xs font-bold text-slate-700 bg-slate-100 border border-slate-200 rounded px-1 py-1">Meta Margem Serviços (%)</th>
+                              <th className="w-24 text-center text-xs font-bold text-slate-700 bg-slate-100 border border-slate-200 rounded px-1 py-1">Ticket Peças (R$)</th>
+                              <th className="w-24 text-center text-xs font-bold text-slate-700 bg-slate-100 border border-slate-200 rounded px-1 py-1">Ticket Serviços (R$)</th>
+                              <th className="w-28 text-center text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1 py-1">Meta Peças (R$)</th>
+                              <th className="w-28 text-center text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1 py-1">Meta Serviços (R$)</th>
+                              <th className="w-28 text-center text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded px-1 py-1">Meta Total (R$)</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {mesEdLinhas.map(l => {
+                              const calc = calcMetaLinhaConsultor(l)
+                              return (
+                                <tr key={l.colaborador_id}>
+                                  <td className="text-xs text-slate-700 px-1 whitespace-nowrap sticky left-0 bg-white">{l.colaborador_nome}</td>
+                                  <td className="bg-white border border-slate-200 rounded p-1"><PctInput value={l.percentual} onChange={v => setLinhaMesCampo(l.colaborador_id, 'percentual', v)} /></td>
+                                  <td className="bg-white border border-slate-200 rounded p-1"><PctInput value={l.margem_pecas_pct} onChange={v => setLinhaMesCampo(l.colaborador_id, 'margem_pecas_pct', v)} /></td>
+                                  <td className="bg-white border border-slate-200 rounded p-1"><PctInput value={l.margem_servicos_pct} onChange={v => setLinhaMesCampo(l.colaborador_id, 'margem_servicos_pct', v)} /></td>
+                                  <td className="bg-white border border-slate-200 rounded p-1"><MoneyInput value={l.ticket_pecas} onChange={v => setLinhaMesCampo(l.colaborador_id, 'ticket_pecas', v)} /></td>
+                                  <td className="bg-white border border-slate-200 rounded p-1"><MoneyInput value={l.ticket_servicos} onChange={v => setLinhaMesCampo(l.colaborador_id, 'ticket_servicos', v)} /></td>
+                                  <td className="bg-emerald-50 border border-emerald-100 rounded p-1 text-right text-xs font-mono text-emerald-700">{calc.pecas > 0 ? fmtBRL(calc.pecas) : '—'}</td>
+                                  <td className="bg-emerald-50 border border-emerald-100 rounded p-1 text-right text-xs font-mono text-emerald-700">{calc.servicos > 0 ? fmtBRL(calc.servicos) : '—'}</td>
+                                  <td className="bg-indigo-50 border border-indigo-100 rounded p-1 text-right text-xs font-mono font-semibold text-indigo-700">{calc.total > 0 ? fmtBRL(calc.total) : '—'}</td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                          <tfoot>
+                            <tr>
+                              <td className="text-xs font-bold text-slate-700 px-1 whitespace-nowrap sticky left-0 bg-white">Total</td>
+                              <td colSpan={4} className="bg-slate-50 border border-slate-200 rounded p-1" />
+                              <td className="bg-emerald-100 border border-emerald-300 rounded p-1 text-right text-xs font-bold text-emerald-800">
+                                {(() => { const t = mesEdLinhas.reduce((s, l) => s + calcMetaLinhaConsultor(l).pecas, 0); return t > 0 ? fmtBRL(t) : '—' })()}
+                              </td>
+                              <td className="bg-emerald-100 border border-emerald-300 rounded p-1 text-right text-xs font-bold text-emerald-800">
+                                {(() => { const t = mesEdLinhas.reduce((s, l) => s + calcMetaLinhaConsultor(l).servicos, 0); return t > 0 ? fmtBRL(t) : '—' })()}
+                              </td>
+                              <td className="bg-indigo-100 border border-indigo-300 rounded p-1 text-right text-xs font-bold text-indigo-800">
+                                {(() => { const t = mesEdLinhas.reduce((s, l) => s + calcMetaLinhaConsultor(l).total, 0); return t > 0 ? fmtBRL(t) : '—' })()}
+                              </td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    </>
+                  )}
+                </>
+              )}
+              {erroMes && (
+                <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm">
+                  <AlertTriangle size={15} /> {erroMes}
+                </div>
+              )}
+            </div>
+            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-200">
+              <button onClick={() => setModalMesAberto(false)} className={BTN_SEC} disabled={salvandoMes}>Cancelar</button>
+              <button onClick={salvarMesEmLote} className={BTN_PRI} disabled={salvandoMes || !mesEdSetorId || !mesEdMes || mesEdLinhas.length === 0}>
+                {salvandoMes ? <><Loader2 size={15} className="animate-spin"/> Salvando...</> : 'Salvar Mês'}
+              </button>
             </div>
           </div>
         </div>

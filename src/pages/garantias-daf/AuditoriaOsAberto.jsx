@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react'
-import { ClipboardList, Download, ChevronDown, Save, AlertTriangle, Building2, ShieldAlert, Trash2, Calendar, User, Banknote, Search, XCircle, X, Clock, ClipboardCheck, FileText, List, ThumbsUp, CheckCircle2, ShieldCheck, ArrowUpDown, ArrowUp, ArrowDown, Settings, RotateCcw, History, Pencil, Tag } from 'lucide-react'
+import { ClipboardList, Download, ChevronDown, Save, AlertTriangle, Building2, ShieldAlert, Trash2, Calendar, User, Banknote, Search, XCircle, X, Clock, ClipboardCheck, FileText, List, ThumbsUp, CheckCircle2, ShieldCheck, ArrowUpDown, ArrowUp, ArrowDown, Settings, RotateCcw, History, Pencil, Tag, CalendarClock } from 'lucide-react'
 import { apiService } from '../../services/api'
 import { useAuth } from '../../context/AuthContext'
 import AuditoriaSituacoes from '../auditoria/AuditoriaSituacoes'
@@ -95,6 +95,14 @@ export default function AuditoriaOsAberto() {
   const [edicaoNaOficina, setEdicaoNaOficina] = useState({}) // { [osId]: true | false | null } — só o que mudou
   const [buscaEditar, setBuscaEditar] = useState('')
   const [salvandoEdicao, setSalvandoEdicao] = useState(false)
+
+  // ── Programar auditorias automáticas (engrenagem, só Admin) ──
+  const [modalProgramar, setModalProgramar] = useState(false)
+  const [agendamentos, setAgendamentos] = useState([])
+  const AG_VAZIO = { id: null, empresa_id: '', dias_semana: [1], hora: '07:00', responsavel_id: '', ativo: true }
+  const [formAg, setFormAg] = useState(AG_VAZIO)
+  const [salvandoAg, setSalvandoAg] = useState(false)
+  const [excluirAgId, setExcluirAgId] = useState(null)
 
   // ── Cadastro de Situações (engrenagem) ──
   const [modalSituacoes, setModalSituacoes] = useState(false)
@@ -437,6 +445,40 @@ export default function AuditoriaOsAberto() {
   })()
   const podeCadastrarSituacoes = isAdminEfetivo || hasAction('auditoria-os-aberto', 'cadastrar_situacoes')
 
+  // ── Programar auditorias: carregar / salvar / excluir ──
+  const abrirModalProgramar = async () => {
+    setFormAg(AG_VAZIO); setExcluirAgId(null); setModalProgramar(true)
+    try { setAgendamentos(await apiService.getAuditoriaAgendamentos()) } catch (e) { setErro(e.message || String(e)) }
+  }
+  const formAgValido = formAg.empresa_id && formAg.dias_semana.length > 0 && /^\d{2}:\d{2}/.test(formAg.hora || '')
+  const handleSalvarAg = async () => {
+    if (!formAgValido) return
+    setSalvandoAg(true)
+    try {
+      const resp = responsaveis.find(r => r.id === formAg.responsavel_id)
+      const payload = {
+        empresa_id: formAg.empresa_id,
+        dias_semana: [...formAg.dias_semana].sort(),
+        hora: formAg.hora,
+        responsavel_id: resp?.id || null,
+        responsavel_nome: resp?.nome || null,
+        ativo: formAg.ativo,
+      }
+      await apiService.saveAuditoriaAgendamento(formAg.id, payload, user?.email || '')
+      setAgendamentos(await apiService.getAuditoriaAgendamentos())
+      setFormAg(AG_VAZIO)
+    } catch (e) { setErro(e.message || String(e)) }
+    finally { setSalvandoAg(false) }
+  }
+  const handleExcluirAg = async (id) => {
+    try {
+      await apiService.deleteAuditoriaAgendamento(id)
+      setAgendamentos(prev => prev.filter(a => a.id !== id))
+      if (formAg.id === id) setFormAg(AG_VAZIO)
+    } catch (e) { setErro(e.message || String(e)) }
+    finally { setExcluirAgId(null) }
+  }
+
   // ── Editar auditoria: quem pode e salvar ──
   const editar = (() => {
     if (!auditoriaAtual) return { pode: false, motivo: 'Selecione uma auditoria' }
@@ -765,6 +807,11 @@ export default function AuditoriaOsAberto() {
                       id: 'reabrir', icon: RotateCcw, label: 'Reabrir auditoria',
                       desc: reabrir.motivo,
                       disabled: !reabrir.pode, onClick: () => abrirModalPrazo('Reaberta'), cor: 'text-amber-600',
+                    },
+                    {
+                      id: 'programar', icon: CalendarClock, label: 'Programar auditorias',
+                      desc: isAdminEfetivo ? 'Gerar auditorias automáticas por dia da semana e horário' : 'Somente o Admin pode programar',
+                      disabled: !isAdminEfetivo, onClick: abrirModalProgramar, cor: 'text-emerald-600',
                     },
                     {
                       id: 'situacoes', icon: Tag, label: 'Situações de auditoria',
@@ -1118,8 +1165,8 @@ export default function AuditoriaOsAberto() {
                       className="h-3.5 w-3.5 accent-indigo-600 cursor-pointer"
                     />
                   </th>
-                  {thOrd('os_numero', 'Nº OS')}
                   {thOrd('data_criacao', 'Dt. OS')}
+                  {thOrd('os_numero', 'Nº OS')}
                   {thOrd('veiculo_placa', 'Placa')}
                   {thOrd('veiculo_chassi', 'Chassi')}
                   {thOrd('proprietario_veiculo', 'Proprietário', 'min-w-[280px]')}
@@ -1138,8 +1185,8 @@ export default function AuditoriaOsAberto() {
                         className="h-3.5 w-3.5 accent-indigo-600 cursor-pointer"
                       />
                     </td>
-                    <td className="p-3 font-mono font-bold text-slate-900 whitespace-nowrap">{row.os_numero || '—'}</td>
                     <td className="p-3 whitespace-nowrap text-slate-500">{fmtDate(row.data_criacao)}</td>
+                    <td className="p-3 font-mono font-bold text-slate-900 whitespace-nowrap">{row.os_numero || '—'}</td>
                     <td className="p-3 font-mono text-slate-700 whitespace-nowrap font-semibold">{row.veiculo_placa || '—'}</td>
                     <td className="p-3 font-mono text-slate-500 whitespace-nowrap">{row.veiculo_chassi || '—'}</td>
                     <td className="p-3 text-slate-700">{row.proprietario_veiculo || '—'}</td>
@@ -1360,8 +1407,8 @@ export default function AuditoriaOsAberto() {
                 <table className="w-full text-left border-collapse">
                   <thead className="sticky top-0 z-10">
                     <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[10px] font-bold uppercase tracking-wider">
-                      <th className="p-3 whitespace-nowrap">Nº OS</th>
                       <th className="p-3 whitespace-nowrap">Dt. OS</th>
+                      <th className="p-3 whitespace-nowrap">Nº OS</th>
                       <th className="p-3 whitespace-nowrap">Placa</th>
                       <th className="p-3 whitespace-nowrap">Chassi</th>
                       <th className="p-3 whitespace-nowrap min-w-[240px]">Proprietário</th>
@@ -1375,8 +1422,8 @@ export default function AuditoriaOsAberto() {
                       const alterado = r.id in edicaoNaOficina
                       return (
                         <tr key={r.id} className={alterado ? 'bg-indigo-50/60' : ''}>
-                          <td className="p-3 font-mono font-bold text-slate-900 whitespace-nowrap">{r.os_numero || '—'}</td>
                           <td className="p-3 whitespace-nowrap text-slate-500">{fmtDate(r.data_criacao)}</td>
+                          <td className="p-3 font-mono font-bold text-slate-900 whitespace-nowrap">{r.os_numero || '—'}</td>
                           <td className="p-3 font-mono whitespace-nowrap font-semibold">{r.veiculo_placa || '—'}</td>
                           <td className="p-3 font-mono text-slate-500 whitespace-nowrap">{r.veiculo_chassi || '—'}</td>
                           <td className="p-3">{r.proprietario_veiculo || '—'}</td>
@@ -1430,6 +1477,178 @@ export default function AuditoriaOsAberto() {
                     <Save className="h-3.5 w-3.5" />
                     {salvandoEdicao ? 'Salvando...' : 'Salvar'}
                   </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* MODAL PROGRAMAR AUDITORIAS (só Admin) */}
+      {modalProgramar && (() => {
+        const DIAS_SEMANA = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
+        const empresaDe = (id) => empresas.find(e => e.id === id)
+        const gerentesForm = responsaveis.filter(r => r.empresa_id === formAg.empresa_id)
+        const dh = (d) => d ? new Date(d).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'
+        const corResultado = { gerada: 'bg-green-100 text-green-700', pulada: 'bg-amber-100 text-amber-700', erro: 'bg-red-100 text-red-700' }
+        return (
+          <div className="fixed top-0 right-0 bottom-0 left-16 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="bg-slate-50 rounded-lg border border-slate-200 w-full max-w-5xl max-h-[92vh] shadow-xl overflow-hidden flex flex-col">
+              <div className="p-4 bg-white border-b border-slate-100 flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                    <CalendarClock className="h-4 w-4 text-emerald-600" /> Programar auditorias
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    A auditoria é gerada sozinha no dia e horário programados (Trucks: SharePoint · Motos: MicroWork).
+                    Não é gerada se a empresa já tiver auditoria em Conferência ou A Responder.
+                  </p>
+                </div>
+                <button onClick={() => setModalProgramar(false)} className="p-1 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="p-4 space-y-4 overflow-y-auto">
+                {/* Formulário */}
+                <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-4 space-y-3">
+                  <h4 className="text-xs font-bold text-slate-600 uppercase tracking-wider">{formAg.id ? 'Editar programação' : 'Nova programação'}</h4>
+                  <div className="flex items-end gap-3 flex-wrap">
+                    <div className="flex flex-col gap-1 w-[240px]">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase">Empresa</label>
+                      <select
+                        value={formAg.empresa_id}
+                        onChange={e => setFormAg(p => ({ ...p, empresa_id: e.target.value, responsavel_id: '' }))}
+                        className="text-xs p-2 border border-slate-300 rounded-md bg-white"
+                      >
+                        <option value="">— Selecione —</option>
+                        {empresas.map(e => <option key={e.id} value={e.id}>{nomeSeletorEmpresa(e)}</option>)}
+                      </select>
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase">Dias da semana</label>
+                      <div className="flex gap-1">
+                        {DIAS_SEMANA.map((d, i) => {
+                          const on = formAg.dias_semana.includes(i)
+                          return (
+                            <button
+                              key={d}
+                              type="button"
+                              onClick={() => setFormAg(p => ({ ...p, dias_semana: on ? p.dias_semana.filter(x => x !== i) : [...p.dias_semana, i] }))}
+                              className={`px-2 py-1.5 rounded-md text-[11px] font-semibold border transition-colors ${
+                                on ? 'bg-emerald-600 border-emerald-600 text-white' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+                              }`}
+                            >{d}</button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase">Horário</label>
+                      <input
+                        type="time"
+                        value={formAg.hora}
+                        onChange={e => setFormAg(p => ({ ...p, hora: e.target.value }))}
+                        className="text-xs p-2 border border-slate-300 rounded-md"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1 w-[260px]">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase">Responsável pela auditoria</label>
+                      <select
+                        value={formAg.responsavel_id}
+                        onChange={e => setFormAg(p => ({ ...p, responsavel_id: e.target.value }))}
+                        disabled={!formAg.empresa_id}
+                        className="text-xs p-2 border border-slate-300 rounded-md bg-white disabled:opacity-50"
+                      >
+                        <option value="">— Sem responsável —</option>
+                        {gerentesForm.map(r => <option key={r.id} value={r.id}>{r.nome}{r.cargo_nome ? ` — ${r.cargo_nome}` : ''}</option>)}
+                      </select>
+                    </div>
+                    <label className="flex items-center gap-1.5 text-xs text-slate-600 pb-2">
+                      <input type="checkbox" checked={formAg.ativo} onChange={e => setFormAg(p => ({ ...p, ativo: e.target.checked }))} className="accent-emerald-600" />
+                      Ativo
+                    </label>
+                    <div className="flex items-center gap-2 ml-auto">
+                      {formAg.id && (
+                        <button onClick={() => setFormAg(AG_VAZIO)} className="px-3 py-2 rounded-md text-xs font-semibold text-slate-600 hover:bg-slate-100">Cancelar</button>
+                      )}
+                      <button
+                        onClick={handleSalvarAg}
+                        disabled={salvandoAg || !formAgValido}
+                        className="flex items-center gap-1.5 px-4 py-2 rounded-md text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 shadow-sm transition-colors disabled:opacity-40"
+                      >
+                        <Save className="h-3.5 w-3.5" />
+                        {salvandoAg ? 'Salvando...' : formAg.id ? 'Salvar' : 'Adicionar'}
+                      </button>
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-slate-400">Horário de Mato Grosso do Sul (Campo Grande). Verificação a cada 5 minutos — a auditoria aparece em até 5 min após o horário.</p>
+                </div>
+
+                {/* Lista */}
+                <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-x-auto">
+                  {agendamentos.length === 0 ? (
+                    <p className="p-8 text-center text-xs text-slate-400">Nenhuma auditoria programada.</p>
+                  ) : (
+                    <table className="w-full text-left text-xs">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[10px] font-bold uppercase">
+                          <th className="p-3">Empresa</th>
+                          <th className="p-3">Dias</th>
+                          <th className="p-3">Horário</th>
+                          <th className="p-3">Responsável</th>
+                          <th className="p-3 text-center">Ativo</th>
+                          <th className="p-3">Última execução</th>
+                          <th className="p-3 text-center">Ações</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 text-slate-700">
+                        {agendamentos.map(ag => {
+                          const emp = empresaDe(ag.empresa_id)
+                          return (
+                            <tr key={ag.id} className={formAg.id === ag.id ? 'bg-emerald-50/60' : ''}>
+                              <td className="p-3 font-semibold whitespace-nowrap">{emp ? nomeSeletorEmpresa(emp) : '—'}</td>
+                              <td className="p-3 whitespace-nowrap">{(ag.dias_semana || []).map(i => DIAS_SEMANA[i]).join(', ')}</td>
+                              <td className="p-3 whitespace-nowrap">{String(ag.hora || '').slice(0, 5)}</td>
+                              <td className="p-3">{ag.responsavel_nome || '—'}</td>
+                              <td className="p-3 text-center">
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${ag.ativo ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>{ag.ativo ? 'Sim' : 'Não'}</span>
+                              </td>
+                              <td className="p-3">
+                                {ag.ultimo_resultado ? (
+                                  <div className="space-y-0.5">
+                                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${corResultado[ag.ultimo_resultado] || ''}`}>
+                                      {{ gerada: 'Gerada', pulada: 'Não gerada', erro: 'Erro' }[ag.ultimo_resultado]}
+                                    </span>
+                                    <span className="ml-1.5 text-slate-500">{dh(ag.ultima_execucao_em)}</span>
+                                    {ag.ultima_mensagem && <p className="text-[10px] text-slate-500">{ag.ultima_mensagem}</p>}
+                                  </div>
+                                ) : <span className="text-slate-300">Ainda não executado</span>}
+                              </td>
+                              <td className="p-3 text-center whitespace-nowrap">
+                                {excluirAgId === ag.id ? (
+                                  <span className="inline-flex items-center gap-1">
+                                    <button onClick={() => handleExcluirAg(ag.id)} className="px-2 py-1 rounded text-[10px] font-bold text-white bg-red-600 hover:bg-red-700">Excluir</button>
+                                    <button onClick={() => setExcluirAgId(null)} className="px-2 py-1 rounded text-[10px] font-semibold text-slate-500 hover:bg-slate-100">Voltar</button>
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1">
+                                    <button
+                                      onClick={() => setFormAg({ id: ag.id, empresa_id: ag.empresa_id, dias_semana: ag.dias_semana || [], hora: String(ag.hora || '').slice(0, 5), responsavel_id: ag.responsavel_id || '', ativo: ag.ativo })}
+                                      className="p-1 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded" title="Editar (trocar responsável, dias, horário)"
+                                    ><Pencil className="h-3.5 w-3.5" /></button>
+                                    <button onClick={() => setExcluirAgId(ag.id)} className="p-1 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded" title="Excluir">
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </button>
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  )}
                 </div>
               </div>
             </div>

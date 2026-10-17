@@ -1,6 +1,7 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react'
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { useSessionState } from '../hooks/useSessionState'
-import { CalendarDays, Play, Trash2, X, AlertTriangle, RefreshCw, ChevronDown, ChevronRight } from 'lucide-react'
+import { CalendarDays, Play, Trash2, X, AlertTriangle, RefreshCw, ChevronDown, ChevronRight, Settings } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { apiService } from '../services/api'
 
@@ -38,9 +39,6 @@ const FILTROS_VAZIOS = { mes: '', dia_semana: '', descricao_evento: '', tipo_pau
 // rótulo aparece (à esquerda quando o botão fica dentro de um card com overflow escondido).
 const VARIANTES_ICONE = {
   sec: 'bg-white border-slate-300 hover:bg-slate-50 text-slate-700',
-  pri: 'bg-indigo-600 hover:bg-indigo-700 text-white border-indigo-600',
-  amb: 'bg-amber-500 hover:bg-amber-600 text-white border-amber-500',
-  dng: 'bg-red-600 hover:bg-red-700 text-white border-red-600',
 }
 
 function BotaoIconeHover({ icon, label, onClick, disabled, variante = 'sec', posicao = 'baixo' }) {
@@ -65,11 +63,53 @@ function BotaoIconeHover({ icon, label, onClick, disabled, variante = 'sec', pos
   )
 }
 
-// Ações Recalcular/Limpar — ficam no cabeçalho da página, ao lado de "Gerar Calendário
-// Anual", e valem para as empresas marcadas nos cards (sem nenhuma marcada, ficam desabilitadas).
-function AcoesCalendarioEmpresa({ empresas, ano, canEdit, canDelete, onChanged }) {
+// Item de menu no estilo do print de referência: ícone + título em negrito + descrição
+// cinza menor embaixo. Quando desabilitado, o item some de cor mas continua visível, e a
+// descrição explica o que falta para habilitá-lo.
+function ItemMenuEngrenagem({ icon: Icon, cor, titulo, descricao, onClick, disabled }) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className="w-full flex items-start gap-3 px-3 py-2.5 text-left hover:bg-slate-50 disabled:hover:bg-transparent disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+    >
+      <Icon size={16} className={`mt-0.5 shrink-0 ${cor}`} />
+      <span className="min-w-0">
+        <span className="block text-sm font-semibold text-slate-800">{titulo}</span>
+        <span className="block text-xs text-slate-400 mt-0.5">{descricao}</span>
+      </span>
+    </button>
+  )
+}
+
+// Menu de ações do cabeçalho (ícone de engrenagem): Gerar Calendário Anual, Recalcular com
+// Feriados e Limpar Calendário do Ano. As duas últimas valem para as empresas marcadas nos
+// cards — sem nenhuma marcada, ficam visíveis porém desabilitadas, com a descrição explicando o motivo.
+function MenuEngrenagemCalendario({ empresas, ano, canEdit, canDelete, onChanged, onGerar }) {
+  const [aberto, setAberto] = useState(false)
+  const [pos, setPos] = useState(null)
   const [processando, setProcessando] = useState(false)
   const [modalLimpar, setModalLimpar] = useState(false)
+  const btnRef = useRef(null)
+  const painelRef = useRef(null)
+
+  useEffect(() => {
+    if (!aberto) return
+    const fechar = (e) => {
+      if (painelRef.current?.contains(e.target)) return
+      if (btnRef.current?.contains(e.target)) return
+      setAberto(false)
+    }
+    document.addEventListener('mousedown', fechar)
+    window.addEventListener('scroll', fechar, true)
+    window.addEventListener('resize', fechar)
+    return () => {
+      document.removeEventListener('mousedown', fechar)
+      window.removeEventListener('scroll', fechar, true)
+      window.removeEventListener('resize', fechar)
+    }
+  }, [aberto])
 
   if (!canEdit && !canDelete) return null
 
@@ -89,33 +129,76 @@ function AcoesCalendarioEmpresa({ empresas, ano, canEdit, canDelete, onChanged }
   }
 
   const recalcular = async () => {
+    setAberto(false)
     if (semEmpresa) return
     setProcessando(true)
     try { await executar(apiService.gerarCalendarioAnual, 'recalcular') } finally { setProcessando(false) }
   }
 
   const limpar = async () => {
-    if (semEmpresa) return
     setModalLimpar(false)
+    if (semEmpresa) return
     await executar(apiService.limparCalendarioAno, 'limpar')
+  }
+
+  const abrirMenu = () => {
+    const r = btnRef.current.getBoundingClientRect()
+    setPos({ right: window.innerWidth - r.right, top: r.bottom + 6 })
+    setAberto(true)
   }
 
   return (
     <>
-      <div className="flex items-center gap-2">
-        {canEdit && (
-          <BotaoIconeHover
-            icon={<RefreshCw size={15} className={processando ? 'animate-spin' : ''} />}
-            label={`Recalcular com Feriados${empresas.length ? ` (${empresas.length})` : ''}`}
-            onClick={recalcular}
-            disabled={processando || semEmpresa}
-            variante="amb"
-          />
-        )}
-        {canDelete && (
-          <BotaoIconeHover icon={<Trash2 size={15} />} label={`Limpar Calendário do Ano${empresas.length ? ` (${empresas.length})` : ''}`} onClick={() => setModalLimpar(true)} disabled={semEmpresa} variante="dng" />
-        )}
-      </div>
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={() => (aberto ? setAberto(false) : abrirMenu())}
+        aria-label="Ações"
+        title="Ações"
+        className={`inline-flex items-center justify-center border text-sm p-2 rounded-lg transition-colors ${aberto ? 'bg-indigo-50 border-indigo-300 text-indigo-700' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50'}`}
+      >
+        <Settings size={16} />
+      </button>
+
+      {aberto && pos && createPortal(
+        <div
+          ref={painelRef}
+          className="fixed z-50 w-72 bg-white border border-slate-200 rounded-lg shadow-xl py-1"
+          style={{ right: pos.right, top: pos.top }}
+        >
+          {canEdit && (
+            <ItemMenuEngrenagem
+              icon={Play}
+              cor="text-indigo-600"
+              titulo="Gerar Calendário Anual"
+              descricao="Gera os dias do ano e cruza com os feriados cadastrados"
+              onClick={() => { setAberto(false); onGerar() }}
+            />
+          )}
+          {canEdit && (
+            <ItemMenuEngrenagem
+              icon={RefreshCw}
+              cor={`text-amber-600 ${processando ? 'animate-spin' : ''}`}
+              titulo="Recalcular com Feriados"
+              descricao={semEmpresa ? 'Marque uma ou mais empresas na lista antes' : `Reprocessa o calendário de ${empresas.length} empresa(s) marcada(s)`}
+              onClick={recalcular}
+              disabled={semEmpresa || processando}
+            />
+          )}
+          {canDelete && (
+            <ItemMenuEngrenagem
+              icon={Trash2}
+              cor="text-red-600"
+              titulo="Limpar Calendário do Ano"
+              descricao={semEmpresa ? 'Marque uma ou mais empresas na lista antes' : `Exclui o calendário de ${empresas.length} empresa(s) marcada(s)`}
+              onClick={() => setModalLimpar(true)}
+              disabled={semEmpresa}
+            />
+          )}
+        </div>,
+        document.body
+      )}
+
       {modalLimpar && !semEmpresa && (
         <div className="fixed top-0 right-0 bottom-0 left-16 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
@@ -297,6 +380,7 @@ export default function Calendario() {
   const [error, setError]       = useState(null)
 
   const [filtroAno, setFiltroAno] = useSessionState('cal_ano', anoAtual)
+  const [filtroEmpresa, setFiltroEmpresa] = useSessionState('cal_empresa', '')
   const [abertas, setAbertas]     = useSessionState('cal_abertas', [])
   // Incrementa após gerar pelo modal do cabeçalho, pra os cards abertos rebuscarem os dados.
   const [versao, setVersao]       = useState(0)
@@ -342,7 +426,10 @@ export default function Calendario() {
     return result
   }, [resumoRaw])
 
-  const empresasComCalendario = resumoRaw ? empresas.filter(e => resumoPorEmpresa[e.id]) : []
+  const empresasComCalendarioTodas = resumoRaw ? empresas.filter(e => resumoPorEmpresa[e.id]) : []
+  const empresasComCalendario = filtroEmpresa
+    ? empresasComCalendarioTodas.filter(e => e.id === filtroEmpresa)
+    : empresasComCalendarioTodas
   // Empresas das ações Recalcular/Limpar; saem da seleção se o calendário delas deixar de existir.
   const empresasAcao = empresasComCalendario.filter(e => empresaAcaoIds.includes(e.id))
 
@@ -390,12 +477,14 @@ export default function Calendario() {
         </div>
         <div className="flex items-center gap-2 flex-wrap justify-end">
           {(canEdit || canDelete) && (
-            <>
-              <AcoesCalendarioEmpresa empresas={empresasAcao} ano={filtroAno} canEdit={canEdit} canDelete={canDelete} onChanged={() => setVersao(v => v + 1)} />
-            </>
-          )}
-          {canEdit && (
-            <BotaoIconeHover icon={<Play size={15} />} label="Gerar Calendário" onClick={abrirModalGerar} variante="pri" />
+            <MenuEngrenagemCalendario
+              empresas={empresasAcao}
+              ano={filtroAno}
+              canEdit={canEdit}
+              canDelete={canDelete}
+              onChanged={() => setVersao(v => v + 1)}
+              onGerar={abrirModalGerar}
+            />
           )}
         </div>
       </div>
@@ -407,18 +496,26 @@ export default function Calendario() {
             {ANOS.map(a => <option key={a} value={a}>{a}</option>)}
           </select>
         </div>
-        {empresasComCalendario.length > 0 && (
-          <label className="ml-auto flex items-center gap-2 text-sm text-slate-600 cursor-pointer select-none self-end pb-2">
-            <input
-              type="checkbox"
-              checked={todasMarcadas}
-              onChange={() => setEmpresaAcaoIds(todasMarcadas ? [] : empresasComCalendario.map(e => e.id))}
-              className="w-4 h-4 rounded accent-indigo-600"
-            />
-            Selecionar todas
-          </label>
-        )}
+        <div className="w-64">
+          <label className={LBL}>Empresa</label>
+          <select className={SEL} value={filtroEmpresa} onChange={e => setFiltroEmpresa(e.target.value)}>
+            <option value="">Todas as empresas</option>
+            {empresasComCalendarioTodas.map(e => <option key={e.id} value={e.id}>{nomeEmpresa(e)}</option>)}
+          </select>
+        </div>
       </div>
+
+      {empresasComCalendario.length > 0 && (
+        <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer select-none pl-4">
+          <input
+            type="checkbox"
+            checked={todasMarcadas}
+            onChange={() => setEmpresaAcaoIds(todasMarcadas ? [] : empresasComCalendario.map(e => e.id))}
+            className="w-4 h-4 rounded accent-indigo-600"
+          />
+          Selecionar todas
+        </label>
+      )}
 
       {error && (
         <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm">
@@ -482,7 +579,9 @@ export default function Calendario() {
         })}
         {resumoRaw && empresasComCalendario.length === 0 && !error && (
           <div className="text-center py-12 text-slate-400 text-sm">
-            Nenhum calendário gerado para {filtroAno}. Use "Gerar Calendário Anual".
+            {filtroEmpresa
+              ? `Nenhum calendário gerado para ${nomeEmpresa(empresas.find(e => e.id === filtroEmpresa) || {})} em ${filtroAno}. Use "Gerar Calendário Anual".`
+              : `Nenhum calendário gerado para ${filtroAno}. Use "Gerar Calendário Anual".`}
           </div>
         )}
       </div>

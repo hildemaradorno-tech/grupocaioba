@@ -25,6 +25,7 @@ import googleCalendarRoutes from './routes/googleCalendar.js'
 import projetosManifestacoesRoutes from './routes/projetosManifestacoes.js'
 import auditAiRoutes from './routes/auditAi.js'
 import { iniciarSchedulerManifestacao } from './services/manifestacaoScheduler.js'
+import { iniciarSchedulerAuditoria } from './services/auditoriaAgendamento.js'
 
 const app = express()
 app.use(cors({ origin: '*', methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'], allowedHeaders: ['Content-Type','Authorization'] }))
@@ -384,6 +385,7 @@ async function start() {
   })
 
   iniciarSchedulerManifestacao()
+  iniciarSchedulerAuditoria()
 }
 
 start().catch(console.error)

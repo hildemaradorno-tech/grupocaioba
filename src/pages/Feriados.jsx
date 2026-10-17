@@ -1,6 +1,7 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react'
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { useSessionState } from '../hooks/useSessionState'
-import { Plus, X, AlertTriangle, Copy, CheckSquare, Square, Calendar, Trash2, ArrowUp, ArrowDown, ArrowUpDown, Download } from 'lucide-react'
+import { Plus, X, AlertTriangle, Copy, CheckSquare, Square, Calendar, Trash2, ArrowUp, ArrowDown, ArrowUpDown, Download, Settings, FileDown, FileSpreadsheet, FileText } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import PermissionActionButtons from '../components/PermissionActionButtons'
 import SeletorEmpresasAgrupado from '../components/SeletorEmpresasAgrupado'
@@ -32,6 +33,25 @@ const calcDiaSemana = (dateStr) => {
 const nomeEmpresa = (e) => e.empresa_fantasia || e.nome_empresa
 const anoDe = (dataStr) => Number(dataStr.slice(0, 4))
 const fmtData = (d) => d ? d.split('-').reverse().join('/') : '-'
+
+// Date.UTC (não "new Date(y,m,d)" local) — o ExcelJS serializa a data pelo horário UTC do
+// objeto, então uma data local à meia-noite em fuso negativo vira meia-noite + N horas no
+// Excel (ex.: 04:00:00 em UTC-4). Com Date.UTC a hora salva é sempre 00:00:00.
+const dataParaExcel = (d) => {
+  if (!d) return null
+  const [y, m, dia] = d.split('-').map(Number)
+  return new Date(Date.UTC(y, m - 1, dia))
+}
+
+const COLUNAS_EXPORT = [
+  { header: 'Data', valor: s => fmtData(s.data_feriado), valorExcel: s => dataParaExcel(s.data_feriado), numFmt: 'dd/mm/yyyy' },
+  { header: 'Dia da Semana', valor: s => calcDiaSemana(s.data_feriado) },
+  { header: 'Descrição', valor: s => s.descricao },
+  { header: 'Empresas', valor: s => s.registros.length },
+  { header: 'Tipo Pausa', valor: s => s.tipo_pausa },
+  { header: 'Tipo Feriado', valor: s => s.tipo_feriado },
+  { header: 'Tipo Data', valor: s => s.tipo_data },
+]
 
 // No banco é uma linha por empresa; a tela agrupa as linhas de uma mesma data (mesma
 // descrição e tipos) numa só, com a lista de empresas em que ela vale.
@@ -78,6 +98,184 @@ const BADGE_DATA = {
   'MÓVEL': 'bg-fuchsia-100 text-fuchsia-700 border border-fuchsia-200',
 }
 
+// Item de menu no estilo ícone + título em negrito + descrição cinza menor embaixo.
+function ItemMenuEngrenagem({ icon: Icon, cor, titulo, descricao, onClick, disabled }) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className="w-full flex items-start gap-3 px-3 py-2.5 text-left hover:bg-slate-50 disabled:hover:bg-transparent disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+    >
+      <Icon size={16} className={`mt-0.5 shrink-0 ${cor}`} />
+      <span className="min-w-0">
+        <span className="block text-sm font-semibold text-slate-800">{titulo}</span>
+        <span className="block text-xs text-slate-400 mt-0.5">{descricao}</span>
+      </span>
+    </button>
+  )
+}
+
+// Menu de ações do cabeçalho (ícone de engrenagem): Duplicar Ano, Importar Feriados e Incluir Feriado.
+function MenuEngrenagemFeriados({ canEdit, onDuplicar, onImportar, onIncluir }) {
+  const [aberto, setAberto] = useState(false)
+  const [pos, setPos] = useState(null)
+  const btnRef = useRef(null)
+  const painelRef = useRef(null)
+
+  useEffect(() => {
+    if (!aberto) return
+    const fechar = (e) => {
+      if (painelRef.current?.contains(e.target)) return
+      if (btnRef.current?.contains(e.target)) return
+      setAberto(false)
+    }
+    document.addEventListener('mousedown', fechar)
+    window.addEventListener('scroll', fechar, true)
+    window.addEventListener('resize', fechar)
+    return () => {
+      document.removeEventListener('mousedown', fechar)
+      window.removeEventListener('scroll', fechar, true)
+      window.removeEventListener('resize', fechar)
+    }
+  }, [aberto])
+
+  const abrirMenu = () => {
+    const r = btnRef.current.getBoundingClientRect()
+    setPos({ right: window.innerWidth - r.right, top: r.bottom + 6 })
+    setAberto(true)
+  }
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={() => (aberto ? setAberto(false) : abrirMenu())}
+        aria-label="Ações"
+        title="Ações"
+        className={`inline-flex items-center justify-center border text-sm p-2 rounded-lg transition-colors ${aberto ? 'bg-indigo-50 border-indigo-300 text-indigo-700' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50'}`}
+      >
+        <Settings size={16} />
+      </button>
+
+      {aberto && pos && createPortal(
+        <div
+          ref={painelRef}
+          className="fixed z-50 w-72 bg-white border border-slate-200 rounded-lg shadow-xl py-1"
+          style={{ right: pos.right, top: pos.top }}
+        >
+          <ItemMenuEngrenagem
+            icon={Copy}
+            cor="text-slate-500"
+            titulo="Duplicar Ano"
+            descricao="Copia os feriados do ano filtrado para o ano seguinte"
+            onClick={() => { setAberto(false); onDuplicar() }}
+          />
+          {canEdit && (
+            <ItemMenuEngrenagem
+              icon={Download}
+              cor="text-slate-500"
+              titulo="Importar Feriados"
+              descricao="Busca feriados nacionais, estaduais e municipais em uma fonte externa"
+              onClick={() => { setAberto(false); onImportar() }}
+            />
+          )}
+          {canEdit && (
+            <ItemMenuEngrenagem
+              icon={Plus}
+              cor="text-indigo-600"
+              titulo="Incluir Feriado"
+              descricao="Cadastra um novo feriado ou parada"
+              onClick={() => { setAberto(false); onIncluir() }}
+            />
+          )}
+        </div>,
+        document.body
+      )}
+    </>
+  )
+}
+
+// Botão "Exportar" — abre as opções Excel/CSV/PDF, sempre sobre a lista filtrada e ordenada
+// que está na tela no momento (mesma lógica de "o que você vê é o que exporta").
+function MenuExportarFeriados({ onExportarExcel, onExportarCSV, onExportarPDF, exportando, desabilitado }) {
+  const [aberto, setAberto] = useState(false)
+  const [pos, setPos] = useState(null)
+  const btnRef = useRef(null)
+  const painelRef = useRef(null)
+
+  useEffect(() => {
+    if (!aberto) return
+    const fechar = (e) => {
+      if (painelRef.current?.contains(e.target)) return
+      if (btnRef.current?.contains(e.target)) return
+      setAberto(false)
+    }
+    document.addEventListener('mousedown', fechar)
+    window.addEventListener('scroll', fechar, true)
+    window.addEventListener('resize', fechar)
+    return () => {
+      document.removeEventListener('mousedown', fechar)
+      window.removeEventListener('scroll', fechar, true)
+      window.removeEventListener('resize', fechar)
+    }
+  }, [aberto])
+
+  const abrirMenu = () => {
+    const r = btnRef.current.getBoundingClientRect()
+    setPos({ right: window.innerWidth - r.right, top: r.bottom + 6 })
+    setAberto(true)
+  }
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={() => (aberto ? setAberto(false) : abrirMenu())}
+        disabled={desabilitado || !!exportando}
+        aria-label="Exportar"
+        title="Exportar"
+        className={`inline-flex items-center justify-center border text-sm p-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${aberto ? 'bg-indigo-50 border-indigo-300 text-indigo-700' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50'}`}
+      >
+        <FileDown size={16} />
+      </button>
+
+      {aberto && pos && createPortal(
+        <div
+          ref={painelRef}
+          className="fixed z-50 w-48 bg-white border border-slate-200 rounded-lg shadow-xl py-1"
+          style={{ right: pos.right, top: pos.top }}
+        >
+          <button
+            type="button"
+            onClick={() => { setAberto(false); onExportarExcel() }}
+            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+          >
+            <FileSpreadsheet size={16} className="text-emerald-600" /> Excel
+          </button>
+          <button
+            type="button"
+            onClick={() => { setAberto(false); onExportarCSV() }}
+            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+          >
+            <FileText size={16} className="text-blue-600" /> CSV
+          </button>
+          <button
+            type="button"
+            onClick={() => { setAberto(false); onExportarPDF() }}
+            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+          >
+            <FileText size={16} className="text-red-600" /> PDF
+          </button>
+        </div>,
+        document.body
+      )}
+    </>
+  )
+}
+
 export default function Feriados() {
   const [empresas, setEmpresas] = useState([])
   const [dados, setDados]       = useState([])
@@ -104,6 +302,7 @@ export default function Feriados() {
   const [anoDestino, setAnoDestino]                   = useState(anoAtual + 1)
   const [datesMoveis, setDatesMoveis]                 = useState({})
   const [naoDuplicar, setNaoDuplicar]                 = useState([])
+  const [exportando, setExportando]                   = useState(null)
   const [erroModal, setErroModal]                     = useState(null)
   const { hasActionOrDefault } = useAuth()
   const canEdit = hasActionOrDefault('feriados', 'editar')
@@ -157,6 +356,132 @@ export default function Feriados() {
     return [...ocorrenciasFiltradas].sort((a, b) =>
       fator * (String(valor(a)).localeCompare(String(valor(b)), 'pt-BR') || a.data_feriado.localeCompare(b.data_feriado)))
   }, [ocorrenciasFiltradas, ordem])
+
+  // Exportação — sempre sobre a lista filtrada/ordenada que está na tela (ocorrenciasOrdenadas).
+  const nomeArquivoExport = (ext) => `feriados_${filtroAno || 'todos'}_${new Date().toISOString().slice(0, 10)}.${ext}`
+
+  const baixarBlob = (blob, nomeArquivo) => {
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = nomeArquivo
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const handleExportarCSV = () => {
+    const linhas = [
+      COLUNAS_EXPORT.map(c => c.header).join(';'),
+      ...ocorrenciasOrdenadas.map(s => COLUNAS_EXPORT.map(c => String(c.valor(s)).replace(/;/g, ',')).join(';')),
+    ]
+    baixarBlob(new Blob(['﻿' + linhas.join('\r\n')], { type: 'text/csv;charset=utf-8;' }), nomeArquivoExport('csv'))
+  }
+
+  const handleExportarExcel = async () => {
+    setExportando('excel')
+    try {
+      const { default: ExcelJS } = await import('exceljs')
+      const wb = new ExcelJS.Workbook()
+      const ws = wb.addWorksheet('Feriados')
+      ws.columns = COLUNAS_EXPORT.map(c => ({ header: c.header, width: 22, style: c.numFmt ? { numFmt: c.numFmt } : undefined }))
+      ws.getRow(1).font = { bold: true }
+      ws.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } }
+      ocorrenciasOrdenadas.forEach(s => ws.addRow(COLUNAS_EXPORT.map(c => (c.valorExcel || c.valor)(s))))
+      const buffer = await wb.xlsx.writeBuffer()
+      baixarBlob(new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), nomeArquivoExport('xlsx'))
+    } catch (err) {
+      alert('Erro ao gerar Excel: ' + (err.message || String(err)))
+    } finally {
+      setExportando(null)
+    }
+  }
+
+  const handleExportarPDF = async () => {
+    if (ocorrenciasOrdenadas.length === 0) return
+    setExportando('pdf')
+    try {
+      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
+        import('html2canvas'),
+        import('jspdf'),
+      ])
+      const MARGIN = 28
+      const WRAP_W = 1000
+      const pdf = new jsPDF({ unit: 'pt', format: 'a4', orientation: 'portrait' })
+      const CW = pdf.internal.pageSize.getWidth() - 2 * MARGIN
+
+      const montarCabecalho = () => `
+        <div style="font-family:Arial,Helvetica,sans-serif;background:#fff;width:${WRAP_W}px;box-sizing:border-box;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #1e293b;padding-bottom:10px;">
+            <div style="font-size:18px;font-weight:800;color:#0f172a;">Feriados e Paradas${filtroAno ? ` — ${filtroAno}` : ''}</div>
+            <div style="text-align:right;font-size:11px;color:#475569;">
+              <div>${ocorrenciasOrdenadas.length} registro(s)</div>
+              <div>Gerado em: ${new Date().toLocaleString('pt-BR')}</div>
+            </div>
+          </div>
+        </div>`
+
+      const montarTabela = (linhas) => `
+        <div style="font-family:Arial,Helvetica,sans-serif;background:#fff;width:${WRAP_W}px;box-sizing:border-box;">
+          <table style="width:100%;border-collapse:collapse;font-size:11px;">
+            <thead>
+              <tr style="background:#f1f5f9;color:#475569;text-transform:uppercase;font-size:9px;">
+                ${COLUNAS_EXPORT.map(c => `<th style="padding:6px 8px;text-align:left;border-bottom:1px solid #e2e8f0;">${c.header}</th>`).join('')}
+              </tr>
+            </thead>
+            <tbody>
+              ${linhas.map((s, i) => `
+                <tr style="background:${i % 2 === 0 ? '#ffffff' : '#f8fafc'};">
+                  ${COLUNAS_EXPORT.map(c => `<td style="padding:6px 8px;color:#334155;border-bottom:1px solid #f1f5f9;">${c.valor(s)}</td>`).join('')}
+                </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>`
+
+      const renderBloco = async (html) => {
+        const wrap = document.createElement('div')
+        wrap.style.cssText = `position:fixed;top:0;left:-9999px;width:${WRAP_W}px;background:#fff;z-index:-1;`
+        wrap.innerHTML = html
+        document.body.appendChild(wrap)
+        try {
+          return await html2canvas(wrap, { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff', width: WRAP_W })
+        } finally {
+          document.body.removeChild(wrap)
+        }
+      }
+
+      const GAP = 6
+      const pageBottom = pdf.internal.pageSize.getHeight() - MARGIN
+      let primeiraPagina = true
+      const iniciarPagina = () => {
+        if (!primeiraPagina) pdf.addPage()
+        primeiraPagina = false
+        return MARGIN
+      }
+      const colocarCanvas = (canvas, y) => {
+        const h = (canvas.height / canvas.width) * CW
+        pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', MARGIN, y, CW, h)
+        return h
+      }
+
+      let y = iniciarPagina()
+      y += colocarCanvas(await renderBloco(montarCabecalho()), y) + GAP
+
+      const TAMANHO_BLOCO = 25
+      for (let i = 0; i < ocorrenciasOrdenadas.length; i += TAMANHO_BLOCO) {
+        const bloco = ocorrenciasOrdenadas.slice(i, i + TAMANHO_BLOCO)
+        const canvas = await renderBloco(montarTabela(bloco))
+        const h = (canvas.height / canvas.width) * CW
+        if (y + h > pageBottom) y = iniciarPagina()
+        y += colocarCanvas(canvas, y) + GAP
+      }
+
+      pdf.save(nomeArquivoExport('pdf'))
+    } catch (err) {
+      alert('Erro ao gerar PDF: ' + (err.message || String(err)))
+    } finally {
+      setExportando(null)
+    }
+  }
 
   const alternarOrdem = (campo) =>
     setOrdem(prev => prev.campo === campo ? { campo, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { campo, dir: 'asc' })
@@ -217,7 +542,7 @@ export default function Feriados() {
       setForm(prev => ({ ...prev, data_feriado: value, dia_semana: calcDiaSemana(value), ano }))
       return
     }
-    setForm(prev => ({ ...prev, [name]: value }))
+    setForm(prev => ({ ...prev, [name]: name === 'descricao' ? value.toUpperCase() : value }))
   }
 
   const handleSalvar = async () => {
@@ -337,22 +662,22 @@ export default function Feriados() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Calendar size={24} className="text-indigo-600" />
-          <h1 className="text-2xl font-bold text-slate-800">Feriados e Ausências</h1>
+          <h1 className="text-2xl font-bold text-slate-800">Feriados e Paradas</h1>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={handleDuplicar} className={BTN_SEC}>
-            <Copy size={16} /> Duplicar Ano
-          </button>
-          {canEdit && (
-            <button onClick={() => setModalImportarAberto(true)} className={BTN_SEC}>
-              <Download size={16} /> Importar Feriados
-            </button>
-          )}
-          {canEdit && (
-            <button onClick={abrirIncluir} className={BTN_PRI}>
-              <Plus size={16} /> Incluir Feriado
-            </button>
-          )}
+          <MenuExportarFeriados
+            onExportarExcel={handleExportarExcel}
+            onExportarCSV={handleExportarCSV}
+            onExportarPDF={handleExportarPDF}
+            exportando={exportando}
+            desabilitado={ocorrenciasOrdenadas.length === 0}
+          />
+          <MenuEngrenagemFeriados
+            canEdit={canEdit}
+            onDuplicar={handleDuplicar}
+            onImportar={() => setModalImportarAberto(true)}
+            onIncluir={abrirIncluir}
+          />
         </div>
       </div>
 

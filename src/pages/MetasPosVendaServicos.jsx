@@ -1,8 +1,12 @@
 import React, { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useSessionState } from '../hooks/useSessionState'
-import { Cog } from 'lucide-react'
+import { Cog, AlertTriangle } from 'lucide-react'
 import { apiService } from '../services/api'
-import { EmpresaMultiFilter, empresasDasMetas } from '../components/EmpresaMultiFilter'
+import { EmpresaMultiFilter, empresasDasMetas, empresaParam, filtrarPorEmpresas } from '../components/EmpresaMultiFilter'
+import { useAuth } from '../context/AuthContext'
+import { linhaPendente } from '../utils/totalPosVendas'
+import { valoresMetaMecanico } from '../utils/metasMecanico'
 import MetasServicosMecanico from './MetasServicosMecanico'
 import MetasServicosConsultor from './MetasServicosConsultor'
 import MetasPecas from './MetasPecas'
@@ -21,6 +25,8 @@ const ABAS = [
 ]
 
 export default function MetasPosVendaServicos() {
+  const navigate = useNavigate()
+  const { hasPermission } = useAuth()
   const [abaSalva, setAba] = useSessionState('mpvs_aba', 'mecanico')
   // Aba salva que não existe mais (ex.: Total Oficina, removida) volta para a primeira.
   const aba = ABAS.some(a => a.key === abaSalva) ? abaSalva : 'mecanico'
@@ -33,12 +39,37 @@ export default function MetasPosVendaServicos() {
   const [empresas,      setEmpresas]      = useState([])
   // Botão "+ Adicionar X" — cada aba registra o seu (Peças/Mecânico/Consultor têm; Total não tem).
   const [botaoAcao,     setBotaoAcao]     = useState(null)
+  // Pendências de aprovação (Empresa/Ano filtrados) — mesmo critério da Gestão de Aprovação
+  // (valor gravado difere do último aprovado, ou nunca foi aprovado).
+  const [pendentes,     setPendentes]     = useState(0)
 
   useEffect(() => {
     apiService.getEmpresas()
       .then(emps => setEmpresas([...empresasDasMetas(emps)].sort((a, b) => (a.empresa_fantasia || '').localeCompare(b.empresa_fantasia || ''))))
       .catch(() => {})
   }, [])
+
+  useEffect(() => {
+    let cancelado = false
+    const checarPendencias = async () => {
+      try {
+        const [mec, cons, pecas] = await Promise.all([
+          apiService.getMetasMecanico(empresaParam(filtroEmpresa), filtroAno),
+          apiService.getMetasConsultor(empresaParam(filtroEmpresa), filtroAno),
+          apiService.getMetasPecas(empresaParam(filtroEmpresa), filtroAno),
+        ])
+        const contarMec = filtrarPorEmpresas(mec, filtroEmpresa).filter(r => {
+          const { meta_servicos, meta_pecas } = valoresMetaMecanico(r)
+          return linhaPendente(meta_servicos + meta_pecas, r.meta_aprovada)
+        }).length
+        const contarSimples = (rows) => filtrarPorEmpresas(rows, filtroEmpresa)
+          .filter(r => linhaPendente(Number(r.meta_faturamento) || 0, r.meta_aprovada)).length
+        if (!cancelado) setPendentes(contarMec + contarSimples(cons) + contarSimples(pecas))
+      } catch { /* non-fatal */ }
+    }
+    checarPendencias()
+    return () => { cancelado = true }
+  }, [filtroEmpresa, filtroAno])
 
   return (
     <div className="flex flex-col h-full">
@@ -55,6 +86,21 @@ export default function MetasPosVendaServicos() {
           </select>
         </div>
       </div>
+
+      {pendentes > 0 && (
+        <div className="flex items-center gap-2 bg-amber-50 border-b border-amber-200 px-6 py-2 text-sm text-amber-800">
+          <AlertTriangle size={16} className="text-amber-600 shrink-0" />
+          <span>
+            <strong>{pendentes}</strong> {pendentes === 1 ? 'lançamento aguardando' : 'lançamentos aguardando'} aprovação
+            {filtroEmpresa.length === 1 ? ' nesta empresa' : ''} em {filtroAno}.
+          </span>
+          {hasPermission('metas/gestao-aprovacao') && (
+            <button onClick={() => navigate('/metas/gestao-aprovacao')} className="ml-auto font-semibold text-amber-900 hover:underline whitespace-nowrap">
+              Ir para Gestão de Aprovação →
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Abas + Total/Peças/Serviços + botão de ação da aba, tudo na mesma linha quando cabe; em telas
           estreitas o grupo da direita quebra pra uma 2ª linha (nunca fica escondido ou cortado). */}

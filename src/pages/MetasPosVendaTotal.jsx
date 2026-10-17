@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react'
+import React, { useEffect, useState, useMemo, useRef } from 'react'
 import { useSessionState } from '../hooks/useSessionState'
 import { TrendingUp, ChevronRight, ChevronDown, Loader2, Calculator, CheckCircle2, Ban, AlertTriangle, Search } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
@@ -376,10 +376,26 @@ export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = 
 
   // Árvore filtrada por Departamento/Setor/Box/Funcionário — usada pra exibir (valores e navegação). A
   // situação de aprovação usa sempre a árvore cheia (`tree`), buscada por eId/dId conforme necessário.
-  const treeFiltrada = useMemo(
-    () => arvorePorFiltro(tree, { depto: filtroDepto, setor: filtroSetorT, box: filtroBoxT, busca: filtroColab }),
-    [tree, filtroDepto, filtroSetorT, filtroBoxT, filtroColab]
-  )
+  const [soPendentes, setSoPendentes] = useState(false)
+  const treeFiltrada = useMemo(() => {
+    let t = arvorePorFiltro(tree, { depto: filtroDepto, setor: filtroSetorT, box: filtroBoxT, busca: filtroColab })
+    if (!modoAprovacao || !soPendentes) return t
+    // "Só Pendentes": dentro de cada empresa, mostra só os departamentos ainda pendentes (a situação
+    // sempre vem da árvore cheia, nunca da já podada por este mesmo filtro).
+    const out = {}
+    Object.entries(t).forEach(([eId, emp]) => {
+      const empFull = tree[eId]
+      if (!empFull) return
+      const depts = {}
+      Object.entries(emp.depts || {}).forEach(([dId, dept]) => {
+        const deptFull = empFull.depts?.[dId]
+        const info = deptFull ? infoAprovacaoDept(deptFull, empFull) : { kind: null }
+        if (info.kind && info.tem && info.pend) depts[dId] = dept
+      })
+      if (Object.keys(depts).length) out[eId] = { ...emp, depts }
+    })
+    return out
+  }, [tree, filtroDepto, filtroSetorT, filtroBoxT, filtroColab, modoAprovacao, soPendentes])
 
   // Chaves de cada nível da árvore: Grupo > Segmento > Empresa > Departamento > Setor > Box.
   const niveisChaves = () => {
@@ -411,23 +427,54 @@ export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = 
     abrir(n.bxs)
   }
 
-  const recolherTudo = () => { setExpanded(new Set()); setSegAbertos(new Set()); setGrupoAberto(true) }
+  // "Recolher Tudo" volta ao padrão: Grupo e Segmento abertos (mostrando as empresas), mas sem nada
+  // dentro de cada empresa (Departamento/Setor/Box/Colaborador fechados).
+  const recolherTudo = () => { setExpanded(new Set()); setSegAbertos(new Set(niveisChaves().segs)); setGrupoAberto(true); setSoPendentes(false) }
+
+  // "Só Pendentes" (Gestão de Aprovação): filtra a árvore pra mostrar só os departamentos ainda
+  // pendentes (esconde os já aprovados, mesmo dentro de uma empresa com departamentos mistos) e já abre
+  // Grupo + Segmento + Empresa dessas, direto na linha do Departamento onde ficam os botões
+  // Aprovar/Pendenciar — sem precisar de clique extra pra expandir. Clicar de novo desliga o filtro.
+  const abrirSoPendentes = () => {
+    if (soPendentes) { setSoPendentes(false); return }
+    const empIdsComPend = new Set()
+    Object.entries(tree).forEach(([eId, emp]) => {
+      const temPend = Object.values(emp.depts || {}).some(dept => {
+        const info = infoAprovacaoDept(dept, emp)
+        return info.kind && info.tem && info.pend
+      })
+      if (temPend) empIdsComPend.add(eId)
+    })
+    if (!empIdsComPend.size) return
+    const segsComPend = new Set()
+    agruparPorSegmento(Object.entries(tree), empresas).forEach(([segLabel, blocos]) => {
+      if (blocos.some(([eId]) => empIdsComPend.has(eId))) segsComPend.add(segLabel)
+    })
+    setGrupoAberto(true)
+    setSegAbertos(segsComPend)
+    setExpanded(new Set([...empIdsComPend].map(eId => `emp-${eId}`)))
+    setSoPendentes(true)
+  }
+  const temAlgumPendente = Object.entries(tree).some(([, emp]) =>
+    Object.values(emp.depts || {}).some(dept => { const info = infoAprovacaoDept(dept, emp); return info.kind && info.tem && info.pend }))
   const tudoExpandido = (() => {
     if (!grupoAberto) return false
     const n = niveisChaves()
     return n.segs.every(l => segAbertos.has(l)) && [...n.emps, ...n.depts, ...n.sets, ...n.bxs].every(k => expanded.has(k))
   })()
-  const algoAberto = expanded.size > 0 || segAbertos.size > 0
+  const algoAberto = expanded.size > 0
 
+  // Ao acessar a tela (ou recarregar os dados), abre só até o nível de Empresa — Segmento visível, nada
+  // dentro de cada empresa expandido — sem mexer no que o usuário já abriu manualmente depois.
+  const segsInicializados = useRef(false)
   useEffect(() => {
-    if (filtroEmpresa.length) {
-      setExpanded(prev => {
-        const n = new Set(prev)
-        filtroEmpresa.forEach(id => n.add(`emp-${id}`))
-        return n
-      })
+    if (segsInicializados.current) return
+    const segs = niveisChaves().segs
+    if (segs.length) {
+      setSegAbertos(new Set(segs))
+      segsInicializados.current = true
     }
-  }, [filtroEmpresa])
+  }, [tree])
 
   const mCells = (vals, prefix, emphTotal = false, situacao = null) => [
     ...vals.map((v, i) => (
@@ -918,6 +965,14 @@ export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = 
                         <button onClick={recolherTudo} title="Recolher tudo"
                           className="px-1.5 py-0.5 rounded text-[10px] font-bold border border-slate-300 bg-white hover:bg-indigo-50 hover:border-indigo-400 hover:text-indigo-700 text-slate-500 transition-colors whitespace-nowrap">
                           − Recolher
+                        </button>
+                      )}
+                      {modoAprovacao && temAlgumPendente && (
+                        <button onClick={abrirSoPendentes} title="Mostra só os departamentos pendentes, já abertos na linha do botão Aprovar"
+                          className={`px-1.5 py-0.5 rounded text-[10px] font-bold border transition-colors whitespace-nowrap ${
+                            soPendentes ? 'border-amber-500 bg-amber-500 text-white' : 'border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-700'
+                          }`}>
+                          Pendentes
                         </button>
                       )}
                     </span>

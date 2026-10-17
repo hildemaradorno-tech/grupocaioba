@@ -1497,12 +1497,20 @@ function ComoFunciona() {
         <li className={passo}>
           <span className={num}>1</span>
           <div>
+            <b>👥 Quem está apto a participar.</b> Os cargos que participam da campanha são os da tabela
+            <b> Bônus-alvo - Serviços</b>, mais abaixo. É preciso estar com o cadastro <b>“1 - Trabalhando”</b> no menu
+            Funcionários, sem data de demissão, e na empresa da campanha. Afastados (férias, licença…) e demitidos não participam.
+          </div>
+        </li>
+        <li className={passo}>
+          <span className={num}>2</span>
+          <div>
             <b>🎯 Suas metas.</b> Cada cargo é avaliado pelos indicadores do <b>Bloco 3 - Serviços</b> da Matriz KPIs,
             com as metas aprovadas no Planejamento de Metas ou definidas na própria Matriz KPIs.
           </div>
         </li>
         <li className={passo}>
-          <span className={num}>2</span>
+          <span className={num}>3</span>
           <div>
             <b>📅 Apuração toda semana.</b> As semanas vão de domingo a sábado, as mesmas da Matriz KPIs (veja a tabela abaixo).
             Uma semana incompleta no começo ou no fim do mês só conta sozinha se tiver uma quarta-feira; senão, é somada à
@@ -1511,7 +1519,7 @@ function ComoFunciona() {
           </div>
         </li>
         <li className={passo}>
-          <span className={num}>3</span>
+          <span className={num}>4</span>
           <div>
             <b>📊 Faixa de pagamento.</b> A contribuição da semana mostra em qual faixa você ficou, e cada faixa
             diz quanto do bônus você recebe — sobre a <b>Meta</b> ✅ ou, nas faixas mais altas, sobre a <b>Supermeta</b> 🚀.
@@ -1520,7 +1528,7 @@ function ComoFunciona() {
           </div>
         </li>
         <li className={passo}>
-          <span className={num}>4</span>
+          <span className={num}>5</span>
           <div>
             <b>💰 Valor da semana.</b> O bônus-alvo do mês (Meta ou Supermeta, tabela <b>Bônus-alvo - Serviços</b>) é dividido
             entre os blocos da Matriz KPIs — por exemplo, Bloco 1 - Corporativo 20%, Bloco 2 - Departamental 30% e
@@ -1530,9 +1538,9 @@ function ComoFunciona() {
           </div>
         </li>
         <li className={passo}>
-          <span className={num}>5</span>
+          <span className={num}>6</span>
           <div>
-            <b>➕ Pagamento.</b> O bônus é a <b>soma das semanas</b> — uma semana fraca não apaga as boas. 😉 O valor acumulado
+            <b>➕ Pagamento.</b> O bônus é a <b>soma das semanas</b>. O valor acumulado
             é pago conforme a <b>forma de pagamento</b> definida nas Regras-chave: semanal, mensal, bimestral ou trimestral.
           </div>
         </li>
@@ -1544,10 +1552,13 @@ function ComoFunciona() {
         <b> R$ 75,00</b> naquela semana.
       </div>
 
-      <ul className="space-y-1 text-[11px] text-slate-500">
-        <li>⚠️ Participa quem está com o cadastro <b>“1 - Trabalhando”</b> durante a campanha.</li>
-        <li>⚠️ Quando ativada nas Regras-chave, as bonificações só são liberadas se o <b>% de atingimento do mês</b> alcançar o mínimo definido.</li>
-      </ul>
+      {/* Item 7 fica abaixo do exemplo, mantendo a numeração dos passos. */}
+      <div className={`${passo} text-xs text-slate-700 leading-relaxed`}>
+        <span className={num}>7</span>
+        <div>
+          ⚠️ Quando ativada nas Regras-chave, as bonificações só são liberadas se o <b>% de atingimento do mês</b> alcançar o mínimo definido.
+        </div>
+      </div>
       </>)}
     </section>
   )
