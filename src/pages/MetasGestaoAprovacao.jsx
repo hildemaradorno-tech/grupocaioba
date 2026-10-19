@@ -169,7 +169,7 @@ export default function MetasGestaoAprovacao() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-64"><EmpresaMultiFilter value={filtroEmpresa} onChange={setFiltroEmpresa} empresas={empresasLista} /></div>
+            <div className="w-96"><EmpresaMultiFilter value={filtroEmpresa} onChange={setFiltroEmpresa} empresas={empresasLista} /></div>
             <select value={filtroAno} onChange={e => setFiltroAno(Number(e.target.value))}
               className="border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
               {ANOS.map(a => <option key={a} value={a}>{a}</option>)}

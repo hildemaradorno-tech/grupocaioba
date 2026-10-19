@@ -277,7 +277,9 @@ export async function lerArquivoComoAoA(downloadUrl, linhaCabecalho) {
 // nomes conhecidos (funcionario/tipo_os/natureza_operacao/movimento) e também uma chave por
 // coluna vinculada a um De-Para (dim_fontes_bi_colunas_depara), sem distinção aqui: o backend
 // só agrupa pelos valores crus, quem sabe o que cada chave significa é o frontend.
-async function agregarArquivoPorDimensoes(downloadUrl, { linhaCabecalho, colunaEmpresa, colunaData, colunaValor, tipoAgregacao, colunasDimensao, empresaAlvo, dataInicio, dataFim, regras }, acc) {
+// agruparPorDia: inclui a data da linha (ISO) como dimensão "data" — usado pela sincronização
+// diária do BI (fato_bi_medidas_diario).
+async function agregarArquivoPorDimensoes(downloadUrl, { linhaCabecalho, colunaEmpresa, colunaData, colunaValor, tipoAgregacao, colunasDimensao, empresaAlvo, dataInicio, dataFim, regras, agruparPorDia }, acc) {
   const aoa = await lerArquivoComoAoA(downloadUrl, linhaCabecalho)
   if (aoa.length === 0) return
 
@@ -310,9 +312,10 @@ async function agregarArquivoPorDimensoes(downloadUrl, { linhaCabecalho, colunaE
       const empresaVal = idxEmpresa >= 0 ? r[idxEmpresa] : undefined
       if (normalizaTexto(empresaVal) !== empresaAlvo) continue
     }
-    if (dataInicio || dataFim) {
+    let iso = null
+    if (dataInicio || dataFim || agruparPorDia) {
       const dataVal = idxData >= 0 ? r[idxData] : undefined
-      const iso = toIsoDate(dataVal)
+      iso = toIsoDate(dataVal)
       if (!iso) continue
       if (dataInicio && iso < dataInicio) continue
       if (dataFim && iso > dataFim) continue
@@ -334,6 +337,7 @@ async function agregarArquivoPorDimensoes(downloadUrl, { linhaCabecalho, colunaE
       dims[chave] = bruto
       partesChave.push(bruto)
     }
+    if (agruparPorDia) { dims.data = iso; partesChave.push(iso) }
     const chaveGrupo = partesChave.join('')
 
     let grupo = acc.grupos.get(chaveGrupo)
@@ -358,11 +362,12 @@ async function agregarArquivoPorDimensoes(downloadUrl, { linhaCabecalho, colunaE
 // Combina listagem de arquivos + leitura + agregação COM corte por dimensão. Retorna um
 // grupo por combinação distinta de valores de dimensão encontrada (tipicamente dezenas/
 // centenas, não uma linha por nota fiscal).
-export async function agregarPorDimensoes({ pastaSharepoint, prefixoArquivo, usaSubpastaAno, linhaCabecalho, colunaEmpresa, colunaData, colunaValor, tipoAgregacao, colunasDimensao, regras, empresaNome, dataInicio, dataFim }) {
+// forcarAtualizacao ignora o cache e relê o SharePoint (sincronização diária do BI).
+export async function agregarPorDimensoes({ pastaSharepoint, prefixoArquivo, usaSubpastaAno, linhaCabecalho, colunaEmpresa, colunaData, colunaValor, tipoAgregacao, colunasDimensao, regras, empresaNome, dataInicio, dataFim, forcarAtualizacao = false, agruparPorDia = false }) {
   const empresaAlvo = empresaNome ? normalizaTexto(empresaNome) : null
-  const key = [pastaSharepoint, prefixoArquivo, usaSubpastaAno, linhaCabecalho || 0, colunaEmpresa, colunaData, colunaValor, tipoAgregacao, JSON.stringify(colunasDimensao || {}), empresaAlvo, dataInicio, dataFim, JSON.stringify(regras || [])].join('|')
+  const key = [pastaSharepoint, prefixoArquivo, usaSubpastaAno, linhaCabecalho || 0, colunaEmpresa, colunaData, colunaValor, tipoAgregacao, JSON.stringify(colunasDimensao || {}), empresaAlvo, dataInicio, dataFim, JSON.stringify(regras || []), agruparPorDia ? 'dia' : ''].join('|')
   const cached = _cache.get(key)
-  if (cached && (Date.now() - cached.ts) < CACHE_TTL_MS) return cached.resultado
+  if (!forcarAtualizacao && cached && (Date.now() - cached.ts) < CACHE_TTL_MS) return cached.resultado
 
   const anos = usaSubpastaAno ? anosDoIntervalo(dataInicio, dataFim) : [null]
   const acc = { totalLinhas: 0, totalFiltradas: 0, grupos: new Map() }
@@ -372,7 +377,7 @@ export async function agregarPorDimensoes({ pastaSharepoint, prefixoArquivo, usa
     for (const file of files) {
       const downloadUrl = file['@microsoft.graph.downloadUrl']
       if (!downloadUrl) continue
-      await agregarArquivoPorDimensoes(downloadUrl, { linhaCabecalho, colunaEmpresa, colunaData, colunaValor, tipoAgregacao, colunasDimensao, empresaAlvo, dataInicio, dataFim, regras }, acc)
+      await agregarArquivoPorDimensoes(downloadUrl, { linhaCabecalho, colunaEmpresa, colunaData, colunaValor, tipoAgregacao, colunasDimensao, empresaAlvo, dataInicio, dataFim, regras, agruparPorDia }, acc)
     }
   }
 

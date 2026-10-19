@@ -165,6 +165,40 @@ const _toRowPublicada = (r, tipo, ts, ctx) => ({
   publicado_em: ts,
 })
 
+// Publica SUBSTITUINDO o que estava publicado no escopo aprovado (empresa + ano + tipo; na aprovação de
+// Peças por setor, só os funcionários daquele setor). Cada meta publicada é única por empresa +
+// período + funcionário (com o departamento/setor/box da linha do rascunho). Antes a publicação só
+// gravava por cima e nunca removia: quem era zerado no Planejamento continuava publicado com a meta
+// antiga e somava em dobro no BI (ex.: consultores com 0% depois de a meta da unidade passar pra outro).
+// Grava só as aprovadas com meta > 0 e apaga do escopo tudo que não veio nesta publicação.
+const _publicarSubstituindo = async ({ tipo, empresaId, ano, rows, ctx, colaboradoresDoEscopo = null }) => {
+  const ts = new Date().toISOString()
+  const validas = (rows || []).filter(r => Number(r.meta_faturamento) > 0 && Number(r.meta_aprovada) > 0)
+  if (validas.length > 0) {
+    const { error } = await supabase.from('fato_metas_publicadas')
+      .upsert(validas.map(r => _toRowPublicada(r, tipo, ts, ctx)), { onConflict: 'empresa_id,ano,mes,tipo,colaborador_id' })
+    if (error) throw error
+  }
+  if (colaboradoresDoEscopo && colaboradoresDoEscopo.length === 0) return validas
+  let del = supabase.from('fato_metas_publicadas').delete()
+    .eq('tipo', tipo).eq('empresa_id', empresaId).eq('ano', Number(ano)).lt('publicado_em', ts)
+  if (colaboradoresDoEscopo) del = del.in('colaborador_id', colaboradoresDoEscopo)
+  const { error: errDel } = await del
+  if (errDel) throw errDel
+  return validas
+}
+
+// As funções de aprovação do banco (approve_metas_*) só aprovam meta > 0 — quem foi zerado ficava
+// com a aprovação antiga (meta_aprovada) valendo. Zera essa aprovação junto com a aprovação da empresa.
+const _aprovarZerados = async ({ tabela, empresaId, ano, setorId = null, usuario = null }) => {
+  let q = supabase.from(tabela)
+    .update({ meta_aprovada: 0, aprovado_em: new Date().toISOString(), aprovado_por: usuario?.id || null, aprovado_por_nome: usuario?.nome || null })
+    .eq('empresa_id', empresaId).eq('ano', Number(ano)).eq('meta_faturamento', 0).gt('meta_aprovada', 0)
+  if (setorId) q = q.eq('setor_id', setorId)
+  const { error } = await q
+  if (error) throw error
+}
+
 // Histórico de aprovação (quem, quando, o quê): só inclui — a tabela não aceita alteração pelo sistema.
 const _registrarHistorico = async ({ evento, tipo, empresaId, empresaNome, ano, setorId = null, setorNome = null, usuario, linhas, valorTotal }) => {
   const { error } = await supabase.from('metas_aprovacao_historico').insert([{
@@ -1888,6 +1922,37 @@ export const apiService = {
   // combinação de dimensões pedida (valores brutos do arquivo). colunasDimensao mapeia
   // 'funcionario'|'tipo_os'|'natureza_operacao'|'movimento' -> nome da coluna no arquivo
   // (vem da Fonte BI vinculada) — só inclui as que a tela pediu pra cortar.
+  // BI Possibilidades: resultado já gravado por dia (fato_bi_medidas_diario), somado no banco
+  // pro período — por Medida × Tipo de OS. empresasNorm = lista de nomes de empresa normalizados
+  // (sem acento, maiúsculo), iguais ao gravado; null/vazio = todas.
+  getBiMedidasAgregado: async ({ dataInicio, dataFim, empresasNorm }) => {
+    // Paginado: com o corte por Funcionário, um período longo pode passar de 1000 linhas.
+    const PAGE = 1000
+    const todas = []
+    for (let de = 0; ; de += PAGE) {
+      const { data, error } = await supabase.rpc('bi_medidas_agregado', {
+        p_inicio: dataInicio, p_fim: dataFim, p_empresas_norm: empresasNorm?.length ? empresasNorm : null,
+      }).order('medida_id').order('tipo_os').order('funcionario').range(de, de + PAGE - 1)
+      if (error) throw error
+      todas.push(...(data || []))
+      if (!data || data.length < PAGE) break
+    }
+    return todas
+  },
+
+  // Botão "Atualizar agora": backend relê o SharePoint no período e regrava fato_bi_medidas_diario.
+  sincronizarBiMedidas: async ({ dataInicio, dataFim }) => {
+    const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
+    const res = await fetch(`${backendUrl}/api/bi-medidas/sincronizar`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
+      body: JSON.stringify({ dataInicio, dataFim }),
+    })
+    const body = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(body.error || `Erro ao atualizar o BI (HTTP ${res.status})`)
+    return body
+  },
+
   agregarMedidaBi: async ({ pasta, prefixo, usaSubpastaAno, linhaCabecalho, colunaEmpresa, colunaData, colunaValor, tipoAgregacao, colunasDimensao, empresaNome, dataInicio, dataFim, regras }) => {
     const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
     const res = await fetch(`${backendUrl}/api/bi-medidas/agregar`, {
@@ -2607,6 +2672,7 @@ export const apiService = {
       p_usuario_nome: usuario?.nome || null,
     })
     if (error) throw error
+    await _aprovarZerados({ tabela: 'fato_rascunho_metas_pecas', empresaId, ano, usuario })
 
     // fato_rascunho_metas_pecas não tem colunas meta_pecas/meta_servicos (o registro inteiro já
     // É de peças) — só meta_faturamento mesmo, que é o que BiPossibilidades.jsx lê pra tipo='pecas'.
@@ -2614,14 +2680,11 @@ export const apiService = {
       .select('empresa_id,empresa_nome,ano,mes,colaborador_id,colaborador_nome,departamento_id,departamento_nome,setor_id,setor_nome,box_id,box_nome,cargo_id,cargo_nome,meta_faturamento,meta_aprovada,aprovado_em,aprovado_por,aprovado_por_nome')
       .eq('empresa_id', empresaId).eq('ano', ano).not('meta_aprovada', 'is', null)
     if (errFetch) throw errFetch
-    if (rows && rows.length > 0) {
-      const ts = new Date().toISOString()
-      const ctx = await _contextoPublicacao()
-      const { error: errPub } = await supabase.from('fato_metas_publicadas')
-        .upsert(rows.map(r => _toRowPublicada(r, 'pecas', ts, ctx)), { onConflict: 'empresa_id,ano,mes,tipo,colaborador_id' })
-      if (errPub) throw errPub
-      await _registrarHistorico({ evento: 'APROVOU', tipo: 'pecas', empresaId, empresaNome: rows[0].empresa_nome, ano, usuario,
-        linhas: rows.length, valorTotal: rows.reduce((t, r) => t + (Number(r.meta_aprovada) || 0), 0) })
+    const ctx = await _contextoPublicacao()
+    const publicadas = await _publicarSubstituindo({ tipo: 'pecas', empresaId, ano, rows, ctx })
+    if (publicadas.length > 0) {
+      await _registrarHistorico({ evento: 'APROVOU', tipo: 'pecas', empresaId, empresaNome: publicadas[0].empresa_nome, ano, usuario,
+        linhas: publicadas.length, valorTotal: publicadas.reduce((t, r) => t + (Number(r.meta_aprovada) || 0), 0) })
     }
     return { success: true }
   },
@@ -2633,18 +2696,21 @@ export const apiService = {
       p_usuario_id: usuario?.id || null, p_usuario_nome: usuario?.nome || null,
     })
     if (error) throw error
+    await _aprovarZerados({ tabela: 'fato_rascunho_metas_pecas', empresaId, ano, setorId, usuario })
     const { data: rows, error: errFetch } = await supabase.from('fato_rascunho_metas_pecas')
       .select('empresa_id,empresa_nome,ano,mes,colaborador_id,colaborador_nome,departamento_id,departamento_nome,setor_id,setor_nome,box_id,box_nome,cargo_id,cargo_nome,meta_faturamento,meta_aprovada,aprovado_em,aprovado_por,aprovado_por_nome')
       .eq('empresa_id', empresaId).eq('ano', ano).eq('setor_id', setorId).not('meta_aprovada', 'is', null)
     if (errFetch) throw errFetch
-    if (rows && rows.length > 0) {
-      const ts = new Date().toISOString()
-      const ctx = await _contextoPublicacao()
-      const { error: errPub } = await supabase.from('fato_metas_publicadas')
-        .upsert(rows.map(r => _toRowPublicada(r, 'pecas', ts, ctx)), { onConflict: 'empresa_id,ano,mes,tipo,colaborador_id' })
-      if (errPub) throw errPub
-      await _registrarHistorico({ evento: 'APROVOU', tipo: 'pecas', empresaId, empresaNome: rows[0].empresa_nome, ano, setorId, setorNome: rows[0].setor_nome, usuario,
-        linhas: rows.length, valorTotal: rows.reduce((t, r) => t + (Number(r.meta_aprovada) || 0), 0) })
+    // Escopo = funcionários do setor no rascunho (aprovar um setor não pode apagar os outros setores).
+    const { data: doSetor, error: errSetor } = await supabase.from('fato_rascunho_metas_pecas')
+      .select('colaborador_id').eq('empresa_id', empresaId).eq('ano', ano).eq('setor_id', setorId)
+    if (errSetor) throw errSetor
+    const ctx = await _contextoPublicacao()
+    const publicadas = await _publicarSubstituindo({ tipo: 'pecas', empresaId, ano, rows, ctx,
+      colaboradoresDoEscopo: [...new Set((doSetor || []).map(r => r.colaborador_id).filter(Boolean))] })
+    if (publicadas.length > 0) {
+      await _registrarHistorico({ evento: 'APROVOU', tipo: 'pecas', empresaId, empresaNome: publicadas[0].empresa_nome, ano, setorId, setorNome: publicadas[0].setor_nome, usuario,
+        linhas: publicadas.length, valorTotal: publicadas.reduce((t, r) => t + (Number(r.meta_aprovada) || 0), 0) })
     }
     return { success: true }
   },
@@ -2713,19 +2779,17 @@ export const apiService = {
       p_empresa_id: empresaId, p_ano: Number(ano), p_usuario_id: usuario?.id || null, p_usuario_nome: usuario?.nome || null,
     })
     if (error) throw error
+    await _aprovarZerados({ tabela: 'fato_rascunho_metas_servicos_mecanico', empresaId, ano, usuario })
 
     const { data: rows, error: errFetch } = await supabase.from('fato_rascunho_metas_servicos_mecanico')
       .select('empresa_id,empresa_nome,ano,mes,colaborador_id,colaborador_nome,departamento_id,departamento_nome,setor_id,setor_nome,box_id,box_nome,cargo_id,cargo_nome,meta_faturamento,meta_pecas,meta_servicos,meta_aprovada,aprovado_em,aprovado_por,aprovado_por_nome')
       .eq('empresa_id', empresaId).eq('ano', ano).not('meta_aprovada', 'is', null)
     if (errFetch) throw errFetch
-    if (rows && rows.length > 0) {
-      const ts = new Date().toISOString()
-      const ctx = await _contextoPublicacao()
-      const { error: errPub } = await supabase.from('fato_metas_publicadas')
-        .upsert(rows.map(r => _toRowPublicada(r, 'mecanico', ts, ctx)), { onConflict: 'empresa_id,ano,mes,tipo,colaborador_id' })
-      if (errPub) throw errPub
-      await _registrarHistorico({ evento: 'APROVOU', tipo: 'mecanico', empresaId, empresaNome: rows[0].empresa_nome, ano, usuario,
-        linhas: rows.length, valorTotal: rows.reduce((t, r) => t + (Number(r.meta_aprovada) || 0), 0) })
+    const ctx = await _contextoPublicacao()
+    const publicadas = await _publicarSubstituindo({ tipo: 'mecanico', empresaId, ano, rows, ctx })
+    if (publicadas.length > 0) {
+      await _registrarHistorico({ evento: 'APROVOU', tipo: 'mecanico', empresaId, empresaNome: publicadas[0].empresa_nome, ano, usuario,
+        linhas: publicadas.length, valorTotal: publicadas.reduce((t, r) => t + (Number(r.meta_aprovada) || 0), 0) })
     }
     return { success: true }
   },
@@ -2769,19 +2833,17 @@ export const apiService = {
       p_empresa_id: empresaId, p_ano: Number(ano), p_usuario_id: usuario?.id || null, p_usuario_nome: usuario?.nome || null,
     })
     if (error) throw error
+    await _aprovarZerados({ tabela: 'fato_rascunho_metas_servicos_consultor', empresaId, ano, usuario })
 
     const { data: rows, error: errFetch } = await supabase.from('fato_rascunho_metas_servicos_consultor')
       .select('empresa_id,empresa_nome,ano,mes,colaborador_id,colaborador_nome,departamento_id,departamento_nome,setor_id,setor_nome,box_id,box_nome,cargo_id,cargo_nome,meta_faturamento,meta_pecas,meta_servicos,meta_aprovada,aprovado_em,aprovado_por,aprovado_por_nome')
       .eq('empresa_id', empresaId).eq('ano', ano).not('meta_aprovada', 'is', null)
     if (errFetch) throw errFetch
-    if (rows && rows.length > 0) {
-      const ts = new Date().toISOString()
-      const ctx = await _contextoPublicacao()
-      const { error: errPub } = await supabase.from('fato_metas_publicadas')
-        .upsert(rows.map(r => _toRowPublicada(r, 'consultor', ts, ctx)), { onConflict: 'empresa_id,ano,mes,tipo,colaborador_id' })
-      if (errPub) throw errPub
-      await _registrarHistorico({ evento: 'APROVOU', tipo: 'consultor', empresaId, empresaNome: rows[0].empresa_nome, ano, usuario,
-        linhas: rows.length, valorTotal: rows.reduce((t, r) => t + (Number(r.meta_aprovada) || 0), 0) })
+    const ctx = await _contextoPublicacao()
+    const publicadas = await _publicarSubstituindo({ tipo: 'consultor', empresaId, ano, rows, ctx })
+    if (publicadas.length > 0) {
+      await _registrarHistorico({ evento: 'APROVOU', tipo: 'consultor', empresaId, empresaNome: publicadas[0].empresa_nome, ano, usuario,
+        linhas: publicadas.length, valorTotal: publicadas.reduce((t, r) => t + (Number(r.meta_aprovada) || 0), 0) })
     }
     return { success: true }
   },
@@ -2831,13 +2893,7 @@ export const apiService = {
       .select('empresa_id,empresa_nome,ano,mes,meta_faturamento,meta_servicos,meta_aprovada')
       .eq('empresa_id', empresaId).eq('ano', ano).not('meta_aprovada', 'is', null)
     if (errFetch2) throw errFetch2
-    if (aprovadas && aprovadas.length > 0) {
-      const ts = new Date().toISOString()
-      const ctxPub = await _contextoPublicacao()
-      const { error: errPub } = await supabase.from('fato_metas_publicadas')
-        .upsert(aprovadas.map(r => _toRowPublicada(r, 'terceiros', ts, ctxPub)), { onConflict: 'empresa_id,ano,mes,tipo,colaborador_id' })
-      if (errPub) throw errPub
-    }
+    await _publicarSubstituindo({ tipo: 'terceiros', empresaId, ano, rows: aprovadas, ctx: await _contextoPublicacao() })
     return { success: true }
   },
 
@@ -2858,18 +2914,12 @@ export const apiService = {
       .select('empresa_id,empresa_nome,ano,mes,meta_faturamento,meta_pecas,meta_servicos,meta_aprovada')
       .eq('empresa_id', empresaId).eq('ano', ano).not('meta_aprovada', 'is', null)
     if (errFetch2) throw errFetch2
-    if (aprovadas && aprovadas.length > 0) {
-      const ts = new Date().toISOString()
-      const comDepartamentoFixo = aprovadas.map(r => ({
-        ...r,
-        departamento_id: 'd549c5fc-79dd-4346-bfd9-cbef8e902a3f', departamento_nome: 'OFICINA',
-        setor_id: '1dc0a6ce-ced3-4084-8eb9-14084821adbe', setor_nome: 'Funilaria/Pintura',
-      }))
-      const ctxPub = await _contextoPublicacao()
-      const { error: errPub } = await supabase.from('fato_metas_publicadas')
-        .upsert(comDepartamentoFixo.map(r => _toRowPublicada(r, 'funilaria', ts, ctxPub)), { onConflict: 'empresa_id,ano,mes,tipo,colaborador_id' })
-      if (errPub) throw errPub
-    }
+    const comDepartamentoFixo = (aprovadas || []).map(r => ({
+      ...r,
+      departamento_id: 'd549c5fc-79dd-4346-bfd9-cbef8e902a3f', departamento_nome: 'OFICINA',
+      setor_id: '1dc0a6ce-ced3-4084-8eb9-14084821adbe', setor_nome: 'Funilaria/Pintura',
+    }))
+    await _publicarSubstituindo({ tipo: 'funilaria', empresaId, ano, rows: comDepartamentoFixo, ctx: await _contextoPublicacao() })
     return { success: true }
   },
 
@@ -2926,6 +2976,27 @@ export const apiService = {
       .select('publicado_em').eq('ano', ano).order('publicado_em', { ascending: false }).limit(1)
     if (error) return null
     return data?.[0]?.publicado_em || null
+  },
+
+  // Peso de cada dia (dias_uteis: 1, sábado 0,5, domingo/feriado 0) de várias empresas num intervalo —
+  // BI Possibilidades proporcionaliza a meta mensal de cada empresa pelo calendário dela. Paginado:
+  // 6 empresas × 1 ano já passam do limite de 1000 linhas por consulta do Supabase.
+  getCalendarioPeriodo: async ({ dataInicio, dataFim, empresaIds }) => {
+    const PAGE = 1000
+    const todas = []
+    for (let de = 0; ; de += PAGE) {
+      let q = supabase.from('fato_calendario')
+        .select('empresa_id, data, ano, mes, dias_uteis')
+        .gte('data', dataInicio).lte('data', dataFim)
+        .order('data', { ascending: true })
+        .range(de, de + PAGE - 1)
+      if (empresaIds?.length) q = q.in('empresa_id', empresaIds)
+      const { data, error } = await q
+      if (error) throw error
+      todas.push(...(data || []))
+      if (!data || data.length < PAGE) break
+    }
+    return todas
   },
 
   getTotalGrupoPublicado: async (ano) => {

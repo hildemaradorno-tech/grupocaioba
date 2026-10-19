@@ -70,6 +70,11 @@ const SLOTS_FATURAMENTO = [
   { value: 'margemPecas', label: 'Margem Peças' },
   { value: 'margemServicos', label: 'Margem Serviços' },
   { value: 'pass', label: 'Passagens' },
+  // Modo Produtivo da aba Oficina (valores pelo mecânico que executou — ROF042):
+  { value: 'prodPecas', label: 'Produtivo — Real Peças' },
+  { value: 'prodServicos', label: 'Produtivo — Real Serviços' },
+  { value: 'prodMargemServicos', label: 'Produtivo — Margem Serviços' },
+  { value: 'prodPass', label: 'Produtivo — Passagens' },
 ]
 const rotuloSlot = (v) => SLOTS_FATURAMENTO.find(s => s.value === v)?.label || v
 

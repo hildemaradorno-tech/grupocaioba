@@ -1,10 +1,10 @@
 // Helpers do motor de BI (Medidas/Fontes) — usados pelo Slot no Faturamento em
 // BI — Possibilidades pra calcular o valor de uma Medida (Total e cortado por
-// Departamento/Setor) a partir de uma única leitura do SharePoint.
+// Departamento/Setor) a partir dos grupos por Tipo de OS gravados no Supabase.
 
 // Remove acentos além de trim/uppercase — nomes de funcionário costumam divergir só na
 // acentuação entre o relatório do SharePoint e o cadastro (ex: "MENDONÇA" vs "MENDONCA").
-const normalizaBusca = (v) => String(v ?? '').trim().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+export const normalizaBusca = (v) => String(v ?? '').trim().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
 
 const somaBucket = (b, tipoAgregacao) => {
   if (tipoAgregacao === 'CONTAGEM') return b.linhas
@@ -24,36 +24,74 @@ const acumularBucket = (mapa, chave, g) => {
   somarNoBucket(bucket, g)
 }
 
-// Calcula o valor de uma Medida CORTADO por Departamento E por Setor — resolve SÓ via Tipo de OS
-// da linha (dim_tipos_os.departamento_id + setor_servico→dim_setores.nome_setor, já cadastrados
-// em Tipos de O.S.), não por Funcionário: um mesmo funcionário pode faturar em mais de um
-// departamento (ex: Balcão e Oficina), então o departamento/setor tem que vir da transação (Tipo
-// de OS), não da pessoa. Usado pelas linhas de departamento/setor da tabela de Faturamento em
-// BI — Possibilidades — e também pro valor da linha Total, calculado aqui mesmo (somado direto
-// dos grupos brutos, sem corte) em vez de uma chamada separada sem dimensão nenhuma, que leria o
-// mesmo arquivo do SharePoint de novo só pra agrupar diferente. Retorna { valorTotal: number, valoresPorDepartamento:
-// Map<departamentoId | '__sem_departamento__', valor>, valoresPorSetor: Map<setorId, valor>,
-// nomesSemDepartamento: Set<string> } — nomesSemDepartamento só pra diagnóstico, mostra o
-// Funcionário (quando a Fonte tiver essa coluna) de cada grupo que caiu em "Sem Departamento"
-// (Tipo de OS não cadastrado com Departamento — Tipo de OS em BRANCO não cai aqui, é sempre
-// tratado como Balcão Peças/Atacado Varejo, venda direta sem Ordem de Serviço).
-export async function calcularValoresPorDepartamento(apiService, medida, { empresaLabel, dataInicio, dataFim, tiposOS, setores }) {
-  const fonte = medida?.fonte_bi
-  const vazio = { valorTotal: 0, valoresPorDepartamento: new Map(), valoresPorSetor: new Map(), nomesSemDepartamento: new Set() }
-  if (!fonte?.pasta_sharepoint || !fonte?.prefixo_arquivo || !medida?.coluna_valor || !fonte?.coluna_tipo_os) {
-    return vazio
+// Mesmo corte de resolverPorDepartamento, mas pelo FUNCIONÁRIO da linha (modo "Produtivo" da aba
+// Oficina): o departamento/setor vem do cadastro do funcionário (dim_funcionarios.setor_ids /
+// departamento_ids), não do Tipo de OS. Casa o nome do relatório com o cadastro por nome normalizado
+// (ou pelo Código Sistema BI). Sem setor no cadastro, usa só o departamento; sem nenhum dos dois (ou
+// funcionário não encontrado) cai em '__sem_departamento__'.
+// deptSemCadastro: departamento pra quem não casar com o cadastro (ex.: ROF042 é todo da Oficina —
+// "Produtivo Não Associado" é serviço de oficina sem mecânico informado).
+export function resolverPorFuncionario(grupos, medida, { funcionarios, setores, deptSemCadastro = null }) {
+  const porNome = new Map()
+  const porCodigo = new Map()
+  for (const f of (funcionarios || [])) {
+    const chave = normalizaBusca(f.nome_funcionario)
+    // Mesmo nome repetido (ex.: readmissão): prefere quem não foi demitido.
+    if (chave && (!porNome.has(chave) || (porNome.get(chave).data_demissao && !f.data_demissao))) porNome.set(chave, f)
+    if (f.codigo_sistema_bi) porCodigo.set(String(f.codigo_sistema_bi).trim(), f)
   }
-  const regras = await apiService.getRegrasParaCalculoMedidaBi(medida.id)
-  const colunasDimensao = { tipo_os: fonte.coluna_tipo_os }
-  if (fonte.coluna_funcionario) colunasDimensao.funcionario = fonte.coluna_funcionario
-  const res = await apiService.agregarMedidaBi({
-    pasta: fonte.pasta_sharepoint, prefixo: fonte.prefixo_arquivo,
-    usaSubpastaAno: fonte.usa_subpasta_ano, linhaCabecalho: fonte.linha_cabecalho,
-    colunaEmpresa: fonte.coluna_empresa, colunaData: fonte.coluna_data,
-    colunaValor: medida.coluna_valor, tipoAgregacao: medida.tipo_agregacao,
-    colunasDimensao, empresaNome: empresaLabel, dataInicio, dataFim, regras,
-  })
+  const setorPorId = new Map((setores || []).map(s => [s.id, s]))
+  const lista = (v) => (Array.isArray(v) ? v : [])
 
+  const bucketsDepto = new Map()
+  const bucketsSetor = new Map()
+  const bucketsSetorFunc = new Map()
+  const nomeFunc = new Map()
+  const bucketTotal = novoBucket()
+  const nomesSemDepartamento = new Set()
+  for (const g of (grupos || [])) {
+    somarNoBucket(bucketTotal, g)
+    const func = String(g.dims?.funcionario ?? '').trim()
+    const cad = porNome.get(normalizaBusca(func)) || porCodigo.get(func) || null
+    const setorId = lista(cad?.setor_ids)[0] || null
+    const deptId = (setorId && setorPorId.get(setorId)?.departamento_id) || lista(cad?.departamento_ids)[0] || (!cad && deptSemCadastro) || '__sem_departamento__'
+    if (deptId === '__sem_departamento__') nomesSemDepartamento.add(func || '(sem funcionário)')
+    acumularBucket(bucketsDepto, deptId, g)
+    if (setorId) {
+      acumularBucket(bucketsSetor, setorId, g)
+      if (func) {
+        const chave = `${setorId}|${normalizaBusca(func)}`
+        acumularBucket(bucketsSetorFunc, chave, g)
+        if (!nomeFunc.has(chave)) nomeFunc.set(chave, cad?.nome_funcionario || func)
+      }
+    }
+  }
+
+  const valorTotal = somaBucket(bucketTotal, medida.tipo_agregacao)
+  const valoresPorDepartamento = new Map()
+  for (const [deptId, b] of bucketsDepto) valoresPorDepartamento.set(deptId, somaBucket(b, medida.tipo_agregacao))
+  const valoresPorSetor = new Map()
+  for (const [setorId, b] of bucketsSetor) valoresPorSetor.set(setorId, somaBucket(b, medida.tipo_agregacao))
+  const valoresPorSetorFuncionario = new Map()
+  for (const [chave, b] of bucketsSetorFunc) {
+    valoresPorSetorFuncionario.set(chave, { setorId: chave.split('|')[0], nome: nomeFunc.get(chave), valor: somaBucket(b, medida.tipo_agregacao) })
+  }
+  return { valorTotal, valoresPorDepartamento, valoresPorSetor, valoresPorSetorFuncionario, nomesSemDepartamento }
+}
+
+// Resolve o valor de uma Medida CORTADO por Departamento E por Setor a partir dos grupos já
+// agregados por Tipo de OS ({ dims: { tipo_os }, soma, linhas, distintos }) — hoje vindos de
+// fato_bi_medidas_diario (função bi_medidas_agregado). Resolve SÓ via Tipo de OS da linha
+// (dim_tipos_os.departamento_id + setor_servico→dim_setores.nome_setor), não por Funcionário: um
+// mesmo funcionário pode faturar em mais de um departamento (ex: Balcão e Oficina), então o
+// departamento/setor tem que vir da transação. O Total é somado direto dos grupos brutos (união
+// dos distintos na Contagem Distinta), não da soma dos departamentos. Retorna { valorTotal,
+// valoresPorDepartamento: Map<departamentoId | '__sem_departamento__', valor>, valoresPorSetor:
+// Map<setorId, valor>, nomesSemDepartamento: Set<string> } — nomesSemDepartamento só pra
+// diagnóstico: os Tipos de OS que caíram em "Sem Departamento" (não cadastrados com Departamento
+// em Tipos de O.S. — Tipo de OS em BRANCO não cai aqui, é sempre Balcão Peças/Atacado Varejo,
+// venda direta sem Ordem de Serviço).
+export function resolverPorDepartamento(grupos, medida, { tiposOS, setores }) {
   // Tipo de OS casa por sigla (normalizada, sem acento) ou por código.
   const tipoOsPorSigla = new Map()
   for (const t of (tiposOS || [])) {
@@ -84,21 +122,40 @@ export async function calcularValoresPorDepartamento(apiService, medida, { empre
   // departamento/setor se somam.
   const bucketsDepto = new Map()
   const bucketsSetor = new Map()
+  // Por Setor × Funcionário (nome normalizado) — vendedores abaixo do setor na aba Balcão.
+  const bucketsSetorFunc = new Map()
+  const nomeFunc = new Map()
+  // Por Setor × Tipo de OS (sigla normalizada) — aba Serviços, modo Consultor › Por Tipo de OS.
+  const bucketsSetorTipo = new Map()
+  const nomeTipo = new Map()
   const bucketTotal = novoBucket()
   const nomesSemDepartamento = new Set()
-  for (const g of (res.grupos || [])) {
+  for (const g of (grupos || [])) {
     somarNoBucket(bucketTotal, g)
     const tipoOsBruto = String(g.dims?.tipo_os ?? '').trim()
     const tipoOsResolvido = tipoOsBruto === '' ? null : resolverTipoOs(tipoOsBruto)
     const deptId = tipoOsBruto === '' ? DEPTO_BALCAO_PECAS : (tipoOsResolvido?.departamento_id || '__sem_departamento__')
     if (deptId === '__sem_departamento__') {
-      const rotulo = g.dims?.funcionario || g.dims?.tipo_os || '(vazio)'
+      const rotulo = g.dims?.tipo_os || '(vazio)'
       nomesSemDepartamento.add(rotulo)
     }
     acumularBucket(bucketsDepto, deptId, g)
 
     const setorId = tipoOsBruto === '' ? SETOR_ATACADO_VAREJO : (setorPorNome.get(normalizaBusca(tipoOsResolvido?.setor_servico))?.id || null)
-    if (setorId) acumularBucket(bucketsSetor, setorId, g)
+    if (setorId) {
+      acumularBucket(bucketsSetor, setorId, g)
+      if (tipoOsBruto) {
+        const chaveTipo = `${setorId}|${normalizaBusca(tipoOsBruto)}`
+        acumularBucket(bucketsSetorTipo, chaveTipo, g)
+        if (!nomeTipo.has(chaveTipo)) nomeTipo.set(chaveTipo, tipoOsResolvido?.tipo_os || tipoOsBruto)
+      }
+      const func = String(g.dims?.funcionario ?? '').trim()
+      if (func) {
+        const chave = `${setorId}|${normalizaBusca(func)}`
+        acumularBucket(bucketsSetorFunc, chave, g)
+        if (!nomeFunc.has(chave)) nomeFunc.set(chave, func)
+      }
+    }
   }
 
   const valorTotal = somaBucket(bucketTotal, medida.tipo_agregacao)
@@ -107,5 +164,15 @@ export async function calcularValoresPorDepartamento(apiService, medida, { empre
   const valoresPorSetor = new Map()
   for (const [setorId, b] of bucketsSetor) valoresPorSetor.set(setorId, somaBucket(b, medida.tipo_agregacao))
 
-  return { valorTotal, valoresPorDepartamento, valoresPorSetor, nomesSemDepartamento }
+  const valoresPorSetorFuncionario = new Map() // 'setorId|NOME NORMALIZADO' -> { setorId, nome, valor }
+  for (const [chave, b] of bucketsSetorFunc) {
+    valoresPorSetorFuncionario.set(chave, { setorId: chave.split('|')[0], nome: nomeFunc.get(chave), valor: somaBucket(b, medida.tipo_agregacao) })
+  }
+
+  const valoresPorSetorTipoOs = new Map() // 'setorId|SIGLA' -> { setorId, nome, valor }
+  for (const [chave, b] of bucketsSetorTipo) {
+    valoresPorSetorTipoOs.set(chave, { setorId: chave.split('|')[0], nome: nomeTipo.get(chave), valor: somaBucket(b, medida.tipo_agregacao) })
+  }
+
+  return { valorTotal, valoresPorDepartamento, valoresPorSetor, valoresPorSetorFuncionario, valoresPorSetorTipoOs, nomesSemDepartamento }
 }

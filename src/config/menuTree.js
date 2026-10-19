@@ -120,9 +120,9 @@ export const MENU_TREE = [
           { key: 'metas/pos-vendas/servicos_pecas', label: 'Pós-Vendas' },
           { key: 'metas/pos-vendas/total', label: 'Total Pós-Vendas', virtual: true },
           { key: 'metas/pos-vendas/distribuicao-consultores', label: 'Distribuição — Consultores', virtual: true },
+          { key: 'metas/gestao-aprovacao', label: 'Total Grupo' },
         ],
       },
-      { key: 'metas/gestao-aprovacao', label: 'Total Grupo' },
     ],
   },
   {

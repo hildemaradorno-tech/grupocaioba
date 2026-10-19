@@ -1,6 +1,9 @@
 import { Router } from 'express'
 import { isConfigured } from '../services/graphClient.js'
 import { getColunas, agregarPorDimensoes } from '../services/sharepointFonteBi.js'
+import { sincronizarBiMedidasDiario, sincronizacaoBiEmAndamento } from '../services/biMedidasDiarioSync.js'
+import { getSupabaseAdmin } from '../services/supabaseAdmin.js'
+import { authMiddleware } from '../middleware/authMiddleware.js'
 
 const router = Router()
 
@@ -57,6 +60,20 @@ router.post('/agregar', wrap(async (req, res) => {
     dataInicio: dataInicio || null,
     dataFim: dataFim || null,
   })
+  res.json(resultado)
+}))
+
+// POST /api/bi-medidas/sincronizar  body: { dataInicio, dataFim }
+// Botão "Atualizar agora" do BI Possibilidades: relê o SharePoint para o período filtrado e grava
+// fato_bi_medidas_diario (a tela lê de lá). Limite de 1 ano por chamada pra não estourar memória.
+router.post('/sincronizar', authMiddleware, wrap(async (req, res) => {
+  if (!isConfigured()) return res.status(503).json({ error: 'sharepoint_not_configured' })
+  if (sincronizacaoBiEmAndamento()) return res.status(409).json({ error: 'Já existe uma atualização do BI em andamento. Aguarde terminar.' })
+  const { dataInicio, dataFim } = req.body || {}
+  if (!dataInicio || !dataFim || dataInicio > dataFim) return res.status(400).json({ error: 'Informe Data Início e Data Fim válidas.' })
+  const dias = (new Date(dataFim) - new Date(dataInicio)) / 86_400_000
+  if (dias > 366) return res.status(400).json({ error: 'Período máximo para atualizar é de 1 ano.' })
+  const resultado = await sincronizarBiMedidasDiario(getSupabaseAdmin(), { dataInicio, dataFim })
   res.json(resultado)
 }))
 

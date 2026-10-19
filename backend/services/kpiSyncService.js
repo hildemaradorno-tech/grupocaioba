@@ -14,6 +14,7 @@ import {
 } from './sharepointExtractor.js'
 import { EMPRESAS_SYNC } from './kpiEmpresas.js'
 import { sincronizarCampanhaDiario } from './campanhaDiarioSync.js'
+import { sincronizarBiMedidasDiario } from './biMedidasDiarioSync.js'
 
 const FONTES_PLANILHA = [
   { chave: 'resultados', fn: getResultados },
@@ -109,6 +110,16 @@ async function _executar(origem, usuarioEmail) {
     sucessos++
   } catch (err) {
     detalhes.campanha = { ok: false, erro: err.message }
+    falhas++
+  }
+
+  // BI Possibilidades (Faturamento — Total): Medidas com Slot por dia, mês anterior + atual.
+  try {
+    const bi = await sincronizarBiMedidasDiario(supabaseAdmin)
+    detalhes.biFaturamento = bi
+    if (bi.ok) sucessos++; else falhas++
+  } catch (err) {
+    detalhes.biFaturamento = { ok: false, erro: err.message }
     falhas++
   }
 
