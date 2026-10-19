@@ -7,6 +7,7 @@ import { apiService } from '../../services/api'
 const CATEGORIAS = [
   { key: 'tipos-saldo', label: 'Tipo de Saldo', icon: Layers },
   { key: 'tolerancia', label: 'Tolerância de Valor', icon: Scale },
+  { key: 'tolerancia-taxa', label: 'Diferença de Taxa', icon: Scale },
 ]
 
 function PainelTolerancia() {
@@ -80,6 +81,93 @@ function PainelTolerancia() {
             onChange={e => setValor(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') salvar() }}
             placeholder="0,02"
+            className="w-32 text-xs border border-slate-200 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300"
+          />
+          <button
+            onClick={salvar}
+            disabled={salvando}
+            className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-2 rounded-md shadow-sm transition-colors disabled:opacity-50"
+          >
+            {salvando ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />} Salvar
+          </button>
+          {salvo && <span className="text-[11px] font-semibold text-emerald-600">Salvo!</span>}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function PainelToleranciaTaxa() {
+  const [valor, setValor] = useState('0,50')
+  const [loading, setLoading] = useState(true)
+  const [salvando, setSalvando] = useState(false)
+  const [erro, setErro] = useState(null)
+  const [salvo, setSalvo] = useState(false)
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true)
+      setErro(null)
+      try {
+        const v = await apiService.getTruckPagToleranciaTaxa()
+        setValor(Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
+      } catch (e) {
+        setErro(e.message || String(e))
+      } finally {
+        setLoading(false)
+      }
+    })()
+  }, [])
+
+  const salvar = async () => {
+    const num = parseFloat(String(valor).replace(/\./g, '').replace(',', '.'))
+    if (isNaN(num) || num < 0) { setErro('Digite um valor válido (ex: 0,50).'); return }
+    setSalvando(true)
+    setErro(null)
+    setSalvo(false)
+    try {
+      await apiService.updateTruckPagToleranciaTaxa(num)
+      setSalvo(true)
+      setTimeout(() => setSalvo(false), 2500)
+    } catch (e) {
+      setErro(e.message || String(e))
+    } finally {
+      setSalvando(false)
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h3 className="text-sm font-bold text-slate-800">Diferença de Taxa</h3>
+        <p className="text-xs text-slate-500 mt-0.5">
+          No detalhe do título dentro de Repasses TruckPag, o sistema compara (Saldo do título − Valor Recebido do
+          repasse) com o Valor Taxa esperado do título. Dentro desta tolerância, o indicador fica verde; fora dela,
+          mostra a diferença em vermelho (ex: <strong>− R$ 0,50</strong>) pra sinalizar taxa cobrada errada.
+        </p>
+      </div>
+
+      {erro && (
+        <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+          <AlertTriangle className="h-3.5 w-3.5 text-red-500 shrink-0" />
+          <p className="text-xs text-red-700">{erro}</p>
+        </div>
+      )}
+
+      {loading ? (
+        <div className="flex items-center justify-center py-8">
+          <Loader2 className="h-5 w-5 text-slate-300 animate-spin" />
+        </div>
+      ) : (
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-semibold text-slate-500">R$</span>
+          <input
+            type="text"
+            inputMode="decimal"
+            value={valor}
+            onChange={e => setValor(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') salvar() }}
+            placeholder="0,50"
             className="w-32 text-xs border border-slate-200 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300"
           />
           <button
@@ -281,6 +369,7 @@ export default function TruckPagConfigModal({ onClose }) {
           <div className="flex-1 overflow-y-auto p-5">
             {categoriaAtiva === 'tipos-saldo' && <PainelTiposSaldo />}
             {categoriaAtiva === 'tolerancia' && <PainelTolerancia />}
+            {categoriaAtiva === 'tolerancia-taxa' && <PainelToleranciaTaxa />}
           </div>
         </div>
 

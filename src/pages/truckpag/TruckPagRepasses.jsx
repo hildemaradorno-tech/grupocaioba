@@ -41,9 +41,12 @@ const COLUNAS_TITULO_DETALHE = [
   { key: 'titulo_data_emissao', label: 'Emissão', formatar: fmtData },
   { key: 'titulo_dias_atraso', label: 'Dias', numerico: true },
   { key: 'tipo_titulo_descr', label: 'Tipo' },
-  { key: 'titulo_valor', label: 'Valor', numerico: true, formatar: fmtMoeda, campoGraduacao: 'valor' },
-  { key: 'valor_taxa', label: 'Valor Taxa', numerico: true, derivar: valorTaxaDoTitulo, formatar: fmtMoeda },
-  { key: 'titulo_saldo', label: 'Saldo', numerico: true, formatar: fmtMoeda, campoGraduacao: 'saldo' },
+  { key: 'titulo_valor', label: 'Valor', numerico: true, formatar: fmtMoeda, campoGraduacao: 'valor', colunaRepasse: 'valor_parcela_total' },
+  // Taxa Adm. do título não vem do arquivo — é a mesma taxa fixa (TAXA_TITULO_PCT) usada em
+  // valorTaxaDoTitulo, só exibida aqui pra alinhar com a coluna Taxa Adm. do repasse.
+  { key: 'taxa_adm_titulo', label: 'Taxa Adm.', numerico: true, derivar: () => `${(TAXA_TITULO_PCT * 100).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}%`, colunaRepasse: 'taxa_adm_pct' },
+  { key: 'valor_taxa', label: 'Valor Taxa', numerico: true, derivar: valorTaxaDoTitulo, formatar: fmtMoeda, colunaRepasse: 'valor_taxa' },
+  { key: 'titulo_saldo', label: 'Saldo', numerico: true, formatar: fmtMoeda, campoGraduacao: 'saldo', colunaRepasse: 'valor_recebido' },
 ]
 
 const fmtPct = (v) => v === null || v === undefined ? '—' : `${Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`
@@ -91,6 +94,7 @@ export default function TruckPagRepasses() {
   const [tiposSaldo, setTiposSaldo] = useState([])
   const [baixas, setBaixas] = useState([])
   const [tolerancia, setTolerancia] = useState(0.02)
+  const [toleranciaTaxa, setToleranciaTaxa] = useState(0.50)
   const [loading, setLoading] = useState(true)
   const [sincronizando, setSincronizando] = useState(false)
   const [erro, setErro] = useState(null)
@@ -158,10 +162,11 @@ export default function TruckPagRepasses() {
     setLoading(true)
     setErro(null)
     try {
-      const [r, t, tol, cred, tipos, baix] = await Promise.all([
+      const [r, t, tol, tolTaxa, cred, tipos, baix] = await Promise.all([
         apiService.getTruckPagRepasses(),
         apiService.getTruckPagTitulos(),
         apiService.getTruckPagToleranciaConciliacao(),
+        apiService.getTruckPagToleranciaTaxa(),
         apiService.getTruckPagCreditos(),
         apiService.getTruckPagTiposSaldo(),
         apiService.getTruckPagBaixasTitulos(),
@@ -169,6 +174,7 @@ export default function TruckPagRepasses() {
       setLinhas(r)
       setTitulos(t)
       setTolerancia(tol)
+      setToleranciaTaxa(tolTaxa)
       setCreditos(cred)
       setTiposSaldo(tipos)
       setBaixas(baix)
@@ -918,6 +924,16 @@ export default function TruckPagRepasses() {
                                       const chavesBate = c.campoGraduacao ? [c.campoGraduacao] : Array.isArray(c.campoInfo) ? c.campoInfo : c.campoInfo ? [c.campoInfo] : []
                                       const bate = camposDivergentes && chavesBate.some(k => camposDivergentes[k] === true)
                                       const largura = larguraDaColuna(c.colunaRepasse) ?? c.larguraFixa
+                                      // Diferença de taxa: (Saldo do título − Valor Recebido do repasse) deveria dar o
+                                      // Valor Taxa esperado (3% do título). Dentro da tolerância configurável (Configurações
+                                      // → Diferença de Taxa): verde. Fora: mostra a diferença em vermelho.
+                                      let diferencaTaxa = null
+                                      let saldoMenosRecebido = null
+                                      if (c.key === 'valor_taxa' && l.tituloEncontrado.titulo_saldo != null) {
+                                        saldoMenosRecebido = Math.round((l.tituloEncontrado.titulo_saldo - (l.valor_recebido || 0)) * 100) / 100
+                                        // Sobra: Taxa (Saldo − Recebido) menos a Valor Taxa calculada do título (3%).
+                                        diferencaTaxa = Math.round((Math.abs(saldoMenosRecebido) - valorTaxaDoTitulo(l.tituloEncontrado)) * 100) / 100
+                                      }
                                       return (
                                         <td key={c.key} style={largura ? { width: largura } : undefined} className={`p-3 whitespace-nowrap overflow-hidden text-ellipsis ${c.numerico ? 'text-right font-semibold text-slate-900' : ''} ${diverge ? 'bg-amber-50 text-amber-700' : ''}`}>
                                           <span className={`inline-flex items-center gap-1 max-w-full ${c.numerico ? 'justify-end' : ''}`}>
@@ -925,7 +941,26 @@ export default function TruckPagRepasses() {
                                             {bate && <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" title="Confere com o repasse" />}
                                             {c.key === 'codigo' && <span className="px-1 py-px rounded bg-blue-50 text-blue-600 text-[9px] font-bold uppercase tracking-wide">Título</span>}
                                             <span className="truncate">{c.formatar ? c.formatar(valor) : (valor ?? '—')}</span>
+                                            {/* Fora da tolerância, a diferença já aparece na linha "Taxa:"/"Sobra:" logo abaixo —
+                                                aqui só o check verde quando bate, pra não disputar espaço com o valor real da taxa. */}
+                                            {diferencaTaxa !== null && Math.abs(diferencaTaxa) <= toleranciaTaxa && (
+                                              <span title={`Saldo − Valor Recebido bate com a Valor Taxa (diferença de ${fmtMoeda(diferencaTaxa)})`} className="inline-flex items-center justify-center h-3.5 w-3.5 rounded-full bg-emerald-100 text-emerald-600 shrink-0">
+                                                <CheckCircle2 className="h-2.5 w-2.5" />
+                                              </span>
+                                            )}
                                           </span>
+                                          {/* "Taxa" é o que foi de fato descontado (Saldo − Valor Recebido). "Sobra" é Taxa menos a
+                                              Valor Taxa calculada do título (3%) — o que sobrou além da taxa esperada. */}
+                                          {saldoMenosRecebido !== null && (
+                                            <div className={`text-[9px] font-semibold text-right mt-0.5 ${saldoMenosRecebido < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                                              Taxa: {fmtMoeda(saldoMenosRecebido)}
+                                            </div>
+                                          )}
+                                          {diferencaTaxa !== null && Math.abs(diferencaTaxa) > toleranciaTaxa && (
+                                            <div className={`text-[9px] font-semibold text-right mt-0.5 ${diferencaTaxa < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                                              Sobra: {fmtMoeda(diferencaTaxa)}
+                                            </div>
+                                          )}
                                         </td>
                                       )
                                     })}

@@ -5589,4 +5589,36 @@ export const apiService = {
     }
     return { success: true }
   },
+
+  // Tolerância de diferença de taxa — compara (Saldo do título - Valor Recebido do repasse) com o
+  // Valor Taxa esperado, no detalhe do título dentro de Repasses TruckPag (mesma linha única acima).
+  getTruckPagToleranciaTaxa: async () => {
+    const { data, error } = await supabase
+      .from('truckpag_config_conciliacao')
+      .select('*')
+      .limit(1)
+      .maybeSingle()
+    if (error) throw error
+    return data?.tolerancia_taxa ?? 0.50
+  },
+
+  updateTruckPagToleranciaTaxa: async (valor) => {
+    const { data: existente, error: selError } = await supabase
+      .from('truckpag_config_conciliacao')
+      .select('id')
+      .limit(1)
+      .maybeSingle()
+    if (selError) throw selError
+    if (existente) {
+      const { error } = await supabase
+        .from('truckpag_config_conciliacao')
+        .update({ tolerancia_taxa: valor, atualizado_em: new Date().toISOString() })
+        .eq('id', existente.id)
+      if (error) throw error
+    } else {
+      const { error } = await supabase.from('truckpag_config_conciliacao').insert([{ tolerancia_taxa: valor }])
+      if (error) throw error
+    }
+    return { success: true }
+  },
 }
