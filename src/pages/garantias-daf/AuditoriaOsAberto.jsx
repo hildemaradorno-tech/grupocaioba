@@ -1169,9 +1169,9 @@ export default function AuditoriaOsAberto() {
                   {thOrd('os_numero', 'Nº OS')}
                   {thOrd('veiculo_placa', 'Placa')}
                   {thOrd('veiculo_chassi', 'Chassi')}
+                  {thOrd('na_oficina', 'Na Oficina', 'text-center w-28', 'center')}
                   {thOrd('proprietario_veiculo', 'Proprietário', 'min-w-[280px]')}
                   {thOrd('veiculo_modelo', 'Modelo', 'min-w-[160px]')}
-                  {thOrd('na_oficina', 'Na Oficina', 'text-center w-28', 'center')}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
@@ -1189,9 +1189,9 @@ export default function AuditoriaOsAberto() {
                     <td className="p-3 font-mono font-bold text-slate-900 whitespace-nowrap">{row.os_numero || '—'}</td>
                     <td className="p-3 font-mono text-slate-700 whitespace-nowrap font-semibold">{row.veiculo_placa || '—'}</td>
                     <td className="p-3 font-mono text-slate-500 whitespace-nowrap">{row.veiculo_chassi || '—'}</td>
+                    <td className="p-3 text-center">{renderNaOficina(row)}</td>
                     <td className="p-3 text-slate-700">{row.proprietario_veiculo || '—'}</td>
                     <td className="p-3 text-slate-600">{row.veiculo_modelo || '—'}</td>
-                    <td className="p-3 text-center">{renderNaOficina(row)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -1411,9 +1411,9 @@ export default function AuditoriaOsAberto() {
                       <th className="p-3 whitespace-nowrap">Nº OS</th>
                       <th className="p-3 whitespace-nowrap">Placa</th>
                       <th className="p-3 whitespace-nowrap">Chassi</th>
+                      <th className="p-3 whitespace-nowrap text-center w-28">Na Oficina</th>
                       <th className="p-3 whitespace-nowrap min-w-[240px]">Proprietário</th>
                       <th className="p-3 whitespace-nowrap min-w-[150px]">Modelo</th>
-                      <th className="p-3 whitespace-nowrap text-center w-28">Na Oficina</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
@@ -1426,8 +1426,6 @@ export default function AuditoriaOsAberto() {
                           <td className="p-3 font-mono font-bold text-slate-900 whitespace-nowrap">{r.os_numero || '—'}</td>
                           <td className="p-3 font-mono whitespace-nowrap font-semibold">{r.veiculo_placa || '—'}</td>
                           <td className="p-3 font-mono text-slate-500 whitespace-nowrap">{r.veiculo_chassi || '—'}</td>
-                          <td className="p-3">{r.proprietario_veiculo || '—'}</td>
-                          <td className="p-3 text-slate-600">{r.veiculo_modelo || '—'}</td>
                           <td className="p-3 text-center">
                             <select
                               value={v === true ? 'sim' : v === false ? 'nao' : ''}
@@ -1450,6 +1448,8 @@ export default function AuditoriaOsAberto() {
                               <option value="nao" className="bg-white text-red-700 font-semibold">Não</option>
                             </select>
                           </td>
+                          <td className="p-3">{r.proprietario_veiculo || '—'}</td>
+                          <td className="p-3 text-slate-600">{r.veiculo_modelo || '—'}</td>
                         </tr>
                       )
                     })}
