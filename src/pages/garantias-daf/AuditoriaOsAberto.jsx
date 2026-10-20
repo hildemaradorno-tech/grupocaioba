@@ -993,14 +993,6 @@ export default function AuditoriaOsAberto() {
           )}
 
           <div className="flex items-center gap-2">
-            {statusAud === 'a_responder' && pode('voltar_etapa') && (
-              <button
-                onClick={() => setModalStatus({ para: 'conferencia', procedimento: 'Voltou para Conferência', titulo: 'Voltar para Conferência', texto: 'A auditoria volta para o Modo Conferência. Nada do que foi preenchido é apagado.' })}
-                className="px-3 py-1.5 rounded-md text-xs font-semibold text-slate-500 hover:bg-slate-100 transition-colors"
-              >
-                Voltar etapa
-              </button>
-            )}
             {statusAud === 'conferencia' && pode('concluir_conferencia') && (
               <div className="relative group">
                 <button
@@ -1014,22 +1006,6 @@ export default function AuditoriaOsAberto() {
                 {naoConferidas > 0 && (
                   <span className="pointer-events-none absolute right-0 top-full mt-1.5 z-20 whitespace-nowrap rounded-md bg-slate-800 px-2.5 py-1.5 text-[11px] font-semibold text-white shadow-lg opacity-0 group-hover:opacity-100 transition-opacity">
                     Faltam {naoConferidas} OS sem Na Oficina (Sim/Não)
-                  </span>
-                )}
-              </div>
-            )}
-            {statusAud === 'a_responder' && pode('concluir_respostas') && (
-              <div className="relative group">
-                <button
-                  onClick={() => setModalStatus({ para: 'respondido_total', procedimento: 'Respondido Total', titulo: 'Concluir respostas', texto: 'Todas as OS pendentes estão respondidas. A auditoria passa para Modo Relatório — Respondido Total (concluída).' })}
-                  disabled={pendentesSemResposta > 0}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  Concluir respostas →
-                </button>
-                {pendentesSemResposta > 0 && (
-                  <span className="pointer-events-none absolute right-0 top-full mt-1.5 z-20 whitespace-nowrap rounded-md bg-slate-800 px-2.5 py-1.5 text-[11px] font-semibold text-white shadow-lg opacity-0 group-hover:opacity-100 transition-opacity">
-                    Faltam {pendentesSemResposta} OS pendentes sem resposta
                   </span>
                 )}
               </div>
@@ -1156,6 +1132,32 @@ export default function AuditoriaOsAberto() {
               <List className="h-3.5 w-3.5" />
               {relatorioVerTodos ? 'Ver só pendentes' : 'Ver todas'}
             </button>
+          )}
+
+          {/* A Responder: Voltar etapa e Concluir respostas na mesma linha do Ver todas */}
+          {statusAud === 'a_responder' && pode('voltar_etapa') && (
+            <button
+              onClick={() => setModalStatus({ para: 'conferencia', procedimento: 'Voltou para Conferência', titulo: 'Voltar para Conferência', texto: 'A auditoria volta para o Modo Conferência. Nada do que foi preenchido é apagado.' })}
+              className="px-3 py-1.5 rounded-md text-xs font-semibold text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 transition-colors"
+            >
+              Voltar etapa
+            </button>
+          )}
+          {statusAud === 'a_responder' && pode('concluir_respostas') && (
+            <div className="relative group">
+              <button
+                onClick={() => setModalStatus({ para: 'respondido_total', procedimento: 'Respondido Total', titulo: 'Concluir respostas', texto: 'Todas as OS pendentes estão respondidas. A auditoria passa para Modo Relatório — Respondido Total (concluída).' })}
+                disabled={pendentesSemResposta > 0}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Concluir respostas →
+              </button>
+              {pendentesSemResposta > 0 && (
+                <span className="pointer-events-none absolute right-0 top-full mt-1.5 z-20 whitespace-nowrap rounded-md bg-slate-800 px-2.5 py-1.5 text-[11px] font-semibold text-white shadow-lg opacity-0 group-hover:opacity-100 transition-opacity">
+                  Faltam {pendentesSemResposta} OS pendentes sem resposta
+                </span>
+              )}
+            </div>
           )}
           </div>
         </div>
