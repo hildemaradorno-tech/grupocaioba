@@ -39,60 +39,10 @@ const parseDataBR = (s) => {
 
 const hojeISO = () => new Date().toISOString().slice(0, 10)
 
-// ── Modo "Atualizar Demissões" — relatório "demitidos" do ERP: já vem filtrado só com quem foi
-// desligado (coluna "situacao" = 8), com CNPJ (cgce_emp) e a data de desligamento em
-// "datasituacao". Casa empresa+código igual ao modo Cadastro.
-const COL_DEM_CNPJ = 'cgce_emp'
-const COL_DEM_CODIGO = 'i_empregados'
-const COL_DEM_NOME = 'nome'
-const COL_DEM_DATA = 'datasituacao'
-const COL_DEM_SITUACAO = 'situacao'
-
-function construirLinhasDemissao(excelRows, funcionarios, empresas) {
-  const vistos = new Set()
-  const unicos = []
-  for (const r of excelRows) {
-    if (norm(r[COL_DEM_SITUACAO]) !== SITUACAO_DEMITIDO) continue
-    const cnpj = soDigitos(r[COL_DEM_CNPJ])
-    const codigo = norm(r[COL_DEM_CODIGO])
-    const nome = norm(r[COL_DEM_NOME])
-    if (!cnpj || !codigo) continue
-    const key = `${cnpj}|${codigo}`
-    if (vistos.has(key)) continue
-    vistos.add(key)
-    unicos.push({ key, cnpj, codigo, nome, dataDemissao: parseDataBR(r[COL_DEM_DATA]) })
-  }
-  unicos.sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
-
-  return unicos.map(u => {
-    const empresa = empresas.find(e => soDigitos(e.cnpj) === u.cnpj)
-    if (!empresa) return { ...u, status: 'empresa_nao_encontrada' }
-    const empresaNome = empresa.empresa_fantasia || empresa.nome_empresa || '—'
-    const base = { ...u, empresaId: empresa.id, empresaNome }
-
-    const funcionario = funcionarios.find(f => f.empresa_id === empresa.id && norm(f.codigo_funcionario) === u.codigo)
-    if (!funcionario) return { ...base, status: 'funcionario_nao_encontrado' }
-    if (!u.dataDemissao) return { ...base, funcionarioId: funcionario.id, nomeAtual: funcionario.nome_funcionario, status: 'data_invalida' }
-
-    const jaAtualizado = funcionario.situacao_funcionario === SITUACAO_DEMITIDO && funcionario.data_demissao === u.dataDemissao
-    return {
-      ...base,
-      funcionarioId: funcionario.id,
-      nomeAtual: funcionario.nome_funcionario,
-      situacaoAtual: funcionario.situacao_funcionario,
-      dataDemissaoAtual: funcionario.data_demissao,
-      status: jaAtualizado ? 'ok' : 'demitir',
-    }
-  })
-}
-
-const STATUS_INFO_DEM = {
-  demitir: { label: 'Marcar como demitido', cls: 'bg-amber-50 text-amber-700 border-amber-200', icon: UserX },
-  ok: { label: 'Já atualizado', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200', icon: CheckCircle2 },
-  funcionario_nao_encontrado: { label: 'Funcionário não encontrado', cls: 'bg-purple-50 text-purple-700 border-purple-200', icon: HelpCircle },
-  empresa_nao_encontrada: { label: 'Empresa não encontrada', cls: 'bg-red-50 text-red-700 border-red-200', icon: AlertTriangle },
-  data_invalida: { label: 'Data inválida na planilha', cls: 'bg-red-50 text-red-700 border-red-200', icon: AlertTriangle },
-}
+// Mesmo arquivo do ERP agora traz cadastro e desligamento juntos: quem foi demitido aparece
+// com situacao=8 e a data do desligamento na coluna "datasituacao" (opcional — nem todo export
+// tem essa coluna; quando falta, só a situação é marcada como demitido, sem mexer na data).
+const COL_DATA_DEMISSAO = 'datasituacao'
 
 // Monta as combinações únicas (CNPJ + Código do Funcionário) do Excel e classifica cada uma
 // contra o que já existe no sistema — mesmo padrão da importação de Cargos, casando por
@@ -117,6 +67,7 @@ function construirLinhas(excelRows, funcionarios, empresas, cargos) {
       cargoNomePlanilha: norm(r[COL_CARGO_NOME]),
       dataAdmissao: parseDataBR(r[COL_ADMISSAO]),
       situacao: norm(r[COL_SITUACAO]),
+      dataDemissao: parseDataBR(r[COL_DATA_DEMISSAO]),
     })
   }
   unicos.sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
@@ -149,7 +100,14 @@ function construirLinhas(excelRows, funcionarios, empresas, cargos) {
     if (existente.cargo_id !== cargo.id) diffs.push('cargo')
     if (norm(existente.situacao_funcionario) !== u.situacao) diffs.push('situacao')
     if ((existente.data_admissao || '') !== (u.dataAdmissao || '')) diffs.push('admissao')
-    if (existente.data_demissao) diffs.push('reativacao')
+    // Demissão e reativação se excluem: se a planilha já traz a data do desligamento e ela
+    // difere da que está salva, atualiza; senão, se o funcionário está demitido no sistema mas
+    // a planilha mostra situação ativa de novo, limpa a demissão (reativação).
+    if (u.situacao === SITUACAO_DEMITIDO) {
+      if (u.dataDemissao && (existente.data_demissao || '') !== u.dataDemissao) diffs.push('demissao')
+    } else if (existente.data_demissao) {
+      diffs.push('reativacao')
+    }
     if (u.cpf && soDigitos(existente.cpf) !== u.cpf) diffs.push('cpf')
 
     return {
@@ -158,6 +116,7 @@ function construirLinhas(excelRows, funcionarios, empresas, cargos) {
       nomeAtual: existente.nome_funcionario,
       cargoAtualNome: existente.cargo_nome,
       situacaoAtual: existente.situacao_funcionario,
+      dataDemissaoAtual: existente.data_demissao,
       status: diffs.length > 0 ? 'atualizar' : 'ok',
       diffs,
     }
@@ -187,13 +146,10 @@ const STATUS_INFO = {
   empresa_nao_encontrada: { label: 'Empresa não cadastrada', cls: 'bg-red-50 text-red-700 border-red-200', icon: AlertTriangle },
 }
 
-const DIFF_LABEL = { nome: 'nome', cargo: 'cargo', situacao: 'situação', admissao: 'admissão', reativacao: 'reativação', cpf: 'cpf' }
+const DIFF_LABEL = { nome: 'nome', cargo: 'cargo', situacao: 'situação', admissao: 'admissão', demissao: 'demissão', reativacao: 'reativação', cpf: 'cpf' }
 
 export default function ImportarFuncionariosModal({ funcionarios, empresas, cargos, onClose, onImported }) {
   const fileRef = useRef(null)
-  // 'cadastro' = fluxo original (cria/atualiza cadastro + ausentes vira demitido); 'demissoes' =
-  // outro relatório do ERP, só atualiza situação+data de demissão de quem já está cadastrado.
-  const [modo, setModo] = useState('cadastro')
   const [arrastando, setArrastando] = useState(false)
   const [etapa, setEtapa] = useState('selecao') // selecao | preview | importando | resultado
   const [erroArquivo, setErroArquivo] = useState(null)
@@ -208,16 +164,8 @@ export default function ImportarFuncionariosModal({ funcionarios, empresas, carg
   const [filtroStatus, setFiltroStatus] = useState('')
   const [somentePendentes, setSomentePendentes] = useState(false)
 
-  // Estado só do modo "Atualizar Demissões" — mantido separado do modo Cadastro (linhas/
-  // selecionados acima) pra trocar de modo sem misturar resultado de uma planilha com a outra.
-  const [linhasDem, setLinhasDem] = useState([])
-  const [selecionadosDem, setSelecionadosDem] = useState(new Set())
-  const [filtroTextoDem, setFiltroTextoDem] = useState('')
-  const [filtroStatusDem, setFiltroStatusDem] = useState('')
-
   const importavel = (l) => l.status !== 'empresa_nao_encontrada' && l.status !== 'ok'
   const pendente = (l) => l.status === 'cargo_nao_encontrado' && !l.cargoEscolhido
-  const importavelDem = (l) => l.status === 'demitir'
 
   const atualizarLinha = (key, campo, valor) =>
     setLinhas(prev => prev.map(l => l.key === key ? { ...l, [campo]: valor } : l))
@@ -259,30 +207,6 @@ export default function ImportarFuncionariosModal({ funcionarios, empresas, carg
     todasAusentesSelecionadas ? new Set() : new Set(ausentes.map(a => a.key))
   )
 
-  const linhasDemFiltradas = useMemo(() => {
-    const q = filtroTextoDem.trim().toLowerCase()
-    return linhasDem.filter(l => {
-      if (filtroStatusDem && l.status !== filtroStatusDem) return false
-      if (!q) return true
-      return `${l.empresaNome || ''} ${l.codigo} ${l.nome}`.toLowerCase().includes(q)
-    })
-  }, [linhasDem, filtroTextoDem, filtroStatusDem])
-
-  const toggleSelecionadoDem = (key) => setSelecionadosDem(prev => {
-    const next = new Set(prev)
-    next.has(key) ? next.delete(key) : next.add(key)
-    return next
-  })
-  const todasFiltradasSelecionadasDem = linhasDemFiltradas.filter(importavelDem).length > 0 &&
-    linhasDemFiltradas.filter(importavelDem).every(l => selecionadosDem.has(l.key))
-  const toggleSelecionarTodasFiltradasDem = () => setSelecionadosDem(prev => {
-    const next = new Set(prev)
-    const alvo = linhasDemFiltradas.filter(importavelDem)
-    if (todasFiltradasSelecionadasDem) alvo.forEach(l => next.delete(l.key))
-    else alvo.forEach(l => next.add(l.key))
-    return next
-  })
-
   const processarArquivo = (file) => {
     if (!file) return
     setErroArquivo(null)
@@ -299,25 +223,6 @@ export default function ImportarFuncionariosModal({ funcionarios, empresas, carg
           return
         }
         const cabecalho = Object.keys(raw[0])
-
-        if (modo === 'demissoes') {
-          const faltandoDem = [COL_DEM_CNPJ, COL_DEM_CODIGO, COL_DEM_NOME, COL_DEM_DATA, COL_DEM_SITUACAO].filter(c => !cabecalho.includes(c))
-          if (faltandoDem.length > 0) {
-            setErroArquivo(`Colunas não encontradas no arquivo:\n${faltandoDem.join(', ')}`)
-            return
-          }
-          const construidasDem = construirLinhasDemissao(raw, funcionarios, empresas)
-          if (construidasDem.length === 0) {
-            setErroArquivo('Nenhuma combinação válida de empresa + código de funcionário encontrada no arquivo.')
-            return
-          }
-          setLinhasDem(construidasDem)
-          setSelecionadosDem(new Set())
-          setFiltroTextoDem('')
-          setFiltroStatusDem('')
-          setEtapa('preview')
-          return
-        }
 
         const faltando = [COL_CNPJ, COL_CODIGO, COL_NOME, COL_CARGO].filter(c => !cabecalho.includes(c))
         if (faltando.length > 0) {
@@ -362,37 +267,6 @@ export default function ImportarFuncionariosModal({ funcionarios, empresas, carg
     return acc
   }, {})
 
-  const linhasDemSelecionadas = linhasDem.filter(l => selecionadosDem.has(l.key))
-  const contagensDem = linhasDem.reduce((acc, l) => {
-    acc[l.status] = (acc[l.status] || 0) + 1
-    return acc
-  }, {})
-
-  const handleImportarDemissoes = async () => {
-    setEtapa('importando')
-    let demitidos = 0
-    const erros = []
-    for (const l of linhasDemSelecionadas) {
-      try {
-        await apiService.updateFuncionario(l.funcionarioId, {
-          situacao_funcionario: SITUACAO_DEMITIDO,
-          data_demissao: l.dataDemissao,
-          ativo: false,
-        })
-        demitidos++
-      } catch (err) {
-        erros.push(`${l.nome} (código ${l.codigo}): ${err.message || String(err)}`)
-      }
-    }
-    if (demitidos > 0) onImported?.()
-    if (erros.length === 0) {
-      onClose?.()
-      return
-    }
-    setResultado({ atualizados: 0, criados: 0, demitidos, pendentesIgnorados: 0, erros })
-    setEtapa('resultado')
-  }
-
   const handleImportar = async () => {
     setEtapa('importando')
     let atualizados = 0
@@ -422,7 +296,7 @@ export default function ImportarFuncionariosModal({ funcionarios, empresas, carg
             departamento_ids: cargoObj?.departamento_ids || [],
             setor_ids: cargoObj?.setor_ids || [],
             data_admissao: l.dataAdmissao,
-            data_demissao: null,
+            data_demissao: l.situacao === SITUACAO_DEMITIDO ? (l.dataDemissao || null) : null,
             situacao_funcionario: l.situacao || null,
             recebe_comissao_ferias: false,
             politica_id: politica?.id || null,
@@ -435,7 +309,7 @@ export default function ImportarFuncionariosModal({ funcionarios, empresas, carg
             comissao_total: politica?.comissao_total ?? null,
             comissao_valor: politica?.comissao_valor ?? null,
             cpf: l.cpf || null,
-            ativo: true,
+            ativo: l.situacao !== SITUACAO_DEMITIDO,
           })
           criados++
         } else {
@@ -460,8 +334,12 @@ export default function ImportarFuncionariosModal({ funcionarios, empresas, carg
             payload.comissao_total = politica?.comissao_total ?? null
             payload.comissao_valor = politica?.comissao_valor ?? null
           }
-          if (diffs.includes('situacao')) payload.situacao_funcionario = l.situacao || null
+          if (diffs.includes('situacao')) {
+            payload.situacao_funcionario = l.situacao || null
+            if (l.situacao === SITUACAO_DEMITIDO) payload.ativo = false
+          }
           if (diffs.includes('admissao')) payload.data_admissao = l.dataAdmissao
+          if (diffs.includes('demissao')) { payload.data_demissao = l.dataDemissao; payload.ativo = false }
           if (diffs.includes('reativacao')) { payload.data_demissao = null; payload.ativo = true }
           if (diffs.includes('cpf')) payload.cpf = l.cpf
           if (Object.keys(payload).length > 0) {
@@ -508,13 +386,9 @@ export default function ImportarFuncionariosModal({ funcionarios, empresas, carg
           <div className="flex items-center gap-3">
             <div className="p-2 bg-blue-100 rounded-lg"><FileSpreadsheet className="h-5 w-5 text-blue-600" /></div>
             <div>
-              <h2 className="text-sm font-bold text-slate-900">
-                {modo === 'demissoes' ? 'Atualizar Demissões via Excel' : 'Importar Funcionários via Excel'}
-              </h2>
+              <h2 className="text-sm font-bold text-slate-900">Importar Funcionários via Excel</h2>
               <p className="text-[11px] text-slate-500">
-                {modo === 'demissoes'
-                  ? 'Casa Empresa + Código do Funcionário da planilha de demitidos e atualiza situação + data de demissão de quem já está cadastrado.'
-                  : 'Compara CNPJ + Código do Funcionário da planilha com o cadastro atual e resolve as diferenças.'}
+                Compara CNPJ + Código do Funcionário da planilha com o cadastro atual, resolve diferenças de cadastro e já marca quem foi desligado (situação demitido) no mesmo arquivo.
               </p>
             </div>
           </div>
@@ -523,26 +397,6 @@ export default function ImportarFuncionariosModal({ funcionarios, empresas, carg
 
         {/* Corpo */}
         <div className="flex-1 overflow-y-auto p-5 space-y-4">
-
-          {/* Escolha do modelo de planilha — só antes de escolher o arquivo. */}
-          {etapa === 'selecao' && (
-            <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-lg w-fit">
-              <button
-                type="button"
-                onClick={() => { setModo('cadastro'); setErroArquivo(null) }}
-                className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${modo === 'cadastro' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-              >
-                Atualizar Cadastro
-              </button>
-              <button
-                type="button"
-                onClick={() => { setModo('demissoes'); setErroArquivo(null) }}
-                className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${modo === 'demissoes' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-              >
-                Atualizar Demissões
-              </button>
-            </div>
-          )}
 
           {/* ── ETAPA: seleção ── */}
           {etapa === 'selecao' && (
@@ -570,16 +424,20 @@ export default function ImportarFuncionariosModal({ funcionarios, empresas, carg
               <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
                 <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-2">Colunas obrigatórias (export do ERP)</p>
                 <div className="flex flex-wrap gap-1.5">
-                  {(modo === 'demissoes' ? [COL_DEM_CNPJ, COL_DEM_CODIGO, COL_DEM_NOME, COL_DEM_DATA, COL_DEM_SITUACAO] : [COL_CNPJ, COL_CODIGO, COL_NOME, COL_CARGO]).map(c => (
+                  {[COL_CNPJ, COL_CODIGO, COL_NOME, COL_CARGO].map(c => (
                     <span key={c} className="px-2 py-0.5 bg-white border border-slate-200 rounded text-[10px] font-mono text-slate-600">{c}</span>
                   ))}
+                </div>
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mt-3 mb-2">Coluna opcional (data de demissão)</p>
+                <div className="flex flex-wrap gap-1.5">
+                  <span className="px-2 py-0.5 bg-white border border-slate-200 rounded text-[10px] font-mono text-slate-600">{COL_DATA_DEMISSAO}</span>
                 </div>
               </div>
             </>
           )}
 
-          {/* ── ETAPA: preview (Cadastro) ── */}
-          {etapa === 'preview' && modo === 'cadastro' && (
+          {/* ── ETAPA: preview ── */}
+          {etapa === 'preview' && (
             <>
               <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg p-3">
                 <CheckCircle2 className="h-4 w-4 text-blue-500 shrink-0" />
@@ -678,6 +536,7 @@ export default function ImportarFuncionariosModal({ funcionarios, empresas, carg
                                 muda: {l.diffs.map(d => DIFF_LABEL[d]).join(', ')}
                                 {l.diffs.includes('cargo') && ` (${l.cargoAtualNome || '—'} → ${l.cargoNome || '—'})`}
                                 {l.diffs.includes('situacao') && ` · situação: ${situacaoLabel(l.situacaoAtual)} → ${situacaoLabel(l.situacao)}`}
+                                {l.diffs.includes('demissao') && ` · demissão: ${l.dataDemissaoAtual || '—'} → ${l.dataDemissao}`}
                               </div>
                             )}
                           </td>
@@ -783,109 +642,11 @@ export default function ImportarFuncionariosModal({ funcionarios, empresas, carg
             </>
           )}
 
-          {/* ── ETAPA: preview (Demissões) ── */}
-          {etapa === 'preview' && modo === 'demissoes' && (
-            <>
-              <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg p-3">
-                <CheckCircle2 className="h-4 w-4 text-blue-500 shrink-0" />
-                <p className="text-xs text-blue-700"><strong>{nomeArquivo}</strong> — {linhasDem.length} combinação(ões) de empresa + código encontradas</p>
-              </div>
-
-              <div className="flex flex-wrap gap-2">
-                {Object.entries(STATUS_INFO_DEM).map(([key, info]) => contagensDem[key] ? (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => setFiltroStatusDem(prev => prev === key ? '' : key)}
-                    className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold border transition-shadow ${info.cls} ${filtroStatusDem === key ? 'ring-2 ring-offset-1 ring-blue-400' : ''}`}
-                  >
-                    <info.icon className="h-3 w-3" /> {contagensDem[key]} {info.label.toLowerCase()}
-                  </button>
-                ) : null)}
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="relative flex-1 min-w-[220px]">
-                  <Search className="h-3.5 w-3.5 text-slate-300 absolute left-2.5 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="text"
-                    value={filtroTextoDem}
-                    onChange={e => setFiltroTextoDem(e.target.value)}
-                    placeholder="Filtrar por empresa, código ou nome..."
-                    className="w-full text-xs pl-8 pr-2 py-2 border border-slate-200 rounded-md bg-white text-slate-700 placeholder-slate-300 focus:outline-none focus:border-blue-400"
-                  />
-                </div>
-                {filtroStatusDem && (
-                  <button onClick={() => setFiltroStatusDem('')} className="flex items-center gap-1 text-[11px] font-semibold text-blue-600 hover:text-blue-800">
-                    <X className="h-3 w-3" /> Limpar filtro de status
-                  </button>
-                )}
-                <span className="text-[11px] font-semibold text-slate-400 ml-auto whitespace-nowrap">
-                  {selecionadosDem.size} de {linhasDem.filter(importavelDem).length} selecionado(s)
-                </span>
-              </div>
-
-              <div className="overflow-x-auto rounded-lg border border-slate-200">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[10px] font-bold uppercase tracking-wide">
-                      <th className="p-2 w-8">
-                        <button type="button" onClick={toggleSelecionarTodasFiltradasDem} className="flex items-center text-slate-400 hover:text-blue-600" title="Selecionar/desmarcar todos os filtrados">
-                          {todasFiltradasSelecionadasDem ? <CheckSquare className="h-3.5 w-3.5 text-blue-600" /> : <Square className="h-3.5 w-3.5" />}
-                        </button>
-                      </th>
-                      <th className="p-2 whitespace-nowrap">Empresa</th>
-                      <th className="p-2 whitespace-nowrap">Código</th>
-                      <th className="p-2 whitespace-nowrap">Funcionário</th>
-                      <th className="p-2 whitespace-nowrap">Data de Demissão (planilha)</th>
-                      <th className="p-2 whitespace-nowrap">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {linhasDemFiltradas.length === 0 ? (
-                      <tr><td colSpan={6} className="p-6 text-center text-xs text-slate-400">Nenhuma linha encontrada para o filtro aplicado.</td></tr>
-                    ) : linhasDemFiltradas.map(l => {
-                      const info = STATUS_INFO_DEM[l.status]
-                      const sel = selecionadosDem.has(l.key)
-                      return (
-                        <tr key={l.key} className={`hover:bg-slate-50/60 align-top ${!importavelDem(l) ? 'opacity-50' : ''}`}>
-                          <td className="p-2">
-                            {importavelDem(l) && (
-                              <button type="button" onClick={() => toggleSelecionadoDem(l.key)} className="flex items-center">
-                                {sel ? <CheckSquare className="h-3.5 w-3.5 text-blue-600" /> : <Square className="h-3.5 w-3.5 text-slate-300" />}
-                              </button>
-                            )}
-                          </td>
-                          <td className="p-2 text-[11px] text-slate-700 whitespace-nowrap">{l.empresaNome || <span className="text-red-500 font-mono">{l.cnpj}</span>}</td>
-                          <td className="p-2 text-[11px] font-mono text-slate-500">{l.codigo}</td>
-                          <td className="p-2 text-[11px] font-semibold text-slate-800">
-                            {l.nomeAtual || l.nome}
-                            {l.status === 'demitir' && l.dataDemissaoAtual && (
-                              <div className="text-[10px] font-normal text-amber-600 mt-0.5">
-                                situação atual: {situacaoLabel(l.situacaoAtual)} · demissão atual: {l.dataDemissaoAtual}
-                              </div>
-                            )}
-                          </td>
-                          <td className="p-2 text-[11px] text-slate-600 whitespace-nowrap font-mono">{l.dataDemissao || '—'}</td>
-                          <td className="p-2">
-                            <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold border whitespace-nowrap ${info.cls}`}>
-                              <info.icon className="h-3 w-3" /> {info.label}
-                            </span>
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
-
           {/* ── ETAPA: importando ── */}
           {etapa === 'importando' && (
             <div className="flex flex-col items-center justify-center py-16 gap-4">
               <Loader2 className="h-10 w-10 text-blue-500 animate-spin" />
-              <p className="text-sm font-semibold text-slate-700">{modo === 'demissoes' ? 'Atualizando demissões...' : 'Importando funcionários...'}</p>
+              <p className="text-sm font-semibold text-slate-700">Importando funcionários...</p>
               <p className="text-xs text-slate-400">Não feche esta janela.</p>
             </div>
           )}
@@ -929,7 +690,7 @@ export default function ImportarFuncionariosModal({ funcionarios, empresas, carg
           {etapa === 'selecao' && (
             <button onClick={onClose} className="px-4 py-2 rounded-md text-xs font-semibold text-slate-600 hover:bg-slate-200/60 transition-colors">Cancelar</button>
           )}
-          {etapa === 'preview' && modo === 'cadastro' && (
+          {etapa === 'preview' && (
             <>
               <button onClick={() => { setEtapa('selecao'); setLinhas([]); setAusentes([]); setSelecionados(new Set()); setSelecionadosAusentes(new Set()) }} className="px-4 py-2 rounded-md text-xs font-semibold text-slate-600 hover:bg-slate-200/60 transition-colors">Voltar</button>
               {pendentes > 0 && (
@@ -944,21 +705,6 @@ export default function ImportarFuncionariosModal({ funcionarios, empresas, carg
                 className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-semibold shadow-sm transition-colors ${(prontasParaImportar === 0 && ausentesSelecionados.length === 0) ? 'bg-slate-200 text-slate-400 cursor-not-allowed' : 'text-white bg-blue-600 hover:bg-blue-700'}`}
               >
                 Importar {(prontasParaImportar + ausentesSelecionados.length) > 0 ? `(${prontasParaImportar + ausentesSelecionados.length})` : ''} <ChevronRight className="h-3.5 w-3.5" />
-              </button>
-            </>
-          )}
-          {etapa === 'preview' && modo === 'demissoes' && (
-            <>
-              <button onClick={() => { setEtapa('selecao'); setLinhasDem([]); setSelecionadosDem(new Set()) }} className="px-4 py-2 rounded-md text-xs font-semibold text-slate-600 hover:bg-slate-200/60 transition-colors">Voltar</button>
-              {linhasDemSelecionadas.length === 0 && (
-                <span className="text-[11px] text-slate-400 font-semibold">Selecione ao menos um item pra atualizar</span>
-              )}
-              <button
-                onClick={handleImportarDemissoes}
-                disabled={linhasDemSelecionadas.length === 0}
-                className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-semibold shadow-sm transition-colors ${linhasDemSelecionadas.length === 0 ? 'bg-slate-200 text-slate-400 cursor-not-allowed' : 'text-white bg-blue-600 hover:bg-blue-700'}`}
-              >
-                Atualizar {linhasDemSelecionadas.length > 0 ? `(${linhasDemSelecionadas.length})` : ''} <ChevronRight className="h-3.5 w-3.5" />
               </button>
             </>
           )}

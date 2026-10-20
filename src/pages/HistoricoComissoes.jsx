@@ -4,7 +4,7 @@ import { Search, Loader2, AlertTriangle, ChevronDown, ChevronLeft, ChevronRight,
 import { apiService } from '../services/api'
 import { passaEscopoComissao, setorSoVisualizacao } from '../utils/permissoesComissao'
 import { useAuth } from '../context/AuthContext'
-import { fmtBRL, fmtPct, fmtDiaMes, TIPOS_META_LABEL, CAMPO_META_LABEL, faixasDaRegra, ROTULO_ACAO_HISTORICO } from '../utils/comissoesFormat'
+import { fmtBRL, fmtPct, fmtDiaMes, TIPOS_META_LABEL, CAMPO_META_LABEL, faixasDaRegra, ROTULO_ACAO_HISTORICO, codigoPolitica, compararCodigoPolitica, comissaoComCodigo } from '../utils/comissoesFormat'
 import { gerarPdfComissoes, paraNomeArquivo } from '../utils/comissoesPdf'
 import { AGRUPAMENTOS_COMISSAO, funcionarioAtivoComissao, resolvePoliticas, politicaConfigurada } from '../utils/comissoesElegibilidade'
 
@@ -545,7 +545,9 @@ export default function HistoricoComissoes() {
     const escopoSetor = comissaoEscopoEfetivo?.setor
     const lotePermitido = (g) => !escopoSetor || escopoSetor.modo !== 'INDIVIDUAL' || !g.lote?.setor_id || escopoSetor.valores.has(g.lote.setor_id)
     const comLote = [...porLote.values()].filter(lotePermitido).map(g => {
-      const funcionarios = [...g.funcionariosMap.entries()].map(([funcionario_id, registros]) => {
+      const funcionarios = [...g.funcionariosMap.entries()].map(([funcionario_id, registrosLote]) => {
+        const registros = [...registrosLote].sort((a, b) => compararCodigoPolitica(a.politica, b.politica)
+          || (a.periodo_inicio || '').localeCompare(b.periodo_inicio || ''))
         const base = registros[0]
         return {
           funcionario_id,
@@ -989,6 +991,7 @@ export default function HistoricoComissoes() {
       const registros = resultados
         .filter(r => r.lote_id === grupo.loteId && ids.has(r.funcionario_id))
         .sort((a, b) => (a.funcionarioNome || '').localeCompare(b.funcionarioNome || '', 'pt-BR')
+          || compararCodigoPolitica(a.politica, b.politica)
           || (a.periodo_inicio || '').localeCompare(b.periodo_inicio || ''))
       return { grupo, registros }
     }).filter(b => b.registros.length > 0)
@@ -1033,7 +1036,7 @@ export default function HistoricoComissoes() {
                   linhas: linhas.map(r => {
                     const baseCalculo = r.politica?.base_calculo
                     return {
-                      comissao: r.comissaoDescricao,
+                      comissao: comissaoComCodigo(r.politica, r.comissaoDescricao),
                       tipo: tipoComissaoPorBase(baseCalculo),
                       periodo: r.periodo_inicio && r.periodo_fim ? `${fmtDiaMes(r.periodo_inicio)} a ${fmtDiaMes(r.periodo_fim)}` : '',
                       detalhes: (Array.isArray(r.detalhe_empresas) ? r.detalhe_empresas : [])
@@ -1415,6 +1418,7 @@ export default function HistoricoComissoes() {
                         )}
                       </td>
                       <td className="px-3 py-1.5 whitespace-nowrap">
+                        {codigoPolitica(r.politica) && <span className="font-mono font-semibold text-slate-400 mr-1.5">{codigoPolitica(r.politica)}</span>}
                         {r.comissaoDescricao}
                         {r.politica?.usa_faixa === 'SIM' && r.politica.regra_comissao?.id && (
                           <button type="button"

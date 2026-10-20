@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { Plus, X, AlertTriangle, Percent, Trash2, Loader2 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
-import PermissionActionButtons from '../components/PermissionActionButtons'
+import AcoesDropdown from '../components/AcoesDropdown'
 import { apiService } from '../services/api'
 
 const OPERADORES = [
@@ -86,6 +86,7 @@ export default function RegrasFaixas() {
 
   const { hasActionOrDefault } = useAuth()
   const canEdit = hasActionOrDefault('regras-faixas', 'editar')
+  const canDelete = hasActionOrDefault('regras-faixas', 'excluir')
 
   useEffect(() => { loadData() }, [])
 
@@ -138,12 +139,14 @@ export default function RegrasFaixas() {
     setModalAberto(true)
   }
 
-  const abrirItem = (item, leitura) => {
-    setEditingId(item.id)
+  // duplicar: abre como Incluir com a configuração da regra copiada, mas sem Política — cada
+  // política tem uma regra só, então manter a mesma tiraria a política da regra original.
+  const abrirItem = (item, leitura, duplicar = false) => {
+    setEditingId(duplicar ? null : item.id)
     setSomenteLeitura(leitura)
     setForm({
       descricao: item.descricao || '', ativo: item.ativo ?? true,
-      politicaId: politicas.find(p => p.regraId === item.id)?.id || '',
+      politicaId: duplicar ? '' : (politicas.find(p => p.regraId === item.id)?.id || ''),
       tipo_faixa: item.tipo_faixa || 'VALOR',
       meta_tipo: item.meta_tipo || '',
       metaCampo: item.meta_campo || 'total',
@@ -232,12 +235,12 @@ export default function RegrasFaixas() {
         <table className="w-full text-left border-collapse">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[11px] font-semibold uppercase tracking-wider">
+              <th className="p-3 w-12 text-center">Ações</th>
               <th className="p-3">Política de Comissão</th>
               <th className="p-3">Base de Cálculo</th>
               <th className="p-3 w-28 text-center">Tipo</th>
               <th className="p-3">Faixas</th>
               <th className="p-3 w-24 text-center">Situação</th>
-              <th className="p-3 w-24 text-center">Ações</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
@@ -245,6 +248,14 @@ export default function RegrasFaixas() {
               <tr><td colSpan="6" className="p-6 text-center text-slate-400">Nenhuma regra cadastrada.</td></tr>
             ) : dados.map(item => (
               <tr key={item.id} className="hover:bg-slate-50/70 transition-colors align-top">
+                <td className="p-3 w-12 text-center">
+                  <AcoesDropdown
+                    onVer={() => abrirItem(item, true)}
+                    onEditar={canEdit ? () => abrirItem(item, false) : null}
+                    onDuplicar={canEdit ? () => abrirItem(item, false, true) : null}
+                    onExcluir={canDelete ? () => handleExcluir(item) : null}
+                  />
+                </td>
                 <td className="p-3">
                   <div className="flex items-center gap-2 font-bold text-slate-900"><Percent className="h-3.5 w-3.5 text-indigo-500 shrink-0" />{item.nome}</div>
                   {item.descricao && <div className="text-[11px] font-normal text-slate-400 mt-0.5">{item.descricao}</div>}
@@ -277,10 +288,6 @@ export default function RegrasFaixas() {
                   <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold border ${item.ativo ? 'bg-green-50 text-green-700 border-green-200' : 'bg-slate-100 text-slate-500 border-slate-200'}`}>
                     {item.ativo ? 'Ativo' : 'Inativo'}
                   </span>
-                </td>
-                <td className="p-3">
-                  <PermissionActionButtons menuPath="regras-faixas"
-                    onView={() => abrirItem(item, true)} onEdit={() => abrirItem(item, false)} onDelete={() => handleExcluir(item)} />
                 </td>
               </tr>
             ))}

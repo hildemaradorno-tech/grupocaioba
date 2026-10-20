@@ -6,7 +6,7 @@ import { apiService } from '../services/api'
 import { useAuth } from '../context/AuthContext'
 import { passaEscopoComissao, setorSoVisualizacao } from '../utils/permissoesComissao'
 import { FeriasStatusProvider, useFeriasStatus } from '../context/FeriasStatusContext'
-import { fmtBRL, fmtPct, fmtDiaMes, TIPOS_META_LABEL, CAMPO_META_LABEL, faixasDaRegra, ROTULO_ACAO_HISTORICO } from '../utils/comissoesFormat'
+import { fmtBRL, fmtPct, fmtDiaMes, TIPOS_META_LABEL, CAMPO_META_LABEL, faixasDaRegra, ROTULO_ACAO_HISTORICO, codigoPolitica, compararCodigoPolitica, comissaoComCodigo } from '../utils/comissoesFormat'
 import { gerarPdfComissoes, paraNomeArquivo } from '../utils/comissoesPdf'
 import { funcionarioAtivoComissao, resolvePoliticas, fonteDaPolitica, politicaConfigurada } from '../utils/comissoesElegibilidade'
 
@@ -172,7 +172,12 @@ function calcularComissaoSobre(c, valorBase, metaMap, baseComissaoMetaMap) {
   const percentualPorNome = tipo === '% Peças' ? c.politica.comissao_pecas
     : tipo === '% Serviços' ? c.politica.comissao_servicos
     : null
-  const percentual = percentualPorNome != null ? percentualPorNome : c.politica.comissao_total
+  // Nome da Base sem Peças/Serviços (ex: "Revisão de Entrega") e % Total vazio: usa o único
+  // percentual preenchido na política, em vez de calcular zero.
+  const percentuaisPreenchidos = [c.politica.comissao_servicos, c.politica.comissao_pecas].filter(v => v != null)
+  const percentual = percentualPorNome != null ? percentualPorNome
+    : c.politica.comissao_total != null ? c.politica.comissao_total
+    : percentuaisPreenchidos.length === 1 ? percentuaisPreenchidos[0] : null
   const valorFixo = c.politica.comissao_valor
   // R$ Valor é um multiplicador por unidade apurada (ex: R$ 0,60 por hora vendida):
   // comissão = Valor × R$ Valor. Os percentuais continuam sendo Valor × %.
@@ -1266,8 +1271,11 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
       // cabeçalho (ex: Individual/Equipe/Empresa/Prêmio) para ordenar as linhas DENTRO do
       // bloco de cada funcionário — senão, comissões com a mesma descrição (ex: "Comissão
       // s/Time Oficina") de técnicos diferentes ficavam juntas, misturando os dois.
+      // Dentro do bloco, as comissões seguem o Código da Política (cadastro da política); a
+      // ordenação do cabeçalho só desempata quem tem o mesmo código (ou nenhum).
       const comparadorSemMisturarFuncionarios = (a, b) =>
-        a.func.id !== b.func.id ? textoNome(a).localeCompare(textoNome(b), 'pt-BR') : comparador(a, b)
+        a.func.id !== b.func.id ? textoNome(a).localeCompare(textoNome(b), 'pt-BR')
+          : (compararCodigoPolitica(a.politica, b.politica) || comparador(a, b))
       return [...porEmpresa.entries()]
         .sort((a, b) => a[0].localeCompare(b[0], 'pt-BR'))
         .map(([nomeEmpresa, itensEmpresa]) => ({ nomeEmpresa, itens: itensEmpresa.sort(comparadorSemMisturarFuncionarios) }))
@@ -1444,7 +1452,7 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
                       linhas: itens.map(c => {
                         const res = valoresPorFuncionario[chaveLinha(c)]
                         return {
-                          comissao: c.politica.descricao_comissao || c.politica.nivel_calculo || '',
+                          comissao: comissaoComCodigo(c.politica, c.politica.descricao_comissao || c.politica.nivel_calculo || ''),
                           tipo: tipoComissaoPorBase(c),
                           periodo: c.segInicio && c.segFim ? `${fmtDiaMes(res?.periodoInicio || c.segInicio)} a ${fmtDiaMes(res?.periodoFim || c.segFim)}` : '',
                           detalhes: c.politica.detalhar_por_empresa
@@ -1929,6 +1937,7 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
                                     )}
                                   </td>
                                   <td className="px-3 py-1.5 whitespace-nowrap">
+                                    {codigoPolitica(c.politica) && <span className="font-mono font-semibold text-slate-400 mr-1.5">{codigoPolitica(c.politica)}</span>}
                                     {c.politica.descricao_comissao || c.politica.nivel_calculo}
                                     {c.politica.usa_faixa === 'SIM' && c.politica.regra_comissao?.id ? (
                                       <button type="button"

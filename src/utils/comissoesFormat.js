@@ -15,6 +15,22 @@ export const ROTULO_ACAO_HISTORICO = {
   REPROCESSAMENTO_SALVO: 'Correção salva — conferência do DP reaberta',
 }
 
+// Código da Política de Comissão (cadastro da política) — ordena as comissões nas telas de
+// Comissões e Processamento: com código primeiro, em ordem numérica (2 antes de 10); sem código no fim.
+export const codigoPolitica = (politica) => (politica?.codigo_politica || '').trim()
+export const compararCodigoPolitica = (pa, pb) => {
+  const a = codigoPolitica(pa), b = codigoPolitica(pb)
+  if (a === b) return 0
+  if (!a) return 1
+  if (!b) return -1
+  return a.localeCompare(b, 'pt-BR', { numeric: true })
+}
+// Texto da comissão com o código na frente ("001 — Comissão s/..."), pro PDF.
+export const comissaoComCodigo = (politica, descricao) => {
+  const codigo = codigoPolitica(politica)
+  return codigo ? `${codigo} — ${descricao}` : descricao
+}
+
 export const TIPOS_META_LABEL = { pecas: 'Peças', mecanico: 'Serviços — Mecânico', consultor: 'Serviços — Consultor', funilaria: 'Funilaria/Pintura', terceiros: 'Terceiros' }
 export const CAMPO_META_LABEL = { pecas: ' · só Peças', servicos: ' · só Serviços' }
 

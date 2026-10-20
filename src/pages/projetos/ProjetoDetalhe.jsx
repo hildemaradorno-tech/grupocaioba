@@ -548,7 +548,10 @@ const abrirModalMover = async (tarefa) => {
                   {projeto.responsavel_nome && (
                     <>
                       {(ini || fim) && <span className="text-slate-300">·</span>}
-                      <span><span className="font-semibold text-slate-400">Resp.:</span> {projeto.responsavel_nome}</span>
+                      <span>
+                        <span className="font-semibold text-slate-400">Resp.:</span> {projeto.responsavel_nome}
+                        {projeto.responsavel2_nome && <> / {projeto.responsavel2_nome}</>}
+                      </span>
                     </>
                   )}
                   {projeto.criado_por && (

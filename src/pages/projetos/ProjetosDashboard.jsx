@@ -378,7 +378,7 @@ export default function ProjetosDashboard() {
         depto,
         projetos,
         totalTarefas: projetos.reduce((s, p) => s + (p.proj_tarefas || []).length, 0),
-        resps: [...new Set(projetos.map(p => p.responsavel_nome).filter(Boolean))],
+        resps: [...new Set(projetos.flatMap(p => [p.responsavel_nome, p.responsavel2_nome]).filter(Boolean))],
       }
     })
   })()
@@ -1331,7 +1331,11 @@ export default function ProjetosDashboard() {
                         <span className="block">{p.departamento_nome || '—'}</span>
                         {p.area_nome && <span className="block italic text-slate-400 text-[10px]">{p.area_nome}</span>}
                       </td>
-                      <td className="p-3 text-slate-600 whitespace-nowrap">{p.responsavel_nome || <span className="text-slate-300">—</span>}</td>
+                      <td className="p-3 text-slate-600 leading-tight">
+                        {p.responsavel_nome
+                          ? <><span className="block">{p.responsavel_nome}</span>{p.responsavel2_nome && <span className="block text-slate-400">{p.responsavel2_nome}</span>}</>
+                          : <span className="text-slate-300">—</span>}
+                      </td>
                       <td className="p-3 whitespace-nowrap">{(() => {
                         const ts = p.proj_tarefas
                         if (!ts || ts.length === 0) return <span className="text-slate-400">—</span>

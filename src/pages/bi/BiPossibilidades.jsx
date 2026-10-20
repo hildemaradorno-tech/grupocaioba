@@ -444,7 +444,7 @@ export default function BiPossibilidades() {
   const [valoresSlotSetorFunc, setValoresSlotSetorFunc] = useState(() => new Map())
   const [valoresSlotSetorTipo, setValoresSlotSetorTipo] = useState(() => new Map())
   // Modo Produtivo (Oficina): os mesmos valores atribuídos pelo departamento/setor do FUNCIONÁRIO.
-  const [valoresProdutivo, setValoresProdutivo] = useState(() => ({ depto: new Map(), setor: new Map(), setorFunc: new Map(), nomesSem: new Set() }))
+  const [valoresProdutivo, setValoresProdutivo] = useState(() => ({ depto: new Map(), setor: new Map(), setorFunc: new Map(), setorBox: new Map(), nomesSem: new Set() }))
   const [carregandoValores, setCarregandoValores] = useState(true)
   // Tipos de OS (como vêm do arquivo) que caíram em "Sem Departamento" em qualquer Medida com
   // Slot — mostrados no ícone de info da linha, pra não precisar investigar por fora.
@@ -471,7 +471,7 @@ export default function BiPossibilidades() {
         if (l.atualizado_em && (!maisAntiga || l.atualizado_em < maisAntiga)) maisAntiga = l.atualizado_em
       }
       const total = new Map(), porDepto = new Map(), porSetor = new Map(), porSetorFunc = new Map(), porSetorTipo = new Map(), nomes = new Set()
-      const prod = { depto: new Map(), setor: new Map(), setorFunc: new Map(), nomesSem: new Set() }
+      const prod = { depto: new Map(), setor: new Map(), setorFunc: new Map(), setorBox: new Map(), nomesSem: new Set() }
       for (const m of medidas.filter(m => m.slot_faturamento && m.ativo)) {
         const r = resolverPorDepartamento(gruposPorMedida.get(m.id) || [], m, { tiposOS, setores })
         total.set(m.slot_faturamento, r.valorTotal)
@@ -482,10 +482,11 @@ export default function BiPossibilidades() {
         for (const n of r.nomesSemDepartamento) nomes.add(n)
         const colunaProd = SLOT_PRODUTIVO[m.slot_faturamento]
         if (colunaProd) {
-          const p = resolverPorFuncionario(gruposPorMedida.get(m.id) || [], m, { funcionarios, setores, deptSemCadastro: DEPTO_OFICINA })
+          const p = resolverPorFuncionario(gruposPorMedida.get(m.id) || [], m, { funcionarios, setores, deptSemCadastro: DEPTO_OFICINA, tiposOS })
           prod.depto.set(colunaProd, p.valoresPorDepartamento)
           prod.setor.set(colunaProd, p.valoresPorSetor)
           prod.setorFunc.set(colunaProd, p.valoresPorSetorFuncionario)
+          prod.setorBox.set(colunaProd, p.valoresPorSetorBox)
           for (const n of p.nomesSemDepartamento) prod.nomesSem.add(n)
         }
       }
@@ -653,7 +654,7 @@ export default function BiPossibilidades() {
         const fator = fracaoMetaPeriodo(r.empresa_id, Number(r.ano), Number(r.mes))
         return {
           departamento_id: r.departamento_id, setor_id: r.setor_id,
-          colaborador_nome: r.colaborador_nome || '', tipo: r.tipo,
+          colaborador_nome: r.colaborador_nome || '', tipo: r.tipo, box_nome: r.box_nome || '',
           ehMesRef: Number(r.ano) === anoRef && Number(r.mes) === mesRef,
           metaMesTotal, metaMesServicos, metaMesPecas: metaMesTotal - metaMesServicos,
           metaTotal: metaMesTotal * fator, metaServicos: metaMesServicos * fator, metaPecas: (metaMesTotal - metaMesServicos) * fator,
@@ -712,7 +713,8 @@ export default function BiPossibilidades() {
     margemPecas: valorSlotSetor('margemPecas', s.id),
     margemServicos: valorSlotSetor('margemServicos', s.id),
     pass: valorSlotSetor('pass', s.id),
-  })).filter(s => s.realTotal || s.margemPecas || s.margemServicos || s.pass)
+  // Na aba Serviços também aparecem os setores da Oficina que só têm meta (ex.: Funilaria sem venda no período).
+  })).filter(s => s.realTotal || s.margemPecas || s.margemServicos || s.pass || (visao === 'oficina' && s.metaTotal))
 
   // Total geral — somado direto de todas as Metas filtradas (não das linhas de departamento
   // acima) e do valor TOTAL de cada Medida (sem corte), que é exato mesmo pra Contagem Distinta
@@ -803,18 +805,21 @@ export default function BiPossibilidades() {
   const linhasProdutivo = (setorId) => {
     const porNome = new Map()
     const pegar = (chave, nome) => {
-      if (!porNome.has(chave)) porNome.set(chave, { funcKey: chave, label: nome, metaPecas: 0, metaServicos: 0, metaTotal: 0, metaMesPecas: 0, metaMesTotal: 0, realPecas: 0, realServicos: 0, margemPecas: 0, margemServicos: 0, pass: 0 })
+      if (!porNome.has(chave)) porNome.set(chave, { funcKey: chave, label: nome, box: '', metaPecas: 0, metaServicos: 0, metaTotal: 0, metaMesPecas: 0, metaMesTotal: 0, realPecas: 0, realServicos: 0, margemPecas: 0, margemServicos: 0, pass: 0 })
       return porNome.get(chave)
     }
     for (const [slot, campo] of [['realPecas', 'realPecas'], ['realServicos', 'realServicos'], ['margemPecas', 'margemPecas'], ['margemServicos', 'margemServicos'], ['pass', 'pass']]) {
       for (const v of ((usarProdutivo ? valoresProdutivo.setorFunc : valoresSlotSetorFunc).get(slot)?.values() || [])) {
         if (v.setorId !== setorId) continue
-        pegar(normalizaBusca(v.nome), v.nome)[campo] += v.valor
+        const l = pegar(normalizaBusca(v.nome), v.nome)
+        l[campo] += v.valor
+        if (v.box && !l.box) l.box = v.box
       }
     }
     for (const m of metasConsideradas) {
       if (m.setor_id !== setorId || !m.colaborador_nome) continue
       const l = pegar(normalizaBusca(m.colaborador_nome), m.colaborador_nome)
+      if (!l.box && m.box_nome) l.box = m.box_nome
       l.metaPecas += m.metaPecas; l.metaServicos += m.metaServicos; l.metaTotal += m.metaTotal
       if (m.ehMesRef) { l.metaMesPecas += m.metaMesPecas; l.metaMesTotal += m.metaMesTotal }
     }
@@ -852,6 +857,32 @@ export default function BiPossibilidades() {
       .sort((a, b) => b.realTotal - a.realTotal || a.label.localeCompare(b.label, 'pt-BR'))
   }
   const abrirPorTipo = ehOficina && !usarProdutivo && aberturaConsultor === 'tipoOs'
+
+  // Boxes abaixo do setor (aba Serviços, modo Oficina): valores pelo box do cadastro do mecânico
+  // (somados direto dos lançamentos — Passagens sem contar 2x a mesma OS) + metas dos mecânicos do box.
+  const linhasBox = (setorId) => {
+    const porBox = new Map()
+    const pegar = (nome) => {
+      const chave = normalizaBusca(nome || '(Sem box)')
+      if (!porBox.has(chave)) porBox.set(chave, { boxKey: chave, label: nome || '(Sem box)', metaPecas: 0, metaServicos: 0, metaTotal: 0, metaMesPecas: 0, metaMesTotal: 0, realPecas: 0, realServicos: 0, margemPecas: 0, margemServicos: 0, pass: 0 })
+      return porBox.get(chave)
+    }
+    for (const slot of ['realPecas', 'realServicos', 'margemPecas', 'margemServicos', 'pass']) {
+      for (const v of (valoresProdutivo.setorBox.get(slot)?.values() || [])) {
+        if (v.setorId === setorId) pegar(v.nome)[slot] += v.valor
+      }
+    }
+    for (const m of metasConsideradas) {
+      if (m.setor_id !== setorId) continue
+      const l = pegar(m.box_nome || '(Sem box)')
+      l.metaPecas += m.metaPecas; l.metaServicos += m.metaServicos; l.metaTotal += m.metaTotal
+      if (m.ehMesRef) { l.metaMesPecas += m.metaMesPecas; l.metaMesTotal += m.metaMesTotal }
+    }
+    return [...porBox.values()]
+      .map(l => ({ ...l, realTotal: l.realPecas + l.realServicos }))
+      .filter(l => l.realTotal || l.margemPecas || l.margemServicos || l.pass || l.metaTotal)
+      .sort((a, b) => b.realTotal - a.realTotal || a.label.localeCompare(b.label, 'pt-BR'))
+  }
 
   const linhasTabela = ehBalcao ? linhasDepartamento.filter(d => d.deptId === DEPTO_BALCAO_PECAS)
     : ehOficina ? linhasDepartamento.filter(d => d.deptId === DEPTO_OFICINA)
@@ -1049,7 +1080,24 @@ export default function BiPossibilidades() {
                             carregandoMargemPecas={carregandoSlot('margemPecas')} carregandoMargemServicos={carregandoSlot('margemServicos')}
                             carregandoPass={carregandoSlot('pass')} />
                         ))}
-                        {oficinaComTabela && setoresExpandidos.has(setor.setorId) && !abrirPorTipo && linhasProdutivo(setor.setorId).map(func => (
+                        {oficinaComTabela && setoresExpandidos.has(setor.setorId) && usarProdutivo && (() => {
+                          const funcs = linhasProdutivo(setor.setorId)
+                          return linhasBox(setor.setorId).map(box => (
+                            <React.Fragment key={box.boxKey}>
+                              <LinhaDepto dias={diasInfo} label={<span className="font-semibold text-slate-800">{box.label}</span>} indent={2} dept={box} semMeta={!box.metaTotal}
+                                carregandoRealPecas={carregandoSlot('realPecas')} carregandoRealServicos={carregandoSlot('realServicos')}
+                                carregandoMargemPecas={carregandoSlot('margemPecas')} carregandoMargemServicos={carregandoSlot('margemServicos')}
+                                carregandoPass={carregandoSlot('pass')} />
+                              {funcs.filter(fn => normalizaBusca(fn.box || '(Sem box)') === box.boxKey).map(func => (
+                                <LinhaDepto dias={diasInfo} key={func.funcKey} label={func.label} indent={3} dept={func} semMeta={!func.metaTotal}
+                                  carregandoRealPecas={carregandoSlot('realPecas')} carregandoRealServicos={carregandoSlot('realServicos')}
+                                  carregandoMargemPecas={carregandoSlot('margemPecas')} carregandoMargemServicos={carregandoSlot('margemServicos')}
+                                  carregandoPass={carregandoSlot('pass')} />
+                              ))}
+                            </React.Fragment>
+                          ))
+                        })()}
+                        {oficinaComTabela && setoresExpandidos.has(setor.setorId) && !usarProdutivo && !abrirPorTipo && linhasProdutivo(setor.setorId).map(func => (
                           <LinhaDepto dias={diasInfo} key={func.funcKey} label={func.label} indent={2} dept={func} semMeta={!func.metaTotal}
                             carregandoRealPecas={carregandoSlot('realPecas')} carregandoRealServicos={carregandoSlot('realServicos')}
                             carregandoMargemPecas={carregandoSlot('margemPecas')} carregandoMargemServicos={carregandoSlot('margemServicos')}

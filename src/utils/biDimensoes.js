@@ -31,7 +31,9 @@ const acumularBucket = (mapa, chave, g) => {
 // funcionário não encontrado) cai em '__sem_departamento__'.
 // deptSemCadastro: departamento pra quem não casar com o cadastro (ex.: ROF042 é todo da Oficina —
 // "Produtivo Não Associado" é serviço de oficina sem mecânico informado).
-export function resolverPorFuncionario(grupos, medida, { funcionarios, setores, deptSemCadastro = null }) {
+// Quem não casa com o cadastro (ex.: "Produtivo Não Associado") usa o setor do Tipo de OS da linha
+// (tiposOS; o ROF042 grava "I21 - I21 - FUNILARIA...", a sigla é o 1º trecho) e, sem isso, deptSemCadastro.
+export function resolverPorFuncionario(grupos, medida, { funcionarios, setores, deptSemCadastro = null, tiposOS = [] }) {
   const porNome = new Map()
   const porCodigo = new Map()
   for (const f of (funcionarios || [])) {
@@ -42,27 +44,43 @@ export function resolverPorFuncionario(grupos, medida, { funcionarios, setores, 
   }
   const setorPorId = new Map((setores || []).map(s => [s.id, s]))
   const lista = (v) => (Array.isArray(v) ? v : [])
+  const tipoPorSigla = new Map((tiposOS || []).filter(t => t.sigla).map(t => [normalizaBusca(t.sigla), t]))
+  const setorPorNome = new Map((setores || []).map(s => [normalizaBusca(s.nome_setor), s]))
+  const setorDoTipoOs = (bruto) => {
+    const sigla = normalizaBusca(String(bruto ?? '').split(' - ')[0])
+    const tipo = sigla ? tipoPorSigla.get(sigla) : null
+    return tipo ? (setorPorNome.get(normalizaBusca(tipo.setor_servico))?.id || null) : null
+  }
 
   const bucketsDepto = new Map()
   const bucketsSetor = new Map()
   const bucketsSetorFunc = new Map()
   const nomeFunc = new Map()
+  const bucketsSetorBox = new Map()
+  const nomeBox = new Map()
+  const boxFunc = new Map()
   const bucketTotal = novoBucket()
   const nomesSemDepartamento = new Set()
   for (const g of (grupos || [])) {
     somarNoBucket(bucketTotal, g)
     const func = String(g.dims?.funcionario ?? '').trim()
     const cad = porNome.get(normalizaBusca(func)) || porCodigo.get(func) || null
-    const setorId = lista(cad?.setor_ids)[0] || null
+    const setorId = lista(cad?.setor_ids)[0] || (!cad ? setorDoTipoOs(g.dims?.tipo_os) : null) || null
     const deptId = (setorId && setorPorId.get(setorId)?.departamento_id) || lista(cad?.departamento_ids)[0] || (!cad && deptSemCadastro) || '__sem_departamento__'
     if (deptId === '__sem_departamento__') nomesSemDepartamento.add(func || '(sem funcionário)')
     acumularBucket(bucketsDepto, deptId, g)
     if (setorId) {
       acumularBucket(bucketsSetor, setorId, g)
+      // Box do cadastro do funcionário (dim_funcionarios.box_nome); sem box = "(Sem box)".
+      const box = String(cad?.box_nome || '').trim() || '(Sem box)'
+      const chaveBox = `${setorId}|${normalizaBusca(box)}`
+      acumularBucket(bucketsSetorBox, chaveBox, g)
+      if (!nomeBox.has(chaveBox)) nomeBox.set(chaveBox, box)
       if (func) {
         const chave = `${setorId}|${normalizaBusca(func)}`
         acumularBucket(bucketsSetorFunc, chave, g)
         if (!nomeFunc.has(chave)) nomeFunc.set(chave, cad?.nome_funcionario || func)
+        if (!boxFunc.has(chave)) boxFunc.set(chave, box)
       }
     }
   }
@@ -74,9 +92,13 @@ export function resolverPorFuncionario(grupos, medida, { funcionarios, setores, 
   for (const [setorId, b] of bucketsSetor) valoresPorSetor.set(setorId, somaBucket(b, medida.tipo_agregacao))
   const valoresPorSetorFuncionario = new Map()
   for (const [chave, b] of bucketsSetorFunc) {
-    valoresPorSetorFuncionario.set(chave, { setorId: chave.split('|')[0], nome: nomeFunc.get(chave), valor: somaBucket(b, medida.tipo_agregacao) })
+    valoresPorSetorFuncionario.set(chave, { setorId: chave.split('|')[0], nome: nomeFunc.get(chave), box: boxFunc.get(chave), valor: somaBucket(b, medida.tipo_agregacao) })
   }
-  return { valorTotal, valoresPorDepartamento, valoresPorSetor, valoresPorSetorFuncionario, nomesSemDepartamento }
+  const valoresPorSetorBox = new Map() // 'setorId|BOX' -> { setorId, nome, valor }
+  for (const [chave, b] of bucketsSetorBox) {
+    valoresPorSetorBox.set(chave, { setorId: chave.split('|')[0], nome: nomeBox.get(chave), valor: somaBucket(b, medida.tipo_agregacao) })
+  }
+  return { valorTotal, valoresPorDepartamento, valoresPorSetor, valoresPorSetorFuncionario, valoresPorSetorBox, nomesSemDepartamento }
 }
 
 // Resolve o valor de uma Medida CORTADO por Departamento E por Setor a partir dos grupos já

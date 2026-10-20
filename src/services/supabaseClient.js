@@ -3961,7 +3961,7 @@ export const apiService = {
   getProjetosParaAta: async (filtros = {}) => {
     let q = supabase
       .from('proj_projetos')
-      .select('id, nome, status, departamento_nome, area_nome, sistema_nome, sistemas_nomes, responsavel_nome, data_inicio, data_fim_prevista, data_fim_real, criado_em, proj_tarefas(id, nome, area_nome, progresso_pct, data_inicio, data_fim, status_kanban, fase_nome, sistema_nome, responsavel_nome, etapa, proj_deliberacoes(id, data, texto))')
+      .select('id, nome, status, departamento_nome, area_nome, sistema_nome, sistemas_nomes, responsavel_nome, responsavel2_nome, data_inicio, data_fim_prevista, data_fim_real, criado_em, proj_tarefas(id, nome, area_nome, progresso_pct, data_inicio, data_fim, status_kanban, fase_nome, sistema_nome, responsavel_nome, etapa, proj_deliberacoes(id, data, texto))')
       .order('departamento_nome', { ascending: true })
     const { data, error } = await q
     if (error) throw error
@@ -4050,7 +4050,7 @@ export const apiService = {
   getProjetosParaBi: async () => {
     const { data, error } = await supabase
       .from('proj_projetos')
-      .select('id, nome, status, departamento_nome, responsavel_nome, area_nome, sistema_nome, sistemas_nomes, data_inicio, data_fim_prevista, data_fim_real, proj_tarefas(id, nome, status_kanban, data_fim, progresso_pct)')
+      .select('id, nome, status, departamento_nome, responsavel_nome, responsavel2_nome, area_nome, sistema_nome, sistemas_nomes, data_inicio, data_fim_prevista, data_fim_real, proj_tarefas(id, nome, status_kanban, data_fim, progresso_pct)')
       .order('nome', { ascending: true })
     if (error) throw error
     return data || []

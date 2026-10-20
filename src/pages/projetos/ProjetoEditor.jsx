@@ -57,7 +57,7 @@ export default function ProjetoEditor() {
   const [proj, setProj] = useState({
     nome: '', departamento_nome: '', area_nome: '',
     status: 'mapeado', ativo: true,
-    responsavel_nome: '',
+    responsavel_nome: '', responsavel2_nome: '',
     sistemas_nomes: [],
   })
   const [salvandoProj, setSalvandoProj] = useState(false)
@@ -66,6 +66,8 @@ export default function ProjetoEditor() {
   const [excluindoProj, setExcluindoProj] = useState(false)
   const [dropSistAberto, setDropSistAberto] = useState(false)
   const dropSistRef = useRef(null)
+  const [dropRespAberto, setDropRespAberto] = useState(false)
+  const dropRespRef = useRef(null)
   const nomeInputRef = useRef(null)
 
   // Tarefas
@@ -150,12 +152,11 @@ export default function ProjetoEditor() {
     init()
   }, [id])
 
-  // Fechar dropdown de sistemas ao clicar fora
+  // Fechar dropdowns ao clicar fora
   useEffect(() => {
     const handler = (e) => {
-      if (dropSistRef.current && !dropSistRef.current.contains(e.target)) {
-        setDropSistAberto(false)
-      }
+      if (dropSistRef.current && !dropSistRef.current.contains(e.target)) setDropSistAberto(false)
+      if (dropRespRef.current && !dropRespRef.current.contains(e.target)) setDropRespAberto(false)
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
@@ -196,6 +197,7 @@ export default function ProjetoEditor() {
         status: proj.status || 'planejado',
         ativo: true,
         responsavel_nome: proj.responsavel_nome || null,
+        responsavel2_nome: proj.responsavel2_nome || null,
         sistemas_nomes: proj.sistemas_nomes?.length > 0 ? proj.sistemas_nomes : [],
       }
       if (isNew) {
@@ -553,12 +555,60 @@ export default function ProjetoEditor() {
               </div>
             )}
           </div>
-          <div className="flex flex-col gap-1">
-            <Lbl>Resp.Projeto</Lbl>
-            <select name="responsavel_nome" value={proj.responsavel_nome || ''} onChange={handleProjChange} className={sel}>
-              <option value="">---</option>
-              {responsaveis.map(r => <option key={r.id} value={r.nome}>{r.nome}</option>)}
-            </select>
+          {/* Multi-select Responsáveis */}
+          <div className="md:col-span-2 lg:col-span-4 flex flex-col gap-1">
+            <Lbl>Resp. Projeto</Lbl>
+            <div ref={dropRespRef} className="relative">
+              <div
+                onClick={() => setDropRespAberto(v => !v)}
+                className="min-h-[34px] flex flex-wrap gap-1.5 items-center p-1.5 border border-slate-200 rounded-md bg-white cursor-pointer hover:border-blue-400 transition-colors"
+              >
+                {!proj.responsavel_nome && !proj.responsavel2_nome && (
+                  <span className="text-xs text-slate-400 pl-1">Selecionar responsáveis...</span>
+                )}
+                {[proj.responsavel_nome, proj.responsavel2_nome].filter(Boolean).map((nome, idx) => (
+                  <span key={idx} className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-800">
+                    {nome}
+                    <button
+                      onClick={e => {
+                        e.stopPropagation()
+                        if (idx === 0) setProj(p => ({ ...p, responsavel_nome: p.responsavel2_nome || '', responsavel2_nome: '' }))
+                        else setProj(p => ({ ...p, responsavel2_nome: '' }))
+                      }}
+                      className="hover:opacity-70 transition-opacity ml-0.5"
+                      title="Remover"
+                    >
+                      <X className="h-2.5 w-2.5" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+              {dropRespAberto && responsaveis.length > 0 && (
+                <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-md shadow-lg z-20 p-2 flex flex-wrap gap-1.5 max-h-48 overflow-y-auto">
+                  {responsaveis.map(r => {
+                    const selecionados = [proj.responsavel_nome, proj.responsavel2_nome].filter(Boolean)
+                    const ativo = selecionados.includes(r.nome)
+                    return (
+                      <button
+                        key={r.id}
+                        onClick={() => {
+                          if (ativo) {
+                            if (proj.responsavel_nome === r.nome) setProj(p => ({ ...p, responsavel_nome: p.responsavel2_nome || '', responsavel2_nome: '' }))
+                            else setProj(p => ({ ...p, responsavel2_nome: '' }))
+                          } else {
+                            if (!proj.responsavel_nome) setProj(p => ({ ...p, responsavel_nome: r.nome }))
+                            else if (!proj.responsavel2_nome) setProj(p => ({ ...p, responsavel2_nome: r.nome }))
+                          }
+                        }}
+                        className={`px-3 py-1 rounded text-[10px] font-bold transition-all hover:opacity-80 ${ativo ? 'bg-blue-600 text-white' : 'bg-blue-50 text-blue-700 border border-blue-200'}`}
+                      >
+                        {ativo ? '✓ ' : ''}{r.nome}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Multi-select Sistemas */}

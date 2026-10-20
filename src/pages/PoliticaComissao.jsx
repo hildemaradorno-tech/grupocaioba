@@ -138,6 +138,7 @@ const USA_FAIXA_OPCOES = ['NÃO', 'SIM']
 
 const FORM_VAZIO = {
   cargo_ids: [],
+  codigo_politica: '',
   descricao_comissao: '',
   // Rubrica pode variar por empresa dentro da MESMA política (ex: mesma comissão, código
   // diferente em cada loja) — chave = empresa_id do cargo (ou '' antes de marcar algum cargo /
@@ -311,10 +312,16 @@ export default function PoliticaComissao() {
   const [, setIdExcluir] = useState(null)
   const [itemVisualizado, setItemVisualizado] = useState(null)
   const [salvando, setSalvando] = useState(false)
+  // Trava imediata contra duplo clique em Salvar — o estado `salvando` só muda no próximo render,
+  // e o 2º clique gravava os cargos de novo (linha repetida = comissão paga em dobro).
+  const salvandoRef = useRef(false)
   const [form, setForm] = useSessionState('polcom_form', FORM_VAZIO)
   // cargo_id (política já existente) -> id da linha de fato_politica_comissao, capturado ao
   // abrir Editar — permite saber, ao salvar, quais linhas atualizar/criar/excluir do grupo.
   const [itensOriginais, setItensOriginais] = useState(new Map())
+  // Todas as linhas do grupo aberto em Editar — inclusive as repetidas do mesmo cargo, que
+  // itensOriginais (1 linha por cargo) não guarda; as que sobrarem são apagadas ao salvar.
+  const [idsLinhasGrupo, setIdsLinhasGrupo] = useState([])
   const { hasActionOrDefault } = useAuth()
   const canEdit = hasActionOrDefault('politica-comissao', 'editar')
   const location = useLocation()
@@ -341,6 +348,13 @@ export default function PoliticaComissao() {
   // Chaves dos seletores de Rubrica a mostrar: 1 por empresa dos cargos já marcados, ou uma
   // chave só (vazia) antes de marcar qualquer cargo — nesse caso mostra todas as rubricas.
   const chavesRubricaEmpresa = empresaIdsDosCargosSelecionados.length > 0 ? empresaIdsDosCargosSelecionados : ['']
+  const descricaoRubrica = (codigo, empresaId) => {
+    if (!codigo) return null
+    const mesmoCodigo = rubricas.filter(r => r.codigo === codigo)
+    return (mesmoCodigo.find(r => empresaId && r.empresa_ids?.includes(empresaId))
+      || mesmoCodigo.find(r => !r.empresa_ids?.length)
+      || mesmoCodigo[0])?.descricao || null
+  }
   const rubricasParaChave = (chave) => chave ? rubricasDaEmpresa(chave) : rubricas
   // Valor digitado antes de escolher os cargos (chave '') serve de ponto de partida quando só
   // há 1 empresa envolvida — evita perder o que a pessoa já tinha escolhido.
@@ -349,9 +363,9 @@ export default function PoliticaComissao() {
   const setRubricaDaChave = (chave, valor) => setForm(prev => ({ ...prev, rubricaPorEmpresa: { ...prev.rubricaPorEmpresa, [chave]: valor } }))
 
   // Filtro de texto por coluna + ordenação A-Z/Z-A clicando no cabeçalho.
-  const [colFiltro, setColFiltro] = useState({ empresa: [], cargo: [], descricao: '' })
-  const temFiltroColuna = colFiltro.empresa.length > 0 || colFiltro.cargo.length > 0 || !!colFiltro.descricao
-  const limparFiltroColuna = () => setColFiltro({ empresa: [], cargo: [], descricao: '' })
+  const [colFiltro, setColFiltro] = useState({ codigo: [], rubrica: [], empresa: [], cargo: [], descricao: '' })
+  const temFiltroColuna = colFiltro.codigo.length > 0 || colFiltro.rubrica.length > 0 || colFiltro.empresa.length > 0 || colFiltro.cargo.length > 0 || !!colFiltro.descricao
+  const limparFiltroColuna = () => setColFiltro({ codigo: [], rubrica: [], empresa: [], cargo: [], descricao: '' })
   const [ordenacao, setOrdenacao] = useState({ coluna: 'cargo', direcao: 'asc' })
   const alternarOrdenacao = (coluna) => setOrdenacao(prev => prev.coluna === coluna
     ? { coluna, direcao: prev.direcao === 'asc' ? 'desc' : 'asc' }
@@ -382,6 +396,7 @@ export default function PoliticaComissao() {
         itens,
         cargosNomes: [...new Set(itens.map(i => i.cargo_nome).filter(Boolean))],
         empresasNomes: [...new Set(itens.map(i => i.empresa_nome).filter(Boolean))],
+        codigo_politica: primeiro.codigo_politica || '',
         descricao_comissao: primeiro.descricao_comissao,
         codigo_rubrica: codigosUnicos.length === 1 ? codigosUnicos[0] : null,
         rubricasPorEmpresa,
@@ -408,9 +423,11 @@ export default function PoliticaComissao() {
     })
   }, [dados])
 
+  const SEM_RUBRICA = '__sem_rubrica__'
+  const rubricasDoGrupo = (grupo) => grupo.rubricasPorEmpresa.map(r => r.codigo || SEM_RUBRICA)
   const textoEmpresas = (grupo) => grupo.empresasNomes.join(', ')
   const textoCargo = (grupo) => grupo.cargosNomes.join(', ')
-  const textoDescricao = (grupo) => grupo.descricao_comissao || ''
+  const textoDescricao = (grupo) => `${grupo.codigo_politica || ''} ${grupo.descricao_comissao || ''}`.trim()
   const numeroServicos = (grupo) => grupo.comissao_servicos != null ? parseFloat(grupo.comissao_servicos) : null
   const numeroPecas = (grupo) => grupo.comissao_pecas != null ? parseFloat(grupo.comissao_pecas) : null
   const numeroTotal = (grupo) => grupo.comissao_total != null ? parseFloat(grupo.comissao_total) : null
@@ -420,6 +437,8 @@ export default function PoliticaComissao() {
   // mesmo padrão já usado em Cálculo de Comissões) — filtrar por Empresa só lista Cargos que
   // ainda têm política nessa empresa, e filtrar por Cargo só lista Empresas com esse cargo.
   const gruposSemFiltro = (ignorar) => grupos.filter(grupo => {
+    if (ignorar !== 'codigo' && colFiltro.codigo.length > 0 && !colFiltro.codigo.includes(grupo.codigo_politica)) return false
+    if (ignorar !== 'rubrica' && colFiltro.rubrica.length > 0 && !rubricasDoGrupo(grupo).some(c => colFiltro.rubrica.includes(c))) return false
     if (ignorar !== 'empresa' && colFiltro.empresa.length > 0 && !grupo.empresasNomes.some(n => colFiltro.empresa.includes(n))) return false
     if (ignorar !== 'cargo' && colFiltro.cargo.length > 0 && !grupo.cargosNomes.some(n => colFiltro.cargo.includes(n))) return false
     if (ignorar !== 'descricao' && colFiltro.descricao && !buscaComCoringa(textoDescricao(grupo), colFiltro.descricao)) return false
@@ -427,10 +446,23 @@ export default function PoliticaComissao() {
   })
   const empresasDisponiveis = useMemo(() =>
     [...new Set(gruposSemFiltro('empresa').flatMap(g => g.empresasNomes))].sort((a, b) => a.localeCompare(b, 'pt-BR')),
-    [grupos, colFiltro.cargo, colFiltro.descricao])
+    [grupos, colFiltro.codigo, colFiltro.rubrica, colFiltro.cargo, colFiltro.descricao])
   const cargosDisponiveis = useMemo(() =>
     [...new Set(gruposSemFiltro('cargo').flatMap(g => g.cargosNomes))].sort((a, b) => a.localeCompare(b, 'pt-BR')),
-    [grupos, colFiltro.empresa, colFiltro.descricao])
+    [grupos, colFiltro.codigo, colFiltro.rubrica, colFiltro.empresa, colFiltro.descricao])
+  const codigosDisponiveis = useMemo(() =>
+    [...new Set(gruposSemFiltro('codigo').map(g => g.codigo_politica).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR', { numeric: true })),
+    [grupos, colFiltro.rubrica, colFiltro.empresa, colFiltro.cargo, colFiltro.descricao])
+  const rubricasDisponiveis = useMemo(() => {
+    const codigos = [...new Set(gruposSemFiltro('rubrica').flatMap(rubricasDoGrupo))]
+    return codigos.sort((a, b) => (a === SEM_RUBRICA) - (b === SEM_RUBRICA) || a.localeCompare(b, 'pt-BR', { numeric: true }))
+  }, [grupos, rubricas, colFiltro.codigo, colFiltro.empresa, colFiltro.cargo, colFiltro.descricao])
+  // Rótulo "código — descrição"; o mesmo código pode ter descrições diferentes por empresa.
+  const rotuloRubrica = (codigo) => {
+    if (codigo === SEM_RUBRICA) return 'Sem rubrica'
+    const descs = [...new Set(rubricas.filter(r => r.codigo === codigo).map(r => r.descricao).filter(Boolean))]
+    return descs.length > 0 ? `${codigo} — ${descs.join(' / ')}` : codigo
+  }
   // Filtro continua batendo pelo NOME (é o que fato_politica_comissao.cargo_nome guarda) — o
   // código aqui é só pra exibir junto no rótulo da opção, buscado no cadastro de Cargos.
   // O mesmo nome de cargo pode existir em várias empresas com códigos diferentes (ex: "TECNICO
@@ -451,6 +483,8 @@ export default function PoliticaComissao() {
 
   const gruposExibidos = useMemo(() => {
     const filtrados = grupos.filter(grupo => {
+      if (colFiltro.codigo.length > 0 && !colFiltro.codigo.includes(grupo.codigo_politica)) return false
+      if (colFiltro.rubrica.length > 0 && !rubricasDoGrupo(grupo).some(c => colFiltro.rubrica.includes(c))) return false
       if (colFiltro.empresa.length > 0 && !grupo.empresasNomes.some(n => colFiltro.empresa.includes(n))) return false
       if (colFiltro.cargo.length > 0 && !grupo.cargosNomes.some(n => colFiltro.cargo.includes(n))) return false
       if (colFiltro.descricao && !buscaComCoringa(textoDescricao(grupo), colFiltro.descricao)) return false
@@ -469,7 +503,8 @@ export default function PoliticaComissao() {
     const comparadores = {
       empresa: (a, b) => dir * textoEmpresas(a).localeCompare(textoEmpresas(b), 'pt-BR'),
       cargo: (a, b) => dir * textoCargo(a).localeCompare(textoCargo(b), 'pt-BR'),
-      descricao: (a, b) => dir * textoDescricao(a).localeCompare(textoDescricao(b), 'pt-BR'),
+      descricao: (a, b) => dir * (a.descricao_comissao || '').localeCompare(b.descricao_comissao || '', 'pt-BR'),
+      codigo: (a, b) => dir * (a.codigo_politica || '').localeCompare(b.codigo_politica || '', 'pt-BR', { numeric: true }),
       servicos: comparadorNumerico(numeroServicos),
       pecas: comparadorNumerico(numeroPecas),
       total: comparadorNumerico(numeroTotal),
@@ -552,15 +587,20 @@ export default function PoliticaComissao() {
   const abrirIncluir = () => {
     setEditingId(null)
     setItensOriginais(new Map())
+    setIdsLinhasGrupo([])
     setForm({ ...FORM_VAZIO })
     setModalAberto(true)
   }
 
   const abrirEditar = (grupo) => {
     setEditingId(grupo.grupoId)
-    setItensOriginais(new Map(grupo.itens.map(i => [i.cargo_id, i.id])))
+    const primeiraPorCargo = new Map()
+    for (const i of grupo.itens) if (!primeiraPorCargo.has(i.cargo_id)) primeiraPorCargo.set(i.cargo_id, i.id)
+    setItensOriginais(primeiraPorCargo)
+    setIdsLinhasGrupo(grupo.itens.map(i => i.id))
     setForm({
-      cargo_ids: grupo.itens.map(i => i.cargo_id).filter(Boolean),
+      cargo_ids: [...new Set(grupo.itens.map(i => i.cargo_id).filter(Boolean))],
+      codigo_politica: grupo.codigo_politica || '',
       descricao_comissao: grupo.descricao_comissao || '',
       // 1 valor por empresa (chave = empresa_id, ou '' se o item não tiver empresa) — se os
       // cargos daquela empresa tiverem códigos diferentes entre si (não deveria, mas por
@@ -622,6 +662,7 @@ export default function PoliticaComissao() {
           empresa_nome: item.empresa_nome || null,
           cargo_id: item.cargo_id || null,
           cargo_nome: item.cargo_nome || null,
+          codigo_politica: null,
           descricao_comissao: item.descricao_comissao ? `${item.descricao_comissao} (Cópia)` : null,
           codigo_rubrica: item.codigo_rubrica || null,
           tipo_processo: item.tipo_processo || null,
@@ -651,7 +692,8 @@ export default function PoliticaComissao() {
 
   const handleSalvar = async (e) => {
     e.preventDefault()
-    if (salvando) return
+    if (salvandoRef.current) return
+    salvandoRef.current = true
     setSalvando(true)
     try {
       // Dedupe defensivo — cada cargo (que já carrega sua empresa) só pode entrar uma vez na
@@ -663,6 +705,7 @@ export default function PoliticaComissao() {
         ...resto,
         fonte_calculo_id: (form.fonte_calculo_id && !String(form.fonte_calculo_id).startsWith('mw:')) ? form.fonte_calculo_id : null,
         base_calculo_id: form.base_calculo_id || null,
+        codigo_politica: form.codigo_politica?.trim() || null,
         // Usa Regra = SIM: o percentual vem das faixas da Regra (sobre o valor da Base), então
         // os campos fixos ficam nulos e a Regra escolhida é gravada.
         regra_comissao_id: form.usa_faixa === 'SIM' ? (form.regra_comissao_id || null) : null,
@@ -699,7 +742,7 @@ export default function PoliticaComissao() {
           // Rascunho: sem cargo marcado, mantém só 1 linha "vazia" (cargo_id null) representando
           // a política — ela some de Cálculo de Comissões e Cargos e Remunerações (que filtram
           // por cargo_id) até algum cargo ser marcado depois, mas continua visível na lista aqui.
-          const idsOriginais = [...itensOriginais.values()]
+          const idsOriginais = idsLinhasGrupo
           const linhaVazia = { ...montarLinha(null), grupo_politica_id: editingId }
           await apiService.updatePoliticaComissao(idsOriginais[0], linhaVazia)
           for (const rowId of idsOriginais.slice(1)) await apiService.deletePoliticaComissao(rowId)
@@ -719,6 +762,11 @@ export default function PoliticaComissao() {
           for (const [cargoId, rowId] of itensOriginais) {
             if (!idsAtuais.has(cargoId)) await apiService.deletePoliticaComissao(rowId)
           }
+          // Linha repetida do mesmo cargo no grupo (cargo pago em dobro): fica só uma por cargo.
+          const mantidas = new Set(itensOriginais.values())
+          for (const rowId of idsLinhasGrupo) {
+            if (!mantidas.has(rowId)) await apiService.deletePoliticaComissao(rowId)
+          }
         }
       } else if (cargo_ids.length === 0) {
         // Política nova salva como rascunho, sem nenhum cargo ainda.
@@ -736,6 +784,7 @@ export default function PoliticaComissao() {
     } catch (err) {
       alert('Erro ao salvar política: ' + (err.message || String(err)))
     } finally {
+      salvandoRef.current = false
       setSalvando(false)
     }
   }
@@ -786,6 +835,16 @@ export default function PoliticaComissao() {
 
       {/* FILTROS */}
       <div className="flex items-end gap-3 flex-wrap">
+        <div className="flex flex-col gap-1 w-40">
+          <label className="text-[10px] font-bold text-slate-400 uppercase">Código</label>
+          <FiltroMultiSelect placeholder="Todos" opcoes={codigosDisponiveis} selecionados={colFiltro.codigo}
+            onChange={vs => setColFiltro(p => ({ ...p, codigo: vs }))} comBusca />
+        </div>
+        <div className="flex flex-col gap-1 w-64">
+          <label className="text-[10px] font-bold text-slate-400 uppercase">Rubrica</label>
+          <FiltroMultiSelect placeholder="Todas" opcoes={rubricasDisponiveis} selecionados={colFiltro.rubrica}
+            onChange={vs => setColFiltro(p => ({ ...p, rubrica: vs }))} labelFor={rotuloRubrica} comBusca />
+        </div>
         <div className="flex flex-col gap-1 w-64">
           <label className="text-[10px] font-bold text-slate-400 uppercase">Empresa</label>
           <FiltroMultiSelect placeholder="Todas" opcoes={empresasDisponiveis} selecionados={colFiltro.empresa}
@@ -813,15 +872,21 @@ export default function PoliticaComissao() {
 
       {/* TABELA */}
       <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-x-auto">
-        <table className="w-full text-left border-collapse min-w-[1500px]">
+        <table className="w-full text-left border-collapse min-w-[1810px]">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[11px] font-semibold uppercase tracking-wider">
               <th className="p-3 w-12 text-center">Ações</th>
+              <th className="p-3 min-w-[90px]">
+                <button onClick={() => alternarOrdenacao('codigo')} className="flex items-center gap-1 hover:text-slate-700 transition-colors">
+                  Código {iconeOrdenacao('codigo')}
+                </button>
+              </th>
               <th className="p-3 min-w-[280px]">
                 <button onClick={() => alternarOrdenacao('descricao')} className="flex items-center gap-1 hover:text-slate-700 transition-colors">
                   Descrição da Comissão {iconeOrdenacao('descricao')}
                 </button>
               </th>
+              <th className="p-3 min-w-[220px]">Rubrica</th>
               <th className="p-3 min-w-[320px]">
                 <button onClick={() => alternarOrdenacao('cargo')} className="flex items-center gap-1 hover:text-slate-700 transition-colors">
                   Cargos {iconeOrdenacao('cargo')}
@@ -858,7 +923,7 @@ export default function PoliticaComissao() {
           <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
             {gruposExibidos.length === 0 ? (
               <tr>
-                <td colSpan="9" className="p-6 text-center text-slate-400">
+                <td colSpan="11" className="p-6 text-center text-slate-400">
                   {grupos.length === 0 ? 'Nenhuma política de comissão cadastrada.' : 'Nenhuma política encontrada para os filtros aplicados.'}
                 </td>
               </tr>
@@ -873,8 +938,42 @@ export default function PoliticaComissao() {
                     duplicando={duplicandoId === grupo.grupoId}
                   />
                 </td>
+                <td className="p-3 min-w-[90px] font-mono font-semibold text-slate-800 whitespace-nowrap">
+                  {grupo.codigo_politica || <span className="text-slate-300 font-sans font-normal">—</span>}
+                </td>
                 <td className="p-3 min-w-[280px] text-slate-600 whitespace-nowrap">
                   {grupo.descricao_comissao || '-'}
+                </td>
+                <td className="p-3 min-w-[220px]">
+                  {(() => {
+                    // Uma linha por rubrica distinta (código + descrição); com mais de uma, ou com
+                    // empresa sem rubrica, mostra a empresa de cada linha.
+                    const linhas = [...new Map(grupo.rubricasPorEmpresa.map(r => {
+                      const desc = descricaoRubrica(r.codigo, r.empresaId)
+                      return [`${r.codigo || ''}|${desc || ''}|${r.codigo ? '' : r.empresaNome}`, { ...r, desc, empresas: [] }]
+                    })).values()]
+                    for (const r of grupo.rubricasPorEmpresa) {
+                      const desc = descricaoRubrica(r.codigo, r.empresaId)
+                      linhas.find(l => l.codigo === r.codigo && l.desc === desc && (l.codigo || l.empresaNome === r.empresaNome))?.empresas.push(r.empresaNome)
+                    }
+                    if (linhas.length === 1 && !linhas[0].codigo && !linhas[0].empresaNome) return <span className="text-slate-300">—</span>
+                    const mostrarEmpresa = linhas.length > 1
+                    return (
+                      <div className="flex flex-col gap-1">
+                        {linhas.map((l, i) => l.codigo ? (
+                          <span key={i} className="whitespace-nowrap">
+                            <span className="font-mono font-semibold text-slate-800">{l.codigo}</span>
+                            {l.desc && <span className="text-slate-500"> — {l.desc}</span>}
+                            {mostrarEmpresa && <span className="text-[10px] text-slate-400"> ({l.empresas.filter(Boolean).join(', ')})</span>}
+                          </span>
+                        ) : (
+                          <span key={i} className="whitespace-nowrap text-[11px] font-semibold text-amber-600">
+                            sem rubrica{l.empresaNome && <span className="font-normal"> ({l.empresaNome})</span>}
+                          </span>
+                        ))}
+                      </div>
+                    )
+                  })()}
                 </td>
                 <td className="p-3 min-w-[320px]">
                   <div className="flex flex-col gap-1">
@@ -965,7 +1064,19 @@ export default function PoliticaComissao() {
                   )}
                 </div>
 
-                {/* Descrição */}
+                {/* Código + Descrição */}
+                <div className="grid grid-cols-[160px_1fr] gap-4">
+                <div className="flex flex-col gap-1.5">
+                  <label className={LBL}>Código</label>
+                  <input
+                    type="text"
+                    name="codigo_politica"
+                    value={form.codigo_politica}
+                    onChange={handleInputChange}
+                    placeholder="Ex: 001"
+                    className={INP}
+                  />
+                </div>
                 <div className="flex flex-col gap-1.5">
                   <label className={LBL}>Descrição da Comissão</label>
                   <input
@@ -977,12 +1088,18 @@ export default function PoliticaComissao() {
                     className={INP}
                   />
                 </div>
+                </div>
 
                 {/* Código da Rubrica + Tipo do Processo — logo abaixo da Descrição */}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="flex flex-col gap-1.5">
                     <label className={`${LBL} flex items-center gap-1`}>
                       Código da Rubrica
+                      {chavesRubricaEmpresa.length === 1 && chavesRubricaEmpresa[0] && (() => {
+                        const emp = empresas.find(e => e.id === chavesRubricaEmpresa[0])
+                        const nome = emp?.empresa_fantasia || emp?.nome_empresa
+                        return nome ? <span className="normal-case tracking-normal font-semibold text-slate-400 truncate">· {nome}</span> : null
+                      })()}
                       <span className="relative group cursor-help normal-case tracking-normal">
                         <Info className="h-3.5 w-3.5 text-blue-500" />
                         <span className="absolute right-0 top-full mt-1 hidden group-hover:block w-72 bg-slate-800 text-white text-[11px] font-normal rounded-md p-3 shadow-xl z-30 leading-relaxed">
@@ -998,7 +1115,7 @@ export default function PoliticaComissao() {
                         const nomeDaEmpresa = chave ? (empresas.find(e => e.id === chave)?.empresa_fantasia || empresas.find(e => e.id === chave)?.nome_empresa) : null
                         return (
                           <div key={chave || '__sem_empresa__'} className={chavesRubricaEmpresa.length > 1 ? 'flex items-center gap-2' : ''}>
-                            {nomeDaEmpresa && (
+                            {nomeDaEmpresa && chavesRubricaEmpresa.length > 1 && (
                               <span className="text-[10px] font-semibold text-slate-500 w-40 shrink-0 truncate" title={nomeDaEmpresa}>{nomeDaEmpresa}</span>
                             )}
                             <select value={valorAtual} onChange={e => setRubricaDaChave(chave, e.target.value)} className={SEL}>
@@ -1211,7 +1328,10 @@ export default function PoliticaComissao() {
               </div>
               <div className="flex flex-col gap-0.5 col-span-2">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Descrição</span>
-                <span className="text-xs font-semibold text-slate-800">{itemVisualizado.descricao_comissao || '-'}</span>
+                <span className="text-xs font-semibold text-slate-800">
+                  {itemVisualizado.codigo_politica && <span className="font-mono text-slate-500">{itemVisualizado.codigo_politica} — </span>}
+                  {itemVisualizado.descricao_comissao || '-'}
+                </span>
               </div>
               <div className="flex flex-col gap-0.5">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Código da Rubrica</span>
