@@ -6,7 +6,7 @@ import {
 } from 'lucide-react'
 import { apiService } from '../../services/api'
 import { useAuth } from '../../context/AuthContext'
-import { empresaNoEscopo } from './auditExtConstants'
+import { empresaNoEscopo, nomeEmpresa } from './auditExtConstants'
 
 // ── Colunas obrigatórias no Excel (nesta ordem) ──────────────────────────────
 const COLUNAS = ['Título da Divergência']
@@ -159,7 +159,7 @@ export default function ImportarDivergenciasModal({ onClose, onImported, cicloId
   }
 
   const cicloSelecionado = ciclos.find(c => c.id === cicloId)
-  const rotuloCiclo = cicloSelecionado ? `${cicloSelecionado.proj_empresas?.nome || '—'} · ${cicloSelecionado.periodo_competencia}` : ''
+  const rotuloCiclo = cicloSelecionado ? `${nomeEmpresa(cicloSelecionado.proj_empresas)} · ${cicloSelecionado.periodo_competencia}` : ''
 
   return (
     <div className="fixed top-0 right-0 bottom-0 left-16 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50">
@@ -189,7 +189,7 @@ export default function ImportarDivergenciasModal({ onClose, onImported, cicloId
                   className="w-full text-xs p-2 border border-slate-200 rounded-md font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500">
                   <option value="">— Selecione o ciclo que receberá as divergências —</option>
                   {ciclos.map(c => (
-                    <option key={c.id} value={c.id}>{c.proj_empresas?.nome || '—'} · {c.periodo_competencia}</option>
+                    <option key={c.id} value={c.id}>{nomeEmpresa(c.proj_empresas)} · {c.periodo_competencia}</option>
                   ))}
                 </select>
               </div>

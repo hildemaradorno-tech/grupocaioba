@@ -212,10 +212,11 @@ export default function TarefaFormModal({ projetoId, tarefa, initialValues, tare
   const executarSalvamento = async () => {
     if (!form.nome.trim()) { setError('Informe o nome da tarefa.'); return false }
     setError(null)
-    // _id auxiliares são apenas para os <select> de lookup — não existem na tabela proj_tarefas
-    const { fase_id, sistema_id, responsavel_id, empresa_id, area_id, ...formSemIds } = form
+    // Exclui apenas os _id auxiliares que não têm coluna própria na tabela
+    const { fase_id, sistema_id, responsavel_id, area_id, ...formSemIds } = form
     const payload = {
       ...formSemIds,
+      empresa_id: form.empresa_id || null,
       projeto_id: projetoId,
       progresso_pct: Number(form.progresso_pct) || 0,
       data_inicio: form.data_inicio || null,

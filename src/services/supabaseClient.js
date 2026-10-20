@@ -3557,25 +3557,16 @@ export const apiService = {
   // GESTÃO DE PROJETOS — CADASTROS DE APOIO (SISTEMA, RESPONSÁVEL, FASE, ÁREA)
   // ══════════════════════════════════════════
 
+  // Redireciona para dim_empresas (unificado com Configurações)
+  // Normaliza para { id, nome, ativo } usando empresa_fantasia como nome de exibição
   getProjEmpresas: async () => {
-    const { data, error } = await supabase.from('proj_empresas').select('*').order('nome', { ascending: true })
+    const { data, error } = await supabase
+      .from('dim_empresas')
+      .select('id, empresa_fantasia, ativo')
+      .eq('ativo', true)
+      .order('empresa_fantasia', { ascending: true })
     if (error) throw error
-    return data || []
-  },
-  createProjEmpresa: async ({ nome, ativo }) => {
-    const { data, error } = await supabase.from('proj_empresas').insert([{ nome, ativo: ativo ?? true }]).select()
-    if (error) throw error
-    return data?.[0]
-  },
-  updateProjEmpresa: async (id, { nome, ativo }) => {
-    const { data, error } = await supabase.from('proj_empresas').update({ nome, ativo: ativo ?? true }).eq('id', id).select()
-    if (error) throw error
-    return data?.[0]
-  },
-  deleteProjEmpresa: async (id) => {
-    const { error } = await supabase.from('proj_empresas').delete().eq('id', id)
-    if (error) throw error
-    return { success: true }
+    return (data || []).map(e => ({ id: e.id, nome: e.empresa_fantasia, ativo: e.ativo }))
   },
 
   getProjStatus: async () => {
@@ -3778,9 +3769,11 @@ export const apiService = {
     }
   },
 
-  // Mesma ideia acima, mas pra Empresa — Auditoria Externa não pode reaproveitar
-  // permissoes_empresa_grupo (usa dim_empresas.id) porque o Ciclo de Auditoria referencia
-  // proj_empresas.id, uma tabela diferente. `modo` fica em grupos_acesso.auditoria_empresa_modo.
+  // Mesma ideia acima, mas pra Empresa — fica em tabela própria (não reaproveita
+  // permissoes_empresa_grupo) porque é exclusiva de Auditoria Externa, com seu
+  // próprio modo (grupos_acesso.auditoria_empresa_modo), independente da
+  // restrição de Empresa usada em Garantias DAF/Comissões. Ambas guardam
+  // dim_empresas.id (Ciclo de Auditoria também referencia dim_empresas agora).
   getPermissoesEmpresaAuditoriaPorGrupo: async (grupoId) => {
     const [{ data, error }, { data: grupoRow, error: e2 }] = await Promise.all([
       supabase.from('permissoes_empresa_grupo_auditoria').select('empresa_id').eq('grupo_id', grupoId),
@@ -3946,13 +3939,14 @@ export const apiService = {
   getProjetos: async (filtros = {}) => {
     let q = supabase
       .from('proj_projetos')
-      .select('*, proj_tarefas(id, progresso_pct, data_inicio, data_fim, status_kanban, responsavel_nome, fase_nome, sistema_nome, proj_deliberacoes(id))')
+      .select('*, proj_tarefas(id, progresso_pct, data_inicio, data_fim, status_kanban, responsavel_nome, fase_nome, sistema_nome, empresa_nome, proj_deliberacoes(id))')
       .order('data_inicio', { ascending: false })
     if (filtros.status)              q = q.eq('status', filtros.status)
     if (filtros.responsavel_id)      q = q.eq('responsavel_id', filtros.responsavel_id)
     if (filtros.sistema_id)          q = q.eq('sistema_id', filtros.sistema_id)
     if (filtros.fase_id)             q = q.eq('fase_id', filtros.fase_id)
     if (filtros.nome)                q = q.ilike('nome', `%${filtros.nome}%`)
+    if (filtros.empresa_ids?.length) q = q.in('empresa_id', [...filtros.empresa_ids])
     const { data, error } = await q
     if (error) throw error
     return data || []
@@ -3961,8 +3955,9 @@ export const apiService = {
   getProjetosParaAta: async (filtros = {}) => {
     let q = supabase
       .from('proj_projetos')
-      .select('id, nome, status, departamento_nome, area_nome, sistema_nome, sistemas_nomes, responsavel_nome, responsavel2_nome, data_inicio, data_fim_prevista, data_fim_real, criado_em, proj_tarefas(id, nome, area_nome, progresso_pct, data_inicio, data_fim, status_kanban, fase_nome, sistema_nome, responsavel_nome, etapa, proj_deliberacoes(id, data, texto))')
+      .select('id, nome, status, empresa_id, empresa_nome, departamento_nome, area_nome, sistema_nome, sistemas_nomes, responsavel_nome, responsavel2_nome, data_inicio, data_fim_prevista, data_fim_real, criado_em, proj_tarefas(id, nome, area_nome, empresa_nome, progresso_pct, data_inicio, data_fim, status_kanban, fase_nome, sistema_nome, responsavel_nome, etapa, proj_deliberacoes(id, data, texto))')
       .order('departamento_nome', { ascending: true })
+    if (filtros.empresa_ids?.length) q = q.in('empresa_id', [...filtros.empresa_ids])
     const { data, error } = await q
     if (error) throw error
     return data || []
@@ -4977,7 +4972,7 @@ export const apiService = {
   getAuditExtCiclos: async () => {
     const { data, error } = await supabase
       .from('audext_ciclos')
-      .select('*, proj_empresas(id, nome)')
+      .select('*, proj_empresas:dim_empresas(id, empresa_fantasia, nome_empresa)')
       .order('criado_em', { ascending: false })
     if (error) throw error
     return data || []
@@ -5009,7 +5004,7 @@ export const apiService = {
   getAuditExtAchados: async () => {
     const { data, error } = await supabase
       .from('audext_achados')
-      .select('*, audext_ciclos(id, periodo_competencia, empresa_id, proj_empresas(id, nome)), audext_tipos_divergencia(id, nome)')
+      .select('*, audext_ciclos(id, periodo_competencia, empresa_id, proj_empresas:dim_empresas(id, empresa_fantasia, nome_empresa)), audext_tipos_divergencia(id, nome)')
       .order('criado_em', { ascending: false })
     if (error) throw error
     return data || []
@@ -5620,5 +5615,96 @@ export const apiService = {
       if (error) throw error
     }
     return { success: true }
+  },
+
+  // CONTROLADORIA — DRE (linhas), Plano de Contas e Centros de Resultado (tabelas ctb_*; o
+  // Power BI lê pelas views vw_ctb_*, ver supabase/migrations/controladoria.sql).
+  getCtbDreLinhas: async () => {
+    const { data, error } = await supabase.from('ctb_dre_linhas').select('*').order('ordem').order('descricao')
+    if (error) throw error
+    return data || []
+  },
+  salvarCtbDreLinha: async (id, { ordem, descricao, tipo, sinal, destaque, ativo }) => {
+    const payload = { ordem: Number(ordem) || 0, descricao: descricao.trim(), tipo, sinal: Number(sinal) === -1 ? -1 : 1, destaque: !!destaque, ativo: ativo ?? true }
+    const query = id
+      ? supabase.from('ctb_dre_linhas').update(payload).eq('id', id)
+      : supabase.from('ctb_dre_linhas').insert([payload])
+    const { data, error } = await query.select()
+    if (error) throw error
+    return data?.[0]
+  },
+  deleteCtbDreLinha: async (id) => {
+    const { error } = await supabase.from('ctb_dre_linhas').delete().eq('id', id)
+    if (error) throw error
+    return { success: true }
+  },
+
+  getCtbPlanoContas: async () => {
+    const { data, error } = await supabase.from('ctb_plano_contas').select('*').order('codigo')
+    if (error) throw error
+    return data || []
+  },
+  salvarCtbPlanoConta: async (id, { codigo, descricao, tipo, natureza, conta_pai_id, linha_dre_id, ativo }) => {
+    const payload = {
+      codigo: codigo.trim(), descricao: descricao.trim(), tipo, natureza,
+      conta_pai_id: conta_pai_id || null, linha_dre_id: linha_dre_id || null, ativo: ativo ?? true,
+    }
+    const query = id
+      ? supabase.from('ctb_plano_contas').update(payload).eq('id', id)
+      : supabase.from('ctb_plano_contas').insert([payload])
+    const { data, error } = await query.select()
+    if (error) throw error
+    return data?.[0]
+  },
+  deleteCtbPlanoConta: async (id) => {
+    const { error } = await supabase.from('ctb_plano_contas').delete().eq('id', id)
+    if (error) throw error
+    return { success: true }
+  },
+
+  getCtbCentrosResultado: async () => {
+    const { data, error } = await supabase.from('ctb_centros_resultado').select('*').order('codigo')
+    if (error) throw error
+    return data || []
+  },
+  salvarCtbCentroResultado: async (id, { codigo, descricao, sistema_id, ativo }) => {
+    const payload = { codigo: codigo.trim(), descricao: descricao.trim(), sistema_id: sistema_id || null, ativo: ativo ?? true }
+    const query = id
+      ? supabase.from('ctb_centros_resultado').update(payload).eq('id', id)
+      : supabase.from('ctb_centros_resultado').insert([payload])
+    const { data, error } = await query.select()
+    if (error) throw error
+    return data?.[0]
+  },
+  deleteCtbCentroResultado: async (id) => {
+    const { error } = await supabase.from('ctb_centros_resultado').delete().eq('id', id)
+    if (error) throw error
+    return { success: true }
+  },
+
+  // Orçamento de um ano + centro de resultado (null = Geral) — [{ conta_id, mes, valor }].
+  getCtbOrcamento: async (ano, centroResultadoId) => {
+    let q = supabase.from('ctb_orcamento').select('conta_id, mes, valor, atualizado_por, atualizado_em').eq('ano', ano)
+    q = centroResultadoId ? q.eq('centro_resultado_id', centroResultadoId) : q.is('centro_resultado_id', null)
+    const { data, error } = await q
+    if (error) throw error
+    return data || []
+  },
+  // Regrava o orçamento inteiro do ano+centro: apaga o que existia e insere os valores ≠ 0
+  // (célula vazia/zero não vira linha, mantendo a view do Power BI enxuta).
+  salvarCtbOrcamento: async (ano, centroResultadoId, itens, usuario) => {
+    let del = supabase.from('ctb_orcamento').delete().eq('ano', ano)
+    del = centroResultadoId ? del.eq('centro_resultado_id', centroResultadoId) : del.is('centro_resultado_id', null)
+    const { error: errDel } = await del
+    if (errDel) throw errDel
+    const agora = new Date().toISOString()
+    const linhas = itens
+      .filter(i => Number(i.valor) !== 0 && Number.isFinite(Number(i.valor)))
+      .map(i => ({ ano, mes: i.mes, conta_id: i.conta_id, centro_resultado_id: centroResultadoId || null, valor: Number(i.valor), atualizado_por: usuario, atualizado_em: agora }))
+    for (let i = 0; i < linhas.length; i += 500) {
+      const { error } = await supabase.from('ctb_orcamento').insert(linhas.slice(i, i + 500))
+      if (error) throw error
+    }
+    return { success: true, qtd: linhas.length }
   },
 }

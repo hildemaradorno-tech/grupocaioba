@@ -7,7 +7,7 @@ import { apiService } from '../../services/api'
 import AuditoriaExternaNav from './AuditoriaExternaNav'
 import ManifestacaoRichEditor from '../projetos/ManifestacaoRichEditor'
 import ImportarDivergenciasModal from './ImportarDivergenciasModal'
-import { CICLO_STATUS_MAP, Badge, fmtData, fmtMoeda, PercentualBar, calcularPercentualAtingidoAchado, empresaNoEscopo } from './auditExtConstants'
+import { CICLO_STATUS_MAP, Badge, fmtData, fmtMoeda, PercentualBar, calcularPercentualAtingidoAchado, empresaNoEscopo, nomeEmpresa } from './auditExtConstants'
 
 const FORM_VAZIO = { empresa_id: '', periodo_competencia: '', firma_auditoria: '', data_apresentacao: '', status: 'em_andamento', observacoes: '' }
 
@@ -246,7 +246,7 @@ export default function CiclosAuditoria() {
               <tr><td colSpan="10" className="p-6 text-center text-slate-400">Nenhum ciclo de auditoria cadastrado.</td></tr>
             ) : dadosVisiveis.map(item => (
               <tr key={item.id} className="hover:bg-slate-50/70 transition-colors">
-                <td className="p-3 text-slate-900 font-bold flex items-center gap-2"><CalendarClock className="h-3.5 w-3.5 text-indigo-500" /> {item.proj_empresas?.nome || '—'}</td>
+                <td className="p-3 text-slate-900 font-bold flex items-center gap-2"><CalendarClock className="h-3.5 w-3.5 text-indigo-500" /> {nomeEmpresa(item.proj_empresas)}</td>
                 <td className="p-3">{item.periodo_competencia}</td>
                 <td className="p-3">{item.firma_auditoria || '—'}</td>
                 <td className="p-3">{fmtData(item.data_apresentacao)}</td>
@@ -371,7 +371,7 @@ export default function CiclosAuditoria() {
             <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto text-xs">
               <div className="flex flex-col gap-0.5">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Empresa</span>
-                <span className="font-semibold text-slate-800">{itemVisualizado.proj_empresas?.nome || '—'}</span>
+                <span className="font-semibold text-slate-800">{nomeEmpresa(itemVisualizado.proj_empresas)}</span>
               </div>
               <div className="flex flex-col gap-0.5">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Período de Competência</span>

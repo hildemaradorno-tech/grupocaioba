@@ -6,7 +6,6 @@ export const MENU_TREE = [
       { key: 'usuarios', label: 'Usuários' },
       { key: 'grupos', label: 'Grupos de Acessos' },
       { key: 'permissoes-matriz', label: 'Matriz de Permissões' },
-      { key: 'funcionarios', label: 'Funcionários' },
       {
         key: '_gestao-tempo',
         label: 'Gestão de Tempo',
@@ -21,7 +20,7 @@ export const MENU_TREE = [
         children: [
           {
             key: '_cadastros.gerais',
-            label: 'Tabelas Gerais',
+            label: 'Tabelas da Organização',
             children: [
               { key: 'segmentos', label: 'Segmentos' },
               { key: 'agrup-empresas', label: 'Agrupamento Empresas' },
@@ -34,6 +33,14 @@ export const MENU_TREE = [
               { key: 'agrup-cargos', label: 'Agrupamento de Cargos' },
               { key: 'cargos', label: 'Cargos' },
               { key: 'organograma', label: 'Organograma' },
+              { key: 'funcionarios', label: 'Funcionários' },
+            ],
+          },
+          {
+            key: '_cadastros.sistemas',
+            label: 'Tabelas Gerais',
+            children: [
+              { key: 'projetos/sistemas', label: 'Sistemas' },
             ],
           },
           {
@@ -69,6 +76,25 @@ export const MENU_TREE = [
         children: [
           { key: 'governanca/grupo-acessos', label: 'Grupo de Acessos' },
           { key: 'governanca/perfis-acesso', label: 'Perfis de Acesso' },
+        ],
+      },
+      {
+        // Menus por departamento da empresa. Controladoria: o grupo navega direto pra página
+        // única com abas (ControladoriaNav); cada aba é uma permissão própria.
+        key: '_config.departamentos',
+        label: 'Departamentos',
+        children: [
+          {
+            key: '_config.departamentos.controladoria',
+            label: 'Controladoria',
+            navTo: 'controladoria/dre',
+            children: [
+              { key: 'controladoria/dre', label: 'DRE' },
+              { key: 'controladoria/plano-contas', label: 'Plano de Contas' },
+              { key: 'controladoria/centro-resultado', label: 'Centro de Resultado' },
+              { key: 'controladoria/orcamento', label: 'Orçamento' },
+            ],
+          },
         ],
       },
     ],
@@ -200,9 +226,7 @@ export const MENU_TREE = [
         key: '_gestao-projetos.cadastros',
         label: 'Cadastros',
         children: [
-          { key: 'projetos/empresas', label: 'Empresas' },
           { key: 'projetos/areas', label: 'Áreas' },
-          { key: 'projetos/sistemas', label: 'Sistemas' },
           { key: 'projetos/responsaveis', label: 'Responsáveis' },
           { key: 'projetos/fases', label: 'Fases' },
           { key: 'projetos/status', label: 'Status' },

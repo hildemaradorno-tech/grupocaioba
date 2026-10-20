@@ -74,10 +74,22 @@ export const ACOES_POR_MENU = [
   {
     menuPath: 'auditoria-os-aberto',
     acoes: [
+      // Admin tem tudo; demais grupos só o que estiver marcado aqui (Programar auditorias = só Admin).
+      // Engrenagem
+      { value: 'inserir_auditoria',    label: 'Inserir Auditoria (importar OS — SharePoint/MicroWork)' },
+      { value: 'excluir_auditoria',    label: 'Excluir Auditoria' },
+      { value: 'editar_na_oficina',    label: 'Editar Auditoria (Na Oficina e Responsável, fora do Modo Conferência)' },
       // Admin reabre qualquer auditoria sem limite; quem tem esta ação reabre só a última da empresa, 1 vez
-      { value: 'reabrir', label: 'Reabrir Auditoria (só a última da empresa, 1 vez)' },
-      { value: 'editar_na_oficina', label: 'Editar Auditoria (alterar Na Oficina fora do Modo Conferência)' },
-      { value: 'cadastrar_situacoes', label: 'Cadastrar Situações de Auditoria (engrenagem)' },
+      { value: 'reabrir',              label: 'Reabrir Auditoria (só a última da empresa, 1 vez)' },
+      { value: 'cadastrar_situacoes',  label: 'Cadastrar Situações de Auditoria' },
+      // Modo Conferência
+      { value: 'conferir',             label: 'Conferir — alterar Na Oficina no Modo Conferência' },
+      { value: 'pendenciar',           label: 'Pendenciar OS selecionadas (Na Oficina = Não em lote)' },
+      { value: 'concluir_conferencia', label: 'Botão Conferido (concluir conferência e definir prazo)' },
+      // Modo Relatório
+      { value: 'responder_os',         label: 'Responder OS (Situação, Observação, Dt. Previsão e Excluir informação)' },
+      { value: 'concluir_respostas',   label: 'Concluir Respostas (encerrar como Respondido Total)' },
+      { value: 'voltar_etapa',         label: 'Voltar Etapa (A Responder → Conferência)' },
     ],
   },
   {
@@ -170,6 +182,20 @@ export const ACOES_POR_MENU = [
     acoes: [
       { value: 'editar', label: 'Incluir / Editar' },
       { value: 'excluir', label: 'Excluir' },
+    ],
+  },
+  // Controladoria (Configurações → Departamentos → Controladoria)
+  ...['controladoria/dre', 'controladoria/plano-contas', 'controladoria/centro-resultado'].map(menuPath => ({
+    menuPath,
+    acoes: [
+      { value: 'editar', label: 'Incluir / Editar' },
+      { value: 'excluir', label: 'Excluir' },
+    ],
+  })),
+  {
+    menuPath: 'controladoria/orcamento',
+    acoes: [
+      { value: 'editar', label: 'Editar / Salvar Orçamento' },
     ],
   },
   {

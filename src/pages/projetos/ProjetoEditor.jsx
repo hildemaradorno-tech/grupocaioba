@@ -56,6 +56,7 @@ export default function ProjetoEditor() {
   // Projeto
   const [proj, setProj] = useState({
     nome: '', departamento_nome: '', area_nome: '',
+    empresa_id: '', empresa_nome: '',
     status: 'mapeado', ativo: true,
     responsavel_nome: '', responsavel2_nome: '',
     sistemas_nomes: [],
@@ -172,6 +173,9 @@ export default function ProjetoEditor() {
       requestAnimationFrame(() => {
         nomeInputRef.current?.setSelectionRange(start, end)
       })
+    } else if (name === 'empresa_id') {
+      const emp = empresas?.find(e => e.id === value)
+      setProj(p => ({ ...p, empresa_id: value, empresa_nome: emp?.nome || '' }))
     } else {
       setProj(p => ({ ...p, [name]: value }))
     }
@@ -194,6 +198,8 @@ export default function ProjetoEditor() {
         nome: proj.nome,
         departamento_nome: proj.departamento_nome || null,
         area_nome: proj.area_nome || null,
+        empresa_id: proj.empresa_id || null,
+        empresa_nome: proj.empresa_nome || null,
         status: proj.status || 'planejado',
         ativo: true,
         responsavel_nome: proj.responsavel_nome || null,
@@ -541,6 +547,13 @@ export default function ProjetoEditor() {
             <select name="area_nome" value={proj.area_nome || ''} onChange={handleProjChange} className={sel}>
               <option value="">---</option>
               {areas.map(a => <option key={a.id} value={a.nome}>{a.nome}</option>)}
+            </select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <Lbl>Empresa / Unidade</Lbl>
+            <select name="empresa_id" value={proj.empresa_id || ''} onChange={handleProjChange} className={sel}>
+              <option value="">---</option>
+              {empresas.map(e => <option key={e.id} value={e.id}>{e.nome}</option>)}
             </select>
           </div>
           <div className="flex flex-col gap-1">

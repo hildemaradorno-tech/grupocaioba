@@ -5,7 +5,7 @@ import { useSessionState } from '../../hooks/useSessionState'
 import { apiService } from '../../services/api'
 import AuditoriaExternaNav from './AuditoriaExternaNav'
 import { useAuth } from '../../context/AuthContext'
-import { calcularPercentualAtingidoAchado, statusAgregadoAchado, achadoResolvido, empresaNoEscopo, departamentoNoEscopo, fmtMoeda } from './auditExtConstants'
+import { calcularPercentualAtingidoAchado, statusAgregadoAchado, achadoResolvido, empresaNoEscopo, departamentoNoEscopo, fmtMoeda, nomeEmpresa } from './auditExtConstants'
 
 function KpiCard({ icon: Icon, label, valor, sub, cor, aoClicar, ativo }) {
   return (
@@ -195,7 +195,7 @@ function CicloMultiSelect({ ciclos, selecionados, onChange }) {
   const resumo = selecionados.length === 0
     ? 'Todos os ciclos (visão consolidada)'
     : selecionados.length === 1
-      ? (() => { const c = ciclos.find(c => c.id === selecionados[0]); return c ? `${c.proj_empresas?.nome || '—'} · ${c.periodo_competencia}` : '1 ciclo selecionado' })()
+      ? (() => { const c = ciclos.find(c => c.id === selecionados[0]); return c ? `${nomeEmpresa(c.proj_empresas)} · ${c.periodo_competencia}` : '1 ciclo selecionado' })()
       : `${selecionados.length} ciclos selecionados`
 
   return (
@@ -222,7 +222,7 @@ function CicloMultiSelect({ ciclos, selecionados, onChange }) {
                   {selecionados.includes(c.id) && <Check className="h-2.5 w-2.5 text-white" />}
                 </span>
                 <input type="checkbox" className="hidden" checked={selecionados.includes(c.id)} onChange={() => toggle(c.id)} />
-                <span className="truncate">{c.proj_empresas?.nome || '—'} · {c.periodo_competencia}</span>
+                <span className="truncate">{nomeEmpresa(c.proj_empresas)} · {c.periodo_competencia}</span>
               </label>
             ))}
           </div>
@@ -466,7 +466,7 @@ export default function AuditoriaDashboard() {
       const chave = a.ciclo_id
       if (!m.has(chave)) {
         m.set(chave, {
-          label: c ? `${c.proj_empresas?.nome || '—'} · ${c.periodo_competencia}` : 'Sem ciclo',
+          label: c ? `${nomeEmpresa(c.proj_empresas)} · ${c.periodo_competencia}` : 'Sem ciclo',
           cicloId: chave,
           totalApontado: 0,
           valorCorrigido: 0,
@@ -590,7 +590,7 @@ export default function AuditoriaDashboard() {
           icon={ShieldAlert} label="Total de Divergências" valor={totalDivergencias}
           sub={
             ciclosSelecionados.length === 1
-              ? `${ciclosSelecionados[0].proj_empresas?.nome || '—'} · ${ciclosSelecionados[0].periodo_competencia}`
+              ? `${nomeEmpresa(ciclosSelecionados[0].proj_empresas)} · ${ciclosSelecionados[0].periodo_competencia}`
               : ciclosSelecionados.length > 1
                 ? `${ciclosSelecionados.length} ciclos selecionados`
                 : `${ciclosVisiveis.length} ciclo(s) de auditoria`

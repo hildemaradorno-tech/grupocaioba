@@ -73,7 +73,6 @@ import ProjetoEditor from './pages/projetos/ProjetoEditor'
 import ProjFases from './pages/projetos/cadastros/ProjFases'
 import ProjResponsaveis from './pages/projetos/cadastros/ProjResponsaveis'
 import ProjSistemas from './pages/projetos/cadastros/ProjSistemas'
-import ProjEmpresas from './pages/projetos/cadastros/ProjEmpresas'
 import ProjAreas from './pages/projetos/cadastros/ProjAreas'
 import ProjStatus from './pages/projetos/cadastros/ProjStatus'
 import ProjTemplates from './pages/projetos/cadastros/ProjTemplates'
@@ -96,6 +95,10 @@ import GradeTreinamentos from './pages/treinamentos/GradeTreinamentos'
 import GrupoAcessos from './pages/governanca/GrupoAcessos'
 import PerfisAcesso from './pages/governanca/PerfisAcesso'
 import Ecossistema from './pages/Ecossistema'
+import Dre from './pages/controladoria/Dre'
+import PlanoContas from './pages/controladoria/PlanoContas'
+import CentroResultado from './pages/controladoria/CentroResultado'
+import Orcamento from './pages/controladoria/Orcamento'
 import Organograma from './pages/Organograma'
 import BiGarantiasDaf from './pages/bi/BiGarantiasDaf'
 import BiProjetos from './pages/bi/BiProjetos'
@@ -267,7 +270,6 @@ export default function App() {
           { path: '/projetos/novo', element: <ProjetoEditor />, menuPath: 'projetos' },
           { path: '/projetos/detalhe/:id/editar', element: <ProjetoEditor />, menuPath: 'projetos' },
           { path: '/projetos/detalhe/:id', element: <ProjetoDetalhe />, menuPath: 'projetos' },
-          { path: '/projetos/empresas', element: <ProjEmpresas />, menuPath: '/projetos/empresas' },
           { path: '/projetos/areas', element: <ProjAreas />, menuPath: '/projetos/areas' },
           { path: '/projetos/status', element: <ProjStatus />, menuPath: '/projetos/status' },
           { path: '/projetos/sistemas', element: <ProjSistemas />, menuPath: '/projetos/sistemas' },
@@ -282,6 +284,10 @@ export default function App() {
           { path: '/governanca/grupo-acessos', element: <GrupoAcessos />, menuPath: 'governanca/grupo-acessos' },
           { path: '/governanca/perfis-acesso', element: <PerfisAcesso />, menuPath: 'governanca/perfis-acesso' },
           { path: '/ecossistema', element: <Ecossistema />, menuPath: 'ecossistema' },
+          { path: '/controladoria/dre', element: <Dre />, menuPath: 'controladoria/dre' },
+          { path: '/controladoria/plano-contas', element: <PlanoContas />, menuPath: 'controladoria/plano-contas' },
+          { path: '/controladoria/centro-resultado', element: <CentroResultado />, menuPath: 'controladoria/centro-resultado' },
+          { path: '/controladoria/orcamento', element: <Orcamento />, menuPath: 'controladoria/orcamento' },
           { path: '/organograma', element: <Organograma />, menuPath: 'organograma' },
           { path: '/bi/garantias-daf', element: <BiGarantiasDaf />, menuPath: 'bi/garantias-daf' },
           { path: '/bi/projetos', element: <BiProjetos />, menuPath: 'bi/projetos' },

@@ -43,7 +43,10 @@ const ETAPAS_AUDITORIA = [
 ]
 
 export default function AuditoriaOsAberto() {
-  const { user, isAdmin, isAdminEfetivo, hasAction, empresasPermitidas } = useAuth()
+  const { user, isAdminEfetivo, hasAction, empresasPermitidasEfetivas } = useAuth()
+  // Permissão por ação (matriz de permissões, menu 'auditoria-os-aberto'); Admin tem tudo
+  const pode = (acao) => isAdminEfetivo || hasAction('auditoria-os-aberto', acao)
+  const SEM_PERMISSAO = 'Sem permissão (liberar na matriz de permissões)'
   const BACKEND = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
 
   // ── Listas de apoio ──
@@ -94,6 +97,7 @@ export default function AuditoriaOsAberto() {
   const [modalEditar, setModalEditar] = useState(false)
   const [edicaoNaOficina, setEdicaoNaOficina] = useState({}) // { [osId]: true | false | null } — só o que mudou
   const [buscaEditar, setBuscaEditar] = useState('')
+  const [responsavelEditarId, setResponsavelEditarId] = useState('') // troca do responsável pelas respostas
   const [salvandoEdicao, setSalvandoEdicao] = useState(false)
 
   // ── Programar auditorias automáticas (engrenagem, só Admin) ──
@@ -146,7 +150,8 @@ export default function AuditoriaOsAberto() {
     ])
     // Só empresas com auditoria de OS: agrupamentos Caiobá Trucks e Caiobá Motos, em ordem alfabética
     const AGRUPAMENTOS_AUDITORIA = ['caiobá trucks', 'caiobá motos']
-    const empsFiltradas = (isAdmin ? emps : emps.filter(e => empresasPermitidas.has(e.id)))
+    // Empresas liberadas no grupo de acesso (aba Empresas); Admin vê todas. "Efetivas" respeita o modo "ver como usuário".
+    const empsFiltradas = (isAdminEfetivo ? emps : emps.filter(e => empresasPermitidasEfetivas.has(e.id)))
       .filter(e => AGRUPAMENTOS_AUDITORIA.includes((e.agrupamento_nome || '').trim().toLowerCase()))
       .sort((a, b) => nomeSeletorEmpresa(a).localeCompare(nomeSeletorEmpresa(b), 'pt-BR'))
     setEmpresas(empsFiltradas)
@@ -166,7 +171,7 @@ export default function AuditoriaOsAberto() {
       .then(us => setNomePorEmail(new Map(us.filter(u => u.email).map(u => [u.email.toLowerCase(), u.nome]))))
       .catch(() => {})
     return { emps: empsFiltradas, respAtivos }
-  }, [isAdmin, empresasPermitidas])
+  }, [isAdminEfetivo, empresasPermitidasEfetivas])
 
   useEffect(() => { loadApoio() }, [loadApoio])
 
@@ -304,7 +309,7 @@ export default function AuditoriaOsAberto() {
 
   // ── Modal de detalhe da OS (Situação / Observação / Dt. Previsão) — abre ao clicar na linha ──
   const abrirModalDetalhe = (row) => {
-    if (auditoriaEncerrada) return // Respondido Total/Parcial ou Sem Resposta: OS não pode ser editada
+    if (bloqueioEdicaoOs) return // encerrada → só Admin; aberta → precisa da ação 'responder_os'
     setModalDetalheRow(row)
     setFormDetalhe({
       situacao_id: row.situacao_id || '',
@@ -370,8 +375,8 @@ export default function AuditoriaOsAberto() {
   // Seletor Na Oficina (Sim/Não) — usado nos dois modos de tela
   const renderNaOficina = (row) => (
     <select
-      disabled={!emConferencia} // Na Oficina só muda no Modo Conferência
-      title={!emConferencia ? 'Na Oficina só pode ser alterado no Modo Conferência' : undefined}
+      disabled={!emConferencia || !pode('conferir')} // Na Oficina só muda no Modo Conferência, com a ação 'conferir'
+      title={!emConferencia ? 'Na Oficina só pode ser alterado no Modo Conferência' : !pode('conferir') ? SEM_PERMISSAO : undefined}
       value={row.na_oficina === true ? 'sim' : row.na_oficina === false ? 'nao' : ''}
       onChange={e => {
         const v = e.target.value === 'sim' ? true : e.target.value === 'nao' ? false : null
@@ -413,6 +418,11 @@ export default function AuditoriaOsAberto() {
   const emConferencia = statusAud === 'conferencia'
   // Encerrada (prazo vencido ou concluída): OS ficam só para consulta
   const auditoriaEncerrada = ['respondido_total', 'respondido_parcial', 'sem_resposta'].includes(statusAud)
+  // Editar a OS (Situação/Observação/Dt. Previsão): aberta → ação 'responder_os'; encerrada → somente Admin.
+  // Retorna o motivo do bloqueio (texto) ou '' quando liberado.
+  const bloqueioEdicaoOs = auditoriaEncerrada
+    ? (isAdminEfetivo ? '' : 'Auditoria encerrada — somente o Admin pode editar')
+    : (pode('responder_os') ? '' : SEM_PERMISSAO)
 
   // ── Quem pode reabrir ──
   //  Admin: qualquer auditoria, sem limite.
@@ -443,7 +453,7 @@ export default function AuditoriaOsAberto() {
     if (soReaberturas.some(r => !r.por_admin)) return { pode: false, motivo: 'Já reaberta uma vez — somente o Admin pode reabrir novamente' }
     return { pode: true, motivo: 'Volta para A Responder com novo prazo (permitido 1 vez)' }
   })()
-  const podeCadastrarSituacoes = isAdminEfetivo || hasAction('auditoria-os-aberto', 'cadastrar_situacoes')
+  const podeCadastrarSituacoes = pode('cadastrar_situacoes')
 
   // ── Programar auditorias: carregar / salvar / excluir ──
   const abrirModalProgramar = async () => {
@@ -483,15 +493,27 @@ export default function AuditoriaOsAberto() {
   const editar = (() => {
     if (!auditoriaAtual) return { pode: false, motivo: 'Selecione uma auditoria' }
     if (emConferencia) return { pode: false, motivo: 'No Modo Conferência a coluna Na Oficina já é editável na tabela' }
-    if (!isAdminEfetivo && !hasAction('auditoria-os-aberto', 'editar_na_oficina')) return { pode: false, motivo: 'Sem permissão para editar' }
+    if (auditoriaEncerrada && !isAdminEfetivo) return { pode: false, motivo: 'Auditoria encerrada — somente o Admin pode editar' }
+    if (!pode('editar_na_oficina')) return { pode: false, motivo: SEM_PERMISSAO }
     return { pode: true, motivo: 'Alterar Na Oficina das OS (tabela de conferência)' }
   })()
-  const abrirModalEditar = () => { setEdicaoNaOficina({}); setBuscaEditar(''); setModalEditar(true) }
+  // Responsável atual da auditoria (gravado em todas as OS) e gerentes da empresa para troca
+  const responsavelAtualId = rows.find(r => r.responsavel_id)?.responsavel_id || ''
+  const gerentesAuditoria = responsaveis.filter(r => r.empresa_id === auditoriaAtual?.empresa_id)
+  const responsavelMudou = responsavelEditarId !== responsavelAtualId
+  const abrirModalEditar = () => { setEdicaoNaOficina({}); setBuscaEditar(''); setResponsavelEditarId(responsavelAtualId); setModalEditar(true) }
   const qtdAlteracoes = Object.keys(edicaoNaOficina).length
   const handleSalvarEdicao = async () => {
-    if (!qtdAlteracoes) { setModalEditar(false); return }
+    if (!qtdAlteracoes && !responsavelMudou) { setModalEditar(false); return }
     setSalvandoEdicao(true)
     try {
+      // Troca do responsável: grava em todas as OS da auditoria
+      if (responsavelMudou) {
+        const resp = responsaveis.find(r => r.id === responsavelEditarId)
+        const payloadResp = { responsavel_id: resp?.id || null, responsavel_nome: resp?.nome || null }
+        await apiService.updateAuditoriaOsLote(rows.map(r => r.id), payloadResp, user?.email || '')
+        setRows(prev => prev.map(r => ({ ...r, ...payloadResp })))
+      }
       // agrupa por valor para gravar em lote (Sim / Não / —)
       const grupos = new Map()
       Object.entries(edicaoNaOficina).forEach(([id, v]) => {
@@ -795,8 +817,8 @@ export default function AuditoriaOsAberto() {
                   {[
                     {
                       id: 'inserir', icon: Download, label: 'Inserir auditoria',
-                      desc: importando ? 'Importando...' : !filtroEmpresaId ? 'Selecione uma empresa antes' : empresaImportMicrowork ? 'Importar OS do MicroWork (API)' : 'Importar OS do SharePoint',
-                      disabled: importando || !filtroEmpresaId, onClick: handleAbrirImport, cor: 'text-indigo-600',
+                      desc: !pode('inserir_auditoria') ? SEM_PERMISSAO : importando ? 'Importando...' : !filtroEmpresaId ? 'Selecione uma empresa antes' : empresaImportMicrowork ? 'Importar OS do MicroWork (API)' : 'Importar OS do SharePoint',
+                      disabled: !pode('inserir_auditoria') || importando || !filtroEmpresaId, onClick: handleAbrirImport, cor: 'text-indigo-600',
                     },
                     {
                       id: 'editar', icon: Pencil, label: 'Editar auditoria',
@@ -815,13 +837,13 @@ export default function AuditoriaOsAberto() {
                     },
                     {
                       id: 'situacoes', icon: Tag, label: 'Situações de auditoria',
-                      desc: podeCadastrarSituacoes ? 'Cadastrar / editar as situações das OS' : 'Sem permissão para cadastrar situações',
+                      desc: podeCadastrarSituacoes ? 'Cadastrar / editar as situações das OS' : SEM_PERMISSAO,
                       disabled: !podeCadastrarSituacoes, onClick: () => setModalSituacoes(true), cor: 'text-violet-600',
                     },
                     {
                       id: 'excluir', icon: Trash2, label: 'Excluir auditoria',
-                      desc: auditoriaAtual ? `Auditoria de ${fmtDate(auditoriaAtual.data_auditoria)}` : 'Selecione uma auditoria',
-                      disabled: !auditoriaAtual, onClick: () => setModalExcluir(true), cor: 'text-red-600',
+                      desc: !pode('excluir_auditoria') ? SEM_PERMISSAO : auditoriaAtual ? `Auditoria de ${fmtDate(auditoriaAtual.data_auditoria)}` : 'Selecione uma auditoria',
+                      disabled: !pode('excluir_auditoria') || !auditoriaAtual, onClick: () => setModalExcluir(true), cor: 'text-red-600',
                     },
                   ].map(op => (
                     <button
@@ -969,7 +991,7 @@ export default function AuditoriaOsAberto() {
           )}
 
           <div className="flex items-center gap-2">
-            {statusAud === 'a_responder' && (
+            {statusAud === 'a_responder' && pode('voltar_etapa') && (
               <button
                 onClick={() => setModalStatus({ para: 'conferencia', procedimento: 'Voltou para Conferência', titulo: 'Voltar para Conferência', texto: 'A auditoria volta para o Modo Conferência. Nada do que foi preenchido é apagado.' })}
                 className="px-3 py-1.5 rounded-md text-xs font-semibold text-slate-500 hover:bg-slate-100 transition-colors"
@@ -981,15 +1003,15 @@ export default function AuditoriaOsAberto() {
               <div className="relative group">
                 <button
                   onClick={() => abrirModalPrazo('Conferido')}
-                  disabled={loading || rows.length === 0 || naoConferidas > 0}
+                  disabled={!pode('concluir_conferencia') || loading || rows.length === 0 || naoConferidas > 0}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-green-600 hover:bg-green-700 shadow-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   <CheckCircle2 className="h-3.5 w-3.5" />
                   Conferido
                 </button>
-                {naoConferidas > 0 && (
+                {(!pode('concluir_conferencia') || naoConferidas > 0) && (
                   <span className="pointer-events-none absolute right-0 top-full mt-1.5 z-20 whitespace-nowrap rounded-md bg-slate-800 px-2.5 py-1.5 text-[11px] font-semibold text-white shadow-lg opacity-0 group-hover:opacity-100 transition-opacity">
-                    Faltam {naoConferidas} OS sem Na Oficina (Sim/Não)
+                    {!pode('concluir_conferencia') ? SEM_PERMISSAO : `Faltam ${naoConferidas} OS sem Na Oficina (Sim/Não)`}
                   </span>
                 )}
               </div>
@@ -998,14 +1020,14 @@ export default function AuditoriaOsAberto() {
               <div className="relative group">
                 <button
                   onClick={() => setModalStatus({ para: 'respondido_total', procedimento: 'Respondido Total', titulo: 'Concluir respostas', texto: 'Todas as OS pendentes estão respondidas. A auditoria passa para Modo Relatório — Respondido Total (concluída).' })}
-                  disabled={pendentesSemResposta > 0}
+                  disabled={!pode('concluir_respostas') || pendentesSemResposta > 0}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   Concluir respostas →
                 </button>
-                {pendentesSemResposta > 0 && (
+                {(!pode('concluir_respostas') || pendentesSemResposta > 0) && (
                   <span className="pointer-events-none absolute right-0 top-full mt-1.5 z-20 whitespace-nowrap rounded-md bg-slate-800 px-2.5 py-1.5 text-[11px] font-semibold text-white shadow-lg opacity-0 group-hover:opacity-100 transition-opacity">
-                    Faltam {pendentesSemResposta} OS pendentes sem resposta
+                    {!pode('concluir_respostas') ? SEM_PERMISSAO : `Faltam ${pendentesSemResposta} OS pendentes sem resposta`}
                   </span>
                 )}
               </div>
@@ -1096,7 +1118,7 @@ export default function AuditoriaOsAberto() {
             <div className="relative group">
               <button
                 onClick={() => setModalPendenciar(true)}
-                disabled={selecionadas.size === 0}
+                disabled={selecionadas.size === 0 || !pode('pendenciar')}
                 aria-label="Pendenciar"
                 className="relative flex items-center justify-center h-8 w-8 rounded-md bg-red-600 hover:bg-red-700 text-white shadow-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
@@ -1108,7 +1130,8 @@ export default function AuditoriaOsAberto() {
                 )}
               </button>
               <span className="pointer-events-none absolute left-0 top-full mt-1.5 z-20 whitespace-nowrap rounded-md bg-slate-800 px-2.5 py-1.5 text-[11px] font-semibold text-white shadow-lg opacity-0 group-hover:opacity-100 transition-opacity">
-                {selecionadas.size === 0
+                {!pode('pendenciar') ? `Pendenciar — ${SEM_PERMISSAO}`
+                  : selecionadas.size === 0
                   ? 'Pendenciar — selecione uma ou mais OS'
                   : `Pendenciar ${selecionadas.size} OS selecionada(s) (Na Oficina = Não)`}
               </span>
@@ -1222,9 +1245,9 @@ export default function AuditoriaOsAberto() {
                   return (
                     <tr
                       key={row.id}
-                      onClick={() => { if (!auditoriaEncerrada) abrirModalDetalhe(row) }}
-                      title={auditoriaEncerrada ? 'Auditoria encerrada — edição bloqueada' : undefined}
-                      className={`transition-colors hover:bg-slate-50/70 ${auditoriaEncerrada ? 'cursor-default' : 'cursor-pointer'}`}
+                      onClick={() => { if (!bloqueioEdicaoOs) abrirModalDetalhe(row) }}
+                      title={bloqueioEdicaoOs || undefined}
+                      className={`transition-colors hover:bg-slate-50/70 ${bloqueioEdicaoOs ? 'cursor-default' : 'cursor-pointer'}`}
                     >
                       {/* Auto — P (vermelho) quando dias >= 30 ou Na Oficina = Não */}
                       <td className="p-3 text-center">
@@ -1386,20 +1409,42 @@ export default function AuditoriaOsAberto() {
               <div className="p-4 border-b border-slate-100 flex items-center justify-between gap-4">
                 <div>
                   <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
-                    <Pencil className="h-4 w-4 text-indigo-600" /> Editar auditoria — Na Oficina
+                    <Pencil className="h-4 w-4 text-indigo-600" /> Editar auditoria — Na Oficina e Responsável
                   </h3>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    Auditoria de {fmtDate(auditoriaAtual.data_auditoria)}{auditoriaAtual.empresa_nome ? ` — ${auditoriaAtual.empresa_nome}` : ''} · só a coluna Na Oficina pode ser alterada.
+                    Auditoria de {fmtDate(auditoriaAtual.data_auditoria)}{auditoriaAtual.empresa_nome ? ` — ${auditoriaAtual.empresa_nome}` : ''} · só a coluna Na Oficina e o responsável podem ser alterados.
                   </p>
                 </div>
-                <div className="relative w-64">
+              </div>
+
+              {/* Busca + Responsável na mesma linha, abaixo do título e antes da tabela */}
+              <div className="px-4 py-3 border-b border-slate-100 flex items-end gap-4 flex-wrap">
+                <div className="relative flex-1 max-w-md">
                   <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
                   <input
                     value={buscaEditar}
                     onChange={e => setBuscaEditar(e.target.value)}
                     placeholder="Buscar Nº OS, placa ou chassi..."
-                    className="w-full pl-8 pr-2 py-1.5 text-xs border border-slate-200 rounded-md focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                    className="w-full pl-8 pr-2 py-2 text-xs border border-slate-200 rounded-md focus:ring-2 focus:ring-indigo-500/20 outline-none"
                   />
+                </div>
+                {/* Responsável pelas respostas da auditoria (gerentes da empresa) — largo p/ "NOME COMPLETO — CARGO" */}
+                <div className="flex flex-col gap-1 w-[520px] max-w-full">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1">
+                    <ShieldCheck className="h-3 w-3" /> Responsável pelas respostas
+                  </label>
+                  <select
+                    value={responsavelEditarId}
+                    onChange={e => setResponsavelEditarId(e.target.value)}
+                    className={`text-xs p-2 border rounded-md bg-white ${responsavelMudou ? 'border-indigo-400 ring-2 ring-indigo-500/20' : 'border-slate-300'}`}
+                  >
+                    <option value="">— Sem responsável —</option>
+                    {/* mantém o atual na lista mesmo se não for mais gerente ativo */}
+                    {responsavelAtualId && !gerentesAuditoria.some(g => g.id === responsavelAtualId) && (
+                      <option value={responsavelAtualId}>{rows.find(r => r.responsavel_id)?.responsavel_nome || 'Responsável atual'}</option>
+                    )}
+                    {gerentesAuditoria.map(r => <option key={r.id} value={r.id}>{r.nome}{r.cargo_nome ? ` — ${r.cargo_nome}` : ''}</option>)}
+                  </select>
                 </div>
               </div>
 
@@ -1459,7 +1504,14 @@ export default function AuditoriaOsAberto() {
 
               <div className="flex items-center justify-between gap-2 p-3 bg-slate-50 border-t border-slate-100">
                 <span className="text-[11px] text-slate-500">
-                  {qtdAlteracoes ? <><strong className="text-indigo-700">{qtdAlteracoes}</strong> OS alterada(s) — ainda não salvas</> : 'Nenhuma alteração'}
+                  {qtdAlteracoes || responsavelMudou ? (
+                    <>
+                      {qtdAlteracoes > 0 && <><strong className="text-indigo-700">{qtdAlteracoes}</strong> OS alterada(s)</>}
+                      {qtdAlteracoes > 0 && responsavelMudou && ' · '}
+                      {responsavelMudou && <strong className="text-indigo-700">responsável alterado</strong>}
+                      {' — ainda não salvo'}
+                    </>
+                  ) : 'Nenhuma alteração'}
                 </span>
                 <div className="flex items-center gap-2">
                   <button
@@ -1471,7 +1523,7 @@ export default function AuditoriaOsAberto() {
                   </button>
                   <button
                     onClick={handleSalvarEdicao}
-                    disabled={salvandoEdicao || !qtdAlteracoes}
+                    disabled={salvandoEdicao || (!qtdAlteracoes && !responsavelMudou)}
                     className="flex items-center gap-1.5 px-4 py-1.5 rounded-md text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm transition-colors disabled:opacity-40"
                   >
                     <Save className="h-3.5 w-3.5" />

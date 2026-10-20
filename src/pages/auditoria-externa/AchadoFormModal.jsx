@@ -4,7 +4,7 @@ import { apiService } from '../../services/api'
 import { useAuth } from '../../context/AuthContext'
 import ManifestacaoRichEditor from '../projetos/ManifestacaoRichEditor'
 import EvidenciaUploader from './EvidenciaUploader'
-import { MoedaInput, fmtMoeda } from './auditExtConstants'
+import { MoedaInput, fmtMoeda, nomeEmpresa } from './auditExtConstants'
 
 const FORM_VAZIO = {
   ciclo_id: '', titulo: '', tipo_divergencia_id: '', motivo: '', total_apontado: '',
@@ -72,7 +72,7 @@ export default function AchadoFormModal({ ciclos, achado, cicloIdPadrao, onClose
                 className="w-full text-xs p-2 border border-slate-200 rounded-md font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500">
                 <option value="">— Selecione —</option>
                 {ciclos.map(c => (
-                  <option key={c.id} value={c.id}>{c.proj_empresas?.nome || '—'} · {c.periodo_competencia}</option>
+                  <option key={c.id} value={c.id}>{nomeEmpresa(c.proj_empresas)} · {c.periodo_competencia}</option>
                 ))}
               </select>
             </div>

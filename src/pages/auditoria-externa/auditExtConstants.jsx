@@ -74,11 +74,17 @@ export function calcularPercentualPlano(plano) {
   return Math.max(0, Math.min(100, Math.floor((corrigido / total) * 100)))
 }
 
+// Nome de exibição de uma Empresa vinda de dim_empresas (cadastro único de
+// Configurações) — usado tanto pela Empresa do Ciclo quanto pela Empresa da Ação.
+export function nomeEmpresa(empresa) {
+  return empresa?.empresa_fantasia || empresa?.nome_empresa || '—'
+}
+
 // Escopo de acesso por Empresa/Departamento (mesmo mecanismo de "Acesso por
 // Empresa"/"Acesso por Departamento" já usado em Gestão de Projetos, vindo do
 // Grupo de Acesso do usuário). Set vazio = sem restrição (admin ou grupo liberado
-// pra tudo). `empresaId` aqui é sempre o id de proj_empresas (o mesmo da Empresa
-// do Ciclo) — não confundir com o empresa_id (dim_empresas) da Empresa da Ação.
+// pra tudo). `empresaId` aqui é sempre o id de dim_empresas (o mesmo cadastro
+// único de Empresas usado em todo o módulo de Auditoria Externa).
 export function empresaNoEscopo(empresaId, empresasPermitidas, isAdminEfetivo) {
   return !!isAdminEfetivo || !empresasPermitidas || empresasPermitidas.size === 0 || empresasPermitidas.has(empresaId)
 }

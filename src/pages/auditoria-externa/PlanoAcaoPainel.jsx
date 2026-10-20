@@ -10,7 +10,7 @@ import PlanoAcaoFormModal from './PlanoAcaoFormModal'
 import AchadoFormModal from './AchadoFormModal'
 import AchadoDetalheDrawer from './AchadoDetalheDrawer'
 import PlanoDetalheDrawer from './PlanoDetalheDrawer'
-import { STATUS_PLANO_MAP, Badge, fmtData, fmtMoeda, PercentualBar, compararPorCodigo, calcularPercentualAtingidoAchado, calcularPercentualPlano, statusAgregadoAchado, empresaNoEscopo, departamentoNoEscopo } from './auditExtConstants'
+import { STATUS_PLANO_MAP, Badge, fmtData, fmtMoeda, PercentualBar, compararPorCodigo, calcularPercentualAtingidoAchado, calcularPercentualPlano, statusAgregadoAchado, empresaNoEscopo, departamentoNoEscopo, nomeEmpresa } from './auditExtConstants'
 
 const PROXIMO_STATUS = { pendente: 'em_andamento', em_andamento: 'concluido', concluido: 'validado_auditoria' }
 const ANTERIOR_STATUS = { em_andamento: 'pendente', concluido: 'em_andamento', validado_auditoria: 'concluido' }
@@ -245,8 +245,8 @@ export default function PlanoAcaoPainel() {
       m.get(cicloId).linhas.push(linha)
     }
     return Array.from(m.values()).sort((a, b) => {
-      const na = `${a.ciclo?.proj_empresas?.nome || ''} ${a.ciclo?.periodo_competencia || ''}`
-      const nb = `${b.ciclo?.proj_empresas?.nome || ''} ${b.ciclo?.periodo_competencia || ''}`
+      const na = `${nomeEmpresa(a.ciclo?.proj_empresas)} ${a.ciclo?.periodo_competencia || ''}`
+      const nb = `${nomeEmpresa(b.ciclo?.proj_empresas)} ${b.ciclo?.periodo_competencia || ''}`
       return na.localeCompare(nb, 'pt-BR')
     })
   }, [linhas])
@@ -345,7 +345,7 @@ export default function PlanoAcaoPainel() {
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1"><CalendarClock className="h-3 w-3" /> Ciclo de Auditoria</label>
               <select value={filtros.cicloId} onChange={e => setFiltros(p => ({ ...p, cicloId: e.target.value }))} className="w-full text-xs p-2 border border-slate-200 rounded-md">
                 <option value="">Todos</option>
-                {ciclosVisiveis.map(c => <option key={c.id} value={c.id}>{c.proj_empresas?.nome || '—'} · {c.periodo_competencia}</option>)}
+                {ciclosVisiveis.map(c => <option key={c.id} value={c.id}>{nomeEmpresa(c.proj_empresas)} · {c.periodo_competencia}</option>)}
               </select>
             </div>
             <div className="flex flex-col gap-1">
@@ -424,7 +424,7 @@ export default function PlanoAcaoPainel() {
                       {cicloExpandido ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                     </span>
                     <span className="text-sm font-bold uppercase tracking-widest truncate">
-                      {ciclo?.proj_empresas?.nome || '—'} · {ciclo?.periodo_competencia || '—'}
+                      {nomeEmpresa(ciclo?.proj_empresas)} · {ciclo?.periodo_competencia || '—'}
                     </span>
                   </div>
                   <div className="flex items-center gap-3 shrink-0">

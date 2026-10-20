@@ -8,7 +8,7 @@ import AchadoFormModal from './AchadoFormModal'
 import AchadoDetalheDrawer from './AchadoDetalheDrawer'
 import AuditAiChatDrawer from './AuditAiChatDrawer'
 import ImportarDivergenciasModal from './ImportarDivergenciasModal'
-import { fmtMoeda, compararPorCodigo, empresaNoEscopo, departamentoNoEscopo } from './auditExtConstants'
+import { fmtMoeda, compararPorCodigo, empresaNoEscopo, departamentoNoEscopo, nomeEmpresa } from './auditExtConstants'
 
 const FILTROS_VAZIOS = { empresa: '', tipoDivergenciaId: '', motivo: '', impactos: '' }
 
@@ -109,8 +109,8 @@ export default function AchadosPainel() {
       m.get(cicloId).achados.push(a)
     }
     return Array.from(m.values()).sort((a, b) => {
-      const na = `${a.ciclo?.proj_empresas?.nome || ''} ${a.ciclo?.periodo_competencia || ''}`
-      const nb = `${b.ciclo?.proj_empresas?.nome || ''} ${b.ciclo?.periodo_competencia || ''}`
+      const na = `${nomeEmpresa(a.ciclo?.proj_empresas)} ${a.ciclo?.periodo_competencia || ''}`
+      const nb = `${nomeEmpresa(b.ciclo?.proj_empresas)} ${b.ciclo?.periodo_competencia || ''}`
       return na.localeCompare(nb, 'pt-BR')
     })
   }, [achadosFiltrados])
@@ -246,7 +246,7 @@ export default function AchadosPainel() {
                       {cicloExpandido ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                     </span>
                     <span className="text-sm font-bold uppercase tracking-widest truncate">
-                      {ciclo?.proj_empresas?.nome || '—'} · {ciclo?.periodo_competencia || '—'}
+                      {nomeEmpresa(ciclo?.proj_empresas)} · {ciclo?.periodo_competencia || '—'}
                     </span>
                   </div>
                   <div className="flex items-center gap-3 shrink-0">

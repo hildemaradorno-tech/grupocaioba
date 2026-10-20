@@ -3,7 +3,7 @@ import { X, Sparkles, Loader2 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { apiService } from '../../services/api'
 import EvidenciaUploader from './EvidenciaUploader'
-import { fmtMoeda } from './auditExtConstants'
+import { fmtMoeda, nomeEmpresa } from './auditExtConstants'
 
 function DiagnosticoIA({ achado }) {
   const [aberto, setAberto] = useState(false)
@@ -77,7 +77,7 @@ export default function AchadoDetalheDrawer({ achado, onClose }) {
             <span className="text-[11px] font-bold text-slate-400">{achado.numero_codigo}</span>
             <h2 className="text-base font-bold text-slate-900">{achado.titulo}</h2>
             <p className="text-[11px] text-slate-500">
-              {achado.audext_ciclos?.proj_empresas?.nome || '—'} · {achado.audext_ciclos?.periodo_competencia || '—'}
+              {nomeEmpresa(achado.audext_ciclos?.proj_empresas)} · {achado.audext_ciclos?.periodo_competencia || '—'}
             </p>
           </div>
           <button onClick={onClose} className="p-1.5 hover:bg-slate-200 rounded-md shrink-0"><X className="h-4 w-4 text-slate-500" /></button>
@@ -88,7 +88,7 @@ export default function AchadoDetalheDrawer({ achado, onClose }) {
             <div>
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1">Ciclo de Auditoria</p>
               <p className="text-slate-700">
-                {achado.audext_ciclos ? `${achado.audext_ciclos.proj_empresas?.nome || '—'} · ${achado.audext_ciclos.periodo_competencia || '—'}` : '—'}
+                {achado.audext_ciclos ? `${nomeEmpresa(achado.audext_ciclos.proj_empresas)} · ${achado.audext_ciclos.periodo_competencia || '—'}` : '—'}
               </p>
             </div>
             <div>

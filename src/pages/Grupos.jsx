@@ -6,10 +6,6 @@ import { MENU_TREE, getLeafKeys, ALL_LEAF_KEYS } from '../config/menuTree'
 import { ACOES_POR_PATH } from '../config/acoesMenu'
 import { DIMENSOES_COMISSAO, escopoComissaoTudoLiberado } from '../utils/permissoesComissao'
 
-// Departamento é só informativo — identifica na tabela a qual área do Grupo Caiobá
-// cada grupo de acesso pertence. Não interfere em nenhuma permissão.
-const DEPARTAMENTOS_GRUPO = ['Vendas', 'Serviços', 'Peças', 'Financeiro', 'RH', 'Contabilidade', 'Controladoria', 'Diretoria', 'Tecnologia', 'Marketing']
-
 // Usado pra só exibir "Acesso por Departamento — Auditoria Externa"/"— Gestão de Projetos"
 // quando o grupo já tem pelo menos uma página do respectivo módulo liberada em Acesso a Páginas.
 const AUDITORIA_EXTERNA_KEYS = ALL_LEAF_KEYS.filter(k => k.startsWith('auditoria-externa/'))
@@ -298,6 +294,7 @@ export default function Grupos() {
   const [comissaoSetorNivel, setComissaoSetorNivel] = useState({})
   // Departamentos só pra identificar o setor na lista (nome de setor pode repetir entre departamentos)
   const [departamentosComissao, setDepartamentosComissao] = useState([])
+  const [departamentosGrupo, setDepartamentosGrupo] = useState([])
   const [setoresComissao, setSetoresComissao] = useState([])
   const [isAdmin, setIsAdmin] = useState(false)
   const [loadingPerms, setLoadingPerms] = useState(false)
@@ -312,12 +309,14 @@ export default function Grupos() {
   const loadGrupos = async () => {
     setLoading(true)
     try {
-      const [grps, todasPerms, emps, usrs] = await Promise.all([
+      const [grps, todasPerms, emps, usrs, deptos] = await Promise.all([
         apiService.getGrupos(),
         apiService.getAllPermissoesEmpresasGrupos(),
         apiService.getEmpresas(),
         apiService.getUsuarios(),
+        apiService.getDepartamentos(),
       ])
+      setDepartamentosGrupo([...new Set(deptos.filter(d => d.ativo !== false).map(d => d.nome_departamento).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR')))
       const empsAtivas = emps.filter(e => e.ativo !== false)
       setTodasEmpresas(empsAtivas)
       setSiglasPorGrupo(buildSiglas(todasPerms, empsAtivas))
@@ -1173,7 +1172,10 @@ export default function Grupos() {
               className="px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-sm"
             >
               <option value="">— Departamento —</option>
-              {DEPARTAMENTOS_GRUPO.map(d => <option key={d} value={d}>{d}</option>)}
+              {(formData.departamento && !departamentosGrupo.includes(formData.departamento)
+                ? [formData.departamento, ...departamentosGrupo]
+                : departamentosGrupo
+              ).map(d => <option key={d} value={d}>{d}</option>)}
             </select>
             <button
               type="submit"

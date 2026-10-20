@@ -36,7 +36,7 @@ function getActiveSectionKey(pathname) {
   if (pathname.startsWith('/bi') || pathname.startsWith('/kpi') || pathname === '/fontes-calculo' || pathname === '/fontes-microwork') return '_bi'
   if (pathname.startsWith('/documentacoes') || pathname.startsWith('/rpa') || pathname.startsWith('/ecossistema')) return '_documentacoes'
   if (pathname.startsWith('/treinamentos')) return '_treinamentos'
-  if (pathname.startsWith('/governanca')) return '_config'
+  if (pathname.startsWith('/governanca') || pathname.startsWith('/controladoria')) return '_config'
   return null
 }
 
@@ -363,7 +363,7 @@ export default function SidebarLayout() {
             {canViewSection('_cadastros.gerais') && (
               <>
                 <div className="mx-3 my-2 border-t border-blue-800/50" />
-                <FlyGroup label="Tabelas Gerais" />
+                <FlyGroup label="Tabelas da Organização" />
                 {canView('segmentos') && <FlyItem to="/segmentos" icon={Building2} onClose={closeFlyout}>Segmentos</FlyItem>}
                 {canView('agrup-empresas') && <FlyItem to="/agrup-empresas" icon={Building2} onClose={closeFlyout}>Agrupamento Empresas</FlyItem>}
                 {canView('empresas') && <FlyItem to="/empresas" icon={Building2} onClose={closeFlyout}>Empresas</FlyItem>}
@@ -375,13 +375,14 @@ export default function SidebarLayout() {
                 {canView('agrup-cargos') && <FlyItem to="/agrup-cargos" icon={Briefcase} onClose={closeFlyout}>Agrupamento de Cargos</FlyItem>}
                 {canView('cargos') && <FlyItem to="/cargos" icon={Briefcase} onClose={closeFlyout}>Cargos</FlyItem>}
                 {canView('organograma') && <FlyItem to="/organograma" icon={Network} onClose={closeFlyout}>Organograma</FlyItem>}
+                {canView('funcionarios') && <FlyItem to="/funcionarios" icon={Users} onClose={closeFlyout}>Funcionários</FlyItem>}
               </>
             )}
-            {canView('funcionarios') && (
+            {canViewSection('_cadastros.sistemas') && (
               <>
                 <div className="mx-3 my-2 border-t border-blue-800/50" />
-                <FlyGroup label="Funcionários" />
-                <FlyItem to="/funcionarios" icon={Users} onClose={closeFlyout}>Funcionários</FlyItem>
+                <FlyGroup label="Tabelas Gerais" />
+                {canView('projetos/sistemas') && <FlyItem to="/projetos/sistemas" icon={BoxIcon} onClose={closeFlyout}>Sistemas</FlyItem>}
               </>
             )}
             {canViewSection('_cadastros.vendas') && (
@@ -417,20 +418,20 @@ export default function SidebarLayout() {
                 {canView('governanca/perfis-acesso') && <FlyItem to="/governanca/perfis-acesso" icon={ShieldCheck} onClose={closeFlyout}>Perfis de Acesso</FlyItem>}
               </>
             )}
-          </>
-        )
-
-      case '_funcionarios':
-        return (
-          <>
-            <FlyGroup label="Funcionários" />
-            {canView('funcionarios') && <FlyItem to="/funcionarios" icon={Users} onClose={closeFlyout}>Funcionários</FlyItem>}
-            {canViewSection('_gestao-tempo') && (
+            {canViewSection('_config.departamentos') && (
               <>
                 <div className="mx-3 my-2 border-t border-blue-800/50" />
-                <FlyGroup label="Gestão de Tempo" />
-                {canView('feriados') && <FlyItem to="/feriados" icon={CalendarX} onClose={closeFlyout}>Feriados</FlyItem>}
-                {canView('calendario') && <FlyItem to="/calendario" icon={Calendar} onClose={closeFlyout}>Calendário</FlyItem>}
+                <FlyGroup label="Departamentos" />
+                {/* Controladoria abre na 1ª aba liberada (DRE / Plano de Contas / Centro de Resultado / Orçamento). */}
+                {canViewSection('_config.departamentos.controladoria') && (
+                  <FlyItem
+                    to={'/' + (['controladoria/dre', 'controladoria/plano-contas', 'controladoria/centro-resultado', 'controladoria/orcamento'].find(canView))}
+                    icon={Calculator}
+                    onClose={closeFlyout}
+                  >
+                    Controladoria
+                  </FlyItem>
+                )}
               </>
             )}
           </>
@@ -520,9 +521,7 @@ export default function SidebarLayout() {
                 <FlyGroup label="Cadastros" />
               </>
             )}
-            {canView('projetos/empresas') && <FlyItem to="/projetos/empresas" icon={Building2} onClose={closeFlyout}>Empresas</FlyItem>}
             {canView('projetos/areas') && <FlyItem to="/projetos/areas" icon={Tag} onClose={closeFlyout}>Áreas</FlyItem>}
-            {canView('projetos/sistemas') && <FlyItem to="/projetos/sistemas" icon={BoxIcon} onClose={closeFlyout}>Sistemas</FlyItem>}
             {canView('projetos/responsaveis') && <FlyItem to="/projetos/responsaveis" icon={Users} onClose={closeFlyout}>Responsáveis</FlyItem>}
             {canView('projetos/fases') && <FlyItem to="/projetos/fases" icon={Layers} onClose={closeFlyout}>Fases</FlyItem>}
             {canView('projetos/status') && <FlyItem to="/projetos/status" icon={CircleDot} onClose={closeFlyout}>Status</FlyItem>}
