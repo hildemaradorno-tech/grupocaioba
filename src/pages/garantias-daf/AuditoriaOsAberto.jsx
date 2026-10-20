@@ -736,6 +736,37 @@ export default function AuditoriaOsAberto() {
     )
   }
 
+  // Opções da engrenagem: só aparece o que o grupo tem liberado (sem permissão = oculto).
+  // Itens liberados mas indisponíveis no momento (ex.: sem empresa selecionada) ficam apagados com o motivo.
+  const opcoesEngrenagem = [
+    {
+      id: 'inserir', visivel: pode('inserir_auditoria'), icon: Download, label: 'Inserir auditoria',
+      desc: importando ? 'Importando...' : !filtroEmpresaId ? 'Selecione uma empresa antes' : empresaImportMicrowork ? 'Importar OS do MicroWork (API)' : 'Importar OS do SharePoint',
+      disabled: importando || !filtroEmpresaId, onClick: handleAbrirImport, cor: 'text-indigo-600',
+    },
+    {
+      id: 'editar', visivel: pode('editar_na_oficina'), icon: Pencil, label: 'Editar auditoria',
+      desc: editar.motivo, disabled: !editar.pode, onClick: abrirModalEditar, cor: 'text-slate-600',
+    },
+    {
+      id: 'reabrir', visivel: pode('reabrir'), icon: RotateCcw, label: 'Reabrir auditoria',
+      desc: reabrir.motivo, disabled: !reabrir.pode, onClick: () => abrirModalPrazo('Reaberta'), cor: 'text-amber-600',
+    },
+    {
+      id: 'programar', visivel: !!isAdminEfetivo, icon: CalendarClock, label: 'Programar auditorias',
+      desc: 'Gerar auditorias automáticas por dia da semana e horário', disabled: false, onClick: abrirModalProgramar, cor: 'text-emerald-600',
+    },
+    {
+      id: 'situacoes', visivel: podeCadastrarSituacoes, icon: Tag, label: 'Situações de auditoria',
+      desc: 'Cadastrar / editar as situações das OS', disabled: false, onClick: () => setModalSituacoes(true), cor: 'text-violet-600',
+    },
+    {
+      id: 'excluir', visivel: pode('excluir_auditoria'), icon: Trash2, label: 'Excluir auditoria',
+      desc: auditoriaAtual ? `Auditoria de ${fmtDate(auditoriaAtual.data_auditoria)}` : 'Selecione uma auditoria',
+      disabled: !auditoriaAtual, onClick: () => setModalExcluir(true), cor: 'text-red-600',
+    },
+  ].filter(op => op.visivel)
+
   return (
     <div className="p-6 space-y-5 max-w-screen-2xl">
 
@@ -797,6 +828,7 @@ export default function AuditoriaOsAberto() {
           </div>
 
           {/* Engrenagem: Inserir / Reabrir / Excluir auditoria */}
+          {opcoesEngrenagem.length > 0 && (
           <div className="relative">
             <button
               onClick={() => setMenuAcoesAberto(v => !v)}
@@ -814,38 +846,7 @@ export default function AuditoriaOsAberto() {
                 {/* clique fora fecha */}
                 <div className="fixed inset-0 z-30" onClick={() => setMenuAcoesAberto(false)} />
                 <div className="absolute right-0 top-full mt-1.5 z-40 w-64 rounded-lg border border-slate-200 bg-white shadow-xl py-1">
-                  {[
-                    {
-                      id: 'inserir', icon: Download, label: 'Inserir auditoria',
-                      desc: !pode('inserir_auditoria') ? SEM_PERMISSAO : importando ? 'Importando...' : !filtroEmpresaId ? 'Selecione uma empresa antes' : empresaImportMicrowork ? 'Importar OS do MicroWork (API)' : 'Importar OS do SharePoint',
-                      disabled: !pode('inserir_auditoria') || importando || !filtroEmpresaId, onClick: handleAbrirImport, cor: 'text-indigo-600',
-                    },
-                    {
-                      id: 'editar', icon: Pencil, label: 'Editar auditoria',
-                      desc: editar.motivo,
-                      disabled: !editar.pode, onClick: abrirModalEditar, cor: 'text-slate-600',
-                    },
-                    {
-                      id: 'reabrir', icon: RotateCcw, label: 'Reabrir auditoria',
-                      desc: reabrir.motivo,
-                      disabled: !reabrir.pode, onClick: () => abrirModalPrazo('Reaberta'), cor: 'text-amber-600',
-                    },
-                    {
-                      id: 'programar', icon: CalendarClock, label: 'Programar auditorias',
-                      desc: isAdminEfetivo ? 'Gerar auditorias automáticas por dia da semana e horário' : 'Somente o Admin pode programar',
-                      disabled: !isAdminEfetivo, onClick: abrirModalProgramar, cor: 'text-emerald-600',
-                    },
-                    {
-                      id: 'situacoes', icon: Tag, label: 'Situações de auditoria',
-                      desc: podeCadastrarSituacoes ? 'Cadastrar / editar as situações das OS' : SEM_PERMISSAO,
-                      disabled: !podeCadastrarSituacoes, onClick: () => setModalSituacoes(true), cor: 'text-violet-600',
-                    },
-                    {
-                      id: 'excluir', icon: Trash2, label: 'Excluir auditoria',
-                      desc: !pode('excluir_auditoria') ? SEM_PERMISSAO : auditoriaAtual ? `Auditoria de ${fmtDate(auditoriaAtual.data_auditoria)}` : 'Selecione uma auditoria',
-                      disabled: !pode('excluir_auditoria') || !auditoriaAtual, onClick: () => setModalExcluir(true), cor: 'text-red-600',
-                    },
-                  ].map(op => (
+                  {opcoesEngrenagem.map(op => (
                     <button
                       key={op.id}
                       disabled={op.disabled}
@@ -863,6 +864,7 @@ export default function AuditoriaOsAberto() {
               </>
             )}
           </div>
+          )}
         </div>
       </div>
 
@@ -999,35 +1001,35 @@ export default function AuditoriaOsAberto() {
                 Voltar etapa
               </button>
             )}
-            {statusAud === 'conferencia' && (
+            {statusAud === 'conferencia' && pode('concluir_conferencia') && (
               <div className="relative group">
                 <button
                   onClick={() => abrirModalPrazo('Conferido')}
-                  disabled={!pode('concluir_conferencia') || loading || rows.length === 0 || naoConferidas > 0}
+                  disabled={loading || rows.length === 0 || naoConferidas > 0}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-green-600 hover:bg-green-700 shadow-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   <CheckCircle2 className="h-3.5 w-3.5" />
                   Conferido
                 </button>
-                {(!pode('concluir_conferencia') || naoConferidas > 0) && (
+                {naoConferidas > 0 && (
                   <span className="pointer-events-none absolute right-0 top-full mt-1.5 z-20 whitespace-nowrap rounded-md bg-slate-800 px-2.5 py-1.5 text-[11px] font-semibold text-white shadow-lg opacity-0 group-hover:opacity-100 transition-opacity">
-                    {!pode('concluir_conferencia') ? SEM_PERMISSAO : `Faltam ${naoConferidas} OS sem Na Oficina (Sim/Não)`}
+                    Faltam {naoConferidas} OS sem Na Oficina (Sim/Não)
                   </span>
                 )}
               </div>
             )}
-            {statusAud === 'a_responder' && (
+            {statusAud === 'a_responder' && pode('concluir_respostas') && (
               <div className="relative group">
                 <button
                   onClick={() => setModalStatus({ para: 'respondido_total', procedimento: 'Respondido Total', titulo: 'Concluir respostas', texto: 'Todas as OS pendentes estão respondidas. A auditoria passa para Modo Relatório — Respondido Total (concluída).' })}
-                  disabled={!pode('concluir_respostas') || pendentesSemResposta > 0}
+                  disabled={pendentesSemResposta > 0}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   Concluir respostas →
                 </button>
-                {(!pode('concluir_respostas') || pendentesSemResposta > 0) && (
+                {pendentesSemResposta > 0 && (
                   <span className="pointer-events-none absolute right-0 top-full mt-1.5 z-20 whitespace-nowrap rounded-md bg-slate-800 px-2.5 py-1.5 text-[11px] font-semibold text-white shadow-lg opacity-0 group-hover:opacity-100 transition-opacity">
-                    {!pode('concluir_respostas') ? SEM_PERMISSAO : `Faltam ${pendentesSemResposta} OS pendentes sem resposta`}
+                    Faltam {pendentesSemResposta} OS pendentes sem resposta
                   </span>
                 )}
               </div>
@@ -1113,8 +1115,8 @@ export default function AuditoriaOsAberto() {
             </div>
           )}
 
-          {/* Pendenciar — só ícone, vermelho; descrição no balão ao passar o mouse */}
-          {emConferencia && (
+          {/* Pendenciar — só ícone, vermelho; descrição no balão ao passar o mouse (oculto sem permissão) */}
+          {emConferencia && pode('pendenciar') && (
             <div className="relative group">
               <button
                 onClick={() => setModalPendenciar(true)}
@@ -1178,6 +1180,7 @@ export default function AuditoriaOsAberto() {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[10px] font-bold uppercase tracking-wider">
+                  {pode('pendenciar') && (
                   <th className="p-3 w-10 text-center">
                     <input
                       type="checkbox"
@@ -1188,6 +1191,7 @@ export default function AuditoriaOsAberto() {
                       className="h-3.5 w-3.5 accent-indigo-600 cursor-pointer"
                     />
                   </th>
+                  )}
                   {thOrd('data_criacao', 'Dt. OS')}
                   {thOrd('os_numero', 'Nº OS')}
                   {thOrd('veiculo_placa', 'Placa')}
@@ -1200,6 +1204,7 @@ export default function AuditoriaOsAberto() {
               <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
                 {rowsOrdenadas.map(row => (
                   <tr key={row.id} className={`transition-colors ${selecionadas.has(row.id) ? 'bg-indigo-50/60' : 'hover:bg-slate-50/70'}`}>
+                    {pode('pendenciar') && (
                     <td className="p-3 w-10 text-center">
                       <input
                         type="checkbox"
@@ -1208,6 +1213,7 @@ export default function AuditoriaOsAberto() {
                         className="h-3.5 w-3.5 accent-indigo-600 cursor-pointer"
                       />
                     </td>
+                    )}
                     <td className="p-3 whitespace-nowrap text-slate-500">{fmtDate(row.data_criacao)}</td>
                     <td className="p-3 font-mono font-bold text-slate-900 whitespace-nowrap">{row.os_numero || '—'}</td>
                     <td className="p-3 font-mono text-slate-700 whitespace-nowrap font-semibold">{row.veiculo_placa || '—'}</td>
@@ -1223,7 +1229,7 @@ export default function AuditoriaOsAberto() {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[10px] font-bold uppercase tracking-wider">
-                  {thOrd('auto', 'Auto', 'text-center w-14', 'center')}
+                  {thOrd('auto', 'Situação', 'text-center w-28', 'center')}
                   {thOrd('data_criacao', 'Dt. Criação')}
                   {thOrd('dias', 'Dias Oficina', 'text-center', 'center')}
                   {thOrd('os_numero', 'Nº OS')}
@@ -1253,9 +1259,10 @@ export default function AuditoriaOsAberto() {
                       <td className="p-3 text-center">
                         {(() => {
                           // P = pendente sem resposta (vermelho forte) · R = pendente já respondida (vermelho claro)
+                          // Pendente sem resposta → "Responder" (vermelho claro) · pendente respondida → "Respondido" (verde claro)
                           if (isPendente(row)) return isRespondida(row)
-                            ? <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-500 border border-red-200" title="Pendência respondida">R</span>
-                            : <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-bold bg-red-600 text-white" title="Pendente — sem resposta">P</span>
+                            ? <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap bg-green-100 text-green-700 border border-green-200" title="Pendência respondida">Respondido</span>
+                            : <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap bg-red-100 text-red-700 border border-red-200" title="Pendente — sem resposta">Responder</span>
                           return<span className="inline-flex px-1.5 py-0.5 rounded bg-green-100 text-green-700" title="OK — não pendente"><ThumbsUp className="h-3 w-3" /></span>
                         })()}
                       </td>
