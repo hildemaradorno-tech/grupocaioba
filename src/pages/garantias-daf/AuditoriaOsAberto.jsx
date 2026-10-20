@@ -918,29 +918,11 @@ export default function AuditoriaOsAberto() {
 
       {/* Status da auditoria — etapas (concluída / atual / próxima) + ação para avançar */}
       {auditoriaAtual && (
-        <div className="bg-white rounded-lg border border-slate-200 shadow-sm px-4 py-3 flex items-center justify-between gap-4 flex-wrap">
-          <div className="flex flex-col gap-1.5">
-          {/* Linha 1: status */}
-          <div className="flex items-center gap-4 flex-wrap">
-          <span className="text-[10px] font-bold text-slate-400 uppercase">Status da Auditoria</span>
-          {(() => {
-            const et = ETAPAS_AUDITORIA[etapaIdx] || ETAPAS_AUDITORIA[0]
-            // Cor de fundo por status: A Responder verde-claro; encerradas: Total verde, Parcial amarelo, Sem Resposta vermelho
-            const corStatus = {
-              conferencia:        'text-indigo-700',
-              a_responder:        'px-2.5 py-1 rounded-md bg-green-50 border border-green-300 text-green-700',
-              respondido_total:   'px-2.5 py-1 rounded-md bg-green-600 text-white',
-              respondido_parcial: 'px-2.5 py-1 rounded-md bg-[#ffff00] border border-yellow-500 text-slate-900 shadow-sm',
-              sem_resposta:       'px-2.5 py-1 rounded-md bg-red-600 text-white',
-            }[et.id] || 'text-indigo-700'
-            return (
-              <span className={`flex items-center gap-1.5 text-sm font-semibold ${corStatus}`}>
-                <et.icon className="h-4 w-4" />
-                {et.label}
-              </span>
-            )
-          })()}
-          </div>
+        <div className="bg-white rounded-lg border border-slate-200 shadow-sm px-4 py-3 flex items-center justify-between gap-4 flex-wrap md:flex-nowrap">
+          {/* Informações à esquerda (quebram linha dentro da coluna); quadro de status à direita, sempre
+              centralizado na altura — não desce para baixo quando a linha de etapas é longa */}
+          <div className="flex flex-col gap-1.5 flex-1 min-w-0">
+          {/* Status fica à direita: Conferência (etiqueta), A Responder (quadro do prazo), encerradas (etiqueta colorida) */}
 
           {/* Linha 2: quantidade de OS + valor total + responsável (definido na importação) */}
           <div className="flex items-center gap-4 flex-wrap text-xs text-slate-500">
@@ -971,7 +953,8 @@ export default function AuditoriaOsAberto() {
             const etapas = [
               { proc: 'Aberta',     por: a.importado_por,  em: a.criado_em },
               { proc: 'Conferido',  por: a.conferido_por,  em: a.conferido_em },
-              { proc: { respondido_parcial: 'Respondido Parcial', sem_resposta: 'Sem Resposta' }[a.status] || 'Respondido Total', por: a.respondido_por, em: a.respondido_em },
+              // Encerramento na linha de etapas: sempre "Finalizado" (o resultado aparece no quadro à direita)
+              { proc: 'Finalizado', por: a.respondido_por, em: a.respondido_em },
             ].filter(e => e && e.em)
              .sort((x, y) => new Date(x.em) - new Date(y.em))
             return (
@@ -1010,7 +993,40 @@ export default function AuditoriaOsAberto() {
           </div>
 
           {/* Lado direito: prazo de resposta e, abaixo dele, os botões de etapa */}
-          <div className="flex flex-col items-end gap-2 ml-auto">
+          <div className="flex flex-col items-end gap-2 ml-auto shrink-0">
+          {/* Modo Conferência: etiqueta verde sinalizando a etapa atual, acima do botão Conferido */}
+          {emConferencia && (
+            <span className="flex items-center gap-1.5 px-3 py-1 rounded-md bg-emerald-100 border border-emerald-300 text-emerald-800 text-sm font-semibold">
+              <ClipboardCheck className="h-4 w-4" />
+              Modo Conferência
+            </span>
+          )}
+          {/* Encerrada: Respondido Total (verde) / Parcial (amarelo) / Sem Resposta (vermelho) também à direita */}
+          {/* Mesmo modelo do quadro "Prazo para responder": rótulo pequeno + status + quando encerrou */}
+          {auditoriaEncerrada && (() => {
+            const et = ETAPAS_AUDITORIA.find(e => e.id === statusAud)
+            const visual = {
+              respondido_total:   { texto: 'Respondido Total',   cor: 'border-green-300 bg-green-50 text-green-800' },
+              respondido_parcial: { texto: 'Respondido Parcial', cor: 'border-amber-300 bg-amber-50 text-amber-800' },
+              sem_resposta:       { texto: 'Sem Resposta',       cor: 'border-red-300 bg-red-50 text-red-700' },
+            }[statusAud]
+            if (!et || !visual) return null
+            const quando = auditoriaAtual.respondido_em || auditoriaAtual.status_atualizado_em
+            return (
+              <div className={`flex items-center gap-3 rounded-lg border-2 px-4 py-2 ${visual.cor}`}>
+                <et.icon className="h-6 w-6 shrink-0" />
+                <div className="leading-tight">
+                  <p className="text-[10px] font-bold uppercase opacity-80">Auditoria encerrada</p>
+                  <p className="text-sm font-bold">{visual.texto}</p>
+                  {quando && (
+                    <p className="text-[11px] font-semibold opacity-80">
+                      em {new Date(quando).toLocaleDateString('pt-BR')} às {new Date(quando).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )
+          })()}
           {/* Prazo de resposta — bem visível enquanto A Responder */}
           {prazoMs && (
             <div className={`flex items-center gap-3 rounded-lg border-2 px-4 py-2 ${
@@ -1026,25 +1042,6 @@ export default function AuditoriaOsAberto() {
             </div>
           )}
 
-          <div className="flex items-center gap-2">
-            {statusAud === 'conferencia' && pode('concluir_conferencia') && (
-              <div className="relative group">
-                <button
-                  onClick={() => abrirModalPrazo('Conferido')}
-                  disabled={loading || rows.length === 0 || naoConferidas > 0}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-green-600 hover:bg-green-700 shadow-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  <CheckCircle2 className="h-3.5 w-3.5" />
-                  Conferido
-                </button>
-                {naoConferidas > 0 && (
-                  <span className="pointer-events-none absolute right-0 top-full mt-1.5 z-20 whitespace-nowrap rounded-md bg-slate-800 px-2.5 py-1.5 text-[11px] font-semibold text-white shadow-lg opacity-0 group-hover:opacity-100 transition-opacity">
-                    Faltam {naoConferidas} OS sem Na Oficina (Sim/Não)
-                  </span>
-                )}
-              </div>
-            )}
-          </div>
           </div>
         </div>
       )}
@@ -1192,6 +1189,25 @@ export default function AuditoriaOsAberto() {
               <List className="h-3.5 w-3.5" />
               {relatorioVerTodos ? 'Ver só pendentes' : 'Ver todas'}
             </button>
+          )}
+
+          {/* Modo Conferência: botão Conferido à direita, na linha da busca */}
+          {statusAud === 'conferencia' && pode('concluir_conferencia') && (
+            <div className="relative group">
+              <button
+                onClick={() => abrirModalPrazo('Conferido')}
+                disabled={loading || rows.length === 0 || naoConferidas > 0}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-green-600 hover:bg-green-700 shadow-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                Conferido
+              </button>
+              {naoConferidas > 0 && (
+                <span className="pointer-events-none absolute right-0 top-full mt-1.5 z-20 whitespace-nowrap rounded-md bg-slate-800 px-2.5 py-1.5 text-[11px] font-semibold text-white shadow-lg opacity-0 group-hover:opacity-100 transition-opacity">
+                  Faltam {naoConferidas} OS sem Na Oficina (Sim/Não)
+                </span>
+              )}
+            </div>
           )}
 
           {/* A Responder: Voltar etapa e Concluir respostas na mesma linha do Ver todas */}
