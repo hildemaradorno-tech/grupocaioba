@@ -1,5 +1,5 @@
 import React from 'react'
-import { Filter, RotateCcw } from 'lucide-react'
+import { RotateCcw } from 'lucide-react'
 import { useProjetosFiltros } from '../../context/ProjetosFiltrosContext'
 
 const sel = (val) =>
@@ -30,53 +30,8 @@ function filtrarProjetos(projetos, { empresa, departamento, area, fase, sistema,
   })
 }
 
-// Barra compacta: botão toggle + contador de filtros ativos
-// Usada em ProjetosDashboard e CalendarioProjetos (modo showTrigger=false)
-export function FiltrosCompactBar() {
-  const {
-    filtroEmpresa,
-    filtroDepartamento,
-    filtroArea,
-    filtroFase,
-    filtroSistema,
-    filtroRespProjeto,
-    filtroRespTarefa,
-    filtrosAbertos,     setFiltrosAbertos,
-    filtroDataIni,
-    filtroDataFim,
-    filtroDataProjIni,
-    filtroDataProjFim,
-  } = useProjetosFiltros()
-
-  const count = [
-    filtroEmpresa, filtroDepartamento, filtroArea, filtroFase,
-    filtroSistema, filtroRespProjeto, filtroRespTarefa,
-    (filtroDataProjIni || filtroDataProjFim) ? '1' : '',
-    (filtroDataIni || filtroDataFim) ? '1' : '',
-  ].filter(Boolean).length
-
-  return (
-    <div className="flex items-center shrink-0">
-      <button
-        onClick={() => setFiltrosAbertos(v => !v)}
-        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
-          filtrosAbertos
-            ? 'bg-indigo-50 border-indigo-200 text-indigo-700'
-            : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-        }`}
-      >
-        <Filter className="h-3.5 w-3.5" />
-        Filtros Avançados
-        {count > 0 && (
-          <span className="bg-indigo-600 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center leading-none">
-            {count}
-          </span>
-        )}
-        <span className="text-slate-400 text-[10px]">{filtrosAbertos ? '▲' : '▼'}</span>
-      </button>
-    </div>
-  )
-}
+// Mantido por compatibilidade mas não renderiza mais o botão toggle
+export function FiltrosCompactBar() { return null }
 
 export default function ProjetosFiltrosPanel({ projetos = [], children, showTrigger = true, hiddenFilters = [] }) {
   const {
@@ -87,7 +42,6 @@ export default function ProjetosFiltrosPanel({ projetos = [], children, showTrig
     filtroSistema,      setFiltroSistema,
     filtroRespProjeto,  setFiltroRespProjeto,
     filtroRespTarefa,   setFiltroRespTarefa,
-    filtrosAbertos,     setFiltrosAbertos,
     filtroDataIni,      setFiltroDataIni,
     filtroDataFim,      setFiltroDataFim,
     filtroDataProjIni,  setFiltroDataProjIni,
@@ -96,13 +50,6 @@ export default function ProjetosFiltrosPanel({ projetos = [], children, showTrig
   } = useProjetosFiltros()
 
   const hasAnyFilter = temFiltroAtivo || Boolean(filtroDataIni) || Boolean(filtroDataFim) || Boolean(filtroDataProjIni) || Boolean(filtroDataProjFim)
-
-  const count = [
-    filtroEmpresa, filtroDepartamento, filtroArea, filtroFase,
-    filtroSistema, filtroRespProjeto, filtroRespTarefa,
-    (filtroDataProjIni || filtroDataProjFim) ? '1' : '',
-    (filtroDataIni || filtroDataFim) ? '1' : '',
-  ].filter(Boolean).length
 
   const filtrosAtivos = {
     empresa: filtroEmpresa, departamento: filtroDepartamento, area: filtroArea,
@@ -202,40 +149,10 @@ export default function ProjetosFiltrosPanel({ projetos = [], children, showTrig
     </>
   )
 
-  // Modo sem trigger: apenas o conteúdo expansível (controlado externamente via ctx.filtrosAbertos)
-  if (!showTrigger) {
-    if (!filtrosAbertos) return null
-    return (
-      <div className="bg-white border border-slate-200 rounded-lg px-4 pb-4 pt-1 shadow-sm">
-        {filterBody}
-      </div>
-    )
-  }
-
-  // Modo padrão: toggle embutido (usado em CalendarioProjetos, EntregasProjetos, ListaWhatsApp)
+  // Sempre visível — sem toggle
   return (
-    <div className="bg-white rounded-lg border border-slate-200 shadow-sm">
-      <button
-        onClick={() => setFiltrosAbertos(v => !v)}
-        className="w-full flex items-center justify-between px-4 py-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
-      >
-        <span className="flex items-center gap-2">
-          <Filter className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-          <span className="shrink-0">Filtros Avançados</span>
-          {count > 0 && (
-            <span className="bg-indigo-600 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center leading-none">
-              {count}
-            </span>
-          )}
-        </span>
-        <span className="text-slate-400">{filtrosAbertos ? '▲' : '▼'}</span>
-      </button>
-
-      {filtrosAbertos && (
-        <div className="px-4 pb-4 border-t border-slate-100">
-          {filterBody}
-        </div>
-      )}
+    <div className="bg-white border border-slate-200 rounded-lg px-4 pb-4 pt-1 shadow-sm">
+      {filterBody}
     </div>
   )
 }

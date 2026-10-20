@@ -645,19 +645,6 @@ const abrirModalMover = async (tarefa) => {
         return (
           <div className="flex items-start justify-end gap-2">
             <div className="flex flex-col items-end gap-1.5">
-              <button
-                onClick={() => setFiltrosAbertos(v => !v)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
-                  filtrosAbertos ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-                }`}
-              >
-                <Filter className="h-3.5 w-3.5" />
-                Filtros Avançados
-                {filterCount > 0 && (
-                  <span className="bg-indigo-600 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center leading-none">{filterCount}</span>
-                )}
-                <span className="text-slate-400 text-[10px]">{filtrosAbertos ? '▲' : '▼'}</span>
-              </button>
               {filterCount > 0 && (
                 <div className="flex items-center gap-1.5 flex-wrap justify-end">
                   {[
@@ -698,9 +685,8 @@ const abrirModalMover = async (tarefa) => {
         )
       })()}
 
-      {/* Painel de filtros colapsável */}
-      {filtrosAbertos && (
-        <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-3">
+      {/* Painel de filtros fixo */}
+      <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-3">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide shrink-0">Término:</span>
             <input type="date" value={filtroDataTermIni} onChange={e => setFiltroDataTermIni(e.target.value)}
@@ -739,7 +725,6 @@ const abrirModalMover = async (tarefa) => {
             )
           })()}
         </div>
-      )}
 
       {/* LISTA DE TAREFAS */}
       <div className="space-y-3">
