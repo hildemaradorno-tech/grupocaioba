@@ -86,6 +86,7 @@ export default function AuditoriaOsAberto() {
   const [relatorioVerTodos, setRelatorioVerTodos] = useState(false) // relatório: só pendentes (padrão) ou todas
   const [cardFiltro, setCardFiltro] = useState(null) // null | mais30 | semVeiculo | total
   const [filtroNaOficina, setFiltroNaOficina] = useState('') // conferência: '' | sim | nao | vazio
+  const [filtroSituacao, setFiltroSituacao] = useState('')   // relatório: '' | responder | respondido | sem_resposta
   const [ordem, setOrdem] = useState({ key: null, dir: 'asc' }) // ordenação da tabela
 
   // ── Seleção de OS (Modo Conferência) + Pendenciar em lote ──
@@ -215,7 +216,7 @@ export default function AuditoriaOsAberto() {
   }, [])
 
   useEffect(() => {
-    loadRows(auditoriaId); setBuscaOs(''); setCardFiltro(null); setFiltroNaOficina(''); setSelecionadas(new Set())
+    loadRows(auditoriaId); setBuscaOs(''); setCardFiltro(null); setFiltroNaOficina(''); setFiltroSituacao(''); setSelecionadas(new Set())
   }, [auditoriaId, loadRows])
 
   // ── Abre modal de importação ──
@@ -665,15 +666,24 @@ export default function AuditoriaOsAberto() {
   })()
   const prazoUrgente = prazoMs && prazoMs - agora <= 2 * 3600000 // menos de 2 horas
 
-  // Filtro Na Oficina (só no Modo Conferência)
+  // Situação da OS no relatório (1ª coluna): só para pendentes
+  const situacaoDe = (r) => !isPendente(r) ? '' : isRespondida(r) ? 'respondido' : auditoriaEncerrada ? 'sem_resposta' : 'responder'
+  const contagemSituacao = useMemo(() => {
+    const c = { responder: 0, respondido: 0, sem_resposta: 0 }
+    rowsDoModo.forEach(r => { const s = situacaoDe(r); if (s) c[s]++ })
+    return c
+  }, [rowsDoModo, auditoriaEncerrada]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Filtro Na Oficina (Modo Conferência) / filtro de Situação (Modo Relatório)
   const porNaOficina = useMemo(() => {
-    if (!emConferencia || !filtroNaOficina) return rowsDoModo
+    if (!emConferencia) return filtroSituacao ? rowsDoModo.filter(r => situacaoDe(r) === filtroSituacao) : rowsDoModo
+    if (!filtroNaOficina) return rowsDoModo
     return rowsDoModo.filter(r =>
       filtroNaOficina === 'sim' ? r.na_oficina === true
       : filtroNaOficina === 'nao' ? r.na_oficina === false
       : r.na_oficina !== true && r.na_oficina !== false
     )
-  }, [rowsDoModo, emConferencia, filtroNaOficina])
+  }, [rowsDoModo, emConferencia, filtroNaOficina, filtroSituacao, auditoriaEncerrada]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const rowsFiltradas = useMemo(() => {
     const q = buscaOs.trim().toLowerCase()
@@ -1097,6 +1107,32 @@ export default function AuditoriaOsAberto() {
             )}
           </div>
 
+          {/* Relatório: filtro por Situação ao lado da busca (clicar de novo limpa) */}
+          {!emConferencia && (
+            <div className="flex items-center gap-1">
+              {[
+                { id: 'responder',    label: 'Responder',    on: 'bg-red-100 border-red-300 text-red-700',       mostra: !auditoriaEncerrada },
+                { id: 'respondido',   label: 'Respondido',   on: 'bg-green-100 border-green-300 text-green-700', mostra: true },
+                { id: 'sem_resposta', label: 'Sem resposta', on: 'bg-slate-900 border-slate-900 text-white',     mostra: auditoriaEncerrada },
+              ].filter(s => s.mostra).map(s => {
+                const ativo = filtroSituacao === s.id
+                return (
+                  <button
+                    key={s.id}
+                    onClick={() => setFiltroSituacao(ativo ? '' : s.id)}
+                    title={ativo ? 'Clique para limpar o filtro' : `Mostrar só "${s.label}"`}
+                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-semibold border transition-colors ${
+                      ativo ? s.on : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    {s.label}
+                    <span className={`text-[10px] font-bold px-1.5 rounded-full ${ativo ? 'bg-white/30' : 'bg-slate-100 text-slate-500'}`}>{contagemSituacao[s.id]}</span>
+                  </button>
+                )
+              })}
+            </div>
+          )}
+
           {/* Conferência: filtro por Na Oficina, ao lado da busca */}
           {emConferencia && (
             <div className="relative w-[230px]">
@@ -1142,7 +1178,7 @@ export default function AuditoriaOsAberto() {
           <div className="flex-1" />
 
           {/* A Responder: alterna entre só pendentes e todas as OS sem resposta */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
           {!emConferencia && (
             <button
               onClick={() => setRelatorioVerTodos(v => !v)}
@@ -1286,9 +1322,12 @@ export default function AuditoriaOsAberto() {
                         {(() => {
                           // P = pendente sem resposta (vermelho forte) · R = pendente já respondida (vermelho claro)
                           // Pendente sem resposta → "Responder" (vermelho claro) · pendente respondida → "Respondido" (verde claro)
+                          // Auditoria encerrada (prazo vencido) e OS pendente sem resposta → "Sem resposta" (preto)
                           if (isPendente(row)) return isRespondida(row)
                             ? <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap bg-green-100 text-green-700 border border-green-200" title="Pendência respondida">Respondido</span>
-                            : <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap bg-red-100 text-red-700 border border-red-200" title="Pendente — sem resposta">Responder</span>
+                            : auditoriaEncerrada
+                              ? <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap bg-slate-900 text-white" title="Prazo encerrado sem resposta">Sem resposta</span>
+                              : <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap bg-red-100 text-red-700 border border-red-200" title="Pendente — sem resposta">Responder</span>
                           return<span className="inline-flex px-1.5 py-0.5 rounded bg-green-100 text-green-700" title="OK — não pendente"><ThumbsUp className="h-3 w-3" /></span>
                         })()}
                       </td>
