@@ -114,6 +114,6 @@ export function BadgeAtivo({ ativo }) {
 // Mensagem padrão de erro do Supabase pra códigos duplicados.
 export function mensagemErro(err, oQue) {
   const msg = err?.message || String(err)
-  if (msg.includes('duplicate key') || msg.includes('unique')) return `Já existe ${oQue} com esse código.`
+  if (msg.includes('duplicate key') || msg.includes('unique')) return `Já existe ${oQue} com esse código${msg.includes('sistema_codigo') ? ' neste sistema' : ''}.`
   return 'Erro ao salvar: ' + msg
 }

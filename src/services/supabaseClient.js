@@ -3474,6 +3474,13 @@ export const apiService = {
     if (error) throw error
     return data?.[0]
   },
+  // Altera só o prazo de resposta (data/hora de fechamento) — Editar auditoria, status A Responder
+  updateAuditoriaPrazo: async (id, prazoResposta) => {
+    const { data, error } = await supabase.from('aud_auditorias')
+      .update({ prazo_resposta: prazoResposta }).eq('id', id).select()
+    if (error) throw error
+    return data?.[0]
+  },
   deleteAuditoria: async (id) => {
     // Apaga as OS filhas primeiro (garante exclusão mesmo sem CASCADE)
     const { error: e1 } = await supabase.from('aud_auditoria_os').delete().eq('auditoria_id', id)
@@ -5667,8 +5674,8 @@ export const apiService = {
     if (error) throw error
     return data || []
   },
-  salvarCtbCentroResultado: async (id, { codigo, descricao, sistema_id, ativo }) => {
-    const payload = { codigo: codigo.trim(), descricao: descricao.trim(), sistema_id: sistema_id || null, ativo: ativo ?? true }
+  salvarCtbCentroResultado: async (id, { codigo, descricao, sistema_id, sigla, ativo }) => {
+    const payload = { codigo: codigo.trim(), descricao: descricao.trim(), sistema_id: sistema_id || null, sigla: (sigla || '').trim() || null, ativo: ativo ?? true }
     const query = id
       ? supabase.from('ctb_centros_resultado').update(payload).eq('id', id)
       : supabase.from('ctb_centros_resultado').insert([payload])

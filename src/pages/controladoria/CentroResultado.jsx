@@ -1,12 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { Plus, Target, Search } from 'lucide-react'
+import { Plus, Target, Search, FileSpreadsheet } from 'lucide-react'
+import ImportarCentrosResultadoModal from './ImportarCentrosResultadoModal'
+import MenuEngrenagem from '../../components/MenuEngrenagem'
 import { useAuth } from '../../context/AuthContext'
 import PermissionActionButtons from '../../components/PermissionActionButtons'
 import { apiService } from '../../services/api'
 import { CabecalhoControladoria, ModalForm, ConfirmarExclusao, BadgeAtivo, INPUT, LABEL, mensagemErro } from './ControladoriaNav'
 
 const MENU = 'controladoria/centro-resultado'
-const FORM_VAZIO = { codigo: '', descricao: '', sistema_id: '', ativo: true }
+const FORM_VAZIO = { codigo: '', descricao: '', sigla: '', sistema_id: '', ativo: true }
 
 export default function CentroResultado() {
   const [centros, setCentros] = useState([])
@@ -15,8 +17,10 @@ export default function CentroResultado() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [busca, setBusca] = useState('')
+  const [filtroSistema, setFiltroSistema] = useState('') // '' = todos | '__sem' = sem sistema | id
 
   const [modalAberto, setModalAberto] = useState(false)
+  const [modalImportarAberto, setModalImportarAberto] = useState(false)
   const [editingId, setEditingId] = useState(null)
   const [form, setForm] = useState(FORM_VAZIO)
   const [erroModal, setErroModal] = useState(null)
@@ -45,15 +49,17 @@ export default function CentroResultado() {
 
   const visiveis = useMemo(() => {
     const t = busca.trim().toLowerCase()
-    const lista = [...centros].sort((a, b) => a.codigo.localeCompare(b.codigo, 'pt-BR', { numeric: true }))
+    const lista = centros
+      .filter(c => !filtroSistema || (filtroSistema === '__sem' ? !c.sistema_id : c.sistema_id === filtroSistema))
+      .sort((a, b) => a.codigo.localeCompare(b.codigo, 'pt-BR', { numeric: true }))
     if (!t) return lista
-    return lista.filter(c => c.codigo.toLowerCase().includes(t) || c.descricao.toLowerCase().includes(t))
-  }, [centros, busca])
+    return lista.filter(c => c.codigo.toLowerCase().includes(t) || c.descricao.toLowerCase().includes(t) || (c.sigla || '').toLowerCase().includes(t))
+  }, [centros, busca, filtroSistema])
 
   const abrirIncluir = () => { setEditingId(null); setForm(FORM_VAZIO); setErroModal(null); setModalAberto(true) }
   const abrirEditar = (c) => {
     setEditingId(c.id)
-    setForm({ codigo: c.codigo, descricao: c.descricao, sistema_id: c.sistema_id || '', ativo: c.ativo ?? true })
+    setForm({ codigo: c.codigo, descricao: c.descricao, sigla: c.sigla || '', sistema_id: c.sistema_id || '', ativo: c.ativo ?? true })
     setErroModal(null)
     setModalAberto(true)
   }
@@ -88,9 +94,10 @@ export default function CentroResultado() {
       <CabecalhoControladoria
         descricao="Centros de Resultado: unidades de apuração de receitas e despesas, por sistema."
         acao={canEdit && (
-          <button onClick={abrirIncluir} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-2 rounded-md shadow-sm transition-colors">
-            <Plus className="h-4 w-4" /> Incluir Centro de Resultado
-          </button>
+          <MenuEngrenagem itens={[
+            { icon: Plus, cor: 'text-indigo-600', titulo: 'Incluir Centro de Resultado', descricao: 'Cadastra um novo centro de resultado', onClick: abrirIncluir },
+            { icon: FileSpreadsheet, cor: 'text-emerald-600', titulo: 'Importar Excel', descricao: 'Importa código e descrição de uma planilha para um sistema', onClick: () => setModalImportarAberto(true) },
+          ]} />
         )}
       />
 
@@ -107,8 +114,13 @@ export default function CentroResultado() {
           <div className="flex items-center gap-3">
             <div className="relative w-80">
               <Search className="h-3.5 w-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-              <input value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar por código ou descrição" className={`${INPUT} pl-8`} />
+              <input value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar por código, descrição ou sigla" className={`${INPUT} pl-8`} />
             </div>
+            <select value={filtroSistema} onChange={e => setFiltroSistema(e.target.value)} className={`${INPUT} w-60`}>
+              <option value="">Todos os sistemas</option>
+              <option value="__sem">Sem sistema</option>
+              {sistemas.map(s => <option key={s.id} value={s.id}>{s.nome}{s.ativo === false ? ' (inativo)' : ''}</option>)}
+            </select>
             <span className="text-[11px] text-slate-400">{visiveis.length} de {centros.length} centro(s)</span>
           </div>
 
@@ -116,22 +128,25 @@ export default function CentroResultado() {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[11px] font-semibold uppercase tracking-wider">
+                  <th className="p-3 w-24 text-center">Ações</th>
                   <th className="p-3 w-32">Código</th>
                   <th className="p-3">Descrição</th>
+                  <th className="p-3 w-28">Sigla</th>
                   <th className="p-3 w-64">Sistema</th>
                   <th className="p-3 w-24 text-center">Situação</th>
-                  <th className="p-3 w-24 text-center">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
                 {visiveis.length === 0 ? (
-                  <tr><td colSpan="5" className="p-6 text-center text-slate-400">{centros.length === 0 ? 'Nenhum centro de resultado cadastrado.' : 'Nenhum centro encontrado.'}</td></tr>
+                  <tr><td colSpan="6" className="p-6 text-center text-slate-400">{centros.length === 0 ? 'Nenhum centro de resultado cadastrado.' : 'Nenhum centro encontrado.'}</td></tr>
                 ) : visiveis.map(c => (
                   <tr key={c.id} className="hover:bg-slate-50/70 transition-colors">
+                    <td className="p-3"><PermissionActionButtons engrenagem menuPath={MENU} onEdit={() => abrirEditar(c)} onDelete={() => setExcluir(c)} /></td>
                     <td className="p-3 font-mono text-slate-600">{c.codigo}</td>
                     <td className="p-3 font-bold text-slate-900">
                       <div className="flex items-center gap-2"><Target className="h-3.5 w-3.5 text-indigo-500 shrink-0" />{c.descricao}</div>
                     </td>
+                    <td className="p-3 font-mono text-slate-600">{c.sigla || <span className="text-slate-300">—</span>}</td>
                     <td className="p-3 text-[11px]">
                       {c.sistema_id && sistemasMap[c.sistema_id] ? (
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-bold"
@@ -141,7 +156,6 @@ export default function CentroResultado() {
                       ) : <span className="text-slate-300">—</span>}
                     </td>
                     <td className="p-3 text-center"><BadgeAtivo ativo={c.ativo} /></td>
-                    <td className="p-3"><PermissionActionButtons menuPath={MENU} onEdit={() => abrirEditar(c)} onDelete={() => setExcluir(c)} /></td>
                   </tr>
                 ))}
               </tbody>
@@ -170,6 +184,10 @@ export default function CentroResultado() {
             </div>
           </div>
           <div className="flex flex-col gap-1.5">
+            <label className={LABEL}>Sigla</label>
+            <input value={form.sigla} onChange={e => setForm(f => ({ ...f, sigla: e.target.value.toUpperCase() }))} placeholder="Ex: OFC-CG" maxLength={20} className={`${INPUT} font-mono`} />
+          </div>
+          <div className="flex flex-col gap-1.5">
             <label className={LABEL}>Sistema</label>
             <select value={form.sistema_id} onChange={e => setForm(f => ({ ...f, sistema_id: e.target.value }))} className={INPUT}>
               <option value="">— Não se aplica —</option>
@@ -183,6 +201,15 @@ export default function CentroResultado() {
             Ativo
           </label>
         </ModalForm>
+      )}
+
+      {modalImportarAberto && (
+        <ImportarCentrosResultadoModal
+          centros={centros}
+          sistemas={sistemas}
+          onClose={() => setModalImportarAberto(false)}
+          onImported={loadData}
+        />
       )}
 
       {excluir && (

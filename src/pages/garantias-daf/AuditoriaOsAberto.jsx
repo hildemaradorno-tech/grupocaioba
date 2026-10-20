@@ -98,6 +98,8 @@ export default function AuditoriaOsAberto() {
   const [edicaoNaOficina, setEdicaoNaOficina] = useState({}) // { [osId]: true | false | null } — só o que mudou
   const [buscaEditar, setBuscaEditar] = useState('')
   const [responsavelEditarId, setResponsavelEditarId] = useState('') // troca do responsável pelas respostas
+  const [prazoEditarData, setPrazoEditarData] = useState('')          // data/hora de fechamento (só A Responder)
+  const [prazoEditarHora, setPrazoEditarHora] = useState('')
   const [salvandoEdicao, setSalvandoEdicao] = useState(false)
 
   // ── Programar auditorias automáticas (engrenagem, só Admin) ──
@@ -501,12 +503,34 @@ export default function AuditoriaOsAberto() {
   const responsavelAtualId = rows.find(r => r.responsavel_id)?.responsavel_id || ''
   const gerentesAuditoria = responsaveis.filter(r => r.empresa_id === auditoriaAtual?.empresa_id)
   const responsavelMudou = responsavelEditarId !== responsavelAtualId
-  const abrirModalEditar = () => { setEdicaoNaOficina({}); setBuscaEditar(''); setResponsavelEditarId(responsavelAtualId); setModalEditar(true) }
+  // Prazo de resposta (data/hora de fechamento): editável só enquanto A Responder
+  const pad2 = (n) => String(n).padStart(2, '0')
+  const prazoAtualLocal = (() => {
+    if (!auditoriaAtual?.prazo_resposta) return { data: '', hora: '' }
+    const d = new Date(auditoriaAtual.prazo_resposta)
+    return { data: `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`, hora: `${pad2(d.getHours())}:${pad2(d.getMinutes())}` }
+  })()
+  const podeEditarPrazo = statusAud === 'a_responder'
+  const prazoEditado = podeEditarPrazo && prazoEditarData && prazoEditarHora ? new Date(`${prazoEditarData}T${prazoEditarHora}:00`) : null
+  const prazoMudou = podeEditarPrazo && (prazoEditarData !== prazoAtualLocal.data || prazoEditarHora !== prazoAtualLocal.hora)
+  const prazoEditadoValido = !prazoMudou || (!!prazoEditado && !isNaN(prazoEditado.getTime()) && prazoEditado.getTime() > Date.now())
+
+  const abrirModalEditar = () => {
+    setEdicaoNaOficina({}); setBuscaEditar(''); setResponsavelEditarId(responsavelAtualId)
+    setPrazoEditarData(prazoAtualLocal.data); setPrazoEditarHora(prazoAtualLocal.hora)
+    setModalEditar(true)
+  }
   const qtdAlteracoes = Object.keys(edicaoNaOficina).length
   const handleSalvarEdicao = async () => {
-    if (!qtdAlteracoes && !responsavelMudou) { setModalEditar(false); return }
+    if (!qtdAlteracoes && !responsavelMudou && !prazoMudou) { setModalEditar(false); return }
+    if (!prazoEditadoValido) { setErro('Informe um prazo de fechamento no futuro.'); return }
     setSalvandoEdicao(true)
     try {
+      // Novo prazo de fechamento
+      if (prazoMudou) {
+        const atualizada = await apiService.updateAuditoriaPrazo(auditoriaAtual.id, prazoEditado.toISOString())
+        setAuditorias(prev => prev.map(a => a.id === auditoriaAtual.id ? { ...a, ...atualizada } : a))
+      }
       // Troca do responsável: grava em todas as OS da auditoria
       if (responsavelMudou) {
         const resp = responsaveis.find(r => r.id === responsavelEditarId)
@@ -1426,17 +1450,9 @@ export default function AuditoriaOsAberto() {
                 </div>
               </div>
 
-              {/* Busca + Responsável na mesma linha, abaixo do título e antes da tabela */}
-              <div className="px-4 py-3 border-b border-slate-100 flex items-end gap-4 flex-wrap">
-                <div className="relative flex-1 max-w-md">
-                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
-                  <input
-                    value={buscaEditar}
-                    onChange={e => setBuscaEditar(e.target.value)}
-                    placeholder="Buscar Nº OS, placa ou chassi..."
-                    className="w-full pl-8 pr-2 py-2 text-xs border border-slate-200 rounded-md focus:ring-2 focus:ring-indigo-500/20 outline-none"
-                  />
-                </div>
+              {/* Linha 1: Responsável + Prazo de fechamento · Linha 2: Busca (antes da tabela) */}
+              <div className="px-4 py-3 border-b border-slate-100 space-y-3">
+              <div className="flex items-end gap-4 flex-wrap">
                 {/* Responsável pelas respostas da auditoria (gerentes da empresa) — largo p/ "NOME COMPLETO — CARGO" */}
                 <div className="flex flex-col gap-1 w-[520px] max-w-full">
                   <label className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1">
@@ -1454,6 +1470,42 @@ export default function AuditoriaOsAberto() {
                     )}
                     {gerentesAuditoria.map(r => <option key={r.id} value={r.id}>{r.nome}{r.cargo_nome ? ` — ${r.cargo_nome}` : ''}</option>)}
                   </select>
+                </div>
+
+                {/* Data e horário de fechamento (prazo de resposta) — só enquanto A Responder */}
+                {podeEditarPrazo && (
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1">
+                      <Clock className="h-3 w-3" /> Fechamento da auditoria (prazo)
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="date"
+                        value={prazoEditarData}
+                        onChange={e => setPrazoEditarData(e.target.value)}
+                        className={`text-xs p-2 border rounded-md ${prazoMudou ? 'border-indigo-400 ring-2 ring-indigo-500/20' : 'border-slate-300'}`}
+                      />
+                      <input
+                        type="time"
+                        value={prazoEditarHora}
+                        onChange={e => setPrazoEditarHora(e.target.value)}
+                        className={`text-xs p-2 border rounded-md ${prazoMudou ? 'border-indigo-400 ring-2 ring-indigo-500/20' : 'border-slate-300'}`}
+                      />
+                    </div>
+                    {!prazoEditadoValido && <span className="text-[10px] text-red-600 font-semibold">Informe data e horário no futuro.</span>}
+                  </div>
+                )}
+              </div>
+
+                {/* Busca — abaixo do responsável */}
+                <div className="relative max-w-md">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+                  <input
+                    value={buscaEditar}
+                    onChange={e => setBuscaEditar(e.target.value)}
+                    placeholder="Buscar Nº OS, placa ou chassi..."
+                    className="w-full pl-8 pr-2 py-2 text-xs border border-slate-200 rounded-md focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                  />
                 </div>
               </div>
 
@@ -1513,11 +1565,13 @@ export default function AuditoriaOsAberto() {
 
               <div className="flex items-center justify-between gap-2 p-3 bg-slate-50 border-t border-slate-100">
                 <span className="text-[11px] text-slate-500">
-                  {qtdAlteracoes || responsavelMudou ? (
+                  {qtdAlteracoes || responsavelMudou || prazoMudou ? (
                     <>
                       {qtdAlteracoes > 0 && <><strong className="text-indigo-700">{qtdAlteracoes}</strong> OS alterada(s)</>}
                       {qtdAlteracoes > 0 && responsavelMudou && ' · '}
                       {responsavelMudou && <strong className="text-indigo-700">responsável alterado</strong>}
+                      {prazoMudou && (qtdAlteracoes > 0 || responsavelMudou) && ' · '}
+                      {prazoMudou && <strong className="text-indigo-700">prazo de fechamento alterado</strong>}
                       {' — ainda não salvo'}
                     </>
                   ) : 'Nenhuma alteração'}
@@ -1532,7 +1586,7 @@ export default function AuditoriaOsAberto() {
                   </button>
                   <button
                     onClick={handleSalvarEdicao}
-                    disabled={salvandoEdicao || (!qtdAlteracoes && !responsavelMudou)}
+                    disabled={salvandoEdicao || (!qtdAlteracoes && !responsavelMudou && !prazoMudou) || !prazoEditadoValido}
                     className="flex items-center gap-1.5 px-4 py-1.5 rounded-md text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm transition-colors disabled:opacity-40"
                   >
                     <Save className="h-3.5 w-3.5" />
