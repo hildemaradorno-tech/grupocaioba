@@ -2836,7 +2836,9 @@ export const apiService = {
     await _aprovarZerados({ tabela: 'fato_rascunho_metas_servicos_consultor', empresaId, ano, usuario })
 
     const { data: rows, error: errFetch } = await supabase.from('fato_rascunho_metas_servicos_consultor')
-      .select('empresa_id,empresa_nome,ano,mes,colaborador_id,colaborador_nome,departamento_id,departamento_nome,setor_id,setor_nome,box_id,box_nome,cargo_id,cargo_nome,meta_faturamento,meta_pecas,meta_servicos,meta_aprovada,aprovado_em,aprovado_por,aprovado_por_nome')
+      // ticket_total e passagens: metas de Ticket Médio da Oficina (Matriz KPIs) — sem eles a meta
+      // publicada ia vazia e o ticket não aparecia na Matriz.
+      .select('empresa_id,empresa_nome,ano,mes,colaborador_id,colaborador_nome,departamento_id,departamento_nome,setor_id,setor_nome,box_id,box_nome,cargo_id,cargo_nome,meta_faturamento,meta_pecas,meta_servicos,meta_aprovada,aprovado_em,aprovado_por,aprovado_por_nome,ticket_total,passagens')
       .eq('empresa_id', empresaId).eq('ano', ano).not('meta_aprovada', 'is', null)
     if (errFetch) throw errFetch
     const ctx = await _contextoPublicacao()

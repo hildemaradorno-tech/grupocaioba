@@ -20,6 +20,7 @@ import {
   extractBalcao,
   listVendedoresBalcao,
   extractPecasOficinaPorConsultor,
+  extractPassagensConsultor,
   listConsultoresOficina,
   extractServicosPorConsultor,
   listConsultoresServicos,
@@ -27,6 +28,16 @@ import {
   listMecanicosROF042,
   extractROF096PorMecanico,
   listMecanicosROF096,
+  extractROF042PorData,
+  extractROF096PorData,
+  extractServicosOficinaPorData,
+  extractFaturamentoEquipeOficina,
+  extractFaturamentoEquipeOficinaPorData,
+  extractROF096EquipeOficina,
+  extractFaturamentoFunilariaPintura,
+  extractFaturamentoFunilariaPinturaPorData,
+  getAuditoriaPorData,
+  extractBalcaoPorData,
 } from '../services/sharepointExtractor.js'
 import { CASA_EMPRESA_MAP, EMPRESAS_SYNC } from '../services/kpiEmpresas.js'
 import {
@@ -39,7 +50,7 @@ import {
 } from '../services/kpiSyncService.js'
 import { getPesos, setPeso, aplicarPesos } from '../services/kpiPesos.js'
 import { getMetasManuais, setMetaManual, aplicarMetasManuais } from '../services/kpiMetasManuais.js'
-import { getMetaPecasPeriodos, getMetaOficinaPeriodos, getMetaMecanicoPeriodos, getMetaMargemOficinaPeriodos, getMetaPecasBalcaoPeriodos, getMetaMargemBalcaoPeriodos, getMetaTrpPeriodos, getMetaTicketMedioPeriodos } from '../services/kpiMetas.js'
+import { getMetaPecasPeriodos, getMetaOficinaPeriodos, getMetaMecanicoPeriodos, getMetaMargemOficinaPeriodos, getMetaPecasBalcaoPeriodos, getMetaMargemBalcaoPeriodos, getMetaTrpPeriodos, getMetaTicketMedioPeriodos, limparCacheMetas } from '../services/kpiMetas.js'
 
 const router = Router()
 
@@ -400,6 +411,34 @@ const BLOCO_SERVICOS_TEMPLATE = [
       { id: 3, indicador: 'Produtividade da Oficina',             orientacao: '>', metrica: '%',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
     ],
   },
+  {
+    // Sem seletor de pessoa (cargo único por casa) — exige empresa, igual SETOR DE MECÂNICA.
+    // Mesmo filtro do indicador 15 da Fontes (departamento Oficina/setor Mecânica), não o de Box.
+    tituloGerente: 'CHEFE DE OFICINA',
+    cor: 'purple',
+    kpis: [
+      { id: 1, indicador: 'Faturamento Total Oficina (Equipe)', orientacao: '>', metrica: 'R$', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      { id: 2, indicador: 'Eficácia da Oficina',                 orientacao: '>', metrica: '%',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+    ],
+  },
+  {
+    // Total da oficina (todos os mecânicos) — sem seletor de pessoa; não muda se um mecânico
+    // for selecionado no quadro MECÂNICO acima (ver montarOficinaBloco3Servicos).
+    tituloGerente: 'SETOR DE MECÂNICA',
+    cor: 'teal',
+    kpis: [
+      { id: 1, indicador: 'Eficácia da Oficina', orientacao: '>', metrica: '%', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+    ],
+  },
+  {
+    // Sem seletor de pessoa — exige empresa, igual SETOR DE MECÂNICA/CHEFE DE OFICINA. Mesmo
+    // cálculo do indicador 14 da Fontes (Tipo de O.S. = departamento Oficina/setor Funilaria-Pintura).
+    tituloGerente: 'SETOR FUNILARIA/PINTURA',
+    cor: 'amber',
+    kpis: [
+      { id: 1, indicador: 'Faturamento Total Funilaria/Pintura (Departamento)', orientacao: '>', metrica: 'R$', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+    ],
+  },
 ]
 
 /**
@@ -425,7 +464,7 @@ function ticketMedioConsultor(consultorData) {
   return out
 }
 
-function mergeBlocoServicos(quadros, consultorData, mecanicoData, metaConsultor, metaMecanico, margemConsultor = null, metaTicket = null) {
+function mergeBlocoServicos(quadros, consultorData, mecanicoData, metaConsultor, metaMecanico, margemConsultor = null, metaTicket = null, oficinaData = null, chefeOficinaData = null, depFunilariaData = null) {
   const r = (v) => (v != null ? Math.round(v) : null)
   const p = (v) => (v != null ? v : null)
 
@@ -449,6 +488,28 @@ function mergeBlocoServicos(quadros, consultorData, mecanicoData, metaConsultor,
           case 2: return injectPeriods(kpi, mecanicoData?.eficacia ?? {}, p)
           case 3: return injectPeriods(kpi, mecanicoData?.produtividade ?? {}, p)
         }
+        return kpi
+      })
+      return { ...quadro, kpis }
+    }
+    if (quadro.tituloGerente === 'SETOR DE MECÂNICA') {
+      const kpis = quadro.kpis.map(kpi => {
+        if (kpi.id === 1) return injectPeriods(kpi, oficinaData?.eficacia ?? {}, p)
+        return kpi
+      })
+      return { ...quadro, kpis }
+    }
+    if (quadro.tituloGerente === 'CHEFE DE OFICINA') {
+      const kpis = quadro.kpis.map(kpi => {
+        if (kpi.id === 1) return injectMeta(injectPeriods(kpi, chefeOficinaData?.faturamento ?? {}, r), chefeOficinaData?.metaFaturamento)
+        if (kpi.id === 2) return injectPeriods(kpi, chefeOficinaData?.eficacia    ?? {}, p)
+        return kpi
+      })
+      return { ...quadro, kpis }
+    }
+    if (quadro.tituloGerente === 'SETOR FUNILARIA/PINTURA') {
+      const kpis = quadro.kpis.map(kpi => {
+        if (kpi.id === 1) return injectPeriods(kpi, depFunilariaData?.liquido ?? {}, r)
         return kpi
       })
       return { ...quadro, kpis }
@@ -531,7 +592,7 @@ router.get('/bloco3-pos-venda', requireConfig, wrap(async (req, res) => {
   quadros = aplicarPesos(quadros, pesos)
 
   const metasManuais = await getMetasManuais('bloco3-pos-venda', year)
-  quadros = aplicarMetasManuais(quadros, metasManuais)
+  quadros = aplicarMetasManuais(quadros, metasManuais, year)
 
   res.json(quadros)
 }))
@@ -694,9 +755,9 @@ async function gravarBaseBloco3Servicos(chave, base) {
   try { await admin.from('kpi_cache_planilhas').upsert({ chave, dados: base, atualizado_em: new Date().toISOString() }) } catch { /* só cache */ }
 }
 
-function recalcularBaseBloco3Servicos(chave, year, consultor, mecanico) {
+function recalcularBaseBloco3Servicos(chave, montar) {
   if (!_b3ServCalculando.has(chave)) {
-    const p = montarBaseBloco3Servicos(year, consultor, mecanico)
+    const p = montar()
       .then(async (base) => {
         _b3ServMem.set(chave, { ts: Date.now(), base })
         await gravarBaseBloco3Servicos(chave, base)
@@ -708,44 +769,138 @@ function recalcularBaseBloco3Servicos(chave, year, consultor, mecanico) {
   return _b3ServCalculando.get(chave)
 }
 
+// Momento (ms) da última aprovação/publicação de metas (Planejamento de Metas): fato_metas_publicadas e
+// metas do consultor (margem/ticket). Consulta leve, guardada por 20 s.
+const _ultimaAprovacao = { ts: 0, valor: 0 }
+async function ultimaAprovacaoMetas() {
+  if (Date.now() - _ultimaAprovacao.ts < 20_000) return _ultimaAprovacao.valor
+  const admin = getSupabaseAdmin()
+  if (!admin) return 0
+  try {
+    const [pub, rasc] = await Promise.all([
+      admin.from('fato_metas_publicadas').select('publicado_em').order('publicado_em', { ascending: false }).limit(1).maybeSingle(),
+      admin.from('fato_rascunho_metas_servicos_consultor').select('atualizado_em').order('atualizado_em', { ascending: false }).limit(1).maybeSingle(),
+    ])
+    const t = (v) => (v ? new Date(v).getTime() || 0 : 0)
+    _ultimaAprovacao.valor = Math.max(t(pub.data?.publicado_em), t(rasc.data?.atualizado_em))
+  } catch { /* sem consulta: mantém o último valor */ }
+  _ultimaAprovacao.ts = Date.now()
+  return _ultimaAprovacao.valor
+}
+
+// Base guardada (memória → kpi_cache_planilhas) ou recalculada. checarMetas: se houve aprovação de
+// metas depois da base guardada, recalcula na hora (senão a meta nova só apareceria depois de até 15 min).
+async function obterBaseBloco3Servicos(chave, montar, { refresh = false, checarMetas = true } = {}) {
+  if (refresh) return recalcularBaseBloco3Servicos(chave, montar)
+  let hit = _b3ServMem.get(chave)
+  if (!hit) {
+    hit = await lerBaseBloco3Servicos(chave)
+    if (hit) _b3ServMem.set(chave, hit)
+  }
+  if (hit && checarMetas && (await ultimaAprovacaoMetas()) > hit.ts) {
+    limparCacheMetas()
+    hit = null
+  }
+  if (!hit) return recalcularBaseBloco3Servicos(chave, montar)
+  if (Date.now() - hit.ts > BLOCO3_SERV_TTL_MS) {
+    recalcularBaseBloco3Servicos(chave, montar)
+      .catch(err => console.error('[bloco3-servicos] recálculo em segundo plano falhou:', err.message))
+  }
+  return hit.base
+}
+
+// ?apenas=OFICINA | CHEFE DE OFICINA: só os quadros por empresa (Campanha Pós-Venda) — não monta Consultor
+// e Mecânico, que são a parte cara. O quadro OFICINA tem cache próprio por empresa (não depende da
+// pessoa escolhida nos outros quadros), então trocar consultor/mecânico na Matriz não o recalcula.
 router.get('/bloco3-servicos', requireConfig, wrap(async (req, res) => {
   const year      = parseInt(req.query.year) || new Date().getFullYear()
   const consultor = req.query.consultor || null
   const mecanico  = req.query.mecanico || null
-  const chave = `bloco3-servicos|${year}|${consultor || ''}|${mecanico || ''}`
+  const empresaOficina = req.query.empresaOficina || null
+  const empresaChefeOficina = req.query.empresaChefeOficina || null
+  const empresaFunilaria = req.query.empresaFunilaria || null
+  const QUADROS_EMPRESA = ['SETOR DE MECÂNICA', 'CHEFE DE OFICINA', 'SETOR FUNILARIA/PINTURA']
+  const soOficina = QUADROS_EMPRESA.includes(req.query.apenas)
+  const refresh = !!req.query.refresh
 
-  let base
-  if (req.query.refresh) {
-    base = await recalcularBaseBloco3Servicos(chave, year, consultor, mecanico)
-  } else {
-    let hit = _b3ServMem.get(chave)
-    if (!hit) {
-      hit = await lerBaseBloco3Servicos(chave)
-      if (hit) _b3ServMem.set(chave, hit)
-    }
-    if (hit) {
-      base = hit.base
-      if (Date.now() - hit.ts > BLOCO3_SERV_TTL_MS) {
-        recalcularBaseBloco3Servicos(chave, year, consultor, mecanico)
-          .catch(err => console.error('[bloco3-servicos] recálculo em segundo plano falhou:', err.message))
-      }
-    } else {
-      base = await recalcularBaseBloco3Servicos(chave, year, consultor, mecanico)
-    }
-  }
+  const [base, oficina, chefeOficina, funilaria] = await Promise.all([
+    soOficina ? null : obterBaseBloco3Servicos(`bloco3-servicos|${year}|${consultor || ''}|${mecanico || ''}`,
+      () => montarBaseBloco3Servicos(year, consultor, mecanico), { refresh }),
+    empresaOficina ? obterBaseBloco3Servicos(`bloco3-servicos-oficina|${year}|${empresaOficina}`,
+      () => montarOficinaBloco3Servicos(year, empresaOficina), { refresh, checarMetas: false }) : null,
+    empresaChefeOficina ? obterBaseBloco3Servicos(`bloco3-servicos-chefeoficina|${year}|${empresaChefeOficina}`,
+      () => montarChefeOficinaBloco3Servicos(year, empresaChefeOficina), { refresh }) : null, // tem meta aprovada → checa aprovação
+    empresaFunilaria ? obterBaseBloco3Servicos(`bloco3-servicos-funilaria|${year}|${empresaFunilaria}`,
+      () => montarSetorFunilariaPinturaBloco3Servicos(year, empresaFunilaria), { refresh, checarMetas: false }) : null,
+  ])
+  const extras = mergeBlocoServicos(BLOCO_SERVICOS_TEMPLATE.filter(q => QUADROS_EMPRESA.includes(q.tituloGerente)),
+    null, null, null, null, null, null, oficina, chefeOficina, funilaria)
+  const quadroOficina = extras.find(q => q.tituloGerente === 'SETOR DE MECÂNICA')
+  const quadroChefeOficina = extras.find(q => q.tituloGerente === 'CHEFE DE OFICINA')
+  const quadroFunilaria = extras.find(q => q.tituloGerente === 'SETOR FUNILARIA/PINTURA')
+  const montados = (base || BLOCO_SERVICOS_TEMPLATE.filter(q => QUADROS_EMPRESA.includes(q.tituloGerente)))
+    .map(q => (q.tituloGerente === 'SETOR DE MECÂNICA' ? quadroOficina
+      : q.tituloGerente === 'CHEFE DE OFICINA' ? quadroChefeOficina
+      : q.tituloGerente === 'SETOR FUNILARIA/PINTURA' ? quadroFunilaria
+      : q))
 
-  let quadros = aplicarPesos(base, await getPesos('bloco3-servicos'))
-  quadros = aplicarMetasManuais(quadros, await getMetasManuais('bloco3-servicos', year))
+  let quadros = aplicarPesos(montados, await getPesos('bloco3-servicos'))
+  quadros = aplicarMetasManuais(quadros, await getMetasManuais('bloco3-servicos', year), year)
   res.json(quadros)
 }))
 
+// Quadro OFICINA: não tem seletor de pessoa, então "todas as casas somadas" não é um número
+// real de nenhuma unidade — exige escolher a empresa (como o Consultor/Mecânico exigem pessoa)
+// pra só então calcular o total daquela casa. Montado à parte (cache próprio por empresa).
+async function montarOficinaBloco3Servicos(year, empresaOficina) {
+  let rof042Oficina = null, rof096Oficina = null
+  try { rof042Oficina = await extractROF042PorMecanico(year, empresaOficina, null) } catch (_) { /* sem dados */ }
+  try { rof096Oficina = await extractROF096PorMecanico(year, empresaOficina, null) } catch (_) { /* sem dados */ }
+  const horas = computeHoras(rof042Oficina, rof096Oficina)
+  return { eficacia: horas.eficacia }
+}
+
+// Quadro CHEFE DE OFICINA: mesmo padrão do OFICINA (sem pessoa, exige empresa, cache próprio), mas
+// com o filtro Departamento Oficina/Setor Mecânica (mesmo do indicador 15 da Fontes), não o de Box.
+async function montarChefeOficinaBloco3Servicos(year, empresaChefeOficina) {
+  let rof042Equipe = null, rof096Equipe = null
+  try { rof042Equipe = await extractFaturamentoEquipeOficina(year, empresaChefeOficina) } catch (_) { /* sem dados */ }
+  try { rof096Equipe = await extractROF096EquipeOficina(year, empresaChefeOficina) } catch (_) { /* sem dados */ }
+  const horas = computeHoras(rof042Equipe, rof096Equipe)
+  // Meta do Faturamento (Equipe): Planejamento de Metas → departamento Oficina, setor Mecânica
+  // (tipo 'mecanico' publicado = boxes Mecânica + Box Express), Peças + Serviços, só desta casa,
+  // sem a linha "Produtivo Não Associado" (não tem box/setor).
+  let metaFaturamento = null
+  try { metaFaturamento = await getMetaOficinaPeriodos(year, { empresaNome: EMPRESA_KEY_TO_RECEP[empresaChefeOficina] || empresaChefeOficina, semNaoAssociado: true }) } catch (_) { /* sem meta */ }
+  return {
+    faturamento: sumPeriods(rof042Equipe?.vlProduto, rof042Equipe?.vlLiquido),
+    metaFaturamento,
+    eficacia: horas.eficacia,
+  }
+}
+
+// Quadro SETOR FUNILARIA/PINTURA: mesmo padrão do SETOR DE MECÂNICA/CHEFE DE OFICINA (sem pessoa,
+// exige empresa, cache próprio) — mesmo cálculo do indicador 14 da Fontes.
+async function montarSetorFunilariaPinturaBloco3Servicos(year, empresaFunilaria) {
+  let fat = null
+  try { fat = await extractFaturamentoFunilariaPintura(year, empresaFunilaria) } catch (_) { /* sem dados */ }
+  return { liquido: fat?.liquido ?? {} }
+}
+
 // Quadros do Bloco 3 - Serviços com realizado e metas (sem pesos/metas manuais — aplicados na rota).
+// Os quadros OFICINA e CHEFE DE OFICINA saem vazios daqui: a rota os preenche à parte
+// (montarOficinaBloco3Servicos / montarChefeOficinaBloco3Servicos).
 async function montarBaseBloco3Servicos(year, consultor, mecanico) {
   // Consultor: Peças de Oficina (RPR001) + Serviços (Recepcionista), mesma
   // dupla fonte do Faturamento Total Oficina do Gerente Geral Pós-Venda —
   // ao vivo, sem filtro de empresa (seletor da tela é só por pessoa).
   let pecasOficina = null, servicos = null
   try { pecasOficina = await extractPecasOficinaPorConsultor(year, null, consultor) } catch (_) { /* sem dados */ }
+  // Ticket Médio: O.S. únicas de peças + serviços (só o RPR001 deixava de fora as O.S. sem peça).
+  try {
+    const passagens = await extractPassagensConsultor(year, null, consultor)
+    if (pecasOficina && passagens) pecasOficina = { ...pecasOficina, passagens }
+  } catch (_) { /* mantém as passagens do RPR001 */ }
   try { servicos     = await extractServicosPorConsultor(year, null, consultor) } catch (_) { /* sem dados */ }
 
   // Mecânico: ROF042 (Vl Líquido + horas) e ROF096 (Horas Disponíveis) do
@@ -787,8 +942,9 @@ async function montarBaseBloco3Servicos(year, consultor, mecanico) {
 // GET /api/kpi/extractor/consultores?year=2026 — lista de consultores (RPR001
 // Oficina + Recepcionista) pro seletor do bloco CONSULTOR DE SERVIÇOS
 router.get('/extractor/consultores', requireConfig, wrap(async (req, res) => {
-  const year = parseInt(req.query.year) || new Date().getFullYear()
-  const [a, b] = await Promise.all([listConsultoresOficina(year, null), listConsultoresServicos(year, null)])
+  const year    = parseInt(req.query.year) || new Date().getFullYear()
+  const empresa = req.query.empresa && req.query.empresa !== 'todas' ? req.query.empresa : null
+  const [a, b] = await Promise.all([listConsultoresOficina(year, empresa), listConsultoresServicos(year, empresa)])
   const consultores = (await filtrarAtivos([...new Set([...a, ...b])])).sort((x, y) => x.localeCompare(y, 'pt-BR'))
   res.json({ year, consultores })
 }))
@@ -796,8 +952,9 @@ router.get('/extractor/consultores', requireConfig, wrap(async (req, res) => {
 // GET /api/kpi/extractor/mecanicos?year=2026 — lista de mecânicos (ROF042 +
 // ROF096) pro seletor do bloco MECÂNICO
 router.get('/extractor/mecanicos', requireConfig, wrap(async (req, res) => {
-  const year = parseInt(req.query.year) || new Date().getFullYear()
-  const [a, b] = await Promise.all([listMecanicosROF042(year, null), listMecanicosROF096(year, null)])
+  const year    = parseInt(req.query.year) || new Date().getFullYear()
+  const empresa = req.query.empresa && req.query.empresa !== 'todas' ? req.query.empresa : null
+  const [a, b] = await Promise.all([listMecanicosROF042(year, empresa), listMecanicosROF096(year, empresa)])
   const mecanicos = (await filtrarAtivos([...new Set([...a, ...b])], 'mecanic')).sort((x, y) => x.localeCompare(y, 'pt-BR'))
   res.json({ year, mecanicos })
 }))
@@ -922,6 +1079,8 @@ function mesclarFontes(partes) {
   const r42 = partes.map(p => p.rof042Data).filter(Boolean)
   const r96 = partes.map(p => p.rof096Data).filter(Boolean)
   const blc = partes.map(p => p.blcData).filter(Boolean)
+  const equ = partes.map(p => p.equipeData).filter(Boolean)
+  const fun = partes.map(p => p.funilariaData).filter(Boolean)
   const campos = (lista, nomes) => Object.fromEntries(nomes.map(n => [n, somarMapas(lista.map(x => x[n]))]))
 
   let extractorData = null
@@ -950,7 +1109,11 @@ function mesclarFontes(partes) {
     const c = campos(blc, ['vendas', 'devolucoes', 'liquido', 'margemContVendas', 'margemContDevolucoes', 'margemContLiquido'])
     blcData = { ...c, margemPct: razaoMapas(c.margemContLiquido, c.liquido), metaData: primeiroMeta('blcData') }
   }
-  return { extractorData, servicosData, rof042Data, rof096Data, blcData }
+  let equipeData = null
+  if (equ.length) equipeData = { ...campos(equ, ['vlLiquido', 'vlProduto']), metaData: primeiroMeta('equipeData') }
+  let funilariaData = null
+  if (fun.length) funilariaData = { ...campos(fun, ['totServ', 'totPec']), metaData: primeiroMeta('funilariaData') }
+  return { extractorData, servicosData, rof042Data, rof096Data, blcData, equipeData, funilariaData }
 }
 
 function infoAuditoria(row) {
@@ -973,18 +1136,23 @@ function infoAuditoria(row) {
     if (/DVE/.test(m) && !/−/.test(m)) filtros.splice(2, 0, 'Considera só as linhas de devolução (DVE)')
     return { arquivo: 'RPR001_VENDAPRODUTO AAAA.MM.xlsx (Vendas de Produtos)', coluna, filtros }
   }
-  if (/Recepcionista/.test(f)) {
-    return {
-      arquivo: 'REL_VENDARECEPCIONISTA_REPORT',
-      coluna: m === 'margem_servico' ? 'margem_servico' : 'tot_serv',
-      filtros: ['Período pela data de emissão (NotaFiscal_DataEmissao)', 'Linhas com valor zerado são ignoradas'],
-    }
+  if (/recepcionista/i.test(f)) {
+    const coluna = m === 'margem_servico' ? 'margem_servico' : /tot_pec/.test(m) ? 'tot_pec' : 'tot_serv'
+    const filtros = ['Período pela data de emissão (NotaFiscal_DataEmissao)', 'Linhas com valor zerado são ignoradas']
+    if (row.id === 14) filtros.push('Somente linhas cujo Tipo de O.S. (TipoOS_Sigla) está cadastrado em Tipos de O.S. como departamento Oficina e setor Funilaria/Pintura')
+    return { arquivo: 'REL_VENDARECEPCIONISTA_REPORT', coluna, filtros }
   }
   if (/ROF042/.test(f)) {
+    const coluna = /Hr\. Total/.test(m) ? 'Hr. Total (coluna P)'
+      : /Hr\. Vend\./.test(m) ? 'Hr. Vend. (coluna Q)'
+      : /Vl Produto/.test(m) ? 'Vl Produto (coluna Z)'
+      : /Vl Líquido/.test(m) ? 'Vl Líquido (coluna V)'
+      : m
+    const depSetorFiltro = ['Somente produtivos do departamento Oficina e setor Mecânica (pelo nome, no Cadastro de Funcionários; quem não está no cadastro ou não tem os dois fica de fora)']
     return {
       arquivo: 'ROF042_FaturamentoServicosProdutivos_Excel',
-      coluna: /Hr. Total/.test(m) ? 'Hr. Total (coluna P)' : 'Hr. Vend. (coluna Q)',
-      filtros: ['Período pela data NF Data (coluna AB)', 'Linhas cujo Produtivo (coluna B) é "Produtivo Não Associado ..." ficam de fora', 'Linhas sem horas e sem valor líquido são ignoradas', ...boxFiltro],
+      coluna,
+      filtros: ['Período pela data NF Data (coluna AB)', 'Linhas cujo Produtivo (coluna B) é "Produtivo Não Associado ..." ficam de fora', 'Linhas sem horas e sem valor líquido são ignoradas', ...(row.id === 15 ? depSetorFiltro : boxFiltro)],
     }
   }
   if (/ROF096/.test(f)) {
@@ -1005,8 +1173,144 @@ router.get('/auditoria', requireConfig, wrap(async (req, res) => {
   const lista = String(req.query.empresas || req.query.empresa || '')
     .split(',').map(e => e.trim()).filter(e => e && e !== 'todas')
   const indicadorId = parseInt(req.query.indicador) || null
+  const USA = { consolidado: [1, 2, 5, 11, 12], servicos: [1, 3, 4, 12], rof042: [6, 7, 8], rof096: [6, 7], balcao: [9, 10], equipe: [15], funilaria: [14] }
   const precisa = (fontes) => !indicadorId || fontes.includes(indicadorId)
-  const USA = { consolidado: [1, 2, 5, 11, 12], servicos: [1, 3, 4, 12], rof042: [6, 7, 8], rof096: [6, 7], balcao: [9, 10] }
+
+  // "Entre datas" — conferência pontual por intervalo de datas (em vez de mês), em qualquer
+  // indicador: toda fonte usada aqui (RPR001, Recepcionista, ROF042, ROF096, Balcão) já tem `dia`
+  // na linha bruta. Ao criar um indicador novo, só ligar o id dele num dos grupos do USA acima (se
+  // a fonte já existir) e acrescentar o bloco `if (indicadorId === N)` abaixo com o cálculo.
+  const dataInicio = req.query.dataInicio || null
+  const dataFim     = req.query.dataFim || null
+  if (dataInicio && dataFim) {
+    const empresaKey   = lista[0] ?? null
+    const empresaRecep = empresaKey ? EMPRESA_KEY_TO_RECEP[empresaKey.toUpperCase()] ?? null : null
+    const [a, serv, rof042, rof096, blc, equ, fun] = await Promise.all([
+      precisa(USA.consolidado) ? getAuditoriaPorData(year, empresaKey, dataInicio, dataFim) : null,
+      precisa(USA.servicos)    ? extractServicosOficinaPorData(year, empresaRecep, dataInicio, dataFim) : null,
+      precisa(USA.rof042)      ? extractROF042PorData(year, empresaKey, dataInicio, dataFim) : null,
+      precisa(USA.rof096)      ? extractROF096PorData(year, empresaKey, dataInicio, dataFim) : null,
+      precisa(USA.balcao)      ? extractBalcaoPorData(year, empresaKey, dataInicio, dataFim) : null,
+      precisa(USA.equipe)      ? extractFaturamentoEquipeOficinaPorData(year, empresaKey, dataInicio, dataFim) : null,
+      precisa(USA.funilaria)   ? extractFaturamentoFunilariaPinturaPorData(year, empresaRecep, dataInicio, dataFim) : null,
+    ])
+    const v = (x) => ({ intervalo: x })
+    let indicadores = []
+    if (indicadorId === 1) {
+      const fonteA = a?.ind1_fatLiquido ?? null
+      const fonteB = serv?.totServ ?? null
+      const soma = (fonteA != null || fonteB != null) ? (fonteA ?? 0) + (fonteB ?? 0) : null
+      indicadores = [
+        { id: 1, indicador: 'Faturamento Total Oficina', fonte: 'Fonte A — RPR001',        metrica: 'NFItem_VlTotal — VEN',      tipo: 'R$', valores: v(a?.ind1_fatVendas ?? null) },
+        { id: 1, indicador: 'Faturamento Total Oficina', fonte: 'Fonte A — RPR001',        metrica: 'NFItem_VlTotal — DVE',      tipo: 'R$', valores: v(a?.ind1_fatDevolucoes ?? null) },
+        { id: 1, indicador: 'Faturamento Total Oficina', fonte: 'Fonte A — RPR001',        metrica: 'VEN − DVE (líquido)',       tipo: 'R$', valores: v(fonteA) },
+        { id: 1, indicador: 'Faturamento Total Oficina', fonte: 'Fonte B — Recepcionista', metrica: 'tot_serv',                  tipo: 'R$', valores: v(fonteB) },
+        { id: 1, indicador: 'Faturamento Total Oficina', fonte: 'RESULTADO',               metrica: 'Fonte A líquido + Fonte B', tipo: 'R$', valores: v(soma) },
+      ]
+    } else if (indicadorId === 2) {
+      indicadores = [
+        { id: 2, indicador: 'Faturamento Total Peças Oficina', fonte: 'Fonte A — RPR001', metrica: 'NFItem_VlTotal — VEN',      tipo: 'R$', valores: v(a?.ind1_fatVendas ?? null) },
+        { id: 2, indicador: 'Faturamento Total Peças Oficina', fonte: 'Fonte A — RPR001', metrica: 'NFItem_VlTotal — DVE',      tipo: 'R$', valores: v(a?.ind1_fatDevolucoes ?? null) },
+        { id: 2, indicador: 'Faturamento Total Peças Oficina', fonte: 'RESULTADO',        metrica: 'Fonte A VEN − Fonte A DVE', tipo: 'R$', valores: v(a?.ind1_fatLiquido ?? null) },
+      ]
+    } else if (indicadorId === 3) {
+      indicadores = [
+        { id: 3, indicador: 'Faturamento Total Serviços Oficina', fonte: 'Fonte A — Recepcionista', metrica: 'tot_serv', tipo: 'R$', valores: v(serv?.totServ ?? null) },
+        { id: 3, indicador: 'Faturamento Total Serviços Oficina', fonte: 'RESULTADO',               metrica: 'SUM(tot_serv)', tipo: 'R$', valores: v(serv?.totServ ?? null) },
+      ]
+    } else if (indicadorId === 4) {
+      const margemPct = (serv?.totServ > 0 && serv?.margemServico != null) ? (serv.margemServico / serv.totServ) * 100 : null
+      indicadores = [
+        { id: 4, indicador: 'Margem Bruta Serviços', fonte: 'Fonte A — Recepcionista', metrica: 'margem_servico', tipo: 'R$', valores: v(serv?.margemServico ?? null) },
+        { id: 4, indicador: 'Margem Bruta Serviços', fonte: 'Fonte B — Recepcionista', metrica: 'tot_serv',        tipo: 'R$', valores: v(serv?.totServ ?? null) },
+        { id: 4, indicador: 'Margem Bruta Serviços', fonte: 'RESULTADO',               metrica: 'Fonte A ÷ Fonte B × 100', tipo: '%', valores: v(margemPct) },
+      ]
+    } else if (indicadorId === 5) {
+      indicadores = [
+        { id: 5, indicador: 'Margem Bruta Peças Oficina', fonte: 'Fonte A — RPR001', metrica: 'NFItem_VlMargemCont — VEN', tipo: 'R$', valores: v(a?.ind3_lucroVendas ?? null) },
+        { id: 5, indicador: 'Margem Bruta Peças Oficina', fonte: 'Fonte A — RPR001', metrica: 'NFItem_VlMargemCont — DVE', tipo: 'R$', valores: v(a?.ind3_lucroDevolucoes ?? null) },
+        { id: 5, indicador: 'Margem Bruta Peças Oficina', fonte: 'Fonte A — RPR001', metrica: 'VEN − DVE (líquido)',       tipo: 'R$', valores: v(a?.ind3_lucroLiquido ?? null) },
+        { id: 5, indicador: 'Margem Bruta Peças Oficina', fonte: 'Fonte B — RPR001', metrica: 'NFItem_VlTotal — VEN',      tipo: 'R$', valores: v(a?.ind3_fatVendas ?? null) },
+        { id: 5, indicador: 'Margem Bruta Peças Oficina', fonte: 'Fonte B — RPR001', metrica: 'NFItem_VlTotal — DVE',      tipo: 'R$', valores: v(a?.ind3_fatDevolucoes ?? null) },
+        { id: 5, indicador: 'Margem Bruta Peças Oficina', fonte: 'Fonte B — RPR001', metrica: 'VEN − DVE (líquido)',       tipo: 'R$', valores: v(a?.ind3_fatLiquido ?? null) },
+        { id: 5, indicador: 'Margem Bruta Peças Oficina', fonte: 'RESULTADO',        metrica: 'Fonte A ÷ Fonte B × 100',   tipo: '%',  valores: v(a?.ind3_margem ?? null) },
+      ]
+    } else if (indicadorId === 6) {
+      const eficacia = (rof096?.disponiveis > 0 && rof042?.hrVend != null) ? (rof042.hrVend / rof096.disponiveis) * 100 : null
+      indicadores = [
+        { id: 6, indicador: 'Eficácia da Oficina', fonte: 'Fonte A — ROF042_FaturamentoServicosProdutivos_Excel', metrica: 'Hr. Vend.',   tipo: 'h', valores: v(rof042?.hrVend ?? null) },
+        { id: 6, indicador: 'Eficácia da Oficina', fonte: 'Fonte B — ROF096_FECHAMENTOCARTAOPRODUCAO', metrica: 'disponíveis', tipo: 'h', valores: v(rof096?.disponiveis ?? null) },
+        { id: 6, indicador: 'Eficácia da Oficina', fonte: 'RESULTADO',        metrica: 'Hr. Vend. ÷ Disponíveis × 100', tipo: '%', valores: v(eficacia) },
+      ]
+    } else if (indicadorId === 7) {
+      const produtividade = (rof096?.disponiveis > 0 && rof042?.hrAplic != null) ? (rof042.hrAplic / rof096.disponiveis) * 100 : null
+      indicadores = [
+        { id: 7, indicador: 'Produtividade da Oficina', fonte: 'Fonte A — ROF042_FaturamentoServicosProdutivos_Excel', metrica: 'Hr. Total',   tipo: 'h', valores: v(rof042?.hrAplic ?? null) },
+        { id: 7, indicador: 'Produtividade da Oficina', fonte: 'Fonte B — ROF096_FECHAMENTOCARTAOPRODUCAO', metrica: 'disponíveis', tipo: 'h', valores: v(rof096?.disponiveis ?? null) },
+        { id: 7, indicador: 'Produtividade da Oficina', fonte: 'RESULTADO',        metrica: 'Hr. Total ÷ Disponíveis × 100', tipo: '%', valores: v(produtividade) },
+      ]
+    } else if (indicadorId === 8) {
+      const eficiencia = (rof042?.hrAplic > 0 && rof042?.hrVend != null) ? (rof042.hrVend / rof042.hrAplic) * 100 : null
+      indicadores = [
+        { id: 8, indicador: 'Eficiência da Oficina', fonte: 'Fonte A — ROF042_FaturamentoServicosProdutivos_Excel', metrica: 'Hr. Vend.',  tipo: 'h', valores: v(rof042?.hrVend ?? null) },
+        { id: 8, indicador: 'Eficiência da Oficina', fonte: 'Fonte B — ROF042_FaturamentoServicosProdutivos_Excel', metrica: 'Hr. Total',  tipo: 'h', valores: v(rof042?.hrAplic ?? null) },
+        { id: 8, indicador: 'Eficiência da Oficina', fonte: 'RESULTADO',        metrica: 'Hr. Vend. ÷ Hr. Total × 100', tipo: '%', valores: v(eficiencia) },
+      ]
+    } else if (indicadorId === 9) {
+      indicadores = [
+        { id: 9, indicador: 'Faturamento Total Peças Balcão', fonte: 'Fonte A — RPR001', metrica: 'NFItem_VlTotal — VEN', tipo: 'R$', valores: v(blc?.vendas ?? null) },
+        { id: 9, indicador: 'Faturamento Total Peças Balcão', fonte: 'Fonte A — RPR001', metrica: 'NFItem_VlTotal — DVE', tipo: 'R$', valores: v(blc?.devolucoes ?? null) },
+        { id: 9, indicador: 'Faturamento Total Peças Balcão', fonte: 'RESULTADO',        metrica: 'VEN − DVE (líquido)', tipo: 'R$', valores: v(blc?.liquido ?? null) },
+      ]
+    } else if (indicadorId === 10) {
+      indicadores = [
+        { id: 10, indicador: 'Margem Bruta Peças Balcão', fonte: 'Fonte A — RPR001', metrica: 'NFItem_VlMargemCont — VEN',   tipo: 'R$', valores: v(blc?.margemContVendas ?? null) },
+        { id: 10, indicador: 'Margem Bruta Peças Balcão', fonte: 'Fonte A — RPR001', metrica: 'NFItem_VlMargemCont — DVE',   tipo: 'R$', valores: v(blc?.margemContDevolucoes ?? null) },
+        { id: 10, indicador: 'Margem Bruta Peças Balcão', fonte: 'Fonte A — RPR001', metrica: 'VEN − DVE (líquido margem)', tipo: 'R$', valores: v(blc?.margemContLiquido ?? null) },
+        { id: 10, indicador: 'Margem Bruta Peças Balcão', fonte: 'Fonte B — RPR001', metrica: 'NFItem_VlTotal — VEN',        tipo: 'R$', valores: v(blc?.vendas ?? null) },
+        { id: 10, indicador: 'Margem Bruta Peças Balcão', fonte: 'Fonte B — RPR001', metrica: 'NFItem_VlTotal — DVE',        tipo: 'R$', valores: v(blc?.devolucoes ?? null) },
+        { id: 10, indicador: 'Margem Bruta Peças Balcão', fonte: 'Fonte B — RPR001', metrica: 'VEN − DVE (líquido fat.)',   tipo: 'R$', valores: v(blc?.liquido ?? null) },
+        { id: 10, indicador: 'Margem Bruta Peças Balcão', fonte: 'RESULTADO',        metrica: 'Fonte A ÷ Fonte B × 100',    tipo: '%',  valores: v(blc?.margemPct ?? null) },
+      ]
+    } else if (indicadorId === 11) {
+      indicadores = [
+        { id: 11, indicador: 'Faturamento TRP', fonte: 'Fonte A — RPR001', metrica: 'NFItem_VlTotal — VEN (ProdTipoCod 2,24,27,28)', tipo: 'R$', valores: v(a?.ind10_trpVendas ?? null) },
+        { id: 11, indicador: 'Faturamento TRP', fonte: 'Fonte A — RPR001', metrica: 'NFItem_VlTotal — DVE (ProdTipoCod 2,24,27,28)', tipo: 'R$', valores: v(a?.ind10_trpDevolucoes ?? null) },
+        { id: 11, indicador: 'Faturamento TRP', fonte: 'RESULTADO',        metrica: 'VEN − DVE (líquido)',                           tipo: 'R$', valores: v(a?.ind10_trpLiquido ?? null) },
+      ]
+    } else if (indicadorId === 12) {
+      const fonteA = (() => {
+        const a1 = a?.ind1_fatLiquido ?? null, b1 = serv?.totServ ?? null
+        return (a1 != null || b1 != null) ? (a1 ?? 0) + (b1 ?? 0) : null
+      })()
+      const pas = a?.ind12_passagens ?? null
+      const ticket = (pas > 0 && fonteA != null) ? fonteA / pas : null
+      indicadores = [
+        { id: 12, indicador: 'Ticket Médio da Oficina', fonte: 'Fonte A — Faturamento Total Oficina', metrica: 'Fonte A líquido + Fonte B',        tipo: 'R$', valores: v(fonteA) },
+        { id: 12, indicador: 'Ticket Médio da Oficina', fonte: 'Fonte B — RPR001',                     metrica: 'OS únicas (passagens na oficina)', tipo: 'un', valores: v(pas) },
+        { id: 12, indicador: 'Ticket Médio da Oficina', fonte: 'RESULTADO',                            metrica: 'Fonte A ÷ Fonte B',                tipo: 'R$', valores: v(ticket) },
+      ]
+    } else if (indicadorId === 14) {
+      const soma = (fun?.totServ != null || fun?.totPec != null) ? (fun?.totServ ?? 0) + (fun?.totPec ?? 0) : null
+      indicadores = [
+        { id: 14, indicador: 'Faturamento Total Funilaria/Pintura (Departamento)', fonte: 'Fonte A — REL_VENDARECEPCIONISTA_REPORT', metrica: 'tot_serv (serviços)', tipo: 'R$', valores: v(fun?.totServ ?? null) },
+        { id: 14, indicador: 'Faturamento Total Funilaria/Pintura (Departamento)', fonte: 'Fonte B — REL_VENDARECEPCIONISTA_REPORT', metrica: 'tot_pec (peças)',     tipo: 'R$', valores: v(fun?.totPec ?? null) },
+        { id: 14, indicador: 'Faturamento Total Funilaria/Pintura (Departamento)', fonte: 'RESULTADO',                               metrica: 'Fonte A + Fonte B',   tipo: 'R$', valores: v(soma) },
+      ]
+    } else if (indicadorId === 15) {
+      const soma = (equ?.vlProduto != null || equ?.vlLiquido != null) ? (equ?.vlProduto ?? 0) + (equ?.vlLiquido ?? 0) : null
+      indicadores = [
+        { id: 15, indicador: 'Faturamento Total Oficina (Equipe)', fonte: 'Fonte A — ROF042_FaturamentoServicosProdutivos_Excel', metrica: 'Vl Produto (peças)',   tipo: 'R$', valores: v(equ?.vlProduto ?? null) },
+        { id: 15, indicador: 'Faturamento Total Oficina (Equipe)', fonte: 'Fonte B — ROF042_FaturamentoServicosProdutivos_Excel', metrica: 'Vl Líquido (serviços)', tipo: 'R$', valores: v(equ?.vlLiquido ?? null) },
+        { id: 15, indicador: 'Faturamento Total Oficina (Equipe)', fonte: 'RESULTADO',         metrica: 'Fonte A + Fonte B',     tipo: 'R$', valores: v(soma) },
+      ]
+    }
+    return res.json({
+      year, porData: true, dataInicio, dataFim,
+      indicadores: indicadores.map(r => ({ ...r, info: infoAuditoria(r) })),
+      metaData: null,
+    })
+  }
 
   const buscarFontes = async (empresaKey) => {
     const empresaRecep = empresaKey ? EMPRESA_KEY_TO_RECEP[empresaKey.toUpperCase()] ?? null : null
@@ -1016,11 +1320,13 @@ router.get('/auditoria', requireConfig, wrap(async (req, res) => {
       precisa(USA.rof042)      ? extractROF042(year, empresaKey) : null,
       precisa(USA.rof096)      ? extractROF096(year, empresaKey) : null,
       precisa(USA.balcao)      ? extractBalcao(year, empresaKey) : null,
+      precisa(USA.equipe)      ? extractFaturamentoEquipeOficina(year, empresaKey) : null,
+      precisa(USA.funilaria)   ? extractFaturamentoFunilariaPintura(year, empresaRecep) : null,
     ]
-    const [extractorData, servicosData, rof042Data, rof096Data, blcData] = await Promise.allSettled(
+    const [extractorData, servicosData, rof042Data, rof096Data, blcData, equipeData, funilariaData] = await Promise.allSettled(
       pedidos.map(p => p ?? Promise.resolve(null))
     ).then(rs => rs.map(r => r.status === 'fulfilled' ? r.value : null))
-    return { extractorData, servicosData, rof042Data, rof096Data, blcData }
+    return { extractorData, servicosData, rof042Data, rof096Data, blcData, equipeData, funilariaData }
   }
 
   let fontes
@@ -1030,7 +1336,7 @@ router.get('/auditoria', requireConfig, wrap(async (req, res) => {
     const partes = await Promise.all(lista.map(buscarFontes))
     fontes = mesclarFontes(partes)
   }
-  const { extractorData, servicosData, rof042Data, rof096Data, blcData } = fontes
+  const { extractorData, servicosData, rof042Data, rof096Data, blcData, equipeData, funilariaData } = fontes
 
   if (precisa(USA.consolidado) && !extractorData) return res.status(404).json({ error: 'Sem dados para o ano solicitado.' })
 
@@ -1105,8 +1411,8 @@ router.get('/auditoria', requireConfig, wrap(async (req, res) => {
       { id: 11, indicador: 'Faturamento TRP', fonte: 'RESULTADO',        metrica: 'VEN − DVE (líquido)',                           tipo: 'R$', valores: a.ind10_trpLiquido },
 
       // ── Indicador 6 — Eficácia da Oficina ───────────────────────────────
-      { id: 6, indicador: 'Eficácia da Oficina', fonte: 'Fonte A — ROF042', metrica: 'Hr. Vend.',      tipo: 'h',  valores: rof042Data?.hrVend      ?? {} },
-      { id: 6, indicador: 'Eficácia da Oficina', fonte: 'Fonte B — ROF096', metrica: 'disponíveis',    tipo: 'h',  valores: rof096Data?.disponiveis ?? {} },
+      { id: 6, indicador: 'Eficácia da Oficina', fonte: 'Fonte A — ROF042_FaturamentoServicosProdutivos_Excel', metrica: 'Hr. Vend.',      tipo: 'h',  valores: rof042Data?.hrVend      ?? {} },
+      { id: 6, indicador: 'Eficácia da Oficina', fonte: 'Fonte B — ROF096_FECHAMENTOCARTAOPRODUCAO', metrica: 'disponíveis',    tipo: 'h',  valores: rof096Data?.disponiveis ?? {} },
       { id: 6, indicador: 'Eficácia da Oficina', fonte: 'RESULTADO',        metrica: 'Hr. Vend. ÷ Disponíveis × 100', tipo: '%', valores: (() => {
         const vend = rof042Data?.hrVend      ?? {}
         const disp = rof096Data?.disponiveis ?? {}
@@ -1120,8 +1426,8 @@ router.get('/auditoria', requireConfig, wrap(async (req, res) => {
       })() },
 
       // ── Indicador 7 — Produtividade da Oficina ──────────────────────────
-      { id: 7, indicador: 'Produtividade da Oficina', fonte: 'Fonte A — ROF042', metrica: 'Hr. Total',    tipo: 'h',  valores: rof042Data?.hrAplic     ?? {} },
-      { id: 7, indicador: 'Produtividade da Oficina', fonte: 'Fonte B — ROF096', metrica: 'disponíveis',  tipo: 'h',  valores: rof096Data?.disponiveis ?? {} },
+      { id: 7, indicador: 'Produtividade da Oficina', fonte: 'Fonte A — ROF042_FaturamentoServicosProdutivos_Excel', metrica: 'Hr. Total',    tipo: 'h',  valores: rof042Data?.hrAplic     ?? {} },
+      { id: 7, indicador: 'Produtividade da Oficina', fonte: 'Fonte B — ROF096_FECHAMENTOCARTAOPRODUCAO', metrica: 'disponíveis',  tipo: 'h',  valores: rof096Data?.disponiveis ?? {} },
       { id: 7, indicador: 'Produtividade da Oficina', fonte: 'RESULTADO',        metrica: 'Hr. Total ÷ Disponíveis × 100', tipo: '%', valores: (() => {
         const aplic = rof042Data?.hrAplic    ?? {}
         const disp  = rof096Data?.disponiveis ?? {}
@@ -1135,8 +1441,8 @@ router.get('/auditoria', requireConfig, wrap(async (req, res) => {
       })() },
 
       // ── Indicador 8 — Eficiência da Oficina ─────────────────────────────
-      { id: 8, indicador: 'Eficiência da Oficina', fonte: 'Fonte A — ROF042', metrica: 'Hr. Vend.',  tipo: 'h', valores: rof042Data?.hrVend  ?? {} },
-      { id: 8, indicador: 'Eficiência da Oficina', fonte: 'Fonte B — ROF042', metrica: 'Hr. Total',  tipo: 'h', valores: rof042Data?.hrAplic ?? {} },
+      { id: 8, indicador: 'Eficiência da Oficina', fonte: 'Fonte A — ROF042_FaturamentoServicosProdutivos_Excel', metrica: 'Hr. Vend.',  tipo: 'h', valores: rof042Data?.hrVend  ?? {} },
+      { id: 8, indicador: 'Eficiência da Oficina', fonte: 'Fonte B — ROF042_FaturamentoServicosProdutivos_Excel', metrica: 'Hr. Total',  tipo: 'h', valores: rof042Data?.hrAplic ?? {} },
       { id: 8, indicador: 'Eficiência da Oficina', fonte: 'RESULTADO',        metrica: 'Hr. Vend. ÷ Hr. Total × 100', tipo: '%', valores: (() => {
         const vend = rof042Data?.hrVend  ?? {}
         const gast = rof042Data?.hrAplic ?? {}
@@ -1148,11 +1454,31 @@ router.get('/auditoria', requireConfig, wrap(async (req, res) => {
         }
         return r
       })() },
+
+      // ── Indicador 14 — Faturamento Total Funilaria/Pintura (Departamento) ──
+      // tot_serv + tot_pec do Recepcionista (relatório de faturamento dos consultores de serviço),
+      // só das linhas cujo Tipo de O.S. (dim_tipos_os) é departamento Oficina/setor Funilaria-Pintura.
+      { id: 14, indicador: 'Faturamento Total Funilaria/Pintura (Departamento)', fonte: 'Fonte A — REL_VENDARECEPCIONISTA_REPORT', metrica: 'tot_serv (serviços)', tipo: 'R$', valores: funilariaData?.totServ ?? {} },
+      { id: 14, indicador: 'Faturamento Total Funilaria/Pintura (Departamento)', fonte: 'Fonte B — REL_VENDARECEPCIONISTA_REPORT', metrica: 'tot_pec (peças)',     tipo: 'R$', valores: funilariaData?.totPec  ?? {} },
+      { id: 14, indicador: 'Faturamento Total Funilaria/Pintura (Departamento)', fonte: 'RESULTADO', metrica: 'Fonte A + Fonte B', tipo: 'R$', valores: (() => {
+        const s = funilariaData?.totServ ?? {}, p = funilariaData?.totPec ?? {}
+        const r = {}; for (const k of new Set([...Object.keys(s), ...Object.keys(p)])) r[k] = (s[k] ?? 0) + (p[k] ?? 0); return r
+      })() },
+
+      // ── Indicador 15 — Faturamento Total Oficina (Equipe) ───────────────
+      // Peças (Vl Produto) + Serviços (Vl Líquido) do ROF042, só dos produtivos do
+      // departamento Oficina/setor Mecânica (diferente do filtro de Box dos ids 6/7/8).
+      { id: 15, indicador: 'Faturamento Total Oficina (Equipe)', fonte: 'Fonte A — ROF042_FaturamentoServicosProdutivos_Excel', metrica: 'Vl Produto (peças)', tipo: 'R$', valores: equipeData?.vlProduto ?? {} },
+      { id: 15, indicador: 'Faturamento Total Oficina (Equipe)', fonte: 'Fonte B — ROF042_FaturamentoServicosProdutivos_Excel', metrica: 'Vl Líquido (serviços)', tipo: 'R$', valores: equipeData?.vlLiquido ?? {} },
+      { id: 15, indicador: 'Faturamento Total Oficina (Equipe)', fonte: 'RESULTADO', metrica: 'Fonte A + Fonte B', tipo: 'R$', valores: (() => {
+        const p = equipeData?.vlProduto ?? {}, l = equipeData?.vlLiquido ?? {}
+        const r = {}; for (const k of new Set([...Object.keys(p), ...Object.keys(l)])) r[k] = (p[k] ?? 0) + (l[k] ?? 0); return r
+      })() },
   ]
   res.json({
     year,
     indicadores: indicadores.filter(r => !indicadorId || r.id === indicadorId).map(r => ({ ...r, info: infoAuditoria(r) })),
-    metaData: (extractorData ?? rof042Data ?? rof096Data ?? blcData ?? servicosData)?.metaData ?? null,
+    metaData: (extractorData ?? rof042Data ?? rof096Data ?? blcData ?? servicosData ?? equipeData ?? funilariaData)?.metaData ?? null,
   })
 }))
 

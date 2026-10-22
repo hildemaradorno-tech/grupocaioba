@@ -87,7 +87,17 @@ export default function AuditoriaOsAberto() {
   const [cardFiltro, setCardFiltro] = useState(null) // null | mais30 | semVeiculo | total
   const [filtroNaOficina, setFiltroNaOficina] = useState('') // conferência: '' | sim | nao | vazio
   const [filtroSituacao, setFiltroSituacao] = useState('')   // relatório: '' | responder | respondido | sem_resposta
+  const [filtroSituacaoOs, setFiltroSituacaoOs] = useState('') // relatório: situacao_id da resposta (cadastro de Situações)
+  const [filtroPrevisao, setFiltroPrevisao] = useState('')     // relatório: data_previsao (AAAA-MM-DD) informada
+  const [filtroConsultor, setFiltroConsultor] = useState('')   // consultor_nome
+  const [filtroTipoOs, setFiltroTipoOs] = useState([])         // tipos de OS selecionados (um ou mais); vazio = todos
+  const [tipoOsAberto, setTipoOsAberto] = useState(false)      // lista suspensa do filtro de Tipo de OS
   const [ordem, setOrdem] = useState({ key: null, dir: 'asc' }) // ordenação da tabela
+
+  // ── Resposta direto na tabela (relatório) ──
+  const [rascunhos, setRascunhos] = useState({})                 // { [osId]: { situacao_id, observacao, data_previsao } } não salvos
+  const [salvandoLinhaId, setSalvandoLinhaId] = useState(null)
+  const [respostaFaltando, setRespostaFaltando] = useState(null) // { os, campos: [...] } → janela de aviso
 
   // ── Seleção de OS (Modo Conferência) + Pendenciar em lote ──
   const [selecionadas, setSelecionadas] = useState(new Set())
@@ -216,7 +226,7 @@ export default function AuditoriaOsAberto() {
   }, [])
 
   useEffect(() => {
-    loadRows(auditoriaId); setBuscaOs(''); setCardFiltro(null); setFiltroNaOficina(''); setFiltroSituacao(''); setSelecionadas(new Set())
+    loadRows(auditoriaId); setBuscaOs(''); setCardFiltro(null); setFiltroNaOficina(''); setFiltroSituacao(''); setFiltroSituacaoOs(''); setFiltroPrevisao(''); setFiltroConsultor(''); setFiltroTipoOs([]); setSelecionadas(new Set()); setRascunhos({})
   }, [auditoriaId, loadRows])
 
   // ── Abre modal de importação ──
@@ -327,6 +337,51 @@ export default function AuditoriaOsAberto() {
   }
 
   const detalheValido = formDetalhe.situacao_id.trim() !== '' && formDetalhe.observacao.trim() !== '' && formDetalhe.data_previsao.trim() !== ''
+
+  // ── Resposta direto na tabela (Modo Relatório): rascunho por OS + botão Responder por linha ──
+  const CAMPOS_RESPOSTA = [
+    { campo: 'situacao_id',   label: 'Situação' },
+    { campo: 'observacao',    label: 'Observação' },
+    { campo: 'data_previsao', label: 'Dt. Previsão' },
+  ]
+  const valorResposta = (row, campo) => (rascunhos[row.id] && campo in rascunhos[row.id] ? rascunhos[row.id][campo] : (row[campo] || ''))
+  const setCampoResposta = (row, campo, valor) =>
+    setRascunhos(prev => ({ ...prev, [row.id]: { ...(prev[row.id] || {}), [campo]: valor } }))
+  const linhaAlterada = (row) => !!rascunhos[row.id] &&
+    CAMPOS_RESPOSTA.some(({ campo }) => campo in rascunhos[row.id] && String(rascunhos[row.id][campo] || '') !== String(row[campo] || ''))
+  const descartarResposta = (row) => setRascunhos(prev => { const n = { ...prev }; delete n[row.id]; return n })
+
+  const handleResponderLinha = async (row) => {
+    // Parcialmente preenchido → janela informando o que falta
+    const faltam = CAMPOS_RESPOSTA.filter(({ campo }) => !String(valorResposta(row, campo)).trim()).map(c => c.label)
+    if (faltam.length) { setRespostaFaltando({ os: row.os_numero, campos: faltam }); return }
+    setSalvandoLinhaId(row.id)
+    try {
+      const situacaoId = valorResposta(row, 'situacao_id')
+      const payload = {
+        situacao_id: situacaoId,
+        situacao_nome: situacoes.find(s => s.id === situacaoId)?.nome || row.situacao_nome || null,
+        observacao: String(valorResposta(row, 'observacao')).trim(),
+        data_previsao: valorResposta(row, 'data_previsao'),
+      }
+      await apiService.updateAuditoriaOsItem(row.id, payload, user?.email || '')
+      setRows(prev => prev.map(r => r.id === row.id ? { ...r, ...payload } : r))
+      descartarResposta(row)
+    } catch (e) { setErro(e.message || String(e)) }
+    finally { setSalvandoLinhaId(null) }
+  }
+
+  // Excluir informação (apaga a resposta da OS) — direto na linha
+  const handleExcluirResposta = async (row) => {
+    setSalvandoLinhaId(row.id)
+    try {
+      const payload = { situacao_id: null, situacao_nome: null, observacao: null, data_previsao: null }
+      await apiService.updateAuditoriaOsItem(row.id, payload, user?.email || '')
+      setRows(prev => prev.map(r => r.id === row.id ? { ...r, ...payload } : r))
+      descartarResposta(row)
+    } catch (e) { setErro(e.message || String(e)) }
+    finally { setSalvandoLinhaId(null) }
+  }
 
   const temDetalheSalvo = !!(modalDetalheRow && (modalDetalheRow.situacao_id || modalDetalheRow.observacao || modalDetalheRow.data_previsao))
 
@@ -675,15 +730,46 @@ export default function AuditoriaOsAberto() {
   }, [rowsDoModo, auditoriaEncerrada]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Filtro Na Oficina (Modo Conferência) / filtro de Situação (Modo Relatório)
+  // Opções dos filtros do relatório: só situações e datas de previsão que aparecem nas OS
+  const situacoesUsadas = useMemo(() => {
+    const m = new Map()
+    rowsDoModo.forEach(r => { if (r.situacao_id) m.set(r.situacao_id, r.situacao_nome || '—') })
+    return [...m.entries()].map(([id, nome]) => ({ id, nome })).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
+  }, [rowsDoModo])
+  const previsoesUsadas = useMemo(
+    () => [...new Set(rowsDoModo.map(r => r.data_previsao).filter(Boolean))].sort(),
+    [rowsDoModo]
+  )
+
+  // Consultores e tipos de OS presentes na auditoria (opções dos filtros), com contagem
+  const tipoOsDe = (r) => r.tipo_os_descricao || r.tipo_os_sigla || ''
+  const opcoesDe = (fn) => {
+    const m = new Map()
+    rowsDoModo.forEach(r => { const v = fn(r); if (v) m.set(v, (m.get(v) || 0) + 1) })
+    return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0], 'pt-BR'))
+  }
+  const consultoresUsados = useMemo(() => opcoesDe(r => r.consultor_nome), [rowsDoModo]) // eslint-disable-line react-hooks/exhaustive-deps
+  const tiposOsUsados = useMemo(() => opcoesDe(tipoOsDe), [rowsDoModo]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const porNaOficina = useMemo(() => {
-    if (!emConferencia) return filtroSituacao ? rowsDoModo.filter(r => situacaoDe(r) === filtroSituacao) : rowsDoModo
-    if (!filtroNaOficina) return rowsDoModo
-    return rowsDoModo.filter(r =>
+    const base = rowsDoModo.filter(r =>
+      (!filtroConsultor || r.consultor_nome === filtroConsultor) &&
+      (!filtroTipoOs.length || filtroTipoOs.includes(tipoOsDe(r)))
+    )
+    if (!emConferencia) {
+      return base.filter(r =>
+        (!filtroSituacao || situacaoDe(r) === filtroSituacao) &&
+        (!filtroSituacaoOs || r.situacao_id === filtroSituacaoOs) &&
+        (!filtroPrevisao || r.data_previsao === filtroPrevisao)
+      )
+    }
+    if (!filtroNaOficina) return base
+    return base.filter(r =>
       filtroNaOficina === 'sim' ? r.na_oficina === true
       : filtroNaOficina === 'nao' ? r.na_oficina === false
       : r.na_oficina !== true && r.na_oficina !== false
     )
-  }, [rowsDoModo, emConferencia, filtroNaOficina, filtroSituacao, auditoriaEncerrada]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [rowsDoModo, emConferencia, filtroNaOficina, filtroSituacao, filtroSituacaoOs, filtroPrevisao, filtroConsultor, filtroTipoOs, auditoriaEncerrada]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const rowsFiltradas = useMemo(() => {
     const q = buscaOs.trim().toLowerCase()
@@ -781,6 +867,13 @@ export default function AuditoriaOsAberto() {
     {
       id: 'editar', visivel: pode('editar_na_oficina'), icon: Pencil, label: 'Editar auditoria',
       desc: editar.motivo, disabled: !editar.pode, onClick: abrirModalEditar, cor: 'text-slate-600',
+    },
+    {
+      id: 'voltar', visivel: pode('voltar_etapa'), icon: ArrowUp, label: 'Voltar etapa',
+      desc: statusAud === 'a_responder' ? 'Volta para o Modo Conferência (nada é apagado)' : 'Só quando a auditoria está em A Responder',
+      disabled: statusAud !== 'a_responder',
+      onClick: () => setModalStatus({ para: 'conferencia', procedimento: 'Voltou para Conferência', titulo: 'Voltar para Conferência', texto: 'A auditoria volta para o Modo Conferência. Nada do que foi preenchido é apagado.' }),
+      cor: 'text-slate-600',
     },
     {
       id: 'reabrir', visivel: pode('reabrir'), icon: RotateCcw, label: 'Reabrir auditoria',
@@ -1083,50 +1176,131 @@ export default function AuditoriaOsAberto() {
 
       {/* BUSCA */}
       {auditoriaId && rows.length > 0 && (
-        <div className="bg-white rounded-lg border border-slate-200 shadow-sm px-4 py-3 flex items-center justify-between gap-4 flex-wrap">
-          <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
-            <input
-              type="text"
-              value={buscaOs}
-              onChange={e => setBuscaOs(e.target.value)}
-              placeholder="Buscar por Nº OS, placa ou chassi..."
-              className="w-full pl-8 pr-8 py-1.5 text-xs border border-slate-200 rounded-md focus:ring-2 focus:ring-indigo-500/20 outline-none"
-            />
-            {buscaOs && (
-              <button
-                onClick={() => setBuscaOs('')}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
-                title="Limpar busca"
-              >
-                <XCircle className="h-3.5 w-3.5" />
-              </button>
+        <div className="bg-white rounded-lg border border-slate-200 shadow-sm px-4 py-3 space-y-3">
+          {/* Linha 1: seletores (Status, Situação, Consultor, Tipo de OS, Dt. Previsão / Na Oficina) + Pendenciar/Conferido */}
+          <div className="flex items-center justify-between gap-2 flex-wrap xl:flex-nowrap">
+
+          {/* Relatório: filtro por Situação ao lado da busca (clicar de novo limpa) */}
+          {!emConferencia && (() => {
+            // Seletor de status da OS (1ª coluna): Responder (aberta) / Respondido / Sem resposta (encerrada)
+            const opcoes = [
+              { id: 'responder',    label: 'Responder',    cor: 'border-red-300 bg-red-50 text-red-700',       mostra: !auditoriaEncerrada },
+              { id: 'respondido',   label: 'Respondido',   cor: 'border-green-300 bg-green-50 text-green-700', mostra: true },
+              { id: 'sem_resposta', label: 'Sem resposta', cor: 'border-slate-900 bg-slate-900 text-white',    mostra: auditoriaEncerrada },
+            ].filter(o => o.mostra)
+            const ativa = opcoes.find(o => o.id === filtroSituacao)
+            return (
+              <div className="relative w-[160px] shrink-0">
+                <select
+                  value={filtroSituacao}
+                  onChange={e => setFiltroSituacao(e.target.value)}
+                  className={`w-full text-xs font-semibold py-1.5 pl-2 pr-8 border rounded-md outline-none appearance-none ${ativa ? ativa.cor : 'bg-white border-slate-200 text-slate-600'}`}
+                  title="Filtrar pelo status da OS (Responder / Respondido / Sem resposta)"
+                >
+                  <option value="" className="bg-white text-slate-600">Status: todos</option>
+                  {opcoes.map(o => (
+                    <option key={o.id} value={o.id} className="bg-white text-slate-700">{o.label} ({contagemSituacao[o.id]})</option>
+                  ))}
+                </select>
+                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 opacity-60 pointer-events-none" />
+              </div>
+            )
+          })()}
+
+          {/* Relatório: filtro pela Situação da resposta e pela Dt. Previsão (só as datas informadas) */}
+          {!emConferencia && (
+            <>
+              <div className="relative w-[200px] shrink-0">
+                <select
+                  value={filtroSituacaoOs}
+                  onChange={e => setFiltroSituacaoOs(e.target.value)}
+                  className={`w-full text-xs py-1.5 pl-2 pr-8 border rounded-md outline-none bg-white appearance-none ${filtroSituacaoOs ? 'border-indigo-400 ring-2 ring-indigo-500/20' : 'border-slate-200'}`}
+                  title="Filtrar pela Situação informada na resposta da OS"
+                >
+                  <option value="">Situação: todas</option>
+                  {situacoesUsadas.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
+                </select>
+                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+              </div>
+            </>
+          )}
+
+          {/* Consultor e Tipo de OS (os dois modos) — só valores presentes na auditoria, com contagem */}
+          <div className="relative w-[180px] shrink-0">
+            <User className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+            <select
+              value={filtroConsultor}
+              onChange={e => setFiltroConsultor(e.target.value)}
+              className={`w-full text-xs py-1.5 pl-7 pr-8 border rounded-md outline-none bg-white appearance-none ${filtroConsultor ? 'border-indigo-400 ring-2 ring-indigo-500/20' : 'border-slate-200'}`}
+              title="Filtrar por consultor"
+            >
+              <option value="">Consultor: todos</option>
+              {consultoresUsados.map(([nome, qtd]) => <option key={nome} value={nome}>{primeiroUltimoNome(nome)} ({qtd})</option>)}
+            </select>
+            <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+          </div>
+          {/* Tipo de OS — seleção múltipla (marcar um ou mais) */}
+          <div className="relative w-[200px] shrink-0">
+            <button
+              type="button"
+              onClick={() => setTipoOsAberto(v => !v)}
+              title="Filtrar por tipo de OS (um ou mais)"
+              className={`w-full text-left text-xs py-1.5 pl-2 pr-8 border rounded-md bg-white truncate ${filtroTipoOs.length ? 'border-indigo-400 ring-2 ring-indigo-500/20 text-slate-800 font-semibold' : 'border-slate-200 text-slate-600'}`}
+            >
+              {filtroTipoOs.length === 0 ? 'Tipo de OS: todos'
+                : filtroTipoOs.length === 1 ? filtroTipoOs[0]
+                : `Tipo de OS: ${filtroTipoOs.length} selecionados`}
+            </button>
+            <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+            {tipoOsAberto && (
+              <>
+                <div className="fixed inset-0 z-30" onClick={() => setTipoOsAberto(false)} />
+                <div className="absolute left-0 top-full mt-1 z-40 w-[340px] max-h-72 overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-xl py-1">
+                  <div className="flex items-center justify-between px-3 py-1.5 border-b border-slate-100">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase">Tipo de OS</span>
+                    {filtroTipoOs.length > 0 && (
+                      <button onClick={() => setFiltroTipoOs([])} className="text-[11px] font-semibold text-indigo-600 hover:underline">Limpar</button>
+                    )}
+                  </div>
+                  {tiposOsUsados.map(([tipo, qtd]) => {
+                    const marcado = filtroTipoOs.includes(tipo)
+                    return (
+                      <label key={tipo} className="flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={marcado}
+                          onChange={() => setFiltroTipoOs(prev => marcado ? prev.filter(t => t !== tipo) : [...prev, tipo])}
+                          className="h-3.5 w-3.5 accent-indigo-600"
+                        />
+                        <span className="flex-1">{tipo}</span>
+                        <span className="text-[10px] font-bold text-slate-400">{qtd}</span>
+                      </label>
+                    )
+                  })}
+                  {tiposOsUsados.length === 0 && <p className="px-3 py-2 text-xs text-slate-400">Nenhum tipo de OS.</p>}
+                </div>
+              </>
             )}
           </div>
 
-          {/* Relatório: filtro por Situação ao lado da busca (clicar de novo limpa) */}
+          {/* Relatório: Dt. Previsão (só as datas informadas), na mesma linha, logo após o Tipo de OS */}
           {!emConferencia && (
-            <div className="flex items-center gap-1">
-              {[
-                { id: 'responder',    label: 'Responder',    on: 'bg-red-100 border-red-300 text-red-700',       mostra: !auditoriaEncerrada },
-                { id: 'respondido',   label: 'Respondido',   on: 'bg-green-100 border-green-300 text-green-700', mostra: true },
-                { id: 'sem_resposta', label: 'Sem resposta', on: 'bg-slate-900 border-slate-900 text-white',     mostra: auditoriaEncerrada },
-              ].filter(s => s.mostra).map(s => {
-                const ativo = filtroSituacao === s.id
-                return (
-                  <button
-                    key={s.id}
-                    onClick={() => setFiltroSituacao(ativo ? '' : s.id)}
-                    title={ativo ? 'Clique para limpar o filtro' : `Mostrar só "${s.label}"`}
-                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-semibold border transition-colors ${
-                      ativo ? s.on : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-                    }`}
-                  >
-                    {s.label}
-                    <span className={`text-[10px] font-bold px-1.5 rounded-full ${ativo ? 'bg-white/30' : 'bg-slate-100 text-slate-500'}`}>{contagemSituacao[s.id]}</span>
-                  </button>
-                )
-              })}
+            <div className="relative w-[170px] shrink-0">
+              <Calendar className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+              <select
+                value={filtroPrevisao}
+                onChange={e => setFiltroPrevisao(e.target.value)}
+                className={`w-full text-xs py-1.5 pl-7 pr-8 border rounded-md outline-none bg-white appearance-none ${filtroPrevisao ? 'border-indigo-400 ring-2 ring-indigo-500/20' : 'border-slate-200'}`}
+                title="Filtrar pela Dt. Previsão informada"
+              >
+                <option value="">Dt. Previsão: todas</option>
+                {previsoesUsadas.map(d => (
+                  <option key={d} value={d}>
+                    {fmtDate(d)} ({rowsDoModo.filter(r => r.data_previsao === d).length})
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
             </div>
           )}
 
@@ -1174,23 +1348,7 @@ export default function AuditoriaOsAberto() {
           )}
           <div className="flex-1" />
 
-          {/* A Responder: alterna entre só pendentes e todas as OS sem resposta */}
           <div className="flex items-center gap-2 flex-wrap">
-          {!emConferencia && (
-            <button
-              onClick={() => setRelatorioVerTodos(v => !v)}
-              title={relatorioVerTodos ? 'Mostrar só as OS pendentes' : 'Mostrar pendentes e não pendentes'}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold border transition-colors ${
-                relatorioVerTodos
-                  ? 'bg-indigo-600 border-indigo-600 text-white hover:bg-indigo-700'
-                  : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-              }`}
-            >
-              <List className="h-3.5 w-3.5" />
-              {relatorioVerTodos ? 'Ver só pendentes' : 'Ver todas'}
-            </button>
-          )}
-
           {/* Modo Conferência: botão Conferido à direita, na linha da busca */}
           {statusAud === 'conferencia' && pode('concluir_conferencia') && (
             <div className="relative group">
@@ -1210,32 +1368,65 @@ export default function AuditoriaOsAberto() {
             </div>
           )}
 
-          {/* A Responder: Voltar etapa e Concluir respostas na mesma linha do Ver todas */}
-          {statusAud === 'a_responder' && pode('voltar_etapa') && (
+          </div>
+          </div>
+
+          {/* Linha 2: campo de busca + Ver todas (relatório), abaixo dos seletores */}
+          <div className="flex items-center gap-2 flex-wrap">
+          <div className="relative flex-1 min-w-[280px] max-w-2xl">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+            <input
+              type="text"
+              value={buscaOs}
+              onChange={e => setBuscaOs(e.target.value)}
+              placeholder="Buscar por Nº OS, placa ou chassi..."
+              className="w-full pl-8 pr-8 py-1.5 text-xs border border-slate-200 rounded-md focus:ring-2 focus:ring-indigo-500/20 outline-none"
+            />
+            {buscaOs && (
+              <button
+                onClick={() => setBuscaOs('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+                title="Limpar busca"
+              >
+                <XCircle className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+          {!emConferencia && (
             <button
-              onClick={() => setModalStatus({ para: 'conferencia', procedimento: 'Voltou para Conferência', titulo: 'Voltar para Conferência', texto: 'A auditoria volta para o Modo Conferência. Nada do que foi preenchido é apagado.' })}
-              className="px-3 py-1.5 rounded-md text-xs font-semibold text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 transition-colors"
+              onClick={() => setRelatorioVerTodos(v => !v)}
+              title={relatorioVerTodos ? 'Mostrar só as OS pendentes' : 'Mostrar pendentes e não pendentes'}
+              className={`ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold border transition-colors ${
+                relatorioVerTodos
+                  ? 'bg-indigo-600 border-indigo-600 text-white hover:bg-indigo-700'
+                  : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+              }`}
             >
-              Voltar etapa
+              <List className="h-3.5 w-3.5" />
+              {relatorioVerTodos ? 'Ver só pendentes' : 'Ver todas'}
             </button>
           )}
+          </div>
+
+          {/* Linha 3 (A Responder): Concluir respostas, à direita */}
           {statusAud === 'a_responder' && pode('concluir_respostas') && (
-            <div className="relative group">
-              <button
-                onClick={() => setModalStatus({ para: 'respondido_total', procedimento: 'Respondido Total', titulo: 'Concluir respostas', texto: 'Todas as OS pendentes estão respondidas. A auditoria passa para Modo Relatório — Respondido Total (concluída).' })}
-                disabled={pendentesSemResposta > 0}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                Concluir respostas →
-              </button>
-              {pendentesSemResposta > 0 && (
-                <span className="pointer-events-none absolute right-0 top-full mt-1.5 z-20 whitespace-nowrap rounded-md bg-slate-800 px-2.5 py-1.5 text-[11px] font-semibold text-white shadow-lg opacity-0 group-hover:opacity-100 transition-opacity">
-                  Faltam {pendentesSemResposta} OS pendentes sem resposta
-                </span>
-              )}
+            <div className="flex items-center justify-end gap-2 flex-wrap">
+                <div className="relative group">
+                  <button
+                    onClick={() => setModalStatus({ para: 'respondido_total', procedimento: 'Respondido Total', titulo: 'Concluir respostas', texto: 'Todas as OS pendentes estão respondidas. A auditoria passa para Modo Relatório — Respondido Total (concluída).' })}
+                    disabled={pendentesSemResposta > 0}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Concluir respostas →
+                  </button>
+                  {pendentesSemResposta > 0 && (
+                    <span className="pointer-events-none absolute right-0 top-full mt-1.5 z-20 whitespace-nowrap rounded-md bg-slate-800 px-2.5 py-1.5 text-[11px] font-semibold text-white shadow-lg opacity-0 group-hover:opacity-100 transition-opacity">
+                      Faltam {pendentesSemResposta} OS pendentes sem resposta
+                    </span>
+                  )}
+                </div>
             </div>
           )}
-          </div>
         </div>
       )}
 
@@ -1319,9 +1510,10 @@ export default function AuditoriaOsAberto() {
                   {thOrd('tipo_os', 'Tipo OS', 'min-w-[180px]')}
                   {thOrd('total', 'Total', 'text-right', 'end')}
                   {thOrd('na_oficina', 'Na Oficina', 'text-center w-28', 'center')}
-                  {thOrd('situacao_nome', 'Situação', 'min-w-[200px]')}
-                  {thOrd('observacao', 'Observação', 'min-w-[240px]')}
+                  {thOrd('situacao_nome', 'Situação', 'min-w-[220px]')}
+                  {thOrd('observacao', 'Observação', 'min-w-[260px]')}
                   {thOrd('data_previsao', 'Dt. Previsão')}
+                  {!bloqueioEdicaoOs && <th className="p-3 whitespace-nowrap text-center">Resposta</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
@@ -1329,9 +1521,7 @@ export default function AuditoriaOsAberto() {
                   return (
                     <tr
                       key={row.id}
-                      onClick={() => { if (!bloqueioEdicaoOs) abrirModalDetalhe(row) }}
-                      title={bloqueioEdicaoOs || undefined}
-                      className={`transition-colors hover:bg-slate-50/70 ${bloqueioEdicaoOs ? 'cursor-default' : 'cursor-pointer'}`}
+                      className={`transition-colors ${linhaAlterada(row) ? 'bg-indigo-50/50' : 'hover:bg-slate-50/70'}`}
                     >
                       {/* Auto — P (vermelho) quando dias >= 30 ou Na Oficina = Não */}
                       <td className="p-3 text-center">
@@ -1370,24 +1560,86 @@ export default function AuditoriaOsAberto() {
                         {renderNaOficina(row)}
                       </td>
 
-                      {/* Resposta da OS (preenchida no modal ao clicar na linha) */}
-                      <td className="p-3">
-                        {row.situacao_nome ? (
-                          <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap ${
-                            situacoes.find(s => s.id === row.situacao_id)?.cor || 'bg-slate-100 text-slate-700'
-                          }`}>
-                            {row.situacao_nome}
-                          </span>
-                        ) : <span className="text-slate-300">—</span>}
-                      </td>
-                      <td className="p-3 text-slate-600 max-w-[320px]">
-                        {row.observacao
-                          ? <span className="line-clamp-2" title={row.observacao}>{row.observacao}</span>
-                          : <span className="text-slate-300">—</span>}
-                      </td>
-                      <td className="p-3 whitespace-nowrap text-slate-600">
-                        {row.data_previsao ? fmtDate(row.data_previsao) : <span className="text-slate-300">—</span>}
-                      </td>
+                      {/* Resposta da OS — editável direto na tabela (Situação / Observação / Dt. Previsão + botão Responder) */}
+                      {bloqueioEdicaoOs ? (
+                        <>
+                          <td className="p-3">
+                            {row.situacao_nome ? (
+                              <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap ${
+                                situacoes.find(s => s.id === row.situacao_id)?.cor || 'bg-slate-100 text-slate-700'
+                              }`}>
+                                {row.situacao_nome}
+                              </span>
+                            ) : <span className="text-slate-300">—</span>}
+                          </td>
+                          <td className="p-3 text-slate-600 max-w-[320px]">
+                            {row.observacao
+                              ? <span className="line-clamp-2" title={row.observacao}>{row.observacao}</span>
+                              : <span className="text-slate-300">—</span>}
+                          </td>
+                          <td className="p-3 whitespace-nowrap text-slate-600">
+                            {row.data_previsao ? fmtDate(row.data_previsao) : <span className="text-slate-300">—</span>}
+                          </td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="p-2">
+                            <select
+                              value={valorResposta(row, 'situacao_id')}
+                              onChange={e => setCampoResposta(row, 'situacao_id', e.target.value)}
+                              className="w-full text-xs p-1.5 border border-slate-200 rounded-md bg-white focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                            >
+                              <option value="">— Selecionar —</option>
+                              {situacoes.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
+                              {/* mantém a situação gravada mesmo se tiver sido inativada no cadastro */}
+                              {row.situacao_id && !situacoes.some(s => s.id === row.situacao_id) && (
+                                <option value={row.situacao_id}>{row.situacao_nome}</option>
+                              )}
+                            </select>
+                          </td>
+                          <td className="p-2">
+                            <textarea
+                              value={valorResposta(row, 'observacao')}
+                              onChange={e => setCampoResposta(row, 'observacao', e.target.value)}
+                              placeholder="Descreva a observação..."
+                              rows={2}
+                              className="w-full min-w-[240px] text-xs p-1.5 border border-slate-200 rounded-md resize-y focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                            />
+                          </td>
+                          <td className="p-2">
+                            <input
+                              type="date"
+                              value={valorResposta(row, 'data_previsao')}
+                              onChange={e => setCampoResposta(row, 'data_previsao', e.target.value)}
+                              className="text-xs p-1.5 border border-slate-200 rounded-md focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                            />
+                          </td>
+                          <td className="p-2 text-center whitespace-nowrap">
+                            {(() => {
+                              // Só o ícone de gravar: roxo = há algo para responder/salvar; verde = já respondida (nada a salvar)
+                              const alterada = linhaAlterada(row)
+                              const algumCampo = ['situacao_id', 'observacao', 'data_previsao'].some(c => String(valorResposta(row, c)).trim())
+                              const respondidaSemMudanca = !alterada && isRespondida(row)
+                              const salvando = salvandoLinhaId === row.id
+                              return (
+                                <button
+                                  onClick={() => handleResponderLinha(row)}
+                                  disabled={respondidaSemMudanca || !algumCampo || salvando}
+                                  title={salvando ? 'Salvando...' : respondidaSemMudanca ? 'Respondido' : 'Responder (gravar)'}
+                                  aria-label="Responder"
+                                  className={`inline-flex items-center justify-center h-8 w-8 rounded-md shadow-sm transition-colors disabled:cursor-not-allowed ${
+                                    respondidaSemMudanca
+                                      ? 'bg-green-100 text-green-700'
+                                      : 'text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40'
+                                  }`}
+                                >
+                                  <Save className={`h-4 w-4 ${salvando ? 'animate-pulse' : ''}`} />
+                                </button>
+                              )
+                            })()}
+                          </td>
+                        </>
+                      )}
 
                     </tr>
                   )
@@ -1901,6 +2153,38 @@ export default function AuditoriaOsAberto() {
                   })}
                 </ol>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* AVISO: resposta incompleta — informa o que falta preencher na OS */}
+      {respostaFaltando && (
+        <div className="fixed top-0 right-0 bottom-0 left-16 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg border border-slate-200 w-[400px] shadow-xl overflow-hidden">
+            <div className="p-5 flex items-start gap-3">
+              <div className="p-2 bg-amber-50 text-amber-600 rounded-full shrink-0">
+                <AlertTriangle className="h-5 w-5" />
+              </div>
+              <div className="space-y-2">
+                <h3 className="text-sm font-bold text-slate-900">Resposta incompleta — OS {respostaFaltando.os}</h3>
+                <p className="text-xs text-slate-500">Para responder, preencha também:</p>
+                <ul className="space-y-1">
+                  {respostaFaltando.campos.map(c => (
+                    <li key={c} className="flex items-center gap-1.5 text-xs font-semibold text-red-600">
+                      <XCircle className="h-3.5 w-3.5" /> {c}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+            <div className="flex items-center justify-end p-3 bg-slate-50 border-t border-slate-100">
+              <button
+                onClick={() => setRespostaFaltando(null)}
+                className="px-4 py-1.5 rounded-md text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm transition-colors"
+              >
+                Entendi
+              </button>
             </div>
           </div>
         </div>

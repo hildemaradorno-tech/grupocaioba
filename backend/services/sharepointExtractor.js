@@ -29,7 +29,8 @@
  */
 
 import { numeroSemanaDoDia } from './kpiSemanas.js'
-import { getFiltroBoxOficina } from './boxFuncionarios.js'
+import { getFiltroBoxOficina, getFiltroDepartamentoSetor } from './boxFuncionarios.js'
+import { getFiltroTipoOs } from './tiposOsFiltro.js'
 import { Client }                        from '@microsoft/microsoft-graph-client'
 import { ClientSecretCredential }         from '@azure/identity'
 import { TokenCredentialAuthenticationProvider }
@@ -281,6 +282,24 @@ function serialToDia(v) {
   return d ? d.getUTCFullYear() * 10000 + (d.getUTCMonth() + 1) * 100 + d.getUTCDate() : null
 }
 
+// Filtra linhas (já com `dia` em AAAAMMDD) dentro de um intervalo 'AAAA-MM-DD' — usado no filtro
+// "Entre datas" da tela Fontes, em toda fonte que tem data na linha bruta (ROF042/ROF096/
+// Recepcionista/RPR001/Balcão).
+function filtrarPorData(rows, dataInicio, dataFim) {
+  const ini = Number(String(dataInicio).replaceAll('-', ''))
+  const fim = Number(String(dataFim).replaceAll('-', ''))
+  return rows.filter(r => r.dia != null && r.dia >= ini && r.dia <= fim)
+}
+
+// Soma campos numéricos de linhas dentro de um intervalo de datas — usado no filtro "Entre datas"
+// pra fontes de campo único (sem razões/líquidos derivados).
+function somarPorData(rows, dataInicio, dataFim, campos) {
+  const linhas = filtrarPorData(rows, dataInicio, dataFim)
+  const out = Object.fromEntries(campos.map(c => [c, null]))
+  for (const r of linhas) for (const c of campos) out[c] = (out[c] ?? 0) + (r[c] || 0)
+  return { ...out, totalLinhas: linhas.length }
+}
+
 /**
  * Converte serial Excel para string 'YYYY-MM'.
  */
@@ -368,6 +387,7 @@ export function parseVendaProdutoBuffer(buffer, meta) {
     // Usa NF_DataMov como data de referência para filtro de período
     const periodo    = serialToYearMonth(row[C.dataMov]) || serialToYearMonth(row[C.dataEmis]) || periodoFallback
     const semanaKey  = serialToWeekKey(row[C.dataMov])   || serialToWeekKey(row[C.dataEmis])   || null
+    const dia        = serialToDia(row[C.dataMov])       || serialToDia(row[C.dataEmis])       || null
 
     const empresaCod = safeNum(row[C.empresaCod])
     const empresa    = EMPRESA_MAP[empresaCod] || normalizeEmpresaNome(row[C.empNome])
@@ -394,6 +414,7 @@ export function parseVendaProdutoBuffer(buffer, meta) {
       arquivo:      meta.name,
       periodo,
       semanaKey,
+      dia,
       empresa,
       empresaCod,
       natOperacao:  natOp,
@@ -456,6 +477,7 @@ function parseBalcaoBuffer(buffer, meta) {
     const periodo   = serialToYearMonth(row[C.dataMov]) || serialToYearMonth(row[C.dataEmis]) || periodoFallback
     if (!periodo) continue
     const semanaKey = serialToWeekKey(row[C.dataMov])   || serialToWeekKey(row[C.dataEmis])   || null
+    const dia       = serialToDia(row[C.dataMov])       || serialToDia(row[C.dataEmis])       || null
 
     const empresaCod = safeNum(row[C.empresaCod])
     const empresa    = EMPRESA_MAP[empresaCod] || normalizeEmpresaNome(row[C.empNome])
@@ -469,7 +491,7 @@ function parseBalcaoBuffer(buffer, meta) {
 
     const nomeVendedor = row[C.nomeVendedor] != null ? String(row[C.nomeVendedor]).trim() : ''
 
-    result.push({ empresa, periodo, semanaKey, vlVendas, vlDevolucoes, vlMargemContVendas, vlMargemContDevolucoes, nomeVendedor, arquivo: meta.name })
+    result.push({ empresa, periodo, semanaKey, dia, vlVendas, vlDevolucoes, vlMargemContVendas, vlMargemContDevolucoes, nomeVendedor, arquivo: meta.name })
   }
   return result
 }
@@ -594,6 +616,15 @@ export async function extractBalcao(year = new Date().getFullYear(), empresaNome
   const result = consolidarBalcao(rows)
   setCache(cacheKey, result)
   return result
+}
+
+// Mesma fonte de extractBalcao, somada direto num intervalo de datas (não por mês) — usado no
+// filtro "Entre datas" da tela Fontes (indicadores 9 e 10), só pra conferência pontual.
+export async function extractBalcaoPorData(year, empresaNome, dataInicio, dataFim) {
+  const empresaNorm = empresaNome ? normalizeEmpresaNome(empresaNome).toUpperCase() : null
+  const rowsDoAno = await getBalcaoRowsDoAno(year)
+  const rows = empresaNorm ? rowsDoAno.filter(r => r.empresa.toUpperCase() === empresaNorm) : rowsDoAno
+  return consolidarBalcaoPorData(filtrarPorData(rows, dataInicio, dataFim))
 }
 
 // Lista de nomes de vendedor distintos no Balcão do ano (pro seletor da tela
@@ -733,6 +764,30 @@ function contarOsPorPeriodo(rows) {
   return { ...cont(porQ), fy: ano.size || null, ...cont(porM), ...cont(porS) }
 }
 
+// Passagens (O.S. únicas) do consultor juntando as DUAS fontes: peças da oficina (RPR001) e serviços
+// (Recepcionista). Só pelo RPR001 ficavam de fora as O.S. sem peça (só mão de obra) — o Dealer.net conta
+// todas (Resumo de Venda por Consultor). Usado no Ticket Médio da Oficina.
+export async function extractPassagensConsultor(year = new Date().getFullYear(), empresaNome = null, consultorNome = null) {
+  const yearStr       = String(year)
+  const empresaNorm   = empresaNome   ? normalizeEmpresaNome(empresaNome).toUpperCase() : null
+  const consultorNorm = consultorNome ? String(consultorNome).trim().toUpperCase()      : null
+  const cacheKey = `passagens-consultor-${yearStr}-${empresaNorm || 'todas'}-${consultorNorm || 'todos'}`
+  const hit = cached(cacheKey)
+  if (hit) return hit
+  const filtrar = (rows, campoEmpresa) => rows.filter(r =>
+    (!empresaNorm || String(r[campoEmpresa] || '').toUpperCase() === empresaNorm) &&
+    (!consultorNorm || String(r.nomeConsultor || '').toUpperCase() === consultorNorm))
+  const pecas = filtrar(await getOficinaConsultorRowsDoAno(year), 'empresa')
+  const servicos = VALID_YEARS.has(yearStr) ? filtrar(await _loadAllRecepRows(year), 'empresaNome') : []
+  const rows = [
+    ...pecas.map(r => ({ periodo: r.periodo, semanaKey: r.semanaKey, osNum: r.osNum })),
+    ...servicos.map(r => ({ periodo: r.periodo, semanaKey: r.semanaKey, osNum: Number(r.os) || null })),
+  ]
+  const result = contarOsPorPeriodo(rows)
+  setCache(cacheKey, result)
+  return result
+}
+
 // Lista de nomes de Consultor distintos nas linhas de Oficina do RPR001 (pro
 // seletor da tela de Serviços) — opcionalmente filtrada por empresa.
 export async function listConsultoresOficina(year = new Date().getFullYear(), empresaNome = null) {
@@ -865,6 +920,68 @@ function agregarPorSemana(rows) {
     if (TRP_TIPO_CODES.has(r.prodTipoCod)) addToBucket(ss[s].TRP_TIPOS, r)
   }
   return ss
+}
+
+// Agrega tudo num bucket só (sem separar por quarter/mês/semana) — usado no filtro "Entre datas"
+// da tela Fontes, onde as linhas já vêm filtradas pro intervalo de datas pedido.
+function agregarTudo(rows) {
+  const agg = makeAggResult()
+  for (const r of rows) {
+    addToBucket(agg[r.tipoKpi], r)
+    addToBucket(agg[r.nfOrigem] || agg.TOTAL, r)
+    addToBucket(agg.TOTAL, r)
+    if (r.tipoKpi === 'PECAS' && r.nfOrigem === 'OFI') addToBucket(agg.PECAS_OFI, r)
+    if (TRP_TIPO_CODES.has(r.prodTipoCod)) addToBucket(agg.TRP_TIPOS, r)
+  }
+  return agg
+}
+
+// Mesmos campos do objeto `auditoria` (consolidarParaKpi), mas num valor só (não por período) —
+// usado no filtro "Entre datas" da tela Fontes. Ao criar um indicador novo baseado no RPR001
+// (ind1_/ind3_/ind10_/ind12_ aqui embaixo), replicar o cálculo aqui também.
+function consolidarAuditoriaPorData(rows) {
+  const agg = agregarTudo(rows)
+  const v = (bucket, campo) => agg[bucket]?.[campo] ?? null
+  const liquido      = (bucket) => { const a = v(bucket, 'vlVendas'), b = v(bucket, 'vlDevolucoes'); return (a != null || b != null) ? (a ?? 0) - (b ?? 0) : null }
+  const liquidoMargem = (bucket) => { const a = v(bucket, 'vlMargemContVendas'), b = v(bucket, 'vlMargemContDevolucoes'); return (a != null || b != null) ? (a ?? 0) - (b ?? 0) : null }
+  const pctCont = (bucket) => { const lucro = liquidoMargem(bucket), fat = liquido(bucket); return fat > 0 ? (lucro / fat) * 100 : null }
+
+  return {
+    ind1_fatVendas:      v('TOTAL', 'vlVendas'),
+    ind1_fatDevolucoes:  v('TOTAL', 'vlDevolucoes'),
+    ind1_fatLiquido:     liquido('TOTAL'),
+    ind3_lucroVendas:     v('TOTAL', 'vlMargemContVendas'),
+    ind3_lucroDevolucoes: v('TOTAL', 'vlMargemContDevolucoes'),
+    ind3_lucroLiquido:    liquidoMargem('TOTAL'),
+    ind3_fatVendas:      v('TOTAL', 'vlVendas'),
+    ind3_fatDevolucoes:  v('TOTAL', 'vlDevolucoes'),
+    ind3_fatLiquido:     liquido('TOTAL'),
+    ind3_margem:         pctCont('TOTAL'),
+    ind12_passagens:     agg.OFI?.osSet?.size ?? null,
+    ind10_trpVendas:     v('TRP_TIPOS', 'vlVendas'),
+    ind10_trpDevolucoes: v('TRP_TIPOS', 'vlDevolucoes'),
+    ind10_trpLiquido:    liquido('TRP_TIPOS'),
+  }
+}
+
+// Mesmos campos de consolidarBalcao, mas num valor só (não por período) — usado no filtro
+// "Entre datas" da tela Fontes (indicadores 9 e 10).
+function consolidarBalcaoPorData(rows) {
+  let vlVendas = null, vlDevolucoes = null, vlMargemContVendas = null, vlMargemContDevolucoes = null
+  for (const r of rows) {
+    vlVendas               = (vlVendas               ?? 0) + r.vlVendas
+    vlDevolucoes           = (vlDevolucoes           ?? 0) + r.vlDevolucoes
+    vlMargemContVendas     = (vlMargemContVendas     ?? 0) + (r.vlMargemContVendas     || 0)
+    vlMargemContDevolucoes = (vlMargemContDevolucoes ?? 0) + (r.vlMargemContDevolucoes || 0)
+  }
+  const liquido       = (vlVendas != null || vlDevolucoes != null) ? (vlVendas ?? 0) - (vlDevolucoes ?? 0) : null
+  const liquidoMargem = (vlMargemContVendas != null || vlMargemContDevolucoes != null) ? (vlMargemContVendas ?? 0) - (vlMargemContDevolucoes ?? 0) : null
+  const margemPct     = (liquido > 0 && liquidoMargem != null) ? (liquidoMargem / liquido) * 100 : null
+  return {
+    vendas: vlVendas, devolucoes: vlDevolucoes, liquido,
+    margemContVendas: vlMargemContVendas, margemContDevolucoes: vlMargemContDevolucoes,
+    margemContLiquido: liquidoMargem, margemPct,
+  }
 }
 
 export function consolidarParaKpi(rows) {
@@ -1129,6 +1246,8 @@ function parseRecepcionistaBuffer(buffer, meta) {
   const colOs       = header.indexOf('OS_Codigo')
   const colPec      = header.indexOf('tot_pec')
   const colMargPec  = header.indexOf('margem_peca')
+  // Sigla do Tipo de O.S. (dim_tipos_os.sigla) — classifica a linha por departamento/setor.
+  const colTipoOs   = header.indexOf('TipoOS_Sigla')
 
   if (colDate === -1 || colVal === -1) {
     console.warn(`[Recep] Colunas não encontradas em ${meta.name}. Cabeçalho: ${header.slice(0, 20).join(', ')}`)
@@ -1153,7 +1272,8 @@ function parseRecepcionistaBuffer(buffer, meta) {
     const codConsultor  = colUsuCod  !== -1 && row[colUsuCod] != null ? String(row[colUsuCod]).trim() : ''
     const os            = colOs      !== -1 ? (Number(row[colOs]) || null) : null
     const margemPeca    = colMargPec !== -1 ? (Number(row[colMargPec]) || 0) : 0
-    result.push({ periodo, semanaKey, totServ, margemServico, empresaNome, nomeConsultor, dia, codConsultor, os, totPec, margemPeca, arquivo: meta.name })
+    const tipoOsSigla   = colTipoOs  !== -1 && row[colTipoOs] != null ? String(row[colTipoOs]).trim() : ''
+    result.push({ periodo, semanaKey, totServ, margemServico, empresaNome, nomeConsultor, dia, codConsultor, os, totPec, margemPeca, tipoOsSigla, arquivo: meta.name })
   }
   return result
 }
@@ -1265,6 +1385,91 @@ export async function extractServicosOficina(year = new Date().getFullYear(), em
   return result
 }
 
+// Mesma fonte de extractServicosOficina, somada direto num intervalo de datas (não por mês) —
+// usado no filtro "Entre datas" da tela Fontes, só pra conferência pontual.
+export async function extractServicosOficinaPorData(year, empresaNome, dataInicio, dataFim) {
+  const empresaNorm = empresaNome ? normalizeEmpresaNome(empresaNome).toUpperCase() : null
+  const allRows = await _loadAllRecepRows(year)
+  const rows = empresaNorm ? allRows.filter(r => r.empresaNome.toUpperCase() === empresaNorm) : allRows
+  return somarPorData(rows, dataInicio, dataFim, ['totServ', 'margemServico'])
+}
+
+// Consolida linhas do Recepcionista em { totServ, totPec, liquido (totServ+totPec) } por período —
+// usado no indicador 14 da Fontes, "Faturamento Total Funilaria/Pintura (Departamento)".
+function consolidarFaturamentoDepartamento(rows) {
+  const qs = {}, qp = {}, ql = {}, ms = {}, mp = {}, ml = {}, ss = {}, sp = {}, sl = {}
+
+  for (const r of rows) {
+    const q = quarter(r.periodo)
+    const m = mesKey(r.periodo)
+    const s = r.semanaKey
+    qs[q] = (qs[q] || 0) + r.totServ
+    qp[q] = (qp[q] || 0) + r.totPec
+    ql[q] = (ql[q] || 0) + r.totServ + r.totPec
+    if (m) { ms[m] = (ms[m] || 0) + r.totServ; mp[m] = (mp[m] || 0) + r.totPec; ml[m] = (ml[m] || 0) + r.totServ + r.totPec }
+    if (s) { ss[s] = (ss[s] || 0) + r.totServ; sp[s] = (sp[s] || 0) + r.totPec; sl[s] = (sl[s] || 0) + r.totServ + r.totPec }
+  }
+
+  const fyS = rows.reduce((s, r) => s + r.totServ, 0) || null
+  const fyP = rows.reduce((s, r) => s + r.totPec, 0) || null
+  const fyL = rows.reduce((s, r) => s + r.totServ + r.totPec, 0) || null
+
+  const per = (monthly, weekly, fy) => ({
+    q1: monthly.q1 ?? null, q2: monthly.q2 ?? null, q3: monthly.q3 ?? null, q4: monthly.q4 ?? null, fy,
+    ...Object.fromEntries(ALL_MONTHS.map(m => [m, monthly[m] ?? null])),
+    ...Object.fromEntries(ALL_WEEKS.map(s  => [s,  weekly[s]  ?? null])),
+  })
+
+  return {
+    totServ: per({ ...ms, ...qs }, ss, fyS),
+    totPec:  per({ ...mp, ...qp }, sp, fyP),
+    liquido: per({ ...ml, ...ql }, sl, fyL),
+    metaData: {
+      totalArquivos: [...new Set(rows.map(r => r.arquivo))].length,
+      totalLinhas:   rows.length,
+      periodos:      [...new Set(rows.map(r => r.periodo))].sort(),
+    },
+  }
+}
+
+// Mesma fonte do Recepcionista, mas filtrada pela sigla do Tipo de O.S. (dim_tipos_os) do
+// departamento Oficina/setor Funilaria-Pintura — diferente do filtro por Box/cadastro do
+// funcionário usado no indicador 15 (Equipe): aqui quem classifica é o próprio Tipo de O.S.
+async function _loadAllRecepRowsFunilariaPintura(year) {
+  const [rows, filtroOk] = await Promise.all([_loadAllRecepRows(year), getFiltroTipoOs('OFICINA', 'Funilaria/Pintura')])
+  return rows.filter(r => filtroOk(r.tipoOsSigla))
+}
+
+// Faturamento Total Funilaria/Pintura (Departamento): tot_serv + tot_pec do Recepcionista (relatório
+// de faturamento dos consultores de serviço), só das linhas cujo Tipo de O.S. está classificado como
+// departamento Oficina/setor Funilaria-Pintura.
+export async function extractFaturamentoFunilariaPintura(year = new Date().getFullYear(), empresaNome = null) {
+  const yearStr      = String(year)
+  const empresaNorm  = empresaNome ? normalizeEmpresaNome(empresaNome).toUpperCase() : null
+  const cacheKey = `recep-funilaria-${yearStr}-${empresaNorm || 'todas'}`
+  const hit = cached(cacheKey)
+  if (hit) return hit
+
+  const allRows   = await _loadAllRecepRowsFunilariaPintura(year)
+  const rowsDoAno = allRows.filter(r => r.periodo?.startsWith(yearStr))
+  const rows      = empresaNorm
+    ? rowsDoAno.filter(r => r.empresaNome.toUpperCase() === empresaNorm)
+    : rowsDoAno
+
+  const result = consolidarFaturamentoDepartamento(rows)
+  setCache(cacheKey, result)
+  return result
+}
+
+// Mesma fonte de extractFaturamentoFunilariaPintura, somada direto num intervalo de datas (não por
+// mês) — usado no filtro "Entre datas" da tela Fontes (indicador 14), só pra conferência pontual.
+export async function extractFaturamentoFunilariaPinturaPorData(year, empresaNome, dataInicio, dataFim) {
+  const empresaNorm = empresaNome ? normalizeEmpresaNome(empresaNome).toUpperCase() : null
+  const allRows = await _loadAllRecepRowsFunilariaPintura(year)
+  const rows = empresaNorm ? allRows.filter(r => r.empresaNome.toUpperCase() === empresaNorm) : allRows
+  return somarPorData(rows, dataInicio, dataFim, ['totServ', 'totPec'])
+}
+
 // Mesma fonte de extractServicosOficina, mas filtrada pelo Consultor (Usuario_Nome)
 // que atendeu a O.S. — usado no bloco CONSULTOR DE SERVIÇOS da Matriz KPIs.
 export async function extractServicosPorConsultor(year = new Date().getFullYear(), empresaNome = null, consultorNome = null) {
@@ -1360,6 +1565,17 @@ export async function getConsolidatedKpiData(year = new Date().getFullYear(), em
   const result = consolidarParaKpi(rows)
   setCache(cacheKey, result)
   return result
+}
+
+// Mesma fonte de getConsolidatedKpiData (RPR001 Oficina/Consultor), somada direto num intervalo
+// de datas (não por mês) — usado no filtro "Entre datas" da tela Fontes (indicadores 1, 2, 3, 5,
+// 11, 12), só pra conferência pontual.
+export async function getAuditoriaPorData(year, empresaNome, dataInicio, dataFim) {
+  const empresaNorm = empresaNome ? normalizeEmpresaNome(empresaNome).toUpperCase() : null
+  const allRows = await _loadAllRows(year)
+  const rowsDoAno = allRows.filter(r => r.periodo?.startsWith(String(year)))
+  const rows = empresaNorm ? rowsDoAno.filter(r => r.empresa.toUpperCase() === empresaNorm) : rowsDoAno
+  return consolidarAuditoriaPorData(filtrarPorData(rows, dataInicio, dataFim))
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1536,6 +1752,32 @@ export async function extractROF096(year = new Date().getFullYear(), empresaNome
   return result
 }
 
+// Mesma fonte do ROF096, mas filtrada por Departamento "OFICINA" + Setor "Mecânica" (igual
+// _loadAllROF042RowsEquipeOficina) — denominador (Horas Disponíveis) da Eficácia do quadro
+// CHEFE DE OFICINA, pro numerador (Hr. Vend.) bater com o mesmo filtro do indicador 15 da Fontes.
+async function _loadAllROF096RowsEquipeOficina(year) {
+  const [rows, filtroOk] = await Promise.all([_loadAllROF096RowsBrutas(year), getFiltroDepartamentoSetor('OFICINA', 'Mecânica')])
+  return rows.filter(r => filtroOk(r.nomeMecanico))
+}
+
+export async function extractROF096EquipeOficina(year = new Date().getFullYear(), empresaNome = null) {
+  const yearStr      = String(year)
+  const empresaNorm  = empresaNome ? normalizeEmpresaNome(empresaNome).toUpperCase() : null
+  const cacheKey = `rof096-equipe-${yearStr}-${empresaNorm || 'todas'}`
+  const hit = cached(cacheKey)
+  if (hit) return hit
+
+  const allRows   = await _loadAllROF096RowsEquipeOficina(year)
+  const rowsDoAno = allRows.filter(r => r.periodo?.startsWith(yearStr))
+  const rows      = empresaNorm
+    ? rowsDoAno.filter(r => r.empresaNome.toUpperCase() === empresaNorm)
+    : rowsDoAno
+
+  const result = consolidarROF096(rows)
+  setCache(cacheKey, result)
+  return result
+}
+
 // Mesma fonte de extractROF096, filtrada pelo mecânico (Usuario_Nome) — usado
 // como denominador (Horas Disponíveis) de Eficácia/Produtividade no bloco
 // MECÂNICO da Matriz KPIs.
@@ -1570,6 +1812,15 @@ export async function listMecanicosROF096(year = new Date().getFullYear(), empre
   const nomes = new Set()
   for (const r of rows) if (r.nomeMecanico) nomes.add(r.nomeMecanico)
   return [...nomes].sort((a, b) => a.localeCompare(b, 'pt-BR'))
+}
+
+// Mesma fonte de extractROF096, somada direto num intervalo de datas (não por mês) —
+// usado no filtro "Entre datas" da tela Fontes, só pra conferência pontual.
+export async function extractROF096PorData(year, empresaNome, dataInicio, dataFim) {
+  const empresaNorm = empresaNome ? normalizeEmpresaNome(empresaNome).toUpperCase() : null
+  const allRows = await _loadAllROF096Rows(year)
+  const rows = empresaNorm ? allRows.filter(r => r.empresaNome.toUpperCase() === empresaNorm) : allRows
+  return somarPorData(rows, dataInicio, dataFim, ['disponiveis'])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1641,7 +1892,8 @@ export function parseROF042Buffer(buffer, meta) {
     const naoAssociado = /produtivo\s+n[aã]o\s+associado/i.test(produtivo)
     const hrAplic     = naoAssociado ? 0 : safeNum(row[15])                             // coluna P — Hr. Total
     const hrVend      = naoAssociado ? 0 : safeNum(row[16])                             // coluna Q
-    const vlLiquido   = safeNum(row[21])                                                // coluna V — Vl Líquido
+    const vlLiquido   = safeNum(row[21])                                                // coluna V — Vl Líquido (serviços)
+    const vlProduto   = safeNum(row[25])                                                // coluna Z — Vl Produto (peças)
     // Coluna AB tem data+hora — converte para só data antes de extrair período
     const rawDate     = typeof row[27] === 'number' ? Math.floor(row[27]) : row[27]
     const periodo     = serialToYearMonth(rawDate)                                      // coluna AB — NF Data
@@ -1649,9 +1901,9 @@ export function parseROF042Buffer(buffer, meta) {
     const dia         = serialToDia(rawDate)                                            // Campanha Pós-Venda
 
     if (!periodo) continue
-    if (!hrAplic && !hrVend && !vlLiquido) continue
+    if (!hrAplic && !hrVend && !vlLiquido && !vlProduto) continue
 
-    result.push({ empresaNome, produtivo, hrAplic, hrVend, vlLiquido, periodo, semanaKey, dia, arquivo: meta.name })
+    result.push({ empresaNome, produtivo, hrAplic, hrVend, vlLiquido, vlProduto, periodo, semanaKey, dia, arquivo: meta.name })
   }
   return result
 }
@@ -1660,7 +1912,7 @@ export function parseROF042Buffer(buffer, meta) {
  * Consolida linhas ROF042 em { hrAplic, hrVend, vlLiquido } por período.
  */
 function consolidarROF042(rows) {
-  const qa = {}, qv = {}, ql = {}, ma = {}, mv = {}, ml = {}, sa = {}, sv = {}, sl = {}
+  const qa = {}, qv = {}, ql = {}, qp = {}, ma = {}, mv = {}, ml = {}, mp = {}, sa = {}, sv = {}, sl = {}, sp = {}
 
   for (const r of rows) {
     const q = quarter(r.periodo)
@@ -1669,13 +1921,15 @@ function consolidarROF042(rows) {
     qa[q] = (qa[q] || 0) + r.hrAplic
     qv[q] = (qv[q] || 0) + r.hrVend
     ql[q] = (ql[q] || 0) + (r.vlLiquido || 0)
-    if (m) { ma[m] = (ma[m] || 0) + r.hrAplic; mv[m] = (mv[m] || 0) + r.hrVend; ml[m] = (ml[m] || 0) + (r.vlLiquido || 0) }
-    if (s) { sa[s] = (sa[s] || 0) + r.hrAplic; sv[s] = (sv[s] || 0) + r.hrVend; sl[s] = (sl[s] || 0) + (r.vlLiquido || 0) }
+    qp[q] = (qp[q] || 0) + (r.vlProduto || 0)
+    if (m) { ma[m] = (ma[m] || 0) + r.hrAplic; mv[m] = (mv[m] || 0) + r.hrVend; ml[m] = (ml[m] || 0) + (r.vlLiquido || 0); mp[m] = (mp[m] || 0) + (r.vlProduto || 0) }
+    if (s) { sa[s] = (sa[s] || 0) + r.hrAplic; sv[s] = (sv[s] || 0) + r.hrVend; sl[s] = (sl[s] || 0) + (r.vlLiquido || 0); sp[s] = (sp[s] || 0) + (r.vlProduto || 0) }
   }
 
   const fyA = rows.reduce((s, r) => s + r.hrAplic, 0) || null
   const fyV = rows.reduce((s, r) => s + r.hrVend,  0) || null
   const fyL = rows.reduce((s, r) => s + (r.vlLiquido || 0), 0) || null
+  const fyP = rows.reduce((s, r) => s + (r.vlProduto || 0), 0) || null
 
   const per = (monthly, weekly, fy) => ({
     q1: monthly.q1 ?? null, q2: monthly.q2 ?? null, q3: monthly.q3 ?? null, q4: monthly.q4 ?? null, fy,
@@ -1687,6 +1941,7 @@ function consolidarROF042(rows) {
     hrAplic:   per({ ...ma, ...qa }, sa, fyA),
     hrVend:    per({ ...mv, ...qv }, sv, fyV),
     vlLiquido: per({ ...ml, ...ql }, sl, fyL),
+    vlProduto: per({ ...mp, ...qp }, sp, fyP),
     metaData: {
       totalArquivos: [...new Set(rows.map(r => r.arquivo))].length,
       totalLinhas:   rows.length,
@@ -1704,6 +1959,43 @@ function consolidarROF042(rows) {
 async function _loadAllROF042Rows(year) {
   const [rows, boxOk] = await Promise.all([_loadAllROF042RowsBrutas(year), getFiltroBoxOficina()])
   return rows.filter(r => boxOk(r.produtivo))
+}
+
+// Mesmas linhas brutas do ROF042, mas filtradas por Departamento "OFICINA" + Setor "Mecânica"
+// (dim_funcionarios) — mais estrito que o filtro de Box acima (exclui Box Express). Usado no
+// indicador 15 da tela Fontes, "Faturamento Total Oficina (Equipe)".
+async function _loadAllROF042RowsEquipeOficina(year) {
+  const [rows, filtroOk] = await Promise.all([_loadAllROF042RowsBrutas(year), getFiltroDepartamentoSetor('OFICINA', 'Mecânica')])
+  return rows.filter(r => filtroOk(r.produtivo))
+}
+
+// Faturamento Total Oficina (Equipe): Vl Produto (peças) + Vl Líquido (serviços) do ROF042,
+// somados, só dos produtivos do departamento Oficina/setor Mecânica.
+export async function extractFaturamentoEquipeOficina(year = new Date().getFullYear(), empresaNome = null) {
+  const yearStr      = String(year)
+  const empresaNorm  = empresaNome ? normalizeEmpresaNome(empresaNome).toUpperCase() : null
+  const cacheKey = `rof042-equipe-${yearStr}-${empresaNorm || 'todas'}`
+  const hit = cached(cacheKey)
+  if (hit) return hit
+
+  const allRows   = await _loadAllROF042RowsEquipeOficina(year)
+  const rowsDoAno = allRows.filter(r => r.periodo?.startsWith(yearStr))
+  const rows      = empresaNorm
+    ? rowsDoAno.filter(r => r.empresaNome.toUpperCase() === empresaNorm)
+    : rowsDoAno
+
+  const result = consolidarROF042(rows)
+  setCache(cacheKey, result)
+  return result
+}
+
+// Mesma fonte de extractFaturamentoEquipeOficina, somada direto num intervalo de datas (não por
+// mês) — usado no filtro "Entre datas" da tela Fontes (indicador 15), só pra conferência pontual.
+export async function extractFaturamentoEquipeOficinaPorData(year, empresaNome, dataInicio, dataFim) {
+  const empresaNorm = empresaNome ? normalizeEmpresaNome(empresaNome).toUpperCase() : null
+  const allRows = await _loadAllROF042RowsEquipeOficina(year)
+  const rows = empresaNorm ? allRows.filter(r => r.empresaNome.toUpperCase() === empresaNorm) : allRows
+  return somarPorData(rows, dataInicio, dataFim, ['vlLiquido', 'vlProduto'])
 }
 
 async function _loadAllROF042RowsBrutas(year) {
@@ -1783,6 +2075,15 @@ export async function extractROF042PorMecanico(year = new Date().getFullYear(), 
   const result = consolidarROF042(rows)
   setCache(cacheKey, result)
   return result
+}
+
+// Mesma fonte de extractROF042, somada direto num intervalo de datas (não por mês) —
+// usado no filtro "Entre datas" da tela Fontes, só pra conferência pontual.
+export async function extractROF042PorData(year, empresaNome, dataInicio, dataFim) {
+  const empresaNorm = empresaNome ? normalizeEmpresaNome(empresaNome).toUpperCase() : null
+  const allRows = await _loadAllROF042Rows(year)
+  const rows = empresaNorm ? allRows.filter(r => r.empresaNome.toUpperCase() === empresaNorm) : allRows
+  return somarPorData(rows, dataInicio, dataFim, ['hrVend', 'hrAplic', 'vlLiquido'])
 }
 
 // Lista de nomes de mecânico distintos no ROF042 (coluna "Produtivo") — pro

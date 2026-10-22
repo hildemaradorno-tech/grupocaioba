@@ -20,6 +20,8 @@ const QUARTERS   = { q1: [1, 2, 3], q2: [4, 5, 6], q3: [7, 8, 9], q4: [10, 11, 1
 
 const TTL_MS = 60_000
 const _cache = new Map()
+// Limpa o cache de metas (ex.: metas novas aprovadas no Planejamento de Metas).
+export function limparCacheMetas() { _cache.clear() }
 
 function normNome(s) {
   return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toUpperCase()
@@ -185,7 +187,8 @@ export async function getMetaPecasBalcaoPeriodos(ano, { empresaNome = null } = {
  * empresaNome: restringe à empresa (casa) informada — usado nos quadros por
  * casa do Pós-Venda; null = todas as empresas (Gerente Geral).
  */
-export async function getMetaOficinaPeriodos(ano, { consultorNome = null, empresaNome = null } = {}) {
+// semNaoAssociado: tira a linha "Produtivo Não Associado" (sem box/setor) — usado no CHEFE DE OFICINA.
+export async function getMetaOficinaPeriodos(ano, { consultorNome = null, empresaNome = null, semNaoAssociado = false } = {}) {
   const base = await carregarBase(ano)
   if (!base) return null
 
@@ -200,6 +203,7 @@ export async function getMetaOficinaPeriodos(ano, { consultorNome = null, empres
     const alvoEmp = normNome(empresaNome)
     linhas = linhas.filter(r => normNome(r.empresa_nome) === alvoEmp)
   }
+  if (semNaoAssociado) linhas = linhas.filter(r => normNome(r.colaborador_nome) !== 'PRODUTIVO NAO ASSOCIADO')
   return periodizarMetas(linhas, ano, base.calendario)
 }
 
@@ -208,12 +212,13 @@ export async function getMetaOficinaPeriodos(ano, { consultorNome = null, empres
  * Serviços (meta_servicos, sem Peças) do tipo 'mecanico'
  * filtrado pelo mecânico selecionado; sem seleção = soma de todos.
  */
-export async function getMetaMecanicoPeriodos(ano, mecanicoNome = null, filtroNome = null) {
+export async function getMetaMecanicoPeriodos(ano, mecanicoNome = null, filtroNome = null, empresaNome = null) {
   const base = await carregarBase(ano)
   if (!base) return null
   const alvo = mecanicoNome ? normNome(mecanicoNome) : null
+  const alvoEmp = empresaNome ? normNome(empresaNome) : null
   const linhas = base.metas
-    .filter(r => r.tipo === 'mecanico' && (!alvo || normNome(r.colaborador_nome) === alvo) && (!filtroNome || filtroNome(r.colaborador_nome)))
+    .filter(r => r.tipo === 'mecanico' && (!alvo || normNome(r.colaborador_nome) === alvo) && (!filtroNome || filtroNome(r.colaborador_nome)) && (!alvoEmp || normNome(r.empresa_nome) === alvoEmp))
     .map(r => ({ ...r, meta_faturamento: r.meta_servicos }))
   return periodizarMetas(linhas, ano, base.calendario)
 }

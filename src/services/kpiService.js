@@ -47,12 +47,17 @@ async function fetchWithTimeout(url, timeoutMs = TIMEOUT_MS) {
 function buildUrl(endpoint, params = {}) {
   const qs = new URLSearchParams()
   if (params.empresa && params.empresa !== 'todas') qs.set('empresa', params.empresa)
+  if (params.empresaOficina) qs.set('empresaOficina', params.empresaOficina)
+  if (params.empresaChefeOficina) qs.set('empresaChefeOficina', params.empresaChefeOficina)
+  if (params.empresaFunilaria) qs.set('empresaFunilaria', params.empresaFunilaria)
   if (params.mecanico && params.mecanico !== 'todos') qs.set('mecanico', params.mecanico)
   if (params.vendedor) qs.set('vendedor', params.vendedor)
   if (params.consultor) qs.set('consultor', params.consultor)
   if (params.year) qs.set('year', params.year)
   if (params.refresh) qs.set('refresh', '1')
   if (params.indicador) qs.set('indicador', params.indicador)
+  if (params.dataInicio) qs.set('dataInicio', params.dataInicio)
+  if (params.dataFim) qs.set('dataFim', params.dataFim)
   const q = qs.toString()
   return `${BASE}/${endpoint}${q ? `?${q}` : ''}`
 }
@@ -109,9 +114,10 @@ export async function fetchVendedoresBalcao(year) {
 }
 
 // Lista de consultores (pro seletor do quadro CONSULTOR DE SERVIÇOS)
-export async function fetchConsultoresServicos(year) {
+export async function fetchConsultoresServicos(year, empresa) {
   try {
-    const res = await fetchWithTimeout(`${BASE}/extractor/consultores?year=${year}`, 30_000)
+    const emp = empresa && empresa !== 'todas' ? `&empresa=${encodeURIComponent(empresa)}` : ''
+    const res = await fetchWithTimeout(`${BASE}/extractor/consultores?year=${year}${emp}`, 30_000)
     return res.consultores || []
   } catch {
     return []
@@ -119,9 +125,10 @@ export async function fetchConsultoresServicos(year) {
 }
 
 // Lista de mecânicos (pro seletor do quadro MECÂNICO)
-export async function fetchMecanicos(year) {
+export async function fetchMecanicos(year, empresa) {
   try {
-    const res = await fetchWithTimeout(`${BASE}/extractor/mecanicos?year=${year}`, 30_000)
+    const emp = empresa && empresa !== 'todas' ? `&empresa=${encodeURIComponent(empresa)}` : ''
+    const res = await fetchWithTimeout(`${BASE}/extractor/mecanicos?year=${year}${emp}`, 30_000)
     return res.mecanicos || []
   } catch {
     return []

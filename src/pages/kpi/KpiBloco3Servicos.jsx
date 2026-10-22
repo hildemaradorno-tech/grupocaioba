@@ -13,15 +13,25 @@ import { PosVendaQuadros } from './KpiBloco3PosVenda'
 const BLOCO_PESOS = 'bloco3-servicos'
 const QUADRO_CONSULTOR = 'CONSULTOR DE SERVIÇOS'
 const QUADRO_MECANICO  = 'MECÂNICO'
+const QUADRO_OFICINA   = 'SETOR DE MECÂNICA'
+const QUADRO_CHEFE_OFICINA = 'CHEFE DE OFICINA'
+const QUADRO_FUNILARIA = 'SETOR FUNILARIA/PINTURA'
+const EMPRESAS_OFICINA = ['CAMPO GRANDE', 'DOURADOS', 'TRÊS LAGOAS', 'CHAPADÃO DO SUL']
 
 const COR_HEADER = {
   blue:   'bg-blue-700   text-white',
   indigo: 'bg-indigo-700 text-white',
+  teal:   'bg-teal-700   text-white',
+  purple: 'bg-purple-700 text-white',
+  amber:  'bg-amber-700  text-white',
 }
 
 const COR_SUBHEADER = {
   blue:   'bg-blue-50   border-blue-200',
   indigo: 'bg-indigo-50 border-indigo-200',
+  teal:   'bg-teal-50   border-teal-200',
+  purple: 'bg-purple-50 border-purple-200',
+  amber:  'bg-amber-50  border-amber-200',
 }
 
 function calcAtingimento(orientacao, meta, realizado) {
@@ -57,19 +67,20 @@ function badgeClass(val) {
 // Input editável do "Peso" — grava no Supabase ao sair do campo (onBlur/Enter),
 // pra ficar igual pra qualquer usuário que abrir essa tela.
 function PesoInput({ value, onSave }) {
-  const [draft, setDraft]   = useState(value != null ? Math.round(value * 100) : '')
+  const [draft, setDraft]   = useState(value ? Math.round(value * 100) : '') // 0 / sem peso = campo vazio
   const [saving, setSaving] = useState(false)
   const [erro, setErro]     = useState(false)
 
   useEffect(() => {
-    setDraft(value != null ? Math.round(value * 100) : '')
+    setDraft(value ? Math.round(value * 100) : '')
   }, [value])
 
   const commit = async () => {
-    const atual = value != null ? Math.round(value * 100) : ''
+    const atual = value ? Math.round(value * 100) : ''
     if (draft === atual || draft === String(atual)) return
-    const num = draft === '' ? null : Math.max(0, Math.min(100, Number(draft)))
-    if (num === null || isNaN(num)) { setDraft(atual); return }
+    // Campo apagado = sem peso (grava 0) — não precisa digitar 0.
+    const num = draft === '' ? 0 : Math.max(0, Math.min(100, Number(draft)))
+    if (isNaN(num)) { setDraft(atual); return }
     setSaving(true)
     setErro(false)
     try {
@@ -368,7 +379,9 @@ function PreencherMesesButton({ onAplicar }) {
   )
 }
 
-function QuadroTable({ quadro, activePeriods, mesTotalKey, year, onSalvarPeso, onSalvarMetaManual, onSalvarMetasVarios, somenteLeitura = false, pessoaSelector, icon: Icon }) {
+// ocultarValores: quadro com seletor de funcionário (Consultor/Mecânico) sem ninguém selecionado —
+// os valores só aparecem depois de escolher o nome.
+function QuadroTable({ quadro, activePeriods, mesTotalKey, year, onSalvarPeso, onSalvarMetaManual, onSalvarMetasVarios, somenteLeitura = false, pessoaSelector, ocultarValores = false, icon: Icon }) {
   const headerCls  = COR_HEADER[quadro.cor]    ?? COR_HEADER.blue
   const subheadCls = COR_SUBHEADER[quadro.cor] ?? COR_SUBHEADER.blue
 
@@ -401,6 +414,7 @@ function QuadroTable({ quadro, activePeriods, mesTotalKey, year, onSalvarPeso, o
               <th />
               <th className="px-4 py-1 sticky left-0 bg-inherit">
                 {pessoaSelector}
+                {ocultarValores && <span className="block mt-0.5 text-[10px] font-normal text-amber-600">Selecione um funcionário para ver os valores</span>}
               </th>
               <th />
               <th className="px-2 py-1" />
@@ -423,16 +437,34 @@ function QuadroTable({ quadro, activePeriods, mesTotalKey, year, onSalvarPeso, o
                   {!somenteLeitura && INDICADORES_META_MANUAL.has(row.indicador) && (
                     <PreencherMesesButton onAplicar={(meses, valor) => onSalvarMetasVarios(quadro.tituloGerente, row.id, meses, valor)} />
                   )}
+                  {INDICADORES_META_MANUAL.has(row.indicador) && (
+                    <div className="text-[10px] font-normal italic text-slate-400">*Valores relacionados a faturamento</div>
+                  )}
                 </td>
                 <td className="px-2 py-2.5 text-center font-bold text-slate-600">{row.orientacao}</td>
                 <td className="px-3 py-2.5 text-center text-slate-500">
-                  {somenteLeitura ? (row.pesoObj != null ? `${Math.round(row.pesoObj * 100)}%` : '—') : <PesoInput value={row.pesoObj} onSave={peso => onSalvarPeso(quadro.tituloGerente, row.id, peso)} />}
+                  {somenteLeitura ? (row.pesoObj ? `${Math.round(row.pesoObj * 100)}%` : '—') : <PesoInput value={row.pesoObj} onSave={peso => onSalvarPeso(quadro.tituloGerente, row.id, peso)} />}
                 </td>
                 {activePeriods.map(p => {
                   const d       = getPeriodData(row, p)
                   const ating   = calcAtingimento(row.orientacao, d.meta, d.realizado)
                   const contrib = (ating !== null && row.pesoObj != null) ? ating * row.pesoObj : null
                   const metaEditavel = !somenteLeitura && INDICADORES_META_MANUAL.has(row.indicador) && /^m\d{2}$/.test(p)
+                  if (ocultarValores) {
+                    // Meta digitada (Eficácia/Produtividade) é do quadro, não da pessoa: o campo continua.
+                    return (
+                      <React.Fragment key={p}>
+                        <td className="px-2 py-2.5 text-center text-slate-300 border-l border-slate-100">
+                          {metaEditavel
+                            ? <MetaInput value={d.meta} onSave={valor => onSalvarMetaManual(quadro.tituloGerente, row.id, p, valor)} />
+                            : '—'}
+                        </td>
+                        <td className="px-2 py-2.5 text-center text-slate-300">—</td>
+                        <td className="px-2 py-2.5 text-center text-slate-300">—</td>
+                        <td className="px-2 py-2.5 text-center text-slate-300">—</td>
+                      </React.Fragment>
+                    )
+                  }
                   return (
                     <React.Fragment key={p}>
                       <td className="px-2 py-2.5 text-center text-slate-600 border-l border-slate-100">
@@ -469,7 +501,7 @@ function QuadroTable({ quadro, activePeriods, mesTotalKey, year, onSalvarPeso, o
                 return (
                   <React.Fragment key={p}>
                     <td colSpan={3} className="border-l border-slate-200" />
-                    <td className="px-2 py-2 text-center">{pct(total)}</td>
+                    <td className="px-2 py-2 text-center">{ocultarValores ? '—' : pct(total)}</td>
                   </React.Fragment>
                 )
               })}
@@ -481,14 +513,16 @@ function QuadroTable({ quadro, activePeriods, mesTotalKey, year, onSalvarPeso, o
   )
 }
 
-function usePessoaFiltro(fetchLista, year) {
+function usePessoaFiltro(fetchLista, year, empresa) {
   const [lista, setLista] = useState([])
   const [aplicado, setAplicado] = useState(null)
   useEffect(() => {
     let ativo = true
-    fetchLista(year).then(l => { if (ativo) setLista(l) })
+    fetchLista(year, empresa).then(l => { if (ativo) setLista(l) })
     return () => { ativo = false }
-  }, [year])
+  }, [year, empresa])
+  // Troca de empresa: a pessoa selecionada pode não existir mais na lista nova.
+  useEffect(() => { setAplicado(null) }, [empresa])
   return { lista, aplicado, setAplicado }
 }
 
@@ -497,16 +531,26 @@ const normNomePessoa = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g,
 
 // pessoasPermitidas (opcional): só esses nomes aparecem nos seletores de Consultor/Mecânico — usado no
 // pop-up da Campanha Pós-Venda, para listar só as pessoas da empresa selecionada lá.
-function ServicosQuadros({ year, activePeriods, mesTotalKey, somenteLeitura = false, apenas = null, pessoasPermitidas = null }) {
+function ServicosQuadros({ year, activePeriods, mesTotalKey, somenteLeitura = false, apenas = null, pessoasPermitidas = null, empresaOficinaInicial = null }) {
   const permitidos = pessoasPermitidas ? new Set(pessoasPermitidas.map(normNomePessoa)) : null
 
   const consultorFiltro = usePessoaFiltro(fetchConsultoresServicos, year)
   const mecanicoFiltro  = usePessoaFiltro(fetchMecanicos, year)
 
+  // SETOR DE MECÂNICA/CHEFE DE OFICINA/SETOR FUNILARIA-PINTURA não têm pessoa — exigem escolher a
+  // empresa (mesma exigência do Consultor/Mecânico exigir pessoa) pra mostrar o valor; sem isso o
+  // total somava as 4 casas juntas.
+  const [empresaOficina, setEmpresaOficina] = useState(EMPRESAS_OFICINA.includes(empresaOficinaInicial) ? empresaOficinaInicial : null)
+  const [empresaChefeOficina, setEmpresaChefeOficina] = useState(EMPRESAS_OFICINA.includes(empresaOficinaInicial) ? empresaOficinaInicial : null)
+  const [empresaFunilaria, setEmpresaFunilaria] = useState(EMPRESAS_OFICINA.includes(empresaOficinaInicial) ? empresaOficinaInicial : null)
+
   const { data: quadros } = useKpiData(fetchBloco3Servicos, MOCK_BLOCO3_SERVICOS, {
     year,
     consultor: consultorFiltro.aplicado || undefined,
     mecanico: mecanicoFiltro.aplicado || undefined,
+    empresaOficina: empresaOficina || undefined,
+    empresaChefeOficina: empresaChefeOficina || undefined,
+    empresaFunilaria: empresaFunilaria || undefined,
   })
 
   // Overlay otimista: aplicado por cima do que veio do backend assim que o usuário
@@ -559,9 +603,17 @@ function ServicosQuadros({ year, activePeriods, mesTotalKey, somenteLeitura = fa
   return (
       <div className="space-y-6">
         {quadrosComPeso.filter(q => !apenas || q.tituloGerente === apenas).map((quadro, idx) => {
-          const ehConsultor = quadro.tituloGerente === QUADRO_CONSULTOR
-          const ehMecanico  = quadro.tituloGerente === QUADRO_MECANICO
-          const filtro      = ehConsultor ? consultorFiltro : ehMecanico ? mecanicoFiltro : null
+          const ehConsultor     = quadro.tituloGerente === QUADRO_CONSULTOR
+          const ehMecanico      = quadro.tituloGerente === QUADRO_MECANICO
+          const ehOficina       = quadro.tituloGerente === QUADRO_OFICINA
+          const ehChefeOficina  = quadro.tituloGerente === QUADRO_CHEFE_OFICINA
+          const ehFunilaria     = quadro.tituloGerente === QUADRO_FUNILARIA
+          const ehPorEmpresa    = ehOficina || ehChefeOficina || ehFunilaria
+          const filtro      = ehConsultor ? consultorFiltro : ehMecanico ? mecanicoFiltro
+            : ehOficina ? { lista: EMPRESAS_OFICINA, aplicado: empresaOficina, setAplicado: setEmpresaOficina }
+            : ehChefeOficina ? { lista: EMPRESAS_OFICINA, aplicado: empresaChefeOficina, setAplicado: setEmpresaChefeOficina }
+            : ehFunilaria ? { lista: EMPRESAS_OFICINA, aplicado: empresaFunilaria, setAplicado: setEmpresaFunilaria }
+            : null
           return (
             <QuadroTable
               key={idx}
@@ -573,16 +625,17 @@ function ServicosQuadros({ year, activePeriods, mesTotalKey, somenteLeitura = fa
               onSalvarMetaManual={handleSalvarMetaManual}
               onSalvarMetasVarios={handleSalvarMetasVarios}
               somenteLeitura={somenteLeitura}
+              ocultarValores={!!filtro && !filtro.aplicado}
               icon={Wrench}
               pessoaSelector={filtro && (
                 <PessoaSelector
-                  lista={permitidos ? filtro.lista.filter(n => permitidos.has(normNomePessoa(n))) : filtro.lista}
+                  lista={ehPorEmpresa ? filtro.lista : (permitidos ? filtro.lista.filter(n => permitidos.has(normNomePessoa(n))) : filtro.lista)}
                   selecionado={filtro.aplicado}
                   onSelecionar={filtro.setAplicado}
                   onLimpar={() => filtro.setAplicado(null)}
-                  placeholderTodos={ehConsultor ? 'Todos os consultores' : 'Todos os mecânicos'}
-                  placeholderBusca={ehConsultor ? 'Buscar consultor...' : 'Buscar mecânico...'}
-                  vazioMsg={ehConsultor ? 'Nenhum consultor encontrado.' : 'Nenhum mecânico encontrado.'}
+                  placeholderTodos={ehConsultor ? 'Todos os consultores' : ehMecanico ? 'Todos os mecânicos' : 'Selecione a empresa'}
+                  placeholderBusca={ehConsultor ? 'Buscar consultor...' : ehMecanico ? 'Buscar mecânico...' : 'Buscar empresa...'}
+                  vazioMsg={ehConsultor ? 'Nenhum consultor encontrado.' : ehMecanico ? 'Nenhum mecânico encontrado.' : 'Nenhuma empresa encontrada.'}
                 />
               )}
             />
@@ -621,12 +674,16 @@ export default function KpiBloco3Servicos() {
 // Visualização do Bloco 3 - Serviços só para consulta (pop-up da Campanha Pós-Venda): sem edição de
 // peso/meta, na visão Semanal do ano/mês recebidos. Seleção de período própria (não grava nem altera
 // a seleção da Matriz KPIs).
-export function Bloco3ServicosVisualizacao({ ano, mes, quadro = null, pessoas = null }) {
+// empresa (opcional): casa já escolhida nos quadros OFICINA / CHEFE DE OFICINA (a da Campanha).
+export function Bloco3ServicosVisualizacao({ ano, mes, quadro = null, pessoas = null, empresa = null }) {
   const periodState = usePeriodSelector(null, 'semanal')
-  const { activePeriods, setWeekMonth } = periodState
-  const doServicos = quadro === QUADRO_CONSULTOR || quadro === QUADRO_MECANICO
+  const { activePeriods, setWeekMonth, toggleS } = periodState
+  const doServicos = [QUADRO_CONSULTOR, QUADRO_MECANICO, QUADRO_OFICINA, QUADRO_CHEFE_OFICINA, QUADRO_FUNILARIA].includes(quadro)
   useEffect(() => {
-    if (mes >= 1 && mes <= 12) setWeekMonth(`m${String(mes).padStart(2, '0')}`)
+    if (mes >= 1 && mes <= 12) {
+      setWeekMonth(`m${String(mes).padStart(2, '0')}`) // marca as semanas do mês (e desmarca o Total)
+      toggleS('mtd') // já abre com a coluna Total (do mês) marcada
+    }
   }, [mes]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
@@ -637,7 +694,7 @@ export function Bloco3ServicosVisualizacao({ ano, mes, quadro = null, pessoas = 
       </div>
       {/* quadro: só o quadro do bloco de onde o pop-up foi aberto (ex.: CONSULTOR DE SERVIÇOS). */}
       {(!quadro || !doServicos) && <PosVendaQuadros year={ano} activePeriods={activePeriods} mesTotalKey={periodState.mesTotalKey} somenteLeitura apenas={quadro} />}
-      {(!quadro || doServicos) && <ServicosQuadros year={ano} activePeriods={activePeriods} mesTotalKey={periodState.mesTotalKey} somenteLeitura apenas={quadro} pessoasPermitidas={pessoas} />}
+      {(!quadro || doServicos) && <ServicosQuadros year={ano} activePeriods={activePeriods} mesTotalKey={periodState.mesTotalKey} somenteLeitura apenas={quadro} pessoasPermitidas={pessoas} empresaOficinaInicial={empresa} />}
     </div>
   )
 }

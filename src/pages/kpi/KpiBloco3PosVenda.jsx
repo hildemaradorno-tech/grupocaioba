@@ -114,19 +114,20 @@ function badgeClass(val) {
 // Input editável do "Peso" — grava no Supabase ao sair do campo (onBlur/Enter),
 // pra ficar igual pra qualquer usuário que abrir essa tela.
 function PesoInput({ value, onSave }) {
-  const [draft, setDraft]   = useState(value != null ? Math.round(value * 100) : '')
+  const [draft, setDraft]   = useState(value ? Math.round(value * 100) : '') // 0 / sem peso = campo vazio
   const [saving, setSaving] = useState(false)
   const [erro, setErro]     = useState(false)
 
   React.useEffect(() => {
-    setDraft(value != null ? Math.round(value * 100) : '')
+    setDraft(value ? Math.round(value * 100) : '')
   }, [value])
 
   const commit = async () => {
-    const atual = value != null ? Math.round(value * 100) : ''
+    const atual = value ? Math.round(value * 100) : ''
     if (draft === atual || draft === String(atual)) return
-    const num = draft === '' ? null : Math.max(0, Math.min(100, Number(draft)))
-    if (num === null || isNaN(num)) { setDraft(atual); return }
+    // Campo apagado = sem peso (grava 0) — não precisa digitar 0.
+    const num = draft === '' ? 0 : Math.max(0, Math.min(100, Number(draft)))
+    if (isNaN(num)) { setDraft(atual); return }
     setSaving(true)
     setErro(false)
     try {
@@ -382,10 +383,13 @@ function QuadroTable({ quadro, activePeriods, mesTotalKey, year, onSalvarPeso, o
                   {!somenteLeitura && INDICADORES_META_MANUAL.has(row.indicador) && (
                     <PreencherMesesButton onAplicar={(meses, valor) => onSalvarMetasVarios(quadro.tituloGerente, row.id, meses, valor)} />
                   )}
+                  {INDICADORES_META_MANUAL.has(row.indicador) && (
+                    <div className="text-[10px] font-normal italic text-slate-400">*Valores relacionados a faturamento</div>
+                  )}
                 </td>
                 <td className="px-2 py-2.5 text-center font-bold text-slate-600">{row.orientacao}</td>
                 <td className="px-3 py-2.5 text-center text-slate-500">
-                  {somenteLeitura ? (row.pesoObj != null ? `${Math.round(row.pesoObj * 100)}%` : '—') : <PesoInput value={row.pesoObj} onSave={peso => onSalvarPeso(quadro.tituloGerente, row.id, peso)} />}
+                  {somenteLeitura ? (row.pesoObj ? `${Math.round(row.pesoObj * 100)}%` : '—') : <PesoInput value={row.pesoObj} onSave={peso => onSalvarPeso(quadro.tituloGerente, row.id, peso)} />}
                 </td>
                 {activePeriods.map(p => {
                   const d      = getPeriodData(row, p)

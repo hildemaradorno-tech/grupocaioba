@@ -4,6 +4,7 @@
  * não se perderem — ver migration kpi_metas_manuais.sql. Mesmo padrão de kpiPesos.js.
  */
 import { getSupabaseAdmin } from './supabaseAdmin.js'
+import { semanasDoAno } from './kpiSemanas.js'
 
 const QUARTERS = { q1: ['m01', 'm02', 'm03'], q2: ['m04', 'm05', 'm06'], q3: ['m07', 'm08', 'm09'], q4: ['m10', 'm11', 'm12'] }
 
@@ -39,7 +40,11 @@ export async function setMetaManual(bloco, tituloGerente, kpiId, ano, mes, valor
 // Injeta a meta digitada no mês certo. Trimestre/Ano = média simples dos meses preenchidos
 // (não dá pra ratear um alvo de % como se fosse um valor em R$). Semanas não recebem meta
 // manual — ficam como estavam (sem meta), já que a entrada é só mês a mês.
-export function aplicarMetasManuais(quadros, metas) {
+// ano (opcional): a meta do mês também vale para cada SEMANA daquele mês (indicadores em %, ex.:
+// Eficácia e Produtividade da Oficina) — senão a visão semanal e a Campanha ficavam sem meta.
+export function aplicarMetasManuais(quadros, metas, ano = null) {
+  const semanasPorMes = {}
+  if (ano) for (const [sk, s] of Object.entries(semanasDoAno(Number(ano)))) (semanasPorMes['m' + String(s.mes).padStart(2, '0')] ??= []).push(sk)
   return quadros.map(quadro => ({
     ...quadro,
     kpis: quadro.kpis.map(kpi => {
@@ -49,6 +54,7 @@ export function aplicarMetasManuais(quadros, metas) {
       const out = { ...kpi }
       for (const mk of Object.keys(meses)) {
         out[mk] = { ...(out[mk] ?? { meta: null, realizado: null }), meta: meses[mk] }
+        for (const sk of semanasPorMes[mk] || []) out[sk] = { ...(out[sk] ?? { meta: null, realizado: null }), meta: meses[mk] }
       }
       for (const [qk, ms] of Object.entries(QUARTERS)) {
         const vals = ms.map(m => meses[m]).filter(v => v != null)

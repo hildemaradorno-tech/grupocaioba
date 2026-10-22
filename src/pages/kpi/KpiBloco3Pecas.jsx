@@ -63,19 +63,20 @@ function badgeClass(val) {
 // Input editável do "Peso" — grava no Supabase ao sair do campo (onBlur/Enter),
 // pra ficar igual pra qualquer usuário que abrir essa tela.
 function PesoInput({ value, onSave }) {
-  const [draft, setDraft]   = useState(value != null ? Math.round(value * 100) : '')
+  const [draft, setDraft]   = useState(value ? Math.round(value * 100) : '') // 0 / sem peso = campo vazio
   const [saving, setSaving] = useState(false)
   const [erro, setErro]     = useState(false)
 
   React.useEffect(() => {
-    setDraft(value != null ? Math.round(value * 100) : '')
+    setDraft(value ? Math.round(value * 100) : '')
   }, [value])
 
   const commit = async () => {
-    const atual = value != null ? Math.round(value * 100) : ''
+    const atual = value ? Math.round(value * 100) : ''
     if (draft === atual || draft === String(atual)) return
-    const num = draft === '' ? null : Math.max(0, Math.min(100, Number(draft)))
-    if (num === null || isNaN(num)) { setDraft(atual); return }
+    // Campo apagado = sem peso (grava 0) — não precisa digitar 0.
+    const num = draft === '' ? 0 : Math.max(0, Math.min(100, Number(draft)))
+    if (isNaN(num)) { setDraft(atual); return }
     setSaving(true)
     setErro(false)
     try {

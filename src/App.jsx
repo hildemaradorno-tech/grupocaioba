@@ -99,6 +99,7 @@ import Dre from './pages/controladoria/Dre'
 import PlanoContas from './pages/controladoria/PlanoContas'
 import CentroResultado from './pages/controladoria/CentroResultado'
 import Orcamento from './pages/controladoria/Orcamento'
+import ControladoriaPowerBi from './pages/integracoes/ControladoriaPowerBi'
 import Organograma from './pages/Organograma'
 import BiGarantiasDaf from './pages/bi/BiGarantiasDaf'
 import BiProjetos from './pages/bi/BiProjetos'
@@ -288,6 +289,7 @@ export default function App() {
           { path: '/controladoria/plano-contas', element: <PlanoContas />, menuPath: 'controladoria/plano-contas' },
           { path: '/controladoria/centro-resultado', element: <CentroResultado />, menuPath: 'controladoria/centro-resultado' },
           { path: '/controladoria/orcamento', element: <Orcamento />, menuPath: 'controladoria/orcamento' },
+          { path: '/integracoes/controladoria', element: <ControladoriaPowerBi />, menuPath: 'integracoes/controladoria' },
           { path: '/organograma', element: <Organograma />, menuPath: 'organograma' },
           { path: '/bi/garantias-daf', element: <BiGarantiasDaf />, menuPath: 'bi/garantias-daf' },
           { path: '/bi/projetos', element: <BiProjetos />, menuPath: 'bi/projetos' },

@@ -97,6 +97,14 @@ export const MENU_TREE = [
           },
         ],
       },
+      {
+        // Manuais de integração do sistema com ferramentas externas (ex.: Power BI ↔ Supabase).
+        key: '_config.integracoes',
+        label: 'Integrações',
+        children: [
+          { key: 'integracoes/controladoria', label: 'Controladoria' },
+        ],
+      },
     ],
   },
   {

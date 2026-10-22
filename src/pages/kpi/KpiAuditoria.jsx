@@ -34,6 +34,8 @@ const INDICADORES_AUDITORIA = [
   { id: 10, nome: 'Margem Bruta Peças Balcão' },
   { id: 11, nome: 'Faturamento TRP' },
   { id: 12, nome: 'Ticket Médio da Oficina' },
+  { id: 14, nome: 'Faturamento Total Funilaria/Pintura (Departamento)' },
+  { id: 15, nome: 'Faturamento Total Oficina (Equipe)' },
 ]
 
 // Botão "i" com painel (portal, position:fixed) mostrando de onde a linha vem: arquivo, coluna
@@ -155,6 +157,9 @@ function SeletorMultiplo({ rotulo, opcoes, valores, onChange, textoVazio, unico 
   )
 }
 
+function hojeISO() { return new Date().toISOString().slice(0, 10) }
+function fmtDataBR(iso) { const [a, m, d] = String(iso || '').split('-'); return (a && m && d) ? `${d}/${m}/${a}` : iso }
+
 export default function KpiAuditoria() {
   const { year } = useKpiYear()
   // Meses escolhidos (um, alguns ou todos): viram as colunas da tabela, na ordem do ano.
@@ -163,6 +168,11 @@ export default function KpiAuditoria() {
   const toggleMes = (m, multi) => setMesesSel(prev => multi
     ? (prev.includes(m) ? prev.filter(x => x !== m) : [...prev, m])
     : [m])
+
+  // "Entre datas" — modo alternativo só pra conferência pontual (não persiste; sempre abre em "Por mês").
+  const [porData, setPorData] = useState(false)
+  const [dataInicio, setDataInicio] = useState(hojeISO())
+  const [dataFim, setDataFim] = useState(hojeISO())
 
   // Empresas escolhidas (uma, várias ou nenhuma = todas). Valor enviado: nomes separados por vírgula.
   const [empresas, setEmpresas] = useSessionState('kpi_auditoria_empresas', [])
@@ -186,10 +196,12 @@ export default function KpiAuditoria() {
   async function load(extra = {}) {
     if (!indicadorId || empresas.length === 0) { setRows([]); setMeta(null); setLoading(false); return }
     const isForce = !!extra._forceReload
-    const key     = `${year}:${empKey}:${indicadorId}`
+    const key     = porData ? `${year}:${empKey}:${indicadorId}:${dataInicio}:${dataFim}` : `${year}:${empKey}:${indicadorId}`
     if (!_cache.has(key) || isForce) setLoading(true)
     try {
-      const result = await fetchAuditoria({ year, empresa: empKey, indicador: indicadorId, ...extra })
+      const params = { year, empresa: empKey, indicador: indicadorId, ...extra }
+      if (porData) { params.dataInicio = dataInicio; params.dataFim = dataFim }
+      const result = await fetchAuditoria(params)
       if (result.data) {
         _cache.set(key, result.data)
         setRows(result.data.indicadores ?? [])
@@ -203,7 +215,7 @@ export default function KpiAuditoria() {
     }
   }
 
-  useEffect(() => { load() }, [year, empKey, indicadorId])
+  useEffect(() => { load() }, [year, empKey, indicadorId, porData, dataInicio, dataFim])
 
   const grouped = rows.reduce((acc, row) => {
     if (!acc[row.id]) acc[row.id] = { indicador: row.indicador, rows: [] }
@@ -234,13 +246,29 @@ export default function KpiAuditoria() {
           onChange={setEmpresas}
           textoVazio="Selecione uma empresa"
         />
-        <SeletorMultiplo
-          rotulo="Meses"
-          opcoes={M_PERIODS.map(m => ({ value: m, label: M_LABELS[m] }))}
-          valores={mesesSel}
-          onChange={setMesesSel}
-          textoVazio="Selecione os meses"
-        />
+        {porData ? (
+          <div className="flex items-center gap-1.5 text-xs border border-slate-300 rounded-md px-2 py-1.5 bg-white">
+            <span className="text-slate-400">De:</span>
+            <input type="date" value={dataInicio} onChange={e => setDataInicio(e.target.value)} className="outline-none" />
+            <span className="text-slate-400">Até:</span>
+            <input type="date" value={dataFim} onChange={e => setDataFim(e.target.value)} className="outline-none" />
+          </div>
+        ) : (
+          <SeletorMultiplo
+            rotulo="Meses"
+            opcoes={M_PERIODS.map(m => ({ value: m, label: M_LABELS[m] }))}
+            valores={mesesSel}
+            onChange={setMesesSel}
+            textoVazio="Selecione os meses"
+          />
+        )}
+        <button type="button" onClick={() => setPorData(p => !p)}
+          title={porData ? 'Voltar pro filtro por mês' : 'Conferir valores entre datas específicas'}
+          className={`text-xs border rounded-md px-2 py-1.5 whitespace-nowrap transition-colors ${
+            porData ? 'border-blue-400 bg-blue-50 text-blue-700 font-semibold' : 'border-slate-300 bg-white text-slate-600 hover:border-blue-400'
+          }`}>
+          Entre datas
+        </button>
       </div>
 
       {!indicadorId || empresas.length === 0 ? (
@@ -261,7 +289,11 @@ export default function KpiAuditoria() {
                           <th className="text-left px-4 py-2 font-medium text-slate-500 sticky left-0 bg-slate-50 min-w-[180px]">Fonte</th>
                           <th className="text-left px-4 py-2 font-medium text-slate-500 min-w-[240px]">Nome Coluna / Métrica</th>
                           <th className="text-center px-3 py-2 font-medium text-slate-500">Tipo</th>
-                          {activePeriods.map(p => (
+                          {porData ? (
+                            <th className="text-right px-3 py-2 font-semibold text-blue-700 border-l border-slate-200 min-w-[140px]">
+                              {fmtDataBR(dataInicio)} – {fmtDataBR(dataFim)}
+                            </th>
+                          ) : activePeriods.map(p => (
                             <th key={p} className="text-right px-3 py-2 font-semibold text-blue-700 border-l border-slate-200 min-w-[110px]">
                               {M_LABELS[p]}
                             </th>
@@ -286,7 +318,13 @@ export default function KpiAuditoria() {
                                   row.tipo === '%' ? 'bg-teal-100 text-teal-700' : 'bg-slate-100 text-slate-600'
                                 }`}>{row.tipo}</span>
                               </td>
-                              {activePeriods.map(p => (
+                              {porData ? (
+                                <td className={`px-3 py-2 text-right border-l border-slate-100 ${
+                                  isResult ? 'text-slate-900 font-bold' : 'text-slate-600'
+                                }`}>
+                                  {fmtVal(row.valores?.intervalo, row.tipo)}
+                                </td>
+                              ) : activePeriods.map(p => (
                                 <td key={p} className={`px-3 py-2 text-right border-l border-slate-100 ${
                                   isResult ? 'text-slate-900 font-bold' : 'text-slate-600'
                                 }`}>

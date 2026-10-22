@@ -3,11 +3,14 @@ import { useNavigate } from 'react-router-dom'
 import { Briefcase, Plus, X, AlertTriangle, Loader2, Edit2, Trash2, FileDown, ChevronDown, ChevronRight } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { apiService } from '../services/api'
+import { compararCodigoPolitica, faixasDaRegra } from '../utils/comissoesFormat'
 
 const SEL = 'text-xs p-2 border border-slate-200 rounded-md bg-white font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 w-auto min-w-[180px]'
 const INP = 'w-full text-xs p-2 border border-slate-200 rounded-md font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500'
 const LBL = 'text-[11px] font-bold text-slate-500 uppercase tracking-wide'
 
+// Escapa texto do cadastro antes de montar o HTML do PDF.
+const esc = (v) => String(v ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]))
 const fmtPct = (v) => (v != null && v !== '') ? `${parseFloat(v).toFixed(2)}%` : '-'
 const fmtBRL = (v) => (v != null && v !== '') ? parseFloat(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '-'
 const juntaUnicos = (arr) => [...new Set(arr.filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'))
@@ -45,6 +48,7 @@ export default function CargosRemuneracoes() {
 
   const [cargos, setCargos] = useState([])
   const [politicas, setPoliticas] = useState([])
+  const [rubricas, setRubricas] = useState([])
   const [ganhos, setGanhos] = useState([])
   const [departamentos, setDepartamentos] = useState([])
   const [setores, setSetores] = useState([])
@@ -71,13 +75,15 @@ export default function CargosRemuneracoes() {
     setLoading(true)
     setErro(null)
     try {
-      const [cargosData, politicasData, ganhosData, deptos, sets] = await Promise.all([
+      const [cargosData, politicasData, ganhosData, deptos, sets, rubs] = await Promise.all([
         apiService.getCargos(),
         apiService.getPoliticaComissao(),
         apiService.getCargoGanhos(),
         apiService.getDepartamentos(),
         apiService.getSetores(),
+        apiService.getRubricas(),
       ])
+      setRubricas(rubs)
       setCargos(cargosData)
       setPoliticas(politicasData.filter(p => p.ativo !== false))
       setGanhos(ganhosData.filter(g => g.ativo !== false))
@@ -153,6 +159,18 @@ export default function CargosRemuneracoes() {
 
   // Monta as linhas de "Descrição das Remunerações" de um cargo: Políticas de Comissão + Ganhos
   // manuais cadastrados + a linha fixa de DSR por último.
+  const descricaoRubrica = (codigo, empresaId) => {
+    if (!codigo) return null
+    const mesmoCodigo = rubricas.filter(r => r.codigo === codigo)
+    return (mesmoCodigo.find(r => empresaId && r.empresa_ids?.includes(empresaId))
+      || mesmoCodigo.find(r => !r.empresa_ids?.length)
+      || mesmoCodigo[0])?.descricao || null
+  }
+  const textoRubrica = (l) => l.rubrica ? `Rubrica ${l.rubrica}${l.rubricaDescricao ? ` — ${l.rubricaDescricao}` : ''}` : ''
+  // Código da comissão em ordem crescente (sem código depois); empate por descrição.
+  const ordenarLinhas = (a, b) =>
+    compararCodigoPolitica({ codigo_politica: a.codigo }, { codigo_politica: b.codigo }) || a.descricao.localeCompare(b.descricao, 'pt-BR')
+
   const linhasDoCargo = (cargo) => {
     const linhasPolitica = politicas
       .filter(p => p.cargo_id === cargo.id)
@@ -160,7 +178,12 @@ export default function CargosRemuneracoes() {
         const partes = valoresDaPolitica(p)
         return {
           tipo: 'politica', id: p.id,
+          codigo: (p.codigo_politica || '').trim(),
+          rubrica: p.codigo_rubrica || '',
+          rubricaDescricao: descricaoRubrica(p.codigo_rubrica, p.empresa_id || cargo.empresa_id),
           descricao: p.descricao_comissao || p.nivel_calculo || '-',
+          // Política com Regra: as faixas ("≥ 110% da meta → R$ 700,00") no lugar do %/Valor.
+          faixas: faixasDaRegra(p, null),
           metrica: p.base_calculo?.nome || p.fonte_calculo?.nome || '-',
           partes,
           display: partes.map(x => `${x.rotulo} ${x.display}`).join('  ·  '),
@@ -176,10 +199,9 @@ export default function CargosRemuneracoes() {
         display: g.tipo_valor === 'PERCENTUAL' ? fmtPct(g.valor) : fmtBRL(g.valor),
         ganhoOriginal: g,
       }))
-    // Tipo de Ganho em ordem alfabética (A a Z) — DSR fica sempre por último, é uma linha fixa
-    // informativa, não um ganho cadastrado.
-    const linhasOrdenadas = [...linhasPolitica, ...linhasGanho]
-      .sort((a, b) => a.descricao.localeCompare(b.descricao, 'pt-BR'))
+    // Pelo Código da comissão (crescente); ganhos manuais e políticas sem código depois, em ordem
+    // alfabética. DSR fica sempre por último — é uma linha fixa informativa, não um ganho cadastrado.
+    const linhasOrdenadas = [...linhasPolitica, ...linhasGanho].sort(ordenarLinhas)
     return [...linhasOrdenadas, LINHA_DSR]
   }
 
@@ -192,13 +214,13 @@ export default function CargosRemuneracoes() {
     for (const cargo of cargosDoGrupo) {
       for (const l of linhasDoCargo(cargo)) {
         if (l.tipo === 'dsr') continue
-        const chave = `${l.tipo}|${l.descricao}|${l.display}`
+        const chave = `${l.tipo}|${l.codigo || ''}|${l.descricao}|${l.rubrica || ''}|${l.display}`
         if (vistos.has(chave)) continue
         vistos.add(chave)
         linhas.push(l)
       }
     }
-    linhas.sort((a, b) => a.descricao.localeCompare(b.descricao, 'pt-BR'))
+    linhas.sort(ordenarLinhas)
     return [...linhas, LINHA_DSR]
   }
 
@@ -314,8 +336,8 @@ export default function CargosRemuneracoes() {
           const linhas = linhasDoGrupoCargo(cargoGrupo.cargos)
           const linhasHtml = linhas.map(l => `
             <tr style="${l.tipo === 'dsr' ? 'background:#fffbeb;' : ''}">
-              <td style="padding:5px 10px;border-bottom:1px solid #f1f5f9;font-weight:600;color:#1e293b;">${l.descricao}</td>
-              <td style="padding:5px 10px;text-align:right;border-bottom:1px solid #f1f5f9;font-weight:700;color:#1e293b;">${l.display}</td>
+              <td style="padding:5px 10px;border-bottom:1px solid #f1f5f9;font-weight:600;color:#1e293b;">${l.codigo ? `<span style="color:#94a3b8;font-family:monospace;">${esc(l.codigo)}</span> ` : ''}${esc(l.descricao)}${l.rubrica ? `<div style="font-weight:400;font-size:9px;color:#94a3b8;">${esc(textoRubrica(l))}</div>` : ''}</td>
+              <td style="padding:5px 10px;text-align:right;border-bottom:1px solid #f1f5f9;font-weight:700;color:#1e293b;">${l.faixas?.length > 0 ? l.faixas.map(f => `<div style="font-size:9px;font-weight:400;color:#475569;white-space:nowrap;">${esc(f.texto)} → <b style="color:#1e293b;">${esc(f.percentual)}</b></div>`).join('') : l.display}</td>
             </tr>`).join('')
           return `
             <div style="border:1px solid #e2e8f0;border-radius:6px;overflow:hidden;break-inside:avoid;">
@@ -325,7 +347,7 @@ export default function CargosRemuneracoes() {
               <table style="width:100%;border-collapse:collapse;font-size:11px;">
                 <thead>
                   <tr style="color:#94a3b8;text-transform:uppercase;font-size:9px;">
-                    <th style="padding:5px 10px;text-align:left;">Tipo de Ganho</th>
+                    <th style="padding:5px 10px;text-align:left;">Descrição dos Ganhos</th>
                     <th style="padding:5px 10px;text-align:right;">%/Valor</th>
                   </tr>
                 </thead>
@@ -517,7 +539,7 @@ export default function CargosRemuneracoes() {
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="bg-slate-50/60 text-slate-400 text-[10px] font-semibold uppercase tracking-wide">
-                      <th className="px-3 py-1.5">Tipo de Ganho</th>
+                      <th className="px-3 py-1.5">Descrição dos Ganhos</th>
                       <th className="px-3 py-1.5 text-right">%/Valor</th>
                       {canEdit && <th className="px-2 py-1.5 w-12"></th>}
                     </tr>
@@ -530,8 +552,18 @@ export default function CargosRemuneracoes() {
                         onClick={l.tipo === 'politica' && canEditPolitica ? () => abrirEdicaoPolitica(l.id) : undefined}
                         title={l.tipo === 'politica' && canEditPolitica ? 'Editar esta Política de Comissão' : undefined}
                       >
-                        <td className="px-3 py-1.5 font-semibold text-slate-800">{l.descricao}</td>
-                        <td className="px-3 py-1.5 text-right font-mono font-bold">{l.display}</td>
+                        <td className="px-3 py-1.5 font-semibold text-slate-800">
+                          {l.codigo && <span className="font-mono text-slate-400 mr-1.5">{l.codigo}</span>}
+                          {l.descricao}
+                          {l.rubrica && <div className="text-[10px] font-normal text-slate-400">{textoRubrica(l)}</div>}
+                        </td>
+                        <td className="px-3 py-1.5 text-right font-mono font-bold">
+                          {l.faixas?.length > 0 ? (
+                            <div className="flex flex-col items-end gap-0.5 text-[10px] font-normal text-slate-600 whitespace-nowrap">
+                              {l.faixas.map((f, i) => <span key={i}>{f.texto} <span className="text-slate-400">→</span> <span className="font-bold text-slate-800">{f.percentual}</span></span>)}
+                            </div>
+                          ) : l.display}
+                        </td>
                         {canEdit && (
                           <td className="px-2 py-1.5 text-right">
                             {l.tipo === 'ganho' && (
