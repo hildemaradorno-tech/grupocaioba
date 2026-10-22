@@ -200,9 +200,11 @@ export default function GarantiasDafManual() {
                 </Sub>
                 <Sub titulo="Dias para Digitação">
                   <p>Valor atual: <Valor>{diasDigitacao} dia{diasDigitacao === 1 ? '' : 's'}</Valor></p>
-                  <p>
-                    Contado a partir da <strong>data de fechamento da OS</strong>. Controla os cards A Digitar e Digitação Atrasada da aba com Garantista.
-                  </p>
+                  <p><strong>D</strong> = dia em que a OS foi fechada.</p>
+                  <ul className="space-y-1 pl-1">
+                    <li>• <strong>A Digitar</strong>: de D até <Valor>D+{diasDigitacao}</Valor></li>
+                    <li>• <strong>Digitação Atrasada</strong>: a partir de <Valor>D+{diasDigitacao + 1}</Valor></li>
+                  </ul>
                   <div className="bg-slate-50 border border-slate-200 rounded-md p-3 space-y-1">
                     <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Exemplo</p>
                     <p>

@@ -30,19 +30,18 @@ const STATUS_MAP = {
   Z:  { label: 'Z — Processo recusado',           cor: 'bg-red-200 text-red-800' },
 }
 
-function getStatusDisplay(item) {
+// Status A segue a regra Dias para Digitação: D = data de fechamento da OS; até D+N em digitação,
+// a partir de D+N+1 atrasada (mesmo critério dos cards A Digitar / Digitação Atrasada).
+function getStatusDisplay(item, diasDigitacao) {
   if (item.status_codigo !== 'A') {
     return STATUS_MAP[item.status_codigo] || { label: item.status_codigo, cor: 'bg-slate-100 text-slate-500' }
   }
-  if (!item.data_abertura_os) {
-    return { label: 'A — Em fase de digitação (D+1)', cor: 'bg-blue-100 text-blue-700' }
-  }
-  const hoje    = new Date()
-  const abertura = new Date(item.data_abertura_os + 'T12:00:00')
-  const d = Math.floor((hoje - abertura) / 86400000)
-  return d > 1
-    ? { label: 'A — Digitação Atrasada (>D+1)',  cor: 'bg-red-100 text-red-700' }
-    : { label: 'A — Em fase de digitação (D+1)', cor: 'bg-blue-100 text-blue-700' }
+  const emDigitacao = { label: `A — Em fase de digitação (D+${diasDigitacao})`, cor: 'bg-blue-100 text-blue-700' }
+  if (!item.data_fechamento_os) return emDigitacao
+  const d = Math.floor((new Date() - new Date(item.data_fechamento_os + 'T12:00:00')) / 86400000)
+  return d > diasDigitacao
+    ? { label: `A — Digitação Atrasada (>D+${diasDigitacao})`, cor: 'bg-red-100 text-red-700' }
+    : emDigitacao
 }
 
 const fmt = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -96,6 +95,8 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
   const { user, isAdmin, empresasPermitidas, hasActionOrDefault, hasPermission } = useAuth()
   const canEditarOS = hasActionOrDefault('garantias-daf', 'editar')
   const canExcluirOS = hasActionOrDefault('garantias-daf', 'excluir')
+  const canBuscarNF = hasActionOrDefault('garantias-daf', 'buscar_nf')
+  const canRegras = hasActionOrDefault(isAndamento ? 'garantias-daf-andamento' : 'garantias-daf', 'regras')
 
   const [dados, setDados] = useState([])          // resultado dos filtros avançados (tabela)
   const [dadosTodos, setDadosTodos] = useState([]) // TODOS os registros — nunca filtrado
@@ -523,10 +524,13 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
     }
   }, [grpNaoEncontrado, user, loadData])
 
+  // Só OS de tipos classificados como Garantia (Cadastro de Tipos de OS). Sem a lista carregada,
+  // não há o que importar — evita trazer todos os tipos do arquivo de OS encerradas.
   const pendFechadas = useMemo(
-    () => loading ? [] : spRows.filter(r => {
+    () => (loading || siglasGarantia.size === 0) ? [] : spRows.filter(r => {
       const osNum    = String(r.os_numero ?? '').trim()
       const tipoSP   = tipoCode(r.tipo_os_sigla) || tipoCode(r.tipo_os_descricao)
+      if (!siglasGarantia.has(tipoSP)) return false
       const key      = `${osNum}||${tipoSP}`
       const jaImportado = importadosSet.has(key)
         || importadosSemTipo.has(osNum)
@@ -534,7 +538,7 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
       return !jaImportado &&
         (!filtroEmpresaDash || r.empresa_nome === filtroEmpresaDash || empresaNome(r) === filtroEmpresaDash)
     }),
-    [spRows, importadosSet, importadosSemTipo, importadosTodosPorOS, loading, filtroEmpresaDash]
+    [spRows, importadosSet, importadosSemTipo, importadosTodosPorOS, loading, filtroEmpresaDash, siglasGarantia]
   )
 
   // nome (fantasia/sistema/oficial, lowercase) → empresa_id — usado para resolver empresa_id
@@ -601,18 +605,20 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
     setErroImportLote(erros > 0 ? { total: erros, exemplo: exemploErro } : null)
   }, [pendFechadas, findEmpresaId, user, loadData])
 
-  // Dispara a importação automaticamente sempre que uma leitura do SharePoint termina (ao acessar
-  // a tela ou ao clicar em "Atualizar"), eliminando o clique manual em "Importar". Guardado pela
-  // transição true→false de spLoading (não por pendFechadas diretamente) pra não reimportar só
-  // porque o usuário mudou um filtro (ex.: filtroEmpresaDash, do qual pendFechadas depende).
+  // Importação automática: cada leitura do SharePoint concluída (ao acessar a tela ou clicar em
+  // "Atualizar") deixa uma importação pendente, que roda uma única vez quando as garantias e a lista
+  // de tipos de garantia já estiverem carregadas. Mudar filtro não reimporta (a pendência já foi consumida).
   const spLoadingPrevRef = useRef(false)
+  const autoImportPendenteRef = useRef(false)
   useEffect(() => {
-    if (spLoadingPrevRef.current && !spLoading && !importandoPend && pendFechadas.length > 0) {
-      handleImportarLote()
-    }
+    if (isAndamento) return
+    if (spLoadingPrevRef.current && !spLoading) autoImportPendenteRef.current = true
     spLoadingPrevRef.current = spLoading
+    if (!autoImportPendenteRef.current || spLoading || loading || importandoPend || siglasGarantia.size === 0) return
+    autoImportPendenteRef.current = false
+    if (pendFechadas.length > 0) handleImportarLote()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [spLoading])
+  }, [spLoading, loading, siglasGarantia, importandoPend])
 
   const handleFiltroChange = (e) => {
     const { name, value } = e.target
@@ -818,13 +824,15 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
               >
                 <RefreshCw className={`h-3.5 w-3.5 ${spLoading ? 'animate-spin' : ''}`} />
               </button>
-              <button
-                onClick={() => setModalRegras(true)}
-                title="Regras do sistema"
-                className="flex items-center justify-center p-2 rounded-md text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 shadow-sm transition-colors"
-              >
-                <Settings className="h-3.5 w-3.5" />
-              </button>
+              {canRegras && (
+                <button
+                  onClick={() => setModalRegras(true)}
+                  title="Regras do sistema"
+                  className="flex items-center justify-center p-2 rounded-md text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 shadow-sm transition-colors"
+                >
+                  <Settings className="h-3.5 w-3.5" />
+                </button>
+              )}
               <button
                 onClick={() => window.open('/garantias-daf-manual', '_blank')}
                 title="Manual de operação"
@@ -858,13 +866,15 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
               >
                 <RefreshCw className={`h-3.5 w-3.5 ${spLoading ? 'animate-spin' : ''}`} />
               </button>
-              <button
-                onClick={() => setModalRegras(true)}
-                title="Regras do sistema"
-                className="flex items-center justify-center p-2 rounded-md text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 shadow-sm transition-colors"
-              >
-                <Settings className="h-3.5 w-3.5" />
-              </button>
+              {canRegras && (
+                <button
+                  onClick={() => setModalRegras(true)}
+                  title="Regras do sistema"
+                  className="flex items-center justify-center p-2 rounded-md text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 shadow-sm transition-colors"
+                >
+                  <Settings className="h-3.5 w-3.5" />
+                </button>
+              )}
               <button
                 onClick={() => window.open('/garantias-daf-manual', '_blank')}
                 title="Manual de operação"
@@ -923,6 +933,7 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
               >
                 <Eye className="h-3.5 w-3.5" />
               </button>
+              {canBuscarNF && (
               <button
                 onClick={handleBuscarFaturamentoLote}
                 disabled={buscandoFaturamentoLote}
@@ -936,6 +947,7 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
                   ? `Buscando ${progressoBuscaLote?.atual ?? 0}/${progressoBuscaLote?.total ?? 0}...`
                   : 'Buscar NF'}
               </button>
+              )}
             </div>
           )}
           {importandoPend && (
@@ -1425,7 +1437,7 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
                   <tr><td colSpan="14" className="p-10 text-center text-slate-400">Nenhuma garantia encontrada.</td></tr>
                 ) : sortedDados.map(item => {
                   const vt = Number(item.valor_pecas || 0) + Number(item.valor_servicos || 0)
-                  const st = getStatusDisplay(item)
+                  const st = getStatusDisplay(item, diasDigitacao)
                   const dp = diasParado(item)
                   return (
                     <tr key={item.id} className={`hover:bg-slate-50/70 transition-colors ${selecionados.has(item.id) ? 'bg-blue-50/50' : dp >= 30 ? 'bg-red-50/40' : dp >= 15 ? 'bg-orange-50/30' : dp >= 7 ? 'bg-yellow-50/30' : ''}`}>
@@ -1577,7 +1589,13 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
                 className="text-xs p-2 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20"
               />
               <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">
-                Contado da data de fechamento da OS — controla os cards "A Digitar" / "Digitação Atrasada".
+                D = dia em que a OS foi fechada.
+                {Number(diasDigitacaoInput) > 0 && (
+                  <>
+                    <br />• <strong>A Digitar</strong>: de D até D+{Number(diasDigitacaoInput)}
+                    <br />• <strong>Digitação Atrasada</strong>: a partir de D+{Number(diasDigitacaoInput) + 1}
+                  </>
+                )}
               </p>
             </div>
             {tiposGarantiaParaRegras.length > 0 && (

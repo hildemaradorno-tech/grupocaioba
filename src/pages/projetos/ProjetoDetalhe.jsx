@@ -488,7 +488,7 @@ const abrirModalMover = async (tarefa) => {
   }
 
   return (
-    <div className="p-6 space-y-5 max-w-screen-2xl">
+    <div className="p-6 space-y-3 max-w-screen-2xl">
       {modoVerTodos && (
         <div className="flex items-center gap-2 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-xs font-semibold">
           <Eye className="h-3.5 w-3.5 text-amber-500 shrink-0" />
@@ -496,7 +496,7 @@ const abrirModalMover = async (tarefa) => {
         </div>
       )}
       {/* CABEÇALHO */}
-      <div id="projeto-detalhe-cabecalho" className="flex items-start justify-between gap-4 border-b border-slate-200 pb-4">
+      <div id="projeto-detalhe-cabecalho" className="flex items-start justify-between gap-4 border-b border-slate-200 pb-2">
         <div className="flex items-start gap-3 min-w-0">
           <button onClick={() => navigate('/projetos')} className="p-1.5 mt-0.5 shrink-0 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-md transition-colors">
             <ArrowLeft className="h-4 w-4" />
@@ -577,12 +577,12 @@ const abrirModalMover = async (tarefa) => {
           </div>
         </div>
         <div className="no-print flex items-center gap-2 shrink-0">
-          {canIniciarFase && (
+          {canCriarTarefa && (
             <button
-              onClick={() => setModalIniciarFase(true)}
-              className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold px-3 py-2 rounded-md shadow-sm border border-slate-200 transition-colors whitespace-nowrap"
+              onClick={() => setModalTarefa({ tarefa: null, prefill: { area_nome: projeto.area_nome || '' } })}
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-2 rounded-md shadow-sm transition-colors whitespace-nowrap"
             >
-              <Flag className="h-3.5 w-3.5" /> Iniciar Fase
+              <Plus className="h-3.5 w-3.5" /> Nova Tarefa
             </button>
           )}
           <div className="relative">
@@ -603,6 +603,14 @@ const abrirModalMover = async (tarefa) => {
                 <div className="fixed inset-0 z-10" onClick={() => setMenuProjeto(false)} />
                 <div className="fixed z-20 bg-white border border-slate-200 rounded-lg shadow-lg py-1 min-w-[170px]"
                   style={{ top: menuProjetoPos.top, right: menuProjetoPos.right }}>
+                  {canIniciarFase && (
+                    <button
+                      onClick={() => { setModalIniciarFase(true); setMenuProjeto(false) }}
+                      className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
+                    >
+                      <Flag className="h-3.5 w-3.5 shrink-0 text-blue-500" /> Iniciar Fase
+                    </button>
+                  )}
                   {canEditar && (
                     <button
                       onClick={() => { navigate(`/projetos/detalhe/${id}/editar`); setMenuProjeto(false) }}
@@ -681,58 +689,70 @@ const abrirModalMover = async (tarefa) => {
                 </div>
               )}
             </div>
-            {canCriarTarefa && (
-              <button
-                onClick={() => setModalTarefa({ tarefa: null, prefill: { area_nome: projeto.area_nome || '' } })}
-                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-md shadow-sm transition-colors shrink-0"
-              >
-                <Plus className="h-4 w-4" /> Nova Tarefa
-              </button>
-            )}
           </div>
         )
       })()}
 
       {/* Painel de filtros fixo */}
-      <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-3">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide shrink-0">Término:</span>
-            <input type="date" value={filtroDataTermIni} onChange={e => setFiltroDataTermIni(e.target.value)}
-              className="text-xs px-2 py-1.5 border border-slate-200 rounded-md bg-white focus:ring-2 focus:ring-blue-400/30" />
-            <span className="text-xs text-slate-400">até</span>
-            <input type="date" value={filtroDataTermFim} onChange={e => setFiltroDataTermFim(e.target.value)} min={filtroDataTermIni || undefined}
-              className="text-xs px-2 py-1.5 border border-slate-200 rounded-md bg-white focus:ring-2 focus:ring-blue-400/30" />
-          </div>
-          {(() => {
-            const optsResp    = [...new Set(tarefas.map(t => t.responsavel_nome).filter(Boolean))].sort()
-            const optsArea    = [...new Set(tarefas.map(t => t.area_nome).filter(Boolean))].sort()
-            const optsSistema = [...new Set(tarefas.map(t => t.sistema_nome).filter(Boolean))].sort()
-            const optsFase    = [...new Set(tarefas.map(t => t.fase_nome).filter(Boolean))].sort()
-            const optsUnidade = [...new Set(tarefas.map(t => t.empresa_nome).filter(Boolean))].sort()
-            const selectCls = "text-xs border border-slate-200 rounded-md px-2 py-1 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-400/30 max-w-[160px]"
-            const filters = [
-              { label: 'Responsável', opts: optsResp,    value: filtroResponsavel, set: setFiltroResponsavel },
-              { label: 'Área',        opts: optsArea,    value: filtroArea,        set: setFiltroArea },
-              { label: 'Sistema',     opts: optsSistema, value: filtroSistema,     set: setFiltroSistema },
-              { label: 'Fase',        opts: optsFase,    value: filtroFase,        set: setFiltroFase },
-              { label: 'Unidade',     opts: optsUnidade, value: filtroUnidade,     set: setFiltroUnidade },
-            ].filter(f => f.opts.length > 0)
-            return (
-              <div className="flex items-center gap-3 flex-wrap">
-                {filters.map(({ label, opts, value, set }) => (
-                  <div key={label} className="flex items-center gap-1.5">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide shrink-0">{label}:</span>
-                    <select value={value} onChange={e => set(e.target.value)} className={selectCls}>
-                      <option value="">Todos</option>
-                      {opts.map(o => <option key={o} value={o}>{o}</option>)}
-                    </select>
-                    {value && <button onClick={() => set('')} className="text-[10px] text-slate-400 hover:text-slate-600 transition-colors">✕</button>}
-                  </div>
-                ))}
+      {(() => {
+        const optsEmpresa = [...new Set(tarefas.map(t => t.empresa_nome).filter(Boolean))].sort()
+        const optsArea    = [...new Set(tarefas.map(t => t.area_nome).filter(Boolean))].sort()
+        const optsFase    = [...new Set(tarefas.map(t => t.fase_nome).filter(Boolean))].sort()
+        const optsSistema = [...new Set(tarefas.map(t => t.sistema_nome).filter(Boolean))].sort()
+        const optsResp    = [...new Set(tarefas.map(t => t.responsavel_nome).filter(Boolean))].sort()
+        const selCls = 'text-xs border border-slate-200 rounded-md px-2 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-400/30 w-full'
+        const lblCls = 'text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1'
+        return (
+          <div className="bg-white border border-slate-200 rounded-lg px-4 py-3 space-y-3">
+            <div className="grid grid-cols-5 gap-3">
+              <div>
+                <p className={lblCls}>Empresa</p>
+                <select value={filtroUnidade} onChange={e => setFiltroUnidade(e.target.value)} className={selCls}>
+                  <option value="">Todas</option>
+                  {optsEmpresa.map(o => <option key={o} value={o}>{o}</option>)}
+                </select>
               </div>
-            )
-          })()}
-        </div>
+              <div>
+                <p className={lblCls}>Área</p>
+                <select value={filtroArea} onChange={e => setFiltroArea(e.target.value)} className={selCls}>
+                  <option value="">Todas</option>
+                  {optsArea.map(o => <option key={o} value={o}>{o}</option>)}
+                </select>
+              </div>
+              <div>
+                <p className={lblCls}>Fase</p>
+                <select value={filtroFase} onChange={e => setFiltroFase(e.target.value)} className={selCls}>
+                  <option value="">Todas</option>
+                  {optsFase.map(o => <option key={o} value={o}>{o}</option>)}
+                </select>
+              </div>
+              <div>
+                <p className={lblCls}>Sistema</p>
+                <select value={filtroSistema} onChange={e => setFiltroSistema(e.target.value)} className={selCls}>
+                  <option value="">Todos</option>
+                  {optsSistema.map(o => <option key={o} value={o}>{o}</option>)}
+                </select>
+              </div>
+              <div>
+                <p className={lblCls}>Resp. Tarefa</p>
+                <select value={filtroResponsavel} onChange={e => setFiltroResponsavel(e.target.value)} className={selCls}>
+                  <option value="">Todos</option>
+                  {optsResp.map(o => <option key={o} value={o}>{o}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide shrink-0">Térm. Tarefa</span>
+              <span className="text-[10px] text-slate-400">de</span>
+              <input type="date" value={filtroDataTermIni} onChange={e => setFiltroDataTermIni(e.target.value)}
+                className="text-xs px-2 py-1.5 border border-slate-200 rounded-md bg-white focus:ring-2 focus:ring-blue-400/30" />
+              <span className="text-xs text-slate-400">até</span>
+              <input type="date" value={filtroDataTermFim} onChange={e => setFiltroDataTermFim(e.target.value)} min={filtroDataTermIni || undefined}
+                className="text-xs px-2 py-1.5 border border-slate-200 rounded-md bg-white focus:ring-2 focus:ring-blue-400/30" />
+            </div>
+          </div>
+        )
+      })()}
 
       {/* LISTA DE TAREFAS */}
       <div className="space-y-3">
@@ -824,14 +844,15 @@ const abrirModalMover = async (tarefa) => {
                 {[
                   { campo: 'etapa',         label: 'Etapa',       cls: 'w-20' },
                   { campo: 'nome',          label: 'Tarefa',      cls: 'min-w-[320px]' },
-                  { campo: 'sistema_nome',  label: 'Sistema',     subtitle: 'Depto / Área', cls: 'w-36' },
+                  { campo: 'sistema_nome',  label: 'Sistemas',          cls: 'w-32' },
+                  { campo: 'area_nome',     label: 'Departamento / Área', cls: 'w-40', noUppercase: true },
                   { campo: 'responsavel',   label: 'Responsável', cls: 'w-32' },
                   { campo: 'data_inicio',   label: 'Início',      cls: 'w-16' },
                   { campo: 'data_fim',      label: 'Fim',         cls: 'w-16' },
                   { campo: 'status_kanban', label: 'Status',      cls: 'w-28' },
                   { campo: 'progresso_pct', label: 'Progresso',   cls: 'w-28' },
                   { campo: 'empresa_nome',  label: 'Unidade',     cls: 'w-28' },
-                ].map(({ campo, label, subtitle, cls = '' }) => (
+                ].map(({ campo, label, subtitle, cls = '', noUppercase = false }) => (
                   <th key={campo} className={`p-3 ${cls}`}>
                     <div className="flex flex-col gap-0.5">
                     <button
@@ -840,7 +861,7 @@ const abrirModalMover = async (tarefa) => {
                           ? { campo, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
                           : { campo, dir: 'asc' }
                       )}
-                      className="flex items-center gap-1 uppercase font-bold tracking-wider hover:text-blue-600 transition-colors"
+                      className={`flex items-center gap-1 ${noUppercase ? '' : 'uppercase'} font-bold tracking-wider hover:text-blue-600 transition-colors whitespace-nowrap`}
                     >
                       {label}
                       <span className="normal-case font-normal">
@@ -946,16 +967,17 @@ const abrirModalMover = async (tarefa) => {
                     )}
                   </td>
                   <td className="p-3">
-                    <div className="flex flex-col gap-0.5">
-                      {t.sistema_nome
-                        ? <span className="px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap" style={{ backgroundColor: sistemaCorMap[t.sistema_nome] || '#1e293b', color: sistemaCorTextoMap[t.sistema_nome] || getTextColor(sistemaCorMap[t.sistema_nome] || '#1e293b') }}>{t.sistema_nome}</span>
-                        : <span className="text-slate-400">—</span>}
-                      {(projeto.departamento_nome || t.area_nome || projeto.area_nome) && (
-                        <div className="text-[10px] text-slate-400 italic mt-0.5 whitespace-nowrap">
-                          {[projeto.departamento_nome, t.area_nome || projeto.area_nome].filter(Boolean).join(' / ')}
+                    {t.sistema_nome
+                      ? <span className="px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap" style={{ backgroundColor: sistemaCorMap[t.sistema_nome] || '#1e293b', color: sistemaCorTextoMap[t.sistema_nome] || getTextColor(sistemaCorMap[t.sistema_nome] || '#1e293b') }}>{t.sistema_nome}</span>
+                      : <span className="text-slate-400">—</span>}
+                  </td>
+                  <td className="p-3">
+                    {(projeto.departamento_nome || t.area_nome || projeto.area_nome)
+                      ? <div className="flex flex-col leading-tight">
+                          {projeto.departamento_nome && <span className="text-xs font-semibold text-slate-700 uppercase">{projeto.departamento_nome}</span>}
+                          {(t.area_nome || projeto.area_nome) && <span className="text-[10px] text-slate-400 italic">{t.area_nome || projeto.area_nome}</span>}
                         </div>
-                      )}
-                    </div>
+                      : <span className="text-slate-400">—</span>}
                   </td>
                   <td className="p-3 text-slate-600 whitespace-nowrap">{t.responsavel_nome || '—'}</td>
                   <td className="p-3 text-slate-500 whitespace-nowrap">{fmtData(t.data_inicio)}</td>

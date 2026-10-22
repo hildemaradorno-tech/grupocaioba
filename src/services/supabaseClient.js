@@ -3516,6 +3516,20 @@ export const apiService = {
     return { success: true }
   },
 
+  // ── Configurações gerais da Auditoria O.S. Aberta (regra de reabertura etc.) ──
+  getAuditoriaConfig: async () => {
+    const { data, error } = await supabase.from('aud_configuracoes').select('*').eq('id', 'geral').maybeSingle()
+    if (error) throw error
+    return data
+  },
+  saveAuditoriaConfig: async (payload, userEmail) => {
+    const { data, error } = await supabase.from('aud_configuracoes')
+      .upsert({ id: 'geral', ...payload, atualizado_em: new Date().toISOString(), atualizado_por: userEmail || null })
+      .select()
+    if (error) throw error
+    return data?.[0]
+  },
+
   // ── Programação de auditorias automáticas (executadas pelo backend, node-cron) ──
   getAuditoriaAgendamentos: async () => {
     const { data, error } = await supabase.from('aud_agendamentos').select('*').order('criado_em')

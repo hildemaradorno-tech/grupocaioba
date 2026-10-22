@@ -689,8 +689,8 @@ export default function ProjetoEditor() {
         </div>
       </div>
 
-      {/* Card: Tarefas (só em modo edição) */}
-      {!isNew && (
+      {/* REMOVIDO: tarefas gerenciadas em ProjetoDetalhe */}
+      {false && (
         <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
           <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 flex-wrap gap-2">
             <div className="flex items-center gap-3">
@@ -1060,11 +1060,6 @@ export default function ProjetoEditor() {
         />
       )}
 
-      {isNew && (
-        <p className="text-xs text-slate-400 text-center italic">
-          Salve o projeto para começar a adicionar tarefas.
-        </p>
-      )}
 
       {/* MODAL MOVER PARA NOVO PROJETO */}
       {modalNovoProj && (

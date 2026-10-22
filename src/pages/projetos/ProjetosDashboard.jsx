@@ -1,11 +1,12 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Edit2, Trash2, FolderKanban, Activity, CheckCircle, AlertTriangle, Layers, ShieldAlert, ChevronRight, ChevronDown, Loader2, X, CheckCircle2, Copy, BarChart2, Download, Eye } from 'lucide-react'
+import { Plus, Edit2, Trash2, FolderKanban, Activity, CheckCircle, AlertTriangle, Layers, ShieldAlert, ChevronRight, ChevronDown, Loader2, X, CheckCircle2, Copy, BarChart2, Download, Eye, Settings, FileSpreadsheet } from 'lucide-react'
 import { apiService } from '../../services/api'
 import { useAuth } from '../../context/AuthContext'
 import { useProjetosFiltros, aplicarFiltrosGlobais, _projetosSession } from '../../context/ProjetosFiltrosContext'
 import ProjetosNav from './ProjetosNav'
 import ProjetosFiltrosPanel, { FiltrosCompactBar } from './ProjetosFiltrosPanel'
+import ModalImportarProjeto, { baixarModeloExcel } from './ModalImportarProjeto'
 
 const STATUS_MAP = {
   mapeado:      { label: 'Mapeado',      cor: 'bg-slate-100 text-slate-600', corAtivo: 'bg-slate-500 text-white' },
@@ -164,6 +165,9 @@ export default function ProjetosDashboard() {
   const [modalExcluir, setModalExcluir] = useState(false)
   const [idExcluir, setIdExcluir] = useState(null)
   const [nomeExcluir, setNomeExcluir] = useState('')
+  const [menuGear, setMenuGear] = useState(false)
+  const [menuGearPos, setMenuGearPos] = useState({ top: 0, right: 0 })
+  const [modalImportar, setModalImportar] = useState(false)
   const [expandidos, setExpandidos] = useState(() => new Set(_dash.expandidos))
   const [tarefasPorProjeto, setTarefasPorProjeto] = useState(() => ({ ..._dash.tarefasPorProjeto }))
   const [carregandoTarefas, setCarregandoTarefas] = useState(new Set())
@@ -990,6 +994,46 @@ export default function ProjetosDashboard() {
                 <Plus className="h-4 w-4" /> Novo Projeto
               </button>
             )}
+            {canCriar && (
+              <div className="relative">
+                <button
+                  onClick={e => {
+                    if (menuGear) { setMenuGear(false); return }
+                    const rect = e.currentTarget.getBoundingClientRect()
+                    setMenuGearPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right })
+                    setMenuGear(true)
+                  }}
+                  className="flex items-center gap-1 px-2.5 py-2 bg-white hover:bg-slate-50 text-slate-600 text-xs font-semibold rounded-md shadow-sm border border-slate-200 transition-colors"
+                  title="Ações"
+                >
+                  <Settings className="h-4 w-4" />
+                </button>
+                {menuGear && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setMenuGear(false)} />
+                    <div
+                      className="fixed z-50 bg-white border border-slate-200 rounded-lg shadow-xl py-1 w-52"
+                      style={{ top: menuGearPos.top, right: menuGearPos.right }}
+                    >
+                      <button
+                        onClick={() => { baixarModeloExcel(); setMenuGear(false) }}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-xs text-slate-700 hover:bg-slate-50"
+                      >
+                        <FileSpreadsheet className="h-3.5 w-3.5 text-green-600 shrink-0" />
+                        Baixar Modelo Projeto
+                      </button>
+                      <button
+                        onClick={() => { setModalImportar(true); setMenuGear(false) }}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-xs text-slate-700 hover:bg-slate-50"
+                      >
+                        <Download className="h-3.5 w-3.5 text-blue-600 shrink-0" />
+                        Importar Projeto
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
           </div>
         </div>
         <div className="flex items-start justify-between gap-3">
@@ -1795,6 +1839,15 @@ export default function ProjetosDashboard() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* MODAL IMPORTAR PROJETO */}
+      {modalImportar && (
+        <ModalImportarProjeto
+          onClose={() => setModalImportar(false)}
+          onProjetoCriado={(id) => { setModalImportar(false); navigate(`/projetos/detalhe/${id}`) }}
+          userEmail={user?.email}
+        />
       )}
 
       {/* MODAL EXCLUIR */}

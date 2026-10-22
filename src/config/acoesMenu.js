@@ -52,42 +52,53 @@ export const ACOES_POR_MENU = [
     ],
   },
   {
+    menuPath: 'garantias-daf-andamento',
+    acoes: [
+      { value: 'regras', label: 'Regras do Sistema (engrenagem — alterar prazos)' },
+    ],
+  },
+  {
     menuPath: 'garantias-daf',
     acoes: [
-      { value: 'editar',  label: 'Editar OS' },
-      { value: 'excluir', label: 'Excluir OS' },
+      { value: 'editar',   label: 'Editar OS (Editar Garantia)' },
+      { value: 'excluir',  label: 'Excluir OS (individual e em lote)' },
+      { value: 'buscar_nf', label: 'Buscar NF das OS não encontradas no SharePoint' },
+      { value: 'regras',   label: 'Regras do Sistema (engrenagem — alterar prazos)' },
     ],
   },
   {
     menuPath: 'garantias-daf-historicodeos',
     acoes: [
-      { value: 'editar',  label: 'Editar OS' },
-      { value: 'excluir', label: 'Excluir OS' },
+      { value: 'importar', label: 'Importar OS Faturadas' },
+      { value: 'excluir',  label: 'Excluir OS' },
     ],
   },
   {
     menuPath: 'garantias-daf-titulos',
     acoes: [
       { value: 'editar', label: 'Editar Título (observação)' },
+      { value: 'editar_garantia', label: 'Editar Garantia (vincular OS / envio à fábrica)' },
     ],
   },
   {
     menuPath: 'auditoria-os-aberto',
     acoes: [
-      // Admin tem tudo; demais grupos só o que estiver marcado aqui (Programar auditorias = só Admin).
+      // Admin tem tudo; demais grupos só o que estiver marcado aqui.
       // Engrenagem
       { value: 'inserir_auditoria',    label: 'Inserir Auditoria (importar OS — SharePoint/MicroWork)' },
       { value: 'excluir_auditoria',    label: 'Excluir Auditoria' },
-      { value: 'editar_na_oficina',    label: 'Editar Auditoria (Na Oficina e Responsável, fora do Modo Conferência)' },
-      // Admin reabre qualquer auditoria sem limite; quem tem esta ação reabre só a última da empresa, 1 vez
-      { value: 'reabrir',              label: 'Reabrir Auditoria (só a última da empresa, 1 vez)' },
+      { value: 'editar_na_oficina',    label: 'Editar Auditoria (Na Oficina, Responsável e Prazo de fechamento — fora do Modo Conferência)' },
+      // Admin reabre qualquer auditoria sem limite; quem tem esta ação reabre só a última da empresa, 1 vez,
+      // dentro da janela e do prazo máximo definidos na Regra de Reabertura
+      { value: 'reabrir',              label: 'Reabrir Auditoria (última da empresa, 1 vez, dentro da Regra de Reabertura)' },
       { value: 'cadastrar_situacoes',  label: 'Cadastrar Situações de Auditoria' },
+      { value: 'programar_auditorias', label: 'Programar Auditorias (geração automática e Regra de Reabertura)' },
       // Modo Conferência
       { value: 'conferir',             label: 'Conferir — alterar Na Oficina no Modo Conferência' },
       { value: 'pendenciar',           label: 'Pendenciar OS selecionadas (Na Oficina = Não em lote)' },
       { value: 'concluir_conferencia', label: 'Botão Conferido (concluir conferência e definir prazo)' },
       // Modo Relatório
-      { value: 'responder_os',         label: 'Responder OS (Situação, Observação, Dt. Previsão e Excluir informação)' },
+      { value: 'responder_os',         label: 'Responder OS na tabela (Situação, Observação, Dt. Previsão e botão gravar)' },
       { value: 'concluir_respostas',   label: 'Concluir Respostas (encerrar como Respondido Total)' },
       { value: 'voltar_etapa',         label: 'Voltar Etapa (A Responder → Conferência)' },
     ],

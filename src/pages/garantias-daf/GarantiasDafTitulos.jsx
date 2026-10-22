@@ -20,6 +20,7 @@ const parseNFServico = (v) => {
 export default function GarantiasDafTitulos() {
   const { isAdmin, empresasPermitidas, user, hasActionOrDefault, hasPermission } = useAuth()
   const canEditarTitulo = hasActionOrDefault('garantias-daf-titulos', 'editar')
+  const canEditarGarantia = hasActionOrDefault('garantias-daf-titulos', 'editar_garantia')
   const location = useLocation()
   const navigate = useNavigate()
 
@@ -699,14 +700,16 @@ export default function GarantiasDafTitulos() {
                         >
                           <Eye className="h-3.5 w-3.5" />
                         </button>
-                        <button
-                          type="button"
-                          onClick={irParaOS}
-                          className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
-                          title="Editar Garantia — vincular OS e informar envio à fábrica"
-                        >
-                          <Edit2 className="h-3.5 w-3.5" />
-                        </button>
+                        {canEditarGarantia && (
+                          <button
+                            type="button"
+                            onClick={irParaOS}
+                            className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                            title="Editar Garantia — vincular OS e informar envio à fábrica"
+                          >
+                            <Edit2 className="h-3.5 w-3.5" />
+                          </button>
+                        )}
                       </div>
                     </td>
                     <td className="p-3 whitespace-nowrap">

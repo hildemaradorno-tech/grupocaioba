@@ -139,6 +139,11 @@ export default function AuditoriaOsAberto() {
   const [prazoHora, setPrazoHora] = useState('15:00')
   const [agora, setAgora] = useState(() => Date.now()) // relógio do contador regressivo
 
+  // ── Regra de reabertura (engrenagem, só Admin) — aud_configuracoes ──
+  const [configAud, setConfigAud] = useState(null)
+  const [formRegra, setFormRegra] = useState({ reabertura_janela_dias: 1, reabertura_horas: 8, expediente_inicio: '08:00', expediente_fim: '18:00', reabertura_pular_fds: true })
+  const [salvandoRegra, setSalvandoRegra] = useState(false)
+
   // ── Data de atualização do arquivo ROF001_OSABERTA (fonte da importação) ──
   const [arquivoAtualizadoEm, setArquivoAtualizadoEm] = useState(null)
   const [arquivoInfoStatus, setArquivoInfoStatus] = useState('carregando') // carregando | ok | erro
@@ -154,6 +159,7 @@ export default function AuditoriaOsAberto() {
   const loadApoio = useCallback(async () => {
     // Encerra prazos vencidos antes de listar (o pg_cron também faz isso a cada 5 min)
     await apiService.encerrarPrazosAuditoria().catch(() => {})
+    apiService.getAuditoriaConfig().then(setConfigAud).catch(() => {})
     const [emps, funcs, cargos, sit, auds] = await Promise.all([
       apiService.getEmpresas(),
       apiService.getFuncionarios(),
@@ -502,6 +508,23 @@ export default function AuditoriaOsAberto() {
   }, [auditoriaId, statusAud])
   const soReaberturas = reaberturas.filter(r => (r.tipo || 'reabertura') === 'reabertura')
 
+  // Janela de reabertura: até o FIM DO EXPEDIENTE do N-ésimo dia (útil, se marcado) após o fechamento.
+  // 0 = só no mesmo dia do fechamento. Admin não tem essa trava.
+  const fmtDataHora = (d) => `${d.toLocaleDateString('pt-BR')} às ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
+  const limiteJanelaReabertura = (() => {
+    const fechadoEm = auditoriaAtual?.respondido_em || auditoriaAtual?.status_atualizado_em
+    if (!auditoriaEncerrada || !fechadoEm || !configAud) return null
+    const dias = Number(configAud.reabertura_janela_dias ?? 1)
+    const pularFds = configAud.reabertura_pular_fds ?? true
+    const ehFds = (dt) => dt.getDay() === 0 || dt.getDay() === 6
+    const d = new Date(fechadoEm)
+    let restantes = dias
+    while (restantes > 0) { d.setDate(d.getDate() + 1); if (!pularFds || !ehFds(d)) restantes-- }
+    const [hh, mm] = String(configAud.expediente_fim || '18:00').split(':').map(Number)
+    d.setHours(hh || 0, mm || 0, 0, 0)
+    return d
+  })()
+
   const reabrir = (() => {
     if (!auditoriaAtual) return { pode: false, motivo: 'Selecione uma auditoria' }
     if (!auditoriaEncerrada) return { pode: false, motivo: 'Só para auditoria encerrada (Respondido / Sem Resposta)' }
@@ -509,13 +532,27 @@ export default function AuditoriaOsAberto() {
     if (!hasAction('auditoria-os-aberto', 'reabrir')) return { pode: false, motivo: 'Sem permissão para reabrir' }
     if (!ehUltimaDaEmpresa) return { pode: false, motivo: 'Só a última auditoria da empresa pode ser reaberta — antigas: somente Admin' }
     if (soReaberturas.some(r => !r.por_admin)) return { pode: false, motivo: 'Já reaberta uma vez — somente o Admin pode reabrir novamente' }
-    return { pode: true, motivo: 'Volta para A Responder com novo prazo (permitido 1 vez)' }
+    if (limiteJanelaReabertura && Date.now() > limiteJanelaReabertura.getTime()) {
+      return { pode: false, motivo: `Prazo para reabrir encerrou em ${fmtDataHora(limiteJanelaReabertura)} — somente o Admin` }
+    }
+    return {
+      pode: true,
+      motivo: `Volta para A Responder (1 vez)${limiteJanelaReabertura ? ` — pode reabrir até ${fmtDataHora(limiteJanelaReabertura)}` : ''}`,
+    }
   })()
   const podeCadastrarSituacoes = pode('cadastrar_situacoes')
 
   // ── Programar auditorias: carregar / salvar / excluir ──
   const abrirModalProgramar = async () => {
     setFormAg(AG_VAZIO); setExcluirAgId(null); setModalProgramar(true)
+    // Regra de reabertura fica dentro de Programar auditorias
+    setFormRegra({
+      reabertura_janela_dias: configAud?.reabertura_janela_dias ?? 1,
+      reabertura_horas: configAud?.reabertura_horas ?? 8,
+      expediente_inicio: String(configAud?.expediente_inicio || '08:00').slice(0, 5),
+      expediente_fim: String(configAud?.expediente_fim || '18:00').slice(0, 5),
+      reabertura_pular_fds: configAud?.reabertura_pular_fds ?? true,
+    })
     try { setAgendamentos(await apiService.getAuditoriaAgendamentos()) } catch (e) { setErro(e.message || String(e)) }
   }
   const formAgValido = formAg.empresa_id && formAg.dias_semana.length > 0 && /^\d{2}:\d{2}/.test(formAg.hora || '')
@@ -662,15 +699,56 @@ export default function AuditoriaOsAberto() {
 
   // ── Prazo de resposta ──
   const abrirModalPrazo = (procedimento) => {
-    const amanha = new Date(); amanha.setDate(amanha.getDate() + 1)
     const pad = (n) => String(n).padStart(2, '0')
-    setPrazoData(`${amanha.getFullYear()}-${pad(amanha.getMonth() + 1)}-${pad(amanha.getDate())}`)
-    setPrazoHora('15:00')
-    setModalPrazo({ procedimento })
+    // Reabertura → prazo calculado pela Regra de Reabertura (engrenagem); Conferido → amanhã 15:00
+    const d = procedimento === 'Reaberta' ? calcularPrazoReabertura() : (() => {
+      const a = new Date(); a.setDate(a.getDate() + 1); a.setHours(15, 0, 0, 0); return a
+    })()
+    setPrazoData(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`)
+    setPrazoHora(`${pad(d.getHours())}:${pad(d.getMinutes())}`)
+    // Reabertura: a regra define o LIMITE (data/hora máxima); o usuário escolhe até ele
+    setModalPrazo({ procedimento, limite: procedimento === 'Reaberta' ? d.getTime() : null })
   }
 
+  // Regra de reabertura: prazo MÁXIMO = agora + N horas, contando só dentro do expediente
+  // (início–fim) e, se marcado, só em dias úteis. Fora do expediente, a contagem começa no próximo início.
+  const calcularPrazoReabertura = (cfg = configAud, base = new Date()) => {
+    const horas = Math.max(1, Number(cfg?.reabertura_horas ?? 8))
+    const hm = (v, padrao) => { const [h, m] = String(v || padrao).split(':').map(Number); return (h || 0) * 60 + (m || 0) }
+    const ini = hm(cfg?.expediente_inicio, '08:00')
+    let fim = hm(cfg?.expediente_fim, '18:00')
+    if (fim <= ini) fim = ini + 60 // proteção: expediente inválido vira 1h
+    const pularFds = cfg?.reabertura_pular_fds ?? true
+    const ehFds = (dt) => dt.getDay() === 0 || dt.getDay() === 6
+    const emMinuto = (dt, min) => { const x = new Date(dt); x.setHours(Math.floor(min / 60), min % 60, 0, 0); return x }
+    const proximoDia = (dt) => { const x = new Date(dt); x.setDate(x.getDate() + 1); return emMinuto(x, ini) }
+
+    let restante = horas * 60
+    let cur = new Date(base); cur.setSeconds(0, 0)
+    for (let guarda = 0; guarda < 400; guarda++) {
+      if (pularFds && ehFds(cur)) { cur = proximoDia(cur); continue }
+      const inicioDia = emMinuto(cur, ini), fimDia = emMinuto(cur, fim)
+      if (cur < inicioDia) cur = inicioDia
+      if (cur >= fimDia) { cur = proximoDia(cur); continue }
+      const disponivel = Math.round((fimDia - cur) / 60000)
+      if (restante <= disponivel) return new Date(cur.getTime() + restante * 60000)
+      restante -= disponivel
+      cur = proximoDia(cur)
+    }
+    return cur
+  }
+  // Na reabertura, só o Admin pode mudar o prazo calculado pela regra
+  // Reabertura por não-Admin: o prazo pode ser qualquer data/hora ATÉ o limite da regra
+  const limiteRegraMs = modalPrazo?.procedimento === 'Reaberta' && !isAdminEfetivo ? modalPrazo.limite : null
+  const limiteRegraTexto = limiteRegraMs
+    ? `${new Date(limiteRegraMs).toLocaleDateString('pt-BR')} às ${new Date(limiteRegraMs).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
+    : ''
+  const limiteRegraData = limiteRegraMs ? (() => { const d = new Date(limiteRegraMs); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` })() : undefined
+
   const prazoEscolhido = prazoData && prazoHora ? new Date(`${prazoData}T${prazoHora}:00`) : null // horário local
-  const prazoValido = !!prazoEscolhido && !isNaN(prazoEscolhido.getTime()) && prazoEscolhido.getTime() > Date.now()
+  const prazoNoFuturo = !!prazoEscolhido && !isNaN(prazoEscolhido.getTime()) && prazoEscolhido.getTime() > Date.now()
+  const prazoDentroDoLimite = !limiteRegraMs || (!!prazoEscolhido && prazoEscolhido.getTime() <= limiteRegraMs)
+  const prazoValido = prazoNoFuturo && prazoDentroDoLimite
 
   const handleConfirmarPrazo = async () => {
     if (!modalPrazo || !auditoriaAtual || !prazoValido) return
@@ -880,8 +958,8 @@ export default function AuditoriaOsAberto() {
       desc: reabrir.motivo, disabled: !reabrir.pode, onClick: () => abrirModalPrazo('Reaberta'), cor: 'text-amber-600',
     },
     {
-      id: 'programar', visivel: !!isAdminEfetivo, icon: CalendarClock, label: 'Programar auditorias',
-      desc: 'Gerar auditorias automáticas por dia da semana e horário', disabled: false, onClick: abrirModalProgramar, cor: 'text-emerald-600',
+      id: 'programar', visivel: pode('programar_auditorias'), // Admin ou grupo com a ação icon: CalendarClock, label: 'Programar auditorias',
+      desc: 'Auditorias automáticas e regra de reabertura', disabled: false, onClick: abrirModalProgramar, cor: 'text-emerald-600',
     },
     {
       id: 'situacoes', visivel: podeCadastrarSituacoes, icon: Tag, label: 'Situações de auditoria',
@@ -946,7 +1024,7 @@ export default function AuditoriaOsAberto() {
                 <option value="">— Selecione uma auditoria —</option>
                 {auditoriasFiltradas.map(a => (
                   <option key={a.id} value={a.id}>
-                    {fmtDate(a.data_auditoria)} — {a.total_os} OS · {{ conferencia: 'Conferência', a_responder: 'A Responder', respondido_total: 'Respondido Total', respondido_parcial: 'Respondido Parcial', sem_resposta: 'Sem Resposta' }[a.status || 'conferencia']}
+                    {fmtDate(a.data_auditoria)} — {a.total_os} OS · {['respondido_total', 'respondido_parcial', 'sem_resposta'].includes(a.status) ? 'Finalizada' : 'Em andamento'}
                   </option>
                 ))}
               </select>
@@ -1698,6 +1776,7 @@ export default function AuditoriaOsAberto() {
                     type="date"
                     value={prazoData}
                     onChange={e => setPrazoData(e.target.value)}
+                    max={limiteRegraData}
                     className="w-full text-xs p-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-indigo-500/20"
                   />
                 </div>
@@ -1711,8 +1790,18 @@ export default function AuditoriaOsAberto() {
                   />
                 </div>
               </div>
-              {!prazoValido && (
+              {modalPrazo.procedimento === 'Reaberta' && (
+                <p className="text-[10px] text-amber-700 font-semibold">
+                  {limiteRegraMs
+                    ? `Regra de Reabertura: prazo máximo até ${limiteRegraTexto}. Pode escolher qualquer data e horário até esse limite.`
+                    : 'Regra de Reabertura aplicada — como Admin, você pode definir qualquer prazo.'}
+                </p>
+              )}
+              {!prazoNoFuturo && (
                 <p className="text-[10px] text-red-600 font-semibold">Informe uma data e horário no futuro.</p>
+              )}
+              {prazoNoFuturo && !prazoDentroDoLimite && (
+                <p className="text-[10px] text-red-600 font-semibold">Passou do limite da regra — escolha até {limiteRegraTexto}.</p>
               )}
             </div>
             <div className="flex items-center justify-end gap-2 p-3 bg-slate-50 border-t border-slate-100">
@@ -1932,6 +2021,115 @@ export default function AuditoriaOsAberto() {
               </div>
 
               <div className="p-4 space-y-4 overflow-y-auto">
+                {/* Regra de reabertura (prazo de toda reabertura; usuário não altera, só o Admin) */}
+                {(() => {
+                  const horasNum = Number(formRegra.reabertura_horas)
+                  const janelaNum = Number(formRegra.reabertura_janela_dias)
+                  const horaOk = (v) => /^\d{2}:\d{2}/.test(v || '')
+                  const valida = horasNum >= 1 && horasNum <= 200 && janelaNum >= 0 && janelaNum <= 30
+                    && horaOk(formRegra.expediente_inicio) && horaOk(formRegra.expediente_fim)
+                    && formRegra.expediente_fim > formRegra.expediente_inicio
+                  const previa = calcularPrazoReabertura({ ...formRegra, reabertura_horas: horasNum || 1 })
+                  const salvarRegra = async () => {
+                    if (!valida) return
+                    setSalvandoRegra(true)
+                    try {
+                      const salvo = await apiService.saveAuditoriaConfig({
+                        reabertura_janela_dias: janelaNum,
+                        reabertura_horas: horasNum,
+                        expediente_inicio: formRegra.expediente_inicio,
+                        expediente_fim: formRegra.expediente_fim,
+                        reabertura_pular_fds: formRegra.reabertura_pular_fds,
+                      }, user?.email || '')
+                      setConfigAud(salvo)
+                    } catch (e) { setErro(e.message || String(e)) }
+                    finally { setSalvandoRegra(false) }
+                  }
+                  const mudou = !configAud
+                    || janelaNum !== Number(configAud.reabertura_janela_dias)
+                    || horasNum !== Number(configAud.reabertura_horas)
+                    || formRegra.expediente_inicio !== String(configAud.expediente_inicio || '').slice(0, 5)
+                    || formRegra.expediente_fim !== String(configAud.expediente_fim || '').slice(0, 5)
+                    || formRegra.reabertura_pular_fds !== configAud.reabertura_pular_fds
+                  return (
+                    <div className="bg-white rounded-lg border border-amber-200 shadow-sm p-4 space-y-3">
+                      <div className="flex items-start gap-2">
+                        <Clock className="h-4 w-4 text-amber-600 mt-0.5" />
+                        <div>
+                          <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Regra de reabertura</h4>
+                          <p className="text-[11px] text-slate-500 mt-0.5">
+                            1) Até quantos dias depois do FECHAMENTO a auditoria ainda pode ser reaberta (vale até o fim do expediente do último dia).
+                            2) Depois de reaberta, por quantas HORAS DE EXPEDIENTE ela pode ficar aberta — o usuário escolhe qualquer prazo até esse limite. O Admin não tem limites.
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-end gap-3 flex-wrap">
+                        <div className="flex flex-col gap-1 w-48">
+                          <label className="text-[10px] font-bold text-slate-400 uppercase">Pode reabrir até (dias após fechar)</label>
+                          <input
+                            type="number" min={0} max={30}
+                            value={formRegra.reabertura_janela_dias}
+                            onChange={e => setFormRegra(p => ({ ...p, reabertura_janela_dias: e.target.value }))}
+                            className="text-xs p-2 border border-slate-300 rounded-md"
+                          />
+                        </div>
+                        <div className="flex flex-col gap-1 w-44">
+                          <label className="text-[10px] font-bold text-slate-400 uppercase">Horas de expediente (máx.)</label>
+                          <input
+                            type="number" min={1} max={200}
+                            value={formRegra.reabertura_horas}
+                            onChange={e => setFormRegra(p => ({ ...p, reabertura_horas: e.target.value }))}
+                            className="text-xs p-2 border border-slate-300 rounded-md"
+                          />
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <label className="text-[10px] font-bold text-slate-400 uppercase">Início do expediente</label>
+                          <input
+                            type="time"
+                            value={formRegra.expediente_inicio}
+                            onChange={e => setFormRegra(p => ({ ...p, expediente_inicio: e.target.value }))}
+                            className="text-xs p-2 border border-slate-300 rounded-md"
+                          />
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <label className="text-[10px] font-bold text-slate-400 uppercase">Fim do expediente</label>
+                          <input
+                            type="time"
+                            value={formRegra.expediente_fim}
+                            onChange={e => setFormRegra(p => ({ ...p, expediente_fim: e.target.value }))}
+                            className="text-xs p-2 border border-slate-300 rounded-md"
+                          />
+                        </div>
+                        <label className="flex items-center gap-2 text-xs text-slate-600 pb-2">
+                          <input
+                            type="checkbox"
+                            checked={formRegra.reabertura_pular_fds}
+                            onChange={e => setFormRegra(p => ({ ...p, reabertura_pular_fds: e.target.checked }))}
+                            className="accent-amber-600"
+                          />
+                          Contar só dias úteis (pular sábado e domingo)
+                        </label>
+                        <button
+                          onClick={salvarRegra}
+                          disabled={salvandoRegra || !valida || !mudou}
+                          className="ml-auto flex items-center gap-1.5 px-4 py-2 rounded-md text-xs font-semibold text-white bg-amber-600 hover:bg-amber-700 shadow-sm disabled:opacity-40"
+                        >
+                          <Save className="h-3.5 w-3.5" />
+                          {salvandoRegra ? 'Salvando...' : 'Salvar regra'}
+                        </button>
+                      </div>
+                      <div className="rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+                        Exemplo: auditoria fechada hoje pode ser reaberta até o fim do expediente de{' '}
+                        <strong>{janelaNum === 0 ? 'hoje' : `${janelaNum} dia(s)${formRegra.reabertura_pular_fds ? ' úteis' : ''} depois`}</strong>
+                        {' '}({formRegra.expediente_fim}). Se reaberta agora, o prazo poderia ir até{' '}
+                        <strong>{previa.toLocaleDateString('pt-BR')} às {previa.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</strong>.
+                        {!mudou && <span className="ml-1 text-green-700 font-semibold">· Regra salva.</span>}
+                      </div>
+                      {!valida && <p className="text-[10px] text-red-600 font-semibold">Dias para reabrir entre 0 e 30, horas entre 1 e 200, e o fim do expediente precisa ser depois do início.</p>}
+                    </div>
+                  )
+                })()}
+
                 {/* Formulário */}
                 <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-4 space-y-3">
                   <h4 className="text-xs font-bold text-slate-600 uppercase tracking-wider">{formAg.id ? 'Editar programação' : 'Nova programação'}</h4>
