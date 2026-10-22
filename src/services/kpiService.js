@@ -50,6 +50,7 @@ function buildUrl(endpoint, params = {}) {
   if (params.empresaOficina) qs.set('empresaOficina', params.empresaOficina)
   if (params.empresaChefeOficina) qs.set('empresaChefeOficina', params.empresaChefeOficina)
   if (params.empresaFunilaria) qs.set('empresaFunilaria', params.empresaFunilaria)
+  if (params.apenas) qs.set('apenas', params.apenas) // Bloco 3 - Serviços: só um quadro por empresa (Campanha)
   if (params.mecanico && params.mecanico !== 'todos') qs.set('mecanico', params.mecanico)
   if (params.vendedor) qs.set('vendedor', params.vendedor)
   if (params.consultor) qs.set('consultor', params.consultor)

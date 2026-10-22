@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
-import { Trophy, Calculator, BookOpen, BarChart2, Loader2, RefreshCw, Info as InfoIcon, Lock, Unlock, Plus, Trash2, Eraser, Copy, CopyPlus, Settings, FileText, X, ChevronDown, Banknote, Save, Users } from 'lucide-react'
+import { Trophy, Calculator, BookOpen, BarChart2, Loader2, RefreshCw, Info as InfoIcon, Lock, Unlock, Plus, Trash2, Eraser, Copy, CopyPlus, Settings, FileText, X, ChevronDown, Banknote, Save, Users, Pencil } from 'lucide-react'
 import { Bloco3ServicosVisualizacao } from '../kpi/KpiBloco3Servicos'
 import { createPortal } from 'react-dom'
 import { apiService } from '../../services/api'
@@ -1375,11 +1375,16 @@ function comValor(obj, caminho, valor) {
 // Linhas do quadro Bônus-alvo da empresa selecionada: onde fica a Meta e a Supermeta de cada função.
 // Funções com bônus-alvo (alvo[unidade]) guardam a Supermeta em supermeta[unidade] (sem valor salvo,
 // vale 120% da Meta, como no regulamento). Chefe e Gerente Geral usam o valor fixo das faixas 100 e 120.
-// Linhas excluídas na aba Regras (lixeira) ficam em regras.linhasRemovidas[unidade][linha] = true.
+// Linhas excluídas na aba Regras (engrenagem › Excluir) ficam em regras.linhasRemovidas[unidade][linha] = true.
 const linhaRemovida = (regras, unidade, k) => !!regras?.linhasRemovidas?.[unidade]?.[k]
 
+// Nome editado (engrenagem › Editar) das funções fixas fica em regras.nomesLinha[unidade][linha];
+// grupos criados guardam o nome no próprio grupo.
 function linhasBonus(regras, unidade, unidades) {
-  return montarLinhasBonus(regras, unidade, unidades).filter((l) => !linhaRemovida(regras, unidade, l.k))
+  const nomes = regras?.nomesLinha?.[unidade] || {}
+  return montarLinhasBonus(regras, unidade, unidades)
+    .filter((l) => !linhaRemovida(regras, unidade, l.k))
+    .map((l) => (!l.grupo && nomes[l.k] ? { ...l, nome: nomes[l.k] } : l))
 }
 function montarLinhasBonus(regras, unidade, unidades) {
   const F = regras.funcoes
@@ -1542,10 +1547,13 @@ const QUADROS_BLOCO3 = {
 // Quadros que a Matriz consegue filtrar por pessoa (parâmetro do backend) — só neles existe "Individual".
 const FILTRO_PESSOA = { 'CONSULTOR DE SERVIÇOS': 'consultor', 'MECÂNICO': 'mecanico', 'VENDEDOR DE PEÇAS': 'vendedor' }
 // Configuração efetiva do quadro de uma linha: a salva ou o padrão; "individual" só vale se o quadro permitir.
+// Quadros renomeados na Matriz: regras já salvas com o nome antigo continuam valendo.
+const QUADRO_RENOMEADO = { 'OFICINA': 'SETOR DE MECÂNICA' }
 function cfgQuadroDaLinha(regras, unidade, k) {
   const c = regras?.quadroLinha?.[unidade]?.[k] || quadroPadraoDaLinha(k, unidade)
-  const podeIndividual = !!FILTRO_PESSOA[c.quadro]
-  return { bloco: c.bloco || 'servicos', quadro: c.quadro || '', individual: podeIndividual && (c.individual ?? true) }
+  const quadro = QUADRO_RENOMEADO[c.quadro] || c.quadro || ''
+  const podeIndividual = !!FILTRO_PESSOA[quadro]
+  return { bloco: c.bloco || 'servicos', quadro, individual: podeIndividual && (c.individual ?? true) }
 }
 function quadroPadraoDaLinha(k, unidade) {
   if (k === 'consultor') return { bloco: 'servicos', quadro: 'CONSULTOR DE SERVIÇOS', individual: true }
@@ -1577,8 +1585,7 @@ function EditorCargos({ cargosLista, empresaPadrao = '', quadroInicial, novo, li
   const [quadro, setQuadro] = useState(quadroInicial?.quadro || '')
   const [individual, setIndividual] = useState(!!quadroInicial?.individual)
   const podeIndividual = !!FILTRO_PESSOA[quadro]
-  const ehGrupo = novo || !!linha?.grupo
-  const [nome, setNome] = useState(grupo?.nome || '')
+  const [nome, setNome] = useState(grupo?.nome || linha?.nome || '')
   const [marcados, setMarcados] = useState(() => new Set((selecionados || []).map(normNome)))
   const [busca, setBusca] = useState('')
   // Filtro de empresa (só para encontrar os cargos; a seleção vale pelo nome do cargo).
@@ -1609,24 +1616,20 @@ function EditorCargos({ cargosLista, empresaPadrao = '', quadroInicial, novo, li
     .filter((o) => !termo || o.k.includes(termo) || normNome(o.agrupamento).includes(termo))
     .sort((a, b) => (marcados.has(b.k) - marcados.has(a.k)) || a.nome.localeCompare(b.nome))
   const alternar = (k) => setMarcados((x) => { const n = new Set(x); if (n.has(k)) n.delete(k); else n.add(k); return n })
-  const podeSalvar = (!ehGrupo || nome.trim()) && marcados.size > 0
+  const podeSalvar = !!nome.trim() && marcados.size > 0
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) onCancelar() }}>
       <div role="dialog" aria-modal="true" aria-label="Cargos da função" className="w-full max-w-xl max-h-[88vh] flex flex-col rounded-xl bg-white shadow-2xl">
         <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-200">
-          <p className="text-sm font-bold text-slate-900">{novo ? 'Adicionar cargo' : `Cargos — ${linha?.nome}`}</p>
+          <p className="text-sm font-bold text-slate-900">{novo ? 'Adicionar cargo' : `Editar — ${linha?.nome}`}</p>
           <button type="button" onClick={onCancelar} aria-label="Fechar" className="h-8 w-8 inline-flex items-center justify-center rounded-md text-slate-500 hover:bg-slate-100"><X className="h-4 w-4" /></button>
         </div>
         <div className="p-5 space-y-3 overflow-auto">
-          {ehGrupo && (
-            <>
-              <label className="block text-xs">
-                <span className="font-semibold text-slate-700">Descrição</span>
-                <input type="text" value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Ex.: Lavadores"
-                  className="mt-1 w-full text-xs p-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
-              </label>
-            </>
-          )}
+          <label className="block text-xs">
+            <span className="font-semibold text-slate-700">Descrição</span>
+            <input type="text" value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Ex.: Lavadores"
+              className="mt-1 w-full text-xs p-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
+          </label>
           {/* Bloco 3 da Matriz KPIs: de onde vêm os valores da Apuração e do Resultado desta função. */}
           <div className="text-xs space-y-2 rounded-md border border-slate-200 bg-slate-50/60 p-3">
             <span className="block font-semibold text-slate-700">Bloco 3 - Serviços (Matriz KPIs)</span>
@@ -1715,36 +1718,59 @@ function bloqueioAtingimentoMinimo(regras, totalMes) {
 }
 
 // Botão de engrenagem com um menu de ações (fecha ao clicar fora ou Esc).
-function MenuEngrenagem({ itens }) {
+// flutuante: menu aberto por cima da página, alinhado à esquerda do botão (dentro de tabela com
+// rolagem, o menu comum ficaria cortado). Fecha ao rolar a página.
+function MenuEngrenagem({ itens, flutuante = false, titulo = 'Mais ações', compacto = false }) {
   const [aberto, setAberto] = useState(false)
+  const [pos, setPos] = useState(null)
   const ref = useRef(null)
+  const menuRef = useRef(null)
   useEffect(() => {
     if (!aberto) return undefined
-    const fora = (e) => { if (ref.current && !ref.current.contains(e.target)) setAberto(false) }
+    const fora = (e) => {
+      if (ref.current?.contains(e.target) || menuRef.current?.contains(e.target)) return
+      setAberto(false)
+    }
     const esc = (e) => { if (e.key === 'Escape') setAberto(false) }
+    const rolou = () => setAberto(false)
     document.addEventListener('mousedown', fora)
     document.addEventListener('keydown', esc)
-    return () => { document.removeEventListener('mousedown', fora); document.removeEventListener('keydown', esc) }
-  }, [aberto])
+    if (flutuante) window.addEventListener('scroll', rolou, true)
+    return () => {
+      document.removeEventListener('mousedown', fora)
+      document.removeEventListener('keydown', esc)
+      window.removeEventListener('scroll', rolou, true)
+    }
+  }, [aberto, flutuante])
   if (!itens.length) return null // nenhuma ação liberada para o grupo: sem engrenagem
+  const alternar = () => {
+    if (!aberto && flutuante && ref.current) {
+      const r = ref.current.getBoundingClientRect()
+      setPos({ top: r.bottom + 4, left: r.left })
+    }
+    setAberto((v) => !v)
+  }
+  const menu = (
+    <div ref={menuRef} role="menu"
+      className={`${flutuante ? 'fixed z-50 w-44' : 'absolute right-0 top-full mt-1 z-30 w-64'} rounded-lg border border-slate-200 bg-white shadow-lg py-1`}
+      style={flutuante && pos ? { top: pos.top, left: pos.left } : undefined}>
+      {itens.map(({ rotulo, icone: Icone, onClick, desabilitado, dica, perigo }) => (
+        <button key={rotulo} type="button" role="menuitem" disabled={desabilitado} title={dica}
+          onClick={() => { setAberto(false); onClick() }}
+          className={`w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-left disabled:opacity-50 ${perigo ? 'text-red-600 hover:bg-red-50' : 'text-slate-700 hover:bg-slate-50'}`}>
+          <Icone className={`h-3.5 w-3.5 ${perigo ? 'text-red-500' : 'text-slate-500'} ${desabilitado ? 'animate-spin' : ''}`} /> {rotulo}
+        </button>
+      ))}
+    </div>
+  )
   return (
-    <div ref={ref} className="relative">
-      <button type="button" onClick={() => setAberto((v) => !v)} aria-expanded={aberto} aria-haspopup="menu"
-        title="Mais ações" aria-label="Mais ações"
-        className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white p-1.5 text-slate-600 hover:bg-slate-50">
-        <Settings className="h-4 w-4" />
+    <div ref={ref} className="relative inline-block">
+      <button type="button" onClick={alternar} aria-expanded={aberto} aria-haspopup="menu"
+        title={titulo} aria-label={titulo}
+        className={`inline-flex items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 ${compacto ? 'h-7 w-7' : 'p-1.5'}`}>
+        <Settings className={compacto ? 'h-3.5 w-3.5' : 'h-4 w-4'} />
       </button>
-      {aberto && (
-        <div role="menu" className="absolute right-0 top-full mt-1 z-30 w-64 rounded-lg border border-slate-200 bg-white shadow-lg py-1">
-          {itens.map(({ rotulo, icone: Icone, onClick, desabilitado, dica }) => (
-            <button key={rotulo} type="button" role="menuitem" disabled={desabilitado} title={dica}
-              onClick={() => { setAberto(false); onClick() }}
-              className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 text-left disabled:opacity-50">
-              <Icone className={`h-3.5 w-3.5 text-slate-500 ${desabilitado ? 'animate-spin' : ''}`} /> {rotulo}
-            </button>
-          ))}
-        </div>
-      )}
+      {aberto && (flutuante ? createPortal(menu, document.body) : menu)}
     </div>
   )
 }
@@ -1793,6 +1819,7 @@ function AbaRegras({ onSalvarMes, cargosLista = [], travaPeriodicidade = null, p
       return
     }
     alterar(ed.linha.cargos, cargos)
+    if (nome && nome !== ed.linha.nome) alterar(['nomesLinha', unidade, ed.linha.k], nome)
   }
   // Copiar para os próximos meses do período: no 1º mês de um bimestre/trimestre, grava as regras da
   // tela (todas: Regras-chave, Bônus-alvo, Faixas, cargos) neste mês e nos meses seguintes do período,
@@ -2239,11 +2266,11 @@ function AbaRegras({ onSalvarMes, cargosLista = [], travaPeriodicidade = null, p
                   return (
                     <tr key={l.k} className={`border-b border-slate-100 last:border-0 ${metaTravada ? 'bg-slate-50' : ''}`}>
                       <td className="p-1.5 text-center">
-                        <button type="button" onClick={() => excluirLinha(l)} title={`Excluir a função "${l.nome}" e as metas dela`}
-                          aria-label={`Excluir ${l.nome}`}
-                          className="h-7 w-7 inline-flex items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 hover:bg-red-50 hover:text-red-600 hover:border-red-200">
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
+                        <MenuEngrenagem flutuante compacto titulo={`Ações — ${l.nome}`} itens={[
+                          { rotulo: 'Editar', icone: Pencil, onClick: () => setEditorCargos({ linha: l }), dica: 'Editar descrição, quadro do Bloco 3 e cargos desta função' },
+                          { rotulo: 'Excluir', icone: Trash2, perigo: true, onClick: () => excluirLinha(l), dica: `Excluir a função "${l.nome}" e as metas dela` },
+                        ]} />
+
                       </td>
                       <td className={`p-2 font-medium whitespace-nowrap ${metaTravada ? 'text-slate-400' : 'text-slate-700'}`}>
                         {l.nome}

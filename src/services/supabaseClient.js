@@ -3201,6 +3201,30 @@ export const apiService = {
     return all
   },
 
+  // Regras do sistema — Garantias DAF (registro único, id=1). dias_digitacao controla os cards
+  // A Digitar/Digitação Atrasada, o corte em Aguardando Aprovação DAF e o alerta de OS na
+  // oficina sem movimentação.
+  getConfiguracoesGarantias: async () => {
+    const { data, error } = await supabase
+      .from('gar_configuracoes')
+      .select('*')
+      .eq('id', 1)
+      .single()
+    if (error) throw error
+    return data
+  },
+
+  updateConfiguracoesGarantias: async (campos, userEmail) => {
+    const { data, error } = await supabase
+      .from('gar_configuracoes')
+      .update({ ...campos, atualizado_por: userEmail, atualizado_em: new Date().toISOString() })
+      .eq('id', 1)
+      .select()
+      .single()
+    if (error) throw error
+    return data
+  },
+
   getGarantias: async (filtros = {}) => {
     // Non-admin with no empresa permissions → nothing to show (prevent full-table leak)
     if (filtros.empresa_ids !== undefined && filtros.empresa_ids.length === 0) return []

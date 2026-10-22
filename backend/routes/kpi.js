@@ -50,7 +50,7 @@ import {
 } from '../services/kpiSyncService.js'
 import { getPesos, setPeso, aplicarPesos } from '../services/kpiPesos.js'
 import { getMetasManuais, setMetaManual, aplicarMetasManuais } from '../services/kpiMetasManuais.js'
-import { getMetaPecasPeriodos, getMetaOficinaPeriodos, getMetaMecanicoPeriodos, getMetaMargemOficinaPeriodos, getMetaPecasBalcaoPeriodos, getMetaMargemBalcaoPeriodos, getMetaTrpPeriodos, getMetaTicketMedioPeriodos, limparCacheMetas } from '../services/kpiMetas.js'
+import { getMetaPecasPeriodos, getMetaOficinaPeriodos, getMetaMecanicoPeriodos, getMetaMargemOficinaPeriodos, getMetaPecasBalcaoPeriodos, getMetaMargemBalcaoPeriodos, getMetaTrpPeriodos, getMetaTicketMedioPeriodos, getMetaFunilariaPeriodos, limparCacheMetas } from '../services/kpiMetas.js'
 
 const router = Router()
 
@@ -509,7 +509,7 @@ function mergeBlocoServicos(quadros, consultorData, mecanicoData, metaConsultor,
     }
     if (quadro.tituloGerente === 'SETOR FUNILARIA/PINTURA') {
       const kpis = quadro.kpis.map(kpi => {
-        if (kpi.id === 1) return injectPeriods(kpi, depFunilariaData?.liquido ?? {}, r)
+        if (kpi.id === 1) return injectMeta(injectPeriods(kpi, depFunilariaData?.liquido ?? {}, r), depFunilariaData?.meta)
         return kpi
       })
       return { ...quadro, kpis }
@@ -831,7 +831,7 @@ router.get('/bloco3-servicos', requireConfig, wrap(async (req, res) => {
     empresaChefeOficina ? obterBaseBloco3Servicos(`bloco3-servicos-chefeoficina|${year}|${empresaChefeOficina}`,
       () => montarChefeOficinaBloco3Servicos(year, empresaChefeOficina), { refresh }) : null, // tem meta aprovada → checa aprovação
     empresaFunilaria ? obterBaseBloco3Servicos(`bloco3-servicos-funilaria|${year}|${empresaFunilaria}`,
-      () => montarSetorFunilariaPinturaBloco3Servicos(year, empresaFunilaria), { refresh, checarMetas: false }) : null,
+      () => montarSetorFunilariaPinturaBloco3Servicos(year, empresaFunilaria), { refresh }) : null, // tem meta aprovada → checa aprovação
   ])
   const extras = mergeBlocoServicos(BLOCO_SERVICOS_TEMPLATE.filter(q => QUADROS_EMPRESA.includes(q.tituloGerente)),
     null, null, null, null, null, null, oficina, chefeOficina, funilaria)
@@ -884,7 +884,10 @@ async function montarChefeOficinaBloco3Servicos(year, empresaChefeOficina) {
 async function montarSetorFunilariaPinturaBloco3Servicos(year, empresaFunilaria) {
   let fat = null
   try { fat = await extractFaturamentoFunilariaPintura(year, empresaFunilaria) } catch (_) { /* sem dados */ }
-  return { liquido: fat?.liquido ?? {} }
+  // Meta: Planejamento de Metas aprovado do setor Funilaria/Pintura (tipo 'funilaria'), desta casa.
+  let meta = null
+  try { meta = await getMetaFunilariaPeriodos(year, { empresaNome: EMPRESA_KEY_TO_RECEP[empresaFunilaria] || empresaFunilaria }) } catch (_) { /* sem meta */ }
+  return { liquido: fat?.liquido ?? {}, meta }
 }
 
 // Quadros do Bloco 3 - Serviços com realizado e metas (sem pesos/metas manuais — aplicados na rota).

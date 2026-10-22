@@ -207,6 +207,16 @@ export async function getMetaOficinaPeriodos(ano, { consultorNome = null, empres
   return periodizarMetas(linhas, ano, base.calendario)
 }
 
+// Meta do setor Funilaria/Pintura (tipo 'funilaria' publicado, Peças + Serviços) — quadro SETOR
+// FUNILARIA/PINTURA. empresaNome restringe à casa.
+export async function getMetaFunilariaPeriodos(ano, { empresaNome = null } = {}) {
+  const base = await carregarBase(ano)
+  if (!base) return null
+  const alvoEmp = empresaNome ? normNome(empresaNome) : null
+  const linhas = base.metas.filter(r => r.tipo === 'funilaria' && (!alvoEmp || normNome(r.empresa_nome) === alvoEmp))
+  return periodizarMetas(linhas, ano, base.calendario)
+}
+
 /**
  * Meta de Faturamento Total Oficina (Serviços) do bloco MECÂNICO: só a parcela de
  * Serviços (meta_servicos, sem Peças) do tipo 'mecanico'

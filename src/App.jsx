@@ -55,6 +55,7 @@ import GarantiasDafFaturadas from './pages/garantias-daf/GarantiasDafFaturadas'
 import GarantiasDafTitulos from './pages/garantias-daf/GarantiasDafTitulos'
 import GarantiasDafForm from './pages/garantias-daf/GarantiasDafForm'
 import AuditoriaOsAberto from './pages/garantias-daf/AuditoriaOsAberto'
+import GarantiasDafManual from './pages/garantias-daf/GarantiasDafManual'
 import HondaGarantiasReceber from './pages/honda/HondaGarantiasReceber'
 import BpmProcessos from './pages/bpm/BpmProcessos'
 import BpmModelador from './pages/bpm/BpmModelador'
@@ -256,6 +257,7 @@ export default function App() {
           { path: '/garantias-daf/:id', element: <GarantiasDafForm />, menuPath: '/garantias-daf' },
           { path: '/garantias-daf-historicodeos', element: <GarantiasDafFaturadas />, menuPath: '/garantias-daf-historicodeos' },
           { path: '/garantias-daf-titulos',   element: <GarantiasDafTitulos />,   menuPath: '/garantias-daf-titulos' },
+          { path: '/garantias-daf-manual', element: <GarantiasDafManual />, menuPath: ['/garantias-daf-andamento', '/garantias-daf', '/garantias-daf-historicodeos', '/garantias-daf-titulos'] },
           { path: '/projetos', element: <ProjetosDashboard />, menuPath: 'projetos' },
           { path: '/projetos/manifestacoes', element: <ManifestacoesPainel />, menuPath: ['projetos/manifestacoes', 'projetos'] },
           { path: '/projetos/lista-tarefas', element: <CalendarioProjetos abaInicial="lista" />, menuPath: 'projetos/lista-tarefas' },

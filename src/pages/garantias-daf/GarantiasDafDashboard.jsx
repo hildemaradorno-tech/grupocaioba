@@ -1,7 +1,7 @@
-﻿import React, { useEffect, useState, useCallback, useMemo } from 'react'
+﻿import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { useSessionState } from '../../hooks/useSessionState'
 import { useNavigate } from 'react-router-dom'
-import { Search, Edit2, Trash2, ShieldAlert, FileText, Activity, Clock, AlertTriangle, Filter, RotateCcw, Download, RefreshCw, CheckCircle, XCircle, BarChart2, CheckSquare, Square, Loader2, Info, Eye } from 'lucide-react'
+import { Search, Edit2, Trash2, ShieldAlert, FileText, Activity, Clock, AlertTriangle, Filter, RotateCcw, Download, RefreshCw, CheckCircle, XCircle, BarChart2, CheckSquare, Square, Loader2, Info, Eye, Settings, X, BookOpen } from 'lucide-react'
 import { apiService } from '../../services/api'
 import { useAuth } from '../../context/AuthContext'
 import GarantiasNav from './GarantiasNav'
@@ -49,11 +49,14 @@ const fmt = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', c
 
 const FILTROS_VAZIOS = { numero_os: '', chassi: '', data_inicio: '', data_fim: '', data_fechamento_inicio: '', data_fechamento_fim: '' }
 
-function CardGrupo({ icon: Icon, label, count, valor, diasMedio, ativo, onClick, st }) {
+function CardGrupo({ icon: Icon, label, count, valor, ativo, onClick, st, extraRows }) {
   return (
-    <button
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onClick}
-      className={`rounded-lg border p-3 text-left transition-all hover:shadow-md w-full ${st.bg} ${st.border} ${ativo ? 'ring-2 ring-offset-1 ' + st.ring + ' shadow-md' : 'shadow-sm'}`}
+      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') onClick() }}
+      className={`rounded-lg border p-3 text-left transition-all hover:shadow-md w-full cursor-pointer ${st.bg} ${st.border} ${ativo ? 'ring-2 ring-offset-1 ' + st.ring + ' shadow-md' : 'shadow-sm'}`}
     >
       <div className="flex items-center gap-1.5 mb-2">
         <div className={`p-1 rounded ${st.icoBg}`}>
@@ -63,11 +66,25 @@ function CardGrupo({ icon: Icon, label, count, valor, diasMedio, ativo, onClick,
       </div>
       <p className={`text-2xl font-bold ${st.numTxt} leading-none`}>{count}</p>
       <p className={`text-[9px] ${st.labelTxt} mt-0.5 mb-2`}>OS</p>
-      <div className={`border-t ${st.divider} pt-1.5 space-y-0.5`}>
+      {extraRows && (
+        <div className={`border-t ${st.divider} pt-1.5 space-y-0.5 text-[10px] mb-2`}>
+          {extraRows.map(r => (
+            <button
+              key={r.label}
+              type="button"
+              onClick={e => { e.stopPropagation(); r.onClick?.() }}
+              className={`w-full flex items-center justify-between px-1 -mx-1 py-0.5 rounded transition-colors ${r.ativo ? 'bg-white/60 ring-1 ' + st.ring : 'hover:bg-white/40'}`}
+            >
+              <span className={st.labelTxt}>{r.label}</span>
+              <span className={`font-semibold ${st.numTxt}`}>{r.value}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      <div className={`border-t ${st.divider} pt-1.5`}>
         <p className={`text-[11px] font-bold ${st.numTxt}`}>{fmt(valor)}</p>
-        <p className={`text-[9px] ${st.labelTxt}`}>{diasMedio !== null ? `${diasMedio}d tempo médio` : '—'}</p>
       </div>
-    </button>
+    </div>
   )
 }
 
@@ -95,7 +112,6 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
   const [modalExcluir, setModalExcluir] = useState(false)
   const [importandoPend, setImportandoPend] = useState(false)
   const [progressoImportPend, setProgressoImportPend] = useState(null) // { atual, total }
-  const [novosImportadosNums, setNovosImportadosNums] = useState(null) // Set<numero_os> — último lote auto-importado
   const [erroImportLote, setErroImportLote] = useState(null) // { total, exemplo } — resumo dos erros do último lote
   const [spRows, setSpRows]             = useState([])
   const [spLoading, setSpLoading]       = useState(false)
@@ -112,8 +128,93 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
   const [excluindoLote, setExcluindoLote] = useState(false)
   const [empresasDim, setEmpresasDim] = useState([])
   const [siglasGarantia, setSiglasGarantia] = useState(new Set())
+  const [tiposGarantiaDim, setTiposGarantiaDim] = useState([])
   const [buscandoFaturamentoLote, setBuscandoFaturamentoLote] = useState(false)
   const [progressoBuscaLote, setProgressoBuscaLote] = useState(null) // { atual, total }
+
+  // Regras do sistema: dias_digitacao controla A Digitar/Digitação Atrasada; dias_oficina controla o
+  // card Mais de N Dias na Oficina; dias_solucao (+ override por tipo de OS em dias_solucao_por_tipo)
+  // controla o corte em dia/atrasado dentro de Aguardando Aprovação DAF (fase pós-digitação).
+  const [diasDigitacao, setDiasDigitacao] = useState(14)
+  const [diasOficina, setDiasOficina] = useState(14)
+  const [diasOficinaInput, setDiasOficinaInput] = useState('14')
+  const [diasSolucao, setDiasSolucao] = useState(14)
+  const [diasSolucaoPorTipo, setDiasSolucaoPorTipo] = useState({})
+  const [modalRegras, setModalRegras] = useState(false)
+  const [diasDigitacaoInput, setDiasDigitacaoInput] = useState('14')
+  const [diasSolucaoInput, setDiasSolucaoInput] = useState('14')
+  const [diasSolucaoPorTipoInput, setDiasSolucaoPorTipoInput] = useState({})
+  const [salvandoRegras, setSalvandoRegras] = useState(false)
+  const [selecionadosTipos, setSelecionadosTipos] = useState(new Set())
+  const [valorAplicarTipos, setValorAplicarTipos] = useState('14')
+
+  const toggleSelecionadoTipo = (sigla) => {
+    setSelecionadosTipos(prev => {
+      const next = new Set(prev)
+      if (next.has(sigla)) next.delete(sigla)
+      else next.add(sigla)
+      return next
+    })
+  }
+
+  const handleAplicarValorTipos = () => {
+    const n = Number(valorAplicarTipos)
+    if (!Number.isFinite(n) || n <= 0) return
+    setDiasSolucaoPorTipoInput(prev => {
+      const next = { ...prev }
+      for (const sigla of selecionadosTipos) next[sigla] = String(n)
+      return next
+    })
+  }
+
+  useEffect(() => {
+    apiService.getConfiguracoesGarantias()
+      .then(cfg => {
+        const dias = cfg?.dias_digitacao ?? 14
+        const diasSol = cfg?.dias_solucao ?? 14
+        const porTipo = cfg?.dias_solucao_por_tipo ?? {}
+        setDiasDigitacao(dias)
+        setDiasDigitacaoInput(String(dias))
+        setDiasOficina(cfg?.dias_oficina ?? 14)
+        setDiasOficinaInput(String(cfg?.dias_oficina ?? 14))
+        setDiasSolucao(diasSol)
+        setDiasSolucaoInput(String(diasSol))
+        setDiasSolucaoPorTipo(porTipo)
+        setDiasSolucaoPorTipoInput(Object.fromEntries(Object.entries(porTipo).map(([k, v]) => [k, String(v)])))
+      })
+      .catch(() => {})
+  }, [])
+
+  const handleSalvarRegras = async () => {
+    const dias = Number(diasDigitacaoInput)
+    const diasSol = Number(diasSolucaoInput)
+    const diasOfi = Number(diasOficinaInput)
+    if ([dias, diasSol, diasOfi].some(n => !Number.isFinite(n) || n <= 0)) {
+      alert('Informe números de dias válidos (maiores que zero).')
+      return
+    }
+    const porTipo = {}
+    for (const [sigla, v] of Object.entries(diasSolucaoPorTipoInput)) {
+      const n = Number(v)
+      if (v !== '' && v != null && Number.isFinite(n) && n > 0) porTipo[sigla] = n
+    }
+    setSalvandoRegras(true)
+    try {
+      await apiService.updateConfiguracoesGarantias(
+        { dias_digitacao: dias, dias_oficina: diasOfi, dias_solucao: diasSol, dias_solucao_por_tipo: porTipo },
+        user?.email
+      )
+      setDiasDigitacao(dias)
+      setDiasOficina(diasOfi)
+      setDiasSolucao(diasSol)
+      setDiasSolucaoPorTipo(porTipo)
+      setModalRegras(false)
+    } catch (err) {
+      alert('Erro ao salvar: ' + (err.message || String(err)))
+    } finally {
+      setSalvandoRegras(false)
+    }
+  }
 
   const loadData = useCallback(async (f = filtros) => {
     setLoading(true); setError(null)
@@ -138,8 +239,9 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
     loadData(FILTROS_VAZIOS)
     apiService.getEmpresas().then(d => setEmpresasDim(d.filter(e => e.ativo !== false))).catch(() => {})
     apiService.getTiposOS().then(tipos => {
-      const siglas = new Set(tipos.filter(t => t.classificacao === 'Garantia' && t.sigla).map(t => String(t.sigla).trim().toUpperCase()))
-      setSiglasGarantia(siglas)
+      const tiposGarantia = tipos.filter(t => t.classificacao === 'Garantia' && t.sigla)
+      setSiglasGarantia(new Set(tiposGarantia.map(t => String(t.sigla).trim().toUpperCase())))
+      setTiposGarantiaDim(tiposGarantia)
     }).catch(() => {})
   }, [isAdmin, empresasPermitidas])
 
@@ -282,7 +384,7 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
       ? Math.floor((new Date() - new Date(r.data_criacao + 'T12:00:00')) / 86400000)
       : -1
     let base = filtroMais14
-      ? spAndamentoFiltrado.filter(r => diasAberto(r) > 14)
+      ? spAndamentoFiltrado.filter(r => diasAberto(r) > diasOficina)
       : spAndamentoFiltrado
     if (filtroTipoOSCard) base = base.filter(r => (r.tipo_os_sigla?.trim() || '—') === filtroTipoOSCard)
     const arr = [...base]
@@ -316,6 +418,21 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
     }
     return map
   }, [dadosTodos])
+
+  // Tipos de OS de garantia para "Dias para Solucionar por Tipo" em Regras do Sistema: todos os do
+  // cadastro de Tipos de OS (mesma lista do Manual) + qualquer sigla que só exista nas garantias.
+  const tiposGarantiaParaRegras = useMemo(() => {
+    const map = new Map()
+    for (const t of tiposGarantiaDim) {
+      const sigla = String(t.sigla).trim().toUpperCase()
+      if (!map.has(sigla)) map.set(sigla, t.tipo_os || sigla)
+    }
+    for (const [sigla, descricao] of tipoOsDescMap) {
+      if (!map.has(sigla)) map.set(sigla, descricao)
+    }
+    return Array.from(map, ([sigla, descricao]) => ({ sigla, descricao }))
+      .sort((a, b) => a.sigla.localeCompare(b.sigla, 'pt-BR'))
+  }, [tiposGarantiaDim, tipoOsDescMap])
 
   const dadosBase = useMemo(() => {
     let base = dados
@@ -436,16 +553,15 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
     [empresaLookup]
   )
 
-  // Importa direto do SharePoint (ROF001_OSABERTA_ENCERRADA) todas as OS pendentes, automaticamente
-  // ao carregar a tela — sem modal de seleção nem confirmação, os dados já vêm completos do arquivo.
-  // Guarda os números das OS recém-importadas para o botão "Visualizar" filtrar a tabela abaixo.
+  // Importa direto do SharePoint (ROF001_OSABERTA_ENCERRADA) todas as OS pendentes. Disparado
+  // automaticamente pelo efeito logo abaixo (ao acessar a tela ou clicar em "Atualizar") — sem
+  // modal de seleção nem confirmação, os dados já vêm completos do arquivo.
   const handleImportarLote = useCallback(async () => {
     if (pendFechadas.length === 0) return
 
     setImportandoPend(true)
     setErroImportLote(null)
     setProgressoImportPend({ atual: 0, total: pendFechadas.length })
-    const novos = []
     let erros = 0
     let exemploErro = ''
 
@@ -472,7 +588,6 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
           },
           user?.email
         )
-        novos.push(String(row.os_numero ?? '').trim())
       } catch (err) {
         erros++
         if (!exemploErro) exemploErro = err?.message || String(err)
@@ -480,12 +595,24 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
       }
     }
 
-    setNovosImportadosNums(novos.length > 0 ? new Set(novos) : null)
     await loadData()
     setImportandoPend(false)
     setProgressoImportPend(null)
     setErroImportLote(erros > 0 ? { total: erros, exemplo: exemploErro } : null)
   }, [pendFechadas, findEmpresaId, user, loadData])
+
+  // Dispara a importação automaticamente sempre que uma leitura do SharePoint termina (ao acessar
+  // a tela ou ao clicar em "Atualizar"), eliminando o clique manual em "Importar". Guardado pela
+  // transição true→false de spLoading (não por pendFechadas diretamente) pra não reimportar só
+  // porque o usuário mudou um filtro (ex.: filtroEmpresaDash, do qual pendFechadas depende).
+  const spLoadingPrevRef = useRef(false)
+  useEffect(() => {
+    if (spLoadingPrevRef.current && !spLoading && !importandoPend && pendFechadas.length > 0) {
+      handleImportarLote()
+    }
+    spLoadingPrevRef.current = spLoading
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [spLoading])
 
   const handleFiltroChange = (e) => {
     const { name, value } = e.target
@@ -545,15 +672,26 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
     return Math.floor((hoje - new Date(g.atualizado_em)) / 86400000)
   }
 
+  // Dias desde a inclusão da digitação da garantia (criado_em) — usado pra separar Aguardando
+  // Aprovação DAF em dentro do prazo x atrasado, pela regra "Dias para Solucionar".
+  const diasDesdeDigitacao = (g) => {
+    if (!g.criado_em) return 0
+    return Math.floor((hoje - new Date(g.criado_em)) / 86400000)
+  }
+
+  // Prazo de solução aplicável à garantia: override por tipo de OS (sigla), ou o valor global.
+  const prazoSolucao = (g) => diasSolucaoPorTipo[g.tipo_os_sigla?.trim()] ?? diasSolucao
+
   const isDigAtrasada = (g) => {
-    if (g.status_codigo !== 'A' || !g.data_abertura_os) return false
-    return Math.floor((hoje - new Date(g.data_abertura_os + 'T12:00:00')) / 86400000) > 1
+    if (g.status_codigo !== 'A' || !g.data_fechamento_os) return false
+    return Math.floor((hoje - new Date(g.data_fechamento_os + 'T12:00:00')) / 86400000) > diasDigitacao
   }
 
   const grpADigitar  = dadosBase.filter(g => g.status_codigo === 'A' && !isDigAtrasada(g))
   const grpAtrasado  = dadosBase.filter(g => isDigAtrasada(g))
   const grpAndamento = dadosBase.filter(g => STATUS_ANDAMENTO_GRUPO.includes(g.status_codigo))
-  const grpAnd15     = grpAndamento.filter(g => diasParado(g) >= 14)
+  const grpAnd15     = grpAndamento.filter(g => diasDesdeDigitacao(g) >= prazoSolucao(g))
+  const grpAndEmDia  = grpAndamento.filter(g => diasDesdeDigitacao(g) < prazoSolucao(g))
   const grpAprovada  = dadosBase.filter(g => g.status_codigo === 'FA')
   const grpRecusas   = dadosBase.filter(g => ['FR','Z'].includes(g.status_codigo))
 
@@ -563,11 +701,6 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
   const totalValorPecas   = useMemo(() => dadosBase.reduce((s, g) => s + Number(g.valor_pecas    || 0), 0), [dadosBase])
   const totalValorServicos= useMemo(() => dadosBase.reduce((s, g) => s + Number(g.valor_servicos || 0), 0), [dadosBase])
   const totalValorGeral   = totalValorPecas + totalValorServicos
-  const avgDias  = (arr) => {
-    if (!arr.length) return null
-    return Math.round(arr.reduce((s, g) => s + diasParado(g), 0) / arr.length)
-  }
-
 
   const statusesPresentes = Object.keys(STATUS_MAP).filter(k => dadosBase.some(g => g.status_codigo === k))
 
@@ -579,13 +712,9 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
         case 'atrasado':    base = grpAtrasado; break
         case 'andamento':   base = grpAndamento; break
         case 'andamento15': base = grpAnd15; break
+        case 'andamento_em_dia': base = grpAndEmDia; break
         case 'aprovada':    base = grpAprovada; break
         case 'recusas':     base = grpRecusas; break
-        case 'novos_importados':
-          base = novosImportadosNums
-            ? dadosBase.filter(g => novosImportadosNums.has(String(g.numero_os ?? '').trim()))
-            : dadosBase
-          break
         default: base = dadosBase
       }
     } else {
@@ -689,6 +818,20 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
               >
                 <RefreshCw className={`h-3.5 w-3.5 ${spLoading ? 'animate-spin' : ''}`} />
               </button>
+              <button
+                onClick={() => setModalRegras(true)}
+                title="Regras do sistema"
+                className="flex items-center justify-center p-2 rounded-md text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 shadow-sm transition-colors"
+              >
+                <Settings className="h-3.5 w-3.5" />
+              </button>
+              <button
+                onClick={() => window.open('/garantias-daf-manual', '_blank')}
+                title="Manual de operação"
+                className="flex items-center justify-center p-2 rounded-md text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 shadow-sm transition-colors"
+              >
+                <BookOpen className="h-3.5 w-3.5" />
+              </button>
               {hasPermission('bi/garantias-daf') && (
                 <button
                   onClick={() => navigate('/bi/garantias-daf', { state: { aba: 'oficina' } })}
@@ -715,6 +858,20 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
               >
                 <RefreshCw className={`h-3.5 w-3.5 ${spLoading ? 'animate-spin' : ''}`} />
               </button>
+              <button
+                onClick={() => setModalRegras(true)}
+                title="Regras do sistema"
+                className="flex items-center justify-center p-2 rounded-md text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 shadow-sm transition-colors"
+              >
+                <Settings className="h-3.5 w-3.5" />
+              </button>
+              <button
+                onClick={() => window.open('/garantias-daf-manual', '_blank')}
+                title="Manual de operação"
+                className="flex items-center justify-center p-2 rounded-md text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 shadow-sm transition-colors"
+              >
+                <BookOpen className="h-3.5 w-3.5" />
+              </button>
               {canExcluirOS && selecionados.size > 0 && (
                 <button
                   onClick={() => setModalExcluirLote(true)}
@@ -740,7 +897,7 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
       </div>
 
       {/* ── ALERTAS ── */}
-      {!isAndamento && (grpNaoEncontrado.length > 0 || importandoPend || (!spLoading && pendFechadas.length > 0) || grpAnd15.length > 0 || !!novosImportadosNums?.size || !!erroImportLote) && (
+      {!isAndamento && (grpNaoEncontrado.length > 0 || importandoPend || !!erroImportLote) && (
         <div className="flex flex-wrap gap-3">
           {grpNaoEncontrado.length > 0 && (
             <div className="flex flex-1 items-center gap-3 bg-red-50 border border-red-300 rounded-lg px-4 py-3">
@@ -781,28 +938,6 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
               </button>
             </div>
           )}
-          {!importandoPend && !spLoading && pendFechadas.length > 0 && (
-            <div className="flex flex-1 items-center gap-3 bg-blue-50 border border-blue-300 rounded-lg px-4 py-3">
-              <div className="p-1.5 bg-blue-100 rounded-md shrink-0">
-                <Download className="h-4 w-4 text-blue-600" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-bold text-blue-800">
-                  {pendFechadas.length} OS disponíve{pendFechadas.length === 1 ? 'l' : 'is'} para importar do SharePoint
-                </p>
-                <p className="text-[10px] text-blue-600 mt-0.5">
-                  Ordens de serviço fechadas ainda não importadas para o sistema.
-                </p>
-              </div>
-              <button
-                onClick={handleImportarLote}
-                className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md bg-blue-600 hover:bg-blue-700 text-white transition-colors"
-              >
-                <Download className="h-3.5 w-3.5" />
-                Importar
-              </button>
-            </div>
-          )}
           {importandoPend && (
             <div className="flex flex-1 items-center gap-3 bg-blue-50 border border-blue-300 rounded-lg px-4 py-3">
               <div className="p-1.5 bg-blue-100 rounded-md shrink-0">
@@ -816,28 +951,6 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
                   Ordens de serviço fechadas ainda não importadas para o sistema.
                 </p>
               </div>
-            </div>
-          )}
-          {!importandoPend && !!novosImportadosNums?.size && (
-            <div className="flex flex-1 items-center gap-3 bg-green-50 border border-green-300 rounded-lg px-4 py-3">
-              <div className="p-1.5 bg-green-100 rounded-md shrink-0">
-                <CheckCircle className="h-4 w-4 text-green-600" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-bold text-green-800">
-                  {novosImportadosNums.size} OS importada{novosImportadosNums.size === 1 ? '' : 's'} automaticamente do SharePoint
-                </p>
-                <p className="text-[10px] text-green-600 mt-0.5">
-                  Última importação — conferir os dados trazidos automaticamente.
-                </p>
-              </div>
-              <button
-                onClick={() => { setFiltroCard(prev => prev === 'novos_importados' ? null : 'novos_importados'); setStatusFiltro('') }}
-                className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${filtroCard === 'novos_importados' ? 'bg-green-700 text-white' : 'bg-green-600 hover:bg-green-700 text-white'}`}
-              >
-                <Eye className="h-3.5 w-3.5" />
-                {filtroCard === 'novos_importados' ? 'Visualizando' : 'Visualizar'}
-              </button>
             </div>
           )}
           {!importandoPend && !!erroImportLote && (
@@ -863,28 +976,6 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
               </button>
             </div>
           )}
-          {grpAnd15.length > 0 && (
-            <div className="flex flex-1 items-center gap-3 bg-orange-50 border border-orange-300 rounded-lg px-4 py-3">
-              <div className="p-1.5 bg-orange-100 rounded-md shrink-0">
-                <Clock className="h-4 w-4 text-orange-600" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-bold text-orange-800">
-                  {grpAnd15.length} OS na oficina ≥14 dias aguardando análise
-                </p>
-                <p className="text-[10px] text-orange-600 mt-0.5">
-                  Processos sem movimentação que requerem atenção.
-                </p>
-              </div>
-              <button
-                onClick={() => { setFiltroCard(prev => prev === 'andamento15' ? null : 'andamento15'); setStatusFiltro('') }}
-                className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${filtroCard === 'andamento15' ? 'bg-orange-600 text-white' : 'bg-orange-500 hover:bg-orange-600 text-white'}`}
-              >
-                <Clock className="h-3.5 w-3.5" />
-                {filtroCard === 'andamento15' ? 'Limpar filtro' : 'Ver quais'}
-              </button>
-            </div>
-          )}
         </div>
       )}
 
@@ -898,10 +989,13 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
               label={c.label}
               count={c.items.length}
               valor={sumValor(c.items)}
-              diasMedio={avgDias(c.items)}
               ativo={filtroCard === c.key}
               onClick={() => handleCardClick(c.key)}
               st={c.st}
+              extraRows={c.key === 'andamento' ? [
+                { label: 'Dentro do prazo', value: grpAndEmDia.length, onClick: () => handleCardClick('andamento_em_dia'), ativo: filtroCard === 'andamento_em_dia' },
+                { label: 'Fora do prazo', value: grpAnd15.length, onClick: () => handleCardClick('andamento15'), ativo: filtroCard === 'andamento15' },
+              ] : null}
             />
           ))}
           {/* Card resumo total em aberto */}
@@ -951,7 +1045,7 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
         const totalPecas    = rowsDedup.reduce((s, r) => s + (r.produto  || 0), 0)
         const totalServicos = rowsDedup.reduce((s, r) => s + (r.servico  || 0), 0)
         const mais14        = spAndamentoFiltrado.filter(r =>
-          r.data_criacao && Math.floor((hoje - new Date(r.data_criacao + 'T12:00:00')) / 86400000) > 14
+          r.data_criacao && Math.floor((hoje - new Date(r.data_criacao + 'T12:00:00')) / 86400000) > diasOficina
         ).length
         return (
           <div className="grid grid-cols-3 gap-3 items-stretch">
@@ -1024,7 +1118,7 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
             {/* Card +14 dias */}
             {(() => {
               const rows14 = spAndamentoFiltrado.filter(r =>
-                r.data_criacao && Math.floor((hoje - new Date(r.data_criacao + 'T12:00:00')) / 86400000) > 14
+                r.data_criacao && Math.floor((hoje - new Date(r.data_criacao + 'T12:00:00')) / 86400000) > diasOficina
               )
               const dedup14Map = new Map()
               for (const r of rows14) {
@@ -1044,7 +1138,7 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
                         <Clock className={`h-4 w-4 ${mais14 > 0 ? 'text-orange-600' : 'text-slate-400'}`} />
                       </div>
                       <span className={`text-xs font-bold uppercase tracking-wide ${mais14 > 0 ? 'text-orange-600' : 'text-slate-500'}`}>
-                        Mais de 14 Dias na Oficina
+                        Mais de {diasOficina} Dias na Oficina
                       </span>
                     </div>
                     {mais14 > 0 && (
@@ -1443,6 +1537,107 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
               >
                 {excluindoLote && <Loader2 className="h-3 w-3 animate-spin" />}
                 {excluindoLote ? 'Excluindo...' : 'Sim, Excluir Todos'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modalRegras && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md mx-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
+                <Settings className="h-4 w-4 text-slate-500" /> Regras do Sistema
+              </h3>
+              <button onClick={() => setModalRegras(false)} className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded transition-colors">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="flex flex-col gap-1 mb-4">
+              <label className="text-[10px] font-bold text-slate-400 uppercase">Dias na Oficina</label>
+              <input
+                type="number"
+                min="1"
+                value={diasOficinaInput}
+                onChange={e => setDiasOficinaInput(e.target.value)}
+                className="text-xs p-2 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20"
+              />
+              <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">
+                Contado da data de criação da OS — controla o card "Mais de N Dias na Oficina" da aba Na Oficina.
+              </p>
+            </div>
+            <div className="flex flex-col gap-1 mb-4">
+              <label className="text-[10px] font-bold text-slate-400 uppercase">Dias para Digitação</label>
+              <input
+                type="number"
+                min="1"
+                value={diasDigitacaoInput}
+                onChange={e => setDiasDigitacaoInput(e.target.value)}
+                className="text-xs p-2 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20"
+              />
+              <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">
+                Contado da data de fechamento da OS — controla os cards "A Digitar" / "Digitação Atrasada".
+              </p>
+            </div>
+            {tiposGarantiaParaRegras.length > 0 && (
+              <div className="flex flex-col gap-1 mb-5">
+                <label className="text-[10px] font-bold text-slate-400 uppercase">Dias para Solucionar por Tipo de OS</label>
+                <div className="flex items-center gap-2 mt-1 mb-1.5">
+                  <input
+                    type="number"
+                    min="1"
+                    value={valorAplicarTipos}
+                    onChange={e => setValorAplicarTipos(e.target.value)}
+                    className="w-16 shrink-0 text-xs p-1.5 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAplicarValorTipos}
+                    disabled={selecionadosTipos.size === 0}
+                    className="flex-1 px-2 py-1.5 rounded-md text-[11px] font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Aplicar aos selecionados ({selecionadosTipos.size})
+                  </button>
+                </div>
+                <div className="flex flex-col gap-1.5 max-h-48 overflow-y-auto pr-1">
+                  {tiposGarantiaParaRegras.map(({ sigla, descricao }) => (
+                    <div key={sigla} className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={selecionadosTipos.has(sigla)}
+                        onChange={() => toggleSelecionadoTipo(sigla)}
+                        className="shrink-0"
+                      />
+                      <span className="flex-1 text-[11px] text-slate-600 truncate" title={descricao}>{descricao}</span>
+                      <input
+                        type="number"
+                        min="1"
+                        placeholder={String(diasSolucao)}
+                        value={diasSolucaoPorTipoInput[sigla] ?? ''}
+                        onChange={e => setDiasSolucaoPorTipoInput(prev => ({ ...prev, [sigla]: e.target.value }))}
+                        className="w-16 shrink-0 text-xs p-1.5 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20"
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setModalRegras(false)}
+                disabled={salvandoRegras}
+                className="px-3 py-1.5 rounded-md text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleSalvarRegras}
+                disabled={salvandoRegras}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 shadow-sm transition-colors disabled:opacity-60"
+              >
+                {salvandoRegras && <Loader2 className="h-3 w-3 animate-spin" />}
+                {salvandoRegras ? 'Salvando...' : 'Salvar'}
               </button>
             </div>
           </div>

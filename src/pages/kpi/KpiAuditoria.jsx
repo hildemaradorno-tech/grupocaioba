@@ -189,7 +189,7 @@ export default function KpiAuditoria() {
   const [loading,    setLoading]    = useState(!initCached)
   const [source,     setSource]     = useState(null)
   // O selo "Dados sincronizados" mora no cabeçalho da Matriz KPIs; aqui só publica o status.
-  const { setStatus } = useKpiSourceStatus()
+  const { setStatus, refreshToken } = useKpiSourceStatus()
   useEffect(() => { setStatus({ source, loading }) }, [source, loading, setStatus])
   const [meta,       setMeta]       = useState(initCached?.metaData    ?? null)
 
@@ -216,6 +216,16 @@ export default function KpiAuditoria() {
   }
 
   useEffect(() => { load() }, [year, empKey, indicadorId, porData, dataInicio, dataFim])
+
+  // Botão "Atualizar dados" do cabeçalho: relê os arquivos do SharePoint (refresh=1 limpa o cache
+  // do backend) em vez de mostrar o que já estava guardado.
+  const ultimoRefresh = useRef(refreshToken)
+  useEffect(() => {
+    if (ultimoRefresh.current === refreshToken) return
+    ultimoRefresh.current = refreshToken
+    _cache.clear()
+    load({ _forceReload: true, refresh: true })
+  }, [refreshToken])
 
   const grouped = rows.reduce((acc, row) => {
     if (!acc[row.id]) acc[row.id] = { indicador: row.indicador, rows: [] }
