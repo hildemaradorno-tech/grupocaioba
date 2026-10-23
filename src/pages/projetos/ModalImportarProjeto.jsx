@@ -212,7 +212,7 @@ export default function ModalImportarProjeto({ onClose, onProjetoCriado, userEma
           return
         }
 
-        setTituloProjeto(titulo)
+        setTituloProjeto(titulo.toUpperCase())
         setTarefas(tarefasImportadas)
       } catch {
         setErroArquivo('Erro ao ler o arquivo. Verifique se é um Excel válido (.xlsx).')

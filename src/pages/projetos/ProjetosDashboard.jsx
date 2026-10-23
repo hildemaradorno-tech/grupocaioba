@@ -1176,7 +1176,7 @@ export default function ProjetosDashboard() {
             <thead></thead>
             <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
               {dadosFiltrados.length === 0 ? (
-                <tr><td colSpan={8} className="p-10 text-center text-slate-400">Nenhum projeto encontrado.</td></tr>
+                <tr><td colSpan={9} className="p-10 text-center text-slate-400">Nenhum projeto encontrado.</td></tr>
               ) : dadosPorDeptoFlat.map((p, pi) => {
                 const depto = p.departamento_nome || 'Sem Departamento'
                 const prevDepto = pi > 0 ? (dadosPorDeptoFlat[pi - 1].departamento_nome || 'Sem Departamento') : null
@@ -1186,7 +1186,7 @@ export default function ProjetosDashboard() {
                 if (!deptoExpandido && !isNewDepto) return null
                 if (!deptoExpandido) return (
                   <tr key={`depto-${depto}`} className="cursor-pointer select-none" onClick={() => toggleDepto(depto)}>
-                    <td colSpan={8}>
+                    <td colSpan={9}>
                       <div className="bg-slate-700 text-white px-5 py-3 flex items-center justify-between gap-4">
                         <div className="flex items-center gap-3 min-w-0">
                           <span className="opacity-60"><ChevronRight className="h-4 w-4" /></span>
@@ -1207,7 +1207,7 @@ export default function ProjetosDashboard() {
                 if (statusRecolhido && !isNewStatus) return null
                 if (statusRecolhido && isNewStatus && !isNewDepto) return (
                   <tr key={`status-${depto}-${pStatus}`} className="cursor-pointer select-none" onClick={() => toggleStatus(pStatus)}>
-                    <td colSpan={8}>
+                    <td colSpan={9}>
                       <div style={{ backgroundColor: statusCor }} className="px-5 py-2 flex items-center gap-2">
                         <span className="text-white/70"><ChevronRight className="h-3.5 w-3.5" /></span>
                         <span className="text-xs font-bold uppercase tracking-widest text-white">{statusLabel}</span>
@@ -1219,7 +1219,7 @@ export default function ProjetosDashboard() {
                 if (statusRecolhido && isNewStatus && isNewDepto) return (
                   <React.Fragment key={`deptstatus-${depto}-${pStatus}`}>
                     <tr className="cursor-pointer select-none" onClick={() => toggleDepto(depto)}>
-                      <td colSpan={8} className={pi > 0 ? 'pt-1' : ''}>
+                      <td colSpan={9} className={pi > 0 ? 'pt-1' : ''}>
                         <div className="bg-slate-700 text-white px-5 py-3 flex items-center justify-between gap-4">
                           <div className="flex items-center gap-3 min-w-0">
                             <span className="opacity-60"><ChevronDown className="h-4 w-4" /></span>
@@ -1231,7 +1231,7 @@ export default function ProjetosDashboard() {
                       </td>
                     </tr>
                     <tr className="cursor-pointer select-none" onClick={() => toggleStatus(pStatus)}>
-                      <td colSpan={8}>
+                      <td colSpan={9}>
                         <div style={{ backgroundColor: statusCor }} className="px-5 py-2 flex items-center gap-2">
                           <span className="text-white/70"><ChevronRight className="h-3.5 w-3.5" /></span>
                           <span className="text-xs font-bold uppercase tracking-widest text-white">{statusLabel}</span>
@@ -1261,7 +1261,7 @@ export default function ProjetosDashboard() {
                   <React.Fragment key={p.id}>
                     {isNewDepto && (
                       <tr className="cursor-pointer select-none" onClick={() => toggleDepto(depto)}>
-                        <td colSpan={8} className={pi > 0 ? 'pt-1' : ''}>
+                        <td colSpan={9} className={pi > 0 ? 'pt-1' : ''}>
                           <div className="bg-slate-700 text-white px-5 py-3 flex items-center justify-between gap-4">
                             <div className="flex items-center gap-3 min-w-0">
                               <span className="opacity-60">{deptoExpandido ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}</span>
@@ -1275,7 +1275,7 @@ export default function ProjetosDashboard() {
                     )}
                     {isNewStatus && (
                       <tr className="cursor-pointer select-none" onClick={() => toggleStatus(pStatus)}>
-                        <td colSpan={8}>
+                        <td colSpan={9}>
                           <div style={{ backgroundColor: statusCor }} className="px-5 py-2 flex items-center gap-2">
                             <span className="text-white/70"><ChevronDown className="h-3.5 w-3.5" /></span>
                             <span className="text-xs font-bold uppercase tracking-widest text-white">{statusLabel}</span>
@@ -1288,8 +1288,9 @@ export default function ProjetosDashboard() {
                       <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[10px] font-bold uppercase tracking-wider">
                         {[
                           { campo: 'titulo',       label: 'Título / Tarefa / Deliberações', style: { minWidth: '360px' } },
-                          { campo: 'sistemas',     label: 'Sistemas', style: { minWidth: '160px' } },
+                          { campo: 'unidade',      label: 'Empresa / Unidade' },
                           { campo: 'depto',        label: 'Departamento / Área' },
+                          { campo: 'sistemas',     label: 'Sistemas', style: { minWidth: '160px' } },
                           { campo: 'resp_projeto', label: 'Resp. Projeto' },
                           { campo: 'conclusao',    label: '% Conclusão' },
                           { campo: 'data_inicio',  label: 'Data Início' },
@@ -1355,6 +1356,13 @@ export default function ProjetosDashboard() {
                           </div>
                         </div>
                       </td>
+                      <td className="p-3 text-slate-600 whitespace-nowrap">
+                        {p.empresa_nome || <span className="text-slate-300">—</span>}
+                      </td>
+                      <td className="p-3 text-slate-600 leading-tight">
+                        <span className="block">{p.departamento_nome || '—'}</span>
+                        {p.area_nome && <span className="block italic text-slate-400 text-[10px]">{p.area_nome}</span>}
+                      </td>
                       <td className="p-3">
                         {p.sistemas_nomes && p.sistemas_nomes.length > 0
                           ? <div className="flex flex-wrap gap-1">
@@ -1370,10 +1378,6 @@ export default function ProjetosDashboard() {
                             </div>
                           : <span className="text-slate-400">—</span>
                         }
-                      </td>
-                      <td className="p-3 text-slate-600 leading-tight">
-                        <span className="block">{p.departamento_nome || '—'}</span>
-                        {p.area_nome && <span className="block italic text-slate-400 text-[10px]">{p.area_nome}</span>}
                       </td>
                       <td className="p-3 text-slate-600 leading-tight">
                         {p.responsavel_nome
@@ -1436,7 +1440,7 @@ export default function ProjetosDashboard() {
                     {/* ── Tarefas (sub-tabela estilo Planejamento) ── */}
                     {expandido && tarefas.length > 0 && (
                       <tr>
-                        <td colSpan={8} className="p-0 bg-slate-50">
+                        <td colSpan={9} className="p-0 bg-slate-50">
                           <div className="ml-10 border-l-[3px] border-l-blue-300">
                           <table className="w-full text-xs border-collapse">
                             <thead>
@@ -1644,7 +1648,7 @@ export default function ProjetosDashboard() {
                     )}
                     {expandido && tarefas.length === 0 && !carregando && (
                       <tr className="bg-slate-50/50 border-b border-slate-100/60">
-                        <td colSpan={8} className="py-3 pl-10 text-[11px] text-slate-400 italic">Nenhuma tarefa cadastrada.</td>
+                        <td colSpan={9} className="py-3 pl-10 text-[11px] text-slate-400 italic">Nenhuma tarefa cadastrada.</td>
                       </tr>
                     )}
                   </React.Fragment>
