@@ -958,7 +958,8 @@ export default function AuditoriaOsAberto() {
       desc: reabrir.motivo, disabled: !reabrir.pode, onClick: () => abrirModalPrazo('Reaberta'), cor: 'text-amber-600',
     },
     {
-      id: 'programar', visivel: pode('programar_auditorias'), // Admin ou grupo com a ação icon: CalendarClock, label: 'Programar auditorias',
+      // Admin ou grupo com a ação 'programar_auditorias'
+      id: 'programar', visivel: pode('programar_auditorias'), icon: CalendarClock, label: 'Programar auditorias',
       desc: 'Auditorias automáticas e regra de reabertura', disabled: false, onClick: abrirModalProgramar, cor: 'text-emerald-600',
     },
     {
