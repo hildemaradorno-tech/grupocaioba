@@ -129,7 +129,7 @@ function CardKpi({ icon: Icon, label, count, ativo, onClick, st }) {
 
 export default function ProjetosDashboard() {
   const navigate = useNavigate()
-  const { isAdmin, isAdminEfetivo, empresasPermitidas, departamentosPermitidosEfetivos, projetosDeptoModoEfetivo, hasActionOrDefault, hasPermission, user, usuarioId, impersonando } = useAuth()
+  const { isAdminEfetivo, departamentosPermitidosEfetivos, projetosDeptoModoEfetivo, hasActionOrDefault, hasPermission, user, usuarioId, impersonando } = useAuth()
   const idEfetivo   = impersonando?.id    || usuarioId
   const ctx = useProjetosFiltros()
   const { modoVerTodos, setModoVerTodos } = ctx
@@ -224,15 +224,16 @@ export default function ProjetosDashboard() {
     if (!silent) setLoading(true)
     setError(null)
     try {
-      const filtrosEmpresa = isAdmin ? {} : { empresa_ids: [...empresasPermitidas] }
-      const projetos = await apiService.getProjetos({ ...f, ...filtrosEmpresa })
+      // Sem filtro por empresa: o projeto guarda a empresa-mãe (ex.: "CAIOBÁ MOTOS") e o grupo libera
+      // filiais, os ids nunca coincidem e o projeto sumia. O acesso aqui é pelo Departamento do grupo.
+      const projetos = await apiService.getProjetos({ ...f })
       setDados(projetos)
     } catch (err) { setError(err.message || String(err)) }
     finally { setLoading(false) }
-  }, [filtros, isAdmin, empresasPermitidas])
+  }, [filtros])
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { loadData(FILTROS_VAZIOS, _dash.dados !== null) }, [isAdmin, empresasPermitidas])
+  useEffect(() => { loadData(FILTROS_VAZIOS, _dash.dados !== null) }, [])
   useEffect(() => {
     if (_projetosSession.primeiroAcesso) {
       ctx.setFiltrosAbertos(false)

@@ -100,7 +100,7 @@ const addDaysLocal = (d, n) => { const dt = new Date(d); dt.setDate(dt.getDate()
 export default function CalendarioProjetos({ abaInicial = 'lista' }) {
   const navigate = useNavigate()
   const location = useLocation()
-  const { isAdmin, empresasPermitidas, departamentosPermitidosEfetivos, hasActionOrDefault, hasPermission, user } = useAuth()
+  const { isAdmin, departamentosPermitidosEfetivos, hasActionOrDefault, hasPermission, user } = useAuth()
   const ctx = useProjetosFiltros()
   const { modoVerTodos, setModoVerTodos } = ctx
   const canVerTodos       = !isAdmin && hasActionOrDefault('projetos', 'ver_todos_projetos')
@@ -152,12 +152,11 @@ export default function CalendarioProjetos({ abaInicial = 'lista' }) {
 
   useEffect(() => {
     if (getProjetosCache()) return
-    const filtrosEmpresa = isAdmin ? {} : { empresa_ids: [...empresasPermitidas] }
-    apiService.getProjetosParaAta(filtrosEmpresa)
+    apiService.getProjetosParaAta()
       .then(data => { setProjetosCache(data); setProjetos(data) })
       .catch(err => console.error(err))
       .finally(() => setLoading(false))
-  }, [isAdmin, empresasPermitidas])
+  }, [])
 
   useEffect(() => {
     Promise.all([
@@ -213,9 +212,8 @@ export default function CalendarioProjetos({ abaInicial = 'lista' }) {
   }
 
   const recarregarDados = () => {
-    const filtrosEmpresa = isAdmin ? {} : { empresa_ids: [...empresasPermitidas] }
     clearProjetosCache()
-    apiService.getProjetosParaAta(filtrosEmpresa)
+    apiService.getProjetosParaAta()
       .then(data => { setProjetosCache(data); setProjetos(data) })
       .catch(err => console.error(err))
   }
