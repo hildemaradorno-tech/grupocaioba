@@ -121,6 +121,7 @@ export default function ProjetoDetalhe() {
   const [salvandoEtapa, setSalvandoEtapa] = useState(null)   // id enquanto salva
   const [modalMover, setModalMover] = useState(null)         // tarefa a mover
   const [editProgresso, setEditProgresso] = useState(null)   // { id, value }
+  const [editStatus, setEditStatus] = useState(null)         // id da tarefa com select de status aberto
   const [projetosLista, setProjetosLista] = useState([])
   const [projetoDestinoId, setProjetoDestinoId] = useState('')
   const [buscaProjeto, setBuscaProjeto] = useState('')
@@ -469,6 +470,14 @@ const abrirModalMover = async (tarefa) => {
     finally { setSalvandoEtapa(null); setEditandoEtapa(null) }
   }
 
+  const salvarStatus = async (id, novoStatus) => {
+    try {
+      await apiService.updateTarefa(id, { status_kanban: novoStatus })
+      setTarefas(prev => prev.map(x => x.id === id ? { ...x, status_kanban: novoStatus } : x))
+    } catch (err) { alert('Erro ao salvar status: ' + (err.message || String(err))) }
+    finally { setEditStatus(null) }
+  }
+
   const salvarProgresso = async (id, valor) => {
     const pct = Math.min(100, Math.max(0, Number(valor) || 0))
     try {
@@ -603,20 +612,20 @@ const abrirModalMover = async (tarefa) => {
                 <div className="fixed inset-0 z-10" onClick={() => setMenuProjeto(false)} />
                 <div className="fixed z-20 bg-white border border-slate-200 rounded-lg shadow-lg py-1 min-w-[170px]"
                   style={{ top: menuProjetoPos.top, right: menuProjetoPos.right }}>
-                  {canIniciarFase && (
-                    <button
-                      onClick={() => { setModalIniciarFase(true); setMenuProjeto(false) }}
-                      className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
-                    >
-                      <Flag className="h-3.5 w-3.5 shrink-0 text-blue-500" /> Iniciar Fase
-                    </button>
-                  )}
                   {canEditar && (
                     <button
                       onClick={() => { navigate(`/projetos/detalhe/${id}/editar`); setMenuProjeto(false) }}
                       className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-blue-50 hover:text-blue-700"
                     >
                       <Edit2 className="h-3.5 w-3.5 shrink-0" /> Editar Projeto
+                    </button>
+                  )}
+                  {canIniciarFase && (
+                    <button
+                      onClick={() => { setModalIniciarFase(true); setMenuProjeto(false) }}
+                      className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
+                    >
+                      <Flag className="h-3.5 w-3.5 shrink-0 text-blue-500" /> Iniciar Fase
                     </button>
                   )}
                 </div>
@@ -842,16 +851,16 @@ const abrirModalMover = async (tarefa) => {
                   />
                 </th>
                 {[
-                  { campo: 'etapa',         label: 'Etapa',       cls: 'w-20' },
-                  { campo: 'nome',          label: 'Tarefa',      cls: 'min-w-[320px]' },
-                  { campo: 'sistema_nome',  label: 'Sistemas',          cls: 'w-32' },
+                  { campo: 'etapa',         label: 'Etapa',              cls: 'w-20' },
+                  { campo: 'nome',          label: 'Tarefa',             cls: 'min-w-[320px]' },
+                  { campo: 'empresa_nome',  label: 'Empresa / Unidade',  cls: 'w-28' },
                   { campo: 'area_nome',     label: 'Departamento / Área', cls: 'w-40', noUppercase: true },
-                  { campo: 'responsavel',   label: 'Responsável', cls: 'w-32' },
-                  { campo: 'data_inicio',   label: 'Início',      cls: 'w-16' },
-                  { campo: 'data_fim',      label: 'Fim',         cls: 'w-16' },
-                  { campo: 'status_kanban', label: 'Status',      cls: 'w-28' },
-                  { campo: 'progresso_pct', label: 'Progresso',   cls: 'w-28' },
-                  { campo: 'empresa_nome',  label: 'Unidade',     cls: 'w-28' },
+                  { campo: 'sistema_nome',  label: 'Sistemas',           cls: 'w-32' },
+                  { campo: 'responsavel',   label: 'Responsável',        cls: 'w-32' },
+                  { campo: 'data_inicio',   label: 'Início',             cls: 'w-16' },
+                  { campo: 'data_fim',      label: 'Fim',                cls: 'w-16' },
+                  { campo: 'status_kanban', label: 'Status',             cls: 'w-28' },
+                  { campo: 'progresso_pct', label: 'Progresso',          cls: 'w-28' },
                 ].map(({ campo, label, subtitle, cls = '', noUppercase = false }) => (
                   <th key={campo} className={`p-3 ${cls}`}>
                     <div className="flex flex-col gap-0.5">
@@ -879,7 +888,7 @@ const abrirModalMover = async (tarefa) => {
               {tarefas.length === 0 ? (
                 <tr><td colSpan="12" className="p-10 text-center text-slate-400">Nenhuma tarefa cadastrada.</td></tr>
               ) : tarefasOrdenadas.map(t => (
-                <tr key={t.id} className={`hover:bg-slate-50/70 transition-colors ${tarefasSelecionadas.has(t.id) ? 'bg-blue-50/60' : ''}`}>
+                <tr key={t.id} className={`hover:bg-blue-50/40 cursor-pointer transition-colors ${tarefasSelecionadas.has(t.id) ? 'bg-blue-50/60' : ''}`} onClick={() => setModalTarefa({ tarefa: t })}>
                   <td className="no-print p-3 text-center">
                     <input
                       type="checkbox"
@@ -966,17 +975,18 @@ const abrirModalMover = async (tarefa) => {
                       </div>
                     )}
                   </td>
-                  <td className="p-3">
-                    {t.sistema_nome
-                      ? <span className="px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap" style={{ backgroundColor: sistemaCorMap[t.sistema_nome] || '#1e293b', color: sistemaCorTextoMap[t.sistema_nome] || getTextColor(sistemaCorMap[t.sistema_nome] || '#1e293b') }}>{t.sistema_nome}</span>
-                      : <span className="text-slate-400">—</span>}
-                  </td>
+                  <td className="p-3 text-slate-500 whitespace-nowrap">{t.empresa_nome || '—'}</td>
                   <td className="p-3">
                     {(projeto.departamento_nome || t.area_nome || projeto.area_nome)
                       ? <div className="flex flex-col leading-tight">
                           {projeto.departamento_nome && <span className="text-xs font-semibold text-slate-700 uppercase">{projeto.departamento_nome}</span>}
                           {(t.area_nome || projeto.area_nome) && <span className="text-[10px] text-slate-400 italic">{t.area_nome || projeto.area_nome}</span>}
                         </div>
+                      : <span className="text-slate-400">—</span>}
+                  </td>
+                  <td className="p-3">
+                    {t.sistema_nome
+                      ? <span className="px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap" style={{ backgroundColor: sistemaCorMap[t.sistema_nome] || '#1e293b', color: sistemaCorTextoMap[t.sistema_nome] || getTextColor(sistemaCorMap[t.sistema_nome] || '#1e293b') }}>{t.sistema_nome}</span>
                       : <span className="text-slate-400">—</span>}
                   </td>
                   <td className="p-3 text-slate-600 whitespace-nowrap">{t.responsavel_nome || '—'}</td>
@@ -986,15 +996,34 @@ const abrirModalMover = async (tarefa) => {
                     isHoje(t)     ? 'text-blue-600 font-bold' :
                                     'text-slate-500'
                   }`}>{fmtData(t.data_fim)}</td>
-                  <td className="p-3 whitespace-nowrap">
-                    <div className="flex flex-col gap-0.5">
-                      <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold ${(STATUS_MAP[t.status_kanban] || { cor: 'bg-slate-100 text-slate-500' }).cor}`}>
-                        {(STATUS_MAP[t.status_kanban] || { label: t.status_kanban?.replace('_', ' ') || '—' }).label}
-                      </span>
-                      {t.fase_nome && <span className="text-[10px] text-slate-400 italic pl-0.5">{t.fase_nome}</span>}
-                    </div>
+                  <td className="p-3 whitespace-nowrap" onClick={e => e.stopPropagation()}>
+                    {editStatus === t.id ? (
+                      <select
+                        autoFocus
+                        value={t.status_kanban || ''}
+                        onChange={e => salvarStatus(t.id, e.target.value)}
+                        onBlur={() => setEditStatus(null)}
+                        onKeyDown={e => { if (e.key === 'Escape') setEditStatus(null) }}
+                        className="text-[11px] p-1 border border-blue-400 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-300/40"
+                      >
+                        {Object.entries(STATUS_MAP).map(([key, { label }]) => (
+                          <option key={key} value={key}>{label}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <div
+                        className="flex flex-col gap-0.5 cursor-pointer"
+                        title="Clique para alterar o status"
+                        onClick={() => setEditStatus(t.id)}
+                      >
+                        <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold ${(STATUS_MAP[t.status_kanban] || { cor: 'bg-slate-100 text-slate-500' }).cor}`}>
+                          {(STATUS_MAP[t.status_kanban] || { label: t.status_kanban?.replace('_', ' ') || '—' }).label}
+                        </span>
+                        {t.fase_nome && <span className="text-[10px] text-slate-400 italic pl-0.5">{t.fase_nome}</span>}
+                      </div>
+                    )}
                   </td>
-                  <td className="p-3" onDoubleClick={() => t.status_kanban !== 'concluido' && setEditProgresso({ id: t.id, value: t.progresso_pct || 0 })}>
+                  <td className="p-3" onClick={e => e.stopPropagation()} onDoubleClick={() => t.status_kanban !== 'concluido' && setEditProgresso({ id: t.id, value: t.progresso_pct || 0 })}>
                     {(() => {
                       const pct = t.status_kanban === 'concluido' ? 100 : Math.min(100, t.progresso_pct || 0)
                       if (editProgresso?.id === t.id) return (
@@ -1020,8 +1049,7 @@ const abrirModalMover = async (tarefa) => {
                       )
                     })()}
                   </td>
-                  <td className="p-3 text-slate-500 whitespace-nowrap">{t.empresa_nome || '—'}</td>
-                  <td className="no-print p-3 text-center">
+                  <td className="no-print p-3 text-center" onClick={e => e.stopPropagation()}>
                     <div className="relative flex items-center justify-center gap-1">
                       {canIniciarTarefa && t.status_kanban === 'programado' && (
                         <button onClick={() => handleIniciarTarefa(t)} className="p-1.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors" title="Iniciar tarefa">
@@ -1063,11 +1091,6 @@ const abrirModalMover = async (tarefa) => {
                             {canConcluirTarefa && t.status_kanban === 'em_andamento' && (
                               <button onClick={() => { setModalConcluir({ tarefa: t, dataFim: hojeISO }); setMenuAcoes(null) }} className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-teal-50 hover:text-teal-700">
                                 <CheckCircle2 className="h-3.5 w-3.5 shrink-0" /> Concluir Tarefa
-                              </button>
-                            )}
-                            {canEditarTarefa && (
-                              <button onClick={() => { setModalTarefa({ tarefa: t }); setMenuAcoes(null) }} className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-blue-50 hover:text-blue-700">
-                                <Edit2 className="h-3.5 w-3.5 shrink-0" /> Editar
                               </button>
                             )}
                             {canEditarTarefa && (

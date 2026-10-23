@@ -77,7 +77,16 @@ export const ACOES_POR_MENU = [
     menuPath: 'garantias-daf-titulos',
     acoes: [
       { value: 'editar', label: 'Editar Título (observação)' },
-      { value: 'editar_garantia', label: 'Editar Garantia (vincular OS / envio à fábrica)' },
+      { value: 'editar_garantia', label: 'Editar Faturamento (vincular OS / envio à fábrica)' },
+      { value: 'emitir_nota_debito', label: 'Emitir Nota de Débito (dentro de Editar Faturamento)' },
+    ],
+  },
+  {
+    menuPath: 'garantia/modelos-nota-debito',
+    acoes: [
+      { value: 'criar',   label: 'Criar Modelo (Novo Modelo / Criar modelos padrão)' },
+      { value: 'editar',  label: 'Editar Modelo' },
+      { value: 'excluir', label: 'Excluir Modelo' },
     ],
   },
   {

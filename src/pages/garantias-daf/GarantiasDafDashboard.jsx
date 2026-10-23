@@ -1,8 +1,9 @@
 ﻿import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { useSessionState } from '../../hooks/useSessionState'
 import { useNavigate } from 'react-router-dom'
-import { Search, Edit2, Trash2, ShieldAlert, FileText, Activity, Clock, AlertTriangle, Filter, RotateCcw, Download, RefreshCw, CheckCircle, XCircle, BarChart2, CheckSquare, Square, Loader2, Info, Eye, Settings, X, BookOpen } from 'lucide-react'
+import { Search, Edit2, Trash2, ShieldAlert, FileText, Activity, Clock, AlertTriangle, RotateCcw, Download, RefreshCw, CheckCircle, XCircle, BarChart2, CheckSquare, Square, Loader2, Info, Eye, Settings, X, BookOpen } from 'lucide-react'
 import { apiService } from '../../services/api'
+import MenuEngrenagem from '../../components/MenuEngrenagem'
 import { useAuth } from '../../context/AuthContext'
 import GarantiasNav from './GarantiasNav'
 
@@ -48,7 +49,7 @@ const fmt = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', c
 
 const FILTROS_VAZIOS = { numero_os: '', chassi: '', data_inicio: '', data_fim: '', data_fechamento_inicio: '', data_fechamento_fim: '' }
 
-function CardGrupo({ icon: Icon, label, count, valor, ativo, onClick, st, extraRows }) {
+function CardGrupo({ icon: Icon, label, regra, count, valor, ativo, onClick, st, extraRows }) {
   return (
     <div
       role="button"
@@ -63,6 +64,7 @@ function CardGrupo({ icon: Icon, label, count, valor, ativo, onClick, st, extraR
         </div>
         <p className={`text-[9px] font-bold uppercase tracking-wide leading-tight ${st.labelTxt}`}>{label}</p>
       </div>
+      {regra && <p className={`text-[9px] leading-tight -mt-1 mb-2 opacity-80 ${st.labelTxt}`}>{regra}</p>}
       <p className={`text-2xl font-bold ${st.numTxt} leading-none`}>{count}</p>
       <p className={`text-[9px] ${st.labelTxt} mt-0.5 mb-2`}>OS</p>
       {extraRows && (
@@ -103,7 +105,6 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [filtros, setFiltros] = useSessionState(`${pfx}_filtros`, FILTROS_VAZIOS)
-  const [filtrosAbertos, setFiltrosAbertos] = useSessionState(`${pfx}_filtros_abertos`, false)
   const [statusFiltro, setStatusFiltro] = useSessionState(`${pfx}_status`, '')
   const [filtroCard, setFiltroCard] = useSessionState(`${pfx}_card`, null)
   const [sortCol, setSortCol] = useSessionState(`${pfx}_sort_col`, 'numero_os')
@@ -234,8 +235,6 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
-    const hasActive = Object.values(filtros).some(v => !!v) || !!filtroEmpresaDash || !!filtroTipoOS
-    if (!hasActive) setFiltrosAbertos(false)
     setFiltros(FILTROS_VAZIOS)
     loadData(FILTROS_VAZIOS)
     apiService.getEmpresas().then(d => setEmpresasDim(d.filter(e => e.ativo !== false))).catch(() => {})
@@ -583,6 +582,7 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
             tipo_garantia_descricao: row.tipo_os_descricao || '',
             tipo_os_sigla:           row.tipo_os_sigla || '',
             chassi:                  row.veiculo_chassi,
+            placa:                   row.veiculo_placa || null,
             valor_pecas:             row.produto,
             valor_servicos:          row.servico,
             data_abertura_os:        row.data_criacao,
@@ -698,6 +698,13 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
   const grpAndamento = dadosBase.filter(g => STATUS_ANDAMENTO_GRUPO.includes(g.status_codigo))
   const grpAnd15     = grpAndamento.filter(g => diasDesdeDigitacao(g) >= prazoSolucao(g))
   const grpAndEmDia  = grpAndamento.filter(g => diasDesdeDigitacao(g) < prazoSolucao(g))
+  // Texto do card: um prazo só quando todas as OS do card têm o mesmo; senão a faixa (menor a maior).
+  const prazosAnd = [...new Set(grpAndamento.map(prazoSolucao))].sort((a, b) => a - b)
+  const prazoAndTexto = prazosAnd.length === 0
+    ? `${diasSolucao} dias`
+    : prazosAnd.length === 1
+      ? `${prazosAnd[0]} dia${prazosAnd[0] === 1 ? '' : 's'}`
+      : `${prazosAnd[0]} a ${prazosAnd[prazosAnd.length - 1]} dias`
   const grpAprovada  = dadosBase.filter(g => g.status_codigo === 'FA')
   const grpRecusas   = dadosBase.filter(g => ['FR','Z'].includes(g.status_codigo))
 
@@ -756,22 +763,27 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
   const CARDS_GRUPOS = [
     {
       key: 'a_digitar', label: 'A Digitar', icon: FileText, items: grpADigitar,
+      regra: `OS fechada <= ${diasDigitacao} dia${diasDigitacao === 1 ? '' : 's'} sem digitar`,
       st: { bg: 'bg-blue-50', border: 'border-blue-200', ring: 'ring-blue-300', icoBg: 'bg-blue-100', icoTxt: 'text-blue-600', numTxt: 'text-blue-700', labelTxt: 'text-blue-500', divider: 'border-blue-200' },
     },
     {
       key: 'atrasado', label: 'Digitação Atrasada', icon: AlertTriangle, items: grpAtrasado,
+      regra: `OS fechada > de ${diasDigitacao} dia${diasDigitacao === 1 ? '' : 's'} sem digitar`,
       st: { bg: 'bg-slate-100', border: 'border-slate-300', ring: 'ring-slate-400', icoBg: 'bg-slate-200', icoTxt: 'text-slate-600', numTxt: 'text-slate-800', labelTxt: 'text-slate-500', divider: 'border-slate-200' },
     },
     {
       key: 'andamento', label: 'Aguardando Aprovação DAF', icon: Activity, items: grpAndamento,
+      regra: `Prazo máximo de solução ${prazoAndTexto}`,
       st: { bg: 'bg-indigo-50', border: 'border-indigo-200', ring: 'ring-indigo-300', icoBg: 'bg-indigo-100', icoTxt: 'text-indigo-600', numTxt: 'text-indigo-700', labelTxt: 'text-indigo-500', divider: 'border-indigo-200' },
     },
     {
       key: 'aprovada', label: 'Aprovada', icon: CheckCircle, items: grpAprovada,
+      regra: 'Realizar Faturamento',
       st: { bg: 'bg-green-50', border: 'border-green-200', ring: 'ring-green-300', icoBg: 'bg-green-100', icoTxt: 'text-green-600', numTxt: 'text-green-700', labelTxt: 'text-green-500', divider: 'border-green-200' },
     },
     {
       key: 'recusas', label: 'Recusas', icon: XCircle, items: grpRecusas,
+      regra: 'Recusada pela DAF',
       st: { bg: 'bg-red-50', border: 'border-red-200', ring: 'ring-red-300', icoBg: 'bg-red-100', icoTxt: 'text-red-500', numTxt: 'text-red-600', labelTxt: 'text-red-400', divider: 'border-red-100' },
     },
   ]
@@ -999,6 +1011,7 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
               key={c.key}
               icon={c.icon}
               label={c.label}
+              regra={c.regra}
               count={c.items.length}
               valor={sumValor(c.items)}
               ativo={filtroCard === c.key}
@@ -1085,6 +1098,9 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
                       <FileText className="h-4 w-4 text-indigo-600" />
                     </div>
                     <span className="text-xs font-bold text-indigo-600 uppercase tracking-wide">Tipos de OS</span>
+                    <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-indigo-50 border border-indigo-100 text-[9px] text-indigo-500">
+                      <Info className="h-2.5 w-2.5" /> Clique em um tipo para filtrar a tabela abaixo
+                    </span>
                     {filtroTipoOSCard
                       ? <span className="ml-auto flex items-center gap-1 px-1.5 py-0.5 bg-indigo-100 text-indigo-700 rounded text-[9px] font-bold">{filtroTipoOSCard}</span>
                       : <span className="ml-auto text-[10px] text-slate-400">{tipos.length} tipos</span>
@@ -1191,18 +1207,12 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
       {/* ── FILTROS AVANÇADOS ── */}
       <div className="bg-white rounded-lg border border-slate-200 shadow-sm">
         <div className="w-full flex items-center justify-between px-4 py-3 gap-3">
-          <button
-            onClick={() => setFiltrosAbertos(p => !p)}
-            className="flex-1 flex items-center gap-2 text-xs font-semibold text-slate-700 hover:text-slate-900 transition-colors min-w-0"
-          >
-            <Filter className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-            Filtros avançados
-            {filtroEmpresaDash && <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px] font-bold">{filtroEmpresaDash}</span>}
-            {filtroTipoOS && <span className="px-1.5 py-0.5 bg-indigo-100 text-indigo-700 rounded text-[10px] font-bold">{filtroTipoOS}</span>}
+          <div className="flex-1 flex items-center gap-2 text-xs font-semibold text-slate-700 min-w-0">
+            <Search className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+            Filtros
             {filtroNaBase === 'sim' && <span className="px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-[10px] font-bold">● Encontrado</span>}
             {filtroNaBase === 'nao' && <span className="px-1.5 py-0.5 bg-red-100 text-red-700 rounded text-[10px] font-bold">● Não encontrado</span>}
-            <span className="text-slate-400">{filtrosAbertos ? '▲' : '▼'}</span>
-          </button>
+          </div>
           {!!(filtroEmpresaDash || filtroTipoOS || filtroNaBase || filtros.numero_os || filtros.chassi || filtros.data_inicio || filtros.data_fim || filtros.data_fechamento_inicio || filtros.data_fechamento_fim) && (
             <button
               type="button"
@@ -1213,7 +1223,6 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
             </button>
           )}
         </div>
-        {filtrosAbertos && (
           <form onSubmit={handleBuscar} className="px-4 pb-4 border-t border-slate-100">
             {/* Linha 1: Empresa | Tipo de OS (com Garantista) */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3">
@@ -1261,9 +1270,7 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
                   </div>
                 </div>
               )}
-            </div>
-            {/* Linha 2: Nº OS | Chassi */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3">
+              {/* Nº OS | Chassi — na mesma grade: Na Oficina fica tudo numa linha só */}
               {[
                 { name: 'numero_os', placeholder: 'Nº OS' },
                 { name: 'chassi', placeholder: isAndamento ? 'Chassi / Placa' : 'Chassi' },
@@ -1285,7 +1292,6 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
               </button>
             </div>
           </form>
-        )}
       </div>
 
       {/* ── FILTRO DE STATUS (somente Aberto) ── */}
@@ -1473,21 +1479,11 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
                         <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold ${st.cor}`}>{st.label}</span>
                       </td>
                       <td className="p-3 text-center sticky right-0 bg-white border-l border-slate-100 shadow-[-4px_0_12px_rgba(0,0,0,0.03)]">
-                        <div className="flex items-center justify-center gap-1">
-                          <button onClick={() => navigate(`/garantias-daf/${item.id}`, { state: { modo: 'visualizar' } })} className="p-1 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors" title="Visualizar">
-                            <Eye className="h-3.5 w-3.5" />
-                          </button>
-                          {canEditarOS && (
-                            <button onClick={() => navigate(`/garantias-daf/${item.id}`)} className="p-1 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors" title="Editar">
-                              <Edit2 className="h-3.5 w-3.5" />
-                            </button>
-                          )}
-                          {canExcluirOS && (
-                            <button onClick={() => confirmarExcluir(item)} className="p-1 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded transition-colors" title="Excluir">
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
-                          )}
-                        </div>
+                        <MenuEngrenagem compacto itens={[
+                          { icon: Eye, cor: 'text-indigo-600', titulo: 'Visualizar', descricao: 'Abrir a garantia somente para leitura', onClick: () => navigate(`/garantias-daf/${item.id}`, { state: { modo: 'visualizar' } }) },
+                          canEditarOS && { icon: Edit2, cor: 'text-blue-600', titulo: 'Editar', descricao: 'Abrir Editar Garantia', onClick: () => navigate(`/garantias-daf/${item.id}`) },
+                          canExcluirOS && { icon: Trash2, cor: 'text-red-600', titulo: 'Excluir', descricao: 'Remover esta garantia', onClick: () => confirmarExcluir(item) },
+                        ]} />
                       </td>
                     </tr>
                   )

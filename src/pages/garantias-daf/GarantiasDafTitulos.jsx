@@ -4,6 +4,7 @@ import {
   Search, RefreshCw, Loader2, Eye, X, ArrowDown, Receipt, XCircle, Link2, Link2Off, AlertTriangle, Info, BarChart2, Clock, Edit2,
 } from 'lucide-react'
 import { apiService } from '../../services/api'
+import MenuEngrenagem from '../../components/MenuEngrenagem'
 import { useAuth } from '../../context/AuthContext'
 import GarantiasNav from './GarantiasNav'
 import RegistroHistoricoPanel from './RegistroHistoricoPanel'
@@ -42,7 +43,6 @@ export default function GarantiasDafTitulos() {
   const [dataInicio, setDataInicio]                 = useState('')
   const [dataFim, setDataFim]                       = useState('')
   const [garantias, setGarantias]                   = useState([])
-  const [filtrosAbertos, setFiltrosAbertos]         = useState(false)
   const [titulosObs, setTitulosObs]                 = useState([]) // linhas de gar_titulos_observacoes (histórico)
 
   const loadTitulos = useCallback(async (force = false) => {
@@ -496,28 +496,20 @@ export default function GarantiasDafTitulos() {
       {/* ── FILTROS AVANÇADOS ── */}
       <div className="bg-white rounded-lg border border-slate-200 shadow-sm">
         <div className="w-full flex items-center justify-between px-4 py-3 gap-3">
-          <button
-            onClick={() => setFiltrosAbertos(p => !p)}
-            className="flex-1 flex items-center gap-2 text-xs font-semibold text-slate-700 hover:text-slate-900 transition-colors min-w-0"
-          >
+          <div className="flex-1 flex items-center gap-2 text-xs font-semibold text-slate-700 min-w-0">
             <Search className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-            Filtros avançados
-            {titulosEmpresa && <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px] font-bold">{titulosEmpresa}</span>}
-            {filtroOS && <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px] font-bold">OS {filtroOS}</span>}
-            {titulosBusca && <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px] font-bold">"{titulosBusca}"</span>}
-            <span className="text-slate-400">{filtrosAbertos ? '▲' : '▼'}</span>
-          </button>
+            Filtros
+          </div>
           {algumFiltroAtivo && (
             <button
               type="button"
               onClick={limparTodosFiltros}
               className="whitespace-nowrap flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold rounded-full border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 transition-colors shrink-0"
             >
-              <XCircle className="h-3 w-3" /> Limpar todos os filtros
+              <XCircle className="h-3 w-3" /> Limpar filtros
             </button>
           )}
         </div>
-        {filtrosAbertos && (
         <div className="flex items-center gap-3 flex-wrap px-4 pb-4 pt-1 border-t border-slate-100">
         <select
           value={titulosEmpresa}
@@ -613,7 +605,6 @@ export default function GarantiasDafTitulos() {
           ><Clock className="h-3 w-3" /> Aguard. Pagto</button>
         </div>
         </div>
-        )}
       </div>
 
       {/* TABELA */}
@@ -683,33 +674,12 @@ export default function GarantiasDafTitulos() {
                 return (
                   <tr key={i} className={`transition-colors hover:bg-slate-50/70 ${atrasado ? 'bg-red-50/30' : ''}`}>
                     <td className="p-3">
-                      <div className="flex items-center justify-center gap-1">
-                        <button
-                          type="button"
-                          onClick={abrirVisualizarOS}
-                          className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
-                          title="Visualizar Ordem de Serviço e Garantia"
-                        >
-                          <Receipt className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => abrirEdicaoTitulo({ ...r, _dataEnvio: dataEnvio })}
-                          className={`p-1 rounded transition-colors hover:bg-indigo-50 ${titulosComObsSet.has(r.nro_titulo) ? 'text-indigo-500 hover:text-indigo-700' : 'text-slate-400 hover:text-indigo-600'}`}
-                          title="Visualizar informações do título"
-                        >
-                          <Eye className="h-3.5 w-3.5" />
-                        </button>
-                        {canEditarGarantia && (
-                          <button
-                            type="button"
-                            onClick={irParaOS}
-                            className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
-                            title="Editar Garantia — vincular OS e informar envio à fábrica"
-                          >
-                            <Edit2 className="h-3.5 w-3.5" />
-                          </button>
-                        )}
+                      <div className="flex justify-center">
+                        <MenuEngrenagem compacto itens={[
+                          canEditarGarantia && { icon: Edit2, cor: 'text-blue-600', titulo: 'Editar Faturamento', descricao: 'Vincular OS e informar envio à fábrica', onClick: irParaOS },
+                          { icon: Eye, cor: titulosComObsSet.has(r.nro_titulo) ? 'text-indigo-600' : 'text-slate-500', titulo: 'Visualizar título', descricao: titulosComObsSet.has(r.nro_titulo) ? 'Informações do título (tem observações)' : 'Informações do título', onClick: () => abrirEdicaoTitulo({ ...r, _dataEnvio: dataEnvio }) },
+                          { icon: Receipt, cor: 'text-indigo-600', titulo: 'Visualizar OS e Garantia', descricao: 'Abertura, Análise e Faturamento da OS vinculada', onClick: abrirVisualizarOS },
+                        ]} />
                       </div>
                     </td>
                     <td className="p-3 whitespace-nowrap">

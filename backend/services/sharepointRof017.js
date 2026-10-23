@@ -159,6 +159,7 @@ export async function getAllFaturamentosRof017(dataInicio, dataFim, numeroOS = n
   const colDtEnc   = findCol('DataEncerramento',    'OS_DataFechamento')
   const colDtFat   = findCol('OSData_Faturamento',  'OSDataFaturamento')
   const colChassi  = findCol('Veiculo_Chassi',      'VeiculoChassi')
+  const colPlaca   = findCol('OS_VeiculoPlaca',     'Veiculo_Placa')
   const colModelo  = findCol('Veiculo_ModeloVeiculoDes', 'ModeloVeiculo')
   const colCliente = findCol('NomPessoa',           'Proprietario_Veiculo')
   const colEmpresa = findCol('Empresa_Nome',        'EmpresaNome')
@@ -197,6 +198,7 @@ export async function getAllFaturamentosRof017(dataInicio, dataFim, numeroOS = n
         consultor_nome:       '',
         proprietario_veiculo: String(r[colCliente] ?? '').trim(),
         chassi,
+        placa:                String(r[colPlaca]   ?? '').trim(),
         modelo_veiculo:       String(r[colModelo]  ?? '').trim(),
         nf_valor_produto:     0,
         nf_valor_servico:     0,

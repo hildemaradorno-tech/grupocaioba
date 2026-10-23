@@ -122,7 +122,7 @@ export default function Usuarios() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
-  const [form, setForm] = useState({ nome: '', email: '', senha: '', senhaConfirm: '', grupo_id: '', cargo_id: '', funcionario_id: '' })
+  const [form, setForm] = useState({ nome: '', nome_completo: '', email: '', senha: '', senhaConfirm: '', grupo_id: '', cargo_id: '', funcionario_id: '' })
   const [alterarSenha, setAlterarSenha] = useState(false)
   const [showSenha, setShowSenha] = useState(false)
   const [showSenhaConfirm, setShowSenhaConfirm] = useState(false)
@@ -172,6 +172,7 @@ export default function Usuarios() {
     try {
       if (editingId) {
         await apiService.updateUsuario(editingId, form.nome, form.email, form.grupo_id || null, form.cargo_id || null, form.funcionario_id || null)
+        await apiService.salvarNomeCompletoUsuario(form.email, form.nome_completo)
         if (alterarSenha && form.senha) {
           if (form.email === user?.email) {
             // Próprio usuário logado: usa a sessão atual, sem precisar do service key
@@ -190,6 +191,7 @@ export default function Usuarios() {
         }
         const redirectTo = `${URL_PRODUCAO}/redefinir-senha`
         await apiService.createUsuario(form.nome, form.email, form.grupo_id || null, redirectTo, form.cargo_id || null, form.funcionario_id || null)
+        if (form.nome_completo.trim()) await apiService.salvarNomeCompletoUsuario(form.email, form.nome_completo)
         setConviteEnviado({ nome: form.nome, email: form.email })
         resetForm()
         loadData()
@@ -203,7 +205,7 @@ export default function Usuarios() {
   }
 
   const handleEdit = (usuario) => {
-    setForm({ nome: usuario.nome, email: usuario.email, senha: '', senhaConfirm: '', grupo_id: usuario.grupo_id || '', cargo_id: usuario.cargo_id || '', funcionario_id: usuario.funcionario_id || '' })
+    setForm({ nome: usuario.nome, nome_completo: usuario.nome_completo || '', email: usuario.email, senha: '', senhaConfirm: '', grupo_id: usuario.grupo_id || '', cargo_id: usuario.cargo_id || '', funcionario_id: usuario.funcionario_id || '' })
     setEditingId(usuario.id)
     setAlterarSenha(false)
     setShowSenha(false)
@@ -235,7 +237,7 @@ export default function Usuarios() {
   }
 
   const resetForm = () => {
-    setForm({ nome: '', email: '', senha: '', senhaConfirm: '', grupo_id: '', cargo_id: '', funcionario_id: '' })
+    setForm({ nome: '', nome_completo: '', email: '', senha: '', senhaConfirm: '', grupo_id: '', cargo_id: '', funcionario_id: '' })
     setEditingId(null)
     setAlterarSenha(false)
     setShowSenha(false)
@@ -302,10 +304,17 @@ export default function Usuarios() {
             <form onSubmit={handleSubmit} className="p-5 space-y-3">
               <input
                 type="text"
-                placeholder="Nome completo"
+                placeholder="Nome no sistema"
                 value={form.nome}
                 onChange={(e) => setForm({ ...form, nome: e.target.value })}
                 required
+                className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              />
+              <input
+                type="text"
+                placeholder="Nome completo (usado em documentos, ex.: assinatura da Nota de Débito)"
+                value={form.nome_completo}
+                onChange={(e) => setForm({ ...form, nome_completo: e.target.value })}
                 className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
               />
               <input
@@ -554,6 +563,10 @@ export default function Usuarios() {
               <div className="flex flex-col gap-0.5">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Nome</span>
                 <span className="text-xs font-semibold text-slate-800">{itemVisualizado.nome || '-'}</span>
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Nome completo</span>
+                <span className="text-xs font-semibold text-slate-800">{itemVisualizado.nome_completo || '-'}</span>
               </div>
               <div className="flex flex-col gap-0.5">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">E-mail</span>

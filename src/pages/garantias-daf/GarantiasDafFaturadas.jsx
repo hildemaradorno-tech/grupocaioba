@@ -3,10 +3,11 @@ import { useSessionState } from '../../hooks/useSessionState'
 import { useNavigate } from 'react-router-dom'
 import {
   Search, Eye, ShieldAlert,
-  Filter, RotateCcw, Download,
+  RotateCcw, Download,
   XCircle, Info,
 } from 'lucide-react'
 import { apiService } from '../../services/api'
+import MenuEngrenagem from '../../components/MenuEngrenagem'
 import { useAuth } from '../../context/AuthContext'
 import GarantiasDafImportFaturadosModal from './GarantiasDafImportFaturadosModal'
 import GarantiasNav from './GarantiasNav'
@@ -54,7 +55,6 @@ export default function GarantiasDafFaturadas() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [filtros, setFiltros] = useSessionState('daf_fat_filtros', FILTROS_VAZIOS)
-  const [filtrosAbertos, setFiltrosAbertos] = useSessionState('daf_fat_filtros_abertos', false)
   const [modalExcluir, setModalExcluir] = useState(false)
   const [modalImportarFaturados, setModalImportarFaturados] = useState(false)
   const [filtroEmpresaDash, setFiltroEmpresaDash] = useSessionState('daf_fat_empresa', '')
@@ -88,8 +88,6 @@ export default function GarantiasDafFaturadas() {
 
   useEffect(() => {
     loadData(filtros)
-    const hasActive = Object.values(filtros).some(v => !!v) || !!filtroEmpresaDash
-    if (!hasActive) setFiltrosAbertos(false)
     apiService.getEmpresas().then(d => setEmpresasDim(d.filter(e => e.ativo !== false))).catch(() => {})
     carregarVinculoTitulos()
   }, [isAdmin, empresasPermitidas])
@@ -283,33 +281,21 @@ export default function GarantiasDafFaturadas() {
 
       {/* ── FILTROS AVANÇADOS ── */}
       <div className="bg-white rounded-lg border border-slate-200 shadow-sm">
-        <div className="w-full flex items-center justify-between px-4 py-3 text-xs font-semibold text-slate-700">
-          <button
-            onClick={() => setFiltrosAbertos(p => !p)}
-            className="flex items-center gap-2 flex-1 text-left hover:opacity-70 transition-opacity"
-          >
-            <Filter className="h-3.5 w-3.5 text-slate-400" />
-            Filtros avançados
-            {filtroEmpresaDash && <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px] font-bold">{filtroEmpresaDash}</span>}
-            {filtroTipoOsDash && <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px] font-bold">{filtroTipoOsDash}</span>}
-          </button>
-          <div className="flex items-center gap-3">
-            {temFiltroAtivo && (
-              <button
-                type="button"
-                onClick={handleLimparTudo}
-                className="flex items-center gap-1 text-slate-400 hover:text-red-600 transition-colors"
-                title="Limpar todos os filtros"
-              >
-                <RotateCcw className="h-3.5 w-3.5" /> Limpar filtros
-              </button>
-            )}
-            <button onClick={() => setFiltrosAbertos(p => !p)} className="text-slate-400 hover:text-slate-600 transition-colors">
-              {filtrosAbertos ? '▲' : '▼'}
-            </button>
+        <div className="w-full flex items-center justify-between px-4 py-3 gap-3">
+          <div className="flex-1 flex items-center gap-2 text-xs font-semibold text-slate-700 min-w-0">
+            <Search className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+            Filtros
           </div>
+          {temFiltroAtivo && (
+            <button
+              type="button"
+              onClick={handleLimparTudo}
+              className="whitespace-nowrap flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold rounded-full border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 transition-colors shrink-0"
+            >
+              <XCircle className="h-3 w-3" /> Limpar filtros
+            </button>
+          )}
         </div>
-        {filtrosAbertos && (
           <form onSubmit={handleBuscar} className="px-4 pb-4 border-t border-slate-100">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3">
               <div className="flex flex-col gap-1">
@@ -373,7 +359,6 @@ export default function GarantiasDafFaturadas() {
               )}
             </div>
           </form>
-        )}
       </div>
 
       {/* ── TABELA ── */}
@@ -435,10 +420,10 @@ export default function GarantiasDafFaturadas() {
                       </td>
                     )}
                     <td className="p-3 text-center">
-                      <div className="flex items-center justify-center gap-1">
-                        <button onClick={() => navigate(`/garantias-daf/${item.id}`, { state: { from: '/garantias-daf-historicodeos', modo: 'visualizar' } })} className="p-1 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors" title="Visualizar">
-                          <Eye className="h-3.5 w-3.5" />
-                        </button>
+                      <div className="flex justify-center">
+                        <MenuEngrenagem compacto itens={[
+                          { icon: Eye, cor: 'text-indigo-600', titulo: 'Visualizar', descricao: 'Abrir a garantia somente para leitura', onClick: () => navigate(`/garantias-daf/${item.id}`, { state: { from: '/garantias-daf-historicodeos', modo: 'visualizar' } }) },
+                        ]} />
                       </div>
                     </td>
                     <td className="p-3 whitespace-nowrap">

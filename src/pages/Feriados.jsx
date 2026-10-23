@@ -105,13 +105,11 @@ function ItemMenuEngrenagem({ icon: Icon, cor, titulo, descricao, onClick, disab
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className="w-full flex items-start gap-3 px-3 py-2.5 text-left hover:bg-slate-50 disabled:hover:bg-transparent disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+      title={descricao}
+      className="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-slate-50 disabled:hover:bg-transparent disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
     >
-      <Icon size={16} className={`mt-0.5 shrink-0 ${cor}`} />
-      <span className="min-w-0">
-        <span className="block text-sm font-semibold text-slate-800">{titulo}</span>
-        <span className="block text-xs text-slate-400 mt-0.5">{descricao}</span>
-      </span>
+      <Icon size={16} className={`shrink-0 ${cor}`} />
+      <span className="min-w-0 text-sm font-semibold text-slate-800">{titulo}</span>
     </button>
   )
 }
@@ -162,7 +160,7 @@ function MenuEngrenagemFeriados({ canEdit, onDuplicar, onImportar, onIncluir }) 
       {aberto && pos && createPortal(
         <div
           ref={painelRef}
-          className="fixed z-50 w-72 bg-white border border-slate-200 rounded-lg shadow-xl py-1"
+          className="fixed z-50 w-56 bg-white border border-slate-200 rounded-lg shadow-xl py-1"
           style={{ right: pos.right, top: pos.top }}
         >
           <ItemMenuEngrenagem

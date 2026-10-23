@@ -46,6 +46,7 @@ export function AuthProvider({ children }) {
   // ausência de entrada = 'editar' (sem restrição), somado às Ações já existentes.
   const [comissaoNivelSetor, setComissaoNivelSetor] = useState(new Map())
   const [userNome, setUserNome] = useState('')
+  const [userNomeCompleto, setUserNomeCompleto] = useState('')
   const [usuarioId, setUsuarioId] = useState(null) // usuarios.id (≠ auth.users.id)
   const [userCargoId, setUserCargoId] = useState(null)
   // Agrupamento do Cargo escolhido em Usuários — não é guardado direto na tabela usuarios (que
@@ -95,7 +96,7 @@ export function AuthProvider({ children }) {
       // Busca por email (mais robusto — evita mismatch entre auth.users.id e usuarios.id)
       const { data: perfil, error: e1 } = await supabase
         .from('usuarios')
-        .select('id, grupo_id, nome, cargo_id')
+        .select('id, grupo_id, nome, nome_completo, cargo_id')
         .eq('email', authUser.email)
         .maybeSingle()
 
@@ -108,6 +109,7 @@ export function AuthProvider({ children }) {
       }
 
       setUserNome(perfil?.nome || '')
+      setUserNomeCompleto(perfil?.nome_completo || '')
       setUsuarioId(perfil?.id || null)
       setUserCargoId(perfil?.cargo_id || null)
       if (perfil?.cargo_id) {
@@ -449,7 +451,7 @@ export function AuthProvider({ children }) {
 
   return (
     <AuthContext.Provider value={{
-      user, loading, permissionsLoading, userNome, usuarioId, userCargoId, cargoIdEfetivo, agrupamentoCargoIdEfetivo,
+      user, loading, permissionsLoading, userNome, userNomeCompleto, usuarioId, userCargoId, cargoIdEfetivo, agrupamentoCargoIdEfetivo,
       login, logout,
       hasPermission, hasAction, hasActionOrDefault, hasEmpresaPermission,
       isAdmin, isAdminEfetivo, empresasPermitidas, empresasPermitidasEfetivas,

@@ -68,6 +68,7 @@ import TruckPagTitulos from './pages/truckpag/TruckPagTitulos'
 import TruckPagConciliacao from './pages/truckpag/TruckPagConciliacao'
 import TruckPagRepasses from './pages/truckpag/TruckPagRepasses'
 import TipoTituloGarantia from './pages/garantia/TipoTituloGarantia'
+import ModelosNotaDebito from './pages/garantia/ModelosNotaDebito'
 import ProjetosDashboard from './pages/projetos/ProjetosDashboard'
 import ProjetoDetalhe from './pages/projetos/ProjetoDetalhe'
 import ProjetoEditor from './pages/projetos/ProjetoEditor'
@@ -251,6 +252,7 @@ export default function App() {
           { path: '/truckpag/conciliacao', element: <TruckPagConciliacao />, menuPath: 'truckpag/conciliacao' },
           { path: '/truckpag/repasses', element: <TruckPagRepasses />, menuPath: 'truckpag/repasses' },
           { path: '/garantia/tipo-titulo', element: <TipoTituloGarantia />, menuPath: 'garantia/tipo-titulo' },
+          { path: '/garantia/modelos-nota-debito', element: <ModelosNotaDebito />, menuPath: 'garantia/modelos-nota-debito' },
           { path: '/garantias-daf-andamento', element: <GarantiasDafDashboard key="andamento" variante="andamento" />, menuPath: '/garantias-daf-andamento' },
           { path: '/garantias-daf', element: <GarantiasDafDashboard key="aberto" />, menuPath: '/garantias-daf' },
           { path: '/garantias-daf/novo', element: <GarantiasDafForm />, menuPath: '/garantias-daf' },

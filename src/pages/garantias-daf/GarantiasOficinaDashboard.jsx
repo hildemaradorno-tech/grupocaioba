@@ -58,10 +58,10 @@ function DonutChart({ data, onSlice, filtroAtivo, encurtar, formatarValor = fmtM
   let cumulativeFrac = 0
   const labels = []
   return (
-    <div className="flex flex-col items-center justify-center gap-3">
+    <div className="flex items-center gap-6">
       <svg viewBox="0 0 160 160" className="w-40 h-40 shrink-0">
         <g transform="translate(80,80) rotate(-90)">
-          <circle r={radius} fill="none" stroke="#2c2c2a" strokeWidth="24" />
+          <circle r={radius} fill="none" stroke="#e2e8f0" strokeWidth="24" />
           {total > 0 && data.map((d, i) => {
             const frac = d.valor / total
             const gap = data.length > 1 ? 2 : 0
@@ -113,16 +113,16 @@ function DonutChart({ data, onSlice, filtroAtivo, encurtar, formatarValor = fmtM
             {l.pct}%
           </text>
         ))}
-        <text x="80" y="76" textAnchor="middle" className="fill-white" style={{ fontSize: '12px', fontWeight: 700 }}>
+        <text x="80" y="76" textAnchor="middle" className="fill-slate-900" style={{ fontSize: '12px', fontWeight: 700 }}>
           {formatarValor(total)}
         </text>
-        <text x="80" y="92" textAnchor="middle" className="fill-[#898781]" style={{ fontSize: '9px' }}>
+        <text x="80" y="92" textAnchor="middle" className="fill-slate-500" style={{ fontSize: '9px' }}>
           Total
         </text>
       </svg>
 
-      {/* Legenda abaixo do gráfico — rótulo curto; descrição completa e valor no tooltip. */}
-      <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1.5">
+      {/* Legenda à direita do gráfico — descrição completa; valor no tooltip. */}
+      <div className="flex-1 min-w-0 flex flex-col gap-1.5">
         {data.map((d, i) => {
           const clicavel = !!(onSlice && d.chave)
           const ativa = filtroAtivo && d.chave === filtroAtivo
@@ -135,10 +135,10 @@ function DonutChart({ data, onSlice, filtroAtivo, encurtar, formatarValor = fmtM
               key={i}
               onClick={clicavel ? () => onSlice(d.chave) : undefined}
               title={`${d.label} · ${pct}% · ${formatarValor(d.valor)}${d.qtd != null ? ` · ${d.qtd} OS` : d.valorMonetario != null ? ` · ${fmtMoeda(d.valorMonetario)}` : ''}`}
-              className={`flex items-center gap-1.5 text-[10px] transition-opacity ${clicavel ? 'cursor-pointer hover:opacity-80' : 'cursor-default'} ${esmaecida ? 'opacity-40' : ''}`}
+              className={`w-full flex items-center gap-1.5 text-[10px] text-left transition-opacity ${clicavel ? 'cursor-pointer hover:opacity-80' : 'cursor-default'} ${esmaecida ? 'opacity-40' : ''}`}
             >
               <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ backgroundColor: d.cor }} />
-              <span className={`truncate max-w-[140px] ${ativa ? 'font-bold text-white' : 'font-medium text-[#c3c2b7]'}`}>{rotulo}</span>
+              <span className={`truncate flex-1 min-w-0 ${ativa ? 'font-bold text-slate-900' : 'font-medium text-slate-600'}`}>{rotulo}</span>
             </button>
           )
         })}
@@ -199,7 +199,7 @@ function ClusterOficina({ dados, filtroAtivo, onSlice }) {
   }, [pontos])
 
   if (pontos.length === 0) {
-    return <p className="text-xs text-[#898781] text-center py-14">Sem dados suficientes para o gráfico.</p>
+    return <p className="text-xs text-slate-500 text-center py-14">Sem dados suficientes para o gráfico.</p>
   }
 
   const maxQtd = Math.max(...matriz.flat().map(c => c.qtd), 1)
@@ -220,19 +220,19 @@ function ClusterOficina({ dados, filtroAtivo, onSlice }) {
     <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ minWidth: 420 }}>
       {/* Grade */}
       {Array.from({ length: nCols + 1 }, (_, i) => (
-        <line key={`vx-${i}`} x1={padL + colW * i} x2={padL + colW * i} y1={padT} y2={H - padB} stroke="#2c2c2a" strokeWidth="1" />
+        <line key={`vx-${i}`} x1={padL + colW * i} x2={padL + colW * i} y1={padT} y2={H - padB} stroke="#e2e8f0" strokeWidth="1" />
       ))}
       {Array.from({ length: nRows + 1 }, (_, i) => (
-        <line key={`hy-${i}`} x1={padL} x2={padL + plotW} y1={padT + rowH * i} y2={padT + rowH * i} stroke="#2c2c2a" strokeWidth="1" />
+        <line key={`hy-${i}`} x1={padL} x2={padL + plotW} y1={padT + rowH * i} y2={padT + rowH * i} stroke="#e2e8f0" strokeWidth="1" />
       ))}
 
       {/* Rótulos eixo X — dias em aberto, a cada 7 dias */}
       {BUCKETS_DIAS_CLUSTER.map((b, i) => (
-        <text key={`xl-${i}`} x={xCentro(i)} y={H - padB + 16} textAnchor="middle" className="fill-[#898781]" style={{ fontSize: '10px' }}>{b.label}</text>
+        <text key={`xl-${i}`} x={xCentro(i)} y={H - padB + 16} textAnchor="middle" className="fill-slate-500" style={{ fontSize: '10px' }}>{b.label}</text>
       ))}
       {/* Rótulos eixo Y — faixas de valor */}
       {BUCKETS_VALOR_CLUSTER.map((b, i) => (
-        <text key={`yl-${i}`} x={padL - 8} y={yCentro(i) + 3} textAnchor="end" className="fill-[#898781]" style={{ fontSize: '10px' }}>{b.label}</text>
+        <text key={`yl-${i}`} x={padL - 8} y={yCentro(i) + 3} textAnchor="end" className="fill-slate-500" style={{ fontSize: '10px' }}>{b.label}</text>
       ))}
 
       {/* Bolhas — tamanho proporcional à quantidade de OS no cruzamento; clicáveis */}
@@ -251,7 +251,7 @@ function ClusterOficina({ dados, filtroAtivo, onSlice }) {
             <circle
               cx={xCentro(ix)} cy={yCentro(iy)} r={raio(cel.qtd)}
               fill={cor} fillOpacity="0.55"
-              stroke={ativa ? '#ffffff' : cor}
+              stroke={ativa ? '#0f172a' : cor}
               strokeWidth={ativa ? 2.5 : 1.5}
             >
               <title>{`${BUCKETS_DIAS_CLUSTER[ix].label} · R$ ${BUCKETS_VALOR_CLUSTER[iy].label} · Quant OS: ${cel.qtd} · Valor total das OS: ${fmtMoeda(cel.valor)}`}</title>
@@ -277,6 +277,10 @@ const diasNaOficina = (r) => r.data_criacao ? Math.floor((new Date() - new Date(
 // apenas OS do tipo Garantia, com filtros cruzados entre todos os gráficos.
 export default function GarantiasOficinaDashboard({ onLastModified }) {
   const [oficinaRows, setOficinaRows] = useState([])
+  const [diasOficina, setDiasOficina] = useState(14)
+  useEffect(() => {
+    apiService.getConfiguracoesGarantias().then(cfg => setDiasOficina(cfg?.dias_oficina ?? 14)).catch(() => {})
+  }, [])
   const [oficinaLoading, setOficinaLoading] = useState(true)
   const [siglasGarantiaOficina, setSiglasGarantiaOficina] = useState(new Set())
   const [oficinaLastModified, setOficinaLastModified] = useState(null)
@@ -403,12 +407,13 @@ export default function GarantiasOficinaDashboard({ onLastModified }) {
   const oficinaStats = useMemo(() => {
     const dias = oficinaRowsFiltradas.map(diasNaOficina).filter(d => d !== null)
     const tempoMedio = dias.length ? Math.round(dias.reduce((a, b) => a + b, 0) / dias.length) : 0
-    const mais14Rows = oficinaRowsFiltradas.filter(r => bucketOf(r) === 'b4')
+    // Mesma regra do card da tela Na Oficina: "Dias na Oficina" (Regras do Sistema)
+    const mais14Rows = oficinaRowsFiltradas.filter(r => { const d = diasNaOficina(r); return d !== null && d > diasOficina })
     const mais14 = mais14Rows.length
     const valorMais14 = mais14Rows.reduce((s, r) => s + Number(r.total || 0), 0)
     const valorTotal = oficinaRowsFiltradas.reduce((s, r) => s + Number(r.total || 0), 0)
     return { total: oficinaRowsFiltradas.length, valorTotal, tempoMedio, mais14, valorMais14 }
-  }, [oficinaRowsFiltradas])
+  }, [oficinaRowsFiltradas, diasOficina])
 
   useEffect(() => { onLastModified?.(oficinaLastModified) }, [oficinaLastModified, onLastModified])
 
@@ -458,7 +463,7 @@ export default function GarantiasOficinaDashboard({ onLastModified }) {
 
   if (oficinaLoading) {
     return (
-      <div className="bg-[#0f172a] rounded-lg border border-white/10 shadow-sm p-16 flex flex-col items-center gap-3 text-[#898781]">
+      <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-16 flex flex-col items-center gap-3 text-slate-500">
         <Loader2 className="h-6 w-6 animate-spin" />
         <p className="text-xs">Carregando dados do SharePoint...</p>
       </div>
@@ -467,9 +472,9 @@ export default function GarantiasOficinaDashboard({ onLastModified }) {
 
   if (oficinaRowsGarantia.length === 0) {
     return (
-      <div className="bg-[#0f172a] rounded-lg border border-white/10 shadow-sm p-16 flex flex-col items-center gap-3">
-        <div className="p-3 bg-white/5 rounded-full"><Wrench className="h-6 w-6 text-[#898781]" /></div>
-        <p className="text-sm font-semibold text-[#c3c2b7]">Nenhuma OS de garantia na oficina no momento</p>
+      <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-16 flex flex-col items-center gap-3">
+        <div className="p-3 bg-slate-50 rounded-full"><Wrench className="h-6 w-6 text-slate-500" /></div>
+        <p className="text-sm font-semibold text-slate-600">Nenhuma OS de garantia na oficina no momento</p>
       </div>
     )
   }
@@ -486,14 +491,14 @@ export default function GarantiasOficinaDashboard({ onLastModified }) {
           >
             <XCircle className="h-3 w-3" /> Limpar dashboard
           </button>
-          <p className="text-[11px] text-[#898781]">
+          <p className="text-[11px] text-slate-500">
             Filtrado por{' '}
             {[
               filtroBucket && BUCKETS_OFICINA.find(b => b.key === filtroBucket)?.label,
               filtroTipo,
               filtroEmpresaOficina,
               filtroCluster && `${BUCKETS_DIAS_CLUSTER[filtroCluster.ix].label} · ${BUCKETS_VALOR_CLUSTER[filtroCluster.iy].label}`,
-            ].filter(Boolean).map((f, i) => <Fragment key={i}>{i > 0 && ' + '}<strong className="text-white">{f}</strong></Fragment>)}
+            ].filter(Boolean).map((f, i) => <Fragment key={i}>{i > 0 && ' + '}<strong className="text-slate-900">{f}</strong></Fragment>)}
           </p>
         </div>
       )}
@@ -518,7 +523,7 @@ export default function GarantiasOficinaDashboard({ onLastModified }) {
         />
         <StatTileGradient
           icon={oficinaStats.mais14 > 0 ? AlertTriangle : CheckCircle2}
-          label="Mais de 14 dias"
+          label={`Mais de ${diasOficina} dias`}
           value={oficinaStats.mais14}
           sub={oficinaStats.total > 0 ? `${Math.round((oficinaStats.mais14 / oficinaStats.total) * 100)}% do total` : '—'}
           rodape={fmtMoeda(oficinaStats.valorMais14)}
@@ -528,20 +533,19 @@ export default function GarantiasOficinaDashboard({ onLastModified }) {
 
       {/* GRÁFICOS DE PIZZA — POR VALOR (nível categoria, participação no total) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="bg-[#0f172a] rounded-lg border border-white/10 shadow-sm p-5">
-          <p className="text-xs font-bold text-white mb-1">OS por Empresa — por Valor</p>
-          <p className="text-[11px] text-[#898781] mb-4">Participação de cada empresa no valor total em disputa.</p>
+        <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-5">
+          <p className="text-xs font-bold text-slate-900 mb-1">OS por Empresa — por Valor</p>
+          <p className="text-[11px] text-slate-500 mb-4">Participação de cada empresa no valor total em disputa.</p>
           <DonutChart data={oficinaPorEmpresaValor} onSlice={toggleFiltroEmpresaOficina} filtroAtivo={filtroEmpresaOficina} />
         </div>
 
-        <div className="bg-[#0f172a] rounded-lg border border-white/10 shadow-sm p-5">
-          <p className="text-xs font-bold text-white mb-1">OS por Tipo de Garantia — por Quantidade</p>
-          <p className="text-[11px] text-[#898781] mb-4">Participação de cada tipo na quantidade total de OS.</p>
+        <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-5">
+          <p className="text-xs font-bold text-slate-900 mb-1">OS por Tipo de Garantia — por Quantidade</p>
+          <p className="text-[11px] text-slate-500 mb-4">Participação de cada tipo na quantidade total de OS.</p>
           <DonutChart
             data={oficinaPorTipoQtd}
             onSlice={toggleFiltroTipo}
             filtroAtivo={filtroTipo}
-            encurtar={(label) => label.split(' ')[0]}
             formatarValor={(v) => `${v} OS`}
           />
         </div>
@@ -549,9 +553,9 @@ export default function GarantiasOficinaDashboard({ onLastModified }) {
 
       {/* GRÁFICOS: POR TIPO DE OS — valor ao lado de quantidade — nível categoria */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="bg-[#0f172a] rounded-lg border border-white/10 shadow-sm p-5">
-          <p className="text-xs font-bold text-white mb-1">OS por Tipo de Garantia — por Valor</p>
-          <p className="text-[11px] text-[#898781] mb-4">Onde o valor em disputa na oficina se concentra hoje.</p>
+        <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-5">
+          <p className="text-xs font-bold text-slate-900 mb-1">OS por Tipo de Garantia — por Valor</p>
+          <p className="text-[11px] text-slate-500 mb-4">Onde o valor em disputa na oficina se concentra hoje.</p>
           <div className="space-y-3">
             {oficinaPorTipoPorValor.map((item, i) => {
               const maxValor = oficinaPorTipoPorValor[0]?.valor || 1
@@ -562,14 +566,14 @@ export default function GarantiasOficinaDashboard({ onLastModified }) {
                 <button type="button" key={i} onClick={() => toggleFiltroTipo(item.label)}
                   className={`relative group block w-full text-left cursor-pointer transition-opacity ${esmaecido ? 'opacity-40' : ''}`}>
                   <div className="flex items-center justify-between text-[11px] mb-1 gap-2">
-                    <span className={`truncate ${ativo ? 'text-[#199e70] font-semibold' : 'text-[#c3c2b7]'}`} title={item.label}>{item.label}</span>
-                    <span className="font-semibold text-white shrink-0">{fmtMoeda(item.valor)}</span>
+                    <span className={`truncate ${ativo ? 'text-[#199e70] font-semibold' : 'text-slate-600'}`} title={item.label}>{item.label}</span>
+                    <span className="font-semibold text-slate-900 shrink-0">{fmtMoeda(item.valor)}</span>
                   </div>
-                  <div className={`h-2.5 rounded-full bg-white/10 overflow-hidden ${ativo ? 'ring-2 ring-offset-1 ring-offset-[#0f172a] ring-[#199e70]/60' : ''}`}>
+                  <div className={`h-2.5 rounded-full bg-slate-100 overflow-hidden ${ativo ? 'ring-2 ring-offset-1 ring-offset-white ring-[#199e70]/60' : ''}`}>
                     <div className="h-full rounded-full bg-[#199e70]" style={{ width: `${pct}%` }} />
                   </div>
                   <div className="absolute left-0 -top-7 hidden group-hover:block z-20 pointer-events-none">
-                    <span className="bg-[#1a1a19] text-white text-[10px] rounded px-2 py-1 whitespace-nowrap shadow-lg border border-white/10">
+                    <span className="bg-[#1a1a19] text-white text-[10px] rounded px-2 py-1 whitespace-nowrap shadow-lg border border-slate-200">
                       {item.qtd} OS · {fmtMoeda(item.valor)}
                     </span>
                   </div>
@@ -579,9 +583,9 @@ export default function GarantiasOficinaDashboard({ onLastModified }) {
           </div>
         </div>
 
-        <div className="bg-[#0f172a] rounded-lg border border-white/10 shadow-sm p-5">
-          <p className="text-xs font-bold text-white mb-1">OS por Tipo de Garantia — por Quantidade</p>
-          <p className="text-[11px] text-[#898781] mb-4">Onde a demanda da oficina se concentra hoje.</p>
+        <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-5">
+          <p className="text-xs font-bold text-slate-900 mb-1">OS por Tipo de Garantia — por Quantidade</p>
+          <p className="text-[11px] text-slate-500 mb-4">Onde a demanda da oficina se concentra hoje.</p>
           <div className="space-y-3">
             {oficinaPorTipo.map((item, i) => {
               const maxQtd = oficinaPorTipo[0]?.qtd || 1
@@ -592,14 +596,14 @@ export default function GarantiasOficinaDashboard({ onLastModified }) {
                 <button type="button" key={i} onClick={() => toggleFiltroTipo(item.label)}
                   className={`relative group block w-full text-left cursor-pointer transition-opacity ${esmaecido ? 'opacity-40' : ''}`}>
                   <div className="flex items-center justify-between text-[11px] mb-1 gap-2">
-                    <span className={`truncate ${ativo ? 'text-[#3987e5] font-semibold' : 'text-[#c3c2b7]'}`} title={item.label}>{item.label}</span>
-                    <span className="font-semibold text-white shrink-0">{item.qtd}</span>
+                    <span className={`truncate ${ativo ? 'text-[#3987e5] font-semibold' : 'text-slate-600'}`} title={item.label}>{item.label}</span>
+                    <span className="font-semibold text-slate-900 shrink-0">{item.qtd}</span>
                   </div>
-                  <div className={`h-2.5 rounded-full bg-white/10 overflow-hidden ${ativo ? 'ring-2 ring-offset-1 ring-offset-[#0f172a] ring-[#3987e5]/60' : ''}`}>
+                  <div className={`h-2.5 rounded-full bg-slate-100 overflow-hidden ${ativo ? 'ring-2 ring-offset-1 ring-offset-white ring-[#3987e5]/60' : ''}`}>
                     <div className="h-full rounded-full bg-[#3987e5]" style={{ width: `${pct}%` }} />
                   </div>
                   <div className="absolute left-0 -top-7 hidden group-hover:block z-20 pointer-events-none">
-                    <span className="bg-[#1a1a19] text-white text-[10px] rounded px-2 py-1 whitespace-nowrap shadow-lg border border-white/10">
+                    <span className="bg-[#1a1a19] text-white text-[10px] rounded px-2 py-1 whitespace-nowrap shadow-lg border border-slate-200">
                       {item.qtd} OS · {fmtMoeda(item.valor)}
                     </span>
                   </div>
@@ -611,38 +615,38 @@ export default function GarantiasOficinaDashboard({ onLastModified }) {
       </div>
 
       {/* CLUSTER MAP: OS EM ABERTO — dias × valor, antes do detalhe por OS */}
-      <div className="bg-[#0f172a] rounded-lg border border-white/10 shadow-sm p-5">
-        <p className="text-xs font-bold text-white mb-1">Ordens de Serviço em Aberto — Concentração por Dias e Valor</p>
-        <p className="text-[11px] text-[#898781] mb-2">Cada bolha cruza uma faixa de dias em aberto (eixo horizontal) com uma faixa de valor em R$ (eixo vertical) — o tamanho mostra quantas OS caem ali, revelando onde a concentração está.</p>
+      <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-5">
+        <p className="text-xs font-bold text-slate-900 mb-1">Ordens de Serviço em Aberto — Concentração por Dias e Valor</p>
+        <p className="text-[11px] text-slate-500 mb-2">Cada bolha cruza uma faixa de dias em aberto (eixo horizontal) com uma faixa de valor em R$ (eixo vertical) — o tamanho mostra quantas OS caem ali, revelando onde a concentração está.</p>
         <div className="flex items-center gap-4 mb-4">
-          <span className="flex items-center gap-1.5 text-[10px] text-[#898781]"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: '#0ca30c' }} /> No prazo <em className="italic">(até 14d e até R$ 30k)</em></span>
-          <span className="flex items-center gap-1.5 text-[10px] text-[#898781]"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: '#fab219' }} /> Atenção <em className="italic">(até 30d e até R$ 50k)</em></span>
-          <span className="flex items-center gap-1.5 text-[10px] text-[#898781]"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: '#d03b3b' }} /> Crítico <em className="italic">(acima disso)</em></span>
+          <span className="flex items-center gap-1.5 text-[10px] text-slate-500"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: '#0ca30c' }} /> No prazo <em className="italic">(até 14d e até R$ 30k)</em></span>
+          <span className="flex items-center gap-1.5 text-[10px] text-slate-500"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: '#fab219' }} /> Atenção <em className="italic">(até 30d e até R$ 50k)</em></span>
+          <span className="flex items-center gap-1.5 text-[10px] text-slate-500"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: '#d03b3b' }} /> Crítico <em className="italic">(acima disso)</em></span>
         </div>
         <ClusterOficina dados={dadosClusterOficina} filtroAtivo={filtroCluster} onSlice={toggleFiltroCluster} />
       </div>
 
       {/* TABELA: ORDENS DE SERVIÇO — última ponta da narrativa, uma linha por OS */}
-      <div className="bg-[#0f172a] rounded-lg border border-white/10 shadow-sm overflow-x-auto custom-scrollbar-light">
+      <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-x-auto custom-scrollbar-light">
         <div className="p-5 pb-0">
-          <p className="text-xs font-bold text-white mb-1">Ordens de Serviço</p>
-          <p className="text-[11px] text-[#898781] mb-1">Detalhamento das OS de garantia na oficina, conforme os filtros ativos acima.</p>
+          <p className="text-xs font-bold text-slate-900 mb-1">Ordens de Serviço</p>
+          <p className="text-[11px] text-slate-500 mb-1">Detalhamento das OS de garantia na oficina, conforme os filtros ativos acima.</p>
         </div>
         {linhasDetalheOficina.length === 0 ? (
-          <div className="p-10 text-center text-[#898781] text-sm">Nenhum registro para exibir.</div>
+          <div className="p-10 text-center text-slate-500 text-sm">Nenhum registro para exibir.</div>
         ) : (
           <table className="w-full text-left border-collapse mt-3">
             <thead>
-              <tr className="bg-white/5 border-b border-white/10 text-[#898781] text-[10px] font-bold uppercase tracking-wider">
+              <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 text-[10px] font-bold uppercase tracking-wider">
                 {COLUNAS_DETALHE.map(c => (
                   <th
                     key={c.key}
                     onClick={() => handleSortDetalhe(c.key)}
-                    className={`p-3 whitespace-nowrap cursor-pointer select-none hover:bg-white/10 hover:text-white transition-colors ${c.tipo === 'moeda' || c.tipo === 'numero' ? 'text-right' : ''}`}
+                    className={`p-3 whitespace-nowrap cursor-pointer select-none hover:bg-slate-100 hover:text-slate-900 transition-colors ${c.tipo === 'moeda' || c.tipo === 'numero' ? 'text-right' : ''}`}
                   >
                     <span className={`flex items-center gap-1 ${c.tipo === 'moeda' || c.tipo === 'numero' ? 'justify-end' : ''}`}>
                       {c.label}
-                      <span className={sortCol === c.key ? 'text-[#3987e5]' : 'text-white/20'}>
+                      <span className={sortCol === c.key ? 'text-[#3987e5]' : 'text-slate-300'}>
                         {sortCol === c.key ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}
                       </span>
                     </span>
@@ -650,13 +654,13 @@ export default function GarantiasOficinaDashboard({ onLastModified }) {
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-white/10 text-xs text-[#c3c2b7]">
+            <tbody className="divide-y divide-slate-200 text-xs text-slate-600">
               {linhasDetalheOficina.map(row => (
-                <tr key={row.id} className="hover:bg-white/5 transition-colors">
+                <tr key={row.id} className="hover:bg-slate-50 transition-colors">
                   {COLUNAS_DETALHE.map(c => {
                     const valor = row[c.key]
                     if (c.key === 'dias') {
-                      const diasCor = valor === null ? 'text-[#898781]'
+                      const diasCor = valor === null ? 'text-slate-500'
                         : valor >= 30 ? 'text-[#e66767] font-bold'
                         : valor >= 15 ? 'text-[#fab219] font-semibold'
                         : 'text-[#0ca30c]'
@@ -668,8 +672,8 @@ export default function GarantiasOficinaDashboard({ onLastModified }) {
                     }
                     const texto = c.tipo === 'data' ? fmtData(valor) : c.tipo === 'moeda' ? (valor ? fmtMoeda(valor) : '') : (valor ?? '')
                     return (
-                      <td key={c.key} className={`p-3 whitespace-nowrap ${c.tipo === 'moeda' || c.tipo === 'numero' ? 'text-right font-semibold text-white' : 'text-[#c3c2b7]'} ${c.key === 'empresa_nome' || c.key === 'tipo_os' ? 'truncate max-w-[220px]' : ''}`}>
-                        {texto || texto === 0 ? texto : <span className="text-white/20">—</span>}
+                      <td key={c.key} className={`p-3 whitespace-nowrap ${c.tipo === 'moeda' || c.tipo === 'numero' ? 'text-right font-semibold text-slate-900' : 'text-slate-600'} ${c.key === 'empresa_nome' || c.key === 'tipo_os' ? 'truncate max-w-[220px]' : ''}`}>
+                        {texto || texto === 0 ? texto : <span className="text-slate-300">—</span>}
                       </td>
                     )
                   })}

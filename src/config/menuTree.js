@@ -68,6 +68,13 @@ export const MENU_TREE = [
               { key: 'auditoria-externa/tipos-divergencia', label: 'Tipos de Divergência' },
             ],
           },
+          {
+            key: '_cadastros.garantias',
+            label: 'Tabelas de Garantia',
+            children: [
+              { key: 'garantia/modelos-nota-debito', label: 'Modelos de Nota de Débito' },
+            ],
+          },
         ],
       },
       {

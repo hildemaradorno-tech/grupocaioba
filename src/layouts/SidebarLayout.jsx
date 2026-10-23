@@ -410,6 +410,13 @@ export default function SidebarLayout() {
                 {canView('auditoria-externa/tipos-divergencia') && <FlyItem to="/auditoria-externa/tipos-divergencia" icon={ShieldAlert} onClose={closeFlyout}>Tipos de Divergência</FlyItem>}
               </>
             )}
+            {canViewSection('_cadastros.garantias') && (
+              <>
+                <div className="mx-3 my-2 border-t border-blue-800/50" />
+                <FlyGroup label="Tabelas de Garantia" />
+                {canView('garantia/modelos-nota-debito') && <FlyItem to="/garantia/modelos-nota-debito" icon={FileText} onClose={closeFlyout}>Modelos de Nota de Débito</FlyItem>}
+              </>
+            )}
             {canViewSection('_governanca') && (
               <>
                 <div className="mx-3 my-2 border-t border-blue-800/50" />

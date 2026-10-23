@@ -3,13 +3,14 @@ import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import {
   ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Save, ArrowLeft,
   Building2, Wrench, BarChart2, XCircle, History, Lock,
-  Search, CheckCircle, AlertCircle, Loader2, Eye,
+  Search, CheckCircle, AlertCircle, Loader2, Eye, FileText,
 } from 'lucide-react'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
 import { apiService } from '../../services/api'
 import { useAuth } from '../../context/AuthContext'
 import RegistroHistoricoPanel from './RegistroHistoricoPanel'
+import EmitirNotaDebitoModal from './EmitirNotaDebitoModal'
 
 const STATUS_OPTIONS = [
   { value: 'A',  label: 'A — Em Análise no Setor de Garantia' },
@@ -89,11 +90,6 @@ const ETAPAS = [
   { id: 3, label: 'Faturamento', icon: BarChart2 },
   { id: 5, label: 'Recusado',    icon: XCircle },
 ]
-
-const diffDias = (a, b) => {
-  if (!a || !b) return null
-  return Math.max(0, Math.round((new Date(b) - new Date(a)) / 86400000))
-}
 
 // Formata qualquer valor de data (ISO, timestamp, YYYY-MM-DD) para DD/MM/YYYY
 const fmtDate = (val) => {
@@ -218,8 +214,13 @@ export default function GarantiasDafForm() {
   const { user, hasActionOrDefault } = useAuth()
   const modoEdicao = Boolean(id)
   const modoVisualizar = location.state?.modo === 'visualizar'
-  const canEditarOS = hasActionOrDefault('garantias-daf', 'editar')
   const voltarPara = location.state?.from || '/garantias-daf'
+  // Nota de Débito só é emitida a partir da aba Títulos a Receber
+  const vindoDeTitulos = location.state?.from === '/garantias-daf-titulos'
+  // Aberta por "Editar Faturamento" (A Receber), vale a permissão daquela aba; senão, Editar OS.
+  const canEditarOS = hasActionOrDefault('garantias-daf', 'editar')
+    || (vindoDeTitulos && hasActionOrDefault('garantias-daf-titulos', 'editar_garantia'))
+  const canEmitirNota = vindoDeTitulos && hasActionOrDefault('garantias-daf-titulos', 'emitir_nota_debito')
 
   const [etapa, setEtapa] = useState(() => {
     if (id) return 1
@@ -245,6 +246,7 @@ export default function GarantiasDafForm() {
   const [log, setLog] = useState([])
   const [loading, setLoading] = useState(true)
   const [salvando, setSalvando] = useState(false)
+  const [notaDebitoAberta, setNotaDebitoAberta] = useState(false)
   const [error, setError] = useState(null)
   const [buscandoFaturamento, setBuscandoFaturamento] = useState(false)
   const [resultadoFaturamento, setResultadoFaturamento] = useState(null) // null | 'found' | {type:'not_found', siglas:[]} | 'error'
@@ -584,7 +586,6 @@ export default function GarantiasDafForm() {
     finally { setSalvando(false) }
   }
 
-  const delta2 = diffDias(form.data_emissao_nf, form.data_envio_fabrica)
   const valorTotal = (parseFloat(form.valor_pecas) || 0) + (parseFloat(form.valor_servicos) || 0)
   const mostrarRecusa = form.status_codigo === 'FR'
   // Sigla exibida sempre derivada da própria descrição ("G03 - PLANO..." → "G03"), garantindo
@@ -1043,6 +1044,15 @@ export default function GarantiasDafForm() {
                 <p className="text-[11px] font-bold text-indigo-700 uppercase tracking-wider">3 — Faturamento</p>
               </div>
               <div className="flex items-center gap-2">
+                {modoEdicao && canEmitirNota && (
+                  <button
+                    type="button"
+                    onClick={() => setNotaDebitoAberta(true)}
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 transition-colors"
+                  >
+                    <FileText className="h-3.5 w-3.5" /> Nota de Débito
+                  </button>
+                )}
                 {nfList.length > 0 && !buscandoFaturamento && (
                   <button
                     type="button"
@@ -1099,11 +1109,11 @@ export default function GarantiasDafForm() {
 
             {/* Layout principal: NFs + Envio Fábrica lado a lado */}
             <div className="space-y-4">
-            <div className="flex gap-4 items-start">
+            <div className="flex gap-4 items-stretch">
 
               {/* Notas Fiscais */}
-              <div className="flex-1 min-w-0 space-y-2">
-                <div className="flex items-center gap-1.5">
+              <div className="flex-1 min-w-0 flex flex-col gap-2">
+                <div className="flex items-center gap-1.5 h-5">
                   <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Notas Fiscais Emitidas</span>
                   {nfList.length > 0 && (
                     <span className="px-1.5 py-0.5 bg-indigo-100 text-indigo-700 rounded text-[10px] font-bold">{nfList.length} NF{nfList.length > 1 ? 's' : ''}</span>
@@ -1198,19 +1208,17 @@ export default function GarantiasDafForm() {
                 </div>
               </div>
 
-              {/* Envio para Fábrica — coluna estreita ao lado das NFs */}
-              <div className="w-48 shrink-0 bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 space-y-3">
-                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Envio para Fábrica</span>
-                <div className="flex flex-col gap-1">
-                  <LabelField>Data de Envio</LabelField>
-                  <InputField type="date" name="data_envio_fabrica" value={form.data_envio_fabrica} onChange={handleChange} />
+              {/* Envio para Fábrica — mesma linha de título e mesma altura da tabela de NFs */}
+              <div className="w-48 shrink-0 flex flex-col gap-2">
+                <div className="flex items-center h-5">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Envio para Fábrica</span>
                 </div>
-                {delta2 !== null && (
+                <div className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-4 py-3">
                   <div className="flex flex-col gap-1">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase">Δ Faturamento → Envio</span>
-                    <span className={`text-sm font-bold ${delta2 > 30 ? 'text-red-600' : delta2 > 15 ? 'text-yellow-600' : 'text-green-600'}`}>{delta2}d</span>
+                    <LabelField>Data de Envio</LabelField>
+                    <InputField type="date" name="data_envio_fabrica" value={form.data_envio_fabrica} onChange={handleChange} />
                   </div>
-                )}
+                </div>
               </div>
 
             </div>
@@ -1407,6 +1415,7 @@ export default function GarantiasDafForm() {
               </button>
             )}
           </div>
+          <div className="flex items-center gap-2">
           {!modoVisualizar && (
           <button
             type="button"
@@ -1419,8 +1428,21 @@ export default function GarantiasDafForm() {
             {salvando ? 'Salvando...' : 'Salvar Garantia'}
           </button>
           )}
+          </div>
         </div>
       </div>
+
+      {notaDebitoAberta && (
+        <EmitirNotaDebitoModal
+          garantia={{ ...form, notas_fiscais: nfList }}
+          garantiaId={id}
+          empresas={empresas}
+          sigla={siglaExibida}
+          statusLabel={STATUS_LABEL[form.status_codigo] || ''}
+          usuario={user?.email}
+          onClose={() => setNotaDebitoAberta(false)}
+        />
+      )}
 
       {/* HISTÓRICO DE ALTERAÇÕES (só no modo edição) */}
       {modoEdicao && log.length > 0 && (

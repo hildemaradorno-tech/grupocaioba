@@ -46,8 +46,20 @@ export default function Empresas() {
     codigo_concessionaria: '',
     nome_empresa_sistema: '',
     sistema_dms: '',
-    numero_filial: ''
+    numero_filial: '',
+    inscricao_estadual: '',
+    endereco: '',
+    numero: '',
+    bairro: '',
+    cep: '',
+    cidade: '',
+    uf: '',
+    telefone: '',
+    banco: '',
+    agencia: '',
+    conta: ''
   })
+  const [aba, setAba] = useState('gerais')
   const [modalVisualizarAberto, setModalVisualizarAberto] = useState(false)
   const [itemVisualizado, setItemVisualizado] = useState(null)
   const [busca, setBusca] = useState('')
@@ -110,8 +122,20 @@ export default function Empresas() {
       codigo_concessionaria: '',
       nome_empresa_sistema: '',
       sistema_dms: '',
-      numero_filial: ''
+      numero_filial: '',
+      inscricao_estadual: '',
+      endereco: '',
+      numero: '',
+      bairro: '',
+      cep: '',
+      cidade: '',
+      uf: '',
+      telefone: '',
+      banco: '',
+      agencia: '',
+      conta: ''
     })
+    setAba('gerais')
     setModalAberto(true)
   }
 
@@ -131,8 +155,20 @@ export default function Empresas() {
       codigo_concessionaria: item.codigo_concessionaria,
       nome_empresa_sistema: item.nome_empresa_sistema || '',
       sistema_dms: item.sistema_dms || '',
-      numero_filial: item.numero_filial || ''
+      numero_filial: item.numero_filial || '',
+      inscricao_estadual: item.inscricao_estadual || '',
+      endereco: item.endereco || '',
+      numero: item.numero || '',
+      bairro: item.bairro || '',
+      cep: item.cep || '',
+      cidade: item.cidade || '',
+      uf: item.uf || '',
+      telefone: item.telefone || '',
+      banco: item.banco || '',
+      agencia: item.agencia || '',
+      conta: item.conta || ''
     })
+    setAba('gerais')
     setModalAberto(true)
   }
 
@@ -163,6 +199,17 @@ export default function Empresas() {
       nome_empresa_sistema: form.nome_empresa_sistema || null,
       sistema_dms: form.sistema_dms || null,
       numero_filial: form.numero_filial || null,
+      inscricao_estadual: form.inscricao_estadual || null,
+      endereco: form.endereco || null,
+      numero: form.numero || null,
+      bairro: form.bairro || null,
+      cep: form.cep || null,
+      cidade: form.cidade || null,
+      uf: form.uf || null,
+      telefone: form.telefone || null,
+      banco: form.banco || null,
+      agencia: form.agencia || null,
+      conta: form.conta || null,
       ativo: true
     }
 
@@ -272,6 +319,7 @@ export default function Empresas() {
         <table className="w-full table-auto text-left border-collapse min-w-[700px]">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[11px] font-semibold uppercase tracking-wider">
+              <th className="p-3 w-16 text-center">Ações</th>
               <th className="p-3 w-16 text-center">
                 <button onClick={() => toggleSort('codigo')} className="flex items-center gap-1 mx-auto hover:text-slate-600 transition-colors">
                   Cód. <SortIcon col="codigo" />
@@ -302,7 +350,6 @@ export default function Empresas() {
                   Agrupamento <SortIcon col="agrupamento" />
                 </button>
               </th>
-              <th className="p-3 w-24 text-center">Ações</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
@@ -314,6 +361,15 @@ export default function Empresas() {
               </tr>
             ) : dadosFiltrados.map((item) => (
               <tr key={item.id} className="hover:bg-slate-50/70 transition-colors">
+                <td className="p-3 text-center">
+                  <PermissionActionButtons
+                    engrenagem
+                    menuPath="empresas"
+                    onView={() => abrirVisualizar(item)}
+                    onEdit={() => abrirEditar(item)}
+                    onDelete={() => abrirExcluir(item)}
+                  />
+                </td>
                 <td className="p-3 text-center text-slate-500 font-mono font-bold">{item.codigo_empresa}</td>
                 <td className="p-3 text-slate-900 font-semibold whitespace-nowrap truncate" title={item.empresa_fantasia}>
                   {item.empresa_fantasia}
@@ -326,14 +382,6 @@ export default function Empresas() {
                 </td>
                 <td className="p-3 text-slate-500">{item.segmento_nome || '-'}</td>
                 <td className="p-3 text-slate-500">{item.agrupamento_nome}</td>
-                <td className="p-3">
-                  <PermissionActionButtons
-                    menuPath="empresas"
-                    onView={() => abrirVisualizar(item)}
-                    onEdit={() => abrirEditar(item)}
-                    onDelete={() => abrirExcluir(item)}
-                  />
-                </td>
               </tr>
             ))}
           </tbody>
@@ -354,9 +402,23 @@ export default function Empresas() {
               </button>
             </div>
 
-            <form onSubmit={handleSalvar}>
-              <div className="p-5 grid grid-cols-2 gap-4">
-                {/* Razão Social + CNPJ */}
+            <form onSubmit={handleSalvar} onInvalidCapture={(e) => setAba(e.target.closest('[data-aba]')?.dataset.aba || 'gerais')}>
+              <div className="flex gap-1 px-5 pt-3 border-b border-slate-100">
+                {[['gerais', 'Dados Gerais'], ['sistemas', 'Sistemas'], ['endereco', 'Endereço'], ['bancarios', 'Dados Bancários']].map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setAba(id)}
+                    className={`px-3 py-2 text-xs font-semibold border-b-2 -mb-px transition-colors ${aba === id ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div className="p-5 grid grid-cols-2 gap-4 content-start min-h-[360px]">
+                {/* ABA: DADOS GERAIS */}
+                <div data-aba="gerais" className={aba === 'gerais' ? 'contents' : 'hidden'}>
+                {/* Razão Social + Empresa Fantasia */}
                 <div className="col-span-2 grid grid-cols-2 gap-4">
                   <div className="flex flex-col gap-1">
                     <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Nome da Empresa (Razão Social) *</label>
@@ -371,22 +433,6 @@ export default function Empresas() {
                     />
                   </div>
                   <div className="flex flex-col gap-1">
-                    <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">CNPJ *</label>
-                    <input
-                      type="text"
-                      required
-                      name="cnpj"
-                      value={form.cnpj}
-                      onChange={handleInputChange}
-                      placeholder="00.000.000/0001-00"
-                      className="w-full text-xs p-2 border border-slate-200 rounded-md font-mono text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                    />
-                  </div>
-                </div>
-
-                {/* Empresa Fantasia + Código Concessionária Fabricante */}
-                <div className="col-span-2 grid grid-cols-2 gap-4">
-                  <div className="flex flex-col gap-1">
                     <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Empresa Fantasia *</label>
                     <input
                       type="text"
@@ -398,6 +444,37 @@ export default function Empresas() {
                       className="w-full text-xs p-2 border border-slate-200 rounded-md font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                     />
                   </div>
+                </div>
+
+                {/* CNPJ + Inscrição Estadual */}
+                <div className="col-span-2 grid grid-cols-2 gap-4">
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">CNPJ *</label>
+                    <input
+                      type="text"
+                      required
+                      name="cnpj"
+                      value={form.cnpj}
+                      onChange={handleInputChange}
+                      placeholder="00.000.000/0001-00"
+                      className="w-full text-xs p-2 border border-slate-200 rounded-md font-mono text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Inscrição Estadual (I.E.)</label>
+                    <input
+                      type="text"
+                      name="inscricao_estadual"
+                      value={form.inscricao_estadual}
+                      onChange={handleInputChange}
+                      placeholder="Ex: 28.389.606-0"
+                      className="w-full text-xs p-2 border border-slate-200 rounded-md font-mono text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Código Concessionária Fabricante */}
+                <div className="col-span-2 grid grid-cols-2 gap-4">
                   <div className="flex flex-col gap-1">
                     <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Código Concessionária Fabricante</label>
                     <input
@@ -459,6 +536,10 @@ export default function Empresas() {
                   </div>
                 </div>
 
+                </div>
+
+                {/* ABA: SISTEMAS */}
+                <div data-aba="sistemas" className={aba === 'sistemas' ? 'contents' : 'hidden'}>
                 {/* Sistema DMS + Sigla Empresa Sistema */}
                 <div className="col-span-2 grid grid-cols-2 gap-4">
                   <div className="flex flex-col gap-1">
@@ -548,6 +629,139 @@ export default function Empresas() {
                     />
                   </div>
                 </div>
+                </div>
+
+                {/* ABA: ENDEREÇO */}
+                <div data-aba="endereco" className={aba === 'endereco' ? 'contents' : 'hidden'}>
+                {/* Endereço */}
+                <div className="col-span-2 grid grid-cols-4 gap-4">
+                  <div className="flex flex-col gap-1 col-span-3">
+                    <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Endereço</label>
+                    <input
+                      type="text"
+                      name="endereco"
+                      value={form.endereco}
+                      onChange={handleInputChange}
+                      placeholder="Rua/Av."
+                      className="w-full text-xs p-2 border border-slate-200 rounded-md font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Nº</label>
+                    <input
+                      type="text"
+                      name="numero"
+                      value={form.numero}
+                      onChange={handleInputChange}
+                      placeholder="Ex: 2281"
+                      className="w-full text-xs p-2 border border-slate-200 rounded-md font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Bairro + Cidade + UF + CEP */}
+                <div className="col-span-2 grid grid-cols-6 gap-4">
+                  <div className="flex flex-col gap-1 col-span-2">
+                    <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Bairro</label>
+                    <input
+                      type="text"
+                      name="bairro"
+                      value={form.bairro}
+                      onChange={handleInputChange}
+                      placeholder="Ex: B. Moreninha"
+                      className="w-full text-xs p-2 border border-slate-200 rounded-md font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1 col-span-2">
+                    <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Cidade</label>
+                    <input
+                      type="text"
+                      name="cidade"
+                      value={form.cidade}
+                      onChange={handleInputChange}
+                      placeholder="Ex: Campo Grande"
+                      className="w-full text-xs p-2 border border-slate-200 rounded-md font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">UF</label>
+                    <input
+                      type="text"
+                      name="uf"
+                      value={form.uf}
+                      onChange={handleInputChange}
+                      placeholder="Ex: MS"
+                      className="w-full text-xs p-2 border border-slate-200 rounded-md font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">CEP</label>
+                    <input
+                      type="text"
+                      name="cep"
+                      value={form.cep}
+                      onChange={handleInputChange}
+                      placeholder="00.000-000"
+                      className="w-full text-xs p-2 border border-slate-200 rounded-md font-mono text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Telefone */}
+                <div className="col-span-2 grid grid-cols-2 gap-4">
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Telefone</label>
+                    <input
+                      type="text"
+                      name="telefone"
+                      value={form.telefone}
+                      onChange={handleInputChange}
+                      placeholder="Ex: (67) 4141-7271"
+                      className="w-full text-xs p-2 border border-slate-200 rounded-md font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                    />
+                  </div>
+                </div>
+
+                </div>
+
+                {/* ABA: DADOS BANCÁRIOS */}
+                <div data-aba="bancarios" className={aba === 'bancarios' ? 'contents' : 'hidden'}>
+                <div className="col-span-2 grid grid-cols-3 gap-4">
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Banco</label>
+                    <input
+                      type="text"
+                      name="banco"
+                      value={form.banco}
+                      onChange={handleInputChange}
+                      placeholder="Ex: Itaú"
+                      className="w-full text-xs p-2 border border-slate-200 rounded-md font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Agência</label>
+                    <input
+                      type="text"
+                      name="agencia"
+                      value={form.agencia}
+                      onChange={handleInputChange}
+                      placeholder="Ex: 0091 – AV. Eduardo Elias Zahran"
+                      className="w-full text-xs p-2 border border-slate-200 rounded-md font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Conta</label>
+                    <input
+                      type="text"
+                      name="conta"
+                      value={form.conta}
+                      onChange={handleInputChange}
+                      placeholder="Ex: 04351-3"
+                      className="w-full text-xs p-2 border border-slate-200 rounded-md font-mono text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                    />
+                  </div>
+                </div>
+                </div>
 
               </div>
 
@@ -627,6 +841,42 @@ export default function Empresas() {
               <div className="flex flex-col gap-0.5 col-span-2">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Agrupamento</span>
                 <span className="text-xs font-semibold text-slate-800">{itemVisualizado.agrupamento_nome || '-'}</span>
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Inscrição Estadual</span>
+                <span className="text-xs font-mono font-semibold text-slate-800">{itemVisualizado.inscricao_estadual || '-'}</span>
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Telefone</span>
+                <span className="text-xs font-semibold text-slate-800">{itemVisualizado.telefone || '-'}</span>
+              </div>
+              <div className="flex flex-col gap-0.5 col-span-2">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Endereço</span>
+                <span className="text-xs font-semibold text-slate-800">{[itemVisualizado.endereco, itemVisualizado.numero].filter(Boolean).join(', ') || '-'}</span>
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Bairro</span>
+                <span className="text-xs font-semibold text-slate-800">{itemVisualizado.bairro || '-'}</span>
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">CEP</span>
+                <span className="text-xs font-mono font-semibold text-slate-800">{itemVisualizado.cep || '-'}</span>
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Cidade / UF</span>
+                <span className="text-xs font-semibold text-slate-800">{[itemVisualizado.cidade, itemVisualizado.uf].filter(Boolean).join(' – ') || '-'}</span>
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Banco</span>
+                <span className="text-xs font-semibold text-slate-800">{itemVisualizado.banco || '-'}</span>
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Agência</span>
+                <span className="text-xs font-semibold text-slate-800">{itemVisualizado.agencia || '-'}</span>
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Conta</span>
+                <span className="text-xs font-mono font-semibold text-slate-800">{itemVisualizado.conta || '-'}</span>
               </div>
               {itemVisualizado.nome_empresa_sistema && (
                 <div className="flex flex-col gap-0.5 col-span-2">

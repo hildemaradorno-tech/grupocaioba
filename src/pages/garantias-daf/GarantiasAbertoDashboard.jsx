@@ -43,10 +43,10 @@ function DonutChart({ data, onSlice, filtroAtivo, encurtar, formatarValor = fmtM
   let cumulativeFrac = 0
   const labels = []
   return (
-    <div className="flex flex-col items-center justify-center gap-3">
+    <div className="flex items-center gap-6">
       <svg viewBox="0 0 160 160" className="w-40 h-40 shrink-0">
         <g transform="translate(80,80) rotate(-90)">
-          <circle r={radius} fill="none" stroke="#2c2c2a" strokeWidth="24" />
+          <circle r={radius} fill="none" stroke="#e2e8f0" strokeWidth="24" />
           {total > 0 && data.map((d, i) => {
             const frac = d.valor / total
             const gap = data.length > 1 ? 2 : 0
@@ -84,12 +84,12 @@ function DonutChart({ data, onSlice, filtroAtivo, encurtar, formatarValor = fmtM
             {l.pct}%
           </text>
         ))}
-        <text x="80" y="76" textAnchor="middle" className="fill-white" style={{ fontSize: '12px', fontWeight: 700 }}>{formatarValor(total)}</text>
-        <text x="80" y="92" textAnchor="middle" className="fill-[#898781]" style={{ fontSize: '9px' }}>Total</text>
+        <text x="80" y="76" textAnchor="middle" className="fill-slate-900" style={{ fontSize: '12px', fontWeight: 700 }}>{formatarValor(total)}</text>
+        <text x="80" y="92" textAnchor="middle" className="fill-slate-500" style={{ fontSize: '9px' }}>Total</text>
       </svg>
 
-      {/* Legenda abaixo do gráfico — rótulo curto; descrição completa e valor no tooltip. */}
-      <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1.5">
+      {/* Legenda à direita do gráfico — descrição completa; valor no tooltip. */}
+      <div className="flex-1 min-w-0 flex flex-col gap-1.5">
         {data.map((d, i) => {
           const clicavel = !!(onSlice && d.chave)
           const ativa = filtroAtivo && d.chave === filtroAtivo
@@ -102,10 +102,10 @@ function DonutChart({ data, onSlice, filtroAtivo, encurtar, formatarValor = fmtM
               key={i}
               onClick={clicavel ? () => onSlice(d.chave) : undefined}
               title={`${d.label} · ${pct}% · ${formatarValor(d.valor)}${d.qtd != null ? ` · ${d.qtd} OS` : d.valorMonetario != null ? ` · ${fmtMoeda(d.valorMonetario)}` : ''}`}
-              className={`flex items-center gap-1.5 text-[10px] transition-opacity ${clicavel ? 'cursor-pointer hover:opacity-80' : 'cursor-default'} ${esmaecida ? 'opacity-40' : ''}`}
+              className={`w-full flex items-center gap-1.5 text-[10px] text-left transition-opacity ${clicavel ? 'cursor-pointer hover:opacity-80' : 'cursor-default'} ${esmaecida ? 'opacity-40' : ''}`}
             >
               <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ backgroundColor: d.cor }} />
-              <span className={`truncate max-w-[140px] ${ativa ? 'font-bold text-white' : 'font-medium text-[#c3c2b7]'}`}>{rotulo}</span>
+              <span className={`truncate flex-1 min-w-0 ${ativa ? 'font-bold text-slate-900' : 'font-medium text-slate-600'}`}>{rotulo}</span>
             </button>
           )
         })}
@@ -162,7 +162,7 @@ function ClusterAberto({ dados, filtroAtivo, onSlice }) {
   }, [pontos])
 
   if (pontos.length === 0) {
-    return <p className="text-xs text-[#898781] text-center py-14">Sem dados suficientes para o gráfico.</p>
+    return <p className="text-xs text-slate-500 text-center py-14">Sem dados suficientes para o gráfico.</p>
   }
 
   const maxQtd = Math.max(...matriz.flat().map(c => c.qtd), 1)
@@ -182,17 +182,17 @@ function ClusterAberto({ dados, filtroAtivo, onSlice }) {
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ minWidth: 420 }}>
       {Array.from({ length: nCols + 1 }, (_, i) => (
-        <line key={`vx-${i}`} x1={padL + colW * i} x2={padL + colW * i} y1={padT} y2={H - padB} stroke="#2c2c2a" strokeWidth="1" />
+        <line key={`vx-${i}`} x1={padL + colW * i} x2={padL + colW * i} y1={padT} y2={H - padB} stroke="#e2e8f0" strokeWidth="1" />
       ))}
       {Array.from({ length: nRows + 1 }, (_, i) => (
-        <line key={`hy-${i}`} x1={padL} x2={padL + plotW} y1={padT + rowH * i} y2={padT + rowH * i} stroke="#2c2c2a" strokeWidth="1" />
+        <line key={`hy-${i}`} x1={padL} x2={padL + plotW} y1={padT + rowH * i} y2={padT + rowH * i} stroke="#e2e8f0" strokeWidth="1" />
       ))}
 
       {BUCKETS_DIAS_CLUSTER.map((b, i) => (
-        <text key={`xl-${i}`} x={xCentro(i)} y={H - padB + 16} textAnchor="middle" className="fill-[#898781]" style={{ fontSize: '10px' }}>{b.label}</text>
+        <text key={`xl-${i}`} x={xCentro(i)} y={H - padB + 16} textAnchor="middle" className="fill-slate-500" style={{ fontSize: '10px' }}>{b.label}</text>
       ))}
       {BUCKETS_VALOR_CLUSTER.map((b, i) => (
-        <text key={`yl-${i}`} x={padL - 8} y={yCentro(i) + 3} textAnchor="end" className="fill-[#898781]" style={{ fontSize: '10px' }}>{b.label}</text>
+        <text key={`yl-${i}`} x={padL - 8} y={yCentro(i) + 3} textAnchor="end" className="fill-slate-500" style={{ fontSize: '10px' }}>{b.label}</text>
       ))}
 
       {matriz.map((linha, iy) => linha.map((cel, ix) => {
@@ -210,7 +210,7 @@ function ClusterAberto({ dados, filtroAtivo, onSlice }) {
             <circle
               cx={xCentro(ix)} cy={yCentro(iy)} r={raio(cel.qtd)}
               fill={cor} fillOpacity="0.55"
-              stroke={ativa ? '#ffffff' : cor}
+              stroke={ativa ? '#0f172a' : cor}
               strokeWidth={ativa ? 2.5 : 1.5}
             >
               <title>{`${BUCKETS_DIAS_CLUSTER[ix].label} · R$ ${BUCKETS_VALOR_CLUSTER[iy].label} · Quant OS: ${cel.qtd} · Valor total das OS: ${fmtMoeda(cel.valor)}`}</title>
@@ -246,30 +246,33 @@ const STATUS_LABEL = {
 }
 const statusLabel = (codigo) => STATUS_LABEL[codigo] || codigo || 'Não informado'
 
-// Status 'A' com mais de D+1 sem digitação vira "digitação atrasada" — mesmo critério do Controle.
-function isDigAtrasada(g) {
-  if (g.status_codigo !== 'A' || !g.data_abertura_os) return false
-  const hoje = new Date()
-  const abertura = new Date(g.data_abertura_os + 'T12:00:00')
-  return Math.floor((hoje - abertura) / 86400000) > 1
+// Mesma regra de Garantias DAF com Garantista: status 'A' fica atrasado quando a OS está fechada
+// há mais que "Dias para Digitação" (Regras do Sistema) dias.
+function diasDesdeFechamento(g) {
+  if (!g.data_fechamento_os) return null
+  return Math.floor((new Date() - new Date(g.data_fechamento_os + 'T12:00:00')) / 86400000)
+}
+
+function isDigAtrasada(g, diasDigitacao) {
+  if (g.status_codigo !== 'A') return false
+  const d = diasDesdeFechamento(g)
+  return d !== null && d > diasDigitacao
 }
 
 // Classifica cada garantia num dos 5 grupos gerais de status (visão simplificada do dashboard)
-function classificarStatus(g) {
-  if (g.status_codigo === 'A') return isDigAtrasada(g) ? 'atrasada' : 'digitar'
+function classificarStatus(g, diasDigitacao) {
+  if (g.status_codigo === 'A') return isDigAtrasada(g, diasDigitacao) ? 'atrasada' : 'digitar'
   if (g.status_codigo === 'FA') return 'aprovada'
   if (['FR', 'Z'].includes(g.status_codigo)) return 'recusada'
   return 'digitada'
 }
 
-// Status detalhado por registro — status 'A' se desdobra conforme os dias desde a abertura da OS.
-function statusDetalhado(g) {
+// Status detalhado por registro — status 'A' se desdobra pela regra Dias para Digitação.
+function statusDetalhado(g, diasDigitacao) {
   if (g.status_codigo !== 'A') return statusLabel(g.status_codigo)
-  if (!g.data_abertura_os) return 'A — Em fase de digitação (D+1)'
-  const hoje = new Date()
-  const abertura = new Date(g.data_abertura_os + 'T12:00:00')
-  const d = Math.floor((hoje - abertura) / 86400000)
-  return d > 1 ? 'A — Digitação Atrasada (>D+1)' : 'A — Em fase de digitação (D+1)'
+  return isDigAtrasada(g, diasDigitacao)
+    ? `A — Digitação Atrasada (>D+${diasDigitacao})`
+    : `A — Em fase de digitação (D+${diasDigitacao})`
 }
 
 // Cartão KPI em degradê — nível "empresa/total" (o primeiro contato do gestor com a tela).
@@ -326,6 +329,10 @@ function CardTotalAberto({ total, distintas, pecas, servicos, geral }) {
 export default function GarantiasAbertoDashboard({ onLastModified }) {
   const { isAdmin, empresasPermitidas } = useAuth()
   const [dados, setDados] = useState([])
+  const [diasDigitacao, setDiasDigitacao] = useState(14)
+  useEffect(() => {
+    apiService.getConfiguracoesGarantias().then(cfg => setDiasDigitacao(cfg?.dias_digitacao ?? 14)).catch(() => {})
+  }, [])
   const [loading, setLoading] = useState(true)
   const [encerradaLastModified, setEncerradaLastModified] = useState(null)
 
@@ -352,7 +359,7 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
   // Cross-filtro: aplica grupo + empresa + tipo + cluster, com opção de pular um deles (usado
   // pelos próprios gráficos/tabelas, pra fatia/bolha/card clicado não desaparecer do que o originou).
   const aplicarFiltrosAberto = (rows, { pularGrupo, pularEmpresa, pularTipo, pularCluster } = {}) => {
-    let out = (!pularGrupo && filtroGrupo) ? rows.filter(g => classificarStatus(g) === filtroGrupo) : rows
+    let out = (!pularGrupo && filtroGrupo) ? rows.filter(g => classificarStatus(g, diasDigitacao) === filtroGrupo) : rows
     if (!pularEmpresa && filtroEmpresa) out = out.filter(g => (g.empresa_nome || 'Não informado') === filtroEmpresa)
     if (!pularTipo && filtroTipo) out = out.filter(g => (g.tipo_garantia_descricao?.trim() || 'Não informado') === filtroTipo)
     if (!pularCluster && filtroCluster) out = out.filter(g => {
@@ -385,8 +392,8 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
 
   // Clique num "Status SHC" da tabela de detalhamento filtra cards, tabela pivot e a própria tabela.
   const dadosBaseShc = useMemo(
-    () => filtroStatusShc ? dados.filter(g => statusDetalhado(g) === filtroStatusShc) : dados,
-    [dados, filtroStatusShc]
+    () => filtroStatusShc ? dados.filter(g => statusDetalhado(g, diasDigitacao) === filtroStatusShc) : dados,
+    [dados, filtroStatusShc, diasDigitacao]
   )
 
   // Base da tabela "Status das Garantias" — reflete empresa/tipo/cluster, mas NÃO o próprio
@@ -422,7 +429,7 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
     for (const grp of GRUPOS_STATUS) p[grp.key] = { total: { qtd: 0, valor: 0 } }
     for (const g of dadosSemGrupo) {
       if (!g.data_abertura_os) continue
-      const grpKey = classificarStatus(g)
+      const grpKey = classificarStatus(g, diasDigitacao)
       const d = new Date(g.data_abertura_os + 'T12:00:00')
       const chave = `${d.getFullYear()}-${d.getMonth()}`
       const valor = Number(g.valor_pecas || 0) + Number(g.valor_servicos || 0)
@@ -433,7 +440,7 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
       p[grpKey].total.valor += valor
     }
     return p
-  }, [dadosSemGrupo])
+  }, [dadosSemGrupo, diasDigitacao])
 
   const totalAno = (grpKey, ano) =>
     (mesesPorAno[ano] || []).reduce((acc, m) => {
@@ -456,7 +463,7 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
 
   const dadosExibidos = useMemo(
     () => aplicarFiltrosAberto(dadosBaseShc),
-    [dadosBaseShc, filtroGrupo, filtroEmpresa, filtroTipo, filtroCluster]
+    [dadosBaseShc, filtroGrupo, filtroEmpresa, filtroTipo, filtroCluster, diasDigitacao]
   )
 
   // Base do cluster map: reflete os OUTROS filtros ativos, mas não o próprio cruzamento
@@ -532,11 +539,11 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
       data_sg: g.data_sg || '',
       dias: g.data_abertura_os ? diffDias(g.data_abertura_os, hojeISO) : null,
       numero_sg: g.numero_sg || '',
-      status_geral: GRUPOS_STATUS.find(gr => gr.key === classificarStatus(g))?.label || '',
-      status_shc: statusDetalhado(g),
+      status_geral: GRUPOS_STATUS.find(gr => gr.key === classificarStatus(g, diasDigitacao))?.label || '',
+      status_shc: statusDetalhado(g, diasDigitacao),
       resposta_shc: g.resposta_shc || '',
     }))
-  }, [dadosExibidos])
+  }, [dadosExibidos, diasDigitacao])
 
   const linhasOrdenadas = useMemo(() => {
     const arr = [...linhasDetalhe]
@@ -569,7 +576,7 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
     for (const grp of GRUPOS_STATUS) p[grp.key] = {}
     for (const g of dadosSemGrupo) {
       if (!g.data_abertura_os) continue
-      const grpKey = classificarStatus(g)
+      const grpKey = classificarStatus(g, diasDigitacao)
       const statusCod = g.status_codigo || '—'
       const d = new Date(g.data_abertura_os + 'T12:00:00')
       const chave = `${d.getFullYear()}-${d.getMonth()}`
@@ -582,7 +589,7 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
       p[grpKey][statusCod].total.valor += valor
     }
     return p
-  }, [dadosSemGrupo])
+  }, [dadosSemGrupo, diasDigitacao])
 
   const totalAnoShc = (grpKey, statusCod, ano) =>
     (mesesPorAno[ano] || []).reduce((acc, m) => {
@@ -597,7 +604,7 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
     for (const grp of GRUPOS_STATUS) p[grp.key] = {}
     for (const g of dadosSemGrupo) {
       if (!g.data_abertura_os) continue
-      const grpKey = classificarStatus(g)
+      const grpKey = classificarStatus(g, diasDigitacao)
       const statusCod = g.status_codigo || '—'
       const tipo = g.tipo_garantia_descricao?.trim() || 'Não informado'
       const d = new Date(g.data_abertura_os + 'T12:00:00')
@@ -612,7 +619,7 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
       p[grpKey][statusCod][tipo].total.valor += valor
     }
     return p
-  }, [dadosSemGrupo])
+  }, [dadosSemGrupo, diasDigitacao])
 
   const totalAnoTipoDentro = (grpKey, statusCod, tipo, ano) =>
     (mesesPorAno[ano] || []).reduce((acc, m) => {
@@ -647,7 +654,7 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
 
   if (loading) {
     return (
-      <div className="bg-[#0f172a] rounded-lg border border-white/10 shadow-sm p-16 flex flex-col items-center gap-3 text-[#898781]">
+      <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-16 flex flex-col items-center gap-3 text-slate-500">
         <Loader2 className="h-6 w-6 animate-spin" />
         <p className="text-xs">Carregando dados...</p>
       </div>
@@ -659,7 +666,7 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
       {/* CARDS — nível empresa/total, clicáveis, filtram a tabela abaixo */}
       <div className="grid grid-cols-6 gap-4">
         {GRUPOS_STATUS.map(grp => (
-          <div key={grp.key} className={`h-full relative transition-all hover:shadow-xl ${filtroGrupo && filtroGrupo !== grp.key ? 'opacity-50' : ''} ${filtroGrupo === grp.key ? 'ring-2 ring-white/60 rounded-2xl' : ''}`}>
+          <div key={grp.key} className={`h-full relative transition-all hover:shadow-xl ${filtroGrupo && filtroGrupo !== grp.key ? 'opacity-50' : ''} ${filtroGrupo === grp.key ? 'ring-2 ring-violet-500 rounded-2xl' : ''}`}>
             <StatTileGradient
               icon={grp.icone}
               label={grp.card}
@@ -675,69 +682,68 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
 
       {/* GRÁFICOS DE PIZZA — POR VALOR / POR QUANTIDADE (nível categoria, participação no total) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="bg-[#0f172a] rounded-lg border border-white/10 shadow-sm p-5">
-          <p className="text-xs font-bold text-white mb-1">OS por Empresa — por Valor</p>
-          <p className="text-[11px] text-[#898781] mb-4">Participação de cada empresa no valor total das garantias em aberto.</p>
+        <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-5">
+          <p className="text-xs font-bold text-slate-900 mb-1">OS por Empresa — por Valor</p>
+          <p className="text-[11px] text-slate-500 mb-4">Participação de cada empresa no valor total das garantias em aberto.</p>
           <DonutChart data={porEmpresaValorDonut} onSlice={toggleFiltroEmpresa} filtroAtivo={filtroEmpresa} />
         </div>
 
-        <div className="bg-[#0f172a] rounded-lg border border-white/10 shadow-sm p-5">
-          <p className="text-xs font-bold text-white mb-1">OS por Tipo de Garantia — por Quantidade</p>
-          <p className="text-[11px] text-[#898781] mb-4">Participação de cada tipo na quantidade total de OS.</p>
+        <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-5">
+          <p className="text-xs font-bold text-slate-900 mb-1">OS por Tipo de Garantia — por Quantidade</p>
+          <p className="text-[11px] text-slate-500 mb-4">Participação de cada tipo na quantidade total de OS.</p>
           <DonutChart
             data={porTipoQtdDonut}
             onSlice={toggleFiltroTipo}
             filtroAtivo={filtroTipo}
-            encurtar={(label) => label.split(' ')[0]}
             formatarValor={(v) => `${v} OS`}
           />
         </div>
       </div>
 
       {/* CLUSTER MAP: OS EM ABERTO — dias × valor, antes das tabelas */}
-      <div className="bg-[#0f172a] rounded-lg border border-white/10 shadow-sm p-5">
-        <p className="text-xs font-bold text-white mb-1">Ordens de Serviço em Aberto — Concentração por Dias e Valor</p>
-        <p className="text-[11px] text-[#898781] mb-2">Cada bolha cruza uma faixa de dias desde a abertura da OS (eixo horizontal) com uma faixa de valor em R$ (eixo vertical) — o tamanho mostra quantas OS caem ali, revelando onde a concentração está.</p>
+      <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-5">
+        <p className="text-xs font-bold text-slate-900 mb-1">Ordens de Serviço em Aberto — Concentração por Dias e Valor</p>
+        <p className="text-[11px] text-slate-500 mb-2">Cada bolha cruza uma faixa de dias desde a abertura da OS (eixo horizontal) com uma faixa de valor em R$ (eixo vertical) — o tamanho mostra quantas OS caem ali, revelando onde a concentração está.</p>
         <div className="flex items-center gap-4 mb-4">
-          <span className="flex items-center gap-1.5 text-[10px] text-[#898781]"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: '#0ca30c' }} /> No prazo <em className="italic">(até 14d e até R$ 30k)</em></span>
-          <span className="flex items-center gap-1.5 text-[10px] text-[#898781]"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: '#fab219' }} /> Atenção <em className="italic">(até 30d e até R$ 50k)</em></span>
-          <span className="flex items-center gap-1.5 text-[10px] text-[#898781]"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: '#d03b3b' }} /> Crítico <em className="italic">(acima disso)</em></span>
+          <span className="flex items-center gap-1.5 text-[10px] text-slate-500"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: '#0ca30c' }} /> No prazo <em className="italic">(até 14d e até R$ 30k)</em></span>
+          <span className="flex items-center gap-1.5 text-[10px] text-slate-500"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: '#fab219' }} /> Atenção <em className="italic">(até 30d e até R$ 50k)</em></span>
+          <span className="flex items-center gap-1.5 text-[10px] text-slate-500"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: '#d03b3b' }} /> Crítico <em className="italic">(acima disso)</em></span>
         </div>
         <ClusterAberto dados={dadosClusterAberto} filtroAtivo={filtroCluster} onSlice={toggleFiltroCluster} />
       </div>
 
       {(filtroGrupo || filtroStatusShc || filtroEmpresa || filtroTipo || filtroCluster) && (
-        <p className="text-[11px] text-[#898781]">
+        <p className="text-[11px] text-slate-500">
           Filtrado por{' '}
           {[
-            filtroGrupo && <strong key="grupo" className="text-white">{GRUPOS_STATUS.find(g => g.key === filtroGrupo)?.card}</strong>,
+            filtroGrupo && <strong key="grupo" className="text-slate-900">{GRUPOS_STATUS.find(g => g.key === filtroGrupo)?.card}</strong>,
             filtroEmpresa && <strong key="empresa" className="text-[#3987e5]">Empresa: {filtroEmpresa}</strong>,
             filtroTipo && <strong key="tipo" className="text-[#199e70]">Tipo: {filtroTipo}</strong>,
             filtroCluster && <strong key="cluster" className="text-[#d03b3b]">{BUCKETS_DIAS_CLUSTER[filtroCluster.ix].label} · {BUCKETS_VALOR_CLUSTER[filtroCluster.iy].label}</strong>,
             filtroStatusShc && <strong key="shc" className="text-[#9085e9]">Status SHC: {filtroStatusShc}</strong>,
           ].filter(Boolean).reduce((acc, el, i) => i === 0 ? [el] : [...acc, ' + ', el], [])}
           {' '}·{' '}
-          <button type="button" onClick={() => { setFiltroGrupo(null); setFiltroStatusShc(null); setFiltroEmpresa(null); setFiltroTipo(null); setFiltroCluster(null) }} className="underline hover:text-white">limpar filtros</button>
+          <button type="button" onClick={() => { setFiltroGrupo(null); setFiltroStatusShc(null); setFiltroEmpresa(null); setFiltroTipo(null); setFiltroCluster(null) }} className="underline hover:text-slate-900">limpar filtros</button>
         </p>
       )}
 
       {/* TABELA PIVOT — Status x Mês/Ano (nível categoria) */}
-      <div className="bg-[#0f172a] rounded-lg border border-white/10 shadow-sm overflow-x-auto custom-scrollbar-light">
+      <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-x-auto custom-scrollbar-light">
         <div className="p-5 pb-0">
-          <p className="text-xs font-bold text-white mb-1">Status das Garantias</p>
-          <p className="text-[11px] text-[#898781] mb-1">Quantidade e valor de garantias por status geral, mês a mês.</p>
+          <p className="text-xs font-bold text-slate-900 mb-1">Status das Garantias</p>
+          <p className="text-[11px] text-slate-500 mb-1">Quantidade e valor de garantias por status geral, mês a mês.</p>
         </div>
         {meses.length === 0 ? (
-          <div className="p-10 text-center text-[#898781] text-sm">Nenhum registro com Data de Criação da OS para montar a tabela.</div>
+          <div className="p-10 text-center text-slate-500 text-sm">Nenhum registro com Data de Criação da OS para montar a tabela.</div>
         ) : (
           <table className="min-w-full text-xs border-collapse mt-3">
             <thead>
-              <tr className="bg-white/5 text-[#c3c2b7] font-bold">
-                <th className="p-2 text-left sticky left-0 bg-[#141d33] z-10 w-44 border-b border-white/10">Ano</th>
+              <tr className="bg-slate-50 text-slate-600 font-bold">
+                <th className="p-2 text-left sticky left-0 bg-slate-50 z-10 w-44 border-b border-slate-200">Ano</th>
                 {anos.map(ano => {
                   const colapsado = !anosExpandidos.has(ano)
                   return (
-                    <th key={ano} colSpan={(colapsado ? 0 : mesesPorAno[ano].length) * 2 + 2} className="p-2 text-center border-b border-l border-white/10">
+                    <th key={ano} colSpan={(colapsado ? 0 : mesesPorAno[ano].length) * 2 + 2} className="p-2 text-center border-b border-l border-slate-200">
                       <button
                         type="button"
                         onClick={() => toggleAno(ano)}
@@ -750,34 +756,34 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
                     </th>
                   )
                 })}
-                <th colSpan={2} rowSpan={2} className="p-2 text-center align-middle border-b border-l-2 border-white/20 bg-[#9085e9]/10">Total</th>
+                <th colSpan={2} rowSpan={2} className="p-2 text-center align-middle border-b border-l-2 border-slate-300 bg-[#9085e9]/10">Total</th>
               </tr>
-              <tr className="bg-white/5 text-[#c3c2b7] font-bold">
-                <th className="p-2 text-left sticky left-0 bg-[#141d33] z-10 border-b border-white/10">Mês</th>
+              <tr className="bg-slate-50 text-slate-600 font-bold">
+                <th className="p-2 text-left sticky left-0 bg-slate-50 z-10 border-b border-slate-200">Mês</th>
                 {anos.map(ano => (
                   <Fragment key={ano}>
                     {mesesVisiveis(ano).map(m => (
-                      <th key={`${m.ano}-${m.mes}`} colSpan={2} className="p-2 text-center border-b border-l border-white/10 capitalize">{MESES[m.mes]}</th>
+                      <th key={`${m.ano}-${m.mes}`} colSpan={2} className="p-2 text-center border-b border-l border-slate-200 capitalize">{MESES[m.mes]}</th>
                     ))}
-                    <th colSpan={2} className="p-2 text-center border-b border-l border-white/10 bg-white/10">Total</th>
+                    <th colSpan={2} className="p-2 text-center border-b border-l border-slate-200 bg-slate-100">Total</th>
                   </Fragment>
                 ))}
               </tr>
-              <tr className="bg-white/5 text-[#898781] text-[10px] font-bold uppercase border-b-2 border-white/20">
-                <th className="p-2 text-left sticky left-0 bg-[#141d33] z-10">Status Geral</th>
+              <tr className="bg-slate-50 text-slate-500 text-[10px] font-bold uppercase border-b-2 border-slate-300">
+                <th className="p-2 text-left sticky left-0 bg-slate-50 z-10">Status Geral</th>
                 {anos.map(ano => (
                   <Fragment key={ano}>
                     {mesesVisiveis(ano).map(m => (
                       <Fragment key={`${m.ano}-${m.mes}`}>
-                        <th className="p-2 text-right border-l border-white/10">OS</th>
+                        <th className="p-2 text-right border-l border-slate-200">OS</th>
                         <th className="p-2 text-right">Total</th>
                       </Fragment>
                     ))}
-                    <th className="p-2 text-right border-l border-white/10 bg-white/10">OS</th>
-                    <th className="p-2 text-right bg-white/10">Total</th>
+                    <th className="p-2 text-right border-l border-slate-200 bg-slate-100">OS</th>
+                    <th className="p-2 text-right bg-slate-100">Total</th>
                   </Fragment>
                 ))}
-                <th className="p-2 text-right border-l-2 border-white/20 bg-[#9085e9]/10">OS</th>
+                <th className="p-2 text-right border-l-2 border-slate-300 bg-[#9085e9]/10">OS</th>
                 <th className="p-2 text-right bg-[#9085e9]/10">Total</th>
               </tr>
             </thead>
@@ -787,13 +793,13 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
                 const statusCods = Object.keys(pivotShc[grp.key]).sort((a, b) => statusLabel(a).localeCompare(statusLabel(b), 'pt-BR'))
                 return (
                   <Fragment key={grp.key}>
-                    <tr className="border-b border-white/10 hover:bg-white/5">
-                      <td className="p-2 font-semibold text-white sticky left-0 bg-[#0f172a] whitespace-nowrap">
+                    <tr className="border-b border-slate-200 hover:bg-slate-50">
+                      <td className="p-2 font-semibold text-slate-900 sticky left-0 bg-white whitespace-nowrap">
                         <button
                           type="button"
                           onClick={() => toggleGrupo(grp.key)}
                           disabled={statusCods.length === 0}
-                          className="flex items-center gap-1 hover:text-[#9085e9] transition-colors disabled:cursor-default disabled:hover:text-white"
+                          className="flex items-center gap-1 hover:text-[#9085e9] transition-colors disabled:cursor-default disabled:hover:text-slate-900"
                         >
                           {statusCods.length > 0 ? (
                             expandido ? <ChevronDown className="h-3.5 w-3.5 shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" />
@@ -807,8 +813,8 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
                             const cel = pivot[grp.key][`${m.ano}-${m.mes}`]
                             return (
                               <Fragment key={`${m.ano}-${m.mes}`}>
-                                <td className="p-2 text-right text-[#c3c2b7] border-l border-white/10">{cel?.qtd || ''}</td>
-                                <td className="p-2 text-right text-[#c3c2b7] font-medium whitespace-nowrap">{cel ? fmtMoeda(cel.valor) : ''}</td>
+                                <td className="p-2 text-right text-slate-600 border-l border-slate-200">{cel?.qtd || ''}</td>
+                                <td className="p-2 text-right text-slate-600 font-medium whitespace-nowrap">{cel ? fmtMoeda(cel.valor) : ''}</td>
                               </Fragment>
                             )
                           })}
@@ -816,15 +822,15 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
                             const t = totalAno(grp.key, ano)
                             return (
                               <Fragment>
-                                <td className="p-2 text-right font-bold text-white border-l border-white/10 bg-white/5">{t.qtd || ''}</td>
-                                <td className="p-2 text-right font-bold text-white bg-white/5 whitespace-nowrap">{t.qtd ? fmtMoeda(t.valor) : ''}</td>
+                                <td className="p-2 text-right font-bold text-slate-900 border-l border-slate-200 bg-slate-50">{t.qtd || ''}</td>
+                                <td className="p-2 text-right font-bold text-slate-900 bg-slate-50 whitespace-nowrap">{t.qtd ? fmtMoeda(t.valor) : ''}</td>
                               </Fragment>
                             )
                           })()}
                         </Fragment>
                       ))}
-                      <td className="p-2 text-right font-bold text-[#9085e9] border-l-2 border-white/20 bg-white/5">{pivot[grp.key].total.qtd || ''}</td>
-                      <td className="p-2 text-right font-bold text-[#9085e9] bg-white/5 whitespace-nowrap">{pivot[grp.key].total.qtd ? fmtMoeda(pivot[grp.key].total.valor) : ''}</td>
+                      <td className="p-2 text-right font-bold text-[#9085e9] border-l-2 border-slate-300 bg-slate-50">{pivot[grp.key].total.qtd || ''}</td>
+                      <td className="p-2 text-right font-bold text-[#9085e9] bg-slate-50 whitespace-nowrap">{pivot[grp.key].total.qtd ? fmtMoeda(pivot[grp.key].total.valor) : ''}</td>
                     </tr>
 
                     {expandido && statusCods.map(statusCod => {
@@ -833,13 +839,13 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
                       const tipos = Object.keys(pivotTipoDentro[grp.key][statusCod] || {}).sort((a, b) => a.localeCompare(b, 'pt-BR'))
                       return (
                         <Fragment key={shcKey}>
-                          <tr className="border-b border-white/5 bg-white/[0.03] hover:bg-white/[0.06]">
-                            <td className="p-2 pl-6 text-[#c3c2b7] sticky left-0 bg-[#111a2e] whitespace-nowrap truncate max-w-[220px]" title={statusLabel(statusCod)}>
+                          <tr className="border-b border-slate-100 bg-white/[0.03] hover:bg-white/[0.06]">
+                            <td className="p-2 pl-6 text-slate-600 sticky left-0 bg-[#111a2e] whitespace-nowrap truncate max-w-[220px]" title={statusLabel(statusCod)}>
                               <button
                                 type="button"
                                 onClick={() => toggleTipo(shcKey)}
                                 disabled={tipos.length === 0}
-                                className="flex items-center gap-1 hover:text-[#9085e9] transition-colors disabled:cursor-default disabled:hover:text-[#c3c2b7]"
+                                className="flex items-center gap-1 hover:text-[#9085e9] transition-colors disabled:cursor-default disabled:hover:text-slate-600"
                               >
                                 {tipos.length > 0 ? (
                                   shcExpandido ? <ChevronDown className="h-3 w-3 shrink-0" /> : <ChevronRight className="h-3 w-3 shrink-0" />
@@ -853,8 +859,8 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
                                   const cel = pivotShc[grp.key][statusCod][`${m.ano}-${m.mes}`]
                                   return (
                                     <Fragment key={`${m.ano}-${m.mes}`}>
-                                      <td className="p-2 text-right text-[#898781] border-l border-white/10">{cel?.qtd || ''}</td>
-                                      <td className="p-2 text-right text-[#898781] whitespace-nowrap">{cel ? fmtMoeda(cel.valor) : ''}</td>
+                                      <td className="p-2 text-right text-slate-500 border-l border-slate-200">{cel?.qtd || ''}</td>
+                                      <td className="p-2 text-right text-slate-500 whitespace-nowrap">{cel ? fmtMoeda(cel.valor) : ''}</td>
                                     </Fragment>
                                   )
                                 })}
@@ -862,28 +868,28 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
                                   const t = totalAnoShc(grp.key, statusCod, ano)
                                   return (
                                     <Fragment>
-                                      <td className="p-2 text-right font-semibold text-[#c3c2b7] border-l border-white/10 bg-white/5">{t.qtd || ''}</td>
-                                      <td className="p-2 text-right font-semibold text-[#c3c2b7] bg-white/5 whitespace-nowrap">{t.qtd ? fmtMoeda(t.valor) : ''}</td>
+                                      <td className="p-2 text-right font-semibold text-slate-600 border-l border-slate-200 bg-slate-50">{t.qtd || ''}</td>
+                                      <td className="p-2 text-right font-semibold text-slate-600 bg-slate-50 whitespace-nowrap">{t.qtd ? fmtMoeda(t.valor) : ''}</td>
                                     </Fragment>
                                   )
                                 })()}
                               </Fragment>
                             ))}
-                            <td className="p-2 text-right font-semibold text-[#9085e9] border-l-2 border-white/20 bg-white/5">{pivotShc[grp.key][statusCod].total.qtd || ''}</td>
-                            <td className="p-2 text-right font-semibold text-[#9085e9] bg-white/5 whitespace-nowrap">{pivotShc[grp.key][statusCod].total.qtd ? fmtMoeda(pivotShc[grp.key][statusCod].total.valor) : ''}</td>
+                            <td className="p-2 text-right font-semibold text-[#9085e9] border-l-2 border-slate-300 bg-slate-50">{pivotShc[grp.key][statusCod].total.qtd || ''}</td>
+                            <td className="p-2 text-right font-semibold text-[#9085e9] bg-slate-50 whitespace-nowrap">{pivotShc[grp.key][statusCod].total.qtd ? fmtMoeda(pivotShc[grp.key][statusCod].total.valor) : ''}</td>
                           </tr>
 
                           {shcExpandido && tipos.map(tipo => (
-                            <tr key={`${shcKey}::${tipo}`} className="border-b border-white/5 bg-white/[0.015] hover:bg-white/[0.04]">
-                              <td className="p-2 pl-12 text-[#898781] sticky left-0 bg-[#0e1626] whitespace-nowrap truncate max-w-[220px]" title={tipo}>{tipo}</td>
+                            <tr key={`${shcKey}::${tipo}`} className="border-b border-slate-100 bg-white/[0.015] hover:bg-white/[0.04]">
+                              <td className="p-2 pl-12 text-slate-500 sticky left-0 bg-[#0e1626] whitespace-nowrap truncate max-w-[220px]" title={tipo}>{tipo}</td>
                               {anos.map(ano => (
                                 <Fragment key={ano}>
                                   {mesesVisiveis(ano).map(m => {
                                     const cel = pivotTipoDentro[grp.key][statusCod][tipo][`${m.ano}-${m.mes}`]
                                     return (
                                       <Fragment key={`${m.ano}-${m.mes}`}>
-                                        <td className="p-2 text-right text-[#898781] border-l border-white/10">{cel?.qtd || ''}</td>
-                                        <td className="p-2 text-right text-[#898781] whitespace-nowrap">{cel ? fmtMoeda(cel.valor) : ''}</td>
+                                        <td className="p-2 text-right text-slate-500 border-l border-slate-200">{cel?.qtd || ''}</td>
+                                        <td className="p-2 text-right text-slate-500 whitespace-nowrap">{cel ? fmtMoeda(cel.valor) : ''}</td>
                                       </Fragment>
                                     )
                                   })}
@@ -891,15 +897,15 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
                                     const t = totalAnoTipoDentro(grp.key, statusCod, tipo, ano)
                                     return (
                                       <Fragment>
-                                        <td className="p-2 text-right font-medium text-[#c3c2b7] border-l border-white/10 bg-white/5">{t.qtd || ''}</td>
-                                        <td className="p-2 text-right font-medium text-[#c3c2b7] bg-white/5 whitespace-nowrap">{t.qtd ? fmtMoeda(t.valor) : ''}</td>
+                                        <td className="p-2 text-right font-medium text-slate-600 border-l border-slate-200 bg-slate-50">{t.qtd || ''}</td>
+                                        <td className="p-2 text-right font-medium text-slate-600 bg-slate-50 whitespace-nowrap">{t.qtd ? fmtMoeda(t.valor) : ''}</td>
                                       </Fragment>
                                     )
                                   })()}
                                 </Fragment>
                               ))}
-                              <td className="p-2 text-right font-medium text-[#9085e9]/80 border-l-2 border-white/20 bg-white/5">{pivotTipoDentro[grp.key][statusCod][tipo].total.qtd || ''}</td>
-                              <td className="p-2 text-right font-medium text-[#9085e9]/80 bg-white/5 whitespace-nowrap">{pivotTipoDentro[grp.key][statusCod][tipo].total.qtd ? fmtMoeda(pivotTipoDentro[grp.key][statusCod][tipo].total.valor) : ''}</td>
+                              <td className="p-2 text-right font-medium text-[#9085e9]/80 border-l-2 border-slate-300 bg-slate-50">{pivotTipoDentro[grp.key][statusCod][tipo].total.qtd || ''}</td>
+                              <td className="p-2 text-right font-medium text-[#9085e9]/80 bg-slate-50 whitespace-nowrap">{pivotTipoDentro[grp.key][statusCod][tipo].total.qtd ? fmtMoeda(pivotTipoDentro[grp.key][statusCod][tipo].total.valor) : ''}</td>
                             </tr>
                           ))}
                         </Fragment>
@@ -908,15 +914,15 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
                   </Fragment>
                 )
               })}
-              <tr className="bg-white/5 font-bold text-white border-t-2 border-white/20">
-                <td className="p-2 sticky left-0 bg-[#141d33]">Total</td>
+              <tr className="bg-slate-50 font-bold text-slate-900 border-t-2 border-slate-300">
+                <td className="p-2 sticky left-0 bg-slate-50">Total</td>
                 {anos.map(ano => (
                   <Fragment key={ano}>
                     {mesesVisiveis(ano).map(m => {
                       const t = somaGrupos(k => pivot[k][`${m.ano}-${m.mes}`] || { qtd: 0, valor: 0 })
                       return (
                         <Fragment key={`${m.ano}-${m.mes}`}>
-                          <td className="p-2 text-right border-l border-white/10">{t.qtd || ''}</td>
+                          <td className="p-2 text-right border-l border-slate-200">{t.qtd || ''}</td>
                           <td className="p-2 text-right whitespace-nowrap">{t.qtd ? fmtMoeda(t.valor) : ''}</td>
                         </Fragment>
                       )
@@ -925,8 +931,8 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
                       const t = somaGrupos(k => totalAno(k, ano))
                       return (
                         <Fragment>
-                          <td className="p-2 text-right border-l border-white/10 bg-white/10">{t.qtd || ''}</td>
-                          <td className="p-2 text-right bg-white/10 whitespace-nowrap">{t.qtd ? fmtMoeda(t.valor) : ''}</td>
+                          <td className="p-2 text-right border-l border-slate-200 bg-slate-100">{t.qtd || ''}</td>
+                          <td className="p-2 text-right bg-slate-100 whitespace-nowrap">{t.qtd ? fmtMoeda(t.valor) : ''}</td>
                         </Fragment>
                       )
                     })()}
@@ -936,8 +942,8 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
                   const t = somaGrupos(k => pivot[k].total)
                   return (
                     <Fragment>
-                      <td className="p-2 text-right border-l-2 border-white/20 bg-white/10">{t.qtd || ''}</td>
-                      <td className="p-2 text-right bg-white/10 whitespace-nowrap">{fmtMoeda(t.valor)}</td>
+                      <td className="p-2 text-right border-l-2 border-slate-300 bg-slate-100">{t.qtd || ''}</td>
+                      <td className="p-2 text-right bg-slate-100 whitespace-nowrap">{fmtMoeda(t.valor)}</td>
                     </Fragment>
                   )
                 })()}
@@ -948,27 +954,27 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
       </div>
 
       {/* TABELA DE DETALHAMENTO — última ponta da narrativa, uma linha por OS */}
-      <div className="bg-[#0f172a] rounded-lg border border-white/10 shadow-sm overflow-x-auto custom-scrollbar-light">
+      <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-x-auto custom-scrollbar-light">
         <div className="p-5 pb-0">
-          <p className="text-xs font-bold text-white mb-1">Ordens de Serviço</p>
-          <p className="text-[11px] text-[#898781] mb-1">Detalhamento das garantias em aberto, conforme os filtros ativos acima.</p>
+          <p className="text-xs font-bold text-slate-900 mb-1">Ordens de Serviço</p>
+          <p className="text-[11px] text-slate-500 mb-1">Detalhamento das garantias em aberto, conforme os filtros ativos acima.</p>
         </div>
         {linhasOrdenadas.length === 0 ? (
-          <div className="p-10 text-center text-[#898781] text-sm">Nenhum registro para exibir.</div>
+          <div className="p-10 text-center text-slate-500 text-sm">Nenhum registro para exibir.</div>
         ) : (
           <table className="w-full text-left border-collapse" style={{ minWidth: '1800px' }}>
             <thead className="sticky top-0 z-10">
-              <tr className="bg-[#141d33] border-b border-white/10 text-[#898781] text-[10px] font-bold uppercase tracking-wider">
+              <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 text-[10px] font-bold uppercase tracking-wider">
                 <th className="p-3 text-center whitespace-nowrap">Ações</th>
                 {COLUNAS_DETALHE.map(c => (
                   <th
                     key={c.key}
                     onClick={() => handleSortDetalhe(c.key)}
-                    className={`p-3 whitespace-nowrap cursor-pointer select-none hover:bg-white/10 hover:text-white transition-colors ${c.tipo === 'moeda' || c.tipo === 'numero' ? 'text-right' : ''}`}
+                    className={`p-3 whitespace-nowrap cursor-pointer select-none hover:bg-slate-100 hover:text-slate-900 transition-colors ${c.tipo === 'moeda' || c.tipo === 'numero' ? 'text-right' : ''}`}
                   >
                     <span className={`flex items-center gap-1 ${c.tipo === 'moeda' || c.tipo === 'numero' ? 'justify-end' : ''}`}>
                       {c.label}
-                      <span className={sortCol === c.key ? 'text-[#3987e5]' : 'text-white/20'}>
+                      <span className={sortCol === c.key ? 'text-[#3987e5]' : 'text-slate-300'}>
                         {sortCol === c.key ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}
                       </span>
                     </span>
@@ -976,15 +982,15 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-white/10 text-xs text-[#c3c2b7]">
+            <tbody className="divide-y divide-slate-200 text-xs text-slate-600">
               {linhasOrdenadas.map(row => (
-                <tr key={row.id} className="hover:bg-white/5 transition-colors">
+                <tr key={row.id} className="hover:bg-slate-50 transition-colors">
                   <td className="p-3 text-center">
                     <button
                       type="button"
                       onClick={() => abrirVisualizar(row)}
                       title="Visualizar Data SG, Nº SG, Status Geral, Status SHC e Resposta SHC"
-                      className="p-1.5 text-[#898781] hover:text-[#9085e9] hover:bg-[#9085e9]/10 rounded transition-colors"
+                      className="p-1.5 text-slate-500 hover:text-[#9085e9] hover:bg-[#9085e9]/10 rounded transition-colors"
                     >
                       <Eye className="h-3.5 w-3.5" />
                     </button>
@@ -994,14 +1000,14 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
                     const texto = c.tipo === 'data' ? fmtData(valor) : c.tipo === 'moeda' ? (valor ? fmtMoeda(valor) : '') : (valor ?? '')
                     if (c.tipo === 'texto_longo') {
                       return (
-                        <td key={c.key} className="p-3 text-[#c3c2b7] whitespace-normal break-words align-top max-w-[260px] min-w-[200px]">
-                          {texto || <span className="text-white/20">—</span>}
+                        <td key={c.key} className="p-3 text-slate-600 whitespace-normal break-words align-top max-w-[260px] min-w-[200px]">
+                          {texto || <span className="text-slate-300">—</span>}
                         </td>
                       )
                     }
                     return (
-                      <td key={c.key} className={`p-3 whitespace-nowrap ${c.tipo === 'moeda' || c.tipo === 'numero' ? 'text-right font-semibold text-white' : 'text-[#c3c2b7]'} ${c.key === 'empresa_nome' || c.key === 'cliente' || c.key === 'tipo_garantia_descricao' ? 'truncate max-w-[220px]' : ''}`}>
-                        {texto || <span className="text-white/20">—</span>}
+                      <td key={c.key} className={`p-3 whitespace-nowrap ${c.tipo === 'moeda' || c.tipo === 'numero' ? 'text-right font-semibold text-slate-900' : 'text-slate-600'} ${c.key === 'empresa_nome' || c.key === 'cliente' || c.key === 'tipo_garantia_descricao' ? 'truncate max-w-[220px]' : ''}`}>
+                        {texto || <span className="text-slate-300">—</span>}
                       </td>
                     )
                   })}
@@ -1015,29 +1021,29 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
       {/* MODAL: VISUALIZAR — Data SG, Nº SG, Status Geral, Status SHC, Resposta SHC */}
       {modalVisualizarAberto && itemVisualizado && (
         <div className="fixed top-0 right-0 bottom-0 left-16 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-[#0f172a] rounded-lg border border-white/10 w-full max-w-[560px] shadow-xl overflow-hidden">
-            <div className="flex items-center justify-between p-4 border-b border-white/10 bg-white/5">
-              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+          <div className="bg-white rounded-lg border border-slate-200 w-full max-w-[560px] shadow-xl overflow-hidden">
+            <div className="flex items-center justify-between p-4 border-b border-slate-200 bg-slate-50">
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                 <Eye className="h-4 w-4 text-[#9085e9]" />
                 OS {itemVisualizado.numero_os}
               </h3>
-              <button onClick={() => setModalVisualizarAberto(false)} className="text-[#898781] hover:text-white"><X className="h-4 w-4" /></button>
+              <button onClick={() => setModalVisualizarAberto(false)} className="text-slate-500 hover:text-slate-900"><X className="h-4 w-4" /></button>
             </div>
             <div className="p-5 grid grid-cols-2 gap-x-6 gap-y-4">
               <div className="flex flex-col gap-0.5">
-                <span className="text-[10px] font-bold text-[#898781] uppercase tracking-wide">Data SG</span>
-                <span className="text-xs font-semibold text-white">{fmtData(itemVisualizado.data_sg) || '—'}</span>
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Data SG</span>
+                <span className="text-xs font-semibold text-slate-900">{fmtData(itemVisualizado.data_sg) || '—'}</span>
               </div>
               <div className="flex flex-col gap-0.5">
-                <span className="text-[10px] font-bold text-[#898781] uppercase tracking-wide">Nº SG</span>
-                <span className="text-xs font-semibold text-white">{itemVisualizado.numero_sg || '—'}</span>
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Nº SG</span>
+                <span className="text-xs font-semibold text-slate-900">{itemVisualizado.numero_sg || '—'}</span>
               </div>
               <div className="flex flex-col gap-0.5">
-                <span className="text-[10px] font-bold text-[#898781] uppercase tracking-wide">Status Geral</span>
-                <span className="text-xs font-semibold text-white">{itemVisualizado.status_geral || '—'}</span>
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Status Geral</span>
+                <span className="text-xs font-semibold text-slate-900">{itemVisualizado.status_geral || '—'}</span>
               </div>
               <div className="flex flex-col gap-0.5">
-                <span className="text-[10px] font-bold text-[#898781] uppercase tracking-wide">Status SHC</span>
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Status SHC</span>
                 <button
                   type="button"
                   onClick={() => { toggleFiltroStatusShc(itemVisualizado.status_shc); setModalVisualizarAberto(false) }}
@@ -1048,12 +1054,12 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
                 </button>
               </div>
               <div className="col-span-2 flex flex-col gap-0.5">
-                <span className="text-[10px] font-bold text-[#898781] uppercase tracking-wide">Resposta SHC</span>
-                <span className="text-xs font-semibold text-white whitespace-normal break-words">{itemVisualizado.resposta_shc || '—'}</span>
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Resposta SHC</span>
+                <span className="text-xs font-semibold text-slate-900 whitespace-normal break-words">{itemVisualizado.resposta_shc || '—'}</span>
               </div>
             </div>
-            <div className="flex justify-end p-3 bg-white/5 border-t border-white/10">
-              <button onClick={() => setModalVisualizarAberto(false)} className="px-3 py-1.5 rounded-md text-xs font-semibold text-[#c3c2b7] hover:bg-white/10 transition-colors">
+            <div className="flex justify-end p-3 bg-slate-50 border-t border-slate-200">
+              <button onClick={() => setModalVisualizarAberto(false)} className="px-3 py-1.5 rounded-md text-xs font-semibold text-slate-600 hover:bg-slate-100 transition-colors">
                 Fechar
               </button>
             </div>

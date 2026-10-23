@@ -36,10 +36,10 @@ function DonutChart({ data, onSlice, filtroAtivo, encurtar }) {
   let cumulativeFrac = 0
   const labels = []
   return (
-    <div className="flex flex-col items-center justify-center gap-3">
+    <div className="flex items-center gap-6">
       <svg viewBox="0 0 160 160" className="w-40 h-40 shrink-0">
         <g transform="translate(80,80) rotate(-90)">
-          <circle r={radius} fill="none" stroke="#2c2c2a" strokeWidth="24" />
+          <circle r={radius} fill="none" stroke="#e2e8f0" strokeWidth="24" />
           {total > 0 && data.map((d, i) => {
             const frac = d.valor / total
             const gap = data.length > 1 ? 2 : 0
@@ -77,10 +77,10 @@ function DonutChart({ data, onSlice, filtroAtivo, encurtar }) {
             {l.pct}%
           </text>
         ))}
-        <text x="80" y="76" textAnchor="middle" className="fill-white" style={{ fontSize: '12px', fontWeight: 700 }}>{fmtMoeda(total)}</text>
-        <text x="80" y="92" textAnchor="middle" className="fill-[#898781]" style={{ fontSize: '9px' }}>Total</text>
+        <text x="80" y="76" textAnchor="middle" className="fill-slate-900" style={{ fontSize: '12px', fontWeight: 700 }}>{fmtMoeda(total)}</text>
+        <text x="80" y="92" textAnchor="middle" className="fill-slate-500" style={{ fontSize: '9px' }}>Total</text>
       </svg>
-      <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1.5">
+      <div className="flex-1 min-w-0 flex flex-col gap-1.5">
         {data.map((d, i) => {
           const clicavel = !!(onSlice && d.chave)
           const ativa = filtroAtivo && d.chave === filtroAtivo
@@ -93,10 +93,10 @@ function DonutChart({ data, onSlice, filtroAtivo, encurtar }) {
               key={i}
               onClick={clicavel ? () => onSlice(d.chave) : undefined}
               title={`${d.label} · ${pct}% · ${fmtMoeda(d.valor)}`}
-              className={`flex items-center gap-1.5 text-[10px] transition-opacity ${clicavel ? 'cursor-pointer hover:opacity-80' : 'cursor-default'} ${esmaecida ? 'opacity-40' : ''}`}
+              className={`w-full flex items-center gap-1.5 text-[10px] text-left transition-opacity ${clicavel ? 'cursor-pointer hover:opacity-80' : 'cursor-default'} ${esmaecida ? 'opacity-40' : ''}`}
             >
               <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ backgroundColor: d.cor }} />
-              <span className={`truncate max-w-[140px] ${ativa ? 'font-bold text-white' : 'font-medium text-[#c3c2b7]'}`}>{rotulo}</span>
+              <span className={`truncate flex-1 min-w-0 ${ativa ? 'font-bold text-slate-900' : 'font-medium text-slate-600'}`}>{rotulo}</span>
             </button>
           )
         })}
@@ -292,7 +292,7 @@ export default function GarantiasTitulosDashboard({ onLastModified }) {
 
   if (loading) {
     return (
-      <div className="bg-[#0f172a] rounded-lg border border-white/10 shadow-sm p-16 flex flex-col items-center gap-3 text-[#898781]">
+      <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-16 flex flex-col items-center gap-3 text-slate-500">
         <Loader2 className="h-6 w-6 animate-spin" />
         <p className="text-xs">Carregando dados do SharePoint...</p>
       </div>
@@ -301,9 +301,9 @@ export default function GarantiasTitulosDashboard({ onLastModified }) {
 
   if (titulosBase.length === 0) {
     return (
-      <div className="bg-[#0f172a] rounded-lg border border-white/10 shadow-sm p-16 flex flex-col items-center gap-3">
-        <div className="p-3 bg-white/5 rounded-full"><DollarSign className="h-6 w-6 text-[#898781]" /></div>
-        <p className="text-sm font-semibold text-[#c3c2b7]">Nenhum título a receber no momento</p>
+      <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-16 flex flex-col items-center gap-3">
+        <div className="p-3 bg-slate-50 rounded-full"><DollarSign className="h-6 w-6 text-slate-500" /></div>
+        <p className="text-sm font-semibold text-slate-600">Nenhum título a receber no momento</p>
       </div>
     )
   }
@@ -319,13 +319,13 @@ export default function GarantiasTitulosDashboard({ onLastModified }) {
           >
             <XCircle className="h-3 w-3" /> Limpar dashboard
           </button>
-          <p className="text-[11px] text-[#898781]">
+          <p className="text-[11px] text-slate-500">
             Filtrado por{' '}
             {[
               filtroSituacao && (filtroSituacao === 'vencido' ? 'Vencidos' : 'A Vencer'),
               filtroEmpresa,
               filtroTipo,
-            ].filter(Boolean).map((f, i) => <Fragment key={i}>{i > 0 && ' + '}<strong className="text-white">{f}</strong></Fragment>)}
+            ].filter(Boolean).map((f, i) => <Fragment key={i}>{i > 0 && ' + '}<strong className="text-slate-900">{f}</strong></Fragment>)}
           </p>
         </div>
       )}
@@ -368,46 +368,46 @@ export default function GarantiasTitulosDashboard({ onLastModified }) {
 
       {/* DONUTS: POR EMPRESA / POR TIPO DE TÍTULO — nível categoria, participação no total */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="bg-[#0f172a] rounded-lg border border-white/10 shadow-sm p-5">
-          <p className="text-xs font-bold text-white mb-1">Títulos por Empresa — por Valor</p>
-          <p className="text-[11px] text-[#898781] mb-4">Onde a carteira de recebíveis está concentrada.</p>
+        <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-5">
+          <p className="text-xs font-bold text-slate-900 mb-1">Títulos por Empresa — por Valor</p>
+          <p className="text-[11px] text-slate-500 mb-4">Onde a carteira de recebíveis está concentrada.</p>
           <DonutChart data={porEmpresaDonut} onSlice={toggleFiltroEmpresa} filtroAtivo={filtroEmpresa} />
         </div>
-        <div className="bg-[#0f172a] rounded-lg border border-white/10 shadow-sm p-5">
-          <p className="text-xs font-bold text-white mb-1">Títulos por Tipo — por Valor</p>
-          <p className="text-[11px] text-[#898781] mb-4">Participação de cada tipo de título no valor total.</p>
+        <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-5">
+          <p className="text-xs font-bold text-slate-900 mb-1">Títulos por Tipo — por Valor</p>
+          <p className="text-[11px] text-slate-500 mb-4">Participação de cada tipo de título no valor total.</p>
           <DonutChart data={porTipoDonut} onSlice={toggleFiltroTipo} filtroAtivo={filtroTipo} />
         </div>
       </div>
 
       {/* TABELA PIVOT: Tipo de Título × Ano/Mês de Vencimento — última ponta da narrativa */}
-      <div className="bg-[#0f172a] rounded-lg border border-white/10 shadow-sm overflow-x-auto custom-scrollbar-light">
+      <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-x-auto custom-scrollbar-light">
         <div className="p-5 pb-0 flex items-center justify-between gap-3">
           <div>
-            <p className="text-xs font-bold text-white mb-1">Títulos por Situação de Vencimento — por Tipo de Título</p>
-            <p className="text-[11px] text-[#898781] mb-1">Quantidade e valor a vencer por tipo de título, mês a mês.</p>
+            <p className="text-xs font-bold text-slate-900 mb-1">Títulos por Situação de Vencimento — por Tipo de Título</p>
+            <p className="text-[11px] text-slate-500 mb-1">Quantidade e valor a vencer por tipo de título, mês a mês.</p>
           </div>
           {anosVencimentoPivot.length > 0 && (
             <button
               type="button"
               onClick={toggleTodosAnos}
-              className="shrink-0 flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold rounded-full border border-white/10 bg-white/5 text-[#c3c2b7] hover:bg-white/10 transition-colors"
+              className="shrink-0 flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold rounded-full border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 transition-colors"
             >
               <ChevronsUpDown className="h-3 w-3" /> {todosAnosColapsados ? 'Expandir todos os anos' : 'Recolher todos os anos'}
             </button>
           )}
         </div>
         {mesesVencimento.length === 0 ? (
-          <div className="p-10 text-center text-[#898781] text-sm">Nenhum registro com Data de Vencimento para montar a tabela.</div>
+          <div className="p-10 text-center text-slate-500 text-sm">Nenhum registro com Data de Vencimento para montar a tabela.</div>
         ) : (
           <table className="min-w-full text-xs border-collapse mt-3">
             <thead>
-              <tr className="bg-white/5 text-[#c3c2b7] font-bold">
-                <th className="p-2 text-left sticky left-0 bg-[#141d33] z-10 w-52 border-b border-white/10">Ano</th>
+              <tr className="bg-slate-50 text-slate-600 font-bold">
+                <th className="p-2 text-left sticky left-0 bg-slate-50 z-10 w-52 border-b border-slate-200">Ano</th>
                 {anosVencimentoPivot.map(ano => {
                   const colapsado = !anosExpandidos.has(ano)
                   return (
-                    <th key={ano} colSpan={colapsado ? 2 : mesesPorAnoVencimento[ano].length * 2 + 2} className="p-1 text-center border-b border-l border-white/10">
+                    <th key={ano} colSpan={colapsado ? 2 : mesesPorAnoVencimento[ano].length * 2 + 2} className="p-1 text-center border-b border-l border-slate-200">
                       <button
                         type="button"
                         onClick={() => toggleAnoColapsado(ano)}
@@ -419,47 +419,47 @@ export default function GarantiasTitulosDashboard({ onLastModified }) {
                     </th>
                   )
                 })}
-                <th colSpan={2} rowSpan={2} className="p-2 text-center align-middle border-b border-l-2 border-white/20 bg-white/10">Total</th>
+                <th colSpan={2} rowSpan={2} className="p-2 text-center align-middle border-b border-l-2 border-slate-300 bg-slate-100">Total</th>
               </tr>
-              <tr className="bg-white/5 text-[#c3c2b7] font-bold">
-                <th className="p-2 text-left sticky left-0 bg-[#141d33] z-10 border-b border-white/10">Mês</th>
+              <tr className="bg-slate-50 text-slate-600 font-bold">
+                <th className="p-2 text-left sticky left-0 bg-slate-50 z-10 border-b border-slate-200">Mês</th>
                 {anosVencimentoPivot.map(ano => {
                   const colapsado = !anosExpandidos.has(ano)
                   return (
                     <Fragment key={ano}>
                       {!colapsado && mesesPorAnoVencimento[ano].map(m => (
-                        <th key={`${m.ano}-${m.mes}`} colSpan={2} className="p-2 text-center border-b border-l border-white/10 capitalize">{MESES_LONGOS[m.mes]}</th>
+                        <th key={`${m.ano}-${m.mes}`} colSpan={2} className="p-2 text-center border-b border-l border-slate-200 capitalize">{MESES_LONGOS[m.mes]}</th>
                       ))}
-                      <th colSpan={2} className="p-2 text-center border-b border-l border-white/10 bg-white/10">Total</th>
+                      <th colSpan={2} className="p-2 text-center border-b border-l border-slate-200 bg-slate-100">Total</th>
                     </Fragment>
                   )
                 })}
               </tr>
-              <tr className="bg-white/5 text-[#898781] text-[10px] font-bold uppercase border-b-2 border-white/20">
-                <th className="p-2 text-left sticky left-0 bg-[#141d33] z-10">Tipo de Título</th>
+              <tr className="bg-slate-50 text-slate-500 text-[10px] font-bold uppercase border-b-2 border-slate-300">
+                <th className="p-2 text-left sticky left-0 bg-slate-50 z-10">Tipo de Título</th>
                 {anosVencimentoPivot.map(ano => {
                   const colapsado = !anosExpandidos.has(ano)
                   return (
                     <Fragment key={ano}>
                       {!colapsado && mesesPorAnoVencimento[ano].map(m => (
                         <Fragment key={`${m.ano}-${m.mes}`}>
-                          <th className="p-2 text-right border-l border-white/10">Títulos</th>
+                          <th className="p-2 text-right border-l border-slate-200">Títulos</th>
                           <th className="p-2 text-right">Valor</th>
                         </Fragment>
                       ))}
-                      <th className="p-2 text-right border-l border-white/10 bg-white/10">Títulos</th>
-                      <th className="p-2 text-right bg-white/10">Valor</th>
+                      <th className="p-2 text-right border-l border-slate-200 bg-slate-100">Títulos</th>
+                      <th className="p-2 text-right bg-slate-100">Valor</th>
                     </Fragment>
                   )
                 })}
-                <th className="p-2 text-right border-l-2 border-white/20 bg-white/10">Títulos</th>
-                <th className="p-2 text-right bg-white/10">Valor</th>
+                <th className="p-2 text-right border-l-2 border-slate-300 bg-slate-100">Títulos</th>
+                <th className="p-2 text-right bg-slate-100">Valor</th>
               </tr>
             </thead>
             <tbody>
               {tiposPivot.map(tipo => (
-                <tr key={tipo} className="border-b border-white/10 hover:bg-white/5">
-                  <td className="p-2 font-semibold text-white sticky left-0 bg-[#0f172a] whitespace-nowrap truncate max-w-[220px]" title={tipo}>{tipo}</td>
+                <tr key={tipo} className="border-b border-slate-200 hover:bg-slate-50">
+                  <td className="p-2 font-semibold text-slate-900 sticky left-0 bg-white whitespace-nowrap truncate max-w-[220px]" title={tipo}>{tipo}</td>
                   {anosVencimentoPivot.map(ano => {
                     const colapsado = !anosExpandidos.has(ano)
                     return (
@@ -468,8 +468,8 @@ export default function GarantiasTitulosDashboard({ onLastModified }) {
                           const cel = pivotTipoMes[tipo][`${m.ano}-${m.mes}`]
                           return (
                             <Fragment key={`${m.ano}-${m.mes}`}>
-                              <td className="p-2 text-right text-[#c3c2b7] border-l border-white/10">{cel?.qtd || ''}</td>
-                              <td className="p-2 text-right text-[#c3c2b7] font-medium whitespace-nowrap">{cel ? fmtMoeda(cel.valor) : ''}</td>
+                              <td className="p-2 text-right text-slate-600 border-l border-slate-200">{cel?.qtd || ''}</td>
+                              <td className="p-2 text-right text-slate-600 font-medium whitespace-nowrap">{cel ? fmtMoeda(cel.valor) : ''}</td>
                             </Fragment>
                           )
                         })}
@@ -477,20 +477,20 @@ export default function GarantiasTitulosDashboard({ onLastModified }) {
                           const t = totalAnoTipoMes(tipo, ano)
                           return (
                             <Fragment>
-                              <td className="p-2 text-right font-bold text-white border-l border-white/10 bg-white/5">{t.qtd || ''}</td>
-                              <td className="p-2 text-right font-bold text-white bg-white/5 whitespace-nowrap">{t.qtd ? fmtMoeda(t.valor) : ''}</td>
+                              <td className="p-2 text-right font-bold text-slate-900 border-l border-slate-200 bg-slate-50">{t.qtd || ''}</td>
+                              <td className="p-2 text-right font-bold text-slate-900 bg-slate-50 whitespace-nowrap">{t.qtd ? fmtMoeda(t.valor) : ''}</td>
                             </Fragment>
                           )
                         })()}
                       </Fragment>
                     )
                   })}
-                  <td className="p-2 text-right font-bold text-[#9085e9] border-l-2 border-white/20 bg-white/5">{pivotTipoMes[tipo].total.qtd || ''}</td>
-                  <td className="p-2 text-right font-bold text-[#9085e9] bg-white/5 whitespace-nowrap">{pivotTipoMes[tipo].total.qtd ? fmtMoeda(pivotTipoMes[tipo].total.valor) : ''}</td>
+                  <td className="p-2 text-right font-bold text-[#9085e9] border-l-2 border-slate-300 bg-slate-50">{pivotTipoMes[tipo].total.qtd || ''}</td>
+                  <td className="p-2 text-right font-bold text-[#9085e9] bg-slate-50 whitespace-nowrap">{pivotTipoMes[tipo].total.qtd ? fmtMoeda(pivotTipoMes[tipo].total.valor) : ''}</td>
                 </tr>
               ))}
-              <tr className="bg-white/5 font-bold text-white border-t-2 border-white/20">
-                <td className="p-2 sticky left-0 bg-[#141d33]">Total</td>
+              <tr className="bg-slate-50 font-bold text-slate-900 border-t-2 border-slate-300">
+                <td className="p-2 sticky left-0 bg-slate-50">Total</td>
                 {anosVencimentoPivot.map(ano => {
                   const colapsado = !anosExpandidos.has(ano)
                   return (
@@ -503,7 +503,7 @@ export default function GarantiasTitulosDashboard({ onLastModified }) {
                         }, { qtd: 0, valor: 0 })
                         return (
                           <Fragment key={`${m.ano}-${m.mes}`}>
-                            <td className="p-2 text-right border-l border-white/10">{t.qtd || ''}</td>
+                            <td className="p-2 text-right border-l border-slate-200">{t.qtd || ''}</td>
                             <td className="p-2 text-right whitespace-nowrap">{t.qtd ? fmtMoeda(t.valor) : ''}</td>
                           </Fragment>
                         )
@@ -516,16 +516,16 @@ export default function GarantiasTitulosDashboard({ onLastModified }) {
                         }, { qtd: 0, valor: 0 })
                         return (
                           <Fragment>
-                            <td className="p-2 text-right border-l border-white/10 bg-white/10">{t.qtd || ''}</td>
-                            <td className="p-2 text-right bg-white/10 whitespace-nowrap">{t.qtd ? fmtMoeda(t.valor) : ''}</td>
+                            <td className="p-2 text-right border-l border-slate-200 bg-slate-100">{t.qtd || ''}</td>
+                            <td className="p-2 text-right bg-slate-100 whitespace-nowrap">{t.qtd ? fmtMoeda(t.valor) : ''}</td>
                           </Fragment>
                         )
                       })()}
                     </Fragment>
                   )
                 })}
-                <td className="p-2 text-right border-l-2 border-white/20 bg-white/10">{totalGeralPivot.qtd || ''}</td>
-                <td className="p-2 text-right bg-white/10 whitespace-nowrap">{fmtMoeda(totalGeralPivot.valor)}</td>
+                <td className="p-2 text-right border-l-2 border-slate-300 bg-slate-100">{totalGeralPivot.qtd || ''}</td>
+                <td className="p-2 text-right bg-slate-100 whitespace-nowrap">{fmtMoeda(totalGeralPivot.valor)}</td>
               </tr>
             </tbody>
           </table>
