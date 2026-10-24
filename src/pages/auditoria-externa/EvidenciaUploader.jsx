@@ -1,16 +1,24 @@
-import React, { useRef, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { ImagePlus, X, Loader2 } from 'lucide-react'
 import { apiService } from '../../services/api'
 
 // Anexo de evidências (imagens) — de uma Divergência ou de um Achado — aceita
 // colar direto (Ctrl+V, ex: print da ferramenta de recorte) ou escolher
-// arquivo PNG/JPG. Faz upload pro bucket público "auditoria-evidencias" (numa
+// arquivo PNG/JPG. Faz upload pro bucket privado "auditoria-evidencias" (numa
 // subpasta identificada por `pastaId`) e persiste a lista de URLs via
 // onChange (quem chama decide como salvar — ver AchadoDetalheDrawer /
 // AchadoFormModal).
 export default function EvidenciaUploader({ pastaId, urls = [], onChange, readOnly = false }) {
   const [enviando, setEnviando] = useState(false)
   const fileInputRef = useRef(null)
+  const [assinadas, setAssinadas] = useState({})
+
+  // Bucket privado: as URLs salvas são convertidas em URLs assinadas pra exibir
+  useEffect(() => {
+    let ativo = true
+    apiService.signAuditExtEvidencias(urls).then(m => { if (ativo) setAssinadas(m) }).catch(() => {})
+    return () => { ativo = false }
+  }, [urls.join('|')]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleFiles = async (fileList) => {
     const imgs = Array.from(fileList).filter(f => f.type === 'image/png' || f.type === 'image/jpeg')
@@ -76,8 +84,8 @@ export default function EvidenciaUploader({ pastaId, urls = [], onChange, readOn
         <div className="flex flex-col gap-3 mt-2">
           {urls.map(url => (
             <div key={url} className="relative group w-fit max-w-full">
-              <a href={url} target="_blank" rel="noreferrer" title="Abrir em tamanho real">
-                <img src={url} alt="Evidência" className="max-w-full h-auto rounded-md border border-slate-200" />
+              <a href={assinadas[url] || url} target="_blank" rel="noreferrer" title="Abrir em tamanho real">
+                <img src={assinadas[url] || url} alt="Evidência" className="max-w-full h-auto rounded-md border border-slate-200" />
               </a>
               {!readOnly && (
                 <button

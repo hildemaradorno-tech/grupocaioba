@@ -5233,7 +5233,7 @@ export const apiService = {
     return { success: true }
   },
 
-  // Evidências (imagens) — bucket público "auditoria-evidencias", controle de
+  // Evidências (imagens) — bucket privado "auditoria-evidencias", controle de
   // upload/edição/exclusão feito pela aplicação (mesmo padrão do resto do módulo).
   uploadAuditExtEvidencia: async (pastaId, file) => {
     const ext = (file.name?.split('.').pop() || (file.type === 'image/png' ? 'png' : 'jpg')).toLowerCase()
@@ -5249,6 +5249,21 @@ export const apiService = {
     if (idx === -1) return
     const path = decodeURIComponent(url.slice(idx + marker.length))
     await supabase.storage.from('auditoria-evidencias').remove([path])
+  },
+  // Bucket privado: converte as URLs salvas no banco em URLs assinadas (1h) para exibir.
+  // Retorna { [urlSalva]: urlAssinada }.
+  signAuditExtEvidencias: async (urls) => {
+    const marker = '/auditoria-evidencias/'
+    const itens = (urls || [])
+      .map(url => ({ url, idx: url.indexOf(marker) }))
+      .filter(i => i.idx !== -1)
+      .map(i => ({ url: i.url, path: decodeURIComponent(i.url.slice(i.idx + marker.length).split('?')[0]) }))
+    if (!itens.length) return {}
+    const { data, error } = await supabase.storage.from('auditoria-evidencias').createSignedUrls(itens.map(i => i.path), 3600)
+    if (error) throw error
+    const mapa = {}
+    itens.forEach((i, n) => { if (data[n]?.signedUrl) mapa[i.url] = data[n].signedUrl })
+    return mapa
   },
 
   // PLANOS DE AÇÃO (Action Items)
