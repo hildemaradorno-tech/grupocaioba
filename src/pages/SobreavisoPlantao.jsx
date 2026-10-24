@@ -2,6 +2,8 @@ import React, { useEffect, useState, useMemo } from 'react'
 import { PhoneCall, Plus, X, AlertTriangle, Loader2, Edit2, Trash2 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { apiService } from '../services/api'
+import { calcularSobreaviso } from '../utils/sobreaviso'
+import { funcionarioAtivoComissao } from '../utils/comissoesElegibilidade'
 
 const SEL = 'text-xs p-2 border border-slate-200 rounded-md bg-white font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 w-auto min-w-[180px]'
 const INP = 'w-full text-xs p-2 border border-slate-200 rounded-md font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500'
@@ -18,7 +20,11 @@ const MESES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julh
 
 const mesRefDe = (data) => `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, '0')}-01`
 
-const FORM_VAZIO = { funcionario_id: '', data_inicio: '', data_fim: '', deslocamentos: '', cliente_atendido: '' }
+const FORM_VAZIO = { empresa_id: '', funcionario_id: '', data_inicio: '', data_fim: '', deslocamentos: '', cliente_atendido: '' }
+
+// Sobreaviso/Plantão é das empresas da Caiobá Trucks: colaborador = qualquer funcionário ativo da
+// empresa escolhida.
+const AGRUPAMENTO_SOBREAVISO = 'Caiobá Trucks'
 
 // Dias corridos entre Data Início e Data Fim, incluindo os dois extremos (ex: 01/09 a 03/09 = 3
 // dias) — mesmo critério de "dias corridos" usado no RH, sem descontar fim de semana/feriado.
@@ -37,6 +43,8 @@ export default function SobreavisoPlantao() {
   const [loading, setLoading] = useState(true)
   const [erro, setErro] = useState(null)
   const [funcionarios, setFuncionarios] = useState([])
+  const [empresas, setEmpresas] = useState([])
+  const [cargosMap, setCargosMap] = useState({})
   const [config, setConfig] = useState(null)
   const [lancamentos, setLancamentos] = useState([])
   // Vem pré-selecionado com o mês anterior — é o mês recém-fechado, mesmo padrão já usado como
@@ -63,10 +71,18 @@ export default function SobreavisoPlantao() {
     setErro(null)
     // Funcionários e config vêm de tabelas independentes — uma falhar (ex: migração da
     // config ainda não rodada) não pode impedir a outra de carregar.
-    const [funcsResult, cfgResult] = await Promise.allSettled([
+    const [funcsResult, cfgResult, empResult, cargosResult] = await Promise.allSettled([
       apiService.getFuncionarios(),
       apiService.getSobreavisoConfig(),
+      apiService.getEmpresas(),
+      apiService.getCargos(),
     ])
+    if (empResult.status === 'fulfilled') {
+      setEmpresas(empResult.value
+        .filter(e => e.agrupamento_nome === AGRUPAMENTO_SOBREAVISO && e.ativo !== false)
+        .sort((a, b) => (a.empresa_fantasia || a.nome_empresa).localeCompare(b.empresa_fantasia || b.nome_empresa, 'pt-BR')))
+    }
+    if (cargosResult.status === 'fulfilled') setCargosMap(Object.fromEntries(cargosResult.value.map(c => [c.id, c])))
     if (funcsResult.status === 'fulfilled') {
       setFuncionarios(
         funcsResult.value.filter(f => f.ativo !== false)
@@ -74,7 +90,7 @@ export default function SobreavisoPlantao() {
       )
     }
     if (cfgResult.status === 'fulfilled') setConfig(cfgResult.value)
-    const erros = [funcsResult, cfgResult].filter(r => r.status === 'rejected').map(r => r.reason?.message || String(r.reason))
+    const erros = [funcsResult, cfgResult, empResult, cargosResult].filter(r => r.status === 'rejected').map(r => r.reason?.message || String(r.reason))
     if (erros.length > 0) setErro('Erro ao carregar dados: ' + erros.join(' | '))
     setLoading(false)
   }
@@ -104,6 +120,14 @@ export default function SobreavisoPlantao() {
     return lista
   }, [])
 
+  const colaboradoresElegiveis = useMemo(() => {
+    if (!form.empresa_id) return []
+    return funcionarios.filter(f => {
+      if (f.id === form.funcionario_id && editandoId) return true
+      return f.empresa_id === form.empresa_id && funcionarioAtivoComissao(f)
+    })
+  }, [funcionarios, form.empresa_id, form.funcionario_id, editandoId])
+
   const abrirNovo = () => {
     setEditandoId(null)
     setForm(FORM_VAZIO)
@@ -114,6 +138,7 @@ export default function SobreavisoPlantao() {
   const abrirEditar = (l) => {
     setEditandoId(l.id)
     setForm({
+      empresa_id: funcionarios.find(f => f.id === l.funcionario_id)?.empresa_id || '',
       funcionario_id: l.funcionario_id,
       data_inicio: l.data_inicio || '',
       data_fim: l.data_fim || '',
@@ -126,15 +151,14 @@ export default function SobreavisoPlantao() {
 
   const diasCalculados = useMemo(() => diasCorridos(form.data_inicio, form.data_fim), [form.data_inicio, form.data_fim])
 
-  const totalCalculado = useMemo(() => {
-    if (!config) return 0
-    const desloc = parseFloat(form.deslocamentos) || 0
-    return diasCalculados * Number(config.valor_dia_sobreaviso) + desloc * Number(config.valor_deslocamento)
-  }, [diasCalculados, form.deslocamentos, config])
+  const calculo = useMemo(() => calcularSobreaviso(diasCalculados, parseFloat(form.deslocamentos) || 0, config),
+    [diasCalculados, form.deslocamentos, config])
+  const totalCalculado = config ? calculo.total : 0
 
   const handleSalvar = async (e) => {
     e.preventDefault()
     setErroModal(null)
+    if (!form.empresa_id) { setErroModal('Selecione a empresa.'); return }
     if (!form.funcionario_id) { setErroModal('Selecione o colaborador.'); return }
     if (!form.data_inicio || !form.data_fim) { setErroModal('Informe a Data Início e a Data Fim do sobreaviso.'); return }
     if (form.data_fim < form.data_inicio) { setErroModal('A Data Fim não pode ser antes da Data Início.'); return }
@@ -154,8 +178,9 @@ export default function SobreavisoPlantao() {
         deslocamentos: desloc,
         cliente_atendido: form.cliente_atendido || null,
         valor_dia_sobreaviso: config.valor_dia_sobreaviso,
+        valor_semana_sobreaviso: config.valor_semana_sobreaviso ?? null,
         valor_deslocamento: config.valor_deslocamento,
-        total: dias * Number(config.valor_dia_sobreaviso) + desloc * Number(config.valor_deslocamento),
+        total: calcularSobreaviso(dias, desloc, config).total,
       }
       if (editandoId) {
         await apiService.updateSobreavisoLancamento(editandoId, payload)
@@ -227,6 +252,7 @@ export default function SobreavisoPlantao() {
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase text-[10px] tracking-wide">
               <th className="text-left px-4 py-2.5">Colaborador</th>
+              <th className="text-center px-4 py-2.5">Período</th>
               <th className="text-center px-4 py-2.5">Dias Sobreaviso</th>
               <th className="text-center px-4 py-2.5">Deslocamentos</th>
               <th className="text-left px-4 py-2.5">Cliente Atendido/OS</th>
@@ -236,17 +262,15 @@ export default function SobreavisoPlantao() {
           </thead>
           <tbody>
             {lancamentos.length === 0 && (
-              <tr><td colSpan={6} className="text-center px-4 py-6 text-slate-400">Nenhum lançamento neste mês.</td></tr>
+              <tr><td colSpan={7} className="text-center px-4 py-6 text-slate-400">Nenhum lançamento neste mês.</td></tr>
             )}
             {lancamentos.map(l => (
               <tr key={l.id} className="border-b border-slate-100 hover:bg-slate-50/60">
                 <td className="px-4 py-2.5 font-semibold text-slate-800">{l.funcionario_nome}</td>
-                <td className="px-4 py-2.5 text-center">
-                  {l.dias_sobreaviso}
-                  {l.data_inicio && l.data_fim && (
-                    <div className="text-[10px] text-slate-400 font-normal">{fmtDate(l.data_inicio)} a {fmtDate(l.data_fim)}</div>
-                  )}
+                <td className="px-4 py-2.5 text-center whitespace-nowrap text-slate-600">
+                  {l.data_inicio && l.data_fim ? `${fmtDate(l.data_inicio)} a ${fmtDate(l.data_fim)}` : '-'}
                 </td>
+                <td className="px-4 py-2.5 text-center">{l.dias_sobreaviso}</td>
                 <td className="px-4 py-2.5 text-center">{l.deslocamentos}</td>
                 <td className="px-4 py-2.5 text-slate-500">{l.cliente_atendido || '-'}</td>
                 <td className="px-4 py-2.5 text-right font-semibold text-slate-800">{fmtBRL(l.total)}</td>
@@ -272,7 +296,7 @@ export default function SobreavisoPlantao() {
           {lancamentos.length > 0 && (
             <tfoot>
               <tr className="bg-slate-50 border-t border-slate-200 font-bold text-slate-800">
-                <td className="px-4 py-2.5" colSpan={4}>Total do Mês</td>
+                <td className="px-4 py-2.5" colSpan={5}>Total do Mês</td>
                 <td className="px-4 py-2.5 text-right">{fmtBRL(totalMes)}</td>
                 {(canEditar || canExcluir) && <td />}
               </tr>
@@ -295,16 +319,32 @@ export default function SobreavisoPlantao() {
             <form onSubmit={handleSalvar}>
               <div className="p-5 space-y-4">
                 <div className="flex flex-col gap-1.5">
+                  <label className={LBL}>Empresa *</label>
+                  <select
+                    required
+                    value={form.empresa_id}
+                    onChange={e => setForm(prev => ({ ...prev, empresa_id: e.target.value, funcionario_id: '' }))}
+                    className={`${SEL} w-full`}
+                  >
+                    <option value="">Selecione a empresa</option>
+                    {empresas.map(e => <option key={e.id} value={e.id}>{e.empresa_fantasia || e.nome_empresa}</option>)}
+                  </select>
+                </div>
+                <div className="flex flex-col gap-1.5">
                   <label className={LBL}>Colaborador *</label>
                   <select
                     required
+                    disabled={!form.empresa_id}
                     value={form.funcionario_id}
                     onChange={e => setForm(prev => ({ ...prev, funcionario_id: e.target.value }))}
-                    className={`${SEL} w-full`}
+                    className={`${SEL} w-full disabled:bg-slate-50 disabled:text-slate-400`}
                   >
-                    <option value="">Selecione o colaborador</option>
-                    {funcionarios.map(f => <option key={f.id} value={f.id}>{f.nome_funcionario}</option>)}
+                    <option value="">{form.empresa_id ? 'Selecione o colaborador' : 'Selecione a empresa primeiro'}</option>
+                    {colaboradoresElegiveis.map(f => <option key={f.id} value={f.id}>{f.nome_funcionario}{cargosMap[f.cargo_id]?.nome_cargo ? ` — ${cargosMap[f.cargo_id].nome_cargo}` : ''}</option>)}
                   </select>
+                  {form.empresa_id && colaboradoresElegiveis.length === 0 && (
+                    <span className="text-[10px] text-amber-600">Nenhum funcionário ativo nesta empresa.</span>
+                  )}
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="flex flex-col gap-1.5">
@@ -348,9 +388,19 @@ export default function SobreavisoPlantao() {
                     placeholder="Opcional" className={INP}
                   />
                 </div>
-                <div className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-                  <span className={LBL}>Total calculado</span>
-                  <span className="text-sm font-bold text-slate-800">{fmtBRL(totalCalculado)}</span>
+                <div className="bg-slate-50 border border-slate-200 rounded-md px-3 py-2 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className={LBL}>Total calculado</span>
+                    <span className="text-sm font-bold text-slate-800">{fmtBRL(totalCalculado)}</span>
+                  </div>
+                  {config && diasCalculados > 0 && (
+                    <div className="text-[11px] text-slate-500 text-right">
+                      {calculo.semanas > 0 && <>{calculo.semanas} semana(s) × {fmtBRL(config.valor_semana_sobreaviso)}</>}
+                      {calculo.semanas > 0 && calculo.diasAvulsos > 0 && ' + '}
+                      {calculo.diasAvulsos > 0 && <>{calculo.diasAvulsos} dia(s) × {fmtBRL(config.valor_dia_sobreaviso)}</>}
+                      {calculo.valorDeslocamento > 0 && <> + deslocamentos {fmtBRL(calculo.valorDeslocamento)}</>}
+                    </div>
+                  )}
                 </div>
                 {erroModal && (
                   <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-md px-3 py-2 text-red-700 text-xs leading-relaxed">

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { Plus, X, AlertTriangle, Percent, Trash2, Loader2 } from 'lucide-react'
+import { Plus, X, AlertTriangle, Percent, Trash2, Loader2, PhoneCall } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import AcoesDropdown from '../components/AcoesDropdown'
 import { apiService } from '../services/api'
@@ -84,8 +84,16 @@ export default function RegrasFaixas() {
   const [agrupamentoCargos, setAgrupamentoCargos] = useState([])
   const [buscaAgrupamentoEquipe, setBuscaAgrupamentoEquipe] = useState('')
 
-  const { hasActionOrDefault } = useAuth()
+  const { hasActionOrDefault, hasAction, hasPermission } = useAuth()
   const canEdit = hasActionOrDefault('regras-faixas', 'editar')
+  // Regra de Sobreaviso/Plantão: valores únicos (por dia e por deslocamento) da configuração do
+  // Sobreaviso — aparece como uma linha na tabela e é incluída/editada pelo mesmo modal.
+  const podeVerSobreaviso = hasPermission('sobreaviso-plantao')
+  const canConfigurarSobreaviso = hasAction('sobreaviso-plantao', 'configurar_valores')
+  const [tipoRegra, setTipoRegra] = useState('COMISSAO') // 'COMISSAO' | 'SOBREAVISO'
+  const [sobreavisoConfig, setSobreavisoConfig] = useState(null)
+  const [formSobreaviso, setFormSobreaviso] = useState({ valor_dia_sobreaviso: '', valor_semana_sobreaviso: '', valor_deslocamento: '' })
+  const sobreavisoTemValor = !!sobreavisoConfig && (Number(sobreavisoConfig.valor_dia_sobreaviso) > 0 || Number(sobreavisoConfig.valor_semana_sobreaviso) > 0 || Number(sobreavisoConfig.valor_deslocamento) > 0)
   const canDelete = hasActionOrDefault('regras-faixas', 'excluir')
 
   useEffect(() => { loadData() }, [])
@@ -98,6 +106,9 @@ export default function RegrasFaixas() {
         apiService.getRegrasComissao(), apiService.getPoliticaComissao(), apiService.getAgrupamentoCargos(),
       ])
       setDados(regras)
+      if (podeVerSobreaviso) {
+        try { setSobreavisoConfig(await apiService.getSobreavisoConfig()) } catch { setSobreavisoConfig(null) }
+      }
       setAgrupamentoCargos(agrupamentosDb.filter(a => a.ativo !== false))
       // Uma "Política" na tela = um grupo (grupo_politica_id) de linhas por cargo.
       const mapa = new Map()
@@ -125,7 +136,23 @@ export default function RegrasFaixas() {
     }
   }
 
+  const preencherSobreaviso = () => setFormSobreaviso({
+    valor_dia_sobreaviso: sobreavisoConfig ? Number(sobreavisoConfig.valor_dia_sobreaviso || 0).toFixed(2) : '',
+    valor_semana_sobreaviso: sobreavisoConfig ? Number(sobreavisoConfig.valor_semana_sobreaviso || 0).toFixed(2) : '',
+    valor_deslocamento: sobreavisoConfig ? Number(sobreavisoConfig.valor_deslocamento || 0).toFixed(2) : '',
+  })
+  const abrirSobreaviso = (leitura) => {
+    setTipoRegra('SOBREAVISO')
+    setEditingId('sobreaviso')
+    setSomenteLeitura(leitura)
+    preencherSobreaviso()
+    setErroModal(null)
+    setModalAberto(true)
+  }
+
   const abrirIncluir = () => {
+    setTipoRegra('COMISSAO')
+    preencherSobreaviso()
     setEditingId(null)
     setSomenteLeitura(false)
     setForm({ ...FORM_VAZIO, faixas: [novaFaixa(), { operador: '<', valor: '', percentual: '' }] })
@@ -142,6 +169,7 @@ export default function RegrasFaixas() {
   // duplicar: abre como Incluir com a configuração da regra copiada, mas sem Política — cada
   // política tem uma regra só, então manter a mesma tiraria a política da regra original.
   const abrirItem = (item, leitura, duplicar = false) => {
+    setTipoRegra('COMISSAO')
     setEditingId(duplicar ? null : item.id)
     setSomenteLeitura(leitura)
     setForm({
@@ -170,6 +198,23 @@ export default function RegrasFaixas() {
   const handleSalvar = async (e) => {
     e.preventDefault()
     setErroModal(null)
+    if (tipoRegra === 'SOBREAVISO') {
+      if (!sobreavisoConfig) return setErroModal('Configuração do Sobreaviso não encontrada. Recarregue a página.')
+      const dia = parseFloat(String(formSobreaviso.valor_dia_sobreaviso).replace(',', '.'))
+      const semana = parseFloat(String(formSobreaviso.valor_semana_sobreaviso || '0').replace(',', '.'))
+      const desloc = parseFloat(String(formSobreaviso.valor_deslocamento).replace(',', '.'))
+      if (Number.isNaN(dia) || Number.isNaN(semana) || Number.isNaN(desloc) || dia < 0 || semana < 0 || desloc < 0) return setErroModal('Informe o valor por dia, por semana e por deslocamento.')
+      setSalvando(true)
+      try {
+        setSobreavisoConfig(await apiService.updateSobreavisoConfig(sobreavisoConfig.id, { valor_dia_sobreaviso: dia, valor_semana_sobreaviso: semana, valor_deslocamento: desloc }))
+        setModalAberto(false)
+      } catch (err) {
+        setErroModal('Erro ao salvar: ' + (err.message || String(err)))
+      } finally {
+        setSalvando(false)
+      }
+      return
+    }
     if (form.tipo_faixa !== 'VALOR' && !form.meta_tipo) return setErroModal('Selecione a Meta de Referência.')
     const faixas = form.faixas.map(f => ({ operador: f.operador, valor: lerNumero(f.valor), percentual: lerNumero(f.percentual) }))
     if (faixas.length === 0) return setErroModal('Informe ao menos uma faixa.')
@@ -244,7 +289,42 @@ export default function RegrasFaixas() {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
-            {dados.length === 0 ? (
+            {sobreavisoTemValor && (
+              <tr className="hover:bg-slate-50/70 transition-colors align-top">
+                <td className="p-3 w-12 text-center">
+                  <AcoesDropdown
+                    onVer={() => abrirSobreaviso(true)}
+                    onEditar={canConfigurarSobreaviso ? () => abrirSobreaviso(false) : null}
+                  />
+                </td>
+                <td className="p-3">
+                  <div className="flex items-center gap-2 font-bold text-slate-900"><PhoneCall className="h-3.5 w-3.5 text-indigo-500 shrink-0" />Sobreaviso/Plantão</div>
+                </td>
+                <td className="p-3 text-slate-300">—</td>
+                <td className="p-3 text-center">
+                  <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-bold">Sobreaviso</span>
+                </td>
+                <td className="p-3">
+                  <div className="flex flex-col gap-1.5 text-[11px] text-slate-600">
+                    <span>
+                      <span className="font-semibold text-slate-700">Sobreaviso diário</span> <span className="text-slate-400">→</span> <span className="font-mono font-bold text-slate-800">{fmtBRL(sobreavisoConfig.valor_dia_sobreaviso)}</span>
+                    </span>
+                    {Number(sobreavisoConfig.valor_semana_sobreaviso) > 0 && (
+                      <span>
+                        <span className="font-semibold text-slate-700">Sobreaviso semanal</span> <span className="text-slate-400">→</span> <span className="font-mono font-bold text-slate-800">{fmtBRL(sobreavisoConfig.valor_semana_sobreaviso)}</span>
+                      </span>
+                    )}
+                    <span>
+                      <span className="font-semibold text-slate-700">Deslocamento</span> <span className="text-slate-400">→</span> <span className="font-mono font-bold text-slate-800">{fmtBRL(sobreavisoConfig.valor_deslocamento)}</span>
+                    </span>
+                  </div>
+                </td>
+                <td className="p-3 text-center">
+                  <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold border bg-green-50 text-green-700 border-green-200">Ativo</span>
+                </td>
+              </tr>
+            )}
+            {dados.length === 0 && !sobreavisoTemValor ? (
               <tr><td colSpan="6" className="p-6 text-center text-slate-400">Nenhuma regra cadastrada.</td></tr>
             ) : dados.map(item => (
               <tr key={item.id} className="hover:bg-slate-50/70 transition-colors align-top">
@@ -300,13 +380,56 @@ export default function RegrasFaixas() {
           <div className="bg-white rounded-lg border border-slate-200 w-full max-w-[640px] max-h-[90vh] shadow-xl overflow-hidden flex flex-col">
             <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50 shrink-0">
               <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                <Percent className="h-4 w-4 text-indigo-600" />
+                {tipoRegra === 'SOBREAVISO' ? <PhoneCall className="h-4 w-4 text-indigo-600" /> : <Percent className="h-4 w-4 text-indigo-600" />}
                 {somenteLeitura ? 'Visualizar Regra' : editingId ? 'Editar Regra' : 'Incluir Regra'}
+                {tipoRegra === 'SOBREAVISO' && <span className="font-normal text-slate-500">— Sobreaviso/Plantão</span>}
               </h3>
               <button onClick={() => setModalAberto(false)} className="text-slate-400 hover:text-slate-600"><X className="h-4 w-4" /></button>
             </div>
             <form onSubmit={handleSalvar} className="flex flex-col flex-1 min-h-0">
               <div className="p-5 space-y-4 flex-1 min-h-0 overflow-y-auto">
+                {!editingId && podeVerSobreaviso && (
+                  <div className="flex flex-col gap-1.5">
+                    <label className={LBL}>Tipo de Regra *</label>
+                    <select value={tipoRegra} onChange={e => setTipoRegra(e.target.value)} className={INP}>
+                      <option value="COMISSAO">Comissão (faixas sobre uma Política)</option>
+                      <option value="SOBREAVISO" disabled={!canConfigurarSobreaviso}>Sobreaviso/Plantão{canConfigurarSobreaviso ? '' : ' (sem permissão)'}</option>
+                    </select>
+                    {tipoRegra === 'SOBREAVISO' && sobreavisoTemValor && (
+                      <span className="text-[10px] text-amber-600">Já existe a regra de Sobreaviso/Plantão — ao salvar, os valores dela são atualizados.</span>
+                    )}
+                  </div>
+                )}
+
+                {tipoRegra === 'SOBREAVISO' ? (
+                  <div className="space-y-3">
+                    <p className="text-[11px] text-slate-500">Valores usados para calcular automaticamente os lançamentos de Sobreaviso/Plantão.</p>
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className="flex flex-col gap-1.5">
+                        <label className={LBL}>Sobreaviso diário (R$) *</label>
+                        <input type="number" step="0.01" min="0" required disabled={somenteLeitura}
+                          value={formSobreaviso.valor_dia_sobreaviso}
+                          onChange={e => setFormSobreaviso(p => ({ ...p, valor_dia_sobreaviso: e.target.value }))} className={INP} />
+                        <span className="text-[10px] text-slate-400">Por dia — paga os dias que não completam uma semana.</span>
+                      </div>
+                      <div className="flex flex-col gap-1.5">
+                        <label className={LBL}>Sobreaviso semanal (R$)</label>
+                        <input type="number" step="0.01" min="0" disabled={somenteLeitura}
+                          value={formSobreaviso.valor_semana_sobreaviso}
+                          onChange={e => setFormSobreaviso(p => ({ ...p, valor_semana_sobreaviso: e.target.value }))} className={INP} />
+                        <span className="text-[10px] text-slate-400">Quando o colaborador cumprir os 7 dias da semana. Vazio/0 = só valor diário.</span>
+                      </div>
+                      <div className="flex flex-col gap-1.5">
+                        <label className={LBL}>Deslocamento (R$) *</label>
+                        <input type="number" step="0.01" min="0" required disabled={somenteLeitura}
+                          value={formSobreaviso.valor_deslocamento}
+                          onChange={e => setFormSobreaviso(p => ({ ...p, valor_deslocamento: e.target.value }))} className={INP} />
+                        <span className="text-[10px] text-slate-400">Por acionamento — cada ida à concessionária ou cliente conta como 1.</span>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                <>
                 <div className="flex flex-col gap-1.5">
                   <label className={LBL}>Política de Comissão *</label>
                   {/* Filtros de Empresa/Cargo + busca por texto — os três juntos, pra achar a política rápido */}
@@ -582,6 +705,8 @@ export default function RegrasFaixas() {
                   <input type="checkbox" disabled={somenteLeitura} checked={form.ativo} onChange={e => setForm(p => ({ ...p, ativo: e.target.checked }))} className="w-4 h-4" /> Ativa
                 </label>
 
+                </>
+                )}
                 {erroModal && (
                   <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-md px-3 py-2 text-red-700 text-xs">
                     <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" /> {erroModal}

@@ -36,7 +36,6 @@ import FontesCalculo from './pages/FontesCalculo'
 import FontesMicrowork from './pages/FontesMicrowork'
 import Ferias from './pages/Ferias'
 import SobreavisoPlantao from './pages/SobreavisoPlantao'
-import SobreavisoConfiguracao from './pages/SobreavisoConfiguracao'
 import CalculoComissoes from './pages/CalculoComissoes'
 import HistoricoComissoes from './pages/HistoricoComissoes'
 import Funcionarios from './pages/Funcionarios'
@@ -219,7 +218,6 @@ export default function App() {
           // Configuração de Valores do Sobreaviso virou tela própria (menu em Regras de
           // Comissões) — mesma permissão de Sobreaviso/Plantão (ação 'configurar_valores' já
           // controla edição x só-leitura dentro da própria tela).
-          { path: '/sobreaviso-configuracao', element: <SobreavisoConfiguracao />, menuPath: 'sobreaviso-plantao' },
           { path: '/calculo-comissoes', element: <CalculoComissoes />, menuPath: 'calculo-comissoes' },
           { path: '/calculo-comissoes-motos', element: <CalculoComissoes agrupamentoNome="Caiobá Motos" titulo="Comissões - HONDA" />, menuPath: 'calculo-comissoes' },
           { path: '/processamento-comissoes', element: <HistoricoComissoes />, menuPath: 'processamento-comissoes' },

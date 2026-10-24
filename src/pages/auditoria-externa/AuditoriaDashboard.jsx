@@ -145,31 +145,75 @@ function ComparativoColunas({ dados, aoClicar }) {
   )
 }
 
-// Rótulo combinado — quantidade + valor apontado, os dois na mesma barra.
-function QuantidadeValorLabel({ x, y, width, value, index, dados }) {
-  const item = dados[index]
-  if (!item) return null
+// Rótulo de uma barra única — só o valor do modo de visualização selecionado.
+// Usa o `value` que o próprio Recharts já calcula pra cada barra (o mesmo
+// número usado pra desenhar a altura dela) — sem reindexar nenhum array à
+// parte, elimina qualquer chance de desalinhar label x barra.
+function ValorResolvidoLabel({ x, y, width, value }) {
+  if (value === undefined || value === null) return null
   return (
-    <text x={x + width / 2} y={y - 6} textAnchor="middle" fontSize={10} fontWeight="bold" fill="#334155">
-      {item.quantidade} un. · {fmtMoeda(item.valor)}
+    <text x={x + width / 2} y={y - 7} textAnchor="middle" fontSize={10} fontWeight="bold" fill="#334155">
+      {fmtMoeda(value)}
     </text>
   )
 }
 
-// Uma barra por Tipo de Divergência — altura = Valor Apontado (R$), com a
-// quantidade de ocorrências junto no mesmo rótulo, acima da barra.
-function QuantidadeValorColunas({ dados, aoClicar, destaque }) {
+// Pequeno grupo de botões tipo "abas" pra trocar o modo de visualização de um gráfico.
+function ToggleVisualizacao({ opcoes, valor, onChange }) {
+  return (
+    <div className="inline-flex rounded-md border border-slate-200 overflow-hidden text-[11px] font-semibold">
+      {opcoes.map((o, i) => (
+        <button
+          key={o.valor}
+          onClick={() => onChange(o.valor)}
+          className={`px-2.5 py-1 transition-colors ${i > 0 ? 'border-l border-slate-200' : ''} ${valor === o.valor ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+const CAMPO_POR_MODO = { divergencia: 'valor', resolvidos: 'valorCorrigido', pendentes: 'pendente' }
+const COR_POR_MODO = { divergencia: '#6366f1', resolvidos: '#059669', pendentes: '#b45309' }
+
+// Tooltip customizado do QuantidadeValorColunas — cada informação numa linha.
+function QuantidadeValorTooltip({ active, payload, label }) {
+  if (!active || !payload || payload.length === 0) return null
+  const item = payload[0]?.payload
+  if (!item) return null
+  return (
+    <div className="bg-white border border-slate-200 rounded-lg shadow-lg px-3 py-2 text-xs space-y-0.5">
+      <p className="font-bold text-slate-700 mb-1">{label}</p>
+      <p className="text-slate-500">Quantidade: <strong className="text-slate-700">{item.quantidade} un.</strong></p>
+      <p className="text-indigo-600">Apontado: <strong>{fmtMoeda(item.valor)}</strong></p>
+      <p className="text-emerald-600">Resolvido: <strong>{fmtMoeda(item.valorCorrigido)} ({item.pctResolvido}%)</strong></p>
+      <p className="text-amber-700">Pendente: <strong>{fmtMoeda(item.pendente)}</strong></p>
+    </div>
+  )
+}
+
+// Gráfico de uma barra por Tipo de Divergência, com 3 modos de visualização
+// (Divergência = Apontado, Resolvidos = Corrigido, Pendentes = Apontado - Corrigido).
+// O rótulo acima da barra mostra só o valor do modo selecionado; passando o
+// mouse, o tooltip traz o detalhamento completo (apontado/resolvido/%/pendente).
+function QuantidadeValorColunas({ dados, modo, aoClicar, destaque }) {
   if (dados.length === 0) return <p className="text-xs text-slate-400">Sem dados ainda.</p>
+
+  const campo = CAMPO_POR_MODO[modo] || 'valor'
+  const corBarra = COR_POR_MODO[modo] || '#6366f1'
+
   return (
     <ResponsiveContainer width="100%" height={320}>
       <BarChart data={dados} margin={{ top: 24, left: -12 }}>
         <CartesianGrid strokeDasharray="3 3" vertical={false} />
         <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={0} angle={-20} textAnchor="end" height={70} />
         <YAxis allowDecimals={false} tick={{ fontSize: 10 }} tickFormatter={fmtMoeda} />
-        <Tooltip formatter={(v, n, p) => [`${p.payload.quantidade} un. · ${fmtMoeda(v)}`, 'Valor Apontado']} />
-        <Bar dataKey="valor" radius={[4, 4, 0, 0]} onClick={(e) => aoClicar && aoClicar(e?.payload ?? e)}>
-          {dados.map((d, i) => <Cell key={i} fill="#6366f1" fillOpacity={destaque && !destaque(d) ? 0.35 : 1} style={{ cursor: aoClicar ? 'pointer' : 'default' }} />)}
-          <LabelList content={(props) => <QuantidadeValorLabel {...props} dados={dados} />} />
+        <Tooltip content={<QuantidadeValorTooltip />} />
+        <Bar key={modo} dataKey={campo} isAnimationActive={false} radius={[4, 4, 0, 0]} onClick={(e) => aoClicar && aoClicar(e?.payload ?? e)}>
+          {dados.map((d, i) => <Cell key={i} fill={corBarra} fillOpacity={destaque && !destaque(d) ? 0.35 : 1} style={{ cursor: aoClicar ? 'pointer' : 'default' }} />)}
+          <LabelList dataKey={campo} content={ValorResolvidoLabel} />
         </Bar>
       </BarChart>
     </ResponsiveContainer>
@@ -383,6 +427,7 @@ export default function AuditoriaDashboard() {
   // Clique num gráfico vira filtro do painel inteiro (gráficos e cards). Clicar de
   // novo no mesmo item limpa o filtro.
   const [filtroGrafico, setFiltroGrafico] = useState(null) // null | { dim, valor }
+  const [visualizacaoTipoDivergencia, setVisualizacaoTipoDivergencia] = useState('divergencia')
   const alternarFiltroGrafico = (dim, valor) =>
     setFiltroGrafico(prev => (prev && prev.dim === dim && prev.valor === valor ? null : { dim, valor }))
   const destaque = (dim, chave) => (item) =>
@@ -520,17 +565,21 @@ export default function AuditoriaDashboard() {
     return Array.from(m.entries()).map(([label, qtd]) => ({ label, qtd })).sort((a, b) => b.qtd - a.qtd)
   }, [planosFiltrados])
 
-  // Quantidade de divergências e soma do Total Apontado (R$) por Tipo de Divergência.
+  // Quantidade de divergências, Total Apontado e Valor já Corrigido (R$) por
+  // Tipo de Divergência — com o % resolvido (Corrigido ÷ Apontado).
   const porTipoDivergencia = useMemo(() => {
     const m = new Map()
     for (const a of achadosFiltrados) {
       const nome = a.audext_tipos_divergencia?.nome || 'Não definido'
-      if (!m.has(nome)) m.set(nome, { label: nome, quantidade: 0, valor: 0 })
+      if (!m.has(nome)) m.set(nome, { label: nome, quantidade: 0, valor: 0, valorCorrigido: 0 })
       const g = m.get(nome)
       g.quantidade += 1
       g.valor += Number(a.total_apontado || 0)
+      g.valorCorrigido += Number(a.valor_corrigido || 0)
     }
-    return Array.from(m.values()).sort((a, b) => b.valor - a.valor)
+    return Array.from(m.values())
+      .map(g => ({ ...g, pendente: g.valor - g.valorCorrigido, pctResolvido: g.valor > 0 ? Math.round((g.valorCorrigido / g.valor) * 100) : 0 }))
+      .sort((a, b) => b.valor - a.valor)
   }, [achadosFiltrados])
 
   // Total Apontado (R$) somado por texto de Impacto — cada divergência entra no
@@ -672,8 +721,19 @@ export default function AuditoriaDashboard() {
       </div>
 
       <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-4">
-        <h3 className="text-xs font-bold text-slate-700 mb-3">Divergências por Tipo de Divergência — Quantidade x Valor Apontado</h3>
-        <QuantidadeValorColunas dados={porTipoDivergencia} aoClicar={(item) => alternarFiltroGrafico('tipoDivergencia', item.label)} destaque={destaque('tipoDivergencia', i => i.label)} />
+        <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+          <h3 className="text-xs font-bold text-slate-700">Divergências por Tipo de Divergência</h3>
+          <ToggleVisualizacao
+            opcoes={[
+              { valor: 'divergencia', label: 'Divergência' },
+              { valor: 'resolvidos', label: 'Resolvidos' },
+              { valor: 'pendentes', label: 'Pendentes' },
+            ]}
+            valor={visualizacaoTipoDivergencia}
+            onChange={setVisualizacaoTipoDivergencia}
+          />
+        </div>
+        <QuantidadeValorColunas dados={porTipoDivergencia} modo={visualizacaoTipoDivergencia} aoClicar={(item) => alternarFiltroGrafico('tipoDivergencia', item.label)} destaque={destaque('tipoDivergencia', i => i.label)} />
       </div>
     </div>
   )

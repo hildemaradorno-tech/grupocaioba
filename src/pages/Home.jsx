@@ -64,7 +64,7 @@ function GrupoBloco({ node, ativo, quantidade, onClick }) {
         </div>
       </div>
       <div className="flex items-center justify-between gap-2 bg-slate-200/70 px-3 py-2.5">
-        <span className="text-sm font-bold text-slate-800 text-left leading-tight">{node.label}</span>
+        <span className="text-sm font-bold text-slate-800 text-left leading-tight whitespace-nowrap truncate" title={node.label}>{node.label}</span>
         <span className="shrink-0 w-5 h-5 rounded-full bg-slate-500 text-white text-[10px] font-bold flex items-center justify-center">
           {quantidade}
         </span>
@@ -81,12 +81,12 @@ function ColunaMenu({ node, rootNode, selecionadoKey, hasPermission, navigate, o
   const cor = GRUPO_CORES[rootNode.key] || COR_PADRAO
 
   return (
-    <div className={`w-full sm:w-[280px] shrink-0 border border-slate-200 border-l-4 ${cor.accent} rounded-2xl overflow-hidden bg-white shadow-sm`}>
+    <div className={`w-full sm:w-max sm:min-w-[280px] shrink-0 border border-slate-200 border-l-4 ${cor.accent} rounded-2xl overflow-hidden bg-white shadow-sm`}>
       <div className={`flex items-center gap-2 px-4 py-3 ${cor.headerBg} border-b ${cor.headerBorder}`}>
         <div className={`bg-gradient-to-br ${cor.grad} text-white rounded-lg p-1.5 shrink-0`}>
           <Icone size={14} />
         </div>
-        <span className="text-xs font-bold text-slate-700 flex-1 truncate">{node.label}</span>
+        <span className="text-xs font-bold text-slate-700 flex-1 whitespace-nowrap">{node.label}</span>
         <button onClick={onFechar} className="text-slate-400 hover:text-slate-600 shrink-0">
           <X size={16} />
         </button>
@@ -114,7 +114,7 @@ function ColunaMenu({ node, rootNode, selecionadoKey, hasPermission, navigate, o
                 : item.href
                 ? <ExternalLink size={20} className="text-slate-400 shrink-0" />
                 : <FileText size={20} className="text-slate-400 shrink-0" />}
-              <span className="text-sm font-bold text-slate-800 flex-1">{item.label}</span>
+              <span className="text-sm font-bold text-slate-800 flex-1 whitespace-nowrap">{item.label}</span>
               {isFolder && <ChevronRight size={16} className="text-slate-400 shrink-0" />}
             </button>
           )

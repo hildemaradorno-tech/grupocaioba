@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom'
-import { Settings, TableProperties, Users, ShieldCheck, Building2, Layers, FolderTree, Box as BoxIcon, Briefcase, Tag, Wrench, Package, TrendingUp, FileCheck2, ScrollText, Clock, CalendarX, Calendar, Target, ShoppingBag, Car, Cog, ClipboardCheck, UserCheck, LogOut, BarChart2, Wallet, ClipboardList, Home, FolderKanban, CircleDot, FileText, Truck, Calculator, BookOpen, GraduationCap, KeyRound, Eye, EyeOff, X, AlertTriangle, Bike, Network, PieChart, Share2, Gauge, Ruler, ShieldAlert, Landmark, Hash, ListChecks, ExternalLink, Workflow, Trophy, Percent, Palmtree, PhoneCall, Settings2, PlugZap } from 'lucide-react'
+import { Settings, TableProperties, Users, ShieldCheck, Building2, Layers, FolderTree, Box as BoxIcon, Briefcase, Tag, Wrench, Package, TrendingUp, FileCheck2, ScrollText, Clock, CalendarX, Calendar, Target, ShoppingBag, Car, Cog, ClipboardCheck, UserCheck, LogOut, BarChart2, Wallet, ClipboardList, Home, FolderKanban, CircleDot, FileText, Truck, Calculator, BookOpen, GraduationCap, KeyRound, Eye, EyeOff, X, AlertTriangle, Bike, Network, PieChart, Share2, Gauge, Ruler, ShieldAlert, Landmark, Hash, ListChecks, ExternalLink, Workflow, Trophy, Percent, Palmtree, PhoneCall, PlugZap } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import TrocarSenhaObrigatoria from '../pages/TrocarSenhaObrigatoria'
 import { supabase } from '../services/supabaseClient'
@@ -22,7 +22,7 @@ function getActiveSectionKey(pathname) {
   if (pathname === '/usuarios' || pathname === '/grupos' || pathname === '/permissoes-matriz') return '_config'
   if (pathname === '/tipos-processo' || pathname === '/rubricas' || pathname === '/bases-calculo' ||
     pathname === '/politica-comissao' || pathname === '/regras-faixas' || pathname === '/cargos-remuneracoes' ||
-    pathname === '/ferias' || pathname === '/sobreaviso-plantao' || pathname === '/sobreaviso-configuracao' ||
+    pathname === '/ferias' || pathname === '/sobreaviso-plantao' ||
     pathname === '/calculo-comissoes' || pathname === '/calculo-comissoes-motos' || pathname === '/processamento-comissoes') return '_comissoes-calculo'
   const cadastros = ['/segmentos','/agrup-empresas','/empresas','/areas','/agrup-departamentos',
     '/departamentos','/setores','/box','/agrup-cargos','/cargos','/organograma',
@@ -462,7 +462,6 @@ export default function SidebarLayout() {
                 {canView('bases-calculo') && <FlyItem to="/bases-calculo" icon={Calculator} onClose={closeFlyout}>Base de Cálculo</FlyItem>}
                 {canView('politica-comissao') && <FlyItem to="/politica-comissao" icon={ScrollText} onClose={closeFlyout}>Política de Comissões</FlyItem>}
                 {canView('regras-faixas') && <FlyItem to="/regras-faixas" icon={Percent} onClose={closeFlyout}>Regras</FlyItem>}
-                {canView('sobreaviso-plantao') && <FlyItem to="/sobreaviso-configuracao" icon={Settings2} onClose={closeFlyout}>Configuração de Valores</FlyItem>}
                 {canView('cargos-remuneracoes') && <FlyItem to="/cargos-remuneracoes" icon={Briefcase} onClose={closeFlyout}>Cargos e Remunerações</FlyItem>}
               </>
             )}
