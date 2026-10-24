@@ -24,6 +24,7 @@ import truckpagRoutes from './routes/truckpag.js'
 import googleCalendarRoutes from './routes/googleCalendar.js'
 import projetosManifestacoesRoutes from './routes/projetosManifestacoes.js'
 import auditAiRoutes from './routes/auditAi.js'
+import powerbiRoutes from './routes/powerbi.js'
 import { iniciarSchedulerManifestacao } from './services/manifestacaoScheduler.js'
 import { iniciarSchedulerAuditoria } from './services/auditoriaAgendamento.js'
 
@@ -68,6 +69,9 @@ app.use('/api/projetos', projetosManifestacoesRoutes)
 
 // ── Rotas Gestão de Projetos — Auditoria Externa (Copiloto de IA) ───────────
 app.use('/api/audit-ai', auditAiRoutes)
+
+// ── Leitura das views da Controladoria para o Power BI (token fixo POWERBI_TOKEN) ───
+app.use('/api/powerbi', powerbiRoutes)
 
 // Handler de erro global — sem isso, um erro lançado dentro de uma rota (ex: pasta/arquivo do
 // SharePoint não encontrado) cai no handler padrão do Express, que responde com uma página HTML
