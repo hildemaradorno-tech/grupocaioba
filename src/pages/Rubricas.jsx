@@ -83,7 +83,7 @@ export default function Rubricas() {
     try {
       const [rubricas, emps] = await Promise.all([apiService.getRubricas(), apiService.getEmpresas()])
       setDados(rubricas)
-      setEmpresas([...emps].sort((a, b) => (a.empresa_fantasia || a.nome_empresa || '').localeCompare(b.empresa_fantasia || b.nome_empresa || '', 'pt-BR')))
+      setEmpresas(emps.filter(e => !e.empresa_visual).sort((a, b) => (a.empresa_fantasia || a.nome_empresa || '').localeCompare(b.empresa_fantasia || b.nome_empresa || '', 'pt-BR')))
     } catch (err) {
       setError(err.message || String(err))
     } finally {

@@ -3,7 +3,7 @@ import { PhoneCall, Plus, X, AlertTriangle, Loader2, Edit2, Trash2 } from 'lucid
 import { useAuth } from '../context/AuthContext'
 import { apiService } from '../services/api'
 import { calcularSobreaviso } from '../utils/sobreaviso'
-import { funcionarioAtivoComissao } from '../utils/comissoesElegibilidade'
+import { funcionarioAtivoComissao, empresaSelecionavel } from '../utils/comissoesElegibilidade'
 
 const SEL = 'text-xs p-2 border border-slate-200 rounded-md bg-white font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 w-auto min-w-[180px]'
 const INP = 'w-full text-xs p-2 border border-slate-200 rounded-md font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500'
@@ -79,7 +79,7 @@ export default function SobreavisoPlantao() {
     ])
     if (empResult.status === 'fulfilled') {
       setEmpresas(empResult.value
-        .filter(e => e.agrupamento_nome === AGRUPAMENTO_SOBREAVISO && e.ativo !== false)
+        .filter(e => e.agrupamento_nome === AGRUPAMENTO_SOBREAVISO && empresaSelecionavel(e))
         .sort((a, b) => (a.empresa_fantasia || a.nome_empresa).localeCompare(b.empresa_fantasia || b.nome_empresa, 'pt-BR')))
     }
     if (cargosResult.status === 'fulfilled') setCargosMap(Object.fromEntries(cargosResult.value.map(c => [c.id, c])))

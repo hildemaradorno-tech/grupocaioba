@@ -130,7 +130,7 @@ export default function CargosRemuneracoes() {
     return true
   }), [cargosComPolitica, filtroCargo, filtroEmpresa, filtroAgrupamentoEmpresa, filtroArea, filtroAgrupamentoCargo, filtroDepartamento, filtroSetor])
 
-  const empresasUnicas = useMemo(() => juntaUnicos(filtrarCargos('empresa').map(c => c.nome_empresa)), [filtrarCargos])
+  const empresasUnicas = useMemo(() => juntaUnicos(filtrarCargos('empresa').filter(c => !c.empresa_visual).map(c => c.nome_empresa)), [filtrarCargos])
   const agrupamentosEmpresaUnicos = useMemo(() => juntaUnicos(filtrarCargos('agrupEmpresa').map(c => c.nome_agrupamento_empresa)), [filtrarCargos])
   const areasUnicas = useMemo(() => juntaUnicos(filtrarCargos('area').flatMap(c => c.nomeAreas)), [filtrarCargos])
   const departamentosUnicos = useMemo(() => juntaUnicos(filtrarCargos('departamento').flatMap(c => c.nomeDepartamentos)), [filtrarCargos])

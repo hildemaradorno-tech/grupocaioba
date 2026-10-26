@@ -241,7 +241,7 @@ export default function BasesCalculo() {
       setDados(bases)
       setFontes(fontesData)
       setFontesMw(fontesMwData)
-      setEmpresas([...emps].sort((a, b) => (a.empresa_fantasia || a.nome_empresa || '').localeCompare(b.empresa_fantasia || b.nome_empresa || '', 'pt-BR')))
+      setEmpresas(emps.filter(e => !e.empresa_visual).sort((a, b) => (a.empresa_fantasia || a.nome_empresa || '').localeCompare(b.empresa_fantasia || b.nome_empresa || '', 'pt-BR')))
       // Setores únicos do cadastro de Tipos de O.S. — opções do operador "Setor da O.S.".
       setSetoresOS([...new Set(tiposOS.map(t => (t.setor_servico || '').trim()).filter(Boolean))]
         .sort((a, b) => a.localeCompare(b, 'pt-BR')))

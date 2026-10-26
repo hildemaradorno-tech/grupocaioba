@@ -532,7 +532,7 @@ export default function GarantiasDafImportFaturadosModal({ onClose, onImported, 
                     className="w-full py-2 pl-3 pr-8 text-xs border border-slate-200 rounded-md text-slate-700 outline-none bg-white focus:ring-2 focus:ring-green-500/20"
                   >
                     <option value="">Selecione a empresa...</option>
-                    {empresasDim.map(e => (
+                    {empresasDim.filter(e => !e.empresa_visual).map(e => (
                       <option key={e.id} value={e.id}>
                         {e.empresa_fantasia || e.nome_empresa || e.nome_empresa_sistema}
                       </option>

@@ -2,12 +2,12 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Plus, Trash2, FileText, AlertTriangle, Save, ImagePlus, X, Wand2, Eye } from 'lucide-react'
 import { apiService } from '../../services/api'
 import MenuEngrenagem from '../../components/MenuEngrenagem'
-import { CAMPOS_NOTA_DEBITO, montarContextoNota, renderizarModelo, comElementoOculto, gerarPdfUrlDeElemento } from '../../utils/notaDebito'
+import { CAMPOS_NOTA_DEBITO, NOME_ARQUIVO_PADRAO, montarContextoNota, renderizarModelo, comElementoOculto, gerarPdfUrlDeElemento } from '../../utils/notaDebito'
 import { MODELOS_PADRAO } from '../../utils/notaDebitoModelosPadrao'
 import { useResponsavelNota } from '../../hooks/useResponsavelNota'
 import { useAuth } from '../../context/AuthContext'
 
-const VAZIO = { id: null, nome: '', descricao: '', tipos_codigos: '', logo: '', conteudo_html: '', ativo: true }
+const VAZIO = { id: null, nome: '', descricao: '', tipos_codigos: '', logo: '', conteudo_html: '', ativo: true, nome_arquivo: NOME_ARQUIVO_PADRAO }
 // tipo_os vem como "G02 - AÇÃO DE CAMPO (MEC)": mostra só a descrição, já que a sigla tem coluna própria
 const descricaoTipo = (t) => String(t.tipo_os || '').replace(/^\S+\s*-\s*/, '')
 const LIMITE_LOGO = 400 * 1024
@@ -205,7 +205,7 @@ export default function ModelosNotaDebito() {
                   <td className="p-3 text-center">
                     <MenuEngrenagem compacto itens={[
                       { icon: Eye, cor: 'text-slate-600', titulo: 'Visualizar PDF', descricao: 'Abre o modelo em PDF com os dados da concessionária', onClick: () => visualizarPdf(m) },
-                      canEditar && { icon: FileText, cor: 'text-blue-600', titulo: 'Editar', onClick: () => setForm({ ...VAZIO, ...m, logo: m.logo || '', descricao: m.descricao || '', tipos_codigos: m.tipos_codigos || '' }) },
+                      canEditar && { icon: FileText, cor: 'text-blue-600', titulo: 'Editar', onClick: () => setForm({ ...VAZIO, ...m, logo: m.logo || '', descricao: m.descricao || '', tipos_codigos: m.tipos_codigos || '', nome_arquivo: m.nome_arquivo || '' }) },
                       canExcluir && { icon: Trash2, cor: 'text-red-600', titulo: 'Excluir', onClick: () => setExcluir(m) },
                     ]} />
                   </td>
@@ -237,6 +237,13 @@ export default function ModelosNotaDebito() {
             <div className="flex flex-col gap-1 col-span-3">
               <label className={lblCls}>Descrição</label>
               <input className={campoCls} value={form.descricao} onChange={e => setForm(p => ({ ...p, descricao: e.target.value }))} />
+            </div>
+            <div className="flex flex-col gap-1 col-span-3">
+              <label className={lblCls}>Nome do arquivo PDF</label>
+              <input className={`${campoCls} font-mono`} value={form.nome_arquivo || ''} onChange={e => setForm(p => ({ ...p, nome_arquivo: e.target.value }))} placeholder={NOME_ARQUIVO_PADRAO} />
+              <span className="text-[10px] text-slate-400">
+                Use os mesmos campos {'{{ }}'} do modelo; o ".pdf" é colocado automaticamente. Ex.: {NOME_ARQUIVO_PADRAO} → O067692 - SB160956 - ND.pdf
+              </span>
             </div>
             <div className="flex flex-col gap-1 col-span-2">
               <label className={lblCls}>Tipos de O.S. que usam este modelo (cadastro de Tipos de O.S.)</label>

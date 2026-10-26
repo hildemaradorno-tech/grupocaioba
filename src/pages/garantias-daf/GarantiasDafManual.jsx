@@ -398,10 +398,10 @@ export default function GarantiasDafManual() {
             <Itens itens={[
               ['Modelo', 'é escolhido automaticamente: o modelo vinculado ao tipo de OS da garantia. Se não houver, a tela avisa e indica onde cadastrar: Configurações → Cadastro de Tabelas → Tabelas de Garantia → Modelos de Nota de Débito.'],
               ['Data de emissão', 'sempre a data do dia — sai direto no PDF.'],
-              ['Itens da nota', 'descrição, quantidade e valor unitário; começa com "Peças substituídas" com o valor de peças da garantia. Use "+ Item" para incluir outros.'],
+              ['Item da nota', '"Peças substituídas em Garantia" (descrição e quantidade editáveis). O valor total é sempre o total das Notas Fiscais Emitidas e não é digitado; a quantidade só divide o valor unitário.'],
               ['Dados do Cliente', 'Nome = Proprietário do Veículo da garantia; Placa = placa gravada na garantia (vem dos arquivos do Dealer.net).'],
               ['Dados da Nota Fiscal', 'vêm de Notas Fiscais Emitidas: Número = números de todas as NFs (coluna NFSe), Valor = Total geral (produto + serviço), Data = data de faturamento.'],
-              ['Emitir e baixar PDF', 'gera o número da nota, grava a emissão e baixa o PDF. As notas já emitidas ficam listadas na mesma tela e podem ser baixadas de novo.'],
+              ['Emitir e baixar PDF', 'gera o número da nota, grava a emissão e baixa o PDF. O nome do arquivo segue o padrão cadastrado no modelo (campo "Nome do arquivo PDF"), ex.: "O067692 - SB160956 - ND.pdf" = Nº SG + 8 últimos caracteres do chassi + ND. As notas já emitidas ficam listadas na mesma tela e podem ser baixadas de novo ou excluídas (Excluir → Sim, conforme permissão).'],
             ]} />
           </Secao>
 
@@ -440,7 +440,7 @@ export default function GarantiasDafManual() {
                     ['Garantias DAF na Oficina', 'Regras do Sistema'],
                     ['Garantias DAF Aberto (com Garantista)', 'Editar OS · Excluir OS · Buscar NF · Regras do Sistema'],
                     ['Histórico de O.S.', 'Importar OS Faturadas · Excluir OS'],
-                    ['Garantias DAF a Receber', 'Editar Título (observação) · Editar Faturamento · Emitir Nota de Débito'],
+                    ['Garantias DAF a Receber', 'Editar Título (observação) · Editar Faturamento · Emitir Nota de Débito · Excluir Nota de Débito'],
                     ['Modelos de Nota de Débito', 'Criar Modelo · Editar Modelo · Excluir Modelo'],
                   ].map(([menu, acoes]) => (
                     <tr key={menu}>

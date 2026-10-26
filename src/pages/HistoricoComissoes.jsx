@@ -6,7 +6,7 @@ import { passaEscopoComissao, setorSoVisualizacao } from '../utils/permissoesCom
 import { useAuth } from '../context/AuthContext'
 import { fmtBRL, fmtPct, fmtDiaMes, TIPOS_META_LABEL, CAMPO_META_LABEL, faixasDaRegra, ROTULO_ACAO_HISTORICO, codigoPolitica, compararCodigoPolitica, comissaoComCodigo } from '../utils/comissoesFormat'
 import { gerarPdfComissoes, paraNomeArquivo } from '../utils/comissoesPdf'
-import { AGRUPAMENTOS_COMISSAO, funcionarioAtivoComissao, resolvePoliticas, politicaConfigurada } from '../utils/comissoesElegibilidade'
+import { AGRUPAMENTOS_COMISSAO, funcionarioAtivoComissao, resolvePoliticas, politicaConfigurada, empresaSelecionavel } from '../utils/comissoesElegibilidade'
 
 
 const SEL = 'text-xs p-2 border border-slate-200 rounded-md bg-white font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500'
@@ -425,7 +425,7 @@ export default function HistoricoComissoes() {
 
   // Opções dos filtros vêm dos cadastros completos (não dependem de já ter buscado um período),
   // pra dar pra pré-filtrar antes de clicar em Visualizar.
-  const empresasUnicas = useMemo(() => juntaUnicos((dados?.empresas || []).map(e => e.empresa_fantasia || e.nome_empresa)), [dados])
+  const empresasUnicas = useMemo(() => juntaUnicos((dados?.empresas || []).filter(empresaSelecionavel).map(e => e.empresa_fantasia || e.nome_empresa)), [dados])
   const setoresUnicas = useMemo(() => juntaUnicos((dados?.setores || []).map(s => s.nome_setor)), [dados])
   const areasUnicas = useMemo(() => juntaUnicos((dados?.departamentos || []).map(d => d.area)), [dados])
   const responsaveisUnicos = useMemo(() => juntaUnicos(
@@ -597,7 +597,7 @@ export default function HistoricoComissoes() {
       for (const func of dados.funcionarios) {
         if (!funcionarioAtivoComissao(func)) continue
         const empresa = mapas.empresasMap[func.empresa_id]
-        if (!empresa || empresa.ativo === false || !AGRUPAMENTOS_COMISSAO.includes(empresa.agrupamento_nome)) continue
+        if (!empresaSelecionavel(empresa) || !AGRUPAMENTOS_COMISSAO.includes(empresa.agrupamento_nome)) continue
         const cargo = mapas.cargosMap[func.cargo_id]
         const areaNomes = [...new Set((func.departamento_ids || []).map(id => mapas.departamentosMap[id]?.area).filter(Boolean))]
         if (!passaEscopoComissao({ empresaId: func.empresa_id, areaNomes, departamentoIds: func.departamento_ids, setorIds: func.setor_ids, agrupamentoCargoId: cargo?.agrupamento_id }, comissaoEscopoEfetivo)) continue

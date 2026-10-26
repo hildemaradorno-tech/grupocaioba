@@ -79,6 +79,7 @@ export const ACOES_POR_MENU = [
       { value: 'editar', label: 'Editar Título (observação)' },
       { value: 'editar_garantia', label: 'Editar Faturamento (vincular OS / envio à fábrica)' },
       { value: 'emitir_nota_debito', label: 'Emitir Nota de Débito (dentro de Editar Faturamento)' },
+      { value: 'excluir_nota_debito', label: 'Excluir Nota de Débito já emitida' },
     ],
   },
   {

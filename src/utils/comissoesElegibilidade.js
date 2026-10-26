@@ -4,6 +4,10 @@
 // Agrupamentos de Empresas de cada tela de cálculo (Comissões - DAF e Comissões - HONDA).
 export const AGRUPAMENTOS_COMISSAO = ['Caiobá Trucks', 'Caiobá Motos']
 
+// Empresa "visual" (flag no cadastro de Empresas, ex: CAIOBÁ TRUCKS / CAIOBÁ MOTOS / GRUPO CAIOBÁ):
+// só existe pra agrupar/exibir — nunca aparece como opção nos seletores do menu Comissões.
+export const empresaSelecionavel = (e) => !!e && e.ativo !== false && !e.empresa_visual
+
 // Mesmo critério de "Situação (Ativo) = Sim" usado em Funcionarios.jsx: sem data de demissão e
 // situação vazia, "1 - Trabalhando" ou "9 - Férias" (exclui Demitido e qualquer outro Afastado).
 const SITUACAO_FERIAS = '9'

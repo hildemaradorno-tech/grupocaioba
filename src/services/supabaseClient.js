@@ -643,7 +643,7 @@ export const apiService = {
         agrupamento:dim_agrupamento_cargos(nome_agrupamento_cargo),
         departamentos:rel_cargos_departamentos(departamento_id),
         setores_rel:rel_cargos_setores(setor_id),
-        empresa:dim_empresas(cnpj, nome_empresa, empresa_fantasia, agrupamento_nome)
+        empresa:dim_empresas(cnpj, nome_empresa, empresa_fantasia, agrupamento_nome, empresa_visual)
       `)
       .order('nome_cargo', { ascending: true })
     if (error) throw error
@@ -655,6 +655,7 @@ export const apiService = {
       cnpj_empresa: c.empresa?.cnpj || '',
       nome_empresa: c.empresa?.empresa_fantasia || c.empresa?.nome_empresa || '',
       nome_agrupamento_empresa: c.empresa?.agrupamento_nome || '',
+      empresa_visual: !!c.empresa?.empresa_visual,
     }))
   },
 
@@ -917,7 +918,7 @@ export const apiService = {
     return data || []
   },
 
-  createEmpresa: async ({ agrupamento_empresa_id, agrupamento_nome, segmento_id, segmento_nome, codigo_empresa, codigo_empresa_dominio, sigla_empresa, nome_empresa, empresa_fantasia, marca, cnpj, codigo_concessionaria, nome_empresa_sistema, sistema_dms, numero_filial, inscricao_estadual, endereco, numero, bairro, cep, cidade, uf, telefone, banco, agencia, conta, ativo }) => {
+  createEmpresa: async ({ agrupamento_empresa_id, agrupamento_nome, segmento_id, segmento_nome, codigo_empresa, codigo_empresa_dominio, sigla_empresa, nome_empresa, empresa_fantasia, marca, cnpj, codigo_concessionaria, nome_empresa_sistema, sistema_dms, numero_filial, inscricao_estadual, endereco, numero, bairro, cep, cidade, uf, telefone, banco, agencia, conta, empresa_visual, ativo }) => {
     const { data, error } = await supabase
       .from('dim_empresas')
       .insert([{
@@ -947,6 +948,7 @@ export const apiService = {
         banco: banco || null,
         agencia: agencia || null,
         conta: conta || null,
+        empresa_visual: !!empresa_visual,
         ativo: ativo ?? true
       }])
       .select()
@@ -964,7 +966,7 @@ export const apiService = {
     return data?.[0]
   },
 
-  updateEmpresa: async (id, { agrupamento_empresa_id, agrupamento_nome, segmento_id, segmento_nome, codigo_empresa, codigo_empresa_dominio, sigla_empresa, nome_empresa, empresa_fantasia, marca, cnpj, codigo_concessionaria, nome_empresa_sistema, sistema_dms, numero_filial, inscricao_estadual, endereco, numero, bairro, cep, cidade, uf, telefone, banco, agencia, conta, ativo }) => {
+  updateEmpresa: async (id, { agrupamento_empresa_id, agrupamento_nome, segmento_id, segmento_nome, codigo_empresa, codigo_empresa_dominio, sigla_empresa, nome_empresa, empresa_fantasia, marca, cnpj, codigo_concessionaria, nome_empresa_sistema, sistema_dms, numero_filial, inscricao_estadual, endereco, numero, bairro, cep, cidade, uf, telefone, banco, agencia, conta, empresa_visual, ativo }) => {
     const { data, error } = await supabase
       .from('dim_empresas')
       .update({
@@ -994,6 +996,7 @@ export const apiService = {
         banco: banco || null,
         agencia: agencia || null,
         conta: conta || null,
+        empresa_visual: !!empresa_visual,
         ativo: ativo ?? true
       })
       .eq('id', id)
@@ -3504,13 +3507,14 @@ export const apiService = {
     if (error) throw error
     return data || []
   },
-  salvarModeloNotaDebito: async (id, { nome, descricao, tipos_codigos, logo, conteudo_html, ativo }) => {
+  salvarModeloNotaDebito: async (id, { nome, descricao, tipos_codigos, logo, conteudo_html, ativo, nome_arquivo }) => {
     const payload = {
       nome: (nome || '').trim(),
       descricao: (descricao || '').trim() || null,
       tipos_codigos: (tipos_codigos || '').trim() || null,
       logo: logo || null,
       conteudo_html: conteudo_html || '',
+      nome_arquivo: (nome_arquivo || '').trim() || null,
       ativo: ativo ?? true,
       atualizado_em: new Date().toISOString(),
     }
@@ -3545,6 +3549,10 @@ export const apiService = {
       .eq('garantia_id', garantiaId).order('criado_em', { ascending: false })
     if (error) throw error
     return data || []
+  },
+  excluirNotaDebito: async (id) => {
+    const { error } = await supabase.from('gar_notas_debito').delete().eq('id', id)
+    if (error) throw error
   },
   // Próximo número sequencial por empresa/ano; repete se outra pessoa gerar o mesmo número ao mesmo tempo.
   emitirNotaDebito: async ({ modelo, garantiaId, empresaId, dataEmissao, valorTotal, dados, usuario }) => {

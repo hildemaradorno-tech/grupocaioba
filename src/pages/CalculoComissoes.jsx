@@ -8,7 +8,7 @@ import { passaEscopoComissao, setorSoVisualizacao } from '../utils/permissoesCom
 import { FeriasStatusProvider, useFeriasStatus } from '../context/FeriasStatusContext'
 import { fmtBRL, fmtPct, fmtDiaMes, TIPOS_META_LABEL, CAMPO_META_LABEL, faixasDaRegra, ROTULO_ACAO_HISTORICO, codigoPolitica, compararCodigoPolitica, comissaoComCodigo } from '../utils/comissoesFormat'
 import { gerarPdfComissoes, paraNomeArquivo } from '../utils/comissoesPdf'
-import { funcionarioAtivoComissao, resolvePoliticas, fonteDaPolitica, politicaConfigurada } from '../utils/comissoesElegibilidade'
+import { funcionarioAtivoComissao, resolvePoliticas, fonteDaPolitica, politicaConfigurada, empresaSelecionavel } from '../utils/comissoesElegibilidade'
 
 // Sentinela pra funcionário sem setor algum (setor_ids vazio) — sem isso não tem como
 // selecionar essa "aba" na tela pra conferir/excluir o histórico desse grupo.
@@ -718,7 +718,7 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
   // agrupamento recém-começando, como Motos) precisa aparecer no seletor do mesmo jeito, pra dar
   // pra escolher a empresa e ver a pendência, em vez de sumir da lista.
   const empresasUnicas = useMemo(() => juntaUnicos(
-    (dados?.empresas || []).filter(e => e.agrupamento_nome === agrupamentoNome && e.ativo !== false).map(e => e.empresa_fantasia || e.nome_empresa)
+    (dados?.empresas || []).filter(e => e.agrupamento_nome === agrupamentoNome && empresaSelecionavel(e)).map(e => e.empresa_fantasia || e.nome_empresa)
   ), [dados, agrupamentoNome])
   // Setores "órfãos": já têm lote salvo pra empresa+período, mas nenhum funcionário elegível
   // neles HOJE (ex: o cargo foi remanejado pra outro setor depois do cálculo). Sem isso, o lote

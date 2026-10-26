@@ -30,6 +30,7 @@ export const CAMPOS_NOTA_DEBITO = [
     ['garantia.tipo', 'Tipo de garantia'],
     ['garantia.numero_os', 'Ordem de Serviço'],
     ['garantia.chassi', 'Chassi'],
+    ['garantia.chassi_final', 'Chassi — 8 últimos caracteres'],
     ['garantia.placa', 'Placa'],
     ['garantia.cliente', 'Cliente'],
     ['garantia.valor_total', 'Valor total'],
@@ -125,6 +126,7 @@ export function montarContextoNota({ empresa, garantia, nota, itens, statusLabel
     'garantia.tipo': g.tipo_garantia_descricao || '',
     'garantia.numero_os': g.numero_os || '',
     'garantia.chassi': g.chassi || '',
+    'garantia.chassi_final': String(g.chassi || '').trim().slice(-8),
     'garantia.placa': n.placa ?? g.placa ?? '',
     'garantia.cliente': g.cliente || '',
     'garantia.valor_total': total ? fmtMoeda(total) : '',
@@ -171,6 +173,16 @@ function tabelaItens(itens) {
     + `<td style="border:${B};background:#d0cece;text-align:center;vertical-align:middle;font-size:14px;line-height:1.4;">Valor Total</td>`
     + `<td style="border:${B};text-align:center;vertical-align:middle;font-size:14px;line-height:1.4;">${esc(total ? fmtMoeda(total) : '')}</td></tr>`
     + `</table>`
+}
+
+// Nome do arquivo PDF a partir do padrão do modelo (texto puro, sem HTML). Tira caracteres que o
+// Windows não aceita em nome de arquivo; modelo sem padrão usa NOME_ARQUIVO_PADRAO.
+export const NOME_ARQUIVO_PADRAO = '{{garantia.numero_sg}} - {{garantia.chassi_final}} - ND'
+export function nomeArquivoNota(padrao, ctx) {
+  const modelo = String(padrao || '').trim() || NOME_ARQUIVO_PADRAO
+  const base = modelo.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_, chave) => String(ctx[chave] ?? ''))
+  const limpo = base.replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, ' ').trim()
+  return `${limpo || 'Nota de Debito'}.pdf`
 }
 
 export function renderizarModelo(html, ctx) {

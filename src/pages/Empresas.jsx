@@ -48,6 +48,7 @@ export default function Empresas() {
     sistema_dms: '',
     numero_filial: '',
     inscricao_estadual: '',
+    empresa_visual: false,
     endereco: '',
     numero: '',
     bairro: '',
@@ -124,6 +125,7 @@ export default function Empresas() {
       sistema_dms: '',
       numero_filial: '',
       inscricao_estadual: '',
+      empresa_visual: false,
       endereco: '',
       numero: '',
       bairro: '',
@@ -157,6 +159,7 @@ export default function Empresas() {
       sistema_dms: item.sistema_dms || '',
       numero_filial: item.numero_filial || '',
       inscricao_estadual: item.inscricao_estadual || '',
+      empresa_visual: !!item.empresa_visual,
       endereco: item.endereco || '',
       numero: item.numero || '',
       bairro: item.bairro || '',
@@ -200,6 +203,7 @@ export default function Empresas() {
       sistema_dms: form.sistema_dms || null,
       numero_filial: form.numero_filial || null,
       inscricao_estadual: form.inscricao_estadual || null,
+      empresa_visual: !!form.empresa_visual,
       endereco: form.endereco || null,
       numero: form.numero || null,
       bairro: form.bairro || null,
@@ -486,6 +490,15 @@ export default function Empresas() {
                       className="w-full text-xs p-2 border border-slate-200 rounded-md font-mono text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                     />
                   </div>
+                  <label className="flex items-center gap-2 self-end pb-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={!!form.empresa_visual}
+                      onChange={e => setForm(prev => ({ ...prev, empresa_visual: e.target.checked }))}
+                      className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Empresa Visual</span>
+                  </label>
                 </div>
 
                 {/* Agrupamento + Segmento + Marca */}
@@ -845,6 +858,10 @@ export default function Empresas() {
               <div className="flex flex-col gap-0.5">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Inscrição Estadual</span>
                 <span className="text-xs font-mono font-semibold text-slate-800">{itemVisualizado.inscricao_estadual || '-'}</span>
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Empresa Visual</span>
+                <span className="text-xs font-semibold text-slate-800">{itemVisualizado.empresa_visual ? 'Sim' : 'Não'}</span>
               </div>
               <div className="flex flex-col gap-0.5">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Telefone</span>

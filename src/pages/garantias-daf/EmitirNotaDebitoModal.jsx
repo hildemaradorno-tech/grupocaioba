@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { X, FileText, Plus, Trash2, Download, Loader2 } from 'lucide-react'
+import { X, FileText, Download, Loader2, Trash2 } from 'lucide-react'
+import { useAuth } from '../../context/AuthContext'
 import { apiService } from '../../services/api'
 import { useResponsavelNota } from '../../hooks/useResponsavelNota'
 import {
-  montarContextoNota, renderizarModelo, gerarPdfDeElemento, fmtDataBR, fmtMoeda, totalItens,
+  montarContextoNota, renderizarModelo, gerarPdfDeElemento, fmtDataBR, nomeArquivoNota,
 } from '../../utils/notaDebito'
 
 // Data local (toISOString usaria UTC e viraria o dia depois das 21h no horário de Brasília)
@@ -28,14 +29,26 @@ async function baixarPdf(html, nomeArquivo) {
 export default function EmitirNotaDebitoModal({ garantia, garantiaId, empresas, sigla, statusLabel, usuario, onClose }) {
   const empresa = useMemo(() => (empresas || []).find(e => e.id === garantia.empresa_id) || {}, [empresas, garantia.empresa_id])
   const responsavel = useResponsavelNota()
+  const { hasActionOrDefault } = useAuth()
+  const canExcluirNota = hasActionOrDefault('garantias-daf-titulos', 'excluir_nota_debito')
+  const [confirmarExclusao, setConfirmarExclusao] = useState(null) // id da nota aguardando confirmação
   const [modelos, setModelos] = useState([])
   const [modeloId, setModeloId] = useState('')
   const [emitidas, setEmitidas] = useState([])
   const dataEmissao = hoje()
-  const [itens, setItens] = useState(() => {
-    const vp = parseFloat(garantia.valor_pecas) || 0
-    return [{ descricao: 'Peças substituídas', quantidade: 1, valor_unitario: vp > 0 ? vp : '' }]
-  })
+  // Valor da nota = total das Notas Fiscais Emitidas (produto + serviço); sem NFs, peças + serviços da garantia.
+  const valorNotas = useMemo(() => {
+    const nfs = Array.isArray(garantia.notas_fiscais) ? garantia.notas_fiscais : []
+    if (nfs.length) return nfs.reduce((acc, nf) => acc + (Number(nf.prod_valor) || 0) + (Number(nf.serv_valor) || 0), 0)
+    return (parseFloat(garantia.valor_pecas) || 0) + (parseFloat(garantia.valor_servicos) || 0)
+  }, [garantia.notas_fiscais, garantia.valor_pecas, garantia.valor_servicos])
+  const [descricaoItem, setDescricaoItem] = useState('Peças substituídas em Garantia')
+  const [quantidadeItem, setQuantidadeItem] = useState(1)
+  // O total do item é sempre o total das NFs; a quantidade só divide o valor unitário.
+  const itens = useMemo(() => {
+    const qtd = Number(quantidadeItem) > 0 ? Number(quantidadeItem) : 1
+    return [{ descricao: descricaoItem, quantidade: qtd, valor_unitario: valorNotas / qtd }]
+  }, [descricaoItem, quantidadeItem, valorNotas])
   const [loading, setLoading] = useState(true)
   const [gerando, setGerando] = useState(false)
   const [erro, setErro] = useState(null)
@@ -59,21 +72,18 @@ export default function EmitirNotaDebitoModal({ garantia, garantiaId, empresas, 
 
   const modelo = modelos.find(m => m.id === modeloId)
 
-  const htmlPara = (mod, { numero, data, placaUsada, itensUsados }) => renderizarModelo(
-    mod?.conteudo_html || '',
-    montarContextoNota({
-      empresa, garantia, statusLabel, logo: mod?.logo, responsavel,
-      nota: { numero, data_emissao: data, placa: placaUsada },
-      itens: itensUsados,
-    })
-  )
+  const contextoPara = (mod, { numero, data, placaUsada, itensUsados }) => montarContextoNota({
+    empresa, garantia, statusLabel, logo: mod?.logo, responsavel,
+    nota: { numero, data_emissao: data, placa: placaUsada },
+    itens: itensUsados,
+  })
+  const htmlPara = (mod, args) => renderizarModelo(mod?.conteudo_html || '', contextoPara(mod, args))
+  const arquivoPara = (mod, args) => nomeArquivoNota(mod?.nome_arquivo, contextoPara(mod, args))
 
   const preview = useMemo(
     () => modelo ? htmlPara(modelo, { numero: '', data: dataEmissao, itensUsados: itens }) : '',
     [modelo, dataEmissao, itens, empresa, garantia, statusLabel, responsavel.nome, responsavel.cargo]
   )
-
-  const setItem = (i, campo, valor) => setItens(p => p.map((x, k) => k === i ? { ...x, [campo]: valor } : x))
 
   const emitir = async () => {
     if (!modelo) return
@@ -81,12 +91,12 @@ export default function EmitirNotaDebitoModal({ garantia, garantiaId, empresas, 
     try {
       const nota = await apiService.emitirNotaDebito({
         modelo, garantiaId, empresaId: garantia.empresa_id || null, dataEmissao,
-        valorTotal: totalItens(itens) || ((parseFloat(garantia.valor_pecas) || 0) + (parseFloat(garantia.valor_servicos) || 0)) || null,
+        valorTotal: valorNotas || null,
         dados: { itens, responsavel }, usuario,
       })
       await baixarPdf(
         htmlPara(modelo, { numero: nota.numero, data: dataEmissao, itensUsados: itens }),
-        `Nota de Debito ${nota.numero.replace('/', '-')} - OS ${garantia.numero_os || ''}.pdf`
+        arquivoPara(modelo, { numero: nota.numero, data: dataEmissao, itensUsados: itens })
       )
       await carregar()
     } catch (e) { setErro(e.message || String(e)) }
@@ -100,8 +110,18 @@ export default function EmitirNotaDebitoModal({ garantia, garantiaId, empresas, 
     try {
       await baixarPdf(
         htmlPara(mod, { numero: n.numero, data: n.data_emissao, placaUsada: n.dados_json?.placa, itensUsados: n.dados_json?.itens || [] }),
-        `Nota de Debito ${n.numero.replace('/', '-')} - OS ${garantia.numero_os || ''}.pdf`
+        arquivoPara(mod, { numero: n.numero, data: n.data_emissao, placaUsada: n.dados_json?.placa, itensUsados: n.dados_json?.itens || [] })
       )
+    } catch (e) { setErro(e.message || String(e)) }
+    finally { setGerando(false) }
+  }
+
+  const excluirEmitida = async (n) => {
+    setGerando(true); setErro(null)
+    try {
+      await apiService.excluirNotaDebito(n.id)
+      setConfirmarExclusao(null)
+      await carregar()
     } catch (e) { setErro(e.message || String(e)) }
     finally { setGerando(false) }
   }
@@ -139,20 +159,11 @@ export default function EmitirNotaDebitoModal({ garantia, garantiaId, empresas, 
               </div>
 
               <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <label className={lblCls}>Itens da nota</label>
-                  <button type="button" onClick={() => setItens(p => [...p, { descricao: '', quantidade: 1, valor_unitario: '' }])}
-                    className="flex items-center gap-1 text-[11px] font-semibold text-indigo-600 hover:underline"><Plus className="h-3 w-3" /> Item</button>
+                <label className={lblCls}>Item da nota</label>
+                <div className="grid grid-cols-12 gap-1.5 items-center">
+                  <input className={`${campoCls} col-span-9`} placeholder="Descrição" value={descricaoItem} onChange={e => setDescricaoItem(e.target.value)} />
+                  <input className={`${campoCls} col-span-3`} type="number" min="1" step="1" placeholder="Qtd" value={quantidadeItem} onChange={e => setQuantidadeItem(e.target.value)} />
                 </div>
-                {itens.map((it, i) => (
-                  <div key={i} className="grid grid-cols-12 gap-1.5 items-center">
-                    <input className={`${campoCls} col-span-6`} placeholder="Descrição" value={it.descricao} onChange={e => setItem(i, 'descricao', e.target.value)} />
-                    <input className={`${campoCls} col-span-2`} type="number" min="0" step="any" placeholder="Qtd" value={it.quantidade} onChange={e => setItem(i, 'quantidade', e.target.value)} />
-                    <input className={`${campoCls} col-span-3`} type="number" min="0" step="0.01" placeholder="Vl. unit." value={it.valor_unitario} onChange={e => setItem(i, 'valor_unitario', e.target.value)} />
-                    <button type="button" onClick={() => setItens(p => p.filter((_, k) => k !== i))} className="text-red-400 hover:text-red-600 justify-self-center"><Trash2 className="h-3.5 w-3.5" /></button>
-                  </div>
-                ))}
-                <div className="text-right text-[11px] text-slate-500">Total: <b className="text-slate-800">{fmtMoeda(totalItens(itens)) || 'R$ 0,00'}</b></div>
               </div>
 
               {emitidas.length > 0 && (
@@ -161,9 +172,24 @@ export default function EmitirNotaDebitoModal({ garantia, garantiaId, empresas, 
                   {emitidas.map(n => (
                     <div key={n.id} className="flex items-center justify-between text-xs border border-slate-100 rounded px-2 py-1.5">
                       <span><b className="font-mono">{n.numero}</b> · {fmtDataBR(n.data_emissao)} · {n.modelo_nome}</span>
-                      <button type="button" disabled={gerando} onClick={() => baixarEmitida(n)} className="text-indigo-600 hover:underline flex items-center gap-1">
-                        <Download className="h-3 w-3" /> PDF
-                      </button>
+                      {confirmarExclusao === n.id ? (
+                        <span className="flex items-center gap-2">
+                          <span className="text-red-600 font-semibold">Excluir?</span>
+                          <button type="button" disabled={gerando} onClick={() => excluirEmitida(n)} className="text-red-600 font-semibold hover:underline">Sim</button>
+                          <button type="button" disabled={gerando} onClick={() => setConfirmarExclusao(null)} className="text-slate-500 hover:underline">Não</button>
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-3">
+                          <button type="button" disabled={gerando} onClick={() => baixarEmitida(n)} className="text-indigo-600 hover:underline flex items-center gap-1">
+                            <Download className="h-3 w-3" /> PDF
+                          </button>
+                          {canExcluirNota && (
+                            <button type="button" disabled={gerando} onClick={() => setConfirmarExclusao(n.id)} title="Excluir esta nota de débito" className="text-red-500 hover:text-red-700 flex items-center">
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </span>
+                      )}
                     </div>
                   ))}
                 </div>

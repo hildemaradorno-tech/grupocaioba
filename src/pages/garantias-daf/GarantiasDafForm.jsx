@@ -678,7 +678,7 @@ export default function GarantiasDafForm() {
                   ? <ReadOnlyField value={form.empresa_nome} />
                   : <SelectField name="empresa_id" value={form.empresa_id} onChange={handleChange}>
                       <option value="">Selecione</option>
-                      {empresas.map(e => <option key={e.id} value={e.id}>{e.empresa_fantasia || e.nome_empresa}</option>)}
+                      {empresas.filter(e => !e.empresa_visual || e.id === form.empresa_id).map(e => <option key={e.id} value={e.id}>{e.empresa_fantasia || e.nome_empresa}</option>)}
                     </SelectField>
                 }
               </div>

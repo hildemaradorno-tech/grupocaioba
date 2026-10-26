@@ -330,7 +330,8 @@ export default function PoliticaComissao() {
   // Cargo só entra no seletor se já tiver empresa vinculada (dim_cargos.empresa_id) — é dali
   // que a política herda empresa/agrupamento de cada linha, então sem isso não tem como saber
   // pra quem a comissão vale.
-  const cargosComEmpresa = useMemo(() => cargos.filter(c => c.empresa_id), [cargos])
+  // Cargos de empresa "visual" (só de agrupamento/exibição) não aparecem pra escolher.
+  const cargosComEmpresa = useMemo(() => cargos.filter(c => c.empresa_id && !c.empresa_visual), [cargos])
   const cargosSemEmpresaCount = cargos.length - cargosComEmpresa.length
   // fato_politica_comissao não guarda o código do cargo — busca no cadastro de Cargos pra exibir.
   const codigoDoCargo = (cargoId) => cargos.find(c => c.id === cargoId)?.codigo_cargo || ''
