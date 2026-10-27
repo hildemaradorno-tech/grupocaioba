@@ -15,7 +15,7 @@ import jwt from 'jsonwebtoken'
 import kpiRoutes       from './routes/kpi.js'
 import garantiasRoutes from './routes/garantias.js'
 import calculoComissaoRoutes from './routes/calculoComissao.js'
-import { authMiddleware } from './middleware/authMiddleware.js'
+import { authMiddleware, requireMenu } from './middleware/authMiddleware.js'
 import biMedidasRoutes from './routes/biMedidas.js'
 import rhFeriasRoutes from './routes/rhFerias.js'
 import hondaRoutes from './routes/honda.js'
@@ -39,40 +39,42 @@ app.options('*', cors())
 app.use(express.json({ limit: '20mb' }))
 
 // ── Rotas da Matriz KPIs (SharePoint / Microsoft Graph) ──────────────────────
-app.use('/api/kpi', kpiRoutes)
+app.use('/api/kpi', authMiddleware, kpiRoutes)
 
 // ── Rotas Garantias DAF (SharePoint ROF001_OSABERTA) ─────────────────────────
-app.use('/api/garantias', garantiasRoutes)
+app.use('/api/garantias', authMiddleware, garantiasRoutes)
 
 // ── Rotas Fonte/Base de Cálculo (SharePoint genérico p/ comissões) ───────────
 app.use('/api/calculo-comissao', authMiddleware, calculoComissaoRoutes)
 
 // ── Rotas Fonte BI / Medida BI (SharePoint genérico p/ dashboards de BI) ─────
-app.use('/api/bi-medidas', biMedidasRoutes)
+app.use('/api/bi-medidas', authMiddleware, biMedidasRoutes)
 
 // ── Rotas RH Férias (SharePoint Relacao de Ferias Calculadas) ─────────────────
-app.use('/api/rh-ferias', rhFeriasRoutes)
+app.use('/api/rh-ferias', authMiddleware, rhFeriasRoutes)
 
 // ── Rotas Honda (integração MicroWork Cloud) ──────────────────────────────────
 app.use('/api/honda', authMiddleware, hondaRoutes)
 
 // ── Rotas MicroWork Cloud genéricas (relatórios cadastrados em dim_fontes_microwork) ─────────
-app.use('/api/microwork', microworkRoutes)
+app.use('/api/microwork', authMiddleware, microworkRoutes)
 
 // ── Rotas TruckPag (SharePoint — Financeiro DAF) ─────────────────────────────
-app.use('/api/truckpag', truckpagRoutes)
+app.use('/api/truckpag', authMiddleware, truckpagRoutes)
 
 // ── Rotas BI Agendamento de Serviços (SharePoint — Campanhas CRM RCR038) ─────
-app.use('/api/agendamento-crm', agendamentoCrmRoutes)
+app.use('/api/agendamento-crm', authMiddleware, agendamentoCrmRoutes)
 
 // ── Rotas Google Calendar (OAuth + leitura de eventos) ───────────────────────
-app.use('/api/google-calendar', googleCalendarRoutes)
+// /callback é o redirect do Google (navegação do browser, sem cabeçalho Authorization): o `state`
+// assinado é validado dentro da própria rota. As demais exigem login e checam o dono do calendário.
+app.use('/api/google-calendar', (req, res, next) => (req.path === '/callback' ? next() : authMiddleware(req, res, next)), googleCalendarRoutes)
 
 // ── Rotas Gestão de Projetos — Período de Manifestação (Etapa 2) ────────────
-app.use('/api/projetos', projetosManifestacoesRoutes)
+app.use('/api/projetos', authMiddleware, projetosManifestacoesRoutes)
 
 // ── Rotas Gestão de Projetos — Auditoria Externa (Copiloto de IA) ───────────
-app.use('/api/audit-ai', auditAiRoutes)
+app.use('/api/audit-ai', authMiddleware, auditAiRoutes)
 
 // ── Leitura das views da Controladoria para o Power BI (token fixo POWERBI_TOKEN) ───
 app.use('/api/powerbi', powerbiRoutes)
@@ -106,7 +108,7 @@ async function start() {
 
   // ==================== GRUPOS DE ACESSO ====================
   
-  app.get('/api/grupos', async (req, res) => {
+  app.get('/api/grupos', authMiddleware, requireMenu('grupos', 'permissoes-matriz'), async (req, res) => {
     try {
       const grupos = await db.all('SELECT * FROM grupos_acesso ORDER BY nome_grupo')
       res.json(grupos)
@@ -115,7 +117,7 @@ async function start() {
     }
   })
 
-  app.post('/api/grupos', async (req, res) => {
+  app.post('/api/grupos', authMiddleware, requireMenu('grupos', 'permissoes-matriz'), async (req, res) => {
     try {
       const { nome_grupo } = req.body
       const id = uuid()
@@ -129,7 +131,7 @@ async function start() {
     }
   })
 
-  app.put('/api/grupos/:id', async (req, res) => {
+  app.put('/api/grupos/:id', authMiddleware, requireMenu('grupos', 'permissoes-matriz'), async (req, res) => {
     try {
       const { id } = req.params
       const { nome_grupo } = req.body
@@ -143,7 +145,7 @@ async function start() {
     }
   })
 
-  app.delete('/api/grupos/:id', async (req, res) => {
+  app.delete('/api/grupos/:id', authMiddleware, requireMenu('grupos', 'permissoes-matriz'), async (req, res) => {
     try {
       const { id } = req.params
       await db.run('DELETE FROM grupos_acesso WHERE id = ?', [id])
@@ -155,7 +157,7 @@ async function start() {
 
   // ==================== USUÁRIOS ====================
   
-  app.get('/api/usuarios', async (req, res) => {
+  app.get('/api/usuarios', authMiddleware, requireMenu('usuarios'), async (req, res) => {
     try {
       const usuarios = await db.all(`
         SELECT u.id, u.nome, u.email, u.grupo_id, g.nome_grupo, u.ativo
@@ -169,7 +171,7 @@ async function start() {
     }
   })
 
-  app.post('/api/usuarios', async (req, res) => {
+  app.post('/api/usuarios', authMiddleware, requireMenu('usuarios'), async (req, res) => {
     try {
       const { nome, email, senha, grupo_id } = req.body
       const id = uuid()
@@ -186,7 +188,7 @@ async function start() {
     }
   })
 
-  app.put('/api/usuarios/:id', async (req, res) => {
+  app.put('/api/usuarios/:id', authMiddleware, requireMenu('usuarios'), async (req, res) => {
     try {
       const { id } = req.params
       const { nome, email, grupo_id } = req.body
@@ -202,7 +204,7 @@ async function start() {
     }
   })
 
-  app.delete('/api/usuarios/:id', async (req, res) => {
+  app.delete('/api/usuarios/:id', authMiddleware, requireMenu('usuarios'), async (req, res) => {
     try {
       const { id } = req.params
       await db.run('DELETE FROM usuarios WHERE id = ?', [id])
@@ -214,7 +216,7 @@ async function start() {
 
   // ==================== PERMISSÕES DE TELAS ====================
   
-  app.get('/api/permissoes/:grupo_id', async (req, res) => {
+  app.get('/api/permissoes/:grupo_id', authMiddleware, requireMenu('grupos', 'permissoes-matriz'), async (req, res) => {
     try {
       const { grupo_id } = req.params
       const permissoes = await db.all(
@@ -227,7 +229,7 @@ async function start() {
     }
   })
 
-  app.post('/api/permissoes', async (req, res) => {
+  app.post('/api/permissoes', authMiddleware, requireMenu('grupos', 'permissoes-matriz'), async (req, res) => {
     try {
       const { grupo_id, menu_path, visualizar, editar, excluir } = req.body
       const id = uuid()
@@ -244,7 +246,7 @@ async function start() {
     }
   })
 
-  app.delete('/api/permissoes/:id', async (req, res) => {
+  app.delete('/api/permissoes/:id', authMiddleware, requireMenu('grupos', 'permissoes-matriz'), async (req, res) => {
     try {
       const { id } = req.params
       await db.run('DELETE FROM permissoes_telas WHERE id = ?', [id])
@@ -258,7 +260,7 @@ async function start() {
 
   // POST /api/auth/create-user — cria usuário no Supabase Auth e envia e-mail de convite/boas-vindas
   // (o próprio usuário define a senha ao clicar no link do e-mail, admin não define senha nenhuma).
-  app.post('/api/auth/create-user', async (req, res) => {
+  app.post('/api/auth/create-user', authMiddleware, requireMenu('usuarios'), async (req, res) => {
     if (!supabaseAdmin) {
       return res.status(503).json({ error: 'SUPABASE_SERVICE_KEY não configurada no backend. Configure o arquivo backend/.env.' })
     }
@@ -292,12 +294,12 @@ async function start() {
     res.json(data?.[0])
   })
 
-  app.get('/api/auth/status', async (req, res) => {
+  app.get('/api/auth/status', authMiddleware, async (req, res) => {
     res.json({ serviceRoleConfigured: !!supabaseAdmin })
   })
 
   // PUT /api/auth/update-password/:id — atualiza senha de usuário existente
-  app.put('/api/auth/update-password/:id', async (req, res) => {
+  app.put('/api/auth/update-password/:id', authMiddleware, requireMenu('usuarios'), async (req, res) => {
     if (!supabaseAdmin) {
       return res.status(503).json({ error: 'SUPABASE_SERVICE_KEY não configurada no backend.' })
     }
@@ -343,7 +345,7 @@ async function start() {
   })
 
   // DELETE /api/auth/delete-user/:id — remove usuário do Supabase Auth + tabela usuarios
-  app.delete('/api/auth/delete-user/:id', async (req, res) => {
+  app.delete('/api/auth/delete-user/:id', authMiddleware, requireMenu('usuarios'), async (req, res) => {
     if (!supabaseAdmin) {
       return res.status(503).json({ error: 'SUPABASE_SERVICE_KEY não configurada no backend.' })
     }

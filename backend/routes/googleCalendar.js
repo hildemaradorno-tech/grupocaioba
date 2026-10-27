@@ -1,6 +1,8 @@
 import { Router } from 'express'
 import { google } from 'googleapis'
 import { createClient } from '@supabase/supabase-js'
+import crypto from 'crypto'
+import { getPerfilUsuario } from '../middleware/authMiddleware.js'
 
 const router = Router()
 const wrap = fn => (req, res, next) => fn(req, res, next).catch(next)
@@ -20,6 +22,30 @@ const getOAuth2Client = () =>
     process.env.GOOGLE_CLIENT_SECRET,
     process.env.GOOGLE_REDIRECT_URI
   )
+
+// O `state` do OAuth carrega o usuario_id assinado (HMAC) — o callback é aberto (redirect do Google),
+// então sem isso qualquer um poderia vincular uma conta Google ao usuário de outra pessoa.
+const assinarState = (usuarioId) =>
+  `${usuarioId}.${crypto.createHmac('sha256', process.env.SUPABASE_SERVICE_KEY || '').update(String(usuarioId)).digest('hex')}`
+const lerState = (state) => {
+  const [usuarioId, mac] = String(state || '').split('.')
+  if (!usuarioId || !mac) return null
+  return assinarState(usuarioId) === `${usuarioId}.${mac}` ? usuarioId : null
+}
+
+// Todas as rotas (exceto /callback) exigem login e só operam sobre o próprio usuário.
+router.use(async (req, res, next) => {
+  if (req.path === '/callback') return next()
+  const usuarioId = req.query.usuario_id
+  if (!usuarioId) return next()
+  try {
+    const perfil = await getPerfilUsuario(req.user?.email)
+    if (!perfil || perfil.id !== usuarioId) return res.status(403).json({ error: 'Operação permitida apenas para o próprio usuário.' })
+    next()
+  } catch (err) {
+    next(err)
+  }
+})
 
 // GET /api/google-calendar/status?usuario_id=xxx
 router.get('/status', wrap(async (req, res) => {
@@ -47,7 +73,7 @@ router.get('/auth-url', (req, res) => {
   const url = getOAuth2Client().generateAuthUrl({
     access_type: 'offline',
     scope: ['https://www.googleapis.com/auth/calendar.readonly'],
-    state: usuario_id,
+    state: assinarState(usuario_id),
     prompt: 'consent',
   })
   res.json({ url })
@@ -56,7 +82,8 @@ router.get('/auth-url', (req, res) => {
 // GET /api/google-calendar/callback  — destino do OAuth do Google
 router.get('/callback', wrap(async (req, res) => {
   const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000'
-  const { code, state: usuario_id, error } = req.query
+  const { code, state, error } = req.query
+  const usuario_id = lerState(state)
 
   if (error) {
     return res.redirect(`${frontendUrl}/projetos/calendario?google_error=${encodeURIComponent(error)}`)
@@ -64,6 +91,9 @@ router.get('/callback', wrap(async (req, res) => {
 
   if (!supabaseAdmin) {
     return res.redirect(`${frontendUrl}/projetos/calendario?google_error=backend_nao_configurado`)
+  }
+  if (!usuario_id) {
+    return res.redirect(`${frontendUrl}/projetos/calendario?google_error=state_invalido`)
   }
 
   try {

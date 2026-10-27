@@ -14,6 +14,30 @@ const authHeaders = async () => {
   return token ? { Authorization: `Bearer ${token}` } : {}
 }
 
+// Todas as rotas do backend exigem login: anexa o access_token do Supabase Auth em toda requisição
+// feita ao backend (e só a ele — nunca ao Supabase nem a terceiros). Cabeçalho Authorization já
+// informado pela chamada é respeitado.
+const BACKEND_HOSTS = [
+  import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001',
+  'https://portal-gestao-backend-production.up.railway.app',
+].map(u => u.replace(/\/+$/, ''))
+
+if (typeof window !== 'undefined' && !window.__backendFetchPatched) {
+  window.__backendFetchPatched = true
+  const fetchOriginal = window.fetch.bind(window)
+  window.fetch = async (input, init = {}) => {
+    const url = typeof input === 'string' ? input : input?.url || ''
+    if (!BACKEND_HOSTS.some(h => url.startsWith(h + '/api/'))) return fetchOriginal(input, init)
+    const headers = new Headers(init.headers || (typeof input !== 'string' ? input.headers : undefined))
+    if (!headers.has('Authorization')) {
+      const { data } = await supabase.auth.getSession()
+      const token = data.session?.access_token
+      if (token) headers.set('Authorization', `Bearer ${token}`)
+    }
+    return fetchOriginal(input, { ...init, headers })
+  }
+}
+
 // ── Auditoria Externa — fechamento automático de Ciclo ───────────────────────
 // O status do ciclo não é mais editável manualmente: fica "em_andamento" até
 // que TODAS as Divergências (achados) do ciclo tenham um Plano de Ação
