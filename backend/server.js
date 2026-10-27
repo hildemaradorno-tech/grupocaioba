@@ -25,6 +25,7 @@ import googleCalendarRoutes from './routes/googleCalendar.js'
 import projetosManifestacoesRoutes from './routes/projetosManifestacoes.js'
 import auditAiRoutes from './routes/auditAi.js'
 import powerbiRoutes from './routes/powerbi.js'
+import agendamentoCrmRoutes from './routes/agendamentoCrm.js'
 import { iniciarSchedulerManifestacao } from './services/manifestacaoScheduler.js'
 import { iniciarSchedulerAuditoria } from './services/auditoriaAgendamento.js'
 
@@ -60,6 +61,9 @@ app.use('/api/microwork', microworkRoutes)
 
 // ── Rotas TruckPag (SharePoint — Financeiro DAF) ─────────────────────────────
 app.use('/api/truckpag', truckpagRoutes)
+
+// ── Rotas BI Agendamento de Serviços (SharePoint — Campanhas CRM RCR038) ─────
+app.use('/api/agendamento-crm', agendamentoCrmRoutes)
 
 // ── Rotas Google Calendar (OAuth + leitura de eventos) ───────────────────────
 app.use('/api/google-calendar', googleCalendarRoutes)

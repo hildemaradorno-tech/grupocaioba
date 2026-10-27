@@ -323,9 +323,45 @@ export function semanasMatrizDoMes(ano, mes) {
   return computeWeekSchema(Number(ano)).MONTH_WEEK_RANGES[mKey] || []
 }
 
+// Mesma regra da Matriz KPIs (KpiBloco3Servicos calcAtingimento).
 function calcAtingimentoMatriz(orientacao, meta, realizado) {
-  if (realizado == null || meta == null || meta === 0) return null
-  return orientacao === '<' ? meta / realizado : realizado / meta
+  if (realizado == null || meta == null) return null
+  if (orientacao === '<') {
+    // Menor é melhor: realizado 0 cumpre qualquer meta; meta 0 só é cumprida com realizado 0.
+    if (realizado <= 0) return 1
+    return meta === 0 ? 0 : meta / realizado
+  }
+  if (meta === 0) return null
+  return realizado / meta
+}
+
+// Soma o mesmo quadro de várias empresas (ex.: SETOR GARANTIA de Campo Grande + Chapadão do Sul):
+// por indicador e período, realizado = soma dos realizados e meta = soma das metas (vazio só se
+// nenhuma empresa tiver valor). Peso e orientação vêm do quadro (iguais em todas as empresas).
+export function somarQuadrosMatriz(quadros) {
+  const validos = (quadros || []).filter(Boolean)
+  if (!validos.length) return null
+  if (validos.length === 1) return validos[0]
+  const soma = (a, b) => (a == null ? b : b == null ? a : a + b)
+  const base = validos[0]
+  return {
+    ...base,
+    kpis: base.kpis.map((kpi) => {
+      const out = { ...kpi }
+      for (const [chave, v] of Object.entries(kpi)) {
+        if (!v || typeof v !== 'object' || !('realizado' in v || 'meta' in v)) continue
+        let meta = null
+        let realizado = null
+        for (const q of validos) {
+          const d = q.kpis.find((x) => x.id === kpi.id)?.[chave] || {}
+          meta = soma(meta, d.meta ?? null)
+          realizado = soma(realizado, d.realizado ?? null)
+        }
+        out[chave] = { ...v, meta, realizado }
+      }
+      return out
+    }),
+  }
 }
 
 // quadro = um item do array devolvido por fetchBloco3Servicos (ex.: tituloGerente === 'CONSULTOR

@@ -2129,7 +2129,9 @@ export const apiService = {
   // sem travar ou apagar o trabalho de outro gerente em outra empresa)
   // Rascunho (calculado/salvo) -> Conferido (Gerente) -> Processado (RH) -> RH pode
   // autorizar reprocessamento, o que reabre o lote como Rascunho de novo.
-  getLoteComissoes: async (periodoInicio, periodoFim, empresaId, setorId) => {
+  // funcionarioId: lote individual daquele funcionário (ex: rescisão); sem ele, o lote do setor
+  // (funcionario_id nulo) — um nunca devolve o outro.
+  getLoteComissoes: async (periodoInicio, periodoFim, empresaId, setorId, funcionarioId = null) => {
     let query = supabase
       .from('fato_comissoes_lotes')
       .select('*')
@@ -2137,6 +2139,7 @@ export const apiService = {
       .eq('periodo_fim', periodoFim)
     query = empresaId ? query.eq('empresa_id', empresaId) : query.is('empresa_id', null)
     query = setorId ? query.eq('setor_id', setorId) : query.is('setor_id', null)
+    query = funcionarioId ? query.eq('funcionario_id', funcionarioId) : query.is('funcionario_id', null)
     const { data, error } = await query.maybeSingle()
     if (error) throw error
     return data || null
@@ -2145,15 +2148,17 @@ export const apiService = {
   // Lote mais recente de empresa+setor cujo período está DENTRO do intervalo informado —
   // fallback quando o usuário olha o mês inteiro mas o cálculo foi gerado até uma data anterior
   // (ex: 01/09 a 25/09 visto no filtro 01/09 a 30/09).
-  getLoteContidoNoPeriodo: async (periodoInicio, periodoFim, empresaId, setorId) => {
+  getLoteContidoNoPeriodo: async (periodoInicio, periodoFim, empresaId, setorId, funcionarioId = null) => {
     if (!empresaId || !setorId) return null
-    const { data, error } = await supabase
+    let query = supabase
       .from('fato_comissoes_lotes')
       .select('*')
       .gte('periodo_inicio', periodoInicio)
       .lte('periodo_fim', periodoFim)
       .eq('empresa_id', empresaId)
       .eq('setor_id', setorId)
+    query = funcionarioId ? query.eq('funcionario_id', funcionarioId) : query.is('funcionario_id', null)
+    const { data, error } = await query
       .order('periodo_fim', { ascending: false })
       .limit(1)
     if (error) throw error
@@ -2172,6 +2177,22 @@ export const apiService = {
       .eq('periodo_inicio', periodoInicio)
       .eq('periodo_fim', periodoFim)
       .eq('empresa_id', empresaId)
+      .is('funcionario_id', null)
+    if (error) throw error
+    return data || []
+  },
+
+  // Lotes individuais (um funcionário só, ex: rescisão) de uma empresa que tocam o período — quem
+  // aparece aqui fica de fora do cálculo/gravação do setor.
+  getLotesIndividuaisPeriodo: async (periodoInicio, periodoFim, empresaId) => {
+    if (!empresaId) return []
+    const { data, error } = await supabase
+      .from('fato_comissoes_lotes')
+      .select('*')
+      .eq('empresa_id', empresaId)
+      .not('funcionario_id', 'is', null)
+      .lte('periodo_inicio', periodoFim)
+      .gte('periodo_fim', periodoInicio)
     if (error) throw error
     return data || []
   },
@@ -2180,14 +2201,15 @@ export const apiService = {
   // Se já estiver Conferido/Processado, não mexe no lote (precisa de Autorizar Reprocessamento antes).
   // departamentoId/departamentoNome são só informativos (o departamento "pai" do setor, resolvido
   // por quem chama) — não entram na trava de unicidade, que agora é por setor.
-  salvarLoteRascunho: async ({ periodoInicio, periodoFim, empresaId, empresaNome, setorId, setorNome, departamentoId, departamentoNome, qtdFuncionarios, valorTotal, usuario }) => {
-    const existente = await apiService.getLoteComissoes(periodoInicio, periodoFim, empresaId, setorId)
+  // funcionarioId/funcionarioNome: lote individual (só aquele funcionário); rescisao só sinaliza.
+  salvarLoteRascunho: async ({ periodoInicio, periodoFim, empresaId, empresaNome, setorId, setorNome, departamentoId, departamentoNome, qtdFuncionarios, valorTotal, usuario, funcionarioId = null, funcionarioNome = null, rescisao = false }) => {
+    const existente = await apiService.getLoteComissoes(periodoInicio, periodoFim, empresaId, setorId, funcionarioId)
     if (existente && existente.status !== 'RASCUNHO') return existente
 
     if (existente) {
       const { data, error } = await supabase
         .from('fato_comissoes_lotes')
-        .update({ qtd_funcionarios: qtdFuncionarios, valor_total: valorTotal, departamento_id: departamentoId || null, departamento_nome: departamentoNome || null, atualizado_em: new Date().toISOString() })
+        .update({ qtd_funcionarios: qtdFuncionarios, valor_total: valorTotal, departamento_id: departamentoId || null, departamento_nome: departamentoNome || null, ...(funcionarioId ? { rescisao: !!rescisao } : {}), atualizado_em: new Date().toISOString() })
         .eq('id', existente.id)
         .select()
       if (error) throw error
@@ -2196,7 +2218,7 @@ export const apiService = {
 
     const { data, error } = await supabase
       .from('fato_comissoes_lotes')
-      .insert([{ periodo_inicio: periodoInicio, periodo_fim: periodoFim, empresa_id: empresaId || null, empresa_nome: empresaNome || null, setor_id: setorId || null, setor_nome: setorNome || null, departamento_id: departamentoId || null, departamento_nome: departamentoNome || null, status: 'RASCUNHO', qtd_funcionarios: qtdFuncionarios, valor_total: valorTotal }])
+      .insert([{ periodo_inicio: periodoInicio, periodo_fim: periodoFim, empresa_id: empresaId || null, empresa_nome: empresaNome || null, setor_id: setorId || null, setor_nome: setorNome || null, departamento_id: departamentoId || null, departamento_nome: departamentoNome || null, status: 'RASCUNHO', qtd_funcionarios: qtdFuncionarios, valor_total: valorTotal, funcionario_id: funcionarioId || null, funcionario_nome: funcionarioId ? (funcionarioNome || null) : null, rescisao: funcionarioId ? !!rescisao : false }])
       .select()
     if (error) throw error
     const lote = data?.[0]
@@ -2204,11 +2226,12 @@ export const apiService = {
     return lote
   },
 
-  conferirLote: async (loteId, usuario) => {
+  // rescisao (opcional, lote individual): resposta da pergunta "é rescisão?" feita ao conferir.
+  conferirLote: async (loteId, usuario, rescisao) => {
     const agora = new Date().toISOString()
     const { data, error } = await supabase
       .from('fato_comissoes_lotes')
-      .update({ status: 'CONFERIDO', conferido_por: usuario, conferido_em: agora, atualizado_em: agora })
+      .update({ status: 'CONFERIDO', conferido_por: usuario, conferido_em: agora, atualizado_em: agora, ...(rescisao !== undefined ? { rescisao: !!rescisao } : {}) })
       .eq('id', loteId)
       .select()
     if (error) throw error
@@ -3155,6 +3178,34 @@ export const apiService = {
       .from('fato_campanha_regras')
       .upsert({ ano, mes, unidade, dados, atualizado_em: new Date().toISOString(), atualizado_por: usuarioEmail },
         { onConflict: 'ano,mes,unidade' })
+    if (error) throw error
+  },
+
+  // Fechamento do mês da Campanha (por empresa): linha de fato_campanha_fechamento com periodo 'MES'.
+  // status 'fechado' = valores congelados (dados = foto); 'reaberto' = histórico do último fechamento.
+  getCampanhaFechamento: async (ano, mes, unidade) => {
+    const { data, error } = await supabase
+      .from('fato_campanha_fechamento')
+      .select('ano, mes, unidade, status, dados, fechado_em, fechado_por, reaberto_em, reaberto_por')
+      .eq('ano', ano).eq('mes', mes).eq('unidade', unidade).eq('periodo', 'MES')
+      .maybeSingle()
+    if (error) throw error
+    return data || null
+  },
+
+  fecharCampanhaMes: async (ano, mes, unidade, dados, usuarioEmail = null) => {
+    const { error } = await supabase
+      .from('fato_campanha_fechamento')
+      .upsert({ ano, mes, unidade, periodo: 'MES', status: 'fechado', dados, fechado_em: new Date().toISOString(),
+        fechado_por: usuarioEmail, reaberto_em: null, reaberto_por: null }, { onConflict: 'ano,mes,unidade,periodo' })
+    if (error) throw error
+  },
+
+  reabrirCampanhaMes: async (ano, mes, unidade, usuarioEmail = null) => {
+    const { error } = await supabase
+      .from('fato_campanha_fechamento')
+      .update({ status: 'reaberto', reaberto_em: new Date().toISOString(), reaberto_por: usuarioEmail })
+      .eq('ano', ano).eq('mes', mes).eq('unidade', unidade).eq('periodo', 'MES')
     if (error) throw error
   },
 

@@ -4,7 +4,7 @@ import { useAuth } from '../../context/AuthContext'
 import { apiService } from '../../services/api'
 import { useResponsavelNota } from '../../hooks/useResponsavelNota'
 import {
-  montarContextoNota, renderizarModelo, gerarPdfDeElemento, fmtDataBR, nomeArquivoNota,
+  montarContextoNota, renderizarModelo, gerarPdfDeElemento, fmtDataBR, nomeArquivoNota, valorPecasNotas,
 } from '../../utils/notaDebito'
 
 // Data local (toISOString usaria UTC e viraria o dia depois das 21h no horário de Brasília)
@@ -36,15 +36,11 @@ export default function EmitirNotaDebitoModal({ garantia, garantiaId, empresas, 
   const [modeloId, setModeloId] = useState('')
   const [emitidas, setEmitidas] = useState([])
   const dataEmissao = hoje()
-  // Valor da nota = total das Notas Fiscais Emitidas (produto + serviço); sem NFs, peças + serviços da garantia.
-  const valorNotas = useMemo(() => {
-    const nfs = Array.isArray(garantia.notas_fiscais) ? garantia.notas_fiscais : []
-    if (nfs.length) return nfs.reduce((acc, nf) => acc + (Number(nf.prod_valor) || 0) + (Number(nf.serv_valor) || 0), 0)
-    return (parseFloat(garantia.valor_pecas) || 0) + (parseFloat(garantia.valor_servicos) || 0)
-  }, [garantia.notas_fiscais, garantia.valor_pecas, garantia.valor_servicos])
+  // Valor da nota = só peças: soma das DANFEs das Notas Fiscais Emitidas (sem NFs, valor de peças da garantia).
+  const valorNotas = useMemo(() => valorPecasNotas(garantia), [garantia.notas_fiscais, garantia.valor_pecas])
   const [descricaoItem, setDescricaoItem] = useState('Peças substituídas em Garantia')
   const [quantidadeItem, setQuantidadeItem] = useState(1)
-  // O total do item é sempre o total das NFs; a quantidade só divide o valor unitário.
+  // O total do item é sempre o valor de peças das NFs; a quantidade só divide o valor unitário.
   const itens = useMemo(() => {
     const qtd = Number(quantidadeItem) > 0 ? Number(quantidadeItem) : 1
     return [{ descricao: descricaoItem, quantidade: qtd, valor_unitario: valorNotas / qtd }]

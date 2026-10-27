@@ -450,6 +450,8 @@ export const ACOES_POR_MENU = [
     acoes: [
       { value: 'atualizar_numeros', label: 'Atualizar Números (sincroniza Matriz KPIs + Campanha)' },
       { value: 'ver_matriz',        label: 'Ver Bloco 3 da Matriz KPIs (pop-up)' },
+      { value: 'fechar_mes',        label: 'Fechar Mês (congela os valores da empresa no mês)' },
+      { value: 'reabrir_mes',       label: 'Reabrir Mês Fechado' },
     ],
   },
   {

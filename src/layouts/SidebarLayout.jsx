@@ -561,6 +561,7 @@ export default function SidebarLayout() {
             {canView('bi/garantias-daf') && <FlyItem to="/bi/garantias-daf" icon={ShieldCheck} onClose={closeFlyout}>Garantias DAF</FlyItem>}
             {canView('bi/projetos') && <FlyItem to="/bi/projetos" icon={FolderKanban} onClose={closeFlyout}>Gestão de Projetos</FlyItem>}
             {canView('bi/possibilidades') && <FlyItem to="/bi/possibilidades" icon={Gauge} onClose={closeFlyout}>Possibilidades</FlyItem>}
+            {canView('bi/agendamento-servicos') && <FlyItem to="/bi/agendamento-servicos" icon={Calendar} onClose={closeFlyout}>Agendamento de Serviços</FlyItem>}
             {canViewSection('_bi.fontes-dados') && (
               <>
                 <div className="mx-3 my-2 border-t border-blue-800/50" />

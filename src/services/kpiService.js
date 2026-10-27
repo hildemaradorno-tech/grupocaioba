@@ -20,6 +20,7 @@ const TIMEOUT_MS = 180_000
 
 // Cache em memória — persiste enquanto a aba estiver aberta; limpo no F5/refresh (morte do módulo).
 const _cache = new Map()
+const _emAndamento = new Map() // chave → Promise do pedido ainda sem resposta
 
 function cacheKey(endpoint, params) {
   return `${endpoint}:${JSON.stringify(params)}`
@@ -50,6 +51,7 @@ function buildUrl(endpoint, params = {}) {
   if (params.empresaOficina) qs.set('empresaOficina', params.empresaOficina)
   if (params.empresaChefeOficina) qs.set('empresaChefeOficina', params.empresaChefeOficina)
   if (params.empresaFunilaria) qs.set('empresaFunilaria', params.empresaFunilaria)
+  if (params.empresaGarantia) qs.set('empresaGarantia', params.empresaGarantia)
   if (params.apenas) qs.set('apenas', params.apenas) // Bloco 3 - Serviços: só um quadro por empresa (Campanha)
   if (params.mecanico && params.mecanico !== 'todos') qs.set('mecanico', params.mecanico)
   if (params.vendedor) qs.set('vendedor', params.vendedor)
@@ -73,16 +75,24 @@ async function tryFetch(endpoint, mockData, params = {}) {
     if (hit) return hit
   }
 
-  try {
-    const result = { data: await fetchWithTimeout(buildUrl(endpoint, cleanParams), TIMEOUT_MS), source: 'sharepoint' }
-    cacheSet(key, result)
-    return result
-  } catch (err) {
-    const silent = err.status === 503 || err.name === 'AbortError'
-    if (!silent) console.warn(`[KPI] Usando mock para "${endpoint}":`, err.message)
-    // Não armazena mock em cache — tenta de novo na próxima abertura
-    return { data: mockData, source: 'mock' }
-  }
+  // Mesmo pedido já em andamento (ex.: a tela redesenhou antes da resposta): espera esse, sem repetir.
+  if (_emAndamento.has(key)) return _emAndamento.get(key)
+  const pedido = (async () => {
+    try {
+      const result = { data: await fetchWithTimeout(buildUrl(endpoint, cleanParams), TIMEOUT_MS), source: 'sharepoint' }
+      cacheSet(key, result)
+      return result
+    } catch (err) {
+      const silent = err.status === 503 || err.name === 'AbortError'
+      if (!silent) console.warn(`[KPI] Usando mock para "${endpoint}":`, err.message)
+      // Não armazena mock em cache — tenta de novo na próxima abertura
+      return { data: mockData, source: 'mock' }
+    } finally {
+      _emAndamento.delete(key)
+    }
+  })()
+  _emAndamento.set(key, pedido)
+  return pedido
 }
 
 // ── API pública ──────────────────────────────────────────────────────────────

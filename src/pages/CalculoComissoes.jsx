@@ -246,6 +246,13 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
   // tabela mostra a visão combinada de todos; com um marcado, libera as ações do fluxo de
   // aprovação (Calcular/Salvar/Conferir/Processar/Excluir) daquele setor (ver setorUnicoSelecionado).
   const [filtrosSetor, setFiltrosSetor] = useState([])
+  // Cálculo individual (ex: rescisão de quem foi desligado no mês): um funcionário só, num lote
+  // próprio no período de Data Início/Fim da tela — o lote do setor continua livre, e quem tem
+  // lote individual no período fica de fora do cálculo/gravação do setor.
+  const [filtroFuncionarioId, setFiltroFuncionarioId] = useState('')
+  const [rescisaoIndividual, setRescisaoIndividual] = useState(false)
+  const [perguntaRescisaoAberta, setPerguntaRescisaoAberta] = useState(false)
+  const [lotesIndividuais, setLotesIndividuais] = useState([])
   const [gerandoPDF, setGerandoPDF] = useState(false)
   const [pdfModalAberto, setPdfModalAberto] = useState(false)
   const [pdfSetoresSelecionados, setPdfSetoresSelecionados] = useState([])
@@ -333,6 +340,15 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
         // empresa de uma vez, o que já causou "JSON object requested, multiple (or no) rows
         // returned" aqui). Então: busca por id só quando há um id real; senão (ou se não achar),
         // cai pro fallback que traz todos os lotes da empresa+período e casa pelo nome do setor.
+        if (filtroFuncionarioId) {
+          const loteIndividual = await apiService.getLoteComissoes(periodoInicio, periodoFim, empresaSelecionadaId, setorSelecionadoId, filtroFuncionarioId)
+            || await apiService.getLoteContidoNoPeriodo(periodoInicio, periodoFim, empresaSelecionadaId, setorSelecionadoId, filtroFuncionarioId)
+          if (!cancelado) {
+            setLote(loteIndividual)
+            if (loteIndividual) setRescisaoIndividual(!!loteIndividual.rescisao)
+          }
+          return
+        }
         let loteAtual = setorSelecionadoId
           ? await apiService.getLoteComissoes(periodoInicio, periodoFim, empresaSelecionadaId, setorSelecionadoId)
           : null
@@ -351,7 +367,7 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
       }
     })()
     return () => { cancelado = true }
-  }, [periodoInicio, periodoFim, periodoValido, filtroEmpresa, empresaSelecionadaId, setorUnicoSelecionado, setorSelecionadoId])
+  }, [periodoInicio, periodoFim, periodoValido, filtroEmpresa, empresaSelecionadaId, setorUnicoSelecionado, setorSelecionadoId, filtroFuncionarioId])
 
   // Busca os valores já salvos desse período — independente de quantas empresas/departamentos
   // estão marcados (0, 1 ou vários), já que getComissoesCalculadas não é escopado por
@@ -432,12 +448,22 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
     if (!mostrarHistoricoLote && lote) carregarHistoricoLote(lote.id)
   }
 
-  const handleConferir = async () => {
+  // Cálculo individual: grava se é rescisão junto com a conferência. Sem a caixa Rescisão marcada,
+  // pergunta antes (fácil esquecer quando o funcionário ainda não tem data de demissão).
+  const handleConferir = async (respostaRescisao) => {
     if (!lote) return
+    const individual = !!lote.funcionario_id
+    if (individual && respostaRescisao === undefined && !rescisaoIndividual) {
+      setPerguntaRescisaoAberta(true)
+      return
+    }
+    setPerguntaRescisaoAberta(false)
+    const rescisao = individual ? (respostaRescisao ?? rescisaoIndividual) : undefined
     setProcessandoAcao('conferir')
     setErro(null)
     try {
-      const atualizado = await apiService.conferirLote(lote.id, usuarioLabel)
+      const atualizado = await apiService.conferirLote(lote.id, usuarioLabel, rescisao)
+      if (individual) setRescisaoIndividual(!!rescisao)
       setLote(atualizado)
       if (mostrarHistoricoLote) await carregarHistoricoLote(lote.id)
     } catch (err) {
@@ -462,7 +488,7 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
       // calculados em fato_comissoes_calculadas não têm essas colunas direto, só via
       // funcionario_id). "Sem setor" é setor_ids vazio, não um id de verdade — não dá pra
       // comparar com .includes(setorSelecionadoId) (que aqui é null e nunca bateria com nada).
-      const funcionarioIds = (dados?.funcionarios || [])
+      const funcionarioIds = filtroFuncionarioId ? [filtroFuncionarioId] : (dados?.funcionarios || [])
         .filter(f => {
           if (f.empresa_id !== empresaSelecionadaId) return false
           if (setorUnicoSelecionado === SEM_SETOR) return (f.setor_ids || []).length === 0
@@ -471,7 +497,7 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
         .map(f => f.id)
       await apiService.excluirHistoricoLote(lote?.id || null, periodoInicio, periodoFim, funcionarioIds)
       setLote(null)
-      setLotesPorSetor(prev => ({ ...prev, [setorUnicoSelecionado]: null }))
+      if (!filtroFuncionarioId) setLotesPorSetor(prev => ({ ...prev, [setorUnicoSelecionado]: null }))
       setHistoricoLote([])
       setMostrarHistoricoLote(false)
       setValoresPorFuncionario({})
@@ -581,7 +607,9 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
     // e situação vazia, "1 - Trabalhando" ou "9 - Férias" (exclui Demitido e qualquer outro
     // Afastado — doença etc). Quem está de férias sempre aparece na tabela — `recebe_comissao_ferias`
     // só decide se os dias de férias são descontados do período calculado, não se ele some da lista.
-    const funcionariosAtivos = funcionarios.filter(funcionarioAtivoComissao)
+    // Desligado no período (data de demissão a partir da Data Início) também entra — mas só
+    // aparece na tela quando escolhido no seletor de Funcionário (cálculo individual/rescisão).
+    const funcionariosAtivos = funcionarios.filter(f => funcionarioAtivoComissao(f) || (!!f.data_demissao && !!periodoInicio && f.data_demissao >= periodoInicio))
     const empresasMap = Object.fromEntries(empresas.map(e => [e.id, e]))
     const cargosMap = Object.fromEntries(cargos.map(c => [c.id, c]))
     const departamentosMap = Object.fromEntries(departamentos.map(d => [d.id, d]))
@@ -625,7 +653,7 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
         const departamentoNomes = nomesDepartamentos(func.departamento_ids)
         const setorNomes = nomesSetores(func.setor_ids)
         const areaNomes = nomesAreas(func.departamento_ids)
-        const base = { func, empresa, cargo, departamentoNomes, setorNomes, areaNomes }
+        const base = { func, empresa, cargo, departamentoNomes, setorNomes, areaNomes, desligado: !!func.data_demissao }
 
         // Restrição de acesso do grupo (Empresa/Área/Departamento/Setor/Agrupamento de
         // Cargos, configurada em Grupos de Acesso) — funcionário fora do escopo do usuário
@@ -699,6 +727,8 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
   // Filtros dinâmicos (facetados): as opções de cada seletor são calculadas aplicando todos os
   // OUTROS filtros ativos, menos o dele mesmo.
   const filtrarCandidatos = useMemo(() => (ignorar) => candidatos.filter(c => {
+    if (c.desligado && c.func.id !== filtroFuncionarioId) return false
+    if (ignorar === null && filtroFuncionarioId && c.func.id !== filtroFuncionarioId) return false
     if (ignorar !== 'empresa' && filtroEmpresa && (c.empresa?.empresa_fantasia || c.empresa?.nome_empresa) !== filtroEmpresa) return false
     // Setor é subordinado à Empresa nesta tela (não um facet do mesmo nível) — nunca deve
     // estreitar de volta a lista de Empresas. Sem essa exceção, marcar um setor "órfão" (só com
@@ -710,7 +740,7 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
       if (!nomesOuSemSetor.some(n => filtrosSetor.includes(n))) return false
     }
     return true
-  }), [candidatos, filtroEmpresa, filtrosSetor])
+  }), [candidatos, filtroEmpresa, filtrosSetor, filtroFuncionarioId])
 
   // Só empresas do agrupamento escolhido (prop agrupamentoNome) — cada aba (Trucks/Motos) só
   // mexe nas empresas do próprio grupo, nunca nas do outro. Vem direto do cadastro (dados.empresas),
@@ -866,9 +896,58 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
   // a bolinha das abas e o Exportar leem lotesPorSetor, buscado só ao trocar empresa/período.
   // Espelha o lote aberto ali na hora, sem precisar recarregar a página.
   useEffect(() => {
-    if (!lote || !setorUnicoSelecionado || lote.empresa_id !== empresaSelecionadaId) return
+    if (!lote || lote.funcionario_id || !setorUnicoSelecionado || lote.empresa_id !== empresaSelecionadaId) return
     setLotesPorSetor(prev => (prev[setorUnicoSelecionado] === lote ? prev : { ...prev, [setorUnicoSelecionado]: lote }))
   }, [lote, setorUnicoSelecionado, empresaSelecionadaId])
+
+  useEffect(() => {
+    if (!periodoValido || !empresaSelecionadaId) { setLotesIndividuais([]); return }
+    let cancelado = false
+    apiService.getLotesIndividuaisPeriodo(periodoInicio, periodoFim, empresaSelecionadaId)
+      .then(l => { if (!cancelado) setLotesIndividuais(l) })
+      .catch(() => { if (!cancelado) setLotesIndividuais([]) })
+    return () => { cancelado = true }
+  }, [periodoValido, periodoInicio, periodoFim, empresaSelecionadaId, lote])
+  // Funcionário com lote individual no período → protegido no cálculo do setor.
+  const lotesIndividuaisPorFuncionario = useMemo(() => new Map(lotesIndividuais.map(l => [l.funcionario_id, l])), [lotesIndividuais])
+
+  // Opções do seletor: quem tem comissão nesta empresa e esteve ativo em algum dia do período
+  // (inclui desligados no período, sinalizados).
+  const opcoesFuncionario = useMemo(() => {
+    if (!empresaSelecionadaId) return []
+    const porFunc = new Map()
+    for (const c of candidatos) {
+      if (c.func.empresa_id !== empresaSelecionadaId || porFunc.has(c.func.id)) continue
+      porFunc.set(c.func.id, c)
+    }
+    return [...porFunc.values()]
+      // Ordem pelo código do funcionário (2 antes de 10); sem código, no fim, pelo nome.
+      .sort((a, b) => {
+        const ca = String(a.func.codigo_funcionario || '').trim(), cb = String(b.func.codigo_funcionario || '').trim()
+        if (ca && cb && ca !== cb) return ca.localeCompare(cb, 'pt-BR', { numeric: true })
+        if (ca !== cb) return ca ? -1 : 1
+        return (a.func.nome_funcionario || '').localeCompare(b.func.nome_funcionario || '', 'pt-BR')
+      })
+      .map(c => ({
+        id: c.func.id,
+        label: `${c.func.codigo_funcionario ? `${c.func.codigo_funcionario} — ` : ''}${c.func.nome_funcionario}${c.func.data_demissao ? ` (desligado em ${fmtData(c.func.data_demissao)})` : ''}`,
+      }))
+  }, [candidatos, empresaSelecionadaId])
+  const selecionarFuncionario = (id) => {
+    setFiltroFuncionarioId(id)
+    if (!id) return
+    const c = candidatos.find(x => x.func.id === id)
+    if (!c) return
+    setFiltrosSetor([c.setorNomes[0] || SEM_SETOR])
+    setRescisaoIndividual(!!c.func.data_demissao)
+  }
+  // Funcionário escolhido sai da seleção se a empresa mudar ou o setor marcado não for dele.
+  useEffect(() => {
+    if (!filtroFuncionarioId) return
+    const c = candidatos.find(x => x.func.id === filtroFuncionarioId)
+    const setoresDele = c ? (c.setorNomes.length > 0 ? c.setorNomes : [SEM_SETOR]) : []
+    if (!c || c.func.empresa_id !== empresaSelecionadaId || !setorUnicoSelecionado || !setoresDele.includes(setorUnicoSelecionado)) setFiltroFuncionarioId('')
+  }, [filtroFuncionarioId, candidatos, empresaSelecionadaId, setorUnicoSelecionado])
 
   const chaveSetorPdf = (empresaId, nomeSetor) => {
     const setorId = dados?.setores.find(s => s.nome_setor === nomeSetor)?.id
@@ -918,21 +997,26 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
   // fica vazio, o que já bloqueia Calcular/Salvar naturalmente (sem precisar checar loteBloqueado
   // à parte nos handlers/botões).
   const elegiveisFiltrados = useMemo(() => {
-    const base = candidatosFiltrados.filter(c => c.status === 'OK')
+    const base = candidatosFiltrados.filter(c => c.status === 'OK' && (filtroFuncionarioId || !lotesIndividuaisPorFuncionario.has(c.func.id)))
     if (!loteBloqueado) return base
     const liberados = new Set(lote?.funcionarios_liberados_reprocessamento || [])
     return base.filter(c => liberados.has(c.func.id))
-  }, [candidatosFiltrados, loteBloqueado, lote])
+  }, [candidatosFiltrados, loteBloqueado, lote, filtroFuncionarioId, lotesIndividuaisPorFuncionario])
 
   // Quem está de férias o período inteiro não entra no cálculo de verdade (não tem Base pra
   // apurar) — mas "Calcular" ainda grava uma linha zerada pra esses, só pra ficar registrado
   // que a pessoa estava de férias naquele mês (em vez de simplesmente não existir nenhum
   // registro salvo pra ela).
-  const feriasParaZerar = useMemo(() => candidatosFiltrados.filter(c => c.status === 'FERIAS_MES_INTEIRO'), [candidatosFiltrados])
+  const feriasParaZerar = useMemo(() => candidatosFiltrados.filter(c => c.status === 'FERIAS_MES_INTEIRO' && (filtroFuncionarioId || !lotesIndividuaisPorFuncionario.has(c.func.id))), [candidatosFiltrados, filtroFuncionarioId, lotesIndividuaisPorFuncionario])
 
   // Status da linha (badge antes do código): Reprocessar (liberado parcialmente em Histórico
   // de Comissões), Pendente (nunca calculado), ou o status do lote pra quem já foi calculado.
   const statusLinha = (c) => {
+    const loteIndividual = !filtroFuncionarioId && lotesIndividuaisPorFuncionario.get(c.func.id)
+    if (loteIndividual) {
+      const etapa = loteIndividual.status === 'PROCESSADO' ? 'Processado' : loteIndividual.status === 'CONFERIDO_DP' ? 'Aguardando Processamento' : loteIndividual.status === 'CONFERIDO' ? 'Aguardando DP' : 'Aguardando Gerente'
+      return { label: `${loteIndividual.rescisao ? 'Rescisão' : 'Individual'} · ${etapa}`, className: 'bg-rose-100 text-rose-700' }
+    }
     const liberado = !!lote?.funcionarios_liberados_reprocessamento?.includes(c.func.id)
     const res = valoresPorFuncionario[chaveLinha(c)]
     const calculado = !!res
@@ -1322,7 +1406,7 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
     // (elegiveisFiltrados já filtra isso) — o resto continua intocado.
     const candidatosParaSalvar = loteBloqueado
       ? elegiveisFiltrados
-      : candidatosFiltrados
+      : candidatosFiltrados.filter(c => filtroFuncionarioId || !lotesIndividuaisPorFuncionario.has(c.func.id))
     const registrosSemLote = candidatosParaSalvar
       .filter(c => (c.status === 'OK' || c.status === 'FERIAS_MES_INTEIRO') && valoresPorFuncionario[chaveLinha(c)] && !valoresPorFuncionario[chaveLinha(c)].semMeta)
       .map(c => {
@@ -1363,6 +1447,17 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
       // Resolve/cria o lote ANTES de salvar os valores, pra já gravar o lote_id em cada
       // registro — sem isso, fato_comissoes_calculadas fica sem saber a qual lote pertence
       // (quebra a seleção/o reprocessamento em Histórico de Comissões).
+      // Cálculo individual: se ele já foi salvo num lote de setor que passou do Rascunho, não tira
+      // os valores de lá (o gerente/DP já conferiu) — precisa liberar o reprocessamento antes.
+      if (filtroFuncionarioId && !loteBloqueado) {
+        const salvosDele = (await apiService.getComissoesCalculadas(periodoInicio, periodoFim))
+          .filter(r => r.funcionario_id === filtroFuncionarioId && r.lote_id && r.lote_id !== lote?.id)
+        const outrosLotes = await apiService.getLotesPorIds([...new Set(salvosDele.map(r => r.lote_id))])
+        const travado = outrosLotes.find(l => l.status !== 'RASCUNHO')
+        if (travado) {
+          throw new Error(`este funcionário já está no lote do setor ${travado.setor_nome || ''} (${travado.status === 'PROCESSADO' ? 'Processado' : travado.status === 'CONFERIDO_DP' ? 'Conferido pelo DP' : 'Conferido'}). Libere o reprocessamento dele em Processamento de Comissões antes do cálculo individual.`)
+        }
+      }
       let loteAtualizado
       if (loteBloqueado) {
         loteAtualizado = lote
@@ -1373,6 +1468,9 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
           setorId: setorSelecionadoId, setorNome: setorUnicoSelecionado,
           departamentoId: departamentoDoSetorSelecionadoId, departamentoNome: departamentoDoSetorSelecionadoId ? dados?.departamentos.find(d => d.id === departamentoDoSetorSelecionadoId)?.nome_departamento : null,
           qtdFuncionarios: registrosSemLote.length, valorTotal: valorTotalLote, usuario: usuarioLabel,
+          funcionarioId: filtroFuncionarioId || null,
+          funcionarioNome: filtroFuncionarioId ? (dados?.funcionarios.find(f => f.id === filtroFuncionarioId)?.nome_funcionario || null) : null,
+          rescisao: !!filtroFuncionarioId && rescisaoIndividual,
         })
       }
       const registros = registrosSemLote.map(r => ({ ...r, lote_id: loteAtualizado.id }))
@@ -1398,17 +1496,19 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
   // Documento pra mandar pro RH computar o pagamento — uma página por Setor, cada uma com os
   // Cargos/funcionários e o total do setor no rodapé. A seleção vem do modal de setores fechados.
   const handleSalvarPDF = async () => {
-    const opcoesSelecionadas = setoresFechadosParaPdf.filter(opcao => pdfSetoresSelecionados.includes(opcao.key))
+    // Cálculo individual (seletor de Funcionário): exporta só ele, direto, sem escolher setores.
+    const individual = !!filtroFuncionarioId
+    const opcoesSelecionadas = individual ? [] : setoresFechadosParaPdf.filter(opcao => pdfSetoresSelecionados.includes(opcao.key))
     const chavesSelecionadas = new Set(opcoesSelecionadas.map(opcao => opcao.key))
     const candidatosDaEmpresa = filtroEmpresa
       ? candidatos.filter(c => c.func.empresa_id === empresaSelecionadaId)
       : candidatos
-    const candidatosParaPDF = candidatosDaEmpresa.map(c => {
+    const candidatosParaPDF = individual ? candidatosFiltrados.filter(c => valoresPorFuncionario[chaveLinha(c)]) : candidatosDaEmpresa.map(c => {
       const setoresIncluidos = (c.setorNomes || [SEM_SETOR]).filter(nomeSetor =>
         chavesSelecionadas.has(chaveSetorPdf(c.func.empresa_id, nomeSetor)))
       return setoresIncluidos.length > 0 ? { ...c, setorNomes: setoresIncluidos } : null
     }).filter(Boolean)
-    const gruposParaPDF = filtroEmpresa
+    const gruposParaPDF = individual || filtroEmpresa
       ? agruparPorSetorECargo(candidatosParaPDF)
       : agruparPorEmpresaSetor(candidatosParaPDF)
     if (gruposParaPDF.length === 0) {
@@ -1482,7 +1582,10 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
       const nomeSetorArquivo = opcoesSelecionadas.length === 1
         ? `${opcoesSelecionadas[0].empresaNome}_${opcoesSelecionadas[0].nomeSetor}`
         : `Setores_${opcoesSelecionadas.length}`
-      const nomeArquivo = filtroEmpresa
+      const funcIndividual = individual ? candidatosParaPDF[0]?.func : null
+      const nomeArquivo = individual
+        ? ['Comissoes', periodoInicio, periodoFim, filtroEmpresa, funcIndividual?.nome_funcionario, rescisaoIndividual ? 'Rescisao' : null].filter(Boolean).map(paraNomeArquivo).join('_')
+        : filtroEmpresa
         ? ['Comissoes', periodoInicio, periodoFim, filtroEmpresa, nomeSetorArquivo].filter(Boolean).map(paraNomeArquivo).join('_')
         : ['Comissoes', periodoInicio, periodoFim, 'Todas_Empresas', nomeSetorArquivo].filter(Boolean).map(paraNomeArquivo).join('_')
       await gerarPdfComissoes({ setores, periodoInicio, periodoFim, nomeArquivo })
@@ -1618,6 +1721,29 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
                 )}
               </div>
             )}
+            {filtroEmpresa && opcoesFuncionario.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2 mb-3">
+                <label className={`${LBL} mr-1`}>Funcionário</label>
+                <select
+                  value={filtroFuncionarioId}
+                  onChange={e => selecionarFuncionario(e.target.value)}
+                  className="w-96 text-xs p-2 border border-slate-200 rounded-md bg-white font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                >
+                  <option value="">Todos — cálculo do setor</option>
+                  {opcoesFuncionario.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
+                </select>
+                {filtroFuncionarioId && (
+                  <>
+                    <label className="flex items-center gap-1.5 text-xs font-semibold text-rose-700 cursor-pointer">
+                      <input type="checkbox" checked={rescisaoIndividual} disabled={loteBloqueado}
+                        onChange={e => setRescisaoIndividual(e.target.checked)} className="h-3.5 w-3.5 rounded accent-rose-600" />
+                      Rescisão
+                    </label>
+                    <span className="text-[11px] text-slate-500">Cálculo só deste funcionário, num lote próprio no período de Data Início a Data Fim — o setor continua livre.</span>
+                  </>
+                )}
+              </div>
+            )}
             {loteBloqueado && (
               <p className="flex items-center gap-1.5 text-[11px] text-amber-600 mt-2">
                 <Lock className="h-3 w-3" />
@@ -1643,6 +1769,11 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
                       : 'bg-slate-100 text-slate-500 border-slate-200'
                     }`}>
                       {lote.status === 'PROCESSADO' ? 'Processado' : lote.status === 'CONFERIDO_DP' ? 'Aguardando Processamento' : lote.status === 'CONFERIDO' ? 'Aguardando DP' : 'Aguardando Gerente'}
+                    </span>
+                  )}
+                  {filtroFuncionarioId && (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold border bg-rose-50 text-rose-700 border-rose-200">
+                      {rescisaoIndividual ? 'Rescisão' : 'Lote individual'}
                     </span>
                   )}
                   {setorSelecionadoId && empresaSelecionadaId && responsaveisPorSetor[setorSelecionadoId]?.[empresaSelecionadaId]?.length > 0 && (
@@ -1708,7 +1839,7 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
                       )}
                       {podeConferir && (
                         <button
-                          onClick={handleConferir}
+                          onClick={() => handleConferir()}
                           disabled={!filtroEmpresa || !setorUnicoSelecionado || !(lote?.status === 'RASCUNHO' && salvo) || processandoAcao === 'conferir' || setorSomenteVisualizacao}
                           title={setorSomenteVisualizacao ? 'Este setor está liberado só pra visualização — peça pra alguém com edição fazer isso.' : undefined}
                           className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold px-3 py-1.5 rounded-md shadow-sm transition-colors"
@@ -1721,9 +1852,13 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
                         <>
                           <button
                             type="button"
-                            onClick={abrirModalExportar}
-                            disabled={carregandoStatusPdf || setoresFechadosParaPdf.length === 0 || gerandoPDF}
-                            title={setoresFechadosParaPdf.length === 0 && !carregandoStatusPdf ? 'Não há setores fechados disponíveis para exportação.' : undefined}
+                            onClick={filtroFuncionarioId ? handleSalvarPDF : abrirModalExportar}
+                            disabled={gerandoPDF || (filtroFuncionarioId
+                              ? !candidatosFiltrados.some(c => valoresPorFuncionario[chaveLinha(c)])
+                              : (carregandoStatusPdf || setoresFechadosParaPdf.length === 0))}
+                            title={filtroFuncionarioId
+                              ? (candidatosFiltrados.some(c => valoresPorFuncionario[chaveLinha(c)]) ? 'Exporta em PDF só este funcionário' : 'Calcule as comissões deste funcionário primeiro.')
+                              : (setoresFechadosParaPdf.length === 0 && !carregandoStatusPdf ? 'Não há setores fechados disponíveis para exportação.' : undefined)}
                             className="flex items-center gap-1.5 border border-slate-300 text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-semibold px-3 py-1.5 rounded-md transition-colors"
                           >
                             <FileDown className="h-3.5 w-3.5" />
@@ -2041,6 +2176,26 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
       )}
 
       {/* TELINHA DA REGRA (aberta pelo ícone de calculadora ao lado da comissão) */}
+      {perguntaRescisaoAberta && (
+        <div className="fixed top-0 right-0 bottom-0 left-16 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setPerguntaRescisaoAberta(false)}>
+          <div className="bg-white rounded-xl border border-slate-200 w-full max-w-md shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-slate-50">
+              <h3 className="text-sm font-bold text-slate-900">Conferir comissões</h3>
+              <button onClick={() => setPerguntaRescisaoAberta(false)} className="text-slate-400 hover:text-slate-600"><X className="h-4 w-4" /></button>
+            </div>
+            <div className="p-5 space-y-2">
+              <p className="text-sm font-semibold text-slate-800">Este cálculo individual é de rescisão?</p>
+              <p className="text-xs text-slate-500">{lote?.funcionario_nome || 'Funcionário'} — {fmtData(lote?.periodo_inicio)} a {fmtData(lote?.periodo_fim)}. A resposta só sinaliza o lote ("Rescisão") nas telas de Comissões e Processamento; não muda o cálculo.</p>
+            </div>
+            <div className="flex justify-end gap-2 px-5 py-3 border-t border-slate-100 bg-slate-50">
+              <button type="button" onClick={() => setPerguntaRescisaoAberta(false)} className="text-xs font-semibold text-slate-600 px-3 py-2">Cancelar</button>
+              <button type="button" onClick={() => handleConferir(false)} className="text-xs font-semibold text-slate-700 border border-slate-300 hover:bg-slate-100 px-3 py-2 rounded-md">Não</button>
+              <button type="button" onClick={() => handleConferir(true)} className="text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 px-3 py-2 rounded-md">Sim, é rescisão</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {regraModal && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setRegraModal(null)}>
           <div className="bg-white rounded-lg border border-slate-200 w-full max-w-[420px] shadow-xl overflow-hidden" onClick={e => e.stopPropagation()}>

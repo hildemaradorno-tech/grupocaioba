@@ -66,7 +66,7 @@ function Gauge2({ label, value }) {
         <circle cx={cx} cy={cy} r="7" fill="#1e293b" stroke={cor} strokeWidth="2" />
         <circle cx={cx} cy={cy} r="2.5" fill="#ffffff" />
       </svg>
-      <p className="text-base font-bold -mt-1" style={{ color: cor }}>{v.toFixed(2)}%</p>
+      <p className="text-sm font-bold -mt-1" style={{ color: cor }}>{v.toFixed(2)}%</p>
     </div>
   )
 }
@@ -95,7 +95,7 @@ function GaugeProgresso({ label, value }) {
         <path d={arco(0, 1)} stroke="#e2e8f0" strokeWidth="14" fill="none" strokeLinecap="round" />
         {v > 0 && <path d={arco(0, v / 100)} stroke={cor} strokeWidth="14" fill="none" strokeLinecap="round" />}
       </svg>
-      <p className="text-base font-bold -mt-3" style={{ color: cor }}>{v.toFixed(2)}%</p>
+      <p className="text-sm font-bold -mt-3" style={{ color: cor }}>{v.toFixed(2)}%</p>
     </div>
   )
 }
@@ -216,7 +216,7 @@ function SeletorEmpresas({ empresas, selecionadas, onChange }) {
   return (
     <>
       <button ref={ref} type="button" onClick={abrir}
-        className="text-xs px-2 py-1.5 rounded-md bg-white border border-slate-300 text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/40 min-w-[230px] flex items-center justify-between gap-2">
+        className="text-[11px] px-2 py-1 rounded-md bg-white border border-slate-300 text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/40 min-w-[180px] flex items-center justify-between gap-2">
         <span className="truncate">{resumo}</span>
         <ChevronDown className="h-3.5 w-3.5 text-slate-400 shrink-0" />
       </button>
@@ -941,10 +941,10 @@ export default function BiPossibilidades() {
                 <label className="text-[10px] font-bold text-slate-500 uppercase">Data</label>
                 <div className="flex items-center gap-1.5">
                   <input type="date" value={dataInicio} onChange={e => setDataInicio(e.target.value)}
-                    className="text-xs px-2 py-1.5 rounded-md bg-white border border-slate-300 text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/40" />
+                    className="text-[11px] px-1.5 py-1 rounded-md bg-white border border-slate-300 text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/40" />
                   <span className="text-slate-400 text-xs">até</span>
                   <input type="date" value={dataFim} onChange={e => setDataFim(e.target.value)}
-                    className="text-xs px-2 py-1.5 rounded-md bg-white border border-slate-300 text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/40" />
+                    className="text-[11px] px-1.5 py-1 rounded-md bg-white border border-slate-300 text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/40" />
                 </div>
               </div>
             </div>

@@ -16,6 +16,7 @@ const QUADRO_MECANICO  = 'MECÂNICO'
 const QUADRO_OFICINA   = 'SETOR DE MECÂNICA'
 const QUADRO_CHEFE_OFICINA = 'CHEFE DE OFICINA'
 const QUADRO_FUNILARIA = 'SETOR FUNILARIA/PINTURA'
+const QUADRO_GARANTIA  = 'SETOR GARANTIA'
 const EMPRESAS_OFICINA = ['CAMPO GRANDE', 'DOURADOS', 'TRÊS LAGOAS', 'CHAPADÃO DO SUL']
 
 const COR_HEADER = {
@@ -24,6 +25,7 @@ const COR_HEADER = {
   teal:   'bg-teal-700   text-white',
   purple: 'bg-purple-700 text-white',
   amber:  'bg-amber-700  text-white',
+  rose:   'bg-rose-700   text-white',
 }
 
 const COR_SUBHEADER = {
@@ -32,11 +34,18 @@ const COR_SUBHEADER = {
   teal:   'bg-teal-50   border-teal-200',
   purple: 'bg-purple-50 border-purple-200',
   amber:  'bg-amber-50  border-amber-200',
+  rose:   'bg-rose-50   border-rose-200',
 }
 
 function calcAtingimento(orientacao, meta, realizado) {
-  if (realizado === null || meta === null || meta === 0) return null
-  return orientacao === '<' ? meta / realizado : realizado / meta
+  if (realizado === null || meta === null) return null
+  if (orientacao === '<') {
+    // Menor é melhor: realizado 0 cumpre qualquer meta; meta 0 só é cumprida com realizado 0.
+    if (realizado <= 0) return 1
+    return meta === 0 ? 0 : meta / realizado
+  }
+  if (meta === 0) return null
+  return realizado / meta
 }
 
 function pct(val) {
@@ -211,11 +220,13 @@ function PessoaSelector({ lista, selecionado, onSelecionar, onLimpar, placeholde
 
 // Indicadores sem meta automática: o usuário digita a meta, só na visão Mensal (Consultor de
 // Serviços e Mecânico, que não têm fonte de meta pra Eficácia/Produtividade da Oficina).
-const INDICADORES_META_MANUAL = new Set(['Eficácia da Oficina', 'Produtividade da Oficina'])
+const INDICADORES_META_MANUAL = new Set(['Eficácia da Oficina', 'Produtividade da Oficina', 'Digitação Atrasada', 'Aguardando Aprovação DAF fora do prazo'])
+// Só os de horas trazem a observação de faturamento.
+const INDICADORES_NOTA_FATURAMENTO = new Set(['Eficácia da Oficina', 'Produtividade da Oficina'])
 
 // Mesmo padrão de PosVendaQuadros/KpiBloco3PosVenda.jsx: a meta digitada mês a mês fica
 // gravada no Supabase (kpi_metas_manuais) e não se perde.
-function MetaInput({ value, onSave }) {
+function MetaInput({ value, onSave, metrica = '%' }) {
   const [draft, setDraft]   = useState(value != null ? value : '')
   const [saving, setSaving] = useState(false)
   const [erro, setErro]     = useState(false)
@@ -245,7 +256,7 @@ function MetaInput({ value, onSave }) {
   return (
     <span className="inline-flex items-center justify-center gap-0.5">
       <input
-        type="number" step="0.01"
+        type="number" step={metrica === 'un' ? 1 : 0.01} min={metrica === 'un' ? 0 : undefined}
         value={draft}
         disabled={saving}
         onChange={e => setDraft(e.target.value)}
@@ -255,14 +266,14 @@ function MetaInput({ value, onSave }) {
           erro ? 'border-red-400' : 'border-slate-200'
         }`}
       />
-      <span className="text-slate-400">%</span>
+      {metrica === '%' && <span className="text-slate-400">%</span>}
     </span>
   )
 }
 
 // Botão ao lado do nome do indicador (fundo amarelo, pra deixar evidente que a meta pode ser
 // digitada): abre um painel com um valor só, aplicado em vários meses de uma vez (ou todos).
-function PreencherMesesButton({ onAplicar }) {
+function PreencherMesesButton({ onAplicar, metrica = '%' }) {
   const [aberto, setAberto]     = useState(false)
   const [valor, setValor]       = useState('')
   const [meses, setMeses]       = useState(() => new Set())
@@ -340,7 +351,7 @@ function PreencherMesesButton({ onAplicar }) {
           className="z-50 w-64 bg-white border border-slate-200 rounded-lg shadow-lg p-3 text-xs normal-case font-normal text-left"
         >
           <p className="font-semibold text-slate-700 mb-2">Preencher meses</p>
-          <label className="block text-slate-500 mb-1">Valor (%)</label>
+          <label className="block text-slate-500 mb-1">{metrica === 'un' ? 'Quantidade (O.S.)' : 'Valor (%)'}</label>
           <input
             type="number" step="0.01" autoFocus
             value={valor}
@@ -381,7 +392,7 @@ function PreencherMesesButton({ onAplicar }) {
 
 // ocultarValores: quadro com seletor de funcionário (Consultor/Mecânico) sem ninguém selecionado —
 // os valores só aparecem depois de escolher o nome.
-function QuadroTable({ quadro, activePeriods, mesTotalKey, year, onSalvarPeso, onSalvarMetaManual, onSalvarMetasVarios, somenteLeitura = false, pessoaSelector, ocultarValores = false, icon: Icon }) {
+function QuadroTable({ quadro, activePeriods, mesTotalKey, year, onSalvarPeso, onSalvarMetaManual, onSalvarMetasVarios, somenteLeitura = false, pessoaSelector, ocultarValores = false, msgOcultar = 'Selecione um funcionário para ver os valores', icon: Icon }) {
   const headerCls  = COR_HEADER[quadro.cor]    ?? COR_HEADER.blue
   const subheadCls = COR_SUBHEADER[quadro.cor] ?? COR_SUBHEADER.blue
 
@@ -414,7 +425,7 @@ function QuadroTable({ quadro, activePeriods, mesTotalKey, year, onSalvarPeso, o
               <th />
               <th className="px-4 py-1 sticky left-0 bg-inherit">
                 {pessoaSelector}
-                {ocultarValores && <span className="block mt-0.5 text-[10px] font-normal text-amber-600">Selecione um funcionário para ver os valores</span>}
+                {ocultarValores && <span className="block mt-0.5 text-[10px] font-normal text-amber-600">{msgOcultar}</span>}
               </th>
               <th />
               <th className="px-2 py-1" />
@@ -435,9 +446,9 @@ function QuadroTable({ quadro, activePeriods, mesTotalKey, year, onSalvarPeso, o
                 <td className="px-4 py-2.5 font-medium text-slate-700 sticky left-0 bg-white">
                   {row.indicador}
                   {!somenteLeitura && INDICADORES_META_MANUAL.has(row.indicador) && (
-                    <PreencherMesesButton onAplicar={(meses, valor) => onSalvarMetasVarios(quadro.tituloGerente, row.id, meses, valor)} />
+                    <PreencherMesesButton metrica={row.metrica} onAplicar={(meses, valor) => onSalvarMetasVarios(quadro.tituloGerente, row.id, meses, valor)} />
                   )}
-                  {INDICADORES_META_MANUAL.has(row.indicador) && (
+                  {INDICADORES_NOTA_FATURAMENTO.has(row.indicador) && (
                     <div className="text-[10px] font-normal italic text-slate-400">*Valores relacionados a faturamento</div>
                   )}
                 </td>
@@ -456,7 +467,7 @@ function QuadroTable({ quadro, activePeriods, mesTotalKey, year, onSalvarPeso, o
                       <React.Fragment key={p}>
                         <td className="px-2 py-2.5 text-center text-slate-300 border-l border-slate-100">
                           {metaEditavel
-                            ? <MetaInput value={d.meta} onSave={valor => onSalvarMetaManual(quadro.tituloGerente, row.id, p, valor)} />
+                            ? <MetaInput value={d.meta} metrica={row.metrica} onSave={valor => onSalvarMetaManual(quadro.tituloGerente, row.id, p, valor)} />
                             : '—'}
                         </td>
                         <td className="px-2 py-2.5 text-center text-slate-300">—</td>
@@ -469,7 +480,7 @@ function QuadroTable({ quadro, activePeriods, mesTotalKey, year, onSalvarPeso, o
                     <React.Fragment key={p}>
                       <td className="px-2 py-2.5 text-center text-slate-600 border-l border-slate-100">
                         {metaEditavel
-                          ? <MetaInput value={d.meta} onSave={valor => onSalvarMetaManual(quadro.tituloGerente, row.id, p, valor)} />
+                          ? <MetaInput value={d.meta} metrica={row.metrica} onSave={valor => onSalvarMetaManual(quadro.tituloGerente, row.id, p, valor)} />
                           : fmtNum(d.meta, row.metrica)}
                       </td>
                       <td className="px-2 py-2.5 text-center text-slate-600">{fmtNum(d.realizado, row.metrica)}</td>
@@ -543,6 +554,7 @@ function ServicosQuadros({ year, activePeriods, mesTotalKey, somenteLeitura = fa
   const [empresaOficina, setEmpresaOficina] = useState(EMPRESAS_OFICINA.includes(empresaOficinaInicial) ? empresaOficinaInicial : null)
   const [empresaChefeOficina, setEmpresaChefeOficina] = useState(EMPRESAS_OFICINA.includes(empresaOficinaInicial) ? empresaOficinaInicial : null)
   const [empresaFunilaria, setEmpresaFunilaria] = useState(EMPRESAS_OFICINA.includes(empresaOficinaInicial) ? empresaOficinaInicial : null)
+  const [empresaGarantia, setEmpresaGarantia] = useState(EMPRESAS_OFICINA.includes(empresaOficinaInicial) ? empresaOficinaInicial : null)
 
   const { data: quadros } = useKpiData(fetchBloco3Servicos, MOCK_BLOCO3_SERVICOS, {
     year,
@@ -551,6 +563,7 @@ function ServicosQuadros({ year, activePeriods, mesTotalKey, somenteLeitura = fa
     empresaOficina: empresaOficina || undefined,
     empresaChefeOficina: empresaChefeOficina || undefined,
     empresaFunilaria: empresaFunilaria || undefined,
+    empresaGarantia: empresaGarantia || undefined,
   })
 
   // Overlay otimista: aplicado por cima do que veio do backend assim que o usuário
@@ -608,11 +621,13 @@ function ServicosQuadros({ year, activePeriods, mesTotalKey, somenteLeitura = fa
           const ehOficina       = quadro.tituloGerente === QUADRO_OFICINA
           const ehChefeOficina  = quadro.tituloGerente === QUADRO_CHEFE_OFICINA
           const ehFunilaria     = quadro.tituloGerente === QUADRO_FUNILARIA
-          const ehPorEmpresa    = ehOficina || ehChefeOficina || ehFunilaria
+          const ehGarantia      = quadro.tituloGerente === QUADRO_GARANTIA
+          const ehPorEmpresa    = ehOficina || ehChefeOficina || ehFunilaria || ehGarantia
           const filtro      = ehConsultor ? consultorFiltro : ehMecanico ? mecanicoFiltro
             : ehOficina ? { lista: EMPRESAS_OFICINA, aplicado: empresaOficina, setAplicado: setEmpresaOficina }
             : ehChefeOficina ? { lista: EMPRESAS_OFICINA, aplicado: empresaChefeOficina, setAplicado: setEmpresaChefeOficina }
             : ehFunilaria ? { lista: EMPRESAS_OFICINA, aplicado: empresaFunilaria, setAplicado: setEmpresaFunilaria }
+            : ehGarantia ? { lista: EMPRESAS_OFICINA, aplicado: empresaGarantia, setAplicado: setEmpresaGarantia }
             : null
           return (
             <QuadroTable
@@ -626,6 +641,7 @@ function ServicosQuadros({ year, activePeriods, mesTotalKey, somenteLeitura = fa
               onSalvarMetasVarios={handleSalvarMetasVarios}
               somenteLeitura={somenteLeitura}
               ocultarValores={!!filtro && !filtro.aplicado}
+              msgOcultar={ehPorEmpresa ? 'Selecione a empresa para ver os valores' : undefined}
               icon={Wrench}
               pessoaSelector={filtro && (
                 <PessoaSelector
@@ -678,7 +694,7 @@ export default function KpiBloco3Servicos() {
 export function Bloco3ServicosVisualizacao({ ano, mes, quadro = null, pessoas = null, empresa = null }) {
   const periodState = usePeriodSelector(null, 'semanal')
   const { activePeriods, setWeekMonth, toggleS } = periodState
-  const doServicos = [QUADRO_CONSULTOR, QUADRO_MECANICO, QUADRO_OFICINA, QUADRO_CHEFE_OFICINA, QUADRO_FUNILARIA].includes(quadro)
+  const doServicos = [QUADRO_CONSULTOR, QUADRO_MECANICO, QUADRO_OFICINA, QUADRO_CHEFE_OFICINA, QUADRO_FUNILARIA, QUADRO_GARANTIA].includes(quadro)
   useEffect(() => {
     if (mes >= 1 && mes <= 12) {
       setWeekMonth(`m${String(mes).padStart(2, '0')}`) // marca as semanas do mês (e desmarca o Total)

@@ -196,6 +196,9 @@ function LoteLinha({ grupo, expandido, onToggleExpand, selecionados, onToggleSel
         <td className="px-3 py-2.5">
           <div className="flex flex-col items-start gap-1">
             <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border whitespace-nowrap ${statusInfo.className}`}>{statusInfo.label}</span>
+            {lote?.rescisao && (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold border whitespace-nowrap bg-rose-50 text-rose-700 border-rose-200">Rescisão</span>
+            )}
             {grupo.soVisualizacao && (
               <span className="px-2 py-0.5 rounded-full text-[10px] font-bold border whitespace-nowrap bg-slate-100 text-slate-500 border-slate-200" title="Este departamento está liberado só pra visualização (Grupos de Acesso) — sem botões de ação.">
                 Somente Visualização
@@ -209,6 +212,10 @@ function LoteLinha({ grupo, expandido, onToggleExpand, selecionados, onToggleSel
           <button type="button" onClick={onToggleExpand} className="font-semibold text-slate-900 hover:text-blue-600 text-left transition-colors">
             {grupo.setorNome}
           </button>
+          {/* Lote individual (ex: rescisão): só um funcionário, separado do lote do setor. */}
+          {lote?.funcionario_id && (
+            <div className="text-[11px] text-slate-500 mt-0.5">{lote.funcionario_nome || 'Funcionário'} <span className="text-slate-400">— lote individual</span></div>
+          )}
         </td>
         <td className="px-3 py-2.5">{grupo.responsavelNomes.length > 0 ? grupo.responsavelNomes.join(', ') : '—'}</td>
         <td className="px-3 py-2.5">
@@ -592,7 +599,7 @@ export default function HistoricoComissoes() {
       // Comparado por empresa + NOME do setor, igual às abas da tela de Cálculo: setores de mesmo
       // nome em departamentos diferentes (ex: "Geral" de GERAL e de PÓS-VENDAS) viram uma aba e um
       // lote só lá.
-      const jaTem = new Set(comLote.filter(g => g.lote?.empresa_id).map(g => `${g.lote.empresa_id}|${g.setorNome}`))
+      const jaTem = new Set(comLote.filter(g => g.lote?.empresa_id && !g.lote?.funcionario_id).map(g => `${g.lote.empresa_id}|${g.setorNome}`))
       const vistos = new Set()
       for (const func of dados.funcionarios) {
         if (!funcionarioAtivoComissao(func)) continue
@@ -905,7 +912,7 @@ export default function HistoricoComissoes() {
       const empresas = [...new Set(itens.map(i => i.lote.empresa_nome).filter(Boolean))]
       const parcial = itens.some(i => i.funcionarioIds)
       const partesNome = itens.length === 1
-        ? [itens[0].lote.empresa_nome, itens[0].lote.setor_nome, parcial ? 'selecionados' : null]
+        ? [itens[0].lote.empresa_nome, itens[0].lote.setor_nome, itens[0].lote.funcionario_nome, itens[0].lote.rescisao ? 'Rescisao' : null, parcial ? 'selecionados' : null]
         : [empresas.join('_'), `Setores_${itens.length}`, parcial ? 'selecionados' : null]
       const nomeArquivo = ['Lancamentos', periodoInicio, periodoFim, ...partesNome]
         .filter(Boolean).map(paraNomeArquivo).join('_')

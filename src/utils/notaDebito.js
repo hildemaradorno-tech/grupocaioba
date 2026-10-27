@@ -3,7 +3,8 @@
 
 export const CAMPOS_NOTA_DEBITO = [
   { grupo: 'Nota', campos: [
-    ['nota.numero', 'Número da nota'],
+    ['nota.numero', 'Número da nota (sequencial do sistema)'],
+    ['nota.numero_nf', 'Número da NFS-e (sem NFS-e: DANFE de peças)'],
     ['nota.data_emissao', 'Data de emissão'],
   ] },
   { grupo: 'Concessionária (Empresas)', campos: [
@@ -84,6 +85,14 @@ export const totalItens = (itens) =>
 
 // Monta o mapa campo -> texto a partir de empresa (dim_empresas), garantia (form/gar_garantias),
 // dados da nota e itens.
+// Valor de peças das Notas Fiscais Emitidas (soma das DANFEs); sem NFs, valor de peças da garantia.
+export function valorPecasNotas(g) {
+  const nfs = Array.isArray(g?.notas_fiscais) ? g.notas_fiscais : []
+  const danfes = nfs.filter(nf => Number(nf.prod_valor) > 0)
+  if (danfes.length) return danfes.reduce((acc, nf) => acc + Number(nf.prod_valor), 0)
+  return parseFloat(g?.valor_pecas) || 0
+}
+
 export function montarContextoNota({ empresa, garantia, nota, itens, statusLabel, logo, responsavel }) {
   const e = empresa || {}
   const g = garantia || {}
@@ -92,15 +101,21 @@ export function montarContextoNota({ empresa, garantia, nota, itens, statusLabel
   const total = (Number(g.valor_pecas) || 0) + (Number(g.valor_servicos) || 0)
   // Dados da NF ao cliente = todas as Notas Fiscais Emitidas (DANFE e NFSe): números da coluna NFSe
   // e valor total (produto + serviço). Sem lista de NFs, cai nos campos gravados na garantia.
+  // Notas Fiscais Emitidas: DANFE = linha com valor de produto (peças); NFS-e = linha com valor de serviço.
   const nfs = Array.isArray(g.notas_fiscais) ? g.notas_fiscais : []
-  const numeroNfse = (numero) => String(numero || '').split('/').map(x => x.trim()).filter(Boolean).pop() || ''
-  const nfNumero = nfs.length ? nfs.map(nf => numeroNfse(nf.numero)).filter(Boolean).join(', ') : (g.nf_peca_numero || '')
-  const nfValor = nfs.length
-    ? nfs.reduce((acc, nf) => acc + (Number(nf.prod_valor) || 0) + (Number(nf.serv_valor) || 0), 0)
-    : Number(g.nf_valor_produto) || 0
-  const nfData = nfs.length ? nfs.find(nf => nf.data_faturamento)?.data_faturamento : g.nf_peca_data
+  const danfes = nfs.filter(nf => Number(nf.prod_valor) > 0)
+  const nfses = nfs.filter(nf => Number(nf.serv_valor) > 0 && !(Number(nf.prod_valor) > 0))
+  const numeroNf = (numero) => String(numero || '').split('/').map(x => x.trim()).filter(Boolean).pop() || ''
+  const juntarNumeros = (lista) => lista.map(nf => numeroNf(nf.numero)).filter(Boolean).join(', ')
+  // "Nota Fiscal de Peças ao Cliente": só DANFE; sem DANFE, campos gravados na garantia.
+  const nfNumero = danfes.length ? juntarNumeros(danfes) : (g.nf_peca_numero || '')
+  const nfValor = danfes.length ? valorPecasNotas(g) : Number(g.nf_valor_produto) || 0
+  const nfData = danfes.length ? danfes.find(nf => nf.data_faturamento)?.data_faturamento : g.nf_peca_data
+  // Número da Nota de Débito: NFS-e; sem NFS-e, a DANFE de peças.
+  const numeroNotaNf = nfses.length ? juntarNumeros(nfses) : juntarNumeros(danfes)
   return {
     'nota.numero': n.numero || '',
+    'nota.numero_nf': numeroNotaNf,
     'nota.data_emissao': fmtDataBR(n.data_emissao),
     'empresa.razao_social': e.nome_empresa || '',
     'empresa.fantasia': e.empresa_fantasia || '',

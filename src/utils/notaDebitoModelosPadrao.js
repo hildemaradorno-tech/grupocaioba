@@ -58,7 +58,7 @@ export const MODELOS_PADRAO = [
 
   <div style="${SEC}margin-top:12px;">Dados da Nota de Débito:</div>
   <table style="width:100%;border-collapse:collapse;font-size:12px;">
-    <tr><td style="${LBL}width:50%;"><b>Número:</b></td><td style="${LBL}"><b>Data de emissão:</b> {{nota.data_emissao}}</td></tr>
+    <tr><td style="${LBL}width:50%;"><b>Número:</b> {{nota.numero_nf}}</td><td style="${LBL}"><b>Data de emissão:</b> {{nota.data_emissao}}</td></tr>
   </table>
 
   <div style="${SEC}margin-top:14px;">Nome do Concessionário: <span style="font-weight:normal;">{{empresa.razao_social}}</span></div>

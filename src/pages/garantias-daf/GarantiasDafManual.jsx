@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import {
   BookOpen, Settings, Activity, FileText, DollarSign, Receipt, Edit2, ListChecks, Database, Loader2,
-  RefreshCw, Eye, BarChart2, Search, AlertTriangle, ShieldCheck, FileSignature,
+  RefreshCw, Eye, BarChart2, Search, AlertTriangle, FileSignature,
 } from 'lucide-react'
 import { apiService } from '../../services/api'
 
@@ -15,7 +15,6 @@ const SECOES = [
   { id: 'receber',      label: 'Garantias DAF a Receber',   icon: DollarSign },
   { id: 'nota-debito',  label: 'Nota de Débito',            icon: FileSignature },
   { id: 'status',       label: 'Status da garantia',        icon: ListChecks },
-  { id: 'permissoes',   label: 'Permissões',                icon: ShieldCheck },
   { id: 'fontes',       label: 'Fontes de dados',           icon: Database },
 ]
 
@@ -92,17 +91,36 @@ function Btn({ icon: Icon, children }) {
 export default function GarantiasDafManual() {
   const [cfg, setCfg] = useState(null)
   const [tiposOS, setTiposOS] = useState([])
+  const [modelosNota, setModelosNota] = useState([])
   const [carregando, setCarregando] = useState(true)
 
   useEffect(() => {
     Promise.all([
       apiService.getConfiguracoesGarantias().catch(() => null),
       apiService.getTiposOS().catch(() => []),
-    ]).then(([c, t]) => {
+      apiService.getModelosNotaDebito().catch(() => []),
+    ]).then(([c, t, mn]) => {
       setCfg(c)
       setTiposOS(t)
+      setModelosNota(mn)
     }).finally(() => setCarregando(false))
   }, [])
+
+  // Tipo de OS de garantia → modelos de Nota de Débito vinculados (campo "Tipos de O.S." do modelo).
+  // Na emissão vale o primeiro modelo ATIVO do tipo, na ordem alfabética do nome (mesma ordem da lista).
+  const modelosPorTipo = useMemo(() => {
+    const siglasDoModelo = (m) => String(m.tipos_codigos || '').split(',').map(x => x.trim().toUpperCase()).filter(Boolean)
+    const tipos = new Map()
+    for (const t of tiposOS) {
+      const sigla = String(t.sigla ?? '').trim().toUpperCase()
+      if (sigla && t.classificacao === 'Garantia' && !tipos.has(sigla)) tipos.set(sigla, t.tipo_os || sigla)
+    }
+    return Array.from(tipos, ([sigla, descricao]) => {
+      const modelos = modelosNota.filter(m => siglasDoModelo(m).includes(sigla))
+      const usado = modelos.find(m => m.ativo)
+      return { sigla, descricao, modelos, usadoId: usado?.id }
+    }).sort((a, b) => a.sigla.localeCompare(b.sigla, 'pt-BR'))
+  }, [tiposOS, modelosNota])
 
   const diasDigitacao = cfg?.dias_digitacao ?? 14
   const diasOficina = cfg?.dias_oficina ?? 14
@@ -181,7 +199,7 @@ export default function GarantiasDafManual() {
             <p>
               Em todas as abas o painel <Btn icon={Search}>Filtros</Btn> fica sempre aberto, com o botão <strong>Limpar filtros</strong> quando
               há algum filtro preenchido. Nas tabelas, as ações de cada linha ficam dentro da engrenagem <Btn icon={Settings}>Ações</Btn>.
-              Botões que alteram dados só aparecem para quem tem a permissão liberada (veja <strong>Permissões</strong>).
+              Botões que alteram dados só aparecem para quem tem a permissão liberada em Grupos de Acessos.
             </p>
           </Secao>
 
@@ -398,11 +416,54 @@ export default function GarantiasDafManual() {
             <Itens itens={[
               ['Modelo', 'é escolhido automaticamente: o modelo vinculado ao tipo de OS da garantia. Se não houver, a tela avisa e indica onde cadastrar: Configurações → Cadastro de Tabelas → Tabelas de Garantia → Modelos de Nota de Débito.'],
               ['Data de emissão', 'sempre a data do dia — sai direto no PDF.'],
-              ['Item da nota', '"Peças substituídas em Garantia" (descrição e quantidade editáveis). O valor total é sempre o total das Notas Fiscais Emitidas e não é digitado; a quantidade só divide o valor unitário.'],
+              ['Item da nota', '"Peças substituídas em Garantia" (descrição e quantidade editáveis). O valor total é sempre o valor de peças (DANFE) das Notas Fiscais Emitidas e não é digitado; a quantidade só divide o valor unitário.'],
               ['Dados do Cliente', 'Nome = Proprietário do Veículo da garantia; Placa = placa gravada na garantia (vem dos arquivos do Dealer.net).'],
-              ['Dados da Nota Fiscal', 'vêm de Notas Fiscais Emitidas: Número = números de todas as NFs (coluna NFSe), Valor = Total geral (produto + serviço), Data = data de faturamento.'],
+              ['Dados da Nota de Débito', 'o Número é sempre o da Nota Fiscal de Serviços (NFS-e). Se a OS não possuir nota fiscal de serviços, o Número é o da DANFE (nota fiscal de peças).'],
+              ['Dados da Nota Fiscal de Peças ao Cliente', 'somente a DANFE (nota fiscal de peças): número, valor de peças e data de faturamento.'],
               ['Emitir e baixar PDF', 'gera o número da nota, grava a emissão e baixa o PDF. O nome do arquivo segue o padrão cadastrado no modelo (campo "Nome do arquivo PDF"), ex.: "O067692 - SB160956 - ND.pdf" = Nº SG + 8 últimos caracteres do chassi + ND. As notas já emitidas ficam listadas na mesma tela e podem ser baixadas de novo ou excluídas (Excluir → Sim, conforme permissão).'],
             ]} />
+            <Sub titulo="Modelo aplicado a cada tipo de OS">
+              <p>
+                Lista atual do cadastro (Configurações → Cadastro de Tabelas → Tabelas de Garantia → Modelos de Nota de Débito).
+                Quando um tipo tem mais de um modelo, a emissão usa o marcado como <strong>em uso</strong> (o primeiro ativo, por ordem de nome).
+              </p>
+              {carregando ? (
+                <p className="flex items-center gap-2 text-slate-400"><Loader2 className="h-4 w-4 animate-spin" /> Carregando modelos...</p>
+              ) : (
+                <div className="border border-slate-200 rounded-md overflow-hidden">
+                  <table className="w-full text-xs">
+                    <thead className="bg-slate-50 text-[10px] uppercase text-slate-400 font-bold">
+                      <tr><th className="text-left p-2">Tipo de OS</th><th className="text-left p-2">Modelo de Nota de Débito</th></tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {modelosPorTipo.map(t => (
+                        <tr key={t.sigla}>
+                          <td className="p-2 text-slate-700"><span className="font-mono font-bold text-slate-500 mr-2">{t.sigla}</span>{t.descricao}</td>
+                          <td className="p-2">
+                            {t.modelos.length === 0 ? (
+                              <span className="text-amber-700 font-semibold">Sem modelo — a emissão fica bloqueada até cadastrar</span>
+                            ) : (
+                              <div className="flex flex-col gap-0.5">
+                                {t.modelos.map(m => (
+                                  <span key={m.id} className={m.ativo ? 'text-slate-700' : 'text-slate-400 line-through'}>
+                                    {m.nome}
+                                    {m.id === t.usadoId && t.modelos.length > 1 && <span className="ml-1.5 px-1 py-0.5 rounded bg-green-100 text-green-700 text-[9px] font-bold no-underline">em uso</span>}
+                                    {!m.ativo && <span className="ml-1.5 text-[10px]">(inativo)</span>}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                      {modelosPorTipo.length === 0 && (
+                        <tr><td colSpan={2} className="p-2 text-slate-400">Nenhum tipo de OS de garantia cadastrado.</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Sub>
           </Secao>
 
           <Secao id="status" icon={ListChecks} titulo="Status da garantia">
@@ -417,35 +478,6 @@ export default function GarantiasDafManual() {
                       <td className="p-2 font-mono font-bold text-slate-700">{cod}</td>
                       <td className="p-2 text-slate-600">{desc}</td>
                       <td className="p-2 text-slate-500">{onde}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Secao>
-
-          <Secao id="permissoes" icon={ShieldCheck} titulo="Permissões">
-            <p>
-              Liberadas em <strong>Configurações → Grupos de Acessos</strong> (ou Matriz de Permissões). O acesso a cada aba é dado pelo
-              próprio menu; as ações abaixo só aparecem para quem as tiver marcadas. Consultas (Visualizar, Atualizar arquivo, Manual,
-              filtros e cards) ficam abertas para quem acessa a tela.
-            </p>
-            <div className="border border-slate-200 rounded-md overflow-hidden">
-              <table className="w-full text-xs">
-                <thead className="bg-slate-50 text-[10px] uppercase text-slate-400 font-bold">
-                  <tr><th className="text-left p-2 w-56">Menu</th><th className="text-left p-2">Ações</th></tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {[
-                    ['Garantias DAF na Oficina', 'Regras do Sistema'],
-                    ['Garantias DAF Aberto (com Garantista)', 'Editar OS · Excluir OS · Buscar NF · Regras do Sistema'],
-                    ['Histórico de O.S.', 'Importar OS Faturadas · Excluir OS'],
-                    ['Garantias DAF a Receber', 'Editar Título (observação) · Editar Faturamento · Emitir Nota de Débito · Excluir Nota de Débito'],
-                    ['Modelos de Nota de Débito', 'Criar Modelo · Editar Modelo · Excluir Modelo'],
-                  ].map(([menu, acoes]) => (
-                    <tr key={menu}>
-                      <td className="p-2 font-semibold text-slate-700">{menu}</td>
-                      <td className="p-2 text-slate-600">{acoes}</td>
                     </tr>
                   ))}
                 </tbody>

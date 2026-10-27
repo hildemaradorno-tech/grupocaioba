@@ -51,6 +51,7 @@ import {
 import { getPesos, setPeso, aplicarPesos } from '../services/kpiPesos.js'
 import { getMetasManuais, setMetaManual, aplicarMetasManuais } from '../services/kpiMetasManuais.js'
 import { getMetaPecasPeriodos, getMetaOficinaPeriodos, getMetaMecanicoPeriodos, getMetaMargemOficinaPeriodos, getMetaPecasBalcaoPeriodos, getMetaMargemBalcaoPeriodos, getMetaTrpPeriodos, getMetaTicketMedioPeriodos, getMetaFunilariaPeriodos, limparCacheMetas } from '../services/kpiMetas.js'
+import { getIndicadoresGarantia } from '../services/kpiGarantias.js'
 
 const router = Router()
 
@@ -439,6 +440,16 @@ const BLOCO_SERVICOS_TEMPLATE = [
       { id: 1, indicador: 'Faturamento Total Funilaria/Pintura (Departamento)', orientacao: '>', metrica: 'R$', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
     ],
   },
+  {
+    // Sem seletor de pessoa — exige empresa, igual aos outros setores. Contagem de O.S. de garantia
+    // (gar_garantias) pelas regras da tela Garantias DAF Aberto — ver kpiGarantias.js.
+    tituloGerente: 'SETOR GARANTIA',
+    cor: 'rose',
+    kpis: [
+      { id: 1, indicador: 'Digitação Atrasada',                              orientacao: '<', metrica: 'un', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      { id: 2, indicador: 'Aguardando Aprovação DAF fora do prazo',          orientacao: '<', metrica: 'un', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+    ],
+  },
 ]
 
 /**
@@ -464,7 +475,7 @@ function ticketMedioConsultor(consultorData) {
   return out
 }
 
-function mergeBlocoServicos(quadros, consultorData, mecanicoData, metaConsultor, metaMecanico, margemConsultor = null, metaTicket = null, oficinaData = null, chefeOficinaData = null, depFunilariaData = null) {
+function mergeBlocoServicos(quadros, consultorData, mecanicoData, metaConsultor, metaMecanico, margemConsultor = null, metaTicket = null, oficinaData = null, chefeOficinaData = null, depFunilariaData = null, garantiaData = null) {
   const r = (v) => (v != null ? Math.round(v) : null)
   const p = (v) => (v != null ? v : null)
 
@@ -510,6 +521,14 @@ function mergeBlocoServicos(quadros, consultorData, mecanicoData, metaConsultor,
     if (quadro.tituloGerente === 'SETOR FUNILARIA/PINTURA') {
       const kpis = quadro.kpis.map(kpi => {
         if (kpi.id === 1) return injectMeta(injectPeriods(kpi, depFunilariaData?.liquido ?? {}, r), depFunilariaData?.meta)
+        return kpi
+      })
+      return { ...quadro, kpis }
+    }
+    if (quadro.tituloGerente === 'SETOR GARANTIA') {
+      const kpis = quadro.kpis.map(kpi => {
+        if (kpi.id === 1) return injectPeriods(kpi, garantiaData?.digitacaoAtrasada ?? {}, p)
+        if (kpi.id === 2) return injectPeriods(kpi, garantiaData?.aguardandoForaPrazo ?? {}, p)
         return kpi
       })
       return { ...quadro, kpis }
@@ -819,11 +838,14 @@ router.get('/bloco3-servicos', requireConfig, wrap(async (req, res) => {
   const empresaOficina = req.query.empresaOficina || null
   const empresaChefeOficina = req.query.empresaChefeOficina || null
   const empresaFunilaria = req.query.empresaFunilaria || null
-  const QUADROS_EMPRESA = ['SETOR DE MECÂNICA', 'CHEFE DE OFICINA', 'SETOR FUNILARIA/PINTURA']
+  const empresaGarantia = req.query.empresaGarantia || null
+  const QUADROS_EMPRESA = ['SETOR DE MECÂNICA', 'CHEFE DE OFICINA', 'SETOR FUNILARIA/PINTURA', 'SETOR GARANTIA']
   const soOficina = QUADROS_EMPRESA.includes(req.query.apenas)
   const refresh = !!req.query.refresh
 
-  const [base, oficina, chefeOficina, funilaria] = await Promise.all([
+  // SETOR GARANTIA lê o Supabase (gar_garantias) ao vivo — consulta leve e muda a cada atualização
+  // de garantia, então não passa pelo cache da base.
+  const [base, oficina, chefeOficina, funilaria, garantia] = await Promise.all([
     soOficina ? null : obterBaseBloco3Servicos(`bloco3-servicos|${year}|${consultor || ''}|${mecanico || ''}`,
       () => montarBaseBloco3Servicos(year, consultor, mecanico), { refresh }),
     empresaOficina ? obterBaseBloco3Servicos(`bloco3-servicos-oficina|${year}|${empresaOficina}`,
@@ -832,17 +854,16 @@ router.get('/bloco3-servicos', requireConfig, wrap(async (req, res) => {
       () => montarChefeOficinaBloco3Servicos(year, empresaChefeOficina), { refresh }) : null, // tem meta aprovada → checa aprovação
     empresaFunilaria ? obterBaseBloco3Servicos(`bloco3-servicos-funilaria|${year}|${empresaFunilaria}`,
       () => montarSetorFunilariaPinturaBloco3Servicos(year, empresaFunilaria), { refresh }) : null, // tem meta aprovada → checa aprovação
+    empresaGarantia ? getIndicadoresGarantia(year, empresaGarantia).catch(() => null) : null,
   ])
   const extras = mergeBlocoServicos(BLOCO_SERVICOS_TEMPLATE.filter(q => QUADROS_EMPRESA.includes(q.tituloGerente)),
-    null, null, null, null, null, null, oficina, chefeOficina, funilaria)
-  const quadroOficina = extras.find(q => q.tituloGerente === 'SETOR DE MECÂNICA')
-  const quadroChefeOficina = extras.find(q => q.tituloGerente === 'CHEFE DE OFICINA')
-  const quadroFunilaria = extras.find(q => q.tituloGerente === 'SETOR FUNILARIA/PINTURA')
-  const montados = (base || BLOCO_SERVICOS_TEMPLATE.filter(q => QUADROS_EMPRESA.includes(q.tituloGerente)))
-    .map(q => (q.tituloGerente === 'SETOR DE MECÂNICA' ? quadroOficina
-      : q.tituloGerente === 'CHEFE DE OFICINA' ? quadroChefeOficina
-      : q.tituloGerente === 'SETOR FUNILARIA/PINTURA' ? quadroFunilaria
-      : q))
+    null, null, null, null, null, null, oficina, chefeOficina, funilaria, garantia)
+  const porTitulo = Object.fromEntries(extras.map(q => [q.tituloGerente, q]))
+  // A base guardada em cache pode ser de antes de um quadro novo existir: segue a ordem do template.
+  const baseMap = Object.fromEntries((base || []).map(q => [q.tituloGerente, q]))
+  const montados = BLOCO_SERVICOS_TEMPLATE
+    .filter(q => base ? true : QUADROS_EMPRESA.includes(q.tituloGerente))
+    .map(q => porTitulo[q.tituloGerente] ?? baseMap[q.tituloGerente] ?? q)
 
   let quadros = aplicarPesos(montados, await getPesos('bloco3-servicos'))
   quadros = aplicarMetasManuais(quadros, await getMetasManuais('bloco3-servicos', year), year)

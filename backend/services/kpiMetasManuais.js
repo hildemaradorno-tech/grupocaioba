@@ -52,16 +52,19 @@ export function aplicarMetasManuais(quadros, metas, ano = null) {
       const meses = metas[key]
       if (!meses) return kpi
       const out = { ...kpi }
+      // Média (não soma): vale pros % e também pras quantidades do SETOR GARANTIA, que são a foto do
+      // dia — o trimestre/ano mostra o mesmo número do mês atual, não a soma dos meses.
+      const agregar = (vals) => vals.reduce((s, v) => s + v, 0) / vals.length
       for (const mk of Object.keys(meses)) {
         out[mk] = { ...(out[mk] ?? { meta: null, realizado: null }), meta: meses[mk] }
         for (const sk of semanasPorMes[mk] || []) out[sk] = { ...(out[sk] ?? { meta: null, realizado: null }), meta: meses[mk] }
       }
       for (const [qk, ms] of Object.entries(QUARTERS)) {
         const vals = ms.map(m => meses[m]).filter(v => v != null)
-        if (vals.length) out[qk] = { ...(out[qk] ?? { meta: null, realizado: null }), meta: vals.reduce((s, v) => s + v, 0) / vals.length }
+        if (vals.length) out[qk] = { ...(out[qk] ?? { meta: null, realizado: null }), meta: agregar(vals) }
       }
       const anoVals = Object.values(meses)
-      if (anoVals.length) out.fy = { ...(out.fy ?? { meta: null, realizado: null }), meta: anoVals.reduce((s, v) => s + v, 0) / anoVals.length }
+      if (anoVals.length) out.fy = { ...(out.fy ?? { meta: null, realizado: null }), meta: agregar(anoVals) }
       return out
     }),
   }))

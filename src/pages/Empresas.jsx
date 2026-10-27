@@ -61,6 +61,7 @@ export default function Empresas() {
     conta: ''
   })
   const [aba, setAba] = useState('gerais')
+  const [abaVis, setAbaVis] = useState('gerais')
   const [modalVisualizarAberto, setModalVisualizarAberto] = useState(false)
   const [itemVisualizado, setItemVisualizado] = useState(null)
   const [busca, setBusca] = useState('')
@@ -77,7 +78,7 @@ export default function Empresas() {
       : <ArrowDown className="h-3 w-3 text-blue-500" />
   const { hasActionOrDefault } = useAuth()
   const canEdit = hasActionOrDefault('empresas', 'editar')
-  const abrirVisualizar = (item) => { setItemVisualizado(item); setModalVisualizarAberto(true) }
+  const abrirVisualizar = (item) => { setItemVisualizado(item); setAbaVis('gerais'); setModalVisualizarAberto(true) }
 
   useEffect(() => {
     loadData()
@@ -798,116 +799,92 @@ export default function Empresas() {
         </div>
       )}
 
-      {/* MODAL: VISUALIZAR */}
-      {modalVisualizarAberto && itemVisualizado && (
-        <div className="fixed top-0 right-0 bottom-0 left-16 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg border border-slate-200 w-[540px] shadow-xl overflow-hidden">
-            <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50">
-              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2"><Eye className="h-4 w-4 text-slate-500" />Visualizar Empresa</h3>
-              <button onClick={() => setModalVisualizarAberto(false)} className="text-slate-400 hover:text-slate-600"><X className="h-4 w-4" /></button>
-            </div>
-            <div className="p-5 grid grid-cols-2 gap-3">
-              <div className="flex flex-col gap-0.5">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Código</span>
-                <span className="text-xs font-semibold text-slate-800">{itemVisualizado.codigo_empresa || '-'}</span>
-              </div>
-              <div className="flex flex-col gap-0.5">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Sigla</span>
-                <span className="text-xs font-semibold text-slate-800">{itemVisualizado.sigla_empresa || '-'}</span>
-              </div>
-              <div className="flex flex-col gap-0.5 col-span-2">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Empresa Fantasia</span>
-                <span className="text-xs font-semibold text-slate-800">{itemVisualizado.empresa_fantasia || '-'}</span>
-              </div>
-              <div className="flex flex-col gap-0.5 col-span-2">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Razão Social</span>
-                <span className="text-xs font-semibold text-slate-800">{itemVisualizado.nome_empresa || '-'}</span>
-              </div>
-              <div className="flex flex-col gap-0.5">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Marca</span>
-                <span className="text-xs font-semibold text-slate-800">{itemVisualizado.marca || '-'}</span>
-              </div>
-              <div className="flex flex-col gap-0.5">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">CNPJ</span>
-                <span className="text-xs font-mono font-semibold text-slate-800">{itemVisualizado.cnpj || '-'}</span>
-              </div>
-              <div className="flex flex-col gap-0.5">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Código Concessionária Fabricante</span>
-                <span className="text-xs font-mono font-semibold text-slate-800">{itemVisualizado.codigo_concessionaria || '-'}</span>
-              </div>
-              <div className="flex flex-col gap-0.5">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Sistema DMS</span>
-                <span className="text-xs font-semibold text-slate-800">{itemVisualizado.sistema_dms || '-'}</span>
-              </div>
-              <div className="flex flex-col gap-0.5">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Nº Filial Sistema</span>
-                <span className="text-xs font-mono font-semibold text-slate-800">{itemVisualizado.numero_filial || '-'}</span>
-              </div>
-              <div className="flex flex-col gap-0.5">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Código Empresa no Domínio</span>
-                <span className="text-xs font-mono font-semibold text-slate-800">{itemVisualizado.codigo_empresa_dominio || '-'}</span>
-              </div>
-              <div className="flex flex-col gap-0.5">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Segmento</span>
-                <span className="text-xs font-semibold text-slate-800">{itemVisualizado.segmento_nome || '-'}</span>
-              </div>
-              <div className="flex flex-col gap-0.5 col-span-2">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Agrupamento</span>
-                <span className="text-xs font-semibold text-slate-800">{itemVisualizado.agrupamento_nome || '-'}</span>
-              </div>
-              <div className="flex flex-col gap-0.5">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Inscrição Estadual</span>
-                <span className="text-xs font-mono font-semibold text-slate-800">{itemVisualizado.inscricao_estadual || '-'}</span>
-              </div>
-              <div className="flex flex-col gap-0.5">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Empresa Visual</span>
-                <span className="text-xs font-semibold text-slate-800">{itemVisualizado.empresa_visual ? 'Sim' : 'Não'}</span>
-              </div>
-              <div className="flex flex-col gap-0.5">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Telefone</span>
-                <span className="text-xs font-semibold text-slate-800">{itemVisualizado.telefone || '-'}</span>
-              </div>
-              <div className="flex flex-col gap-0.5 col-span-2">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Endereço</span>
-                <span className="text-xs font-semibold text-slate-800">{[itemVisualizado.endereco, itemVisualizado.numero].filter(Boolean).join(', ') || '-'}</span>
-              </div>
-              <div className="flex flex-col gap-0.5">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Bairro</span>
-                <span className="text-xs font-semibold text-slate-800">{itemVisualizado.bairro || '-'}</span>
-              </div>
-              <div className="flex flex-col gap-0.5">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">CEP</span>
-                <span className="text-xs font-mono font-semibold text-slate-800">{itemVisualizado.cep || '-'}</span>
-              </div>
-              <div className="flex flex-col gap-0.5">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Cidade / UF</span>
-                <span className="text-xs font-semibold text-slate-800">{[itemVisualizado.cidade, itemVisualizado.uf].filter(Boolean).join(' – ') || '-'}</span>
-              </div>
-              <div className="flex flex-col gap-0.5">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Banco</span>
-                <span className="text-xs font-semibold text-slate-800">{itemVisualizado.banco || '-'}</span>
-              </div>
-              <div className="flex flex-col gap-0.5">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Agência</span>
-                <span className="text-xs font-semibold text-slate-800">{itemVisualizado.agencia || '-'}</span>
-              </div>
-              <div className="flex flex-col gap-0.5">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Conta</span>
-                <span className="text-xs font-mono font-semibold text-slate-800">{itemVisualizado.conta || '-'}</span>
-              </div>
-              {itemVisualizado.nome_empresa_sistema && (
-                <div className="flex flex-col gap-0.5 col-span-2">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Nome Empresa no Sistema</span>
-                  <span className="text-xs font-semibold text-slate-800">{itemVisualizado.nome_empresa_sistema}</span>
-                </div>
-              )}
-            </div>
-            <div className="flex justify-end p-3 bg-slate-50 border-t border-slate-100">
-              <button onClick={() => setModalVisualizarAberto(false)} className="px-3 py-1.5 rounded-md text-xs font-semibold text-slate-600 hover:bg-slate-200/60 transition-colors">Fechar</button>
+      {/* MODAL: VISUALIZAR (mesmo layout e abas do Editar, só leitura) */}
+      {modalVisualizarAberto && itemVisualizado && (() => {
+        const v = itemVisualizado
+        const Campo = ({ label, valor, mono, span = '' }) => (
+          <div className={`flex flex-col gap-1 ${span}`}>
+            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">{label}</span>
+            <div className={`w-full min-h-[34px] text-xs p-2 border border-slate-200 rounded-md bg-slate-50 text-slate-800 ${mono ? 'font-mono' : 'font-medium'}`}>
+              {valor || <span className="text-slate-300">-</span>}
             </div>
           </div>
-        </div>
-      )}
+        )
+        return (
+          <div className="fixed top-0 right-0 bottom-0 left-16 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg border border-slate-200 w-[900px] shadow-xl overflow-hidden animate-scale-in">
+              <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50">
+                <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2"><Eye className="h-4 w-4 text-slate-500" />Visualizar Empresa</h3>
+                <button onClick={() => setModalVisualizarAberto(false)} className="text-slate-400 hover:text-slate-600"><X className="h-4 w-4" /></button>
+              </div>
+              <div className="flex gap-1 px-5 pt-3 border-b border-slate-100">
+                {[['gerais', 'Dados Gerais'], ['sistemas', 'Sistemas'], ['endereco', 'Endereço'], ['bancarios', 'Dados Bancários']].map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setAbaVis(id)}
+                    className={`px-3 py-2 text-xs font-semibold border-b-2 -mb-px transition-colors ${abaVis === id ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div className="p-5 grid grid-cols-2 gap-4 content-start min-h-[360px]">
+                {abaVis === 'gerais' && (
+                  <>
+                    <Campo label="Nome da Empresa (Razão Social)" valor={v.nome_empresa} />
+                    <Campo label="Empresa Fantasia" valor={v.empresa_fantasia} />
+                    <Campo label="CNPJ" valor={fmtCnpj(v.cnpj)} mono />
+                    <Campo label="Inscrição Estadual (I.E.)" valor={v.inscricao_estadual} mono />
+                    <Campo label="Código Concessionária Fabricante" valor={v.codigo_concessionaria} mono />
+                    <Campo label="Empresa Visual" valor={v.empresa_visual ? 'Sim' : 'Não'} />
+                    <div className="col-span-2 grid grid-cols-3 gap-4">
+                      <Campo label="Agrupamento Empresas" valor={v.agrupamento_nome} />
+                      <Campo label="Segmento" valor={v.segmento_nome} />
+                      <Campo label="Marca" valor={v.marca} />
+                    </div>
+                  </>
+                )}
+                {abaVis === 'sistemas' && (
+                  <>
+                    <Campo label="Sistema DMS" valor={v.sistema_dms} />
+                    <Campo label="Sigla Empresa Sistema" valor={v.sigla_empresa} />
+                    <Campo label="Código Empresa Sistema" valor={v.codigo_empresa} />
+                    <Campo label="Nº Filial Sistema" valor={v.numero_filial} mono />
+                    <Campo label="Nome Empresa no Sistema" valor={v.nome_empresa_sistema} />
+                    <Campo label="Código Empresa no Domínio" valor={v.codigo_empresa_dominio} mono />
+                  </>
+                )}
+                {abaVis === 'endereco' && (
+                  <>
+                    <div className="col-span-2 grid grid-cols-4 gap-4">
+                      <Campo label="Endereço" valor={v.endereco} span="col-span-3" />
+                      <Campo label="Nº" valor={v.numero} />
+                    </div>
+                    <div className="col-span-2 grid grid-cols-6 gap-4">
+                      <Campo label="Bairro" valor={v.bairro} span="col-span-2" />
+                      <Campo label="Cidade" valor={v.cidade} span="col-span-2" />
+                      <Campo label="UF" valor={v.uf} />
+                      <Campo label="CEP" valor={v.cep} mono />
+                    </div>
+                    <Campo label="Telefone" valor={v.telefone} />
+                  </>
+                )}
+                {abaVis === 'bancarios' && (
+                  <div className="col-span-2 grid grid-cols-3 gap-4">
+                    <Campo label="Banco" valor={v.banco} />
+                    <Campo label="Agência" valor={v.agencia} />
+                    <Campo label="Conta" valor={v.conta} mono />
+                  </div>
+                )}
+              </div>
+              <div className="flex justify-end p-3 bg-slate-50 border-t border-slate-100">
+                <button onClick={() => setModalVisualizarAberto(false)} className="px-3 py-1.5 rounded-md text-xs font-semibold text-slate-600 hover:bg-slate-200/60 transition-colors">Fechar</button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* MODAL: EXCLUIR */}
       {modalExcluirAberto && (

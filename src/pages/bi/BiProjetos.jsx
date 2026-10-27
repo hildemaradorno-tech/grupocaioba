@@ -13,7 +13,7 @@ function StatTile({ icon: Icon, label, valor, from, to }) {
         <div className="p-1.5 bg-white/20 rounded-md"><Icon className="h-4 w-4" /></div>
         <p className="text-[11px] font-bold uppercase tracking-wide opacity-90">{label}</p>
       </div>
-      <p className="text-3xl font-bold leading-none">{valor}</p>
+      <p className="text-base font-bold leading-none">{valor}</p>
     </div>
   )
 }
