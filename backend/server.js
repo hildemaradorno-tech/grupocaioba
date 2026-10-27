@@ -26,6 +26,7 @@ import projetosManifestacoesRoutes from './routes/projetosManifestacoes.js'
 import auditAiRoutes from './routes/auditAi.js'
 import powerbiRoutes from './routes/powerbi.js'
 import agendamentoCrmRoutes from './routes/agendamentoCrm.js'
+import planosManutencaoRoutes from './routes/planosManutencao.js'
 import { iniciarSchedulerManifestacao } from './services/manifestacaoScheduler.js'
 import { iniciarSchedulerAuditoria } from './services/auditoriaAgendamento.js'
 
@@ -64,6 +65,7 @@ app.use('/api/truckpag', authMiddleware, truckpagRoutes)
 
 // ── Rotas BI Agendamento de Serviços (SharePoint — Campanhas CRM RCR038) ─────
 app.use('/api/agendamento-crm', authMiddleware, agendamentoCrmRoutes)
+app.use('/api/planos-manutencao', authMiddleware, planosManutencaoRoutes)
 
 // ── Rotas Google Calendar (OAuth + leitura de eventos) ───────────────────────
 // /callback é o redirect do Google (navegação do browser, sem cabeçalho Authorization): o `state`

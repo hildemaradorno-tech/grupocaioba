@@ -562,6 +562,7 @@ export default function SidebarLayout() {
             {canView('bi/projetos') && <FlyItem to="/bi/projetos" icon={FolderKanban} onClose={closeFlyout}>Gestão de Projetos</FlyItem>}
             {canView('bi/possibilidades') && <FlyItem to="/bi/possibilidades" icon={Gauge} onClose={closeFlyout}>Possibilidades</FlyItem>}
             {canView('bi/agendamento-servicos') && <FlyItem to="/bi/agendamento-servicos" icon={Calendar} onClose={closeFlyout}>Agendamento de Serviços</FlyItem>}
+            {canView('bi/planos-manutencao') && <FlyItem to="/bi/planos-manutencao" icon={Wrench} onClose={closeFlyout}>Planos de Manutenção</FlyItem>}
             {canViewSection('_bi.fontes-dados') && (
               <>
                 <div className="mx-3 my-2 border-t border-blue-800/50" />

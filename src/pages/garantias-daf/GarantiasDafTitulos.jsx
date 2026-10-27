@@ -18,6 +18,19 @@ const parseNFServico = (v) => {
   return parts.length >= 2 ? { rps: parts[0], nfse: parts[1] } : { rps: parts[0] || '—', nfse: parts[0] || '—' }
 }
 
+const ROTULO_SITUACAO = {
+  os_nao_vinculado: 'OS não vinculado',
+  faturamento_pendente: 'Faturamento pendente',
+  nf_nao_enviado: 'NF não enviado',
+  aguardando_pagamento: 'Aguard. Pagto',
+}
+const COR_SITUACAO = {
+  os_nao_vinculado: 'bg-orange-100 text-orange-700',
+  faturamento_pendente: 'bg-rose-100 text-rose-700',
+  nf_nao_enviado: 'bg-amber-100 text-amber-700',
+  aguardando_pagamento: 'bg-blue-100 text-blue-700',
+}
+
 export default function GarantiasDafTitulos() {
   const { isAdmin, empresasPermitidas, user, hasActionOrDefault, hasPermission } = useAuth()
   const canEditarTitulo = hasActionOrDefault('garantias-daf-titulos', 'editar')
@@ -33,7 +46,7 @@ export default function GarantiasDafTitulos() {
   const [filtroOS, setFiltroOS]                     = useState(() => location.state?.osNumero || '')
   const [titulosEmpresa, setTitulosEmpresa]         = useState('')
   const [tiposCadastrados, setTiposCadastrados]     = useState([])
-  // null | 'aguardando_pagamento' | 'os_nao_vinculado' | 'nf_nao_enviado'
+  // null | 'aguardando_pagamento' | 'os_nao_vinculado' | 'faturamento_pendente' | 'nf_nao_enviado'
   const [filtroSituacao, setFiltroSituacao]         = useState(null)
   const [filtroCritico, setFiltroCritico]           = useState(false)
   const [filtroCardSemVinculo, setFiltroCardSemVinculo] = useState(false)
@@ -79,7 +92,9 @@ export default function GarantiasDafTitulos() {
     loadTitulos()
     loadTitulosObs()
     const filtrosEmpresa = isAdmin ? {} : { empresa_ids: [...empresasPermitidas] }
-    apiService.getGarantias({ ...filtrosEmpresa, status_in: ['E', 'F'] })
+    // Todas as garantias (qualquer status): o título se vincula à OS mesmo antes de ela ter NF
+    // lançada (ex.: FA — Aprovada aguardando faturamento).
+    apiService.getGarantias({ ...filtrosEmpresa })
       .then(setGarantias)
       .catch(() => {})
   }, [isAdmin, empresasPermitidas])
@@ -103,18 +118,27 @@ export default function GarantiasDafTitulos() {
     [titulosRows]
   )
 
-  // OS presentes em Histórico de O.S. — usado para saber se o título tem vínculo
+  const noHistorico = (g) => ['E', 'F'].includes(g.status_codigo)
+
+  // OS cadastradas no sistema (qualquer status) — o título tem vínculo
   const garantiasOsSet = useMemo(
     () => new Set(garantias.map(g => String(g.numero_os ?? '').trim()).filter(Boolean)),
     [garantias]
   )
+  // OS já no Histórico de O.S. (NF lançada: status E ou F)
+  const historicoOsSet = useMemo(
+    () => new Set(garantias.filter(noHistorico).map(g => String(g.numero_os ?? '').trim()).filter(Boolean)),
+    [garantias]
+  )
 
-  // Mapa OS → id da garantia — usado para navegar até a OS vinculada
+  // Mapa OS → id da garantia — usado para navegar até a OS vinculada. Se houver mais de uma
+  // garantia com o mesmo nº de OS, prefere a que já está no Histórico.
   const garantiaIdByOS = useMemo(() => {
     const m = new Map()
     for (const g of garantias) {
       const osNum = String(g.numero_os ?? '').trim()
-      if (osNum) m.set(osNum, g.id)
+      if (!osNum) continue
+      if (!m.has(osNum) || noHistorico(g)) m.set(osNum, g.id)
     }
     return m
   }, [garantias])
@@ -175,15 +199,15 @@ export default function GarantiasDafTitulos() {
   const ehAVencer   = (r) => !!r.data_vencimento && r.data_vencimento > hojeISO
 
   // Classifica a linha numa única "Situação" (mesma lógica exibida na coluna da tabela e no modal
-  // Visualizar). Ordem obrigatória: 1) OS precisa estar vinculada — sem isso, nem faz sentido
-  // olhar a NF; 2) só então verifica se a NF foi enviada à fábrica; 3) com os dois OK, é só
-  // "Aguard. Pagto" (a data exata de vencimento já aparece na coluna Vencto./Atr.).
+  // Visualizar). Ordem: 1) OS cadastrada no sistema; 2) OS já com faturamento lançado (Histórico,
+  // status E/F); 3) NF enviada à fábrica; 4) com tudo OK, "Aguard. Pagto".
   const situacaoDeLinha = useCallback((r) => {
-    const vinculado = garantiasOsSet.has(String(r.os_numero ?? '').trim())
-    if (!vinculado) return 'os_nao_vinculado'
+    const osKey = String(r.os_numero ?? '').trim()
+    if (!garantiasOsSet.has(osKey)) return 'os_nao_vinculado'
+    if (!historicoOsSet.has(osKey)) return 'faturamento_pendente'
     if (!temEnvioTitulo(r)) return 'nf_nao_enviado'
     return 'aguardando_pagamento'
-  }, [garantiasOsSet, temEnvioTitulo])
+  }, [garantiasOsSet, historicoOsSet, temEnvioTitulo])
 
   // Aplica somente os filtros de base (tipo cadastrado, empresa, período, busca) — usado para os
   // cards de alerta, que devem refletir contagens absolutas independentes dos filtros de situação.
@@ -596,6 +620,10 @@ export default function GarantiasDafTitulos() {
             className={`whitespace-nowrap flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold rounded-full border transition-colors ${filtroSituacao === 'os_nao_vinculado' ? 'bg-orange-600 text-white border-orange-600' : 'bg-orange-50 text-orange-700 border-orange-200 hover:bg-orange-100'}`}
           ><Link2Off className="h-3 w-3" /> OS não vinculado</button>
           <button type="button"
+            onClick={() => toggleFiltroSituacao('faturamento_pendente')}
+            className={`whitespace-nowrap flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold rounded-full border transition-colors ${filtroSituacao === 'faturamento_pendente' ? 'bg-rose-600 text-white border-rose-600' : 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'}`}
+          ><Receipt className="h-3 w-3" /> Faturamento pendente</button>
+          <button type="button"
             onClick={() => toggleFiltroSituacao('nf_nao_enviado')}
             className={`whitespace-nowrap flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold rounded-full border transition-colors ${filtroSituacao === 'nf_nao_enviado' ? 'bg-amber-600 text-white border-amber-600' : 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'}`}
           ><ArrowDown className="h-3 w-3" /> NF não enviado</button>
@@ -654,20 +682,15 @@ export default function GarantiasDafTitulos() {
                 const danfeKey = String(r.nota_fiscal || '').trim()
                 const dataEnvio = envioMap.get(`${osKey}||${danfeKey}`) ?? envioMap.get(osKey) ?? null
                 const garantiaId = garantiaIdByOS.get(osKey)
-                const semOS = !garantiaId
-                const semNF = !dataEnvio
-                const situacaoTitulo = semOS ? 'OS não vinculado'
-                  : semNF ? 'NF não enviado'
-                  : 'Aguard. Pagto'
-                const corSituacao = semOS ? 'bg-orange-100 text-orange-700'
-                  : semNF ? 'bg-amber-100 text-amber-700'
-                  : 'bg-blue-100 text-blue-700'
+                const sitKey = situacaoDeLinha(r)
+                const situacaoTitulo = ROTULO_SITUACAO[sitKey]
+                const corSituacao = COR_SITUACAO[sitKey]
                 const irParaOS = () => {
                   if (garantiaId) navigate(`/garantias-daf/${garantiaId}`, { state: { from: '/garantias-daf-titulos' } })
-                  else alert(`A OS ${osKey || ''} deste título ainda não está cadastrada em Histórico de O.S.`)
+                  else alert(`A OS ${osKey || ''} deste título ainda não está cadastrada no sistema.`)
                 }
                 const abrirVisualizarOS = () => {
-                  if (!garantiaId) { alert(`A OS ${osKey || ''} deste título ainda não está cadastrada em Histórico de O.S.`); return }
+                  if (!garantiaId) { alert(`A OS ${osKey || ''} deste título ainda não está cadastrada no sistema.`); return }
                   const g = garantiaById.get(garantiaId)
                   if (g) setModalVisualizarOS(g)
                 }
@@ -727,14 +750,11 @@ export default function GarantiasDafTitulos() {
         const osKey = String(t.os_numero ?? '').trim()
         const garantiaId = garantiaIdByOS.get(osKey)
         const atrasado = ehVencido(t)
-        const semOSModal = !garantiaId
-        const semNFModal = !t._dataEnvio
-        const situacao = semOSModal ? 'OS não vinculado'
-          : semNFModal ? 'NF não enviado'
-          : 'Aguard. Pagto'
+        const sitKeyModal = situacaoDeLinha(t)
+        const situacao = ROTULO_SITUACAO[sitKeyModal]
         const { rps, nfse } = parseNFServico(t.nota_fiscal_servico)
         const campos = [
-          { label: 'Situação',         valor: situacao, destaque: semOSModal || semNFModal || atrasado },
+          { label: 'Situação',         valor: situacao, destaque: sitKeyModal !== 'aguardando_pagamento' || atrasado },
           { label: 'Empresa',          valor: t.empresa },
           { label: 'Data Envio',       valor: t._dataEnvio ? fmtData(t._dataEnvio) : '—' },
           { label: 'Nro Lançamento',   valor: t.nro_lancamento },

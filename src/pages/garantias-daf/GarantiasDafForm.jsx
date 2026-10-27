@@ -423,6 +423,7 @@ export default function GarantiasDafForm() {
       params.set('tipoSigla', sigla)
       if (form.tipo_garantia_descricao?.trim()) params.set('tipoOS', form.tipo_garantia_descricao.trim())
       if (form.chassi?.trim()) params.set('chassi', form.chassi.trim())
+      if (form.data_abertura_os) params.set('dataAbertura', String(form.data_abertura_os).slice(0, 10))
       const res = await fetch(`${BACKEND_URL}/api/garantias/faturamento/${encodeURIComponent(form.numero_os.trim())}?${params}`)
       if (res.status === 404) {
         const body = await res.json().catch(() => ({}))

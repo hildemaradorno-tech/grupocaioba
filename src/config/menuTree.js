@@ -265,6 +265,7 @@ export const MENU_TREE = [
       { key: 'bi/projetos', label: 'BI — Gestão de Projetos' },
       { key: 'bi/possibilidades', label: 'BI — Possibilidades' },
       { key: 'bi/agendamento-servicos', label: 'BI — Agendamento de Serviços' },
+      { key: 'bi/planos-manutencao', label: 'BI — Planos de Manutenção' },
       {
         // Agrupamento de menu (sem navTo) — cada item abaixo é uma tela própria, não mais abas
         // de uma página única. Movido de Comissões pra cá junto com Medidas BI.

@@ -393,8 +393,9 @@ export default function GarantiasDafManual() {
             </Sub>
             <Sub titulo="Situação de cada título">
               <Itens itens={[
-                ['OS não vinculado', 'a OS do título ainda não está no Histórico de O.S.'],
-                ['NF não enviado', 'OS vinculada, mas a NF ainda não foi enviada à fábrica.'],
+                ['OS não vinculado', 'a OS do título não está cadastrada no sistema (importe em Histórico de O.S. → Importar).'],
+                ['Faturamento pendente', 'a OS está no sistema (ex.: Aprovada) mas ainda sem nota fiscal lançada. Use Ações → Editar Faturamento → Buscar Faturamento e salve: a OS vai para E — Nota Fiscal Emitida e passa ao Histórico de O.S.'],
+                ['NF não enviado', 'OS com faturamento lançado, mas a NF ainda não foi enviada à fábrica.'],
                 ['Aguard. Pagto', 'OS vinculada e NF enviada — falta só o pagamento.'],
               ]} />
             </Sub>

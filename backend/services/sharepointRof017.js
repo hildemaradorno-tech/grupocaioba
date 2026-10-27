@@ -214,6 +214,26 @@ export async function getAllFaturamentosRof017(dataInicio, dataFim, numeroOS = n
   return Array.from(osMap.values())
 }
 
+/**
+ * Data de abertura (OS_DataCriacao) e placa de cada OS, por "OS_Numero|Chassi", lendo só os anos pedidos.
+ * Usado pelo BI Planos de Manutenção: o ROF042 não traz a abertura da OS. O chassi entra na chave porque
+ * o Dealer.net reaproveita números de OS entre unidades/anos.
+ */
+export async function getAberturaOsRof017(anos) {
+  const rows = await loadAllRows(anos)
+  const m = new Map()
+  for (const r of rows) {
+    const os = String(r.OS_Numero ?? '').trim()
+    const chassi = String(r.Veiculo_Chassi ?? '').trim().toUpperCase()
+    if (!os || !chassi || m.has(`${os}|${chassi}`)) continue
+    m.set(`${os}|${chassi}`, {
+      data_abertura: toIsoDate(r.OS_DataCriacao),
+      placa: String(r.OS_VeiculoPlaca ?? '').trim(),
+    })
+  }
+  return m
+}
+
 /** Retorna colunas e amostra para diagnóstico */
 export async function getRof017Colunas() {
   const rows = await loadAllRows()
@@ -235,8 +255,17 @@ export async function getRof017Colunas() {
  * garantir que só entrem NFs do OS/ano correto; sem chassi, cai no filtro antigo (OS+sigla).
  * Deduplica por NotaFiscal_Numero e retorna lista de NFs com data de faturamento.
  */
-export async function getFaturamentoPorOSRof017(numeroOS, tipoOS, tipoSigla, chassi) {
-  const rows = await loadAllRows()
+export async function getFaturamentoPorOSRof017(numeroOS, tipoOS, tipoSigla, chassi, dataAbertura = null) {
+  // Uma OS só é faturada depois de aberta: com a data de abertura, lê só os arquivos do ano de
+  // abertura até o ano atual (bem mais rápido e evita OS de mesmo número de anos anteriores).
+  let anos = null
+  const anoAbertura = Number(String(dataAbertura || '').slice(0, 4))
+  const anoAtual = new Date().getFullYear()
+  if (Number.isFinite(anoAbertura) && anoAbertura >= 2000 && anoAbertura <= anoAtual) {
+    anos = []
+    for (let a = anoAbertura; a <= anoAtual; a++) anos.push(a)
+  }
+  const rows = await loadAllRows(anos)
   const osStr     = String(numeroOS ?? '').trim()
   const siglaStr  = String(tipoSigla ?? '').trim().toUpperCase()
   const chassiStr = String(chassi ?? '').trim().toUpperCase()
