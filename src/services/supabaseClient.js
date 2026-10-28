@@ -5723,19 +5723,26 @@ export const apiService = {
 
   getTruckPagRepasses: async (filtros = {}) => {
     // Supabase/PostgREST limita a 1000 linhas por requisição por padrão — o histórico de
-    // repasses já passa bem disso (~5 mil linhas), então pagina em blocos até esgotar.
+    // repasses já passa bem disso (~6 mil linhas), então pagina em blocos até esgotar.
+    // Pagina por CURSOR (id > último visto), não por OFFSET: com OFFSET, cada página reavalia a
+    // política de RLS (checa permissão de menu) em todas as linhas já puladas também — na página
+    // 5 isso já significa reavaliar ~5000 linhas de novo, e o SELECT estourava o statement_timeout
+    // (8s) assim que a tabela passou de uns milhares de linhas. Por cursor, cada página só avalia
+    // as linhas que ela de fato traz. A ordenação por `id` não importa pra tela (ela reordena por
+    // data/empresa do jeito que quiser depois).
     const PAGE = 1000
-    let inicio = 0
+    let ultimoId = null
     let todos = []
     while (true) {
-      let q = supabase.from('truckpag_repasses').select('*').order('data_pagamento', { ascending: false }).range(inicio, inicio + PAGE - 1)
+      let q = supabase.from('truckpag_repasses').select('*').order('id', { ascending: true }).limit(PAGE)
+      if (ultimoId) q = q.gt('id', ultimoId)
       if (filtros.dataInicio) q = q.gte('data_pagamento', filtros.dataInicio)
       if (filtros.dataFim) q = q.lte('data_pagamento', filtros.dataFim)
       const { data, error } = await q
       if (error) throw error
       todos = todos.concat(data || [])
       if (!data || data.length < PAGE) break
-      inicio += PAGE
+      ultimoId = data[data.length - 1].id
     }
     return todos
   },
