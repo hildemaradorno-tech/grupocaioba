@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo, Fragment } from 'react'
 import { Loader2, ChevronRight, ChevronDown, FileText, Clock, CheckCircle2, XCircle, AlertTriangle, BarChart2, Eye, X } from 'lucide-react'
 import { apiService } from '../../services/api'
-import { useAuth } from '../../context/AuthContext'
+import { useEmpresasGarantias } from '../../hooks/useEmpresasGarantias'
 
 const fmtMoeda = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const fmtData  = (s) => { if (!s) return ''; try { return new Date(String(s).slice(0, 10) + 'T12:00:00').toLocaleDateString('pt-BR') } catch { return s } }
@@ -327,7 +327,8 @@ function CardTotalAberto({ total, distintas, pecas, servicos, geral }) {
 // Dashboard "Garantias em Aberto (Encerradas)" — cards por grupo de status, tabela pivot
 // Status × Mês/Ano com drill-down (Tipo de OS → Status Atual) e tabela de detalhamento por OS.
 export default function GarantiasAbertoDashboard({ onLastModified }) {
-  const { isAdmin, empresasPermitidas } = useAuth()
+  // Empresas do usuário (inclusive em "Visualizar como")
+  const { filtrosEmpresa } = useEmpresasGarantias()
   const [dados, setDados] = useState([])
   const [diasDigitacao, setDiasDigitacao] = useState(14)
   useEffect(() => {
@@ -371,12 +372,11 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
 
   useEffect(() => {
     setLoading(true)
-    const filtrosEmpresa = isAdmin ? {} : { empresa_ids: [...empresasPermitidas] }
     apiService.getGarantias({ ...filtrosEmpresa, status_not_in: ['E', 'F'] })
       .then(setDados)
       .catch(() => setDados([]))
       .finally(() => setLoading(false))
-  }, [isAdmin, empresasPermitidas])
+  }, [filtrosEmpresa])
 
   // Data de modificação do arquivo-fonte (ROF001_OSABERTA_ENCERRADA) — só para referência,
   // os dados exibidos aqui vêm do Supabase (importados previamente), não ao vivo do arquivo.

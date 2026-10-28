@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { X, FileText, Download, Loader2, Trash2 } from 'lucide-react'
+import { X, FileText, Download, Loader2, Trash2, AlertTriangle } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { apiService } from '../../services/api'
 import { useResponsavelNota } from '../../hooks/useResponsavelNota'
@@ -14,7 +14,7 @@ const hoje = () => {
 }
 
 // Gera o PDF de um HTML já preenchido, usando um elemento fora da tela
-async function baixarPdf(html, nomeArquivo) {
+async function baixarPdf(html, nomeArquivo, rodape = '') {
   const el = document.createElement('div')
   el.style.cssText = 'position:fixed;left:-10000px;top:0;width:794px;background:#fff;'
   el.innerHTML = html
@@ -22,7 +22,7 @@ async function baixarPdf(html, nomeArquivo) {
   try {
     // aguarda imagens (logo) carregarem
     await Promise.all([...el.querySelectorAll('img')].map(img => img.complete ? null : new Promise(r => { img.onload = r; img.onerror = r })))
-    await gerarPdfDeElemento(el, nomeArquivo)
+    await gerarPdfDeElemento(el, nomeArquivo, rodape)
   } finally { document.body.removeChild(el) }
 }
 
@@ -48,6 +48,9 @@ export default function EmitirNotaDebitoModal({ garantia, garantiaId, empresas, 
   const [loading, setLoading] = useState(true)
   const [gerando, setGerando] = useState(false)
   const [erro, setErro] = useState(null)
+  // Alerta antes de baixar (emissão nova ou PDF de nota já emitida): conferir o PDF antes de enviar ao
+  // fabricante. Guarda o que fazer no OK: { mensagem, acao }.
+  const [avisoConferir, setAvisoConferir] = useState(null)
 
   const carregar = async () => {
     try {
@@ -68,17 +71,25 @@ export default function EmitirNotaDebitoModal({ garantia, garantiaId, empresas, 
 
   const modelo = modelos.find(m => m.id === modeloId)
 
+  // Nome, cargo e assinatura são sempre do usuário logado — inclusive ao baixar de novo uma nota já emitida.
   const contextoPara = (mod, { numero, data, placaUsada, itensUsados }) => montarContextoNota({
     empresa, garantia, statusLabel, logo: mod?.logo, responsavel,
     nota: { numero, data_emissao: data, placa: placaUsada },
     itens: itensUsados,
   })
+  // Rodapé discreto com quem emitiu a nota pela primeira vez e quando (fica igual ao baixar de novo).
+  // Vai na margem inferior da 1ª página do PDF, fora do conteúdo do modelo.
+  const rodapeEmissao = (emissao) => {
+    if (!emissao?.em) return ''
+    const quando = new Date(emissao.em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+    return `Emitida pela primeira vez por ${emissao.nome || ''} em ${quando}`
+  }
   const htmlPara = (mod, args) => renderizarModelo(mod?.conteudo_html || '', contextoPara(mod, args))
   const arquivoPara = (mod, args) => nomeArquivoNota(mod?.nome_arquivo, contextoPara(mod, args))
 
   const preview = useMemo(
     () => modelo ? htmlPara(modelo, { numero: '', data: dataEmissao, itensUsados: itens }) : '',
-    [modelo, dataEmissao, itens, empresa, garantia, statusLabel, responsavel.nome, responsavel.cargo]
+    [modelo, dataEmissao, itens, empresa, garantia, statusLabel, responsavel.nome, responsavel.cargo, responsavel.assinatura]
   )
 
   const emitir = async () => {
@@ -88,11 +99,12 @@ export default function EmitirNotaDebitoModal({ garantia, garantiaId, empresas, 
       const nota = await apiService.emitirNotaDebito({
         modelo, garantiaId, empresaId: garantia.empresa_id || null, dataEmissao,
         valorTotal: valorNotas || null,
-        dados: { itens, responsavel }, usuario,
+        dados: { itens, responsavel: { nome: responsavel.nome, cargo: responsavel.cargo } }, usuario,
       })
       await baixarPdf(
         htmlPara(modelo, { numero: nota.numero, data: dataEmissao, itensUsados: itens }),
-        arquivoPara(modelo, { numero: nota.numero, data: dataEmissao, itensUsados: itens })
+        arquivoPara(modelo, { numero: nota.numero, data: dataEmissao, itensUsados: itens }),
+        rodapeEmissao({ nome: responsavel.nome || usuario, em: nota.criado_em || new Date().toISOString() })
       )
       await carregar()
     } catch (e) { setErro(e.message || String(e)) }
@@ -106,7 +118,8 @@ export default function EmitirNotaDebitoModal({ garantia, garantiaId, empresas, 
     try {
       await baixarPdf(
         htmlPara(mod, { numero: n.numero, data: n.data_emissao, placaUsada: n.dados_json?.placa, itensUsados: n.dados_json?.itens || [] }),
-        arquivoPara(mod, { numero: n.numero, data: n.data_emissao, placaUsada: n.dados_json?.placa, itensUsados: n.dados_json?.itens || [] })
+        arquivoPara(mod, { numero: n.numero, data: n.data_emissao, placaUsada: n.dados_json?.placa, itensUsados: n.dados_json?.itens || [] }),
+        rodapeEmissao({ nome: n.dados_json?.responsavel?.nome || n.criado_por, em: n.criado_em })
       )
     } catch (e) { setErro(e.message || String(e)) }
     finally { setGerando(false) }
@@ -176,7 +189,7 @@ export default function EmitirNotaDebitoModal({ garantia, garantiaId, empresas, 
                         </span>
                       ) : (
                         <span className="flex items-center gap-3">
-                          <button type="button" disabled={gerando} onClick={() => baixarEmitida(n)} className="text-indigo-600 hover:underline flex items-center gap-1">
+                          <button type="button" disabled={gerando} onClick={() => setAvisoConferir({ mensagem: `Ao clicar em OK, o PDF da Nota de Débito ${n.numero} será baixado.`, acao: () => baixarEmitida(n) })} className="text-indigo-600 hover:underline flex items-center gap-1">
                             <Download className="h-3 w-3" /> PDF
                           </button>
                           {canExcluirNota && (
@@ -203,13 +216,38 @@ export default function EmitirNotaDebitoModal({ garantia, garantiaId, empresas, 
 
         <div className="flex items-center justify-end gap-2 p-3 bg-slate-50 border-t border-slate-100">
           <button onClick={onClose} className="px-3 py-1.5 rounded-md text-xs font-semibold text-slate-600 hover:bg-slate-200/60">Fechar</button>
-          <button onClick={emitir} disabled={gerando || !modelo}
+          <button onClick={() => setAvisoConferir({ mensagem: 'Ao clicar em OK, a Nota de Débito será emitida e o PDF será baixado.', acao: emitir })} disabled={gerando || !modelo}
             className="flex items-center gap-1.5 px-4 py-1.5 rounded-md text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50">
             {gerando ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
             {gerando ? 'Gerando...' : 'Emitir e baixar PDF'}
           </button>
         </div>
       </div>
+
+      {avisoConferir && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 p-4">
+          <div role="alertdialog" aria-modal="true" className="bg-white rounded-lg border-2 border-amber-300 shadow-2xl w-full max-w-md overflow-hidden">
+            <div className="flex items-center gap-2 px-5 py-3 bg-amber-50 border-b border-amber-200">
+              <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0" />
+              <h4 className="text-sm font-bold text-amber-800">Atenção: confira a Nota de Débito</h4>
+            </div>
+            <div className="px-5 py-4 space-y-2 text-xs text-slate-700 leading-relaxed">
+              <p>{avisoConferir.mensagem}</p>
+              <p className="font-semibold text-slate-900">
+                Antes de enviar ao fabricante, abra o arquivo e leia todas as informações do documento para confirmar se estão corretas
+                (dados da concessionária, processo de garantia, notas fiscais, valores, cliente/placa e assinatura).
+              </p>
+              <p>Se algo estiver errado, corrija os dados da garantia e gere a nota novamente.</p>
+            </div>
+            <div className="flex justify-end px-5 py-3 bg-slate-50 border-t border-slate-100">
+              <button type="button" autoFocus onClick={() => { const { acao } = avisoConferir; setAvisoConferir(null); acao() }}
+                className="px-5 py-1.5 rounded-md text-xs font-bold text-white bg-amber-600 hover:bg-amber-700">
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

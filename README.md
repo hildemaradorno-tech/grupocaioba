@@ -9,19 +9,22 @@ Sistema React com Supabase para controle de acesso por grupo.
 1. **Configure Supabase** seguindo o guia acima
 
 2. **Crie `.env.local` na raiz:**
+
    - Copie o arquivo `.env.local.example`
    - Renomeie para `.env.local`
    - Preencha com suas credenciais do Supabase
 
 3. **Instale dependências:**
-```bash
-npm install
-```
+
+   ```bash
+   npm install
+   ```
 
 4. **Rode o projeto:**
-```bash
-npm run dev
-```
+
+   ```bash
+   npm run dev
+   ```
 
 Acesse: `http://localhost:3000`
 
@@ -35,7 +38,7 @@ Acesse: `http://localhost:3000`
 
 ## Estrutura
 
-```
+```text
 src/
 ├── pages/          # Páginas do sistema
 ├── layouts/        # Layouts compartilhados
@@ -45,11 +48,13 @@ src/
 
 ## Menus Disponíveis
 
-**Configurações**
+### Configurações
+
 - Usuários
 - Grupos de Acessos
 
-**Cadastro de Tabelas**
+### Cadastro de Tabelas
+
 - Agrupamento Empresas
 - Empresas
 - Departamentos

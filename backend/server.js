@@ -15,7 +15,7 @@ import jwt from 'jsonwebtoken'
 import kpiRoutes       from './routes/kpi.js'
 import garantiasRoutes from './routes/garantias.js'
 import calculoComissaoRoutes from './routes/calculoComissao.js'
-import { authMiddleware, requireMenu } from './middleware/authMiddleware.js'
+import { authMiddleware, requireMenu, requireMenuLike, filtrarPorEmpresa } from './middleware/authMiddleware.js'
 import biMedidasRoutes from './routes/biMedidas.js'
 import rhFeriasRoutes from './routes/rhFerias.js'
 import hondaRoutes from './routes/honda.js'
@@ -40,31 +40,31 @@ app.options('*', cors())
 app.use(express.json({ limit: '20mb' }))
 
 // ── Rotas da Matriz KPIs (SharePoint / Microsoft Graph) ──────────────────────
-app.use('/api/kpi', authMiddleware, kpiRoutes)
+app.use('/api/kpi', authMiddleware, requireMenuLike('kpi', 'bi', 'metas', 'integracoes'), kpiRoutes)
 
 // ── Rotas Garantias DAF (SharePoint ROF001_OSABERTA) ─────────────────────────
-app.use('/api/garantias', authMiddleware, garantiasRoutes)
+app.use('/api/garantias', authMiddleware, requireMenuLike('garantia', 'bi/garantias', 'auditoria'), filtrarPorEmpresa, garantiasRoutes)
 
 // ── Rotas Fonte/Base de Cálculo (SharePoint genérico p/ comissões) ───────────
-app.use('/api/calculo-comissao', authMiddleware, calculoComissaoRoutes)
+app.use('/api/calculo-comissao', authMiddleware, requireMenu('calculo-comissoes', 'processamento-comissoes', 'cargos-remuneracoes', 'regras-faixas', 'rubricas', 'bases-calculo', 'fontes-calculo', 'fontes-microwork', 'funcionarios'), calculoComissaoRoutes)
 
 // ── Rotas Fonte BI / Medida BI (SharePoint genérico p/ dashboards de BI) ─────
-app.use('/api/bi-medidas', authMiddleware, biMedidasRoutes)
+app.use('/api/bi-medidas', authMiddleware, requireMenuLike('bi'), biMedidasRoutes)
 
 // ── Rotas RH Férias (SharePoint Relacao de Ferias Calculadas) ─────────────────
-app.use('/api/rh-ferias', authMiddleware, rhFeriasRoutes)
+app.use('/api/rh-ferias', authMiddleware, requireMenu('ferias', 'calculo-comissoes', 'processamento-comissoes', 'funcionarios'), rhFeriasRoutes)
 
 // ── Rotas Honda (integração MicroWork Cloud) ──────────────────────────────────
-app.use('/api/honda', authMiddleware, hondaRoutes)
+app.use('/api/honda', authMiddleware, requireMenuLike('honda'), hondaRoutes)
 
 // ── Rotas MicroWork Cloud genéricas (relatórios cadastrados em dim_fontes_microwork) ─────────
-app.use('/api/microwork', authMiddleware, microworkRoutes)
+app.use('/api/microwork', authMiddleware, requireMenuLike('fontes-microwork', 'auditoria', 'calculo-comissoes', 'processamento-comissoes', 'honda', 'bi'), microworkRoutes)
 
 // ── Rotas TruckPag (SharePoint — Financeiro DAF) ─────────────────────────────
-app.use('/api/truckpag', authMiddleware, truckpagRoutes)
+app.use('/api/truckpag', authMiddleware, requireMenuLike('truckpag', 'bi/truckpag'), filtrarPorEmpresa, truckpagRoutes)
 
 // ── Rotas BI Agendamento de Serviços (SharePoint — Campanhas CRM RCR038) ─────
-app.use('/api/agendamento-crm', authMiddleware, agendamentoCrmRoutes)
+app.use('/api/agendamento-crm', authMiddleware, requireMenuLike('bi/agendamento-servicos'), filtrarPorEmpresa, agendamentoCrmRoutes)
 app.use('/api/planos-manutencao', authMiddleware, planosManutencaoRoutes)
 
 // ── Rotas Google Calendar (OAuth + leitura de eventos) ───────────────────────
@@ -73,10 +73,10 @@ app.use('/api/planos-manutencao', authMiddleware, planosManutencaoRoutes)
 app.use('/api/google-calendar', (req, res, next) => (req.path === '/callback' ? next() : authMiddleware(req, res, next)), googleCalendarRoutes)
 
 // ── Rotas Gestão de Projetos — Período de Manifestação (Etapa 2) ────────────
-app.use('/api/projetos', authMiddleware, projetosManifestacoesRoutes)
+app.use('/api/projetos', authMiddleware, requireMenuLike('projetos', 'bi/projetos'), projetosManifestacoesRoutes)
 
 // ── Rotas Gestão de Projetos — Auditoria Externa (Copiloto de IA) ───────────
-app.use('/api/audit-ai', authMiddleware, auditAiRoutes)
+app.use('/api/audit-ai', authMiddleware, requireMenuLike('auditoria-externa'), auditAiRoutes)
 
 // ── Leitura das views da Controladoria para o Power BI (token fixo POWERBI_TOKEN) ───
 app.use('/api/powerbi', powerbiRoutes)

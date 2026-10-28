@@ -6,6 +6,7 @@ import {
 import { apiService } from '../../services/api'
 import MenuEngrenagem from '../../components/MenuEngrenagem'
 import { useAuth } from '../../context/AuthContext'
+import { useEmpresasGarantias } from '../../hooks/useEmpresasGarantias'
 import GarantiasNav from './GarantiasNav'
 import RegistroHistoricoPanel from './RegistroHistoricoPanel'
 
@@ -32,13 +33,16 @@ const COR_SITUACAO = {
 }
 
 export default function GarantiasDafTitulos() {
-  const { isAdmin, empresasPermitidas, user, hasActionOrDefault, hasPermission } = useAuth()
+  const { user, hasActionOrDefault, hasPermission } = useAuth()
+  // Empresas do usuário (inclusive em "Visualizar como"): filtra garantias e os títulos do RFN003.
+  const { permiteNome, filtrosEmpresa } = useEmpresasGarantias()
   const canEditarTitulo = hasActionOrDefault('garantias-daf-titulos', 'editar')
   const canEditarGarantia = hasActionOrDefault('garantias-daf-titulos', 'editar_garantia')
   const location = useLocation()
   const navigate = useNavigate()
 
-  const [titulosRows, setTitulosRows]               = useState([])
+  const [titulosRowsTodos, setTitulosRows]          = useState([])
+  const titulosRows = useMemo(() => titulosRowsTodos.filter(r => permiteNome(r.empresa)), [titulosRowsTodos, permiteNome])
   const [titulosLoading, setTitulosLoading]         = useState(false)
   const [titulosRefreshing, setTitulosRefreshing]   = useState(false)
   const [titulosLastMod, setTitulosLastMod]         = useState(null)
@@ -91,13 +95,12 @@ export default function GarantiasDafTitulos() {
   useEffect(() => {
     loadTitulos()
     loadTitulosObs()
-    const filtrosEmpresa = isAdmin ? {} : { empresa_ids: [...empresasPermitidas] }
     // Todas as garantias (qualquer status): o título se vincula à OS mesmo antes de ela ter NF
     // lançada (ex.: FA — Aprovada aguardando faturamento).
     apiService.getGarantias({ ...filtrosEmpresa })
       .then(setGarantias)
       .catch(() => {})
-  }, [isAdmin, empresasPermitidas])
+  }, [filtrosEmpresa])
 
   // Mapa OS||NF → data_envio_fabrica (vem das garantias do Supabase)
   const envioMap = useMemo(() => {

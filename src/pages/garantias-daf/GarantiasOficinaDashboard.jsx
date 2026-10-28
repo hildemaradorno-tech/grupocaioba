@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo, Fragment } from 'react'
 import { Loader2, Wrench, AlertTriangle, XCircle, Clock, CheckCircle2 } from 'lucide-react'
 import { apiService } from '../../services/api'
+import { useEmpresasGarantias } from '../../hooks/useEmpresasGarantias'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
 
@@ -277,6 +278,8 @@ const diasNaOficina = (r) => r.data_criacao ? Math.floor((new Date() - new Date(
 // apenas OS do tipo Garantia, com filtros cruzados entre todos os gráficos.
 export default function GarantiasOficinaDashboard({ onLastModified }) {
   const [oficinaRows, setOficinaRows] = useState([])
+  // Empresas do usuário (inclusive em "Visualizar como"): o arquivo do SharePoint traz todas as unidades.
+  const { permiteNome } = useEmpresasGarantias()
   const [diasOficina, setDiasOficina] = useState(14)
   useEffect(() => {
     apiService.getConfiguracoesGarantias().then(cfg => setDiasOficina(cfg?.dias_oficina ?? 14)).catch(() => {})
@@ -303,10 +306,11 @@ export default function GarantiasOficinaDashboard({ onLastModified }) {
 
   // Só ordens de serviço do tipo Garantia — a oficina também atende revisão, funilaria etc.
   const oficinaRowsGarantia = useMemo(() => {
-    if (siglasGarantiaOficina.size === 0) return oficinaRows
+    const daEmpresa = oficinaRows.filter(r => permiteNome(r.empresa_nome))
+    if (siglasGarantiaOficina.size === 0) return daEmpresa
     const tipoCode = (s) => String(s || '').trim().split(' ')[0].toUpperCase()
-    return oficinaRows.filter(r => siglasGarantiaOficina.has(tipoCode(r.tipo_os_sigla)))
-  }, [oficinaRows, siglasGarantiaOficina])
+    return daEmpresa.filter(r => siglasGarantiaOficina.has(tipoCode(r.tipo_os_sigla)))
+  }, [oficinaRows, siglasGarantiaOficina, permiteNome])
 
   // ── Filtros cruzados: clicar em qualquer gráfico filtra os demais e os cards ──
   const [filtroBucket, setFiltroBucket] = useState(null)

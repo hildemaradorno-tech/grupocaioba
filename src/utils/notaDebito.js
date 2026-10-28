@@ -47,6 +47,7 @@ export const CAMPOS_NOTA_DEBITO = [
   ] },
   { grupo: 'Responsável (usuário logado)', campos: [
     ['usuario.assinatura', 'Nome – cargo – empresa (assinatura)'],
+    ['usuario.assinatura_imagem', 'Imagem da assinatura (cadastro de Funcionários)'],
     ['usuario.nome', 'Nome do usuário'],
     ['usuario.cargo', 'Cargo do usuário'],
   ] },
@@ -154,6 +155,7 @@ export function montarContextoNota({ empresa, garantia, nota, itens, statusLabel
       .filter(Boolean).join(' – ').toUpperCase(),
     '__itens': itens || [],
     '__logo': logo || '',
+    '__assinatura': r.assinatura || '',
   }
 }
 
@@ -205,11 +207,13 @@ export function renderizarModelo(html, ctx) {
     if (chave === 'itens_tabela') return tabelaItens(ctx.__itens)
     if (chave === 'itens_total') return esc(fmtMoeda(totalItens(ctx.__itens)) || '')
     if (chave === 'logo') return ctx.__logo ? `<img src="${esc(ctx.__logo)}" style="max-height:78px;max-width:220px;" />` : ''
+    if (chave === 'usuario.assinatura_imagem') return ctx.__assinatura ? `<img src="${esc(ctx.__assinatura)}" style="display:block;margin:0 auto;max-height:70px;max-width:260px;" />` : ''
     return esc(ctx[chave] ?? '')
   })
 }
 
-async function montarPdf(el) {
+// rodape: texto opcional escrito na margem inferior da 1ª página (fora do conteúdo, não cria página nova).
+async function montarPdf(el, rodape = '') {
   const [{ default: html2canvas }, { jsPDF }] = await Promise.all([import('html2canvas'), import('jspdf')])
   // O Tailwind (preflight) põe img{display:block}; o html2canvas mede a linha de base do texto com
   // uma <img> inline e, com isso, desenha todo texto mais baixo (fora do centro das células).
@@ -244,11 +248,18 @@ async function montarPdf(el) {
     y += h
   }
   void altTotal
+  if (rodape) {
+    pdf.setPage(1)
+    pdf.setFont('helvetica', 'normal')
+    pdf.setFontSize(6)
+    pdf.setTextColor(130)
+    pdf.text(rodape, pw - margem, ph - 10, { align: 'right' })
+  }
   return pdf
 }
 
-export async function gerarPdfDeElemento(el, nomeArquivo) {
-  (await montarPdf(el)).save(nomeArquivo)
+export async function gerarPdfDeElemento(el, nomeArquivo, rodape = '') {
+  (await montarPdf(el, rodape)).save(nomeArquivo)
 }
 
 // Devolve uma URL (blob) do PDF para abrir em outra aba, sem baixar

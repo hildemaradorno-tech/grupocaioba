@@ -88,6 +88,7 @@ export const MODELOS_PADRAO = [
   <table style="width:100%;border-collapse:collapse;margin-top:14px;">
     <tr><td style="border:1px solid #444;padding:4px 6px;font-size:13px;line-height:1.4;font-weight:bold;background:#bfbfbf;">Assinatura do responsável da Concessionária:</td></tr>
     <tr><td style="border:1px solid #444;height:118px;vertical-align:bottom;padding:0 22px 26px 22px;">
+      <div style="text-align:center;line-height:0;">{{usuario.assinatura_imagem}}</div>
       <div style="width:76%;margin:0 auto;border-top:1px solid #111;padding-top:2px;text-align:center;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.3;font-weight:bold;">{{usuario.assinatura}}</div>
     </td></tr>
   </table>

@@ -11,6 +11,7 @@ import MenuEngrenagem from '../../components/MenuEngrenagem'
 import { useAuth } from '../../context/AuthContext'
 import GarantiasDafImportFaturadosModal from './GarantiasDafImportFaturadosModal'
 import GarantiasNav from './GarantiasNav'
+import { useEmpresasGarantias } from '../../hooks/useEmpresasGarantias'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
 
@@ -46,7 +47,8 @@ const FILTROS_VAZIOS = { numero_os: '', chassi: '', cliente: '', numero_nf: '', 
 
 export default function GarantiasDafFaturadas() {
   const navigate = useNavigate()
-  const { isAdmin, empresasPermitidas, hasActionOrDefault } = useAuth()
+  const { hasActionOrDefault } = useAuth()
+  const { filtrosEmpresa } = useEmpresasGarantias()
   const canExcluirOS = hasActionOrDefault('garantias-daf-historicodeos', 'excluir')
   const canImportar = hasActionOrDefault('garantias-daf-historicodeos', 'importar')
 
@@ -69,14 +71,13 @@ export default function GarantiasDafFaturadas() {
   const loadData = useCallback(async (f = filtros) => {
     setLoading(true); setError(null)
     try {
-      const filtrosEmpresa = isAdmin ? {} : { empresa_ids: [...empresasPermitidas] }
       const todos = await apiService.getAllGarantiasParaImport({ ...filtrosEmpresa })
       setDadosTodos(todos)
       const garantias = await apiService.getGarantias({ ...f, ...filtrosEmpresa, status_in: ['E', 'F'] })
       setDados(garantias)
     } catch (err) { setError(err.message || String(err)) }
     finally { setLoading(false) }
-  }, [filtros, isAdmin, empresasPermitidas])
+  }, [filtros, filtrosEmpresa])
 
   const carregarVinculoTitulos = useCallback(async () => {
     try {
@@ -90,7 +91,7 @@ export default function GarantiasDafFaturadas() {
     loadData(filtros)
     apiService.getEmpresas().then(d => setEmpresasDim(d.filter(e => e.ativo !== false))).catch(() => {})
     carregarVinculoTitulos()
-  }, [isAdmin, empresasPermitidas])
+  }, [filtrosEmpresa])
 
   // Limpa seleção sempre que os dados recarregam (nova busca/exclusão) — evita manter
   // ids selecionados que não correspondem mais ao conjunto exibido.

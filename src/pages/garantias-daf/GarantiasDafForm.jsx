@@ -11,6 +11,7 @@ import { apiService } from '../../services/api'
 import { useAuth } from '../../context/AuthContext'
 import RegistroHistoricoPanel from './RegistroHistoricoPanel'
 import EmitirNotaDebitoModal from './EmitirNotaDebitoModal'
+import { useEmpresasGarantias } from '../../hooks/useEmpresasGarantias'
 
 const STATUS_OPTIONS = [
   { value: 'A',  label: 'A — Em Análise no Setor de Garantia' },
@@ -215,6 +216,7 @@ export default function GarantiasDafForm() {
   const modoEdicao = Boolean(id)
   const modoVisualizar = location.state?.modo === 'visualizar'
   const voltarPara = location.state?.from || '/garantias-daf'
+  const { permiteId: permiteEmpresaId } = useEmpresasGarantias()
   // Nota de Débito só é emitida a partir da aba Títulos a Receber
   const vindoDeTitulos = location.state?.from === '/garantias-daf-titulos'
   // Aberta por "Editar Faturamento" (A Receber), vale a permissão daquela aba; senão, Editar OS.
@@ -679,7 +681,7 @@ export default function GarantiasDafForm() {
                   ? <ReadOnlyField value={form.empresa_nome} />
                   : <SelectField name="empresa_id" value={form.empresa_id} onChange={handleChange}>
                       <option value="">Selecione</option>
-                      {empresas.filter(e => !e.empresa_visual || e.id === form.empresa_id).map(e => <option key={e.id} value={e.id}>{e.empresa_fantasia || e.nome_empresa}</option>)}
+                      {empresas.filter(e => e.id === form.empresa_id || (!e.empresa_visual && permiteEmpresaId(e.id))).map(e => <option key={e.id} value={e.id}>{e.empresa_fantasia || e.nome_empresa}</option>)}
                     </SelectField>
                 }
               </div>

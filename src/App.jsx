@@ -106,6 +106,7 @@ import BiGarantiasDaf from './pages/bi/BiGarantiasDaf'
 import BiProjetos from './pages/bi/BiProjetos'
 import BiAgendamentoServicos from './pages/bi/BiAgendamentoServicos'
 import BiPlanosManutencao from './pages/bi/BiPlanosManutencao'
+import BiPlanosManutencaoManual from './pages/bi/BiPlanosManutencaoManual'
 import BiPossibilidades from './pages/bi/BiPossibilidades'
 import MedidasBi from './pages/bi/MedidasBi'
 import BiCampanha, { CAMPANHA_ABAS_PERMS } from './pages/bi/BiCampanha'
@@ -300,6 +301,7 @@ export default function App() {
           { path: '/bi/possibilidades', element: <BiPossibilidades />, menuPath: 'bi/possibilidades' },
           { path: '/bi/agendamento-servicos', element: <BiAgendamentoServicos />, menuPath: 'bi/agendamento-servicos' },
           { path: '/bi/planos-manutencao', element: <BiPlanosManutencao />, menuPath: 'bi/planos-manutencao' },
+          { path: '/bi/planos-manutencao/manual', element: <BiPlanosManutencaoManual />, menuPath: 'bi/planos-manutencao' },
           { path: '/bi/fontes', element: <Navigate to="/fontes-calculo" replace /> },
           { path: '/bi/medidas', element: <MedidasBi />, menuPath: 'bi/medidas' },
           { path: '/bi/campanha', element: <BiCampanha />, menuPath: CAMPANHA_ABAS_PERMS },

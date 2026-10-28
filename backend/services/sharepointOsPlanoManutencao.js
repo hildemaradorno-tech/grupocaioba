@@ -1,7 +1,6 @@
 import * as XLSX from 'xlsx'
 import axios from 'axios'
 import { graphGet } from './graphClient.js'
-import { getAberturaOsRof017 } from './sharepointRof017.js'
 
 // O.S. de Plano de Manutenção (tipo P04) do Dealer.net ROF042_FaturamentoServicosProdutivos_Excel.
 // Um arquivo por ano (até 2024) ou por mês ("... 2026.10.xlsx"). Linha 1 em branco, cabeçalho na
@@ -42,36 +41,64 @@ async function listar(caminho) {
 }
 
 // O ROF042 não tem a data de abertura da O.S.: ela vem do ROF017 (OS_DataCriacao), junto com a placa da O.S.
-// Fica guardada por "O.S.|chassi" e só se consulta o ROF017 para O.S. ainda não vistas (os arquivos do
-// ROF017 são grandes: ~5–7 MB por ano). Lê o ano da NF e o anterior (a O.S. pode abrir num ano e faturar no outro).
+// Fica guardada por "O.S.|chassi" e só se consulta o ROF017 para O.S. ainda não vistas. Os arquivos do ROF017
+// são grandes (~5–7 MB e ~40 mil linhas por ano), então:
+// - a leitura roda em SEGUNDO PLANO: a tela recebe as O.S. na hora e a abertura entra na próxima leitura;
+// - um arquivo por vez, guardando só as O.S. procuradas (não mantém as linhas do ROF017 em memória).
+// Lê o ano da NF e o anterior (a O.S. pode abrir num ano e faturar no outro).
+const PASTA_ROF017 = '/Banco de Dados - DAF - Pós-Vendas/Relatório Geral OS'
+const PREFIX_ROF017 = 'ROF017_FATURAMENTOPOROS'
 const _abertura = new Map() // "os|chassi" → { data_abertura, placa_os } | {} (não achada)
 const chaveOs = (r) => `${r.os}|${r.chassi.toUpperCase()}`
-async function completarAbertura(rows) {
+let _aberturaEmAndamento = null
+
+function completarAberturaEmSegundoPlano(rows) {
+  if (_aberturaEmAndamento) return
   const faltando = rows.filter(r => !_abertura.has(chaveOs(r)))
   if (!faltando.length) return
+  _aberturaEmAndamento = completarAbertura(faltando)
+    .catch(e => console.warn('[OsPlanoManutencao] não foi possível ler a abertura no ROF017:', e.message))
+    .finally(() => { _aberturaEmAndamento = null })
+}
+
+async function completarAbertura(faltando) {
   const anos = new Set()
   faltando.forEach(r => { const a = Number((r.data || '').slice(0, 4)); if (a) { anos.add(a); anos.add(a - 1) } })
-  // Sem ano nenhum o leitor do ROF017 cairia em "todos os arquivos": nesse caso não consulta.
-  if (!anos.size) { faltando.forEach(r => _abertura.set(chaveOs(r), {})); return }
-  try {
-    const mapa = await getAberturaOsRof017([...anos])
-    faltando.forEach(r => {
-      const a = mapa.get(chaveOs(r))
-      _abertura.set(chaveOs(r), a ? { data_abertura: a.data_abertura, placa_os: a.placa } : {})
-    })
-    console.log(`[OsPlanoManutencao] abertura (ROF017 ${[...anos].sort().join(', ')}): ${faltando.length} linha(s) consultada(s)`)
-  } catch (e) {
-    // Sem o ROF017 a tela continua funcionando, só sem a data de abertura (tenta de novo na próxima leitura).
-    console.warn('[OsPlanoManutencao] não foi possível ler a abertura no ROF017:', e.message)
+  const procuradas = new Set(faltando.map(chaveOs))
+  const achadas = new Map()
+  const arquivos = (await listar(PASTA_ROF017))
+    .filter(i => i.file && i.name?.startsWith(PREFIX_ROF017) && anos.has(Number((i.name.match(/\d{4}/) || [])[0])))
+  for (const item of arquivos) {
+    const resp = await axios.get(item['@microsoft.graph.downloadUrl'], { responseType: 'arraybuffer', timeout: 120_000 })
+    const ws = XLSX.read(Buffer.from(resp.data), { type: 'buffer', cellHTML: false, cellText: false }).Sheets
+    const linhas = XLSX.utils.sheet_to_json(ws[Object.keys(ws)[0]], { header: 1, defval: '' })
+    const cab = (linhas[0] || []).map(txt)
+    const col = (nome) => cab.indexOf(nome)
+    const [cOs, cChassi, cData, cPlaca] = [col('OS_Numero'), col('Veiculo_Chassi'), col('OS_DataCriacao'), col('OS_VeiculoPlaca')]
+    for (let i = 1; i < linhas.length; i++) {
+      const l = linhas[i]
+      const chave = `${txt(l[cOs])}|${txt(l[cChassi]).toUpperCase()}`
+      if (procuradas.has(chave) && !achadas.has(chave)) achadas.set(chave, { data_abertura: dataSerial(l[cData]), placa_os: txt(l[cPlaca]) })
+    }
+    console.log(`[OsPlanoManutencao] abertura: ${item.name} lido (${achadas.size}/${procuradas.size} O.S. achadas)`)
+    // Libera o servidor entre um arquivo e outro, para as outras telas não ficarem esperando.
+    await new Promise(r => setImmediate(r))
   }
+  procuradas.forEach(k => _abertura.set(k, achadas.get(k) || {}))
 }
+
+// Linhas devolvidas à tela: as O.S. P04 com a abertura/placa que já tiver sido achada no ROF017.
+const comAbertura = (c) => c && { ...c, rows: c.rows.map(r => ({ ...r, ..._abertura.get(chaveOs(r)) })) }
 
 // Duas telas abrindo juntas aguardam a mesma leitura em vez de baixar tudo duas vezes.
 let _emAndamento = null
-export function getOsPlanoManutencao() {
-  if (_cache !== null && (Date.now() - _cacheTs) < CACHE_TTL_MS) return Promise.resolve(_cache)
-  if (!_emAndamento) _emAndamento = carregar().finally(() => { _emAndamento = null })
-  return _emAndamento
+export async function getOsPlanoManutencao() {
+  if (!(_cache !== null && (Date.now() - _cacheTs) < CACHE_TTL_MS)) {
+    if (!_emAndamento) _emAndamento = carregar().finally(() => { _emAndamento = null })
+    await _emAndamento
+  }
+  completarAberturaEmSegundoPlano(_cache.rows)
+  return comAbertura(_cache)
 }
 
 async function carregar() {
@@ -90,6 +117,8 @@ async function carregar() {
       _porArquivo.set(item.id, { lastModified: item.lastModifiedDateTime, rows: linhasP04 })
       console.log(`[OsPlanoManutencao] ${item.name}: ${linhasP04.length} linha(s) P04`)
     }))
+    // Libera o servidor entre os lotes, para as outras telas (ex.: Veículos Vendidos) não ficarem esperando.
+    await new Promise(r => setImmediate(r))
   }
 
   for (const item of arquivos) {
@@ -100,8 +129,7 @@ async function carregar() {
     if (!lastModified || item.lastModifiedDateTime > lastModified) lastModified = item.lastModifiedDateTime
   }
 
-  await completarAbertura(rows)
-  _cache = { rows: rows.map(r => ({ ...r, ..._abertura.get(chaveOs(r)) })), arquivos: arquivosLidos, lastModified, lidoEm: new Date().toISOString() }
+  _cache = { rows, arquivos: arquivosLidos, lastModified, lidoEm: new Date().toISOString() }
   _cacheTs = Date.now()
   return _cache
 }

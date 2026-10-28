@@ -6,6 +6,7 @@ import { apiService } from '../../services/api'
 import MenuEngrenagem from '../../components/MenuEngrenagem'
 import { useAuth } from '../../context/AuthContext'
 import GarantiasNav from './GarantiasNav'
+import { useEmpresasGarantias } from '../../hooks/useEmpresasGarantias'
 
 const STATUS_MAP = {
   A:  { label: 'Em Análise',                      cor: 'bg-blue-100 text-blue-700' },
@@ -94,7 +95,9 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
   const pfx = isAndamento ? 'daf_and' : 'daf_ab'
 
   const navigate = useNavigate()
-  const { user, isAdmin, empresasPermitidas, hasActionOrDefault, hasPermission } = useAuth()
+  const { user, hasActionOrDefault, hasPermission } = useAuth()
+  // Empresas do usuário (inclusive em "Visualizar como"): filtra Supabase e as linhas do SharePoint.
+  const { permiteNome, filtrosEmpresa, carregado: empresasCarregadas } = useEmpresasGarantias()
   const canEditarOS = hasActionOrDefault('garantias-daf', 'editar')
   const canExcluirOS = hasActionOrDefault('garantias-daf', 'excluir')
   const canBuscarNF = hasActionOrDefault('garantias-daf', 'buscar_nf')
@@ -221,7 +224,6 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
   const loadData = useCallback(async (f = filtros) => {
     setLoading(true); setError(null)
     try {
-      const filtrosEmpresa = isAdmin ? {} : { empresa_ids: [...empresasPermitidas] }
       // Sempre carrega todos (paginado) para importadosSet e modais
       const todos = await apiService.getAllGarantiasParaImport({ ...filtrosEmpresa })
       setDadosTodos(todos)
@@ -231,7 +233,7 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
       setDados(garantias)
     } catch (err) { setError(err.message || String(err)) }
     finally { setLoading(false) }
-  }, [filtros, isAdmin, empresasPermitidas, isAndamento])
+  }, [filtros, filtrosEmpresa, isAndamento])
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
@@ -243,7 +245,7 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
       setSiglasGarantia(new Set(tiposGarantia.map(t => String(t.sigla).trim().toUpperCase())))
       setTiposGarantiaDim(tiposGarantia)
     }).catch(() => {})
-  }, [isAdmin, empresasPermitidas])
+  }, [filtrosEmpresa])
 
   const fetchSharePoint = useCallback(async (force = false) => {
     const BACKEND = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
@@ -334,10 +336,10 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
 
 
   // Pré-computa _empresa direto do SharePoint, sem cruzamento com Supabase
-  const spRowsEnriquecidos = useMemo(() => spRows.map(r => ({
+  const spRowsEnriquecidos = useMemo(() => spRows.filter(r => permiteNome(r.empresa_nome)).map(r => ({
     ...r,
     _empresa: String(r.empresa_nome || '').trim() || '—'
-  })), [spRows])
+  })), [spRows, permiteNome])
 
   const spEmpresaNome = useCallback((r) => r._empresa || String(r.empresa_nome || '').trim() || '—', [])
 
@@ -527,7 +529,8 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
   // Só OS de tipos classificados como Garantia (Cadastro de Tipos de OS). Sem a lista carregada,
   // não há o que importar — evita trazer todos os tipos do arquivo de OS encerradas.
   const pendFechadas = useMemo(
-    () => (loading || siglasGarantia.size === 0) ? [] : spRows.filter(r => {
+    () => (loading || siglasGarantia.size === 0 || !empresasCarregadas) ? [] : spRows.filter(r => {
+      if (!permiteNome(r.empresa_nome)) return false
       const osNum    = String(r.os_numero ?? '').trim()
       const tipoSP   = tipoCode(r.tipo_os_sigla) || tipoCode(r.tipo_os_descricao)
       if (!siglasGarantia.has(tipoSP)) return false
@@ -538,7 +541,7 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
       return !jaImportado &&
         (!filtroEmpresaDash || r.empresa_nome === filtroEmpresaDash || empresaNome(r) === filtroEmpresaDash)
     }),
-    [spRows, importadosSet, importadosSemTipo, importadosTodosPorOS, loading, filtroEmpresaDash, siglasGarantia]
+    [spRows, importadosSet, importadosSemTipo, importadosTodosPorOS, loading, filtroEmpresaDash, siglasGarantia, empresasCarregadas, permiteNome]
   )
 
   // nome (fantasia/sistema/oficial, lowercase) → empresa_id — usado para resolver empresa_id
@@ -615,11 +618,11 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
     if (isAndamento) return
     if (spLoadingPrevRef.current && !spLoading) autoImportPendenteRef.current = true
     spLoadingPrevRef.current = spLoading
-    if (!autoImportPendenteRef.current || spLoading || loading || importandoPend || siglasGarantia.size === 0) return
+    if (!autoImportPendenteRef.current || spLoading || loading || importandoPend || siglasGarantia.size === 0 || !empresasCarregadas) return
     autoImportPendenteRef.current = false
     if (pendFechadas.length > 0) handleImportarLote()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [spLoading, loading, siglasGarantia, importandoPend])
+  }, [spLoading, loading, siglasGarantia, importandoPend, empresasCarregadas])
 
   const handleFiltroChange = (e) => {
     const { name, value } = e.target

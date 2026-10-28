@@ -2567,6 +2567,25 @@ export const apiService = {
     return data?.[0]
   },
 
+  getAssinaturaFuncionario: async (funcionarioId) => {
+    const { data, error } = await supabase.from('dim_funcionarios_assinatura')
+      .select('imagem').eq('funcionario_id', funcionarioId).maybeSingle()
+    if (error) throw error
+    return data?.imagem || ''
+  },
+  // imagem vazia = remove a assinatura
+  salvarAssinaturaFuncionario: async (funcionarioId, imagem, usuario) => {
+    if (!imagem) {
+      const { error } = await supabase.from('dim_funcionarios_assinatura').delete().eq('funcionario_id', funcionarioId)
+      if (error) throw error
+      return
+    }
+    const { error } = await supabase.from('dim_funcionarios_assinatura').upsert({
+      funcionario_id: funcionarioId, imagem, atualizado_em: new Date().toISOString(), atualizado_por: usuario || null,
+    })
+    if (error) throw error
+  },
+
   deleteFuncionario: async (id) => {
     const { error } = await supabase
       .from('dim_funcionarios')
@@ -3608,10 +3627,10 @@ export const apiService = {
   getResponsavelUsuario: async (email) => {
     if (!email) return null
     const { data, error } = await supabase.from('usuarios')
-      .select('nome, nome_completo, cargo:dim_cargos(nome_cargo)').eq('email', email).maybeSingle()
+      .select('nome, nome_completo, funcionario_id, cargo:dim_cargos(nome_cargo)').eq('email', email).maybeSingle()
     if (error) throw error
     if (!data) return null
-    return { nome: data.nome || '', nome_completo: data.nome_completo || '', cargo: data.cargo?.nome_cargo || '' }
+    return { nome: data.nome || '', nome_completo: data.nome_completo || '', cargo: data.cargo?.nome_cargo || '', funcionario_id: data.funcionario_id || null }
   },
   getNomeCargo: async (cargoId) => {
     if (!cargoId) return ''

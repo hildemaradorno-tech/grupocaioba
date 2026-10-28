@@ -5,6 +5,7 @@ import {
 } from 'lucide-react'
 import { apiService } from '../../services/api'
 import { useAuth } from '../../context/AuthContext'
+import { useEmpresasGarantias } from '../../hooks/useEmpresasGarantias'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
 
@@ -44,6 +45,8 @@ async function fetchFaturados(dataInicio, dataFim, numeroOS = null) {
 
 export default function GarantiasDafImportFaturadosModal({ onClose, onImported, osJaImportadas }) {
   const { user }    = useAuth()
+  // Só as empresas do usuário (inclusive em "Visualizar como") aparecem para importar.
+  const { permiteNome, permiteId } = useEmpresasGarantias()
   const defaults    = defaultPeriodo()
 
   // ── Estado de datas ────────────────────────────────────
@@ -166,23 +169,23 @@ export default function GarantiasDafImportFaturadosModal({ onClose, onImported, 
   // ── Empresas disponíveis nos resultados (já restrito a garantia) ───
   const empresas = useMemo(() => {
     if (!shareRows) return []
-    const rows = garantiaSiglas.size > 0
+    const rows = (garantiaSiglas.size > 0
       ? shareRows.filter(r => garantiaSiglas.has(tipoCode(r.tipo_os_sigla) || tipoCode(r.tipo_os_descricao)))
-      : shareRows
+      : shareRows).filter(r => permiteNome(r.empresa_nome))
     const set = new Set(rows.map(r => r.empresa_nome).filter(Boolean))
     return Array.from(set).sort()
-  }, [shareRows, garantiaSiglas])
+  }, [shareRows, garantiaSiglas, permiteNome])
 
   // ── Filtro de tabela (tipo garantia + OS + empresa) ────
   const rowsFiltradas = useMemo(() => {
     if (!shareRows) return []
-    let rows = shareRows
+    let rows = shareRows.filter(r => permiteNome(r.empresa_nome))
     if (garantiaSiglas.size > 0) rows = rows.filter(r => garantiaSiglas.has(tipoCode(r.tipo_os_sigla) || tipoCode(r.tipo_os_descricao)))
     const os = filtroOS.trim()
     if (os) rows = rows.filter(r => String(r.os_numero ?? '').includes(os))
     if (filtroEmpresa) rows = rows.filter(r => r.empresa_nome === filtroEmpresa)
     return rows
-  }, [shareRows, filtroEmpresa, filtroOS, garantiaSiglas])
+  }, [shareRows, filtroEmpresa, filtroOS, garantiaSiglas, permiteNome])
 
   // ── Seleção ────────────────────────────────────────────
   // Chave composta: numero_os + código do tipo (ex: "134||G01")
@@ -532,7 +535,7 @@ export default function GarantiasDafImportFaturadosModal({ onClose, onImported, 
                     className="w-full py-2 pl-3 pr-8 text-xs border border-slate-200 rounded-md text-slate-700 outline-none bg-white focus:ring-2 focus:ring-green-500/20"
                   >
                     <option value="">Selecione a empresa...</option>
-                    {empresasDim.filter(e => !e.empresa_visual).map(e => (
+                    {empresasDim.filter(e => !e.empresa_visual && permiteId(e.id)).map(e => (
                       <option key={e.id} value={e.id}>
                         {e.empresa_fantasia || e.nome_empresa || e.nome_empresa_sistema}
                       </option>

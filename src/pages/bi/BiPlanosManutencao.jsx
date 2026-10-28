@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Building2, Calendar, CalendarClock, CalendarX2, ChevronDown, ChevronLeft, ChevronRight, ChevronsUpDown, ChevronUp, FilePlus2, FileSearch, FileX2, Play, RefreshCw, Repeat, Search, Truck, Wrench, X } from 'lucide-react'
+import { BookOpen, Building2, Calendar, CalendarClock, CalendarX2, ChevronDown, ChevronLeft, ChevronRight, ChevronsUpDown, ChevronUp, FilePlus2, FileSearch, FileX2, Info, Play, RefreshCw, RotateCcw, Repeat, Search, Truck, Wrench, X } from 'lucide-react'
 import { apiService } from '../../services/supabaseClient'
 import { empresaSelecionavel } from '../../utils/comissoesElegibilidade'
+import { INFO_RESUMO } from './planosManutencaoTextos'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
 
@@ -189,9 +190,50 @@ const fmtDataHora = (d) => d.toLocaleString('pt-BR', { day: '2-digit', month: '2
 
 // Card com ícone (caminhão por padrão; cada indicador passa o seu).
 // `cor` = degradê do quadrado do ícone (azul por padrão).
-function CardTruck({ label, valor, ajuda, icone: Icone = Truck, cor = 'from-blue-400 to-blue-600' }) {
+
+// Botão ⓘ dos cards/indicadores: abre um quadro com objetivo, fonte (arquivo), cálculo e filtros do número.
+// O quadro abre centralizado na tela (portal, acima de tudo), para nunca sair da área visível — mesmo com o
+// card no fim da página; fecha clicando fora ou no X.
+function BotaoInfo({ titulo, info }) {
+  const [aberto, setAberto] = useState(false)
+  // Só objetivo e cálculo; fonte, filtros/regras e colunas ficam no Manual operacional (página /bi/planos-manutencao/manual).
+  const secoes = [['Objetivo', info.objetivo], ['Cálculo', info.calculo]]
   return (
-    <div className="bg-white border border-slate-200 rounded-lg p-3 flex items-center gap-3" title={ajuda}>
+    <>
+      <button type="button" onClick={() => setAberto(true)} aria-label={`Informações: ${titulo}`} title="Informações"
+        className="absolute top-2 right-2 p-0.5 rounded-full text-slate-400 hover:text-blue-600 hover:bg-blue-50">
+        <Info className="h-3.5 w-3.5" />
+      </button>
+      {aberto && createPortal(
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
+          onMouseDown={(e) => { if (e.target === e.currentTarget) setAberto(false) }}>
+          <div className="bg-white border border-slate-200 rounded-lg shadow-xl text-[11px] text-slate-700 w-full max-w-md max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between gap-2 px-4 py-2.5 border-b border-slate-200">
+              <p className="text-sm font-bold text-slate-900">{titulo}</p>
+              <button type="button" onClick={() => setAberto(false)} aria-label="Fechar" className="p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="p-4 space-y-3 overflow-y-auto">
+              {secoes.filter(([, t]) => t).map(([nome, texto]) => (
+                <div key={nome}>
+                  <p className="text-[10px] font-bold uppercase text-blue-700">{nome}</p>
+                  <p className="leading-snug mt-0.5 whitespace-pre-line">{texto}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+    </>
+  )
+}
+
+function CardTruck({ label, valor, ajuda, info, icone: Icone = Truck, cor = 'from-blue-400 to-blue-600' }) {
+  return (
+    <div className="relative bg-white border border-slate-200 rounded-lg p-3 flex items-center gap-3" title={info ? undefined : ajuda}>
+      {info && <BotaoInfo titulo={label} info={info} />}
       <div className={`w-9 h-9 rounded-lg bg-gradient-to-br ${cor} flex items-center justify-center shrink-0`}>
         <Icone className="h-5 w-5 text-white" />
       </div>
@@ -239,7 +281,7 @@ function ThOrdena({ titulo, chave = titulo, ordenacao, direita }) {
 }
 
 // Velocímetro (meia-lua), no modelo do BI Agendamento de Serviços: arco cinza de fundo e arco azul até o valor (%).
-function Gauge({ label, valor, detalhe, ajuda }) {
+function Gauge({ label, valor, detalhe, ajuda, info }) {
   const cx = 100, cy = 100, r = 70, esp = 36
   const ponto = (pct) => {
     const a = Math.PI * (1 - Math.min(Math.max(pct, 0), 100) / 100)
@@ -247,7 +289,8 @@ function Gauge({ label, valor, detalhe, ajuda }) {
   }
   const arco = (pct) => { const [x, y] = ponto(pct); return `M ${cx - r} ${cy} A ${r} ${r} 0 0 1 ${x} ${y}` }
   return (
-    <div className="bg-white border border-slate-200 rounded-lg p-3" title={ajuda}>
+    <div className="relative bg-white border border-slate-200 rounded-lg p-3" title={info ? undefined : ajuda}>
+      {info && <BotaoInfo titulo={label} info={info} />}
       <p className="text-[11px] font-semibold text-indigo-950 leading-tight">{label}</p>
       <svg viewBox="0 0 200 118" className="w-full max-h-40 mt-1">
         <path d={arco(100)} fill="none" stroke="#e2e8f0" strokeWidth={esp} />
@@ -310,13 +353,17 @@ export default function BiPlanosManutencao() {
   const buscar = async (rota, refresh, setDados, setCarregandoRota, setErroRota, nome) => {
     setCarregandoRota(true)
     setErroRota('')
+    // Tempo limite de 3 min: se o backend não responder, o botão de atualizar para de girar e mostra o erro.
+    const controle = new AbortController()
+    const limite = setTimeout(() => controle.abort(), 180_000)
     try {
-      const r = await fetch(`${BACKEND_URL}/api/planos-manutencao/${rota}${refresh ? '/refresh' : ''}`, { method: refresh ? 'POST' : 'GET' })
+      const r = await fetch(`${BACKEND_URL}/api/planos-manutencao/${rota}${refresh ? '/refresh' : ''}`, { method: refresh ? 'POST' : 'GET', signal: controle.signal })
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`)
       setDados(await r.json())
     } catch (e) {
-      setErroRota(`Não foi possível ler ${nome}: ${e.message}`)
+      setErroRota(`Não foi possível ler ${nome}: ${e.name === 'AbortError' ? 'o servidor demorou mais de 3 minutos para responder' : e.message}`)
     } finally {
+      clearTimeout(limite)
       setCarregandoRota(false)
     }
   }
@@ -585,6 +632,13 @@ export default function BiPlanosManutencao() {
               >
                 <RefreshCw className={`h-3.5 w-3.5 ${carregando ? 'animate-spin' : ''}`} />
               </button>
+              {/* Manual operacional: página própria, sempre em outra aba. Link com target="_blank" em vez de
+                  window.open, que alguns navegadores bloqueiam como pop-up ou abrem na mesma aba. */}
+              <a href="/bi/planos-manutencao/manual" target="_blank" rel="noopener noreferrer"
+                title="Manual operacional do BI (abre em outra aba)" aria-label="Manual operacional do BI"
+                className="flex items-center justify-center p-1.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white shadow-sm transition-colors">
+                <BookOpen className="h-3.5 w-3.5" />
+              </a>
             </div>
             {erro && <p className="text-[10px] text-red-600 max-w-[420px] text-right leading-tight">{erro}</p>}
             <div className="flex flex-wrap items-end gap-4">
@@ -605,6 +659,12 @@ export default function BiPlanosManutencao() {
                   <button type="button" onClick={() => trocarMes(1)} disabled={!podeAvancar} title="Próximo mês" aria-label="Próximo mês"
                     className="p-1 rounded-md bg-white border border-slate-300 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed">
                     <ChevronRight className="h-3.5 w-3.5" />
+                  </button>
+                  {/* Volta direto ao mês atual (dia 1 até ontem). */}
+                  <button type="button" onClick={() => { setDataIni(DATA_MIN); setDataFim(DATA_MAX) }}
+                    disabled={dataIni === DATA_MIN && dataFim === DATA_MAX} title="Voltar ao mês atual"
+                    aria-label="Voltar ao mês atual" className="p-1 rounded-md bg-blue-600 hover:bg-blue-700 text-white shadow-sm disabled:opacity-40 disabled:cursor-not-allowed">
+                    <RotateCcw className="h-3.5 w-3.5" />
                   </button>
                 </div>
               </div>
@@ -689,12 +749,14 @@ export default function BiPlanosManutencao() {
         <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-5 gap-3">
           <Gauge
             label="Contratos novos"
+            info={INFO_RESUMO.gaugeNovos}
             valor={(carregandoOrdens && !ordens) || !chassisVendidos ? null : contratosPeriodo.novos / chassisVendidos * 100}
             detalhe={chassisVendidos ? `${contratosPeriodo.novos} de ${chassisVendidos} vendidos` : ''}
             ajuda="Contratos novos ÷ veículos vendidos no período (mesmos filtros dos cards)"
           />
           <Gauge
             label="Contratos renovados"
+            info={INFO_RESUMO.gaugeRenovados}
             valor={(carregandoContratos && !contratos) || (carregandoOrdens && !ordens) || !renovacoesPeriodo.aRenovar
               ? null : renovacoesPeriodo.renovados / renovacoesPeriodo.aRenovar * 100}
             detalhe={renovacoesPeriodo.aRenovar ? `${renovacoesPeriodo.renovados} de ${renovacoesPeriodo.aRenovar} a renovar` : ''}
@@ -703,6 +765,7 @@ export default function BiPlanosManutencao() {
           {/* Potencial: as duas oportunidades juntas — vendas (contrato novo) e contratos vencendo (renovação). */}
           <Gauge
             label="Potencial"
+            info={INFO_RESUMO.gaugePotencial}
             valor={(carregandoContratos && !contratos) || (carregandoOrdens && !ordens) || !(chassisVendidos + renovacoesPeriodo.aRenovar)
               ? null : (contratosPeriodo.novos + renovacoesPeriodo.renovados) / (chassisVendidos + renovacoesPeriodo.aRenovar) * 100}
             detalhe={chassisVendidos + renovacoesPeriodo.aRenovar
@@ -719,18 +782,21 @@ export default function BiPlanosManutencao() {
         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
           <CardTruck
             label="Veículos vendidos (por chassi)"
+            info={INFO_RESUMO.vendidos}
             valor={carregandoVendas && !vendas ? '...' : vendas ? chassisVendidos.toLocaleString('pt-BR') : '—'}
             ajuda="Chassis DAF distintos vendidos no período (vendas menos devoluções) — mesma lista da aba Veículos Vendidos"
           />
           <CardTruck
             label="Contratos novos"
             icone={FilePlus2}
+            info={INFO_RESUMO.novos}
             cor="from-emerald-400 to-emerald-600"
             valor={carregandoOrdens && !ordens ? '...' : ordens ? contratosPeriodo.novos.toLocaleString('pt-BR') : '—'}
             ajuda="Veículos vendidos no período com Situação contrato = Novo contrato (O.S. P04 após a venda)"
           />
           <CardTruck
             label="Sem contrato"
+            info={INFO_RESUMO.semContrato}
             icone={FileX2}
             cor="from-red-400 to-red-600"
             valor={carregandoOrdens && !ordens ? '...' : ordens ? (chassisVendidos - contratosPeriodo.novos - contratosPeriodo.renovados).toLocaleString('pt-BR') : '—'}
@@ -743,10 +809,11 @@ export default function BiPlanosManutencao() {
       {/* Oportunidade de renovação: contratos da aba Planos de Manutenção com fim no período do filtro Data. */}
       {aba === 'Resumo' && (
         <div className="border-t border-slate-700 pt-4 space-y-3">
-        <p className="text-[11px] font-semibold text-slate-300 uppercase tracking-wide">Contratos Renovados</p>
+        <p className="text-[11px] font-semibold text-slate-300 uppercase tracking-wide">Renovação de Contratos</p>
         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
           <CardTruck
             label="Contratos a serem renovados"
+            info={INFO_RESUMO.aRenovar}
             icone={CalendarClock}
             cor="from-amber-400 to-amber-600"
             valor={carregandoContratos && !contratos ? '...' : contratos ? renovacoesPeriodo.aRenovar.toLocaleString('pt-BR') : '—'}
@@ -755,12 +822,14 @@ export default function BiPlanosManutencao() {
           <CardTruck
             label="Contratos renovados"
             icone={Repeat}
+            info={INFO_RESUMO.renovados}
             cor="from-violet-400 to-violet-600"
             valor={(carregandoContratos && !contratos) || (carregandoOrdens && !ordens) ? '...' : contratos ? renovacoesPeriodo.renovados.toLocaleString('pt-BR') : '—'}
             ajuda="Dos contratos a renovar, quantos têm O.S. P04 do chassi após o fim do contrato ou um novo contrato do chassi que vai além desse fim"
           />
           <CardTruck
             label="Sem contrato renovado"
+            info={INFO_RESUMO.semRenovacao}
             icone={CalendarX2}
             cor="from-red-400 to-red-600"
             valor={(carregandoContratos && !contratos) || (carregandoOrdens && !ordens) ? '...' : contratos ? (renovacoesPeriodo.aRenovar - renovacoesPeriodo.renovados).toLocaleString('pt-BR') : '—'}

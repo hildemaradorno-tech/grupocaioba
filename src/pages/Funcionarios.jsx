@@ -1,6 +1,6 @@
 ﻿import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
-import { Plus, X, AlertTriangle, Users, Eye, BadgePercent, Search, Info, ChevronDown, ArrowUp, ArrowDown, ArrowUpDown, FileDown, FileSpreadsheet, RefreshCw, Loader2 } from 'lucide-react'
+import { Plus, X, AlertTriangle, Users, Eye, BadgePercent, Search, Info, ChevronDown, ArrowUp, ArrowDown, ArrowUpDown, FileDown, FileSpreadsheet, RefreshCw, Loader2, Upload, Trash2 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import PermissionActionButtons from '../components/PermissionActionButtons'
 import { apiService } from '../services/api'
@@ -253,10 +253,8 @@ export default function Funcionarios() {
   const menuSalvarRef = useRef(null)
   const [modalImportarAberto, setModalImportarAberto] = useState(false)
 
-  // colFiltros persiste no localStorage — quem já usava a tela antes do filtro de CNPJ
-  // existir tem um objeto salvo sem essa chave, então nunca confia direto em
-  // colFiltros.cnpj (undefined quebraria .length/.includes); sempre usa cnpjFiltro.
-  const [colFiltros, setColFiltros] = useSessionState('func_colfiltros', { nome: '', empresa: [], cnpj: [], codigo: [], cargo: [], departamento: [], setor: [], ativo: [] })
+  // Filtros por coluna: a tela sempre abre limpa (não persistem entre acessos).
+  const [colFiltros, setColFiltros] = useState({ nome: '', empresa: [], cnpj: [], codigo: [], cargo: [], departamento: [], setor: [], ativo: [] })
   const codigoFiltro = colFiltros.codigo || []
   const cnpjFiltro = colFiltros.cnpj || []
   const departamentoFiltro = colFiltros.departamento || []
@@ -269,10 +267,16 @@ export default function Funcionarios() {
   const [idExcluir, setIdExcluir] = useState(null)
   const [itemVisualizado, setItemVisualizado] = useState(null)
   const [form, setForm] = useSessionState('func_form', FORM_VAZIO)
+  const [abaFunc, setAbaFunc] = useState('geral')
+  // Assinatura fica fora do form (sessionStorage) por ser imagem; gravada em dim_funcionarios_assinatura
+  const [assinatura, setAssinatura] = useState('')
+  const [assinaturaOriginal, setAssinaturaOriginal] = useState('')
+  const [carregandoAssinatura, setCarregandoAssinatura] = useState(false)
+  const [assinaturaVis, setAssinaturaVis] = useState(null) // null = carregando
   const [erroModal, setErroModal] = useState(null)
   const [buscandoPolitica, setBuscandoPolitica] = useState(false)
   const [sincronizando, setSincronizando] = useState(false)
-  const { hasActionOrDefault } = useAuth()
+  const { hasActionOrDefault, user } = useAuth()
   const canEdit = hasActionOrDefault('funcionarios', 'editar')
 
   useEffect(() => { loadData() }, [])
@@ -437,7 +441,19 @@ export default function Funcionarios() {
     return { label: motivo, cls: 'bg-amber-50 text-amber-700 border-amber-200', detalhe: situacaoTexto(item.situacao_funcionario) }
   }
 
+  const onAssinaturaArquivo = (e) => {
+    const f = e.target.files?.[0]
+    e.target.value = ''
+    if (!f) return
+    if (f.type !== 'image/png') { setErroModal('A assinatura deve ser uma imagem PNG.'); return }
+    if (f.size > 500 * 1024) { setErroModal('A imagem da assinatura deve ter até 500 KB.'); return }
+    const r = new FileReader()
+    r.onload = () => { setErroModal(null); setAssinatura(r.result) }
+    r.readAsDataURL(f)
+  }
+
   const abrirIncluir = () => {
+    setAbaFunc('geral'); setAssinatura(''); setAssinaturaOriginal('')
     setEditingId(null)
     setForm({ ...FORM_VAZIO })
     setErroModal(null)
@@ -445,6 +461,12 @@ export default function Funcionarios() {
   }
 
   const abrirEditar = (item) => {
+    setAbaFunc('geral'); setAssinatura(''); setAssinaturaOriginal('')
+    setCarregandoAssinatura(true)
+    apiService.getAssinaturaFuncionario(item.id)
+      .then(img => { setAssinatura(img || ''); setAssinaturaOriginal(img || '') })
+      .catch(() => {})
+      .finally(() => setCarregandoAssinatura(false))
     setEditingId(item.id)
     const cargo = cargos.find(c => c.id === item.cargo_id)
     const cargoSetorIds = cargo?.setor_ids || item.setor_ids || []
@@ -519,6 +541,8 @@ export default function Funcionarios() {
   }
 
   const abrirVisualizar = (item) => {
+    setAssinaturaVis(null)
+    apiService.getAssinaturaFuncionario(item.id).then(img => setAssinaturaVis(img || '')).catch(() => setAssinaturaVis(''))
     setItemVisualizado(item)
     setModalVisualizarAberto(true)
   }
@@ -574,10 +598,14 @@ export default function Funcionarios() {
         comissao_valor: form.comissao_valor !== '' ? parseFloat(form.comissao_valor) : null,
         ativo: !form.data_demissao,
       }
+      let idSalvo = editingId
       if (editingId) {
         await apiService.updateFuncionario(editingId, payload)
       } else {
-        await apiService.createFuncionario(payload)
+        idSalvo = (await apiService.createFuncionario(payload))?.id
+      }
+      if (idSalvo && assinatura !== assinaturaOriginal) {
+        await apiService.salvarAssinaturaFuncionario(idSalvo, assinatura, user?.email)
       }
       await loadData()
       setForm(FORM_VAZIO)
@@ -1073,6 +1101,7 @@ export default function Funcionarios() {
         <table className="w-full text-left border-collapse min-w-[600px]">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[11px] font-semibold uppercase tracking-wider">
+              <th className="p-3 w-20 text-center">Ações</th>
               <th className="p-3 w-20">
                 <button onClick={() => alternarOrdenacao('codigo')} className="flex items-center gap-1 hover:text-slate-600 transition-colors">
                   Código {iconeOrdenacao('codigo')}
@@ -1120,9 +1149,19 @@ export default function Funcionarios() {
                   Ativo {iconeOrdenacao('ativo')}
                 </button>
               </th>
-              <th className="p-3 w-24 text-center">Ações</th>
             </tr>
             <tr className="bg-white border-b border-slate-100">
+              <th className="px-2 py-1.5 w-20 text-center">
+                <button
+                  onClick={() => setColFiltros({ nome: '', empresa: [], cnpj: [], codigo: [], cargo: [], departamento: [], setor: [], ativo: [] })}
+                  disabled={!colFiltros.nome && colFiltros.empresa.length === 0 && cnpjFiltro.length === 0 && codigoFiltro.length === 0 && colFiltros.cargo.length === 0 && departamentoFiltro.length === 0 && setorFiltro.length === 0 && colFiltros.ativo.length === 0}
+                  className="flex items-center gap-1 mx-auto text-[11px] font-semibold text-slate-400 hover:text-red-600 disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:text-slate-400 transition-colors"
+                  title="Limpar todos os filtros"
+                >
+                  <X className="h-3 w-3" />
+                  Limpar
+                </button>
+              </th>
               <th className="px-2 py-1.5 w-20">
                 <FiltroMultiSelect
                   placeholder="Todos"
@@ -1200,17 +1239,6 @@ export default function Funcionarios() {
                   onChange={v => setCol('ativo', v)}
                 />
               </th>
-              <th className="px-2 py-1.5 w-24 text-center">
-                <button
-                  onClick={() => setColFiltros({ nome: '', empresa: [], cnpj: [], codigo: [], cargo: [], departamento: [], setor: [], ativo: [] })}
-                  disabled={!colFiltros.nome && colFiltros.empresa.length === 0 && cnpjFiltro.length === 0 && codigoFiltro.length === 0 && colFiltros.cargo.length === 0 && departamentoFiltro.length === 0 && setorFiltro.length === 0 && colFiltros.ativo.length === 0}
-                  className="flex items-center gap-1 mx-auto text-[11px] font-semibold text-slate-400 hover:text-red-600 disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:text-slate-400 transition-colors"
-                  title="Limpar todos os filtros"
-                >
-                  <X className="h-3 w-3" />
-                  Limpar
-                </button>
-              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
@@ -1225,6 +1253,15 @@ export default function Funcionarios() {
               const st = statusInfo(item)
               return (
                 <tr key={item.id} className="hover:bg-slate-50/70 transition-colors">
+                  <td className="p-3 whitespace-nowrap text-center">
+                    <PermissionActionButtons
+                    engrenagem
+                    menuPath="funcionarios"
+                    onView={() => abrirVisualizar(item)}
+                    onEdit={() => abrirEditar(item)}
+                    onDelete={() => abrirExcluir(item)}
+                  />
+                  </td>
                   <td className="p-3 text-slate-500 font-mono text-[11px] whitespace-nowrap">{item.codigo_funcionario || '-'}</td>
                   <td className="p-3 font-bold text-slate-900 whitespace-nowrap">
                     <div className="flex items-center gap-2">
@@ -1255,14 +1292,6 @@ export default function Funcionarios() {
                       {st.label}
                     </span>
                   </td>
-                  <td className="p-3 whitespace-nowrap">
-                    <PermissionActionButtons
-                    menuPath="funcionarios"
-                    onView={() => abrirVisualizar(item)}
-                    onEdit={() => abrirEditar(item)}
-                    onDelete={() => abrirExcluir(item)}
-                  />
-                  </td>
                 </tr>
               )
             })}
@@ -1284,8 +1313,20 @@ export default function Funcionarios() {
               </button>
             </div>
 
-            <form onSubmit={handleSalvar}>
-              <div className="p-5 space-y-4 max-h-[74vh] overflow-y-auto custom-scrollbar">
+            <form onSubmit={handleSalvar} onInvalidCapture={() => setAbaFunc('geral')}>
+              <div className="flex gap-1 px-5 pt-3 border-b border-slate-100">
+                {[['geral', 'Geral'], ['assinatura', 'Assinatura']].map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setAbaFunc(id)}
+                    className={`px-3 py-2 text-xs font-semibold border-b-2 -mb-px transition-colors ${abaFunc === id ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div className={`p-5 space-y-4 max-h-[74vh] overflow-y-auto custom-scrollbar ${abaFunc === 'geral' ? '' : 'hidden'}`}>
 
                 {/* Nome */}
                 <div className="grid grid-cols-3 gap-4">
@@ -1503,6 +1544,37 @@ export default function Funcionarios() {
 
               </div>
 
+              {/* ABA: ASSINATURA — imagem PNG usada em documentos (ex.: Nota de Débito) */}
+              {abaFunc === 'assinatura' && (
+                <div className="p-5 space-y-3 min-h-[320px]">
+                  <p className="text-xs text-slate-500">
+                    Envie a imagem da assinatura em PNG (de preferência com fundo transparente), até 500 KB.
+                    Ela fica salva no sistema e pode ser usada em documentos de qualquer navegador.
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <label className="flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-semibold text-slate-600 border border-slate-200 hover:bg-slate-50 cursor-pointer">
+                      <Upload className="h-3.5 w-3.5" /> {assinatura ? 'Trocar imagem' : 'Escolher imagem PNG'}
+                      <input type="file" accept="image/png" className="hidden" onChange={onAssinaturaArquivo} />
+                    </label>
+                    {assinatura && (
+                      <button type="button" onClick={() => setAssinatura('')}
+                        className="flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-semibold text-red-600 border border-red-200 hover:bg-red-50">
+                        <Trash2 className="h-3.5 w-3.5" /> Remover
+                      </button>
+                    )}
+                    {carregandoAssinatura && <span className="text-[11px] text-slate-400">Carregando...</span>}
+                  </div>
+                  <div className="border border-dashed border-slate-300 rounded-md bg-[repeating-conic-gradient(#f1f5f9_0%_25%,#fff_0%_50%)] bg-[length:16px_16px] h-48 flex items-center justify-center">
+                    {assinatura
+                      ? <img src={assinatura} alt="Assinatura" className="max-h-44 max-w-full object-contain" />
+                      : <span className="text-xs text-slate-400">Nenhuma assinatura cadastrada</span>}
+                  </div>
+                  {assinatura !== assinaturaOriginal && (
+                    <p className="text-[11px] text-amber-600">Alteração pendente — clique em Salvar Dados para gravar.</p>
+                  )}
+                </div>
+              )}
+
               {erroModal && (
                 <div className="mx-4 mb-2 flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-red-700 text-xs leading-relaxed">
                   <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" /> {erroModal}
@@ -1666,6 +1738,18 @@ export default function Funcionarios() {
                       ))}
                     </div>
                   )}
+                </div>
+              </div>
+
+              {/* Assinatura digitalizada (abaixo da Política de Comissão) */}
+              <div className="col-span-2 border-t border-slate-100 pt-3 flex flex-col gap-1.5">
+                <span className="text-[11px] font-bold text-indigo-600 uppercase tracking-wide">Assinatura Digitalizada</span>
+                <div className="border border-slate-200 rounded-md bg-white h-32 flex items-center justify-center">
+                  {assinaturaVis === null
+                    ? <span className="text-xs text-slate-400">Carregando...</span>
+                    : assinaturaVis
+                      ? <img src={assinaturaVis} alt="Assinatura" className="max-h-28 max-w-full object-contain" />
+                      : <span className="text-xs text-slate-400">Nenhuma assinatura cadastrada</span>}
                 </div>
               </div>
             </div>

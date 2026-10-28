@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo, Fragment } from 'react'
 import { Loader2, DollarSign, XCircle, ChevronRight, ChevronDown, ChevronsUpDown, AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { apiService } from '../../services/api'
+import { useEmpresasGarantias } from '../../hooks/useEmpresasGarantias'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
 
@@ -129,7 +130,10 @@ function StatTileGradient({ icon: Icon, label, value, sub, gradiente, onClick, d
 // Dashboard "Títulos a Receber" — RFN003_PosicaoAnaliticoReceber, com filtros cruzados
 // entre situação de vencimento, empresa e tipo de título.
 export default function GarantiasTitulosDashboard({ onLastModified }) {
-  const [titulosRows, setTitulosRows] = useState([])
+  const [titulosRowsTodos, setTitulosRows] = useState([])
+  // Empresas do usuário (inclusive em "Visualizar como"): o RFN003 traz todas as unidades.
+  const { permiteNome } = useEmpresasGarantias()
+  const titulosRows = useMemo(() => titulosRowsTodos.filter(r => permiteNome(r.empresa)), [titulosRowsTodos, permiteNome])
   const [tiposCadastrados, setTiposCadastrados] = useState([])
   const [loading, setLoading] = useState(true)
   const [titulosLastModified, setTitulosLastModified] = useState(null)

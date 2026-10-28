@@ -419,9 +419,10 @@ export default function GarantiasDafManual() {
               ['Data de emissão', 'sempre a data do dia — sai direto no PDF.'],
               ['Item da nota', '"Peças substituídas em Garantia" (descrição e quantidade editáveis). O valor total é sempre o valor de peças (DANFE) das Notas Fiscais Emitidas e não é digitado; a quantidade só divide o valor unitário.'],
               ['Dados do Cliente', 'Nome = Proprietário do Veículo da garantia; Placa = placa gravada na garantia (vem dos arquivos do Dealer.net).'],
+              ['Assinatura', 'nome, cargo e imagem da assinatura são sempre do usuário logado, inclusive ao baixar de novo uma nota já emitida; no rodapé do PDF, em letra pequena, fica registrado quem emitiu a nota pela primeira vez, com data e horário. A imagem vem do funcionário vinculado ao usuário (cadastro de Funcionários); sem vínculo ou sem imagem, o espaço fica em branco.'],
               ['Dados da Nota de Débito', 'o Número é sempre o da Nota Fiscal de Serviços (NFS-e). Se a OS não possuir nota fiscal de serviços, o Número é o da DANFE (nota fiscal de peças).'],
               ['Dados da Nota Fiscal de Peças ao Cliente', 'somente a DANFE (nota fiscal de peças): número, valor de peças e data de faturamento.'],
-              ['Emitir e baixar PDF', 'gera o número da nota, grava a emissão e baixa o PDF. O nome do arquivo segue o padrão cadastrado no modelo (campo "Nome do arquivo PDF"), ex.: "O067692 - SB160956 - ND.pdf" = Nº SG + 8 últimos caracteres do chassi + ND. As notas já emitidas ficam listadas na mesma tela e podem ser baixadas de novo ou excluídas (Excluir → Sim, conforme permissão).'],
+              ['Emitir e baixar PDF', 'antes de baixar (nota nova ou PDF de nota já emitida) abre um alerta pedindo para ler todo o documento e conferir as informações antes de enviar ao fabricante; o download só acontece no OK. Gera o número da nota, grava a emissão e baixa o PDF. O nome do arquivo segue o padrão cadastrado no modelo (campo "Nome do arquivo PDF"), ex.: "O067692 - SB160956 - ND.pdf" = Nº SG + 8 últimos caracteres do chassi + ND. As notas já emitidas ficam listadas na mesma tela e podem ser baixadas de novo ou excluídas (Excluir → Sim, conforme permissão).'],
             ]} />
             <Sub titulo="Modelo aplicado a cada tipo de OS">
               <p>
