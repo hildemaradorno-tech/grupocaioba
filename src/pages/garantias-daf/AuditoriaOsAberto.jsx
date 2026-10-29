@@ -525,10 +525,12 @@ export default function AuditoriaOsAberto() {
     return d
   })()
 
+  // Admin ou grupo com a ação 'reabrir_sem_limite': reabre qualquer auditoria, a qualquer momento, prazo livre
+  const reabrirSemLimite = isAdminEfetivo || hasAction('auditoria-os-aberto', 'reabrir_sem_limite')
   const reabrir = (() => {
     if (!auditoriaAtual) return { pode: false, motivo: 'Selecione uma auditoria' }
     if (!auditoriaEncerrada) return { pode: false, motivo: 'Só para auditoria encerrada (Respondido / Sem Resposta)' }
-    if (isAdminEfetivo) return { pode: true, motivo: 'Volta para A Responder com novo prazo (Admin, sem limite)' }
+    if (reabrirSemLimite) return { pode: true, motivo: `Volta para A Responder com novo prazo (${isAdminEfetivo ? 'Admin' : 'Reabrir sem limite'})` }
     if (!hasAction('auditoria-os-aberto', 'reabrir')) return { pode: false, motivo: 'Sem permissão para reabrir' }
     if (!ehUltimaDaEmpresa) return { pode: false, motivo: 'Só a última auditoria da empresa pode ser reaberta — antigas: somente Admin' }
     if (soReaberturas.some(r => !r.por_admin)) return { pode: false, motivo: 'Já reaberta uma vez — somente o Admin pode reabrir novamente' }
@@ -739,7 +741,7 @@ export default function AuditoriaOsAberto() {
   }
   // Na reabertura, só o Admin pode mudar o prazo calculado pela regra
   // Reabertura por não-Admin: o prazo pode ser qualquer data/hora ATÉ o limite da regra
-  const limiteRegraMs = modalPrazo?.procedimento === 'Reaberta' && !isAdminEfetivo ? modalPrazo.limite : null
+  const limiteRegraMs = modalPrazo?.procedimento === 'Reaberta' && !reabrirSemLimite ? modalPrazo.limite : null
   const limiteRegraTexto = limiteRegraMs
     ? `${new Date(limiteRegraMs).toLocaleDateString('pt-BR')} às ${new Date(limiteRegraMs).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
     : ''
@@ -762,7 +764,8 @@ export default function AuditoriaOsAberto() {
           auditoria_id: auditoriaAtual.id,
           tipo: 'reabertura',
           reaberto_por: user?.email || null,
-          por_admin: !!isAdminEfetivo,
+          // Reabertura sem limite (Admin ou ação 'reabrir_sem_limite') não consome a "1 vez" dos demais usuários
+          por_admin: !!reabrirSemLimite,
           status_anterior: statusAud,
           prazo_novo: prazoEscolhido.toISOString(),
         })
@@ -954,7 +957,7 @@ export default function AuditoriaOsAberto() {
       cor: 'text-slate-600',
     },
     {
-      id: 'reabrir', visivel: pode('reabrir'), icon: RotateCcw, label: 'Reabrir auditoria',
+      id: 'reabrir', visivel: pode('reabrir') || reabrirSemLimite, icon: RotateCcw, label: 'Reabrir auditoria',
       desc: reabrir.motivo, disabled: !reabrir.pode, onClick: () => abrirModalPrazo('Reaberta'), cor: 'text-amber-600',
     },
     {
@@ -2339,7 +2342,7 @@ export default function AuditoriaOsAberto() {
                             {fechamento ? `Fechada — ${nomeStatus(r.resultado)}` : 'Reaberta'}
                           </span>
                           por <strong className="text-slate-800">{quem}</strong>
-                          {r.por_admin && <span className="ml-1 px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 text-[9px] font-bold">ADMIN</span>}
+                          {r.por_admin && <span className="ml-1 px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 text-[9px] font-bold">{fechamento ? 'ADMIN' : 'SEM LIMITE'}</span>}
                           {' '}em <strong className="text-slate-800">{dh(r.reaberto_em)}</strong>
                           {!fechamento && (
                             <span className="block text-[11px] text-slate-500">

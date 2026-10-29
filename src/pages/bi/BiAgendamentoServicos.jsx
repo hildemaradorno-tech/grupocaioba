@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Bar, BarChart, CartesianGrid, LabelList, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { AlertTriangle, Building2, Calendar, ChevronDown, ChevronLeft, ChevronRight, RefreshCw, RotateCcw, X } from 'lucide-react'
+import { AlertTriangle, BookOpen, Building2, Calendar, ChevronDown, ChevronLeft, ChevronRight, Info, RefreshCw, RotateCcw, Table2, X } from 'lucide-react'
 import { apiService } from '../../services/supabaseClient'
 import { empresaSelecionavel } from '../../utils/comissoesElegibilidade'
+import { INFO, OBJETIVO_ABAS } from './agendamentoServicosTextos'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
 
@@ -25,11 +26,11 @@ const KPIS = [
 // Velocímetros. valor/meta em %; valor null = ainda sem fonte de dados.
 // junto: true = fica abaixo dos cards de situação dos agendamentos.
 const GAUGES = [
-  { label: 'Taxa de Contato Realizado', chave: 'taxaContato', valor: null, meta: 80, ajuda: 'Contatos realizados ÷ contatos gerados' },
-  { label: 'Taxa de Agendamento', chave: 'taxaAgendamento', valor: null, meta: 80, ajuda: 'Contatos agendados ÷ contatos realizados' },
-  { label: 'Taxa de Conversão', chave: 'taxaConversao', junto: true, valor: null, meta: 80, ajuda: 'O.S abertas com agendamento ÷ contatos agendados' },
-  { label: 'Taxa Encerrado sem Agendamento', chave: 'taxaSemAgendamento', valor: null, meta: 80, ajuda: 'Contatos encerrados sem agendamento ÷ contatos gerados (quanto menor, melhor)', menorMelhor: true },
-  { label: 'Taxa de No-show', chave: 'taxaNoShow', junto: true, valor: null, meta: 15, ajuda: 'No-show (agendou e não compareceu) ÷ contatos agendados (quanto menor, melhor)', menorMelhor: true },
+  { label: 'Taxa de Contato Realizado', chave: 'taxaContato', valor: null, meta: 80, info: INFO.taxaContato },
+  { label: 'Taxa de Agendamento', chave: 'taxaAgendamento', valor: null, meta: 80, info: INFO.taxaAgendamento },
+  { label: 'Taxa de Conversão', chave: 'taxaConversao', junto: true, valor: null, meta: 80, info: INFO.taxaConversao },
+  { label: 'Taxa Encerrado sem Agendamento', chave: 'taxaSemAgendamento', valor: null, meta: 80, info: INFO.taxaSemAgendamento, menorMelhor: true },
+  { label: 'Taxa de No-show', chave: 'taxaNoShow', junto: true, valor: null, meta: 15, info: INFO.taxaNoShow, menorMelhor: true },
 ]
 
 // Meia-lua: arco cinza de fundo, arco preenchido até o valor e um corte branco na meta.
@@ -61,10 +62,66 @@ const EVOLUCAO = MESES.slice(0, MES_ATUAL + 1).map((m, i) => ({ idx: i, mes: `${
 const fmtMil = (v) => (v === null || v === undefined ? '' : `R$ ${(v / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} mil`)
 const eixo = { fontSize: 11, fill: '#64748b' }
 
-function CardGrafico({ titulo, vazio, children }) {
+// Botão ⓘ dos cards/indicadores/gráficos (mesmo padrão do BI Planos de Manutenção, em verde): abre um quadro
+// com objetivo, cálculo e fonte (arquivo) do número, centralizado na tela (portal, acima de tudo); fecha clicando fora ou no X.
+// Regras e colunas ficam no Manual operacional (/bi/agendamento-servicos/manual).
+function BotaoInfo({ titulo, info }) {
+  const [aberto, setAberto] = useState(false)
+  if (!info) return null
+  const secoes = [['Objetivo', info.objetivo], ['Cálculo', info.calculo], ['Fonte (arquivo)', info.fonte]]
   return (
-    <div className="bg-white border border-slate-200 rounded-lg p-3">
-      <p className="text-[11px] font-semibold text-indigo-950 leading-tight mb-2">{titulo}</p>
+    <>
+      <button type="button" onClick={() => setAberto(true)} aria-label={`Informações: ${titulo}`} title="Informações"
+        className="absolute top-2 right-2 p-0.5 rounded-full text-slate-400 hover:text-emerald-600 hover:bg-emerald-50">
+        <Info className="h-3.5 w-3.5" />
+      </button>
+      {aberto && createPortal(
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
+          onMouseDown={(e) => { if (e.target === e.currentTarget) setAberto(false) }}>
+          <div className="bg-white border border-slate-200 rounded-lg shadow-xl text-[11px] text-slate-700 w-full max-w-md max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between gap-2 px-4 py-2.5 border-b border-slate-200">
+              <p className="text-sm font-bold text-slate-900">{titulo}</p>
+              <button type="button" onClick={() => setAberto(false)} aria-label="Fechar" className="p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="p-4 space-y-3 overflow-y-auto">
+              {secoes.filter(([, t]) => t).map(([nome, texto]) => (
+                <div key={nome}>
+                  <p className="text-[10px] font-bold uppercase text-emerald-700">{nome}</p>
+                  <p className="leading-snug mt-0.5 whitespace-pre-line">{texto}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+    </>
+  )
+}
+
+// Card simples (barra lateral + rótulo + número) com o botão ⓘ.
+function CardKpi({ label, valor, info, cor, children, extra }) {
+  return (
+    <div className="relative bg-white border border-slate-200 rounded-lg p-3 flex gap-2.5">
+      <BotaoInfo titulo={label} info={info} />
+      <div className={`w-1 rounded shrink-0 ${cor ? '' : 'bg-red-400'}`} style={cor ? { backgroundColor: cor } : undefined} />
+      <div className="flex-1 pr-4">
+        <p className="text-[11px] font-semibold text-indigo-950 leading-tight">{label}</p>
+        <p className="text-base font-bold text-slate-900 mt-1">{valor}</p>
+        {children}
+      </div>
+      {extra}
+    </div>
+  )
+}
+
+function CardGrafico({ titulo, vazio, info, children }) {
+  return (
+    <div className="relative bg-white border border-slate-200 rounded-lg p-3">
+      <BotaoInfo titulo={titulo} info={info} />
+      <p className="text-[11px] font-semibold text-indigo-950 leading-tight mb-2 pr-5">{titulo}</p>
       <div className="h-56">
         {vazio ? <div className="h-full flex items-center justify-center text-[11px] text-slate-400">Sem fonte de dados ainda.</div> : children}
       </div>
@@ -73,7 +130,7 @@ function CardGrafico({ titulo, vazio, children }) {
 }
 
 // Card no modelo "Conversão — Resultado": Peças, Serviços e Total (barras proporcionais ao Total) de uma lista de O.S.
-function CardConversao({ titulo, oses, carregando }) {
+function CardConversao({ titulo, oses, carregando, info }) {
   const soma = (campo) => (oses ? oses.reduce((t, o) => t + (o[campo] || 0), 0) : null)
   const itens = [
     { label: 'Faturamento Peças', valor: soma('produto'), cor: '#34d399' },
@@ -82,8 +139,9 @@ function CardConversao({ titulo, oses, carregando }) {
   ]
   const max = Math.max(...itens.map(c => c.valor || 0), 0)
   return (
-    <div className="bg-white border border-slate-200 rounded-lg p-3" title="Soma das O.S. (colunas Produto, Servico, Desconto e Total do ROF001 TODAS)">
-      <p className="text-[11px] font-semibold text-indigo-950 leading-tight">{titulo}{oses ? <span className="font-normal text-slate-400"> · {oses.length.toLocaleString('pt-BR')} O.S.</span> : null}</p>
+    <div className="relative bg-white border border-slate-200 rounded-lg p-3">
+      <BotaoInfo titulo={titulo} info={info} />
+      <p className="text-[11px] font-semibold text-indigo-950 leading-tight pr-5">{titulo}</p>
       <div className="space-y-3 mt-3">
         {itens.map(c => (
           <div key={c.label}>
@@ -96,7 +154,7 @@ function CardConversao({ titulo, oses, carregando }) {
             </div>
           </div>
         ))}
-        {/* Ticket médio = Faturamento Total ÷ nº de O.S. do card. */}
+        {/* Ticket médio = Faturamento Total ÷ nº de O.S. do card (as mesmas dos cards de quantidade). */}
         <div className="flex items-baseline justify-between gap-2 text-[11px] border-t border-slate-100 pt-2">
           <span className="text-slate-600">Ticket médio</span>
           <span className="font-bold text-slate-900 tabular-nums">{oses?.length ? fmtBRL(soma('total') / oses.length) : '—'}</span>
@@ -113,7 +171,7 @@ const corAtingimento = (valor, meta, menorMelhor) => {
   return ating >= 1 ? '#059669' : ating >= 0.8 ? '#eab308' : '#dc2626'
 }
 
-function GaugeMeta({ label, valor, meta, ajuda, menorMelhor }) {
+function GaugeMeta({ label, valor, meta, info, menorMelhor }) {
   const cx = 100, cy = 100, r = 70, esp = 36
   const ponto = (pct, raio = r) => {
     const a = Math.PI * (1 - Math.min(Math.max(pct, 0), 100) / 100)
@@ -123,8 +181,9 @@ function GaugeMeta({ label, valor, meta, ajuda, menorMelhor }) {
   const [mx1, my1] = ponto(meta, r - esp / 2 - 1)
   const [mx2, my2] = ponto(meta, r + esp / 2 + 1)
   return (
-    <div className="bg-white border border-slate-200 rounded-lg p-3" title={ajuda}>
-      <p className="text-[11px] font-semibold text-indigo-950 leading-tight">{label}</p>
+    <div className="relative bg-white border border-slate-200 rounded-lg p-3">
+      <BotaoInfo titulo={label} info={info} />
+      <p className="text-[11px] font-semibold text-indigo-950 leading-tight pr-5">{label}</p>
       <svg viewBox="0 0 200 118" className="w-full max-h-40 mt-1">
         <path d={arco(100)} fill="none" stroke="#e2e8f0" strokeWidth={esp} />
         {valor !== null && valor > 0 && <path d={arco(valor)} fill="none" stroke={corAtingimento(valor, meta, menorMelhor)} strokeWidth={esp} />}
@@ -139,9 +198,11 @@ function GaugeMeta({ label, valor, meta, ajuda, menorMelhor }) {
 }
 
 // Abas internas do BI.
-const ABAS = ['Passagens', 'Campanhas', 'Visão Período']
-// Passagens: O.S. abertas e agendamentos; Campanhas: painel de cards/velocímetros; Visão Período: gráficos mensais.
-const ABA_PASSAGENS = 'Passagens'
+// Visão Período fica fora por enquanto (gráficos ainda sem fonte); o código dela continua abaixo.
+const ABAS = ['Por Campanhas', 'Por Agendamentos', 'Por Passagens']
+// Passagens: O.S. abertas e agendamentos; Por Agendamentos: agenda pela data do agendamento e o que aconteceu; Campanhas: painel de cards/velocímetros; Visão Período: gráficos mensais.
+const ABA_PASSAGENS = 'Por Passagens'
+const ABA_AGENDAMENTOS = 'Por Agendamentos'
 const VISAO_PERIODO = 'Visão Período'
 
 // Multisseleção de empresas: marcar o agrupamento marca/desmarca todas as empresas dele.
@@ -213,6 +274,107 @@ function SeletorEmpresas({ grupos, selecionadas, onChange }) {
       )}
     </>
   )
+}
+
+// Subtítulo de seção com o ícone de tabela à direita (abre a tabela por data da aba).
+function SubtituloSecao({ titulo, onTabela, tituloTabela }) {
+  return (
+    <div className="flex items-end justify-between gap-2 border-b border-slate-700 pb-1">
+      <h2 className="text-xs font-bold text-slate-200 uppercase tracking-wide">{titulo}</h2>
+      {onTabela && (
+        <button type="button" onClick={onTabela} title={`${tituloTabela} (tabela)`} aria-label={tituloTabela}
+          className="p-1 rounded-md text-slate-300 hover:text-white hover:bg-slate-700 transition-colors">
+          <Table2 className="h-4 w-4" />
+        </button>
+      )}
+    </div>
+  )
+}
+
+// Pop-up com a tabela por data da aba: uma linha por data (mais recente primeiro) e o Total no fim.
+// colunas = [[título, (linha) => valor]]; a 1ª coluna é a data (à esquerda), as demais números (à direita).
+function TabelaPorData({ titulo, colunas, linhas, total, vazio, onClose }) {
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-7xl max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
+          <p className="text-sm font-bold text-slate-900 flex items-center gap-2"><Table2 className="h-4 w-4 text-emerald-600" /> {titulo}</p>
+          <button type="button" onClick={onClose} aria-label="Fechar" className="text-slate-400 hover:text-slate-600"><X className="h-4 w-4" /></button>
+        </div>
+        <div className="overflow-auto p-4">
+          <table className="w-full text-[11px]">
+            <thead className="sticky top-0 bg-white text-slate-500 uppercase text-[10px]">
+              <tr>{colunas.map(([h], i) => <th key={h} className={`font-bold py-1.5 px-2 border-b border-slate-200 ${i < 1 ? 'text-left' : 'text-right'}`}>{h}</th>)}</tr>
+            </thead>
+            <tbody className="text-slate-700">
+              {linhas.length === 0 && <tr><td colSpan={colunas.length} className="py-6 text-center text-slate-400">{vazio}</td></tr>}
+              {[...linhas, ...(linhas.length ? [{ ...total, id: 'Total', data: '' }] : [])].map(l => (
+                <tr key={l.id} className={l.id === 'Total' ? 'font-bold bg-slate-50 border-t-2 border-slate-200' : 'border-b border-slate-100'}>
+                  {colunas.map(([h, f], i) => <td key={h} className={`py-1 px-2 whitespace-nowrap tabular-nums ${i < 1 ? 'text-left' : 'text-right'}`}>{f(l)}</td>)}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>,
+    document.body
+  )
+}
+const fmtData = (d) => (d ? d.split('-').reverse().join('/') : 'Total')
+const taxa = (a, b) => (b > 0 ? `${Math.round((a / b) * 100)}%` : '—')
+const PASSIVOS_TIPOS = ['Receptivo', 'Presencial', 'Internet']
+const somaTotal = (oses) => oses.reduce((t, o) => t + (o.total || 0), 0)
+
+// Contagens da aba Por Passagens (cards e tabela por data de abertura).
+function resumoPassagens(oses) {
+  const agend = oses.filter(o => o.tipo_agendamento)
+  return {
+    passagens: oses.length,
+    agendadas: agend.length,
+    ativos: oses.filter(o => o.tipo_agendamento === 'Ativo').length,
+    passivos: oses.filter(o => PASSIVOS_TIPOS.includes(o.tipo_agendamento)).length,
+    faturamento: somaTotal(agend),
+  }
+}
+
+// Contagens da aba Por Agendamentos (cards e tabela por data do agendamento). `lista` já traz o desfecho.
+function resumoAgendamentos(lista) {
+  const conta = (f) => lista.filter(f).length
+  const ativo = (a) => a.tipo === 'Ativo'
+  const passivo = (a) => PASSIVOS_TIPOS.includes(a.tipo)
+  const oses = new Map()
+  lista.filter(a => a.desfecho === 'virouOs' && a.osRow).forEach(a => oses.set(`${a.empresa}#${a.os}`, a.osRow))
+  return {
+    total: lista.length,
+    ativos: conta(ativo),
+    passivos: conta(passivo),
+    virouOs: conta(a => a.desfecho === 'virouOs'),
+    virouOsAtivo: conta(a => ativo(a) && a.desfecho === 'virouOs'),
+    virouOsPassivo: conta(a => passivo(a) && a.desfecho === 'virouOs'),
+    osCancelada: conta(a => a.desfecho === 'osCancelada'),
+    noShow: conta(a => a.desfecho === 'noShow'),
+    aExecutar: conta(a => a.desfecho === 'aExecutar'),
+    osGeradas: oses.size,
+    faturamento: somaTotal([...oses.values()]),
+  }
+}
+
+// Contagens das campanhas (cards da aba Por Campanhas e tabela por campanha) — regras no manual.
+function resumoContatos(rows) {
+  const comCliente = rows.filter(r => r.id_cliente !== null)
+  const n = {
+    campanhas: new Set(rows.map(r => r.id_campanha_execucao)).size,
+    contatos: comCliente.length,
+    realizados: comCliente.filter(r => r.contato_realizado).length,
+    aRealizar: comCliente.filter(r => !r.contato_realizado && !/^S0[01]/i.test(r.motivo_encerramento || '')).length,
+    agendados: comCliente.filter(r => r.contato_agendado).length,
+    // Inclui S02 "Cliente já agendado": o contato da campanha terminou sem gerar agendamento novo.
+    encerrados: comCliente.filter(r => r.contato_realizado && !r.contato_agendado && r.motivo_encerramento).length,
+    osAberta: 0, programados: 0, noShow: 0,
+  }
+  comCliente.forEach(r => { const k = situacaoDe(r.agendamento); if (k) n[k]++ })
+  return n
 }
 
 // Situações de O.S. que pedem atenção (contam como passagem, mas aguardam autorização).
@@ -293,19 +455,16 @@ export default function BiAgendamentoServicos() {
     return crm.rows.filter(r => r.data && r.data >= dataIni && r.data <= dataFim
       && (!siglasSel || siglasSel.has(SIGLA_ARQUIVO_EMPRESA[r.sigla])))
   }, [crm, empresas, empresasSel, dataIni, dataFim])
-  const numeros = {
-    campanhas: new Set(contatosFiltrados.map(r => r.id_campanha_execucao)).size,
-    contatos: contatosFiltrados.filter(r => r.id_cliente !== null).length,
-    realizados: contatosFiltrados.filter(r => r.id_cliente !== null && r.contato_realizado).length,
-    aRealizar: contatosFiltrados.filter(r => r.id_cliente !== null && !r.contato_realizado
-      && !/^S0[01]/i.test(r.motivo_encerramento || '')).length,
-    agendados: contatosFiltrados.filter(r => r.id_cliente !== null && r.contato_agendado).length,
-    osAberta: 0, programados: 0, noShow: 0,
-    // Inclui S02 "Cliente já agendado": o contato da campanha terminou sem gerar agendamento novo.
-    encerrados: contatosFiltrados.filter(r => r.id_cliente !== null && r.contato_realizado && !r.contato_agendado
-      && r.motivo_encerramento).length,
-  }
-  contatosFiltrados.forEach(r => { const k = r.id_cliente !== null && situacaoDe(r.agendamento); if (k) numeros[k]++ })
+  const numeros = resumoContatos(contatosFiltrados)
+  // Tabela "Campanhas por data de geração" (ícone na linha do subtítulo): mesmas regras dos cards, por campanha.
+  const [tabela, setTabela] = useState(null) // 'campanhas' | 'agendamentos' | 'passagens' (pop-up da tabela por data)
+  const linhasCampanhas = useMemo(() => {
+    const m = new Map()
+    // Uma linha por data de geração (todas as unidades e campanhas do dia juntas).
+    contatosFiltrados.forEach(r => { const k = r.data; (m.get(k) || m.set(k, []).get(k)).push(r) })
+    return [...m.entries()].map(([data, rows]) => ({ id: data, data, ...resumoContatos(rows) }))
+      .sort((a, b) => b.data.localeCompare(a.data))
+  }, [contatosFiltrados])
   // Velocímetros com fonte: o valor sai de "numeros"; os demais seguem null (—).
   const pct = (a, b) => (b > 0 ? Math.round((a / b) * 100) : null)
   const valorGauge = {
@@ -342,12 +501,63 @@ export default function BiAgendamentoServicos() {
   // Velocímetros da aba Passagens: tudo sobre as passagens (ativo + passivo = taxa de agendamento, fora os sem tipo).
   const pctPass = (n) => (passagens ? Math.round((n / passagens) * 100) : null)
   const gaugesGeral = [
-    { label: 'Taxa de Agendamento', valor: pctPass(passagensAgendadas), meta: 80, ajuda: 'O.S. com agendamento ÷ quant. O.S. por data de abertura' },
-    { label: 'Taxa de Agendamento Ativo', valor: pctPass(agAtivos), meta: 80, ajuda: 'Agendamentos ativos ÷ quant. O.S. por data de abertura' },
-    { label: 'Taxa de Agendamento Passivo', valor: pctPass(agReceptivos), meta: 80, ajuda: 'Agendamentos passivos (receptivo, presencial e internet) ÷ quant. O.S. por data de abertura' },
+    { label: 'Taxa de Agendamento', valor: pctPass(passagensAgendadas), meta: 80, info: INFO.gaugeAgendamentoOs },
+    { label: 'Taxa de Agendamento Ativo', valor: pctPass(agAtivos), meta: 80, info: INFO.gaugeAtivo },
+    { label: 'Taxa de Agendamento Passivo', valor: pctPass(agReceptivos), meta: 80, info: INFO.gaugePassivo },
   ]
   // O.S. pendentes de autorização (cancelamento/encerramento) entre as passagens: alerta no card.
   const osPendentes = (osDoPeriodo || []).filter(o => SITUACOES_PENDENTES.includes(o.situacao))
+  // Aba Por Agendamentos: agendamentos com DATA DO AGENDAMENTO no período (ROF037 + ROF026, sem os cancelados CAN)
+  // e o desfecho de cada um: virou O.S. (O.S. não cancelada no ROF001), no-show (NSW) ou a executar.
+  const osPorChave = useMemo(() => new Map((passagensOs?.rows || []).map(o => [`${o.empresa.toUpperCase()}#${o.numero}`, o])), [passagensOs])
+  const agendDoPeriodo = useMemo(() => {
+    if (!passagensOs?.agendamentos) return null
+    const norm = (t) => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim()
+    const nomesSel = empresasSel.length
+      ? new Set(empresas.filter(e => empresasSel.includes(e.id)).map(e => norm(e.empresa_fantasia || e.nome_empresa)))
+      : null
+    return passagensOs.agendamentos
+      .filter(a => a.data && a.data >= dataIni && a.data <= dataFim && a.status !== 'CAN' && (!nomesSel || nomesSel.has(norm(a.empresa))))
+      .map(a => {
+        const os = a.os ? osPorChave.get(`${a.empresa}#${a.os}`) : null
+        const desfecho = a.os ? (os?.situacao === 'Cancelada' ? 'osCancelada' : 'virouOs') : a.status === 'NSW' ? 'noShow' : 'aExecutar'
+        return { ...a, osRow: os || null, desfecho }
+      })
+  }, [passagensOs, osPorChave, empresas, empresasSel, dataIni, dataFim])
+  const ehAtivo = (a) => a.tipo === 'Ativo'
+  const ehPassivo = (a) => PASSIVOS.includes(a.tipo)
+  const contaAg = (f) => (agendDoPeriodo ? agendDoPeriodo.filter(f).length : null)
+  const ag = {
+    total: contaAg(() => true),
+    ativos: contaAg(ehAtivo),
+    passivos: contaAg(ehPassivo),
+    virouOs: contaAg(a => a.desfecho === 'virouOs'),
+    osCancelada: contaAg(a => a.desfecho === 'osCancelada'),
+    noShow: contaAg(a => a.desfecho === 'noShow'),
+    aExecutar: contaAg(a => a.desfecho === 'aExecutar'),
+  }
+  const pctAg = (n, base) => (base ? Math.round((n / base) * 100) : null)
+  const gaugesAgend = [
+    { label: 'Taxa de Conversão', valor: pctAg(ag.virouOs, ag.total), meta: 80, info: INFO.agTaxaConversao },
+    { label: 'Taxa de Conversão Ativo', valor: pctAg(contaAg(a => ehAtivo(a) && a.desfecho === 'virouOs'), ag.ativos), meta: 80, info: INFO.agTaxaConversaoAtivo },
+    { label: 'Taxa de Conversão Passivo', valor: pctAg(contaAg(a => ehPassivo(a) && a.desfecho === 'virouOs'), ag.passivos), meta: 80, info: INFO.agTaxaConversaoPassivo },
+    { label: 'Taxa de No-show', valor: pctAg(ag.noShow, ag.total), meta: 15, menorMelhor: true, info: INFO.agTaxaNoShow },
+  ]
+  // Valores da conversão: as O.S. (sem repetir) dos agendamentos que viraram O.S.
+  // Linhas por data. crescente = da data mais antiga para a mais recente (padrão: mais recente primeiro).
+  const porData = (lista, resumo, crescente = false) => {
+    if (!lista) return []
+    const m = new Map()
+    lista.forEach(x => { (m.get(x.data) || m.set(x.data, []).get(x.data)).push(x) })
+    return [...m.entries()].map(([data, l]) => ({ id: data, data, ...resumo(l) }))
+      .sort((a, b) => (crescente ? a.data.localeCompare(b.data) : b.data.localeCompare(a.data)))
+  }
+  const osDosAgend = (f) => {
+    if (!agendDoPeriodo) return null
+    const m = new Map()
+    agendDoPeriodo.filter(a => a.desfecho === 'virouOs' && a.osRow && f(a)).forEach(a => m.set(`${a.empresa}#${a.os}`, a.osRow))
+    return [...m.values()]
+  }
   const [alertaPendentes, setAlertaPendentes] = useState(false)
   const [filtroPendente, setFiltroPendente] = useState(null) // situação clicada na janela (null = todas)
 
@@ -361,13 +571,8 @@ export default function BiAgendamentoServicos() {
   const blocoCards = (
     <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
       {KPIS.map(k => (
-        <div key={k.label} className="bg-white border border-slate-200 rounded-lg p-3 flex gap-2.5">
-          <div className="w-1 rounded bg-red-400 shrink-0" />
-          <div>
-            <p className="text-[11px] font-semibold text-indigo-950 leading-tight">{k.label}</p>
-            <p className="text-base font-bold text-slate-900 mt-1">{k.chave ? (carregando && !crm ? '...' : numeros[k.chave].toLocaleString('pt-BR')) : (k.valor ?? '—')}</p>
-          </div>
-        </div>
+        <CardKpi key={k.label} label={k.label} info={INFO[k.chave]}
+          valor={k.chave ? (carregando && !crm ? '...' : numeros[k.chave].toLocaleString('pt-BR')) : (k.valor ?? '—')} />
       ))}
     </div>
   )
@@ -409,6 +614,12 @@ export default function BiAgendamentoServicos() {
               >
                 <RefreshCw className={`h-3.5 w-3.5 ${carregando ? 'animate-spin' : ''}`} />
               </button>
+              {/* Manual operacional: página própria, sempre em outra aba (mesmo padrão do BI Planos de Manutenção). */}
+              <a href="/bi/agendamento-servicos/manual" target="_blank" rel="noopener noreferrer"
+                title="Manual operacional do BI (abre em outra aba)" aria-label="Manual operacional do BI"
+                className="flex items-center justify-center p-1.5 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm transition-colors">
+                <BookOpen className="h-3.5 w-3.5" />
+              </a>
             </div>
             {erroCrm && <p className="text-[10px] text-red-600 max-w-[420px] text-right leading-tight">{erroCrm}</p>}
             <div className="flex flex-wrap items-end gap-4">
@@ -455,6 +666,8 @@ export default function BiAgendamentoServicos() {
           </button>
         ))}
       </div>
+      {/* Objetivo da aba (mesmo texto do manual). */}
+      {OBJETIVO_ABAS[aba] && <p className="text-[11px] text-slate-300 leading-snug max-w-4xl -mt-2">{OBJETIVO_ABAS[aba]}</p>}
 
       {/* Tipo de Agendamentos: só na Visão Período. */}
       {aba === VISAO_PERIODO && (
@@ -469,71 +682,82 @@ export default function BiAgendamentoServicos() {
       )}
 
       {/* Aba Passagens: O.S. abertas no período e quantas vieram de agendamento. */}
-      {aba === ABA_PASSAGENS ? (
+      {aba === ABA_AGENDAMENTOS ? (
         <>
+        <SubtituloSecao titulo="Agendamentos" onTabela={() => setTabela('agendamentos')} tituloTabela="Agendamentos por data do agendamento" />
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {gaugesAgend.map(g => <GaugeMeta key={g.label} {...g} />)}
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+          {[
+            ['Agendamentos no período', ag.total, INFO.agTotal],
+            ['Agendamentos ativos', ag.ativos, INFO.agAtivosAgenda],
+            ['Agendamentos passivos', ag.passivos, INFO.agPassivosAgenda],
+          ].map(([label, v, info]) => (
+            <CardKpi key={label} label={label} info={info} valor={carregando && v === null ? '...' : v === null ? '—' : v.toLocaleString('pt-BR')} />
+          ))}
+          <CardKpi label="Viraram O.S." info={INFO.agVirouOs} cor="#059669"
+            valor={carregando && ag.virouOs === null ? '...' : ag.virouOs === null ? '—' : ag.virouOs.toLocaleString('pt-BR')} />
+          <CardKpi label="No-show" info={INFO.agNoShow} cor="#dc2626"
+            valor={carregando && ag.noShow === null ? '...' : ag.noShow === null ? '—' : ag.noShow.toLocaleString('pt-BR')} />
+          <CardKpi label="A executar" info={INFO.agAExecutar} cor="#3b82f6"
+            valor={carregando && ag.aExecutar === null ? '...' : ag.aExecutar === null ? '—' : ag.aExecutar.toLocaleString('pt-BR')} />
+        </div>
+
+        <h2 className="text-xs font-bold text-slate-200 uppercase tracking-wide border-b border-slate-700 pb-1">Conversão</h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <CardConversao titulo="Conversão — Total" oses={osDosAgend(() => true)} carregando={carregando} info={INFO.agConversaoTotal} />
+          <CardConversao titulo="Conversão — Ativos" oses={osDosAgend(ehAtivo)} carregando={carregando} info={INFO.agConversaoAtivos} />
+          <CardConversao titulo="Conversão — Passivos" oses={osDosAgend(ehPassivo)} carregando={carregando} info={INFO.agConversaoPassivos} />
+        </div>
+        </>
+      ) : aba === ABA_PASSAGENS ? (
+        <>
+        <SubtituloSecao titulo="Passagens" onTabela={() => setTabela('passagens')} tituloTabela="Passagens por data de abertura" />
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
           {gaugesGeral.map(g => <GaugeMeta key={g.label} {...g} />)}
         </div>
         {/* 4 cards ocupando a largura toda. */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <div className="bg-white border border-slate-200 rounded-lg p-3 flex gap-2.5" title="O.S. abertas no período (data de criação), sem as canceladas — ROF001 TODAS">
-            <div className="w-1 rounded bg-red-400 shrink-0" />
-            <div className="flex-1">
-              <p className="text-[11px] font-semibold text-indigo-950 leading-tight">Quant. O.S. por data de abertura</p>
-              <p className="text-base font-bold text-slate-900 mt-1">{carregando && passagens === null ? '...' : passagens === null ? '—' : passagens.toLocaleString('pt-BR')}</p>
-            </div>
-            {osPendentes.length > 0 && (
+          <CardKpi label="Quant. O.S. por data de abertura" info={INFO.osAbertura}
+            valor={carregando && passagens === null ? '...' : passagens === null ? '—' : passagens.toLocaleString('pt-BR')}
+            extra={osPendentes.length > 0 && (
               <button type="button" onClick={() => { setFiltroPendente(null); setAlertaPendentes(true) }} title="O.S. pendentes de autorização"
-                className="self-start flex items-center gap-1 px-1.5 py-1 rounded-md bg-amber-100 text-amber-700 hover:bg-amber-200 text-[11px] font-bold">
+                className="self-start mr-4 flex items-center gap-1 px-1.5 py-1 rounded-md bg-amber-100 text-amber-700 hover:bg-amber-200 text-[11px] font-bold">
                 <AlertTriangle className="h-3.5 w-3.5" /> {osPendentes.length}
               </button>
+            )} />
+          <CardKpi label="O.S. com agendamento" info={INFO.osAgendamento}
+            valor={carregando && passagensAgendadas === null ? '...' : passagensAgendadas === null ? '—' : passagensAgendadas.toLocaleString('pt-BR')}>
+            {agSemTipo.length > 0 && (
+              <p className="text-[10px] text-amber-700 mt-0.5" title={agSemTipo.map(o => `${o.empresa.replace('CAIOBA TRUCKS - ', '')} · O.S. ${o.numero} · agendador ${o.agendador}`).join('\n')}>
+                {agSemTipo.length} com agendador fora do ROF037/ROF026
+              </p>
             )}
-          </div>
-          <div className="bg-white border border-slate-200 rounded-lg p-3 flex gap-2.5" title="Das passagens por data de abertura, as O.S. que vieram de agendamento (nº da O.S. no ROF037; se faltar lá, ROF026)">
-            <div className="w-1 rounded bg-red-400 shrink-0" />
-            <div>
-              <p className="text-[11px] font-semibold text-indigo-950 leading-tight">O.S. com agendamento</p>
-              <p className="text-base font-bold text-slate-900 mt-1">{carregando && passagensAgendadas === null ? '...' : passagensAgendadas === null ? '—' : passagensAgendadas.toLocaleString('pt-BR')}</p>
-              {agSemTipo.length > 0 && (
-                <p className="text-[10px] text-amber-700 mt-0.5" title={agSemTipo.map(o => `${o.empresa.replace('CAIOBA TRUCKS - ', '')} · O.S. ${o.numero} · agendador ${o.agendador}`).join('\n')}>
-                  {agSemTipo.length} com agendador fora do ROF037/ROF026
-                </p>
-              )}
-            </div>
-          </div>
-          <div className="bg-white border border-slate-200 rounded-lg p-3 flex gap-2.5" title="Passagens com agendamento do tipo Ativo (ROF037; se faltar lá, ROF026)">
-            <div className="w-1 rounded bg-red-400 shrink-0" />
-            <div>
-              <p className="text-[11px] font-semibold text-indigo-950 leading-tight">Agendamentos ativos</p>
-              <p className="text-base font-bold text-slate-900 mt-1">{carregando && agAtivos === null ? '...' : agAtivos === null ? '—' : agAtivos.toLocaleString('pt-BR')}</p>
-            </div>
-          </div>
-          <div className="bg-white border border-slate-200 rounded-lg p-3 flex gap-2.5" title="Passagens com agendamento do tipo Receptivo, Presencial ou Internet (ROF037; se faltar lá, ROF026)">
-            <div className="w-1 rounded bg-red-400 shrink-0" />
-            <div>
-              <p className="text-[11px] font-semibold text-indigo-950 leading-tight">Agendamentos passivos</p>
-              <p className="text-base font-bold text-slate-900 mt-1">{carregando && agReceptivos === null ? '...' : agReceptivos === null ? '—' : agReceptivos.toLocaleString('pt-BR')}</p>
-            </div>
-          </div>
+          </CardKpi>
+          <CardKpi label="Agendamentos ativos" info={INFO.agAtivos}
+            valor={carregando && agAtivos === null ? '...' : agAtivos === null ? '—' : agAtivos.toLocaleString('pt-BR')} />
+          <CardKpi label="Agendamentos passivos" info={INFO.agPassivos}
+            valor={carregando && agReceptivos === null ? '...' : agReceptivos === null ? '—' : agReceptivos.toLocaleString('pt-BR')} />
         </div>
 
         {/* Conversão: valores e gráficos das O.S. com agendamento. */}
         <h2 className="text-xs font-bold text-slate-200 uppercase tracking-wide border-b border-slate-700 pb-1">Conversão</h2>
         {/* Conversão total, depois só das ativas e só das passivas. */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <CardConversao titulo="Conversão — Total" oses={osAgendadas} carregando={carregando} />
-          <CardConversao titulo="Conversão — Ativos" oses={osAtivas} carregando={carregando} />
-          <CardConversao titulo="Conversão — Passivos" oses={osPassivas} carregando={carregando} />
+          <CardConversao titulo="Conversão — Total" oses={osAgendadas} carregando={carregando} info={INFO.conversaoTotal} />
+          <CardConversao titulo="Conversão — Ativos" oses={osAtivas} carregando={carregando} info={INFO.conversaoAtivos} />
+          <CardConversao titulo="Conversão — Passivos" oses={osPassivas} carregando={carregando} info={INFO.conversaoPassivos} />
         </div>
         </>
       ) : (
       <>
       {/* Subtítulo de seção (Campanhas e Visão Período). */}
-      <h2 className="text-xs font-bold text-slate-200 uppercase tracking-wide border-b border-slate-700 pb-1">Campanhas de Ativação</h2>
+      <SubtituloSecao titulo="Campanhas de Ativação" onTabela={aba !== VISAO_PERIODO ? () => setTabela('campanhas') : null} tituloTabela="Campanhas por data de geração" />
 
       {aba === VISAO_PERIODO ? (
         <div className="space-y-3">
-          <CardGrafico titulo="Evolução da Taxa de Agendamento" vazio={EVOLUCAO.every(e => e.taxa === null)}>
+          <CardGrafico titulo="Evolução da Taxa de Agendamento" info={INFO.evolucaoTaxa} vazio={EVOLUCAO.every(e => e.taxa === null)}>
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={EVOLUCAO} margin={{ top: 20, right: 20, left: -10, bottom: 0 }}>
                 <CartesianGrid stroke="#e2e8f0" vertical={false} />
@@ -546,7 +770,7 @@ export default function BiAgendamentoServicos() {
               </LineChart>
             </ResponsiveContainer>
           </CardGrafico>
-          <CardGrafico titulo="Evolução do Faturamento Convertido" vazio={EVOLUCAO.every(e => e.faturamento === null)}>
+          <CardGrafico titulo="Evolução do Faturamento Convertido" info={INFO.evolucaoFaturamento} vazio={EVOLUCAO.every(e => e.faturamento === null)}>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={EVOLUCAO} margin={{ top: 20, right: 10, left: 10, bottom: 0 }}>
                 <CartesianGrid stroke="#e2e8f0" vertical={false} />
@@ -569,19 +793,16 @@ export default function BiAgendamentoServicos() {
       <div className="space-y-3">
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
           {SITUACAO.map(d => (
-            <div key={d.label} className="bg-white border border-slate-200 rounded-lg p-3 flex gap-2.5">
-              <div className="w-1 rounded shrink-0" style={{ backgroundColor: d.cor }} />
-              <div>
-                <p className="text-[11px] font-semibold text-indigo-950 leading-tight">{d.label}</p>
-                <p className="text-base font-bold text-slate-900 mt-1">{carregando && !crm ? '...' : crm ? numeros[d.chave].toLocaleString('pt-BR') : '—'}</p>
-              </div>
-            </div>
+            <CardKpi key={d.label} label={d.label} info={INFO[d.chave]} cor={d.cor}
+              valor={carregando && !crm ? '...' : crm ? numeros[d.chave].toLocaleString('pt-BR') : '—'} />
           ))}
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          {GAUGES.filter(g => g.junto).map(g => <GaugeMeta key={g.label} {...gauge(g)} />)}
-          <div className="bg-white border border-slate-200 rounded-lg p-3">
-            <p className="text-[11px] font-semibold text-indigo-950 leading-tight">Conversão — Resultado</p>
+          {/* Ordem: Taxa de Conversão, Conversão — Resultado ao lado dela, depois Taxa de No-show. */}
+          <GaugeMeta {...gauge(GAUGES.find(g => g.chave === 'taxaConversao'))} />
+          <div className="relative bg-white border border-slate-200 rounded-lg p-3">
+            <BotaoInfo titulo="Conversão — Resultado" info={INFO.conversaoCampanha} />
+            <p className="text-[11px] font-semibold text-indigo-950 leading-tight pr-5">Conversão — Resultado</p>
             {/* Barras horizontais proporcionais ao maior valor (Total). */}
             <div className="space-y-3 mt-3">
               {CONVERSAO.map(c => (
@@ -597,11 +818,69 @@ export default function BiAgendamentoServicos() {
               ))}
             </div>
           </div>
+          <GaugeMeta {...gauge(GAUGES.find(g => g.chave === 'taxaNoShow'))} />
         </div>
       </div>
       </>
       )}
       </>
+      )}
+
+      {tabela === 'campanhas' && (
+        <TabelaPorData titulo="Campanhas por data de geração" linhas={linhasCampanhas} total={numeros} vazio="Nenhuma campanha no período." onClose={() => setTabela(null)}
+          colunas={[
+            ['Data de geração', l => fmtData(l.data)],
+            ['Campanhas geradas', l => l.campanhas],
+            ['Contatos gerados', l => l.contatos],
+            ['Contatos realizados', l => l.realizados],
+            ['Contatos a realizar', l => l.aRealizar],
+            ['Contatos agendados', l => l.agendados],
+            ['Encerrados sem agendamento', l => l.encerrados],
+            ['Agendamento com O.S aberta', l => l.osAberta],
+            ['Agendamentos programados', l => l.programados],
+            ['No-show', l => l.noShow],
+            ['Taxa de Contato Realizado', l => taxa(l.realizados, l.contatos)],
+            ['Taxa de Agendamento', l => taxa(l.agendados, l.realizados)],
+            ['Taxa Encerrado sem Agendamento', l => taxa(l.encerrados, l.contatos)],
+            ['Taxa de Conversão', l => taxa(l.osAberta, l.agendados)],
+            ['Taxa de No-show', l => taxa(l.noShow, l.agendados)],
+          ]} />
+      )}
+      {tabela === 'agendamentos' && (
+        <TabelaPorData titulo="Agendamentos por data do agendamento" linhas={porData(agendDoPeriodo, resumoAgendamentos, true)}
+          total={resumoAgendamentos(agendDoPeriodo || [])} vazio="Nenhum agendamento no período." onClose={() => setTabela(null)}
+          colunas={[
+            ['Data do agendamento', l => fmtData(l.data)],
+            ['Agendamentos', l => l.total],
+            ['Ativos', l => l.ativos],
+            ['Passivos', l => l.passivos],
+            ['Viraram O.S.', l => l.virouOs],
+            ['O.S. cancelada', l => l.osCancelada],
+            ['No-show', l => l.noShow],
+            ['A executar', l => l.aExecutar],
+            ['Taxa de Conversão', l => taxa(l.virouOs, l.total)],
+            ['Taxa de Conversão Ativo', l => taxa(l.virouOsAtivo, l.ativos)],
+            ['Taxa de Conversão Passivo', l => taxa(l.virouOsPassivo, l.passivos)],
+            ['Taxa de No-show', l => taxa(l.noShow, l.total)],
+            ['Faturamento Total', l => fmtBRL(l.faturamento)],
+            ['Ticket médio', l => (l.osGeradas ? fmtBRL(l.faturamento / l.osGeradas) : '—')],
+          ]} />
+      )}
+      {tabela === 'passagens' && (
+        <TabelaPorData titulo="Passagens por data de abertura" linhas={porData(osDoPeriodo, resumoPassagens, true)}
+          total={resumoPassagens(osDoPeriodo || [])} vazio="Nenhuma O.S. no período." onClose={() => setTabela(null)}
+          colunas={[
+            ['Data de abertura', l => fmtData(l.data)],
+            ['Quant. O.S.', l => l.passagens],
+            ['O.S. com agendamento', l => l.agendadas],
+            ['Agendamentos ativos', l => l.ativos],
+            ['Agendamentos passivos', l => l.passivos],
+            ['Taxa de Agendamento', l => taxa(l.agendadas, l.passagens)],
+            ['Taxa de Agendamento Ativo', l => taxa(l.ativos, l.passagens)],
+            ['Taxa de Agendamento Passivo', l => taxa(l.passivos, l.passagens)],
+            ['Faturamento Total (com agendamento)', l => fmtBRL(l.faturamento)],
+            ['Ticket médio (com agendamento)', l => (l.agendadas ? fmtBRL(l.faturamento / l.agendadas) : '—')],
+          ]} />
       )}
 
       {alertaPendentes && createPortal(

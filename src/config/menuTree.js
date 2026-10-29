@@ -1,3 +1,23 @@
+// Telas do Gestor de Peças 2.0 (iguais para Trucks 'pecas' e Motos 'pecas-motos')
+const TELAS_GESTOR_PECAS = [
+  ['central-alertas', 'Central de Alertas'],
+  ['estoque', 'Posição de Estoque'],
+  ['classificacao', 'Classificação e Curvas (ABC/XYZ/Frequência)'],
+  ['demanda', 'Demanda e Tendências'],
+  ['reposicao', 'Reposição e Sugestão de Compra'],
+  ['cobertura-ruptura', 'Cobertura e Ruptura'],
+  ['excesso-obsoletos', 'Excesso e Obsoletos'],
+  ['promocoes', 'Oportunidades de Promoção'],
+  ['pedidos-pendentes', 'Itens em Pedido Pendente'],
+  ['transferencias', 'Realocação entre Lojas'],
+  ['anomalias', 'Anomalias de Compra, Preço e Custo'],
+  ['produto', 'Evolução do Produto'],
+  ['fornecedores', 'Desempenho de Fornecedores'],
+  ['assistente-ia', 'Assistente IA'],
+  ['parametros', 'Parâmetros'],
+]
+const telasGestorPecas = (prefixo) => TELAS_GESTOR_PECAS.map(([slug, label]) => ({ key: `${prefixo}/${slug}`, label }))
+
 export const MENU_TREE = [
   {
     key: '_config',
@@ -100,6 +120,16 @@ export const MENU_TREE = [
               { key: 'controladoria/plano-contas', label: 'Plano de Contas' },
               { key: 'controladoria/centro-resultado', label: 'Centro de Resultado' },
               { key: 'controladoria/orcamento', label: 'Orçamento' },
+            ],
+          },
+          {
+            // Regra única de classificação do Gestor de Peças 2.0 (Trucks/Dealer.net e Motos/MicroWork).
+            // Key começa com 'pecas/' para valer a mesma liberação do backend e das policies pec_*.
+            key: '_config.departamentos.pecas',
+            label: 'Peças',
+            children: [
+              { key: 'pecas/configuracao', label: 'Classificação de Estoque — Trucks' },
+              { key: 'pecas-motos/configuracao', label: 'Classificação de Estoque — Motos' },
             ],
           },
         ],
@@ -258,6 +288,18 @@ export const MENU_TREE = [
     ],
   },
   {
+    // Gestor de Peças 2.0 — dois Gestores separados com as mesmas telas (fase 1 com dados simulados —
+    // ver backend/services/gestorPecas/dataProvider.js). Dashboards no BI; regras em Configurações → Departamentos → Peças.
+    key: '_pecas',
+    label: 'Gestor de Peças 2.0 — Trucks',
+    children: telasGestorPecas('pecas'),
+  },
+  {
+    key: '_pecas-motos',
+    label: 'Gestor de Peças 2.0 — Motos',
+    children: telasGestorPecas('pecas-motos'),
+  },
+  {
     key: '_bi',
     label: 'BI - Dashboard',
     children: [
@@ -266,6 +308,8 @@ export const MENU_TREE = [
       { key: 'bi/possibilidades', label: 'BI — Possibilidades' },
       { key: 'bi/agendamento-servicos', label: 'BI — Agendamento de Serviços' },
       { key: 'bi/planos-manutencao', label: 'BI — Planos de Manutenção' },
+      { key: 'bi/gestor-pecas', label: 'BI — Gestor de Peças 2.0 — Trucks' },
+      { key: 'bi/gestor-pecas-motos', label: 'BI — Gestor de Peças 2.0 — Motos' },
       {
         // Agrupamento de menu (sem navTo) — cada item abaixo é uma tela própria, não mais abas
         // de uma página única. Movido de Comissões pra cá junto com Medidas BI.

@@ -1,5 +1,5 @@
 import React from 'react'
-import { BookOpen, Database, LayoutDashboard, SlidersHorizontal, Truck, Wrench, FileText, ArrowUpDown, Gauge, CreditCard } from 'lucide-react'
+import { BookOpen, Database, LayoutDashboard, SlidersHorizontal, Truck, Wrench, FileText, Gauge, CreditCard } from 'lucide-react'
 import { INFO_RESUMO, MANUAL_GERAL, MANUAL_RESUMO, MANUAL_ABAS } from './planosManutencaoTextos'
 
 // Manual operacional do BI Planos de Manutenção (aberto em nova aba pelo ícone de livro do cabeçalho do BI).
@@ -9,7 +9,7 @@ import { INFO_RESUMO, MANUAL_GERAL, MANUAL_RESUMO, MANUAL_ABAS } from './planosM
 const ICONES_GERAL = { 'Visão geral': BookOpen, 'Fontes (relatórios)': Database, 'Cabeçalho': SlidersHorizontal }
 const ICONES_ABAS = {
   'Aba Veículos Vendidos': Truck, 'Aba Ordens de Serviço': Wrench,
-  'Aba Planos de Manutenção': FileText, 'Ordenação e busca': ArrowUpDown,
+  'Aba Planos de Manutenção': FileText,
 }
 const slug = (t) => t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
 
@@ -22,7 +22,7 @@ const secoesResumo = MANUAL_RESUMO.map(([titulo, chave]) => {
     icone: titulo.startsWith('Indicador') ? Gauge : CreditCard,
     itens: [
       ['Objetivo', i.objetivo], ['Cálculo', i.calculo], ['Fonte (arquivo)', i.fonte],
-      ['Filtros e regras', i.filtros], ['Colunas utilizadas de cada relatório', i.colunas],
+      ['Regras', i.filtros], ['Colunas utilizadas de cada relatório', i.colunas],
     ],
   }
 })
@@ -31,6 +31,55 @@ const SECOES = [
   ...secoesResumo,
   ...MANUAL_ABAS.map(b => ({ id: slug(b.titulo), titulo: b.titulo, icone: ICONES_ABAS[b.titulo] || BookOpen, itens: b.itens })),
 ]
+
+// Texto do manual, uma informação por linha (formato de planosManutencaoTextos.js):
+// "Título:" → subtítulo · "• Coluna — uso" → tabela de duas colunas · "• texto" → lista · outra linha → parágrafo.
+function Texto({ texto }) {
+  const blocos = []
+  texto.split('\n').forEach(linha => {
+    const l = linha.trim()
+    if (!l) return
+    if (l.endsWith(':') && !l.startsWith('•')) return blocos.push({ tipo: 'sub', texto: l.slice(0, -1) })
+    if (l.startsWith('•')) {
+      const conteudo = l.slice(1).trim()
+      const partes = conteudo.split(' — ')
+      const tipo = partes.length === 2 ? 'tabela' : 'lista'
+      const ult = blocos[blocos.length - 1]
+      const item = tipo === 'tabela' ? partes : conteudo
+      if (ult?.tipo === tipo) ult.itens.push(item)
+      else blocos.push({ tipo, itens: [item] })
+      return
+    }
+    blocos.push({ tipo: 'p', texto: l })
+  })
+  return (
+    <div className="space-y-1.5">
+      {blocos.map((b, i) => {
+        if (b.tipo === 'sub') return <p key={i} className="font-semibold text-slate-800 pt-1">{b.texto}</p>
+        if (b.tipo === 'p') return <p key={i}>{b.texto}</p>
+        if (b.tipo === 'lista') return (
+          <ul key={i} className="space-y-0.5">
+            {b.itens.map((t, j) => (
+              <li key={j} className="flex gap-2"><span className="text-blue-400">•</span><span>{t}</span></li>
+            ))}
+          </ul>
+        )
+        return (
+          <table key={i} className="w-full text-[12px] border border-slate-200 rounded">
+            <tbody className="divide-y divide-slate-100">
+              {b.itens.map(([coluna, uso], j) => (
+                <tr key={j}>
+                  <td className="px-2 py-1 font-mono text-slate-800 whitespace-nowrap align-top w-0">{coluna}</td>
+                  <td className="px-2 py-1">{uso}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )
+      })}
+    </div>
+  )
+}
 
 function Secao({ id, icone: Icone, titulo, itens }) {
   return (
@@ -43,7 +92,7 @@ function Secao({ id, icone: Icone, titulo, itens }) {
         {itens.filter(([, t]) => t).map(([nome, texto]) => (
           <div key={nome}>
             <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wide mb-1">{nome}</h3>
-            <p className="whitespace-pre-line">{texto}</p>
+            <Texto texto={texto} />
           </div>
         ))}
       </div>

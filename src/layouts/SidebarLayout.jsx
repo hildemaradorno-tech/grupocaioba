@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom'
-import { Settings, TableProperties, Users, ShieldCheck, Building2, Layers, FolderTree, Box as BoxIcon, Briefcase, Tag, Wrench, Package, TrendingUp, FileCheck2, ScrollText, Clock, CalendarX, Calendar, Target, ShoppingBag, Car, Cog, ClipboardCheck, UserCheck, LogOut, BarChart2, Wallet, ClipboardList, Home, FolderKanban, CircleDot, FileText, Truck, Calculator, BookOpen, GraduationCap, KeyRound, Eye, EyeOff, X, AlertTriangle, Bike, Network, PieChart, Share2, Gauge, Ruler, ShieldAlert, Landmark, Hash, ListChecks, ExternalLink, Workflow, Trophy, Percent, Palmtree, PhoneCall, PlugZap } from 'lucide-react'
+import { Settings, TableProperties, Users, ShieldCheck, Building2, Layers, FolderTree, Box as BoxIcon, Briefcase, Tag, Wrench, Package, TrendingUp, FileCheck2, ScrollText, Clock, CalendarX, Calendar, Target, ShoppingBag, Car, Cog, ClipboardCheck, UserCheck, LogOut, BarChart2, Wallet, ClipboardList, Home, FolderKanban, CircleDot, FileText, Truck, Calculator, BookOpen, GraduationCap, KeyRound, Eye, EyeOff, X, AlertTriangle, Bike, Network, PieChart, Share2, Gauge, Ruler, ShieldAlert, Landmark, Hash, ListChecks, ExternalLink, Workflow, Trophy, Percent, Palmtree, PhoneCall, PlugZap, Bell, Warehouse, Archive, Megaphone, ArrowRightLeft, Bot, SlidersHorizontal } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import TrocarSenhaObrigatoria from '../pages/TrocarSenhaObrigatoria'
 import { supabase } from '../services/supabaseClient'
@@ -36,6 +36,9 @@ function getActiveSectionKey(pathname) {
   if (pathname.startsWith('/bi') || pathname.startsWith('/kpi') || pathname === '/fontes-calculo' || pathname === '/fontes-microwork') return '_bi'
   if (pathname.startsWith('/documentacoes') || pathname.startsWith('/rpa') || pathname.startsWith('/ecossistema')) return '_documentacoes'
   if (pathname.startsWith('/treinamentos')) return '_treinamentos'
+  if (pathname === '/pecas/configuracao' || pathname === '/pecas-motos/configuracao') return '_config'
+  if (pathname.startsWith('/pecas-motos')) return '_pecas-motos'
+  if (pathname.startsWith('/pecas')) return '_pecas'
   if (pathname.startsWith('/governanca') || pathname.startsWith('/controladoria') || pathname.startsWith('/integracoes')) return '_config'
   return null
 }
@@ -342,6 +345,31 @@ export default function SidebarLayout() {
   const closeFlyout = () => setActiveSection(null)
 
   // ── Flyout content ────────────────────────────────────────────────────────
+  // Flyout do Gestor de Peças 2.0 — mesmo conteúdo para Trucks (m = 'pecas') e Motos (m = 'pecas-motos')
+  const flyoutGestorPecas = (m, titulo) => (
+          <>
+            <FlyGroup label={titulo} />
+            {canView(`${m}/central-alertas`) && <FlyItem to={`/${m}/central-alertas`} icon={Bell} onClose={closeFlyout}>Central de Alertas</FlyItem>}
+            {canView(`${m}/assistente-ia`) && <FlyItem to={`/${m}/assistente-ia`} icon={Bot} onClose={closeFlyout}>Assistente IA</FlyItem>}
+            {(canView(`${m}/estoque`) || canView(`${m}/classificacao`) || canView(`${m}/demanda`)) && <><div className="mx-3 my-2 border-t border-blue-800/50" /><FlyGroup label="Análise" /></>}
+            {canView(`${m}/estoque`) && <FlyItem to={`/${m}/estoque`} icon={Warehouse} onClose={closeFlyout}>Posição de Estoque</FlyItem>}
+            {canView(`${m}/classificacao`) && <FlyItem to={`/${m}/classificacao`} icon={Layers} onClose={closeFlyout}>Classificação e Curvas</FlyItem>}
+            {canView(`${m}/demanda`) && <FlyItem to={`/${m}/demanda`} icon={TrendingUp} onClose={closeFlyout}>Demanda e Tendências</FlyItem>}
+            {canView(`${m}/cobertura-ruptura`) && <FlyItem to={`/${m}/cobertura-ruptura`} icon={Gauge} onClose={closeFlyout}>Cobertura e Ruptura</FlyItem>}
+            {canView(`${m}/produto`) && <FlyItem to={`/${m}/produto`} icon={Package} onClose={closeFlyout}>Evolução do Produto</FlyItem>}
+            {(canView(`${m}/reposicao`) || canView(`${m}/pedidos-pendentes`) || canView(`${m}/transferencias`) || canView(`${m}/fornecedores`)) && <><div className="mx-3 my-2 border-t border-blue-800/50" /><FlyGroup label="Compras e Reposição" /></>}
+            {canView(`${m}/reposicao`) && <FlyItem to={`/${m}/reposicao`} icon={ShoppingBag} onClose={closeFlyout}>Reposição e Sugestão de Compra</FlyItem>}
+            {canView(`${m}/pedidos-pendentes`) && <FlyItem to={`/${m}/pedidos-pendentes`} icon={ClipboardList} onClose={closeFlyout}>Itens em Pedido Pendente</FlyItem>}
+            {canView(`${m}/transferencias`) && <FlyItem to={`/${m}/transferencias`} icon={ArrowRightLeft} onClose={closeFlyout}>Realocação entre Lojas</FlyItem>}
+            {canView(`${m}/fornecedores`) && <FlyItem to={`/${m}/fornecedores`} icon={Truck} onClose={closeFlyout}>Desempenho de Fornecedores</FlyItem>}
+            {(canView(`${m}/excesso-obsoletos`) || canView(`${m}/promocoes`) || canView(`${m}/anomalias`)) && <><div className="mx-3 my-2 border-t border-blue-800/50" /><FlyGroup label="Saúde do Estoque" /></>}
+            {canView(`${m}/excesso-obsoletos`) && <FlyItem to={`/${m}/excesso-obsoletos`} icon={Archive} onClose={closeFlyout}>Excesso e Obsoletos</FlyItem>}
+            {canView(`${m}/promocoes`) && <FlyItem to={`/${m}/promocoes`} icon={Megaphone} onClose={closeFlyout}>Oportunidades de Promoção</FlyItem>}
+            {canView(`${m}/anomalias`) && <FlyItem to={`/${m}/anomalias`} icon={ShieldAlert} onClose={closeFlyout}>Anomalias de Compra, Preço e Custo</FlyItem>}
+            {canView(`${m}/parametros`) && <><div className="mx-3 my-2 border-t border-blue-800/50" /><FlyItem to={`/${m}/parametros`} icon={SlidersHorizontal} onClose={closeFlyout}>Parâmetros</FlyItem></>}
+          </>
+  )
+
   const renderFlyoutContent = () => {
     switch (activeSection) {
 
@@ -439,6 +467,8 @@ export default function SidebarLayout() {
                     Controladoria
                   </FlyItem>
                 )}
+                {canView('pecas/configuracao') && <FlyItem to="/pecas/configuracao" icon={Truck} onClose={closeFlyout}>Peças Trucks — Classificação</FlyItem>}
+                {canView('pecas-motos/configuracao') && <FlyItem to="/pecas-motos/configuracao" icon={Bike} onClose={closeFlyout}>Peças Motos — Classificação</FlyItem>}
               </>
             )}
             {canViewSection('_config.integracoes') && (
@@ -563,6 +593,8 @@ export default function SidebarLayout() {
             {canView('bi/possibilidades') && <FlyItem to="/bi/possibilidades" icon={Gauge} onClose={closeFlyout}>Possibilidades</FlyItem>}
             {canView('bi/agendamento-servicos') && <FlyItem to="/bi/agendamento-servicos" icon={Calendar} onClose={closeFlyout}>Agendamento de Serviços</FlyItem>}
             {canView('bi/planos-manutencao') && <FlyItem to="/bi/planos-manutencao" icon={Wrench} onClose={closeFlyout}>Planos de Manutenção</FlyItem>}
+            {canView('bi/gestor-pecas') && <FlyItem to="/bi/gestor-pecas" icon={Truck} onClose={closeFlyout}>Gestor de Peças — Trucks</FlyItem>}
+            {canView('bi/gestor-pecas-motos') && <FlyItem to="/bi/gestor-pecas-motos" icon={Bike} onClose={closeFlyout}>Gestor de Peças — Motos</FlyItem>}
             {canViewSection('_bi.fontes-dados') && (
               <>
                 <div className="mx-3 my-2 border-t border-blue-800/50" />
@@ -592,6 +624,12 @@ export default function SidebarLayout() {
             {canView('ecossistema') && <FlyItem to="/ecossistema" icon={Share2} onClose={closeFlyout}>Ecossistema</FlyItem>}
           </>
         )
+
+      case '_pecas':
+        return flyoutGestorPecas('pecas', 'Gestor de Peças 2.0 — Trucks')
+
+      case '_pecas-motos':
+        return flyoutGestorPecas('pecas-motos', 'Gestor de Peças 2.0 — Motos')
 
       case '_treinamentos':
         return (
@@ -686,6 +724,22 @@ export default function SidebarLayout() {
               onClick={() => toggleSection('_calculadoras')}
             />
           )}
+          {canViewSection('_pecas') && (
+            <SidebarIconBtn
+              icon={Package}
+              label="Gestor de Peças 2.0 — Trucks"
+              isActive={currentSection === '_pecas' || activeSection === '_pecas'}
+              onClick={() => toggleSection('_pecas')}
+            />
+          )}
+          {canViewSection('_pecas-motos') && (
+            <SidebarIconBtn
+              icon={Bike}
+              label="Gestor de Peças 2.0 — Motos"
+              isActive={currentSection === '_pecas-motos' || activeSection === '_pecas-motos'}
+              onClick={() => toggleSection('_pecas-motos')}
+            />
+          )}
           {canViewSection('_bi') && (
             <SidebarIconBtn
               icon={PieChart}
@@ -742,6 +796,8 @@ export default function SidebarLayout() {
                 {activeSection === '_gestao-projetos' && 'Gestão de Projetos'}
                 {activeSection === '_calculadoras' && 'Calculadoras'}
                 {activeSection === '_bi' && 'BI - Dashboard'}
+                {activeSection === '_pecas' && 'Gestor de Peças 2.0 — Trucks'}
+                {activeSection === '_pecas-motos' && 'Gestor de Peças 2.0 — Motos'}
                 {activeSection === '_documentacoes' && 'Documentações'}
                 {activeSection === '_treinamentos' && 'Treinamentos'}
                 {activeSection === 'organograma' && 'Organograma'}

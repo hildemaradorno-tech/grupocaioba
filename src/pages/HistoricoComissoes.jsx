@@ -160,7 +160,11 @@ function LoteLinha({ grupo, expandido, onToggleExpand, selecionados, onToggleSel
   const todosSelecionados = grupo.funcionarios.length > 0 && selecionadosDoLote.length === grupo.funcionarios.length
   // grupo.soVisualizacao: departamento liberado só pra visualização (Grupos de Acesso) — soma-se
   // às Ações já marcadas pro grupo, desligando toda ação neste lote específico.
-  const podeSelecionar = podeProcessar && !!status && status !== 'RASCUNHO' && !grupo.soVisualizacao
+  // Checkbox por funcionário: lote já conferido (quem processa) ou ainda em Aguardando Gerente
+  // (quem processa ou exclui) — marcar o lote marca todos eles.
+  const podeSelecionar = !grupo.soVisualizacao && !grupo.semCalculo && !!status && (
+    (podeProcessar && status !== 'RASCUNHO') || (status === 'RASCUNHO' && (podeProcessar || podeExcluirLote))
+  )
   // Lote selecionável pra qualquer ação da barra de cima (Conferido DP, Pagamento Processado,
   // Processar Selecionados) — cada uma valida o status do lote escolhido antes de agir.
   const podeSelecionarLote = !grupo.soVisualizacao && !grupo.semCalculo && (
@@ -664,7 +668,6 @@ export default function HistoricoComissoes() {
   // mesmo sem marcar o checkbox do lote — só vale quando todos os marcados estão no mesmo lote.
   const lotesComFuncionarioMarcado = lotesAgrupados.filter(g => g.funcionarios.some(f => selecionados.has(f.funcionario_id)))
   const grupoFuncionarios = lotesComFuncionarioMarcado.length === 1 ? lotesComFuncionarioMarcado[0] : null
-  const selecionadosDoLoteUnico = grupoFuncionarios ? grupoFuncionarios.funcionarios.filter(f => selecionados.has(f.funcionario_id)) : []
   // Lote dos botões de lote (Conferido DP / Pagamento Processado): o marcado no checkbox, ou o dos
   // funcionários marcados quando todos eles estão no mesmo lote.
   const grupoAcaoLote = loteUnicoSelecionado ?? grupoFuncionarios
@@ -672,7 +675,8 @@ export default function HistoricoComissoes() {
   // marcados; sem nenhum marcado nele, o lote inteiro quando o checkbox do lote está marcado.
   const alvos = lotesAgrupados.map(g => {
     const marcados = g.funcionarios.filter(f => selecionados.has(f.funcionario_id))
-    if (marcados.length > 0) return { grupo: g, funcionarios: marcados, loteInteiro: false }
+    // Todos marcados (ex: marcou o lote) vale como o lote inteiro.
+    if (marcados.length > 0) return { grupo: g, funcionarios: marcados, loteInteiro: marcados.length === g.funcionarios.length }
     if (lotesSelecionadosProcessamento.has(g.loteId)) return { grupo: g, funcionarios: g.funcionarios, loteInteiro: true }
     return null
   }).filter(Boolean)
@@ -710,18 +714,12 @@ export default function HistoricoComissoes() {
     && funcionarios.every(f => !!grupo.lote?.funcionarios_conferidos_dp?.includes(f.funcionario_id)
       && !grupo.lote?.funcionarios_liberados_reprocessamento?.includes(f.funcionario_id)))
   const podeExportarTxt = podeExportar && alvos.every(({ grupo, funcionarios }) => funcionarios.every(f => processadoNoLote(grupo, f)))
-  // Reprocessar age num lote só: os funcionários marcados dele, ou o lote marcado inteiro.
-  const grupoAlvo = grupoFuncionarios ?? loteUnicoSelecionado
-  const statusAlvo = grupoAlvo?.status
-  const funcionariosAlvo = selecionadosDoLoteUnico.length > 0 ? selecionadosDoLoteUnico : (grupoAlvo?.funcionarios || [])
-  // Já processado não reprocessa por aqui — usa o Voltar Processamento.
-  const alvoJaProcessado = funcionariosAlvo.length > 0 && funcionariosAlvo.every(f => processadoNoLote(grupoAlvo, f))
-  const podeReprocessarLoteUnico = !!grupoAlvo && podeProcessar && !!statusAlvo && statusAlvo !== 'RASCUNHO' && funcionariosAlvo.length > 0 && !grupoAlvo.soVisualizacao && !alvoJaProcessado
-  // Lote único marcado (checkbox) — Conferido DP, Pagamento Processado e Excluir.
-  const statusLoteUnico = loteUnicoSelecionado?.status
-  const podeExcluirLoteUnico = !!loteUnicoSelecionado && podeExcluirLote && (!statusLoteUnico || statusLoteUnico === 'RASCUNHO') && !loteUnicoSelecionado.soVisualizacao
-  const processandoExcluirLoteUnico = !!loteUnicoSelecionado && processandoAcao === `excluir-${loteUnicoSelecionado.loteId}`
-  const processandoReprocessarLoteUnico = !!grupoAlvo && processandoAcao === `reprocessar-${grupoAlvo.loteId}`
+  // Reprocessar: todos os lotes/funcionários selecionados que já passaram do Gerente e ainda não
+  // foram processados (os processados voltam pelo Voltar Processamento).
+  const alvosReprocessar = alvos.filter(a => podeProcessar && !!a.grupo.lote && !!a.grupo.status && a.grupo.status !== 'RASCUNHO'
+    && !a.grupo.soVisualizacao && a.funcionarios.length > 0 && !a.funcionarios.every(f => processadoNoLote(a.grupo, f)))
+  // Excluir: todos os lotes marcados ainda em Aguardando Gerente (Rascunho) ou sem lote.
+  const lotesParaExcluir = lotesMarcados.filter(g => podeExcluirLote && (!g.status || g.status === 'RASCUNHO') && !g.soVisualizacao && !g.semCalculo)
 
 
   const mesLabel = MESES.find(m => m.v === mes)?.label || mes
@@ -752,12 +750,23 @@ export default function HistoricoComissoes() {
       return novo
     })
   }
-  const toggleSelecionarLoteProcessamento = (loteId) => {
+  // Marcar o lote marca junto todos os funcionários dele (e desmarcar desmarca) — só onde os
+  // funcionários têm checkbox (lote já conferido, fora de Somente Visualização).
+  const toggleSelecionarLoteProcessamento = (grupo) => {
+    const marcando = !lotesSelecionadosProcessamento.has(grupo.loteId)
     setLotesSelecionadosProcessamento(prev => {
       const proximo = new Set(prev)
-      if (proximo.has(loteId)) proximo.delete(loteId)
-      else proximo.add(loteId)
+      if (marcando) proximo.add(grupo.loteId)
+      else proximo.delete(grupo.loteId)
       return proximo
+    })
+    const funcionariosComCheckbox = !grupo.soVisualizacao && !grupo.semCalculo && !!grupo.status && (
+      (podeProcessar && grupo.status !== 'RASCUNHO') || (grupo.status === 'RASCUNHO' && (podeProcessar || podeExcluirLote)))
+    if (!funcionariosComCheckbox) return
+    setSelecionados(prev => {
+      const novo = new Set(prev)
+      grupo.funcionarios.forEach(f => { if (marcando) novo.add(f.funcionario_id); else novo.delete(f.funcionario_id) })
+      return novo
     })
   }
 
@@ -787,31 +796,24 @@ export default function HistoricoComissoes() {
     }
   }
 
-  const handleAutorizarReprocessamento = async (grupo) => {
-    const lote = grupo.lote
-    if (!lote) return
-    const marcados = grupo.funcionarios.filter(f => selecionados.has(f.funcionario_id))
-    // Lote marcado no checkbox sem funcionário marcado vale pro lote inteiro.
-    const selecionadosDoLote = marcados.length > 0 ? marcados : grupo.funcionarios
-    if (selecionadosDoLote.length === 0) return
-    const ehLoteInteiro = selecionadosDoLote.length === grupo.funcionarios.length
-    setProcessandoAcao(`reprocessar-${lote.id}`)
+  // Lote inteiro (marcado ou com todos os funcionários marcados): o lote volta UMA etapa
+  // (Processado → Conferido DP → Conferido → Rascunho). Só alguns funcionários: libera o
+  // reprocessamento só deles, o resto do lote fica como está.
+  const handleReprocessarSelecionados = async () => {
+    const itens = alvosReprocessar
+    if (itens.length === 0) return
+    const lotesInteiros = itens.filter(a => a.loteInteiro)
+    const parciais = itens.filter(a => !a.loteInteiro)
+    const qtdParciais = parciais.reduce((soma, a) => soma + a.funcionarios.length, 0)
+    const partes = []
+    if (lotesInteiros.length > 0) partes.push(`${lotesInteiros.length} lote(s) inteiro(s) voltam uma etapa (Processado → Aguardando Processamento → Aguardando DP → Aguardando Gerente)`)
+    if (parciais.length > 0) partes.push(`${qtdParciais} funcionário(s) em ${parciais.length} lote(s) ficam liberados pra reprocessamento — o restante desses lotes continua como está`)
+    if (!window.confirm(`Autorizar reprocessamento?\n\n${partes.join('\n')}`)) return
+    setProcessandoAcao('reprocessar')
     setErro(null)
     try {
-      if (ehLoteInteiro) {
-        // Desfaz só a ÚLTIMA etapa concluída (um passo por vez) — não pula direto pra Rascunho.
-        const proximoStatusTexto = lote.status === 'PROCESSADO'
-          ? 'Conferido pelo DP — o RH/Seletiva vai precisar processar de novo'
-          : lote.status === 'CONFERIDO_DP'
-            ? 'Conferido — o DP vai precisar conferir de novo'
-            : 'Rascunho — o Gerente vai precisar recalcular e salvar de novo'
-        if (!window.confirm(`Autorizar reprocessamento do LOTE INTEIRO (${lote.empresa_nome || 'este período'} — todos os ${grupo.funcionarios.length} funcionário(s))? O lote volta pra ${proximoStatusTexto}.`)) return
-        await apiService.autorizarReprocessamentoLote(lote.id, usuarioLabel)
-      } else {
-        const statusAtualTexto = lote.status === 'PROCESSADO' ? 'Processado' : lote.status === 'CONFERIDO_DP' ? 'Conferido pelo DP' : 'Conferido'
-        if (!window.confirm(`Liberar reprocessamento só de ${selecionadosDoLote.length} funcionário(s) selecionado(s)? O restante do lote continua ${statusAtualTexto}.`)) return
-        await apiService.liberarReprocessamentoLote(lote.id, selecionadosDoLote.map(f => f.funcionario_id), usuarioLabel)
-      }
+      for (const a of lotesInteiros) await apiService.autorizarReprocessamentoLote(a.grupo.lote.id, usuarioLabel)
+      for (const a of parciais) await apiService.liberarReprocessamentoLote(a.grupo.lote.id, a.funcionarios.map(f => f.funcionario_id), usuarioLabel)
       await handleVisualizar()
     } catch (err) {
       setErro(err.message || String(err))
@@ -820,20 +822,21 @@ export default function HistoricoComissoes() {
     }
   }
 
-  // Apaga os valores calculados (e o lote, se existir) do grupo — reabre o período pra
-  // Cálculo de Comissões poder recalcular do zero. Mesma regra de segurança de lá: com lote,
-  // exclui só as linhas DESSE lote (via lote_id); sem lote ("Sem lote" — valor calculado mas
-  // nunca virou lote), exclui pelos funcionário(s) do grupo no período.
-  const handleExcluirLote = async (grupo) => {
-    if (!window.confirm(`Excluir o lote de ${grupo.empresaNome} — ${grupo.setorNome} (${mesLabel}/${ano})? Os valores calculados serão apagados e o período volta a poder ser calculado do zero. Essa ação não pode ser desfeita.`)) return
-    setProcessandoAcao(`excluir-${grupo.loteId}`)
+  const handleExcluirSelecionados = async () => {
+    const lista = lotesParaExcluir
+    if (lista.length === 0) return
+    const nomes = lista.map(g => `• ${g.empresaNome} — ${g.setorNome}${g.lote?.funcionario_nome ? ` (${g.lote.funcionario_nome})` : ''}`).join('\n')
+    if (!window.confirm(`Excluir ${lista.length} lote(s) de ${mesLabel}/${ano}?\n\n${nomes}\n\nOs valores calculados serão apagados e o período volta a poder ser calculado do zero. Essa ação não pode ser desfeita.`)) return
+    setProcessandoAcao('excluir')
     setErro(null)
     try {
-      const funcionarioIds = grupo.funcionarios.map(f => f.funcionario_id)
-      await apiService.excluirHistoricoLote(grupo.lote?.id || null, periodoInicio, periodoFim, funcionarioIds)
+      for (const grupo of lista) {
+        await apiService.excluirHistoricoLote(grupo.lote?.id || null, periodoInicio, periodoFim, grupo.funcionarios.map(f => f.funcionario_id))
+      }
       await handleVisualizar()
     } catch (err) {
       setErro(err.message || String(err))
+      await handleVisualizar()
     } finally {
       setProcessandoAcao(null)
     }
@@ -1213,28 +1216,28 @@ export default function HistoricoComissoes() {
                       Conferido DP
                     </button>
                   )}
-                  {selecaoMesmoCnpj && podeExcluirLoteUnico && (
+                  {selecaoMesmoCnpj && lotesParaExcluir.length > 0 && (
                     <button
                       type="button"
-                      onClick={() => handleExcluirLote(loteUnicoSelecionado)}
-                      disabled={processandoExcluirLoteUnico}
-                      title="Apaga os valores calculados e reabre o período pra recalcular do zero"
+                      onClick={handleExcluirSelecionados}
+                      disabled={processandoAcao === 'excluir'}
+                      title="Apaga os valores calculados dos lotes marcados (Aguardando Gerente) e reabre o período pra recalcular do zero"
                       className="flex items-center gap-1.5 border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-semibold px-3 py-1.5 rounded-md transition-colors"
                     >
-                      {processandoExcluirLoteUnico ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-                      Excluir
+                      {processandoAcao === 'excluir' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                      Excluir{lotesParaExcluir.length > 1 ? ` (${lotesParaExcluir.length})` : ''}
                     </button>
                   )}
-                  {selecaoMesmoCnpj && podeReprocessarLoteUnico && (
+                  {selecaoMesmoCnpj && alvosReprocessar.length > 0 && (
                     <button
                       type="button"
-                      onClick={() => handleAutorizarReprocessamento(grupoAlvo)}
-                      disabled={processandoReprocessarLoteUnico}
-                      title="Libera o reprocessamento dos funcionários marcados (ou do lote inteiro, se todos estiverem marcados)"
+                      onClick={handleReprocessarSelecionados}
+                      disabled={processandoAcao === 'reprocessar'}
+                      title="Libera o reprocessamento de todos os lotes/funcionários marcados (lote inteiro volta uma etapa)"
                       className="flex items-center gap-1.5 border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-semibold px-3 py-1.5 rounded-md transition-colors"
                     >
-                      {processandoReprocessarLoteUnico ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
-                      Reprocessar
+                      {processandoAcao === 'reprocessar' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
+                      Reprocessar{alvosReprocessar.length > 1 ? ` (${alvosReprocessar.length})` : ''}
                     </button>
                   )}
                   {selecaoMesmoCnpj && podeProcessar && temAlgoElegivelProcessamento && (
@@ -1328,7 +1331,7 @@ export default function HistoricoComissoes() {
                           onToggleSelecionado={toggleSelecionado}
                           onToggleSelecionarTodos={() => toggleSelecionarTodosDoLote(grupo)}
                           loteSelecionadoProcessamento={lotesSelecionadosProcessamento.has(grupo.loteId)}
-                          onToggleLoteProcessamento={() => toggleSelecionarLoteProcessamento(grupo.loteId)}
+                          onToggleLoteProcessamento={() => toggleSelecionarLoteProcessamento(grupo)}
                           podeProcessar={podeProcessar}
                           podeConfirmarConferenciaDp={podeConfirmarConferenciaDp}
                           podeExcluirLote={podeExcluirLote}

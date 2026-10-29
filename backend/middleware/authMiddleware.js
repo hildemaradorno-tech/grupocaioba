@@ -78,11 +78,11 @@ export const requireMenuLike = (...prefixos) =>
 // ── Escopo por empresa (Acesso por Empresa do grupo) ─────────────────────────
 // Os arquivos do SharePoint só trazem o nome da empresa. Mesmo critério do frontend
 // (useEmpresasGarantias): nome casado com fantasia, nome oficial e nome no sistema, sem acento/caixa.
-const normalizar = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim()
+export const normalizar = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim()
 const CAMPOS_EMPRESA = ['empresa_nome', 'empresa', 'titulo_empresa_nome', 'empresa_desc']
 const cacheEmpresas = new Map()
 
-async function nomesEmpresasPermitidas(grupoId) {
+export async function nomesEmpresasPermitidas(grupoId) {
   const hit = cacheEmpresas.get(grupoId)
   if (hit && Date.now() - hit.em < CACHE_MS) return hit.nomes
   const supabaseAdmin = getSupabaseAdmin()

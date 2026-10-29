@@ -33,6 +33,68 @@ export const ACOES_POR_MENU = [
       { value: 'gerenciar_participantes',  label: 'Gerenciar Participantes (Adicionar / Remover)' },
     ],
   },
+  // Gestor de Peças 2.0 — Trucks: ações que gravam decisões (sem flag = negado; admin sempre pode)
+  {
+    menuPath: 'pecas/reposicao',
+    acoes: [
+      { value: 'aprovar_sugestao', label: 'Aprovar / Rejeitar Sugestão de Compra' },
+    ],
+  },
+  {
+    menuPath: 'pecas/transferencias',
+    acoes: [
+      { value: 'gerar_transferencia', label: 'Gerar e Atualizar Transferências' },
+    ],
+  },
+  {
+    menuPath: 'pecas/promocoes',
+    acoes: [
+      { value: 'criar_promocao', label: 'Criar / Editar Campanhas Promocionais' },
+    ],
+  },
+  {
+    menuPath: 'pecas/parametros',
+    acoes: [
+      { value: 'gerar_snapshot', label: 'Gerar Snapshot do Dia' },
+    ],
+  },
+  {
+    menuPath: 'pecas/configuracao',
+    acoes: [
+      { value: 'editar_parametros', label: 'Editar Parâmetros (classificação e política de compra)' },
+    ],
+  },
+  // Gestor de Peças 2.0 — Motos (mesmas ações)
+  {
+    menuPath: 'pecas-motos/reposicao',
+    acoes: [
+      { value: 'aprovar_sugestao', label: 'Aprovar / Rejeitar Sugestão de Compra' },
+    ],
+  },
+  {
+    menuPath: 'pecas-motos/transferencias',
+    acoes: [
+      { value: 'gerar_transferencia', label: 'Gerar e Atualizar Transferências' },
+    ],
+  },
+  {
+    menuPath: 'pecas-motos/promocoes',
+    acoes: [
+      { value: 'criar_promocao', label: 'Criar / Editar Campanhas Promocionais' },
+    ],
+  },
+  {
+    menuPath: 'pecas-motos/parametros',
+    acoes: [
+      { value: 'gerar_snapshot', label: 'Gerar Snapshot do Dia' },
+    ],
+  },
+  {
+    menuPath: 'pecas-motos/configuracao',
+    acoes: [
+      { value: 'editar_parametros', label: 'Editar Parâmetros (classificação e política de compra)' },
+    ],
+  },
   {
     menuPath: 'calculo-comissoes',
     acoes: [
@@ -101,6 +163,8 @@ export const ACOES_POR_MENU = [
       // Admin reabre qualquer auditoria sem limite; quem tem esta ação reabre só a última da empresa, 1 vez,
       // dentro da janela e do prazo máximo definidos na Regra de Reabertura
       { value: 'reabrir',              label: 'Reabrir Auditoria (última da empresa, 1 vez, dentro da Regra de Reabertura)' },
+      // Igual ao Admin: qualquer auditoria, quantas vezes quiser, a qualquer momento, prazo livre
+      { value: 'reabrir_sem_limite',   label: 'Reabrir Auditoria a qualquer momento (sem limite, igual ao Admin)' },
       { value: 'cadastrar_situacoes',  label: 'Cadastrar Situações de Auditoria' },
       { value: 'programar_auditorias', label: 'Programar Auditorias (geração automática e Regra de Reabertura)' },
       // Modo Conferência

@@ -337,7 +337,7 @@ export default function BiPlanosManutencao() {
   }, [empresas])
 
   // Veículos vendidos (Dealer.net REL_VEICULOSVENDIDOSPORPERIODO_REPORT, pasta DAF - Veículos) e
-  // O.S. tipo P04 (ROF042, pasta DAF - Pós-Vendas/Vendas Mecânicos), lidos juntos.
+  // O.S. tipo P04 (ROF017_FATURAMENTOPOROS, pasta DAF - Pós-Vendas/Relatório Geral OS), lidos juntos.
   const [vendas, setVendas] = useState(null) // { rows, lidoEm }
   const [ordens, setOrdens] = useState(null) // { rows, lidoEm }
   // Cada relatório entra na tela assim que chega (o card não espera a leitura das O.S.).
@@ -439,35 +439,28 @@ export default function BiPlanosManutencao() {
   const listaChassis = useMemo(() => montarChassis(dataIni, dataFim), [vendas, nomesEmpresasSel, dataIni, dataFim])
   const listaChassisTabela = useMemo(() => (termo ? montarChassis(tabIni, tabFim) : listaChassis), [listaChassis, vendas, nomesEmpresasSel, termo, tabIni, tabFim])
   // Todas as O.S. P04 por chassi (sem filtro de período: a O.S. pode ser de qualquer data após a venda).
-  // Data da O.S. = abertura (OS_DataCriacao do ROF017, completada no backend); sem ela, encerramento ou NF.
+  // Data da O.S. = abertura (OS_DataCriacao do ROF017); sem ela, encerramento ou NF.
   const osPorChassi = useMemo(() => {
     const m = {}
     ordens?.rows.forEach(r => { (m[r.chassi.toUpperCase()] ||= []).push({ ...r, dataOs: r.data_abertura || r.data_encerramento || r.data }) })
     return m
   }, [ordens])
 
-  // Situação do contrato de cada venda:
-  // - Sem contrato: nenhuma O.S. P04 do chassi com data igual ou posterior à venda.
-  // - Renovação de contrato: há O.S. P04 após a venda e o chassi já tinha contrato antes dela
-  //   (O.S. P04 anterior à venda, ou contrato do Potencial Renovação iniciado antes da venda).
-  // - Novo contrato: há O.S. P04 após a venda e nenhum contrato anterior.
+  // Situação do contrato de cada venda — só dois relatórios (vendas + ROF017), para conferir direto no Dealer.net:
+  // olha as O.S. P04 do chassi abertas na data da venda ou depois e o TMO delas:
+  // - Novo contrato: tem TMO PLAN01 (código 3216);
+  // - Renovação de contrato: tem TMO PLAN02 (código 3218);
+  // - Sem contrato: nenhuma O.S. P04 com PLAN01/PLAN02 depois da venda (O.S. só de "Plano Manutenção OF" não conta).
+  // Os contratos do chassi no CRM DAF (Potencial Renovação) vão junto só para mostrar no pop-up, não entram na regra.
   // O Potencial Renovação traz só o final do chassi (ex.: "RB147102"), por isso compara pelo fim.
-  // Junto vão os contratos do chassi na aba Planos de Manutenção (todos, sem filtro de período), para o pop-up.
   const situacaoContrato = (venda) => {
     const chassi = venda.chassi.toUpperCase()
     const contratosChassi = (contratos?.rows || []).filter(c => c.chassi && chassi.endsWith(c.chassi.toUpperCase()))
       .sort((a, b) => (b.inicio || '').localeCompare(a.inicio || ''))
-    const todas = osPorChassi[chassi] || []
-    const apos = todas.filter(o => o.dataOs && o.dataOs >= venda.data)
-    if (!apos.length) return { situacao: 'Sem contrato', os: [], contratos: contratosChassi }
-    // O TMO da O.S. já diz o tipo (PLAN01 novo, PLAN02 renovação); sem um deles, vale o histórico do chassi.
+    const apos = (osPorChassi[chassi] || []).filter(o => o.dataOs && o.dataOs >= venda.data)
     const tipos = apos.map(o => tipoContratoTmo(o.tmo)).filter(Boolean)
-    if (tipos.length) {
-      return { situacao: tipos.includes('renovado') ? 'Renovação de contrato' : 'Novo contrato', os: apos, contratos: contratosChassi }
-    }
-    const anterior = todas.some(o => o.dataOs && o.dataOs < venda.data)
-      || contratosChassi.some(c => c.inicio && c.inicio < venda.data)
-    return { situacao: anterior ? 'Renovação de contrato' : 'Novo contrato', os: apos, contratos: contratosChassi }
+    const situacao = tipos.includes('renovado') ? 'Renovação de contrato' : tipos.includes('novo') ? 'Novo contrato' : 'Sem contrato'
+    return { situacao, os: situacao === 'Sem contrato' ? [] : apos, contratos: contratosChassi }
   }
 
   // Só os chassis da marca DAF: o card do Resumo conta os do período; a aba Veículos Vendidos lista os da tabela.
@@ -479,7 +472,7 @@ export default function BiPlanosManutencao() {
     .map(r => situacaoContrato(r).situacao), [listaChassis, filtroTipo, osPorChassi, contratos])
   const chassisVendidos = resumoVendidos.length
   // Oportunidade de renovação: contratos do Potencial Renovação com Fim do contrato dentro do período.
-  // Renovado = depois do fim, o chassi tem uma O.S. P04 (ROF042) ou um novo contrato no Potencial Renovação
+  // Renovado = depois do fim, o chassi tem uma O.S. P04 (ROF017) ou um novo contrato no Potencial Renovação
   // (início a partir de 90 dias antes do fim e fim depois do fim deste). O Potencial Renovação guarda só o final do chassi (8 caracteres),
   // então a O.S. é comparada pelo final do chassi.
   // Também alimenta a coluna "Renovado" e o seletor de Renovação da aba Planos de Manutenção.
@@ -1160,7 +1153,7 @@ function ModalOs({ venda, onFechar }) {
                 <span>O.S. <strong className="text-slate-900">{os}</strong></span>
                 {linhas[0].data_abertura && <span>Abertura <strong className="text-slate-900">{fmtData(linhas[0].data_abertura)}</strong></span>}
                 <span>Chassi <strong className="text-slate-900 font-mono">{linhas[0].chassi}</strong></span>
-                {/* O ROF042 não tem placa: vem da venda do veículo ou, sem ela, da O.S. no ROF017. */}
+                {/* Placa: da venda do veículo ou, sem ela, da O.S. no ROF017. */}
                 {(venda.placa || linhas[0].placa_os) && <span>Placa <strong className="text-slate-900 font-mono">{venda.placa || linhas[0].placa_os}</strong></span>}
                 <span>NF <strong className="text-slate-900">{linhas[0].nf}</strong> em <strong className="text-slate-900">{fmtData(linhas[0].data)}</strong></span>
                 <span>{nomeEmpresa(linhas[0].empresa_nome)}</span>

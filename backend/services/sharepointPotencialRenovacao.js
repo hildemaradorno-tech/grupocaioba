@@ -3,9 +3,11 @@ import axios from 'axios'
 import { graphGet } from './graphClient.js'
 
 // Contratos de Plano de Manutenção DAF com potencial de renovação (exportação do CRM DAF,
-// "Potencial Renovação 2026.xlsx"). Uma linha por chassi do contrato; o mesmo contrato pode ter vários chassis.
+// "CRM DAF - Plano de Manutenção - Potencial Renovação 2026.xlsx"). Uma linha por chassi do contrato; o mesmo
+// contrato pode ter vários chassis. O arquivo é achado pelo trecho "Potencial Renovação" em qualquer parte do nome
+// (o nome já mudou uma vez: era "Potencial Renovação 2026.xlsx").
 const PASTA = '/Banco de Dados - DAF - Pós-Vendas/Planos de Manutenção'
-const PREFIX = 'Potencial Renovação'
+const TRECHO_NOME = 'potencial renovação'
 
 const CACHE_TTL_MS = 5 * 60 * 1000
 let _cache = null
@@ -46,7 +48,7 @@ export function getPotencialRenovacao() {
 
 async function carregar() {
   const arquivos = (await listar(PASTA))
-    .filter(i => i.file && i.name?.toLowerCase().startsWith(PREFIX.toLowerCase()))
+    .filter(i => i.file && /\.xlsx?$/i.test(i.name || '') && i.name.normalize('NFC').toLowerCase().includes(TRECHO_NOME.normalize('NFC')))
   const rows = []
   const arquivosLidos = []
   let lastModified = null

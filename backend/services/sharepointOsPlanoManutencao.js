@@ -2,18 +2,23 @@ import * as XLSX from 'xlsx'
 import axios from 'axios'
 import { graphGet } from './graphClient.js'
 
-// O.S. de Plano de Manutenção (tipo P04) do Dealer.net ROF042_FaturamentoServicosProdutivos_Excel.
-// Um arquivo por ano (até 2024) ou por mês ("... 2026.10.xlsx"). Linha 1 em branco, cabeçalho na
-// linha 2; cada linha é um TMO (serviço) de uma O.S. — a mesma O.S. aparece em várias linhas.
-const PASTA = '/Banco de Dados - DAF - Pós-Vendas/Vendas Mecânicos'
-const PREFIX = 'ROF042_FaturamentoServicosProdutivos_Excel'
-const TIPO_OS = /^P04\b/i
+// O.S. de Plano de Manutenção (tipo P04) do Dealer.net ROF017_FATURAMENTOPOROS (Relatório Geral OS).
+// É a única fonte de O.S. do BI Planos de Manutenção (antes eram ROF042 + ROF017): assim cada indicador
+// confere com dois relatórios — vendas + ROF017, ou contratos (CRM DAF) + ROF017.
+// Um arquivo por ano ("ROF017_FATURAMENTOPOROS 2026.xlsx"); cada linha é um item (TMO/produto) da NF de uma O.S.
+// O tipo P04 só existe a partir de 2024, então os arquivos anteriores nem são baixados.
+const PASTA = '/Banco de Dados - DAF - Pós-Vendas/Relatório Geral OS'
+const PREFIX = 'ROF017_FATURAMENTOPOROS'
+const ANO_INICIAL = 2024
+const TIPO_OS = 'P04'
+// Código do TMO (NotaFiscalItem_TMOCod) → referência usada nas regras do BI.
+const TMO_REFERENCIA = { 3216: 'PLAN01', 3218: 'PLAN02' }
 
 const CACHE_TTL_MS = 5 * 60 * 1000
 let _cache = null
 let _cacheTs = 0
-// Linhas já lidas de cada arquivo: só baixa de novo o arquivo que mudou no SharePoint
-// (os arquivos antigos, 2020–2025, quase nunca mudam).
+// Linhas P04 já lidas de cada arquivo: só baixa de novo o arquivo que mudou no SharePoint (na prática, o do
+// ano atual). Os arquivos do ROF017 são grandes (~5–7 MB, ~40 mil linhas): guarda só as linhas P04.
 const _porArquivo = new Map() // id → { lastModified, rows }
 
 // O refresh só invalida a lista; os arquivos sem alteração continuam vindo da memória.
@@ -40,84 +45,29 @@ async function listar(caminho) {
   return itens
 }
 
-// O ROF042 não tem a data de abertura da O.S.: ela vem do ROF017 (OS_DataCriacao), junto com a placa da O.S.
-// Fica guardada por "O.S.|chassi" e só se consulta o ROF017 para O.S. ainda não vistas. Os arquivos do ROF017
-// são grandes (~5–7 MB e ~40 mil linhas por ano), então:
-// - a leitura roda em SEGUNDO PLANO: a tela recebe as O.S. na hora e a abertura entra na próxima leitura;
-// - um arquivo por vez, guardando só as O.S. procuradas (não mantém as linhas do ROF017 em memória).
-// Lê o ano da NF e o anterior (a O.S. pode abrir num ano e faturar no outro).
-const PASTA_ROF017 = '/Banco de Dados - DAF - Pós-Vendas/Relatório Geral OS'
-const PREFIX_ROF017 = 'ROF017_FATURAMENTOPOROS'
-const _abertura = new Map() // "os|chassi" → { data_abertura, placa_os } | {} (não achada)
-const chaveOs = (r) => `${r.os}|${r.chassi.toUpperCase()}`
-let _aberturaEmAndamento = null
-
-function completarAberturaEmSegundoPlano(rows) {
-  if (_aberturaEmAndamento) return
-  const faltando = rows.filter(r => !_abertura.has(chaveOs(r)))
-  if (!faltando.length) return
-  _aberturaEmAndamento = completarAbertura(faltando)
-    .catch(e => console.warn('[OsPlanoManutencao] não foi possível ler a abertura no ROF017:', e.message))
-    .finally(() => { _aberturaEmAndamento = null })
-}
-
-async function completarAbertura(faltando) {
-  const anos = new Set()
-  faltando.forEach(r => { const a = Number((r.data || '').slice(0, 4)); if (a) { anos.add(a); anos.add(a - 1) } })
-  const procuradas = new Set(faltando.map(chaveOs))
-  const achadas = new Map()
-  const arquivos = (await listar(PASTA_ROF017))
-    .filter(i => i.file && i.name?.startsWith(PREFIX_ROF017) && anos.has(Number((i.name.match(/\d{4}/) || [])[0])))
-  for (const item of arquivos) {
-    const resp = await axios.get(item['@microsoft.graph.downloadUrl'], { responseType: 'arraybuffer', timeout: 120_000 })
-    const ws = XLSX.read(Buffer.from(resp.data), { type: 'buffer', cellHTML: false, cellText: false }).Sheets
-    const linhas = XLSX.utils.sheet_to_json(ws[Object.keys(ws)[0]], { header: 1, defval: '' })
-    const cab = (linhas[0] || []).map(txt)
-    const col = (nome) => cab.indexOf(nome)
-    const [cOs, cChassi, cData, cPlaca] = [col('OS_Numero'), col('Veiculo_Chassi'), col('OS_DataCriacao'), col('OS_VeiculoPlaca')]
-    for (let i = 1; i < linhas.length; i++) {
-      const l = linhas[i]
-      const chave = `${txt(l[cOs])}|${txt(l[cChassi]).toUpperCase()}`
-      if (procuradas.has(chave) && !achadas.has(chave)) achadas.set(chave, { data_abertura: dataSerial(l[cData]), placa_os: txt(l[cPlaca]) })
-    }
-    console.log(`[OsPlanoManutencao] abertura: ${item.name} lido (${achadas.size}/${procuradas.size} O.S. achadas)`)
-    // Libera o servidor entre um arquivo e outro, para as outras telas não ficarem esperando.
-    await new Promise(r => setImmediate(r))
-  }
-  procuradas.forEach(k => _abertura.set(k, achadas.get(k) || {}))
-}
-
-// Linhas devolvidas à tela: as O.S. P04 com a abertura/placa que já tiver sido achada no ROF017.
-const comAbertura = (c) => c && { ...c, rows: c.rows.map(r => ({ ...r, ..._abertura.get(chaveOs(r)) })) }
-
 // Duas telas abrindo juntas aguardam a mesma leitura em vez de baixar tudo duas vezes.
 let _emAndamento = null
-export async function getOsPlanoManutencao() {
-  if (!(_cache !== null && (Date.now() - _cacheTs) < CACHE_TTL_MS)) {
-    if (!_emAndamento) _emAndamento = carregar().finally(() => { _emAndamento = null })
-    await _emAndamento
-  }
-  completarAberturaEmSegundoPlano(_cache.rows)
-  return comAbertura(_cache)
+export function getOsPlanoManutencao() {
+  if (_cache !== null && (Date.now() - _cacheTs) < CACHE_TTL_MS) return Promise.resolve(_cache)
+  if (!_emAndamento) _emAndamento = carregar().finally(() => { _emAndamento = null })
+  return _emAndamento
 }
 
 async function carregar() {
+  const ano = (nome) => Number((nome.match(/\d{4}/) || [])[0])
   const arquivos = (await listar(PASTA))
-    .filter(i => i.file && i.name?.toLowerCase().startsWith(PREFIX.toLowerCase()))
+    .filter(i => i.file && i.name?.startsWith(PREFIX) && ano(i.name) >= ANO_INICIAL)
   const rows = []
   const arquivosLidos = []
   let lastModified = null
 
-  // Baixa em lotes de 4 só os arquivos novos ou alterados.
+  // Um arquivo por vez (são grandes), liberando o servidor entre eles para as outras telas não esperarem.
   const pendentes = arquivos.filter(i => i['@microsoft.graph.downloadUrl'] && _porArquivo.get(i.id)?.lastModified !== i.lastModifiedDateTime)
-  for (let i = 0; i < pendentes.length; i += 4) {
-    await Promise.all(pendentes.slice(i, i + 4).map(async item => {
-      const resp = await axios.get(item['@microsoft.graph.downloadUrl'], { responseType: 'arraybuffer', timeout: 60_000 })
-      const linhasP04 = lerArquivo(Buffer.from(resp.data))
-      _porArquivo.set(item.id, { lastModified: item.lastModifiedDateTime, rows: linhasP04 })
-      console.log(`[OsPlanoManutencao] ${item.name}: ${linhasP04.length} linha(s) P04`)
-    }))
-    // Libera o servidor entre os lotes, para as outras telas (ex.: Veículos Vendidos) não ficarem esperando.
+  for (const item of pendentes) {
+    const resp = await axios.get(item['@microsoft.graph.downloadUrl'], { responseType: 'arraybuffer', timeout: 120_000 })
+    const linhasP04 = lerArquivo(Buffer.from(resp.data))
+    _porArquivo.set(item.id, { lastModified: item.lastModifiedDateTime, rows: linhasP04 })
+    console.log(`[OsPlanoManutencao] ${item.name}: ${linhasP04.length} linha(s) P04`)
     await new Promise(r => setImmediate(r))
   }
 
@@ -135,28 +85,30 @@ async function carregar() {
 }
 
 function lerArquivo(buffer) {
-  const wb = XLSX.read(buffer, { type: 'buffer' })
-  const linhas = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '' })
+  const wb = XLSX.read(buffer, { type: 'buffer', cellHTML: false, cellText: false })
+  const linhas = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '' })
   const rows = []
-  for (const r of linhas.slice(2)) {
-    const tipo = txt(r[5])
-    if (!TIPO_OS.test(tipo)) continue
+  for (const r of linhas) {
+    if (txt(r.TipoOS_Sigla) !== TIPO_OS) continue
+    const codTmo = txt(r.NotaFiscalItem_TMOCod)
+    const vlProduto = num(r.ProdValor)
+    const vlServico = num(r.ServValor)
     rows.push({
-      empresa_nome: txt(r[0]),             // A — Empresa
-      produtivo: txt(r[1]),                // B
-      consultor: txt(r[2]),                // C
-      chassi: txt(r[3]),                   // D
-      tipo_os: tipo,                       // F — Tipo O.S.
-      os: txt(r[7]),                       // H — O.S.
-      data_encerramento: dataSerial(r[8]), // I
-      tmo: txt(r[9]),                      // J — TMO Referência
-      tmo_descricao: txt(r[10]),           // K
-      hr_vend: num(r[16]),                 // Q — Hr. Vend.
-      vl_liquido: num(r[21]),              // V — Vl Líquido (serviços)
-      vl_produto: num(r[25]),              // Z — Vl Produto (peças)
-      vl_total: num(r[26]),                // AA — Serviços+Produtos
-      data: dataSerial(r[27]),             // AB — NF Data
-      nf: txt(r[28]),                      // AC — NF Número
+      empresa_nome: txt(r.Empresa_Nome),
+      chassi: txt(r.Veiculo_Chassi),
+      placa_os: txt(r.OS_VeiculoPlaca),
+      tipo_os: TIPO_OS,
+      os: txt(r.OS_Numero),
+      data_abertura: dataSerial(r.OS_DataCriacao),
+      data_encerramento: dataSerial(r.DataEncerramento),
+      tmo_codigo: codTmo,                              // NotaFiscalItem_TMOCod (3216, 3218, 3236...)
+      tmo: TMO_REFERENCIA[codTmo] || codTmo,           // PLAN01 / PLAN02 / o próprio código
+      tmo_descricao: txt(r.TMOProdDesc),
+      vl_liquido: vlServico,                           // ServValor (serviços)
+      vl_produto: vlProduto,                           // ProdValor (peças)
+      vl_total: vlServico + vlProduto,
+      data: dataSerial(r.OSData_Faturamento),          // data da NF (faturamento)
+      nf: txt(r.NotaFiscal_Numero),
     })
   }
   return rows

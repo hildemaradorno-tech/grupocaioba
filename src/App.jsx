@@ -105,11 +105,38 @@ import Organograma from './pages/Organograma'
 import BiGarantiasDaf from './pages/bi/BiGarantiasDaf'
 import BiProjetos from './pages/bi/BiProjetos'
 import BiAgendamentoServicos from './pages/bi/BiAgendamentoServicos'
+import BiAgendamentoServicosManual from './pages/bi/BiAgendamentoServicosManual'
 import BiPlanosManutencao from './pages/bi/BiPlanosManutencao'
 import BiPlanosManutencaoManual from './pages/bi/BiPlanosManutencaoManual'
 import BiPossibilidades from './pages/bi/BiPossibilidades'
 import MedidasBi from './pages/bi/MedidasBi'
 import BiCampanha, { CAMPANHA_ABAS_PERMS } from './pages/bi/BiCampanha'
+import BiGestorPecas from './pages/bi/BiGestorPecas'
+import PecasCentralAlertas from './pages/pecas/PecasCentralAlertas'
+import PecasEstoque from './pages/pecas/PecasEstoque'
+import PecasClassificacao from './pages/pecas/PecasClassificacao'
+import PecasDemanda from './pages/pecas/PecasDemanda'
+import PecasReposicao from './pages/pecas/PecasReposicao'
+import PecasCoberturaRuptura from './pages/pecas/PecasCoberturaRuptura'
+import PecasExcessoObsoletos from './pages/pecas/PecasExcessoObsoletos'
+import PecasPromocoes from './pages/pecas/PecasPromocoes'
+import PecasPedidosPendentes from './pages/pecas/PecasPedidosPendentes'
+import PecasTransferencias from './pages/pecas/PecasTransferencias'
+import PecasAnomalias from './pages/pecas/PecasAnomalias'
+import PecasProduto from './pages/pecas/PecasProduto'
+import PecasFornecedores from './pages/pecas/PecasFornecedores'
+import PecasAssistenteIA from './pages/pecas/PecasAssistenteIA'
+import PecasParametros from './pages/pecas/PecasParametros'
+import PecasConfiguracao from './pages/pecas/PecasConfiguracao'
+
+const ROTAS_PECAS = [
+  ['central-alertas', PecasCentralAlertas], ['estoque', PecasEstoque], ['classificacao', PecasClassificacao],
+  ['demanda', PecasDemanda], ['reposicao', PecasReposicao], ['cobertura-ruptura', PecasCoberturaRuptura],
+  ['excesso-obsoletos', PecasExcessoObsoletos], ['promocoes', PecasPromocoes], ['pedidos-pendentes', PecasPedidosPendentes],
+  ['transferencias', PecasTransferencias], ['anomalias', PecasAnomalias], ['produto', PecasProduto],
+  ['fornecedores', PecasFornecedores], ['assistente-ia', PecasAssistenteIA], ['parametros', PecasParametros],
+  ['configuracao', PecasConfiguracao],
+]
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth()
@@ -300,11 +327,16 @@ export default function App() {
           { path: '/bi/projetos', element: <BiProjetos />, menuPath: 'bi/projetos' },
           { path: '/bi/possibilidades', element: <BiPossibilidades />, menuPath: 'bi/possibilidades' },
           { path: '/bi/agendamento-servicos', element: <BiAgendamentoServicos />, menuPath: 'bi/agendamento-servicos' },
+          { path: '/bi/agendamento-servicos/manual', element: <BiAgendamentoServicosManual />, menuPath: 'bi/agendamento-servicos' },
           { path: '/bi/planos-manutencao', element: <BiPlanosManutencao />, menuPath: 'bi/planos-manutencao' },
           { path: '/bi/planos-manutencao/manual', element: <BiPlanosManutencaoManual />, menuPath: 'bi/planos-manutencao' },
           { path: '/bi/fontes', element: <Navigate to="/fontes-calculo" replace /> },
           { path: '/bi/medidas', element: <MedidasBi />, menuPath: 'bi/medidas' },
           { path: '/bi/campanha', element: <BiCampanha />, menuPath: CAMPANHA_ABAS_PERMS },
+          { path: '/bi/gestor-pecas', element: <BiGestorPecas />, menuPath: 'bi/gestor-pecas' },
+          { path: '/bi/gestor-pecas-motos', element: <BiGestorPecas />, menuPath: 'bi/gestor-pecas-motos' },
+          // Gestor de Peças 2.0 — mesmas telas para Trucks (/pecas, Dealer.net) e Motos (/pecas-motos, MicroWork)
+          ...['pecas', 'pecas-motos'].flatMap(m => ROTAS_PECAS.map(([slug, Tela]) => ({ path: `/${m}/${slug}`, element: <Tela />, menuPath: `${m}/${slug}` }))),
         ].map(route => (
           <Route
             key={route.path}
