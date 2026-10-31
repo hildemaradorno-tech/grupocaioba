@@ -8,10 +8,12 @@ import { graphGet } from './graphClient.js'
 const RAIZ = '/Banco de Dados - DAF - Pós-Vendas/Agendamentos - CRM'
 const PASTA = `${RAIZ}/CAMPANHA CRM`
 const PREFIX = 'RCR038_CampanhaCRM_Clientes_Excel'
-// Contatos de cada atendimento (RCR017 — Lista por Data Contato/Encerramento), ligados à campanha por
-// Atendimento_Codigo = id_atendimento do RCR038. Arquivos por ano ("... 2026.xlsx"), na pasta ou em subpasta de ano.
+// Contatos de cada atendimento (RCR017), ligados à campanha por Atendimento_Codigo = id_atendimento do RCR038.
+// A pasta tem duas versões do mesmo relatório, por ano: "RCR017_LISTAPORDATACONTATO 2026" (filtrado pela data
+// do contato — inclui contatos ainda sem encerramento) e "RCR017_LISTAPORDATAENCERRAMENTO 2026" (pela data de
+// encerramento). Lê as duas e conta cada contato (AtendimentoContato_Codigo) uma vez só.
 const PASTA_CONTATOS = `${RAIZ}/LISTA POR DATA CONTATO_ENCERRAMENTO`
-const PREFIX_CONTATOS = 'RCR017_LISTAPORDATACONTATOENCERRAMENTO'
+const PREFIX_CONTATOS = 'RCR017_LISTAPORDATA'
 // Agendamentos de serviço (ROF037). Liga com o contato da campanha pelo CHASSI, considerando só os
 // agendamentos criados a partir da data da campanha (o relatório não traz o atendimento do CRM).
 const PASTA_AGENDAMENTOS = `${RAIZ}/AGENDAMENTO SERVICOS`
@@ -25,11 +27,17 @@ let _cacheTs = 0
 
 export function clearCampanhasCrmCache() { _cache = null; _cacheTs = 0 }
 
+// Sigla da unidade no nome do arquivo → sigla oficial (os arquivos usam variações).
+const SIGLA_OFICIAL = { CGR: 'CGR', CRG: 'CGR', CPD: 'CPD', DOU: 'DOU', DOR: 'DOU', TLG: 'TLG', TRL: 'TLG' }
+
 // "RCR038_CampanhaCRM_Clientes_Excel CGR 20261019.xls" → { sigla: 'CGR', data: '2026-10-19' }
 function infoDoNome(nome) {
-  const m = nome.slice(PREFIX.length).match(/^\s*([A-Za-z]+)\s+(\d{4})(\d{2})(\d{2})/)
-  if (!m) return { sigla: null, data: null }
-  return { sigla: m[1].toUpperCase(), data: `${m[2]}-${m[3]}-${m[4]}` }
+  // Sigla é opcional (arquivo salvo sem ela ainda vale pela data); a data são os 8 dígitos AAAAMMDD.
+  const resto = nome.slice(PREFIX.length)
+  const d = resto.match(/(20\d{2})(\d{2})(\d{2})/)
+  const sg = resto.match(/^\s*([A-Za-z]{2,4})\s+20\d{6}/)
+  const sigla = sg ? sg[1].toUpperCase() : null
+  return { sigla: sigla ? (SIGLA_OFICIAL[sigla] || sigla) : null, data: d ? `${d[1]}-${d[2]}-${d[3]}` : null }
 }
 
 const numOuZero = (v) => { const n = Number(v); return isNaN(n) ? 0 : n }
@@ -59,23 +67,40 @@ async function arquivosDoRelatorio(pasta, prefix) {
   return achados.filter(i => i['@microsoft.graph.downloadUrl'])
 }
 
-// Map Atendimento_Codigo → contatos (RCR017).
+// RCR017: mapa Atendimento_Codigo → contatos (aba Por Campanhas).
 async function lerContatos() {
   const porAtendimento = new Map()
-  for (const item of await arquivosDoRelatorio(PASTA_CONTATOS, PREFIX_CONTATOS)) {
+  const vistos = new Set() // AtendimentoContato_Codigo já lido (o mesmo contato está nos dois arquivos)
+  // Sem a pasta (ou sem arquivo RCR017) a aba Por Campanhas continua funcionando: devolve null e a tela
+  // mostra "—" nos números que dependem do contato realizado.
+  let itens
+  try {
+    itens = await arquivosDoRelatorio(PASTA_CONTATOS, PREFIX_CONTATOS)
+  } catch (e) {
+    console.warn(`[AgendamentoCRM] pasta de contatos (RCR017) indisponível: ${e.message}`)
+    return null
+  }
+  if (itens.length === 0) return null
+  for (const item of itens) {
     const linhas = await baixarLinhas(item)
     for (const r of linhas) {
       const at = num(r.Atendimento_Codigo)
       if (at === null) continue
+      const codContato = txt(r.AtendimentoContato_Codigo)
+      if (codContato) {
+        if (vistos.has(codContato)) continue
+        vistos.add(codContato)
+      }
       const motivo = txt(r.MotivoEncerramento)
-      const lista = porAtendimento.get(at) || []
-      lista.push({
+      const contato = {
         data: dataExcel(r.AtendimentoContato_Data),
         resultado: txt(r.AtendimentoContato_Resultado),
         motivo,
         meio: txt(r.MeioContato_Descricao),
         sem_contato: MOTIVOS_SEM_CONTATO.some(c => motivo.toUpperCase().startsWith(c)),
-      })
+      }
+      const lista = porAtendimento.get(at) || []
+      lista.push(contato)
       porAtendimento.set(at, lista)
     }
     console.log(`[AgendamentoCRM] ${item.name}: ${linhas.length} contato(s) de atendimento`)
@@ -89,18 +114,16 @@ async function lerAgendamentos() {
   for (const item of await arquivosDoRelatorio(PASTA_AGENDAMENTOS, PREFIX_AGENDAMENTOS)) {
     const linhas = await baixarLinhas(item)
     for (const r of linhas) {
-      const chassi = txt(r.Chassi).toUpperCase()
-      if (!chassi) continue
-      const lista = porChassi.get(chassi) || []
-      lista.push({
+      const ag = {
         criado: dataExcel(r.AgendamentoHistorico_Data),
         data_agendamento: dataExcel(r.DtAgendamento),
         status: txt(r.StatusAgendamento).toUpperCase(), // AGE, CON, RAG, FIM, NSW, CAN...
         tipo: txt(r.AgendamentoTipo),
         os: num(r.OSNumero),
         empresa: txt(r.EmpresaNome),
-      })
-      porChassi.set(chassi, lista)
+      }
+      const chassi = txt(r.Chassi).toUpperCase()
+      if (chassi) porChassi.set(chassi, [...(porChassi.get(chassi) || []), ag])
     }
     console.log(`[AgendamentoCRM] ${item.name}: ${linhas.length} agendamento(s)`)
   }
@@ -125,12 +148,17 @@ export async function getCampanhasCrm() {
 
   const anos = (await listar(PASTA)).filter(i => i.folder)
   const rows = []
+  const contatosVistos = new Set()
   const arquivosLidos = []
   let lastModified = null
 
   for (const ano of anos) {
+    // Em ordem de data do nome do arquivo (depois pelo nome): se a mesma campanha foi exportada duas vezes,
+    // vale o 1º arquivo (o de data mais antiga) e os contatos repetidos do outro são ignorados.
     const arquivos = (await listar(`${PASTA}/${ano.name}`))
       .filter(i => i.file && i.name?.toLowerCase().startsWith(PREFIX.toLowerCase()))
+      // Arquivo sem data no nome vai por último (não pode "roubar" os contatos de uma campanha com data).
+      .sort((a, b) => (infoDoNome(a.name).data || '9999').localeCompare(infoDoNome(b.name).data || '9999') || a.name.localeCompare(b.name))
     for (const item of arquivos) {
       const downloadUrl = item['@microsoft.graph.downloadUrl']
       if (!downloadUrl) continue
@@ -139,9 +167,14 @@ export async function getCampanhasCrm() {
       const wb = XLSX.read(Buffer.from(resp.data), { type: 'buffer' })
       const linhas = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '' })
       let n = 0
+      let repetidos = 0
       for (const r of linhas) {
         const campanha = num(r.ID_Campanha_Execucao)
         if (campanha === null) continue // linha em branco no fim do arquivo
+        // Cada contato da campanha (campanha + atendimento, ou cliente) conta uma vez em toda a pasta.
+        const chaveContato = `${campanha}#${txt(r.id_atendimento) || `c${txt(r.ID_Cliente)}`}`
+        if (contatosVistos.has(chaveContato)) { repetidos++; continue }
+        contatosVistos.add(chaveContato)
         rows.push({
           arquivo: item.name,
           sigla,
@@ -161,7 +194,8 @@ export async function getCampanhasCrm() {
         })
         n++
       }
-      arquivosLidos.push({ nome: item.name, sigla, data, linhas: n })
+      arquivosLidos.push({ nome: item.name, sigla, data, linhas: n, repetidos })
+      if (repetidos) console.warn(`[AgendamentoCRM] ${item.name}: ${repetidos} contato(s) repetido(s) de campanha já lida em outro arquivo — ignorados`)
       if (!lastModified || item.lastModifiedDateTime > lastModified) lastModified = item.lastModifiedDateTime
       console.log(`[AgendamentoCRM] ${item.name}: ${n} contato(s)`)
     }
@@ -170,8 +204,9 @@ export async function getCampanhasCrm() {
   // Contato realizado = o atendimento da campanha tem ao menos 1 contato no RCR017 que não seja
   // encerramento "sem contato" (S00/S01). Encerrado = último contato tem motivo de encerramento.
   const contatos = await lerContatos()
+  const semContatos = contatos === null
   for (const r of rows) {
-    const lista = (r.id_atendimento !== null && contatos.get(r.id_atendimento)) || []
+    const lista = (!semContatos && r.id_atendimento !== null && contatos.get(r.id_atendimento)) || []
     const validos = lista.filter(c => !c.sem_contato)
     const ultimo = [...lista].sort((a, b) => (a.data || '').localeCompare(b.data || '')).pop() || null
     r.qtd_contatos = lista.length
@@ -191,7 +226,7 @@ export async function getCampanhasCrm() {
     r.contato_agendado = !!r.agendamento
   }
 
-  _cache = { rows, arquivos: arquivosLidos, lastModified, lidoEm: new Date().toISOString() }
+  _cache = { rows, semContatos, arquivos: arquivosLidos, lastModified, lidoEm: new Date().toISOString() }
   _cacheTs = Date.now()
   return _cache
 }

@@ -14,15 +14,15 @@ const wrap = fn => (req, res, next) => fn(req, res, next).catch(next)
 // (Caioba Motos — MicroWork, menus pecas-motos/...). O segmento vem em ?segmento= e cada um exige
 // o menu do próprio Gestor (admin vê os dois).
 const SEGMENTOS = {
-  trucks: { prefixo: 'pecas/', bi: 'bi/gestor-pecas', idParametros: 1 },
-  motos:  { prefixo: 'pecas-motos/', bi: 'bi/gestor-pecas-motos', idParametros: 2 },
+  trucks: { prefixo: 'pecas/', idParametros: 1 },
+  motos:  { prefixo: 'pecas-motos/', idParametros: 2 },
 }
 router.use(wrap(async (req, res, next) => {
   req.segmento = req.query.segmento === 'motos' ? 'motos' : 'trucks'
   const seg = SEGMENTOS[req.segmento]
   const perfil = req.perfil || await getPerfilUsuario(req.user?.email)
   if (!perfil) return res.status(403).json({ error: 'Usuário sem perfil ativo.' })
-  if (!perfil.is_admin && ![...perfil.menus].some(m => m.startsWith(seg.prefixo) || m === seg.bi)) {
+  if (!perfil.is_admin && ![...perfil.menus].some(m => m.startsWith(seg.prefixo))) {
     return res.status(403).json({ error: 'Sem permissão para este Gestor de Peças.' })
   }
   req.perfil = perfil

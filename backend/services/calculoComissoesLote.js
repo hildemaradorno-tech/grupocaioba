@@ -43,7 +43,9 @@ function agregarArquivoParaGrupo(aoa, linha0, itensDoGrupo, colunaEmpresa, colun
   // Sem Regras de Cálculo (filtros de linha) e com mais de uma coluna somada (ex:
   // "totalvenda+totaldevolucao"), dá pra rastrear o total de CADA coluna separada — usado pela
   // telinha de calculadora em Cálculo de Comissões pra mostrar Venda x Devolução, não só o líquido.
-  const rastrearColunas = (!regrasCru || regrasCru.length === 0) && idxsValor.length > 1
+  // Regras só de FILTRAR (descartam linhas, não mexem no valor) não atrapalham: a soma de cada coluna
+  // das linhas que passaram continua batendo com o total.
+  const rastrearColunas = (!regrasCru || regrasCru.every(r => r.tipo_acao === 'FILTRAR')) && idxsValor.length > 1
   // Coluna Tipo de Movimento (opcional, independe de Regras de Cálculo e de quantas colunas a
   // Coluna do Valor soma): agrupa o total por CADA valor distinto dessa coluna (ex: "SAÍDA"/
   // "ENTRADA", ou "VENDA"/"DEVOLUÇÃO"...) — sem lista fixa de categorias, o que aparecer na
@@ -188,7 +190,7 @@ export async function calcularLote(itens) {
   for (const item of itens) {
     // Sem Regras de Cálculo e com mais de uma coluna somada (ex: "totalvenda+totaldevolucao"),
     // guarda o total de cada coluna separado — usado pela calculadora de Venda x Devolução no front.
-    const partesColuna = (item.regras || []).length === 0 ? (item.colunaValor || '').split('+').map(s => s.trim()).filter(Boolean) : []
+    const partesColuna = (item.regras || []).every(r => r.tipo_acao === 'FILTRAR') ? (item.colunaValor || '').split('+').map(s => s.trim()).filter(Boolean) : []
     item._acc = {
       totalLinhas: 0, totalFiltradas: 0, soma: 0,
       somaPorColuna: partesColuna.length > 1 ? new Array(partesColuna.length).fill(0) : null, partesColuna,

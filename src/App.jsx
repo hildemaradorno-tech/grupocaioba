@@ -32,8 +32,7 @@ import BasesCalculo from './pages/BasesCalculo'
 import PoliticaComissao from './pages/PoliticaComissao'
 import RegrasFaixas from './pages/RegrasFaixas'
 import CargosRemuneracoes from './pages/CargosRemuneracoes'
-import FontesCalculo from './pages/FontesCalculo'
-import FontesMicrowork from './pages/FontesMicrowork'
+import FontesDados from './pages/FontesDados'
 import Ferias from './pages/Ferias'
 import SobreavisoPlantao from './pages/SobreavisoPlantao'
 import CalculoComissoes from './pages/CalculoComissoes'
@@ -55,6 +54,8 @@ import GarantiasDafTitulos from './pages/garantias-daf/GarantiasDafTitulos'
 import GarantiasDafForm from './pages/garantias-daf/GarantiasDafForm'
 import AuditoriaOsAberto from './pages/garantias-daf/AuditoriaOsAberto'
 import GarantiasDafManual from './pages/garantias-daf/GarantiasDafManual'
+import CalculoComissoesManual from './pages/CalculoComissoesManual'
+import HistoricoComissoesManual from './pages/HistoricoComissoesManual'
 import HondaGarantiasReceber from './pages/honda/HondaGarantiasReceber'
 import BpmProcessos from './pages/bpm/BpmProcessos'
 import BpmModelador from './pages/bpm/BpmModelador'
@@ -111,7 +112,6 @@ import BiPlanosManutencaoManual from './pages/bi/BiPlanosManutencaoManual'
 import BiPossibilidades from './pages/bi/BiPossibilidades'
 import MedidasBi from './pages/bi/MedidasBi'
 import BiCampanha, { CAMPANHA_ABAS_PERMS } from './pages/bi/BiCampanha'
-import BiGestorPecas from './pages/bi/BiGestorPecas'
 import PecasCentralAlertas from './pages/pecas/PecasCentralAlertas'
 import PecasEstoque from './pages/pecas/PecasEstoque'
 import PecasClassificacao from './pages/pecas/PecasClassificacao'
@@ -238,9 +238,10 @@ export default function App() {
           { path: '/regras-comissoes', element: <Navigate to="/tipos-processo" replace /> },
           // Fontes de Dados virou agrupamento de menu dentro de BI - Dashboard (sem aba/tela
           // única), mesmo padrão de Regras de Comissões.
-          { path: '/fontes-calculo', element: <FontesCalculo />, menuPath: 'fontes-calculo' },
-          { path: '/fontes-microwork', element: <FontesMicrowork />, menuPath: 'fontes-microwork' },
-          { path: '/fontes-comissoes', element: <Navigate to="/fontes-calculo" replace /> },
+          { path: '/fontes-dados', element: <FontesDados />, menuPath: ['fontes-calculo', 'fontes-microwork'] },
+          { path: '/fontes-calculo', element: <Navigate to="/fontes-dados?aba=dealernet" replace /> },
+          { path: '/fontes-microwork', element: <Navigate to="/fontes-dados?aba=microwork" replace /> },
+          { path: '/fontes-comissoes', element: <Navigate to="/fontes-dados?aba=dealernet" replace /> },
           // Comissões Pós-Vendas virou agrupamento de menu (sem aba/tela única), mesmo padrão
           // de Regras de Comissões — ordem de cima pra baixo do menu lateral.
           { path: '/ferias', element: <Ferias />, menuPath: 'ferias' },
@@ -249,8 +250,10 @@ export default function App() {
           // Comissões) — mesma permissão de Sobreaviso/Plantão (ação 'configurar_valores' já
           // controla edição x só-leitura dentro da própria tela).
           { path: '/calculo-comissoes', element: <CalculoComissoes />, menuPath: 'calculo-comissoes' },
-          { path: '/calculo-comissoes-motos', element: <CalculoComissoes agrupamentoNome="Caiobá Motos" titulo="Comissões - HONDA" />, menuPath: 'calculo-comissoes' },
+          { path: '/calculo-comissoes-manual', element: <CalculoComissoesManual />, menuPath: ['calculo-comissoes', 'calculo-comissoes-motos'] },
+          { path: '/calculo-comissoes-motos', element: <CalculoComissoes agrupamentoNome="Caiobá Motos" titulo="Comissões - HONDA" permissao="calculo-comissoes-motos" />, menuPath: 'calculo-comissoes-motos' },
           { path: '/processamento-comissoes', element: <HistoricoComissoes />, menuPath: 'processamento-comissoes' },
+          { path: '/processamento-comissoes-manual', element: <HistoricoComissoesManual />, menuPath: 'processamento-comissoes' },
           // Link antigo (tela única com abas) — manda pro primeiro item da sequência.
           { path: '/folha-pagamento-daf', element: <Navigate to="/ferias" replace /> },
           { path: '/funcionarios', element: <Funcionarios />, menuPath: 'funcionarios' },
@@ -330,11 +333,9 @@ export default function App() {
           { path: '/bi/agendamento-servicos/manual', element: <BiAgendamentoServicosManual />, menuPath: 'bi/agendamento-servicos' },
           { path: '/bi/planos-manutencao', element: <BiPlanosManutencao />, menuPath: 'bi/planos-manutencao' },
           { path: '/bi/planos-manutencao/manual', element: <BiPlanosManutencaoManual />, menuPath: 'bi/planos-manutencao' },
-          { path: '/bi/fontes', element: <Navigate to="/fontes-calculo" replace /> },
+          { path: '/bi/fontes', element: <Navigate to="/fontes-dados?aba=dealernet" replace /> },
           { path: '/bi/medidas', element: <MedidasBi />, menuPath: 'bi/medidas' },
           { path: '/bi/campanha', element: <BiCampanha />, menuPath: CAMPANHA_ABAS_PERMS },
-          { path: '/bi/gestor-pecas', element: <BiGestorPecas />, menuPath: 'bi/gestor-pecas' },
-          { path: '/bi/gestor-pecas-motos', element: <BiGestorPecas />, menuPath: 'bi/gestor-pecas-motos' },
           // Gestor de Peças 2.0 — mesmas telas para Trucks (/pecas, Dealer.net) e Motos (/pecas-motos, MicroWork)
           ...['pecas', 'pecas-motos'].flatMap(m => ROTAS_PECAS.map(([slug, Tela]) => ({ path: `/${m}/${slug}`, element: <Tela />, menuPath: `${m}/${slug}` }))),
         ].map(route => (

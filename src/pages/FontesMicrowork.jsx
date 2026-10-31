@@ -97,7 +97,8 @@ function extrairLista(data) {
   return null
 }
 
-export default function FontesMicrowork() {
+// embutido: aba da tela Fonte de Dados (FontesDados.jsx) — sem título próprio nem padding da página.
+export default function FontesMicrowork({ embutido = false } = {}) {
   const [dados, setDados] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -365,10 +366,13 @@ export default function FontesMicrowork() {
   )
 
   return (
-    <div className="p-6 space-y-4 max-w-screen-xl">
+    <div className={embutido ? 'space-y-4' : 'p-6 space-y-4 max-w-screen-xl'}>
 
       {/* CABEÇALHO */}
-      <div className="flex items-center justify-between border-b border-slate-200 pb-4">
+      <div className={embutido ? 'flex items-center justify-between gap-4' : 'flex items-center justify-between border-b border-slate-200 pb-4'}>
+        {embutido ? (
+          <p className="text-xs text-slate-500">Cadastre relatórios do MicroWork Cloud (via API) como fonte de dados de comissão.</p>
+        ) : (
         <div>
           <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
             <Radio className="h-5 w-5 text-blue-600" />
@@ -376,6 +380,7 @@ export default function FontesMicrowork() {
           </h1>
           <p className="text-xs text-slate-500">Cadastre relatórios do MicroWork Cloud (via API) como fonte de dados de comissão.</p>
         </div>
+        )}
         {canEdit && (
           <button
             onClick={abrirIncluir}

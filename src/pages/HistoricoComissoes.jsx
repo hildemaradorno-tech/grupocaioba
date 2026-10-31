@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { Search, Loader2, AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, Eye, X, RotateCcw, Truck, ShieldCheck, CheckCircle2, Circle, Download, Trash2, ClipboardCheck, Calculator, History } from 'lucide-react'
+import { Search, Loader2, AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, Eye, X, RotateCcw, Truck, ShieldCheck, CheckCircle2, Circle, Download, Trash2, ClipboardCheck, Calculator, History, BookOpen } from 'lucide-react'
 import { apiService } from '../services/api'
-import { passaEscopoComissao, setorSoVisualizacao } from '../utils/permissoesComissao'
+import { passaEscopoComissao, setorSoVisualizacao, empresaNoEscopoComissao } from '../utils/permissoesComissao'
 import { useAuth } from '../context/AuthContext'
 import { fmtBRL, fmtPct, fmtDiaMes, TIPOS_META_LABEL, CAMPO_META_LABEL, faixasDaRegra, ROTULO_ACAO_HISTORICO, codigoPolitica, compararCodigoPolitica, comissaoComCodigo } from '../utils/comissoesFormat'
 import { gerarPdfComissoes, paraNomeArquivo } from '../utils/comissoesPdf'
+import { rotuloColuna } from '../utils/rotuloColuna'
 import { AGRUPAMENTOS_COMISSAO, funcionarioAtivoComissao, resolvePoliticas, politicaConfigurada, empresaSelecionavel } from '../utils/comissoesElegibilidade'
 
 
@@ -337,11 +338,12 @@ function LoteLinha({ grupo, expandido, onToggleExpand, selecionados, onToggleSel
 }
 
 export default function HistoricoComissoes() {
-  const { user, hasAction, comissaoEscopoEfetivo, comissaoNivelSetorEfetivo } = useAuth()
+  const { user, userNome, userNomeCompleto, hasAction, comissaoEscopoEfetivo, comissaoNivelSetorEfetivo } = useAuth()
   const podeConfirmarConferenciaDp = hasAction('processamento-comissoes', 'confirmar_conferencia')
   const podeProcessar = hasAction('processamento-comissoes', 'processar')
   const podeExcluirLote = hasAction('processamento-comissoes', 'excluir')
-  const usuarioLabel = user?.email || 'desconhecido'
+  // Quem fez a ação (calculou/conferiu/processou/importou): nome do usuário; e-mail só se não tiver nome.
+  const usuarioLabel = userNomeCompleto || userNome || user?.email || 'desconhecido'
   const anoAtual = new Date().getFullYear()
   const ANOS = useMemo(() => Array.from({ length: 6 }, (_, i) => String(anoAtual - i)), [anoAtual])
 
@@ -436,7 +438,9 @@ export default function HistoricoComissoes() {
 
   // Opções dos filtros vêm dos cadastros completos (não dependem de já ter buscado um período),
   // pra dar pra pré-filtrar antes de clicar em Visualizar.
-  const empresasUnicas = useMemo(() => juntaUnicos((dados?.empresas || []).filter(empresaSelecionavel).map(e => e.empresa_fantasia || e.nome_empresa)), [dados])
+  const empresasUnicas = useMemo(() => juntaUnicos((dados?.empresas || [])
+    .filter(e => empresaSelecionavel(e) && AGRUPAMENTOS_COMISSAO.includes(e.agrupamento_nome) && empresaNoEscopoComissao(e.id, comissaoEscopoEfetivo))
+    .map(e => e.empresa_fantasia || e.nome_empresa)), [dados, comissaoEscopoEfetivo])
   const setoresUnicas = useMemo(() => juntaUnicos((dados?.setores || []).map(s => s.nome_setor)), [dados])
   const areasUnicas = useMemo(() => juntaUnicos((dados?.departamentos || []).map(d => d.area)), [dados])
   const responsaveisUnicos = useMemo(() => juntaUnicos(
@@ -1136,6 +1140,15 @@ export default function HistoricoComissoes() {
               </button>
             </div>
           </div>
+          <button
+            type="button"
+            onClick={() => window.open('/processamento-comissoes-manual', '_blank')}
+            title="Manual de operação"
+            aria-label="Manual de operação"
+            className="flex items-center justify-center p-2 rounded-md text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 shadow-sm transition-colors"
+          >
+            <BookOpen className="h-3.5 w-3.5" />
+          </button>
         </div>
       </div>
 
@@ -1444,6 +1457,14 @@ export default function HistoricoComissoes() {
                                 valorApurado: dc.valorApurado ?? r.valor_base, baseComissao: dc.valorApurado != null ? r.valor_base : null,
                                 valorBruto: dc.valorBruto, descontoPct: dc.descontoPct,
                                 segmentos: dc.segmentos, valorPorColuna: dc.valorPorColuna,
+                                // Políticas marcadas na Regra (Base da Comissão), com o valor salvo de cada uma.
+                                composicaoBase: (() => {
+                                  const ids = new Set(r.politica.regra_comissao.base_politica_ids || [])
+                                  if (ids.size === 0) return []
+                                  return detalheAberto.registros
+                                    .filter(x => x.politica && ids.has(x.politica.grupo_politica_id || x.politica.id))
+                                    .map(x => ({ codigo: codigoPolitica(x.politica), descricao: x.comissaoDescricao, periodo: '', valor: x.valor_comissao }))
+                                })(),
                               })
                             }}
                             title="Ver a regra desta comissão"
@@ -1554,10 +1575,16 @@ export default function HistoricoComissoes() {
                 <div className="rounded-md border border-slate-200 divide-y divide-slate-100">
                   {regraModal.valorPorColuna.map((col, i) => (
                     <div key={i} className="flex items-center justify-between px-3 py-2 text-xs">
-                      <span className="font-mono text-slate-600">{col.coluna}</span>
+                      <span className="font-mono text-slate-600">{rotuloColuna(col.coluna)}</span>
                       <span className="font-mono font-semibold text-slate-700">{fmtBRL(col.valor)}</span>
                     </div>
                   ))}
+                  {regraModal.valorPorColuna.length > 1 && (
+                    <div className="flex items-center justify-between px-3 py-2 text-xs bg-slate-50">
+                      <span className="font-mono font-bold text-slate-700">Total</span>
+                      <span className="font-mono font-bold text-slate-800">{fmtBRL(regraModal.valorPorColuna.reduce((s, c) => s + (Number(c.valor) || 0), 0))}</span>
+                    </div>
+                  )}
                 </div>
               )}
               {regraModal.porMeta && (
@@ -1613,9 +1640,27 @@ export default function HistoricoComissoes() {
                 </div>
               )}
               {regraModal.porMeta && !regraModal.semMeta && regraModal.baseComissao != null && (
-                <div className="rounded-md border border-emerald-200 bg-emerald-50/60 px-3 py-2 text-[11px] text-slate-600 flex items-center justify-between">
-                  <span>Base da Comissão (soma das comissões das políticas selecionadas na Regra)</span>
-                  <span className="font-mono font-bold text-emerald-700">{fmtBRL(regraModal.baseComissao)}</span>
+                <div className="rounded-md border border-emerald-200 bg-emerald-50/60 px-3 py-2 text-[11px] text-slate-600 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span>Base da Comissão (soma das comissões das políticas selecionadas na Regra)</span>
+                    <span className="font-mono font-bold text-emerald-700">{fmtBRL(regraModal.baseComissao)}</span>
+                  </div>
+                  {/* O que entra na soma: as políticas marcadas na Regra, com a comissão de cada uma. */}
+                  {regraModal.composicaoBase?.length > 0 && (
+                    <div className="border-t border-emerald-200 pt-1.5 space-y-0.5">
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-emerald-700">Entram nesta base</p>
+                      {regraModal.composicaoBase.map((p, idx) => (
+                        <div key={idx} className="flex items-center justify-between gap-3">
+                          <span className="truncate">
+                            {p.codigo && <span className="font-mono font-semibold text-slate-400 mr-1">{p.codigo}</span>}
+                            {p.descricao}
+                            {p.periodo && <span className="ml-1 text-[10px] font-semibold text-blue-600">{p.periodo}</span>}
+                          </span>
+                          <span className="font-mono text-slate-700 shrink-0">{p.valor == null ? '—' : fmtBRL(p.valor)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
               <div className="text-[10px] text-slate-400">

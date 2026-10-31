@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom'
-import { Settings, TableProperties, Users, ShieldCheck, Building2, Layers, FolderTree, Box as BoxIcon, Briefcase, Tag, Wrench, Package, TrendingUp, FileCheck2, ScrollText, Clock, CalendarX, Calendar, Target, ShoppingBag, Car, Cog, ClipboardCheck, UserCheck, LogOut, BarChart2, Wallet, ClipboardList, Home, FolderKanban, CircleDot, FileText, Truck, Calculator, BookOpen, GraduationCap, KeyRound, Eye, EyeOff, X, AlertTriangle, Bike, Network, PieChart, Share2, Gauge, Ruler, ShieldAlert, Landmark, Hash, ListChecks, ExternalLink, Workflow, Trophy, Percent, Palmtree, PhoneCall, PlugZap, Bell, Warehouse, Archive, Megaphone, ArrowRightLeft, Bot, SlidersHorizontal } from 'lucide-react'
+import { Settings, TableProperties, Users, ShieldCheck, Building2, Layers, FolderTree, Box as BoxIcon, Briefcase, Tag, Wrench, Package, TrendingUp, FileCheck2, ScrollText, Clock, CalendarX, Calendar, Target, ShoppingBag, Car, Cog, ClipboardCheck, UserCheck, LogOut, BarChart2, Wallet, ClipboardList, Home, FolderKanban, CircleDot, FileText, Truck, Calculator, BookOpen, GraduationCap, KeyRound, Eye, EyeOff, X, AlertTriangle, Bike, Network, PieChart, Share2, Gauge, Ruler, ShieldAlert, Landmark, Hash, ListChecks, ExternalLink, Workflow, Trophy, Percent, Palmtree, PhoneCall, PlugZap, Bell, Warehouse, Archive, Megaphone, ArrowRightLeft, Bot, SlidersHorizontal, ChevronRight } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import TrocarSenhaObrigatoria from '../pages/TrocarSenhaObrigatoria'
 import { supabase } from '../services/supabaseClient'
@@ -20,7 +20,7 @@ MENU_TREE.forEach(buildSectionLeaves)
 // ── Map route to section key ──────────────────────────────────────────────────
 function getActiveSectionKey(pathname) {
   if (pathname === '/usuarios' || pathname === '/grupos' || pathname === '/permissoes-matriz') return '_config'
-  if (pathname === '/tipos-processo' || pathname === '/rubricas' || pathname === '/bases-calculo' ||
+  if (pathname === '/tipos-processo' || pathname === '/rubricas' || pathname === '/fontes-dados' || pathname === '/bases-calculo' ||
     pathname === '/politica-comissao' || pathname === '/regras-faixas' || pathname === '/cargos-remuneracoes' ||
     pathname === '/ferias' || pathname === '/sobreaviso-plantao' ||
     pathname === '/calculo-comissoes' || pathname === '/calculo-comissoes-motos' || pathname === '/processamento-comissoes') return '_comissoes-calculo'
@@ -33,12 +33,12 @@ function getActiveSectionKey(pathname) {
   if (pathname.startsWith('/garantias-daf') || pathname.startsWith('/auditoria-os-aberto') || pathname.startsWith('/auditoria') || pathname.startsWith('/garantia') || pathname.startsWith('/honda') || pathname.startsWith('/truckpag') || pathname.startsWith('/bpm')) return '_controle-processos'
   if (pathname.startsWith('/projetos') || pathname.startsWith('/auditoria-externa')) return '_gestao-projetos'
   if (pathname.startsWith('/calculadoras')) return '_calculadoras'
-  if (pathname.startsWith('/bi') || pathname.startsWith('/kpi') || pathname === '/fontes-calculo' || pathname === '/fontes-microwork') return '_bi'
+  if (pathname.startsWith('/bi') || pathname.startsWith('/kpi')) return '_bi'
   if (pathname.startsWith('/documentacoes') || pathname.startsWith('/rpa') || pathname.startsWith('/ecossistema')) return '_documentacoes'
   if (pathname.startsWith('/treinamentos')) return '_treinamentos'
   if (pathname === '/pecas/configuracao' || pathname === '/pecas-motos/configuracao') return '_config'
-  if (pathname.startsWith('/pecas-motos')) return '_pecas-motos'
-  if (pathname.startsWith('/pecas')) return '_pecas'
+  // Gestor de Peças 2.0 fica dentro de Controle de Processos
+  if (pathname.startsWith('/pecas')) return '_controle-processos'
   if (pathname.startsWith('/governanca') || pathname.startsWith('/controladoria') || pathname.startsWith('/integracoes')) return '_config'
   return null
 }
@@ -207,6 +207,18 @@ function FlyItem({ to, icon: Icon, children, badge, onClose }) {
 }
 
 // ── Flyout: link externo (abre em nova aba, sem passar pelo react-router) ────
+// ── Flyout: item que abre um submenu (ex.: Gestor de Peças dentro de Controle de Processos) ──
+function FlyDrill({ icon: Icon, children, onClick }) {
+  return (
+    <button type="button" onClick={onClick}
+      className="w-full flex items-center gap-2 px-3 py-1.5 rounded-md text-xs text-slate-300 hover:text-white hover:bg-blue-700/60 transition-colors">
+      {Icon && <Icon className="h-3.5 w-3.5 shrink-0 text-blue-400" />}
+      <span className="flex-1 truncate text-left">{children}</span>
+      <ChevronRight className="h-3.5 w-3.5 text-blue-400" />
+    </button>
+  )
+}
+
 function FlyItemExternal({ href, icon: Icon, children, onClose }) {
   return (
     <a
@@ -348,6 +360,8 @@ export default function SidebarLayout() {
   // Flyout do Gestor de Peças 2.0 — mesmo conteúdo para Trucks (m = 'pecas') e Motos (m = 'pecas-motos')
   const flyoutGestorPecas = (m, titulo) => (
           <>
+            <button type="button" onClick={() => setActiveSection('_controle-processos')}
+              className="mx-3 mt-2 text-[11px] text-blue-300 hover:text-white">← Controle de Processos</button>
             <FlyGroup label={titulo} />
             {canView(`${m}/central-alertas`) && <FlyItem to={`/${m}/central-alertas`} icon={Bell} onClose={closeFlyout}>Central de Alertas</FlyItem>}
             {canView(`${m}/assistente-ia`) && <FlyItem to={`/${m}/assistente-ia`} icon={Bot} onClose={closeFlyout}>Assistente IA</FlyItem>}
@@ -489,20 +503,21 @@ export default function SidebarLayout() {
                 <FlyGroup label="Regras de Comissões" />
                 {canView('tipos-processo') && <FlyItem to="/tipos-processo" icon={ListChecks} onClose={closeFlyout}>Tipo de Processo</FlyItem>}
                 {canView('rubricas') && <FlyItem to="/rubricas" icon={Hash} onClose={closeFlyout}>Rubrica</FlyItem>}
+                {(canView('fontes-calculo') || canView('fontes-microwork')) && <FlyItem to="/fontes-dados" icon={TableProperties} onClose={closeFlyout}>Fonte de Dados</FlyItem>}
                 {canView('bases-calculo') && <FlyItem to="/bases-calculo" icon={Calculator} onClose={closeFlyout}>Base de Cálculo</FlyItem>}
                 {canView('politica-comissao') && <FlyItem to="/politica-comissao" icon={ScrollText} onClose={closeFlyout}>Política de Comissões</FlyItem>}
                 {canView('regras-faixas') && <FlyItem to="/regras-faixas" icon={Percent} onClose={closeFlyout}>Regras</FlyItem>}
                 {canView('cargos-remuneracoes') && <FlyItem to="/cargos-remuneracoes" icon={Briefcase} onClose={closeFlyout}>Cargos e Remunerações</FlyItem>}
               </>
             )}
-            {(canView('ferias') || canView('calculo-comissoes') || canView('processamento-comissoes') || canView('sobreaviso-plantao')) && (
+            {(canView('ferias') || canView('calculo-comissoes') || canView('calculo-comissoes-motos') || canView('processamento-comissoes') || canView('sobreaviso-plantao')) && (
               <>
                 <div className="mx-3 my-2 border-t border-blue-800/50" />
                 <FlyGroup label="Comissões Pós-Vendas" />
                 {canView('ferias') && <FlyItem to="/ferias" icon={Palmtree} onClose={closeFlyout}>Férias</FlyItem>}
                 {canView('sobreaviso-plantao') && <FlyItem to="/sobreaviso-plantao" icon={PhoneCall} onClose={closeFlyout}>Sobreaviso/Plantão</FlyItem>}
                 {canView('calculo-comissoes') && <FlyItem to="/calculo-comissoes" icon={Wallet} onClose={closeFlyout}>Comissões - DAF</FlyItem>}
-                {canView('calculo-comissoes') && <FlyItem to="/calculo-comissoes-motos" icon={Wallet} onClose={closeFlyout}>Comissões - HONDA</FlyItem>}
+                {canView('calculo-comissoes-motos') && <FlyItem to="/calculo-comissoes-motos" icon={Wallet} onClose={closeFlyout}>Comissões - HONDA</FlyItem>}
                 {canView('processamento-comissoes') && <FlyItem to="/processamento-comissoes" icon={ClipboardCheck} onClose={closeFlyout}>Processamento de Comissões</FlyItem>}
               </>
             )}
@@ -530,7 +545,7 @@ export default function SidebarLayout() {
       case '_controle-processos':
         return (
           <>
-            {(canView('garantias-daf-andamento') || canView('garantias-daf') || canView('garantias-daf-historicodeos') || canView('garantias-daf-titulos') || canView('honda/contas-a-receber') || canView('bpm/nfe-cancelamento-devolucao')) && (
+            {(canView('garantias-daf-andamento') || canView('garantias-daf') || canView('garantias-daf-historicodeos') || canView('garantias-daf-titulos') || canView('honda/contas-a-receber') || canView('bpm/nfe-cancelamento-devolucao') || canViewSection('_pecas') || canViewSection('_pecas-motos')) && (
               <FlyGroup label="Controle de Processos" />
             )}
             {/* Dashboard e as demais telas (Encerradas, Faturadas, a Receber) já ficam acessíveis como abas dentro de Garantias DAF. */}
@@ -543,6 +558,9 @@ export default function SidebarLayout() {
         <FlyItem to={canView('truckpag/conciliacao') ? "/truckpag/conciliacao" : "/truckpag/titulos"} icon={Truck} onClose={closeFlyout}>TruckPag a Receber</FlyItem>
       )}
             {canView('auditoria-os-aberto') && <FlyItem to="/auditoria-os-aberto" icon={ClipboardList} onClose={closeFlyout}>Auditoria O.S. Aberta</FlyItem>}
+            {(canViewSection('_pecas') || canViewSection('_pecas-motos')) && <FlyGroup label="Gestor de Peças 2.0" />}
+            {canViewSection('_pecas') && <FlyDrill icon={Package} onClick={() => setActiveSection('_pecas')}>Peças — Trucks</FlyDrill>}
+            {canViewSection('_pecas-motos') && <FlyDrill icon={Bike} onClick={() => setActiveSection('_pecas-motos')}>Peças — Motos</FlyDrill>}
             {canView('garantia/tipo-titulo') && <FlyGroup label="Cadastros de Garantia" />}
             {canView('garantia/tipo-titulo') && <FlyItem to="/garantia/tipo-titulo" icon={FileText} onClose={closeFlyout}>Tipo de Título Garantia</FlyItem>}
           </>
@@ -593,14 +611,10 @@ export default function SidebarLayout() {
             {canView('bi/possibilidades') && <FlyItem to="/bi/possibilidades" icon={Gauge} onClose={closeFlyout}>Possibilidades</FlyItem>}
             {canView('bi/agendamento-servicos') && <FlyItem to="/bi/agendamento-servicos" icon={Calendar} onClose={closeFlyout}>Agendamento de Serviços</FlyItem>}
             {canView('bi/planos-manutencao') && <FlyItem to="/bi/planos-manutencao" icon={Wrench} onClose={closeFlyout}>Planos de Manutenção</FlyItem>}
-            {canView('bi/gestor-pecas') && <FlyItem to="/bi/gestor-pecas" icon={Truck} onClose={closeFlyout}>Gestor de Peças — Trucks</FlyItem>}
-            {canView('bi/gestor-pecas-motos') && <FlyItem to="/bi/gestor-pecas-motos" icon={Bike} onClose={closeFlyout}>Gestor de Peças — Motos</FlyItem>}
             {canViewSection('_bi.fontes-dados') && (
               <>
                 <div className="mx-3 my-2 border-t border-blue-800/50" />
                 <FlyGroup label="Fontes de Dados" />
-                {canView('fontes-calculo') && <FlyItem to="/fontes-calculo" icon={TableProperties} onClose={closeFlyout}>Dealer.net</FlyItem>}
-                {canView('fontes-microwork') && <FlyItem to="/fontes-microwork" icon={TableProperties} onClose={closeFlyout}>MicroWork</FlyItem>}
                 {canView('bi/medidas') && <FlyItem to="/bi/medidas" icon={Ruler} onClose={closeFlyout}>Medidas BI</FlyItem>}
               </>
             )}
@@ -722,22 +736,6 @@ export default function SidebarLayout() {
               label="Calculadoras"
               isActive={currentSection === '_calculadoras' || activeSection === '_calculadoras'}
               onClick={() => toggleSection('_calculadoras')}
-            />
-          )}
-          {canViewSection('_pecas') && (
-            <SidebarIconBtn
-              icon={Package}
-              label="Gestor de Peças 2.0 — Trucks"
-              isActive={currentSection === '_pecas' || activeSection === '_pecas'}
-              onClick={() => toggleSection('_pecas')}
-            />
-          )}
-          {canViewSection('_pecas-motos') && (
-            <SidebarIconBtn
-              icon={Bike}
-              label="Gestor de Peças 2.0 — Motos"
-              isActive={currentSection === '_pecas-motos' || activeSection === '_pecas-motos'}
-              onClick={() => toggleSection('_pecas-motos')}
             />
           )}
           {canViewSection('_bi') && (

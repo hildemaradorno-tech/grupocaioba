@@ -106,6 +106,17 @@ export const ACOES_POR_MENU = [
     ],
   },
   {
+    // Comissões - HONDA: mesmas ações da DAF, com permissão própria.
+    menuPath: 'calculo-comissoes-motos',
+    acoes: [
+      { value: 'calcular',   label: 'Calcular Comissões' },
+      { value: 'salvar',     label: 'Salvar Comissões (Rascunho)' },
+      { value: 'conferir',   label: 'Conferir Comissões (Gerente)' },
+      { value: 'salvar_pdf', label: 'Salvar PDF' },
+      { value: 'excluir',    label: 'Excluir Histórico' },
+    ],
+  },
+  {
     menuPath: 'processamento-comissoes',
     acoes: [
       { value: 'confirmar_conferencia', label: 'Confirmar Conferência (DP)' },

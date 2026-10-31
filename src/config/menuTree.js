@@ -156,6 +156,10 @@ export const MENU_TREE = [
         children: [
           { key: 'tipos-processo', label: 'Tipo de Processo' },
           { key: 'rubricas', label: 'Rubrica' },
+          // Fonte de Dados: uma tela com abas (Dealer.net / MicroWork); as duas permissões continuam
+          // separadas (mesmas keys de antes). Na Home vira um botão só.
+          { key: 'fontes-calculo', label: 'Fonte de Dados — Dealer.net', atalhosHome: [{ label: 'Fonte de Dados', navTo: 'fontes-dados' }] },
+          { key: 'fontes-microwork', label: 'Fonte de Dados — MicroWork', virtual: true },
           { key: 'bases-calculo', label: 'Base de Cálculo' },
           { key: 'politica-comissao', label: 'Política de Comissões' },
           { key: 'regras-faixas', label: 'Regras' },
@@ -163,16 +167,16 @@ export const MENU_TREE = [
         ],
       },
       {
-        // Agrupamento de menu (sem navTo) — cada item abaixo é uma tela própria, não mais abas
-        // de uma página única. Comissões - DAF e Comissões - HONDA são 2 telas separadas no menu
-        // (rotas /calculo-comissoes e /calculo-comissoes-motos) mas compartilham a mesma
-        // permissão 'calculo-comissoes' (a diferença entre elas é só o agrupamento de empresas).
+        // Agrupamento de menu (sem navTo) — cada item abaixo é uma tela própria. Comissões - DAF
+        // ('calculo-comissoes') e Comissões - HONDA ('calculo-comissoes-motos') têm permissões
+        // separadas: cada grupo de acesso libera a tela da sua operação.
         key: '_folha-pagamento-daf',
         label: 'Comissões Pós-Vendas',
         children: [
           { key: 'ferias', label: 'Férias' },
           { key: 'sobreaviso-plantao', label: 'Sobreaviso/Plantão' },
-          { key: 'calculo-comissoes', label: 'Cálculo de Comissões' },
+          { key: 'calculo-comissoes', label: 'Comissões - DAF' },
+          { key: 'calculo-comissoes-motos', label: 'Comissões - HONDA' },
           { key: 'processamento-comissoes', label: 'Processamento de Comissões' },
         ],
       },
@@ -237,6 +241,11 @@ export const MENU_TREE = [
         ],
       },
       { key: 'auditoria-os-aberto', label: 'Auditoria O.S. Aberta' },
+      // Gestor de Peças 2.0 (movido para Controle de Processos em 29/10/2026) — dois Gestores separados com
+      // as mesmas telas; keys mantidas (permissões pecas/... e pecas-motos/... não mudam). Sem dashboard no menu BI
+      // (excluído a pedido do usuário em 29/10/2026); regras em Configurações → Departamentos → Peças.
+      { key: '_pecas', label: 'Gestor de Peças 2.0 — Trucks', children: telasGestorPecas('pecas') },
+      { key: '_pecas-motos', label: 'Gestor de Peças 2.0 — Motos', children: telasGestorPecas('pecas-motos') },
       {
         key: '_garantia.cadastros',
         label: 'Cadastros de Garantia',
@@ -288,18 +297,6 @@ export const MENU_TREE = [
     ],
   },
   {
-    // Gestor de Peças 2.0 — dois Gestores separados com as mesmas telas (fase 1 com dados simulados —
-    // ver backend/services/gestorPecas/dataProvider.js). Dashboards no BI; regras em Configurações → Departamentos → Peças.
-    key: '_pecas',
-    label: 'Gestor de Peças 2.0 — Trucks',
-    children: telasGestorPecas('pecas'),
-  },
-  {
-    key: '_pecas-motos',
-    label: 'Gestor de Peças 2.0 — Motos',
-    children: telasGestorPecas('pecas-motos'),
-  },
-  {
     key: '_bi',
     label: 'BI - Dashboard',
     children: [
@@ -308,16 +305,12 @@ export const MENU_TREE = [
       { key: 'bi/possibilidades', label: 'BI — Possibilidades' },
       { key: 'bi/agendamento-servicos', label: 'BI — Agendamento de Serviços' },
       { key: 'bi/planos-manutencao', label: 'BI — Planos de Manutenção' },
-      { key: 'bi/gestor-pecas', label: 'BI — Gestor de Peças 2.0 — Trucks' },
-      { key: 'bi/gestor-pecas-motos', label: 'BI — Gestor de Peças 2.0 — Motos' },
       {
         // Agrupamento de menu (sem navTo) — cada item abaixo é uma tela própria, não mais abas
         // de uma página única. Movido de Comissões pra cá junto com Medidas BI.
         key: '_bi.fontes-dados',
         label: 'Fontes de Dados',
         children: [
-          { key: 'fontes-calculo', label: 'Dealer.net' },
-          { key: 'fontes-microwork', label: 'MicroWork' },
           // Mesma key de antes (bi/medidas) pra não perder as permissões já concedidas.
           { key: 'bi/medidas', label: 'Medidas BI' },
         ],

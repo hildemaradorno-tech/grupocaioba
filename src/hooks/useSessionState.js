@@ -18,3 +18,12 @@ export function useSessionState(key, initialValue) {
 
   return [state, setValue]
 }
+
+// Apaga filtros salvos ao ENTRAR numa tela (uma vez, antes de qualquer useSessionState dela ou das
+// abas filhas ler o valor) — a tela abre sem nada filtrado/selecionado. Chamar como 1º hook do componente.
+export function useLimparSessaoAoEntrar(keys) {
+  useState(() => {
+    keys.forEach(k => { try { localStorage.removeItem(k) } catch {} })
+    return true
+  })
+}

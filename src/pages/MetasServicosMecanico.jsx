@@ -121,7 +121,10 @@ export default function MetasServicosMecanico({ empresaExterna = null, anoExtern
   const [dadosConsultor, setDadosConsultor] = useState([])
   const [loading,       setLoading]       = useState(false)
   const [error,         setError]         = useState(null)
-  const { hasActionOrDefault } = useAuth()
+  const { hasActionOrDefault, hasAction, usuarioId, userNome } = useAuth()
+  // Trocar o colaborador de um lançamento (mesmo aprovado): liberado pela ação Pendenciar (Grupos de Acesso).
+  const podeTrocarColab = hasAction('/metas/gestao-aprovacao', 'pendenciar')
+  const [trocaColab, setTrocaColab] = useState(null) // { antigoId, snapshot } enquanto está trocando
   const canEdit = hasActionOrDefault('metas/pos-vendas/servicos_pecas', 'editar')
   const canDelete = hasActionOrDefault('metas/pos-vendas/servicos_pecas', 'excluir')
   const [filtroEmpresaSalva, setFiltroEmpresaSalva] = useSessionState('mpvs_servicos_empresas', [])
@@ -144,6 +147,9 @@ export default function MetasServicosMecanico({ empresaExterna = null, anoExtern
   const [segAbertos,        setSegAbertos]        = useState(new Set())
 
   const [modalAberto,        setModalAberto]        = useState(false)
+  useEffect(() => { setTrocaColab(null) }, [modalAberto])
+  // Recarrega o cadastro ao abrir o modal: quem foi ativado/cadastrado em Funcionários com esta tela já aberta aparece no seletor.
+  useEffect(() => { if (modalAberto) apiService.getFuncionarios().then(f => setFuncionarios(sortNome(f, 'nome_funcionario'))).catch(() => {}) }, [modalAberto])
   const [modoModal,          setModoModal]          = useState('incluir') // 'incluir' | 'editar'
   const [modalExcluirAberto, setModalExcluirAberto] = useState(false)
   const [form,               setForm]               = useState(FORM_VAZIO)
@@ -529,6 +535,17 @@ export default function MetasServicosMecanico({ empresaExterna = null, anoExtern
         setor_id:        formPayload.setor_id        || null,
         box_id:          formPayload.box_id          || null,
         cargo_id:        formPayload.cargo_id        || null,
+      }
+      if (trocaColab && form.colaborador_id && form.colaborador_id !== trocaColab.antigoId) {
+        const func = funcionarios.find(f => f.id === form.colaborador_id)
+        await apiService.trocarColaboradorMeta({
+          tipo: 'mecanico', empresaId: form.empresa_id, ano: Number(form.ano), antigoId: trocaColab.antigoId,
+          novo: form.colaborador_id === 'A_CONTRATAR'
+            ? { id: '00000000-0000-0000-0000-000000000000', nome: 'A contratar' }
+            : { id: form.colaborador_id, nome: form.colaborador_nome, cargo_id: form.cargo_id || func?.cargo_id || null, cargo_nome: form.cargo_nome, box_id: form.box_id || null, box_nome: form.box_nome, data_admissao: func?.data_admissao || null },
+          usuario: { id: usuarioId, nome: userNome },
+        })
+        setTrocaColab(null)
       }
       for (const m of mesesForm) {
         if (!isProdNaoAssoc && isMesLocked(m.mes - 1)) continue
@@ -1252,9 +1269,19 @@ export default function MetasServicosMecanico({ empresaExterna = null, anoExtern
               </div>
               <div className="grid grid-cols-3 gap-4 items-end">
                 <div className="col-span-2"><label className={LBL}>Colaborador *</label>
-                  {(!form.empresa_id || modoModal === 'editar' || modoModal === 'visualizar') ? (
-                    <div className={`${SEL} bg-slate-100 text-slate-500 cursor-not-allowed`}>{form.colaborador_nome || '—'}</div>
+                  {(!form.empresa_id || modoModal === 'visualizar' || (modoModal === 'editar' && !trocaColab)) ? (
+                    <div className="flex items-center gap-2">
+                      <div className={`${SEL} bg-slate-100 text-slate-500 cursor-not-allowed flex-1`}>{form.colaborador_nome || '—'}</div>
+                      {modoModal === 'editar' && podeTrocarColab && form.empresa_id && form.colaborador_id !== '00000000-0000-0000-0000-000000000001' && (
+                        <button type="button" className={BTN_SEC} title="Trocar o colaborador deste lançamento (valores mantidos; volta a pendente de aprovação)"
+                          onClick={() => setTrocaColab({ antigoId: form.colaborador_id, snapshot: { colaborador_id: form.colaborador_id, colaborador_nome: form.colaborador_nome, data_admissao: form.data_admissao, cargo_id: form.cargo_id, cargo_nome: form.cargo_nome, setor_id: form.setor_id, setor_nome: form.setor_nome, box_id: form.box_id, box_nome: form.box_nome } })}>
+                          Trocar
+                        </button>
+                      )}
+                    </div>
                   ) : (
+                    <div className="flex items-center gap-2">
+                    <div className="flex-1 min-w-0">
                     <SearchCombobox
                       value={form.colaborador_id}
                       onChange={(id) => handleFormChange({ target: { name: 'colaborador_id', value: id } })}
@@ -1264,7 +1291,7 @@ export default function MetasServicosMecanico({ empresaExterna = null, anoExtern
                       notFoundLabel="Nenhum colaborador encontrado."
                       opcoes={[
                         { id: 'A_CONTRATAR', nome_funcionario: 'A contratar' },
-                        { id: 'PROD_NAO_ASSOC_FUN', nome_funcionario: 'Produtivo Não Associado' },
+                        ...(trocaColab ? [] : [{ id: 'PROD_NAO_ASSOC_FUN', nome_funcionario: 'Produtivo Não Associado' }]),
                         ...funcsEmp,
                       ]}
                       getLabel={(o) => {
@@ -1279,6 +1306,14 @@ export default function MetasServicosMecanico({ empresaExterna = null, anoExtern
                       }}
                       getSearchText={(o) => `${o.nome_funcionario} ${cargosPorId[o.cargo_id]?.nome_cargo || ''}`}
                     />
+                    </div>
+                    {trocaColab && (
+                      <button type="button" className={BTN_SEC} title="Desfazer a troca e voltar ao colaborador original"
+                        onClick={() => { setForm(prev => ({ ...prev, ...trocaColab.snapshot })); setTrocaColab(null) }}>
+                        Cancelar troca
+                      </button>
+                    )}
+                    </div>
                   )}
                 </div>
                 <div>

@@ -25,7 +25,7 @@ const gruposAbas = MANUAL_ABAS_CARDS.map(([aba, cards]) => [aba, [...secaoObjeti
     titulo,
     icone: titulo.startsWith('Indicador') ? Gauge : titulo.startsWith('Gráfico') ? LineChart : CreditCard,
     itens: [
-      ['Objetivo', i.objetivo], ['Cálculo', i.calculo], ['Fonte (arquivo)', i.fonte],
+      ['Objetivo', i.objetivo], ['Cálculo', i.calculo], ['Origem do cálculo', i.origem], ['Fonte (arquivo)', i.fonte],
       ['Regras', i.filtros], ['Colunas utilizadas de cada relatório', i.colunas],
     ],
   }

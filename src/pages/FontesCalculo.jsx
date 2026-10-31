@@ -23,7 +23,8 @@ const SEL = 'w-full text-xs p-2 border border-slate-200 rounded-md bg-white font
 const INP = 'w-full text-xs p-2 border border-slate-200 rounded-md font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500'
 const LBL = 'text-[11px] font-bold text-slate-500 uppercase tracking-wide'
 
-export default function FontesCalculo() {
+// embutido: aba da tela Fonte de Dados (FontesDados.jsx) — sem título próprio nem padding da página.
+export default function FontesCalculo({ embutido = false } = {}) {
   const [dados, setDados] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -231,10 +232,13 @@ export default function FontesCalculo() {
   )
 
   return (
-    <div className="p-6 space-y-4 max-w-screen-xl">
+    <div className={embutido ? 'space-y-4' : 'p-6 space-y-4 max-w-screen-xl'}>
 
       {/* CABEÇALHO */}
-      <div className="flex items-center justify-between border-b border-slate-200 pb-4">
+      <div className={embutido ? 'flex items-center justify-between gap-4' : 'flex items-center justify-between border-b border-slate-200 pb-4'}>
+        {embutido ? (
+          <p className="text-xs text-slate-500">Cadastre de qual arquivo do SharePoint cada evento de comissão lê seus dados.</p>
+        ) : (
         <div>
           <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
             <Database className="h-5 w-5 text-blue-600" />
@@ -242,6 +246,7 @@ export default function FontesCalculo() {
           </h1>
           <p className="text-xs text-slate-500">Cadastre de qual arquivo do SharePoint cada evento de comissão lê seus dados.</p>
         </div>
+        )}
         {canEdit && (
           <button
             onClick={abrirIncluir}

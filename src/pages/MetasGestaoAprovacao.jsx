@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useState, useMemo, useCallback } from 'react'
-import { useSessionState } from '../hooks/useSessionState'
+import { useSessionState, useLimparSessaoAoEntrar } from '../hooks/useSessionState'
 
 import { ClipboardCheck, AlertTriangle, CheckCircle2, Loader2, Package, Wrench, TrendingUp, BarChart3, Cog, XCircle, Ban } from 'lucide-react'
 import { apiService } from '../services/api'
@@ -35,6 +35,8 @@ function isPendente(r) {
 
 
 export default function MetasGestaoAprovacao() {
+  // Entra sempre sem nada filtrado/selecionado (empresa, ano, meses e filtros de Departamento/Setor/Box/Funcionário).
+  useLimparSessaoAoEntrar(['mga_ano', 'mpvs_servicos_empresas', 'mpvs_servicos_meses', 'mpvt_depto', 'mpvt_setor', 'mpvt_box', 'mpvt_colab'])
 
   const [filtroAno, setFiltroAno] = useSessionState('mga_ano', anoAtual)
   // Mesma seleção de empresas das demais telas de Metas.

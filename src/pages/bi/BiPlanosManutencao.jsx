@@ -313,18 +313,14 @@ export default function BiPlanosManutencao() {
   const [dataIni, setDataIni] = useState(DATA_MIN)
   const [dataFim, setDataFim] = useState(DATA_MAX)
 
-  // Setas do calendário: pulam para o mês anterior/seguinte ao da data inicial (dia 1 ao último dia, limitado a ontem).
+  // Setas do calendário: pulam para o mês anterior/seguinte ao da data inicial (dia 1 ao último dia; no mês
+  // atual, até ontem, como ao abrir). O calendário não trava: qualquer data pode ser escolhida.
   const trocarMes = (passo) => {
     const [a, m] = dataIni.split('-').map(Number)
-    const ini = new Date(a, m - 1 + passo, 1)
-    const fim = iso(new Date(a, m + passo, 0))
-    setDataIni(iso(ini))
-    setDataFim(fim > DATA_MAX ? DATA_MAX : fim)
+    const ini = iso(new Date(a, m - 1 + passo, 1))
+    setDataIni(ini)
+    setDataFim(ini === DATA_MIN ? DATA_MAX : iso(new Date(a, m + passo, 0)))
   }
-  const podeAvancar = (() => {
-    const [a, m] = dataIni.split('-').map(Number)
-    return iso(new Date(a, m, 1)) <= DATA_MAX
-  })()
 
   // Empresas do cadastro (sem as "visuais"), agrupadas por Agrupamento; só Trucks.
   useEffect(() => {
@@ -642,15 +638,15 @@ export default function BiPlanosManutencao() {
               <div className="flex flex-col gap-1">
                 <label className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1"><Calendar className="h-3 w-3" /> Data</label>
                 <div className="flex items-center gap-1.5">
-                  <input type="date" className={inputCls} max={dataFim || DATA_MAX} value={dataIni} onChange={e => e.target.value && setDataIni(e.target.value)} />
+                  <input type="date" className={inputCls} max={dataFim} value={dataIni} onChange={e => e.target.value && setDataIni(e.target.value)} />
                   <span className="text-slate-400 text-xs">até</span>
-                  <input type="date" className={inputCls} min={dataIni} max={DATA_MAX} value={dataFim} onChange={e => e.target.value && setDataFim(e.target.value)} />
+                  <input type="date" className={inputCls} min={dataIni} value={dataFim} onChange={e => e.target.value && setDataFim(e.target.value)} />
                   <button type="button" onClick={() => trocarMes(-1)} title="Mês anterior" aria-label="Mês anterior"
                     className="p-1 rounded-md bg-white border border-slate-300 text-slate-600 hover:bg-slate-50">
                     <ChevronLeft className="h-3.5 w-3.5" />
                   </button>
-                  <button type="button" onClick={() => trocarMes(1)} disabled={!podeAvancar} title="Próximo mês" aria-label="Próximo mês"
-                    className="p-1 rounded-md bg-white border border-slate-300 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed">
+                  <button type="button" onClick={() => trocarMes(1)} title="Próximo mês" aria-label="Próximo mês"
+                    className="p-1 rounded-md bg-white border border-slate-300 text-slate-600 hover:bg-slate-50">
                     <ChevronRight className="h-3.5 w-3.5" />
                   </button>
                   {/* Volta direto ao mês atual (dia 1 até ontem). */}

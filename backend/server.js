@@ -47,13 +47,13 @@ app.use('/api/kpi', authMiddleware, requireMenuLike('kpi', 'bi', 'metas', 'integ
 app.use('/api/garantias', authMiddleware, requireMenuLike('garantia', 'bi/garantias', 'auditoria'), filtrarPorEmpresa, garantiasRoutes)
 
 // ── Rotas Fonte/Base de Cálculo (SharePoint genérico p/ comissões) ───────────
-app.use('/api/calculo-comissao', authMiddleware, requireMenu('calculo-comissoes', 'processamento-comissoes', 'cargos-remuneracoes', 'regras-faixas', 'rubricas', 'bases-calculo', 'fontes-calculo', 'fontes-microwork', 'funcionarios'), calculoComissaoRoutes)
+app.use('/api/calculo-comissao', authMiddleware, requireMenu('calculo-comissoes', 'calculo-comissoes-motos', 'processamento-comissoes', 'cargos-remuneracoes', 'regras-faixas', 'rubricas', 'bases-calculo', 'fontes-calculo', 'fontes-microwork', 'funcionarios'), calculoComissaoRoutes)
 
 // ── Rotas Fonte BI / Medida BI (SharePoint genérico p/ dashboards de BI) ─────
 app.use('/api/bi-medidas', authMiddleware, requireMenuLike('bi'), biMedidasRoutes)
 
 // ── Rotas RH Férias (SharePoint Relacao de Ferias Calculadas) ─────────────────
-app.use('/api/rh-ferias', authMiddleware, requireMenu('ferias', 'calculo-comissoes', 'processamento-comissoes', 'funcionarios'), rhFeriasRoutes)
+app.use('/api/rh-ferias', authMiddleware, requireMenu('ferias', 'calculo-comissoes', 'calculo-comissoes-motos', 'processamento-comissoes', 'funcionarios'), rhFeriasRoutes)
 
 // ── Rotas Honda (integração MicroWork Cloud) ──────────────────────────────────
 app.use('/api/honda', authMiddleware, requireMenuLike('honda'), hondaRoutes)
@@ -69,7 +69,7 @@ app.use('/api/agendamento-crm', authMiddleware, requireMenuLike('bi/agendamento-
 app.use('/api/planos-manutencao', authMiddleware, planosManutencaoRoutes)
 
 // ── Rotas Gestor de Peças 2.0 (fase 1: dados simulados — ver services/gestorPecas/dataProvider.js) ─
-app.use('/api/gestor-pecas', authMiddleware, requireMenuLike('pecas/', 'pecas-motos/', 'bi/gestor-pecas'), filtrarPorEmpresa, gestorPecasRoutes)
+app.use('/api/gestor-pecas', authMiddleware, requireMenuLike('pecas/', 'pecas-motos/'), filtrarPorEmpresa, gestorPecasRoutes)
 
 // ── Rotas Google Calendar (OAuth + leitura de eventos) ───────────────────────
 // /callback é o redirect do Google (navegação do browser, sem cabeçalho Authorization): o `state`

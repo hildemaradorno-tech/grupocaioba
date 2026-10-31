@@ -8,9 +8,6 @@ import { INFO, OBJETIVO_ABAS } from './agendamentoServicosTextos'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
 
-// Sigla no nome do arquivo RCR038 (pasta DAF Pós-Vendas) → sigla_empresa no cadastro de Empresas.
-const SIGLA_ARQUIVO_EMPRESA = { CGR: 'DAF CGR', CPD: 'DAF CPD', DOU: 'DAF DOU', TLG: 'DAF TRES' }
-
 // Sem mockup: "valor: null" = ainda sem fonte de dados (mostra —); "chave" = vem das Campanhas CRM (RCR038).
 const TIPOS = ['AGENDAMENTO ATIVO', 'AGENDAMENTO RECEPTIVO']
 
@@ -68,7 +65,7 @@ const eixo = { fontSize: 11, fill: '#64748b' }
 function BotaoInfo({ titulo, info }) {
   const [aberto, setAberto] = useState(false)
   if (!info) return null
-  const secoes = [['Objetivo', info.objetivo], ['Cálculo', info.calculo], ['Fonte (arquivo)', info.fonte]]
+  const secoes = [['Objetivo', info.objetivo], ['Cálculo', info.calculo], ['Origem do cálculo', info.origem], ['Fonte (arquivo)', info.fonte]]
   return (
     <>
       <button type="button" onClick={() => setAberto(true)} aria-label={`Informações: ${titulo}`} title="Informações"
@@ -199,10 +196,11 @@ function GaugeMeta({ label, valor, meta, info, menorMelhor }) {
 
 // Abas internas do BI.
 // Visão Período fica fora por enquanto (gráficos ainda sem fonte); o código dela continua abaixo.
-const ABAS = ['Por Campanhas', 'Por Agendamentos', 'Por Passagens']
-// Passagens: O.S. abertas e agendamentos; Por Agendamentos: agenda pela data do agendamento e o que aconteceu; Campanhas: painel de cards/velocímetros; Visão Período: gráficos mensais.
-const ABA_PASSAGENS = 'Por Passagens'
-const ABA_AGENDAMENTOS = 'Por Agendamentos'
+const ABAS = ['Por Campanhas', 'Por Data Agendamento', 'Por Data da O.S.']
+// Passagens: O.S. abertas e agendamentos; Por Data Agendamento: agenda pela data do agendamento e o que aconteceu; Campanhas: painel de cards/velocímetros; Visão Período: gráficos mensais.
+const ABA_PASSAGENS = 'Por Data da O.S.'
+const ABA_AGENDAMENTOS = 'Por Data Agendamento'
+const ABA_CAMPANHAS = 'Por Campanhas'
 const VISAO_PERIODO = 'Visão Período'
 
 // Multisseleção de empresas: marcar o agrupamento marca/desmarca todas as empresas dele.
@@ -326,9 +324,9 @@ const taxa = (a, b) => (b > 0 ? `${Math.round((a / b) * 100)}%` : '—')
 const PASSIVOS_TIPOS = ['Receptivo', 'Presencial', 'Internet']
 const somaTotal = (oses) => oses.reduce((t, o) => t + (o.total || 0), 0)
 
-// Contagens da aba Por Passagens (cards e tabela por data de abertura).
+// Contagens da aba Por Data da O.S. (cards e tabela por data de abertura).
 function resumoPassagens(oses) {
-  const agend = oses.filter(o => o.tipo_agendamento)
+  const agend = oses.filter(o => o.agendador) // O.S. veio de agendamento = Agendador preenchido no ROF001
   return {
     passagens: oses.length,
     agendadas: agend.length,
@@ -338,7 +336,7 @@ function resumoPassagens(oses) {
   }
 }
 
-// Contagens da aba Por Agendamentos (cards e tabela por data do agendamento). `lista` já traz o desfecho.
+// Contagens da aba Por Data Agendamento (cards e tabela por data do agendamento). `lista` já traz o desfecho.
 function resumoAgendamentos(lista) {
   const conta = (f) => lista.filter(f).length
   const ativo = (a) => a.tipo === 'Ativo'
@@ -352,7 +350,6 @@ function resumoAgendamentos(lista) {
     virouOs: conta(a => a.desfecho === 'virouOs'),
     virouOsAtivo: conta(a => ativo(a) && a.desfecho === 'virouOs'),
     virouOsPassivo: conta(a => passivo(a) && a.desfecho === 'virouOs'),
-    osCancelada: conta(a => a.desfecho === 'osCancelada'),
     noShow: conta(a => a.desfecho === 'noShow'),
     aExecutar: conta(a => a.desfecho === 'aExecutar'),
     osGeradas: oses.size,
@@ -381,7 +378,8 @@ function resumoContatos(rows) {
 const SITUACOES_PENDENTES = ['Pendente Autorização Cancelamento', 'Pendente de Autorização de Encerramento']
 
 const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-// Período padrão: do dia 1 do mês até ontem (se hoje é dia 1, o mês de ontem). Qualquer data até ontem pode ser escolhida.
+// Período padrão ao abrir: do dia 1 do mês até ontem (se hoje é dia 1, o mês de ontem). O calendário não trava:
+// qualquer data (inclusive hoje e futuras) pode ser escolhida.
 const ontem = new Date(); ontem.setDate(ontem.getDate() - 1)
 const DATA_MAX = iso(ontem)
 const DATA_MIN = iso(new Date(ontem.getFullYear(), ontem.getMonth(), 1))
@@ -434,28 +432,25 @@ export default function BiAgendamentoServicos() {
 
   const [dataIni, setDataIni] = useState(DATA_MIN)
   const [dataFim, setDataFim] = useState(DATA_MAX)
-  // Setas ‹ ›: mês inteiro anterior/seguinte (mesmo filtro do BI Planos de Manutenção), sem passar de ontem.
+  // Setas ‹ ›: mês inteiro anterior/seguinte (no mês atual, até ontem, como ao abrir).
   const trocarMes = (passo) => {
     const [a, m] = dataIni.split('-').map(Number)
-    const fim = iso(new Date(a, m + passo, 0))
-    setDataIni(iso(new Date(a, m - 1 + passo, 1)))
-    setDataFim(fim > DATA_MAX ? DATA_MAX : fim)
+    const ini = iso(new Date(a, m - 1 + passo, 1))
+    setDataIni(ini)
+    setDataFim(ini === DATA_MIN ? DATA_MAX : iso(new Date(a, m + passo, 0)))
   }
-  const podeAvancar = (() => {
-    const [a, m] = dataIni.split('-').map(Number)
-    return iso(new Date(a, m, 1)) <= DATA_MAX
-  })()
   // Ao trocar de aba o período volta ao padrão dela (Visão Período: ano até ontem; demais: mês atual).
   // Contatos das campanhas dentro do período (data do arquivo) e das empresas selecionadas.
+  // Aba Por Campanhas sem filtro de Empresas: o relatório da campanha (RCR038) não identifica a empresa
+  // (a sigla no nome do arquivo não é confiável — há campanhas exportadas com sigla de outra unidade).
   const contatosFiltrados = useMemo(() => {
     if (!crm) return []
-    const siglasSel = empresasSel.length
-      ? new Set(empresas.filter(e => empresasSel.includes(e.id)).map(e => e.sigla_empresa))
-      : null
-    return crm.rows.filter(r => r.data && r.data >= dataIni && r.data <= dataFim
-      && (!siglasSel || siglasSel.has(SIGLA_ARQUIVO_EMPRESA[r.sigla])))
-  }, [crm, empresas, empresasSel, dataIni, dataFim])
+    return crm.rows.filter(r => r.data && r.data >= dataIni && r.data <= dataFim)
+  }, [crm, dataIni, dataFim])
   const numeros = resumoContatos(contatosFiltrados)
+  // Sem o RCR017 (pasta de contatos indisponível), só Campanhas geradas e Contatos gerados têm valor.
+  const semContatos = !!crm?.semContatos
+  const depContato = new Set(['realizados', 'agendados', 'encerrados', 'aRealizar', 'osAberta', 'programados', 'noShow'])
   // Tabela "Campanhas por data de geração" (ícone na linha do subtítulo): mesmas regras dos cards, por campanha.
   const [tabela, setTabela] = useState(null) // 'campanhas' | 'agendamentos' | 'passagens' (pop-up da tabela por data)
   const linhasCampanhas = useMemo(() => {
@@ -474,7 +469,7 @@ export default function BiAgendamentoServicos() {
     taxaConversao: crm ? pct(numeros.osAberta, numeros.agendados) : null,
     taxaNoShow: crm ? pct(numeros.noShow, numeros.agendados) : null,
   }
-  const gauge = (g) => (g.chave ? { ...g, valor: valorGauge[g.chave] ?? null } : g)
+  const gauge = (g) => (g.chave ? { ...g, valor: semContatos ? null : valorGauge[g.chave] ?? null } : g)
 
   // Passagens = O.S. abertas no período (Data Criacao), menos as "Cancelada"; empresa do arquivo casada
   // com o cadastro pelo nome fantasia sem acento (ex: "CAIOBA TRUCKS - CHAPADAO" = "CAIOBÁ TRUCKS - CHAPADÃO").
@@ -486,15 +481,17 @@ export default function BiAgendamentoServicos() {
       : null
     return passagensOs.rows.filter(o => o.data >= dataIni && o.data <= dataFim && o.situacao !== 'Cancelada'
       && (!nomesSel || nomesSel.has(norm(o.empresa))))
+      // Tipo (Ativo × Passivo) só do ROF037 — o ROF026 não entra nesta aba.
+      .map(o => (o.fonte_tipo_agendamento === 'ROF037' ? o : { ...o, tipo_agendamento: '' }))
   }, [passagensOs, empresas, empresasSel, dataIni, dataFim])
   const passagens = osDoPeriodo ? osDoPeriodo.length : null
-  const osAgendadas = osDoPeriodo ? osDoPeriodo.filter(o => o.tipo_agendamento) : null // O.S. está no ROF037/ROF026
+  const osAgendadas = osDoPeriodo ? osDoPeriodo.filter(o => o.agendador) : null // Agendador preenchido no ROF001
   const passagensAgendadas = osAgendadas ? osAgendadas.length : null
   // Conversão: Total × Ativos × Passivos.
   const PASSIVOS = ['Receptivo', 'Presencial', 'Internet']
   const osAtivas = osAgendadas ? osAgendadas.filter(o => o.tipo_agendamento === 'Ativo') : null
   const osPassivas = osAgendadas ? osAgendadas.filter(o => PASSIVOS.includes(o.tipo_agendamento)) : null
-  // Tipo do agendamento (ROF037, senão ROF026): Ativo × Receptivo (Presencial e Internet contam como Receptivo).
+  // Tipo do agendamento (só ROF037): Ativo × Receptivo (Presencial e Internet contam como Receptivo).
   const agAtivos = osDoPeriodo ? osDoPeriodo.filter(o => o.tipo_agendamento === 'Ativo').length : null
   const agReceptivos = osDoPeriodo ? osDoPeriodo.filter(o => ['Receptivo', 'Presencial', 'Internet'].includes(o.tipo_agendamento)).length : null
   const agSemTipo = (osDoPeriodo || []).filter(o => o.agendador && !o.tipo_agendamento)
@@ -507,8 +504,9 @@ export default function BiAgendamentoServicos() {
   ]
   // O.S. pendentes de autorização (cancelamento/encerramento) entre as passagens: alerta no card.
   const osPendentes = (osDoPeriodo || []).filter(o => SITUACOES_PENDENTES.includes(o.situacao))
-  // Aba Por Agendamentos: agendamentos com DATA DO AGENDAMENTO no período (ROF037 + ROF026, sem os cancelados CAN)
-  // e o desfecho de cada um: virou O.S. (O.S. não cancelada no ROF001), no-show (NSW) ou a executar.
+  // Aba Por Data Agendamento: agendamentos com DATA DO AGENDAMENTO no período — só do ROF037 (o ROF026 não entra
+  // nesta aba; segue usado só pra tipar as O.S. da aba Passagens), sem os cancelados (CAN)
+  // e o desfecho de cada um, só pelo ROF037: comparecido (tem nº de O.S.), no-show (NSW) ou a comparecer.
   const osPorChave = useMemo(() => new Map((passagensOs?.rows || []).map(o => [`${o.empresa.toUpperCase()}#${o.numero}`, o])), [passagensOs])
   const agendDoPeriodo = useMemo(() => {
     if (!passagensOs?.agendamentos) return null
@@ -517,10 +515,10 @@ export default function BiAgendamentoServicos() {
       ? new Set(empresas.filter(e => empresasSel.includes(e.id)).map(e => norm(e.empresa_fantasia || e.nome_empresa)))
       : null
     return passagensOs.agendamentos
-      .filter(a => a.data && a.data >= dataIni && a.data <= dataFim && a.status !== 'CAN' && (!nomesSel || nomesSel.has(norm(a.empresa))))
+      .filter(a => a.fonte === 'ROF037' && a.data && a.data >= dataIni && a.data <= dataFim && a.status !== 'CAN' && (!nomesSel || nomesSel.has(norm(a.empresa))))
       .map(a => {
         const os = a.os ? osPorChave.get(`${a.empresa}#${a.os}`) : null
-        const desfecho = a.os ? (os?.situacao === 'Cancelada' ? 'osCancelada' : 'virouOs') : a.status === 'NSW' ? 'noShow' : 'aExecutar'
+        const desfecho = a.os ? 'virouOs' : a.status === 'NSW' ? 'noShow' : 'aExecutar'
         return { ...a, osRow: os || null, desfecho }
       })
   }, [passagensOs, osPorChave, empresas, empresasSel, dataIni, dataFim])
@@ -532,7 +530,6 @@ export default function BiAgendamentoServicos() {
     ativos: contaAg(ehAtivo),
     passivos: contaAg(ehPassivo),
     virouOs: contaAg(a => a.desfecho === 'virouOs'),
-    osCancelada: contaAg(a => a.desfecho === 'osCancelada'),
     noShow: contaAg(a => a.desfecho === 'noShow'),
     aExecutar: contaAg(a => a.desfecho === 'aExecutar'),
   }
@@ -572,7 +569,7 @@ export default function BiAgendamentoServicos() {
     <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
       {KPIS.map(k => (
         <CardKpi key={k.label} label={k.label} info={INFO[k.chave]}
-          valor={k.chave ? (carregando && !crm ? '...' : numeros[k.chave].toLocaleString('pt-BR')) : (k.valor ?? '—')} />
+          valor={k.chave ? (carregando && !crm ? '...' : semContatos && depContato.has(k.chave) ? '—' : numeros[k.chave].toLocaleString('pt-BR')) : (k.valor ?? '—')} />
       ))}
     </div>
   )
@@ -623,21 +620,24 @@ export default function BiAgendamentoServicos() {
             </div>
             {erroCrm && <p className="text-[10px] text-red-600 max-w-[420px] text-right leading-tight">{erroCrm}</p>}
             <div className="flex flex-wrap items-end gap-4">
+              {/* Na aba Por Campanhas não há seletor de Empresas (o RCR038 não identifica a empresa). */}
+              {aba !== ABA_CAMPANHAS && (
               <div className="flex flex-col gap-1">
                 <label className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1"><Building2 className="h-3 w-3" /> Empresas</label>
                 <SeletorEmpresas grupos={grupos} selecionadas={empresasSel} onChange={setEmpresasSel} />
               </div>
+              )}
               <div className="flex flex-col gap-1">
                 <label className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1"><Calendar className="h-3 w-3" /> Data</label>
                 <div className="flex items-center gap-1.5">
-                  <input type="date" className={inputCls.replace("w-full ", "")} max={dataFim || DATA_MAX} value={dataIni} onChange={e => e.target.value && setDataIni(e.target.value)} />
+                  <input type="date" className={inputCls.replace("w-full ", "")} max={dataFim} value={dataIni} onChange={e => e.target.value && setDataIni(e.target.value)} />
                   <span className="text-slate-400 text-xs">até</span>
-                  <input type="date" className={inputCls.replace("w-full ", "")} min={dataIni} max={DATA_MAX} value={dataFim} onChange={e => e.target.value && setDataFim(e.target.value)} />
+                  <input type="date" className={inputCls.replace("w-full ", "")} min={dataIni} value={dataFim} onChange={e => e.target.value && setDataFim(e.target.value)} />
                   <button type="button" onClick={() => trocarMes(-1)} title="Mês anterior" aria-label="Mês anterior"
                     className="p-1 rounded-md bg-white border border-slate-300 text-slate-600 hover:bg-slate-50">
                     <ChevronLeft className="h-3.5 w-3.5" />
                   </button>
-                  <button type="button" onClick={() => trocarMes(1)} disabled={!podeAvancar} title="Próximo mês" aria-label="Próximo mês"
+                  <button type="button" onClick={() => trocarMes(1)} title="Próximo mês" aria-label="Próximo mês"
                     className="p-1 rounded-md bg-white border border-slate-300 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed">
                     <ChevronRight className="h-3.5 w-3.5" />
                   </button>
@@ -684,27 +684,32 @@ export default function BiAgendamentoServicos() {
       {/* Aba Passagens: O.S. abertas no período e quantas vieram de agendamento. */}
       {aba === ABA_AGENDAMENTOS ? (
         <>
-        <SubtituloSecao titulo="Agendamentos" onTabela={() => setTabela('agendamentos')} tituloTabela="Agendamentos por data do agendamento" />
+        {/* Sem subtítulo nesta aba — só o botão da tabela por data, à direita. */}
+        <div className="flex justify-end -mb-1">
+          <button type="button" onClick={() => setTabela('agendamentos')} title="Agendamentos por data do agendamento (tabela)" aria-label="Agendamentos por data do agendamento"
+            className="p-1 rounded-md text-slate-300 hover:text-white hover:bg-slate-700 transition-colors">
+            <Table2 className="h-4 w-4" />
+          </button>
+        </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {gaugesAgend.map(g => <GaugeMeta key={g.label} {...g} />)}
         </div>
         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
           {[
-            ['Agendamentos no período', ag.total, INFO.agTotal],
+            ['Agendamentos realizados', ag.total, INFO.agTotal],
             ['Agendamentos ativos', ag.ativos, INFO.agAtivosAgenda],
             ['Agendamentos passivos', ag.passivos, INFO.agPassivosAgenda],
           ].map(([label, v, info]) => (
             <CardKpi key={label} label={label} info={info} valor={carregando && v === null ? '...' : v === null ? '—' : v.toLocaleString('pt-BR')} />
           ))}
-          <CardKpi label="Viraram O.S." info={INFO.agVirouOs} cor="#059669"
+          <CardKpi label="Agendamentos comparecidos" info={INFO.agVirouOs} cor="#059669"
             valor={carregando && ag.virouOs === null ? '...' : ag.virouOs === null ? '—' : ag.virouOs.toLocaleString('pt-BR')} />
-          <CardKpi label="No-show" info={INFO.agNoShow} cor="#dc2626"
-            valor={carregando && ag.noShow === null ? '...' : ag.noShow === null ? '—' : ag.noShow.toLocaleString('pt-BR')} />
-          <CardKpi label="A executar" info={INFO.agAExecutar} cor="#3b82f6"
+          <CardKpi label="Agendamentos a comparecer" info={INFO.agAExecutar} cor="#3b82f6"
             valor={carregando && ag.aExecutar === null ? '...' : ag.aExecutar === null ? '—' : ag.aExecutar.toLocaleString('pt-BR')} />
+          <CardKpi label="Agendamentos Não comparecidos (No-Show)" info={INFO.agNoShow} cor="#dc2626"
+            valor={carregando && ag.noShow === null ? '...' : ag.noShow === null ? '—' : ag.noShow.toLocaleString('pt-BR')} />
         </div>
 
-        <h2 className="text-xs font-bold text-slate-200 uppercase tracking-wide border-b border-slate-700 pb-1">Conversão</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <CardConversao titulo="Conversão — Total" oses={osDosAgend(() => true)} carregando={carregando} info={INFO.agConversaoTotal} />
           <CardConversao titulo="Conversão — Ativos" oses={osDosAgend(ehAtivo)} carregando={carregando} info={INFO.agConversaoAtivos} />
@@ -731,7 +736,7 @@ export default function BiAgendamentoServicos() {
             valor={carregando && passagensAgendadas === null ? '...' : passagensAgendadas === null ? '—' : passagensAgendadas.toLocaleString('pt-BR')}>
             {agSemTipo.length > 0 && (
               <p className="text-[10px] text-amber-700 mt-0.5" title={agSemTipo.map(o => `${o.empresa.replace('CAIOBA TRUCKS - ', '')} · O.S. ${o.numero} · agendador ${o.agendador}`).join('\n')}>
-                {agSemTipo.length} com agendador fora do ROF037/ROF026
+                {agSemTipo.length} sem tipo no ROF037 (fora de ativo/passivo)
               </p>
             )}
           </CardKpi>
@@ -794,7 +799,7 @@ export default function BiAgendamentoServicos() {
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
           {SITUACAO.map(d => (
             <CardKpi key={d.label} label={d.label} info={INFO[d.chave]} cor={d.cor}
-              valor={carregando && !crm ? '...' : crm ? numeros[d.chave].toLocaleString('pt-BR') : '—'} />
+              valor={carregando && !crm ? '...' : crm && !semContatos ? numeros[d.chave].toLocaleString('pt-BR') : '—'} />
           ))}
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -854,10 +859,9 @@ export default function BiAgendamentoServicos() {
             ['Agendamentos', l => l.total],
             ['Ativos', l => l.ativos],
             ['Passivos', l => l.passivos],
-            ['Viraram O.S.', l => l.virouOs],
-            ['O.S. cancelada', l => l.osCancelada],
-            ['No-show', l => l.noShow],
-            ['A executar', l => l.aExecutar],
+            ['Agendamentos comparecidos', l => l.virouOs],
+            ['Agendamentos a comparecer', l => l.aExecutar],
+            ['Agendamentos Não comparecidos (No-Show)', l => l.noShow],
             ['Taxa de Conversão', l => taxa(l.virouOs, l.total)],
             ['Taxa de Conversão Ativo', l => taxa(l.virouOsAtivo, l.ativos)],
             ['Taxa de Conversão Passivo', l => taxa(l.virouOsPassivo, l.passivos)],

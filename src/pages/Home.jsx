@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   ClipboardCheck, AlertTriangle, ChevronRight, KeyRound,
   Settings, Wallet, Target, ClipboardList, FolderKanban, Calculator, BookOpen,
-  Folder, FileText, X, PieChart, GraduationCap, ExternalLink, Package, Bike,
+  Folder, FileText, X, PieChart, GraduationCap, ExternalLink,
 } from 'lucide-react'
 import { apiService } from '../services/api'
 import { useAuth } from '../context/AuthContext'
@@ -22,8 +22,6 @@ const GRUPO_ICONES = {
   '_documentacoes': BookOpen,
   '_bi': PieChart,
   '_treinamentos': GraduationCap,
-  '_pecas': Package,
-  '_pecas-motos': Bike,
 }
 
 const COR_PADRAO = {
@@ -42,8 +40,6 @@ const GRUPO_CORES = {
   '_documentacoes':       { grad: 'from-orange-400 to-orange-600',  ring: 'border-orange-400 ring-orange-200',  accent: 'border-l-orange-400',  headerBg: 'bg-orange-50',  headerBorder: 'border-orange-100',  pill: 'bg-orange-100 text-orange-700',  chevron: 'text-orange-300' },
   '_bi':                  { grad: 'from-teal-400 to-teal-600',      ring: 'border-teal-400 ring-teal-200',      accent: 'border-l-teal-400',    headerBg: 'bg-teal-50',    headerBorder: 'border-teal-100',    pill: 'bg-teal-100 text-teal-700',      chevron: 'text-teal-300' },
   '_treinamentos':        { grad: 'from-violet-400 to-violet-600',  ring: 'border-violet-400 ring-violet-200',  accent: 'border-l-violet-400',  headerBg: 'bg-violet-50',  headerBorder: 'border-violet-100',  pill: 'bg-violet-100 text-violet-700',  chevron: 'text-violet-300' },
-  '_pecas':               { grad: 'from-orange-400 to-orange-600',  ring: 'border-orange-400 ring-orange-200',  accent: 'border-l-orange-400',  headerBg: 'bg-orange-50',  headerBorder: 'border-orange-100',  pill: 'bg-orange-100 text-orange-700',  chevron: 'text-orange-300' },
-  '_pecas-motos':         { grad: 'from-red-400 to-red-600',        ring: 'border-red-400 ring-red-200',        accent: 'border-l-red-400',     headerBg: 'bg-red-50',     headerBorder: 'border-red-100',     pill: 'bg-red-100 text-red-700',        chevron: 'text-red-300' },
 }
 
 function nodeVisivel(n, hasPermission) {
@@ -80,7 +76,9 @@ function GrupoBloco({ node, ativo, quantidade, onClick }) {
 // ── Coluna com o conteúdo de um nível do grupo — cada subpasta clicada abre uma
 // nova coluna ao lado (cascata lateral, estilo colunas do Finder) ──
 function ColunaMenu({ node, rootNode, selecionadoKey, hasPermission, navigate, onSelecionar, onFechar }) {
+  // Item com atalhosHome (ex: Cálculo de Comissões → DAF e HONDA, mesma permissão) vira um botão por tela.
   const itens = (node.children || []).filter(n => !n.virtual && nodeVisivel(n, hasPermission))
+    .flatMap(n => n.atalhosHome ? n.atalhosHome.map(a => ({ key: `${n.key}#${a.navTo}`, label: a.label, navTo: a.navTo })) : [n])
   const Icone = GRUPO_ICONES[rootNode.key] || Folder
   const cor = GRUPO_CORES[rootNode.key] || COR_PADRAO
 

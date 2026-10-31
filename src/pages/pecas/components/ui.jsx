@@ -3,7 +3,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link, useNavigate } from 'react-router-dom'
 import * as XLSX from 'xlsx'
-import { AlertTriangle, ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Download, FlaskConical, Info, PieChart, RefreshCw, Save, Search, Sparkles, X } from 'lucide-react'
+import { AlertTriangle, ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Download, FlaskConical, Info, RefreshCw, Save, Search, Sparkles, X } from 'lucide-react'
 import { useAuth } from '../../../context/AuthContext'
 import { analisarComIA, getOpcoes, getTela, salvarAnaliseIA } from '../gestorPecasApi'
 import { OBJETIVO_TELAS } from '../gestorPecasTextos'
@@ -451,7 +451,6 @@ export function PaginaPecas({ icone: Icone, titulo, tela, fonte, carregando, err
             {acoes}
             {iaTela && <BotaoAnaliseIA tela={iaTela} titulo={titulo} filtros={filtros} />}
             {onRecarregar && <button type="button" className={btnSec} onClick={onRecarregar} disabled={carregando} title="Recalcular"><RefreshCw className={`h-3.5 w-3.5 ${carregando ? 'animate-spin' : ''}`} /> Atualizar</button>}
-            {hasPermission(sg.bi) && <button type="button" className={btnSec} onClick={() => navigate('/' + sg.bi)}><PieChart className="h-3.5 w-3.5" /> Ir para Dashboard</button>}
           </div>
         </div>
         {OBJETIVO_TELAS[tela] && <p className="text-[11px] text-slate-500 leading-snug max-w-5xl">{OBJETIVO_TELAS[tela]}</p>}

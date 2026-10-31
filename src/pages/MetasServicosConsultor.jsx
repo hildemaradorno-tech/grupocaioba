@@ -115,7 +115,10 @@ export default function MetasServicosConsultor({ empresaExterna = null, anoExter
   const [filtroSetor,    setFiltroSetor]    = useSessionState('msc_setor', '')
   const [filtroConsultor,setFiltroConsultor]= useSessionState('msc_consultor', '') // busca por nome (texto livre)
   const [mesesSel,       setMesesSel]       = useSessionState('mpvs_servicos_meses', [])
-  const { hasActionOrDefault } = useAuth()
+  const { hasActionOrDefault, hasAction, usuarioId, userNome } = useAuth()
+  // Trocar o colaborador de um lançamento (mesmo aprovado): liberado pela ação Pendenciar (Grupos de Acesso).
+  const podeTrocarColab = hasAction('/metas/gestao-aprovacao', 'pendenciar')
+  const [trocaColab, setTrocaColab] = useState(null) // { antigoId, snapshot } enquanto está trocando
   const canEdit = hasActionOrDefault('metas/pos-vendas/servicos_pecas', 'editar')
   const canDelete = hasActionOrDefault('metas/pos-vendas/servicos_pecas', 'excluir')
 
@@ -126,6 +129,19 @@ export default function MetasServicosConsultor({ empresaExterna = null, anoExter
   const [segAbertos,      setSegAbertos]      = useState(new Set())
 
   const [modalAberto,        setModalAberto]        = useState(false)
+  const [boxesAberto, setBoxesAberto] = useState(false)
+  const [boxMesesSel, setBoxMesesSel] = useState({}) // { [boxId]: Set(meses) } marcados na tela "% por Box"
+  useEffect(() => { setTrocaColab(null); setBoxesAberto(false) }, [modalAberto])
+  // Recarrega o cadastro ao abrir o modal: quem foi ativado/cadastrado em Funcionários com esta tela já aberta aparece no seletor.
+  useEffect(() => { if (modalAberto) apiService.getFuncionarios().then(f => setFuncionarios(sortNome(f, 'nome_funcionario'))).catch(() => {}) }, [modalAberto])
+  const [boxCalcSel, setBoxCalcSel] = useState(new Set()) // boxes escolhidos pra "Aplicar % sobre os boxes"
+  const [boxCalcPct, setBoxCalcPct] = useState({}) // { [mes]: % a aplicar }
+  useEffect(() => { if (boxesAberto) { setBoxMesesSel({}); setBoxCalcSel(new Set()); setBoxCalcPct({}) } }, [boxesAberto])
+  const toggleBoxMes = (bId, mes) => setBoxMesesSel(prev => {
+    const s = new Set(prev[bId] || [])
+    s.has(mes) ? s.delete(mes) : s.add(mes)
+    return { ...prev, [bId]: s }
+  })
   const [modoModal,          setModoModal]          = useState('incluir')
   const [modalExcluirAberto, setModalExcluirAberto] = useState(false)
   const [form,               setForm]               = useState(FORM_VAZIO)
@@ -500,13 +516,13 @@ export default function MetasServicosConsultor({ empresaExterna = null, anoExter
     dados.forEach(r => {
       if (r.empresa_id !== form.empresa_id) return
       if (Number(r.ano) !== Number(form.ano)) return
-      if (r.colaborador_id === form.colaborador_id) return
+      if (r.colaborador_id === form.colaborador_id || (trocaColab && r.colaborador_id === trocaColab.antigoId)) return
       const rSId = (r.box_id && boxToSetorMap[r.box_id]) || r.setor_id
       if (rSId !== form.setor_id) return
       map[r.mes] = (map[r.mes]||0) + (Number(r.percentual)||0)
     })
     return map
-  }, [dados, form.empresa_id, form.ano, form.colaborador_id, form.setor_id, boxToSetorMap])
+  }, [dados, form.empresa_id, form.ano, form.colaborador_id, form.setor_id, boxToSetorMap, trocaColab])
 
   const handleSalvar = async () => {
     if(!form.empresa_id)     { setErroModal('Selecione a Empresa.'); return }
@@ -531,6 +547,16 @@ export default function MetasServicosConsultor({ empresaExterna = null, anoExter
         setor_id:        form.setor_id        || null,
         box_id:          null,
         cargo_id:        form.cargo_id        || null,
+      }
+      if (trocaColab && form.colaborador_id && form.colaborador_id !== trocaColab.antigoId) {
+        await apiService.trocarColaboradorMeta({
+          tipo: 'consultor', empresaId: form.empresa_id, ano: Number(form.ano), antigoId: trocaColab.antigoId,
+          novo: form.colaborador_id === 'A_CONTRATAR'
+            ? { id: '00000000-0000-0000-0000-000000000000', nome: 'A contratar' }
+            : { id: form.colaborador_id, nome: form.colaborador_nome, cargo_id: form.cargo_id || null, cargo_nome: form.cargo_nome },
+          usuario: { id: usuarioId, nome: userNome },
+        })
+        setTrocaColab(null)
       }
       for (const m of mesesForm) {
         const pct  = Number(m.percentual) || 0
@@ -576,7 +602,7 @@ export default function MetasServicosConsultor({ empresaExterna = null, anoExter
   const [erroMes,        setErroMes]        = useState(null)
 
   const abrirEditarPorMes = () => {
-    setMesEdSetorId(''); setMesEdMes(null); setMesEdLinhas([]); setErroMes(null)
+    setMesEdSetorId(''); setMesEdMes(null); setMesEdLinhas([]); setErroMes(null); setBoxesMesAberto(false)
     setModalMesAberto(true)
   }
 
@@ -594,6 +620,41 @@ export default function MetasServicosConsultor({ empresaExterna = null, anoExter
     const servicos = (isFun ? (fun.servicos || 0) : (mec.servicos || 0)) + (entraTerceiro ? ter : 0)
     return { pecas, servicos }
   }, [filtroEmpresa, mesEdSetorId, mesEdMes, mesEdSetorNome, totaisMec, totaisTer, totaisFun])
+
+  // % POR BOX no Editar por Mês: valor de cada Box do setor (e Terceiro, quando entra) no mês escolhido e quanto
+  // representa da Ref. Total — mesmos mecânicos/cálculo de totaisMec. Funilaria/Pintura não tem box.
+  const [boxesMesAberto, setBoxesMesAberto] = useState(false)
+  const [boxesMesSel,    setBoxesMesSel]    = useState(new Set())
+  const [boxesMesPct,    setBoxesMesPct]    = useState(100)
+  const [boxesMesColab,  setBoxesMesColab]  = useState('')
+  useEffect(() => { if (boxesMesAberto) { setBoxesMesSel(new Set()); setBoxesMesPct(100); setBoxesMesColab('') } }, [boxesMesAberto])
+
+  const boxesMes = useMemo(() => {
+    const empId = empresaUnica(filtroEmpresa)
+    const refTotal = mesEdRef.pecas + mesEdRef.servicos
+    if (!empId || !mesEdSetorId || !mesEdMes || /funilaria|pintura/i.test(mesEdSetorNome)) return { linhas: [], refTotal }
+    const porBox = {}
+    mecRows.forEach(r => {
+      if (r.empresa_id !== empId || Number(r.mes) !== mesEdMes) return
+      const bId = funcionarios.find(f => f.id === r.colaborador_id)?.box_id || r.box_id
+      if (!bId || boxToSetorMap[bId] !== mesEdSetorId) return
+      const v = valoresMetaMecanico(r)
+      porBox[bId] = (porBox[bId] || 0) + v.meta_servicos + v.meta_pecas
+    })
+    const linhas = Object.entries(porBox).filter(([, v]) => v > 0)
+      .map(([bId, valor]) => ({ bId, nome: boxes.find(b => b.id === bId)?.nome_box || '—', valor }))
+      .sort((a, b) => b.valor - a.valor)
+    const ter = /mec[âa]nica/i.test(mesEdSetorNome) ? (Number(totaisTer[empId]?.[mesEdMes]) || 0) : 0
+    if (linhas.length && ter > 0) linhas.push({ bId: '__terceiro__', nome: 'Terceiro', valor: ter })
+    return { linhas, refTotal }
+  }, [filtroEmpresa, mesEdSetorId, mesEdMes, mesEdSetorNome, mesEdRef, mecRows, funcionarios, boxToSetorMap, boxes, totaisTer])
+
+  const boxesMesResultado = boxesMes.linhas.filter(b => boxesMesSel.has(b.bId)).reduce((s, b) => s + b.valor, 0) * (Number(boxesMesPct) || 0) / 100
+  const aplicarBoxesMes = () => {
+    if (!boxesMesColab || !(boxesMes.refTotal > 0) || !(boxesMesResultado > 0)) return
+    setMesEdLinhas(prev => prev.map(l => l.colaborador_id === boxesMesColab ? { ...l, percentual: boxesMesResultado / boxesMes.refTotal * 100 } : l))
+    setBoxesMesSel(new Set()); setBoxesMesColab('')
+  }
 
   useEffect(() => {
     if (!modalMesAberto || !mesEdSetorId || !mesEdMes) { setMesEdLinhas([]); return }
@@ -678,7 +739,78 @@ export default function MetasServicosConsultor({ empresaExterna = null, anoExter
     finally { setSalvandoMes(false) }
   }
 
-  // Registra os botões "+ Adicionar Consultor" e "Editar por Mês" no cabeçalho compartilhado das abas.
+  // ── % DE CADA BOX DO SETOR (modal do consultor): quanto cada Box do setor Mecânica representa do
+  // total dos boxes no mês (mesmos mecânicos e mesmo cálculo da Ref. do modal) — referência pra definir
+  // o % do consultor que atende aquele box. Funilaria/Pintura não tem box na referência, então não aparece.
+  const refBoxesModal = useMemo(() => {
+    if (isFunSetorModal || !form.setor_id) return []
+    const boxIds = new Set(boxesDoSetor.map(b => b.id))
+    const porBox = {}
+    mecRowsModal.forEach(r => {
+      const bId = funcionarios.find(f => f.id === r.colaborador_id)?.box_id || r.box_id
+      if (!boxIds.has(bId)) return
+      const v = valoresMetaMecanico(r)
+      if (!porBox[bId]) porBox[bId] = {}
+      porBox[bId][r.mes] = (porBox[bId][r.mes] || 0) + v.meta_servicos + v.meta_pecas
+    })
+    // Base do % = Ref. Total do modal (boxes + Terceiro, quando entra), a mesma que multiplica o % do
+    // consultor — assim "% do box × Ref. Total" dá exatamente o valor do box.
+    const totalMes = {}
+    for (let m = 1; m <= 12; m++) {
+      const ref = Number(refModalDetalhePorMes[m]?.total) || 0
+      const somaBoxes = Object.values(porBox).reduce((s, mm) => s + (mm[m] || 0), 0)
+      totalMes[m] = ref > 0 ? ref : somaBoxes
+    }
+    const linhas = Object.entries(porBox)
+      .map(([bId, meses]) => ({ bId, nome: boxes.find(b => b.id === bId)?.nome_box || '—', meses, totalMes }))
+      .filter(b => Object.values(b.meses).some(v => v > 0))
+      .sort((a, b) => Object.values(b.meses).reduce((s, v) => s + v, 0) - Object.values(a.meses).reduce((s, v) => s + v, 0))
+    const terMeses = {}
+    for (let m = 1; m <= 12; m++) { const t = Number(refModalDetalhePorMes[m]?.terceiros) || 0; if (t > 0) terMeses[m] = t }
+    if (linhas.length && Object.keys(terMeses).length) linhas.push({ bId: '__terceiro__', nome: 'Terceiro', meses: terMeses, totalMes, terceiro: true })
+    return linhas
+  }, [isFunSetorModal, form.setor_id, boxesDoSetor, mecRowsModal, funcionarios, boxes, refModalDetalhePorMes])
+
+  // "Aplicar % sobre os boxes": valor = (soma dos boxes escolhidos) × % digitado; no consultor vira o % equivalente
+  // sobre a Ref. Total (valor ÷ Ref. Total), pra Meta do consultor bater com esse valor.
+  // % por mês (boxCalcPct[mes]); mês sem % não entra.
+  const calcBox = useMemo(() => {
+    const escolhidos = refBoxesModal.filter(b => boxCalcSel.has(b.bId))
+    const tot = refBoxesModal[0]?.totalMes || {}
+    const valor = {}
+    const mesesAlvo = new Set()
+    for (let m = 1; m <= 12; m++) {
+      const p = Number(boxCalcPct[m]) || 0
+      valor[m] = escolhidos.reduce((s, b) => s + (b.meses[m] || 0), 0) * p / 100
+      if (escolhidos.length && p > 0 && (tot[m] || 0) > 0) mesesAlvo.add(m)
+    }
+    return { ativo: mesesAlvo.size > 0, valor, tot, mesesAlvo }
+  }, [refBoxesModal, boxCalcSel, boxCalcPct])
+
+  const aplicarCalcBox = () => {
+    if (!calcBox.ativo) return
+    setMesesForm(prev => prev.map(x => {
+      if (!calcBox.mesesAlvo.has(x.mes)) return x
+      const disp = Math.max(0, 100 - (pctSomadoNoMes[x.mes] || 0))
+      return { ...x, percentual: Math.min(calcBox.valor[x.mes] / calcBox.tot[x.mes] * 100, disp + 0.01) }
+    }))
+    setBoxesAberto(false)
+  }
+
+  // Copia o % do box pro % deste consultor (meses sem valor no setor ficam como estão), sem passar do disponível.
+  // % sem arredondar: % × Ref. Total tem que dar o valor exato do box.
+  // mesesSelBox: se tiver meses marcados na tela "% por Box", só esses meses recebem o %.
+  const usarPctBox = (b, mesesSelBox = null) => setMesesForm(prev => prev.map(x => {
+    if (mesesSelBox && mesesSelBox.size > 0 && !mesesSelBox.has(x.mes)) return x
+    const tot = b.totalMes[x.mes] || 0
+    if (tot <= 0) return x
+    const disp = Math.max(0, 100 - (pctSomadoNoMes[x.mes] || 0))
+    // Mesma folga de 0,01 ponto da trava de 100% ao salvar: os outros consultores podem ter % antigos de
+    // 2 casas (ex.: 88,70 em vez de 88,69925) e cortariam alguns reais do valor exato do box.
+    return { ...x, percentual: Math.min((b.meses[x.mes] || 0) / tot * 100, disp + 0.01) }
+  }))
+
+  // Registra os botões "Editar por Mês" e "+ Adicionar Consultor" no cabeçalho das abas.
   const abrirIncluirRef = React.useRef(abrirIncluir)
   abrirIncluirRef.current = abrirIncluir
   const abrirEditarPorMesRef = React.useRef(abrirEditarPorMes)
@@ -954,11 +1086,21 @@ export default function MetasServicosConsultor({ empresaExterna = null, anoExter
                   )}</div>
               </div>
               <div><label className={LBL}>Consultor *</label>
-                {(!form.empresa_id || modoModal !== 'incluir') ? (
-                  <div className={`${SEL} bg-slate-100 text-slate-500 cursor-not-allowed`}>
-                    {form.colaborador_id === 'A_CONTRATAR' ? 'A contratar' : (form.colaborador_nome || '—')}
+                {(!form.empresa_id || (modoModal !== 'incluir' && !(modoModal === 'editar' && trocaColab))) ? (
+                  <div className="flex items-center gap-2">
+                    <div className={`${SEL} bg-slate-100 text-slate-500 cursor-not-allowed flex-1`}>
+                      {form.colaborador_id === 'A_CONTRATAR' ? 'A contratar' : (form.colaborador_nome || '—')}
+                    </div>
+                    {modoModal === 'editar' && podeTrocarColab && form.empresa_id && (
+                      <button type="button" className={BTN_SEC} title="Trocar o colaborador deste lançamento (valores mantidos; volta a pendente de aprovação)"
+                        onClick={() => setTrocaColab({ antigoId: form.colaborador_id, snapshot: { colaborador_id: form.colaborador_id, colaborador_nome: form.colaborador_nome, cargo_id: form.cargo_id, cargo_nome: form.cargo_nome } })}>
+                        Trocar
+                      </button>
+                    )}
                   </div>
                 ) : (
+                  <div className="flex items-center gap-2">
+                  <div className="flex-1 min-w-0">
                   <SearchCombobox
                     value={form.colaborador_id}
                     onChange={(id) => {
@@ -988,6 +1130,14 @@ export default function MetasServicosConsultor({ empresaExterna = null, anoExter
                     }}
                     getSearchText={(o) => `${o.nome_funcionario} ${cargosPorId[o.cargo_id]?.nome_cargo || ''}`}
                   />
+                  </div>
+                  {trocaColab && (
+                    <button type="button" className={BTN_SEC} title="Desfazer a troca e voltar ao colaborador original"
+                      onClick={() => { setForm(prev => ({ ...prev, ...trocaColab.snapshot })); setTrocaColab(null) }}>
+                      Cancelar troca
+                    </button>
+                  )}
+                  </div>
                 )}
               </div>
 
@@ -1038,7 +1188,15 @@ export default function MetasServicosConsultor({ empresaExterna = null, anoExter
                       })}
                       {/* Percentual */}
                       <tr>
-                        <td className="text-xs font-semibold text-slate-500 px-1">% deste consultor</td>
+                        <td className="text-xs font-semibold text-slate-500 px-1 whitespace-nowrap">
+                          <span className="inline-flex items-center gap-1.5">
+                            % deste consultor
+                            {refBoxesModal.length > 0 && (
+                              <button type="button" onClick={() => setBoxesAberto(true)} title="Ver quanto % cada Box representa do setor em cada mês"
+                                className="text-[10px] font-semibold text-indigo-600 border border-indigo-200 bg-white rounded px-1.5 py-0.5 hover:bg-indigo-50">% por Box</button>
+                            )}
+                          </span>
+                        </td>
                         {mesesForm.map((m,i)=>{
                           if (modoModal === 'visualizar') {
                             return <td key={i} className="bg-slate-100 border border-slate-200 rounded p-1 text-center text-xs text-slate-600 font-mono">{m.percentual !== '' && m.percentual !== 0 ? fmtPct(m.percentual) : '—'}</td>
@@ -1224,6 +1382,140 @@ export default function MetasServicosConsultor({ empresaExterna = null, anoExter
         </div>
       )}
 
+      {/* % POR BOX: quanto cada Box do setor representa do total dos boxes, mês a mês */}
+      {boxesAberto && modalAberto && (
+        <div className="fixed top-0 right-0 bottom-0 left-16 bg-black/50 flex items-center justify-center z-[60] p-4" onClick={() => setBoxesAberto(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+              <h2 className="text-lg font-bold text-slate-800">% por Box — {form.setor_nome || 'Setor'}</h2>
+              <button onClick={() => setBoxesAberto(false)} className="text-slate-400 hover:text-slate-600"><X size={20}/></button>
+            </div>
+            <div className="overflow-auto flex-1 p-6 space-y-3">
+              <div className="overflow-x-auto border border-slate-200 rounded-lg">
+                <table className="border-separate border-spacing-1 p-1" style={{ minWidth: '1200px' }}>
+                  <thead>
+                    <tr>
+                      <th className="text-left text-xs text-slate-500 font-semibold px-1">Box</th>
+                      {MESES_ABR.map((m, i) => <th key={i} className="w-24 text-center text-xs font-bold text-slate-700 bg-slate-100 border border-slate-200 rounded px-1 py-1">{m}</th>)}
+                      <th className="w-24 text-center text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded px-1 py-1">Total Ano</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {refBoxesModal.map(b => {
+                      const anoBox = Object.values(b.meses).reduce((s, v) => s + v, 0)
+                      const anoSetor = Object.values(b.totalMes).reduce((s, v) => s + v, 0)
+                      return (
+                        <React.Fragment key={b.bId}>
+                          <tr>
+                            <td rowSpan={2} className="text-xs text-slate-700 font-semibold px-1 whitespace-nowrap align-middle">
+                              <span className="inline-flex items-center gap-1.5">
+                                <input type="checkbox" checked={boxCalcSel.has(b.bId)} title="Marcar este box para aplicar o % por mês abaixo"
+                                  onChange={() => setBoxCalcSel(prev => { const s = new Set(prev); s.has(b.bId) ? s.delete(b.bId) : s.add(b.bId); return s })}
+                                  className="h-3.5 w-3.5 accent-indigo-600 cursor-pointer" />
+                                {b.nome}
+                                {modoModal !== 'visualizar' && (
+                                  <button type="button" onClick={() => { usarPctBox(b, boxMesesSel[b.bId]); setBoxesAberto(false) }}
+                                    title={(boxMesesSel[b.bId]?.size || 0) > 0 ? 'Usar o % deste box só nos meses marcados (limitado ao disponível)' : 'Usar o % deste box em todos os meses (limitado ao disponível)'}
+                                    className="text-[10px] font-semibold text-indigo-600 border border-indigo-200 rounded px-1.5 py-0.5 hover:bg-indigo-50">
+                                    {(boxMesesSel[b.bId]?.size || 0) > 0 ? `usar (${boxMesesSel[b.bId].size})` : 'usar'}
+                                  </button>
+                                )}
+                              </span>
+                            </td>
+                            {Array.from({ length: 12 }, (_, i) => {
+                              const tot = b.totalMes[i + 1] || 0
+                              const marcado = boxMesesSel[b.bId]?.has(i + 1)
+                              const clicavel = modoModal !== 'visualizar' && tot > 0
+                              return (
+                                <td key={i} onClick={clicavel ? () => toggleBoxMes(b.bId, i + 1) : undefined}
+                                  title={clicavel ? (marcado ? 'Clique para desmarcar este mês' : 'Clique para marcar este mês') : ''}
+                                  className={`border rounded p-1 text-center text-xs font-mono font-semibold select-none transition-colors ${
+                                    marcado ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-amber-50 border-amber-100 text-amber-800'
+                                  } ${clicavel ? 'cursor-pointer hover:ring-2 hover:ring-indigo-300' : ''}`}>
+                                  {tot > 0 ? fmtPct((b.meses[i + 1] || 0) / tot * 100) : '—'}
+                                </td>
+                              )
+                            })}
+                            <td className="bg-amber-100 border border-amber-200 rounded p-1 text-center text-xs font-bold text-amber-800">{anoSetor > 0 ? fmtPct(anoBox / anoSetor * 100) : '—'}</td>
+                          </tr>
+                          <tr>
+                            {Array.from({ length: 12 }, (_, i) => (
+                              <td key={i} className="border border-slate-100 rounded p-1 text-right text-[10px] font-mono text-slate-500">{(b.meses[i + 1] || 0) > 0 ? fmtBRL(b.meses[i + 1]) : '—'}</td>
+                            ))}
+                            <td className="border border-slate-200 rounded p-1 text-right text-[10px] font-mono font-semibold text-slate-600">{fmtBRL(anoBox)}</td>
+                          </tr>
+                        </React.Fragment>
+                      )
+                    })}
+                    <tr>
+                      <td className="text-xs font-bold text-slate-800 px-1">Ref. Total do setor</td>
+                      {Array.from({ length: 12 }, (_, i) => {
+                        const tot = refBoxesModal[0]?.totalMes[i + 1] || 0
+                        return <td key={i} className="bg-slate-100 border border-slate-200 rounded p-1 text-right text-[10px] font-mono font-bold text-slate-700">{tot > 0 ? fmtBRL(tot) : '—'}</td>
+                      })}
+                      <td className="bg-indigo-50 border border-indigo-200 rounded p-1 text-right text-[10px] font-mono font-bold text-indigo-700">{fmtBRL(Object.values(refBoxesModal[0]?.totalMes || {}).reduce((s, v) => s + v, 0))}</td>
+                    </tr>
+                    {modoModal !== 'visualizar' && (
+                      <tr>
+                        <td className="text-xs font-bold text-indigo-700 px-1 whitespace-nowrap">
+                          <span className="inline-flex items-center gap-1.5">
+                            % a aplicar
+                            <span className="text-[10px] font-normal text-slate-400">todos:</span>
+                            <span className="w-14 border border-slate-300 rounded bg-white px-0.5 inline-block">
+                              <PctInput value="" onChange={v => setBoxCalcPct(() => { const o = {}; for (let m = 1; m <= 12; m++) o[m] = v; return o })} />
+                            </span>
+                          </span>
+                        </td>
+                        {Array.from({ length: 12 }, (_, i) => (
+                          <td key={i} className="bg-white border border-indigo-200 rounded p-1">
+                            <PctInput value={boxCalcPct[i + 1] ?? ''} onChange={v => setBoxCalcPct(prev => ({ ...prev, [i + 1]: v }))} />
+                          </td>
+                        ))}
+                        <td />
+                      </tr>
+                    )}
+                    {calcBox.ativo && (
+                      <>
+                        <tr>
+                          <td className="text-xs font-bold text-emerald-700 px-1 whitespace-nowrap">Resultado (R$)</td>
+                          {Array.from({ length: 12 }, (_, i) => (
+                            <td key={i} className={`bg-emerald-50 border border-emerald-200 rounded p-1 text-right text-[10px] font-mono font-bold text-emerald-700 ${calcBox.mesesAlvo.has(i + 1) ? '' : 'opacity-40'}`}>{calcBox.valor[i + 1] > 0 ? fmtBRL(calcBox.valor[i + 1]) : '—'}</td>
+                          ))}
+                          <td className="bg-emerald-100 border border-emerald-300 rounded p-1 text-right text-[10px] font-mono font-bold text-emerald-800">{fmtBRL([...calcBox.mesesAlvo].reduce((s, m) => s + (calcBox.valor[m] || 0), 0))}</td>
+                        </tr>
+                        <tr>
+                          <td className="text-xs font-bold text-indigo-700 px-1 whitespace-nowrap">% deste consultor</td>
+                          {Array.from({ length: 12 }, (_, i) => (
+                            <td key={i} className={`bg-indigo-50 border border-indigo-200 rounded p-1 text-center text-xs font-mono font-bold text-indigo-700 ${calcBox.mesesAlvo.has(i + 1) ? '' : 'opacity-40'}`}>{calcBox.tot[i + 1] > 0 ? fmtPct(calcBox.valor[i + 1] / calcBox.tot[i + 1] * 100) : '—'}</td>
+                          ))}
+                          <td />
+                        </tr>
+                      </>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              {/* Aplicar % por mês sobre os boxes marcados (checkbox antes do nome): o consultor recebe o valor
+                  resultante, convertido em % da Ref. Total */}
+              {modoModal !== 'visualizar' && (
+                <div className="flex items-center justify-between gap-3 border border-slate-200 rounded-lg p-3 bg-slate-50">
+                  <p className="text-[11px] text-slate-500">
+                    Marque o(s) box(es) no quadradinho antes do nome e digite o <strong>% a aplicar</strong> em cada mês (pode ser diferente por mês; mês vazio não muda). O consultor fica com o <strong>Resultado (R$)</strong>, e na tela dele aparece o % equivalente sobre a Ref. Total. Nunca passa do disponível no setor.
+                  </p>
+                  <button type="button" disabled={!calcBox.ativo} onClick={aplicarCalcBox}
+                    className="shrink-0 px-3 py-1.5 rounded-md text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40">
+                    Aplicar no consultor
+                  </button>
+                </div>
+              )}
+              <p className="text-[11px] text-slate-500">
+                Use o % do box que o consultor atende como "% deste consultor". Clique nos % para marcar meses: o botão <strong>usar</strong> copia só os meses marcados daquele box; sem nada marcado, copia todos. Nunca passa do disponível no setor. O % de cada box é sobre a Ref. Total (boxes + Terceiro), então % × Ref. Total dá exatamente o valor do box.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* EDITAR POR MÊS: todos os consultores de um Setor, um único mês, numa grade só */}
       {modalMesAberto && (
         <div className="fixed top-0 right-0 bottom-0 left-16 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -1266,7 +1558,65 @@ export default function MetasServicosConsultor({ empresaExterna = null, anoExter
                         <span>Ref. Peças: <strong className="text-slate-700">{fmtBRL(mesEdRef.pecas)}</strong></span>
                         <span>Ref. Serviços: <strong className="text-slate-700">{fmtBRL(mesEdRef.servicos)}</strong></span>
                         <span className={pctMesEstourado ? 'text-red-600 font-bold' : ''}>% distribuída no setor: <strong>{pctTotalLinhasMes.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</strong> / 100%</span>
+                        {boxesMes.linhas.length > 0 && (
+                          <button type="button" onClick={() => setBoxesMesAberto(v => !v)}
+                            className={`ml-auto text-[11px] font-semibold border rounded px-2 py-0.5 transition-colors ${boxesMesAberto ? 'bg-indigo-600 border-indigo-600 text-white' : 'text-indigo-600 border-indigo-200 bg-white hover:bg-indigo-50'}`}>
+                            % por Box
+                          </button>
+                        )}
                       </div>
+                      {boxesMesAberto && boxesMes.linhas.length > 0 && (
+                        <div className="border border-indigo-200 rounded-lg p-3 space-y-3 bg-indigo-50/30">
+                          <div className="text-xs font-bold text-slate-600 uppercase tracking-wide">% por Box — {mesEdSetorNome} ({MESES_ABR[mesEdMes - 1]})</div>
+                          <table className="w-full text-xs">
+                            <thead className="text-slate-500">
+                              <tr>
+                                <th className="text-left px-2 py-1 font-semibold">Box</th>
+                                <th className="text-right px-2 py-1 font-semibold">Valor (R$)</th>
+                                <th className="text-right px-2 py-1 font-semibold">% da Ref. Total</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {boxesMes.linhas.map(b => (
+                                <tr key={b.bId} className="border-t border-indigo-100">
+                                  <td className="px-2 py-1">
+                                    <label className="inline-flex items-center gap-1.5 cursor-pointer">
+                                      <input type="checkbox" checked={boxesMesSel.has(b.bId)} className="h-3.5 w-3.5 accent-indigo-600"
+                                        onChange={() => setBoxesMesSel(prev => { const s = new Set(prev); s.has(b.bId) ? s.delete(b.bId) : s.add(b.bId); return s })} />
+                                      <span className="font-semibold text-slate-700">{b.nome}</span>
+                                    </label>
+                                  </td>
+                                  <td className="px-2 py-1 text-right font-mono text-slate-700">{fmtBRL(b.valor)}</td>
+                                  <td className="px-2 py-1 text-right font-mono font-semibold text-amber-800">{boxesMes.refTotal > 0 ? fmtPct(b.valor / boxesMes.refTotal * 100) : '—'}</td>
+                                </tr>
+                              ))}
+                              <tr className="border-t-2 border-indigo-200 font-bold text-slate-800">
+                                <td className="px-2 py-1">Ref. Total do setor</td>
+                                <td className="px-2 py-1 text-right font-mono">{fmtBRL(boxesMes.refTotal)}</td>
+                                <td className="px-2 py-1 text-right font-mono">{fmtPct(100)}</td>
+                              </tr>
+                            </tbody>
+                          </table>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-xs text-slate-600">Aplicar</span>
+                            <span className="w-16 border border-slate-300 rounded bg-white px-0.5 inline-block"><PctInput value={boxesMesPct} onChange={v => setBoxesMesPct(v)} /></span>
+                            <span className="text-xs text-slate-600">dos boxes marcados no consultor</span>
+                            <select value={boxesMesColab} onChange={e => setBoxesMesColab(e.target.value)} className="border border-slate-300 rounded-md px-2 py-1 text-xs bg-white">
+                              <option value="">Selecione...</option>
+                              {mesEdLinhas.map(l => <option key={l.colaborador_id} value={l.colaborador_id}>{l.colaborador_nome}</option>)}
+                            </select>
+                            <span className="text-xs text-slate-500">
+                              = <strong className="text-emerald-700">{fmtBRL(boxesMesResultado)}</strong>
+                              {boxesMes.refTotal > 0 && boxesMesResultado > 0 && <> → <strong className="text-indigo-700">{fmtPct(boxesMesResultado / boxesMes.refTotal * 100)}</strong> no consultor</>}
+                            </span>
+                            <button type="button" onClick={aplicarBoxesMes} disabled={!boxesMesColab || !(boxesMesResultado > 0)}
+                              className="ml-auto px-3 py-1 rounded-md text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40">
+                              Aplicar
+                            </button>
+                          </div>
+                          <p className="text-[11px] text-slate-500">Marque o(s) box(es), informe o % (100% = o box inteiro), escolha o consultor e clique em Aplicar. O % do consultor vira o equivalente sobre a Ref. Total, então a meta dele bate com o valor calculado. Pode repetir para outros consultores e depois clicar em Salvar Mês.</p>
+                        </div>
+                      )}
                       <div className="overflow-x-auto border border-slate-200 rounded-lg">
                         <table className="border-separate border-spacing-1 p-1 w-full">
                           <thead>
@@ -1303,7 +1653,7 @@ export default function MetasServicosConsultor({ empresaExterna = null, anoExter
                           <tfoot>
                             <tr>
                               <td className="text-xs font-bold text-slate-700 px-1 whitespace-nowrap sticky left-0 bg-white">Total</td>
-                              <td colSpan={4} className="bg-slate-50 border border-slate-200 rounded p-1" />
+                              <td colSpan={5} className="bg-slate-50 border border-slate-200 rounded p-1" />
                               <td className="bg-emerald-100 border border-emerald-300 rounded p-1 text-right text-xs font-bold text-emerald-800">
                                 {(() => { const t = mesEdLinhas.reduce((s, l) => s + calcMetaLinhaConsultor(l).pecas, 0); return t > 0 ? fmtBRL(t) : '—' })()}
                               </td>

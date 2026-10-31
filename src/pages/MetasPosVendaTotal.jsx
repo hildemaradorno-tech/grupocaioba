@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react'
 import { useSessionState } from '../hooks/useSessionState'
-import { TrendingUp, ChevronRight, ChevronDown, Loader2, Calculator, CheckCircle2, Ban, AlertTriangle, Search } from 'lucide-react'
+import { TrendingUp, ChevronRight, ChevronDown, Loader2, Calculator, CheckCircle2, Ban, AlertTriangle, Search, Trash2 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import BotaoIconeTooltip from '../components/BotaoIconeTooltip'
 import TooltipTexto from '../components/TooltipTexto'
@@ -183,7 +183,7 @@ const SEL2 = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm text-s
 export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = false, somenteAprovado = false, anoExterno = null, empresasExterno = null, filtroVisuExterno = null, setFiltroVisuExterno = null, aoAlterarAprovacao = null, visao = 'padrao' } = {}) {
   const modoAprovacao = modoAprovacaoProp || somenteAprovado
   const podeAgir = modoAprovacaoProp
-  const { hasActionOrDefault, hasAction, usuarioId, userNome } = useAuth()
+  const { hasActionOrDefault, hasAction, usuarioId, userNome, isAdminEfetivo } = useAuth()
   const canEdit = hasActionOrDefault('metas/gestao-aprovacao', 'editar')
   const podePendenciar = hasAction('/metas/gestao-aprovacao', 'pendenciar')
   const [empresas,      setEmpresas]      = useState([])
@@ -300,6 +300,21 @@ export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = 
       aoAlterarAprovacao?.()
     } catch (err) { setError(err.message || String(err)) }
     finally { setAcaoRodando(null) }
+  }
+
+  // Exclusão total de um colaborador (rascunho + publicado), mesmo aprovado — só administrador, na Gestão de Aprovação.
+  const [confirmExcluir, setConfirmExcluir] = useState(null) // { nome, empresaId, empresaNome, colaboradorId, tipos }
+  const executarExclusao = async () => {
+    const c = confirmExcluir
+    if (!c) return
+    setConfirmExcluir(null)
+    try {
+      for (const tipo of c.tipos) {
+        await apiService.excluirColaboradorMetaForcado({ tipo, empresaId: c.empresaId, ano: filtroAno, colaboradorId: c.colaboradorId, usuario: { id: usuarioId, nome: userNome } })
+      }
+      await loadAll()
+      aoAlterarAprovacao?.()
+    } catch (err) { setError(err.message || String(err)) }
   }
 
   // Árvore unificada: Peças + Consultor + Mecânico (inclui Produtivo Não Associado Funilaria) + Terceiros
@@ -779,6 +794,18 @@ export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = 
                           <Calculator size={13} />
                         </button>
                       )}
+                      {modoAprovacao && isAdminEfetivo && (() => {
+                        const tipos = [...new Set(colab.linhas.map(l => l._tipo))].filter(t => ['MECANICO', 'CONSULTOR', 'PECAS'].includes(t)).map(t => t.toLowerCase())
+                        const l0 = colab.linhas[0]
+                        if (!tipos.length || !l0?.colaborador_id || !l0?.empresa_id) return null
+                        return (
+                          <button type="button" title="Excluir este colaborador por completo (somente administrador)"
+                            onClick={e => { e.stopPropagation(); setConfirmExcluir({ nome: colab.nome, empresaId: l0.empresa_id, empresaNome: eNome, colaboradorId: l0.colaborador_id, tipos }) }}
+                            className="text-slate-300 hover:text-red-600 hover:bg-red-50 rounded p-0.5 transition-colors">
+                            <Trash2 size={13} />
+                          </button>
+                        )
+                      })()}
                     </span>
                   </td>
                   {mCells(colab.meses, coKey)}
@@ -1005,6 +1032,24 @@ export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = 
         </table>
       </div>
       {calcAberto && <CalculoFuncionarioModal dados={calcAberto} onClose={() => setCalcAberto(null)} />}
+
+      {confirmExcluir && (
+        <div className="fixed top-0 right-0 bottom-0 left-16 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setConfirmExcluir(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md" onClick={e => e.stopPropagation()}>
+            <div className="p-6">
+              <h2 className="text-lg font-bold text-slate-800 mb-2">Excluir colaborador por completo</h2>
+              <p className="text-sm text-slate-600">
+                Apagar <strong>{confirmExcluir.nome}</strong> em <strong>{confirmExcluir.empresaNome}</strong> ({filtroAno}) — todos os meses, no planejamento <strong>e</strong> no que já foi publicado no Power BI. Não dá para desfazer.
+              </p>
+              <p className="text-xs text-slate-500 mt-2">Vale para: {confirmExcluir.tipos.map(t => ({ mecanico: 'Mecânico', consultor: 'Consultor', pecas: 'Peças' }[t])).join(', ')}.</p>
+            </div>
+            <div className="flex gap-3 px-6 pb-6">
+              <button onClick={() => setConfirmExcluir(null)} className="flex-1 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-sm font-semibold px-4 py-2 rounded-lg transition-colors">Cancelar</button>
+              <button onClick={executarExclusao} className="flex-1 text-white text-sm font-bold px-4 py-2 rounded-lg transition-colors bg-red-600 hover:bg-red-700">Excluir</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {confirmAcao && (
         <div className="fixed top-0 right-0 bottom-0 left-16 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setConfirmAcao(null)}>

@@ -40,6 +40,13 @@ export function passaEscopoComissao(candidato, escopo) {
   return true
 }
 
+// Empresa liberada no "Acesso por Empresa" do grupo (comissaoEscopoEfetivo.empresa) — usado nos
+// seletores de Empresa das telas de comissões, pra não listar loja que o usuário não pode ver.
+export function empresaNoEscopoComissao(empresaId, escopo) {
+  const cfg = escopo?.empresa
+  return !cfg || cfg.modo !== 'INDIVIDUAL' || cfg.valores.has(empresaId)
+}
+
 // nivelPorSetor: Map<setor_id, 'editar'|'visualizar'> (comissaoNivelSetorEfetivo do
 // AuthContext) — ausência de entrada = 'editar' (sem restrição extra), mesmo padrão de
 // "dimensão ausente nunca bloqueia" usado acima. Setor nulo (nada selecionado/aplicável)

@@ -256,6 +256,12 @@ const _pendenciarComHistorico = async ({ tabela, tipo, empresaId, ano, setorId =
   }
 }
 
+const _TABELA_META = {
+  mecanico:  'fato_rascunho_metas_servicos_mecanico',
+  consultor: 'fato_rascunho_metas_servicos_consultor',
+  pecas:     'fato_rascunho_metas_pecas',
+}
+
 // Meta já aprovada ou publicada não pode ser excluída: só é alterada (a alteração fica pendente até um diretor
 // aprovar) — ou o administrador limpa a aprovação na Gestão de Aprovação.
 const _bloquearExclusaoSeAprovada = async (tabela, tipo, filtros) => {
@@ -3105,6 +3111,67 @@ export const apiService = {
       .order('empresa_nome', { ascending: true })
     if (error) throw error
     return data || []
+  },
+
+  // Troca o colaborador de um lançamento (Mecânico / Consultor / Peças) mantendo os valores — mesmo já
+  // aprovado/publicado. As linhas passam pro novo colaborador e voltam a pendente (aprovação limpa); o que
+  // estava publicado do colaborador antigo é removido do Power BI. Bloqueia se o novo já tem lançamento
+  // na empresa/ano, ou (Mecânico) se foi admitido depois de meses que já têm valor.
+  trocarColaboradorMeta: async ({ tipo, empresaId, ano, antigoId, novo, usuario = null }) => {
+    const tabela = _TABELA_META[tipo]
+    if (!tabela) throw new Error('Tipo de meta inválido.')
+    if (!novo?.id || novo.id === antigoId) throw new Error('Selecione outro colaborador.')
+    const anoN = Number(ano)
+    const { count, error: eDup } = await supabase.from(tabela).select('id', { count: 'exact', head: true })
+      .eq('empresa_id', empresaId).eq('ano', anoN).eq('colaborador_id', novo.id)
+    if (eDup) throw eDup
+    if ((count || 0) > 0) throw new Error(`${novo.nome} já tem lançamento nesta empresa em ${anoN}. Escolha outro colaborador.`)
+    const { data: rows, error: e1 } = await supabase.from(tabela)
+      .select('id,mes,empresa_nome,meta_faturamento,meta_aprovada')
+      .eq('empresa_id', empresaId).eq('ano', anoN).eq('colaborador_id', antigoId)
+    if (e1) throw e1
+    if (!rows?.length) throw new Error('Nenhum lançamento encontrado para o colaborador atual.')
+    if (tipo === 'mecanico' && novo.data_admissao) {
+      const [aa, am] = String(novo.data_admissao).slice(0, 10).split('-').map(Number)
+      const antes = rows.filter(r => Number(r.meta_faturamento) > 0 && (aa > anoN || (aa === anoN && Number(r.mes) < am)))
+      if (antes.length) throw new Error(`${novo.nome} foi admitido(a) em ${String(novo.data_admissao).slice(0, 10).split('-').reverse().join('/')} e há valores lançados em meses anteriores. Zere esses meses antes de trocar.`)
+    }
+    const upd = { colaborador_id: novo.id, colaborador_nome: novo.nome, meta_aprovada: null, aprovado_em: null, aprovado_por: null, aprovado_por_nome: null }
+    if (novo.cargo_id) { upd.cargo_id = novo.cargo_id; upd.cargo_nome = novo.cargo_nome || null }
+    if (tipo === 'mecanico' && novo.box_id) { upd.box_id = novo.box_id; upd.box_nome = novo.box_nome || null }
+    const { error: eUp } = await supabase.from(tabela).update(upd).in('id', rows.map(r => r.id))
+    if (eUp) throw eUp
+    const { error: eDel } = await supabase.from('fato_metas_publicadas').delete()
+      .eq('tipo', tipo).eq('empresa_id', empresaId).eq('ano', anoN).eq('colaborador_id', antigoId)
+    if (eDel) throw eDel
+    try {
+      await _registrarHistorico({ evento: 'TROCOU_COLABORADOR', tipo, empresaId, empresaNome: rows[0].empresa_nome, ano: anoN, usuario,
+        linhas: rows.length, valorTotal: rows.reduce((t, r) => t + (Number(r.meta_aprovada) || 0), 0) })
+    } catch { /* histórico é complementar */ }
+    return { success: true, linhas: rows.length }
+  },
+
+  // Exclusão total de um colaborador (rascunho + publicado) — mesmo aprovado. Só administrador (a tela já restringe).
+  excluirColaboradorMetaForcado: async ({ tipo, empresaId, ano, colaboradorId, usuario = null }) => {
+    const tabela = _TABELA_META[tipo]
+    if (!tabela) throw new Error('Tipo de meta inválido.')
+    const anoN = Number(ano)
+    const { data: rows, error: e1 } = await supabase.from(tabela).select('empresa_nome,meta_aprovada')
+      .eq('empresa_id', empresaId).eq('ano', anoN).eq('colaborador_id', colaboradorId)
+    if (e1) throw e1
+    const { error: eDel } = await supabase.from(tabela).delete()
+      .eq('empresa_id', empresaId).eq('ano', anoN).eq('colaborador_id', colaboradorId)
+    if (eDel) throw eDel
+    const { error: eDelPub } = await supabase.from('fato_metas_publicadas').delete()
+      .eq('tipo', tipo).eq('empresa_id', empresaId).eq('ano', anoN).eq('colaborador_id', colaboradorId)
+    if (eDelPub) throw eDelPub
+    if (rows?.length) {
+      try {
+        await _registrarHistorico({ evento: 'EXCLUIU_COLABORADOR', tipo, empresaId, empresaNome: rows[0].empresa_nome, ano: anoN, usuario,
+          linhas: rows.length, valorTotal: rows.reduce((t, r) => t + (Number(r.meta_aprovada) || 0), 0) })
+      } catch { /* histórico é complementar */ }
+    }
+    return { success: true, linhas: rows?.length || 0 }
   },
 
   getPendingCountTotal: async (ano) => {

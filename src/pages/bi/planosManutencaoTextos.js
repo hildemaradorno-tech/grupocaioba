@@ -172,7 +172,7 @@ export const MANUAL_GERAL = [
     titulo: 'Cabeçalho',
     itens: [
       ['Empresas', 'Filtra vendas e O.S. pela empresa. O arquivo de contratos não traz a empresa, então não filtra os contratos.'],
-      ['Data', 'Período do BI (padrão: do dia 1 do mês até ontem). As setas ‹ › pulam para o mês anterior/seguinte.'],
+      ['Data', 'Período do BI (ao abrir: do dia 1 do mês até ontem; qualquer data pode ser escolhida). As setas ‹ › pulam para o mês anterior/seguinte.'],
       ['Atualizar (botão azul)', 'Relê os relatórios. Só baixa de novo os arquivos que mudaram; os dados ficam guardados por 5 minutos.'],
     ],
   },

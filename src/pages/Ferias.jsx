@@ -19,9 +19,10 @@ const fmtDataHora = (v) => v ? new Date(v).toLocaleString('pt-BR') : '-'
 const soDigitos = (v) => String(v || '').replace(/\D/g, '')
 
 export default function Ferias() {
-  const { user, hasActionOrDefault } = useAuth()
+  const { user, userNome, userNomeCompleto, hasActionOrDefault } = useAuth()
   const canEdit = hasActionOrDefault('ferias', 'editar')
-  const usuarioLabel = user?.email || 'desconhecido'
+  // Quem fez a ação (calculou/conferiu/processou/importou): nome do usuário; e-mail só se não tiver nome.
+  const usuarioLabel = userNomeCompleto || userNome || user?.email || 'desconhecido'
 
   const [dados, setDados] = useState([])
   const [empresas, setEmpresas] = useState([])

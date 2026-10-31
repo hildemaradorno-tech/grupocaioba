@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useSessionState } from '../hooks/useSessionState'
+import { useSessionState, useLimparSessaoAoEntrar } from '../hooks/useSessionState'
 import { Cog, AlertTriangle } from 'lucide-react'
 import { apiService } from '../services/api'
 import { EmpresaMultiFilter, empresasDasMetas, empresaParam, filtrarPorEmpresas } from '../components/EmpresaMultiFilter'
@@ -24,7 +24,17 @@ const ABAS = [
   { key: 'grupo',        label: 'Grupo' },
 ]
 
+// Filtros que voltam ao padrão (nada filtrado/selecionado) toda vez que se entra na tela — de todas as abas.
+const FILTROS_POS_VENDAS = [
+  'mpvs_servicos_empresas', 'mpvs_servicos_ano', 'mpvs_servicos_visu', 'mpvs_servicos_meses',
+  'msm_mecanico', 'msm_setor', 'msm_box',
+  'msc_setor', 'msc_consultor',
+  'mpc_setor', 'mpc_box', 'mpc_colab',
+  'mpvt_depto', 'mpvt_setor', 'mpvt_box', 'mpvt_colab',
+]
+
 export default function MetasPosVendaServicos() {
+  useLimparSessaoAoEntrar(FILTROS_POS_VENDAS)
   const navigate = useNavigate()
   const { hasPermission } = useAuth()
   const [abaSalva, setAba] = useSessionState('mpvs_aba', 'mecanico')

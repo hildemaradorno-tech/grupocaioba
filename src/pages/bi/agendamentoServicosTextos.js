@@ -5,9 +5,8 @@
 
 const ARQ_OS = 'ROF001_OSAberta_Excel TODAS'
 const ARQ_AGEND = 'ROF037_AGENDAMENTOSERVICO'
-const ARQ_CLIENTES_AGEND = 'ROF026_CLIENTEAGENDADO (só quando o agendamento não está no ROF037)'
 const ARQ_CAMPANHA = 'RCR038_CampanhaCRM_Clientes_Excel'
-const ARQ_CONTATOS = 'RCR017_LISTAPORDATACONTATOENCERRAMENTO'
+const ARQ_CONTATOS = 'RCR017_LISTAPORDATACONTATO + RCR017_LISTAPORDATAENCERRAMENTO'
 
 // "Regras" e "Colunas utilizadas" do manual. Formato, uma informação por linha:
 //   linha terminada em ":"  → subtítulo
@@ -23,9 +22,9 @@ const REGRAS_OS = [
 ].join('\n')
 const REGRAS_AGEND = [
   'Regras do agendamento:',
-  '• A O.S. vem de agendamento quando Empresa + OS Numero aparece no ROF037 (EmpresaNome + OSNumero)',
-  '• Se não estiver no ROF037, procura no ROF026 (Agendamento_EmpresaCod + OficinaServico_OSNumero)',
-  '• Não importa a data do agendamento, só se a O.S. está num relatório de agendamento',
+  '• A O.S. vem de agendamento quando a coluna Agendador do ROF001 está preenchida',
+  '• O tipo (Ativo × Passivo) vem do ROF037, ligando Empresa + OS Numero com EmpresaNome + OSNumero',
+  '• O.S. com Agendador que não está no ROF037 conta como agendada, mas fica sem tipo (aviso no card O.S. com agendamento)',
   '• Ativo = tipo Ativo · Passivo = Receptivo, Presencial ou Internet',
 ].join('\n')
 const REGRAS_VALOR = [
@@ -42,7 +41,7 @@ const COL_OS = [
   '• Situacao Tipo OS — tira as "Cancelada"; alerta das pendentes',
   '• Tipo OS Sigla — tipo da O.S. (lista do alerta)',
   '• Consultor Nome — consultor (lista do alerta)',
-  '• Agendador — conferência: agendador preenchido fora dos relatórios de agendamento',
+  '• Agendador — preenchido = O.S. veio de agendamento',
 ].join('\n')
 const COL_OS_VALOR = [
   `${ARQ_OS}:`,
@@ -56,27 +55,23 @@ const COL_AGEND = [
   '• EmpresaNome — empresa da O.S.',
   '• OSNumero — número da O.S. gerada pelo agendamento',
   '• AgendamentoTipo — Ativo / Receptivo / Presencial / Internet',
-  'ROF026_CLIENTEAGENDADO:',
-  '• Agendamento_EmpresaCod — 1 Campo Grande · 2 Dourados · 12 Três Lagoas · 13 Chapadão',
-  '• OficinaServico_OSNumero — número da O.S.',
-  '• Agendamento_Tipo — A Ativo · R Receptivo · P Presencial · I Internet',
 ].join('\n')
 
-// ── Aba Por Agendamentos ─────────────────────────────────────────────────────────────────────────────────────
+
+// ── Aba Por Data Agendamento ─────────────────────────────────────────────────────────────────────────────────────
 const REGRAS_AGENDA = [
   'Regras dos agendamentos:',
   '• O filtro Data vale para a data do agendamento (DtAgendamento), não para a O.S. nem para o contato',
-  '• Base: ROF037; os agendamentos que só estão no ROF026 entram também',
+  '• Fonte única: ROF037 (o ROF026 não entra nesta aba)',
   '• Um agendamento com vários serviços aparece em várias linhas do ROF037 e conta uma vez',
   '• Agendamentos cancelados (status CAN) ficam fora',
   '• Ativo = tipo Ativo · Passivo = Receptivo, Presencial ou Internet',
 ].join('\n')
 const REGRAS_DESFECHO = [
   'O que aconteceu com o agendamento:',
-  '• Virou O.S.: o agendamento tem número de O.S. e essa O.S. não está Cancelada no ROF001 TODAS',
-  '• O.S. cancelada: tem número de O.S., mas a O.S. está Cancelada (não conta como conversão; aparece só na tabela por data)',
-  '• No-show: sem O.S. e status NSW (o cliente não compareceu)',
-  '• A executar: sem O.S. e sem no-show (AGE, CON, RAG: data por vir ou ainda não resolvido)',
+  '• Agendamento comparecido: o agendamento tem número de O.S. (OSNumero) no ROF037',
+  '• Agendamentos Não comparecidos (No-Show): sem O.S. e status NSW (o cliente não compareceu)',
+  '• Agendamento a comparecer: sem O.S. e sem no-show (AGE, CON, RAG: data por vir ou ainda não resolvido)',
 ].join('\n')
 const COL_AGENDA = [
   `${ARQ_AGEND}:`,
@@ -86,19 +81,8 @@ const COL_AGENDA = [
   '• StatusAgendamento — AGE, CON, RAG, FIM, NSW, CAN',
   '• OSNumero — O.S. gerada pelo agendamento',
   '• CodCliente + Chassi — identificam o agendamento (uma vez só)',
-  'ROF026_CLIENTEAGENDADO:',
-  '• Agendamento_EmpresaCod — 1 Campo Grande · 2 Dourados · 12 Três Lagoas · 13 Chapadão',
-  '• Agendamento_Data — data do agendamento',
-  '• Agendamento_Tipo — A Ativo · R Receptivo · P Presencial · I Internet',
-  '• Agendamento_Status — status',
-  '• OficinaServico_OSNumero — O.S. gerada',
 ].join('\n')
-const COL_OS_SITUACAO = [
-  `${ARQ_OS}:`,
-  '• Empresa + OS Numero — liga com a O.S. do agendamento',
-  '• Situacao Tipo OS — O.S. Cancelada não conta como conversão',
-].join('\n')
-const FONTE_AGENDA = `${ARQ_AGEND}\nROF026_CLIENTEAGENDADO (agendamentos que não estão no ROF037)`
+const FONTE_AGENDA = ARQ_AGEND
 
 // ── Aba Campanhas ───────────────────────────────────────────────────────────────────────────────────────────
 const REGRAS_CAMPANHA = [
@@ -106,11 +90,13 @@ const REGRAS_CAMPANHA = [
   '• Um arquivo RCR038 por execução de campanha e unidade, ex: "... CGR 20261019.xls"',
   '• A unidade e a data vêm do nome do arquivo (a planilha não traz nenhuma das duas)',
   '• O filtro Data vale para a data da campanha (nome do arquivo)',
-  '• Sigla → empresa: CGR Campo Grande · CPD Chapadão · DOU Dourados · TLG Três Lagoas',
+  '• Sem filtro de Empresas: o relatório da campanha não identifica a empresa',
+  '• Cada contato da campanha (campanha + atendimento) conta uma vez: se a mesma campanha estiver em dois arquivos, vale o de data mais antiga no nome',
 ].join('\n')
 const REGRAS_CONTATO = [
   'Regras do contato:',
   '• O contato da campanha liga com o RCR017 por id_atendimento = Atendimento_Codigo',
+  '• Os dois arquivos RCR017 (por data do contato e por data de encerramento) são lidos juntos; cada contato (AtendimentoContato_Codigo) conta uma vez',
   '• Contato realizado: o atendimento tem pelo menos um contato no RCR017',
   '• Não contam como realizados os encerrados "S00 - Finalizado sem contato" e "S01 - Telefones incorretos"',
 ].join('\n')
@@ -136,6 +122,7 @@ const COL_CAMPANHA = [
 ].join('\n')
 const COL_CONTATOS = [
   `${ARQ_CONTATOS}:`,
+  '• AtendimentoContato_Codigo — identifica o contato (o mesmo contato aparece nos dois arquivos)',
   '• Atendimento_Codigo — liga com o id_atendimento da campanha',
   '• AtendimentoContato_Data — data do contato',
   '• MotivoEncerramento — motivo de encerramento (S00, S01, S02, S03...)',
@@ -154,21 +141,21 @@ export const INFO = {
   // Aba Passagens
   gaugeAgendamentoOs: {
     objetivo: 'Medir quanto das O.S. abertas no período vieram de agendamento.',
-    fonte: `${ARQ_OS}\n${ARQ_AGEND}\n${ARQ_CLIENTES_AGEND}`,
+    fonte: ARQ_OS,
     calculo: `O.S. com agendamento ÷ Quant. O.S. por data de abertura × 100.\n${META}`,
     filtros: `${REGRAS_OS}\n${REGRAS_AGEND}`,
     colunas: `${COL_OS}\n${COL_AGEND}`,
   },
   gaugeAtivo: {
     objetivo: 'Medir quanto das O.S. abertas no período vieram de agendamento ativo (a equipe procurou o cliente).',
-    fonte: `${ARQ_OS}\n${ARQ_AGEND}\n${ARQ_CLIENTES_AGEND}`,
+    fonte: `${ARQ_OS}\n${ARQ_AGEND}`,
     calculo: `Agendamentos ativos ÷ Quant. O.S. por data de abertura × 100.\n${META}`,
     filtros: `${REGRAS_OS}\n${REGRAS_AGEND}`,
     colunas: `${COL_OS}\n${COL_AGEND}`,
   },
   gaugePassivo: {
     objetivo: 'Medir quanto das O.S. abertas no período vieram de agendamento passivo (o cliente procurou).',
-    fonte: `${ARQ_OS}\n${ARQ_AGEND}\n${ARQ_CLIENTES_AGEND}`,
+    fonte: `${ARQ_OS}\n${ARQ_AGEND}`,
     calculo: `Agendamentos passivos ÷ Quant. O.S. por data de abertura × 100.\n${META}`,
     filtros: `${REGRAS_OS}\n${REGRAS_AGEND}`,
     colunas: `${COL_OS}\n${COL_AGEND}`,
@@ -182,75 +169,75 @@ export const INFO = {
   },
   osAgendamento: {
     objetivo: 'Mostrar quantas das O.S. abertas no período vieram de agendamento.',
-    fonte: `${ARQ_OS}\n${ARQ_AGEND}\n${ARQ_CLIENTES_AGEND}`,
-    calculo: 'Das O.S. do card Quant. O.S. por data de abertura, as que têm o número da O.S. no ROF037 (ou, se faltar lá, no ROF026).',
+    fonte: ARQ_OS,
+    calculo: 'Das O.S. do card Quant. O.S. por data de abertura, as que têm a coluna Agendador preenchida.',
     filtros: `${REGRAS_OS}\n${REGRAS_AGEND}`,
-    colunas: `${COL_OS}\n${COL_AGEND}`,
+    colunas: COL_OS,
   },
   agAtivos: {
     objetivo: 'Mostrar quantas O.S. com agendamento vieram de agendamento ativo.',
-    fonte: `${ARQ_OS}\n${ARQ_AGEND}\n${ARQ_CLIENTES_AGEND}`,
-    calculo: 'O.S. com agendamento cujo tipo é Ativo (ROF037 AgendamentoTipo; no ROF026, a letra A).',
+    fonte: `${ARQ_OS}\n${ARQ_AGEND}`,
+    calculo: 'O.S. com agendamento cujo tipo é Ativo (ROF037 AgendamentoTipo).',
     filtros: `${REGRAS_OS}\n${REGRAS_AGEND}`,
     colunas: `${COL_OS}\n${COL_AGEND}`,
   },
   agPassivos: {
     objetivo: 'Mostrar quantas O.S. com agendamento vieram de agendamento passivo.',
-    fonte: `${ARQ_OS}\n${ARQ_AGEND}\n${ARQ_CLIENTES_AGEND}`,
-    calculo: 'O.S. com agendamento cujo tipo é Receptivo, Presencial ou Internet (no ROF026, as letras R, P ou I).',
+    fonte: `${ARQ_OS}\n${ARQ_AGEND}`,
+    calculo: 'O.S. com agendamento cujo tipo é Receptivo, Presencial ou Internet (ROF037 AgendamentoTipo).',
     filtros: `${REGRAS_OS}\n${REGRAS_AGEND}`,
     colunas: `${COL_OS}\n${COL_AGEND}`,
   },
   conversaoTotal: {
     objetivo: 'Mostrar quanto faturaram as O.S. que vieram de agendamento.',
-    fonte: `${ARQ_OS}\n${ARQ_AGEND}\n${ARQ_CLIENTES_AGEND}`,
+    fonte: ARQ_OS,
     calculo: 'Soma de Peças (Produto), Serviços (Servico) e Total das O.S. com agendamento. Ticket médio = Faturamento Total ÷ quantidade do card O.S. com agendamento.',
     filtros: `${REGRAS_OS}\n${REGRAS_AGEND}\n${REGRAS_VALOR}`,
     colunas: `${COL_OS_VALOR}\n${COL_AGEND}`,
   },
   conversaoAtivos: {
     objetivo: 'Mostrar quanto faturaram as O.S. que vieram de agendamento ativo.',
-    fonte: `${ARQ_OS}\n${ARQ_AGEND}\n${ARQ_CLIENTES_AGEND}`,
+    fonte: `${ARQ_OS}\n${ARQ_AGEND}`,
     calculo: 'Mesmo cálculo da Conversão — Total, só com as O.S. de agendamento Ativo. Ticket médio = Faturamento Total ÷ quantidade do card Agendamentos ativos.',
     filtros: `${REGRAS_OS}\n${REGRAS_AGEND}\n${REGRAS_VALOR}`,
     colunas: `${COL_OS_VALOR}\n${COL_AGEND}`,
   },
   conversaoPassivos: {
     objetivo: 'Mostrar quanto faturaram as O.S. que vieram de agendamento passivo.',
-    fonte: `${ARQ_OS}\n${ARQ_AGEND}\n${ARQ_CLIENTES_AGEND}`,
+    fonte: `${ARQ_OS}\n${ARQ_AGEND}`,
     calculo: 'Mesmo cálculo da Conversão — Total, só com as O.S. de agendamento Receptivo, Presencial ou Internet. Ticket médio = Faturamento Total ÷ quantidade do card Agendamentos passivos.',
     filtros: `${REGRAS_OS}\n${REGRAS_AGEND}\n${REGRAS_VALOR}`,
     colunas: `${COL_OS_VALOR}\n${COL_AGEND}`,
   },
 
-  // Aba Por Agendamentos
+  // Aba Por Data Agendamento
   agTaxaConversao: {
     objetivo: 'Medir quanto dos agendamentos marcados para o período virou O.S.',
-    fonte: `${FONTE_AGENDA}\n${ARQ_OS}`,
-    calculo: `Viraram O.S. ÷ Agendamentos no período × 100.\n${META}`,
+    origem: 'Card Agendamentos comparecidos ÷ card Agendamentos realizados.',
+    calculo: `Agendamentos comparecidos ÷ Agendamentos realizados × 100.\n${META}`,
     filtros: `${REGRAS_AGENDA}\n${REGRAS_DESFECHO}`,
-    colunas: `${COL_AGENDA}\n${COL_OS_SITUACAO}`,
+    colunas: COL_AGENDA,
   },
   agTaxaConversaoAtivo: {
     objetivo: 'Medir quanto dos agendamentos ativos marcados para o período virou O.S.',
-    fonte: `${FONTE_AGENDA}\n${ARQ_OS}`,
+    origem: 'Parte ativa do card Agendamentos comparecidos ÷ card Agendamentos ativos.',
     calculo: `Agendamentos ativos que viraram O.S. ÷ Agendamentos ativos × 100.\n${META}`,
     filtros: `${REGRAS_AGENDA}\n${REGRAS_DESFECHO}`,
-    colunas: `${COL_AGENDA}\n${COL_OS_SITUACAO}`,
+    colunas: COL_AGENDA,
   },
   agTaxaConversaoPassivo: {
     objetivo: 'Medir quanto dos agendamentos passivos marcados para o período virou O.S.',
-    fonte: `${FONTE_AGENDA}\n${ARQ_OS}`,
+    origem: 'Parte passiva do card Agendamentos comparecidos ÷ card Agendamentos passivos.',
     calculo: `Agendamentos passivos que viraram O.S. ÷ Agendamentos passivos × 100.\n${META}`,
     filtros: `${REGRAS_AGENDA}\n${REGRAS_DESFECHO}`,
-    colunas: `${COL_AGENDA}\n${COL_OS_SITUACAO}`,
+    colunas: COL_AGENDA,
   },
   agTaxaNoShow: {
     objetivo: 'Medir quanto dos agendamentos marcados para o período o cliente não compareceu.',
-    fonte: `${FONTE_AGENDA}\n${ARQ_OS}`,
-    calculo: `No-show ÷ Agendamentos no período × 100.\n${META_MENOR(15)}`,
+    origem: 'Card Agendamentos Não comparecidos (No-Show) ÷ card Agendamentos realizados.',
+    calculo: `Agendamentos Não comparecidos (No-Show) ÷ Agendamentos realizados × 100.\n${META_MENOR(15)}`,
     filtros: `${REGRAS_AGENDA}\n${REGRAS_DESFECHO}`,
-    colunas: `${COL_AGENDA}\n${COL_OS_SITUACAO}`,
+    colunas: COL_AGENDA,
   },
   agTotal: {
     objetivo: 'Mostrar quantos agendamentos estavam marcados para o período.',
@@ -262,35 +249,35 @@ export const INFO = {
   agAtivosAgenda: {
     objetivo: 'Mostrar quantos dos agendamentos do período foram ativos (a equipe procurou o cliente).',
     fonte: FONTE_AGENDA,
-    calculo: 'Agendamentos no período com tipo Ativo (no ROF026, a letra A).',
+    calculo: 'Agendamentos realizados com tipo Ativo.',
     filtros: REGRAS_AGENDA,
     colunas: COL_AGENDA,
   },
   agPassivosAgenda: {
     objetivo: 'Mostrar quantos dos agendamentos do período foram passivos (o cliente procurou).',
     fonte: FONTE_AGENDA,
-    calculo: 'Agendamentos no período com tipo Receptivo, Presencial ou Internet (no ROF026, as letras R, P ou I).',
+    calculo: 'Agendamentos realizados com tipo Receptivo, Presencial ou Internet.',
     filtros: REGRAS_AGENDA,
     colunas: COL_AGENDA,
   },
   agVirouOs: {
-    objetivo: 'Mostrar quantos agendamentos do período viraram O.S.',
-    fonte: `${FONTE_AGENDA}\n${ARQ_OS}`,
-    calculo: 'Agendamentos no período com número de O.S., e essa O.S. não está Cancelada no ROF001 TODAS. Os que viraram O.S. depois cancelada ficam fora (aparecem na coluna O.S. cancelada da tabela por data).',
+    objetivo: 'Mostrar quantos agendamentos do período tiveram o cliente comparecendo (viraram O.S.).',
+    fonte: FONTE_AGENDA,
+    calculo: 'Agendamentos realizados com número de O.S. (OSNumero) no ROF037.',
     filtros: `${REGRAS_AGENDA}\n${REGRAS_DESFECHO}`,
-    colunas: `${COL_AGENDA}\n${COL_OS_SITUACAO}`,
+    colunas: COL_AGENDA,
   },
   agNoShow: {
     objetivo: 'Mostrar quantos agendamentos do período o cliente não compareceu.',
     fonte: FONTE_AGENDA,
-    calculo: 'Agendamentos no período sem O.S. e com status NSW.',
+    calculo: 'Agendamentos realizados sem O.S. e com status NSW.',
     filtros: `${REGRAS_AGENDA}\n${REGRAS_DESFECHO}`,
     colunas: COL_AGENDA,
   },
   agAExecutar: {
     objetivo: 'Mostrar quantos agendamentos do período ainda não tiveram desfecho.',
     fonte: FONTE_AGENDA,
-    calculo: 'Agendamentos no período sem O.S. e sem no-show (status AGE, CON ou RAG).',
+    calculo: 'Agendamentos realizados sem O.S. e sem no-show (status AGE, CON ou RAG).',
     filtros: `${REGRAS_AGENDA}\n${REGRAS_DESFECHO}`,
     colunas: COL_AGENDA,
   },
@@ -450,8 +437,8 @@ const ALERTA_PENDENTES = {
 
 // Objetivo de cada aba: aparece abaixo das abas no BI e como 1ª seção de cada aba no manual.
 export const OBJETIVO_ABAS = {
-  'Por Passagens': 'Análise com base na data de abertura da ordem de serviço: considera as ordens de serviço abertas no período e identifica quantas tiveram origem em agendamento.',
-  'Por Agendamentos': 'Análise com base na data do agendamento: considera os agendamentos programados para o período e apresenta o seu desfecho.',
+  'Por Data da O.S.': 'Análise com base na data de abertura da ordem de serviço: considera as ordens de serviço abertas no período e identifica quantas tiveram origem em agendamento.',
+  'Por Data Agendamento': 'Análise com base na data do agendamento: considera os agendamentos programados para o período e apresenta o seu desfecho.',
   'Por Campanhas': 'Análise com base na data de execução da campanha: considera as campanhas de ativação do CRM executadas no período e acompanha a evolução dos contatos.',
 }
 
@@ -464,15 +451,15 @@ const TABELA_CAMPANHAS = {
   ],
 }
 
-// Tabela do ícone ao lado do subtítulo "Agendamentos" (aba Por Agendamentos).
+// Tabela do ícone ao lado do subtítulo "Agendamentos" (aba Por Data Agendamento).
 const TABELA_AGENDAMENTOS = {
   itens: [
     ['O que mostra', 'Uma linha por data do agendamento, em ordem de data (da mais antiga para a mais recente), e uma linha de Total no fim.'],
-    ['Colunas', 'Data do agendamento, Agendamentos, Ativos, Passivos, Viraram O.S., O.S. cancelada, No-show, A executar, as taxas de Conversão (total, ativo e passivo) e de No-show, Faturamento Total e Ticket médio das O.S. geradas.'],
+    ['Colunas', 'Data do agendamento, Agendamentos, Ativos, Passivos, Agendamentos comparecidos, Agendamentos a comparecer, Agendamentos Não comparecidos (No-Show), as taxas de Conversão (total, ativo e passivo) e de No-show, Faturamento Total e Ticket médio das O.S. geradas.'],
     ['Regras', 'As mesmas dos cards e indicadores da aba, calculadas por data do agendamento; o Total é igual aos cards.'],
   ],
 }
-// Tabela do ícone ao lado do subtítulo "Passagens" (aba Por Passagens).
+// Tabela do ícone ao lado do subtítulo "Passagens" (aba Por Data da O.S.).
 const TABELA_PASSAGENS = {
   itens: [
     ['O que mostra', 'Uma linha por data de abertura da O.S., em ordem de data (da mais antiga para a mais recente), e uma linha de Total no fim.'],
@@ -502,23 +489,23 @@ export const MANUAL_ABAS_CARDS = [
     ['Card — Conversão — Resultado', 'conversaoCampanha'],
     ['Indicador — Taxa de No-show', 'taxaNoShow'],
   ]],
-  ['Aba Por Agendamentos', [
+  ['Aba Por Data Agendamento', [
     ['Tabela — Agendamentos por data do agendamento', TABELA_AGENDAMENTOS],
     ['Indicador — Taxa de Conversão', 'agTaxaConversao'],
     ['Indicador — Taxa de Conversão Ativo', 'agTaxaConversaoAtivo'],
     ['Indicador — Taxa de Conversão Passivo', 'agTaxaConversaoPassivo'],
     ['Indicador — Taxa de No-show', 'agTaxaNoShow'],
-    ['Card — Agendamentos no período', 'agTotal'],
+    ['Card — Agendamentos realizados', 'agTotal'],
     ['Card — Agendamentos ativos', 'agAtivosAgenda'],
     ['Card — Agendamentos passivos', 'agPassivosAgenda'],
-    ['Card — Viraram O.S.', 'agVirouOs'],
-    ['Card — No-show', 'agNoShow'],
-    ['Card — A executar', 'agAExecutar'],
+    ['Card — Agendamentos comparecidos', 'agVirouOs'],
+    ['Card — Agendamentos Não comparecidos (No-Show)', 'agNoShow'],
+    ['Card — Agendamentos a comparecer', 'agAExecutar'],
     ['Card — Conversão — Total', 'agConversaoTotal'],
     ['Card — Conversão — Ativos', 'agConversaoAtivos'],
     ['Card — Conversão — Passivos', 'agConversaoPassivos'],
   ]],
-  ['Aba Por Passagens', [
+  ['Aba Por Data da O.S.', [
     ['Tabela — Passagens por data de abertura', TABELA_PASSAGENS],
     ['Indicador — Taxa de Agendamento', 'gaugeAgendamentoOs'],
     ['Indicador — Taxa de Agendamento Ativo', 'gaugeAtivo'],
@@ -545,9 +532,8 @@ export const MANUAL_GERAL = [
     itens: [
       [ARQ_OS, 'Pasta SharePoint: Banco de Dados - DAF - Pós-Vendas › Relatório Geral OS'],
       [ARQ_AGEND, 'Pasta SharePoint: Banco de Dados - DAF - Pós-Vendas › Agendamentos - CRM › AGENDAMENTO SERVICOS'],
-      ['ROF026_CLIENTEAGENDADO', 'Pasta SharePoint: Banco de Dados - DAF - Pós-Vendas › Agendamentos - CRM › CLIENTES AGENDADOS'],
       [ARQ_CAMPANHA, 'Pasta SharePoint: Banco de Dados - DAF - Pós-Vendas › Agendamentos - CRM › CAMPANHA CRM › (ano)'],
-      [ARQ_CONTATOS, 'Pasta SharePoint: Banco de Dados - DAF - Pós-Vendas › Agendamentos - CRM › LISTA POR DATA CONTATO_ENCERRAMENTO'],
+      ['RCR017_LISTAPORDATACONTATO e RCR017_LISTAPORDATAENCERRAMENTO', 'Pasta SharePoint: Banco de Dados - DAF - Pós-Vendas › Agendamentos - CRM › LISTA POR DATA CONTATO_ENCERRAMENTO'],
     ],
   },
 ]

@@ -1,16 +1,16 @@
 // Dois Gestores de Peças separados, com as mesmas telas:
-//   Trucks → rotas /pecas/...        menus pecas/...        BI bi/gestor-pecas        (Dealer.net)
-//   Motos  → rotas /pecas-motos/...  menus pecas-motos/...  BI bi/gestor-pecas-motos  (MicroWork)
+//   Trucks → rotas /pecas/...        menus pecas/...        (Dealer.net)
+//   Motos  → rotas /pecas-motos/...  menus pecas-motos/...  (MicroWork)
 // O segmento sai da rota atual, então as telas não precisam receber props.
 import { useLocation } from 'react-router-dom'
 
 export const SEGMENTOS = {
-  trucks: { seg: 'trucks', base: '/pecas', menu: 'pecas', bi: 'bi/gestor-pecas', nome: 'Trucks', empresa: 'Caioba Trucks', sistema: 'Dealer.net' },
-  motos:  { seg: 'motos', base: '/pecas-motos', menu: 'pecas-motos', bi: 'bi/gestor-pecas-motos', nome: 'Motos', empresa: 'Caioba Motos', sistema: 'MicroWork' },
+  trucks: { seg: 'trucks', base: '/pecas', menu: 'pecas', nome: 'Trucks', empresa: 'Caioba Trucks', sistema: 'Dealer.net' },
+  motos:  { seg: 'motos', base: '/pecas-motos', menu: 'pecas-motos', nome: 'Motos', empresa: 'Caioba Motos', sistema: 'MicroWork' },
 }
 
 export const segmentoDoCaminho = (pathname = '') =>
-  (pathname.startsWith('/pecas-motos') || pathname.startsWith('/bi/gestor-pecas-motos') ? SEGMENTOS.motos : SEGMENTOS.trucks)
+  (pathname.startsWith('/pecas-motos') ? SEGMENTOS.motos : SEGMENTOS.trucks)
 
 // Para o gestorPecasApi.js (chamado sempre a partir de uma tela do próprio Gestor)
 export const segmentoAtual = () => segmentoDoCaminho(typeof window !== 'undefined' ? window.location.pathname : '')

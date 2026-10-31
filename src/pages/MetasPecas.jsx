@@ -84,6 +84,26 @@ const mesesVazios = () =>
   Array.from({ length: 12 }, (_, i) => ({ mes: i + 1, meta_faturamento: '', dias_uteis_reais: '', margem_pecas_pct: '', fat_marca: '', fat_parceira: '' }))
 
 const numOuVazio = (v) => (v === null || v === undefined || v === '') ? '' : Number(v)
+
+// Faturamento marca/parceira guardam também o % sobre a Meta R$ (fat_marca_pct / fat_parceira_pct): trocar a
+// Meta recalcula os valores por esse %; digitar o valor (R$) à mão atualiza o % (o campo continua livre).
+const pctFatDe = (valor, meta) => (valor === '' || valor == null || !(Number(meta) > 0)) ? '' : (Number(valor) || 0) / Number(meta) * 100
+const valorFatDe = (pct, meta) => Math.round((Number(meta) || 0) * Number(pct)) / 100
+const pctFatInicial = (pctGravado, valor, meta) => (pctGravado !== null && pctGravado !== undefined && pctGravado !== '') ? Number(pctGravado) : pctFatDe(valor, meta)
+const pctFatParaGravar = (pct) => (pct === '' || pct == null || !Number.isFinite(Number(pct))) ? null : Number(pct)
+function atualizarCampoFat(x, campo, valor) {
+  const up = { ...x, [campo]: valor }
+  if (campo === 'meta_faturamento') {
+    const meta = parseBRL(valor)
+    ;['fat_marca', 'fat_parceira'].forEach(c => {
+      const p = x[`${c}_pct`]
+      if (p !== '' && p != null) up[c] = valorFatDe(p, meta)
+    })
+  } else if (campo === 'fat_marca' || campo === 'fat_parceira') {
+    up[`${campo}_pct`] = pctFatDe(valor, parseBRL(x.meta_faturamento))
+  }
+  return up
+}
 const fmtPctMargem = (v) => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%'
 
 // Input de percentual (mesmo modelo da tela Metas - Consultor)
@@ -229,7 +249,10 @@ export default function MetasPecas({ empresaExterna = null, anoExterno = null, a
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState(null)
   const [atualizandoDias, setAtualizandoDias] = useState(false)
-  const { hasActionOrDefault } = useAuth()
+  const { hasActionOrDefault, hasAction, usuarioId, userNome } = useAuth()
+  // Trocar o colaborador de um lançamento (mesmo aprovado): liberado pela ação Pendenciar (Grupos de Acesso).
+  const podeTrocarColab = hasAction('/metas/gestao-aprovacao', 'pendenciar')
+  const [trocaColab, setTrocaColab] = useState(null) // { antigoId, snapshot } enquanto está trocando
   const canEdit = hasActionOrDefault('metas/pos-vendas/pecas', 'editar')
 
   const [filtroEmpresaSalva, setFiltroEmpresaSalva] = useSessionState('mpvs_servicos_empresas', [])
@@ -252,6 +275,9 @@ export default function MetasPecas({ empresaExterna = null, anoExterno = null, a
 
   // Modal
   const [modalAberto,       setModalAberto]       = useState(false)
+  useEffect(() => { setTrocaColab(null) }, [modalAberto])
+  // Recarrega o cadastro ao abrir o modal: quem foi ativado/cadastrado em Funcionários com esta tela já aberta aparece no seletor.
+  useEffect(() => { if (modalAberto) apiService.getFuncionarios().then(f => setFuncionarios(sortNome(f, 'nome_funcionario'))).catch(() => {}) }, [modalAberto])
   const [modoModal,         setModoModal]         = useState('incluir')
   const [modalExcluirAberto,setModalExcluirAberto]= useState(false)
   const [form,              setForm]              = useState(FORM_VAZIO)
@@ -425,9 +451,18 @@ export default function MetasPecas({ empresaExterna = null, anoExterno = null, a
     const meta = field === 'meta_faturamento' ? Number(newVal) || 0 : Number(row.meta_faturamento) || 0
     const dias  = field === 'dias_uteis_reais' ? Number(newVal) || 0 : Number(row.dias_uteis_reais) || 0
     const media = calcMedia(meta, dias)
+    // Meta alterada direto na tabela: Faturamento marca/parceira acompanham pelo % gravado (se houver).
+    const fat = {}
+    if (field === 'meta_faturamento') {
+      const pm = pctFatInicial(row.fat_marca_pct, row.fat_marca, row.meta_faturamento)
+      const pp = pctFatInicial(row.fat_parceira_pct, row.fat_parceira, row.meta_faturamento)
+      if (pm !== '') { fat.fat_marca = valorFatDe(pm, meta); fat.fat_marca_pct = pm }
+      if (pp !== '') { fat.fat_parceira = valorFatDe(pp, meta); fat.fat_parceira_pct = pp }
+      if (pm !== '' || pp !== '') fat.fat_outros = Math.max(0, meta - (fat.fat_marca ?? (Number(row.fat_marca) || 0)) - (fat.fat_parceira ?? (Number(row.fat_parceira) || 0)))
+    }
     try {
-      await apiService.updateMetaPecas(rowId, { meta_faturamento: meta, dias_uteis_reais: dias, media_diaria_venda: media })
-      setDados(prev => prev.map(r => r.id === rowId ? { ...r, meta_faturamento: meta, dias_uteis_reais: dias, media_diaria_venda: media } : r))
+      await apiService.updateMetaPecas(rowId, { meta_faturamento: meta, dias_uteis_reais: dias, media_diaria_venda: media, ...fat })
+      setDados(prev => prev.map(r => r.id === rowId ? { ...r, meta_faturamento: meta, dias_uteis_reais: dias, media_diaria_venda: media, ...fat } : r))
     } catch (err) {
       setError(err.message || String(err))
     }
@@ -533,7 +568,12 @@ export default function MetasPecas({ empresaExterna = null, anoExterno = null, a
     })
     setMesesForm(Array.from({ length: 12 }, (_, i) => {
       const row = rows.find(r => Number(r.mes) === i + 1)
-      return { mes: i + 1, meta_faturamento: row?.meta_faturamento ?? '', dias_uteis_reais: row?.dias_uteis_reais ?? '', margem_pecas_pct: numOuVazio(row?.margem_pecas_pct), fat_marca: numOuVazio(row?.fat_marca), fat_parceira: numOuVazio(row?.fat_parceira) }
+      return {
+        mes: i + 1, meta_faturamento: row?.meta_faturamento ?? '', dias_uteis_reais: row?.dias_uteis_reais ?? '', margem_pecas_pct: numOuVazio(row?.margem_pecas_pct),
+        fat_marca: numOuVazio(row?.fat_marca), fat_parceira: numOuVazio(row?.fat_parceira),
+        fat_marca_pct: pctFatInicial(row?.fat_marca_pct, row?.fat_marca, row?.meta_faturamento),
+        fat_parceira_pct: pctFatInicial(row?.fat_parceira_pct, row?.fat_parceira, row?.meta_faturamento),
+      }
     }))
     setErroModal(null)
     setModoModal(modo)
@@ -602,6 +642,16 @@ export default function MetasPecas({ empresaExterna = null, anoExterno = null, a
         setSalvando(false)
         return
       }
+      if (trocaColab && form.colaborador_id && form.colaborador_id !== trocaColab.antigoId) {
+        await apiService.trocarColaboradorMeta({
+          tipo: 'pecas', empresaId: form.empresa_id, ano: Number(form.ano), antigoId: trocaColab.antigoId,
+          novo: form.colaborador_id === 'A_CONTRATAR'
+            ? { id: '00000000-0000-0000-0000-000000000000', nome: 'A contratar' }
+            : { id: form.colaborador_id, nome: form.colaborador_nome, cargo_id: form.cargo_id || null, cargo_nome: form.cargo_nome },
+          usuario: { id: usuarioId, nome: userNome },
+        })
+        setTrocaColab(null)
+      }
       for (const m of mesesForm) {
         const meta  = Number(m.meta_faturamento) || 0
         const dias  = Number(m.dias_uteis_reais) || 0
@@ -614,6 +664,8 @@ export default function MetasPecas({ empresaExterna = null, anoExterno = null, a
           fat_marca:    (m.fat_marca === '' || m.fat_marca == null) ? null : (Number(m.fat_marca) || 0),
           fat_parceira: (m.fat_parceira === '' || m.fat_parceira == null) ? null : (Number(m.fat_parceira) || 0),
           fat_outros:   ((m.fat_marca === '' || m.fat_marca == null) && (m.fat_parceira === '' || m.fat_parceira == null)) ? null : Math.max(0, meta - (Number(m.fat_marca) || 0) - (Number(m.fat_parceira) || 0)),
+          fat_marca_pct:    pctFatParaGravar(m.fat_marca_pct),
+          fat_parceira_pct: pctFatParaGravar(m.fat_parceira_pct),
           media_diaria_venda: calcMedia(meta, dias),
         })
       }
@@ -681,13 +733,15 @@ export default function MetasPecas({ empresaExterna = null, anoExterno = null, a
         margem_pecas_pct: numOuVazio(rowMes?.margem_pecas_pct),
         fat_marca: numOuVazio(rowMes?.fat_marca),
         fat_parceira: numOuVazio(rowMes?.fat_parceira),
+        fat_marca_pct: pctFatInicial(rowMes?.fat_marca_pct, rowMes?.fat_marca, rowMes?.meta_faturamento),
+        fat_parceira_pct: pctFatInicial(rowMes?.fat_parceira_pct, rowMes?.fat_parceira, rowMes?.meta_faturamento),
       }
     }).sort((a, b) => (a.colaborador_nome || '').localeCompare(b.colaborador_nome || ''))
     setMesEdLinhas(linhas)
   }, [modalMesAberto, mesEdSetorId, mesEdMes, empIdMes, dados, funcionarios, cargosPorId])
 
   const setLinhaMesCampo = (colabId, campo, valor) =>
-    setMesEdLinhas(prev => prev.map(l => l.colaborador_id === colabId ? { ...l, [campo]: valor } : l))
+    setMesEdLinhas(prev => prev.map(l => l.colaborador_id === colabId ? atualizarCampoFat(l, campo, valor) : l))
 
   const linhasIncompletasMes = mesEdLinhas.filter(l => {
     const emUso = parseBRL(l.meta_faturamento) > 0
@@ -724,6 +778,8 @@ export default function MetasPecas({ empresaExterna = null, anoExterno = null, a
           fat_marca:    (l.fat_marca === '' || l.fat_marca == null) ? null : (Number(l.fat_marca) || 0),
           fat_parceira: (l.fat_parceira === '' || l.fat_parceira == null) ? null : (Number(l.fat_parceira) || 0),
           fat_outros:   ((l.fat_marca === '' || l.fat_marca == null) && (l.fat_parceira === '' || l.fat_parceira == null)) ? null : Math.max(0, meta - (Number(l.fat_marca) || 0) - (Number(l.fat_parceira) || 0)),
+          fat_marca_pct:    pctFatParaGravar(l.fat_marca_pct),
+          fat_parceira_pct: pctFatParaGravar(l.fat_parceira_pct),
           media_diaria_venda: calcMedia(meta, dias),
           status: 'AGUARDANDO APROVACAO',
         })
@@ -734,15 +790,15 @@ export default function MetasPecas({ empresaExterna = null, anoExterno = null, a
     finally { setSalvandoMes(false) }
   }
 
-  // Distribui a Meta R$ de cada mês (com valor) pelos percentuais informados; "Outros" fica com o restante.
+  // Distribui a Meta R$ de cada mês pelos percentuais informados; "Outros" fica com o restante. O % fica gravado
+  // em todos os meses (inclusive sem Meta ainda): quando a Meta for lançada/alterada, os valores se recalculam.
   const aplicarDistribuicaoPct = () => {
     const pm = Number(distPctMarca) || 0, pp = Number(distPctParceira) || 0
     setMesesForm(prev => prev.map(m => {
       const meta = parseBRL(m.meta_faturamento) || 0
-      if (meta <= 0) return m
-      const marca = Math.round(meta * pm) / 100
-      const parceira = Math.round(meta * pp) / 100
-      return { ...m, fat_marca: marca, fat_parceira: parceira }
+      const base = { ...m, fat_marca_pct: pm, fat_parceira_pct: pp }
+      if (meta <= 0) return base
+      return { ...base, fat_marca: valorFatDe(pm, meta), fat_parceira: valorFatDe(pp, meta) }
     }))
     setDistAberto(false)
   }
@@ -1116,11 +1172,21 @@ export default function MetasPecas({ empresaExterna = null, anoExterno = null, a
               {/* Colaborador */}
               <div>
                 <label className={LBL}>Colaborador *</label>
-                {(!form.empresa_id || modoModal !== 'incluir') ? (
-                  <div className={`${SEL} bg-slate-100 text-slate-500 cursor-not-allowed`}>
-                    {form.colaborador_id === 'A_CONTRATAR' ? 'A contratar' : (form.colaborador_nome || '—')}
+                {(!form.empresa_id || (modoModal !== 'incluir' && !(modoModal === 'editar' && trocaColab))) ? (
+                  <div className="flex items-center gap-2">
+                    <div className={`${SEL} bg-slate-100 text-slate-500 cursor-not-allowed flex-1`}>
+                      {form.colaborador_id === 'A_CONTRATAR' ? 'A contratar' : (form.colaborador_nome || '—')}
+                    </div>
+                    {modoModal === 'editar' && podeTrocarColab && form.empresa_id && (
+                      <button type="button" className={BTN_SEC} title="Trocar o colaborador deste lançamento (valores mantidos; volta a pendente de aprovação)"
+                        onClick={() => setTrocaColab({ antigoId: form.colaborador_id, snapshot: { colaborador_id: form.colaborador_id, colaborador_nome: form.colaborador_nome, cargo_id: form.cargo_id, cargo_nome: form.cargo_nome, setor_id: form.setor_id, setor_nome: form.setor_nome, box_id: form.box_id, box_nome: form.box_nome } })}>
+                        Trocar
+                      </button>
+                    )}
                   </div>
                 ) : (
+                  <div className="flex items-center gap-2">
+                  <div className="flex-1 min-w-0">
                   <SearchCombobox
                     value={form.colaborador_id}
                     onChange={(id) => handleFormChange({ target: { name: 'colaborador_id', value: id } })}
@@ -1141,6 +1207,14 @@ export default function MetasPecas({ empresaExterna = null, anoExterno = null, a
                     }}
                     getSearchText={(o) => `${o.nome_funcionario} ${cargosPorId[o.cargo_id]?.nome_cargo || ''}`}
                   />
+                  </div>
+                  {trocaColab && (
+                    <button type="button" className={BTN_SEC} title="Desfazer a troca e voltar ao colaborador original"
+                      onClick={() => { setForm(prev => ({ ...prev, ...trocaColab.snapshot })); setTrocaColab(null) }}>
+                      Cancelar troca
+                    </button>
+                  )}
+                  </div>
                 )}
               </div>
 
@@ -1183,7 +1257,7 @@ export default function MetasPecas({ empresaExterna = null, anoExterno = null, a
                               : <td key={i} className="bg-white border border-slate-200 rounded p-1">
                                   <MetaInput
                                     value={m.meta_faturamento}
-                                    onChange={val => setMesesForm(prev => prev.map((x, xi) => xi === i ? { ...x, meta_faturamento: val } : x))}
+                                    onChange={val => setMesesForm(prev => prev.map((x, xi) => xi === i ? atualizarCampoFat(x, 'meta_faturamento', val) : x))}
                                   />
                                 </td>
                         ))}
@@ -1307,7 +1381,7 @@ export default function MetasPecas({ empresaExterna = null, anoExterno = null, a
                             return modoModal === 'visualizar'
                               ? <td key={i} className="bg-slate-100 border border-slate-200 rounded p-1 text-right text-xs text-slate-600 font-mono px-2">{m[campo] === '' || m[campo] == null ? '—' : formatBRL(m[campo])}</td>
                               : <td key={i} className={`border rounded p-1 ${estourou ? 'bg-red-50 border-red-300' : 'bg-white border-slate-200'}`}>
-                                  <MetaInput value={m[campo]} onChange={val => setMesesForm(prev => prev.map((x, xi) => xi === i ? { ...x, [campo]: val } : x))} />
+                                  <MetaInput value={m[campo]} onChange={val => setMesesForm(prev => prev.map((x, xi) => xi === i ? atualizarCampoFat(x, campo, val) : x))} />
                                 </td>
                           })}
                           <td className="bg-indigo-50 border border-indigo-200 rounded p-1 text-right text-xs font-bold text-indigo-700 font-mono">
