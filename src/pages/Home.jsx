@@ -3,7 +3,7 @@ import { useSessionState } from '../hooks/useSessionState'
 import { useNavigate } from 'react-router-dom'
 import {
   ClipboardCheck, AlertTriangle, ChevronRight, KeyRound,
-  Settings, Wallet, Target, ClipboardList, FolderKanban, Calculator, BookOpen,
+  Settings, Target, ClipboardList, FolderKanban, Calculator, BookOpen,
   Folder, FileText, X, PieChart, GraduationCap, ExternalLink,
 } from 'lucide-react'
 import { apiService } from '../services/api'
@@ -14,11 +14,10 @@ const DIAS_LIMITE_SENHA = 30
 
 const GRUPO_ICONES = {
   '_config': Settings,
-  '_comissoes-calculo': Wallet,
+  '_comissoes-calculo': Calculator,
   '_metas': Target,
   '_controle-processos': ClipboardList,
   '_gestao-projetos': FolderKanban,
-  '_calculadoras': Calculator,
   '_documentacoes': BookOpen,
   '_bi': PieChart,
   '_treinamentos': GraduationCap,
@@ -36,7 +35,6 @@ const GRUPO_CORES = {
   '_metas':               { grad: 'from-amber-400 to-amber-600',    ring: 'border-amber-400 ring-amber-200',    accent: 'border-l-amber-400',   headerBg: 'bg-amber-50',   headerBorder: 'border-amber-100',   pill: 'bg-amber-100 text-amber-700',    chevron: 'text-amber-300' },
   '_controle-processos':  { grad: 'from-purple-400 to-purple-600',  ring: 'border-purple-400 ring-purple-200',  accent: 'border-l-purple-400',  headerBg: 'bg-purple-50',  headerBorder: 'border-purple-100',  pill: 'bg-purple-100 text-purple-700',  chevron: 'text-purple-300' },
   '_gestao-projetos':     { grad: 'from-indigo-400 to-indigo-600',  ring: 'border-indigo-400 ring-indigo-200',  accent: 'border-l-indigo-400',  headerBg: 'bg-indigo-50',  headerBorder: 'border-indigo-100',  pill: 'bg-indigo-100 text-indigo-700',  chevron: 'text-indigo-300' },
-  '_calculadoras':        { grad: 'from-pink-400 to-pink-600',      ring: 'border-pink-400 ring-pink-200',      accent: 'border-l-pink-400',    headerBg: 'bg-pink-50',    headerBorder: 'border-pink-100',    pill: 'bg-pink-100 text-pink-700',      chevron: 'text-pink-300' },
   '_documentacoes':       { grad: 'from-orange-400 to-orange-600',  ring: 'border-orange-400 ring-orange-200',  accent: 'border-l-orange-400',  headerBg: 'bg-orange-50',  headerBorder: 'border-orange-100',  pill: 'bg-orange-100 text-orange-700',  chevron: 'text-orange-300' },
   '_bi':                  { grad: 'from-teal-400 to-teal-600',      ring: 'border-teal-400 ring-teal-200',      accent: 'border-l-teal-400',    headerBg: 'bg-teal-50',    headerBorder: 'border-teal-100',    pill: 'bg-teal-100 text-teal-700',      chevron: 'text-teal-300' },
   '_treinamentos':        { grad: 'from-violet-400 to-violet-600',  ring: 'border-violet-400 ring-violet-200',  accent: 'border-l-violet-400',  headerBg: 'bg-violet-50',  headerBorder: 'border-violet-100',  pill: 'bg-violet-100 text-violet-700',  chevron: 'text-violet-300' },

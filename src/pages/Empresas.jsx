@@ -49,6 +49,7 @@ export default function Empresas() {
     numero_filial: '',
     inscricao_estadual: '',
     empresa_visual: false,
+    processa_comissoes: false,
     endereco: '',
     numero: '',
     bairro: '',
@@ -127,6 +128,7 @@ export default function Empresas() {
       numero_filial: '',
       inscricao_estadual: '',
       empresa_visual: false,
+      processa_comissoes: false,
       endereco: '',
       numero: '',
       bairro: '',
@@ -161,6 +163,7 @@ export default function Empresas() {
       numero_filial: item.numero_filial || '',
       inscricao_estadual: item.inscricao_estadual || '',
       empresa_visual: !!item.empresa_visual,
+      processa_comissoes: !!item.processa_comissoes,
       endereco: item.endereco || '',
       numero: item.numero || '',
       bairro: item.bairro || '',
@@ -205,6 +208,7 @@ export default function Empresas() {
       numero_filial: form.numero_filial || null,
       inscricao_estadual: form.inscricao_estadual || null,
       empresa_visual: !!form.empresa_visual,
+      processa_comissoes: !!form.processa_comissoes,
       endereco: form.endereco || null,
       numero: form.numero || null,
       bairro: form.bairro || null,
@@ -499,6 +503,16 @@ export default function Empresas() {
                       className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                     />
                     <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Empresa Visual</span>
+                  </label>
+                  {/* Liga a empresa nas telas de Comissões (DAF/HONDA/Prestadores) e no Processamento de Comissões. */}
+                  <label className="flex items-center gap-2 self-end pb-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={!!form.processa_comissoes}
+                      onChange={e => setForm(prev => ({ ...prev, processa_comissoes: e.target.checked }))}
+                      className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Processa Comissões</span>
                   </label>
                 </div>
 
@@ -838,6 +852,7 @@ export default function Empresas() {
                     <Campo label="Inscrição Estadual (I.E.)" valor={v.inscricao_estadual} mono />
                     <Campo label="Código Concessionária Fabricante" valor={v.codigo_concessionaria} mono />
                     <Campo label="Empresa Visual" valor={v.empresa_visual ? 'Sim' : 'Não'} />
+                    <Campo label="Processa Comissões" valor={v.processa_comissoes ? 'Sim' : 'Não'} />
                     <div className="col-span-2 grid grid-cols-3 gap-4">
                       <Campo label="Agrupamento Empresas" valor={v.agrupamento_nome} />
                       <Campo label="Segmento" valor={v.segmento_nome} />

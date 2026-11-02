@@ -31,6 +31,8 @@ import Rubricas from './pages/Rubricas'
 import BasesCalculo from './pages/BasesCalculo'
 import PoliticaComissao from './pages/PoliticaComissao'
 import RegrasFaixas from './pages/RegrasFaixas'
+import RegrasPJ from './pages/RegrasPJ'
+import MinhaNotaFiscal from './pages/MinhaNotaFiscal'
 import CargosRemuneracoes from './pages/CargosRemuneracoes'
 import FontesDados from './pages/FontesDados'
 import Ferias from './pages/Ferias'
@@ -233,6 +235,8 @@ export default function App() {
           { path: '/bases-calculo', element: <BasesCalculo />, menuPath: 'bases-calculo' },
           { path: '/politica-comissao', element: <PoliticaComissao />, menuPath: 'politica-comissao' },
           { path: '/regras-faixas', element: <RegrasFaixas />, menuPath: 'regras-faixas' },
+          { path: '/regras-pj', element: <RegrasPJ />, menuPath: 'regras-pj' },
+          { path: '/descontos-pj', element: <RegrasPJ descontos />, menuPath: 'descontos-pj' },
           { path: '/cargos-remuneracoes', element: <CargosRemuneracoes />, menuPath: 'cargos-remuneracoes' },
           // Link antigo (tela única com abas) — manda pro primeiro item da sequência.
           { path: '/regras-comissoes', element: <Navigate to="/tipos-processo" replace /> },
@@ -250,9 +254,11 @@ export default function App() {
           // Comissões) — mesma permissão de Sobreaviso/Plantão (ação 'configurar_valores' já
           // controla edição x só-leitura dentro da própria tela).
           { path: '/calculo-comissoes', element: <CalculoComissoes />, menuPath: 'calculo-comissoes' },
-          { path: '/calculo-comissoes-manual', element: <CalculoComissoesManual />, menuPath: ['calculo-comissoes', 'calculo-comissoes-motos'] },
+          { path: '/calculo-comissoes-manual', element: <CalculoComissoesManual />, menuPath: ['calculo-comissoes', 'calculo-comissoes-motos', 'calculo-comissoes-grupo'] },
           { path: '/calculo-comissoes-motos', element: <CalculoComissoes agrupamentoNome="Caiobá Motos" titulo="Comissões - HONDA" permissao="calculo-comissoes-motos" />, menuPath: 'calculo-comissoes-motos' },
+          { path: '/calculo-comissoes-grupo', element: <CalculoComissoes agrupamentoNome="Outras Caiobá" titulo="Prestadores de Serviços" permissao="calculo-comissoes-grupo" />, menuPath: 'calculo-comissoes-grupo' },
           { path: '/processamento-comissoes', element: <HistoricoComissoes />, menuPath: 'processamento-comissoes' },
+          { path: '/minha-nota-fiscal', element: <MinhaNotaFiscal />, menuPath: 'minha-nota-fiscal' },
           { path: '/processamento-comissoes-manual', element: <HistoricoComissoesManual />, menuPath: 'processamento-comissoes' },
           // Link antigo (tela única com abas) — manda pro primeiro item da sequência.
           { path: '/folha-pagamento-daf', element: <Navigate to="/ferias" replace /> },

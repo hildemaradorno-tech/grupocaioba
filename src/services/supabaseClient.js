@@ -948,7 +948,7 @@ export const apiService = {
     return data || []
   },
 
-  createEmpresa: async ({ agrupamento_empresa_id, agrupamento_nome, segmento_id, segmento_nome, codigo_empresa, codigo_empresa_dominio, sigla_empresa, nome_empresa, empresa_fantasia, marca, cnpj, codigo_concessionaria, nome_empresa_sistema, sistema_dms, numero_filial, inscricao_estadual, endereco, numero, bairro, cep, cidade, uf, telefone, banco, agencia, conta, empresa_visual, ativo }) => {
+  createEmpresa: async ({ agrupamento_empresa_id, agrupamento_nome, segmento_id, segmento_nome, codigo_empresa, codigo_empresa_dominio, sigla_empresa, nome_empresa, empresa_fantasia, marca, cnpj, codigo_concessionaria, nome_empresa_sistema, sistema_dms, numero_filial, inscricao_estadual, endereco, numero, bairro, cep, cidade, uf, telefone, banco, agencia, conta, empresa_visual, processa_comissoes, ativo }) => {
     const { data, error } = await supabase
       .from('dim_empresas')
       .insert([{
@@ -979,6 +979,7 @@ export const apiService = {
         agencia: agencia || null,
         conta: conta || null,
         empresa_visual: !!empresa_visual,
+        processa_comissoes: !!processa_comissoes,
         ativo: ativo ?? true
       }])
       .select()
@@ -996,7 +997,7 @@ export const apiService = {
     return data?.[0]
   },
 
-  updateEmpresa: async (id, { agrupamento_empresa_id, agrupamento_nome, segmento_id, segmento_nome, codigo_empresa, codigo_empresa_dominio, sigla_empresa, nome_empresa, empresa_fantasia, marca, cnpj, codigo_concessionaria, nome_empresa_sistema, sistema_dms, numero_filial, inscricao_estadual, endereco, numero, bairro, cep, cidade, uf, telefone, banco, agencia, conta, empresa_visual, ativo }) => {
+  updateEmpresa: async (id, { agrupamento_empresa_id, agrupamento_nome, segmento_id, segmento_nome, codigo_empresa, codigo_empresa_dominio, sigla_empresa, nome_empresa, empresa_fantasia, marca, cnpj, codigo_concessionaria, nome_empresa_sistema, sistema_dms, numero_filial, inscricao_estadual, endereco, numero, bairro, cep, cidade, uf, telefone, banco, agencia, conta, empresa_visual, processa_comissoes, ativo }) => {
     const { data, error } = await supabase
       .from('dim_empresas')
       .update({
@@ -1027,6 +1028,7 @@ export const apiService = {
         agencia: agencia || null,
         conta: conta || null,
         empresa_visual: !!empresa_visual,
+        processa_comissoes: !!processa_comissoes,
         ativo: ativo ?? true
       })
       .eq('id', id)
@@ -1404,6 +1406,89 @@ export const apiService = {
     return data?.[0]
   },
 
+  // COPARTICIPAÇÃO (Regra PJ): valor do boleto lançado por regra × funcionário × mês ('YYYY-MM').
+  getCoparticipacaoLancamentos: async (periodo) => {
+    const { data, error } = await supabase
+      .from('pj_coparticipacao_lancamentos')
+      .select('regra_id, funcionario_id, valor_boleto')
+      .eq('periodo', periodo)
+    if (error) throw error
+    return data || []
+  },
+
+  salvarCoparticipacaoLancamento: async ({ regraId, funcionarioId, periodo, valorBoleto }) => {
+    if (valorBoleto == null) {
+      const { error } = await supabase
+        .from('pj_coparticipacao_lancamentos')
+        .delete()
+        .eq('regra_id', regraId).eq('funcionario_id', funcionarioId).eq('periodo', periodo)
+      if (error) throw error
+      return { success: true }
+    }
+    const { error } = await supabase
+      .from('pj_coparticipacao_lancamentos')
+      .upsert({ regra_id: regraId, funcionario_id: funcionarioId, periodo, valor_boleto: valorBoleto, atualizado_em: new Date().toISOString() },
+        { onConflict: 'regra_id,funcionario_id,periodo' })
+    if (error) throw error
+    return { success: true }
+  },
+
+  // ANEXOS PJ (tabela pj_anexos + bucket privado 'pj-anexos', caminho {funcionario_id}/{periodo}/...):
+  // documentos exigidos pelas Regras PJ (tipo DOCUMENTO) e Notas Fiscais do prestador (tipo NF).
+  getPjAnexos: async ({ periodos, funcionarioIds } = {}) => {
+    let q = supabase.from('pj_anexos').select('*').order('enviado_em')
+    if (periodos?.length) q = q.in('periodo', periodos)
+    if (funcionarioIds?.length) q = q.in('funcionario_id', funcionarioIds)
+    const { data, error } = await q
+    if (error) throw error
+    return data || []
+  },
+
+  uploadPjAnexo: async ({ funcionarioId, periodo, tipo, regraId = null, documento = null, cnpj = null, empresaNome = null, file }) => {
+    if (!['application/pdf', 'image/png', 'image/jpeg'].includes(file.type)) throw new Error('envie um PDF ou imagem (PNG/JPG).')
+    if (file.size > 5 * 1024 * 1024) throw new Error('o arquivo passa de 5 MB.')
+    const ext = (file.name?.split('.').pop() || 'pdf').toLowerCase()
+    const path = `${funcionarioId}/${periodo}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`
+    const { error: eUp } = await supabase.storage.from('pj-anexos').upload(path, file, { contentType: file.type })
+    if (eUp) throw eUp
+    const { data: sessao } = await supabase.auth.getSession()
+    const { data, error } = await supabase.from('pj_anexos').insert({
+      funcionario_id: funcionarioId, periodo, tipo, regra_id: regraId, documento, cnpj, empresa_nome: empresaNome,
+      nome_arquivo: file.name, path, tamanho: file.size, content_type: file.type,
+      enviado_por: sessao?.session?.user?.email || null,
+    }).select().single()
+    if (error) {
+      await supabase.storage.from('pj-anexos').remove([path])
+      throw error
+    }
+    return data
+  },
+
+  removerPjAnexo: async (anexo) => {
+    const { error } = await supabase.from('pj_anexos').delete().eq('id', anexo.id)
+    if (error) throw error
+    await supabase.storage.from('pj-anexos').remove([anexo.path])
+    return { success: true }
+  },
+
+  // URL assinada (10 min) pra visualizar; com download = true o navegador baixa com o nome original.
+  urlPjAnexo: async (anexo, { download = false } = {}) => {
+    const { data, error } = await supabase.storage.from('pj-anexos')
+      .createSignedUrl(anexo.path, 600, download ? { download: anexo.nome_arquivo || true } : undefined)
+    if (error) throw error
+    return data.signedUrl
+  },
+
+  // Bucket privado: abre o arquivo por URL assinada (10 min). A aba abre antes do await
+  // (ainda dentro do clique) pra o navegador não bloquear como pop-up.
+  abrirPjAnexo: async (anexo) => {
+    const aba = window.open('about:blank', '_blank')
+    const { data, error } = await supabase.storage.from('pj-anexos').createSignedUrl(anexo.path, 600)
+    if (error) { aba?.close(); throw error }
+    if (aba) aba.location.href = data.signedUrl
+    else window.location.assign(data.signedUrl)
+  },
+
   deletePoliticaComissao: async (id) => {
     const { error } = await supabase
       .from('fato_politica_comissao')
@@ -1576,6 +1661,32 @@ export const apiService = {
       servicos: Number(r.meta_servicos) || 0,
     }
     return mapa
+  },
+
+  // Meta de Pós-Vendas por EMPRESA no mês (Regra PJ "Bonificação por Meta") — { [empresa_id]:
+  // { balcao, oficina, funilaria } }. Mecânico e Consultor repartem a MESMA meta da oficina entre
+  // pessoas diferentes, então a oficina vem de um tipo só (Mecânico; Consultor se a loja não tiver).
+  // A meta da oficina já INCLUI a Funilaria/Pintura (ex: CG Trucks out/26: 2.095.660 = 1.815.660 +
+  // 280.000) — tira a funilaria dela, pra cada parte marcada na regra contar só uma vez.
+  getMetasEmpresasPeriodo: async (empresaIds, ano, mes) => {
+    if (!empresaIds?.length) return {}
+    const { data, error } = await supabase
+      .from('fato_metas_publicadas')
+      .select('empresa_id, tipo, meta_faturamento')
+      .eq('ano', ano).eq('mes', mes)
+      .in('empresa_id', empresaIds)
+      .in('tipo', ['pecas', 'mecanico', 'consultor', 'funilaria'])
+    if (error) throw error
+    const soma = {}
+    for (const r of data || []) {
+      const e = soma[r.empresa_id] || (soma[r.empresa_id] = { pecas: 0, mecanico: 0, consultor: 0, funilaria: 0 })
+      e[r.tipo] += Number(r.meta_faturamento) || 0
+    }
+    return Object.fromEntries(Object.entries(soma).map(([id, e]) => [id, {
+      balcao: e.pecas,
+      oficina: Math.max(0, (e.mecanico || e.consultor) - e.funilaria),
+      funilaria: e.funilaria,
+    }]))
   },
 
   // "Meta de Equipe" de uma Regra (meta_equipe_agrupamento_ids preenchido): soma as metas
@@ -2121,17 +2232,21 @@ export const apiService = {
   // fora do filtro atual (salvos numa leva anterior) ficam intactos. A limpeza é por intervalo
   // (não igualdade exata) porque cada registro pode cobrir um segmento menor do período — ex:
   // funcionário com férias no meio do mês gera dois registros com datas parciais.
-  salvarComissoesCalculadas: async (registros, lotePeriodoInicio, lotePeriodoFim) => {
+  // politicaIds (opcional): salvar só algumas comissões (filtro Comissão da tela) — apaga e regrava
+  // só essas políticas do funcionário; as outras comissões dele no período ficam como estavam.
+  salvarComissoesCalculadas: async (registros, lotePeriodoInicio, lotePeriodoFim, politicaIds = null) => {
     const periodoInicio = lotePeriodoInicio || registros[0]?.periodo_inicio
     const periodoFim = lotePeriodoFim || registros[0]?.periodo_fim
     const funcionarioIds = [...new Set(registros.map(r => r.funcionario_id).filter(Boolean))]
     if (periodoInicio && periodoFim && funcionarioIds.length > 0) {
-      const { error: eDel } = await supabase
+      let del = supabase
         .from('fato_comissoes_calculadas')
         .delete()
         .gte('periodo_inicio', periodoInicio)
         .lte('periodo_fim', periodoFim)
         .in('funcionario_id', funcionarioIds)
+      if (politicaIds?.length) del = del.in('politica_id', politicaIds)
+      const { error: eDel } = await del
       if (eDel) throw eDel
     }
     const { data, error } = await supabase

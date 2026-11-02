@@ -1,16 +1,22 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useSessionState } from '../hooks/useSessionState'
-import { PlayCircle, Loader2, AlertTriangle, Save, X, ShieldCheck, Lock, ArrowUp, ArrowDown, ArrowUpDown, Trash2, ChevronRight, ChevronLeft, FileDown, Calculator, Wallet, RefreshCw, CheckCircle2, BookOpen } from 'lucide-react'
+import { PlayCircle, Loader2, AlertTriangle, Save, X, ShieldCheck, Lock, ArrowUp, ArrowDown, ArrowUpDown, Trash2, ChevronRight, ChevronLeft, ChevronDown, FileDown, FileText, Calculator, Wallet, RefreshCw, CheckCircle2, BookOpen, Paperclip } from 'lucide-react'
 import { apiService } from '../services/api'
 import { useAuth } from '../context/AuthContext'
+import TabelaBonificacao from '../components/TabelaBonificacao'
+import TabelaPercentualPJ from '../components/TabelaPercentualPJ'
 import { passaEscopoComissao, setorSoVisualizacao, empresaNoEscopoComissao } from '../utils/permissoesComissao'
 import { FeriasStatusProvider, useFeriasStatus } from '../context/FeriasStatusContext'
-import { fmtBRL, fmtPct, fmtDiaMes, TIPOS_META_LABEL, CAMPO_META_LABEL, faixasDaRegra, ROTULO_ACAO_HISTORICO, codigoPolitica, compararCodigoPolitica, comissaoComCodigo } from '../utils/comissoesFormat'
+import { fmtBRL, fmtPct, fmtDiaMes, TIPOS_META_LABEL, CAMPO_META_LABEL, faixasDaRegra, ROTULO_ACAO_HISTORICO, codigoPolitica, compararCodigoPolitica, comissaoComCodigo, ordenarColunasBase } from '../utils/comissoesFormat'
 import { gerarPdfComissoes, paraNomeArquivo } from '../utils/comissoesPdf'
 import FiltroMultiSelect from '../components/FiltroMultiSelect'
 import { rotuloColuna } from '../utils/rotuloColuna'
-import { funcionarioAtivoComissao, resolvePoliticas, fonteDaPolitica, politicaConfigurada, empresaSelecionavel } from '../utils/comissoesElegibilidade'
+import { funcionarioAtivoComissao, resolvePoliticas, fonteDaPolitica, politicaConfigurada, empresaProcessaComissao } from '../utils/comissoesElegibilidade'
+import { montarPercentualPj } from '../utils/regrasPj'
+import { montarHtmlNotaFiscal, montarNotaFiscalPj } from '../utils/notaFiscalPj'
+import TabelaNotaFiscal from '../components/TabelaNotaFiscal'
+import AnexoPjSlot from '../components/AnexoPjSlot'
 
 // Sentinela pra funcionário sem setor algum (setor_ids vazio) — sem isso não tem como
 // selecionar essa "aba" na tela pra conferir/excluir o histórico desse grupo.
@@ -60,6 +66,34 @@ const juntaUnicos = (arr) => [...new Set(arr.filter(Boolean))].sort((a, b) => a.
 // férias quebram o período em pedaços (quem não recebe comissão de férias).
 const chaveLinha = (c) => `${c.func.id}::${c.politica.id}::${c.segInicio || ''}::${c.segFim || ''}`
 
+// Regra PJ "Coparticipação": o boleto lançado no mês fica por funcionário × regra (não por segmento de férias).
+const chaveBoleto = (c) => `${c.func.id}::${c.politica.grupo_politica_id || c.politica.id}`
+// Aplica o % da regra sobre o boleto e divide em partes iguais entre as empresas (em centavos; a sobra
+// de centavos vai pra última empresa, então a soma das partes fecha sempre com o total).
+const dividirCoparticipacao = (politica, boleto) => {
+  const cfg = politica.pj_coparticipacao || {}
+  const pct = Number(cfg.percentual) || 0
+  const empresas = cfg.empresas || []
+  const centavosTotal = Math.round((Number(boleto) || 0) * pct)
+  const n = empresas.length || 1
+  const parte = Math.floor(centavosTotal / n)
+  const lista = empresas.map((e, i) => {
+    const v = (i === n - 1 ? centavosTotal - parte * (n - 1) : parte) / 100
+    return { empresa: e.empresa_nome, valorBase: v, valorComissao: v }
+  })
+  return { total: centavosTotal / 100, pct, lista }
+}
+
+// Desconto PJ de valor fixo rateado: divide em partes iguais (centavos; sobra na última) — negativo.
+const ratearDesconto = (valor, empresas) => {
+  const centavos = Math.round((Number(valor) || 0) * 100)
+  const n = empresas.length || 1
+  const parte = Math.floor(centavos / n)
+  return empresas.map((e, i) => {
+    const v = -((i === n - 1 ? centavos - parte * (n - 1) : parte) / 100)
+    return { empresa: e.empresa_nome, valorBase: -v, valorComissao: v }
+  })
+}
 
 const addDias = (iso, n) => {
   const [y, m, d] = iso.split('-').map(Number)
@@ -116,6 +150,11 @@ const regrasDoGrupo = (itens) => {
 // Aplica o percentual/valor fixo da política sobre um valor base já apurado — usado tanto pro
 // total da linha quanto pro detalhamento por empresa (mesma regra, valor base diferente).
 function calcularComissaoSobre(c, valorBase, metaMap, baseComissaoMetaMap) {
+  // Regra PJ: paga o valor fixo da prestação de serviços (não lê Base nenhuma).
+  if (c.politica.prestacao_pj) {
+    const valorFixo = parseFloat(c.politica.comissao_valor) || 0
+    return { percentual: null, valorFixo, valorComissao: valorFixo, valorApurado: valorFixo, valorBruto: valorFixo, descontoPct: 0 }
+  }
   // Desconto configurado na própria Base de Cálculo (ex: 14,25% de imposto de venda) — vale
   // SEMPRE que essa Base for usada (política com % fixo, R$ Valor, ou qualquer Regra por faixa),
   // tirando esse % do valor bruto lido antes de qualquer cálculo. A partir daqui trabalha com o
@@ -203,7 +242,7 @@ const tipoComissaoPorBase = (c) => {
 // duplicar ~1900 linhas de lógica de lote/departamento/PDF (só essa 1 filtragem muda entre as
 // duas). Chaves de sessão (período) ganham sufixo quando não é o padrão, pra cada aba guardar seu
 // próprio período sem um sobrescrever o outro no localStorage.
-// permissao: menu/ações da tela — 'calculo-comissoes' (DAF) ou 'calculo-comissoes-motos' (HONDA).
+// permissao: menu/ações da tela — 'calculo-comissoes' (DAF), 'calculo-comissoes-motos' (HONDA) ou 'calculo-comissoes-grupo' (GRUPO).
 function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo = 'Comissões - DAF', permissao = 'calculo-comissoes' } = {}) {
   const { user, userNome, userNomeCompleto, hasAction, comissaoEscopoEfetivo, comissaoNivelSetorEfetivo } = useAuth()
   const podeCalcular = hasAction(permissao, 'calcular')
@@ -214,6 +253,8 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
   // Quem fez a ação (calculou/conferiu/processou/importou): nome do usuário; e-mail só se não tiver nome.
   const usuarioLabel = userNomeCompleto || userNome || user?.email || 'desconhecido'
 
+  // Comissões - GRUPO: cabeçalhos próprios (Base / Valor Serviços).
+  const ehTelaGrupo = permissao === 'calculo-comissoes-grupo'
   const sufixoSessao = agrupamentoNome === 'Caiobá Trucks' ? '' : `_${agrupamentoNome.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`
   const [periodoInicio, setPeriodoInicio] = useSessionState(`calccom_ini${sufixoSessao}`, '')
   const [periodoFim, setPeriodoFim] = useSessionState(`calccom_fim${sufixoSessao}`, '')
@@ -242,6 +283,14 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
   // chaveLinha(c) -> [{ empresa, valorBase, valorComissao }]. Só existe em memória depois de
   // Calcular nesta sessão; não é salvo no banco (é um detalhe de auditoria do total já salvo).
   const [detalhePorEmpresa, setDetalhePorEmpresa] = useState({})
+  // Boletos lançados das Regras PJ "Coparticipação" no mês — chaveBoleto(c) -> valor total do boleto (R$).
+  const [boletosCop, setBoletosCop] = useState({})
+  // Anexos PJ do mês (pj_anexos): documentos exigidos pelas Regras PJ (pj_documentos). docsModal = linha
+  // (candidato) com o modal de documentos aberto.
+  const [anexosPj, setAnexosPj] = useState([])
+  const [docsModal, setDocsModal] = useState(null)
+  // Janela "Faltam documentos" — aberta ao clicar em Conferir Comissões com documento pendente.
+  const [pendenciasAberta, setPendenciasAberta] = useState(false)
 
   // Filtros aplicados ANTES de calcular — servem pra escolher quem entra na conta,
   // e também são a base pra quando os acessos por setor/gerente forem liberados depois.
@@ -267,6 +316,64 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
   const periodoValido = periodoInicio && periodoFim && periodoInicio <= periodoFim && mesmoMes(periodoInicio, periodoFim)
   const periodoMesesDiferentes = periodoInicio && periodoFim && !mesmoMes(periodoInicio, periodoFim)
   const loteBloqueado = lote && lote.status !== 'RASCUNHO'
+
+  // Boletos já lançados no mês (Regra PJ Coparticipação) — preenchem o campo de cada prestador.
+  useEffect(() => {
+    if (!periodoValido) { setBoletosCop({}); return }
+    let ativo = true
+    apiService.getCoparticipacaoLancamentos(periodoInicio.slice(0, 7))
+      .then(lista => { if (ativo) setBoletosCop(Object.fromEntries(lista.map(l => [`${l.funcionario_id}::${l.regra_id}`, Number(l.valor_boleto)]))) })
+      .catch(() => { if (ativo) setBoletosCop({}) })
+    return () => { ativo = false }
+  }, [periodoValido, periodoInicio])
+
+  const carregarAnexosPj = async () => {
+    if (!periodoValido) { setAnexosPj([]); return }
+    try {
+      setAnexosPj(await apiService.getPjAnexos({ periodos: [periodoInicio.slice(0, 7)] }))
+    } catch {
+      setAnexosPj([])
+    }
+  }
+  useEffect(() => { carregarAnexosPj() }, [periodoValido, periodoInicio]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Grava o boleto lançado e já mostra o valor calculado da linha (a conta é local, não lê Base nenhuma).
+  const aplicarBoletoCop = async (c, texto) => {
+    const bruto = String(texto ?? '').trim().replace(',', '.')
+    const num = bruto === '' ? null : Number(bruto)
+    const valor = num != null && Number.isFinite(num) && num > 0 ? Math.round(num * 100) / 100 : null
+    const chave = chaveBoleto(c)
+    if ((boletosCop[chave] ?? null) === valor) return
+    setBoletosCop(prev => ({ ...prev, [chave]: valor }))
+    const k = chaveLinha(c)
+    if (valor == null) {
+      setValoresPorFuncionario(prev => { const n = { ...prev }; delete n[k]; return n })
+      setDetalhePorEmpresa(prev => { const n = { ...prev }; delete n[k]; return n })
+    } else if (periodoValido && c.politica.pj_desconto) {
+      setValoresPorFuncionario(prev => ({ ...prev, [k]: {
+        valorBase: valor, valorApurado: undefined, valorBruto: valor, descontoPct: 0,
+        valorComissao: -valor, percentual: null, valorFixo: null, semMeta: false, percentualAtingido: null, meta: null,
+        valorPorColuna: [{ coluna: 'Valor lançado no mês', valor }], bonificacao: null, percentualPj: null,
+        periodoInicio: c.segInicio || periodoInicio, periodoFim: c.segFim || periodoFim, segmentos: null,
+      } }))
+    } else if (periodoValido) {
+      const cop = dividirCoparticipacao(c.politica, valor)
+      setValoresPorFuncionario(prev => ({ ...prev, [k]: {
+        valorBase: valor, valorApurado: undefined, valorBruto: valor, descontoPct: 0,
+        valorComissao: cop.total, percentual: cop.pct, valorFixo: null, semMeta: false, percentualAtingido: null, meta: null,
+        valorPorColuna: [{ coluna: 'Boleto lançado', valor }], bonificacao: null, percentualPj: null,
+        periodoInicio: c.segInicio || periodoInicio, periodoFim: c.segFim || periodoFim, segmentos: null,
+      } }))
+      setDetalhePorEmpresa(prev => ({ ...prev, [k]: cop.lista }))
+    }
+    try {
+      await apiService.salvarCoparticipacaoLancamento({
+        regraId: c.politica.grupo_politica_id || c.politica.id, funcionarioId: c.func.id, periodo: periodoInicio.slice(0, 7), valorBoleto: valor,
+      })
+    } catch (err) {
+      setErro(`Não foi possível gravar o boleto: ${err.message || err}`)
+    }
+  }
 
   // Move o período inteiro pro mês anterior/seguinte, sempre preenchendo do dia 1 ao último dia.
   const mudarMes = (delta) => {
@@ -411,6 +518,10 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
             totalLinhasFiltradas: s.total_linhas_filtradas,
             periodoInicio: s.periodo_inicio,
             periodoFim: s.periodo_fim,
+            // Bonificação por Meta: tabela Meta × Realizado salva no cálculo.
+            bonificacao: s.detalhe_calculo?.bonificacao || null,
+            percentualPj: s.detalhe_calculo?.percentualPj || null,
+            valorPorColuna: s.detalhe_calculo?.valorPorColuna || null,
           }
           if (s.detalhe_empresas) detalhePorLinha[chave] = s.detalhe_empresas
         }
@@ -459,6 +570,7 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
   // pergunta antes (fácil esquecer quando o funcionário ainda não tem data de demissão).
   const handleConferir = async (respostaRescisao) => {
     if (!lote) return
+    if (documentosPendentes.length > 0) { setPendenciasAberta(true); return }
     const individual = !!lote.funcionario_id
     if (individual && respostaRescisao === undefined && !rescisaoIndividual) {
       setPerguntaRescisaoAberta(true)
@@ -655,7 +767,7 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
         // Cada aba (Trucks/Motos) só enxerga funcionários de empresas do próprio agrupamento —
         // sem isso, a contagem de "Calcular Comissões (N)" e tudo mais ficava misturando os dois
         // grupos sempre que nenhuma Empresa estivesse selecionada ainda.
-        if (empresa?.agrupamento_nome !== agrupamentoNome) return []
+        if (empresa?.agrupamento_nome !== agrupamentoNome || !empresaProcessaComissao(empresa)) return []
         const cargo = cargosMap[func.cargo_id] || null
         const departamentoNomes = nomesDepartamentos(func.departamento_ids)
         const setorNomes = nomesSetores(func.setor_ids)
@@ -703,7 +815,8 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
           // dias de férias — cada pedaço vira uma linha própria, calculada e salva separada.
           // Quem recebe nas férias (ou não tem férias no período) fica com o período cheio.
           .flatMap(linha => {
-            if (!periodoValido) return [{ ...linha, segInicio: periodoInicio, segFim: periodoFim }]
+            // Regra PJ: valor fixo do mês — não quebra por férias (senão pagaria o fixo em cada pedaço).
+            if (!periodoValido || linha.politica.prestacao_pj) return [{ ...linha, segInicio: periodoInicio, segFim: periodoFim }]
             const feriasFunc = feriasNoPeriodo(func, empresa)
             if (feriasFunc.length === 0 || func.recebe_comissao_ferias) {
               return [{ ...linha, segInicio: periodoInicio, segFim: periodoFim }]
@@ -731,9 +844,16 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
       })
   }, [dados, periodoInicio, periodoFim, periodoValido, feriasPorCodigo, comissaoEscopoEfetivo, agrupamentoNome])
 
+  // Rescisão já gerada (lote individual com flag Rescisão, em qualquer etapa) que cruza o período:
+  // o funcionário some da tela de cálculo (tabela e seletor), pra não gerar outro cálculo por cima.
+  // O lote dele continua no Processamento de Comissões.
+  // Exceção: o lote aberto agora (acabou de conferir a rescisão) — continua na tela pra exportar.
+  const funcsComRescisao = useMemo(() => new Set(lotesIndividuais.filter(l => l.rescisao && l.id !== lote?.id).map(l => l.funcionario_id)), [lotesIndividuais, lote])
+
   // Filtros dinâmicos (facetados): as opções de cada seletor são calculadas aplicando todos os
   // OUTROS filtros ativos, menos o dele mesmo.
   const filtrarCandidatos = useMemo(() => (ignorar) => candidatos.filter(c => {
+    if (funcsComRescisao.has(c.func.id)) return false
     if (c.desligado && c.func.id !== filtroFuncionarioId) return false
     if (ignorar === null && filtroFuncionarioId && c.func.id !== filtroFuncionarioId) return false
     if (ignorar !== 'empresa' && filtroEmpresa && (c.empresa?.empresa_fantasia || c.empresa?.nome_empresa) !== filtroEmpresa) return false
@@ -747,7 +867,7 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
       if (!nomesOuSemSetor.some(n => filtrosSetor.includes(n))) return false
     }
     return true
-  }), [candidatos, filtroEmpresa, filtrosSetor, filtroFuncionarioId])
+  }), [candidatos, filtroEmpresa, filtrosSetor, filtroFuncionarioId, funcsComRescisao])
 
   // Só empresas do agrupamento escolhido (prop agrupamentoNome) — cada aba (Trucks/Motos) só
   // mexe nas empresas do próprio grupo, nunca nas do outro. Vem direto do cadastro (dados.empresas),
@@ -755,7 +875,7 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
   // agrupamento recém-começando, como Motos) precisa aparecer no seletor do mesmo jeito, pra dar
   // pra escolher a empresa e ver a pendência, em vez de sumir da lista.
   const empresasUnicas = useMemo(() => juntaUnicos(
-    (dados?.empresas || []).filter(e => e.agrupamento_nome === agrupamentoNome && empresaSelecionavel(e) && empresaNoEscopoComissao(e.id, comissaoEscopoEfetivo)).map(e => e.empresa_fantasia || e.nome_empresa)
+    (dados?.empresas || []).filter(e => e.agrupamento_nome === agrupamentoNome && empresaProcessaComissao(e) && empresaNoEscopoComissao(e.id, comissaoEscopoEfetivo)).map(e => e.empresa_fantasia || e.nome_empresa)
   ), [dados, agrupamentoNome, comissaoEscopoEfetivo])
   // Setores "órfãos": já têm lote salvo pra empresa+período, mas nenhum funcionário elegível
   // neles HOJE (ex: o cargo foi remanejado pra outro setor depois do cálculo). Sem isso, o lote
@@ -924,7 +1044,7 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
     if (!empresaSelecionadaId) return []
     const porFunc = new Map()
     for (const c of candidatos) {
-      if (c.func.empresa_id !== empresaSelecionadaId || porFunc.has(c.func.id)) continue
+      if (c.func.empresa_id !== empresaSelecionadaId || porFunc.has(c.func.id) || funcsComRescisao.has(c.func.id)) continue
       porFunc.set(c.func.id, c)
     }
     return [...porFunc.values()]
@@ -934,7 +1054,7 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
         id: c.func.id,
         label: `${c.func.codigo_funcionario ? `${c.func.codigo_funcionario} — ` : ''}${c.func.nome_funcionario}${c.func.data_demissao ? ` (desligado em ${fmtData(c.func.data_demissao)})` : ''}`,
       }))
-  }, [candidatos, empresaSelecionadaId])
+  }, [candidatos, empresaSelecionadaId, funcsComRescisao])
   const selecionarFuncionario = (id) => {
     setFiltroFuncionarioId(id)
     if (!id) return
@@ -946,10 +1066,10 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
   // Funcionário escolhido sai da seleção se a empresa mudar ou o setor marcado não for dele.
   useEffect(() => {
     if (!filtroFuncionarioId) return
-    const c = candidatos.find(x => x.func.id === filtroFuncionarioId)
+    const c = funcsComRescisao.has(filtroFuncionarioId) ? null : candidatos.find(x => x.func.id === filtroFuncionarioId)
     const setoresDele = c ? (c.setorNomes.length > 0 ? c.setorNomes : [SEM_SETOR]) : []
     if (!c || c.func.empresa_id !== empresaSelecionadaId || !setorUnicoSelecionado || !setoresDele.includes(setorUnicoSelecionado)) setFiltroFuncionarioId('')
-  }, [filtroFuncionarioId, candidatos, empresaSelecionadaId, setorUnicoSelecionado])
+  }, [filtroFuncionarioId, candidatos, empresaSelecionadaId, setorUnicoSelecionado, funcsComRescisao])
 
   const chaveSetorPdf = (empresaId, nomeSetor) => {
     const setorId = dados?.setores.find(s => s.nome_setor === nomeSetor)?.id
@@ -1011,6 +1131,21 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
   // registro salvo pra ela).
   const feriasParaZerar = useMemo(() => candidatosFiltrados.filter(c => c.status === 'FERIAS_MES_INTEIRO' && (filtroFuncionarioId || !lotesIndividuaisPorFuncionario.has(c.func.id))), [candidatosFiltrados, filtroFuncionarioId, lotesIndividuaisPorFuncionario])
 
+  // Prestador PJ (tem Regra PJ): não gera TXT — depois do Conferido DP fica "Aguardando Nota Fiscal",
+  // igual ao Processamento de Comissões. Lote PJ = todos os funcionários na tela com Regra PJ.
+  const funcsComRegraPj = useMemo(() => new Set(candidatosFiltrados.filter(c => c.politica?.prestacao_pj).map(c => c.func.id)), [candidatosFiltrados])
+  const lotePj = candidatosFiltrados.length > 0 && candidatosFiltrados.every(c => funcsComRegraPj.has(c.func.id))
+
+  // Documentos exigidos pela Regra PJ (pj_documentos) — só nas linhas calculadas. Sem todos anexados no
+  // mês, o Conferir Comissões fica bloqueado.
+  const anexosDoDocumento = (c, documento) => anexosPj.filter(a => a.tipo === 'DOCUMENTO' && a.funcionario_id === c.func.id
+    && a.regra_id === (c.politica.grupo_politica_id || c.politica.id) && a.documento === documento)
+  const documentosPendentes = useMemo(() => candidatosFiltrados
+    .filter(c => Array.isArray(c.politica?.pj_documentos) && c.politica.pj_documentos.length > 0 && valoresPorFuncionario[chaveLinha(c)])
+    .flatMap(c => c.politica.pj_documentos.filter(d => !anexosPj.some(a => a.tipo === 'DOCUMENTO' && a.funcionario_id === c.func.id
+      && a.regra_id === (c.politica.grupo_politica_id || c.politica.id) && a.documento === d)).map(d => ({ c, documento: d }))),
+  [candidatosFiltrados, valoresPorFuncionario, anexosPj])
+
   // Status da linha (badge antes do código): Reprocessar (liberado parcialmente em Histórico
   // de Comissões), Pendente (nunca calculado), ou o status do lote pra quem já foi calculado.
   const statusLinha = (c) => {
@@ -1040,6 +1175,7 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
     // Mesmos rótulos usados em Processamento de Comissões (STATUS_LOTE_INFO), pra identificar de
     // cara em que etapa do fluxo aquele funcionário está sem precisar trocar de aba.
     if (statusEfetivo === 'PROCESSADO') return { label: 'Processado', className: 'bg-emerald-100 text-emerald-700' }
+    if (statusEfetivo === 'CONFERIDO_DP' && funcsComRegraPj.has(c.func.id)) return { label: 'Aguardando Nota Fiscal', className: 'bg-emerald-100 text-emerald-700' }
     if (statusEfetivo === 'CONFERIDO_DP') return { label: 'Aguardando Processamento', className: 'bg-indigo-100 text-indigo-700' }
     if (statusEfetivo === 'CONFERIDO') return { label: 'Aguardando DP', className: 'bg-blue-100 text-blue-700' }
     return { label: 'Aguardando Gerente', className: 'bg-slate-200 text-slate-700' }
@@ -1069,7 +1205,9 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
         })
       }
       if (elegiveisFiltrados.length === 0) return
-      const baseIdsUnicos = [...new Set(elegiveisFiltrados.map(c => c.base.id))]
+      const linhasPj = elegiveisFiltrados.filter(c => c.politica.prestacao_pj)
+      const elegiveisMotor = elegiveisFiltrados.filter(c => !c.politica.prestacao_pj)
+      const baseIdsUnicos = [...new Set(elegiveisMotor.map(c => c.base.id))]
       const regrasPorBase = {}
       await Promise.all(baseIdsUnicos.map(async (baseId) => {
         regrasPorBase[baseId] = await apiService.getRegrasParaCalculo(baseId)
@@ -1100,7 +1238,7 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
       // item por pedaço sem férias, cada um com id próprio (senão o lote não saberia separar as
       // leituras) — os resultados são somados manualmente logo abaixo, numa única linha.
       const segmentosPorLinha = new Map() // chaveLinha(c) -> [{ tempId, inicio, fim }]
-      const itens = elegiveisFiltrados.flatMap(c => {
+      const itens = elegiveisMotor.flatMap(c => {
         if (Array.isArray(c.segmentosLeitura) && c.segmentosLeitura.length > 0) {
           const chave = chaveLinha(c)
           const lista = c.segmentosLeitura.map((seg, i) => ({ tempId: `${chave}::SEG::${i}`, inicio: seg.inicio, fim: seg.fim }))
@@ -1116,7 +1254,7 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
       // leitura, só com mais "baldes" acumulando em paralelo.
       const detalheInfo = []
       const itensDetalhe = []
-      elegiveisFiltrados.forEach(c => {
+      elegiveisMotor.forEach(c => {
         if (!c.politica.detalhar_por_empresa || c.politica.nivel_calculo !== 'EMPRESA') return
         if (!Array.isArray(c.empresaNomes) || c.empresaNomes.length < 2) return
         c.empresaNomes.forEach((empresaNome, i) => {
@@ -1126,8 +1264,113 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
         })
       })
 
-      const resultados = await apiService.calcularComissoesLote([...itens, ...itensDetalhe])
+      // Regra PJ "Bonificação por Meta": realizado = Bases de Cálculo marcadas, lidas só nas empresas
+      // da regra — 1 item por empresa × Base, no MESMO lote (pra mostrar meta × realizado por empresa).
+      const linhasBonificacao = linhasPj.filter(c => c.politica.pj_bonificacao)
+      const leiturasBonificacao = [] // { id, devolId, chave, empresaId, baseId, lado: 'FAT' | 'LUC' }
+      const itensBonificacao = []
+      if (linhasBonificacao.length > 0) {
+        const [basesTodas, fontesTodas, fontesMwTodas] = await Promise.all([
+          apiService.getBasesCalculo(), apiService.getFontesCalculo(), apiService.getFontesMicrowork(),
+        ])
+        const empresasPorId = Object.fromEntries((dados?.empresas || []).map(e => [e.id, e]))
+        const nomesFiltroEmpresa = (e) => [e.nome_empresa_sistema || e.empresa_fantasia || e.nome_empresa, e.sigla_empresa].filter(Boolean)
+        for (const c of linhasBonificacao) {
+          const cfg = c.politica.pj_bonificacao
+          const basesLidas = [
+            ...(cfg.base_ids || []).map(id => ({ baseId: id, lado: 'FAT' })),
+            ...(cfg.modo === 'MARGEM' ? (cfg.lucro_base_ids || []).map(id => ({ baseId: id, lado: 'LUC' })) : []),
+          ]
+          for (const { baseId, lado } of basesLidas) {
+            const base = basesTodas.find(b => b.id === baseId)
+            if (!base) continue
+            const fmw = base.fonte_microwork_id ? fontesMwTodas.find(f => f.id === base.fonte_microwork_id) : null
+            const fonte = base.fonte_calculo_id ? fontesTodas.find(f => f.id === base.fonte_calculo_id) : (fmw ? { ...fmw, _microwork: true } : null)
+            if (!fonte) continue
+            if (!regrasPorBase[baseId]) regrasPorBase[baseId] = await apiService.getRegrasParaCalculo(baseId)
+            // Devoluções: mesmas Regras da Base, mas a(s) de "Inverter sinal" vira(m) filtro — sobra só
+            // o que a Base desconta (ex: NaturezaOperacao = DVE, "DEVOLUÇÃO..."). Base sem inversão = 0.
+            const regrasBase = regrasPorBase[baseId] || []
+            const inversoes = regrasBase.filter(r => r.tipo_acao === 'INVERTER_SINAL')
+            const regrasDevolucao = inversoes.length === 0 ? null : regrasBase
+              .filter(r => r.tipo_acao !== 'INVERTER_SINAL' || r === inversoes[0])
+              .map(r => r !== inversoes[0] ? r : {
+                ...r,
+                tipo_acao: 'FILTRAR',
+                condicoes: inversoes.flatMap(x => x.condicoes || []),
+                condicao_logica: inversoes.length > 1 ? 'OU' : r.condicao_logica,
+              })
+            for (const empresaId of cfg.empresa_ids || []) {
+              const empresa = empresasPorId[empresaId]
+              if (!empresa) continue
+              const id = `${chaveLinha(c)}::BON::${lado}::${empresaId}::${baseId}`
+              const item = {
+                ...itemBase({ fonte, base, politica: { nivel_calculo: 'EMPRESA' }, func: c.func, segInicio: periodoInicio, segFim: periodoFim }),
+                empresaNomes: nomesFiltroEmpresa(empresa),
+              }
+              leiturasBonificacao.push({ id, devolId: regrasDevolucao ? `${id}::DEV` : null, chave: chaveLinha(c), empresaId, baseId, lado })
+              itensBonificacao.push({ id, ...item })
+              if (regrasDevolucao) itensBonificacao.push({ id: `${id}::DEV`, ...item, regras: regrasDevolucao })
+            }
+          }
+        }
+      }
+
+      const itensLote = [...itens, ...itensDetalhe, ...itensBonificacao]
+      const resultados = itensLote.length > 0 ? await apiService.calcularComissoesLote(itensLote) : []
       const resultadosPorId = new Map(resultados.map(r => [r.id, r]))
+      linhasPj.forEach(c => resultadosPorId.set(chaveLinha(c), { id: chaveLinha(c), valor: parseFloat(c.politica.comissao_valor) || 0 }))
+
+      // Meta (metas aprovadas de Pós-Vendas do mês) × Realizado → faixa → prêmio em R$.
+      const bonificacaoPorLinha = new Map()
+      if (linhasBonificacao.length > 0) {
+        const [anoBon, mesBon] = periodoInicio.split('-').map(Number)
+        const empresaIdsBon = [...new Set(linhasBonificacao.flatMap(c => c.politica.pj_bonificacao.empresa_ids || []))]
+        const metasEmp = await apiService.getMetasEmpresasPeriodo(empresaIdsBon, anoBon, mesBon)
+        const nomeEmp = (id) => { const e = (dados?.empresas || []).find(x => x.id === id); return e?.empresa_fantasia || e?.nome_empresa || '?' }
+        const casa = (f, alvo) => f.operador === '>=' ? alvo >= f.valor : f.operador === '>' ? alvo > f.valor : f.operador === '<=' ? alvo <= f.valor : alvo < f.valor
+        const rotuloFaixa = (f) => f ? `${f.nome ? `${f.nome}: ` : ''}${f.operador} ${f.valor}%` : null
+        for (const c of linhasBonificacao) {
+          const cfg = c.politica.pj_bonificacao
+          const chave = chaveLinha(c)
+          // Bonificação por Margem: Margem % = Lucro ÷ Faturamento das empresas marcadas → faixa.
+          if (cfg.modo === 'MARGEM') {
+            const soma = (empresaId, lado) => leiturasBonificacao
+              .filter(l => l.chave === chave && l.empresaId === empresaId && l.lado === lado)
+              .reduce((s, l) => s + (Number(resultadosPorId.get(l.id)?.valor) || 0), 0)
+            const linhasMargem = (cfg.empresa_ids || []).map(empresaId => ({ empresa: nomeEmp(empresaId), faturamento: soma(empresaId, 'FAT'), lucro: soma(empresaId, 'LUC') }))
+            const faturamento = linhasMargem.reduce((s, l) => s + l.faturamento, 0)
+            const lucro = linhasMargem.reduce((s, l) => s + l.lucro, 0)
+            const pct = faturamento > 0 ? (lucro / faturamento) * 100 : null
+            const faixa = pct == null ? null : (cfg.faixas || []).find(f => casa(f, pct))
+            const premio = faixa ? Number(faixa.premio) || 0 : 0
+            const bonificacao = { modo: 'MARGEM', faixas: cfg.faixas || [], linhas: linhasMargem, faturamento, lucro, pct, faixa: rotuloFaixa(faixa), premio }
+            bonificacaoPorLinha.set(chave, { meta: null, realizado: faturamento, pct, premio, semMeta: false })
+            resultadosPorId.set(chave, { id: chave, valor: faturamento, bonificacao })
+            continue
+          }
+          const linhasEmp = []
+          let meta = 0, realizado = 0, devolucao = 0
+          for (const empresaId of cfg.empresa_ids || []) {
+            const m = metasEmp[empresaId] || {}
+            const metaEmp = (cfg.componentes || []).reduce((s, k) => s + (Number(m[k]) || 0), 0)
+            const leiturasEmp = leiturasBonificacao.filter(l => l.chave === chave && l.empresaId === empresaId)
+            const realEmp = leiturasEmp.reduce((s, l) => s + (Number(resultadosPorId.get(l.id)?.valor) || 0), 0)
+            const devEmp = leiturasEmp.reduce((s, l) => s + (l.devolId ? Math.abs(Number(resultadosPorId.get(l.devolId)?.valor) || 0) : 0), 0)
+            meta += metaEmp
+            realizado += realEmp
+            devolucao += devEmp
+            linhasEmp.push({ empresa: nomeEmp(empresaId), meta: metaEmp, realizado: realEmp, devolucao: devEmp })
+          }
+          const pct = meta > 0 ? (realizado / meta) * 100 : null
+          const faixa = pct == null ? null : (cfg.faixas || []).find(f => casa(f, pct))
+          const premio = faixa ? Number(faixa.premio) || 0 : 0
+          // faixas: as da regra (na ordem cadastrada), pra mostrar no modal qual foi aplicada.
+          const bonificacao = { faixas: cfg.faixas || [], linhas: linhasEmp, meta, realizado, devolucao, pct, faixa: rotuloFaixa(faixa), premio }
+          bonificacaoPorLinha.set(chave, { meta, realizado, pct, premio, semMeta: !(meta > 0) })
+          resultadosPorId.set(chave, { id: chave, valor: realizado, bonificacao })
+        }
+      }
 
       // Junta os segmentos de leitura (por férias) de volta numa única linha: soma os valores,
       // guarda o detalhamento por período (mostrado na telinha da Regra) sob a chave real da
@@ -1217,14 +1460,113 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
         })
       }
 
+      // Regra PJ "Percentual": % sobre o valor de outras Regras PJ do mesmo funcionário — Valor
+      // fixo (o fixo cadastrado) e/ou Variáveis (soma das comissões já calculadas das políticas
+      // marcadas nela). Cada regra usada vira uma coluna no modal Base de Cálculo.
+      const politicasPorGrupo = new Map((dados?.politicas || []).map(p => [p.grupo_politica_id || p.id, p]))
+      const valorDaRegraPj = (func, regra) => {
+        if (regra.pj_variaveis) {
+          const ids = new Set(regra.pj_politica_ids || [])
+          return elegiveisMotor
+            .filter(x => x.func.id === func.id && ids.has(x.politica.grupo_politica_id || x.politica.id))
+            .reduce((s, x) => {
+              const r = resultadosPorId.get(chaveLinha(x))
+              return s + (r ? (calcularComissaoSobre(x, r.valor ?? 0, metaMap, baseComissaoMetaMap).valorComissao ?? 0) : 0)
+            }, 0)
+        }
+        return parseFloat(regra.comissao_valor) || 0
+      }
+      const pjPercentualPorLinha = new Map()
+      linhasPj.filter(c => c.politica.pj_percentual).forEach(c => {
+        const itensPct = []
+        let base = 0, comissao = 0
+        for (const item of c.politica.pj_percentuais || []) {
+          const regra = politicasPorGrupo.get(item.regra_id)
+          if (!regra) continue
+          const valor = valorDaRegraPj(c.func, regra)
+          const pct = Number(item.percentual) || 0
+          base += valor
+          comissao += valor * pct / 100
+          itensPct.push({ regraId: item.regra_id, codigo: regra.codigo_politica || '', descricao: regra.descricao_comissao || '', tipo: regra.pj_variaveis ? 'Variáveis' : 'Valor fixo', valor, percentual: pct, resultado: valor * pct / 100 })
+        }
+        pjPercentualPorLinha.set(chaveLinha(c), { base, comissao })
+        resultadosPorId.set(chaveLinha(c), { id: chaveLinha(c), valor: base, percentualPj: { itens: itensPct, base, comissao } })
+      })
+
+      // Regra PJ "Coparticipação": % sobre o boleto lançado no mês, dividido entre as empresas da regra.
+      // Sem boleto lançado a linha fica sem valor (—), em vez de gravar R$ 0,00.
+      const copPorLinha = new Map()
+      linhasPj.filter(c => c.politica.pj_coparticipacao).forEach(c => {
+        const boleto = Number(boletosCop[chaveBoleto(c)]) || 0
+        if (!(boleto > 0)) return
+        copPorLinha.set(chaveLinha(c), { ...dividirCoparticipacao(c.politica, boleto), boleto })
+        resultadosPorId.set(chaveLinha(c), { id: chaveLinha(c), valor: boleto, valor_por_coluna: [{ coluna: 'Boleto lançado', valor: boleto }] })
+      })
+
+      // Descontos PJ (menu Descontos PJ): entram NEGATIVOS no que o prestador recebe. O "% sobre regras"
+      // usa o valor já calculado de cada regra PJ do funcionário (fixo, variáveis, %, bonificação, coparticipação).
+      const valorFinalRegraPj = (func, regra) => {
+        if (regra.pj_variaveis) return valorDaRegraPj(func, regra)
+        const linha = linhasPj.find(x => x.func.id === func.id && (x.politica.grupo_politica_id || x.politica.id) === (regra.grupo_politica_id || regra.id))
+        const k = linha ? chaveLinha(linha) : null
+        if (k && pjPercentualPorLinha.has(k)) return pjPercentualPorLinha.get(k).comissao
+        if (k && bonificacaoPorLinha.has(k)) { const b = bonificacaoPorLinha.get(k); return b.semMeta ? 0 : b.premio }
+        if (k && copPorLinha.has(k)) return copPorLinha.get(k).total
+        if (regra.pj_coparticipacao || regra.pj_bonificacao) return 0
+        return parseFloat(regra.comissao_valor) || 0
+      }
+      const descPorLinha = new Map()
+      linhasPj.filter(c => c.politica.pj_desconto).forEach(c => {
+        const d = c.politica.pj_desconto
+        const k = chaveLinha(c)
+        if (d.tipo === 'FIXO') {
+          const v = Number(d.valor) || 0
+          descPorLinha.set(k, { valor: v })
+          resultadosPorId.set(k, { id: k, valor: v })
+        } else if (d.tipo === 'LANCADO') {
+          const v = Number(boletosCop[chaveBoleto(c)]) || 0
+          if (!(v > 0)) return
+          descPorLinha.set(k, { valor: v })
+          resultadosPorId.set(k, { id: k, valor: v, valor_por_coluna: [{ coluna: 'Valor lançado no mês', valor: v }] })
+        } else if (d.tipo === 'PERCENTUAL') {
+          const itensPct = []
+          let base = 0, desconto = 0
+          for (const item of d.itens || []) {
+            const regra = politicasPorGrupo.get(item.regra_id)
+            if (!regra) continue
+            const valor = valorFinalRegraPj(c.func, regra)
+            const pct = Number(item.percentual) || 0
+            base += valor
+            desconto += valor * pct / 100
+            itensPct.push({ regraId: item.regra_id, codigo: regra.codigo_politica || '', descricao: regra.descricao_comissao || '', tipo: 'Regra PJ', valor, percentual: pct, resultado: -(valor * pct / 100) })
+          }
+          descPorLinha.set(k, { valor: desconto, pct: d.percentual_igual ?? null })
+          resultadosPorId.set(k, { id: k, valor: base, percentualPj: { itens: itensPct, base, comissao: -desconto } })
+        }
+      })
+
       setValoresPorFuncionario(prev => {
         const novo = { ...prev }
         elegiveisFiltrados.forEach(c => {
+          // Filtro Comissão marcado: só as comissões filtradas recebem o valor novo.
+          if (!naComissaoFiltrada(c)) return
           const chave = chaveLinha(c)
           const r = resultadosPorId.get(chave)
           if (!r) return
           const valorLido = r.valor ?? 0
-          const { percentual, valorFixo, valorComissao, semMeta, percentualAtingido, meta, baseComissao, valorApurado, valorBruto, descontoPct } = calcularComissaoSobre(c, valorLido, metaMap, baseComissaoMetaMap)
+          const pjPct = pjPercentualPorLinha.get(chave)
+          const bon = bonificacaoPorLinha.get(chave)
+          const cop = copPorLinha.get(chave)
+          const desc = descPorLinha.get(chave)
+          const { percentual, valorFixo, valorComissao, semMeta, percentualAtingido, meta, baseComissao, valorApurado, valorBruto, descontoPct } = desc
+            ? { percentual: desc.pct ?? null, valorFixo: null, valorComissao: -desc.valor, valorApurado: valorLido, valorBruto: valorLido, descontoPct: 0 }
+            : bon
+            ? { percentual: null, valorFixo: null, valorComissao: bon.semMeta ? null : bon.premio, semMeta: bon.semMeta, percentualAtingido: bon.pct, meta: bon.meta, valorApurado: bon.realizado, valorBruto: bon.realizado, descontoPct: 0 }
+            : cop
+            ? { percentual: cop.pct, valorFixo: null, valorComissao: cop.total, valorApurado: cop.boleto, valorBruto: cop.boleto, descontoPct: 0 }
+            : pjPct
+            ? { percentual: c.politica.comissao_total ?? null, valorFixo: null, valorComissao: pjPct.comissao, valorApurado: pjPct.base, valorBruto: pjPct.base, descontoPct: 0 }
+            : calcularComissaoSobre(c, valorLido, metaMap, baseComissaoMetaMap)
           novo[chave] = {
             // Pro Prêmio (% Meta/Valor Fixo), "Base Comissão" na tabela é o que a % realmente
             // multiplicou (Individual+Equipe) — o valor apurado (já líquido, se a Regra tiver
@@ -1236,6 +1578,8 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
             valorBruto, descontoPct,
             valorComissao, percentual, valorFixo, semMeta, percentualAtingido, meta,
             valorPorColuna: r.valor_por_coluna || r.valor_por_movimento || null,
+            bonificacao: r.bonificacao || null,
+            percentualPj: r.percentualPj || null,
             totalLinhasFonte: r.total_linhas_fonte, totalLinhasFiltradas: r.total_linhas_filtradas,
             periodoInicio: c.segInicio || periodoInicio,
             periodoFim: c.segFim || periodoFim,
@@ -1244,6 +1588,21 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
         })
         return novo
       })
+
+      if (linhasPj.length > 0) {
+        setDetalhePorEmpresa(prev => {
+          const novo = { ...prev }
+          linhasPj.forEach(c => {
+            const lista = c.politica.pj_desconto
+              ? (c.politica.pj_desconto.tipo === 'FIXO' ? ratearDesconto(c.politica.pj_desconto.valor, c.politica.pj_desconto.empresas || []) : [])
+              : c.politica.pj_coparticipacao
+              ? (copPorLinha.get(chaveLinha(c))?.lista || [])
+              : (c.politica.pj_empresas || []).map(p => ({ empresa: p.empresa_nome, valorBase: Number(p.valor) || 0, valorComissao: Number(p.valor) || 0 }))
+            if (lista.length > 0) novo[chaveLinha(c)] = lista
+          })
+          return novo
+        })
+      }
 
       if (detalheInfo.length > 0) {
         setDetalhePorEmpresa(prev => {
@@ -1359,9 +1718,12 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
       // s/Time Oficina") de técnicos diferentes ficavam juntas, misturando os dois.
       // Dentro do bloco, as comissões seguem o Código da Política (cadastro da política); a
       // ordenação do cabeçalho só desempata quem tem o mesmo código (ou nenhum).
+      // Comissão de uma Regra PJ "Variáveis" ordena pelo código da REGRA (ex: PJ002 entre PJ001 e
+      // PJ003), não pelo da própria comissão — a linha agrupada fica na sequência certa.
+      const politicaOrdem = (c) => regraVariaveisDe(c) || c.politica
       const comparadorSemMisturarFuncionarios = (a, b) =>
         a.func.id !== b.func.id ? textoNome(a).localeCompare(textoNome(b), 'pt-BR')
-          : (compararCodigoPolitica(a.politica, b.politica) || comparador(a, b))
+          : (compararCodigoPolitica(politicaOrdem(a), politicaOrdem(b)) || compararCodigoPolitica(a.politica, b.politica) || comparador(a, b))
       return [...porEmpresa.entries()]
         .sort((a, b) => a[0].localeCompare(b[0], 'pt-BR'))
         .map(([nomeEmpresa, itensEmpresa]) => ({ nomeEmpresa, itens: itensEmpresa.sort(comparadorSemMisturarFuncionarios) }))
@@ -1389,6 +1751,9 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
   useEffect(() => {
     if (filtroComissoes.some(v => !opcoesComissao.includes(v))) setFiltroComissoes(prev => prev.filter(v => opcoesComissao.includes(v)))
   }, [opcoesComissao])
+  // Filtro Comissão também vale pra Calcular/Salvar: só as comissões marcadas são recalculadas e
+  // regravadas; as outras do funcionário ficam com o valor já salvo.
+  const naComissaoFiltrada = (c) => filtroComissoes.length === 0 || filtroComissoes.includes(rotuloComissaoFiltro(c))
   const candidatosNaTabela = useMemo(() => filtroComissoes.length === 0
     ? candidatosFiltrados
     : candidatosFiltrados.filter(c => filtroComissoes.includes(rotuloComissaoFiltro(c))), [candidatosFiltrados, filtroComissoes])
@@ -1409,7 +1774,20 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
         }
       })
   }
-  const gruposPorCargo = useMemo(() => agruparPorSetorECargo(candidatosNaTabela), [candidatosNaTabela, ordenacao, valoresPorFuncionario])
+  // Regra PJ "Variáveis" (tela Regras PJ): as comissões marcadas nela aparecem como UMA linha
+  // (código/descrição da regra + valor total), que expande pra mostrar cada comissão. Só muda a
+  // exibição — cada comissão continua calculada e salva separada (sem contar o total duas vezes).
+  const regrasVariaveis = useMemo(() => (dados?.politicas || []).filter(p => p.pj_variaveis && p.ativo !== false), [dados])
+  const regraVariaveisDe = (c) => regrasVariaveis.find(r => r.cargo_id === c.func.cargo_id
+    && (r.pj_politica_ids || []).includes(c.politica.grupo_politica_id || c.politica.id)) || null
+  const [variaveisAbertas, setVariaveisAbertas] = useState(() => new Set())
+  const toggleVariaveis = (chave) => setVariaveisAbertas(prev => {
+    const novo = new Set(prev)
+    if (novo.has(chave)) novo.delete(chave); else novo.add(chave)
+    return novo
+  })
+
+  const gruposPorCargo = useMemo(() => agruparPorSetorECargo(candidatosNaTabela), [candidatosNaTabela, ordenacao, valoresPorFuncionario, regrasVariaveis])
 
   // Agrupa por Setor + Empresa para que setores de mesmo nome em lojas diferentes não se misturem.
   const agruparPorEmpresaSetor = (lista) => {
@@ -1441,15 +1819,17 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
     const candidatosParaSalvar = loteBloqueado
       ? elegiveisFiltrados
       : candidatosFiltrados.filter(c => filtroFuncionarioId || !lotesIndividuaisPorFuncionario.has(c.func.id))
+    const comValor = (c) => (c.status === 'OK' || c.status === 'FERIAS_MES_INTEIRO') && valoresPorFuncionario[chaveLinha(c)] && !valoresPorFuncionario[chaveLinha(c)].semMeta
+    const parcialComissao = filtroComissoes.length > 0
     const registrosSemLote = candidatosParaSalvar
-      .filter(c => (c.status === 'OK' || c.status === 'FERIAS_MES_INTEIRO') && valoresPorFuncionario[chaveLinha(c)] && !valoresPorFuncionario[chaveLinha(c)].semMeta)
+      .filter(c => comValor(c) && naComissaoFiltrada(c))
       .map(c => {
         const r = valoresPorFuncionario[chaveLinha(c)]
         return {
           funcionario_id: c.func.id,
           politica_id: c.politica.id,
-          fonte_calculo_id: c.fonte._microwork ? null : c.fonte.id,
-          base_calculo_id: c.base.id,
+          fonte_calculo_id: !c.fonte || c.fonte._microwork ? null : c.fonte.id,
+          base_calculo_id: c.base?.id || null,
           periodo_inicio: r.periodoInicio,
           periodo_fim: r.periodoFim,
           nivel_calculo: c.politica.nivel_calculo,
@@ -1470,6 +1850,8 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
             percentualAtingido: r.percentualAtingido ?? null,
             meta: r.meta ?? null,
             valorPorColuna: r.valorPorColuna ?? null,
+            bonificacao: r.bonificacao ?? null,
+            percentualPj: r.percentualPj ?? null,
             segmentos: r.segmentos ?? null,
           },
         }
@@ -1496,12 +1878,15 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
       if (loteBloqueado) {
         loteAtualizado = lote
       } else {
-        const valorTotalLote = registrosSemLote.reduce((acc, r) => acc + (r.valor_comissao || 0), 0)
+        // Total do lote = todas as comissões do setor (as não filtradas entram com o valor já salvo).
+        const valorTotalLote = parcialComissao
+          ? candidatosParaSalvar.filter(comValor).reduce((acc, c) => acc + (valoresPorFuncionario[chaveLinha(c)]?.valorComissao || 0), 0)
+          : registrosSemLote.reduce((acc, r) => acc + (r.valor_comissao || 0), 0)
         loteAtualizado = await apiService.salvarLoteRascunho({
           periodoInicio, periodoFim, empresaId: empresaSelecionadaId, empresaNome: filtroEmpresa,
           setorId: setorSelecionadoId, setorNome: setorUnicoSelecionado,
           departamentoId: departamentoDoSetorSelecionadoId, departamentoNome: departamentoDoSetorSelecionadoId ? dados?.departamentos.find(d => d.id === departamentoDoSetorSelecionadoId)?.nome_departamento : null,
-          qtdFuncionarios: registrosSemLote.length, valorTotal: valorTotalLote, usuario: usuarioLabel,
+          qtdFuncionarios: parcialComissao ? candidatosParaSalvar.filter(comValor).length : registrosSemLote.length, valorTotal: valorTotalLote, usuario: usuarioLabel,
           funcionarioId: filtroFuncionarioId || null,
           funcionarioNome: filtroFuncionarioId ? (dados?.funcionarios.find(f => f.id === filtroFuncionarioId)?.nome_funcionario || null) : null,
           rescisao: !!filtroFuncionarioId && rescisaoIndividual,
@@ -1510,7 +1895,8 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
       const registros = registrosSemLote.map(r => ({ ...r, lote_id: loteAtualizado.id }))
       // Passa o período do lote inteiro — os registros individuais podem ter segmentos menores
       // (férias), e a limpeza dos antigos precisa cobrir o intervalo todo.
-      await apiService.salvarComissoesCalculadas(registros, periodoInicio, periodoFim)
+      await apiService.salvarComissoesCalculadas(registros, periodoInicio, periodoFim,
+        parcialComissao ? [...new Set(registros.map(r => r.politica_id))] : null)
       if (loteBloqueado) {
         // Reprocessamento parcial: destrava (some da lista de liberados) quem acabou de salvar.
         // Se o lote já tinha passado do DP (Conferido pelo DP ou Processado), o status volta
@@ -1529,6 +1915,118 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
 
   // Documento pra mandar pro RH computar o pagamento — uma página por Setor, cada uma com os
   // Cargos/funcionários e o total do setor no rodapé. A seleção vem do modal de setores fechados.
+  // Monta os setores já formatados pro PDF padrão de comissões (utils/comissoesPdf.js) — usado pelo
+  // Exportar e pela Nota Fiscal do prestador (detalhe analítico depois da tabela-resumo).
+  const montarSetoresPdf = (gruposParaPDF) => {
+    const valorDe = (c) => valoresPorFuncionario[chaveLinha(c)]?.valorComissao || 0
+    // Monta os dados já formatados pro PDF padrão de comissões (utils/comissoesPdf.js).
+  return gruposParaPDF.map(grupoSetor => {
+      const itensSetor = grupoSetor.cargos.flatMap(g => g.itens)
+      return {
+        // Empresa(s) do setor — quase sempre uma só; se houver mais de uma no mesmo setor,
+        // mostra todas separadas por vírgula.
+        empresasLabel: [...new Set(itensSetor
+          .map(c => c.empresa?.empresa_fantasia || c.empresa?.nome_empresa || c.empresaNome)
+          .filter(Boolean))].join(', '),
+        nomeSetor: grupoSetor.nomeSetor,
+        total: itensSetor.reduce((acc, c) => acc + valorDe(c), 0),
+        cargos: grupoSetor.cargos.map(grupo => {
+          const codigoCargo = grupo.itens[0]?.cargo?.codigo_cargo
+          return {
+            titulo: codigoCargo ? `${grupo.nomeCargo} (${codigoCargo})` : grupo.nomeCargo,
+            regras: regrasDoGrupo(grupo.itens),
+            empresas: grupo.empresas.map(empresaGrupo => {
+              const porFuncionario = new Map()
+              for (const c of empresaGrupo.itens) {
+                if (!porFuncionario.has(c.func.id)) porFuncionario.set(c.func.id, [])
+                porFuncionario.get(c.func.id).push(c)
+              }
+              return {
+                nomeEmpresa: empresaGrupo.nomeEmpresa,
+                funcionarios: [...porFuncionario.values()].map(itens => {
+                  const f = itens[0].func
+                  return {
+                    nome: f.codigo_funcionario ? `${f.codigo_funcionario} — ${f.nome_funcionario}` : f.nome_funcionario,
+                    nomeCurto: f.nome_funcionario,
+                    total: itens.reduce((acc, c) => acc + valorDe(c), 0),
+                    linhas: itens.map(c => {
+                      const res = valoresPorFuncionario[chaveLinha(c)]
+                      return {
+                        comissao: comissaoComCodigo(c.politica, c.politica.descricao_comissao || c.politica.nivel_calculo || ''),
+                        tipo: tipoComissaoPorBase(c),
+                        periodo: c.segInicio && c.segFim ? `${fmtDiaMes(res?.periodoInicio || c.segInicio)} a ${fmtDiaMes(res?.periodoFim || c.segFim)}` : '',
+                        detalhes: c.politica.detalhar_por_empresa
+                          ? (detalhePorEmpresa[chaveLinha(c)] || []).filter(d => !detalheEmpresaSemValor(d))
+                            .map(d => ({ empresa: d.empresa, base: fmtValorBase(c, d.valorBase), comissao: fmtBRL(d.valorComissao) }))
+                          : [],
+                        // Regra PJ: Base e %/R$ ficam em branco, igual à tela.
+                        base: c.politica.prestacao_pj ? '' : res ? fmtValorBase(c, res.valorBase) : '—',
+                        pctServicos: c.politica.prestacao_pj ? '' : fmtPct(c.politica.comissao_servicos),
+                        pctPecas: c.politica.prestacao_pj ? '' : fmtPct(c.politica.comissao_pecas),
+                        pctTotal: c.politica.prestacao_pj ? '' : fmtPct(c.politica.comissao_total),
+                        valorFixo: c.politica.prestacao_pj ? '' : fmtBRL(c.politica.comissao_valor != null ? parseFloat(c.politica.comissao_valor) : null),
+                        valorComissao: res ? fmtBRL(res.valorComissao) : '—',
+                        semMeta: !!res?.semMeta,
+                      }
+                    }),
+                  }
+                }),
+              }
+            }),
+          }
+        }),
+      }
+    })
+
+  }
+
+  // ── Emitir Nota Fiscal (Prestadores de Serviços) ─────────────────────────────────────────────────
+  // Tabela-resumo por prestador: regras nas linhas (Variáveis agrupadas), empresas nas colunas.
+  const [nfFuncId, setNfFuncId] = useState(null)
+  const [gerandoNf, setGerandoNf] = useState(false)
+  const prestadoresNf = useMemo(() => {
+    const porFunc = new Map()
+    candidatosFiltrados.forEach(c => {
+      if (!c.politica.prestacao_pj || !valoresPorFuncionario[chaveLinha(c)]) return
+      if (!porFunc.has(c.func.id)) porFunc.set(c.func.id, c.func)
+    })
+    return [...porFunc.values()].sort((a, b) => (a.nome_funcionario || '').localeCompare(b.nome_funcionario || '', 'pt-BR'))
+  }, [candidatosFiltrados, valoresPorFuncionario])
+  const montarNotaFiscal = (funcId) => {
+    const linhasFunc = candidatosFiltrados.filter(c => c.func.id === funcId && valoresPorFuncionario[chaveLinha(c)] && !valoresPorFuncionario[chaveLinha(c)].semMeta)
+    if (linhasFunc.length === 0) return null
+    const func = linhasFunc[0].func
+    const nf = montarNotaFiscalPj({
+      linhas: linhasFunc.map(c => ({ politica: c.politica, valor: valoresPorFuncionario[chaveLinha(c)]?.valorComissao || 0, detalhe: detalhePorEmpresa[chaveLinha(c)] || [] })),
+      politicas: dados?.politicas || [], empresas: dados?.empresas || [],
+      emissaoConfig: func.pj_emissao_nf || null,
+      prestador: `${func.codigo_funcionario ? `${func.codigo_funcionario} — ` : ''}${func.nome_funcionario}`,
+    })
+    return nf ? { ...nf, linhasFunc } : null
+  }
+  const notaFiscal = useMemo(() => (nfFuncId ? montarNotaFiscal(nfFuncId) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [nfFuncId, candidatosFiltrados, valoresPorFuncionario, detalhePorEmpresa, dados])
+  const abrirNotaFiscal = () => { if (prestadoresNf.length > 0) setNfFuncId(prestadoresNf[0].id) }
+  const salvarNotaFiscalPdf = async () => {
+    if (!notaFiscal) return
+    setGerandoNf(true)
+    setErro(null)
+    try {
+      const periodoLabel = `${periodoInicio.split('-').reverse().join('/')} a ${periodoFim.split('-').reverse().join('/')}`
+      await gerarPdfComissoes({
+        paginasIniciais: [montarHtmlNotaFiscal(notaFiscal, { periodoLabel })],
+        setores: montarSetoresPdf(agruparPorSetorECargo(notaFiscal.linhasFunc)),
+        periodoInicio, periodoFim,
+        nomeArquivo: ['Nota_Fiscal', periodoInicio, periodoFim, notaFiscal.linhasFunc[0].func.nome_funcionario].map(paraNomeArquivo).join('_'),
+      })
+    } catch (err) {
+      setErro('Erro ao gerar o PDF da Nota Fiscal: ' + (err.message || String(err)))
+    } finally {
+      setGerandoNf(false)
+    }
+  }
+
   const handleSalvarPDF = async () => {
     // Cálculo individual (seletor de Funcionário): exporta só ele, direto, sem escolher setores.
     const individual = !!filtroFuncionarioId
@@ -1552,70 +2050,12 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
     setGerandoPDF(true)
     setErro(null)
     try {
-      const valorDe = (c) => valoresPorFuncionario[chaveLinha(c)]?.valorComissao || 0
-      // Monta os dados já formatados pro PDF padrão de comissões (utils/comissoesPdf.js).
-      const setores = gruposParaPDF.map(grupoSetor => {
-        const itensSetor = grupoSetor.cargos.flatMap(g => g.itens)
-        return {
-          // Empresa(s) do setor — quase sempre uma só; se houver mais de uma no mesmo setor,
-          // mostra todas separadas por vírgula.
-          empresasLabel: [...new Set(itensSetor
-            .map(c => c.empresa?.empresa_fantasia || c.empresa?.nome_empresa || c.empresaNome)
-            .filter(Boolean))].join(', '),
-          nomeSetor: grupoSetor.nomeSetor,
-          total: itensSetor.reduce((acc, c) => acc + valorDe(c), 0),
-          cargos: grupoSetor.cargos.map(grupo => {
-            const codigoCargo = grupo.itens[0]?.cargo?.codigo_cargo
-            return {
-              titulo: codigoCargo ? `${grupo.nomeCargo} (${codigoCargo})` : grupo.nomeCargo,
-              regras: regrasDoGrupo(grupo.itens),
-              empresas: grupo.empresas.map(empresaGrupo => {
-                const porFuncionario = new Map()
-                for (const c of empresaGrupo.itens) {
-                  if (!porFuncionario.has(c.func.id)) porFuncionario.set(c.func.id, [])
-                  porFuncionario.get(c.func.id).push(c)
-                }
-                return {
-                  nomeEmpresa: empresaGrupo.nomeEmpresa,
-                  funcionarios: [...porFuncionario.values()].map(itens => {
-                    const f = itens[0].func
-                    return {
-                      nome: f.codigo_funcionario ? `${f.codigo_funcionario} — ${f.nome_funcionario}` : f.nome_funcionario,
-                      nomeCurto: f.nome_funcionario,
-                      total: itens.reduce((acc, c) => acc + valorDe(c), 0),
-                      linhas: itens.map(c => {
-                        const res = valoresPorFuncionario[chaveLinha(c)]
-                        return {
-                          comissao: comissaoComCodigo(c.politica, c.politica.descricao_comissao || c.politica.nivel_calculo || ''),
-                          tipo: tipoComissaoPorBase(c),
-                          periodo: c.segInicio && c.segFim ? `${fmtDiaMes(res?.periodoInicio || c.segInicio)} a ${fmtDiaMes(res?.periodoFim || c.segFim)}` : '',
-                          detalhes: c.politica.detalhar_por_empresa
-                            ? (detalhePorEmpresa[chaveLinha(c)] || []).filter(d => !detalheEmpresaSemValor(d))
-                              .map(d => ({ empresa: d.empresa, base: fmtValorBase(c, d.valorBase), comissao: fmtBRL(d.valorComissao) }))
-                            : [],
-                          base: res ? fmtValorBase(c, res.valorBase) : '—',
-                          pctServicos: fmtPct(c.politica.comissao_servicos),
-                          pctPecas: fmtPct(c.politica.comissao_pecas),
-                          pctTotal: fmtPct(c.politica.comissao_total),
-                          valorFixo: fmtBRL(c.politica.comissao_valor != null ? parseFloat(c.politica.comissao_valor) : null),
-                          valorComissao: res ? fmtBRL(res.valorComissao) : '—',
-                          semMeta: !!res?.semMeta,
-                        }
-                      }),
-                    }
-                  }),
-                }
-              }),
-            }
-          }),
-        }
-      })
+      const setores = montarSetoresPdf(gruposParaPDF)
 
-      // Nome do arquivo inclui empresa e setor(es) pra identificar o PDF sem precisar abrir, já
-      // que dá pra gerar um por vez ou vários juntos.
+      // Nome do arquivo: com 1 setor leva empresa + setor; com vários, para na empresa.
       const nomeSetorArquivo = opcoesSelecionadas.length === 1
         ? `${opcoesSelecionadas[0].empresaNome}_${opcoesSelecionadas[0].nomeSetor}`
-        : `Setores_${opcoesSelecionadas.length}`
+        : null
       const funcIndividual = individual ? candidatosParaPDF[0]?.func : null
       const nomeArquivo = individual
         ? ['Comissoes', periodoInicio, periodoFim, filtroEmpresa, funcIndividual?.nome_funcionario, rescisaoIndividual ? 'Rescisao' : null].filter(Boolean).map(paraNomeArquivo).join('_')
@@ -1804,7 +2244,7 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
                   <p className="text-[11px] text-slate-500">Cálculo só deste funcionário, num lote próprio no período de Data Início a Data Fim — o setor continua livre.</p>
                 )}
                 {filtroComissoes.length > 0 && (
-                  <p className="text-[11px] text-slate-500">O filtro de Comissão vale só para a tabela — Calcular, Salvar e Exportar continuam com todas as comissões do setor.</p>
+                  <p className="text-[11px] text-amber-600 font-medium">Calcular e Salvar só atualizam as comissões filtradas — as demais continuam com o valor já salvo. Exportar continua com todas.</p>
                 )}
               </div>
             )}
@@ -1828,11 +2268,11 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
                   {lote && (
                     <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
                       lote.status === 'PROCESSADO' ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                      : lote.status === 'CONFERIDO_DP' ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                      : lote.status === 'CONFERIDO_DP' ? (lotePj ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-indigo-50 text-indigo-700 border-indigo-200')
                       : lote.status === 'CONFERIDO' ? 'bg-blue-50 text-blue-700 border-blue-200'
                       : 'bg-slate-100 text-slate-500 border-slate-200'
                     }`}>
-                      {lote.status === 'PROCESSADO' ? 'Processado' : lote.status === 'CONFERIDO_DP' ? 'Aguardando Processamento' : lote.status === 'CONFERIDO' ? 'Aguardando DP' : 'Aguardando Gerente'}
+                      {lote.status === 'PROCESSADO' ? 'Processado' : lote.status === 'CONFERIDO_DP' ? (lotePj ? 'Aguardando Nota Fiscal' : 'Aguardando Processamento') : lote.status === 'CONFERIDO' ? 'Aguardando DP' : 'Aguardando Gerente'}
                     </span>
                   )}
                   {filtroFuncionarioId && (
@@ -1914,6 +2354,21 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
                       )}
                       {podeSalvarPDF && (
                         <>
+                          {ehTelaGrupo ? (
+                          // Só depois do Conferido DP (RH aprovou → "Aguardando Nota Fiscal").
+                          ['CONFERIDO_DP', 'PROCESSAMENTO_PARCIAL', 'PROCESSADO'].includes(lote?.status) && (
+                          <button
+                            type="button"
+                            onClick={abrirNotaFiscal}
+                            disabled={prestadoresNf.length === 0}
+                            title={prestadoresNf.length === 0 ? 'Calcule os prestadores primeiro.' : 'Resumo da Nota Fiscal por empresa, com PDF'}
+                            className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-40 disabled:cursor-not-allowed text-xs font-semibold px-3 py-1.5 rounded-md shadow-sm transition-colors"
+                          >
+                            <FileText className="h-3.5 w-3.5" />
+                            Emitir Nota Fiscal
+                          </button>
+                          )
+                          ) : (
                           <button
                             type="button"
                             onClick={filtroFuncionarioId ? handleSalvarPDF : abrirModalExportar}
@@ -1928,6 +2383,7 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
                             <FileDown className="h-3.5 w-3.5" />
                             Exportar
                           </button>
+                          )}
                           {pdfModalAberto && (
                             <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onClick={() => !gerandoPDF && setPdfModalAberto(false)}>
                               <div role="dialog" aria-modal="true" aria-labelledby="selecionar-setores-pdf" className="w-full max-w-lg overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl" onClick={e => e.stopPropagation()}>
@@ -2034,7 +2490,7 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
                     </th>
                     <th className="p-3 text-right">
                       <button onClick={() => alternarOrdenacao('valor')} className="flex items-center gap-1 ml-auto hover:text-slate-700 transition-colors">
-                        {iconeOrdenacao('valor')} Base Comissão
+                        {iconeOrdenacao('valor')} {ehTelaGrupo ? 'Base' : 'Base Comissão'}
                       </button>
                     </th>
                     <th className="p-3 text-right">
@@ -2059,7 +2515,7 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
                     </th>
                     <th className="p-3 text-right">
                       <button onClick={() => alternarOrdenacao('valorComissao')} className="flex items-center gap-1 ml-auto hover:text-slate-700 transition-colors">
-                        {iconeOrdenacao('valorComissao')} Valor Comissão
+                        {iconeOrdenacao('valorComissao')} {ehTelaGrupo ? 'Valor Serviços' : 'Valor Comissão'}
                       </button>
                     </th>
                   </tr>
@@ -2109,13 +2565,58 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
                               ? linhasMesmoFunc.reduce((acc, x) => acc + (valoresPorFuncionario[chaveLinha(x)]?.valorComissao || 0), 0)
                               : null
                             const detalhesEmpresa = (detalhePorEmpresa[chaveLinha(c)] || []).filter(d => !detalheEmpresaSemValor(d))
+                            // Comissão que faz parte de uma Regra PJ "Variáveis": a 1ª da regra puxa a linha
+                            // agrupada (total); as comissões só aparecem com a linha expandida.
+                            const regraVar = regraVariaveisDe(c)
+                            const chaveVar = regraVar ? `${c.func.id}::${regraVar.id}` : null
+                            const componentesVar = regraVar ? linhasMesmoFunc.filter(x => regraVariaveisDe(x)?.id === regraVar.id) : []
+                            const ehPrimeiroDaVar = !!regraVar && componentesVar[0] === c
+                            const varAberta = !!chaveVar && variaveisAbertas.has(chaveVar)
+                            const calculadosVar = componentesVar.map(x => valoresPorFuncionario[chaveLinha(x)]).filter(Boolean)
+                            const totalVar = calculadosVar.reduce((s, r) => s + (r.valorComissao || 0), 0)
                             return (
                               <React.Fragment key={chaveLinha(c)}>
-                                <tr className="hover:bg-slate-50/70 transition-colors">
+                                {ehPrimeiroDaVar && (
+                                  <tr className="bg-indigo-50/40 hover:bg-indigo-50/70 transition-colors">
+                                    <td className="px-3 py-1.5 pl-8 font-bold text-slate-900 whitespace-nowrap">
+                                      {ehPrimeiraLinhaDoFunc && (
+                                        <>
+                                          {(() => {
+                                            const st = statusLinha(c)
+                                            return (
+                                              <span className={`inline-block mr-2 px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wide ${st.className}`}>
+                                                {st.label}
+                                              </span>
+                                            )
+                                          })()}
+                                          <span className="inline-block w-14 font-mono font-normal text-slate-400">{c.func.codigo_funcionario || ''}</span>
+                                          {c.func.nome_funcionario}
+                                        </>
+                                      )}
+                                    </td>
+                                    <td className="px-3 py-1.5 whitespace-nowrap">
+                                      <button type="button" onClick={() => toggleVariaveis(chaveVar)}
+                                        title={varAberta ? 'Recolher as comissões' : 'Ver as comissões que formam este valor'}
+                                        className="inline-flex items-center gap-1 text-left hover:text-indigo-700">
+                                        {varAberta ? <ChevronDown className="h-3.5 w-3.5 text-indigo-500" /> : <ChevronRight className="h-3.5 w-3.5 text-indigo-500" />}
+                                        {codigoPolitica(regraVar) && <span className="font-mono font-semibold text-slate-400 mr-1">{codigoPolitica(regraVar)}</span>}
+                                        <span className="font-semibold">{regraVar.descricao_comissao || 'Variáveis'}</span>
+                                      </button>
+                                      <div className="text-[10px] font-normal text-slate-400 mt-0.5 pl-5">
+                                        {componentesVar.length} comissõe{componentesVar.length === 1 ? '' : 's'}: {[...new Set(componentesVar.map(x => codigoPolitica(x.politica)).filter(Boolean))].join(', ')}
+                                        {' · '}{varAberta ? 'clique para recolher' : 'clique para ver'}
+                                      </div>
+                                    </td>
+                                    <td /><td /><td /><td /><td />
+                                    <td className="px-3 py-1.5 text-right font-mono font-semibold text-slate-800">{calculadosVar.length > 0 ? fmtBRL(totalVar) : '—'}</td>
+                                  </tr>
+                                )}
+                                {(!regraVar || varAberta) && (
+                                <tr className={`hover:bg-slate-50/70 transition-colors ${regraVar ? 'bg-indigo-50/20 text-slate-500' : ''}`}>
                                   {/* Nome só na primeira linha do funcionário — as demais ficam em
                                       branco, já que a linha de Total identifica o grupo. */}
                                   <td className="px-3 py-1.5 pl-8 font-bold text-slate-900 whitespace-nowrap">
-                                    {ehPrimeiraLinhaDoFunc && (
+                                    {ehPrimeiraLinhaDoFunc && !regraVar && (
                                       <>
                                         {(() => {
                                           const st = statusLinha(c)
@@ -2135,7 +2636,7 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
                                       </>
                                     )}
                                   </td>
-                                  <td className="px-3 py-1.5 whitespace-nowrap">
+                                  <td className={`px-3 py-1.5 whitespace-nowrap ${regraVar ? 'pl-9' : ''}`}>
                                     {codigoPolitica(c.politica) && <span className="font-mono font-semibold text-slate-400 mr-1.5">{codigoPolitica(c.politica)}</span>}
                                     {c.politica.descricao_comissao || c.politica.nivel_calculo}
                                     {c.politica.usa_faixa === 'SIM' && c.politica.regra_comissao?.id ? (
@@ -2159,8 +2660,10 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
                                     ) : (
                                       <button type="button"
                                         onClick={() => setColunaModal({
+                                          copLinha: c.politica.pj_coparticipacao || c.politica.pj_desconto?.tipo === 'LANCADO' ? c : null,
                                           baseNome: c.base?.nome,
-                                          colunas: res?.valorPorColuna || [],
+                                          // Percentual PJ: a conta vai na tabela própria (não repete a lista de colunas).
+                                          colunas: c.politica.pj_percentual ? [] : (res?.valorPorColuna || []),
                                           total: res?.valorBase,
                                           fmtTotal: (v) => fmtValorBase(c, v),
                                           percentual: res?.percentual,
@@ -2168,6 +2671,14 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
                                           valorComissao: res?.valorComissao,
                                           periodoInicio: res?.periodoInicio || c.segInicio,
                                           periodoFim: res?.periodoFim || c.segFim,
+                                          // Faixas: as gravadas no cálculo, ou as atuais da regra (cálculo antigo não guardava).
+                                          bonificacao: res?.bonificacao ? { ...res.bonificacao, faixas: res.bonificacao.faixas || c.politica.pj_bonificacao?.faixas || [] } : null,
+                                          percentualPj: montarPercentualPj({ politica: c.politica, percentualPj: res?.percentualPj, valorPorColuna: res?.valorPorColuna, valorComissao: res?.valorComissao, politicas: dados?.politicas }) || res?.percentualPj || null,
+                                          // Detalhe por empresa (Política com "Detalhar por empresa" / Regra PJ) — fica
+                                          // dentro deste modal, não abaixo da descrição, pra linha não crescer.
+                                          empresas: c.politica.detalhar_por_empresa
+                                            ? detalhesEmpresa.map(d => ({ empresa: d.empresa, base: fmtValorBase(c, d.valorBase), valorComissao: d.valorComissao }))
+                                            : [],
                                         })}
                                         title="Ver a base de cálculo desta comissão"
                                         className="ml-1.5 align-middle inline-flex items-center justify-center w-5 h-5 rounded border border-blue-200 bg-white text-blue-600 hover:bg-blue-50 transition-colors">
@@ -2180,6 +2691,18 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
                                         {fmtDiaMes(res?.periodoInicio || c.segInicio)} a {fmtDiaMes(res?.periodoFim || c.segFim)}
                                       </span>
                                     )}
+                                    {Array.isArray(c.politica.pj_documentos) && c.politica.pj_documentos.length > 0 && (() => {
+                                      const docs = c.politica.pj_documentos
+                                      const feitos = docs.filter(d => anexosDoDocumento(c, d).length > 0).length
+                                      const completo = feitos === docs.length
+                                      return (
+                                        <button type="button" onClick={() => setDocsModal(c)}
+                                          title={completo ? 'Documentos anexados — clique para ver' : 'Faltam documentos — clique para anexar'}
+                                          className={`ml-1.5 align-middle inline-flex items-center gap-1 px-1.5 h-5 rounded border text-[10px] font-bold ${completo ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-300 bg-amber-50 text-amber-700'}`}>
+                                          <Paperclip className="h-3 w-3" /> {feitos}/{docs.length}
+                                        </button>
+                                      )
+                                    })()}
                                     {(c.politica?.codigo_rubrica || c.politica?.tipo_processo) && (
                                       <div className="text-[10px] font-normal text-slate-400 mt-0.5">
                                         {c.politica?.codigo_rubrica && (
@@ -2195,9 +2718,9 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
                                         )}
                                       </div>
                                     )}
-                                    {/* Detalhamento por empresa (Nível EMPRESA + checkbox marcado na Política) —
-                                        uma linha por empresa, abaixo da descrição, pra auditar de onde veio o total. */}
-                                    {c.politica.detalhar_por_empresa && detalhesEmpresa.length > 0 && (
+                                    {/* Detalhamento por empresa: sem Regra fica no modal Base de Cálculo; com Regra
+                                        (que abre outro modal) continua abaixo da descrição. */}
+                                    {c.politica.detalhar_por_empresa && detalhesEmpresa.length > 0 && c.politica.usa_faixa === 'SIM' && c.politica.regra_comissao?.id && (
                                       <div className="mt-1 space-y-0.5">
                                         {detalhesEmpresa.map(d => (
                                           <div key={d.empresa} className="text-[10px] font-normal text-slate-400">
@@ -2209,13 +2732,23 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
                                       </div>
                                     )}
                                   </td>
-                                  <td className="px-3 py-1.5 text-right font-mono">{res ? fmtValorBase(c, res.valorBase) : '—'}</td>
-                                  <td className="px-3 py-1.5 text-right font-mono">{fmtPct(c.politica.comissao_servicos)}</td>
-                                  <td className="px-3 py-1.5 text-right font-mono">{fmtPct(c.politica.comissao_pecas)}</td>
-                                  <td className="px-3 py-1.5 text-right font-mono">{c.politica.usa_faixa === 'SIM' ? fmtPct(res?.percentual) : fmtPct(c.politica.comissao_total)}</td>
-                                  <td className="px-3 py-1.5 text-right font-mono">{fmtBRL(c.politica.comissao_valor != null ? parseFloat(c.politica.comissao_valor) : null)}</td>
-                                  <td className="px-3 py-1.5 text-right font-mono font-semibold text-slate-800">{res ? (res.semMeta ? <span className="font-sans font-semibold text-amber-600 text-[11px]" title="Sem meta cadastrada em Planejamento de Metas pra este funcionário/mês">Sem meta</span> : fmtBRL(res.valorComissao)) : '—'}</td>
+                                  {/* Regra PJ (valor fixo, percentual sobre regras, bonificação): Base e %/R$ ficam só
+                                      na calculadora — na linha aparece apenas o valor final. */}
+                                  {/* Coparticipação: o boleto do mês é lançado dentro da calculadora (modal Base de Cálculo). */}
+                                  {c.politica.prestacao_pj ? (
+                                    <><td /><td /><td /><td /><td /></>
+                                  ) : (
+                                    <>
+                                      <td className="px-3 py-1.5 text-right font-mono">{res ? fmtValorBase(c, res.valorBase) : '—'}</td>
+                                      <td className="px-3 py-1.5 text-right font-mono">{fmtPct(c.politica.comissao_servicos)}</td>
+                                      <td className="px-3 py-1.5 text-right font-mono">{fmtPct(c.politica.comissao_pecas)}</td>
+                                      <td className="px-3 py-1.5 text-right font-mono">{c.politica.usa_faixa === 'SIM' ? fmtPct(res?.percentual) : fmtPct(c.politica.comissao_total)}</td>
+                                      <td className="px-3 py-1.5 text-right font-mono">{fmtBRL(c.politica.comissao_valor != null ? parseFloat(c.politica.comissao_valor) : null)}</td>
+                                    </>
+                                  )}
+                                  <td className={`px-3 py-1.5 text-right font-mono font-semibold ${res?.valorComissao < 0 ? 'text-rose-600' : 'text-slate-800'}`}>{res ? (res.semMeta ? <span className="font-sans font-semibold text-amber-600 text-[11px]" title="Sem meta cadastrada em Planejamento de Metas pra este funcionário/mês">Sem meta</span> : fmtBRL(res.valorComissao)) : '—'}</td>
                                 </tr>
+                                )}
                                 {mostrarSubtotal && (
                                   <tr className="bg-emerald-50/50">
                                     <td colSpan="7" className="px-2 py-1 pl-8 text-right text-[11px] font-bold text-slate-600 whitespace-nowrap">
@@ -2238,6 +2771,85 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
             </div>
           </div>
         </>
+      )}
+
+      {/* FALTAM DOCUMENTOS (Conferir Comissões com documento exigido pela Regra PJ ainda sem anexo) */}
+      {pendenciasAberta && (() => {
+        // Uma linha por funcionário + regra, com os documentos que faltam.
+        const grupos = []
+        documentosPendentes.forEach(p => {
+          const chave = chaveLinha(p.c)
+          let g = grupos.find(x => x.chave === chave)
+          if (!g) grupos.push(g = { chave, c: p.c, documentos: [] })
+          g.documentos.push(p.documento)
+        })
+        return (
+          <div className="fixed top-0 right-0 bottom-0 left-16 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setPendenciasAberta(false)}>
+            <div className="bg-white rounded-xl border border-slate-200 w-full max-w-lg shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between px-5 py-4 border-b border-amber-100 bg-amber-50">
+                <h3 className="text-sm font-bold text-amber-800 flex items-center gap-2"><AlertTriangle className="h-4 w-4" /> Faltam documentos para conferir</h3>
+                <button onClick={() => setPendenciasAberta(false)} className="text-slate-400 hover:text-slate-600"><X className="h-4 w-4" /></button>
+              </div>
+              <div className="p-5 space-y-3 max-h-[60vh] overflow-auto">
+                <p className="text-xs text-slate-600">As comissões abaixo exigem documentos anexados. Anexe todos para liberar o <strong>Conferir Comissões</strong>.</p>
+                {grupos.map(g => (
+                  <div key={g.chave} className="rounded-md border border-slate-200 p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-[11px] text-slate-500">{g.c.func.nome_funcionario}</div>
+                        <div className="text-xs font-semibold text-slate-800"><span className="font-mono text-slate-400 mr-1">{codigoPolitica(g.c.politica)}</span>{g.c.politica.descricao_comissao}</div>
+                      </div>
+                      <button type="button" onClick={() => { setPendenciasAberta(false); setDocsModal(g.c) }}
+                        className="flex items-center gap-1.5 text-[11px] font-semibold text-blue-700 border border-blue-200 bg-white hover:bg-blue-50 px-2.5 py-1 rounded-md shrink-0">
+                        <Paperclip className="h-3.5 w-3.5" /> Anexar
+                      </button>
+                    </div>
+                    <ul className="mt-1.5 space-y-0.5">
+                      {g.documentos.map(d => <li key={d} className="text-[11px] text-amber-700 flex items-center gap-1.5"><AlertTriangle className="h-3 w-3" /> {d}</li>)}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+              <div className="flex justify-end px-5 py-3 border-t border-slate-100 bg-slate-50">
+                <button type="button" onClick={() => setPendenciasAberta(false)} className="text-xs font-semibold text-slate-700 border border-slate-300 hover:bg-slate-100 px-3 py-2 rounded-md">Fechar</button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* DOCUMENTOS DA REGRA PJ (clipe ao lado da comissão) */}
+      {docsModal && (
+        <div className="fixed top-0 right-0 bottom-0 left-16 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setDocsModal(null)}>
+          <div className="bg-white rounded-xl border border-slate-200 w-full max-w-lg shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-slate-50">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2"><Paperclip className="h-4 w-4 text-blue-600" /> Documentos — {codigoPolitica(docsModal.politica)} {docsModal.politica.descricao_comissao}</h3>
+                <p className="text-[11px] text-slate-500">{docsModal.func.nome_funcionario} · {periodoInicio.slice(5, 7)}/{periodoInicio.slice(0, 4)}</p>
+              </div>
+              <button onClick={() => setDocsModal(null)} className="text-slate-400 hover:text-slate-600"><X className="h-4 w-4" /></button>
+            </div>
+            <div className="p-5 space-y-2">
+              <p className="text-[11px] text-slate-500">Anexe cada documento (PDF ou imagem, até 5 MB). Sem todos, o Conferir Comissões fica bloqueado.</p>
+              {docsModal.politica.pj_documentos.map(d => (
+                <AnexoPjSlot key={d} rotulo={d} anexos={anexosDoDocumento(docsModal, d)}
+                  podeEditar={!loteBloqueado && !setorSomenteVisualizacao}
+                  dados={{ funcionarioId: docsModal.func.id, periodo: periodoInicio.slice(0, 7), tipo: 'DOCUMENTO', regraId: docsModal.politica.grupo_politica_id || docsModal.politica.id, documento: d }}
+                  onAlterado={carregarAnexosPj} />
+              ))}
+            </div>
+            {/* Cada arquivo já é gravado ao anexar — Confirmar só fecha a tela. */}
+            <div className="flex items-center justify-between gap-3 px-5 py-3 border-t border-slate-100 bg-slate-50">
+              <span className="text-[11px] text-slate-500">
+                {docsModal.politica.pj_documentos.filter(d => anexosDoDocumento(docsModal, d).length > 0).length} de {docsModal.politica.pj_documentos.length} documento{docsModal.politica.pj_documentos.length === 1 ? '' : 's'} anexado{docsModal.politica.pj_documentos.length === 1 ? '' : 's'}
+              </span>
+              <button type="button" onClick={() => setDocsModal(null)}
+                className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-4 py-2 rounded-md">
+                <CheckCircle2 className="h-3.5 w-3.5" /> Confirmar
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* TELINHA DA REGRA (aberta pelo ícone de calculadora ao lado da comissão) */}
@@ -2296,7 +2908,7 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
                   só que aqui embutido na telinha da Regra. */}
               {regraModal.valorPorColuna?.length > 0 && (
                 <div className="rounded-md border border-slate-200 divide-y divide-slate-100">
-                  {regraModal.valorPorColuna.map((col, i) => (
+                  {ordenarColunasBase(regraModal.valorPorColuna).map((col, i) => (
                     <div key={i} className="flex items-center justify-between px-3 py-2 text-xs">
                       <span className="font-mono text-slate-600">{rotuloColuna(col.coluna)}</span>
                       <span className="font-mono font-semibold text-slate-700">{fmtBRL(col.valor)}</span>
@@ -2408,9 +3020,44 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
         </div>
       )}
 
+      {nfFuncId && (
+        <div className="fixed top-0 right-0 bottom-0 left-16 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => !gerandoNf && setNfFuncId(null)}>
+          <div className="bg-white rounded-xl border border-slate-200 w-full max-w-[1400px] max-h-[88vh] shadow-2xl flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between gap-4 px-5 py-4 border-b border-slate-100 bg-slate-50 shrink-0">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2"><FileText className="h-4 w-4 text-emerald-600" /> Nota Fiscal — Prestação de Serviços</h3>
+                <p className="text-[11px] text-slate-400 mt-0.5">Período {fmtData(periodoInicio)} a {fmtData(periodoFim)}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                {prestadoresNf.length > 1 && (
+                  <select value={nfFuncId} onChange={e => setNfFuncId(e.target.value)} className="text-xs p-1.5 border border-slate-200 rounded-md bg-white">
+                    {prestadoresNf.map(f => <option key={f.id} value={f.id}>{f.nome_funcionario}</option>)}
+                  </select>
+                )}
+                <button type="button" onClick={salvarNotaFiscalPdf} disabled={gerandoNf || !notaFiscal}
+                  className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white text-xs font-semibold px-3 py-1.5 rounded-md">
+                  {gerandoNf ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileDown className="h-3.5 w-3.5" />}
+                  Salvar em PDF
+                </button>
+                <button onClick={() => setNfFuncId(null)} disabled={gerandoNf} className="text-slate-400 hover:text-slate-600"><X className="h-4 w-4" /></button>
+              </div>
+            </div>
+            <div className="p-5 overflow-auto">
+              {!notaFiscal ? (
+                <p className="text-xs text-slate-400">Sem valores calculados para este prestador.</p>
+              ) : (
+                <>
+                  <TabelaNotaFiscal nf={notaFiscal} anexos={anexosPj.filter(a => a.funcionario_id === nfFuncId)} />
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {colunaModal && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setColunaModal(null)}>
-          <div className="bg-white rounded-lg border border-slate-200 w-full max-w-[380px] shadow-xl overflow-hidden" onClick={e => e.stopPropagation()}>
+          <div className={`bg-white rounded-lg border border-slate-200 w-full ${colunaModal.bonificacao ? 'max-w-[860px]' : colunaModal.percentualPj ? 'max-w-[680px]' : 'max-w-[560px]'} shadow-xl overflow-hidden`} onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50">
               <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                 <Calculator className="h-4 w-4 text-blue-600" /> Base de Cálculo
@@ -2424,20 +3071,98 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
               {colunaModal.periodoInicio && colunaModal.periodoFim && (
                 <div className="text-[11px] text-slate-500">Período: <span className="font-semibold text-slate-700">{fmtDiaMes(colunaModal.periodoInicio)} a {fmtDiaMes(colunaModal.periodoFim)}</span></div>
               )}
-              {colunaModal.total == null ? (
+              {colunaModal.copLinha ? (() => {
+                // Coparticipação: lança o valor do boleto aqui; aplica o % da regra e divide entre as empresas.
+                const c = colunaModal.copLinha
+                const boleto = boletosCop[chaveBoleto(c)] ?? null
+                const ehDesconto = !!c.politica.pj_desconto
+                const cop = boleto && !ehDesconto ? dividirCoparticipacao(c.politica, boleto) : null
+                const bloqueado = !podeCalcular || loteBloqueado || !periodoValido
+                return (
+                  <div className="space-y-3">
+                    <div className="flex items-end gap-2">
+                      <div className="flex flex-col gap-1 flex-1">
+                        <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">{ehDesconto ? 'Valor do desconto do mês (R$)' : 'Valor total do boleto do mês (R$)'}</label>
+                        <input id="boleto-cop" type="number" min="0" step="0.01" placeholder="0,00"
+                          key={`${chaveBoleto(c)}:${boleto ?? ''}`}
+                          defaultValue={boleto ?? ''}
+                          disabled={bloqueado}
+                          onKeyDown={e => { if (e.key === 'Enter') aplicarBoletoCop(c, e.currentTarget.value) }}
+                          className="w-full text-sm p-2 border border-slate-200 rounded-md text-right font-mono font-medium text-slate-800 disabled:bg-slate-50 disabled:text-slate-400" />
+                      </div>
+                      <button type="button" disabled={bloqueado}
+                        onClick={() => aplicarBoletoCop(c, document.getElementById('boleto-cop')?.value)}
+                        className="px-4 py-2 rounded-md bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-semibold">
+                        Aplicar
+                      </button>
+                    </div>
+                    {bloqueado && (
+                      <p className="text-[11px] text-amber-600">{!periodoValido ? 'Informe o período (um mês) primeiro.' : loteBloqueado ? 'Lote já conferido — libere o reprocessamento para alterar o boleto.' : 'Sem permissão para calcular.'}</p>
+                    )}
+                    {ehDesconto && boleto ? (
+                      <div className="flex items-center justify-between px-3 py-2 rounded-md bg-rose-50 border border-rose-200 text-xs font-bold">
+                        <span className="text-slate-700">Desconto do mês</span>
+                        <span className="font-mono text-rose-700">{fmtBRL(-boleto)}</span>
+                      </div>
+                    ) : cop ? (
+                      <div className="rounded-md border border-slate-200 overflow-hidden">
+                        <p className="px-3 py-1.5 bg-slate-50 text-[11px] text-slate-500">
+                          Boleto <span className="font-mono font-semibold text-slate-700">{fmtBRL(boleto)}</span> × <span className="font-mono font-semibold text-slate-700">{fmtPct(cop.pct)}</span> = <span className="font-mono font-semibold text-slate-700">{fmtBRL(cop.total)}</span>, dividido em partes iguais entre {cop.lista.length} empresa{cop.lista.length === 1 ? '' : 's'}
+                        </p>
+                        <table className="w-full text-xs">
+                          <tbody className="divide-y divide-slate-100">
+                            {cop.lista.map(d => (
+                              <tr key={d.empresa}>
+                                <td className="px-3 py-1.5 text-slate-700">{d.empresa}</td>
+                                <td className="px-3 py-1.5 text-right font-mono font-semibold text-emerald-700">{fmtBRL(d.valorComissao)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot>
+                            <tr className="bg-emerald-50 border-t border-emerald-200 font-bold">
+                              <td className="px-3 py-1.5 text-slate-700">Total</td>
+                              <td className="px-3 py-1.5 text-right font-mono text-emerald-700">{fmtBRL(cop.total)}</td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    ) : (
+                      <p className="text-[11px] text-slate-400">{ehDesconto ? 'Informe o valor do desconto do mês e clique em Aplicar.' : 'Informe o valor do boleto e clique em Aplicar para ver o valor por empresa e o total.'}</p>
+                    )}
+                  </div>
+                )
+              })() : colunaModal.total == null ? (
                 <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 text-amber-700 text-[11px] leading-relaxed">
                   <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" /> Ainda não foi calculado neste período.
                 </div>
               ) : (
                 <>
+                  <TabelaBonificacao bonificacao={colunaModal.bonificacao} />
+                  <TabelaPercentualPJ percentualPj={colunaModal.percentualPj} />
                   {colunaModal.colunas.length > 0 && (
                     <div className="rounded-md border border-slate-200 divide-y divide-slate-100">
-                      {colunaModal.colunas.map((col, i) => (
+                      {ordenarColunasBase(colunaModal.colunas).map((col, i) => (
                         <div key={i} className="flex items-center justify-between px-3 py-2 text-xs">
                           <span className="font-mono text-slate-600">{col.coluna}</span>
                           <span className="font-mono font-semibold text-slate-700">{(colunaModal.fmtTotal || fmtBRL)(col.valor)}</span>
                         </div>
                       ))}
+                    </div>
+                  )}
+                  {colunaModal.empresas?.length > 0 && (
+                    <div className="rounded-md border border-slate-200">
+                      <p className="px-3 pt-2 text-[10px] font-bold uppercase tracking-wide text-slate-400">Por empresa</p>
+                      <div className="divide-y divide-slate-100 max-h-[50vh] overflow-y-auto">
+                        {colunaModal.empresas.map(d => (
+                          <div key={d.empresa} className="px-3 py-1.5 text-[11px]">
+                            <div className="font-semibold text-slate-700">{d.empresa}</div>
+                            <div className="flex items-center justify-between text-slate-500">
+                              <span>Base <span className="font-mono text-slate-600">{d.base}</span></span>
+                              <span>{ehTelaGrupo ? 'Valor Serviços' : 'Comissão'} <span className="font-mono font-semibold text-emerald-600">{fmtBRL(d.valorComissao)}</span></span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   )}
                   <div className="flex items-center justify-between px-3 py-2 rounded-md bg-blue-50 border border-blue-200 text-xs font-bold">
@@ -2457,7 +3182,7 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
                     </div>
                   )}
                   <div className="flex items-center justify-between px-3 py-2 rounded-md bg-emerald-50 border border-emerald-200 text-xs font-bold">
-                    <span className="text-slate-700">Valor da Comissão</span>
+                    <span className="text-slate-700">{ehTelaGrupo ? 'Valor Serviços' : 'Valor da Comissão'}</span>
                     <span className="font-mono text-emerald-700">{fmtBRL(colunaModal.valorComissao)}</span>
                   </div>
                 </>

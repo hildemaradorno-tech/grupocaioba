@@ -1,22 +1,33 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { Plus } from 'lucide-react'
 
-// Botão "+ Adicionar X" retrátil: fica só o ícone e expande mostrando o texto ao passar o mouse (ou focar,
-// pra acessibilidade via teclado). Usado nas abas de Planejamento de Metas - Pós-Vendas, onde a linha das
-// abas já divide espaço com 5 abas + o toggle Total/Peças/Serviços — com o texto sempre visível a linha
-// não cabe numa tela normal e o botão acaba saindo da área visível.
-export default function BotaoAcaoRetratil({ texto, onClick, Icone = Plus, className = '' }) {
+// Botão de ação só com ícone (quadrado, tamanho fixo — vários lado a lado ficam alinhados); a descrição aparece
+// só ao passar o mouse, num balão "fixed" (não é cortado por containers com scroll). variante: 'primario' (cheio)
+// ou 'secundario' (contorno).
+export default function BotaoAcaoRetratil({ texto, onClick, Icone = Plus, variante = 'primario', className = '' }) {
+  const [pos, setPos] = useState(null)
+  // Mesmo formato dos botões de mês (SeletorMeses), em verde pra se diferenciar deles: primário = cheio; secundário = claro.
+  const estilo = variante === 'secundario'
+    ? 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100'
+    : 'bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700'
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={texto}
-      className={`group inline-flex items-center h-10 pl-2.5 pr-2.5 hover:pr-4 focus:pr-4 gap-0 hover:gap-2 focus:gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-lg transition-all duration-200 overflow-hidden disabled:opacity-50 disabled:cursor-not-allowed shrink-0 ${className}`}
-    >
-      <Icone size={16} className="shrink-0" />
-      <span className="max-w-0 group-hover:max-w-xs group-focus:max-w-xs overflow-hidden whitespace-nowrap transition-all duration-200">
-        {texto}
-      </span>
-    </button>
+    <span className="inline-flex"
+      onMouseEnter={e => { const r = e.currentTarget.getBoundingClientRect(); setPos({ x: r.right, y: r.bottom + 6 }) }}
+      onMouseLeave={() => setPos(null)}>
+      <button
+        type="button"
+        aria-label={texto}
+        onClick={e => { setPos(null); onClick?.(e) }}
+        className={`inline-flex items-center justify-center px-2.5 py-1 rounded-md border text-xs leading-4 transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed ${estilo} ${className}`}
+      >
+        <Icone size={16} />
+      </button>
+      {pos && (
+        <span style={{ position: 'fixed', left: pos.x, top: pos.y, transform: 'translateX(-100%)' }}
+          className="z-[60] bg-slate-800 text-white text-[11px] font-medium rounded-md px-2.5 py-1.5 shadow-lg whitespace-nowrap pointer-events-none">
+          {texto}
+        </span>
+      )}
+    </span>
   )
 }

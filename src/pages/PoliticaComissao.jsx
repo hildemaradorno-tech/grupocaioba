@@ -135,7 +135,7 @@ function CargoMultiSelect({ cargos, selecionados, onToggle }) {
 
   const cargosFiltrados = cargos
     .filter(c => filtrosEmpresa.length === 0 || filtrosEmpresa.includes(c.nome_empresa))
-    .filter(c => !busca.trim() || buscaComCoringa(`${c.codigo_cargo || ''} ${c.nome_cargo} ${c.nome_empresa || ''}`, busca))
+    .filter(c => !busca.trim() || buscaComCoringa(`${c.codigo_cargo || ''} ${c.nome_cargo} ${c.nome_empresa || ''} ${c.tipo_contratacao || ''}`, busca))
     // Ordena pelo Código (numérico quando possível) — é o primeiro dado que aparece em cada
     // linha, então navegar em ordem crescente de código é mais previsível do que por nome.
     .sort((a, b) => {
@@ -218,6 +218,9 @@ function CargoMultiSelect({ cargos, selecionados, onToggle }) {
                 />
                 <span className="font-mono text-[10px] text-slate-400 shrink-0 w-10">{c.codigo_cargo || '—'}</span>
                 <span className="truncate text-slate-700 font-medium flex-1">{c.nome_cargo}</span>
+                {c.tipo_contratacao === 'PJ' && (
+                  <span className="shrink-0 px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-50 text-amber-700 border border-amber-200">PJ</span>
+                )}
                 <span className="text-[10px] text-slate-400 shrink-0 truncate max-w-[140px]">{c.nome_empresa || '—'}</span>
               </label>
             )
@@ -473,7 +476,7 @@ export default function PoliticaComissao() {
       ])
       setFontesMw(fontesMwData)
       setRegrasComissao(regrasData)
-      setDados(politicas)
+      setDados(politicas.filter(p => !p.prestacao_pj))
       setEmpresas([...emps].sort((a, b) => (a.empresa_fantasia || '').localeCompare(b.empresa_fantasia || '', 'pt-BR')))
       setCargos([...carg].sort((a, b) => (a.nome_cargo || '').localeCompare(b.nome_cargo || '', 'pt-BR')))
       setFontesCalculo([...fontes].sort((a, b) => (a.nome || '').localeCompare(b.nome || '', 'pt-BR')))
@@ -644,7 +647,7 @@ export default function PoliticaComissao() {
         ...resto,
         fonte_calculo_id: (form.fonte_calculo_id && !String(form.fonte_calculo_id).startsWith('mw:')) ? form.fonte_calculo_id : null,
         base_calculo_id: form.base_calculo_id || null,
-        codigo_politica: form.codigo_politica?.trim() || null,
+        codigo_politica: form.codigo_politica?.trim().toUpperCase() || null,
         // Usa Regra = SIM: o percentual vem das faixas da Regra (sobre o valor da Base), então
         // os campos fixos ficam nulos e a Regra escolhida é gravada.
         regra_comissao_id: form.usa_faixa === 'SIM' ? (form.regra_comissao_id || null) : null,
@@ -1006,14 +1009,16 @@ export default function PoliticaComissao() {
                 {/* Código + Descrição */}
                 <div className="grid grid-cols-[160px_1fr] gap-4">
                 <div className="flex flex-col gap-1.5">
-                  <label className={LBL}>Código</label>
+                  <label className={LBL}>Código <span className="text-red-500">*</span></label>
+                  {/* Obrigatório e sempre em MAIÚSCULO (converte enquanto digita). */}
                   <input
                     type="text"
+                    required
                     name="codigo_politica"
                     value={form.codigo_politica}
-                    onChange={handleInputChange}
-                    placeholder="Ex: 001"
-                    className={INP}
+                    onChange={e => setForm(f => ({ ...f, codigo_politica: e.target.value.toUpperCase() }))}
+                    placeholder="Ex: PREST001"
+                    className={`${INP} uppercase`}
                   />
                 </div>
                 <div className="flex flex-col gap-1.5">

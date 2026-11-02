@@ -108,7 +108,8 @@ export function SearchCombobox({ value, onChange, opcoes, placeholder, emptyOpti
 // Variante multi-seleção do combobox acima — cada opção marcada fica na lista (não fecha o
 // painel ao marcar, pra permitir selecionar vários seguidos), com um resumo no botão.
 // quebrarTexto: nomes longos quebram linha na lista em vez de serem cortados com "..."
-export function MultiSearchCombobox({ value, onChange, opcoes, placeholder, searchPlaceholder, notFoundLabel, getLabel, getSearchText, resumo, quebrarTexto = false }) {
+// grupos (opcional): [{ id, label, ids }] — atalhos no topo da lista que marcam/desmarcam várias opções de uma vez.
+export function MultiSearchCombobox({ value, onChange, opcoes, placeholder, searchPlaceholder, notFoundLabel, getLabel, getSearchText, resumo, quebrarTexto = false, grupos = [] }) {
   const [aberto, setAberto] = useState(false)
   const [busca, setBusca] = useState('')
   const [pos, setPos] = useState(null)
@@ -151,8 +152,16 @@ export function MultiSearchCombobox({ value, onChange, opcoes, placeholder, sear
     onChange([...next])
   }
 
+  const toggleGrupo = (g) => {
+    const next = new Set(selecionados)
+    const todos = g.ids.every(id => next.has(id))
+    g.ids.forEach(id => { if (todos) next.delete(id); else next.add(id) })
+    onChange([...next])
+  }
+
   const q = busca.trim().toLowerCase()
   const filtradas = q ? opcoes.filter(o => getSearchText(o).toLowerCase().includes(q)) : opcoes
+  const gruposVisiveis = (grupos || []).filter(g => g.ids.length > 0)
   const rotuloBotao = selecionados.size === 0
     ? placeholder
     : (resumo ? resumo(opcoes.filter(o => selecionados.has(o.id))) : `${selecionados.size} selecionado(s)`)
@@ -191,25 +200,67 @@ export function MultiSearchCombobox({ value, onChange, opcoes, placeholder, sear
               className="w-full text-sm pl-8 pr-2 py-2 focus:outline-none"
             />
           </div>
-          <div className="max-h-52 overflow-y-auto custom-scrollbar">
-            {filtradas.length === 0 ? (
-              <p className="px-3 py-2 text-sm text-slate-400">{notFoundLabel}</p>
-            ) : filtradas.map(o => {
-              const marcado = selecionados.has(o.id)
+          <div className="max-h-64 overflow-y-auto custom-scrollbar">
+            {(() => {
+              const renderOpcao = (o, recuo) => {
+                const marcado = selecionados.has(o.id)
+                return (
+                  <button
+                    key={o.id}
+                    type="button"
+                    onClick={() => toggle(o.id)}
+                    className={`w-full flex items-center gap-2 text-left ${recuo ? 'pl-9' : 'pl-3'} pr-3 py-2 text-sm hover:bg-blue-50 ${marcado ? 'bg-blue-50/60 text-blue-700' : 'text-slate-700'}`}
+                  >
+                    <span className={`shrink-0 w-4 h-4 rounded border flex items-center justify-center ${marcado ? 'bg-blue-600 border-blue-600' : 'border-slate-300'}`}>
+                      {marcado && <Check className="h-3 w-3 text-white" />}
+                    </span>
+                    <span className={quebrarTexto ? 'break-words' : 'truncate'}>{getLabel(o)}</span>
+                  </button>
+                )
+              }
+              // Sem grupos: lista simples. Com grupos: cascata — cada grupo (marca/desmarca todos) com as opções dele abaixo.
+              if (!gruposVisiveis.length) {
+                return filtradas.length === 0
+                  ? <p className="px-3 py-2 text-sm text-slate-400">{notFoundLabel}</p>
+                  : filtradas.map(o => renderOpcao(o, false))
+              }
+              const porId = new Map(opcoes.map(o => [o.id, o]))
+              const idsAgrupados = new Set(gruposVisiveis.flatMap(g => g.ids))
+              const blocos = gruposVisiveis.map(g => {
+                const grupoBate = !q || g.label.toLowerCase().includes(q)
+                const filhos = g.ids.map(id => porId.get(id)).filter(Boolean).filter(o => grupoBate || getSearchText(o).toLowerCase().includes(q))
+                return { g, filhos, mostrar: grupoBate || filhos.length > 0 }
+              }).filter(b => b.mostrar)
+              const soltas = filtradas.filter(o => !idsAgrupados.has(o.id))
+              if (!blocos.length && !soltas.length) return <p className="px-3 py-2 text-sm text-slate-400">{notFoundLabel}</p>
               return (
-                <button
-                  key={o.id}
-                  type="button"
-                  onClick={() => toggle(o.id)}
-                  className={`w-full flex items-center gap-2 text-left px-3 py-2 text-sm hover:bg-blue-50 ${marcado ? 'bg-blue-50/60 text-blue-700' : 'text-slate-700'}`}
-                >
-                  <span className={`shrink-0 w-4 h-4 rounded border flex items-center justify-center ${marcado ? 'bg-blue-600 border-blue-600' : 'border-slate-300'}`}>
-                    {marcado && <Check className="h-3 w-3 text-white" />}
-                  </span>
-                  <span className={quebrarTexto ? 'break-words' : 'truncate'}>{getLabel(o)}</span>
-                </button>
+                <>
+                  {blocos.map(({ g, filhos }) => {
+                    const todos = g.ids.every(id => selecionados.has(id))
+                    const algum = !todos && g.ids.some(id => selecionados.has(id))
+                    return (
+                      <div key={`grupo-${g.id}`} className="border-b border-slate-100 last:border-b-0">
+                        <button
+                          type="button"
+                          onClick={() => toggleGrupo(g)}
+                          title={todos ? 'Desmarcar todas deste grupo' : 'Marcar todas deste grupo'}
+                          className={`w-full flex items-center gap-2 text-left px-3 py-2 text-sm font-semibold bg-slate-50 hover:bg-blue-50 ${todos ? 'text-blue-700' : 'text-slate-800'}`}
+                        >
+                          <span className={`shrink-0 w-4 h-4 rounded border flex items-center justify-center ${todos ? 'bg-blue-600 border-blue-600' : algum ? 'bg-blue-100 border-blue-400' : 'border-slate-300 bg-white'}`}>
+                            {todos && <Check className="h-3 w-3 text-white" />}
+                            {algum && <span className="w-2 h-0.5 bg-blue-600 rounded" />}
+                          </span>
+                          <span className="truncate">{g.label}</span>
+                          <span className="ml-auto text-[11px] font-normal text-slate-400">{g.ids.length}</span>
+                        </button>
+                        {filhos.map(o => renderOpcao(o, true))}
+                      </div>
+                    )
+                  })}
+                  {soltas.map(o => renderOpcao(o, false))}
+                </>
               )
-            })}
+            })()}
           </div>
         </div>,
         document.body

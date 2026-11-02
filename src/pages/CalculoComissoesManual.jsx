@@ -82,11 +82,11 @@ export default function CalculoComissoesManual() {
     <div className="p-6 max-w-screen-xl">
       <div className="border-b border-slate-200 pb-4 mb-5">
         <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
-          <BookOpen className="h-5 w-5 text-indigo-600" /> Manual de Operação — Comissões DAF e HONDA
+          <BookOpen className="h-5 w-5 text-indigo-600" /> Manual de Operação — Comissões DAF, HONDA e Prestadores de Serviços
         </h1>
         <p className="text-xs text-slate-500 mt-1">
-          Passo a passo para calcular, salvar, conferir e exportar as comissões do período. As telas Comissões - DAF e
-          Comissões - HONDA funcionam do mesmo jeito — muda só o grupo de empresas.
+          Passo a passo para calcular, salvar, conferir e exportar as comissões do período. As telas Comissões - DAF,
+          Comissões - HONDA e Prestadores de Serviços funcionam do mesmo jeito — muda só o grupo de empresas.
         </p>
       </div>
 
@@ -114,6 +114,7 @@ export default function CalculoComissoesManual() {
             <Itens itens={[
               ['Comissões - DAF', 'empresas da Caiobá Trucks.'],
               ['Comissões - HONDA', 'empresas da Caiobá Motos.'],
+              ['Prestadores de Serviços', 'empresas do agrupamento Outras Caiobá (Caminhões, Holding, Transportes, Serviços ADM, Participações).'],
             ]} />
             <p>
               No cabeçalho ficam o botão de férias (<Btn icon={CheckCircle2}>Férias Atualizadas</Btn> ou <Btn icon={RefreshCw}>Atualizar Férias</Btn>) e

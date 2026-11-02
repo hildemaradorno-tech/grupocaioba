@@ -22,7 +22,9 @@ import { fmtBRL } from './comissoesFormat'
 // Escapa texto vindo do cadastro antes de montar o HTML do PDF (nomes podem ter & ou <).
 export const esc = (v) => String(v ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]))
 
-export async function gerarPdfComissoes({ setores, periodoInicio, periodoFim, nomeArquivo }) {
+// paginasIniciais: blocos HTML (largura WRAP_W) que entram antes do detalhe, um por página — ex: a
+// tabela-resumo da Nota Fiscal do prestador PJ.
+export async function gerarPdfComissoes({ setores, periodoInicio, periodoFim, nomeArquivo, paginasIniciais = [] }) {
   const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
     import('html2canvas'),
     import('jspdf'),
@@ -160,6 +162,11 @@ export async function gerarPdfComissoes({ setores, periodoInicio, periodoFim, no
     const h = (canvas.height / canvas.width) * CW
     pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', MARGIN, y, CW, h)
     return h
+  }
+
+  for (const html of paginasIniciais) {
+    const y = iniciarPagina()
+    colocarCanvas(await renderBloco(html), y)
   }
 
   for (const setor of setores) {

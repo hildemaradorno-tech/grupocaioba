@@ -17,6 +17,12 @@ export const ROTULO_ACAO_HISTORICO = {
 
 // Código da Política de Comissão (cadastro da política) — ordena as comissões nas telas de
 // Comissões e Processamento: com código primeiro, em ordem numérica (2 antes de 10); sem código no fim.
+// Detalhe da Base por coluna/tipo de movimento: SAÍDA sempre acima de ENTRADA (demais mantêm a ordem).
+export const ordenarColunasBase = (cols) => {
+  const ehEntrada = (col) => String(col?.coluna || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toUpperCase().startsWith('ENTRADA')
+  return [...(cols || [])].sort((a, b) => ehEntrada(a) - ehEntrada(b))
+}
+
 export const codigoPolitica = (politica) => (politica?.codigo_politica || '').trim()
 export const compararCodigoPolitica = (pa, pb) => {
   const a = codigoPolitica(pa), b = codigoPolitica(pb)

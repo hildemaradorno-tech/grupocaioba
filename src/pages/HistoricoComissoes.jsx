@@ -1,13 +1,20 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { Search, Loader2, AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, Eye, X, RotateCcw, Truck, ShieldCheck, CheckCircle2, Circle, Download, Trash2, ClipboardCheck, Calculator, History, BookOpen } from 'lucide-react'
+import { Search, Loader2, AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, Eye, X, RotateCcw, Truck, ShieldCheck, CheckCircle2, Circle, Download, Trash2, ClipboardCheck, Calculator, History, BookOpen, Paperclip } from 'lucide-react'
 import { apiService } from '../services/api'
 import { passaEscopoComissao, setorSoVisualizacao, empresaNoEscopoComissao } from '../utils/permissoesComissao'
 import { useAuth } from '../context/AuthContext'
-import { fmtBRL, fmtPct, fmtDiaMes, TIPOS_META_LABEL, CAMPO_META_LABEL, faixasDaRegra, ROTULO_ACAO_HISTORICO, codigoPolitica, compararCodigoPolitica, comissaoComCodigo } from '../utils/comissoesFormat'
+import TabelaBonificacao from '../components/TabelaBonificacao'
+import TabelaPercentualPJ from '../components/TabelaPercentualPJ'
+import { fmtBRL, fmtPct, fmtDiaMes, TIPOS_META_LABEL, CAMPO_META_LABEL, faixasDaRegra, ROTULO_ACAO_HISTORICO, codigoPolitica, compararCodigoPolitica, comissaoComCodigo, ordenarColunasBase } from '../utils/comissoesFormat'
 import { gerarPdfComissoes, paraNomeArquivo } from '../utils/comissoesPdf'
 import { rotuloColuna } from '../utils/rotuloColuna'
-import { AGRUPAMENTOS_COMISSAO, funcionarioAtivoComissao, resolvePoliticas, politicaConfigurada, empresaSelecionavel } from '../utils/comissoesElegibilidade'
+import { AGRUPAMENTOS_COMISSAO, funcionarioAtivoComissao, resolvePoliticas, politicaConfigurada, empresaProcessaComissao } from '../utils/comissoesElegibilidade'
+import { montarPercentualPj } from '../utils/regrasPj'
+import { montarNotaFiscalPj, montarHtmlNotaFiscal, montarSetorAnaliticoPj, notasFiscaisRecebidas, chaveNotaFiscal, anexosDaNota, fmtCnpj } from '../utils/notaFiscalPj'
+import TabelaNotaFiscal from '../components/TabelaNotaFiscal'
+import AnexoPjSlot from '../components/AnexoPjSlot'
+import VisualizadorAnexosPj from '../components/VisualizadorAnexosPj'
 
 
 const SEL = 'text-xs p-2 border border-slate-200 rounded-md bg-white font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500'
@@ -145,6 +152,13 @@ function DropdownAcao({ label, icon: Icon, carregando, disabled, title, classNam
 // a linha expandida ocupa todas. Ações do lote ficam na barra acima da tabela.
 const COLUNAS_LOTE = 8
 
+// Lote PJ depois do Conferido DP: aguarda o prestador anexar as Notas Fiscais (Minha Nota Fiscal);
+// com todas as notas do quadro de emissão anexadas, vira "Nota Fiscal Recebida".
+const STATUS_NF_PJ = {
+  aguardando: { label: 'Aguardando Nota Fiscal', className: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  recebida: { label: 'Nota Fiscal Recebida', className: 'bg-teal-600 text-white border-teal-600' },
+}
+
 // Uma linha por lote (Empresa + Setor + Período) — o botão de expandir abre logo abaixo as
 // comissões individuais dos funcionários dele. Os botões de ação (Conferido DP / Reprocessar /
 // Excluir) já sabem exatamente qual lote é o seu, direto pela linha.
@@ -156,6 +170,8 @@ function LoteLinha({ grupo, expandido, onToggleExpand, selecionados, onToggleSel
   const temReprocessamentoPendente = (lote?.funcionarios_liberados_reprocessamento || []).length > 0
   const statusInfo = (status === 'PROCESSADO' && temReprocessamentoPendente)
     ? { label: 'Processado Parcialmente', className: 'bg-amber-50 text-amber-700 border-amber-200' }
+    : (grupo.pj && status === 'CONFERIDO_DP')
+    ? STATUS_NF_PJ[grupo.nfRecebida ? 'recebida' : 'aguardando']
     : STATUS_LOTE_INFO[status] || { label: status || 'Sem lote', className: 'bg-slate-100 text-slate-500 border-slate-200' }
   const selecionadosDoLote = grupo.funcionarios.filter(f => selecionados.has(f.funcionario_id))
   const todosSelecionados = grupo.funcionarios.length > 0 && selecionadosDoLote.length === grupo.funcionarios.length
@@ -310,7 +326,7 @@ function LoteLinha({ grupo, expandido, onToggleExpand, selecionados, onToggleSel
                             : lote?.funcionarios_processados?.includes(f.funcionario_id)
                               ? { label: 'Processado', className: 'bg-emerald-50 text-emerald-700 border-emerald-200' }
                               : (status === 'PROCESSAMENTO_PARCIAL' || status === 'CONFERIDO_DP')
-                                ? { label: 'Aguardando Processamento', className: 'bg-indigo-50 text-indigo-700 border-indigo-200' }
+                                ? (grupo.pj ? STATUS_NF_PJ[f.nfRecebida ? 'recebida' : 'aguardando'] : { label: 'Aguardando Processamento', className: 'bg-indigo-50 text-indigo-700 border-indigo-200' })
                                 : statusInfo
                           return (
                             <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border whitespace-nowrap ${info.className}`}>
@@ -377,6 +393,13 @@ export default function HistoricoComissoes() {
   // nada aqui) — regraModal = "Regra da Comissão" (políticas com faixa), colunaModal = Venda/
   // Devolução (políticas sem faixa, quando a Base tem Coluna Tipo de Movimento ou soma 2+ colunas).
   const [regraModal, setRegraModal] = useState(null)
+  const [variaveisModal, setVariaveisModal] = useState(null)
+  // Visualizar de prestador PJ: aba "Detalhe do Cálculo" (padrão) ou "Nota Fiscal".
+  const [abaDetalhe, setAbaDetalhe] = useState('calculo')
+  // Anexos PJ (pj_anexos) dos meses na tela: Notas Fiscais e documentos exigidos pelas Regras PJ.
+  const [anexosPj, setAnexosPj] = useState([])
+  const [verAnexos, setVerAnexos] = useState(null) // lista de anexos aberta na tela de visualização
+  const [gerandoNfPdf, setGerandoNfPdf] = useState(false) // linha "Variáveis" (Regra PJ) aberta no Visualizar
   const [colunaModal, setColunaModal] = useState(null)
   const [lotesMap, setLotesMap] = useState({})
   const [selecionados, setSelecionados] = useState(new Set())
@@ -439,7 +462,7 @@ export default function HistoricoComissoes() {
   // Opções dos filtros vêm dos cadastros completos (não dependem de já ter buscado um período),
   // pra dar pra pré-filtrar antes de clicar em Visualizar.
   const empresasUnicas = useMemo(() => juntaUnicos((dados?.empresas || [])
-    .filter(e => empresaSelecionavel(e) && AGRUPAMENTOS_COMISSAO.includes(e.agrupamento_nome) && empresaNoEscopoComissao(e.id, comissaoEscopoEfetivo))
+    .filter(e => empresaProcessaComissao(e) && AGRUPAMENTOS_COMISSAO.includes(e.agrupamento_nome) && empresaNoEscopoComissao(e.id, comissaoEscopoEfetivo))
     .map(e => e.empresa_fantasia || e.nome_empresa)), [dados, comissaoEscopoEfetivo])
   const setoresUnicas = useMemo(() => juntaUnicos((dados?.setores || []).map(s => s.nome_setor)), [dados])
   const areasUnicas = useMemo(() => juntaUnicos((dados?.departamentos || []).map(d => d.area)), [dados])
@@ -540,6 +563,17 @@ export default function HistoricoComissoes() {
     return () => { cancelado = true }
   }, [loteIdsResultados])
 
+  const periodosResultados = useMemo(() => [...new Set(resultados.map(r => (r.periodo_inicio || '').slice(0, 7)).filter(Boolean))].sort().join(','), [resultados])
+  const carregarAnexosPj = async () => {
+    if (!periodosResultados) { setAnexosPj([]); return }
+    try {
+      setAnexosPj(await apiService.getPjAnexos({ periodos: periodosResultados.split(',') }))
+    } catch {
+      setAnexosPj([])
+    }
+  }
+  useEffect(() => { carregarAnexosPj() }, [periodosResultados]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const resultadosFiltrados = useMemo(() => resultados.filter(r => !filtroEmpresa || r.empresaNome === filtroEmpresa), [resultados, filtroEmpresa])
 
   // Agrupa os resultados por LOTE e, dentro de cada lote, por funcionário — a tela é organizada
@@ -564,8 +598,14 @@ export default function HistoricoComissoes() {
         const registros = [...registrosLote].sort((a, b) => compararCodigoPolitica(a.politica, b.politica)
           || (a.periodo_inicio || '').localeCompare(b.periodo_inicio || ''))
         const base = registros[0]
+        const prestadorPj = registros.some(r => r.politica?.prestacao_pj)
+        const nfRecebida = prestadorPj && notasFiscaisRecebidas(montarNotaFiscalPj({
+          linhas: registros.map(r => ({ politica: r.politica, valor: r.valor_comissao, detalhe: Array.isArray(r.detalhe_empresas) ? r.detalhe_empresas : [] })),
+          politicas: dados?.politicas || [], empresas: dados?.empresas || [], emissaoConfig: base.func?.pj_emissao_nf || null, prestador: '',
+        }), anexosPj, funcionario_id, (base.periodo_inicio || '').slice(0, 7))
         return {
           funcionario_id,
+          nfRecebida,
           funcionarioNome: base.funcionarioNome,
           empresaNome: base.empresaNome,
           cargoNome: base.cargoNome,
@@ -586,6 +626,10 @@ export default function HistoricoComissoes() {
         loteId: g.loteId,
         lote: g.lote,
         status: g.lote?.status || null,
+        // Lote de prestadores PJ: não gera TXT — depois do Conferido DP fica "Aguardando Nota Fiscal"
+        // (o próprio PJ vê a Nota Fiscal em Minha Nota Fiscal) e não entra no Processar.
+        pj: funcionarios.length > 0 && funcionarios.every(f => f.registros.some(r => r.politica?.prestacao_pj)),
+        nfRecebida: funcionarios.length > 0 && funcionarios.every(f => f.nfRecebida),
         empresaNome: (empresaCadastro?.empresa_fantasia || empresaCadastro?.nome_empresa) || g.lote?.empresa_nome || funcionarios[0]?.empresaNome || 'Empresa',
         setorNome: setorCadastro?.nome_setor || g.lote?.setor_nome || 'Sem setor',
         // Área = área do departamento "pai" do setor (cadastro atual); lote legado sem setor cai
@@ -612,7 +656,7 @@ export default function HistoricoComissoes() {
       for (const func of dados.funcionarios) {
         if (!funcionarioAtivoComissao(func)) continue
         const empresa = mapas.empresasMap[func.empresa_id]
-        if (!empresaSelecionavel(empresa) || !AGRUPAMENTOS_COMISSAO.includes(empresa.agrupamento_nome)) continue
+        if (!empresaProcessaComissao(empresa) || !AGRUPAMENTOS_COMISSAO.includes(empresa.agrupamento_nome)) continue
         const cargo = mapas.cargosMap[func.cargo_id]
         const areaNomes = [...new Set((func.departamento_ids || []).map(id => mapas.departamentosMap[id]?.area).filter(Boolean))]
         if (!passaEscopoComissao({ empresaId: func.empresa_id, areaNomes, departamentoIds: func.departamento_ids, setorIds: func.setor_ids, agrupamentoCargoId: cargo?.agrupamento_id }, comissaoEscopoEfetivo)) continue
@@ -649,7 +693,7 @@ export default function HistoricoComissoes() {
         && (!filtroSetor || g.setorNome === filtroSetor)
         && (!filtroResponsavel || g.responsavelNomes.includes(filtroResponsavel)))
       .sort((a, b) => (a.empresaNome + a.setorNome).localeCompare(b.empresaNome + b.setorNome, 'pt-BR'))
-  }, [resultadosFiltrados, lotesMap, mapas, dados, jaBuscou, comissaoNivelSetorEfetivo, responsaveisPorSetor, comissaoEscopoEfetivo,
+  }, [resultadosFiltrados, lotesMap, mapas, dados, anexosPj, jaBuscou, comissaoNivelSetorEfetivo, responsaveisPorSetor, comissaoEscopoEfetivo,
     filtroEmpresa, filtroArea, filtroSetor, filtroResponsavel])
 
   const lotesVisiveis = useMemo(() => (
@@ -659,10 +703,10 @@ export default function HistoricoComissoes() {
   // Lote único marcado (checkbox) — alimenta Conferido DP e Pagamento Processado da barra.
   const lotesMarcados = useMemo(() => lotesAgrupados.filter(g => lotesSelecionadosProcessamento.has(g.loteId)), [lotesAgrupados, lotesSelecionadosProcessamento])
   const loteUnicoSelecionado = lotesMarcados.length === 1 ? lotesMarcados[0] : null
-  const temLoteElegivelProcessamento = lotesMarcados.some(g => ['CONFERIDO_DP', 'PROCESSAMENTO_PARCIAL'].includes(g.status) && !g.soVisualizacao)
+  const temLoteElegivelProcessamento = lotesMarcados.some(g => ['CONFERIDO_DP', 'PROCESSAMENTO_PARCIAL'].includes(g.status) && !g.soVisualizacao && !g.pj)
   // Mesmo critério de handleProcessarSelecionados: funcionário marcado precisa estar revisado, sem
   // reprocessamento pendente e ainda não processado.
-  const temFuncionarioElegivelProcessamento = lotesAgrupados.some(g => ['CONFERIDO_DP', 'PROCESSAMENTO_PARCIAL'].includes(g.status) && !g.soVisualizacao
+  const temFuncionarioElegivelProcessamento = lotesAgrupados.some(g => ['CONFERIDO_DP', 'PROCESSAMENTO_PARCIAL'].includes(g.status) && !g.soVisualizacao && !g.pj
     && g.funcionarios.some(f => selecionados.has(f.funcionario_id)
       && !!g.lote?.funcionarios_conferidos_dp?.includes(f.funcionario_id)
       && !g.lote?.funcionarios_liberados_reprocessamento?.includes(f.funcionario_id)
@@ -785,9 +829,12 @@ export default function HistoricoComissoes() {
     }
   }
 
-  const handleConfirmarConferenciaDp = async (lote) => {
+  const handleConfirmarConferenciaDp = async (lote, pj = false) => {
     if (!lote || lote.status !== 'CONFERIDO') return
-    if (!window.confirm(`Confirmar a conferência do DP pro lote de ${lote.empresa_nome || 'este período'} — ${lote.setor_nome || ''}? Depois disso ele fica liberado pro RH/Seletiva processar o pagamento.`)) return
+    const depois = pj
+      ? 'Depois disso fica Aguardando Nota Fiscal: o prestador PJ vê a Nota Fiscal em Minha Nota Fiscal para emitir e baixar o PDF (não gera arquivo de pagamento).'
+      : 'Depois disso ele fica liberado pro RH/Seletiva processar o pagamento.'
+    if (!window.confirm(`Confirmar a conferência do DP pro lote de ${lote.empresa_nome || 'este período'} — ${lote.setor_nome || ''}? ${depois}`)) return
     setProcessandoAcao(`confirmar-${lote.id}`)
     setErro(null)
     try {
@@ -920,7 +967,7 @@ export default function HistoricoComissoes() {
       const parcial = itens.some(i => i.funcionarioIds)
       const partesNome = itens.length === 1
         ? [itens[0].lote.empresa_nome, itens[0].lote.setor_nome, itens[0].lote.funcionario_nome, itens[0].lote.rescisao ? 'Rescisao' : null, parcial ? 'selecionados' : null]
-        : [empresas.join('_'), `Setores_${itens.length}`, parcial ? 'selecionados' : null]
+        : [empresas.join('_'), parcial ? 'selecionados' : null]
       const nomeArquivo = ['Lancamentos', periodoInicio, periodoFim, ...partesNome]
         .filter(Boolean).map(paraNomeArquivo).join('_')
     const blob = new Blob([conteudo], { type: 'text/plain;charset=utf-8' })
@@ -944,7 +991,7 @@ export default function HistoricoComissoes() {
     const lotesEscolhidos = new Set(lotesSelecionadosProcessamento)
     const funcionariosEscolhidos = new Set(selecionados)
     const gruposElegiveis = lotesVisiveis.filter(grupo =>
-      ['CONFERIDO_DP', 'PROCESSAMENTO_PARCIAL'].includes(grupo.status) && !grupo.soVisualizacao &&
+      ['CONFERIDO_DP', 'PROCESSAMENTO_PARCIAL'].includes(grupo.status) && !grupo.soVisualizacao && !grupo.pj &&
       (lotesEscolhidos.has(grupo.loteId) || grupo.funcionarios.some(f => funcionariosEscolhidos.has(f.funcionario_id)))
     )
     const trabalhos = gruposElegiveis.map(grupo => {
@@ -1081,7 +1128,7 @@ export default function HistoricoComissoes() {
       const setores = blocos.map(montarSetor)
       const partesNome = blocos.length === 1
         ? [blocos[0].grupo.empresaNome, blocos[0].grupo.setorNome]
-        : [[...new Set(blocos.map(b => b.grupo.empresaNome))].join('_'), `Setores_${blocos.length}`]
+        : [[...new Set(blocos.map(b => b.grupo.empresaNome))].join('_')]
       const nomeArquivo = ['Comissoes', periodoInicio, periodoFim, ...partesNome].filter(Boolean).map(paraNomeArquivo).join('_')
       await gerarPdfComissoes({ setores, periodoInicio, periodoFim, nomeArquivo })
     } catch (err) {
@@ -1104,6 +1151,109 @@ export default function HistoricoComissoes() {
     if (!primeiro?.func || !primeiro?.empresa) return []
     return feriasNoPeriodo(primeiro.func, primeiro.empresa, periodoInicio, periodoFim)
   }, [detalheAberto, feriasPorCodigo, periodoInicio, periodoFim])
+
+  // Regra PJ "Variáveis" (tela Regras PJ) do cargo do funcionário: as comissões marcadas
+  // nela viram UMA linha (valor total) no Detalhe do Cálculo; Visualizar mostra a composição.
+  const ehPrestadorPj = !!detalheAberto?.registros.some(r => r.politica?.prestacao_pj)
+  // Prestador PJ vê só a Nota Fiscal (com a calculadora em cada regra); os demais, o Detalhe do Cálculo.
+  useEffect(() => { setAbaDetalhe(ehPrestadorPj ? 'nf' : 'calculo') }, [detalheAberto, ehPrestadorPj])
+  const notaFiscalDetalhe = useMemo(() => {
+    if (!detalheAberto || !ehPrestadorPj) return null
+    const r0 = detalheAberto.registros[0]
+    return montarNotaFiscalPj({
+      linhas: detalheAberto.registros.map(r => ({ politica: r.politica, valor: r.valor_comissao, detalhe: Array.isArray(r.detalhe_empresas) ? r.detalhe_empresas : [] })),
+      politicas: dados?.politicas || [], empresas: dados?.empresas || [],
+      emissaoConfig: r0?.func?.pj_emissao_nf || null,
+      prestador: `${r0?.func?.codigo_funcionario ? `${r0.func.codigo_funcionario} — ` : ''}${detalheAberto.funcionarioNome}`,
+    })
+  }, [detalheAberto, ehPrestadorPj, dados])
+  const salvarNfPdf = async () => {
+    if (!notaFiscalDetalhe) return
+    setGerandoNfPdf(true)
+    try {
+      const ini = detalheAberto.registros[0]?.periodo_inicio
+      const fim = detalheAberto.registros[detalheAberto.registros.length - 1]?.periodo_fim
+      await gerarPdfComissoes({
+        paginasIniciais: [montarHtmlNotaFiscal(notaFiscalDetalhe, { periodoLabel: `${fmtData(ini)} a ${fmtData(fim)}` })],
+        setores: [montarSetorAnaliticoPj({
+          registros: detalheAberto.registros,
+          prestador: notaFiscalDetalhe.prestador,
+          empresaNome: detalheAberto.empresaNome,
+          cargoNome: detalheAberto.registros[0]?.cargoNome,
+          politicas: dados?.politicas || [],
+        })],
+        periodoInicio: ini, periodoFim: fim,
+        nomeArquivo: ['Nota_Fiscal', ini, fim, detalheAberto.funcionarioNome].map(paraNomeArquivo).join('_'),
+      })
+    } catch (err) {
+      setErro('Erro ao gerar o PDF da Nota Fiscal: ' + (err.message || String(err)))
+    } finally {
+      setGerandoNfPdf(false)
+    }
+  }
+
+  const linhasDetalhe = useMemo(() => {
+    if (!detalheAberto) return []
+    const regs = detalheAberto.registros
+    const func = regs[0]?.func
+    if (!func || !dados?.politicas || !mapas) return regs
+    const regrasVariaveis = resolvePoliticas(func, dados.politicas.filter(p => p.pj_variaveis), mapas.empresasMap)
+    let restantes = regs
+    const agrupadas = []
+    for (const regra of regrasVariaveis) {
+      const ids = new Set(regra.pj_politica_ids || [])
+      const componentes = restantes.filter(r => r.politica && ids.has(r.politica.grupo_politica_id || r.politica.id))
+      if (componentes.length === 0) continue
+      restantes = restantes.filter(r => !componentes.includes(r))
+      agrupadas.push({
+        _variaveis: true,
+        id: `variaveis-${regra.id}`,
+        politica: regra,
+        comissaoDescricao: regra.descricao_comissao || 'Variáveis',
+        componentes,
+        valor_comissao: componentes.reduce((s, r) => s + (r.valor_comissao || 0), 0),
+        periodo_inicio: componentes.reduce((m, r) => (!m || r.periodo_inicio < m ? r.periodo_inicio : m), null),
+        periodo_fim: componentes.reduce((m, r) => (!m || r.periodo_fim > m ? r.periodo_fim : m), null),
+      })
+    }
+    if (agrupadas.length === 0) return regs
+    return [...restantes, ...agrupadas].sort((a, b) => compararCodigoPolitica(a.politica, b.politica)
+      || (a.periodo_inicio || '').localeCompare(b.periodo_inicio || ''))
+  }, [detalheAberto, dados, mapas])
+
+  // Modal "Base de Cálculo" de uma linha do Detalhe do Cálculo (também aberto pela aba Nota Fiscal).
+  const temBaseCalculo = (r) => !(r.politica?.usa_faixa === 'SIM' && r.politica.regra_comissao?.id)
+    && (r.detalhe_calculo?.valorPorColuna?.length > 0 || r.detalhe_empresas?.length > 0 || r.detalhe_calculo?.bonificacao || r.detalhe_calculo?.percentualPj)
+  const abrirBaseCalculo = (r) => setColunaModal({
+    baseNome: r.politica?.base_calculo?.nome,
+    colunas: r.politica?.pj_percentual ? [] : (r.detalhe_calculo?.valorPorColuna || []),
+    total: r.valor_base,
+    bonificacao: r.detalhe_calculo?.bonificacao ? { ...r.detalhe_calculo.bonificacao, faixas: r.detalhe_calculo.bonificacao.faixas || r.politica?.pj_bonificacao?.faixas || [] } : null,
+    percentualPj: montarPercentualPj({ politica: r.politica, percentualPj: r.detalhe_calculo?.percentualPj, valorPorColuna: r.detalhe_calculo?.valorPorColuna, valorComissao: r.valor_comissao, politicas: dados?.politicas }) || r.detalhe_calculo?.percentualPj || null,
+    // Detalhe por empresa fica dentro deste modal (não abaixo da descrição).
+    empresas: (Array.isArray(r.detalhe_empresas) ? r.detalhe_empresas : [])
+      .map(d => ({ empresa: d.empresa, base: fmtValorBase(r.politica?.base_calculo, d.valorBase), valorComissao: d.valorComissao })),
+  })
+  // Aba Nota Fiscal: calculadora (ou olho, nas Variáveis) ao lado de cada regra, igual ao Detalhe do Cálculo.
+  const botaoCalculoNf = (l) => {
+    const r = linhasDetalhe.find(x => x.politica?.id === l.politicaId)
+    if (!r) return null
+    if (r._variaveis) {
+      return (
+        <button type="button" onClick={() => setVariaveisModal(r)} title="Visualizar de onde vêm os valores"
+          className="ml-1.5 align-middle inline-flex items-center justify-center w-5 h-5 rounded border border-indigo-200 bg-white text-indigo-600 hover:bg-indigo-50 transition-colors">
+          <Eye className="h-3 w-3" />
+        </button>
+      )
+    }
+    if (!temBaseCalculo(r)) return null
+    return (
+      <button type="button" onClick={() => abrirBaseCalculo(r)} title="Ver a base de cálculo desta comissão"
+        className="ml-1.5 align-middle inline-flex items-center justify-center w-5 h-5 rounded border border-blue-200 bg-white text-blue-600 hover:bg-blue-50 transition-colors">
+        <Calculator className="h-3 w-3" />
+      </button>
+    )
+  }
 
   return (
     <div className="min-h-full w-full p-6 space-y-4">
@@ -1220,7 +1370,7 @@ export default function HistoricoComissoes() {
                   {selecaoMesmoCnpj && podeConfirmarConferenciaDp && grupoAcaoLote?.status === 'CONFERIDO' && (
                     <button
                       type="button"
-                      onClick={() => handleConfirmarConferenciaDp(grupoAcaoLote.lote)}
+                      onClick={() => handleConfirmarConferenciaDp(grupoAcaoLote.lote, grupoAcaoLote.pj)}
                       disabled={processandoAcao === `confirmar-${grupoAcaoLote.lote?.id}` || !grupoAcaoRevisado || grupoAcaoLote.soVisualizacao}
                       title={grupoAcaoLote.soVisualizacao ? 'Este departamento está liberado só pra visualização — peça pra alguém com edição fazer isso.' : !grupoAcaoRevisado ? 'Marque todos os funcionários como revisados (expanda o lote) pra liberar' : ''}
                       className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold px-3 py-1.5 rounded-md shadow-sm transition-colors"
@@ -1400,7 +1550,7 @@ export default function HistoricoComissoes() {
           <div className="bg-white rounded-xl border border-slate-200 w-fit min-w-0 max-w-full max-h-[85vh] shadow-2xl flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-slate-50 shrink-0">
               <div>
-                <h3 className="text-sm font-bold text-slate-900">Detalhe do Cálculo</h3>
+                <h3 className="text-sm font-bold text-slate-900">{abaDetalhe === 'nf' ? 'Nota Fiscal — Prestação de Serviços' : 'Detalhe do Cálculo'}</h3>
                 <p className="text-[11px] text-slate-400 mt-0.5">{detalheAberto.empresaNome} — {fmtData(detalheAberto.registros[0]?.periodo_inicio)} a {fmtData(detalheAberto.registros[detalheAberto.registros.length - 1]?.periodo_fim)}</p>
                 {feriasDoDetalhe.length > 0 && (
                   <p className="text-[11px] text-amber-600 font-semibold mt-0.5">
@@ -1410,10 +1560,71 @@ export default function HistoricoComissoes() {
                   </p>
                 )}
               </div>
-              <button onClick={() => setDetalheAberto(null)} className="text-slate-400 hover:text-slate-600">
-                <X className="h-4 w-4" />
-              </button>
+              <div className="flex items-center gap-2">
+                {ehPrestadorPj && (
+                  <button type="button" onClick={salvarNfPdf} disabled={gerandoNfPdf || !notaFiscalDetalhe}
+                    className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white text-xs font-semibold px-3 py-1.5 rounded-md">
+                    {gerandoNfPdf ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                    Salvar em PDF
+                  </button>
+                )}
+                <button onClick={() => setDetalheAberto(null)} className="text-slate-400 hover:text-slate-600">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
             </div>
+            {abaDetalhe === 'nf' ? (
+              <div className="p-5 overflow-auto min-w-[860px]">
+                {(() => {
+                  // Quadros de anexos abaixo da tabela, lado a lado, cada um com Visualizar.
+                  const funcId = detalheAberto.funcionario_id
+                  const periodo = (detalheAberto.registros[0]?.periodo_inicio || '').slice(0, 7)
+                  const notas = notaFiscalDetalhe?.emissao?.notas || []
+                  const regrasComDocs = detalheAberto.registros.filter((r, i, arr) => Array.isArray(r.politica?.pj_documentos) && r.politica.pj_documentos.length > 0
+                    && arr.findIndex(x => x.politica_id === r.politica_id) === i)
+                  const doMes = anexosPj.filter(a => a.funcionario_id === funcId && a.periodo === periodo)
+                  const cabecalho = (titulo, lista) => (
+                    <div className="flex items-center justify-between gap-2">
+                      <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wide flex items-center gap-1.5"><Paperclip className="h-3.5 w-3.5" /> {titulo}</h4>
+                      <button type="button" onClick={() => setVerAnexos(lista)} disabled={lista.length === 0}
+                        title={lista.length === 0 ? 'Nenhum arquivo anexado ainda' : 'Abrir os arquivos'}
+                        className="flex items-center gap-1.5 text-[11px] font-semibold text-blue-700 border border-blue-200 bg-white hover:bg-blue-50 disabled:opacity-40 disabled:cursor-not-allowed px-2.5 py-1 rounded-md">
+                        <Eye className="h-3.5 w-3.5" /> Visualizar ({lista.length})
+                      </button>
+                    </div>
+                  )
+                  const paineis = (
+                    <div className="grid grid-cols-2 gap-5">
+                      {/* order: Documentos das regras à esquerda, Notas Fiscais à direita. */}
+                      <div className="space-y-2 order-2">
+                        {cabecalho('Notas Fiscais anexadas', doMes.filter(a => a.tipo === 'NF'))}
+                        {notas.length === 0 ? <p className="text-[11px] text-slate-400">Sem notas a emitir.</p> : notas.map(n => (
+                          <AnexoPjSlot key={chaveNotaFiscal(n)} rotulo={n.nome} detalhe={`${n.cnpj ? `CNPJ ${fmtCnpj(n.cnpj)} · ` : ''}${fmtBRL(n.valor)}`}
+                            anexos={anexosDaNota(anexosPj, n, funcId, periodo)}
+                            dados={{ funcionarioId: funcId, periodo, tipo: 'NF', cnpj: chaveNotaFiscal(n), empresaNome: n.nome }}
+                            onAlterado={carregarAnexosPj} />
+                        ))}
+                      </div>
+                      <div className="space-y-2 order-1">
+                        {cabecalho('Documentos das regras', doMes.filter(a => a.tipo === 'DOCUMENTO'))}
+                        {regrasComDocs.length === 0 ? <p className="text-[11px] text-slate-400">Nenhuma regra deste prestador exige documentos.</p> : regrasComDocs.flatMap(r => r.politica.pj_documentos.map(d => {
+                          const regraId = r.politica.grupo_politica_id || r.politica.id
+                          return (
+                            <AnexoPjSlot key={`${r.id}:${d}`} rotulo={d} detalhe={`${codigoPolitica(r.politica)} ${r.politica.descricao_comissao || ''}`}
+                              anexos={doMes.filter(a => a.tipo === 'DOCUMENTO' && a.regra_id === regraId && a.documento === d)}
+                              dados={{ funcionarioId: funcId, periodo, tipo: 'DOCUMENTO', regraId, documento: d }}
+                              podeEditar={false} onVisualizar={setVerAnexos}
+                              onAlterado={carregarAnexosPj} />
+                          )
+                        }))}
+                      </div>
+                    </div>
+                  )
+                  return <><TabelaNotaFiscal nf={notaFiscalDetalhe} acaoLinha={botaoCalculoNf} /><div className="mt-5">{paineis}</div></>
+                })()}
+                {verAnexos && <VisualizadorAnexosPj anexos={verAnexos} onFechar={() => setVerAnexos(null)} />}
+              </div>
+            ) : (
             <div className="overflow-auto">
               <table className="text-left border-collapse min-w-[860px]">
                 <thead>
@@ -1430,7 +1641,33 @@ export default function HistoricoComissoes() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
-                  {detalheAberto.registros.map((r, i) => (
+                  {linhasDetalhe.map((r, i) => r._variaveis ? (
+                    <tr key={r.id} className="bg-indigo-50/30">
+                      <td className="px-3 py-1.5 font-bold text-slate-900 whitespace-nowrap">
+                        {i === 0 && (
+                          <>
+                            <span className="inline-block w-14 font-mono font-normal text-slate-400">{detalheAberto.registros[0]?.func?.codigo_funcionario || ''}</span>
+                            {detalheAberto.funcionarioNome}
+                          </>
+                        )}
+                      </td>
+                      <td className="px-3 py-1.5 whitespace-nowrap">
+                        {codigoPolitica(r.politica) && <span className="font-mono font-semibold text-slate-400 mr-1.5">{codigoPolitica(r.politica)}</span>}
+                        {r.comissaoDescricao}
+                        <button type="button" onClick={() => setVariaveisModal(r)}
+                          title="Visualizar de onde vêm os valores"
+                          className="ml-1.5 align-middle inline-flex items-center justify-center w-5 h-5 rounded border border-indigo-200 bg-white text-indigo-600 hover:bg-indigo-50 transition-colors">
+                          <Eye className="h-3 w-3" />
+                        </button>
+                        <div className="text-[10px] font-normal text-slate-400 mt-0.5">
+                          {r.componentes.length} comissõe{r.componentes.length === 1 ? '' : 's'}: {[...new Set(r.componentes.map(x => codigoPolitica(x.politica)))].join(', ')}
+                        </div>
+                      </td>
+                      <td className="px-3 py-1.5 font-mono whitespace-nowrap">{fmtData(r.periodo_inicio)} – {fmtData(r.periodo_fim)}</td>
+                      <td /><td /><td /><td /><td />
+                      <td className={`px-3 py-1.5 text-right font-mono font-semibold ${r.valor_comissao < 0 ? "text-rose-600" : "text-slate-800"}`}>{fmtBRL(r.valor_comissao)}</td>
+                    </tr>
+                  ) : (
                     <tr key={r.id}>
                       <td className="px-3 py-1.5 font-bold text-slate-900 whitespace-nowrap">
                         {i === 0 && (
@@ -1472,14 +1709,10 @@ export default function HistoricoComissoes() {
                             <Calculator className="h-3 w-3" />
                           </button>
                         )}
-                        {!(r.politica?.usa_faixa === 'SIM' && r.politica.regra_comissao?.id) && r.detalhe_calculo?.valorPorColuna?.length > 0 && (
+                        {temBaseCalculo(r) && (
                           <button type="button"
-                            onClick={() => setColunaModal({
-                              baseNome: r.politica?.base_calculo?.nome,
-                              colunas: r.detalhe_calculo.valorPorColuna,
-                              total: r.valor_base,
-                            })}
-                            title="Ver Venda/Devolução separadas desta Base"
+                            onClick={() => abrirBaseCalculo(r)}
+                            title="Ver a base de cálculo desta comissão"
                             className="ml-1.5 align-middle inline-flex items-center justify-center w-5 h-5 rounded border border-blue-200 bg-white text-blue-600 hover:bg-blue-50 transition-colors">
                             <Calculator className="h-3 w-3" />
                           </button>
@@ -1502,7 +1735,7 @@ export default function HistoricoComissoes() {
                             )}
                           </div>
                         )}
-                        {Array.isArray(r.detalhe_empresas) && r.detalhe_empresas.length > 0 && (
+                        {Array.isArray(r.detalhe_empresas) && r.detalhe_empresas.length > 0 && r.politica?.usa_faixa === 'SIM' && r.politica.regra_comissao?.id && (
                           <div className="mt-1 space-y-0.5">
                             {r.detalhe_empresas.map(d => (
                               <div key={d.empresa} className="text-[10px] font-normal text-slate-400">
@@ -1515,15 +1748,22 @@ export default function HistoricoComissoes() {
                         )}
                       </td>
                       <td className="px-3 py-1.5 font-mono whitespace-nowrap">{fmtData(r.periodo_inicio)} – {fmtData(r.periodo_fim)}</td>
-                      <td className="px-3 py-1.5 text-right font-mono">{fmtValorBase(r.politica?.base_calculo, r.valor_base)}</td>
-                      <td className="px-3 py-1.5 text-right font-mono">{fmtPct(r.politica?.comissao_servicos)}</td>
-                      <td className="px-3 py-1.5 text-right font-mono">{fmtPct(r.politica?.comissao_pecas)}</td>
-                      <td className="px-3 py-1.5 text-right font-mono">{fmtPct(r.politica?.comissao_total)}</td>
-                      <td className="px-3 py-1.5 text-right font-mono">{fmtBRL(r.politica?.comissao_valor != null ? parseFloat(r.politica.comissao_valor) : null)}</td>
-                      <td className="px-3 py-1.5 text-right font-mono font-semibold text-slate-800">{fmtBRL(r.valor_comissao)}</td>
+                      {/* Regra PJ: Base e %/R$ só na calculadora — na linha, apenas o valor final. */}
+                      {r.politica?.prestacao_pj ? (
+                        <><td /><td /><td /><td /><td /></>
+                      ) : (
+                        <>
+                          <td className="px-3 py-1.5 text-right font-mono">{fmtValorBase(r.politica?.base_calculo, r.valor_base)}</td>
+                          <td className="px-3 py-1.5 text-right font-mono">{fmtPct(r.politica?.comissao_servicos)}</td>
+                          <td className="px-3 py-1.5 text-right font-mono">{fmtPct(r.politica?.comissao_pecas)}</td>
+                          <td className="px-3 py-1.5 text-right font-mono">{fmtPct(r.politica?.comissao_total)}</td>
+                          <td className="px-3 py-1.5 text-right font-mono">{fmtBRL(r.politica?.comissao_valor != null ? parseFloat(r.politica.comissao_valor) : null)}</td>
+                        </>
+                      )}
+                      <td className={`px-3 py-1.5 text-right font-mono font-semibold ${r.valor_comissao < 0 ? "text-rose-600" : "text-slate-800"}`}>{fmtBRL(r.valor_comissao)}</td>
                     </tr>
                   ))}
-                  {detalheAberto.registros.length > 1 && (
+                  {linhasDetalhe.length > 1 && (
                     <tr className="bg-emerald-50/50">
                       <td colSpan="8" className="px-3 py-1.5 text-right text-[11px] font-bold text-slate-600">Total {detalheAberto.funcionarioNome}</td>
                       <td className="px-3 py-1.5 text-right font-mono font-bold text-emerald-700">{fmtBRL(detalheAberto.valorComissaoTotal)}</td>
@@ -1533,6 +1773,65 @@ export default function HistoricoComissoes() {
               </table>
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2 border-t border-slate-100 text-[11px] text-slate-400">
                 <span>Calculado em <strong className="text-slate-600">{new Date(detalheAberto.calculadoEmMax).toLocaleString('pt-BR')}</strong></span>
+              </div>
+            </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* VARIÁVEIS (Regra PJ) — composição da linha agrupada: cada comissão, base, % e valor */}
+      {variaveisModal && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[60] p-4" onClick={() => setVariaveisModal(null)}>
+          <div className="bg-white rounded-lg border border-slate-200 w-full max-w-[720px] max-h-[85vh] shadow-xl flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50 shrink-0">
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <Eye className="h-4 w-4 text-indigo-600" />
+                {codigoPolitica(variaveisModal.politica) && <span className="font-mono text-slate-400">{codigoPolitica(variaveisModal.politica)}</span>}
+                {variaveisModal.comissaoDescricao}
+              </h3>
+              <button onClick={() => setVariaveisModal(null)} className="text-slate-400 hover:text-slate-600"><X className="h-4 w-4" /></button>
+            </div>
+            <div className="p-5 space-y-3 overflow-y-auto">
+              {variaveisModal.componentes.map(r => {
+                const pct = r.percentual_aplicado ?? r.politica?.comissao_total ?? r.politica?.comissao_pecas ?? r.politica?.comissao_servicos
+                const empresas = (Array.isArray(r.detalhe_empresas) ? r.detalhe_empresas : [])
+                  .filter(d => Math.round(Math.abs(Number(d.valorBase) || 0) * 100) !== 0 || Math.round(Math.abs(Number(d.valorComissao) || 0) * 100) !== 0)
+                return (
+                  <div key={r.id} className="rounded-md border border-slate-200">
+                    <div className="flex items-center justify-between gap-3 px-3 py-2 bg-slate-50 border-b border-slate-100 text-xs">
+                      <span className="font-semibold text-slate-800">
+                        {codigoPolitica(r.politica) && <span className="font-mono text-slate-400 mr-1.5">{codigoPolitica(r.politica)}</span>}
+                        {r.comissaoDescricao}
+                      </span>
+                      <span className="font-mono font-bold text-emerald-700 shrink-0">{fmtBRL(r.valor_comissao)}</span>
+                    </div>
+                    <div className="px-3 py-1.5 text-[11px] text-slate-500 flex flex-wrap gap-x-4 gap-y-0.5">
+                      <span>Período <span className="font-mono text-slate-600">{fmtData(r.periodo_inicio)} – {fmtData(r.periodo_fim)}</span></span>
+                      {r.politica?.base_calculo?.nome && <span>Base de Cálculo <span className="font-semibold text-slate-600">{r.politica.base_calculo.nome}</span></span>}
+                      <span>Base <span className="font-mono text-slate-600">{fmtValorBase(r.politica?.base_calculo, r.valor_base)}</span></span>
+                      {pct != null && <span>% <span className="font-mono text-slate-600">{fmtPct(pct)}</span></span>}
+                    </div>
+                    {empresas.length > 0 && (
+                      <div className="divide-y divide-slate-100 border-t border-slate-100">
+                        {empresas.map(d => (
+                          <div key={d.empresa} className="flex items-center justify-between gap-3 px-3 py-1 text-[11px]">
+                            <span className="text-slate-600">{d.empresa}</span>
+                            <span className="text-slate-500 shrink-0">
+                              Base <span className="font-mono text-slate-600">{fmtValorBase(r.politica?.base_calculo, d.valorBase)}</span>
+                              <span className="text-slate-300"> → </span>
+                              <span className="font-mono font-semibold text-emerald-600">{fmtBRL(d.valorComissao)}</span>
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+              <div className="flex items-center justify-between px-3 py-2 rounded-md bg-emerald-50 border border-emerald-200 text-xs font-bold">
+                <span className="text-slate-700">Total {variaveisModal.comissaoDescricao}</span>
+                <span className="font-mono text-emerald-700">{fmtBRL(variaveisModal.valor_comissao)}</span>
               </div>
             </div>
           </div>
@@ -1573,7 +1872,7 @@ export default function HistoricoComissoes() {
               </div>
               {regraModal.valorPorColuna?.length > 0 && (
                 <div className="rounded-md border border-slate-200 divide-y divide-slate-100">
-                  {regraModal.valorPorColuna.map((col, i) => (
+                  {ordenarColunasBase(regraModal.valorPorColuna).map((col, i) => (
                     <div key={i} className="flex items-center justify-between px-3 py-2 text-xs">
                       <span className="font-mono text-slate-600">{rotuloColuna(col.coluna)}</span>
                       <span className="font-mono font-semibold text-slate-700">{fmtBRL(col.valor)}</span>
@@ -1677,10 +1976,10 @@ export default function HistoricoComissoes() {
 
       {colunaModal && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setColunaModal(null)}>
-          <div className="bg-white rounded-lg border border-slate-200 w-full max-w-[380px] shadow-xl overflow-hidden" onClick={e => e.stopPropagation()}>
+          <div className={`bg-white rounded-lg border border-slate-200 w-full ${colunaModal.bonificacao ? 'max-w-[860px]' : colunaModal.percentualPj ? 'max-w-[680px]' : 'max-w-[440px]'} shadow-xl overflow-hidden`} onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50">
               <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                <Calculator className="h-4 w-4 text-blue-600" /> Venda / Devolução
+                <Calculator className="h-4 w-4 text-blue-600" /> Base de Cálculo
               </h3>
               <button onClick={() => setColunaModal(null)} className="text-slate-400 hover:text-slate-600"><X className="h-4 w-4" /></button>
             </div>
@@ -1688,14 +1987,34 @@ export default function HistoricoComissoes() {
               {colunaModal.baseNome && (
                 <div className="text-[11px] text-slate-500">Base de Cálculo: <span className="font-semibold text-slate-700">{colunaModal.baseNome}</span></div>
               )}
-              <div className="rounded-md border border-slate-200 divide-y divide-slate-100">
-                {colunaModal.colunas.map((col, i) => (
-                  <div key={i} className="flex items-center justify-between px-3 py-2 text-xs">
-                    <span className="font-mono text-slate-600">{col.coluna}</span>
-                    <span className="font-mono font-semibold text-slate-700">{fmtBRL(col.valor)}</span>
+              <TabelaBonificacao bonificacao={colunaModal.bonificacao} />
+              <TabelaPercentualPJ percentualPj={colunaModal.percentualPj} />
+              {colunaModal.colunas.length > 0 && (
+                <div className="rounded-md border border-slate-200 divide-y divide-slate-100">
+                  {ordenarColunasBase(colunaModal.colunas).map((col, i) => (
+                    <div key={i} className="flex items-center justify-between px-3 py-2 text-xs">
+                      <span className="font-mono text-slate-600">{col.coluna}</span>
+                      <span className="font-mono font-semibold text-slate-700">{fmtBRL(col.valor)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {colunaModal.empresas?.length > 0 && (
+                <div className="rounded-md border border-slate-200">
+                  <p className="px-3 pt-2 text-[10px] font-bold uppercase tracking-wide text-slate-400">Por empresa</p>
+                  <div className="divide-y divide-slate-100 max-h-64 overflow-y-auto">
+                    {colunaModal.empresas.map(d => (
+                      <div key={d.empresa} className="px-3 py-1.5 text-[11px]">
+                        <div className="font-semibold text-slate-700">{d.empresa}</div>
+                        <div className="flex items-center justify-between text-slate-500">
+                          <span>Base <span className="font-mono text-slate-600">{d.base}</span></span>
+                          <span>Comissão <span className="font-mono font-semibold text-emerald-600">{fmtBRL(d.valorComissao)}</span></span>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                </div>
+              )}
               <div className="flex items-center justify-between px-3 py-2 rounded-md bg-blue-50 border border-blue-200 text-xs font-bold">
                 <span className="text-slate-700">Total (Base de Cálculo)</span>
                 <span className="font-mono text-blue-700">{fmtBRL(colunaModal.total)}</span>

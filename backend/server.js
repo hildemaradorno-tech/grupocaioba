@@ -47,13 +47,13 @@ app.use('/api/kpi', authMiddleware, requireMenuLike('kpi', 'bi', 'metas', 'integ
 app.use('/api/garantias', authMiddleware, requireMenuLike('garantia', 'bi/garantias', 'auditoria'), filtrarPorEmpresa, garantiasRoutes)
 
 // ── Rotas Fonte/Base de Cálculo (SharePoint genérico p/ comissões) ───────────
-app.use('/api/calculo-comissao', authMiddleware, requireMenu('calculo-comissoes', 'calculo-comissoes-motos', 'processamento-comissoes', 'cargos-remuneracoes', 'regras-faixas', 'rubricas', 'bases-calculo', 'fontes-calculo', 'fontes-microwork', 'funcionarios'), calculoComissaoRoutes)
+app.use('/api/calculo-comissao', authMiddleware, requireMenu('calculo-comissoes', 'calculo-comissoes-motos', 'calculo-comissoes-grupo', 'processamento-comissoes', 'cargos-remuneracoes', 'regras-faixas', 'rubricas', 'bases-calculo', 'fontes-calculo', 'fontes-microwork', 'funcionarios'), calculoComissaoRoutes)
 
 // ── Rotas Fonte BI / Medida BI (SharePoint genérico p/ dashboards de BI) ─────
 app.use('/api/bi-medidas', authMiddleware, requireMenuLike('bi'), biMedidasRoutes)
 
 // ── Rotas RH Férias (SharePoint Relacao de Ferias Calculadas) ─────────────────
-app.use('/api/rh-ferias', authMiddleware, requireMenu('ferias', 'calculo-comissoes', 'calculo-comissoes-motos', 'processamento-comissoes', 'funcionarios'), rhFeriasRoutes)
+app.use('/api/rh-ferias', authMiddleware, requireMenu('ferias', 'calculo-comissoes', 'calculo-comissoes-motos', 'calculo-comissoes-grupo', 'processamento-comissoes', 'funcionarios'), rhFeriasRoutes)
 
 // ── Rotas Honda (integração MicroWork Cloud) ──────────────────────────────────
 app.use('/api/honda', authMiddleware, requireMenuLike('honda'), hondaRoutes)

@@ -84,7 +84,7 @@ export default function HistoricoComissoesManual() {
           <BookOpen className="h-5 w-5 text-indigo-600" /> Manual de Operação — Processamento de Comissões
         </h1>
         <p className="text-xs text-slate-500 mt-1">
-          Passo a passo para o DP conferir, processar e exportar as comissões calculadas em Comissões - DAF e Comissões - HONDA,
+          Passo a passo para o DP conferir, processar e exportar as comissões calculadas em Comissões - DAF, Comissões - HONDA e Prestadores de Serviços,
           e gerar o TXT de pagamento.
         </p>
       </div>

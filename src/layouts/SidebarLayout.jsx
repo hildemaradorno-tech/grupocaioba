@@ -21,9 +21,9 @@ MENU_TREE.forEach(buildSectionLeaves)
 function getActiveSectionKey(pathname) {
   if (pathname === '/usuarios' || pathname === '/grupos' || pathname === '/permissoes-matriz') return '_config'
   if (pathname === '/tipos-processo' || pathname === '/rubricas' || pathname === '/fontes-dados' || pathname === '/bases-calculo' ||
-    pathname === '/politica-comissao' || pathname === '/regras-faixas' || pathname === '/cargos-remuneracoes' ||
+    pathname === '/politica-comissao' || pathname === '/regras-faixas' || pathname === '/regras-pj' || pathname === '/descontos-pj' || pathname === '/cargos-remuneracoes' ||
     pathname === '/ferias' || pathname === '/sobreaviso-plantao' ||
-    pathname === '/calculo-comissoes' || pathname === '/calculo-comissoes-motos' || pathname === '/processamento-comissoes') return '_comissoes-calculo'
+    pathname === '/calculo-comissoes' || pathname === '/calculo-comissoes-motos' || pathname === '/calculo-comissoes-grupo' || pathname === '/processamento-comissoes' || pathname === '/minha-nota-fiscal') return '_comissoes-calculo'
   const cadastros = ['/segmentos','/agrup-empresas','/empresas','/areas','/agrup-departamentos',
     '/departamentos','/setores','/box','/agrup-cargos','/cargos','/organograma',
     '/movimento-venda','/natureza-operacoes','/tipos-produtos','/tipos-os',
@@ -32,7 +32,7 @@ function getActiveSectionKey(pathname) {
   if (pathname.startsWith('/metas')) return '_metas'
   if (pathname.startsWith('/garantias-daf') || pathname.startsWith('/auditoria-os-aberto') || pathname.startsWith('/auditoria') || pathname.startsWith('/garantia') || pathname.startsWith('/honda') || pathname.startsWith('/truckpag') || pathname.startsWith('/bpm')) return '_controle-processos'
   if (pathname.startsWith('/projetos') || pathname.startsWith('/auditoria-externa')) return '_gestao-projetos'
-  if (pathname.startsWith('/calculadoras')) return '_calculadoras'
+  if (pathname.startsWith('/calculadoras')) return '_controle-processos'
   if (pathname.startsWith('/bi') || pathname.startsWith('/kpi')) return '_bi'
   if (pathname.startsWith('/documentacoes') || pathname.startsWith('/rpa') || pathname.startsWith('/ecossistema')) return '_documentacoes'
   if (pathname.startsWith('/treinamentos')) return '_treinamentos'
@@ -507,10 +507,12 @@ export default function SidebarLayout() {
                 {canView('bases-calculo') && <FlyItem to="/bases-calculo" icon={Calculator} onClose={closeFlyout}>Base de Cálculo</FlyItem>}
                 {canView('politica-comissao') && <FlyItem to="/politica-comissao" icon={ScrollText} onClose={closeFlyout}>Política de Comissões</FlyItem>}
                 {canView('regras-faixas') && <FlyItem to="/regras-faixas" icon={Percent} onClose={closeFlyout}>Regras</FlyItem>}
+                {canView('regras-pj') && <FlyItem to="/regras-pj" icon={Percent} onClose={closeFlyout}>Regras PJ</FlyItem>}
+                {canView('descontos-pj') && <FlyItem to="/descontos-pj" icon={Percent} onClose={closeFlyout}>Descontos PJ</FlyItem>}
                 {canView('cargos-remuneracoes') && <FlyItem to="/cargos-remuneracoes" icon={Briefcase} onClose={closeFlyout}>Cargos e Remunerações</FlyItem>}
               </>
             )}
-            {(canView('ferias') || canView('calculo-comissoes') || canView('calculo-comissoes-motos') || canView('processamento-comissoes') || canView('sobreaviso-plantao')) && (
+            {(canView('ferias') || canView('calculo-comissoes') || canView('calculo-comissoes-motos') || canView('calculo-comissoes-grupo') || canView('processamento-comissoes') || canView('minha-nota-fiscal') || canView('sobreaviso-plantao')) && (
               <>
                 <div className="mx-3 my-2 border-t border-blue-800/50" />
                 <FlyGroup label="Comissões Pós-Vendas" />
@@ -518,7 +520,9 @@ export default function SidebarLayout() {
                 {canView('sobreaviso-plantao') && <FlyItem to="/sobreaviso-plantao" icon={PhoneCall} onClose={closeFlyout}>Sobreaviso/Plantão</FlyItem>}
                 {canView('calculo-comissoes') && <FlyItem to="/calculo-comissoes" icon={Wallet} onClose={closeFlyout}>Comissões - DAF</FlyItem>}
                 {canView('calculo-comissoes-motos') && <FlyItem to="/calculo-comissoes-motos" icon={Wallet} onClose={closeFlyout}>Comissões - HONDA</FlyItem>}
+                {canView('calculo-comissoes-grupo') && <FlyItem to="/calculo-comissoes-grupo" icon={Wallet} onClose={closeFlyout}>Prestadores de Serviços</FlyItem>}
                 {canView('processamento-comissoes') && <FlyItem to="/processamento-comissoes" icon={ClipboardCheck} onClose={closeFlyout}>Processamento de Comissões</FlyItem>}
+                {canView('minha-nota-fiscal') && <FlyItem to="/minha-nota-fiscal" icon={FileText} onClose={closeFlyout}>Minha Nota Fiscal</FlyItem>}
               </>
             )}
           </>
@@ -545,7 +549,7 @@ export default function SidebarLayout() {
       case '_controle-processos':
         return (
           <>
-            {(canView('garantias-daf-andamento') || canView('garantias-daf') || canView('garantias-daf-historicodeos') || canView('garantias-daf-titulos') || canView('honda/contas-a-receber') || canView('bpm/nfe-cancelamento-devolucao') || canViewSection('_pecas') || canViewSection('_pecas-motos')) && (
+            {(canView('garantias-daf-andamento') || canView('garantias-daf') || canView('garantias-daf-historicodeos') || canView('garantias-daf-titulos') || canView('honda/contas-a-receber') || canView('bpm/nfe-cancelamento-devolucao') || canViewSection('_pecas') || canViewSection('_pecas-motos') || canView('calculadoras/venda-servico')) && (
               <FlyGroup label="Controle de Processos" />
             )}
             {/* Dashboard e as demais telas (Encerradas, Faturadas, a Receber) já ficam acessíveis como abas dentro de Garantias DAF. */}
@@ -563,6 +567,8 @@ export default function SidebarLayout() {
             {canViewSection('_pecas-motos') && <FlyDrill icon={Bike} onClick={() => setActiveSection('_pecas-motos')}>Peças — Motos</FlyDrill>}
             {canView('garantia/tipo-titulo') && <FlyGroup label="Cadastros de Garantia" />}
             {canView('garantia/tipo-titulo') && <FlyItem to="/garantia/tipo-titulo" icon={FileText} onClose={closeFlyout}>Tipo de Título Garantia</FlyItem>}
+            {canView('calculadoras/venda-servico') && <FlyGroup label="Calculadoras" />}
+            {canView('calculadoras/venda-servico') && <FlyItem to="/calculadoras/venda-servico" icon={Calculator} onClose={closeFlyout}>Venda de Serviço Terceiro</FlyItem>}
           </>
         )
 
@@ -587,18 +593,6 @@ export default function SidebarLayout() {
             {canView('projetos/fases') && <FlyItem to="/projetos/fases" icon={Layers} onClose={closeFlyout}>Fases</FlyItem>}
             {canView('projetos/status') && <FlyItem to="/projetos/status" icon={CircleDot} onClose={closeFlyout}>Status</FlyItem>}
             {canView('projetos/templates') && <FlyItem to="/projetos/templates" icon={FileText} onClose={closeFlyout}>Templates de Tarefa</FlyItem>}
-          </>
-        )
-
-      case '_calculadoras':
-        return (
-          <>
-            <FlyGroup label="Calculadoras" />
-            {canView('calculadoras/venda-servico') && (
-              <FlyItem to="/calculadoras/venda-servico" icon={Calculator} onClose={closeFlyout}>
-                Venda de Serviço Terceiro
-              </FlyItem>
-            )}
           </>
         )
 
@@ -699,7 +693,7 @@ export default function SidebarLayout() {
           )}
           {canViewSection('_comissoes-calculo') && (
             <SidebarIconBtn
-              icon={Wallet}
+              icon={Calculator}
               label="Comissões"
               isActive={currentSection === '_comissoes-calculo' || activeSection === '_comissoes-calculo'}
               onClick={() => toggleSection('_comissoes-calculo')}
@@ -728,14 +722,6 @@ export default function SidebarLayout() {
               label="Gestão de Projetos"
               isActive={currentSection === '_gestao-projetos' || activeSection === '_gestao-projetos'}
               onClick={() => toggleSection('_gestao-projetos')}
-            />
-          )}
-          {canViewSection('_calculadoras') && (
-            <SidebarIconBtn
-              icon={Calculator}
-              label="Calculadoras"
-              isActive={currentSection === '_calculadoras' || activeSection === '_calculadoras'}
-              onClick={() => toggleSection('_calculadoras')}
             />
           )}
           {canViewSection('_bi') && (
@@ -792,7 +778,6 @@ export default function SidebarLayout() {
                 {activeSection === '_metas' && 'Planejamento de Metas'}
                 {activeSection === '_controle-processos' && 'Controle de Processos'}
                 {activeSection === '_gestao-projetos' && 'Gestão de Projetos'}
-                {activeSection === '_calculadoras' && 'Calculadoras'}
                 {activeSection === '_bi' && 'BI - Dashboard'}
                 {activeSection === '_pecas' && 'Gestor de Peças 2.0 — Trucks'}
                 {activeSection === '_pecas-motos' && 'Gestor de Peças 2.0 — Motos'}

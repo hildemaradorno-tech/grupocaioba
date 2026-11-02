@@ -175,6 +175,9 @@ const FORM_VAZIO = {
   data_demissao: '',
   situacao_funcionario: '',
   recebe_comissao_ferias: false,
+  // Prestador PJ (aba PJ): como emitir as Notas Fiscais — RATEADA (uma por CNPJ), UNICA (empresa_id
+  // recebe o total) ou AGRUPAMENTO (por_agrupamento[nome] = empresa que recebe o total do agrupamento).
+  pj_emissao_nf: { modo: 'RATEADA', empresa_id: '', por_agrupamento: {} },
   politica_id: '',
   descricao_comissao: '',
   base_tipo: '',
@@ -415,7 +418,8 @@ export default function Funcionarios() {
 
   const handleInputChange = (e) => {
     const { name, value } = e.target
-    setForm(prev => ({ ...prev, [name]: value }))
+    // Nome do funcionário sempre em maiúsculas
+    setForm(prev => ({ ...prev, [name]: name === 'nome_funcionario' ? value.toUpperCase() : value }))
   }
 
   const getNomes = (ids, lista, campo) => {
@@ -472,7 +476,7 @@ export default function Funcionarios() {
     const cargoSetorIds = cargo?.setor_ids || item.setor_ids || []
     const cargoDeptoIds = cargo?.departamento_ids || item.departamento_ids || []
     setForm({
-      nome_funcionario: item.nome_funcionario || '',
+      nome_funcionario: (item.nome_funcionario || '').toUpperCase(),
       codigo_funcionario: item.codigo_funcionario || '',
       codigo_sistema_bi: item.codigo_sistema_bi || '',
       empresa_id: item.empresa_id || '',
@@ -485,6 +489,7 @@ export default function Funcionarios() {
       data_demissao: item.data_demissao || '',
       situacao_funcionario: item.situacao_funcionario || '',
       recebe_comissao_ferias: item.recebe_comissao_ferias ?? false,
+      pj_emissao_nf: item.pj_emissao_nf || { modo: 'RATEADA', empresa_id: '', por_agrupamento: {} },
       politica_id: item.politica_id || '',
       descricao_comissao: item.descricao_comissao || '',
       base_tipo: item.base_tipo || '',
@@ -574,7 +579,7 @@ export default function Funcionarios() {
 
     try {
       const payload = {
-        nome_funcionario: form.nome_funcionario,
+        nome_funcionario: (form.nome_funcionario || '').trim().toUpperCase(),
         codigo_funcionario: form.codigo_funcionario || null,
         codigo_sistema_bi: form.codigo_sistema_bi || null,
         empresa_id: form.empresa_id || null,
@@ -587,6 +592,8 @@ export default function Funcionarios() {
         data_demissao: form.data_demissao || null,
         situacao_funcionario: form.situacao_funcionario || null,
         recebe_comissao_ferias: form.recebe_comissao_ferias ?? false,
+        // Só prestador PJ guarda a forma de emissão das NFs.
+        pj_emissao_nf: cargos.find(c => c.id === form.cargo_id)?.tipo_contratacao === 'PJ' ? form.pj_emissao_nf : null,
         politica_id: form.politica_id || null,
         descricao_comissao: form.descricao_comissao || null,
         base_tipo: form.base_tipo || null,
@@ -1315,7 +1322,7 @@ export default function Funcionarios() {
 
             <form onSubmit={handleSalvar} onInvalidCapture={() => setAbaFunc('geral')}>
               <div className="flex gap-1 px-5 pt-3 border-b border-slate-100">
-                {[['geral', 'Geral'], ['assinatura', 'Assinatura']].map(([id, label]) => (
+                {[['geral', 'Geral'], ...(cargos.find(c => c.id === form.cargo_id)?.tipo_contratacao === 'PJ' ? [['pj', 'PJ']] : []), ['assinatura', 'Assinatura']].map(([id, label]) => (
                   <button
                     key={id}
                     type="button"
@@ -1543,6 +1550,63 @@ export default function Funcionarios() {
                 </div>
 
               </div>
+
+              {/* ABA: PJ — forma de emissão das Notas Fiscais do prestador (Prestadores de Serviços → Emitir Nota Fiscal) */}
+              {abaFunc === 'pj' && (() => {
+                const cfg = form.pj_emissao_nf || { modo: 'RATEADA', empresa_id: '', por_agrupamento: {} }
+                const setCfg = (patch) => setForm(prev => ({ ...prev, pj_emissao_nf: { ...(prev.pj_emissao_nf || {}), ...patch } }))
+                const empresasNf = empresas.filter(e => e.ativo !== false && !e.empresa_visual)
+                  .sort((a, b) => (a.agrupamento_nome || '').localeCompare(b.agrupamento_nome || '', 'pt-BR') || (a.empresa_fantasia || '').localeCompare(b.empresa_fantasia || '', 'pt-BR'))
+                const agrupamentos = [...new Set(empresasNf.map(e => e.agrupamento_nome).filter(Boolean))]
+                const nomeEmp = (e) => `${e.empresa_fantasia || e.nome_empresa}${e.cnpj ? ` — ${e.cnpj}` : ''}`
+                const SELNF = 'w-full text-xs p-2 border border-slate-200 rounded-md bg-white font-medium text-slate-800'
+                return (
+                  <div className="p-5 space-y-4 min-h-[320px]">
+                    <p className="text-xs text-slate-500">
+                      Como as Notas Fiscais deste prestador devem ser emitidas. Aparece no quadro <strong>Emissão das Notas Fiscais</strong> em
+                      Prestadores de Serviços (Emitir Nota Fiscal) e no Processamento de Comissões.
+                    </p>
+                    <div className="space-y-2">
+                      {[
+                        ['RATEADA', 'Uma NF por CNPJ', 'Cada empresa recebe uma NF com o valor dela.'],
+                        ['UNICA', 'Uma NF única', 'Uma empresa recebe uma NF só, com o valor total de todas.'],
+                        ['AGRUPAMENTO', 'Uma NF por agrupamento', 'Em cada agrupamento (ex: Caiobá Trucks, Caiobá Motos), escolha a empresa que recebe a NF com o total do agrupamento — ou uma NF por CNPJ só naquele agrupamento.'],
+                      ].map(([valor, rotulo, ajuda]) => (
+                        <label key={valor} className={`flex items-start gap-2 p-2 rounded-md border cursor-pointer ${cfg.modo === valor ? 'border-blue-300 bg-blue-50' : 'border-slate-200'}`}>
+                          <input type="radio" className="mt-0.5" checked={cfg.modo === valor} onChange={() => setCfg({ modo: valor })} />
+                          <span>
+                            <span className="block text-xs font-semibold text-slate-800">{rotulo}</span>
+                            <span className="block text-[11px] text-slate-500">{ajuda}</span>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                    {cfg.modo === 'UNICA' && (
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Empresa que recebe a NF</label>
+                        <select value={cfg.empresa_id || ''} onChange={e => setCfg({ empresa_id: e.target.value })} className={SELNF}>
+                          <option value="">Selecione...</option>
+                          {empresasNf.map(e => <option key={e.id} value={e.id}>{nomeEmp(e)}</option>)}
+                        </select>
+                      </div>
+                    )}
+                    {cfg.modo === 'AGRUPAMENTO' && (
+                      <div className="space-y-2">
+                        {agrupamentos.map(ag => (
+                          <div key={ag} className="flex flex-col gap-1.5">
+                            <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">{ag} — empresa que recebe a NF</label>
+                            <select value={cfg.por_agrupamento?.[ag] || ''} onChange={e => setCfg({ por_agrupamento: { ...(cfg.por_agrupamento || {}), [ag]: e.target.value } })} className={SELNF}>
+                              <option value="">A primeira empresa do agrupamento na nota</option>
+                              <option value="RATEADA">Uma NF por CNPJ</option>
+                              {empresasNf.filter(e => e.agrupamento_nome === ag).map(e => <option key={e.id} value={e.id}>{nomeEmp(e)}</option>)}
+                            </select>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
 
               {/* ABA: ASSINATURA — imagem PNG usada em documentos (ex.: Nota de Débito) */}
               {abaFunc === 'assinatura' && (

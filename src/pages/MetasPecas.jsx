@@ -803,21 +803,6 @@ export default function MetasPecas({ empresaExterna = null, anoExterno = null, a
     setDistAberto(false)
   }
 
-  // Registra os botões "+ Adicionar Vendedor" e "Editar por Mês" no cabeçalho compartilhado das abas.
-  const abrirIncluirRef = React.useRef(abrirIncluir)
-  abrirIncluirRef.current = abrirIncluir
-  const abrirEditarPorMesRef = React.useRef(abrirEditarPorMes)
-  abrirEditarPorMesRef.current = abrirEditarPorMes
-  useEffect(() => {
-    if (!aoDefinirBotaoAcao) return
-    aoDefinirBotaoAcao(canEdit
-      ? <div className="flex items-center gap-2">
-          <BotaoAcaoRetratil texto="Editar por Mês" Icone={CalendarDays} className="!bg-white !text-indigo-700 border border-indigo-300 hover:!bg-indigo-50" onClick={() => abrirEditarPorMesRef.current()} />
-          <BotaoAcaoRetratil texto="Adicionar Vendedor" onClick={() => abrirIncluirRef.current()} />
-        </div>
-      : null)
-    return () => aoDefinirBotaoAcao(null)
-  }, [aoDefinirBotaoAcao, canEdit])
 
   return (
     <div className="flex flex-col h-full p-6 gap-4">
@@ -834,11 +819,6 @@ export default function MetasPecas({ empresaExterna = null, anoExterno = null, a
                 {ANOS.map(a => <option key={a} value={a}>{a}</option>)}
               </select>
             </div>
-            {canEdit && (
-              <button onClick={abrirIncluir} className={BTN_PRI}>
-                <Plus size={16} /> Adicionar Vendedor
-              </button>
-            )}
           </div>
         </div>
       )}
@@ -876,7 +856,15 @@ export default function MetasPecas({ empresaExterna = null, anoExterno = null, a
             </button>
           )}
         </div>
-        <SeletorMeses selecionados={mesesSel} onChange={setMesesSel} />
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <SeletorMeses selecionados={mesesSel} onChange={setMesesSel} />
+          {canEdit && (
+            <div className="flex items-center gap-2">
+              <BotaoAcaoRetratil texto="Editar por Mês" Icone={CalendarDays} variante="secundario" onClick={abrirEditarPorMes} />
+              <BotaoAcaoRetratil texto="Adicionar Vendedor" onClick={abrirIncluir} />
+            </div>
+          )}
+        </div>
       </div>
 
       {error && (

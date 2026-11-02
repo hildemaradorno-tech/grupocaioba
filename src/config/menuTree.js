@@ -163,13 +163,15 @@ export const MENU_TREE = [
           { key: 'bases-calculo', label: 'Base de Cálculo' },
           { key: 'politica-comissao', label: 'Política de Comissões' },
           { key: 'regras-faixas', label: 'Regras' },
+          { key: 'regras-pj', label: 'Regras PJ' },
+          { key: 'descontos-pj', label: 'Descontos PJ' },
           { key: 'cargos-remuneracoes', label: 'Cargos e Remunerações' },
         ],
       },
       {
         // Agrupamento de menu (sem navTo) — cada item abaixo é uma tela própria. Comissões - DAF
-        // ('calculo-comissoes') e Comissões - HONDA ('calculo-comissoes-motos') têm permissões
-        // separadas: cada grupo de acesso libera a tela da sua operação.
+        // ('calculo-comissoes'), Comissões - HONDA ('calculo-comissoes-motos') e Prestadores de Serviços
+        // ('calculo-comissoes-grupo') têm permissões separadas: cada grupo de acesso libera a tela da sua operação.
         key: '_folha-pagamento-daf',
         label: 'Comissões Pós-Vendas',
         children: [
@@ -177,7 +179,10 @@ export const MENU_TREE = [
           { key: 'sobreaviso-plantao', label: 'Sobreaviso/Plantão' },
           { key: 'calculo-comissoes', label: 'Comissões - DAF' },
           { key: 'calculo-comissoes-motos', label: 'Comissões - HONDA' },
+          { key: 'calculo-comissoes-grupo', label: 'Prestadores de Serviços' },
           { key: 'processamento-comissoes', label: 'Processamento de Comissões' },
+          // Prestador PJ: vê a própria Nota Fiscal (usuário ligado ao funcionário em Usuários).
+          { key: 'minha-nota-fiscal', label: 'Minha Nota Fiscal' },
         ],
       },
     ],
@@ -253,6 +258,15 @@ export const MENU_TREE = [
           { key: 'garantia/tipo-titulo', label: 'Tipo de Título Garantia' },
         ],
       },
+      // Calculadoras movidas para Controle de Processos em 31/10/2026 — key da tela mantida
+      // (calculadoras/venda-servico), então as permissões já concedidas não mudam.
+      {
+        key: '_calculadoras',
+        label: 'Calculadoras',
+        children: [
+          { key: 'calculadoras/venda-servico', label: 'Venda de Serviço Terceiro' },
+        ],
+      },
     ],
   },
   {
@@ -287,13 +301,6 @@ export const MENU_TREE = [
           { key: 'projetos/templates', label: 'Templates de Tarefa' },
         ],
       },
-    ],
-  },
-  {
-    key: '_calculadoras',
-    label: 'Calculadoras',
-    children: [
-      { key: 'calculadoras/venda-servico', label: 'Venda de Serviço Terceiro' },
     ],
   },
   {

@@ -49,6 +49,8 @@ export function AuthProvider({ children }) {
   const [userNomeCompleto, setUserNomeCompleto] = useState('')
   const [usuarioId, setUsuarioId] = useState(null) // usuarios.id (≠ auth.users.id)
   const [userCargoId, setUserCargoId] = useState(null)
+  // Funcionário ligado ao usuário (usuarios.funcionario_id) — ex: o prestador PJ vê a própria Nota Fiscal.
+  const [userFuncionarioId, setUserFuncionarioId] = useState(null)
   // Agrupamento do Cargo escolhido em Usuários — não é guardado direto na tabela usuarios (que
   // guarda o cargo específico, cargo_id), é resolvido via dim_cargos.agrupamento_id. É contra
   // isso que o BPM compara (bpm_tasks.responsavel_agrupamento_cargo_id), não contra o cargo exato.
@@ -96,7 +98,7 @@ export function AuthProvider({ children }) {
       // Busca por email (mais robusto — evita mismatch entre auth.users.id e usuarios.id)
       const { data: perfil, error: e1 } = await supabase
         .from('usuarios')
-        .select('id, grupo_id, nome, nome_completo, cargo_id')
+        .select('id, grupo_id, nome, nome_completo, cargo_id, funcionario_id')
         .eq('email', authUser.email)
         .maybeSingle()
 
@@ -112,6 +114,7 @@ export function AuthProvider({ children }) {
       setUserNomeCompleto(perfil?.nome_completo || '')
       setUsuarioId(perfil?.id || null)
       setUserCargoId(perfil?.cargo_id || null)
+      setUserFuncionarioId(perfil?.funcionario_id || null)
       if (perfil?.cargo_id) {
         const { data: cargo } = await supabase.from('dim_cargos').select('agrupamento_id').eq('id', perfil.cargo_id).maybeSingle()
         setUserAgrupamentoCargoId(cargo?.agrupamento_id || null)
@@ -451,7 +454,7 @@ export function AuthProvider({ children }) {
 
   return (
     <AuthContext.Provider value={{
-      user, loading, permissionsLoading, userNome, userNomeCompleto, usuarioId, userCargoId, cargoIdEfetivo, agrupamentoCargoIdEfetivo,
+      user, loading, permissionsLoading, userNome, userNomeCompleto, usuarioId, userCargoId, userFuncionarioId, cargoIdEfetivo, agrupamentoCargoIdEfetivo,
       login, logout,
       hasPermission, hasAction, hasActionOrDefault, hasEmpresaPermission,
       isAdmin, isAdminEfetivo, empresasPermitidas, empresasPermitidasEfetivas,

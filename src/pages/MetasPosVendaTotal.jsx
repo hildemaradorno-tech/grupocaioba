@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo, useRef } from 'react'
+import React, { useEffect, useState, useMemo } from 'react'
 import { useSessionState } from '../hooks/useSessionState'
 import { TrendingUp, ChevronRight, ChevronDown, Loader2, Calculator, CheckCircle2, Ban, AlertTriangle, Search, Trash2 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
@@ -95,6 +95,12 @@ const infoAprovacaoDept = (dept, empNode) => {
 }
 
 const SEM_FILTRO = []
+
+// Linhas da aba Grupo: uma por marca, somando as empresas dela.
+const GRUPOS_VISAO = [
+  { id: 'GRUPO_DAF',   marca: 'DAF',   nome: 'CAIOBÁ TRUCKS - DAF' },
+  { id: 'GRUPO_HONDA', marca: 'HONDA', nome: 'CAIOBÁ MOTOS - HONDA' },
+]
 
 // Corta a árvore pelos filtros de Departamento / Setor / Box / busca de Funcionário — os VALORES exibidos
 // (totais de cada linha, inclusive Empresa/Segmento/Grupo) passam a refletir só o que sobrou do corte.
@@ -323,14 +329,14 @@ export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = 
     [rowsPecas, rowsMecanico, rowsConsultor, rowsTerceiros, funcionarios, cargos, boxes, setores, departamentos, filtroVisu]
   )
 
-  // Visão Grupo (aba Grupo): todas as empresas DAF viram uma única linha "CAIOBÁ TRUCKS - DAF", com os
-  // departamentos agregados entre elas. Os filtros de Empresa continuam valendo para escolher quais entram.
+  // Visão Grupo (aba Grupo): as empresas de cada marca viram uma única linha — DAF → "CAIOBÁ TRUCKS - DAF",
+  // HONDA → "CAIOBÁ MOTOS - HONDA" —, com os departamentos agregados entre elas. Os filtros de Empresa
+  // continuam valendo para escolher quais entram.
   const ehVisaoGrupo = visao === 'grupoDAF'
-  const idsDAF = useMemo(() => empresas
-    .filter(e => String(e.marca || '').trim().toUpperCase() === 'DAF')
+  const idsPorGrupo = useMemo(() => Object.fromEntries(GRUPOS_VISAO.map(g => [g.id, empresas
+    .filter(e => String(e.marca || '').trim().toUpperCase() === g.marca)
     .filter(e => !filtroEmpresa.length || filtroEmpresa.includes(e.id))
-    .map(e => e.id), [empresas, filtroEmpresa])
-  const idsDAFSet = useMemo(() => new Set(idsDAF), [idsDAF])
+    .map(e => e.id)])), [empresas, filtroEmpresa])
   const tree = useMemo(() => {
     if (!ehVisaoGrupo) return treeBase
     const mergeDepts = (dst, src) => Object.entries(src || {}).forEach(([dId, d]) => {
@@ -344,16 +350,20 @@ export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = 
         })
       })
     })
-    const depts = {}
-    idsDAF.forEach(eid => {
-      const emp = treeBase[eid]
-      if (!emp) return
-      // marca o empresa de origem em cada colaborador, para a chave ficar única entre empresas
-      Object.values(emp.depts || {}).forEach(d => Object.values(d.setores || {}).forEach(st => Object.values(st.boxes || {}).forEach(bx => Object.values(bx.colabs || {}).forEach(co => { co.__emp = eid }))))
-      mergeDepts(depts, emp.depts)
+    const out = {}
+    GRUPOS_VISAO.forEach(g => {
+      const depts = {}
+      ;(idsPorGrupo[g.id] || []).forEach(eid => {
+        const emp = treeBase[eid]
+        if (!emp) return
+        // marca o empresa de origem em cada colaborador, para a chave ficar única entre empresas
+        Object.values(emp.depts || {}).forEach(d => Object.values(d.setores || {}).forEach(st => Object.values(st.boxes || {}).forEach(bx => Object.values(bx.colabs || {}).forEach(co => { co.__emp = eid }))))
+        mergeDepts(depts, emp.depts)
+      })
+      if (Object.keys(depts).length) out[g.id] = { nome: g.nome, depts }
     })
-    return Object.keys(depts).length ? { GRUPO_DAF: { nome: 'CAIOBÁ TRUCKS - DAF', depts } } : {}
-  }, [ehVisaoGrupo, treeBase, idsDAF])
+    return out
+  }, [ehVisaoGrupo, treeBase, idsPorGrupo])
 
   // Filtros de Departamento / Setor / Box / Funcionário (busca) — só na aba Total (não em modo Aprovação).
   const [filtroDepto, setFiltroDepto] = useSessionState('mpvt_depto', '')
@@ -442,9 +452,9 @@ export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = 
     abrir(n.bxs)
   }
 
-  // "Recolher Tudo" volta ao padrão: Grupo e Segmento abertos (mostrando as empresas), mas sem nada
-  // dentro de cada empresa (Departamento/Setor/Box/Colaborador fechados).
-  const recolherTudo = () => { setExpanded(new Set()); setSegAbertos(new Set(niveisChaves().segs)); setGrupoAberto(true); setSoPendentes(false) }
+  // "Recolher Tudo" volta ao padrão de abertura: Grupo Caiobá aberto e tudo recolhido no agrupamento
+  // (Segmento - Marca), sem mostrar as empresas.
+  const recolherTudo = () => { setExpanded(new Set()); setSegAbertos(new Set()); setGrupoAberto(true); setSoPendentes(false) }
 
   // "Só Pendentes" (Gestão de Aprovação): filtra a árvore pra mostrar só os departamentos ainda
   // pendentes (esconde os já aprovados, mesmo dentro de uma empresa com departamentos mistos) e já abre
@@ -477,19 +487,7 @@ export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = 
     const n = niveisChaves()
     return n.segs.every(l => segAbertos.has(l)) && [...n.emps, ...n.depts, ...n.sets, ...n.bxs].every(k => expanded.has(k))
   })()
-  const algoAberto = expanded.size > 0
-
-  // Ao acessar a tela (ou recarregar os dados), abre só até o nível de Empresa — Segmento visível, nada
-  // dentro de cada empresa expandido — sem mexer no que o usuário já abriu manualmente depois.
-  const segsInicializados = useRef(false)
-  useEffect(() => {
-    if (segsInicializados.current) return
-    const segs = niveisChaves().segs
-    if (segs.length) {
-      setSegAbertos(new Set(segs))
-      segsInicializados.current = true
-    }
-  }, [tree])
+  const algoAberto = expanded.size > 0 || segAbertos.size > 0
 
   const mCells = (vals, prefix, emphTotal = false, situacao = null) => [
     ...vals.map((v, i) => (
@@ -513,7 +511,7 @@ export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = 
   }, [rowsPecas, rowsConsultor, rowsMecanico])
 
   const empList = ehVisaoGrupo
-    ? (tree.GRUPO_DAF ? [{ id: 'GRUPO_DAF', empresa_fantasia: 'CAIOBÁ TRUCKS - DAF', marca: 'DAF' }] : [])
+    ? GRUPOS_VISAO.filter(g => tree[g.id]).map(g => ({ id: g.id, empresa_fantasia: g.nome, marca: g.marca }))
     : empresas
       .filter(e => empresasComValor.has(e.id))
       .filter(e => !filtroEmpresa.length || filtroEmpresa.includes(e.id))
@@ -598,7 +596,7 @@ export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = 
         // Produtividade = Horas Meta ÷ Horas Disponíveis). Respeita os filtros de Setor/Box/Funcionário.
         // No Balcão Peças, a linha Indicadores traz a Margem Peças (%) e os Faturamentos por marca, calculados com os vendedores.
         const ehOficinaInd = (dept.nome || '').toLowerCase().includes('oficina')
-        const empOk = (id) => (ehVisaoGrupo ? idsDAFSet.has(id) : id === eId)
+        const empOk = (id) => (ehVisaoGrupo ? (idsPorGrupo[eId] || []).includes(id) : id === eId)
         const ehBalcaoInd  = /balc/i.test(dept.nome || '')
         if (ehOficinaInd || ehBalcaoInd) {
           const hd = Array(12).fill(0), hm = Array(12).fill(0)
@@ -901,7 +899,9 @@ export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = 
         </div>
       )}
 
-      {/* Filters */}
+      {/* Filters — dentro das abas (filtros externos) esta linha fica vazia; só aparece se tiver algo, senão
+          vira um espaço a mais entre as abas e os seletores. */}
+      {(!filtrosExternos || loading) && (
       <div className="flex items-center gap-3 flex-wrap">
         {!filtrosExternos && (
           <>
@@ -927,6 +927,7 @@ export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = 
         )}
         {loading && <Loader2 size={18} className="animate-spin text-indigo-500" />}
       </div>
+      )}
       </>)}
 
       {/* Filtros de Departamento / Setor / Box e busca por Funcionário — em todas as abas, inclusive na
