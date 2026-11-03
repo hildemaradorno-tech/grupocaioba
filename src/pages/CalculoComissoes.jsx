@@ -14,7 +14,7 @@ import FiltroMultiSelect from '../components/FiltroMultiSelect'
 import { rotuloColuna } from '../utils/rotuloColuna'
 import { funcionarioAtivoComissao, resolvePoliticas, fonteDaPolitica, politicaConfigurada, empresaProcessaComissao } from '../utils/comissoesElegibilidade'
 import { montarPercentualPj } from '../utils/regrasPj'
-import { montarHtmlNotaFiscal, montarNotaFiscalPj } from '../utils/notaFiscalPj'
+import { montarHtmlNotaFiscal, montarNotaFiscalPj, montarPaginasCalculoPj, etapaNfPj, STATUS_NF_PRESTADOR } from '../utils/notaFiscalPj'
 import TabelaNotaFiscal from '../components/TabelaNotaFiscal'
 import AnexoPjSlot from '../components/AnexoPjSlot'
 import { documentosDoPrestador, anexosDoDocumentoPj, origemDocumentoPj, dadosAnexoDocumento } from '../utils/documentosPj'
@@ -1140,6 +1140,22 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
   // igual ao Processamento de Comissões. Lote PJ = todos os funcionários na tela com Regra PJ.
   const funcsComRegraPj = useMemo(() => new Set(candidatosFiltrados.filter(c => c.politica?.prestacao_pj).map(c => c.func.id)), [candidatosFiltrados])
   const lotePj = candidatosFiltrados.length > 0 && candidatosFiltrados.every(c => funcsComRegraPj.has(c.func.id))
+  // Envio da Nota Fiscal dos PJs no mês (pj_nf_envios) e a etapa do lote PJ no badge das Etapas.
+  const [enviosNf, setEnviosNf] = useState([])
+  useEffect(() => {
+    if (!periodoValido) { setEnviosNf([]); return }
+    let ativo = true
+    apiService.getPjNfEnvios({ periodos: [periodoInicio.slice(0, 7)] })
+      .then(lista => { if (ativo) setEnviosNf(lista) })
+      .catch(() => { if (ativo) setEnviosNf([]) })
+    return () => { ativo = false }
+  }, [periodoValido, periodoInicio, lote?.status])
+  const etapaNfLote = (() => {
+    if (!lotePj || !lote || !['CONFERIDO_DP', 'PROCESSAMENTO_PARCIAL', 'PROCESSADO'].includes(lote.status)) return null
+    const etapas = [...funcsComRegraPj].map(id => etapaNfPj(lote, id, enviosNf.find(e => e.lote_id === lote.id && e.funcionario_id === id)))
+    if (etapas.every(e => e === 'recebida')) return 'recebida'
+    return etapas.includes('enviada') ? 'enviada' : etapas.includes('devolvida') ? 'devolvida' : 'aguardando'
+  })()
 
   // Documentos PJ de cada prestador no mês (menu Documentos PJ): os de todos os prestadores + os das
   // Regras PJ calculadas. Obrigatório sem anexo trava o Conferir Comissões.
@@ -1199,15 +1215,20 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
     // candidato — de lotesPorSetor (empresa marcada) ou, sem empresa nenhuma selecionada, de
     // lotesTodasEmpresasPorChave (empresa+setor do próprio candidato). Sem isso, todo mundo
     // aparecia preso em "Aguardando Gerente" na visão sem empresa, mesmo já Conferido/Processado.
-    const statusEfetivo = setorUnicoSelecionado
-      ? lote?.status
+    const loteEfetivo = setorUnicoSelecionado
+      ? lote
       : filtroEmpresa
-        ? (c.setorNomes || []).map(n => lotesPorSetor[n]?.status).find(Boolean)
-        : (c.setorNomes || []).map(n => lotesTodasEmpresasPorChave[`${c.func.empresa_id}::${n}`]?.status).find(Boolean)
+        ? (c.setorNomes || []).map(n => lotesPorSetor[n]).find(l => l?.status)
+        : (c.setorNomes || []).map(n => lotesTodasEmpresasPorChave[`${c.func.empresa_id}::${n}`]).find(l => l?.status)
+    const statusEfetivo = loteEfetivo?.status
+    // Prestador PJ depois do Conferido DP: mesma etapa vista em Minha Nota Fiscal (Aguardando Nota
+    // Fiscal → Aguardando recebimento → Nota Fiscal Recebida).
+    if (funcsComRegraPj.has(c.func.id) && ['CONFERIDO_DP', 'PROCESSAMENTO_PARCIAL', 'PROCESSADO'].includes(statusEfetivo)) {
+      return STATUS_NF_PRESTADOR[etapaNfPj(loteEfetivo, c.func.id, enviosNf.find(e => e.lote_id === loteEfetivo.id && e.funcionario_id === c.func.id))]
+    }
     // Mesmos rótulos usados em Processamento de Comissões (STATUS_LOTE_INFO), pra identificar de
     // cara em que etapa do fluxo aquele funcionário está sem precisar trocar de aba.
     if (statusEfetivo === 'PROCESSADO') return { label: 'Processado', className: 'bg-emerald-100 text-emerald-700' }
-    if (statusEfetivo === 'CONFERIDO_DP' && funcsComRegraPj.has(c.func.id)) return { label: 'Aguardando Nota Fiscal', className: 'bg-emerald-100 text-emerald-700' }
     if (statusEfetivo === 'CONFERIDO_DP') return { label: 'Aguardando Processamento', className: 'bg-indigo-100 text-indigo-700' }
     if (statusEfetivo === 'CONFERIDO') return { label: 'Aguardando DP', className: 'bg-blue-100 text-blue-700' }
     return { label: 'Aguardando Gerente', className: 'bg-slate-200 text-slate-700' }
@@ -2046,9 +2067,21 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
     setErro(null)
     try {
       const periodoLabel = `${periodoInicio.split('-').reverse().join('/')} a ${periodoFim.split('-').reverse().join('/')}`
+      // Mesmo formato das linhas salvas, pra montar a memória do cálculo de cada regra.
+      const registros = notaFiscal.linhasFunc.map(c => {
+        const r = valoresPorFuncionario[chaveLinha(c)] || {}
+        return {
+          politica: c.politica, valor_comissao: r.valorComissao, valor_base: r.valorBase, percentual_aplicado: r.percentual,
+          periodo_inicio: r.periodoInicio, periodo_fim: r.periodoFim, detalhe_empresas: detalhePorEmpresa[chaveLinha(c)] || null,
+          detalhe_calculo: { valorPorColuna: r.valorPorColuna ?? null, bonificacao: r.bonificacao ?? null, percentualPj: r.percentualPj ?? null },
+        }
+      })
       await gerarPdfComissoes({
-        paginasIniciais: [montarHtmlNotaFiscal(notaFiscal, { periodoLabel })],
-        setores: montarSetoresPdf(agruparPorSetorECargo(notaFiscal.linhasFunc)),
+        paginasIniciais: [
+          montarHtmlNotaFiscal(notaFiscal, { periodoLabel }),
+          ...montarPaginasCalculoPj({ registros, prestador: notaFiscal.prestador, periodoLabel, politicas: dados?.politicas || [] }),
+        ],
+        setores: [],
         periodoInicio, periodoFim,
         nomeArquivo: ['Nota_Fiscal', periodoInicio, periodoFim, notaFiscal.linhasFunc[0].func.nome_funcionario].map(paraNomeArquivo).join('_'),
       })
@@ -2297,7 +2330,10 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
                 <div className="flex items-center gap-2">
                   <ShieldCheck className="h-4 w-4 text-indigo-500" />
                   <span className="text-sm font-bold text-slate-900">Etapas do Processamento</span>
-                  {lote && (
+                  {lote && etapaNfLote && (
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${STATUS_NF_PRESTADOR[etapaNfLote].className}`}>{STATUS_NF_PRESTADOR[etapaNfLote].label}</span>
+                  )}
+                  {lote && !etapaNfLote && (
                     <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
                       lote.status === 'PROCESSADO' ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                       : lote.status === 'CONFERIDO_DP' ? (lotePj ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-indigo-50 text-indigo-700 border-indigo-200')

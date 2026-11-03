@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { Search, Loader2, AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, Eye, X, RotateCcw, Truck, ShieldCheck, CheckCircle2, Circle, Download, Trash2, ClipboardCheck, Calculator, History, BookOpen, Paperclip } from 'lucide-react'
+import { Search, Loader2, AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, Eye, X, RotateCcw, Truck, ShieldCheck, CheckCircle2, Circle, Download, Trash2, ClipboardCheck, Calculator, History, BookOpen, Paperclip, Receipt } from 'lucide-react'
 import { apiService } from '../services/api'
 import { passaEscopoComissao, setorSoVisualizacao, empresaNoEscopoComissao } from '../utils/permissoesComissao'
 import { useAuth } from '../context/AuthContext'
@@ -11,7 +11,7 @@ import { gerarPdfComissoes, paraNomeArquivo } from '../utils/comissoesPdf'
 import { rotuloColuna } from '../utils/rotuloColuna'
 import { AGRUPAMENTOS_COMISSAO, funcionarioAtivoComissao, resolvePoliticas, politicaConfigurada, empresaProcessaComissao } from '../utils/comissoesElegibilidade'
 import { montarPercentualPj } from '../utils/regrasPj'
-import { montarNotaFiscalPj, montarHtmlNotaFiscal, montarSetorAnaliticoPj, notasFiscaisRecebidas, chaveNotaFiscal, anexosDaNota, fmtCnpj } from '../utils/notaFiscalPj'
+import { montarNotaFiscalPj, montarHtmlNotaFiscal, montarPaginasCalculoPj, chaveNotaFiscal, anexosDaNota, fmtCnpj, etapaNfPj } from '../utils/notaFiscalPj'
 import TabelaNotaFiscal from '../components/TabelaNotaFiscal'
 import AnexoPjSlot from '../components/AnexoPjSlot'
 import VisualizadorAnexosPj from '../components/VisualizadorAnexosPj'
@@ -69,13 +69,15 @@ const STATUS_CHIPS = [
   { value: 'CONFERIDO', label: 'Aguardando DP' },
   { value: 'CONFERIDO_DP', label: 'Aguardando Processamento' },
   { value: 'AGUARDANDO_NF', label: 'Aguardando Nota Fiscal' },
-  { value: 'NF_RECEBIDA', label: 'Nota Fiscal Recebida' },
+  { value: 'RECEBER_NF', label: 'Receber Nota Fiscal' },
   { value: 'PROCESSAMENTO_PARCIAL', label: 'Processamento Parcial' },
   { value: 'PROCESSADO', label: 'Processados' },
 ]
 // Etapa do lote nos botões de filtro: lote PJ depois do Conferido DP não vai pra "Aguardando
-// Processamento" — fica em "Aguardando Nota Fiscal" até todas as notas serem anexadas.
-const statusDoChip = (g) => (g.pj && g.status === 'CONFERIDO_DP') ? (g.nfRecebida ? 'NF_RECEBIDA' : 'AGUARDANDO_NF') : g.status
+// Processamento" — fica em "Aguardando Nota Fiscal" e, quando algum PJ confirma o envio em Minha
+// Nota Fiscal, em "Receber Nota Fiscal". Com o recebimento de todos, vira Processado.
+const loteNfPjAberto = (g) => g.pj && ['CONFERIDO_DP', 'PROCESSAMENTO_PARCIAL'].includes(g.status)
+const statusDoChip = (g) => loteNfPjAberto(g) ? (g.etapaNf === 'enviada' ? 'RECEBER_NF' : 'AGUARDANDO_NF') : g.status
 
 // Botão com menu suspenso (Salvar em TXT / Salvar em PDF etc.) — os cards de lote rodam dentro
 // de um container com overflow-hidden, então um menu "absolute" comum fica cortado quando o
@@ -158,17 +160,19 @@ function DropdownAcao({ label, icon: Icon, carregando, disabled, title, classNam
 // a linha expandida ocupa todas. Ações do lote ficam na barra acima da tabela.
 const COLUNAS_LOTE = 8
 
-// Lote PJ depois do Conferido DP: aguarda o prestador anexar as Notas Fiscais (Minha Nota Fiscal);
-// com todas as notas do quadro de emissão anexadas, vira "Nota Fiscal Recebida".
+// Lote PJ depois do Conferido DP: aguarda o prestador anexar e confirmar as Notas Fiscais (Minha Nota
+// Fiscal) → "Receber Nota Fiscal" → Confirmar recebimento deixa o PJ "Processado" (etapaNfPj).
 const STATUS_NF_PJ = {
   aguardando: { label: 'Aguardando Nota Fiscal', className: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-  recebida: { label: 'Nota Fiscal Recebida', className: 'bg-teal-600 text-white border-teal-600' },
+  devolvida: { label: 'Nota Fiscal Devolvida', className: 'bg-rose-50 text-rose-700 border-rose-200' },
+  enviada: { label: 'Receber Nota Fiscal', className: 'bg-teal-600 text-white border-teal-600' },
+  recebida: { label: 'Processado', className: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
 }
 
 // Uma linha por lote (Empresa + Setor + Período) — o botão de expandir abre logo abaixo as
 // comissões individuais dos funcionários dele. Os botões de ação (Conferido DP / Reprocessar /
 // Excluir) já sabem exatamente qual lote é o seu, direto pela linha.
-function LoteLinha({ grupo, expandido, onToggleExpand, selecionados, onToggleSelecionado, onToggleSelecionarTodos, loteSelecionadoProcessamento, onToggleLoteProcessamento, podeProcessar, podeConfirmarConferenciaDp, podeExcluirLote, processandoAcao, onVisualizar, onToggleConferidoDp, onVerHistorico }) {
+function LoteLinha({ grupo, expandido, onToggleExpand, selecionados, onToggleSelecionado, onToggleSelecionarTodos, loteSelecionadoProcessamento, onToggleLoteProcessamento, podeProcessar, podeConfirmarConferenciaDp, podeExcluirLote, processandoAcao, onVisualizar, onToggleConferidoDp, onVerHistorico, onVerNotaFiscal }) {
   const { lote, status } = grupo
   // Enquanto tiver alguém "Aguardando Reprocessamento" dentro de um lote já Processado, o badge
   // não pode dizer "Processado" liso — dá a entender que está tudo certo. Mostra "Processado
@@ -176,8 +180,8 @@ function LoteLinha({ grupo, expandido, onToggleExpand, selecionados, onToggleSel
   const temReprocessamentoPendente = (lote?.funcionarios_liberados_reprocessamento || []).length > 0
   const statusInfo = (status === 'PROCESSADO' && temReprocessamentoPendente)
     ? { label: 'Processado Parcialmente', className: 'bg-amber-50 text-amber-700 border-amber-200' }
-    : (grupo.pj && status === 'CONFERIDO_DP')
-    ? STATUS_NF_PJ[grupo.nfRecebida ? 'recebida' : 'aguardando']
+    : loteNfPjAberto(grupo)
+    ? STATUS_NF_PJ[grupo.etapaNf]
     : STATUS_LOTE_INFO[status] || { label: status || 'Sem lote', className: 'bg-slate-100 text-slate-500 border-slate-200' }
   const selecionadosDoLote = grupo.funcionarios.filter(f => selecionados.has(f.funcionario_id))
   const todosSelecionados = grupo.funcionarios.length > 0 && selecionadosDoLote.length === grupo.funcionarios.length
@@ -307,7 +311,7 @@ function LoteLinha({ grupo, expandido, onToggleExpand, selecionados, onToggleSel
                         const aguardandoReprocessamento = !!lote?.funcionarios_liberados_reprocessamento?.includes(f.funcionario_id)
                         const revisado = !!lote?.funcionarios_conferidos_dp?.includes(f.funcionario_id)
                         return (
-                          <td className="p-3">
+                          <td className="p-3 whitespace-nowrap">
                             <button
                               type="button"
                               onClick={() => !aguardandoReprocessamento && onToggleConferidoDp(grupo.loteId, f.funcionario_id)}
@@ -319,6 +323,14 @@ function LoteLinha({ grupo, expandido, onToggleExpand, selecionados, onToggleSel
                                 ? <CheckCircle2 className="h-4 w-4 text-emerald-600" />
                                 : <Circle className="h-4 w-4 text-slate-300" />}
                             </button>
+                            {/* Prestador PJ: Nota Fiscal (emissão + notas anexadas pelo PJ). */}
+                            {grupo.pj && ['CONFERIDO_DP', 'PROCESSAMENTO_PARCIAL', 'PROCESSADO'].includes(status) && (
+                              <button type="button" onClick={() => onVerNotaFiscal(grupo, f)}
+                                title="Nota Fiscal — emissão e notas anexadas pelo prestador"
+                                className={`ml-1 p-1 rounded-md border transition-colors ${['enviada', 'recebida'].includes(f.etapaNf) ? 'border-teal-300 bg-teal-50 text-teal-700 hover:bg-teal-100' : 'border-slate-200 text-slate-400 hover:text-blue-600 hover:bg-blue-50'}`}>
+                                <Receipt className="h-4 w-4" />
+                              </button>
+                            )}
                           </td>
                         )
                       })()}
@@ -332,7 +344,7 @@ function LoteLinha({ grupo, expandido, onToggleExpand, selecionados, onToggleSel
                             : lote?.funcionarios_processados?.includes(f.funcionario_id)
                               ? { label: 'Processado', className: 'bg-emerald-50 text-emerald-700 border-emerald-200' }
                               : (status === 'PROCESSAMENTO_PARCIAL' || status === 'CONFERIDO_DP')
-                                ? (grupo.pj ? STATUS_NF_PJ[f.nfRecebida ? 'recebida' : 'aguardando'] : { label: 'Aguardando Processamento', className: 'bg-indigo-50 text-indigo-700 border-indigo-200' })
+                                ? (grupo.pj ? STATUS_NF_PJ[f.etapaNf] : { label: 'Aguardando Processamento', className: 'bg-indigo-50 text-indigo-700 border-indigo-200' })
                                 : statusInfo
                           return (
                             <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border whitespace-nowrap ${info.className}`}>
@@ -405,7 +417,8 @@ export default function HistoricoComissoes() {
   // Anexos PJ (pj_anexos) dos meses na tela: Notas Fiscais e documentos exigidos pelas Regras PJ.
   const [anexosPj, setAnexosPj] = useState([])
   const [docsExigidos, setDocsExigidos] = useState([]) // menu Documentos PJ
-  const [verAnexos, setVerAnexos] = useState(null) // lista de anexos aberta na tela de visualização
+  const [verAnexos, setVerAnexos] = useState(null) // { anexos, titulo, subtitulo } abertos na tela de visualização
+  const [nfEmissao, setNfEmissao] = useState(null) // { loteId, funcionarioId } — janela Nota Fiscal do PJ (botão ao lado do Revisado)
   const [gerandoNfPdf, setGerandoNfPdf] = useState(false) // linha "Variáveis" (Regra PJ) aberta no Visualizar
   const [colunaModal, setColunaModal] = useState(null)
   const [lotesMap, setLotesMap] = useState({})
@@ -580,6 +593,17 @@ export default function HistoricoComissoes() {
     }
   }
   useEffect(() => { carregarAnexosPj() }, [periodosResultados]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Envio da Nota Fiscal de cada PJ (pj_nf_envios) — Receber / Devolver.
+  const [enviosNf, setEnviosNf] = useState([])
+  const carregarEnviosNf = async () => {
+    if (loteIdsResultados.length === 0) { setEnviosNf([]); return }
+    try {
+      setEnviosNf(await apiService.getPjNfEnvios({ loteIds: loteIdsResultados }))
+    } catch {
+      setEnviosNf([])
+    }
+  }
+  useEffect(() => { carregarEnviosNf() }, [loteIdsResultados]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     apiService.getPjDocumentosExigidos().then(setDocsExigidos).catch(() => setDocsExigidos([]))
   }, [])
@@ -608,14 +632,11 @@ export default function HistoricoComissoes() {
         const registros = [...registrosLote].sort((a, b) => compararCodigoPolitica(a.politica, b.politica)
           || (a.periodo_inicio || '').localeCompare(b.periodo_inicio || ''))
         const base = registros[0]
-        const prestadorPj = registros.some(r => r.politica?.prestacao_pj)
-        const nfRecebida = prestadorPj && notasFiscaisRecebidas(montarNotaFiscalPj({
-          linhas: registros.map(r => ({ politica: r.politica, valor: r.valor_comissao, detalhe: Array.isArray(r.detalhe_empresas) ? r.detalhe_empresas : [] })),
-          politicas: dados?.politicas || [], empresas: dados?.empresas || [], emissaoConfig: base.func?.pj_emissao_nf || null, prestador: '',
-        }), anexosPj, funcionario_id, (base.periodo_inicio || '').slice(0, 7))
+        const envioNf = enviosNf.find(e => e.lote_id === g.loteId && e.funcionario_id === funcionario_id) || null
         return {
           funcionario_id,
-          nfRecebida,
+          envioNf,
+          etapaNf: etapaNfPj(g.lote, funcionario_id, envioNf),
           funcionarioNome: base.funcionarioNome,
           empresaNome: base.empresaNome,
           cargoNome: base.cargoNome,
@@ -639,7 +660,8 @@ export default function HistoricoComissoes() {
         // Lote de prestadores PJ: não gera TXT — depois do Conferido DP fica "Aguardando Nota Fiscal"
         // (o próprio PJ vê a Nota Fiscal em Minha Nota Fiscal) e não entra no Processar.
         pj: funcionarios.length > 0 && funcionarios.every(f => f.registros.some(r => r.politica?.prestacao_pj)),
-        nfRecebida: funcionarios.length > 0 && funcionarios.every(f => f.nfRecebida),
+        // Algum PJ com nota enviada e ainda não recebida → o lote fica "Receber Nota Fiscal".
+        etapaNf: funcionarios.some(f => f.etapaNf === 'enviada') ? 'enviada' : 'aguardando',
         empresaNome: (empresaCadastro?.empresa_fantasia || empresaCadastro?.nome_empresa) || g.lote?.empresa_nome || funcionarios[0]?.empresaNome || 'Empresa',
         setorNome: setorCadastro?.nome_setor || g.lote?.setor_nome || 'Sem setor',
         // Área = área do departamento "pai" do setor (cadastro atual); lote legado sem setor cai
@@ -703,7 +725,7 @@ export default function HistoricoComissoes() {
         && (!filtroSetor || g.setorNome === filtroSetor)
         && (!filtroResponsavel || g.responsavelNomes.includes(filtroResponsavel)))
       .sort((a, b) => (a.empresaNome + a.setorNome).localeCompare(b.empresaNome + b.setorNome, 'pt-BR'))
-  }, [resultadosFiltrados, lotesMap, mapas, dados, anexosPj, jaBuscou, comissaoNivelSetorEfetivo, responsaveisPorSetor, comissaoEscopoEfetivo,
+  }, [resultadosFiltrados, lotesMap, mapas, dados, enviosNf, jaBuscou, comissaoNivelSetorEfetivo, responsaveisPorSetor, comissaoEscopoEfetivo,
     filtroEmpresa, filtroArea, filtroSetor, filtroResponsavel])
 
   const lotesVisiveis = useMemo(() => (
@@ -758,6 +780,54 @@ export default function HistoricoComissoes() {
       setSelecionados(new Set())
       setLotesSelecionadosProcessamento(new Set())
       await handleVisualizar()
+    } catch (err) {
+      setErro(err.message || String(err))
+    } finally {
+      setProcessandoAcao(null)
+    }
+  }
+  // PJs marcados com Nota Fiscal enviada (Minha Nota Fiscal) e ainda não recebida — Confirmar
+  // recebimento (vira Processado, sem TXT) ou Devolver ao prestador.
+  const alvosNfPj = alvos
+    .filter(a => podeProcessar && loteNfPjAberto(a.grupo) && !a.grupo.soVisualizacao)
+    .map(a => ({ ...a, ids: a.funcionarios.filter(f => f.etapaNf === 'enviada').map(f => f.funcionario_id) }))
+    .filter(a => a.ids.length > 0)
+  const qtdNfPj = alvosNfPj.reduce((soma, a) => soma + a.ids.length, 0)
+  // lista: [{ grupo, ids }] — padrão = PJs marcados; a janela da Nota Fiscal passa um só.
+  const handleConfirmarRecebimentoNf = async (lista = alvosNfPj) => {
+    const qtd = lista.reduce((soma, a) => soma + a.ids.length, 0)
+    if (qtd === 0) return
+    if (!window.confirm(`Confirmar o recebimento da Nota Fiscal de ${qtd} prestador(es)? Eles ficam como Processado (para o PJ: Nota Fiscal Recebida).`)) return
+    setProcessandoAcao('receber-nf')
+    setErro(null)
+    try {
+      for (const a of lista) {
+        const todosIds = [...new Set(resultados.filter(r => r.lote_id === a.grupo.loteId).map(r => r.funcionario_id))]
+        await apiService.confirmarRecebimentoNfPj(a.grupo.lote.id, usuarioLabel, a.ids, todosIds)
+      }
+      setSelecionados(new Set())
+      setLotesSelecionadosProcessamento(new Set())
+      await handleVisualizar()
+      await carregarEnviosNf()
+    } catch (err) {
+      setErro(err.message || String(err))
+    } finally {
+      setProcessandoAcao(null)
+    }
+  }
+  const handleDevolverNf = async (lista = alvosNfPj) => {
+    const qtd = lista.reduce((soma, a) => soma + a.ids.length, 0)
+    if (qtd === 0) return
+    const motivo = window.prompt(`Devolver a Nota Fiscal de ${qtd} prestador(es)? Informe o motivo (o PJ vê em Minha Nota Fiscal):`)
+    if (motivo === null) return
+    if (!motivo.trim()) { setErro('Informe o motivo da devolução.'); return }
+    setProcessandoAcao('devolver-nf')
+    setErro(null)
+    try {
+      for (const a of lista) await apiService.devolverNfPj(a.grupo.lote.id, a.ids, motivo.trim(), usuarioLabel)
+      setSelecionados(new Set())
+      setLotesSelecionadosProcessamento(new Set())
+      await carregarEnviosNf()
     } catch (err) {
       setErro(err.message || String(err))
     } finally {
@@ -1183,15 +1253,13 @@ export default function HistoricoComissoes() {
     try {
       const ini = detalheAberto.registros[0]?.periodo_inicio
       const fim = detalheAberto.registros[detalheAberto.registros.length - 1]?.periodo_fim
+      const periodoLabel = `${fmtData(ini)} a ${fmtData(fim)}`
       await gerarPdfComissoes({
-        paginasIniciais: [montarHtmlNotaFiscal(notaFiscalDetalhe, { periodoLabel: `${fmtData(ini)} a ${fmtData(fim)}` })],
-        setores: [montarSetorAnaliticoPj({
-          registros: detalheAberto.registros,
-          prestador: notaFiscalDetalhe.prestador,
-          empresaNome: detalheAberto.empresaNome,
-          cargoNome: detalheAberto.registros[0]?.cargoNome,
-          politicas: dados?.politicas || [],
-        })],
+        paginasIniciais: [
+          montarHtmlNotaFiscal(notaFiscalDetalhe, { periodoLabel }),
+          ...montarPaginasCalculoPj({ registros: detalheAberto.registros, prestador: notaFiscalDetalhe.prestador, periodoLabel, politicas: dados?.politicas || [] }),
+        ],
+        setores: [],
         periodoInicio: ini, periodoFim: fim,
         nomeArquivo: ['Nota_Fiscal', ini, fim, detalheAberto.funcionarioNome].map(paraNomeArquivo).join('_'),
       })
@@ -1425,6 +1493,30 @@ export default function HistoricoComissoes() {
                       Processar
                     </button>
                   )}
+                  {qtdNfPj > 0 && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => handleConfirmarRecebimentoNf()}
+                        disabled={!!processandoAcao}
+                        title="Confirma o recebimento das Notas Fiscais dos prestadores PJ marcados — ficam como Processado"
+                        className="flex items-center gap-1.5 bg-teal-600 hover:bg-teal-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold px-3 py-1.5 rounded-md shadow-sm transition-colors"
+                      >
+                        {processandoAcao === 'receber-nf' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                        Confirmar recebimento{qtdNfPj > 1 ? ` (${qtdNfPj})` : ''}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDevolverNf()}
+                        disabled={!!processandoAcao}
+                        title="Devolve as Notas Fiscais ao prestador PJ para corrigir (pede o motivo)"
+                        className="flex items-center gap-1.5 border border-rose-200 text-rose-600 hover:bg-rose-50 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-semibold px-3 py-1.5 rounded-md transition-colors"
+                      >
+                        {processandoAcao === 'devolver-nf' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
+                        Devolver
+                      </button>
+                    </>
+                  )}
                   {selecaoMesmoCnpj && podeVoltarProcessamento && (
                     <button
                       type="button"
@@ -1511,6 +1603,7 @@ export default function HistoricoComissoes() {
                           processandoAcao={processandoAcao}
                           onVisualizar={setDetalheAberto}
                           onToggleConferidoDp={handleToggleConferidoDp}
+                          onVerNotaFiscal={(g, f) => setNfEmissao({ loteId: g.loteId, funcionarioId: f.funcionario_id })}
                           onVerHistorico={abrirHistoricoLote}
                         />
                       ))}
@@ -1522,6 +1615,121 @@ export default function HistoricoComissoes() {
           )}
         </>
       )}
+
+      {/* NOTA FISCAL DO PJ — emissão (pra quem / CNPJ / valor) com as notas anexadas pelo prestador. */}
+      {nfEmissao && (() => {
+        const g = lotesAgrupados.find(x => x.loteId === nfEmissao.loteId)
+        const f = g?.funcionarios.find(x => x.funcionario_id === nfEmissao.funcionarioId)
+        if (!g || !f) return null
+        const r0 = f.registros[0]
+        const periodo = (r0?.periodo_inicio || '').slice(0, 7)
+        const nf = montarNotaFiscalPj({
+          linhas: f.registros.map(r => ({ politica: r.politica, valor: r.valor_comissao, detalhe: Array.isArray(r.detalhe_empresas) ? r.detalhe_empresas : [] })),
+          politicas: dados?.politicas || [], empresas: dados?.empresas || [], emissaoConfig: r0?.func?.pj_emissao_nf || null, prestador: f.funcionarioNome,
+        })
+        const notas = nf?.emissao?.notas || []
+        const info = STATUS_NF_PJ[f.etapaNf]
+        const envio = f.envioNf
+        const lista = [{ grupo: g, ids: [f.funcionario_id] }]
+        const podeAgir = podeProcessar && !g.soVisualizacao && f.etapaNf === 'enviada'
+        // Anexos do prestador no mês — "Visualizar" de cada quadro abre todos os do tipo numa tela só.
+        const doMes = anexosPj.filter(a => a.funcionario_id === f.funcionario_id && a.periodo === periodo)
+        const notasMes = doMes.filter(a => a.tipo === 'NF')
+        const docsMes = doMes.filter(a => a.tipo !== 'NF')
+        const botaoVerTodos = (lista, rotulo, titulo) => (
+          <button type="button" disabled={lista.length === 0}
+            onClick={() => setVerAnexos({ anexos: lista, titulo: `${titulo} — ${f.funcionarioNome}`, subtitulo: `${lista.length} arquivo(s)`, cabecalhos })}
+            title={lista.length === 0 ? 'Nenhum arquivo anexado ainda' : `Abrir ${rotulo.toLowerCase()} numa tela só`}
+            className="flex items-center gap-1.5 text-[11px] font-semibold text-blue-700 border border-blue-200 bg-white hover:bg-blue-50 disabled:opacity-40 disabled:cursor-not-allowed px-2.5 py-1 rounded-md">
+            <Eye className="h-3.5 w-3.5" /> {rotulo} ({lista.length})
+          </button>
+        )
+        const docsPrestador = documentosDoPrestador(docsExigidos, f.registros.map(r => r.politica), periodo)
+        // Cabeçalho de cada anexo na tela de visualização: a nota (empresa, valor, CNPJ) ou o documento.
+        const cabecalhos = {}
+        notas.forEach(n => anexosDaNota(anexosPj, n, f.funcionario_id, periodo).forEach(a => {
+          cabecalhos[a.id] = { titulo: `${n.nome} — ${fmtBRL(n.valor)}`, subtitulo: `${n.cnpj ? `CNPJ ${fmtCnpj(n.cnpj)} · ` : ''}Referente a: ${n.referente.join(', ')}` }
+        }))
+        docsPrestador.forEach(it => anexosDoDocumentoPj(doMes, it.doc, f.funcionario_id, periodo).forEach(a => {
+          cabecalhos[a.id] = { titulo: it.doc.nome, subtitulo: origemDocumentoPj(it) }
+        }))
+        return (
+          <div className="fixed top-0 right-0 bottom-0 left-16 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setNfEmissao(null)}>
+            <div className="bg-white rounded-xl border border-slate-200 w-full max-w-4xl max-h-[85vh] shadow-2xl flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-slate-50 shrink-0">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2"><Receipt className="h-4 w-4 text-teal-600" /> Nota Fiscal — {f.funcionarioNome}</h3>
+                  <p className="text-[11px] text-slate-400 mt-0.5">{g.empresaNome} — {fmtData(r0?.periodo_inicio)} a {fmtData(f.registros[f.registros.length - 1]?.periodo_fim)}</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border whitespace-nowrap ${info.className}`}>{info.label}</span>
+                  <button onClick={() => setNfEmissao(null)} className="text-slate-400 hover:text-slate-600"><X className="h-4 w-4" /></button>
+                </div>
+              </div>
+              <div className="p-5 overflow-y-auto space-y-3">
+                {envio && (
+                  <div className="text-[11px] text-slate-500 space-y-0.5">
+                    {envio.enviado_em && <div>Enviada pelo prestador em {new Date(envio.enviado_em).toLocaleString('pt-BR')}{envio.enviado_por ? ` (${envio.enviado_por})` : ''}</div>}
+                    {envio.status === 'DEVOLVIDA' && <div className="text-rose-700">Devolvida em {new Date(envio.devolvido_em).toLocaleString('pt-BR')} por {envio.devolvido_por}{envio.motivo_devolucao ? `: ${envio.motivo_devolucao}` : ''}</div>}
+                    {envio.recebido_em && <div className="text-teal-700">Recebimento confirmado em {new Date(envio.recebido_em).toLocaleString('pt-BR')} por {envio.recebido_por}</div>}
+                  </div>
+                )}
+                {notas.length === 0 ? <p className="text-xs text-slate-400">Sem notas a emitir.</p> : (
+                  <div className="rounded-md border border-emerald-200 overflow-hidden">
+                    <div className="flex items-center justify-between px-3 py-1.5 bg-emerald-50 text-xs font-bold text-emerald-800">
+                      Emissão das Notas Fiscais
+                      {botaoVerTodos(notasMes, 'Visualizar notas', 'Notas Fiscais')}
+                    </div>
+                    <div className="p-3 space-y-2">
+                      {notas.map(n => (
+                        <div key={chaveNotaFiscal(n)}>
+                          <AnexoPjSlot rotulo={`${n.nome} — ${fmtBRL(n.valor)}`}
+                            detalhe={`${n.cnpj ? `CNPJ ${fmtCnpj(n.cnpj)} · ` : ''}Referente a: ${n.referente.join(', ')}`}
+                            anexos={anexosDaNota(anexosPj, n, f.funcionario_id, periodo)}
+                            dados={{ funcionarioId: f.funcionario_id, periodo, tipo: 'NF', cnpj: chaveNotaFiscal(n), empresaNome: n.nome }}
+                            podeEditar={false} onVisualizar={(lista, cab) => setVerAnexos({ anexos: lista, ...cab })} />
+                        </div>
+                      ))}
+                      <div className="flex justify-between px-1 pt-1 text-xs font-bold text-slate-800">
+                        <span>Valor Total da Nota Fiscal</span>
+                        <span className="font-mono text-emerald-700">{fmtBRL(nf.total)}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {/* Documentos do prestador no mês (menu Documentos PJ), logo abaixo da emissão. */}
+                <div className="rounded-md border border-indigo-200 overflow-hidden">
+                  <div className="flex items-center justify-between px-3 py-1.5 bg-indigo-50 text-xs font-bold text-indigo-800">
+                    Documentos anexados
+                    {botaoVerTodos(docsMes, 'Visualizar documentos', 'Documentos')}
+                  </div>
+                  <div className="p-3 space-y-2">
+                    {docsPrestador.length === 0 ? <p className="text-[11px] text-slate-400">Nenhum documento exigido deste prestador.</p> : docsPrestador.map(it => (
+                      <AnexoPjSlot key={it.doc.id} rotulo={it.doc.nome} detalhe={origemDocumentoPj(it)} opcional={!it.doc.obrigatorio}
+                        anexos={anexosDoDocumentoPj(doMes, it.doc, f.funcionario_id, periodo)}
+                        dados={dadosAnexoDocumento(it, f.funcionario_id, periodo)}
+                        podeEditar={false} onVisualizar={(lista, cab) => setVerAnexos({ anexos: lista, ...cab })} />
+                    ))}
+                  </div>
+                </div>
+              </div>
+              {podeAgir && (
+                <div className="flex justify-end gap-2 px-5 py-3 border-t border-slate-100 bg-slate-50 shrink-0">
+                  <button type="button" onClick={() => handleDevolverNf(lista)} disabled={!!processandoAcao}
+                    className="flex items-center gap-1.5 border border-rose-200 text-rose-600 hover:bg-rose-50 disabled:opacity-40 text-xs font-semibold px-3 py-1.5 rounded-md">
+                    {processandoAcao === 'devolver-nf' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />} Devolver
+                  </button>
+                  <button type="button" onClick={() => handleConfirmarRecebimentoNf(lista)} disabled={!!processandoAcao}
+                    className="flex items-center gap-1.5 bg-teal-600 hover:bg-teal-700 disabled:opacity-40 text-white text-xs font-semibold px-3 py-1.5 rounded-md">
+                    {processandoAcao === 'receber-nf' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />} Confirmar recebimento
+                  </button>
+                </div>
+              )}
+            </div>
+            {verAnexos && <VisualizadorAnexosPj anexos={verAnexos.anexos} titulo={verAnexos.titulo} subtitulo={verAnexos.subtitulo} cabecalhos={verAnexos.cabecalhos} onFechar={() => setVerAnexos(null)} />}
+          </div>
+        )
+      })()}
 
       {/* DETALHE DO CÁLCULO — mesma visualização de linha usada na tabela de Cálculo de Comissões */}
       {historicoAberto && (
@@ -1595,7 +1803,7 @@ export default function HistoricoComissoes() {
                   const cabecalho = (titulo, lista) => (
                     <div className="flex items-center justify-between gap-2">
                       <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wide flex items-center gap-1.5"><Paperclip className="h-3.5 w-3.5" /> {titulo}</h4>
-                      <button type="button" onClick={() => setVerAnexos(lista)} disabled={lista.length === 0}
+                      <button type="button" onClick={() => setVerAnexos({ anexos: lista, titulo })} disabled={lista.length === 0}
                         title={lista.length === 0 ? 'Nenhum arquivo anexado ainda' : 'Abrir os arquivos'}
                         className="flex items-center gap-1.5 text-[11px] font-semibold text-blue-700 border border-blue-200 bg-white hover:bg-blue-50 disabled:opacity-40 disabled:cursor-not-allowed px-2.5 py-1 rounded-md">
                         <Eye className="h-3.5 w-3.5" /> Visualizar ({lista.length})
@@ -1620,7 +1828,7 @@ export default function HistoricoComissoes() {
                           <AnexoPjSlot key={it.doc.id} rotulo={it.doc.nome} detalhe={origemDocumentoPj(it)} opcional={!it.doc.obrigatorio}
                             anexos={anexosDoDocumentoPj(doMes, it.doc, funcId, periodo)}
                             dados={dadosAnexoDocumento(it, funcId, periodo)}
-                            podeEditar={false} onVisualizar={setVerAnexos}
+                            podeEditar={false} onVisualizar={(lista, cab) => setVerAnexos({ anexos: lista, ...cab })}
                             onAlterado={carregarAnexosPj} />
                         ))}
                       </div>
@@ -1628,7 +1836,7 @@ export default function HistoricoComissoes() {
                   )
                   return <><TabelaNotaFiscal nf={notaFiscalDetalhe} acaoLinha={botaoCalculoNf} /><div className="mt-5">{paineis}</div></>
                 })()}
-                {verAnexos && <VisualizadorAnexosPj anexos={verAnexos} onFechar={() => setVerAnexos(null)} />}
+                {verAnexos && <VisualizadorAnexosPj anexos={verAnexos.anexos} titulo={verAnexos.titulo} subtitulo={verAnexos.subtitulo} cabecalhos={verAnexos.cabecalhos} onFechar={() => setVerAnexos(null)} />}
               </div>
             ) : (
             <div className="overflow-auto">

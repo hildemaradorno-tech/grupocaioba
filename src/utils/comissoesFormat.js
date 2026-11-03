@@ -13,6 +13,7 @@ export const ROTULO_ACAO_HISTORICO = {
   PROCESSADO: 'Processado p/ pagamento',
   REPROCESSAMENTO_AUTORIZADO: 'Reprocessamento autorizado',
   REPROCESSAMENTO_SALVO: 'Correção salva — conferência do DP reaberta',
+  NF_DEVOLVIDA: 'Nota Fiscal devolvida ao prestador',
 }
 
 // Código da Política de Comissão (cadastro da política) — ordena as comissões nas telas de

@@ -5,11 +5,13 @@ import { fmtCnpj } from '../utils/notaFiscalPj'
 
 // Tela de visualização dos anexos do prestador PJ (Notas Fiscais e documentos das regras):
 // lista à esquerda, o arquivo (PDF ou imagem) à direita e o botão para baixar.
+// titulo / subtitulo (opcional): do que são os anexos (ex: empresa, valor e CNPJ da Nota Fiscal).
+// cabecalhos (opcional): { [anexo.id]: { titulo, subtitulo } } — o cabeçalho acompanha o anexo aberto.
 const rotuloAnexo = (a) => a.tipo === 'NF'
   ? `Nota Fiscal — ${a.empresa_nome || ''}${a.cnpj && /^\d+$/.test(a.cnpj) ? ` (${fmtCnpj(a.cnpj)})` : ''}`
   : a.documento || 'Documento'
 
-export default function VisualizadorAnexosPj({ anexos, onFechar }) {
+export default function VisualizadorAnexosPj({ anexos, onFechar, titulo, subtitulo, cabecalhos }) {
   const [selecionado, setSelecionado] = useState(anexos[0] || null)
   const [url, setUrl] = useState(null)
   const [carregando, setCarregando] = useState(false)
@@ -41,12 +43,16 @@ export default function VisualizadorAnexosPj({ anexos, onFechar }) {
   }
 
   const ehPdf = selecionado?.content_type === 'application/pdf'
+  const cab = (selecionado && cabecalhos?.[selecionado.id]) || { titulo, subtitulo }
 
   return (
     <div className="fixed top-0 right-0 bottom-0 left-16 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-[60] p-4" onClick={onFechar}>
       <div className="bg-white rounded-xl border border-slate-200 w-full max-w-6xl h-[90vh] shadow-2xl flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100 bg-slate-50 shrink-0">
-          <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2"><Paperclip className="h-4 w-4 text-blue-600" /> Anexos</h3>
+          <div className="min-w-0">
+            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2"><Paperclip className="h-4 w-4 text-blue-600 shrink-0" /> <span className="truncate">{cab.titulo || 'Anexos'}</span></h3>
+            {cab.subtitulo && <p className="text-[11px] text-slate-500 mt-0.5 pl-6 truncate">{cab.subtitulo}</p>}
+          </div>
           <div className="flex items-center gap-2">
             <button type="button" onClick={baixar} disabled={!selecionado || baixando}
               className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white text-xs font-semibold px-3 py-1.5 rounded-md">

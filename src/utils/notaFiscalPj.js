@@ -6,6 +6,7 @@
 
 import { fmtBRL } from './comissoesFormat'
 import { esc } from './comissoesPdf'
+import { montarPercentualPj } from './regrasPj'
 
 export const fmtCnpj = (v) => {
   const d = String(v || '').replace(/\D/g, '')
@@ -156,6 +157,22 @@ export const anexosDaNota = (anexos, nota, funcionarioId, periodo) => (anexos ||
 export const notasFiscaisRecebidas = (nf, anexos, funcionarioId, periodo) => !!nf?.emissao?.notas?.length
   && nf.emissao.notas.every(n => anexosDaNota(anexos, n, funcionarioId, periodo).length > 0)
 
+// Etapa da Nota Fiscal do PJ num lote já Conferido DP (pj_nf_envios + funcionarios_processados):
+// 'recebida' (Processamento confirmou), 'enviada' (PJ confirmou, falta receber), 'devolvida' ou 'aguardando'.
+export const etapaNfPj = (lote, funcionarioId, envio) => {
+  if (lote?.funcionarios_processados?.includes(funcionarioId)) return 'recebida'
+  if (envio?.status === 'ENVIADA' || envio?.status === 'RECEBIDA') return 'enviada'
+  if (envio?.status === 'DEVOLVIDA') return 'devolvida'
+  return 'aguardando'
+}
+// Rótulo visto pelo PJ (Minha Nota Fiscal) e em Prestadores de Serviços.
+export const STATUS_NF_PRESTADOR = {
+  aguardando: { label: 'Aguardando Nota Fiscal', className: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
+  devolvida: { label: 'Nota Fiscal Devolvida', className: 'bg-rose-100 text-rose-700 border-rose-200' },
+  enviada: { label: 'Aguardando recebimento da Nota Fiscal', className: 'bg-amber-100 text-amber-700 border-amber-200' },
+  recebida: { label: 'Nota Fiscal Recebida', className: 'bg-teal-600 text-white border-teal-600' },
+}
+
 const montarHtmlEmissao = (em) => !em?.notas?.length ? '' : `
       <div style="margin-bottom:16px;border:1px solid #a7f3d0;border-radius:6px;overflow:hidden;">
         <div style="background:#ecfdf5;padding:6px 10px;font-size:13px;font-weight:700;color:#065f46;">Emissão das Notas Fiscais</div>
@@ -213,9 +230,6 @@ export function montarHtmlNotaFiscal(nf, { periodoLabel, largura = 1600 }) {
     </div>`
 }
 
-// ── Detalhe analítico (2ª parte do PDF): cada comissão salva com base, % e detalhe por empresa, e
-// as regras de cada Regra PJ por extenso. Formato de gerarPdfComissoes (um setor só).
-// registros: [{ politica, valor_comissao, valor_base, periodo_inicio, periodo_fim, detalhe_empresas }]
 const fmtPctPdf = (v) => (v == null || v === '' ? '-' : `${Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`)
 const fmtDiaMesPdf = (iso) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : '')
 const nomeRegra = (p) => [codigoDe(p), p?.descricao_comissao].filter(Boolean).join(' ')
@@ -240,44 +254,160 @@ function descreverRegra(p, politicas) {
   return null
 }
 
-export function montarSetorAnaliticoPj({ registros, prestador, empresaNome = '', cargoNome = '', politicas = [] }) {
-  const regras = []
-  const vistas = new Set()
-  const add = (r) => { if (r && !vistas.has(r.nome)) { vistas.add(r.nome); regras.push(r) } }
-  registros.forEach(r => add(r.politica && descreverRegra(r.politica, politicas)))
-  // Regras Variáveis do cargo (não têm linha própria salva — agrupam as comissões).
-  const cargoId = registros.find(r => r.politica?.cargo_id)?.politica.cargo_id
-  politicas.filter(p => p.pj_variaveis && p.ativo !== false && p.cargo_id === cargoId).forEach(p => add(descreverRegra(p, politicas)))
-  const linhas = [...registros]
-    .sort((a, b) => codigoDe(a.politica).localeCompare(codigoDe(b.politica), 'pt-BR', { numeric: true }))
-    .map(r => {
-      const p = r.politica || {}
-      const pj = !!p.prestacao_pj
-      return {
-        comissao: nomeRegra(p) || '-',
-        tipo: '',
-        periodo: r.periodo_inicio && r.periodo_fim ? `${fmtDiaMesPdf(r.periodo_inicio)} a ${fmtDiaMesPdf(r.periodo_fim)}` : '',
-        detalhes: (Array.isArray(r.detalhe_empresas) ? r.detalhe_empresas : [])
-          .filter(d => Math.round(Math.abs(Number(d.valorBase) || 0) * 100) !== 0 || Math.round(Math.abs(Number(d.valorComissao) || 0) * 100) !== 0)
-          .map(d => ({ empresa: d.empresa, base: fmtBRL(d.valorBase), comissao: fmtBRL(d.valorComissao) })),
-        base: pj ? '' : fmtBRL(r.valor_base),
-        pctServicos: pj ? '' : fmtPctPdf(p.comissao_servicos),
-        pctPecas: pj ? '' : fmtPctPdf(p.comissao_pecas),
-        pctTotal: pj ? '' : fmtPctPdf(p.comissao_total),
-        valorFixo: pj ? '' : (p.comissao_valor != null ? fmtBRL(p.comissao_valor) : '-'),
-        valorComissao: fmtBRL(r.valor_comissao),
-        semMeta: false,
-      }
-    })
-  const total = registros.reduce((acc, r) => acc + (Number(r.valor_comissao) || 0), 0)
-  return {
-    empresasLabel: empresaNome,
-    nomeSetor: 'Cálculo detalhado — regras e valores',
-    total,
-    cargos: [{
-      titulo: cargoNome || 'Prestador de Serviços',
-      regras,
-      empresas: [{ nomeEmpresa: empresaNome, funcionarios: [{ nome: prestador, nomeCurto: prestador, total, linhas }] }],
-    }],
+// ── Cálculo detalhado (páginas seguintes do PDF): UMA página por regra, com a descrição da regra e a
+// memória do cálculo — de onde vem cada valor até chegar no valor da regra. As comissões de uma Regra
+// PJ "Variáveis" do cargo ficam juntas na página dessa regra.
+// registros: [{ politica, valor_comissao, valor_base, percentual_aplicado, periodo_inicio, periodo_fim,
+//               detalhe_empresas, detalhe_calculo }]
+const TD = 'padding:6px 10px;border-bottom:1px solid #e2e8f0;'
+const TDR = `${TD}text-align:right;font-family:monospace;`
+const TH = 'padding:6px 10px;text-align:left;background:#f1f5f9;font-size:11px;text-transform:uppercase;color:#475569;'
+const THR = `${TH}text-align:right;`
+const TOT = 'padding:7px 10px;font-weight:800;background:#ecfdf5;border-top:2px solid #10b981;'
+const tabela = (cab, linhas, rodape = '') => `
+  <table style="width:100%;border-collapse:collapse;font-size:13px;margin-top:6px;">
+    <thead><tr>${cab}</tr></thead><tbody>${linhas}</tbody>${rodape ? `<tfoot>${rodape}</tfoot>` : ''}
+  </table>`
+const secao = (titulo, corpo) => `
+  <div style="margin-top:18px;">
+    <div style="font-size:13px;font-weight:800;color:#0f172a;text-transform:uppercase;letter-spacing:.5px;">${esc(titulo)}</div>
+    ${corpo}
+  </div>`
+const nota = (texto) => `<div style="font-size:12px;color:#475569;margin-top:4px;">${texto}</div>`
+const pctDe = (a, b) => (b > 0 ? (a / b) * 100 : null)
+const empresasDe = (r) => (Array.isArray(r.detalhe_empresas) ? r.detalhe_empresas : [])
+  .filter(d => Math.round(Math.abs(Number(d.valorBase) || 0) * 100) !== 0 || Math.round(Math.abs(Number(d.valorComissao) || 0) * 100) !== 0)
+
+// Valor da regra repartido por empresa (detalhe_empresas).
+const tabelaEmpresas = (r, { comBase = false } = {}) => {
+  const lista = empresasDe(r)
+  if (!lista.length) return ''
+  return secao('Valor por empresa', tabela(
+    `<th style="${TH}">Empresa</th>${comBase ? `<th style="${THR}">Base</th>` : ''}<th style="${THR}">Valor</th>`,
+    lista.map(d => `<tr><td style="${TD}">${esc(d.empresa)}</td>${comBase ? `<td style="${TDR}">${fmtBRL(d.valorBase)}</td>` : ''}<td style="${TDR}">${fmtBRL(d.valorComissao)}</td></tr>`).join(''),
+    `<tr><td style="${TOT}">Total</td>${comBase ? `<td style="${TOT}text-align:right;font-family:monospace;">${fmtBRL(lista.reduce((s, d) => s + (Number(d.valorBase) || 0), 0))}</td>` : ''}<td style="${TOT}text-align:right;font-family:monospace;">${fmtBRL(lista.reduce((s, d) => s + (Number(d.valorComissao) || 0), 0))}</td></tr>`,
+  ))
+}
+
+// Comissão comum (ex: componente de Variáveis): base (por coluna) × % = valor.
+const memoriaComissao = (r) => {
+  const cols = r.detalhe_calculo?.valorPorColuna || []
+  const pct = r.percentual_aplicado ?? r.politica?.comissao_total
+  const base = cols.length ? tabela(
+    `<th style="${TH}">Base — ${esc(r.politica?.base_calculo?.nome || 'colunas somadas')}</th><th style="${THR}">Valor</th>`,
+    cols.map(c => `<tr><td style="${TD}">${esc(c.coluna)}</td><td style="${TDR}">${fmtBRL(c.valor)}</td></tr>`).join(''),
+    `<tr><td style="${TOT}">Base da comissão</td><td style="${TOT}text-align:right;font-family:monospace;">${fmtBRL(r.valor_base)}</td></tr>`,
+  ) : ''
+  const conta = pct != null && r.valor_base != null
+    ? `Base ${fmtBRL(r.valor_base)} × ${fmtPctPdf(pct)} = <b>${fmtBRL(r.valor_comissao)}</b>`
+    : `Valor calculado: <b>${fmtBRL(r.valor_comissao)}</b>`
+  return `${base}${nota(conta)}`
+}
+
+const memoriaBonificacao = (b) => {
+  const margem = b.modo === 'MARGEM'
+  const tab = margem
+    ? tabela(`<th style="${TH}">Empresa</th><th style="${THR}">Faturamento</th><th style="${THR}">Lucro</th><th style="${THR}">Margem %</th>`,
+      (b.linhas || []).map(l => `<tr><td style="${TD}">${esc(l.empresa)}</td><td style="${TDR}">${fmtBRL(l.faturamento)}</td><td style="${TDR}">${fmtBRL(l.lucro)}</td><td style="${TDR}">${fmtPctPdf(pctDe(l.lucro, l.faturamento))}</td></tr>`).join(''),
+      `<tr><td style="${TOT}">Total (lucro ÷ faturamento)</td><td style="${TOT}text-align:right;font-family:monospace;">${fmtBRL(b.faturamento)}</td><td style="${TOT}text-align:right;font-family:monospace;">${fmtBRL(b.lucro)}</td><td style="${TOT}text-align:right;font-family:monospace;">${fmtPctPdf(b.pct)}</td></tr>`)
+    : tabela(`<th style="${TH}">Empresa</th><th style="${THR}">Meta</th><th style="${THR}">Realizado</th><th style="${THR}">% atingido</th>`,
+      (b.linhas || []).map(l => `<tr><td style="${TD}">${esc(l.empresa)}</td><td style="${TDR}">${fmtBRL(l.meta)}</td><td style="${TDR}">${fmtBRL(l.realizado)}</td><td style="${TDR}">${fmtPctPdf(pctDe(l.realizado, l.meta))}</td></tr>`).join(''),
+      `<tr><td style="${TOT}">Total (realizado ÷ meta)</td><td style="${TOT}text-align:right;font-family:monospace;">${fmtBRL(b.meta)}</td><td style="${TOT}text-align:right;font-family:monospace;">${fmtBRL(b.realizado)}</td><td style="${TOT}text-align:right;font-family:monospace;">${fmtPctPdf(b.pct)}</td></tr>`)
+  const faixas = (b.faixas || []).map(f => {
+    const rot = `${f.nome ? `${f.nome}: ` : ''}${f.operador} ${f.valor}%`
+    const aplicada = b.faixa === rot || b.faixa === `${f.operador} ${f.valor}%`
+    return `<tr style="${aplicada ? 'background:#d1fae5;font-weight:700;' : ''}"><td style="${TD}">${esc(f.nome || '')}</td><td style="${TD}">${margem ? 'margem' : 'atingido'} ${esc(f.operador)} ${fmtPctPdf(f.valor)}${aplicada ? ' ✓ aplicada' : ''}</td><td style="${TDR}">${fmtBRL(f.premio)}</td></tr>`
+  }).join('')
+  return `${tab}${faixas ? tabela(`<th style="${TH}">Faixa</th><th style="${TH}">Condição</th><th style="${THR}">Prêmio</th>`, faixas) : ''}
+    ${nota(`${margem ? 'Margem' : 'Atingido'} de ${fmtPctPdf(b.pct)} → ${b.faixa ? `faixa ${esc(b.faixa)}` : 'nenhuma faixa atingida'} → prêmio <b>${fmtBRL(b.premio)}</b>`)}`
+}
+
+const memoriaPercentual = (p) => `${tabela(
+  `<th style="${TH}">Regra / de onde vem o valor</th><th style="${THR}">Valor da regra</th><th style="${THR}">%</th><th style="${THR}">Resultado</th>`,
+  (p.itens || []).map(it => `<tr><td style="${TD}"><b>${esc([it.codigo, it.descricao].filter(Boolean).join(' '))}</b>${it.origem ? `<div style="font-size:11px;color:#64748b;">${esc(it.origem)}</div>` : ''}</td><td style="${TDR}">${fmtBRL(it.valor)}</td><td style="${TDR}">× ${fmtPctPdf(it.percentual)}</td><td style="${TDR}">= ${fmtBRL(it.resultado)}</td></tr>`).join(''),
+  `<tr><td style="${TOT}">Soma dos resultados</td><td style="${TOT}text-align:right;font-family:monospace;">${fmtBRL(p.base)}</td><td style="${TOT}"></td><td style="${TOT}text-align:right;font-family:monospace;">${fmtBRL(p.comissao)}</td></tr>`,
+)}${nota('Para cada regra: valor da regra no mês × % = resultado; o valor desta regra é a soma dos resultados.')}`
+
+// Memória do cálculo de uma linha salva, conforme o tipo da regra.
+function memoriaDaRegra(r, politicas) {
+  const p = r.politica || {}
+  const dc = r.detalhe_calculo || {}
+  if (dc.bonificacao) return memoriaBonificacao({ ...dc.bonificacao, faixas: dc.bonificacao.faixas || p.pj_bonificacao?.faixas || [] }) + tabelaEmpresas(r)
+  const perc = (p.pj_percentual || p.pj_desconto?.tipo === 'PERCENTUAL')
+    ? (montarPercentualPj({ politica: { ...p, pj_percentual: true }, percentualPj: dc.percentualPj, valorPorColuna: dc.valorPorColuna, valorComissao: r.valor_comissao, politicas }) || dc.percentualPj)
+    : null
+  if (perc) return memoriaPercentual(perc) + tabelaEmpresas(r)
+  if (p.pj_coparticipacao) {
+    const pct = p.pj_coparticipacao.percentual
+    const n = empresasDe(r).length
+    return nota(`Boleto do mês ${fmtBRL(r.valor_base)} × ${fmtPctPdf(pct)} = <b>${fmtBRL(r.valor_comissao)}</b>${n > 1 ? `, dividido em partes iguais entre ${n} empresas` : ''}`) + tabelaEmpresas(r)
   }
+  if (p.pj_desconto) {
+    const n = empresasDe(r).length
+    const texto = p.pj_desconto.tipo === 'FIXO' ? `Desconto fixo cadastrado na regra: <b>${fmtBRL(r.valor_comissao)}</b>` : `Valor lançado no mês: <b>${fmtBRL(r.valor_comissao)}</b>`
+    return nota(`${texto}${n > 1 ? `, rateado em partes iguais entre ${n} empresas` : ''}`) + tabelaEmpresas(r)
+  }
+  if (p.prestacao_pj) return nota(`Valor fixo cadastrado por empresa; a soma é o valor da regra: <b>${fmtBRL(r.valor_comissao)}</b>`) + tabelaEmpresas(r)
+  return memoriaComissao(r) + tabelaEmpresas(r, { comBase: true })
+}
+
+const blocoRegra = (desc) => !desc ? '' : `
+  <div style="margin-top:12px;padding:8px 12px;background:#eef2ff;border-left:4px solid #6366f1;border-radius:4px;font-size:12px;">
+    <div style="font-weight:800;color:#4338ca;margin-bottom:3px;">Regra: ${esc(desc.nome)}</div>
+    ${(desc.faixas || []).map(f => `<div style="color:#475569;">${esc(f.texto)} → ${esc(f.percentual)}</div>`).join('')}
+  </div>`
+
+const paginaRegra = ({ titulo, periodo, desc, corpo, valor, prestador, periodoLabel, indice, totalPaginas, parte = 1, totalPartes = 1 }) => `
+  <div style="font-family:Arial,Helvetica,sans-serif;background:#fff;padding:20px;width:1600px;box-sizing:border-box;">
+    <div style="display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #1e293b;padding-bottom:12px;">
+      <div>
+        <div style="font-size:13px;font-weight:700;color:#64748b;text-transform:uppercase;">Memória do cálculo — regra ${indice} de ${totalPaginas}${totalPartes > 1 ? ` · página ${parte} de ${totalPartes}` : ''}</div>
+        <div style="font-size:22px;font-weight:800;color:#0f172a;margin-top:2px;">${esc(titulo)} <span style="font-size:14px;color:#2563eb;">${esc(periodo)}</span></div>
+        <div style="font-size:14px;font-weight:700;color:#1e293b;margin-top:2px;">${esc(prestador)}</div>
+      </div>
+      <div style="text-align:right;font-size:13px;color:#475569;">
+        <div>Período: ${esc(periodoLabel)}</div>
+        <div style="font-size:18px;font-weight:800;color:${Number(valor) < 0 ? '#e11d48' : '#047857'};margin-top:4px;">${fmtBRL(valor)}</div>
+      </div>
+    </div>
+    ${parte === 1 ? blocoRegra(desc) : ''}
+    ${corpo}
+    <div style="display:flex;justify-content:flex-end;margin-top:16px;">
+      <div style="padding:8px 14px;background:#1e3a8a;color:#fff;font-weight:800;font-size:14px;border-radius:4px;">Valor da regra: ${fmtBRL(valor)}</div>
+    </div>
+  </div>`
+
+export function montarPaginasCalculoPj({ registros, prestador, periodoLabel = '', politicas = [] }) {
+  const cargoId = registros.find(r => r.politica?.cargo_id)?.politica.cargo_id
+  const variaveis = politicas.filter(p => p.pj_variaveis && p.ativo !== false && p.cargo_id === cargoId)
+  let restantes = registros.filter(r => r.politica)
+  const itens = []
+  // Variáveis: 1ª página com a regra e a soma das comissões; depois uma página por comissão, com a
+  // sua conta (numa página só a tabela ficava alta demais e o PDF reduzia o tamanho).
+  for (const v of variaveis) {
+    const ids = new Set(v.pj_politica_ids || [])
+    const comps = restantes.filter(r => ids.has(grupoDe(r.politica)))
+    if (!comps.length) continue
+    restantes = restantes.filter(r => !comps.includes(r))
+    const total = comps.reduce((s, r) => s + (Number(r.valor_comissao) || 0), 0)
+    const ordenadas = [...comps].sort((a, b) => codigoDe(a.politica).localeCompare(codigoDe(b.politica), 'pt-BR', { numeric: true }) || nomeRegra(a.politica).localeCompare(nomeRegra(b.politica), 'pt-BR'))
+    const partesComps = ordenadas.map(r => secao(`${nomeRegra(r.politica)}${r.periodo_inicio ? ` (${fmtDiaMesPdf(r.periodo_inicio)} a ${fmtDiaMesPdf(r.periodo_fim)})` : ''} — ${fmtBRL(r.valor_comissao)}`, memoriaDaRegra(r, politicas)))
+    const resumo = secao('Soma das comissões', tabela(`<th style="${TH}">Comissão</th><th style="${THR}">Valor</th>`,
+        ordenadas.map(r => `<tr><td style="${TD}">${esc(nomeRegra(r.politica))}</td><td style="${TDR}">${fmtBRL(r.valor_comissao)}</td></tr>`).join(''),
+        `<tr><td style="${TOT}">Total da regra</td><td style="${TOT}text-align:right;font-family:monospace;">${fmtBRL(total)}</td></tr>`))
+    itens.push({ codigo: codigoDe(v), titulo: nomeRegra(v), periodo: '', desc: (d => d && { ...d, nome: d.nome.replace(`${nomeRegra(v)} — `, '') })(descreverRegra(v, politicas)), partes: [resumo, ...partesComps], valor: total })
+  }
+  restantes.forEach(r => {
+    const d = descreverRegra(r.politica, politicas)
+    itens.push({
+      codigo: codigoDe(r.politica),
+      titulo: nomeRegra(r.politica),
+      periodo: r.periodo_inicio && r.periodo_fim ? `${fmtDiaMesPdf(r.periodo_inicio)} a ${fmtDiaMesPdf(r.periodo_fim)}` : '',
+      desc: d ? { ...d, nome: d.nome.replace(`${nomeRegra(r.politica)} — `, '') } : null,
+      partes: [secao('Memória do cálculo', memoriaDaRegra(r, politicas))],
+      valor: r.valor_comissao,
+    })
+  })
+  itens.sort((a, b) => a.codigo.localeCompare(b.codigo, 'pt-BR', { numeric: true }))
+  return itens.flatMap((it, i) => it.partes.map((corpo, k) => paginaRegra({ ...it, corpo, prestador, periodoLabel, indice: i + 1, totalPaginas: itens.length, parte: k + 1, totalPartes: it.partes.length })))
 }

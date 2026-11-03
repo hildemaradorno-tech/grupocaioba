@@ -1444,6 +1444,44 @@ export const apiService = {
     return data || []
   },
 
+  // ENVIO DA NOTA FISCAL PJ (pj_nf_envios): o PJ confirma em Minha Nota Fiscal (ENVIADA), o
+  // Processamento devolve (DEVOLVIDA) ou confirma o recebimento (RECEBIDA + processarLote).
+  getPjNfEnvios: async ({ periodos, funcionarioIds, loteIds } = {}) => {
+    let q = supabase.from('pj_nf_envios').select('*')
+    if (periodos?.length) q = q.in('periodo', periodos)
+    if (funcionarioIds?.length) q = q.in('funcionario_id', funcionarioIds)
+    if (loteIds?.length) q = q.in('lote_id', loteIds)
+    const { data, error } = await q
+    if (error) throw error
+    return data || []
+  },
+  enviarNfPj: async ({ loteId, funcionarioId, periodo }) => {
+    const { data: sessao } = await supabase.auth.getSession()
+    const { error } = await supabase.from('pj_nf_envios').upsert({
+      lote_id: loteId, funcionario_id: funcionarioId, periodo, status: 'ENVIADA',
+      enviado_em: new Date().toISOString(), enviado_por: sessao?.session?.user?.email || null,
+    }, { onConflict: 'lote_id,funcionario_id' })
+    if (error) throw error
+    return { success: true }
+  },
+  devolverNfPj: async (loteId, funcionarioIds, motivo, usuario) => {
+    const { error } = await supabase.from('pj_nf_envios')
+      .update({ status: 'DEVOLVIDA', motivo_devolucao: motivo || null, devolvido_em: new Date().toISOString(), devolvido_por: usuario })
+      .eq('lote_id', loteId).in('funcionario_id', funcionarioIds)
+    if (error) throw error
+    await supabase.from('fato_comissoes_lotes_historico').insert([{ lote_id: loteId, acao: 'NF_DEVOLVIDA', usuario }])
+    return { success: true }
+  },
+  // Recebimento = processamento do PJ (não gera TXT): entra em funcionarios_processados.
+  confirmarRecebimentoNfPj: async (loteId, usuario, funcionarioIds, todosFuncionarioIds) => {
+    const lote = await apiService.processarLote(loteId, usuario, funcionarioIds, todosFuncionarioIds)
+    const { error } = await supabase.from('pj_nf_envios')
+      .update({ status: 'RECEBIDA', recebido_em: new Date().toISOString(), recebido_por: usuario })
+      .eq('lote_id', loteId).in('funcionario_id', funcionarioIds)
+    if (error) throw error
+    return lote
+  },
+
   // DOCUMENTOS PJ (menu Documentos PJ): documentos que o prestador envia todo mês (pj_documentos_exigidos).
   getPjDocumentosExigidos: async () => {
     const { data, error } = await supabase.from('pj_documentos_exigidos').select('*').order('nome')
@@ -2417,6 +2455,8 @@ export const apiService = {
     if (error) throw error
     const lote = data?.[0]
     await supabase.from('fato_comissoes_lotes_historico').insert([{ lote_id: loteId, acao: 'CONFERIDO_DP', usuario, valor_no_momento: lote?.valor_total }])
+    // Lote PJ reconferido (ex: depois de reprocessar): o envio de Nota Fiscal anterior não vale mais.
+    await supabase.from('pj_nf_envios').delete().eq('lote_id', loteId)
     return lote
   },
 

@@ -164,9 +164,18 @@ export async function gerarPdfComissoes({ setores, periodoInicio, periodoFim, no
     return h
   }
 
+  // Página avulsa (ex: Nota Fiscal PJ e a memória de cada regra): se for mais alta que a folha,
+  // reduz proporcionalmente pra caber inteira em vez de cortar.
   for (const html of paginasIniciais) {
     const y = iniciarPagina()
-    colocarCanvas(await renderBloco(html), y)
+    const canvas = await renderBloco(html)
+    const altDisp = pageBottom - y
+    const h = (canvas.height / canvas.width) * CW
+    if (h <= altDisp) colocarCanvas(canvas, y)
+    else {
+      const w = CW * (altDisp / h)
+      pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', MARGIN + (CW - w) / 2, y, w, altDisp)
+    }
   }
 
   for (const setor of setores) {

@@ -6,7 +6,7 @@ import { apiService } from '../services/api'
 // mostra se já foi anexado, abre/remove os arquivos e envia um novo (PDF/PNG/JPG até 5 MB).
 // `anexos` = anexos já enviados para este documento; `dados` = campos gravados em pj_anexos
 // ({ funcionarioId, periodo, tipo, regraId, documento, cnpj, empresaNome }).
-// onVisualizar (opcional): botão Visualizar no lugar do Anexar (abre a tela de visualização).
+// onVisualizar (opcional): botão Visualizar (recebe os anexos e { titulo, subtitulo } pro cabeçalho da tela).
 // opcional: documento não obrigatório — sem anexo fica neutro (sem o alerta amarelo).
 export default function AnexoPjSlot({ rotulo, detalhe, anexos = [], dados, podeEditar = true, onAlterado, onVisualizar, opcional = false }) {
   const inputRef = useRef(null)
@@ -54,7 +54,7 @@ export default function AnexoPjSlot({ rotulo, detalhe, anexos = [], dados, podeE
           </div>
         </div>
         {onVisualizar && ok && (
-          <button type="button" onClick={() => onVisualizar(anexos)}
+          <button type="button" onClick={() => onVisualizar(anexos, { titulo: rotulo, subtitulo: detalhe })}
             className="flex items-center gap-1.5 text-[11px] font-semibold text-blue-700 border border-blue-200 bg-white hover:bg-blue-50 px-2.5 py-1 rounded-md shrink-0">
             <Eye className="h-3.5 w-3.5" /> Visualizar
           </button>

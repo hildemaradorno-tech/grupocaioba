@@ -44,10 +44,31 @@ const dataExcel = (v) => {
   return null
 }
 
+// Linhas já lidas de cada arquivo do SharePoint (id do item → versão + linhas). Na releitura só baixa de novo
+// o arquivo que mudou (eTag/lastModifiedDateTime diferente); os demais vêm da memória.
+const _arquivosLidos = new Map()
 async function baixarLinhas(item) {
+  const versao = item.eTag || item.lastModifiedDateTime || ''
+  const ja = _arquivosLidos.get(item.id)
+  if (ja && ja.versao === versao) return ja.linhas
   const resp = await axios.get(item['@microsoft.graph.downloadUrl'], { responseType: 'arraybuffer', timeout: 60_000 })
   const wb = XLSX.read(Buffer.from(resp.data), { type: 'buffer' })
-  return XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '' })
+  const linhas = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '' })
+  _arquivosLidos.set(item.id, { versao, linhas })
+  return linhas
+}
+
+// Baixa (ou pega da memória) as linhas de vários arquivos em paralelo, até `limite` por vez; devolve na mesma ordem.
+async function baixarVarios(itens, limite = 8) {
+  const res = new Array(itens.length)
+  let prox = 0
+  await Promise.all(Array.from({ length: Math.min(limite, itens.length) }, async () => {
+    while (prox < itens.length) {
+      const i = prox++
+      res[i] = await baixarLinhas(itens[i])
+    }
+  }))
+  return res
 }
 
 // Arquivos com o prefixo na pasta e nas subpastas diretas (ex: subpasta de ano).
@@ -112,13 +133,12 @@ export async function getCampanhasCrm() {
       .filter(i => i.file && i.name?.toLowerCase().startsWith(PREFIX.toLowerCase()))
       // Arquivo sem data no nome vai por último (não pode "roubar" os contatos de uma campanha com data).
       .sort((a, b) => (infoDoNome(a.name).data || '9999').localeCompare(infoDoNome(b.name).data || '9999') || a.name.localeCompare(b.name))
-    for (const item of arquivos) {
-      const downloadUrl = item['@microsoft.graph.downloadUrl']
-      if (!downloadUrl) continue
+      .filter(i => i['@microsoft.graph.downloadUrl'])
+    // Download em paralelo; o processamento continua na ordem acima (importa para os repetidos).
+    const conteudos = await baixarVarios(arquivos)
+    for (const [idx, item] of arquivos.entries()) {
       const { sigla, data } = infoDoNome(item.name)
-      const resp = await axios.get(downloadUrl, { responseType: 'arraybuffer', timeout: 60_000 })
-      const wb = XLSX.read(Buffer.from(resp.data), { type: 'buffer' })
-      const linhas = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '' })
+      const linhas = conteudos[idx]
       let n = 0
       let repetidos = 0
       for (const r of linhas) {
