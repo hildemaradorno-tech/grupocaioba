@@ -7,7 +7,8 @@ import { apiService } from '../services/api'
 // `anexos` = anexos já enviados para este documento; `dados` = campos gravados em pj_anexos
 // ({ funcionarioId, periodo, tipo, regraId, documento, cnpj, empresaNome }).
 // onVisualizar (opcional): botão Visualizar no lugar do Anexar (abre a tela de visualização).
-export default function AnexoPjSlot({ rotulo, detalhe, anexos = [], dados, podeEditar = true, onAlterado, onVisualizar }) {
+// opcional: documento não obrigatório — sem anexo fica neutro (sem o alerta amarelo).
+export default function AnexoPjSlot({ rotulo, detalhe, anexos = [], dados, podeEditar = true, onAlterado, onVisualizar, opcional = false }) {
   const inputRef = useRef(null)
   const [enviando, setEnviando] = useState(false)
   const [erro, setErro] = useState(null)
@@ -43,10 +44,10 @@ export default function AnexoPjSlot({ rotulo, detalhe, anexos = [], dados, podeE
   const abrir = (a) => apiService.abrirPjAnexo(a).catch(err => setErro(err.message || String(err)))
 
   return (
-    <div className={`rounded-md border px-3 py-2 ${ok ? 'border-emerald-200 bg-emerald-50/40' : 'border-amber-200 bg-amber-50/40'}`}>
+    <div className={`rounded-md border px-3 py-2 ${ok ? 'border-emerald-200 bg-emerald-50/40' : opcional ? 'border-slate-200 bg-slate-50/40' : 'border-amber-200 bg-amber-50/40'}`}>
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2 min-w-0">
-          {ok ? <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" /> : <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0" />}
+          {ok ? <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" /> : opcional ? <Paperclip className="h-4 w-4 text-slate-400 shrink-0" /> : <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0" />}
           <div className="min-w-0">
             <div className="text-xs font-semibold text-slate-800 truncate">{rotulo}</div>
             {detalhe && <div className="text-[10px] text-slate-500">{detalhe}</div>}

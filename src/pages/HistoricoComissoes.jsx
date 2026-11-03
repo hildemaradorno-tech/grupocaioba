@@ -15,6 +15,7 @@ import { montarNotaFiscalPj, montarHtmlNotaFiscal, montarSetorAnaliticoPj, notas
 import TabelaNotaFiscal from '../components/TabelaNotaFiscal'
 import AnexoPjSlot from '../components/AnexoPjSlot'
 import VisualizadorAnexosPj from '../components/VisualizadorAnexosPj'
+import { documentosDoPrestador, anexosDoDocumentoPj, origemDocumentoPj, dadosAnexoDocumento } from '../utils/documentosPj'
 
 
 const SEL = 'text-xs p-2 border border-slate-200 rounded-md bg-white font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500'
@@ -67,9 +68,14 @@ const STATUS_CHIPS = [
   { value: 'RASCUNHO', label: 'Aguardando Gerente' },
   { value: 'CONFERIDO', label: 'Aguardando DP' },
   { value: 'CONFERIDO_DP', label: 'Aguardando Processamento' },
+  { value: 'AGUARDANDO_NF', label: 'Aguardando Nota Fiscal' },
+  { value: 'NF_RECEBIDA', label: 'Nota Fiscal Recebida' },
   { value: 'PROCESSAMENTO_PARCIAL', label: 'Processamento Parcial' },
   { value: 'PROCESSADO', label: 'Processados' },
 ]
+// Etapa do lote nos botões de filtro: lote PJ depois do Conferido DP não vai pra "Aguardando
+// Processamento" — fica em "Aguardando Nota Fiscal" até todas as notas serem anexadas.
+const statusDoChip = (g) => (g.pj && g.status === 'CONFERIDO_DP') ? (g.nfRecebida ? 'NF_RECEBIDA' : 'AGUARDANDO_NF') : g.status
 
 // Botão com menu suspenso (Salvar em TXT / Salvar em PDF etc.) — os cards de lote rodam dentro
 // de um container com overflow-hidden, então um menu "absolute" comum fica cortado quando o
@@ -398,6 +404,7 @@ export default function HistoricoComissoes() {
   const [abaDetalhe, setAbaDetalhe] = useState('calculo')
   // Anexos PJ (pj_anexos) dos meses na tela: Notas Fiscais e documentos exigidos pelas Regras PJ.
   const [anexosPj, setAnexosPj] = useState([])
+  const [docsExigidos, setDocsExigidos] = useState([]) // menu Documentos PJ
   const [verAnexos, setVerAnexos] = useState(null) // lista de anexos aberta na tela de visualização
   const [gerandoNfPdf, setGerandoNfPdf] = useState(false) // linha "Variáveis" (Regra PJ) aberta no Visualizar
   const [colunaModal, setColunaModal] = useState(null)
@@ -573,6 +580,9 @@ export default function HistoricoComissoes() {
     }
   }
   useEffect(() => { carregarAnexosPj() }, [periodosResultados]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    apiService.getPjDocumentosExigidos().then(setDocsExigidos).catch(() => setDocsExigidos([]))
+  }, [])
 
   const resultadosFiltrados = useMemo(() => resultados.filter(r => !filtroEmpresa || r.empresaNome === filtroEmpresa), [resultados, filtroEmpresa])
 
@@ -697,7 +707,7 @@ export default function HistoricoComissoes() {
     filtroEmpresa, filtroArea, filtroSetor, filtroResponsavel])
 
   const lotesVisiveis = useMemo(() => (
-    filtroStatusLote ? lotesAgrupados.filter(l => l.status === filtroStatusLote) : lotesAgrupados
+    filtroStatusLote ? lotesAgrupados.filter(l => statusDoChip(l) === filtroStatusLote) : lotesAgrupados
   ), [lotesAgrupados, filtroStatusLote])
 
   // Lote único marcado (checkbox) — alimenta Conferido DP e Pagamento Processado da barra.
@@ -1445,7 +1455,7 @@ export default function HistoricoComissoes() {
               {!buscando && lotesAgrupados.length > 0 && (
                 <div className="flex flex-wrap items-center gap-1.5">
                   {STATUS_CHIPS.map(chip => {
-                    const qtd = chip.value ? lotesAgrupados.filter(l => l.status === chip.value).length : lotesAgrupados.length
+                    const qtd = chip.value ? lotesAgrupados.filter(l => statusDoChip(l) === chip.value).length : lotesAgrupados.length
                     return (
                       <button
                         key={chip.value || 'todos'}
@@ -1580,8 +1590,7 @@ export default function HistoricoComissoes() {
                   const funcId = detalheAberto.funcionario_id
                   const periodo = (detalheAberto.registros[0]?.periodo_inicio || '').slice(0, 7)
                   const notas = notaFiscalDetalhe?.emissao?.notas || []
-                  const regrasComDocs = detalheAberto.registros.filter((r, i, arr) => Array.isArray(r.politica?.pj_documentos) && r.politica.pj_documentos.length > 0
-                    && arr.findIndex(x => x.politica_id === r.politica_id) === i)
+                  const docsPrestador = documentosDoPrestador(docsExigidos, detalheAberto.registros.map(r => r.politica), periodo)
                   const doMes = anexosPj.filter(a => a.funcionario_id === funcId && a.periodo === periodo)
                   const cabecalho = (titulo, lista) => (
                     <div className="flex items-center justify-between gap-2">
@@ -1606,17 +1615,14 @@ export default function HistoricoComissoes() {
                         ))}
                       </div>
                       <div className="space-y-2 order-1">
-                        {cabecalho('Documentos das regras', doMes.filter(a => a.tipo === 'DOCUMENTO'))}
-                        {regrasComDocs.length === 0 ? <p className="text-[11px] text-slate-400">Nenhuma regra deste prestador exige documentos.</p> : regrasComDocs.flatMap(r => r.politica.pj_documentos.map(d => {
-                          const regraId = r.politica.grupo_politica_id || r.politica.id
-                          return (
-                            <AnexoPjSlot key={`${r.id}:${d}`} rotulo={d} detalhe={`${codigoPolitica(r.politica)} ${r.politica.descricao_comissao || ''}`}
-                              anexos={doMes.filter(a => a.tipo === 'DOCUMENTO' && a.regra_id === regraId && a.documento === d)}
-                              dados={{ funcionarioId: funcId, periodo, tipo: 'DOCUMENTO', regraId, documento: d }}
-                              podeEditar={false} onVisualizar={setVerAnexos}
-                              onAlterado={carregarAnexosPj} />
-                          )
-                        }))}
+                        {cabecalho('Documentos', doMes.filter(a => a.tipo === 'DOCUMENTO'))}
+                        {docsPrestador.length === 0 ? <p className="text-[11px] text-slate-400">Nenhum documento exigido deste prestador.</p> : docsPrestador.map(it => (
+                          <AnexoPjSlot key={it.doc.id} rotulo={it.doc.nome} detalhe={origemDocumentoPj(it)} opcional={!it.doc.obrigatorio}
+                            anexos={anexosDoDocumentoPj(doMes, it.doc, funcId, periodo)}
+                            dados={dadosAnexoDocumento(it, funcId, periodo)}
+                            podeEditar={false} onVisualizar={setVerAnexos}
+                            onAlterado={carregarAnexosPj} />
+                        ))}
                       </div>
                     </div>
                   )

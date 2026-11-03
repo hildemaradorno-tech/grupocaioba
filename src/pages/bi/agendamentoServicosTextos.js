@@ -6,7 +6,6 @@
 const ARQ_OS = 'ROF001_OSAberta_Excel TODAS'
 const ARQ_AGEND = 'ROF037_AGENDAMENTOSERVICO'
 const ARQ_CAMPANHA = 'RCR038_CampanhaCRM_Clientes_Excel'
-const ARQ_CONTATOS = 'RCR017_LISTAPORDATACONTATO + RCR017_LISTAPORDATAENCERRAMENTO'
 
 // "Regras" e "Colunas utilizadas" do manual. Formato, uma informação por linha:
 //   linha terminada em ":"  → subtítulo
@@ -84,52 +83,39 @@ const COL_AGENDA = [
 ].join('\n')
 const FONTE_AGENDA = ARQ_AGEND
 
-// ── Aba Campanhas ───────────────────────────────────────────────────────────────────────────────────────────
+// ── Aba Campanhas ─── (2 relatórios: RCR038 + ROF037, ligados pelo chassi)
 const REGRAS_CAMPANHA = [
   'Regras da campanha:',
   '• Um arquivo RCR038 por execução de campanha e unidade, ex: "... CGR 20261019.xls"',
-  '• A unidade e a data vêm do nome do arquivo (a planilha não traz nenhuma das duas)',
-  '• O filtro Data vale para a data da campanha (nome do arquivo)',
+  '• A data da campanha vem do nome do arquivo (a planilha não traz data); o filtro Data vale para ela',
   '• Sem filtro de Empresas: o relatório da campanha não identifica a empresa',
-  '• Cada contato da campanha (campanha + atendimento) conta uma vez: se a mesma campanha estiver em dois arquivos, vale o de data mais antiga no nome',
-].join('\n')
-const REGRAS_CONTATO = [
-  'Regras do contato:',
-  '• O contato da campanha liga com o RCR017 por id_atendimento = Atendimento_Codigo',
-  '• Os dois arquivos RCR017 (por data do contato e por data de encerramento) são lidos juntos; cada contato (AtendimentoContato_Codigo) conta uma vez',
-  '• Contato realizado: o atendimento tem pelo menos um contato no RCR017',
-  '• Não contam como realizados os encerrados "S00 - Finalizado sem contato" e "S01 - Telefones incorretos"',
+  '• Cada contato da campanha (ID_Campanha_Execucao + id_atendimento) conta uma vez',
 ].join('\n')
 const REGRAS_AGENDADO = [
-  'Regras do contato agendado:',
-  '• Contato realizado cujo chassi tem agendamento no ROF037 criado na data da campanha ou depois',
+  'Regras do agendamento da campanha:',
+  '• Agendado: o chassi do contato gerado tem agendamento do tipo Ativo no ROF037 criado (AgendamentoHistorico_Data) da data da campanha até 30 dias depois',
   '• Agendamento cancelado (status CAN) não conta',
-  '• Ligação pelo chassi: o ROF037 não traz o atendimento do CRM',
+  '• Não agendado: contato gerado sem agendamento nessas condições',
+  '• Ligação pelo chassi: o ROF037 não traz o ID da campanha nem o atendimento do CRM',
 ].join('\n')
 const REGRAS_SITUACAO = [
-  'Situação do agendamento (ROF037):',
-  '• Com O.S. aberta: o agendamento tem número de O.S. (ou status FIM)',
+  'O que aconteceu com o agendamento (ROF037):',
+  '• Vieram: o agendamento tem número de O.S. (OSNumero) ou status FIM',
   '• No-show: status NSW (agendou e não compareceu)',
-  '• Programado: AGE, CON ou RAG, ainda sem O.S.',
+  '• Vão vir: AGE, CON ou RAG, ainda sem O.S.',
 ].join('\n')
 const COL_CAMPANHA = [
   `${ARQ_CAMPANHA}:`,
-  '• (nome do arquivo) — sigla da unidade e data da campanha',
+  '• (nome do arquivo) — data da campanha',
   '• ID_Campanha_Execucao — número da campanha',
   '• ID_Cliente — contato gerado',
-  '• id_atendimento — liga com o RCR017',
+  '• id_atendimento — identifica o contato (conta uma vez)',
   '• Chassi — liga com o ROF037',
-].join('\n')
-const COL_CONTATOS = [
-  `${ARQ_CONTATOS}:`,
-  '• AtendimentoContato_Codigo — identifica o contato (o mesmo contato aparece nos dois arquivos)',
-  '• Atendimento_Codigo — liga com o id_atendimento da campanha',
-  '• AtendimentoContato_Data — data do contato',
-  '• MotivoEncerramento — motivo de encerramento (S00, S01, S02, S03...)',
 ].join('\n')
 const COL_AGEND_CAMPANHA = [
   `${ARQ_AGEND}:`,
   '• Chassi — liga com o chassi da campanha',
+  '• AgendamentoTipo — só Ativo',
   '• AgendamentoHistorico_Data — data em que o agendamento foi criado',
   '• StatusAgendamento — AGE, CON, RAG, FIM, NSW, CAN',
   '• OSNumero — O.S. gerada pelo agendamento',
@@ -304,40 +290,26 @@ export const INFO = {
   },
 
   // Aba Campanhas
-  taxaContato: {
-    objetivo: 'Medir quanto dos contatos gerados nas campanhas a equipe conseguiu realizar.',
-    fonte: `${ARQ_CAMPANHA}\n${ARQ_CONTATOS}`,
-    calculo: `Contatos realizados ÷ Contatos gerados × 100.\n${META}`,
-    filtros: `${REGRAS_CAMPANHA}\n${REGRAS_CONTATO}`,
-    colunas: `${COL_CAMPANHA}\n${COL_CONTATOS}`,
-  },
   taxaAgendamento: {
-    objetivo: 'Medir quanto dos contatos realizados virou agendamento.',
-    fonte: `${ARQ_CAMPANHA}\n${ARQ_CONTATOS}\n${ARQ_AGEND}`,
-    calculo: `Contatos agendados ÷ Contatos realizados × 100.\n${META}`,
-    filtros: `${REGRAS_CAMPANHA}\n${REGRAS_CONTATO}\n${REGRAS_AGENDADO}`,
-    colunas: `${COL_CAMPANHA}\n${COL_CONTATOS}\n${COL_AGEND_CAMPANHA}`,
-  },
-  taxaSemAgendamento: {
-    objetivo: 'Medir quanto dos contatos gerados terminou encerrado sem agendamento.',
-    fonte: `${ARQ_CAMPANHA}\n${ARQ_CONTATOS}\n${ARQ_AGEND}`,
-    calculo: `Contatos encerrados sem agendamento ÷ Contatos gerados × 100.\n${META_MENOR(80)}`,
-    filtros: `${REGRAS_CAMPANHA}\n${REGRAS_CONTATO}\n${REGRAS_AGENDADO}`,
-    colunas: `${COL_CAMPANHA}\n${COL_CONTATOS}\n${COL_AGEND_CAMPANHA}`,
+    objetivo: 'Medir quanto dos contatos gerados nas campanhas virou agendamento.',
+    fonte: `${ARQ_CAMPANHA}\n${ARQ_AGEND}`,
+    calculo: `Agendados ÷ Contatos gerados × 100.\n${META}`,
+    filtros: `${REGRAS_CAMPANHA}\n${REGRAS_AGENDADO}`,
+    colunas: `${COL_CAMPANHA}\n${COL_AGEND_CAMPANHA}`,
   },
   taxaConversao: {
-    objetivo: 'Medir quanto dos contatos agendados chegou a abrir O.S.',
-    fonte: `${ARQ_CAMPANHA}\n${ARQ_CONTATOS}\n${ARQ_AGEND}`,
-    calculo: `Agendamento com O.S. aberta ÷ Contatos agendados × 100.\n${META}`,
-    filtros: `${REGRAS_CAMPANHA}\n${REGRAS_CONTATO}\n${REGRAS_AGENDADO}\n${REGRAS_SITUACAO}`,
-    colunas: `${COL_CAMPANHA}\n${COL_CONTATOS}\n${COL_AGEND_CAMPANHA}`,
+    objetivo: 'Medir quanto dos agendados das campanhas veio (abriu O.S.).',
+    fonte: `${ARQ_CAMPANHA}\n${ARQ_AGEND}`,
+    calculo: `Vieram ÷ Agendados × 100.\n${META}`,
+    filtros: `${REGRAS_CAMPANHA}\n${REGRAS_AGENDADO}\n${REGRAS_SITUACAO}`,
+    colunas: `${COL_CAMPANHA}\n${COL_AGEND_CAMPANHA}`,
   },
   taxaNoShow: {
-    objetivo: 'Medir quanto dos contatos agendados não compareceu.',
-    fonte: `${ARQ_CAMPANHA}\n${ARQ_CONTATOS}\n${ARQ_AGEND}`,
-    calculo: `No-show ÷ Contatos agendados × 100.\n${META_MENOR(15)}`,
-    filtros: `${REGRAS_CAMPANHA}\n${REGRAS_CONTATO}\n${REGRAS_AGENDADO}\n${REGRAS_SITUACAO}`,
-    colunas: `${COL_CAMPANHA}\n${COL_CONTATOS}\n${COL_AGEND_CAMPANHA}`,
+    objetivo: 'Medir quanto dos agendados das campanhas não compareceu.',
+    fonte: `${ARQ_CAMPANHA}\n${ARQ_AGEND}`,
+    calculo: `No-show ÷ Agendados × 100.\n${META_MENOR(15)}`,
+    filtros: `${REGRAS_CAMPANHA}\n${REGRAS_AGENDADO}\n${REGRAS_SITUACAO}`,
+    colunas: `${COL_CAMPANHA}\n${COL_AGEND_CAMPANHA}`,
   },
   campanhas: {
     objetivo: 'Mostrar quantas campanhas de ativação foram executadas no período.',
@@ -349,65 +321,44 @@ export const INFO = {
   contatos: {
     objetivo: 'Mostrar quantos clientes as campanhas mandaram contatar.',
     fonte: ARQ_CAMPANHA,
-    calculo: 'Linhas com ID_Cliente nos arquivos com data de campanha no período. Um cliente em duas campanhas conta duas vezes.',
+    calculo: 'Contatos (ID_Campanha_Execucao + id_atendimento) nos arquivos com data de campanha no período. Um cliente em duas campanhas conta duas vezes.',
     filtros: REGRAS_CAMPANHA,
     colunas: COL_CAMPANHA,
   },
-  realizados: {
-    objetivo: 'Mostrar quantos dos contatos gerados a equipe realizou.',
-    fonte: `${ARQ_CAMPANHA}\n${ARQ_CONTATOS}`,
-    calculo: 'Contatos gerados cujo atendimento tem pelo menos um contato no RCR017, fora os encerrados S00/S01.',
-    filtros: `${REGRAS_CAMPANHA}\n${REGRAS_CONTATO}`,
-    colunas: `${COL_CAMPANHA}\n${COL_CONTATOS}`,
-  },
   agendados: {
-    objetivo: 'Mostrar quantos dos contatos realizados viraram agendamento.',
-    fonte: `${ARQ_CAMPANHA}\n${ARQ_CONTATOS}\n${ARQ_AGEND}`,
-    calculo: 'Contatos realizados cujo chassi tem agendamento no ROF037 criado na data da campanha ou depois, sem estar cancelado.',
-    filtros: `${REGRAS_CAMPANHA}\n${REGRAS_CONTATO}\n${REGRAS_AGENDADO}`,
-    colunas: `${COL_CAMPANHA}\n${COL_CONTATOS}\n${COL_AGEND_CAMPANHA}`,
+    objetivo: 'Mostrar quantos contatos gerados viraram agendamento.',
+    fonte: `${ARQ_CAMPANHA}\n${ARQ_AGEND}`,
+    calculo: 'Contatos gerados cujo chassi tem agendamento Ativo no ROF037 criado da data da campanha até 30 dias depois, sem estar cancelado.',
+    filtros: `${REGRAS_CAMPANHA}\n${REGRAS_AGENDADO}`,
+    colunas: `${COL_CAMPANHA}\n${COL_AGEND_CAMPANHA}`,
   },
-  encerrados: {
-    objetivo: 'Mostrar quantos contatos realizados terminaram sem agendamento.',
-    fonte: `${ARQ_CAMPANHA}\n${ARQ_CONTATOS}\n${ARQ_AGEND}`,
-    calculo: 'Contatos realizados que não viraram agendamento e têm motivo de encerramento no último contato (inclui "S02 - Cliente já agendado").',
-    filtros: `${REGRAS_CAMPANHA}\n${REGRAS_CONTATO}\n${REGRAS_AGENDADO}`,
-    colunas: `${COL_CAMPANHA}\n${COL_CONTATOS}\n${COL_AGEND_CAMPANHA}`,
-  },
-  aRealizar: {
-    objetivo: 'Mostrar quantos contatos gerados ainda não foram trabalhados.',
-    fonte: `${ARQ_CAMPANHA}\n${ARQ_CONTATOS}`,
-    calculo: 'Contatos gerados sem contato realizado no RCR017, fora os encerrados S00/S01 (já resolvidos sem contato).',
-    filtros: `${REGRAS_CAMPANHA}\n${REGRAS_CONTATO}`,
-    colunas: `${COL_CAMPANHA}\n${COL_CONTATOS}`,
+  naoAgendados: {
+    objetivo: 'Mostrar quantos contatos gerados não viraram agendamento.',
+    fonte: `${ARQ_CAMPANHA}\n${ARQ_AGEND}`,
+    calculo: 'Contatos gerados − Agendados.',
+    filtros: `${REGRAS_CAMPANHA}\n${REGRAS_AGENDADO}`,
+    colunas: `${COL_CAMPANHA}\n${COL_AGEND_CAMPANHA}`,
   },
   osAberta: {
-    objetivo: 'Mostrar quantos contatos agendados já abriram O.S.',
-    fonte: `${ARQ_CAMPANHA}\n${ARQ_CONTATOS}\n${ARQ_AGEND}`,
-    calculo: 'Contatos agendados cujo agendamento no ROF037 tem número de O.S. (ou status FIM).',
+    objetivo: 'Mostrar quantos agendados das campanhas vieram.',
+    fonte: `${ARQ_CAMPANHA}\n${ARQ_AGEND}`,
+    calculo: 'Agendados cujo agendamento no ROF037 tem número de O.S. (ou status FIM).',
     filtros: `${REGRAS_CAMPANHA}\n${REGRAS_AGENDADO}\n${REGRAS_SITUACAO}`,
     colunas: `${COL_CAMPANHA}\n${COL_AGEND_CAMPANHA}`,
   },
   programados: {
-    objetivo: 'Mostrar quantos contatos agendados ainda vão acontecer.',
-    fonte: `${ARQ_CAMPANHA}\n${ARQ_CONTATOS}\n${ARQ_AGEND}`,
-    calculo: 'Contatos agendados cujo agendamento no ROF037 está AGE, CON ou RAG, ainda sem O.S.',
+    objetivo: 'Mostrar quantos agendados das campanhas ainda vão vir.',
+    fonte: `${ARQ_CAMPANHA}\n${ARQ_AGEND}`,
+    calculo: 'Agendados cujo agendamento no ROF037 está AGE, CON ou RAG, ainda sem O.S.',
     filtros: `${REGRAS_CAMPANHA}\n${REGRAS_AGENDADO}\n${REGRAS_SITUACAO}`,
     colunas: `${COL_CAMPANHA}\n${COL_AGEND_CAMPANHA}`,
   },
   noShow: {
-    objetivo: 'Mostrar quantos contatos agendados não compareceram.',
-    fonte: `${ARQ_CAMPANHA}\n${ARQ_CONTATOS}\n${ARQ_AGEND}`,
-    calculo: 'Contatos agendados cujo agendamento no ROF037 está NSW (no-show).',
+    objetivo: 'Mostrar quantos agendados das campanhas não compareceram.',
+    fonte: `${ARQ_CAMPANHA}\n${ARQ_AGEND}`,
+    calculo: 'Agendados cujo agendamento no ROF037 está NSW (no-show).',
     filtros: `${REGRAS_CAMPANHA}\n${REGRAS_AGENDADO}\n${REGRAS_SITUACAO}`,
     colunas: `${COL_CAMPANHA}\n${COL_AGEND_CAMPANHA}`,
-  },
-  conversaoCampanha: {
-    objetivo: 'Mostrar quanto faturaram as O.S. abertas pelos contatos agendados das campanhas.',
-    fonte: 'Ainda sem fonte de dados.',
-    calculo: 'Ainda não calculado (mostra —).',
-    filtros: '',
-    colunas: '',
   },
 
   // Aba Visão Período
@@ -445,8 +396,8 @@ export const OBJETIVO_ABAS = {
 // Tabela do ícone ao lado do subtítulo "Campanhas de Ativação" (aba Por Campanhas).
 const TABELA_CAMPANHAS = {
   itens: [
-    ['O que mostra', 'Uma linha por data de geração (todas as unidades e campanhas do dia juntas), da mais recente para a mais antiga, e uma linha de Total no fim.'],
-    ['Colunas', 'Data de geração (do nome do arquivo RCR038), Campanhas geradas (ID_Campanha_Execucao distintos) e os mesmos números dos cards (contatos gerados, realizados, a realizar, agendados, encerrados sem agendamento, agendamento com O.S. aberta, programados e no-show) e as mesmas taxas dos indicadores.'],
+    ['O que mostra', 'Uma linha por data de geração (todas as campanhas do dia juntas), da mais recente para a mais antiga, e uma linha de Total no fim.'],
+    ['Colunas', 'Data de geração (do nome do arquivo RCR038), Campanhas geradas, Contatos gerados, Agendados, Não agendados, Vieram, Vão vir, No-show e as taxas de Agendamento, Conversão e No-show.'],
     ['Regras', 'As mesmas dos cards e indicadores da aba, calculadas por data de geração; o Total é igual aos cards.'],
   ],
 }
@@ -473,20 +424,15 @@ const TABELA_PASSAGENS = {
 export const MANUAL_ABAS_CARDS = [
   ['Aba Por Campanhas', [
     ['Tabela — Campanhas por data de geração', TABELA_CAMPANHAS],
-    ['Indicador — Taxa de Contato Realizado', 'taxaContato'],
     ['Indicador — Taxa de Agendamento', 'taxaAgendamento'],
-    ['Indicador — Taxa Encerrado sem Agendamento', 'taxaSemAgendamento'],
     ['Card — Campanhas geradas', 'campanhas'],
     ['Card — Contatos gerados', 'contatos'],
-    ['Card — Contatos realizados', 'realizados'],
-    ['Card — Contatos agendados', 'agendados'],
-    ['Card — Contatos encerrados sem agendamento', 'encerrados'],
-    ['Card — Contatos a realizar', 'aRealizar'],
-    ['Card — Agendamento com O.S aberta', 'osAberta'],
-    ['Card — Agendamentos programados', 'programados'],
+    ['Card — Agendados', 'agendados'],
+    ['Card — Não agendados', 'naoAgendados'],
+    ['Card — Vieram', 'osAberta'],
+    ['Card — Vão vir', 'programados'],
     ['Card — No-show', 'noShow'],
     ['Indicador — Taxa de Conversão', 'taxaConversao'],
-    ['Card — Conversão — Resultado', 'conversaoCampanha'],
     ['Indicador — Taxa de No-show', 'taxaNoShow'],
   ]],
   ['Aba Por Data Agendamento', [
@@ -531,9 +477,8 @@ export const MANUAL_GERAL = [
     titulo: 'Fontes (relatórios)',
     itens: [
       [ARQ_OS, 'Pasta SharePoint: Banco de Dados - DAF - Pós-Vendas › Relatório Geral OS'],
-      [ARQ_AGEND, 'Pasta SharePoint: Banco de Dados - DAF - Pós-Vendas › Agendamentos - CRM › AGENDAMENTO SERVICOS'],
+      [ARQ_AGEND, 'Pasta SharePoint: Banco de Dados - DAF - Pós-Vendas › Agendamentos - CRM › AGENDAMENTO DE SERVICOS E PRODUTOS'],
       [ARQ_CAMPANHA, 'Pasta SharePoint: Banco de Dados - DAF - Pós-Vendas › Agendamentos - CRM › CAMPANHA CRM › (ano)'],
-      ['RCR017_LISTAPORDATACONTATO e RCR017_LISTAPORDATAENCERRAMENTO', 'Pasta SharePoint: Banco de Dados - DAF - Pós-Vendas › Agendamentos - CRM › LISTA POR DATA CONTATO_ENCERRAMENTO'],
     ],
   },
 ]

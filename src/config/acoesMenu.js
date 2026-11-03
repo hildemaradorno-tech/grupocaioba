@@ -362,6 +362,13 @@ export const ACOES_POR_MENU = [
     ],
   },
   {
+    menuPath: 'documentos-pj',
+    acoes: [
+      { value: 'editar', label: 'Incluir / Editar' },
+      { value: 'excluir', label: 'Excluir' },
+    ],
+  },
+  {
     menuPath: 'cargos-remuneracoes',
     acoes: [
       { value: 'editar', label: 'Incluir / Editar' },

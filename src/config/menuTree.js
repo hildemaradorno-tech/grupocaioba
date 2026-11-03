@@ -165,6 +165,7 @@ export const MENU_TREE = [
           { key: 'regras-faixas', label: 'Regras' },
           { key: 'regras-pj', label: 'Regras PJ' },
           { key: 'descontos-pj', label: 'Descontos PJ' },
+          { key: 'documentos-pj', label: 'Documentos PJ' },
           { key: 'cargos-remuneracoes', label: 'Cargos e Remunerações' },
         ],
       },

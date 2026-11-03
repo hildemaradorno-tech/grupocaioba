@@ -1444,7 +1444,27 @@ export const apiService = {
     return data || []
   },
 
-  uploadPjAnexo: async ({ funcionarioId, periodo, tipo, regraId = null, documento = null, cnpj = null, empresaNome = null, file }) => {
+  // DOCUMENTOS PJ (menu Documentos PJ): documentos que o prestador envia todo mês (pj_documentos_exigidos).
+  getPjDocumentosExigidos: async () => {
+    const { data, error } = await supabase.from('pj_documentos_exigidos').select('*').order('nome')
+    if (error) throw error
+    return data || []
+  },
+  salvarPjDocumentoExigido: async (id, payload) => {
+    const q = id
+      ? supabase.from('pj_documentos_exigidos').update(payload).eq('id', id)
+      : supabase.from('pj_documentos_exigidos').insert(payload)
+    const { error } = await q
+    if (error) throw error
+    return { success: true }
+  },
+  excluirPjDocumentoExigido: async (id) => {
+    const { error } = await supabase.from('pj_documentos_exigidos').delete().eq('id', id)
+    if (error) throw error
+    return { success: true }
+  },
+
+  uploadPjAnexo: async ({ funcionarioId, periodo, tipo, regraId = null, documentoId = null, documento = null, cnpj = null, empresaNome = null, file }) => {
     if (!['application/pdf', 'image/png', 'image/jpeg'].includes(file.type)) throw new Error('envie um PDF ou imagem (PNG/JPG).')
     if (file.size > 5 * 1024 * 1024) throw new Error('o arquivo passa de 5 MB.')
     const ext = (file.name?.split('.').pop() || 'pdf').toLowerCase()
@@ -1453,7 +1473,7 @@ export const apiService = {
     if (eUp) throw eUp
     const { data: sessao } = await supabase.auth.getSession()
     const { data, error } = await supabase.from('pj_anexos').insert({
-      funcionario_id: funcionarioId, periodo, tipo, regra_id: regraId, documento, cnpj, empresa_nome: empresaNome,
+      funcionario_id: funcionarioId, periodo, tipo, regra_id: regraId, documento_id: documentoId, documento, cnpj, empresa_nome: empresaNome,
       nome_arquivo: file.name, path, tamanho: file.size, content_type: file.type,
       enviado_por: sessao?.session?.user?.email || null,
     }).select().single()

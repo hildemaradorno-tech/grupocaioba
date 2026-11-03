@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
-import { ArrowLeft, Edit2, Plus, Trash2, ShieldAlert, ArrowRight, Copy, MessageSquare, CheckCircle2, FolderInput, PlayCircle, Loader2, PartyPopper, RotateCcw, Eye, Filter, Activity, CheckCircle, AlertTriangle, Layers, X, Flag, ClipboardList, ChevronRight, Settings } from 'lucide-react'
+import { ArrowLeft, Edit2, Plus, Trash2, ShieldAlert, ArrowRight, Copy, MessageSquare, CheckCircle2, FolderInput, PlayCircle, Loader2, PartyPopper, RotateCcw, Eye, Filter, Activity, CheckCircle, AlertTriangle, Layers, X, Flag, ClipboardList, ChevronRight, Settings, ListOrdered } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { useProjetosFiltros } from '../../context/ProjetosFiltrosContext'
 import { apiService } from '../../services/api'
@@ -122,6 +122,7 @@ export default function ProjetoDetalhe() {
   const [modalMover, setModalMover] = useState(null)         // tarefa a mover
   const [editProgresso, setEditProgresso] = useState(null)   // { id, value }
   const [editStatus, setEditStatus] = useState(null)         // id da tarefa com select de status aberto
+  const [reorganizando, setReorganizando] = useState(false)
   const [projetosLista, setProjetosLista] = useState([])
   const [projetoDestinoId, setProjetoDestinoId] = useState('')
   const [buscaProjeto, setBuscaProjeto] = useState('')
@@ -470,6 +471,25 @@ const abrirModalMover = async (tarefa) => {
     finally { setSalvandoEtapa(null); setEditandoEtapa(null) }
   }
 
+  const reorganizarEtapas = async () => {
+    if (reorganizando) return
+    setReorganizando(true)
+    try {
+      for (let i = 0; i < tarefasOrdenadas.length; i++) {
+        const t = tarefasOrdenadas[i]
+        const novaEtapa = i + 1
+        if (t.etapa !== novaEtapa) {
+          await apiService.updateTarefa(t.id, { etapa: novaEtapa })
+          setTarefas(prev => prev.map(x => x.id === t.id ? { ...x, etapa: novaEtapa } : x))
+        }
+      }
+    } catch (err) {
+      alert('Erro ao reorganizar etapas: ' + (err.message || String(err)))
+    } finally {
+      setReorganizando(false)
+    }
+  }
+
   const salvarStatus = async (id, novoStatus) => {
     try {
       await apiService.updateTarefa(id, { status_kanban: novoStatus })
@@ -790,8 +810,8 @@ const abrirModalMover = async (tarefa) => {
           )
         })()}
 
-        {/* Ações em massa + contagem */}
-        {(tarefasSelecionadas.size > 0 || tarefasOrdenadas.length !== tarefas.length) && (
+        {/* Ações em massa */}
+        {(tarefasSelecionadas.size > 0 || tarefasOrdenadas.length !== tarefas.length || (canEditarTarefa && tarefasOrdenadas.length > 1)) && (
           <div className="flex items-center gap-2 flex-wrap justify-end">
             {tarefasSelecionadas.size > 0 && (
               <>
@@ -799,42 +819,50 @@ const abrirModalMover = async (tarefa) => {
                   <button onClick={abrirModalMoverSelecionadas}
                     className="flex items-center gap-1 px-2.5 py-1 bg-violet-600 hover:bg-violet-700 text-white text-[10px] font-semibold rounded transition-colors">
                     <FolderInput className="h-3 w-3" />
-                    Mover {tarefasSelecionadas.size} selecionada{tarefasSelecionadas.size !== 1 ? 's' : ''}
+                    Mover Selecionadas
                   </button>
                 )}
                 {canMoverTarefa && (
                   <button onClick={() => setModalNovoProjeto({ fase: 'pergunta', nomeProjeto: '', salvando: false })}
                     className="flex items-center gap-1 px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-semibold rounded transition-colors">
                     <Plus className="h-3 w-3" />
-                    Novo Projeto com {tarefasSelecionadas.size} selecionada{tarefasSelecionadas.size !== 1 ? 's' : ''}
+                    Novo Projeto com Selecionadas
                   </button>
                 )}
                 {canDuplicarTarefa && (
                   <button onClick={duplicarTarefasSelecionadas}
                     className="flex items-center gap-1 px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-semibold rounded transition-colors">
                     <Copy className="h-3 w-3" />
-                    Duplicar {tarefasSelecionadas.size} selecionada{tarefasSelecionadas.size !== 1 ? 's' : ''}
+                    Duplicar Selecionadas
                   </button>
                 )}
                 {canResetarTarefa && (
                   <button onClick={resetarTarefasSelecionadas}
                     className="flex items-center gap-1 px-2.5 py-1 bg-orange-500 hover:bg-orange-600 text-white text-[10px] font-semibold rounded transition-colors">
                     <RotateCcw className="h-3 w-3" />
-                    Resetar {tarefasSelecionadas.size} selecionada{tarefasSelecionadas.size !== 1 ? 's' : ''}
+                    Resetar Selecionadas
                   </button>
                 )}
                 {canExcluirTarefa && (
                   <button onClick={excluirTarefasSelecionadas}
                     className="flex items-center gap-1 px-2.5 py-1 bg-red-600 hover:bg-red-700 text-white text-[10px] font-semibold rounded transition-colors">
                     <Trash2 className="h-3 w-3" />
-                    Excluir {tarefasSelecionadas.size} selecionada{tarefasSelecionadas.size !== 1 ? 's' : ''}
+                    Excluir Selecionadas
                   </button>
                 )}
               </>
             )}
-            <span className="text-[10px] text-slate-400">
-              {tarefasOrdenadas.length} tarefa{tarefasOrdenadas.length !== 1 ? 's' : ''} de {tarefasFiltradas.length} total
-            </span>
+            {canEditarTarefa && tarefasOrdenadas.length > 1 && (
+              <button
+                onClick={reorganizarEtapas}
+                disabled={reorganizando}
+                title="Renumera as etapas de 1 a N seguindo a ordem atual da tabela"
+                className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-semibold text-slate-500 hover:text-indigo-700 hover:bg-indigo-50 border border-slate-200 rounded transition-colors disabled:opacity-50"
+              >
+                {reorganizando ? <Loader2 className="h-3 w-3 animate-spin" /> : <ListOrdered className="h-3 w-3" />}
+                {reorganizando ? 'Reorganizando...' : 'Reorganizar Etapas'}
+              </button>
+            )}
           </div>
         )}
         <div id="projeto-detalhe-tabela" className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-x-auto custom-scrollbar-light">
@@ -912,7 +940,7 @@ const abrirModalMover = async (tarefa) => {
                         className="text-[11px] p-1 border border-indigo-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300/40 w-28"
                       >
                         <option value="">— Sem etapa —</option>
-                        {Array.from({ length: Math.max(20, tarefas.length + 5) }, (_, i) => i + 1).map(n => {
+                        {Array.from({ length: Math.max(20, tarefas.length + 5, Math.max(0, ...tarefas.map(x => x.etapa || 0)) + 5) }, (_, i) => i + 1).map(n => {
                           const emUso = tarefas.some(x => x.id !== t.id && x.etapa === n)
                           return (
                             <option key={n} value={n}>

@@ -21,7 +21,7 @@ MENU_TREE.forEach(buildSectionLeaves)
 function getActiveSectionKey(pathname) {
   if (pathname === '/usuarios' || pathname === '/grupos' || pathname === '/permissoes-matriz') return '_config'
   if (pathname === '/tipos-processo' || pathname === '/rubricas' || pathname === '/fontes-dados' || pathname === '/bases-calculo' ||
-    pathname === '/politica-comissao' || pathname === '/regras-faixas' || pathname === '/regras-pj' || pathname === '/descontos-pj' || pathname === '/cargos-remuneracoes' ||
+    pathname === '/politica-comissao' || pathname === '/regras-faixas' || pathname === '/regras-pj' || pathname === '/descontos-pj' || pathname === '/documentos-pj' || pathname === '/cargos-remuneracoes' ||
     pathname === '/ferias' || pathname === '/sobreaviso-plantao' ||
     pathname === '/calculo-comissoes' || pathname === '/calculo-comissoes-motos' || pathname === '/calculo-comissoes-grupo' || pathname === '/processamento-comissoes' || pathname === '/minha-nota-fiscal') return '_comissoes-calculo'
   const cadastros = ['/segmentos','/agrup-empresas','/empresas','/areas','/agrup-departamentos',
@@ -509,6 +509,7 @@ export default function SidebarLayout() {
                 {canView('regras-faixas') && <FlyItem to="/regras-faixas" icon={Percent} onClose={closeFlyout}>Regras</FlyItem>}
                 {canView('regras-pj') && <FlyItem to="/regras-pj" icon={Percent} onClose={closeFlyout}>Regras PJ</FlyItem>}
                 {canView('descontos-pj') && <FlyItem to="/descontos-pj" icon={Percent} onClose={closeFlyout}>Descontos PJ</FlyItem>}
+                {canView('documentos-pj') && <FlyItem to="/documentos-pj" icon={FileCheck2} onClose={closeFlyout}>Documentos PJ</FlyItem>}
                 {canView('cargos-remuneracoes') && <FlyItem to="/cargos-remuneracoes" icon={Briefcase} onClose={closeFlyout}>Cargos e Remunerações</FlyItem>}
               </>
             )}

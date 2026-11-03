@@ -13,38 +13,27 @@ const TIPOS = ['AGENDAMENTO ATIVO', 'AGENDAMENTO RECEPTIVO']
 
 const KPIS = [
   { label: 'Campanhas geradas', chave: 'campanhas' }, // ID_Campanha_Execucao distintos
-  { label: 'Contatos gerados', chave: 'contatos' }, // contagem da coluna ID_Cliente
-  { label: 'Contatos realizados', chave: 'realizados' }, // atendimentos da campanha com contato no RCR017
-  { label: 'Contatos agendados', chave: 'agendados' }, // contatos realizados com agendamento no ROF037 (mesmo chassi)
-  { label: 'Contatos encerrados sem agendamento', chave: 'encerrados' }, // realizado, sem agendamento e com motivo de encerramento (inclui S02)
-  { label: 'Contatos a realizar', chave: 'aRealizar' }, // gerados sem contato no RCR017 (fora os encerrados sem contato S00/S01)
+  { label: 'Contatos gerados', chave: 'contatos' }, // contatos (campanha + atendimento) do RCR038
+  { label: 'Agendados', chave: 'agendados' }, // chassi com agendamento Ativo no ROF037 até 30 dias após a campanha
+  { label: 'Não agendados', chave: 'naoAgendados' }, // gerados − agendados
 ]
 
 // Velocímetros. valor/meta em %; valor null = ainda sem fonte de dados.
 // junto: true = fica abaixo dos cards de situação dos agendamentos.
 const GAUGES = [
-  { label: 'Taxa de Contato Realizado', chave: 'taxaContato', valor: null, meta: 80, info: INFO.taxaContato },
   { label: 'Taxa de Agendamento', chave: 'taxaAgendamento', valor: null, meta: 80, info: INFO.taxaAgendamento },
   { label: 'Taxa de Conversão', chave: 'taxaConversao', junto: true, valor: null, meta: 80, info: INFO.taxaConversao },
-  { label: 'Taxa Encerrado sem Agendamento', chave: 'taxaSemAgendamento', valor: null, meta: 80, info: INFO.taxaSemAgendamento, menorMelhor: true },
   { label: 'Taxa de No-show', chave: 'taxaNoShow', junto: true, valor: null, meta: 15, info: INFO.taxaNoShow, menorMelhor: true },
 ]
 
 // Meia-lua: arco cinza de fundo, arco preenchido até o valor e um corte branco na meta.
-// Faturamento das O.S abertas com agendamento (sem fonte ainda).
-const CONVERSAO = [
-  { label: 'Faturamento Peças', valor: null, cor: '#34d399' },
-  { label: 'Faturamento Serviços', valor: null, cor: '#10b981' },
-  { label: 'Faturamento Total', valor: null, cor: '#047857' },
-]
-const maxConversao = Math.max(...CONVERSAO.map(c => c.valor || 0), 1)
 const fmtBRL = (v) => (v === null || v === undefined ? '—' : v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }))
 
-// Situação dos contatos agendados, pelo status do agendamento no ROF037:
-// O.S aberta = tem número de O.S (ou status FIM); No-show = NSW; programado = ainda vai acontecer (AGE/CON/RAG).
+// O que aconteceu com os agendados das campanhas, pelo status do agendamento no ROF037:
+// Vieram = tem número de O.S (ou status FIM); No-show = NSW; Vão vir = ainda vai acontecer (AGE/CON/RAG).
 const SITUACAO = [
-  { label: 'Agendamento com O.S aberta', chave: 'osAberta', cor: '#059669' },
-  { label: 'Agendamentos programados', chave: 'programados', cor: '#3b82f6' },
+  { label: 'Vieram', chave: 'osAberta', cor: '#059669' },
+  { label: 'Vão vir', chave: 'programados', cor: '#3b82f6' },
   { label: 'No-show', chave: 'noShow', cor: '#dc2626' },
 ]
 const situacaoDe = (ag) => (!ag ? null : ag.os !== null || ag.status === 'FIM' ? 'osAberta' : ag.status === 'NSW' ? 'noShow' : 'programados')
@@ -359,18 +348,14 @@ function resumoAgendamentos(lista) {
 
 // Contagens das campanhas (cards da aba Por Campanhas e tabela por campanha) — regras no manual.
 function resumoContatos(rows) {
-  const comCliente = rows.filter(r => r.id_cliente !== null)
   const n = {
     campanhas: new Set(rows.map(r => r.id_campanha_execucao)).size,
-    contatos: comCliente.length,
-    realizados: comCliente.filter(r => r.contato_realizado).length,
-    aRealizar: comCliente.filter(r => !r.contato_realizado && !/^S0[01]/i.test(r.motivo_encerramento || '')).length,
-    agendados: comCliente.filter(r => r.contato_agendado).length,
-    // Inclui S02 "Cliente já agendado": o contato da campanha terminou sem gerar agendamento novo.
-    encerrados: comCliente.filter(r => r.contato_realizado && !r.contato_agendado && r.motivo_encerramento).length,
+    contatos: rows.length,
+    agendados: rows.filter(r => r.agendamento).length,
     osAberta: 0, programados: 0, noShow: 0,
   }
-  comCliente.forEach(r => { const k = situacaoDe(r.agendamento); if (k) n[k]++ })
+  n.naoAgendados = n.contatos - n.agendados
+  rows.forEach(r => { const k = situacaoDe(r.agendamento); if (k) n[k]++ })
   return n
 }
 
@@ -448,9 +433,6 @@ export default function BiAgendamentoServicos() {
     return crm.rows.filter(r => r.data && r.data >= dataIni && r.data <= dataFim)
   }, [crm, dataIni, dataFim])
   const numeros = resumoContatos(contatosFiltrados)
-  // Sem o RCR017 (pasta de contatos indisponível), só Campanhas geradas e Contatos gerados têm valor.
-  const semContatos = !!crm?.semContatos
-  const depContato = new Set(['realizados', 'agendados', 'encerrados', 'aRealizar', 'osAberta', 'programados', 'noShow'])
   // Tabela "Campanhas por data de geração" (ícone na linha do subtítulo): mesmas regras dos cards, por campanha.
   const [tabela, setTabela] = useState(null) // 'campanhas' | 'agendamentos' | 'passagens' (pop-up da tabela por data)
   const linhasCampanhas = useMemo(() => {
@@ -463,13 +445,11 @@ export default function BiAgendamentoServicos() {
   // Velocímetros com fonte: o valor sai de "numeros"; os demais seguem null (—).
   const pct = (a, b) => (b > 0 ? Math.round((a / b) * 100) : null)
   const valorGauge = {
-    taxaContato: crm ? pct(numeros.realizados, numeros.contatos) : null,
-    taxaAgendamento: crm ? pct(numeros.agendados, numeros.realizados) : null,
-    taxaSemAgendamento: crm ? pct(numeros.encerrados, numeros.contatos) : null,
+    taxaAgendamento: crm ? pct(numeros.agendados, numeros.contatos) : null,
     taxaConversao: crm ? pct(numeros.osAberta, numeros.agendados) : null,
     taxaNoShow: crm ? pct(numeros.noShow, numeros.agendados) : null,
   }
-  const gauge = (g) => (g.chave ? { ...g, valor: semContatos ? null : valorGauge[g.chave] ?? null } : g)
+  const gauge = (g) => (g.chave ? { ...g, valor: valorGauge[g.chave] ?? null } : g)
 
   // Passagens = O.S. abertas no período (Data Criacao), menos as "Cancelada"; empresa do arquivo casada
   // com o cadastro pelo nome fantasia sem acento (ex: "CAIOBA TRUCKS - CHAPADAO" = "CAIOBÁ TRUCKS - CHAPADÃO").
@@ -566,10 +546,10 @@ export default function BiAgendamentoServicos() {
 
   // Linha de cards de KPI e linha de velocímetros da aba Campanhas.
   const blocoCards = (
-    <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
       {KPIS.map(k => (
         <CardKpi key={k.label} label={k.label} info={INFO[k.chave]}
-          valor={k.chave ? (carregando && !crm ? '...' : semContatos && depContato.has(k.chave) ? '—' : numeros[k.chave].toLocaleString('pt-BR')) : (k.valor ?? '—')} />
+          valor={k.chave ? (carregando && !crm ? '...' : numeros[k.chave].toLocaleString('pt-BR')) : (k.valor ?? '—')} />
       ))}
     </div>
   )
@@ -794,35 +774,16 @@ export default function BiAgendamentoServicos() {
       {blocoGauges}
       {blocoCards}
 
-      {/* Situação dos agendamentos em cards; abaixo, Taxa de Conversão, No-show e Conversão — Resultado. */}
+      {/* O que aconteceu com os agendados (Vieram, Vão vir, No-show); abaixo, Taxa de Conversão e Taxa de No-show. */}
       <div className="space-y-3">
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
           {SITUACAO.map(d => (
             <CardKpi key={d.label} label={d.label} info={INFO[d.chave]} cor={d.cor}
-              valor={carregando && !crm ? '...' : crm && !semContatos ? numeros[d.chave].toLocaleString('pt-BR') : '—'} />
+              valor={carregando && !crm ? '...' : crm ? numeros[d.chave].toLocaleString('pt-BR') : '—'} />
           ))}
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          {/* Ordem: Taxa de Conversão, Conversão — Resultado ao lado dela, depois Taxa de No-show. */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <GaugeMeta {...gauge(GAUGES.find(g => g.chave === 'taxaConversao'))} />
-          <div className="relative bg-white border border-slate-200 rounded-lg p-3">
-            <BotaoInfo titulo="Conversão — Resultado" info={INFO.conversaoCampanha} />
-            <p className="text-[11px] font-semibold text-indigo-950 leading-tight pr-5">Conversão — Resultado</p>
-            {/* Barras horizontais proporcionais ao maior valor (Total). */}
-            <div className="space-y-3 mt-3">
-              {CONVERSAO.map(c => (
-                <div key={c.label}>
-                  <div className="flex items-baseline justify-between gap-2 text-[11px]">
-                    <span className="text-slate-600">{c.label}</span>
-                    <span className="font-bold text-slate-900 tabular-nums">{fmtBRL(c.valor)}</span>
-                  </div>
-                  <div className="h-4 bg-slate-100 rounded mt-1 overflow-hidden">
-                    <div className="h-full rounded" style={{ width: `${((c.valor || 0) / maxConversao) * 100}%`, backgroundColor: c.cor }} />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
           <GaugeMeta {...gauge(GAUGES.find(g => g.chave === 'taxaNoShow'))} />
         </div>
       </div>
@@ -837,16 +798,12 @@ export default function BiAgendamentoServicos() {
             ['Data de geração', l => fmtData(l.data)],
             ['Campanhas geradas', l => l.campanhas],
             ['Contatos gerados', l => l.contatos],
-            ['Contatos realizados', l => l.realizados],
-            ['Contatos a realizar', l => l.aRealizar],
-            ['Contatos agendados', l => l.agendados],
-            ['Encerrados sem agendamento', l => l.encerrados],
-            ['Agendamento com O.S aberta', l => l.osAberta],
-            ['Agendamentos programados', l => l.programados],
+            ['Agendados', l => l.agendados],
+            ['Não agendados', l => l.naoAgendados],
+            ['Vieram', l => l.osAberta],
+            ['Vão vir', l => l.programados],
             ['No-show', l => l.noShow],
-            ['Taxa de Contato Realizado', l => taxa(l.realizados, l.contatos)],
-            ['Taxa de Agendamento', l => taxa(l.agendados, l.realizados)],
-            ['Taxa Encerrado sem Agendamento', l => taxa(l.encerrados, l.contatos)],
+            ['Taxa de Agendamento', l => taxa(l.agendados, l.contatos)],
             ['Taxa de Conversão', l => taxa(l.osAberta, l.agendados)],
             ['Taxa de No-show', l => taxa(l.noShow, l.agendados)],
           ]} />

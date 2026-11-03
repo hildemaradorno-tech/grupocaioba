@@ -8,18 +8,12 @@ import { graphGet } from './graphClient.js'
 const RAIZ = '/Banco de Dados - DAF - Pós-Vendas/Agendamentos - CRM'
 const PASTA = `${RAIZ}/CAMPANHA CRM`
 const PREFIX = 'RCR038_CampanhaCRM_Clientes_Excel'
-// Contatos de cada atendimento (RCR017), ligados à campanha por Atendimento_Codigo = id_atendimento do RCR038.
-// A pasta tem duas versões do mesmo relatório, por ano: "RCR017_LISTAPORDATACONTATO 2026" (filtrado pela data
-// do contato — inclui contatos ainda sem encerramento) e "RCR017_LISTAPORDATAENCERRAMENTO 2026" (pela data de
-// encerramento). Lê as duas e conta cada contato (AtendimentoContato_Codigo) uma vez só.
-const PASTA_CONTATOS = `${RAIZ}/LISTA POR DATA CONTATO_ENCERRAMENTO`
-const PREFIX_CONTATOS = 'RCR017_LISTAPORDATA'
 // Agendamentos de serviço (ROF037). Liga com o contato da campanha pelo CHASSI, considerando só os
 // agendamentos criados a partir da data da campanha (o relatório não traz o atendimento do CRM).
-const PASTA_AGENDAMENTOS = `${RAIZ}/AGENDAMENTO SERVICOS`
+const PASTA_AGENDAMENTOS = `${RAIZ}/AGENDAMENTO DE SERVICOS E PRODUTOS`
 const PREFIX_AGENDAMENTOS = 'ROF037_AGENDAMENTOSERVICO'
-// Encerramentos que significam que NÃO houve contato com o cliente.
-const MOTIVOS_SEM_CONTATO = ['S00', 'S01'] // finalizado sem contato / telefones incorretos
+// Aba Por Campanhas: o agendamento Ativo do chassi conta se for criado até N dias depois da data da campanha.
+const DIAS_CAMPANHA_AGENDAMENTO = 30
 
 const CACHE_TTL_MS = 5 * 60 * 1000
 let _cache = null
@@ -65,47 +59,6 @@ async function arquivosDoRelatorio(pasta, prefix) {
     achados.push(...(await listar(`${pasta}/${sub.name}`)).filter(i => i.file && i.name?.toLowerCase().startsWith(alvo)))
   }
   return achados.filter(i => i['@microsoft.graph.downloadUrl'])
-}
-
-// RCR017: mapa Atendimento_Codigo → contatos (aba Por Campanhas).
-async function lerContatos() {
-  const porAtendimento = new Map()
-  const vistos = new Set() // AtendimentoContato_Codigo já lido (o mesmo contato está nos dois arquivos)
-  // Sem a pasta (ou sem arquivo RCR017) a aba Por Campanhas continua funcionando: devolve null e a tela
-  // mostra "—" nos números que dependem do contato realizado.
-  let itens
-  try {
-    itens = await arquivosDoRelatorio(PASTA_CONTATOS, PREFIX_CONTATOS)
-  } catch (e) {
-    console.warn(`[AgendamentoCRM] pasta de contatos (RCR017) indisponível: ${e.message}`)
-    return null
-  }
-  if (itens.length === 0) return null
-  for (const item of itens) {
-    const linhas = await baixarLinhas(item)
-    for (const r of linhas) {
-      const at = num(r.Atendimento_Codigo)
-      if (at === null) continue
-      const codContato = txt(r.AtendimentoContato_Codigo)
-      if (codContato) {
-        if (vistos.has(codContato)) continue
-        vistos.add(codContato)
-      }
-      const motivo = txt(r.MotivoEncerramento)
-      const contato = {
-        data: dataExcel(r.AtendimentoContato_Data),
-        resultado: txt(r.AtendimentoContato_Resultado),
-        motivo,
-        meio: txt(r.MeioContato_Descricao),
-        sem_contato: MOTIVOS_SEM_CONTATO.some(c => motivo.toUpperCase().startsWith(c)),
-      }
-      const lista = porAtendimento.get(at) || []
-      lista.push(contato)
-      porAtendimento.set(at, lista)
-    }
-    console.log(`[AgendamentoCRM] ${item.name}: ${linhas.length} contato(s) de atendimento`)
-  }
-  return porAtendimento
 }
 
 // Map chassi → agendamentos (ROF037).
@@ -201,32 +154,18 @@ export async function getCampanhasCrm() {
     }
   }
 
-  // Contato realizado = o atendimento da campanha tem ao menos 1 contato no RCR017 que não seja
-  // encerramento "sem contato" (S00/S01). Encerrado = último contato tem motivo de encerramento.
-  const contatos = await lerContatos()
-  const semContatos = contatos === null
-  for (const r of rows) {
-    const lista = (!semContatos && r.id_atendimento !== null && contatos.get(r.id_atendimento)) || []
-    const validos = lista.filter(c => !c.sem_contato)
-    const ultimo = [...lista].sort((a, b) => (a.data || '').localeCompare(b.data || '')).pop() || null
-    r.qtd_contatos = lista.length
-    r.contato_realizado = validos.length > 0
-    r.data_contato = validos.map(c => c.data).filter(Boolean).sort()[0] || null
-    r.motivo_encerramento = ultimo?.motivo || ''
-  }
-
-  // Contato agendado = contato realizado cujo chassi tem agendamento (ROF037) criado na data da
-  // campanha ou depois, sem estar cancelado (CAN). Guarda o 1º agendamento p/ os cards de situação.
+  // Agendado = o chassi do contato gerado tem agendamento do tipo Ativo no ROF037 criado da data da campanha
+  // até 30 dias depois, sem estar cancelado (CAN). Guarda o 1º agendamento p/ os cards Vieram/Vão vir/No-show.
   const agendamentos = await lerAgendamentos()
+  const ate = (iso, n) => { const d = new Date(`${iso}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10) }
   for (const r of rows) {
-    const doChassi = (agendamentos.get(r.chassi.toUpperCase()) || [])
-      .filter(a => a.criado && r.data && a.criado >= r.data && a.status !== 'CAN')
-      .sort((a, b) => a.criado.localeCompare(b.criado))
-    r.agendamento = r.contato_realizado ? (doChassi[0] || null) : null
-    r.contato_agendado = !!r.agendamento
+    const limite = r.data ? ate(r.data, DIAS_CAMPANHA_AGENDAMENTO) : null
+    r.agendamento = (agendamentos.get(r.chassi.toUpperCase()) || [])
+      .filter(a => a.tipo === 'Ativo' && a.criado && r.data && a.criado >= r.data && a.criado <= limite && a.status !== 'CAN')
+      .sort((a, b) => a.criado.localeCompare(b.criado))[0] || null
   }
 
-  _cache = { rows, semContatos, arquivos: arquivosLidos, lastModified, lidoEm: new Date().toISOString() }
+  _cache = { rows, arquivos: arquivosLidos, lastModified, lidoEm: new Date().toISOString() }
   _cacheTs = Date.now()
   return _cache
 }

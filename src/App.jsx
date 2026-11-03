@@ -32,6 +32,7 @@ import BasesCalculo from './pages/BasesCalculo'
 import PoliticaComissao from './pages/PoliticaComissao'
 import RegrasFaixas from './pages/RegrasFaixas'
 import RegrasPJ from './pages/RegrasPJ'
+import DocumentosPJ from './pages/DocumentosPJ'
 import MinhaNotaFiscal from './pages/MinhaNotaFiscal'
 import CargosRemuneracoes from './pages/CargosRemuneracoes'
 import FontesDados from './pages/FontesDados'
@@ -237,6 +238,7 @@ export default function App() {
           { path: '/regras-faixas', element: <RegrasFaixas />, menuPath: 'regras-faixas' },
           { path: '/regras-pj', element: <RegrasPJ />, menuPath: 'regras-pj' },
           { path: '/descontos-pj', element: <RegrasPJ descontos />, menuPath: 'descontos-pj' },
+          { path: '/documentos-pj', element: <DocumentosPJ />, menuPath: 'documentos-pj' },
           { path: '/cargos-remuneracoes', element: <CargosRemuneracoes />, menuPath: 'cargos-remuneracoes' },
           // Link antigo (tela única com abas) — manda pro primeiro item da sequência.
           { path: '/regras-comissoes', element: <Navigate to="/tipos-processo" replace /> },

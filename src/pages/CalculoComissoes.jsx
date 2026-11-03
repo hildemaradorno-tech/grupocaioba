@@ -17,6 +17,7 @@ import { montarPercentualPj } from '../utils/regrasPj'
 import { montarHtmlNotaFiscal, montarNotaFiscalPj } from '../utils/notaFiscalPj'
 import TabelaNotaFiscal from '../components/TabelaNotaFiscal'
 import AnexoPjSlot from '../components/AnexoPjSlot'
+import { documentosDoPrestador, anexosDoDocumentoPj, origemDocumentoPj, dadosAnexoDocumento } from '../utils/documentosPj'
 
 // Sentinela pra funcionário sem setor algum (setor_ids vazio) — sem isso não tem como
 // selecionar essa "aba" na tela pra conferir/excluir o histórico desse grupo.
@@ -285,9 +286,10 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
   const [detalhePorEmpresa, setDetalhePorEmpresa] = useState({})
   // Boletos lançados das Regras PJ "Coparticipação" no mês — chaveBoleto(c) -> valor total do boleto (R$).
   const [boletosCop, setBoletosCop] = useState({})
-  // Anexos PJ do mês (pj_anexos): documentos exigidos pelas Regras PJ (pj_documentos). docsModal = linha
-  // (candidato) com o modal de documentos aberto.
+  // Anexos PJ do mês (pj_anexos) e documentos que o prestador envia (menu Documentos PJ).
+  // docsModal = { func, titulo, itens } da tela de documentos aberta.
   const [anexosPj, setAnexosPj] = useState([])
+  const [docsExigidos, setDocsExigidos] = useState([])
   const [docsModal, setDocsModal] = useState(null)
   // Janela "Faltam documentos" — aberta ao clicar em Conferir Comissões com documento pendente.
   const [pendenciasAberta, setPendenciasAberta] = useState(false)
@@ -336,6 +338,9 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
     }
   }
   useEffect(() => { carregarAnexosPj() }, [periodoValido, periodoInicio]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    apiService.getPjDocumentosExigidos().then(setDocsExigidos).catch(() => setDocsExigidos([]))
+  }, [])
 
   // Grava o boleto lançado e já mostra o valor calculado da linha (a conta é local, não lê Base nenhuma).
   const aplicarBoletoCop = async (c, texto) => {
@@ -1136,15 +1141,42 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
   const funcsComRegraPj = useMemo(() => new Set(candidatosFiltrados.filter(c => c.politica?.prestacao_pj).map(c => c.func.id)), [candidatosFiltrados])
   const lotePj = candidatosFiltrados.length > 0 && candidatosFiltrados.every(c => funcsComRegraPj.has(c.func.id))
 
-  // Documentos exigidos pela Regra PJ (pj_documentos) — só nas linhas calculadas. Sem todos anexados no
-  // mês, o Conferir Comissões fica bloqueado.
-  const anexosDoDocumento = (c, documento) => anexosPj.filter(a => a.tipo === 'DOCUMENTO' && a.funcionario_id === c.func.id
-    && a.regra_id === (c.politica.grupo_politica_id || c.politica.id) && a.documento === documento)
-  const documentosPendentes = useMemo(() => candidatosFiltrados
-    .filter(c => Array.isArray(c.politica?.pj_documentos) && c.politica.pj_documentos.length > 0 && valoresPorFuncionario[chaveLinha(c)])
-    .flatMap(c => c.politica.pj_documentos.filter(d => !anexosPj.some(a => a.tipo === 'DOCUMENTO' && a.funcionario_id === c.func.id
-      && a.regra_id === (c.politica.grupo_politica_id || c.politica.id) && a.documento === d)).map(d => ({ c, documento: d }))),
-  [candidatosFiltrados, valoresPorFuncionario, anexosPj])
+  // Documentos PJ de cada prestador no mês (menu Documentos PJ): os de todos os prestadores + os das
+  // Regras PJ calculadas. Obrigatório sem anexo trava o Conferir Comissões.
+  const periodoMes = periodoValido ? periodoInicio.slice(0, 7) : ''
+  const docsPorFunc = useMemo(() => {
+    const porFunc = new Map()
+    candidatosFiltrados.forEach(c => {
+      if (!valoresPorFuncionario[chaveLinha(c)]) return
+      if (!porFunc.has(c.func.id)) porFunc.set(c.func.id, { func: c.func, politicas: [] })
+      porFunc.get(c.func.id).politicas.push(c.politica)
+    })
+    const m = new Map()
+    porFunc.forEach(({ func, politicas }, id) => {
+      const itens = documentosDoPrestador(docsExigidos, politicas, periodoMes)
+      if (itens.length) m.set(id, { func, itens })
+    })
+    return m
+  }, [candidatosFiltrados, valoresPorFuncionario, docsExigidos, periodoMes])
+  const anexosDoItem = (funcId, item) => anexosDoDocumentoPj(anexosPj, item.doc, funcId, periodoMes)
+  const documentosPendentes = useMemo(() => [...docsPorFunc.values()].flatMap(({ func, itens }) => itens
+    .filter(it => it.doc.obrigatorio && anexosDoDocumentoPj(anexosPj, it.doc, func.id, periodoMes).length === 0)
+    .map(item => ({ func, item }))), [docsPorFunc, anexosPj, periodoMes])
+  // Clipe com "anexados/obrigatórios" — ao lado do nome (todos os documentos) e da Regra PJ (os dela).
+  const botaoDocumentos = (func, itens, titulo) => {
+    if (!itens?.length) return null
+    const obrigatorios = itens.filter(it => it.doc.obrigatorio)
+    const base = obrigatorios.length ? obrigatorios : itens
+    const feitos = base.filter(it => anexosDoItem(func.id, it).length > 0).length
+    const completo = feitos === base.length
+    return (
+      <button type="button" onClick={() => setDocsModal({ func, titulo, itens })}
+        title={completo ? 'Documentos anexados — clique para ver' : 'Faltam documentos — clique para anexar'}
+        className={`ml-1.5 align-middle inline-flex items-center gap-1 px-1.5 h-5 rounded border text-[10px] font-bold ${completo ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-300 bg-amber-50 text-amber-700'}`}>
+        <Paperclip className="h-3 w-3" /> {feitos}/{base.length}
+      </button>
+    )
+  }
 
   // Status da linha (badge antes do código): Reprocessar (liberado parcialmente em Histórico
   // de Comissões), Pendente (nunca calculado), ou o status do lote pra quem já foi calculado.
@@ -2591,6 +2623,7 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
                                           })()}
                                           <span className="inline-block w-14 font-mono font-normal text-slate-400">{c.func.codigo_funcionario || ''}</span>
                                           {c.func.nome_funcionario}
+                                          {botaoDocumentos(c.func, docsPorFunc.get(c.func.id)?.itens, 'Documentos do prestador')}
                                         </>
                                       )}
                                     </td>
@@ -2628,6 +2661,7 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
                                         })()}
                                         <span className="inline-block w-14 font-mono font-normal text-slate-400">{c.func.codigo_funcionario || ''}</span>
                                         {c.func.nome_funcionario}
+                                        {botaoDocumentos(c.func, docsPorFunc.get(c.func.id)?.itens, 'Documentos do prestador')}
                                         {feriasNoPeriodo(c.func, c.empresa).map(f => (
                                           <span key={f.id} className="ml-2 italic font-normal text-[10px] text-amber-600 whitespace-nowrap">
                                             Férias: {fmtData(f.inicio_gozo)} a {fmtData(f.fim_gozo)}
@@ -2691,18 +2725,9 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
                                         {fmtDiaMes(res?.periodoInicio || c.segInicio)} a {fmtDiaMes(res?.periodoFim || c.segFim)}
                                       </span>
                                     )}
-                                    {Array.isArray(c.politica.pj_documentos) && c.politica.pj_documentos.length > 0 && (() => {
-                                      const docs = c.politica.pj_documentos
-                                      const feitos = docs.filter(d => anexosDoDocumento(c, d).length > 0).length
-                                      const completo = feitos === docs.length
-                                      return (
-                                        <button type="button" onClick={() => setDocsModal(c)}
-                                          title={completo ? 'Documentos anexados — clique para ver' : 'Faltam documentos — clique para anexar'}
-                                          className={`ml-1.5 align-middle inline-flex items-center gap-1 px-1.5 h-5 rounded border text-[10px] font-bold ${completo ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-300 bg-amber-50 text-amber-700'}`}>
-                                          <Paperclip className="h-3 w-3" /> {feitos}/{docs.length}
-                                        </button>
-                                      )
-                                    })()}
+                                    {c.politica.prestacao_pj && botaoDocumentos(c.func,
+                                      docsPorFunc.get(c.func.id)?.itens.filter(it => it.doc.escopo === 'REGRA' && it.doc.regra_id === (c.politica.grupo_politica_id || c.politica.id)),
+                                      `${codigoPolitica(c.politica)} ${c.politica.descricao_comissao || ''}`)}
                                     {(c.politica?.codigo_rubrica || c.politica?.tipo_processo) && (
                                       <div className="text-[10px] font-normal text-slate-400 mt-0.5">
                                         {c.politica?.codigo_rubrica && (
@@ -2775,13 +2800,12 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
 
       {/* FALTAM DOCUMENTOS (Conferir Comissões com documento exigido pela Regra PJ ainda sem anexo) */}
       {pendenciasAberta && (() => {
-        // Uma linha por funcionário + regra, com os documentos que faltam.
+        // Um quadro por prestador, com os documentos obrigatórios que faltam.
         const grupos = []
         documentosPendentes.forEach(p => {
-          const chave = chaveLinha(p.c)
-          let g = grupos.find(x => x.chave === chave)
-          if (!g) grupos.push(g = { chave, c: p.c, documentos: [] })
-          g.documentos.push(p.documento)
+          let g = grupos.find(x => x.func.id === p.func.id)
+          if (!g) grupos.push(g = { func: p.func, itens: [] })
+          g.itens.push(p.item)
         })
         return (
           <div className="fixed top-0 right-0 bottom-0 left-16 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setPendenciasAberta(false)}>
@@ -2791,21 +2815,18 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
                 <button onClick={() => setPendenciasAberta(false)} className="text-slate-400 hover:text-slate-600"><X className="h-4 w-4" /></button>
               </div>
               <div className="p-5 space-y-3 max-h-[60vh] overflow-auto">
-                <p className="text-xs text-slate-600">As comissões abaixo exigem documentos anexados. Anexe todos para liberar o <strong>Conferir Comissões</strong>.</p>
+                <p className="text-xs text-slate-600">Os prestadores abaixo têm documentos obrigatórios sem anexo. Anexe todos para liberar o <strong>Conferir Comissões</strong>.</p>
                 {grupos.map(g => (
-                  <div key={g.chave} className="rounded-md border border-slate-200 p-3">
+                  <div key={g.func.id} className="rounded-md border border-slate-200 p-3">
                     <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <div className="text-[11px] text-slate-500">{g.c.func.nome_funcionario}</div>
-                        <div className="text-xs font-semibold text-slate-800"><span className="font-mono text-slate-400 mr-1">{codigoPolitica(g.c.politica)}</span>{g.c.politica.descricao_comissao}</div>
-                      </div>
-                      <button type="button" onClick={() => { setPendenciasAberta(false); setDocsModal(g.c) }}
+                      <div className="text-xs font-semibold text-slate-800">{g.func.nome_funcionario}</div>
+                      <button type="button" onClick={() => { setPendenciasAberta(false); setDocsModal({ func: g.func, titulo: 'Documentos do prestador', itens: docsPorFunc.get(g.func.id)?.itens || g.itens }) }}
                         className="flex items-center gap-1.5 text-[11px] font-semibold text-blue-700 border border-blue-200 bg-white hover:bg-blue-50 px-2.5 py-1 rounded-md shrink-0">
                         <Paperclip className="h-3.5 w-3.5" /> Anexar
                       </button>
                     </div>
                     <ul className="mt-1.5 space-y-0.5">
-                      {g.documentos.map(d => <li key={d} className="text-[11px] text-amber-700 flex items-center gap-1.5"><AlertTriangle className="h-3 w-3" /> {d}</li>)}
+                      {g.itens.map(it => <li key={it.doc.id} className="text-[11px] text-amber-700 flex items-center gap-1.5"><AlertTriangle className="h-3 w-3" /> {it.doc.nome} <span className="text-slate-400">— {origemDocumentoPj(it)}</span></li>)}
                     </ul>
                   </div>
                 ))}
@@ -2818,30 +2839,31 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
         )
       })()}
 
-      {/* DOCUMENTOS DA REGRA PJ (clipe ao lado da comissão) */}
+      {/* DOCUMENTOS PJ (clipe ao lado do prestador ou da Regra PJ) */}
       {docsModal && (
         <div className="fixed top-0 right-0 bottom-0 left-16 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setDocsModal(null)}>
           <div className="bg-white rounded-xl border border-slate-200 w-full max-w-lg shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-slate-50">
               <div>
-                <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2"><Paperclip className="h-4 w-4 text-blue-600" /> Documentos — {codigoPolitica(docsModal.politica)} {docsModal.politica.descricao_comissao}</h3>
+                <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2"><Paperclip className="h-4 w-4 text-blue-600" /> {docsModal.titulo}</h3>
                 <p className="text-[11px] text-slate-500">{docsModal.func.nome_funcionario} · {periodoInicio.slice(5, 7)}/{periodoInicio.slice(0, 4)}</p>
               </div>
               <button onClick={() => setDocsModal(null)} className="text-slate-400 hover:text-slate-600"><X className="h-4 w-4" /></button>
             </div>
             <div className="p-5 space-y-2">
-              <p className="text-[11px] text-slate-500">Anexe cada documento (PDF ou imagem, até 5 MB). Sem todos, o Conferir Comissões fica bloqueado.</p>
-              {docsModal.politica.pj_documentos.map(d => (
-                <AnexoPjSlot key={d} rotulo={d} anexos={anexosDoDocumento(docsModal, d)}
+              <p className="text-[11px] text-slate-500">Anexe cada documento (PDF ou imagem, até 5 MB). Sem os obrigatórios, o Conferir Comissões fica bloqueado.</p>
+              {docsModal.itens.map(it => (
+                <AnexoPjSlot key={it.doc.id} rotulo={it.doc.nome} detalhe={origemDocumentoPj(it)} opcional={!it.doc.obrigatorio}
+                  anexos={anexosDoItem(docsModal.func.id, it)}
                   podeEditar={!loteBloqueado && !setorSomenteVisualizacao}
-                  dados={{ funcionarioId: docsModal.func.id, periodo: periodoInicio.slice(0, 7), tipo: 'DOCUMENTO', regraId: docsModal.politica.grupo_politica_id || docsModal.politica.id, documento: d }}
+                  dados={dadosAnexoDocumento(it, docsModal.func.id, periodoMes)}
                   onAlterado={carregarAnexosPj} />
               ))}
             </div>
             {/* Cada arquivo já é gravado ao anexar — Confirmar só fecha a tela. */}
             <div className="flex items-center justify-between gap-3 px-5 py-3 border-t border-slate-100 bg-slate-50">
               <span className="text-[11px] text-slate-500">
-                {docsModal.politica.pj_documentos.filter(d => anexosDoDocumento(docsModal, d).length > 0).length} de {docsModal.politica.pj_documentos.length} documento{docsModal.politica.pj_documentos.length === 1 ? '' : 's'} anexado{docsModal.politica.pj_documentos.length === 1 ? '' : 's'}
+                {docsModal.itens.filter(it => anexosDoItem(docsModal.func.id, it).length > 0).length} de {docsModal.itens.length} documento{docsModal.itens.length === 1 ? '' : 's'} anexado{docsModal.itens.length === 1 ? '' : 's'}
               </span>
               <button type="button" onClick={() => setDocsModal(null)}
                 className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-4 py-2 rounded-md">

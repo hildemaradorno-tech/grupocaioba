@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { Plus, X, AlertTriangle, Briefcase, Loader2, Paperclip } from 'lucide-react'
+import { Plus, X, AlertTriangle, Briefcase, Loader2 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { apiService } from '../services/api'
 import AcoesDropdown from '../components/AcoesDropdown'
@@ -22,9 +22,7 @@ import { empresaSelecionavel } from '../utils/comissoesElegibilidade'
 // meta = metas aprovadas de Pós-Vendas das empresas marcadas no mês; realizado = soma das Bases de
 // Cálculo marcadas (só essas empresas); faixas por % atingido pagam um valor fixo em R$.
 
-// Documentos obrigatórios (pj_documentos = ['Boleto', 'Extrato', ...]), em qualquer tipo de regra:
-// em Prestadores de Serviços o prestador anexa cada documento no mês, e o Conferir Comissões só
-// libera com todos anexados (tabela pj_anexos + bucket pj-anexos).
+// Documentos que o prestador envia (boleto, comprovante...) ficam no menu Documentos PJ.
 
 const TIPOS_REGRA = [
   { value: 'FIXO', label: 'Valor fixo' },
@@ -84,8 +82,6 @@ const FORM_VAZIO = {
   vig_inicio: '',
   vig_fim: '',
   ativo: true,
-  exige_documentos: false,
-  documentos: [''],
 }
 
 const fmtBRL = (v) => (v != null && v !== '') ? parseFloat(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '-'
@@ -280,8 +276,6 @@ export default function RegrasPJ({ descontos = false }) {
       vig_inicio: r.vig_inicio || '',
       vig_fim: r.vig_fim || '',
       ativo: r.ativo !== false,
-      exige_documentos: Array.isArray(r.pj_documentos) && r.pj_documentos.length > 0,
-      documentos: Array.isArray(r.pj_documentos) && r.pj_documentos.length > 0 ? [...r.pj_documentos] : [''],
     })
     setErroForm(null)
     setModalAberto(true)
@@ -296,8 +290,6 @@ export default function RegrasPJ({ descontos = false }) {
     try {
       const cargo = cargos.find(c => c.id === form.cargo_id)
       const empresa = empresas.find(x => x.id === cargo?.empresa_id)
-      const documentosExigidos = form.exige_documentos ? form.documentos.map(d => d.trim()).filter(Boolean) : []
-      if (form.exige_documentos && documentosExigidos.length === 0) throw new Error('informe o nome de pelo menos um documento a anexar.')
       const payload = {
         prestacao_pj: true,
         codigo_politica: form.codigo_politica.trim().toUpperCase(),
@@ -321,7 +313,6 @@ export default function RegrasPJ({ descontos = false }) {
         vig_inicio: form.vig_inicio || null,
         vig_fim: form.vig_fim || null,
         ativo: form.ativo,
-        pj_documentos: documentosExigidos.length > 0 ? documentosExigidos : null,
         // Valor fixo: sem Fonte/Base/Regra nem percentuais.
         nivel_calculo: 'INDIVIDUAL',
         usa_faixa: 'NÃO',
@@ -549,11 +540,6 @@ export default function RegrasPJ({ descontos = false }) {
                   ) : r.pj_variaveis ? (
                     <span className="font-sans text-[11px] font-semibold text-indigo-700" title={nomesComissoes(r).join('\n')}>Variáveis: {(r.pj_politica_ids || []).length} comissõe{(r.pj_politica_ids || []).length === 1 ? '' : 's'}</span>
                   ) : fmtBRL(r.comissao_valor)}
-                  {Array.isArray(r.pj_documentos) && r.pj_documentos.length > 0 && (
-                    <div className="font-sans font-semibold text-[10px] text-blue-600 flex items-center justify-end gap-1" title={r.pj_documentos.join('\n')}>
-                      <Paperclip className="h-3 w-3" /> {r.pj_documentos.length} documento{r.pj_documentos.length === 1 ? '' : 's'} a anexar
-                    </div>
-                  )}
                   {Array.isArray(r.pj_empresas) && r.pj_empresas.length > 0 && (
                     <div className="font-sans font-normal text-[10px] text-slate-400" title={r.pj_empresas.map(p => `${p.empresa_nome}: ${fmtBRL(p.valor)}`).join('\n')}>
                       {r.pj_empresas.length} empresa{r.pj_empresas.length === 1 ? '' : 's'} · {r.pj_valor_diferente ? 'valores diferentes' : 'mesmo valor'}
@@ -980,34 +966,6 @@ export default function RegrasPJ({ descontos = false }) {
                     <label className={LBL}>Vigência Fim</label>
                     <input type="date" value={form.vig_fim} onChange={e => setForm(f => ({ ...f, vig_fim: e.target.value }))} className={INP} />
                   </div>
-                </div>
-
-                <div className="rounded-md border border-slate-200 p-3 space-y-2">
-                  <label className="flex items-center gap-2 text-xs font-semibold text-slate-700">
-                    <input type="checkbox" checked={form.exige_documentos} onChange={e => setForm(f => ({ ...f, exige_documentos: e.target.checked }))} className="w-4 h-4" />
-                    <Paperclip className="h-3.5 w-3.5 text-blue-600" /> Exige anexar documentos
-                  </label>
-                  {form.exige_documentos && (
-                    <>
-                      <p className="text-[11px] text-slate-500">Todo mês, em Prestadores de Serviços, cada documento abaixo precisa ser anexado para o prestador — sem eles o Conferir Comissões fica bloqueado.</p>
-                      {form.documentos.map((d, i) => (
-                        <div key={i} className="flex items-center gap-2">
-                          <span className="text-[11px] font-mono text-slate-400 w-5 text-right">{i + 1}.</span>
-                          <input type="text" value={d} placeholder="Nome do documento (ex: Boleto Unimed)"
-                            onChange={e => setForm(f => ({ ...f, documentos: f.documentos.map((x, j) => j === i ? e.target.value : x) }))}
-                            className={INP} />
-                          {form.documentos.length > 1 && (
-                            <button type="button" onClick={() => setForm(f => ({ ...f, documentos: f.documentos.filter((_, j) => j !== i) }))}
-                              className="text-slate-400 hover:text-rose-600"><X className="h-4 w-4" /></button>
-                          )}
-                        </div>
-                      ))}
-                      <button type="button" onClick={() => setForm(f => ({ ...f, documentos: [...f.documentos, ''] }))}
-                        className="flex items-center gap-1 text-[11px] font-semibold text-blue-600 hover:text-blue-700">
-                        <Plus className="h-3.5 w-3.5" /> Adicionar documento
-                      </button>
-                    </>
-                  )}
                 </div>
 
                 <label className="flex items-center gap-2 text-xs font-semibold text-slate-700">
