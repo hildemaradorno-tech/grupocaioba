@@ -182,8 +182,6 @@ export const MENU_TREE = [
           { key: 'calculo-comissoes-motos', label: 'Comissões - HONDA' },
           { key: 'calculo-comissoes-grupo', label: 'Prestadores de Serviços' },
           { key: 'processamento-comissoes', label: 'Processamento de Comissões' },
-          // Prestador PJ: vê a própria Nota Fiscal (usuário ligado ao funcionário em Usuários).
-          { key: 'minha-nota-fiscal', label: 'Minha Nota Fiscal' },
         ],
       },
     ],

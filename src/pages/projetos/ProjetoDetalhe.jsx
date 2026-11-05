@@ -881,14 +881,14 @@ const abrirModalMover = async (tarefa) => {
                 {[
                   { campo: 'etapa',         label: 'Etapa',              cls: 'w-20' },
                   { campo: 'nome',          label: 'Tarefa',             cls: 'min-w-[320px]' },
-                  { campo: 'empresa_nome',  label: 'Empresa / Unidade',  cls: 'w-28' },
-                  { campo: 'area_nome',     label: 'Departamento / Área', cls: 'w-40', noUppercase: true },
+                  { campo: 'empresa_nome',      label: 'Empresa', cls: 'w-28' },
+                  { campo: 'area_nome',         label: 'Departamento / Área', cls: 'w-36', noUppercase: true },
                   { campo: 'sistema_nome',  label: 'Sistemas',           cls: 'w-32' },
                   { campo: 'responsavel',   label: 'Responsável',        cls: 'w-32' },
                   { campo: 'data_inicio',   label: 'Início',             cls: 'w-16' },
                   { campo: 'data_fim',      label: 'Fim',                cls: 'w-16' },
-                  { campo: 'status_kanban', label: 'Status',             cls: 'w-28' },
-                  { campo: 'progresso_pct', label: 'Progresso',          cls: 'w-28' },
+                  { campo: 'fase_nome',     label: 'Fase',               cls: 'w-28' },
+                  { campo: 'status_kanban', label: 'Status / Progresso',  cls: 'w-36' },
                 ].map(({ campo, label, subtitle, cls = '', noUppercase = false }) => (
                   <th key={campo} className={`p-3 ${cls}`}>
                     <div className="flex flex-col gap-0.5">
@@ -1004,13 +1004,12 @@ const abrirModalMover = async (tarefa) => {
                     )}
                   </td>
                   <td className="p-3 text-slate-500 whitespace-nowrap">{t.empresa_nome || '—'}</td>
-                  <td className="p-3">
-                    {(projeto.departamento_nome || t.area_nome || projeto.area_nome)
-                      ? <div className="flex flex-col leading-tight">
-                          {projeto.departamento_nome && <span className="text-xs font-semibold text-slate-700 uppercase">{projeto.departamento_nome}</span>}
-                          {(t.area_nome || projeto.area_nome) && <span className="text-[10px] text-slate-400 italic">{t.area_nome || projeto.area_nome}</span>}
-                        </div>
-                      : <span className="text-slate-400">—</span>}
+                  <td className="p-3 whitespace-nowrap">
+                    <div className="flex flex-col leading-tight">
+                      {projeto.departamento_nome && <span className="text-xs font-semibold text-slate-700 uppercase">{projeto.departamento_nome}</span>}
+                      {(t.area_nome || projeto.area_nome) && <span className="text-[10px] text-slate-400 italic">{t.area_nome || projeto.area_nome}</span>}
+                      {!projeto.departamento_nome && !t.area_nome && !projeto.area_nome && <span className="text-slate-400">—</span>}
+                    </div>
                   </td>
                   <td className="p-3">
                     {t.sistema_nome
@@ -1024,7 +1023,10 @@ const abrirModalMover = async (tarefa) => {
                     isHoje(t)     ? 'text-blue-600 font-bold' :
                                     'text-slate-500'
                   }`}>{fmtData(t.data_fim)}</td>
-                  <td className="p-3 whitespace-nowrap" onClick={e => e.stopPropagation()}>
+                  <td className="p-3 text-slate-500 whitespace-nowrap text-[11px]">
+                    {t.fase_nome || <span className="text-slate-300">—</span>}
+                  </td>
+                  <td className="p-3" onClick={e => e.stopPropagation()} onDoubleClick={() => t.status_kanban !== 'concluido' && setEditProgresso({ id: t.id, value: t.progresso_pct || 0 })}>
                     {editStatus === t.id ? (
                       <select
                         autoFocus
@@ -1038,41 +1040,37 @@ const abrirModalMover = async (tarefa) => {
                           <option key={key} value={key}>{label}</option>
                         ))}
                       </select>
-                    ) : (
-                      <div
-                        className="flex flex-col gap-0.5 cursor-pointer"
-                        title="Clique para alterar o status"
-                        onClick={() => setEditStatus(t.id)}
-                      >
-                        <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold ${(STATUS_MAP[t.status_kanban] || { cor: 'bg-slate-100 text-slate-500' }).cor}`}>
-                          {(STATUS_MAP[t.status_kanban] || { label: t.status_kanban?.replace('_', ' ') || '—' }).label}
-                        </span>
-                        {t.fase_nome && <span className="text-[10px] text-slate-400 italic pl-0.5">{t.fase_nome}</span>}
-                      </div>
-                    )}
-                  </td>
-                  <td className="p-3" onClick={e => e.stopPropagation()} onDoubleClick={() => t.status_kanban !== 'concluido' && setEditProgresso({ id: t.id, value: t.progresso_pct || 0 })}>
-                    {(() => {
+                    ) : (() => {
                       const pct = t.status_kanban === 'concluido' ? 100 : Math.min(100, t.progresso_pct || 0)
-                      if (editProgresso?.id === t.id) return (
-                        <input
-                          type="number" min="0" max="100" autoFocus
-                          value={editProgresso.value}
-                          onChange={e => setEditProgresso(p => ({ ...p, value: e.target.value }))}
-                          onBlur={() => salvarProgresso(t.id, editProgresso.value)}
-                          onKeyDown={e => {
-                            if (e.key === 'Enter') salvarProgresso(t.id, editProgresso.value)
-                            if (e.key === 'Escape') setEditProgresso(null)
-                          }}
-                          className="w-16 text-xs text-center p-1 border border-blue-400 rounded focus:outline-none focus:ring-2 focus:ring-blue-400/30"
-                        />
-                      )
                       return (
-                        <div className="flex items-center gap-2 cursor-pointer" title="Duplo clique para editar">
-                          <div className="h-1.5 w-16 bg-slate-100 rounded-full overflow-hidden">
-                            <div className={`h-full rounded-full ${pct === 100 ? 'bg-teal-500' : 'bg-blue-500'}`} style={{ width: `${pct}%` }} />
-                          </div>
-                          <span className={`text-[11px] ${pct === 100 ? 'text-teal-600 font-bold' : 'text-slate-400'}`}>{pct}%</span>
+                        <div className="flex flex-col gap-1">
+                          <span
+                            className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold cursor-pointer ${(STATUS_MAP[t.status_kanban] || { cor: 'bg-slate-100 text-slate-500' }).cor}`}
+                            title="Clique para alterar o status"
+                            onClick={() => setEditStatus(t.id)}
+                          >
+                            {(STATUS_MAP[t.status_kanban] || { label: t.status_kanban?.replace('_', ' ') || '—' }).label}
+                          </span>
+                          {editProgresso?.id === t.id ? (
+                            <input
+                              type="number" min="0" max="100" autoFocus
+                              value={editProgresso.value}
+                              onChange={e => setEditProgresso(p => ({ ...p, value: e.target.value }))}
+                              onBlur={() => salvarProgresso(t.id, editProgresso.value)}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') salvarProgresso(t.id, editProgresso.value)
+                                if (e.key === 'Escape') setEditProgresso(null)
+                              }}
+                              className="w-16 text-xs text-center p-1 border border-blue-400 rounded focus:outline-none focus:ring-2 focus:ring-blue-400/30"
+                            />
+                          ) : (
+                            <div className="flex items-center gap-2 cursor-pointer" title="Duplo clique para editar %">
+                              <div className="h-1.5 w-14 bg-slate-100 rounded-full overflow-hidden">
+                                <div className={`h-full rounded-full ${pct === 100 ? 'bg-teal-500' : 'bg-blue-500'}`} style={{ width: `${pct}%` }} />
+                              </div>
+                              <span className={`text-[11px] ${pct === 100 ? 'text-teal-600 font-bold' : 'text-slate-400'}`}>{pct}%</span>
+                            </div>
+                          )}
                         </div>
                       )
                     })()}

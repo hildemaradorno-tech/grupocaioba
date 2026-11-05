@@ -14,6 +14,7 @@ import FiltroMultiSelect from '../components/FiltroMultiSelect'
 import { rotuloColuna } from '../utils/rotuloColuna'
 import { funcionarioAtivoComissao, resolvePoliticas, fonteDaPolitica, politicaConfigurada, empresaProcessaComissao } from '../utils/comissoesElegibilidade'
 import { montarPercentualPj } from '../utils/regrasPj'
+import MinhaNotaFiscal from './MinhaNotaFiscal'
 import { montarHtmlNotaFiscal, montarNotaFiscalPj, montarPaginasCalculoPj, etapaNfPj, STATUS_NF_PRESTADOR } from '../utils/notaFiscalPj'
 import TabelaNotaFiscal from '../components/TabelaNotaFiscal'
 import AnexoPjSlot from '../components/AnexoPjSlot'
@@ -256,6 +257,7 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
 
   // Comissões - GRUPO: cabeçalhos próprios (Base / Valor Serviços).
   const ehTelaGrupo = permissao === 'calculo-comissoes-grupo'
+  const [abaTela, setAbaTela] = useState('calculo') // Prestadores de Serviços: 'calculo' | 'nf'
   const sufixoSessao = agrupamentoNome === 'Caiobá Trucks' ? '' : `_${agrupamentoNome.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`
   const [periodoInicio, setPeriodoInicio] = useSessionState(`calccom_ini${sufixoSessao}`, '')
   const [periodoFim, setPeriodoFim] = useSessionState(`calccom_fim${sufixoSessao}`, '')
@@ -2163,6 +2165,22 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
         </div>
       </div>
 
+      {/* Prestadores de Serviços: aba Cálculo (esta tela) e aba Nota Fiscal (a mesma tela de Minha
+          Nota Fiscal, escolhendo o prestador). A aba Cálculo fica só escondida, pra não perder o que já
+          foi calculado ao trocar de aba. */}
+      {ehTelaGrupo && (
+        <div className="flex items-center gap-1 border-b border-slate-200">
+          {[['calculo', 'Cálculo'], ['nf', 'Nota Fiscal']].map(([v, rot]) => (
+            <button key={v} type="button" onClick={() => setAbaTela(v)}
+              className={`px-4 py-2 text-xs font-semibold border-b-2 -mb-px transition-colors ${abaTela === v ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>
+              {rot}
+            </button>
+          ))}
+        </div>
+      )}
+      {ehTelaGrupo && abaTela === 'nf' && <MinhaNotaFiscal modoGestao />}
+
+      <div className={abaTela === 'nf' ? 'hidden' : 'space-y-4'}>
       {erro && (
         <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-md px-3 py-2 text-red-700 text-xs leading-relaxed">
           <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" /> {erro}
@@ -3250,6 +3268,7 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
         </div>
       )}
 
+      </div>
     </div>
   )
 }

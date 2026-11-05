@@ -30,6 +30,7 @@ import planosManutencaoRoutes from './routes/planosManutencao.js'
 import gestorPecasRoutes from './routes/gestorPecas.js'
 import { iniciarSchedulerManifestacao } from './services/manifestacaoScheduler.js'
 import { iniciarSchedulerAuditoria } from './services/auditoriaAgendamento.js'
+import { iniciarSchedulerProjetosTarefas } from './services/projetosTaskScheduler.js'
 
 const app = express()
 app.use(cors({ origin: '*', methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'], allowedHeaders: ['Content-Type','Authorization'] }))
@@ -402,6 +403,7 @@ async function start() {
 
   iniciarSchedulerManifestacao()
   iniciarSchedulerAuditoria()
+  iniciarSchedulerProjetosTarefas()
 }
 
 start().catch(console.error)

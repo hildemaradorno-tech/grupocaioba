@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react'
-import { ClipboardList, Download, ChevronDown, Save, AlertTriangle, Building2, ShieldAlert, Trash2, Calendar, User, Banknote, Search, XCircle, X, Clock, ClipboardCheck, FileText, List, ThumbsUp, CheckCircle2, ShieldCheck, ArrowUpDown, ArrowUp, ArrowDown, Settings, RotateCcw, History, Pencil, Tag, CalendarClock } from 'lucide-react'
+import { ClipboardList, Download, ChevronDown, Save, AlertTriangle, Building2, ShieldAlert, Trash2, Calendar, User, Banknote, Search, XCircle, X, Clock, ClipboardCheck, FileText, List, ThumbsUp, CheckCircle2, ShieldCheck, ArrowUpDown, ArrowUp, ArrowDown, Settings, RotateCcw, History, Pencil, Tag, CalendarClock, FileDown, FileSpreadsheet } from 'lucide-react'
 import { apiService } from '../../services/api'
 import { useAuth } from '../../context/AuthContext'
 import AuditoriaSituacoes from '../auditoria/AuditoriaSituacoes'
@@ -103,6 +103,8 @@ export default function AuditoriaOsAberto() {
   const [selecionadas, setSelecionadas] = useState(new Set())
   const [modalPendenciar, setModalPendenciar] = useState(false)
   const [menuAcoesAberto, setMenuAcoesAberto] = useState(false) // engrenagem do cabeçalho
+  const [submenuExportar, setSubmenuExportar] = useState(false) // engrenagem → Exportar (PDF / Excel)
+  const [exportando, setExportando] = useState(false)
 
   // ── Editar auditoria (engrenagem): tabela de conferência com só Na Oficina editável ──
   const [modalEditar, setModalEditar] = useState(false)
@@ -172,6 +174,8 @@ export default function AuditoriaOsAberto() {
     // Empresas liberadas no grupo de acesso (aba Empresas); Admin vê todas. "Efetivas" respeita o modo "ver como usuário".
     const empsFiltradas = (isAdminEfetivo ? emps : emps.filter(e => empresasPermitidasEfetivas.has(e.id)))
       .filter(e => AGRUPAMENTOS_AUDITORIA.includes((e.agrupamento_nome || '').trim().toLowerCase()))
+      // Empresa "visual" (flag no cadastro de Empresas) não tem OS própria — fica fora do seletor
+      .filter(e => !e.empresa_visual)
       .sort((a, b) => nomeSeletorEmpresa(a).localeCompare(nomeSeletorEmpresa(b), 'pt-BR'))
     setEmpresas(empsFiltradas)
     // Responsável pela auditoria = funcionários ativos cujo cargo está no agrupamento "Gerentes" ou "Gerente Geral"
@@ -937,6 +941,165 @@ export default function AuditoriaOsAberto() {
     )
   }
 
+  // ── Exportar (PDF / Excel): exatamente o que está na tabela — mesmo modo, filtros e ordenação ──
+  const colunasExportacao = () => {
+    const txt = (v) => (v === null || v === undefined || v === '' ? '—' : String(v))
+    const naOficinaTxt = (r) => (r.na_oficina === true ? 'Sim' : r.na_oficina === false ? 'Não' : '—')
+    const situacaoAuto = (r) => isPendente(r)
+      ? (isRespondida(r) ? 'Respondido' : auditoriaEncerrada ? 'Sem resposta' : 'Responder')
+      : 'OK'
+    if (emConferencia) return [
+      { label: 'Dt. OS', peso: 9, valor: r => fmtDate(r.data_criacao) },
+      { label: 'Nº OS', peso: 8, valor: r => txt(r.os_numero) },
+      { label: 'Placa', peso: 8, valor: r => txt(r.veiculo_placa) },
+      { label: 'Chassi', peso: 14, valor: r => txt(r.veiculo_chassi) },
+      { label: 'Na Oficina', peso: 7, valor: naOficinaTxt },
+      { label: 'Proprietário', peso: 30, valor: r => txt(r.proprietario_veiculo) },
+      { label: 'Modelo', peso: 20, valor: r => txt(r.veiculo_modelo) },
+    ]
+    return [
+      { label: 'Situação', peso: 8, valor: situacaoAuto },
+      { label: 'Dt. Criação', peso: 7, valor: r => fmtDate(r.data_criacao) },
+      { label: 'Dias', peso: 4, valor: r => diasOficina(r.data_criacao, r.data_auditoria) ?? '—', alinhar: 'center' },
+      { label: 'Nº OS', peso: 6, valor: r => txt(r.os_numero) },
+      { label: 'Consultor', peso: 9, valor: r => txt(primeiroUltimoNome(r.consultor_nome)) },
+      { label: 'Proprietário', peso: 16, valor: r => txt(r.proprietario_veiculo) },
+      { label: 'Placa', peso: 6, valor: r => txt(r.veiculo_placa) },
+      { label: 'Chassi', peso: 11, valor: r => txt(r.veiculo_chassi) },
+      { label: 'Modelo', peso: 10, valor: r => txt(r.veiculo_modelo) },
+      { label: 'Tipo OS', peso: 10, valor: r => txt(r.tipo_os_descricao || r.tipo_os_sigla) },
+      { label: 'Total', peso: 8, valor: r => (r.total > 0 ? fmt(r.total) : '—'), excel: r => Number(r.total) || 0, alinhar: 'right' },
+      { label: 'Na Oficina', peso: 5, valor: naOficinaTxt },
+      { label: 'Situação OS', peso: 10, valor: r => txt(r.situacao_nome) },
+      { label: 'Observação', peso: 18, valor: r => txt(r.observacao) },
+      { label: 'Dt. Previsão', peso: 7, valor: r => (r.data_previsao ? fmtDate(r.data_previsao) : '—') },
+    ]
+  }
+
+  const handleExportar = async (tipo) => {
+    if (!auditoriaAtual || rowsOrdenadas.length === 0) return
+    setExportando(true)
+    try {
+      const empresa = empresas.find(e => e.id === filtroEmpresaId)
+      const nomeEmpresa = empresa ? nomeSeletorEmpresa(empresa) : (auditoriaAtual.empresa_nome || '')
+      const etapa = ETAPAS_AUDITORIA.find(e => e.id === statusAud)?.label || ''
+      const colunas = colunasExportacao()
+      const titulo = `Auditoria O.S. Aberta — ${nomeEmpresa}`
+      const subtitulo = `Auditoria de ${fmtDate(auditoriaAtual.data_auditoria)} · ${etapa} · ${rowsOrdenadas.length} OS · Exportado em ${new Date().toLocaleString('pt-BR')}`
+      const nomeArquivo = `Auditoria OS - ${nomeEmpresa} - ${fmtDate(auditoriaAtual.data_auditoria).replace(/\//g, '-')}`
+        .replace(/[\\/:*?"<>|]/g, '')
+
+      if (tipo === 'excel') {
+        // Mesmo visual do PDF: título, subtítulo cinza, cabeçalho cinza-claro em maiúsculas, linhas zebradas
+        const { default: ExcelJS } = await import('exceljs')
+        const wb = new ExcelJS.Workbook()
+        const ws = wb.addWorksheet('Auditoria', {
+          pageSetup: { orientation: 'landscape', paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0, printTitlesRow: '4:4' },
+          views: [{ state: 'frozen', ySplit: 4 }],
+        })
+        const n = colunas.length
+        const borda = { bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } } }
+        const alinhamento = (c) => ({ vertical: 'top', horizontal: c.alinhar || 'left', wrapText: true })
+
+        ws.columns = colunas.map(c => ({ width: Math.max(8, Math.round(c.peso * 1.6)) }))
+        ws.mergeCells(1, 1, 1, n)
+        ws.getCell(1, 1).value = titulo
+        ws.getCell(1, 1).font = { name: 'Arial', size: 14, bold: true, color: { argb: 'FF0F172A' } }
+        ws.getRow(1).height = 22
+        ws.mergeCells(2, 1, 2, n)
+        ws.getCell(2, 1).value = subtitulo
+        ws.getCell(2, 1).font = { name: 'Arial', size: 9, color: { argb: 'FF64748B' } }
+
+        const cab = ws.getRow(4)
+        colunas.forEach((c, i) => {
+          const cel = cab.getCell(i + 1)
+          cel.value = c.label.toUpperCase()
+          cel.font = { name: 'Arial', size: 8, bold: true, color: { argb: 'FF475569' } }
+          cel.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } }
+          cel.alignment = { ...alinhamento(c), vertical: 'middle' }
+          cel.border = borda
+        })
+        cab.height = 18
+
+        rowsOrdenadas.forEach((r, idx) => {
+          const linha = ws.getRow(5 + idx)
+          colunas.forEach((c, i) => {
+            const cel = linha.getCell(i + 1)
+            cel.value = c.excel ? c.excel(r) : c.valor(r)
+            cel.font = { name: 'Arial', size: 8, color: { argb: 'FF1E293B' } }
+            cel.alignment = alinhamento(c)
+            cel.border = borda
+            if (c.excel) cel.numFmt = '"R$" #,##0.00'
+            if (idx % 2) cel.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } }
+          })
+        })
+        ws.autoFilter = { from: { row: 4, column: 1 }, to: { row: 4, column: n } }
+
+        const buffer = await wb.xlsx.writeBuffer()
+        const url = URL.createObjectURL(new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }))
+        const a = document.createElement('a')
+        a.href = url; a.download = `${nomeArquivo}.xlsx`; a.click()
+        URL.revokeObjectURL(url)
+        return
+      }
+
+      // PDF — A4 paisagem, tabela com quebra de linha nas células e cabeçalho repetido em cada página
+      const { default: jsPDF } = await import('jspdf')
+      const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
+      const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight(), M = 8
+      const pesoTotal = colunas.reduce((s, c) => s + c.peso, 0)
+      const larguras = colunas.map(c => ((W - 2 * M) * c.peso) / pesoTotal)
+      const LH = 3.2, PAD = 1.2
+      // Fonte padrão do jsPDF não tem travessão (—): troca por hífen para não sair caractere estranho
+      const pdfTxt = (t) => String(t).replace(/[—–]/g, '-')
+      let y = M
+
+      const celulaX = (i) => M + larguras.slice(0, i).reduce((s, w) => s + w, 0)
+      const escreverLinha = (textos, negrito) => {
+        doc.setFont('helvetica', negrito ? 'bold' : 'normal')
+        const quebrados = textos.map((t, i) => doc.splitTextToSize(pdfTxt(t), larguras[i] - 2 * PAD))
+        const altura = Math.max(...quebrados.map(q => q.length)) * LH + 2 * PAD
+        return { quebrados, altura }
+      }
+      const desenharLinha = ({ quebrados, altura }, fundo) => {
+        if (fundo) { doc.setFillColor(...fundo); doc.rect(M, y, W - 2 * M, altura, 'F') }
+        quebrados.forEach((linhas, i) => {
+          const al = colunas[i].alinhar
+          const x = al === 'right' ? celulaX(i) + larguras[i] - PAD : al === 'center' ? celulaX(i) + larguras[i] / 2 : celulaX(i) + PAD
+          doc.text(linhas, x, y + PAD + 2.4, { align: al || 'left' })
+        })
+        doc.setDrawColor(226, 232, 240); doc.line(M, y + altura, W - M, y + altura)
+        y += altura
+      }
+      const cabecalho = () => {
+        doc.setFontSize(11); doc.setFont('helvetica', 'bold'); doc.setTextColor(15, 23, 42)
+        doc.text(pdfTxt(titulo), M, y + 4)
+        doc.setFontSize(8); doc.setFont('helvetica', 'normal'); doc.setTextColor(100, 116, 139)
+        doc.text(pdfTxt(subtitulo), M, y + 9)
+        y += 13
+        doc.setFontSize(7); doc.setTextColor(71, 85, 105)
+        desenharLinha(escreverLinha(colunas.map(c => c.label.toUpperCase()), true), [241, 245, 249])
+        doc.setTextColor(30, 41, 59)
+      }
+
+      cabecalho()
+      rowsOrdenadas.forEach((r, idx) => {
+        doc.setFontSize(7)
+        const linha = escreverLinha(colunas.map(c => c.valor(r)), false)
+        if (y + linha.altura > H - M) { doc.addPage(); y = M; cabecalho(); doc.setFontSize(7) }
+        doc.setFont('helvetica', 'normal')
+        desenharLinha(linha, idx % 2 ? [248, 250, 252] : null)
+      })
+      const paginas = doc.getNumberOfPages()
+      for (let p = 1; p <= paginas; p++) {
+        doc.setPage(p); doc.setFontSize(7); doc.setTextColor(148, 163, 184)
+        doc.text(`Página ${p} de ${paginas}`, W - M, H - 3, { align: 'right' })
+      }
+      doc.save(`${nomeArquivo}.pdf`)
+    } catch (e) { setErro(`Erro ao exportar: ${e.message || e}`) }
+    finally { setExportando(false) }
+  }
+
   // Opções da engrenagem: só aparece o que o grupo tem liberado (sem permissão = oculto).
   // Itens liberados mas indisponíveis no momento (ex.: sem empresa selecionada) ficam apagados com o motivo.
   const opcoesEngrenagem = [
@@ -968,6 +1131,12 @@ export default function AuditoriaOsAberto() {
     {
       id: 'situacoes', visivel: podeCadastrarSituacoes, icon: Tag, label: 'Situações de auditoria',
       desc: 'Cadastrar / editar as situações das OS', disabled: false, onClick: () => setModalSituacoes(true), cor: 'text-violet-600',
+    },
+    {
+      // Abre o submenu PDF / Excel — exporta a tabela como está na tela (modo, filtros e ordenação)
+      id: 'exportar', visivel: pode('exportar'), icon: FileDown, label: 'Exportar',
+      desc: exportando ? 'Gerando arquivo...' : !auditoriaAtual ? 'Selecione uma auditoria' : rowsOrdenadas.length === 0 ? 'Nenhuma OS na tabela' : 'PDF ou Excel da tabela atual',
+      disabled: exportando || !auditoriaAtual || rowsOrdenadas.length === 0, submenu: true, cor: 'text-sky-600',
     },
     {
       id: 'excluir', visivel: pode('excluir_auditoria'), icon: Trash2, label: 'Excluir auditoria',
@@ -1053,21 +1222,42 @@ export default function AuditoriaOsAberto() {
             {menuAcoesAberto && (
               <>
                 {/* clique fora fecha */}
-                <div className="fixed inset-0 z-30" onClick={() => setMenuAcoesAberto(false)} />
+                <div className="fixed inset-0 z-30" onClick={() => { setMenuAcoesAberto(false); setSubmenuExportar(false) }} />
                 <div className="absolute right-0 top-full mt-1.5 z-40 w-64 rounded-lg border border-slate-200 bg-white shadow-xl py-1">
                   {opcoesEngrenagem.map(op => (
+                    <React.Fragment key={op.id}>
                     <button
-                      key={op.id}
                       disabled={op.disabled}
-                      onClick={() => { setMenuAcoesAberto(false); op.onClick() }}
+                      onClick={() => {
+                        if (op.submenu) { setSubmenuExportar(v => !v); return }
+                        setMenuAcoesAberto(false); setSubmenuExportar(false); op.onClick()
+                      }}
                       className="w-full flex items-start gap-2.5 px-3 py-2 text-left hover:bg-slate-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
                     >
                       <op.icon className={`h-4 w-4 mt-0.5 shrink-0 ${op.cor}`} />
-                      <span className="leading-tight">
+                      <span className="leading-tight flex-1">
                         <span className="block text-xs font-semibold text-slate-800">{op.label}</span>
                         <span className="block text-[10px] text-slate-400 mt-0.5">{op.desc}</span>
                       </span>
+                      {op.submenu && <ChevronDown className={`h-3.5 w-3.5 mt-0.5 shrink-0 text-slate-400 transition-transform ${submenuExportar && !op.disabled ? 'rotate-180' : ''}`} />}
                     </button>
+                    {op.submenu && submenuExportar && !op.disabled && (
+                      <div className="ml-9 mr-3 mb-1.5 flex gap-1.5">
+                        <button
+                          onClick={() => { setMenuAcoesAberto(false); setSubmenuExportar(false); handleExportar('pdf') }}
+                          className="flex-1 flex items-center justify-center gap-1.5 h-7 rounded-md border border-red-200 bg-red-50 text-red-700 text-[11px] font-bold hover:bg-red-100 transition-colors"
+                        >
+                          <FileText className="h-3.5 w-3.5" /> PDF
+                        </button>
+                        <button
+                          onClick={() => { setMenuAcoesAberto(false); setSubmenuExportar(false); handleExportar('excel') }}
+                          className="flex-1 flex items-center justify-center gap-1.5 h-7 rounded-md border border-green-200 bg-green-50 text-green-700 text-[11px] font-bold hover:bg-green-100 transition-colors"
+                        >
+                          <FileSpreadsheet className="h-3.5 w-3.5" /> Excel
+                        </button>
+                      </div>
+                    )}
+                    </React.Fragment>
                   ))}
                 </div>
               </>

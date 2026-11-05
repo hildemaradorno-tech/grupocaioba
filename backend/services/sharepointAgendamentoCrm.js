@@ -14,6 +14,10 @@ const PASTA_AGENDAMENTOS = `${RAIZ}/AGENDAMENTO DE SERVICOS E PRODUTOS`
 const PREFIX_AGENDAMENTOS = 'ROF037_AGENDAMENTOSERVICO'
 // Aba Por Campanhas: o agendamento Ativo do chassi conta se for criado até N dias depois da data da campanha.
 const DIAS_CAMPANHA_AGENDAMENTO = 30
+// Contatos do CRM (RCR017 Lista por Data de Contato e Encerramento). Liga com a campanha pelo ID do atendimento
+// (id_atendimento do RCR038 = Atendimento_Codigo).
+const PASTA_CONTATOS = `${RAIZ}/LISTA POR DATA CONTATO_ENCERRAMENTO`
+const PREFIX_CONTATOS = 'RCR017_LISTAPORDATACONTATOENCERRAMENTO'
 
 const CACHE_TTL_MS = 5 * 60 * 1000
 let _cache = null
@@ -95,6 +99,7 @@ async function lerAgendamentos() {
         tipo: txt(r.AgendamentoTipo),
         os: num(r.OSNumero),
         empresa: txt(r.EmpresaNome),
+        cliente: num(r.CodCliente),
       }
       const chassi = txt(r.Chassi).toUpperCase()
       if (chassi) porChassi.set(chassi, [...(porChassi.get(chassi) || []), ag])
@@ -102,6 +107,33 @@ async function lerAgendamentos() {
     console.log(`[AgendamentoCRM] ${item.name}: ${linhas.length} agendamento(s)`)
   }
   return porChassi
+}
+
+// Map Atendimento_Codigo → { motivos, agendouAtivo, datas, operador } (RCR017 LISTAPORDATACONTATOENCERRAMENTO).
+// motivos = MotivoEncerramento distintos do atendimento; agendouAtivo = contato com o registro do agendamento
+// ("Serviços:" na descrição) feito por meio ativo (não Receptivo); datas/operador só p/ a conferência linha a linha.
+async function lerContatos() {
+  const porAtendimento = new Map()
+  for (const item of await arquivosDoRelatorio(PASTA_CONTATOS, PREFIX_CONTATOS)) {
+    const linhas = await baixarLinhas(item)
+    for (const r of linhas) {
+      const at = num(r.Atendimento_Codigo)
+      if (at === null) continue
+      const c = porAtendimento.get(at) || { motivos: new Set(), agendouAtivo: false, datas: [], operador: '', motivoFinal: '', motivoFinalEm: -1 }
+      const motivo = txt(r.MotivoEncerramento)
+      if (motivo) c.motivos.add(motivo)
+      // Motivo final = o do contato mais recente que tem motivo (um por atendimento, p/ o quadro "Por que não agendaram").
+      const quando = typeof r.AtendimentoContato_Data === 'number' ? r.AtendimentoContato_Data : 0
+      if (motivo && quando >= c.motivoFinalEm) { c.motivoFinal = motivo; c.motivoFinalEm = quando }
+      if (/Servi[cç]os:/i.test(txt(r.AtendimentoContato_Descricao)) && !/RECEPTIVO/i.test(txt(r.MeioContato_Descricao))) c.agendouAtivo = true
+      const data = dataExcel(r.AtendimentoContato_Data)
+      if (data) c.datas.push(data)
+      if (!c.operador) c.operador = txt(r.Atendimento_UsuarioNom)
+      porAtendimento.set(at, c)
+    }
+    console.log(`[AgendamentoCRM] ${item.name}: ${linhas.length} contato(s) do CRM`)
+  }
+  return porAtendimento
 }
 
 async function listar(caminho) {
@@ -174,15 +206,32 @@ export async function getCampanhasCrm() {
     }
   }
 
-  // Agendado = o chassi do contato gerado tem agendamento do tipo Ativo no ROF037 criado da data da campanha
-  // até 30 dias depois, sem estar cancelado (CAN). Guarda o 1º agendamento p/ os cards Vieram/Vão vir/No-show.
-  const agendamentos = await lerAgendamentos()
+  // Agendado = o chassi do contato distribuído tem agendamento do tipo Ativo no ROF037, do mesmo cliente,
+  // criado da data da campanha até 30 dias depois, sem estar cancelado (CAN). Guarda o 1º agendamento
+  // p/ os cards Vieram/Vão vir/No-show. A janela começa na data da campanha (nome do arquivo RCR038) e usa a
+  // data de CRIAÇÃO do agendamento (AgendamentoHistorico_Data); a data de contato do RCR017 não entra — o cliente
+  // costuma recusar no contato e agendar dias depois por fora do atendimento, e a data do contato "Serviços:"
+  // nem sempre é a da criação. Assim bate com o Agendamento Realizado do Sintético do Dealer.net.
+  // Contato (RCR017, pelo ID do atendimento): registrado = o atendimento aparece no relatório;
+  // realizado = tem motivo de encerramento ou o agendamento registrado num contato ativo
+  // (mesma conta do "Contato Realizado" do Resultado de Campanha Sintético do Dealer.net).
+  const [agendamentos, contatos] = await Promise.all([lerAgendamentos(), lerContatos()])
   const ate = (iso, n) => { const d = new Date(`${iso}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10) }
   for (const r of rows) {
     const limite = r.data ? ate(r.data, DIAS_CAMPANHA_AGENDAMENTO) : null
     r.agendamento = (agendamentos.get(r.chassi.toUpperCase()) || [])
-      .filter(a => a.tipo === 'Ativo' && a.criado && r.data && a.criado >= r.data && a.criado <= limite && a.status !== 'CAN')
+      .filter(a => a.tipo === 'Ativo' && a.cliente === r.id_cliente && a.criado && r.data && a.criado >= r.data && a.criado <= limite && a.status !== 'CAN')
       .sort((a, b) => a.criado.localeCompare(b.criado))[0] || null
+    const c = r.id_atendimento !== null ? contatos.get(r.id_atendimento) : null
+    r.contato_registrado = !!c
+    r.motivos = c ? [...c.motivos] : []
+    r.motivo_final = c ? c.motivoFinal : ''
+    r.contato_realizado = !!c && (c.motivos.size > 0 || c.agendouAtivo)
+    const datas = c ? [...c.datas].sort() : []
+    r.contato_primeiro = datas[0] || null
+    r.contato_ultimo = datas[datas.length - 1] || null
+    r.contato_qtde = datas.length
+    r.operador = c ? c.operador : ''
   }
 
   _cache = { rows, arquivos: arquivosLidos, lastModified, lidoEm: new Date().toISOString() }
@@ -197,48 +246,40 @@ export async function getCampanhasCrm() {
 const PASTA_OS = '/Banco de Dados - DAF - Pós-Vendas/Relatório Geral OS'
 const PREFIX_OS = 'ROF001_OSAberta_Excel'
 
-// Tipo do agendamento que gerou a O.S. (Ativo / Receptivo / Presencial / Internet), por empresa + nº da O.S.
-// 1ª fonte: ROF037 (AgendamentoTipo). 2ª fonte: ROF026 Clientes Agendados — tem agendamentos que faltam
-// no ROF037 (ex: os do SYONET); a empresa vem por código e o tipo por letra.
-const PASTA_CLIENTES_AGENDADOS = `${RAIZ}/CLIENTES AGENDADOS`
-const PREFIX_CLIENTES_AGENDADOS = 'ROF026_CLIENTEAGENDADO'
-const EMPRESA_POR_CODIGO = { 1: 'CAIOBA TRUCKS - CAMPO GRANDE', 2: 'CAIOBA TRUCKS - DOURADOS', 12: 'CAIOBA TRUCKS - TRES LAGOAS', 13: 'CAIOBA TRUCKS - CHAPADAO' }
-const TIPO_POR_LETRA = { A: 'Ativo', R: 'Receptivo', P: 'Presencial', I: 'Internet' }
-
-// Lê ROF037 e ROF026 uma vez e devolve:
+// Lê o ROF037 (fonte única dos agendamentos em todas as abas) uma vez e devolve:
 //  - porOs: empresa#nºOS → tipo do agendamento (p/ classificar as passagens em ativo/passivo);
-//  - agendamentos: lista de agendamentos (1 por agendamento) p/ a Conversão agendamento → O.S.
-//    Base = ROF037 (tem todos os status: FIM, NSW, AGE, CAN...; várias linhas por agendamento quando há
-//    mais de um serviço → dedup por empresa+cliente+data/hora+chassi), mais os do ROF026 que faltam no
-//    ROF037 (casados por cliente + data/hora do agendamento).
+//  - agendamentos: lista de agendamentos (1 por agendamento) p/ a aba Por Data Agendamento e as consultas.
+//    O ROF037 tem todos os status (FIM, NSW, AGE, CAN...) e várias linhas por agendamento quando há mais
+//    de um serviço → dedup por empresa+cliente+data/hora+chassi.
 async function lerAgendamentosServico() {
   const porOs = new Map()
   const agendamentos = []
-  const vistos = new Set()
+  const vistos = new Map() // chave do agendamento → agendamento
   const chaveClienteHora = (cliente, dataHora) => `${cliente}|${typeof dataHora === 'number' ? Math.round(dataHora * 1440) : txt(dataHora)}`
-  const clienteHora37 = new Set()
   for (const item of await arquivosDoRelatorio(PASTA_AGENDAMENTOS, PREFIX_AGENDAMENTOS)) {
     for (const r of await baixarLinhas(item)) {
       const empresa = txt(r.EmpresaNome).toUpperCase()
       const os = txt(r.OSNumero)
       if (os && txt(r.AgendamentoTipo)) porOs.set(`${empresa}#${os}`, { tipo: txt(r.AgendamentoTipo), fonte: 'ROF037' })
       const ch = chaveClienteHora(txt(r.CodCliente), r.DtAgendamento)
-      clienteHora37.add(ch)
       const chave = `${empresa}|${ch}|${txt(r.Chassi)}`
-      if (vistos.has(chave)) continue
-      vistos.add(chave)
-      agendamentos.push({ empresa, data: dataExcel(r.DtAgendamento), status: txt(r.StatusAgendamento).toUpperCase(), tipo: txt(r.AgendamentoTipo), os: os || null, fonte: 'ROF037' })
-    }
-  }
-  for (const item of await arquivosDoRelatorio(PASTA_CLIENTES_AGENDADOS, PREFIX_CLIENTES_AGENDADOS)) {
-    for (const r of await baixarLinhas(item)) {
-      const empresa = EMPRESA_POR_CODIGO[num(r.Agendamento_EmpresaCod)]
-      const tipo = TIPO_POR_LETRA[txt(r.Agendamento_Tipo).toUpperCase()]
-      const os = txt(r.OficinaServico_OSNumero)
-      if (!empresa) continue
-      if (os && tipo && !porOs.has(`${empresa}#${os}`)) porOs.set(`${empresa}#${os}`, { tipo, fonte: 'ROF026' })
-      if (clienteHora37.has(chaveClienteHora(txt(r.Agendamento_PessoaCod), r.Agendamento_Data))) continue
-      agendamentos.push({ empresa, data: dataExcel(r.Agendamento_Data), status: txt(r.Agendamento_Status).toUpperCase(), tipo: tipo || '', os: os || null, fonte: 'ROF026' })
+      const servico = txt(r.OficinaServico_TMODes)
+      if (vistos.has(chave)) {
+        // Mesmo agendamento em outra linha (um serviço por linha): só junta o serviço p/ a consulta.
+        const ja = vistos.get(chave)
+        if (servico && !ja.servicos.includes(servico)) ja.servicos.push(servico)
+        continue
+      }
+      const ag = {
+        empresa, data: dataExcel(r.DtAgendamento), status: txt(r.StatusAgendamento).toUpperCase(), tipo: txt(r.AgendamentoTipo), os: os || null, fonte: 'ROF037',
+        // Detalhes só p/ a Consulta de agendamentos (aba Por Data Agendamento).
+        criado: dataExcel(r.AgendamentoHistorico_Data), cod_cliente: num(r.CodCliente), cliente: txt(r.Cliente), chassi: txt(r.Chassi).toUpperCase(),
+        placa: txt(r.Placa), modelo: txt(r.ModeloVeiculo), agendador: txt(r.Agendador), funcionario: txt(r.Funcionario),
+        servicos: servico ? [servico] : [], obs: txt(r.OBSAgendamento), data_abertura: dataExcel(r.DataAbertura),
+        data_cancelamento: dataExcel(r.DataCancelamento), motivo_cancelamento: txt(r.MotivoCancelamento),
+      }
+      vistos.set(chave, ag)
+      agendamentos.push(ag)
     }
   }
   return { porOs, agendamentos }
@@ -275,7 +316,7 @@ export async function getPassagensOs() {
         tipo_os: txt(r['Tipo OS Sigla']),
         chassi: txt(r['Veiculo Chassi']).toUpperCase(),
         consultor: txt(r['Consultor Nome']),
-        agendador: txt(r.Agendador), // preenchido = O.S. veio de agendamento (bate com o ROF037)
+        agendador: txt(r.Agendador), // só informativo (Consulta de O.S.); quem diz se veio de agendamento é o ROF037
         servico: numOuZero(r.Servico),
         produto: numOuZero(r.Produto),
         desconto: numOuZero(r.Desconto),
@@ -287,8 +328,7 @@ export async function getPassagensOs() {
   }
   const { porOs: tipos, agendamentos } = await lerAgendamentosServico()
   for (const o of porChave.values()) {
-    // O.S. que veio de agendamento = está no ROF037 (ou ROF026) com esse nº de O.S.; o tipo vem de lá.
-    // Agendador preenchido sem estar nos relatórios de agendamento = "sem tipo" (aviso na tela).
+    // O.S. que veio de agendamento = está no ROF037 com esse nº de O.S. (EmpresaNome + OSNumero); o tipo vem de lá.
     const t = tipos.get(`${o.empresa.toUpperCase()}#${o.numero}`)
     o.tipo_agendamento = t?.tipo || ''
     o.fonte_tipo_agendamento = t?.fonte || ''

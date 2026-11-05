@@ -18,13 +18,19 @@ const VIEWS = [
     nome: 'vw_ctb_centros_resultado',
     desc: 'Cadastro dos Centros de Resultado.',
     origem: 'Controladoria → Centro de Resultado',
-    colunas: 'centro_resultado_id, codigo, descricao, ativo, sistema_id, sistema, sigla',
+    colunas: 'centro_resultado_id, codigo, descricao, ativo, sistema_id, sistema, sigla, cr_visual_id, cr_visual_codigo, cr_visual',
+  },
+  {
+    nome: 'vw_ctb_cr_visuais',
+    desc: 'Centro de Resultado (Visual): nomenclaturas dos centros de resultado usadas em Orçamento e dashboards.',
+    origem: 'Controladoria → Centro de Resultado → engrenagem → Centro de Resultado (Visual)',
+    colunas: 'cr_visual_id, cr_visual_codigo, cr_visual, ativo, qtd_centros',
   },
   {
     nome: 'vw_ctb_orcamento',
     desc: 'Orçamento por centro de resultado, conta e mês (valores). Já traz conta, linha do DRE e centro por nome.',
     origem: 'Controladoria → Orçamento',
-    colunas: 'orcamento_id, ano, mes, data_competencia, valor, conta_id, conta_codigo, conta_descricao, conta_natureza, linha_dre_id, linha_dre_ordem, linha_dre, linha_dre_sinal, centro_resultado_id, centro_resultado_codigo, centro_resultado, centro_resultado_sigla, sistema_id, sistema, atualizado_por, atualizado_em',
+    colunas: 'orcamento_id, ano, mes, data_competencia, valor, conta_id, conta_codigo, conta_descricao, conta_natureza, linha_dre_id, linha_dre_ordem, linha_dre, linha_dre_sinal, centro_resultado_id, centro_resultado_codigo, centro_resultado, centro_resultado_sigla, cr_visual_id, cr_visual_codigo, cr_visual, sistema_id, sistema, atualizado_por, atualizado_em',
   },
   {
     nome: 'vw_ctb_plano_contas',

@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, useState } from 'react'
 import * as XLSX from 'xlsx'
-import { X, Upload, FileSpreadsheet, AlertTriangle, CheckCircle2, Loader2, Plus as PlusIcon, RefreshCw } from 'lucide-react'
+import { X, Upload, FileSpreadsheet, AlertTriangle, CheckCircle2, Loader2, Plus as PlusIcon } from 'lucide-react'
 import { apiService } from '../../services/api'
 import { INPUT, LABEL } from './ControladoriaNav'
 
@@ -19,9 +19,10 @@ export default function ImportarCentrosResultadoModal({ centros, sistemas, onClo
   const [sistemaId, setSistemaId] = useState('')
   const [resultado, setResultado] = useState(null)
 
-  // Mesmo código em sistemas diferentes são centros diferentes: só atualiza se código E sistema coincidem.
+  // Um centro é identificado por sistema + código + descrição + sigla: o mesmo código pode ter
+  // descrições/siglas diferentes, então a importação nunca altera um centro existente, só cria o que falta.
   const centrosDoSistema = useMemo(
-    () => Object.fromEntries(centros.filter(c => (c.sistema_id || '') === sistemaId).map(c => [c.codigo, c])),
+    () => centros.filter(c => (c.sistema_id || '') === sistemaId),
     [centros, sistemaId]
   )
 
@@ -48,13 +49,19 @@ export default function ImportarCentrosResultadoModal({ centros, sistemas, onClo
         for (const r of raw) {
           const codigo = norm(r[colCodigo])
           const descricao = norm(r[colDescricao])
-          if (!codigo || !descricao || vistos.has(codigo)) continue
-          vistos.add(codigo)
-          lista.push({ codigo, descricao, sigla: colSigla ? norm(r[colSigla]).toUpperCase() : null })
+          if (!codigo || !descricao) continue
+          // Sem coluna Sigla (ou célula vazia), a sigla vira o próprio código.
+          const siglaArquivo = colSigla ? norm(r[colSigla]).toUpperCase() : ''
+          const sigla = siglaArquivo || codigo.toUpperCase()
+          const chave = `${codigo}|${descricao}|${sigla}`
+          if (vistos.has(chave)) continue
+          vistos.add(chave)
+          lista.push({ chave, codigo, descricao, sigla })
         }
         if (lista.length === 0) { setErroArquivo('Nenhuma linha com código e descrição preenchidos.'); return }
         lista.sort((a, b) => a.codigo.localeCompare(b.codigo, 'pt-BR', { numeric: true }))
         setLinhas(lista)
+        setSistemaId('')
         setEtapa('preview')
       } catch (err) {
         setErroArquivo('Erro ao processar o arquivo: ' + (err.message || String(err)))
@@ -63,12 +70,11 @@ export default function ImportarCentrosResultadoModal({ centros, sistemas, onClo
     reader.readAsBinaryString(file)
   }
 
-  const classificadas = useMemo(() => linhas.map(l => {
-    const existente = centrosDoSistema[l.codigo]
-    if (!existente) return { ...l, status: 'novo' }
-    const mudou = existente.descricao !== l.descricao || (l.sigla !== null && (existente.sigla || '') !== l.sigla)
-    return { ...l, status: mudou ? 'atualizar' : 'ok', existente }
-  }), [linhas, centrosDoSistema])
+  const classificadas = useMemo(() => {
+    if (!sistemaId) return []
+    const cadastradas = new Set(centrosDoSistema.map(c => `${c.codigo}|${c.descricao}|${c.sigla || ''}`))
+    return linhas.map(l => ({ ...l, status: cadastradas.has(l.chave) ? 'ok' : 'novo' }))
+  }, [linhas, centrosDoSistema, sistemaId])
 
   const contagem = classificadas.reduce((acc, l) => { acc[l.status] = (acc[l.status] || 0) + 1; return acc }, {})
   const pendentes = classificadas.filter(l => l.status !== 'ok')
@@ -76,24 +82,18 @@ export default function ImportarCentrosResultadoModal({ centros, sistemas, onClo
   const handleImportar = async () => {
     setEtapa('importando')
     let criados = 0
-    let atualizados = 0
     const erros = []
     for (const l of pendentes) {
       try {
-        if (l.status === 'novo') {
-          await apiService.salvarCtbCentroResultado(null, { codigo: l.codigo, descricao: l.descricao, sistema_id: sistemaId, sigla: l.sigla, ativo: true })
-          criados++
-        } else {
-          await apiService.salvarCtbCentroResultado(l.existente.id, { codigo: l.codigo, descricao: l.descricao, sistema_id: sistemaId, sigla: l.sigla ?? l.existente.sigla, ativo: l.existente.ativo })
-          atualizados++
-        }
+        await apiService.salvarCtbCentroResultado(null, { codigo: l.codigo, descricao: l.descricao, sistema_id: sistemaId, sigla: l.sigla, ativo: true })
+        criados++
       } catch (err) {
         erros.push(`${l.codigo} — ${l.descricao}: ${err.message || String(err)}`)
       }
     }
-    if (criados > 0 || atualizados > 0) onImported?.()
+    if (criados > 0) onImported?.()
     if (erros.length === 0) { onClose?.(); return }
-    setResultado({ criados, atualizados, erros })
+    setResultado({ criados, erros })
     setEtapa('resultado')
   }
 
@@ -143,6 +143,7 @@ export default function ImportarCentrosResultadoModal({ centros, sistemas, onClo
                 <div className="flex flex-wrap gap-1.5">
                   <span className="px-2 py-0.5 bg-white border border-slate-200 rounded text-[10px] font-mono text-slate-600">Sigla</span>
                 </div>
+                <p className="text-[10px] text-slate-400 mt-1.5">Sem a coluna Sigla (ou com a célula vazia), a sigla recebe o mesmo valor do Código.</p>
               </div>
             </>
           )}
@@ -160,16 +161,19 @@ export default function ImportarCentrosResultadoModal({ centros, sistemas, onClo
                   <option value="">Selecione o sistema...</option>
                   {sistemas.filter(s => s.ativo !== false).map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
                 </select>
-                <p className="text-[11px] text-slate-400">Só atualiza quando o mesmo código já existe neste sistema; em outro sistema, o código é criado como novo.</p>
+                <p className="text-[11px] text-slate-400">Compara Sistema + Código + Descrição + Sigla: só cria o que ainda não existe igual; nenhum centro cadastrado é alterado.</p>
               </div>
+
+              {!sistemaId && (
+                <div className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg p-3">Escolha o sistema para ver o que será criado.</div>
+              )}
 
               <div className="flex flex-wrap gap-2 text-[10px] font-bold">
                 {contagem.novo > 0 && <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full border bg-blue-50 text-blue-700 border-blue-200"><PlusIcon className="h-3 w-3" /> {contagem.novo} novo(s)</span>}
-                {contagem.atualizar > 0 && <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full border bg-amber-50 text-amber-700 border-amber-200"><RefreshCw className="h-3 w-3" /> {contagem.atualizar} a atualizar</span>}
                 {contagem.ok > 0 && <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full border bg-emerald-50 text-emerald-700 border-emerald-200"><CheckCircle2 className="h-3 w-3" /> {contagem.ok} já cadastrado(s)</span>}
               </div>
 
-              <div className="overflow-x-auto rounded-lg border border-slate-200 max-h-72 overflow-y-auto">
+              {sistemaId && <div className="overflow-x-auto rounded-lg border border-slate-200 max-h-72 overflow-y-auto">
                 <table className="w-full text-left border-collapse">
                   <thead className="sticky top-0">
                     <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[10px] font-bold uppercase tracking-wide">
@@ -180,21 +184,18 @@ export default function ImportarCentrosResultadoModal({ centros, sistemas, onClo
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {classificadas.map(l => (
-                      <tr key={l.codigo} className={l.status === 'ok' ? 'opacity-50' : ''}>
+                      <tr key={l.chave} className={l.status === 'ok' ? 'opacity-50' : ''}>
                         <td className="p-2 text-[11px] font-mono text-slate-600">{l.codigo}</td>
                         <td className="p-2 text-[11px] font-semibold text-slate-800">
                           {l.descricao}
                           {l.sigla && <span className="ml-2 px-1.5 py-0.5 rounded bg-slate-100 text-[10px] font-mono text-slate-600">{l.sigla}</span>}
-                          {l.status === 'atualizar' && l.existente.descricao !== l.descricao && (
-                            <div className="text-[10px] font-normal text-amber-600">hoje: {l.existente.descricao}</div>
-                          )}
                         </td>
-                        <td className="p-2 text-[11px] text-slate-500">{l.status === 'novo' ? 'Novo' : l.status === 'atualizar' ? 'Atualizar' : 'Sem alteração'}</td>
+                        <td className="p-2 text-[11px] text-slate-500">{l.status === 'novo' ? 'Novo' : 'Já cadastrado'}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
-              </div>
+              </div>}
             </>
           )}
 
@@ -212,7 +213,7 @@ export default function ImportarCentrosResultadoModal({ centros, sistemas, onClo
                 <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
                 <div>
                   <p className="text-sm font-bold text-slate-900">Importação concluída com avisos</p>
-                  <p className="text-xs text-slate-600 mt-0.5"><strong>{resultado.criados}</strong> criado(s) · <strong>{resultado.atualizados}</strong> atualizado(s)</p>
+                  <p className="text-xs text-slate-600 mt-0.5"><strong>{resultado.criados}</strong> criado(s)</p>
                 </div>
               </div>
               <div className="bg-red-50 border border-red-200 rounded-lg p-3 space-y-1 max-h-40 overflow-y-auto">

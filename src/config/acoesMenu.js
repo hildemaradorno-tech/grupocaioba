@@ -189,6 +189,7 @@ export const ACOES_POR_MENU = [
       { value: 'reabrir_sem_limite',   label: 'Reabrir Auditoria a qualquer momento (sem limite, igual ao Admin)' },
       { value: 'cadastrar_situacoes',  label: 'Cadastrar Situações de Auditoria' },
       { value: 'programar_auditorias', label: 'Programar Auditorias (geração automática e Regra de Reabertura)' },
+      { value: 'exportar',             label: 'Exportar Auditoria (PDF / Excel da tabela atual)' },
       // Modo Conferência
       { value: 'conferir',             label: 'Conferir — alterar Na Oficina no Modo Conferência' },
       { value: 'pendenciar',           label: 'Pendenciar OS selecionadas (Na Oficina = Não em lote)' },

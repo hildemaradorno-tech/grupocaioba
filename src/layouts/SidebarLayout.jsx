@@ -23,7 +23,7 @@ function getActiveSectionKey(pathname) {
   if (pathname === '/tipos-processo' || pathname === '/rubricas' || pathname === '/fontes-dados' || pathname === '/bases-calculo' ||
     pathname === '/politica-comissao' || pathname === '/regras-faixas' || pathname === '/regras-pj' || pathname === '/descontos-pj' || pathname === '/documentos-pj' || pathname === '/cargos-remuneracoes' ||
     pathname === '/ferias' || pathname === '/sobreaviso-plantao' ||
-    pathname === '/calculo-comissoes' || pathname === '/calculo-comissoes-motos' || pathname === '/calculo-comissoes-grupo' || pathname === '/processamento-comissoes' || pathname === '/minha-nota-fiscal') return '_comissoes-calculo'
+    pathname === '/calculo-comissoes' || pathname === '/calculo-comissoes-motos' || pathname === '/calculo-comissoes-grupo' || pathname === '/processamento-comissoes') return '_comissoes-calculo'
   const cadastros = ['/segmentos','/agrup-empresas','/empresas','/areas','/agrup-departamentos',
     '/departamentos','/setores','/box','/agrup-cargos','/cargos','/organograma',
     '/movimento-venda','/natureza-operacoes','/tipos-produtos','/tipos-os',
@@ -513,7 +513,7 @@ export default function SidebarLayout() {
                 {canView('cargos-remuneracoes') && <FlyItem to="/cargos-remuneracoes" icon={Briefcase} onClose={closeFlyout}>Cargos e Remunerações</FlyItem>}
               </>
             )}
-            {(canView('ferias') || canView('calculo-comissoes') || canView('calculo-comissoes-motos') || canView('calculo-comissoes-grupo') || canView('processamento-comissoes') || canView('minha-nota-fiscal') || canView('sobreaviso-plantao')) && (
+            {(canView('ferias') || canView('calculo-comissoes') || canView('calculo-comissoes-motos') || canView('calculo-comissoes-grupo') || canView('processamento-comissoes') || canView('sobreaviso-plantao')) && (
               <>
                 <div className="mx-3 my-2 border-t border-blue-800/50" />
                 <FlyGroup label="Comissões Pós-Vendas" />
@@ -523,7 +523,6 @@ export default function SidebarLayout() {
                 {canView('calculo-comissoes-motos') && <FlyItem to="/calculo-comissoes-motos" icon={Wallet} onClose={closeFlyout}>Comissões - HONDA</FlyItem>}
                 {canView('calculo-comissoes-grupo') && <FlyItem to="/calculo-comissoes-grupo" icon={Wallet} onClose={closeFlyout}>Prestadores de Serviços</FlyItem>}
                 {canView('processamento-comissoes') && <FlyItem to="/processamento-comissoes" icon={ClipboardCheck} onClose={closeFlyout}>Processamento de Comissões</FlyItem>}
-                {canView('minha-nota-fiscal') && <FlyItem to="/minha-nota-fiscal" icon={FileText} onClose={closeFlyout}>Minha Nota Fiscal</FlyItem>}
               </>
             )}
           </>

@@ -33,7 +33,6 @@ import PoliticaComissao from './pages/PoliticaComissao'
 import RegrasFaixas from './pages/RegrasFaixas'
 import RegrasPJ from './pages/RegrasPJ'
 import DocumentosPJ from './pages/DocumentosPJ'
-import MinhaNotaFiscal from './pages/MinhaNotaFiscal'
 import CargosRemuneracoes from './pages/CargosRemuneracoes'
 import FontesDados from './pages/FontesDados'
 import Ferias from './pages/Ferias'
@@ -260,7 +259,6 @@ export default function App() {
           { path: '/calculo-comissoes-motos', element: <CalculoComissoes agrupamentoNome="Caiobá Motos" titulo="Comissões - HONDA" permissao="calculo-comissoes-motos" />, menuPath: 'calculo-comissoes-motos' },
           { path: '/calculo-comissoes-grupo', element: <CalculoComissoes agrupamentoNome="Outras Caiobá" titulo="Prestadores de Serviços" permissao="calculo-comissoes-grupo" />, menuPath: 'calculo-comissoes-grupo' },
           { path: '/processamento-comissoes', element: <HistoricoComissoes />, menuPath: 'processamento-comissoes' },
-          { path: '/minha-nota-fiscal', element: <MinhaNotaFiscal />, menuPath: 'minha-nota-fiscal' },
           { path: '/processamento-comissoes-manual', element: <HistoricoComissoesManual />, menuPath: 'processamento-comissoes' },
           // Link antigo (tela única com abas) — manda pro primeiro item da sequência.
           { path: '/folha-pagamento-daf', element: <Navigate to="/ferias" replace /> },

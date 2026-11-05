@@ -6,6 +6,7 @@
 const ARQ_OS = 'ROF001_OSAberta_Excel TODAS'
 const ARQ_AGEND = 'ROF037_AGENDAMENTOSERVICO'
 const ARQ_CAMPANHA = 'RCR038_CampanhaCRM_Clientes_Excel'
+const ARQ_CONTATO = 'RCR017_LISTAPORDATACONTATOENCERRAMENTO'
 
 // "Regras" e "Colunas utilizadas" do manual. Formato, uma informação por linha:
 //   linha terminada em ":"  → subtítulo
@@ -21,9 +22,10 @@ const REGRAS_OS = [
 ].join('\n')
 const REGRAS_AGEND = [
   'Regras do agendamento:',
-  '• A O.S. vem de agendamento quando a coluna Agendador do ROF001 está preenchida',
-  '• O tipo (Ativo × Passivo) vem do ROF037, ligando Empresa + OS Numero com EmpresaNome + OSNumero',
-  '• O.S. com Agendador que não está no ROF037 conta como agendada, mas fica sem tipo (aviso no card O.S. com agendamento)',
+  '• O ROF037 é a fonte padrão dos agendamentos em todas as abas',
+  '• A O.S. vem de agendamento quando está no ROF037: Empresa + OS Numero (ROF001) = EmpresaNome + OSNumero (ROF037)',
+  '• O tipo (Ativo × Passivo) vem do mesmo agendamento do ROF037',
+  '• A coluna Agendador do ROF001 não é usada (O.S. com Agendador que não está no ROF037 não conta)',
   '• Ativo = tipo Ativo · Passivo = Receptivo, Presencial ou Internet',
 ].join('\n')
 const REGRAS_VALOR = [
@@ -40,7 +42,6 @@ const COL_OS = [
   '• Situacao Tipo OS — tira as "Cancelada"; alerta das pendentes',
   '• Tipo OS Sigla — tipo da O.S. (lista do alerta)',
   '• Consultor Nome — consultor (lista do alerta)',
-  '• Agendador — preenchido = O.S. veio de agendamento',
 ].join('\n')
 const COL_OS_VALOR = [
   `${ARQ_OS}:`,
@@ -61,7 +62,7 @@ const COL_AGEND = [
 const REGRAS_AGENDA = [
   'Regras dos agendamentos:',
   '• O filtro Data vale para a data do agendamento (DtAgendamento), não para a O.S. nem para o contato',
-  '• Fonte única: ROF037 (o ROF026 não entra nesta aba)',
+  '• Fonte única: ROF037',
   '• Um agendamento com vários serviços aparece em várias linhas do ROF037 e conta uma vez',
   '• Agendamentos cancelados (status CAN) ficam fora',
   '• Ativo = tipo Ativo · Passivo = Receptivo, Presencial ou Internet',
@@ -83,38 +84,66 @@ const COL_AGENDA = [
 ].join('\n')
 const FONTE_AGENDA = ARQ_AGEND
 
-// ── Aba Campanhas ─── (2 relatórios: RCR038 + ROF037, ligados pelo chassi)
+// ── Aba Campanhas ─── (3 relatórios: RCR038 + RCR017 pelo ID do atendimento + ROF037 pelo chassi e cliente)
+// Distribuídos por ATENDIMENTO (veículo repetido em outra campanha conta de novo); cada agendamento do ROF037
+// conta UMA vez (na 1ª campanha do veículo) — as outras linhas do mesmo veículo ficam como não agendadas.
 const REGRAS_CAMPANHA = [
   'Regras da campanha:',
   '• Um arquivo RCR038 por execução de campanha e unidade, ex: "... CGR 20261019.xls"',
   '• A data da campanha vem do nome do arquivo (a planilha não traz data); o filtro Data vale para ela',
   '• Sem filtro de Empresas: o relatório da campanha não identifica a empresa',
-  '• Cada contato da campanha (ID_Campanha_Execucao + id_atendimento) conta uma vez',
+  '• Cada contato gerado (ID_Campanha_Execucao + id_atendimento) conta uma vez; o mesmo veículo em outra campanha conta de novo (ex: as campanhas 165 e 168 de 03/10 são a mesma lista de 63 veículos)',
+  '• O agendamento conta UMA vez: se o mesmo veículo está em mais de uma campanha e o agendamento do ROF037 serve para as duas, ele conta só na 1ª campanha (data mais antiga; mesma data, menor número de campanha)',
+  '• As outras linhas desse veículo (nas outras campanhas) contam como Não agendados, com o motivo de encerramento delas no RCR017 (ex: S03 ou Agendamento cancelado); na conferência linha a linha, a coluna Veículo agendado na mostra a campanha onde o agendamento contou',
+  '• Não agendados = Contatos gerados − Contatos agendados',
+  '• O Sintético do Dealer.net conta o agendamento em cada atendimento (ex: outubro — 8 no Dealer.net × 5 aqui; os outros 3 atendimentos dos mesmos veículos estão em Não agendados)',
 ].join('\n')
 const REGRAS_AGENDADO = [
   'Regras do agendamento da campanha:',
-  '• Agendado: o chassi do contato gerado tem agendamento do tipo Ativo no ROF037 criado (AgendamentoHistorico_Data) da data da campanha até 30 dias depois',
+  '• Agendado: o chassi do contato gerado tem agendamento do tipo Ativo no ROF037, do mesmo cliente (CodCliente = ID_Cliente), criado (AgendamentoHistorico_Data) da data da campanha até 30 dias depois',
   '• Agendamento cancelado (status CAN) não conta',
   '• Não agendado: contato gerado sem agendamento nessas condições',
-  '• Ligação pelo chassi: o ROF037 não traz o ID da campanha nem o atendimento do CRM',
+  '• Ligação pelo chassi e cliente: o ROF037 não traz o ID da campanha nem o atendimento do CRM',
+  'Datas usadas no agendamento:',
+  '• Início da janela: data da campanha (nome do arquivo RCR038)',
+  '• Data comparada: criação do agendamento (AgendamentoHistorico_Data do ROF037), não a data para quando foi agendado (DtAgendamento)',
+  '• Fim da janela: 30 dias depois da data da campanha. Depois disso o agendamento não é atribuído à campanha (o Dealer.net também não conta)',
+  '• A data de contato do RCR017 não entra: o cliente costuma recusar no contato e ser agendado dias depois por fora do atendimento, e o contato com "Serviços:" nem sempre tem a data da criação do agendamento',
+  '• Com essas datas, contando o agendamento em cada atendimento, o número bate com o Agendamento Realizado do Sintético do Dealer.net; o BI conta cada agendamento uma vez (ver Regras da campanha)',
+].join('\n')
+const REGRAS_CONTATO = [
+  'Regras dos não agendados (RCR017):',
+  '• Quem agendou vem sempre do ROF037; o RCR017 só explica os NÃO agendados',
+  '• Liga pelo ID do atendimento: id_atendimento do RCR038 = Atendimento_Codigo do RCR017',
+  '• Contatos encerrados: não agendado cujo atendimento tem motivo de encerramento (MotivoEncerramento) ou o agendamento registrado num contato ativo ("Serviços:" na descrição, meio de contato que não é Receptivo) sem agendamento Ativo no ROF037',
+  '• Motivo: um por cliente — o do contato mais recente com motivo',
+  '• Contatos a realizar: não agendado sem motivo — o atendimento não aparece no RCR017 (sem contato) ou aparece sem resultado (já contatado, ex: retorno programado, contato receptivo)',
+].join('\n')
+const COL_CONTATO = [
+  `${ARQ_CONTATO}:`,
+  '• Atendimento_Codigo — liga com o id_atendimento da campanha',
+  '• MotivoEncerramento — motivo do encerramento do contato',
+  '• AtendimentoContato_Descricao — "Serviços:" = agendamento registrado no contato',
+  '• MeioContato_Descricao — tira o contato Receptivo',
 ].join('\n')
 const REGRAS_SITUACAO = [
   'O que aconteceu com o agendamento (ROF037):',
-  '• Vieram: o agendamento tem número de O.S. (OSNumero) ou status FIM',
-  '• No-show: status NSW (agendou e não compareceu)',
-  '• Vão vir: AGE, CON ou RAG, ainda sem O.S.',
+  '• Agendamentos comparecidos: o agendamento tem número de O.S. (OSNumero) ou status FIM',
+  '• Agendamentos não comparecidos (No-show): status NSW (agendou e não compareceu)',
+  '• Agendamentos a comparecer: AGE, CON ou RAG, ainda sem O.S.',
 ].join('\n')
 const COL_CAMPANHA = [
   `${ARQ_CAMPANHA}:`,
   '• (nome do arquivo) — data da campanha',
   '• ID_Campanha_Execucao — número da campanha',
-  '• ID_Cliente — contato gerado',
-  '• id_atendimento — identifica o contato (conta uma vez)',
+  '• ID_Cliente — cliente; liga com o CodCliente do ROF037',
+  '• id_atendimento — atendimento da campanha; liga com o RCR017',
   '• Chassi — liga com o ROF037',
 ].join('\n')
 const COL_AGEND_CAMPANHA = [
   `${ARQ_AGEND}:`,
   '• Chassi — liga com o chassi da campanha',
+  '• CodCliente — tem que ser o mesmo cliente da campanha',
   '• AgendamentoTipo — só Ativo',
   '• AgendamentoHistorico_Data — data em que o agendamento foi criado',
   '• StatusAgendamento — AGE, CON, RAG, FIM, NSW, CAN',
@@ -127,71 +156,71 @@ export const INFO = {
   // Aba Passagens
   gaugeAgendamentoOs: {
     objetivo: 'Medir quanto das O.S. abertas no período vieram de agendamento.',
-    fonte: ARQ_OS,
-    calculo: `O.S. com agendamento ÷ Quant. O.S. por data de abertura × 100.\n${META}`,
+    fonte: `${ARQ_OS}\n${ARQ_AGEND}`,
+    calculo: `O.S. com agendamento ÷ Quant. O.S. por data de abertura × 100. Conciliação: cada O.S. do ROF001 (Empresa + OS Numero, aberta no período, sem "Cancelada") é procurada no ROF037 pela EmpresaNome + OSNumero; se existir, é O.S. com agendamento.\n${META}`,
     filtros: `${REGRAS_OS}\n${REGRAS_AGEND}`,
     colunas: `${COL_OS}\n${COL_AGEND}`,
   },
   gaugeAtivo: {
     objetivo: 'Medir quanto das O.S. abertas no período vieram de agendamento ativo (a equipe procurou o cliente).',
     fonte: `${ARQ_OS}\n${ARQ_AGEND}`,
-    calculo: `Agendamentos ativos ÷ Quant. O.S. por data de abertura × 100.\n${META}`,
+    calculo: `Agendamentos ativos ÷ Quant. O.S. por data de abertura × 100. Conciliação: O.S. do ROF001 encontrada no ROF037 (Empresa + OS Numero = EmpresaNome + OSNumero) com AgendamentoTipo = Ativo.\n${META}`,
     filtros: `${REGRAS_OS}\n${REGRAS_AGEND}`,
     colunas: `${COL_OS}\n${COL_AGEND}`,
   },
   gaugePassivo: {
     objetivo: 'Medir quanto das O.S. abertas no período vieram de agendamento passivo (o cliente procurou).',
     fonte: `${ARQ_OS}\n${ARQ_AGEND}`,
-    calculo: `Agendamentos passivos ÷ Quant. O.S. por data de abertura × 100.\n${META}`,
+    calculo: `Agendamentos passivos ÷ Quant. O.S. por data de abertura × 100. Conciliação: O.S. do ROF001 encontrada no ROF037 (Empresa + OS Numero = EmpresaNome + OSNumero) com AgendamentoTipo = Receptivo, Presencial ou Internet.\n${META}`,
     filtros: `${REGRAS_OS}\n${REGRAS_AGEND}`,
     colunas: `${COL_OS}\n${COL_AGEND}`,
   },
   osAbertura: {
     objetivo: 'Mostrar quantas O.S. (passagens) foram abertas no período.',
     fonte: ARQ_OS,
-    calculo: 'O.S. distintas (Empresa + OS Numero) com Data Criacao no período, sem as "Cancelada". O alerta ⚠ mostra as O.S. pendentes de autorização de cancelamento ou de encerramento, que também entram na conta.',
+    calculo: 'O.S. do ROF001 com Data Criacao no período, cada uma contada uma vez por Empresa + OS Numero (o arquivo tem várias linhas por O.S.). Ficam fora as com Situacao Tipo OS "Cancelada"; as pendentes de autorização contam (alerta ⚠). Filtro Empresas pela coluna Empresa.',
     filtros: REGRAS_OS,
     colunas: COL_OS,
   },
   osAgendamento: {
     objetivo: 'Mostrar quantas das O.S. abertas no período vieram de agendamento.',
-    fonte: ARQ_OS,
-    calculo: 'Das O.S. do card Quant. O.S. por data de abertura, as que têm a coluna Agendador preenchida.',
+    fonte: `${ARQ_OS}\n${ARQ_AGEND}`,
+    calculo: 'Das O.S. do card Quant. O.S. por data de abertura, conta as que existem no ROF037: Empresa + OS Numero (ROF001) = EmpresaNome + OSNumero (ROF037). O.S. que não está no ROF037 não conta, mesmo com a coluna Agendador preenchida no ROF001.',
     filtros: `${REGRAS_OS}\n${REGRAS_AGEND}`,
-    colunas: COL_OS,
+    colunas: `${COL_OS}\n${COL_AGEND}`,
   },
   agAtivos: {
     objetivo: 'Mostrar quantas O.S. com agendamento vieram de agendamento ativo.',
     fonte: `${ARQ_OS}\n${ARQ_AGEND}`,
-    calculo: 'O.S. com agendamento cujo tipo é Ativo (ROF037 AgendamentoTipo).',
+    calculo: 'Das O.S. com agendamento, as que no ROF037 (mesma EmpresaNome + OSNumero) têm AgendamentoTipo = Ativo.',
     filtros: `${REGRAS_OS}\n${REGRAS_AGEND}`,
     colunas: `${COL_OS}\n${COL_AGEND}`,
   },
   agPassivos: {
     objetivo: 'Mostrar quantas O.S. com agendamento vieram de agendamento passivo.',
     fonte: `${ARQ_OS}\n${ARQ_AGEND}`,
-    calculo: 'O.S. com agendamento cujo tipo é Receptivo, Presencial ou Internet (ROF037 AgendamentoTipo).',
+    calculo: 'Das O.S. com agendamento, as que no ROF037 (mesma EmpresaNome + OSNumero) têm AgendamentoTipo = Receptivo, Presencial ou Internet.',
     filtros: `${REGRAS_OS}\n${REGRAS_AGEND}`,
     colunas: `${COL_OS}\n${COL_AGEND}`,
   },
   conversaoTotal: {
     objetivo: 'Mostrar quanto faturaram as O.S. que vieram de agendamento.',
-    fonte: ARQ_OS,
-    calculo: 'Soma de Peças (Produto), Serviços (Servico) e Total das O.S. com agendamento. Ticket médio = Faturamento Total ÷ quantidade do card O.S. com agendamento.',
+    fonte: `${ARQ_OS}\n${ARQ_AGEND}`,
+    calculo: 'Pega as O.S. do card O.S. com agendamento e soma no ROF001 todas as linhas de cada O.S. (uma O.S. pode ter várias linhas, ex: uma por NF): Peças = Produto, Serviços = Servico, Faturamento Total = Total (já com o Desconto). Ticket médio = Faturamento Total ÷ quantidade do card O.S. com agendamento.',
     filtros: `${REGRAS_OS}\n${REGRAS_AGEND}\n${REGRAS_VALOR}`,
     colunas: `${COL_OS_VALOR}\n${COL_AGEND}`,
   },
   conversaoAtivos: {
     objetivo: 'Mostrar quanto faturaram as O.S. que vieram de agendamento ativo.',
     fonte: `${ARQ_OS}\n${ARQ_AGEND}`,
-    calculo: 'Mesmo cálculo da Conversão — Total, só com as O.S. de agendamento Ativo. Ticket médio = Faturamento Total ÷ quantidade do card Agendamentos ativos.',
+    calculo: 'Mesmo cálculo da Conversão — Total, só com as O.S. que no ROF037 têm AgendamentoTipo = Ativo. Ticket médio = Faturamento Total ÷ quantidade do card Agendamentos ativos.',
     filtros: `${REGRAS_OS}\n${REGRAS_AGEND}\n${REGRAS_VALOR}`,
     colunas: `${COL_OS_VALOR}\n${COL_AGEND}`,
   },
   conversaoPassivos: {
     objetivo: 'Mostrar quanto faturaram as O.S. que vieram de agendamento passivo.',
     fonte: `${ARQ_OS}\n${ARQ_AGEND}`,
-    calculo: 'Mesmo cálculo da Conversão — Total, só com as O.S. de agendamento Receptivo, Presencial ou Internet. Ticket médio = Faturamento Total ÷ quantidade do card Agendamentos passivos.',
+    calculo: 'Mesmo cálculo da Conversão — Total, só com as O.S. que no ROF037 têm AgendamentoTipo = Receptivo, Presencial ou Internet. Ticket médio = Faturamento Total ÷ quantidade do card Agendamentos passivos.',
     filtros: `${REGRAS_OS}\n${REGRAS_AGEND}\n${REGRAS_VALOR}`,
     colunas: `${COL_OS_VALOR}\n${COL_AGEND}`,
   },
@@ -200,91 +229,91 @@ export const INFO = {
   agTaxaConversao: {
     objetivo: 'Medir quanto dos agendamentos marcados para o período virou O.S.',
     origem: 'Card Agendamentos comparecidos ÷ card Agendamentos realizados.',
-    calculo: `Agendamentos comparecidos ÷ Agendamentos realizados × 100.\n${META}`,
+    calculo: `Agendamentos comparecidos ÷ Agendamentos realizados × 100. Os dois saem do ROF037: realizado = agendamento com DtAgendamento no período e sem CAN; comparecido = esse agendamento tem OSNumero.\n${META}`,
     filtros: `${REGRAS_AGENDA}\n${REGRAS_DESFECHO}`,
     colunas: COL_AGENDA,
   },
   agTaxaConversaoAtivo: {
     objetivo: 'Medir quanto dos agendamentos ativos marcados para o período virou O.S.',
     origem: 'Parte ativa do card Agendamentos comparecidos ÷ card Agendamentos ativos.',
-    calculo: `Agendamentos ativos que viraram O.S. ÷ Agendamentos ativos × 100.\n${META}`,
+    calculo: `Agendamentos ativos com OSNumero ÷ Agendamentos ativos × 100 (ROF037, AgendamentoTipo = Ativo).\n${META}`,
     filtros: `${REGRAS_AGENDA}\n${REGRAS_DESFECHO}`,
     colunas: COL_AGENDA,
   },
   agTaxaConversaoPassivo: {
     objetivo: 'Medir quanto dos agendamentos passivos marcados para o período virou O.S.',
     origem: 'Parte passiva do card Agendamentos comparecidos ÷ card Agendamentos passivos.',
-    calculo: `Agendamentos passivos que viraram O.S. ÷ Agendamentos passivos × 100.\n${META}`,
+    calculo: `Agendamentos passivos com OSNumero ÷ Agendamentos passivos × 100 (ROF037, AgendamentoTipo = Receptivo, Presencial ou Internet).\n${META}`,
     filtros: `${REGRAS_AGENDA}\n${REGRAS_DESFECHO}`,
     colunas: COL_AGENDA,
   },
   agTaxaNoShow: {
     objetivo: 'Medir quanto dos agendamentos marcados para o período o cliente não compareceu.',
     origem: 'Card Agendamentos Não comparecidos (No-Show) ÷ card Agendamentos realizados.',
-    calculo: `Agendamentos Não comparecidos (No-Show) ÷ Agendamentos realizados × 100.\n${META_MENOR(15)}`,
+    calculo: `Agendamentos Não comparecidos (No-Show) ÷ Agendamentos realizados × 100. No-show = agendamento do ROF037 sem OSNumero e com StatusAgendamento = NSW.\n${META_MENOR(15)}`,
     filtros: `${REGRAS_AGENDA}\n${REGRAS_DESFECHO}`,
     colunas: COL_AGENDA,
   },
   agTotal: {
     objetivo: 'Mostrar quantos agendamentos estavam marcados para o período.',
     fonte: FONTE_AGENDA,
-    calculo: 'Agendamentos com data do agendamento no período, cada um uma vez, sem os cancelados (CAN).',
+    calculo: 'Linhas do ROF037 com DtAgendamento no período e StatusAgendamento diferente de CAN. O ROF037 repete o agendamento em uma linha por serviço: cada agendamento conta uma vez por EmpresaNome + CodCliente + data/hora do agendamento + Chassi. Filtro Empresas pela EmpresaNome.',
     filtros: REGRAS_AGENDA,
     colunas: COL_AGENDA,
   },
   agAtivosAgenda: {
     objetivo: 'Mostrar quantos dos agendamentos do período foram ativos (a equipe procurou o cliente).',
     fonte: FONTE_AGENDA,
-    calculo: 'Agendamentos realizados com tipo Ativo.',
+    calculo: 'Dos Agendamentos realizados (ROF037), os com AgendamentoTipo = Ativo.',
     filtros: REGRAS_AGENDA,
     colunas: COL_AGENDA,
   },
   agPassivosAgenda: {
     objetivo: 'Mostrar quantos dos agendamentos do período foram passivos (o cliente procurou).',
     fonte: FONTE_AGENDA,
-    calculo: 'Agendamentos realizados com tipo Receptivo, Presencial ou Internet.',
+    calculo: 'Dos Agendamentos realizados (ROF037), os com AgendamentoTipo = Receptivo, Presencial ou Internet.',
     filtros: REGRAS_AGENDA,
     colunas: COL_AGENDA,
   },
   agVirouOs: {
     objetivo: 'Mostrar quantos agendamentos do período tiveram o cliente comparecendo (viraram O.S.).',
     fonte: FONTE_AGENDA,
-    calculo: 'Agendamentos realizados com número de O.S. (OSNumero) no ROF037.',
+    calculo: 'Dos Agendamentos realizados, os que têm OSNumero preenchido no ROF037 (o cliente compareceu e a O.S. foi aberta).',
     filtros: `${REGRAS_AGENDA}\n${REGRAS_DESFECHO}`,
     colunas: COL_AGENDA,
   },
   agNoShow: {
     objetivo: 'Mostrar quantos agendamentos do período o cliente não compareceu.',
     fonte: FONTE_AGENDA,
-    calculo: 'Agendamentos realizados sem O.S. e com status NSW.',
+    calculo: 'Dos Agendamentos realizados, os sem OSNumero e com StatusAgendamento = NSW no ROF037.',
     filtros: `${REGRAS_AGENDA}\n${REGRAS_DESFECHO}`,
     colunas: COL_AGENDA,
   },
   agAExecutar: {
     objetivo: 'Mostrar quantos agendamentos do período ainda não tiveram desfecho.',
     fonte: FONTE_AGENDA,
-    calculo: 'Agendamentos realizados sem O.S. e sem no-show (status AGE, CON ou RAG).',
+    calculo: 'Dos Agendamentos realizados, os sem OSNumero e sem NSW (StatusAgendamento AGE, CON ou RAG: data ainda por vir ou sem desfecho).',
     filtros: `${REGRAS_AGENDA}\n${REGRAS_DESFECHO}`,
     colunas: COL_AGENDA,
   },
   agConversaoTotal: {
     objetivo: 'Mostrar quanto faturaram as O.S. geradas pelos agendamentos do período.',
     fonte: `${FONTE_AGENDA}\n${ARQ_OS}`,
-    calculo: 'Soma de Peças (Produto), Serviços (Servico) e Total das O.S. dos agendamentos que viraram O.S. (cada O.S. uma vez). Ticket médio = Faturamento Total ÷ número dessas O.S.',
+    calculo: 'Pega os Agendamentos comparecidos e procura a O.S. de cada um no ROF001: EmpresaNome + OSNumero (ROF037) = Empresa + OS Numero (ROF001). Soma todas as linhas de cada O.S., cada O.S. uma vez: Peças = Produto, Serviços = Servico, Faturamento Total = Total. Ticket médio = Faturamento Total ÷ número dessas O.S.',
     filtros: `${REGRAS_AGENDA}\n${REGRAS_DESFECHO}\n${REGRAS_VALOR}`,
     colunas: `${COL_AGENDA}\n${COL_OS_VALOR}`,
   },
   agConversaoAtivos: {
     objetivo: 'Mostrar quanto faturaram as O.S. geradas pelos agendamentos ativos do período.',
     fonte: `${FONTE_AGENDA}\n${ARQ_OS}`,
-    calculo: 'Mesmo cálculo da Conversão — Total, só com os agendamentos Ativos. Ticket médio = Faturamento Total ÷ número dessas O.S.',
+    calculo: 'Mesmo cálculo da Conversão — Total, só com os agendamentos comparecidos com AgendamentoTipo = Ativo. Ticket médio = Faturamento Total ÷ número dessas O.S.',
     filtros: `${REGRAS_AGENDA}\n${REGRAS_DESFECHO}\n${REGRAS_VALOR}`,
     colunas: `${COL_AGENDA}\n${COL_OS_VALOR}`,
   },
   agConversaoPassivos: {
     objetivo: 'Mostrar quanto faturaram as O.S. geradas pelos agendamentos passivos do período.',
     fonte: `${FONTE_AGENDA}\n${ARQ_OS}`,
-    calculo: 'Mesmo cálculo da Conversão — Total, só com os agendamentos Receptivo, Presencial ou Internet. Ticket médio = Faturamento Total ÷ número dessas O.S.',
+    calculo: 'Mesmo cálculo da Conversão — Total, só com os agendamentos comparecidos com AgendamentoTipo = Receptivo, Presencial ou Internet. Ticket médio = Faturamento Total ÷ número dessas O.S.',
     filtros: `${REGRAS_AGENDA}\n${REGRAS_DESFECHO}\n${REGRAS_VALOR}`,
     colunas: `${COL_AGENDA}\n${COL_OS_VALOR}`,
   },
@@ -293,70 +322,84 @@ export const INFO = {
   taxaAgendamento: {
     objetivo: 'Medir quanto dos contatos gerados nas campanhas virou agendamento.',
     fonte: `${ARQ_CAMPANHA}\n${ARQ_AGEND}`,
-    calculo: `Agendados ÷ Contatos gerados × 100.\n${META}`,
+    calculo: `Contatos agendados ÷ Contatos gerados × 100. Contatos gerados = linhas do RCR038 (campanha + atendimento); Contatos agendados = contatos ligados a um agendamento Ativo do ROF037 pelo Chassi + cliente (ID_Cliente = CodCliente), criado até 30 dias após a campanha, sem CAN — cada agendamento contado uma vez.\n${META}`,
     filtros: `${REGRAS_CAMPANHA}\n${REGRAS_AGENDADO}`,
     colunas: `${COL_CAMPANHA}\n${COL_AGEND_CAMPANHA}`,
   },
   taxaConversao: {
-    objetivo: 'Medir quanto dos agendados das campanhas veio (abriu O.S.).',
+    objetivo: 'Medir quanto dos agendamentos das campanhas compareceu (abriu O.S.).',
     fonte: `${ARQ_CAMPANHA}\n${ARQ_AGEND}`,
-    calculo: `Vieram ÷ Agendados × 100.\n${META}`,
+    calculo: `Agendamentos comparecidos ÷ Contatos agendados × 100. Comparecido = o agendamento do ROF037 ligado ao contato tem OSNumero ou StatusAgendamento = FIM.\n${META}`,
     filtros: `${REGRAS_CAMPANHA}\n${REGRAS_AGENDADO}\n${REGRAS_SITUACAO}`,
     colunas: `${COL_CAMPANHA}\n${COL_AGEND_CAMPANHA}`,
   },
   taxaNoShow: {
     objetivo: 'Medir quanto dos agendados das campanhas não compareceu.',
     fonte: `${ARQ_CAMPANHA}\n${ARQ_AGEND}`,
-    calculo: `No-show ÷ Agendados × 100.\n${META_MENOR(15)}`,
+    calculo: `Agendamentos não comparecidos (No-show) ÷ Contatos agendados × 100. No-show = o agendamento do ROF037 ligado ao contato está com StatusAgendamento = NSW.\n${META_MENOR(15)}`,
     filtros: `${REGRAS_CAMPANHA}\n${REGRAS_AGENDADO}\n${REGRAS_SITUACAO}`,
     colunas: `${COL_CAMPANHA}\n${COL_AGEND_CAMPANHA}`,
   },
   campanhas: {
     objetivo: 'Mostrar quantas campanhas de ativação foram executadas no período.',
     fonte: ARQ_CAMPANHA,
-    calculo: 'Números distintos de ID_Campanha_Execucao nos arquivos com data de campanha no período.',
+    calculo: 'Números distintos de ID_Campanha_Execucao nos arquivos RCR038 cuja data (no nome do arquivo, ex: "... CGR 20261019.xls" = 19/10/2026) está no período.',
     filtros: REGRAS_CAMPANHA,
     colunas: COL_CAMPANHA,
   },
   contatos: {
-    objetivo: 'Mostrar quantos clientes as campanhas mandaram contatar.',
+    objetivo: 'Mostrar quantos contatos as campanhas geraram.',
     fonte: ARQ_CAMPANHA,
-    calculo: 'Contatos (ID_Campanha_Execucao + id_atendimento) nos arquivos com data de campanha no período. Um cliente em duas campanhas conta duas vezes.',
+    calculo: 'Linhas do RCR038 dos arquivos com data da campanha no período, cada uma contada uma vez por ID_Campanha_Execucao + id_atendimento (se a mesma campanha foi salva em dois arquivos, a linha repetida é ignorada). O mesmo veículo em outra campanha conta de novo.',
     filtros: REGRAS_CAMPANHA,
     colunas: COL_CAMPANHA,
   },
   agendados: {
-    objetivo: 'Mostrar quantos contatos gerados viraram agendamento.',
+    objetivo: 'Mostrar quantos agendamentos as campanhas geraram, sem duplicar.',
     fonte: `${ARQ_CAMPANHA}\n${ARQ_AGEND}`,
-    calculo: 'Contatos gerados cujo chassi tem agendamento Ativo no ROF037 criado da data da campanha até 30 dias depois, sem estar cancelado.',
+    calculo: 'Para cada contato gerado (RCR038), procura no ROF037 um agendamento com: mesmo Chassi; CodCliente = ID_Cliente; AgendamentoTipo = Ativo; StatusAgendamento diferente de CAN; AgendamentoHistorico_Data (criação) entre a data da campanha e 30 dias depois. Achou = contato agendado. O mesmo agendamento conta uma vez: fica no contato da 1ª campanha do veículo; os outros contatos do mesmo veículo vão para Contatos encerrados ou Contatos a realizar.',
     filtros: `${REGRAS_CAMPANHA}\n${REGRAS_AGENDADO}`,
     colunas: `${COL_CAMPANHA}\n${COL_AGEND_CAMPANHA}`,
   },
   naoAgendados: {
     objetivo: 'Mostrar quantos contatos gerados não viraram agendamento.',
     fonte: `${ARQ_CAMPANHA}\n${ARQ_AGEND}`,
-    calculo: 'Contatos gerados − Agendados.',
+    calculo: 'Contatos gerados − Contatos agendados = Contatos encerrados + Contatos a realizar.',
     filtros: `${REGRAS_CAMPANHA}\n${REGRAS_AGENDADO}`,
     colunas: `${COL_CAMPANHA}\n${COL_AGEND_CAMPANHA}`,
   },
-  osAberta: {
-    objetivo: 'Mostrar quantos agendados das campanhas vieram.',
-    fonte: `${ARQ_CAMPANHA}\n${ARQ_AGEND}`,
-    calculo: 'Agendados cujo agendamento no ROF037 tem número de O.S. (ou status FIM).',
-    filtros: `${REGRAS_CAMPANHA}\n${REGRAS_AGENDADO}\n${REGRAS_SITUACAO}`,
-    colunas: `${COL_CAMPANHA}\n${COL_AGEND_CAMPANHA}`,
+  encerrados: {
+    objetivo: 'Mostrar quantos não agendados já foram trabalhados e não agendaram — e por quê.',
+    fonte: `${ARQ_CAMPANHA}\n${ARQ_AGEND}\n${ARQ_CONTATO}`,
+    calculo: 'Contatos gerados não agendados (ROF037) cujo atendimento, no RCR017 (id_atendimento do RCR038 = Atendimento_Codigo), tem MotivoEncerramento preenchido — ou um contato ativo com "Serviços:" na descrição. O motivo de cada um está no quadro Motivo de Encerramento.',
+    filtros: `${REGRAS_CAMPANHA}\n${REGRAS_AGENDADO}\n${REGRAS_CONTATO}`,
+    colunas: `${COL_CAMPANHA}\n${COL_AGEND_CAMPANHA}\n${COL_CONTATO}`,
   },
-  programados: {
-    objetivo: 'Mostrar quantos agendados das campanhas ainda vão vir.',
-    fonte: `${ARQ_CAMPANHA}\n${ARQ_AGEND}`,
-    calculo: 'Agendados cujo agendamento no ROF037 está AGE, CON ou RAG, ainda sem O.S.',
-    filtros: `${REGRAS_CAMPANHA}\n${REGRAS_AGENDADO}\n${REGRAS_SITUACAO}`,
-    colunas: `${COL_CAMPANHA}\n${COL_AGEND_CAMPANHA}`,
+  faltaContatar: {
+    objetivo: 'Mostrar quantos não agendados ainda precisam de contato para agendar.',
+    fonte: `${ARQ_CAMPANHA}\n${ARQ_AGEND}\n${ARQ_CONTATO}`,
+    calculo: 'Contatos gerados não agendados (ROF037) e sem motivo de encerramento no RCR017: o id_atendimento não aparece no RCR017 (sem contato) ou aparece só com contato sem resultado (a linha abaixo do número mostra quantos). Contatos gerados = Contatos agendados + Contatos encerrados + Contatos a realizar.',
+    filtros: `${REGRAS_CAMPANHA}\n${REGRAS_AGENDADO}\n${REGRAS_CONTATO}`,
+    colunas: `${COL_CAMPANHA}\n${COL_AGEND_CAMPANHA}\n${COL_CONTATO}`,
   },
-  noShow: {
-    objetivo: 'Mostrar quantos agendados das campanhas não compareceram.',
+  listaFaltaContatar: {
+    objetivo: 'Listar os contatos a realizar, para a equipe da Mesa de Agendamento trabalhar.',
+    fonte: `${ARQ_CAMPANHA}\n${ARQ_AGEND}\n${ARQ_CONTATO}`,
+    calculo: 'Os mesmos clientes do card Contatos a realizar, um por linha, da campanha mais antiga para a mais recente. Colunas: Data da campanha (nome do arquivo RCR038), Campanha (ID_Campanha_Execucao), Atendimento (id_atendimento), Cliente (nome), Chassi, Contato (Sem contato / Já contatado, sem resultado) e Último contato (AtendimentoContato_Data do RCR017).',
+    filtros: `${REGRAS_CAMPANHA}\n${REGRAS_AGENDADO}\n${REGRAS_CONTATO}`,
+    colunas: `${COL_CAMPANHA}\n${COL_AGEND_CAMPANHA}\n${COL_CONTATO}`,
+  },
+  motivos: {
+    objetivo: 'Mostrar por que os clientes das campanhas não agendaram.',
+    fonte: `${ARQ_CAMPANHA}\n${ARQ_AGEND}\n${ARQ_CONTATO}`,
+    calculo: 'Os clientes do card Contatos encerrados, um por cliente, pelo MotivoEncerramento do contato mais recente no RCR017; o total é igual ao card. "Agendamento no CRM sem Ativo no ROF037" = o contato registrou agendamento ("Serviços:"), mas não há agendamento Ativo no ROF037 dentro da regra. Quem agendou depois de recusar (ROF037) fica fora: conta em Contatos agendados. % = quantidade ÷ total do quadro.',
+    filtros: `${REGRAS_CAMPANHA}\n${REGRAS_AGENDADO}\n${REGRAS_CONTATO}`,
+    colunas: `${COL_CAMPANHA}\n${COL_AGEND_CAMPANHA}\n${COL_CONTATO}`,
+  },
+  quadroAgendados: {
+    objetivo: 'Mostrar o que aconteceu com os contatos agendados das campanhas: compareceram, ainda vão comparecer ou não compareceram.',
     fonte: `${ARQ_CAMPANHA}\n${ARQ_AGEND}`,
-    calculo: 'Agendados cujo agendamento no ROF037 está NSW (no-show).',
+    calculo: 'Contatos agendados por situação do agendamento no ROF037 — Agendamentos comparecidos: tem número de O.S. (ou status FIM) · Agendamentos a comparecer: AGE, CON ou RAG, ainda sem O.S. · Agendamentos não comparecidos (No-show): status NSW. O total é igual ao card Contatos agendados; % = quantidade ÷ total do quadro.',
     filtros: `${REGRAS_CAMPANHA}\n${REGRAS_AGENDADO}\n${REGRAS_SITUACAO}`,
     colunas: `${COL_CAMPANHA}\n${COL_AGEND_CAMPANHA}`,
   },
@@ -390,19 +433,32 @@ const ALERTA_PENDENTES = {
 export const OBJETIVO_ABAS = {
   'Por Data da O.S.': 'Análise com base na data de abertura da ordem de serviço: considera as ordens de serviço abertas no período e identifica quantas tiveram origem em agendamento.',
   'Por Data Agendamento': 'Análise com base na data do agendamento: considera os agendamentos programados para o período e apresenta o seu desfecho.',
-  'Por Campanhas': 'Análise com base na data de execução da campanha: considera as campanhas de ativação do CRM executadas no período e acompanha a evolução dos contatos.',
+  'Por Campanhas': 'Análise com base na data de execução da campanha: considera as campanhas de ativação do CRM executadas no período e mostra quantos clientes agendaram, por que os demais não agendaram e quantos ainda falta contatar.',
 }
 
-// Tabela do ícone ao lado do subtítulo "Campanhas de Ativação" (aba Por Campanhas).
+// Tabela do ícone na linha das abas, à direita (aba Por Campanhas).
 const TABELA_CAMPANHAS = {
   itens: [
     ['O que mostra', 'Uma linha por data de geração (todas as campanhas do dia juntas), da mais recente para a mais antiga, e uma linha de Total no fim.'],
-    ['Colunas', 'Data de geração (do nome do arquivo RCR038), Campanhas geradas, Contatos gerados, Agendados, Não agendados, Vieram, Vão vir, No-show e as taxas de Agendamento, Conversão e No-show.'],
+    ['Colunas', 'Data de geração (do nome do arquivo RCR038), Campanhas geradas, Contatos gerados, Contatos agendados, Não agendados, Contatos encerrados, Contatos a realizar, Agendamentos comparecidos, Agendamentos a comparecer, Agendamentos não comparecidos (No-show) e as taxas de Agendamento, Conversão e No-show.'],
     ['Regras', 'As mesmas dos cards e indicadores da aba, calculadas por data de geração; o Total é igual aos cards.'],
   ],
 }
 
-// Tabela do ícone ao lado do subtítulo "Agendamentos" (aba Por Data Agendamento).
+// Pop-up do ícone ✓ (Conferência linha a linha) na linha das abas, à direita (aba Por Campanhas).
+const TABELA_CONFERENCIA = {
+  itens: [
+    ['Para que serve', 'Conferir de onde sai cada número da aba: um contato gerado (atendimento) por linha, com o que foi encontrado em cada relatório. A soma das linhas de cada situação é igual ao card.'],
+    ['Filtros', 'Todos, Contato agendado, Contato encerrado e Contato a realizar (quantidade de cada um no botão = cards), e busca por cliente, chassi, atendimento, campanha ou operador. Vale o filtro Data da tela.'],
+    ['Colunas do RCR038', 'Data da campanha (nome do arquivo), Campanha (ID_Campanha_Execucao), Atendimento (id_atendimento), Cód. cliente (ID_Cliente), Cliente (nome), Chassi.'],
+    ['Colunas do RCR017 (pelo atendimento)', 'Contato (Encerrado / registrado, Já contatado sem resultado, Sem contato), Motivo de encerramento (o do contato mais recente), 1º contato e Último contato (AtendimentoContato_Data), Nº contatos (linhas do atendimento), Operador (Atendimento_UsuarioNom). Vazias = atendimento não está no RCR017.'],
+    ['Colunas do ROF037 (pelo chassi + cliente)', 'Agendamento criado em (AgendamentoHistorico_Data), Dias após a campanha (criação − data da campanha, até 30), Agendado para (DtAgendamento), Tipo, Status, O.S. (OSNumero) e Resultado (Compareceu, A comparecer, Não compareceu (No-show)). Vazias = não agendado. Veículo agendado na = quando o mesmo veículo foi agendado por outra campanha, mostra a campanha e o atendimento onde o agendamento contou (esta linha fica como não agendada).'],
+    ['Situação', 'Contato agendado (achou agendamento no ROF037 — vale mesmo se o RCR017 tiver motivo de recusa) · Contato encerrado (não agendado com motivo no RCR017) · Contato a realizar (não agendado sem motivo).'],
+    ['Exportar Excel', 'Baixa as linhas do filtro atual, com as mesmas colunas, para conferir nos relatórios do Dealer.net.'],
+  ],
+}
+
+// Tabela do ícone na linha das abas, à direita (aba Por Data Agendamento).
 const TABELA_AGENDAMENTOS = {
   itens: [
     ['O que mostra', 'Uma linha por data do agendamento, em ordem de data (da mais antiga para a mais recente), e uma linha de Total no fim.'],
@@ -410,7 +466,35 @@ const TABELA_AGENDAMENTOS = {
     ['Regras', 'As mesmas dos cards e indicadores da aba, calculadas por data do agendamento; o Total é igual aos cards.'],
   ],
 }
-// Tabela do ícone ao lado do subtítulo "Passagens" (aba Por Data da O.S.).
+// Pop-up do ícone ✓ (Consulta de agendamentos) da aba Por Data Agendamento.
+const TABELA_CONSULTA_AGEND = {
+  itens: [
+    ['Para que serve', 'Consultar os agendamentos do ROF037 um a um e conferir os cards da aba. Vale o filtro Data (data do agendamento, DtAgendamento) e o filtro Empresas da tela.'],
+    ['Filtros', 'Todos (sem cancelados) — igual ao card Agendamentos realizados · Ativos · Ativos de campanha · Ativos sem campanha · Passivos (Receptivo, Presencial, Internet) · Cancelados (status CAN, fora dos cards). Quantidade de cada um no botão; busca por cliente, chassi, placa, agendador ou O.S.'],
+    ['Um agendamento por linha', 'O ROF037 repete o agendamento em várias linhas (uma por serviço); a consulta mostra uma vez (empresa + cliente + data/hora + chassi, a mesma regra dos cards) e junta os serviços na coluna Serviços.'],
+    ['Colunas do ROF037', 'Data agendada (DtAgendamento), Criado em (AgendamentoHistorico_Data), Empresa (EmpresaNome), Cód. cliente (CodCliente), Cliente, Chassi, Placa, Modelo (ModeloVeiculo), Tipo (AgendamentoTipo), Agendador, Status (StatusAgendamento), O.S. (OSNumero), Abertura da O.S. (DataAbertura), Serviços (OficinaServico_TMODes), Observação (OBSAgendamento), Cancelado em (DataCancelamento), Motivo do cancelamento (MotivoCancelamento).'],
+    ['Desfecho', 'Comparecido (tem O.S.) · No-show (status NSW) · A comparecer (sem O.S. e sem no-show) · Cancelado (CAN) — as mesmas regras dos cards.'],
+    ['Veio de campanha?', 'Só para os Ativos. Sim = o mesmo chassi + cliente (Chassi + CodCliente = Chassi + ID_Cliente) está num RCR038 e o agendamento foi criado da data da campanha até 30 dias depois — a mesma regra do Agendado da aba Por Campanhas, olhando ao contrário. Colunas Campanha(s) (data), Atendimento(s), Dias após a campanha e Nº de campanhas vêm do RCR038; o veículo pode estar em mais de uma campanha dentro dos 30 dias, e aí todas aparecem, cada uma com a sua data. Campanhas de meses anteriores contam (ex: agendamento de outubro criado por campanha de setembro).'],
+    ['Diferença com a aba Por Campanhas', 'Aqui o filtro Data é a data do AGENDAMENTO; na aba Por Campanhas é a data da CAMPANHA. Por isso aqui entram agendamentos de campanhas de meses anteriores. As duas contam cada agendamento uma vez (ex: outubro — 5 agendados das campanhas de outubro; aqui 15 ativos de campanha agendados para outubro, contando campanhas de setembro).'],
+    ['Exportar Excel', 'Baixa as linhas do filtro atual, com as mesmas colunas.'],
+    ['Por que o ROF037 e não o RCR014', 'O ROF037 traz o tipo do agendamento (Ativo/Receptivo/Presencial/Internet), o status (inclusive no-show e cancelado), a empresa, o agendador e o número da O.S.; o RCR014 não traz tipo, status nem empresa.'],
+  ],
+}
+
+// Pop-up do ícone ✓ (Consulta de O.S.) na linha das abas, à direita (aba Por Data da O.S.).
+const TABELA_CONSULTA_OS = {
+  itens: [
+    ['Para que serve', 'Consultar as O.S. do ROF001 TODAS uma a uma e conferir os cards da aba. Vale o filtro Data (data de abertura, Data Criacao) e o filtro Empresas da tela.'],
+    ['Filtros', 'Todas (sem canceladas) — igual ao card Quant. O.S. por data de abertura · Com agendamento — igual ao card O.S. com agendamento · Agendamento ativo · Agendamento ativo de campanha · Agendamento passivo (Receptivo, Presencial, Internet) · Sem agendamento · Pendentes de autorização (alerta ⚠) · Canceladas (fora dos cards). Quantidade de cada um no botão; busca por O.S., chassi, consultor, agendador, empresa ou número da campanha.'],
+    ['Uma O.S. por linha', 'O ROF001 tem várias linhas por O.S.; a consulta mostra uma vez (Empresa + OS Numero) com os valores somados de todas as linhas — a mesma regra dos cards.'],
+    ['Colunas do ROF001', 'Data de abertura (Data Criacao), Empresa, O.S. (OS Numero), Situação (Situacao Tipo OS), Tipo O.S. (Tipo OS Sigla), Chassi, Consultor (Consultor Nome), Agendador (só informativo — não é usado na conta), Peças (Produto), Serviços (Servico), Desconto e Total.'],
+    ['Colunas do ROF037', 'Veio de agendamento? = Sim quando a O.S. está no ROF037 (Empresa + OS Numero = EmpresaNome + OSNumero) · Tipo do agendamento (AgendamentoTipo) e Agendamento criado em (AgendamentoHistorico_Data) desse agendamento.'],
+    ['Veio de campanha? (RCR038)', 'Só para O.S. de agendamento Ativo. Sim = o Chassi + CodCliente do agendamento do ROF037 está num RCR038 (Chassi + ID_Cliente) e o agendamento foi criado da data da campanha até 30 dias depois — a mesma regra da aba Por Campanhas. Campanha(s) (data), Atendimento(s) e Dias após a campanha vêm do RCR038; se o veículo estava em mais de uma campanha na janela, todas aparecem. Filtro próprio: Agendamento ativo de campanha.'],
+    ['Exportar Excel', 'Baixa as linhas do filtro atual, com as mesmas colunas.'],
+  ],
+}
+
+// Tabela do ícone na linha das abas, à direita (aba Por Data da O.S.).
 const TABELA_PASSAGENS = {
   itens: [
     ['O que mostra', 'Uma linha por data de abertura da O.S., em ordem de data (da mais antiga para a mais recente), e uma linha de Total no fim.'],
@@ -424,19 +508,22 @@ const TABELA_PASSAGENS = {
 export const MANUAL_ABAS_CARDS = [
   ['Aba Por Campanhas', [
     ['Tabela — Campanhas por data de geração', TABELA_CAMPANHAS],
+    ['Tabela — Conferência linha a linha', TABELA_CONFERENCIA],
     ['Indicador — Taxa de Agendamento', 'taxaAgendamento'],
-    ['Card — Campanhas geradas', 'campanhas'],
-    ['Card — Contatos gerados', 'contatos'],
-    ['Card — Agendados', 'agendados'],
-    ['Card — Não agendados', 'naoAgendados'],
-    ['Card — Vieram', 'osAberta'],
-    ['Card — Vão vir', 'programados'],
-    ['Card — No-show', 'noShow'],
     ['Indicador — Taxa de Conversão', 'taxaConversao'],
     ['Indicador — Taxa de No-show', 'taxaNoShow'],
+    ['Card — Campanhas geradas', 'campanhas'],
+    ['Card — Contatos gerados', 'contatos'],
+    ['Card — Contatos agendados', 'agendados'],
+    ['Card — Contatos encerrados', 'encerrados'],
+    ['Card — Contatos a realizar', 'faltaContatar'],
+    ['Quadro — Contatos agendados', 'quadroAgendados'],
+    ['Quadro — Motivo de Encerramento', 'motivos'],
+    ['Lista — Contatos a realizar', 'listaFaltaContatar'],
   ]],
   ['Aba Por Data Agendamento', [
     ['Tabela — Agendamentos por data do agendamento', TABELA_AGENDAMENTOS],
+    ['Tabela — Consulta de agendamentos', TABELA_CONSULTA_AGEND],
     ['Indicador — Taxa de Conversão', 'agTaxaConversao'],
     ['Indicador — Taxa de Conversão Ativo', 'agTaxaConversaoAtivo'],
     ['Indicador — Taxa de Conversão Passivo', 'agTaxaConversaoPassivo'],
@@ -453,6 +540,7 @@ export const MANUAL_ABAS_CARDS = [
   ]],
   ['Aba Por Data da O.S.', [
     ['Tabela — Passagens por data de abertura', TABELA_PASSAGENS],
+    ['Tabela — Consulta de O.S.', TABELA_CONSULTA_OS],
     ['Indicador — Taxa de Agendamento', 'gaugeAgendamentoOs'],
     ['Indicador — Taxa de Agendamento Ativo', 'gaugeAtivo'],
     ['Indicador — Taxa de Agendamento Passivo', 'gaugePassivo'],
@@ -479,6 +567,7 @@ export const MANUAL_GERAL = [
       [ARQ_OS, 'Pasta SharePoint: Banco de Dados - DAF - Pós-Vendas › Relatório Geral OS'],
       [ARQ_AGEND, 'Pasta SharePoint: Banco de Dados - DAF - Pós-Vendas › Agendamentos - CRM › AGENDAMENTO DE SERVICOS E PRODUTOS'],
       [ARQ_CAMPANHA, 'Pasta SharePoint: Banco de Dados - DAF - Pós-Vendas › Agendamentos - CRM › CAMPANHA CRM › (ano)'],
+      [ARQ_CONTATO, 'Pasta SharePoint: Banco de Dados - DAF - Pós-Vendas › Agendamentos - CRM › LISTA POR DATA CONTATO_ENCERRAMENTO'],
     ],
   },
 ]

@@ -8,6 +8,28 @@ import ProjetosNav from './ProjetosNav'
 import ProjetosFiltrosPanel, { FiltrosCompactBar } from './ProjetosFiltrosPanel'
 import ModalImportarProjeto, { baixarModeloExcel } from './ModalImportarProjeto'
 
+const renderNome = (nome) => {
+  if (!nome) return null
+  const parseLine = (line, baseKey) => {
+    const parts = []
+    const regex = /(\*\*(.+?)\*\*)|(\*(.+?)\*)/g
+    let last = 0; let match; let k = baseKey
+    while ((match = regex.exec(line)) !== null) {
+      if (match.index > last) parts.push(line.slice(last, match.index))
+      if (match[1]) parts.push(<strong key={k++}>{match[2]}</strong>)
+      else parts.push(<em key={k++}>{match[4]}</em>)
+      last = regex.lastIndex
+    }
+    if (last < line.length) parts.push(line.slice(last))
+    return parts
+  }
+  return nome.split('\n').reduce((acc, line, i) => {
+    if (i > 0) acc.push(<br key={`br${i}`} />)
+    acc.push(...parseLine(line, i * 1000))
+    return acc
+  }, [])
+}
+
 const STATUS_MAP = {
   mapeado:      { label: 'Mapeado',      cor: 'bg-slate-100 text-slate-600', corAtivo: 'bg-slate-500 text-white' },
   programado:   { label: 'Programado',   cor: 'bg-blue-100 text-blue-700' },
@@ -167,6 +189,10 @@ export default function ProjetosDashboard() {
   const [nomeExcluir, setNomeExcluir] = useState('')
   const [menuGear, setMenuGear] = useState(false)
   const [menuGearPos, setMenuGearPos] = useState({ top: 0, right: 0 })
+  const [menuTarefa, setMenuTarefa] = useState(null)
+  const [menuTarefaPos, setMenuTarefaPos] = useState({})
+  const [menuProjeto, setMenuProjeto] = useState(null)
+  const [menuProjetoPos, setMenuProjetoPos] = useState({})
   const [modalImportar, setModalImportar] = useState(false)
   const [expandidos, setExpandidos] = useState(() => new Set(_dash.expandidos))
   const [tarefasPorProjeto, setTarefasPorProjeto] = useState(() => ({ ..._dash.tarefasPorProjeto }))
@@ -1407,32 +1433,48 @@ export default function ProjetosDashboard() {
                         }>{fmtData(dataFimMax)}</span>
                       </td>
                       <td className="p-3 text-center border-l border-slate-100" onClick={e => e.stopPropagation()}>
-                        <div className="flex items-center justify-center gap-1">
-                          {canEditar && (
+                        <div className="relative flex items-center justify-center">
+                          {(canEditar || canDuplicar || canExcluir) && (
                             <button
-                              onClick={() => navigate(`/projetos/detalhe/${p.id}`)}
-                              className="p-1 rounded transition-colors text-slate-500 hover:text-blue-600 hover:bg-blue-50"
-                              title="Editar projeto"
+                              onClick={e => {
+                                e.stopPropagation()
+                                if (menuProjeto === p.id) { setMenuProjeto(null); return }
+                                const rect = e.currentTarget.getBoundingClientRect()
+                                const right = window.innerWidth - rect.right
+                                const spaceBelow = window.innerHeight - rect.bottom
+                                setMenuProjetoPos(spaceBelow < 160 ? { bottom: window.innerHeight - rect.top + 4, right, top: undefined } : { top: rect.bottom + 4, right, bottom: undefined })
+                                setMenuProjeto(p.id)
+                              }}
+                              className={`p-1.5 rounded transition-colors ${menuProjeto === p.id ? 'bg-slate-100 text-slate-700' : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'}`}
+                              title="Ações"
                             >
-                              <Edit2 className="h-3.5 w-3.5" />
+                              <Settings className="h-3.5 w-3.5" />
                             </button>
                           )}
-                          {canDuplicar && (
-                            <button
-                              onClick={() => duplicarProjeto(p)}
-                              disabled={duplicando === p.id}
-                              className="p-1 rounded transition-colors text-slate-500 hover:text-teal-600 hover:bg-teal-50 disabled:opacity-40"
-                              title="Duplicar projeto com todas as tarefas"
-                            >
-                              {duplicando === p.id
-                                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                : <Copy className="h-3.5 w-3.5" />}
-                            </button>
-                          )}
-                          {canExcluir && (
-                            <button onClick={() => confirmarExcluir(p)} className="p-1 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded transition-colors" title="Excluir projeto e tarefas">
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
+                          {menuProjeto === p.id && (
+                            <>
+                              <div className="fixed inset-0 z-10" onClick={() => setMenuProjeto(null)} />
+                              <div className="fixed z-20 bg-white border border-slate-200 rounded-lg shadow-lg py-1 min-w-[160px]" style={{ top: menuProjetoPos.top, bottom: menuProjetoPos.bottom, right: menuProjetoPos.right }}>
+                                {canEditar && (
+                                  <button onClick={() => { navigate(`/projetos/detalhe/${p.id}`); setMenuProjeto(null) }} className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-blue-50 hover:text-blue-700">
+                                    <Edit2 className="h-3.5 w-3.5 shrink-0" /> Editar Projeto
+                                  </button>
+                                )}
+                                {canDuplicar && (
+                                  <button onClick={() => { duplicarProjeto(p); setMenuProjeto(null) }} disabled={duplicando === p.id} className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-teal-50 hover:text-teal-700 disabled:opacity-40">
+                                    {duplicando === p.id ? <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" /> : <Copy className="h-3.5 w-3.5 shrink-0" />} Duplicar
+                                  </button>
+                                )}
+                                {canExcluir && (
+                                  <>
+                                    <div className="my-1 border-t border-slate-100" />
+                                    <button onClick={() => { confirmarExcluir(p); setMenuProjeto(null) }} className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-red-600 hover:bg-red-50">
+                                      <Trash2 className="h-3.5 w-3.5 shrink-0" /> Excluir
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            </>
                           )}
                         </div>
                       </td>
@@ -1448,11 +1490,12 @@ export default function ProjetosDashboard() {
                               <tr className="bg-slate-200/70 border-y border-slate-300/50 text-[9px] font-extrabold uppercase tracking-widest text-slate-500">
                                 <th className="px-2 py-1.5 text-center w-10">#</th>
                                 <th className="px-3 py-1.5 text-left">Tarefa</th>
+                                <th className="px-2 py-1.5 text-center w-24 whitespace-nowrap">Empresa</th>
+                                <th className="px-2 py-1.5 text-center w-32 whitespace-nowrap">Departamento / Área</th>
                                 <th className="px-2 py-1.5 text-center w-24 whitespace-nowrap">Sistema</th>
-                                <th className="px-2 py-1.5 text-center w-32 whitespace-nowrap">Depto / Área</th>
                                 <th className="px-2 py-1.5 text-center w-24 whitespace-nowrap">Responsável</th>
-                                <th className="px-2 py-1.5 text-center w-24 whitespace-nowrap">Status</th>
-                                <th className="px-2 py-1.5 text-center w-28 whitespace-nowrap">% Concl.</th>
+                                <th className="px-2 py-1.5 text-center w-24 whitespace-nowrap">Fase</th>
+                                <th className="px-2 py-1.5 text-center w-32 whitespace-nowrap">Status / % Concl.</th>
                                 <th className="px-2 py-1.5 text-center w-20 whitespace-nowrap">Início</th>
                                 <th className="px-2 py-1.5 text-center w-20 whitespace-nowrap">Término</th>
                                 <th className="px-1 py-1.5 w-16" />
@@ -1481,8 +1524,7 @@ export default function ProjetosDashboard() {
                             <td className="px-3 py-1.5">
                               <div className="flex items-start justify-between gap-2 min-w-0">
                                 <div className="flex items-start gap-1.5 min-w-0 flex-1">
-                                  {atrasadaTarefa && <AlertTriangle className="h-3 w-3 text-red-400 shrink-0 mt-0.5" />}
-                                  <span className="text-slate-700 font-medium leading-snug">{t.nome}</span>
+                                  <span className="text-slate-700 font-medium leading-snug">{renderNome(t.nome)}</span>
                                 </div>
                                 <button
                                   onClick={() => toggleDeliberacoes(t.id)}
@@ -1494,31 +1536,40 @@ export default function ProjetosDashboard() {
                                 </button>
                               </div>
                             </td>
+                            {/* Empresa */}
+                            <td className="px-2 py-1.5 text-center text-[10px] text-slate-500 whitespace-nowrap">
+                              {t.empresa_nome || <span className="text-slate-300">—</span>}
+                            </td>
+                            {/* Departamento / Área */}
+                            <td className="px-2 py-1.5 whitespace-nowrap">
+                              <div className="flex flex-col leading-tight">
+                                {p.departamento_nome && <span className="text-xs font-semibold text-slate-700 uppercase">{p.departamento_nome}</span>}
+                                {t.area_nome && <span className="text-[10px] text-slate-400 italic">{t.area_nome}</span>}
+                                {!p.departamento_nome && !t.area_nome && <span className="text-slate-300">—</span>}
+                              </div>
+                            </td>
                             {/* Sistema */}
                             <td className="px-2 py-1.5 text-center whitespace-nowrap">
                               {t.sistema_nome
                                 ? <span className="px-1.5 py-0.5 rounded text-[9px] font-bold" style={{ backgroundColor: sistCor, color: sistTxt }}>{t.sistema_nome}</span>
                                 : <span className="text-slate-300">—</span>}
                             </td>
-                            {/* Depto / Área */}
-                            <td className="px-2 py-1.5 text-center text-[10px] text-slate-500 whitespace-nowrap">
-                              {(p.departamento_nome || t.area_nome)
-                                ? [p.departamento_nome, t.area_nome].filter(Boolean).join(' / ')
-                                : <span className="text-slate-300">—</span>}
-                            </td>
                             {/* Responsável */}
                             <td className="px-2 py-1.5 text-center text-slate-600 text-[11px]">{t.responsavel_nome || <span className="text-slate-300">—</span>}</td>
-                            {/* Status */}
-                            <td className="px-2 py-1.5 text-center whitespace-nowrap">
-                              <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide ${kt.cor}`}>{kt.label}</span>
+                            {/* Fase */}
+                            <td className="px-2 py-1.5 text-center text-[10px] text-slate-500 whitespace-nowrap">
+                              {t.fase_nome || <span className="text-slate-300">—</span>}
                             </td>
-                            {/* % Conclusão */}
+                            {/* Status + % Conclusão */}
                             <td className="px-2 py-1.5">
-                              <div className="flex items-center gap-1.5">
-                                <div className="flex-1 h-1.5 bg-slate-200 rounded-full overflow-hidden min-w-[40px]">
-                                  <div className="h-full rounded-full bg-teal-500 transition-all" style={{ width: `${pct}%` }} />
+                              <div className="flex flex-col gap-1">
+                                <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold ${kt.cor}`}>{kt.label}</span>
+                                <div className="flex items-center gap-1.5">
+                                  <div className="h-1.5 w-14 bg-slate-100 rounded-full overflow-hidden">
+                                    <div className={`h-full rounded-full ${pct >= 100 ? 'bg-teal-500' : 'bg-blue-500'} transition-all`} style={{ width: `${pct}%` }} />
+                                  </div>
+                                  <span className={`text-[10px] font-bold whitespace-nowrap ${pct >= 100 ? 'text-teal-600' : pct > 0 ? 'text-slate-600' : 'text-slate-400'}`}>{pct}%</span>
                                 </div>
-                                <span className={`text-[10px] font-bold whitespace-nowrap ${pct >= 100 ? 'text-teal-600' : pct > 0 ? 'text-slate-600' : 'text-slate-400'}`}>{pct}%</span>
                               </div>
                             </td>
                             {/* Início */}
@@ -1533,21 +1584,48 @@ export default function ProjetosDashboard() {
                             </td>
                             {/* Ações */}
                             <td className="px-1 py-1.5">
-                              <div className="flex items-center justify-center gap-0.5">
+                              <div className="relative flex items-center justify-center gap-0.5">
                                 {t.status_kanban !== 'concluido' && canConcluirTar && (
                                   <button onClick={() => setModalConcluir({ tarefa: t, dataFim: hoje2 })} className="p-1 text-slate-400 hover:text-teal-600 hover:bg-teal-50 rounded transition-colors" title="Concluir tarefa">
                                     <CheckCircle2 className="h-3 w-3" />
                                   </button>
                                 )}
-                                {canEditarTar && (
-                                  <button onClick={() => abrirEditTarefa(t)} className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors" title="Editar tarefa">
-                                    <Edit2 className="h-3 w-3" />
+                                {(canEditarTar || canExcluirTar) && (
+                                  <button
+                                    onClick={e => {
+                                      e.stopPropagation()
+                                      if (menuTarefa === t.id) { setMenuTarefa(null); return }
+                                      const rect = e.currentTarget.getBoundingClientRect()
+                                      const right = window.innerWidth - rect.right
+                                      const spaceBelow = window.innerHeight - rect.bottom
+                                      setMenuTarefaPos(spaceBelow < 160 ? { bottom: window.innerHeight - rect.top + 4, right, top: undefined } : { top: rect.bottom + 4, right, bottom: undefined })
+                                      setMenuTarefa(t.id)
+                                    }}
+                                    className={`p-1 rounded transition-colors ${menuTarefa === t.id ? 'bg-slate-100 text-slate-700' : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'}`}
+                                    title="Ações"
+                                  >
+                                    <Settings className="h-3 w-3" />
                                   </button>
                                 )}
-                                {canExcluirTar && (
-                                  <button onClick={() => setModalExcluirTarefa(t)} className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors" title="Excluir tarefa">
-                                    <Trash2 className="h-3 w-3" />
-                                  </button>
+                                {menuTarefa === t.id && (
+                                  <>
+                                    <div className="fixed inset-0 z-10" onClick={() => setMenuTarefa(null)} />
+                                    <div className="fixed z-20 bg-white border border-slate-200 rounded-lg shadow-lg py-1 min-w-[140px]" style={{ top: menuTarefaPos.top, bottom: menuTarefaPos.bottom, right: menuTarefaPos.right }}>
+                                      {canEditarTar && (
+                                        <button onClick={() => { abrirEditTarefa(t); setMenuTarefa(null) }} className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-blue-50 hover:text-blue-700">
+                                          <Edit2 className="h-3.5 w-3.5 shrink-0" /> Editar
+                                        </button>
+                                      )}
+                                      {canExcluirTar && (
+                                        <>
+                                          <div className="my-1 border-t border-slate-100" />
+                                          <button onClick={() => { setModalExcluirTarefa(t); setMenuTarefa(null) }} className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-red-600 hover:bg-red-50">
+                                            <Trash2 className="h-3.5 w-3.5 shrink-0" /> Excluir
+                                          </button>
+                                        </>
+                                      )}
+                                    </div>
+                                  </>
                                 )}
                               </div>
                             </td>
@@ -1556,7 +1634,7 @@ export default function ProjetosDashboard() {
                           {/* painel de deliberações */}
                           {delibersAberto && (
                             <tr className="border-b border-blue-100">
-                              <td colSpan={10} className="pl-14 pr-6 py-4 bg-blue-50/30">
+                              <td colSpan={11} className="pl-14 pr-6 py-4 bg-blue-50/30">
                                 <div className="space-y-3">
                                   {/* lista */}
                                   {delibers.length > 0 ? (

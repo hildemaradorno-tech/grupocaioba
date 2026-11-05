@@ -20,6 +20,7 @@ const wrap = fn => (req, res, next) => fn(req, res, next).catch(next)
 // view liberada → coluna usada para ordenar (paginação estável)
 const VIEWS = {
   vw_ctb_centros_resultado: 'centro_resultado_id',
+  vw_ctb_cr_visuais: 'cr_visual_id',
   vw_ctb_orcamento: 'orcamento_id',
   vw_ctb_plano_contas: 'conta_id',
   vw_ctb_dre_estrutura: 'linha_dre_id',

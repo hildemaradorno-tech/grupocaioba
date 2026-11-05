@@ -103,7 +103,13 @@ function ColunaMenu({ node, rootNode, selecionadoKey, hasPermission, navigate, o
               key={item.key}
               onClick={() => {
                 if (item.href) { window.open(item.href, '_blank', 'noopener,noreferrer'); return }
-                isFolder ? onSelecionar(item) : navigate('/' + (item.navTo || item.key))
+                if (isFolder) { onSelecionar(item); return }
+                // navTo sem permissão (ex.: Controladoria → DRE quando só a aba Centro de Resultado
+                // está liberada) cairia no bloqueio da rota e voltaria pra Home: abre a 1ª aba liberada.
+                const destino = item.navTo && item.children && !hasPermission(item.navTo)
+                  ? getLeafKeys(item).find(k => hasPermission(k)) || item.navTo
+                  : (item.navTo || item.key)
+                navigate('/' + destino)
               }}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-colors text-left ${
                 ativo ? cor.pill : 'bg-slate-100 hover:bg-slate-200'

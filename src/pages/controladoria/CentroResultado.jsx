@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { Plus, Target, Search, FileSpreadsheet } from 'lucide-react'
+import { Plus, Target, Search, FileSpreadsheet, Eye } from 'lucide-react'
 import ImportarCentrosResultadoModal from './ImportarCentrosResultadoModal'
+import CrVisuaisModal from './CrVisuaisModal'
 import MenuEngrenagem from '../../components/MenuEngrenagem'
 import { useAuth } from '../../context/AuthContext'
 import PermissionActionButtons from '../../components/PermissionActionButtons'
@@ -8,12 +9,15 @@ import { apiService } from '../../services/api'
 import { CabecalhoControladoria, ModalForm, ConfirmarExclusao, BadgeAtivo, INPUT, LABEL, mensagemErro } from './ControladoriaNav'
 
 const MENU = 'controladoria/centro-resultado'
-const FORM_VAZIO = { codigo: '', descricao: '', sigla: '', sistema_id: '', ativo: true }
+const FORM_VAZIO = { codigo: '', descricao: '', sigla: '', sistema_id: '', cr_visual_id: '', ativo: true }
 
 export default function CentroResultado() {
   const [centros, setCentros] = useState([])
   // Sistemas vêm do cadastro Gestão de Projetos → Cadastros → Sistemas (proj_sistemas).
   const [sistemas, setSistemas] = useState([])
+  // CR Visual: nomenclatura usada em Orçamento e dashboards (ctb_cr_visuais).
+  const [crVisuais, setCrVisuais] = useState([])
+  const [modalCrVisualAberto, setModalCrVisualAberto] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [busca, setBusca] = useState('')
@@ -34,9 +38,10 @@ export default function CentroResultado() {
     setLoading(true)
     setError(null)
     try {
-      const [c, s] = await Promise.all([apiService.getCtbCentrosResultado(), apiService.getProjSistemas()])
+      const [c, s, v] = await Promise.all([apiService.getCtbCentrosResultado(), apiService.getProjSistemas(), apiService.getCtbCrVisuais()])
       setCentros(c)
       setSistemas(s)
+      setCrVisuais(v)
     } catch (err) {
       setError(err.message || String(err))
     } finally {
@@ -46,6 +51,7 @@ export default function CentroResultado() {
   useEffect(() => { loadData() }, [])
 
   const sistemasMap = useMemo(() => Object.fromEntries(sistemas.map(s => [s.id, s])), [sistemas])
+  const crVisuaisMap = useMemo(() => Object.fromEntries(crVisuais.map(v => [v.id, v])), [crVisuais])
 
   const visiveis = useMemo(() => {
     const t = busca.trim().toLowerCase()
@@ -53,13 +59,14 @@ export default function CentroResultado() {
       .filter(c => !filtroSistema || (filtroSistema === '__sem' ? !c.sistema_id : c.sistema_id === filtroSistema))
       .sort((a, b) => a.codigo.localeCompare(b.codigo, 'pt-BR', { numeric: true }))
     if (!t) return lista
-    return lista.filter(c => c.codigo.toLowerCase().includes(t) || c.descricao.toLowerCase().includes(t) || (c.sigla || '').toLowerCase().includes(t))
-  }, [centros, busca, filtroSistema])
+    return lista.filter(c => c.codigo.toLowerCase().includes(t) || c.descricao.toLowerCase().includes(t) || (c.sigla || '').toLowerCase().includes(t)
+      || (crVisuaisMap[c.cr_visual_id]?.descricao || '').toLowerCase().includes(t))
+  }, [centros, busca, filtroSistema, crVisuaisMap])
 
   const abrirIncluir = () => { setEditingId(null); setForm(FORM_VAZIO); setErroModal(null); setModalAberto(true) }
   const abrirEditar = (c) => {
     setEditingId(c.id)
-    setForm({ codigo: c.codigo, descricao: c.descricao, sigla: c.sigla || '', sistema_id: c.sistema_id || '', ativo: c.ativo ?? true })
+    setForm({ codigo: c.codigo, descricao: c.descricao, sigla: c.sigla || '', sistema_id: c.sistema_id || '', cr_visual_id: c.cr_visual_id || '', ativo: c.ativo ?? true })
     setErroModal(null)
     setModalAberto(true)
   }
@@ -97,6 +104,7 @@ export default function CentroResultado() {
           <MenuEngrenagem itens={[
             { icon: Plus, cor: 'text-indigo-600', titulo: 'Incluir Centro de Resultado', descricao: 'Cadastra um novo centro de resultado', onClick: abrirIncluir },
             { icon: FileSpreadsheet, cor: 'text-emerald-600', titulo: 'Importar Excel', descricao: 'Importa código e descrição de uma planilha para um sistema', onClick: () => setModalImportarAberto(true) },
+            { icon: Eye, cor: 'text-violet-600', titulo: 'Centro de Resultado (Visual)', descricao: 'Cadastra as nomenclaturas de centro de resultado usadas em Orçamento e dashboards', onClick: () => setModalCrVisualAberto(true) },
           ]} />
         )}
       />
@@ -112,16 +120,17 @@ export default function CentroResultado() {
       ) : (
         <>
           <div className="flex items-center gap-3">
-            <div className="relative w-80">
+            {/* Só os sistemas que têm centro cadastrado. */}
+            {/* INPUT traz w-full: tirado aqui pra o seletor ficar do tamanho do nome do sistema. */}
+            <select value={filtroSistema} onChange={e => setFiltroSistema(e.target.value)} className={`${INPUT.replace('w-full ', '')} w-auto shrink-0 pr-7`}>
+              <option value="">Todos os sistemas</option>
+              {centros.some(c => !c.sistema_id) && <option value="__sem">Sem sistema</option>}
+              {sistemas.filter(s => centros.some(c => c.sistema_id === s.id)).map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
+            </select>
+            <div className="relative flex-1 max-w-2xl">
               <Search className="h-3.5 w-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
               <input value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar por código, descrição ou sigla" className={`${INPUT} pl-8`} />
             </div>
-            <select value={filtroSistema} onChange={e => setFiltroSistema(e.target.value)} className={`${INPUT} w-60`}>
-              <option value="">Todos os sistemas</option>
-              <option value="__sem">Sem sistema</option>
-              {sistemas.map(s => <option key={s.id} value={s.id}>{s.nome}{s.ativo === false ? ' (inativo)' : ''}</option>)}
-            </select>
-            <span className="text-[11px] text-slate-400">{visiveis.length} de {centros.length} centro(s)</span>
           </div>
 
           <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
@@ -130,15 +139,16 @@ export default function CentroResultado() {
                 <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[11px] font-semibold uppercase tracking-wider">
                   <th className="p-3 w-24 text-center">Ações</th>
                   <th className="p-3 w-32">Código</th>
-                  <th className="p-3">Descrição</th>
+                  <th className="p-3">Descrição no DMS</th>
                   <th className="p-3 w-28">Sigla</th>
-                  <th className="p-3 w-64">Sistema</th>
+                  <th className="p-3 w-48">Sistema</th>
+                  <th className="p-3 w-48">Descrição Visual</th>
                   <th className="p-3 w-24 text-center">Situação</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
                 {visiveis.length === 0 ? (
-                  <tr><td colSpan="6" className="p-6 text-center text-slate-400">{centros.length === 0 ? 'Nenhum centro de resultado cadastrado.' : 'Nenhum centro encontrado.'}</td></tr>
+                  <tr><td colSpan="7" className="p-6 text-center text-slate-400">{centros.length === 0 ? 'Nenhum centro de resultado cadastrado.' : 'Nenhum centro encontrado.'}</td></tr>
                 ) : visiveis.map(c => (
                   <tr key={c.id} className="hover:bg-slate-50/70 transition-colors">
                     <td className="p-3"><PermissionActionButtons engrenagem menuPath={MENU} onEdit={() => abrirEditar(c)} onDelete={() => setExcluir(c)} /></td>
@@ -155,6 +165,7 @@ export default function CentroResultado() {
                         </span>
                       ) : <span className="text-slate-300">—</span>}
                     </td>
+                    <td className="p-3 text-[11px] font-semibold text-violet-700">{crVisuaisMap[c.cr_visual_id]?.descricao || <span className="text-slate-300 font-normal">—</span>}</td>
                     <td className="p-3 text-center"><BadgeAtivo ativo={c.ativo} /></td>
                   </tr>
                 ))}
@@ -179,7 +190,7 @@ export default function CentroResultado() {
               <input required value={form.codigo} onChange={e => setForm(f => ({ ...f, codigo: e.target.value }))} placeholder="Ex: 101" className={`${INPUT} font-mono`} />
             </div>
             <div className="flex flex-col gap-1.5 col-span-2">
-              <label className={LABEL}>Descrição *</label>
+              <label className={LABEL}>Descrição no DMS *</label>
               <input required value={form.descricao} onChange={e => setForm(f => ({ ...f, descricao: e.target.value }))} placeholder="Ex: Oficina Campo Grande" className={INPUT} />
             </div>
           </div>
@@ -196,6 +207,14 @@ export default function CentroResultado() {
             </select>
             <p className="text-[11px] text-slate-400">Cadastro em Gestão de Projetos → Cadastros → Sistemas.</p>
           </div>
+          <div className="flex flex-col gap-1.5">
+            <label className={LABEL}>Centro de Resultado (Visual)</label>
+            <select value={form.cr_visual_id} onChange={e => setForm(f => ({ ...f, cr_visual_id: e.target.value }))} className={INPUT}>
+              <option value="">— Sem Centro de Resultado (Visual) —</option>
+              {crVisuais.filter(v => v.ativo !== false || v.id === form.cr_visual_id).map(v => <option key={v.id} value={v.id}>{v.codigo} — {v.descricao}{v.ativo === false ? ' (inativo)' : ''}</option>)}
+            </select>
+            <p className="text-[11px] text-slate-400">Cadastro na engrenagem → Centro de Resultado (Visual). Usado em Orçamento e dashboards.</p>
+          </div>
           <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer">
             <input type="checkbox" checked={form.ativo} onChange={e => setForm(f => ({ ...f, ativo: e.target.checked }))} className="w-4 h-4" />
             Ativo
@@ -209,6 +228,15 @@ export default function CentroResultado() {
           sistemas={sistemas}
           onClose={() => setModalImportarAberto(false)}
           onImported={loadData}
+        />
+      )}
+
+      {modalCrVisualAberto && (
+        <CrVisuaisModal
+          crVisuais={crVisuais}
+          centros={centros}
+          onClose={() => setModalCrVisualAberto(false)}
+          onChanged={loadData}
         />
       )}
 

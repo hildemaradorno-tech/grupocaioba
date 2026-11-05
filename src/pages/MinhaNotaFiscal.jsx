@@ -15,11 +15,41 @@ import { gerarPdfComissoes, paraNomeArquivo } from '../utils/comissoesPdf'
 // funcionário (policies "minha-nota-fiscal"). Aqui o PJ também anexa as notas emitidas (pj_anexos tipo NF)
 // e clica em Confirmar (pj_nf_envios): fica "Aguardando recebimento da Nota Fiscal", com os anexos
 // travados, até o Processamento confirmar o recebimento ("Nota Fiscal Recebida") ou devolver.
+// modoGestao: aba Nota Fiscal de Prestadores de Serviços — a mesma tela, escolhendo o prestador PJ.
+// Desde nov/2026 o menu próprio (/minha-nota-fiscal) saiu: a tela só é usada por essa aba.
 const STATUS_LIBERADOS = ['CONFERIDO_DP', 'PROCESSAMENTO_PARCIAL', 'PROCESSADO']
 const fmtData = (v) => (v ? String(v).split('-').reverse().join('/') : '')
 
-export default function MinhaNotaFiscal() {
-  const { userFuncionarioId } = useAuth()
+export default function MinhaNotaFiscal({ modoGestao = false }) {
+  const { userFuncionarioId: meuFuncionarioId } = useAuth()
+  // Prestadores PJ com cálculo salvo (Regra PJ) — só no modoGestao.
+  const [prestadores, setPrestadores] = useState([])
+  const [prestadorId, setPrestadorId] = useState('')
+  useEffect(() => {
+    if (!modoGestao) return
+    let ativo = true
+    ;(async () => {
+      try {
+        const pols = await apiService.getPoliticaComissao()
+        const idsPj = pols.filter(p => p.prestacao_pj).map(p => p.id)
+        if (idsPj.length === 0) return
+        const { data: calc, error } = await supabase.from('fato_comissoes_calculadas').select('funcionario_id').in('politica_id', idsPj).not('lote_id', 'is', null)
+        if (error) throw error
+        const ids = [...new Set((calc || []).map(r => r.funcionario_id))]
+        if (ids.length === 0) return
+        const { data: fs, error: eF } = await supabase.from('dim_funcionarios').select('id, nome_funcionario, codigo_funcionario').in('id', ids)
+        if (eF) throw eF
+        if (!ativo) return
+        const ordenados = (fs || []).sort((a, b) => (a.nome_funcionario || '').localeCompare(b.nome_funcionario || '', 'pt-BR'))
+        setPrestadores(ordenados)
+        setPrestadorId(atual => atual || ordenados[0]?.id || '')
+      } catch (err) {
+        if (ativo) setErro(err.message || String(err))
+      }
+    })()
+    return () => { ativo = false }
+  }, [modoGestao])
+  const userFuncionarioId = modoGestao ? prestadorId : meuFuncionarioId
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState(null)
   const [func, setFunc] = useState(null)
@@ -142,11 +172,20 @@ export default function MinhaNotaFiscal() {
   }
 
   return (
-    <div className="min-h-full w-full p-6 space-y-4">
-      <div className="flex items-center justify-between border-b border-slate-200 pb-4 gap-4 flex-wrap">
+    <div className={modoGestao ? 'w-full space-y-4' : 'min-h-full w-full p-6 space-y-4'}>
+      <div className={`flex items-center justify-between gap-4 flex-wrap ${modoGestao ? '' : 'border-b border-slate-200 pb-4'}`}>
         <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2"><FileText className="h-5 w-5 text-emerald-600" /> Minha Nota Fiscal</h1>
-          <p className="text-xs text-slate-500">Valores da sua prestação de serviços já conferidos pelo DP — emita as notas conforme o quadro abaixo e baixe o PDF.</p>
+          {modoGestao ? (
+            <select value={prestadorId} onChange={e => setPrestadorId(e.target.value)} className="text-xs p-2 border border-slate-200 rounded-md bg-white font-semibold min-w-[280px]">
+              {prestadores.length === 0 && <option value="">Nenhum prestador PJ com cálculo salvo</option>}
+              {prestadores.map(p => <option key={p.id} value={p.id}>{p.codigo_funcionario ? `${p.codigo_funcionario} — ` : ''}{p.nome_funcionario}</option>)}
+            </select>
+          ) : (
+            <>
+              <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2"><FileText className="h-5 w-5 text-emerald-600" /> Minha Nota Fiscal</h1>
+              <p className="text-xs text-slate-500">Valores da sua prestação de serviços já conferidos pelo DP — emita as notas conforme o quadro abaixo e baixe o PDF.</p>
+            </>
+          )}
           {lote && (
             <span className={`inline-block mt-2 px-2 py-0.5 rounded-full text-[10px] font-bold border whitespace-nowrap ${STATUS_NF_PRESTADOR[etapa].className}`}>{STATUS_NF_PRESTADOR[etapa].label}</span>
           )}
@@ -173,6 +212,8 @@ export default function MinhaNotaFiscal() {
 
       {carregando ? (
         <p className="text-xs text-slate-400 flex items-center gap-1.5"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Carregando...</p>
+      ) : !userFuncionarioId && modoGestao ? (
+        <p className="text-xs text-slate-400">Escolha o prestador.</p>
       ) : !userFuncionarioId ? (
         <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">Seu usuário não está ligado a um funcionário. Peça ao administrador para informar o funcionário no cadastro de Usuários.</p>
       ) : lotes.length === 0 ? (

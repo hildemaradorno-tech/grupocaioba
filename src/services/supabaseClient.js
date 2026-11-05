@@ -6179,8 +6179,10 @@ export const apiService = {
     if (error) throw error
     return data || []
   },
-  salvarCtbCentroResultado: async (id, { codigo, descricao, sistema_id, sigla, ativo }) => {
+  salvarCtbCentroResultado: async (id, { codigo, descricao, sistema_id, sigla, cr_visual_id, ativo }) => {
     const payload = { codigo: codigo.trim(), descricao: descricao.trim(), sistema_id: sistema_id || null, sigla: (sigla || '').trim() || null, ativo: ativo ?? true }
+    // Importação não envia cr_visual_id: só grava quando vier do formulário.
+    if (cr_visual_id !== undefined) payload.cr_visual_id = cr_visual_id || null
     const query = id
       ? supabase.from('ctb_centros_resultado').update(payload).eq('id', id)
       : supabase.from('ctb_centros_resultado').insert([payload])
@@ -6190,6 +6192,27 @@ export const apiService = {
   },
   deleteCtbCentroResultado: async (id) => {
     const { error } = await supabase.from('ctb_centros_resultado').delete().eq('id', id)
+    if (error) throw error
+    return { success: true }
+  },
+
+  getCtbCrVisuais: async () => {
+    const { data, error } = await supabase.from('ctb_cr_visuais').select('*')
+    if (error) throw error
+    return (data || []).sort((a, b) => a.codigo.localeCompare(b.codigo, 'pt-BR', { numeric: true }))
+  },
+  salvarCtbCrVisual: async (id, { codigo, descricao, ativo }) => {
+    // Centro de Resultado (Visual) é sempre gravado em maiúsculas.
+    const payload = { codigo: codigo.trim().toUpperCase(), descricao: descricao.trim().toUpperCase(), ativo: ativo ?? true }
+    const query = id
+      ? supabase.from('ctb_cr_visuais').update(payload).eq('id', id)
+      : supabase.from('ctb_cr_visuais').insert([payload])
+    const { data, error } = await query.select()
+    if (error) throw error
+    return data?.[0]
+  },
+  deleteCtbCrVisual: async (id) => {
+    const { error } = await supabase.from('ctb_cr_visuais').delete().eq('id', id)
     if (error) throw error
     return { success: true }
   },

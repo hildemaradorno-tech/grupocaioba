@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Bar, BarChart, CartesianGrid, LabelList, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { AlertTriangle, BookOpen, Building2, Calendar, ChevronDown, ChevronLeft, ChevronRight, Info, RefreshCw, RotateCcw, Table2, X } from 'lucide-react'
+import { AlertTriangle, BookOpen, Building2, Calendar, ChevronDown, ChevronLeft, ChevronRight, Download, Info, ListChecks, RefreshCw, RotateCcw, Table2, X } from 'lucide-react'
 import { apiService } from '../../services/supabaseClient'
 import { empresaSelecionavel } from '../../utils/comissoesElegibilidade'
 import { INFO, OBJETIVO_ABAS } from './agendamentoServicosTextos'
@@ -13,28 +13,28 @@ const TIPOS = ['AGENDAMENTO ATIVO', 'AGENDAMENTO RECEPTIVO']
 
 const KPIS = [
   { label: 'Campanhas geradas', chave: 'campanhas' }, // ID_Campanha_Execucao distintos
-  { label: 'Contatos gerados', chave: 'contatos' }, // contatos (campanha + atendimento) do RCR038
-  { label: 'Agendados', chave: 'agendados' }, // chassi com agendamento Ativo no ROF037 até 30 dias após a campanha
-  { label: 'Não agendados', chave: 'naoAgendados' }, // gerados − agendados
+  { label: 'Contatos gerados', chave: 'contatos' }, // atendimentos (campanha + atendimento) do RCR038 — veículo repetido conta de novo
+  { label: 'Contatos agendados', chave: 'agendados' }, // chassi + cliente com agendamento Ativo no ROF037 até 30 dias após a campanha
+  { label: 'Contatos encerrados', chave: 'encerrados' }, // não agendados com motivo de encerramento no RCR017
+  { label: 'Contatos a realizar', chave: 'faltaContatar' }, // não agendados sem motivo no RCR017 (sem contato ou sem resultado)
 ]
 
-// Velocímetros. valor/meta em %; valor null = ainda sem fonte de dados.
-// junto: true = fica abaixo dos cards de situação dos agendamentos.
+// Velocímetros (os três lado a lado no topo da aba). valor/meta em %; valor null = ainda sem fonte de dados.
 const GAUGES = [
   { label: 'Taxa de Agendamento', chave: 'taxaAgendamento', valor: null, meta: 80, info: INFO.taxaAgendamento },
-  { label: 'Taxa de Conversão', chave: 'taxaConversao', junto: true, valor: null, meta: 80, info: INFO.taxaConversao },
-  { label: 'Taxa de No-show', chave: 'taxaNoShow', junto: true, valor: null, meta: 15, info: INFO.taxaNoShow, menorMelhor: true },
+  { label: 'Taxa de Conversão', chave: 'taxaConversao', valor: null, meta: 80, info: INFO.taxaConversao },
+  { label: 'Taxa de No-show', chave: 'taxaNoShow', valor: null, meta: 15, info: INFO.taxaNoShow, menorMelhor: true },
 ]
 
 // Meia-lua: arco cinza de fundo, arco preenchido até o valor e um corte branco na meta.
 const fmtBRL = (v) => (v === null || v === undefined ? '—' : v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }))
 
 // O que aconteceu com os agendados das campanhas, pelo status do agendamento no ROF037:
-// Vieram = tem número de O.S (ou status FIM); No-show = NSW; Vão vir = ainda vai acontecer (AGE/CON/RAG).
+// Agendamentos comparecidos = tem número de O.S (ou status FIM); Agendamentos não comparecidos (No-show) = NSW; Agendamentos a comparecer = ainda vai acontecer (AGE/CON/RAG).
 const SITUACAO = [
-  { label: 'Vieram', chave: 'osAberta', cor: '#059669' },
-  { label: 'Vão vir', chave: 'programados', cor: '#3b82f6' },
-  { label: 'No-show', chave: 'noShow', cor: '#dc2626' },
+  { label: 'Agendamentos comparecidos', chave: 'osAberta', cor: '#059669' },
+  { label: 'Agendamentos a comparecer', chave: 'programados', cor: '#3b82f6' },
+  { label: 'Agendamentos não comparecidos (No-show)', chave: 'noShow', cor: '#dc2626' },
 ]
 const situacaoDe = (ag) => (!ag ? null : ag.os !== null || ag.status === 'FIM' ? 'osAberta' : ag.status === 'NSW' ? 'noShow' : 'programados')
 
@@ -263,18 +263,120 @@ function SeletorEmpresas({ grupos, selecionadas, onChange }) {
   )
 }
 
-// Subtítulo de seção com o ícone de tabela à direita (abre a tabela por data da aba).
-function SubtituloSecao({ titulo, onTabela, tituloTabela }) {
+// Ícones da aba, na linha das abas, à direita: conferência/consulta linha a linha e tabela por data.
+function IconesAba({ onTabela, tituloTabela, onConferencia, tituloConferencia }) {
   return (
-    <div className="flex items-end justify-between gap-2 border-b border-slate-700 pb-1">
-      <h2 className="text-xs font-bold text-slate-200 uppercase tracking-wide">{titulo}</h2>
-      {onTabela && (
-        <button type="button" onClick={onTabela} title={`${tituloTabela} (tabela)`} aria-label={tituloTabela}
-          className="p-1 rounded-md text-slate-300 hover:text-white hover:bg-slate-700 transition-colors">
-          <Table2 className="h-4 w-4" />
-        </button>
-      )}
+    <div className="flex justify-end">
+      <div className="flex items-center gap-1">
+        {onConferencia && (
+          <button type="button" onClick={onConferencia} title={tituloConferencia} aria-label={tituloConferencia}
+            className="p-1 rounded-md text-slate-300 hover:text-white hover:bg-slate-700 transition-colors">
+            <ListChecks className="h-4 w-4" />
+          </button>
+        )}
+        {onTabela && (
+          <button type="button" onClick={onTabela} title={`${tituloTabela} (tabela)`} aria-label={tituloTabela}
+            className="p-1 rounded-md text-slate-300 hover:text-white hover:bg-slate-700 transition-colors">
+            <Table2 className="h-4 w-4" />
+          </button>
+        )}
+      </div>
     </div>
+  )
+}
+
+// Situação de cada contato gerado (mesma regra dos cards da aba Por Campanhas).
+const situacaoCampanha = (r) => (r.agendamento ? 'Contato agendado' : r.contato_realizado ? 'Contato encerrado' : 'Contato a realizar')
+const agDaLinha = (r) => r.agendamento // só o atendimento onde o agendamento contou
+const contatoCampanha = (r) => (r.contato_realizado ? 'Encerrado / registrado' : r.contato_registrado ? 'Já contatado, sem resultado' : 'Sem contato')
+const RESULTADO_AG = { osAberta: 'Compareceu', programados: 'A comparecer', noShow: 'Não compareceu (No-show)' }
+const diasEntre = (de, ate) => (de && ate ? Math.round((new Date(`${ate}T12:00:00Z`) - new Date(`${de}T12:00:00Z`)) / 864e5) : null)
+// Colunas da conferência: [título, valor da linha]. As mesmas vão para o Excel.
+const COLUNAS_CONFERENCIA = [
+  ['Data da campanha', r => fmtData(r.data)],
+  ['Campanha', r => r.id_campanha_execucao],
+  ['Atendimento', r => r.id_atendimento ?? ''],
+  ['Cód. cliente', r => r.id_cliente ?? ''],
+  ['Cliente', r => r.cliente],
+  ['Chassi', r => r.chassi],
+  ['Situação', r => situacaoCampanha(r)],
+  ['Contato (RCR017)', r => contatoCampanha(r)],
+  ['Motivo de encerramento', r => r.motivo_final || ''],
+  ['1º contato', r => (r.contato_primeiro ? fmtData(r.contato_primeiro) : '')],
+  ['Último contato', r => (r.contato_ultimo ? fmtData(r.contato_ultimo) : '')],
+  ['Nº contatos', r => r.contato_qtde || ''],
+  ['Operador', r => r.operador || ''],
+  ['Agendamento criado em', r => (agDaLinha(r) ? fmtData(agDaLinha(r).criado) : '')],
+  ['Dias após a campanha', r => (agDaLinha(r) ? diasEntre(r.data, agDaLinha(r).criado) : '')],
+  ['Agendado para', r => (agDaLinha(r)?.data_agendamento ? fmtData(agDaLinha(r).data_agendamento) : '')],
+  ['Tipo', r => agDaLinha(r)?.tipo || ''],
+  ['Status', r => agDaLinha(r)?.status || ''],
+  ['O.S.', r => agDaLinha(r)?.os ?? ''],
+  ['Resultado', r => (agDaLinha(r) ? RESULTADO_AG[situacaoDe(agDaLinha(r))] : '')],
+  ['Veículo agendado na', r => (r.repetido_de ? `campanha ${r.repetido_de.id_campanha_execucao} (atendimento ${r.repetido_de.id_atendimento ?? '—'})` : '')],
+]
+const FILTROS_CONFERENCIA = ['Todos', 'Contato agendado', 'Contato encerrado', 'Contato a realizar']
+
+// Pop-up "Conferência linha a linha" (aba Por Campanhas): um contato gerado por linha com tudo o que liga
+// os relatórios (atendimento → RCR017; chassi + cliente → ROF037), filtro pela situação e exportação para Excel.
+function ConferenciaCampanhas({ rows, onClose }) {
+  const [filtro, setFiltro] = useState('Todos')
+  const [busca, setBusca] = useState('')
+  const lista = useMemo(() => {
+    const t = busca.trim().toUpperCase()
+    return rows
+      .filter(r => filtro === 'Todos' || situacaoCampanha(r) === filtro)
+      .filter(r => !t || [r.cliente, r.chassi, r.id_atendimento, r.id_campanha_execucao, r.operador].some(v => String(v ?? '').toUpperCase().includes(t)))
+      .sort((a, b) => a.data.localeCompare(b.data) || a.id_campanha_execucao - b.id_campanha_execucao || (a.id_atendimento ?? 0) - (b.id_atendimento ?? 0))
+  }, [rows, filtro, busca])
+  const qtde = (f) => rows.filter(r => f === 'Todos' || situacaoCampanha(r) === f).length
+  const exportar = async () => {
+    const XLSX = await import('xlsx')
+    const dados = lista.map(r => Object.fromEntries(COLUNAS_CONFERENCIA.map(([h, f]) => [h, f(r)])))
+    const ws = XLSX.utils.json_to_sheet(dados)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Conferência')
+    XLSX.writeFile(wb, `Conferencia Campanhas ${filtro} ${new Date().toISOString().slice(0, 10)}.xlsx`)
+  }
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-[95vw] max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
+          <p className="text-sm font-bold text-slate-900 flex items-center gap-2"><ListChecks className="h-4 w-4 text-emerald-600" /> Conferência linha a linha — contatos gerados</p>
+          <button type="button" onClick={onClose} aria-label="Fechar" className="text-slate-400 hover:text-slate-600"><X className="h-4 w-4" /></button>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 px-4 py-2 border-b border-slate-100">
+          {FILTROS_CONFERENCIA.map(f => (
+            <button key={f} type="button" onClick={() => setFiltro(f)}
+              className={`text-[11px] px-2 py-1 rounded-md border ${filtro === f ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'}`}>
+              {f} ({qtde(f).toLocaleString('pt-BR')})
+            </button>
+          ))}
+          <input value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar cliente, chassi, atendimento, campanha, operador"
+            className="text-[11px] px-2 py-1 rounded-md border border-slate-300 w-72 focus:outline-none focus:ring-2 focus:ring-emerald-500/40" />
+          <button type="button" onClick={exportar} disabled={!lista.length}
+            className="ml-auto text-[11px] px-2 py-1 rounded-md bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-1">
+            <Download className="h-3.5 w-3.5" /> Exportar Excel ({lista.length.toLocaleString('pt-BR')})
+          </button>
+        </div>
+        <div className="overflow-auto p-4">
+          <table className="w-full text-[11px]">
+            <thead className="sticky top-0 bg-white text-slate-500 uppercase text-[10px]">
+              <tr>{COLUNAS_CONFERENCIA.map(([h]) => <th key={h} className="font-bold text-left py-1.5 px-2 border-b border-slate-200 whitespace-nowrap">{h}</th>)}</tr>
+            </thead>
+            <tbody className="text-slate-700">
+              {!lista.length && <tr><td colSpan={COLUNAS_CONFERENCIA.length} className="py-6 text-center text-slate-400">Nenhum cliente nesse filtro.</td></tr>}
+              {lista.map((r, i) => (
+                <tr key={`${r.id_campanha_execucao}#${r.id_atendimento ?? r.id_cliente}#${i}`} className="border-b border-slate-100">
+                  {COLUNAS_CONFERENCIA.map(([h, f]) => <td key={h} className="py-1 px-2 whitespace-nowrap">{f(r)}</td>)}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>,
+    document.body
   )
 }
 
@@ -313,9 +415,13 @@ const taxa = (a, b) => (b > 0 ? `${Math.round((a / b) * 100)}%` : '—')
 const PASSIVOS_TIPOS = ['Receptivo', 'Presencial', 'Internet']
 const somaTotal = (oses) => oses.reduce((t, o) => t + (o.total || 0), 0)
 
+// O.S. veio de agendamento = a O.S. (empresa + número) está no ROF037 — o ROF037 é a fonte padrão dos
+// agendamentos em todas as abas (a coluna Agendador do ROF001 não é mais usada).
+const veioDeAgendamento = (o) => o.fonte_tipo_agendamento === 'ROF037'
+
 // Contagens da aba Por Data da O.S. (cards e tabela por data de abertura).
 function resumoPassagens(oses) {
-  const agend = oses.filter(o => o.agendador) // O.S. veio de agendamento = Agendador preenchido no ROF001
+  const agend = oses.filter(veioDeAgendamento)
   return {
     passagens: oses.length,
     agendadas: agend.length,
@@ -346,17 +452,309 @@ function resumoAgendamentos(lista) {
   }
 }
 
+// Cada atendimento da campanha continua uma linha (o veículo aparece quantas vezes foi distribuído), mas cada
+// agendamento do ROF037 conta UMA vez: fica na 1ª campanha do veículo (data mais antiga). As outras linhas do
+// mesmo veículo com o mesmo agendamento ficam como NÃO agendadas (com o motivo do RCR017 delas);
+// agendamento_repetido + repetido_de guardam o agendamento e a campanha onde ele contou, p/ a conferência.
+function agendamentoUmaVez(rows) {
+  const vistos = new Map() // veículo + agendamento → linha onde contou
+  return [...rows]
+    .sort((a, b) => a.data.localeCompare(b.data) || a.id_campanha_execucao - b.id_campanha_execucao)
+    .map(r => {
+      if (!r.agendamento) return r
+      const k = `${r.chassi.toUpperCase()}#${r.id_cliente}#${r.agendamento.criado}#${r.agendamento.data_agendamento}`
+      const primeira = vistos.get(k)
+      if (!primeira) { vistos.set(k, r); return r }
+      return { ...r, agendamento: null, agendamento_repetido: r.agendamento, repetido_de: primeira }
+    })
+}
+
 // Contagens das campanhas (cards da aba Por Campanhas e tabela por campanha) — regras no manual.
+// rows = atendimentos já passados por agendamentoUmaVez.
 function resumoContatos(rows) {
   const n = {
     campanhas: new Set(rows.map(r => r.id_campanha_execucao)).size,
     contatos: rows.length,
     agendados: rows.filter(r => r.agendamento).length,
     osAberta: 0, programados: 0, noShow: 0,
+    encerrados: 0, faltaContatar: 0, emAndamento: 0, // emAndamento = parte do Contatos a realizar que já teve contato sem resultado
+    motivos: {}, // motivo de encerramento → não agendados
   }
   n.naoAgendados = n.contatos - n.agendados
-  rows.forEach(r => { const k = situacaoDe(r.agendamento); if (k) n[k]++ })
+  rows.forEach(r => {
+    const k = situacaoDe(r.agendamento); if (k) n[k]++
+    if (r.agendamento) return
+    if (r.contato_realizado) {
+      n.encerrados++
+      // Um motivo por cliente: o do contato mais recente. Sem motivo = registrou agendamento ("Serviços:") no CRM,
+      // mas não há agendamento Ativo no ROF037 dentro da regra.
+      const m = r.motivo_final || 'Agendamento no CRM sem Ativo no ROF037'
+      n.motivos[m] = (n.motivos[m] || 0) + 1
+    } else {
+      n.faltaContatar++
+      if (r.contato_registrado) n.emAndamento++
+    }
+  })
   return n
+}
+
+// Lista dos não agendados que faltam contatar (abaixo do card Contatos a realizar), da campanha mais antiga para a mais recente.
+function TabelaFaltaContatar({ rows, carregando, info }) {
+  const lista = rows.filter(r => !r.agendamento && !r.contato_realizado)
+    .sort((a, b) => a.data.localeCompare(b.data) || a.id_campanha_execucao - b.id_campanha_execucao || a.cliente.localeCompare(b.cliente, 'pt-BR'))
+  return (
+    <div className="relative bg-white border border-slate-200 rounded-lg p-3">
+      <BotaoInfo titulo="Contatos a realizar" info={info} />
+      <p className="text-[11px] font-semibold text-indigo-950 leading-tight mb-2 pr-5">Contatos a realizar ({lista.length.toLocaleString('pt-BR')})</p>
+      {carregando ? <p className="text-[11px] text-slate-400">...</p> : !lista.length ? <p className="text-[11px] text-slate-400">Nenhum contato a realizar no período.</p> : (
+        <div className="max-h-72 overflow-auto">
+          <table className="w-full text-[11px]">
+            <thead className="sticky top-0 bg-white">
+              <tr className="text-slate-500 border-b border-slate-200">
+                {['Data da campanha', 'Campanha', 'Atendimento', 'Cliente', 'Chassi', 'Contato', 'Último contato'].map(h => <th key={h} className="text-left font-semibold py-1 pr-3 whitespace-nowrap">{h}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {lista.map((r, i) => (
+                <tr key={`${r.id_campanha_execucao}#${r.id_atendimento ?? r.id_cliente}#${i}`} className="border-b border-slate-100 text-slate-700">
+                  <td className="py-1 pr-3 whitespace-nowrap">{fmtData(r.data)}</td>
+                  <td className="py-1 pr-3">{r.id_campanha_execucao}</td>
+                  <td className="py-1 pr-3">{r.id_atendimento ?? '—'}</td>
+                  <td className="py-1 pr-3">{r.cliente}</td>
+                  <td className="py-1 pr-3 whitespace-nowrap">{r.chassi}</td>
+                  <td className="py-1 pr-3 whitespace-nowrap">{r.contato_registrado ? 'Já contatado, sem resultado' : 'Sem contato'}</td>
+                  <td className="py-1 pr-3 whitespace-nowrap">{r.contato_ultimo ? fmtData(r.contato_ultimo) : ''}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Consulta de agendamentos (aba Por Data Agendamento): um agendamento do ROF037 por linha, com filtros e Excel.
+const PASSIVOS_CONSULTA = ['Receptivo', 'Presencial', 'Internet']
+const COLUNAS_CONSULTA = [
+  ['Data agendada', a => fmtData(a.data)],
+  ['Criado em', a => (a.criado ? fmtData(a.criado) : '')],
+  ['Empresa', a => a.empresa],
+  ['Cód. cliente', a => a.cod_cliente ?? ''],
+  ['Cliente', a => a.cliente],
+  ['Chassi', a => a.chassi],
+  ['Placa', a => a.placa],
+  ['Modelo', a => a.modelo],
+  ['Tipo', a => a.tipo],
+  ['Agendador', a => a.agendador],
+  ['Status', a => a.status],
+  ['Desfecho', a => a.desfecho],
+  ['O.S.', a => a.os ?? ''],
+  ['Abertura da O.S.', a => (a.data_abertura ? fmtData(a.data_abertura) : '')],
+  ['Serviços', a => (a.servicos || []).join(' / ')],
+  ['Observação', a => a.obs],
+  ['Cancelado em', a => (a.data_cancelamento ? fmtData(a.data_cancelamento) : '')],
+  ['Motivo do cancelamento', a => a.motivo_cancelamento],
+  ['Veio de campanha?', a => (a.tipo !== 'Ativo' ? '' : a.campanhas.length ? 'Sim' : 'Não')],
+  // Um veículo pode estar em mais de uma campanha na janela: lista todas, cada uma com a sua data e os dias.
+  ['Campanha(s) (data)', a => a.campanhas.map(c => `${c.id_campanha_execucao} (${fmtData(c.data)})`).join(', ')],
+  ['Atendimento(s)', a => a.campanhas.map(c => c.id_atendimento).filter(Boolean).join(', ')],
+  ['Dias após a campanha', a => a.campanhas.map(c => diasEntre(c.data, a.criado)).join(', ')],
+  ['Nº de campanhas', a => (a.campanhas.length || '')],
+]
+const FILTROS_CONSULTA = {
+  'Todos (sem cancelados)': a => a.status !== 'CAN',
+  'Ativos': a => a.status !== 'CAN' && a.tipo === 'Ativo',
+  'Ativos de campanha': a => a.status !== 'CAN' && a.tipo === 'Ativo' && a.campanhas.length > 0,
+  'Ativos sem campanha': a => a.status !== 'CAN' && a.tipo === 'Ativo' && !a.campanhas.length,
+  'Passivos': a => a.status !== 'CAN' && PASSIVOS_CONSULTA.includes(a.tipo),
+  'Cancelados': a => a.status === 'CAN',
+}
+// Janela de consulta linha a linha (um registro por linha), com filtros, busca e exportação para Excel.
+// colunas = [[título, (linha) => valor]]; filtros = { nome: (linha) => bool } (o 1º é o padrão);
+// busca = (linha) => [valores onde procurar]; largas = colunas de texto longo (quebram linha).
+function JanelaConsulta({ titulo, lista: todos, carregando, onClose, colunas, filtros, busca: camposBusca, placeholder, aba, arquivo, vazio, largas = [] }) {
+  const [filtro, setFiltro] = useState(Object.keys(filtros)[0])
+  const [busca, setBusca] = useState('')
+  const lista = useMemo(() => {
+    const t = busca.trim().toUpperCase()
+    return todos.filter(filtros[filtro])
+      .filter(a => !t || camposBusca(a).some(v => String(v ?? '').toUpperCase().includes(t)))
+  }, [todos, filtros, filtro, busca, camposBusca])
+  const exportar = async () => {
+    const XLSX = await import('xlsx')
+    const ws = XLSX.utils.json_to_sheet(lista.map(a => Object.fromEntries(colunas.map(([h, f]) => [h, f(a)]))))
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, aba)
+    XLSX.writeFile(wb, `${arquivo} ${filtro} ${new Date().toISOString().slice(0, 10)}.xlsx`)
+  }
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-[95vw] max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
+          <p className="text-sm font-bold text-slate-900 flex items-center gap-2"><ListChecks className="h-4 w-4 text-emerald-600" /> {titulo}</p>
+          <button type="button" onClick={onClose} aria-label="Fechar" className="text-slate-400 hover:text-slate-600"><X className="h-4 w-4" /></button>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 px-4 py-2 border-b border-slate-100">
+          {Object.entries(filtros).map(([f, fn]) => (
+            <button key={f} type="button" onClick={() => setFiltro(f)}
+              className={`text-[11px] px-2 py-1 rounded-md border ${filtro === f ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'}`}>
+              {f} ({todos.filter(fn).length.toLocaleString('pt-BR')})
+            </button>
+          ))}
+          <input value={busca} onChange={e => setBusca(e.target.value)} placeholder={placeholder}
+            className="text-[11px] px-2 py-1 rounded-md border border-slate-300 w-64 focus:outline-none focus:ring-2 focus:ring-emerald-500/40" />
+          <button type="button" onClick={exportar} disabled={!lista.length}
+            className="ml-auto text-[11px] px-2 py-1 rounded-md bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-1">
+            <Download className="h-3.5 w-3.5" /> Exportar Excel ({lista.length.toLocaleString('pt-BR')})
+          </button>
+        </div>
+        <div className="overflow-auto p-4">
+          <table className="w-full text-[11px]">
+            <thead className="sticky top-0 bg-white text-slate-500 uppercase text-[10px]">
+              <tr>{colunas.map(([h]) => <th key={h} className="font-bold text-left py-1.5 px-2 border-b border-slate-200 whitespace-nowrap">{h}</th>)}</tr>
+            </thead>
+            <tbody className="text-slate-700">
+              {carregando && <tr><td colSpan={colunas.length} className="py-6 text-center text-slate-400">...</td></tr>}
+              {!carregando && !lista.length && <tr><td colSpan={colunas.length} className="py-6 text-center text-slate-400">{vazio}</td></tr>}
+              {lista.map((a, i) => (
+                <tr key={i} className="border-b border-slate-100">
+                  {colunas.map(([h, f]) => <td key={h} className={`py-1 px-2 ${largas.includes(h) ? 'min-w-[16rem]' : 'whitespace-nowrap'}`}>{f(a)}</td>)}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>,
+    document.body
+  )
+}
+
+const buscaAgend = (a) => [a.cliente, a.chassi, a.placa, a.agendador, a.os, a.cod_cliente]
+function ConsultaAgendamentos({ lista, carregando, onClose }) {
+  return (
+    <JanelaConsulta titulo="Consulta de agendamentos — ROF037" lista={lista} carregando={carregando} onClose={onClose}
+      colunas={COLUNAS_CONSULTA} filtros={FILTROS_CONSULTA} busca={buscaAgend} placeholder="Buscar cliente, chassi, placa, agendador, O.S."
+      aba="Agendamentos" arquivo="Consulta Agendamentos" vazio="Nenhum agendamento nesse filtro." largas={['Serviços', 'Observação']} />
+  )
+}
+
+// Consulta de O.S. (aba Por Data da O.S.): uma O.S. do ROF001 por linha (valores somados de todas as linhas dela),
+// com o agendamento do ROF037 quando a O.S. está lá (Empresa + OS Numero = EmpresaNome + OSNumero).
+const daRof037 = (o) => o.fonte_tipo_agendamento === 'ROF037'
+const COLUNAS_CONSULTA_OS = [
+  ['Data de abertura', o => fmtData(o.data)],
+  ['Empresa', o => o.empresa],
+  ['O.S.', o => o.numero],
+  ['Situação', o => o.situacao],
+  ['Tipo O.S.', o => o.tipo_os],
+  ['Chassi', o => o.chassi],
+  ['Consultor', o => o.consultor],
+  ['Agendador (ROF001)', o => o.agendador],
+  ['Veio de agendamento? (ROF037)', o => (daRof037(o) ? 'Sim' : 'Não')],
+  ['Tipo do agendamento', o => (daRof037(o) ? o.tipo_agendamento : '')],
+  ['Agendamento criado em', o => (o.agendamento37?.criado ? fmtData(o.agendamento37.criado) : '')],
+  ['Veio de campanha?', o => (o.tipo_agendamento !== 'Ativo' || !daRof037(o) ? '' : o.campanhas.length ? 'Sim' : 'Não')],
+  ['Campanha(s) (data)', o => o.campanhas.map(c => `${c.id_campanha_execucao} (${fmtData(c.data)})`).join(', ')],
+  ['Atendimento(s)', o => o.campanhas.map(c => c.id_atendimento).filter(Boolean).join(', ')],
+  ['Dias após a campanha', o => (o.agendamento37 ? o.campanhas.map(c => diasEntre(c.data, o.agendamento37.criado)).join(', ') : '')],
+  ['Peças', o => fmtBRL(o.produto)],
+  ['Serviços', o => fmtBRL(o.servico)],
+  ['Desconto', o => fmtBRL(o.desconto)],
+  ['Total', o => fmtBRL(o.total)],
+]
+const FILTROS_CONSULTA_OS = {
+  'Todas (sem canceladas)': o => o.situacao !== 'Cancelada',
+  'Com agendamento': o => o.situacao !== 'Cancelada' && daRof037(o),
+  'Agendamento ativo': o => o.situacao !== 'Cancelada' && daRof037(o) && o.tipo_agendamento === 'Ativo',
+  'Agendamento ativo de campanha': o => o.situacao !== 'Cancelada' && daRof037(o) && o.tipo_agendamento === 'Ativo' && o.campanhas.length > 0,
+  'Agendamento passivo': o => o.situacao !== 'Cancelada' && daRof037(o) && PASSIVOS_CONSULTA.includes(o.tipo_agendamento),
+  'Sem agendamento': o => o.situacao !== 'Cancelada' && !daRof037(o),
+  'Pendentes de autorização': o => SITUACOES_PENDENTES.includes(o.situacao),
+  'Canceladas': o => o.situacao === 'Cancelada',
+}
+const buscaOs = (o) => [o.numero, o.chassi, o.consultor, o.agendador, o.empresa, ...o.campanhas.map(c => c.id_campanha_execucao)]
+function ConsultaOs({ lista, carregando, onClose }) {
+  return (
+    <JanelaConsulta titulo="Consulta de O.S. — ROF001 TODAS" lista={lista} carregando={carregando} onClose={onClose}
+      colunas={COLUNAS_CONSULTA_OS} filtros={FILTROS_CONSULTA_OS} busca={buscaOs} placeholder="Buscar O.S., chassi, consultor, agendador, empresa, campanha"
+      aba="O.S." arquivo="Consulta OS" vazio="Nenhuma O.S. nesse filtro." />
+  )
+}
+
+// Quadro "Contatos agendados": o que aconteceu com os agendados (comparecidos, a comparecer, não comparecidos),
+// no mesmo formato do quadro Motivo de Encerramento. O total é igual ao card Contatos agendados.
+function CardContatosAgendados({ numeros, carregando, info }) {
+  const total = SITUACAO.reduce((s, d) => s + (numeros[d.chave] || 0), 0)
+  return (
+    <div className="relative bg-white border border-slate-200 rounded-lg p-3">
+      <BotaoInfo titulo="Contatos agendados" info={info} />
+      <p className="text-[11px] font-semibold text-indigo-950 leading-tight mb-2 pr-5">Contatos agendados</p>
+      {carregando ? <p className="text-[11px] text-slate-400">...</p> : (
+        <table className="w-full text-[11px]">
+          <thead>
+            <tr className="text-slate-500 border-b border-slate-200">
+              <th className="text-left font-semibold py-1">Situação</th>
+              <th className="text-right font-semibold py-1">Qtde</th>
+              <th className="text-right font-semibold py-1 w-14">%</th>
+            </tr>
+          </thead>
+          <tbody>
+            {SITUACAO.map(d => (
+              <tr key={d.chave} className="border-b border-slate-100 text-slate-700">
+                <td className="py-1"><span className="inline-block w-2 h-2 rounded-full mr-1.5 align-middle" style={{ backgroundColor: d.cor }} />{d.label}</td>
+                <td className="py-1 text-right">{(numeros[d.chave] || 0).toLocaleString('pt-BR')}</td>
+                <td className="py-1 text-right">{total ? `${((numeros[d.chave] / total) * 100).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%` : '—'}</td>
+              </tr>
+            ))}
+            <tr className="font-bold text-slate-900">
+              <td className="py-1">Total</td>
+              <td className="py-1 text-right">{total.toLocaleString('pt-BR')}</td>
+              <td className="py-1 text-right">{total ? '100%' : '—'}</td>
+            </tr>
+          </tbody>
+        </table>
+      )}
+    </div>
+  )
+}
+
+// Resumo por motivo de encerramento (RCR017), maior quantidade primeiro.
+function CardMotivos({ motivos, carregando, info }) {
+  const lista = Object.entries(motivos || {}).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+  const total = lista.reduce((s, [, q]) => s + q, 0)
+  return (
+    <div className="relative bg-white border border-slate-200 rounded-lg p-3">
+      <BotaoInfo titulo="Motivo de Encerramento" info={info} />
+      <p className="text-[11px] font-semibold text-indigo-950 leading-tight mb-2 pr-5">Motivo de Encerramento</p>
+      {carregando ? <p className="text-[11px] text-slate-400">...</p> : !lista.length ? <p className="text-[11px] text-slate-400">Nenhum não agendado com motivo no período.</p> : (
+        <table className="w-full text-[11px]">
+          <thead>
+            <tr className="text-slate-500 border-b border-slate-200">
+              <th className="text-left font-semibold py-1">Motivo</th>
+              <th className="text-right font-semibold py-1">Qtde</th>
+              <th className="text-right font-semibold py-1 w-14">%</th>
+            </tr>
+          </thead>
+          <tbody>
+            {lista.map(([m, q]) => (
+              <tr key={m} className="border-b border-slate-100 text-slate-700">
+                <td className="py-1">{m}</td>
+                <td className="py-1 text-right">{q.toLocaleString('pt-BR')}</td>
+                <td className="py-1 text-right">{((q / total) * 100).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%</td>
+              </tr>
+            ))}
+            <tr className="font-bold text-slate-900">
+              <td className="py-1">Total</td>
+              <td className="py-1 text-right">{total.toLocaleString('pt-BR')}</td>
+              <td className="py-1 text-right">100%</td>
+            </tr>
+          </tbody>
+        </table>
+      )}
+    </div>
+  )
 }
 
 // Situações de O.S. que pedem atenção (contam como passagem, mas aguardam autorização).
@@ -424,13 +822,13 @@ export default function BiAgendamentoServicos() {
     setDataIni(ini)
     setDataFim(ini === DATA_MIN ? DATA_MAX : iso(new Date(a, m + passo, 0)))
   }
-  // Ao trocar de aba o período volta ao padrão dela (Visão Período: ano até ontem; demais: mês atual).
+  // Ao trocar de aba o período escolhido continua o mesmo (só a Visão Período, escondida, usa o ano até ontem).
   // Contatos das campanhas dentro do período (data do arquivo) e das empresas selecionadas.
   // Aba Por Campanhas sem filtro de Empresas: o relatório da campanha (RCR038) não identifica a empresa
   // (a sigla no nome do arquivo não é confiável — há campanhas exportadas com sigla de outra unidade).
   const contatosFiltrados = useMemo(() => {
     if (!crm) return []
-    return crm.rows.filter(r => r.data && r.data >= dataIni && r.data <= dataFim)
+    return agendamentoUmaVez(crm.rows.filter(r => r.data && r.data >= dataIni && r.data <= dataFim))
   }, [crm, dataIni, dataFim])
   const numeros = resumoContatos(contatosFiltrados)
   // Tabela "Campanhas por data de geração" (ícone na linha do subtítulo): mesmas regras dos cards, por campanha.
@@ -461,11 +859,21 @@ export default function BiAgendamentoServicos() {
       : null
     return passagensOs.rows.filter(o => o.data >= dataIni && o.data <= dataFim && o.situacao !== 'Cancelada'
       && (!nomesSel || nomesSel.has(norm(o.empresa))))
-      // Tipo (Ativo × Passivo) só do ROF037 — o ROF026 não entra nesta aba.
+      // Tipo (Ativo × Passivo) só do ROF037.
       .map(o => (o.fonte_tipo_agendamento === 'ROF037' ? o : { ...o, tipo_agendamento: '' }))
   }, [passagensOs, empresas, empresasSel, dataIni, dataFim])
+  // Consulta de O.S.: as mesmas O.S. do período e empresas, inclusive as "Cancelada" (filtro próprio na janela).
+  const consultaOs = useMemo(() => {
+    if (!passagensOs) return []
+    const norm = (t) => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().trim()
+    const nomesSel = empresasSel.length
+      ? new Set(empresas.filter(e => empresasSel.includes(e.id)).map(e => norm(e.empresa_fantasia || e.nome_empresa)))
+      : null
+    return passagensOs.rows.filter(o => o.data >= dataIni && o.data <= dataFim && (!nomesSel || nomesSel.has(norm(o.empresa))))
+      .sort((a, b) => a.data.localeCompare(b.data) || a.empresa.localeCompare(b.empresa) || String(a.numero).localeCompare(String(b.numero), undefined, { numeric: true }))
+  }, [passagensOs, empresas, empresasSel, dataIni, dataFim])
   const passagens = osDoPeriodo ? osDoPeriodo.length : null
-  const osAgendadas = osDoPeriodo ? osDoPeriodo.filter(o => o.agendador) : null // Agendador preenchido no ROF001
+  const osAgendadas = osDoPeriodo ? osDoPeriodo.filter(veioDeAgendamento) : null
   const passagensAgendadas = osAgendadas ? osAgendadas.length : null
   // Conversão: Total × Ativos × Passivos.
   const PASSIVOS = ['Receptivo', 'Presencial', 'Internet']
@@ -474,7 +882,6 @@ export default function BiAgendamentoServicos() {
   // Tipo do agendamento (só ROF037): Ativo × Receptivo (Presencial e Internet contam como Receptivo).
   const agAtivos = osDoPeriodo ? osDoPeriodo.filter(o => o.tipo_agendamento === 'Ativo').length : null
   const agReceptivos = osDoPeriodo ? osDoPeriodo.filter(o => ['Receptivo', 'Presencial', 'Internet'].includes(o.tipo_agendamento)).length : null
-  const agSemTipo = (osDoPeriodo || []).filter(o => o.agendador && !o.tipo_agendamento)
   // Velocímetros da aba Passagens: tudo sobre as passagens (ativo + passivo = taxa de agendamento, fora os sem tipo).
   const pctPass = (n) => (passagens ? Math.round((n / passagens) * 100) : null)
   const gaugesGeral = [
@@ -484,7 +891,7 @@ export default function BiAgendamentoServicos() {
   ]
   // O.S. pendentes de autorização (cancelamento/encerramento) entre as passagens: alerta no card.
   const osPendentes = (osDoPeriodo || []).filter(o => SITUACOES_PENDENTES.includes(o.situacao))
-  // Aba Por Data Agendamento: agendamentos com DATA DO AGENDAMENTO no período — só do ROF037 (o ROF026 não entra
+  // Aba Por Data Agendamento: agendamentos com DATA DO AGENDAMENTO no período — só do ROF037 (fonte única dos agendamentos;
   // nesta aba; segue usado só pra tipar as O.S. da aba Passagens), sem os cancelados (CAN)
   // e o desfecho de cada um, só pelo ROF037: comparecido (tem nº de O.S.), no-show (NSW) ou a comparecer.
   const osPorChave = useMemo(() => new Map((passagensOs?.rows || []).map(o => [`${o.empresa.toUpperCase()}#${o.numero}`, o])), [passagensOs])
@@ -502,6 +909,42 @@ export default function BiAgendamentoServicos() {
         return { ...a, osRow: os || null, desfecho }
       })
   }, [passagensOs, osPorChave, empresas, empresasSel, dataIni, dataFim])
+  // Consulta de agendamentos (ROF037): todos os agendamentos com data no período e nas empresas escolhidas,
+  // inclusive cancelados, e se o Ativo veio de campanha (mesma regra da aba Por Campanhas, ao contrário:
+  // chassi + cliente num RCR038 e agendamento criado da data da campanha até 30 dias depois).
+  const campanhasPorVeiculo = useMemo(() => {
+    const m = new Map()
+    ;(crm?.rows || []).forEach(r => { if (!r.data) return; const k = `${r.chassi.toUpperCase()}#${r.id_cliente}`; (m.get(k) || m.set(k, []).get(k)).push(r) })
+    return m
+  }, [crm])
+  // Consulta de O.S. com a campanha: O.S. → agendamento do ROF037 (EmpresaNome + OSNumero) → se Ativo, campanha
+  // pelo Chassi + cliente do agendamento num RCR038, criado da data da campanha até 30 dias depois.
+  const consultaOsCampanha = useMemo(() => {
+    const agPorOs = new Map((passagensOs?.agendamentos || []).filter(a => a.fonte === 'ROF037' && a.os).map(a => [`${a.empresa}#${a.os}`, a]))
+    return consultaOs.map(o => {
+      const ag = agPorOs.get(`${o.empresa.toUpperCase()}#${o.numero}`)
+      const campanhas = ag && ag.tipo === 'Ativo' && ag.criado
+        ? (campanhasPorVeiculo.get(`${ag.chassi}#${ag.cod_cliente}`) || []).filter(c => ag.criado >= c.data && diasEntre(c.data, ag.criado) <= 30).sort((x, y) => x.data.localeCompare(y.data))
+        : []
+      return { ...o, agendamento37: ag || null, campanhas }
+    })
+  }, [consultaOs, passagensOs, campanhasPorVeiculo])
+  const consultaAgend = useMemo(() => {
+    if (!passagensOs?.agendamentos) return []
+    const norm = (t) => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().trim()
+    const nomesSel = empresasSel.length
+      ? new Set(empresas.filter(e => empresasSel.includes(e.id)).map(e => norm(e.empresa_fantasia || e.nome_empresa)))
+      : null
+    return passagensOs.agendamentos
+      .filter(a => a.fonte === 'ROF037' && a.data && a.data >= dataIni && a.data <= dataFim && (!nomesSel || nomesSel.has(norm(a.empresa))))
+      .map(a => {
+        const camps = a.tipo === 'Ativo' && a.criado
+          ? (campanhasPorVeiculo.get(`${a.chassi}#${a.cod_cliente}`) || []).filter(c => a.criado >= c.data && diasEntre(c.data, a.criado) <= 30).sort((x, y) => x.data.localeCompare(y.data))
+          : []
+        return { ...a, campanhas: camps, desfecho: a.status === 'CAN' ? 'Cancelado' : a.os ? 'Comparecido' : a.status === 'NSW' ? 'No-show' : 'A comparecer' }
+      })
+      .sort((x, y) => x.data.localeCompare(y.data) || x.cliente.localeCompare(y.cliente, 'pt-BR'))
+  }, [passagensOs, campanhasPorVeiculo, empresas, empresasSel, dataIni, dataFim])
   const ehAtivo = (a) => a.tipo === 'Ativo'
   const ehPassivo = (a) => PASSIVOS.includes(a.tipo)
   const contaAg = (f) => (agendDoPeriodo ? agendDoPeriodo.filter(f).length : null)
@@ -540,22 +983,25 @@ export default function BiAgendamentoServicos() {
 
   const trocarAba = (a) => {
     setAba(a)
-    setDataIni(a === VISAO_PERIODO ? INICIO_ANO : DATA_MIN)
-    setDataFim(DATA_MAX)
+    if (a === VISAO_PERIODO) { setDataIni(INICIO_ANO); setDataFim(DATA_MAX) }
   }
 
   // Linha de cards de KPI e linha de velocímetros da aba Campanhas.
   const blocoCards = (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+    <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
       {KPIS.map(k => (
         <CardKpi key={k.label} label={k.label} info={INFO[k.chave]}
-          valor={k.chave ? (carregando && !crm ? '...' : numeros[k.chave].toLocaleString('pt-BR')) : (k.valor ?? '—')} />
+          valor={k.chave ? (carregando && !crm ? '...' : numeros[k.chave].toLocaleString('pt-BR')) : (k.valor ?? '—')}>
+          {k.chave === 'faltaContatar' && crm && numeros.emAndamento > 0 && (
+            <p className="text-[10px] text-slate-500 mt-0.5">{numeros.emAndamento.toLocaleString('pt-BR')} já com contato, ainda sem resultado</p>
+          )}
+        </CardKpi>
       ))}
     </div>
   )
   const blocoGauges = (
-    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-      {GAUGES.filter(g => !g.junto).map(g => <GaugeMeta key={g.label} {...gauge(g)} />)}
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      {GAUGES.map(g => <GaugeMeta key={g.label} {...gauge(g)} />)}
     </div>
   )
 
@@ -634,17 +1080,32 @@ export default function BiAgendamentoServicos() {
         </div>
       </div>
 
-      <div className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-lg p-0.5 w-fit">
-        {ABAS.map(a => (
-          <button
-            key={a}
-            type="button"
-            onClick={() => trocarAba(a)}
-            className={`px-4 py-1.5 rounded-md text-xs font-semibold transition-colors ${aba === a ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'}`}
-          >
-            {a}
-          </button>
-        ))}
+      {/* Abas à esquerda; na mesma linha, à direita, os ícones da aba (conferência/consulta e tabela por data). */}
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-lg p-0.5 w-fit">
+          {ABAS.map(a => (
+            <button
+              key={a}
+              type="button"
+              onClick={() => trocarAba(a)}
+              className={`px-4 py-1.5 rounded-md text-xs font-semibold transition-colors ${aba === a ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'}`}
+            >
+              {a}
+            </button>
+          ))}
+        </div>
+        {aba === ABA_CAMPANHAS && (
+          <IconesAba onConferencia={crm ? () => setTabela('conferencia') : null} tituloConferencia="Conferência linha a linha"
+            onTabela={() => setTabela('campanhas')} tituloTabela="Campanhas por data de geração" />
+        )}
+        {aba === ABA_AGENDAMENTOS && (
+          <IconesAba onConferencia={() => setTabela('consultaAgend')} tituloConferencia="Consulta de agendamentos (ROF037)"
+            onTabela={() => setTabela('agendamentos')} tituloTabela="Agendamentos por data do agendamento" />
+        )}
+        {aba === ABA_PASSAGENS && (
+          <IconesAba onConferencia={() => setTabela('consultaOs')} tituloConferencia="Consulta de O.S. (ROF001 TODAS)"
+            onTabela={() => setTabela('passagens')} tituloTabela="Passagens por data de abertura" />
+        )}
       </div>
       {/* Objetivo da aba (mesmo texto do manual). */}
       {OBJETIVO_ABAS[aba] && <p className="text-[11px] text-slate-300 leading-snug max-w-4xl -mt-2">{OBJETIVO_ABAS[aba]}</p>}
@@ -664,13 +1125,6 @@ export default function BiAgendamentoServicos() {
       {/* Aba Passagens: O.S. abertas no período e quantas vieram de agendamento. */}
       {aba === ABA_AGENDAMENTOS ? (
         <>
-        {/* Sem subtítulo nesta aba — só o botão da tabela por data, à direita. */}
-        <div className="flex justify-end -mb-1">
-          <button type="button" onClick={() => setTabela('agendamentos')} title="Agendamentos por data do agendamento (tabela)" aria-label="Agendamentos por data do agendamento"
-            className="p-1 rounded-md text-slate-300 hover:text-white hover:bg-slate-700 transition-colors">
-            <Table2 className="h-4 w-4" />
-          </button>
-        </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {gaugesAgend.map(g => <GaugeMeta key={g.label} {...g} />)}
         </div>
@@ -698,7 +1152,6 @@ export default function BiAgendamentoServicos() {
         </>
       ) : aba === ABA_PASSAGENS ? (
         <>
-        <SubtituloSecao titulo="Passagens" onTabela={() => setTabela('passagens')} tituloTabela="Passagens por data de abertura" />
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
           {gaugesGeral.map(g => <GaugeMeta key={g.label} {...g} />)}
         </div>
@@ -713,21 +1166,13 @@ export default function BiAgendamentoServicos() {
               </button>
             )} />
           <CardKpi label="O.S. com agendamento" info={INFO.osAgendamento}
-            valor={carregando && passagensAgendadas === null ? '...' : passagensAgendadas === null ? '—' : passagensAgendadas.toLocaleString('pt-BR')}>
-            {agSemTipo.length > 0 && (
-              <p className="text-[10px] text-amber-700 mt-0.5" title={agSemTipo.map(o => `${o.empresa.replace('CAIOBA TRUCKS - ', '')} · O.S. ${o.numero} · agendador ${o.agendador}`).join('\n')}>
-                {agSemTipo.length} sem tipo no ROF037 (fora de ativo/passivo)
-              </p>
-            )}
-          </CardKpi>
+            valor={carregando && passagensAgendadas === null ? '...' : passagensAgendadas === null ? '—' : passagensAgendadas.toLocaleString('pt-BR')} />
           <CardKpi label="Agendamentos ativos" info={INFO.agAtivos}
             valor={carregando && agAtivos === null ? '...' : agAtivos === null ? '—' : agAtivos.toLocaleString('pt-BR')} />
           <CardKpi label="Agendamentos passivos" info={INFO.agPassivos}
             valor={carregando && agReceptivos === null ? '...' : agReceptivos === null ? '—' : agReceptivos.toLocaleString('pt-BR')} />
         </div>
 
-        {/* Conversão: valores e gráficos das O.S. com agendamento. */}
-        <h2 className="text-xs font-bold text-slate-200 uppercase tracking-wide border-b border-slate-700 pb-1">Conversão</h2>
         {/* Conversão total, depois só das ativas e só das passivas. */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <CardConversao titulo="Conversão — Total" oses={osAgendadas} carregando={carregando} info={INFO.conversaoTotal} />
@@ -738,7 +1183,6 @@ export default function BiAgendamentoServicos() {
       ) : (
       <>
       {/* Subtítulo de seção (Campanhas e Visão Período). */}
-      <SubtituloSecao titulo="Campanhas de Ativação" onTabela={aba !== VISAO_PERIODO ? () => setTabela('campanhas') : null} tituloTabela="Campanhas por data de geração" />
 
       {aba === VISAO_PERIODO ? (
         <div className="space-y-3">
@@ -774,35 +1218,35 @@ export default function BiAgendamentoServicos() {
       {blocoGauges}
       {blocoCards}
 
-      {/* O que aconteceu com os agendados (Vieram, Vão vir, No-show); abaixo, Taxa de Conversão e Taxa de No-show. */}
-      <div className="space-y-3">
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-          {SITUACAO.map(d => (
-            <CardKpi key={d.label} label={d.label} info={INFO[d.chave]} cor={d.cor}
-              valor={carregando && !crm ? '...' : crm ? numeros[d.chave].toLocaleString('pt-BR') : '—'} />
-          ))}
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <GaugeMeta {...gauge(GAUGES.find(g => g.chave === 'taxaConversao'))} />
-          <GaugeMeta {...gauge(GAUGES.find(g => g.chave === 'taxaNoShow'))} />
-        </div>
+      {/* À esquerda, o que aconteceu com os agendados (comparecidos, a comparecer, não comparecidos);
+          à direita, Motivo de Encerramento (motivo dos Contatos encerrados, RCR017). */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <CardContatosAgendados numeros={numeros} carregando={carregando && !crm} info={INFO.quadroAgendados} />
+        <CardMotivos motivos={numeros.motivos} carregando={carregando && !crm} info={INFO.motivos} />
       </div>
+      <TabelaFaltaContatar rows={contatosFiltrados} carregando={carregando && !crm} info={INFO.listaFaltaContatar} />
+
       </>
       )}
       </>
       )}
 
+      {tabela === 'conferencia' && <ConferenciaCampanhas rows={contatosFiltrados} onClose={() => setTabela(null)} />}
+      {tabela === 'consultaOs' && <ConsultaOs lista={consultaOsCampanha}carregando={carregando && !passagensOs} onClose={() => setTabela(null)} />}
+      {tabela === 'consultaAgend' && <ConsultaAgendamentos lista={consultaAgend} carregando={carregando && !passagensOs} onClose={() => setTabela(null)} />}
       {tabela === 'campanhas' && (
         <TabelaPorData titulo="Campanhas por data de geração" linhas={linhasCampanhas} total={numeros} vazio="Nenhuma campanha no período." onClose={() => setTabela(null)}
           colunas={[
             ['Data de geração', l => fmtData(l.data)],
             ['Campanhas geradas', l => l.campanhas],
             ['Contatos gerados', l => l.contatos],
-            ['Agendados', l => l.agendados],
+            ['Contatos agendados', l => l.agendados],
             ['Não agendados', l => l.naoAgendados],
-            ['Vieram', l => l.osAberta],
-            ['Vão vir', l => l.programados],
-            ['No-show', l => l.noShow],
+            ['Contatos encerrados', l => l.encerrados],
+            ['Contato a realizar', l => l.faltaContatar],
+            ['Agendamentos comparecidos', l => l.osAberta],
+            ['Agendamentos a comparecer', l => l.programados],
+            ['Agendamentos não comparecidos (No-show)', l => l.noShow],
             ['Taxa de Agendamento', l => taxa(l.agendados, l.contatos)],
             ['Taxa de Conversão', l => taxa(l.osAberta, l.agendados)],
             ['Taxa de No-show', l => taxa(l.noShow, l.agendados)],
