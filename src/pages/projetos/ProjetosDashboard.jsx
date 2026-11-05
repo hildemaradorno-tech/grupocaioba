@@ -1,7 +1,9 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Edit2, Trash2, FolderKanban, Activity, CheckCircle, AlertTriangle, Layers, ShieldAlert, ChevronRight, ChevronDown, Loader2, X, CheckCircle2, Copy, BarChart2, Download, Eye, Settings, FileSpreadsheet } from 'lucide-react'
+import { Plus, Edit2, Trash2, FolderKanban, Activity, CheckCircle, AlertTriangle, Layers, ShieldAlert, ChevronRight, ChevronDown, Loader2, X, CheckCircle2, Copy, BarChart2, Download, Eye, Settings, FileSpreadsheet, MessageSquare } from 'lucide-react'
 import { apiService } from '../../services/api'
+import TarefaFormModal from './TarefaFormModal'
+import DependenciaBadge from './DependenciaBadge'
 import { useAuth } from '../../context/AuthContext'
 import { useProjetosFiltros, aplicarFiltrosGlobais, _projetosSession } from '../../context/ProjetosFiltrosContext'
 import ProjetosNav from './ProjetosNav'
@@ -162,6 +164,7 @@ export default function ProjetosDashboard() {
   const canExcluir    = !modoVerTodos && hasActionOrDefault('projetos', 'excluir')
   const canDuplicar   = !modoVerTodos && hasActionOrDefault('projetos', 'duplicar')
   const canEditarTar   = !modoVerTodos && hasActionOrDefault('projetos', 'editar_tarefa')
+  const canAlterarStatusTar = !modoVerTodos && (canEditarTar || hasActionOrDefault('projetos', 'alterar_status_tarefa'))
   const canExcluirTar  = !modoVerTodos && hasActionOrDefault('projetos', 'excluir_tarefa')
   const canConcluirTar = !modoVerTodos && hasActionOrDefault('projetos', 'concluir_tarefa')
   const hoje2 = new Date().toISOString().split('T')[0]
@@ -196,12 +199,26 @@ export default function ProjetosDashboard() {
   const [modalImportar, setModalImportar] = useState(false)
   const [expandidos, setExpandidos] = useState(() => new Set(_dash.expandidos))
   const [tarefasPorProjeto, setTarefasPorProjeto] = useState(() => ({ ..._dash.tarefasPorProjeto }))
+  const [depsPorTarefa, setDepsPorTarefa] = useState({})
+  const depsCarregadosRef = useRef({})
+  useEffect(() => {
+    Object.entries(tarefasPorProjeto).forEach(([pid, tfs]) => {
+      if (!tfs || depsCarregadosRef.current[pid] === tfs) return
+      depsCarregadosRef.current[pid] = tfs
+      const ids = tfs.map(t => t.id)
+      if (ids.length === 0) return
+      apiService.getDependenciasDetalhadas(ids).then(rows => {
+        setDepsPorTarefa(prev => {
+          const n = { ...prev }
+          ids.forEach(id => { delete n[id] })
+          rows.forEach(r => { (n[r.tarefa_id] ||= []).push(r) })
+          return n
+        })
+      }).catch(() => {})
+    })
+  }, [tarefasPorProjeto])
   const [carregandoTarefas, setCarregandoTarefas] = useState(new Set())
-  const [modalEditTarefa, setModalEditTarefa] = useState(null)
-  const [editForm, setEditForm] = useState({})
-  const [modalDelibs, setModalDelibs] = useState([])
-  const [modalNovaDelib, setModalNovaDelib] = useState({ data: hoje2, texto: '' })
-  const [modalAdicionandoDelib, setModalAdicionandoDelib] = useState(false)
+  const [modalTarefaForm, setModalTarefaForm] = useState(null) // { projetoId, tarefa, tarefas, deps, empresas }
   const [modalExcluirTarefa, setModalExcluirTarefa] = useState(null)
   const [filtroAtrasadas, setFiltroAtrasadas] = useState(false)
   const [filtroHoje, setFiltroHoje] = useState(false)
@@ -831,60 +848,23 @@ export default function ProjetosDashboard() {
 
 
   const abrirEditTarefa = async (t) => {
-    setEditForm({ ...t })
-    setModalEditTarefa(t)
-    setModalDelibs([])
-    setModalNovaDelib({ data: hoje2, texto: '' })
     try {
-      const rows = await apiService.getDeliberacoes(t.id)
-      setModalDelibs(rows)
+      const [tfs, deps, emps] = await Promise.all([
+        apiService.getTarefas(t.projeto_id),
+        apiService.getDependencias(t.projeto_id),
+        apiService.getProjEmpresas(),
+      ])
+      const tarefa = tfs.find(x => x.id === t.id) || t
+      setModalTarefaForm({ projetoId: t.projeto_id, tarefa, tarefas: tfs, deps, empresas: emps.filter(e => e.ativo !== false) })
+    } catch (err) { alert('Erro ao abrir tarefa: ' + (err.message || String(err))) }
+  }
+
+  const aposSalvarTarefa = async (projetoId) => {
+    setModalTarefaForm(null)
+    try {
+      const tarefas = await apiService.getTarefas(projetoId)
+      setTarefasPorProjeto(prev => ({ ...prev, [projetoId]: tarefas }))
     } catch { /* silencioso */ }
-  }
-
-  const handleModalAddDelib = async () => {
-    if (!modalNovaDelib.texto.trim()) return
-    setModalAdicionandoDelib(true)
-    try {
-      await apiService.createDeliberacao(modalEditTarefa.id, modalNovaDelib.data || hoje2, modalNovaDelib.texto.trim(), user?.email)
-      const rows = await apiService.getDeliberacoes(modalEditTarefa.id)
-      setModalDelibs(rows)
-      setModalNovaDelib({ data: hoje2, texto: '' })
-    } catch (err) { alert('Erro: ' + err.message) }
-    finally { setModalAdicionandoDelib(false) }
-  }
-
-  const handleModalDeleteDelib = async (deliberId) => {
-    try {
-      await apiService.deleteDeliberacao(deliberId)
-      setModalDelibs(prev => prev.filter(d => d.id !== deliberId))
-    } catch (err) { alert('Erro: ' + err.message) }
-  }
-  const handleEditFormChange = (e) => {
-    const { name, value } = e.target
-    if (name === 'status_kanban' && value === 'concluido') {
-      setEditForm(prev => ({ ...prev, status_kanban: value, progresso_pct: 100 }))
-      return
-    }
-    setEditForm(prev => ({ ...prev, [name]: value }))
-  }
-  const handleSalvarTarefa = async () => {
-    const pct = editForm.status_kanban === 'concluido' ? 100 : (Number(editForm.progresso_pct) || 0)
-    try {
-      await apiService.updateTarefa(editForm.id, {
-        nome:            editForm.nome,
-        area_nome:       editForm.area_nome        || null,
-        fase_nome:       editForm.fase_nome        || null,
-        status_kanban:   editForm.status_kanban,
-        progresso_pct:   pct,
-        data_inicio:     editForm.data_inicio      || null,
-        data_fim:        editForm.data_fim         || null,
-        sistema_nome:    editForm.sistema_nome     || null,
-        responsavel_nome:editForm.responsavel_nome || null,
-      })
-      const tarefas = await apiService.getTarefas(editForm.projeto_id)
-      setTarefasPorProjeto(prev => ({ ...prev, [editForm.projeto_id]: tarefas }))
-      setModalEditTarefa(null)
-    } catch (err) { alert('Erro ao salvar: ' + (err.message || String(err))) }
   }
   const handleExcluirTarefa = async () => {
     try {
@@ -1523,17 +1503,30 @@ export default function ProjetosDashboard() {
                             {/* Nome + deliberações */}
                             <td className="px-3 py-1.5">
                               <div className="flex items-start justify-between gap-2 min-w-0">
-                                <div className="flex items-start gap-1.5 min-w-0 flex-1">
+                                <div className="flex flex-col items-start gap-1 min-w-0 flex-1">
                                   <span className="text-slate-700 font-medium leading-snug">{renderNome(t.nome)}</span>
+                                  {(() => {
+                                    const nDelib = delibers.length || tarefaDelibsMap[t.id] || 0
+                                    return (
+                                      <div className="flex flex-wrap items-center gap-1">
+                                        <DependenciaBadge deps={depsPorTarefa[t.id]} projetoAtualId={p.id} />
+                                        {nDelib > 0 && (
+                                          <button type="button" onClick={() => toggleDeliberacoes(t.id)}
+                                            className="shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold border bg-slate-600 border-slate-700 text-white hover:bg-slate-700 transition-colors">
+                                            <MessageSquare className="h-3 w-3" />
+                                            {nDelib} deliberaç{nDelib === 1 ? 'ão' : 'ões'}
+                                            <ChevronRight className={`h-3 w-3 transition-transform duration-150 ${delibersAberto ? 'rotate-90' : ''}`} />
+                                          </button>
+                                        )}
+                                        <button type="button" onClick={() => toggleDeliberacoes(t.id)}
+                                          className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold border border-slate-200 text-slate-400 hover:text-amber-600 hover:border-amber-300 hover:bg-amber-50 transition-colors"
+                                          title="Adicionar / gerenciar deliberações">
+                                          <Plus className="h-3 w-3" /> Deliberação
+                                        </button>
+                                      </div>
+                                    )
+                                  })()}
                                 </div>
-                                <button
-                                  onClick={() => toggleDeliberacoes(t.id)}
-                                  title="Deliberações"
-                                  className={`shrink-0 mt-0.5 flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold transition-colors ${delibersAberto ? 'bg-blue-100 text-blue-600' : (delibers.length > 0 || (tarefaDelibsMap[t.id] ?? 0) > 0) ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'text-slate-300 hover:bg-blue-50 hover:text-blue-500'}`}
-                                >
-                                  <Plus className={`h-3 w-3 transition-transform duration-150 ${delibersAberto ? 'rotate-45' : ''}`} />
-                                  {(() => { const n = delibers.length || tarefaDelibsMap[t.id] || 0; return n > 0 ? <span>{n}</span> : null })()}
-                                </button>
                               </div>
                             </td>
                             {/* Empresa */}
@@ -1786,123 +1779,22 @@ export default function ProjetosDashboard() {
 
 
       {/* MODAL EDITAR TAREFA */}
-      {modalEditTarefa && (
-        <div className="fixed top-0 right-0 bottom-0 left-16 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg border border-slate-200 w-[600px] shadow-xl overflow-hidden">
-            <div className="p-4 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
-              <h3 className="text-sm font-bold text-slate-900">Editar Tarefa</h3>
-              <button onClick={() => setModalEditTarefa(null)} className="text-slate-400 hover:text-slate-600"><X className="h-4 w-4" /></button>
-            </div>
-            <div className="p-4 space-y-3 max-h-[70vh] overflow-y-auto">
-              <div className="grid grid-cols-1 gap-3">
-                <div>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase">Tarefa</label>
-                  <textarea name="nome" value={editForm.nome || ''} onChange={handleEditFormChange} rows={5}
-                    className="w-full mt-1 text-xs p-2 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 resize-none" />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase">Deliberações</label>
-                  {modalDelibs.length === 0 ? (
-                    <p className="mt-1 text-[11px] text-slate-400 italic">Nenhuma deliberação registrada.</p>
-                  ) : (
-                    <div className="mt-1 space-y-1 max-h-36 overflow-y-auto">
-                      {modalDelibs.map(d => (
-                        <div key={d.id} className="flex items-start gap-2 text-xs text-slate-700 bg-slate-50 rounded px-2 py-1.5">
-                          <span className="text-slate-400 shrink-0 font-medium whitespace-nowrap">
-                            {d.data ? new Date(d.data + 'T12:00:00').toLocaleDateString('pt-BR') : '—'}
-                          </span>
-                          <span className="flex-1">{d.texto}</span>
-                          <button onClick={() => handleModalDeleteDelib(d.id)} className="shrink-0 text-slate-300 hover:text-red-500 transition-colors">
-                            <Trash2 className="h-3 w-3" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  <div className="mt-2 flex gap-2 items-center">
-                    <input type="date" value={modalNovaDelib.data}
-                      onChange={e => setModalNovaDelib(p => ({ ...p, data: e.target.value }))}
-                      className="text-xs p-1.5 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20 w-36 shrink-0" />
-                    <input value={modalNovaDelib.texto}
-                      onChange={e => setModalNovaDelib(p => ({ ...p, texto: e.target.value }))}
-                      onKeyDown={e => { if (e.key === 'Enter') handleModalAddDelib() }}
-                      placeholder="Nova deliberação... (Enter para salvar)"
-                      className="flex-1 text-xs p-1.5 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20" />
-                    <button onClick={handleModalAddDelib} disabled={!modalNovaDelib.texto.trim() || modalAdicionandoDelib}
-                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-semibold rounded-md transition-colors shrink-0">
-                      Adicionar
-                    </button>
-                  </div>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase">Área</label>
-                  <select name="area_nome" value={editForm.area_nome || ''} onChange={handleEditFormChange}
-                    className="w-full mt-1 text-xs p-2 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20 bg-white">
-                    <option value="">—</option>
-                    {areas.map(a => <option key={a.id} value={a.nome}>{a.nome}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase">Fase</label>
-                  <select name="fase_nome" value={editForm.fase_nome || ''} onChange={handleEditFormChange}
-                    className="w-full mt-1 text-xs p-2 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20 bg-white">
-                    <option value="">—</option>
-                    {fases.map(f => <option key={f.id} value={f.nome}>{f.nome}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase">Status</label>
-                  <select name="status_kanban" value={editForm.status_kanban || 'mapeado'} onChange={handleEditFormChange}
-                    className="w-full mt-1 text-xs p-2 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20 bg-white">
-                    {Object.entries(KANBAN_MAP).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase">% Conclusão</label>
-                  <input type="number" name="progresso_pct" min="0" max="100" value={editForm.progresso_pct ?? 0} onChange={handleEditFormChange}
-                    className="w-full mt-1 text-xs p-2 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20" />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase">Data Início</label>
-                  <input type="date" name="data_inicio" value={editForm.data_inicio || ''} onChange={handleEditFormChange}
-                    className="w-full mt-1 text-xs p-2 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20" />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase">Data Término</label>
-                  <input type="date" name="data_fim" value={editForm.data_fim || ''} onChange={handleEditFormChange}
-                    className="w-full mt-1 text-xs p-2 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20" />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase">Sistema</label>
-                  <div className="flex items-center gap-1.5 mt-1">
-                    {editForm.sistema_nome && (
-                      <span className="inline-block w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: sistemaCorMap[editForm.sistema_nome] || '#1e293b' }} />
-                    )}
-                    <select name="sistema_nome" value={editForm.sistema_nome || ''} onChange={handleEditFormChange}
-                      className="flex-1 text-xs p-2 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20 bg-white">
-                      <option value="">—</option>
-                      {sistemas.map(s => <option key={s.id} value={s.nome}>{s.nome}</option>)}
-                    </select>
-                  </div>
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase">Resp.Tarefa</label>
-                  <select name="responsavel_nome" value={editForm.responsavel_nome || ''} onChange={handleEditFormChange}
-                    className="w-full mt-1 text-xs p-2 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20 bg-white">
-                    <option value="">—</option>
-                    {responsaveis.map(r => <option key={r.id} value={r.nome}>{r.nome}</option>)}
-                  </select>
-                </div>
-              </div>
-            </div>
-            <div className="flex items-center justify-end gap-2 p-3 bg-slate-50 border-t border-slate-100">
-              <button onClick={() => setModalEditTarefa(null)} className="px-3 py-1.5 rounded-md text-xs font-semibold text-slate-600 hover:bg-slate-200/60 transition-colors">Cancelar</button>
-              <button onClick={handleSalvarTarefa} className="px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 shadow-sm transition-colors">Salvar</button>
-            </div>
-          </div>
-        </div>
+      {modalTarefaForm && (
+        <TarefaFormModal
+          projetoId={modalTarefaForm.projetoId}
+          tarefa={modalTarefaForm.tarefa}
+          tarefas={modalTarefaForm.tarefas}
+          dependenciasAtuais={modalTarefaForm.deps}
+          responsaveis={responsaveis || []}
+          sistemas={sistemas}
+          fases={fases}
+          empresas={modalTarefaForm.empresas}
+          areas={areas}
+          canAlterarStatus={canAlterarStatusTar}
+          onClose={() => setModalTarefaForm(null)}
+          onSaved={() => aposSalvarTarefa(modalTarefaForm.projetoId)}
+          onNavigate={(t) => setModalTarefaForm(prev => ({ ...prev, tarefa: t }))}
+        />
       )}
 
       {/* MODAL EXCLUIR TAREFA */}

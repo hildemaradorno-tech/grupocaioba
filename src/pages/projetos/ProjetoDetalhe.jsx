@@ -6,6 +6,7 @@ import { useProjetosFiltros } from '../../context/ProjetosFiltrosContext'
 import { apiService } from '../../services/api'
 import { clearProjetosCache } from '../../services/projetosCache'
 import TarefaFormModal from './TarefaFormModal'
+import DependenciaBadge from './DependenciaBadge'
 import DeliberacoesModal from './DeliberacoesModal'
 import ManifestacoesTab from './ManifestacoesTab'
 import IniciarFaseModal from './IniciarFaseModal'
@@ -92,6 +93,7 @@ export default function ProjetoDetalhe() {
   const [projeto, setProjeto] = useState(null)
   const [tarefas, setTarefas] = useState([])
   const [dependencias, setDependencias] = useState([])
+  const [depsPorTarefa, setDepsPorTarefa] = useState({})
   const [responsaveis, setResponsaveis] = useState([])
   const [sistemas, setSistemas] = useState([])
   const [usuarios, setUsuarios] = useState([])
@@ -161,6 +163,13 @@ export default function ProjetoDetalhe() {
       setProjeto(proj)
       setTarefas(tfs)
       setDependencias(deps)
+      apiService.getDependenciasDetalhadas(tfs.map(t => t.id))
+        .then(rows => {
+          const m = {}
+          rows.forEach(r => { (m[r.tarefa_id] ||= []).push(r) })
+          setDepsPorTarefa(m)
+        })
+        .catch(() => setDepsPorTarefa({}))
       setConvidados(conv)
       setManifestoesIniciais(mans)
     } catch (err) { setError(err.message || String(err)) }
@@ -969,37 +978,40 @@ const abrirModalMover = async (tarefa) => {
                   </td>
                   <td className="p-3 leading-snug" style={{ whiteSpace: 'normal' }}>
                     <div className="flex items-start gap-1.5">
-                      <span className="text-slate-800 flex-1">{renderNome(t.nome)}</span>
-                      {canDeliberacao && (
-                        <button onClick={() => setModalDelib(t)} className="shrink-0 mt-0.5 p-0.5 relative text-slate-300 hover:text-amber-500 transition-colors" title={t.proj_deliberacoes?.length > 0 ? `${t.proj_deliberacoes.length} deliberação(ões)` : 'Deliberações'}>
-                          <MessageSquare className={`h-3.5 w-3.5 ${t.proj_deliberacoes?.length > 0 ? 'text-amber-500' : ''}`} />
-                          {t.proj_deliberacoes?.length > 0 && (
-                            <span className="absolute -top-1 -right-1 min-w-[14px] h-3.5 px-0.5 rounded-full bg-amber-500 text-white text-[9px] font-bold flex items-center justify-center leading-none">
-                              {t.proj_deliberacoes.length}
-                            </span>
-                          )}
-                        </button>
-                      )}
-                    </div>
-                    {t.proj_deliberacoes?.length > 0 && (
-                      <div className="mt-1">
-                        <button type="button" onClick={() => toggleDelib(t.id)}
-                          className="flex items-center gap-0.5 text-[10px] text-amber-600 hover:text-amber-800 font-semibold leading-none py-0.5">
-                          <ChevronRight className={`h-3 w-3 transition-transform duration-150 ${delibExpanded.has(t.id) ? 'rotate-90' : ''}`} />
-                          {t.proj_deliberacoes.length} deliberaç{t.proj_deliberacoes.length === 1 ? 'ão' : 'ões'}
-                        </button>
-                        {delibExpanded.has(t.id) && (
-                          <div className="mt-1 space-y-1">
-                            {t.proj_deliberacoes.map(d => (
-                              <div key={d.id} className="flex gap-1.5 text-[10px] bg-amber-50 border border-amber-200 rounded px-2 py-1">
-                                <span className="text-amber-600 font-semibold shrink-0 whitespace-nowrap">
-                                  {d.data ? new Date(d.data + 'T12:00:00').toLocaleDateString('pt-BR') : '—'}
-                                </span>
-                                <span className="text-slate-600 leading-snug">{d.texto}</span>
-                              </div>
-                            ))}
+                      <div className="flex-1 flex flex-col items-start gap-1">
+                        <span className="text-slate-800">{renderNome(t.nome)}</span>
+                        {(depsPorTarefa[t.id]?.length > 0 || t.proj_deliberacoes?.length > 0 || canDeliberacao) && (
+                          <div className="flex flex-wrap items-center gap-1" onClick={e => e.stopPropagation()}>
+                            <DependenciaBadge deps={depsPorTarefa[t.id]} projetoAtualId={id} />
+                            {t.proj_deliberacoes?.length > 0 && (
+                              <button type="button" onClick={() => toggleDelib(t.id)}
+                                className="shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold border bg-slate-600 border-slate-700 text-white hover:bg-slate-700 transition-colors">
+                                <MessageSquare className="h-3 w-3" />
+                                {t.proj_deliberacoes.length} deliberaç{t.proj_deliberacoes.length === 1 ? 'ão' : 'ões'}
+                                <ChevronRight className={`h-3 w-3 transition-transform duration-150 ${delibExpanded.has(t.id) ? 'rotate-90' : ''}`} />
+                              </button>
+                            )}
+                            {canDeliberacao && (
+                              <button type="button" onClick={() => setModalDelib(t)}
+                                className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold border border-slate-200 text-slate-400 hover:text-amber-600 hover:border-amber-300 hover:bg-amber-50 transition-colors"
+                                title="Adicionar / gerenciar deliberações">
+                                <Plus className="h-3 w-3" /> Deliberação
+                              </button>
+                            )}
                           </div>
                         )}
+                      </div>
+                    </div>
+                    {t.proj_deliberacoes?.length > 0 && delibExpanded.has(t.id) && (
+                      <div className="mt-1 space-y-1">
+                        {t.proj_deliberacoes.map(d => (
+                          <div key={d.id} className="flex gap-1.5 text-[10px] bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                            <span className="text-amber-600 font-semibold shrink-0 whitespace-nowrap">
+                              {d.data ? new Date(d.data + 'T12:00:00').toLocaleDateString('pt-BR') : '—'}
+                            </span>
+                            <span className="text-slate-600 leading-snug">{d.texto}</span>
+                          </div>
+                        ))}
                       </div>
                     )}
                   </td>
@@ -1109,16 +1121,6 @@ const abrirModalMover = async (tarefa) => {
                         <>
                           <div className="fixed inset-0 z-10" onClick={() => setMenuAcoes(null)} />
                           <div className="fixed z-20 bg-white border border-slate-200 rounded-lg shadow-lg py-1 min-w-[160px]" style={{ top: menuAcoesPos.top, bottom: menuAcoesPos.bottom, right: menuAcoesPos.right }}>
-                            {canIniciarTarefa && t.status_kanban === 'programado' && (
-                              <button onClick={() => { handleIniciarTarefa(t); setMenuAcoes(null) }} className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-blue-50 hover:text-blue-700">
-                                <PlayCircle className="h-3.5 w-3.5 shrink-0" /> Iniciar Tarefa
-                              </button>
-                            )}
-                            {canConcluirTarefa && t.status_kanban === 'em_andamento' && (
-                              <button onClick={() => { setModalConcluir({ tarefa: t, dataFim: hojeISO }); setMenuAcoes(null) }} className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-teal-50 hover:text-teal-700">
-                                <CheckCircle2 className="h-3.5 w-3.5 shrink-0" /> Concluir Tarefa
-                              </button>
-                            )}
                             {canEditarTarefa && (
                               <button onClick={() => { handleProximaEtapa(t); setMenuAcoes(null) }} className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-indigo-50 hover:text-indigo-700">
                                 <ArrowRight className="h-3.5 w-3.5 shrink-0" /> Próxima Etapa

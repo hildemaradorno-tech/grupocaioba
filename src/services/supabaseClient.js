@@ -4654,6 +4654,26 @@ export const apiService = {
     return data || []
   },
 
+  getDependenciasDetalhadas: async (tarefaIds) => {
+    if (!tarefaIds?.length) return []
+    const { data, error } = await supabase
+      .from('proj_tarefas_dependencias')
+      .select('id, tarefa_id, depende_de_tarefa_id, predecessora:proj_tarefas!depende_de_tarefa_id(id, nome, etapa, status_kanban, data_fim, projeto_id, proj_projetos(nome))')
+      .in('tarefa_id', tarefaIds)
+    if (error) throw error
+    return data || []
+  },
+
+  getTarefasResumoByIds: async (ids) => {
+    if (!ids?.length) return []
+    const { data, error } = await supabase
+      .from('proj_tarefas')
+      .select('id, nome, etapa, status_kanban, projeto_id, proj_projetos(nome)')
+      .in('id', ids)
+    if (error) throw error
+    return data || []
+  },
+
   createDependencia: async (tarefaId, dependeDeTarefaId) => {
     const { data, error } = await supabase
       .from('proj_tarefas_dependencias')

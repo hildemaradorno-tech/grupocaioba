@@ -165,7 +165,54 @@ export default function TarefaFormModal({ projetoId, tarefa, initialValues, tare
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.responsavel_nome])
 
-  const outrasTarefas = tarefas.filter(t => !modoEdicao || t.id !== tarefa.id)
+  const [depProjetoId, setDepProjetoId] = useState(projetoId)
+  const [projetosLista, setProjetosLista] = useState([])
+  const [tarefasOutroProjeto, setTarefasOutroProjeto] = useState([])
+  const [carregandoDep, setCarregandoDep] = useState(false)
+  const [depInfo, setDepInfo] = useState({}) // id -> { nome, etapa, projeto_nome }
+
+  useEffect(() => {
+    apiService.getProjetosLista().then(setProjetosLista).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    if (!depProjetoId || depProjetoId === projetoId) { setTarefasOutroProjeto([]); return }
+    setCarregandoDep(true)
+    apiService.getTarefas(depProjetoId)
+      .then(setTarefasOutroProjeto)
+      .catch(() => setTarefasOutroProjeto([]))
+      .finally(() => setCarregandoDep(false))
+  }, [depProjetoId, projetoId])
+
+  // Nomes das dependências já gravadas que são de outros projetos
+  useEffect(() => {
+    const locais = new Set(tarefas.map(t => t.id))
+    const faltando = dependeDe.filter(id => !locais.has(id) && !depInfo[id])
+    if (faltando.length === 0) return
+    apiService.getTarefasResumoByIds(faltando).then(rows => {
+      setDepInfo(prev => {
+        const n = { ...prev }
+        rows.forEach(r => { n[r.id] = { nome: r.nome, etapa: r.etapa, projeto_nome: r.proj_projetos?.nome } })
+        return n
+      })
+    }).catch(() => {})
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dependeDe])
+
+  const nomeProjetoAtual = projetosLista.find(p => p.id === projetoId)?.nome || 'Este projeto'
+  const tarefasDoProjetoDep = depProjetoId === projetoId ? tarefas : tarefasOutroProjeto
+  const tarefasDisponiveisDep = tarefasDoProjetoDep
+    .filter(t => (!modoEdicao || t.id !== tarefa.id) && t.status_kanban !== 'concluido' && t.status_kanban !== 'cancelado')
+    .sort((a, b) => (a.etapa ?? 9999) - (b.etapa ?? 9999))
+
+  const infoDependencia = (id) => {
+    const local = tarefas.find(t => t.id === id)
+    if (local) return { nome: local.nome, etapa: local.etapa, projeto_nome: null }
+    const outro = tarefasOutroProjeto.find(t => t.id === id)
+    if (outro) return { nome: outro.nome, etapa: outro.etapa, projeto_nome: projetosLista.find(p => p.id === depProjetoId)?.nome }
+    return depInfo[id] || { nome: 'Carregando...', etapa: null, projeto_nome: null }
+  }
+  const textoPlano = (s) => (s || '').replace(/\*\*?/g, '')
 
   const handleChange = (e) => {
     const { name, value } = e.target
@@ -473,19 +520,49 @@ export default function TarefaFormModal({ projetoId, tarefa, initialValues, tare
             </div>
           </div>
 
-          {outrasTarefas.length > 0 && (
-            <div className="flex flex-col gap-1">
-              <label className="text-[10px] font-bold text-slate-500 uppercase">Depende de</label>
-              <div className="border border-slate-200 rounded-md max-h-32 overflow-y-auto divide-y divide-slate-50">
-                {outrasTarefas.map(t => (
-                  <label key={t.id} className="flex items-center gap-2 px-2 py-1.5 text-xs text-slate-700 hover:bg-slate-50 cursor-pointer">
-                    <input type="checkbox" checked={dependeDe.includes(t.id)} onChange={() => toggleDependencia(t.id)} />
-                    {t.nome}
-                  </label>
-                ))}
-              </div>
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[10px] font-bold text-slate-500 uppercase">Depende de</label>
+            <select value={depProjetoId || ''} onChange={e => setDepProjetoId(e.target.value)}
+              className="w-full text-xs p-2 border border-slate-200 rounded-md bg-white focus:ring-2 focus:ring-blue-500/20">
+              <option value={projetoId}>{nomeProjetoAtual} (este projeto)</option>
+              {projetosLista.filter(p => p.id !== projetoId).map(p => (
+                <option key={p.id} value={p.id}>{p.nome}</option>
+              ))}
+            </select>
+            <div className="border border-slate-200 rounded-md max-h-40 overflow-y-auto divide-y divide-slate-50">
+              {carregandoDep ? (
+                <p className="px-2 py-2 text-[11px] text-slate-400 flex items-center gap-1.5"><Loader2 className="h-3 w-3 animate-spin" /> Carregando tarefas...</p>
+              ) : tarefasDisponiveisDep.length === 0 ? (
+                <p className="px-2 py-2 text-[11px] text-slate-400 italic">Nenhuma tarefa em aberto neste projeto.</p>
+              ) : tarefasDisponiveisDep.map(t => (
+                <label key={t.id} className="flex items-center gap-2 px-2 py-1.5 text-xs text-slate-700 hover:bg-slate-50 cursor-pointer">
+                  <input type="checkbox" checked={dependeDe.includes(t.id)} onChange={() => toggleDependencia(t.id)} />
+                  {t.etapa != null && <span className="shrink-0 text-[10px] font-bold text-indigo-600">{t.etapa}ª</span>}
+                  <span>{textoPlano(t.nome)}</span>
+                </label>
+              ))}
             </div>
-          )}
+            {dependeDe.length > 0 && (
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] text-slate-400">Selecionadas ({dependeDe.length}):</span>
+                <div className="flex flex-wrap gap-1">
+                  {dependeDe.map(id => {
+                    const info = infoDependencia(id)
+                    return (
+                      <span key={id} className="inline-flex items-center gap-1 max-w-full bg-blue-50 border border-blue-200 text-blue-800 rounded px-1.5 py-0.5 text-[10px]">
+                        {info.projeto_nome && <span className="font-semibold shrink-0">{info.projeto_nome} ›</span>}
+                        {info.etapa != null && <span className="font-bold shrink-0">{info.etapa}ª</span>}
+                        <span className="truncate">{textoPlano(info.nome)}</span>
+                        <button type="button" onClick={() => toggleDependencia(id)} className="shrink-0 text-blue-400 hover:text-red-500" title="Remover">
+                          <X className="h-3 w-3" />
+                        </button>
+                      </span>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
 
           {modoEdicao && (
             <div className="flex flex-col gap-2">
