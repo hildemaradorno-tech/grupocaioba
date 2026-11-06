@@ -4426,6 +4426,32 @@ export const apiService = {
     return data || []
   },
 
+  // ── Custos de Projetos (proj_custos_lancamentos) ──
+  getProjCustos: async () => {
+    const { data, error } = await supabase
+      .from('proj_custos_lancamentos')
+      .select('*, proj_projetos(id, nome)')
+      .order('data', { ascending: false })
+      .order('criado_em', { ascending: false })
+    if (error) throw error
+    return data || []
+  },
+  createProjCusto: async ({ projeto_id, data, descricao, categoria, valor, criado_por }) => {
+    const { data: row, error } = await supabase.from('proj_custos_lancamentos')
+      .insert([{ projeto_id, data, descricao, categoria, valor, criado_por: criado_por || null }]).select()
+    if (error) throw error
+    return row?.[0]
+  },
+  updateProjCusto: async (id, { projeto_id, data, descricao, categoria, valor }) => {
+    const { error } = await supabase.from('proj_custos_lancamentos')
+      .update({ projeto_id, data, descricao, categoria, valor, atualizado_em: new Date().toISOString() }).eq('id', id)
+    if (error) throw error
+  },
+  deleteProjCusto: async (id) => {
+    const { error } = await supabase.from('proj_custos_lancamentos').delete().eq('id', id)
+    if (error) throw error
+  },
+
   getProjetos: async (filtros = {}) => {
     let q = supabase
       .from('proj_projetos')

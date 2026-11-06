@@ -75,6 +75,7 @@ import ProjetosDashboard from './pages/projetos/ProjetosDashboard'
 import ProjetoDetalhe from './pages/projetos/ProjetoDetalhe'
 import ProjetoEditor from './pages/projetos/ProjetoEditor'
 import ProjFases from './pages/projetos/cadastros/ProjFases'
+import CustosProjetos from './pages/projetos/CustosProjetos'
 import ProjResponsaveis from './pages/projetos/cadastros/ProjResponsaveis'
 import ProjSistemas from './pages/projetos/cadastros/ProjSistemas'
 import ProjAreas from './pages/projetos/cadastros/ProjAreas'
@@ -302,6 +303,7 @@ export default function App() {
           { path: '/projetos/lista-tarefas', element: <CalendarioProjetos abaInicial="lista" />, menuPath: 'projetos/lista-tarefas' },
           { path: '/projetos/calendario', element: <CalendarioProjetos abaInicial="calendario" />, menuPath: 'projetos/calendario' },
           { path: '/projetos/ata-reuniao', element: <AtaReuniao />, menuPath: 'projetos/ata-reuniao' },
+          { path: '/projetos/custos', element: <CustosProjetos />, menuPath: 'projetos/custos' },
           { path: '/auditoria-externa/dashboard', element: <AuditoriaDashboard />, menuPath: 'auditoria-externa/dashboard' },
           { path: '/auditoria-externa/divergencias', element: <AchadosPainel />, menuPath: 'auditoria-externa/divergencias' },
           { path: '/auditoria-externa/plano-acao', element: <PlanoAcaoPainel />, menuPath: 'auditoria-externa/plano-acao' },

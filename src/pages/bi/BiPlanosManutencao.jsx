@@ -1,14 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { BookOpen, Building2, Calendar, CalendarClock, CalendarX2, ChevronDown, ChevronLeft, ChevronRight, ChevronsUpDown, ChevronUp, FilePlus2, FileSearch, FileX2, Info, Play, RefreshCw, RotateCcw, Repeat, Search, Truck, Wrench, X } from 'lucide-react'
+import { BookOpen, Building2, Calendar, CalendarClock, CalendarX2, ChevronDown, ChevronLeft, ChevronRight, ChevronsUpDown, ChevronUp, FilePlus2, FileSearch, FileX2, Info, Play, RefreshCw, RotateCcw, Repeat, Search, Settings, Upload, Truck, Wrench, X } from 'lucide-react'
 import { apiService } from '../../services/supabaseClient'
 import { empresaSelecionavel } from '../../utils/comissoesElegibilidade'
-import { INFO_RESUMO } from './planosManutencaoTextos'
+import { INFO_RESUMO, FONTE_TABELAS } from './planosManutencaoTextos'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
 
 // Abas do BI (as próximas entram aqui).
-const ABAS = ['Resumo', 'Veículos Vendidos', 'Ordens de Serviço', 'Planos de Manutenção']
+const ABAS = ['Resumo', 'Contratos', 'Veículos Vendidos', 'Ordens de Serviço']
 const fmtData = (s) => (s ? s.split('-').reverse().join('/') : '')
 const nomeEmpresa = (s) => s.replace(/^CAIOBA TRUCKS - /i, '')
 // Cor do status do contrato (Razão do Status do CRM DAF), por grupo de status. A lista completa do CRM vem
@@ -110,7 +110,7 @@ function SeletorEmpresas({ grupos, selecionadas, onChange }) {
   )
 }
 
-// Multisseleção de Status do contrato (aba Planos de Manutenção): nenhum marcado = todos.
+// Multisseleção de Status do contrato (aba Contratos): nenhum marcado = todos.
 // Mesmo visual do seletor de empresas (lista em portal, acima de tudo); cada status com a sua cor.
 function SeletorStatus({ opcoes, selecionados, onChange }) {
   const [aberto, setAberto] = useState(false)
@@ -166,8 +166,8 @@ const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0
 const ontem = new Date(); ontem.setDate(ontem.getDate() - 1)
 const DATA_MAX = iso(ontem)
 // Título da tabela de contratos conforme o seletor Tipo de data.
-const TEXTO_TIPO_DATA = { ambos: 'início ou fim do contrato no período', inicio: 'início do contrato no período', fim: 'fim do contrato no período' }
-// Coluna Origem (aba Planos de Manutenção): rótulo e cor de cada situação ('na' = em branco).
+const TEXTO_TIPO_DATA = { criacao: 'data de criação', ambos: 'data de início ou fim', inicio: 'data de início', fim: 'data de fim' }
+// Coluna Origem (aba Contratos): rótulo e cor de cada situação ('na' = em branco).
 // 'sim' = contrato expirado que foi renovado; 'renovacao' = o contrato que veio da renovação (os dois aparecem
 // como "Renovado"; o seletor filtra pelo nome, juntando os dois).
 const SITUACOES_CONTRATO = {
@@ -191,17 +191,16 @@ const fmtDataHora = (d) => d.toLocaleString('pt-BR', { day: '2-digit', month: '2
 // Card com ícone (caminhão por padrão; cada indicador passa o seu).
 // `cor` = degradê do quadrado do ícone (azul por padrão).
 
-// Botão ⓘ dos cards/indicadores: abre um quadro com objetivo, fonte (arquivo), cálculo e filtros do número.
-// O quadro abre centralizado na tela (portal, acima de tudo), para nunca sair da área visível — mesmo com o
-// card no fim da página; fecha clicando fora ou no X.
-function BotaoInfo({ titulo, info }) {
+// Botão ⓘ: abre um quadro centralizado na tela (portal, acima de tudo), para nunca sair da área visível;
+// fecha clicando fora ou no X. Nos cards/indicadores mostra objetivo e cálculo (`info`; fonte, regras e colunas
+// ficam no Manual operacional). Nas tabelas mostra a fonte (`secoes` próprias) e fica ao lado do título (`noTitulo`).
+function BotaoInfo({ titulo, info, secoes: secoesProprias, noTitulo }) {
   const [aberto, setAberto] = useState(false)
-  // Só objetivo e cálculo; fonte, filtros/regras e colunas ficam no Manual operacional (página /bi/planos-manutencao/manual).
-  const secoes = [['Objetivo', info.objetivo], ['Cálculo', info.calculo]]
+  const secoes = secoesProprias || [['Objetivo', info.objetivo], ['Cálculo', info.calculo]]
   return (
     <>
       <button type="button" onClick={() => setAberto(true)} aria-label={`Informações: ${titulo}`} title="Informações"
-        className="absolute top-2 right-2 p-0.5 rounded-full text-slate-400 hover:text-blue-600 hover:bg-blue-50">
+        className={`${noTitulo ? '' : 'absolute top-2 right-2 '}p-0.5 rounded-full text-slate-400 hover:text-blue-600 hover:bg-blue-50`}>
         <Info className="h-3.5 w-3.5" />
       </button>
       {aberto && createPortal(
@@ -224,6 +223,46 @@ function BotaoInfo({ titulo, info }) {
             </div>
           </div>
         </div>,
+        document.body
+      )}
+    </>
+  )
+}
+
+// Engrenagem do cabeçalho (ao lado de Atualizar): menu com "Importar arquivo" do CRM DAF - Potencial Renovação.
+// Lista em portal (acima de tudo); o arquivo escolhido vai para `onImportar`.
+function MenuEngrenagem({ importando, onImportar }) {
+  const [pos, setPos] = useState(null)
+  const ref = useRef(null)
+  const arquivoRef = useRef(null)
+  const abrir = () => {
+    const r = ref.current.getBoundingClientRect()
+    setPos({ top: r.bottom + 4, right: window.innerWidth - r.right })
+  }
+  return (
+    <>
+      <button ref={ref} type="button" onClick={abrir} disabled={importando}
+        title="Configurações" aria-label="Configurações"
+        className="flex items-center justify-center p-1.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white shadow-sm disabled:opacity-60 disabled:cursor-not-allowed transition-colors">
+        <Settings className={`h-3.5 w-3.5 ${importando ? 'animate-spin' : ''}`} />
+      </button>
+      <input ref={arquivoRef} type="file" accept=".xlsx,.xls" className="hidden"
+        onChange={e => { onImportar(e.target.files?.[0]); e.target.value = '' }} />
+      {pos && createPortal(
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setPos(null)} />
+          <div style={{ position: 'fixed', top: pos.top, right: pos.right }}
+            className="z-50 w-72 bg-white border border-slate-200 rounded-md shadow-lg py-1 text-xs text-slate-800">
+            <button type="button" onClick={() => { setPos(null); arquivoRef.current?.click() }}
+              className="w-full text-left px-3 py-2 hover:bg-slate-50 flex items-start gap-2">
+              <Upload className="h-3.5 w-3.5 text-blue-600 mt-0.5 shrink-0" />
+              <span>
+                <span className="font-semibold block">Importar arquivo</span>
+                <span className="text-[11px] text-slate-500">CRM DAF - Plano de Manutenção - Potencial Renovação — atualiza a aba Contratos</span>
+              </span>
+            </button>
+          </div>
+        </>,
         document.body
       )}
     </>
@@ -363,10 +402,41 @@ export default function BiPlanosManutencao() {
       setCarregandoRota(false)
     }
   }
+  // Engrenagem → "Importar arquivo": envia o .xlsx do CRM DAF (Potencial Renovação), que substitui o arquivo da
+  // pasta do SharePoint; a aba Contratos é atualizada com os contratos já relidos.
+  const [importando, setImportando] = useState(false)
+  const [avisoImportacao, setAvisoImportacao] = useState(null) // { ok, texto }
+  const importarContratos = async (arquivo) => {
+    if (!arquivo) return
+    setImportando(true)
+    setAvisoImportacao(null)
+    try {
+      const conteudoBase64 = await new Promise((resolve, reject) => {
+        const leitor = new FileReader()
+        leitor.onload = () => resolve(String(leitor.result).split(',')[1] || '')
+        leitor.onerror = () => reject(new Error('Não foi possível ler o arquivo.'))
+        leitor.readAsDataURL(arquivo)
+      })
+      const r = await fetch(`${BACKEND_URL}/api/planos-manutencao/contratos/importar`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nome: arquivo.name, conteudoBase64 }),
+      })
+      const corpo = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(corpo.error || `HTTP ${r.status}`)
+      setContratos(corpo.dados)
+      setErroContratos('')
+      setAvisoImportacao({ ok: true, texto: `Arquivo importado: ${corpo.contratos.toLocaleString('pt-BR')} contrato(s) gravados em "${corpo.arquivo}" no SharePoint.` })
+    } catch (e) {
+      setAvisoImportacao({ ok: false, texto: `Não foi possível importar: ${e.message}` })
+    } finally {
+      setImportando(false)
+    }
+  }
+
   const carregarDados = (refresh = false) => {
     buscar('veiculos-vendidos', refresh, setVendas, setCarregandoVendas, setErroVendas, 'os Veículos Vendidos')
     buscar('ordens-servico', refresh, setOrdens, setCarregandoOrdens, setErroOrdens, 'as Ordens de Serviço')
-    buscar('contratos', refresh, setContratos, setCarregandoContratos, setErroContratos, 'os Planos de Manutenção')
+    buscar('contratos', refresh, setContratos, setCarregandoContratos, setErroContratos, 'os Contratos')
   }
   useEffect(() => { carregarDados() }, [])
 
@@ -382,12 +452,13 @@ export default function BiPlanosManutencao() {
   // Seletores de tipo do veículo (VN/VU: Resumo e Veículos Vendidos) e situação do contrato ('' = todos).
   const [filtroTipo, setFiltroTipo] = useState('')
   const [filtroSituacao, setFiltroSituacao] = useState('')
-  const [filtroStatus, setFiltroStatus] = useState([]) // aba Planos de Manutenção: Razão do Status do contrato (vários; vazio = todos)
-  const [contratosTodos, setContratosTodos] = useState(false) // aba Planos de Manutenção: ignora o período (só seletores)
-  // aba Planos de Manutenção: qual data do contrato o calendário filtra — 'ambos' (início OU fim no período), 'inicio' ou 'fim'.
-  const [tipoDataContrato, setTipoDataContrato] = useState('ambos')
-  const [excluirCancelados, setExcluirCancelados] = useState(true) // aba Planos de Manutenção: esconde status Cancelado (já vem marcado)
-  const [filtroRenovacao, setFiltroRenovacao] = useState('') // aba Planos de Manutenção: '' todos | 'sim' renovados | 'nao' não renovados
+  const [filtroStatus, setFiltroStatus] = useState([]) // aba Contratos: Razão do Status do contrato (vários; vazio = todos)
+  const [contratosTodos, setContratosTodos] = useState(false) // aba Contratos: ignora o período (só seletores)
+  // aba Contratos: qual data do contrato o calendário filtra — 'criacao' (Data de Criação no CRM, padrão),
+  // 'ambos' (início OU fim no período), 'inicio' ou 'fim'.
+  const [tipoDataContrato, setTipoDataContrato] = useState('criacao')
+  const [excluirCancelados, setExcluirCancelados] = useState(true) // aba Contratos: esconde status Cancelado (já vem marcado)
+  const [filtroRenovacao, setFiltroRenovacao] = useState('') // aba Contratos: '' todos | 'sim' renovados | 'nao' não renovados
   const [tabIni, tabFim] = termo ? ['0000-00-00', '9999-99-99'] : [dataIni, dataFim]
 
   // Contratos (um por chassi) com fim do contrato dentro do período. O arquivo não traz a empresa
@@ -398,6 +469,7 @@ export default function BiPlanosManutencao() {
       .filter(r => {
         if (contratosTodos) return true
         const noPeriodo = (d) => d && d >= tabIni && d <= tabFim
+        if (tipoDataContrato === 'criacao') return noPeriodo(r.criacao)
         if (tipoDataContrato === 'inicio') return noPeriodo(r.inicio)
         if (tipoDataContrato === 'ambos') return noPeriodo(r.inicio) || noPeriodo(r.fim)
         return noPeriodo(r.fim)
@@ -405,13 +477,17 @@ export default function BiPlanosManutencao() {
       .sort((a, b) => (a.fim || '').localeCompare(b.fim || '') || a.contrato.localeCompare(b.contrato, 'pt-BR', { numeric: true }))
   }, [contratos, tabIni, tabFim, contratosTodos, tipoDataContrato])
 
-  // Linhas (TMOs) das O.S. P04 com NF no período, nas empresas selecionadas.
+  // Linhas (TMOs) das O.S. P04 abertas no período (OS_DataCriacao do ROF017; sem ela, a data da NF), nas empresas selecionadas.
+  // Seletor de data da aba: 'abertura' (padrão) ou 'nf' (data da nota fiscal).
+  const [tipoDataOs, setTipoDataOs] = useState('abertura')
+  const aberturaOs = r => r.data_abertura || r.data
+  const dataOs = r => (tipoDataOs === 'nf' ? r.data : aberturaOs(r))
   const listaOs = useMemo(() => {
     if (!ordens) return []
     return ordens.rows
-      .filter(r => r.data && r.data >= tabIni && r.data <= tabFim && (!nomesEmpresasSel || nomesEmpresasSel.has(r.empresa_nome.toUpperCase())))
-      .sort((a, b) => b.data.localeCompare(a.data) || a.os.localeCompare(b.os, 'pt-BR', { numeric: true }))
-  }, [ordens, nomesEmpresasSel, tabIni, tabFim])
+      .filter(r => { const d = dataOs(r); return d && d >= tabIni && d <= tabFim && (!nomesEmpresasSel || nomesEmpresasSel.has(r.empresa_nome.toUpperCase())) })
+      .sort((a, b) => (dataOs(b) || '').localeCompare(dataOs(a) || '') || a.os.localeCompare(b.os, 'pt-BR', { numeric: true }))
+  }, [ordens, nomesEmpresasSel, tabIni, tabFim, tipoDataOs])
 
   // Chassis vendidos entre as datas e nas empresas selecionadas: venda (VEN) soma, devolução (DVE) desconta;
   // conta o chassi com saldo > 0 (vendido e devolvido some; devolvido e revendido conta uma vez).
@@ -471,7 +547,7 @@ export default function BiPlanosManutencao() {
   // Renovado = depois do fim, o chassi tem uma O.S. P04 (ROF017) ou um novo contrato no Potencial Renovação
   // (início a partir de 90 dias antes do fim e fim depois do fim deste). O Potencial Renovação guarda só o final do chassi (8 caracteres),
   // então a O.S. é comparada pelo final do chassi.
-  // Também alimenta a coluna "Renovado" e o seletor de Renovação da aba Planos de Manutenção.
+  // Também alimenta a coluna "Renovado" e o seletor de Renovação da aba Contratos.
   const contratosRenovados = useMemo(() => {
     const osPorFinal = {}
     Object.entries(osPorChassi).forEach(([chassi, lista]) => { (osPorFinal[chassi.slice(-8)] ||= []).push(...lista) })
@@ -499,7 +575,7 @@ export default function BiPlanosManutencao() {
   }, [contratos, osPorChassi])
   const [renovacaoModal, setRenovacaoModal] = useState(null) // contrato aberto no pop-up da coluna Origem
 
-  // Coluna Origem da aba Planos de Manutenção:
+  // Coluna Origem da aba Contratos:
   // - Expirado → Renovado ('sim') ou Não renovado ('nao'), pela regra acima;
   // - Cancelado trocado por outro contrato do mesmo chassi que começou depois do início e antes do fim dele
   //   → Substituído (ex.: DMS-37097 cancelado, trocado pelo DMS-51501); cancelado sem troca fica em branco;
@@ -564,11 +640,11 @@ export default function BiPlanosManutencao() {
 
   // Colunas ordenáveis de cada tabela (título → valor usado na ordenação). Datas vêm em AAAA-MM-DD, então ordenam como texto.
   const ordContratos = useOrdenacao(tabelaContratos, {
-    Contrato: r => r.contrato, Cliente: r => r.cliente, Chassi: r => r.chassi, Tipo: r => r.tipo,
+    Contrato: r => r.contrato, Criação: r => r.criacao, Cliente: r => r.cliente, Chassi: r => r.chassi, Tipo: r => r.tipo,
     Início: r => r.inicio, Fim: r => r.fim, Status: r => r.status, Origem: r => SITUACOES_CONTRATO[situacaoRenovacao(r)]?.label || '', Grupo: r => r.grupo,
   })
   const ordOs = useOrdenacao(tabelaOs, {
-    'Data NF': r => r.data, NF: r => r.nf, 'O.S.': r => r.os, Chassi: r => r.chassi, TMO: r => r.tmo,
+    Abertura: r => r.data_abertura, 'Data NF': r => r.data, NF: r => r.nf, 'O.S.': r => r.os, Chassi: r => r.chassi, TMO: r => r.tmo,
     Descrição: r => r.tmo_descricao, 'Valor Total': r => r.vl_total,
   })
   const ordVendas = useOrdenacao(tabelaVendas, {
@@ -621,6 +697,7 @@ export default function BiPlanosManutencao() {
               >
                 <RefreshCw className={`h-3.5 w-3.5 ${carregando ? 'animate-spin' : ''}`} />
               </button>
+              <MenuEngrenagem importando={importando} onImportar={importarContratos} />
               {/* Manual operacional: página própria, sempre em outra aba. Link com target="_blank" em vez de
                   window.open, que alguns navegadores bloqueiam como pop-up ou abrem na mesma aba. */}
               <a href="/bi/planos-manutencao/manual" target="_blank" rel="noopener noreferrer"
@@ -630,6 +707,13 @@ export default function BiPlanosManutencao() {
               </a>
             </div>
             {erro && <p className="text-[10px] text-red-600 max-w-[420px] text-right leading-tight">{erro}</p>}
+            {importando && <p className="text-[10px] text-slate-600 max-w-[420px] text-right leading-tight">Importando o arquivo do CRM DAF…</p>}
+            {avisoImportacao && (
+              <p className={`text-[10px] max-w-[420px] text-right leading-tight ${avisoImportacao.ok ? 'text-emerald-700' : 'text-red-600'}`}>
+                {avisoImportacao.texto}
+                <button type="button" onClick={() => setAvisoImportacao(null)} className="ml-1 text-slate-400 hover:text-slate-700" aria-label="Fechar aviso">✕</button>
+              </p>
+            )}
             <div className="flex flex-wrap items-end gap-4">
               <div className="flex flex-col gap-1">
                 <label className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1"><Building2 className="h-3 w-3" /> Empresas</label>
@@ -685,10 +769,11 @@ export default function BiPlanosManutencao() {
         {/* Busca de chassi fora das tabelas, abaixo das abas; só nas abas com tabela. */}
         {aba !== 'Resumo' && (
           <div className="flex flex-wrap items-center gap-3 w-full">
-            {aba === 'Planos de Manutenção' && (
+            {aba === 'Contratos' && (
               <>
                 <select value={tipoDataContrato} onChange={e => setTipoDataContrato(e.target.value)} disabled={contratosTodos}
                   className={`${inputCls} py-2 disabled:opacity-50`} aria-label="Tipo de data" title={contratosTodos ? 'Sem efeito com "Ver todos" marcado' : undefined}>
+                  <option value="criacao">Data: Criação</option>
                   <option value="ambos">Data: Início e Fim</option>
                   <option value="inicio">Data: Início</option>
                   <option value="fim">Data: Fim</option>
@@ -701,6 +786,12 @@ export default function BiPlanosManutencao() {
                   <option value="na">Sem situação (em branco)</option>
                 </select>
               </>
+            )}
+            {aba === 'Ordens de Serviço' && (
+              <select value={tipoDataOs} onChange={e => setTipoDataOs(e.target.value)} className={`${inputCls} py-2`} aria-label="Tipo de data">
+                <option value="abertura">Data: Abertura O.S.</option>
+                <option value="nf">Data: Nota Fiscal</option>
+              </select>
             )}
             {aba === 'Veículos Vendidos' && (
               <>
@@ -717,7 +808,7 @@ export default function BiPlanosManutencao() {
             )}
             {campoBusca}
             {/* Na mesma linha, encostado à direita da página. */}
-            {aba === 'Planos de Manutenção' && (
+            {aba === 'Contratos' && (
               <div className="ml-auto flex items-center gap-4">
                 <label className="flex items-center gap-1.5 text-[11px] text-white cursor-pointer select-none">
                   <input type="checkbox" className="h-3.5 w-3.5 accent-blue-600" checked={excluirCancelados} onChange={e => setExcluirCancelados(e.target.checked)} />
@@ -795,7 +886,7 @@ export default function BiPlanosManutencao() {
         </div>
       )}
 
-      {/* Oportunidade de renovação: contratos da aba Planos de Manutenção com fim no período do filtro Data. */}
+      {/* Oportunidade de renovação: contratos da aba Contratos com fim no período do filtro Data. */}
       {aba === 'Resumo' && (
         <div className="border-t border-slate-700 pt-4 space-y-3">
         <p className="text-[11px] font-semibold text-slate-300 uppercase tracking-wide">Renovação de Contratos</p>
@@ -822,25 +913,26 @@ export default function BiPlanosManutencao() {
             icone={CalendarX2}
             cor="from-red-400 to-red-600"
             valor={(carregandoContratos && !contratos) || (carregandoOrdens && !ordens) ? '...' : contratos ? (renovacoesPeriodo.aRenovar - renovacoesPeriodo.renovados).toLocaleString('pt-BR') : '—'}
-            ajuda="Dos contratos a renovar (Expirados com fim no período), quantos não foram renovados — os mesmos que aparecem como Não renovado na aba Planos de Manutenção"
+            ajuda="Dos contratos a renovar (Expirados com fim no período), quantos não foram renovados — os mesmos que aparecem como Não renovado na aba Contratos"
           />
         </div>
         </div>
       )}
 
-      {aba === 'Planos de Manutenção' && (
+      {aba === 'Contratos' && (
         <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
           <div className="flex items-center gap-2 px-3 py-2 border-b border-slate-200">
             <Truck className="h-4 w-4 text-blue-600" />
-            <p className="text-[11px] font-semibold text-indigo-950">Planos de Manutenção — Potencial de Renovação ({contratosTodos ? 'todas as datas' : TEXTO_TIPO_DATA[tipoDataContrato]})</p>
+            <p className="text-[11px] font-semibold text-indigo-950">{contratosTodos ? 'Contratos — todas as datas' : `Contratos por ${TEXTO_TIPO_DATA[tipoDataContrato]}`}</p>
+            <BotaoInfo noTitulo titulo="Contratos" secoes={[['Fonte (arquivo)', FONTE_TABELAS.contratos]]} />
           </div>
           <div className="overflow-x-auto max-h-[65vh] overflow-y-auto">
             <table className="w-full text-[11px]">
               <thead className="bg-slate-50 text-slate-500 uppercase text-[10px] sticky top-0">
                 <tr>
-                  {/* A coluna de origem se chama "Contrato" na tela, como a do número; por dentro segue a chave "Origem". */}
-                  {['Contrato', 'Cliente', 'Chassi', 'Tipo', 'Início', 'Fim', 'Status', 'Origem', 'Grupo'].map(h => (
-                    <ThOrdena key={h} chave={h} titulo={h === 'Origem' ? 'Contrato' : h} ordenacao={ordContratos} />
+                  {/* A coluna de origem se chama "Situação" na tela; por dentro segue a chave "Origem". */}
+                  {['Contrato', 'Criação', 'Cliente', 'Chassi', 'Tipo', 'Início', 'Fim', 'Origem', 'Status', 'Grupo'].map(h => (
+                    <ThOrdena key={h} chave={h} titulo={h === 'Origem' ? 'Situação' : h} ordenacao={ordContratos} />
                   ))}
                 </tr>
               </thead>
@@ -848,14 +940,12 @@ export default function BiPlanosManutencao() {
                 {ordContratos.ordenada.map((r, i) => (
                   <tr key={`${r.contrato}-${r.chassi}-${i}`} className="hover:bg-slate-50">
                     <td className="px-3 py-1.5 whitespace-nowrap">{r.contrato}</td>
+                    <td className="px-3 py-1.5 whitespace-nowrap tabular-nums">{fmtData(r.criacao)}</td>
                     <td className="px-3 py-1.5 whitespace-nowrap">{r.cliente}</td>
                     <td className="px-3 py-1.5 whitespace-nowrap font-mono">{r.chassi}</td>
                     <td className="px-3 py-1.5 whitespace-nowrap">{r.tipo}</td>
                     <td className="px-3 py-1.5 whitespace-nowrap tabular-nums">{fmtData(r.inicio)}</td>
                     <td className="px-3 py-1.5 whitespace-nowrap tabular-nums">{fmtData(r.fim)}</td>
-                    <td className="px-3 py-1.5 whitespace-nowrap">
-                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${corStatusContrato(r.status)}`}>{r.status}</span>
-                    </td>
                     <td className="px-3 py-1.5 whitespace-nowrap">
                       {(() => {
                         const s = situacaoRenovacao(r)
@@ -875,11 +965,14 @@ export default function BiPlanosManutencao() {
                         )
                       })()}
                     </td>
+                    <td className="px-3 py-1.5 whitespace-nowrap">
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${corStatusContrato(r.status)}`}>{r.status}</span>
+                    </td>
                     <td className="px-3 py-1.5 whitespace-nowrap">{r.grupo}</td>
                   </tr>
                 ))}
                 {tabelaContratos.length === 0 && (
-                  <tr><td colSpan={9} className="px-3 py-6 text-center text-slate-400">{carregandoContratos ? 'Carregando...' : 'Nenhum contrato no período.'}</td></tr>
+                  <tr><td colSpan={10} className="px-3 py-6 text-center text-slate-400">{carregandoContratos ? 'Carregando...' : 'Nenhum contrato no período.'}</td></tr>
                 )}
               </tbody>
             </table>
@@ -891,13 +984,14 @@ export default function BiPlanosManutencao() {
         <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
           <div className="flex items-center gap-2 px-3 py-2 border-b border-slate-200">
             <Truck className="h-4 w-4 text-blue-600" />
-            <p className="text-[11px] font-semibold text-indigo-950">Ordens de Serviço — P04 Plano de Manutenção DAF MultiSuporte</p>
+            <p className="text-[11px] font-semibold text-indigo-950">{tipoDataOs === 'nf' ? 'Ordens de Serviço por data da nota fiscal' : 'Ordens de Serviço por data de abertura'}</p>
+            <BotaoInfo noTitulo titulo="Ordens de Serviço" secoes={[['Fonte (arquivo)', FONTE_TABELAS.os]]} />
           </div>
           <div className="overflow-x-auto max-h-[65vh] overflow-y-auto">
             <table className="w-full text-[11px]">
               <thead className="bg-slate-50 text-slate-500 uppercase text-[10px] sticky top-0">
                 <tr>
-                  {['Data NF', 'NF', 'O.S.', 'Chassi', 'TMO', 'Descrição', 'Valor Total'].map(h => (
+                  {['O.S.', 'Abertura', 'Chassi', 'TMO', 'Descrição', 'NF', 'Data NF', 'Valor Total'].map(h => (
                     <ThOrdena key={h} titulo={h} ordenacao={ordOs} direita={h === 'Valor Total'} />
                   ))}
                 </tr>
@@ -905,17 +999,18 @@ export default function BiPlanosManutencao() {
               <tbody className="divide-y divide-slate-100 text-slate-800">
                 {ordOs.ordenada.map((r, i) => (
                   <tr key={`${r.empresa_nome}-${r.os}-${r.tmo}-${i}`} className="hover:bg-slate-50">
-                    <td className="px-3 py-1.5 whitespace-nowrap tabular-nums">{fmtData(r.data)}</td>
-                    <td className="px-3 py-1.5 whitespace-nowrap">{r.nf}</td>
                     <td className="px-3 py-1.5 whitespace-nowrap tabular-nums">{r.os}</td>
+                    <td className="px-3 py-1.5 whitespace-nowrap tabular-nums">{fmtData(r.data_abertura)}</td>
                     <td className="px-3 py-1.5 whitespace-nowrap font-mono">{r.chassi}</td>
                     <td className="px-3 py-1.5 whitespace-nowrap">{r.tmo}</td>
                     <td className="px-3 py-1.5 whitespace-nowrap">{r.tmo_descricao}</td>
+                    <td className="px-3 py-1.5 whitespace-nowrap">{r.nf}</td>
+                    <td className="px-3 py-1.5 whitespace-nowrap tabular-nums">{fmtData(r.data)}</td>
                     <td className="px-3 py-1.5 whitespace-nowrap text-right tabular-nums font-semibold">{fmtBRL(r.vl_total)}</td>
                   </tr>
                 ))}
                 {tabelaOs.length === 0 && (
-                  <tr><td colSpan={7} className="px-3 py-6 text-center text-slate-400">{carregandoOrdens ? 'Carregando...' : 'Nenhuma O.S. P04 no período.'}</td></tr>
+                  <tr><td colSpan={8} className="px-3 py-6 text-center text-slate-400">{carregandoOrdens ? 'Carregando...' : 'Nenhuma O.S. P04 no período.'}</td></tr>
                 )}
               </tbody>
             </table>
@@ -927,7 +1022,12 @@ export default function BiPlanosManutencao() {
         <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
           <div className="flex items-center gap-2 px-3 py-2 border-b border-slate-200">
             <Truck className="h-4 w-4 text-blue-600" />
-            <p className="text-[11px] font-semibold text-indigo-950">Veículos Vendidos da Marca DAF</p>
+            <p className="text-[11px] font-semibold text-indigo-950">Veículos Vendidos por data de venda</p>
+            {/* Quantidade de veículos da tabela, já com os filtros e a busca aplicados. */}
+            <span className="px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 text-[10px] font-bold tabular-nums">
+              {carregandoVendas && !vendas ? '...' : `${tabelaVendas.length.toLocaleString('pt-BR')} veículo${tabelaVendas.length === 1 ? '' : 's'}`}
+            </span>
+            <BotaoInfo noTitulo titulo="Veículos Vendidos por data de venda" secoes={[['Fonte (arquivo)', FONTE_TABELAS.vendidos]]} />
           </div>
           <div className="overflow-x-auto max-h-[65vh] overflow-y-auto">
             <table className="w-full text-[11px]">
@@ -995,7 +1095,7 @@ export default function BiPlanosManutencao() {
   )
 }
 
-// Pop-up da coluna Situação (aba Planos de Manutenção). Renovado: onde o contrato foi renovado — O.S. P04 do
+// Pop-up da coluna Situação (aba Contratos). Renovado: onde o contrato foi renovado — O.S. P04 do
 // chassi e/ou novo contrato no Potencial Renovação. Substituído (renovacao.substituicao): o contrato que
 // entrou no lugar do cancelado. Contrato da renovação (modo 'anterior'): o contrato que ele renovou.
 // Nesses dois modos não há a parte de O.S.
@@ -1179,9 +1279,9 @@ function ModalOs({ venda, onFechar }) {
             <p className="text-[11px] text-slate-400">Nenhuma O.S. P04 após a venda.</p>
           )}
 
-          {/* Contratos do chassi na aba Planos de Manutenção (Potencial Renovação). */}
+          {/* Contratos do chassi na aba Contratos (Potencial Renovação). */}
           <div>
-            <p className="text-[11px] font-semibold text-indigo-950 mb-2">Contrato — Planos de Manutenção</p>
+            <p className="text-[11px] font-semibold text-indigo-950 mb-2">Contratos</p>
             {venda.contratos.length === 0 ? (
               <p className="text-[11px] text-slate-400">Nenhum contrato encontrado para este chassi no Potencial Renovação.</p>
             ) : (

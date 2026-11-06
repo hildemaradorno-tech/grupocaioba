@@ -150,6 +150,33 @@ export const ACOES_POR_MENU = [
       { value: 'regras',   label: 'Regras do Sistema (engrenagem — alterar prazos)' },
     ],
   },
+  // Contas a Receber HONDA — botão do topo + engrenagem de cada aba (sem flag = negado; admin sempre pode).
+  {
+    menuPath: 'honda/contas-a-receber',
+    acoes: [
+      { value: 'atualizar',        label: 'Atualizar (consulta a API do MicroWork e limpa anotações de títulos já baixados)' },
+      { value: 'gerenciar_status', label: 'Cadastro de Status (engrenagem do topo — criar, renomear, trocar cor, ativar/inativar)' },
+      { value: 'excluir_status',   label: 'Excluir Status (dentro do Cadastro de Status)' },
+    ],
+  },
+  {
+    menuPath: 'honda/contas-a-receber/garantias',
+    acoes: [
+      { value: 'editar', label: 'Editar Garantia (engrenagem da linha — Status, Situação e Nº da SG)' },
+    ],
+  },
+  {
+    menuPath: 'honda/contas-a-receber/revisoes',
+    acoes: [
+      { value: 'editar', label: 'Editar Revisão Gratuita (engrenagem da linha — Status e Situação)' },
+    ],
+  },
+  {
+    menuPath: 'honda/contas-a-receber/seguradoras',
+    acoes: [
+      { value: 'editar', label: 'Editar Seguradora (engrenagem da linha — Nº do Sinistro, Status e Situação)' },
+    ],
+  },
   {
     menuPath: 'garantias-daf-historicodeos',
     acoes: [

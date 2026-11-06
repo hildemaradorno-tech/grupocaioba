@@ -112,7 +112,7 @@ export const INFO_RESUMO = {
   semRenovacao: {
     objetivo: 'Mostrar os contratos vencidos no período que não foram renovados: oportunidade de renovação em aberto.',
     fonte: `${ARQ_CONTRATOS}\n${ARQ_OS}`,
-    calculo: 'Contratos a serem renovados − Contratos renovados (os mesmos que aparecem como "Não renovado" na aba Planos de Manutenção).',
+    calculo: 'Contratos a serem renovados − Contratos renovados (os mesmos que aparecem como "Não renovado" na aba Contratos).',
     filtros: `${FILTRO_RENOV}\n${REGRAS_RENOVADO}`,
     colunas: `${COL_CONTRATOS}\n${COL_OS}`,
   },
@@ -157,7 +157,7 @@ export const MANUAL_GERAL = [
     titulo: 'Visão geral',
     itens: [
       ['Para que serve', 'Acompanhar os Planos de Manutenção DAF: quantos veículos vendidos fecharam contrato novo, quantos contratos venceram no período (oportunidade de renovação) e quantos foram renovados.'],
-      ['Abas', 'Resumo (indicadores e cards) · Veículos Vendidos · Ordens de Serviço · Planos de Manutenção.'],
+      ['Abas', 'Resumo (indicadores e cards) · Contratos · Veículos Vendidos · Ordens de Serviço.'],
       ['Empresas', 'Só as empresas do agrupamento Trucks.'],
     ],
   },
@@ -174,14 +174,41 @@ export const MANUAL_GERAL = [
       ['Empresas', 'Filtra vendas e O.S. pela empresa. O arquivo de contratos não traz a empresa, então não filtra os contratos.'],
       ['Data', 'Período do BI (ao abrir: do dia 1 do mês até ontem; qualquer data pode ser escolhida). As setas ‹ › pulam para o mês anterior/seguinte.'],
       ['Atualizar (botão azul)', 'Relê os relatórios. Só baixa de novo os arquivos que mudaram; os dados ficam guardados por 5 minutos.'],
+      ['Importar arquivo (engrenagem)', 'Quando o arquivo CRM DAF - Plano de Manutenção - Potencial Renovação da pasta do SharePoint não está atualizado: escolha o .xlsx exportado do CRM DAF. O sistema confere se é a exportação certa (colunas Chassi, Contrato, Início, Fim e Razão do Status) e substitui o arquivo da pasta do SharePoint; a aba Contratos e os cards de renovação passam a usar o arquivo novo.'],
     ],
   },
 ]
+// Fonte de cada tabela das abas: botão ⓘ no título da tabela e item "Fonte (arquivo)" de cada aba no manual.
+export const FONTE_TABELAS = {
+  vendidos: [
+    '• REL_VEICULOSVENDIDOSPORPERIODO_REPORT — vendas: data, empresa, chassi, marca, modelo, tipo e cliente',
+    '• ROF017_FATURAMENTOPOROS — O.S. tipo P04 da coluna Situação contrato e da lupa',
+    '• CRM DAF - Plano de Manutenção - Potencial Renovação — contratos do chassi mostrados na lupa',
+  ].join('\n'),
+  os: [
+    '• ROF017_FATURAMENTOPOROS — O.S. tipo P04: NF, O.S., chassi, TMO, descrição e valor',
+  ].join('\n'),
+  contratos: [
+    '• CRM DAF - Plano de Manutenção - Potencial Renovação — contratos: número, cliente, chassi, tipo, início, fim, status e grupo',
+    '• ROF017_FATURAMENTOPOROS — O.S. tipo P04 usadas na coluna Situação (renovação) e na lupa',
+  ].join('\n'),
+}
+
 export const MANUAL_ABAS = [
+  {
+    titulo: 'Aba Contratos',
+    itens: [
+      ['O que lista', 'Contratos do Potencial Renovação (uma linha por chassi do contrato). O filtro Data usa a Data de Criação do contrato no CRM (contratos criados no período); o seletor de data também permite filtrar por Início e Fim, Início ou Fim.'],
+      ['Fonte (arquivo)', FONTE_TABELAS.contratos],
+      ['Coluna Situação', 'Renovado: contrato Expirado que foi renovado (O.S. P04 ou novo contrato após o fim, este começando até 90 dias antes do fim), ou o contrato que veio da renovação.\nNão renovado: Expirado sem nada depois.\nSubstituição: contrato Cancelado trocado por outro do mesmo chassi, ou o contrato que entrou no lugar.\nNovo: 1º contrato do chassi, ou contrato a mais com o anterior ainda vigente.\nEm validação: status Validar Serviço, Minuta Solicitada, Aguardando Assinatura ou Pendente de Contrato.\nEm branco: Cancelado sem troca.'],
+      ['Lupa (pop-up)', 'Renovado: onde foi renovado (O.S. P04 e novo contrato). Substituição: o contrato do par. Em validação: de qual contrato vem a transição e as O.S. P04 do chassi. O play verde marca o contrato que realmente deu início.'],
+    ],
+  },
   {
     titulo: 'Aba Veículos Vendidos',
     itens: [
       ['O que lista', 'Chassis DAF vendidos no período (venda menos devolução), com os dados da venda mais recente de cada chassi.'],
+      ['Fonte (arquivo)', FONTE_TABELAS.vendidos],
       ['Situação contrato', 'Novo contrato: O.S. P04 do chassi aberta na data da venda ou depois, com TMO PLAN01 (3216).\nRenovação de contrato: O.S. P04 aberta na data da venda ou depois, com TMO PLAN02 (3218).\nSem contrato: nenhuma O.S. P04 com PLAN01/PLAN02 depois da venda (O.S. só de "Plano Manutenção OF" não conta).'],
       ['Lupa (pop-up)', 'Mostra as O.S. P04 após a venda (abertura, chassi, placa, NF, TMOs e valores) e os contratos do chassi no Potencial Renovação, com o play verde no contrato que realmente deu início.'],
     ],
@@ -189,15 +216,8 @@ export const MANUAL_ABAS = [
   {
     titulo: 'Aba Ordens de Serviço',
     itens: [
-      ['O que lista', 'Itens (TMOs) das O.S. tipo P04 do ROF017 com NF no período, nas empresas selecionadas. A mesma O.S. pode aparecer em várias linhas.'],
-    ],
-  },
-  {
-    titulo: 'Aba Planos de Manutenção',
-    itens: [
-      ['O que lista', 'Contratos do Potencial Renovação (uma linha por chassi do contrato).'],
-      ['Coluna Contrato', 'Renovado: contrato Expirado que foi renovado (O.S. P04 ou novo contrato após o fim, este começando até 90 dias antes do fim), ou o contrato que veio da renovação.\nNão renovado: Expirado sem nada depois.\nSubstituição: contrato Cancelado trocado por outro do mesmo chassi, ou o contrato que entrou no lugar.\nNovo: 1º contrato do chassi, ou contrato a mais com o anterior ainda vigente.\nEm validação: status Validar Serviço, Minuta Solicitada, Aguardando Assinatura ou Pendente de Contrato.\nEm branco: Cancelado sem troca.'],
-      ['Lupa (pop-up)', 'Renovado: onde foi renovado (O.S. P04 e novo contrato). Substituição: o contrato do par. Em validação: de qual contrato vem a transição e as O.S. P04 do chassi. O play verde marca o contrato que realmente deu início.'],
+      ['O que lista', 'Itens (TMOs) das O.S. tipo P04 do ROF017 no período: o seletor de data escolhe Abertura O.S. (padrão; coluna OS_DataCriacao, sem ela a data da NF) ou Nota Fiscal (OSData_Faturamento), nas empresas selecionadas. A mesma O.S. pode aparecer em várias linhas.'],
+      ['Fonte (arquivo)', FONTE_TABELAS.os],
     ],
   },
 ]

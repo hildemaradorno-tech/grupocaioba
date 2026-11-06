@@ -9,7 +9,7 @@ import { INFO_RESUMO, MANUAL_GERAL, MANUAL_RESUMO, MANUAL_ABAS } from './planosM
 const ICONES_GERAL = { 'Visão geral': BookOpen, 'Fontes (relatórios)': Database, 'Cabeçalho': SlidersHorizontal }
 const ICONES_ABAS = {
   'Aba Veículos Vendidos': Truck, 'Aba Ordens de Serviço': Wrench,
-  'Aba Planos de Manutenção': FileText,
+  'Aba Contratos': FileText,
 }
 const slug = (t) => t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
 

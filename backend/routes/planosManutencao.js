@@ -2,7 +2,7 @@ import { Router } from 'express'
 import { isConfigured } from '../services/graphClient.js'
 import { getVeiculosVendidos, clearVeiculosVendidosCache } from '../services/sharepointVeiculosVendidos.js'
 import { getOsPlanoManutencao, clearOsPlanoManutencaoCache } from '../services/sharepointOsPlanoManutencao.js'
-import { getPotencialRenovacao, clearPotencialRenovacaoCache } from '../services/sharepointPotencialRenovacao.js'
+import { getPotencialRenovacao, clearPotencialRenovacaoCache, importarPotencialRenovacao } from '../services/sharepointPotencialRenovacao.js'
 
 const router = Router()
 
@@ -21,7 +21,7 @@ router.post('/veiculos-vendidos/refresh', wrap(async (req, res) => {
   res.json(await getVeiculosVendidos())
 }))
 
-// GET /api/planos-manutencao/ordens-servico — linhas das O.S. tipo P04 (ROF042), todos os anos
+// GET /api/planos-manutencao/ordens-servico — linhas das O.S. tipo P04 (ROF017), de 2024 em diante
 router.get('/ordens-servico', wrap(async (req, res) => {
   if (!isConfigured()) return res.status(503).json({ error: 'sharepoint_not_configured' })
   res.json(await getOsPlanoManutencao())
@@ -45,6 +45,20 @@ router.post('/contratos/refresh', wrap(async (req, res) => {
   if (!isConfigured()) return res.status(503).json({ error: 'sharepoint_not_configured' })
   clearPotencialRenovacaoCache()
   res.json(await getPotencialRenovacao())
+}))
+
+// POST /api/planos-manutencao/contratos/importar — { nome, conteudoBase64 } do .xlsx exportado do CRM DAF.
+// Confere o arquivo e substitui o da pasta do SharePoint; devolve os contratos já relidos.
+router.post('/contratos/importar', wrap(async (req, res) => {
+  if (!isConfigured()) return res.status(503).json({ error: 'sharepoint_not_configured' })
+  const { nome, conteudoBase64 } = req.body || {}
+  if (!conteudoBase64) return res.status(400).json({ error: 'Nenhum arquivo enviado.' })
+  try {
+    res.json(await importarPotencialRenovacao(String(nome || ''), Buffer.from(conteudoBase64, 'base64')))
+  } catch (e) {
+    if (e.status) return res.status(e.status).json({ error: e.message })
+    throw e
+  }
 }))
 
 export default router

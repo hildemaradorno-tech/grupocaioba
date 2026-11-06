@@ -577,6 +577,7 @@ export default function SidebarLayout() {
           <>
             <FlyGroup label="Gestão de Projetos" />
             {canView('projetos') && <FlyItem to="/projetos" icon={FolderKanban} onClose={closeFlyout}>Projetos</FlyItem>}
+            {canView('projetos/custos') && <FlyItem to="/projetos/custos" icon={Wallet} onClose={closeFlyout}>Custos de Projetos</FlyItem>}
 
             {(canView('auditoria-externa/ciclos') || canView('auditoria-externa/dashboard') || canView('auditoria-externa/divergencias') || canView('auditoria-externa/plano-acao') || canView('auditoria-externa/tipos-acao')) && (
               <FlyItem to="/auditoria-externa/dashboard" icon={ShieldAlert} onClose={closeFlyout}>Auditoria Externa</FlyItem>

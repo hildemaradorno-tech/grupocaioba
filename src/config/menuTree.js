@@ -223,7 +223,20 @@ export const MENU_TREE = [
           { key: 'garantias-daf-titulos',   label: 'Garantias DAF a Receber' },
         ],
       },
-      { key: 'honda/contas-a-receber', label: 'Contas a Receber HONDA' },
+      {
+        // Mesmo padrão da Campanha Pós-Venda: o grupo navega direto pra tela única. A key da tela
+        // (honda/contas-a-receber) é mantida, então o acesso já concedido não muda; cada aba é uma
+        // permissão própria (marcar = pode ver a aba) e os botões são ações em acoesMenu.js.
+        key: '_honda.contas-receber',
+        label: 'Contas a Receber HONDA',
+        navTo: 'honda/contas-a-receber',
+        children: [
+          { key: 'honda/contas-a-receber', label: 'Tela Contas a Receber HONDA' },
+          { key: 'honda/contas-a-receber/garantias', label: 'Aba Garantias' },
+          { key: 'honda/contas-a-receber/revisoes', label: 'Aba Revisões Gratuitas' },
+          { key: 'honda/contas-a-receber/seguradoras', label: 'Aba Seguradoras' },
+        ],
+      },
       {
         key: '_bpm',
         label: 'Cancelamento/Devolução NF-e',
@@ -277,6 +290,7 @@ export const MENU_TREE = [
       { key: 'projetos/manifestacoes', label: 'Manifestações', virtual: true },
       { key: 'projetos/calendario', label: 'Agenda', virtual: true },
       { key: 'projetos/ata-reuniao', label: 'Ata de Reunião', virtual: true },
+      { key: 'projetos/custos', label: 'Custos de Projetos' },
       {
         key: '_gestao-projetos.auditoria-externa',
         label: 'Auditoria Externa',

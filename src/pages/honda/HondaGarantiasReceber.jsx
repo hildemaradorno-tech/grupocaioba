@@ -1,6 +1,10 @@
 import React, { useState, useCallback, useMemo, useEffect } from 'react'
 import { Bike, RefreshCw, AlertTriangle, ShieldCheck, Wrench, Building2, X, Info, Wallet, CalendarClock, CalendarCheck2, Settings, Plus, Trash2 } from 'lucide-react'
 import { supabase, apiService } from '../../services/supabaseClient'
+import { useAuth } from '../../context/AuthContext'
+
+// Permissões (Grupos de Acesso): a tela, cada aba (…/garantias|revisoes|seguradoras) e as ações em acoesMenu.js.
+const PERM_TELA = 'honda/contas-a-receber'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
 const CACHE_KEY = 'honda_garantias_a_receber_cache'
@@ -207,7 +211,7 @@ function ModalBase({ titulo, onClose, children, largura = 'max-w-lg' }) {
 }
 
 // Engrenagem ao lado de "Atualizar": cadastro dos Status usados no seletor das abas.
-function ModalCadastroStatus({ statusLista, onClose, onChanged, onErro }) {
+function ModalCadastroStatus({ statusLista, podeExcluir, onClose, onChanged, onErro }) {
   const [novoNome, setNovoNome] = useState('')
   const [novaCor, setNovaCor] = useState('sky')
   const [ocupado, setOcupado] = useState(false)
@@ -269,14 +273,16 @@ function ModalCadastroStatus({ statusLista, onClose, onChanged, onErro }) {
                 <input type="checkbox" checked={s.ativo} onChange={(e) => executar(() => apiService.salvarHondaStatus({ id: s.id, ativo: e.target.checked }))} />
                 Ativo
               </label>
-              <button
-                type="button"
-                title="Excluir status"
-                onClick={() => { if (window.confirm(`Excluir o status "${s.nome}"? Os títulos que o usam ficarão sem status.`)) executar(() => apiService.excluirHondaStatus(s.id)) }}
-                className="text-slate-300 hover:text-red-600"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </button>
+              {podeExcluir && (
+                <button
+                  type="button"
+                  title="Excluir status"
+                  onClick={() => { if (window.confirm(`Excluir o status "${s.nome}"? Os títulos que o usam ficarão sem status.`)) executar(() => apiService.excluirHondaStatus(s.id)) }}
+                  className="text-slate-300 hover:text-red-600"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              )}
             </li>
           ))}
         </ul>
@@ -381,12 +387,20 @@ function ModalEditarTitulo({ row, titulos, categoria, anotacao, statusLista, onS
 }
 
 export default function HondaGarantiasReceber() {
+  const { hasPermission, hasActionOrDefault } = useAuth()
+  const abasVisiveis = ABAS_PORTADOR.filter(a => hasPermission(`${PERM_TELA}/${a.key}`))
+  const chaveAbasVisiveis = abasVisiveis.map(a => a.key).join(',')
+  const podeAtualizar = hasActionOrDefault(PERM_TELA, 'atualizar')
+  const podeGerenciarStatus = hasActionOrDefault(PERM_TELA, 'gerenciar_status')
+  const podeExcluirStatus = hasActionOrDefault(PERM_TELA, 'excluir_status')
+
   const cacheInicial = lerCache()
   const [dados, setDados] = useState(cacheInicial?.dados ?? null)
   const [ultimaConsulta, setUltimaConsulta] = useState(cacheInicial?.consultadoEm ?? null)
   const [loading, setLoading] = useState(false)
   const [erro, setErro] = useState(null)
-  const [filtroCategoria, setFiltroCategoria] = useState('garantias') // 'garantias' | 'revisoes' | 'seguradoras' — aba ativa (sempre uma selecionada)
+  const [filtroCategoria, setFiltroCategoria] = useState(() => abasVisiveis[0]?.key ?? 'garantias') // 'garantias' | 'revisoes' | 'seguradoras' — aba ativa (sempre uma das abas liberadas)
+  const podeEditar = hasActionOrDefault(`${PERM_TELA}/${filtroCategoria}`, 'editar') // engrenagem da linha na aba ativa
   const [filtroPrazo, setFiltroPrazo] = useState(null) // null (Total) | 'vencido' | 'hoje' | 'aVencer' — card clicado
   const [sortCol, setSortCol] = useState(null)
   const [sortDir, setSortDir] = useState('asc')
@@ -497,10 +511,18 @@ export default function HondaGarantiasReceber() {
   }, [carregarAnotacoes])
 
   // Só Garantias, Revisões Gratuitas e Seguradoras — o restante é descartado.
+  // E só das abas liberadas ao grupo do usuário — dados de aba sem permissão nunca chegam à tela.
   const listaCompleta = useMemo(() => {
     const bruta = extrairLista(dados)
-    return bruta ? bruta.filter(row => categoriaDoRegistro(row) !== null) : null
-  }, [dados])
+    if (!bruta) return null
+    const liberadas = new Set(chaveAbasVisiveis ? chaveAbasVisiveis.split(',') : [])
+    return bruta.filter(row => liberadas.has(categoriaDoRegistro(row)))
+  }, [dados, chaveAbasVisiveis])
+
+  // Se a aba ativa não está liberada (ex: padrão "garantias" sem permissão), vai para a primeira liberada.
+  useEffect(() => {
+    if (abasVisiveis.length > 0 && !abasVisiveis.some(a => a.key === filtroCategoria)) setFiltroCategoria(abasVisiveis[0].key)
+  }, [chaveAbasVisiveis, filtroCategoria]) // eslint-disable-line react-hooks/exhaustive-deps
   const colunas = listaCompleta && listaCompleta.length > 0 ? Object.keys(listaCompleta[0]) : []
 
   const colunaVencimento = colunas.find(c => COLUNA_VENCIMENTO_RE.test(c)) || null
@@ -648,6 +670,19 @@ export default function HondaGarantiasReceber() {
     return arr
   }, [lista, sortColEfetivo, sortDir])
 
+  // Tem acesso à tela mas nenhuma aba liberada no Grupo de Acesso.
+  if (abasVisiveis.length === 0) {
+    return (
+      <div className="p-6 max-w-screen-2xl">
+        <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-16 flex flex-col items-center gap-3">
+          <div className="p-3 bg-slate-100 rounded-full"><Bike className="h-6 w-6 text-slate-400" /></div>
+          <p className="text-sm font-semibold text-slate-500">Nenhuma aba liberada</p>
+          <p className="text-xs text-slate-400">Peça ao administrador para liberar as abas (Garantias, Revisões Gratuitas, Seguradoras) no seu Grupo de Acesso.</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="p-6 space-y-5 max-w-screen-2xl">
       <div className="flex items-center justify-between">
@@ -672,34 +707,39 @@ export default function HondaGarantiasReceber() {
               Última consulta: <strong className="text-slate-500">{new Date(ultimaConsulta).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</strong>
             </span>
           )}
-          <button
-            type="button"
-            onClick={() => setMostrarCadastroStatus(true)}
-            title="Cadastro de Status"
-            className="p-2 rounded-md border border-slate-200 bg-white text-slate-500 hover:text-slate-800 hover:bg-slate-50 transition-colors"
-          >
-            <Settings className="h-4 w-4" />
-          </button>
-          <button
-            onClick={carregar}
-            disabled={loading}
-            className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold px-4 py-2 rounded-md shadow-sm transition-colors disabled:opacity-50"
-          >
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            {loading ? 'Atualizando...' : 'Atualizar'}
-          </button>
+          {podeGerenciarStatus && (
+            <button
+              type="button"
+              onClick={() => setMostrarCadastroStatus(true)}
+              title="Cadastro de Status"
+              className="p-2 rounded-md border border-slate-200 bg-white text-slate-500 hover:text-slate-800 hover:bg-slate-50 transition-colors"
+            >
+              <Settings className="h-4 w-4" />
+            </button>
+          )}
+          {podeAtualizar && (
+            <button
+              onClick={carregar}
+              disabled={loading}
+              className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold px-4 py-2 rounded-md shadow-sm transition-colors disabled:opacity-50"
+            >
+              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+              {loading ? 'Atualizando...' : 'Atualizar'}
+            </button>
+          )}
         </div>
       </div>
 
-      {mostrarCadastroStatus && (
+      {mostrarCadastroStatus && podeGerenciarStatus && (
         <ModalCadastroStatus
           statusLista={statusLista}
+          podeExcluir={podeExcluirStatus}
           onClose={() => setMostrarCadastroStatus(false)}
           onChanged={carregarStatus}
           onErro={setErro}
         />
       )}
-      {tituloEditando && (
+      {tituloEditando && podeEditar && (
         <ModalEditarTitulo
           row={tituloEditando}
           titulos={(listaCompleta || []).filter(r => chaveDoRegistro(r) === chaveDoRegistro(tituloEditando))}
@@ -721,7 +761,7 @@ export default function HondaGarantiasReceber() {
       {listaCompleta && listaCompleta.length > 0 && (
         <div className="!mt-2">
           <div className="flex gap-1 border-b border-slate-200">
-            {ABAS_PORTADOR.map(aba => {
+            {abasVisiveis.map(aba => {
               const info = categorias[aba.key]
               const Icon = aba.icon
               const ativo = filtroCategoria === aba.key
@@ -823,7 +863,9 @@ export default function HondaGarantiasReceber() {
             <Bike className="h-6 w-6 text-slate-400" />
           </div>
           <p className="text-sm font-semibold text-slate-500">Nenhuma consulta feita ainda</p>
-          <p className="text-xs text-slate-400">Clique em "Atualizar" para buscar os dados.</p>
+          <p className="text-xs text-slate-400">
+            {podeAtualizar ? 'Clique em "Atualizar" para buscar os dados.' : 'Peça a quem tem permissão para atualizar os dados.'}
+          </p>
         </div>
       ) : lista ? (
         lista.length === 0 ? (
@@ -840,7 +882,7 @@ export default function HondaGarantiasReceber() {
                 <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[10px] font-bold uppercase tracking-wider">
                   {colunasTabela.map(c => (
                     <React.Fragment key={c}>
-                      {c === colunaAntesEngrenagem && <th className="p-3 bg-blue-50/50" />}
+                      {podeEditar && c === colunaAntesEngrenagem && <th className="p-3 bg-blue-50/50" />}
                       <th
                         onClick={() => handleSort(c)}
                         className={`p-3 whitespace-nowrap cursor-pointer select-none hover:bg-slate-100 hover:text-slate-600 transition-colors ${COLUNA_MOEDA_RE.test(c) ? 'text-right' : ''}`}
@@ -869,7 +911,7 @@ export default function HondaGarantiasReceber() {
                         : ''
                       return (
                         <React.Fragment key={c}>
-                          {c === colunaAntesEngrenagem && (
+                          {podeEditar && c === colunaAntesEngrenagem && (
                             <td className="p-2 bg-blue-50/30">
                               <button type="button" title="Editar status e situação" onClick={() => setTituloEditando(row)} className="p-1.5 rounded-md text-slate-400 hover:text-red-600 hover:bg-white">
                                 <Settings className="h-4 w-4" />
