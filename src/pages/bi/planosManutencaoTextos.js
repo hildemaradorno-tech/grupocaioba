@@ -12,29 +12,19 @@ const ARQ_CONTRATOS = 'CRM DAF - Plano de Manutenção - Potencial Renovação'
 //   "• Coluna — para quê"   → linha da tabela de colunas (coluna à esquerda, uso à direita)
 const FILTRO_VENDAS = [
   'Regras das vendas:',
+  '• Data da venda no mês ANTERIOR a cada mês do filtro Mês/Ano',
   '• Só veículos da marca DAF',
   '• Só notas de venda (VEN); a devolução (DVE) desconta',
   '• Notas canceladas ficam fora',
   '• Cada chassi conta uma vez',
-].join('\n')
-const REGRAS_OS = [
-  'Regras das O.S.:',
-  '• Só O.S. tipo P04 (Plano Manut DAF MultiSuporte)',
-  '• TMO 3216 (PLAN01) = novo contrato',
-  '• TMO 3218 (PLAN02) = renovação',
-  '• A O.S. tem que ser aberta na data da venda ou depois',
-  '• O filtro Data vale para a data da venda, não para a O.S.: um veículo vendido em setembro com O.S. de contrato aberta em outubro conta como contrato novo em setembro',
+  '• Filtra: Empresas (veículos novos e usados juntos)',
 ].join('\n')
 const FILTRO_RENOV = [
-  'Regras dos contratos:',
-  '• Só contratos com status Expirado (Prazo ou KM)',
-  '• Cancelado e os demais status ficam fora',
+  'Regras dos contratos a renovar:',
+  '• Fim do contrato no mês ANTERIOR a cada mês do filtro Mês/Ano (como os veículos vendidos)',
+  '• Só contratos com status Expirado (Prazo ou KM); Cancelado e os demais status ficam fora',
   '• Cada linha do arquivo (chassi do contrato) conta uma vez',
-].join('\n')
-const REGRAS_RENOVADO = [
-  'Regras da renovação:',
-  '• Depois do fim do contrato, o chassi tem O.S. P04 (qualquer TMO) ou um novo contrato que começa até 90 dias antes do fim e termina depois dele',
-  '• Se todos os novos contratos estiverem Cancelados, não conta como renovado',
+  '• O seletor de Empresas não filtra (o arquivo não traz a empresa)',
 ].join('\n')
 const COL_VENDAS = [
   'REL_VEICULOSVENDIDOSPORPERIODO_REPORT:',
@@ -50,15 +40,8 @@ const COL_OS = [
   'ROF017_FATURAMENTOPOROS:',
   '• TipoOS_Sigla — tipo da O.S. (só P04)',
   '• Veiculo_Chassi — chassi',
-  '• OS_Numero — número da O.S.',
   '• OS_DataCriacao — data de abertura da O.S.',
   '• NotaFiscalItem_TMOCod — 3216 = PLAN01 (novo contrato) · 3218 = PLAN02 (renovação)',
-  '• TMOProdDesc — descrição do TMO',
-  '• NotaFiscal_Numero — número da NF',
-  '• OSData_Faturamento — data da NF',
-  '• ServValor + ProdValor — valor (serviços + peças)',
-  '• Empresa_Nome — empresa',
-  '• OS_VeiculoPlaca — placa',
 ].join('\n')
 const COL_CONTRATOS = [
   'CRM DAF - Plano de Manutenção - Potencial Renovação:',
@@ -68,74 +51,112 @@ const COL_CONTRATOS = [
   '• Fim Contrato (Contrato) (Contrato DMS) — fim',
   '• Razão do Status — status (Expirado, Cancelado...)',
 ].join('\n')
+// Contratos novos / renovados do Resumo: aba Contratos (CRM DAF), coluna Situação, pela Data de Criação.
+const REGRAS_CRM = [
+  'Regras dos contratos novos e renovados (aba Contratos):',
+  '• Data de Criação no CRM nos meses do filtro Mês/Ano (o próprio mês, não o anterior)',
+  '• Situação Novo = 1º contrato do chassi; Renovação = o chassi já teve contrato que começou antes deste',
+  '• Todos os status contam, inclusive Cancelado',
+  '• Cada linha do arquivo (chassi do contrato) conta uma vez',
+  '• O seletor de Empresas não filtra (o arquivo não traz a empresa)',
+].join('\n')
+const COL_CRM = [
+  'CRM DAF - Plano de Manutenção - Potencial Renovação:',
+  '• Chassi — final do chassi (8 caracteres), liga os contratos do mesmo veículo',
+  '• Contrato — número do contrato',
+  '• Data de Criação — mês em que o contrato conta',
+  '• Início Contrato (Contrato) (Contrato DMS) — ordem dos contratos do chassi (Novo × Renovação)',
+].join('\n')
 const FILTRO_POTENCIAL = [
   'Regras:',
-  '• Parte de vendas: as mesmas do card Contratos novos (só DAF, só P04, PLAN01 = novo, O.S. aberta depois da venda)',
-  '• Parte de renovação: as mesmas dos cards de renovação (só Expirado, O.S. P04 ou novo contrato depois do fim)',
+  '• Contratos novos e renovados: aba Contratos, Situação Novo / Renovação, criados nos meses do filtro (todos os status)',
+  '• Veículos vendidos: mês anterior a cada mês do filtro, só DAF, venda menos devolução, cada chassi uma vez',
+  '• Contratos a serem renovados: só Expirado, com fim no mês anterior a cada mês do filtro',
 ].join('\n')
 export const INFO_RESUMO = {
   vendidos: {
-    objetivo: 'Mostrar quantos veículos DAF foram vendidos no período: é a base de oportunidade de contrato novo.',
+    objetivo: 'Mostrar quantos veículos DAF foram vendidos no mês anterior ao filtro: é a base de oportunidade de contrato novo.',
     fonte: ARQ_VENDAS,
-    calculo: 'Chassis distintos com venda (VEN) no período, descontando devoluções (DVE). Chassi vendido e devolvido não conta; devolvido e revendido conta uma vez.',
+    calculo: 'Chassis distintos com venda (VEN) no mês anterior a cada mês do filtro, descontando devoluções (DVE). Chassi vendido e devolvido não conta; devolvido e revendido conta uma vez. É a mesma lista da aba Veículos Vendidos (sem os filtros da aba).',
     filtros: FILTRO_VENDAS,
     colunas: COL_VENDAS,
   },
   novos: {
-    objetivo: 'Mostrar quantos dos veículos vendidos fecharam um contrato novo de Plano de Manutenção.',
-    fonte: `${ARQ_VENDAS}\n${ARQ_OS}`,
-    calculo: 'Dos veículos vendidos no período, os que têm O.S. P04 do mesmo chassi aberta na data da venda ou depois, com TMO PLAN01 (código 3216 — Novo contrato).',
-    filtros: `${FILTRO_VENDAS}\n${REGRAS_OS}`,
-    colunas: `${COL_VENDAS}\n${COL_OS}\n${COL_CONTRATOS}`,
+    objetivo: 'Mostrar quantos contratos novos de Plano de Manutenção foram criados nos meses do filtro.',
+    fonte: ARQ_CONTRATOS,
+    calculo: 'Contratos da aba Contratos com Situação Novo (1º contrato do chassi) e Data de Criação nos meses do filtro. Todos os status contam, inclusive Cancelado.',
+    filtros: REGRAS_CRM,
+    colunas: COL_CRM,
   },
   semContrato: {
-    objetivo: 'Mostrar os veículos vendidos que ainda não têm Plano de Manutenção: oportunidade em aberto de contrato novo.',
-    fonte: `${ARQ_VENDAS}\n${ARQ_OS}`,
-    calculo: 'Veículos vendidos no período sem O.S. P04 do chassi com TMO PLAN01 ou PLAN02 aberta na data da venda ou depois (Situação contrato = Sem contrato).',
-    filtros: `${FILTRO_VENDAS}\n${REGRAS_OS}`,
-    colunas: `${COL_VENDAS}\n${COL_OS}\n${COL_CONTRATOS}`,
+    objetivo: 'Mostrar os veículos vendidos (mês anterior ao filtro) que ainda não têm Plano de Manutenção: oportunidade em aberto de contrato novo.',
+    fonte: `${ARQ_VENDAS}\n${ARQ_CONTRATOS}`,
+    calculo: 'Veículos vendidos (por chassi) mês anterior − Contratos novos',
+    filtros: `${FILTRO_VENDAS}\n${REGRAS_CRM}`,
+    colunas: `${COL_VENDAS}\n${COL_CRM}`,
   },
   aRenovar: {
-    objetivo: 'Mostrar a oportunidade de renovação: contratos que venceram no período.',
+    objetivo: 'Mostrar a oportunidade de renovação: contratos que venceram no mês anterior ao filtro.',
     fonte: ARQ_CONTRATOS,
-    calculo: 'Contratos (um por chassi) com Fim do contrato dentro do período e status Expirado (Prazo ou KM). Cancelados e demais status ficam fora.',
+    calculo: 'Contratos (um por chassi) com Fim do contrato no mês anterior a cada mês do filtro e status Expirado (Prazo ou KM). Cancelados e demais status ficam fora. A lista desses contratos está na aba Oportunidade de Renovação.',
     filtros: FILTRO_RENOV,
     colunas: COL_CONTRATOS,
   },
   renovados: {
-    objetivo: 'Mostrar quantos dos contratos vencidos no período foram renovados.',
-    fonte: `${ARQ_CONTRATOS}\n${ARQ_OS}`,
-    calculo: 'Dos contratos a serem renovados, os que têm, depois do fim: O.S. P04 do chassi (pela abertura) ou um novo contrato do chassi que começa até 90 dias antes do fim e termina depois dele. Se todos os novos contratos estiverem Cancelados, não conta.',
-    filtros: `${FILTRO_RENOV}\n${REGRAS_RENOVADO}`,
-    colunas: `${COL_CONTRATOS}\n${COL_OS}`,
+    objetivo: 'Mostrar quantos contratos de renovação de Plano de Manutenção foram criados nos meses do filtro.',
+    fonte: ARQ_CONTRATOS,
+    calculo: 'Contratos da aba Contratos com Situação Renovação (o chassi já teve contrato antes) e Data de Criação nos meses do filtro. Todos os status contam, inclusive Cancelado.',
+    filtros: REGRAS_CRM,
+    colunas: COL_CRM,
   },
   semRenovacao: {
-    objetivo: 'Mostrar os contratos vencidos no período que não foram renovados: oportunidade de renovação em aberto.',
-    fonte: `${ARQ_CONTRATOS}\n${ARQ_OS}`,
-    calculo: 'Contratos a serem renovados − Contratos renovados (os mesmos que aparecem como "Não renovado" na aba Contratos).',
-    filtros: `${FILTRO_RENOV}\n${REGRAS_RENOVADO}`,
-    colunas: `${COL_CONTRATOS}\n${COL_OS}`,
+    objetivo: 'Mostrar os contratos vencidos no mês anterior ao filtro que não foram renovados: oportunidade de renovação em aberto.',
+    fonte: ARQ_CONTRATOS,
+    calculo: 'Contratos a serem renovados do mês anterior − Contratos renovados',
+    filtros: `${FILTRO_RENOV}\n${REGRAS_CRM}`,
+    colunas: `${COL_CONTRATOS}\n${COL_CRM}`,
+  },
+  totalOportunidades: {
+    objetivo: 'Mostrar o total de oportunidades de contrato: veículos vendidos (contrato novo) e contratos vencidos (renovação).',
+    fonte: `${ARQ_VENDAS}\n${ARQ_CONTRATOS}`,
+    calculo: 'Veículos vendidos (por chassi) mês anterior + Contratos a serem renovados do mês anterior',
+    filtros: `${FILTRO_VENDAS}\n${FILTRO_RENOV}`,
+    colunas: `${COL_VENDAS}\n${COL_CONTRATOS}`,
+  },
+  totalRealizados: {
+    objetivo: 'Mostrar o total de contratos vendidos: novos e de renovação.',
+    fonte: ARQ_CONTRATOS,
+    calculo: 'Contratos novos + Contratos renovados',
+    filtros: REGRAS_CRM,
+    colunas: COL_CRM,
+  },
+  totalNaoRealizados: {
+    objetivo: 'Mostrar o total de oportunidades que ainda não viraram contrato.',
+    fonte: `${ARQ_VENDAS}\n${ARQ_CONTRATOS}`,
+    calculo: 'Sem contrato + Sem contrato renovado (= Oportunidades − Contratos realizados)',
+    filtros: `${FILTRO_VENDAS}\n${FILTRO_RENOV}\n${REGRAS_CRM}`,
+    colunas: `${COL_VENDAS}\n${COL_CONTRATOS}\n${COL_CRM}`,
   },
   gaugeNovos: {
-    objetivo: 'Medir a taxa de conversão de veículos vendidos em contrato novo de Plano de Manutenção.',
-    fonte: `${ARQ_VENDAS}\n${ARQ_OS}`,
-    calculo: 'Contratos novos ÷ Veículos vendidos × 100.',
-    filtros: `${FILTRO_VENDAS}\n${REGRAS_OS}`,
-    colunas: `${COL_VENDAS}\n${COL_OS}\n${COL_CONTRATOS}`,
+    objetivo: 'Comparar os contratos novos criados no mês com os veículos vendidos no mês anterior.',
+    fonte: `${ARQ_VENDAS}\n${ARQ_CONTRATOS}`,
+    calculo: 'Contratos novos ÷ Veículos vendidos (por chassi) mês anterior × 100.',
+    filtros: `${FILTRO_VENDAS}\n${REGRAS_CRM}`,
+    colunas: `${COL_VENDAS}\n${COL_CRM}`,
   },
   gaugeRenovados: {
-    objetivo: 'Medir a taxa de renovação dos contratos que venceram no período.',
-    fonte: `${ARQ_CONTRATOS}\n${ARQ_OS}`,
-    calculo: 'Contratos renovados ÷ Contratos a serem renovados × 100.',
-    filtros: `${FILTRO_RENOV}\n${REGRAS_RENOVADO}`,
-    colunas: `${COL_CONTRATOS}\n${COL_OS}`,
+    objetivo: 'Comparar os contratos de renovação criados no mês com os contratos que venceram no mês anterior.',
+    fonte: ARQ_CONTRATOS,
+    calculo: 'Contratos renovados ÷ Contratos a serem renovados do mês anterior × 100.',
+    filtros: `${REGRAS_CRM}\n${FILTRO_RENOV}`,
+    colunas: `${COL_CRM}\n${COL_CONTRATOS}`,
   },
   gaugePotencial: {
-    objetivo: 'Medir o aproveitamento geral das duas oportunidades do período: vendas (contrato novo) e contratos vencendo (renovação).',
-    fonte: `${ARQ_VENDAS}\n${ARQ_OS}\n${ARQ_CONTRATOS}` + ' (só na parte de renovação)',
-    calculo: '(Contratos novos + Contratos renovados) ÷ (Veículos vendidos + Contratos a serem renovados) × 100.',
+    objetivo: 'Medir o aproveitamento geral das duas oportunidades: vendas (contrato novo) e contratos vencendo (renovação).',
+    fonte: `${ARQ_VENDAS}\n${ARQ_CONTRATOS}`,
+    calculo: '(Contratos novos + Contratos renovados) ÷ (Veículos vendidos (por chassi) mês anterior + Contratos a serem renovados do mês anterior) × 100.',
     filtros: FILTRO_POTENCIAL,
-    colunas: `${COL_VENDAS}\n${COL_OS}\n${COL_CONTRATOS}`,
+    colunas: `${COL_VENDAS}\n${COL_CRM}\n${COL_CONTRATOS}`,
   },
 }
 
@@ -144,80 +165,116 @@ export const INFO_RESUMO = {
 export const MANUAL_RESUMO = [
   ['Indicador — Contratos novos', 'gaugeNovos'],
   ['Indicador — Contratos renovados', 'gaugeRenovados'],
-  ['Indicador — Potencial', 'gaugePotencial'],
-  ['Card — Veículos vendidos (por chassi)', 'vendidos'],
+  ['Indicador — Potencial de contratos', 'gaugePotencial'],
+  ['Card — Veículos vendidos (por chassi) mês anterior', 'vendidos'],
   ['Card — Contratos novos', 'novos'],
   ['Card — Sem contrato', 'semContrato'],
-  ['Card — Contratos a serem renovados', 'aRenovar'],
+  ['Card — Contratos a serem renovados do mês anterior', 'aRenovar'],
   ['Card — Contratos renovados', 'renovados'],
   ['Card — Sem contrato renovado', 'semRenovacao'],
+  ['Card — Oportunidades', 'totalOportunidades'],
+  ['Card — Contratos realizados', 'totalRealizados'],
+  ['Card — Contratos não realizados', 'totalNaoRealizados'],
 ]
 export const MANUAL_GERAL = [
   {
     titulo: 'Visão geral',
     itens: [
-      ['Para que serve', 'Acompanhar os Planos de Manutenção DAF: quantos veículos vendidos fecharam contrato novo, quantos contratos venceram no período (oportunidade de renovação) e quantos foram renovados.'],
-      ['Abas', 'Resumo (indicadores e cards) · Contratos · Veículos Vendidos · Ordens de Serviço.'],
-      ['Empresas', 'Só as empresas do agrupamento Trucks.'],
+      ['Para que serve', 'Acompanhar os Planos de Manutenção DAF: quantos contratos novos e de renovação foram vendidos (criados no CRM), comparando com os veículos vendidos e com os contratos que venceram (oportunidade de renovação).'],
     ],
   },
   {
     titulo: 'Fontes (relatórios)',
     itens: [
-      ['REL_VEICULOSVENDIDOSPORPERIODO_REPORT', 'Vendas e devoluções de veículos (Dealer.net). Um arquivo por ano.'],
-      ['ROF017_FATURAMENTOPOROS', 'Relatório Geral de O.S. (Dealer.net), um arquivo por ano. Só as O.S. tipo P04 (Plano Manut DAF MultiSuporte), de 2024 em diante. Traz a abertura da O.S., a NF e o TMO: 3216 = PLAN01 (novo contrato) e 3218 = PLAN02 (renovação).'],      ['CRM DAF - Plano de Manutenção - Potencial Renovação', 'Contratos de Plano de Manutenção exportados do CRM DAF (uma linha por chassi do contrato).'],
+      ['REL_VEICULOSVENDIDOSPORPERIODO_REPORT', 'Os veículos DAF vendidos (venda menos devolução): chassi, data da venda, empresa e se é novo ou usado.'],
+      ['ROF017_FATURAMENTOPOROS', 'O faturamento das O.S. de Plano de Manutenção (tipo P04).'],
+      ['ROF001_OSAberta_Excel TODAS', 'Todas as O.S. de Plano de Manutenção (tipo P04) do ano, inclusive as ainda sem NF: número, abertura, chassi, valor e situação.'],
+      ['CRM DAF - Plano de Manutenção - Potencial Renovação', 'Os contratos de Plano de Manutenção do CRM DAF: número, chassi, cliente, data de criação, início, fim e status.'],
     ],
   },
   {
-    titulo: 'Cabeçalho',
+    titulo: 'Importar arquivo',
     itens: [
-      ['Empresas', 'Filtra vendas e O.S. pela empresa. O arquivo de contratos não traz a empresa, então não filtra os contratos.'],
-      ['Data', 'Período do BI (ao abrir: do dia 1 do mês até ontem; qualquer data pode ser escolhida). As setas ‹ › pulam para o mês anterior/seguinte.'],
-      ['Atualizar (botão azul)', 'Relê os relatórios. Só baixa de novo os arquivos que mudaram; os dados ficam guardados por 5 minutos.'],
-      ['Importar arquivo (engrenagem)', 'Quando o arquivo CRM DAF - Plano de Manutenção - Potencial Renovação da pasta do SharePoint não está atualizado: escolha o .xlsx exportado do CRM DAF. O sistema confere se é a exportação certa (colunas Chassi, Contrato, Início, Fim e Razão do Status) e substitui o arquivo da pasta do SharePoint; a aba Contratos e os cards de renovação passam a usar o arquivo novo.'],
+      ['Importar arquivo (engrenagem)', 'Use quando o arquivo de contratos do CRM DAF no SharePoint estiver desatualizado:\n• No CRM DAF, exporte a lista Potencial Renovação em Excel (.xlsx)\n• No BI, clique na engrenagem [[engrenagem]] ao lado do botão Atualizar e escolha [[importar]]\n• Selecione o arquivo exportado\n• O sistema confere se é a exportação certa (colunas Chassi, Contrato, Início, Fim e Razão do Status) e substitui o arquivo CRM DAF - Plano de Manutenção - Potencial Renovação no SharePoint\n• Ao terminar, aparece a mensagem com a quantidade de contratos gravados e o BI já passa a usar o arquivo novo'],
+      ['Quem pode', 'Só quem tem a ação Importar Arquivo do CRM DAF liberada no grupo de acesso (Grupos › BI — Planos de Manutenção). Sem ela, a engrenagem não aparece.'],
+    ],
+  },
+  {
+    titulo: 'Como informar as metas',
+    itens: [
+      ['Onde', 'Na aba Resultado, clique no ícone [[tabela]] Tabela (à direita, abaixo das abas). O ano é o escolhido no seletor Mês/Ano do cabeçalho. Cada mês tem uma coluna Meta (%) em Contratos novos e outra em Contratos renovados. A meta do Potencial de contratos não é digitada: é calculada a partir das duas.'],
+      ['Passo a passo', '• Clique em [[editar]] (canto direito da tabela)\n• Para um mês: digite a meta (%) direto na coluna Meta de Contratos novos e/ou de Contratos renovados\n• Para vários meses de uma vez: marque as caixas [[caixa]] ao lado dos meses (a caixa no título Mês marca o ano inteiro), digite a meta no topo da tabela e clique em [[aplicar]]\n• Clique em [[salvar]] para gravar (ou [[cancelar]] para desfazer)'],
+      ['Regras', '• A meta é um percentual de 0 a 100 e vale para todos os usuários\n• Cada mês tem a sua meta; mês sem meta não calcula o % e o velocímetro do Resumo fica sem a marca da meta\n• Para tirar a meta de um mês, apague o valor do campo e salve'],
+      ['Quem pode', 'Só quem tem a ação Editar e Salvar Metas liberada no grupo de acesso (Grupos › BI — Planos de Manutenção). Sem ela, a tabela aparece só para consulta, sem o botão Editar metas.'],
     ],
   },
 ]
 // Fonte de cada tabela das abas: botão ⓘ no título da tabela e item "Fonte (arquivo)" de cada aba no manual.
 export const FONTE_TABELAS = {
   vendidos: [
-    '• REL_VEICULOSVENDIDOSPORPERIODO_REPORT — vendas: data, empresa, chassi, marca, modelo, tipo e cliente',
-    '• ROF017_FATURAMENTOPOROS — O.S. tipo P04 da coluna Situação contrato e da lupa',
-    '• CRM DAF - Plano de Manutenção - Potencial Renovação — contratos do chassi mostrados na lupa',
+    '• REL_VEICULOSVENDIDOSPORPERIODO_REPORT',
+    '• ROF017_FATURAMENTOPOROS',
+    '• CRM DAF - Plano de Manutenção - Potencial Renovação',
+  ].join('\n'),
+  oportunidade: [
+    '• CRM DAF - Plano de Manutenção - Potencial Renovação',
+    '• ROF017_FATURAMENTOPOROS',
   ].join('\n'),
   os: [
-    '• ROF017_FATURAMENTOPOROS — O.S. tipo P04: NF, O.S., chassi, TMO, descrição e valor',
+    '• ROF001_OSAberta_Excel TODAS',
+    '• ROF017_FATURAMENTOPOROS',
   ].join('\n'),
   contratos: [
-    '• CRM DAF - Plano de Manutenção - Potencial Renovação — contratos: número, cliente, chassi, tipo, início, fim, status e grupo',
-    '• ROF017_FATURAMENTOPOROS — O.S. tipo P04 usadas na coluna Situação (renovação) e na lupa',
+    '• CRM DAF - Plano de Manutenção - Potencial Renovação',
+    '• ROF017_FATURAMENTOPOROS',
+    '• ROF001_OSAberta_Excel TODAS',
   ].join('\n'),
 }
 
 export const MANUAL_ABAS = [
   {
-    titulo: 'Aba Contratos',
+    titulo: 'Resultado',
     itens: [
-      ['O que lista', 'Contratos do Potencial Renovação (uma linha por chassi do contrato). O filtro Data usa a Data de Criação do contrato no CRM (contratos criados no período); o seletor de data também permite filtrar por Início e Fim, Início ou Fim.'],
+      ['O que mostra', 'Mês a mês do ano escolhido no cabeçalho (o seletor de meses não vale nesta aba): a meta e o resultado de Contratos novos, Contratos renovados e Potencial de contratos, com o % de cada um. O % fica verde quando bate a meta, amarelo de 80% a 99% da meta e vermelho abaixo de 80%.'],
+      ['Visualização (ícones abaixo das abas)', '[[resumo]] Resumo: os indicadores e cards (seções logo abaixo).\n[[tabela]] Tabela: metas e resultados de cada mês (é onde se editam as metas).\n[[grafico]] Gráfico: um gráfico por mês em que você escolhe o indicador (Contratos novos, Contratos renovados ou Potencial de contratos) e se quer ver Quantidade (ex.: vendidos do mês anterior × contratos novos) ou % (com a meta em linha tracejada).'],
+      ['Metas', 'Digitadas nesta tabela pelo botão Editar metas. O passo a passo está na seção Como informar as metas.'],
+    ],
+  },
+  {
+    titulo: 'Contratos',
+    itens: [
+      ['O que lista', 'Todos os contratos de Plano de Manutenção, novos e de renovação, realizados no período do filtro selecionado (pela Data de Criação do contrato no CRM).'],
       ['Fonte (arquivo)', FONTE_TABELAS.contratos],
-      ['Coluna Situação', 'Renovado: contrato Expirado que foi renovado (O.S. P04 ou novo contrato após o fim, este começando até 90 dias antes do fim), ou o contrato que veio da renovação.\nNão renovado: Expirado sem nada depois.\nSubstituição: contrato Cancelado trocado por outro do mesmo chassi, ou o contrato que entrou no lugar.\nNovo: 1º contrato do chassi, ou contrato a mais com o anterior ainda vigente.\nEm validação: status Validar Serviço, Minuta Solicitada, Aguardando Assinatura ou Pendente de Contrato.\nEm branco: Cancelado sem troca.'],
-      ['Lupa (pop-up)', 'Renovado: onde foi renovado (O.S. P04 e novo contrato). Substituição: o contrato do par. Em validação: de qual contrato vem a transição e as O.S. P04 do chassi. O play verde marca o contrato que realmente deu início.'],
+      ['Excluir cancelados', 'Vem marcado: esconde os contratos com status Cancelado. Desmarcando, eles voltam para a tabela. Só vale no botão Todos.'],
+      ['Ver todos (sem filtro de data)', 'Ignora o filtro Mês/Ano e mostra todos os contratos do arquivo, de qualquer data. Os demais filtros continuam valendo. Só vale no botão Todos.'],
+      ['Lupa (Ver detalhes)', 'Aparece na Situação Renovação: mostra o contrato anterior do chassi (o que este contrato renovou) e as O.S. P04 deste contrato.'],
+      ['Lupa na coluna Chassi', 'Aparece quando o veículo está no relatório de vendas: mostra a venda do veículo (data, NF, empresa, placa, modelo, novo ou usado e cliente).'],
     ],
   },
   {
-    titulo: 'Aba Veículos Vendidos',
+    titulo: 'Oportunidade de Renovação',
     itens: [
-      ['O que lista', 'Chassis DAF vendidos no período (venda menos devolução), com os dados da venda mais recente de cada chassi.'],
+      ['O que lista', 'Contratos de Plano de Manutenção que venceram no mês anterior ao escolhido no filtro (status Expirado por prazo ou por KM), mostrando se cada um foi renovado ou não.'],
+      ['Fonte (arquivo)', FONTE_TABELAS.oportunidade],
+      ['Ver todos (sem filtro de data)', 'Mostra todos os contratos com status Expirado, de qualquer data, em vez de só os que venceram no mês anterior.'],
+      ['Lupa (Ver detalhes)', 'Aparece no Renovado Sim: mostra em qual novo contrato foi renovado (com o play verde no que deu início) e as O.S. P04 faturadas depois do fim.'],
+    ],
+  },
+  {
+    titulo: 'Veículos Vendidos',
+    itens: [
+      ['O que lista', 'Chassis DAF vendidos no mês anterior ao do filtro Mês/Ano (venda menos devolução).'],
       ['Fonte (arquivo)', FONTE_TABELAS.vendidos],
-      ['Situação contrato', 'Novo contrato: O.S. P04 do chassi aberta na data da venda ou depois, com TMO PLAN01 (3216).\nRenovação de contrato: O.S. P04 aberta na data da venda ou depois, com TMO PLAN02 (3218).\nSem contrato: nenhuma O.S. P04 com PLAN01/PLAN02 depois da venda (O.S. só de "Plano Manutenção OF" não conta).'],
-      ['Lupa (pop-up)', 'Mostra as O.S. P04 após a venda (abertura, chassi, placa, NF, TMOs e valores) e os contratos do chassi no Potencial Renovação, com o play verde no contrato que realmente deu início.'],
+      ['Ver todos (sem filtro de data)', 'Mostra os veículos vendidos de todas as datas do relatório, em vez de só os do mês anterior.'],
+      ['Lupa (Ver detalhes)', 'Aparece quando o veículo tem contrato: mostra as O.S. P04 do chassi depois da venda e os contratos do chassi no CRM.'],
     ],
   },
   {
-    titulo: 'Aba Ordens de Serviço',
+    titulo: 'Ordens de Serviço',
     itens: [
-      ['O que lista', 'Itens (TMOs) das O.S. tipo P04 do ROF017 no período: o seletor de data escolhe Abertura O.S. (padrão; coluna OS_DataCriacao, sem ela a data da NF) ou Nota Fiscal (OSData_Faturamento), nas empresas selecionadas. A mesma O.S. pode aparecer em várias linhas.'],
+      ['O que lista', 'As O.S. de Plano de Manutenção (tipo P04) do período do filtro, abertas ou já faturadas.'],
       ['Fonte (arquivo)', FONTE_TABELAS.os],
+      ['Ver todos (sem filtro de data)', 'Mostra as O.S. de todas as datas, sem o filtro Mês/Ano.'],
     ],
   },
 ]

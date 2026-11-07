@@ -96,6 +96,7 @@ function lerArquivo(buffer) {
       modelo: txt(r.VeiculoModeloVeiculo_Descricao),
       cliente: txt(r.NotaFiscal_PessoaNom),
       vendedor: txt(r.NotaFiscal_UsuNomVendedor),
+      nf: txt(r.NotaFiscal_Numero),                 // número da NF de venda/devolução
     })
   }
   return rows

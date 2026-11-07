@@ -1,10 +1,13 @@
 import { Router } from 'express'
 import { isConfigured } from '../services/graphClient.js'
+import { requireMenu, requireAcao } from '../middleware/authMiddleware.js'
 import { getVeiculosVendidos, clearVeiculosVendidosCache } from '../services/sharepointVeiculosVendidos.js'
 import { getOsPlanoManutencao, clearOsPlanoManutencaoCache } from '../services/sharepointOsPlanoManutencao.js'
 import { getPotencialRenovacao, clearPotencialRenovacaoCache, importarPotencialRenovacao } from '../services/sharepointPotencialRenovacao.js'
 
 const router = Router()
+// Só quem tem o menu do BI (ou é admin) usa estas rotas.
+router.use(requireMenu('bi/planos-manutencao'))
 
 const wrap = fn => (req, res, next) => fn(req, res, next).catch(next)
 
@@ -49,7 +52,7 @@ router.post('/contratos/refresh', wrap(async (req, res) => {
 
 // POST /api/planos-manutencao/contratos/importar — { nome, conteudoBase64 } do .xlsx exportado do CRM DAF.
 // Confere o arquivo e substitui o da pasta do SharePoint; devolve os contratos já relidos.
-router.post('/contratos/importar', wrap(async (req, res) => {
+router.post('/contratos/importar', requireAcao('bi/planos-manutencao', 'importar_arquivo'), wrap(async (req, res) => {
   if (!isConfigured()) return res.status(503).json({ error: 'sharepoint_not_configured' })
   const { nome, conteudoBase64 } = req.body || {}
   if (!conteudoBase64) return res.status(400).json({ error: 'Nenhum arquivo enviado.' })

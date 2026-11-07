@@ -3973,6 +3973,43 @@ export const apiService = {
     return data?.[0]
   },
 
+  // ── Metas dos indicadores do BI Agendamento de Serviços (engrenagem do BI) ──
+  getBiAgendamentoMetas: async () => {
+    const { data, error } = await supabase.from('bi_agendamento_metas').select('indicador, meta, atualizado_em, atualizado_por')
+    if (error) throw error
+    return data || []
+  },
+  saveBiAgendamentoMetas: async (metas, userEmail) => {
+    const agora = new Date().toISOString()
+    const linhas = Object.entries(metas).map(([indicador, meta]) => ({ indicador, meta, atualizado_em: agora, atualizado_por: userEmail || null }))
+    const { error } = await supabase.from('bi_agendamento_metas').upsert(linhas)
+    if (error) throw error
+    return { success: true }
+  },
+
+  // ── Metas dos indicadores do BI Planos de Manutenção (engrenagem do BI) ──
+  // Uma meta por indicador + ano + mês.
+  getBiPlanosMetas: async () => {
+    const { data, error } = await supabase.from('bi_planos_metas').select('indicador, ano, mes, meta, atualizado_em, atualizado_por')
+    if (error) throw error
+    return data || []
+  },
+  // gravar: [{ indicador, ano, mes, meta }] · apagar: [{ indicador, ano, mes }] (mês volta a herdar a meta anterior)
+  saveBiPlanosMetas: async (gravar, apagar, userEmail) => {
+    const agora = new Date().toISOString()
+    if (gravar.length) {
+      const { error } = await supabase.from('bi_planos_metas')
+        .upsert(gravar.map(l => ({ ...l, atualizado_em: agora, atualizado_por: userEmail || null })))
+      if (error) throw error
+    }
+    for (const l of apagar) {
+      const { error } = await supabase.from('bi_planos_metas').delete()
+        .eq('indicador', l.indicador).eq('ano', l.ano).eq('mes', l.mes)
+      if (error) throw error
+    }
+    return { success: true }
+  },
+
   // ── Programação de auditorias automáticas (executadas pelo backend, node-cron) ──
   getAuditoriaAgendamentos: async () => {
     const { data, error } = await supabase.from('aud_agendamentos').select('*').order('criado_em')

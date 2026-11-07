@@ -149,8 +149,8 @@ const COL_AGEND_CAMPANHA = [
   '• StatusAgendamento — AGE, CON, RAG, FIM, NSW, CAN',
   '• OSNumero — O.S. gerada pelo agendamento',
 ].join('\n')
-const META = 'Meta: 80%. Cor pelo atingimento da meta: abaixo de 80% vermelho, de 80% a 99% amarelo, 100% ou mais verde.'
-const META_MENOR = (meta) => `Meta: ${meta}% (quanto menor, melhor: atingimento = meta ÷ valor). Abaixo de 80% de atingimento vermelho, de 80% a 99% amarelo, 100% ou mais verde.`
+const META = 'Meta: definida na engrenagem (⚙) ao lado do botão Atualizar — o valor aparece no velocímetro (padrão 80%). Cor pelo atingimento da meta: abaixo de 80% vermelho, de 80% a 99% amarelo, 100% ou mais verde.'
+const META_MENOR = (meta) => `Meta: definida na engrenagem (⚙) ao lado do botão Atualizar — o valor aparece no velocímetro (padrão ${meta}%); quanto menor, melhor: atingimento = meta ÷ valor. Abaixo de 80% de atingimento vermelho, de 80% a 99% amarelo, 100% ou mais verde.`
 
 export const INFO = {
   // Aba Passagens
@@ -257,7 +257,7 @@ export const INFO = {
   agTotal: {
     objetivo: 'Mostrar quantos agendamentos estavam marcados para o período.',
     fonte: FONTE_AGENDA,
-    calculo: 'Linhas do ROF037 com DtAgendamento no período e StatusAgendamento diferente de CAN. O ROF037 repete o agendamento em uma linha por serviço: cada agendamento conta uma vez por EmpresaNome + CodCliente + data/hora do agendamento + Chassi. Filtro Empresas pela EmpresaNome.',
+    calculo: 'Linhas do ROF037 com DtAgendamento no período e StatusAgendamento FIM (atendido), NSW (no-show) ou AGE/CON/RAG (a comparecer) — o CAN (cancelado) fica fora. Diferente do ROF026 e do RCR014, que não trazem os no-shows. O ROF037 repete o agendamento em uma linha por serviço: cada agendamento conta uma vez por EmpresaNome + CodCliente + data/hora do agendamento + Chassi. Filtro Empresas pela EmpresaNome.',
     filtros: REGRAS_AGENDA,
     colunas: COL_AGENDA,
   },
@@ -361,13 +361,6 @@ export const INFO = {
     filtros: `${REGRAS_CAMPANHA}\n${REGRAS_AGENDADO}`,
     colunas: `${COL_CAMPANHA}\n${COL_AGEND_CAMPANHA}`,
   },
-  naoAgendados: {
-    objetivo: 'Mostrar quantos contatos gerados não viraram agendamento.',
-    fonte: `${ARQ_CAMPANHA}\n${ARQ_AGEND}`,
-    calculo: 'Contatos gerados − Contatos agendados = Contatos encerrados + Contatos a realizar.',
-    filtros: `${REGRAS_CAMPANHA}\n${REGRAS_AGENDADO}`,
-    colunas: `${COL_CAMPANHA}\n${COL_AGEND_CAMPANHA}`,
-  },
   encerrados: {
     objetivo: 'Mostrar quantos não agendados já foram trabalhados e não agendaram — e por quê.',
     fonte: `${ARQ_CAMPANHA}\n${ARQ_AGEND}\n${ARQ_CONTATO}`,
@@ -385,7 +378,7 @@ export const INFO = {
   listaFaltaContatar: {
     objetivo: 'Listar os contatos a realizar, para a equipe da Mesa de Agendamento trabalhar.',
     fonte: `${ARQ_CAMPANHA}\n${ARQ_AGEND}\n${ARQ_CONTATO}`,
-    calculo: 'Os mesmos clientes do card Contatos a realizar, um por linha, da campanha mais antiga para a mais recente. Colunas: Data da campanha (nome do arquivo RCR038), Campanha (ID_Campanha_Execucao), Atendimento (id_atendimento), Cliente (nome), Chassi, Contato (Sem contato / Já contatado, sem resultado) e Último contato (AtendimentoContato_Data do RCR017).',
+    calculo: 'Os mesmos clientes do card Contatos a realizar, um por linha, da campanha mais antiga para a mais recente. Colunas: Data da campanha (nome do arquivo RCR038), Campanha (ID_Campanha_Execucao), Atendimento (id_atendimento), Cliente (nome), Chassi, Contato (Sem contato / Já contatado, sem resultado) e Próximo contato (data do contato registrado no RCR017 — AtendimentoContato_Data — para quem já foi contatado e ainda está sem resultado; vazio = ainda sem contato).',
     filtros: `${REGRAS_CAMPANHA}\n${REGRAS_AGENDADO}\n${REGRAS_CONTATO}`,
     colunas: `${COL_CAMPANHA}\n${COL_AGEND_CAMPANHA}\n${COL_CONTATO}`,
   },
@@ -440,7 +433,7 @@ export const OBJETIVO_ABAS = {
 const TABELA_CAMPANHAS = {
   itens: [
     ['O que mostra', 'Uma linha por data de geração (todas as campanhas do dia juntas), da mais recente para a mais antiga, e uma linha de Total no fim.'],
-    ['Colunas', 'Data de geração (do nome do arquivo RCR038), Campanhas geradas, Contatos gerados, Contatos agendados, Não agendados, Contatos encerrados, Contatos a realizar, Agendamentos comparecidos, Agendamentos a comparecer, Agendamentos não comparecidos (No-show) e as taxas de Agendamento, Conversão e No-show.'],
+    ['Colunas', 'Data de geração (do nome do arquivo RCR038), Campanhas geradas, Contatos gerados, Contatos agendados, Contatos encerrados, Contatos a realizar, Agendamentos comparecidos, Agendamentos a comparecer, Agendamentos não comparecidos (No-show) e as taxas de Agendamento, Conversão e No-show.'],
     ['Regras', 'As mesmas dos cards e indicadores da aba, calculadas por data de geração; o Total é igual aos cards.'],
   ],
 }
@@ -470,9 +463,9 @@ const TABELA_AGENDAMENTOS = {
 const TABELA_CONSULTA_AGEND = {
   itens: [
     ['Para que serve', 'Consultar os agendamentos do ROF037 um a um e conferir os cards da aba. Vale o filtro Data (data do agendamento, DtAgendamento) e o filtro Empresas da tela.'],
-    ['Filtros', 'Todos (sem cancelados) — igual ao card Agendamentos realizados · Ativos · Ativos de campanha · Ativos sem campanha · Passivos (Receptivo, Presencial, Internet) · Cancelados (status CAN, fora dos cards). Quantidade de cada um no botão; busca por cliente, chassi, placa, agendador ou O.S.'],
-    ['Um agendamento por linha', 'O ROF037 repete o agendamento em várias linhas (uma por serviço); a consulta mostra uma vez (empresa + cliente + data/hora + chassi, a mesma regra dos cards) e junta os serviços na coluna Serviços.'],
-    ['Colunas do ROF037', 'Data agendada (DtAgendamento), Criado em (AgendamentoHistorico_Data), Empresa (EmpresaNome), Cód. cliente (CodCliente), Cliente, Chassi, Placa, Modelo (ModeloVeiculo), Tipo (AgendamentoTipo), Agendador, Status (StatusAgendamento), O.S. (OSNumero), Abertura da O.S. (DataAbertura), Serviços (OficinaServico_TMODes), Observação (OBSAgendamento), Cancelado em (DataCancelamento), Motivo do cancelamento (MotivoCancelamento).'],
+    ['Filtros', 'Todos (sem cancelados) — igual ao card Agendamentos realizados · Ativos · Ativos de campanha · Ativos sem campanha · Passivos (Receptivo, Presencial, Internet) · Com mais de um serviço (o mesmo agendamento tem 2 ou mais serviços no ROF037, uma linha por serviço; sem os cancelados) · Cancelados (status CAN, fora dos cards). Quantidade de cada um no botão; busca por cliente, chassi, placa, agendador ou O.S.'],
+    ['Um agendamento por linha', 'O ROF037 repete o agendamento em várias linhas (uma por serviço); a consulta mostra uma vez (empresa + cliente + data/hora + chassi, a mesma regra dos cards) e junta os serviços na coluna Serviço (OficinaServico_TMODes); a coluna Nº de serviços mostra quantos são.'],
+    ['Colunas do ROF037', 'Data agendada (DtAgendamento), Criado em (AgendamentoHistorico_Data), Empresa (EmpresaNome), Cód. cliente (CodCliente), Cliente, Chassi, Placa, Modelo (ModeloVeiculo), Tipo (AgendamentoTipo), Agendador, Status (StatusAgendamento), O.S. (OSNumero), Abertura da O.S. (DataAbertura), Serviço (OficinaServico_TMODes — os vários serviços do mesmo agendamento ficam juntos, separados por /), Nº de serviços (quantos serviços diferentes o agendamento tem), Observação (OBSAgendamento), Cancelado em (DataCancelamento), Motivo do cancelamento (MotivoCancelamento).'],
     ['Desfecho', 'Comparecido (tem O.S.) · No-show (status NSW) · A comparecer (sem O.S. e sem no-show) · Cancelado (CAN) — as mesmas regras dos cards.'],
     ['Veio de campanha?', 'Só para os Ativos. Sim = o mesmo chassi + cliente (Chassi + CodCliente = Chassi + ID_Cliente) está num RCR038 e o agendamento foi criado da data da campanha até 30 dias depois — a mesma regra do Agendado da aba Por Campanhas, olhando ao contrário. Colunas Campanha(s) (data), Atendimento(s), Dias após a campanha e Nº de campanhas vêm do RCR038; o veículo pode estar em mais de uma campanha dentro dos 30 dias, e aí todas aparecem, cada uma com a sua data. Campanhas de meses anteriores contam (ex: agendamento de outubro criado por campanha de setembro).'],
     ['Diferença com a aba Por Campanhas', 'Aqui o filtro Data é a data do AGENDAMENTO; na aba Por Campanhas é a data da CAMPANHA. Por isso aqui entram agendamentos de campanhas de meses anteriores. As duas contam cada agendamento uma vez (ex: outubro — 5 agendados das campanhas de outubro; aqui 15 ativos de campanha agendados para outubro, contando campanhas de setembro).'],
@@ -558,7 +551,28 @@ export const MANUAL_GERAL = [
   {
     titulo: 'Visão geral',
     itens: [
-      ['Para que serve', 'Acompanhar a Mesa de Agendamento do Pós-Venda: quantas O.S. vieram de agendamento (ativo ou passivo) e quanto faturaram, e o resultado das campanhas de ativação (contatos, agendamentos, no-show).'],
+      ['Para que serve', 'Acompanhar a Mesa de Agendamento do Pós-Venda: o resultado das campanhas de ativação do CRM (contatos agendados, encerrados e a realizar, motivos de encerramento), os agendamentos marcados e o seu desfecho (comparecido, a comparecer, no-show), e quantas O.S. vieram de agendamento (ativo ou passivo) e quanto faturaram.'],
+      ['Abas', 'Por Campanhas (data da campanha) · Por Data Agendamento (data para quando o agendamento foi marcado) · Por Data da O.S. (data de abertura da O.S.). O objetivo de cada aba aparece logo abaixo das abas.'],
+      ['Fonte dos agendamentos', 'O ROF037 é a fonte única dos agendamentos em todas as abas (o ROF026 e o RCR014 não são usados).'],
+    ],
+  },
+  {
+    titulo: 'Filtros e botões',
+    itens: [
+      ['Data', 'Ao abrir: o mês atual, do dia 1 até ontem (no dia 1, o mês anterior). As setas ‹ › trocam de mês e o ↺ volta ao mês atual; o calendário aceita qualquer data. O período escolhido continua o mesmo ao trocar de aba. Cada aba aplica o filtro na sua data (ver Abas).'],
+      ['Empresas', 'Nas abas Por Data Agendamento e Por Data da O.S. (por EmpresaNome do ROF037 / Empresa do ROF001). Não existe na aba Por Campanhas: o RCR038 não identifica a empresa.'],
+      ['Ícones da aba', 'Na linha das abas, à direita: ✓ abre a consulta linha a linha da aba (Conferência linha a linha, Consulta de agendamentos ou Consulta de O.S., todas com filtros, busca e Exportar Excel) e ▦ abre a tabela com os números por data.'],
+      ['Cabeçalho', 'Atualizar (↻) relê os relatórios do SharePoint · Engrenagem (⚙) define as metas dos indicadores · Livro abre este manual. "Última atualização" = quando os relatórios foram lidos.'],
+      ['ⓘ dos cards', 'Cada card, indicador e quadro tem o botão ⓘ com o objetivo, o cálculo (como os relatórios são ligados) e a fonte; as regras completas e as colunas usadas estão nas seções de cada aba deste manual.'],
+    ],
+  },
+  {
+    titulo: 'Metas dos indicadores',
+    itens: [
+      ['Onde definir', 'Botão de engrenagem (⚙) ao lado do botão Atualizar, no cabeçalho do BI. A janela lista os indicadores (velocímetros) de cada aba com a meta em %; Salvar vale para todos os usuários.'],
+      ['Padrão', 'Enquanto ninguém alterar: 80% para as taxas de agendamento e de conversão e 15% para as taxas de No-show (quanto menor, melhor).'],
+      ['Cor do velocímetro', 'Pelo atingimento da meta: abaixo de 80% vermelho, de 80% a 99% amarelo, 100% ou mais verde. Nas taxas de No-show, atingimento = meta ÷ valor.'],
+      ['Registro', 'A janela mostra a data e o usuário da última alteração.'],
     ],
   },
   {
@@ -568,6 +582,8 @@ export const MANUAL_GERAL = [
       [ARQ_AGEND, 'Pasta SharePoint: Banco de Dados - DAF - Pós-Vendas › Agendamentos - CRM › AGENDAMENTO DE SERVICOS E PRODUTOS'],
       [ARQ_CAMPANHA, 'Pasta SharePoint: Banco de Dados - DAF - Pós-Vendas › Agendamentos - CRM › CAMPANHA CRM › (ano)'],
       [ARQ_CONTATO, 'Pasta SharePoint: Banco de Dados - DAF - Pós-Vendas › Agendamentos - CRM › LISTA POR DATA CONTATO_ENCERRAMENTO'],
+      ['Aba lida', 'De cada arquivo é lida a aba "Dados" (como vem do Dealer.net); se não existir, a aba com mais linhas. Abas criadas a mais (ex: tabela dinâmica) não atrapalham.'],
+      ['Arquivos soltos', 'Só os arquivos dentro das pastas acima são lidos; arquivos salvos direto na pasta Agendamentos - CRM não entram.'],
     ],
   },
 ]

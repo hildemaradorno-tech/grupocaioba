@@ -57,7 +57,11 @@ async function baixarLinhas(item) {
   if (ja && ja.versao === versao) return ja.linhas
   const resp = await axios.get(item['@microsoft.graph.downloadUrl'], { responseType: 'arraybuffer', timeout: 60_000 })
   const wb = XLSX.read(Buffer.from(resp.data), { type: 'buffer' })
-  const linhas = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '' })
+  // Os relatórios do Dealer.net vêm com a aba "Dados"; se alguém criar outra aba antes (ex: tabela dinâmica),
+  // continua lendo a de dados: a aba "Dados" ou, sem ela, a que tem mais linhas.
+  const tamanho = (n) => { const ref = wb.Sheets[n]['!ref']; return ref ? XLSX.utils.decode_range(ref).e.r : 0 }
+  const aba = wb.SheetNames.find(n => n.trim().toLowerCase() === 'dados') || [...wb.SheetNames].sort((a, b) => tamanho(b) - tamanho(a))[0]
+  const linhas = XLSX.utils.sheet_to_json(wb.Sheets[aba], { defval: '' })
   _arquivosLidos.set(item.id, { versao, linhas })
   return linhas
 }

@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Bar, BarChart, CartesianGrid, LabelList, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { AlertTriangle, BookOpen, Building2, Calendar, ChevronDown, ChevronLeft, ChevronRight, Download, Info, ListChecks, RefreshCw, RotateCcw, Table2, X } from 'lucide-react'
+import { AlertTriangle, BookOpen, Building2, Calendar, ChevronDown, ChevronLeft, ChevronRight, Download, Info, ListChecks, RefreshCw, RotateCcw, Settings, Table2, X } from 'lucide-react'
+import { useAuth } from '../../context/AuthContext'
 import { apiService } from '../../services/supabaseClient'
 import { empresaSelecionavel } from '../../utils/comissoesElegibilidade'
 import { INFO, OBJETIVO_ABAS } from './agendamentoServicosTextos'
@@ -25,6 +26,79 @@ const GAUGES = [
   { label: 'Taxa de Conversão', chave: 'taxaConversao', valor: null, meta: 80, info: INFO.taxaConversao },
   { label: 'Taxa de No-show', chave: 'taxaNoShow', valor: null, meta: 15, info: INFO.taxaNoShow, menorMelhor: true },
 ]
+
+// Metas dos indicadores: editadas na engrenagem (tabela bi_agendamento_metas); estes valores valem até carregar
+// ou se o indicador não estiver na tabela.
+const METAS_PADRAO = {
+  taxaAgendamento: 80, taxaConversao: 80, taxaNoShow: 15,
+  agTaxaConversao: 80, agTaxaConversaoAtivo: 80, agTaxaConversaoPassivo: 80, agTaxaNoShow: 15,
+  gaugeAgendamentoOs: 80, gaugeAtivo: 80, gaugePassivo: 80,
+}
+// Indicadores na janela de metas, por aba (na mesma ordem da tela).
+const METAS_POR_ABA = [
+  ['Por Campanhas', [['taxaAgendamento', 'Taxa de Agendamento'], ['taxaConversao', 'Taxa de Conversão'], ['taxaNoShow', 'Taxa de No-show', true]]],
+  ['Por Data Agendamento', [['agTaxaConversao', 'Taxa de Conversão'], ['agTaxaConversaoAtivo', 'Taxa de Conversão Ativo'], ['agTaxaConversaoPassivo', 'Taxa de Conversão Passivo'], ['agTaxaNoShow', 'Taxa de No-show', true]]],
+  ['Por Data da O.S.', [['gaugeAgendamentoOs', 'Taxa de Agendamento'], ['gaugeAtivo', 'Taxa de Agendamento Ativo'], ['gaugePassivo', 'Taxa de Agendamento Passivo']]],
+]
+
+// Janela da engrenagem: meta (%) de cada indicador, salva para todos os usuários.
+function JanelaMetas({ metas, info, onSalvar, onClose }) {
+  const [valores, setValores] = useState(() => Object.fromEntries(Object.entries(metas).map(([k, v]) => [k, String(v)])))
+  const [salvando, setSalvando] = useState(false)
+  const [erro, setErro] = useState('')
+  const invalido = Object.values(valores).some(v => v === '' || isNaN(Number(v)) || Number(v) < 0 || Number(v) > 100)
+  const salvar = async () => {
+    setSalvando(true); setErro('')
+    try {
+      await onSalvar(Object.fromEntries(Object.entries(valores).map(([k, v]) => [k, Number(v)])))
+      onClose()
+    } catch (e) {
+      setErro(`Não foi possível salvar: ${e.message || e}`)
+    } finally {
+      setSalvando(false)
+    }
+  }
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
+          <p className="text-sm font-bold text-slate-900 flex items-center gap-2"><Settings className="h-4 w-4 text-emerald-600" /> Metas dos indicadores</p>
+          <button type="button" onClick={onClose} aria-label="Fechar" className="text-slate-400 hover:text-slate-600"><X className="h-4 w-4" /></button>
+        </div>
+        <div className="overflow-auto p-4 space-y-4">
+          {METAS_POR_ABA.map(([aba, itens]) => (
+            <div key={aba}>
+              <p className="text-[11px] font-bold text-emerald-700 uppercase mb-1.5">{aba}</p>
+              <div className="space-y-1.5">
+                {itens.map(([chave, label, menorMelhor]) => (
+                  <label key={chave} className="flex items-center justify-between gap-3 text-[11px] text-slate-700">
+                    <span>{label}{menorMelhor && <span className="text-slate-400"> (quanto menor, melhor)</span>}</span>
+                    <span className="flex items-center gap-1">
+                      <input type="number" min="0" max="100" step="0.1" value={valores[chave] ?? ''}
+                        onChange={e => setValores(v => ({ ...v, [chave]: e.target.value }))}
+                        className="w-20 text-right text-[11px] px-1.5 py-1 rounded-md border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500/40" />
+                      %
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          ))}
+          {info && <p className="text-[10px] text-slate-400">{info}</p>}
+          {erro && <p className="text-[11px] text-red-600">{erro}</p>}
+        </div>
+        <div className="flex justify-end gap-2 px-4 py-3 border-t border-slate-200">
+          <button type="button" onClick={onClose} className="text-[11px] px-3 py-1.5 rounded-md border border-slate-300 text-slate-700 hover:bg-slate-50">Cancelar</button>
+          <button type="button" onClick={salvar} disabled={salvando || invalido}
+            className="text-[11px] px-3 py-1.5 rounded-md bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50">
+            {salvando ? 'Salvando...' : 'Salvar'}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  )
+}
 
 // Meia-lua: arco cinza de fundo, arco preenchido até o valor e um corte branco na meta.
 const fmtBRL = (v) => (v === null || v === undefined ? '—' : v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }))
@@ -511,7 +585,7 @@ function TabelaFaltaContatar({ rows, carregando, info }) {
           <table className="w-full text-[11px]">
             <thead className="sticky top-0 bg-white">
               <tr className="text-slate-500 border-b border-slate-200">
-                {['Data da campanha', 'Campanha', 'Atendimento', 'Cliente', 'Chassi', 'Contato', 'Último contato'].map(h => <th key={h} className="text-left font-semibold py-1 pr-3 whitespace-nowrap">{h}</th>)}
+                {['Data da campanha', 'Campanha', 'Atendimento', 'Cliente', 'Chassi', 'Contato', 'Próximo contato'].map(h => <th key={h} className="text-left font-semibold py-1 pr-3 whitespace-nowrap">{h}</th>)}
               </tr>
             </thead>
             <tbody>
@@ -551,7 +625,8 @@ const COLUNAS_CONSULTA = [
   ['Desfecho', a => a.desfecho],
   ['O.S.', a => a.os ?? ''],
   ['Abertura da O.S.', a => (a.data_abertura ? fmtData(a.data_abertura) : '')],
-  ['Serviços', a => (a.servicos || []).join(' / ')],
+  ['Serviço (OficinaServico_TMODes)', a => (a.servicos || []).join(' / ')],
+  ['Nº de serviços', a => (a.servicos || []).length || ''],
   ['Observação', a => a.obs],
   ['Cancelado em', a => (a.data_cancelamento ? fmtData(a.data_cancelamento) : '')],
   ['Motivo do cancelamento', a => a.motivo_cancelamento],
@@ -568,6 +643,7 @@ const FILTROS_CONSULTA = {
   'Ativos de campanha': a => a.status !== 'CAN' && a.tipo === 'Ativo' && a.campanhas.length > 0,
   'Ativos sem campanha': a => a.status !== 'CAN' && a.tipo === 'Ativo' && !a.campanhas.length,
   'Passivos': a => a.status !== 'CAN' && PASSIVOS_CONSULTA.includes(a.tipo),
+  'Com mais de um serviço': a => a.status !== 'CAN' && (a.servicos || []).length > 1,
   'Cancelados': a => a.status === 'CAN',
 }
 // Janela de consulta linha a linha (um registro por linha), com filtros, busca e exportação para Excel.
@@ -636,7 +712,7 @@ function ConsultaAgendamentos({ lista, carregando, onClose }) {
   return (
     <JanelaConsulta titulo="Consulta de agendamentos — ROF037" lista={lista} carregando={carregando} onClose={onClose}
       colunas={COLUNAS_CONSULTA} filtros={FILTROS_CONSULTA} busca={buscaAgend} placeholder="Buscar cliente, chassi, placa, agendador, O.S."
-      aba="Agendamentos" arquivo="Consulta Agendamentos" vazio="Nenhum agendamento nesse filtro." largas={['Serviços', 'Observação']} />
+      aba="Agendamentos" arquivo="Consulta Agendamentos" vazio="Nenhum agendamento nesse filtro." largas={['Serviço (OficinaServico_TMODes)', 'Observação']} />
   )
 }
 
@@ -766,6 +842,9 @@ const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0
 const ontem = new Date(); ontem.setDate(ontem.getDate() - 1)
 const DATA_MAX = iso(ontem)
 const DATA_MIN = iso(new Date(ontem.getFullYear(), ontem.getMonth(), 1))
+// Período ao abrir a tela (e do botão ↺): o mês atual, do dia 1 até ontem.
+const PADRAO_INI = DATA_MIN
+const PADRAO_FIM = DATA_MAX
 // Visão Período: do começo do ano até ontem.
 const INICIO_ANO = iso(new Date(ontem.getFullYear(), 0, 1))
 
@@ -773,6 +852,23 @@ const inputCls = 'w-full text-[11px] px-1.5 py-1 rounded-md bg-white border bord
 const fmtDataHora = (d) => d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 
 export default function BiAgendamentoServicos() {
+  const { user } = useAuth()
+  // Metas dos velocímetros (engrenagem). Sem a tabela ou com erro, ficam as padrão.
+  const [metas, setMetas] = useState(METAS_PADRAO)
+  const [metasInfo, setMetasInfo] = useState('')
+  const [metasAberto, setMetasAberto] = useState(false)
+  const lerMetas = () => apiService.getBiAgendamentoMetas()
+    .then(linhas => {
+      setMetas({ ...METAS_PADRAO, ...Object.fromEntries(linhas.map(l => [l.indicador, Number(l.meta)])) })
+      const ultima = linhas.filter(l => l.atualizado_por).sort((a, b) => String(b.atualizado_em).localeCompare(String(a.atualizado_em)))[0]
+      setMetasInfo(ultima ? `Última alteração: ${new Date(ultima.atualizado_em).toLocaleString('pt-BR')} por ${ultima.atualizado_por}` : '')
+    })
+    .catch(() => {})
+  useEffect(() => { lerMetas() }, [])
+  const salvarMetas = async (novas) => {
+    await apiService.saveBiAgendamentoMetas(novas, user?.email)
+    await lerMetas()
+  }
   const [empresas, setEmpresas] = useState([])
   const [empresasSel, setEmpresasSel] = useState([]) // vazio = todas
   const [crm, setCrm] = useState(null) // { rows, lidoEm } das Campanhas CRM
@@ -813,8 +909,8 @@ export default function BiAgendamentoServicos() {
   }
   useEffect(() => { carregarCrm() }, [])
 
-  const [dataIni, setDataIni] = useState(DATA_MIN)
-  const [dataFim, setDataFim] = useState(DATA_MAX)
+  const [dataIni, setDataIni] = useState(PADRAO_INI)
+  const [dataFim, setDataFim] = useState(PADRAO_FIM)
   // Setas ‹ ›: mês inteiro anterior/seguinte (no mês atual, até ontem, como ao abrir).
   const trocarMes = (passo) => {
     const [a, m] = dataIni.split('-').map(Number)
@@ -847,7 +943,7 @@ export default function BiAgendamentoServicos() {
     taxaConversao: crm ? pct(numeros.osAberta, numeros.agendados) : null,
     taxaNoShow: crm ? pct(numeros.noShow, numeros.agendados) : null,
   }
-  const gauge = (g) => (g.chave ? { ...g, valor: valorGauge[g.chave] ?? null } : g)
+  const gauge = (g) => ({ ...g, meta: metas[g.chave] ?? g.meta, valor: g.chave ? valorGauge[g.chave] ?? null : g.valor })
 
   // Passagens = O.S. abertas no período (Data Criacao), menos as "Cancelada"; empresa do arquivo casada
   // com o cadastro pelo nome fantasia sem acento (ex: "CAIOBA TRUCKS - CHAPADAO" = "CAIOBÁ TRUCKS - CHAPADÃO").
@@ -885,9 +981,9 @@ export default function BiAgendamentoServicos() {
   // Velocímetros da aba Passagens: tudo sobre as passagens (ativo + passivo = taxa de agendamento, fora os sem tipo).
   const pctPass = (n) => (passagens ? Math.round((n / passagens) * 100) : null)
   const gaugesGeral = [
-    { label: 'Taxa de Agendamento', valor: pctPass(passagensAgendadas), meta: 80, info: INFO.gaugeAgendamentoOs },
-    { label: 'Taxa de Agendamento Ativo', valor: pctPass(agAtivos), meta: 80, info: INFO.gaugeAtivo },
-    { label: 'Taxa de Agendamento Passivo', valor: pctPass(agReceptivos), meta: 80, info: INFO.gaugePassivo },
+    { label: 'Taxa de Agendamento', valor: pctPass(passagensAgendadas), meta: metas.gaugeAgendamentoOs, info: INFO.gaugeAgendamentoOs },
+    { label: 'Taxa de Agendamento Ativo', valor: pctPass(agAtivos), meta: metas.gaugeAtivo, info: INFO.gaugeAtivo },
+    { label: 'Taxa de Agendamento Passivo', valor: pctPass(agReceptivos), meta: metas.gaugePassivo, info: INFO.gaugePassivo },
   ]
   // O.S. pendentes de autorização (cancelamento/encerramento) entre as passagens: alerta no card.
   const osPendentes = (osDoPeriodo || []).filter(o => SITUACOES_PENDENTES.includes(o.situacao))
@@ -958,10 +1054,10 @@ export default function BiAgendamentoServicos() {
   }
   const pctAg = (n, base) => (base ? Math.round((n / base) * 100) : null)
   const gaugesAgend = [
-    { label: 'Taxa de Conversão', valor: pctAg(ag.virouOs, ag.total), meta: 80, info: INFO.agTaxaConversao },
-    { label: 'Taxa de Conversão Ativo', valor: pctAg(contaAg(a => ehAtivo(a) && a.desfecho === 'virouOs'), ag.ativos), meta: 80, info: INFO.agTaxaConversaoAtivo },
-    { label: 'Taxa de Conversão Passivo', valor: pctAg(contaAg(a => ehPassivo(a) && a.desfecho === 'virouOs'), ag.passivos), meta: 80, info: INFO.agTaxaConversaoPassivo },
-    { label: 'Taxa de No-show', valor: pctAg(ag.noShow, ag.total), meta: 15, menorMelhor: true, info: INFO.agTaxaNoShow },
+    { label: 'Taxa de Conversão', valor: pctAg(ag.virouOs, ag.total), meta: metas.agTaxaConversao, info: INFO.agTaxaConversao },
+    { label: 'Taxa de Conversão Ativo', valor: pctAg(contaAg(a => ehAtivo(a) && a.desfecho === 'virouOs'), ag.ativos), meta: metas.agTaxaConversaoAtivo, info: INFO.agTaxaConversaoAtivo },
+    { label: 'Taxa de Conversão Passivo', valor: pctAg(contaAg(a => ehPassivo(a) && a.desfecho === 'virouOs'), ag.passivos), meta: metas.agTaxaConversaoPassivo, info: INFO.agTaxaConversaoPassivo },
+    { label: 'Taxa de No-show', valor: pctAg(ag.noShow, ag.total), meta: metas.agTaxaNoShow, menorMelhor: true, info: INFO.agTaxaNoShow },
   ]
   // Valores da conversão: as O.S. (sem repetir) dos agendamentos que viraram O.S.
   // Linhas por data. crescente = da data mais antiga para a mais recente (padrão: mais recente primeiro).
@@ -1037,6 +1133,11 @@ export default function BiAgendamentoServicos() {
               >
                 <RefreshCw className={`h-3.5 w-3.5 ${carregando ? 'animate-spin' : ''}`} />
               </button>
+              {/* Engrenagem: metas dos indicadores (velocímetros). */}
+              <button type="button" onClick={() => setMetasAberto(true)} title="Metas dos indicadores" aria-label="Metas dos indicadores"
+                className="flex items-center justify-center p-1.5 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm transition-colors">
+                <Settings className="h-3.5 w-3.5" />
+              </button>
               {/* Manual operacional: página própria, sempre em outra aba (mesmo padrão do BI Planos de Manutenção). */}
               <a href="/bi/agendamento-servicos/manual" target="_blank" rel="noopener noreferrer"
                 title="Manual operacional do BI (abre em outra aba)" aria-label="Manual operacional do BI"
@@ -1067,9 +1168,9 @@ export default function BiAgendamentoServicos() {
                     className="p-1 rounded-md bg-white border border-slate-300 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed">
                     <ChevronRight className="h-3.5 w-3.5" />
                   </button>
-                  {/* Volta direto ao mês atual (dia 1 até ontem). */}
-                  <button type="button" onClick={() => { setDataIni(DATA_MIN); setDataFim(DATA_MAX) }}
-                    disabled={dataIni === DATA_MIN && dataFim === DATA_MAX} title="Voltar ao mês atual"
+                  {/* Volta ao período padrão: o mês atual (dia 1 até ontem). */}
+                  <button type="button" onClick={() => { setDataIni(PADRAO_INI); setDataFim(PADRAO_FIM) }}
+                    disabled={dataIni === PADRAO_INI && dataFim === PADRAO_FIM} title="Voltar ao mês atual"
                     aria-label="Voltar ao mês atual" className="p-1 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm disabled:opacity-40 disabled:cursor-not-allowed">
                     <RotateCcw className="h-3.5 w-3.5" />
                   </button>
@@ -1231,7 +1332,8 @@ export default function BiAgendamentoServicos() {
       </>
       )}
 
-      {tabela === 'conferencia' && <ConferenciaCampanhas rows={contatosFiltrados} onClose={() => setTabela(null)} />}
+      {metasAberto && <JanelaMetas metas={metas} info={metasInfo} onSalvar={salvarMetas} onClose={() => setMetasAberto(false)} />}
+      {tabela === 'conferencia' &&<ConferenciaCampanhas rows={contatosFiltrados} onClose={() => setTabela(null)} />}
       {tabela === 'consultaOs' && <ConsultaOs lista={consultaOsCampanha}carregando={carregando && !passagensOs} onClose={() => setTabela(null)} />}
       {tabela === 'consultaAgend' && <ConsultaAgendamentos lista={consultaAgend} carregando={carregando && !passagensOs} onClose={() => setTabela(null)} />}
       {tabela === 'campanhas' && (
@@ -1241,7 +1343,6 @@ export default function BiAgendamentoServicos() {
             ['Campanhas geradas', l => l.campanhas],
             ['Contatos gerados', l => l.contatos],
             ['Contatos agendados', l => l.agendados],
-            ['Não agendados', l => l.naoAgendados],
             ['Contatos encerrados', l => l.encerrados],
             ['Contato a realizar', l => l.faltaContatar],
             ['Agendamentos comparecidos', l => l.osAberta],

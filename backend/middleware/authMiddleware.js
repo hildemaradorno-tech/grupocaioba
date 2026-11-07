@@ -71,6 +71,23 @@ const middlewareMenu = (permite) => async (req, res, next) => {
 export const requireMenu = (...menuPaths) =>
   middlewareMenu(menus => menuPaths.some(m => menus.has(m)))
 
+// Exige uma ação do menu (tabela permissoes_grupo_acoes, a mesma do hasAction do frontend). Admin sempre pode.
+export const requireAcao = (menuPath, acao) => async (req, res, next) => {
+  try {
+    const perfil = await getPerfilUsuario(req.user?.email)
+    if (!perfil) return res.status(403).json({ error: 'Usuário sem perfil ativo.' })
+    if (!perfil.is_admin) {
+      const { data } = await getSupabaseAdmin().from('permissoes_grupo_acoes').select('acao')
+        .eq('grupo_id', perfil.grupo_id).eq('menu_path', menuPath).eq('acao', acao).limit(1)
+      if (!data?.length) return res.status(403).json({ error: 'Sem permissão para esta operação.' })
+    }
+    req.perfil = perfil
+    next()
+  } catch (err) {
+    next(err)
+  }
+}
+
 // Igual ao requireMenu, mas por prefixo de menu (ex: 'garantia' cobre 'garantias-daf-titulos').
 export const requireMenuLike = (...prefixos) =>
   middlewareMenu(menus => [...menus].some(m => prefixos.some(p => m.startsWith(p))))

@@ -569,6 +569,14 @@ export const ACOES_POR_MENU = [
       { value: 'excluir', label: 'Excluir' },
     ],
   },
+  // BI Planos de Manutenção — quem só tem o menu vê tudo; editar metas e importar o arquivo do CRM são ações à parte.
+  {
+    menuPath: 'bi/planos-manutencao',
+    acoes: [
+      { value: 'editar_metas',     label: 'Editar e Salvar Metas (aba Resultado › Tabela)' },
+      { value: 'importar_arquivo', label: 'Importar Arquivo do CRM DAF (engrenagem)' },
+    ],
+  },
   // Campanha Pós-Venda (BI) — botões de cada aba.
   {
     menuPath: 'bi/campanha/regras',
