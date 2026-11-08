@@ -324,7 +324,22 @@ export const MENU_TREE = [
       { key: 'bi/projetos', label: 'BI — Gestão de Projetos' },
       { key: 'bi/possibilidades', label: 'BI — Possibilidades' },
       { key: 'bi/agendamento-servicos', label: 'BI — Agendamento de Serviços' },
-      { key: 'bi/planos-manutencao', label: 'BI — Planos de Manutenção' },
+      // BI Planos de Manutenção: mesmo padrão do Contas a Receber HONDA — a key da tela (bi/planos-manutencao) dá o
+      // acesso à tela (rotas do backend e RLS usam ela); cada aba é uma permissão própria (marcar = pode ver a aba) e os
+      // botões são ações em acoesMenu.js. Precisa da tela e de pelo menos 1 aba.
+      {
+        key: '_bi.planos-manutencao',
+        label: 'BI — Planos de Manutenção',
+        navTo: 'bi/planos-manutencao',
+        children: [
+          { key: 'bi/planos-manutencao', label: 'Tela BI — Planos de Manutenção' },
+          { key: 'bi/planos-manutencao/resultado', label: 'Aba Resultado (Resumo, Tabela e Gráfico)' },
+          { key: 'bi/planos-manutencao/oportunidades', label: 'Aba Oportunidades' },
+          { key: 'bi/planos-manutencao/contratos', label: 'Aba Contratos' },
+          { key: 'bi/planos-manutencao/veiculos-vendidos', label: 'Aba Veículos Vendidos' },
+          { key: 'bi/planos-manutencao/ordens-servico', label: 'Aba Ordens de Serviço' },
+        ],
+      },
       {
         // Agrupamento de menu (sem navTo) — cada item abaixo é uma tela própria, não mais abas
         // de uma página única. Movido de Comissões pra cá junto com Medidas BI.

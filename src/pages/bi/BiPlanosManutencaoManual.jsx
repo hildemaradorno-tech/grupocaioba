@@ -1,15 +1,15 @@
 import React from 'react'
-import { BookOpen, Database, LayoutDashboard, Truck, Wrench, FileText, Gauge, CreditCard, FileSearch, Check, Settings, Upload, Goal, Table2, BarChart3, Pencil } from 'lucide-react'
+import { BookOpen, Database, LayoutDashboard, Truck, Wrench, FileText, Gauge, CreditCard, FileSearch, Check, Settings, Upload, Goal, Table2, BarChart3, Pencil, ListChecks, RefreshCw, Building2 } from 'lucide-react'
 import { INFO_RESUMO, MANUAL_GERAL, MANUAL_RESUMO, MANUAL_ABAS } from './planosManutencaoTextos'
 
 // Manual operacional do BI Planos de Manutenção (aberto em nova aba pelo ícone de livro do cabeçalho do BI).
 // Mesmo modelo do manual de Garantias DAF: menu de acesso rápido fixo na lateral e uma seção por assunto.
 // O conteúdo vem de planosManutencaoTextos.js (o mesmo usado no botão ⓘ dos cards).
 
-const ICONES_GERAL = { 'Visão geral': BookOpen, 'Fontes (relatórios)': Database, 'Importar arquivo': Upload, 'Como informar as metas': Goal }
+const ICONES_GERAL = { 'Visão geral': BookOpen, 'Fontes (relatórios)': Database, 'Importar arquivo': Upload, 'Como informar as metas': Goal, 'Cadastro de ações': ListChecks, 'Acessos (grupo de acesso)': Building2 }
 const ICONES_ABAS = {
   'Veículos Vendidos': Truck, 'Ordens de Serviço': Wrench,
-  'Contratos': FileText, 'Oportunidade de Renovação': Gauge, 'Resultado': LayoutDashboard,
+  'Contratos': FileText, 'Oportunidades': Gauge, 'Resultado': LayoutDashboard,
 }
 const slug = (t) => t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
 
@@ -44,10 +44,18 @@ const BOTOES = {
   cancelar: () => <span className="inline-flex px-2 py-0.5 rounded-md border border-slate-300 text-slate-700 text-[11px] align-middle">Cancelar</span>,
   caixa: () => <span className="inline-flex items-center justify-center h-3.5 w-3.5 rounded-sm bg-blue-600 align-middle"><Check className="h-2.5 w-2.5 text-white" strokeWidth={3} /></span>,
   engrenagem: () => <span className="inline-flex p-1 rounded-md bg-blue-600 text-white align-middle"><Settings className="h-3.5 w-3.5" /></span>,
+  acoes: () => <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-slate-200 bg-white text-slate-800 text-[11px] font-semibold align-middle"><ListChecks className="h-3 w-3 text-blue-600" /> Cadastro de ações</span>,
+  incluir: () => <span className="inline-flex px-2 py-0.5 rounded-md bg-blue-600 text-white text-[11px] font-semibold align-middle">Incluir</span>,
+  atualizar: () => <span className="inline-flex p-1 rounded-md bg-blue-600 text-white align-middle"><RefreshCw className="h-3.5 w-3.5" /></span>,
+  manual: () => <span className="inline-flex p-1 rounded-md bg-blue-600 text-white align-middle"><BookOpen className="h-3.5 w-3.5" /></span>,
+  lapis: () => <span className="inline-flex p-0.5 rounded text-blue-600 border border-blue-200 align-middle"><Pencil className="h-3.5 w-3.5" /></span>,
+  lupa: () => <span className="inline-flex p-0.5 rounded text-blue-600 border border-blue-200 align-middle"><FileSearch className="h-3.5 w-3.5" /></span>,
+  ativa: () => <span className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-700 align-middle">Ativa</span>,
+  salvarSimples: () => <span className="inline-flex px-2 py-0.5 rounded-md bg-blue-600 text-white text-[11px] font-semibold align-middle">Salvar</span>,
   importar: () => <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-slate-200 bg-white text-slate-800 text-[11px] font-semibold align-middle"><Upload className="h-3 w-3 text-blue-600" /> Importar arquivo</span>,
 }
 // Nome de aba do BI depois da palavra "aba" (ex.: "aba Resultado") aparece destacado, como a aba na tela.
-const ABAS_BI = ['Oportunidade de Renovação', 'Veículos Vendidos', 'Ordens de Serviço', 'Resultado', 'Contratos']
+const ABAS_BI = ['Oportunidades', 'Veículos Vendidos', 'Ordens de Serviço', 'Resultado', 'Contratos']
 const RE_ABA = new RegExp('([Aa]bas? (?:' + ABAS_BI.join('|') + '))')
 function ComAbas({ texto }) {
   return texto.split(RE_ABA).map((p, i) => {
@@ -107,7 +115,7 @@ function Texto({ texto }) {
               {b.itens.map(([coluna, uso], j) => (
                 <tr key={j}>
                   <td className="px-2 py-1 font-mono text-slate-800 whitespace-nowrap align-top w-0">{coluna}</td>
-                  <td className="px-2 py-1">{uso}</td>
+                  <td className="px-2 py-1"><ComBotoes texto={uso} /></td>
                 </tr>
               ))}
             </tbody>

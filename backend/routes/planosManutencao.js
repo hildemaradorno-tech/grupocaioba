@@ -18,7 +18,7 @@ router.get('/veiculos-vendidos', wrap(async (req, res) => {
 }))
 
 // POST /api/planos-manutencao/veiculos-vendidos/refresh — invalida cache e relê a pasta
-router.post('/veiculos-vendidos/refresh', wrap(async (req, res) => {
+router.post('/veiculos-vendidos/refresh', requireAcao('bi/planos-manutencao', 'atualizar'), wrap(async (req, res) => {
   if (!isConfigured()) return res.status(503).json({ error: 'sharepoint_not_configured' })
   clearVeiculosVendidosCache()
   res.json(await getVeiculosVendidos())
@@ -31,7 +31,7 @@ router.get('/ordens-servico', wrap(async (req, res) => {
 }))
 
 // POST /api/planos-manutencao/ordens-servico/refresh — invalida cache e relê a pasta
-router.post('/ordens-servico/refresh', wrap(async (req, res) => {
+router.post('/ordens-servico/refresh', requireAcao('bi/planos-manutencao', 'atualizar'), wrap(async (req, res) => {
   if (!isConfigured()) return res.status(503).json({ error: 'sharepoint_not_configured' })
   clearOsPlanoManutencaoCache()
   res.json(await getOsPlanoManutencao())
@@ -44,7 +44,7 @@ router.get('/contratos', wrap(async (req, res) => {
 }))
 
 // POST /api/planos-manutencao/contratos/refresh — invalida cache e relê a pasta
-router.post('/contratos/refresh', wrap(async (req, res) => {
+router.post('/contratos/refresh', requireAcao('bi/planos-manutencao', 'atualizar'), wrap(async (req, res) => {
   if (!isConfigured()) return res.status(503).json({ error: 'sharepoint_not_configured' })
   clearPotencialRenovacaoCache()
   res.json(await getPotencialRenovacao())

@@ -4010,6 +4010,33 @@ export const apiService = {
     return { success: true }
   },
 
+  // ── BI Planos de Manutenção: cadastro de ações e oportunidades gravadas (aba Oportunidades) ──
+  getBiPlanosAcoes: async () => {
+    const { data, error } = await supabase.from('bi_planos_acoes').select('id, nome, ativo').order('nome')
+    if (error) throw error
+    return data || []
+  },
+  // { id? , nome, ativo } — sem id cria; com id altera.
+  saveBiPlanosAcao: async (acao, userEmail) => {
+    const linha = { nome: acao.nome.trim(), ativo: acao.ativo !== false, atualizado_em: new Date().toISOString(), atualizado_por: userEmail || null }
+    const q = acao.id ? supabase.from('bi_planos_acoes').update(linha).eq('id', acao.id) : supabase.from('bi_planos_acoes').insert(linha)
+    const { error } = await q
+    if (error) throw error
+    return { success: true }
+  },
+  getBiPlanosOportunidades: async () => {
+    const { data, error } = await supabase.from('bi_planos_oportunidades').select('*')
+    if (error) throw error
+    return data || []
+  },
+  // Grava (ou atualiza) a oportunidade com a ação e a descrição; os dados da oportunidade vão junto.
+  saveBiPlanosOportunidade: async (op, userEmail) => {
+    const { error } = await supabase.from('bi_planos_oportunidades')
+      .upsert({ ...op, atualizado_em: new Date().toISOString(), atualizado_por: userEmail || null })
+    if (error) throw error
+    return { success: true }
+  },
+
   // ── Programação de auditorias automáticas (executadas pelo backend, node-cron) ──
   getAuditoriaAgendamentos: async () => {
     const { data, error } = await supabase.from('aud_agendamentos').select('*').order('criado_em')

@@ -98,7 +98,7 @@ export const INFO_RESUMO = {
   aRenovar: {
     objetivo: 'Mostrar a oportunidade de renovação: contratos que venceram no mês anterior ao filtro.',
     fonte: ARQ_CONTRATOS,
-    calculo: 'Contratos (um por chassi) com Fim do contrato no mês anterior a cada mês do filtro e status Expirado (Prazo ou KM). Cancelados e demais status ficam fora. A lista desses contratos está na aba Oportunidade de Renovação.',
+    calculo: 'Contratos (um por chassi) com Fim do contrato no mês anterior a cada mês do filtro e status Expirado (Prazo ou KM). Cancelados e demais status ficam fora. A lista desses contratos está na aba Oportunidades.',
     filtros: FILTRO_RENOV,
     colunas: COL_CONTRATOS,
   },
@@ -208,6 +208,23 @@ export const MANUAL_GERAL = [
       ['Quem pode', 'Só quem tem a ação Editar e Salvar Metas liberada no grupo de acesso (Grupos › BI — Planos de Manutenção). Sem ela, a tabela aparece só para consulta, sem o botão Editar metas.'],
     ],
   },
+  {
+    titulo: 'Cadastro de ações',
+    itens: [
+      ['Onde', 'Na engrenagem [[engrenagem]] ao lado do botão Atualizar, escolha [[acoes]]. As ações cadastradas aparecem na coluna Ação da aba Oportunidades.'],
+      ['Passo a passo', '• Para incluir: digite o nome da ação (ex.: Ligar para o cliente) e clique em [[incluir]]\n• Para renomear: clique no lápis [[lapis]] da ação, ajuste o nome e clique em Salvar\n• Para tirar da lista de escolha: clique em [[ativa]] para deixá-la Inativa (ela continua aparecendo nas oportunidades que já a usaram)'],
+      ['Quem pode', 'Só quem tem a ação Cadastrar Ações das Oportunidades liberada no grupo de acesso (Grupos › BI — Planos de Manutenção).'],
+    ],
+  },
+  {
+    titulo: 'Acessos (grupo de acesso)',
+    itens: [
+      ['Onde liberar', 'Em Grupos › BI — Planos de Manutenção. Para usar o BI o grupo precisa da Tela e de pelo menos uma aba.'],
+      ['Tela e abas', '• Tela (Planos de Manutenção) — abre o BI pelo menu lateral\n• Aba Resultado — Resumo, Tabela e Gráfico\n• Aba Oportunidades — oportunidades de contrato novo e de renovação\n• Aba Contratos — contratos do CRM DAF\n• Aba Veículos Vendidos — vendas do mês anterior\n• Aba Ordens de Serviço — O.S. de Plano de Manutenção'],
+      ['Ações (botões)', '• Atualizar — botão [[atualizar]] do topo\n• Importar Arquivo do CRM DAF — engrenagem [[engrenagem]] › Importar arquivo\n• Cadastro de Ações das Oportunidades — engrenagem [[engrenagem]] › Cadastro de ações\n• Editar e Salvar Metas — botão [[editar]] da aba Resultado › Tabela\n• Informar Ação e Descrição nas Oportunidades — lápis [[lapis]] da coluna Ação'],
+      ['Sem a ação', 'O botão não aparece (ou fica só para consulta). As lupas de detalhe, filtros, seletores e a busca (chassi, contrato ou cliente) ficam disponíveis para quem vê a aba. O Manual de Operação (botão [[manual]] do topo) fica disponível para todos os usuários do BI. Administradores podem tudo.'],
+    ],
+  },
 ]
 // Fonte de cada tabela das abas: botão ⓘ no título da tabela e item "Fonte (arquivo)" de cada aba no manual.
 export const FONTE_TABELAS = {
@@ -217,6 +234,7 @@ export const FONTE_TABELAS = {
     '• CRM DAF - Plano de Manutenção - Potencial Renovação',
   ].join('\n'),
   oportunidade: [
+    '• REL_VEICULOSVENDIDOSPORPERIODO_REPORT',
     '• CRM DAF - Plano de Manutenção - Potencial Renovação',
     '• ROF017_FATURAMENTOPOROS',
   ].join('\n'),
@@ -241,6 +259,18 @@ export const MANUAL_ABAS = [
     ],
   },
   {
+    titulo: 'Oportunidades',
+    itens: [
+      ['O que lista', 'As oportunidades do mês anterior ao escolhido no filtro, em dois tipos (coluna Tipo oportunidade): Novo = veículos DAF vendidos no mês anterior; Renovação = contratos que venceram no mês anterior (status Expirado por prazo ou por KM). A coluna Realizado mostra se a oportunidade virou contrato.'],
+      ['Fonte (arquivo)', FONTE_TABELAS.oportunidade],
+      ['Seletor Tipo oportunidade', 'Filtra a lista: Todos, Novo (veículos vendidos no mês anterior) ou Renovação (contratos que venceram no mês anterior).'],
+      ['Seletor Realizado', 'Filtra a lista: Todos, Sim (a oportunidade virou contrato) ou Não (ainda em aberto).'],
+      ['Ver todos (sem filtro de data)', 'Mostra as oportunidades de qualquer data: todos os veículos vendidos do relatório e todos os contratos com status Expirado.'],
+      ['Lupa (Ver detalhes)', 'Aparece no Realizado Sim. Novo: o contrato fechado depois da venda e as O.S. P04 do chassi. Renovação: em qual novo contrato foi renovado (com o play verde no que deu início) e as O.S. P04 faturadas depois do fim.'],
+      ['Ação e Descrição', 'Para cada oportunidade, informe o que está sendo feito: clique no lápis [[lapis]] da coluna Ação, escolha a ação (cadastrada na engrenagem › Cadastro de ações), escreva a descrição e clique em [[salvarSimples]]. A oportunidade fica gravada no banco com a ação e a descrição, e todos os usuários veem a mesma informação, mesmo saindo da tela. Só quem tem a ação Informar Ação e Descrição nas Oportunidades pode alterar; os demais só consultam pela lupa [[lupa]].'],
+    ],
+  },
+  {
     titulo: 'Contratos',
     itens: [
       ['O que lista', 'Todos os contratos de Plano de Manutenção, novos e de renovação, realizados no período do filtro selecionado (pela Data de Criação do contrato no CRM).'],
@@ -249,15 +279,6 @@ export const MANUAL_ABAS = [
       ['Ver todos (sem filtro de data)', 'Ignora o filtro Mês/Ano e mostra todos os contratos do arquivo, de qualquer data. Os demais filtros continuam valendo. Só vale no botão Todos.'],
       ['Lupa (Ver detalhes)', 'Aparece na Situação Renovação: mostra o contrato anterior do chassi (o que este contrato renovou) e as O.S. P04 deste contrato.'],
       ['Lupa na coluna Chassi', 'Aparece quando o veículo está no relatório de vendas: mostra a venda do veículo (data, NF, empresa, placa, modelo, novo ou usado e cliente).'],
-    ],
-  },
-  {
-    titulo: 'Oportunidade de Renovação',
-    itens: [
-      ['O que lista', 'Contratos de Plano de Manutenção que venceram no mês anterior ao escolhido no filtro (status Expirado por prazo ou por KM), mostrando se cada um foi renovado ou não.'],
-      ['Fonte (arquivo)', FONTE_TABELAS.oportunidade],
-      ['Ver todos (sem filtro de data)', 'Mostra todos os contratos com status Expirado, de qualquer data, em vez de só os que venceram no mês anterior.'],
-      ['Lupa (Ver detalhes)', 'Aparece no Renovado Sim: mostra em qual novo contrato foi renovado (com o play verde no que deu início) e as O.S. P04 faturadas depois do fim.'],
     ],
   },
   {

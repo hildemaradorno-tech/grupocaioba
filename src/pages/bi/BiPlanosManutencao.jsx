@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Bar, CartesianGrid, ComposedChart, LabelList, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { Target, CheckCircle2, XCircle, Goal, Pencil, Table2, BarChart3, LayoutDashboard, BookOpen, Building2, Calendar, CalendarClock, CalendarX2, ChevronDown, ChevronsUpDown, ChevronUp, FilePlus2, FileSearch, FileX2, Info, Play, RefreshCw, Repeat, Search, Settings, Upload, Truck, Wrench, X } from 'lucide-react'
+import { Target, CheckCircle2, XCircle, Goal, Pencil, ListChecks, Table2, BarChart3, LayoutDashboard, BookOpen, Building2, Calendar, CalendarClock, CalendarX2, ChevronDown, ChevronsUpDown, ChevronUp, FilePlus2, FileSearch, FileX2, Info, Play, RefreshCw, Repeat, Search, Settings, Upload, Truck, Wrench, X } from 'lucide-react'
 import { apiService } from '../../services/supabaseClient'
 import { useAuth } from '../../context/AuthContext'
 import { empresaSelecionavel } from '../../utils/comissoesElegibilidade'
@@ -10,7 +10,15 @@ import { INFO_RESUMO, FONTE_TABELAS } from './planosManutencaoTextos'
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
 
 // Abas do BI (as próximas entram aqui).
-const ABAS = ['Resultado', 'Contratos', 'Oportunidade de Renovação', 'Veículos Vendidos', 'Ordens de Serviço']
+const ABAS = ['Resultado', 'Oportunidades', 'Contratos', 'Veículos Vendidos', 'Ordens de Serviço']
+// Permissão de cada aba no grupo de acesso (menuTree: BI — Planos de Manutenção › Aba ...).
+const PERM_ABA = {
+  Resultado: 'bi/planos-manutencao/resultado',
+  Oportunidades: 'bi/planos-manutencao/oportunidades',
+  Contratos: 'bi/planos-manutencao/contratos',
+  'Veículos Vendidos': 'bi/planos-manutencao/veiculos-vendidos',
+  'Ordens de Serviço': 'bi/planos-manutencao/ordens-servico',
+}
 // Visualizações da aba Resultado: Resumo (indicadores e cards), Tabela (metas e resultados por mês) e Gráfico
 // (por mês; escolhe o indicador — novos, renovados ou potencial — e se mostra quantidade ou %).
 const VISOES_RESULTADO = [
@@ -222,6 +230,7 @@ function SeletorMeses({ ano, selecionados, onChange }) {
     setAberto(a => !a)
   }
   const disponiveis = MESES.map((_, i) => i + 1).filter(m => !futuro(m))
+  const todosMarcados = disponiveis.every(m => selecionados.includes(m))
   return (
     <>
       <button ref={ref} type="button" onClick={abrir} aria-label="Meses"
@@ -233,18 +242,30 @@ function SeletorMeses({ ano, selecionados, onChange }) {
         <>
           <div className="fixed inset-0 z-40" onClick={() => setAberto(false)} />
           <div style={{ position: 'fixed', top: pos.top, left: pos.left, width: pos.width }}
-            className="z-50 bg-white border border-slate-200 rounded-md shadow-lg py-1 text-xs text-slate-800 max-h-[360px] overflow-y-auto whitespace-nowrap">
-            <button type="button" onClick={() => onChange(disponiveis)}
-              className={`w-full text-left px-3 py-1.5 hover:bg-slate-50 font-semibold ${ordenados.length === disponiveis.length ? 'text-blue-700' : ''}`}>
+            className="z-50 bg-white border border-slate-200 rounded-md shadow-lg py-1 text-xs text-slate-800 max-h-[400px] overflow-y-auto whitespace-nowrap">
+            {/* Clique = só aquele mês; Ctrl (ou Cmd) + clique = marca/desmarca mais de um. */}
+            <p className="px-3 pt-1 pb-1.5 text-[9px] text-slate-500 whitespace-normal leading-snug border-b border-slate-100 mb-1">
+              Para marcar mais de um, segure <kbd className="px-0.5 rounded border border-slate-300 bg-slate-50 font-semibold text-slate-700 text-[9px]">Ctrl</kbd> e clique nos meses.
+            </p>
+            {/* Flag Todos os meses: marcado = ano inteiro (até o mês atual); desmarcar volta só para o último mês disponível. */}
+            <button type="button" onClick={() => onChange(todosMarcados ? [disponiveis[disponiveis.length - 1]] : disponiveis)}
+              className={`w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-slate-50 font-semibold ${todosMarcados ? 'text-blue-700' : ''}`}>
+              <input type="checkbox" readOnly tabIndex={-1} className="h-3.5 w-3.5 accent-blue-600 pointer-events-none" checked={todosMarcados} />
               Todos os meses
             </button>
             <div className="border-t border-slate-100 mt-1 pt-1">
               {MESES.map((nome, i) => (
-                <label key={nome} className={`flex items-center gap-2 px-3 py-1.5 capitalize ${futuro(i + 1) ? 'opacity-40 cursor-not-allowed' : 'hover:bg-slate-50 cursor-pointer'}`}>
-                  <input type="checkbox" className="h-3.5 w-3.5 accent-blue-600" disabled={futuro(i + 1)}
-                    checked={selecionados.includes(i + 1)} onChange={ev => alternar(i + 1, ev.target.checked)} />
+                <button key={nome} type="button" disabled={futuro(i + 1)}
+                  onClick={ev => {
+                    const m = i + 1
+                    if (ev.ctrlKey || ev.metaKey) alternar(m, !selecionados.includes(m))
+                    else { onChange([m]); setAberto(false) }
+                  }}
+                  className={`w-full flex items-center gap-2 px-3 py-1.5 capitalize text-left ${futuro(i + 1) ? 'opacity-40 cursor-not-allowed' : 'hover:bg-slate-50 cursor-pointer'}`}>
+                  <input type="checkbox" readOnly tabIndex={-1} className="h-3.5 w-3.5 accent-blue-600 pointer-events-none" disabled={futuro(i + 1)}
+                    checked={selecionados.includes(i + 1)} />
                   {nome}
-                </label>
+                </button>
               ))}
             </div>
           </div>
@@ -325,9 +346,132 @@ function BotaoInfo({ titulo, info, secoes: secoesProprias, noTitulo, tabela }) {
   )
 }
 
+// Janela da engrenagem › Cadastro de ações: incluir, renomear e ativar/desativar. Ação não é apagada (desativada some
+// da lista de escolha, mas continua nas oportunidades que já a usaram).
+function ModalCadastroAcoes({ acoes, onSalvar, onClose }) {
+  const [nova, setNova] = useState('')
+  const [editando, setEditando] = useState(null) // { id, nome }
+  const [erro, setErro] = useState('')
+  const [salvando, setSalvando] = useState(false)
+  const salvar = async (acao) => {
+    if (!acao.nome?.trim()) return
+    setSalvando(true); setErro('')
+    try { await onSalvar(acao); setNova(''); setEditando(null) }
+    catch (e) { setErro(/duplicate|unique/i.test(e.message || '') ? 'Já existe uma ação com esse nome.' : `Não foi possível salvar: ${e.message || e}`) }
+    finally { setSalvando(false) }
+  }
+  return createPortal(
+    <div className="fixed inset-y-0 right-0 left-16 z-50 flex items-center justify-center bg-slate-900/40 p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="bg-white rounded-lg shadow-xl w-full min-w-0 max-w-lg max-h-[85vh] flex flex-col">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
+          <p className="text-sm font-bold text-slate-900 flex items-center gap-2"><ListChecks className="h-4 w-4 text-blue-600" /> Cadastro de ações</p>
+          <button type="button" onClick={onClose} aria-label="Fechar" className="text-slate-400 hover:text-slate-600"><X className="h-4 w-4" /></button>
+        </div>
+        <div className="p-4 space-y-3 overflow-auto">
+          <div className="flex items-center gap-2">
+            <input value={nova} onChange={e => setNova(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') salvar({ nome: nova }) }}
+              placeholder="Nova ação (ex.: Ligar para o cliente)" className={`${inputCls} flex-1 py-1.5`} />
+            <button type="button" onClick={() => salvar({ nome: nova })} disabled={salvando || !nova.trim()}
+              className="text-[11px] px-3 py-1.5 rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">Incluir</button>
+          </div>
+          {erro && <p className="text-[11px] text-red-600">{erro}</p>}
+          <table className="w-full text-[11px]">
+            <thead className="text-slate-500 uppercase text-[10px]"><tr><th className="text-left py-1">Ação</th><th className="text-left py-1 w-20">Situação</th><th className="w-24" /></tr></thead>
+            <tbody className="divide-y divide-slate-100 text-slate-800">
+              {acoes.map(a => (
+                <tr key={a.id}>
+                  <td className="py-1.5 pr-2">
+                    {editando?.id === a.id
+                      ? <input autoFocus value={editando.nome} onChange={e => setEditando({ ...editando, nome: e.target.value })}
+                          onKeyDown={e => { if (e.key === 'Enter') salvar({ ...a, nome: editando.nome }) }} className={`${inputCls} w-full`} />
+                      : <span className={a.ativo ? '' : 'text-slate-400 line-through'}>{a.nome}</span>}
+                  </td>
+                  <td className="py-1.5">
+                    <button type="button" onClick={() => salvar({ ...a, ativo: !a.ativo })} disabled={salvando}
+                      className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${a.ativo ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'}`}
+                      title={a.ativo ? 'Clique para desativar' : 'Clique para ativar'}>{a.ativo ? 'Ativa' : 'Inativa'}</button>
+                  </td>
+                  <td className="py-1.5 text-right">
+                    {editando?.id === a.id
+                      ? <>
+                          <button type="button" onClick={() => salvar({ ...a, nome: editando.nome })} className="text-[11px] text-blue-700 font-semibold mr-2">Salvar</button>
+                          <button type="button" onClick={() => setEditando(null)} className="text-[11px] text-slate-500">Cancelar</button>
+                        </>
+                      : <button type="button" onClick={() => setEditando({ id: a.id, nome: a.nome })} title="Renomear" aria-label="Renomear" className="p-1 rounded text-slate-500 hover:bg-slate-100"><Pencil className="h-3.5 w-3.5" /></button>}
+                  </td>
+                </tr>
+              ))}
+              {!acoes.length && <tr><td colSpan={3} className="py-3 text-center text-slate-400">Nenhuma ação cadastrada.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>,
+    document.body
+  )
+}
+
+// Janela da coluna Ação (aba Oportunidades): escolher a ação e escrever a descrição; grava a oportunidade no Supabase.
+function ModalAcaoOportunidade({ linha, gravada, acoes, podeEditar, onSalvar, onClose }) {
+  const [acaoId, setAcaoId] = useState(gravada?.acao_id ? String(gravada.acao_id) : '')
+  const [descricao, setDescricao] = useState(gravada?.descricao || '')
+  const [salvando, setSalvando] = useState(false)
+  const [erro, setErro] = useState('')
+  const opcoes = acoes.filter(a => a.ativo || String(a.id) === acaoId)
+  const salvar = async () => {
+    setSalvando(true); setErro('')
+    try { await onSalvar({ acao_id: acaoId ? Number(acaoId) : null, descricao: descricao.trim() || null }); onClose() }
+    catch (e) { setErro(`Não foi possível salvar: ${e.message || e}`) }
+    finally { setSalvando(false) }
+  }
+  return createPortal(
+    <div className="fixed inset-y-0 right-0 left-16 z-50 flex items-center justify-center bg-slate-900/40 p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="bg-white rounded-lg shadow-xl w-full min-w-0 max-w-lg max-h-[85vh] flex flex-col">
+        <div className="flex items-start justify-between gap-3 px-4 py-3 border-b border-slate-200">
+          <div>
+            <p className="text-sm font-bold text-slate-900">Ação da oportunidade</p>
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              {linha.tipoOp} · {linha.contrato ? `Contrato ${linha.contrato} · ` : ''}Chassi <span className="font-mono">{linha.chassi}</span> · {linha.cliente}
+            </p>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Fechar" className="text-slate-400 hover:text-slate-600"><X className="h-4 w-4" /></button>
+        </div>
+        <div className="p-4 space-y-3 overflow-auto text-[11px]">
+          <label className="block">
+            <span className="font-bold text-slate-600 uppercase text-[10px]">Ação</span>
+            <select value={acaoId} onChange={e => setAcaoId(e.target.value)} disabled={!podeEditar} className={`${inputCls} w-full mt-1 py-1.5`}>
+              <option value="">— Sem ação —</option>
+              {opcoes.map(a => <option key={a.id} value={a.id}>{a.nome}{a.ativo ? '' : ' (inativa)'}</option>)}
+            </select>
+          </label>
+          <label className="block">
+            <span className="font-bold text-slate-600 uppercase text-[10px]">Descrição da ação</span>
+            <textarea value={descricao} onChange={e => setDescricao(e.target.value)} disabled={!podeEditar} rows={5}
+              placeholder="O que foi feito / combinado com o cliente"
+              className="w-full mt-1 text-[11px] px-2 py-1.5 rounded-md border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500/40 disabled:bg-slate-50" />
+          </label>
+          {gravada?.atualizado_por && (
+            <p className="text-[10px] text-slate-400">Última alteração: {new Date(gravada.atualizado_em).toLocaleString('pt-BR')} por {gravada.atualizado_por}</p>
+          )}
+          {!podeEditar && <p className="text-[10px] text-slate-500">Somente consulta: o seu grupo de acesso não pode informar ações.</p>}
+          {erro && <p className="text-red-600">{erro}</p>}
+        </div>
+        <div className="flex justify-end gap-2 px-4 py-3 border-t border-slate-200">
+          <button type="button" onClick={onClose} className="text-[11px] px-3 py-1.5 rounded-md border border-slate-300 text-slate-700 hover:bg-slate-50">{podeEditar ? 'Cancelar' : 'Fechar'}</button>
+          {podeEditar && (
+            <button type="button" onClick={salvar} disabled={salvando}
+              className="text-[11px] px-3 py-1.5 rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">{salvando ? 'Salvando...' : 'Salvar'}</button>
+          )}
+        </div>
+      </div>
+    </div>,
+    document.body
+  )
+}
+
 // Engrenagem do cabeçalho (ao lado de Atualizar): menu com "Importar arquivo" do CRM DAF - Potencial Renovação.
 // Lista em portal (acima de tudo); o arquivo escolhido vai para `onImportar`.
-function MenuEngrenagem({ importando, onImportar }) {
+function MenuEngrenagem({ importando, onImportar, podeImportar, onAcoes }) {
   const [pos, setPos] = useState(null)
   const ref = useRef(null)
   const arquivoRef = useRef(null)
@@ -349,14 +493,24 @@ function MenuEngrenagem({ importando, onImportar }) {
           <div className="fixed inset-0 z-40" onClick={() => setPos(null)} />
           <div style={{ position: 'fixed', top: pos.top, right: pos.right }}
             className="z-50 w-72 bg-white border border-slate-200 rounded-md shadow-lg py-1 text-xs text-slate-800">
-            <button type="button" onClick={() => { setPos(null); arquivoRef.current?.click() }}
+            {podeImportar && <button type="button" onClick={() => { setPos(null); arquivoRef.current?.click() }}
               className="w-full text-left px-3 py-2 hover:bg-slate-50 flex items-start gap-2">
               <Upload className="h-3.5 w-3.5 text-blue-600 mt-0.5 shrink-0" />
               <span>
                 <span className="font-semibold block">Importar arquivo</span>
                 <span className="text-[11px] text-slate-500">CRM DAF - Plano de Manutenção - Potencial Renovação — atualiza a aba Contratos</span>
               </span>
-            </button>
+            </button>}
+            {onAcoes && (
+              <button type="button" onClick={() => { setPos(null); onAcoes() }}
+                className="w-full text-left px-3 py-2 hover:bg-slate-50 flex items-start gap-2 border-t border-slate-100">
+                <ListChecks className="h-3.5 w-3.5 text-blue-600 mt-0.5 shrink-0" />
+                <span>
+                  <span className="font-semibold block">Cadastro de ações</span>
+                  <span className="text-[11px] text-slate-500">Ações usadas na coluna Ação da aba Oportunidades</span>
+                </span>
+              </button>
+            )}
           </div>
         </>,
         document.body
@@ -746,10 +900,34 @@ function Gauge({ label, valor, detalhe, ajuda, info, meta }) {
 }
 
 export default function BiPlanosManutencao() {
-  const { user, hasAction } = useAuth()
+  const { user, hasAction, hasPermission } = useAuth()
+  // Abas liberadas no grupo de acesso (admin vê todas).
+  const abasVisiveis = ABAS.filter(a => hasPermission(PERM_ABA[a]))
+  const podeAtualizar = hasAction('bi/planos-manutencao', 'atualizar')
   // Ações do grupo de acesso (Grupos › BI — Planos de Manutenção). Quem só tem o menu vê, mas não edita nem importa.
-  const podeEditarMetas = hasAction('bi/planos-manutencao', 'editar_metas')
+  const podeEditarMetas = hasAction('bi/planos-manutencao/resultado', 'editar_metas')
   const podeImportar = hasAction('bi/planos-manutencao', 'importar_arquivo')
+  const podeCadastrarAcoes = hasAction('bi/planos-manutencao', 'cadastrar_acoes')
+  const podeDefinirAcao = hasAction('bi/planos-manutencao/oportunidades', 'definir_acao')
+  // Ações (cadastro da engrenagem) e oportunidades gravadas no Supabase (ação + descrição), para todos os usuários.
+  const [acoesCad, setAcoesCad] = useState([])
+  const [opGravadas, setOpGravadas] = useState(new Map()) // chave → linha de bi_planos_oportunidades
+  const [acoesAberto, setAcoesAberto] = useState(false)
+  const [acaoModal, setAcaoModal] = useState(null) // linha da aba Oportunidades
+  const lerAcoes = () => apiService.getBiPlanosAcoes().then(setAcoesCad).catch(() => {})
+  const lerOportunidades = () => apiService.getBiPlanosOportunidades()
+    .then(linhas => setOpGravadas(new Map(linhas.map(l => [l.chave, l])))).catch(() => {})
+  useEffect(() => { lerAcoes(); lerOportunidades() }, [])
+  const salvarAcaoCad = async (acao) => { await apiService.saveBiPlanosAcao(acao, user?.email); await lerAcoes() }
+  const salvarOportunidade = async (linha, dados) => {
+    await apiService.saveBiPlanosOportunidade({
+      chave: linha.chave, tipo_oportunidade: linha.tipoOp, contrato: linha.contrato || null, cliente: linha.cliente || null,
+      chassi: linha.chassi || null, data_venda: linha.dataVenda || null, inicio: linha.inicio || null, fim: linha.fim || null,
+      empresa: linha.grupo || null, ...dados,
+    }, user?.email)
+    await lerOportunidades()
+  }
+  const nomeAcao = (id) => acoesCad.find(a => a.id === id)?.nome || ''
   // Metas dos velocímetros (engrenagem). Sem a tabela ou com erro, ficam as padrão.
   const [visaoResultado, setVisaoResultado] = useState('resumo') // aba Resultado
   const [metasLinhas, setMetasLinhas] = useState([]) // [{ indicador, ano, mes, meta }]
@@ -768,7 +946,9 @@ export default function BiPlanosManutencao() {
   }
   const [empresas, setEmpresas] = useState([])
   const [empresasSel, setEmpresasSel] = useState([]) // vazio = todas
-  const [aba, setAba] = useState(ABAS[0])
+  const [aba, setAba] = useState(() => abasVisiveis[0] || '') // '' = nenhuma aba liberada (não mostra conteúdo)
+  // Se a aba aberta não estiver liberada (permissões carregadas depois), vai para a primeira liberada.
+  useEffect(() => { if (!abasVisiveis.includes(aba)) setAba(abasVisiveis[0] || '') }, [abasVisiveis.join(','), aba])
   const [anoSel, setAnoSel] = useState(ANO_ATUAL)
   const [mesesSel, setMesesSel] = useState([MES_ATUAL]) // 1 a 12, um ou mais
   // Trocar o ano tira os meses que ainda não chegaram (no ano atual); se nada sobrar, fica o mês atual.
@@ -914,8 +1094,10 @@ export default function BiPlanosManutencao() {
   // - ROF017 (faturamento): onde se localiza a NF — número, data, TMO e valor faturado.
   // Status: Emitida = O.S. localizada no ROF017; Cancelada = situação Cancelada no ROF001; Em aberto = sem NF.
   // O ROF001 só cobre o ano atual: O.S. que só estão no ROF017 (2024, 2025) também entram, para nada sumir.
-  // "Ver todos (sem filtro de data)" das abas Oportunidade de Renovação, Veículos Vendidos e Ordens de Serviço.
+  // "Ver todos (sem filtro de data)" das abas Oportunidade, Veículos Vendidos e Ordens de Serviço.
   const [verTodosOport, setVerTodosOport] = useState(false)
+  const [filtroTipoOp, setFiltroTipoOp] = useState('') // aba Oportunidades: '' todos | 'Novo' | 'Renovação'
+  const [filtroRealizado, setFiltroRealizado] = useState('') // aba Oportunidades: '' todos | 'sim' | 'nao'
   const [verTodosVendas, setVerTodosVendas] = useState(false)
   const [verTodosOs, setVerTodosOs] = useState(false)
   const [tipoDataOs, setTipoDataOs] = useState('abertura') // seletor de data: 'abertura' (padrão) ou 'nf'
@@ -940,6 +1122,7 @@ export default function BiPlanosManutencao() {
         os: o.os,
         data_abertura: a?.data_abertura || f?.data_abertura || null,
         chassi: a?.chassi || f?.chassi || '',
+        cliente: a?.cliente || '',
         tmo: unicos(o.fat.map(x => x.tmo)),
         tmo_codigo: unicos(o.fat.map(x => x.tmo_codigo)),
         tmo_descricao: unicos(o.fat.map(x => x.tmo_descricao)),
@@ -1047,7 +1230,7 @@ export default function BiPlanosManutencao() {
     return m
   }, [contratos, osPorChassi])
   const [renovacaoModal, setRenovacaoModal] = useState(null) // contrato aberto no pop-up da coluna Origem
-  const [oportunidadeModal, setOportunidadeModal] = useState(null) // aba Oportunidade: onde o contrato foi renovado
+  const [oportunidadeModal, setOportunidadeModal] = useState(null) // aba Oportunidades: onde o contrato foi renovado
   const [vendaModal, setVendaModal] = useState(null) // aba Contratos: detalhe da venda do veículo do contrato
   // Notas de venda/devolução do chassi (o CRM traz só o final do chassi: compara pelos 8 últimos caracteres).
   const vendasPorFinal = useMemo(() => {
@@ -1187,18 +1370,20 @@ export default function BiPlanosManutencao() {
   const [osModal, setOsModal] = useState(null) // venda com as O.S. P04 encontradas, para o pop-up
 
   // O Potencial Renovação guarda só o final do chassi, então lá também casa quando a busca termina com ele.
-  const casaChassi = (chassi) => !termo || chassi.toUpperCase().includes(termo)
-  const tabelaVendas = useMemo(() => listaDaf.filter(r => casaChassi(r.chassi)
+  const casaChassi = (chassi) => !termo || (chassi || '').toUpperCase().includes(termo)
+  // Busca também por contrato e cliente (qualquer parte do texto, sem diferenciar maiúsculas).
+  const casaTexto = (...valores) => !termo || valores.some(v => v && String(v).toUpperCase().includes(termo))
+  const tabelaVendas = useMemo(() => listaDaf.filter(r => (casaChassi(r.chassi) || casaTexto(r.cliente))
     && (!filtroTipo || r.estoque_tipo === filtroTipo)
     && (!filtroSituacao || r.situacao === filtroSituacao)), [listaDaf, termo, filtroTipo, filtroSituacao])
   // Busca: chassi (das O.S. faturadas) ou número da O.S. (as em aberto ainda não têm chassi).
-  const tabelaOs = useMemo(() => listaOs.filter(r => (casaChassi(r.chassi) || (termo && r.os.includes(termo)))
+  const tabelaOs = useMemo(() => listaOs.filter(r => (casaChassi(r.chassi) || (termo && r.os.includes(termo)) || casaTexto(r.cliente))
     && (!filtroStatusOs || r.status === filtroStatusOs)), [listaOs, termo, filtroStatusOs])
   // Botões da aba Contratos: Novos = os do card Contratos novos do Resumo; Renovação = os contratos de renovação
   // vendidos (card Contratos renovados). Nesses dois a lista é a mesma do Resumo: tipo de data, "Ver todos" e
-  // "Excluir cancelados" não valem. Os contratos a serem renovados ficam na aba Oportunidade de Renovação.
+  // "Excluir cancelados" não valem. Os contratos a serem renovados ficam na aba Oportunidades.
   const baseContratos = visaoContratos === 'novos' ? listaNovosCrm : visaoContratos === 'renovacao' ? listaRenovadosCrm : listaContratos
-  const tabelaContratos = useMemo(() => baseContratos.filter(r => (casaChassi(r.chassi)
+  const tabelaContratos = useMemo(() => baseContratos.filter(r => (casaChassi(r.chassi) || casaTexto(r.contrato, r.cliente)
     || (termo.length > r.chassi.length && r.chassi && termo.endsWith(r.chassi.toUpperCase())))
     && (!filtroStatus.length || filtroStatus.includes(r.status))
     && (!filtroRenovacao || SITUACOES_CONTRATO[situacaoRenovacao(r)]?.label === filtroRenovacao)
@@ -1208,15 +1393,50 @@ export default function BiPlanosManutencao() {
     .sort((a, b) => a.localeCompare(b, 'pt-BR')), [contratos])
 
   // Colunas ordenáveis de cada tabela (título → valor usado na ordenação). Datas vêm em AAAA-MM-DD, então ordenam como texto.
-  // Aba Oportunidade de Renovação: os mesmos contratos do card Contratos a serem renovados do mês anterior
+  // Aba Oportunidade: os mesmos contratos do card Contratos a serem renovados do mês anterior
   // (Expirado com fim no mês anterior a cada mês do filtro); a busca de chassi procura dentro dessa lista.
-  const tabelaOportunidade = useMemo(() => (verTodosOport ? (contratos?.rows || []).filter(ehExpirado) : listaARenovar).filter(r => casaChassi(r.chassi)
-    || (termo.length > r.chassi.length && r.chassi && termo.endsWith(r.chassi.toUpperCase())))
-    .sort((a, b) => (a.fim || '').localeCompare(b.fim || '') || a.contrato.localeCompare(b.contrato, 'pt-BR', { numeric: true })),
-  [listaARenovar, termo, verTodosOport, contratos])
+  // Aba Oportunidade — dois tipos de oportunidade:
+  // - Novo: veículos DAF vendidos no mês anterior ao filtro (os mesmos do card Veículos vendidos). Realizado = o chassi
+  //   tem contrato no CRM criado na data da venda ou depois (o CRM traz só o final do chassi: compara pelos 8 últimos).
+  // - Renovação: contratos a serem renovados (Expirado com fim no mês anterior). Realizado = renovado (O.S. P04 ou novo
+  //   contrato do chassi depois do fim — regra da coluna Renovado de antes).
+  const contratosDoFinal = useMemo(() => {
+    const m = {}
+    ;(contratos?.rows || []).forEach(c => { if (c.chassi) (m[c.chassi.toUpperCase().slice(-8)] ||= []).push(c) })
+    return m
+  }, [contratos])
+  const linhasOportunidade = useMemo(() => {
+    const vendidos = (verTodosOport ? montarChassis(todasAsDatas) : listaChassis).filter(ehDaf)
+    const novos = vendidos.map(v => {
+      const final = v.chassi.toUpperCase().slice(-8)
+      const fechados = (contratosDoFinal[final] || []).filter(c => !c.criacao || c.criacao >= v.data)
+        .sort((a, b) => (a.criacao || '').localeCompare(b.criacao || ''))
+      const os = Object.entries(osPorChassi).filter(([ch]) => ch.endsWith(final)).flatMap(([, l]) => l)
+        .filter(o => o.dataOs && o.dataOs >= v.data)
+      return {
+        chave: `novo|${v.chassi}|${v.data}`, tipoOp: 'Novo', contrato: fechados[0]?.contrato || '', cliente: v.cliente, chassi: v.chassi, dataVenda: v.data,
+        tipo: fechados[0]?.tipo || '', inicio: fechados[0]?.inicio || null, fim: fechados[0]?.fim || null, status: fechados[0]?.status || '',
+        grupo: v.empresa_nome || '', realizado: fechados.length > 0, // empresa = NotaFiscal_EmpresaNom (relatório de vendas)
+        detalhe: fechados.length ? { contrato: { contrato: '—', chassi: v.chassi, tipo: tipoVeiculo(v.estoque_tipo), inicio: v.data, fim: null, status: 'Veículo vendido' }, renovacao: { os, novos: fechados, modo: 'venda' } } : null,
+      }
+    })
+    const renov = (verTodosOport ? (contratos?.rows || []).filter(ehExpirado) : listaARenovar).map(c => ({
+      chave: `renovacao|${c.contrato}|${c.chassi}`, tipoOp: 'Renovação', contrato: c.contrato, cliente: c.cliente, chassi: c.chassi, dataVenda: null, tipo: c.tipo,
+      inicio: c.inicio, fim: c.fim, status: c.status, grupo: c.grupo, realizado: contratosRenovados.has(c),
+      detalhe: contratosRenovados.has(c) ? { contrato: c, renovacao: contratosRenovados.get(c) } : null,
+    }))
+    return [...novos, ...renov]
+  }, [verTodosOport, listaChassis, vendas, nomesEmpresasSel, contratos, contratosDoFinal, osPorChassi, listaARenovar, contratosRenovados])
+  const tabelaOportunidade = useMemo(() => linhasOportunidade.filter(r => (casaChassi(r.chassi) || casaTexto(r.contrato, r.cliente)
+    || (termo.length > (r.chassi || '').length && r.chassi && termo.endsWith(r.chassi.toUpperCase())))
+    && (!filtroTipoOp || r.tipoOp === filtroTipoOp)
+    && (!filtroRealizado || (filtroRealizado === 'sim') === r.realizado))
+    .sort((a, b) => a.tipoOp.localeCompare(b.tipoOp) || (a.dataVenda || a.fim || '').localeCompare(b.dataVenda || b.fim || '')),
+  [linhasOportunidade, termo, filtroTipoOp, filtroRealizado])
   const ordOportunidade = useOrdenacao(tabelaOportunidade, {
-    Contrato: r => r.contrato, Cliente: r => r.cliente, Chassi: r => r.chassi, Tipo: r => r.tipo, Início: r => r.inicio,
-    Fim: r => r.fim, Status: r => r.status, Renovado: r => (contratosRenovados.has(r) ? 'Sim' : 'Não'), Grupo: r => r.grupo,
+    'Tipo oportunidade': r => r.tipoOp, Contrato: r => r.contrato, Cliente: r => r.cliente, Chassi: r => r.chassi,
+    'Data venda': r => r.dataVenda || '', Tipo: r => r.tipo, Início: r => r.inicio || '', Fim: r => r.fim || '', Status: r => r.status,
+    Realizado: r => (r.realizado ? 'Sim' : 'Não'), Ação: r => nomeAcao(opGravadas.get(r.chave)?.acao_id), Descrição: r => opGravadas.get(r.chave)?.descricao || '', Grupo: r => r.grupo,
   })
   const ordContratos = useOrdenacao(tabelaContratos, {
     Contrato: r => r.contrato, 'O.S.': r => Number(osDoContrato(r)[0]?.os) || 0, 'Abertura O.S.': r => dadosOsContrato(r)[0]?.data_abertura || '',
@@ -1229,14 +1449,14 @@ export default function BiPlanosManutencao() {
     'Data NF': r => r.data_nf || '', 'Valor O.S.': r => r.vl_os ?? -1,
   })
   const ordVendas = useOrdenacao(tabelaVendas, {
-    'Data venda': r => r.data, Empresa: r => nomeEmpresa(r.empresa_nome), Chassi: r => r.chassi, Marca: r => r.marca,
+    'Data venda': r => r.data, Empresa: r => r.empresa_nome, Chassi: r => r.chassi, Marca: r => r.marca,
     Modelo: r => r.modelo, Tipo: r => tipoVeiculo(r.estoque_tipo), Cliente: r => r.cliente, 'Situação contrato': r => r.situacao,
   })
   const campoBusca = (
     <div className="relative">
       <Search className="h-3.5 w-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-      <input type="text" value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar chassi"
-        className={`${inputCls} pl-8 pr-7 py-2 w-60`} />
+      <input type="text" value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar chassi, contrato ou cliente"
+        className={`${inputCls} pl-8 pr-7 py-2 w-80 max-w-full`} />
       {busca && (
         <button type="button" onClick={() => setBusca('')} aria-label="Limpar busca"
           className="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700">
@@ -1268,7 +1488,7 @@ export default function BiPlanosManutencao() {
               <p className="text-[10px] text-slate-500 leading-tight">
                 Última atualização: <strong className="text-slate-700">{carregandoVendas ? '...' : vendas?.lidoEm ? fmtDataHora(new Date(vendas.lidoEm)) : '—'}</strong>
               </p>
-              <button
+              {podeAtualizar && <button
                 type="button"
                 onClick={() => carregarDados(true)}
                 disabled={carregando}
@@ -1277,8 +1497,12 @@ export default function BiPlanosManutencao() {
                 className="flex items-center justify-center p-1.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white shadow-sm disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
               >
                 <RefreshCw className={`h-3.5 w-3.5 ${carregando ? 'animate-spin' : ''}`} />
-              </button>
-              {podeImportar && <MenuEngrenagem importando={importando} onImportar={importarContratos} />}
+              </button>}
+              {(podeImportar || podeCadastrarAcoes) && (
+                <MenuEngrenagem importando={importando} onImportar={importarContratos} podeImportar={podeImportar}
+                  onAcoes={podeCadastrarAcoes ? () => setAcoesAberto(true) : null} />
+              )}
+              {acoesAberto && <ModalCadastroAcoes acoes={acoesCad} onSalvar={salvarAcaoCad} onClose={() => setAcoesAberto(false)} />}
               {/* Manual operacional: página própria, sempre em outra aba. Link com target="_blank" em vez de
                   window.open, que alguns navegadores bloqueiam como pop-up ou abrem na mesma aba. */}
               <a href="/bi/planos-manutencao/manual" target="_blank" rel="noopener noreferrer"
@@ -1317,9 +1541,14 @@ export default function BiPlanosManutencao() {
         </div>
       </div>
 
-      <div className="flex flex-col items-start gap-3">
+      {abasVisiveis.length === 0 && (
+        <div className="bg-white border border-slate-200 rounded-lg p-6 text-center text-[12px] text-slate-500">
+          Nenhuma aba deste BI está liberada para o seu grupo de acesso. Peça ao administrador para liberar em Grupos › BI — Planos de Manutenção.
+        </div>
+      )}
+      <div className={`flex flex-col items-start gap-3 ${abasVisiveis.length ? '' : 'hidden'}`}>
         <div className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-lg p-0.5 w-fit">
-          {ABAS.map(a => (
+          {abasVisiveis.map(a => (
             <button
               key={a}
               type="button"
@@ -1400,6 +1629,20 @@ export default function BiPlanosManutencao() {
                 </select>
               </>
             )}
+            {aba === 'Oportunidades' && (
+              <select value={filtroTipoOp} onChange={e => setFiltroTipoOp(e.target.value)} className={`${inputCls} py-2`} aria-label="Tipo oportunidade">
+                <option value="">Tipo oportunidade: Todos</option>
+                <option value="Novo">Novo</option>
+                <option value="Renovação">Renovação</option>
+              </select>
+            )}
+            {aba === 'Oportunidades' && (
+              <select value={filtroRealizado} onChange={e => setFiltroRealizado(e.target.value)} className={`${inputCls} py-2`} aria-label="Realizado">
+                <option value="">Realizado: Todos</option>
+                <option value="sim">Sim</option>
+                <option value="nao">Não</option>
+              </select>
+            )}
             {campoBusca}
             {/* Na mesma linha, encostado à direita da página. */}
             {aba === 'Contratos' && (
@@ -1414,7 +1657,7 @@ export default function BiPlanosManutencao() {
                 </label>
               </div>
             )}
-            {aba === 'Oportunidade de Renovação' && (
+            {aba === 'Oportunidades' && (
               <label className="ml-auto flex items-center gap-1.5 text-[11px] text-white cursor-pointer select-none">
                 <input type="checkbox" className="h-3.5 w-3.5 accent-blue-600" checked={verTodosOport} onChange={e => setVerTodosOport(e.target.checked)} />
                 Ver todos (sem filtro de data)
@@ -1661,58 +1904,79 @@ export default function BiPlanosManutencao() {
         </div>
       )}
 
-      {aba === 'Oportunidade de Renovação' && (
+      {aba === 'Oportunidades' && (
         <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
           <div className="flex items-center gap-2 px-3 py-2 border-b border-slate-200">
             <Truck className="h-4 w-4 text-blue-600" />
-            <p className="text-[11px] font-semibold text-indigo-950">{verTodosOport ? 'Contratos a serem renovados — todas as datas' : 'Contratos a serem renovados do mês anterior'}</p>
+            <p className="text-[11px] font-semibold text-indigo-950">{verTodosOport ? 'Oportunidades — todas as datas' : 'Oportunidades do mês anterior'}</p>
             <span className="px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 text-[10px] font-bold tabular-nums">
-              {carregandoContratos && !contratos ? '...' : `${tabelaOportunidade.length.toLocaleString('pt-BR')} contrato${tabelaOportunidade.length === 1 ? '' : 's'}`}
+              {carregandoContratos && !contratos ? '...' : `${tabelaOportunidade.length.toLocaleString('pt-BR')} oportunidade${tabelaOportunidade.length === 1 ? '' : 's'}`}
             </span>
-            <BotaoInfo noTitulo titulo="Oportunidade de Renovação" secoes={[['Fonte (arquivo)', FONTE_TABELAS.oportunidade]]} />
+            <BotaoInfo noTitulo titulo="Oportunidades" secoes={[['Fonte (arquivo)', FONTE_TABELAS.oportunidade]]} />
           </div>
           <div className="overflow-x-auto max-h-[65vh] overflow-y-auto">
             <table className="w-full text-[11px]">
               <thead className="bg-slate-50 text-slate-500 uppercase text-[10px] sticky top-0">
                 <tr>
-                  {['Contrato', 'Cliente', 'Chassi', 'Tipo', 'Início', 'Fim', 'Status', 'Renovado', 'Grupo'].map(h => (
+                  {['Tipo oportunidade', 'Contrato', 'Cliente', 'Chassi', 'Data venda', 'Tipo', 'Início', 'Fim', 'Status', 'Realizado', 'Ação', 'Descrição', 'Grupo'].map(h => (
                     <ThOrdena key={h} titulo={h} ordenacao={ordOportunidade} />
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-slate-800">
-                {ordOportunidade.ordenada.map((r, i) => {
-                  const renovado = contratosRenovados.has(r)
-                  return (
-                    <tr key={`${r.contrato}-${r.chassi}-${i}`} className="hover:bg-slate-50">
-                      <td className="px-3 py-1.5 whitespace-nowrap">{r.contrato}</td>
-                      <td className="px-3 py-1.5 whitespace-nowrap">{r.cliente}</td>
-                      <td className="px-3 py-1.5 whitespace-nowrap font-mono">{r.chassi}</td>
-                      <td className="px-3 py-1.5 whitespace-nowrap">{r.tipo}</td>
-                      <td className="px-3 py-1.5 whitespace-nowrap tabular-nums">{fmtData(r.inicio)}</td>
-                      <td className="px-3 py-1.5 whitespace-nowrap tabular-nums">{fmtData(r.fim)}</td>
-                      <td className="px-3 py-1.5 whitespace-nowrap">
-                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${corStatusContrato(r.status)}`}>{r.status}</span>
-                      </td>
-                      <td className="px-3 py-1.5 whitespace-nowrap">
-                        {/* Mesma regra do card Sem contrato renovado: O.S. P04 ou novo contrato do chassi após o fim. */}
-                        <div className="flex items-center gap-1.5">
-                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${renovado ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>{renovado ? 'Sim' : 'Não'}</span>
-                          {/* Pop-up: em qual contrato foi renovado e qual O.S. P04 foi faturada após o fim. */}
-                          {renovado && (
-                            <button type="button" onClick={() => setOportunidadeModal(r)} title="Ver detalhes" aria-label="Ver detalhes"
-                              className="p-0.5 rounded text-blue-600 hover:bg-blue-50">
-                              <FileSearch className="h-3.5 w-3.5" />
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-3 py-1.5 whitespace-nowrap">{r.grupo}</td>
-                    </tr>
-                  )
-                })}
+                {ordOportunidade.ordenada.map((r, i) => (
+                  <tr key={`${r.tipoOp}-${r.contrato}-${r.chassi}-${i}`} className="hover:bg-slate-50">
+                    <td className="px-3 py-1.5 whitespace-nowrap">
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${r.tipoOp === 'Novo' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>{r.tipoOp}</span>
+                    </td>
+                    <td className="px-3 py-1.5 whitespace-nowrap">{r.contrato || <span className="text-slate-300">—</span>}</td>
+                    <td className="px-3 py-1.5 whitespace-nowrap">{r.cliente}</td>
+                    <td className="px-3 py-1.5 whitespace-nowrap font-mono">{r.chassi}</td>
+                    <td className="px-3 py-1.5 whitespace-nowrap tabular-nums">{r.dataVenda ? fmtData(r.dataVenda) : <span className="text-slate-300">—</span>}</td>
+                    <td className="px-3 py-1.5 whitespace-nowrap">{r.tipo || <span className="text-slate-300">—</span>}</td>
+                    <td className="px-3 py-1.5 whitespace-nowrap tabular-nums">{r.inicio ? fmtData(r.inicio) : <span className="text-slate-300">—</span>}</td>
+                    <td className="px-3 py-1.5 whitespace-nowrap tabular-nums">{r.fim ? fmtData(r.fim) : <span className="text-slate-300">—</span>}</td>
+                    <td className="px-3 py-1.5 whitespace-nowrap">
+                      {r.status ? <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${corStatusContrato(r.status)}`}>{r.status}</span> : <span className="text-slate-300">—</span>}
+                    </td>
+                    <td className="px-3 py-1.5 whitespace-nowrap">
+                      {/* Novo: o chassi fechou contrato no CRM depois da venda. Renovação: O.S. P04 ou novo contrato depois do fim. */}
+                      <div className="flex items-center gap-1.5">
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${r.realizado ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>{r.realizado ? 'Sim' : 'Não'}</span>
+                        {r.detalhe && (
+                          <button type="button" onClick={() => setOportunidadeModal(r.detalhe)} title="Ver detalhes" aria-label="Ver detalhes"
+                            className="p-0.5 rounded text-blue-600 hover:bg-blue-50">
+                            <FileSearch className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                    {/* Ação e descrição gravadas no Supabase (bi_planos_oportunidades); o lápis abre a janela para informar. */}
+                    {(() => {
+                      const g = opGravadas.get(r.chave)
+                      const nome = nomeAcao(g?.acao_id)
+                      return (
+                        <>
+                          <td className="px-3 py-1.5 whitespace-nowrap">
+                            <div className="flex items-center gap-1.5">
+                              {nome ? <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-indigo-100 text-indigo-700">{nome}</span> : <span className="text-slate-300">—</span>}
+                              {(podeDefinirAcao || g) && (
+                                <button type="button" onClick={() => setAcaoModal(r)} title={podeDefinirAcao ? 'Informar ação' : 'Ver ação'} aria-label="Informar ação"
+                                  className="p-0.5 rounded text-blue-600 hover:bg-blue-50">
+                                  {podeDefinirAcao ? <Pencil className="h-3.5 w-3.5" /> : <FileSearch className="h-3.5 w-3.5" />}
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-3 py-1.5 max-w-[260px] truncate" title={g?.descricao || undefined}>{g?.descricao || <span className="text-slate-300">—</span>}</td>
+                        </>
+                      )
+                    })()}
+                    <td className="px-3 py-1.5 whitespace-nowrap">{r.grupo}</td>
+                  </tr>
+                ))}
                 {tabelaOportunidade.length === 0 && (
-                  <tr><td colSpan={9} className="px-3 py-6 text-center text-slate-400">{carregandoContratos ? 'Carregando...' : 'Nenhum contrato a renovar no mês anterior.'}</td></tr>
+                  <tr><td colSpan={13} className="px-3 py-6 text-center text-slate-400">{carregandoContratos ? 'Carregando...' : 'Nenhuma oportunidade no mês anterior.'}</td></tr>
                 )}
               </tbody>
             </table>
@@ -1790,7 +2054,7 @@ export default function BiPlanosManutencao() {
                 {ordVendas.ordenada.map(r => (
                   <tr key={r.chassi} className="hover:bg-slate-50">
                     <td className="px-3 py-1.5 whitespace-nowrap tabular-nums">{fmtData(r.data)}</td>
-                    <td className="px-3 py-1.5 whitespace-nowrap">{nomeEmpresa(r.empresa_nome)}</td>
+                    <td className="px-3 py-1.5 whitespace-nowrap">{r.empresa_nome}</td>
                     <td className="px-3 py-1.5 whitespace-nowrap font-mono">{r.chassi}</td>
                     <td className="px-3 py-1.5 whitespace-nowrap">{r.marca}</td>
                     <td className="px-3 py-1.5 whitespace-nowrap">{r.modelo}</td>
@@ -1821,9 +2085,13 @@ export default function BiPlanosManutencao() {
       )}
 
       {osModal && <ModalOs venda={osModal} onFechar={() => setOsModal(null)} />}
+      {acaoModal && (
+        <ModalAcaoOportunidade linha={acaoModal} gravada={opGravadas.get(acaoModal.chave)} acoes={acoesCad} podeEditar={podeDefinirAcao}
+          onSalvar={(dados) => salvarOportunidade(acaoModal, dados)} onClose={() => setAcaoModal(null)} />
+      )}
       {vendaModal && <ModalVenda contrato={vendaModal} vendas={vendasDoChassi(vendaModal.chassi)} onFechar={() => setVendaModal(null)} />}
       {oportunidadeModal && (
-        <ModalRenovacao contrato={oportunidadeModal} renovacao={contratosRenovados.get(oportunidadeModal)}
+        <ModalRenovacao contrato={oportunidadeModal.contrato} renovacao={oportunidadeModal.renovacao}
           onFechar={() => setOportunidadeModal(null)} />
       )}
       {renovacaoModal && (
@@ -1870,7 +2138,7 @@ function ModalVenda({ contrato, vendas, onFechar }) {
                   <tr key={i} className={v.cancelada ? 'text-slate-400 line-through' : ''}>
                     <td className="px-3 py-1.5 whitespace-nowrap tabular-nums">{fmtData(v.data)}</td>
                     <td className="px-3 py-1.5 whitespace-nowrap tabular-nums">{v.nf}</td>
-                    <td className="px-3 py-1.5 whitespace-nowrap">{nomeEmpresa(v.empresa_nome || '')}</td>
+                    <td className="px-3 py-1.5 whitespace-nowrap">{v.empresa_nome}</td>
                     <td className="px-3 py-1.5 whitespace-nowrap font-mono">{v.chassi}</td>
                     <td className="px-3 py-1.5 whitespace-nowrap font-mono">{v.placa}</td>
                     <td className="px-3 py-1.5 whitespace-nowrap">{v.marca}</td>
@@ -1903,11 +2171,13 @@ function ModalRenovacao({ contrato, renovacao, onFechar }) {
       <div className="bg-white rounded-lg shadow-xl w-full min-w-0 max-w-3xl max-h-[85vh] flex flex-col">
         <div className="flex items-start justify-between gap-3 px-4 py-3 border-b border-slate-200">
           <div>
-            <p className="text-sm font-bold text-slate-900">{modo === 'transicao' ? 'Transição' : modo === 'substituicao' || modo === 'substituto' ? 'Substituição' : 'Renovação'} do Contrato — Plano de Manutenção</p>
+            <p className="text-sm font-bold text-slate-900">{modo === 'venda' ? 'Contrato Novo — Plano de Manutenção' : `${modo === 'transicao' ? 'Transição' : modo === 'substituicao' || modo === 'substituto' ? 'Substituição' : 'Renovação'} do Contrato — Plano de Manutenção`}</p>
             <p className="text-[11px] text-slate-500 mt-0.5">
-              Contrato {contrato.contrato} · Chassi <span className="font-mono">{contrato.chassi}</span> · {contrato.tipo} · Início em {fmtData(contrato.inicio)} · Fim em {fmtData(contrato.fim)}
+              {modo === 'venda'
+                ? <>Chassi <span className="font-mono">{contrato.chassi}</span> · Veículo {contrato.tipo} · Venda em {fmtData(contrato.inicio)}</>
+                : <>Contrato {contrato.contrato} · Chassi <span className="font-mono">{contrato.chassi}</span> · {contrato.tipo} · Início em {fmtData(contrato.inicio)} · Fim em {fmtData(contrato.fim)}</>}
             </p>
-            <span className={`inline-block mt-1.5 px-1.5 py-0.5 rounded text-[10px] font-semibold ${corStatusContrato(contrato.status)}`}>{contrato.status}</span>
+            {modo !== 'venda' && <span className={`inline-block mt-1.5 px-1.5 py-0.5 rounded text-[10px] font-semibold ${corStatusContrato(contrato.status)}`}>{contrato.status}</span>}
           </div>
           <button type="button" onClick={onFechar} aria-label="Fechar" className="p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100">
             <X className="h-4 w-4" />
@@ -1920,7 +2190,7 @@ function ModalRenovacao({ contrato, renovacao, onFechar }) {
               {modo === 'transicao' ? 'Ordens de Serviço P04 do chassi desde o início do contrato anterior' : 'Ordens de Serviço'}
             </p>
             {Object.keys(porOs).length === 0 ? (
-              <p className="text-[11px] text-slate-400">{modo === 'transicao' ? 'Nenhuma O.S. P04 do chassi nesse período.' : 'Nenhuma O.S. P04 após o fim do contrato.'}</p>
+              <p className="text-[11px] text-slate-400">{modo === 'transicao' ? 'Nenhuma O.S. P04 do chassi nesse período.' : modo === 'venda' ? 'Nenhuma O.S. P04 do chassi depois da venda.' : 'Nenhuma O.S. P04 após o fim do contrato.'}</p>
             ) : (
               <div className="space-y-3">
                 {Object.values(porOs).map(linhas => (
@@ -1964,7 +2234,7 @@ function ModalRenovacao({ contrato, renovacao, onFechar }) {
                 : modo === 'anterior' ? 'Contrato anterior, que este renovou'
                 : modo === 'substituto' ? 'Contrato cancelado, que este substituiu'
                 : modo === 'transicao' ? 'Contrato anterior do chassi, de onde vem a transição'
-                : 'Novo contrato do chassi'}
+                : modo === 'venda' ? 'Contrato fechado depois da venda' : 'Novo contrato do chassi'}
             </p>
             {!renovacao?.novos.length ? (
               <p className="text-[11px] text-slate-400">Nenhum novo contrato do chassi que vá além do fim deste contrato.</p>

@@ -569,12 +569,25 @@ export const ACOES_POR_MENU = [
       { value: 'excluir', label: 'Excluir' },
     ],
   },
-  // BI Planos de Manutenção — quem só tem o menu vê tudo; editar metas e importar o arquivo do CRM são ações à parte.
+  // BI Planos de Manutenção — botões do topo, da engrenagem e das abas (sem flag = negado; admin sempre pode).
   {
     menuPath: 'bi/planos-manutencao',
     acoes: [
-      { value: 'editar_metas',     label: 'Editar e Salvar Metas (aba Resultado › Tabela)' },
+      { value: 'atualizar',        label: 'Atualizar (botão azul do topo — relê os relatórios do SharePoint)' },
       { value: 'importar_arquivo', label: 'Importar Arquivo do CRM DAF (engrenagem)' },
+      { value: 'cadastrar_acoes',  label: 'Cadastro de Ações das Oportunidades (engrenagem — incluir, renomear, ativar/inativar)' },
+    ],
+  },
+  {
+    menuPath: 'bi/planos-manutencao/resultado',
+    acoes: [
+      { value: 'editar_metas', label: 'Editar e Salvar Metas (Tabela › Editar metas)' },
+    ],
+  },
+  {
+    menuPath: 'bi/planos-manutencao/oportunidades',
+    acoes: [
+      { value: 'definir_acao', label: 'Informar Ação e Descrição (lápis da coluna Ação)' },
     ],
   },
   // Campanha Pós-Venda (BI) — botões de cada aba.

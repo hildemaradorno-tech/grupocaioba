@@ -355,7 +355,7 @@ export default function PermissoesMatriz() {
                     const isOpen = busca.trim() ? true : openSections.has(row.key)
                     return (
                       <tr key={row.key} className="bg-slate-100 hover:bg-slate-200/70 transition-colors">
-                        <td className="sticky left-0 z-10 bg-slate-100 hover:bg-slate-200/70 border-r border-b border-slate-200 px-4 py-2">
+                        <td className="sticky left-0 z-10 bg-slate-100 hover:bg-slate-200 border-r border-b border-slate-200 px-4 py-2">
                           <button
                             onClick={() => toggleSection(row.key)}
                             className="flex items-center gap-2 w-full text-left"
@@ -400,7 +400,7 @@ export default function PermissoesMatriz() {
                     const acoesAbertas = openAcoesMenu.has(row.key)
                     return (
                       <tr key={row.key} className="bg-white hover:bg-blue-50/30 transition-colors group">
-                        <td className="sticky left-0 z-10 bg-white group-hover:bg-blue-50/30 border-r border-b border-slate-100 px-4 py-2">
+                        <td className="sticky left-0 z-10 bg-white group-hover:bg-blue-50 border-r border-b border-slate-100 px-4 py-2">
                           <div className="flex items-center gap-2" style={{ paddingLeft: `${row.depth * 16}px` }}>
                             <span className="text-sm text-slate-700 truncate">{row.label}</span>
                             {minhasAcoes.length > 0 && (
@@ -447,7 +447,7 @@ export default function PermissoesMatriz() {
                   // type === 'action'
                   return (
                     <tr key={row.key} className="bg-blue-50/40 hover:bg-blue-50/70 transition-colors group">
-                      <td className="sticky left-0 z-10 bg-blue-50/40 group-hover:bg-blue-50/70 border-r border-b border-blue-100 px-4 py-1.5">
+                      <td className="sticky left-0 z-10 bg-blue-50 group-hover:bg-blue-100 border-r border-b border-blue-100 px-4 py-1.5">
                         <div
                           className="flex items-center gap-1.5"
                           style={{ paddingLeft: `${row.depth * 16}px` }}
