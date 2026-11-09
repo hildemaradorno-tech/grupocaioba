@@ -89,11 +89,14 @@ const BLOCO3_PV_TEMPLATE = [
       { id: 1, indicador: 'Faturamento Total Oficina (Peças + Serviços)', orientacao: '>', metrica: 'R$',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
       { id: 2, indicador: 'Margem Bruta Serviços',                        orientacao: '>', metrica: '%',   metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
       { id: 3, indicador: 'Margem Bruta Peças Oficina',                   orientacao: '>', metrica: '%',   metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      // id 7 (Penetração Plano de Manutenção) trocado a pedido pelos indicadores do Consultor de Plano
+      // (mesmos números e metas do BI Planos; ids novos para não herdar o peso do 7).
+      { id: 10, indicador: 'Contratos novos',                             orientacao: '>', metrica: 'un',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      { id: 11, indicador: 'Contratos renovados',                         orientacao: '>', metrica: 'un',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
       { id: 4, indicador: 'O.S. aberta sem veículo',                      orientacao: '<', metrica: '%',   metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
       { id: 5, indicador: 'Absorção de Pós-Venda',                        orientacao: '>', metrica: '%',   metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
       { id: 6, indicador: 'Recusa de Garantia',                           orientacao: '<', metrica: '%',   metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
-      { id: 7, indicador: 'Penetração Plano de Manutenção',               orientacao: '>', metrica: '%',   metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
-      { id: 8, indicador: 'NPS (Net Promoter Score)',                     orientacao: '>', metrica: 'pts', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      { id: 8, indicador: 'NPS (Net Promoter Score)',                    orientacao: '>', metrica: 'pts', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
       { id: 9, indicador: 'O.S. abertas >= 30 dias',                      orientacao: '<', metrica: '%',   metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
     ],
   },
@@ -627,9 +630,13 @@ const INDICADORES_AGENDAMENTO_QUALIDADE = {
 }
 // Planos de manutenção (quantidade + meta do BI), mesmos do CONSULTOR DE PLANO DE MANUTENÇÃO.
 const INDICADORES_PLANOS_QUALIDADE = { 'Contratos novos': 'novos', 'Contratos renovados': 'renovados' }
+// Quadros dos gerentes que recebem esses indicadores (pelo nome do indicador): o de Processos e
+// Qualidade (garantia, agendamento, planos) e o Gerente Geral (planos, no lugar da Penetração).
+// A lista de indicadores segue o modelo (BLOCO3_PV_TEMPLATE) — base guardada antes da troca se ajusta.
+const QUADROS_PV_COM_EXTRAS = new Set(['GERENTE DE PROCESSOS E QUALIDADE', 'GERENTE GERAL PÓS-VENDAS'])
 function comGarantiasQualidade(base, garantia, agendamento = null, planos = null) {
   return base.map(q => {
-    if (q.tituloGerente !== 'GERENTE DE PROCESSOS E QUALIDADE') return q
+    if (!QUADROS_PV_COM_EXTRAS.has(q.tituloGerente)) return q
     const modelo = BLOCO3_PV_TEMPLATE.find(t => t.tituloGerente === q.tituloGerente)
     const kpis = modelo.kpis.map(t => q.kpis.find(k => k.id === t.id) || t)
     return {

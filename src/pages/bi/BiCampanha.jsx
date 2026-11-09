@@ -360,7 +360,8 @@ export default function BiCampanha() {
   const [busca, setBusca] = useState('')
   const [carregarTodas, setCarregarTodas] = useState(false)
   const [fecharPendente, setFecharPendente] = useState(false)
-  useEffect(() => { setCarregarTodas(false); setFecharPendente(false) }, [ano, mes, unidade])
+  // Trocar empresa/ano/mês volta para a sub-aba Equipe (sempre abre nela).
+  useEffect(() => { setCarregarTodas(false); setFecharPendente(false); setSubAba('equipe') }, [ano, mes, unidade])
   const podeClicarFechar = !foto && funcionarios !== null && diario !== null && !fecharPendente
   const [fechando, setFechando] = useState(false)
   const [msgFech, setMsgFech] = useState(null)
@@ -574,7 +575,23 @@ export default function BiCampanha() {
 // Sub-abas da Apuração/Resultado, pelo quadro do Bloco 3 de cada função: GERENTE/COORDENADOR/SUPERVISÃO…
 // = Gerentes; o resto (consultores, mecânicos, vendedores, sem quadro) = Equipe. Funções de quadro de setor
 // (SETOR…, Garantias) vão pelo nome do cargo: liderança → Gerentes; os demais → Equipe.
-const SUB_ABAS_APURACAO = [{ k: 'gerentes', label: 'Gerentes' }, { k: 'equipe', label: 'Equipe' }]
+// Equipe primeiro (é a que abre sempre); Gerentes depois.
+const SUB_ABAS_APURACAO = [{ k: 'equipe', label: 'Equipe' }, { k: 'gerentes', label: 'Gerentes' }]
+// Barra das sub-abas — mesmo modelo das sub-abas do Bloco 3 - Serviços da Matriz KPIs: ativa em azul
+// cheio, as outras em azul-claro, linha azul embaixo.
+function BarraSubAbas({ abas, ativa, contagem, onEscolher }) {
+  return (
+    <div className="flex gap-1.5 border-b-2 border-blue-600 px-3 pt-3">
+      {abas.map((s) => (
+        <button key={s.k} type="button" aria-pressed={s.k === ativa} onClick={() => onEscolher?.(s.k)}
+          className={`px-5 py-2 text-[11px] font-semibold rounded-t-md transition-colors ${
+            s.k === ativa ? 'bg-blue-600 text-white shadow-sm' : 'bg-blue-50 text-blue-800 hover:bg-blue-100'}`}>
+          {s.label} <span className={`font-normal ${s.k === ativa ? 'text-blue-100' : 'text-blue-500'}`}>({contagem[s.k].length})</span>
+        </button>
+      ))}
+    </div>
+  )
+}
 const LIDERANCA = /^(GERENTE|COORDENADOR|SUPERVIS|CHEFE|LIDER|ENCARREGAD)/
 function subAbaDaFuncao(cfg, nomeFuncao) {
   const q = normNome(cfg.quadro || '')
@@ -695,17 +712,7 @@ function AbaApuracao({ campanha, regras, unidade, ehTrucks, diario, consultores,
       ) : (
         <div className={CARD}>
           {/* Com busca, valem todas as sub-abas (a pessoa pode estar em qualquer uma). */}
-          {!buscaAtiva && (
-            <div className="flex gap-1 border-b border-slate-200 px-3">
-              {subAbasComFuncao.map((s) => (
-                <button key={s.k} type="button" onClick={() => onSubAba?.(s.k)}
-                  className={`px-3 py-2 text-[11px] font-semibold border-b-2 -mb-px transition-colors ${
-                    s.k === ativa ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
-                  {s.label} <span className="font-normal text-slate-400">({porSubAba[s.k].length})</span>
-                </button>
-              ))}
-            </div>
-          )}
+          {!buscaAtiva && <BarraSubAbas abas={subAbasComFuncao} ativa={ativa} contagem={porSubAba} onEscolher={onSubAba} />}
           {/* Com busca: uma tabela só (um cabeçalho) com as funções de todas as sub-abas. */}
           {buscaAtiva
             ? tabela(subAbasComFuncao.flatMap((s) => (s.k === 'equipe' ? renderPorSetor(porSubAba[s.k]) : renderFuncoes(porSubAba[s.k]))), 'busca')
@@ -905,15 +912,7 @@ function AbaPagamento({ ano, mes, unidade, periodicidade, funcionarios, erroFunc
       {mesesProntos && titulos.length > 0 && (
         <div className={CARD}>
           {!ehTrucks && !buscaNorm && subAbasComFuncao.length > 0 && (
-            <div className="flex gap-1 border-b border-slate-200 px-3">
-              {subAbasComFuncao.map((s) => (
-                <button key={s.k} type="button" onClick={() => onSubAba?.(s.k)}
-                  className={`px-3 py-2 text-[11px] font-semibold border-b-2 -mb-px transition-colors ${
-                    s.k === ativa ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
-                  {s.label} <span className="font-normal text-slate-400">({porSubAba[s.k].length})</span>
-                </button>
-              ))}
-            </div>
+            <BarraSubAbas abas={subAbasComFuncao} ativa={ativa} contagem={porSubAba} onEscolher={onSubAba} />
           )}
           <div className="overflow-x-auto">
             <table className="w-full table-fixed text-xs border-collapse">
