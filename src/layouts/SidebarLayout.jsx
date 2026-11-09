@@ -616,7 +616,7 @@ export default function SidebarLayout() {
             {canViewSection('_bi.kpis') && (
               <>
                 <div className="mx-3 my-2 border-t border-blue-800/50" />
-                <FlyItem to="/kpi/matriz" icon={BarChart2} onClose={closeFlyout}>Matriz KPIs</FlyItem>
+                <FlyItem to="/kpi/matriz" icon={BarChart2} onClose={closeFlyout}>Matriz KPIs - DAF</FlyItem>
               </>
             )}
             {/* Campanha Pós-Venda logo abaixo da Matriz KPIs (usa os blocos da Matriz). */}

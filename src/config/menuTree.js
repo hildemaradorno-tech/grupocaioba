@@ -354,7 +354,7 @@ export const MENU_TREE = [
         // Permissões individuais mantidas (controlam quais abas aparecem em /kpi/matriz),
         // mas o grupo inteiro navega direto pra página única — ver navTo no Home.jsx (TabelaMenu).
         key: '_bi.kpis',
-        label: 'Matriz KPIs',
+        label: 'Matriz KPIs - DAF',
         navTo: 'kpi/matriz',
         children: [
           { key: 'kpi/resultados', label: 'Resultados' },

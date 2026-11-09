@@ -60,7 +60,7 @@ export default function KpiMatriz() {
     <div className="flex flex-col h-full">
       <div className="px-6 pt-6 flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-xl font-bold text-slate-800">Matriz KPIs</h1>
+          <h1 className="text-xl font-bold text-slate-800">Matriz KPIs - DAF</h1>
           <p className="text-sm text-slate-500 mt-0.5">Indicadores de desempenho consolidados por bloco</p>
         </div>
         {/* Direita: linha 1 = Visão/Meses · Ano · Atualizar; linha 2 = "Dados sincronizados" menor, embaixo. */}
