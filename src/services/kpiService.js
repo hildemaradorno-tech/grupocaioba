@@ -52,6 +52,7 @@ function buildUrl(endpoint, params = {}) {
   if (params.empresaChefeOficina) qs.set('empresaChefeOficina', params.empresaChefeOficina)
   if (params.empresaFunilaria) qs.set('empresaFunilaria', params.empresaFunilaria)
   if (params.empresaGarantia) qs.set('empresaGarantia', params.empresaGarantia)
+  if (params.apenas) qs.set('apenas', params.apenas)
   if (params.apenas) qs.set('apenas', params.apenas) // Bloco 3 - Serviços: só um quadro por empresa (Campanha)
   if (params.mecanico && params.mecanico !== 'todos') qs.set('mecanico', params.mecanico)
   if (params.vendedor) qs.set('vendedor', params.vendedor)
@@ -103,6 +104,64 @@ export async function fetchBloco2(p)        { return tryFetch('bloco2',         
 export async function fetchBloco3PosVenda(p){ return tryFetch('bloco3-pos-venda', MOCK_BLOCO3_POS_VENDA,  p) }
 export async function fetchBloco3Pecas(p)   { return tryFetch('bloco3-pecas',     MOCK_BLOCO3_PECAS,      p) }
 export async function fetchBloco3Servicos(p){ return tryFetch('bloco3-servicos',  MOCK_BLOCO3_SERVICOS,   p) }
+
+// ── Campanha Pós-Venda: quadros da Matriz em lote ─────────────────────────────
+// Os pedidos feitos no mesmo instante (todas as pessoas de uma função) viram um POST só por quadro
+// (/campanha-lote). Resolve com o quadro, ou null se não veio (backend fora do ar / falha).
+// tipo: 'servicos' | 'posvenda' | 'pecas'; params: os mesmos do GET (consultor, mecanico, empresaOficina…).
+const _lote = { fila: [], timer: null }
+
+export function pedirQuadroCampanha({ year, tipo, quadro, params = {}, forcar = false }) {
+  const chave = cacheKey(`lote:${tipo}:${quadro}`, { year, ...params })
+  if (!forcar) {
+    const hit = cacheGet(chave)
+    if (hit) return Promise.resolve(hit)
+  }
+  if (_emAndamento.has(chave)) return _emAndamento.get(chave)
+  const p = new Promise((resolve) => {
+    _lote.fila.push({ chave, year, tipo, quadro, params, resolve })
+    if (!_lote.timer) _lote.timer = setTimeout(enviarLotes, 40)
+  })
+  _emAndamento.set(chave, p)
+  return p
+}
+
+async function enviarLotes() {
+  const fila = _lote.fila
+  _lote.fila = []
+  _lote.timer = null
+  // Um POST por ano + quadro: uma função lenta (ex.: pessoa sem base guardada) não segura as outras.
+  const grupos = new Map()
+  for (const item of fila) {
+    const g = `${item.year}|${item.tipo}|${item.quadro}`
+    if (!grupos.has(g)) grupos.set(g, [])
+    grupos.get(g).push(item)
+  }
+  await Promise.all([...grupos.values()].map(async (itens) => {
+    let resultados = null
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
+    try {
+      const res = await fetch(`${BASE}/campanha-lote`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          year: itens[0].year,
+          pedidos: itens.map((it, i) => ({ k: String(i), tipo: it.tipo, quadro: it.quadro, params: it.params })),
+        }),
+        signal: controller.signal,
+      })
+      if (res.ok) resultados = (await res.json())?.resultados || null
+    } catch { /* backend fora do ar: fica null ("—") */ }
+    finally { clearTimeout(timer) }
+    itens.forEach((it, i) => {
+      const q = resultados?.[String(i)] || null
+      if (q) cacheSet(it.chave, q)
+      _emAndamento.delete(it.chave)
+      it.resolve(q)
+    })
+  }))
+}
 
 // Metas aprovadas por período dos indicadores da aba Operacional (null se indisponível)
 export async function fetchMetasOperacional(year) {

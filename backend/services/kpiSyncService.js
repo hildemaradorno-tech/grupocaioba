@@ -42,13 +42,23 @@ const FONTES_EXTRATOR = [
 let emExecucao = false
 export function sincronizacaoEmAndamento() { return emExecucao }
 
+// Tarefas do fim da sincronização (ex.: pré-cálculo da Campanha Pós-Venda, ~40 s, registrado em
+// routes/kpi.js). Rodam antes de liberar o botão Atualizar: a Campanha recarrega já com os números novos.
+// Falha numa delas não marca a sincronização como erro.
+const _aoTerminar = []
+export function aoTerminarSincronizacao(fn) { _aoTerminar.push(fn) }
+
 export async function executarSincronizacao(origem, usuarioEmail = null) {
   if (!getSupabaseAdmin()) throw new Error('SUPABASE_URL/SUPABASE_SERVICE_KEY não configurados no backend.')
   if (emExecucao) throw new Error('Já existe uma sincronização em andamento.')
   emExecucao = true
 
   try {
-    return await _executar(origem, usuarioEmail)
+    const resultado = await _executar(origem, usuarioEmail)
+    for (const fn of _aoTerminar) {
+      try { await fn(new Date().getFullYear()) } catch (err) { console.error('[KPI Sync] tarefa pós-sincronização falhou:', err.message) }
+    }
+    return resultado
   } finally {
     emExecucao = false
   }

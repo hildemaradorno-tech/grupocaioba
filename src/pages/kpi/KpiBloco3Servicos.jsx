@@ -17,6 +17,8 @@ const QUADRO_OFICINA   = 'SETOR DE MECÂNICA'
 const QUADRO_CHEFE_OFICINA = 'CHEFE DE OFICINA'
 const QUADRO_FUNILARIA = 'SETOR FUNILARIA/PINTURA'
 const QUADRO_GARANTIA  = 'SETOR GARANTIA'
+const QUADRO_PLANOS    = 'CONSULTOR DE PLANO DE MANUTENÇÃO'
+const QUADRO_AGENDAMENTO = 'AGENDAMENTO DE SERVIÇOS' // indicadores do BI Agendamento de Serviços; sem seletor (todas as empresas)
 const EMPRESAS_OFICINA = ['CAMPO GRANDE', 'DOURADOS', 'TRÊS LAGOAS', 'CHAPADÃO DO SUL']
 
 const COR_HEADER = {
@@ -26,6 +28,7 @@ const COR_HEADER = {
   purple: 'bg-purple-700 text-white',
   amber:  'bg-amber-700  text-white',
   rose:   'bg-rose-700   text-white',
+  emerald: 'bg-emerald-700 text-white',
 }
 
 const COR_SUBHEADER = {
@@ -35,6 +38,7 @@ const COR_SUBHEADER = {
   purple: 'bg-purple-50 border-purple-200',
   amber:  'bg-amber-50  border-amber-200',
   rose:   'bg-rose-50   border-rose-200',
+  emerald: 'bg-emerald-50 border-emerald-200',
 }
 
 function calcAtingimento(orientacao, meta, realizado) {
@@ -542,11 +546,17 @@ const normNomePessoa = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g,
 
 // pessoasPermitidas (opcional): só esses nomes aparecem nos seletores de Consultor/Mecânico — usado no
 // pop-up da Campanha Pós-Venda, para listar só as pessoas da empresa selecionada lá.
-function ServicosQuadros({ year, activePeriods, mesTotalKey, somenteLeitura = false, apenas = null, pessoasPermitidas = null, empresaOficinaInicial = null }) {
-  const permitidos = pessoasPermitidas ? new Set(pessoasPermitidas.map(normNomePessoa)) : null
+const SEM_LISTA = async () => []
 
-  const consultorFiltro = usePessoaFiltro(fetchConsultoresServicos, year)
-  const mecanicoFiltro  = usePessoaFiltro(fetchMecanicos, year)
+// grupo (opcional): só esses quadros aparecem (sub-abas da tela). Sem Consultor/Mecânico no grupo,
+// não busca as listas de pessoas e pede ao backend só os quadros por empresa (pula a parte cara).
+function ServicosQuadros({ year, activePeriods, mesTotalKey, somenteLeitura = false, apenas = null, grupo = null, pessoasPermitidas = null, empresaOficinaInicial = null }) {
+  const permitidos = pessoasPermitidas ? new Set(pessoasPermitidas.map(normNomePessoa)) : null
+  const visivel = (t) => (!apenas || t === apenas) && (!grupo || grupo.includes(t))
+  const temPessoas = visivel(QUADRO_CONSULTOR) || visivel(QUADRO_MECANICO)
+
+  const consultorFiltro = usePessoaFiltro(temPessoas ? fetchConsultoresServicos : SEM_LISTA, year)
+  const mecanicoFiltro  = usePessoaFiltro(temPessoas ? fetchMecanicos : SEM_LISTA, year)
 
   // SETOR DE MECÂNICA/CHEFE DE OFICINA/SETOR FUNILARIA-PINTURA não têm pessoa — exigem escolher a
   // empresa (mesma exigência do Consultor/Mecânico exigir pessoa) pra mostrar o valor; sem isso o
@@ -564,6 +574,8 @@ function ServicosQuadros({ year, activePeriods, mesTotalKey, somenteLeitura = fa
     empresaChefeOficina: empresaChefeOficina || undefined,
     empresaFunilaria: empresaFunilaria || undefined,
     empresaGarantia: empresaGarantia || undefined,
+    // Atalho do backend (não monta Consultor/Mecânico): só o Consultor de Plano, ou só os quadros por empresa.
+    apenas: temPessoas ? undefined : visivel(QUADRO_PLANOS) ? (apenas === QUADRO_PLANOS ? QUADRO_PLANOS : undefined) : QUADRO_OFICINA,
   })
 
   // Overlay otimista: aplicado por cima do que veio do backend assim que o usuário
@@ -615,7 +627,7 @@ function ServicosQuadros({ year, activePeriods, mesTotalKey, somenteLeitura = fa
 
   return (
       <div className="space-y-6">
-        {quadrosComPeso.filter(q => !apenas || q.tituloGerente === apenas).map((quadro, idx) => {
+        {quadrosComPeso.filter(q => visivel(q.tituloGerente)).map((quadro, idx) => {
           const ehConsultor     = quadro.tituloGerente === QUADRO_CONSULTOR
           const ehMecanico      = quadro.tituloGerente === QUADRO_MECANICO
           const ehOficina       = quadro.tituloGerente === QUADRO_OFICINA
@@ -661,16 +673,28 @@ function ServicosQuadros({ year, activePeriods, mesTotalKey, somenteLeitura = fa
   )
 }
 
-// Aba única "Serviços": quadros de Pós-Venda (gerentes) primeiro; Consultor e Mecânico por último.
-export default function KpiBloco3Servicos() {
-  const periodState = usePeriodSelector('kpi-matriz')
+// Sub-abas do Bloco 3 - Serviços, nesta ordem; ao entrar, sempre abre em Equipe.
+const ABAS_SERVICOS = [
+  { key: 'equipe',   label: 'Equipe',   quadros: [QUADRO_CONSULTOR, QUADRO_PLANOS, QUADRO_MECANICO, QUADRO_CHEFE_OFICINA] },
+  { key: 'setores',  label: 'Setores',  quadros: [QUADRO_OFICINA, QUADRO_FUNILARIA, QUADRO_GARANTIA, QUADRO_AGENDAMENTO] },
+  { key: 'gerentes', label: 'Gerentes' },
+]
+
+export default function KpiBloco3Servicos({ periodState: periodoMatriz = null }) {
+  // Na Matriz KPIs o seletor de Visão/Meses fica no topo (acima das abas) e chega por prop.
+  const periodoProprio = usePeriodSelector('kpi-matriz')
+  const periodState = periodoMatriz || periodoProprio
   const { activePeriods } = periodState
   const { year } = useKpiYear()
   const { hasActionOrDefault } = useAuth()
   const canEdit = hasActionOrDefault('kpi/bloco3-servicos', 'editar')
+  const [abaKey, setAbaKey] = useState('equipe')
+  const aba = ABAS_SERVICOS.find(a => a.key === abaKey) ?? ABAS_SERVICOS[0]
 
   return (
     <div className="p-6 space-y-5">
+      {/* Título, legenda e sub-abas fixos no topo ao rolar a página (como as abas da Matriz). */}
+      <div className="sticky top-0 z-20 -mx-6 -mt-6 px-6 pt-6 space-y-5 bg-slate-50">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-xl font-bold text-slate-800">Indicadores de Serviços</h1>
@@ -679,10 +703,27 @@ export default function KpiBloco3Servicos() {
         <PeriodLegend />
       </div>
 
-      <PeriodSelector state={periodState} inlineTrimestral hideLegend modes={MODES_COM_SEMANAL} />
+      {!periodoMatriz && <PeriodSelector state={periodState} inlineTrimestral hideLegend modes={MODES_COM_SEMANAL} />}
 
-      <PosVendaQuadros year={year} activePeriods={activePeriods} mesTotalKey={periodState.mesTotalKey} somenteLeitura={!canEdit} />
-      <ServicosQuadros year={year} activePeriods={activePeriods} mesTotalKey={periodState.mesTotalKey} somenteLeitura={!canEdit} />
+      <div className="flex gap-1 border-b border-slate-200">
+        {ABAS_SERVICOS.map(a => (
+          <button
+            key={a.key}
+            type="button"
+            onClick={() => setAbaKey(a.key)}
+            className={`px-4 py-2 text-[11px] font-semibold border-b-2 -mb-px transition-colors ${
+              a.key === aba.key ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            {a.label}
+          </button>
+        ))}
+      </div>
+      </div>
+
+      {aba.key === 'gerentes'
+        ? <PosVendaQuadros year={year} activePeriods={activePeriods} mesTotalKey={periodState.mesTotalKey} somenteLeitura={!canEdit} />
+        : <ServicosQuadros key={aba.key} year={year} activePeriods={activePeriods} mesTotalKey={periodState.mesTotalKey} somenteLeitura={!canEdit} grupo={aba.quadros} />}
     </div>
   )
 }
@@ -694,7 +735,7 @@ export default function KpiBloco3Servicos() {
 export function Bloco3ServicosVisualizacao({ ano, mes, quadro = null, pessoas = null, empresa = null }) {
   const periodState = usePeriodSelector(null, 'semanal')
   const { activePeriods, setWeekMonth, toggleS } = periodState
-  const doServicos = [QUADRO_CONSULTOR, QUADRO_MECANICO, QUADRO_OFICINA, QUADRO_CHEFE_OFICINA, QUADRO_FUNILARIA, QUADRO_GARANTIA].includes(quadro)
+  const doServicos = [QUADRO_CONSULTOR, QUADRO_MECANICO, QUADRO_OFICINA, QUADRO_CHEFE_OFICINA, QUADRO_FUNILARIA, QUADRO_GARANTIA, QUADRO_PLANOS].includes(quadro)
   useEffect(() => {
     if (mes >= 1 && mes <= 12) {
       setWeekMonth(`m${String(mes).padStart(2, '0')}`) // marca as semanas do mês (e desmarca o Total)

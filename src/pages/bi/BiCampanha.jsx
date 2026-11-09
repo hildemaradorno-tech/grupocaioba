@@ -1,9 +1,9 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
-import { Trophy, Calculator, BookOpen, BarChart2, Loader2, RefreshCw, Info as InfoIcon, Lock, Unlock, Plus, Trash2, Eraser, Copy, CopyPlus, Settings, FileText, X, ChevronDown, Banknote, Save, Users, Pencil, ShieldCheck, Wrench } from 'lucide-react'
+import { Trophy, Calculator, BookOpen, BarChart2, Loader2, RefreshCw, Info as InfoIcon, Lock, Unlock, Plus, Trash2, Eraser, Copy, CopyPlus, Settings, FileText, X, ChevronDown, Banknote, Users, Pencil, Wrench, Receipt } from 'lucide-react'
 import { Bloco3ServicosVisualizacao } from '../kpi/KpiBloco3Servicos'
 import { createPortal } from 'react-dom'
 import { apiService } from '../../services/api'
-import { fetchBloco3Servicos, fetchBloco3Pecas, fetchBloco3PosVenda } from '../../services/kpiService'
+import { fetchBloco3Servicos, fetchBloco3Pecas, fetchBloco3PosVenda, pedirQuadroCampanha } from '../../services/kpiService'
 import { useSincronizacaoKpi } from '../../hooks/useSincronizacaoKpi'
 import { useAuth } from '../../context/AuthContext'
 import {
@@ -353,7 +353,15 @@ export default function BiCampanha() {
   const chavesMatriz = ehTrucks ? [] : linhasBonus(regras, unidade, CAMPANHA.unidades)
     .filter((l) => cfgQuadroDaLinha(regras, unidade, l.k).quadro).map((l) => l.k)
   const faltamFech = chavesMatriz.filter((k) => !coletaFech[k]?.completo)
-  const podeClicarFechar = !foto && funcionarios !== null && diario !== null && !faltamFech.length
+  // Sub-abas da Apuração/Resultado (Gerentes / Equipe / Setores): só a aberta (e as já visitadas) busca
+  // na Matriz. Ao Fechar mês com sub-abas ainda não abertas, carrega todas e fecha quando terminar.
+  const [subAba, setSubAba] = useState('equipe')
+  // Busca por nome de funcionário: vale para Apuração, Resultado e Pagamento (ignora a sub-aba).
+  const [busca, setBusca] = useState('')
+  const [carregarTodas, setCarregarTodas] = useState(false)
+  const [fecharPendente, setFecharPendente] = useState(false)
+  useEffect(() => { setCarregarTodas(false); setFecharPendente(false) }, [ano, mes, unidade])
+  const podeClicarFechar = !foto && funcionarios !== null && diario !== null && !fecharPendente
   const [fechando, setFechando] = useState(false)
   const [msgFech, setMsgFech] = useState(null)
   useEffect(() => { setMsgFech(null) }, [ano, mes, unidade])
@@ -385,6 +393,16 @@ export default function BiCampanha() {
       setFechando(false)
     }
   }
+  // Clique em Fechar mês: com tudo carregado fecha na hora; senão carrega as sub-abas que faltam e fecha
+  // assim que todas as funções responderem.
+  const pedirFecharMes = () => {
+    if (!faltamFech.length) { fecharMes(); return }
+    setCarregarTodas(true)
+    setFecharPendente(true)
+  }
+  useEffect(() => {
+    if (fecharPendente && !faltamFech.length) { setFecharPendente(false); fecharMes() }
+  }, [fecharPendente, faltamFech.length]) // eslint-disable-line react-hooks/exhaustive-deps
   const reabrirMes = async () => {
     if (!window.confirm(`Reabrir ${nomeMes}/${ano} de ${nomeEmpresaTela}?\n\nOs valores voltam a ser calculados com os dados atuais (podem mudar) e as Regras do mês voltam a ser editáveis.`)) return
     setFechando(true)
@@ -464,11 +482,12 @@ export default function BiCampanha() {
           {/* Fechar mês (Apuração/Resultado): congela os valores desta empresa no mês. Só habilita com
               todas as funções carregadas (sem erro), para não congelar "—" por falta de resposta. */}
           {!!unidade && !foto && podeFechar && (aba === 'apuracao' || aba === 'resultado') && (
-            <button type="button" onClick={fecharMes} disabled={!podeClicarFechar || fechando}
-              title={podeClicarFechar ? `Fechar ${nomeMes}/${ano} desta empresa (congela os valores)`
-                : faltamFech.length ? `Aguarde carregar todas as funções para fechar (faltam: ${faltamFech.length})` : 'Aguarde carregar os dados para fechar'}
+            <button type="button" onClick={pedirFecharMes} disabled={!podeClicarFechar || fechando}
+              title={fecharPendente ? `Carregando todas as funções para fechar (faltam: ${faltamFech.length})`
+                : podeClicarFechar ? `Fechar ${nomeMes}/${ano} desta empresa (congela os valores)` : 'Aguarde carregar os dados para fechar'}
               className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">
-              {fechando ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Lock className="h-3.5 w-3.5" />} Fechar mês
+              {fechando || fecharPendente ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Lock className="h-3.5 w-3.5" />}
+              {fecharPendente ? `Carregando todas as funções (faltam ${faltamFech.length})…` : 'Fechar mês'}
             </button>
           )}
           <div ref={setSlotAcoes} className="flex items-center gap-2" />
@@ -494,7 +513,6 @@ export default function BiCampanha() {
             <Lock className="h-4 w-4 text-slate-600 shrink-0" />
             <span>
               <b>{nomeMes}/{ano} fechado</b> — valores congelados em {dataHora(fechamento.fechado_em)}{fechamento.fechado_por ? ` por ${fechamento.fechado_por}` : ''}.
-              {' '}Apuração, Resultado e Pagamento mostram os valores do fechamento, e as Regras do mês estão travadas.
             </span>
           </p>
           {podeReabrir && (
@@ -505,11 +523,6 @@ export default function BiCampanha() {
           )}
         </div>
       )}
-      {!!empresasVisiveis.length && !!unidade && !foto && fechamento?.status === 'reaberto' && (
-        <p className="text-[11px] text-slate-500">
-          Mês reaberto em {dataHora(fechamento.reaberto_em)}{fechamento.reaberto_por ? ` por ${fechamento.reaberto_por}` : ''} (tinha sido fechado em {dataHora(fechamento.fechado_em)}). Os valores voltaram a ser calculados.
-        </p>
-      )}
       {!!empresasVisiveis.length && !!unidade && aba === 'regras' && (
         <AbaRegras slotAcoes={slotAcoes} cargosLista={cargosLista} travaPeriodicidade={travaPeriodicidade} mesFechado={!!foto}
           permRegras={foto ? Object.fromEntries(Object.keys(permRegras).map((k) => [k, false])) : permRegras}
@@ -518,20 +531,35 @@ export default function BiCampanha() {
           regras={regras} onSalvar={salvarRegras} origemRegras={origemRegras}
           nomeEmpresa={unidade === 'TRUCKS' ? 'CAIOBÁ TRUCKS' : (nomeEmpresa[u.empresaId] || u.nome)} />
       )}
+      {!!empresasVisiveis.length && !!unidade && ['apuracao', 'resultado', 'pagamento'].includes(aba) && (
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative w-full max-w-xs">
+            <input type="search" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar funcionário…"
+              aria-label="Buscar funcionário"
+              className="w-full text-xs pl-2.5 pr-2 py-1.5 border border-slate-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
+          </div>
+          {busca.trim()
+            ? <span className="text-[11px] text-slate-500">Mostrando quem tem “{busca.trim()}” no nome ou todos da função com esse nome.</span>
+            : aba !== 'pagamento' && <span className="text-[11px] text-slate-400">Clique no nome para ver o extrato do funcionário no mês.</span>}
+        </div>
+      )}
       {!!empresasVisiveis.length && !!unidade && aba === 'apuracao' && (
         <AbaApuracao campanha={campanha} regras={regrasCalc} unidade={unidade} ehTrucks={ehTrucks} diario={diarioTela} consultores={consultores} mecanicos={mecanicos} chefes={chefes} gerentes={gerentes}
           gerentesGerais={gerentesGerais} metasPorUnidade={metasPorUnidade}
           blocosMatriz={blocosMatriz} ano={ano} mes={mes} foto={foto} registrarFech={registrarFech}
+          subAba={subAba} onSubAba={setSubAba} carregarTodas={carregarTodas} busca={busca}
           metasUnidade={metasUnidade} funcionarios={funcionarios} erroFunc={erroFunc} versaoDados={recarregar} grupos={grupos} semCalculo={semCalculo} />
       )}
       {!!empresasVisiveis.length && !!unidade && aba === 'pagamento' && (
         <AbaPagamento ano={ano} mes={mes} unidade={unidade} periodicidade={periodicidadeEfetiva} funcionarios={funcionarios} erroFunc={erroFunc}
-          calendarios={calendarios} versaoDados={recarregar} versaoFech={versaoFech} />
+          calendarios={calendarios} versaoDados={recarregar} versaoFech={versaoFech}
+          regras={regras} subAba={subAba} onSubAba={setSubAba} busca={busca} />
       )}
       {!!empresasVisiveis.length && !!unidade && aba === 'resultado' && (
         <AbaApuracao modo="resultado" campanha={campanha} regras={regrasCalc} unidade={unidade} ehTrucks={ehTrucks} diario={diarioTela} consultores={consultores} mecanicos={mecanicos} chefes={chefes} gerentes={gerentes}
           gerentesGerais={gerentesGerais} metasPorUnidade={metasPorUnidade}
           blocosMatriz={blocosMatriz} ano={ano} mes={mes} foto={foto} registrarFech={registrarFech}
+          subAba={subAba} onSubAba={setSubAba} carregarTodas={carregarTodas} busca={busca}
           metasUnidade={metasUnidade} funcionarios={funcionarios} erroFunc={erroFunc} versaoDados={recarregar} grupos={grupos} semCalculo={semCalculo} />
       )}
     </div>
@@ -543,58 +571,151 @@ export default function BiCampanha() {
 // Uma coluna por semana do mês (mesmas semanas da Matriz KPIs) com a contribuição da semana e,
 // no fim, o Total = soma das contribuições das semanas.
 // ======================================================================================
+// Sub-abas da Apuração/Resultado, pelo quadro do Bloco 3 de cada função: GERENTE/COORDENADOR/SUPERVISÃO…
+// = Gerentes; o resto (consultores, mecânicos, vendedores, sem quadro) = Equipe. Funções de quadro de setor
+// (SETOR…, Garantias) vão pelo nome do cargo: liderança → Gerentes; os demais → Equipe.
+const SUB_ABAS_APURACAO = [{ k: 'gerentes', label: 'Gerentes' }, { k: 'equipe', label: 'Equipe' }]
+const LIDERANCA = /^(GERENTE|COORDENADOR|SUPERVIS|CHEFE|LIDER|ENCARREGAD)/
+function subAbaDaFuncao(cfg, nomeFuncao) {
+  const q = normNome(cfg.quadro || '')
+  // Quadro de setor ou sem quadro: pelo nome do cargo (ex.: Gerente de Processos e Qualidade → Gerentes).
+  if (!q || cfg.garantias || q.startsWith('SETOR')) {
+    return normNome(nomeFuncao || '').split(/[\s/]+/).some((p) => LIDERANCA.test(p)) ? 'gerentes' : 'equipe'
+  }
+  if (LIDERANCA.test(q)) return 'gerentes'
+  return 'equipe'
+}
+
+// Dentro da sub-aba Equipe, as funções vêm agrupadas por setor (linha de título por setor). O setor sai
+// do quadro do Bloco 3 da função; sem quadro (ou quadro genérico), do nome do cargo.
+const SETORES_EQUIPE = ['Consultores', 'Mecânica', 'Funilaria/Pintura', 'Garantia', 'Peças', 'Outros']
+function setorDaFuncao(cfg, nomeFuncao) {
+  const q = normNome(cfg.quadro || '')
+  if (q.startsWith('CONSULTOR')) return 'Consultores'
+  if (q === 'MECANICO' || q === 'SETOR DE MECANICA' || q === 'CHEFE DE OFICINA') return 'Mecânica'
+  if (q.startsWith('SETOR FUNILARIA')) return 'Funilaria/Pintura'
+  if (cfg.garantias || q === 'SETOR GARANTIA') return 'Garantia'
+  if (cfg.bloco === 'pecas' && q) return 'Peças'
+  const n = normNome(nomeFuncao || '')
+  if (/CONSULTOR/.test(n)) return 'Consultores'
+  if (/MECANIC/.test(n)) return 'Mecânica'
+  if (/FUNIL|PINT|PREPARADOR|MONTADOR/.test(n)) return 'Funilaria/Pintura'
+  if (/GARANTIA/.test(n)) return 'Garantia'
+  if (/PECA|ESTOQU|VENDEDOR|ALMOX/.test(n)) return 'Peças'
+  return 'Outros'
+}
+// Linha de título do setor (mesma em Apuração, Resultado e Pagamento) — cor própria, diferente das
+// linhas de função.
+function LinhaSetor({ setor, colSpan }) {
+  return (
+    <tbody>
+      <tr>
+        <td colSpan={colSpan} className="bg-indigo-50 border-y border-indigo-200 px-2 py-1.5 text-[11px] font-bold uppercase tracking-wide text-indigo-800">
+          {setor}
+        </td>
+      </tr>
+    </tbody>
+  )
+}
+// Organização comum de Apuração, Resultado e Pagamento: sub-aba (Gerentes / Equipe) e, na Equipe, setor.
+// itens = [{ chave, nome, cfg }]; devolve { porSubAba: { gerentes: [...], equipe: [...] } }.
+function organizarFuncoes(itens) {
+  const porSubAba = Object.fromEntries(SUB_ABAS_APURACAO.map((s) => [s.k, []]))
+  for (const it of itens) porSubAba[subAbaDaFuncao(it.cfg, it.nome)].push(it)
+  return porSubAba
+}
+// Itens da Equipe agrupados por setor, na ordem de SETORES_EQUIPE: [{ setor, itens }].
+const gruposPorSetor = (itens) => SETORES_EQUIPE
+  .map((setor) => ({ setor, itens: itens.filter((it) => setorDaFuncao(it.cfg, it.nome) === setor) }))
+  .filter((g) => g.itens.length)
+
 function AbaApuracao({ campanha, regras, unidade, ehTrucks, diario, consultores, mecanicos, chefes, gerentes, metasUnidade, funcionarios, erroFunc,
   gerentesGerais, metasPorUnidade, blocosMatriz, ano, mes, modo = 'apuracao', versaoDados = 0, onColeta = null, grupos = [], semCalculo = {},
-  foto = null, registrarFech = null }) {
+  foto = null, registrarFech = null, subAba = null, onSubAba = null, carregarTodas = false, busca = '' }) {
   // Mês fechado (foto): ninguém espera funcionários — as pessoas vêm da foto.
   const comum = { campanha, regras, unidade, diario, blocosMatriz, ano, mes, versaoDados, carregandoFunc: !foto && funcionarios === null }
   // foto: valores congelados do mês fechado; registrarFech: cada função informa seus valores carregados (para Fechar mês).
-  const ctx = useMemo(() => ({ faixas: faixasDe(regras, unidade) || [], regras, unidade, modo, ano, mes, onColeta, foto, registrarFech }),
-    [regras, unidade, modo, ano, mes, onColeta, foto, registrarFech])
-  const ctxGarantias = useMemo(() => ({ ...ctx, faixas: regras.faixasGarantias?.[unidade] || [] }), [ctx, regras, unidade])
-  const blocosGarantias = useMemo(() => ({ ...blocosMatriz, pesos: { ...(blocosMatriz.pesos || {}), individual: 1 } }), [blocosMatriz])
+  // Extrato do funcionário (clique no nome): { p, titulo, pesoB3, chaveBonus, faixas, campanha } ou null.
+  const [extrato, setExtrato] = useState(null)
+  // Busca só filtra o que aparece (no modo coleta do Pagamento não vale: lá tudo é calculado).
+  const buscaNorm = modo === 'coleta' ? '' : normNome(busca)
+  const ctx = useMemo(() => ({ faixas: faixasDe(regras, unidade) || [], regras, unidade, modo, ano, mes, onColeta, foto, registrarFech, busca: buscaNorm, abrirExtrato: setExtrato }),
+    [regras, unidade, modo, ano, mes, onColeta, foto, registrarFech, buscaNorm])
   const pesoB3 = blocosMatriz.pesos?.individual || 0
   // Funções = linhas do Bônus-alvo (aba Regras), na mesma ordem. Cada uma vira uma seção da tabela.
   const funcoes = linhasBonus(regras, unidade, CAMPANHA.unidades)
-  const conteudo = ehTrucks
-    ? (funcoes.length ? <BlocoGerenteGeral key="gg" {...comum} gerentesGerais={gerentesGerais} metasPorUnidade={metasPorUnidade} /> : null)
-    : funcoes.map((l) => {
+  const renderFuncoes = (lista) => lista.map((l) => {
       // Pessoas da função = cargos agrupados na linha do Bônus-alvo.
       const pessoas = { consultor: consultores, mecanico: mecanicos, chefe: chefes, gerente: gerentes }[l.k]
         || (l.grupo ? (grupos.find((g) => g.k === l.k)?.pessoas || []) : (semCalculo[l.k] || []))
       // Valores = quadro do Bloco 3 escolhido na janela de Cargos (individual ou total). Sem quadro → "—".
       const cfg = cfgQuadroDaLinha(regras, unidade, l.k)
       if (!cfg.quadro) return <SecaoSemCalculo key={l.k} titulo={l.nome} pessoas={pessoas} campanha={campanha} />
-      // Garantias: faixas próprias (Regras - Garantias) e bônus inteiro (sem a divisão B1/B2/B3 de Serviços).
-      if (cfg.garantias) {
-        return (
-          <FaixasCtx.Provider key={l.k} value={ctxGarantias}>
-            <BlocoMatriz {...comum} blocosMatriz={blocosGarantias} titulo={l.nome} chaveBonus={l.k} cor="#d97706" pessoas={pessoas} cfg={cfg} />
-          </FaixasCtx.Provider>
-        )
-      }
       return <BlocoMatriz key={l.k} {...comum} titulo={l.nome} chaveBonus={l.k} cor={CORES_FUNCAO[l.k] || '#64748b'} pessoas={pessoas} cfg={cfg} />
     })
 
-  if (modo === 'coleta') return <FaixasCtx.Provider value={ctx}>{conteudo}</FaixasCtx.Provider>
+  // Funções separadas por sub-aba (só as que têm função aparecem).
+  const porSubAba = useMemo(
+    () => organizarFuncoes(ehTrucks ? [] : funcoes.map((l) => ({ ...l, cfg: cfgQuadroDaLinha(regras, unidade, l.k) }))),
+    [funcoes, regras, unidade, ehTrucks])
+  const subAbasComFuncao = SUB_ABAS_APURACAO.filter((s) => porSubAba[s.k].length)
+  const ativa = subAbasComFuncao.find((s) => s.k === subAba)?.k || subAbasComFuncao[0]?.k
+  // Sub-abas já abertas continuam montadas (escondidas): não buscam de novo ao voltar e seguem
+  // valendo para o Fechar mês. carregarTodas (Fechar mês) monta as que faltam.
+  const [visitadas, setVisitadas] = useState(() => new Set())
+  useEffect(() => { if (ativa) setVisitadas((v) => (v.has(ativa) ? v : new Set(v).add(ativa))) }, [ativa])
+
+  // Equipe: um título por setor (largura da tabela) e as funções do setor embaixo, na ordem do Bônus-alvo.
+  const nColsTabela = campanha.semanas.length * colsPorSemana(modo) + 3
+  // Com busca, sem os títulos de setor (ficariam vazios); a ordem por setor continua.
+  const buscaAtiva = !!buscaNorm
+  const renderPorSetor = (lista) => gruposPorSetor(lista.map((l) => ({ ...l, cfg: cfgQuadroDaLinha(regras, unidade, l.k) })))
+    .flatMap(({ setor, itens }) => [...(buscaAtiva ? [] : [<LinhaSetor key={`setor-${setor}`} setor={setor} colSpan={nColsTabela} />]), ...renderFuncoes(itens)])
+
+  if (modo === 'coleta') {
+    return <FaixasCtx.Provider value={ctx}>{ehTrucks ? (funcoes.length ? <BlocoGerenteGeral key="gg" {...comum} gerentesGerais={gerentesGerais} metasPorUnidade={metasPorUnidade} /> : null) : renderFuncoes(funcoes)}</FaixasCtx.Provider>
+  }
+  const tabela = (filhos, k = 'unica', oculta = false) => (
+    <div key={k} className={`overflow-x-auto ${oculta ? 'hidden' : ''}`}>
+      {/* Cabeçalho único e uma seção (tbody) por função do Bônus-alvo. */}
+      <table className="w-full min-w-[56rem] table-fixed text-xs border-collapse">
+        <CabecalhoTabela modo={modo} semanas={campanha.semanas} pesoB3={pesoB3} />
+        {filhos}
+      </table>
+    </div>
+  )
   return (
     <FaixasCtx.Provider value={ctx}>
     <div className="space-y-3">
       {erroFunc && <p className="text-xs text-red-600">Não foi possível carregar os funcionários: {erroFunc}</p>}
       {!funcoes.length ? (
         <p className={`${CARD} p-6 text-sm text-slate-600`}>Nenhuma função no Bônus-alvo desta empresa. Cadastre as funções na aba Regras.</p>
+      ) : ehTrucks ? (
+        <div className={CARD}>{tabela(<BlocoGerenteGeral key="gg" {...comum} gerentesGerais={gerentesGerais} metasPorUnidade={metasPorUnidade} />)}</div>
       ) : (
         <div className={CARD}>
-          <div className="overflow-x-auto">
-            {/* Uma tabela só: cabeçalho único e uma seção (tbody) por função do Bônus-alvo. */}
-            <table className="w-full min-w-[56rem] table-fixed text-xs border-collapse">
-              <CabecalhoTabela modo={modo} semanas={campanha.semanas} pesoB3={pesoB3} />
-              {conteudo}
-            </table>
-          </div>
+          {/* Com busca, valem todas as sub-abas (a pessoa pode estar em qualquer uma). */}
+          {!buscaAtiva && (
+            <div className="flex gap-1 border-b border-slate-200 px-3">
+              {subAbasComFuncao.map((s) => (
+                <button key={s.k} type="button" onClick={() => onSubAba?.(s.k)}
+                  className={`px-3 py-2 text-[11px] font-semibold border-b-2 -mb-px transition-colors ${
+                    s.k === ativa ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
+                  {s.label} <span className="font-normal text-slate-400">({porSubAba[s.k].length})</span>
+                </button>
+              ))}
+            </div>
+          )}
+          {/* Com busca: uma tabela só (um cabeçalho) com as funções de todas as sub-abas. */}
+          {buscaAtiva
+            ? tabela(subAbasComFuncao.flatMap((s) => (s.k === 'equipe' ? renderPorSetor(porSubAba[s.k]) : renderFuncoes(porSubAba[s.k]))), 'busca')
+            : subAbasComFuncao
+              .filter((s) => s.k === ativa || visitadas.has(s.k) || carregarTodas)
+              .map((s) => tabela(s.k === 'equipe' ? renderPorSetor(porSubAba[s.k]) : renderFuncoes(porSubAba[s.k]), s.k, s.k !== ativa))}
         </div>
       )}
     </div>
+    {extrato && <ExtratoFuncionario {...extrato} modo={modo} mesFechado={!!foto} ano={ano} mes={mes} onFechar={() => setExtrato(null)} />}
     </FaixasCtx.Provider>
   )
 }
@@ -686,7 +807,9 @@ function MesPagamento({ ano, mes, unidade, funcionarios, erroFunc, calendarios, 
   )
 }
 
-function AbaPagamento({ ano, mes, unidade, periodicidade, funcionarios, erroFunc, calendarios, versaoDados, versaoFech = 0 }) {
+function AbaPagamento({ ano, mes, unidade, periodicidade, funcionarios, erroFunc, calendarios, versaoDados, versaoFech = 0,
+  regras = null, subAba = null, onSubAba = null, busca = '' }) {
+  const buscaNorm = normNome(busca)
   const meses = mesesDoPeriodo(periodicidade, mes)
   const chaveMeses = meses.join(',')
   // coleta[mes][tituloDoBloco] = { cor, semanas, linhas } | null (carregando)
@@ -701,6 +824,11 @@ function AbaPagamento({ ano, mes, unidade, periodicidade, funcionarios, erroFunc
   useEffect(() => { setSemRegras({}) }, [ano, chaveMeses, unidade, versaoDados, versaoFech])
   const onSemRegras = useCallback((m, sem) => setSemRegras((x) => ({ ...x, [m]: sem })), [])
   const mesesSemRegras = meses.filter((m) => semRegras[m])
+  // Extrato do funcionário (clique no nome): { titulo, id, mes } — dados de coleta[mes][titulo].extratos[id].
+  const [extrato, setExtrato] = useState(null)
+  useEffect(() => { setExtrato(null) }, [ano, chaveMeses, unidade])
+  const mesesComExtrato = (titulo, id) => meses.filter((m) => coleta[m]?.[titulo]?.extratos?.[id])
+  const dadosExtrato = extrato ? coleta[extrato.mes]?.[extrato.titulo]?.extratos?.[extrato.id] : null
 
   const nomeMesN = (m) => MESES[m - 1]?.label
   const hoje = new Date()
@@ -723,6 +851,26 @@ function AbaPagamento({ ano, mes, unidade, periodicidade, funcionarios, erroFunc
 
   const TD = 'p-2 text-right whitespace-nowrap tabular-nums border-l border-slate-200'
   const VAZIO = <span className="text-slate-300">—</span>
+
+  // Mesma organização da Apuração e do Resultado: sub-abas Gerentes / Equipe (a mesma escolhida lá) e,
+  // na Equipe, um título por setor. Cada seção (título = nome da função) acha sua função no Bônus-alvo.
+  const ehTrucks = unidade === 'TRUCKS'
+  const funcoesBonus = regras ? linhasBonus(regras, unidade, CAMPANHA.unidades) : []
+  const itensSecoes = titulos.map((t) => {
+    const l = funcoesBonus.find((f) => f.nome === t)
+    return { chave: t, nome: t, cfg: l ? cfgQuadroDaLinha(regras, unidade, l.k) : { quadro: '' } }
+  })
+  const porSubAba = organizarFuncoes(ehTrucks ? [] : itensSecoes)
+  const subAbasComFuncao = SUB_ABAS_APURACAO.filter((s) => porSubAba[s.k].length)
+  const ativa = subAbasComFuncao.find((s) => s.k === subAba)?.k || subAbasComFuncao[0]?.k
+  const nColsPag = colunas.length + 4
+  // Ordem das seções na tela: Trucks = todas; Gerentes = na ordem; Equipe = por setor, com título.
+  // Com busca: todas as funções (qualquer sub-aba), sem títulos de setor; só quem bate com o nome.
+  const secoesTela = ehTrucks || buscaNorm
+    ? titulos.map((t) => ({ tipo: 'secao', titulo: t }))
+    : ativa === 'equipe'
+      ? gruposPorSetor(porSubAba.equipe).flatMap(({ setor, itens }) => [{ tipo: 'setor', setor }, ...itens.map((it) => ({ tipo: 'secao', titulo: it.chave }))])
+      : (porSubAba[ativa] || []).map((it) => ({ tipo: 'secao', titulo: it.chave }))
   return (
     <div className="space-y-5">
       <div className={`${CARD} p-4 flex flex-wrap items-center justify-between gap-2`}>
@@ -756,6 +904,17 @@ function AbaPagamento({ ano, mes, unidade, periodicidade, funcionarios, erroFunc
       {/* Uma tabela só: cabeçalho único e uma seção por função do Bônus-alvo. */}
       {mesesProntos && titulos.length > 0 && (
         <div className={CARD}>
+          {!ehTrucks && !buscaNorm && subAbasComFuncao.length > 0 && (
+            <div className="flex gap-1 border-b border-slate-200 px-3">
+              {subAbasComFuncao.map((s) => (
+                <button key={s.k} type="button" onClick={() => onSubAba?.(s.k)}
+                  className={`px-3 py-2 text-[11px] font-semibold border-b-2 -mb-px transition-colors ${
+                    s.k === ativa ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
+                  {s.label} <span className="font-normal text-slate-400">({porSubAba[s.k].length})</span>
+                </button>
+              ))}
+            </div>
+          )}
           <div className="overflow-x-auto">
             <table className="w-full table-fixed text-xs border-collapse">
               <colgroup>
@@ -781,14 +940,20 @@ function AbaPagamento({ ano, mes, unidade, periodicidade, funcionarios, erroFunc
                   ))}
                 </tr>
               </thead>
-              {titulos.map((titulo) => {
+              {secoesTela.map((item) => {
+                if (item.tipo === 'setor') return <LinhaSetor key={`setor-${item.setor}`} setor={item.setor} colSpan={nColsPag} />
+                const { titulo } = item
                 const secao = meses.map((m) => coleta[m][titulo]).find(Boolean)
                 const cor = secao?.cor
                 const semCalc = !!secao?.semCalculo
-                const nCols = colunas.length + 4
+                const nCols = nColsPag
                 // Pessoas de todos os meses do período (quem saiu/entrou aparece com "—" no mês em que não estava).
                 const pessoas = new Map()
                 for (const m of meses) for (const l of coleta[m][titulo]?.linhas || []) if (!pessoas.has(l.id)) pessoas.set(l.id, l.nome)
+                if (buscaNorm && !normNome(titulo).includes(buscaNorm)) {
+                  for (const [id, nome] of [...pessoas]) if (!normNome(nome).includes(buscaNorm)) pessoas.delete(id)
+                  if (!pessoas.size) return null
+                }
                 const valor = (id, col) => {
                   if (semCalc || semRegras[col.mes]) return null
                   const l = (coleta[col.mes][titulo]?.linhas || []).find((x) => x.id === id)
@@ -811,9 +976,33 @@ function AbaPagamento({ ano, mes, unidade, periodicidade, funcionarios, erroFunc
                       const b1 = BLOCOS_1_2_COM_REGRA && !semCalc && doMes.length ? doMes.reduce((a2, l) => a2 + (l.b1 || 0), 0) : null
                       const b2 = BLOCOS_1_2_COM_REGRA && !semCalc && doMes.length ? doMes.reduce((a2, l) => a2 + (l.b2 || 0), 0) : null
                       const total = vals.reduce((a2, v) => a2 + (v || 0), 0) + (b1 || 0) + (b2 || 0)
+                      const mesesExt = semCalc ? [] : mesesComExtrato(titulo, id)
+                      // Abre no mês selecionado (se a pessoa estava nele); senão no último mês do período em que estava.
+                      const mesInicial = mesesExt.includes(Number(mes)) ? Number(mes) : mesesExt[mesesExt.length - 1]
+                      // Detalhe do pagamento da pessoa no período (vai junto no extrato).
+                      const pag = {
+                        rotuloPeriodo,
+                        quando: periodicidade === 'semanal' ? 'cada semana paga após o seu fechamento' : `pago em ${pagamentoEm}`,
+                        b1, b2, total,
+                        colunas: colunas.map((c, i) => ({ k: c.k, titulo: c.titulo, sub: c.sub, valor: vals[i] })),
+                      }
+                      const abrir = () => setExtrato({ titulo, id, mes: mesInicial, pag })
                       return (
                         <tr key={id} className="border-b border-slate-100">
-                          <td className="p-2 font-medium text-slate-800 truncate" title={nome}>{nome}</td>
+                          <td className="p-2 font-medium text-slate-800" title={nome}>
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              {mesesExt.length ? (
+                                <>
+                                  <button type="button" onClick={abrir} title="Ver detalhe do extrato de pagamento (Apuração, Resultado e Pagamento)"
+                                    aria-label={`Ver detalhe do extrato de pagamento de ${nome}`}
+                                    className="shrink-0 rounded p-0.5 text-blue-600 hover:bg-blue-50 hover:text-blue-800">
+                                    <Receipt className="h-3.5 w-3.5" />
+                                  </button>
+                                  <span className="truncate"><NomeExtrato nome={nome} onClick={abrir} /></span>
+                                </>
+                              ) : <span className="truncate">{nome}</span>}
+                            </div>
+                          </td>
                           <td className={`${TD} ${b1 > 0 ? 'text-slate-900 font-semibold' : 'text-slate-400'}`} title={BLOCOS_1_2_COM_REGRA ? 'Bloco 1 - Corporativo: parte da Meta paga integralmente' : 'Bloco 1 - Corporativo: regras ainda não criadas'}>{b1 == null ? VAZIO : moedaBR(b1)}</td>
                           <td className={`${TD} ${b2 > 0 ? 'text-slate-900 font-semibold' : 'text-slate-400'}`} title={BLOCOS_1_2_COM_REGRA ? 'Bloco 2 - Departamental: parte da Meta paga integralmente' : 'Bloco 2 - Departamental: regras ainda não criadas'}>{b2 == null ? VAZIO : moedaBR(b2)}</td>
                           {vals.map((v, i) => (
@@ -831,6 +1020,10 @@ function AbaPagamento({ ano, mes, unidade, periodicidade, funcionarios, erroFunc
             </table>
           </div>
         </div>
+      )}
+      {dadosExtrato && (
+        <ExtratoFuncionario {...dadosExtrato} pagamento={extrato.pag} onFechar={() => setExtrato(null)}
+          mesesPeriodo={mesesComExtrato(extrato.titulo, extrato.id)} onMes={(m) => setExtrato((x) => ({ ...x, mes: m }))} />
       )}
     </div>
   )
@@ -1063,6 +1256,7 @@ function bonusDaLinha(p, { pesoB3, faixas, regras, unidade, chaveBonus, nSem }) 
 // Modo "coleta" (aba Pagamento): não desenha nada — calcula o bônus de cada pessoa do bloco no mês
 // e entrega para a aba Pagamento (ctx.onColeta). null = ainda carregando.
 function ColetaBonus({ titulo, cor, campanha, linhas, carregando, pesoB3, faixas, regras, unidade, chaveBonus, onColeta }) {
+  const { ano, mes, foto } = useContext(FaixasCtx)
   const nSem = campanha.semanas.length || 1
   const dados = carregando ? null : {
     cor,
@@ -1077,7 +1271,15 @@ function ColetaBonus({ titulo, cor, campanha, linhas, carregando, pesoB3, faixas
     }),
   }
   const chave = JSON.stringify(dados)
-  useEffect(() => { onColeta?.(titulo, dados) }, [chave]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Extrato do funcionário no Pagamento: os mesmos dados que o pop-up da Apuração/Resultado usa (fora
+  // da chave, para não comparar objetos grandes a cada desenho).
+  useEffect(() => {
+    if (!dados) { onColeta?.(titulo, null); return }
+    const extratos = Object.fromEntries(linhas.map((p) => [p.id, {
+      p, titulo, pesoB3, chaveBonus, faixas, regras, unidade, campanha, ano, mes, mesFechado: !!foto,
+    }]))
+    onColeta?.(titulo, { ...dados, extratos })
+  }, [chave]) // eslint-disable-line react-hooks/exhaustive-deps
   return null
 }
 
@@ -1090,14 +1292,191 @@ function ColetaBonus({ titulo, cor, campanha, linhas, carregando, pesoB3, faixas
 // Nº de colunas de dados por semana em cada modo (Apuração: Contrib. + Faixa; Resultado: valor).
 const colsPorSemana = (modo) => (modo === 'resultado' ? 1 : 2)
 
-// Coluna "Situação bônus" (depois do Total): Não liberado quando a regra-chave de atingimento
-// mínimo do mês bloqueia; senão Liberado.
-function CelulaSituacao({ bloqueio }) {
+// Nome do funcionário clicável: abre o extrato dele no mês.
+function NomeExtrato({ nome, onClick }) {
   return (
-    <td className="p-2 text-center border-l border-slate-200" title={bloqueio || 'Bônus liberado'}>
+    <button type="button" onClick={onClick} title="Ver o extrato do funcionário no mês"
+      className="text-left font-medium text-slate-800 hover:text-blue-700 hover:underline underline-offset-2">
+      {nome}
+    </button>
+  )
+}
+
+// Extrato do funcionário no mês (pop-up): mesmos cálculos da Apuração e do Resultado (bonusDaLinha /
+// totalDaLinha) — contribuição e faixa de cada semana, indicadores (peso × atingimento), total do mês,
+// situação e bônus.
+function ExtratoFuncionario({ p, titulo, pesoB3, chaveBonus, faixas, regras, unidade, campanha, mesFechado, ano, mes, onFechar, mesesPeriodo = null, onMes = null, pagamento = null }) {
+  useEffect(() => {
+    const esc = (e) => { if (e.key === 'Escape') onFechar() }
+    document.addEventListener('keydown', esc)
+    return () => document.removeEventListener('keydown', esc)
+  }, [onFechar])
+  const semanas = campanha.semanas
+  const nSem = semanas.length || 1
+  const { cels, bloqueio, calc, total: bonusMes, mes: bm } = bonusDaLinha(p, { pesoB3, faixas, regras, unidade, chaveBonus, nSem })
+  const { total: atingMes, parcial } = totalDaLinha(p, cels)
+  const alvo = bonusAlvoDe(regras, p.unidadeBonus ? 'TRUCKS' : unidade, p.chaveBonus || chaveBonus) // igual a bonusDaLinha
+  const rotFx = (fx) => (!fx ? '—' : fx.abaixo ? 'Sem faixa' : fx.max == null ? `≥ ${pctTxt(fx.min)}` : `${pctTxt(fx.min)} a < ${pctTxt(fx.max)}`)
+  const pct = (v) => (v == null ? '—' : pctTxt(v))
+  const situacao = bloqueio ? (mesFechado ? 'Não atingido' : 'Fora da meta') : (mesFechado ? 'Atingido' : 'Na meta')
+  // Linhas de período: uma por semana; na apuração mensal, só o mês.
+  const periodos = p.mensal
+    ? [{ id: 'mes', rotulo: MESES[Number(mes) - 1]?.label || 'Mês', sub: '', ating: atingMes, fx: bm?.fx || null, valor: bonusMes, itens: p.itensMes || [] }]
+    : semanas.map((s, i) => ({
+      id: s.id, rotulo: `Sem ${i + 1}`, sub: s.label, ating: cels[i].semDiaUtil ? null : cels[i].contrib,
+      fx: calc[i].fx, valor: calc[i].valor, itens: p.semanas[i]?.itens || [], semDiaUtil: cels[i].semDiaUtil,
+    }))
+  const indicadores = [...new Set(periodos.flatMap((x) => x.itens.map((it) => it.indicador)))]
+  const pesoDe = (ind) => periodos.flatMap((x) => x.itens).find((it) => it.indicador === ind)?.peso
+  const TH2 = 'px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500 text-right'
+  const TD2 = 'px-2 py-1.5 text-right tabular-nums border-t border-slate-100'
+  const Card = ({ rotulo, valor, cor = 'text-slate-900' }) => (
+    <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+      <p className="text-[11px] text-slate-500">{rotulo}</p>
+      <p className={`text-base font-bold tabular-nums ${cor}`}>{valor}</p>
+    </div>
+  )
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) onFechar() }}>
+      <div role="dialog" aria-modal="true" aria-label={`Extrato de ${p.nome}`} className="w-full max-w-3xl max-h-[90vh] flex flex-col rounded-xl bg-white shadow-2xl">
+        <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-3">
+          <div>
+            <p className="text-sm font-bold text-slate-900">{p.nome}</p>
+            <p className="text-[11px] text-slate-500">{titulo} · {MESES[Number(mes) - 1]?.label}/{ano}{mesFechado ? ' · mês fechado' : ' · mês em aberto (parcial)'}</p>
+            {/* Pagamento bimestral/trimestral: escolher o mês do período. */}
+            {mesesPeriodo?.length > 1 && (
+              <div className="mt-1.5 flex gap-1">
+                {mesesPeriodo.map((m) => (
+                  <button key={m} type="button" onClick={() => onMes?.(m)}
+                    className={`rounded px-2 py-0.5 text-[11px] font-semibold border ${Number(m) === Number(mes) ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-500 hover:text-slate-700'}`}>
+                    {MESES[Number(m) - 1]?.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <button type="button" onClick={onFechar} aria-label="Fechar" className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><X className="h-4 w-4" /></button>
+        </div>
+        <div className="overflow-y-auto px-5 py-4 space-y-4">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <Card rotulo="Atingimento do mês" valor={`${pct(atingMes)}${parcial && atingMes != null ? '*' : ''}`} cor={atingMes == null ? 'text-slate-400' : corPct(atingMes)} />
+            <Card rotulo="Situação bônus" valor={situacao} cor={bloqueio ? 'text-amber-700' : 'text-emerald-700'} />
+            <Card rotulo="Bônus-alvo (Meta / Supermeta)" valor={`${moedaBR(alvo.meta)} / ${moedaBR(alvo.supermeta)}`} />
+            <Card rotulo="Bônus do mês" valor={moedaBR(bonusMes)} cor={bonusMes > 0 ? 'text-emerald-700' : 'text-slate-500'} />
+          </div>
+          {bloqueio && <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">{bloqueio}</p>}
+          {p.alerta && <p className="text-[11px] text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">{p.alerta}</p>}
+
+          <div>
+            <p className="text-xs font-bold text-slate-700 mb-1">
+              {pagamento ? 'Apuração e Resultado' : ''}{pagamento ? ' — ' : ''}{p.mensal ? 'Resultado do mês' : 'Semana a semana'}
+              {pagamento && <span className="ml-1 font-normal text-slate-400">(atingimento e faixa = Apuração; bônus = Resultado)</span>}
+            </p>
+            <table className="w-full text-xs">
+              <thead><tr>
+                <th className={`${TH2} text-left`}>Período</th><th className={TH2}>Atingimento</th><th className={TH2}>Faixa</th><th className={TH2}>% pago</th><th className={TH2}>Bônus</th>
+              </tr></thead>
+              <tbody>
+                {periodos.map((x) => (
+                  <tr key={x.id}>
+                    <td className="px-2 py-1.5 border-t border-slate-100">{x.rotulo}{x.sub && <span className="ml-1 text-[10px] text-slate-400">{x.sub}</span>}</td>
+                    <td className={TD2}>{x.semDiaUtil ? 'sem dia útil' : pct(x.ating)}</td>
+                    <td className={TD2}>{rotFx(x.fx)}</td>
+                    <td className={TD2}>{x.fx && !x.fx.abaixo ? pct(x.fx.paga) : '—'}</td>
+                    <td className={`${TD2} font-semibold ${x.valor > 0 ? 'text-slate-900' : 'text-slate-400'}`}>{moedaBR(x.valor)}</td>
+                  </tr>
+                ))}
+                <tr className="bg-slate-50 font-bold">
+                  <td className="px-2 py-1.5 border-t border-slate-200">Total do mês</td>
+                  <td className={TD2}>{pct(atingMes)}</td><td className={TD2} /><td className={TD2} />
+                  <td className={`${TD2} ${bonusMes > 0 ? 'text-emerald-700' : 'text-slate-500'}`}>{moedaBR(bonusMes)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          {indicadores.length > 0 && (
+            <div>
+              <p className="text-xs font-bold text-slate-700 mb-1">Indicadores (atingimento de cada um; contribuição = soma peso × atingimento)</p>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead><tr>
+                    <th className={`${TH2} text-left`}>Indicador</th><th className={TH2}>Peso</th>
+                    {periodos.map((x) => <th key={x.id} className={TH2}>{x.rotulo}</th>)}
+                  </tr></thead>
+                  <tbody>
+                    {indicadores.map((ind) => (
+                      <tr key={ind}>
+                        <td className="px-2 py-1.5 border-t border-slate-100">{ind}</td>
+                        <td className={TD2}>{pct(pesoDe(ind))}</td>
+                        {periodos.map((x) => {
+                          const it = x.itens.find((y) => y.indicador === ind)
+                          return <td key={x.id} className={TD2}>{it?.atingimento == null ? '—' : <span className={corPct(it.atingimento)}>{pctTxt(it.atingimento)}</span>}</td>
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+          {pagamento && (
+            <div>
+              <p className="text-xs font-bold text-slate-700 mb-1">
+                Pagamento <span className="font-normal text-slate-500">· {pagamento.rotuloPeriodo} · {pagamento.quando}</span>
+              </p>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead><tr>
+                    <th className={`${TH2} text-left`}>Bloco</th><th className={`${TH2} text-left`}>Período</th><th className={TH2}>Valor</th>
+                  </tr></thead>
+                  <tbody>
+                    <tr>
+                      <td className="px-2 py-1.5 border-t border-slate-100">Bloco 1 - Corporativo</td>
+                      <td className="px-2 py-1.5 border-t border-slate-100 text-slate-400">{pagamento.b1 == null ? 'regras ainda não criadas' : 'parte da Meta'}</td>
+                      <td className={TD2}>{pagamento.b1 == null ? '—' : moedaBR(pagamento.b1)}</td>
+                    </tr>
+                    <tr>
+                      <td className="px-2 py-1.5 border-t border-slate-100">Bloco 2 - Departamental</td>
+                      <td className="px-2 py-1.5 border-t border-slate-100 text-slate-400">{pagamento.b2 == null ? 'regras ainda não criadas' : 'parte da Meta'}</td>
+                      <td className={TD2}>{pagamento.b2 == null ? '—' : moedaBR(pagamento.b2)}</td>
+                    </tr>
+                    {pagamento.colunas.map((c) => (
+                      <tr key={c.k}>
+                        <td className="px-2 py-1.5 border-t border-slate-100">Bloco 3 - Serviços</td>
+                        <td className="px-2 py-1.5 border-t border-slate-100">{c.titulo}{c.sub && <span className="ml-1 text-[10px] text-slate-400">{c.sub}</span>}</td>
+                        <td className={`${TD2} ${c.valor > 0 ? 'font-semibold text-slate-900' : 'text-slate-400'}`}>{c.valor == null ? '—' : moedaBR(c.valor)}</td>
+                      </tr>
+                    ))}
+                    <tr className="bg-emerald-50 font-bold">
+                      <td className="px-2 py-1.5 border-t border-slate-200" colSpan={2}>Total a pagar</td>
+                      <td className={`${TD2} ${pagamento.total > 0 ? 'text-emerald-700' : 'text-slate-500'}`}>{moedaBR(pagamento.total)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+          <p className="text-[10px] text-slate-400">Valores calculados com as mesmas regras da Apuração e do Resultado{mesFechado ? ' (congelados no fechamento do mês)' : ''}. * = parcial: semanas sem meta ou sem dados ficaram de fora.</p>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  )
+}
+
+// Coluna "Situação bônus" (depois do Total): bloqueada quando a regra-chave de atingimento mínimo do
+// mês bloqueia. Resultado diz Liberado / Não liberado. A Apuração (atingimento) diz Na meta / Fora da
+// meta enquanto o mês está aberto (valor parcial) e Atingido / Não atingido depois do Fechar mês.
+function CelulaSituacao({ bloqueio, atingimento = false, mesFechado = false }) {
+  const [ok, nao, dica] = !atingimento ? ['Liberado', 'Não liberado', 'Bônus liberado']
+    : mesFechado ? ['Atingido', 'Não atingido', 'Mês fechado: atingimento mínimo alcançado']
+      : ['Na meta', 'Fora da meta', 'Mês em aberto: atingimento até agora acima do mínimo']
+  return (
+    <td className="p-2 text-center border-l border-slate-200" title={bloqueio || dica}>
       {bloqueio
-        ? <span className="text-[10px] font-semibold px-1.5 py-px rounded border bg-amber-50 text-amber-700 border-amber-200">Não liberado</span>
-        : <span className="text-[10px] font-semibold px-1.5 py-px rounded border bg-emerald-50 text-emerald-700 border-emerald-200">Liberado</span>}
+        ? <span className="text-[10px] font-semibold px-1.5 py-px rounded border bg-amber-50 text-amber-700 border-amber-200">{nao}</span>
+        : <span className="text-[10px] font-semibold px-1.5 py-px rounded border bg-emerald-50 text-emerald-700 border-emerald-200">{ok}</span>}
     </td>
   )
 }
@@ -1163,13 +1542,15 @@ function CabecalhoTabela({ modo, semanas, pesoB3 }) {
 
 // Função do Bônus-alvo ainda SEM Bloco 3 (grupos criados em "Adicionar cargo", Box Express,
 // Programação): aparece com as pessoas e "—". No Pagamento (modo coleta) entra com valores vazios.
-function SecaoSemCalculo({ titulo, pessoas, campanha }) {
-  const { modo, onColeta } = useContext(FaixasCtx)
+function SecaoSemCalculo({ titulo, pessoas: todasPessoas, campanha }) {
+  const { modo, onColeta, busca } = useContext(FaixasCtx)
   const cor = '#94a3b8'
-  const dados = { cor, semCalculo: true, semanas: [], linhas: (pessoas || []).map((p) => ({ id: p.id, nome: p.nome, semanas: [], total: 0, b1: 0, b2: 0 })) }
+  const dados = { cor, semCalculo: true, semanas: [], linhas: (todasPessoas || []).map((p) => ({ id: p.id, nome: p.nome, semanas: [], total: 0, b1: 0, b2: 0 })) }
   const chave = JSON.stringify(dados)
   useEffect(() => { if (modo === 'coleta') onColeta?.(titulo, dados) }, [chave, modo]) // eslint-disable-line react-hooks/exhaustive-deps
   if (modo === 'coleta') return null
+  const pessoas = busca && !normNome(titulo).includes(busca) ? (todasPessoas || []).filter((p) => normNome(p.nome).includes(busca)) : todasPessoas
+  if (busca && !pessoas.length) return null
   const semanas = campanha.semanas
   const nDados = semanas.length * colsPorSemana(modo)
   const VAZIO = <span className="text-slate-300">—</span>
@@ -1198,7 +1579,9 @@ const comLimiteTempo = (p) => Promise.race([p, new Promise((_, rej) => setTimeou
 const PARAM_EMPRESA_QUADRO = { 'SETOR DE MECÂNICA': 'empresaOficina', 'CHEFE DE OFICINA': 'empresaChefeOficina', 'SETOR FUNILARIA/PINTURA': 'empresaFunilaria', 'SETOR GARANTIA': 'empresaGarantia' }
 // Endpoint da Matriz de cada quadro (abas Bloco 3 - Serviços / Bloco 3 - Peças).
 const fetchDoQuadro = (bloco, quadro) => (bloco === 'pecas' ? fetchBloco3Pecas
-  : (['CONSULTOR DE SERVIÇOS', 'MECÂNICO', ...Object.keys(PARAM_EMPRESA_QUADRO)].includes(quadro) ? fetchBloco3Servicos : fetchBloco3PosVenda))
+  : (['CONSULTOR DE SERVIÇOS', 'CONSULTOR DE PLANO DE MANUTENÇÃO', 'MECÂNICO', 'AGENDAMENTO DE SERVIÇOS', ...Object.keys(PARAM_EMPRESA_QUADRO)].includes(quadro) ? fetchBloco3Servicos : fetchBloco3PosVenda))
+// Quadros sem pessoa nem empresa que a Matriz monta sozinhos (?apenas=): não espera Consultor/Mecânico.
+const QUADROS_APENAS = new Set(['CONSULTOR DE PLANO DE MANUTENÇÃO', 'AGENDAMENTO DE SERVIÇOS'])
 
 const SEM_VALORES_FOTO = [] // função sem valores na foto do mês fechado (referência fixa)
 
@@ -1229,15 +1612,17 @@ function BlocoMatriz({ campanha, blocosMatriz, pessoas, carregandoFunc, ano, mes
     if (fotoLinha) { setDados(new Map(fotoLinha)); setPendentes(0); return undefined }
     setDados(new Map())
     if (!quadro || !pessoas.length || !sKeys.length || (paramEmpresa && !empresasTxt)) { setPendentes(0); return undefined }
+    // Pedidos de todas as pessoas juntos num POST por quadro (pedirQuadroCampanha), com as bases já
+    // guardadas no backend (pré-calculadas na Atualização).
     const buscar = fetchDoQuadro(bloco, quadro)
+    const tipo = bloco === 'pecas' ? 'pecas' : buscar === fetchBloco3Servicos ? 'servicos' : 'posvenda'
     // Quadro de uma empresa (ou sem empresa); null = falha/limite de tempo/backend fora do ar.
     const quadroDe = async (nome, empresa) => {
-      const params = { year: Number(ano), _forceReload: versaoDados > 0 }
+      const params = {}
       if (nome) params[param] = nome
       if (empresa) { params[paramEmpresa] = empresa; params.apenas = quadro } // só esse quadro (rápido)
-      const res = await comLimiteTempo(buscar(params))
-      if (res?.source === 'mock') return null // backend fora do ar → dados de exemplo não valem
-      return (res?.data || []).find((x) => normNome(x.tituloGerente) === normNome(quadro)) || null
+      if (QUADROS_APENAS.has(quadro)) params.apenas = quadro // idem (não monta Consultor/Mecânico)
+      return comLimiteTempo(pedirQuadroCampanha({ year: Number(ano), tipo, quadro, params, forcar: versaoDados > 0 }))
     }
     const ler = async (nome) => {
       try {
@@ -1287,8 +1672,9 @@ function BlocoMatriz({ campanha, blocosMatriz, pessoas, carregandoFunc, ano, mes
       // Apuração só mensal (Garantias): semanas sem valor; o bônus sai do Total do mês.
       mensal: !!cfg.mensal,
       itensMes: d.mensal?.itens || [],
-      semanas: campanha.semanas.map((_, i) => (cfg.mensal ? { itens: [], contribDireta: null }
-        : { itens: d.semanas[i]?.itens || [], contribDireta: d.semanas[i]?.contrib ?? null })),
+      // Apuração mensal (Garantias, Consultor de Plano): as semanas aparecem na Apuração só como
+      // acompanhamento; o bônus continua pelo Total do mês (p.mensal).
+      semanas: campanha.semanas.map((_, i) => ({ itens: d.semanas[i]?.itens || [], contribDireta: d.semanas[i]?.contrib ?? null })),
     }
   })
   return (
@@ -1300,7 +1686,7 @@ function BlocoMatriz({ campanha, blocosMatriz, pessoas, carregandoFunc, ano, mes
 }
 
 // Resultado: linhas de uma função (valor do bônus por semana + ⓘ do cálculo e Total).
-function ResultadoSemanal({ titulo, cor, campanha, linhas, carregando, faltam = 0, vazio, pesoB3, faixas, regras, unidade, chaveBonus, matrizB3 }) {
+function ResultadoSemanal({ titulo, cor, campanha, linhas, carregando, faltam = 0, vazio, pesoB3, faixas, regras, unidade, chaveBonus, matrizB3, verExtrato = null }) {
   const { hasActionOrDefault } = useAuth()
   const podeVerCalculo = hasActionOrDefault('bi/campanha/resultado', 'ver_calculo')
   const semanas = campanha.semanas
@@ -1344,8 +1730,7 @@ function ResultadoSemanal({ titulo, cor, campanha, linhas, carregando, faltam = 
           return (
             <tr key={p.id} className="border-b border-slate-100">
               <td className="p-2 font-medium text-slate-800 leading-tight" title={p.nome}>
-                <span className="block">{p.nome}</span>
-                <span className="text-[10px] font-normal text-slate-400">apuração mensal</span>
+                <span className="block"><NomeExtrato nome={p.nome} onClick={() => verExtrato?.(p)} /></span>
               </td>
               {semanas.map((s) => <td key={s.id} className={`${TD} border-l border-slate-200 text-center text-slate-300`}>—</td>)}
               <td className={`${TD} border-l border-slate-200 font-bold ${COR_TOTAL.real} ${total > 0 ? 'text-emerald-700' : 'text-slate-500'}`}
@@ -1362,7 +1747,7 @@ function ResultadoSemanal({ titulo, cor, campanha, linhas, carregando, faltam = 
         return (
           <tr key={p.id} className="border-b border-slate-100">
             <td className="p-2 font-medium text-slate-800 leading-tight [&>span]:mt-1 [&>span]:ml-0 [&>span]:inline-block" title={p.nome}>
-              <span className="block !mt-0">{p.nome}</span>
+              <span className="block !mt-0"><NomeExtrato nome={p.nome} onClick={() => verExtrato?.(p)} /></span>
               {p.alerta && (
                 <span className="ml-2 text-[10px] font-semibold px-1.5 py-px rounded border bg-red-50 text-red-700 border-red-200" title={p.alerta}>Mês zerado</span>
               )}
@@ -1432,18 +1817,23 @@ function LinhaFaltam({ faltam, colSpan }) {
   )
 }
 
-function ResumoSemanal({ titulo, cor, campanha, linhas, carregando, faltam = 0, vazio, blocosMatriz, matrizB3, chaveBonus }) {
+function ResumoSemanal({ titulo, cor, campanha, linhas: todasLinhas, carregando, faltam = 0, vazio, blocosMatriz, matrizB3, chaveBonus }) {
   const VAZIO = <span className="text-slate-300">—</span>
   const pesoB3 = blocosMatriz.pesos?.individual || 0
   const semanas = campanha.semanas
-  const { faixas, regras, unidade, modo, onColeta } = useContext(FaixasCtx)
+  const { faixas, regras, unidade, modo, onColeta, foto, busca, abrirExtrato } = useContext(FaixasCtx)
   if (modo === 'coleta') {
-    return <ColetaBonus titulo={titulo} cor={cor} campanha={campanha} linhas={linhas} carregando={carregando}
+    return <ColetaBonus titulo={titulo} cor={cor} campanha={campanha} linhas={todasLinhas} carregando={carregando}
       pesoB3={pesoB3} faixas={faixas} regras={regras} unidade={unidade} chaveBonus={chaveBonus} onColeta={onColeta} />
   }
+  // Busca por nome: só quem bate; função sem ninguém que bata some da tabela. Busca que bate com o
+  // nome da função: todos da função.
+  const linhas = busca && !normNome(titulo).includes(busca) ? todasLinhas.filter((l) => normNome(l.nome).includes(busca)) : todasLinhas
+  if (busca && !linhas.length) return null
+  const verExtrato = (p) => abrirExtrato?.({ p, titulo, pesoB3, chaveBonus, faixas, regras, unidade, campanha })
   if (modo === 'resultado') {
     return <ResultadoSemanal titulo={titulo} cor={cor} campanha={campanha} linhas={linhas} carregando={carregando} faltam={faltam} vazio={vazio}
-      pesoB3={pesoB3} faixas={faixas} regras={regras} unidade={unidade} chaveBonus={chaveBonus} matrizB3={matrizB3} />
+      pesoB3={pesoB3} faixas={faixas} regras={regras} unidade={unidade} chaveBonus={chaveBonus} matrizB3={matrizB3} verExtrato={verExtrato} />
   }
   const nCols = semanas.length * 2 + 3
   const TD = 'p-2 text-right whitespace-nowrap tabular-nums border-l border-slate-200'
@@ -1467,11 +1857,10 @@ function ResumoSemanal({ titulo, cor, campanha, linhas, carregando, faltam = 0, 
         return (
           <tr key={p.id} className="border-b border-slate-100">
             <td className="p-2 font-medium text-slate-800 leading-tight [&>span]:mt-1 [&>span]:ml-0 [&>span]:inline-block" title={p.nome}>
-              <span className="block !mt-0">{p.nome}</span>
+              <span className="block !mt-0"><NomeExtrato nome={p.nome} onClick={() => verExtrato(p)} /></span>
               {p.alerta && (
                 <span className="ml-2 text-[10px] font-semibold px-1.5 py-px rounded border bg-red-50 text-red-700 border-red-200" title={p.alerta}>Mês zerado</span>
               )}
-              {p.mensal && <span className="text-[10px] font-normal text-slate-400" title="Sem valor semanal — o resultado é o do mês">apuração mensal</span>}
             </td>
             {cels.map((c, i) => {
               const w = p.semanas[i]
@@ -1479,7 +1868,9 @@ function ResumoSemanal({ titulo, cor, campanha, linhas, carregando, faltam = 0, 
               const temContribDireta = Object.prototype.hasOwnProperty.call(w, 'contribDireta')
               const linhaAting = `Atingimento da semana: ${c.ating == null ? '—' : pctTxt(c.ating)}`
               const linhaPeso = temContribDireta ? 'Contribuição da semana (Matriz KPIs)' : 'Contribuição = soma peso × atingimento dos indicadores'
-              const tituloCel = c.semDiaUtil ? 'Semana sem dia útil' : `${linhaAting}\n${linhaPeso}\n${detalhe}`
+              // Apuração mensal (Garantias): a semana é só informativa — faixa e bônus saem do Total do mês.
+              const soInfo = p.mensal ? '\nSó informativo: o bônus é apurado pelo Total do mês.' : ''
+              const tituloCel = c.semDiaUtil ? 'Semana sem dia útil' : `${linhaAting}\n${linhaPeso}\n${detalhe}${soInfo}`
               // Faixa pelo valor da contribuição da semana.
               const fx = c.semDiaUtil ? null : faixaDoValor(c.contrib, faixas)
               return (
@@ -1488,9 +1879,9 @@ function ResumoSemanal({ titulo, cor, campanha, linhas, carregando, faltam = 0, 
                     {c.semDiaUtil || c.contrib == null ? VAZIO : pctTxt(c.contrib)}
                   </td>
                   <td className={TDF}
-                    title={!fx ? undefined : fx.abaixo
+                    title={!fx ? undefined : (fx.abaixo
                       ? `Abaixo da 1ª faixa (${pctTxt(fx.min)}) — não paga`
-                      : `Faixa ${rotuloFaixa(fx)} · paga ${pctTxt(fx.paga)} do bônus da ${fx.base === 'supermeta' ? 'Supermeta' : 'Meta'}`}>
+                      : `Faixa ${rotuloFaixa(fx)} · paga ${pctTxt(fx.paga)} do bônus da ${fx.base === 'supermeta' ? 'Supermeta' : 'Meta'}`) + soInfo}>
                     {!fx ? VAZIO : fx.abaixo
                       ? <span className="text-[10px] font-semibold text-red-600">Sem faixa</span>
                       : (
@@ -1506,7 +1897,7 @@ function ResumoSemanal({ titulo, cor, campanha, linhas, carregando, faltam = 0, 
               title={parcial ? (temTotalDireto ? 'Sem meta ou sem dados no mês' : 'Parcial: semanas sem meta ou sem dados ficaram de fora') : (temTotalDireto ? 'Contribuição do mês (Matriz KPIs)' : 'Contribuição do mês: média das semanas ponderada pelos dias úteis')}>
               {total == null ? VAZIO : <span className={corPct(total)}>{pctTxt(total)}{parcial ? '*' : ''}</span>}
             </td>
-            <CelulaSituacao bloqueio={bloqueio} />
+            <CelulaSituacao bloqueio={bloqueio} atingimento mesFechado={!!foto} />
           </tr>
         )
       })}
@@ -1788,7 +2179,7 @@ function regrasZeradas(regras, unidade, unidades) {
 // BLOCO3_PECAS). Cada função do Bônus-alvo aponta para um quadro: regras.quadroLinha[unidade][linha] =
 // { bloco: 'servicos' | 'pecas', quadro }. Sem escolha salva, vale o padrão da função.
 const QUADROS_BLOCO3 = {
-  servicos: ['CONSULTOR DE SERVIÇOS', 'MECÂNICO', 'CHEFE DE OFICINA', 'SETOR DE MECÂNICA', 'SETOR FUNILARIA/PINTURA', 'SETOR GARANTIA', 'GERENTE GERAL PÓS-VENDAS', 'GERENTE DE SERVIÇO - CAMPO GRANDE',
+  servicos: ['CONSULTOR DE SERVIÇOS', 'CONSULTOR DE PLANO DE MANUTENÇÃO', 'MECÂNICO', 'CHEFE DE OFICINA', 'SETOR DE MECÂNICA', 'SETOR FUNILARIA/PINTURA', 'SETOR GARANTIA', 'AGENDAMENTO DE SERVIÇOS', 'GERENTE GERAL PÓS-VENDAS', 'GERENTE DE SERVIÇO - CAMPO GRANDE',
     'GERENTE FILIAL - DOURADOS', 'GERENTE FILIAL - TRÊS LAGOAS', 'GERENTE FILIAL - CHAPADÃO DO SUL', 'GERENTE DE QUALIDADE'],
   pecas: ['GERENTE ATACADO PEÇAS', 'COORDENADOR ATACADO PEÇAS', 'VENDEDOR DE PEÇAS', 'GERENTE DE COMPRAS',
     'SUPERVISÃO DE PEÇAS/ENCARREGADO ESTOQUE', 'ESTOQUISTA/AUXILIAR PEÇAS'],
@@ -1798,18 +2189,35 @@ const FILTRO_PESSOA = { 'CONSULTOR DE SERVIÇOS': 'consultor', 'MECÂNICO': 'mec
 // Configuração efetiva do quadro de uma linha: a salva ou o padrão; "individual" só vale se o quadro permitir.
 // Quadros renomeados na Matriz: regras já salvas com o nome antigo continuam valendo.
 const QUADRO_RENOMEADO = { 'OFICINA': 'SETOR DE MECÂNICA' }
+// Empresas cujos valores somados formam o resultado da função (quadros por empresa, ex.: SETOR GARANTIA):
+// janela Editar da função › "Empresas que compõem o resultado". Gravado em empresasResultado[unidade][linha]; as
+// funções do antigo bloco de Garantias tinham em regrasGarantias[unidade][linha].empresas (ainda lido).
+// Sem escolha salva = só a própria empresa.
+// Só nos quadros listados aqui (hoje, os garantistas).
+const QUADROS_COM_EMPRESAS_RESULTADO = new Set(['SETOR GARANTIA'])
+const empresasResultadoDe = (regras, unidade, k) =>
+  regras?.empresasResultado?.[unidade]?.[k] || regras?.regrasGarantias?.[unidade]?.[k]?.empresas || null
 function cfgQuadroDaLinha(regras, unidade, k) {
-  // Funções de Garantias: quadro SETOR GARANTIA (por empresa), somando as empresas da regra
-  // "Empresas que compõem o resultado"; apuração só MENSAL (sem valor semanal).
-  if (regras?.gruposBonus?.[unidade]?.[k]?.area === 'garantias') {
-    const empresas = regras?.regrasGarantias?.[unidade]?.[k]?.empresas || [unidade]
-    return { bloco: 'servicos', quadro: 'SETOR GARANTIA', individual: false, empresas, mensal: true, garantias: true }
-  }
-  const c = regras?.quadroLinha?.[unidade]?.[k] || quadroPadraoDaLinha(k, unidade)
+  // Funções do antigo bloco "Garantias" (gruposBonus area 'garantias') sem quadro salvo: SETOR GARANTIA.
+  const doBlocoGarantias = regras?.gruposBonus?.[unidade]?.[k]?.area === 'garantias'
+  const c = regras?.quadroLinha?.[unidade]?.[k]
+    || (doBlocoGarantias ? { bloco: 'servicos', quadro: 'SETOR GARANTIA', individual: false } : quadroPadraoDaLinha(k, unidade))
   const quadro = QUADRO_RENOMEADO[c.quadro] || c.quadro || ''
   const podeIndividual = !!FILTRO_PESSOA[quadro]
-  return { bloco: c.bloco || 'servicos', quadro, individual: podeIndividual && (c.individual ?? true) }
+  const cfg = { bloco: c.bloco || 'servicos', quadro, individual: podeIndividual && (c.individual ?? true) }
+  if (QUADROS_COM_EMPRESAS_RESULTADO.has(quadro)) {
+    const empresas = empresasResultadoDe(regras, unidade, k)
+    if (empresas?.length) cfg.empresas = empresas
+  }
+  // Resultado semanal ou só mensal: flag da linha no Bônus-alvo (resultadoSemanal[unidade][linha]); sem
+  // escolha salva, semanal — menos os quadros só mensais (Consultor de Plano). Mensal = faixa e bônus
+  // pelo Total do mês; as semanas aparecem na Apuração só como acompanhamento.
+  const semanal = regras?.resultadoSemanal?.[unidade]?.[k]
+  if (semanal === false || (semanal == null && QUADROS_SO_MENSAIS.has(quadro))) cfg.mensal = true
+  return cfg
 }
+// Consultor de Plano de Manutenção: contratos do BI Planos de Manutenção, que só é apurado por mês.
+const QUADROS_SO_MENSAIS = new Set(['CONSULTOR DE PLANO DE MANUTENÇÃO'])
 function quadroPadraoDaLinha(k, unidade) {
   if (k === 'consultor') return { bloco: 'servicos', quadro: 'CONSULTOR DE SERVIÇOS', individual: true }
   if (k === 'mecanico') return { bloco: 'servicos', quadro: 'MECÂNICO', individual: true }
@@ -1835,12 +2243,21 @@ function cargosPadraoDaLinha(k, regras, unidade, cargosLista) {
 // Editor de cargos de uma linha do Bônus-alvo (ou de um grupo novo): descrição e cálculo (só grupos
 // criados) + cargos do menu Cargos (busca + marcar/desmarcar). Só altera o rascunho — vale no Salvar.
 // semQuadro: funções de Garantias (regras próprias) — sem o seletor de quadro do Bloco 3 - Serviços.
-function EditorCargos({ cargosLista, empresaPadrao = '', quadroInicial, novo, linha, grupo, selecionados, onCancelar, onSalvar, onRemover, semQuadro = false }) {
+// unidades / empresasIniciais: "Empresas que compõem o resultado" (só nos quadros por empresa, ex.:
+// SETOR GARANTIA) — a função soma os valores das empresas marcadas; ao menos uma.
+function EditorCargos({ cargosLista, empresaPadrao = '', quadroInicial, novo, linha, grupo, selecionados, onCancelar, onSalvar, onRemover, semQuadro = false,
+  unidades = [], empresasIniciais = [] }) {
   // Quadro do Bloco 3 da Matriz KPIs que dá os valores da Apuração/Resultado desta função.
   const bloco = 'servicos' // só o Bloco 3 - Serviços
   const [quadro, setQuadro] = useState(quadroInicial?.quadro || '')
   const [individual, setIndividual] = useState(!!quadroInicial?.individual)
   const podeIndividual = !!FILTRO_PESSOA[quadro]
+  const temEmpresasResultado = QUADROS_COM_EMPRESAS_RESULTADO.has(quadro)
+  const [empresasRes, setEmpresasRes] = useState(empresasIniciais)
+  const alternarEmpresaRes = (id) => setEmpresasRes((atuais) => {
+    const novas = atuais.includes(id) ? atuais.filter((x) => x !== id) : [...atuais, id]
+    return unidades.map((x) => x.id).filter((x) => novas.includes(x)) // ordem do cadastro (CG, DOU, TL, CS)
+  })
   const [nome, setNome] = useState(grupo?.nome || linha?.nome || '')
   const [marcados, setMarcados] = useState(() => new Set((selecionados || []).map(normNome)))
   const [busca, setBusca] = useState('')
@@ -1905,6 +2322,26 @@ function EditorCargos({ cargosLista, empresaPadrao = '', quadroInicial, novo, li
             </label>
           </div>
           )}
+          {/* Empresas que compõem o resultado (quadro por empresa, ex.: SETOR GARANTIA). */}
+          {temEmpresasResultado && unidades.length > 0 && (
+            <div className="text-xs space-y-2 rounded-md border border-slate-200 bg-slate-50/60 p-3">
+              <span className="block font-semibold text-slate-700">Empresas que compõem o resultado</span>
+              <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+                {unidades.map((x) => {
+                  const unica = empresasRes.length === 1 && empresasRes.includes(x.id)
+                  return (
+                    <label key={x.id} className="inline-flex items-center gap-2 text-slate-700" title={unica ? 'É preciso ao menos uma empresa' : undefined}>
+                      <input type="checkbox" className="h-3.5 w-3.5" checked={empresasRes.includes(x.id)} disabled={unica} onChange={() => alternarEmpresaRes(x.id)} />
+                      {x.nome}
+                    </label>
+                  )
+                })}
+              </div>
+              <p className="text-[11px] text-slate-500">
+                Resultado = soma de {empresasRes.map((id) => unidades.find((x) => x.id === id)?.nome || id).join(' + ')} (realizado e meta de cada indicador).
+              </p>
+            </div>
+          )}
           <div className="text-xs">
             {/* Empresa e, logo abaixo, a busca — cada um na largura toda. */}
             <div className="space-y-2">
@@ -1942,7 +2379,8 @@ function EditorCargos({ cargosLista, empresaPadrao = '', quadroInicial, novo, li
           ) : <span />}
           <div className="flex items-center gap-2">
             <button type="button" onClick={onCancelar} className="px-3 py-1.5 rounded-md text-xs font-semibold text-slate-700 border border-slate-200 bg-white hover:bg-slate-50">Cancelar</button>
-            <button type="button" disabled={!podeSalvar} onClick={() => onSalvar({ nome: nome.trim(), cargos: [...marcados], quadro: { bloco, quadro, individual: podeIndividual && individual } })}
+            <button type="button" disabled={!podeSalvar} onClick={() => onSalvar({ nome: nome.trim(), cargos: [...marcados], quadro: { bloco, quadro, individual: podeIndividual && individual },
+              empresas: temEmpresasResultado && empresasRes.length ? empresasRes : null })}
               className="px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50">
               {novo ? 'Adicionar' : 'Aplicar'}
             </button>
@@ -2033,7 +2471,7 @@ function MenuEngrenagem({ itens, flutuante = false, titulo = 'Mais ações', com
   )
 }
 
-function AbaRegras({ onSalvarMes, cargosLista = [], travaPeriodicidade = null, permRegras = {}, mesFechado = false, onSalvarOutra, slotAcoes, campanha, unidade, semCalendario, nomeMes, ano, mes, regras, onSalvar, origemRegras, nomeEmpresa }) {
+function AbaRegras({onSalvarMes, cargosLista = [], travaPeriodicidade = null, permRegras = {}, mesFechado = false, onSalvarOutra, slotAcoes, campanha, unidade, semCalendario, nomeMes, ano, mes, regras, onSalvar, origemRegras, nomeEmpresa }) {
   const unidades = unidade === 'TRUCKS' ? campanha.unidades : campanha.unidades.filter((u) => u.id === unidade)
   const semCal = unidades.filter((u) => semCalendario.includes(u.id))
 
@@ -2041,18 +2479,22 @@ function AbaRegras({ onSalvarMes, cargosLista = [], travaPeriodicidade = null, p
   const [rascunho, setRascunho] = useState(regras)
   const [salvando, setSalvando] = useState(false)
   const [msg, setMsg] = useState(null)
-  useEffect(() => { setRascunho(regras); setMsg(null) }, [regras])
+  // Cadeado de cada quadro (Regras-chave, Bônus-alvo, Faixas): quadro aberto = editável; fechar grava.
+  // secaoAberta: null (tudo travado) | 'chave' | 'bonus' | 'faixas' | 'todas' (Zerar / Copiar do mês
+  // anterior mexem em tudo). Fecha ao trocar empresa/mês ou depois de gravar.
+  const [secaoAberta, setSecaoAberta] = useState(null)
+  useEffect(() => { setRascunho(regras); setMsg(null); setSecaoAberta(null) }, [regras])
   const alterado = JSON.stringify(rascunho) !== JSON.stringify(regras)
   const linhas = linhasBonus(rascunho, unidade, campanha.unidades)
-  // Funções de Garantias (gruposBonus com area 'garantias') ficam no bloco próprio, fora de Serviços.
-  const linhasServicos = linhas.filter((l) => l.area !== 'garantias')
-  const linhasGarantias = linhas.filter((l) => l.area === 'garantias')
-  const moverArea = (l, area) => alterar(['gruposBonus', unidade, l.k, 'area'], area)
+  // Todas as funções no Bônus-alvo - Serviços (o antigo bloco "Garantias" foi juntado aqui).
+  const linhasServicos = linhas
   const valorSuper = (l) => {
     const v = lerCaminho(rascunho, l.supermeta)
     return v // só o valor digitado (sem preencher 120% da Meta automaticamente)
   }
-  const alterar = (caminho, v) => { setRascunho((r) => comValor(r, caminho, v)); setMsg(null) }
+  // Qualquer mudança no rascunho (inclusive Zerar / Copiar do mês anterior) abre o cadeado: para gravar,
+  // basta fechá-lo.
+  const alterar = (caminho, v) => { setRascunho((r) => comValor(r, caminho, v)); setMsg(null); setSecaoAberta((x) => x || 'todas') }
   // Bônus-alvo é do mês: por semana = valor ÷ nº de semanas do mês (5 semanas ÷ 5, 4 semanas ÷ 4).
   const nSemanas = campanha.semanas.length || 1
   const porSemana = (v) => `R$ ${moedaTxt((Number(v) || 0) / nSemanas)}`
@@ -2067,14 +2509,17 @@ function AbaRegras({ onSalvarMes, cargosLista = [], travaPeriodicidade = null, p
     if (Array.isArray(salvo)) return salvo
     return cargosPadraoDaLinha(l.k, rascunho, unidade, cargosLista)
   }
-  const salvarCargos = (ed, { nome, cargos, quadro }) => {
+  const salvarCargos = (ed, { nome, cargos, quadro, empresas }) => {
     if (ed.novo) {
       const k = `g${Date.now().toString(36)}`
       alterar(['gruposBonus', unidade, k], { nome, cargos, meta: 0, supermeta: null, ...(ed.area ? { area: ed.area } : {}) })
       if (!ed.area) alterar(['quadroLinha', unidade, k], quadro)
+      if (empresas) alterar(['empresasResultado', unidade, k], empresas)
       return
     }
     alterar(['quadroLinha', unidade, ed.linha.k], quadro)
+    // Empresas que compõem o resultado (janela Editar, só em quadro por empresa).
+    if (empresas) alterar(['empresasResultado', unidade, ed.linha.k], empresas)
     if (ed.linha.grupo) {
       const atual = rascunho.gruposBonus?.[unidade]?.[ed.linha.k] || {}
       alterar(['gruposBonus', unidade, ed.linha.k], { ...atual, nome, cargos })
@@ -2111,7 +2556,7 @@ function AbaRegras({ onSalvarMes, cargosLista = [], travaPeriodicidade = null, p
   // Excluir uma linha do Bônus-alvo: grupo criado é apagado; função fixa é marcada como removida
   // (some da tabela e da Apuração/Resultado/Pagamento desta empresa e mês). Vale depois de Salvar.
   const excluirLinha = (l) => {
-    if (!window.confirm(`Excluir a função "${l.nome}" e as metas dela do Bônus-alvo?\n\nEla deixa de aparecer na Apuração, no Resultado e no Pagamento desta empresa (${nomeMes}/${ano}). Clique em Salvar para gravar.`)) return
+    if (!window.confirm(`Excluir a função "${l.nome}" e as metas dela do Bônus-alvo?\n\nEla deixa de aparecer na Apuração, no Resultado e no Pagamento desta empresa (${nomeMes}/${ano}). Feche o cadeado do quadro para gravar.`)) return
     if (l.grupo) { removerGrupo(l.k); return }
     alterar(['linhasRemovidas', unidade, l.k], true)
   }
@@ -2126,14 +2571,15 @@ function AbaRegras({ onSalvarMes, cargosLista = [], travaPeriodicidade = null, p
   const somaBlocosOk = Math.abs(somaBlocos - 1) < 0.0001
   // Células B1, B2 e B3 de Meta/Supermeta: valor do mês (parte do bloco) e, embaixo, por semana.
   const BLOCOS_BONUS = [['companhia', 'B1'], ['departamento', 'B2'], ['individual', 'B3']]
-  const celulasBlocos = (v) => BLOCOS_BONUS.map(([k, rot]) => {
+  // mensal: função só com resultado mensal — sem o valor por semana embaixo do Bloco 3.
+  const celulasBlocos = (v, mensal = false) => BLOCOS_BONUS.map(([k, rot]) => {
     const cls = `p-2 text-right tabular-nums whitespace-nowrap ${k === 'individual' ? 'text-blue-800 bg-blue-50/40' : 'text-slate-600'}`
     if (v == null) return <td key={k} className={cls}>—</td>
     const parte = (Number(v) || 0) * (Number(pb[k]) || 0)
     return (
-      <td key={k} className={cls} title={`${rot} (${pctTxt(Number(pb[k]) || 0)})`}>
+      <td key={k} className={cls} title={`${rot} (${pctTxt(Number(pb[k]) || 0)})${k === 'individual' && mensal ? ' · resultado mensal' : ''}`}>
         R$ {moedaTxt(parte)}
-        {k === 'individual' && <span className="block text-[10px] text-slate-400">R$ {moedaTxt(parte / nSemanas)}/sem</span>}
+        {k === 'individual' && !mensal && <span className="block text-[10px] text-slate-400">R$ {moedaTxt(parte / nSemanas)}/sem</span>}
       </td>
     )
   })
@@ -2142,11 +2588,27 @@ function AbaRegras({ onSalvarMes, cargosLista = [], travaPeriodicidade = null, p
     try {
       await onSalvar(rascunho)
       setMsg({ erro: false, txt: `Salvo para ${nomeEmpresa} — ${nomeMes}/${ano}.` })
+      return true
     } catch (err) {
       setMsg({ erro: true, txt: `Não foi possível salvar: ${err.message || err}` })
+      return false
     } finally {
       setSalvando(false)
     }
+  }
+  // Cadeado de um quadro: fechado = campos travados; abrir libera só esse quadro (se outro estava aberto
+  // com mudanças, grava antes); fechar grava as regras (se algo mudou) e trava. Se a gravação falhar,
+  // continua aberto com a mensagem de erro.
+  const podeEditar = (s) => secaoAberta === 'todas' || secaoAberta === s
+  const alternarSecao = async (s) => {
+    if (podeEditar(s)) {
+      if (alterado && !(await salvar())) return
+      setSecaoAberta(null)
+      return
+    }
+    if (secaoAberta && alterado && !(await salvar())) return
+    setSecaoAberta(s)
+    setMsg(null)
   }
 
   // Zerar valores (aba inteira desta empresa), só no rascunho — vale depois de Salvar:
@@ -2156,7 +2618,8 @@ function AbaRegras({ onSalvarMes, cargosLista = [], travaPeriodicidade = null, p
   //   Faixas de pagamento: nenhuma faixa.
   const zerarValores = () => {
     setRascunho(regrasZeradas(rascunho, unidade, campanha.unidades))
-    setMsg({ erro: false, txt: 'Valores zerados — clique em Salvar para gravar.' })
+    setSecaoAberta('todas')
+    setMsg({ erro: false, txt: 'Valores zerados — feche um cadeado para gravar.' })
   }
 
   // Zerar valores de TODAS as empresas (CG, DOU, TL, CS e CAIOBÁ TRUCKS) no mês/ano selecionado:
@@ -2199,8 +2662,9 @@ function AbaRegras({ onSalvarMes, cargosLista = [], travaPeriodicidade = null, p
         return
       }
       setRascunho(mesclarRegras(REGRAS_PADRAO, linha.dados))
+      setSecaoAberta('todas')
       const deOnde = linha.unidade === 'GERAL' ? 'regra geral' : nomeEmpresa
-      setMsg({ erro: false, txt: `Copiado de ${MESES[Number(linha.mes) - 1]?.label}/${linha.ano} (${deOnde}) — clique em Salvar para gravar.` })
+      setMsg({ erro: false, txt: `Copiado de ${MESES[Number(linha.mes) - 1]?.label}/${linha.ano} (${deOnde}) — feche um cadeado para gravar.` })
     } catch (err) {
       setMsg({ erro: true, txt: `Não foi possível copiar: ${err.message || err}` })
     } finally {
@@ -2240,7 +2704,7 @@ function AbaRegras({ onSalvarMes, cargosLista = [], travaPeriodicidade = null, p
         r = comValor(r, ['faixasGarantias', destino.id], rascunho.faixasGarantias?.[unidade] || [])
         await onSalvarOutra(destino.id, r)
       }
-      setMsg({ erro: false, txt: `Copiado e salvo em ${nomes} (${nomeMes}/${ano}).${alterado ? ' Esta empresa ainda precisa de Salvar.' : ''}` })
+      setMsg({ erro: false, txt: `Copiado e salvo em ${nomes} (${nomeMes}/${ano}).${alterado ? ' Esta empresa ainda precisa fechar o cadeado para gravar as próprias mudanças.' : ''}` })
     } catch (err) {
       setMsg({ erro: true, txt: `Não foi possível copiar para todas: ${err.message || err}` })
     } finally {
@@ -2248,32 +2712,35 @@ function AbaRegras({ onSalvarMes, cargosLista = [], travaPeriodicidade = null, p
     }
   }
 
-  // Salvar/Descartar gravam todas as regras da aba de uma vez (Bônus-alvo e Faixas). Ficam na linha
-  // das abas (slotAcoes, via portal), com a engrenagem de Zerar valores / Copiar do mês anterior.
-  // Mesmo Salvar do topo, no título de cada tabela editável (grava a aba inteira desta empresa/mês).
-  const salvarNaTabela = permRegras.editar && (
-    <button type="button" onClick={salvar} disabled={salvando || !alterado}
-      title={salvando ? 'Salvando…' : alterado ? 'Salvar' : 'Nada para salvar'} aria-label="Salvar"
-      className="inline-flex items-center justify-center rounded-md border border-blue-600 bg-blue-600 p-1.5 text-white hover:bg-blue-700 disabled:opacity-40">
-      {salvando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-    </button>
-  )
+  // Cadeado no título de cada quadro editável (fechar grava a aba desta empresa/mês; como só o quadro
+  // aberto pode ter mudado, é a mudança dele que vai para o banco).
+  const NOMES_SECAO = { chave: 'Regras-chave', bonus: 'Bônus-alvo', faixas: 'Faixas de pagamento' }
+  const cadeadoSecao = (s) => {
+    if (!permRegras.editar) return null
+    const aberto = podeEditar(s)
+    const nome = NOMES_SECAO[s]
+    return (
+      <button type="button" onClick={() => alternarSecao(s)} disabled={salvando} aria-pressed={aberto}
+        title={salvando ? 'Salvando…' : !aberto ? `Abrir ${nome} para editar` : alterado ? `Fechar e salvar ${nome}` : `Fechar ${nome} (nada para salvar)`}
+        aria-label={!aberto ? `Abrir ${nome} para editar` : `Fechar e salvar ${nome}`}
+        className={`inline-flex items-center justify-center rounded-md border p-1.5 disabled:opacity-50 ${aberto
+          ? 'border-amber-400 bg-amber-50 text-amber-700 hover:bg-amber-100'
+          : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50'}`}>
+        {salvando && aberto ? <Loader2 className="h-4 w-4 animate-spin" /> : aberto ? <Unlock className="h-4 w-4" /> : <Lock className="h-4 w-4" />}
+      </button>
+    )
+  }
 
   const botoesSalvar = (
     <div className="flex items-center gap-2">
       {msg && <span className={`text-xs ${msg.erro ? 'text-red-600' : 'text-emerald-700'}`}>{msg.txt}</span>}
-      {permRegras.editar && alterado && (
-        // Só ícones (lixeira = Descartar, disquete = Salvar); o nome aparece ao passar o mouse.
-        <button type="button" onClick={() => { setRascunho(regras); setMsg(null) }} title="Descartar" aria-label="Descartar"
+      {permRegras.editar && secaoAberta && alterado && (
+        // Descartar: desfaz as mudanças não gravadas e fecha os cadeados.
+        <button type="button" onClick={() => { setRascunho(regras); setMsg(null); setSecaoAberta(null) }} title="Descartar alterações" aria-label="Descartar alterações"
           className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white p-1.5 text-slate-600 hover:bg-red-50 hover:text-red-600 hover:border-red-200">
           <Trash2 className="h-4 w-4" />
         </button>
       )}
-      {permRegras.editar && <button type="button" onClick={salvar} disabled={salvando || !alterado}
-        title={salvando ? 'Salvando…' : 'Salvar'} aria-label="Salvar"
-        className="inline-flex items-center justify-center rounded-md border border-blue-600 bg-blue-600 p-1.5 text-white hover:bg-blue-700 disabled:opacity-50">
-        {salvando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-      </button>}
       <MenuEngrenagem itens={[
         {
           permitido: permRegras.zerar && permRegras.editar,
@@ -2363,19 +2830,11 @@ function AbaRegras({ onSalvarMes, cargosLista = [], travaPeriodicidade = null, p
       </table>
     </div>
   )
-  // Faixas de pagamento - Garantias: próprias da empresa (faixasGarantias[unidade]), começam vazias.
-  const faixasGar = rascunho.faixasGarantias?.[unidade] || []
-  const caminhoFaixasGar = ['faixasGarantias', unidade]
-  // Regras - Garantias › Empresas do resultado: cada função de Garantias soma os valores das empresas
-  // marcadas (ex.: garantista de Campo Grande responde por Campo Grande + Chapadão do Sul). Gravado em
-  // regrasGarantias[unidade][linha].empresas = ['CG', 'CS']; sem escolha salva, vale a própria empresa.
-  const empresasGarantia = (l) => rascunho.regrasGarantias?.[unidade]?.[l.k]?.empresas || [unidade]
-  const alternarEmpresaGarantia = (l, id) => {
-    const atuais = empresasGarantia(l)
-    const novas = atuais.includes(id) ? atuais.filter((x) => x !== id) : [...atuais, id]
-    // Mantém a ordem do cadastro (CG, DOU, TL, CS).
-    alterar(['regrasGarantias', unidade, l.k, 'empresas'], campanha.unidades.map((x) => x.id).filter((x) => novas.includes(x)))
-  }
+  // Empresas que compõem o resultado: a função soma os valores das empresas marcadas (ex.: garantista
+  // de Campo Grande responde por Campo Grande + Chapadão do Sul). Gravado em empresasResultado[unidade][linha]
+  // = ['CG', 'CS']; sem escolha salva, vale a própria empresa.
+  const empresasDaLinha = (l) => empresasResultadoDe(rascunho, unidade, l.k) || [unidade]
+  const nomesEmpresas = (ids) => ids.map((id) => campanha.unidades.find((x) => x.id === id)?.nome || id).join(' + ')
 
   // Tabela do Bônus-alvo: Serviços (com a parte de cada bloco) ou Garantias (só Meta e Supermeta).
   const tabelaBonus = (lista, garantias = false) => (
@@ -2388,6 +2847,12 @@ function AbaRegras({ onSalvarMes, cargosLista = [], travaPeriodicidade = null, p
                 <tr className="bg-slate-50 border-t border-slate-200">
                   <th rowSpan={2} className={`${TH} w-9 align-bottom border-b border-slate-200`} aria-label="Excluir" />
                   <th rowSpan={2} className={`${TH} text-left align-bottom border-b border-slate-200`}>Função</th>
+                  {!garantias && (
+                    <th rowSpan={2} className={`${TH} text-center align-bottom border-l border-b border-slate-200 w-20`}
+                      title="Marcado: faixa e bônus apurados semana a semana. Desmarcado: só pelo resultado do mês (as semanas aparecem na Apuração só como acompanhamento).">
+                      Resultado semanal
+                    </th>
+                  )}
                   <th colSpan={garantias ? 1 : 4} className={`${TH} text-center border-l border-slate-200`}>Meta</th>
                   <th colSpan={garantias ? 1 : 4} className={`${TH} text-center border-l border-slate-200`}>Supermeta</th>
                 </tr>
@@ -2421,8 +2886,7 @@ function AbaRegras({ onSalvarMes, cargosLista = [], travaPeriodicidade = null, p
                     <tr key={l.k} className={`border-b border-slate-100 last:border-0 ${metaTravada ? 'bg-slate-50' : ''}`}>
                       <td className="p-1.5 text-center">
                         <MenuEngrenagem flutuante compacto titulo={`Ações — ${l.nome}`} itens={[
-                          { rotulo: 'Editar', icone: Pencil, onClick: () => setEditorCargos({ linha: l, area: garantias ? 'garantias' : null }), dica: 'Editar descrição, quadro do Bloco 3 e cargos desta função' },
-                          ...(l.grupo ? [{ rotulo: garantias ? 'Mover para Serviços' : 'Mover para Garantias', icone: garantias ? Wrench : ShieldCheck, onClick: () => moverArea(l, garantias ? null : 'garantias'), dica: garantias ? 'Passa esta função para o Bônus-alvo - Serviços' : 'Passa esta função para o bloco Bônus-alvo e Regras - Garantias' }] : []),
+                          { rotulo: 'Editar', icone: Pencil, onClick: () => setEditorCargos({ linha: l }), dica: 'Editar descrição, quadro do Bloco 3, empresas do resultado e cargos desta função' },
                           { rotulo: 'Excluir', icone: Trash2, perigo: true, onClick: () => excluirLinha(l), dica: `Excluir a função "${l.nome}" e as metas dela` },
                         ]} />
 
@@ -2430,7 +2894,7 @@ function AbaRegras({ onSalvarMes, cargosLista = [], travaPeriodicidade = null, p
                       <td className={`p-2 font-medium whitespace-nowrap ${metaTravada ? 'text-slate-400' : 'text-slate-700'}`}>
                         {l.nome}
                         {l.cargos && (
-                          <button type="button" onClick={() => setEditorCargos({ linha: l, area: garantias ? 'garantias' : null })}
+                          <button type="button" onClick={() => setEditorCargos({ linha: l })}
                             title={`Cargos que fazem parte de "${l.nome}": ${cargosDaLinha(l).join(', ') || 'nenhum'}`}
                             className="ml-2 inline-flex items-center gap-1 rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-semibold text-slate-600 hover:bg-slate-50 hover:text-blue-700">
                             <Users className="h-3 w-3" /> Cargos ({cargosDaLinha(l).length})
@@ -2442,10 +2906,19 @@ function AbaRegras({ onSalvarMes, cargosLista = [], travaPeriodicidade = null, p
                           return (
                             <span className={`block text-[10px] font-normal ${q.quadro ? 'text-slate-400' : 'text-amber-600'}`}>
                               {q.quadro ? `Bloco 3 - Serviços / ${nomeProprio(q.quadro)}${q.individual ? ' · individual' : ''}` : 'Sem quadro do Bloco 3'}
+                              {q.empresas?.length > 1 && ` · soma ${nomesEmpresas(q.empresas)}`}
                             </span>
                           )
                         })()}
                       </td>
+                      {!garantias && (
+                        <td className="p-1.5 text-center border-l border-slate-100">
+                          <input type="checkbox" className="h-4 w-4 cursor-pointer" checked={!quadroDaLinha(l).mensal}
+                            aria-label={`Resultado semanal — ${l.nome}`}
+                            title={quadroDaLinha(l).mensal ? 'Só resultado mensal: faixa e bônus pelo Total do mês' : 'Resultado semanal: faixa e bônus semana a semana'}
+                            onChange={(e) => alterar(['resultadoSemanal', unidade, l.k], e.target.checked)} />
+                        </td>
+                      )}
                       <td className="p-1.5 text-right border-l border-slate-100">
                         <span className="inline-flex items-center gap-1.5">
                           <Cadeado travado={metaTravada} rotulo={`Meta — ${l.nome}`} onClick={() => travar('meta', !metaTravada)}
@@ -2454,7 +2927,7 @@ function AbaRegras({ onSalvarMes, cargosLista = [], travaPeriodicidade = null, p
                             value={lerCaminho(rascunho, l.meta) ?? 0} onChange={(v) => alterar(l.meta, v)} />
                         </span>
                       </td>
-                      {!garantias && celulasBlocos(metaTravada ? null : lerCaminho(rascunho, l.meta))}
+                      {!garantias && celulasBlocos(metaTravada ? null : lerCaminho(rascunho, l.meta), !!quadroDaLinha(l).mensal)}
                       <td className="p-1.5 text-right border-l border-slate-100">
                         {l.supermeta && (
                           <span className="inline-flex items-center gap-1.5">
@@ -2466,7 +2939,7 @@ function AbaRegras({ onSalvarMes, cargosLista = [], travaPeriodicidade = null, p
                           </span>
                         )}
                       </td>
-                      {!garantias && celulasBlocos(!l.supermeta || superTravada ? null : valorSuper(l))}
+                      {!garantias && celulasBlocos(!l.supermeta || superTravada ? null : valorSuper(l), !!quadroDaLinha(l).mensal)}
                     </tr>
                   )
                 })}
@@ -2488,6 +2961,11 @@ function AbaRegras({ onSalvarMes, cargosLista = [], travaPeriodicidade = null, p
         </p>
       )}
       {/* Bloco normal (não "contents"): assim o espaçamento entre os quadros da aba funciona. */}
+      {permRegras.editar && !secaoAberta && (
+        <p className="text-xs text-slate-500 flex items-center gap-1.5">
+          <Lock className="h-3.5 w-3.5" /> Regras travadas — clique no cadeado de cada quadro para editá-lo; ao fechar o cadeado, as alterações são gravadas.
+        </p>
+      )}
       <fieldset disabled={!permRegras.editar} className="space-y-5 min-w-0">
     <div className="grid grid-cols-1 gap-5">
     {/* Semanas e Regras-chave lado a lado; Bônus-alvo e Faixas abaixo. */}
@@ -2538,8 +3016,9 @@ function AbaRegras({ onSalvarMes, cargosLista = [], travaPeriodicidade = null, p
       <section className={`${CARD} p-4 space-y-3`}>
         <div className="flex items-center justify-between gap-2">
           <h2 className="text-sm font-bold text-slate-900">Regras-chave</h2>
-          {salvarNaTabela}
+          {cadeadoSecao('chave')}
         </div>
+        <fieldset disabled={!podeEditar('chave')} className="min-w-0">
         <div className="overflow-x-auto">
           <table className="w-full text-xs border-collapse">
             <thead>
@@ -2629,13 +3108,16 @@ function AbaRegras({ onSalvarMes, cargosLista = [], travaPeriodicidade = null, p
             </tbody>
           </table>
         </div>
+        </fieldset>
       </section>
     </div>
 
       <section className={`${CARD} p-4 space-y-3`}>
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <h2 className="text-sm font-bold text-slate-900">Bônus-alvo - Serviços</h2>
+          {cadeadoSecao('bonus')}
         </div>
+        <fieldset disabled={!podeEditar('bonus')} className="space-y-3 min-w-0">
         {/* Divisão do bônus entre os blocos da Matriz (iguais para todas as funções; gravado em
             regras.pesosBlocos). A parte de cada bloco é a base de cálculo daquele bloco — hoje só o
             Bloco 3 tem dados (Resultado e Pagamento usam a parte do Bloco 3). */}
@@ -2653,15 +3135,18 @@ function AbaRegras({ onSalvarMes, cargosLista = [], travaPeriodicidade = null, p
           </span>
         </div>
         {tabelaBonus(linhasServicos)}
-        {/* Novo grupo de cargos (não existe em CAIOBÁ TRUCKS, que só tem o Gerente Geral). */}
+        </fieldset>
+        {/* Novo grupo de cargos (não existe em CAIOBÁ TRUCKS, que só tem o Gerente Geral) + o cadeado do
+            quadro (fora do fieldset travado, para continuar clicável). */}
         <div className="flex items-center gap-2">
           {unidade !== 'TRUCKS' && (
-            <button type="button" onClick={() => setEditorCargos({ novo: true })}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-blue-700 border border-blue-200 bg-blue-50 hover:bg-blue-100">
+            <button type="button" onClick={() => setEditorCargos({ novo: true })} disabled={!permRegras.editar || !podeEditar('bonus')}
+              title={podeEditar('bonus') ? undefined : 'Abra o cadeado para adicionar'}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-blue-700 border border-blue-200 bg-blue-50 hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed">
               <Plus className="h-3.5 w-3.5" /> Adicionar cargo
             </button>
           )}
-          {salvarNaTabela}
+          {cadeadoSecao('bonus')}
         </div>
       </section>
     </div>
@@ -2670,6 +3155,7 @@ function AbaRegras({ onSalvarMes, cargosLista = [], travaPeriodicidade = null, p
           quadroInicial={editorCargos.linha ? quadroDaLinha(editorCargos.linha) : { bloco: 'servicos', quadro: '', individual: false }} linha={editorCargos.linha || null}
           grupo={editorCargos.linha?.grupo ? rascunho.gruposBonus?.[unidade]?.[editorCargos.linha.k] : null}
           selecionados={editorCargos.linha ? cargosDaLinha(editorCargos.linha) : []}
+          unidades={campanha.unidades} empresasIniciais={editorCargos.linha ? empresasDaLinha(editorCargos.linha) : [unidade]}
           onCancelar={() => setEditorCargos(null)}
           onRemover={editorCargos.linha?.grupo ? () => { removerGrupo(editorCargos.linha.k); setEditorCargos(null) } : null}
           onSalvar={(dados) => { salvarCargos(editorCargos, dados); setEditorCargos(null) }} />
@@ -2678,90 +3164,20 @@ function AbaRegras({ onSalvarMes, cargosLista = [], travaPeriodicidade = null, p
       <section className={`${CARD} p-4 space-y-3`}>
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <h2 className="text-sm font-bold text-slate-900">Faixas de pagamento</h2>
+          {cadeadoSecao('faixas')}
         </div>
+        <fieldset disabled={!podeEditar('faixas')} className="space-y-3 min-w-0">
         {tabelaFaixas(faixas, ['faixasUnidade', unidade])}
+        </fieldset>
         <div className="flex items-center gap-2">
-          <button type="button" onClick={adicionarFaixa}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-blue-700 border border-blue-200 bg-blue-50 hover:bg-blue-100">
+          <button type="button" onClick={adicionarFaixa} disabled={!permRegras.editar || !podeEditar('faixas')}
+            title={podeEditar('faixas') ? undefined : 'Abra o cadeado para adicionar'}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-blue-700 border border-blue-200 bg-blue-50 hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed">
             <Plus className="h-3.5 w-3.5" /> Adicionar faixa
           </button>
-          {salvarNaTabela}
+          {cadeadoSecao('faixas')}
         </div>
       </section>
-      {/* Bônus-alvo e Regras - Garantias: funções de garantia (gruposBonus com area 'garantias'), com
-          Meta/Supermeta e Faixas de pagamento próprias (faixasGarantias[unidade]). */}
-      {unidade !== 'TRUCKS' && (
-      <section className={`${CARD} p-4 space-y-4 border-l-4 border-l-amber-400`}>
-        <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-          <ShieldCheck className="h-4 w-4 text-amber-600" /> Bônus-alvo e Regras - Garantias
-        </h2>
-        <div className="space-y-3">
-          <h3 className="text-xs font-bold text-slate-700">Bônus-alvo</h3>
-          {tabelaBonus(linhasGarantias, true)}
-          <div className="flex items-center gap-2">
-            <button type="button" onClick={() => setEditorCargos({ novo: true, area: 'garantias' })}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-blue-700 border border-blue-200 bg-blue-50 hover:bg-blue-100">
-              <Plus className="h-3.5 w-3.5" /> Adicionar cargo
-            </button>
-            {salvarNaTabela}
-          </div>
-        </div>
-        <div className="space-y-3 border-t border-slate-100 pt-4">
-          <h3 className="text-xs font-bold text-slate-700">Regras - Garantias</h3>
-          {/* Regra 1: empresas cujos valores somados formam o resultado de cada função de Garantias. */}
-          <div className="space-y-2">
-            <p className="text-xs font-semibold text-slate-700">Empresas que compõem o resultado</p>
-            {!linhasGarantias.length ? (
-              <p className="text-xs text-slate-500">Cadastre uma função de Garantias no Bônus-alvo acima para escolher as empresas.</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50 border-y border-slate-200">
-                      <th className={`${TH} text-left`}>Função</th>
-                      {campanha.unidades.map((x) => <th key={x.id} className={`${TH} text-center`}>{x.nome}</th>)}
-                      <th className={`${TH} text-left`}>Resultado</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {linhasGarantias.map((l) => {
-                      const marcadas = empresasGarantia(l)
-                      return (
-                        <tr key={l.k} className="border-b border-slate-100 last:border-0">
-                          <td className="p-2 font-medium text-slate-700 whitespace-nowrap">{l.nome}</td>
-                          {campanha.unidades.map((x) => (
-                            <td key={x.id} className="p-2 text-center">
-                              <input type="checkbox" className="h-3.5 w-3.5" checked={marcadas.includes(x.id)}
-                                aria-label={`${l.nome}: incluir ${x.nome} no resultado`}
-                                disabled={marcadas.length === 1 && marcadas.includes(x.id)}
-                                title={marcadas.length === 1 && marcadas.includes(x.id) ? 'É preciso ao menos uma empresa' : undefined}
-                                onChange={() => alternarEmpresaGarantia(l, x.id)} />
-                            </td>
-                          ))}
-                          <td className="p-2 text-slate-600">
-                            Soma de {marcadas.map((id) => campanha.unidades.find((x) => x.id === id)?.nome || id).join(' + ')}
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-          <p className="text-xs font-semibold text-slate-700 pt-2">Faixas de pagamento</p>
-          {faixasGar.length ? tabelaFaixas(faixasGar, caminhoFaixasGar, true)
-            : <p className="text-xs text-slate-500">Nenhuma faixa de Garantias cadastrada.</p>}
-          <div className="flex items-center gap-2">
-            <button type="button" onClick={() => adicionarFaixaEm(caminhoFaixasGar, faixasGar)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-blue-700 border border-blue-200 bg-blue-50 hover:bg-blue-100">
-              <Plus className="h-3.5 w-3.5" /> Adicionar faixa
-            </button>
-            {salvarNaTabela}
-          </div>
-        </div>
-      </section>
-      )}
       </fieldset>
     </div>
   )

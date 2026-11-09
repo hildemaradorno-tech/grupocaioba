@@ -180,6 +180,16 @@ export const MOCK_BLOCO3_SERVICOS = [
       { id: 4, indicador: 'Produtividade da Oficina',                     orientacao: '>', metrica: '%',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
       { id: 5, indicador: 'O.S. aberta sem veículo na oficina',           orientacao: '<', metrica: '%',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
       { id: 6, indicador: 'O.S. >= 30 dias (% do Valor)',                 orientacao: '<', metrica: '%',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      { id: 7, indicador: 'Ticket Médio da Oficina',                      orientacao: '>', metrica: 'R$', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+    ],
+  },
+  // Mesma ordem e quadros do BLOCO_SERVICOS_TEMPLATE do backend: aparecem vazios enquanto os dados carregam.
+  {
+    tituloGerente: 'CONSULTOR DE PLANO DE MANUTENÇÃO',
+    cor: 'blue',
+    kpis: [
+      { id: 1, indicador: 'Contratos novos',     orientacao: '>', metrica: 'un', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      { id: 2, indicador: 'Contratos renovados', orientacao: '>', metrica: 'un', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
     ],
   },
   {
@@ -189,6 +199,36 @@ export const MOCK_BLOCO3_SERVICOS = [
       { id: 1, indicador: 'Faturamento Total Oficina (Serviços)', orientacao: '>', metrica: 'R$', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
       { id: 2, indicador: 'Eficácia da Oficina',                  orientacao: '>', metrica: '%',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
       { id: 3, indicador: 'Produtividade da Oficina',             orientacao: '>', metrica: '%',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+    ],
+  },
+  {
+    tituloGerente: 'CHEFE DE OFICINA',
+    cor: 'purple',
+    kpis: [
+      { id: 1, indicador: 'Faturamento Total Oficina (Equipe)', orientacao: '>', metrica: 'R$', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      { id: 2, indicador: 'Eficácia da Oficina',                 orientacao: '>', metrica: '%',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+    ],
+  },
+  {
+    tituloGerente: 'SETOR DE MECÂNICA',
+    cor: 'teal',
+    kpis: [
+      { id: 1, indicador: 'Eficácia da Oficina', orientacao: '>', metrica: '%', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+    ],
+  },
+  {
+    tituloGerente: 'SETOR FUNILARIA/PINTURA',
+    cor: 'amber',
+    kpis: [
+      { id: 1, indicador: 'Faturamento Total Funilaria/Pintura (Departamento)', orientacao: '>', metrica: 'R$', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+    ],
+  },
+  {
+    tituloGerente: 'SETOR GARANTIA',
+    cor: 'rose',
+    kpis: [
+      { id: 1, indicador: 'Digitação Atrasada',                     orientacao: '<', metrica: 'un', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      { id: 2, indicador: 'Aguardando Aprovação DAF fora do prazo', orientacao: '<', metrica: 'un', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
     ],
   },
 ]

@@ -310,8 +310,10 @@ function QuadroTable({ quadro, activePeriods, mesTotalKey, year, onSalvarPeso, v
   )
 }
 
-export default function KpiBloco3Pecas() {
-  const periodState = usePeriodSelector('kpi-matriz')
+export default function KpiBloco3Pecas({ periodState: periodoMatriz = null }) {
+  // Na Matriz KPIs o seletor de Visão/Meses fica no topo (acima das abas) e chega por prop.
+  const periodoProprio = usePeriodSelector('kpi-matriz')
+  const periodState = periodoMatriz || periodoProprio
   const { activePeriods } = periodState
   const { year } = useKpiYear()
   const { hasActionOrDefault } = useAuth()
@@ -358,7 +360,7 @@ export default function KpiBloco3Pecas() {
         <PeriodLegend />
       </div>
 
-      <PeriodSelector state={periodState} inlineTrimestral hideLegend modes={MODES_COM_SEMANAL} />
+      {!periodoMatriz && <PeriodSelector state={periodState} inlineTrimestral hideLegend modes={MODES_COM_SEMANAL} />}
 
       <div className="space-y-6">
         {quadrosComPeso.map((quadro, idx) => (

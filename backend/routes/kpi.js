@@ -47,11 +47,14 @@ import {
   executarSincronizacao,
   executarSincronizacaoCampanha,
   sincronizacaoEmAndamento,
+  aoTerminarSincronizacao,
 } from '../services/kpiSyncService.js'
 import { getPesos, setPeso, aplicarPesos } from '../services/kpiPesos.js'
 import { getMetasManuais, setMetaManual, aplicarMetasManuais } from '../services/kpiMetasManuais.js'
 import { getMetaPecasPeriodos, getMetaOficinaPeriodos, getMetaMecanicoPeriodos, getMetaMargemOficinaPeriodos, getMetaPecasBalcaoPeriodos, getMetaMargemBalcaoPeriodos, getMetaTrpPeriodos, getMetaTicketMedioPeriodos, getMetaFunilariaPeriodos, limparCacheMetas } from '../services/kpiMetas.js'
 import { getIndicadoresGarantia } from '../services/kpiGarantias.js'
+import { getIndicadoresAgendamento, comMetasAtuaisAgendamento } from '../services/kpiAgendamento.js'
+import { getIndicadoresPlanos, contarPlanosPorMes } from '../services/kpiPlanosManutencao.js'
 
 const router = Router()
 
@@ -404,6 +407,16 @@ const BLOCO_SERVICOS_TEMPLATE = [
     ],
   },
   {
+    // Total do grupo (o CRM DAF não traz a empresa), mesma regra e metas do BI Planos de Manutenção —
+    // ver kpiPlanosManutencao.js.
+    tituloGerente: 'CONSULTOR DE PLANO DE MANUTENÇÃO',
+    cor: 'blue',
+    kpis: [
+      { id: 1, indicador: 'Contratos novos',     orientacao: '>', metrica: 'un', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      { id: 2, indicador: 'Contratos renovados', orientacao: '>', metrica: 'un', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+    ],
+  },
+  {
     tituloGerente: 'MECÂNICO',
     cor: 'indigo',
     kpis: [
@@ -450,6 +463,16 @@ const BLOCO_SERVICOS_TEMPLATE = [
       { id: 2, indicador: 'Aguardando Aprovação DAF fora do prazo',          orientacao: '<', metrica: 'un', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
     ],
   },
+  {
+    // Sem seletor (todas as empresas): mesmos indicadores e metas do BI Agendamento de Serviços — ver kpiAgendamento.js.
+    tituloGerente: 'AGENDAMENTO DE SERVIÇOS',
+    cor: 'emerald',
+    kpis: [
+      { id: 1, indicador: 'Taxa de Agendamento (Por Campanhas)',            orientacao: '>', metrica: '%', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      { id: 2, indicador: 'Taxa de Agendamento Ativo (Por Data Agendamento)', orientacao: '>', metrica: '%', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      { id: 3, indicador: 'Taxa de No-show (Por Data Agendamento)',         orientacao: '<', metrica: '%', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+    ],
+  },
 ]
 
 /**
@@ -475,7 +498,7 @@ function ticketMedioConsultor(consultorData) {
   return out
 }
 
-function mergeBlocoServicos(quadros, consultorData, mecanicoData, metaConsultor, metaMecanico, margemConsultor = null, metaTicket = null, oficinaData = null, chefeOficinaData = null, depFunilariaData = null, garantiaData = null) {
+function mergeBlocoServicos(quadros, consultorData, mecanicoData, metaConsultor, metaMecanico, margemConsultor = null, metaTicket = null, oficinaData = null, chefeOficinaData = null, depFunilariaData = null, garantiaData = null, planosData = null, agendamentoData = null) {
   const r = (v) => (v != null ? Math.round(v) : null)
   const p = (v) => (v != null ? v : null)
 
@@ -525,6 +548,20 @@ function mergeBlocoServicos(quadros, consultorData, mecanicoData, metaConsultor,
       })
       return { ...quadro, kpis }
     }
+    if (quadro.tituloGerente === 'CONSULTOR DE PLANO DE MANUTENÇÃO') {
+      const kpis = quadro.kpis.map(kpi => {
+        const d = kpi.id === 1 ? planosData?.novos : kpi.id === 2 ? planosData?.renovados : null
+        return d ? injectMeta(injectPeriods(kpi, d.realizado, p), d.meta) : kpi
+      })
+      return { ...quadro, kpis }
+    }
+    if (quadro.tituloGerente === 'AGENDAMENTO DE SERVIÇOS') {
+      const kpis = quadro.kpis.map(kpi => {
+        const d = kpi.id === 1 ? agendamentoData?.taxaAgendamento : kpi.id === 2 ? agendamentoData?.taxaAtivo : kpi.id === 3 ? agendamentoData?.taxaNoShow : null
+        return d ? injectMeta(injectPeriods(kpi, d.realizado, p), d.meta) : kpi
+      })
+      return { ...quadro, kpis }
+    }
     if (quadro.tituloGerente === 'SETOR GARANTIA') {
       const kpis = quadro.kpis.map(kpi => {
         if (kpi.id === 1) return injectPeriods(kpi, garantiaData?.digitacaoAtrasada ?? {}, p)
@@ -543,7 +580,21 @@ router.get('/status', (req, res) => {
 
 router.get('/bloco3-pos-venda', requireConfig, wrap(async (req, res) => {
   const year = parseInt(req.query.year) || new Date().getFullYear()
+  res.json(await quadrosBloco3PosVenda({ year, refresh: !!req.query.refresh }))
+}))
 
+// Quadros dos gerentes (Bloco 3 - Serviços, parte Pós-Venda) com pesos e metas manuais. A base (realizado
+// + metas aprovadas) fica guardada como a do Bloco 3 - Serviços: antes era montada a cada pedido (a
+// Campanha pedia uma vez por função de gerente).
+async function quadrosBloco3PosVenda({ year, refresh = false, fundo = false }) {
+  const base = await obterBaseBloco3Servicos(`bloco3-posvenda|${year}`, () => montarBaseBloco3PosVenda(year),
+    { refresh, checarMetas: metasModo(fundo) })
+  let quadros = aplicarPesos(base, await getPesos('bloco3-pos-venda'))
+  quadros = aplicarMetasManuais(quadros, await getMetasManuais('bloco3-pos-venda', year), year)
+  return quadros
+}
+
+async function montarBaseBloco3PosVenda(year) {
   // Carrega dados consolidados + ROF042 + ROF096 para cada empresa em paralelo
   // (lê primeiro do cache sincronizado; só cai no SharePoint ao vivo se a
   // combinação fonte/ano/empresa ainda não tiver sido sincronizada)
@@ -596,7 +647,7 @@ router.get('/bloco3-pos-venda', requireConfig, wrap(async (req, res) => {
   const margemBalcaoByEmpresa = Object.fromEntries(casasNomes.map((nome, i) => [nome, margensBalcao[i]]))
 
   // Injeta dados por quadro: GERENTE GERAL PÓS-VENDAS usa 'todas', casas usam a empresa mapeada
-  let quadros = BLOCO3_PV_TEMPLATE.map(quadro => {
+  return BLOCO3_PV_TEMPLATE.map(quadro => {
     const empresa = CASA_EMPRESA_MAP[quadro.tituloGerente] || 'todas'
     const pv    = pvByEmpresa[empresa] ?? pvByEmpresa['todas']
     const horas = horasByEmpresa[empresa] ?? null
@@ -606,15 +657,7 @@ router.get('/bloco3-pos-venda', requireConfig, wrap(async (req, res) => {
     const margemBalcao = CASA_EMPRESA_MAP[quadro.tituloGerente] ? margemBalcaoByEmpresa[empresa] : null
     return mergeBloco3PV([quadro], pv, horas, meta, margem, metaBalcao, margemBalcao)[0]
   })
-
-  const pesos = await getPesos('bloco3-pos-venda')
-  quadros = aplicarPesos(quadros, pesos)
-
-  const metasManuais = await getMetasManuais('bloco3-pos-venda', year)
-  quadros = aplicarMetasManuais(quadros, metasManuais, year)
-
-  res.json(quadros)
-}))
+}
 
 // GET  /api/kpi/pesos?bloco=bloco3-pos-venda        — { 'tituloGerente|kpiId': peso }
 // PUT  /api/kpi/pesos { bloco, tituloGerente, kpiId, peso } — grava/atualiza um peso
@@ -650,10 +693,23 @@ router.put('/metas-manuais', wrap(async (req, res) => {
 }))
 
 router.get('/bloco3-pecas', requireConfig, wrap(async (req, res) => {
-  const year    = parseInt(req.query.year) || new Date().getFullYear()
-  const empresa = req.query.empresa || null
+  res.json(await quadrosBloco3Pecas({
+    year: parseInt(req.query.year) || new Date().getFullYear(),
+    empresa: req.query.empresa || null,
+    vendedor: req.query.vendedor || null,
+    refresh: !!req.query.refresh,
+  }))
+}))
+
+// Quadros do Bloco 3 - Peças com pesos. Base guardada por empresa + vendedor (como o Bloco 3 - Serviços).
+async function quadrosBloco3Pecas({ year, empresa = null, vendedor = null, refresh = false, fundo = false }) {
+  const base = await obterBaseBloco3Servicos(`bloco3-pecas|${year}|${empresa || 'todas'}|${normPessoa(vendedor)}`,
+    () => montarBaseBloco3Pecas(year, empresa, vendedor), { refresh, checarMetas: metasModo(fundo) })
+  return aplicarPesos(base, await getPesos('bloco3-pecas'))
+}
+
+async function montarBaseBloco3Pecas(year, empresa, vendedor) {
   const empresaChave = empresa || 'todas'
-  const vendedor = req.query.vendedor || null
 
   let extractorData = null
   try { extractorData = await getExtratorComCache('CONSOLIDADO', getConsolidatedKpiData, year, empresaChave, empresa) } catch (_) { /* sem dados */ }
@@ -695,12 +751,8 @@ router.get('/bloco3-pecas', requireConfig, wrap(async (req, res) => {
   let trpTodos = null
   try { trpTodos = await getMetaTrpPeriodos(year) } catch (_) { /* sem meta */ }
 
-  let quadros = mergeBloco3Pecas(BLOCO3_PECAS_TEMPLATE, extractorData?.bloco3PecasRealizado, balcaoTodas, balcaoVendedor, metaTodos, metaVendedor, margemTodos, margemVendedor, trpTodos)
-  const pesos = await getPesos('bloco3-pecas')
-  quadros = aplicarPesos(quadros, pesos)
-
-  res.json(quadros)
-}))
+  return mergeBloco3Pecas(BLOCO3_PECAS_TEMPLATE, extractorData?.bloco3PecasRealizado, balcaoTodas, balcaoVendedor, metaTodos, metaVendedor, margemTodos, margemVendedor, trpTodos)
+}
 
 // Só nomes de funcionários ATIVOS (cadastro dim_funcionarios: sem situação, "1" em
 // atividade ou "9" férias, e sem data de demissão) entram nos seletores de pessoa.
@@ -809,6 +861,8 @@ async function ultimaAprovacaoMetas() {
 
 // Base guardada (memória → kpi_cache_planilhas) ou recalculada. checarMetas: se houve aprovação de
 // metas depois da base guardada, recalcula na hora (senão a meta nova só apareceria depois de até 15 min).
+// checarMetas = 'fundo' (Campanha Pós-Venda): devolve a base guardada na hora e recalcula por trás — a
+// meta nova aparece na próxima abertura, sem a tela ficar esperando.
 async function obterBaseBloco3Servicos(chave, montar, { refresh = false, checarMetas = true } = {}) {
   if (refresh) return recalcularBaseBloco3Servicos(chave, montar)
   let hit = _b3ServMem.get(chave)
@@ -816,59 +870,197 @@ async function obterBaseBloco3Servicos(chave, montar, { refresh = false, checarM
     hit = await lerBaseBloco3Servicos(chave)
     if (hit) _b3ServMem.set(chave, hit)
   }
+  const falhaFundo = err => console.error('[bloco3-servicos] recálculo em segundo plano falhou:', err.message)
   if (hit && checarMetas && (await ultimaAprovacaoMetas()) > hit.ts) {
-    limparCacheMetas()
-    hit = null
+    if (!_b3ServCalculando.has(chave)) limparCacheMetas()
+    if (checarMetas !== 'fundo') hit = null
+    else { recalcularBaseBloco3Servicos(chave, montar).catch(falhaFundo); return hit.base }
   }
   if (!hit) return recalcularBaseBloco3Servicos(chave, montar)
-  if (Date.now() - hit.ts > BLOCO3_SERV_TTL_MS) {
-    recalcularBaseBloco3Servicos(chave, montar)
-      .catch(err => console.error('[bloco3-servicos] recálculo em segundo plano falhou:', err.message))
-  }
+  if (Date.now() - hit.ts > BLOCO3_SERV_TTL_MS) recalcularBaseBloco3Servicos(chave, montar).catch(falhaFundo)
   return hit.base
 }
+
+// Bases guardadas de cada parte do Bloco 3 - Serviços (usadas pela rota, pela Campanha em lote e pelo
+// pré-cálculo depois da Atualização). Nome da pessoa normalizado na chave: "Fulano de Tal" (Campanha) e
+// "FULANO DE TAL" (seletor da Matriz) usam a mesma base.
+const metasModo = (fundo, padrao = true) => (padrao && fundo ? 'fundo' : padrao)
+const basePessoaServicos = (year, consultor, mecanico, { refresh = false, fundo = false } = {}) =>
+  obterBaseBloco3Servicos(`bloco3-servicos|${year}|${normPessoa(consultor)}|${normPessoa(mecanico)}`,
+    () => montarBaseBloco3Servicos(year, consultor, mecanico), { refresh, checarMetas: metasModo(fundo) })
+const baseOficinaServicos = (year, empresa, { refresh = false } = {}) =>
+  obterBaseBloco3Servicos(`bloco3-servicos-oficina|${year}|${empresa}`,
+    () => montarOficinaBloco3Servicos(year, empresa), { refresh, checarMetas: false })
+const baseChefeOficinaServicos = (year, empresa, { refresh = false, fundo = false } = {}) =>
+  obterBaseBloco3Servicos(`bloco3-servicos-chefeoficina|${year}|${empresa}`,
+    () => montarChefeOficinaBloco3Servicos(year, empresa), { refresh, checarMetas: metasModo(fundo) }) // tem meta aprovada
+const baseFunilariaServicos = (year, empresa, { refresh = false, fundo = false } = {}) =>
+  obterBaseBloco3Servicos(`bloco3-servicos-funilaria|${year}|${empresa}`,
+    () => montarSetorFunilariaPinturaBloco3Servicos(year, empresa), { refresh, checarMetas: metasModo(fundo) }) // tem meta aprovada
+// Contagens guardadas (devolve na hora e atualiza por trás, como a base); metas lidas na hora.
+const basePlanosServicos = (year, { refresh = false } = {}) =>
+  obterBaseBloco3Servicos(`bloco3-servicos-planos-v2|${year}`, () => contarPlanosPorMes(year), { refresh, checarMetas: false }) // v2: com semanas
+// BI Agendamento de Serviços: realizados guardados (leitura do SharePoint leva ~15 s a frio); metas lidas na hora.
+const baseAgendamentoServicos = (year, { refresh = false } = {}) =>
+  obterBaseBloco3Servicos(`bloco3-servicos-agendamento|${year}`, () => getIndicadoresAgendamento(year), { refresh, checarMetas: false })
+
+const QUADROS_EMPRESA_SERVICOS = ['SETOR DE MECÂNICA', 'CHEFE DE OFICINA', 'SETOR FUNILARIA/PINTURA', 'SETOR GARANTIA']
+const QUADRO_PLANOS_SERVICOS = 'CONSULTOR DE PLANO DE MANUTENÇÃO'
+const QUADRO_AGENDAMENTO_SERVICOS = 'AGENDAMENTO DE SERVIÇOS' // sem seletor; vem junto com os quadros por empresa
 
 // ?apenas=OFICINA | CHEFE DE OFICINA: só os quadros por empresa (Campanha Pós-Venda) — não monta Consultor
 // e Mecânico, que são a parte cara. O quadro OFICINA tem cache próprio por empresa (não depende da
 // pessoa escolhida nos outros quadros), então trocar consultor/mecânico na Matriz não o recalcula.
 router.get('/bloco3-servicos', requireConfig, wrap(async (req, res) => {
-  const year      = parseInt(req.query.year) || new Date().getFullYear()
-  const consultor = req.query.consultor || null
-  const mecanico  = req.query.mecanico || null
-  const empresaOficina = req.query.empresaOficina || null
-  const empresaChefeOficina = req.query.empresaChefeOficina || null
-  const empresaFunilaria = req.query.empresaFunilaria || null
-  const empresaGarantia = req.query.empresaGarantia || null
-  const QUADROS_EMPRESA = ['SETOR DE MECÂNICA', 'CHEFE DE OFICINA', 'SETOR FUNILARIA/PINTURA', 'SETOR GARANTIA']
-  const soOficina = QUADROS_EMPRESA.includes(req.query.apenas)
-  const refresh = !!req.query.refresh
+  res.json(await quadrosBloco3Servicos({
+    year: parseInt(req.query.year) || new Date().getFullYear(),
+    consultor: req.query.consultor || null,
+    mecanico: req.query.mecanico || null,
+    empresaOficina: req.query.empresaOficina || null,
+    empresaChefeOficina: req.query.empresaChefeOficina || null,
+    empresaFunilaria: req.query.empresaFunilaria || null,
+    empresaGarantia: req.query.empresaGarantia || null,
+    apenas: req.query.apenas || null,
+    refresh: !!req.query.refresh,
+  }))
+}))
+
+// Quadros do Bloco 3 - Serviços já com pesos e metas manuais (rota GET e Campanha em lote).
+async function quadrosBloco3Servicos({ year, consultor = null, mecanico = null, empresaOficina = null, empresaChefeOficina = null,
+  empresaFunilaria = null, empresaGarantia = null, apenas = null, refresh = false, fundo = false }) {
+  const QUADROS_EMPRESA = QUADROS_EMPRESA_SERVICOS
+  const QUADRO_PLANOS = QUADRO_PLANOS_SERVICOS
+  const QUADRO_AGENDAMENTO = QUADRO_AGENDAMENTO_SERVICOS
+  // ?apenas=<quadro por empresa> → só os quadros por empresa; ?apenas=CONSULTOR DE PLANO… → só ele.
+  // Nos dois casos não monta Consultor/Mecânico (a parte cara).
+  const soOficina = QUADROS_EMPRESA.includes(apenas)
+  const soPlanos = apenas === QUADRO_PLANOS
+  // ?apenas=AGENDAMENTO DE SERVIÇOS (Campanha Pós-Venda) → só ele.
+  const soAgendamento = apenas === QUADRO_AGENDAMENTO
+  const semBase = soOficina || soPlanos || soAgendamento
+  const opts = { refresh, fundo }
 
   // SETOR GARANTIA lê o Supabase (gar_garantias) ao vivo — consulta leve e muda a cada atualização
   // de garantia, então não passa pelo cache da base.
-  const [base, oficina, chefeOficina, funilaria, garantia] = await Promise.all([
-    soOficina ? null : obterBaseBloco3Servicos(`bloco3-servicos|${year}|${consultor || ''}|${mecanico || ''}`,
-      () => montarBaseBloco3Servicos(year, consultor, mecanico), { refresh }),
-    empresaOficina ? obterBaseBloco3Servicos(`bloco3-servicos-oficina|${year}|${empresaOficina}`,
-      () => montarOficinaBloco3Servicos(year, empresaOficina), { refresh, checarMetas: false }) : null,
-    empresaChefeOficina ? obterBaseBloco3Servicos(`bloco3-servicos-chefeoficina|${year}|${empresaChefeOficina}`,
-      () => montarChefeOficinaBloco3Servicos(year, empresaChefeOficina), { refresh }) : null, // tem meta aprovada → checa aprovação
-    empresaFunilaria ? obterBaseBloco3Servicos(`bloco3-servicos-funilaria|${year}|${empresaFunilaria}`,
-      () => montarSetorFunilariaPinturaBloco3Servicos(year, empresaFunilaria), { refresh }) : null, // tem meta aprovada → checa aprovação
+  // CONSULTOR DE PLANO DE MANUTENÇÃO: contagens guardadas como a base; metas lidas na hora.
+  const [base, oficina, chefeOficina, funilaria, garantia, planos, agendamento] = await Promise.all([
+    semBase ? null : basePessoaServicos(year, consultor, mecanico, opts),
+    empresaOficina ? baseOficinaServicos(year, empresaOficina, opts) : null,
+    empresaChefeOficina ? baseChefeOficinaServicos(year, empresaChefeOficina, opts) : null,
+    empresaFunilaria ? baseFunilariaServicos(year, empresaFunilaria, opts) : null,
     empresaGarantia ? getIndicadoresGarantia(year, empresaGarantia).catch(() => null) : null,
+    soOficina || soAgendamento ? null : basePlanosServicos(year, opts)
+      .then(meses => getIndicadoresPlanos(year, meses))
+      .catch(err => { console.error('[bloco3-servicos] planos:', err.message); return null }),
+    soPlanos ? null : baseAgendamentoServicos(year, opts)
+      .then(comMetasAtuaisAgendamento)
+      .catch(err => { console.error('[bloco3-servicos] agendamento:', err.message); return null }),
   ])
-  const extras = mergeBlocoServicos(BLOCO_SERVICOS_TEMPLATE.filter(q => QUADROS_EMPRESA.includes(q.tituloGerente)),
-    null, null, null, null, null, null, oficina, chefeOficina, funilaria, garantia)
+  const extras = mergeBlocoServicos(BLOCO_SERVICOS_TEMPLATE.filter(q => QUADROS_EMPRESA.includes(q.tituloGerente) || q.tituloGerente === QUADRO_PLANOS || q.tituloGerente === QUADRO_AGENDAMENTO),
+    null, null, null, null, null, null, oficina, chefeOficina, funilaria, garantia, planos, agendamento)
   const porTitulo = Object.fromEntries(extras.map(q => [q.tituloGerente, q]))
   // A base guardada em cache pode ser de antes de um quadro novo existir: segue a ordem do template.
   const baseMap = Object.fromEntries((base || []).map(q => [q.tituloGerente, q]))
   const montados = BLOCO_SERVICOS_TEMPLATE
-    .filter(q => base ? true : QUADROS_EMPRESA.includes(q.tituloGerente))
+    .filter(q => base ? true : soPlanos ? q.tituloGerente === QUADRO_PLANOS : soAgendamento ? q.tituloGerente === QUADRO_AGENDAMENTO
+      : QUADROS_EMPRESA.includes(q.tituloGerente) || q.tituloGerente === QUADRO_AGENDAMENTO)
     .map(q => porTitulo[q.tituloGerente] ?? baseMap[q.tituloGerente] ?? q)
 
   let quadros = aplicarPesos(montados, await getPesos('bloco3-servicos'))
   quadros = aplicarMetasManuais(quadros, await getMetasManuais('bloco3-servicos', year), year)
-  res.json(quadros)
+  return quadros
+}
+
+// ── Campanha Pós-Venda: quadros da Matriz em lote ────────────────────────────────────────────────
+// POST /api/kpi/campanha-lote { year, pedidos: [{ k, tipo: 'servicos'|'posvenda'|'pecas', quadro, params }] }
+// → { resultados: { k: quadro | null } }. Antes a Campanha fazia um pedido por pessoa (cada um montando
+// planos/agendamento de novo); aqui pedidos iguais são calculados uma vez e as bases guardadas são devolvidas
+// na hora (recálculo por trás, inclusive quando há meta nova aprovada).
+const PARAMS_LOTE = {
+  servicos: ['consultor', 'mecanico', 'empresaOficina', 'empresaChefeOficina', 'empresaFunilaria', 'empresaGarantia', 'apenas'],
+  posvenda: [],
+  pecas: ['empresa', 'vendedor'],
+}
+const FN_LOTE = { servicos: quadrosBloco3Servicos, posvenda: quadrosBloco3PosVenda, pecas: quadrosBloco3Pecas }
+
+// No máximo n cálculos ao mesmo tempo (pessoa sem base guardada lê os arquivos do SharePoint).
+function limitador(n) {
+  let ativos = 0
+  const fila = []
+  const proximo = () => {
+    if (ativos >= n || !fila.length) return
+    ativos++
+    const { fn, ok, falha } = fila.shift()
+    fn().then(ok, falha).finally(() => { ativos--; proximo() })
+  }
+  return fn => new Promise((ok, falha) => { fila.push({ fn, ok, falha }); proximo() })
+}
+
+router.post('/campanha-lote', requireConfig, wrap(async (req, res) => {
+  const year = parseInt(req.body?.year) || new Date().getFullYear()
+  const pedidos = Array.isArray(req.body?.pedidos) ? req.body.pedidos.slice(0, 500) : []
+  const limitar = limitador(4)
+  const consultas = new Map()
+  const consulta = (tipo, params) => {
+    const chave = `${tipo}|${JSON.stringify(params)}`
+    if (!consultas.has(chave)) {
+      consultas.set(chave, limitar(() => FN_LOTE[tipo]({ ...params, year, fundo: true }))
+        .catch(err => { console.error('[campanha-lote]', tipo, err.message); return null }))
+    }
+    return consultas.get(chave)
+  }
+  const resultados = {}
+  await Promise.all(pedidos.map(async (p) => {
+    if (!p || !FN_LOTE[p.tipo] || p.k == null) return
+    const params = {}
+    for (const campo of PARAMS_LOTE[p.tipo]) if (p.params?.[campo]) params[campo] = String(p.params[campo])
+    const quadros = await consulta(p.tipo, params)
+    resultados[p.k] = (quadros || []).find(q => normPessoa(q.tituloGerente) === normPessoa(p.quadro)) || null
+  }))
+  res.json({ resultados })
 }))
+
+// Pré-cálculo depois da Atualização (Matriz + Campanha): recalcula e grava as bases de todos os
+// consultores, mecânicos, vendedores, empresas e gerentes — a Campanha abre lendo o que já está pronto.
+// Roda por trás, uma coisa de cada vez (memória do Railway). Empresas = as da Campanha (empresaErp).
+const EMPRESAS_CAMPANHA = ['CAMPO GRANDE', 'DOURADOS', 'TRÊS LAGOAS', 'CHAPADÃO DO SUL']
+let _aquecendo = false
+export async function aquecerCacheCampanha(year = new Date().getFullYear()) {
+  if (_aquecendo) return
+  _aquecendo = true
+  const t0 = Date.now()
+  let ok = 0, falhas = 0
+  const passo = async (nome, fn) => {
+    try { await fn(); ok++ } catch (err) { falhas++; console.error('[pré-cálculo Campanha]', nome, err.message) }
+  }
+  const op = { refresh: true }
+  try {
+    await passo('agendamento', () => baseAgendamentoServicos(year, op))
+    await passo('planos', () => basePlanosServicos(year, op))
+    await passo('gerentes', () => quadrosBloco3PosVenda({ year, refresh: true }))
+    await passo('peças', () => quadrosBloco3Pecas({ year, refresh: true }))
+    await passo('serviços (total)', () => basePessoaServicos(year, null, null, op))
+    for (const emp of EMPRESAS_CAMPANHA) {
+      await passo(`setor mecânica ${emp}`, () => baseOficinaServicos(year, emp, op))
+      await passo(`chefe de oficina ${emp}`, () => baseChefeOficinaServicos(year, emp, op))
+      await passo(`funilaria ${emp}`, () => baseFunilariaServicos(year, emp, op))
+    }
+    const [cA, cB, mA, mB, vend] = await Promise.all([
+      listConsultoresOficina(year, null), listConsultoresServicos(year, null),
+      listMecanicosROF042(year, null), listMecanicosROF096(year, null), listVendedoresBalcao(year, null),
+    ])
+    const consultores = await filtrarAtivos([...new Set([...cA, ...cB])])
+    const mecanicos = await filtrarAtivos([...new Set([...mA, ...mB])], 'mecanic')
+    const vendedores = await filtrarAtivos(vend)
+    for (const n of consultores) await passo(`consultor ${n}`, () => basePessoaServicos(year, n, null, op))
+    for (const n of mecanicos) await passo(`mecânico ${n}`, () => basePessoaServicos(year, null, n, op))
+    for (const n of vendedores) await passo(`vendedor ${n}`, () => quadrosBloco3Pecas({ year, vendedor: n, refresh: true }))
+  } finally {
+    _aquecendo = false
+    console.log(`[pré-cálculo Campanha] ${ok} bases gravadas, ${falhas} falhas, ${Math.round((Date.now() - t0) / 1000)} s`)
+  }
+}
+aoTerminarSincronizacao((ano) => aquecerCacheCampanha(ano))
 
 // Quadro OFICINA: não tem seletor de pessoa, então "todas as casas somadas" não é um número
 // real de nenhuma unidade — exige escolher a empresa (como o Consultor/Mecânico exigem pessoa)

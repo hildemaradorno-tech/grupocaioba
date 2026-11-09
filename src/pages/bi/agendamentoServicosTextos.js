@@ -203,6 +203,27 @@ export const INFO = {
     filtros: `${REGRAS_OS}\n${REGRAS_AGEND}`,
     colunas: `${COL_OS}\n${COL_AGEND}`,
   },
+  osAgNaoLigado: {
+    objetivo: 'Mostrar quantas O.S. foram abertas para veículos que estavam no agendamento, mas não foram abertas pelo agendamento.',
+    fonte: `${ARQ_OS}
+${ARQ_AGEND}`,
+    calculo: 'Das O.S. do card Quant. O.S. por data de abertura, as que NÃO estão no ROF037 (Empresa + OS Numero = EmpresaNome + OSNumero), mas cujo veículo (Veiculo Chassi do ROF001 = Chassi do ROF037) tinha agendamento no ROF037, sem CAN, perto da abertura: (1) 2ª O.S. da mesma visita — no mesmo dia, o agendamento abriu outra O.S.; (2) agendamento marcado para o mesmo dia, sem ligação com esta O.S.; (3) agendamento sem O.S. (no-show ou em aberto) marcado nos 30 dias antes, e o veículo veio depois sem agendar. Na Consulta de O.S., o filtro Estava no agendamento, não aberta por ele mostra cada uma e o caso.',
+    filtros: `${REGRAS_OS}
+${REGRAS_AGEND}`,
+    colunas: `${COL_OS}
+${COL_AGEND}`,
+  },
+  gaugeAgNaoLigado: {
+    objetivo: 'Medir quanto das O.S. abertas no período eram de veículos que estavam no agendamento mas não foram abertas por ele.',
+    fonte: `${ARQ_OS}
+${ARQ_AGEND}`,
+    calculo: `O.S. estava no agendamento, não aberta por ele ÷ Quant. O.S. por data de abertura × 100.
+${META_MENOR(10)}`,
+    filtros: `${REGRAS_OS}
+${REGRAS_AGEND}`,
+    colunas: `${COL_OS}
+${COL_AGEND}`,
+  },
   conversaoTotal: {
     objetivo: 'Mostrar quanto faturaram as O.S. que vieram de agendamento.',
     fonte: `${ARQ_OS}\n${ARQ_AGEND}`,
@@ -371,7 +392,7 @@ export const INFO = {
   faltaContatar: {
     objetivo: 'Mostrar quantos não agendados ainda precisam de contato para agendar.',
     fonte: `${ARQ_CAMPANHA}\n${ARQ_AGEND}\n${ARQ_CONTATO}`,
-    calculo: 'Contatos gerados não agendados (ROF037) e sem motivo de encerramento no RCR017: o id_atendimento não aparece no RCR017 (sem contato) ou aparece só com contato sem resultado (a linha abaixo do número mostra quantos). Contatos gerados = Contatos agendados + Contatos encerrados + Contatos a realizar.',
+    calculo: 'Contatos gerados não agendados (ROF037) e sem motivo de encerramento no RCR017: o id_atendimento não aparece no RCR017 (sem contato) ou aparece só com contato sem resultado (a coluna Contato da lista Contatos a realizar separa os dois casos). Contatos gerados = Contatos agendados + Contatos encerrados + Contatos a realizar.',
     filtros: `${REGRAS_CAMPANHA}\n${REGRAS_AGENDADO}\n${REGRAS_CONTATO}`,
     colunas: `${COL_CAMPANHA}\n${COL_AGEND_CAMPANHA}\n${COL_CONTATO}`,
   },
@@ -455,7 +476,7 @@ const TABELA_CONFERENCIA = {
 const TABELA_AGENDAMENTOS = {
   itens: [
     ['O que mostra', 'Uma linha por data do agendamento, em ordem de data (da mais antiga para a mais recente), e uma linha de Total no fim.'],
-    ['Colunas', 'Data do agendamento, Agendamentos, Ativos, Passivos, Agendamentos comparecidos, Agendamentos a comparecer, Agendamentos Não comparecidos (No-Show), as taxas de Conversão (total, ativo e passivo) e de No-show, Faturamento Total e Ticket médio das O.S. geradas.'],
+    ['Colunas', 'Data do agendamento, Agendamentos, Ativos, Passivos, Agendamentos comparecidos, Agendamentos a comparecer, Agendamentos Não comparecidos (No-Show), as taxas de Agendamento (total, ativo e passivo — agendamentos que compareceram) e de No-show, Faturamento Total e Ticket médio das O.S. geradas.'],
     ['Regras', 'As mesmas dos cards e indicadores da aba, calculadas por data do agendamento; o Total é igual aos cards.'],
   ],
 }
@@ -478,11 +499,12 @@ const TABELA_CONSULTA_AGEND = {
 const TABELA_CONSULTA_OS = {
   itens: [
     ['Para que serve', 'Consultar as O.S. do ROF001 TODAS uma a uma e conferir os cards da aba. Vale o filtro Data (data de abertura, Data Criacao) e o filtro Empresas da tela.'],
-    ['Filtros', 'Todas (sem canceladas) — igual ao card Quant. O.S. por data de abertura · Com agendamento — igual ao card O.S. com agendamento · Agendamento ativo · Agendamento ativo de campanha · Agendamento passivo (Receptivo, Presencial, Internet) · Sem agendamento · Pendentes de autorização (alerta ⚠) · Canceladas (fora dos cards). Quantidade de cada um no botão; busca por O.S., chassi, consultor, agendador, empresa ou número da campanha.'],
+    ['Filtros', 'Todas (sem canceladas) — igual ao card Quant. O.S. por data de abertura · Com agendamento — igual ao card O.S. com agendamento · Agendamento ativo · Agendamento ativo de campanha · Agendamento passivo (Receptivo, Presencial, Internet) · Sem agendamento · Estava no agendamento, não aberta por ele — igual ao card O.S. estava no agendamento, não aberta por ele · Pendentes de autorização (alerta ⚠) · Canceladas (fora dos cards). Quantidade de cada um no botão; busca por O.S., chassi, consultor, agendador, empresa ou número da campanha.'],
     ['Uma O.S. por linha', 'O ROF001 tem várias linhas por O.S.; a consulta mostra uma vez (Empresa + OS Numero) com os valores somados de todas as linhas — a mesma regra dos cards.'],
     ['Colunas do ROF001', 'Data de abertura (Data Criacao), Empresa, O.S. (OS Numero), Situação (Situacao Tipo OS), Tipo O.S. (Tipo OS Sigla), Chassi, Consultor (Consultor Nome), Agendador (só informativo — não é usado na conta), Peças (Produto), Serviços (Servico), Desconto e Total.'],
     ['Colunas do ROF037', 'Veio de agendamento? = Sim quando a O.S. está no ROF037 (Empresa + OS Numero = EmpresaNome + OSNumero) · Tipo do agendamento (AgendamentoTipo) e Agendamento criado em (AgendamentoHistorico_Data) desse agendamento.'],
     ['Veio de campanha? (RCR038)', 'Só para O.S. de agendamento Ativo. Sim = o Chassi + CodCliente do agendamento do ROF037 está num RCR038 (Chassi + ID_Cliente) e o agendamento foi criado da data da campanha até 30 dias depois — a mesma regra da aba Por Campanhas. Campanha(s) (data), Atendimento(s) e Dias após a campanha vêm do RCR038; se o veículo estava em mais de uma campanha na janela, todas aparecem. Filtro próprio: Agendamento ativo de campanha.'],
+    ['Estava no agendamento, não aberta por ele', 'O.S. que NÃO está no ROF037, mas o veículo (chassi) tinha agendamento no ROF037 (sem CAN) perto da abertura: (1) 2ª O.S. da mesma visita — no mesmo dia, o agendamento abriu outra O.S.; (2) agendamento no mesmo dia sem ligação com esta O.S.; (3) agendamento sem O.S. (no-show ou em aberto) nos 30 dias antes, e o veículo veio depois sem agendar. Colunas: Estava no agendamento sem ser aberta por ele (qual dos três casos) e Agendamento do veículo (não ligado) — data, tipo, status, O.S. e empresa do agendamento.'],
     ['Exportar Excel', 'Baixa as linhas do filtro atual, com as mesmas colunas.'],
   ],
 }
@@ -517,9 +539,9 @@ export const MANUAL_ABAS_CARDS = [
   ['Aba Por Data Agendamento', [
     ['Tabela — Agendamentos por data do agendamento', TABELA_AGENDAMENTOS],
     ['Tabela — Consulta de agendamentos', TABELA_CONSULTA_AGEND],
-    ['Indicador — Taxa de Conversão', 'agTaxaConversao'],
-    ['Indicador — Taxa de Conversão Ativo', 'agTaxaConversaoAtivo'],
-    ['Indicador — Taxa de Conversão Passivo', 'agTaxaConversaoPassivo'],
+    ['Indicador — Taxa de Agendamento', 'agTaxaConversao'],
+    ['Indicador — Taxa de Agendamento Ativo', 'agTaxaConversaoAtivo'],
+    ['Indicador — Taxa de Agendamento Passivo', 'agTaxaConversaoPassivo'],
     ['Indicador — Taxa de No-show', 'agTaxaNoShow'],
     ['Card — Agendamentos realizados', 'agTotal'],
     ['Card — Agendamentos ativos', 'agAtivosAgenda'],
@@ -537,11 +559,13 @@ export const MANUAL_ABAS_CARDS = [
     ['Indicador — Taxa de Agendamento', 'gaugeAgendamentoOs'],
     ['Indicador — Taxa de Agendamento Ativo', 'gaugeAtivo'],
     ['Indicador — Taxa de Agendamento Passivo', 'gaugePassivo'],
+    ['Indicador — Taxa de O.S. fora do Agendamento', 'gaugeAgNaoLigado'],
     ['Card — Quant. O.S. por data de abertura', 'osAbertura'],
     ['Alerta — O.S. pendentes', ALERTA_PENDENTES],
     ['Card — O.S. com agendamento', 'osAgendamento'],
     ['Card — Agendamentos ativos', 'agAtivos'],
     ['Card — Agendamentos passivos', 'agPassivos'],
+    ['Card — O.S. estava no agendamento, não aberta por ele', 'osAgNaoLigado'],
     ['Card — Conversão — Total', 'conversaoTotal'],
     ['Card — Conversão — Ativos', 'conversaoAtivos'],
     ['Card — Conversão — Passivos', 'conversaoPassivos'],
@@ -559,7 +583,7 @@ export const MANUAL_GERAL = [
   {
     titulo: 'Filtros e botões',
     itens: [
-      ['Data', 'Ao abrir: o mês atual, do dia 1 até ontem (no dia 1, o mês anterior). As setas ‹ › trocam de mês e o ↺ volta ao mês atual; o calendário aceita qualquer data. O período escolhido continua o mesmo ao trocar de aba. Cada aba aplica o filtro na sua data (ver Abas).'],
+      ['Data', 'Ao abrir: o mês atual, do dia 1 até ontem (no dia 1, o mês anterior). As setas ‹ › trocam de mês; o calendário aceita qualquer data. O período escolhido continua o mesmo ao trocar de aba. Cada aba aplica o filtro na sua data (ver Abas).'],
       ['Empresas', 'Nas abas Por Data Agendamento e Por Data da O.S. (por EmpresaNome do ROF037 / Empresa do ROF001). Não existe na aba Por Campanhas: o RCR038 não identifica a empresa.'],
       ['Ícones da aba', 'Na linha das abas, à direita: ✓ abre a consulta linha a linha da aba (Conferência linha a linha, Consulta de agendamentos ou Consulta de O.S., todas com filtros, busca e Exportar Excel) e ▦ abre a tabela com os números por data.'],
       ['Cabeçalho', 'Atualizar (↻) relê os relatórios do SharePoint · Engrenagem (⚙) define as metas dos indicadores · Livro abre este manual. "Última atualização" = quando os relatórios foram lidos.'],

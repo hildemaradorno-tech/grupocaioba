@@ -7,9 +7,10 @@
  *   Aguardando Aprovação DAF  — status B..Y (grupo "Aguardando Aprovação DAF") há dias_solucao
  *   fora do prazo               (ou o prazo do tipo de OS) dias ou mais desde a digitação (criado_em).
  *
- * É a fotografia de HOJE (mesmo número dos cards da tela de garantias), lançada no período atual —
- * mês, semana, trimestre e ano correntes. Não há histórico dessa situação, então meses passados
- * ficam sem valor.
+ * Cada período (mês, semana, trimestre, ano) vale a FOTOGRAFIA DO ÚLTIMO DIA dele, reconstruída pelo
+ * histórico de status (gar_garantias_log: status de cada garantia = último registro até aquele dia).
+ * Período em andamento = foto de hoje (mesmo número dos cards da tela de garantias); período futuro ou
+ * anterior ao primeiro registro do log (15/07/2026) fica sem valor. Prazos = configuração atual.
  */
 import { getSupabaseAdmin } from './supabaseAdmin.js'
 import { numeroSemanaDoDia } from './kpiSemanas.js'
@@ -48,31 +49,36 @@ async function fetchTudo(montarQuery) {
 const DIA_MS = 86_400_000
 const diasDesde = (d, hoje) => Math.floor((hoje - d) / DIA_MS)
 
-// Coloca a quantidade de hoje no mês, semana, trimestre e ano correntes; o resto fica sem valor.
-function noPeriodoAtual(qtd, ano) {
-  const out = {}
-  for (const k of [...ALL_MONTHS, ...ALL_WEEKS, ...Object.keys(QUARTERS), 'fy']) out[k] = null
-  const hoje = new Date()
-  if (hoje.getFullYear() !== ano) return out
-  const mes = hoje.getMonth() + 1
-  const m = `m${String(mes).padStart(2, '0')}`
-  out[m] = qtd
-  out[`s${String(numeroSemanaDoDia(ano, mes, hoje.getDate())).padStart(2, '0')}`] = qtd
-  out[Object.keys(QUARTERS).find(q => QUARTERS[q].includes(m))] = qtd
-  out.fy = qtd
-  return out
+// Primeiro e último dia (horário de MS) de cada período do ano: { m01: { ini, fim }, s01: …, q1: …, fy: … }.
+function limitesDosPeriodos(ano) {
+  const lim = {}
+  const dia = (mes, d, hora) => new Date(`${ano}-${String(mes).padStart(2, '0')}-${String(d).padStart(2, '0')}T${hora}-04:00`)
+  for (let mes = 1; mes <= 12; mes++) {
+    const dias = new Date(ano, mes, 0).getDate()
+    const m = `m${String(mes).padStart(2, '0')}`
+    for (let d = 1; d <= dias; d++) {
+      const ini = dia(mes, d, '00:00:00'), fim = dia(mes, d, '23:59:59')
+      for (const k of [m, `s${String(numeroSemanaDoDia(ano, mes, d)).padStart(2, '0')}`, Object.keys(QUARTERS).find(q => QUARTERS[q].includes(m)), 'fy']) {
+        if (!lim[k]) lim[k] = { ini, fim }
+        else lim[k].fim = fim
+      }
+    }
+  }
+  return lim
 }
 
 export async function getIndicadoresGarantia(ano, empresaKey) {
   const admin = getSupabaseAdmin()
   if (!admin) return null
 
-  const [cfgRes, empresas, garantias] = await Promise.all([
+  // Todas as garantias (inclusive as já encerradas hoje: em datas passadas podiam estar em aberto) + log de status.
+  const [cfgRes, empresas, garantias, logs] = await Promise.all([
     admin.from('gar_configuracoes').select('dias_digitacao, dias_solucao, dias_solucao_por_tipo').limit(1).maybeSingle(),
     fetchTudo(() => admin.from('dim_empresas').select('id, empresa_fantasia, nome_empresa_sistema').order('id')),
     fetchTudo(() => admin.from('gar_garantias')
-      .select('id, empresa_id, empresa_nome, status_codigo, data_fechamento_os, criado_em, tipo_os_sigla')
-      .not('status_codigo', 'in', '("E","F")').order('id')),
+      .select('id, empresa_id, empresa_nome, status_codigo, data_fechamento_os, criado_em, tipo_os_sigla').order('id')),
+    fetchTudo(() => admin.from('gar_garantias_log')
+      .select('garantia_id, valor_depois, alterado_em').eq('campo', 'status_codigo').order('id')),
   ])
   const cfg = cfgRes.data || {}
   const diasDigitacao = cfg.dias_digitacao ?? 14
@@ -81,24 +87,57 @@ export async function getIndicadoresGarantia(ano, empresaKey) {
 
   const casaPorId = new Map(empresas.map(e => [e.id, casaDaEmpresa(e.nome_empresa_sistema) || casaDaEmpresa(e.empresa_fantasia)]))
   const alvo = empresaKey ? norm(empresaKey) : null
-  const hoje = new Date()
+  const daCasa = garantias.filter(g => !alvo || norm(casaPorId.get(g.empresa_id) || casaDaEmpresa(g.empresa_nome)) === alvo)
 
-  let digitacaoAtrasada = 0
-  let aguardandoForaPrazo = 0
-  for (const g of garantias) {
-    const casa = casaPorId.get(g.empresa_id) || casaDaEmpresa(g.empresa_nome)
-    if (alvo && norm(casa) !== alvo) continue
-
-    if (g.status_codigo === 'A' && g.data_fechamento_os) {
-      if (diasDesde(new Date(g.data_fechamento_os + 'T12:00:00'), hoje) > diasDigitacao) digitacaoAtrasada++
-    } else if (STATUS_ANDAMENTO.has(g.status_codigo) && g.criado_em) {
-      const prazo = porTipo[String(g.tipo_os_sigla || '').trim()] ?? diasSolucao
-      if (diasDesde(new Date(g.criado_em), hoje) >= prazo) aguardandoForaPrazo++
+  // Histórico de status por garantia, em ordem de data.
+  const historico = new Map()
+  let primeiroLog = null
+  for (const l of logs) {
+    const t = new Date(l.alterado_em)
+    if (!historico.has(l.garantia_id)) historico.set(l.garantia_id, [])
+    historico.get(l.garantia_id).push({ t, status: l.valor_depois })
+    if (!primeiroLog || t < primeiroLog) primeiroLog = t
+  }
+  for (const h of historico.values()) h.sort((a, b) => a.t - b.t)
+  // Status na data (último registro até ela); sem registro até lá = garantia ainda não existia.
+  const statusEm = (g, data) => {
+    const h = historico.get(g.id)
+    if (!h) return new Date(g.criado_em) <= data ? g.status_codigo : null // sem log: usa o status atual
+    let s = null
+    for (const x of h) { if (x.t <= data) s = x.status; else break }
+    return s
+  }
+  // Contagem dos dois indicadores na fotografia de uma data.
+  const contarEm = (data) => {
+    let digitacao = 0, foraPrazo = 0
+    for (const g of daCasa) {
+      const s = statusEm(g, data)
+      if (s === 'A' && g.data_fechamento_os) {
+        if (diasDesde(new Date(g.data_fechamento_os + 'T12:00:00'), data) > diasDigitacao) digitacao++
+      } else if (STATUS_ANDAMENTO.has(s) && g.criado_em) {
+        const prazo = porTipo[String(g.tipo_os_sigla || '').trim()] ?? diasSolucao
+        if (diasDesde(new Date(g.criado_em), data) >= prazo) foraPrazo++
+      }
     }
+    return { digitacao, foraPrazo }
   }
 
-  return {
-    digitacaoAtrasada: noPeriodoAtual(digitacaoAtrasada, ano),
-    aguardandoForaPrazo: noPeriodoAtual(aguardandoForaPrazo, ano),
+  const agora = new Date()
+  const digitacaoAtrasada = {}
+  const aguardandoForaPrazo = {}
+  const fotos = new Map() // data (ms) → contagem (vários períodos terminam no mesmo dia)
+  const lim = limitesDosPeriodos(ano)
+  for (const k of [...ALL_MONTHS, ...ALL_WEEKS, ...Object.keys(QUARTERS), 'fy']) {
+    const p = lim[k]
+    // Sem valor: período que não existe no ano, ainda não começou, ou terminou antes do histórico existir.
+    if (!p || !primeiroLog || p.ini > agora || p.fim < primeiroLog) {
+      digitacaoAtrasada[k] = null; aguardandoForaPrazo[k] = null; continue
+    }
+    const corte = p.fim > agora ? agora : p.fim // em andamento = hoje
+    if (!fotos.has(corte.getTime())) fotos.set(corte.getTime(), contarEm(corte))
+    const c = fotos.get(corte.getTime())
+    digitacaoAtrasada[k] = c.digitacao
+    aguardandoForaPrazo[k] = c.foraPrazo
   }
+  return { digitacaoAtrasada, aguardandoForaPrazo }
 }

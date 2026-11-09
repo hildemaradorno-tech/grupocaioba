@@ -76,8 +76,10 @@ function fmtNum(v, metrica) {
   return v.toLocaleString('pt-BR', { maximumFractionDigits: 0 })
 }
 
-export default function KpiIndicadoresCorporativos() {
-  const periodState = usePeriodSelector('kpi-matriz')
+export default function KpiIndicadoresCorporativos({ periodState: periodoMatriz = null }) {
+  // Na Matriz KPIs o seletor de Visão/Meses fica no topo (acima das abas) e chega por prop.
+  const periodoProprio = usePeriodSelector('kpi-matriz')
+  const periodState = periodoMatriz || periodoProprio
   const { activePeriods } = periodState
   const { year } = useKpiYear()
   const { data: rawRows } = useKpiData(fetchBloco1, MOCK, { year })
@@ -93,7 +95,7 @@ export default function KpiIndicadoresCorporativos() {
         <PeriodLegend />
       </div>
 
-      <PeriodSelector state={periodState} inlineTrimestral hideLegend />
+      {!periodoMatriz && <PeriodSelector state={periodState} inlineTrimestral hideLegend />}
 
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
