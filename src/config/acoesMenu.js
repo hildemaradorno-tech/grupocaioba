@@ -33,6 +33,14 @@ export const ACOES_POR_MENU = [
       { value: 'gerenciar_participantes',  label: 'Gerenciar Participantes (Adicionar / Remover)' },
     ],
   },
+  // Custos de Projetos: a tela já conferia esta ação, mas não estava cadastrada (só o admin
+  // conseguia lançar). Incluída na varredura do Grupo de Acessos (09/11/2026).
+  {
+    menuPath: 'projetos/custos',
+    acoes: [
+      { value: 'editar', label: 'Lançar / Editar / Excluir Custos' },
+    ],
+  },
   // Gestor de Peças 2.0 — Trucks: ações que gravam decisões (sem flag = negado; admin sempre pode)
   {
     menuPath: 'pecas/reposicao',
@@ -377,6 +385,15 @@ export const ACOES_POR_MENU = [
   },
   {
     menuPath: 'regras-pj',
+    acoes: [
+      { value: 'editar', label: 'Incluir / Editar' },
+      { value: 'excluir', label: 'Excluir' },
+    ],
+  },
+  // Regras de Faixas: a tela já conferia estas ações, mas não estavam cadastradas (só o admin
+  // conseguia incluir/editar/excluir). Incluídas na varredura do Grupo de Acessos (09/11/2026).
+  {
+    menuPath: 'regras-faixas',
     acoes: [
       { value: 'editar', label: 'Incluir / Editar' },
       { value: 'excluir', label: 'Excluir' },
