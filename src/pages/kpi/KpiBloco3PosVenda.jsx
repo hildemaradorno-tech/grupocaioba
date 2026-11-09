@@ -5,6 +5,7 @@ import { MOCK_BLOCO3_POS_VENDA } from '../../data/kpiMockData'
 import { getPeriodData, getPeriodLabel, M_PERIODS, M_LABELS } from '../../utils/kpiPeriods'
 import { useKpiData } from '../../hooks/useKpiData'
 import { fetchBloco3PosVenda, salvarPeso, salvarMetaManual } from '../../services/kpiService'
+import { useExpandirQuadro } from '../../components/kpi/useExpandirQuadro'
 
 const BLOCO_PESOS = 'bloco3-pos-venda'
 
@@ -81,9 +82,16 @@ const COR_SUBHEADER = {
   teal:   'bg-teal-50   border-teal-200',
 }
 
+// Mesma regra do Bloco 3 - Serviços (KpiBloco3Servicos) e da Campanha.
 function calcAtingimento(orientacao, meta, realizado) {
-  if (realizado === null || meta === null || meta === 0) return null
-  return orientacao === '<' ? meta / realizado : realizado / meta
+  if (realizado === null || meta === null) return null
+  if (orientacao === '<') {
+    // Menor é melhor: realizado 0 cumpre qualquer meta; meta 0 só é cumprida com realizado 0.
+    if (realizado <= 0) return 1
+    return meta === 0 ? 0 : meta / realizado
+  }
+  if (meta === 0) return null
+  return realizado / meta
 }
 
 function pct(val) {
@@ -159,60 +167,15 @@ function PesoInput({ value, onSave }) {
   )
 }
 
-// Indicadores sem fonte automática de meta: o usuário digita, mês a mês, e fica gravado no
-// Supabase (kpi_metas_manuais) — mesmo padrão do PesoInput acima, mas valor livre (não 0-100
-// obrigatório) e não limpa o campo ao sair vazio (evita apagar sem querer).
-function MetaInput({ value, onSave }) {
-  const [draft, setDraft]   = useState(value != null ? value : '')
-  const [saving, setSaving] = useState(false)
-  const [erro, setErro]     = useState(false)
-
-  React.useEffect(() => {
-    setDraft(value != null ? value : '')
-  }, [value])
-
-  const commit = async () => {
-    const atual = value != null ? value : ''
-    if (draft === '' || draft === atual || draft === String(atual)) { setDraft(atual); return }
-    const num = Number(draft)
-    if (isNaN(num)) { setDraft(atual); return }
-    setSaving(true)
-    setErro(false)
-    try {
-      await onSave(num)
-    } catch (err) {
-      console.warn('[KPI] Falha ao salvar meta:', err.message)
-      setErro(true)
-      setDraft(atual)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <span className="inline-flex items-center justify-center gap-0.5">
-      <input
-        type="number" step="0.01"
-        value={draft}
-        disabled={saving}
-        onChange={e => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur() }}
-        className={`w-14 text-center border rounded px-1 py-0.5 text-xs focus:outline-none focus:border-blue-400 disabled:opacity-50 ${
-          erro ? 'border-red-400' : 'border-slate-200'
-        }`}
-      />
-      <span className="text-slate-400">%</span>
-    </span>
-  )
-}
 
 // Indicadores sem meta automática: o usuário digita a meta, só na visão Mensal.
-const INDICADORES_META_MANUAL = new Set(['Eficácia da Oficina', 'Produtividade da Oficina'])
+const INDICADORES_META_MANUAL = new Set(['Eficácia da Oficina', 'Produtividade da Oficina', 'Digitação Atrasada', 'Aguardando Aprovação DAF fora do prazo'])
+// Os que levam a nota "*Valores relacionados a faturamento".
+const INDICADORES_NOTA_FATURAMENTO = new Set(['Eficácia da Oficina', 'Produtividade da Oficina'])
 
 // Botão ao lado do nome do indicador: abre um painel pra digitar um valor só e aplicar em
 // vários meses de uma vez (ou em todos), em vez de editar mês a mês na tabela.
-function PreencherMesesButton({ onAplicar }) {
+function PreencherMesesButton({ onAplicar, metrica = '%' }) {
   const [aberto, setAberto]   = useState(false)
   const [valor, setValor]     = useState('')
   const [meses, setMeses]     = useState(() => new Set())
@@ -278,7 +241,7 @@ function PreencherMesesButton({ onAplicar }) {
         ref={btnRef}
         type="button"
         onClick={() => (aberto ? setAberto(false) : abrir())}
-        title="Meta editável — clique para digitar"
+        title="Meta editável — clique para preencher os meses (único jeito de digitar a meta)"
         className="ml-1.5 inline-flex items-center justify-center h-4 w-4 rounded align-middle bg-amber-100 text-amber-700 border border-amber-300 hover:bg-amber-200 transition-colors"
       >
         <Pencil size={10} />
@@ -290,7 +253,7 @@ function PreencherMesesButton({ onAplicar }) {
           className="z-50 w-64 bg-white border border-slate-200 rounded-lg shadow-lg p-3 text-xs normal-case font-normal text-left"
         >
           <p className="font-semibold text-slate-700 mb-2">Preencher meses</p>
-          <label className="block text-slate-500 mb-1">Valor (%)</label>
+          <label className="block text-slate-500 mb-1">Valor{metrica === '%' ? ' (%)' : ' (quantidade)'}</label>
           <input
             type="number" step="0.01" autoFocus
             value={valor}
@@ -329,7 +292,8 @@ function PreencherMesesButton({ onAplicar }) {
   )
 }
 
-function QuadroTable({ quadro, activePeriods, mesTotalKey, year, onSalvarPeso, onSalvarMetaManual, onSalvarMetasVarios, somenteLeitura = false }) {
+// seletor: elemento opcional na linha abaixo do título das colunas (ex.: empresa do GERENTE DE PROCESSOS E QUALIDADE).
+function QuadroTable({ quadro, activePeriods, mesTotalKey, year, onSalvarPeso, onSalvarMetaManual, onSalvarMetasVarios, somenteLeitura = false, seletor = null }) {
   const headerCls   = COR_HEADER[quadro.cor]   ?? COR_HEADER.blue
   const subheadCls  = COR_SUBHEADER[quadro.cor] ?? COR_SUBHEADER.blue
   const colSpanBase = 4
@@ -338,17 +302,22 @@ function QuadroTable({ quadro, activePeriods, mesTotalKey, year, onSalvarPeso, o
   const totalPeso = Math.round(quadro.kpis.reduce((s, k) => s + (k.pesoObj ?? 0), 0) * 100)
   const totalOk   = totalPeso === 100
 
+  const ex = useExpandirQuadro(quadro.tituloGerente)
+
   return (
-    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+    <>
+    {ex.fundo}
+    <div style={ex.estiloCaixa} className={`bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden ${ex.classeCaixa}`}>
       {/* Cabeçalho do quadro — título do gerente */}
       <div className={`px-5 py-3 flex items-center gap-2 ${headerCls}`}>
         <Wrench className="h-4 w-4 opacity-80" />
         <span className="text-sm font-bold tracking-wide">{quadro.tituloGerente}</span>
+        {ex.botao}
       </div>
 
-      <div className="overflow-x-auto">
+      <div className={ex.classeRolagem}>
         <table className="w-full text-xs whitespace-nowrap">
-          <thead>
+          <thead className={ex.classeCabecalho}>
             <tr className={`border-b ${subheadCls}`}>
               <th className="text-center px-3 py-2.5 font-medium text-slate-500 w-8">#</th>
               <th className="text-left px-4 py-2.5 font-medium text-slate-600 sticky left-0 bg-inherit min-w-[240px]">Indicador (KPI)</th>
@@ -361,7 +330,13 @@ function QuadroTable({ quadro, activePeriods, mesTotalKey, year, onSalvarPeso, o
               ))}
             </tr>
             <tr className="bg-slate-50/60 border-b border-slate-200 text-[10px]">
-              <th colSpan={colSpanBase - 1} />
+              {seletor ? (
+                <>
+                  <th />
+                  <th className="px-4 py-1 sticky left-0 bg-inherit text-left font-normal">{seletor}</th>
+                  <th />
+                </>
+              ) : <th colSpan={colSpanBase - 1} />}
               <th className="px-2 py-1" />
               {activePeriods.map(p => (
                 <React.Fragment key={p}>
@@ -374,16 +349,17 @@ function QuadroTable({ quadro, activePeriods, mesTotalKey, year, onSalvarPeso, o
             </tr>
           </thead>
           <tbody>
-            {quadro.kpis.map(row => (
+            {quadro.kpis.map((row, pos) => (
               <tr key={row.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
-                <td className="px-3 py-2.5 text-center text-slate-400 font-mono">{row.id}</td>
+                {/* Posição na lista (o id fica interno: pesos e metas gravados por ele). */}
+                <td className="px-3 py-2.5 text-center text-slate-400 font-mono">{pos + 1}</td>
                 <td className="px-4 py-2.5 font-medium text-slate-700 sticky left-0 bg-white">
                   {row.indicador}
                   <InfoIndicador indicador={row.indicador} />
                   {!somenteLeitura && INDICADORES_META_MANUAL.has(row.indicador) && (
-                    <PreencherMesesButton onAplicar={(meses, valor) => onSalvarMetasVarios(quadro.tituloGerente, row.id, meses, valor)} />
+                    <PreencherMesesButton metrica={row.metrica} onAplicar={(meses, valor) => onSalvarMetasVarios(quadro.tituloGerente, row.id, meses, valor)} />
                   )}
-                  {INDICADORES_META_MANUAL.has(row.indicador) && (
+                  {INDICADORES_NOTA_FATURAMENTO.has(row.indicador) && (
                     <div className="text-[10px] font-normal italic text-slate-400">*Valores relacionados a faturamento</div>
                   )}
                 </td>
@@ -395,13 +371,11 @@ function QuadroTable({ quadro, activePeriods, mesTotalKey, year, onSalvarPeso, o
                   const d      = getPeriodData(row, p)
                   const ating  = calcAtingimento(row.orientacao, d.meta, d.realizado)
                   const contrib = (ating !== null && row.pesoObj != null) ? ating * row.pesoObj : null
-                  const metaEditavel = !somenteLeitura && INDICADORES_META_MANUAL.has(row.indicador) && /^m\d{2}$/.test(p)
+                  // Meta digitada: só leitura na tabela — preenche pelo lápis "Preencher meses" do indicador.
                   return (
                     <React.Fragment key={p}>
                       <td className="px-2 py-2.5 text-center text-slate-600 border-l border-slate-100">
-                        {metaEditavel
-                          ? <MetaInput value={d.meta} onSave={valor => onSalvarMetaManual(quadro.tituloGerente, row.id, p, valor)} />
-                          : fmtNum(d.meta, row.metrica)}
+                        {fmtNum(d.meta, row.metrica)}
                       </td>
                       <td className="px-2 py-2.5 text-center text-slate-600">{fmtNum(d.realizado, row.metrica)}</td>
                       <td className="px-2 py-2.5 text-center">
@@ -441,6 +415,7 @@ function QuadroTable({ quadro, activePeriods, mesTotalKey, year, onSalvarPeso, o
         </table>
       </div>
     </div>
+    </>
   )
 }
 
@@ -460,6 +435,8 @@ function ordenarCasas(quadros) {
   return [...outros.slice(0, ini), ...casas, ...outros.slice(ini)]
 }
 
+// GERENTE DE PROCESSOS E QUALIDADE: sem seletor de empresa (removido a pedido) — os indicadores de garantia vêm
+// com todas as empresas somadas. O backend ainda aceita ?empresaQualidade=, se um dia voltar.
 export function PosVendaQuadros({ year, activePeriods, mesTotalKey, somenteLeitura = false, apenas = null }) {
   const { data: quadros } = useKpiData(fetchBloco3PosVenda, MOCK_BLOCO3_POS_VENDA, { year })
 
@@ -495,7 +472,10 @@ export function PosVendaQuadros({ year, activePeriods, mesTotalKey, somenteLeitu
     })
   }
 
-  const quadrosComPeso = ordenarCasas(quadros).map(quadro => ({
+  // Quadro renomeado: dado com o nome antigo (memória da tela / backend não atualizado) aparece no nome novo.
+  const quadrosComPeso = ordenarCasas(quadros)
+    .map(q => (q.tituloGerente === 'GERENTE DE QUALIDADE' ? { ...q, tituloGerente: 'GERENTE DE PROCESSOS E QUALIDADE' } : q))
+    .map(quadro => ({
     ...quadro,
     kpis: quadro.kpis.map(kpi => {
       const key = `${quadro.tituloGerente}|${kpi.id}`
@@ -513,7 +493,8 @@ export function PosVendaQuadros({ year, activePeriods, mesTotalKey, somenteLeitu
   return (
       <div className="space-y-6">
         {quadrosComPeso.filter(q => !apenas || q.tituloGerente === apenas).map((quadro, idx) => (
-          <QuadroTable key={idx} quadro={quadro} activePeriods={activePeriods} mesTotalKey={mesTotalKey} year={year} onSalvarPeso={handleSalvarPeso} onSalvarMetaManual={handleSalvarMetaManual} onSalvarMetasVarios={handleSalvarMetasVarios} somenteLeitura={somenteLeitura} />
+          <QuadroTable key={idx} quadro={quadro} activePeriods={activePeriods} mesTotalKey={mesTotalKey} year={year} onSalvarPeso={handleSalvarPeso} onSalvarMetaManual={handleSalvarMetaManual} onSalvarMetasVarios={handleSalvarMetasVarios} somenteLeitura={somenteLeitura}
+ />
         ))}
       </div>
   )

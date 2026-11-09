@@ -1579,9 +1579,9 @@ const comLimiteTempo = (p) => Promise.race([p, new Promise((_, rej) => setTimeou
 const PARAM_EMPRESA_QUADRO = { 'SETOR DE MECÂNICA': 'empresaOficina', 'CHEFE DE OFICINA': 'empresaChefeOficina', 'SETOR FUNILARIA/PINTURA': 'empresaFunilaria', 'SETOR GARANTIA': 'empresaGarantia' }
 // Endpoint da Matriz de cada quadro (abas Bloco 3 - Serviços / Bloco 3 - Peças).
 const fetchDoQuadro = (bloco, quadro) => (bloco === 'pecas' ? fetchBloco3Pecas
-  : (['CONSULTOR DE SERVIÇOS', 'CONSULTOR DE PLANO DE MANUTENÇÃO', 'MECÂNICO', 'AGENDAMENTO DE SERVIÇOS', ...Object.keys(PARAM_EMPRESA_QUADRO)].includes(quadro) ? fetchBloco3Servicos : fetchBloco3PosVenda))
+  : (['CONSULTOR DE SERVIÇOS', 'CONSULTOR DE PLANO DE MANUTENÇÃO', 'MECÂNICO', 'SETOR DE AGENDAMENTO DE SERVIÇOS', ...Object.keys(PARAM_EMPRESA_QUADRO)].includes(quadro) ? fetchBloco3Servicos : fetchBloco3PosVenda))
 // Quadros sem pessoa nem empresa que a Matriz monta sozinhos (?apenas=): não espera Consultor/Mecânico.
-const QUADROS_APENAS = new Set(['CONSULTOR DE PLANO DE MANUTENÇÃO', 'AGENDAMENTO DE SERVIÇOS'])
+const QUADROS_APENAS = new Set(['CONSULTOR DE PLANO DE MANUTENÇÃO', 'SETOR DE AGENDAMENTO DE SERVIÇOS'])
 
 const SEM_VALORES_FOTO = [] // função sem valores na foto do mês fechado (referência fixa)
 
@@ -2179,8 +2179,8 @@ function regrasZeradas(regras, unidade, unidades) {
 // BLOCO3_PECAS). Cada função do Bônus-alvo aponta para um quadro: regras.quadroLinha[unidade][linha] =
 // { bloco: 'servicos' | 'pecas', quadro }. Sem escolha salva, vale o padrão da função.
 const QUADROS_BLOCO3 = {
-  servicos: ['CONSULTOR DE SERVIÇOS', 'CONSULTOR DE PLANO DE MANUTENÇÃO', 'MECÂNICO', 'CHEFE DE OFICINA', 'SETOR DE MECÂNICA', 'SETOR FUNILARIA/PINTURA', 'SETOR GARANTIA', 'AGENDAMENTO DE SERVIÇOS', 'GERENTE GERAL PÓS-VENDAS', 'GERENTE DE SERVIÇO - CAMPO GRANDE',
-    'GERENTE FILIAL - DOURADOS', 'GERENTE FILIAL - TRÊS LAGOAS', 'GERENTE FILIAL - CHAPADÃO DO SUL', 'GERENTE DE QUALIDADE'],
+  servicos: ['CONSULTOR DE SERVIÇOS', 'CONSULTOR DE PLANO DE MANUTENÇÃO', 'MECÂNICO', 'CHEFE DE OFICINA', 'SETOR DE MECÂNICA', 'SETOR FUNILARIA/PINTURA', 'SETOR GARANTIA', 'SETOR DE AGENDAMENTO DE SERVIÇOS', 'GERENTE GERAL PÓS-VENDAS', 'GERENTE DE SERVIÇO - CAMPO GRANDE',
+    'GERENTE FILIAL - DOURADOS', 'GERENTE FILIAL - TRÊS LAGOAS', 'GERENTE FILIAL - CHAPADÃO DO SUL', 'GERENTE DE PROCESSOS E QUALIDADE'],
   pecas: ['GERENTE ATACADO PEÇAS', 'COORDENADOR ATACADO PEÇAS', 'VENDEDOR DE PEÇAS', 'GERENTE DE COMPRAS',
     'SUPERVISÃO DE PEÇAS/ENCARREGADO ESTOQUE', 'ESTOQUISTA/AUXILIAR PEÇAS'],
 }
@@ -2188,7 +2188,7 @@ const QUADROS_BLOCO3 = {
 const FILTRO_PESSOA = { 'CONSULTOR DE SERVIÇOS': 'consultor', 'MECÂNICO': 'mecanico', 'VENDEDOR DE PEÇAS': 'vendedor' }
 // Configuração efetiva do quadro de uma linha: a salva ou o padrão; "individual" só vale se o quadro permitir.
 // Quadros renomeados na Matriz: regras já salvas com o nome antigo continuam valendo.
-const QUADRO_RENOMEADO = { 'OFICINA': 'SETOR DE MECÂNICA' }
+const QUADRO_RENOMEADO = { 'OFICINA': 'SETOR DE MECÂNICA', 'AGENDAMENTO DE SERVIÇOS': 'SETOR DE AGENDAMENTO DE SERVIÇOS', 'GERENTE DE QUALIDADE': 'GERENTE DE PROCESSOS E QUALIDADE' }
 // Empresas cujos valores somados formam o resultado da função (quadros por empresa, ex.: SETOR GARANTIA):
 // janela Editar da função › "Empresas que compõem o resultado". Gravado em empresasResultado[unidade][linha]; as
 // funções do antigo bloco de Garantias tinham em regrasGarantias[unidade][linha].empresas (ainda lido).

@@ -89,13 +89,16 @@ export const MOCK_BLOCO3_POS_VENDA = [
     ],
   },
   {
-    tituloGerente: 'GERENTE DE QUALIDADE',
+    tituloGerente: 'GERENTE DE PROCESSOS E QUALIDADE',
     cor: 'teal',
     kpis: [
-      { id:  1, indicador: 'O.S. de Garantia em Aberto',           orientacao: '<', metrica: 'qtd', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
-      { id:  2, indicador: 'Agendamentos Ativos',                  orientacao: '>', metrica: 'qtd', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
-      { id:  3, indicador: 'Total Agendamento',                    orientacao: '>', metrica: 'qtd', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
-      { id:  4, indicador: 'Penetração Plano de Manutenção',       orientacao: '>', metrica: '%',   metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      { id: 11, indicador: 'Digitação Atrasada',                   orientacao: '<', metrica: 'un',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      { id: 12, indicador: 'Aguardando Aprovação DAF fora do prazo', orientacao: '<', metrica: 'un', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      { id: 13, indicador: 'Taxa de Agendamento (Por Campanhas)',              orientacao: '>', metrica: '%', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      { id: 14, indicador: 'Taxa de Agendamento Ativo (Por Data Agendamento)', orientacao: '>', metrica: '%', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      { id: 15, indicador: 'Taxa de No-show (Por Data Agendamento)',           orientacao: '<', metrica: '%', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      { id: 16, indicador: 'Contratos novos',     orientacao: '>', metrica: 'un', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      { id: 17, indicador: 'Contratos renovados', orientacao: '>', metrica: 'un', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
       { id:  5, indicador: 'Recusa de Garantia',                   orientacao: '<', metrica: '%',   metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
       { id:  6, indicador: 'Auditoria Padrão DOURADOS',            orientacao: '>', metrica: '%',   metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
       { id:  7, indicador: 'Auditoria Padrão TRÊS LAGOAS',         orientacao: '>', metrica: '%',   metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
@@ -229,6 +232,15 @@ export const MOCK_BLOCO3_SERVICOS = [
     kpis: [
       { id: 1, indicador: 'Digitação Atrasada',                     orientacao: '<', metrica: 'un', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
       { id: 2, indicador: 'Aguardando Aprovação DAF fora do prazo', orientacao: '<', metrica: 'un', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+    ],
+  },
+  {
+    tituloGerente: 'SETOR DE AGENDAMENTO DE SERVIÇOS',
+    cor: 'emerald',
+    kpis: [
+      { id: 1, indicador: 'Taxa de Agendamento (Por Campanhas)',              orientacao: '>', metrica: '%', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      { id: 2, indicador: 'Taxa de Agendamento Ativo (Por Data Agendamento)', orientacao: '>', metrica: '%', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      { id: 3, indicador: 'Taxa de No-show (Por Data Agendamento)',           orientacao: '<', metrica: '%', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
     ],
   },
 ]

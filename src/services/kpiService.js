@@ -52,6 +52,7 @@ function buildUrl(endpoint, params = {}) {
   if (params.empresaChefeOficina) qs.set('empresaChefeOficina', params.empresaChefeOficina)
   if (params.empresaFunilaria) qs.set('empresaFunilaria', params.empresaFunilaria)
   if (params.empresaGarantia) qs.set('empresaGarantia', params.empresaGarantia)
+  if (params.empresaQualidade) qs.set('empresaQualidade', params.empresaQualidade) // GERENTE DE PROCESSOS E QUALIDADE (Bloco 3 › Gerentes)
   if (params.apenas) qs.set('apenas', params.apenas)
   if (params.apenas) qs.set('apenas', params.apenas) // Bloco 3 - Serviços: só um quadro por empresa (Campanha)
   if (params.mecanico && params.mecanico !== 'todos') qs.set('mecanico', params.mecanico)
@@ -244,6 +245,7 @@ export async function salvarMetaManual({ bloco, tituloGerente, kpiId, ano, mes, 
   })
   const body = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(body.message || `HTTP ${res.status}`)
+  _cache.clear() // quadros guardados na tela ficaram com a meta antiga: a próxima abertura busca de novo
   return body
 }
 
@@ -257,5 +259,8 @@ export async function salvarPeso({ bloco, tituloGerente, kpiId, peso }) {
   })
   const body = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(body.message || `HTTP ${res.status}`)
+  // Quadros guardados na tela (Matriz e Campanha) ficaram com o peso antigo: sem isto, voltar para a
+  // aba mostrava o valor de antes da gravação até um F5. A próxima abertura busca de novo.
+  _cache.clear()
   return body
 }

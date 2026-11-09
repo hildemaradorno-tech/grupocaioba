@@ -1,5 +1,5 @@
 /**
- * Indicadores do quadro AGENDAMENTO DE SERVIÇOS (Matriz KPIs › Bloco 3 - Serviços › aba Setores), com as mesmas
+ * Indicadores do quadro SETOR DE AGENDAMENTO DE SERVIÇOS (Matriz KPIs › Bloco 3 - Serviços › aba Setores), com as mesmas
  * regras e metas do BI Agendamento de Serviços (Mesa de Agendamento):
  *
  *   Taxa de Agendamento          — aba Por Campanhas: Contatos agendados ÷ Contatos gerados × 100, pela data da

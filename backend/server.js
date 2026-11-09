@@ -351,6 +351,35 @@ async function start() {
     res.json({ success: true })
   })
 
+  // PUT /api/auth/update-email/:id — troca o e-mail de login (Supabase Auth). Chamado ANTES de gravar
+  // o novo e-mail em usuarios: o perfil é achado pelo e-mail no login e a redefinição de senha só
+  // chega se o Auth tiver o mesmo e-mail do cadastro.
+  app.put('/api/auth/update-email/:id', authMiddleware, requireMenu('usuarios'), async (req, res) => {
+    if (!supabaseAdmin) {
+      return res.status(503).json({ error: 'SUPABASE_SERVICE_KEY não configurada no backend.' })
+    }
+    const { id } = req.params
+    const email = String(req.body?.email || '').trim().toLowerCase()
+    if (!email) return res.status(400).json({ error: 'E-mail obrigatório.' })
+
+    // id de usuarios nem sempre é o id do Auth — cai para a busca pelo e-mail atual do cadastro
+    let authId = null
+    const { data: porId } = await supabaseAdmin.auth.admin.getUserById(id)
+    if (porId?.user) authId = porId.user.id
+    else {
+      const { data: perfil } = await supabaseAdmin.from('usuarios').select('email').eq('id', id).single()
+      if (perfil?.email) {
+        const { data: lista } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 })
+        authId = (lista?.users || []).find(u => (u.email || '').toLowerCase() === perfil.email.toLowerCase())?.id || null
+      }
+    }
+    if (!authId) return res.status(400).json({ error: 'Usuário não encontrado no Supabase Auth.' })
+
+    const { error } = await supabaseAdmin.auth.admin.updateUserById(authId, { email, email_confirm: true })
+    if (error) return res.status(400).json({ error: error.message })
+    res.json({ success: true })
+  })
+
   // DELETE /api/auth/delete-user/:id — remove usuário do Supabase Auth + tabela usuarios
   app.delete('/api/auth/delete-user/:id', authMiddleware, requireMenu('usuarios'), async (req, res) => {
     if (!supabaseAdmin) {

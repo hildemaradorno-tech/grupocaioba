@@ -9,6 +9,7 @@ import { fetchBloco3Servicos, salvarPeso, salvarMetaManual, fetchConsultoresServ
 import { useKpiYear } from '../../context/KpiYearContext'
 import { useAuth } from '../../context/AuthContext'
 import { PosVendaQuadros } from './KpiBloco3PosVenda'
+import { useExpandirQuadro } from '../../components/kpi/useExpandirQuadro'
 
 const BLOCO_PESOS = 'bloco3-servicos'
 const QUADRO_CONSULTOR = 'CONSULTOR DE SERVIÇOS'
@@ -18,8 +19,11 @@ const QUADRO_CHEFE_OFICINA = 'CHEFE DE OFICINA'
 const QUADRO_FUNILARIA = 'SETOR FUNILARIA/PINTURA'
 const QUADRO_GARANTIA  = 'SETOR GARANTIA'
 const QUADRO_PLANOS    = 'CONSULTOR DE PLANO DE MANUTENÇÃO'
-const QUADRO_AGENDAMENTO = 'AGENDAMENTO DE SERVIÇOS' // indicadores do BI Agendamento de Serviços; sem seletor (todas as empresas)
+const QUADRO_AGENDAMENTO = 'SETOR DE AGENDAMENTO DE SERVIÇOS' // indicadores do BI Agendamento de Serviços; sem seletor (todas as empresas)
+// Quadros renomeados: dado com o nome antigo (cache da tela ou backend ainda não atualizado) aparece no nome novo.
+const NOME_NOVO_QUADRO = { 'AGENDAMENTO DE SERVIÇOS': QUADRO_AGENDAMENTO, 'OFICINA': QUADRO_OFICINA }
 const EMPRESAS_OFICINA = ['CAMPO GRANDE', 'DOURADOS', 'TRÊS LAGOAS', 'CHAPADÃO DO SUL']
+const EMPRESA_TODAS = 'TODAS' // backend: todas as lojas juntas (quadros da aba Setores)
 
 const COR_HEADER = {
   blue:   'bg-blue-700   text-white',
@@ -130,7 +134,8 @@ function PesoInput({ value, onSave }) {
 // tabela). O painel é montado via portal com position:fixed (mesmo padrão de DropdownAcao em
 // HistoricoComissoes.jsx) pra escapar do overflow-hidden/overflow-x-auto do card da tabela —
 // um simples position:absolute ficaria cortado ali dentro.
-function PessoaSelector({ lista, selecionado, onSelecionar, onLimpar, placeholderTodos, placeholderBusca, vazioMsg }) {
+// alertaVazio: sem seleção, o texto do placeholder fica em vermelho (ex.: "Selecione a empresa…").
+function PessoaSelector({ lista, selecionado, onSelecionar, onLimpar, placeholderTodos, placeholderBusca, vazioMsg, alertaVazio = false }) {
   const [aberto, setAberto] = useState(false)
   const [busca, setBusca] = useState('')
   const [pos, setPos] = useState(null)
@@ -178,7 +183,7 @@ function PessoaSelector({ lista, selecionado, onSelecionar, onLimpar, placeholde
         onClick={() => (aberto ? setAberto(false) : abrirNaPosicao())}
         className="w-full min-w-0 flex items-center justify-between gap-1 text-[11px] font-normal normal-case border border-slate-200 rounded px-2 py-1 bg-white text-slate-700 hover:bg-slate-50 focus:outline-none focus:border-blue-400 transition-colors"
       >
-        <span className={`truncate ${selecionado ? 'text-slate-700' : 'text-slate-400'}`}>{selecionado || placeholderTodos}</span>
+        <span className={`truncate ${selecionado ? 'text-slate-700' : alertaVazio ? 'text-red-600 font-medium' : 'text-slate-400'}`}>{selecionado || placeholderTodos}</span>
         <ChevronDown size={12} className="text-slate-400 shrink-0" />
       </button>
       {selecionado && (
@@ -228,52 +233,6 @@ const INDICADORES_META_MANUAL = new Set(['Eficácia da Oficina', 'Produtividade 
 // Só os de horas trazem a observação de faturamento.
 const INDICADORES_NOTA_FATURAMENTO = new Set(['Eficácia da Oficina', 'Produtividade da Oficina'])
 
-// Mesmo padrão de PosVendaQuadros/KpiBloco3PosVenda.jsx: a meta digitada mês a mês fica
-// gravada no Supabase (kpi_metas_manuais) e não se perde.
-function MetaInput({ value, onSave, metrica = '%' }) {
-  const [draft, setDraft]   = useState(value != null ? value : '')
-  const [saving, setSaving] = useState(false)
-  const [erro, setErro]     = useState(false)
-
-  useEffect(() => {
-    setDraft(value != null ? value : '')
-  }, [value])
-
-  const commit = async () => {
-    const atual = value != null ? value : ''
-    if (draft === '' || draft === atual || draft === String(atual)) { setDraft(atual); return }
-    const num = Number(draft)
-    if (isNaN(num)) { setDraft(atual); return }
-    setSaving(true)
-    setErro(false)
-    try {
-      await onSave(num)
-    } catch (err) {
-      console.warn('[KPI] Falha ao salvar meta:', err.message)
-      setErro(true)
-      setDraft(atual)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <span className="inline-flex items-center justify-center gap-0.5">
-      <input
-        type="number" step={metrica === 'un' ? 1 : 0.01} min={metrica === 'un' ? 0 : undefined}
-        value={draft}
-        disabled={saving}
-        onChange={e => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur() }}
-        className={`w-14 text-center border rounded px-1 py-0.5 text-xs focus:outline-none focus:border-blue-400 disabled:opacity-50 ${
-          erro ? 'border-red-400' : 'border-slate-200'
-        }`}
-      />
-      {metrica === '%' && <span className="text-slate-400">%</span>}
-    </span>
-  )
-}
 
 // Botão ao lado do nome do indicador (fundo amarelo, pra deixar evidente que a meta pode ser
 // digitada): abre um painel com um valor só, aplicado em vários meses de uma vez (ou todos).
@@ -343,7 +302,7 @@ function PreencherMesesButton({ onAplicar, metrica = '%' }) {
         ref={btnRef}
         type="button"
         onClick={() => (aberto ? setAberto(false) : abrir())}
-        title="Meta editável — clique para digitar"
+        title="Meta editável — clique para preencher os meses (único jeito de digitar a meta)"
         className="ml-1.5 inline-flex items-center justify-center h-4 w-4 rounded align-middle bg-amber-100 text-amber-700 border border-amber-300 hover:bg-amber-200 transition-colors"
       >
         <Pencil size={10} />
@@ -404,16 +363,21 @@ function QuadroTable({ quadro, activePeriods, mesTotalKey, year, onSalvarPeso, o
   const totalPeso = Math.round(quadro.kpis.reduce((s, k) => s + (k.pesoObj ?? 0), 0) * 100)
   const totalOk   = totalPeso === 100
 
+  const ex = useExpandirQuadro(quadro.tituloGerente)
+
   return (
-    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+    <>
+    {ex.fundo}
+    <div style={ex.estiloCaixa} className={`bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden ${ex.classeCaixa}`}>
       <div className={`px-5 py-3 flex items-center gap-2 ${headerCls}`}>
         <Icon className="h-4 w-4 opacity-80" />
         <span className="text-sm font-bold tracking-wide">{quadro.tituloGerente}</span>
+        {ex.botao}
       </div>
 
-      <div className="overflow-x-auto">
+      <div className={ex.classeRolagem}>
         <table className="w-full text-xs whitespace-nowrap">
-          <thead>
+          <thead className={ex.classeCabecalho}>
             <tr className={`border-b ${subheadCls}`}>
               <th className="text-center px-3 py-2.5 font-medium text-slate-500 w-8">#</th>
               <th className="text-left px-4 py-2.5 font-medium text-slate-600 sticky left-0 bg-inherit min-w-[240px]">Indicador (KPI)</th>
@@ -429,7 +393,7 @@ function QuadroTable({ quadro, activePeriods, mesTotalKey, year, onSalvarPeso, o
               <th />
               <th className="px-4 py-1 sticky left-0 bg-inherit">
                 {pessoaSelector}
-                {ocultarValores && <span className="block mt-0.5 text-[10px] font-normal text-amber-600">{msgOcultar}</span>}
+                {ocultarValores && msgOcultar && <span className="block mt-0.5 text-[10px] font-normal text-amber-600">{msgOcultar}</span>}
               </th>
               <th />
               <th className="px-2 py-1" />
@@ -464,15 +428,15 @@ function QuadroTable({ quadro, activePeriods, mesTotalKey, year, onSalvarPeso, o
                   const d       = getPeriodData(row, p)
                   const ating   = calcAtingimento(row.orientacao, d.meta, d.realizado)
                   const contrib = (ating !== null && row.pesoObj != null) ? ating * row.pesoObj : null
-                  const metaEditavel = !somenteLeitura && INDICADORES_META_MANUAL.has(row.indicador) && /^m\d{2}$/.test(p)
+                  // Meta digitada (Eficácia, garantias…): só leitura na tabela — preenche pelo lápis
+                  // "Preencher meses" ao lado do indicador.
+                  const metaDigitada = INDICADORES_META_MANUAL.has(row.indicador)
                   if (ocultarValores) {
-                    // Meta digitada (Eficácia/Produtividade) é do quadro, não da pessoa: o campo continua.
+                    // Meta digitada é do quadro, não da pessoa: continua aparecendo.
                     return (
                       <React.Fragment key={p}>
                         <td className="px-2 py-2.5 text-center text-slate-300 border-l border-slate-100">
-                          {metaEditavel
-                            ? <MetaInput value={d.meta} metrica={row.metrica} onSave={valor => onSalvarMetaManual(quadro.tituloGerente, row.id, p, valor)} />
-                            : '—'}
+                          {metaDigitada ? <span className="text-slate-600">{fmtNum(d.meta, row.metrica)}</span> : '—'}
                         </td>
                         <td className="px-2 py-2.5 text-center text-slate-300">—</td>
                         <td className="px-2 py-2.5 text-center text-slate-300">—</td>
@@ -483,9 +447,7 @@ function QuadroTable({ quadro, activePeriods, mesTotalKey, year, onSalvarPeso, o
                   return (
                     <React.Fragment key={p}>
                       <td className="px-2 py-2.5 text-center text-slate-600 border-l border-slate-100">
-                        {metaEditavel
-                          ? <MetaInput value={d.meta} metrica={row.metrica} onSave={valor => onSalvarMetaManual(quadro.tituloGerente, row.id, p, valor)} />
-                          : fmtNum(d.meta, row.metrica)}
+                        {fmtNum(d.meta, row.metrica)}
                       </td>
                       <td className="px-2 py-2.5 text-center text-slate-600">{fmtNum(d.realizado, row.metrica)}</td>
                       <td className="px-2 py-2.5 text-center">
@@ -525,6 +487,7 @@ function QuadroTable({ quadro, activePeriods, mesTotalKey, year, onSalvarPeso, o
         </table>
       </div>
     </div>
+    </>
   )
 }
 
@@ -570,12 +533,15 @@ function ServicosQuadros({ year, activePeriods, mesTotalKey, somenteLeitura = fa
     year,
     consultor: consultorFiltro.aplicado || undefined,
     mecanico: mecanicoFiltro.aplicado || undefined,
-    empresaOficina: empresaOficina || undefined,
+    // Quadros da aba Setores: sem empresa escolhida = todas as lojas juntas ('TODAS' no backend).
+    // Só pede quando o quadro aparece (o quadro por empresa custa uma leitura das fontes).
+    empresaOficina: empresaOficina || (visivel(QUADRO_OFICINA) ? EMPRESA_TODAS : undefined),
     empresaChefeOficina: empresaChefeOficina || undefined,
-    empresaFunilaria: empresaFunilaria || undefined,
-    empresaGarantia: empresaGarantia || undefined,
-    // Atalho do backend (não monta Consultor/Mecânico): só o Consultor de Plano, ou só os quadros por empresa.
-    apenas: temPessoas ? undefined : visivel(QUADRO_PLANOS) ? (apenas === QUADRO_PLANOS ? QUADRO_PLANOS : undefined) : QUADRO_OFICINA,
+    empresaFunilaria: empresaFunilaria || (visivel(QUADRO_FUNILARIA) ? EMPRESA_TODAS : undefined),
+    empresaGarantia: empresaGarantia || (visivel(QUADRO_GARANTIA) ? EMPRESA_TODAS : undefined),
+    // Atalho do backend (não monta Consultor/Mecânico): só o Consultor de Plano, ou os quadros da aba
+    // Setores (por empresa + Agendamento + Consultor de Plano).
+    apenas: temPessoas ? undefined : apenas === QUADRO_PLANOS ? QUADRO_PLANOS : QUADRO_OFICINA,
   })
 
   // Overlay otimista: aplicado por cima do que veio do backend assim que o usuário
@@ -610,7 +576,7 @@ function ServicosQuadros({ year, activePeriods, mesTotalKey, somenteLeitura = fa
     })
   }
 
-  const quadrosComPeso = quadros.map(quadro => ({
+  const quadrosComPeso = quadros.map(q => (NOME_NOVO_QUADRO[q.tituloGerente] ? { ...q, tituloGerente: NOME_NOVO_QUADRO[q.tituloGerente] } : q)).map(quadro => ({
     ...quadro,
     kpis: quadro.kpis.map(kpi => {
       const key = `${quadro.tituloGerente}|${kpi.id}`
@@ -627,7 +593,10 @@ function ServicosQuadros({ year, activePeriods, mesTotalKey, somenteLeitura = fa
 
   return (
       <div className="space-y-6">
-        {quadrosComPeso.filter(q => visivel(q.tituloGerente)).map((quadro, idx) => {
+        {/* Ordem da aba (ABAS_SERVICOS), não a do backend. */}
+        {quadrosComPeso.filter(q => visivel(q.tituloGerente))
+          .sort((a, b) => (grupo ? grupo.indexOf(a.tituloGerente) - grupo.indexOf(b.tituloGerente) : 0))
+          .map((quadro, idx) => {
           const ehConsultor     = quadro.tituloGerente === QUADRO_CONSULTOR
           const ehMecanico      = quadro.tituloGerente === QUADRO_MECANICO
           const ehOficina       = quadro.tituloGerente === QUADRO_OFICINA
@@ -635,6 +604,8 @@ function ServicosQuadros({ year, activePeriods, mesTotalKey, somenteLeitura = fa
           const ehFunilaria     = quadro.tituloGerente === QUADRO_FUNILARIA
           const ehGarantia      = quadro.tituloGerente === QUADRO_GARANTIA
           const ehPorEmpresa    = ehOficina || ehChefeOficina || ehFunilaria || ehGarantia
+          // Setores: sem escolha mostra o total de todas as empresas; o Chefe de Oficina ainda exige a empresa.
+          const ehSetorTotal    = ehOficina || ehFunilaria || ehGarantia
           const filtro      = ehConsultor ? consultorFiltro : ehMecanico ? mecanicoFiltro
             : ehOficina ? { lista: EMPRESAS_OFICINA, aplicado: empresaOficina, setAplicado: setEmpresaOficina }
             : ehChefeOficina ? { lista: EMPRESAS_OFICINA, aplicado: empresaChefeOficina, setAplicado: setEmpresaChefeOficina }
@@ -652,8 +623,8 @@ function ServicosQuadros({ year, activePeriods, mesTotalKey, somenteLeitura = fa
               onSalvarMetaManual={handleSalvarMetaManual}
               onSalvarMetasVarios={handleSalvarMetasVarios}
               somenteLeitura={somenteLeitura}
-              ocultarValores={!!filtro && !filtro.aplicado}
-              msgOcultar={ehPorEmpresa ? 'Selecione a empresa para ver os valores' : undefined}
+              ocultarValores={!!filtro && !filtro.aplicado && !ehSetorTotal}
+              msgOcultar={null /* o aviso ("Selecione…para ver os valores") vai dentro do seletor */}
               icon={Wrench}
               pessoaSelector={filtro && (
                 <PessoaSelector
@@ -661,7 +632,8 @@ function ServicosQuadros({ year, activePeriods, mesTotalKey, somenteLeitura = fa
                   selecionado={filtro.aplicado}
                   onSelecionar={filtro.setAplicado}
                   onLimpar={() => filtro.setAplicado(null)}
-                  placeholderTodos={ehConsultor ? 'Todos os consultores' : ehMecanico ? 'Todos os mecânicos' : 'Selecione a empresa'}
+                  placeholderTodos={ehConsultor || ehMecanico ? 'Selecione um funcionário para ver os valores' : ehSetorTotal ? 'Todas as empresas' : 'Selecione a empresa para ver os valores'}
+                  alertaVazio={!ehSetorTotal}
                   placeholderBusca={ehConsultor ? 'Buscar consultor...' : ehMecanico ? 'Buscar mecânico...' : 'Buscar empresa...'}
                   vazioMsg={ehConsultor ? 'Nenhum consultor encontrado.' : ehMecanico ? 'Nenhum mecânico encontrado.' : 'Nenhuma empresa encontrada.'}
                 />
@@ -675,8 +647,8 @@ function ServicosQuadros({ year, activePeriods, mesTotalKey, somenteLeitura = fa
 
 // Sub-abas do Bloco 3 - Serviços, nesta ordem; ao entrar, sempre abre em Equipe.
 const ABAS_SERVICOS = [
-  { key: 'equipe',   label: 'Equipe',   quadros: [QUADRO_CONSULTOR, QUADRO_PLANOS, QUADRO_MECANICO, QUADRO_CHEFE_OFICINA] },
-  { key: 'setores',  label: 'Setores',  quadros: [QUADRO_OFICINA, QUADRO_FUNILARIA, QUADRO_GARANTIA, QUADRO_AGENDAMENTO] },
+  { key: 'equipe',   label: 'Equipe',   quadros: [QUADRO_CONSULTOR, QUADRO_MECANICO, QUADRO_CHEFE_OFICINA] },
+  { key: 'setores',  label: 'Setores',  quadros: [QUADRO_OFICINA, QUADRO_FUNILARIA, QUADRO_GARANTIA, QUADRO_AGENDAMENTO, QUADRO_PLANOS] },
   { key: 'gerentes', label: 'Gerentes' },
 ]
 
@@ -692,27 +664,32 @@ export default function KpiBloco3Servicos({ periodState: periodoMatriz = null })
   const aba = ABAS_SERVICOS.find(a => a.key === abaKey) ?? ABAS_SERVICOS[0]
 
   return (
-    <div className="p-6 space-y-5">
+    <div className="px-6 pb-6 pt-3 space-y-5">
       {/* Título, legenda e sub-abas fixos no topo ao rolar a página (como as abas da Matriz). */}
-      <div className="sticky top-0 z-20 -mx-6 -mt-6 px-6 pt-6 space-y-5 bg-slate-50">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
+      <div className="sticky top-0 z-20 -mx-6 -mt-3 px-6 pt-3 space-y-5 bg-slate-50">
+      <div>
+        {/* Legenda de cores na mesma linha do título, no lado direito da página. */}
+        <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-1">
           <h1 className="text-xl font-bold text-slate-800">Indicadores de Serviços</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Indicadores de performance da oficina, consultores e mecânicos</p>
+          <PeriodLegend />
         </div>
-        <PeriodLegend />
+        <p className="text-sm text-slate-500 mt-0.5">Indicadores de performance da oficina, consultores e mecânicos</p>
       </div>
 
       {!periodoMatriz && <PeriodSelector state={periodState} inlineTrimestral hideLegend modes={MODES_COM_SEMANAL} />}
 
-      <div className="flex gap-1 border-b border-slate-200">
+      {/* Sub-abas em destaque: fundo azul na ativa, cinza-azulado nas outras (diferente das abas da Matriz). */}
+      <div className="flex gap-1.5 border-b-2 border-blue-600">
         {ABAS_SERVICOS.map(a => (
           <button
             key={a.key}
             type="button"
+            aria-pressed={a.key === aba.key}
             onClick={() => setAbaKey(a.key)}
-            className={`px-4 py-2 text-[11px] font-semibold border-b-2 -mb-px transition-colors ${
-              a.key === aba.key ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700'
+            className={`px-5 py-2 text-[11px] font-semibold rounded-t-md transition-colors ${
+              a.key === aba.key
+                ? 'bg-blue-600 text-white shadow-sm'
+                : 'bg-blue-50 text-blue-800 hover:bg-blue-100'
             }`}
           >
             {a.label}

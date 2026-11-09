@@ -1092,6 +1092,19 @@ export const apiService = {
     return body
   },
 
+  // Troca o e-mail de login no Supabase Auth (backend com service key)
+  updateEmailUsuarioAuth: async (id, email) => {
+    const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
+    const res = await fetch(`${backendUrl}/api/auth/update-email/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    })
+    const body = await res.json()
+    if (!res.ok) throw new Error(body.error || 'Erro ao atualizar e-mail de login')
+    return body
+  },
+
   updateSenhaUsuario: async (id, senha) => {
     const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
     const res = await fetch(`${backendUrl}/api/auth/update-password/${id}`, {

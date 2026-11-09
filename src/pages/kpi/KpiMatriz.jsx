@@ -13,13 +13,15 @@ import KpiBloco3Servicos from './KpiBloco3Servicos'
 import KpiBloco3Pecas from './KpiBloco3Pecas'
 import KpiOrcamentoBacklog from './KpiOrcamentoBacklog'
 import KpiAuditoria from './KpiAuditoria'
+import PeriodSelector, { usePeriodSelector, MODES_COM_SEMANAL } from '../../components/kpi/PeriodSelector'
 
+// periodo: a aba usa o seletor de Visão/Meses do topo (ao lado do Ano) — 'semanal' = também visão Semanal.
 const ABAS = [
   { key: 'resultados', label: 'Resultados', icon: BarChart2, permKey: 'kpi/resultados', Componente: KpiDashboardExecutivo },
-  { key: 'bloco1', label: 'Bloco 1 - Corporativo', icon: TrendingUp, permKey: 'kpi/bloco1-corporativo', Componente: KpiIndicadoresCorporativos },
-  { key: 'bloco2', label: 'Bloco 2 - Departamental', icon: Activity, permKey: 'kpi/bloco2-operacional', Componente: KpiIndicadoresOperacionais },
-  { key: 'bloco3-servicos', label: 'Bloco 3 - Serviços', icon: Wrench, permKey: 'kpi/bloco3-servicos', Componente: KpiBloco3Servicos },
-  { key: 'bloco3-pecas', label: 'Bloco 3 - Peças', icon: Package, permKey: 'kpi/bloco3-pecas', Componente: KpiBloco3Pecas },
+  { key: 'bloco1', label: 'Bloco 1 - Corporativo', icon: TrendingUp, permKey: 'kpi/bloco1-corporativo', Componente: KpiIndicadoresCorporativos, periodo: 'mensal' },
+  { key: 'bloco2', label: 'Bloco 2 - Departamental', icon: Activity, permKey: 'kpi/bloco2-operacional', Componente: KpiIndicadoresOperacionais, periodo: 'mensal' },
+  { key: 'bloco3-servicos', label: 'Bloco 3 - Serviços', icon: Wrench, permKey: 'kpi/bloco3-servicos', Componente: KpiBloco3Servicos, periodo: 'semanal' },
+  { key: 'bloco3-pecas', label: 'Bloco 3 - Peças', icon: Package, permKey: 'kpi/bloco3-pecas', Componente: KpiBloco3Pecas, periodo: 'semanal' },
   { key: 'orcamento-backlog', label: 'Orçamento & Backlog', icon: Wallet, permKey: 'kpi/orcamento-backlog', Componente: KpiOrcamentoBacklog },
   { key: 'auditoria', label: 'Fontes', icon: Database, permKey: 'kpi/auditoria', Componente: KpiAuditoria },
 ]
@@ -36,6 +38,8 @@ export default function KpiMatriz() {
       try { localStorage.removeItem(`period_kpi-matriz_${campo}`) } catch { /* sem localStorage */ }
     }
   })
+  // Seletor único de Visão/Meses no topo, ao lado do Ano (depois da limpeza acima: abre no mês atual).
+  const periodState = usePeriodSelector('kpi-matriz')
   const { year, setYear } = useKpiYear()
   const { status: sourceStatus, refreshToken, refreshData } = useKpiSourceStatus()
   // Atualização compartilhada com o BI Campanha Pós-Venda (Matriz + Campanha, um processo só no
@@ -59,15 +63,13 @@ export default function KpiMatriz() {
           <h1 className="text-xl font-bold text-slate-800">Matriz KPIs</h1>
           <p className="text-sm text-slate-500 mt-0.5">Indicadores de desempenho consolidados por bloco</p>
         </div>
-        <div className="flex items-center gap-3 shrink-0">
-          {sourceStatus.source != null && <DataSourceBadge source={sourceStatus.source} loading={sourceStatus.loading} refreshKey={refreshToken} />}
-          {podeSincronizar && (
-            <button type="button" onClick={() => sync.iniciar(user?.email)} disabled={sync.executando}
-              title={sync.executando ? `Atualização em andamento${sync.porQuem ? ` (iniciada por ${sync.porQuem})` : ''} — aguarde terminar` : 'Atualizar dados (Matriz KPIs e Campanha Pós-Venda - DAF)'}
-              aria-label="Atualizar dados"
-              className="inline-flex items-center justify-center rounded-md border border-blue-200 bg-blue-50 p-1.5 text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60">
-              <RefreshCw className={`h-4 w-4 ${sync.executando ? 'animate-spin' : ''}`} />
-            </button>
+        {/* Direita: linha 1 = Visão/Meses · Ano · Atualizar; linha 2 = "Dados sincronizados" menor, embaixo. */}
+        <div className="flex flex-col items-end gap-1 shrink-0">
+        <div className="flex items-center gap-3">
+          {/* Visão / Meses (só nas abas que usam), junto do Ano: todos os filtros de período no mesmo lugar. */}
+          {abaAtual?.periodo && (
+            <PeriodSelector state={periodState} inlineTrimestral hideLegend
+              modes={abaAtual.periodo === 'semanal' ? MODES_COM_SEMANAL : undefined} />
           )}
           <span className="text-xs text-slate-500 font-medium">Ano:</span>
           <select
@@ -77,6 +79,16 @@ export default function KpiMatriz() {
           >
             {KPI_YEARS.map(y => <option key={y} value={y}>{y}</option>)}
           </select>
+          {podeSincronizar && (
+            <button type="button" onClick={() => sync.iniciar(user?.email)} disabled={sync.executando}
+              title={sync.executando ? `Atualização em andamento${sync.porQuem ? ` (iniciada por ${sync.porQuem})` : ''} — aguarde terminar` : 'Atualizar dados (Matriz KPIs e Campanha Pós-Venda - DAF)'}
+              aria-label="Atualizar dados"
+              className="inline-flex items-center justify-center rounded-md border border-blue-200 bg-blue-50 p-1.5 text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60">
+              <RefreshCw className={`h-4 w-4 ${sync.executando ? 'animate-spin' : ''}`} />
+            </button>
+          )}
+        </div>
+        {sourceStatus.source != null && <DataSourceBadge compacto source={sourceStatus.source} loading={sourceStatus.loading} refreshKey={refreshToken} />}
         </div>
       </div>
       {sync.mensagem && <p role="status" className="px-6 pt-2 text-xs text-slate-600">{sync.mensagem}</p>}
@@ -101,7 +113,7 @@ export default function KpiMatriz() {
           </div>
 
           <div className="flex-1 overflow-y-auto">
-            <abaAtual.Componente />
+            {abaAtual.periodo ? <abaAtual.Componente periodState={periodState} /> : <abaAtual.Componente />}
           </div>
         </>
       ) : (

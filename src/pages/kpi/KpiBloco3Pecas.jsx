@@ -8,6 +8,7 @@ import { useKpiData } from '../../hooks/useKpiData'
 import { fetchBloco3Pecas, salvarPeso, fetchVendedoresBalcao } from '../../services/kpiService'
 import { useKpiYear } from '../../context/KpiYearContext'
 import { useAuth } from '../../context/AuthContext'
+import { useExpandirQuadro } from '../../components/kpi/useExpandirQuadro'
 
 const BLOCO_PESOS = 'bloco3-pecas'
 const QUADRO_VENDEDOR = 'VENDEDOR DE PEÇAS'
@@ -213,16 +214,21 @@ function QuadroTable({ quadro, activePeriods, mesTotalKey, year, onSalvarPeso, v
   const totalPeso = Math.round(quadro.kpis.reduce((s, k) => s + (k.pesoObj ?? 0), 0) * 100)
   const totalOk   = totalPeso === 100
 
+  const ex = useExpandirQuadro(quadro.tituloGerente)
+
   return (
-    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+    <>
+    {ex.fundo}
+    <div style={ex.estiloCaixa} className={`bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden ${ex.classeCaixa}`}>
       <div className={`px-5 py-3 flex items-center gap-2 ${headerCls}`}>
         <Package className="h-4 w-4 opacity-80" />
         <span className="text-sm font-bold tracking-wide">{quadro.tituloGerente}</span>
+        {ex.botao}
       </div>
 
-      <div className="overflow-x-auto">
+      <div className={ex.classeRolagem}>
         <table className="w-full text-xs whitespace-nowrap">
-          <thead>
+          <thead className={ex.classeCabecalho}>
             <tr className={`border-b ${subheadCls}`}>
               <th className="text-center px-3 py-2.5 font-medium text-slate-500 w-8">#</th>
               <th className="text-left px-4 py-2.5 font-medium text-slate-600 sticky left-0 bg-inherit min-w-[240px]">Indicador (KPI)</th>
@@ -307,6 +313,7 @@ function QuadroTable({ quadro, activePeriods, mesTotalKey, year, onSalvarPeso, v
         </table>
       </div>
     </div>
+    </>
   )
 }
 
@@ -351,7 +358,7 @@ export default function KpiBloco3Pecas({ periodState: periodoMatriz = null }) {
   }))
 
   return (
-    <div className="p-6 space-y-5">
+    <div className="px-6 pb-6 pt-3 space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-xl font-bold text-slate-800">Indicadores de Peças</h1>

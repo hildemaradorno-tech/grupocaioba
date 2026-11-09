@@ -234,7 +234,7 @@ export default function KpiAuditoria() {
   }, {})
 
   return (
-    <div className="p-6 space-y-5">
+    <div className="px-6 pb-6 pt-3 space-y-5">
       <div>
         <h1 className="text-xl font-bold text-slate-800">Fontes</h1>
       </div>

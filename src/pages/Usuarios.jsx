@@ -171,6 +171,12 @@ export default function Usuarios() {
     setSaving(true)
     try {
       if (editingId) {
+        // E-mail mudou: troca primeiro no login (Auth). Se ficar diferente do cadastro, o perfil não
+        // carrega no login e a redefinição de senha não chega.
+        const emailAnterior = usuarios.find(u => u.id === editingId)?.email || ''
+        if (emailAnterior && emailAnterior.trim().toLowerCase() !== form.email.trim().toLowerCase()) {
+          await apiService.updateEmailUsuarioAuth(editingId, form.email)
+        }
         await apiService.updateUsuario(editingId, form.nome, form.email, form.grupo_id || null, form.cargo_id || null, form.funcionario_id || null)
         await apiService.salvarNomeCompletoUsuario(form.email, form.nome_completo)
         if (alterarSenha && form.senha) {

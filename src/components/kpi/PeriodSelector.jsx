@@ -8,6 +8,7 @@ import {
 const VIEW_MODES = ['mensal', 'trimestral']
 export const MODES_COM_SEMANAL = ['mensal', 'trimestral', 'semanal']
 const VIEW_LABELS_MAP = { trimestral: 'Trimestral', mensal: 'Mensal', semanal: 'Semanal' }
+const ORDEM_VISAO = ['semanal', 'mensal', 'trimestral'] // ordem dos botões de Visão
 
 // ── helpers de data atual ────────────────────────────────────────────────────
 
@@ -123,6 +124,11 @@ export function usePeriodSelector(pageKey, defaultViewMode = 'mensal') {
     ? { ...prev, [p]: !prev[p] }
     : Object.fromEntries([...M_PERIODS, 'fy'].map(m => [m, m === p])))
   const toggleS = (p) => setVisibleS(prev => ({ ...prev, [p]: !prev[p] }))
+  // Listas da Visão: clique = só esse item; Ctrl/Cmd+clique (multi) = soma/tira da seleção.
+  const escolherT = (p, multi) => (multi ? toggleT(p)
+    : setVisibleT(Object.fromEntries(T_PERIODS.map(t => [t, t === p]))))
+  const escolherS = (p, multi) => (multi ? toggleS(p)
+    : setVisibleS(prev => ({ ...prev, ...Object.fromEntries([...(MONTH_WEEK_RANGES[weekMonth] || []), 'mtd'].map(s => [s, s === p])) })))
 
   const selectAllT = () => setVisibleT(Object.fromEntries(T_PERIODS.map(p => [p, true])))
   const clearAllT  = () => setVisibleT(quarterDefault())
@@ -137,7 +143,7 @@ export function usePeriodSelector(pageKey, defaultViewMode = 'mensal') {
     weekMonth, setWeekMonth,
     activePeriods,
     mesTotalKey: viewMode === 'semanal' && visibleS.mtd ? weekMonth : null,
-    toggleT, toggleM, toggleS,
+    toggleT, toggleM, toggleS, escolherT, escolherS,
     selectAllT, clearAllT, selectAllM, clearAllM, selectAllS, clearAllS,
   }
 }
@@ -154,12 +160,77 @@ export function PeriodLegend() {
 
 // ── componente ────────────────────────────────────────────────────────────────
 
+// Lista (seletor): mostra o que está escolhido e abre a lista. Clique = só aquele item (fecha a lista);
+// Ctrl/Cmd+clique = soma/tira da seleção (lista continua aberta). Todos / Limpar no rodapé.
+// itens = [{ k, nome }]; marcados = { k: true }; onEscolher(k, multi).
+function ListaMarcavel({ rotulo, itens, marcados, onEscolher, onTodos, onLimpar }) {
+  const [aberto, setAberto] = React.useState(false)
+  const caixa = React.useRef(null)
+  React.useEffect(() => {
+    if (!aberto) return undefined
+    const fora = (e) => { if (!caixa.current?.contains(e.target)) setAberto(false) }
+    const esc = (e) => { if (e.key === 'Escape') setAberto(false) }
+    document.addEventListener('mousedown', fora)
+    document.addEventListener('keydown', esc)
+    return () => { document.removeEventListener('mousedown', fora); document.removeEventListener('keydown', esc) }
+  }, [aberto])
+  const escolhidos = itens.filter(i => marcados?.[i.k])
+  const resumo = !escolhidos.length ? 'Nenhum'
+    : escolhidos.length === itens.length ? 'Todos'
+      : escolhidos.length <= 3 ? escolhidos.map(i => i.nome).join(', ')
+        : `${escolhidos.length} selecionados`
+  return (
+    <div ref={caixa} className="relative">
+      <button
+        type="button"
+        onClick={() => setAberto(a => !a)}
+        aria-haspopup="listbox"
+        aria-expanded={aberto}
+        aria-label={`${rotulo}: ${resumo}`}
+        className="inline-flex items-center gap-2 bg-white text-slate-700 text-xs font-medium rounded-md pl-2 pr-1.5 py-1 border border-slate-300 hover:border-blue-400 focus:outline-none focus:border-blue-400 min-w-[7rem] justify-between"
+      >
+        <span className="truncate max-w-[14rem]">{resumo}</span>
+        <svg viewBox="0 0 20 20" className="h-3.5 w-3.5 text-slate-500 shrink-0" aria-hidden="true"><path fill="currentColor" d="M5.3 7.3a1 1 0 0 1 1.4 0L10 10.6l3.3-3.3a1 1 0 1 1 1.4 1.4l-4 4a1 1 0 0 1-1.4 0l-4-4a1 1 0 0 1 0-1.4z" /></svg>
+      </button>
+      {aberto && (
+        <div role="listbox" aria-multiselectable="true" aria-label={rotulo}
+          className="absolute left-0 top-full mt-1 z-40 w-52 rounded-lg border border-slate-200 bg-white shadow-lg py-1 text-xs">
+          <div className="max-h-64 overflow-y-auto">
+            {itens.map(i => {
+              const marcado = !!marcados?.[i.k]
+              return (
+                <button key={i.k} type="button" role="option" aria-selected={marcado}
+                  onClick={e => {
+                    const multi = e.ctrlKey || e.metaKey
+                    onEscolher(i.k, multi)
+                    if (!multi) setAberto(false)
+                  }}
+                  className={`w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-slate-50 ${marcado ? 'text-blue-800 font-semibold' : 'text-slate-700'}`}>
+                  <input type="checkbox" tabIndex={-1} readOnly checked={marcado} className="h-3.5 w-3.5 pointer-events-none" aria-hidden="true" />
+                  {i.nome}
+                </button>
+              )
+            })}
+          </div>
+          <p className="px-3 pt-1 text-[10px] text-slate-400">Ctrl+clique para escolher mais de um</p>
+          <div className="flex justify-between gap-2 border-t border-slate-100 px-3 pt-1.5 pb-1">
+            <button type="button" onClick={onTodos} className="text-blue-600 hover:underline">Todos</button>
+            <button type="button" onClick={onLimpar} className="text-slate-500 hover:text-red-600 hover:underline">Limpar</button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// inlineTrimestral: mantido por compatibilidade (o trimestral agora sempre fica na mesma linha, como lista).
+// eslint-disable-next-line no-unused-vars
 export default function PeriodSelector({ state, hideLegend = false, modes = VIEW_MODES, inlineTrimestral = false }) {
   const {
     viewMode, setViewMode,
     visibleT, visibleM, visibleS,
     weekMonth, setWeekMonth,
-    toggleT, toggleM, toggleS,
+    toggleM, escolherT, escolherS,
     selectAllT, clearAllT, selectAllM, clearAllM, selectAllS, clearAllS,
   } = state
 
@@ -170,16 +241,11 @@ export default function PeriodSelector({ state, hideLegend = false, modes = VIEW
   }, [modes, viewMode])
 
   const weekKeys = MONTH_WEEK_RANGES[weekMonth] || []
-  const [mesAberto, setMesAberto] = React.useState(false)
-
-  const btnBase = 'px-2.5 py-1 rounded-full text-xs font-medium border transition-colors'
-  const btnOn   = 'bg-blue-950 text-white border-blue-950'
-  const btnOff  = 'bg-white text-slate-500 border-slate-300 hover:border-blue-400'
-  const modeOff = 'bg-white text-slate-600 border-slate-300 hover:border-blue-400'
 
   return (
     <div className="flex flex-col gap-2">
-      {/* Linha 1: seletor de modo + legenda */}
+      {/* Linha 1: Visão + períodos, todos como listas (seletores). Meses/Períodos/Semanas abrem
+          com caixas de marcar — dá para escolher vários. */}
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-xs font-medium text-slate-500 shrink-0">Visão:</span>
         <select
@@ -187,83 +253,59 @@ export default function PeriodSelector({ state, hideLegend = false, modes = VIEW
           onChange={e => setViewMode(e.target.value)}
           className="bg-white text-slate-700 text-xs font-medium rounded-md px-2 py-1 border border-slate-300 focus:outline-none focus:border-blue-400 cursor-pointer"
         >
-          {modes.map(m => (
-            <option key={m} value={m}>
-              {VIEW_LABELS_MAP[m]}
-            </option>
+          {ORDEM_VISAO.filter(m => modes.includes(m)).map(m => (
+            <option key={m} value={m}>{VIEW_LABELS_MAP[m]}</option>
           ))}
         </select>
 
         {viewMode === 'semanal' && (
           <>
-            <span className="text-xs text-slate-400 ml-2 mr-1">Mês:</span>
-            {mesAberto ? (
-              M_PERIODS.map(m => (
-                <button
-                  key={m}
-                  onClick={() => { setWeekMonth(m); setMesAberto(false) }}
-                  className={`${btnBase} ${weekMonth === m ? 'bg-indigo-700 text-white border-indigo-700' : modeOff}`}
-                >
-                  {M_LABELS[m]}
-                </button>
-              ))
-            ) : (
-              <button
-                onClick={() => setMesAberto(true)}
-                title="Clique para escolher outro mês"
-                className={`${btnBase} bg-indigo-700 text-white border-indigo-700`}
-              >
-                {M_LABELS[weekMonth]}
-              </button>
-            )}
-            <span className="text-xs text-slate-400 ml-2 mr-1">Semanas:</span>
-            {weekKeys.map(p => (
-              <button key={p} onClick={() => toggleS(p)} className={`${btnBase} ${visibleS[p] ? btnOn : btnOff}`}>
-                {S_LABELS[p]}
-              </button>
-            ))}
-            <button onClick={() => toggleS('mtd')} title="Coluna com o total do mês" className={`${btnBase} ${visibleS.mtd ? btnOn : btnOff}`}>Total</button>
-            <button onClick={selectAllS} className="text-[10px] px-2 py-0.5 rounded border border-slate-300 text-slate-500 hover:border-blue-400 hover:text-blue-600 transition-colors">Todos</button>
-            <button onClick={clearAllS}  className="text-[10px] px-2 py-0.5 rounded border border-slate-300 text-slate-500 hover:border-red-400 hover:text-red-500 transition-colors">Limpar</button>
+            <span className="text-xs text-slate-500 ml-2">Mês:</span>
+            <select
+              value={weekMonth}
+              onChange={e => setWeekMonth(e.target.value)}
+              className="bg-white text-slate-700 text-xs font-medium rounded-md px-2 py-1 border border-slate-300 focus:outline-none focus:border-blue-400 cursor-pointer"
+            >
+              {M_PERIODS.map(m => <option key={m} value={m}>{M_LABELS[m]}</option>)}
+            </select>
+            <span className="text-xs text-slate-500 ml-2">Semanas:</span>
+            <ListaMarcavel
+              rotulo='Semanas'
+              itens={[...weekKeys.map(p => ({ k: p, nome: S_LABELS[p] })), { k: 'mtd', nome: 'Total do mês' }]}
+              marcados={visibleS}
+              onEscolher={escolherS}
+              onTodos={selectAllS}
+              onLimpar={clearAllS}
+            />
           </>
         )}
 
         {viewMode === 'mensal' && (
           <>
-            <span className="text-xs text-slate-400 ml-2 mr-1" title="Ctrl+clique para selecionar vários meses">Meses:</span>
-            {M_PERIODS.map(p => (
-              <button
-                key={p}
-                onClick={e => toggleM(p, e.ctrlKey || e.metaKey)}
-                title="Ctrl+clique para selecionar vários meses"
-                className={`${btnBase} ${visibleM[p] ? btnOn : btnOff}`}
-              >
-                {M_LABELS[p]}
-              </button>
-            ))}
-            <button
-              onClick={e => toggleM('fy', e.ctrlKey || e.metaKey)}
-              title="Total do ano (Ctrl+clique para somar à seleção)"
-              className={`${btnBase} ${visibleM.fy ? btnOn : btnOff}`}
-            >
-              Total do Ano
-            </button>
-            <button onClick={selectAllM} className="text-[10px] px-2 py-0.5 rounded border border-slate-300 text-slate-500 hover:border-blue-400 hover:text-blue-600 transition-colors">Todos</button>
-            <button onClick={clearAllM}  className="text-[10px] px-2 py-0.5 rounded border border-slate-300 text-slate-500 hover:border-red-400 hover:text-red-500 transition-colors">Limpar</button>
+            <span className="text-xs text-slate-500 ml-2">Meses:</span>
+            <ListaMarcavel
+              rotulo='Meses'
+              itens={[...M_PERIODS.map(p => ({ k: p, nome: M_LABELS[p] })), { k: 'fy', nome: 'Total do Ano' }]}
+              marcados={visibleM}
+              onEscolher={toggleM}
+              onTodos={selectAllM}
+              onLimpar={clearAllM}
+            />
           </>
         )}
 
-        {viewMode === 'trimestral' && inlineTrimestral && (
-        <>
-          <span className="text-xs text-slate-400 ml-2 mr-1">Períodos:</span>
-          {T_PERIODS.map(p => (
-            <button key={p} onClick={() => toggleT(p)} className={`${btnBase} ${visibleT[p] ? btnOn : btnOff}`}>
-              {T_LABELS[p]}
-            </button>
-          ))}
-          <button onClick={selectAllT} className="text-[10px] px-2 py-0.5 rounded border border-slate-300 text-slate-500 hover:border-blue-400 hover:text-blue-600 transition-colors">Todos</button>
-          <button onClick={clearAllT}  className="text-[10px] px-2 py-0.5 rounded border border-slate-300 text-slate-500 hover:border-red-400 hover:text-red-500 transition-colors">Limpar</button>
-        </>
+        {viewMode === 'trimestral' && (
+          <>
+            <span className="text-xs text-slate-500 ml-2">Períodos:</span>
+            <ListaMarcavel
+              rotulo='Períodos'
+              itens={T_PERIODS.map(p => ({ k: p, nome: T_LABELS[p] }))}
+              marcados={visibleT}
+              onEscolher={escolherT}
+              onTodos={selectAllT}
+              onLimpar={clearAllT}
+            />
+          </>
         )}
 
         {!hideLegend && (
@@ -275,20 +317,7 @@ export default function PeriodSelector({ state, hideLegend = false, modes = VIEW
         )}
       </div>
 
-      {/* Trimestral: toggles Q1–Q4–FY */}
-      {viewMode === 'trimestral' && !inlineTrimestral && (
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-xs text-slate-400 mr-1">Períodos:</span>
-          {T_PERIODS.map(p => (
-            <button key={p} onClick={() => toggleT(p)} className={`${btnBase} ${visibleT[p] ? btnOn : btnOff}`}>
-              {T_LABELS[p]}
-            </button>
-          ))}
-          <span className="w-px h-4 bg-slate-200 mx-1" />
-          <button onClick={selectAllT} className="text-[10px] px-2 py-0.5 rounded border border-slate-300 text-slate-500 hover:border-blue-400 hover:text-blue-600 transition-colors">Todos</button>
-          <button onClick={clearAllT}  className="text-[10px] px-2 py-0.5 rounded border border-slate-300 text-slate-500 hover:border-red-400 hover:text-red-500 transition-colors">Limpar</button>
-        </div>
-      )}
+      {/* Trimestral: na mesma linha, como lista (ver acima). */}
 
     </div>
   )
