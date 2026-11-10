@@ -34,9 +34,9 @@ const VIEWS = [
   },
   {
     nome: 'vw_ctb_plano_contas',
-    desc: 'Plano de Contas com nível, caminho hierárquico, conta pai, grupo e linha do DRE.',
-    origem: 'Controladoria → Plano de Contas',
-    colunas: 'conta_id, codigo, descricao, tipo, natureza, ativo, nivel, caminho_codigo, caminho_descricao, conta_pai_id, conta_pai_codigo, conta_pai_descricao, grupo_codigo, grupo_descricao, linha_dre_id, linha_dre_ordem, linha_dre, linha_dre_sinal',
+    desc: 'Plano de Contas por empresa, com nível, caminho hierárquico, conta pai, grupo, linha do DRE, conta reduzida e referencial ECD/ECF.',
+    origem: 'Controladoria → Plano de Contas (importado do Dealer.net / MicroWork)',
+    colunas: 'conta_id, codigo, descricao, tipo, natureza, ativo, nivel, caminho_codigo, caminho_descricao, conta_pai_id, conta_pai_codigo, conta_pai_descricao, grupo_codigo, grupo_descricao, linha_dre_id, linha_dre_ordem, linha_dre, linha_dre_sinal, empresa_id, codigo_empresa, sigla_empresa, empresa, conta_reduzida, conta_referencial, demonstrativo, demonstrativo_descricao',
   },
   {
     nome: 'vw_ctb_dre_estrutura',

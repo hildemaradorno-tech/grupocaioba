@@ -6274,16 +6274,50 @@ export const apiService = {
     return { success: true }
   },
 
-  getCtbPlanoContas: async () => {
-    const { data, error } = await supabase.from('ctb_plano_contas').select('*').order('codigo')
-    if (error) throw error
-    return data || []
+  // Paginado: um plano do Dealer.net sozinho passa de 1.000 contas (limite por requisição do Supabase).
+  getCtbPlanoContas: async (empresaId) => {
+    const PAGE = 1000
+    const todas = []
+    for (let de = 0; ; de += PAGE) {
+      let q = supabase.from('ctb_plano_contas').select('*').order('codigo').order('id')
+      if (empresaId) q = q.eq('empresa_id', empresaId)
+      const { data, error } = await q.range(de, de + PAGE - 1)
+      if (error) throw error
+      todas.push(...(data || []))
+      if (!data || data.length < PAGE) break
+    }
+    return todas
   },
-  salvarCtbPlanoConta: async (id, { codigo, descricao, tipo, natureza, conta_pai_id, linha_dre_id, ativo }) => {
+  // Importação: insere em lote e devolve as linhas criadas (com id), pra resolver a conta pai do nível seguinte.
+  inserirCtbPlanoContasLote: async (linhas) => {
+    const criadas = []
+    for (let i = 0; i < linhas.length; i += 500) {
+      const { data, error } = await supabase.from('ctb_plano_contas').insert(linhas.slice(i, i + 500)).select()
+      if (error) throw error
+      criadas.push(...(data || []))
+    }
+    return criadas
+  },
+  // Atualiza só os campos informados (a importação não mexe em Linha da DRE nem em Ativo).
+  atualizarCtbPlanoConta: async (id, campos) => {
+    const { error } = await supabase.from('ctb_plano_contas').update(campos).eq('id', id)
+    if (error) throw error
+  },
+  // Tipo de Conta (DRE / BALANCO) em várias contas de uma vez — usado pra descer o valor de uma sintética às filhas.
+  definirCtbDemonstrativo: async (ids, demonstrativo) => {
+    for (let i = 0; i < ids.length; i += 200) {
+      const { error } = await supabase.from('ctb_plano_contas').update({ demonstrativo: demonstrativo || null }).in('id', ids.slice(i, i + 200))
+      if (error) throw error
+    }
+  },
+  salvarCtbPlanoConta: async (id, { empresa_id, codigo, descricao, tipo, natureza, conta_pai_id, linha_dre_id, conta_reduzida, conta_referencial, demonstrativo, ativo }) => {
     const payload = {
       codigo: codigo.trim(), descricao: descricao.trim(), tipo, natureza,
       conta_pai_id: conta_pai_id || null, linha_dre_id: linha_dre_id || null, ativo: ativo ?? true,
+      conta_reduzida: conta_reduzida?.trim() || null, conta_referencial: conta_referencial?.trim() || null,
+      demonstrativo: demonstrativo || null,
     }
+    if (empresa_id !== undefined) payload.empresa_id = empresa_id || null
     const query = id
       ? supabase.from('ctb_plano_contas').update(payload).eq('id', id)
       : supabase.from('ctb_plano_contas').insert([payload])

@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
-import { Trophy, Calculator, BookOpen, BarChart2, Loader2, RefreshCw, Info as InfoIcon, Lock, Unlock, Plus, Trash2, Eraser, Copy, CopyPlus, Settings, FileText, X, ChevronDown, Banknote, Users, Pencil, Wrench, Receipt } from 'lucide-react'
+import { Trophy, Calculator, BookOpen, BarChart2, Loader2, RefreshCw, Info as InfoIcon, Lock, Unlock, Plus, Trash2, Eraser, Copy, CopyPlus, Settings, FileText, X, ChevronDown, Banknote, Users, Pencil, Wrench } from 'lucide-react'
 import { Bloco3ServicosVisualizacao } from '../kpi/KpiBloco3Servicos'
 import { createPortal } from 'react-dom'
 import { apiService } from '../../services/api'
@@ -104,6 +104,17 @@ export const CAMPANHA_ABAS = [
   { k: 'pagamento', label: 'Pagamento', icon: Banknote, perm: 'bi/campanha/pagamento' },
 ]
 export const CAMPANHA_ABAS_PERMS = CAMPANHA_ABAS.map((a) => a.perm)
+// Abas da tela: Apuração e Resultado viraram UMA aba ("Resultado") com o seletor de visão
+// Apuração % (permissão da Apuração) | Bônus R$ (permissão do Resultado). As duas permissões continuam.
+const ABAS_TELA = [
+  { k: 'regras', label: 'Regras', icon: BookOpen, perms: ['bi/campanha/regras'] },
+  { k: 'resultado', label: 'Resultado', icon: BarChart2, perms: ['bi/campanha/apuracao', 'bi/campanha/resultado'] },
+  { k: 'pagamento', label: 'Pagamento', icon: Banknote, perms: ['bi/campanha/pagamento'] },
+]
+const VISOES_RESULTADO = [
+  { k: 'apuracao', label: 'Apuração', perm: 'bi/campanha/apuracao' },
+  { k: 'resultado', label: 'Bônus R$', perm: 'bi/campanha/resultado' },
+]
 const PERM_EMPRESA = { TRUCKS: 'bi/campanha/empresa-trucks', CG: 'bi/campanha/empresa-cg', DOU: 'bi/campanha/empresa-dou', TL: 'bi/campanha/empresa-tl', CS: 'bi/campanha/empresa-cs' }
 
 // ── Participantes por cargo (Bônus-alvo - Serviços) ──────────────────────────────────────────────
@@ -148,7 +159,11 @@ function montarParticipantes(funcionarios, u, regras, unidade) {
 
 export default function BiCampanha() {
   const { user, hasPermission, hasActionOrDefault } = useAuth()
-  const abasVisiveis = CAMPANHA_ABAS.filter((a) => hasPermission(a.perm))
+  const abasVisiveis = ABAS_TELA.filter((a) => a.perms.some((p) => hasPermission(p)))
+  // Visão da aba Resultado (só as liberadas no grupo de acesso); abre em Apuração % quando pode.
+  const visoesVisiveis = VISOES_RESULTADO.filter((v) => hasPermission(v.perm))
+  const [visaoEscolhida, setVisao] = useState('apuracao')
+  const visao = visoesVisiveis.find((v) => v.k === visaoEscolhida)?.k || visoesVisiveis[0]?.k || 'apuracao'
   const empresasVisiveis = [{ id: 'TRUCKS', nome: 'CAIOBÁ TRUCKS' }, ...CAMPANHA.unidades].filter((x) => hasPermission(PERM_EMPRESA[x.id]))
   const [aba, setAba] = useState(() => abasVisiveis[0]?.k || 'regras')
   const [slotAcoes, setSlotAcoes] = useState(null) // elemento à direita das abas (Salvar + engrenagem da aba Regras)
@@ -474,7 +489,7 @@ export default function BiCampanha() {
         <div className="ml-auto flex items-center gap-2 pb-1.5">
           {/* Mesma atualização do botão da Matriz KPIs (Matriz + Campanha). Travado em todas as telas
               enquanto qualquer pessoa estiver atualizando. */}
-          {aba === 'apuracao' && podeAtualizar && <button type="button" onClick={() => sync.iniciar(user?.email)} disabled={sync.executando}
+          {aba === 'resultado' && podeAtualizar && <button type="button" onClick={() => sync.iniciar(user?.email)} disabled={sync.executando}
             title={sync.executando ? `Atualizando…${sync.porQuem ? ` (iniciada por ${sync.porQuem})` : ''} — aguarde terminar` : 'Atualizar números'}
             aria-label={sync.executando ? 'Atualizando' : 'Atualizar números'}
             className="inline-flex items-center justify-center rounded-md border border-blue-200 bg-blue-50 p-1.5 text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60">
@@ -482,7 +497,7 @@ export default function BiCampanha() {
           </button>}
           {/* Fechar mês (Apuração/Resultado): congela os valores desta empresa no mês. Só habilita com
               todas as funções carregadas (sem erro), para não congelar "—" por falta de resposta. */}
-          {!!unidade && !foto && podeFechar && (aba === 'apuracao' || aba === 'resultado') && (
+          {!!unidade && !foto && podeFechar && aba === 'resultado' && (
             <button type="button" onClick={pedirFecharMes} disabled={!podeClicarFechar || fechando}
               title={fecharPendente ? `Carregando todas as funções para fechar (faltam: ${faltamFech.length})`
                 : podeClicarFechar ? `Fechar ${nomeMes}/${ano} desta empresa (congela os valores)` : 'Aguarde carregar os dados para fechar'}
@@ -532,7 +547,7 @@ export default function BiCampanha() {
           regras={regras} onSalvar={salvarRegras} origemRegras={origemRegras}
           nomeEmpresa={unidade === 'TRUCKS' ? 'CAIOBÁ TRUCKS' : (nomeEmpresa[u.empresaId] || u.nome)} />
       )}
-      {!!empresasVisiveis.length && !!unidade && ['apuracao', 'resultado', 'pagamento'].includes(aba) && (
+      {!!empresasVisiveis.length && !!unidade && ['resultado', 'pagamento'].includes(aba) && (
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative w-full max-w-xs">
             <input type="search" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar funcionário…"
@@ -541,23 +556,32 @@ export default function BiCampanha() {
           </div>
           {busca.trim()
             ? <span className="text-[11px] text-slate-500">Mostrando quem tem “{busca.trim()}” no nome ou todos da função com esse nome.</span>
-            : aba !== 'pagamento' && <span className="text-[11px] text-slate-400">Clique no nome para ver o extrato do funcionário no mês.</span>}
+            : null}
+          {/* Visão da aba Resultado: troca só a forma de mostrar (os valores já carregados continuam). */}
+          {aba === 'resultado' && visoesVisiveis.length > 1 && (
+            <div className="ml-auto flex items-center gap-2">
+              <span className="text-[11px] font-medium text-slate-500">Visão:</span>
+              <div role="group" aria-label="Visão do Resultado" className="inline-flex rounded-md border border-blue-600 overflow-hidden">
+                {visoesVisiveis.map((v) => (
+                  <button key={v.k} type="button" aria-pressed={visao === v.k} onClick={() => setVisao(v.k)}
+                    className={`px-3 py-1.5 text-[11px] font-semibold transition-colors ${
+                      visao === v.k ? 'bg-blue-600 text-white' : 'bg-blue-50 text-blue-800 hover:bg-blue-100'}`}>
+                    {v.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
-      )}
-      {!!empresasVisiveis.length && !!unidade && aba === 'apuracao' && (
-        <AbaApuracao campanha={campanha} regras={regrasCalc} unidade={unidade} ehTrucks={ehTrucks} diario={diarioTela} consultores={consultores} mecanicos={mecanicos} chefes={chefes} gerentes={gerentes}
-          gerentesGerais={gerentesGerais} metasPorUnidade={metasPorUnidade}
-          blocosMatriz={blocosMatriz} ano={ano} mes={mes} foto={foto} registrarFech={registrarFech}
-          subAba={subAba} onSubAba={setSubAba} carregarTodas={carregarTodas} busca={busca}
-          metasUnidade={metasUnidade} funcionarios={funcionarios} erroFunc={erroFunc} versaoDados={recarregar} grupos={grupos} semCalculo={semCalculo} />
       )}
       {!!empresasVisiveis.length && !!unidade && aba === 'pagamento' && (
         <AbaPagamento ano={ano} mes={mes} unidade={unidade} periodicidade={periodicidadeEfetiva} funcionarios={funcionarios} erroFunc={erroFunc}
           calendarios={calendarios} versaoDados={recarregar} versaoFech={versaoFech}
           regras={regras} subAba={subAba} onSubAba={setSubAba} busca={busca} />
       )}
+      {/* Resultado: um componente só para as duas visões (mesma posição) — trocar a visão não recarrega. */}
       {!!empresasVisiveis.length && !!unidade && aba === 'resultado' && (
-        <AbaApuracao modo="resultado" campanha={campanha} regras={regrasCalc} unidade={unidade} ehTrucks={ehTrucks} diario={diarioTela} consultores={consultores} mecanicos={mecanicos} chefes={chefes} gerentes={gerentes}
+        <AbaApuracao modo={visao} campanha={campanha} regras={regrasCalc} unidade={unidade} ehTrucks={ehTrucks} diario={diarioTela} consultores={consultores} mecanicos={mecanicos} chefes={chefes} gerentes={gerentes}
           gerentesGerais={gerentesGerais} metasPorUnidade={metasPorUnidade}
           blocosMatriz={blocosMatriz} ano={ano} mes={mes} foto={foto} registrarFech={registrarFech}
           subAba={subAba} onSubAba={setSubAba} carregarTodas={carregarTodas} busca={busca}
@@ -653,10 +677,9 @@ function AbaApuracao({ campanha, regras, unidade, ehTrucks, diario, consultores,
   const comum = { campanha, regras, unidade, diario, blocosMatriz, ano, mes, versaoDados, carregandoFunc: !foto && funcionarios === null }
   // foto: valores congelados do mês fechado; registrarFech: cada função informa seus valores carregados (para Fechar mês).
   // Extrato do funcionário (clique no nome): { p, titulo, pesoB3, chaveBonus, faixas, campanha } ou null.
-  const [extrato, setExtrato] = useState(null)
   // Busca só filtra o que aparece (no modo coleta do Pagamento não vale: lá tudo é calculado).
   const buscaNorm = modo === 'coleta' ? '' : normNome(busca)
-  const ctx = useMemo(() => ({ faixas: faixasDe(regras, unidade) || [], regras, unidade, modo, ano, mes, onColeta, foto, registrarFech, busca: buscaNorm, abrirExtrato: setExtrato }),
+  const ctx = useMemo(() => ({ faixas: faixasDe(regras, unidade) || [], regras, unidade, modo, ano, mes, onColeta, foto, registrarFech, busca: buscaNorm }),
     [regras, unidade, modo, ano, mes, onColeta, foto, registrarFech, buscaNorm])
   const pesoB3 = blocosMatriz.pesos?.individual || 0
   // Funções = linhas do Bônus-alvo (aba Regras), na mesma ordem. Cada uma vira uma seção da tabela.
@@ -722,7 +745,6 @@ function AbaApuracao({ campanha, regras, unidade, ehTrucks, diario, consultores,
         </div>
       )}
     </div>
-    {extrato && <ExtratoFuncionario {...extrato} modo={modo} mesFechado={!!foto} ano={ano} mes={mes} onFechar={() => setExtrato(null)} />}
     </FaixasCtx.Provider>
   )
 }
@@ -831,11 +853,6 @@ function AbaPagamento({ ano, mes, unidade, periodicidade, funcionarios, erroFunc
   useEffect(() => { setSemRegras({}) }, [ano, chaveMeses, unidade, versaoDados, versaoFech])
   const onSemRegras = useCallback((m, sem) => setSemRegras((x) => ({ ...x, [m]: sem })), [])
   const mesesSemRegras = meses.filter((m) => semRegras[m])
-  // Extrato do funcionário (clique no nome): { titulo, id, mes } — dados de coleta[mes][titulo].extratos[id].
-  const [extrato, setExtrato] = useState(null)
-  useEffect(() => { setExtrato(null) }, [ano, chaveMeses, unidade])
-  const mesesComExtrato = (titulo, id) => meses.filter((m) => coleta[m]?.[titulo]?.extratos?.[id])
-  const dadosExtrato = extrato ? coleta[extrato.mes]?.[extrato.titulo]?.extratos?.[extrato.id] : null
 
   const nomeMesN = (m) => MESES[m - 1]?.label
   const hoje = new Date()
@@ -975,32 +992,10 @@ function AbaPagamento({ ano, mes, unidade, periodicidade, funcionarios, erroFunc
                       const b1 = BLOCOS_1_2_COM_REGRA && !semCalc && doMes.length ? doMes.reduce((a2, l) => a2 + (l.b1 || 0), 0) : null
                       const b2 = BLOCOS_1_2_COM_REGRA && !semCalc && doMes.length ? doMes.reduce((a2, l) => a2 + (l.b2 || 0), 0) : null
                       const total = vals.reduce((a2, v) => a2 + (v || 0), 0) + (b1 || 0) + (b2 || 0)
-                      const mesesExt = semCalc ? [] : mesesComExtrato(titulo, id)
-                      // Abre no mês selecionado (se a pessoa estava nele); senão no último mês do período em que estava.
-                      const mesInicial = mesesExt.includes(Number(mes)) ? Number(mes) : mesesExt[mesesExt.length - 1]
-                      // Detalhe do pagamento da pessoa no período (vai junto no extrato).
-                      const pag = {
-                        rotuloPeriodo,
-                        quando: periodicidade === 'semanal' ? 'cada semana paga após o seu fechamento' : `pago em ${pagamentoEm}`,
-                        b1, b2, total,
-                        colunas: colunas.map((c, i) => ({ k: c.k, titulo: c.titulo, sub: c.sub, valor: vals[i] })),
-                      }
-                      const abrir = () => setExtrato({ titulo, id, mes: mesInicial, pag })
                       return (
                         <tr key={id} className="border-b border-slate-100">
                           <td className="p-2 font-medium text-slate-800" title={nome}>
-                            <div className="flex items-center gap-1.5 min-w-0">
-                              {mesesExt.length ? (
-                                <>
-                                  <button type="button" onClick={abrir} title="Ver detalhe do extrato de pagamento (Apuração, Resultado e Pagamento)"
-                                    aria-label={`Ver detalhe do extrato de pagamento de ${nome}`}
-                                    className="shrink-0 rounded p-0.5 text-blue-600 hover:bg-blue-50 hover:text-blue-800">
-                                    <Receipt className="h-3.5 w-3.5" />
-                                  </button>
-                                  <span className="truncate"><NomeExtrato nome={nome} onClick={abrir} /></span>
-                                </>
-                              ) : <span className="truncate">{nome}</span>}
-                            </div>
+                            <span className="block truncate">{nome}</span>
                           </td>
                           <td className={`${TD} ${b1 > 0 ? 'text-slate-900 font-semibold' : 'text-slate-400'}`} title={BLOCOS_1_2_COM_REGRA ? 'Bloco 1 - Corporativo: parte da Meta paga integralmente' : 'Bloco 1 - Corporativo: regras ainda não criadas'}>{b1 == null ? VAZIO : moedaBR(b1)}</td>
                           <td className={`${TD} ${b2 > 0 ? 'text-slate-900 font-semibold' : 'text-slate-400'}`} title={BLOCOS_1_2_COM_REGRA ? 'Bloco 2 - Departamental: parte da Meta paga integralmente' : 'Bloco 2 - Departamental: regras ainda não criadas'}>{b2 == null ? VAZIO : moedaBR(b2)}</td>
@@ -1019,10 +1014,6 @@ function AbaPagamento({ ano, mes, unidade, periodicidade, funcionarios, erroFunc
             </table>
           </div>
         </div>
-      )}
-      {dadosExtrato && (
-        <ExtratoFuncionario {...dadosExtrato} pagamento={extrato.pag} onFechar={() => setExtrato(null)}
-          mesesPeriodo={mesesComExtrato(extrato.titulo, extrato.id)} onMes={(m) => setExtrato((x) => ({ ...x, mes: m }))} />
       )}
     </div>
   )
@@ -1112,6 +1103,95 @@ function LinkBloco3({ matrizB3, pessoas }) {
             </div>
             <div className="flex-1 overflow-auto p-5">
               <Bloco3ServicosVisualizacao ano={Number(ano)} mes={Number(mes)} quadro={quadro} pessoas={pessoas} empresa={empresaErp} />
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
+    </>
+  )
+}
+
+// Botão "Ver regra" (ao lado do 📄 Bloco 3, na linha-título de cada função): pop-up só de leitura com a
+// regra do cargo — de onde vêm os valores, apuração, forma de pagamento, bônus-alvo, atingimento mínimo e
+// faixas. Lê as mesmas regras do cálculo (no mês fechado, as do fechamento).
+function LinkRegraFuncao({ titulo, chaveBonus, pesoB3 }) {
+  const { regras, unidade, faixas, ano, mes } = useContext(FaixasCtx)
+  const [aberto, setAberto] = useState(false)
+  useEffect(() => {
+    if (!aberto) return undefined
+    const esc = (e) => { if (e.key === 'Escape') setAberto(false) }
+    document.addEventListener('keydown', esc)
+    return () => document.removeEventListener('keydown', esc)
+  }, [aberto])
+  if (!chaveBonus || !regras) return null
+  const cfg = cfgQuadroDaLinha(regras, unidade, chaveBonus)
+  const alvo = bonusAlvoDe(regras, unidade, chaveBonus)
+  const nSem = semanasMatrizDoMes(ano, mes).length || 1
+  const nomeUnidade = (id) => CAMPANHA.unidades.find((x) => x.id === id)?.nome || id
+  const origem = !cfg.quadro ? 'Sem quadro do Bloco 3 (sem cálculo)'
+    : `Bloco 3 - Serviços › ${nomeProprio(cfg.quadro)}${cfg.individual ? ' · individual (pelo nome de cada pessoa)' : ' · total do quadro (igual para todos)'}`
+  const empresas = (cfg.empresas || []).length > 1 ? cfg.empresas.map(nomeUnidade).join(' + ') : null
+  const minimo = regras?.regrasChave?.atingimentoMinimo
+  const formaPag = PERIODICIDADES.find((x) => x.v === periodicidadeDe(regras))?.label || 'Mensal'
+  const parteB3 = pesoB3 ?? 0
+  const Item = ({ rotulo, children }) => (
+    <div className="flex items-baseline justify-between gap-3 border-t border-slate-100 py-1.5 first:border-t-0">
+      <span className="text-slate-500">{rotulo}</span>
+      <span className="text-right font-medium text-slate-800">{children}</span>
+    </div>
+  )
+  return (
+    <>
+      <button type="button" onClick={() => setAberto(true)} title={`Ver a regra de ${titulo}`} aria-label={`Ver a regra de ${titulo}`}
+        className="inline-flex items-center gap-1 rounded px-1 text-[10px] font-semibold text-blue-600 hover:bg-blue-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400">
+        <BookOpen className="h-3.5 w-3.5" /> Ver regra
+      </button>
+      {aberto && createPortal(
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) setAberto(false) }}>
+          <div role="dialog" aria-modal="true" aria-label={`Regra de ${titulo}`}
+            className="w-full max-w-lg max-h-[90vh] flex flex-col rounded-xl bg-white shadow-2xl normal-case tracking-normal text-left font-normal">
+            <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-3">
+              <div>
+                <p className="text-sm font-bold text-slate-900 flex items-center gap-2"><BookOpen className="h-4 w-4 text-blue-600" /> Regra — {titulo}</p>
+                <p className="text-[11px] text-slate-500">{nomeUnidade(unidade)} · {MESES[Number(mes) - 1]?.label}/{ano} · somente visualização</p>
+              </div>
+              <button type="button" onClick={() => setAberto(false)} aria-label="Fechar" className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><X className="h-4 w-4" /></button>
+            </div>
+            <div className="overflow-y-auto px-5 py-4 space-y-4 text-xs">
+              <div>
+                <Item rotulo="Valores vêm de">{origem}</Item>
+                {empresas && <Item rotulo="Empresas do resultado">soma de {empresas}</Item>}
+                <Item rotulo="Apuração">{cfg.mensal ? 'Mensal (sem valor semanal)' : `Semanal (${nSem} semanas no mês)`}</Item>
+                <Item rotulo="Forma de pagamento">{formaPag}</Item>
+                <Item rotulo="Bônus-alvo do mês">Meta {moedaBR(alvo.meta)} · Supermeta {alvo.supermeta ? moedaBR(alvo.supermeta) : '—'}</Item>
+                {parteB3 !== 1 && <Item rotulo="Parte do Bloco 3">{pctTxt(parteB3)} = {moedaBR(alvo.meta * parteB3)} (Meta)</Item>}
+                {!cfg.mensal && <Item rotulo="Base por semana (Meta)">{moedaBR((alvo.meta * parteB3) / nSem)}</Item>}
+                <Item rotulo="Atingimento mínimo do mês">{minimo?.ativo ? `${pctTxt(Number(minimo.valor) || 0)} (abaixo disso, não libera)` : 'não se aplica'}</Item>
+              </div>
+              <div>
+                <p className="font-semibold text-slate-700 mb-1">Faixas de pagamento</p>
+                {faixas?.length ? (
+                  <table className="w-full">
+                    <thead><tr className="text-[10px] uppercase tracking-wide text-slate-500">
+                      <th className="text-left py-1">Atingimento</th><th className="text-right py-1">% pago</th><th className="text-right py-1">Sobre</th>
+                    </tr></thead>
+                    <tbody>
+                      <tr className="border-t border-slate-100 text-slate-400"><td className="py-1">abaixo de {pctTxt(faixas[0].min)}</td><td className="text-right">0,00%</td><td className="text-right">—</td></tr>
+                      {faixas.map((fx, i) => {
+                        const prox = faixas[i + 1]
+                        return (
+                          <tr key={fx.id || i} className="border-t border-slate-100">
+                            <td className="py-1">{prox ? `${pctTxt(fx.min)} a < ${pctTxt(prox.min)}` : `≥ ${pctTxt(fx.min)}`}</td>
+                            <td className="text-right tabular-nums">{pctTxt(fx.paga)}</td>
+                            <td className="text-right">{fx.base === 'supermeta' ? 'Supermeta' : 'Meta'}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                ) : <p className="text-slate-400">Nenhuma faixa cadastrada — sem pagamento.</p>}
+              </div>
             </div>
           </div>
         </div>,
@@ -1255,7 +1335,6 @@ function bonusDaLinha(p, { pesoB3, faixas, regras, unidade, chaveBonus, nSem }) 
 // Modo "coleta" (aba Pagamento): não desenha nada — calcula o bônus de cada pessoa do bloco no mês
 // e entrega para a aba Pagamento (ctx.onColeta). null = ainda carregando.
 function ColetaBonus({ titulo, cor, campanha, linhas, carregando, pesoB3, faixas, regras, unidade, chaveBonus, onColeta }) {
-  const { ano, mes, foto } = useContext(FaixasCtx)
   const nSem = campanha.semanas.length || 1
   const dados = carregando ? null : {
     cor,
@@ -1270,15 +1349,8 @@ function ColetaBonus({ titulo, cor, campanha, linhas, carregando, pesoB3, faixas
     }),
   }
   const chave = JSON.stringify(dados)
-  // Extrato do funcionário no Pagamento: os mesmos dados que o pop-up da Apuração/Resultado usa (fora
-  // da chave, para não comparar objetos grandes a cada desenho).
-  useEffect(() => {
-    if (!dados) { onColeta?.(titulo, null); return }
-    const extratos = Object.fromEntries(linhas.map((p) => [p.id, {
-      p, titulo, pesoB3, chaveBonus, faixas, regras, unidade, campanha, ano, mes, mesFechado: !!foto,
-    }]))
-    onColeta?.(titulo, { ...dados, extratos })
-  }, [chave]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Entrega os valores do bloco para a aba Pagamento.
+  useEffect(() => { onColeta?.(titulo, dados) }, [chave]) // eslint-disable-line react-hooks/exhaustive-deps
   return null
 }
 
@@ -1290,179 +1362,6 @@ function ColetaBonus({ titulo, cor, campanha, linhas, carregando, pesoB3, faixas
 
 // Nº de colunas de dados por semana em cada modo (Apuração: Contrib. + Faixa; Resultado: valor).
 const colsPorSemana = (modo) => (modo === 'resultado' ? 1 : 2)
-
-// Nome do funcionário clicável: abre o extrato dele no mês.
-function NomeExtrato({ nome, onClick }) {
-  return (
-    <button type="button" onClick={onClick} title="Ver o extrato do funcionário no mês"
-      className="text-left font-medium text-slate-800 hover:text-blue-700 hover:underline underline-offset-2">
-      {nome}
-    </button>
-  )
-}
-
-// Extrato do funcionário no mês (pop-up): mesmos cálculos da Apuração e do Resultado (bonusDaLinha /
-// totalDaLinha) — contribuição e faixa de cada semana, indicadores (peso × atingimento), total do mês,
-// situação e bônus.
-function ExtratoFuncionario({ p, titulo, pesoB3, chaveBonus, faixas, regras, unidade, campanha, mesFechado, ano, mes, onFechar, mesesPeriodo = null, onMes = null, pagamento = null }) {
-  useEffect(() => {
-    const esc = (e) => { if (e.key === 'Escape') onFechar() }
-    document.addEventListener('keydown', esc)
-    return () => document.removeEventListener('keydown', esc)
-  }, [onFechar])
-  const semanas = campanha.semanas
-  const nSem = semanas.length || 1
-  const { cels, bloqueio, calc, total: bonusMes, mes: bm } = bonusDaLinha(p, { pesoB3, faixas, regras, unidade, chaveBonus, nSem })
-  const { total: atingMes, parcial } = totalDaLinha(p, cels)
-  const alvo = bonusAlvoDe(regras, p.unidadeBonus ? 'TRUCKS' : unidade, p.chaveBonus || chaveBonus) // igual a bonusDaLinha
-  const rotFx = (fx) => (!fx ? '—' : fx.abaixo ? 'Sem faixa' : fx.max == null ? `≥ ${pctTxt(fx.min)}` : `${pctTxt(fx.min)} a < ${pctTxt(fx.max)}`)
-  const pct = (v) => (v == null ? '—' : pctTxt(v))
-  const situacao = bloqueio ? (mesFechado ? 'Não atingido' : 'Fora da meta') : (mesFechado ? 'Atingido' : 'Na meta')
-  // Linhas de período: uma por semana; na apuração mensal, só o mês.
-  const periodos = p.mensal
-    ? [{ id: 'mes', rotulo: MESES[Number(mes) - 1]?.label || 'Mês', sub: '', ating: atingMes, fx: bm?.fx || null, valor: bonusMes, itens: p.itensMes || [] }]
-    : semanas.map((s, i) => ({
-      id: s.id, rotulo: `Sem ${i + 1}`, sub: s.label, ating: cels[i].semDiaUtil ? null : cels[i].contrib,
-      fx: calc[i].fx, valor: calc[i].valor, itens: p.semanas[i]?.itens || [], semDiaUtil: cels[i].semDiaUtil,
-    }))
-  const indicadores = [...new Set(periodos.flatMap((x) => x.itens.map((it) => it.indicador)))]
-  const pesoDe = (ind) => periodos.flatMap((x) => x.itens).find((it) => it.indicador === ind)?.peso
-  const TH2 = 'px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500 text-right'
-  const TD2 = 'px-2 py-1.5 text-right tabular-nums border-t border-slate-100'
-  const Card = ({ rotulo, valor, cor = 'text-slate-900' }) => (
-    <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
-      <p className="text-[11px] text-slate-500">{rotulo}</p>
-      <p className={`text-base font-bold tabular-nums ${cor}`}>{valor}</p>
-    </div>
-  )
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) onFechar() }}>
-      <div role="dialog" aria-modal="true" aria-label={`Extrato de ${p.nome}`} className="w-full max-w-3xl max-h-[90vh] flex flex-col rounded-xl bg-white shadow-2xl">
-        <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-3">
-          <div>
-            <p className="text-sm font-bold text-slate-900">{p.nome}</p>
-            <p className="text-[11px] text-slate-500">{titulo} · {MESES[Number(mes) - 1]?.label}/{ano}{mesFechado ? ' · mês fechado' : ' · mês em aberto (parcial)'}</p>
-            {/* Pagamento bimestral/trimestral: escolher o mês do período. */}
-            {mesesPeriodo?.length > 1 && (
-              <div className="mt-1.5 flex gap-1">
-                {mesesPeriodo.map((m) => (
-                  <button key={m} type="button" onClick={() => onMes?.(m)}
-                    className={`rounded px-2 py-0.5 text-[11px] font-semibold border ${Number(m) === Number(mes) ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-500 hover:text-slate-700'}`}>
-                    {MESES[Number(m) - 1]?.label}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-          <button type="button" onClick={onFechar} aria-label="Fechar" className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><X className="h-4 w-4" /></button>
-        </div>
-        <div className="overflow-y-auto px-5 py-4 space-y-4">
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            <Card rotulo="Atingimento do mês" valor={`${pct(atingMes)}${parcial && atingMes != null ? '*' : ''}`} cor={atingMes == null ? 'text-slate-400' : corPct(atingMes)} />
-            <Card rotulo="Situação bônus" valor={situacao} cor={bloqueio ? 'text-amber-700' : 'text-emerald-700'} />
-            <Card rotulo="Bônus-alvo (Meta / Supermeta)" valor={`${moedaBR(alvo.meta)} / ${moedaBR(alvo.supermeta)}`} />
-            <Card rotulo="Bônus do mês" valor={moedaBR(bonusMes)} cor={bonusMes > 0 ? 'text-emerald-700' : 'text-slate-500'} />
-          </div>
-          {bloqueio && <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">{bloqueio}</p>}
-          {p.alerta && <p className="text-[11px] text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">{p.alerta}</p>}
-
-          <div>
-            <p className="text-xs font-bold text-slate-700 mb-1">
-              {pagamento ? 'Apuração e Resultado' : ''}{pagamento ? ' — ' : ''}{p.mensal ? 'Resultado do mês' : 'Semana a semana'}
-              {pagamento && <span className="ml-1 font-normal text-slate-400">(atingimento e faixa = Apuração; bônus = Resultado)</span>}
-            </p>
-            <table className="w-full text-xs">
-              <thead><tr>
-                <th className={`${TH2} text-left`}>Período</th><th className={TH2}>Atingimento</th><th className={TH2}>Faixa</th><th className={TH2}>% pago</th><th className={TH2}>Bônus</th>
-              </tr></thead>
-              <tbody>
-                {periodos.map((x) => (
-                  <tr key={x.id}>
-                    <td className="px-2 py-1.5 border-t border-slate-100">{x.rotulo}{x.sub && <span className="ml-1 text-[10px] text-slate-400">{x.sub}</span>}</td>
-                    <td className={TD2}>{x.semDiaUtil ? 'sem dia útil' : pct(x.ating)}</td>
-                    <td className={TD2}>{rotFx(x.fx)}</td>
-                    <td className={TD2}>{x.fx && !x.fx.abaixo ? pct(x.fx.paga) : '—'}</td>
-                    <td className={`${TD2} font-semibold ${x.valor > 0 ? 'text-slate-900' : 'text-slate-400'}`}>{moedaBR(x.valor)}</td>
-                  </tr>
-                ))}
-                <tr className="bg-slate-50 font-bold">
-                  <td className="px-2 py-1.5 border-t border-slate-200">Total do mês</td>
-                  <td className={TD2}>{pct(atingMes)}</td><td className={TD2} /><td className={TD2} />
-                  <td className={`${TD2} ${bonusMes > 0 ? 'text-emerald-700' : 'text-slate-500'}`}>{moedaBR(bonusMes)}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          {indicadores.length > 0 && (
-            <div>
-              <p className="text-xs font-bold text-slate-700 mb-1">Indicadores (atingimento de cada um; contribuição = soma peso × atingimento)</p>
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead><tr>
-                    <th className={`${TH2} text-left`}>Indicador</th><th className={TH2}>Peso</th>
-                    {periodos.map((x) => <th key={x.id} className={TH2}>{x.rotulo}</th>)}
-                  </tr></thead>
-                  <tbody>
-                    {indicadores.map((ind) => (
-                      <tr key={ind}>
-                        <td className="px-2 py-1.5 border-t border-slate-100">{ind}</td>
-                        <td className={TD2}>{pct(pesoDe(ind))}</td>
-                        {periodos.map((x) => {
-                          const it = x.itens.find((y) => y.indicador === ind)
-                          return <td key={x.id} className={TD2}>{it?.atingimento == null ? '—' : <span className={corPct(it.atingimento)}>{pctTxt(it.atingimento)}</span>}</td>
-                        })}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-          {pagamento && (
-            <div>
-              <p className="text-xs font-bold text-slate-700 mb-1">
-                Pagamento <span className="font-normal text-slate-500">· {pagamento.rotuloPeriodo} · {pagamento.quando}</span>
-              </p>
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead><tr>
-                    <th className={`${TH2} text-left`}>Bloco</th><th className={`${TH2} text-left`}>Período</th><th className={TH2}>Valor</th>
-                  </tr></thead>
-                  <tbody>
-                    <tr>
-                      <td className="px-2 py-1.5 border-t border-slate-100">Bloco 1 - Corporativo</td>
-                      <td className="px-2 py-1.5 border-t border-slate-100 text-slate-400">{pagamento.b1 == null ? 'regras ainda não criadas' : 'parte da Meta'}</td>
-                      <td className={TD2}>{pagamento.b1 == null ? '—' : moedaBR(pagamento.b1)}</td>
-                    </tr>
-                    <tr>
-                      <td className="px-2 py-1.5 border-t border-slate-100">Bloco 2 - Departamental</td>
-                      <td className="px-2 py-1.5 border-t border-slate-100 text-slate-400">{pagamento.b2 == null ? 'regras ainda não criadas' : 'parte da Meta'}</td>
-                      <td className={TD2}>{pagamento.b2 == null ? '—' : moedaBR(pagamento.b2)}</td>
-                    </tr>
-                    {pagamento.colunas.map((c) => (
-                      <tr key={c.k}>
-                        <td className="px-2 py-1.5 border-t border-slate-100">Bloco 3 - Serviços</td>
-                        <td className="px-2 py-1.5 border-t border-slate-100">{c.titulo}{c.sub && <span className="ml-1 text-[10px] text-slate-400">{c.sub}</span>}</td>
-                        <td className={`${TD2} ${c.valor > 0 ? 'font-semibold text-slate-900' : 'text-slate-400'}`}>{c.valor == null ? '—' : moedaBR(c.valor)}</td>
-                      </tr>
-                    ))}
-                    <tr className="bg-emerald-50 font-bold">
-                      <td className="px-2 py-1.5 border-t border-slate-200" colSpan={2}>Total a pagar</td>
-                      <td className={`${TD2} ${pagamento.total > 0 ? 'text-emerald-700' : 'text-slate-500'}`}>{moedaBR(pagamento.total)}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-          <p className="text-[10px] text-slate-400">Valores calculados com as mesmas regras da Apuração e do Resultado{mesFechado ? ' (congelados no fechamento do mês)' : ''}. * = parcial: semanas sem meta ou sem dados ficaram de fora.</p>
-        </div>
-      </div>
-    </div>,
-    document.body,
-  )
-}
 
 // Coluna "Situação bônus" (depois do Total): bloqueada quando a regra-chave de atingimento mínimo do
 // mês bloqueia. Resultado diz Liberado / Não liberado. A Apuração (atingimento) diz Na meta / Fora da
@@ -1685,7 +1584,7 @@ function BlocoMatriz({ campanha, blocosMatriz, pessoas, carregandoFunc, ano, mes
 }
 
 // Resultado: linhas de uma função (valor do bônus por semana + ⓘ do cálculo e Total).
-function ResultadoSemanal({ titulo, cor, campanha, linhas, carregando, faltam = 0, vazio, pesoB3, faixas, regras, unidade, chaveBonus, matrizB3, verExtrato = null }) {
+function ResultadoSemanal({ titulo, cor, campanha, linhas, carregando, faltam = 0, vazio, pesoB3, faixas, regras, unidade, chaveBonus, matrizB3 }) {
   const { hasActionOrDefault } = useAuth()
   const podeVerCalculo = hasActionOrDefault('bi/campanha/resultado', 'ver_calculo')
   const semanas = campanha.semanas
@@ -1697,6 +1596,7 @@ function ResultadoSemanal({ titulo, cor, campanha, linhas, carregando, faltam = 
     <tbody>
       <LinhaSecao titulo={titulo} cor={cor} colSpan={nCols}>
         {matrizB3 && <LinkBloco3 matrizB3={matrizB3} pessoas={linhas.map((l) => l.nome)} />}
+        <LinkRegraFuncao titulo={titulo} chaveBonus={chaveBonus} pesoB3={pesoB3} />
       </LinhaSecao>
       {carregando ? (
         <tr><td colSpan={nCols} className="px-2 py-2 text-xs text-slate-500"><span className="inline-flex items-center gap-2"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Carregando…</span></td></tr>
@@ -1729,7 +1629,7 @@ function ResultadoSemanal({ titulo, cor, campanha, linhas, carregando, faltam = 
           return (
             <tr key={p.id} className="border-b border-slate-100">
               <td className="p-2 font-medium text-slate-800 leading-tight" title={p.nome}>
-                <span className="block"><NomeExtrato nome={p.nome} onClick={() => verExtrato?.(p)} /></span>
+                <span className="block">{p.nome}</span>
               </td>
               {semanas.map((s) => <td key={s.id} className={`${TD} border-l border-slate-200 text-center text-slate-300`}>—</td>)}
               <td className={`${TD} border-l border-slate-200 font-bold ${COR_TOTAL.real} ${total > 0 ? 'text-emerald-700' : 'text-slate-500'}`}
@@ -1746,7 +1646,7 @@ function ResultadoSemanal({ titulo, cor, campanha, linhas, carregando, faltam = 
         return (
           <tr key={p.id} className="border-b border-slate-100">
             <td className="p-2 font-medium text-slate-800 leading-tight [&>span]:mt-1 [&>span]:ml-0 [&>span]:inline-block" title={p.nome}>
-              <span className="block !mt-0"><NomeExtrato nome={p.nome} onClick={() => verExtrato?.(p)} /></span>
+              <span className="block !mt-0">{p.nome}</span>
               {p.alerta && (
                 <span className="ml-2 text-[10px] font-semibold px-1.5 py-px rounded border bg-red-50 text-red-700 border-red-200" title={p.alerta}>Mês zerado</span>
               )}
@@ -1820,7 +1720,7 @@ function ResumoSemanal({ titulo, cor, campanha, linhas: todasLinhas, carregando,
   const VAZIO = <span className="text-slate-300">—</span>
   const pesoB3 = blocosMatriz.pesos?.individual || 0
   const semanas = campanha.semanas
-  const { faixas, regras, unidade, modo, onColeta, foto, busca, abrirExtrato } = useContext(FaixasCtx)
+  const { faixas, regras, unidade, modo, onColeta, foto, busca } = useContext(FaixasCtx)
   if (modo === 'coleta') {
     return <ColetaBonus titulo={titulo} cor={cor} campanha={campanha} linhas={todasLinhas} carregando={carregando}
       pesoB3={pesoB3} faixas={faixas} regras={regras} unidade={unidade} chaveBonus={chaveBonus} onColeta={onColeta} />
@@ -1829,10 +1729,9 @@ function ResumoSemanal({ titulo, cor, campanha, linhas: todasLinhas, carregando,
   // nome da função: todos da função.
   const linhas = busca && !normNome(titulo).includes(busca) ? todasLinhas.filter((l) => normNome(l.nome).includes(busca)) : todasLinhas
   if (busca && !linhas.length) return null
-  const verExtrato = (p) => abrirExtrato?.({ p, titulo, pesoB3, chaveBonus, faixas, regras, unidade, campanha })
   if (modo === 'resultado') {
     return <ResultadoSemanal titulo={titulo} cor={cor} campanha={campanha} linhas={linhas} carregando={carregando} faltam={faltam} vazio={vazio}
-      pesoB3={pesoB3} faixas={faixas} regras={regras} unidade={unidade} chaveBonus={chaveBonus} matrizB3={matrizB3} verExtrato={verExtrato} />
+      pesoB3={pesoB3} faixas={faixas} regras={regras} unidade={unidade} chaveBonus={chaveBonus} matrizB3={matrizB3} />
   }
   const nCols = semanas.length * 2 + 3
   const TD = 'p-2 text-right whitespace-nowrap tabular-nums border-l border-slate-200'
@@ -1842,6 +1741,7 @@ function ResumoSemanal({ titulo, cor, campanha, linhas: todasLinhas, carregando,
     <tbody>
       <LinhaSecao titulo={titulo} cor={cor} colSpan={nCols}>
         {matrizB3 && <LinkBloco3 matrizB3={matrizB3} pessoas={linhas.map((l) => l.nome)} />}
+        <LinkRegraFuncao titulo={titulo} chaveBonus={chaveBonus} pesoB3={pesoB3} />
       </LinhaSecao>
       {carregando ? (
         <tr><td colSpan={nCols} className="px-2 py-2 text-xs text-slate-500"><span className="inline-flex items-center gap-2"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Carregando…</span></td></tr>
@@ -1856,7 +1756,7 @@ function ResumoSemanal({ titulo, cor, campanha, linhas: todasLinhas, carregando,
         return (
           <tr key={p.id} className="border-b border-slate-100">
             <td className="p-2 font-medium text-slate-800 leading-tight [&>span]:mt-1 [&>span]:ml-0 [&>span]:inline-block" title={p.nome}>
-              <span className="block !mt-0"><NomeExtrato nome={p.nome} onClick={() => verExtrato(p)} /></span>
+              <span className="block !mt-0">{p.nome}</span>
               {p.alerta && (
                 <span className="ml-2 text-[10px] font-semibold px-1.5 py-px rounded border bg-red-50 text-red-700 border-red-200" title={p.alerta}>Mês zerado</span>
               )}

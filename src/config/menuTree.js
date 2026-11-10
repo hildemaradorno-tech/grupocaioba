@@ -376,8 +376,9 @@ export const MENU_TREE = [
         navTo: 'bi/campanha',
         children: [
           { key: 'bi/campanha/regras', label: 'Aba Regras' },
-          { key: 'bi/campanha/apuracao', label: 'Aba Apuração' },
-          { key: 'bi/campanha/resultado', label: 'Aba Resultado' },
+          // Apuração e Resultado são uma aba só ("Resultado"); cada permissão libera uma visão dela.
+          { key: 'bi/campanha/apuracao', label: 'Aba Resultado — visão Apuração' },
+          { key: 'bi/campanha/resultado', label: 'Aba Resultado — visão Bônus R$' },
           { key: 'bi/campanha/pagamento', label: 'Aba Pagamento' },
           { key: 'bi/campanha/empresa-trucks', label: 'Empresa CAIOBÁ TRUCKS (Gerente Geral)' },
           { key: 'bi/campanha/empresa-cg', label: 'Empresa Campo Grande' },

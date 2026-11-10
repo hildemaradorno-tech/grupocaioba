@@ -187,7 +187,7 @@ export default function Dre() {
               </tbody>
             </table>
           </div>
-          <p className="text-[11px] text-slate-400">Vincule as contas a cada linha na aba <strong>Plano de Contas</strong> (campo "Linha da DRE" das contas analíticas).</p>
+          <p className="text-[11px] text-slate-400">No <strong>Plano de Contas</strong>, as contas estão marcadas como DRE ou Balanço Patrimonial (Tipo de Conta). O vínculo de cada conta a uma linha desta DRE será feito numa próxima etapa.</p>
         </>
       )}
 
