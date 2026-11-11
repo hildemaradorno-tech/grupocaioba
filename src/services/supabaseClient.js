@@ -6390,10 +6390,34 @@ export const apiService = {
     return { success: true }
   },
 
+  // Cada centro vem com empresa_ids (tabela ctb_centro_resultado_empresas: uma linha por centro × empresa).
   getCtbCentrosResultado: async () => {
-    const { data, error } = await supabase.from('ctb_centros_resultado').select('*').order('codigo')
+    const { data, error } = await supabase.from('ctb_centros_resultado').select('*, ctb_centro_resultado_empresas(empresa_id)').order('codigo')
     if (error) throw error
-    return data || []
+    return (data || []).map(({ ctb_centro_resultado_empresas: vinc, ...c }) => ({ ...c, empresa_ids: (vinc || []).map(v => v.empresa_id) }))
+  },
+  // Deixa o centro ligado exatamente a estas empresas (remove as desmarcadas, cria as novas).
+  definirEmpresasCtbCentro: async (centroId, empresaIds) => {
+    const { data: atuais, error } = await supabase.from('ctb_centro_resultado_empresas').select('empresa_id').eq('centro_resultado_id', centroId)
+    if (error) throw error
+    const ja = new Set((atuais || []).map(a => a.empresa_id))
+    const remover = [...ja].filter(id => !empresaIds.includes(id))
+    const incluir = empresaIds.filter(id => !ja.has(id))
+    if (remover.length) {
+      const { error: e1 } = await supabase.from('ctb_centro_resultado_empresas').delete().eq('centro_resultado_id', centroId).in('empresa_id', remover)
+      if (e1) throw e1
+    }
+    if (incluir.length) {
+      const { error: e2 } = await supabase.from('ctb_centro_resultado_empresas').insert(incluir.map(empresa_id => ({ centro_resultado_id: centroId, empresa_id })))
+      if (e2) throw e2
+    }
+  },
+  // Só acrescenta empresas (importação): nunca remove as que o centro já tem.
+  vincularEmpresasCtbCentro: async (centroId, empresaIds) => {
+    if (!empresaIds.length) return
+    const { error } = await supabase.from('ctb_centro_resultado_empresas')
+      .upsert(empresaIds.map(empresa_id => ({ centro_resultado_id: centroId, empresa_id })), { onConflict: 'centro_resultado_id,empresa_id', ignoreDuplicates: true })
+    if (error) throw error
   },
   salvarCtbCentroResultado: async (id, { codigo, descricao, sistema_id, sigla, cr_visual_id, ativo }) => {
     const payload = { codigo: codigo.trim(), descricao: descricao.trim(), sistema_id: sistema_id || null, sigla: (sigla || '').trim() || null, ativo: ativo ?? true }

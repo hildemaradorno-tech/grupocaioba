@@ -16,9 +16,15 @@ const CONEXAO = [
 const VIEWS = [
   {
     nome: 'vw_ctb_centros_resultado',
-    desc: 'Cadastro dos Centros de Resultado.',
+    desc: 'Cadastro dos Centros de Resultado (uma linha por centro, com as empresas agrupadas).',
     origem: 'Controladoria → Centro de Resultado',
-    colunas: 'centro_resultado_id, codigo, descricao, ativo, sistema_id, sistema, sigla, cr_visual_id, cr_visual_codigo, cr_visual',
+    colunas: 'centro_resultado_id, codigo, descricao, ativo, sistema_id, sistema, sigla, cr_visual_id, cr_visual_codigo, cr_visual, qtd_empresas, empresas',
+  },
+  {
+    nome: 'vw_ctb_centros_resultado_empresas',
+    desc: 'Centros de Resultado por empresa: uma linha para cada centro × empresa em que ele existe.',
+    origem: 'Controladoria → Centro de Resultado (campo Empresas)',
+    colunas: 'centro_empresa_id, centro_resultado_id, codigo, descricao, sigla, ativo, sistema_id, sistema, cr_visual_id, cr_visual_codigo, cr_visual, empresa_id, codigo_empresa, sigla_empresa, empresa',
   },
   {
     nome: 'vw_ctb_cr_visuais',

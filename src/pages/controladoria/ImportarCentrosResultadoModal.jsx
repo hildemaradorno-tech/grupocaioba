@@ -1,15 +1,16 @@
 import React, { useMemo, useRef, useState } from 'react'
 import * as XLSX from 'xlsx'
-import { X, Upload, FileSpreadsheet, AlertTriangle, CheckCircle2, Loader2, Plus as PlusIcon } from 'lucide-react'
+import { X, Upload, FileSpreadsheet, AlertTriangle, CheckCircle2, Loader2, Plus as PlusIcon, Link2 } from 'lucide-react'
 import { apiService } from '../../services/api'
 import { INPUT, LABEL } from './ControladoriaNav'
+import SeletorEmpresas from './SeletorEmpresas'
 
 const norm = (v) => String(v ?? '').trim()
 const semAcento = (s) => norm(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
 
 const achaColuna = (cabecalho, nomes) => cabecalho.find(c => nomes.includes(semAcento(c)))
 
-export default function ImportarCentrosResultadoModal({ centros, sistemas, onClose, onImported }) {
+export default function ImportarCentrosResultadoModal({ centros, sistemas, empresas = [], onClose, onImported }) {
   const fileRef = useRef(null)
   const [etapa, setEtapa] = useState('selecao') // selecao | preview | importando | resultado
   const [arrastando, setArrastando] = useState(false)
@@ -17,10 +18,14 @@ export default function ImportarCentrosResultadoModal({ centros, sistemas, onClo
   const [nomeArquivo, setNomeArquivo] = useState('')
   const [linhas, setLinhas] = useState([])
   const [sistemaId, setSistemaId] = useState('')
+  // Empresas em que os centros do arquivo existem (uma linha por centro × empresa no Supabase).
+  const [empresaIds, setEmpresaIds] = useState([])
   const [resultado, setResultado] = useState(null)
 
-  // Um centro é identificado por sistema + código + descrição + sigla: o mesmo código pode ter
-  // descrições/siglas diferentes, então a importação nunca altera um centro existente, só cria o que falta.
+  // Um centro é identificado por sistema + código + sigla: mesmo código e mesma sigla = mesmo centro
+  // (a empresa nova é acrescentada nele, mesmo que a descrição venha diferente — a cadastrada é mantida).
+  // A importação nunca altera os dados de um centro existente; só cria o que falta e liga empresas.
+  const chaveCentro = (codigo, sigla) => `${norm(codigo)}|${(norm(sigla) || norm(codigo)).toUpperCase()}`
   const centrosDoSistema = useMemo(
     () => centros.filter(c => (c.sistema_id || '') === sistemaId),
     [centros, sistemaId]
@@ -40,7 +45,7 @@ export default function ImportarCentrosResultadoModal({ centros, sistemas, onClo
         const cabecalho = Object.keys(raw[0])
         const colCodigo = achaColuna(cabecalho, ['codigo', 'cod'])
         const colDescricao = achaColuna(cabecalho, ['descricao', 'desc'])
-        const colSigla = achaColuna(cabecalho, ['sigla'])
+        const colSigla = achaColuna(cabecalho, ['sigla/fisco', 'sigla / fisco', 'sigla fisco', 'sigla', 'fisco'])
         const faltando = [!colCodigo && 'Código', !colDescricao && 'Descrição'].filter(Boolean)
         if (faltando.length > 0) { setErroArquivo(`Colunas não encontradas no arquivo: ${faltando.join(', ')}`); return }
 
@@ -53,7 +58,8 @@ export default function ImportarCentrosResultadoModal({ centros, sistemas, onClo
           // Sem coluna Sigla (ou célula vazia), a sigla vira o próprio código.
           const siglaArquivo = colSigla ? norm(r[colSigla]).toUpperCase() : ''
           const sigla = siglaArquivo || codigo.toUpperCase()
-          const chave = `${codigo}|${descricao}|${sigla}`
+          // Mesmo código + sigla repetido no arquivo: fica a primeira linha.
+          const chave = chaveCentro(codigo, sigla)
           if (vistos.has(chave)) continue
           vistos.add(chave)
           lista.push({ chave, codigo, descricao, sigla })
@@ -72,9 +78,19 @@ export default function ImportarCentrosResultadoModal({ centros, sistemas, onClo
 
   const classificadas = useMemo(() => {
     if (!sistemaId) return []
-    const cadastradas = new Set(centrosDoSistema.map(c => `${c.codigo}|${c.descricao}|${c.sigla || ''}`))
-    return linhas.map(l => ({ ...l, status: cadastradas.has(l.chave) ? 'ok' : 'novo' }))
-  }, [linhas, centrosDoSistema, sistemaId])
+    const cadastradas = new Map()
+    for (const c of centrosDoSistema) {
+      const k = chaveCentro(c.codigo, c.sigla)
+      if (!cadastradas.has(k)) cadastradas.set(k, c)
+    }
+    return linhas.map(l => {
+      const atual = cadastradas.get(l.chave)
+      if (!atual) return { ...l, status: 'novo', faltam: empresaIds }
+      // Já existe: só falta ligar às empresas marcadas que ele ainda não tem.
+      const faltam = empresaIds.filter(id => !(atual.empresa_ids || []).includes(id))
+      return { ...l, atual, faltam, status: faltam.length ? 'vincular' : 'ok' }
+    })
+  }, [linhas, centrosDoSistema, sistemaId, empresaIds])
 
   const contagem = classificadas.reduce((acc, l) => { acc[l.status] = (acc[l.status] || 0) + 1; return acc }, {})
   const pendentes = classificadas.filter(l => l.status !== 'ok')
@@ -82,18 +98,25 @@ export default function ImportarCentrosResultadoModal({ centros, sistemas, onClo
   const handleImportar = async () => {
     setEtapa('importando')
     let criados = 0
+    let vinculados = 0
     const erros = []
     for (const l of pendentes) {
       try {
-        await apiService.salvarCtbCentroResultado(null, { codigo: l.codigo, descricao: l.descricao, sistema_id: sistemaId, sigla: l.sigla, ativo: true })
-        criados++
+        if (l.status === 'novo') {
+          const novo = await apiService.salvarCtbCentroResultado(null, { codigo: l.codigo, descricao: l.descricao, sistema_id: sistemaId, sigla: l.sigla, ativo: true })
+          await apiService.vincularEmpresasCtbCentro(novo.id, empresaIds)
+          criados++
+        } else {
+          await apiService.vincularEmpresasCtbCentro(l.atual.id, l.faltam)
+          vinculados++
+        }
       } catch (err) {
         erros.push(`${l.codigo} — ${l.descricao}: ${err.message || String(err)}`)
       }
     }
-    if (criados > 0) onImported?.()
+    if (criados > 0 || vinculados > 0) onImported?.()
     if (erros.length === 0) { onClose?.(); return }
-    setResultado({ criados, erros })
+    setResultado({ criados, vinculados, erros })
     setEtapa('resultado')
   }
 
@@ -105,7 +128,7 @@ export default function ImportarCentrosResultadoModal({ centros, sistemas, onClo
             <div className="p-2 bg-blue-100 rounded-lg"><FileSpreadsheet className="h-5 w-5 text-blue-600" /></div>
             <div>
               <h2 className="text-sm font-bold text-slate-900">Importar Centros de Resultado via Excel</h2>
-              <p className="text-[11px] text-slate-500">Planilha com as colunas Código e Descrição; todos os itens ficam vinculados ao sistema escolhido.</p>
+              <p className="text-[11px] text-slate-500">Planilha com as colunas Código e Descrição; todos os itens ficam vinculados ao sistema e às empresas escolhidos.</p>
             </div>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors"><X className="h-5 w-5" /></button>
@@ -141,9 +164,9 @@ export default function ImportarCentrosResultadoModal({ centros, sistemas, onClo
                 </div>
                 <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mt-3 mb-2">Coluna opcional</p>
                 <div className="flex flex-wrap gap-1.5">
-                  <span className="px-2 py-0.5 bg-white border border-slate-200 rounded text-[10px] font-mono text-slate-600">Sigla</span>
+                  <span className="px-2 py-0.5 bg-white border border-slate-200 rounded text-[10px] font-mono text-slate-600">Sigla/Fisco</span>
                 </div>
-                <p className="text-[10px] text-slate-400 mt-1.5">Sem a coluna Sigla (ou com a célula vazia), a sigla recebe o mesmo valor do Código.</p>
+                <p className="text-[10px] text-slate-400 mt-1.5">Aceita a coluna com o nome Sigla/Fisco, Sigla ou Fisco. Sem ela (ou com a célula vazia), a Sigla/Fisco recebe o mesmo valor do Código.</p>
               </div>
             </>
           )}
@@ -161,8 +184,17 @@ export default function ImportarCentrosResultadoModal({ centros, sistemas, onClo
                   <option value="">Selecione o sistema...</option>
                   {sistemas.filter(s => s.ativo !== false).map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
                 </select>
-                <p className="text-[11px] text-slate-400">Compara Sistema + Código + Descrição + Sigla: só cria o que ainda não existe igual; nenhum centro cadastrado é alterado.</p>
+                <p className="text-[11px] text-slate-400">Compara Sistema + Código + Sigla/Fisco: se já existe um centro com o mesmo código e Sigla/Fisco, as empresas marcadas são acrescentadas nele (mesma linha); senão, cria um centro novo. Os dados dos centros cadastrados não são alterados.</p>
               </div>
+
+              <SeletorEmpresas
+                empresas={empresas}
+                value={empresaIds}
+                onChange={setEmpresaIds}
+                sistemaNome={sistemas.find(s => s.id === sistemaId)?.nome}
+                obrigatorio
+              />
+              <p className="text-[11px] text-slate-400 -mt-2">Centro novo é criado já ligado às empresas marcadas; centro que já existe só ganha as empresas que ainda não tem (nenhuma é removida).</p>
 
               {!sistemaId && (
                 <div className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg p-3">Escolha o sistema para ver o que será criado.</div>
@@ -170,6 +202,7 @@ export default function ImportarCentrosResultadoModal({ centros, sistemas, onClo
 
               <div className="flex flex-wrap gap-2 text-[10px] font-bold">
                 {contagem.novo > 0 && <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full border bg-blue-50 text-blue-700 border-blue-200"><PlusIcon className="h-3 w-3" /> {contagem.novo} novo(s)</span>}
+                {contagem.vincular > 0 && <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full border bg-amber-50 text-amber-700 border-amber-200"><Link2 className="h-3 w-3" /> {contagem.vincular} já cadastrado(s), ganha(m) empresa</span>}
                 {contagem.ok > 0 && <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full border bg-emerald-50 text-emerald-700 border-emerald-200"><CheckCircle2 className="h-3 w-3" /> {contagem.ok} já cadastrado(s)</span>}
               </div>
 
@@ -179,7 +212,7 @@ export default function ImportarCentrosResultadoModal({ centros, sistemas, onClo
                     <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[10px] font-bold uppercase tracking-wide">
                       <th className="p-2 w-28">Código</th>
                       <th className="p-2">Descrição</th>
-                      <th className="p-2 w-32">Situação</th>
+                      <th className="p-2 w-48">Situação</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -189,8 +222,11 @@ export default function ImportarCentrosResultadoModal({ centros, sistemas, onClo
                         <td className="p-2 text-[11px] font-semibold text-slate-800">
                           {l.descricao}
                           {l.sigla && <span className="ml-2 px-1.5 py-0.5 rounded bg-slate-100 text-[10px] font-mono text-slate-600">{l.sigla}</span>}
+                          {l.atual && l.atual.descricao !== l.descricao && (
+                            <div className="text-[10px] font-normal text-slate-500">Mesmo código e sigla de <strong>{l.atual.descricao}</strong> — entra nessa mesma linha (a descrição cadastrada é mantida).</div>
+                          )}
                         </td>
-                        <td className="p-2 text-[11px] text-slate-500">{l.status === 'novo' ? 'Novo' : 'Já cadastrado'}</td>
+                        <td className="p-2 text-[11px] text-slate-500">{l.status === 'novo' ? 'Novo' : l.status === 'vincular' ? `Já cadastrado · +${l.faltam.length} empresa(s)` : 'Já cadastrado'}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -213,7 +249,7 @@ export default function ImportarCentrosResultadoModal({ centros, sistemas, onClo
                 <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
                 <div>
                   <p className="text-sm font-bold text-slate-900">Importação concluída com avisos</p>
-                  <p className="text-xs text-slate-600 mt-0.5"><strong>{resultado.criados}</strong> criado(s)</p>
+                  <p className="text-xs text-slate-600 mt-0.5"><strong>{resultado.criados}</strong> criado(s) · <strong>{resultado.vinculados}</strong> ligado(s) a mais empresas</p>
                 </div>
               </div>
               <div className="bg-red-50 border border-red-200 rounded-lg p-3 space-y-1 max-h-40 overflow-y-auto">
@@ -231,11 +267,13 @@ export default function ImportarCentrosResultadoModal({ centros, sistemas, onClo
           {etapa === 'preview' && (
             <>
               <button onClick={() => { setEtapa('selecao'); setLinhas([]) }} className="px-4 py-2 rounded-md text-xs font-semibold text-slate-600 hover:bg-slate-200/60 transition-colors">Voltar</button>
-              {!sistemaId && <span className="text-[11px] text-amber-600 font-semibold">Selecione o sistema</span>}
+              {!sistemaId
+                ? <span className="text-[11px] text-amber-600 font-semibold">Selecione o sistema</span>
+                : empresaIds.length === 0 && <span className="text-[11px] text-amber-600 font-semibold">Marque ao menos uma empresa</span>}
               <button
                 onClick={handleImportar}
-                disabled={!sistemaId || pendentes.length === 0}
-                className={`px-4 py-2 rounded-md text-xs font-semibold shadow-sm transition-colors ${(!sistemaId || pendentes.length === 0) ? 'bg-slate-200 text-slate-400 cursor-not-allowed' : 'text-white bg-blue-600 hover:bg-blue-700'}`}
+                disabled={!sistemaId || empresaIds.length === 0 || pendentes.length === 0}
+                className={`px-4 py-2 rounded-md text-xs font-semibold shadow-sm transition-colors ${(!sistemaId || empresaIds.length === 0 || pendentes.length === 0) ? 'bg-slate-200 text-slate-400 cursor-not-allowed' : 'text-white bg-blue-600 hover:bg-blue-700'}`}
               >
                 Importar {pendentes.length > 0 ? `(${pendentes.length})` : ''}
               </button>

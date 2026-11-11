@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { Plus, Target, Search, FileSpreadsheet, Eye } from 'lucide-react'
+import { Plus, Target, Search, FileSpreadsheet, Eye, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
 import ImportarCentrosResultadoModal from './ImportarCentrosResultadoModal'
 import CrVisuaisModal from './CrVisuaisModal'
+import SeletorEmpresas, { siglaEmpresa, nomeEmpresaCompleto } from './SeletorEmpresas'
 import MenuEngrenagem from '../../components/MenuEngrenagem'
 import { useAuth } from '../../context/AuthContext'
 import PermissionActionButtons from '../../components/PermissionActionButtons'
@@ -9,7 +10,7 @@ import { apiService } from '../../services/api'
 import { CabecalhoControladoria, ModalForm, ConfirmarExclusao, BadgeAtivo, INPUT, LABEL, mensagemErro } from './ControladoriaNav'
 
 const MENU = 'controladoria/centro-resultado'
-const FORM_VAZIO = { codigo: '', descricao: '', sigla: '', sistema_id: '', cr_visual_id: '', ativo: true }
+const FORM_VAZIO = { codigo: '', descricao: '', sigla: '', sistema_id: '', cr_visual_id: '', empresa_ids: [], ativo: true }
 
 export default function CentroResultado() {
   const [centros, setCentros] = useState([])
@@ -22,6 +23,9 @@ export default function CentroResultado() {
   const [error, setError] = useState(null)
   const [busca, setBusca] = useState('')
   const [filtroSistema, setFiltroSistema] = useState('') // '' = todos | '__sem' = sem sistema | id
+  // Empresas onde o centro existe (ctb_centro_resultado_empresas: uma linha por centro × empresa no Supabase).
+  const [empresas, setEmpresas] = useState([])
+  const [filtroEmpresa, setFiltroEmpresa] = useState('') // '' = todas | '__sem' = sem empresa | id
 
   const [modalAberto, setModalAberto] = useState(false)
   const [modalImportarAberto, setModalImportarAberto] = useState(false)
@@ -38,10 +42,11 @@ export default function CentroResultado() {
     setLoading(true)
     setError(null)
     try {
-      const [c, s, v] = await Promise.all([apiService.getCtbCentrosResultado(), apiService.getProjSistemas(), apiService.getCtbCrVisuais()])
+      const [c, s, v, e] = await Promise.all([apiService.getCtbCentrosResultado(), apiService.getProjSistemas(), apiService.getCtbCrVisuais(), apiService.getEmpresas()])
       setCentros(c)
       setSistemas(s)
       setCrVisuais(v)
+      setEmpresas(e)
     } catch (err) {
       setError(err.message || String(err))
     } finally {
@@ -52,21 +57,64 @@ export default function CentroResultado() {
 
   const sistemasMap = useMemo(() => Object.fromEntries(sistemas.map(s => [s.id, s])), [sistemas])
   const crVisuaisMap = useMemo(() => Object.fromEntries(crVisuais.map(v => [v.id, v])), [crVisuais])
+  const empresasMap = useMemo(() => Object.fromEntries(empresas.map(e => [e.id, e])), [empresas])
+  const ordemEmpresa = (id) => empresasMap[id]?.codigo_empresa ?? 9999
+  // Seletor de empresa: só as que têm algum centro.
+  const empresasComCentro = useMemo(
+    () => empresas.filter(e => centros.some(c => (c.empresa_ids || []).includes(e.id))),
+    [empresas, centros]
+  )
+
+  // Ordenação pelos cabeçalhos: clicar alterna crescente/decrescente; o padrão é por código.
+  const [ordem, setOrdem] = useState({ campo: 'codigo', dir: 1 })
+  const ordenarPor = (campo) => setOrdem(o => o.campo === campo ? { campo, dir: -o.dir } : { campo, dir: 1 })
+  const valorOrdem = (c, campo) => {
+    switch (campo) {
+      case 'codigo': return c.codigo
+      case 'descricao': return c.descricao
+      case 'sigla': return c.sigla || ''
+      case 'sistema': return sistemasMap[c.sistema_id]?.nome || ''
+      case 'empresas': return [...(c.empresa_ids || [])].map(id => siglaEmpresa(empresasMap[id])).sort().join(', ')
+      case 'visual': return crVisuaisMap[c.cr_visual_id]?.descricao || ''
+      case 'situacao': return c.ativo === false ? 'Inativo' : 'Ativo'
+      default: return ''
+    }
+  }
 
   const visiveis = useMemo(() => {
     const t = busca.trim().toLowerCase()
     const lista = centros
       .filter(c => !filtroSistema || (filtroSistema === '__sem' ? !c.sistema_id : c.sistema_id === filtroSistema))
-      .sort((a, b) => a.codigo.localeCompare(b.codigo, 'pt-BR', { numeric: true }))
+      .filter(c => !filtroEmpresa || (filtroEmpresa === '__sem' ? !(c.empresa_ids || []).length : (c.empresa_ids || []).includes(filtroEmpresa)))
+      .sort((a, b) => {
+        const va = valorOrdem(a, ordem.campo)
+        const vb = valorOrdem(b, ordem.campo)
+        // Vazio sempre por último; empate desempata pelo código.
+        if (!va && vb) return 1
+        if (va && !vb) return -1
+        return (va.localeCompare(vb, 'pt-BR', { numeric: true, sensitivity: 'base' }) * ordem.dir)
+          || a.codigo.localeCompare(b.codigo, 'pt-BR', { numeric: true })
+      })
     if (!t) return lista
     return lista.filter(c => c.codigo.toLowerCase().includes(t) || c.descricao.toLowerCase().includes(t) || (c.sigla || '').toLowerCase().includes(t)
       || (crVisuaisMap[c.cr_visual_id]?.descricao || '').toLowerCase().includes(t))
-  }, [centros, busca, filtroSistema, crVisuaisMap])
+  }, [centros, busca, filtroSistema, filtroEmpresa, crVisuaisMap, ordem, sistemasMap, empresasMap]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const Th = ({ campo, children, className = '' }) => (
+    <th className={`p-3 ${className}`}>
+      <button type="button" onClick={() => ordenarPor(campo)} className={`inline-flex items-center gap-1 uppercase tracking-wider hover:text-slate-700 transition-colors ${ordem.campo === campo ? 'text-slate-700' : ''}`}>
+        {children}
+        {ordem.campo !== campo
+          ? <ArrowUpDown className="h-3 w-3 opacity-50" />
+          : ordem.dir === 1 ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
+      </button>
+    </th>
+  )
 
   const abrirIncluir = () => { setEditingId(null); setForm(FORM_VAZIO); setErroModal(null); setModalAberto(true) }
   const abrirEditar = (c) => {
     setEditingId(c.id)
-    setForm({ codigo: c.codigo, descricao: c.descricao, sigla: c.sigla || '', sistema_id: c.sistema_id || '', cr_visual_id: c.cr_visual_id || '', ativo: c.ativo ?? true })
+    setForm({ codigo: c.codigo, descricao: c.descricao, sigla: c.sigla || '', sistema_id: c.sistema_id || '', cr_visual_id: c.cr_visual_id || '', empresa_ids: c.empresa_ids || [], ativo: c.ativo ?? true })
     setErroModal(null)
     setModalAberto(true)
   }
@@ -75,7 +123,8 @@ export default function CentroResultado() {
     setSalvando(true)
     setErroModal(null)
     try {
-      await apiService.salvarCtbCentroResultado(editingId, form)
+      const salvo = await apiService.salvarCtbCentroResultado(editingId, form)
+      await apiService.definirEmpresasCtbCentro(editingId || salvo.id, form.empresa_ids)
       await loadData()
       setModalAberto(false)
     } catch (err) {
@@ -99,11 +148,11 @@ export default function CentroResultado() {
   return (
     <div className="p-6 space-y-4 max-w-screen-xl">
       <CabecalhoControladoria
-        descricao="Centros de Resultado: unidades de apuração de receitas e despesas, por sistema."
+        descricao="Centros de Resultado: unidades de apuração de receitas e despesas, por sistema e empresa."
         acao={canEdit && (
           <MenuEngrenagem itens={[
             { icon: Plus, cor: 'text-indigo-600', titulo: 'Incluir Centro de Resultado', descricao: 'Cadastra um novo centro de resultado', onClick: abrirIncluir },
-            { icon: FileSpreadsheet, cor: 'text-emerald-600', titulo: 'Importar Excel', descricao: 'Importa código e descrição de uma planilha para um sistema', onClick: () => setModalImportarAberto(true) },
+            { icon: FileSpreadsheet, cor: 'text-emerald-600', titulo: 'Importar Excel', descricao: 'Importa código e descrição de uma planilha para um sistema e as empresas marcadas', onClick: () => setModalImportarAberto(true) },
             { icon: Eye, cor: 'text-violet-600', titulo: 'Centro de Resultado (Visual)', descricao: 'Cadastra as nomenclaturas de centro de resultado usadas em Orçamento e dashboards', onClick: () => setModalCrVisualAberto(true) },
           ]} />
         )}
@@ -127,6 +176,13 @@ export default function CentroResultado() {
               {centros.some(c => !c.sistema_id) && <option value="__sem">Sem sistema</option>}
               {sistemas.filter(s => centros.some(c => c.sistema_id === s.id)).map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
             </select>
+            {(empresasComCentro.length > 0 || centros.some(c => !(c.empresa_ids || []).length)) && (
+              <select value={filtroEmpresa} onChange={e => setFiltroEmpresa(e.target.value)} className={`${INPUT.replace('w-full ', '')} w-auto shrink-0 pr-7`}>
+                <option value="">Todas as empresas</option>
+                {centros.some(c => !(c.empresa_ids || []).length) && <option value="__sem">Sem empresa</option>}
+                {empresasComCentro.map(e => <option key={e.id} value={e.id}>{nomeEmpresaCompleto(e)}</option>)}
+              </select>
+            )}
             <div className="relative flex-1 max-w-2xl">
               <Search className="h-3.5 w-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
               <input value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar por código, descrição ou sigla" className={`${INPUT} pl-8`} />
@@ -138,17 +194,18 @@ export default function CentroResultado() {
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[11px] font-semibold uppercase tracking-wider">
                   <th className="p-3 w-24 text-center">Ações</th>
-                  <th className="p-3 w-32">Código</th>
-                  <th className="p-3">Descrição no DMS</th>
-                  <th className="p-3 w-28">Sigla</th>
-                  <th className="p-3 w-48">Sistema</th>
-                  <th className="p-3 w-48">Descrição Visual</th>
-                  <th className="p-3 w-24 text-center">Situação</th>
+                  <Th campo="codigo" className="w-32">Código</Th>
+                  <Th campo="descricao">Descrição no DMS</Th>
+                  <Th campo="sigla" className="w-32">Sigla/Fisco</Th>
+                  <Th campo="sistema" className="w-48">Sistema</Th>
+                  <Th campo="empresas">Empresas</Th>
+                  <Th campo="visual" className="w-48">Descrição Visual</Th>
+                  <Th campo="situacao" className="w-24 text-center">Situação</Th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
                 {visiveis.length === 0 ? (
-                  <tr><td colSpan="7" className="p-6 text-center text-slate-400">{centros.length === 0 ? 'Nenhum centro de resultado cadastrado.' : 'Nenhum centro encontrado.'}</td></tr>
+                  <tr><td colSpan="8" className="p-6 text-center text-slate-400">{centros.length === 0 ? 'Nenhum centro de resultado cadastrado.' : 'Nenhum centro encontrado.'}</td></tr>
                 ) : visiveis.map(c => (
                   <tr key={c.id} className="hover:bg-slate-50/70 transition-colors">
                     <td className="p-3"><PermissionActionButtons engrenagem menuPath={MENU} onEdit={() => abrirEditar(c)} onDelete={() => setExcluir(c)} /></td>
@@ -164,6 +221,17 @@ export default function CentroResultado() {
                           {sistemasMap[c.sistema_id].nome}
                         </span>
                       ) : <span className="text-slate-300">—</span>}
+                    </td>
+                    <td className="p-3">
+                      {(c.empresa_ids || []).length ? (
+                        <div className="flex flex-wrap gap-1">
+                          {[...c.empresa_ids].sort((a, b) => ordemEmpresa(a) - ordemEmpresa(b)).map(id => (
+                            <span key={id} title={nomeEmpresaCompleto(empresasMap[id])} className="px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200 text-[10px] font-bold text-slate-600 whitespace-nowrap">
+                              {siglaEmpresa(empresasMap[id])}
+                            </span>
+                          ))}
+                        </div>
+                      ) : <span className="text-[11px] text-amber-600 font-semibold">Sem empresa</span>}
                     </td>
                     <td className="p-3 text-[11px] font-semibold text-violet-700">{crVisuaisMap[c.cr_visual_id]?.descricao || <span className="text-slate-300 font-normal">—</span>}</td>
                     <td className="p-3 text-center"><BadgeAtivo ativo={c.ativo} /></td>
@@ -183,6 +251,7 @@ export default function CentroResultado() {
           salvando={salvando}
           onFechar={() => setModalAberto(false)}
           onSalvar={handleSalvar}
+          largura="w-[640px]"
         >
           <div className="grid grid-cols-3 gap-3">
             <div className="flex flex-col gap-1.5">
@@ -195,7 +264,7 @@ export default function CentroResultado() {
             </div>
           </div>
           <div className="flex flex-col gap-1.5">
-            <label className={LABEL}>Sigla</label>
+            <label className={LABEL}>Sigla/Fisco</label>
             <input value={form.sigla} onChange={e => setForm(f => ({ ...f, sigla: e.target.value.toUpperCase() }))} placeholder="Ex: OFC-CG" maxLength={20} className={`${INPUT} font-mono`} />
           </div>
           <div className="flex flex-col gap-1.5">
@@ -207,6 +276,12 @@ export default function CentroResultado() {
             </select>
             <p className="text-[11px] text-slate-400">Cadastro em Gestão de Projetos → Cadastros → Sistemas.</p>
           </div>
+          <SeletorEmpresas
+            empresas={empresas}
+            value={form.empresa_ids}
+            onChange={ids => setForm(f => ({ ...f, empresa_ids: ids }))}
+            sistemaNome={sistemasMap[form.sistema_id]?.nome}
+          />
           <div className="flex flex-col gap-1.5">
             <label className={LABEL}>Centro de Resultado (Visual)</label>
             <select value={form.cr_visual_id} onChange={e => setForm(f => ({ ...f, cr_visual_id: e.target.value }))} className={INPUT}>
@@ -226,6 +301,7 @@ export default function CentroResultado() {
         <ImportarCentrosResultadoModal
           centros={centros}
           sistemas={sistemas}
+          empresas={empresas}
           onClose={() => setModalImportarAberto(false)}
           onImported={loadData}
         />
