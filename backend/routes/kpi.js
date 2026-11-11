@@ -177,7 +177,7 @@ const BLOCO3_PV_TEMPLATE = [
     kpis: [
       // Mesmos indicadores do SETOR GARANTIA (kpiGarantias.js), todas as empresas ou a escolhida; meta digitada.
       { id: 11, indicador: 'Digitação Atrasada',                   orientacao: '<', metrica: 'un',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
-      { id: 12, indicador: 'Aguardando Aprovação DAF fora do prazo', orientacao: '<', metrica: 'un', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      { id: 12, indicador: 'Aguardando Aprovação DAF (fora do prazo)', orientacao: '<', metrica: 'un', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
       // Mesmos indicadores e metas do SETOR DE AGENDAMENTO DE SERVIÇOS (BI Agendamento; grupo todo).
       { id: 13, indicador: 'Taxa de Agendamento (Por Campanhas)',              orientacao: '>', metrica: '%', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
       { id: 14, indicador: 'Taxa de Agendamento Ativo (Por Data Agendamento)', orientacao: '>', metrica: '%', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
@@ -471,7 +471,12 @@ const BLOCO_SERVICOS_TEMPLATE = [
     cor: 'rose',
     kpis: [
       { id: 1, indicador: 'Digitação Atrasada',                              orientacao: '<', metrica: 'un', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
-      { id: 2, indicador: 'Aguardando Aprovação DAF fora do prazo',          orientacao: '<', metrica: 'un', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      { id: 2, indicador: 'Aguardando Aprovação DAF (fora do prazo)',          orientacao: '<', metrica: 'un', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      // Cards "Aprovada" e "Recusas › Fora do prazo" da tela de Garantias (quantidade de O.S.).
+      { id: 3, indicador: 'Aprovada sem Faturamento',                        orientacao: '<', metrica: 'un', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      { id: 4, indicador: 'Recusadas sem Solução (fora do prazo)',             orientacao: '<', metrica: 'un', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      // Card "Vencidos" da aba Títulos a Receber (RFN003): só período atual (sem histórico no arquivo).
+      { id: 5, indicador: 'Garantias a Receber Vencidas',                     orientacao: '<', metrica: 'un', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
     ],
   },
   {
@@ -577,6 +582,9 @@ function mergeBlocoServicos(quadros, consultorData, mecanicoData, metaConsultor,
       const kpis = quadro.kpis.map(kpi => {
         if (kpi.id === 1) return injectPeriods(kpi, garantiaData?.digitacaoAtrasada ?? {}, p)
         if (kpi.id === 2) return injectPeriods(kpi, garantiaData?.aguardandoForaPrazo ?? {}, p)
+        if (kpi.id === 3) return injectPeriods(kpi, garantiaData?.aprovadaSemFaturamento ?? {}, p)
+        if (kpi.id === 4) return injectPeriods(kpi, garantiaData?.recusadaForaPrazo ?? {}, p)
+        if (kpi.id === 5) return injectPeriods(kpi, garantiaData?.titulosVencidos ?? {}, p)
         return kpi
       })
       return { ...quadro, kpis }
@@ -601,7 +609,7 @@ router.get('/bloco3-pos-venda', requireConfig, wrap(async (req, res) => {
 async function quadrosBloco3PosVenda({ year, refresh = false, fundo = false, empresaQualidade = null }) {
   const [base, garantia, agendamento, planos] = await Promise.all([
     obterBaseBloco3Servicos(`bloco3-posvenda|${year}`, () => montarBaseBloco3PosVenda(year), { refresh, checarMetas: metasModo(fundo) }),
-    // GERENTE DE PROCESSOS E QUALIDADE › Digitação Atrasada / Aguardando Aprovação DAF fora do prazo: as garantias
+    // GERENTE DE PROCESSOS E QUALIDADE › Digitação Atrasada / Aguardando Aprovação DAF (fora do prazo): as garantias
     // de todas as empresas ou da escolhida (lidas na hora, como no SETOR GARANTIA — consulta leve no Supabase).
     getIndicadoresGarantia(year, empresaQualidade || null).catch(err => { console.error('[bloco3-pos-venda] garantias:', err.message); return null }),
     // Agendamento (grupo todo — o relatório não traz a empresa): base guardada + metas do BI na hora.
@@ -621,7 +629,7 @@ async function quadrosBloco3PosVenda({ year, refresh = false, fundo = false, emp
 
 // Preenche no GERENTE DE PROCESSOS E QUALIDADE os indicadores de garantia (realizado; a meta vem das metas digitadas).
 // Base guardada antes desses indicadores existirem: acrescenta as linhas que faltam (ordem do template).
-const INDICADORES_GARANTIA_QUALIDADE = { 'Digitação Atrasada': 'digitacaoAtrasada', 'Aguardando Aprovação DAF fora do prazo': 'aguardandoForaPrazo' }
+const INDICADORES_GARANTIA_QUALIDADE = { 'Digitação Atrasada': 'digitacaoAtrasada', 'Aguardando Aprovação DAF (fora do prazo)': 'aguardandoForaPrazo' }
 // Agendamento (realizado + meta do BI), mesmos do SETOR DE AGENDAMENTO DE SERVIÇOS.
 const INDICADORES_AGENDAMENTO_QUALIDADE = {
   'Taxa de Agendamento (Por Campanhas)': 'taxaAgendamento',
@@ -638,7 +646,11 @@ function comGarantiasQualidade(base, garantia, agendamento = null, planos = null
   return base.map(q => {
     if (!QUADROS_PV_COM_EXTRAS.has(q.tituloGerente)) return q
     const modelo = BLOCO3_PV_TEMPLATE.find(t => t.tituloGerente === q.tituloGerente)
-    const kpis = modelo.kpis.map(t => q.kpis.find(k => k.id === t.id) || t)
+    // Nome, orientação e métrica sempre do modelo atual (base guardada pode ter o nome antigo).
+    const kpis = modelo.kpis.map(t => {
+      const k = q.kpis.find(x => x.id === t.id)
+      return k ? { ...k, indicador: t.indicador, orientacao: t.orientacao, metrica: t.metrica } : t
+    })
     return {
       ...q,
       kpis: kpis.map(k => {

@@ -229,7 +229,7 @@ function PessoaSelector({ lista, selecionado, onSelecionar, onLimpar, placeholde
 
 // Indicadores sem meta automática: o usuário digita a meta, só na visão Mensal (Consultor de
 // Serviços e Mecânico, que não têm fonte de meta pra Eficácia/Produtividade da Oficina).
-const INDICADORES_META_MANUAL = new Set(['Eficácia da Oficina', 'Produtividade da Oficina', 'Digitação Atrasada', 'Aguardando Aprovação DAF fora do prazo'])
+const INDICADORES_META_MANUAL = new Set(['Eficácia da Oficina', 'Produtividade da Oficina', 'Digitação Atrasada', 'Aguardando Aprovação DAF (fora do prazo)', 'Aprovada sem Faturamento', 'Recusadas sem Solução (fora do prazo)', 'Garantias a Receber Vencidas'])
 // Só os de horas trazem a observação de faturamento.
 const INDICADORES_NOTA_FATURAMENTO = new Set(['Eficácia da Oficina', 'Produtividade da Oficina'])
 

@@ -50,11 +50,8 @@ import MetasServicosConsultor from './pages/MetasServicosConsultor'
 import MetasDistribuicaoConsultores from './pages/MetasDistribuicaoConsultores'
 import MetasGestaoAprovacao from './pages/MetasGestaoAprovacao'
 import MetasPosVendaTotal from './pages/MetasPosVendaTotal'
-import GarantiasDafDashboard from './pages/garantias-daf/GarantiasDafDashboard'
-import GarantiasDafFaturadas from './pages/garantias-daf/GarantiasDafFaturadas'
-import GarantiasDafTitulos from './pages/garantias-daf/GarantiasDafTitulos'
 import GarantiasDafForm from './pages/garantias-daf/GarantiasDafForm'
-import AuditoriaOsAberto from './pages/garantias-daf/AuditoriaOsAberto'
+import BiAuditoriaOsAberto from './pages/bi/BiAuditoriaOsAberto'
 import GarantiasDafManual from './pages/garantias-daf/GarantiasDafManual'
 import CalculoComissoesManual from './pages/CalculoComissoesManual'
 import HistoricoComissoesManual from './pages/HistoricoComissoesManual'
@@ -276,7 +273,8 @@ export default function App() {
 
           { path: '/metas/pos-vendas/total', element: <MetasPosVendaTotal />, menuPath: '/metas/pos-vendas/total' },
           { path: '/metas/gestao-aprovacao', element: <MetasGestaoAprovacao />, menuPath: '/metas/gestao-aprovacao' },
-          { path: '/auditoria-os-aberto', element: <AuditoriaOsAberto />, menuPath: '/auditoria-os-aberto' },
+          // Auditoria O.S. Aberta foi para o BI (Dashboard | Controle) — o endereço antigo abre a visão Controle
+          { path: '/auditoria-os-aberto', element: <Navigate to="/bi/auditoria-os-aberto?modo=controle" replace /> },
           { path: '/honda/contas-a-receber', element: <HondaGarantiasReceber />, menuPath: 'honda/contas-a-receber' },
           { path: '/bpm/processos', element: <BpmProcessos />, menuPath: 'bpm/processos' },
           { path: '/bpm/modelador', element: <BpmModelador />, menuPath: ['bpm/modelador', 'bpm/nfe-cancelamento-devolucao'] },
@@ -291,13 +289,14 @@ export default function App() {
           { path: '/truckpag/repasses', element: <TruckPagRepasses />, menuPath: 'truckpag/repasses' },
           { path: '/garantia/tipo-titulo', element: <TipoTituloGarantia />, menuPath: 'garantia/tipo-titulo' },
           { path: '/garantia/modelos-nota-debito', element: <ModelosNotaDebito />, menuPath: 'garantia/modelos-nota-debito' },
-          { path: '/garantias-daf-andamento', element: <GarantiasDafDashboard key="andamento" variante="andamento" />, menuPath: '/garantias-daf-andamento' },
-          { path: '/garantias-daf', element: <GarantiasDafDashboard key="aberto" />, menuPath: '/garantias-daf' },
+          // Garantias DAF ficou dentro de BI — Garantias DAF (Dashboard | Controle); as rotas antigas redirecionam.
+          { path: '/garantias-daf-andamento', element: <Navigate to="/bi/garantias-daf?aba=oficina&modo=controle" replace /> },
+          { path: '/garantias-daf', element: <Navigate to="/bi/garantias-daf?aba=aberto&modo=controle" replace /> },
           { path: '/garantias-daf/novo', element: <GarantiasDafForm />, menuPath: '/garantias-daf' },
-          { path: '/garantias-daf/:id', element: <GarantiasDafForm />, menuPath: '/garantias-daf' },
-          { path: '/garantias-daf-historicodeos', element: <GarantiasDafFaturadas />, menuPath: '/garantias-daf-historicodeos' },
-          { path: '/garantias-daf-titulos',   element: <GarantiasDafTitulos />,   menuPath: '/garantias-daf-titulos' },
-          { path: '/garantias-daf-manual', element: <GarantiasDafManual />, menuPath: ['/garantias-daf-andamento', '/garantias-daf', '/garantias-daf-historicodeos', '/garantias-daf-titulos'] },
+          { path: '/garantias-daf/:id', element: <GarantiasDafForm />, menuPath: ['/garantias-daf-andamento', '/garantias-daf', '/garantias-daf-historicodeos', '/garantias-daf-titulos'] },
+          { path: '/garantias-daf-historicodeos', element: <Navigate to="/bi/garantias-daf?aba=historico&modo=controle" replace /> },
+          { path: '/garantias-daf-titulos', element: <Navigate to="/bi/garantias-daf?aba=titulos&modo=controle" replace /> },
+          { path: '/garantias-daf-manual', element: <GarantiasDafManual /> },
           { path: '/projetos', element: <ProjetosDashboard />, menuPath: 'projetos' },
           { path: '/projetos/manifestacoes', element: <ManifestacoesPainel />, menuPath: ['projetos/manifestacoes', 'projetos'] },
           { path: '/projetos/lista-tarefas', element: <CalendarioProjetos abaInicial="lista" />, menuPath: 'projetos/lista-tarefas' },
@@ -334,7 +333,8 @@ export default function App() {
           { path: '/controladoria/orcamento', element: <Orcamento />, menuPath: 'controladoria/orcamento' },
           { path: '/integracoes/controladoria', element: <ControladoriaPowerBi />, menuPath: 'integracoes/controladoria' },
           { path: '/organograma', element: <Organograma />, menuPath: 'organograma' },
-          { path: '/bi/garantias-daf', element: <BiGarantiasDaf />, menuPath: 'bi/garantias-daf' },
+          { path: '/bi/auditoria-os-aberto', element: <BiAuditoriaOsAberto />, menuPath: ['auditoria-os-aberto/dashboard', '/auditoria-os-aberto'] },
+          { path: '/bi/garantias-daf', element: <BiGarantiasDaf />, menuPath: ['bi/garantias-daf', '/garantias-daf-andamento', '/garantias-daf', '/garantias-daf-historicodeos', '/garantias-daf-titulos'] },
           { path: '/bi/projetos', element: <BiProjetos />, menuPath: 'bi/projetos' },
           { path: '/bi/possibilidades', element: <BiPossibilidades />, menuPath: 'bi/possibilidades' },
           { path: '/bi/agendamento-servicos', element: <BiAgendamentoServicos />, menuPath: 'bi/agendamento-servicos' },

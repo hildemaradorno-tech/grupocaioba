@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import {
   BookOpen, Settings, Activity, FileText, DollarSign, Receipt, Edit2, ListChecks, Database, Loader2,
-  RefreshCw, Eye, BarChart2, Search, AlertTriangle, FileSignature,
+  RefreshCw, Eye, BarChart2, ClipboardList, Search, AlertTriangle, FileSignature,
 } from 'lucide-react'
 import { apiService } from '../../services/api'
 
@@ -124,6 +124,7 @@ export default function GarantiasDafManual() {
 
   const diasDigitacao = cfg?.dias_digitacao ?? 14
   const diasOficina = cfg?.dias_oficina ?? 14
+  const diasRecusa = cfg?.dias_recusa ?? 15
   const diasSolucaoPadrao = cfg?.dias_solucao ?? 14
   const porTipo = cfg?.dias_solucao_por_tipo ?? {}
 
@@ -183,18 +184,20 @@ export default function GarantiasDafManual() {
           <Secao id="visao-geral" icon={BookOpen} titulo="Visão geral">
             <p>
               O módulo acompanha a garantia DAF de ponta a ponta: da OS ainda aberta na oficina até o recebimento do título.
+              Tudo fica numa tela só, no menu <strong>BI → Garantias DAF</strong>. No topo, os botões <Btn icon={BarChart2}>Dashboard</Btn>{' '}
+              e <Btn icon={ClipboardList}>Controle</Btn> trocam entre os indicadores e as telas de trabalho da aba escolhida (só uma
+              visão é carregada por vez). O Dashboard depende da permissão de BI; o Controle, da permissão de cada aba.
               O caminho natural de uma OS pelas abas é:
             </p>
             <ol className="list-decimal pl-5 space-y-1">
               <li><strong className="text-slate-700">Na Oficina</strong> — OS de garantia ainda abertas (leitura direta do Dealer.net via SharePoint).</li>
               <li><strong className="text-slate-700">com Garantista</strong> — OS fechadas, importadas automaticamente para digitação e acompanhamento da análise DAF.</li>
-              <li><strong className="text-slate-700">Histórico de O.S.</strong> — garantias com Nota Fiscal emitida (status E) ou enviadas à fábrica (status F).</li>
-              <li><strong className="text-slate-700">Garantias DAF a Receber</strong> — títulos a receber da DAF, cruzados com as OS do Histórico.</li>
+              <li><strong className="text-slate-700">Títulos a Receber</strong> — títulos a receber da DAF, cruzados com as OS do sistema.</li>
+              <li><strong className="text-slate-700">Histórico de O.S.</strong> — garantias com Nota Fiscal emitida (status E) ou enviadas à fábrica (status F). Esta aba só tem Controle.</li>
             </ol>
             <p>
               No cabeçalho das telas Na Oficina e com Garantista ficam os botões <Btn icon={RefreshCw}>Atualizar arquivo</Btn>,{' '}
-              <Btn icon={Settings}>Regras do sistema</Btn>, <Btn icon={BookOpen}>Manual de operação</Btn> e, para quem tem acesso ao BI,{' '}
-              <Btn icon={BarChart2}>Ir para Dashboard</Btn>. O ícone <strong>ⓘ</strong> ao lado do título mostra a origem dos dados, e o texto "Modificado em" indica quando o arquivo foi atualizado pela última vez.
+              <Btn icon={Settings}>Regras do sistema</Btn> e <Btn icon={BookOpen}>Manual de operação</Btn>. O ícone <strong>ⓘ</strong> ao lado do título mostra a origem dos dados, e o texto "Arquivo atualizado em" indica quando o arquivo foi atualizado pela última vez.
             </p>
             <p>
               Em todas as abas o painel <Btn icon={Search}>Filtros</Btn> fica sempre aberto, com o botão <strong>Limpar filtros</strong> quando
@@ -222,6 +225,18 @@ export default function GarantiasDafManual() {
                       <strong>Mais de {diasOficina} Dias na Oficina</strong> a partir de <Valor>{exOficina}</Valor>.
                     </p>
                   </div>
+                </Sub>
+                <Sub titulo="Dias para Tratar Recusa">
+                  <p>Valor atual: <Valor>{diasRecusa} dia{diasRecusa === 1 ? '' : 's'}</Valor></p>
+                  <p>
+                    Contado a partir da <strong>Data Final Avaliação</strong> (dia em que a DAF recusou; sem essa data, como no status Z, conta da Data SG).
+                    Controla as linhas do card Recusas, no Controle e no Dashboard:
+                  </p>
+                  <ul className="space-y-1 pl-1">
+                    <li>• <strong>No prazo</strong>: até <Valor>{diasRecusa} dia{diasRecusa === 1 ? '' : 's'}</Valor></li>
+                    <li>• <strong>Fora do prazo</strong>: a partir de <Valor>{diasRecusa + 1} dias</Valor></li>
+                  </ul>
+                  <p>Cada linha mostra quantidade e valor; clicar nela filtra só essas OS.</p>
                 </Sub>
                 <Sub titulo="Dias para Digitação">
                   <p>Valor atual: <Valor>{diasDigitacao} dia{diasDigitacao === 1 ? '' : 's'}</Valor></p>
@@ -309,7 +324,7 @@ export default function GarantiasDafManual() {
                 ['Digitação Atrasada', `status A — "OS fechada > de ${diasDigitacao} dias sem digitar".`],
                 ['Aguardando Aprovação DAF', 'status B, C, G, M, N, P, Q, R, S, T, U, V, W, X ou Y — "Prazo máximo de solução N dias" (o prazo do tipo de OS; se o card tiver tipos com prazos diferentes, mostra a faixa, ex.: 14 a 20 dias). Abaixo da quantidade aparecem "Dentro do prazo" e "Fora do prazo", cada um clicável para filtrar a tabela.'],
                 ['Aprovada', 'status FA — "Realizar Faturamento".'],
-                ['Recusas', 'status FR ou Z — "Recusada pela DAF".'],
+                ['Recusas', `status FR ou Z — "Recusada pela DAF". Abaixo do valor: No prazo (até ${diasRecusa} dias desde a Data Final Avaliação) e Fora do prazo (mais de ${diasRecusa} dias), com quantidade e valor; clicar filtra a tabela.`],
               ]} />
             </Sub>
             <Sub titulo="Alertas">
@@ -388,7 +403,7 @@ export default function GarantiasDafManual() {
               <Itens itens={[
                 ['Pendências', '"Sem OS vinculada" (título cuja OS não está no Histórico de O.S.) e "NF sem envio" (NF não enviada à fábrica e emitida há 4 dias ou mais).'],
                 ['Vencidos / Vence Hoje / A Vencer', 'pela data de vencimento comparada com a data de hoje. Clicar em um card ativa só ele e desativa os outros.'],
-                ['Resumo Geral', 'quantidade de títulos, valor e saldo.'],
+                ['Resumo Geral', 'quantidade de títulos e saldo. Em todos os cards e gráficos (Controle e Dashboard) o valor mostrado é o Saldo — o que ainda falta receber.'],
               ]} />
             </Sub>
             <Sub titulo="Situação de cada título">

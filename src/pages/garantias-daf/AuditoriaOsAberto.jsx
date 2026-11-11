@@ -1,37 +1,13 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react'
+import { createPortal } from 'react-dom'
 import { ClipboardList, Download, ChevronDown, Save, AlertTriangle, Building2, ShieldAlert, Trash2, Calendar, User, Banknote, Search, XCircle, X, Clock, ClipboardCheck, FileText, List, ThumbsUp, CheckCircle2, ShieldCheck, ArrowUpDown, ArrowUp, ArrowDown, Settings, RotateCcw, History, Pencil, Tag, CalendarClock, FileDown, FileSpreadsheet } from 'lucide-react'
 import { apiService } from '../../services/api'
 import { useAuth } from '../../context/AuthContext'
 import AuditoriaSituacoes from '../auditoria/AuditoriaSituacoes'
-
-const fmt = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-const fmtDate = (d) => d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') : '—'
-const primeiroUltimoNome = (nome) => {
-  if (!nome) return '—'
-  const partes = nome.trim().split(/\s+/)
-  if (partes.length <= 2) return nome
-  return `${partes[0]} ${partes[partes.length - 1]}`
-}
-
-const diasOficina = (criacao, auditoria) => {
-  if (!criacao || !auditoria) return null
-  return Math.floor((new Date(auditoria + 'T12:00:00') - new Date(criacao + 'T12:00:00')) / 86400000)
-}
+import { fmt, fmtDate, primeiroUltimoNome, diasOficina, nomeSeletorEmpresa, empresaDaAuditoria, isPendente, isRespondida } from './auditoriaOsRegras'
 
 // Fonte da importação por agrupamento: Caiobá Motos → API MicroWork; Caiobá Trucks → SharePoint
 const fonteMicrowork = (e) => (e?.agrupamento_nome || '').trim().toLowerCase() === 'caiobá motos'
-
-// Nome exibido no seletor de empresa: nome fantasia (ex.: "CAIOBÁ MOTOS - CAMPO GRANDE"); reserva: nome do sistema
-const nomeSeletorEmpresa = (e) => e.empresa_fantasia || e.nome_empresa_sistema || e.nome_empresa || ''
-
-// Pendente ("P" na coluna Auto): 30+ dias na oficina ou Na Oficina = Não
-const isPendente = (row) => {
-  const d = diasOficina(row.data_criacao, row.data_auditoria)
-  return (d !== null && d >= 30) || row.na_oficina === false
-}
-
-// Respondida: Situação, Observação e Dt. Previsão preenchidas (o modal exige os três)
-const isRespondida = (row) => !!(row.situacao_id && (row.observacao || '').trim() && row.data_previsao)
 
 // Status da AUDITORIA (aud_auditorias.status) — toda auditoria passa pelas 3 etapas, em ordem
 const ETAPAS_AUDITORIA = [
@@ -42,7 +18,11 @@ const ETAPAS_AUDITORIA = [
   { id: 'sem_resposta', label: 'Modo Relatório — Sem Resposta', icon: XCircle },
 ]
 
-export default function AuditoriaOsAberto() {
+// embedded: dentro do BI Auditoria O.S. Aberta (visão Controle) — sem título próprio
+// slotFiltros: elemento do cabeçalho do BI onde ficam os seletores Empresa / Data da Auditoria
+// onSlotVisao: ref onde o BI desenha os ícones Dashboard | Controle (ao lado da engrenagem)
+// selecao/onSelecao: empresa e auditoria compartilhadas com o Dashboard ({ empresa, auditoria })
+export default function AuditoriaOsAberto({ embedded = false, slotFiltros = null, onSlotVisao = null, selecao = null, onSelecao = null }) {
   const { user, isAdminEfetivo, hasAction, empresasPermitidasEfetivas } = useAuth()
   // Permissão por ação (matriz de permissões, menu 'auditoria-os-aberto'); Admin tem tudo
   const pode = (acao) => isAdminEfetivo || hasAction('auditoria-os-aberto', acao)
@@ -56,9 +36,11 @@ export default function AuditoriaOsAberto() {
   const [nomePorEmail, setNomePorEmail] = useState(new Map())
 
   // ── Filtro e seleção de auditoria ──
-  const [filtroEmpresaId, setFiltroEmpresaId] = useState('')
+  // Começa com a empresa/auditoria escolhidas no Dashboard (BI) e devolve cada troca, para as duas visões andarem juntas
+  const [filtroEmpresaId, setFiltroEmpresaId] = useState(selecao?.empresa || '')
   const [auditorias, setAuditorias] = useState([])
-  const [auditoriaId, setAuditoriaId] = useState('')
+  const [auditoriaId, setAuditoriaId] = useState(selecao?.empresa ? (selecao.auditoria || '') : '')
+  useEffect(() => { onSelecao?.({ empresa: filtroEmpresaId, auditoria: auditoriaId }) }, [filtroEmpresaId, auditoriaId]) // eslint-disable-line react-hooks/exhaustive-deps
   const [rows, setRows] = useState([])
 
   // ── Estado ──
@@ -169,13 +151,10 @@ export default function AuditoriaOsAberto() {
       apiService.getAuditoriaSituacoes(),
       apiService.getAuditorias(),
     ])
-    // Só empresas com auditoria de OS: agrupamentos Caiobá Trucks e Caiobá Motos, em ordem alfabética
-    const AGRUPAMENTOS_AUDITORIA = ['caiobá trucks', 'caiobá motos']
+    // Só empresas com auditoria de OS (Caiobá Trucks / Caiobá Motos, sem as "visuais"), em ordem alfabética.
     // Empresas liberadas no grupo de acesso (aba Empresas); Admin vê todas. "Efetivas" respeita o modo "ver como usuário".
     const empsFiltradas = (isAdminEfetivo ? emps : emps.filter(e => empresasPermitidasEfetivas.has(e.id)))
-      .filter(e => AGRUPAMENTOS_AUDITORIA.includes((e.agrupamento_nome || '').trim().toLowerCase()))
-      // Empresa "visual" (flag no cadastro de Empresas) não tem OS própria — fica fora do seletor
-      .filter(e => !e.empresa_visual)
+      .filter(empresaDaAuditoria)
       .sort((a, b) => nomeSeletorEmpresa(a).localeCompare(nomeSeletorEmpresa(b), 'pt-BR'))
     setEmpresas(empsFiltradas)
     // Responsável pela auditoria = funcionários ativos cujo cargo está no agrupamento "Gerentes" ou "Gerente Geral"
@@ -222,7 +201,7 @@ export default function AuditoriaOsAberto() {
 
   // Quando empresa muda, limpa auditoria se não pertence a ela
   useEffect(() => {
-    if (!auditoriaId) return
+    if (!auditoriaId || !auditorias.length) return // ainda carregando: não descarta a auditoria vinda do Dashboard
     const ainda = auditoriasFiltradas.find(a => a.id === auditoriaId)
     if (!ainda) setAuditoriaId('')
   }, [auditoriasFiltradas])
@@ -1145,11 +1124,122 @@ export default function AuditoriaOsAberto() {
     },
   ].filter(op => op.visivel)
 
-  return (
-    <div className="p-6 space-y-5 max-w-screen-2xl">
+  // Engrenagem (Inserir / Editar / Reabrir / Exportar / Excluir...) — só as opções liberadas para o grupo
+  const engrenagem = opcoesEngrenagem.length > 0 && (
+      <div className="relative">
+        <button
+          onClick={() => setMenuAcoesAberto(v => !v)}
+          aria-label="Opções da auditoria"
+          title="Opções da auditoria"
+          className={`flex items-center justify-center h-9 w-9 rounded-md border shadow-sm transition-colors ${
+            menuAcoesAberto ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50'
+          }`}
+        >
+          <Settings className={`h-4 w-4 ${importando ? 'animate-spin' : ''}`} />
+        </button>
 
-      {/* CABEÇALHO */}
-      <div className="flex items-center justify-between border-b border-slate-200 pb-4">
+        {menuAcoesAberto && (
+          <>
+            {/* clique fora fecha */}
+            <div className="fixed inset-0 z-30" onClick={() => { setMenuAcoesAberto(false); setSubmenuExportar(false) }} />
+            <div className="absolute right-0 top-full mt-1.5 z-40 w-64 rounded-lg border border-slate-200 bg-white shadow-xl py-1">
+              {opcoesEngrenagem.map(op => (
+                <React.Fragment key={op.id}>
+                <button
+                  disabled={op.disabled}
+                  onClick={() => {
+                    if (op.submenu) { setSubmenuExportar(v => !v); return }
+                    setMenuAcoesAberto(false); setSubmenuExportar(false); op.onClick()
+                  }}
+                  className="w-full flex items-start gap-2.5 px-3 py-2 text-left hover:bg-slate-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                >
+                  <op.icon className={`h-4 w-4 mt-0.5 shrink-0 ${op.cor}`} />
+                  <span className="leading-tight flex-1">
+                    <span className="block text-xs font-semibold text-slate-800">{op.label}</span>
+                    <span className="block text-[10px] text-slate-400 mt-0.5">{op.desc}</span>
+                  </span>
+                  {op.submenu && <ChevronDown className={`h-3.5 w-3.5 mt-0.5 shrink-0 text-slate-400 transition-transform ${submenuExportar && !op.disabled ? 'rotate-180' : ''}`} />}
+                </button>
+                {op.submenu && submenuExportar && !op.disabled && (
+                  <div className="ml-9 mr-3 mb-1.5 flex gap-1.5">
+                    <button
+                      onClick={() => { setMenuAcoesAberto(false); setSubmenuExportar(false); handleExportar('pdf') }}
+                      className="flex-1 flex items-center justify-center gap-1.5 h-7 rounded-md border border-red-200 bg-red-50 text-red-700 text-[11px] font-bold hover:bg-red-100 transition-colors"
+                    >
+                      <FileText className="h-3.5 w-3.5" /> PDF
+                    </button>
+                    <button
+                      onClick={() => { setMenuAcoesAberto(false); setSubmenuExportar(false); handleExportar('excel') }}
+                      className="flex-1 flex items-center justify-center gap-1.5 h-7 rounded-md border border-green-200 bg-green-50 text-green-700 text-[11px] font-bold hover:bg-green-100 transition-colors"
+                    >
+                      <FileSpreadsheet className="h-3.5 w-3.5" /> Excel
+                    </button>
+                  </div>
+                )}
+                </React.Fragment>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+  )
+
+  // Seletores Empresa / Data da Auditoria — dentro do BI vão para o cabeçalho (slotFiltros), com rótulo branco
+  const corRotulo = slotFiltros ? 'text-white' : 'text-slate-400'
+  const filtrosSelecao = (
+    <>
+    <div className="flex flex-col gap-1 w-[240px]">
+      <label className={`h-4 text-[10px] font-bold ${corRotulo} uppercase flex items-center gap-1`}>
+        <Building2 className="h-3 w-3" /> Empresa
+      </label>
+      <div className="relative">
+        <select
+          value={filtroEmpresaId}
+          onChange={e => {
+            // Já seleciona a última auditoria realizada da empresa; sem auditoria → "Selecione uma auditoria"
+            setFiltroEmpresaId(e.target.value)
+            setAuditoriaId(e.target.value ? (auditoriasDaEmpresa(e.target.value)[0]?.id || '') : '')
+          }}
+          className="w-full h-9 text-xs px-2 pr-8 border border-slate-300 rounded-md focus:ring-2 focus:ring-indigo-500/20 bg-white appearance-none font-semibold"
+        >
+          <option value="">— Selecione uma empresa —</option>
+          {empresas.map(e => (
+            <option key={e.id} value={e.id}>{nomeSeletorEmpresa(e)}</option>
+          ))}
+        </select>
+        <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+      </div>
+    </div>
+
+    {/* Auditoria */}
+    <div className="flex flex-col gap-1 w-[235px]">{/* cabe "dd/mm/aaaa — 999 OS · Em andamento" */}
+      <label className={`h-4 text-[10px] font-bold ${corRotulo} uppercase flex items-center`}>Data da Auditoria</label>
+      <div className="relative">
+        <select
+          value={auditoriaId}
+          onChange={e => setAuditoriaId(e.target.value)}
+          disabled={!filtroEmpresaId}
+          className="w-full h-9 text-xs px-2 pr-8 border border-slate-300 rounded-md focus:ring-2 focus:ring-indigo-500/20 bg-white appearance-none disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <option value="">— Selecione uma auditoria —</option>
+          {auditoriasFiltradas.map(a => (
+            <option key={a.id} value={a.id}>
+              {fmtDate(a.data_auditoria)} — {a.total_os} OS · {['respondido_total', 'respondido_parcial', 'sem_resposta'].includes(a.status) ? 'Finalizada' : 'Em andamento'}
+            </option>
+          ))}
+        </select>
+        <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+      </div>
+    </div>
+    </>
+  )
+
+  return (
+    <div className={embedded ? 'space-y-5' : 'p-6 space-y-5 max-w-screen-2xl'}>
+
+      {/* CABEÇALHO — dentro do BI (embedded) o título fica no cabeçalho do BI; aqui sobram os seletores e a engrenagem */}
+      <div className={embedded ? 'flex items-center justify-end' : 'flex items-center justify-between border-b border-slate-200 pb-4'}>
+        {!embedded && (
         <div>
           <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
             <ClipboardList className="h-5 w-5 text-indigo-600" />
@@ -1159,111 +1249,16 @@ export default function AuditoriaOsAberto() {
             Selecione a empresa, importe as OS do SharePoint e acompanhe por auditoria.
           </p>
         </div>
+        )}
         <div className="flex items-end gap-3 flex-wrap justify-end">
-          {/* Empresa */}
-          <div className="flex flex-col gap-1 w-[240px]">
-            <label className="h-4 text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1">
-              <Building2 className="h-3 w-3" /> Empresa
-            </label>
-            <div className="relative">
-              <select
-                value={filtroEmpresaId}
-                onChange={e => {
-                  // Já seleciona a última auditoria realizada da empresa; sem auditoria → "Selecione uma auditoria"
-                  setFiltroEmpresaId(e.target.value)
-                  setAuditoriaId(e.target.value ? (auditoriasDaEmpresa(e.target.value)[0]?.id || '') : '')
-                }}
-                className="w-full h-9 text-xs px-2 pr-8 border border-slate-300 rounded-md focus:ring-2 focus:ring-indigo-500/20 bg-white appearance-none font-semibold"
-              >
-                <option value="">— Selecione uma empresa —</option>
-                {empresas.map(e => (
-                  <option key={e.id} value={e.id}>{nomeSeletorEmpresa(e)}</option>
-                ))}
-              </select>
-              <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
-            </div>
-          </div>
+          {/* Empresa / Data da Auditoria: no cabeçalho do BI quando embutido */}
+          {!slotFiltros && filtrosSelecao}
+          {/* No BI a engrenagem vai junto, ao lado da Data da Auditoria */}
+          {slotFiltros && createPortal(<div className="flex items-end gap-3">{filtrosSelecao}{engrenagem}</div>, slotFiltros)}
 
-          {/* Auditoria */}
-          <div className="flex flex-col gap-1 w-[285px]">{/* largo o bastante para "dd/mm/aaaa — 999 OS · Respondido Parcial" */}
-            <label className="h-4 text-[10px] font-bold text-slate-400 uppercase flex items-center">Data da Auditoria</label>
-            <div className="relative">
-              <select
-                value={auditoriaId}
-                onChange={e => setAuditoriaId(e.target.value)}
-                disabled={!filtroEmpresaId}
-                className="w-full h-9 text-xs px-2 pr-8 border border-slate-300 rounded-md focus:ring-2 focus:ring-indigo-500/20 bg-white appearance-none disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <option value="">— Selecione uma auditoria —</option>
-                {auditoriasFiltradas.map(a => (
-                  <option key={a.id} value={a.id}>
-                    {fmtDate(a.data_auditoria)} — {a.total_os} OS · {['respondido_total', 'respondido_parcial', 'sem_resposta'].includes(a.status) ? 'Finalizada' : 'Em andamento'}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
-            </div>
-          </div>
-
-          {/* Engrenagem: Inserir / Reabrir / Excluir auditoria */}
-          {opcoesEngrenagem.length > 0 && (
-          <div className="relative">
-            <button
-              onClick={() => setMenuAcoesAberto(v => !v)}
-              aria-label="Opções da auditoria"
-              title="Opções da auditoria"
-              className={`flex items-center justify-center h-9 w-9 rounded-md border shadow-sm transition-colors ${
-                menuAcoesAberto ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50'
-              }`}
-            >
-              <Settings className={`h-4 w-4 ${importando ? 'animate-spin' : ''}`} />
-            </button>
-
-            {menuAcoesAberto && (
-              <>
-                {/* clique fora fecha */}
-                <div className="fixed inset-0 z-30" onClick={() => { setMenuAcoesAberto(false); setSubmenuExportar(false) }} />
-                <div className="absolute right-0 top-full mt-1.5 z-40 w-64 rounded-lg border border-slate-200 bg-white shadow-xl py-1">
-                  {opcoesEngrenagem.map(op => (
-                    <React.Fragment key={op.id}>
-                    <button
-                      disabled={op.disabled}
-                      onClick={() => {
-                        if (op.submenu) { setSubmenuExportar(v => !v); return }
-                        setMenuAcoesAberto(false); setSubmenuExportar(false); op.onClick()
-                      }}
-                      className="w-full flex items-start gap-2.5 px-3 py-2 text-left hover:bg-slate-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
-                    >
-                      <op.icon className={`h-4 w-4 mt-0.5 shrink-0 ${op.cor}`} />
-                      <span className="leading-tight flex-1">
-                        <span className="block text-xs font-semibold text-slate-800">{op.label}</span>
-                        <span className="block text-[10px] text-slate-400 mt-0.5">{op.desc}</span>
-                      </span>
-                      {op.submenu && <ChevronDown className={`h-3.5 w-3.5 mt-0.5 shrink-0 text-slate-400 transition-transform ${submenuExportar && !op.disabled ? 'rotate-180' : ''}`} />}
-                    </button>
-                    {op.submenu && submenuExportar && !op.disabled && (
-                      <div className="ml-9 mr-3 mb-1.5 flex gap-1.5">
-                        <button
-                          onClick={() => { setMenuAcoesAberto(false); setSubmenuExportar(false); handleExportar('pdf') }}
-                          className="flex-1 flex items-center justify-center gap-1.5 h-7 rounded-md border border-red-200 bg-red-50 text-red-700 text-[11px] font-bold hover:bg-red-100 transition-colors"
-                        >
-                          <FileText className="h-3.5 w-3.5" /> PDF
-                        </button>
-                        <button
-                          onClick={() => { setMenuAcoesAberto(false); setSubmenuExportar(false); handleExportar('excel') }}
-                          className="flex-1 flex items-center justify-center gap-1.5 h-7 rounded-md border border-green-200 bg-green-50 text-green-700 text-[11px] font-bold hover:bg-green-100 transition-colors"
-                        >
-                          <FileSpreadsheet className="h-3.5 w-3.5" /> Excel
-                        </button>
-                      </div>
-                    )}
-                    </React.Fragment>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
-          )}
+          {!slotFiltros && engrenagem}
+          {/* Ícones Dashboard | Controle do BI (desenhados pela página do BI) */}
+          {onSlotVisao && <div ref={onSlotVisao} />}
         </div>
       </div>
 

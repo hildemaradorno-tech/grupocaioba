@@ -1,17 +1,18 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react'
+import { createPortal } from 'react-dom'
 import { useSessionState } from '../../hooks/useSessionState'
 import { useNavigate } from 'react-router-dom'
 import {
   Search, Eye, ShieldAlert,
   RotateCcw, Download,
-  XCircle, Info,
+  XCircle, RefreshCw, Settings, BookOpen,
 } from 'lucide-react'
 import { apiService } from '../../services/api'
 import MenuEngrenagem from '../../components/MenuEngrenagem'
 import { useAuth } from '../../context/AuthContext'
 import GarantiasDafImportFaturadosModal from './GarantiasDafImportFaturadosModal'
-import GarantiasNav from './GarantiasNav'
 import { useEmpresasGarantias } from '../../hooks/useEmpresasGarantias'
+import RegrasSistemaModal from './RegrasSistemaModal'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
 
@@ -45,12 +46,17 @@ const fmt = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', c
 
 const FILTROS_VAZIOS = { numero_os: '', chassi: '', cliente: '', numero_nf: '', data_inicio: '', data_fim: '' }
 
-export default function GarantiasDafFaturadas() {
+export default function GarantiasDafFaturadas({ slotAcoes } = {}) {
+  // slotAcoes: espaço na linha das abas de Garantias DAF onde ficam os botões desta tela.
+  const naLinhaDasAbas = (el) => (slotAcoes ? createPortal(el, slotAcoes) : el)
   const navigate = useNavigate()
-  const { hasActionOrDefault } = useAuth()
+  const { user, hasActionOrDefault } = useAuth()
   const { filtrosEmpresa } = useEmpresasGarantias()
   const canExcluirOS = hasActionOrDefault('garantias-daf-historicodeos', 'excluir')
   const canImportar = hasActionOrDefault('garantias-daf-historicodeos', 'importar')
+  // Engrenagem: mesma permissão "Regras do Sistema" das abas Na Oficina / Com Garantista
+  const canRegras = hasActionOrDefault('garantias-daf', 'regras') || hasActionOrDefault('garantias-daf-andamento', 'regras')
+  const [modalRegras, setModalRegras] = useState(false)
 
   const [dados, setDados] = useState([])
   const [dadosTodos, setDadosTodos] = useState([])
@@ -241,32 +247,37 @@ export default function GarantiasDafFaturadas() {
   )
 
   return (
-    <div className="p-6 space-y-5 max-w-screen-2xl">
+    <div className="space-y-5 max-w-screen-2xl">
 
       {/* CABEÇALHO */}
-      <div className="space-y-3 border-b border-slate-200 pb-4">
-        <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-1.5">
-            Histórico de O.S.
-            <span className="relative group cursor-help">
-              <Info className="h-3.5 w-3.5 text-slate-400" />
-              <span className="absolute top-full left-0 mt-2 w-96 text-[10px] text-white bg-slate-700 rounded px-2 py-1.5 leading-relaxed opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 normal-case font-normal tracking-normal space-y-1">
-                <div>Fonte de dados: Relatório extraído do sistema Dealer.net através do sistema Robert Automation</div>
-                <div>RPA: Processo 4: Extração Relatório Auditoria de O.S.</div>
-                <div>Nome do Arquivo: ROF017_FATURAMENTOPOROS.xlsx</div>
-                <div>Pasta SharePoint: /Banco de Dados - DAF - Pós-Vendas/Relatório Geral OS</div>
-                <div className="pt-1 border-t border-white/20">
-                  Como importar: clique em "Importar OS", informe o período (ou o Nº da OS) e busque. Selecione as OS desejadas, preencha Empresa, Tipo de O.S. e Consultor para o lote e confirme a importação.
-                </div>
-              </span>
-            </span>
-          </h1>
-          <p className="text-xs text-slate-500">
-            Ordens de serviço com nota fiscal emitida (Status E).
-          </p>
-        </div>
+      {naLinhaDasAbas(
         <div className="flex items-center gap-2">
+        <div className="flex items-center justify-end">
+        <div className="flex items-center gap-3">
+            <button
+              onClick={() => { loadData(filtros); carregarVinculoTitulos() }}
+              disabled={loading}
+              title="Atualizar"
+              className="flex items-center justify-center p-1.5 rounded-md bg-orange-500 hover:bg-orange-600 text-white shadow-sm transition-colors disabled:opacity-50"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+            </button>
+            {canRegras && (
+              <button
+                onClick={() => setModalRegras(true)}
+                title="Regras do sistema"
+                className="flex items-center justify-center p-1.5 rounded-md bg-orange-500 hover:bg-orange-600 text-white shadow-sm transition-colors"
+              >
+                <Settings className="h-3.5 w-3.5" />
+              </button>
+            )}
+            <button
+              onClick={() => window.open('/garantias-daf-manual', '_blank')}
+              title="Manual de operação"
+              className="flex items-center justify-center p-1.5 rounded-md bg-orange-500 hover:bg-orange-600 text-white shadow-sm transition-colors"
+            >
+              <BookOpen className="h-3.5 w-3.5" />
+            </button>
           {canExcluirOS && selecionados.size > 0 && (
             <button
               onClick={() => setModalExcluir(true)}
@@ -277,8 +288,8 @@ export default function GarantiasDafFaturadas() {
           )}
         </div>
         </div>
-        <GarantiasNav />
       </div>
+      )}
 
       {/* ── FILTROS AVANÇADOS ── */}
       <div className="bg-white rounded-lg border border-slate-200 shadow-sm">
@@ -476,6 +487,7 @@ export default function GarantiasDafFaturadas() {
           </div>
         </div>
       )}
+      {modalRegras && <RegrasSistemaModal onClose={() => setModalRegras(false)} usuario={user?.email} />}
     </div>
   )
 }

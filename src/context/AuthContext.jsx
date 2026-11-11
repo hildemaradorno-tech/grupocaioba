@@ -62,6 +62,9 @@ export function AuthProvider({ children }) {
   const [impersonandoPermissions, setImpersonandoPermissions] = useState(new Set())
   const [impersonandoAcoes, setImpersonandoAcoes] = useState(new Set())
   const [projetosDeptoModo, setProjetosDeptoModo] = useState(null) // null | 'TODOS' | 'INDIVIDUAL'
+  // Visão que abre primeiro em Garantias DAF (grupos_acesso.garantias_daf_default_view: 'dashboard' | 'tabela' = Controle)
+  const [garantiasVisaoPadrao, setGarantiasVisaoPadrao] = useState(null)
+  const [impersonandoGarantiasVisaoPadrao, setImpersonandoGarantiasVisaoPadrao] = useState(null)
   const [impersonandoIsAdmin, setImpersonandoIsAdmin] = useState(false)
   const [impersonandoEmpresas, setImpersonandoEmpresas] = useState(new Set())
   const [impersonandoDeptos, setImpersonandoDeptos] = useState(new Set())
@@ -132,7 +135,7 @@ export function AuthProvider({ children }) {
       }
 
       const [{ data: grupo, error: e2 },{ data: perms, error: e3 }, { data: empPerms }, { data: acoes }, { data: deptoPerms }, { data: deptoAuditPerms }, { data: empAuditPerms }] = await Promise.all([
-        supabase.from('grupos_acesso').select('is_admin, auditoria_depto_modo, projetos_depto_modo, auditoria_empresa_modo').eq('id', perfil.grupo_id).single(),
+        supabase.from('grupos_acesso').select('is_admin, auditoria_depto_modo, projetos_depto_modo, auditoria_empresa_modo, garantias_daf_default_view').eq('id', perfil.grupo_id).single(),
         supabase.from('permissoes_grupo').select('menu_path').eq('grupo_id', perfil.grupo_id),
         supabase.from('permissoes_empresa_grupo').select('empresa_id').eq('grupo_id', perfil.grupo_id),
         supabase.from('permissoes_grupo_acoes').select('menu_path, acao').eq('grupo_id', perfil.grupo_id),
@@ -172,6 +175,7 @@ export function AuthProvider({ children }) {
       setPermissions(new Set((perms || []).map(p => p.menu_path)))
       setEmpresasPermitidas(new Set((empPerms || []).map(p => p.empresa_id)))
       setProjetosDeptoModo(grupo?.projetos_depto_modo || null)
+      setGarantiasVisaoPadrao(grupo?.garantias_daf_default_view || null)
       setDepartamentosPermitidos(grupo?.projetos_depto_modo === 'INDIVIDUAL' ? new Set((deptoPerms || []).map(p => p.departamento_nome)) : new Set())
       setDepartamentosPermitidosAuditoria(grupo?.auditoria_depto_modo === 'INDIVIDUAL' ? new Set((deptoAuditPerms || []).map(p => p.departamento_nome)) : new Set())
       setEmpresasPermitidasAuditoria(grupo?.auditoria_empresa_modo === 'INDIVIDUAL' ? new Set((empAuditPerms || []).map(p => p.empresa_id)) : new Set())
@@ -272,7 +276,7 @@ export function AuthProvider({ children }) {
       }
 
       const [{ data: grupo }, { data: perms }, { data: empPerms }, { data: acoes }, { data: deptoPerms }, { data: deptoAuditPerms }, { data: empAuditPerms }] = await Promise.all([
-        supabase.from('grupos_acesso').select('is_admin, auditoria_depto_modo, projetos_depto_modo, auditoria_empresa_modo').eq('id', perfil.grupo_id).single(),
+        supabase.from('grupos_acesso').select('is_admin, auditoria_depto_modo, projetos_depto_modo, auditoria_empresa_modo, garantias_daf_default_view').eq('id', perfil.grupo_id).single(),
         supabase.from('permissoes_grupo').select('menu_path').eq('grupo_id', perfil.grupo_id),
         supabase.from('permissoes_empresa_grupo').select('empresa_id').eq('grupo_id', perfil.grupo_id),
         supabase.from('permissoes_grupo_acoes').select('menu_path, acao').eq('grupo_id', perfil.grupo_id),
@@ -285,6 +289,7 @@ export function AuthProvider({ children }) {
       setImpersonandoPermissions(new Set((perms || []).map(p => p.menu_path)))
       setImpersonandoEmpresas(new Set((empPerms || []).map(p => p.empresa_id)))
       setImpersonandoProjetosDeptoModo(grupo?.projetos_depto_modo || null)
+      setImpersonandoGarantiasVisaoPadrao(grupo?.garantias_daf_default_view || null)
       setImpersonandoDeptos(grupo?.projetos_depto_modo === 'INDIVIDUAL' ? new Set((deptoPerms || []).map(p => p.departamento_nome)) : new Set())
       setImpersonandoDeptosAuditoria(grupo?.auditoria_depto_modo === 'INDIVIDUAL' ? new Set((deptoAuditPerms || []).map(p => p.departamento_nome)) : new Set())
       setImpersonandoEmpresasAuditoria(grupo?.auditoria_empresa_modo === 'INDIVIDUAL' ? new Set((empAuditPerms || []).map(p => p.empresa_id)) : new Set())
@@ -409,6 +414,7 @@ export function AuthProvider({ children }) {
   )
   // Modo de acesso por departamento para Gestão de Projetos (null | 'TODOS' | 'INDIVIDUAL')
   const projetosDeptoModoEfetivo = isAdminEfetivo ? null : (impersonando ? impersonandoProjetosDeptoModo : projetosDeptoModo)
+  const garantiasVisaoPadraoEfetiva = (impersonando ? impersonandoGarantiasVisaoPadrao : garantiasVisaoPadrao) === 'tabela' ? 'controle' : 'dashboard'
   // Mesma lógica, mas pro escopo exclusivo de Auditoria Externa (tabela separada).
   const departamentosPermitidosAuditoriaEfetivos = useMemo(
     () => isAdminEfetivo ? new Set() : (impersonando ? impersonandoDeptosAuditoria : departamentosPermitidosAuditoria),
@@ -458,7 +464,7 @@ export function AuthProvider({ children }) {
       login, logout,
       hasPermission, hasAction, hasActionOrDefault, hasEmpresaPermission,
       isAdmin, isAdminEfetivo, empresasPermitidas, empresasPermitidasEfetivas,
-      departamentosPermitidos, departamentosPermitidosEfetivos, projetosDeptoModoEfetivo,
+      departamentosPermitidos, departamentosPermitidosEfetivos, projetosDeptoModoEfetivo, garantiasVisaoPadraoEfetiva,
       departamentosPermitidosAuditoriaEfetivos, empresasPermitidasAuditoriaEfetivas,
       comissaoEscopoEfetivo, comissaoNivelSetorEfetivo,
       trocarSenha, marcarSenhaTrocada,

@@ -13,18 +13,19 @@ const PALETA_CATEGORICA = ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181'
 const COR_OUTROS = '#898781'
 
 // Cartão KPI em degradê — nível "empresa/total" da narrativa (o primeiro que o gestor vê).
-function StatTileGradient({ icon: Icon, label, value, sub, rodape, gradiente }) {
+function StatTileGradient({ icon: Icon, label, value, sub, gradiente }) {
   return (
-    <div className={`relative overflow-hidden rounded-2xl p-4 shadow-lg bg-gradient-to-br ${gradiente}`}>
+    <div className={`h-full relative overflow-hidden rounded-2xl p-4 shadow-lg bg-gradient-to-br ${gradiente} flex flex-col justify-between gap-3`}>
       <div className="flex items-start justify-between gap-2">
-        <p className="text-[11px] font-bold uppercase tracking-wide text-white/80">{label}</p>
+        <p className="text-[9px] font-bold uppercase tracking-wide leading-tight text-white/80">{label}</p>
         <div className="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center shrink-0">
           <Icon className="h-3.5 w-3.5 text-white" />
         </div>
       </div>
-      <p className="text-2xl font-bold text-white mt-1 leading-none">{value}</p>
-      <p className="text-xs text-white/70 mt-1">{sub}</p>
-      {rodape != null && <p className="text-sm font-bold text-white mt-2 pt-2 border-t border-white/20">{rodape}</p>}
+      <div>
+        <p className="text-base font-bold text-white leading-none whitespace-nowrap">{value}</p>
+        <p className="text-[11px] font-bold text-white/80 mt-2 pt-1.5 border-t border-white/20">{sub}</p>
+      </div>
     </div>
   )
 }
@@ -512,26 +513,23 @@ export default function GarantiasOficinaDashboard({ onLastModified }) {
         <StatTileGradient
           icon={Wrench}
           label="Total na Oficina"
-          value={oficinaStats.total}
-          sub="OS em andamento"
-          rodape={fmtMoeda(oficinaStats.valorTotal)}
+          value={fmtMoeda(oficinaStats.valorTotal)}
+          sub={`Qtde O.S. ${oficinaStats.total}`}
           gradiente="from-violet-600 to-purple-800"
+        />
+        <StatTileGradient
+          icon={oficinaStats.mais14 > 0 ? AlertTriangle : CheckCircle2}
+          label={`Mais de ${diasOficina} dias`}
+          value={fmtMoeda(oficinaStats.valorMais14)}
+          sub={`Qtde O.S. ${oficinaStats.mais14}`}
+          gradiente={oficinaStats.mais14 > 0 ? 'from-orange-500 to-red-600' : 'from-teal-500 to-emerald-700'}
         />
         <StatTileGradient
           icon={Clock}
           label="Tempo Médio na Oficina"
           value={`${oficinaStats.tempoMedio}d`}
           sub="desde a criação da OS"
-          rodape="—"
           gradiente="from-blue-600 to-indigo-800"
-        />
-        <StatTileGradient
-          icon={oficinaStats.mais14 > 0 ? AlertTriangle : CheckCircle2}
-          label={`Mais de ${diasOficina} dias`}
-          value={oficinaStats.mais14}
-          sub={oficinaStats.total > 0 ? `${Math.round((oficinaStats.mais14 / oficinaStats.total) * 100)}% do total` : '—'}
-          rodape={fmtMoeda(oficinaStats.valorMais14)}
-          gradiente={oficinaStats.mais14 > 0 ? 'from-orange-500 to-red-600' : 'from-teal-500 to-emerald-700'}
         />
       </div>
 

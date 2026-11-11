@@ -94,7 +94,7 @@ export const MOCK_BLOCO3_POS_VENDA = [
     cor: 'teal',
     kpis: [
       { id: 11, indicador: 'Digitação Atrasada',                   orientacao: '<', metrica: 'un',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
-      { id: 12, indicador: 'Aguardando Aprovação DAF fora do prazo', orientacao: '<', metrica: 'un', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      { id: 12, indicador: 'Aguardando Aprovação DAF (fora do prazo)', orientacao: '<', metrica: 'un', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
       { id: 13, indicador: 'Taxa de Agendamento (Por Campanhas)',              orientacao: '>', metrica: '%', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
       { id: 14, indicador: 'Taxa de Agendamento Ativo (Por Data Agendamento)', orientacao: '>', metrica: '%', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
       { id: 15, indicador: 'Taxa de No-show (Por Data Agendamento)',           orientacao: '<', metrica: '%', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
@@ -232,7 +232,10 @@ export const MOCK_BLOCO3_SERVICOS = [
     cor: 'rose',
     kpis: [
       { id: 1, indicador: 'Digitação Atrasada',                     orientacao: '<', metrica: 'un', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
-      { id: 2, indicador: 'Aguardando Aprovação DAF fora do prazo', orientacao: '<', metrica: 'un', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      { id: 2, indicador: 'Aguardando Aprovação DAF (fora do prazo)', orientacao: '<', metrica: 'un', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      { id: 3, indicador: 'Aprovada sem Faturamento',               orientacao: '<', metrica: 'un', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      { id: 4, indicador: 'Recusadas sem Solução (fora do prazo)',    orientacao: '<', metrica: 'un', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      { id: 5, indicador: 'Garantias a Receber Vencidas',           orientacao: '<', metrica: 'un', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
     ],
   },
   {

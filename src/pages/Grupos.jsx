@@ -13,7 +13,7 @@ const GESTAO_PROJETOS_KEYS = ALL_LEAF_KEYS.filter(k => k === 'projetos' || k.sta
 
 // ── Tree checkbox node ────────────────────────────────────────────────────────
 
-function TreeNode({ node, selected, onToggle, disabled, defaultOpen = false, selectedAcoes, onToggleAcao }) {
+function TreeNode({ node, selected, onToggle, disabled, defaultOpen = false, selectedAcoes, onToggleAcao, renderExtra }) {
   const isLeaf = !node.children
   const checkRef = useRef(null)
   const [open, setOpen] = useState(defaultOpen)
@@ -119,8 +119,9 @@ function TreeNode({ node, selected, onToggle, disabled, defaultOpen = false, sel
       </div>
       {open && (
         <div className="ml-6 pl-2 border-l border-slate-200 mt-0.5 mb-1">
+          {renderExtra?.(node)}
           {node.children.map(child => (
-            <TreeNode key={child.key} node={child} selected={selected} onToggle={onToggle} disabled={disabled} defaultOpen={defaultOpen} selectedAcoes={selectedAcoes} onToggleAcao={onToggleAcao} />
+            <TreeNode key={child.key} node={child} selected={selected} onToggle={onToggle} disabled={disabled} defaultOpen={defaultOpen} selectedAcoes={selectedAcoes} onToggleAcao={onToggleAcao} renderExtra={renderExtra} />
           ))}
         </div>
       )}
@@ -281,6 +282,7 @@ export default function Grupos() {
   const [empresaExpandido, setEmpresaExpandido] = useState(false)
   const [selectedDeptosProjetos, setSelectedDeptosProjetos] = useState(new Set())
   const [projetosDeptoModo, setProjetosDeptoModo] = useState('TODOS')
+  const [garantiasVisao, setGarantiasVisao] = useState('tabela') // 'dashboard' | 'tabela' (= Controle)
   const [projDepartamentos, setProjDepartamentos] = useState([])
   const [selectedDeptosAuditoria, setSelectedDeptosAuditoria] = useState(new Set())
   const [auditoriaDeptoModo, setAuditoriaDeptoModo] = useState('TODOS')
@@ -470,7 +472,7 @@ export default function Grupos() {
     setTreeDefaultOpen(false)
     setTreeKey(k => k + 1)
     try {
-      const [paths, acoes, empIds, emps, deptosDim, setoresDim, comissaoEscopoRaw, deptosProj, projDeptos, deptosAudit, projEmps, empresasAudit] = await Promise.all([
+      const [paths, acoes, empIds, emps, deptosDim, setoresDim, comissaoEscopoRaw, deptosProj, projDeptos, deptosAudit, projEmps, empresasAudit, visaoGarantias] = await Promise.all([
         apiService.getPermissoesGrupo(grupo.id),
         apiService.getPermissoesGrupoAcoes(grupo.id),
         apiService.getPermissoesEmpresasGrupo(grupo.id),
@@ -483,6 +485,7 @@ export default function Grupos() {
         apiService.getPermissoesDeptoAuditoriaPorGrupo(grupo.id),
         apiService.getProjEmpresas(),
         apiService.getPermissoesEmpresaAuditoriaPorGrupo(grupo.id),
+        apiService.getVisaoGarantiasGrupo(grupo.id),
       ])
       setSelectedPaths(new Set(paths))
       setSelectedAcoes(new Set(acoes.map(a => `${a.menu_path}|${a.acao}`)))
@@ -491,6 +494,7 @@ export default function Grupos() {
       setEmpresaModoIndividual(empIds.length !== empresasAtivas.length)
       setEmpresaExpandido(false)
       setProjetosDeptoModo(deptosProj.modo)
+      setGarantiasVisao(visaoGarantias)
       setSelectedDeptosProjetos(new Set(deptosProj.valores))
       setProjDepartamentos((projDeptos || []).filter(d => d.ativo !== false).sort((a, b) => (a.nome || '').localeCompare(b.nome || '', 'pt-BR')))
       setAuditoriaDeptoModo(deptosAudit.modo)
@@ -516,6 +520,7 @@ export default function Grupos() {
       setEmpresaExpandido(false)
       setSelectedDeptosProjetos(new Set())
       setProjetosDeptoModo('TODOS')
+      setGarantiasVisao('tabela')
       setSelectedDeptosAuditoria(new Set())
       setAuditoriaDeptoModo('TODOS')
       setSelectedEmpresasAuditoria(new Set())
@@ -619,6 +624,25 @@ export default function Grupos() {
     setComissaoSetorNivel(prev => ({ ...prev, [setorId]: { ...prev[setorId], responsavel: !prev[setorId]?.responsavel } }))
   }
 
+  // Dentro do nó "Garantias DAF" da árvore: qual visão abre primeiro (Dashboard ou Controle)
+  const renderExtraArvore = (node) => {
+    if (node.key !== '_garantias-daf') return null
+    return (
+      <div className="flex items-center gap-3 py-1 px-2 mb-0.5 rounded bg-violet-50 border border-violet-100">
+        <span className="text-xs font-semibold text-violet-700" title="Qual visão aparece primeiro quando o usuário abre Garantias DAF. Sem permissão para a escolhida, abre na outra.">
+          Visão inicial
+        </span>
+        {[['dashboard', 'Dashboard'], ['tabela', 'Controle']].map(([valor, label]) => (
+          <label key={valor} className="flex items-center gap-1.5 text-xs text-slate-700 cursor-pointer select-none">
+            <input type="radio" name="garantias-visao" value={valor} checked={garantiasVisao === valor}
+              onChange={() => setGarantiasVisao(valor)} className="accent-violet-600" />
+            {label}
+          </label>
+        ))}
+      </div>
+    )
+  }
+
   const handleSavePerms = async () => {
     setSavingPerms(true)
     setSaveSuccess(false)
@@ -634,6 +658,7 @@ export default function Grupos() {
         })),
         apiService.setPermissoesEmpresasGrupo(editingId, isAdmin ? [] : [...selectedEmpresas]),
         apiService.setPermissoesDeptoPorGrupo(editingId, isAdmin ? 'TODOS' : projetosDeptoModo, isAdmin ? [] : [...selectedDeptosProjetos]),
+        apiService.setVisaoGarantiasGrupo(editingId, garantiasVisao),
         apiService.setPermissoesDeptoAuditoriaPorGrupo(editingId, isAdmin ? 'TODOS' : auditoriaDeptoModo, isAdmin ? [] : [...selectedDeptosAuditoria]),
         apiService.setPermissoesEmpresaAuditoriaPorGrupo(editingId, isAdmin ? 'TODOS' : auditoriaEmpresaModo, isAdmin ? [] : [...selectedEmpresasAuditoria]),
         apiService.setPermissoesComissaoGrupo(editingId, Object.fromEntries(DIMENSOES_COMISSAO.map(dim => [
@@ -852,6 +877,7 @@ export default function Grupos() {
                     defaultOpen={treeDefaultOpen}
                     selectedAcoes={selectedAcoes}
                     onToggleAcao={handleToggleAcao}
+                    renderExtra={renderExtraArvore}
                   />
                 ))}
               </div>

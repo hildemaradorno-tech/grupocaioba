@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo, Fragment } from 'react'
 import { Loader2, ChevronRight, ChevronDown, FileText, Clock, CheckCircle2, XCircle, AlertTriangle, BarChart2, Eye, X } from 'lucide-react'
 import { apiService } from '../../services/api'
 import { useEmpresasGarantias } from '../../hooks/useEmpresasGarantias'
+import { situacaoPrazoRecusa } from './prazoRecusa'
 
 const fmtMoeda = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const fmtData  = (s) => { if (!s) return ''; try { return new Date(String(s).slice(0, 10) + 'T12:00:00').toLocaleDateString('pt-BR') } catch { return s } }
@@ -276,18 +277,33 @@ function statusDetalhado(g, diasDigitacao) {
 }
 
 // Cartão KPI em degradê — nível "empresa/total" (o primeiro contato do gestor com a tela).
-function StatTileGradient({ icon: Icon, label, value, sub, gradiente }) {
+// rodapeRows: linhas abaixo da quantidade (ex.: Recusas no prazo / fora do prazo), clicáveis.
+function StatTileGradient({ icon: Icon, label, value, sub, gradiente, rodapeRows }) {
   return (
     <div className={`h-full text-left relative overflow-hidden rounded-2xl p-4 shadow-lg transition-transform bg-gradient-to-br ${gradiente} flex flex-col justify-between`}>
       <div className="flex items-start justify-between gap-2">
-        <p className="text-[11px] font-bold uppercase tracking-wide text-white/80">{label}</p>
+        <p className="text-[9px] font-bold uppercase tracking-wide leading-tight text-white/80">{label}</p>
         <div className="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center shrink-0">
           <Icon className="h-3.5 w-3.5 text-white" />
         </div>
       </div>
       <div>
-        <p className="text-xl font-bold text-white leading-none">{value}</p>
-        <p className="text-xs text-white/70 mt-2 pt-2 border-t border-white/20">{sub}</p>
+        <p className="text-base font-bold text-white leading-none whitespace-nowrap">{value}</p>
+        <p className="text-[11px] font-bold text-white/80 mt-2 pt-1.5 border-t border-white/20">{sub}</p>
+        {rodapeRows && (
+          <div className="mt-2 pt-2 border-t border-white/20 space-y-1">
+            {rodapeRows.map(r => (
+              <button key={r.label} type="button" onClick={e => { e.stopPropagation(); r.onClick?.() }}
+                className={`relative z-10 w-full text-left px-1.5 -mx-1.5 py-0.5 rounded transition-colors ${r.ativo ? 'bg-white/30 ring-1 ring-white' : 'hover:bg-white/15'}`}>
+                <span className="block text-[10px] leading-tight text-white/80">{r.label}</span>
+                <span className="flex items-center justify-between text-[10px] font-semibold text-white">
+                  <span>{r.qtd} OS</span>
+                  <span>{fmtMoeda(r.valor)}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )
@@ -302,22 +318,22 @@ const GRUPOS_STATUS = [
 ]
 
 // Card de resumo — não é filtrável (mesmo padrão do Controle), só mostra o total consolidado.
-function CardTotalAberto({ total, distintas, pecas, servicos, geral }) {
+function CardTotalAberto({ total, pecas, servicos, geral }) {
   return (
     <div className="h-full rounded-2xl p-4 shadow-lg bg-gradient-to-br from-violet-600 to-purple-800 flex flex-col justify-between">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-[11px] font-bold uppercase tracking-wide text-white/80">Total Aberto</p>
+        <p className="text-[9px] font-bold uppercase tracking-wide leading-tight text-white/80">Total Aberto</p>
         <div className="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center shrink-0">
           <BarChart2 className="h-3.5 w-3.5 text-white" />
         </div>
       </div>
+      {/* Mesmo modelo dos outros cards: valor total em destaque, depois a quantidade */}
       <div>
-        <p className="text-xl font-bold text-white leading-none mb-2">{total} <span className="text-xs font-normal text-white/70">OS</span></p>
-        <div className="pt-2 border-t border-white/20 space-y-1 text-[11px] text-white/80">
-          <div className="flex items-center justify-between"><span>OS distintas</span><span className="font-semibold text-white">{distintas}</span></div>
-          <div className="flex items-center justify-between"><span>Peças</span><span className="font-mono text-white">{fmtMoeda(pecas)}</span></div>
-          <div className="flex items-center justify-between"><span>Serviços</span><span className="font-mono text-white">{fmtMoeda(servicos)}</span></div>
-          <div className="flex items-center justify-between border-t border-white/20 pt-1 mt-1 font-bold text-white"><span>Total</span><span className="font-mono">{fmtMoeda(geral)}</span></div>
+        <p className="text-base font-bold text-white leading-none whitespace-nowrap">{fmtMoeda(geral)}</p>
+        <p className="text-[11px] font-bold text-white/80 mt-2 pt-1.5 border-t border-white/20">Qtde O.S. {total}</p>
+        <div className="mt-2 pt-1.5 border-t border-white/20 space-y-1 text-[10px] text-white/80">
+          <div className="flex items-center justify-between"><span>Peças</span><span className="font-semibold text-white">{fmtMoeda(pecas)}</span></div>
+          <div className="flex items-center justify-between"><span>Serviços</span><span className="font-semibold text-white">{fmtMoeda(servicos)}</span></div>
         </div>
       </div>
     </div>
@@ -331,14 +347,40 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
   const { filtrosEmpresa } = useEmpresasGarantias()
   const [dados, setDados] = useState([])
   const [diasDigitacao, setDiasDigitacao] = useState(14)
+  const [diasRecusa, setDiasRecusa] = useState(15)
+  const [diasSolucao, setDiasSolucao] = useState(14)
+  const [diasSolucaoPorTipo, setDiasSolucaoPorTipo] = useState({})
   useEffect(() => {
-    apiService.getConfiguracoesGarantias().then(cfg => setDiasDigitacao(cfg?.dias_digitacao ?? 14)).catch(() => {})
+    apiService.getConfiguracoesGarantias().then(cfg => {
+      setDiasDigitacao(cfg?.dias_digitacao ?? 14)
+      setDiasRecusa(cfg?.dias_recusa ?? 15)
+      setDiasSolucao(cfg?.dias_solucao ?? 14)
+      setDiasSolucaoPorTipo(cfg?.dias_solucao_por_tipo ?? {})
+    }).catch(() => {})
   }, [])
+
+  // Aguardando Aprovação DAF — mesma regra do Controle: dias desde a digitação (criado_em)
+  // contra o prazo de solução do tipo de OS (ou o geral). Dentro = menor que o prazo.
+  const prazoSolucao = (g) => diasSolucaoPorTipo[g.tipo_os_sigla?.trim()] ?? diasSolucao
+  const situacaoPrazoSolucao = (g) => {
+    const dias = g.criado_em ? Math.floor((new Date() - new Date(g.criado_em)) / 86400000) : 0
+    return dias < prazoSolucao(g) ? 'prazo' : 'fora'
+  }
+  // Situação de prazo de um card que tem linhas No prazo / Fora do prazo
+  const situacaoPrazoDoGrupo = (grupo, g) =>
+    grupo === 'recusada' ? situacaoPrazoRecusa(g, diasRecusa) : situacaoPrazoSolucao(g)
   const [loading, setLoading] = useState(true)
   const [encerradaLastModified, setEncerradaLastModified] = useState(null)
 
   const [filtroGrupo, setFiltroGrupo] = useState(null) // null | 'digitar' | 'atrasada' | 'digitada' | 'aprovada' | 'recusada' — card selecionado
   const toggleFiltroGrupo = (key) => setFiltroGrupo(prev => prev === key ? null : key)
+  // '<grupo>_prazo' / '<grupo>_fora' = linhas No prazo / Fora do prazo dos cards
+  // Aguardando Aprovação DAF (digitada) e Recusas (recusada)
+  const [grupoDoFiltro, prazoDoFiltro] = (filtroGrupo || '').split('_')
+  const casaGrupo = (g) => {
+    if (classificarStatus(g, diasDigitacao) !== grupoDoFiltro) return false
+    return prazoDoFiltro ? situacaoPrazoDoGrupo(grupoDoFiltro, g) === prazoDoFiltro : true
+  }
   const [filtroStatusShc, setFiltroStatusShc] = useState(null) // texto do Status SHC clicado na tabela de detalhamento
   const toggleFiltroStatusShc = (texto) => setFiltroStatusShc(prev => prev === texto ? null : texto)
   const [filtroEmpresa, setFiltroEmpresa] = useState(null) // fatia clicada no donut "por Empresa"
@@ -347,6 +389,34 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
   const toggleFiltroTipo = (label) => setFiltroTipo(prev => prev === label ? null : label)
   const [filtroCluster, setFiltroCluster] = useState(null) // { ix, iy } — cruzamento dias × valor selecionado no cluster map
   const toggleFiltroCluster = (ix, iy) => setFiltroCluster(prev => (prev && prev.ix === ix && prev.iy === iy) ? null : { ix, iy })
+  // Tabela "Status das Garantias": status (código) e período (mês/ano de criação da OS) clicados
+  const [filtroStatusCod, setFiltroStatusCod] = useState(null)
+  const [filtroPeriodo, setFiltroPeriodo] = useState(null) // { ano, mes } — mes null = ano inteiro
+  const mesmoPeriodo = (a, b) => (!a && !b) || (!!a && !!b && a.ano === b.ano && a.mes === b.mes)
+  // Clique numa célula da tabela de Status: aplica grupo/status/tipo + período juntos; clicar de novo
+  // na mesma célula limpa a seleção.
+  // A célula fica realçada quando os filtros ativos são exatamente os dela.
+  const celulaAtiva = (sel) =>
+    (sel.grupo || null) === filtroGrupo
+    && (sel.statusCod || null) === filtroStatusCod
+    && mesmoPeriodo(sel.periodo || null, filtroPeriodo)
+    && (!sel.tipo || sel.tipo === filtroTipo)
+  const clicarCelulaStatus = (sel) => {
+    if (celulaAtiva(sel)) {
+      setFiltroGrupo(null); setFiltroStatusCod(null); setFiltroPeriodo(null)
+      if (sel.tipo) setFiltroTipo(null)
+      return
+    }
+    setFiltroGrupo(sel.grupo || null)
+    setFiltroStatusCod(sel.statusCod || null)
+    setFiltroPeriodo(sel.periodo || null)
+    if (sel.tipo) setFiltroTipo(sel.tipo)
+  }
+  const periodoDe = (g) => {
+    if (!g.data_abertura_os) return null
+    const d = new Date(g.data_abertura_os + 'T12:00:00')
+    return { ano: d.getFullYear(), mes: d.getMonth() }
+  }
 
   // Dias = desde a Data de Abertura da OS até hoje.
   const clusterOf = (g) => {
@@ -360,7 +430,12 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
   // Cross-filtro: aplica grupo + empresa + tipo + cluster, com opção de pular um deles (usado
   // pelos próprios gráficos/tabelas, pra fatia/bolha/card clicado não desaparecer do que o originou).
   const aplicarFiltrosAberto = (rows, { pularGrupo, pularEmpresa, pularTipo, pularCluster } = {}) => {
-    let out = (!pularGrupo && filtroGrupo) ? rows.filter(g => classificarStatus(g, diasDigitacao) === filtroGrupo) : rows
+    if (filtroStatusCod) rows = rows.filter(g => (g.status_codigo || '—') === filtroStatusCod)
+    if (filtroPeriodo) rows = rows.filter(g => {
+      const p = periodoDe(g)
+      return !!p && p.ano === filtroPeriodo.ano && (filtroPeriodo.mes === null || p.mes === filtroPeriodo.mes)
+    })
+    let out = (!pularGrupo && filtroGrupo) ? rows.filter(casaGrupo) : rows
     if (!pularEmpresa && filtroEmpresa) out = out.filter(g => (g.empresa_nome || 'Não informado') === filtroEmpresa)
     if (!pularTipo && filtroTipo) out = out.filter(g => (g.tipo_garantia_descricao?.trim() || 'Não informado') === filtroTipo)
     if (!pularCluster && filtroCluster) out = out.filter(g => {
@@ -401,7 +476,7 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
   // quais linhas ficam visíveis, via gruposExibidos).
   const dadosSemGrupo = useMemo(
     () => aplicarFiltrosAberto(dadosBaseShc, { pularGrupo: true }),
-    [dadosBaseShc, filtroEmpresa, filtroTipo, filtroCluster]
+    [dadosBaseShc, filtroEmpresa, filtroTipo, filtroCluster, filtroStatusCod, filtroPeriodo]
   )
 
   // Meses (ano+mês) presentes nos dados, com base na Data de Criação da OS
@@ -451,20 +526,53 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
 
   // Resumo consolidado (não filtrável) — total de OS em aberto, distintas e por peças/serviços.
   const totalAbertoStats = useMemo(() => {
-    const distintas = new Set(dadosBaseShc.map(g => g.numero_os)).size
     const pecas = dadosBaseShc.reduce((s, g) => s + Number(g.valor_pecas || 0), 0)
     const servicos = dadosBaseShc.reduce((s, g) => s + Number(g.valor_servicos || 0), 0)
-    return { total: dadosBaseShc.length, distintas, pecas, servicos, geral: pecas + servicos }
+    return { total: dadosBaseShc.length, pecas, servicos, geral: pecas + servicos }
   }, [dadosBaseShc])
 
 
   // Card selecionado filtra as linhas exibidas na tabela (e gráficos) abaixo dos cards.
-  const gruposExibidos = filtroGrupo ? GRUPOS_STATUS.filter(g => g.key === filtroGrupo) : GRUPOS_STATUS
+  const gruposExibidos = grupoDoFiltro ? GRUPOS_STATUS.filter(g => g.key === grupoDoFiltro) : GRUPOS_STATUS
 
   const dadosExibidos = useMemo(
     () => aplicarFiltrosAberto(dadosBaseShc),
-    [dadosBaseShc, filtroGrupo, filtroEmpresa, filtroTipo, filtroCluster, diasDigitacao]
+    [dadosBaseShc, filtroGrupo, filtroEmpresa, filtroTipo, filtroCluster, diasDigitacao, diasRecusa, diasSolucao, diasSolucaoPorTipo, filtroStatusCod, filtroPeriodo]
   )
+
+  // Cards Aguardando Aprovação DAF e Recusas: no prazo / fora do prazo (mesma base dos cards)
+  const prazosPorGrupo = useMemo(() => {
+    const novo = () => ({ prazo: { qtd: 0, valor: 0 }, fora: { qtd: 0, valor: 0 } })
+    const out = { digitada: novo(), recusada: novo() }
+    for (const g of dadosSemGrupo) {
+      const grupo = classificarStatus(g, diasDigitacao)
+      if (!out[grupo]) continue
+      const s = out[grupo][situacaoPrazoDoGrupo(grupo, g)]
+      s.qtd += 1
+      s.valor += Number(g.valor_pecas || 0) + Number(g.valor_servicos || 0)
+    }
+    return out
+  }, [dadosSemGrupo, diasDigitacao, diasRecusa, diasSolucao, diasSolucaoPorTipo])
+
+  // Texto do prazo de solução: um só quando todas as OS do card têm o mesmo; senão a faixa.
+  const prazoSolucaoTexto = useMemo(() => {
+    const prazos = [...new Set(dadosSemGrupo.filter(g => classificarStatus(g, diasDigitacao) === 'digitada').map(prazoSolucao))].sort((a, b) => a - b)
+    if (prazos.length === 0) return `${diasSolucao} dias`
+    if (prazos.length === 1) return `${prazos[0]} dia${prazos[0] === 1 ? '' : 's'}`
+    return `${prazos[0]} a ${prazos[prazos.length - 1]} dias`
+  }, [dadosSemGrupo, diasDigitacao, diasSolucao, diasSolucaoPorTipo])
+
+  const rodapePrazo = (grupo) => {
+    const p = prazosPorGrupo[grupo]
+    if (!p) return null
+    const [lblPrazo, lblFora] = grupo === 'recusada'
+      ? [`No prazo (até ${diasRecusa} dias)`, `Fora do prazo (+ de ${diasRecusa} dias)`]
+      : [`Dentro do prazo (${prazoSolucaoTexto})`, 'Fora do prazo']
+    return [
+      { label: lblPrazo, ...p.prazo, onClick: () => toggleFiltroGrupo(`${grupo}_prazo`), ativo: filtroGrupo === `${grupo}_prazo` },
+      { label: lblFora, ...p.fora, onClick: () => toggleFiltroGrupo(`${grupo}_fora`), ativo: filtroGrupo === `${grupo}_fora` },
+    ]
+  }
 
   // Base do cluster map: reflete os OUTROS filtros ativos, mas não o próprio cruzamento
   // selecionado — assim todas as bolhas continuam visíveis (uma delas realçada).
@@ -475,7 +583,7 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
       dias: g.data_abertura_os ? diffDias(g.data_abertura_os, hojeISO) : null,
       valor: Number(g.valor_pecas || 0) + Number(g.valor_servicos || 0),
     }))
-  }, [dadosBaseShc, filtroGrupo, filtroEmpresa, filtroTipo])
+  }, [dadosBaseShc, filtroGrupo, filtroEmpresa, filtroTipo, filtroStatusCod, filtroPeriodo])
 
   const somaGrupos = (fn) => gruposExibidos.reduce((acc, g) => {
     const r = fn(g.key)
@@ -495,7 +603,7 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
       e.valor += Number(g.valor_pecas || 0) + Number(g.valor_servicos || 0)
     }
     return paraDonut([...map.values()].sort((a, b) => b.valor - a.valor))
-  }, [dadosBaseShc, filtroGrupo, filtroTipo, filtroCluster])
+  }, [dadosBaseShc, filtroGrupo, filtroTipo, filtroCluster, filtroStatusCod, filtroPeriodo])
 
   // Donut "OS por Tipo de Garantia — por Quantidade" — base exclui o próprio filtro de tipo.
   const porTipoQtdDonut = useMemo(() => {
@@ -509,7 +617,7 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
       e.valor += Number(g.valor_pecas || 0) + Number(g.valor_servicos || 0)
     }
     return paraDonut([...map.values()].sort((a, b) => b.qtd - a.qtd).map(t => ({ label: t.label, valor: t.qtd, valorMonetario: t.valor })))
-  }, [dadosBaseShc, filtroGrupo, filtroEmpresa, filtroCluster])
+  }, [dadosBaseShc, filtroGrupo, filtroEmpresa, filtroCluster, filtroStatusCod, filtroPeriodo])
 
   // ── Tabela de detalhamento (uma linha por OS) ──────────────────────────
   const [sortCol, setSortCol] = useState('data_abertura_os')
@@ -652,6 +760,20 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
   })
   const mesesVisiveis = (ano) => anosExpandidos.has(ano) ? mesesPorAno[ano] : []
 
+  // Par de células (OS | Total) da tabela de Status: clicável quando tem valor, realçada quando selecionada.
+  const celulasStatus = (sel, cel, clsBase, { borda = 'border-l border-slate-200' } = {}) => {
+    const ativa = celulaAtiva(sel)
+    const clicavel = !!cel?.qtd
+    const cls = `${clsBase} ${clicavel ? 'cursor-pointer hover:bg-violet-50' : ''} ${ativa ? '!bg-violet-100 !text-violet-800 font-bold' : ''}`
+    const onClick = clicavel ? () => clicarCelulaStatus(sel) : undefined
+    return (
+      <>
+        <td onClick={onClick} className={`p-2 text-right ${borda} ${cls}`}>{cel?.qtd || ''}</td>
+        <td onClick={onClick} className={`p-2 text-right whitespace-nowrap ${cls}`}>{cel?.qtd ? fmtMoeda(cel.valor) : ''}</td>
+      </>
+    )
+  }
+
   if (loading) {
     return (
       <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-16 flex flex-col items-center gap-3 text-slate-500">
@@ -666,13 +788,14 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
       {/* CARDS — nível empresa/total, clicáveis, filtram a tabela abaixo */}
       <div className="grid grid-cols-6 gap-4">
         {GRUPOS_STATUS.map(grp => (
-          <div key={grp.key} className={`h-full relative transition-all hover:shadow-xl ${filtroGrupo && filtroGrupo !== grp.key ? 'opacity-50' : ''} ${filtroGrupo === grp.key ? 'ring-2 ring-violet-500 rounded-2xl' : ''}`}>
+          <div key={grp.key} className={`h-full relative transition-all hover:shadow-xl ${grupoDoFiltro && grupoDoFiltro !== grp.key ? 'opacity-50' : ''} ${filtroGrupo === grp.key ? 'ring-2 ring-violet-500 rounded-2xl' : ''}`}>
             <StatTileGradient
               icon={grp.icone}
               label={grp.card}
               value={fmtMoeda(pivot[grp.key].total.valor)}
               sub={`Qtde O.S. ${pivot[grp.key].total.qtd}`}
               gradiente={grp.gradiente}
+              rodapeRows={rodapePrazo(grp.key)}
             />
             <button type="button" onClick={() => toggleFiltroGrupo(grp.key)} className="absolute inset-0 rounded-2xl cursor-pointer" aria-label={`Filtrar por ${grp.card}`} />
           </div>
@@ -712,18 +835,20 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
         <ClusterAberto dados={dadosClusterAberto} filtroAtivo={filtroCluster} onSlice={toggleFiltroCluster} />
       </div>
 
-      {(filtroGrupo || filtroStatusShc || filtroEmpresa || filtroTipo || filtroCluster) && (
+      {(filtroGrupo || filtroStatusShc || filtroEmpresa || filtroTipo || filtroCluster || filtroStatusCod || filtroPeriodo) && (
         <p className="text-[11px] text-slate-500">
           Filtrado por{' '}
           {[
-            filtroGrupo && <strong key="grupo" className="text-slate-900">{GRUPOS_STATUS.find(g => g.key === filtroGrupo)?.card}</strong>,
+            filtroGrupo && <strong key="grupo" className="text-slate-900">{GRUPOS_STATUS.find(g => g.key === grupoDoFiltro)?.card}{prazoDoFiltro === 'prazo' ? (grupoDoFiltro === 'recusada' ? ' — No prazo' : ' — Dentro do prazo') : prazoDoFiltro === 'fora' ? ' — Fora do prazo' : ''}</strong>,
             filtroEmpresa && <strong key="empresa" className="text-[#3987e5]">Empresa: {filtroEmpresa}</strong>,
             filtroTipo && <strong key="tipo" className="text-[#199e70]">Tipo: {filtroTipo}</strong>,
             filtroCluster && <strong key="cluster" className="text-[#d03b3b]">{BUCKETS_DIAS_CLUSTER[filtroCluster.ix].label} · {BUCKETS_VALOR_CLUSTER[filtroCluster.iy].label}</strong>,
             filtroStatusShc && <strong key="shc" className="text-[#9085e9]">Status SHC: {filtroStatusShc}</strong>,
+            filtroStatusCod && <strong key="cod" className="text-[#9085e9]">Status: {statusLabel(filtroStatusCod)}</strong>,
+            filtroPeriodo && <strong key="periodo" className="text-slate-900">Criação: {filtroPeriodo.mes === null ? filtroPeriodo.ano : `${MESES[filtroPeriodo.mes]}/${filtroPeriodo.ano}`}</strong>,
           ].filter(Boolean).reduce((acc, el, i) => i === 0 ? [el] : [...acc, ' + ', el], [])}
           {' '}·{' '}
-          <button type="button" onClick={() => { setFiltroGrupo(null); setFiltroStatusShc(null); setFiltroEmpresa(null); setFiltroTipo(null); setFiltroCluster(null) }} className="underline hover:text-slate-900">limpar filtros</button>
+          <button type="button" onClick={() => { setFiltroGrupo(null); setFiltroStatusShc(null); setFiltroEmpresa(null); setFiltroTipo(null); setFiltroCluster(null); setFiltroStatusCod(null); setFiltroPeriodo(null) }} className="underline hover:text-slate-900">limpar filtros</button>
         </p>
       )}
 
@@ -813,8 +938,7 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
                             const cel = pivot[grp.key][`${m.ano}-${m.mes}`]
                             return (
                               <Fragment key={`${m.ano}-${m.mes}`}>
-                                <td className="p-2 text-right text-slate-600 border-l border-slate-200">{cel?.qtd || ''}</td>
-                                <td className="p-2 text-right text-slate-600 font-medium whitespace-nowrap">{cel ? fmtMoeda(cel.valor) : ''}</td>
+                                {celulasStatus({ grupo: grp.key, periodo: { ano: m.ano, mes: m.mes } }, cel, 'text-slate-600 font-medium')}
                               </Fragment>
                             )
                           })}
@@ -822,15 +946,13 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
                             const t = totalAno(grp.key, ano)
                             return (
                               <Fragment>
-                                <td className="p-2 text-right font-bold text-slate-900 border-l border-slate-200 bg-slate-50">{t.qtd || ''}</td>
-                                <td className="p-2 text-right font-bold text-slate-900 bg-slate-50 whitespace-nowrap">{t.qtd ? fmtMoeda(t.valor) : ''}</td>
+                                {celulasStatus({ grupo: grp.key, periodo: { ano, mes: null } }, t, 'font-bold text-slate-900 bg-slate-50')}
                               </Fragment>
                             )
                           })()}
                         </Fragment>
                       ))}
-                      <td className="p-2 text-right font-bold text-[#9085e9] border-l-2 border-slate-300 bg-slate-50">{pivot[grp.key].total.qtd || ''}</td>
-                      <td className="p-2 text-right font-bold text-[#9085e9] bg-slate-50 whitespace-nowrap">{pivot[grp.key].total.qtd ? fmtMoeda(pivot[grp.key].total.valor) : ''}</td>
+                      {celulasStatus({ grupo: grp.key }, pivot[grp.key].total, 'font-bold text-[#9085e9] bg-slate-50', { borda: 'border-l-2 border-slate-300' })}
                     </tr>
 
                     {expandido && statusCods.map(statusCod => {
@@ -839,8 +961,8 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
                       const tipos = Object.keys(pivotTipoDentro[grp.key][statusCod] || {}).sort((a, b) => a.localeCompare(b, 'pt-BR'))
                       return (
                         <Fragment key={shcKey}>
-                          <tr className="border-b border-slate-100 bg-white/[0.03] hover:bg-white/[0.06]">
-                            <td className="p-2 pl-6 text-slate-600 sticky left-0 bg-[#111a2e] whitespace-nowrap truncate max-w-[220px]" title={statusLabel(statusCod)}>
+                          <tr className="border-b border-slate-100 bg-slate-50/40 hover:bg-slate-50">
+                            <td className="p-2 pl-6 text-slate-600 sticky left-0 bg-slate-50 whitespace-nowrap truncate max-w-[220px]" title={statusLabel(statusCod)}>
                               <button
                                 type="button"
                                 onClick={() => toggleTipo(shcKey)}
@@ -859,8 +981,7 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
                                   const cel = pivotShc[grp.key][statusCod][`${m.ano}-${m.mes}`]
                                   return (
                                     <Fragment key={`${m.ano}-${m.mes}`}>
-                                      <td className="p-2 text-right text-slate-500 border-l border-slate-200">{cel?.qtd || ''}</td>
-                                      <td className="p-2 text-right text-slate-500 whitespace-nowrap">{cel ? fmtMoeda(cel.valor) : ''}</td>
+                                      {celulasStatus({ grupo: grp.key, statusCod, periodo: { ano: m.ano, mes: m.mes } }, cel, 'text-slate-500')}
                                     </Fragment>
                                   )
                                 })}
@@ -868,28 +989,25 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
                                   const t = totalAnoShc(grp.key, statusCod, ano)
                                   return (
                                     <Fragment>
-                                      <td className="p-2 text-right font-semibold text-slate-600 border-l border-slate-200 bg-slate-50">{t.qtd || ''}</td>
-                                      <td className="p-2 text-right font-semibold text-slate-600 bg-slate-50 whitespace-nowrap">{t.qtd ? fmtMoeda(t.valor) : ''}</td>
+                                      {celulasStatus({ grupo: grp.key, statusCod, periodo: { ano, mes: null } }, t, 'font-semibold text-slate-600 bg-slate-50')}
                                     </Fragment>
                                   )
                                 })()}
                               </Fragment>
                             ))}
-                            <td className="p-2 text-right font-semibold text-[#9085e9] border-l-2 border-slate-300 bg-slate-50">{pivotShc[grp.key][statusCod].total.qtd || ''}</td>
-                            <td className="p-2 text-right font-semibold text-[#9085e9] bg-slate-50 whitespace-nowrap">{pivotShc[grp.key][statusCod].total.qtd ? fmtMoeda(pivotShc[grp.key][statusCod].total.valor) : ''}</td>
+                            {celulasStatus({ grupo: grp.key, statusCod }, pivotShc[grp.key][statusCod].total, 'font-semibold text-[#9085e9] bg-slate-50', { borda: 'border-l-2 border-slate-300' })}
                           </tr>
 
                           {shcExpandido && tipos.map(tipo => (
-                            <tr key={`${shcKey}::${tipo}`} className="border-b border-slate-100 bg-white/[0.015] hover:bg-white/[0.04]">
-                              <td className="p-2 pl-12 text-slate-500 sticky left-0 bg-[#0e1626] whitespace-nowrap truncate max-w-[220px]" title={tipo}>{tipo}</td>
+                            <tr key={`${shcKey}::${tipo}`} className="border-b border-slate-100 bg-white hover:bg-slate-50">
+                              <td className="p-2 pl-12 text-slate-500 sticky left-0 bg-white whitespace-nowrap truncate max-w-[220px]" title={tipo}>{tipo}</td>
                               {anos.map(ano => (
                                 <Fragment key={ano}>
                                   {mesesVisiveis(ano).map(m => {
                                     const cel = pivotTipoDentro[grp.key][statusCod][tipo][`${m.ano}-${m.mes}`]
                                     return (
                                       <Fragment key={`${m.ano}-${m.mes}`}>
-                                        <td className="p-2 text-right text-slate-500 border-l border-slate-200">{cel?.qtd || ''}</td>
-                                        <td className="p-2 text-right text-slate-500 whitespace-nowrap">{cel ? fmtMoeda(cel.valor) : ''}</td>
+                                        {celulasStatus({ grupo: grp.key, statusCod, tipo, periodo: { ano: m.ano, mes: m.mes } }, cel, 'text-slate-500')}
                                       </Fragment>
                                     )
                                   })}
@@ -897,15 +1015,13 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
                                     const t = totalAnoTipoDentro(grp.key, statusCod, tipo, ano)
                                     return (
                                       <Fragment>
-                                        <td className="p-2 text-right font-medium text-slate-600 border-l border-slate-200 bg-slate-50">{t.qtd || ''}</td>
-                                        <td className="p-2 text-right font-medium text-slate-600 bg-slate-50 whitespace-nowrap">{t.qtd ? fmtMoeda(t.valor) : ''}</td>
+                                        {celulasStatus({ grupo: grp.key, statusCod, tipo, periodo: { ano, mes: null } }, t, 'font-medium text-slate-600 bg-slate-50')}
                                       </Fragment>
                                     )
                                   })()}
                                 </Fragment>
                               ))}
-                              <td className="p-2 text-right font-medium text-[#9085e9]/80 border-l-2 border-slate-300 bg-slate-50">{pivotTipoDentro[grp.key][statusCod][tipo].total.qtd || ''}</td>
-                              <td className="p-2 text-right font-medium text-[#9085e9]/80 bg-slate-50 whitespace-nowrap">{pivotTipoDentro[grp.key][statusCod][tipo].total.qtd ? fmtMoeda(pivotTipoDentro[grp.key][statusCod][tipo].total.valor) : ''}</td>
+                              {celulasStatus({ grupo: grp.key, statusCod, tipo }, pivotTipoDentro[grp.key][statusCod][tipo].total, 'font-medium text-[#9085e9]/80 bg-slate-50', { borda: 'border-l-2 border-slate-300' })}
                             </tr>
                           ))}
                         </Fragment>
@@ -922,8 +1038,7 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
                       const t = somaGrupos(k => pivot[k][`${m.ano}-${m.mes}`] || { qtd: 0, valor: 0 })
                       return (
                         <Fragment key={`${m.ano}-${m.mes}`}>
-                          <td className="p-2 text-right border-l border-slate-200">{t.qtd || ''}</td>
-                          <td className="p-2 text-right whitespace-nowrap">{t.qtd ? fmtMoeda(t.valor) : ''}</td>
+                          {celulasStatus({ periodo: { ano: m.ano, mes: m.mes } }, t, '')}
                         </Fragment>
                       )
                     })}
@@ -931,8 +1046,7 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
                       const t = somaGrupos(k => totalAno(k, ano))
                       return (
                         <Fragment>
-                          <td className="p-2 text-right border-l border-slate-200 bg-slate-100">{t.qtd || ''}</td>
-                          <td className="p-2 text-right bg-slate-100 whitespace-nowrap">{t.qtd ? fmtMoeda(t.valor) : ''}</td>
+                          {celulasStatus({ periodo: { ano, mes: null } }, t, 'bg-slate-100')}
                         </Fragment>
                       )
                     })()}
@@ -962,15 +1076,15 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
         {linhasOrdenadas.length === 0 ? (
           <div className="p-10 text-center text-slate-500 text-sm">Nenhum registro para exibir.</div>
         ) : (
-          <table className="w-full text-left border-collapse" style={{ minWidth: '1800px' }}>
+          <table className="w-full text-left border-collapse">
             <thead className="sticky top-0 z-10">
               <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 text-[10px] font-bold uppercase tracking-wider">
-                <th className="p-3 text-center whitespace-nowrap">Ações</th>
+                <th className="p-2 px-3 text-center whitespace-nowrap">Ações</th>
                 {COLUNAS_DETALHE.map(c => (
                   <th
                     key={c.key}
                     onClick={() => handleSortDetalhe(c.key)}
-                    className={`p-3 whitespace-nowrap cursor-pointer select-none hover:bg-slate-100 hover:text-slate-900 transition-colors ${c.tipo === 'moeda' || c.tipo === 'numero' ? 'text-right' : ''}`}
+                    className={`p-2 px-3 whitespace-nowrap cursor-pointer select-none hover:bg-slate-100 hover:text-slate-900 transition-colors ${c.tipo === 'moeda' || c.tipo === 'numero' ? 'text-right' : ''}`}
                   >
                     <span className={`flex items-center gap-1 ${c.tipo === 'moeda' || c.tipo === 'numero' ? 'justify-end' : ''}`}>
                       {c.label}
@@ -985,7 +1099,7 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
             <tbody className="divide-y divide-slate-200 text-xs text-slate-600">
               {linhasOrdenadas.map(row => (
                 <tr key={row.id} className="hover:bg-slate-50 transition-colors">
-                  <td className="p-3 text-center">
+                  <td className="p-2 px-3 text-center">
                     <button
                       type="button"
                       onClick={() => abrirVisualizar(row)}
@@ -1000,13 +1114,20 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
                     const texto = c.tipo === 'data' ? fmtData(valor) : c.tipo === 'moeda' ? (valor ? fmtMoeda(valor) : '') : (valor ?? '')
                     if (c.tipo === 'texto_longo') {
                       return (
-                        <td key={c.key} className="p-3 text-slate-600 whitespace-normal break-words align-top max-w-[260px] min-w-[200px]">
+                        <td key={c.key} className="p-2 px-3 text-slate-600 whitespace-normal break-words align-top max-w-[260px] min-w-[200px]">
                           {texto || <span className="text-slate-300">—</span>}
                         </td>
                       )
                     }
+                    // Empresa e Tipo de OS: clicar filtra a tela inteira (mesmo filtro das fatias dos gráficos)
+                    const filtroDaColuna = c.key === 'empresa_nome' ? { atual: filtroEmpresa, toggle: toggleFiltroEmpresa, valor: valor || 'Não informado' }
+                      : c.key === 'tipo_garantia_descricao' ? { atual: filtroTipo, toggle: toggleFiltroTipo, valor: String(valor || '').trim() || 'Não informado' }
+                      : null
                     return (
-                      <td key={c.key} className={`p-3 whitespace-nowrap ${c.tipo === 'moeda' || c.tipo === 'numero' ? 'text-right font-semibold text-slate-900' : 'text-slate-600'} ${c.key === 'empresa_nome' || c.key === 'cliente' || c.key === 'tipo_garantia_descricao' ? 'truncate max-w-[220px]' : ''}`}>
+                      <td key={c.key}
+                        onClick={filtroDaColuna ? () => filtroDaColuna.toggle(filtroDaColuna.valor) : undefined}
+                        title={filtroDaColuna ? 'Clique para filtrar' : undefined}
+                        className={`p-2 px-3 whitespace-nowrap ${c.tipo === 'moeda' || c.tipo === 'numero' ? 'text-right font-semibold text-slate-900' : 'text-slate-600'} ${c.key === 'empresa_nome' || c.key === 'cliente' || c.key === 'tipo_garantia_descricao' ? 'truncate max-w-[220px]' : ''} ${filtroDaColuna ? 'cursor-pointer hover:underline' : ''} ${filtroDaColuna && filtroDaColuna.atual === filtroDaColuna.valor ? '!text-violet-700 font-bold' : ''}`}>
                         {texto || <span className="text-slate-300">—</span>}
                       </td>
                     )

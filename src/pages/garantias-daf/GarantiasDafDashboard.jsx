@@ -1,12 +1,14 @@
 ﻿import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { useSessionState } from '../../hooks/useSessionState'
 import { useNavigate } from 'react-router-dom'
 import { Search, Edit2, Trash2, ShieldAlert, FileText, Activity, Clock, AlertTriangle, RotateCcw, Download, RefreshCw, CheckCircle, XCircle, BarChart2, CheckSquare, Square, Loader2, Info, Eye, Settings, X, BookOpen } from 'lucide-react'
 import { apiService } from '../../services/api'
 import MenuEngrenagem from '../../components/MenuEngrenagem'
 import { useAuth } from '../../context/AuthContext'
-import GarantiasNav from './GarantiasNav'
 import { useEmpresasGarantias } from '../../hooks/useEmpresasGarantias'
+import RegrasSistemaModal from './RegrasSistemaModal'
+import { situacaoPrazoRecusa } from './prazoRecusa'
 
 const STATUS_MAP = {
   A:  { label: 'Em Análise',                      cor: 'bg-blue-100 text-blue-700' },
@@ -50,7 +52,10 @@ const fmt = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', c
 
 const FILTROS_VAZIOS = { numero_os: '', chassi: '', data_inicio: '', data_fim: '', data_fechamento_inicio: '', data_fechamento_fim: '' }
 
-function CardGrupo({ icon: Icon, label, regra, count, valor, ativo, onClick, st, extraRows }) {
+// Mesmo modelo dos cards do Dashboard: valor em destaque, depois "Qtde O.S. N".
+// rodapeRows: linhas abaixo (ex.: Dentro/Fora do prazo), cada uma com quantidade e valor,
+// clicáveis para filtrar a tabela.
+function CardGrupo({ icon: Icon, label, regra, count, valor, ativo, onClick, st, rodapeRows }) {
   return (
     <div
       role="button"
@@ -66,36 +71,41 @@ function CardGrupo({ icon: Icon, label, regra, count, valor, ativo, onClick, st,
         <p className={`text-[9px] font-bold uppercase tracking-wide leading-tight ${st.labelTxt}`}>{label}</p>
       </div>
       {regra && <p className={`text-[9px] leading-tight -mt-1 mb-2 opacity-80 ${st.labelTxt}`}>{regra}</p>}
-      <p className={`text-2xl font-bold ${st.numTxt} leading-none`}>{count}</p>
-      <p className={`text-[9px] ${st.labelTxt} mt-0.5 mb-2`}>OS</p>
-      {extraRows && (
-        <div className={`border-t ${st.divider} pt-1.5 space-y-0.5 text-[10px] mb-2`}>
-          {extraRows.map(r => (
+      <p className={`text-base font-bold ${st.numTxt} leading-none whitespace-nowrap`}>{fmt(valor)}</p>
+      <div className={`border-t ${st.divider} mt-2 pt-1.5`}>
+        <p className={`text-[11px] font-bold ${st.numTxt}`}>Qtde O.S. {count}</p>
+      </div>
+      {rodapeRows && (
+        <div className={`border-t ${st.divider} mt-1.5 pt-1.5 space-y-0.5 text-[10px]`}>
+          {rodapeRows.map(r => (
             <button
               key={r.label}
               type="button"
               onClick={e => { e.stopPropagation(); r.onClick?.() }}
-              className={`w-full flex items-center justify-between px-1 -mx-1 py-0.5 rounded transition-colors ${r.ativo ? 'bg-white/60 ring-1 ' + st.ring : 'hover:bg-white/40'}`}
+              className={`w-full text-left px-1 -mx-1 py-0.5 rounded transition-colors ${r.ativo ? 'bg-white/60 ring-1 ' + st.ring : 'hover:bg-white/40'}`}
             >
-              <span className={st.labelTxt}>{r.label}</span>
-              <span className={`font-semibold ${st.numTxt}`}>{r.value}</span>
+              <span className={`block leading-tight ${st.labelTxt}`}>{r.label}</span>
+              <span className="flex items-center justify-between">
+                <span className={`font-semibold ${st.numTxt}`}>{r.qtd} OS</span>
+                <span className={`font-semibold ${st.numTxt}`}>{fmt(r.valor)}</span>
+              </span>
             </button>
           ))}
         </div>
       )}
-      <div className={`border-t ${st.divider} pt-1.5`}>
-        <p className={`text-[11px] font-bold ${st.numTxt}`}>{fmt(valor)}</p>
-      </div>
     </div>
   )
 }
 
-export default function GarantiasDafDashboard({ variante = 'aberto' }) {
+// onLastModified: informa a data do arquivo do SharePoint para o topo de BI — Garantias DAF.
+export default function GarantiasDafDashboard({ variante = 'aberto', onLastModified, slotAcoes }) {
+  // slotAcoes: espaço na linha das abas de Garantias DAF onde ficam os botões desta tela.
+  const naLinhaDasAbas = (el) => (slotAcoes ? createPortal(el, slotAcoes) : el)
   const isAndamento = variante === 'andamento'
   const pfx = isAndamento ? 'daf_and' : 'daf_ab'
 
   const navigate = useNavigate()
-  const { user, hasActionOrDefault, hasPermission } = useAuth()
+  const { user, hasActionOrDefault } = useAuth()
   // Empresas do usuário (inclusive em "Visualizar como"): filtra Supabase e as linhas do SharePoint.
   const { permiteNome, filtrosEmpresa, carregado: empresasCarregadas } = useEmpresasGarantias()
   const canEditarOS = hasActionOrDefault('garantias-daf', 'editar')
@@ -133,7 +143,6 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
   const [excluindoLote, setExcluindoLote] = useState(false)
   const [empresasDim, setEmpresasDim] = useState([])
   const [siglasGarantia, setSiglasGarantia] = useState(new Set())
-  const [tiposGarantiaDim, setTiposGarantiaDim] = useState([])
   const [buscandoFaturamentoLote, setBuscandoFaturamentoLote] = useState(false)
   const [progressoBuscaLote, setProgressoBuscaLote] = useState(null) // { atual, total }
 
@@ -142,84 +151,21 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
   // controla o corte em dia/atrasado dentro de Aguardando Aprovação DAF (fase pós-digitação).
   const [diasDigitacao, setDiasDigitacao] = useState(14)
   const [diasOficina, setDiasOficina] = useState(14)
-  const [diasOficinaInput, setDiasOficinaInput] = useState('14')
   const [diasSolucao, setDiasSolucao] = useState(14)
   const [diasSolucaoPorTipo, setDiasSolucaoPorTipo] = useState({})
+  const [diasRecusa, setDiasRecusa] = useState(15)
   const [modalRegras, setModalRegras] = useState(false)
-  const [diasDigitacaoInput, setDiasDigitacaoInput] = useState('14')
-  const [diasSolucaoInput, setDiasSolucaoInput] = useState('14')
-  const [diasSolucaoPorTipoInput, setDiasSolucaoPorTipoInput] = useState({})
-  const [salvandoRegras, setSalvandoRegras] = useState(false)
-  const [selecionadosTipos, setSelecionadosTipos] = useState(new Set())
-  const [valorAplicarTipos, setValorAplicarTipos] = useState('14')
 
-  const toggleSelecionadoTipo = (sigla) => {
-    setSelecionadosTipos(prev => {
-      const next = new Set(prev)
-      if (next.has(sigla)) next.delete(sigla)
-      else next.add(sigla)
-      return next
-    })
+  const aplicarRegras = (cfg) => {
+    setDiasRecusa(cfg?.dias_recusa ?? 15)
+    setDiasDigitacao(cfg?.dias_digitacao ?? 14)
+    setDiasOficina(cfg?.dias_oficina ?? 14)
+    setDiasSolucao(cfg?.dias_solucao ?? 14)
+    setDiasSolucaoPorTipo(cfg?.dias_solucao_por_tipo ?? {})
   }
-
-  const handleAplicarValorTipos = () => {
-    const n = Number(valorAplicarTipos)
-    if (!Number.isFinite(n) || n <= 0) return
-    setDiasSolucaoPorTipoInput(prev => {
-      const next = { ...prev }
-      for (const sigla of selecionadosTipos) next[sigla] = String(n)
-      return next
-    })
-  }
-
   useEffect(() => {
-    apiService.getConfiguracoesGarantias()
-      .then(cfg => {
-        const dias = cfg?.dias_digitacao ?? 14
-        const diasSol = cfg?.dias_solucao ?? 14
-        const porTipo = cfg?.dias_solucao_por_tipo ?? {}
-        setDiasDigitacao(dias)
-        setDiasDigitacaoInput(String(dias))
-        setDiasOficina(cfg?.dias_oficina ?? 14)
-        setDiasOficinaInput(String(cfg?.dias_oficina ?? 14))
-        setDiasSolucao(diasSol)
-        setDiasSolucaoInput(String(diasSol))
-        setDiasSolucaoPorTipo(porTipo)
-        setDiasSolucaoPorTipoInput(Object.fromEntries(Object.entries(porTipo).map(([k, v]) => [k, String(v)])))
-      })
-      .catch(() => {})
+    apiService.getConfiguracoesGarantias().then(aplicarRegras).catch(() => {})
   }, [])
-
-  const handleSalvarRegras = async () => {
-    const dias = Number(diasDigitacaoInput)
-    const diasSol = Number(diasSolucaoInput)
-    const diasOfi = Number(diasOficinaInput)
-    if ([dias, diasSol, diasOfi].some(n => !Number.isFinite(n) || n <= 0)) {
-      alert('Informe números de dias válidos (maiores que zero).')
-      return
-    }
-    const porTipo = {}
-    for (const [sigla, v] of Object.entries(diasSolucaoPorTipoInput)) {
-      const n = Number(v)
-      if (v !== '' && v != null && Number.isFinite(n) && n > 0) porTipo[sigla] = n
-    }
-    setSalvandoRegras(true)
-    try {
-      await apiService.updateConfiguracoesGarantias(
-        { dias_digitacao: dias, dias_oficina: diasOfi, dias_solucao: diasSol, dias_solucao_por_tipo: porTipo },
-        user?.email
-      )
-      setDiasDigitacao(dias)
-      setDiasOficina(diasOfi)
-      setDiasSolucao(diasSol)
-      setDiasSolucaoPorTipo(porTipo)
-      setModalRegras(false)
-    } catch (err) {
-      alert('Erro ao salvar: ' + (err.message || String(err)))
-    } finally {
-      setSalvandoRegras(false)
-    }
-  }
 
   const loadData = useCallback(async (f = filtros) => {
     setLoading(true); setError(null)
@@ -243,7 +189,6 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
     apiService.getTiposOS().then(tipos => {
       const tiposGarantia = tipos.filter(t => t.classificacao === 'Garantia' && t.sigla)
       setSiglasGarantia(new Set(tiposGarantia.map(t => String(t.sigla).trim().toUpperCase())))
-      setTiposGarantiaDim(tiposGarantia)
     }).catch(() => {})
   }, [filtrosEmpresa])
 
@@ -267,6 +212,7 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
   }, [isAndamento])
 
   useEffect(() => { fetchSharePoint() }, [fetchSharePoint])
+  useEffect(() => { onLastModified?.(spLastModified) }, [spLastModified, onLastModified])
 
   const empresaFantasiaMap = useMemo(() => {
     const m = new Map()
@@ -421,20 +367,6 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
     return map
   }, [dadosTodos])
 
-  // Tipos de OS de garantia para "Dias para Solucionar por Tipo" em Regras do Sistema: todos os do
-  // cadastro de Tipos de OS (mesma lista do Manual) + qualquer sigla que só exista nas garantias.
-  const tiposGarantiaParaRegras = useMemo(() => {
-    const map = new Map()
-    for (const t of tiposGarantiaDim) {
-      const sigla = String(t.sigla).trim().toUpperCase()
-      if (!map.has(sigla)) map.set(sigla, t.tipo_os || sigla)
-    }
-    for (const [sigla, descricao] of tipoOsDescMap) {
-      if (!map.has(sigla)) map.set(sigla, descricao)
-    }
-    return Array.from(map, ([sigla, descricao]) => ({ sigla, descricao }))
-      .sort((a, b) => a.sigla.localeCompare(b.sigla, 'pt-BR'))
-  }, [tiposGarantiaDim, tipoOsDescMap])
 
   const dadosBase = useMemo(() => {
     let base = dados
@@ -711,10 +643,12 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
       : `${prazosAnd[0]} a ${prazosAnd[prazosAnd.length - 1]} dias`
   const grpAprovada  = dadosBase.filter(g => g.status_codigo === 'FA')
   const grpRecusas   = dadosBase.filter(g => ['FR','Z'].includes(g.status_codigo))
+  // Prazo para tratar recusa (Regras do Sistema), contado da Data Final Avaliação
+  const grpRecPrazo  = grpRecusas.filter(g => situacaoPrazoRecusa(g, diasRecusa) === 'prazo')
+  const grpRecFora   = grpRecusas.filter(g => situacaoPrazoRecusa(g, diasRecusa) === 'fora')
 
   const sumValor = (arr) => arr.reduce((s, g) => s + Number(g.valor_pecas||0) + Number(g.valor_servicos||0), 0)
 
-  const totalOsDistintas  = useMemo(() => new Set(dadosBase.map(d => d.numero_os)).size, [dadosBase])
   const totalValorPecas   = useMemo(() => dadosBase.reduce((s, g) => s + Number(g.valor_pecas    || 0), 0), [dadosBase])
   const totalValorServicos= useMemo(() => dadosBase.reduce((s, g) => s + Number(g.valor_servicos || 0), 0), [dadosBase])
   const totalValorGeral   = totalValorPecas + totalValorServicos
@@ -732,6 +666,8 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
         case 'andamento_em_dia': base = grpAndEmDia; break
         case 'aprovada':    base = grpAprovada; break
         case 'recusas':     base = grpRecusas; break
+        case 'recusas_prazo': base = grpRecPrazo; break
+        case 'recusas_fora':  base = grpRecFora; break
         default: base = dadosBase
       }
     } else {
@@ -787,7 +723,7 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
     },
     {
       key: 'recusas', label: 'Recusas', icon: XCircle, items: grpRecusas,
-      regra: 'Recusada pela DAF',
+      regra: `Recusada pela DAF · prazo para tratar ${diasRecusa} dia${diasRecusa === 1 ? '' : 's'}`,
       st: { bg: 'bg-red-50', border: 'border-red-200', ring: 'ring-red-300', icoBg: 'bg-red-100', icoTxt: 'text-red-500', numTxt: 'text-red-600', labelTxt: 'text-red-400', divider: 'border-red-100' },
     },
   ]
@@ -802,41 +738,20 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
   )
 
   return (
-    <div className="p-6 space-y-5 max-w-screen-2xl">
+    <div className="space-y-5 max-w-screen-2xl">
 
       {/* CABEÇALHO */}
-      <div className="space-y-3 border-b border-slate-200 pb-4">
-        <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-1.5">
-            {isAndamento ? 'Garantias DAF Na Oficina' : 'Garantias DAF com Garantista'}
-            <span className="relative group cursor-help">
-              <Info className="h-3.5 w-3.5 text-slate-400" />
-              <span className="absolute top-full left-0 mt-2 w-96 text-[10px] text-white bg-slate-700 rounded px-2 py-1.5 leading-relaxed opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 normal-case font-normal tracking-normal space-y-1">
-                <div>Fonte de dados: Relatório extraído do sistema Dealer.net através do sistema Robert Automation</div>
-                <div>RPA: Processo 4: Extração Relatório Auditoria de O.S.</div>
-                <div>Nome do Arquivo: {isAndamento ? 'ROF001_OSABERTA.xlsx' : 'ROF001_OSABERTA_ENCERRADA.xlsx'}</div>
-                <div>Pasta SharePoint: /Banco de Dados - DAF - Pós-Vendas/Relatório Geral OS</div>
-              </span>
-            </span>
-          </h1>
-          <p className="text-xs text-slate-500">
-            {isAndamento ? 'Ordens de serviço em andamento na oficina.' : 'Ordens de serviço encerrada em fase de digitação da garantia'}
-          </p>
-        </div>
+      {naLinhaDasAbas(
+        <div className="flex items-center gap-2">
+        <div className="flex items-center justify-end">
         <div className="flex items-center gap-2">
           {isAndamento && (
             <div className="flex items-center gap-3">
-              {spLastModified && (
-                <span className="text-[10px] text-slate-400">
-                  Modificado em <strong className="text-slate-500">{new Date(spLastModified).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</strong>
-                </span>
-              )}
               <button
                 onClick={() => fetchSharePoint(true)}
                 disabled={spLoading}
                 title="Atualizar arquivo"
-                className="flex items-center justify-center p-2 rounded-md text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 shadow-sm transition-colors disabled:opacity-50"
+                className="flex items-center justify-center p-1.5 rounded-md bg-orange-500 hover:bg-orange-600 text-white shadow-sm transition-colors disabled:opacity-50"
               >
                 <RefreshCw className={`h-3.5 w-3.5 ${spLoading ? 'animate-spin' : ''}`} />
               </button>
@@ -844,7 +759,7 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
                 <button
                   onClick={() => setModalRegras(true)}
                   title="Regras do sistema"
-                  className="flex items-center justify-center p-2 rounded-md text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 shadow-sm transition-colors"
+                  className="flex items-center justify-center p-1.5 rounded-md bg-orange-500 hover:bg-orange-600 text-white shadow-sm transition-colors"
                 >
                   <Settings className="h-3.5 w-3.5" />
                 </button>
@@ -852,33 +767,19 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
               <button
                 onClick={() => window.open('/garantias-daf-manual', '_blank')}
                 title="Manual de operação"
-                className="flex items-center justify-center p-2 rounded-md text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 shadow-sm transition-colors"
+                className="flex items-center justify-center p-1.5 rounded-md bg-orange-500 hover:bg-orange-600 text-white shadow-sm transition-colors"
               >
                 <BookOpen className="h-3.5 w-3.5" />
               </button>
-              {hasPermission('bi/garantias-daf') && (
-                <button
-                  onClick={() => navigate('/bi/garantias-daf', { state: { aba: 'oficina' } })}
-                  title="Ir para Dashboard"
-                  className="flex items-center justify-center p-2 rounded-md text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 shadow-sm transition-colors"
-                >
-                  <BarChart2 className="h-3.5 w-3.5 text-indigo-500" />
-                </button>
-              )}
             </div>
           )}
           {!isAndamento && (
             <div className="flex items-center gap-2">
-              {spLastModified && (
-                <span className="text-[10px] text-slate-400">
-                  Modificado em <strong className="text-slate-500">{new Date(spLastModified).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</strong>
-                </span>
-              )}
               <button
                 onClick={() => fetchSharePoint(true)}
                 disabled={spLoading}
                 title="Atualizar arquivo"
-                className="flex items-center justify-center p-2 rounded-md text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 shadow-sm transition-colors disabled:opacity-50"
+                className="flex items-center justify-center p-1.5 rounded-md bg-orange-500 hover:bg-orange-600 text-white shadow-sm transition-colors disabled:opacity-50"
               >
                 <RefreshCw className={`h-3.5 w-3.5 ${spLoading ? 'animate-spin' : ''}`} />
               </button>
@@ -886,7 +787,7 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
                 <button
                   onClick={() => setModalRegras(true)}
                   title="Regras do sistema"
-                  className="flex items-center justify-center p-2 rounded-md text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 shadow-sm transition-colors"
+                  className="flex items-center justify-center p-1.5 rounded-md bg-orange-500 hover:bg-orange-600 text-white shadow-sm transition-colors"
                 >
                   <Settings className="h-3.5 w-3.5" />
                 </button>
@@ -894,7 +795,7 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
               <button
                 onClick={() => window.open('/garantias-daf-manual', '_blank')}
                 title="Manual de operação"
-                className="flex items-center justify-center p-2 rounded-md text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 shadow-sm transition-colors"
+                className="flex items-center justify-center p-1.5 rounded-md bg-orange-500 hover:bg-orange-600 text-white shadow-sm transition-colors"
               >
                 <BookOpen className="h-3.5 w-3.5" />
               </button>
@@ -906,21 +807,12 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
                   <Trash2 className="h-4 w-4" /> Excluir {selecionados.size} selecionado(s)
                 </button>
               )}
-              {hasPermission('bi/garantias-daf') && (
-                <button
-                  onClick={() => navigate('/bi/garantias-daf', { state: { aba: 'aberto' } })}
-                  title="Ir para Dashboard"
-                  className="flex items-center justify-center p-2 rounded-md text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 shadow-sm transition-colors"
-                >
-                  <BarChart2 className="h-3.5 w-3.5 text-indigo-500" />
-                </button>
-              )}
             </div>
           )}
         </div>
         </div>
-        <GarantiasNav />
       </div>
+      )}
 
       {/* ── ALERTAS ── */}
       {!isAndamento && (grpNaoEncontrado.length > 0 || importandoPend || !!erroImportLote) && (
@@ -1021,40 +913,35 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
               ativo={filtroCard === c.key}
               onClick={() => handleCardClick(c.key)}
               st={c.st}
-              extraRows={c.key === 'andamento' ? [
-                { label: 'Dentro do prazo', value: grpAndEmDia.length, onClick: () => handleCardClick('andamento_em_dia'), ativo: filtroCard === 'andamento_em_dia' },
-                { label: 'Fora do prazo', value: grpAnd15.length, onClick: () => handleCardClick('andamento15'), ativo: filtroCard === 'andamento15' },
+              rodapeRows={c.key === 'andamento' ? [
+                { label: `Dentro do prazo (${prazoAndTexto})`, qtd: grpAndEmDia.length, valor: sumValor(grpAndEmDia), onClick: () => handleCardClick('andamento_em_dia'), ativo: filtroCard === 'andamento_em_dia' },
+                { label: 'Fora do prazo', qtd: grpAnd15.length, valor: sumValor(grpAnd15), onClick: () => handleCardClick('andamento15'), ativo: filtroCard === 'andamento15' },
+              ] : c.key === 'recusas' ? [
+                { label: `No prazo (até ${diasRecusa} dias)`, qtd: grpRecPrazo.length, valor: sumValor(grpRecPrazo), onClick: () => handleCardClick('recusas_prazo'), ativo: filtroCard === 'recusas_prazo' },
+                { label: `Fora do prazo (+ de ${diasRecusa} dias)`, qtd: grpRecFora.length, valor: sumValor(grpRecFora), onClick: () => handleCardClick('recusas_fora'), ativo: filtroCard === 'recusas_fora' },
               ] : null}
             />
           ))}
-          {/* Card resumo total em aberto */}
-          <div className="bg-violet-50 border border-violet-200 rounded-lg p-3 flex flex-col gap-1">
-            <div className="flex items-center gap-1.5 mb-0.5">
+          {/* Card resumo total em aberto — mesmo modelo dos outros: valor total em destaque, depois quantidade */}
+          <div className="bg-violet-50 border border-violet-200 rounded-lg p-3 shadow-sm">
+            <div className="flex items-center gap-1.5 mb-2">
               <div className="p-1 bg-violet-100 rounded">
-                <BarChart2 className="h-3.5 w-3.5 text-violet-600" />
+                <BarChart2 className="h-3 w-3 text-violet-600" />
               </div>
-              <span className="text-[10px] font-bold text-violet-500 uppercase tracking-wider">Total Aberto</span>
+              <p className="text-[9px] font-bold uppercase tracking-wide leading-tight text-violet-500">Total Aberto</p>
             </div>
-            <div className="flex items-baseline gap-1">
-              <span className="text-xl font-bold text-violet-700">{dadosBase.length}</span>
-              <span className="text-[10px] text-violet-400">OS</span>
+            <p className="text-base font-bold text-violet-700 leading-none whitespace-nowrap">{fmt(totalValorGeral)}</p>
+            <div className="border-t border-violet-200 mt-2 pt-1.5">
+              <p className="text-[11px] font-bold text-violet-700">Qtde O.S. {dadosBase.length}</p>
             </div>
-            <div className="border-t border-violet-200 mt-1 pt-1.5 space-y-1 text-[10px]">
-              <div className="flex items-center justify-between">
-                <span className="text-violet-400">OS distintas</span>
-                <span className="font-semibold text-violet-700">{totalOsDistintas}</span>
-              </div>
+            <div className="border-t border-violet-200 mt-1.5 pt-1.5 space-y-1 text-[10px]">
               <div className="flex items-center justify-between">
                 <span className="text-violet-400">Peças</span>
-                <span className="font-mono text-violet-600">{fmt(totalValorPecas)}</span>
+                <span className="font-semibold text-violet-700">{fmt(totalValorPecas)}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-violet-400">Serviços</span>
-                <span className="font-mono text-violet-600">{fmt(totalValorServicos)}</span>
-              </div>
-              <div className="flex items-center justify-between border-t border-violet-200 pt-1 mt-1">
-                <span className="font-bold text-violet-600">Total</span>
-                <span className="font-bold font-mono text-violet-700">{fmt(totalValorGeral)}</span>
+                <span className="font-semibold text-violet-700">{fmt(totalValorServicos)}</span>
               </div>
             </div>
           </div>
@@ -1556,110 +1443,7 @@ export default function GarantiasDafDashboard({ variante = 'aberto' }) {
       )}
 
       {modalRegras && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md mx-4">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
-                <Settings className="h-4 w-4 text-slate-500" /> Regras do Sistema
-              </h3>
-              <button onClick={() => setModalRegras(false)} className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded transition-colors">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="flex flex-col gap-1 mb-4">
-              <label className="text-[10px] font-bold text-slate-400 uppercase">Dias na Oficina</label>
-              <input
-                type="number"
-                min="1"
-                value={diasOficinaInput}
-                onChange={e => setDiasOficinaInput(e.target.value)}
-                className="text-xs p-2 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20"
-              />
-              <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">
-                Contado da data de criação da OS — controla o card "Mais de N Dias na Oficina" da aba Na Oficina.
-              </p>
-            </div>
-            <div className="flex flex-col gap-1 mb-4">
-              <label className="text-[10px] font-bold text-slate-400 uppercase">Dias para Digitação</label>
-              <input
-                type="number"
-                min="1"
-                value={diasDigitacaoInput}
-                onChange={e => setDiasDigitacaoInput(e.target.value)}
-                className="text-xs p-2 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20"
-              />
-              <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">
-                D = dia em que a OS foi fechada.
-                {Number(diasDigitacaoInput) > 0 && (
-                  <>
-                    <br />• <strong>A Digitar</strong>: de D até D+{Number(diasDigitacaoInput)}
-                    <br />• <strong>Digitação Atrasada</strong>: a partir de D+{Number(diasDigitacaoInput) + 1}
-                  </>
-                )}
-              </p>
-            </div>
-            {tiposGarantiaParaRegras.length > 0 && (
-              <div className="flex flex-col gap-1 mb-5">
-                <label className="text-[10px] font-bold text-slate-400 uppercase">Dias para Solucionar por Tipo de OS</label>
-                <div className="flex items-center gap-2 mt-1 mb-1.5">
-                  <input
-                    type="number"
-                    min="1"
-                    value={valorAplicarTipos}
-                    onChange={e => setValorAplicarTipos(e.target.value)}
-                    className="w-16 shrink-0 text-xs p-1.5 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleAplicarValorTipos}
-                    disabled={selecionadosTipos.size === 0}
-                    className="flex-1 px-2 py-1.5 rounded-md text-[11px] font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                  >
-                    Aplicar aos selecionados ({selecionadosTipos.size})
-                  </button>
-                </div>
-                <div className="flex flex-col gap-1.5 max-h-48 overflow-y-auto pr-1">
-                  {tiposGarantiaParaRegras.map(({ sigla, descricao }) => (
-                    <div key={sigla} className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={selecionadosTipos.has(sigla)}
-                        onChange={() => toggleSelecionadoTipo(sigla)}
-                        className="shrink-0"
-                      />
-                      <span className="flex-1 text-[11px] text-slate-600 truncate" title={descricao}>{descricao}</span>
-                      <input
-                        type="number"
-                        min="1"
-                        placeholder={String(diasSolucao)}
-                        value={diasSolucaoPorTipoInput[sigla] ?? ''}
-                        onChange={e => setDiasSolucaoPorTipoInput(prev => ({ ...prev, [sigla]: e.target.value }))}
-                        className="w-16 shrink-0 text-xs p-1.5 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20"
-                      />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => setModalRegras(false)}
-                disabled={salvandoRegras}
-                className="px-3 py-1.5 rounded-md text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={handleSalvarRegras}
-                disabled={salvandoRegras}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 shadow-sm transition-colors disabled:opacity-60"
-              >
-                {salvandoRegras && <Loader2 className="h-3 w-3 animate-spin" />}
-                {salvandoRegras ? 'Salvando...' : 'Salvar'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <RegrasSistemaModal onClose={() => setModalRegras(false)} onSalvo={aplicarRegras} usuario={user?.email} tiposExtras={tipoOsDescMap} />
       )}
     </div>
   )

@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useMemo, Fragment } from 'react'
-import { Loader2, DollarSign, XCircle, ChevronRight, ChevronDown, ChevronsUpDown, AlertTriangle, CheckCircle2 } from 'lucide-react'
+import { Loader2, DollarSign, XCircle, ChevronRight, ChevronDown, ChevronsUpDown, AlertTriangle, CheckCircle2, Clock } from 'lucide-react'
 import { apiService } from '../../services/api'
 import { useEmpresasGarantias } from '../../hooks/useEmpresasGarantias'
+import TabelaTitulosDashboard from './TabelaTitulosDashboard'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
 
@@ -113,16 +114,18 @@ function StatTileGradient({ icon: Icon, label, value, sub, gradiente, onClick, d
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`text-left relative overflow-hidden rounded-2xl p-4 shadow-lg transition-all bg-gradient-to-br ${gradiente} ${disabled ? 'cursor-default' : 'hover:shadow-xl cursor-pointer'} ${ativo ? 'ring-2 ring-white/70' : ''} ${esmaecido ? 'opacity-50' : ''}`}
+      className={`h-full text-left relative overflow-hidden rounded-2xl p-4 shadow-lg transition-all bg-gradient-to-br ${gradiente} flex flex-col justify-between gap-3 ${disabled ? 'cursor-default' : 'hover:shadow-xl cursor-pointer'} ${ativo ? 'ring-2 ring-white/70' : ''} ${esmaecido ? 'opacity-50' : ''}`}
     >
       <div className="flex items-start justify-between gap-2">
-        <p className="text-[11px] font-bold uppercase tracking-wide text-white/80">{label}</p>
+        <p className="text-[9px] font-bold uppercase tracking-wide leading-tight text-white/80">{label}</p>
         <div className="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center shrink-0">
           <Icon className="h-3.5 w-3.5 text-white" />
         </div>
       </div>
-      <p className="text-2xl font-bold text-white mt-1 leading-none">{value}</p>
-      <p className="text-xs text-white/70 mt-1">{sub}</p>
+      <div>
+        <p className="text-base font-bold text-white leading-none whitespace-nowrap">{value}</p>
+        <p className="text-[11px] font-bold text-white/80 mt-2 pt-1.5 border-t border-white/20">{sub}</p>
+      </div>
     </button>
   )
 }
@@ -132,7 +135,7 @@ function StatTileGradient({ icon: Icon, label, value, sub, gradiente, onClick, d
 export default function GarantiasTitulosDashboard({ onLastModified }) {
   const [titulosRowsTodos, setTitulosRows] = useState([])
   // Empresas do usuário (inclusive em "Visualizar como"): o RFN003 traz todas as unidades.
-  const { permiteNome } = useEmpresasGarantias()
+  const { permiteNome, filtrosEmpresa } = useEmpresasGarantias()
   const titulosRows = useMemo(() => titulosRowsTodos.filter(r => permiteNome(r.empresa)), [titulosRowsTodos, permiteNome])
   const [tiposCadastrados, setTiposCadastrados] = useState([])
   const [loading, setLoading] = useState(true)
@@ -159,45 +162,71 @@ export default function GarantiasTitulosDashboard({ onLastModified }) {
   // ── Filtros cruzados: clicar em qualquer gráfico ou card filtra os demais ──
   const [filtroEmpresa, setFiltroEmpresa] = useState(null)
   const [filtroTipo, setFiltroTipo] = useState(null)
-  const [filtroSituacao, setFiltroSituacao] = useState(null) // null | 'vencido' | 'a_vencer'
+  const [filtroSituacao, setFiltroSituacao] = useState(null) // null | 'vencido' | 'vence_hoje' | 'a_vencer'
   const toggleFiltroEmpresa = (label) => setFiltroEmpresa(prev => prev === label ? null : label)
   const toggleFiltroTipo = (label) => setFiltroTipo(prev => prev === label ? null : label)
   const toggleFiltroSituacao = (key) => setFiltroSituacao(prev => prev === key ? null : key)
-  const algumFiltroAtivo = !!(filtroEmpresa || filtroTipo || filtroSituacao)
-  const limparDashboard = () => { setFiltroEmpresa(null); setFiltroTipo(null); setFiltroSituacao(null) }
+  // Período de vencimento clicado na tabela por mês ou na lista: { ano, mes } (mes null = ano inteiro)
+  const [filtroPeriodo, setFiltroPeriodo] = useState(null)
+  const mesmoPeriodo = (a, b) => !!a && !!b && a.ano === b.ano && a.mes === b.mes
+  const toggleFiltroPeriodo = (p) => setFiltroPeriodo(prev => (mesmoPeriodo(prev, p) ? null : p))
+  // Célula da tabela por mês: tipo + período juntos (clicar de novo na mesma célula limpa os dois)
+  const toggleCelulaPivot = (tipo, periodo) => {
+    if (filtroTipo === tipo && (periodo ? mesmoPeriodo(filtroPeriodo, periodo) : !filtroPeriodo)) {
+      setFiltroTipo(null); setFiltroPeriodo(null)
+    } else {
+      setFiltroTipo(tipo); setFiltroPeriodo(periodo)
+    }
+  }
+  const algumFiltroAtivo = !!(filtroEmpresa || filtroTipo || filtroSituacao || filtroPeriodo)
+  const limparDashboard = () => { setFiltroEmpresa(null); setFiltroTipo(null); setFiltroSituacao(null); setFiltroPeriodo(null) }
 
   const empresaOf = (r) => r.empresa?.trim() || 'Não informado'
   const tipoOf = (r) => r.tipo_titulo?.trim() || 'Não informado'
-  const situacaoOf = (r) => (r.atraso === null || r.atraso === undefined) ? null : (r.atraso > 0 ? 'vencido' : 'a_vencer')
+  const hojeISO = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` })()
+  const situacaoOf = (r) => !r.data_vencimento ? null
+    : r.data_vencimento < hojeISO ? 'vencido'
+    : r.data_vencimento === hojeISO ? 'vence_hoje' : 'a_vencer'
 
-  const aplicarFiltros = (rows, { pularEmpresa, pularTipo, pularSituacao } = {}) => {
+  const periodoOf = (r) => {
+    if (!r.data_vencimento) return null
+    const d = new Date(r.data_vencimento + 'T12:00:00')
+    return { ano: d.getFullYear(), mes: d.getMonth() }
+  }
+  const casaPeriodo = (r) => {
+    const p = periodoOf(r)
+    return !!p && p.ano === filtroPeriodo.ano && (filtroPeriodo.mes === null || p.mes === filtroPeriodo.mes)
+  }
+
+  const aplicarFiltros = (rows, { pularEmpresa, pularTipo, pularSituacao, pularPeriodo } = {}) => {
     let out = rows
     if (!pularEmpresa && filtroEmpresa) out = out.filter(r => empresaOf(r) === filtroEmpresa)
     if (!pularTipo && filtroTipo) out = out.filter(r => tipoOf(r) === filtroTipo)
     if (!pularSituacao && filtroSituacao) out = out.filter(r => situacaoOf(r) === filtroSituacao)
+    if (!pularPeriodo && filtroPeriodo) out = out.filter(casaPeriodo)
     return out
   }
 
-  const baseEmpresa = useMemo(() => aplicarFiltros(titulosBase, { pularEmpresa: true }), [titulosBase, filtroTipo, filtroSituacao])
+  const baseEmpresa = useMemo(() => aplicarFiltros(titulosBase, { pularEmpresa: true }), [titulosBase, filtroTipo, filtroSituacao, filtroPeriodo])
   const porEmpresa = useMemo(() => {
     const map = new Map()
     for (const r of baseEmpresa) {
       const e = empresaOf(r)
       if (!map.has(e)) map.set(e, { label: e, qtd: 0, valor: 0 })
       const x = map.get(e)
-      x.qtd += 1; x.valor += Number(r.valor || 0)
+      x.qtd += 1; x.valor += Number(r.saldo || 0)
     }
     return [...map.values()].sort((a, b) => b.valor - a.valor)
   }, [baseEmpresa])
 
-  const baseTipo = useMemo(() => aplicarFiltros(titulosBase, { pularTipo: true }), [titulosBase, filtroEmpresa, filtroSituacao])
+  const baseTipo = useMemo(() => aplicarFiltros(titulosBase, { pularTipo: true }), [titulosBase, filtroEmpresa, filtroSituacao, filtroPeriodo])
   const porTipo = useMemo(() => {
     const map = new Map()
     for (const r of baseTipo) {
       const t = tipoOf(r)
       if (!map.has(t)) map.set(t, { label: t, qtd: 0, valor: 0 })
       const x = map.get(t)
-      x.qtd += 1; x.valor += Number(r.valor || 0)
+      x.qtd += 1; x.valor += Number(r.saldo || 0)
     }
     return [...map.values()].sort((a, b) => b.valor - a.valor)
   }, [baseTipo])
@@ -207,24 +236,29 @@ export default function GarantiasTitulosDashboard({ onLastModified }) {
 
   // Cards de Vencidos/A Vencer/Total: refletem empresa/tipo, mas não a própria situação
   // selecionada — assim os três números continuam visíveis e clicáveis mesmo com um deles ativo.
-  const baseSituacao = useMemo(() => aplicarFiltros(titulosBase, { pularSituacao: true }), [titulosBase, filtroEmpresa, filtroTipo])
+  const baseSituacao = useMemo(() => aplicarFiltros(titulosBase, { pularSituacao: true }), [titulosBase, filtroEmpresa, filtroTipo, filtroPeriodo])
 
   // Demais elementos (gráficos, alertas, tabelas): refletem TODOS os filtros ativos.
-  const titulosFiltrados = useMemo(() => aplicarFiltros(titulosBase), [titulosBase, filtroEmpresa, filtroTipo, filtroSituacao])
+  const titulosFiltrados = useMemo(() => aplicarFiltros(titulosBase), [titulosBase, filtroEmpresa, filtroTipo, filtroSituacao, filtroPeriodo])
+
+  // Tabela por mês: reflete empresa/situação, mas não o próprio tipo/período clicado — assim todas as
+  // linhas e meses continuam visíveis (o selecionado fica realçado) para trocar de seleção.
+  const basePivot = useMemo(() => aplicarFiltros(titulosBase, { pularTipo: true, pularPeriodo: true }), [titulosBase, filtroEmpresa, filtroSituacao])
 
   const stats = useMemo(() => {
-    const totalValor = baseSituacao.reduce((s, r) => s + (r.valor || 0), 0)
     const totalSaldo = baseSituacao.reduce((s, r) => s + (r.saldo || 0), 0)
-    const vencidos = baseSituacao.filter(r => r.atraso > 0)
-    const aVencer = baseSituacao.filter(r => r.atraso !== null && r.atraso !== undefined && r.atraso <= 0)
+    const vencidos = baseSituacao.filter(r => situacaoOf(r) === 'vencido')
+    const venceHoje = baseSituacao.filter(r => situacaoOf(r) === 'vence_hoje')
+    const aVencer = baseSituacao.filter(r => situacaoOf(r) === 'a_vencer')
     return {
       total: baseSituacao.length,
-      totalValor,
       totalSaldo,
       vencidosQtd: vencidos.length,
-      vencidosValor: vencidos.reduce((s, r) => s + (r.valor || 0), 0),
+      vencidosValor: vencidos.reduce((s, r) => s + (r.saldo || 0), 0),
+      venceHojeQtd: venceHoje.length,
+      venceHojeValor: venceHoje.reduce((s, r) => s + (r.saldo || 0), 0),
       aVencerQtd: aVencer.length,
-      aVencerValor: aVencer.reduce((s, r) => s + (r.valor || 0), 0),
+      aVencerValor: aVencer.reduce((s, r) => s + (r.saldo || 0), 0),
     }
   }, [baseSituacao])
 
@@ -233,13 +267,13 @@ export default function GarantiasTitulosDashboard({ onLastModified }) {
   // ── TABELA PIVOT: Tipo de Título × Ano/Mês de Vencimento ────────────────
   const mesesVencimento = useMemo(() => {
     const map = new Map()
-    for (const r of titulosFiltrados) {
+    for (const r of basePivot) {
       if (!r.data_vencimento) continue
       const d = new Date(r.data_vencimento + 'T12:00:00')
       map.set(`${d.getFullYear()}-${d.getMonth()}`, { ano: d.getFullYear(), mes: d.getMonth() })
     }
     return [...map.values()].sort((a, b) => a.ano - b.ano || a.mes - b.mes)
-  }, [titulosFiltrados])
+  }, [basePivot])
 
   const anosVencimentoPivot = useMemo(() => [...new Set(mesesVencimento.map(m => m.ano))].sort((a, b) => a - b), [mesesVencimento])
   const mesesPorAnoVencimento = useMemo(() => {
@@ -251,7 +285,7 @@ export default function GarantiasTitulosDashboard({ onLastModified }) {
   // pivotTipoMes[tipo][`ano-mes`] = { qtd, valor } · pivotTipoMes[tipo].total
   const pivotTipoMes = useMemo(() => {
     const p = {}
-    for (const r of titulosFiltrados) {
+    for (const r of basePivot) {
       if (!r.data_vencimento) continue
       const tipo = tipoOf(r)
       const d = new Date(r.data_vencimento + 'T12:00:00')
@@ -259,12 +293,12 @@ export default function GarantiasTitulosDashboard({ onLastModified }) {
       if (!p[tipo]) p[tipo] = { total: { qtd: 0, valor: 0 } }
       if (!p[tipo][chave]) p[tipo][chave] = { qtd: 0, valor: 0 }
       p[tipo][chave].qtd += 1
-      p[tipo][chave].valor += Number(r.valor || 0)
+      p[tipo][chave].valor += Number(r.saldo || 0)
       p[tipo].total.qtd += 1
-      p[tipo].total.valor += Number(r.valor || 0)
+      p[tipo].total.valor += Number(r.saldo || 0)
     }
     return p
-  }, [titulosFiltrados])
+  }, [basePivot])
 
   const tiposPivot = useMemo(
     () => Object.keys(pivotTipoMes).sort((a, b) => pivotTipoMes[b].total.valor - pivotTipoMes[a].total.valor),
@@ -326,46 +360,58 @@ export default function GarantiasTitulosDashboard({ onLastModified }) {
           <p className="text-[11px] text-slate-500">
             Filtrado por{' '}
             {[
-              filtroSituacao && (filtroSituacao === 'vencido' ? 'Vencidos' : 'A Vencer'),
+              filtroSituacao && ({ vencido: 'Vencidos', vence_hoje: 'Vence Hoje', a_vencer: 'A Vencer' })[filtroSituacao],
               filtroEmpresa,
               filtroTipo,
+              filtroPeriodo && (filtroPeriodo.mes === null ? `Vencimento ${filtroPeriodo.ano}` : `Vencimento ${MESES_LONGOS[filtroPeriodo.mes]}/${filtroPeriodo.ano}`),
             ].filter(Boolean).map((f, i) => <Fragment key={i}>{i > 0 && ' + '}<strong className="text-slate-900">{f}</strong></Fragment>)}
           </p>
         </div>
       )}
 
       {/* STAT TILES — nível empresa/total, clicáveis: filtram os gráficos e tabelas abaixo */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <StatTileGradient
-          icon={DollarSign}
-          label="Total de Títulos"
-          value={stats.total}
-          sub={`${fmtMoeda(stats.totalValor)} · Saldo ${fmtMoeda(stats.totalSaldo)}`}
-          gradiente="from-violet-600 to-purple-800"
-          onClick={limparDashboard}
-          disabled={!algumFiltroAtivo}
-        />
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <StatTileGradient
           icon={stats.vencidosQtd > 0 ? AlertTriangle : CheckCircle2}
           label="Vencidos"
-          value={stats.vencidosQtd}
-          sub={fmtMoeda(stats.vencidosValor)}
+          value={fmtMoeda(stats.vencidosValor)}
+          sub={`Qtde Títulos ${stats.vencidosQtd}`}
           gradiente={stats.vencidosQtd > 0 ? 'from-orange-500 to-red-600' : 'from-slate-700 to-slate-900'}
           onClick={() => toggleFiltroSituacao('vencido')}
           disabled={stats.vencidosQtd === 0}
           ativo={filtroSituacao === 'vencido'}
-          esmaecido={filtroSituacao === 'a_vencer'}
+          esmaecido={!!filtroSituacao && filtroSituacao !== 'vencido'}
+        />
+        <StatTileGradient
+          icon={Clock}
+          label="Vence Hoje"
+          value={fmtMoeda(stats.venceHojeValor)}
+          sub={`Qtde Títulos ${stats.venceHojeQtd}`}
+          gradiente="from-yellow-400 to-amber-500"
+          onClick={() => toggleFiltroSituacao('vence_hoje')}
+          disabled={stats.venceHojeQtd === 0}
+          ativo={filtroSituacao === 'vence_hoje'}
+          esmaecido={!!filtroSituacao && filtroSituacao !== 'vence_hoje'}
         />
         <StatTileGradient
           icon={CheckCircle2}
           label="A Vencer"
-          value={stats.aVencerQtd}
-          sub={fmtMoeda(stats.aVencerValor)}
+          value={fmtMoeda(stats.aVencerValor)}
+          sub={`Qtde Títulos ${stats.aVencerQtd}`}
           gradiente="from-teal-500 to-emerald-700"
           onClick={() => toggleFiltroSituacao('a_vencer')}
           disabled={stats.aVencerQtd === 0}
           ativo={filtroSituacao === 'a_vencer'}
-          esmaecido={filtroSituacao === 'vencido'}
+          esmaecido={!!filtroSituacao && filtroSituacao !== 'a_vencer'}
+        />
+        <StatTileGradient
+          icon={DollarSign}
+          label="Total de Títulos"
+          value={fmtMoeda(stats.totalSaldo)}
+          sub={`Qtde Títulos ${stats.total}`}
+          gradiente="from-violet-600 to-purple-800"
+          onClick={limparDashboard}
+          disabled={!algumFiltroAtivo}
         />
       </div>
 
@@ -373,13 +419,13 @@ export default function GarantiasTitulosDashboard({ onLastModified }) {
       {/* DONUTS: POR EMPRESA / POR TIPO DE TÍTULO — nível categoria, participação no total */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-5">
-          <p className="text-xs font-bold text-slate-900 mb-1">Títulos por Empresa — por Valor</p>
+          <p className="text-xs font-bold text-slate-900 mb-1">Títulos por Empresa — por Saldo</p>
           <p className="text-[11px] text-slate-500 mb-4">Onde a carteira de recebíveis está concentrada.</p>
           <DonutChart data={porEmpresaDonut} onSlice={toggleFiltroEmpresa} filtroAtivo={filtroEmpresa} />
         </div>
         <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-5">
-          <p className="text-xs font-bold text-slate-900 mb-1">Títulos por Tipo — por Valor</p>
-          <p className="text-[11px] text-slate-500 mb-4">Participação de cada tipo de título no valor total.</p>
+          <p className="text-xs font-bold text-slate-900 mb-1">Títulos por Tipo — por Saldo</p>
+          <p className="text-[11px] text-slate-500 mb-4">Participação de cada tipo de título no saldo total.</p>
           <DonutChart data={porTipoDonut} onSlice={toggleFiltroTipo} filtroAtivo={filtroTipo} />
         </div>
       </div>
@@ -448,49 +494,58 @@ export default function GarantiasTitulosDashboard({ onLastModified }) {
                       {!colapsado && mesesPorAnoVencimento[ano].map(m => (
                         <Fragment key={`${m.ano}-${m.mes}`}>
                           <th className="p-2 text-right border-l border-slate-200">Títulos</th>
-                          <th className="p-2 text-right">Valor</th>
+                          <th className="p-2 text-right">Saldo</th>
                         </Fragment>
                       ))}
                       <th className="p-2 text-right border-l border-slate-200 bg-slate-100">Títulos</th>
-                      <th className="p-2 text-right bg-slate-100">Valor</th>
+                      <th className="p-2 text-right bg-slate-100">Saldo</th>
                     </Fragment>
                   )
                 })}
                 <th className="p-2 text-right border-l-2 border-slate-300 bg-slate-100">Títulos</th>
-                <th className="p-2 text-right bg-slate-100">Valor</th>
+                <th className="p-2 text-right bg-slate-100">Saldo</th>
               </tr>
             </thead>
             <tbody>
               {tiposPivot.map(tipo => (
-                <tr key={tipo} className="border-b border-slate-200 hover:bg-slate-50">
-                  <td className="p-2 font-semibold text-slate-900 sticky left-0 bg-white whitespace-nowrap truncate max-w-[220px]" title={tipo}>{tipo}</td>
+                <tr key={tipo} className={`border-b border-slate-200 hover:bg-slate-50 ${filtroTipo && filtroTipo !== tipo ? 'opacity-50' : ''}`}>
+                  <td onClick={() => toggleFiltroTipo(tipo)} title={`${tipo} — clique para filtrar`}
+                    className={`p-2 font-semibold sticky left-0 whitespace-nowrap truncate max-w-[220px] cursor-pointer hover:underline ${filtroTipo === tipo ? 'bg-violet-100 text-violet-800' : 'bg-white text-slate-900'}`}>{tipo}</td>
                   {anosVencimentoPivot.map(ano => {
                     const colapsado = !anosExpandidos.has(ano)
                     return (
                       <Fragment key={ano}>
                         {!colapsado && mesesPorAnoVencimento[ano].map(m => {
                           const cel = pivotTipoMes[tipo][`${m.ano}-${m.mes}`]
+                          const periodo = { ano: m.ano, mes: m.mes }
+                          const sel = filtroTipo === tipo && mesmoPeriodo(filtroPeriodo, periodo)
+                          const clique = cel ? () => toggleCelulaPivot(tipo, periodo) : undefined
+                          const cls = `${cel ? 'cursor-pointer hover:bg-violet-50' : ''} ${sel ? 'bg-violet-100 text-violet-800 font-bold' : 'text-slate-600'}`
                           return (
                             <Fragment key={`${m.ano}-${m.mes}`}>
-                              <td className="p-2 text-right text-slate-600 border-l border-slate-200">{cel?.qtd || ''}</td>
-                              <td className="p-2 text-right text-slate-600 font-medium whitespace-nowrap">{cel ? fmtMoeda(cel.valor) : ''}</td>
+                              <td onClick={clique} className={`p-2 text-right border-l border-slate-200 ${cls}`}>{cel?.qtd || ''}</td>
+                              <td onClick={clique} className={`p-2 text-right font-medium whitespace-nowrap ${cls}`}>{cel ? fmtMoeda(cel.valor) : ''}</td>
                             </Fragment>
                           )
                         })}
                         {(() => {
                           const t = totalAnoTipoMes(tipo, ano)
+                          const periodo = { ano, mes: null }
+                          const sel = filtroTipo === tipo && mesmoPeriodo(filtroPeriodo, periodo)
+                          const clique = t.qtd ? () => toggleCelulaPivot(tipo, periodo) : undefined
+                          const cls = `${t.qtd ? 'cursor-pointer hover:bg-violet-50' : ''} ${sel ? 'bg-violet-100 text-violet-800' : 'bg-slate-50 text-slate-900'}`
                           return (
                             <Fragment>
-                              <td className="p-2 text-right font-bold text-slate-900 border-l border-slate-200 bg-slate-50">{t.qtd || ''}</td>
-                              <td className="p-2 text-right font-bold text-slate-900 bg-slate-50 whitespace-nowrap">{t.qtd ? fmtMoeda(t.valor) : ''}</td>
+                              <td onClick={clique} className={`p-2 text-right font-bold border-l border-slate-200 ${cls}`}>{t.qtd || ''}</td>
+                              <td onClick={clique} className={`p-2 text-right font-bold whitespace-nowrap ${cls}`}>{t.qtd ? fmtMoeda(t.valor) : ''}</td>
                             </Fragment>
                           )
                         })()}
                       </Fragment>
                     )
                   })}
-                  <td className="p-2 text-right font-bold text-[#9085e9] border-l-2 border-slate-300 bg-slate-50">{pivotTipoMes[tipo].total.qtd || ''}</td>
-                  <td className="p-2 text-right font-bold text-[#9085e9] bg-slate-50 whitespace-nowrap">{pivotTipoMes[tipo].total.qtd ? fmtMoeda(pivotTipoMes[tipo].total.valor) : ''}</td>
+                  <td onClick={() => toggleCelulaPivot(tipo, null)} className="p-2 text-right font-bold text-[#9085e9] border-l-2 border-slate-300 bg-slate-50 cursor-pointer hover:bg-violet-50">{pivotTipoMes[tipo].total.qtd || ''}</td>
+                  <td onClick={() => toggleCelulaPivot(tipo, null)} className="p-2 text-right font-bold text-[#9085e9] bg-slate-50 whitespace-nowrap cursor-pointer hover:bg-violet-50">{pivotTipoMes[tipo].total.qtd ? fmtMoeda(pivotTipoMes[tipo].total.valor) : ''}</td>
                 </tr>
               ))}
               <tr className="bg-slate-50 font-bold text-slate-900 border-t-2 border-slate-300">
@@ -505,10 +560,15 @@ export default function GarantiasTitulosDashboard({ onLastModified }) {
                           if (cel) { acc.qtd += cel.qtd; acc.valor += cel.valor }
                           return acc
                         }, { qtd: 0, valor: 0 })
+                        // Linha Total: clicar no mês filtra só o período (todos os tipos)
+                        const periodo = { ano: m.ano, mes: m.mes }
+                        const sel = !filtroTipo && mesmoPeriodo(filtroPeriodo, periodo)
+                        const clique = t.qtd ? () => { setFiltroTipo(null); toggleFiltroPeriodo(periodo) } : undefined
+                        const cls = `${t.qtd ? 'cursor-pointer hover:bg-violet-50' : ''} ${sel ? 'bg-violet-100 text-violet-800' : ''}`
                         return (
                           <Fragment key={`${m.ano}-${m.mes}`}>
-                            <td className="p-2 text-right border-l border-slate-200">{t.qtd || ''}</td>
-                            <td className="p-2 text-right whitespace-nowrap">{t.qtd ? fmtMoeda(t.valor) : ''}</td>
+                            <td onClick={clique} className={`p-2 text-right border-l border-slate-200 ${cls}`}>{t.qtd || ''}</td>
+                            <td onClick={clique} className={`p-2 text-right whitespace-nowrap ${cls}`}>{t.qtd ? fmtMoeda(t.valor) : ''}</td>
                           </Fragment>
                         )
                       })}
@@ -518,10 +578,15 @@ export default function GarantiasTitulosDashboard({ onLastModified }) {
                           acc.qtd += r.qtd; acc.valor += r.valor
                           return acc
                         }, { qtd: 0, valor: 0 })
+                        // Linha Total, coluna do ano: filtra o ano inteiro (todos os tipos)
+                        const periodo = { ano, mes: null }
+                        const sel = !filtroTipo && mesmoPeriodo(filtroPeriodo, periodo)
+                        const clique = t.qtd ? () => { setFiltroTipo(null); toggleFiltroPeriodo(periodo) } : undefined
+                        const cls = `${t.qtd ? 'cursor-pointer hover:bg-violet-50' : ''} ${sel ? 'bg-violet-100 text-violet-800' : 'bg-slate-100'}`
                         return (
                           <Fragment>
-                            <td className="p-2 text-right border-l border-slate-200 bg-slate-100">{t.qtd || ''}</td>
-                            <td className="p-2 text-right bg-slate-100 whitespace-nowrap">{t.qtd ? fmtMoeda(t.valor) : ''}</td>
+                            <td onClick={clique} className={`p-2 text-right border-l border-slate-200 ${cls}`}>{t.qtd || ''}</td>
+                            <td onClick={clique} className={`p-2 text-right whitespace-nowrap ${cls}`}>{t.qtd ? fmtMoeda(t.valor) : ''}</td>
                           </Fragment>
                         )
                       })()}
@@ -535,6 +600,13 @@ export default function GarantiasTitulosDashboard({ onLastModified }) {
           </table>
         )}
       </div>
+
+      {/* TABELA DE TÍTULOS — a mesma do Controle (só consulta), seguindo os filtros dos cards e gráficos */}
+      <TabelaTitulosDashboard rows={titulosFiltrados} filtrosEmpresa={filtrosEmpresa}
+        filtroEmpresa={filtroEmpresa} onEmpresa={toggleFiltroEmpresa}
+        filtroTipo={filtroTipo} onTipo={toggleFiltroTipo}
+        filtroSituacao={filtroSituacao} onSituacao={toggleFiltroSituacao} situacaoOf={situacaoOf} />
+
     </div>
   )
 }

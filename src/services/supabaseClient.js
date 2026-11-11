@@ -3471,6 +3471,18 @@ export const apiService = {
     return (await doMes(unidade)) || (await doMes('GERAL'))
   },
 
+  // Regras de TODAS as empresas em um mês (uma linha por empresa) — para os vínculos por quadro
+  // ("Vale também para"): a empresa vinculada lê o quadro da empresa de origem.
+  getCampanhaRegrasMes: async (ano, mes) => {
+    const { data, error } = await supabase
+      .from('fato_campanha_regras')
+      .select('unidade, dados')
+      .eq('ano', ano)
+      .eq('mes', mes)
+    if (error) throw error
+    return data || []
+  },
+
   salvarCampanhaRegras: async (ano, mes, unidade, dados, usuarioEmail = null) => {
     const { error } = await supabase
       .from('fato_campanha_regras')
@@ -4097,6 +4109,19 @@ export const apiService = {
     if (error) throw error
     return data || []
   },
+  // OS de várias auditorias (Dashboard) — paginado, o PostgREST devolve no máximo 1000 linhas por chamada
+  getAuditoriaOsDeVarias: async (auditoriaIds) => {
+    if (!auditoriaIds?.length) return []
+    const todas = []
+    for (let de = 0; ; de += 1000) {
+      const { data, error } = await supabase.from('aud_auditoria_os')
+        .select('*').in('auditoria_id', auditoriaIds).order('id').range(de, de + 999)
+      if (error) throw error
+      todas.push(...(data || []))
+      if (!data || data.length < 1000) break
+    }
+    return todas
+  },
   createAuditoriaOsLote: async (rows) => {
     if (!rows.length) return []
     const { data, error } = await supabase.from('aud_auditoria_os').insert(rows).select()
@@ -4278,6 +4303,17 @@ export const apiService = {
   // Restringe Gestão de Projetos por departamento. Modo TODOS/INDIVIDUAL igual ao de
   // Cálculo de Comissões e Auditoria Externa: TODOS = sem restrição (inclusive
   // departamentos futuros), INDIVIDUAL = só os nomes marcados em permissoes_depto_grupo.
+  // Visão que abre primeiro em Garantias DAF: grupos_acesso.garantias_daf_default_view ('dashboard' | 'tabela' = Controle)
+  getVisaoGarantiasGrupo: async (grupoId) => {
+    const { data, error } = await supabase.from('grupos_acesso').select('garantias_daf_default_view').eq('id', grupoId).maybeSingle()
+    if (error) throw error
+    return data?.garantias_daf_default_view === 'dashboard' ? 'dashboard' : 'tabela'
+  },
+  setVisaoGarantiasGrupo: async (grupoId, visao) => {
+    const { error } = await supabase.from('grupos_acesso')
+      .update({ garantias_daf_default_view: visao === 'dashboard' ? 'dashboard' : 'tabela' }).eq('id', grupoId)
+    if (error) throw error
+  },
   // `modo` fica em grupos_acesso.projetos_depto_modo (default 'TODOS').
   getPermissoesDeptoPorGrupo: async (grupoId) => {
     const [{ data, error }, { data: grupoRow, error: e2 }] = await Promise.all([
@@ -6112,12 +6148,26 @@ export const apiService = {
     return todos
   },
 
+  // Apaga TUDO de uma tabela TruckPag em lotes pequenos (por id), em vez de um DELETE só pra
+  // tabela inteira. Motivo: a política de RLS (checagem de permissão por menu) é reavaliada
+  // linha a linha também num DELETE — um "delete tudo" numa tabela de milhares de linhas (ex.:
+  // truckpag_repasses, ~6 mil) estourava o statement_timeout (8s) sozinho, antes mesmo de inserir
+  // nada de novo. Em lotes de 500, cada DELETE individual fica bem abaixo do limite.
+  limparTabelaTruckPag: async (tabela) => {
+    while (true) {
+      const { data, error } = await supabase.from(tabela).select('id').order('id', { ascending: true }).limit(500)
+      if (error) throw error
+      if (!data || data.length === 0) break
+      const { error: delError } = await supabase.from(tabela).delete().in('id', data.map(r => r.id))
+      if (delError) throw delError
+    }
+  },
+
   // truckpag_titulos e truckpag_creditos_nao_identificados são um "retrato" do momento
   // (relatório de posição) — cada importação substitui o conteúdo inteiro da tabela,
   // em vez de casar linha a linha contra o que já existe.
   importarTruckPagTitulos: async (linhas) => {
-    const { error: delError } = await supabase.from('truckpag_titulos').delete().neq('id', '00000000-0000-0000-0000-000000000000')
-    if (delError) throw delError
+    await apiService.limparTabelaTruckPag('truckpag_titulos')
     const CHUNK = 500
     for (let i = 0; i < linhas.length; i += CHUNK) {
       const { error } = await supabase.from('truckpag_titulos').insert(linhas.slice(i, i + CHUNK))
@@ -6127,8 +6177,7 @@ export const apiService = {
   },
 
   importarTruckPagCreditos: async (linhas) => {
-    const { error: delError } = await supabase.from('truckpag_creditos_nao_identificados').delete().neq('id', '00000000-0000-0000-0000-000000000000')
-    if (delError) throw delError
+    await apiService.limparTabelaTruckPag('truckpag_creditos_nao_identificados')
     const CHUNK = 500
     for (let i = 0; i < linhas.length; i += CHUNK) {
       const { error } = await supabase.from('truckpag_creditos_nao_identificados').insert(linhas.slice(i, i + CHUNK))
@@ -6143,8 +6192,7 @@ export const apiService = {
   // novo, igual títulos/créditos, e garante que baixa/exclusão feita direto na planilha também
   // reflete aqui (upsert nunca removia linha que sumiu da fonte).
   importarTruckPagRepasses: async (linhas) => {
-    const { error: delError } = await supabase.from('truckpag_repasses').delete().neq('id', '00000000-0000-0000-0000-000000000000')
-    if (delError) throw delError
+    await apiService.limparTabelaTruckPag('truckpag_repasses')
     const CHUNK = 500
     for (let i = 0; i < linhas.length; i += CHUNK) {
       const { error } = await supabase.from('truckpag_repasses').insert(linhas.slice(i, i + CHUNK))

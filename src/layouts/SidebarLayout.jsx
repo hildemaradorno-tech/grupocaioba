@@ -30,7 +30,8 @@ function getActiveSectionKey(pathname) {
     '/classificacao-compra','/funcionarios','/feriados','/calendario']
   if (cadastros.includes(pathname)) return '_config'
   if (pathname.startsWith('/metas')) return '_metas'
-  if (pathname.startsWith('/garantias-daf') || pathname.startsWith('/auditoria-os-aberto') || pathname.startsWith('/auditoria') || pathname.startsWith('/garantia') || pathname.startsWith('/honda') || pathname.startsWith('/truckpag') || pathname.startsWith('/bpm')) return '_controle-processos'
+  if (pathname.startsWith('/garantias-daf')) return '_bi'
+  if (pathname.startsWith('/auditoria') || pathname.startsWith('/garantia') || pathname.startsWith('/honda') || pathname.startsWith('/truckpag') || pathname.startsWith('/bpm')) return '_controle-processos'
   if (pathname.startsWith('/projetos') || pathname.startsWith('/auditoria-externa')) return '_gestao-projetos'
   if (pathname.startsWith('/calculadoras')) return '_controle-processos'
   if (pathname.startsWith('/bi') || pathname.startsWith('/kpi')) return '_bi'
@@ -549,19 +550,14 @@ export default function SidebarLayout() {
       case '_controle-processos':
         return (
           <>
-            {(canView('garantias-daf-andamento') || canView('garantias-daf') || canView('garantias-daf-historicodeos') || canView('garantias-daf-titulos') || canView('honda/contas-a-receber') || canView('bpm/nfe-cancelamento-devolucao') || canViewSection('_pecas') || canViewSection('_pecas-motos') || canView('calculadoras/venda-servico')) && (
+            {(canView('honda/contas-a-receber') || canView('bpm/nfe-cancelamento-devolucao') || canViewSection('_pecas') || canViewSection('_pecas-motos') || canView('calculadoras/venda-servico')) && (
               <FlyGroup label="Controle de Processos" />
-            )}
-            {/* Dashboard e as demais telas (Encerradas, Faturadas, a Receber) já ficam acessíveis como abas dentro de Garantias DAF. */}
-            {(canView('garantias-daf-andamento') || canView('garantias-daf')) && (
-              <FlyItem to={canView('garantias-daf-andamento') ? '/garantias-daf-andamento' : '/garantias-daf'} icon={ShieldCheck} onClose={closeFlyout}>Garantias DAF</FlyItem>
             )}
             {canView('honda/contas-a-receber') && <FlyItem to="/honda/contas-a-receber" icon={Bike} onClose={closeFlyout}>Contas a Receber HONDA</FlyItem>}
             {canView('bpm/nfe-cancelamento-devolucao') && <FlyItem to="/bpm/nfe-cancelamento-devolucao" icon={Workflow} onClose={closeFlyout}>Cancelamento/Devolução NF-e</FlyItem>}
       {(canView('truckpag/titulos') || canView('truckpag/conciliacao')) && (
         <FlyItem to={canView('truckpag/conciliacao') ? "/truckpag/conciliacao" : "/truckpag/titulos"} icon={Truck} onClose={closeFlyout}>TruckPag a Receber</FlyItem>
       )}
-            {canView('auditoria-os-aberto') && <FlyItem to="/auditoria-os-aberto" icon={ClipboardList} onClose={closeFlyout}>Auditoria O.S. Aberta</FlyItem>}
             {(canViewSection('_pecas') || canViewSection('_pecas-motos')) && <FlyGroup label="Gestor de Peças 2.0" />}
             {canViewSection('_pecas') && <FlyDrill icon={Package} onClick={() => setActiveSection('_pecas')}>Peças — Trucks</FlyDrill>}
             {canViewSection('_pecas-motos') && <FlyDrill icon={Bike} onClick={() => setActiveSection('_pecas-motos')}>Peças — Motos</FlyDrill>}
@@ -601,7 +597,10 @@ export default function SidebarLayout() {
         return (
           <>
             <FlyGroup label="BI - Dashboard" />
-            {canView('bi/garantias-daf') && <FlyItem to="/bi/garantias-daf" icon={ShieldCheck} onClose={closeFlyout}>Garantias DAF</FlyItem>}
+            {/* Garantias DAF (Dashboard | Controle) fica só aqui, desde nov/2026 */}
+            {(canView('bi/garantias-daf') || canView('garantias-daf-andamento') || canView('garantias-daf') || canView('garantias-daf-historicodeos') || canView('garantias-daf-titulos')) && <FlyItem to="/bi/garantias-daf" icon={ShieldCheck} onClose={closeFlyout}>Garantias DAF</FlyItem>}
+            {/* Auditoria O.S. Aberta (Dashboard | Controle) fica só aqui, desde nov/2026 */}
+            {(canView('auditoria-os-aberto/dashboard') || canView('auditoria-os-aberto')) && <FlyItem to="/bi/auditoria-os-aberto" icon={ClipboardList} onClose={closeFlyout}>Auditoria O.S. Aberta</FlyItem>}
             {canView('bi/projetos') && <FlyItem to="/bi/projetos" icon={FolderKanban} onClose={closeFlyout}>Gestão de Projetos</FlyItem>}
             {canView('bi/possibilidades') && <FlyItem to="/bi/possibilidades" icon={Gauge} onClose={closeFlyout}>Possibilidades</FlyItem>}
             {canView('bi/agendamento-servicos') && <FlyItem to="/bi/agendamento-servicos" icon={Calendar} onClose={closeFlyout}>Agendamento de Serviços</FlyItem>}

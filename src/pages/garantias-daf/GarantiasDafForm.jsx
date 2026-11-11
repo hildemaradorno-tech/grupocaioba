@@ -462,7 +462,7 @@ export default function GarantiasDafForm() {
   }
 
   const handleZerarSG = async () => {
-    if (!modoEdicao || modoVisualizar) return
+    if (!modoEdicao || modoVisualizar || !canEditarOS) return
     setZerandoSG(true)
     try {
       await apiService.updateGarantia(id, { numero_sg: null, data_sg: null }, user?.email, statusAnterior)
@@ -787,7 +787,7 @@ export default function GarantiasDafForm() {
               {/* Separador SG */}
               <div className="col-span-3 border-t border-dashed border-blue-100 pt-2 mt-1 flex items-center justify-between">
                 <span className="text-[10px] font-bold text-blue-500 uppercase tracking-wider">Solicitação de Garantia</span>
-                {modoEdicao && (form.numero_sg || form.data_sg) && (
+                {modoEdicao && canEditarOS && !modoVisualizar && (form.numero_sg || form.data_sg) && (
                   <button
                     type="button"
                     onClick={handleZerarSG}

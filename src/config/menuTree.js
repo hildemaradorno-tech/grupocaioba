@@ -209,21 +209,6 @@ export const MENU_TREE = [
     label: 'Controle de Processos',
     children: [
       {
-        // Permissões individuais mantidas (controlam quais abas aparecem em Garantias DAF),
-        // mas o grupo inteiro navega direto pra página única — ver navTo no Home.jsx (TabelaMenu),
-        // mesmo padrão do grupo Matriz KPIs logo abaixo. As telas de Andamento/Aberto/a Receber
-        // já ficam acessíveis como abas (GarantiasNav) dentro de uma mesma tela.
-        key: '_garantias-daf',
-        label: 'Garantias DAF',
-        navTo: 'garantias-daf-andamento',
-        children: [
-          { key: 'garantias-daf-andamento', label: 'Garantias DAF na Oficina' },
-          { key: 'garantias-daf', label: 'Garantias DAF Aberto' },
-          { key: 'garantias-daf-historicodeos', label: 'Histórico de O.S.' },
-          { key: 'garantias-daf-titulos',   label: 'Garantias DAF a Receber' },
-        ],
-      },
-      {
         // Mesmo padrão da Campanha Pós-Venda: o grupo navega direto pra tela única. A key da tela
         // (honda/contas-a-receber) é mantida, então o acesso já concedido não muda; cada aba é uma
         // permissão própria (marcar = pode ver a aba) e os botões são ações em acoesMenu.js.
@@ -257,7 +242,6 @@ export const MENU_TREE = [
           { key: 'truckpag/titulos', label: 'Títulos a Receber' },
         ],
       },
-      { key: 'auditoria-os-aberto', label: 'Auditoria O.S. Aberta' },
       // Gestor de Peças 2.0 (movido para Controle de Processos em 29/10/2026) — dois Gestores separados com
       // as mesmas telas; keys mantidas (permissões pecas/... e pecas-motos/... não mudam). Sem dashboard no menu BI
       // (excluído a pedido do usuário em 29/10/2026); regras em Configurações → Departamentos → Peças.
@@ -320,7 +304,31 @@ export const MENU_TREE = [
     key: '_bi',
     label: 'BI - Dashboard',
     children: [
-      { key: 'bi/garantias-daf', label: 'BI — Garantias DAF' },
+      {
+        // Garantias DAF numa tela só (BI — Garantias DAF): Dashboard (bi/garantias-daf) e Controle de
+        // cada aba (chaves garantias-daf-*, mantidas para não mudar as permissões já dadas aos grupos).
+        key: '_garantias-daf',
+        label: 'Garantias DAF',
+        navTo: 'bi/garantias-daf',
+        children: [
+          { key: 'bi/garantias-daf', label: 'Dashboards' },
+          { key: 'garantias-daf-andamento', label: 'Controle — Na Oficina' },
+          { key: 'garantias-daf', label: 'Controle — Com Garantista' },
+          { key: 'garantias-daf-titulos', label: 'Controle — Títulos a Receber' },
+          { key: 'garantias-daf-historicodeos', label: 'Controle — Histórico de O.S.' },
+        ],
+      },
+      {
+        // Auditoria O.S. Aberta numa tela só (nov/2026): Dashboard e Controle. A key do Controle
+        // (auditoria-os-aberto) foi mantida — permissões e ações já dadas aos grupos não mudam.
+        key: '_auditoria-os-aberto',
+        label: 'Auditoria O.S. Aberta',
+        navTo: 'bi/auditoria-os-aberto',
+        children: [
+          { key: 'auditoria-os-aberto/dashboard', label: 'Dashboard' },
+          { key: 'auditoria-os-aberto', label: 'Controle' },
+        ],
+      },
       { key: 'bi/projetos', label: 'BI — Gestão de Projetos' },
       { key: 'bi/possibilidades', label: 'BI — Possibilidades' },
       { key: 'bi/agendamento-servicos', label: 'BI — Agendamento de Serviços' },
@@ -377,8 +385,8 @@ export const MENU_TREE = [
         children: [
           { key: 'bi/campanha/regras', label: 'Aba Regras' },
           // Apuração e Resultado são uma aba só ("Resultado"); cada permissão libera uma visão dela.
-          { key: 'bi/campanha/apuracao', label: 'Aba Resultado — visão Apuração' },
-          { key: 'bi/campanha/resultado', label: 'Aba Resultado — visão Bônus R$' },
+          { key: 'bi/campanha/apuracao', label: 'Aba Resultado — Apuração (contribuição e faixa)' },
+          { key: 'bi/campanha/resultado', label: 'Aba Resultado — Bônus R$ (colunas de bônus e cálculo)' },
           { key: 'bi/campanha/pagamento', label: 'Aba Pagamento' },
           { key: 'bi/campanha/empresa-trucks', label: 'Empresa CAIOBÁ TRUCKS (Gerente Geral)' },
           { key: 'bi/campanha/empresa-cg', label: 'Empresa Campo Grande' },
