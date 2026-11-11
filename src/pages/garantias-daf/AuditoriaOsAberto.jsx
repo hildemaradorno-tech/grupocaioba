@@ -1200,7 +1200,7 @@ export default function AuditoriaOsAberto({ embedded = false, slotFiltros = null
             setFiltroEmpresaId(e.target.value)
             setAuditoriaId(e.target.value ? (auditoriasDaEmpresa(e.target.value)[0]?.id || '') : '')
           }}
-          className="w-full h-9 text-xs px-2 pr-8 border border-slate-300 rounded-md focus:ring-2 focus:ring-indigo-500/20 bg-white appearance-none font-semibold"
+          className="w-full h-9 text-[11px] px-2 pr-8 border border-slate-300 rounded-md focus:ring-2 focus:ring-indigo-500/20 bg-white appearance-none"
         >
           <option value="">— Selecione uma empresa —</option>
           {empresas.map(e => (
@@ -1219,7 +1219,7 @@ export default function AuditoriaOsAberto({ embedded = false, slotFiltros = null
           value={auditoriaId}
           onChange={e => setAuditoriaId(e.target.value)}
           disabled={!filtroEmpresaId}
-          className="w-full h-9 text-xs px-2 pr-8 border border-slate-300 rounded-md focus:ring-2 focus:ring-indigo-500/20 bg-white appearance-none disabled:opacity-50 disabled:cursor-not-allowed"
+          className="w-full h-9 text-[11px] px-2 pr-8 border border-slate-300 rounded-md focus:ring-2 focus:ring-indigo-500/20 bg-white appearance-none disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <option value="">— Selecione uma auditoria —</option>
           {auditoriasFiltradas.map(a => (

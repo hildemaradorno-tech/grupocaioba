@@ -318,7 +318,7 @@ export default function AuditoriaOsAbertoDashboard({ selecao = null, onSelecao =
       <div className="flex flex-col gap-1 w-[240px]">
         <label className={`text-[10px] font-bold ${corRotulo} uppercase flex items-center gap-1`}><Building2 className="h-3 w-3" /> Empresa</label>
         <select value={empresaId} onChange={e => setEmpresaId(e.target.value)}
-          className="h-9 text-xs px-2 border border-slate-300 rounded-md bg-white font-semibold">
+          className="h-9 text-[11px] px-2 border border-slate-300 rounded-md bg-white">
           <option value="">— Selecione uma empresa —</option>
           {empresas.map(e => <option key={e.id} value={e.id}>{nomeSeletorEmpresa(e)}</option>)}
         </select>
@@ -326,7 +326,7 @@ export default function AuditoriaOsAbertoDashboard({ selecao = null, onSelecao =
       <div className="flex flex-col gap-1 w-[235px]">
         <label className={`text-[10px] font-bold ${corRotulo} uppercase flex items-center gap-1`}><Calendar className="h-3 w-3" /> Data da Auditoria</label>
         <select value={dataSel} onChange={e => setDataSel(e.target.value)} disabled={!empresaId}
-          className="h-9 text-xs px-2 border border-slate-300 rounded-md bg-white disabled:opacity-50 disabled:cursor-not-allowed">
+          className="h-9 text-[11px] px-2 border border-slate-300 rounded-md bg-white disabled:opacity-50 disabled:cursor-not-allowed">
           <option value="">— Selecione uma auditoria —</option>
           {empresaId && audsEmpresa.map(a => <option key={a.id} value={a.id}>{fmtDate(a.data_auditoria)} — {STATUS_ENCERRADOS.includes(a.status) ? 'Finalizada' : 'Em andamento'}</option>)}
         </select>
