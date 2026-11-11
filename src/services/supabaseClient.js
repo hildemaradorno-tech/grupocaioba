@@ -6412,6 +6412,13 @@ export const apiService = {
       if (e2) throw e2
     }
   },
+  // Lote: mesmo Centro de Resultado (Visual) em vários centros (null remove o vínculo).
+  definirCrVisualCtbCentros: async (ids, crVisualId) => {
+    for (let i = 0; i < ids.length; i += 200) {
+      const { error } = await supabase.from('ctb_centros_resultado').update({ cr_visual_id: crVisualId || null }).in('id', ids.slice(i, i + 200))
+      if (error) throw error
+    }
+  },
   // Só acrescenta empresas (importação): nunca remove as que o centro já tem.
   vincularEmpresasCtbCentro: async (centroId, empresaIds) => {
     if (!empresaIds.length) return

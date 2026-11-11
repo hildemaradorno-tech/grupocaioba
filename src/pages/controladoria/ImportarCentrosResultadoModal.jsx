@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, useState } from 'react'
 import * as XLSX from 'xlsx'
-import { X, Upload, FileSpreadsheet, AlertTriangle, CheckCircle2, Loader2, Plus as PlusIcon, Link2 } from 'lucide-react'
+import { X, Upload, FileSpreadsheet, AlertTriangle, CheckCircle2, Loader2, Plus as PlusIcon, Link2, Download } from 'lucide-react'
 import { apiService } from '../../services/api'
 import { INPUT, LABEL } from './ControladoriaNav'
 import SeletorEmpresas from './SeletorEmpresas'
@@ -20,6 +20,24 @@ export default function ImportarCentrosResultadoModal({ centros, sistemas, empre
   const [sistemaId, setSistemaId] = useState('')
   // Empresas em que os centros do arquivo existem (uma linha por centro × empresa no Supabase).
   const [empresaIds, setEmpresaIds] = useState([])
+  const [semSigla, setSemSigla] = useState([]) // linhas ignoradas por estarem sem Sigla/Fisco
+
+  // Modelo .xlsx: cabeçalho certo e as células já formatadas como Texto (formato "@"), pra o Excel
+  // não tirar zero à esquerda do código (ex.: 001) nem converter em número.
+  const baixarModelo = () => {
+    const colunas = ['Código', 'Descrição', 'Sigla/Fisco']
+    const ws = {}
+    colunas.forEach((nome, c) => { ws[XLSX.utils.encode_cell({ r: 0, c })] = { t: 's', v: nome, z: '@' } })
+    for (let r = 1; r <= 500; r++) {
+      colunas.forEach((_, c) => { ws[XLSX.utils.encode_cell({ r, c })] = { t: 's', v: '', z: '@' } })
+    }
+    ws['!ref'] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: 500, c: colunas.length - 1 } })
+    ws['!cols'] = [{ wch: 14 }, { wch: 45 }, { wch: 16 }]
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Centros de Resultado')
+    // cellStyles: sem isso o formato "@" (Texto) não é gravado no arquivo.
+    XLSX.writeFile(wb, 'modelo_centros_resultado.xlsx', { cellStyles: true })
+  }
   const [resultado, setResultado] = useState(null)
 
   // Um centro é identificado por sistema + código + sigla: mesmo código e mesma sigla = mesmo centro
@@ -46,27 +64,28 @@ export default function ImportarCentrosResultadoModal({ centros, sistemas, empre
         const colCodigo = achaColuna(cabecalho, ['codigo', 'cod'])
         const colDescricao = achaColuna(cabecalho, ['descricao', 'desc'])
         const colSigla = achaColuna(cabecalho, ['sigla/fisco', 'sigla / fisco', 'sigla fisco', 'sigla', 'fisco'])
-        const faltando = [!colCodigo && 'Código', !colDescricao && 'Descrição'].filter(Boolean)
-        if (faltando.length > 0) { setErroArquivo(`Colunas não encontradas no arquivo: ${faltando.join(', ')}`); return }
+        const faltando = [!colCodigo && 'Código', !colDescricao && 'Descrição', !colSigla && 'Sigla/Fisco'].filter(Boolean)
+        if (faltando.length > 0) { setErroArquivo(`Colunas não encontradas no arquivo: ${faltando.join(', ')}\nUse o botão "Baixar modelo" para pegar a planilha no formato certo.`); return }
 
         const vistos = new Set()
         const lista = []
+        const ignoradas = [] // linhas com código e descrição, mas sem Sigla/Fisco (obrigatória)
         for (const r of raw) {
           const codigo = norm(r[colCodigo])
           const descricao = norm(r[colDescricao])
           if (!codigo || !descricao) continue
-          // Sem coluna Sigla (ou célula vazia), a sigla vira o próprio código.
-          const siglaArquivo = colSigla ? norm(r[colSigla]).toUpperCase() : ''
-          const sigla = siglaArquivo || codigo.toUpperCase()
+          const sigla = norm(r[colSigla]).toUpperCase()
+          if (!sigla) { ignoradas.push(`${codigo} — ${descricao}`); continue }
           // Mesmo código + sigla repetido no arquivo: fica a primeira linha.
           const chave = chaveCentro(codigo, sigla)
           if (vistos.has(chave)) continue
           vistos.add(chave)
           lista.push({ chave, codigo, descricao, sigla })
         }
-        if (lista.length === 0) { setErroArquivo('Nenhuma linha com código e descrição preenchidos.'); return }
+        if (lista.length === 0) { setErroArquivo('Nenhuma linha com Código, Descrição e Sigla/Fisco preenchidos.'); return }
         lista.sort((a, b) => a.codigo.localeCompare(b.codigo, 'pt-BR', { numeric: true }))
         setLinhas(lista)
+        setSemSigla(ignoradas)
         setSistemaId('')
         setEtapa('preview')
       } catch (err) {
@@ -156,17 +175,20 @@ export default function ImportarCentrosResultadoModal({ centros, sistemas, empre
                 </div>
               )}
               <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
-                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-2">Colunas obrigatórias</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {['Código', 'Descrição'].map(c => (
-                    <span key={c} className="px-2 py-0.5 bg-white border border-slate-200 rounded text-[10px] font-mono text-slate-600">{c}</span>
-                  ))}
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-2">Colunas obrigatórias</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {['Código', 'Descrição', 'Sigla/Fisco'].map(c => (
+                        <span key={c} className="px-2 py-0.5 bg-white border border-slate-200 rounded text-[10px] font-mono text-slate-600">{c}</span>
+                      ))}
+                    </div>
+                  </div>
+                  <button type="button" onClick={baixarModelo} className="flex items-center gap-1.5 shrink-0 px-3 py-1.5 rounded-md text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 transition-colors">
+                    <Download className="h-3.5 w-3.5" /> Baixar modelo
+                  </button>
                 </div>
-                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mt-3 mb-2">Coluna opcional</p>
-                <div className="flex flex-wrap gap-1.5">
-                  <span className="px-2 py-0.5 bg-white border border-slate-200 rounded text-[10px] font-mono text-slate-600">Sigla/Fisco</span>
-                </div>
-                <p className="text-[10px] text-slate-400 mt-1.5">Aceita a coluna com o nome Sigla/Fisco, Sigla ou Fisco. Sem ela (ou com a célula vazia), a Sigla/Fisco recebe o mesmo valor do Código.</p>
+                <p className="text-[10px] text-slate-400 mt-2">O modelo já vem com essas colunas e as células formatadas como Texto (mantém zero à esquerda, ex.: 001). A coluna Sigla/Fisco também é aceita com o nome Sigla ou Fisco; linha sem Sigla/Fisco não é importada.</p>
               </div>
             </>
           )}
@@ -177,6 +199,14 @@ export default function ImportarCentrosResultadoModal({ centros, sistemas, empre
                 <CheckCircle2 className="h-4 w-4 text-blue-500 shrink-0" />
                 <p className="text-xs text-blue-700"><strong>{nomeArquivo}</strong> — {linhas.length} centro(s) de resultado encontrados</p>
               </div>
+              {semSigla.length > 0 && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-1">
+                  <p className="text-[11px] font-bold text-amber-700 flex items-center gap-1.5"><AlertTriangle className="h-3.5 w-3.5" /> {semSigla.length} linha(s) sem Sigla/Fisco não serão importadas:</p>
+                  <div className="max-h-24 overflow-y-auto">
+                    {semSigla.map((t, i) => <p key={i} className="text-[11px] text-amber-800">{t}</p>)}
+                  </div>
+                </div>
+              )}
 
               <div className="flex flex-col gap-1.5">
                 <label className={LABEL}>Sistema *</label>

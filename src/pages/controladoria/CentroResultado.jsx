@@ -34,6 +34,25 @@ export default function CentroResultado() {
   const [erroModal, setErroModal] = useState(null)
   const [salvando, setSalvando] = useState(false)
   const [excluir, setExcluir] = useState(null)
+  // Seleção em lote: marcar vários centros e aplicar o mesmo Centro de Resultado (Visual) em todos.
+  const [selecionados, setSelecionados] = useState(() => new Set())
+  const [visualLote, setVisualLote] = useState('') // '' = escolher | '__remover' | id
+  const [aplicandoLote, setAplicandoLote] = useState(false)
+  const alternarSel = (id) => setSelecionados(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
+  const aplicarVisualLote = async () => {
+    if (!visualLote || selecionados.size === 0) return
+    setAplicandoLote(true)
+    try {
+      await apiService.definirCrVisualCtbCentros([...selecionados], visualLote === '__remover' ? null : visualLote)
+      await loadData()
+      setSelecionados(new Set())
+      setVisualLote('')
+    } catch (err) {
+      alert('Erro ao aplicar: ' + (err.message || String(err)))
+    } finally {
+      setAplicandoLote(false)
+    }
+  }
 
   const { hasActionOrDefault } = useAuth()
   const canEdit = hasActionOrDefault(MENU, 'editar')
@@ -189,10 +208,40 @@ export default function CentroResultado() {
             </div>
           </div>
 
-          <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
+          {canEdit && selecionados.size > 0 && (
+            <div className="flex items-center gap-3 flex-wrap bg-violet-50 border border-violet-200 rounded-lg px-3 py-2">
+              <span className="text-xs font-bold text-violet-800">{selecionados.size} centro(s) selecionado(s)</span>
+              <span className="text-[11px] font-semibold text-violet-700">Centro de Resultado (Visual):</span>
+              <select value={visualLote} onChange={e => setVisualLote(e.target.value)} className={`${INPUT.replace('w-full ', '')} w-auto pr-7 bg-white`}>
+                <option value="">Selecione...</option>
+                {crVisuais.filter(v => v.ativo !== false).map(v => <option key={v.id} value={v.id}>{v.codigo} — {v.descricao}</option>)}
+                <option value="__remover">— Remover o Visual —</option>
+              </select>
+              <button type="button" onClick={aplicarVisualLote} disabled={!visualLote || aplicandoLote}
+                className="px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-violet-600 hover:bg-violet-700 shadow-sm transition-colors disabled:opacity-50">
+                {aplicandoLote ? 'Aplicando...' : 'Aplicar nos selecionados'}
+              </button>
+              <button type="button" onClick={() => { setSelecionados(new Set()); setVisualLote('') }} className="ml-auto text-[11px] font-semibold text-slate-500 hover:text-slate-700 hover:underline">Limpar seleção</button>
+            </div>
+          )}
+
+          {/* Empresas lado a lado (sem quebrar): se não couber, a tabela rola na horizontal. */}
+          <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[11px] font-semibold uppercase tracking-wider">
+                  {canEdit && (
+                    <th className="p-3 w-10 text-center">
+                      {/* Marca/desmarca todos os que estão aparecendo (respeita filtros e busca). */}
+                      <input type="checkbox" className="w-3.5 h-3.5 cursor-pointer" title="Selecionar todos os listados"
+                        checked={visiveis.length > 0 && visiveis.every(c => selecionados.has(c.id))}
+                        onChange={e => setSelecionados(s => {
+                          const n = new Set(s)
+                          visiveis.forEach(c => e.target.checked ? n.add(c.id) : n.delete(c.id))
+                          return n
+                        })} />
+                    </th>
+                  )}
                   <th className="p-3 w-24 text-center">Ações</th>
                   <Th campo="codigo" className="w-32">Código</Th>
                   <Th campo="descricao">Descrição no DMS</Th>
@@ -205,9 +254,14 @@ export default function CentroResultado() {
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
                 {visiveis.length === 0 ? (
-                  <tr><td colSpan="8" className="p-6 text-center text-slate-400">{centros.length === 0 ? 'Nenhum centro de resultado cadastrado.' : 'Nenhum centro encontrado.'}</td></tr>
+                  <tr><td colSpan={canEdit ? 9 : 8} className="p-6 text-center text-slate-400">{centros.length === 0 ? 'Nenhum centro de resultado cadastrado.' : 'Nenhum centro encontrado.'}</td></tr>
                 ) : visiveis.map(c => (
-                  <tr key={c.id} className="hover:bg-slate-50/70 transition-colors">
+                  <tr key={c.id} className={`transition-colors ${selecionados.has(c.id) ? 'bg-violet-50/60' : 'hover:bg-slate-50/70'}`}>
+                    {canEdit && (
+                      <td className="p-3 text-center">
+                        <input type="checkbox" className="w-3.5 h-3.5 cursor-pointer" checked={selecionados.has(c.id)} onChange={() => alternarSel(c.id)} />
+                      </td>
+                    )}
                     <td className="p-3"><PermissionActionButtons engrenagem menuPath={MENU} onEdit={() => abrirEditar(c)} onDelete={() => setExcluir(c)} /></td>
                     <td className="p-3 font-mono text-slate-600">{c.codigo}</td>
                     <td className="p-3 font-bold text-slate-900">
@@ -224,7 +278,7 @@ export default function CentroResultado() {
                     </td>
                     <td className="p-3">
                       {(c.empresa_ids || []).length ? (
-                        <div className="flex flex-wrap gap-1">
+                        <div className="flex flex-nowrap gap-1 whitespace-nowrap">
                           {[...c.empresa_ids].sort((a, b) => ordemEmpresa(a) - ordemEmpresa(b)).map(id => (
                             <span key={id} title={nomeEmpresaCompleto(empresasMap[id])} className="px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200 text-[10px] font-bold text-slate-600 whitespace-nowrap">
                               {siglaEmpresa(empresasMap[id])}
@@ -264,8 +318,8 @@ export default function CentroResultado() {
             </div>
           </div>
           <div className="flex flex-col gap-1.5">
-            <label className={LABEL}>Sigla/Fisco</label>
-            <input value={form.sigla} onChange={e => setForm(f => ({ ...f, sigla: e.target.value.toUpperCase() }))} placeholder="Ex: OFC-CG" maxLength={20} className={`${INPUT} font-mono`} />
+            <label className={LABEL}>Sigla/Fisco *</label>
+            <input required value={form.sigla} onChange={e => setForm(f => ({ ...f, sigla: e.target.value.toUpperCase() }))} placeholder="Ex: OFC-CG" maxLength={20} className={`${INPUT} font-mono`} />
           </div>
           <div className="flex flex-col gap-1.5">
             <label className={LABEL}>Sistema</label>
