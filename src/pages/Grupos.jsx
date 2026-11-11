@@ -283,6 +283,7 @@ export default function Grupos() {
   const [selectedDeptosProjetos, setSelectedDeptosProjetos] = useState(new Set())
   const [projetosDeptoModo, setProjetosDeptoModo] = useState('TODOS')
   const [garantiasVisao, setGarantiasVisao] = useState('tabela') // 'dashboard' | 'tabela' (= Controle)
+  const [auditoriaVisao, setAuditoriaVisao] = useState('dashboard') // Auditoria O.S. Aberta: 'dashboard' | 'controle'
   const [projDepartamentos, setProjDepartamentos] = useState([])
   const [selectedDeptosAuditoria, setSelectedDeptosAuditoria] = useState(new Set())
   const [auditoriaDeptoModo, setAuditoriaDeptoModo] = useState('TODOS')
@@ -472,7 +473,7 @@ export default function Grupos() {
     setTreeDefaultOpen(false)
     setTreeKey(k => k + 1)
     try {
-      const [paths, acoes, empIds, emps, deptosDim, setoresDim, comissaoEscopoRaw, deptosProj, projDeptos, deptosAudit, projEmps, empresasAudit, visaoGarantias] = await Promise.all([
+      const [paths, acoes, empIds, emps, deptosDim, setoresDim, comissaoEscopoRaw, deptosProj, projDeptos, deptosAudit, projEmps, empresasAudit, visaoGarantias, visaoAuditoria] = await Promise.all([
         apiService.getPermissoesGrupo(grupo.id),
         apiService.getPermissoesGrupoAcoes(grupo.id),
         apiService.getPermissoesEmpresasGrupo(grupo.id),
@@ -486,6 +487,7 @@ export default function Grupos() {
         apiService.getProjEmpresas(),
         apiService.getPermissoesEmpresaAuditoriaPorGrupo(grupo.id),
         apiService.getVisaoGarantiasGrupo(grupo.id),
+        apiService.getVisaoAuditoriaGrupo(grupo.id),
       ])
       setSelectedPaths(new Set(paths))
       setSelectedAcoes(new Set(acoes.map(a => `${a.menu_path}|${a.acao}`)))
@@ -495,6 +497,7 @@ export default function Grupos() {
       setEmpresaExpandido(false)
       setProjetosDeptoModo(deptosProj.modo)
       setGarantiasVisao(visaoGarantias)
+      setAuditoriaVisao(visaoAuditoria)
       setSelectedDeptosProjetos(new Set(deptosProj.valores))
       setProjDepartamentos((projDeptos || []).filter(d => d.ativo !== false).sort((a, b) => (a.nome || '').localeCompare(b.nome || '', 'pt-BR')))
       setAuditoriaDeptoModo(deptosAudit.modo)
@@ -521,6 +524,7 @@ export default function Grupos() {
       setSelectedDeptosProjetos(new Set())
       setProjetosDeptoModo('TODOS')
       setGarantiasVisao('tabela')
+      setAuditoriaVisao('dashboard')
       setSelectedDeptosAuditoria(new Set())
       setAuditoriaDeptoModo('TODOS')
       setSelectedEmpresasAuditoria(new Set())
@@ -624,18 +628,23 @@ export default function Grupos() {
     setComissaoSetorNivel(prev => ({ ...prev, [setorId]: { ...prev[setorId], responsavel: !prev[setorId]?.responsavel } }))
   }
 
-  // Dentro do nó "Garantias DAF" da árvore: qual visão abre primeiro (Dashboard ou Controle)
+  // Dentro dos nós "Garantias DAF" e "Auditoria O.S. Aberta" da árvore: qual visão abre primeiro (Dashboard ou Controle)
   const renderExtraArvore = (node) => {
-    if (node.key !== '_garantias-daf') return null
+    const cfg = node.key === '_garantias-daf'
+      ? { nome: 'Garantias DAF', radio: 'garantias-visao', valor: garantiasVisao, set: setGarantiasVisao, controle: 'tabela' }
+      : node.key === '_auditoria-os-aberto'
+        ? { nome: 'Auditoria O.S. Aberta', radio: 'auditoria-visao', valor: auditoriaVisao, set: setAuditoriaVisao, controle: 'controle' }
+        : null
+    if (!cfg) return null
     return (
       <div className="flex items-center gap-3 py-1 px-2 mb-0.5 rounded bg-violet-50 border border-violet-100">
-        <span className="text-xs font-semibold text-violet-700" title="Qual visão aparece primeiro quando o usuário abre Garantias DAF. Sem permissão para a escolhida, abre na outra.">
+        <span className="text-xs font-semibold text-violet-700" title={`Qual visão aparece primeiro quando o usuário abre ${cfg.nome}. Sem permissão para a escolhida, abre na outra.`}>
           Visão inicial
         </span>
-        {[['dashboard', 'Dashboard'], ['tabela', 'Controle']].map(([valor, label]) => (
+        {[['dashboard', 'Dashboard'], [cfg.controle, 'Controle']].map(([valor, label]) => (
           <label key={valor} className="flex items-center gap-1.5 text-xs text-slate-700 cursor-pointer select-none">
-            <input type="radio" name="garantias-visao" value={valor} checked={garantiasVisao === valor}
-              onChange={() => setGarantiasVisao(valor)} className="accent-violet-600" />
+            <input type="radio" name={cfg.radio} value={valor} checked={cfg.valor === valor}
+              onChange={() => cfg.set(valor)} className="accent-violet-600" />
             {label}
           </label>
         ))}
@@ -659,6 +668,7 @@ export default function Grupos() {
         apiService.setPermissoesEmpresasGrupo(editingId, isAdmin ? [] : [...selectedEmpresas]),
         apiService.setPermissoesDeptoPorGrupo(editingId, isAdmin ? 'TODOS' : projetosDeptoModo, isAdmin ? [] : [...selectedDeptosProjetos]),
         apiService.setVisaoGarantiasGrupo(editingId, garantiasVisao),
+        apiService.setVisaoAuditoriaGrupo(editingId, auditoriaVisao),
         apiService.setPermissoesDeptoAuditoriaPorGrupo(editingId, isAdmin ? 'TODOS' : auditoriaDeptoModo, isAdmin ? [] : [...selectedDeptosAuditoria]),
         apiService.setPermissoesEmpresaAuditoriaPorGrupo(editingId, isAdmin ? 'TODOS' : auditoriaEmpresaModo, isAdmin ? [] : [...selectedEmpresasAuditoria]),
         apiService.setPermissoesComissaoGrupo(editingId, Object.fromEntries(DIMENSOES_COMISSAO.map(dim => [

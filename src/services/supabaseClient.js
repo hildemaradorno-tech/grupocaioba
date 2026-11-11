@@ -4314,6 +4314,17 @@ export const apiService = {
       .update({ garantias_daf_default_view: visao === 'dashboard' ? 'dashboard' : 'tabela' }).eq('id', grupoId)
     if (error) throw error
   },
+  // Visão que abre primeiro na Auditoria O.S. Aberta: grupos_acesso.auditoria_os_default_view ('dashboard' | 'controle')
+  getVisaoAuditoriaGrupo: async (grupoId) => {
+    const { data, error } = await supabase.from('grupos_acesso').select('auditoria_os_default_view').eq('id', grupoId).maybeSingle()
+    if (error) throw error
+    return data?.auditoria_os_default_view === 'controle' ? 'controle' : 'dashboard'
+  },
+  setVisaoAuditoriaGrupo: async (grupoId, visao) => {
+    const { error } = await supabase.from('grupos_acesso')
+      .update({ auditoria_os_default_view: visao === 'controle' ? 'controle' : 'dashboard' }).eq('id', grupoId)
+    if (error) throw error
+  },
   // `modo` fica em grupos_acesso.projetos_depto_modo (default 'TODOS').
   getPermissoesDeptoPorGrupo: async (grupoId) => {
     const [{ data, error }, { data: grupoRow, error: e2 }] = await Promise.all([

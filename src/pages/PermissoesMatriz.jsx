@@ -25,8 +25,9 @@ function buildRows() {
         sectionAncestors: [...sectionAncestors],
       })
       if (!isLeaf) {
-        if (node.key === '_garantias-daf') {
-          rows.push({ type: 'visao', key: `${node.key}#visao`, label: 'Visão inicial (abre primeiro)', depth: depth + 1, sectionAncestors: [...sectionAncestors, node.key] })
+        // Visão inicial (Dashboard | Controle) de Garantias DAF e Auditoria O.S. Aberta
+        if (node.key === '_garantias-daf' || node.key === '_auditoria-os-aberto') {
+          rows.push({ type: 'visao', modulo: node.key === '_garantias-daf' ? 'garantias' : 'auditoria', key: `${node.key}#visao`, label: 'Visão inicial (abre primeiro)', depth: depth + 1, sectionAncestors: [...sectionAncestors, node.key] })
         }
         walk(node.children, [...sectionAncestors, node.key], depth + 1)
       } else {
@@ -168,6 +169,21 @@ export default function PermissoesMatriz() {
     try {
       await apiService.setVisaoGarantiasGrupo(grupoId, visao)
       setGrupos(gs => gs.map(g => g.id === grupoId ? { ...g, garantias_daf_default_view: visao } : g))
+    } catch (e) {
+      setErr(e.message || 'Erro ao salvar a visão inicial.')
+    } finally {
+      setSaving(s => { const n = new Set(s); n.delete(cellKey); return n })
+    }
+  }, [])
+
+  // ── Visão inicial da Auditoria O.S. Aberta (grupos_acesso.auditoria_os_default_view) ─
+  const salvarVisaoAuditoria = useCallback(async (grupoId, visao) => {
+    const cellKey = `${grupoId}:visao-auditoria`
+    setSaving(s => new Set([...s, cellKey]))
+    setErr(null)
+    try {
+      await apiService.setVisaoAuditoriaGrupo(grupoId, visao)
+      setGrupos(gs => gs.map(g => g.id === grupoId ? { ...g, auditoria_os_default_view: visao } : g))
     } catch (e) {
       setErr(e.message || 'Erro ao salvar a visão inicial.')
     } finally {
@@ -463,26 +479,32 @@ export default function PermissoesMatriz() {
                   }
 
                   if (row.type === 'visao') {
+                    const auditoria = row.modulo === 'auditoria'
+                    const nomeModulo = auditoria ? 'Auditoria O.S. Aberta' : 'Garantias DAF'
                     return (
                       <tr key={row.key} className="bg-violet-50/50 hover:bg-violet-50 transition-colors group">
                         <td className="sticky left-0 z-10 bg-violet-50 group-hover:bg-violet-100 border-r border-b border-violet-100 px-4 py-1.5">
                           <div className="flex items-center gap-1.5" style={{ paddingLeft: `${row.depth * 16}px` }}
-                            title="Qual visão aparece primeiro quando o usuário abre Garantias DAF. Sem permissão para a escolhida, abre na outra.">
+                            title={`Qual visão aparece primeiro quando o usuário abre ${nomeModulo}. Sem permissão para a escolhida, abre na outra.`}>
                             <span className="text-xs font-semibold text-violet-700">{row.label}</span>
                           </div>
                         </td>
                         {gruposVisiveis.map(g => {
-                          const cellKey = `${g.id}:visao-garantias`
-                          const valor = g.garantias_daf_default_view === 'dashboard' ? 'dashboard' : 'tabela'
+                          const cellKey = `${g.id}:visao-${row.modulo}`
+                          const controle = auditoria ? 'controle' : 'tabela'
+                          const valor = auditoria
+                            ? (g.auditoria_os_default_view === 'controle' ? 'controle' : 'dashboard')
+                            : (g.garantias_daf_default_view === 'dashboard' ? 'dashboard' : 'tabela')
+                          const salvar = auditoria ? salvarVisaoAuditoria : salvarVisaoGarantias
                           return (
                             <td key={g.id} className="border-r border-b border-violet-100 px-2 py-1.5 text-center">
                               {isSaving(cellKey)
                                 ? <RefreshCw className="h-3.5 w-3.5 text-violet-400 animate-spin mx-auto" />
                                 : (
-                                  <select value={valor} onChange={e => salvarVisaoGarantias(g.id, e.target.value)}
+                                  <select value={valor} onChange={e => salvar(g.id, e.target.value)}
                                     className="text-[11px] border border-violet-200 rounded px-1 py-0.5 bg-white text-slate-700 focus:ring-1 focus:ring-violet-300">
                                     <option value="dashboard">Dashboard</option>
-                                    <option value="tabela">Controle</option>
+                                    <option value={controle}>Controle</option>
                                   </select>
                                 )}
                             </td>

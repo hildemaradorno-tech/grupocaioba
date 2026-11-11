@@ -14,7 +14,7 @@ const PERM_DASHBOARD = 'auditoria-os-aberto/dashboard'
 const PERM_CONTROLE = 'auditoria-os-aberto'
 
 export default function BiAuditoriaOsAberto() {
-  const { hasPermission } = useAuth()
+  const { hasPermission, auditoriaVisaoPadraoEfetiva } = useAuth()
   const [params, setParams] = useSearchParams()
   const [slotVisao, setSlotVisao] = useState(null)
   const [slotFiltros, setSlotFiltros] = useState(null)
@@ -31,10 +31,12 @@ export default function BiAuditoriaOsAberto() {
   const podeDashboard = hasPermission(PERM_DASHBOARD)
   const podeControle = hasPermission(PERM_CONTROLE)
 
-  // Visão na URL (?modo=dashboard|controle); sem ela, abre no Dashboard se o usuário puder vê-lo
+  // Visão na URL (?modo=dashboard|controle); sem ela, a "Visão inicial" do grupo (Grupos de Acessos),
+  // se o usuário puder vê-la; senão a outra
   const pedido = params.get('modo')
   const modo = pedido === 'controle' && podeControle ? 'controle'
     : pedido === 'dashboard' && podeDashboard ? 'dashboard'
+    : auditoriaVisaoPadraoEfetiva === 'controle' && podeControle ? 'controle'
     : podeDashboard ? 'dashboard' : podeControle ? 'controle' : null
 
   if (!modo) return <div className="p-6 text-xs text-slate-500">Sem acesso à Auditoria O.S. Aberta.</div>

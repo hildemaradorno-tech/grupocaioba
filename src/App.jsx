@@ -274,9 +274,9 @@ export default function App() {
           { path: '/metas/pos-vendas/total', element: <MetasPosVendaTotal />, menuPath: '/metas/pos-vendas/total' },
           { path: '/metas/gestao-aprovacao', element: <MetasGestaoAprovacao />, menuPath: '/metas/gestao-aprovacao' },
           // Auditoria O.S. Aberta foi para o BI (Dashboard | Controle) — o endereço antigo abre a visão Controle
-          { path: '/auditoria-os-aberto', element: <Navigate to="/bi/auditoria-os-aberto?modo=controle" replace /> },
-          // A Home usa a key da permissão como endereço quando o usuário só tem o Dashboard
-          { path: '/auditoria-os-aberto/dashboard', element: <Navigate to="/bi/auditoria-os-aberto?modo=dashboard" replace /> },
+          // Endereços antigos / atalhos da Home (que usam a key da permissão) → BI, abrindo na "Visão inicial" do grupo
+          { path: '/auditoria-os-aberto', element: <Navigate to="/bi/auditoria-os-aberto" replace /> },
+          { path: '/auditoria-os-aberto/dashboard', element: <Navigate to="/bi/auditoria-os-aberto" replace /> },
           { path: '/honda/contas-a-receber', element: <HondaGarantiasReceber />, menuPath: 'honda/contas-a-receber' },
           { path: '/bpm/processos', element: <BpmProcessos />, menuPath: 'bpm/processos' },
           { path: '/bpm/modelador', element: <BpmModelador />, menuPath: ['bpm/modelador', 'bpm/nfe-cancelamento-devolucao'] },
