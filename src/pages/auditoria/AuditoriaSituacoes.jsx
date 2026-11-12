@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { Plus, Edit2, Trash2, ShieldAlert, Tag, AlertTriangle } from 'lucide-react'
+import { Plus, Edit2, Trash2, ShieldAlert, Tag, AlertTriangle, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
 import { apiService } from '../../services/api'
 
 const CORES = [
@@ -52,6 +52,30 @@ export default function AuditoriaSituacoes({ embedded = false, onChange }) {
   const handleEdit = (item) => {
     setEditId(item.id)
     setForm({ nome: item.nome, cor: item.cor || 'bg-slate-100 text-slate-700', ativo: item.ativo })
+  }
+
+  // Ordenação ao clicar no cabeçalho: crescente → decrescente → sem ordem (mesmo padrão da tabela da auditoria)
+  const [ord, setOrd] = useState({ col: null, dir: 'asc' })
+  const clicarOrd = (col) => setOrd(o => o.col !== col ? { col, dir: 'asc' } : o.dir === 'asc' ? { col, dir: 'desc' } : { col: null, dir: 'asc' })
+  const valorOrd = {
+    nome: (i) => i.nome || '',
+    cor: (i) => CORES.find(c => c.value === i.cor)?.label || '',
+    ativo: (i) => (i.ativo ? 'Sim' : 'Não'),
+  }
+  const listaOrdenada = !ord.col ? lista : [...lista].sort((a, b) => {
+    const r = valorOrd[ord.col](a).localeCompare(valorOrd[ord.col](b), 'pt-BR')
+    return ord.dir === 'asc' ? r : -r
+  })
+  const thOrd = (col, label, cls = '') => {
+    const Icone = ord.col !== col ? ArrowUpDown : ord.dir === 'asc' ? ArrowUp : ArrowDown
+    return (
+      <th className={`p-3 ${cls}`}>
+        <button type="button" onClick={() => clicarOrd(col)}
+          className={`inline-flex items-center gap-1 uppercase hover:text-slate-700 ${ord.col === col ? 'text-indigo-600' : ''}`}>
+          {label} <Icone className="h-3 w-3" />
+        </button>
+      </th>
+    )
   }
 
   const handleExcluir = async () => {
@@ -150,14 +174,14 @@ export default function AuditoriaSituacoes({ embedded = false, onChange }) {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[10px] font-bold uppercase tracking-wider">
-                <th className="p-3">Nome</th>
-                <th className="p-3 text-center">Cor</th>
-                <th className="p-3 text-center">Ativo</th>
+                {thOrd('nome', 'Nome')}
+                {thOrd('cor', 'Cor', 'text-center')}
+                {thOrd('ativo', 'Ativo', 'text-center')}
                 <th className="p-3 text-center">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
-              {lista.map(item => (
+              {listaOrdenada.map(item => (
                 <tr key={item.id} className="hover:bg-slate-50/70 transition-colors">
                   <td className="p-3 font-semibold">{item.nome}</td>
                   <td className="p-3 text-center">

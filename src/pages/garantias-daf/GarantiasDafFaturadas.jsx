@@ -12,7 +12,7 @@ import MenuEngrenagem from '../../components/MenuEngrenagem'
 import { useAuth } from '../../context/AuthContext'
 import GarantiasDafImportFaturadosModal from './GarantiasDafImportFaturadosModal'
 import { useEmpresasGarantias } from '../../hooks/useEmpresasGarantias'
-import RegrasSistemaModal from './RegrasSistemaModal'
+import EngrenagemRegras from './EngrenagemRegras'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
 
@@ -56,7 +56,6 @@ export default function GarantiasDafFaturadas({ slotAcoes } = {}) {
   const canImportar = hasActionOrDefault('garantias-daf-historicodeos', 'importar')
   // Engrenagem: mesma permissão "Regras do Sistema" das abas Na Oficina / Com Garantista
   const canRegras = hasActionOrDefault('garantias-daf', 'regras') || hasActionOrDefault('garantias-daf-andamento', 'regras')
-  const [modalRegras, setModalRegras] = useState(false)
 
   const [dados, setDados] = useState([])
   const [dadosTodos, setDadosTodos] = useState([])
@@ -262,15 +261,7 @@ export default function GarantiasDafFaturadas({ slotAcoes } = {}) {
             >
               <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
             </button>
-            {canRegras && (
-              <button
-                onClick={() => setModalRegras(true)}
-                title="Regras do sistema"
-                className="flex items-center justify-center p-1.5 rounded-md bg-orange-500 hover:bg-orange-600 text-white shadow-sm transition-colors"
-              >
-                <Settings className="h-3.5 w-3.5" />
-              </button>
-            )}
+            {canRegras && <EngrenagemRegras usuario={user?.email} />}
             <button
               onClick={() => window.open('/garantias-daf-manual', '_blank')}
               title="Manual de operação"
@@ -487,7 +478,6 @@ export default function GarantiasDafFaturadas({ slotAcoes } = {}) {
           </div>
         </div>
       )}
-      {modalRegras && <RegrasSistemaModal onClose={() => setModalRegras(false)} usuario={user?.email} />}
     </div>
   )
 }

@@ -8,7 +8,7 @@ import { apiService } from '../../services/api'
 import MenuEngrenagem from '../../components/MenuEngrenagem'
 import { useAuth } from '../../context/AuthContext'
 import { useEmpresasGarantias } from '../../hooks/useEmpresasGarantias'
-import RegrasSistemaModal from './RegrasSistemaModal'
+import EngrenagemRegras from './EngrenagemRegras'
 import RegistroHistoricoPanel from './RegistroHistoricoPanel'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
@@ -97,7 +97,11 @@ export default function GarantiasDafTitulos({ onLastModified, slotAcoes } = {}) 
   const canEditarGarantia = hasActionOrDefault('garantias-daf-titulos', 'editar_garantia')
   // Engrenagem: mesma permissão "Regras do Sistema" das abas Na Oficina / Com Garantista
   const canRegras = hasActionOrDefault('garantias-daf', 'regras') || hasActionOrDefault('garantias-daf-andamento', 'regras')
-  const [modalRegras, setModalRegras] = useState(false)
+  // Regra "Dias para Envio da NF" (card NF sem envio) — padrão 4 enquanto a coluna não existir no banco
+  const [diasNfEnvio, setDiasNfEnvio] = useState(4)
+  useEffect(() => {
+    apiService.getConfiguracoesGarantias().then(cfg => setDiasNfEnvio(cfg?.dias_nf_envio ?? 4)).catch(() => {})
+  }, [])
   const location = useLocation()
   const navigate = useNavigate()
 
@@ -251,8 +255,9 @@ export default function GarantiasDafTitulos({ onLastModified, slotAcoes } = {}) 
     return Math.floor((new Date() - new Date(r.data_emissao + 'T12:00:00')) / 86400000)
   }
 
-  // Crítico: NF sem envio à fábrica e emitida há 4 dias ou mais (com base na data de Emissão).
-  const ehCritico = (r) => !temEnvioTitulo(r) && (diasDesdeEmissao(r) ?? -1) >= 4
+  // Crítico: NF sem envio à fábrica e emitida há N dias ou mais (com base na data de Emissão).
+  // N = "Dias para Envio da NF" (engrenagem → Títulos a Receber; gar_configuracoes.dias_nf_envio, padrão 4).
+  const ehCritico = (r) => !temEnvioTitulo(r) && (diasDesdeEmissao(r) ?? -1) >= diasNfEnvio
 
   // Vencido / Vence Hoje / A Vencer: pela Data de Vencimento comparada à data de hoje — não pela
   // coluna "Atr." do RFN003, que fica travada em 0 para títulos já vencidos (campo do Dealer.net
@@ -308,7 +313,7 @@ export default function GarantiasDafTitulos({ onLastModified, slotAcoes } = {}) 
       out = [...out].sort((a, b) => String(a.data_vencimento || '').localeCompare(String(b.data_vencimento || '')))
     }
     return out
-  }, [aplicarFiltrosBase, filtroSituacao, situacaoDeLinha, filtroCritico, filtroCardSemVinculo, garantiasOsSet, filtroCardVencido, filtroCardVenceHoje, filtroCardAVencer])
+  }, [aplicarFiltrosBase, filtroSituacao, situacaoDeLinha, filtroCritico, filtroCardSemVinculo, garantiasOsSet, filtroCardVencido, filtroCardVenceHoje, filtroCardAVencer, diasNfEnvio, temEnvioTitulo])
 
   // Base dos cards de alerta: só os filtros de base (tipo/empresa/período/busca) — contagens
   // absolutas, independentes da pill de Situação e dos próprios toggles dos cards.
@@ -316,7 +321,7 @@ export default function GarantiasDafTitulos({ onLastModified, slotAcoes } = {}) 
     () => aplicarFiltrosBase(titulosRows),
     [titulosRows, aplicarFiltrosBase]
   )
-  const grpNfCritica = useMemo(() => baseAlerta.filter(ehCritico), [baseAlerta])
+  const grpNfCritica = useMemo(() => baseAlerta.filter(ehCritico), [baseAlerta, diasNfEnvio, temEnvioTitulo])
   // Títulos cuja OS ainda não está vinculada (cadastrada) em Histórico de O.S.
   const grpNaoVinculado = useMemo(
     () => baseAlerta.filter(r => !garantiasOsSet.has(String(r.os_numero ?? '').trim())),
@@ -443,13 +448,8 @@ export default function GarantiasDafTitulos({ onLastModified, slotAcoes } = {}) 
               <RefreshCw className={`h-3.5 w-3.5 ${titulosRefreshing ? 'animate-spin' : ''}`} />
             </button>
             {canRegras && (
-              <button
-                onClick={() => setModalRegras(true)}
-                title="Regras do sistema"
-                className="flex items-center justify-center p-1.5 rounded-md bg-orange-500 hover:bg-orange-600 text-white shadow-sm transition-colors"
-              >
-                <Settings className="h-3.5 w-3.5" />
-              </button>
+              <EngrenagemRegras usuario={user?.email}
+                onSalvo={(cfg) => { if (cfg?.dias_nf_envio) setDiasNfEnvio(cfg.dias_nf_envio) }} />
             )}
             <button
               onClick={() => window.open('/garantias-daf-manual', '_blank')}
@@ -491,7 +491,7 @@ export default function GarantiasDafTitulos({ onLastModified, slotAcoes } = {}) 
               type="button"
               onClick={toggleFiltroCritico}
               className={`w-full text-left rounded-md px-2 py-1.5 transition-all hover:bg-slate-200 ${filtroCritico ? 'bg-slate-200 ring-2 ring-slate-400' : ''}`}
-              title="NF sem envio à fábrica (Emissão ≥ 4 dias)"
+              title={`NF sem envio à fábrica (Emissão ≥ ${diasNfEnvio} dia${diasNfEnvio === 1 ? '' : 's'})`}
             >
               <div className="flex items-center gap-1.5">
                 <ArrowDown className="h-3 w-3 text-slate-500 shrink-0" />
@@ -953,7 +953,6 @@ export default function GarantiasDafTitulos({ onLastModified, slotAcoes } = {}) 
           </div>
         )
       })()}
-      {modalRegras && <RegrasSistemaModal onClose={() => setModalRegras(false)} usuario={user?.email} />}
     </div>
   )
 }

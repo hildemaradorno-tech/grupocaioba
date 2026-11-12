@@ -9,10 +9,10 @@ const SECOES = [
   { id: 'visao-geral',  label: 'Visão geral',               icon: BookOpen },
   { id: 'regras',       label: 'Regras do Sistema',         icon: Settings },
   { id: 'na-oficina',   label: 'Na Oficina',                icon: Activity },
-  { id: 'garantista',   label: 'com Garantista',            icon: FileText },
+  { id: 'garantista',   label: 'Com Garantista',            icon: FileText },
   { id: 'editar',       label: 'Editar Garantia',           icon: Edit2 },
   { id: 'historico',    label: 'Histórico de O.S.',         icon: Receipt },
-  { id: 'receber',      label: 'Garantias DAF a Receber',   icon: DollarSign },
+  { id: 'receber',      label: 'Títulos a Receber',         icon: DollarSign },
   { id: 'nota-debito',  label: 'Nota de Débito',            icon: FileSignature },
   { id: 'status',       label: 'Status da garantia',        icon: ListChecks },
   { id: 'fontes',       label: 'Fontes de dados',           icon: Database },
@@ -125,6 +125,7 @@ export default function GarantiasDafManual() {
   const diasDigitacao = cfg?.dias_digitacao ?? 14
   const diasOficina = cfg?.dias_oficina ?? 14
   const diasRecusa = cfg?.dias_recusa ?? 15
+  const diasNfEnvio = cfg?.dias_nf_envio ?? 4
   const diasSolucaoPadrao = cfg?.dias_solucao ?? 14
   const porTipo = cfg?.dias_solucao_por_tipo ?? {}
 
@@ -159,13 +160,8 @@ export default function GarantiasDafManual() {
     <div className="p-6 max-w-screen-xl">
       <div className="border-b border-slate-200 pb-4 mb-5">
         <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
-          <BookOpen className="h-5 w-5 text-indigo-600" /> Manual de Operação — Garantias DAF
+          <BookOpen className="h-5 w-5 text-indigo-600" /> Manual de Operação — Garantias DAF - Visão Controle
         </h1>
-        <p className="text-xs text-slate-500 mt-1">
-          Como funciona cada aba, cada card e cada ação do módulo. Os prazos destacados em
-          <span className="mx-1"><Valor>amarelo</Valor></span>
-          são lidos das Regras do Sistema no momento em que esta página é aberta — ao alterar uma regra, o manual já mostra o novo valor.
-        </p>
       </div>
 
       <div className="flex gap-6 items-start">
@@ -184,20 +180,23 @@ export default function GarantiasDafManual() {
           <Secao id="visao-geral" icon={BookOpen} titulo="Visão geral">
             <p>
               O módulo acompanha a garantia DAF de ponta a ponta: da OS ainda aberta na oficina até o recebimento do título.
-              Tudo fica numa tela só, no menu <strong>BI → Garantias DAF</strong>. No topo, os botões <Btn icon={BarChart2}>Dashboard</Btn>{' '}
-              e <Btn icon={ClipboardList}>Controle</Btn> trocam entre os indicadores e as telas de trabalho da aba escolhida (só uma
-              visão é carregada por vez). O Dashboard depende da permissão de BI; o Controle, da permissão de cada aba.
+              Tudo fica numa tela só, no menu <strong>BI → Garantias DAF</strong>. Na linha das abas, à direita, os ícones{' '}
+              <Btn icon={BarChart2}>Dashboard</Btn> e <Btn icon={ClipboardList}>Controle</Btn> trocam entre os indicadores e as telas de
+              trabalho da aba escolhida (só uma visão é carregada por vez; o nome aparece ao parar o mouse sobre o ícone).
+              O Dashboard depende da permissão de BI; o Controle, da permissão de cada aba.
               O caminho natural de uma OS pelas abas é:
             </p>
             <ol className="list-decimal pl-5 space-y-1">
               <li><strong className="text-slate-700">Na Oficina</strong> — OS de garantia ainda abertas (leitura direta do Dealer.net via SharePoint).</li>
-              <li><strong className="text-slate-700">com Garantista</strong> — OS fechadas, importadas automaticamente para digitação e acompanhamento da análise DAF.</li>
+              <li><strong className="text-slate-700">Com Garantista</strong> — OS fechadas, importadas automaticamente para digitação e acompanhamento da análise DAF.</li>
               <li><strong className="text-slate-700">Títulos a Receber</strong> — títulos a receber da DAF, cruzados com as OS do sistema.</li>
               <li><strong className="text-slate-700">Histórico de O.S.</strong> — garantias com Nota Fiscal emitida (status E) ou enviadas à fábrica (status F). Esta aba só tem Controle.</li>
             </ol>
             <p>
-              No cabeçalho das telas Na Oficina e com Garantista ficam os botões <Btn icon={RefreshCw}>Atualizar arquivo</Btn>,{' '}
-              <Btn icon={Settings}>Regras do sistema</Btn> e <Btn icon={BookOpen}>Manual de operação</Btn>. O ícone <strong>ⓘ</strong> ao lado do título mostra a origem dos dados, e o texto "Arquivo atualizado em" indica quando o arquivo foi atualizado pela última vez.
+              No cabeçalho laranja, à direita, ficam o texto "Arquivo atualizado em" (quando o arquivo da aba foi atualizado pela última vez)
+              e, no Controle de todas as abas, os botões <Btn icon={RefreshCw}>Atualizar arquivo</Btn>,{' '}
+              <Btn icon={Settings}>Regras do sistema</Btn> e <Btn icon={BookOpen}>Manual de operação</Btn>. No Dashboard aparece só a
+              engrenagem de Regras do sistema.
             </p>
             <p>
               Em todas as abas o painel <Btn icon={Search}>Filtros</Btn> fica sempre aberto, com o botão <strong>Limpar filtros</strong> quando
@@ -208,12 +207,17 @@ export default function GarantiasDafManual() {
 
           <Secao id="regras" icon={Settings} titulo="Regras do Sistema">
             <p>
-              Abertas pela engrenagem <Btn icon={Settings}>Regras do sistema</Btn>. Valem para todos os usuários e todas as empresas.            </p>
+              Abertas pela engrenagem <Btn icon={Settings}>Regras do sistema</Btn>. Valem para todos os usuários e todas as empresas,
+              no Controle e no Dashboard. Ao clicar na engrenagem abre uma lista com um item para cada aba —{' '}
+              <Btn icon={Activity}>Regras — Na Oficina</Btn>, <Btn icon={FileText}>Regras — Com Garantista</Btn> e{' '}
+              <Btn icon={DollarSign}>Regras — Títulos a Receber</Btn> —, cada um com a descrição do que controla. O item escolhido abre
+              uma janela só com as regras daquela aba; <Btn>Salvar</Btn> grava e a tela já passa a usar o valor novo.
+            </p>
             {carregando ? (
               <p className="flex items-center gap-2 text-slate-400"><Loader2 className="h-4 w-4 animate-spin" /> Carregando regras...</p>
             ) : (
               <>
-                <Sub titulo="Dias na Oficina">
+                <Sub titulo="Dias na Oficina (menu Na Oficina)">
                   <p>Valor atual: <Valor>{diasOficina} dia{diasOficina === 1 ? '' : 's'}</Valor></p>
                   <p>
                     Contado a partir da <strong>data de criação da OS</strong>. Controla o card Mais de {diasOficina} Dias na Oficina da aba Na Oficina.
@@ -226,7 +230,7 @@ export default function GarantiasDafManual() {
                     </p>
                   </div>
                 </Sub>
-                <Sub titulo="Dias para Tratar Recusa">
+                <Sub titulo="Dias para Tratar Recusa (menu Com Garantista)">
                   <p>Valor atual: <Valor>{diasRecusa} dia{diasRecusa === 1 ? '' : 's'}</Valor></p>
                   <p>
                     Contado a partir da <strong>Data Final Avaliação</strong> (dia em que a DAF recusou; sem essa data, como no status Z, conta da Data SG).
@@ -238,7 +242,7 @@ export default function GarantiasDafManual() {
                   </ul>
                   <p>Cada linha mostra quantidade e valor; clicar nela filtra só essas OS.</p>
                 </Sub>
-                <Sub titulo="Dias para Digitação">
+                <Sub titulo="Dias para Digitação (menu Com Garantista)">
                   <p>Valor atual: <Valor>{diasDigitacao} dia{diasDigitacao === 1 ? '' : 's'}</Valor></p>
                   <p><strong>D</strong> = dia em que a OS foi fechada.</p>
                   <ul className="space-y-1 pl-1">
@@ -254,7 +258,7 @@ export default function GarantiasDafManual() {
                     </p>
                   </div>
                 </Sub>
-                <Sub titulo="Dias para Solucionar (por Tipo de OS)">
+                <Sub titulo="Dias para Solucionar por Tipo de OS (menu Com Garantista)">
                   <p>
                     Contado a partir da <strong>data em que a garantia foi digitada</strong> no sistema. Define, dentro do card{' '}
                     <strong>Aguardando Aprovação DAF</strong>, quais garantias estão <strong>Dentro do prazo</strong> e quais estão{' '}
@@ -285,11 +289,19 @@ export default function GarantiasDafManual() {
                     gravar o mesmo prazo em todos de uma vez; depois clique em <Btn>Salvar</Btn>.
                   </p>
                 </Sub>
+                <Sub titulo="Dias para Envio da NF (menu Títulos a Receber)">
+                  <p>Valor atual: <Valor>{diasNfEnvio} dia{diasNfEnvio === 1 ? '' : 's'}</Valor></p>
+                  <p>
+                    Contado a partir da <strong>data de emissão da NF</strong>. Controla a linha <strong>NF sem envio</strong> do card
+                    Pendências: NF não enviada à fábrica e emitida há <Valor>{diasNfEnvio} dia{diasNfEnvio === 1 ? '' : 's'}</Valor> ou mais.
+                  </p>
+                  <p>Os cards Vencidos, Vence Hoje e A Vencer seguem regra fixa: data de vencimento comparada com a data de hoje.</p>
+                </Sub>
               </>
             )}
           </Secao>
 
-          <Secao id="na-oficina" icon={Activity} titulo="Garantias DAF Na Oficina">
+          <Secao id="na-oficina" icon={Activity} titulo="Na Oficina">
             <p>Mostra as OS de garantia que ainda estão <strong>abertas</strong> na oficina, lidas ao vivo do arquivo do Dealer.net. Nada aqui é gravado no sistema — é uma visão de acompanhamento.</p>
             <Sub titulo="Cards">
               <Itens itens={[
@@ -305,7 +317,7 @@ export default function GarantiasDafManual() {
             </Sub>
           </Secao>
 
-          <Secao id="garantista" icon={FileText} titulo="Garantias DAF com Garantista">
+          <Secao id="garantista" icon={FileText} titulo="Com Garantista">
             <p>Concentra as OS <strong>fechadas</strong> que estão em digitação ou em análise pela DAF.</p>
             <Sub titulo="Importação automática">
               <p>
@@ -317,14 +329,17 @@ export default function GarantiasDafManual() {
               </p>
             </Sub>
             <Sub titulo="Cards (clique para filtrar a tabela; clique de novo para limpar)">
-              <p>Abaixo do título de cada card aparece, em letra pequena, a regra que ele segue.</p>
+              <p>
+                Abaixo do título de cada card aparece, em letra pequena, a regra que ele segue. Em todos os cards o{' '}
+                <strong>valor</strong> fica em destaque e, logo abaixo, a quantidade (<strong>Qtde O.S.</strong>).
+              </p>
               <Itens itens={[
-                ['Total Aberto', 'OS distintas e valores de peças, serviços e total de tudo que está na tela.'],
+                ['Total Aberto', 'valor total em destaque, Qtde O.S. e os valores de peças e serviços de tudo que está na tela.'],
                 ['A Digitar', `status A — "OS fechada <= ${diasDigitacao} dias sem digitar".`],
                 ['Digitação Atrasada', `status A — "OS fechada > de ${diasDigitacao} dias sem digitar".`],
-                ['Aguardando Aprovação DAF', 'status B, C, G, M, N, P, Q, R, S, T, U, V, W, X ou Y — "Prazo máximo de solução N dias" (o prazo do tipo de OS; se o card tiver tipos com prazos diferentes, mostra a faixa, ex.: 14 a 20 dias). Abaixo da quantidade aparecem "Dentro do prazo" e "Fora do prazo", cada um clicável para filtrar a tabela.'],
+                ['Aguardando Aprovação DAF', 'status B, C, G, M, N, P, Q, R, S, T, U, V, W, X ou Y — "Prazo máximo de solução N dias" (o prazo do tipo de OS; se o card tiver tipos com prazos diferentes, mostra a faixa, ex.: 14 a 20 dias). Abaixo do valor e da Qtde O.S. aparecem "Dentro do prazo" e "Fora do prazo", com quantidade e valor, cada um clicável para filtrar a tabela.'],
                 ['Aprovada', 'status FA — "Realizar Faturamento".'],
-                ['Recusas', `status FR ou Z — "Recusada pela DAF". Abaixo do valor: No prazo (até ${diasRecusa} dias desde a Data Final Avaliação) e Fora do prazo (mais de ${diasRecusa} dias), com quantidade e valor; clicar filtra a tabela.`],
+                ['Recusas', `status FR ou Z — "Recusada pela DAF · prazo para tratar ${diasRecusa} dias". Abaixo do valor e da Qtde O.S.: No prazo (até ${diasRecusa} dias desde a Data Final Avaliação) e Fora do prazo (mais de ${diasRecusa} dias), com quantidade e valor; clicar filtra a tabela.`],
               ]} />
             </Sub>
             <Sub titulo="Alertas">
@@ -358,7 +373,7 @@ export default function GarantiasDafManual() {
             <Itens itens={[
               ['Abertura', 'empresa, consultor, tipo de OS, Nº OS, proprietário, chassi, datas de abertura/fechamento e valores de peças e serviços.'],
               ['Análise', 'Solicitação de Garantia (Nº SG e Data SG — obrigatórios para salvar), Nova Garantia ou Garantia Reapresentada (com Nº SG e data da reapresentação), status, Data Final Avaliação (liberada só para FA, FR e Z), NF de envio de peça, informações de material aguardado (status W), Motivo da Recusa e Resposta SHC (status FR) e as respostas da concessionária.'],
-              ['Faturamento', 'no topo ficam os botões "Nota de Débito" (só quando a garantia é aberta por Editar Faturamento, em A Receber), "Limpar NFs" e "Buscar Faturamento" (traz NFs, emissão e valores do ROF017). Abaixo, a tabela Notas Fiscais Emitidas (Tipo Doc., RPS, NFSe, Faturamento, valores de produto e serviço e Total) com o quadro Envio para Fábrica (Data de Envio) ao lado; depois Título a Receber (Nº título, lançamento e vencimento) e Observações do Título.'],
+              ['Faturamento', 'no topo ficam os botões "Nota de Débito" (só quando a garantia é aberta por Editar Faturamento, em Títulos a Receber), "Limpar NFs" e "Buscar Faturamento" (traz NFs, emissão e valores do ROF017). Abaixo, a tabela Notas Fiscais Emitidas (Tipo Doc., RPS, NFSe, Faturamento, valores de produto e serviço e Total) com o quadro Envio para Fábrica (Data de Envio) ao lado; depois Título a Receber (Nº título, lançamento e vencimento) e Observações do Título.'],
               ['Recusado', 'aparece somente com status FR: resumo do processamento/análise e do faturamento e o Plano de Ação — Direção (Ação Tomada: Débito Interno - Serviços, Débito Interno - Comercial ou Recurso junto à DAF; data e descrição do plano).'],
             ]} />
             <Sub titulo="Mudança automática de status ao salvar">
@@ -374,8 +389,8 @@ export default function GarantiasDafManual() {
             </Sub>
             <p>Todas as alterações ficam registradas no painel <strong>Histórico de Alterações</strong> (data/hora, campo, alteração e usuário).</p>
             <p>
-              Para salvar é preciso a permissão <strong>Editar OS</strong> (com Garantista) ou, quando aberta por A Receber,{' '}
-              <strong>Editar Faturamento</strong>. Sem permissão a tela abre só para consulta.
+              Para salvar é preciso a permissão <strong>Editar OS</strong> (Com Garantista) ou{' '}
+              <strong>Editar Faturamento</strong> (aberta por Títulos a Receber). Sem permissão a tela abre só para consulta.
             </p>
           </Secao>
 
@@ -393,17 +408,18 @@ export default function GarantiasDafManual() {
             </Sub>
             <Sub titulo="Tabela">
               <p>Nº OS, Nº NF, Empresa, Tipo OS, Proprietário Veículo, Nº Chassi e Total. Na engrenagem de Ações, <Btn icon={Eye}>Visualizar</Btn> abre os dados da OS e da garantia.
-              Marcando linhas aparece "Excluir N selecionado(s)" (conforme permissão).</p>
+              Marcando linhas aparece "Excluir selecionadas (N)" (conforme permissão).</p>
             </Sub>
           </Secao>
 
-          <Secao id="receber" icon={DollarSign} titulo="Garantias DAF a Receber">
+          <Secao id="receber" icon={DollarSign} titulo="Títulos a Receber">
             <p>Títulos a receber da DAF lidos do arquivo financeiro (RFN003, um arquivo por unidade) e cruzados com as OS do Histórico de O.S.</p>
             <Sub titulo="Cards">
+              <p>Em todos os cards o <strong>valor</strong> fica em destaque e, logo abaixo, a quantidade (<strong>Qtde Títulos</strong>).</p>
               <Itens itens={[
-                ['Pendências', '"Sem OS vinculada" (título cuja OS não está no Histórico de O.S.) e "NF sem envio" (NF não enviada à fábrica e emitida há 4 dias ou mais).'],
+                ['Pendências', `"Sem OS vinculada" (título cuja OS não está no Histórico de O.S.) e "NF sem envio" (NF não enviada à fábrica e emitida há ${diasNfEnvio} dia${diasNfEnvio === 1 ? '' : 's'} ou mais — regra Dias para Envio da NF). Cada linha é clicável para filtrar a tabela.`],
                 ['Vencidos / Vence Hoje / A Vencer', 'pela data de vencimento comparada com a data de hoje. Clicar em um card ativa só ele e desativa os outros.'],
-                ['Resumo Geral', 'quantidade de títulos e saldo. Em todos os cards e gráficos (Controle e Dashboard) o valor mostrado é o Saldo — o que ainda falta receber.'],
+                ['Resumo Geral', 'saldo total em destaque e Qtde Títulos. Clicar nele limpa o filtro do card selecionado. Em todos os cards e gráficos (Controle e Dashboard) o valor mostrado é o Saldo — o que ainda falta receber.'],
               ]} />
             </Sub>
             <Sub titulo="Situação de cada título">
@@ -426,7 +442,7 @@ export default function GarantiasDafManual() {
 
           <Secao id="nota-debito" icon={FileSignature} titulo="Nota de Débito">
             <p>
-              Emitida em <strong>Garantias DAF a Receber → Ações → Editar Faturamento</strong>, pelo botão <Btn icon={FileText}>Nota de Débito</Btn>{' '}
+              Emitida em <strong>Títulos a Receber → Ações → Editar Faturamento</strong>, pelo botão <Btn icon={FileText}>Nota de Débito</Btn>{' '}
               no topo da etapa Faturamento (conforme permissão).
             </p>
             <Itens itens={[
@@ -506,7 +522,7 @@ export default function GarantiasDafManual() {
             <p>Arquivos extraídos do Dealer.net pelo RPA e gravados no SharePoint (pasta "Banco de Dados - DAF - Pós-Vendas").</p>
             <Itens itens={[
               ['ROF001_OSABERTA.xlsx', 'OS abertas — aba Na Oficina.'],
-              ['ROF001_OSABERTA_ENCERRADA.xlsx', 'OS encerradas — importação automática da aba com Garantista (inclusive a placa, coluna Veiculo_Placa).'],
+              ['ROF001_OSABERTA_ENCERRADA.xlsx', 'OS encerradas — importação automática da aba Com Garantista (inclusive a placa, coluna Veiculo_Placa).'],
               ['ROF017_FATURAMENTOPOROS <ano>.xlsx', 'faturamento por OS (um arquivo por ano) — Buscar NF, Buscar Faturamento e Importar OS Faturadas (placa na coluna OS_VeiculoPlaca).'],
               ['RFN003_PosicaoAnaliticoReceber_Excel_<unidade>.xls', 'títulos a receber (um arquivo por unidade) — aba Garantias DAF a Receber.'],
             ]} />

@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Activity, FileText, DollarSign, Receipt, ShieldCheck, BarChart2, ClipboardList, Settings } from 'lucide-react'
+import { Activity, FileText, DollarSign, Receipt, BarChart2, ClipboardList } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
-import RegrasSistemaModal from '../garantias-daf/RegrasSistemaModal'
+import logoCaioba from '../../assets/logo-grupo.png'
+import EngrenagemRegras from '../garantias-daf/EngrenagemRegras'
 import GarantiasOficinaDashboard from '../garantias-daf/GarantiasOficinaDashboard'
 import GarantiasAbertoDashboard from '../garantias-daf/GarantiasAbertoDashboard'
 import GarantiasTitulosDashboard from '../garantias-daf/GarantiasTitulosDashboard'
@@ -14,19 +15,19 @@ import GarantiasDafFaturadas from '../garantias-daf/GarantiasDafFaturadas'
 // aba). Histórico de O.S. só tem Controle.
 const ABAS = [
   {
-    key: 'oficina', label: 'Na Oficina', icon: Activity, permKey: 'garantias-daf-andamento',
+    key: 'oficina', label: 'Na Oficina (Em Aberto)', icon: Activity, permKey: 'garantias-daf-andamento',
     objetivo: 'acompanhar as ordens de serviço de garantia que estão atualmente na oficina, executando o serviço.',
     dashboard: (p) => <GarantiasOficinaDashboard {...p} />,
     controle: (p) => <GarantiasDafDashboard key="andamento" variante="andamento" {...p} />,
   },
   {
-    key: 'aberto', label: 'Com Garantista', icon: FileText, permKey: 'garantias-daf',
+    key: 'aberto', label: 'Com Garantista (Em Aberto)', icon: FileText, permKey: 'garantias-daf',
     objetivo: 'acompanhar o andamento das garantias já encerradas na oficina e que já se encontra com o departamento de garantia.',
     dashboard: (p) => <GarantiasAbertoDashboard {...p} />,
     controle: (p) => <GarantiasDafDashboard key="aberto" {...p} />,
   },
   {
-    key: 'titulos', label: 'Títulos a Receber', icon: DollarSign, permKey: 'garantias-daf-titulos',
+    key: 'titulos', label: 'Títulos a Receber (Faturadas)', icon: DollarSign, permKey: 'garantias-daf-titulos',
     objetivo: 'acompanhar os títulos financeiros a receber vinculados às garantias faturadas.',
     dashboard: (p) => <GarantiasTitulosDashboard {...p} />,
     controle: (p) => <GarantiasDafTitulos {...p} />,
@@ -43,7 +44,6 @@ export default function BiGarantiasDaf() {
   const { hasPermission, hasActionOrDefault, user, garantiasVisaoPadraoEfetiva } = useAuth()
   // Mesma permissão da engrenagem nas telas de Controle (ação "regras")
   const podeRegras = hasActionOrDefault('garantias-daf', 'regras') || hasActionOrDefault('garantias-daf-andamento', 'regras')
-  const [modalRegras, setModalRegras] = useState(false)
   const [versaoRegras, setVersaoRegras] = useState(0)
   const [params, setParams] = useSearchParams()
 
@@ -99,32 +99,35 @@ export default function BiGarantiasDaf() {
       <div className="max-w-screen-2xl mx-auto space-y-5">
         {/* CABEÇALHO — mesmo modelo do BI Planos de Manutenção, em laranja: título à esquerda; à direita,
             atualização + botões em cima e, no lugar dos filtros, a escolha Dashboard | Controle. */}
-        <div className="relative z-10 rounded-lg border border-slate-200 shadow-sm bg-white">
-          <div className="absolute inset-0 rounded-lg bg-gradient-to-r from-orange-100 via-amber-50 to-transparent pointer-events-none" />
-          <div className="relative flex flex-wrap items-stretch justify-between gap-4 p-5">
-          <div className="flex items-center gap-3 self-start">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center shrink-0">
-              <ShieldCheck className="h-5 w-5 text-white" />
+        <div
+          className="relative z-10 rounded-lg shadow-sm"
+          style={{ background: 'linear-gradient(90deg, #fdf8ec 0%, #f8d78c 28%, #f0a30a 50%, #a08a35 68%, #4f6a6a 84%, #1a4d8f 100%)' }}
+        >
+          <div className="relative flex flex-wrap items-center justify-between gap-4 px-5 py-3">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 shrink-0">
+              <img src={logoCaioba} alt="Caiobá" className="h-11 w-auto" />
+              <span className="text-[30px] leading-none font-black italic tracking-tight text-[#1a4d8f]"
+                style={{ fontFamily: "'Arial Black', 'Segoe UI Black', Arial, sans-serif" }}>CAIOBÁ</span>
             </div>
-            <div>
-              <h1 className="text-lg font-bold text-slate-900 tracking-tight">Garantias DAF</h1>
-              <p className="text-[11px] text-slate-500 uppercase tracking-wide">Garantias DAF — Pós-Venda</p>
+            <div className="w-0.5 self-stretch bg-[#1a4d8f]" />
+            <div style={{ fontFamily: "Cambria, Georgia, 'Times New Roman', serif" }}>
+              <h1 className="text-[22px] font-bold text-slate-900 uppercase leading-tight">Garantias DAF</h1>
+              <p className="text-[17px] italic text-slate-900 uppercase leading-tight mt-0.5">Pós-Vendas</p>
             </div>
           </div>
-          <div className="flex flex-col items-end justify-end">
-            <div className="flex items-end gap-3">
-            <p className="text-[10px] text-slate-500 leading-tight whitespace-nowrap pb-2">
-              Arquivo atualizado em: <strong className="text-slate-700">{fmtDataHora(lastModified) || '—'}</strong>
+          {/* Atualização + botões na altura do título (alinhados ao topo) */}
+          <div className="flex flex-col items-end justify-start ml-auto self-start pt-1">
+            <div className="flex items-center gap-3">
+            <p className="text-[10px] text-white/90 leading-tight whitespace-nowrap">
+              Arquivo atualizado em: <strong className="text-white">{fmtDataHora(lastModified) || '—'}</strong>
             </p>
             {/* Botões da tela de Controle (Atualizar, Regras, Manual) */}
-            {modo === 'controle' && <div ref={setSlotAcoes} className="flex items-center gap-2 pb-1" />}
+            {modo === 'controle' && <div ref={setSlotAcoes} className="flex items-center gap-2" />}
             {/* Visão Dashboard: a mesma engrenagem (Regras do Sistema), que vale para Controle e Dashboard */}
             {modo === 'dashboard' && podeRegras && (
-              <div className="flex items-center gap-2 pb-1">
-                <button type="button" onClick={() => setModalRegras(true)} title="Regras do sistema"
-                  className="flex items-center justify-center p-1.5 rounded-md bg-orange-500 hover:bg-orange-600 text-white shadow-sm transition-colors">
-                  <Settings className="h-3.5 w-3.5" />
-                </button>
+              <div className="flex items-center gap-2">
+                <EngrenagemRegras usuario={user?.email} onSalvo={() => setVersaoRegras(v => v + 1)} />
               </div>
             )}
             </div>
@@ -170,9 +173,6 @@ export default function BiGarantiasDaf() {
           ? <React.Fragment key={versaoRegras}>{abaAtual.dashboard({ onLastModified: setLastModified })}</React.Fragment>
           : abaAtual.controle({ onLastModified: setLastModified, slotAcoes })}
       </div>
-      {modalRegras && (
-        <RegrasSistemaModal onClose={() => setModalRegras(false)} onSalvo={() => setVersaoRegras(v => v + 1)} usuario={user?.email} />
-      )}
     </div>
   )
 }

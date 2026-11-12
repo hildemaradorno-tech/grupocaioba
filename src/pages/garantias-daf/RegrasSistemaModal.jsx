@@ -1,17 +1,31 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { Settings, X, Loader2 } from 'lucide-react'
+import { Settings, X, Loader2, Activity, FileText, DollarSign } from 'lucide-react'
 import { apiService } from '../../services/api'
+
+// Menus da engrenagem: cada aba de Garantias DAF com as regras que ela usa
+const ABAS_REGRAS = [
+  { key: 'oficina', label: 'Na Oficina', icon: Activity },
+  { key: 'garantista', label: 'Com Garantista', icon: FileText },
+  { key: 'titulos', label: 'Títulos a Receber', icon: DollarSign },
+]
 
 // Regras do Sistema de Garantias DAF (gar_configuracoes, registro único). Usada pela engrenagem de
 // todas as abas de Controle. onSalvo recebe a configuração gravada, para a tela aplicar na hora.
 // tiposExtras: Map sigla → descrição de tipos que só existem nas garantias (fora do cadastro).
-export default function RegrasSistemaModal({ onClose, onSalvo, usuario, tiposExtras }) {
+// abaInicial: 'oficina' | 'garantista' | 'titulos' — abre no menu da aba de onde a engrenagem foi clicada
+// somenteAba: aberta por um item da engrenagem — mostra só as regras daquela aba, sem os menus no topo
+export default function RegrasSistemaModal({ onClose, onSalvo, usuario, tiposExtras, abaInicial, somenteAba = false }) {
+  const [aba, setAba] = useState(ABAS_REGRAS.some(a => a.key === abaInicial) ? abaInicial : 'oficina')
   const [carregando, setCarregando] = useState(true)
   const [tiposDim, setTiposDim] = useState([])
   const [diasOficinaInput, setDiasOficinaInput] = useState('14')
   const [diasDigitacaoInput, setDiasDigitacaoInput] = useState('14')
   const [diasSolucao, setDiasSolucao] = useState(14)
   const [diasRecusaInput, setDiasRecusaInput] = useState('15')
+  // "Dias para Envio da NF" (card NF sem envio). temColunaNf: a coluna dias_nf_envio já existe no banco —
+  // sem ela o campo fica só leitura e não é enviado ao salvar (senão o update falharia).
+  const [diasNfInput, setDiasNfInput] = useState('4')
+  const [temColunaNf, setTemColunaNf] = useState(false)
   const [diasSolucaoPorTipoInput, setDiasSolucaoPorTipoInput] = useState({})
   const [selecionadosTipos, setSelecionadosTipos] = useState(new Set())
   const [valorAplicarTipos, setValorAplicarTipos] = useState('14')
@@ -27,6 +41,8 @@ export default function RegrasSistemaModal({ onClose, onSalvo, usuario, tiposExt
       setDiasDigitacaoInput(String(cfg?.dias_digitacao ?? 14))
       setDiasSolucao(cfg?.dias_solucao ?? 14)
       setDiasRecusaInput(String(cfg?.dias_recusa ?? 15))
+      setTemColunaNf(!!cfg && 'dias_nf_envio' in cfg)
+      setDiasNfInput(String(cfg?.dias_nf_envio ?? 4))
       const porTipo = cfg?.dias_solucao_por_tipo ?? {}
       setDiasSolucaoPorTipoInput(Object.fromEntries(Object.entries(porTipo).map(([k, v]) => [k, String(v)])))
       setTiposDim(tipos.filter(t => t.classificacao === 'Garantia' && t.sigla))
@@ -68,7 +84,8 @@ export default function RegrasSistemaModal({ onClose, onSalvo, usuario, tiposExt
     const dias = Number(diasDigitacaoInput)
     const diasOfi = Number(diasOficinaInput)
     const diasRec = Number(diasRecusaInput)
-    if ([dias, diasOfi, diasRec].some(n => !Number.isFinite(n) || n <= 0)) {
+    const diasNf = Number(diasNfInput)
+    if ([dias, diasOfi, diasRec, ...(temColunaNf ? [diasNf] : [])].some(n => !Number.isFinite(n) || n <= 0)) {
       setErro('Informe números de dias válidos (maiores que zero).')
       return
     }
@@ -79,7 +96,7 @@ export default function RegrasSistemaModal({ onClose, onSalvo, usuario, tiposExt
     }
     setSalvando(true); setErro(null)
     try {
-      const cfg = { dias_digitacao: dias, dias_oficina: diasOfi, dias_solucao: diasSolucao, dias_solucao_por_tipo: porTipo, dias_recusa: diasRec }
+      const cfg = { dias_digitacao: dias, dias_oficina: diasOfi, dias_solucao: diasSolucao, dias_solucao_por_tipo: porTipo, dias_recusa: diasRec, ...(temColunaNf ? { dias_nf_envio: diasNf } : {}) }
       await apiService.updateConfiguracoesGarantias(cfg, usuario)
       onSalvo?.(cfg)
       onClose()
@@ -95,10 +112,11 @@ export default function RegrasSistemaModal({ onClose, onSalvo, usuario, tiposExt
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md mx-4">
+      <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-lg mx-4">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
             <Settings className="h-4 w-4 text-slate-500" /> Regras do Sistema
+            {somenteAba && <span className="font-semibold text-slate-500">— {ABAS_REGRAS.find(a => a.key === aba)?.label}</span>}
           </h3>
           <button onClick={onClose} className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded transition-colors">
             <X className="h-4 w-4" />
@@ -109,6 +127,21 @@ export default function RegrasSistemaModal({ onClose, onSalvo, usuario, tiposExt
         ) : (
           <>
             {erro && <div className="mb-3 text-xs text-red-700 bg-red-50 border border-red-200 rounded p-2">{erro}</div>}
+            {/* Um menu por aba — cada um mostra só as regras que aquela aba usa */}
+            {!somenteAba && <div className="flex items-center gap-0.5 bg-slate-50 border border-slate-200 rounded-lg p-0.5 mb-4">
+              {ABAS_REGRAS.map(a => {
+                const Icon = a.icon
+                return (
+                  <button key={a.key} type="button" onClick={() => setAba(a.key)}
+                    className={`flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-[11px] font-semibold transition-colors ${
+                      aba === a.key ? 'bg-orange-500 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800 hover:bg-white'
+                    }`}>
+                    <Icon className="h-3.5 w-3.5" /> {a.label}
+                  </button>
+                )
+              })}
+            </div>}
+            {aba === 'oficina' && (
             <div className="flex flex-col gap-1 mb-4">
               <label className={lblCls}>Dias na Oficina</label>
               <input type="number" min="1" value={diasOficinaInput} onChange={e => setDiasOficinaInput(e.target.value)} className={campoCls} />
@@ -116,6 +149,8 @@ export default function RegrasSistemaModal({ onClose, onSalvo, usuario, tiposExt
                 Contado da data de criação da OS — controla o card "Mais de N Dias na Oficina" da aba Na Oficina.
               </p>
             </div>
+            )}
+            {aba === 'garantista' && (<>
             <div className="flex flex-col gap-1 mb-4">
               <label className={lblCls}>Dias para Digitação</label>
               <input type="number" min="1" value={diasDigitacaoInput} onChange={e => setDiasDigitacaoInput(e.target.value)} className={campoCls} />
@@ -165,6 +200,28 @@ export default function RegrasSistemaModal({ onClose, onSalvo, usuario, tiposExt
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+            </>)}
+            {aba === 'titulos' && (
+              <div className="mb-4 space-y-3">
+                <div className="flex flex-col gap-1">
+                  <label className={lblCls}>Dias para Envio da NF</label>
+                  <input type="number" min="1" value={diasNfInput} onChange={e => setDiasNfInput(e.target.value)}
+                    disabled={!temColunaNf} className={`${campoCls} disabled:bg-slate-50 disabled:text-slate-400`} />
+                  <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">
+                    Contado da data de emissão da NF — controla a linha "NF sem envio" do card Pendências: NF não enviada à
+                    fábrica e emitida há {Number(diasNfInput) > 0 ? Number(diasNfInput) : 'N'} dia{Number(diasNfInput) === 1 ? '' : 's'} ou mais.
+                  </p>
+                  {!temColunaNf && (
+                    <p className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded p-1.5">
+                      Campo ainda não liberado no banco — por enquanto vale o padrão de 4 dias.
+                    </p>
+                  )}
+                </div>
+                <p className="text-[11px] text-slate-500 leading-relaxed">
+                  <strong>Vencidos / Vence Hoje / A Vencer</strong>: regra fixa — data de vencimento comparada com hoje.
+                </p>
               </div>
             )}
           </>

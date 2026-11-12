@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { Plus, Target, Search, FileSpreadsheet, Eye, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
+import { Plus, Target, Search, FileSpreadsheet, Eye, ArrowUpDown, ArrowUp, ArrowDown, Building2 } from 'lucide-react'
 import ImportarCentrosResultadoModal from './ImportarCentrosResultadoModal'
 import CrVisuaisModal from './CrVisuaisModal'
 import SeletorEmpresas, { siglaEmpresa, nomeEmpresaCompleto } from './SeletorEmpresas'
@@ -39,6 +39,32 @@ export default function CentroResultado() {
   const [visualLote, setVisualLote] = useState('') // '' = escolher | '__remover' | id
   const [aplicandoLote, setAplicandoLote] = useState(false)
   const alternarSel = (id) => setSelecionados(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
+  // Empresas em lote (modal com o mesmo seletor do cadastro).
+  const [empresasLote, setEmpresasLote] = useState(null) // null = fechado | { ids: [], modo }
+  const [erroEmpresasLote, setErroEmpresasLote] = useState(null)
+  const aplicarEmpresasLote = async () => {
+    if (empresasLote.ids.length === 0 && empresasLote.modo !== 'substituir') { setErroEmpresasLote('Marque ao menos uma empresa.'); return }
+    setAplicandoLote(true)
+    setErroEmpresasLote(null)
+    try {
+      await apiService.definirEmpresasCtbCentrosLote([...selecionados], empresasLote.ids, empresasLote.modo)
+      await loadData()
+      setEmpresasLote(null)
+      setSelecionados(new Set())
+    } catch (err) {
+      setErroEmpresasLote('Erro ao aplicar: ' + (err.message || String(err)))
+    } finally {
+      setAplicandoLote(false)
+    }
+  }
+  // Se todos os selecionados são do mesmo sistema, o seletor oferece "Marcar as do <sistema>".
+  // Função (e não valor calculado aqui): sistemasMap só é declarado mais abaixo — calcular direto
+  // aqui dava "Cannot access before initialization" e deixava a tela em branco.
+  const sistemaDaSelecao = () => {
+    const ids = new Set(centros.filter(c => selecionados.has(c.id)).map(c => c.sistema_id || ''))
+    return ids.size === 1 ? sistemasMap[[...ids][0]]?.nome : undefined
+  }
+
   const aplicarVisualLote = async () => {
     if (!visualLote || selecionados.size === 0) return
     setAplicandoLote(true)
@@ -221,6 +247,11 @@ export default function CentroResultado() {
                 className="px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-violet-600 hover:bg-violet-700 shadow-sm transition-colors disabled:opacity-50">
                 {aplicandoLote ? 'Aplicando...' : 'Aplicar nos selecionados'}
               </button>
+              <span className="h-5 w-px bg-violet-200" />
+              <button type="button" onClick={() => { setErroEmpresasLote(null); setEmpresasLote({ ids: [], modo: 'acrescentar' }) }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-violet-700 bg-white border border-violet-300 hover:bg-violet-100 transition-colors">
+                <Building2 className="h-3.5 w-3.5" /> Definir empresas
+              </button>
               <button type="button" onClick={() => { setSelecionados(new Set()); setVisualLote('') }} className="ml-auto text-[11px] font-semibold text-slate-500 hover:text-slate-700 hover:underline">Limpar seleção</button>
             </div>
           )}
@@ -368,6 +399,44 @@ export default function CentroResultado() {
           onClose={() => setModalCrVisualAberto(false)}
           onChanged={loadData}
         />
+      )}
+
+      {empresasLote && (
+        <ModalForm
+          titulo={`Empresas de ${selecionados.size} centro(s) selecionado(s)`}
+          icon={Building2}
+          erro={erroEmpresasLote}
+          salvando={aplicandoLote}
+          onFechar={() => setEmpresasLote(null)}
+          onSalvar={aplicarEmpresasLote}
+          largura="w-[640px]"
+        >
+          <div className="flex flex-col gap-1.5">
+            <label className={LABEL}>O que fazer com as empresas marcadas</label>
+            {[
+              ['acrescentar', 'Acrescentar', 'mantém as empresas que cada centro já tem e soma as marcadas'],
+              ['substituir', 'Substituir', 'cada centro fica só com as empresas marcadas'],
+              ['remover', 'Remover', 'tira as empresas marcadas dos centros selecionados'],
+            ].map(([modo, titulo, desc]) => (
+              <label key={modo} className="flex items-start gap-2 text-xs text-slate-700 cursor-pointer">
+                <input type="radio" name="modoEmpresasLote" checked={empresasLote.modo === modo} onChange={() => setEmpresasLote(l => ({ ...l, modo }))} className="mt-0.5" />
+                <span><strong>{titulo}</strong> — <span className="text-slate-500">{desc}</span></span>
+              </label>
+            ))}
+          </div>
+          <SeletorEmpresas
+            empresas={empresas}
+            value={empresasLote.ids}
+            onChange={ids => setEmpresasLote(l => ({ ...l, ids }))}
+            sistemaNome={sistemaDaSelecao()}
+          />
+          {empresasLote.ids.length === 0 && empresasLote.modo !== 'substituir' && (
+            <p className="text-[11px] text-amber-600 font-semibold">Marque ao menos uma empresa.</p>
+          )}
+          {empresasLote.ids.length === 0 && empresasLote.modo === 'substituir' && (
+            <p className="text-[11px] text-amber-600 font-semibold">Sem empresa marcada, "Substituir" deixa os centros selecionados sem nenhuma empresa.</p>
+          )}
+        </ModalForm>
       )}
 
       {excluir && (

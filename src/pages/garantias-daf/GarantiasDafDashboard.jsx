@@ -7,7 +7,7 @@ import { apiService } from '../../services/api'
 import MenuEngrenagem from '../../components/MenuEngrenagem'
 import { useAuth } from '../../context/AuthContext'
 import { useEmpresasGarantias } from '../../hooks/useEmpresasGarantias'
-import RegrasSistemaModal from './RegrasSistemaModal'
+import EngrenagemRegras from './EngrenagemRegras'
 import { situacaoPrazoRecusa } from './prazoRecusa'
 
 const STATUS_MAP = {
@@ -154,7 +154,6 @@ export default function GarantiasDafDashboard({ variante = 'aberto', onLastModif
   const [diasSolucao, setDiasSolucao] = useState(14)
   const [diasSolucaoPorTipo, setDiasSolucaoPorTipo] = useState({})
   const [diasRecusa, setDiasRecusa] = useState(15)
-  const [modalRegras, setModalRegras] = useState(false)
 
   const aplicarRegras = (cfg) => {
     setDiasRecusa(cfg?.dias_recusa ?? 15)
@@ -755,15 +754,7 @@ export default function GarantiasDafDashboard({ variante = 'aberto', onLastModif
               >
                 <RefreshCw className={`h-3.5 w-3.5 ${spLoading ? 'animate-spin' : ''}`} />
               </button>
-              {canRegras && (
-                <button
-                  onClick={() => setModalRegras(true)}
-                  title="Regras do sistema"
-                  className="flex items-center justify-center p-1.5 rounded-md bg-orange-500 hover:bg-orange-600 text-white shadow-sm transition-colors"
-                >
-                  <Settings className="h-3.5 w-3.5" />
-                </button>
-              )}
+              {canRegras && <EngrenagemRegras usuario={user?.email} onSalvo={aplicarRegras} tiposExtras={tipoOsDescMap} />}
               <button
                 onClick={() => window.open('/garantias-daf-manual', '_blank')}
                 title="Manual de operação"
@@ -783,15 +774,7 @@ export default function GarantiasDafDashboard({ variante = 'aberto', onLastModif
               >
                 <RefreshCw className={`h-3.5 w-3.5 ${spLoading ? 'animate-spin' : ''}`} />
               </button>
-              {canRegras && (
-                <button
-                  onClick={() => setModalRegras(true)}
-                  title="Regras do sistema"
-                  className="flex items-center justify-center p-1.5 rounded-md bg-orange-500 hover:bg-orange-600 text-white shadow-sm transition-colors"
-                >
-                  <Settings className="h-3.5 w-3.5" />
-                </button>
-              )}
+              {canRegras && <EngrenagemRegras usuario={user?.email} onSalvo={aplicarRegras} tiposExtras={tipoOsDescMap} />}
               <button
                 onClick={() => window.open('/garantias-daf-manual', '_blank')}
                 title="Manual de operação"
@@ -1442,9 +1425,6 @@ export default function GarantiasDafDashboard({ variante = 'aberto', onLastModif
         </div>
       )}
 
-      {modalRegras && (
-        <RegrasSistemaModal onClose={() => setModalRegras(false)} onSalvo={aplicarRegras} usuario={user?.email} tiposExtras={tipoOsDescMap} />
-      )}
     </div>
   )
 }

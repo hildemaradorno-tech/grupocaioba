@@ -4109,6 +4109,20 @@ export const apiService = {
     if (error) throw error
     return data || []
   },
+  // Histórico das OS (coluna "Status da OS"): as mesmas OS (por número) nas auditorias anteriores da empresa
+  getAuditoriaOsHistorico: async (auditoriaIds, osNumeros) => {
+    if (!auditoriaIds?.length || !osNumeros?.length) return []
+    const todas = []
+    for (let de = 0; ; de += 1000) {
+      const { data, error } = await supabase.from('aud_auditoria_os')
+        .select('id, auditoria_id, os_numero, data_auditoria, na_oficina, situacao_nome, observacao, data_previsao')
+        .in('auditoria_id', auditoriaIds).in('os_numero', osNumeros).order('id').range(de, de + 999)
+      if (error) throw error
+      todas.push(...(data || []))
+      if (!data || data.length < 1000) break
+    }
+    return todas
+  },
   // OS de várias auditorias (Dashboard) — paginado, o PostgREST devolve no máximo 1000 linhas por chamada
   getAuditoriaOsDeVarias: async (auditoriaIds) => {
     if (!auditoriaIds?.length) return []
@@ -6417,6 +6431,26 @@ export const apiService = {
     for (let i = 0; i < ids.length; i += 200) {
       const { error } = await supabase.from('ctb_centros_resultado').update({ cr_visual_id: crVisualId || null }).in('id', ids.slice(i, i + 200))
       if (error) throw error
+    }
+  },
+  // Lote de empresas em vários centros. modo: 'acrescentar' (mantém as atuais), 'substituir'
+  // (fica só com as marcadas) ou 'remover' (tira as marcadas).
+  definirEmpresasCtbCentrosLote: async (centroIds, empresaIds, modo) => {
+    for (let i = 0; i < centroIds.length; i += 100) {
+      const lote = centroIds.slice(i, i + 100)
+      if (modo === 'substituir' || modo === 'remover') {
+        let q = supabase.from('ctb_centro_resultado_empresas').delete().in('centro_resultado_id', lote)
+        if (modo === 'remover') q = q.in('empresa_id', empresaIds)
+        else if (empresaIds.length) q = q.not('empresa_id', 'in', `(${empresaIds.join(',')})`)
+        const { error } = await q
+        if (error) throw error
+      }
+      if (modo !== 'remover' && empresaIds.length) {
+        const linhas = lote.flatMap(centro_resultado_id => empresaIds.map(empresa_id => ({ centro_resultado_id, empresa_id })))
+        const { error } = await supabase.from('ctb_centro_resultado_empresas')
+          .upsert(linhas, { onConflict: 'centro_resultado_id,empresa_id', ignoreDuplicates: true })
+        if (error) throw error
+      }
     }
   },
   // Só acrescenta empresas (importação): nunca remove as que o centro já tem.

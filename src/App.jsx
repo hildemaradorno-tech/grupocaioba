@@ -53,6 +53,7 @@ import MetasPosVendaTotal from './pages/MetasPosVendaTotal'
 import GarantiasDafForm from './pages/garantias-daf/GarantiasDafForm'
 import BiAuditoriaOsAberto from './pages/bi/BiAuditoriaOsAberto'
 import GarantiasDafManual from './pages/garantias-daf/GarantiasDafManual'
+import AuditoriaOsAbertoManual from './pages/garantias-daf/AuditoriaOsAbertoManual'
 import CalculoComissoesManual from './pages/CalculoComissoesManual'
 import HistoricoComissoesManual from './pages/HistoricoComissoesManual'
 import HondaGarantiasReceber from './pages/honda/HondaGarantiasReceber'
@@ -299,6 +300,8 @@ export default function App() {
           { path: '/garantias-daf-historicodeos', element: <Navigate to="/bi/garantias-daf?aba=historico&modo=controle" replace /> },
           { path: '/garantias-daf-titulos', element: <Navigate to="/bi/garantias-daf?aba=titulos&modo=controle" replace /> },
           { path: '/garantias-daf-manual', element: <GarantiasDafManual /> },
+          // Manual da Auditoria O.S. Aberta (visão Controle) — livre para todos, abre numa aba nova
+          { path: '/auditoria-os-aberto-manual', element: <AuditoriaOsAbertoManual /> },
           { path: '/projetos', element: <ProjetosDashboard />, menuPath: 'projetos' },
           { path: '/projetos/manifestacoes', element: <ManifestacoesPainel />, menuPath: ['projetos/manifestacoes', 'projetos'] },
           { path: '/projetos/lista-tarefas', element: <CalendarioProjetos abaInicial="lista" />, menuPath: 'projetos/lista-tarefas' },

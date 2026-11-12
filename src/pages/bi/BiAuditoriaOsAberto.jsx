@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useSearchParams } from 'react-router-dom'
-import { BarChart2, ClipboardList } from 'lucide-react'
+import { BarChart2, ClipboardList, BookOpen } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import logoCaioba from '../../assets/logo-grupo.png'
 import AuditoriaOsAberto from '../garantias-daf/AuditoriaOsAberto'
@@ -18,6 +18,8 @@ export default function BiAuditoriaOsAberto() {
   const [params, setParams] = useSearchParams()
   const [slotVisao, setSlotVisao] = useState(null)
   const [slotFiltros, setSlotFiltros] = useState(null)
+  const [slotEngrenagem, setSlotEngrenagem] = useState(null)
+  const [versao, setVersao] = useState(0) // engrenagem mudou alguma auditoria → Dashboard recarrega
 
   // Empresa / auditoria iguais nas duas visões — ficam na URL (?empresa=&auditoria=&data=); cada visão lê ao abrir
   // e devolve as trocas por onSelecao
@@ -89,15 +91,36 @@ export default function BiAuditoriaOsAberto() {
             </div>
             {/* Empresa / Data da Auditoria da visão aberta (cada visão desenha os seus seletores aqui) */}
             {/* ml-auto: fica à direita mesmo quando a tela é estreita e a linha quebra */}
-            <div ref={setSlotFiltros} className="flex items-end justify-end ml-auto" />
+            <div className="flex items-end justify-end gap-3 ml-auto">
+              <div ref={setSlotFiltros} className="flex items-end" />
+              {/* Engrenagem — nas duas visões, ao lado da Data da Auditoria */}
+              <div ref={setSlotEngrenagem} className="flex items-end" />
+              {/* Manual de operação — nas duas visões, abre numa aba nova (livre para todos) */}
+              <button
+                type="button"
+                onClick={() => window.open('/auditoria-os-aberto-manual', '_blank')}
+                title="Manual de operação"
+                aria-label="Manual de operação"
+                className="flex items-center justify-center h-9 w-9 rounded-md border border-slate-300 bg-white text-slate-600 shadow-sm hover:bg-slate-50 transition-colors"
+              >
+                <BookOpen className="h-4 w-4" />
+              </button>
+            </div>
           </div>
         </div>
         {slotVisao && createPortal(seletorVisao, slotVisao)}
 
         {/* Só a visão escolhida é montada — a outra não carrega dados enquanto estiver fechada */}
         {modo === 'dashboard'
-          ? <AuditoriaOsAbertoDashboard selecao={selecao} onSelecao={onSelecao} slotFiltros={slotFiltros} onSlotVisao={setSlotVisao} />
-          : <AuditoriaOsAberto embedded slotFiltros={slotFiltros} onSlotVisao={setSlotVisao} selecao={selecao} onSelecao={(s) => onSelecao({ ...s, data: selecao.data })} />}
+          ? <>
+              <AuditoriaOsAbertoDashboard selecao={selecao} onSelecao={onSelecao} slotFiltros={slotFiltros} onSlotVisao={setSlotVisao} versao={versao} />
+              {/* Engrenagem no Dashboard: a mesma do Controle (só ela e as janelas, sem a tabela) — quem tem o Controle */}
+              {podeControle && (
+                <AuditoriaOsAberto embedded soEngrenagem slotEngrenagem={slotEngrenagem} selecao={selecao}
+                  onAlterado={() => setVersao(v => v + 1)} />
+              )}
+            </>
+          : <AuditoriaOsAberto embedded slotFiltros={slotFiltros} slotEngrenagem={slotEngrenagem} onSlotVisao={setSlotVisao} selecao={selecao} onSelecao={(s) => onSelecao({ ...s, data: selecao.data })} />}
       </div>
     </div>
   )
