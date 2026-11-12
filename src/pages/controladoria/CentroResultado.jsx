@@ -302,11 +302,11 @@ export default function CentroResultado() {
                   )}
                   <th className="p-3 w-24 text-center">Ações</th>
                   <Th campo="codigo" className="w-32">Código</Th>
-                  <Th campo="descricao">Descrição no DMS</Th>
+                  <Th campo="descricao">Descrição no Sistema</Th>
                   <Th campo="sigla" className="w-32">Sigla/Fisco</Th>
                   <Th campo="sistema" className="w-48">Sistema</Th>
                   <Th campo="empresas">Empresas</Th>
-                  <Th campo="visual" className="w-48">Descrição Visual</Th>
+                  <Th campo="visual" className="w-48">Descrição no Orçamento</Th>
                   <Th campo="situacao" className="w-24 text-center">Situação</Th>
                 </tr>
               </thead>
@@ -371,7 +371,7 @@ export default function CentroResultado() {
               <input required value={form.codigo} onChange={e => setForm(f => ({ ...f, codigo: e.target.value }))} placeholder="Ex: 101" className={`${INPUT} font-mono`} />
             </div>
             <div className="flex flex-col gap-1.5 col-span-2">
-              <label className={LABEL}>Descrição no DMS *</label>
+              <label className={LABEL}>Descrição no Sistema *</label>
               <input required value={form.descricao} onChange={e => setForm(f => ({ ...f, descricao: e.target.value }))} placeholder="Ex: Oficina Campo Grande" className={INPUT} />
             </div>
           </div>

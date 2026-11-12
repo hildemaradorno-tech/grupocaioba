@@ -68,7 +68,7 @@ export default function CrVisuaisModal({ crVisuais, centros, onClose, onChanged 
                 <input autoFocus value={form.codigo} onChange={e => setForm(f => ({ ...f, codigo: e.target.value.toUpperCase() }))} placeholder="Ex: 01" className={`${INPUT} font-mono`} />
               </div>
               <div className="flex flex-col gap-1.5 col-span-4">
-                <label className={LABEL}>{editingId ? 'Editar descrição visual' : 'Nova descrição visual'} *</label>
+                <label className={LABEL}>{editingId ? 'Editar descrição no orçamento' : 'Nova descrição no orçamento'} *</label>
                 <input value={form.descricao} onChange={e => setForm(f => ({ ...f, descricao: e.target.value.toUpperCase() }))} placeholder="Ex: PÓS-VENDA" className={INPUT} />
               </div>
               <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer pb-2">
@@ -91,7 +91,7 @@ export default function CrVisuaisModal({ crVisuais, centros, onClose, onChanged 
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[10px] font-bold uppercase tracking-wide">
                   <th className="p-2 w-20">Código</th>
-                  <th className="p-2">Descrição Visual</th>
+                  <th className="p-2">Descrição no Orçamento</th>
                   <th className="p-2 w-24 text-center">Centros</th>
                   <th className="p-2 w-20 text-center">Situação</th>
                   <th className="p-2 w-20 text-center">Ações</th>
