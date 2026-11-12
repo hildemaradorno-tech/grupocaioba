@@ -3998,6 +3998,25 @@ export const apiService = {
     return data?.[0]
   },
 
+  // ── Metas mensais dos indicadores da Auditoria O.S. Aberta (aud_metas_indicadores, ano a ano) ──
+  getAuditoriaMetasAno: async (ano) => {
+    const { data, error } = await supabase.from('aud_metas_indicadores').select('*').eq('ano', ano).order('mes')
+    if (error) throw error
+    return data || []
+  },
+  getAuditoriaMetaMes: async (ano, mes) => {
+    const { data, error } = await supabase.from('aud_metas_indicadores').select('*').eq('ano', ano).eq('mes', mes).maybeSingle()
+    if (error) throw error
+    return data
+  },
+  // linhas: [{ mes, meta_pendentes_pct, meta_mais30_pct }] — grava os 12 meses do ano de uma vez
+  saveAuditoriaMetasAno: async (ano, linhas, userEmail) => {
+    const agora = new Date().toISOString()
+    const { error } = await supabase.from('aud_metas_indicadores')
+      .upsert(linhas.map(l => ({ ano, ...l, atualizado_em: agora, atualizado_por: userEmail || null })), { onConflict: 'ano,mes' })
+    if (error) throw error
+  },
+
   // ── Metas dos indicadores do BI Agendamento de Serviços (engrenagem do BI) ──
   getBiAgendamentoMetas: async () => {
     const { data, error } = await supabase.from('bi_agendamento_metas').select('indicador, meta, atualizado_em, atualizado_por')
@@ -6424,6 +6443,13 @@ export const apiService = {
     if (incluir.length) {
       const { error: e2 } = await supabase.from('ctb_centro_resultado_empresas').insert(incluir.map(empresa_id => ({ centro_resultado_id: centroId, empresa_id })))
       if (e2) throw e2
+    }
+  },
+  // Exclusão em lote (ctb_centro_resultado_empresas e ctb_orcamento caem junto por ON DELETE CASCADE).
+  deleteCtbCentrosResultadoLote: async (ids) => {
+    for (let i = 0; i < ids.length; i += 200) {
+      const { error } = await supabase.from('ctb_centros_resultado').delete().in('id', ids.slice(i, i + 200))
+      if (error) throw error
     }
   },
   // Lote: mesmo Centro de Resultado (Visual) em vários centros (null remove o vínculo).

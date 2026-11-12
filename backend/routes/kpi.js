@@ -53,6 +53,7 @@ import { getPesos, setPeso, aplicarPesos } from '../services/kpiPesos.js'
 import { getMetasManuais, setMetaManual, aplicarMetasManuais } from '../services/kpiMetasManuais.js'
 import { getMetaPecasPeriodos, getMetaOficinaPeriodos, getMetaMecanicoPeriodos, getMetaMargemOficinaPeriodos, getMetaPecasBalcaoPeriodos, getMetaMargemBalcaoPeriodos, getMetaTrpPeriodos, getMetaTicketMedioPeriodos, getMetaFunilariaPeriodos, limparCacheMetas } from '../services/kpiMetas.js'
 import { getIndicadoresGarantia } from '../services/kpiGarantias.js'
+import { getIndicadoresAuditoriaOs } from '../services/kpiAuditoriaOs.js'
 import { getIndicadoresAgendamento, comMetasAtuaisAgendamento } from '../services/kpiAgendamento.js'
 import { getIndicadoresPlanos, contarPlanosPorMes } from '../services/kpiPlanosManutencao.js'
 
@@ -607,7 +608,7 @@ router.get('/bloco3-pos-venda', requireConfig, wrap(async (req, res) => {
 // Campanha pedia uma vez por função de gerente).
 // empresaQualidade: seletor de empresa do GERENTE DE PROCESSOS E QUALIDADE ('CAMPO GRANDE'…); vazio = todas somadas.
 async function quadrosBloco3PosVenda({ year, refresh = false, fundo = false, empresaQualidade = null }) {
-  const [base, garantia, agendamento, planos] = await Promise.all([
+  const [base, garantia, agendamento, planos, auditoriaOs] = await Promise.all([
     obterBaseBloco3Servicos(`bloco3-posvenda|${year}`, () => montarBaseBloco3PosVenda(year), { refresh, checarMetas: metasModo(fundo) }),
     // GERENTE DE PROCESSOS E QUALIDADE › Digitação Atrasada / Aguardando Aprovação DAF (fora do prazo): as garantias
     // de todas as empresas ou da escolhida (lidas na hora, como no SETOR GARANTIA — consulta leve no Supabase).
@@ -618,10 +619,12 @@ async function quadrosBloco3PosVenda({ year, refresh = false, fundo = false, emp
     // Planos de manutenção: contagens guardadas + metas do BI na hora (como no Consultor de Plano).
     basePlanosServicos(year, { refresh }).then(meses => getIndicadoresPlanos(year, meses))
       .catch(err => { console.error('[bloco3-pos-venda] planos:', err.message); return null }),
+    // Auditoria O.S. Aberta (aud_*): O.S. sem veículo e 30+ dias, por empresa e grupo — lida na hora.
+    getIndicadoresAuditoriaOs(year).catch(err => { console.error('[bloco3-pos-venda] auditoria O.S.:', err.message); return null }),
   ])
   // Base guardada antes de um quadro ser renomeado: passa para o nome novo (QUADROS_NOME_ANTIGO).
   const baseNomesNovos = base.map(q => (QUADROS_NOME_ANTIGO[q.tituloGerente] ? { ...q, tituloGerente: QUADROS_NOME_ANTIGO[q.tituloGerente] } : q))
-  let quadros = comGarantiasQualidade(baseNomesNovos, garantia, agendamento, planos)
+  let quadros = comGarantiasQualidade(baseNomesNovos, garantia, agendamento, planos, auditoriaOs)
   quadros = aplicarPesos(quadros, comNomesAntigos(await getPesos('bloco3-pos-venda')))
   quadros = aplicarMetasManuais(quadros, comNomesAntigos(await getMetasManuais('bloco3-pos-venda', year)), year)
   return quadros
@@ -641,10 +644,26 @@ const INDICADORES_PLANOS_QUALIDADE = { 'Contratos novos': 'novos', 'Contratos re
 // Quadros dos gerentes que recebem esses indicadores (pelo nome do indicador): o de Processos e
 // Qualidade (garantia, agendamento, planos) e o Gerente Geral (planos, no lugar da Penetração).
 // A lista de indicadores segue o modelo (BLOCO3_PV_TEMPLATE) — base guardada antes da troca se ajusta.
-const QUADROS_PV_COM_EXTRAS = new Set(['GERENTE DE PROCESSOS E QUALIDADE', 'GERENTE GERAL PÓS-VENDAS'])
-function comGarantiasQualidade(base, garantia, agendamento = null, planos = null) {
+// Auditoria O.S. Aberta: Gerente Geral = grupo (todas as empresas); gerentes de loja = a própria empresa.
+const INDICADORES_AUDITORIA_OS = {
+  'O.S. aberta sem veículo': 'semVeiculo',             // Gerente Geral
+  'O.S. abertas >= 30 dias': 'mais30',                 // Gerente Geral
+  'O.S. aberta sem veículo na oficina': 'semVeiculo',  // gerentes de loja
+  'O.S. >= 30 dias (% do Valor)': 'mais30',            // gerentes de loja
+}
+const CASA_DO_GERENTE = {
+  'GERENTE DE SERVIÇO - CAMPO GRANDE': 'CAMPO GRANDE',
+  'GERENTE FILIAL - DOURADOS': 'DOURADOS',
+  'GERENTE FILIAL - TRÊS LAGOAS': 'TRÊS LAGOAS',
+  'GERENTE FILIAL - CHAPADÃO DO SUL': 'CHAPADÃO DO SUL',
+}
+const QUADROS_PV_COM_EXTRAS = new Set(['GERENTE DE PROCESSOS E QUALIDADE', 'GERENTE GERAL PÓS-VENDAS', ...Object.keys(CASA_DO_GERENTE)])
+function comGarantiasQualidade(base, garantia, agendamento = null, planos = null, auditoriaOs = null) {
   return base.map(q => {
     if (!QUADROS_PV_COM_EXTRAS.has(q.tituloGerente)) return q
+    // Auditoria O.S. do quadro: a empresa do gerente de loja, ou o grupo (Gerente Geral).
+    const audQuadro = CASA_DO_GERENTE[q.tituloGerente] ? auditoriaOs?.porCasa?.[CASA_DO_GERENTE[q.tituloGerente]]
+      : q.tituloGerente === 'GERENTE GERAL PÓS-VENDAS' ? auditoriaOs?.grupo : null
     const modelo = BLOCO3_PV_TEMPLATE.find(t => t.tituloGerente === q.tituloGerente)
     // Nome, orientação e métrica sempre do modelo atual (base guardada pode ter o nome antigo).
     const kpis = modelo.kpis.map(t => {
@@ -654,6 +673,11 @@ function comGarantiasQualidade(base, garantia, agendamento = null, planos = null
     return {
       ...q,
       kpis: kpis.map(k => {
+        const campoAud = audQuadro && INDICADORES_AUDITORIA_OS[k.indicador]
+        if (campoAud) {
+          const d = audQuadro[campoAud]
+          return d ? injectMeta(injectPeriods(k, d.realizado, v => v ?? null), d.meta) : k
+        }
         const campoAg = INDICADORES_AGENDAMENTO_QUALIDADE[k.indicador]
         const campoPl = INDICADORES_PLANOS_QUALIDADE[k.indicador]
         if (campoAg || campoPl) {
@@ -1138,12 +1162,12 @@ export async function aquecerCacheCampanha(year = new Date().getFullYear()) {
       await passo(`chefe de oficina ${emp}`, () => baseChefeOficinaServicos(year, emp, op))
       await passo(`funilaria ${emp}`, () => baseFunilariaServicos(year, emp, op))
     }
-    const [cA, cB, mA, mB, vend] = await Promise.all([
-      listConsultoresOficina(year, null), listConsultoresServicos(year, null),
-      listMecanicosROF042(year, null), listMecanicosROF096(year, null), listVendedoresBalcao(year, null),
+    // Listas dos seletores renovadas e guardadas (a Matriz abre com os nomes na hora).
+    const [nomesC, nomesM, vend] = await Promise.all([
+      listaNomesConsultores(year, null, op), listaNomesMecanicos(year, null, op), listVendedoresBalcao(year, null),
     ])
-    const consultores = await filtrarAtivos([...new Set([...cA, ...cB])])
-    const mecanicos = await filtrarAtivos([...new Set([...mA, ...mB])], 'mecanic')
+    const consultores = await filtrarAtivos(nomesC)
+    const mecanicos = await filtrarAtivos(nomesM, 'mecanic')
     const vendedores = await filtrarAtivos(vend)
     for (const n of consultores) await passo(`consultor ${n}`, () => basePessoaServicos(year, n, null, op))
     for (const n of mecanicos) await passo(`mecânico ${n}`, () => basePessoaServicos(year, null, n, op))
@@ -1257,11 +1281,24 @@ async function montarBaseBloco3Servicos(year, consultor, mecanico) {
 
 // GET /api/kpi/extractor/consultores?year=2026 — lista de consultores (RPR001
 // Oficina + Recepcionista) pro seletor do bloco CONSULTOR DE SERVIÇOS
+// Listas de nomes dos seletores (Consultor / Mecânico): lidas dos relatórios do SharePoint (lento, ~4–8 s
+// a frio) e guardadas como as bases do Bloco 3 (devolve na hora, atualiza por trás). O filtro de
+// funcionário ativo (dim_funcionarios) é aplicado na hora, sobre a lista guardada.
+const listaNomesConsultores = (year, empresa, { refresh = false } = {}) =>
+  obterBaseBloco3Servicos(`lista-consultores|${year}|${empresa || 'todas'}`, async () => {
+    const [a, b] = await Promise.all([listConsultoresOficina(year, empresa), listConsultoresServicos(year, empresa)])
+    return [...new Set([...a, ...b])]
+  }, { refresh, checarMetas: false })
+const listaNomesMecanicos = (year, empresa, { refresh = false } = {}) =>
+  obterBaseBloco3Servicos(`lista-mecanicos|${year}|${empresa || 'todas'}`, async () => {
+    const [a, b] = await Promise.all([listMecanicosROF042(year, empresa), listMecanicosROF096(year, empresa)])
+    return [...new Set([...a, ...b])]
+  }, { refresh, checarMetas: false })
+
 router.get('/extractor/consultores', requireConfig, wrap(async (req, res) => {
   const year    = parseInt(req.query.year) || new Date().getFullYear()
   const empresa = req.query.empresa && req.query.empresa !== 'todas' ? req.query.empresa : null
-  const [a, b] = await Promise.all([listConsultoresOficina(year, empresa), listConsultoresServicos(year, empresa)])
-  const consultores = (await filtrarAtivos([...new Set([...a, ...b])])).sort((x, y) => x.localeCompare(y, 'pt-BR'))
+  const consultores = (await filtrarAtivos(await listaNomesConsultores(year, empresa))).sort((x, y) => x.localeCompare(y, 'pt-BR'))
   res.json({ year, consultores })
 }))
 
@@ -1270,8 +1307,7 @@ router.get('/extractor/consultores', requireConfig, wrap(async (req, res) => {
 router.get('/extractor/mecanicos', requireConfig, wrap(async (req, res) => {
   const year    = parseInt(req.query.year) || new Date().getFullYear()
   const empresa = req.query.empresa && req.query.empresa !== 'todas' ? req.query.empresa : null
-  const [a, b] = await Promise.all([listMecanicosROF042(year, empresa), listMecanicosROF096(year, empresa)])
-  const mecanicos = (await filtrarAtivos([...new Set([...a, ...b])], 'mecanic')).sort((x, y) => x.localeCompare(y, 'pt-BR'))
+  const mecanicos = (await filtrarAtivos(await listaNomesMecanicos(year, empresa), 'mecanic')).sort((x, y) => x.localeCompare(y, 'pt-BR'))
   res.json({ year, mecanicos })
 }))
 

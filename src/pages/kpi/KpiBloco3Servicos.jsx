@@ -491,14 +491,27 @@ function QuadroTable({ quadro, activePeriods, mesTotalKey, year, onSalvarPeso, o
   )
 }
 
+// Listas de nomes já buscadas nesta página (por função + ano + empresa): ao trocar de aba ou voltar à
+// Matriz, os nomes aparecem na hora; a busca roda de novo por trás e atualiza se mudou.
+// Chave = a própria função de busca (o nome dela muda na publicação) + ano + empresa.
+const _listasPessoas = new Map() // fetchLista → Map(`ano|empresa` → lista)
+const listasDe = (fn) => (_listasPessoas.get(fn) || _listasPessoas.set(fn, new Map()).get(fn))
+
 function usePessoaFiltro(fetchLista, year, empresa) {
-  const [lista, setLista] = useState([])
+  const chave = `${year}|${empresa || ''}`
+  const guardadas = listasDe(fetchLista)
+  const [lista, setLista] = useState(() => guardadas.get(chave) || [])
   const [aplicado, setAplicado] = useState(null)
   useEffect(() => {
     let ativo = true
-    fetchLista(year, empresa).then(l => { if (ativo) setLista(l) })
+    if (guardadas.has(chave)) setLista(guardadas.get(chave))
+    fetchLista(year, empresa).then(l => {
+      if (!ativo) return
+      if (l?.length || !guardadas.has(chave)) guardadas.set(chave, l) // falha (lista vazia) não apaga a guardada
+      setLista(guardadas.get(chave) || l)
+    })
     return () => { ativo = false }
-  }, [year, empresa])
+  }, [fetchLista, chave]) // eslint-disable-line react-hooks/exhaustive-deps
   // Troca de empresa: a pessoa selecionada pode não existir mais na lista nova.
   useEffect(() => { setAplicado(null) }, [empresa])
   return { lista, aplicado, setAplicado }

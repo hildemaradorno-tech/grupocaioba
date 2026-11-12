@@ -44,32 +44,54 @@ const ABAS = [
 ]
 
 // Meio-círculo com o % (o "velocímetro" do card de pendentes)
-function Medidor({ pct }) {
+// Medidor (meia-lua) — fica ao lado do card, em fundo branco; corArco acompanha a cor do card
+// meta (0–1, opcional): risco escuro atravessando o arco na posição da meta
+function Medidor({ pct, corArco = '#dc2626', meta }) {
   const p = Math.max(0, Math.min(1, pct || 0))
   const r = 34, c = Math.PI * r
+  // Ponto do arco no ângulo da meta (0 = esquerda, 1 = direita), centro (42,42)
+  const marca = meta == null ? null : (() => {
+    const a = Math.PI * (1 - Math.max(0, Math.min(1, meta)))
+    const ponto = (raio) => [42 + raio * Math.cos(a), 42 - raio * Math.sin(a)]
+    return [ponto(r - 6), ponto(r + 6)]
+  })()
   return (
-    <svg viewBox="0 0 84 48" className="w-24 h-14 shrink-0">
-      <path d="M8 42 A34 34 0 0 1 76 42" fill="none" stroke="rgba(255,255,255,0.85)" strokeWidth="11" />
-      <path d="M8 42 A34 34 0 0 1 76 42" fill="none" stroke="#6b7280" strokeWidth="11" strokeDasharray={`${p * c} ${c}`} />
-      <text x="42" y="44" textAnchor="middle" fill="#fff" style={{ fontSize: '9px', fontWeight: 700 }}>{(p * 100).toFixed(2).replace('.', ',')}%</text>
+    <svg viewBox="0 0 84 48" className="w-44 h-[100px] shrink-0">
+      <path d="M8 42 A34 34 0 0 1 76 42" fill="none" stroke="#e2e8f0" strokeWidth="11" />
+      <path d="M8 42 A34 34 0 0 1 76 42" fill="none" stroke={corArco} strokeWidth="11" strokeDasharray={`${p * c} ${c}`} />
+      {marca && <line x1={marca[0][0]} y1={marca[0][1]} x2={marca[1][0]} y2={marca[1][1]} stroke="#475569" strokeOpacity="0.7" strokeWidth="0.8" strokeLinecap="round" />}
+      <text x="42" y="44" textAnchor="middle" fill="#0f172a" style={{ fontSize: '9px', fontWeight: 700 }}>{(p * 100).toFixed(2).replace('.', ',')}%</text>
     </svg>
   )
 }
 
-function CardIndicador({ titulo, rotulo, valor, qtdTxt, cor, medidor }) {
+// meta: percentual (0–100) cadastrado na engrenagem (Metas dos indicadores) ou null
+function CardIndicador({ titulo, rotulo, valor, qtdTxt, cor, medidor, meta }) {
+  // Meta vem do banco como texto ("5.00") — mostra 5 / 2,5
+  const metaTxt = meta != null && meta !== '' ? Number(meta).toLocaleString('pt-BR', { maximumFractionDigits: 2 }) : null
   return (
     // sem h-full: o card fica do tamanho dele e a tabela vem logo abaixo (com h-full ele esticava até o fim da coluna)
     <div className="flex flex-col gap-2">
       <div className="rounded-md border border-slate-300 bg-slate-50 px-3 py-2 text-center text-[11px] font-bold uppercase text-slate-700 leading-tight min-h-[44px] flex items-center justify-center">
         {titulo}
       </div>
-      <div className={`rounded-md p-4 text-white flex items-center justify-between gap-2 min-h-[104px] ${cor}`}>
-        <div>
-          <p className="text-[11px] font-bold uppercase">{rotulo}</p>
-          <p className="text-base font-bold mt-1">{valor}</p>
-          <p className="text-[11px] mt-1 text-white/90">{qtdTxt}</p>
+      {/* Card colorido + medidor ao lado (fora do card), num quadro branco */}
+      <div className="flex items-stretch gap-2">
+        <div className={`flex-1 rounded-md p-4 text-white flex items-center min-h-[104px] ${cor}`}>
+          <div>
+            <p className="text-[11px] font-bold uppercase">{rotulo}</p>
+            <p className="text-base font-bold mt-1">{valor}</p>
+            <p className="text-[11px] mt-1 text-white/90">{qtdTxt}</p>
+          </div>
         </div>
-        {medidor !== undefined && <Medidor pct={medidor} />}
+        {medidor !== undefined && (
+          <div className="rounded-md border border-slate-200 bg-white px-3 py-1 flex flex-col items-center justify-center shrink-0">
+            <Medidor pct={medidor} corArco={cor.includes('emerald') ? '#059669' : '#dc2626'} meta={meta != null ? meta / 100 : null} />
+            {metaTxt && (
+              <p className="text-[11px] font-bold text-slate-700 -mt-1">Meta {metaTxt}%</p>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )
@@ -190,7 +212,8 @@ const ROTULO_FILTRO = { consultor: 'Consultor', tipo: 'Tipo de OS', situacao: 'S
 // rows: todas as OS da auditoria · base: as pendentes (sem veículo na oficina), sem filtro
 // reincidentes: Set das OS que já apareceram em auditorias anteriores da empresa (null = carregando)
 // txt: textos do painel — O.S. Pendentes ({ grupo: 'Pendências', indicador: 'O.S. Pendentes', pct: 'Pendência' }) ou O.S. ≥ 30 Dias
-function PainelPendentes({ rows, base, reincidentes, fx, setFx, casa, txt }) {
+// meta: percentual (0–100) da engrenagem → Metas dos indicadores (a da aba aberta) ou null
+function PainelPendentes({ rows, base, reincidentes, fx, setFx, casa, txt, meta = null }) {
   const alternarFx = (dim, valor) => setFx(f => ({ ...f, [dim]: f[dim] === valor ? null : valor }))
   const limparFx = () => setFx(FILTROS_PEND_VAZIO)
   // Reincidência de um consultor: liga consultor + reincidência juntos; clicar de novo desliga os dois
@@ -257,16 +280,32 @@ function PainelPendentes({ rows, base, reincidentes, fx, setFx, casa, txt }) {
           <p className="text-[11px] text-slate-600 mt-3 pt-2 border-t border-slate-200">Qtde {txt.indicador} {tot.qtd}</p>
         </div>
         {/* % Vlr Pendência — só o indicador (meia-lua), sem card */}
+        {/* Com meta: arco verde até a meta e vermelho acima, risco sutil na posição da meta e "Meta X%" embaixo */}
         <div className="flex flex-col items-center justify-center">
-          <svg viewBox="0 0 120 70" className="w-40 h-24">
-            <path d="M12 62 A48 48 0 0 1 108 62" fill="none" stroke="#e2e8f0" strokeWidth="14" />
-            <path d="M12 62 A48 48 0 0 1 108 62" fill="none" stroke="#dc2626" strokeWidth="14"
-              strokeDasharray={`${Math.max(0, Math.min(1, pct)) * Math.PI * 48} ${Math.PI * 48}`} />
-            <text x="60" y="60" textAnchor="middle" fill="#0f172a" style={{ fontSize: '15px', fontWeight: 700 }}>
-              {(pct * 100).toFixed(2).replace('.', ',')}%
-            </text>
-          </svg>
+          {(() => {
+            const temMeta = meta != null && meta !== ''
+            const metaNum = temMeta ? Number(meta) : null
+            const corArco = temMeta && pct * 100 <= metaNum ? '#059669' : '#dc2626'
+            const a = temMeta ? Math.PI * (1 - Math.max(0, Math.min(1, metaNum / 100))) : null
+            const pt = (raio) => [60 + raio * Math.cos(a), 62 - raio * Math.sin(a)]
+            return (
+              <svg viewBox="0 0 120 70" className="w-40 h-24">
+                <path d="M12 62 A48 48 0 0 1 108 62" fill="none" stroke="#e2e8f0" strokeWidth="14" />
+                <path d="M12 62 A48 48 0 0 1 108 62" fill="none" stroke={corArco} strokeWidth="14"
+                  strokeDasharray={`${Math.max(0, Math.min(1, pct)) * Math.PI * 48} ${Math.PI * 48}`} />
+                {temMeta && (() => { const [p1, p2] = [pt(48 - 8), pt(48 + 8)]; return (
+                  <line x1={p1[0]} y1={p1[1]} x2={p2[0]} y2={p2[1]} stroke="#475569" strokeOpacity="0.7" strokeWidth="1.1" strokeLinecap="round" />
+                ) })()}
+                <text x="60" y="60" textAnchor="middle" fill="#0f172a" style={{ fontSize: '15px', fontWeight: 700 }}>
+                  {(pct * 100).toFixed(2).replace('.', ',')}%
+                </text>
+              </svg>
+            )
+          })()}
           <p className="text-[11px] text-slate-500 -mt-1">% Vlr {txt.pct}</p>
+          {meta != null && meta !== '' && (
+            <p className="text-[11px] font-bold text-slate-700">Meta {Number(meta).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%</p>
+          )}
         </div>
       </div>
 
@@ -527,6 +566,9 @@ function TabelaOs({ linhas, mostrarEmpresa, vazio, reincidentes, onVerHistorico 
 // versao: muda quando a engrenagem altera alguma auditoria → recarrega auditorias e OS
 export default function AuditoriaOsAbertoDashboard({ selecao = null, onSelecao = null, slotFiltros = null, onSlotVisao = null, versao = 0, onStatusAuditoria = null }) {
   const { isAdminEfetivo, empresasPermitidasEfetivas } = useAuth()
+  // Metas dos indicadores (aud_configuracoes — engrenagem do Controle → Metas dos indicadores)
+  const [metasAud, setMetasAud] = useState(null)
+  useEffect(() => { apiService.getAuditoriaConfig().then(setMetasAud).catch(() => {}) }, [versao])
   const [empresas, setEmpresas] = useState([])
   const [auditorias, setAuditorias] = useState([])
   const [empresaId, setEmpresaId] = useState(selecao?.empresa || '') // '' = todas
@@ -540,6 +582,21 @@ export default function AuditoriaOsAbertoDashboard({ selecao = null, onSelecao =
   const [carregando, setCarregando] = useState(true)
   const [carregandoOs, setCarregandoOs] = useState(false)
   const [erro, setErro] = useState('')
+
+  // Mês da meta = mês da data da auditoria aberta (a mais recente, quando "Todas" junta várias empresas);
+  // sem auditoria, o mês atual
+  const anoMesRef = useMemo(() => {
+    const datas = rows.map(r => String(r.data_auditoria || '')).filter(Boolean).sort()
+    const ref = datas.length ? datas[datas.length - 1] : new Date().toISOString().slice(0, 10)
+    return ref.slice(0, 7) // 'aaaa-mm'
+  }, [rows])
+  const [metaMes, setMetaMes] = useState(null)
+  useEffect(() => {
+    const [a, m] = anoMesRef.split('-').map(Number)
+    let vivo = true
+    apiService.getAuditoriaMetaMes(a, m).then(d => { if (vivo) setMetaMes(d) }).catch(() => { if (vivo) setMetaMes(null) })
+    return () => { vivo = false }
+  }, [anoMesRef, versao])
 
   // Empresas e auditorias (mesma regra de empresas da visão Controle)
   useEffect(() => {
@@ -666,12 +723,22 @@ export default function AuditoriaOsAbertoDashboard({ selecao = null, onSelecao =
   const total = somar(rows)
   const totSemVeic = somar(rows.filter(semVeiculo))
   const tot30 = somar(rows.filter(mais30))
+  // Cor do card: com meta (engrenagem → Metas dos indicadores), verde até a meta e vermelho acima;
+  // sem meta, como antes: vermelho se houver alguma O.S., verde se não houver
+  const pctDoTotal = (t) => (total.valor ? t.valor / total.valor : 0)
+  const corIndicador = (t, metaPct) => metaPct != null
+    ? (pctDoTotal(t) * 100 > Number(metaPct) ? 'bg-red-600' : 'bg-emerald-600')
+    : (t.qtd ? 'bg-red-600' : 'bg-emerald-600')
+  // Meta do mês da auditoria (aud_metas_indicadores); mês sem meta usa a meta geral (aud_configuracoes)
+  const metaDe = (campo) => metaMes?.[campo] ?? metasAud?.[campo] ?? null
+  const metaPendentes = metaDe('meta_pendentes_pct')
+  const metaMais30 = metaDe('meta_mais30_pct')
   const responsaveis = [...new Set(rows.map(r => r.responsavel_nome).filter(Boolean))]
   // Aba O.S. Pendentes: só as OS sem veículo na oficina
   // Abas com painel (O.S. Pendentes e O.S. ≥ 30 Dias): base de OS e textos de cada uma
   const PAINEIS = {
-    pendentes: { filtro: semVeiculo, txt: { grupo: 'Pendências', indicador: 'O.S. Pendentes', pct: 'Pendência' } },
-    mais30: { filtro: mais30, txt: { grupo: 'O.S. com 30+ Dias', indicador: 'O.S. > 30 Dias', pct: '> 30 Dias' } },
+    pendentes: { filtro: semVeiculo, campoMeta: 'meta_pendentes_pct', txt: { grupo: 'Pendências', indicador: 'O.S. Pendentes', pct: 'Pendência' } },
+    mais30: { filtro: mais30, campoMeta: 'meta_mais30_pct', txt: { grupo: 'O.S. com 30+ Dias', indicador: 'O.S. > 30 Dias', pct: '> 30 Dias' } },
   }
   const painelAba = PAINEIS[aba]
   const baseAba = painelAba ? rowsPend.filter(painelAba.filtro) : []
@@ -759,9 +826,9 @@ export default function AuditoriaOsAbertoDashboard({ selecao = null, onSelecao =
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div className="flex flex-col gap-2">
               <CardIndicador titulo="Total de O.S. em aberto sem que o veículo esteja na oficina" rotulo="Total O.S. pendentes"
-                valor={totSemVeic.qtd ? fmt(totSemVeic.valor) : '- -'} qtdTxt={`Qtde O.S. pendentes ${totSemVeic.qtd || '--'}`}
-                cor={totSemVeic.qtd ? 'bg-red-600' : 'bg-emerald-600'}
-                medidor={total.valor ? totSemVeic.valor / total.valor : 0} />
+                valor={totSemVeic.qtd ? fmt(totSemVeic.valor) : '- -'} qtdTxt={`Qtde O.S. pendentes = ${totSemVeic.qtd || '--'}`}
+                cor={corIndicador(totSemVeic, metaPendentes)}
+                medidor={pctDoTotal(totSemVeic)} meta={metaPendentes} />
               <div className="rounded-md border border-slate-200 bg-white">
                 {/* Situação → Tipo de OS (grupo do Tipo Interno) → Tipo de OS → O.S. */}
                 <TabelaNiveis cabecalho="Situação" itens={rowsPend.filter(semVeiculo)} onInfo={setModalInfoOs} reincidentes={reincidentes} onHistorico={setModalHistoricoOs}
@@ -775,9 +842,9 @@ export default function AuditoriaOsAbertoDashboard({ selecao = null, onSelecao =
             </div>
             <div className="flex flex-col gap-2">
               <CardIndicador titulo="Total de veículos na oficina com O.S. aberta há mais de 30 dias" rotulo="Total O.S. > 30 dias"
-                valor={tot30.qtd ? fmt(tot30.valor) : '- -'} qtdTxt={`Qtde O.S. > 30 dias ${tot30.qtd || '--'}`}
-                cor={tot30.qtd ? 'bg-red-600' : 'bg-emerald-600'}
-                medidor={total.valor ? tot30.valor / total.valor : 0} />
+                valor={tot30.qtd ? fmt(tot30.valor) : '- -'} qtdTxt={`Qtde O.S. > 30 dias = ${tot30.qtd || '--'}`}
+                cor={corIndicador(tot30, metaMais30)}
+                medidor={pctDoTotal(tot30)} meta={metaMais30} />
               <div className="rounded-md border border-slate-200 bg-white">
                 {/* Mesma tabela do 1º card: Situação → Tipo de OS (grupo) → Tipo de OS → O.S. */}
                 <TabelaNiveis cabecalho="Situação" itens={rowsPend.filter(mais30)} onInfo={setModalInfoOs} reincidentes={reincidentes} onHistorico={setModalHistoricoOs}
@@ -795,7 +862,7 @@ export default function AuditoriaOsAbertoDashboard({ selecao = null, onSelecao =
 
       {/* O.S. Pendentes: painel de gráficos acima da tabela */}
       {!semSelecao && painelAba && (
-        <PainelPendentes key={aba} rows={rowsPend} base={baseAba} reincidentes={reincidentes} fx={fxPend} setFx={setFxPend} casa={casaPend} txt={painelAba.txt} />
+        <PainelPendentes key={aba} rows={rowsPend} base={baseAba} reincidentes={reincidentes} fx={fxPend} setFx={setFxPend} casa={casaPend} txt={painelAba.txt} meta={metaDe(painelAba.campoMeta)} />
       )}
 
       {!semSelecao && abaAtual?.filtro && (

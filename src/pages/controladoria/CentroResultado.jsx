@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { Plus, Target, Search, FileSpreadsheet, Eye, ArrowUpDown, ArrowUp, ArrowDown, Building2 } from 'lucide-react'
+import { Plus, Target, Search, FileSpreadsheet, Eye, ArrowUpDown, ArrowUp, ArrowDown, Building2, Trash2 } from 'lucide-react'
 import ImportarCentrosResultadoModal from './ImportarCentrosResultadoModal'
 import CrVisuaisModal from './CrVisuaisModal'
 import SeletorEmpresas, { siglaEmpresa, nomeEmpresaCompleto } from './SeletorEmpresas'
@@ -82,6 +82,22 @@ export default function CentroResultado() {
 
   const { hasActionOrDefault } = useAuth()
   const canEdit = hasActionOrDefault(MENU, 'editar')
+  const canDelete = hasActionOrDefault(MENU, 'excluir')
+  const podeSelecionar = canEdit || canDelete
+
+  // Exclusão em lote (empresas e orçamento dos centros saem junto — FK em cascata).
+  const [excluirLote, setExcluirLote] = useState(false)
+  const handleExcluirLote = async () => {
+    try {
+      await apiService.deleteCtbCentrosResultadoLote([...selecionados])
+      setSelecionados(new Set())
+      await loadData()
+    } catch (err) {
+      alert('Erro ao excluir: ' + (err.message || String(err)))
+    } finally {
+      setExcluirLote(false)
+    }
+  }
 
   const loadData = async () => {
     setLoading(true)
@@ -234,9 +250,10 @@ export default function CentroResultado() {
             </div>
           </div>
 
-          {canEdit && selecionados.size > 0 && (
+          {podeSelecionar && selecionados.size > 0 && (
             <div className="flex items-center gap-3 flex-wrap bg-violet-50 border border-violet-200 rounded-lg px-3 py-2">
               <span className="text-xs font-bold text-violet-800">{selecionados.size} centro(s) selecionado(s)</span>
+              {canEdit && <>
               <span className="text-[11px] font-semibold text-violet-700">Centro de Resultado (Visual):</span>
               <select value={visualLote} onChange={e => setVisualLote(e.target.value)} className={`${INPUT.replace('w-full ', '')} w-auto pr-7 bg-white`}>
                 <option value="">Selecione...</option>
@@ -252,6 +269,16 @@ export default function CentroResultado() {
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-violet-700 bg-white border border-violet-300 hover:bg-violet-100 transition-colors">
                 <Building2 className="h-3.5 w-3.5" /> Definir empresas
               </button>
+              </>}
+              {canDelete && (
+                <>
+                  {canEdit && <span className="h-5 w-px bg-violet-200" />}
+                  <button type="button" onClick={() => setExcluirLote(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-red-600 bg-white border border-red-200 hover:bg-red-50 transition-colors">
+                    <Trash2 className="h-3.5 w-3.5" /> Excluir selecionados
+                  </button>
+                </>
+              )}
               <button type="button" onClick={() => { setSelecionados(new Set()); setVisualLote('') }} className="ml-auto text-[11px] font-semibold text-slate-500 hover:text-slate-700 hover:underline">Limpar seleção</button>
             </div>
           )}
@@ -261,7 +288,7 @@ export default function CentroResultado() {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[11px] font-semibold uppercase tracking-wider">
-                  {canEdit && (
+                  {podeSelecionar && (
                     <th className="p-3 w-10 text-center">
                       {/* Marca/desmarca todos os que estão aparecendo (respeita filtros e busca). */}
                       <input type="checkbox" className="w-3.5 h-3.5 cursor-pointer" title="Selecionar todos os listados"
@@ -285,10 +312,10 @@ export default function CentroResultado() {
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
                 {visiveis.length === 0 ? (
-                  <tr><td colSpan={canEdit ? 9 : 8} className="p-6 text-center text-slate-400">{centros.length === 0 ? 'Nenhum centro de resultado cadastrado.' : 'Nenhum centro encontrado.'}</td></tr>
+                  <tr><td colSpan={podeSelecionar ? 9 : 8} className="p-6 text-center text-slate-400">{centros.length === 0 ? 'Nenhum centro de resultado cadastrado.' : 'Nenhum centro encontrado.'}</td></tr>
                 ) : visiveis.map(c => (
                   <tr key={c.id} className={`transition-colors ${selecionados.has(c.id) ? 'bg-violet-50/60' : 'hover:bg-slate-50/70'}`}>
-                    {canEdit && (
+                    {podeSelecionar && (
                       <td className="p-3 text-center">
                         <input type="checkbox" className="w-3.5 h-3.5 cursor-pointer" checked={selecionados.has(c.id)} onChange={() => alternarSel(c.id)} />
                       </td>
@@ -437,6 +464,20 @@ export default function CentroResultado() {
             <p className="text-[11px] text-amber-600 font-semibold">Sem empresa marcada, "Substituir" deixa os centros selecionados sem nenhuma empresa.</p>
           )}
         </ModalForm>
+      )}
+
+      {excluirLote && (
+        <ConfirmarExclusao
+          texto={<>
+            Tem certeza que deseja excluir <strong className="text-slate-800">{selecionados.size} centro(s) de resultado</strong>?
+            <span className="block mt-1.5 max-h-28 overflow-y-auto text-slate-600">
+              {centros.filter(c => selecionados.has(c.id)).map(c => <span key={c.id} className="block">{c.codigo} — {c.descricao}{c.sigla ? ` (${c.sigla})` : ''}</span>)}
+            </span>
+            <span className="block mt-1.5">As empresas ligadas e os valores de Orçamento desses centros também serão excluídos.</span>
+          </>}
+          onVoltar={() => setExcluirLote(false)}
+          onConfirmar={handleExcluirLote}
+        />
       )}
 
       {excluir && (

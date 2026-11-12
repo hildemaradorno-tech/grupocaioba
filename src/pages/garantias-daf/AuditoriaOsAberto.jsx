@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { ClipboardList, Download, ChevronDown, Save, AlertTriangle, Building2, ShieldAlert, Trash2, Calendar, User, Banknote, Search, XCircle, X, Clock, ClipboardCheck, FileText, List, ThumbsUp, CheckCircle2, ShieldCheck, ArrowUpDown, ArrowUp, ArrowDown, Settings, RotateCcw, History, Pencil, Tag, CalendarClock, FileDown, FileSpreadsheet, Truck, BookOpen } from 'lucide-react'
+import { ClipboardList, Download, ChevronDown, Save, AlertTriangle, Building2, ShieldAlert, Trash2, Calendar, User, Banknote, Search, XCircle, X, Clock, ClipboardCheck, FileText, List, ThumbsUp, CheckCircle2, ShieldCheck, ArrowUpDown, ArrowUp, ArrowDown, Settings, RotateCcw, History, Pencil, Tag, CalendarClock, FileDown, FileSpreadsheet, Truck, BookOpen, Target } from 'lucide-react'
+import MetasIndicadoresAuditoriaModal from './MetasIndicadoresAuditoriaModal'
 import { apiService } from '../../services/api'
 import { useAuth } from '../../context/AuthContext'
 import AuditoriaSituacoes from '../auditoria/AuditoriaSituacoes'
@@ -138,6 +139,7 @@ export default function AuditoriaOsAberto({
 
   // ── Regra de reabertura (engrenagem, só Admin) — aud_configuracoes ──
   const [configAud, setConfigAud] = useState(null)
+  const [modalMetas, setModalMetas] = useState(false) // Metas dos indicadores do Dashboard (engrenagem)
   const [formRegra, setFormRegra] = useState({ reabertura_janela_dias: 1, reabertura_horas: 8, expediente_inicio: '08:00', expediente_fim: '18:00', reabertura_pular_fds: true })
   const [salvandoRegra, setSalvandoRegra] = useState(false)
 
@@ -1186,6 +1188,11 @@ export default function AuditoriaOsAberto({
       desc: 'Auditorias automáticas e regra de reabertura', disabled: false, onClick: abrirModalProgramar, cor: 'text-emerald-600',
     },
     {
+      // Admin ou grupo com a ação 'metas_indicadores' — metas em % dos cards do Dashboard
+      id: 'metas', visivel: pode('metas_indicadores'), icon: Target, label: 'Metas dos indicadores',
+      desc: 'Meta em % de O.S. pendentes e > 30 dias', disabled: false, onClick: () => setModalMetas(true), cor: 'text-rose-600',
+    },
+    {
       id: 'situacoes', visivel: podeCadastrarSituacoes, icon: Tag, label: 'Situações de auditoria',
       desc: 'Cadastrar / editar as situações das OS', disabled: false, onClick: () => setModalSituacoes(true), cor: 'text-violet-600',
     },
@@ -1843,6 +1850,10 @@ export default function AuditoriaOsAberto({
       })()}
 
       {/* MODAL SITUAÇÕES DE AUDITORIA (cadastro, aberto pela engrenagem) */}
+      {modalMetas && (
+        <MetasIndicadoresAuditoriaModal config={configAud} usuario={user?.email}
+          onClose={() => setModalMetas(false)} onSalvo={(salvo) => salvo && setConfigAud(salvo)} />
+      )}
       {modalSituacoes && (
         <div className="fixed top-0 right-0 bottom-0 left-16 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-slate-50 rounded-lg border border-slate-200 w-full max-w-6xl max-h-[92vh] shadow-xl overflow-hidden flex flex-col">
