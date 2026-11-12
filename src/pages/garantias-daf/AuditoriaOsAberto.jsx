@@ -27,7 +27,7 @@ const ETAPAS_AUDITORIA = [
 //   Dashboard (selecao); onAlterado avisa o Dashboard quando uma auditoria é criada, excluída ou muda de status
 export default function AuditoriaOsAberto({
   embedded = false, slotFiltros = null, slotEngrenagem = null, onSlotVisao = null,
-  selecao = null, onSelecao = null, soEngrenagem = false, onAlterado = null,
+  selecao = null, onSelecao = null, soEngrenagem = false, onAlterado = null, onStatusAuditoria = null,
 }) {
   const { user, isAdminEfetivo, hasAction, empresasPermitidasEfetivas } = useAuth()
   // Permissão por ação (matriz de permissões, menu 'auditoria-os-aberto'); Admin tem tudo
@@ -476,6 +476,8 @@ export default function AuditoriaOsAberto({
   }
 
   const auditoriaAtual = useMemo(() => auditorias.find(a => a.id === auditoriaId), [auditorias, auditoriaId])
+  // Avisa o BI o status da auditoria aberta (etiqueta "Em andamento" ao lado de Dashboard | Controle)
+  useEffect(() => { onStatusAuditoria?.(auditoriaAtual?.status || null) }, [auditoriaAtual?.status]) // eslint-disable-line react-hooks/exhaustive-deps
   const totalValorOS = useMemo(() => rows.reduce((acc, r) => acc + (Number(r.total) || 0), 0), [rows])
 
   // Status da auditoria define a tela:
@@ -1288,7 +1290,7 @@ export default function AuditoriaOsAberto({
     </div>
 
     {/* Auditoria */}
-    <div className="flex flex-col gap-1 w-[235px]">{/* cabe "dd/mm/aaaa — 999 OS · Em andamento" */}
+    <div className="flex flex-col gap-1 w-[190px]">{/* cabe "dd/mm/aaaa — Em andamento" */}
       <label className={`h-4 text-[10px] font-bold ${corRotulo} uppercase flex items-center`}>Data da Auditoria</label>
       <div className="relative">
         <select
@@ -1300,7 +1302,7 @@ export default function AuditoriaOsAberto({
           <option value="">— Selecione uma auditoria —</option>
           {auditoriasFiltradas.map(a => (
             <option key={a.id} value={a.id}>
-              {fmtDate(a.data_auditoria)} — {a.total_os} OS · {['respondido_total', 'respondido_parcial', 'sem_resposta'].includes(a.status) ? 'Finalizada' : 'Em andamento'}
+              {fmtDate(a.data_auditoria)} — {['respondido_total', 'respondido_parcial', 'sem_resposta'].includes(a.status) ? 'Finalizada' : 'Em andamento'}
             </option>
           ))}
         </select>

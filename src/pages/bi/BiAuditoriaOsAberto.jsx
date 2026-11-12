@@ -20,6 +20,9 @@ export default function BiAuditoriaOsAberto() {
   const [slotFiltros, setSlotFiltros] = useState(null)
   const [slotEngrenagem, setSlotEngrenagem] = useState(null)
   const [versao, setVersao] = useState(0) // engrenagem mudou alguma auditoria → Dashboard recarrega
+  // Status da auditoria aberta (informado pela visão) — etiqueta "Em andamento" ao lado de Dashboard | Controle
+  const [statusAuditoria, setStatusAuditoria] = useState(null)
+  const emAndamento = !!statusAuditoria && !['respondido_total', 'respondido_parcial', 'sem_resposta'].includes(statusAuditoria)
 
   // Empresa / auditoria iguais nas duas visões — ficam na URL (?empresa=&auditoria=&data=); cada visão lê ao abrir
   // e devolve as trocas por onSelecao
@@ -61,9 +64,17 @@ export default function BiAuditoriaOsAberto() {
   )
   // Visão Dashboard | Controle — cada visão reserva o lugar (onSlotVisao) na linha das abas / dos seletores, à direita
   const seletorVisao = (
-    <div className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-lg p-0.5 shadow-sm">
-      {botaoModo('dashboard', 'Dashboard', BarChart2, podeDashboard, podeDashboard ? 'ver indicadores' : 'sem permissão')}
-      {botaoModo('controle', 'Controle', ClipboardList, podeControle, podeControle ? 'conferir e responder as auditorias' : 'sem permissão')}
+    <div className="flex items-center gap-2">
+      {/* Auditoria em andamento (Conferência ou A Responder): etiqueta amarela antes dos ícones */}
+      {emAndamento && (
+        <span className="inline-flex items-center h-8 px-3 rounded-md bg-yellow-300 text-yellow-900 text-[11px] font-bold uppercase shadow-sm">
+          Em andamento
+        </span>
+      )}
+      <div className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-lg p-0.5 shadow-sm">
+        {botaoModo('dashboard', 'Dashboard', BarChart2, podeDashboard, podeDashboard ? 'ver indicadores' : 'sem permissão')}
+        {botaoModo('controle', 'Controle', ClipboardList, podeControle, podeControle ? 'conferir e responder as auditorias' : 'sem permissão')}
+      </div>
     </div>
   )
 
@@ -113,14 +124,14 @@ export default function BiAuditoriaOsAberto() {
         {/* Só a visão escolhida é montada — a outra não carrega dados enquanto estiver fechada */}
         {modo === 'dashboard'
           ? <>
-              <AuditoriaOsAbertoDashboard selecao={selecao} onSelecao={onSelecao} slotFiltros={slotFiltros} onSlotVisao={setSlotVisao} versao={versao} />
+              <AuditoriaOsAbertoDashboard selecao={selecao} onSelecao={onSelecao} slotFiltros={slotFiltros} onSlotVisao={setSlotVisao} versao={versao} onStatusAuditoria={setStatusAuditoria} />
               {/* Engrenagem no Dashboard: a mesma do Controle (só ela e as janelas, sem a tabela) — quem tem o Controle */}
               {podeControle && (
                 <AuditoriaOsAberto embedded soEngrenagem slotEngrenagem={slotEngrenagem} selecao={selecao}
                   onAlterado={() => setVersao(v => v + 1)} />
               )}
             </>
-          : <AuditoriaOsAberto embedded slotFiltros={slotFiltros} slotEngrenagem={slotEngrenagem} onSlotVisao={setSlotVisao} selecao={selecao} onSelecao={(s) => onSelecao({ ...s, data: selecao.data })} />}
+          : <AuditoriaOsAberto embedded slotFiltros={slotFiltros} slotEngrenagem={slotEngrenagem} onSlotVisao={setSlotVisao} selecao={selecao} onSelecao={(s) => onSelecao({ ...s, data: selecao.data })} onStatusAuditoria={setStatusAuditoria} />}
       </div>
     </div>
   )

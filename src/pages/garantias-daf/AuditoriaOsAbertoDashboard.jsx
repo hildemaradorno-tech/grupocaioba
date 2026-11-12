@@ -525,7 +525,7 @@ function TabelaOs({ linhas, mostrarEmpresa, vazio, reincidentes, onVerHistorico 
 // selecao/onSelecao: empresa e auditoria compartilhadas com a visão Controle ({ empresa, auditoria, data })
 // slotFiltros: elemento do cabeçalho do BI para os seletores; onSlotVisao: ref p/ os ícones Dashboard | Controle
 // versao: muda quando a engrenagem altera alguma auditoria → recarrega auditorias e OS
-export default function AuditoriaOsAbertoDashboard({ selecao = null, onSelecao = null, slotFiltros = null, onSlotVisao = null, versao = 0 }) {
+export default function AuditoriaOsAbertoDashboard({ selecao = null, onSelecao = null, slotFiltros = null, onSlotVisao = null, versao = 0, onStatusAuditoria = null }) {
   const { isAdminEfetivo, empresasPermitidasEfetivas } = useAuth()
   const [empresas, setEmpresas] = useState([])
   const [auditorias, setAuditorias] = useState([])
@@ -589,6 +589,9 @@ export default function AuditoriaOsAbertoDashboard({ selecao = null, onSelecao =
     if (!empresaId || !dataSel) return []
     return audsEmpresa.filter(a => a.id === dataSel)
   }, [empresaId, dataSel, audsEmpresa])
+  // Avisa o BI o status da auditoria escolhida (etiqueta "Em andamento" ao lado de Dashboard | Controle)
+  const statusSelecionada = audsSelecionadas[0]?.status || null
+  useEffect(() => { onStatusAuditoria?.(statusSelecionada) }, [statusSelecionada]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Reincidência: OS da auditoria escolhida que já apareceram em auditorias ANTERIORES da mesma empresa
   // (mesma regra da coluna "O.S. na Auditoria" do Controle). null = carregando.
@@ -692,7 +695,7 @@ export default function AuditoriaOsAbertoDashboard({ selecao = null, onSelecao =
           {empresas.map(e => <option key={e.id} value={e.id}>{nomeSeletorEmpresa(e)}</option>)}
         </select>
       </div>
-      <div className="flex flex-col gap-1 w-[235px]">
+      <div className="flex flex-col gap-1 w-[190px]">
         <label className={`text-[10px] font-bold ${corRotulo} uppercase flex items-center gap-1`}><Calendar className="h-3 w-3" /> Data da Auditoria</label>
         <select value={dataSel} onChange={e => setDataSel(e.target.value)} disabled={!empresaId}
           className="h-9 text-[11px] px-2 border border-slate-300 rounded-md bg-white disabled:opacity-50 disabled:cursor-not-allowed">
