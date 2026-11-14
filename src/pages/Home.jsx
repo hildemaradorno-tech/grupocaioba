@@ -106,8 +106,12 @@ function ColunaMenu({ node, rootNode, selecionadoKey, hasPermission, navigate, o
                 if (isFolder) { onSelecionar(item); return }
                 // navTo sem permissão (ex.: Controladoria → DRE quando só a aba Centro de Resultado
                 // está liberada) cairia no bloqueio da rota e voltaria pra Home: abre a 1ª aba liberada.
-                const destino = item.navTo && item.children && !hasPermission(item.navTo)
-                  ? getLeafKeys(item).find(k => hasPermission(k)) || item.navTo
+                // Só quando o navTo é uma das permissões do próprio grupo: navTo que é só o endereço da página
+                // (ex.: kpi/matriz, bi/campanha) não é permissão — antes mandava pra /kpi/resultados (sem
+                // rota = tela em branco) quem não era administrador.
+                const leaves = item.children ? getLeafKeys(item) : []
+                const destino = item.navTo && leaves.includes(item.navTo) && !hasPermission(item.navTo)
+                  ? leaves.find(k => hasPermission(k)) || item.navTo
                   : (item.navTo || item.key)
                 navigate('/' + destino)
               }}
