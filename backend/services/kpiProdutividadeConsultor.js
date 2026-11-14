@@ -66,17 +66,111 @@ function calcularConsultores(diario, metas) {
   return pessoas
 }
 
+// ── Gerentes de loja (Bloco 3 › Gerentes, 14/11/2026): Eficácia e Produtividade da Oficina da EMPRESA, com a
+// conta do total da tela Indicadores de Produtividade (total = soma dos mecânicos da empresa; Tipo de
+// Visualização padrão da tela, "Horas Vendidas (Tempo Encerrado Mecânico)" — produtividadeCalculos.js):
+//   Eficácia %      = Hr. Vendidas (encerrado) ÷ Hr. Disp. Reais × 100
+//   Produtividade % = Hr. Gastas (encerrado)   ÷ Hr. Disp. Reais × 100
+// Fora: pessoas excluídas pela tela (Funilaria/Pintura, Montagem) e "Produtivo Não Associado"/"Sem Técnico".
+// Só Caiobá Trucks. Devolve { 'CAMPO GRANDE': { eficacia: {p: %}, produtividade: {p: %} }, … }.
+const CASAS_TRUCKS = ['CAMPO GRANDE', 'DOURADOS', 'TRÊS LAGOAS', 'CHAPADÃO DO SUL']
+const _memoCasa = new Map()
+export function getEficaciaProdutividadePorCasa(ano, { incluirHoje = false } = {}) {
+  const chave = `${ano}|${incluirHoje ? 1 : 0}`
+  const hit = _memoCasa.get(chave)
+  if (hit && Date.now() - hit.ts < 60_000) return hit.promessa
+  const promessa = calcularPorCasa(ano, incluirHoje).catch(err => { _memoCasa.delete(chave); throw err })
+  _memoCasa.set(chave, { ts: Date.now(), promessa })
+  return promessa
+}
+
+// Horas diárias dos mecânicos do ano (Trucks, sem os excluídos pela tela) — lidas uma vez e guardadas 60 s,
+// usadas pelos gerentes, pelo SETOR DE MECÂNICA e pelo quadro MECÂNICO.
+const _memoMec = new Map()
+function linhasMecanicosAno(ano) {
+  const hit = _memoMec.get(ano)
+  if (hit && Date.now() - hit.ts < 60_000) return hit.promessa
+  const promessa = (async () => {
+    const admin = getSupabaseAdmin()
+    if (!admin) return null
+    const [mt, linhas] = await Promise.all([
+      metasProdutividade(admin, [ano]),
+      fetchTudo(() => admin.from('vw_pv_prod_diario').select('data, empresa, pessoa, hr_disp_reais, hr_vend_enc, hr_gasto_enc')
+        .eq('papel', 'mecanico').gte('data', iso(ano, 1, 1)).lte('data', iso(ano, 12, 31)).order('data')),
+    ])
+    const fora = new Set((mt?.excluidos || []).map(semAcento))
+    return linhas.filter(r => ehTrucks(r.empresa) && !fora.has(semAcento(r.pessoa)) && !NAO_PESSOA.test(r.pessoa || ''))
+      .map(r => ({ ...r, data: String(r.data).slice(0, 10), pessoaNorm: semAcento(r.pessoa), empresaNorm: semAcento(r.empresa) }))
+  })().catch(err => { _memoMec.delete(ano); throw err })
+  _memoMec.set(ano, { ts: Date.now(), promessa })
+  return promessa
+}
+
+function periodosMatriz(ano) {
+  const ult = (m) => new Date(ano, m, 0).getDate()
+  const periodos = {}
+  for (let m = 1; m <= 12; m++) periodos[`m${String(m).padStart(2, '0')}`] = [iso(ano, m, 1), iso(ano, m, ult(m))]
+  for (const [k, s] of Object.entries(semanasDoAno(ano))) periodos[k] = [iso(ano, s.mes, s.inicio), iso(ano, s.mes, s.fim)]
+  for (const [q, ms] of Object.entries(QUARTERS)) periodos[q] = [iso(ano, ms[0], 1), iso(ano, ms[2], ult(ms[2]))]
+  periodos.fy = [iso(ano, 1, 1), iso(ano, 12, 31)]
+  return periodos
+}
+
+// Eficácia / Produtividade (%) por período de um conjunto de linhas (já cortado em ontem/hoje).
+function efProdPorPeriodo(linhas, periodos) {
+  const o = { eficacia: {}, produtividade: {} }
+  for (const [p, [ini, fim]] of Object.entries(periodos)) {
+    let reais = 0, vend = 0, gasto = 0
+    for (const r of linhas) {
+      if (r.data < ini || r.data > fim) continue
+      reais += Number(r.hr_disp_reais) || 0; vend += Number(r.hr_vend_enc) || 0; gasto += Number(r.hr_gasto_enc) || 0
+    }
+    o.eficacia[p] = reais && vend ? (vend / reais) * 100 : null
+    o.produtividade[p] = reais && gasto ? (gasto / reais) * 100 : null
+  }
+  return o
+}
+
+const hojeMSHoras = () => new Date(Date.now() - 4 * 3600 * 1000).toISOString().slice(0, 10)
+
+async function calcularPorCasa(ano, incluirHoje) {
+  const todas = await linhasMecanicosAno(ano)
+  if (!todas) return null
+  const hoje = hojeMSHoras()
+  const validas = todas.filter(r => incluirHoje || r.data < hoje)
+  const periodos = periodosMatriz(ano)
+  const out = {}
+  // 'TODAS' = as 4 Trucks juntas (SETOR DE MECÂNICA com "Todas as empresas").
+  for (const casa of ['TODAS', ...CASAS_TRUCKS]) {
+    const alvo = semAcento(casa)
+    out[casa] = efProdPorPeriodo(casa === 'TODAS' ? validas : validas.filter(r => r.empresaNorm.includes(alvo)), periodos)
+  }
+  return out
+}
+
+// Quadro MECÂNICO (14/11/2026): Eficácia e Produtividade do mecânico escolhido, com a conta da aba Mecânicos da tela
+// Indicadores de Produtividade (horas dele em todas as empresas Trucks). Sem mecânico = total dos mecânicos.
+export async function getEficaciaProdutividadeMecanico(ano, mecanico, { incluirHoje = false } = {}) {
+  const todas = await linhasMecanicosAno(ano)
+  if (!todas) return null
+  const hoje = hojeMSHoras()
+  const alvo = mecanico ? semAcento(mecanico) : null
+  return efProdPorPeriodo(todas.filter(r => (incluirHoje || r.data < hoje) && (!alvo || r.pessoaNorm === alvo)), periodosMatriz(ano))
+}
+
 // Meta da Produtividade % do consultor (pedido do usuário, 13/11/2026): limite inferior da faixa verde das
 // Regras de Cores › Produtividade da tela de Indicadores (pv_prod_regras_cor, fração → %). Mês sem regra =
 // faixa padrão do Power BI (0,80 → 80%, FAIXAS em src/pages/pos-vendas/produtividadeCalculos.js).
 // Devolve { m01: 80, …, m12: 80 } — no formato das metas manuais (semana = a do mês; trimestre/ano = média).
-const LIMITE_PADRAO_PRODUTIVIDADE = 0.8
-export async function metaProdutividadeRegrasCor(ano) {
+// indicador: 'produtividade' (padrão) ou 'eficacia' — Gerentes de loja usam os dois (14/11/2026).
+// Faixa padrão do Power BI (limite inferior): eficácia 0,80 e produtividade 0,80.
+const LIMITE_PADRAO = { produtividade: 0.8, eficacia: 0.8 }
+export async function metaProdutividadeRegrasCor(ano, indicador = 'produtividade') {
   const admin = getSupabaseAdmin()
   const meses = {}
-  for (let m = 1; m <= 12; m++) meses[`m${String(m).padStart(2, '0')}`] = LIMITE_PADRAO_PRODUTIVIDADE * 100
+  for (let m = 1; m <= 12; m++) meses[`m${String(m).padStart(2, '0')}`] = LIMITE_PADRAO[indicador] * 100
   if (!admin) return meses
-  const { data, error } = await admin.from('pv_prod_regras_cor').select('mes, limite_inf').eq('ano', ano).eq('indicador', 'produtividade')
+  const { data, error } = await admin.from('pv_prod_regras_cor').select('mes, limite_inf').eq('ano', ano).eq('indicador', indicador)
   if (error) throw error
   for (const r of data || []) meses[`m${String(r.mes).padStart(2, '0')}`] = Number(r.limite_inf) * 100
   return meses

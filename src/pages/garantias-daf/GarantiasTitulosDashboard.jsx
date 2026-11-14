@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo, Fragment } from 'react'
 import { Loader2, DollarSign, XCircle, ChevronRight, ChevronDown, ChevronsUpDown, AlertTriangle, CheckCircle2, Clock } from 'lucide-react'
 import { apiService } from '../../services/api'
 import { useEmpresasGarantias } from '../../hooks/useEmpresasGarantias'
+import { useEmpresaDoLink } from '../../hooks/useEmpresaDoLink'
 import TabelaTitulosDashboard from './TabelaTitulosDashboard'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
@@ -182,6 +183,9 @@ export default function GarantiasTitulosDashboard({ onLastModified }) {
   const limparDashboard = () => { setFiltroEmpresa(null); setFiltroTipo(null); setFiltroSituacao(null); setFiltroPeriodo(null) }
 
   const empresaOf = (r) => r.empresa?.trim() || 'Não informado'
+  // Link da Matriz KPIs (?loja=CAMPO GRANDE): abre com a fatia da empresa marcada (14/11/2026).
+  const empresasNosDados = useMemo(() => [...new Set(titulosBase.map(r => r.empresa?.trim() || 'Não informado'))], [titulosBase])
+  useEmpresaDoLink(empresasNosDados, setFiltroEmpresa)
   const tipoOf = (r) => r.tipo_titulo?.trim() || 'Não informado'
   const hojeISO = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` })()
   const situacaoOf = (r) => !r.data_vencimento ? null

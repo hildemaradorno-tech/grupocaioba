@@ -117,7 +117,10 @@ function PesoInput({ value, onSave }) {
 
 
 // Indicadores sem meta automática: o usuário digita a meta, só na visão Mensal.
-const INDICADORES_META_MANUAL = new Set(['Eficácia da Oficina', 'Produtividade da Oficina', 'Garantias com Digitação Atrasada', 'Garantias Aguardando Aprovação DAF (fora do prazo)'])  // Garantias Recusadas (fora do prazo): meta vem de Garantias DAF (sem lápis)
+// Eficácia / Produtividade da Oficina saíram (14/11/2026): a meta vem das Regras de Cores da tela Indicadores de
+// Produtividade. Garantias (Digitação Atrasada, Aguardando Aprovação DAF e Recusadas, fora do prazo): meta vem de
+// Garantias DAF (engrenagem → Metas), sem lápis — desde 14/11/2026 nenhum indicador dos gerentes tem meta digitada.
+const INDICADORES_META_MANUAL = new Set([])
 // Os que levam a nota "*Valores relacionados a faturamento".
 const INDICADORES_NOTA_FATURAMENTO = new Set(['Eficácia da Oficina', 'Produtividade da Oficina'])
 
@@ -303,7 +306,7 @@ function QuadroTable({ quadro, activePeriods, mesTotalKey, year, onSalvarPeso, o
                 <td className="px-3 py-2.5 text-center text-slate-400 font-mono">{pos + 1}</td>
                 <td className="px-4 py-2.5 font-medium text-slate-700 sticky left-0 bg-white">
                   {row.indicador}
-                  <OrigemIndicador indicador={row.indicador} />
+                  <OrigemIndicador indicador={row.indicador} quadro={quadro.tituloGerente} />
                   {!somenteLeitura && INDICADORES_META_MANUAL.has(row.indicador) && (
                     <PreencherMesesButton metrica={row.metrica} onAplicar={(meses, valor) => onSalvarMetasVarios(quadro.tituloGerente, row.id, meses, valor)} />
                   )}

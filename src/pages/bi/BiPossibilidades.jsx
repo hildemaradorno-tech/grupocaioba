@@ -27,7 +27,8 @@ function Gauge2({ label, value }) {
     const [x2, y2] = ponto(tFim, raio)
     return `M ${x1} ${y1} A ${raio} ${raio} 0 0 1 ${x2} ${y2}`
   }
-  const cor = v >= 100 ? '#0ca30c' : v >= 80 ? '#fab219' : '#d03b3b'
+  // Cor do número = faixa onde o ponteiro está (mesmas faixas desenhadas: vermelho 0–40, amarelo 40–70, verde 70–100).
+  const cor = v >= 70 ? '#0ca30c' : v >= 40 ? '#fab219' : '#d03b3b'
 
   // Marcações de escala — maior a cada 20%, menor a cada 10%.
   const ticks = Array.from({ length: 11 }, (_, i) => i / 10)
@@ -502,7 +503,7 @@ export default function BiPossibilidades() {
   const [empresaIds, setEmpresaIds] = useState([])
   const [dataInicio, setDataInicio] = useState(() => primeiroDiaMes(ontem()))
   const [dataFim, setDataFim] = useState(() => isoLocal(ontem()))
-  const [aba, setAba] = useState('entreDatas') // 'entreDatas' | 'noMes'
+  const [aba, setAba] = useState('noMes') // 'entreDatas' | 'noMes' — abre sempre em "Metas e Real no Mês"
   // Visões do BI (abas acima dos dias úteis). 'total' = visão geral de sempre.
   // ?visao=oficina (ex.: botão de origem da Matriz KPIs) abre direto nessa aba (Evolução não: muda as datas).
   const [visao, setVisao] = useState(() => {
@@ -583,12 +584,30 @@ export default function BiPossibilidades() {
     // Só empresas dos agrupamentos Caiobá Motos e Caiobá Trucks — "Outras Caiobá" são empresas
     // administrativas/holding (não têm faturamento de peças/serviços pra fazer sentido aqui).
     const AGRUPAMENTOS_FATURAMENTO = ['3d942f69-7f0e-4f1c-bbc0-45a00ca0de85', '219e9965-1808-407e-8459-91e8c6a8a400']
-    apiService.getEmpresas().then(lista => setEmpresas((lista || []).filter(e => e.ativo !== false && AGRUPAMENTOS_FATURAMENTO.includes(e.agrupamento_empresa_id)))).catch(() => setEmpresas([]))
+    // Fora também a empresa "de grupo" com o mesmo nome do agrupamento (ex.: CAIOBÁ TRUCKS, CNPJ fictício)
+    // — no seletor o próprio agrupamento já marca todas as empresas dele.
+    const ehEmpresaDoGrupo = (e) => normalizaBusca(e.empresa_fantasia || e.nome_empresa) === normalizaBusca(e.agrupamento_nome)
+    apiService.getEmpresas().then(lista => setEmpresas((lista || []).filter(e => e.ativo !== false && AGRUPAMENTOS_FATURAMENTO.includes(e.agrupamento_empresa_id) && !ehEmpresaDoGrupo(e)))).catch(() => setEmpresas([]))
     apiService.getDepartamentos().then(lista => setDepartamentos(lista || [])).catch(() => setDepartamentos([]))
     apiService.getSetores().then(lista => setSetores(lista || [])).catch(() => setSetores([]))
     apiService.getTiposOS().then(lista => setTiposOS(lista || [])).catch(() => setTiposOS([]))
     apiService.getFuncionarios().then(lista => setFuncionarios(lista || [])).catch(() => setFuncionarios([]))
   }, [])
+
+  // ?empresa=CAMPO GRANDE (ou TRUCKS = todas as Trucks) — link de origem da Matriz KPIs: abre com a empresa do
+  // quadro marcada (uma vez, quando a lista de empresas chega).
+  const empresaDoLink = useRef(new URLSearchParams(window.location.search).get('empresa'))
+  useEffect(() => {
+    const alvo = empresaDoLink.current
+    if (!alvo || !empresas.length) return
+    const n = (s) => normalizaBusca(s).replace(/ DO SUL$/, '')
+    const sel = empresas.filter(e => {
+      const nome = n(e.empresa_fantasia || e.nome_empresa_sistema || e.nome_empresa)
+      return nome.includes('TRUCKS') && (n(alvo) === 'TRUCKS' || nome.includes(n(alvo)))
+    }).map(e => e.id)
+    if (sel.length) setEmpresaIds(sel)
+    empresaDoLink.current = null
+  }, [empresas])
 
   const departamentoPorId = useMemo(() => new Map(departamentos.map(d => [d.id, d.nome_departamento])), [departamentos])
   const setoresPorDepartamento = useMemo(() => {

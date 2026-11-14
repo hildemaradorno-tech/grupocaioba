@@ -1,18 +1,18 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { BarChart2, TrendingUp, Activity, Wrench, Package, Wallet, RefreshCw, Database } from 'lucide-react'
+import { BarChart2, TrendingUp, Activity, Wrench, Package, Wallet, RefreshCw, Loader2 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { useKpiYear, KPI_YEARS } from '../../context/KpiYearContext'
 import { useKpiSourceStatus } from '../../context/KpiSourceStatusContext'
 import DataSourceBadge from '../../components/kpi/DataSourceBadge'
 import { useSincronizacaoKpi } from '../../hooks/useSincronizacaoKpi'
+import { getStatusSincronizacao } from '../../services/kpiService'
 import KpiDashboardExecutivo from './KpiDashboardExecutivo'
 import KpiIndicadoresCorporativos from './KpiIndicadoresCorporativos'
 import KpiIndicadoresOperacionais from './KpiIndicadoresOperacionais'
 import KpiBloco3Servicos from './KpiBloco3Servicos'
 import KpiBloco3Pecas from './KpiBloco3Pecas'
 import KpiOrcamentoBacklog from './KpiOrcamentoBacklog'
-import KpiAuditoria from './KpiAuditoria'
 import PeriodSelector, { usePeriodSelector, MODES_COM_SEMANAL } from '../../components/kpi/PeriodSelector'
 import logoCaioba from '../../assets/logo-grupo.png'
 
@@ -24,7 +24,9 @@ const ABAS = [
   { key: 'bloco3-servicos', label: 'Bloco 3 - Serviços', icon: Wrench, permKey: 'kpi/bloco3-servicos', Componente: KpiBloco3Servicos, periodo: 'semanal' },
   { key: 'bloco3-pecas', label: 'Bloco 3 - Peças', icon: Package, permKey: 'kpi/bloco3-pecas', Componente: KpiBloco3Pecas, periodo: 'semanal' },
   { key: 'orcamento-backlog', label: 'Orçamento & Backlog', icon: Wallet, permKey: 'kpi/orcamento-backlog', Componente: KpiOrcamentoBacklog },
-  { key: 'auditoria', label: 'Fontes', icon: Database, permKey: 'kpi/auditoria', Componente: KpiAuditoria },
+  // Aba "Fontes" (kpi/auditoria) retirada em 14/11/2026: nenhum quadro usa mais os indicadores calculados nela
+  // (vêm do BI Possibilidades e dos Indicadores de Produtividade). O componente KpiAuditoria.jsx e a rota
+  // /api/kpi/auditoria ficaram no projeto, sem uso.
 ]
 
 export const KPI_MATRIZ_PERMS = ABAS.map(a => a.permKey)
@@ -46,6 +48,22 @@ export default function KpiMatriz() {
   // backend): o botão fica travado em todas as telas enquanto qualquer pessoa estiver atualizando,
   // e ao terminar a Matriz recarrega os dados.
   const sync = useSincronizacaoKpi((status) => { if (status !== 'ERRO') refreshData() })
+  // Atualização automática 1 vez por dia (pedido do usuário, 14/11/2026): ao abrir a Matriz, se a última
+  // Atualização não começou HOJE (horário de Campo Grande), qualquer usuário dispara — o botão gira para todos
+  // e a tela recarrega ao terminar. Se outra pessoa já estiver atualizando, só acompanha (trava do backend).
+  useEffect(() => {
+    let vivo = true
+    const dia = (d) => d.toLocaleDateString('en-CA', { timeZone: 'America/Campo_Grande' })
+    getStatusSincronizacao().then(st => {
+      // configurado false = backend sem Supabase ou fora do ar (kpiService devolve assim): não dispara.
+      if (!vivo || !st?.configurado || st?.executandoAgora) return
+      const ultima = st?.ultimaExecucao?.iniciado_em
+      if (ultima && dia(new Date(ultima)) === dia(new Date())) return
+      sync.iniciar(user?.email, { automatica: true })
+    }).catch(() => { /* backend fora do ar: segue com os dados guardados */ })
+    return () => { vivo = false }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const abasVisiveis = ABAS.filter(a => hasPermission(a.permKey))
   // ?aba=bloco3-servicos (ex.: link da Campanha Pós-Venda) abre direto nessa aba, se o usuário puder vê-la.
   const [params] = useSearchParams()
@@ -87,8 +105,9 @@ export default function KpiMatriz() {
                 >
                   {KPI_YEARS.map(y => <option key={y} value={y}>{y}</option>)}
                 </select>
-                {podeSincronizar && (
-                  <button type="button" onClick={() => sync.iniciar(user?.email)} disabled={sync.executando}
+                {/* Sem a permissão de Atualizar, o botão só aparece (travado, girando) durante uma atualização. */}
+                {(podeSincronizar || sync.executando) && (
+                  <button type="button" onClick={() => sync.iniciar(user?.email)} disabled={sync.executando || !podeSincronizar}
                     title={sync.executando ? `Atualização em andamento${sync.porQuem ? ` (iniciada por ${sync.porQuem})` : ''} — aguarde terminar` : 'Atualizar dados (Matriz KPIs e Campanha Pós-Venda - DAF)'}
                     aria-label="Atualizar dados"
                     className="flex items-center justify-center h-8 w-8 rounded-md border border-slate-300 bg-white text-slate-600 shadow-sm hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed transition-colors">
@@ -106,7 +125,16 @@ export default function KpiMatriz() {
                     Considerar o dia atual
                   </label>
                 )}
-                {sourceStatus.source != null && <DataSourceBadge compacto source={sourceStatus.source} loading={sourceStatus.loading} refreshKey={refreshToken} />}
+                {/* Durante a Atualização (manual ou a automática do 1º acesso do dia): "Sincronizando…". */}
+                {sync.executando ? (
+                  <span className="flex items-center gap-1.5 rounded-full font-medium border px-2 py-0.5 text-[10px] bg-amber-50 text-amber-700 border-amber-200"
+                    title={sync.porQuem ? `Atualização iniciada por ${sync.porQuem}` : 'Atualização em andamento'}>
+                    <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                    Sincronizando… (pode levar alguns minutos)
+                  </span>
+                ) : (
+                  sourceStatus.source != null && <DataSourceBadge compacto source={sourceStatus.source} loading={sourceStatus.loading} refreshKey={refreshToken} />
+                )}
               </div>
             </div>
           </div>

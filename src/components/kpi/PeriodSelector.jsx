@@ -31,10 +31,11 @@ function monthDefault() {
   return Object.fromEntries(M_PERIODS.map(p => [p, p === m]))
 }
 
+// Visão Semanal: abre com todas as semanas do mês E o "Total do mês" marcados (pedido do usuário, 14/11/2026).
 function weekDefaultForMonth(mKey) {
   const weeks = MONTH_WEEK_RANGES[mKey] || []
   const allKeys = Object.values(MONTH_WEEK_RANGES).flat()
-  return Object.fromEntries(allKeys.map(s => [s, weeks.includes(s)]))
+  return { ...Object.fromEntries(allKeys.map(s => [s, weeks.includes(s)])), mtd: true }
 }
 
 // ── persistência de estado ────────────────────────────────────────────────────
@@ -134,8 +135,9 @@ export function usePeriodSelector(pageKey, defaultViewMode = 'mensal') {
   const clearAllT  = () => setVisibleT(quarterDefault())
   const selectAllM = () => setVisibleM(Object.fromEntries([...M_PERIODS, 'fy'].map(p => [p, true])))
   const clearAllM  = () => setVisibleM(Object.fromEntries([...M_PERIODS, 'fy'].map(p => [p, p === currentMonthKey()])))
-  const selectAllS = () => setVisibleS(prev => ({ ...prev, ...Object.fromEntries((MONTH_WEEK_RANGES[weekMonth] || []).map(p => [p, true])) }))
-  const clearAllS  = () => setVisibleS(prev => ({ ...prev, ...Object.fromEntries((MONTH_WEEK_RANGES[weekMonth] || []).map(p => [p, false])) }))
+  // "Todos"/"Limpar" da lista de semanas valem também para o "Total do mês" (mtd).
+  const selectAllS = () => setVisibleS(prev => ({ ...prev, ...Object.fromEntries([...(MONTH_WEEK_RANGES[weekMonth] || []), 'mtd'].map(p => [p, true])) }))
+  const clearAllS  = () => setVisibleS(prev => ({ ...prev, ...Object.fromEntries([...(MONTH_WEEK_RANGES[weekMonth] || []), 'mtd'].map(p => [p, false])) }))
 
   return {
     viewMode, setViewMode,

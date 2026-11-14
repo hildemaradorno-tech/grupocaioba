@@ -24,6 +24,7 @@ const QUADRO_AGENDAMENTO = 'SETOR DE AGENDAMENTO DE SERVIÇOS' // indicadores do
 // Quadros renomeados: dado com o nome antigo (cache da tela ou backend ainda não atualizado) aparece no nome novo.
 const NOME_NOVO_QUADRO = { 'AGENDAMENTO DE SERVIÇOS': QUADRO_AGENDAMENTO, 'OFICINA': QUADRO_OFICINA }
 const EMPRESAS_OFICINA = ['CAMPO GRANDE', 'DOURADOS', 'TRÊS LAGOAS', 'CHAPADÃO DO SUL']
+const EMPRESA_FUNILARIA = 'CAMPO GRANDE' // única empresa com Funilaria/Pintura (quadro sem seletor)
 const EMPRESA_TODAS = 'TODAS' // backend: todas as lojas juntas (quadros da aba Setores)
 
 const COR_HEADER = {
@@ -244,7 +245,12 @@ function PessoaSelector({ lista, selecionado, onSelecionar, onLimpar, placeholde
 const INDICADORES_META_MANUAL = new Set(['Eficácia da Oficina', 'Produtividade da Oficina'])
 // Exceção: CONSULTOR DE SERVIÇOS › Produtividade da Oficina — a meta vem das Regras de Cores da tela
 // Pós-Vendas › Indicadores de Produtividade (limite inferior da faixa verde); não se digita aqui.
-const metaDeOutraTela = (tituloGerente, indicador) => tituloGerente === 'CONSULTOR DE SERVIÇOS' && indicador === 'Produtividade da Oficina'
+// SETOR DE MECÂNICA › Eficácia da Oficina (14/11/2026): também das Regras de Cores (Eficácia) da mesma tela.
+// MECÂNICO (Eficácia e Produtividade) e CHEFE DE OFICINA (Eficácia), 14/11/2026: idem.
+const metaDeOutraTela = (tituloGerente, indicador) => (tituloGerente === 'CONSULTOR DE SERVIÇOS' && indicador === 'Produtividade da Oficina')
+  || (tituloGerente === 'SETOR DE MECÂNICA' && indicador === 'Eficácia da Oficina')
+  || (tituloGerente === 'CHEFE DE OFICINA' && indicador === 'Eficácia da Oficina')
+  || (tituloGerente === 'MECÂNICO' && ['Eficácia da Oficina', 'Produtividade da Oficina'].includes(indicador))
 
 
 // Botão ao lado do nome do indicador (fundo amarelo, pra deixar evidente que a meta pode ser
@@ -368,7 +374,7 @@ function PreencherMesesButton({ onAplicar, metrica = '%' }) {
 
 // ocultarValores: quadro com seletor de funcionário (Consultor/Mecânico) sem ninguém selecionado —
 // os valores só aparecem depois de escolher o nome.
-function QuadroTable({ quadro, activePeriods, mesTotalKey, year, onSalvarPeso, onSalvarMetaManual, onSalvarMetasVarios, somenteLeitura = false, pessoaSelector, ocultarValores = false, msgOcultar = 'Selecione um funcionário para ver os valores', icon: Icon }) {
+function QuadroTable({ quadro, activePeriods, mesTotalKey, year, onSalvarPeso, onSalvarMetaManual, onSalvarMetasVarios, somenteLeitura = false, pessoaSelector, empresaLink = null, ocultarValores = false, msgOcultar = 'Selecione um funcionário para ver os valores', icon: Icon }) {
   const headerCls  = COR_HEADER[quadro.cor]    ?? COR_HEADER.blue
   const subheadCls = COR_SUBHEADER[quadro.cor] ?? COR_SUBHEADER.blue
 
@@ -427,7 +433,7 @@ function QuadroTable({ quadro, activePeriods, mesTotalKey, year, onSalvarPeso, o
                 <td className="px-3 py-2.5 text-center text-slate-400 font-mono">{pos + 1}</td>
                 <td className="px-4 py-2.5 font-medium text-slate-700 sticky left-0 bg-white">
                   {row.indicador}
-                  <OrigemIndicador indicador={row.indicador} quadro={quadro.tituloGerente} />
+                  <OrigemIndicador indicador={row.indicador} quadro={quadro.tituloGerente} empresa={empresaLink} />
                   {!somenteLeitura && INDICADORES_META_MANUAL.has(row.indicador) && !metaDeOutraTela(quadro.tituloGerente, row.indicador) && (
                     <PreencherMesesButton metrica={row.metrica} onAplicar={(meses, valor) => onSalvarMetasVarios(quadro.tituloGerente, row.id, meses, valor)} />
                   )}
@@ -553,7 +559,6 @@ function ServicosQuadros({ year, activePeriods, mesTotalKey, somenteLeitura = fa
   // total somava as 4 casas juntas.
   const [empresaOficina, setEmpresaOficina] = useState(EMPRESAS_OFICINA.includes(empresaOficinaInicial) ? empresaOficinaInicial : null)
   const [empresaChefeOficina, setEmpresaChefeOficina] = useState(EMPRESAS_OFICINA.includes(empresaOficinaInicial) ? empresaOficinaInicial : null)
-  const [empresaFunilaria, setEmpresaFunilaria] = useState(EMPRESAS_OFICINA.includes(empresaOficinaInicial) ? empresaOficinaInicial : null)
   const [empresaGarantia, setEmpresaGarantia] = useState(EMPRESAS_OFICINA.includes(empresaOficinaInicial) ? empresaOficinaInicial : null)
 
   const { incluirHoje } = useKpiYear() // Matriz: período em andamento até ontem, ou até agora
@@ -565,9 +570,11 @@ function ServicosQuadros({ year, activePeriods, mesTotalKey, somenteLeitura = fa
     mecanico: mecanicoFiltro.aplicado || undefined,
     // Quadros da aba Setores: sem empresa escolhida = todas as lojas juntas ('TODAS' no backend).
     // Só pede quando o quadro aparece (o quadro por empresa custa uma leitura das fontes).
-    empresaOficina: empresaOficina || (visivel(QUADRO_OFICINA) ? EMPRESA_TODAS : undefined),
+    // SETOR DE MECÂNICA (14/11/2026): só com empresa escolhida, como o Chefe de Oficina (sem "Todas").
+    empresaOficina: empresaOficina || undefined,
     empresaChefeOficina: empresaChefeOficina || undefined,
-    empresaFunilaria: empresaFunilaria || (visivel(QUADRO_FUNILARIA) ? EMPRESA_TODAS : undefined),
+    // SETOR FUNILARIA/PINTURA (14/11/2026): só Campo Grande tem funilaria — sem seletor, sempre Campo Grande.
+    empresaFunilaria: visivel(QUADRO_FUNILARIA) ? EMPRESA_FUNILARIA : undefined,
     empresaGarantia: empresaGarantia || (visivel(QUADRO_GARANTIA) ? EMPRESA_TODAS : undefined),
     // Atalho do backend (não monta Consultor/Mecânico): só o Consultor de Plano, ou os quadros da aba
     // Setores (por empresa + Agendamento + Consultor de Plano).
@@ -634,12 +641,12 @@ function ServicosQuadros({ year, activePeriods, mesTotalKey, somenteLeitura = fa
           const ehFunilaria     = quadro.tituloGerente === QUADRO_FUNILARIA
           const ehGarantia      = quadro.tituloGerente === QUADRO_GARANTIA
           const ehPorEmpresa    = ehOficina || ehChefeOficina || ehFunilaria || ehGarantia
-          // Setores: sem escolha mostra o total de todas as empresas; o Chefe de Oficina ainda exige a empresa.
-          const ehSetorTotal    = ehOficina || ehFunilaria || ehGarantia
+          // Setores: sem escolha mostra o total de todas as empresas; Chefe de Oficina e Setor de Mecânica
+          // exigem a empresa (sem "Todas as empresas").
+          const ehSetorTotal    = ehGarantia
           const filtro      = ehConsultor ? consultorFiltro : ehMecanico ? mecanicoFiltro
             : ehOficina ? { lista: EMPRESAS_OFICINA, aplicado: empresaOficina, setAplicado: setEmpresaOficina }
             : ehChefeOficina ? { lista: EMPRESAS_OFICINA, aplicado: empresaChefeOficina, setAplicado: setEmpresaChefeOficina }
-            : ehFunilaria ? { lista: EMPRESAS_OFICINA, aplicado: empresaFunilaria, setAplicado: setEmpresaFunilaria }
             : ehGarantia ? { lista: EMPRESAS_OFICINA, aplicado: empresaGarantia, setAplicado: setEmpresaGarantia }
             : null
           return (
@@ -658,6 +665,8 @@ function ServicosQuadros({ year, activePeriods, mesTotalKey, somenteLeitura = fa
               ocultarValores={(!!filtro && !filtro.aplicado && !ehSetorTotal) || !atualizado}
               msgOcultar={!atualizado ? 'Carregando…' : null /* o aviso ("Selecione…para ver os valores") vai dentro do seletor */}
               icon={Wrench}
+              // Empresa escolhida no quadro (Setores): o botão de origem abre a tela já com ela marcada.
+              empresaLink={ehFunilaria ? EMPRESA_FUNILARIA : ehPorEmpresa ? filtro?.aplicado : null}
               pessoaSelector={filtro && (
                 <PessoaSelector
                   lista={ehPorEmpresa ? filtro.lista : (permitidos ? filtro.lista.filter(n => permitidos.has(normNomePessoa(n))) : filtro.lista)}
@@ -683,7 +692,8 @@ function ServicosQuadros({ year, activePeriods, mesTotalKey, somenteLeitura = fa
 const ABAS_SERVICOS = [
   { key: 'gerentes', label: 'Gerentes' },
   { key: 'setores',  label: 'Setores',  quadros: [QUADRO_OFICINA, QUADRO_FUNILARIA, QUADRO_GARANTIA, QUADRO_AGENDAMENTO, QUADRO_PLANOS] },
-  { key: 'equipe',   label: 'Equipe',   quadros: [QUADRO_CONSULTOR, QUADRO_MECANICO, QUADRO_CHEFE_OFICINA] },
+  // Aba "Individual" (era "Equipe" até 14/11/2026; a key continua 'equipe').
+  { key: 'equipe',   label: 'Individual', quadros: [QUADRO_CONSULTOR, QUADRO_MECANICO, QUADRO_CHEFE_OFICINA] },
 ]
 
 export default function KpiBloco3Servicos({ periodState: periodoMatriz = null }) {

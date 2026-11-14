@@ -324,7 +324,6 @@ export const MENU_TREE = [
               { key: 'kpi/bloco3-servicos', label: 'Bloco 3 — Serviços' },
               { key: 'kpi/bloco3-pecas', label: 'Bloco 3 — Peças' },
               { key: 'kpi/orcamento-backlog', label: 'Orçamento & Backlog' },
-              { key: 'kpi/auditoria', label: 'Fontes' },
             ],
           },
           // Campanha Pós-Venda logo abaixo da Matriz KPIs, no grupo Gestão (13/11/2026). Mesmo padrão da Matriz KPIs:

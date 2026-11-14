@@ -105,6 +105,8 @@ async function lerAno(ano) {
     return r
   }
   const setorFunilaria = setores.find(s => normalizaBusca(s.nome_setor) === 'FUNILARIA/PINTURA')?.id || null
+  // Setor Mecânica da Oficina (linha "Mecânica" abaixo de OFICINA) — CHEFE DE OFICINA › Faturamento (Equipe).
+  const setorMecanica = setores.find(s => normalizaBusca(s.nome_setor) === 'MECANICA' && s.departamento_id === DEPTO_OFICINA)?.id || null
 
   // Uma linha enxuta por registro, já com o que cada indicador precisa saber.
   const regs = linhas.map(l => {
@@ -113,8 +115,10 @@ async function lerAno(ano) {
       slot: slotDaMedida.get(l.medida_id), data: String(l.data).slice(0, 10), empresa: l.empresa_norm || '',
       func: normalizaBusca(l.funcionario), soma: Number(l.soma) || 0, distintos: l.distintos || null,
       oficina: deptId === DEPTO_OFICINA, // linha OFICINA (departamento do Tipo de OS)
+      balcao: deptId === DEPTO_BALCAO_PECAS, // linha BALCÃO PEÇAS (Tipo de OS em branco = venda de balcão)
       setorOficina: !!setorId && deptDoSetor.get(setorId) === DEPTO_OFICINA, // linhas de setor/consultor da Oficina
       funilaria: !!setorId && setorId === setorFunilaria,
+      mecanica: !!setorId && setorId === setorMecanica,
     }
   })
   return { regs }
@@ -151,6 +155,82 @@ const indicadoresConsultor = (s) => ({
   margemPecas: pct(s.margemPecas, s.realPecas),
   ticket: s.pass ? (s.realPecas + s.realServicos) / s.pass : null,
 })
+
+/**
+ * Linha OFICINA (departamento do Tipo de OS) da Possibilidades por casa — quadros dos Gerentes (Bloco 3 ›
+ * Gerentes, 14/11/2026): Faturamento Total Oficina (Peças + Serviços), Margem Bruta Serviços e Peças Oficina.
+ * @returns { TODAS: {fatTotal, margemServicos, margemPecas}, 'CAMPO GRANDE': {...}, … } — cada um { período: valor }
+ */
+export const CASAS_POSSIBILIDADES = ['CAMPO GRANDE', 'DOURADOS', 'TRÊS LAGOAS', 'CHAPADÃO DO SUL']
+export async function getOficinaPorCasa(ano, { incluirHoje = false } = {}) {
+  const base = await carregarAno(ano)
+  if (!base) return null
+  const periodos = periodosDoAno(ano, incluirHoje ? diaMS(0) : diaMS(-1))
+  const regsOficina = base.regs.filter(r => r.oficina && r.slot !== 'prodServicos')
+  // Linha BALCÃO PEÇAS (Faturamento Balcão = Real Total; Margem Bruta Peças Balcão = Margem Peças ÷ Real Peças).
+  const regsBalcao = base.regs.filter(r => r.balcao && r.slot !== 'prodServicos')
+  const out = {}
+  for (const casa of ['TODAS', ...CASAS_POSSIBILIDADES]) {
+    const alvo = casa === 'TODAS' ? null : normalizaBusca(casa).replace(/ DO SUL$/, '')
+    const daCasa = (lista) => (alvo ? lista.filter(r => r.empresa.includes(alvo)) : lista)
+    const regs = daCasa(regsOficina)
+    const regsBal = daCasa(regsBalcao)
+    const o = { fatTotal: {}, margemServicos: {}, margemPecas: {}, balcaoFat: {}, balcaoMargemPecas: {} }
+    for (const [p, [ini, fim]] of Object.entries(periodos)) {
+      const dentro = (r) => r.data >= ini && r.data <= fim
+      const c = indicadoresConsultor(somar(regs.filter(dentro)))
+      o.fatTotal[p] = c.fatTotal; o.margemServicos[p] = c.margemServicos; o.margemPecas[p] = c.margemPecas
+      const b = indicadoresConsultor(somar(regsBal.filter(dentro)))
+      o.balcaoFat[p] = b.fatTotal; o.balcaoMargemPecas[p] = b.margemPecas
+    }
+    out[casa] = o
+  }
+  return out
+}
+
+// Filtro de casa sobre empresa_norm ('CAIOBA TRUCKS - CHAPADAO' etc.); 'TODAS'/null = todas.
+const daCasaFn = (casa) => {
+  if (!casa || casa === 'TODAS') return () => true
+  const alvo = normalizaBusca(casa).replace(/ DO SUL$/, '')
+  return (r) => r.empresa.includes(alvo)
+}
+
+/**
+ * CHEFE DE OFICINA › Faturamento Total Oficina (Equipe) (14/11/2026): linha do setor Mecânica (abaixo de OFICINA)
+ * da Possibilidades na empresa — Real Peças + Real Serviços. @returns { período: valor }
+ */
+export async function getFaturamentoSetorMecanica(ano, casa, { incluirHoje = false } = {}) {
+  const base = await carregarAno(ano)
+  if (!base) return null
+  const naCasa = daCasaFn(casa)
+  const regs = base.regs.filter(r => r.mecanica && (r.slot === 'realPecas' || r.slot === 'realServicos') && naCasa(r))
+  const out = {}
+  for (const [p, [ini, fim]] of Object.entries(periodosDoAno(ano, incluirHoje ? diaMS(0) : diaMS(-1)))) {
+    const s = somar(regs.filter(r => r.data >= ini && r.data <= fim))
+    out[p] = s.realPecas + s.realServicos || null
+  }
+  return out
+}
+
+/**
+ * Bloco 3 - Peças (14/11/2026): linha BALCÃO PEÇAS da Possibilidades — todas as Trucks (Gerente/Coordenador
+ * Atacado) ou só as vendas do vendedor (funcionário da venda, NF_UsuNomVendedor).
+ * Faturamento = Real Peças + Real Serviços; Margem = Margem Peças ÷ Real Peças × 100.
+ * @returns { fat: { período: R$ }, margem: { período: % } }
+ */
+export async function getBalcaoPecas(ano, { vendedor = null, incluirHoje = false } = {}) {
+  const base = await carregarAno(ano)
+  if (!base) return null
+  const nome = vendedor ? normalizaBusca(vendedor) : null
+  const regs = base.regs.filter(r => r.balcao && r.slot !== 'prodServicos' && (!nome || r.func === nome))
+  const out = { fat: {}, margem: {} }
+  for (const [p, [ini, fim]] of Object.entries(periodosDoAno(ano, incluirHoje ? diaMS(0) : diaMS(-1)))) {
+    const c = indicadoresConsultor(somar(regs.filter(r => r.data >= ini && r.data <= fim)))
+    out.fat[p] = c.fatTotal
+    out.margem[p] = c.margemPecas
+  }
+  return out
+}
 
 /**
  * @param ano

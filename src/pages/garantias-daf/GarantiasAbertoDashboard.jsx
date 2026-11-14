@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo, useCallback, Fragment } from 'reac
 import { Loader2, ChevronRight, ChevronDown, FileText, Clock, CheckCircle2, XCircle, AlertTriangle, BarChart2, Eye, X } from 'lucide-react'
 import { apiService } from '../../services/api'
 import { useEmpresasGarantias } from '../../hooks/useEmpresasGarantias'
+import { useEmpresaDoLink } from '../../hooks/useEmpresaDoLink'
 import { situacaoPrazoRecusa } from './prazoRecusa'
 import { carregarRegrasMes, regraDoMes, prazoSolucaoDoMes, textoFaixaDias } from './regrasGarantiasMes'
 
@@ -484,6 +485,10 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
     () => filtroStatusShc ? dados.filter(g => statusDetalhado(g, diasDigitacao) === filtroStatusShc) : dados,
     [dados, filtroStatusShc, diasDigitacao]
   )
+
+  // Link da Matriz KPIs (?loja=CAMPO GRANDE): abre com a fatia da empresa marcada (14/11/2026).
+  const empresasNosDados = useMemo(() => [...new Set(dados.map(g => g.empresa_nome || 'Não informado'))], [dados])
+  useEmpresaDoLink(empresasNosDados, setFiltroEmpresa)
 
   // Base da tabela "Status das Garantias" — reflete empresa/tipo/cluster, mas NÃO o próprio
   // grupo (os cards e a tabela pivot mostram o total de TODOS os grupos; o grupo só controla

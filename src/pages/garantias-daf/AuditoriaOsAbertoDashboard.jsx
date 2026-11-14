@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, useCallback, Fragment } from 'react'
+import React, { useEffect, useMemo, useState, useCallback, useRef, Fragment } from 'react'
 import { createPortal } from 'react-dom'
 import {
   Loader2, Building2, Calendar, ChevronDown, ChevronRight, Gauge, ClipboardList, CalendarClock,
@@ -19,6 +19,8 @@ const semVeiculo = (r) => r.na_oficina === false
 // Mesma regra do card "Veículos com mais de 30 dias na oficina" do Controle: 30+ dias E Na Oficina = Sim
 const mais30 = (r) => { const d = diasOficina(r.data_criacao, r.data_auditoria); return d !== null && d >= 30 && r.na_oficina === true }
 const tipoOs = (r) => r.tipo_os_descricao || r.tipo_os_sigla || '(Sem tipo)'
+// Chave da O.S. para a reincidência: empresa + número (no agrupamento há várias empresas e os números se repetem)
+const chaveOs = (r) => `${r._empKey || ''}|${r.os_numero}`
 
 // Status da resposta de cada OS — o mesmo da 1ª coluna do relatório na visão Controle
 const statusResposta = (r) => !isPendente(r) ? 'OK' : isRespondida(r) ? 'Respondido' : r._encerrada ? 'Sem resposta' : 'Responder'
@@ -125,7 +127,7 @@ function TabelaNiveis({ cabecalho, itens, niveis, onInfo, reincidentes, onHistor
                   <Info className="h-3.5 w-3.5" />
                 </button>
               )}
-              {folha && onHistorico && g.itens.length === 1 && reincidentes?.has(g.itens[0].os_numero) && (
+              {folha && onHistorico && g.itens.length === 1 && reincidentes?.has(chaveOs(g.itens[0])) && (
                 <button type="button" onClick={e => { e.stopPropagation(); onHistorico(g.itens[0]) }}
                   title="Reincidência — clique para ver em quais auditorias anteriores a O.S. apareceu"
                   className="inline-flex items-center justify-center h-4 w-4 rounded text-[9px] font-bold bg-orange-100 text-orange-700 border border-orange-300 hover:bg-orange-200 shrink-0">
@@ -233,11 +235,11 @@ function PainelPendentes({ rows, base, reincidentes, fx, setFx, casa, txt, meta 
     base.filter(r => casa(r, 'consultor')).forEach(r => {
       const c = linha(nomeConsultor(r))
       c.pendQtd++; c.pendValor += Number(r.total) || 0
-      if (reincidentes?.has(r.os_numero)) { c.reincQtd++; c.reincValor += Number(r.total) || 0 }
+      if (reincidentes?.has(chaveOs(r))) { c.reincQtd++; c.reincValor += Number(r.total) || 0 }
     })
     return [...m.values()].sort((a, b) => b.pendValor - a.pendValor || b.abertoValor - a.abertoValor)
   }, [rows, base, casa, reincidentes])
-  const totReinc = somar(pendentes.filter(r => reincidentes?.has(r.os_numero)))
+  const totReinc = somar(pendentes.filter(r => reincidentes?.has(chaveOs(r))))
   const donut = porConsultor.filter(c => c.pendValor > 0)
     .map((c, i) => ({ nome: c.nome, valor: c.pendValor, cor: PALETA[i % PALETA.length] }))
   const totDonut = donut.reduce((s, d) => s + d.valor, 0)
@@ -477,7 +479,7 @@ function TabelaOs({ linhas, mostrarEmpresa, vazio, reincidentes, onVerHistorico 
     situacao_os: r => r.situacao_nome,
     observacao: r => r.observacao,
     previsao: r => r.data_previsao,
-    na_auditoria: r => (!reincidentes ? null : reincidentes.has(r.os_numero) ? 'Reincidência' : 'Nova'),
+    na_auditoria: r => (!reincidentes ? null : reincidentes.has(chaveOs(r)) ? 'Reincidência' : 'Nova'),
   }
   const vazioV = (v) => v === null || v === undefined || v === ''
   const ordenadas = !ord.col ? linhas : [...linhas].sort((a, b) => {
@@ -545,7 +547,7 @@ function TabelaOs({ linhas, mostrarEmpresa, vazio, reincidentes, onVerHistorico 
                 <td className="p-2 whitespace-nowrap">{r.data_previsao ? fmtDate(r.data_previsao) : '—'}</td>
                 <td className="p-2 whitespace-nowrap">
                   {!reincidentes ? <span className="text-slate-300">…</span>
-                    : reincidentes.has(r.os_numero)
+                    : reincidentes.has(chaveOs(r))
                       ? <span className="inline-flex items-center gap-1.5">
                           <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-bold bg-orange-100 text-orange-700 border border-orange-200">Reincidência</span>
                           {onVerHistorico && (
@@ -571,6 +573,76 @@ function TabelaOs({ linhas, mostrarEmpresa, vazio, reincidentes, onVerHistorico 
   )
 }
 
+// Seletor de empresas com caixinhas por agrupamento (mesmo modelo do BI Planos de Manutenção / Possibilidades).
+// "Todos" marca todas; marcar o agrupamento marca/desmarca as empresas dele. Nenhuma marcada = "— Selecione —".
+function SeletorEmpresasAud({ grupos, selecionadas, onChange }) {
+  const [aberto, setAberto] = useState(false)
+  const [pos, setPos] = useState(null)
+  const ref = useRef(null)
+  const todas = grupos.flatMap(([, l]) => l)
+  const alternar = (ids, marcar) => {
+    const set = new Set(selecionadas)
+    ids.forEach(id => (marcar ? set.add(id) : set.delete(id)))
+    onChange([...set])
+  }
+  const tudo = todas.length > 0 && todas.every(e => selecionadas.includes(e.id))
+  const resumo = selecionadas.length === 0 ? '— Selecione —'
+    : tudo ? 'Todos'
+    : selecionadas.length === 1 ? nomeSeletorEmpresa(todas.find(e => e.id === selecionadas[0]) || {}) || '1 empresa'
+    : `${selecionadas.length} empresas`
+  const abrir = () => {
+    if (ref.current) {
+      const r = ref.current.getBoundingClientRect()
+      setPos({ top: r.bottom + 4, left: r.left, width: Math.max(r.width, 300) })
+    }
+    setAberto(a => !a)
+  }
+  return (
+    <>
+      <button ref={ref} type="button" onClick={abrir}
+        className="h-9 w-full text-[11px] px-2 rounded-md bg-white border border-slate-300 text-slate-900 flex items-center justify-between gap-2">
+        <span className="truncate">{resumo}</span>
+        <ChevronDown className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+      </button>
+      {aberto && pos && createPortal(
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setAberto(false)} />
+          <div style={{ position: 'fixed', top: pos.top, left: pos.left, width: pos.width }}
+            className="z-50 bg-white border border-slate-200 rounded-md shadow-lg py-1 text-xs text-slate-800 max-h-[380px] overflow-y-auto whitespace-nowrap">
+            <button type="button" onClick={() => onChange(tudo ? [] : todas.map(e => e.id))}
+              className={`w-full text-left px-3 py-1.5 hover:bg-slate-50 font-semibold ${tudo ? 'text-orange-600' : 'text-orange-700/80'}`}>
+              Todos
+            </button>
+            {grupos.map(([nome, lista]) => {
+              const ids = lista.map(e => e.id)
+              const qtd = ids.filter(id => selecionadas.includes(id)).length
+              return (
+                <div key={nome} className="border-t border-slate-100 mt-1 pt-1">
+                  <label className="flex items-center gap-2 px-3 py-1.5 hover:bg-slate-50 cursor-pointer font-bold uppercase text-[11px] text-slate-600">
+                    <input type="checkbox" className="h-3.5 w-3.5 accent-indigo-600"
+                      checked={qtd === ids.length}
+                      ref={el => { if (el) el.indeterminate = qtd > 0 && qtd < ids.length }}
+                      onChange={ev => alternar(ids, ev.target.checked)} />
+                    {nome}
+                  </label>
+                  {lista.map(e => (
+                    <label key={e.id} className="flex items-center gap-2 pl-8 pr-3 py-1.5 hover:bg-slate-50 cursor-pointer">
+                      <input type="checkbox" className="h-3.5 w-3.5 accent-indigo-600" checked={selecionadas.includes(e.id)}
+                        onChange={ev => alternar([e.id], ev.target.checked)} />
+                      {nomeSeletorEmpresa(e)}
+                    </label>
+                  ))}
+                </div>
+              )
+            })}
+          </div>
+        </>,
+        document.body
+      )}
+    </>
+  )
+}
+
 // selecao/onSelecao: empresa e auditoria compartilhadas com a visão Controle ({ empresa, auditoria, data })
 // slotFiltros: elemento do cabeçalho do BI para os seletores; onSlotVisao: ref p/ os ícones Dashboard | Controle
 // versao: muda quando a engrenagem altera alguma auditoria → recarrega auditorias e OS
@@ -581,12 +653,18 @@ export default function AuditoriaOsAbertoDashboard({ selecao = null, onSelecao =
   useEffect(() => { apiService.getAuditoriaConfig().then(setMetasAud).catch(() => {}) }, [versao])
   const [empresas, setEmpresas] = useState([])
   const [auditorias, setAuditorias] = useState([])
-  const [empresaId, setEmpresaId] = useState(selecao?.empresa || '') // '' = todas
-  // empresa: id da auditoria; todas: data ('' = última de cada empresa)
-  const [dataSel, setDataSel] = useState(selecao?.empresa ? (selecao.auditoria || '') : (selecao?.data || ''))
+  // Empresas marcadas no seletor (caixinhas por agrupamento). Nenhuma = painel vazio; uma = escolhe a data da
+  // auditoria; várias (ou Todos) = última auditoria de cada empresa marcada (isGrupo)
+  const [empresasSel, setEmpresasSel] = useState(() => selecao?.empresa ? [selecao.empresa]
+    : String(selecao?.data || '').startsWith('emps:') ? selecao.data.slice(5).split(',').filter(Boolean) : [])
+  const isGrupo = empresasSel.length > 1
+  const empresaId = empresasSel.length === 1 ? empresasSel[0] : isGrupo ? 'varias' : '' // '' = nenhuma marcada
+  // dataSel: id da auditoria (uma empresa). Com várias não se escolhe data (vale a última de cada empresa)
+  const [dataSel, setDataSel] = useState(selecao?.empresa ? (selecao.auditoria || '') : '')
   useEffect(() => {
-    onSelecao?.(empresaId ? { empresa: empresaId, auditoria: dataSel, data: '' } : { empresa: '', auditoria: '', data: dataSel })
-  }, [empresaId, dataSel]) // eslint-disable-line react-hooks/exhaustive-deps
+    // Várias empresas vão no parâmetro "data" da URL; a visão Controle recebe empresa vazia (escolhe uma lá)
+    onSelecao?.(isGrupo ? { empresa: '', auditoria: '', data: `emps:${empresasSel.join(',')}` } : { empresa: empresaId, auditoria: dataSel, data: '' })
+  }, [empresasSel, dataSel]) // eslint-disable-line react-hooks/exhaustive-deps
   const [aba, setAba] = useState('indicadores')
   const [rows, setRows] = useState([])
   const [carregando, setCarregando] = useState(true)
@@ -629,35 +707,64 @@ export default function AuditoriaOsAbertoDashboard({ selecao = null, onSelecao =
     return () => { vivo = false }
   }, [isAdminEfetivo, empresasPermitidasEfetivas, versao])
 
+  // ?loja=CAMPO GRANDE (ou TRUCKS = todas as Trucks) — link de origem da Matriz KPIs (14/11/2026): abre com a
+  // empresa do quadro marcada, uma vez, quando as empresas chegam (só se a URL não trouxe outra seleção).
+  const lojaDoLink = useRef(new URLSearchParams(window.location.search).get('loja'))
+  useEffect(() => {
+    const alvo = lojaDoLink.current
+    if (!alvo || !empresas.length) return
+    lojaDoLink.current = null
+    if (empresasSel.length) return
+    const n = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/ DO SUL$/, '').trim()
+    const sel = empresas.filter(e => {
+      const nome = n(e.empresa_fantasia || e.nome_empresa_sistema || e.nome_empresa)
+      return nome.includes('TRUCKS') && (n(alvo) === 'TRUCKS' || nome.includes(n(alvo)))
+    }).map(e => e.id)
+    if (sel.length) setEmpresasSel(sel)
+  }, [empresas]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const nomeEmpresaAud = useMemo(() => {
     const porId = new Map(empresas.map(e => [e.id, nomeSeletorEmpresa(e)]))
     return (a) => porId.get(a.empresa_id) || a.empresa_nome || '—'
   }, [empresas])
   const ordemAud = (a, b) => `${b.data_auditoria}|${b.criado_em || ''}`.localeCompare(`${a.data_auditoria}|${a.criado_em || ''}`)
 
-  // Auditorias da empresa escolhida (mais recente primeiro) e datas disponíveis quando "Todas"
-  const audsEmpresa = useMemo(
-    () => (empresaId ? auditorias.filter(a => a.empresa_id === empresaId) : auditorias).slice().sort(ordemAud),
-    [auditorias, empresaId],
-  )
+  // Empresas por agrupamento (Caiobá Motos / Caiobá Trucks), para o seletor com caixinhas
+  const gruposEmpresas = useMemo(() => {
+    const m = new Map()
+    empresas.forEach(e => { const k = (e.agrupamento_nome || 'Outras').trim().toUpperCase(); if (!m.has(k)) m.set(k, []); m.get(k).push(e) })
+    return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0], 'pt-BR'))
+  }, [empresas])
+  const empresasDoGrupo = useMemo(() => (isGrupo ? empresas.filter(e => empresasSel.includes(e.id)) : []), [empresas, empresasSel, isGrupo])
+  // Auditorias das empresas marcadas, mais recente primeiro
+  const audsEmpresa = useMemo(() => {
+    const ids = new Set(empresasSel)
+    return auditorias.filter(a => ids.has(a.empresa_id)).sort(ordemAud)
+  }, [auditorias, empresasSel])
 
   // Ao trocar a empresa: já seleciona a última auditoria dela (ou "última de cada empresa" em Todas).
   // Se a escolha atual (ex.: vinda da visão Controle) continua válida, mantém.
   useEffect(() => {
     if (carregando) return
-    setDataSel(atual => empresaId
+    setDataSel(atual => empresaId && !isGrupo
       ? (audsEmpresa.some(a => a.id === atual) ? atual : (audsEmpresa[0]?.id || ''))
       : '')
-  }, [empresaId, audsEmpresa, carregando])
+  }, [empresaId, isGrupo, audsEmpresa, carregando]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auditorias consideradas no painel
   const audsSelecionadas = useMemo(() => {
     // Sem empresa e data escolhidas, o painel fica vazio (nenhum valor)
+    if (isGrupo) {
+      // Agrupamento: a última auditoria de cada empresa (audsEmpresa já vem da mais recente para a mais antiga)
+      const ultima = new Map()
+      audsEmpresa.forEach(a => { if (!ultima.has(a.empresa_id)) ultima.set(a.empresa_id, a) })
+      return [...ultima.values()]
+    }
     if (!empresaId || !dataSel) return []
     return audsEmpresa.filter(a => a.id === dataSel)
-  }, [empresaId, dataSel, audsEmpresa])
+  }, [empresaId, isGrupo, dataSel, audsEmpresa])
   // Avisa o BI o status da auditoria escolhida (etiqueta "Em andamento" ao lado de Dashboard | Controle)
-  const statusSelecionada = audsSelecionadas[0]?.status || null
+  const statusSelecionada = isGrupo ? null : (audsSelecionadas[0]?.status || null)
   useEffect(() => { onStatusAuditoria?.(statusSelecionada) }, [statusSelecionada]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Reincidência: OS da auditoria escolhida que já apareceram em auditorias ANTERIORES da mesma empresa
@@ -683,24 +790,29 @@ export default function AuditoriaOsAbertoDashboard({ selecao = null, onSelecao =
     (exceto === 'consultor' || !fxPend.consultor || nomeConsultor(r) === fxPend.consultor) &&
     (exceto === 'tipo' || !fxPend.tipo || r._grupoTipo === fxPend.tipo) &&
     (exceto === 'situacao' || !fxPend.situacao || (r.situacao_nome || '(Em branco)') === fxPend.situacao) &&
-    (exceto === 'reinc' || !fxPend.reinc || !!reincidentes?.has(r.os_numero)),
+    (exceto === 'reinc' || !fxPend.reinc || !!reincidentes?.has(chaveOs(r))),
   [fxPend, reincidentes])
   useEffect(() => {
     let vivo = true
     setHistoricoOs(null)
-    const atual = audsSelecionadas[0]
-    if (!atual || !rows.length) return
-    const anteriores = audsEmpresa.filter(a => a.id !== atual.id && ordemAud(atual, a) < 0)
+    if (!audsSelecionadas.length || !rows.length) return
+    // Para cada auditoria escolhida, as anteriores da MESMA empresa (no agrupamento, uma por empresa)
+    const anteriores = []
+    audsSelecionadas.forEach(atual => audsEmpresa.forEach(a => {
+      if (a.empresa_id === atual.empresa_id && a.id !== atual.id && ordemAud(atual, a) < 0) anteriores.push(a)
+    }))
     if (!anteriores.length) { setHistoricoOs(new Map()); return }
     const dataPorAud = new Map(anteriores.map(a => [a.id, a.data_auditoria]))
+    const empPorAud = new Map(anteriores.map(a => [a.id, a.empresa_id || a.empresa_nome]))
     const numeros = [...new Set(rows.map(r => r.os_numero).filter(Boolean))]
     apiService.getAuditoriaOsHistorico(anteriores.map(a => a.id), numeros)
       .then(lista => {
         if (!vivo) return
         const m = new Map()
         lista.forEach(h => {
-          if (!m.has(h.os_numero)) m.set(h.os_numero, [])
-          m.get(h.os_numero).push({ ...h, data_auditoria: dataPorAud.get(h.auditoria_id) || h.data_auditoria })
+          const k = chaveOs({ _empKey: empPorAud.get(h.auditoria_id), os_numero: h.os_numero })
+          if (!m.has(k)) m.set(k, [])
+          m.get(k).push({ ...h, data_auditoria: dataPorAud.get(h.auditoria_id) || h.data_auditoria })
         })
         m.forEach(v => v.sort((a, b) => String(b.data_auditoria).localeCompare(String(a.data_auditoria))))
         setHistoricoOs(m)
@@ -714,7 +826,7 @@ export default function AuditoriaOsAbertoDashboard({ selecao = null, onSelecao =
     const porId = new Map(auds.map(a => [a.id, a]))
     return lista.map(r => {
       const a = porId.get(r.auditoria_id)
-      return { ...r, _empresa: a ? nomeEmpresaAud(a) : '—', _encerrada: STATUS_ENCERRADOS.includes(a?.status) }
+      return { ...r, _empresa: a ? nomeEmpresaAud(a) : '—', _empKey: a ? (a.empresa_id || a.empresa_nome) : '', _encerrada: STATUS_ENCERRADOS.includes(a?.status) }
     })
   }
   useEffect(() => {
@@ -756,28 +868,24 @@ export default function AuditoriaOsAbertoDashboard({ selecao = null, onSelecao =
 
   if (carregando) return <div className="flex items-center gap-2 text-[11px] text-slate-500 p-6"><Loader2 className="h-4 w-4 animate-spin" /> Carregando auditorias...</div>
   const abaAtual = ABAS.find(a => a.key === aba)
-  const mostrarEmpresa = !empresaId
-  // Sem empresa e data escolhidas não mostra nenhum valor
-  const semSelecao = !empresaId || !dataSel
+  const mostrarEmpresa = isGrupo
+  // Sem empresa e data escolhidas não mostra nenhum valor (no agrupamento basta escolhê-lo)
+  const semSelecao = !empresaId || (!isGrupo && !dataSel)
 
   // Seletores Empresa / Data — dentro do BI vão para o cabeçalho (slotFiltros), com rótulo branco
   const corRotulo = slotFiltros ? 'text-white' : 'text-slate-500'
   const filtros = (
     <div className="flex items-end gap-3">
       <div className="flex flex-col gap-1 w-[240px]">
-        <label className={`text-[10px] font-bold ${corRotulo} uppercase flex items-center gap-1`}><Building2 className="h-3 w-3" /> Empresa</label>
-        <select value={empresaId} onChange={e => setEmpresaId(e.target.value)}
-          className="h-9 text-[11px] px-2 border border-slate-300 rounded-md bg-white">
-          <option value="">— Selecione uma empresa —</option>
-          {empresas.map(e => <option key={e.id} value={e.id}>{nomeSeletorEmpresa(e)}</option>)}
-        </select>
+        <label className={`text-[10px] font-bold ${corRotulo} uppercase flex items-center gap-1`}><Building2 className="h-3 w-3" /> Empresas</label>
+        <SeletorEmpresasAud grupos={gruposEmpresas} selecionadas={empresasSel} onChange={setEmpresasSel} />
       </div>
       <div className="flex flex-col gap-1 w-[190px]">
         <label className={`text-[10px] font-bold ${corRotulo} uppercase flex items-center gap-1`}><Calendar className="h-3 w-3" /> Data da Auditoria</label>
-        <select value={dataSel} onChange={e => setDataSel(e.target.value)} disabled={!empresaId}
+        <select value={dataSel} onChange={e => setDataSel(e.target.value)} disabled={!empresaId || isGrupo}
           className="h-9 text-[11px] px-2 border border-slate-300 rounded-md bg-white disabled:opacity-50 disabled:cursor-not-allowed">
-          <option value="">— Selecione uma auditoria —</option>
-          {empresaId && audsEmpresa.map(a => <option key={a.id} value={a.id}>{fmtDate(a.data_auditoria)} — {STATUS_ENCERRADOS.includes(a.status) ? 'Finalizada' : 'Em andamento'}</option>)}
+          <option value="">{isGrupo ? 'Última de cada empresa' : '— Selecione uma auditoria —'}</option>
+          {empresaId && !isGrupo && audsEmpresa.map(a => <option key={a.id} value={a.id}>{fmtDate(a.data_auditoria)} — {STATUS_ENCERRADOS.includes(a.status) ? 'Finalizada' : 'Em andamento'}</option>)}
         </select>
       </div>
     </div>
@@ -801,6 +909,30 @@ export default function AuditoriaOsAbertoDashboard({ selecao = null, onSelecao =
         </div>
         {onSlotVisao && <div ref={onSlotVisao} />}
       </div>
+
+      {/* Agrupamento: qual auditoria de cada empresa entrou no cálculo (a última de cada uma) */}
+      {isGrupo && (
+        <div className="flex flex-wrap items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+          <span className="text-[11px] font-bold text-slate-600">Auditorias no cálculo:</span>
+          {empresasDoGrupo.map(e => {
+            const a = audsSelecionadas.find(x => x.empresa_id === e.id)
+            const encerrada = a && STATUS_ENCERRADOS.includes(a.status)
+            return (
+              <span key={e.id} className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] ${a ? 'bg-white border-slate-200 text-slate-700' : 'bg-slate-100 border-slate-200 text-slate-400'}`}>
+                <strong className="font-semibold">{nomeSeletorEmpresa(e)}</strong>
+                {a ? (
+                  <>
+                    <span>{fmtDate(a.data_auditoria)}</span>
+                    <span className={`rounded px-1.5 text-[10px] font-bold ${encerrada ? 'bg-green-100 text-green-700' : 'bg-yellow-200 text-yellow-900'}`}>
+                      {encerrada ? 'Finalizada' : 'Em andamento'}
+                    </span>
+                  </>
+                ) : <span>sem auditoria</span>}
+              </span>
+            )
+          })}
+        </div>
+      )}
 
       {erro &&<p className="text-[11px] text-red-600 font-semibold">{erro}</p>}
       {carregandoOs && <div className="flex items-center gap-2 text-[11px] text-slate-500"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Carregando OS...</div>}
@@ -886,7 +1018,7 @@ export default function AuditoriaOsAbertoDashboard({ selecao = null, onSelecao =
       {modalInfoOs && (() => {
         const o = modalInfoOs
         const d = diasOficina(o.data_criacao, o.data_auditoria)
-        const reinc = historicoOs?.get(o.os_numero) || []
+        const reinc = historicoOs?.get(chaveOs(o)) || []
         const campo = (rotulo, valor) => (
           <div>
             <p className="text-[10px] font-bold text-slate-400 uppercase">{rotulo}</p>
@@ -937,7 +1069,7 @@ export default function AuditoriaOsAbertoDashboard({ selecao = null, onSelecao =
 
       {/* Histórico da OS reincidente — mesma janela da visão Controle */}
       {modalHistoricoOs && (() => {
-        const lista = historicoOs?.get(modalHistoricoOs.os_numero) || []
+        const lista = historicoOs?.get(chaveOs(modalHistoricoOs)) || []
         return (
           <div className="fixed top-0 right-0 bottom-0 left-16 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4"
             onClick={() => setModalHistoricoOs(null)}>

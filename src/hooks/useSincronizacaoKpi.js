@@ -51,7 +51,8 @@ export function useSincronizacaoKpi(onConcluido) {
     return () => { vivo = false; clearTimeout(timer) }
   }, [consultar])
 
-  const iniciar = useCallback(async (usuarioEmail) => {
+  // automatica: disparada sozinha ao abrir a Matriz (1ª vez no dia) — só muda o aviso.
+  const iniciar = useCallback(async (usuarioEmail, { automatica = false } = {}) => {
     setMensagem('')
     try {
       if (await consultar()) {
@@ -62,7 +63,9 @@ export function useSincronizacaoKpi(onConcluido) {
       setExecutando(true)
       setPorQuem(usuarioEmail || null)
       rodandoAntes.current = true
-      setMensagem('Atualizando a Matriz KPIs e a Campanha… pode levar alguns minutos.')
+      setMensagem(automatica
+        ? 'Primeiro acesso do dia: atualizando os dados da Matriz KPIs e da Campanha… pode levar alguns minutos (os números atuais continuam na tela até terminar).'
+        : 'Atualizando a Matriz KPIs e a Campanha… pode levar alguns minutos.')
     } catch (err) {
       // 409 = outra pessoa iniciou no mesmo instante: passa a acompanhar a dela.
       if (/andamento/i.test(err.message || '')) {

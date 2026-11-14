@@ -363,6 +363,18 @@ export default function IndicadoresProdutividade() {
     for (const [e, marca] of marcaDe) g[marca === 'TRUCKS' ? 'Caiobá Trucks' : marca === 'MOTOS' ? 'Caiobá Motos' : 'Outras'].push(e)
     return Object.entries(g).filter(([, l]) => l.length).map(([n, l]) => [n, l.sort((a, b) => a.localeCompare(b, 'pt-BR'))])
   }, [diario, metas])
+  // ?empresa=CAMPO GRANDE (ou TRUCKS = todas as Trucks) — link de origem da Matriz KPIs: abre com a empresa do
+  // quadro marcada (uma vez, quando a lista de empresas chega).
+  const empresaDoLink = useRef(new URLSearchParams(window.location.search).get('empresa'))
+  useEffect(() => {
+    const alvo = empresaDoLink.current
+    if (!alvo || !gruposEmpresa.length) return
+    const n = (s) => semAcento(s).replace(/ DO SUL$/, '')
+    const todas = gruposEmpresa.flatMap(([, l]) => l)
+    const sel = todas.filter(e => n(e).includes('TRUCKS') && (n(alvo) === 'TRUCKS' || n(e).includes(n(alvo))))
+    if (sel.length) setEmpresasSel(sel)
+    empresaDoLink.current = null
+  }, [gruposEmpresa])
   const noEscopo = useCallback((empresa) => empresasSel.length === 0 || empresasSel.includes(empresa), [empresasSel])
 
   const diarioEsc = useMemo(() => diario.filter(r => noEscopo(r.empresa, r.marca)), [diario, noEscopo])

@@ -161,11 +161,14 @@ export async function getMetaPecasPeriodos(ano, vendedorNome = null) {
  * Meta de Faturamento Balcão por período: metas de Peças do departamento Balcão (Total
  * Pós-Vendas → Planejamento de Metas), somando os vendedores. empresaNome restringe à casa.
  */
-export async function getMetaPecasBalcaoPeriodos(ano, { empresaNome = null } = {}) {
+// soTrucks: só Caiobá Trucks (Bloco 3 - Peças › Gerente/Coordenador Atacado, 14/11/2026 — o realizado, da
+// Possibilidades, é só Trucks; sem isso a meta somava as lojas da Caiobá Motos).
+export async function getMetaPecasBalcaoPeriodos(ano, { empresaNome = null, soTrucks = false } = {}) {
   const base = await carregarBase(ano)
   if (!base) return null
   const alvoEmp = empresaNome ? normNome(empresaNome) : null
-  const linhas = base.metas.filter(r => r.tipo === 'pecas' && /balc/i.test(r.departamento_nome || '') && (!alvoEmp || normNome(r.empresa_nome) === alvoEmp))
+  const linhas = base.metas.filter(r => r.tipo === 'pecas' && /balc/i.test(r.departamento_nome || '') && (!alvoEmp || normNome(r.empresa_nome) === alvoEmp)
+    && (!soTrucks || normNome(r.empresa_nome).includes('TRUCKS')))
   return periodizarMetas(linhas, ano, base.calendario)
 }
 
@@ -188,7 +191,9 @@ export async function getMetaPecasBalcaoPeriodos(ano, { empresaNome = null } = {
  * casa do Pós-Venda; null = todas as empresas (Gerente Geral).
  */
 // semNaoAssociado: tira a linha "Produtivo Não Associado" (sem box/setor) — usado no CHEFE DE OFICINA.
-export async function getMetaOficinaPeriodos(ano, { consultorNome = null, empresaNome = null, semNaoAssociado = false } = {}) {
+// soTrucks: só empresas Caiobá Trucks (Gerente Geral Pós-Vendas — o realizado, da Possibilidades, é só Trucks;
+// sem isso a meta somava as lojas da Caiobá Motos).
+export async function getMetaOficinaPeriodos(ano, { consultorNome = null, empresaNome = null, semNaoAssociado = false, soTrucks = false } = {}) {
   const base = await carregarBase(ano)
   if (!base) return null
 
@@ -204,6 +209,7 @@ export async function getMetaOficinaPeriodos(ano, { consultorNome = null, empres
     linhas = linhas.filter(r => normNome(r.empresa_nome) === alvoEmp)
   }
   if (semNaoAssociado) linhas = linhas.filter(r => normNome(r.colaborador_nome) !== 'PRODUTIVO NAO ASSOCIADO')
+  if (soTrucks) linhas = linhas.filter(r => normNome(r.empresa_nome).includes('TRUCKS'))
   return periodizarMetas(linhas, ano, base.calendario)
 }
 
@@ -294,7 +300,7 @@ function razaoPeriodos(lucro, meta, ano) {
  * empresaNome: só consultores dessa empresa; consultorNome: só esse consultor; ambos null = todos.
  * Retorna { servicos, pecas } ou null quando não há nenhuma margem aprovada no recorte.
  */
-export async function getMetaMargemOficinaPeriodos(ano, { empresaNome = null, consultorNome = null } = {}) {
+export async function getMetaMargemOficinaPeriodos(ano, { empresaNome = null, consultorNome = null, soTrucks = false } = {}) {
   const base = await carregarBaseMargem(ano)
   if (!base) return null
 
@@ -336,6 +342,7 @@ export async function getMetaMargemOficinaPeriodos(ano, { empresaNome = null, co
   const lucroP = Array(12).fill(0), metaP = Array(12).fill(0), lucroS = Array(12).fill(0), metaS = Array(12).fill(0)
   for (const r of base.consultor) {
     if (alvoEmp && normNome(r.empresa_nome) !== alvoEmp) continue
+    if (soTrucks && !normNome(r.empresa_nome).includes('TRUCKS')) continue
     if (alvoCon && normNome(r.colaborador_nome) !== alvoCon) continue
     const aprovado = r.meta_aprovada != null && Math.abs((Number(r.meta_faturamento) || 0) - Number(r.meta_aprovada)) <= 0.001
     if (!aprovado) continue
@@ -368,7 +375,7 @@ export async function getMetaMargemOficinaPeriodos(ano, { empresaNome = null, co
  * só linhas hoje APROVADAS (meta_aprovada = meta_faturamento).
  * empresaNome: só a casa; vendedorNome: só esse vendedor; ambos null = todos.
  */
-export async function getMetaMargemBalcaoPeriodos(ano, { empresaNome = null, vendedorNome = null } = {}) {
+export async function getMetaMargemBalcaoPeriodos(ano, { empresaNome = null, vendedorNome = null, soTrucks = false } = {}) {
   const key = `margem-balcao-${ano}`
   let linhas
   const hit = _cache.get(key)
@@ -388,6 +395,7 @@ export async function getMetaMargemBalcaoPeriodos(ano, { empresaNome = null, ven
   for (const r of linhas) {
     if (!/balc/i.test(r.departamento_nome || '')) continue
     if (alvoEmp && normNome(r.empresa_nome) !== alvoEmp) continue
+    if (soTrucks && !normNome(r.empresa_nome).includes('TRUCKS')) continue
     if (alvoVen && normNome(r.colaborador_nome) !== alvoVen) continue
     if (r.margem_pecas_pct == null || r.margem_pecas_pct === '') continue
     const fat = Number(r.meta_faturamento) || 0
