@@ -307,9 +307,9 @@ export const MENU_TREE = [
     label: 'BI - Dashboard',
     children: [
       {
-        // Agrupamento "Gestão" (sem navTo, 13/11/2026), antes do Pós-Vendas: Matriz KPIs - DAF.
+        // Agrupamento "Gestão Estratégica" (sem navTo, 13/11/2026), antes do Pós-Vendas: Matriz KPIs - DAF.
         key: '_bi.gestao',
-        label: 'Gestão',
+        label: 'Gestão Estratégica',
         children: [
           {
             // Permissões individuais mantidas (controlam quais abas aparecem em /kpi/matriz),
