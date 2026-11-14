@@ -132,8 +132,14 @@ export default function KpiMatriz() {
                     <Loader2 className="h-2.5 w-2.5 animate-spin" />
                     Sincronizando… (pode levar alguns minutos)
                   </span>
+                ) : sourceStatus.loading ? (
+                  // Carregando os quadros da aba (14/11/2026): etiqueta visível no lugar do "Carregando..." cinza.
+                  <span className="flex items-center gap-1.5 rounded-full font-semibold border px-2 py-0.5 text-[10px] bg-amber-50 text-amber-700 border-amber-200">
+                    <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                    Carregando os valores…
+                  </span>
                 ) : (
-                  sourceStatus.source != null && <DataSourceBadge compacto source={sourceStatus.source} loading={sourceStatus.loading} refreshKey={refreshToken} />
+                  sourceStatus.source != null && <DataSourceBadge compacto source={sourceStatus.source} loading={false} refreshKey={refreshToken} />
                 )}
               </div>
             </div>

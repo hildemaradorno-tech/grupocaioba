@@ -8,6 +8,7 @@ import { getPeriodData, getPeriodLabel, M_PERIODS, M_LABELS } from '../../utils/
 import { useKpiData } from '../../hooks/useKpiData'
 import { fetchBloco3PosVenda, salvarPeso, salvarMetaManual } from '../../services/kpiService'
 import { useExpandirQuadro } from '../../components/kpi/useExpandirQuadro'
+import AvisoCarregando from '../../components/kpi/AvisoCarregando'
 
 const BLOCO_PESOS = 'bloco3-pos-venda'
 
@@ -390,7 +391,8 @@ function ordenarCasas(quadros) {
 // com todas as empresas somadas. O backend ainda aceita ?empresaQualidade=, se um dia voltar.
 export function PosVendaQuadros({ year, activePeriods, mesTotalKey, somenteLeitura = false, apenas = null }) {
   const { incluirHoje } = useKpiYear() // Matriz: período em andamento até ontem, ou até agora
-  const { data: quadros } = useKpiData(fetchBloco3PosVenda, MOCK_BLOCO3_POS_VENDA, { year, incluirHoje: incluirHoje || undefined })
+  // atualizado = false: ainda sem a resposta do filtro atual (na 1ª abertura, os dados seriam os de demonstração).
+  const { data: quadros, atualizado } = useKpiData(fetchBloco3PosVenda, MOCK_BLOCO3_POS_VENDA, { year, incluirHoje: incluirHoje || undefined })
 
   // Overlay otimista: aplicado por cima do que veio do backend assim que o usuário
   // salva um peso, sem precisar esperar o próximo fetch pra refletir na tela.
@@ -441,6 +443,9 @@ export function PosVendaQuadros({ year, activePeriods, mesTotalKey, somenteLeitu
       return k
     }),
   }))
+
+  // Carregando (14/11/2026): aviso no lugar dos quadros — antes apareciam os números de demonstração até chegar.
+  if (!atualizado) return <AvisoCarregando />
 
   return (
       <div className="space-y-6">

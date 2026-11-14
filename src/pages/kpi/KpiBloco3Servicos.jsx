@@ -11,6 +11,7 @@ import { useAuth } from '../../context/AuthContext'
 import { PosVendaQuadros } from './KpiBloco3PosVenda'
 import { useExpandirQuadro } from '../../components/kpi/useExpandirQuadro'
 import OrigemIndicador from '../../components/kpi/OrigemIndicador'
+import AvisoCarregando from '../../components/kpi/AvisoCarregando'
 
 const BLOCO_PESOS = 'bloco3-servicos'
 const QUADRO_CONSULTOR = 'CONSULTOR DE SERVIÇOS'
@@ -630,6 +631,8 @@ function ServicosQuadros({ year, activePeriods, mesTotalKey, somenteLeitura = fa
 
   return (
       <div className="space-y-6">
+        {/* Carregando (14/11/2026): aviso visível acima dos quadros; os valores ficam "—" até a resposta chegar. */}
+        {!atualizado && <AvisoCarregando />}
         {/* Ordem da aba (ABAS_SERVICOS), não a do backend. */}
         {quadrosComPeso.filter(q => visivel(q.tituloGerente))
           .sort((a, b) => (grupo ? grupo.indexOf(a.tituloGerente) - grupo.indexOf(b.tituloGerente) : 0))
