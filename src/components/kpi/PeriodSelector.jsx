@@ -225,7 +225,9 @@ function ListaMarcavel({ rotulo, itens, marcados, onEscolher, onTodos, onLimpar 
 
 // inlineTrimestral: mantido por compatibilidade (o trimestral agora sempre fica na mesma linha, como lista).
 // eslint-disable-next-line no-unused-vars
-export default function PeriodSelector({ state, hideLegend = false, modes = VIEW_MODES, inlineTrimestral = false }) {
+// escuro: rótulos brancos em maiúsculas (cabeçalho com fundo degradê da Matriz KPIs, padrão Possibilidades).
+export default function PeriodSelector({ state, hideLegend = false, modes = VIEW_MODES, inlineTrimestral = false, escuro = false }) {
+  const rotulo = escuro ? "text-[10px] font-bold text-white uppercase" : "text-xs text-slate-500"
   const {
     viewMode, setViewMode,
     visibleT, visibleM, visibleS,
@@ -247,7 +249,7 @@ export default function PeriodSelector({ state, hideLegend = false, modes = VIEW
       {/* Linha 1: Visão + períodos, todos como listas (seletores). Meses/Períodos/Semanas abrem
           com caixas de marcar — dá para escolher vários. */}
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs font-medium text-slate-500 shrink-0">Visão:</span>
+        <span className={`${rotulo} font-medium shrink-0`}>Visão:</span>
         <select
           value={viewMode}
           onChange={e => setViewMode(e.target.value)}
@@ -260,7 +262,7 @@ export default function PeriodSelector({ state, hideLegend = false, modes = VIEW
 
         {viewMode === 'semanal' && (
           <>
-            <span className="text-xs text-slate-500 ml-2">Mês:</span>
+            <span className={`${rotulo} ml-2`}>Mês:</span>
             <select
               value={weekMonth}
               onChange={e => setWeekMonth(e.target.value)}
@@ -268,7 +270,7 @@ export default function PeriodSelector({ state, hideLegend = false, modes = VIEW
             >
               {M_PERIODS.map(m => <option key={m} value={m}>{M_LABELS[m]}</option>)}
             </select>
-            <span className="text-xs text-slate-500 ml-2">Semanas:</span>
+            <span className={`${rotulo} ml-2`}>Semanas:</span>
             <ListaMarcavel
               rotulo='Semanas'
               itens={[...weekKeys.map(p => ({ k: p, nome: S_LABELS[p] })), { k: 'mtd', nome: 'Total do mês' }]}
@@ -282,7 +284,7 @@ export default function PeriodSelector({ state, hideLegend = false, modes = VIEW
 
         {viewMode === 'mensal' && (
           <>
-            <span className="text-xs text-slate-500 ml-2">Meses:</span>
+            <span className={`${rotulo} ml-2`}>Meses:</span>
             <ListaMarcavel
               rotulo='Meses'
               itens={[...M_PERIODS.map(p => ({ k: p, nome: M_LABELS[p] })), { k: 'fy', nome: 'Total do Ano' }]}
@@ -296,7 +298,7 @@ export default function PeriodSelector({ state, hideLegend = false, modes = VIEW
 
         {viewMode === 'trimestral' && (
           <>
-            <span className="text-xs text-slate-500 ml-2">Períodos:</span>
+            <span className={`${rotulo} ml-2`}>Períodos:</span>
             <ListaMarcavel
               rotulo='Períodos'
               itens={T_PERIODS.map(p => ({ k: p, nome: T_LABELS[p] }))}

@@ -14,6 +14,7 @@ import KpiBloco3Pecas from './KpiBloco3Pecas'
 import KpiOrcamentoBacklog from './KpiOrcamentoBacklog'
 import KpiAuditoria from './KpiAuditoria'
 import PeriodSelector, { usePeriodSelector, MODES_COM_SEMANAL } from '../../components/kpi/PeriodSelector'
+import logoCaioba from '../../assets/logo-grupo.png'
 
 // periodo: a aba usa o seletor de Visão/Meses do topo (ao lado do Ano) — 'semanal' = também visão Semanal.
 const ABAS = [
@@ -27,7 +28,6 @@ const ABAS = [
 ]
 
 export const KPI_MATRIZ_PERMS = ABAS.map(a => a.permKey)
-
 export default function KpiMatriz() {
   const { hasPermission, hasActionOrDefault, user } = useAuth()
   // Sempre que entra na Matriz KPIs: visão Mensal no mês atual. Limpa a seleção de período guardada
@@ -58,47 +58,58 @@ export default function KpiMatriz() {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="px-6 pt-6 flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-xl font-bold text-slate-800">Matriz KPIs - DAF</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Indicadores de desempenho consolidados por bloco</p>
-        </div>
-        {/* Direita: linha 1 = Visão/Meses · Ano · Atualizar; linha 2 = "Dados sincronizados" menor, embaixo. */}
-        <div className="flex flex-col items-end gap-1 shrink-0">
-        <div className="flex items-center gap-3">
-          {/* Visão / Meses (só nas abas que usam), junto do Ano: todos os filtros de período no mesmo lugar. */}
-          {abaAtual?.periodo && (
-            <PeriodSelector state={periodState} inlineTrimestral hideLegend
-              modes={abaAtual.periodo === 'semanal' ? MODES_COM_SEMANAL : undefined} />
-          )}
-          <span className="text-xs text-slate-500 font-medium">Ano:</span>
-          <select
-            value={year}
-            onChange={e => setYear(Number(e.target.value))}
-            className="bg-white text-slate-700 text-sm rounded-md px-2 py-1.5 border border-slate-300 focus:outline-none focus:border-blue-400 cursor-pointer"
-          >
-            {KPI_YEARS.map(y => <option key={y} value={y}>{y}</option>)}
-          </select>
-          {podeSincronizar && (
-            <button type="button" onClick={() => sync.iniciar(user?.email)} disabled={sync.executando}
-              title={sync.executando ? `Atualização em andamento${sync.porQuem ? ` (iniciada por ${sync.porQuem})` : ''} — aguarde terminar` : 'Atualizar dados (Matriz KPIs e Campanha Pós-Venda - DAF)'}
-              aria-label="Atualizar dados"
-              className="inline-flex items-center justify-center rounded-md border border-blue-200 bg-blue-50 p-1.5 text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60">
-              <RefreshCw className={`h-4 w-4 ${sync.executando ? 'animate-spin' : ''}`} />
-            </button>
-          )}
-        </div>
-        <div className="flex items-center gap-3">
-          {/* Bloco 3 - Serviços: período em andamento até ontem; marcado, até agora (dia atual incluído). */}
-          {abaAtual?.key === 'bloco3-servicos' && (
-            <label className="inline-flex items-center gap-1.5 text-[11px] text-slate-600 cursor-pointer select-none"
-              title="Desmarcado: o mês, a semana, o trimestre e o ano em andamento mostram os valores apurados até ONTEM. Marcado: incluem o dia de hoje.">
-              <input type="checkbox" className="h-3.5 w-3.5 cursor-pointer" checked={incluirHoje} onChange={e => setIncluirHoje(e.target.checked)} />
-              Considerar o dia atual
-            </label>
-          )}
-          {sourceStatus.source != null && <DataSourceBadge compacto source={sourceStatus.source} loading={sourceStatus.loading} refreshKey={refreshToken} />}
-        </div>
+      {/* Cabeçalho no padrão do BI Possibilidades - Sintonia do Dia (degradê e logo do painel Power BI da
+          Caiobá): título à esquerda; à direita, status + Atualizar em cima e os filtros de período embaixo. */}
+      <div className="px-6 pt-6">
+        <div className="relative rounded-lg shadow-sm"
+          style={{ background: 'linear-gradient(90deg, #fdf8ec 0%, #f8d78c 28%, #f0a30a 50%, #a08a35 68%, #4f6a6a 84%, #1a4d8f 100%)' }}>
+          <div className="relative flex flex-wrap items-stretch justify-between gap-4 px-5 py-3">
+            <div className="flex items-center gap-4">
+              <img src={logoCaioba} alt="Caiobá" className="h-11 w-auto shrink-0" />
+              <div className="w-0.5 self-stretch bg-[#1a4d8f]" />
+              <div style={{ fontFamily: "Cambria, Georgia, 'Times New Roman', serif" }}>
+                <h1 className="text-[22px] font-bold text-slate-900 uppercase leading-tight">Matriz KPIs - DAF</h1>
+                <p className="text-[15px] italic text-slate-900 uppercase leading-tight mt-0.5">Indicadores de desempenho</p>
+              </div>
+            </div>
+            <div className="flex flex-col items-end gap-2">
+              {/* Visão / Meses (só nas abas que usam), Ano e o botão Atualizar ao lado — rótulos brancos. */}
+              <div className="flex flex-wrap items-center justify-end gap-3">
+                {abaAtual?.periodo && (
+                  <PeriodSelector state={periodState} inlineTrimestral hideLegend escuro
+                    modes={abaAtual.periodo === 'semanal' ? MODES_COM_SEMANAL : undefined} />
+                )}
+                <span className="text-[10px] font-bold text-white uppercase">Ano:</span>
+                <select
+                  value={year}
+                  onChange={e => setYear(Number(e.target.value))}
+                  className="bg-white text-slate-700 text-xs font-medium rounded-md px-2 py-1 border border-slate-300 focus:outline-none focus:border-blue-400 cursor-pointer"
+                >
+                  {KPI_YEARS.map(y => <option key={y} value={y}>{y}</option>)}
+                </select>
+                {podeSincronizar && (
+                  <button type="button" onClick={() => sync.iniciar(user?.email)} disabled={sync.executando}
+                    title={sync.executando ? `Atualização em andamento${sync.porQuem ? ` (iniciada por ${sync.porQuem})` : ''} — aguarde terminar` : 'Atualizar dados (Matriz KPIs e Campanha Pós-Venda - DAF)'}
+                    aria-label="Atualizar dados"
+                    className="flex items-center justify-center h-8 w-8 rounded-md border border-slate-300 bg-white text-slate-600 shadow-sm hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed transition-colors">
+                    <RefreshCw className={`h-4 w-4 ${sync.executando ? 'animate-spin' : ''}`} />
+                  </button>
+                )}
+              </div>
+              {/* Abaixo dos seletores: "Considerar o dia atual" (só Bloco 3 - Serviços: período em andamento até
+                  ontem; marcado, até agora) e a etiqueta "Dados sincronizados", lado a lado. */}
+              <div className="flex flex-wrap items-center justify-end gap-3">
+                {abaAtual?.key === 'bloco3-servicos' && (
+                  <label className="inline-flex items-center gap-1.5 text-[10px] font-bold text-white uppercase cursor-pointer select-none"
+                    title="Desmarcado: o mês, a semana, o trimestre e o ano em andamento mostram os valores apurados até ONTEM. Marcado: incluem o dia de hoje.">
+                    <input type="checkbox" className="h-3.5 w-3.5 cursor-pointer" checked={incluirHoje} onChange={e => setIncluirHoje(e.target.checked)} />
+                    Considerar o dia atual
+                  </label>
+                )}
+                {sourceStatus.source != null && <DataSourceBadge compacto source={sourceStatus.source} loading={sourceStatus.loading} refreshKey={refreshToken} />}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
       {sync.mensagem && <p role="status" className="px-6 pt-2 text-xs text-slate-600">{sync.mensagem}</p>}
