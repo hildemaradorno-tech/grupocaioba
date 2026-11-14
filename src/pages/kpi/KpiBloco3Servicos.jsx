@@ -678,11 +678,12 @@ function ServicosQuadros({ year, activePeriods, mesTotalKey, somenteLeitura = fa
   )
 }
 
-// Sub-abas do Bloco 3 - Serviços, nesta ordem; ao entrar, sempre abre em Equipe.
+// Sub-abas do Bloco 3 - Serviços, nesta ordem (Gerentes · Setores · Equipe, 13/11/2026); ao entrar,
+// sempre abre em Gerentes.
 const ABAS_SERVICOS = [
-  { key: 'equipe',   label: 'Equipe',   quadros: [QUADRO_CONSULTOR, QUADRO_MECANICO, QUADRO_CHEFE_OFICINA] },
-  { key: 'setores',  label: 'Setores',  quadros: [QUADRO_OFICINA, QUADRO_FUNILARIA, QUADRO_GARANTIA, QUADRO_AGENDAMENTO, QUADRO_PLANOS] },
   { key: 'gerentes', label: 'Gerentes' },
+  { key: 'setores',  label: 'Setores',  quadros: [QUADRO_OFICINA, QUADRO_FUNILARIA, QUADRO_GARANTIA, QUADRO_AGENDAMENTO, QUADRO_PLANOS] },
+  { key: 'equipe',   label: 'Equipe',   quadros: [QUADRO_CONSULTOR, QUADRO_MECANICO, QUADRO_CHEFE_OFICINA] },
 ]
 
 export default function KpiBloco3Servicos({ periodState: periodoMatriz = null }) {
@@ -693,7 +694,7 @@ export default function KpiBloco3Servicos({ periodState: periodoMatriz = null })
   const { year } = useKpiYear()
   const { hasActionOrDefault } = useAuth()
   const canEdit = hasActionOrDefault('kpi/bloco3-servicos', 'editar')
-  const [abaKey, setAbaKey] = useState('equipe')
+  const [abaKey, setAbaKey] = useState('gerentes')
   const aba = ABAS_SERVICOS.find(a => a.key === abaKey) ?? ABAS_SERVICOS[0]
 
   return (
