@@ -40,7 +40,7 @@ export default function KpiMatriz() {
   })
   // Seletor único de Visão/Meses no topo, ao lado do Ano (depois da limpeza acima: abre no mês atual).
   const periodState = usePeriodSelector('kpi-matriz')
-  const { year, setYear } = useKpiYear()
+  const { year, setYear, incluirHoje, setIncluirHoje } = useKpiYear()
   const { status: sourceStatus, refreshToken, refreshData } = useKpiSourceStatus()
   // Atualização compartilhada com o BI Campanha Pós-Venda (Matriz + Campanha, um processo só no
   // backend): o botão fica travado em todas as telas enquanto qualquer pessoa estiver atualizando,
@@ -88,7 +88,17 @@ export default function KpiMatriz() {
             </button>
           )}
         </div>
-        {sourceStatus.source != null && <DataSourceBadge compacto source={sourceStatus.source} loading={sourceStatus.loading} refreshKey={refreshToken} />}
+        <div className="flex items-center gap-3">
+          {/* Bloco 3 - Serviços: período em andamento até ontem; marcado, até agora (dia atual incluído). */}
+          {abaAtual?.key === 'bloco3-servicos' && (
+            <label className="inline-flex items-center gap-1.5 text-[11px] text-slate-600 cursor-pointer select-none"
+              title="Desmarcado: o mês, a semana, o trimestre e o ano em andamento mostram os valores apurados até ONTEM. Marcado: incluem o dia de hoje.">
+              <input type="checkbox" className="h-3.5 w-3.5 cursor-pointer" checked={incluirHoje} onChange={e => setIncluirHoje(e.target.checked)} />
+              Considerar o dia atual
+            </label>
+          )}
+          {sourceStatus.source != null && <DataSourceBadge compacto source={sourceStatus.source} loading={sourceStatus.loading} refreshKey={refreshToken} />}
+        </div>
         </div>
       </div>
       {sync.mensagem && <p role="status" className="px-6 pt-2 text-xs text-slate-600">{sync.mensagem}</p>}

@@ -63,6 +63,7 @@ function buildUrl(endpoint, params = {}) {
   if (params.indicador) qs.set('indicador', params.indicador)
   if (params.dataInicio) qs.set('dataInicio', params.dataInicio)
   if (params.dataFim) qs.set('dataFim', params.dataFim)
+  if (params.incluirHoje) qs.set('incluirHoje', '1') // Matriz: período em andamento até agora (padrão: até ontem)
   const q = qs.toString()
   return `${BASE}/${endpoint}${q ? `?${q}` : ''}`
 }

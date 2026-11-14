@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   ClipboardCheck, AlertTriangle, ChevronRight, KeyRound,
   Settings, Target, ClipboardList, FolderKanban, Calculator, BookOpen,
-  Folder, FileText, X, PieChart, GraduationCap, ExternalLink,
+  Folder, FileText, X, PieChart, GraduationCap, ExternalLink, Wrench,
 } from 'lucide-react'
 import { apiService } from '../services/api'
 import { useAuth } from '../context/AuthContext'

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { createPortal } from 'react-dom'
 import { Bar, BarChart, CartesianGrid, LabelList, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { AlertTriangle, BookOpen, Building2, Calendar, ChevronDown, ChevronLeft, ChevronRight, Download, Info, ListChecks, RefreshCw, Settings, Table2, X } from 'lucide-react'
@@ -878,7 +879,9 @@ export default function BiAgendamentoServicos() {
   const [carregando, setCarregando] = useState(false)
   const [erroCrm, setErroCrm] = useState('')
   const [tipo, setTipo] = useState(TIPOS[0])
-  const [aba, setAba] = useState(ABAS[0])
+  // ?aba=<nome da aba> (ex.: atalho da Matriz KPIs) abre direto nela.
+  const [paramsUrl] = useSearchParams()
+  const [aba, setAba] = useState(() => (ABAS.includes(paramsUrl.get('aba')) ? paramsUrl.get('aba') : ABAS[0]))
 
   // Empresas do cadastro (sem as "visuais"), agrupadas por Agrupamento (Motos, Trucks...); só os agrupamentos Motos e Trucks (ex.: "Outras Caiobá" fica de fora).
   useEffect(() => {

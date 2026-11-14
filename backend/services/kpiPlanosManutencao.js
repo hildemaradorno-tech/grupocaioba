@@ -35,9 +35,10 @@ const diasUteis = (ano, mes, ini, fim) => {
 const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 
 // Parte pesada (lê os arquivos do SharePoint): contagens por mês — a rota guarda em cache.
-export async function contarPlanosPorMes(ano) {
+// incluirHoje: conta também o dia de HOJE; padrão só até ontem (Matriz › Considerar o dia atual).
+export async function contarPlanosPorMes(ano, { incluirHoje = false } = {}) {
   const [vendas, contratos] = await Promise.all([getVeiculosVendidos(), getPotencialRenovacao()])
-  const ontem = new Date(); ontem.setDate(ontem.getDate() - 1)
+  const ontem = new Date(); if (!incluirHoje) ontem.setDate(ontem.getDate() - 1) // "ontem" = último dia contado
   const dataMax = iso(ontem)
   const noMes = (am) => (d) => !!d && d <= dataMax && d.slice(0, 7) === am
 

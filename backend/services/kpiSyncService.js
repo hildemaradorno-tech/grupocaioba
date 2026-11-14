@@ -15,6 +15,7 @@ import {
 import { EMPRESAS_SYNC } from './kpiEmpresas.js'
 import { sincronizarCampanhaDiario } from './campanhaDiarioSync.js'
 import { sincronizarBiMedidasDiario } from './biMedidasDiarioSync.js'
+import { sincronizarProdutividadeMes } from './produtividadeSync.js'
 
 const FONTES_PLANILHA = [
   { chave: 'resultados', fn: getResultados },
@@ -130,6 +131,23 @@ async function _executar(origem, usuarioEmail) {
     if (bi.ok) sucessos++; else falhas++
   } catch (err) {
     detalhes.biFaturamento = { ok: false, erro: err.message }
+    falhas++
+  }
+
+  // Pós-Vendas › Indicadores de Produtividade e Eficiência: mês atual (e, até o dia 5, o anterior).
+  try {
+    const hoje = new Date()
+    const meses = [[hoje.getFullYear(), hoje.getMonth() + 1]]
+    if (hoje.getDate() <= 5) meses.unshift(hoje.getMonth() === 0 ? [hoje.getFullYear() - 1, 12] : [hoje.getFullYear(), hoje.getMonth()])
+    detalhes.produtividade = []
+    for (const [a, m] of meses) {
+      const r = await sincronizarProdutividadeMes(supabaseAdmin, a, m)
+      const ok = r.TRUCKS?.ok && r.MOTOS?.ok
+      detalhes.produtividade.push({ ano: a, mes: m, ok, trucks: r.TRUCKS?.linhas ?? r.TRUCKS?.erro, motos: r.MOTOS?.linhas ?? r.MOTOS?.erro })
+      if (ok) sucessos++; else falhas++
+    }
+  } catch (err) {
+    detalhes.produtividade = { ok: false, erro: err.message }
     falhas++
   }
 

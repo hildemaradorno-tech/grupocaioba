@@ -18,8 +18,12 @@ export function KpiYearProvider({ children }) {
     setYearState(y)
   }
 
+  // Matriz KPIs: o período em andamento vale até ONTEM; marcado "Considerar o dia atual", até agora.
+  // Sempre começa desmarcado (não fica gravado).
+  const [incluirHoje, setIncluirHoje] = useState(false)
+
   return (
-    <KpiYearContext.Provider value={{ year, setYear }}>
+    <KpiYearContext.Provider value={{ year, setYear, incluirHoje, setIncluirHoje }}>
       {children}
     </KpiYearContext.Provider>
   )

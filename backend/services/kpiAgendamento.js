@@ -82,13 +82,16 @@ export async function comMetasAtuaisAgendamento(dados) {
   }
 }
 
-export async function getIndicadoresAgendamento(ano) {
+// incluirHoje: conta também o dia de HOJE; padrão só até ontem (Matriz › Considerar o dia atual).
+export async function getIndicadoresAgendamento(ano, { incluirHoje = false } = {}) {
   const [campanhas, passagens, metas] = await Promise.all([getCampanhasCrm(), getPassagensOs(), lerMetas()])
+  const hojeMS = new Date(Date.now() - 4 * 3600 * 1000).toISOString().slice(0, 10)
+  const ateCorte = (d) => incluirHoje || String(d).slice(0, 10) < hojeMS
 
-  const porCampanha = agrupar(campanhas.rows.filter(r => r.data), r => r.data, ano)
+  const porCampanha = agrupar(campanhas.rows.filter(r => r.data && ateCorte(r.data)), r => r.data, ano)
   const taxaAgendamento = taxaPorPeriodo(porCampanha, rows => [contatosAgendados(rows), rows.length])
 
-  const agendamentos = passagens.agendamentos.filter(a => a.fonte === 'ROF037' && a.data && a.status !== 'CAN')
+  const agendamentos = passagens.agendamentos.filter(a => a.fonte === 'ROF037' && a.data && a.status !== 'CAN' && ateCorte(a.data))
   const porData = agrupar(agendamentos, a => a.data, ano)
   const taxaAtivo = taxaPorPeriodo(porData, lista => {
     const ativos = lista.filter(a => a.tipo === 'Ativo')

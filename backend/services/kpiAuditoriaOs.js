@@ -12,6 +12,9 @@
  * no período = sem valor. Grupo (todas as empresas) = soma da última auditoria de cada empresa no período.
  * Meta (%, menor é melhor) = "Metas dos indicadores" da Auditoria: a do mês (aud_metas_indicadores) ou, sem
  * ela, a meta geral (aud_configuracoes) — a do mês da auditoria usada.
+ *
+ * Por consultor (quadro CONSULTOR DE SERVIÇOS): só as O.S. do consultor (consultor_nome) nas mesmas auditorias
+ * do grupo; % sobre o valor total em aberto DELE. Chave = nome normalizado (sem acento, maiúsculo).
  */
 import { getSupabaseAdmin } from './supabaseAdmin.js'
 import { numeroSemanaDoDia } from './kpiSemanas.js'
@@ -52,7 +55,21 @@ function periodosDaData(iso, ano) {
   return [m, `s${String(numeroSemanaDoDia(ano, mes, dia)).padStart(2, '0')}`, Object.keys(QUARTERS).find(q => QUARTERS[q].includes(mes)), 'fy']
 }
 
-export async function getIndicadoresAuditoriaOs(ano) {
+export const normConsultor = (s) => norm(s).replace(/\s+/g, ' ')
+
+// Resultado guardado por 60 s: a Campanha pede o quadro de cada consultor quase ao mesmo tempo.
+const _memo = new Map() // ano → { ts, promessa }
+// incluirHoje: considera também as auditorias de HOJE; padrão só até ontem (Matriz › Considerar o dia atual).
+export function getIndicadoresAuditoriaOs(ano, { incluirHoje = false } = {}) {
+  const chave = `${ano}|${incluirHoje ? 1 : 0}`
+  const hit = _memo.get(chave)
+  if (hit && Date.now() - hit.ts < 60_000) return hit.promessa
+  const promessa = calcular(ano, incluirHoje).catch(err => { _memo.delete(chave); throw err })
+  _memo.set(chave, { ts: Date.now(), promessa })
+  return promessa
+}
+
+async function calcular(ano, incluirHoje = false) {
   const admin = getSupabaseAdmin()
   if (!admin) return null
 
@@ -62,22 +79,34 @@ export async function getIndicadoresAuditoriaOs(ano) {
     admin.from('aud_metas_indicadores').select('mes, meta_pendentes_pct, meta_mais30_pct').eq('ano', ano).then(r => r.data || []),
     admin.from('aud_configuracoes').select('meta_pendentes_pct, meta_mais30_pct').limit(1).maybeSingle().then(r => r.data || {}),
   ])
-  const audsTrucks = auds.map(a => ({ ...a, casa: casaDaEmpresa(a.empresa_nome) })).filter(a => a.casa)
+  const hojeMS = new Date(Date.now() - 4 * 3600 * 1000).toISOString().slice(0, 10)
+  const audsTrucks = auds.map(a => ({ ...a, casa: casaDaEmpresa(a.empresa_nome) }))
+    .filter(a => a.casa && (incluirHoje || String(a.data_auditoria) < hojeMS)) // sem o dia atual: auditorias até ontem
   if (!audsTrucks.length) return null
 
   // Totais de cada auditoria: valor total em aberto, sem veículo e 30+ dias na oficina.
   const linhas = await fetchTudo(() => admin.from('aud_auditoria_os')
-    .select('auditoria_id, total, na_oficina, data_criacao, data_auditoria')
+    .select('auditoria_id, total, na_oficina, data_criacao, data_auditoria, consultor_nome')
     .in('auditoria_id', audsTrucks.map(a => a.id)).order('id'))
   const somaPorAud = new Map()
-  for (const r of linhas) {
-    const s = somaPorAud.get(r.auditoria_id) || { total: 0, semVeiculo: 0, mais30: 0 }
+  const somaPorAudCons = new Map() // auditoria → Map(consultor normalizado → somas)
+  const somar = (s, r) => {
     const v = Number(r.total) || 0
     s.total += v
     if (r.na_oficina === false) s.semVeiculo += v
     const d = diasEntre(r.data_criacao, r.data_auditoria)
     if (r.na_oficina === true && d !== null && d >= 30) s.mais30 += v
-    somaPorAud.set(r.auditoria_id, s)
+  }
+  const novo = () => ({ total: 0, semVeiculo: 0, mais30: 0 })
+  for (const r of linhas) {
+    if (!somaPorAud.has(r.auditoria_id)) somaPorAud.set(r.auditoria_id, novo())
+    somar(somaPorAud.get(r.auditoria_id), r)
+    const c = normConsultor(r.consultor_nome)
+    if (!c) continue
+    if (!somaPorAudCons.has(r.auditoria_id)) somaPorAudCons.set(r.auditoria_id, new Map())
+    const porCons = somaPorAudCons.get(r.auditoria_id)
+    if (!porCons.has(c)) porCons.set(c, novo())
+    somar(porCons.get(c), r)
   }
 
   // Última auditoria de cada empresa em cada período.
@@ -97,10 +126,11 @@ export async function getIndicadoresAuditoriaOs(ano) {
     return v == null ? null : Number(v)
   }
   // Monta { realizado: {p: %}, meta: {p: %} } a partir das auditorias escolhidas de cada período.
-  const montar = (audsPorPeriodo, campoValor, campoMeta) => {
+  // somaDe(a) = somas da auditoria (padrão: a auditoria toda; por consultor: só as O.S. dele).
+  const montar = (audsPorPeriodo, campoValor, campoMeta, somaDe = (a) => somaPorAud.get(a.id)) => {
     const realizado = {}, meta = {}
     for (const [p, lista] of Object.entries(audsPorPeriodo)) {
-      const somas = lista.map(a => somaPorAud.get(a.id)).filter(Boolean)
+      const somas = lista.map(somaDe).filter(Boolean)
       const total = somas.reduce((s, x) => s + x.total, 0)
       if (!total) continue
       realizado[p] = (somas.reduce((s, x) => s + x[campoValor], 0) / total) * 100
@@ -127,5 +157,16 @@ export async function getIndicadoresAuditoriaOs(ano) {
     semVeiculo: montar(grupoPorPeriodo, 'semVeiculo', 'meta_pendentes_pct'),
     mais30: montar(grupoPorPeriodo, 'mais30', 'meta_mais30_pct'),
   }
-  return { porCasa, grupo }
+  // Por consultor: as O.S. dele nas mesmas auditorias do grupo (última de cada empresa no período).
+  const consultores = new Set()
+  for (const m of somaPorAudCons.values()) for (const c of m.keys()) consultores.add(c)
+  const porConsultor = {}
+  for (const c of consultores) {
+    const somaDe = (a) => somaPorAudCons.get(a.id)?.get(c)
+    porConsultor[c] = {
+      semVeiculo: montar(grupoPorPeriodo, 'semVeiculo', 'meta_pendentes_pct', somaDe),
+      mais30: montar(grupoPorPeriodo, 'mais30', 'meta_mais30_pct', somaDe),
+    }
+  }
+  return { porCasa, grupo, porConsultor }
 }

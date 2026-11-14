@@ -227,15 +227,16 @@ function PainelPendentes({ rows, base, reincidentes, fx, setFx, casa, txt, meta 
   // Por consultor (tabela e rosca): com todos os filtros, menos o de consultor
   const porConsultor = useMemo(() => {
     const m = new Map()
+    const linha = (k) => { if (!m.has(k)) m.set(k, { nome: k, abertoQtd: 0, abertoValor: 0, pendQtd: 0, pendValor: 0, reincQtd: 0, reincValor: 0 }); return m.get(k) }
+    // Total de O.S. em aberto do consultor (todas as O.S. da auditoria, com os outros filtros da aba)
+    rows.filter(r => casa(r, 'consultor')).forEach(r => { const c = linha(nomeConsultor(r)); c.abertoQtd++; c.abertoValor += Number(r.total) || 0 })
     base.filter(r => casa(r, 'consultor')).forEach(r => {
-      const k = nomeConsultor(r)
-      if (!m.has(k)) m.set(k, { nome: k, pendQtd: 0, pendValor: 0, reincQtd: 0, reincValor: 0 })
-      const c = m.get(k)
+      const c = linha(nomeConsultor(r))
       c.pendQtd++; c.pendValor += Number(r.total) || 0
       if (reincidentes?.has(r.os_numero)) { c.reincQtd++; c.reincValor += Number(r.total) || 0 }
     })
-    return [...m.values()].sort((a, b) => b.pendValor - a.pendValor)
-  }, [base, casa, reincidentes])
+    return [...m.values()].sort((a, b) => b.pendValor - a.pendValor || b.abertoValor - a.abertoValor)
+  }, [rows, base, casa, reincidentes])
   const totReinc = somar(pendentes.filter(r => reincidentes?.has(r.os_numero)))
   const donut = porConsultor.filter(c => c.pendValor > 0)
     .map((c, i) => ({ nome: c.nome, valor: c.pendValor, cor: PALETA[i % PALETA.length] }))
@@ -317,8 +318,11 @@ function PainelPendentes({ rows, base, reincidentes, fx, setFx, casa, txt, meta 
             <thead>
               <tr className="border-b border-slate-200 text-slate-600">
                 <th className="text-left font-semibold p-1">Consultor</th>
+                <th className="text-right font-semibold p-1">Total O.S. em Aberto</th>
+                <th className="text-right font-semibold p-1">Qtde</th>
                 <th className="text-right font-semibold p-1">O.S. Pendentes</th>
                 <th className="text-right font-semibold p-1">Qtde</th>
+                <th className="text-right font-semibold p-1" title="Valor das O.S. pendentes ÷ valor total de O.S. em aberto">%</th>
                 <th className="text-right font-semibold p-1 text-orange-700" title="Pendentes que já apareceram em auditorias anteriores da empresa">Reincidência</th>
                 <th className="text-right font-semibold p-1 text-orange-700">Qtde</th>
               </tr>
@@ -329,8 +333,11 @@ function PainelPendentes({ rows, base, reincidentes, fx, setFx, casa, txt, meta 
                   className={`border-b border-slate-100 cursor-pointer ${fx.consultor === c.nome ? 'bg-indigo-100 font-semibold' : 'odd:bg-slate-50/60 hover:bg-indigo-50'} ${esmaecer('consultor', c.nome) ? 'opacity-40' : ''}`}
                   onClick={() => alternarFx('consultor', c.nome)} title="Clique para filtrar a aba por este consultor">
                   <td className="p-1 whitespace-nowrap">{c.nome}</td>
+                  <td className="p-1 text-right whitespace-nowrap">{fmt(c.abertoValor)}</td>
+                  <td className="p-1 text-right">{c.abertoQtd}</td>
                   <td className="p-1 text-right whitespace-nowrap">{fmt(c.pendValor)}</td>
                   <td className="p-1 text-right">{c.pendQtd}</td>
+                  <td className="p-1 text-right">{c.abertoValor ? `${(c.pendValor / c.abertoValor * 100).toFixed(2).replace('.', ',')}%` : '—'}</td>
                   <td className={celReinc(fx.reinc && fx.consultor === c.nome)}
                     onClick={e => { e.stopPropagation(); if (reincidentes) alternarReincConsultor(c.nome) }}
                     title="Clique para ver só as reincidências deste consultor">{reincidentes ? fmt(c.reincValor) : '…'}</td>
@@ -341,8 +348,11 @@ function PainelPendentes({ rows, base, reincidentes, fx, setFx, casa, txt, meta 
               ))}
               <tr className="font-bold">
                 <td className="p-1">Total</td>
+                <td className="p-1 text-right whitespace-nowrap">{fmt(total.valor)}</td>
+                <td className="p-1 text-right">{total.qtd}</td>
                 <td className="p-1 text-right whitespace-nowrap">{fmt(tot.valor)}</td>
                 <td className="p-1 text-right">{tot.qtd}</td>
+                <td className="p-1 text-right">{total.valor ? `${(pct * 100).toFixed(2).replace('.', ',')}%` : '—'}</td>
                 <td className={celReinc(fx.reinc && !fx.consultor)} onClick={() => reincidentes && alternarFx('reinc', true)}
                   title="Clique para ver só as reincidências">{reincidentes ? fmt(totReinc.valor) : '…'}</td>
                 <td className={celReinc(fx.reinc && !fx.consultor)} onClick={() => reincidentes && alternarFx('reinc', true)}>

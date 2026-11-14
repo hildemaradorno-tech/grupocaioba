@@ -211,14 +211,36 @@ export default function GarantiasDafManual() {
               no Controle e no Dashboard. Ao clicar na engrenagem abre uma lista com um item para cada aba —{' '}
               <Btn icon={Activity}>Regras — Na Oficina</Btn>, <Btn icon={FileText}>Regras — Com Garantista</Btn> e{' '}
               <Btn icon={DollarSign}>Regras — Títulos a Receber</Btn> —, cada um com a descrição do que controla. O item escolhido abre
-              uma janela só com as regras daquela aba; <Btn>Salvar</Btn> grava e a tela já passa a usar o valor novo.
+              uma janela só com as regras daquela aba (regra geral + regra por mês); <Btn>Salvar</Btn> grava e a tela já passa a usar o valor novo.
             </p>
             {carregando ? (
               <p className="flex items-center gap-2 text-slate-400"><Loader2 className="h-4 w-4 animate-spin" /> Carregando regras...</p>
             ) : (
               <>
+                <Sub titulo="Regra geral e regra por mês (todos os menus)">
+                  <p>
+                    Cada janela tem a <strong>Regra geral (meses em branco)</strong> e, abaixo, a <strong>Regra por mês</strong>: seletor
+                    de ano ◀ Ano ▶ e uma tabela de Janeiro a Dezembro para digitar os dias de cada mês, ano a ano. Mês em branco usa a regra
+                    geral (o valor geral aparece em cinza no campo). <Btn>Copiar Janeiro para todos os meses</Btn> repete Janeiro no ano
+                    inteiro; dá para mexer em mais de um ano e <Btn>Salvar</Btn> grava tudo de uma vez.
+                  </p>
+                  <p>
+                    Cada O.S. ou título usa a regra do <strong>mês em que a contagem começa</strong>: Dias na Oficina → mês da criação da OS;
+                    Digitação → mês do fechamento da OS; Solução → mês em que a garantia foi digitada; Recusa → mês da Data Final Avaliação
+                    (sem ela, Data SG); Envio da NF → mês da emissão da NF. Uma O.S. aberta em março segue a regra de março até o fim.
+                  </p>
+                  <p>
+                    Em Com Garantista, a coluna <strong>Por tipo</strong> (botão <Btn>Definir</Btn>, ou a quantidade de tipos já
+                    preenchidos) abre o prazo de solução por tipo de OS só daquele mês. Ordem
+                    usada: tipo no mês → Solução do mês → tipo na regra geral → regra geral.
+                  </p>
+                  <p>
+                    Quando as O.S. de um card caem em meses com regras diferentes, o texto do card mostra a faixa (ex.: "10 a 14 dias").
+                    Os valores abaixo são os da regra geral.
+                  </p>
+                </Sub>
                 <Sub titulo="Dias na Oficina (menu Na Oficina)">
-                  <p>Valor atual: <Valor>{diasOficina} dia{diasOficina === 1 ? '' : 's'}</Valor></p>
+                  <p>Regra geral: <Valor>{diasOficina} dia{diasOficina === 1 ? '' : 's'}</Valor></p>
                   <p>
                     Contado a partir da <strong>data de criação da OS</strong>. Controla o card Mais de {diasOficina} Dias na Oficina da aba Na Oficina.
                   </p>
@@ -231,7 +253,7 @@ export default function GarantiasDafManual() {
                   </div>
                 </Sub>
                 <Sub titulo="Dias para Tratar Recusa (menu Com Garantista)">
-                  <p>Valor atual: <Valor>{diasRecusa} dia{diasRecusa === 1 ? '' : 's'}</Valor></p>
+                  <p>Regra geral: <Valor>{diasRecusa} dia{diasRecusa === 1 ? '' : 's'}</Valor></p>
                   <p>
                     Contado a partir da <strong>Data Final Avaliação</strong> (dia em que a DAF recusou; sem essa data, como no status Z, conta da Data SG).
                     Controla as linhas do card Recusas, no Controle e no Dashboard:
@@ -243,7 +265,7 @@ export default function GarantiasDafManual() {
                   <p>Cada linha mostra quantidade e valor; clicar nela filtra só essas OS.</p>
                 </Sub>
                 <Sub titulo="Dias para Digitação (menu Com Garantista)">
-                  <p>Valor atual: <Valor>{diasDigitacao} dia{diasDigitacao === 1 ? '' : 's'}</Valor></p>
+                  <p>Regra geral: <Valor>{diasDigitacao} dia{diasDigitacao === 1 ? '' : 's'}</Valor></p>
                   <p><strong>D</strong> = dia em que a OS foi fechada.</p>
                   <ul className="space-y-1 pl-1">
                     <li>• <strong>A Digitar</strong>: de D até <Valor>D+{diasDigitacao}</Valor></li>
@@ -290,7 +312,7 @@ export default function GarantiasDafManual() {
                   </p>
                 </Sub>
                 <Sub titulo="Dias para Envio da NF (menu Títulos a Receber)">
-                  <p>Valor atual: <Valor>{diasNfEnvio} dia{diasNfEnvio === 1 ? '' : 's'}</Valor></p>
+                  <p>Regra geral: <Valor>{diasNfEnvio} dia{diasNfEnvio === 1 ? '' : 's'}</Valor></p>
                   <p>
                     Contado a partir da <strong>data de emissão da NF</strong>. Controla a linha <strong>NF sem envio</strong> do card
                     Pendências: NF não enviada à fábrica e emitida há <Valor>{diasNfEnvio} dia{diasNfEnvio === 1 ? '' : 's'}</Valor> ou mais.

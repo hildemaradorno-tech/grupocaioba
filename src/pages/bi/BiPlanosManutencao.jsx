@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { createPortal } from 'react-dom'
 import { Bar, CartesianGrid, ComposedChart, LabelList, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { Target, CheckCircle2, XCircle, Goal, Pencil, ListChecks, Table2, BarChart3, LayoutDashboard, BookOpen, Building2, Calendar, CalendarClock, CalendarX2, ChevronDown, ChevronsUpDown, ChevronUp, FilePlus2, FileSearch, FileX2, Info, Play, RefreshCw, Repeat, Search, Settings, Upload, Truck, Wrench, X } from 'lucide-react'
@@ -946,7 +947,9 @@ export default function BiPlanosManutencao() {
   }
   const [empresas, setEmpresas] = useState([])
   const [empresasSel, setEmpresasSel] = useState([]) // vazio = todas
-  const [aba, setAba] = useState(() => abasVisiveis[0] || '') // '' = nenhuma aba liberada (não mostra conteúdo)
+  // ?aba=<nome da aba> (ex.: atalho da Matriz KPIs) abre direto nela, se estiver liberada.
+  const [paramsUrl] = useSearchParams()
+  const [aba, setAba] = useState(() => (abasVisiveis.includes(paramsUrl.get('aba')) ? paramsUrl.get('aba') : abasVisiveis[0] || '')) // '' = nenhuma aba liberada (não mostra conteúdo)
   // Se a aba aberta não estiver liberada (permissões carregadas depois), vai para a primeira liberada.
   useEffect(() => { if (!abasVisiveis.includes(aba)) setAba(abasVisiveis[0] || '') }, [abasVisiveis.join(','), aba])
   const [anoSel, setAnoSel] = useState(ANO_ATUAL)

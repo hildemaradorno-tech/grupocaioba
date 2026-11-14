@@ -10,6 +10,7 @@ import { useKpiYear } from '../../context/KpiYearContext'
 import { useAuth } from '../../context/AuthContext'
 import { PosVendaQuadros } from './KpiBloco3PosVenda'
 import { useExpandirQuadro } from '../../components/kpi/useExpandirQuadro'
+import OrigemIndicador from '../../components/kpi/OrigemIndicador'
 
 const BLOCO_PESOS = 'bloco3-servicos'
 const QUADRO_CONSULTOR = 'CONSULTOR DE SERVIÇOS'
@@ -135,7 +136,8 @@ function PesoInput({ value, onSave }) {
 // HistoricoComissoes.jsx) pra escapar do overflow-hidden/overflow-x-auto do card da tabela —
 // um simples position:absolute ficaria cortado ali dentro.
 // alertaVazio: sem seleção, o texto do placeholder fica em vermelho (ex.: "Selecione a empresa…").
-function PessoaSelector({ lista, selecionado, onSelecionar, onLimpar, placeholderTodos, placeholderBusca, vazioMsg, alertaVazio = false }) {
+// opcaoTodos: texto de uma 1ª opção da lista que volta ao total (ex.: "Todas as empresas" nos Setores).
+function PessoaSelector({ lista, selecionado, onSelecionar, onLimpar, placeholderTodos, placeholderBusca, vazioMsg, alertaVazio = false, opcaoTodos = null }) {
   const [aberto, setAberto] = useState(false)
   const [busca, setBusca] = useState('')
   const [pos, setPos] = useState(null)
@@ -207,6 +209,15 @@ function PessoaSelector({ lista, selecionado, onSelecionar, onLimpar, placeholde
             className="w-full text-[11px] font-normal px-2 py-1.5 border-b border-slate-100 focus:outline-none"
           />
           <div className="overflow-y-auto py-1">
+            {opcaoTodos && !busca.trim() && (
+              <button
+                type="button"
+                onClick={() => { onLimpar(); setAberto(false) }}
+                className={`w-full text-left px-2 py-1.5 text-[11px] border-b border-slate-100 hover:bg-slate-50 transition-colors ${!selecionado ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-700 font-medium'}`}
+              >
+                {opcaoTodos}
+              </button>
+            )}
             {filtrados.length === 0 ? (
               <p className="px-2 py-1.5 text-[11px] text-slate-400">{vazioMsg}</p>
             ) : filtrados.map(v => (
@@ -229,9 +240,11 @@ function PessoaSelector({ lista, selecionado, onSelecionar, onLimpar, placeholde
 
 // Indicadores sem meta automática: o usuário digita a meta, só na visão Mensal (Consultor de
 // Serviços e Mecânico, que não têm fonte de meta pra Eficácia/Produtividade da Oficina).
-const INDICADORES_META_MANUAL = new Set(['Eficácia da Oficina', 'Produtividade da Oficina', 'Digitação Atrasada', 'Aguardando Aprovação DAF (fora do prazo)', 'Aprovada sem Faturamento', 'Recusadas sem Solução (fora do prazo)', 'Garantias a Receber Vencidas'])
-// Só os de horas trazem a observação de faturamento.
-const INDICADORES_NOTA_FATURAMENTO = new Set(['Eficácia da Oficina', 'Produtividade da Oficina'])
+// SETOR GARANTIA não entra: a meta vem de Garantias DAF (engrenagem → Metas — Setor Garantia).
+const INDICADORES_META_MANUAL = new Set(['Eficácia da Oficina', 'Produtividade da Oficina'])
+// Exceção: CONSULTOR DE SERVIÇOS › Produtividade da Oficina — a meta vem das Regras de Cores da tela
+// Pós-Vendas › Indicadores de Produtividade (limite inferior da faixa verde); não se digita aqui.
+const metaDeOutraTela = (tituloGerente, indicador) => tituloGerente === 'CONSULTOR DE SERVIÇOS' && indicador === 'Produtividade da Oficina'
 
 
 // Botão ao lado do nome do indicador (fundo amarelo, pra deixar evidente que a meta pode ser
@@ -408,16 +421,15 @@ function QuadroTable({ quadro, activePeriods, mesTotalKey, year, onSalvarPeso, o
             </tr>
           </thead>
           <tbody>
-            {quadro.kpis.map(row => (
+            {quadro.kpis.map((row, pos) => (
               <tr key={row.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
-                <td className="px-3 py-2.5 text-center text-slate-400 font-mono">{row.id}</td>
+                {/* Posição na lista (o id fica interno: pesos e metas gravados por ele). */}
+                <td className="px-3 py-2.5 text-center text-slate-400 font-mono">{pos + 1}</td>
                 <td className="px-4 py-2.5 font-medium text-slate-700 sticky left-0 bg-white">
                   {row.indicador}
-                  {!somenteLeitura && INDICADORES_META_MANUAL.has(row.indicador) && (
+                  <OrigemIndicador indicador={row.indicador} quadro={quadro.tituloGerente} />
+                  {!somenteLeitura && INDICADORES_META_MANUAL.has(row.indicador) && !metaDeOutraTela(quadro.tituloGerente, row.indicador) && (
                     <PreencherMesesButton metrica={row.metrica} onAplicar={(meses, valor) => onSalvarMetasVarios(quadro.tituloGerente, row.id, meses, valor)} />
-                  )}
-                  {INDICADORES_NOTA_FATURAMENTO.has(row.indicador) && (
-                    <div className="text-[10px] font-normal italic text-slate-400">*Valores relacionados a faturamento</div>
                   )}
                 </td>
                 <td className="px-2 py-2.5 text-center font-bold text-slate-600">{row.orientacao}</td>
@@ -430,7 +442,9 @@ function QuadroTable({ quadro, activePeriods, mesTotalKey, year, onSalvarPeso, o
                   const contrib = (ating !== null && row.pesoObj != null) ? ating * row.pesoObj : null
                   // Meta digitada (Eficácia, garantias…): só leitura na tabela — preenche pelo lápis
                   // "Preencher meses" ao lado do indicador.
-                  const metaDigitada = INDICADORES_META_MANUAL.has(row.indicador)
+                  // Sem funcionário escolhido, a meta digitada continua aparecendo — menos a Produtividade da
+                  // Oficina do Consultor (meta das Regras de Cores): essa só com o consultor selecionado.
+                  const metaDigitada = INDICADORES_META_MANUAL.has(row.indicador) && !metaDeOutraTela(quadro.tituloGerente, row.indicador)
                   if (ocultarValores) {
                     // Meta digitada é do quadro, não da pessoa: continua aparecendo.
                     return (
@@ -542,8 +556,11 @@ function ServicosQuadros({ year, activePeriods, mesTotalKey, somenteLeitura = fa
   const [empresaFunilaria, setEmpresaFunilaria] = useState(EMPRESAS_OFICINA.includes(empresaOficinaInicial) ? empresaOficinaInicial : null)
   const [empresaGarantia, setEmpresaGarantia] = useState(EMPRESAS_OFICINA.includes(empresaOficinaInicial) ? empresaOficinaInicial : null)
 
-  const { data: quadros } = useKpiData(fetchBloco3Servicos, MOCK_BLOCO3_SERVICOS, {
+  const { incluirHoje } = useKpiYear() // Matriz: período em andamento até ontem, ou até agora
+  // atualizado = false: os quadros na tela ainda são do filtro anterior (resposta nova a caminho).
+  const { data: quadros, atualizado } = useKpiData(fetchBloco3Servicos, MOCK_BLOCO3_SERVICOS, {
     year,
+    incluirHoje: incluirHoje || undefined,
     consultor: consultorFiltro.aplicado || undefined,
     mecanico: mecanicoFiltro.aplicado || undefined,
     // Quadros da aba Setores: sem empresa escolhida = todas as lojas juntas ('TODAS' no backend).
@@ -636,8 +653,10 @@ function ServicosQuadros({ year, activePeriods, mesTotalKey, somenteLeitura = fa
               onSalvarMetaManual={handleSalvarMetaManual}
               onSalvarMetasVarios={handleSalvarMetasVarios}
               somenteLeitura={somenteLeitura}
-              ocultarValores={!!filtro && !filtro.aplicado && !ehSetorTotal}
-              msgOcultar={null /* o aviso ("Selecione…para ver os valores") vai dentro do seletor */}
+              // Sem pessoa/empresa escolhida, ou ainda carregando a escolha nova (não mostra os números do
+              // filtro anterior — ex.: o total do grupo no lugar da consultora escolhida).
+              ocultarValores={(!!filtro && !filtro.aplicado && !ehSetorTotal) || !atualizado}
+              msgOcultar={!atualizado ? 'Carregando…' : null /* o aviso ("Selecione…para ver os valores") vai dentro do seletor */}
               icon={Wrench}
               pessoaSelector={filtro && (
                 <PessoaSelector
@@ -647,6 +666,7 @@ function ServicosQuadros({ year, activePeriods, mesTotalKey, somenteLeitura = fa
                   onLimpar={() => filtro.setAplicado(null)}
                   placeholderTodos={ehConsultor || ehMecanico ? 'Selecione um funcionário para ver os valores' : ehSetorTotal ? 'Todas as empresas' : 'Selecione a empresa para ver os valores'}
                   alertaVazio={!ehSetorTotal}
+                  opcaoTodos={ehSetorTotal ? 'Todas as empresas' : null}
                   placeholderBusca={ehConsultor ? 'Buscar consultor...' : ehMecanico ? 'Buscar mecânico...' : 'Buscar empresa...'}
                   vazioMsg={ehConsultor ? 'Nenhum consultor encontrado.' : ehMecanico ? 'Nenhum mecânico encontrado.' : 'Nenhuma empresa encontrada.'}
                 />

@@ -1105,6 +1105,22 @@ export const apiService = {
     return body
   },
 
+  getEmailStatusAuth: async () => {
+    const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
+    const res = await fetch(`${backendUrl}/api/auth/email-status`)
+    const body = await res.json()
+    if (!res.ok) throw new Error(body.error || 'Erro ao consultar confirmação de e-mail')
+    return body
+  },
+
+  confirmarEmailUsuario: async (id) => {
+    const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
+    const res = await fetch(`${backendUrl}/api/auth/confirm-email/${id}`, { method: 'PUT' })
+    const body = await res.json()
+    if (!res.ok) throw new Error(body.error || 'Erro ao confirmar e-mail')
+    return body
+  },
+
   updateSenhaUsuario: async (id, senha) => {
     const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
     const res = await fetch(`${backendUrl}/api/auth/update-password/${id}`, {
@@ -2176,6 +2192,21 @@ export const apiService = {
       const { data, error } = await supabase.rpc('bi_medidas_agregado', {
         p_inicio: dataInicio, p_fim: dataFim, p_empresas_norm: empresasNorm?.length ? empresasNorm : null,
       }).order('medida_id').order('tipo_os').order('funcionario').range(de, de + PAGE - 1)
+      if (error) throw error
+      todas.push(...(data || []))
+      if (!data || data.length < PAGE) break
+    }
+    return todas
+  },
+
+  // Aba Evolução: mesma soma por MÊS × Medida × Tipo de OS (função bi_medidas_agregado_mensal). Paginado.
+  getBiMedidasAgregadoMensal: async ({ dataInicio, dataFim, empresasNorm }) => {
+    const PAGE = 1000
+    const todas = []
+    for (let de = 0; ; de += PAGE) {
+      const { data, error } = await supabase.rpc('bi_medidas_agregado_mensal', {
+        p_inicio: dataInicio, p_fim: dataFim, p_empresas_norm: empresasNorm?.length ? empresasNorm : null,
+      }).order('medida_id').order('ano').order('mes').order('tipo_os').range(de, de + PAGE - 1)
       if (error) throw error
       todas.push(...(data || []))
       if (!data || data.length < PAGE) break
@@ -3615,6 +3646,51 @@ export const apiService = {
       .single()
     if (error) throw error
     return data
+  },
+
+  // Regras do sistema por mês (gar_regras_mes) — sem ano = todos os meses cadastrados.
+  // NULL no mês = vale a regra geral (gar_configuracoes).
+  getRegrasGarantiasMes: async (ano) => {
+    let q = supabase.from('gar_regras_mes').select('*')
+    if (ano) q = q.eq('ano', ano)
+    const { data, error } = await q.order('ano').order('mes')
+    if (error) throw error
+    return data || []
+  },
+
+  // linhas: [{ mes, ...só os campos da aba }] — o upsert altera só as colunas enviadas
+  saveRegrasGarantiasMes: async (ano, linhas, userEmail) => {
+    const agora = new Date().toISOString()
+    const { error } = await supabase
+      .from('gar_regras_mes')
+      .upsert(linhas.map(l => ({ ano, ...l, atualizado_em: agora, atualizado_por: userEmail })), { onConflict: 'ano,mes' })
+    if (error) throw error
+  },
+
+  // Metas dos indicadores do SETOR GARANTIA (Matriz KPIs), por empresa: geral (ano 0, mes 0) e por mês.
+  getGarantiaMetas: async (empresa) => {
+    let q = supabase.from('gar_metas_indicadores').select('empresa, ano, mes, indicador, meta')
+    if (empresa) q = q.eq('empresa', empresa)
+    const { data, error } = await q
+    if (error) throw error
+    return data || []
+  },
+
+  // linhas: [{ empresa, ano, mes, indicador, meta }] — meta null/'' apaga a linha (volta a valer a geral / sem meta)
+  saveGarantiaMetas: async (linhas, userEmail) => {
+    const agora = new Date().toISOString()
+    const gravar = linhas.filter(l => l.meta != null && l.meta !== '')
+      .map(l => ({ ...l, meta: Number(l.meta), atualizado_em: agora, atualizado_por: userEmail }))
+    const apagar = linhas.filter(l => l.meta == null || l.meta === '')
+    if (gravar.length) {
+      const { error } = await supabase.from('gar_metas_indicadores').upsert(gravar, { onConflict: 'empresa,ano,mes,indicador' })
+      if (error) throw error
+    }
+    for (const l of apagar) {
+      const { error } = await supabase.from('gar_metas_indicadores').delete()
+        .eq('empresa', l.empresa).eq('ano', l.ano).eq('mes', l.mes).eq('indicador', l.indicador)
+      if (error) throw error
+    }
   },
 
   getGarantias: async (filtros = {}) => {

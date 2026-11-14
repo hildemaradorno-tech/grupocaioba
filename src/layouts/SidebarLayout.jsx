@@ -32,11 +32,12 @@ function getActiveSectionKey(pathname) {
   if (pathname.startsWith('/metas')) return '_metas'
   if (pathname.startsWith('/garantias-daf')) return '_bi'
   if (pathname.startsWith('/auditoria') || pathname.startsWith('/garantia') || pathname.startsWith('/honda') || pathname.startsWith('/truckpag') || pathname.startsWith('/bpm')) return '_controle-processos'
-  if (pathname.startsWith('/projetos') || pathname.startsWith('/auditoria-externa')) return '_gestao-projetos'
+  if (pathname.startsWith('/projetos') || pathname.startsWith('/auditoria-externa') || pathname.startsWith('/bi/projetos')) return '_gestao-projetos'
   if (pathname.startsWith('/calculadoras')) return '_controle-processos'
   if (pathname.startsWith('/bi') || pathname.startsWith('/kpi')) return '_bi'
   if (pathname.startsWith('/documentacoes') || pathname.startsWith('/rpa') || pathname.startsWith('/ecossistema')) return '_documentacoes'
   if (pathname.startsWith('/treinamentos')) return '_treinamentos'
+  if (pathname.startsWith('/pos-vendas')) return '_bi' // Indicadores de Produtividade e Possibilidades: BI › Pós-Vendas
   if (pathname === '/pecas/configuracao' || pathname === '/pecas-motos/configuracao') return '_config'
   // Gestor de Peças 2.0 fica dentro de Controle de Processos
   if (pathname.startsWith('/pecas')) return '_controle-processos'
@@ -574,6 +575,8 @@ export default function SidebarLayout() {
             <FlyGroup label="Gestão de Projetos" />
             {canView('projetos') && <FlyItem to="/projetos" icon={FolderKanban} onClose={closeFlyout}>Projetos</FlyItem>}
             {canView('projetos/custos') && <FlyItem to="/projetos/custos" icon={Wallet} onClose={closeFlyout}>Custos de Projetos</FlyItem>}
+            {/* BI de projetos (veio do BI - Dashboard, 13/11/2026) — endereço /bi/projetos mantido. */}
+            {canView('bi/projetos') && <FlyItem to="/bi/projetos" icon={PieChart} onClose={closeFlyout}>BI — Gestão de Projetos</FlyItem>}
 
             {(canView('auditoria-externa/ciclos') || canView('auditoria-externa/dashboard') || canView('auditoria-externa/divergencias') || canView('auditoria-externa/plano-acao') || canView('auditoria-externa/tipos-acao')) && (
               <FlyItem to="/auditoria-externa/dashboard" icon={ShieldAlert} onClose={closeFlyout}>Auditoria Externa</FlyItem>
@@ -596,15 +599,26 @@ export default function SidebarLayout() {
       case '_bi':
         return (
           <>
-            <FlyGroup label="BI - Dashboard" />
-            {/* Garantias DAF (Dashboard | Controle) fica só aqui, desde nov/2026 */}
-            {(canView('bi/garantias-daf') || canView('garantias-daf-andamento') || canView('garantias-daf') || canView('garantias-daf-historicodeos') || canView('garantias-daf-titulos')) && <FlyItem to="/bi/garantias-daf" icon={ShieldCheck} onClose={closeFlyout}>Garantias DAF</FlyItem>}
+            {canViewSection('_bi.gestao') && (
+              <>
+                <FlyGroup label="Gestão" />
+                {canViewSection('_bi.kpis') && <FlyItem to="/kpi/matriz" icon={BarChart2} onClose={closeFlyout}>Matriz KPIs - DAF</FlyItem>}
+                {/* Campanha Pós-Venda logo abaixo da Matriz KPIs (usa os blocos da Matriz). */}
+                {['bi/campanha/regras', 'bi/campanha/apuracao', 'bi/campanha/resultado', 'bi/campanha/pagamento'].some(canView) && <FlyItem to="/bi/campanha" icon={Trophy} onClose={closeFlyout}>Campanha Pós-Venda - DAF</FlyItem>}
+                <div className="mx-3 my-2 border-t border-blue-800/50" />
+              </>
+            )}
+            <FlyGroup label="Pós-Vendas" />
+            {/* Em ordem alfabética (13/11/2026). Indicadores de Produtividade e Possibilidades vieram do antigo
+                menu Pós-Vendas — endereços /pos-vendas/... mantidos. */}
+            {canView('bi/agendamento-servicos') && <FlyItem to="/bi/agendamento-servicos" icon={Calendar} onClose={closeFlyout}>Agendamento de Serviços</FlyItem>}
             {/* Auditoria O.S. Aberta (Dashboard | Controle) fica só aqui, desde nov/2026 */}
             {(canView('auditoria-os-aberto/dashboard') || canView('auditoria-os-aberto')) && <FlyItem to="/bi/auditoria-os-aberto" icon={ClipboardList} onClose={closeFlyout}>Auditoria O.S. Aberta</FlyItem>}
-            {canView('bi/projetos') && <FlyItem to="/bi/projetos" icon={FolderKanban} onClose={closeFlyout}>Gestão de Projetos</FlyItem>}
-            {canView('bi/possibilidades') && <FlyItem to="/bi/possibilidades" icon={Gauge} onClose={closeFlyout}>Possibilidades</FlyItem>}
-            {canView('bi/agendamento-servicos') && <FlyItem to="/bi/agendamento-servicos" icon={Calendar} onClose={closeFlyout}>Agendamento de Serviços</FlyItem>}
+            {/* Garantias DAF (Dashboard | Controle) fica só aqui, desde nov/2026 */}
+            {(canView('bi/garantias-daf') || canView('garantias-daf-andamento') || canView('garantias-daf') || canView('garantias-daf-historicodeos') || canView('garantias-daf-titulos')) && <FlyItem to="/bi/garantias-daf" icon={ShieldCheck} onClose={closeFlyout}>Garantias DAF</FlyItem>}
+            {canView('pos-vendas/produtividade') && <FlyItem to="/pos-vendas/produtividade" icon={Gauge} onClose={closeFlyout}>Indicadores de Produtividade</FlyItem>}
             {canView('bi/planos-manutencao') && <FlyItem to="/bi/planos-manutencao" icon={Wrench} onClose={closeFlyout}>Planos de Manutenção</FlyItem>}
+            {canView('bi/possibilidades') && <FlyItem to="/pos-vendas/possibilidades" icon={Gauge} onClose={closeFlyout}>Possibilidades</FlyItem>}
             {canViewSection('_bi.fontes-dados') && (
               <>
                 <div className="mx-3 my-2 border-t border-blue-800/50" />
@@ -612,14 +626,6 @@ export default function SidebarLayout() {
                 {canView('bi/medidas') && <FlyItem to="/bi/medidas" icon={Ruler} onClose={closeFlyout}>Medidas BI</FlyItem>}
               </>
             )}
-            {canViewSection('_bi.kpis') && (
-              <>
-                <div className="mx-3 my-2 border-t border-blue-800/50" />
-                <FlyItem to="/kpi/matriz" icon={BarChart2} onClose={closeFlyout}>Matriz KPIs - DAF</FlyItem>
-              </>
-            )}
-            {/* Campanha Pós-Venda logo abaixo da Matriz KPIs (usa os blocos da Matriz). */}
-            {['bi/campanha/regras', 'bi/campanha/apuracao', 'bi/campanha/resultado', 'bi/campanha/pagamento'].some(canView) && <FlyItem to="/bi/campanha" icon={Trophy} onClose={closeFlyout}>Campanha Pós-Venda - DAF</FlyItem>}
           </>
         )
 

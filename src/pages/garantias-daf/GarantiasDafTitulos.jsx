@@ -9,6 +9,7 @@ import MenuEngrenagem from '../../components/MenuEngrenagem'
 import { useAuth } from '../../context/AuthContext'
 import { useEmpresasGarantias } from '../../hooks/useEmpresasGarantias'
 import EngrenagemRegras from './EngrenagemRegras'
+import { carregarRegrasMes, regraDoMes, textoFaixaDias } from './regrasGarantiasMes'
 import RegistroHistoricoPanel from './RegistroHistoricoPanel'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
@@ -99,8 +100,11 @@ export default function GarantiasDafTitulos({ onLastModified, slotAcoes } = {}) 
   const canRegras = hasActionOrDefault('garantias-daf', 'regras') || hasActionOrDefault('garantias-daf-andamento', 'regras')
   // Regra "Dias para Envio da NF" (card NF sem envio) — padrão 4 enquanto a coluna não existir no banco
   const [diasNfEnvio, setDiasNfEnvio] = useState(4)
+  // Regras por mês (gar_regras_mes): cada título usa a do mês da emissão da NF; mês vazio = geral
+  const [regrasMes, setRegrasMes] = useState({})
   useEffect(() => {
     apiService.getConfiguracoesGarantias().then(cfg => setDiasNfEnvio(cfg?.dias_nf_envio ?? 4)).catch(() => {})
+    carregarRegrasMes().then(setRegrasMes)
   }, [])
   const location = useLocation()
   const navigate = useNavigate()
@@ -257,7 +261,9 @@ export default function GarantiasDafTitulos({ onLastModified, slotAcoes } = {}) 
 
   // Crítico: NF sem envio à fábrica e emitida há N dias ou mais (com base na data de Emissão).
   // N = "Dias para Envio da NF" (engrenagem → Títulos a Receber; gar_configuracoes.dias_nf_envio, padrão 4).
-  const ehCritico = (r) => !temEnvioTitulo(r) && (diasDesdeEmissao(r) ?? -1) >= diasNfEnvio
+  // Regra do mês da emissão (gar_regras_mes); mês sem regra = geral.
+  const nfEnvioDe = (r) => regraDoMes(regrasMes, 'dias_nf_envio', r.data_emissao, diasNfEnvio)
+  const ehCritico = (r) => !temEnvioTitulo(r) && (diasDesdeEmissao(r) ?? -1) >= nfEnvioDe(r)
 
   // Vencido / Vence Hoje / A Vencer: pela Data de Vencimento comparada à data de hoje — não pela
   // coluna "Atr." do RFN003, que fica travada em 0 para títulos já vencidos (campo do Dealer.net
@@ -313,7 +319,7 @@ export default function GarantiasDafTitulos({ onLastModified, slotAcoes } = {}) 
       out = [...out].sort((a, b) => String(a.data_vencimento || '').localeCompare(String(b.data_vencimento || '')))
     }
     return out
-  }, [aplicarFiltrosBase, filtroSituacao, situacaoDeLinha, filtroCritico, filtroCardSemVinculo, garantiasOsSet, filtroCardVencido, filtroCardVenceHoje, filtroCardAVencer, diasNfEnvio, temEnvioTitulo])
+  }, [aplicarFiltrosBase, filtroSituacao, situacaoDeLinha, filtroCritico, filtroCardSemVinculo, garantiasOsSet, filtroCardVencido, filtroCardVenceHoje, filtroCardAVencer, diasNfEnvio, regrasMes, temEnvioTitulo])
 
   // Base dos cards de alerta: só os filtros de base (tipo/empresa/período/busca) — contagens
   // absolutas, independentes da pill de Situação e dos próprios toggles dos cards.
@@ -321,7 +327,8 @@ export default function GarantiasDafTitulos({ onLastModified, slotAcoes } = {}) 
     () => aplicarFiltrosBase(titulosRows),
     [titulosRows, aplicarFiltrosBase]
   )
-  const grpNfCritica = useMemo(() => baseAlerta.filter(ehCritico), [baseAlerta, diasNfEnvio, temEnvioTitulo])
+  const grpNfCritica = useMemo(() => baseAlerta.filter(ehCritico), [baseAlerta, diasNfEnvio, regrasMes, temEnvioTitulo]) // eslint-disable-line react-hooks/exhaustive-deps
+  const nfEnvioTexto = textoFaixaDias(baseAlerta.filter(r => r.data_emissao).map(nfEnvioDe), diasNfEnvio)
   // Títulos cuja OS ainda não está vinculada (cadastrada) em Histórico de O.S.
   const grpNaoVinculado = useMemo(
     () => baseAlerta.filter(r => !garantiasOsSet.has(String(r.os_numero ?? '').trim())),
@@ -449,7 +456,7 @@ export default function GarantiasDafTitulos({ onLastModified, slotAcoes } = {}) 
             </button>
             {canRegras && (
               <EngrenagemRegras usuario={user?.email}
-                onSalvo={(cfg) => { if (cfg?.dias_nf_envio) setDiasNfEnvio(cfg.dias_nf_envio) }} />
+                onSalvo={(cfg, meses) => { if (cfg?.dias_nf_envio) setDiasNfEnvio(cfg.dias_nf_envio); if (meses) setRegrasMes(meses) }} />
             )}
             <button
               onClick={() => window.open('/garantias-daf-manual', '_blank')}
@@ -491,7 +498,7 @@ export default function GarantiasDafTitulos({ onLastModified, slotAcoes } = {}) 
               type="button"
               onClick={toggleFiltroCritico}
               className={`w-full text-left rounded-md px-2 py-1.5 transition-all hover:bg-slate-200 ${filtroCritico ? 'bg-slate-200 ring-2 ring-slate-400' : ''}`}
-              title={`NF sem envio à fábrica (Emissão ≥ ${diasNfEnvio} dia${diasNfEnvio === 1 ? '' : 's'})`}
+              title={`NF sem envio à fábrica (Emissão ≥ ${nfEnvioTexto})`}
             >
               <div className="flex items-center gap-1.5">
                 <ArrowDown className="h-3 w-3 text-slate-500 shrink-0" />

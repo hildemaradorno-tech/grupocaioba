@@ -1,7 +1,8 @@
 import React, { useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Settings, Activity, FileText, DollarSign } from 'lucide-react'
+import { Settings, Activity, FileText, DollarSign, Target } from 'lucide-react'
 import RegrasSistemaModal from './RegrasSistemaModal'
+import MetasGarantiaModal from './MetasGarantiaModal'
 
 // Engrenagem das Regras do Sistema de Garantias DAF — mesmo modelo do menu da Auditoria O.S. Aberta:
 // lista suspensa com ícone, título e descrição; cada item abre só as regras daquela aba.
@@ -10,6 +11,8 @@ const ITENS = [
   { key: 'oficina',    icon: Activity,   cor: 'text-orange-600',  label: 'Regras — Na Oficina',        desc: 'Dias na Oficina' },
   { key: 'garantista', icon: FileText,   cor: 'text-indigo-600',  label: 'Regras — Com Garantista',    desc: 'Digitação, prazo de solução e recusa' },
   { key: 'titulos',    icon: DollarSign, cor: 'text-emerald-600', label: 'Regras — Títulos a Receber', desc: 'Dias para envio da NF' },
+  // Abre a janela própria de metas (não a das regras/prazos)
+  { key: 'metas',      icon: Target,     cor: 'text-rose-600',    label: 'Metas — Setor Garantia',     desc: 'Quantidade máxima de O.S./títulos por indicador (Matriz KPIs), por empresa e mês' },
 ]
 
 export default function EngrenagemRegras({ usuario, onSalvo, tiposExtras }) {
@@ -52,7 +55,11 @@ export default function EngrenagemRegras({ usuario, onSalvo, tiposExtras }) {
       )}
 
       {/* Portal: a engrenagem fica dentro do cabeçalho (z-10); a janela vai para o body para ficar por cima de tudo */}
-      {aba && createPortal(
+      {aba === 'metas' && createPortal(
+        <MetasGarantiaModal usuario={usuario} onClose={() => setAba(null)} />,
+        document.body
+      )}
+      {aba && aba !== 'metas' && createPortal(
         <RegrasSistemaModal
           abaInicial={aba}
           somenteAba

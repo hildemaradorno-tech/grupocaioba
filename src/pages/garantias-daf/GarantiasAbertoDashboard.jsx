@@ -1,8 +1,9 @@
-import React, { useEffect, useState, useMemo, Fragment } from 'react'
+import React, { useEffect, useState, useMemo, useCallback, Fragment } from 'react'
 import { Loader2, ChevronRight, ChevronDown, FileText, Clock, CheckCircle2, XCircle, AlertTriangle, BarChart2, Eye, X } from 'lucide-react'
 import { apiService } from '../../services/api'
 import { useEmpresasGarantias } from '../../hooks/useEmpresasGarantias'
 import { situacaoPrazoRecusa } from './prazoRecusa'
+import { carregarRegrasMes, regraDoMes, prazoSolucaoDoMes, textoFaixaDias } from './regrasGarantiasMes'
 
 const fmtMoeda = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const fmtData  = (s) => { if (!s) return ''; try { return new Date(String(s).slice(0, 10) + 'T12:00:00').toLocaleDateString('pt-BR') } catch { return s } }
@@ -254,10 +255,13 @@ function diasDesdeFechamento(g) {
   return Math.floor((new Date() - new Date(g.data_fechamento_os + 'T12:00:00')) / 86400000)
 }
 
+// diasDigitacao: número ou função (g) → número (regra do mês do fechamento da OS)
+const prazoDigitacao = (g, diasDigitacao) => (typeof diasDigitacao === 'function' ? diasDigitacao(g) : diasDigitacao)
+
 function isDigAtrasada(g, diasDigitacao) {
   if (g.status_codigo !== 'A') return false
   const d = diasDesdeFechamento(g)
-  return d !== null && d > diasDigitacao
+  return d !== null && d > prazoDigitacao(g, diasDigitacao)
 }
 
 // Classifica cada garantia num dos 5 grupos gerais de status (visão simplificada do dashboard)
@@ -271,9 +275,10 @@ function classificarStatus(g, diasDigitacao) {
 // Status detalhado por registro — status 'A' se desdobra pela regra Dias para Digitação.
 function statusDetalhado(g, diasDigitacao) {
   if (g.status_codigo !== 'A') return statusLabel(g.status_codigo)
+  const n = prazoDigitacao(g, diasDigitacao)
   return isDigAtrasada(g, diasDigitacao)
-    ? `A — Digitação Atrasada (>D+${diasDigitacao})`
-    : `A — Em fase de digitação (D+${diasDigitacao})`
+    ? `A — Digitação Atrasada (>D+${n})`
+    : `A — Em fase de digitação (D+${n})`
 }
 
 // Cartão KPI em degradê — nível "empresa/total" (o primeiro contato do gestor com a tela).
@@ -346,10 +351,12 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
   // Empresas do usuário (inclusive em "Visualizar como")
   const { filtrosEmpresa } = useEmpresasGarantias()
   const [dados, setDados] = useState([])
-  const [diasDigitacao, setDiasDigitacao] = useState(14)
+  const [diasDigitacaoGeral, setDiasDigitacao] = useState(14)
   const [diasRecusa, setDiasRecusa] = useState(15)
   const [diasSolucao, setDiasSolucao] = useState(14)
   const [diasSolucaoPorTipo, setDiasSolucaoPorTipo] = useState({})
+  // Regras por mês (gar_regras_mes): cada OS usa a do mês em que a contagem começa; mês vazio = geral
+  const [regrasMes, setRegrasMes] = useState({})
   useEffect(() => {
     apiService.getConfiguracoesGarantias().then(cfg => {
       setDiasDigitacao(cfg?.dias_digitacao ?? 14)
@@ -357,18 +364,25 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
       setDiasSolucao(cfg?.dias_solucao ?? 14)
       setDiasSolucaoPorTipo(cfg?.dias_solucao_por_tipo ?? {})
     }).catch(() => {})
+    carregarRegrasMes().then(setRegrasMes)
   }, [])
+  // Prazo de digitação de cada OS (mês do fechamento) — passado no lugar do número às funções de status
+  const diasDigitacao = useCallback(
+    (g) => regraDoMes(regrasMes, 'dias_digitacao', g.data_fechamento_os, diasDigitacaoGeral),
+    [regrasMes, diasDigitacaoGeral]
+  )
+  const recusaDe = (g) => regraDoMes(regrasMes, 'dias_recusa', g.data_final_avaliacao || g.data_sg, diasRecusa)
 
   // Aguardando Aprovação DAF — mesma regra do Controle: dias desde a digitação (criado_em)
-  // contra o prazo de solução do tipo de OS (ou o geral). Dentro = menor que o prazo.
-  const prazoSolucao = (g) => diasSolucaoPorTipo[g.tipo_os_sigla?.trim()] ?? diasSolucao
+  // contra o prazo de solução do mês da digitação (tipo no mês → geral do mês → tipo geral → geral).
+  const prazoSolucao = (g) => prazoSolucaoDoMes(regrasMes, g.tipo_os_sigla, g.criado_em, diasSolucaoPorTipo, diasSolucao)
   const situacaoPrazoSolucao = (g) => {
     const dias = g.criado_em ? Math.floor((new Date() - new Date(g.criado_em)) / 86400000) : 0
     return dias < prazoSolucao(g) ? 'prazo' : 'fora'
   }
   // Situação de prazo de um card que tem linhas No prazo / Fora do prazo
   const situacaoPrazoDoGrupo = (grupo, g) =>
-    grupo === 'recusada' ? situacaoPrazoRecusa(g, diasRecusa) : situacaoPrazoSolucao(g)
+    grupo === 'recusada' ? situacaoPrazoRecusa(g, recusaDe(g)) : situacaoPrazoSolucao(g)
   const [loading, setLoading] = useState(true)
   const [encerradaLastModified, setEncerradaLastModified] = useState(null)
 
@@ -537,7 +551,7 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
 
   const dadosExibidos = useMemo(
     () => aplicarFiltrosAberto(dadosBaseShc),
-    [dadosBaseShc, filtroGrupo, filtroEmpresa, filtroTipo, filtroCluster, diasDigitacao, diasRecusa, diasSolucao, diasSolucaoPorTipo, filtroStatusCod, filtroPeriodo]
+    [dadosBaseShc, filtroGrupo, filtroEmpresa, filtroTipo, filtroCluster, diasDigitacao, diasRecusa, diasSolucao, diasSolucaoPorTipo, regrasMes, filtroStatusCod, filtroPeriodo]
   )
 
   // Cards Aguardando Aprovação DAF e Recusas: no prazo / fora do prazo (mesma base dos cards)
@@ -552,21 +566,24 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
       s.valor += Number(g.valor_pecas || 0) + Number(g.valor_servicos || 0)
     }
     return out
-  }, [dadosSemGrupo, diasDigitacao, diasRecusa, diasSolucao, diasSolucaoPorTipo])
+  }, [dadosSemGrupo, diasDigitacao, diasRecusa, diasSolucao, diasSolucaoPorTipo, regrasMes]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Texto do prazo de solução: um só quando todas as OS do card têm o mesmo; senão a faixa.
-  const prazoSolucaoTexto = useMemo(() => {
-    const prazos = [...new Set(dadosSemGrupo.filter(g => classificarStatus(g, diasDigitacao) === 'digitada').map(prazoSolucao))].sort((a, b) => a - b)
-    if (prazos.length === 0) return `${diasSolucao} dias`
-    if (prazos.length === 1) return `${prazos[0]} dia${prazos[0] === 1 ? '' : 's'}`
-    return `${prazos[0]} a ${prazos[prazos.length - 1]} dias`
-  }, [dadosSemGrupo, diasDigitacao, diasSolucao, diasSolucaoPorTipo])
+  const prazoSolucaoTexto = useMemo(
+    () => textoFaixaDias(dadosSemGrupo.filter(g => classificarStatus(g, diasDigitacao) === 'digitada').map(prazoSolucao), diasSolucao),
+    [dadosSemGrupo, diasDigitacao, diasSolucao, diasSolucaoPorTipo, regrasMes] // eslint-disable-line react-hooks/exhaustive-deps
+  )
+  // Idem para o prazo de recusa (mês da Data Final Avaliação)
+  const recusaTexto = useMemo(
+    () => textoFaixaDias(dadosSemGrupo.filter(g => classificarStatus(g, diasDigitacao) === 'recusada').map(recusaDe), diasRecusa),
+    [dadosSemGrupo, diasDigitacao, diasRecusa, regrasMes] // eslint-disable-line react-hooks/exhaustive-deps
+  )
 
   const rodapePrazo = (grupo) => {
     const p = prazosPorGrupo[grupo]
     if (!p) return null
     const [lblPrazo, lblFora] = grupo === 'recusada'
-      ? [`No prazo (até ${diasRecusa} dias)`, `Fora do prazo (+ de ${diasRecusa} dias)`]
+      ? [`No prazo (até ${recusaTexto})`, `Fora do prazo (+ de ${recusaTexto})`]
       : [`Dentro do prazo (${prazoSolucaoTexto})`, 'Fora do prazo']
     return [
       { label: lblPrazo, ...p.prazo, onClick: () => toggleFiltroGrupo(`${grupo}_prazo`), ativo: filtroGrupo === `${grupo}_prazo` },

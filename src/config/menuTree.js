@@ -275,6 +275,8 @@ export const MENU_TREE = [
       { key: 'projetos/calendario', label: 'Agenda', virtual: true },
       { key: 'projetos/ata-reuniao', label: 'Ata de Reunião', virtual: true },
       { key: 'projetos/custos', label: 'Custos de Projetos' },
+      // Veio do BI - Dashboard › Gestão (13/11/2026) — key e endereço (/bi/projetos) mantidos.
+      { key: 'bi/projetos', label: 'BI — Gestão de Projetos' },
       {
         key: '_gestao-projetos.auditoria-externa',
         label: 'Auditoria Externa',
@@ -305,6 +307,68 @@ export const MENU_TREE = [
     label: 'BI - Dashboard',
     children: [
       {
+        // Agrupamento "Gestão" (sem navTo, 13/11/2026), antes do Pós-Vendas: Matriz KPIs - DAF.
+        key: '_bi.gestao',
+        label: 'Gestão',
+        children: [
+          {
+            // Permissões individuais mantidas (controlam quais abas aparecem em /kpi/matriz),
+            // mas o grupo inteiro navega direto pra página única — ver navTo no Home.jsx (TabelaMenu).
+            key: '_bi.kpis',
+            label: 'Matriz KPIs - DAF',
+            navTo: 'kpi/matriz',
+            children: [
+              { key: 'kpi/resultados', label: 'Resultados' },
+              { key: 'kpi/bloco1-corporativo', label: 'Bloco 1 — Corporativo' },
+              { key: 'kpi/bloco2-operacional', label: 'Bloco 2 — Departamental' },
+              { key: 'kpi/bloco3-servicos', label: 'Bloco 3 — Serviços' },
+              { key: 'kpi/bloco3-pecas', label: 'Bloco 3 — Peças' },
+              { key: 'kpi/orcamento-backlog', label: 'Orçamento & Backlog' },
+              { key: 'kpi/auditoria', label: 'Fontes' },
+            ],
+          },
+          // Campanha Pós-Venda logo abaixo da Matriz KPIs, no grupo Gestão (13/11/2026). Mesmo padrão da Matriz KPIs:
+          // o grupo navega direto pra página única; cada aba e cada empresa é uma permissão própria
+          // (ver CAMPANHA_ABAS / PERM_EMPRESA em BiCampanha.jsx) e os botões são ações em acoesMenu.js.
+          // Precisa de pelo menos 1 aba E 1 empresa para usar a tela.
+          {
+            key: '_bi.campanha',
+            label: 'Campanha Pós-Venda - DAF',
+            navTo: 'bi/campanha',
+            children: [
+              { key: 'bi/campanha/regras', label: 'Aba Regras' },
+              // Apuração e Resultado são uma aba só ("Resultado"); cada permissão libera uma visão dela.
+              { key: 'bi/campanha/apuracao', label: 'Aba Resultado — Apuração (contribuição e faixa)' },
+              { key: 'bi/campanha/resultado', label: 'Aba Resultado — Bônus R$ (colunas de bônus e cálculo)' },
+              { key: 'bi/campanha/pagamento', label: 'Aba Pagamento' },
+              { key: 'bi/campanha/empresa-trucks', label: 'Empresa CAIOBÁ TRUCKS (Gerente Geral)' },
+              { key: 'bi/campanha/empresa-cg', label: 'Empresa Campo Grande' },
+              { key: 'bi/campanha/empresa-dou', label: 'Empresa Dourados' },
+              { key: 'bi/campanha/empresa-tl', label: 'Empresa Três Lagoas' },
+              { key: 'bi/campanha/empresa-cs', label: 'Empresa Chapadão do Sul' },
+            ],
+          },
+        ],
+      },
+      {
+      // Agrupamento "Pós-Vendas" (sem navTo, 13/11/2026) — o mesmo subtítulo do menu lateral; as keys de
+      // dentro não mudaram (permissões já dadas continuam valendo).
+      key: '_bi.pos-vendas',
+      label: 'Pós-Vendas',
+      children: [
+      { key: 'bi/agendamento-servicos', label: 'Agendamento de Serviços' },
+      {
+        // Auditoria O.S. Aberta numa tela só (nov/2026): Dashboard e Controle. A key do Controle
+        // (auditoria-os-aberto) foi mantida — permissões e ações já dadas aos grupos não mudam.
+        key: '_auditoria-os-aberto',
+        label: 'Auditoria O.S. Aberta',
+        navTo: 'bi/auditoria-os-aberto',
+        children: [
+          { key: 'auditoria-os-aberto/dashboard', label: 'Dashboard' },
+          { key: 'auditoria-os-aberto', label: 'Controle' },
+        ],
+      },
+      {
         // Garantias DAF numa tela só (BI — Garantias DAF): Dashboard (bi/garantias-daf) e Controle de
         // cada aba (chaves garantias-daf-*, mantidas para não mudar as permissões já dadas aos grupos).
         key: '_garantias-daf',
@@ -318,26 +382,14 @@ export const MENU_TREE = [
           { key: 'garantias-daf-historicodeos', label: 'Controle — Histórico de O.S.' },
         ],
       },
-      {
-        // Auditoria O.S. Aberta numa tela só (nov/2026): Dashboard e Controle. A key do Controle
-        // (auditoria-os-aberto) foi mantida — permissões e ações já dadas aos grupos não mudam.
-        key: '_auditoria-os-aberto',
-        label: 'Auditoria O.S. Aberta',
-        navTo: 'bi/auditoria-os-aberto',
-        children: [
-          { key: 'auditoria-os-aberto/dashboard', label: 'Dashboard' },
-          { key: 'auditoria-os-aberto', label: 'Controle' },
-        ],
-      },
-      { key: 'bi/projetos', label: 'BI — Gestão de Projetos' },
-      { key: 'bi/possibilidades', label: 'BI — Possibilidades' },
-      { key: 'bi/agendamento-servicos', label: 'BI — Agendamento de Serviços' },
+      // Vieram do menu Pós-Vendas (13/11/2026, o menu foi removido) — keys e endereços (/pos-vendas/...) mantidos.
+      { key: 'pos-vendas/produtividade', label: 'Indicadores de Produtividade' },
       // BI Planos de Manutenção: mesmo padrão do Contas a Receber HONDA — a key da tela (bi/planos-manutencao) dá o
       // acesso à tela (rotas do backend e RLS usam ela); cada aba é uma permissão própria (marcar = pode ver a aba) e os
       // botões são ações em acoesMenu.js. Precisa da tela e de pelo menos 1 aba.
       {
         key: '_bi.planos-manutencao',
-        label: 'BI — Planos de Manutenção',
+        label: 'Planos de Manutenção',
         navTo: 'bi/planos-manutencao',
         children: [
           { key: 'bi/planos-manutencao', label: 'Tela BI — Planos de Manutenção' },
@@ -348,6 +400,9 @@ export const MENU_TREE = [
           { key: 'bi/planos-manutencao/ordens-servico', label: 'Aba Ordens de Serviço' },
         ],
       },
+      { key: 'bi/possibilidades', label: 'Possibilidades' },
+      ],
+      },
       {
         // Agrupamento de menu (sem navTo) — cada item abaixo é uma tela própria, não mais abas
         // de uma página única. Movido de Comissões pra cá junto com Medidas BI.
@@ -356,43 +411,6 @@ export const MENU_TREE = [
         children: [
           // Mesma key de antes (bi/medidas) pra não perder as permissões já concedidas.
           { key: 'bi/medidas', label: 'Medidas BI' },
-        ],
-      },
-      {
-        // Permissões individuais mantidas (controlam quais abas aparecem em /kpi/matriz),
-        // mas o grupo inteiro navega direto pra página única — ver navTo no Home.jsx (TabelaMenu).
-        key: '_bi.kpis',
-        label: 'Matriz KPIs - DAF',
-        navTo: 'kpi/matriz',
-        children: [
-          { key: 'kpi/resultados', label: 'Resultados' },
-          { key: 'kpi/bloco1-corporativo', label: 'Bloco 1 — Corporativo' },
-          { key: 'kpi/bloco2-operacional', label: 'Bloco 2 — Departamental' },
-          { key: 'kpi/bloco3-servicos', label: 'Bloco 3 — Serviços' },
-          { key: 'kpi/bloco3-pecas', label: 'Bloco 3 — Peças' },
-          { key: 'kpi/orcamento-backlog', label: 'Orçamento & Backlog' },
-          { key: 'kpi/auditoria', label: 'Fontes' },
-        ],
-      },
-      // Logo abaixo da Matriz KPIs (a campanha usa os blocos da Matriz). Mesmo padrão da Matriz:
-      // o grupo navega direto pra página única; cada aba e cada empresa é uma permissão própria
-      // (ver CAMPANHA_ABAS / PERM_EMPRESA em BiCampanha.jsx) e os botões são ações em acoesMenu.js.
-      // Precisa de pelo menos 1 aba E 1 empresa para usar a tela.
-      {
-        key: '_bi.campanha',
-        label: 'Campanha Pós-Venda - DAF',
-        navTo: 'bi/campanha',
-        children: [
-          { key: 'bi/campanha/regras', label: 'Aba Regras' },
-          // Apuração e Resultado são uma aba só ("Resultado"); cada permissão libera uma visão dela.
-          { key: 'bi/campanha/apuracao', label: 'Aba Resultado — Apuração (contribuição e faixa)' },
-          { key: 'bi/campanha/resultado', label: 'Aba Resultado — Bônus R$ (colunas de bônus e cálculo)' },
-          { key: 'bi/campanha/pagamento', label: 'Aba Pagamento' },
-          { key: 'bi/campanha/empresa-trucks', label: 'Empresa CAIOBÁ TRUCKS (Gerente Geral)' },
-          { key: 'bi/campanha/empresa-cg', label: 'Empresa Campo Grande' },
-          { key: 'bi/campanha/empresa-dou', label: 'Empresa Dourados' },
-          { key: 'bi/campanha/empresa-tl', label: 'Empresa Três Lagoas' },
-          { key: 'bi/campanha/empresa-cs', label: 'Empresa Chapadão do Sul' },
         ],
       },
     ],

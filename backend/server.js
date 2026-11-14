@@ -28,6 +28,7 @@ import powerbiRoutes from './routes/powerbi.js'
 import agendamentoCrmRoutes from './routes/agendamentoCrm.js'
 import planosManutencaoRoutes from './routes/planosManutencao.js'
 import gestorPecasRoutes from './routes/gestorPecas.js'
+import produtividadeRoutes from './routes/produtividade.js'
 import { iniciarSchedulerManifestacao } from './services/manifestacaoScheduler.js'
 import { iniciarSchedulerAuditoria } from './services/auditoriaAgendamento.js'
 import { iniciarSchedulerProjetosTarefas } from './services/projetosTaskScheduler.js'
@@ -68,6 +69,9 @@ app.use('/api/truckpag', authMiddleware, requireMenuLike('truckpag', 'bi/truckpa
 // ── Rotas BI Agendamento de Serviços (SharePoint — Campanhas CRM RCR038) ─────
 app.use('/api/agendamento-crm', authMiddleware, requireMenuLike('bi/agendamento-servicos'), filtrarPorEmpresa, agendamentoCrmRoutes)
 app.use('/api/planos-manutencao', authMiddleware, planosManutencaoRoutes)
+
+// ── Rotas Pós-Vendas › Indicadores de Produtividade e Eficiência (SharePoint Dealer.net + MicroWork) ─
+app.use('/api/produtividade', authMiddleware, produtividadeRoutes)
 
 // ── Rotas Gestor de Peças 2.0 (fase 1: dados simulados — ver services/gestorPecas/dataProvider.js) ─
 app.use('/api/gestor-pecas', authMiddleware, requireMenuLike('pecas/', 'pecas-motos/'), filtrarPorEmpresa, gestorPecasRoutes)
@@ -351,6 +355,16 @@ async function start() {
     res.json({ success: true })
   })
 
+  // id de usuarios nem sempre é o id do Auth — cai para a busca pelo e-mail atual do cadastro
+  const resolverAuthId = async (usuarioId) => {
+    const { data: porId } = await supabaseAdmin.auth.admin.getUserById(usuarioId)
+    if (porId?.user) return porId.user.id
+    const { data: perfil } = await supabaseAdmin.from('usuarios').select('email').eq('id', usuarioId).single()
+    if (!perfil?.email) return null
+    const { data: lista } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 })
+    return (lista?.users || []).find(u => (u.email || '').toLowerCase() === perfil.email.toLowerCase())?.id || null
+  }
+
   // PUT /api/auth/update-email/:id — troca o e-mail de login (Supabase Auth). Chamado ANTES de gravar
   // o novo e-mail em usuarios: o perfil é achado pelo e-mail no login e a redefinição de senha só
   // chega se o Auth tiver o mesmo e-mail do cadastro.
@@ -358,24 +372,34 @@ async function start() {
     if (!supabaseAdmin) {
       return res.status(503).json({ error: 'SUPABASE_SERVICE_KEY não configurada no backend.' })
     }
-    const { id } = req.params
     const email = String(req.body?.email || '').trim().toLowerCase()
     if (!email) return res.status(400).json({ error: 'E-mail obrigatório.' })
-
-    // id de usuarios nem sempre é o id do Auth — cai para a busca pelo e-mail atual do cadastro
-    let authId = null
-    const { data: porId } = await supabaseAdmin.auth.admin.getUserById(id)
-    if (porId?.user) authId = porId.user.id
-    else {
-      const { data: perfil } = await supabaseAdmin.from('usuarios').select('email').eq('id', id).single()
-      if (perfil?.email) {
-        const { data: lista } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 })
-        authId = (lista?.users || []).find(u => (u.email || '').toLowerCase() === perfil.email.toLowerCase())?.id || null
-      }
-    }
+    const authId = await resolverAuthId(req.params.id)
     if (!authId) return res.status(400).json({ error: 'Usuário não encontrado no Supabase Auth.' })
-
     const { error } = await supabaseAdmin.auth.admin.updateUserById(authId, { email, email_confirm: true })
+    if (error) return res.status(400).json({ error: error.message })
+    res.json({ success: true })
+  })
+
+  // GET /api/auth/email-status — situação de confirmação do e-mail de cada login
+  app.get('/api/auth/email-status', authMiddleware, requireMenu('usuarios'), async (req, res) => {
+    if (!supabaseAdmin) {
+      return res.status(503).json({ error: 'SUPABASE_SERVICE_KEY não configurada no backend.' })
+    }
+    const { data, error } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 })
+    if (error) return res.status(400).json({ error: error.message })
+    res.json((data?.users || []).map(u => ({ email: (u.email || '').toLowerCase(), confirmado: !!u.email_confirmed_at })))
+  })
+
+  // PUT /api/auth/confirm-email/:id — confirma o e-mail manualmente (usuário que não conseguiu
+  // confirmar pelo link), liberando o acesso
+  app.put('/api/auth/confirm-email/:id', authMiddleware, requireMenu('usuarios'), async (req, res) => {
+    if (!supabaseAdmin) {
+      return res.status(503).json({ error: 'SUPABASE_SERVICE_KEY não configurada no backend.' })
+    }
+    const authId = await resolverAuthId(req.params.id)
+    if (!authId) return res.status(400).json({ error: 'Usuário não encontrado no Supabase Auth.' })
+    const { error } = await supabaseAdmin.auth.admin.updateUserById(authId, { email_confirm: true })
     if (error) return res.status(400).json({ error: error.message })
     res.json({ success: true })
   })

@@ -28,6 +28,12 @@ export function useKpiData(fetchFn, fallback, params = {}) {
   const stored    = getStored(fetchFn, paramsKey)
 
   const [data,    setData]    = useState(stored?.data   ?? fallback)
+  // dataKey: de qual filtro é o `data` na tela. Ao trocar o filtro (ex.: escolher um consultor), o dado
+  // anterior continua em `data` até a resposta nova chegar — `atualizado` avisa a tela para não mostrá-lo
+  // como se fosse do filtro novo (mostrava o total do grupo no quadro do consultor escolhido).
+  const [dataKey, setDataKey] = useState(stored ? paramsKey : null)
+  const keyAtual = useRef(paramsKey)
+  keyAtual.current = paramsKey
   const [loading, setLoading] = useState(!stored)
   const [error,   setError]   = useState(null)
   const [source,  setSource]  = useState(stored?.source ?? null)
@@ -47,7 +53,10 @@ export function useKpiData(fetchFn, fallback, params = {}) {
     try {
       const result = await fetchFn({ ...params, ...extraParams })
       setStored(fetchFn, paramsKey, result)
+      // Resposta de um filtro que já foi trocado (chegou depois da do filtro novo): só guarda.
+      if (keyAtual.current !== paramsKey) return
       setData(result.data)
+      setDataKey(paramsKey)
       setSource(result.source)
     } catch (err) {
       setError(err.message)
@@ -65,5 +74,8 @@ export function useKpiData(fetchFn, fallback, params = {}) {
 
   const forceReload = useCallback(() => load({ _forceReload: true }), [load])
 
-  return { data, loading, error, source, reload: load, forceReload }
+  // Filtro novo já guardado nesta sessão: usa direto (sem esperar o efeito); senão, o que está na tela.
+  const guardado = getStored(fetchFn, paramsKey)
+  const atualizado = !!guardado || dataKey === paramsKey
+  return { data: guardado?.data ?? data, atualizado, loading, error, source, reload: load, forceReload }
 }

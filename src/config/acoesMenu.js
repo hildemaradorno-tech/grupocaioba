@@ -587,6 +587,14 @@ export const ACOES_POR_MENU = [
       { value: 'excluir', label: 'Excluir' },
     ],
   },
+  // Pós-Vendas › Indicadores de Produtividade (sem flag = negado; admin sempre pode).
+  {
+    menuPath: 'pos-vendas/produtividade',
+    acoes: [
+      { value: 'atualizar', label: 'Atualizar dados (botão azul do topo — relê Dealer.net e MicroWork do período)' },
+      { value: 'regras_cores', label: 'Regras de cores dos indicadores (engrenagem — Eficiência, Eficácia e Produtividade mês a mês)' },
+    ],
+  },
   // BI Planos de Manutenção — botões do topo, da engrenagem e das abas (sem flag = negado; admin sempre pode).
   {
     menuPath: 'bi/planos-manutencao',

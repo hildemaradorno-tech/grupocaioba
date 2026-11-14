@@ -7,14 +7,15 @@
  *   Aguardando Aprovação DAF  — status B..Y (grupo "Aguardando Aprovação DAF") há dias_solucao
  *   fora do prazo               (ou o prazo do tipo de OS) dias ou mais desde a digitação (criado_em).
  *   Aprovada sem Faturamento  — status FA (Financeiro APROVADO), ainda não faturada (card "Aprovada").
- *   Recusadas sem Solução     — status FR ou Z há mais de dias_recusa dias, contados da Data Final da
+ *   Garantias Recusadas       — status FR ou Z há mais de dias_recusa dias, contados da Data Final da
  *   fora do Prazo               Avaliação (sem ela, da Data SG; sem nenhuma, conta como fora) —
  *                               card "Recusas › Fora do prazo" (prazoRecusa.js).
  *
  * Cada período (mês, semana, trimestre, ano) vale a FOTOGRAFIA DO ÚLTIMO DIA dele, reconstruída pelo
  * histórico de status (gar_garantias_log: status de cada garantia = último registro até aquele dia).
  * Período em andamento = foto de hoje (mesmo número dos cards da tela de garantias); período futuro ou
- * anterior ao primeiro registro do log (15/07/2026) fica sem valor. Prazos = configuração atual.
+ * anterior ao primeiro registro do log (15/07/2026) fica sem valor. Prazos = configuração atual, com a
+ * regra do mês (gar_regras_mes) do início da contagem de cada garantia quando houver.
  */
 import { getSupabaseAdmin } from './supabaseAdmin.js'
 import { numeroSemanaDoDia } from './kpiSemanas.js'
@@ -24,14 +25,18 @@ import { getTitulosAReceber } from './sharepointFinanceiro.js'
 // RFN003 dos tipos de título ativos (dim_tipo_titulo_garantia) com vencimento antes de hoje. O RFN003
 // só traz o que está em aberto HOJE (pagos saem do arquivo), então não há histórico: a quantidade de
 // hoje vale só no período atual (mês, semana, trimestre e ano correntes); os demais ficam sem valor.
-async function titulosVencidosHoje(admin, empresaKey) {
+// Data de referência AAAA-MM-DD (horário de MS): hoje, ou ontem quando o dia atual não é considerado.
+const diaMS = (desloc = 0) => new Date(Date.now() - 4 * 3600 * 1000 + desloc * 86400000).toISOString().slice(0, 10)
+// Fim do dia de ontem (23:59:59 em MS) — corte padrão da Matriz (período em andamento até ontem).
+const fimDeOntem = () => new Date(new Date(`${diaMS(0)}T00:00:00-04:00`).getTime() - 1000)
+
+async function titulosVencidosHoje(admin, empresaKey, refISO = diaMS(0)) {
   const [{ rows }, tipos] = await Promise.all([
     getTitulosAReceber(),
     admin.from('dim_tipo_titulo_garantia').select('descricao, ativo').then(r => r.data || []),
   ])
   const tiposAtivos = new Set(tipos.filter(t => t.ativo).map(t => String(t.descricao || '').trim()))
-  const d = new Date()
-  const hoje = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  const hoje = refISO // vencido = vencimento antes do dia de referência (hoje, ou ontem)
   const alvo = empresaKey ? norm(empresaKey) : null
   let qtd = 0, valor = 0
   for (const r of rows || []) {
@@ -45,10 +50,11 @@ async function titulosVencidosHoje(admin, empresaKey) {
 }
 
 // Valor de hoje só nos períodos correntes (mês, semana, trimestre, ano); o resto sem valor.
-function soNoPeriodoAtual(qtd, ano) {
+function soNoPeriodoAtual(qtd, ano, refISO = diaMS(0)) {
   const out = {}
   for (const k of [...ALL_MONTHS, ...ALL_WEEKS, ...Object.keys(QUARTERS), 'fy']) out[k] = null
-  const hoje = new Date()
+  const [aRef, mRef, dRef] = refISO.split('-').map(Number)
+  const hoje = { getFullYear: () => aRef, getMonth: () => mRef - 1, getDate: () => dRef }
   if (hoje.getFullYear() !== ano || qtd == null) return out
   const mes = hoje.getMonth() + 1
   const m = `m${String(mes).padStart(2, '0')}`
@@ -114,13 +120,15 @@ function limitesDosPeriodos(ano) {
   return lim
 }
 
-export async function getIndicadoresGarantia(ano, empresaKey) {
+// incluirHoje: foto do período em andamento AGORA; padrão = fim de ontem (Matriz › Considerar o dia atual).
+export async function getIndicadoresGarantia(ano, empresaKey, { incluirHoje = false } = {}) {
   const admin = getSupabaseAdmin()
   if (!admin) return null
 
   // Todas as garantias (inclusive as já encerradas hoje: em datas passadas podiam estar em aberto) + log de status.
-  const [cfgRes, empresas, garantias, logs] = await Promise.all([
+  const [cfgRes, mesesRes, empresas, garantias, logs] = await Promise.all([
     admin.from('gar_configuracoes').select('dias_digitacao, dias_solucao, dias_solucao_por_tipo, dias_recusa').limit(1).maybeSingle(),
+    admin.from('gar_regras_mes').select('ano, mes, dias_digitacao, dias_solucao, dias_solucao_por_tipo, dias_recusa'),
     fetchTudo(() => admin.from('dim_empresas').select('id, empresa_fantasia, nome_empresa_sistema').order('id')),
     fetchTudo(() => admin.from('gar_garantias')
       .select('id, empresa_id, empresa_nome, status_codigo, data_fechamento_os, criado_em, tipo_os_sigla, data_final_avaliacao, data_sg').order('id')),
@@ -132,6 +140,25 @@ export async function getIndicadoresGarantia(ano, empresaKey) {
   const diasSolucao = cfg.dias_solucao ?? 14
   const porTipo = cfg.dias_solucao_por_tipo ?? {}
   const diasRecusa = cfg.dias_recusa ?? 15
+  // Regras por mês (gar_regras_mes) — mesma regra das telas (regrasGarantiasMes.js): cada garantia usa a
+  // do mês em que a contagem começa; mês sem valor = regra geral. Tabela ausente = só a geral.
+  const meses = new Map((mesesRes.data || []).map(r => [`${r.ano}-${String(r.mes).padStart(2, '0')}`, r]))
+  const anoMes = (data) => {
+    if (!data) return null
+    const s = String(data)
+    if (s.length > 10 && s.includes('T')) {
+      const d = new Date(s) // timestamp: mês no horário de MS
+      const ms = new Date(d.getTime() - 4 * 3600 * 1000)
+      return `${ms.getUTCFullYear()}-${String(ms.getUTCMonth() + 1).padStart(2, '0')}`
+    }
+    return s.slice(0, 7)
+  }
+  const doMes = (campo, data, geral) => { const v = meses.get(anoMes(data))?.[campo]; return v != null ? Number(v) : geral }
+  const prazoSolucaoDe = (g) => {
+    const s = String(g.tipo_os_sigla || '').trim()
+    const m = meses.get(anoMes(g.criado_em))
+    return Number(m?.dias_solucao_por_tipo?.[s] ?? m?.dias_solucao ?? porTipo[s] ?? diasSolucao)
+  }
 
   const casaPorId = new Map(empresas.map(e => [e.id, casaDaEmpresa(e.nome_empresa_sistema) || casaDaEmpresa(e.empresa_fantasia)]))
   const alvo = empresaKey ? norm(empresaKey) : null
@@ -161,22 +188,21 @@ export async function getIndicadoresGarantia(ano, empresaKey) {
     for (const g of daCasa) {
       const s = statusEm(g, data)
       if (s === 'A' && g.data_fechamento_os) {
-        if (diasDesde(new Date(g.data_fechamento_os + 'T12:00:00'), data) > diasDigitacao) digitacao++
+        if (diasDesde(new Date(g.data_fechamento_os + 'T12:00:00'), data) > doMes('dias_digitacao', g.data_fechamento_os, diasDigitacao)) digitacao++
       } else if (STATUS_ANDAMENTO.has(s) && g.criado_em) {
-        const prazo = porTipo[String(g.tipo_os_sigla || '').trim()] ?? diasSolucao
-        if (diasDesde(new Date(g.criado_em), data) >= prazo) foraPrazo++
+        if (diasDesde(new Date(g.criado_em), data) >= prazoSolucaoDe(g)) foraPrazo++
       } else if (s === 'FA') {
         aprovada++
       } else if (STATUS_RECUSADA.has(s)) {
         // Dias desde a recusa (Data Final da Avaliação; sem ela, Data SG); sem data = fora do prazo.
         const inicio = String(g.data_final_avaliacao || g.data_sg || '').slice(0, 10)
-        if (!inicio || diasDesde(new Date(inicio + 'T12:00:00'), data) > diasRecusa) recusadaFora++
+        if (!inicio || diasDesde(new Date(inicio + 'T12:00:00'), data) > doMes('dias_recusa', inicio, diasRecusa)) recusadaFora++
       }
     }
     return { digitacao, foraPrazo, aprovada, recusadaFora }
   }
 
-  const agora = new Date()
+  const agora = incluirHoje ? new Date() : fimDeOntem()
   const digitacaoAtrasada = {}
   const aguardandoForaPrazo = {}
   const aprovadaSemFaturamento = {}
@@ -200,8 +226,38 @@ export async function getIndicadoresGarantia(ano, empresaKey) {
   }
   // Títulos vencidos (SharePoint RFN003); se o arquivo não puder ser lido, fica sem valor.
   let vencidos = null
-  try { vencidos = await titulosVencidosHoje(admin, empresaKey) } catch (err) { console.error('[kpiGarantias] títulos RFN003:', err.message) }
-  const titulosVencidos = soNoPeriodoAtual(vencidos?.qtd ?? null, ano)
+  try { vencidos = await titulosVencidosHoje(admin, empresaKey, incluirHoje ? diaMS(0) : diaMS(-1)) } catch (err) { console.error('[kpiGarantias] títulos RFN003:', err.message) }
+  const titulosVencidos = soNoPeriodoAtual(vencidos?.qtd ?? null, ano, incluirHoje ? diaMS(0) : diaMS(-1))
 
-  return { digitacaoAtrasada, aguardandoForaPrazo, aprovadaSemFaturamento, recusadaForaPrazo, titulosVencidos }
+  const metas = await metasDoSetorGarantia(admin, ano, empresaKey, lim, agora)
+  return { digitacaoAtrasada, aguardandoForaPrazo, aprovadaSemFaturamento, recusadaForaPrazo, titulosVencidos, metas }
+}
+
+// Metas do SETOR GARANTIA cadastradas em Garantias DAF (engrenagem → Metas — Setor Garantia; tabela
+// gar_metas_indicadores): por empresa, meta do mês ou, sem ela, a geral (ano 0, mês 0). Cada período usa a
+// meta do mês da sua foto (último dia do período; em andamento = hoje). "Todas as empresas" (empresaKey
+// vazio) = soma das metas das lojas que têm meta. Sem nenhuma meta = sem meta (null).
+// → { digitacaoAtrasada: { m01: n, s01: n, q1: n, fy: n, … }, aguardandoForaPrazo: …, … }
+const INDICADORES_COM_META = ['digitacaoAtrasada', 'aguardandoForaPrazo', 'aprovadaSemFaturamento', 'recusadaForaPrazo', 'titulosVencidos']
+const CASAS_METAS = ['CAMPO GRANDE', 'DOURADOS', 'TRÊS LAGOAS', 'CHAPADÃO DO SUL']
+async function metasDoSetorGarantia(admin, ano, empresaKey, lim, agora) {
+  let linhas = []
+  try {
+    const { data, error } = await admin.from('gar_metas_indicadores').select('empresa, ano, mes, indicador, meta').in('ano', [0, ano])
+    if (!error) linhas = data || []
+  } catch { /* sem a tabela: sem metas */ }
+  const idx = new Map(linhas.map(l => [`${l.empresa}|${l.ano}|${l.mes}|${l.indicador}`, Number(l.meta)]))
+  const metaEmpresa = (casa, mes, ind) => idx.get(`${casa}|${ano}|${mes}|${ind}`) ?? idx.get(`${casa}|0|0|${ind}`) ?? null
+  const casas = empresaKey ? CASAS_METAS.filter(c => norm(c) === norm(empresaKey)) : CASAS_METAS
+  const metaNoMes = (mes, ind) => {
+    const vals = casas.map(c => metaEmpresa(c, mes, ind)).filter(v => v != null)
+    return vals.length ? vals.reduce((s, v) => s + v, 0) : null
+  }
+  const out = Object.fromEntries(INDICADORES_COM_META.map(i => [i, {}]))
+  for (const [k, p] of Object.entries(lim)) {
+    const ref = p.ini <= agora && p.fim > agora ? agora : p.fim // mês da foto do período
+    const mes = Number(new Date(ref.getTime() - 4 * 3600 * 1000).toISOString().slice(5, 7)) // horário de MS
+    for (const ind of INDICADORES_COM_META) out[ind][k] = metaNoMes(mes, ind)
+  }
+  return out
 }

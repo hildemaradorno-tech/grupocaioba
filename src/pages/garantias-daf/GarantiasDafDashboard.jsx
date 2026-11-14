@@ -9,6 +9,7 @@ import { useAuth } from '../../context/AuthContext'
 import { useEmpresasGarantias } from '../../hooks/useEmpresasGarantias'
 import EngrenagemRegras from './EngrenagemRegras'
 import { situacaoPrazoRecusa } from './prazoRecusa'
+import { carregarRegrasMes, regraDoMes, prazoSolucaoDoMes, textoFaixaDias } from './regrasGarantiasMes'
 
 const STATUS_MAP = {
   A:  { label: 'Em Análise',                      cor: 'bg-blue-100 text-blue-700' },
@@ -154,17 +155,25 @@ export default function GarantiasDafDashboard({ variante = 'aberto', onLastModif
   const [diasSolucao, setDiasSolucao] = useState(14)
   const [diasSolucaoPorTipo, setDiasSolucaoPorTipo] = useState({})
   const [diasRecusa, setDiasRecusa] = useState(15)
+  // Regras por mês (gar_regras_mes): cada OS usa a do mês em que a contagem começa; mês vazio = geral
+  const [regrasMes, setRegrasMes] = useState({})
 
-  const aplicarRegras = (cfg) => {
+  const aplicarRegras = (cfg, meses) => {
     setDiasRecusa(cfg?.dias_recusa ?? 15)
     setDiasDigitacao(cfg?.dias_digitacao ?? 14)
     setDiasOficina(cfg?.dias_oficina ?? 14)
     setDiasSolucao(cfg?.dias_solucao ?? 14)
     setDiasSolucaoPorTipo(cfg?.dias_solucao_por_tipo ?? {})
+    if (meses) setRegrasMes(meses)
   }
   useEffect(() => {
-    apiService.getConfiguracoesGarantias().then(aplicarRegras).catch(() => {})
+    apiService.getConfiguracoesGarantias().then(cfg => aplicarRegras(cfg)).catch(() => {})
+    carregarRegrasMes().then(setRegrasMes)
   }, [])
+  // Prazo de cada OS pela regra do mês de início da contagem
+  const digitacaoDe = (g) => regraDoMes(regrasMes, 'dias_digitacao', g.data_fechamento_os, diasDigitacao)
+  const oficinaDe = (r) => regraDoMes(regrasMes, 'dias_oficina', r.data_criacao, diasOficina)
+  const recusaDe = (g) => regraDoMes(regrasMes, 'dias_recusa', g.data_final_avaliacao || g.data_sg, diasRecusa)
 
   const loadData = useCallback(async (f = filtros) => {
     setLoading(true); setError(null)
@@ -331,7 +340,7 @@ export default function GarantiasDafDashboard({ variante = 'aberto', onLastModif
       ? Math.floor((new Date() - new Date(r.data_criacao + 'T12:00:00')) / 86400000)
       : -1
     let base = filtroMais14
-      ? spAndamentoFiltrado.filter(r => diasAberto(r) > diasOficina)
+      ? spAndamentoFiltrado.filter(r => diasAberto(r) > oficinaDe(r))
       : spAndamentoFiltrado
     if (filtroTipoOSCard) base = base.filter(r => (r.tipo_os_sigla?.trim() || '—') === filtroTipoOSCard)
     const arr = [...base]
@@ -348,7 +357,7 @@ export default function GarantiasDafDashboard({ variante = 'aberto', onLastModif
       return sortDirAnd === 'asc' ? cmp : -cmp
     })
     return arr
-  }, [spAndamentoFiltrado, filtroMais14, filtroTipoOSCard, sortColAnd, sortDirAnd])
+  }, [spAndamentoFiltrado, filtroMais14, filtroTipoOSCard, sortColAnd, sortDirAnd, diasOficina, regrasMes]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const tiposOsDisponiveis = useMemo(
     () => Array.from(new Set(dadosTodos.map(d => d.tipo_garantia_descricao).filter(Boolean))).sort(),
@@ -621,11 +630,12 @@ export default function GarantiasDafDashboard({ variante = 'aberto', onLastModif
   }
 
   // Prazo de solução aplicável à garantia: override por tipo de OS (sigla), ou o valor global.
-  const prazoSolucao = (g) => diasSolucaoPorTipo[g.tipo_os_sigla?.trim()] ?? diasSolucao
+  // Regra do mês da digitação (criado_em): tipo no mês → geral do mês → tipo geral → geral.
+  const prazoSolucao = (g) => prazoSolucaoDoMes(regrasMes, g.tipo_os_sigla, g.criado_em, diasSolucaoPorTipo, diasSolucao)
 
   const isDigAtrasada = (g) => {
     if (g.status_codigo !== 'A' || !g.data_fechamento_os) return false
-    return Math.floor((hoje - new Date(g.data_fechamento_os + 'T12:00:00')) / 86400000) > diasDigitacao
+    return Math.floor((hoje - new Date(g.data_fechamento_os + 'T12:00:00')) / 86400000) > digitacaoDe(g)
   }
 
   const grpADigitar  = dadosBase.filter(g => g.status_codigo === 'A' && !isDigAtrasada(g))
@@ -643,8 +653,11 @@ export default function GarantiasDafDashboard({ variante = 'aberto', onLastModif
   const grpAprovada  = dadosBase.filter(g => g.status_codigo === 'FA')
   const grpRecusas   = dadosBase.filter(g => ['FR','Z'].includes(g.status_codigo))
   // Prazo para tratar recusa (Regras do Sistema), contado da Data Final Avaliação
-  const grpRecPrazo  = grpRecusas.filter(g => situacaoPrazoRecusa(g, diasRecusa) === 'prazo')
-  const grpRecFora   = grpRecusas.filter(g => situacaoPrazoRecusa(g, diasRecusa) === 'fora')
+  const grpRecPrazo  = grpRecusas.filter(g => situacaoPrazoRecusa(g, recusaDe(g)) === 'prazo')
+  const grpRecFora   = grpRecusas.filter(g => situacaoPrazoRecusa(g, recusaDe(g)) === 'fora')
+  // Textos dos cards: um prazo só, ou a faixa quando as OS caem em meses com regras diferentes
+  const digitacaoTexto = textoFaixaDias(dadosBase.filter(g => g.status_codigo === 'A').map(digitacaoDe), diasDigitacao)
+  const recusaTexto = textoFaixaDias(grpRecusas.map(recusaDe), diasRecusa)
 
   const sumValor = (arr) => arr.reduce((s, g) => s + Number(g.valor_pecas||0) + Number(g.valor_servicos||0), 0)
 
@@ -702,12 +715,12 @@ export default function GarantiasDafDashboard({ variante = 'aberto', onLastModif
   const CARDS_GRUPOS = [
     {
       key: 'a_digitar', label: 'A Digitar', icon: FileText, items: grpADigitar,
-      regra: `OS fechada <= ${diasDigitacao} dia${diasDigitacao === 1 ? '' : 's'} sem digitar`,
+      regra: `OS fechada <= ${digitacaoTexto} sem digitar`,
       st: { bg: 'bg-blue-50', border: 'border-blue-200', ring: 'ring-blue-300', icoBg: 'bg-blue-100', icoTxt: 'text-blue-600', numTxt: 'text-blue-700', labelTxt: 'text-blue-500', divider: 'border-blue-200' },
     },
     {
       key: 'atrasado', label: 'Digitação Atrasada', icon: AlertTriangle, items: grpAtrasado,
-      regra: `OS fechada > de ${diasDigitacao} dia${diasDigitacao === 1 ? '' : 's'} sem digitar`,
+      regra: `OS fechada > de ${digitacaoTexto} sem digitar`,
       st: { bg: 'bg-slate-100', border: 'border-slate-300', ring: 'ring-slate-400', icoBg: 'bg-slate-200', icoTxt: 'text-slate-600', numTxt: 'text-slate-800', labelTxt: 'text-slate-500', divider: 'border-slate-200' },
     },
     {
@@ -722,7 +735,7 @@ export default function GarantiasDafDashboard({ variante = 'aberto', onLastModif
     },
     {
       key: 'recusas', label: 'Recusas', icon: XCircle, items: grpRecusas,
-      regra: `Recusada pela DAF · prazo para tratar ${diasRecusa} dia${diasRecusa === 1 ? '' : 's'}`,
+      regra: `Recusada pela DAF · prazo para tratar ${recusaTexto}`,
       st: { bg: 'bg-red-50', border: 'border-red-200', ring: 'ring-red-300', icoBg: 'bg-red-100', icoTxt: 'text-red-500', numTxt: 'text-red-600', labelTxt: 'text-red-400', divider: 'border-red-100' },
     },
   ]
@@ -900,8 +913,8 @@ export default function GarantiasDafDashboard({ variante = 'aberto', onLastModif
                 { label: `Dentro do prazo (${prazoAndTexto})`, qtd: grpAndEmDia.length, valor: sumValor(grpAndEmDia), onClick: () => handleCardClick('andamento_em_dia'), ativo: filtroCard === 'andamento_em_dia' },
                 { label: 'Fora do prazo', qtd: grpAnd15.length, valor: sumValor(grpAnd15), onClick: () => handleCardClick('andamento15'), ativo: filtroCard === 'andamento15' },
               ] : c.key === 'recusas' ? [
-                { label: `No prazo (até ${diasRecusa} dias)`, qtd: grpRecPrazo.length, valor: sumValor(grpRecPrazo), onClick: () => handleCardClick('recusas_prazo'), ativo: filtroCard === 'recusas_prazo' },
-                { label: `Fora do prazo (+ de ${diasRecusa} dias)`, qtd: grpRecFora.length, valor: sumValor(grpRecFora), onClick: () => handleCardClick('recusas_fora'), ativo: filtroCard === 'recusas_fora' },
+                { label: `No prazo (até ${recusaTexto})`, qtd: grpRecPrazo.length, valor: sumValor(grpRecPrazo), onClick: () => handleCardClick('recusas_prazo'), ativo: filtroCard === 'recusas_prazo' },
+                { label: `Fora do prazo (+ de ${recusaTexto})`, qtd: grpRecFora.length, valor: sumValor(grpRecFora), onClick: () => handleCardClick('recusas_fora'), ativo: filtroCard === 'recusas_fora' },
               ] : null}
             />
           ))}
@@ -944,8 +957,9 @@ export default function GarantiasDafDashboard({ variante = 'aberto', onLastModif
         const totalPecas    = rowsDedup.reduce((s, r) => s + (r.produto  || 0), 0)
         const totalServicos = rowsDedup.reduce((s, r) => s + (r.servico  || 0), 0)
         const mais14        = spAndamentoFiltrado.filter(r =>
-          r.data_criacao && Math.floor((hoje - new Date(r.data_criacao + 'T12:00:00')) / 86400000) > diasOficina
+          r.data_criacao && Math.floor((hoje - new Date(r.data_criacao + 'T12:00:00')) / 86400000) > oficinaDe(r)
         ).length
+        const oficinaTexto  = textoFaixaDias(spAndamentoFiltrado.filter(r => r.data_criacao).map(oficinaDe), diasOficina)
         return (
           <div className="grid grid-cols-3 gap-3 items-stretch">
             {/* Card Tipos de OS */}
@@ -1020,7 +1034,7 @@ export default function GarantiasDafDashboard({ variante = 'aberto', onLastModif
             {/* Card +14 dias */}
             {(() => {
               const rows14 = spAndamentoFiltrado.filter(r =>
-                r.data_criacao && Math.floor((hoje - new Date(r.data_criacao + 'T12:00:00')) / 86400000) > diasOficina
+                r.data_criacao && Math.floor((hoje - new Date(r.data_criacao + 'T12:00:00')) / 86400000) > oficinaDe(r)
               )
               const dedup14Map = new Map()
               for (const r of rows14) {
@@ -1040,7 +1054,7 @@ export default function GarantiasDafDashboard({ variante = 'aberto', onLastModif
                         <Clock className={`h-4 w-4 ${mais14 > 0 ? 'text-orange-600' : 'text-slate-400'}`} />
                       </div>
                       <span className={`text-xs font-bold uppercase tracking-wide ${mais14 > 0 ? 'text-orange-600' : 'text-slate-500'}`}>
-                        Mais de {diasOficina} Dias na Oficina
+                        Mais de {oficinaTexto.replace(/ dias?$/, '')} Dias na Oficina
                       </span>
                     </div>
                     {mais14 > 0 && (
@@ -1317,7 +1331,7 @@ export default function GarantiasDafDashboard({ variante = 'aberto', onLastModif
                   <tr><td colSpan="14" className="p-10 text-center text-slate-400">Nenhuma garantia encontrada.</td></tr>
                 ) : sortedDados.map(item => {
                   const vt = Number(item.valor_pecas || 0) + Number(item.valor_servicos || 0)
-                  const st = getStatusDisplay(item, diasDigitacao)
+                  const st = getStatusDisplay(item, digitacaoDe(item))
                   const dp = diasParado(item)
                   return (
                     <tr key={item.id} className={`hover:bg-slate-50/70 transition-colors ${selecionados.has(item.id) ? 'bg-blue-50/50' : dp >= 30 ? 'bg-red-50/40' : dp >= 15 ? 'bg-orange-50/30' : dp >= 7 ? 'bg-yellow-50/30' : ''}`}>

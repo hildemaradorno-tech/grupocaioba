@@ -12,6 +12,7 @@
  * Medidas são lidas uma por vez, nunca em paralelo (disciplina de memória do leitor de Excel).
  */
 import { agregarPorDimensoes, normalizaTexto } from './sharepointFonteBi.js'
+import { limparCachePossibilidades } from './kpiPossibilidades.js'
 
 const LOTE = 500
 const r2 = (v) => Math.round((v || 0) * 100) / 100
@@ -157,5 +158,7 @@ export async function sincronizarBiMedidasDiario(supabaseAdmin, periodo = period
     return { dataInicio, dataFim, ok: detalhes.every(d => d.ok), detalhes }
   } finally {
     emExecucao = false
+    // Matriz KPIs › Bloco 3 - Serviços lê esses mesmos dados (kpiPossibilidades.js): relê na próxima consulta.
+    limparCachePossibilidades()
   }
 }

@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo, Fragment } from 'react'
 import { Loader2, Wrench, AlertTriangle, XCircle, Clock, CheckCircle2 } from 'lucide-react'
 import { apiService } from '../../services/api'
 import { useEmpresasGarantias } from '../../hooks/useEmpresasGarantias'
+import { carregarRegrasMes, regraDoMes, textoFaixaDias } from './regrasGarantiasMes'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
 
@@ -282,9 +283,13 @@ export default function GarantiasOficinaDashboard({ onLastModified }) {
   // Empresas do usuário (inclusive em "Visualizar como"): o arquivo do SharePoint traz todas as unidades.
   const { permiteNome } = useEmpresasGarantias()
   const [diasOficina, setDiasOficina] = useState(14)
+  // Regras por mês (gar_regras_mes): cada OS usa a do mês da criação; mês vazio = geral
+  const [regrasMes, setRegrasMes] = useState({})
   useEffect(() => {
     apiService.getConfiguracoesGarantias().then(cfg => setDiasOficina(cfg?.dias_oficina ?? 14)).catch(() => {})
+    carregarRegrasMes().then(setRegrasMes)
   }, [])
+  const oficinaDe = (r) => regraDoMes(regrasMes, 'dias_oficina', r.data_criacao, diasOficina)
   const [oficinaLoading, setOficinaLoading] = useState(true)
   const [siglasGarantiaOficina, setSiglasGarantiaOficina] = useState(new Set())
   const [oficinaLastModified, setOficinaLastModified] = useState(null)
@@ -413,12 +418,14 @@ export default function GarantiasOficinaDashboard({ onLastModified }) {
     const dias = oficinaRowsFiltradas.map(diasNaOficina).filter(d => d !== null)
     const tempoMedio = dias.length ? Math.round(dias.reduce((a, b) => a + b, 0) / dias.length) : 0
     // Mesma regra do card da tela Na Oficina: "Dias na Oficina" (Regras do Sistema)
-    const mais14Rows = oficinaRowsFiltradas.filter(r => { const d = diasNaOficina(r); return d !== null && d > diasOficina })
+    // (regra do mês da criação da OS; mês sem regra = geral)
+    const mais14Rows = oficinaRowsFiltradas.filter(r => { const d = diasNaOficina(r); return d !== null && d > oficinaDe(r) })
     const mais14 = mais14Rows.length
     const valorMais14 = mais14Rows.reduce((s, r) => s + Number(r.total || 0), 0)
     const valorTotal = oficinaRowsFiltradas.reduce((s, r) => s + Number(r.total || 0), 0)
-    return { total: oficinaRowsFiltradas.length, valorTotal, tempoMedio, mais14, valorMais14 }
-  }, [oficinaRowsFiltradas, diasOficina])
+    const oficinaTexto = textoFaixaDias(oficinaRowsFiltradas.filter(r => r.data_criacao).map(oficinaDe), diasOficina)
+    return { total: oficinaRowsFiltradas.length, valorTotal, tempoMedio, mais14, valorMais14, oficinaTexto }
+  }, [oficinaRowsFiltradas, diasOficina, regrasMes]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { onLastModified?.(oficinaLastModified) }, [oficinaLastModified, onLastModified])
 
@@ -519,7 +526,7 @@ export default function GarantiasOficinaDashboard({ onLastModified }) {
         />
         <StatTileGradient
           icon={oficinaStats.mais14 > 0 ? AlertTriangle : CheckCircle2}
-          label={`Mais de ${diasOficina} dias`}
+          label={`Mais de ${oficinaStats.oficinaTexto}`}
           value={fmtMoeda(oficinaStats.valorMais14)}
           sub={`Qtde O.S. ${oficinaStats.mais14}`}
           gradiente={oficinaStats.mais14 > 0 ? 'from-orange-500 to-red-600' : 'from-teal-500 to-emerald-700'}

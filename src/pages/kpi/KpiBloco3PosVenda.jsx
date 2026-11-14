@@ -1,6 +1,8 @@
 ﻿import React, { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { Wrench, Info, Pencil } from 'lucide-react'
+import { Wrench, Pencil } from 'lucide-react'
+import OrigemIndicador from '../../components/kpi/OrigemIndicador'
+import { useKpiYear } from '../../context/KpiYearContext'
 import { MOCK_BLOCO3_POS_VENDA } from '../../data/kpiMockData'
 import { getPeriodData, getPeriodLabel, M_PERIODS, M_LABELS } from '../../utils/kpiPeriods'
 import { useKpiData } from '../../hooks/useKpiData'
@@ -8,60 +10,6 @@ import { fetchBloco3PosVenda, salvarPeso, salvarMetaManual } from '../../service
 import { useExpandirQuadro } from '../../components/kpi/useExpandirQuadro'
 
 const BLOCO_PESOS = 'bloco3-pos-venda'
-
-// Explicação de como o Realizado de cada indicador é calculado — ver KPI_INDICADORES.md
-// pro detalhamento completo de fonte/filtro/coluna. Indicadores sem fórmula definida
-// ainda mostram um aviso genérico em vez de sumir o ícone.
-const EXPLICACAO_PADRAO = 'Fonte e fórmula deste indicador ainda não foram definidas — o Realizado ainda não vem do SharePoint.'
-const EXPLICACOES = {
-  'Faturamento Total Oficina (Peças + Serviços)': 'Soma do faturamento líquido de Peças/Serviços de Oficina (RPR001: vendas − devoluções) com o faturamento bruto de Serviços do Recepcionista (tot_serv), por período.',
-  'Margem Bruta Serviços': 'Margem bruta dos Serviços do Recepcionista ÷ Faturamento bruto de Serviços (tot_serv) × 100.',
-  'Margem Bruta Peças Oficina': 'Lucro líquido das Peças de Oficina (RPR001: NFItem_VlMargemCont, vendas − devoluções) ÷ Faturamento líquido total da Oficina (NFItem_VlTotal) × 100.',
-  'Faturamento Oficina (Serviços)': 'Faturamento bruto de Serviços do Recepcionista (tot_serv) da casa, filtrado pela empresa.',
-  'Faturamento Balcão': 'Faturamento líquido de Peças de Balcão (RPR001: vendas − devoluções, fora de O.S. de oficina).',
-  'Margem Bruta Peças Balcão': 'Margem de contribuição líquida das Peças de Balcão ÷ Faturamento líquido de Balcão × 100.',
-  'Eficácia da Oficina': 'Horas vendidas (ROF042) ÷ Horas disponíveis (ROF096) × 100.',
-  'Produtividade da Oficina': 'Horas aplicadas/total (ROF042) ÷ Horas disponíveis (ROF096) × 100.',
-}
-
-// Tooltip renderizado via portal em document.body, com posição calculada pelo
-// ícone (getBoundingClientRect). Evita ficar cortado/coberto pelas colunas
-// sticky da tabela — um <div> absoluto normal ficava preso no stacking context
-// de cada linha (position: sticky por linha), sendo sobreposto pelas linhas seguintes.
-function InfoIndicador({ indicador }) {
-  const texto = EXPLICACOES[indicador] || EXPLICACAO_PADRAO
-  const iconRef = React.useRef(null)
-  const [pos, setPos] = useState(null)
-
-  const mostrar = () => {
-    const r = iconRef.current?.getBoundingClientRect()
-    if (!r) return
-    setPos({
-      top: r.bottom + 6,
-      left: Math.min(r.left, window.innerWidth - 264),
-    })
-  }
-
-  return (
-    <span
-      ref={iconRef}
-      className="relative inline-flex align-middle ml-1.5"
-      onMouseEnter={mostrar}
-      onMouseLeave={() => setPos(null)}
-    >
-      <Info className="h-3.5 w-3.5 text-slate-400 hover:text-blue-500 cursor-help shrink-0" />
-      {pos && createPortal(
-        <div
-          className="fixed w-64 rounded-lg bg-slate-800 text-white text-[11px] leading-snug px-2.5 py-2 shadow-lg whitespace-normal text-left pointer-events-none"
-          style={{ top: pos.top, left: pos.left, zIndex: 9999 }}
-        >
-          {texto}
-        </div>,
-        document.body
-      )}
-    </span>
-  )
-}
 
 // Paleta de cores por gerente (cabeçalho da seção)
 const COR_HEADER = {
@@ -169,7 +117,7 @@ function PesoInput({ value, onSave }) {
 
 
 // Indicadores sem meta automática: o usuário digita a meta, só na visão Mensal.
-const INDICADORES_META_MANUAL = new Set(['Eficácia da Oficina', 'Produtividade da Oficina', 'Digitação Atrasada', 'Aguardando Aprovação DAF (fora do prazo)'])
+const INDICADORES_META_MANUAL = new Set(['Eficácia da Oficina', 'Produtividade da Oficina', 'Garantias com Digitação Atrasada', 'Garantias Aguardando Aprovação DAF (fora do prazo)'])  // Garantias Recusadas (fora do prazo): meta vem de Garantias DAF (sem lápis)
 // Os que levam a nota "*Valores relacionados a faturamento".
 const INDICADORES_NOTA_FATURAMENTO = new Set(['Eficácia da Oficina', 'Produtividade da Oficina'])
 
@@ -355,7 +303,7 @@ function QuadroTable({ quadro, activePeriods, mesTotalKey, year, onSalvarPeso, o
                 <td className="px-3 py-2.5 text-center text-slate-400 font-mono">{pos + 1}</td>
                 <td className="px-4 py-2.5 font-medium text-slate-700 sticky left-0 bg-white">
                   {row.indicador}
-                  <InfoIndicador indicador={row.indicador} />
+                  <OrigemIndicador indicador={row.indicador} />
                   {!somenteLeitura && INDICADORES_META_MANUAL.has(row.indicador) && (
                     <PreencherMesesButton metrica={row.metrica} onAplicar={(meses, valor) => onSalvarMetasVarios(quadro.tituloGerente, row.id, meses, valor)} />
                   )}
@@ -438,7 +386,8 @@ function ordenarCasas(quadros) {
 // GERENTE DE PROCESSOS E QUALIDADE: sem seletor de empresa (removido a pedido) — os indicadores de garantia vêm
 // com todas as empresas somadas. O backend ainda aceita ?empresaQualidade=, se um dia voltar.
 export function PosVendaQuadros({ year, activePeriods, mesTotalKey, somenteLeitura = false, apenas = null }) {
-  const { data: quadros } = useKpiData(fetchBloco3PosVenda, MOCK_BLOCO3_POS_VENDA, { year })
+  const { incluirHoje } = useKpiYear() // Matriz: período em andamento até ontem, ou até agora
+  const { data: quadros } = useKpiData(fetchBloco3PosVenda, MOCK_BLOCO3_POS_VENDA, { year, incluirHoje: incluirHoje || undefined })
 
   // Overlay otimista: aplicado por cima do que veio do backend assim que o usuário
   // salva um peso, sem precisar esperar o próximo fetch pra refletir na tela.

@@ -109,6 +109,7 @@ import BiProjetos from './pages/bi/BiProjetos'
 import BiAgendamentoServicos from './pages/bi/BiAgendamentoServicos'
 import BiAgendamentoServicosManual from './pages/bi/BiAgendamentoServicosManual'
 import BiPlanosManutencao from './pages/bi/BiPlanosManutencao'
+import IndicadoresProdutividade from './pages/pos-vendas/IndicadoresProdutividade'
 import BiPlanosManutencaoManual from './pages/bi/BiPlanosManutencaoManual'
 import BiPossibilidades from './pages/bi/BiPossibilidades'
 import MedidasBi from './pages/bi/MedidasBi'
@@ -341,11 +342,14 @@ export default function App() {
           { path: '/bi/auditoria-os-aberto', element: <BiAuditoriaOsAberto />, menuPath: ['auditoria-os-aberto/dashboard', '/auditoria-os-aberto'] },
           { path: '/bi/garantias-daf', element: <BiGarantiasDaf />, menuPath: ['bi/garantias-daf', '/garantias-daf-andamento', '/garantias-daf', '/garantias-daf-historicodeos', '/garantias-daf-titulos'] },
           { path: '/bi/projetos', element: <BiProjetos />, menuPath: 'bi/projetos' },
-          { path: '/bi/possibilidades', element: <BiPossibilidades />, menuPath: 'bi/possibilidades' },
+          // Possibilidades mudou do menu BI pro menu Pós-Vendas (13/11/2026); endereço antigo redireciona.
+          { path: '/bi/possibilidades', element: <Navigate to="/pos-vendas/possibilidades" replace /> },
           { path: '/bi/agendamento-servicos', element: <BiAgendamentoServicos />, menuPath: 'bi/agendamento-servicos' },
           { path: '/bi/agendamento-servicos/manual', element: <BiAgendamentoServicosManual />, menuPath: 'bi/agendamento-servicos' },
           { path: '/bi/planos-manutencao', element: <BiPlanosManutencao />, menuPath: 'bi/planos-manutencao' },
           { path: '/bi/planos-manutencao/manual', element: <BiPlanosManutencaoManual />, menuPath: 'bi/planos-manutencao' },
+          { path: '/pos-vendas/produtividade', element: <IndicadoresProdutividade />, menuPath: 'pos-vendas/produtividade' },
+          { path: '/pos-vendas/possibilidades', element: <BiPossibilidades />, menuPath: 'bi/possibilidades' },
           { path: '/bi/fontes', element: <Navigate to="/fontes-dados?aba=dealernet" replace /> },
           { path: '/bi/medidas', element: <MedidasBi />, menuPath: 'bi/medidas' },
           { path: '/bi/campanha', element: <BiCampanha />, menuPath: CAMPANHA_ABAS_PERMS },

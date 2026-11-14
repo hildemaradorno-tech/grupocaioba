@@ -53,9 +53,11 @@ import { getPesos, setPeso, aplicarPesos } from '../services/kpiPesos.js'
 import { getMetasManuais, setMetaManual, aplicarMetasManuais } from '../services/kpiMetasManuais.js'
 import { getMetaPecasPeriodos, getMetaOficinaPeriodos, getMetaMecanicoPeriodos, getMetaMargemOficinaPeriodos, getMetaPecasBalcaoPeriodos, getMetaMargemBalcaoPeriodos, getMetaTrpPeriodos, getMetaTicketMedioPeriodos, getMetaFunilariaPeriodos, limparCacheMetas } from '../services/kpiMetas.js'
 import { getIndicadoresGarantia } from '../services/kpiGarantias.js'
-import { getIndicadoresAuditoriaOs } from '../services/kpiAuditoriaOs.js'
+import { getIndicadoresAuditoriaOs, normConsultor } from '../services/kpiAuditoriaOs.js'
+import { getProdutividadeConsultores, metaProdutividadeRegrasCor, semAcento as semAcentoProd } from '../services/kpiProdutividadeConsultor.js'
 import { getIndicadoresAgendamento, comMetasAtuaisAgendamento } from '../services/kpiAgendamento.js'
 import { getIndicadoresPlanos, contarPlanosPorMes } from '../services/kpiPlanosManutencao.js'
+import { getValoresPossibilidades, limparCachePossibilidades } from '../services/kpiPossibilidades.js'
 
 const router = Router()
 
@@ -94,11 +96,12 @@ const BLOCO3_PV_TEMPLATE = [
       // (mesmos números e metas do BI Planos; ids novos para não herdar o peso do 7).
       { id: 10, indicador: 'Contratos novos',                             orientacao: '>', metrica: 'un',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
       { id: 11, indicador: 'Contratos renovados',                         orientacao: '>', metrica: 'un',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
-      { id: 4, indicador: 'O.S. aberta sem veículo',                      orientacao: '<', metrica: '%',   metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
-      { id: 5, indicador: 'Absorção de Pós-Venda',                        orientacao: '>', metrica: '%',   metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
-      { id: 6, indicador: 'Recusa de Garantia',                           orientacao: '<', metrica: '%',   metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
-      { id: 8, indicador: 'NPS (Net Promoter Score)',                    orientacao: '>', metrica: 'pts', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      { id: 4, indicador: 'O.S. aberta sem veículo na oficina',           orientacao: '<', metrica: '%',   metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
       { id: 9, indicador: 'O.S. abertas >= 30 dias',                      orientacao: '<', metrica: '%',   metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      // id 6 (Recusa de Garantia) trocado a pedido pelo indicador do SETOR GARANTIA (todas as empresas; meta digitada).
+      { id: 12, indicador: 'Garantias Recusadas (fora do prazo)',       orientacao: '<', metrica: 'un',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      { id: 5, indicador: 'Absorção de Pós-Venda',                        orientacao: '>', metrica: '%',   metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      { id: 8, indicador: 'NPS (Net Promoter Score)',                    orientacao: '>', metrica: 'pts', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
     ],
   },
   {
@@ -177,8 +180,8 @@ const BLOCO3_PV_TEMPLATE = [
     // A ordem da lista é a da tela (os de garantia primeiro); a coluna # mostra a posição.
     kpis: [
       // Mesmos indicadores do SETOR GARANTIA (kpiGarantias.js), todas as empresas ou a escolhida; meta digitada.
-      { id: 11, indicador: 'Digitação Atrasada',                   orientacao: '<', metrica: 'un',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
-      { id: 12, indicador: 'Aguardando Aprovação DAF (fora do prazo)', orientacao: '<', metrica: 'un', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      { id: 11, indicador: 'Garantias com Digitação Atrasada',                   orientacao: '<', metrica: 'un',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      { id: 12, indicador: 'Garantias Aguardando Aprovação DAF (fora do prazo)', orientacao: '<', metrica: 'un', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
       // Mesmos indicadores e metas do SETOR DE AGENDAMENTO DE SERVIÇOS (BI Agendamento; grupo todo).
       { id: 13, indicador: 'Taxa de Agendamento (Por Campanhas)',              orientacao: '>', metrica: '%', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
       { id: 14, indicador: 'Taxa de Agendamento Ativo (Por Data Agendamento)', orientacao: '>', metrica: '%', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
@@ -186,7 +189,8 @@ const BLOCO3_PV_TEMPLATE = [
       // Mesmos indicadores e metas do CONSULTOR DE PLANO DE MANUTENÇÃO (BI Planos; grupo todo).
       { id: 16, indicador: 'Contratos novos',     orientacao: '>', metrica: 'un', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
       { id: 17, indicador: 'Contratos renovados', orientacao: '>', metrica: 'un', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
-      { id:  5, indicador: 'Recusa de Garantia',                   orientacao: '<', metrica: '%',   metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      // id 5 (Recusa de Garantia) trocado a pedido pelo indicador do SETOR GARANTIA (todas as empresas; meta de Garantias DAF).
+      { id: 18, indicador: 'Garantias Recusadas (fora do prazo)',          orientacao: '<', metrica: 'un',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
       { id:  6, indicador: 'Auditoria Padrão DOURADOS',            orientacao: '>', metrica: '%',   metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
       { id:  7, indicador: 'Auditoria Padrão TRÊS LAGOAS',         orientacao: '>', metrica: '%',   metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
       { id:  8, indicador: 'Auditoria Padrão CAMPO GRANDE',        orientacao: '>', metrica: '%',   metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
@@ -412,10 +416,12 @@ const BLOCO_SERVICOS_TEMPLATE = [
       { id: 1, indicador: 'Faturamento Total Oficina (Peças + Serviços)', orientacao: '>', metrica: 'R$', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
       { id: 2, indicador: 'Margem Bruta Serviços',                        orientacao: '>', metrica: '%',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
       { id: 3, indicador: 'Margem Bruta Peças Oficina',                   orientacao: '>', metrica: '%',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      // Ticket Médio logo abaixo da Margem Bruta Peças Oficina (pedido do usuário, 13/11/2026). O id não
+      // muda (pesos e metas gravados por ele); a tela numera pela posição.
+      { id: 7, indicador: 'Ticket Médio da Oficina',                      orientacao: '>', metrica: 'R$', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
       { id: 4, indicador: 'Produtividade da Oficina',                     orientacao: '>', metrica: '%',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
       { id: 5, indicador: 'O.S. aberta sem veículo na oficina',           orientacao: '<', metrica: '%',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
       { id: 6, indicador: 'O.S. >= 30 dias (% do Valor)',                 orientacao: '<', metrica: '%',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
-      { id: 7, indicador: 'Ticket Médio da Oficina',                      orientacao: '>', metrica: 'R$', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
     ],
   },
   {
@@ -471,11 +477,11 @@ const BLOCO_SERVICOS_TEMPLATE = [
     tituloGerente: 'SETOR GARANTIA',
     cor: 'rose',
     kpis: [
-      { id: 1, indicador: 'Digitação Atrasada',                              orientacao: '<', metrica: 'un', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
-      { id: 2, indicador: 'Aguardando Aprovação DAF (fora do prazo)',          orientacao: '<', metrica: 'un', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      { id: 1, indicador: 'Garantias com Digitação Atrasada',                              orientacao: '<', metrica: 'un', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      { id: 2, indicador: 'Garantias Aguardando Aprovação DAF (fora do prazo)',          orientacao: '<', metrica: 'un', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
       // Cards "Aprovada" e "Recusas › Fora do prazo" da tela de Garantias (quantidade de O.S.).
-      { id: 3, indicador: 'Aprovada sem Faturamento',                        orientacao: '<', metrica: 'un', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
-      { id: 4, indicador: 'Recusadas sem Solução (fora do prazo)',             orientacao: '<', metrica: 'un', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      { id: 3, indicador: 'Garantias Aprovada sem Faturamento',                        orientacao: '<', metrica: 'un', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      { id: 4, indicador: 'Garantias Recusadas (fora do prazo)',             orientacao: '<', metrica: 'un', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
       // Card "Vencidos" da aba Títulos a Receber (RFN003): só período atual (sem histórico no arquivo).
       { id: 5, indicador: 'Garantias a Receber Vencidas',                     orientacao: '<', metrica: 'un', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
     ],
@@ -581,11 +587,11 @@ function mergeBlocoServicos(quadros, consultorData, mecanicoData, metaConsultor,
     }
     if (quadro.tituloGerente === 'SETOR GARANTIA') {
       const kpis = quadro.kpis.map(kpi => {
-        if (kpi.id === 1) return injectPeriods(kpi, garantiaData?.digitacaoAtrasada ?? {}, p)
-        if (kpi.id === 2) return injectPeriods(kpi, garantiaData?.aguardandoForaPrazo ?? {}, p)
-        if (kpi.id === 3) return injectPeriods(kpi, garantiaData?.aprovadaSemFaturamento ?? {}, p)
-        if (kpi.id === 4) return injectPeriods(kpi, garantiaData?.recusadaForaPrazo ?? {}, p)
-        if (kpi.id === 5) return injectPeriods(kpi, garantiaData?.titulosVencidos ?? {}, p)
+        if (kpi.id === 1) return injectMeta(injectPeriods(kpi, garantiaData?.digitacaoAtrasada ?? {}, p), garantiaData?.metas?.digitacaoAtrasada)
+        if (kpi.id === 2) return injectMeta(injectPeriods(kpi, garantiaData?.aguardandoForaPrazo ?? {}, p), garantiaData?.metas?.aguardandoForaPrazo)
+        if (kpi.id === 3) return injectMeta(injectPeriods(kpi, garantiaData?.aprovadaSemFaturamento ?? {}, p), garantiaData?.metas?.aprovadaSemFaturamento)
+        if (kpi.id === 4) return injectMeta(injectPeriods(kpi, garantiaData?.recusadaForaPrazo ?? {}, p), garantiaData?.metas?.recusadaForaPrazo)
+        if (kpi.id === 5) return injectMeta(injectPeriods(kpi, garantiaData?.titulosVencidos ?? {}, p), garantiaData?.metas?.titulosVencidos)
         return kpi
       })
       return { ...quadro, kpis }
@@ -600,39 +606,46 @@ router.get('/status', (req, res) => {
 
 router.get('/bloco3-pos-venda', requireConfig, wrap(async (req, res) => {
   const year = parseInt(req.query.year) || new Date().getFullYear()
-  res.json(await quadrosBloco3PosVenda({ year, refresh: !!req.query.refresh, empresaQualidade: req.query.empresaQualidade || null }))
+  res.json(await quadrosBloco3PosVenda({ year, refresh: !!req.query.refresh, empresaQualidade: req.query.empresaQualidade || null, incluirHoje: !!req.query.incluirHoje }))
 }))
 
 // Quadros dos gerentes (Bloco 3 - Serviços, parte Pós-Venda) com pesos e metas manuais. A base (realizado
 // + metas aprovadas) fica guardada como a do Bloco 3 - Serviços: antes era montada a cada pedido (a
 // Campanha pedia uma vez por função de gerente).
 // empresaQualidade: seletor de empresa do GERENTE DE PROCESSOS E QUALIDADE ('CAMPO GRANDE'…); vazio = todas somadas.
-async function quadrosBloco3PosVenda({ year, refresh = false, fundo = false, empresaQualidade = null }) {
+// incluirHoje: período em andamento até agora; padrão até ONTEM (Matriz › Considerar o dia atual).
+async function quadrosBloco3PosVenda({ year, refresh = false, fundo = false, empresaQualidade = null, incluirHoje = false }) {
   const [base, garantia, agendamento, planos, auditoriaOs] = await Promise.all([
     obterBaseBloco3Servicos(`bloco3-posvenda|${year}`, () => montarBaseBloco3PosVenda(year), { refresh, checarMetas: metasModo(fundo) }),
     // GERENTE DE PROCESSOS E QUALIDADE › Digitação Atrasada / Aguardando Aprovação DAF (fora do prazo): as garantias
     // de todas as empresas ou da escolhida (lidas na hora, como no SETOR GARANTIA — consulta leve no Supabase).
-    getIndicadoresGarantia(year, empresaQualidade || null).catch(err => { console.error('[bloco3-pos-venda] garantias:', err.message); return null }),
+    getIndicadoresGarantia(year, empresaQualidade || null, { incluirHoje }).catch(err => { console.error('[bloco3-pos-venda] garantias:', err.message); return null }),
     // Agendamento (grupo todo — o relatório não traz a empresa): base guardada + metas do BI na hora.
-    baseAgendamentoServicos(year, { refresh }).then(comMetasAtuaisAgendamento)
+    baseAgendamentoServicos(year, { refresh, incluirHoje }).then(comMetasAtuaisAgendamento)
       .catch(err => { console.error('[bloco3-pos-venda] agendamento:', err.message); return null }),
     // Planos de manutenção: contagens guardadas + metas do BI na hora (como no Consultor de Plano).
-    basePlanosServicos(year, { refresh }).then(meses => getIndicadoresPlanos(year, meses))
+    basePlanosServicos(year, { refresh, incluirHoje }).then(meses => getIndicadoresPlanos(year, meses))
       .catch(err => { console.error('[bloco3-pos-venda] planos:', err.message); return null }),
     // Auditoria O.S. Aberta (aud_*): O.S. sem veículo e 30+ dias, por empresa e grupo — lida na hora.
-    getIndicadoresAuditoriaOs(year).catch(err => { console.error('[bloco3-pos-venda] auditoria O.S.:', err.message); return null }),
+    getIndicadoresAuditoriaOs(year, { incluirHoje }).catch(err => { console.error('[bloco3-pos-venda] auditoria O.S.:', err.message); return null }),
   ])
   // Base guardada antes de um quadro ser renomeado: passa para o nome novo (QUADROS_NOME_ANTIGO).
   const baseNomesNovos = base.map(q => (QUADROS_NOME_ANTIGO[q.tituloGerente] ? { ...q, tituloGerente: QUADROS_NOME_ANTIGO[q.tituloGerente] } : q))
   let quadros = comGarantiasQualidade(baseNomesNovos, garantia, agendamento, planos, auditoriaOs)
   quadros = aplicarPesos(quadros, comNomesAntigos(await getPesos('bloco3-pos-venda')))
-  quadros = aplicarMetasManuais(quadros, comNomesAntigos(await getMetasManuais('bloco3-pos-venda', year)), year)
+  // Indicadores com meta de Garantias DAF: as metas digitadas na Matriz não valem (seriam aplicadas por cima).
+  const chavesMetaGar = new Set(quadros.flatMap(q => q.kpis.filter(k => META_DE_GARANTIAS_DAF.has(k.indicador)).map(k => `${q.tituloGerente}|${k.id}`)))
+  const metasManuaisPv = Object.fromEntries(Object.entries(comNomesAntigos(await getMetasManuais('bloco3-pos-venda', year)) || {})
+    .filter(([k]) => !chavesMetaGar.has(k)))
+  quadros = aplicarMetasManuais(quadros, metasManuaisPv, year)
   return quadros
 }
 
 // Preenche no GERENTE DE PROCESSOS E QUALIDADE os indicadores de garantia (realizado; a meta vem das metas digitadas).
 // Base guardada antes desses indicadores existirem: acrescenta as linhas que faltam (ordem do template).
-const INDICADORES_GARANTIA_QUALIDADE = { 'Digitação Atrasada': 'digitacaoAtrasada', 'Aguardando Aprovação DAF (fora do prazo)': 'aguardandoForaPrazo' }
+const INDICADORES_GARANTIA_QUALIDADE = { 'Garantias com Digitação Atrasada': 'digitacaoAtrasada', 'Garantias Aguardando Aprovação DAF (fora do prazo)': 'aguardandoForaPrazo', 'Garantias Recusadas (fora do prazo)': 'recusadaForaPrazo' }
+// Indicadores de garantia dos gerentes cuja META vem de Garantias DAF (gar_metas_indicadores, soma das lojas).
+const META_DE_GARANTIAS_DAF = new Set(['Garantias Recusadas (fora do prazo)'])
 // Agendamento (realizado + meta do BI), mesmos do SETOR DE AGENDAMENTO DE SERVIÇOS.
 const INDICADORES_AGENDAMENTO_QUALIDADE = {
   'Taxa de Agendamento (Por Campanhas)': 'taxaAgendamento',
@@ -646,7 +659,6 @@ const INDICADORES_PLANOS_QUALIDADE = { 'Contratos novos': 'novos', 'Contratos re
 // A lista de indicadores segue o modelo (BLOCO3_PV_TEMPLATE) — base guardada antes da troca se ajusta.
 // Auditoria O.S. Aberta: Gerente Geral = grupo (todas as empresas); gerentes de loja = a própria empresa.
 const INDICADORES_AUDITORIA_OS = {
-  'O.S. aberta sem veículo': 'semVeiculo',             // Gerente Geral
   'O.S. abertas >= 30 dias': 'mais30',                 // Gerente Geral
   'O.S. aberta sem veículo na oficina': 'semVeiculo',  // gerentes de loja
   'O.S. >= 30 dias (% do Valor)': 'mais30',            // gerentes de loja
@@ -688,7 +700,10 @@ function comGarantiasQualidade(base, garantia, agendamento = null, planos = null
         const valores = campo && garantia?.[campo]
         if (!valores) return k
         const out = { ...k }
-        for (const [p, realizado] of Object.entries(valores)) out[p] = { meta: null, realizado }
+        // Meta de Garantias DAF (engrenagem → Metas — Setor Garantia; soma das lojas) nos indicadores
+        // listados em META_DE_GARANTIAS_DAF; nos demais, a meta é digitada na Matriz (metas manuais).
+        const metasGar = META_DE_GARANTIAS_DAF.has(k.indicador) ? garantia?.metas?.[campo] : null
+        for (const [p, realizado] of Object.entries(valores)) out[p] = { meta: metasGar?.[p] ?? null, realizado }
         return out
       }),
     }
@@ -986,9 +1001,23 @@ async function obterBaseBloco3Servicos(chave, montar, { refresh = false, checarM
 // pré-cálculo depois da Atualização). Nome da pessoa normalizado na chave: "Fulano de Tal" (Campanha) e
 // "FULANO DE TAL" (seletor da Matriz) usam a mesma base.
 const metasModo = (fundo, padrao = true) => (padrao && fundo ? 'fundo' : padrao)
-const basePessoaServicos = (year, consultor, mecanico, { refresh = false, fundo = false } = {}) =>
+// Sem checar metas (13/11/2026): as metas do Consultor (quadroConsultorServicos) e do Mecânico
+// (comMetaMecanico) são lidas na hora — antes, qualquer aprovação no Planejamento fazia o mecânico escolhido
+// reler o ROF042/ROF096 (~20 s) só pra trocar a meta.
+const basePessoaServicos = (year, consultor, mecanico, { refresh = false } = {}) =>
   obterBaseBloco3Servicos(`bloco3-servicos|${year}|${normPessoa(consultor)}|${normPessoa(mecanico)}`,
-    () => montarBaseBloco3Servicos(year, consultor, mecanico), { refresh, checarMetas: metasModo(fundo) })
+    () => montarBaseBloco3Servicos(year, consultor, mecanico), { refresh, checarMetas: false })
+
+// MECÂNICO › Faturamento Total Oficina (Serviços): meta aprovada do Planejamento lida na hora (leve, 60 s
+// de cache em kpiMetas); sem meta aprovada = sem meta (não fica a da base guardada).
+async function comMetaMecanico(quadros, year, mecanico) {
+  const meta = await getMetaMecanicoPeriodos(year, mecanico, await getFiltroBoxOficina()).catch(() => undefined)
+  if (meta === undefined) return quadros // falha na leitura: mantém o que veio na base
+  return quadros.map(q => (q.tituloGerente !== 'MECÂNICO' ? q : {
+    ...q,
+    kpis: q.kpis.map(k => (k.id !== 1 ? k : injectMeta(k, meta || Object.fromEntries(['q1', 'q2', 'q3', 'q4', 'fy', ...ALL_MONTHS, ...ALL_WEEKS].map(p => [p, null]))))),
+  }))
+}
 const baseOficinaServicos = (year, empresa, { refresh = false } = {}) =>
   obterBaseBloco3Servicos(`bloco3-servicos-oficina|${year}|${empresa}`,
     () => montarOficinaBloco3Servicos(year, empresa), { refresh, checarMetas: false })
@@ -999,11 +1028,11 @@ const baseFunilariaServicos = (year, empresa, { refresh = false, fundo = false }
   obterBaseBloco3Servicos(`bloco3-servicos-funilaria|${year}|${empresa}`,
     () => montarSetorFunilariaPinturaBloco3Servicos(year, empresa), { refresh, checarMetas: metasModo(fundo) }) // tem meta aprovada
 // Contagens guardadas (devolve na hora e atualiza por trás, como a base); metas lidas na hora.
-const basePlanosServicos = (year, { refresh = false } = {}) =>
-  obterBaseBloco3Servicos(`bloco3-servicos-planos-v2|${year}`, () => contarPlanosPorMes(year), { refresh, checarMetas: false }) // v2: com semanas
+const basePlanosServicos = (year, { refresh = false, incluirHoje = false } = {}) =>
+  obterBaseBloco3Servicos(`bloco3-servicos-planos-v2|${year}${incluirHoje ? '|hoje' : ''}`, () => contarPlanosPorMes(year, { incluirHoje }), { refresh, checarMetas: false }) // v2: com semanas
 // BI Agendamento de Serviços: realizados guardados (leitura do SharePoint leva ~15 s a frio); metas lidas na hora.
-const baseAgendamentoServicos = (year, { refresh = false } = {}) =>
-  obterBaseBloco3Servicos(`bloco3-servicos-agendamento|${year}`, () => getIndicadoresAgendamento(year), { refresh, checarMetas: false })
+const baseAgendamentoServicos = (year, { refresh = false, incluirHoje = false } = {}) =>
+  obterBaseBloco3Servicos(`bloco3-servicos-agendamento-v2|${year}${incluirHoje ? '|hoje' : ''}`, () => getIndicadoresAgendamento(year, { incluirHoje }), { refresh, checarMetas: false })
 
 const QUADROS_EMPRESA_SERVICOS = ['SETOR DE MECÂNICA', 'CHEFE DE OFICINA', 'SETOR FUNILARIA/PINTURA', 'SETOR GARANTIA']
 const QUADRO_PLANOS_SERVICOS = 'CONSULTOR DE PLANO DE MANUTENÇÃO'
@@ -1039,12 +1068,81 @@ router.get('/bloco3-servicos', requireConfig, wrap(async (req, res) => {
     empresaGarantia: req.query.empresaGarantia || null,
     apenas: req.query.apenas || null,
     refresh: !!req.query.refresh,
+    incluirHoje: !!req.query.incluirHoje, // período em andamento até agora (padrão: até ontem)
   }))
 }))
 
+// CONSULTOR DE SERVIÇOS › O.S. aberta sem veículo na oficina / O.S. >= 30 dias (% do Valor): auditorias
+// O.S. Aberta — só as O.S. do consultor escolhido; sem consultor, o grupo (todas as empresas).
+// Consultor sem O.S. em nenhuma auditoria do período = sem valor.
+function comAuditoriaConsultor(q, auditoriaOs, consultor) {
+  if (q.tituloGerente !== 'CONSULTOR DE SERVIÇOS' || !auditoriaOs) return q
+  const dados = consultor ? auditoriaOs.porConsultor?.[normConsultor(consultor)] : auditoriaOs.grupo
+  return {
+    ...q,
+    kpis: q.kpis.map(k => {
+      const campo = INDICADORES_AUDITORIA_OS[k.indicador]
+      if (!campo) return k
+      const d = dados?.[campo] || { realizado: {}, meta: auditoriaOs.grupo?.[campo]?.meta || {} }
+      return injectMeta(injectPeriods(k, d.realizado, v => v ?? null), d.meta)
+    }),
+  }
+}
+
+// CONSULTOR DE SERVIÇOS › Produtividade da Oficina: Produtividade % da aba Consultores de Pós-Vendas ›
+// Indicadores de Produtividade (Hr. Faturadas ÷ Hr. Disp. Reais do consultor). Só o realizado; a meta
+// continua a da Matriz. Sem consultor escolhido = total dos consultores (Trucks).
+function comProdutividadeConsultor(q, prod, consultor) {
+  if (q.tituloGerente !== 'CONSULTOR DE SERVIÇOS' || !prod) return q
+  const dados = consultor ? prod.porConsultor?.[semAcentoProd(consultor)] : prod.grupo
+  return {
+    ...q,
+    // metaHoras: { período: h } — Meta Horas do consultor (aba Consultores), mostrada embaixo da meta em %.
+    kpis: q.kpis.map(k => (k.indicador === 'Produtividade da Oficina'
+      ? { ...injectPeriods(k, dados?.realizado || {}, v => v ?? null), metaHoras: dados?.metaHoras || null } : k)),
+  }
+}
+
+// Realizado tirado do BI Possibilidades - Sintonia do Dia (kpiPossibilidades.js) — troca SÓ o realizado de
+// cada período; a meta continua a da Matriz. mapa = { 'Nome do indicador': { período: valor } }.
+const POSS_POR_QUADRO = {
+  'CONSULTOR DE SERVIÇOS': (v) => ({
+    'Faturamento Total Oficina (Peças + Serviços)': v.consultor.fatTotal,
+    'Margem Bruta Serviços': v.consultor.margemServicos,
+    'Margem Bruta Peças Oficina': v.consultor.margemPecas,
+    'Ticket Médio da Oficina': v.consultor.ticket,
+  }),
+  'MECÂNICO': (v) => ({ 'Faturamento Total Oficina (Serviços)': v.mecanico.fatServicos }),
+  'SETOR FUNILARIA/PINTURA': (v) => (v.funilaria ? { 'Faturamento Total Funilaria/Pintura (Departamento)': v.funilaria.fatTotal } : {}),
+}
+function comPossibilidades(q, poss) {
+  const montar = poss && POSS_POR_QUADRO[q.tituloGerente]
+  if (!montar) return q
+  const mapa = montar(poss)
+  const PERIODOS = [...ALL_MONTHS, ...ALL_WEEKS, 'q1', 'q2', 'q3', 'q4', 'fy']
+  return {
+    ...q,
+    kpis: q.kpis.map(k => {
+      const valores = mapa[k.indicador]
+      if (!valores) return k
+      const out = { ...k }
+      for (const p of PERIODOS) out[p] = { ...(k[p] ?? { meta: null }), realizado: valores[p] ?? null }
+      return out
+    }),
+  }
+}
+
+// Linhas do quadro na ordem do template (a base guardada em cache pode ter a ordem antiga); pelo id.
+function naOrdemDoTemplate(q) {
+  const tpl = BLOCO_SERVICOS_TEMPLATE.find(t => t.tituloGerente === q.tituloGerente)
+  if (!tpl) return q
+  const pos = new Map(tpl.kpis.map((k, i) => [k.id, i]))
+  return { ...q, kpis: [...q.kpis].sort((a, b) => (pos.get(a.id) ?? 999) - (pos.get(b.id) ?? 999)) }
+}
+
 // Quadros do Bloco 3 - Serviços já com pesos e metas manuais (rota GET e Campanha em lote).
 async function quadrosBloco3Servicos({ year, consultor = null, mecanico = null, empresaOficina = null, empresaChefeOficina = null,
-  empresaFunilaria = null, empresaGarantia = null, apenas = null, refresh = false, fundo = false }) {
+  empresaFunilaria = null, empresaGarantia = null, apenas = null, refresh = false, fundo = false, incluirHoje = false }) {
   const QUADROS_EMPRESA = QUADROS_EMPRESA_SERVICOS
   const QUADRO_PLANOS = QUADRO_PLANOS_SERVICOS
   const QUADRO_AGENDAMENTO = QUADRO_AGENDAMENTO_SERVICOS
@@ -1056,23 +1154,35 @@ async function quadrosBloco3Servicos({ year, consultor = null, mecanico = null, 
   const soAgendamento = apenas === QUADRO_AGENDAMENTO
   const semBase = soOficina || soPlanos || soAgendamento
   const opts = { refresh, fundo }
+  if (refresh) limparCachePossibilidades()
 
   // SETOR GARANTIA lê o Supabase (gar_garantias) ao vivo — consulta leve e muda a cada atualização
   // de garantia, então não passa pelo cache da base.
   // CONSULTOR DE PLANO DE MANUTENÇÃO: contagens guardadas como a base; metas lidas na hora.
-  const [base, oficina, chefeOficina, funilaria, garantia, planos, agendamento] = await Promise.all([
-    semBase ? null : basePessoaServicos(year, consultor, mecanico, opts),
+  let [base, oficina, chefeOficina, funilaria, garantia, planos, agendamento, auditoriaOs, prodConsultores, possibilidades, quadroConsultor] = await Promise.all([
+    // Base guardada só por mecânico (o consultor não lê planilha — quadroConsultor abaixo).
+    semBase ? null : basePessoaServicos(year, null, mecanico, opts),
     empresaOficina ? baseOficinaServicos(year, empresaOficina, opts) : null,
     empresaChefeOficina ? baseChefeOficinaServicos(year, empresaChefeOficina, opts) : null,
     empresaFunilaria ? baseFunilariaServicos(year, empresaFunilaria, opts) : null,
-    empresaGarantia ? getIndicadoresGarantia(year, semTodas(empresaGarantia)).catch(() => null) : null,
-    soAgendamento ? null : basePlanosServicos(year, opts) // aba Setores (soOficina) também mostra o Consultor de Plano
+    empresaGarantia ? getIndicadoresGarantia(year, semTodas(empresaGarantia), { incluirHoje }).catch(() => null) : null,
+    soAgendamento ? null : basePlanosServicos(year, { ...opts, incluirHoje }) // aba Setores (soOficina) também mostra o Consultor de Plano
       .then(meses => getIndicadoresPlanos(year, meses))
       .catch(err => { console.error('[bloco3-servicos] planos:', err.message); return null }),
-    soPlanos ? null : baseAgendamentoServicos(year, opts)
+    soPlanos ? null : baseAgendamentoServicos(year, { ...opts, incluirHoje })
       .then(comMetasAtuaisAgendamento)
       .catch(err => { console.error('[bloco3-servicos] agendamento:', err.message); return null }),
+    // Auditoria O.S. Aberta para o CONSULTOR DE SERVIÇOS (só quando o quadro dele é montado).
+    semBase ? null : getIndicadoresAuditoriaOs(year, { incluirHoje }).catch(err => { console.error('[bloco3-servicos] auditoria O.S.:', err.message); return null }),
+    // Produtividade % do consultor: mesma conta da aba Consultores de Pós-Vendas › Indicadores de Produtividade.
+    semBase ? null : getProdutividadeConsultores(year, { incluirHoje }).catch(err => { console.error('[bloco3-servicos] produtividade consultor:', err.message); return null }),
+    // Faturamento/Margem/Ticket do Consultor, Faturamento do Mecânico e da Funilaria: BI Possibilidades.
+    (semBase && !empresaFunilaria) ? null : getValoresPossibilidades(year, { incluirHoje, consultor, mecanico, empresaFunilaria })
+      .catch(err => { console.error('[bloco3-servicos] possibilidades:', err.message); return null }),
+    semBase ? null : quadroConsultorServicos(year, consultor).catch(err => { console.error('[bloco3-servicos] consultor:', err.message); return null }),
   ])
+  if (base && quadroConsultor) base = base.map(q => (q.tituloGerente === 'CONSULTOR DE SERVIÇOS' ? quadroConsultor : q))
+  if (base) base = await comMetaMecanico(base, year, mecanico)
   const extras = mergeBlocoServicos(BLOCO_SERVICOS_TEMPLATE.filter(q => QUADROS_EMPRESA.includes(q.tituloGerente) || q.tituloGerente === QUADRO_PLANOS || q.tituloGerente === QUADRO_AGENDAMENTO),
     null, null, null, null, null, null, oficina, chefeOficina, funilaria, garantia, planos, agendamento)
   const porTitulo = Object.fromEntries(extras.map(q => [q.tituloGerente, q]))
@@ -1082,9 +1192,22 @@ async function quadrosBloco3Servicos({ year, consultor = null, mecanico = null, 
     .filter(q => base ? true : soPlanos ? q.tituloGerente === QUADRO_PLANOS : soAgendamento ? q.tituloGerente === QUADRO_AGENDAMENTO
       : QUADROS_EMPRESA.includes(q.tituloGerente) || q.tituloGerente === QUADRO_AGENDAMENTO || q.tituloGerente === QUADRO_PLANOS)
     .map(q => porTitulo[q.tituloGerente] ?? baseMap[q.tituloGerente] ?? q)
+    .map(q => comAuditoriaConsultor(q, auditoriaOs, consultor))
+    .map(q => comProdutividadeConsultor(q, prodConsultores, consultor))
+    .map(q => comPossibilidades(q, possibilidades))
+    .map(naOrdemDoTemplate)
 
   let quadros = aplicarPesos(montados, comNomesAntigos(await getPesos('bloco3-servicos')))
-  quadros = aplicarMetasManuais(quadros, comNomesAntigos(await getMetasManuais('bloco3-servicos', year)), year)
+  // SETOR GARANTIA: meta das Regras de Garantias DAF (gar_metas_indicadores) — as digitadas na Matriz não valem.
+  const metasManuaisServ = Object.fromEntries(Object.entries(comNomesAntigos(await getMetasManuais('bloco3-servicos', year)) || {}).filter(([k]) => !k.startsWith('SETOR GARANTIA|')))
+  // CONSULTOR DE SERVIÇOS › Produtividade da Oficina: meta das Regras de Cores da tela de Indicadores de
+  // Produtividade (limite inferior da faixa verde) — a digitada na Matriz não vale mais.
+  const kpiProdCons = quadros.find(q => q.tituloGerente === 'CONSULTOR DE SERVIÇOS')?.kpis.find(k => k.indicador === 'Produtividade da Oficina')
+  if (kpiProdCons) {
+    const metaRegras = await metaProdutividadeRegrasCor(year).catch(err => { console.error('[bloco3-servicos] meta produtividade (regras de cores):', err.message); return null })
+    if (metaRegras) metasManuaisServ[`CONSULTOR DE SERVIÇOS|${kpiProdCons.id}`] = metaRegras
+  }
+  quadros = aplicarMetasManuais(quadros, metasManuaisServ, year)
   return quadros
 }
 
@@ -1152,6 +1275,8 @@ export async function aquecerCacheCampanha(year = new Date().getFullYear()) {
   }
   const op = { refresh: true }
   try {
+    // Medidas BI do ano (BI Possibilidades) já lidas: o 1º consultor escolhido abre na hora.
+    await passo('possibilidades', () => getValoresPossibilidades(year))
     await passo('agendamento', () => baseAgendamentoServicos(year, op))
     await passo('planos', () => basePlanosServicos(year, op))
     await passo('gerentes', () => quadrosBloco3PosVenda({ year, refresh: true }))
@@ -1169,7 +1294,8 @@ export async function aquecerCacheCampanha(year = new Date().getFullYear()) {
     const consultores = await filtrarAtivos(nomesC)
     const mecanicos = await filtrarAtivos(nomesM, 'mecanic')
     const vendedores = await filtrarAtivos(vend)
-    for (const n of consultores) await passo(`consultor ${n}`, () => basePessoaServicos(year, n, null, op))
+    // Consultores: não há mais base por consultor (quadroConsultorServicos não lê planilha) — nada a pré-calcular.
+    void consultores
     for (const n of mecanicos) await passo(`mecânico ${n}`, () => basePessoaServicos(year, null, n, op))
     for (const n of vendedores) await passo(`vendedor ${n}`, () => quadrosBloco3Pecas({ year, vendedor: n, refresh: true }))
   } finally {
@@ -1230,18 +1356,23 @@ async function montarSetorFunilariaPinturaBloco3Servicos(year, empresaFunilariaP
 // Quadros do Bloco 3 - Serviços com realizado e metas (sem pesos/metas manuais — aplicados na rota).
 // Os quadros OFICINA e CHEFE DE OFICINA saem vazios daqui: a rota os preenche à parte
 // (montarOficinaBloco3Servicos / montarChefeOficinaBloco3Servicos).
+// Quadro CONSULTOR DE SERVIÇOS sem ler planilha nenhuma (13/11/2026): os realizados vêm do BI Possibilidades
+// (comPossibilidades), da Produtividade (Indicadores) e da Auditoria O.S.; aqui só as metas aprovadas do
+// Planejamento (fato_metas_publicadas / consultor aprovado — leitura leve, guardada 60 s em kpiMetas).
+async function quadroConsultorServicos(year, consultor) {
+  const [metaConsultor, margemConsultor, metaTicket] = await Promise.all([
+    getMetaOficinaPeriodos(year, consultor ? { consultorNome: consultor } : {}).catch(() => null),
+    getMetaMargemOficinaPeriodos(year, { consultorNome: consultor }).catch(() => null),
+    getMetaTicketMedioPeriodos(year, { consultorNome: consultor }).catch(() => null),
+  ])
+  const tpl = BLOCO_SERVICOS_TEMPLATE.filter(q => q.tituloGerente === 'CONSULTOR DE SERVIÇOS')
+  return mergeBlocoServicos(tpl, null, null, metaConsultor, null, margemConsultor, metaTicket)[0]
+}
+
+// Base pesada do Bloco 3 - Serviços: só o MECÂNICO (ROF042/ROF096 do SharePoint). O consultor não entra mais
+// (quadroConsultorServicos) — antes cada consultor escolhido relia 3 relatórios (~20 s na primeira vez).
 async function montarBaseBloco3Servicos(year, consultor, mecanico) {
-  // Consultor: Peças de Oficina (RPR001) + Serviços (Recepcionista), mesma
-  // dupla fonte do Faturamento Total Oficina do Gerente Geral Pós-Venda —
-  // ao vivo, sem filtro de empresa (seletor da tela é só por pessoa).
-  let pecasOficina = null, servicos = null
-  try { pecasOficina = await extractPecasOficinaPorConsultor(year, null, consultor) } catch (_) { /* sem dados */ }
-  // Ticket Médio: O.S. únicas de peças + serviços (só o RPR001 deixava de fora as O.S. sem peça).
-  try {
-    const passagens = await extractPassagensConsultor(year, null, consultor)
-    if (pecasOficina && passagens) pecasOficina = { ...pecasOficina, passagens }
-  } catch (_) { /* mantém as passagens do RPR001 */ }
-  try { servicos     = await extractServicosPorConsultor(year, null, consultor) } catch (_) { /* sem dados */ }
+  const pecasOficina = null, servicos = null
 
   // Mecânico: ROF042 (Vl Líquido + horas) e ROF096 (Horas Disponíveis) do
   // mesmo mecânico selecionado.

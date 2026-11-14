@@ -1,7 +1,7 @@
 ﻿import React, { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useSessionState } from '../hooks/useSessionState'
-import { Trash2, Plus, Edit2, Eye, EyeOff, X, UserCheck, Search, UserPlus, Send, Link2, Settings } from 'lucide-react'
+import { Trash2, Plus, Edit2, Eye, EyeOff, X, UserCheck, Search, UserPlus, Send, Link2, Settings, MailCheck } from 'lucide-react'
 import { SearchCombobox } from '../components/SearchCombobox'
 import { apiService } from '../services/api'
 import { supabase } from '../services/supabaseClient'
@@ -114,6 +114,8 @@ function AcoesMenu({ acoes }) {
 export default function Usuarios() {
   const { isAdmin, iniciarVisualizacao, user } = useAuth()
   const [usuarios, setUsuarios] = useState([])
+  // e-mails (minúsculos) de login ainda não confirmados no Supabase Auth
+  const [naoConfirmados, setNaoConfirmados] = useState(new Set())
   const [grupos, setGrupos] = useState([])
   const [cargos, setCargos] = useState([])
   const [funcionarios, setFuncionarios] = useState([])
@@ -151,6 +153,7 @@ export default function Usuarios() {
       setCargos(cargosData.filter(c => c.ativo !== false))
       setFuncionarios(funcionariosData.filter(f => f.ativo !== false))
       setAuthServiceConfigured(Boolean(authStatus.serviceRoleConfigured))
+      carregarConfirmacoes()
     } catch (err) {
       console.error('Erro ao carregar dados', err)
       setError(err.message || String(err))
@@ -217,6 +220,23 @@ export default function Usuarios() {
     setShowSenha(false)
     setShowSenhaConfirm(false)
     setShowForm(true)
+  }
+
+  const carregarConfirmacoes = () => {
+    apiService.getEmailStatusAuth()
+      .then(lista => setNaoConfirmados(new Set(lista.filter(x => !x.confirmado).map(x => x.email))))
+      .catch(() => setNaoConfirmados(new Set()))
+  }
+
+  const handleConfirmarEmail = async (usuario) => {
+    if (!window.confirm(`Confirmar o e-mail de ${usuario.nome} (${usuario.email}) e liberar o acesso?`)) return
+    try {
+      await apiService.confirmarEmailUsuario(usuario.id)
+      carregarConfirmacoes()
+      alert('E-mail confirmado. O usuário já pode entrar.')
+    } catch (err) {
+      alert('Erro ao confirmar e-mail: ' + (err.message || String(err)))
+    }
   }
 
   const handleReenviarConvite = async (usuario) => {
@@ -509,12 +529,21 @@ export default function Usuarios() {
                     { label: 'Visualizar', icon: <Eye size={14} />, onClick: () => abrirVisualizar(u) },
                     { label: 'Editar', icon: <Edit2 size={14} />, onClick: () => handleEdit(u) },
                     { label: 'Reenviar e-mail', icon: <Send size={14} />, onClick: () => handleReenviarConvite(u) },
+                    naoConfirmados.has((u.email || '').toLowerCase()) && { label: 'Confirmar e-mail', icon: <MailCheck size={14} />, onClick: () => handleConfirmarEmail(u) },
                     (isAdmin && u.email !== user?.email) && { label: `Visualizar como ${u.nome}`, icon: <UserCheck size={14} />, onClick: () => iniciarVisualizacao(u) },
                     { label: 'Excluir', icon: <Trash2 size={14} />, onClick: () => handleDelete(u.id), danger: true },
                   ]} />
                 </td>
                 <td className="px-6 py-3 text-sm text-slate-900 whitespace-nowrap">{u.nome}</td>
-                <td className="px-6 py-3 text-sm text-slate-600">{u.email}</td>
+                <td className="px-6 py-3 text-sm text-slate-600">
+                  {u.email}
+                  {naoConfirmados.has((u.email || '').toLowerCase()) && (
+                    <span title="E-mail ainda não confirmado — use a engrenagem → Confirmar e-mail para liberar o acesso"
+                      className="ml-2 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 whitespace-nowrap">
+                      não confirmado
+                    </span>
+                  )}
+                </td>
                 <td className="px-6 py-3 text-sm text-slate-500 whitespace-nowrap">
                   {grupos.find(g => g.id === u.grupo_id)?.nome_grupo || <span className="text-slate-300">—</span>}
                 </td>

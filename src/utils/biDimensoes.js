@@ -18,6 +18,26 @@ const somarNoBucket = (bucket, g) => {
   bucket.linhas += g.linhas || 0
   if (g.distintos) for (const v of g.distintos) bucket.distintos.add(v)
 }
+// Abertura do funcionário (aba Serviços): Setor × Funcionário × Tipo Interno e × Tipo de OS.
+const novaAberturaFunc = () => ({ grupo: new Map(), tipo: new Map(), info: new Map() })
+const acumularAberturaFunc = (ab, setorId, funcNorm, tipoResolvido, tipoBruto, g) => {
+  const grupo = String(tipoResolvido?.tipo_interno || '').trim() || '(Sem tipo interno)'
+  const grupoNorm = normalizaBusca(grupo)
+  const chaveGrupo = `${setorId}|${funcNorm}|${grupoNorm}`
+  acumularBucket(ab.grupo, chaveGrupo, g)
+  if (!ab.info.has(chaveGrupo)) ab.info.set(chaveGrupo, { nome: grupo })
+  const chaveTipo = `${chaveGrupo}|${normalizaBusca(tipoResolvido?.sigla || tipoBruto)}`
+  acumularBucket(ab.tipo, chaveTipo, g)
+  if (!ab.info.has(chaveTipo)) ab.info.set(chaveTipo, { nome: tipoResolvido?.tipo_os || tipoBruto || '(Sem Tipo de OS)' })
+}
+// -> { grupo: Map<'setor|FUNC|GRUPO', {nome, valor}>, tipo: Map<'setor|FUNC|GRUPO|SIGLA', {nome, valor}> }
+const finalizarAberturaFunc = (ab, tipoAgregacao) => {
+  const sai = { grupo: new Map(), tipo: new Map() }
+  for (const [k, b] of ab.grupo) sai.grupo.set(k, { nome: ab.info.get(k).nome, valor: somaBucket(b, tipoAgregacao) })
+  for (const [k, b] of ab.tipo) sai.tipo.set(k, { nome: ab.info.get(k).nome, valor: somaBucket(b, tipoAgregacao) })
+  return sai
+}
+
 const acumularBucket = (mapa, chave, g) => {
   let bucket = mapa.get(chave)
   if (!bucket) { bucket = novoBucket(); mapa.set(chave, bucket) }
@@ -45,6 +65,7 @@ export function resolverPorFuncionario(grupos, medida, { funcionarios, setores, 
   const setorPorId = new Map((setores || []).map(s => [s.id, s]))
   const lista = (v) => (Array.isArray(v) ? v : [])
   const tipoPorSigla = new Map((tiposOS || []).filter(t => t.sigla).map(t => [normalizaBusca(t.sigla), t]))
+  const aberturaFunc = novaAberturaFunc()
   const setorPorNome = new Map((setores || []).map(s => [normalizaBusca(s.nome_setor), s]))
   const setorDoTipoOs = (bruto) => {
     const sigla = normalizaBusca(String(bruto ?? '').split(' - ')[0])
@@ -81,6 +102,9 @@ export function resolverPorFuncionario(grupos, medida, { funcionarios, setores, 
         acumularBucket(bucketsSetorFunc, chave, g)
         if (!nomeFunc.has(chave)) nomeFunc.set(chave, cad?.nome_funcionario || func)
         if (!boxFunc.has(chave)) boxFunc.set(chave, box)
+        const tipoBruto = String(g.dims?.tipo_os ?? '').trim()
+        const tipoRes = tipoPorSigla.get(normalizaBusca(tipoBruto.split(' - ')[0])) || null
+        acumularAberturaFunc(aberturaFunc, setorId, normalizaBusca(func), tipoRes, tipoBruto, g)
       }
     }
   }
@@ -98,7 +122,7 @@ export function resolverPorFuncionario(grupos, medida, { funcionarios, setores, 
   for (const [chave, b] of bucketsSetorBox) {
     valoresPorSetorBox.set(chave, { setorId: chave.split('|')[0], nome: nomeBox.get(chave), valor: somaBucket(b, medida.tipo_agregacao) })
   }
-  return { valorTotal, valoresPorDepartamento, valoresPorSetor, valoresPorSetorFuncionario, valoresPorSetorBox, nomesSemDepartamento }
+  return { valorTotal, valoresPorDepartamento, valoresPorSetor, valoresPorSetorFuncionario, valoresPorSetorBox, aberturaFuncionario: finalizarAberturaFunc(aberturaFunc, medida.tipo_agregacao), nomesSemDepartamento }
 }
 
 // Resolve o valor de uma Medida CORTADO por Departamento E por Setor a partir dos grupos já
@@ -123,7 +147,8 @@ export function resolverPorDepartamento(grupos, medida, { tiposOS, setores }) {
   const resolverTipoOs = (bruto) => {
     const alvo = normalizaBusca(bruto)
     if (!alvo) return null
-    return tipoOsPorSigla.get(alvo) || (tiposOS || []).find(t => String(t.codigo ?? '').trim() === String(bruto ?? '').trim()) || null
+    // ROF042 grava 'V01 - V01 - SERVIÇO CLIENTE (MEC)': a sigla é o 1º trecho.
+    return tipoOsPorSigla.get(alvo) || tipoOsPorSigla.get(normalizaBusca(String(bruto ?? '').split(' - ')[0])) || (tiposOS || []).find(t => String(t.codigo ?? '').trim() === String(bruto ?? '').trim()) || null
   }
   // Setor do Tipo de OS (texto "Mecânica"/"Funilaria/Pintura"/...) casado por nome contra
   // dim_setores.nome_setor.
@@ -150,6 +175,11 @@ export function resolverPorDepartamento(grupos, medida, { tiposOS, setores }) {
   // Por Setor × Tipo de OS (sigla normalizada) — aba Serviços, modo Consultor › Por Tipo de OS.
   const bucketsSetorTipo = new Map()
   const nomeTipo = new Map()
+  // Agrupamento do Tipo de OS = "Tipo Interno" do cadastro (Cliente, Garantia, Interna Pós Vendas...).
+  const grupoTipo = new Map()
+  const aberturaFunc = novaAberturaFunc()
+  const bucketsSetorGrupo = new Map()
+  const nomeGrupo = new Map()
   const bucketTotal = novoBucket()
   const nomesSemDepartamento = new Set()
   for (const g of (grupos || [])) {
@@ -170,12 +200,18 @@ export function resolverPorDepartamento(grupos, medida, { tiposOS, setores }) {
         const chaveTipo = `${setorId}|${normalizaBusca(tipoOsBruto)}`
         acumularBucket(bucketsSetorTipo, chaveTipo, g)
         if (!nomeTipo.has(chaveTipo)) nomeTipo.set(chaveTipo, tipoOsResolvido?.tipo_os || tipoOsBruto)
+        const grupo = String(tipoOsResolvido?.tipo_interno || '').trim() || '(Sem tipo interno)'
+        if (!grupoTipo.has(chaveTipo)) grupoTipo.set(chaveTipo, grupo)
+        const chaveGrupo = `${setorId}|${normalizaBusca(grupo)}`
+        acumularBucket(bucketsSetorGrupo, chaveGrupo, g)
+        if (!nomeGrupo.has(chaveGrupo)) nomeGrupo.set(chaveGrupo, grupo)
       }
       const func = String(g.dims?.funcionario ?? '').trim()
       if (func) {
         const chave = `${setorId}|${normalizaBusca(func)}`
         acumularBucket(bucketsSetorFunc, chave, g)
         if (!nomeFunc.has(chave)) nomeFunc.set(chave, func)
+        acumularAberturaFunc(aberturaFunc, setorId, normalizaBusca(func), tipoOsResolvido, tipoOsBruto, g)
       }
     }
   }
@@ -193,8 +229,13 @@ export function resolverPorDepartamento(grupos, medida, { tiposOS, setores }) {
 
   const valoresPorSetorTipoOs = new Map() // 'setorId|SIGLA' -> { setorId, nome, valor }
   for (const [chave, b] of bucketsSetorTipo) {
-    valoresPorSetorTipoOs.set(chave, { setorId: chave.split('|')[0], nome: nomeTipo.get(chave), valor: somaBucket(b, medida.tipo_agregacao) })
+    valoresPorSetorTipoOs.set(chave, { setorId: chave.split('|')[0], nome: nomeTipo.get(chave), grupo: grupoTipo.get(chave), valor: somaBucket(b, medida.tipo_agregacao) })
+  }
+  // Por Setor × Tipo Interno — valores exatos do agrupamento (Passagens sem contar 2x a mesma OS).
+  const valoresPorSetorGrupoTipo = new Map() // 'setorId|GRUPO' -> { setorId, nome, valor }
+  for (const [chave, b] of bucketsSetorGrupo) {
+    valoresPorSetorGrupoTipo.set(chave, { setorId: chave.split('|')[0], nome: nomeGrupo.get(chave), valor: somaBucket(b, medida.tipo_agregacao) })
   }
 
-  return { valorTotal, valoresPorDepartamento, valoresPorSetor, valoresPorSetorFuncionario, valoresPorSetorTipoOs, nomesSemDepartamento }
+  return { valorTotal, valoresPorDepartamento, valoresPorSetor, valoresPorSetorFuncionario, valoresPorSetorTipoOs, valoresPorSetorGrupoTipo, aberturaFuncionario: finalizarAberturaFunc(aberturaFunc, medida.tipo_agregacao), nomesSemDepartamento }
 }
