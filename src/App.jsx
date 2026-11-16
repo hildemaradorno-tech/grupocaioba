@@ -76,7 +76,6 @@ import ProjFases from './pages/projetos/cadastros/ProjFases'
 import CustosProjetos from './pages/projetos/CustosProjetos'
 import ProjResponsaveis from './pages/projetos/cadastros/ProjResponsaveis'
 import ProjSistemas from './pages/projetos/cadastros/ProjSistemas'
-import ProjAreas from './pages/projetos/cadastros/ProjAreas'
 import ProjStatus from './pages/projetos/cadastros/ProjStatus'
 import ProjTemplates from './pages/projetos/cadastros/ProjTemplates'
 import CalendarioProjetos from './pages/projetos/CalendarioProjetos'
@@ -319,7 +318,6 @@ export default function App() {
           { path: '/projetos/novo', element: <ProjetoEditor />, menuPath: 'projetos' },
           { path: '/projetos/detalhe/:id/editar', element: <ProjetoEditor />, menuPath: 'projetos' },
           { path: '/projetos/detalhe/:id', element: <ProjetoDetalhe />, menuPath: 'projetos' },
-          { path: '/projetos/areas', element: <ProjAreas />, menuPath: '/projetos/areas' },
           { path: '/projetos/status', element: <ProjStatus />, menuPath: '/projetos/status' },
           { path: '/projetos/sistemas', element: <ProjSistemas />, menuPath: '/projetos/sistemas' },
           { path: '/projetos/responsaveis', element: <ProjResponsaveis />, menuPath: '/projetos/responsaveis' },

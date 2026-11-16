@@ -3,6 +3,7 @@ import { Plus, X, AlertTriangle, Eye, Search } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import PermissionActionButtons from '../../components/PermissionActionButtons'
 import { apiService } from '../../services/api'
+import ProjetosNav from './ProjetosNav'
 
 export const CATEGORIAS_CUSTO = [
   'Desenvolvimento',
@@ -167,6 +168,8 @@ export default function CustosProjetos() {
         )}
       </div>
 
+      <ProjetosNav />
+
       {/* Filtros */}
       <div className="flex flex-wrap items-end gap-2">
         <div className="flex flex-col gap-1">
@@ -245,7 +248,7 @@ export default function CustosProjetos() {
                 <td className="p-3 font-semibold text-slate-800">{item.proj_projetos?.nome || '—'}</td>
                 <td className="p-3 text-right font-bold text-slate-900 whitespace-nowrap">{fmtValor(item.valor)}</td>
                 <td className="p-3">
-                  <PermissionActionButtons menuPath="projetos/custos" onView={() => setItemVisualizado(item)} onEdit={() => abrirEditar(item)} onDelete={() => setItemExcluir(item)} />
+                  <PermissionActionButtons menuPath="projetos/custos" onView={() => setItemVisualizado(item)} onEdit={() => abrirEditar(item)} onDelete={canEdit ? () => setItemExcluir(item) : undefined} />
                 </td>
               </tr>
             ))}

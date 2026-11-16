@@ -19,7 +19,6 @@ export const ACOES_POR_MENU = [
       { value: 'iniciar_tarefa',   label: 'Iniciar Tarefa (→ Em Andamento)' },
       { value: 'concluir_tarefa',  label: 'Concluir Tarefa (→ Concluído)' },
       { value: 'deliberacao',      label: 'Criar / Editar / Excluir Deliberações' },
-      { value: 'custo',            label: 'Gerenciar Custos e Confirmar Pagamentos' },
       { value: 'iniciar_fase',          label: 'Iniciar Fase do Projeto' },
       { value: 'enviar_manifestacao',   label: 'Enviar Manifestação / De Acordo' },
       { value: 'ver_todos_projetos',    label: 'Ver Todos os Projetos (ignora filtro de departamento)' },
@@ -522,18 +521,6 @@ export const ACOES_POR_MENU = [
     ],
   },
   {
-    menuPath: 'projetos/areas',
-    acoes: [
-      { value: 'editar', label: 'Incluir / Editar' },
-    ],
-  },
-  {
-    menuPath: 'projetos/empresas',
-    acoes: [
-      { value: 'editar', label: 'Incluir / Editar' },
-    ],
-  },
-  {
     menuPath: 'projetos/fases',
     acoes: [
       { value: 'editar', label: 'Incluir / Editar' },
@@ -641,12 +628,6 @@ export const ACOES_POR_MENU = [
     acoes: [
       { value: 'ver_matriz',        label: 'Ver Bloco 3 da Matriz KPIs (pop-up)' },
       { value: 'ver_calculo',       label: 'Ver Cálculo do Bônus de cada Semana (ⓘ)' },
-    ],
-  },
-  {
-    menuPath: 'sincronizacao-dados',
-    acoes: [
-      { value: 'editar', label: 'Incluir / Editar' },
     ],
   },
   {

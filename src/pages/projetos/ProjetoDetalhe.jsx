@@ -325,7 +325,7 @@ const abrirModalMover = async (tarefa) => {
       setModalConcluir(null)
       const todasConcluidas = tarefas.length > 0 &&
         tarefas.every(t => t.id === tarefa.id ? true : t.status_kanban === 'concluido')
-      if (todasConcluidas && projeto?.status !== 'concluido') {
+      if (todasConcluidas && projeto?.status !== 'concluido' && hasActionOrDefault('projetos', 'concluir_projeto')) {
         setModalConcluirProjeto(true)
       }
       await loadData()
@@ -891,13 +891,13 @@ const abrirModalMover = async (tarefa) => {
                   { campo: 'etapa',         label: 'Etapa',              cls: 'w-20' },
                   { campo: 'nome',          label: 'Tarefa',             cls: 'min-w-[320px]' },
                   { campo: 'empresa_nome',      label: 'Empresa', cls: 'w-28' },
-                  { campo: 'area_nome',         label: 'Departamento / Área', cls: 'w-36', noUppercase: true },
+                  { campo: 'area_nome',         label: <span className="flex flex-col items-start leading-tight"><span>Departamento</span><span>Área</span></span>, cls: 'w-36' },
                   { campo: 'sistema_nome',  label: 'Sistemas',           cls: 'w-32' },
                   { campo: 'responsavel',   label: 'Responsável',        cls: 'w-32' },
                   { campo: 'data_inicio',   label: 'Início',             cls: 'w-16' },
                   { campo: 'data_fim',      label: 'Fim',                cls: 'w-16' },
                   { campo: 'fase_nome',     label: 'Fase',               cls: 'w-28' },
-                  { campo: 'status_kanban', label: 'Status / Progresso',  cls: 'w-36' },
+                  { campo: 'status_kanban', label: <span className="flex flex-col items-start leading-tight"><span>Status</span><span>Progresso</span></span>, cls: 'w-36' },
                 ].map(({ campo, label, subtitle, cls = '', noUppercase = false }) => (
                   <th key={campo} className={`p-3 ${cls}`}>
                     <div className="flex flex-col gap-0.5">

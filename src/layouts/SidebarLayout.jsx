@@ -574,9 +574,9 @@ export default function SidebarLayout() {
           <>
             <FlyGroup label="Gestão de Projetos" />
             {canView('projetos') && <FlyItem to="/projetos" icon={FolderKanban} onClose={closeFlyout}>Projetos</FlyItem>}
-            {canView('projetos/custos') && <FlyItem to="/projetos/custos" icon={Wallet} onClose={closeFlyout}>Custos de Projetos</FlyItem>}
-            {/* BI de projetos (veio do BI - Dashboard, 13/11/2026) — endereço /bi/projetos mantido. */}
-            {canView('bi/projetos') && <FlyItem to="/bi/projetos" icon={PieChart} onClose={closeFlyout}>BI — Gestão de Projetos</FlyItem>}
+            {/* Custos de Projetos é aba de Projetos; o BI (/bi/projetos) abre pelo botão Dashboard | Controle das abas.
+                Quem só tem o BI (sem Projetos) entra por aqui direto no Dashboard. */}
+            {!canView('projetos') && canView('bi/projetos') && <FlyItem to="/bi/projetos" icon={PieChart} onClose={closeFlyout}>Projetos</FlyItem>}
 
             {(canView('auditoria-externa/ciclos') || canView('auditoria-externa/dashboard') || canView('auditoria-externa/divergencias') || canView('auditoria-externa/plano-acao') || canView('auditoria-externa/tipos-acao')) && (
               <FlyItem to="/auditoria-externa/dashboard" icon={ShieldAlert} onClose={closeFlyout}>Auditoria Externa</FlyItem>
@@ -588,7 +588,6 @@ export default function SidebarLayout() {
                 <FlyGroup label="Cadastros" />
               </>
             )}
-            {canView('projetos/areas') && <FlyItem to="/projetos/areas" icon={Tag} onClose={closeFlyout}>Áreas</FlyItem>}
             {canView('projetos/responsaveis') && <FlyItem to="/projetos/responsaveis" icon={Users} onClose={closeFlyout}>Responsáveis</FlyItem>}
             {canView('projetos/fases') && <FlyItem to="/projetos/fases" icon={Layers} onClose={closeFlyout}>Fases</FlyItem>}
             {canView('projetos/status') && <FlyItem to="/projetos/status" icon={CircleDot} onClose={closeFlyout}>Status</FlyItem>}

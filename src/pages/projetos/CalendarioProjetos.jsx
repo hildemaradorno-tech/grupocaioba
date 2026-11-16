@@ -104,7 +104,6 @@ export default function CalendarioProjetos({ abaInicial = 'lista' }) {
   const ctx = useProjetosFiltros()
   const { modoVerTodos, setModoVerTodos } = ctx
   const canVerTodos       = !isAdmin && hasActionOrDefault('projetos', 'ver_todos_projetos')
-  const canEditarProjeto  = !modoVerTodos && hasActionOrDefault('projetos', 'editar')
   const canEditarTarefa        = !modoVerTodos && hasActionOrDefault('projetos', 'editar_tarefa')
   const canAlterarStatusTarefa = hasActionOrDefault('projetos', 'alterar_status_tarefa')
   const canIniciarTarefa  = !modoVerTodos && hasActionOrDefault('projetos', 'iniciar_tarefa')
@@ -241,7 +240,7 @@ export default function CalendarioProjetos({ abaInicial = 'lista' }) {
         tarefasDoProjeto.every(t => t.id === tarefa.id ? true : t.status_kanban === 'concluido')
       if (todasConcluidas) {
         const proj = projetos.find(p => p.id === tarefa.projeto_id)
-        if (proj && proj.status !== 'concluido') setModalConcluirProjeto(proj)
+        if (proj && proj.status !== 'concluido' && hasActionOrDefault('projetos', 'concluir_projeto')) setModalConcluirProjeto(proj)
       }
       recarregarDados()
     } catch (err) { alert('Erro ao concluir: ' + (err.message || String(err))) }
@@ -651,14 +650,6 @@ export default function CalendarioProjetos({ abaInicial = 'lista' }) {
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          {hasPermission('bi/projetos') && (
-            <button
-              onClick={() => navigate('/bi/projetos')}
-              className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold px-3 py-2 rounded-md shadow-sm border border-slate-200 transition-colors"
-            >
-              <BarChart2 className="h-4 w-4 text-indigo-500" /> Ir para Dashboard
-            </button>
-          )}
           {canVerTodos && (
             <button
               onClick={() => setModoVerTodos(!modoVerTodos)}
@@ -833,7 +824,16 @@ export default function CalendarioProjetos({ abaInicial = 'lista' }) {
                                 : visualizacaoLista === 'data'
                                 ? <CalendarDays className="h-3.5 w-3.5 shrink-0" />
                                 : <FolderOpen className="h-3.5 w-3.5 shrink-0" />}
-                              {isData ? fmtData(grupo) : grupo}
+                              {isData ? fmtData(grupo) : (visualizacaoLista === 'projeto' && gTarefas[0]?.projeto_id) ? (
+                                <button
+                                  type="button"
+                                  onClick={e => { e.stopPropagation(); navigate(`/projetos/detalhe/${gTarefas[0].projeto_id}`) }}
+                                  title="Abrir detalhes do projeto"
+                                  className="uppercase font-bold hover:underline text-left"
+                                >
+                                  {grupo}
+                                </button>
+                              ) : grupo}
                               {isData && (
                                 <span className={`text-[10px] font-semibold normal-case tracking-normal ${subCls}`}>
                                   {fmtDiaSemana(grupo)}
@@ -893,9 +893,10 @@ export default function CalendarioProjetos({ abaInicial = 'lista' }) {
                           </td>
                           {visualizacaoLista !== 'projeto' && (
                             <td className="px-4 py-2.5">
-                              {canEditarProjeto ? (
+                              {t.projeto_id ? (
                                 <button
-                                  onClick={e => { e.stopPropagation(); navigate(`/projetos/detalhe/${t.projeto_id}/editar`) }}
+                                  onClick={e => { e.stopPropagation(); navigate(`/projetos/detalhe/${t.projeto_id}`) }}
+                                  title="Abrir detalhes do projeto"
                                   className="text-indigo-600 hover:text-indigo-800 hover:underline text-left text-xs"
                                 >
                                   {t.projeto_nome}

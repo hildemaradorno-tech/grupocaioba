@@ -964,14 +964,6 @@ export default function ProjetosDashboard() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {hasPermission('bi/projetos') && (
-              <button
-                onClick={() => navigate('/bi/projetos')}
-                className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold px-3 py-2 rounded-md shadow-sm border border-slate-200 transition-colors"
-              >
-                <BarChart2 className="h-4 w-4 text-indigo-500" /> Ir para Dashboard
-              </button>
-            )}
             {canVerTodos && (
               <button
                 onClick={() => setModoVerTodos(!modoVerTodos)}
@@ -1471,11 +1463,11 @@ export default function ProjetosDashboard() {
                                 <th className="px-2 py-1.5 text-center w-10">#</th>
                                 <th className="px-3 py-1.5 text-left">Tarefa</th>
                                 <th className="px-2 py-1.5 text-center w-24 whitespace-nowrap">Empresa</th>
-                                <th className="px-2 py-1.5 text-center w-32 whitespace-nowrap">Departamento / Área</th>
+                                <th className="px-2 py-1.5 text-left w-32 whitespace-nowrap leading-tight">Departamento<br />Área</th>
                                 <th className="px-2 py-1.5 text-center w-24 whitespace-nowrap">Sistema</th>
                                 <th className="px-2 py-1.5 text-center w-24 whitespace-nowrap">Responsável</th>
                                 <th className="px-2 py-1.5 text-center w-24 whitespace-nowrap">Fase</th>
-                                <th className="px-2 py-1.5 text-center w-32 whitespace-nowrap">Status / % Concl.</th>
+                                <th className="px-2 py-1.5 text-center w-32 whitespace-nowrap leading-tight">Status<br />% Concl.</th>
                                 <th className="px-2 py-1.5 text-center w-20 whitespace-nowrap">Início</th>
                                 <th className="px-2 py-1.5 text-center w-20 whitespace-nowrap">Término</th>
                                 <th className="px-1 py-1.5 w-16" />

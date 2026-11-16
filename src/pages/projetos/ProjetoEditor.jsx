@@ -46,6 +46,10 @@ export default function ProjetoEditor() {
   const { modoVerTodos } = useProjetosFiltros()
   const canExcluir = !modoVerTodos && hasActionOrDefault('projetos', 'excluir')
   const canAlterarStatus = hasActionOrDefault('projetos', 'alterar_status')
+  const canMoverTarefa = hasActionOrDefault('projetos', 'mover_tarefa')
+  const canCopiarTarefa = hasActionOrDefault('projetos', 'copiar_tarefa')
+  const canConcluirProjeto = hasActionOrDefault('projetos', 'concluir_projeto')
+  const canResetarTarefa = hasActionOrDefault('projetos', 'resetar_tarefa')
   const isNew = !id
 
   // Se está em modo visualização geral, redireciona para o detalhe (sem edição)
@@ -212,8 +216,9 @@ export default function ProjetoEditor() {
       } else {
         await apiService.updateProjeto(id, payload)
         clearProjetosCache()
-        setSalvoProjOk(true)
-        setTimeout(() => setSalvoProjOk(false), 2500)
+        // Salvou → fecha a edição e volta para a tela anterior (sem histórico, cai no Detalhe do Projeto)
+        if ((window.history.state?.idx ?? 0) > 0) navigate(-1)
+        else navigate(`/projetos/detalhe/${id}`, { replace: true })
       }
     } catch (err) { alert('Erro ao salvar projeto: ' + err.message) }
     finally { setSalvandoProj(false) }
@@ -366,7 +371,7 @@ export default function ProjetoEditor() {
       setTarefas(novasTarefas)
       setModalConcluir(null)
       const todasConcluidas = novasTarefas.length > 0 && novasTarefas.every(t => t.status_kanban === 'concluido')
-      if (todasConcluidas && proj?.status !== 'concluido') {
+      if (todasConcluidas && proj?.status !== 'concluido' && canConcluirProjeto) {
         setModalConcluirProjeto(true)
       }
     } catch (err) { alert('Erro ao concluir: ' + (err.message || String(err))) }
@@ -710,22 +715,30 @@ export default function ProjetoEditor() {
               </h2>
               {selectedTarefas.size > 0 && (
                 <>
+                  {canMoverTarefa && (
                   <button onClick={() => abrirModalMoverEditor('mover')}
                     className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold border border-violet-200 bg-violet-50 text-violet-600 hover:bg-violet-100 transition-colors">
                     <FolderInput className="h-3 w-3" /> Mover {selectedTarefas.size} selecionada(s)
                   </button>
+                  )}
+                  {canCopiarTarefa && (
                   <button onClick={() => abrirModalMoverEditor('copiar')}
                     className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold border border-teal-200 bg-teal-50 text-teal-600 hover:bg-teal-100 transition-colors">
                     <Copy className="h-3 w-3" /> Copiar {selectedTarefas.size} selecionada(s)
                   </button>
+                  )}
+                  {canMoverTarefa && (
                   <button onClick={abrirModalNovoProj}
                     className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold border border-blue-200 bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors">
                     <Plus className="h-3 w-3" /> Mover para Novo Projeto
                   </button>
+                  )}
+                  {canResetarTarefa && (
                   <button onClick={handleResetarSelecionadas}
                     className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold border border-orange-200 bg-orange-50 text-orange-600 hover:bg-orange-100 transition-colors">
                     <RotateCcw className="h-3 w-3" /> Resetar {selectedTarefas.size} selecionada(s)
                   </button>
+                  )}
                   <button onClick={handleDeleteSelecionadas}
                     className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 transition-colors">
                     <Trash2 className="h-3 w-3" /> Excluir {selectedTarefas.size} selecionada(s)

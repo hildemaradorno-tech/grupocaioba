@@ -8,6 +8,7 @@ import { useNavigate } from 'react-router-dom'
 import { apiService } from '../../services/api'
 import { useAuth } from '../../context/AuthContext'
 import logoCaioba from '../../assets/logo-caioba.jpg'
+import ProjetosNav from './ProjetosNav'
 
 // ── constantes ────────────────────────────────────────────────────────────────
 const LOGO_URL = logoCaioba
@@ -1190,15 +1191,10 @@ export default function AtaReuniao() {
 
   // ── render ────────────────────────────────────────────────────────────────
   return (
-    <div className="p-6 max-w-5xl">
+    <div className="p-6 max-w-screen-2xl">
       {/* Cabeçalho da página */}
-      <div className="flex items-start justify-between mb-6">
+      <div className="flex items-start justify-between mb-4">
         <div className="flex items-start gap-3">
-          <button onClick={() => navigate('/projetos')}
-            className="mt-0.5 p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
-            title="Voltar para Projetos">
-            <ArrowLeft className="h-4 w-4" />
-          </button>
           <div>
             <h1 className="text-lg font-bold text-slate-800">Ata de Reunião</h1>
             <p className="text-xs text-slate-400 mt-0.5">Gere e gerencie atas profissionais das reuniões gerenciais</p>
@@ -1210,7 +1206,13 @@ export default function AtaReuniao() {
         </button>
       </div>
 
+      {/* Abas de Projetos + Dashboard | Controle */}
+      <div className="mb-6">
+        <ProjetosNav />
+      </div>
+
       {/* Lista de atas ou empty state */}
+      <div className="max-w-5xl">
       {carregandoLista ? (
         <div className="flex items-center justify-center py-20">
           <Loader2 className="h-5 w-5 animate-spin text-slate-400 mr-2" />
@@ -1285,6 +1287,7 @@ export default function AtaReuniao() {
           })}
         </div>
       )}
+      </div>
 
       {/* Modal — Gerenciar Locais */}
       {modalLocais && (

@@ -808,8 +808,13 @@ function CalculoComissoesConteudo({ agrupamentoNome = 'Caiobá Trucks', titulo =
             // empresas cadastradas, não só o Agrupamento do funcionário. Senão, nível EMPRESA
             // junta os nomes de todas as empresas do mesmo Agrupamento, e INDIVIDUAL/EQUIPE
             // mantém só a própria empresa (comportamento de sempre).
+            // "Somar também outras empresas" (comissao_empresas_extras): a soma fica SÓ a empresa do
+            // funcionário + as escolhidas (no nível Empresa deixa de juntar o Agrupamento inteiro).
+            const extras = politica.comissao_todas_empresas ? [] : (politica.comissao_empresas_extras || [])
             const empresaNomes = politica.comissao_todas_empresas
               ? todasEmpresasNomes
+              : extras.length > 0
+              ? [...new Set([...nomesParaFiltro(empresa), ...extras.flatMap(id => nomesParaFiltro(empresasMap[id]))])]
               : politica.nivel_calculo === 'EMPRESA' && empresa?.agrupamento_empresa_id
               ? [...new Set((empresasPorAgrupamento.get(empresa.agrupamento_empresa_id) || []).flatMap(nomesParaFiltro))]
               : nomesParaFiltro(empresa)

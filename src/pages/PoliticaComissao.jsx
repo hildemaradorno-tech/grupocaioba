@@ -7,6 +7,7 @@ import { useAuth } from '../context/AuthContext'
 import { apiService } from '../services/api'
 import { buscaComCoringa } from '../utils/buscaTexto'
 import FiltroMultiSelect from '../components/FiltroMultiSelect'
+import { EmpresaMultiFilter } from '../components/EmpresaMultiFilter'
 
 // Menu de Ações da linha, atrás de um botão de engrenagem — evita 4 ícones soltos na tabela.
 // O painel abre via portal (position:fixed na posição real do botão) porque a tabela rola na
@@ -93,6 +94,7 @@ const FORM_VAZIO = {
   usa_faixa: 'NÃO',
   regra_comissao_id: '',
   comissao_todas_empresas: false,
+  comissao_empresas_extras: [],
   detalhar_por_empresa: false,
   vig_inicio: '',
   vig_fim: '',
@@ -357,6 +359,7 @@ export default function PoliticaComissao() {
         regra_comissao_id: primeiro.regra_comissao_id,
         regra_comissao: primeiro.regra_comissao,
         comissao_todas_empresas: primeiro.comissao_todas_empresas,
+        comissao_empresas_extras: primeiro.comissao_empresas_extras || [],
         detalhar_por_empresa: primeiro.detalhar_por_empresa,
         vig_inicio: primeiro.vig_inicio,
         vig_fim: primeiro.vig_fim,
@@ -559,6 +562,7 @@ export default function PoliticaComissao() {
       usa_faixa: grupo.usa_faixa || 'NÃO',
       regra_comissao_id: grupo.regra_comissao_id || '',
       comissao_todas_empresas: grupo.comissao_todas_empresas ?? false,
+      comissao_empresas_extras: grupo.comissao_empresas_extras || [],
       detalhar_por_empresa: grupo.detalhar_por_empresa ?? false,
       vig_inicio: grupo.vig_inicio || '',
       vig_fim: grupo.vig_fim || '',
@@ -618,6 +622,7 @@ export default function PoliticaComissao() {
           usa_faixa: item.usa_faixa || 'NÃO',
           regra_comissao_id: item.regra_comissao_id || null,
           comissao_todas_empresas: item.comissao_todas_empresas ?? false,
+          comissao_empresas_extras: item.comissao_empresas_extras || [],
           detalhar_por_empresa: item.detalhar_por_empresa ?? false,
           vig_inicio: item.vig_inicio || null,
           vig_fim: item.vig_fim || null,
@@ -648,6 +653,7 @@ export default function PoliticaComissao() {
         fonte_calculo_id: (form.fonte_calculo_id && !String(form.fonte_calculo_id).startsWith('mw:')) ? form.fonte_calculo_id : null,
         base_calculo_id: form.base_calculo_id || null,
         codigo_politica: form.codigo_politica?.trim().toUpperCase() || null,
+        comissao_empresas_extras: form.comissao_todas_empresas ? [] : (form.comissao_empresas_extras || []),
         // Usa Regra = SIM: o percentual vem das faixas da Regra (sobre o valor da Base), então
         // os campos fixos ficam nulos e a Regra escolhida é gravada.
         regra_comissao_id: form.usa_faixa === 'SIM' ? (form.regra_comissao_id || null) : null,
@@ -1215,6 +1221,19 @@ export default function PoliticaComissao() {
                   </p>
                 </div>
 
+                {/* Empresas a mais na soma (quando não é "todas"): a do funcionário/agrupamento continua entrando. */}
+                {!form.comissao_todas_empresas && (
+                  <div className="flex flex-col gap-1.5">
+                    <label className={LBL}>Somar também outras empresas</label>
+                    <EmpresaMultiFilter value={form.comissao_empresas_extras || []} empresas={empresas}
+                      onChange={ids => setForm(prev => ({ ...prev, comissao_empresas_extras: ids }))} />
+                    <p className="text-[11px] text-slate-400">
+                      Vazio = como sempre: a empresa do funcionário (ou o Agrupamento inteiro dele, no nível Empresa). Com empresas marcadas, a soma fica
+                      SÓ a empresa do funcionário + as marcadas — ex: Garantista de Campo Grande recebendo sobre Campo Grande e Chapadão do Sul.
+                    </p>
+                  </div>
+                )}
+
                 {/* Detalhar valor por empresa (só faz sentido no Nível EMPRESA, que soma várias empresas num total só) */}
                 <div className="flex flex-col gap-1">
                   <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer">
@@ -1356,6 +1375,12 @@ export default function PoliticaComissao() {
                   {itemVisualizado.comissao_todas_empresas ? 'SIM' : 'NÃO'}
                 </span>
               </div>
+              {(itemVisualizado.comissao_empresas_extras || []).length > 0 && (
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Soma Também</span>
+                  <span className="text-xs font-semibold text-slate-800">{itemVisualizado.comissao_empresas_extras.map(id => { const e = empresas.find(x => x.id === id); return e ? (e.empresa_fantasia || e.nome_empresa) : '—' }).join(', ')}</span>
+                </div>
+              )}
               <div className="flex flex-col gap-0.5">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Detalhar por Empresa</span>
                 <span className={`inline-flex w-fit items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${itemVisualizado.detalhar_por_empresa ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-slate-100 text-slate-500 border-slate-200'}`}>

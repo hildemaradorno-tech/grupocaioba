@@ -4291,25 +4291,12 @@ export const apiService = {
     return { success: true }
   },
 
+  // Áreas dos Projetos = cadastro de Áreas da organização (dim_areas), no formato { id, nome, ativo }
+  // que as telas de Projetos já usam. O antigo cadastro próprio (proj_areas) foi excluído em 16/11/2026.
   getProjAreas: async () => {
-    const { data, error } = await supabase.from('proj_areas').select('*').order('nome', { ascending: true })
+    const { data, error } = await supabase.from('dim_areas').select('id, nome_area, ativo').order('nome_area', { ascending: true })
     if (error) throw error
-    return data || []
-  },
-  createProjArea: async ({ nome, ativo }) => {
-    const { data, error } = await supabase.from('proj_areas').insert([{ nome, ativo: ativo ?? true }]).select()
-    if (error) throw error
-    return data?.[0]
-  },
-  updateProjArea: async (id, { nome, ativo }) => {
-    const { data, error } = await supabase.from('proj_areas').update({ nome, ativo: ativo ?? true }).eq('id', id).select()
-    if (error) throw error
-    return data?.[0]
-  },
-  deleteProjArea: async (id) => {
-    const { error } = await supabase.from('proj_areas').delete().eq('id', id)
-    if (error) throw error
-    return { success: true }
+    return (data || []).map(a => ({ id: a.id, nome: a.nome_area, ativo: a.ativo }))
   },
 
   getProjSistemas: async () => {

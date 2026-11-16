@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { FolderKanban, CheckCircle2, ListChecks, Building2, Users, Loader2, ExternalLink, XCircle } from 'lucide-react'
 import { apiService } from '../../services/api'
 import { useAuth } from '../../context/AuthContext'
+import ProjetosNav from '../projetos/ProjetosNav'
 
 const fmtData = (s) => { if (!s) return '—'; try { return new Date(s + 'T12:00:00').toLocaleDateString('pt-BR') } catch { return s } }
 
@@ -379,16 +380,10 @@ export default function BiProjetos() {
             Visão executiva de entregas e status do portfólio — projetos e tarefas, por departamento.
           </p>
         </div>
-        {hasPermission('projetos') && (
-          <button
-            onClick={() => navigate('/projetos')}
-            className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-semibold text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 shadow-sm transition-colors"
-          >
-            <ExternalLink className="h-3.5 w-3.5 text-indigo-500" />
-            Ir para Controle de Projetos
-          </button>
-        )}
       </div>
+
+      {/* Abas de Projetos + Dashboard | Controle (mesmo modelo do BI Garantias DAF) */}
+      <ProjetosNav />
 
       {/* FILTROS */}
       <div className="flex flex-wrap items-center gap-2">
