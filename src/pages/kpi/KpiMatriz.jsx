@@ -146,7 +146,11 @@ export default function KpiMatriz() {
           </div>
         </div>
       </div>
-      {sync.mensagem && <p role="status" className="px-6 pt-2 text-xs text-slate-600">{sync.mensagem}</p>}
+      {/* Andamento e resultado da Atualização (Sincronizando… / parcial / erro) ficam na etiqueta do cabeçalho
+          (16/11/2026); aqui só avisos que ela não mostra (ex.: não foi possível iniciar). */}
+      {sync.mensagem && !/^(A atualização terminou com erro|Atualização parcial concluída|Dados atualizados|Atualizando a Matriz|Primeiro acesso do dia)/.test(sync.mensagem) && (
+        <p role="status" className="px-6 pt-2 text-xs text-slate-600">{sync.mensagem}</p>
+      )}
 
       {abaAtual ? (
         <>
