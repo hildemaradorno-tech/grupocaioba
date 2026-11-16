@@ -1303,12 +1303,12 @@ export default function GarantiasDafDashboard({ variante = 'aberto', onLastModif
                     { col: 'numero_os',              label: 'Nº OS',               cls: 'w-32' },
                     { col: 'empresa_nome',            label: 'Empresa',             cls: 'w-80' },
                     { col: 'data_abertura_os',        label: 'Data Criação',        cls: 'w-32' },
-                    { col: 'data_fechamento_os',      label: 'Fechado em',          cls: 'w-36' },
                     { col: 'tipo_garantia_descricao', label: 'Tipo OS',             cls: 'w-56' },
                     { col: 'consultor_nome',          label: 'Consultor',           cls: 'w-72' },
                     { col: 'cliente',                 label: 'Proprietário Veículo',cls: 'w-72' },
                     { col: 'chassi',                  label: 'Nº Chassi',           cls: 'w-36' },
                     { col: 'total',                   label: 'Total',               cls: 'w-36 text-right' },
+                    { col: 'data_fechamento_os',      label: 'Fechado em',          cls: 'w-36' },
                     { col: 'numero_sg',               label: 'Nº SG',              cls: 'w-40' },
                     { col: 'data_sg',                 label: 'Data SG',             cls: 'w-28' },
                     { col: 'status_codigo',           label: 'Status',              cls: 'w-56' },
@@ -1350,17 +1350,17 @@ export default function GarantiasDafDashboard({ variante = 'aberto', onLastModif
                       </td>
                       <td className="p-3 text-slate-700 whitespace-normal leading-snug">{empresaNome(item)}</td>
                       <td className="p-3 text-slate-500">{item.data_abertura_os ? new Date(item.data_abertura_os + 'T12:00:00').toLocaleDateString('pt-BR') : '—'}</td>
+                      <td className="p-3 text-slate-600 truncate max-w-[160px]" title={item.tipo_garantia_descricao || item.tipo_os_sigla}>{item.tipo_garantia_descricao || item.tipo_os_sigla || '—'}</td>
+                      <td className="p-3 text-slate-600">{item.consultor_nome || '—'}</td>
+                      <td className="p-3 truncate max-w-[200px]" title={item.cliente}>{item.cliente || '—'}</td>
+                      <td className="p-3 font-mono text-slate-500" title={item.chassi}>{item.chassi ? item.chassi.slice(-8) : '—'}</td>
+                      <td className="p-3 text-right font-semibold text-slate-900">{vt > 0 ? fmt(vt) : '—'}</td>
                       <td className="p-3">
                         {item.data_fechamento_os
                           ? <span className="text-[11px] font-semibold text-green-700">{new Date(item.data_fechamento_os + 'T12:00:00').toLocaleDateString('pt-BR')}</span>
                           : <span className="text-[11px] font-semibold text-amber-600">Aberto</span>
                         }
                       </td>
-                      <td className="p-3 text-slate-600 truncate max-w-[160px]" title={item.tipo_garantia_descricao || item.tipo_os_sigla}>{item.tipo_garantia_descricao || item.tipo_os_sigla || '—'}</td>
-                      <td className="p-3 text-slate-600">{item.consultor_nome || '—'}</td>
-                      <td className="p-3 truncate max-w-[200px]" title={item.cliente}>{item.cliente || '—'}</td>
-                      <td className="p-3 font-mono text-slate-500" title={item.chassi}>{item.chassi ? item.chassi.slice(-8) : '—'}</td>
-                      <td className="p-3 text-right font-semibold text-slate-900">{vt > 0 ? fmt(vt) : '—'}</td>
                       <td className="p-3 font-mono text-slate-700">{item.numero_sg || '—'}</td>
                       <td className="p-3 text-slate-500">{item.data_sg ? new Date(item.data_sg + 'T12:00:00').toLocaleDateString('pt-BR') : '—'}</td>
                       <td className="p-3">

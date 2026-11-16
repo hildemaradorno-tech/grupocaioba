@@ -378,7 +378,7 @@ export default function GarantiasDafManual() {
               </p>
             </Sub>
             <Sub titulo="Tabela e ações">
-              <p>Colunas: Nº OS, Empresa, Data Criação, Fechado em, Tipo OS, Consultor, Proprietário Veículo, Nº Chassi, Total, Nº SG, Data SG e Status. Na engrenagem de Ações:</p>
+              <p>Colunas: Nº OS, Empresa, Data Criação, Tipo OS, Consultor, Proprietário Veículo, Nº Chassi, Total, Fechado em, Nº SG, Data SG e Status. Na engrenagem de Ações:</p>
               <Itens itens={[
                 ['Visualizar', 'abre os dados da garantia somente para leitura.'],
                 ['Editar', 'abre a tela Editar Garantia (conforme permissão).'],
