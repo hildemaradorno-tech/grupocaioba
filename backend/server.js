@@ -23,6 +23,7 @@ import microworkRoutes from './routes/microwork.js'
 import truckpagRoutes from './routes/truckpag.js'
 import googleCalendarRoutes from './routes/googleCalendar.js'
 import projetosManifestacoesRoutes from './routes/projetosManifestacoes.js'
+import { linkRouter as projetosAgendaLinkRoutes, feedRouter as projetosAgendaFeedRoutes } from './routes/projetosAgenda.js'
 import auditAiRoutes from './routes/auditAi.js'
 import powerbiRoutes from './routes/powerbi.js'
 import agendamentoCrmRoutes from './routes/agendamentoCrm.js'
@@ -83,6 +84,12 @@ app.use('/api/google-calendar', (req, res, next) => (req.path === '/callback' ? 
 
 // ── Rotas Gestão de Projetos — Período de Manifestação (Etapa 2) ────────────
 app.use('/api/projetos', authMiddleware, requireMenuLike('projetos', 'bi/projetos'), projetosManifestacoesRoutes)
+
+// ── Agenda de Projetos → Outlook (assinatura .ics) ──────────────────────────
+// /api/projetos-agenda/link: o usuário logado pega o link secreto da própria agenda.
+// /api/agenda-ics/<token>.ics: público (o Outlook não manda login) — protegido pelo token secreto.
+app.use('/api/projetos-agenda', authMiddleware, requireMenuLike('projetos', 'bi/projetos'), projetosAgendaLinkRoutes)
+app.use('/api/agenda-ics', projetosAgendaFeedRoutes)
 
 // ── Rotas Gestão de Projetos — Auditoria Externa (Copiloto de IA) ───────────
 app.use('/api/audit-ai', authMiddleware, requireMenuLike('auditoria-externa'), auditAiRoutes)

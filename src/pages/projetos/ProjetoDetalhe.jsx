@@ -11,27 +11,7 @@ import DeliberacoesModal from './DeliberacoesModal'
 import ManifestacoesTab from './ManifestacoesTab'
 import IniciarFaseModal from './IniciarFaseModal'
 
-const renderNome = (nome) => {
-  if (!nome) return null
-  const parseLine = (line, baseKey) => {
-    const parts = []
-    const regex = /(\*\*(.+?)\*\*)|(\*(.+?)\*)/g
-    let last = 0; let match; let k = baseKey
-    while ((match = regex.exec(line)) !== null) {
-      if (match.index > last) parts.push(line.slice(last, match.index))
-      if (match[1]) parts.push(<strong key={k++}>{match[2]}</strong>)
-      else parts.push(<em key={k++}>{match[4]}</em>)
-      last = regex.lastIndex
-    }
-    if (last < line.length) parts.push(line.slice(last))
-    return parts
-  }
-  return nome.split('\n').reduce((acc, line, i) => {
-    if (i > 0) acc.push(<br key={`br${i}`} />)
-    acc.push(...parseLine(line, i * 1000))
-    return acc
-  }, [])
-}
+import { renderNome } from './textoFormatado'
 
 const STATUS_MAP = {
   mapeado:      { label: 'Mapeado',      cor: 'bg-slate-100 text-slate-600' },
@@ -540,17 +520,21 @@ const abrirModalMover = async (tarefa) => {
             <ArrowLeft className="h-4 w-4" />
           </button>
           <div className="min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-xl font-bold text-slate-900 tracking-tight">{projeto.nome}</h1>
-              {projeto.sistemas_nomes && projeto.sistemas_nomes.length > 0 && projeto.sistemas_nomes.map(nome => {
-                const cor = sistemaCorMap[nome] || '#1e293b'
-                return (
-                  <span key={nome} style={{ backgroundColor: cor, color: sistemaCorTextoMap[nome] || getTextColor(cor) }}
-                    className="inline-flex px-2.5 py-0.5 rounded text-xs font-bold whitespace-nowrap">
-                    {nome}
-                  </span>
-                )
-              })}
+            <h1 className="text-xl font-bold text-slate-900 tracking-tight">{projeto.nome}</h1>
+            {/* Abaixo do título: Departamento e Área do projeto (no lugar dos sistemas) */}
+            <div className="flex items-center gap-2 flex-wrap mt-1">
+              {projeto.departamento_nome && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs bg-slate-100 border border-slate-200 whitespace-nowrap">
+                  <span className="text-[10px] font-semibold text-slate-400 uppercase">Departamento:</span>
+                  <span className="font-bold text-slate-700 uppercase">{projeto.departamento_nome}</span>
+                </span>
+              )}
+              {projeto.area_nome && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs bg-slate-100 border border-slate-200 whitespace-nowrap">
+                  <span className="text-[10px] font-semibold text-slate-400 uppercase">Área:</span>
+                  <span className="font-semibold text-slate-700">{projeto.area_nome}</span>
+                </span>
+              )}
               <span className={`px-3 py-1 rounded-full text-xs font-bold ${st.cor}`}>{st.label}</span>
               {projeto.fase_nome && (
                 <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-100">
@@ -734,7 +718,6 @@ const abrirModalMover = async (tarefa) => {
       {/* Painel de filtros fixo */}
       {(() => {
         const optsEmpresa = [...new Set(tarefas.map(t => t.empresa_nome).filter(Boolean))].sort()
-        const optsArea    = [...new Set(tarefas.map(t => t.area_nome).filter(Boolean))].sort()
         const optsFase    = [...new Set(tarefas.map(t => t.fase_nome).filter(Boolean))].sort()
         const optsSistema = [...new Set(tarefas.map(t => t.sistema_nome).filter(Boolean))].sort()
         const optsResp    = [...new Set(tarefas.map(t => t.responsavel_nome).filter(Boolean))].sort()
@@ -742,19 +725,12 @@ const abrirModalMover = async (tarefa) => {
         const lblCls = 'text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1'
         return (
           <div className="bg-white border border-slate-200 rounded-lg px-4 py-3 space-y-3">
-            <div className="grid grid-cols-5 gap-3">
+            <div className="grid grid-cols-4 gap-3">
               <div>
                 <p className={lblCls}>Empresa</p>
                 <select value={filtroUnidade} onChange={e => setFiltroUnidade(e.target.value)} className={selCls}>
                   <option value="">Todas</option>
                   {optsEmpresa.map(o => <option key={o} value={o}>{o}</option>)}
-                </select>
-              </div>
-              <div>
-                <p className={lblCls}>Área</p>
-                <select value={filtroArea} onChange={e => setFiltroArea(e.target.value)} className={selCls}>
-                  <option value="">Todas</option>
-                  {optsArea.map(o => <option key={o} value={o}>{o}</option>)}
                 </select>
               </div>
               <div>
@@ -891,7 +867,6 @@ const abrirModalMover = async (tarefa) => {
                   { campo: 'etapa',         label: 'Etapa',              cls: 'w-20' },
                   { campo: 'nome',          label: 'Tarefa',             cls: 'min-w-[320px]' },
                   { campo: 'empresa_nome',      label: 'Empresa', cls: 'w-28' },
-                  { campo: 'area_nome',         label: <span className="flex flex-col items-start leading-tight"><span>Departamento</span><span>Área</span></span>, cls: 'w-36' },
                   { campo: 'sistema_nome',  label: 'Sistemas',           cls: 'w-32' },
                   { campo: 'responsavel',   label: 'Responsável',        cls: 'w-32' },
                   { campo: 'data_inicio',   label: 'Início',             cls: 'w-16' },
@@ -923,7 +898,7 @@ const abrirModalMover = async (tarefa) => {
             </thead>
             <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
               {tarefas.length === 0 ? (
-                <tr><td colSpan="12" className="p-10 text-center text-slate-400">Nenhuma tarefa cadastrada.</td></tr>
+                <tr><td colSpan="11" className="p-10 text-center text-slate-400">Nenhuma tarefa cadastrada.</td></tr>
               ) : tarefasOrdenadas.map(t => (
                 <tr key={t.id} className={`hover:bg-blue-50/40 cursor-pointer transition-colors ${tarefasSelecionadas.has(t.id) ? 'bg-blue-50/60' : ''}`} onClick={() => setModalTarefa({ tarefa: t })}>
                   <td className="no-print p-3 text-center">
@@ -1016,13 +991,6 @@ const abrirModalMover = async (tarefa) => {
                     )}
                   </td>
                   <td className="p-3 text-slate-500 whitespace-nowrap">{t.empresa_nome || '—'}</td>
-                  <td className="p-3 whitespace-nowrap">
-                    <div className="flex flex-col leading-tight">
-                      {projeto.departamento_nome && <span className="text-xs font-semibold text-slate-700 uppercase">{projeto.departamento_nome}</span>}
-                      {(t.area_nome || projeto.area_nome) && <span className="text-[10px] text-slate-400 italic">{t.area_nome || projeto.area_nome}</span>}
-                      {!projeto.departamento_nome && !t.area_nome && !projeto.area_nome && <span className="text-slate-400">—</span>}
-                    </div>
-                  </td>
                   <td className="p-3">
                     {t.sistema_nome
                       ? <span className="px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap" style={{ backgroundColor: sistemaCorMap[t.sistema_nome] || '#1e293b', color: sistemaCorTextoMap[t.sistema_nome] || getTextColor(sistemaCorMap[t.sistema_nome] || '#1e293b') }}>{t.sistema_nome}</span>

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { X, Save, Loader2, Trash2, ChevronLeft, ChevronRight, Pencil, Check } from 'lucide-react'
 import { apiService } from '../../services/api'
 import CalendarioPicker from './CalendarioPicker'
+import EditorTextoRico, { textoPlano } from './textoFormatado'
 
 const hoje = new Date().toISOString().slice(0, 10)
 
@@ -12,7 +13,7 @@ const FORM_VAZIO = {
   responsavel_id: '', responsavel_nome: '',
   empresa_id: '', empresa_nome: '',
   area_id: '', area_nome: '',
-  data_inicio: '', data_fim: '', progresso_pct: 0,
+  data_inicio: '', data_fim: '', hora_inicio: '', hora_fim: '', progresso_pct: 0,
   status_kanban: 'mapeado', cor: '#2563eb',
   etapa: null,
 }
@@ -61,9 +62,12 @@ export default function TarefaFormModal({ projetoId, tarefa, initialValues, tare
       opts || optsRef.current
     const base = { ...FORM_VAZIO, ...raw }
     ;['nome', 'descricao', 'empresa_nome', 'area_nome', 'sistema_nome',
-      'fase_nome', 'responsavel_nome', 'data_inicio', 'data_fim'].forEach(k => {
+      'fase_nome', 'responsavel_nome', 'data_inicio', 'data_fim', 'hora_inicio', 'hora_fim'].forEach(k => {
       if (base[k] == null) base[k] = ''
     })
+    // banco devolve "08:00:00"; o campo de hora usa "08:00"
+    base.hora_inicio = String(base.hora_inicio).slice(0, 5)
+    base.hora_fim = String(base.hora_fim).slice(0, 5)
     if (!base.responsavel_id && base.responsavel_nome)
       { const r = findByNome(rs, base.responsavel_nome); if (r) base.responsavel_id = r.id }
     if (!base.sistema_id && base.sistema_nome)
@@ -212,7 +216,6 @@ export default function TarefaFormModal({ projetoId, tarefa, initialValues, tare
     if (outro) return { nome: outro.nome, etapa: outro.etapa, projeto_nome: projetosLista.find(p => p.id === depProjetoId)?.nome }
     return depInfo[id] || { nome: 'Carregando...', etapa: null, projeto_nome: null }
   }
-  const textoPlano = (s) => (s || '').replace(/\*\*?/g, '')
 
   const handleChange = (e) => {
     const { name, value } = e.target
@@ -268,6 +271,9 @@ export default function TarefaFormModal({ projetoId, tarefa, initialValues, tare
       progresso_pct: Number(form.progresso_pct) || 0,
       data_inicio: form.data_inicio || null,
       data_fim: form.data_fim || null,
+      // horário opcional: sem horário = dia inteiro na agenda do Outlook
+      hora_inicio: form.hora_inicio || null,
+      hora_fim: form.hora_fim || null,
     }
 
     if (payload.etapa != null) {
@@ -364,48 +370,20 @@ export default function TarefaFormModal({ projetoId, tarefa, initialValues, tare
           {error && <div className="bg-red-50 border border-red-200 rounded-md p-2 text-xs text-red-700">{error}</div>}
 
           <div className="flex flex-col gap-1">
-            <div className="flex items-center justify-between">
-              <label className="text-[10px] font-bold text-slate-500 uppercase">Nome da Tarefa *</label>
-              <div className="flex gap-1">
-                {[{ label: 'B', title: 'Negrito (**texto**)', marker: '**', cls: 'font-bold' }, { label: 'I', title: 'Itálico (*texto*)', marker: '*', cls: 'italic' }].map(({ label, title, marker, cls }) => (
-                  <button key={label} type="button" title={title}
-                    onMouseDown={e => {
-                      e.preventDefault()
-                      const el = nomeRef.current; if (!el) return
-                      const start = el.selectionStart; const end = el.selectionEnd
-                      const val = el.value
-                      const sel = val.slice(start, end)
-                      const novo = val.slice(0, start) + marker + sel + marker + val.slice(end)
-                      setForm(prev => ({ ...prev, nome: novo }))
-                      setTimeout(() => {
-                        el.focus()
-                        el.setSelectionRange(start + marker.length, start + marker.length + sel.length)
-                      }, 0)
-                    }}
-                    className={`w-5 h-5 flex items-center justify-center text-[11px] ${cls} text-slate-600 border border-slate-200 rounded hover:bg-slate-100 transition-colors`}
-                  >{label}</button>
-                ))}
-              </div>
-            </div>
-            <textarea ref={nomeRef} name="nome" value={form.nome} onChange={handleChange} rows={5}
-              className="w-full text-xs p-2 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20 resize-none" />
+            <EditorTextoRico
+              ref={nomeRef}
+              value={form.nome}
+              onChange={nome => setForm(prev => ({ ...prev, nome }))}
+              label={<label className="text-[10px] font-bold text-slate-500 uppercase">Nome da Tarefa *</label>}
+            />
             {templates.length > 0 && (
               <div className="flex flex-wrap gap-1.5 pt-1">
                 {templates.map(t => (
                   <button
                     key={t.id}
                     type="button"
-                    onClick={() => {
-                      const el = nomeRef.current
-                      const start = el ? el.selectionStart : (form.nome || '').length
-                      const end = el ? el.selectionEnd : start
-                      const atual = form.nome || ''
-                      const novo = atual.slice(0, start) + t.texto + atual.slice(end)
-                      setForm(prev => ({ ...prev, nome: novo }))
-                      setTimeout(() => {
-                        if (el) { el.focus(); el.setSelectionRange(start + t.texto.length, start + t.texto.length) }
-                      }, 0)
-                    }}
+                    onMouseDown={e => e.preventDefault()}
+                    onClick={() => nomeRef.current?.inserirTexto(t.texto)}
                     className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 hover:border-blue-400 transition-colors"
                     title={t.texto}
                   >
@@ -451,10 +429,16 @@ export default function TarefaFormModal({ projetoId, tarefa, initialValues, tare
                 <div className="flex flex-col gap-1">
                   <label className="text-[10px] font-bold text-slate-500 uppercase">Início</label>
                   <CalendarioPicker name="data_inicio" value={form.data_inicio || ''} onChange={handleChange} ocupacao={ocupacao} />
+                  <input type="time" name="hora_inicio" value={form.hora_inicio || ''} onChange={handleChange}
+                    title="Horário de início (opcional). Sem horário, a tarefa aparece como dia inteiro no Outlook."
+                    className="w-full text-xs p-1.5 border border-slate-200 rounded-md bg-white focus:ring-2 focus:ring-blue-500/20" />
                 </div>
                 <div className="flex flex-col gap-1">
                   <label className="text-[10px] font-bold text-slate-500 uppercase">Fim</label>
                   <CalendarioPicker name="data_fim" value={form.data_fim || ''} onChange={handleChange} ocupacao={ocupacao} initialViewDate={form.data_inicio || ''} />
+                  <input type="time" name="hora_fim" value={form.hora_fim || ''} onChange={handleChange}
+                    title="Horário de término (opcional)."
+                    className="w-full text-xs p-1.5 border border-slate-200 rounded-md bg-white focus:ring-2 focus:ring-blue-500/20" />
                 </div>
               </div>
             )
@@ -482,15 +466,13 @@ export default function TarefaFormModal({ projetoId, tarefa, initialValues, tare
                 {fases?.map(f => <option key={f.id} value={f.id}>{f.nome}</option>)}
               </select>
             </div>
+            {/* Área vem sempre do projeto (regra no banco: trg_proj_tarefa_area_do_projeto) */}
             <div className="flex flex-col gap-1">
-              <label className={alertLabel(!form.area_id)}>
-                Área{!form.area_id && <span className="text-amber-500">⚠</span>}
-              </label>
-              <select name="area_id" value={form.area_id} onChange={handleChange}
-                className={alertSel(!form.area_id)}>
-                <option value="">Selecione</option>
-                {areas?.map(a => <option key={a.id} value={a.id}>{a.nome}</option>)}
-              </select>
+              <label className="text-[10px] font-bold text-slate-500 uppercase">Área</label>
+              <div title="A área da tarefa é sempre a área do projeto. Para mudar, edite o projeto."
+                className="w-full text-xs p-2 border border-slate-200 rounded-md bg-slate-50 text-slate-600 truncate">
+                {form.area_nome || <span className="italic text-slate-400">Área do projeto</span>}
+              </div>
             </div>
           </div>
 

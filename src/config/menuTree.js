@@ -276,7 +276,8 @@ export const MENU_TREE = [
       { key: 'projetos/ata-reuniao', label: 'Ata de Reunião', virtual: true },
       { key: 'projetos/custos', label: 'Custos de Projetos', virtual: true },
       // Veio do BI - Dashboard › Gestão (13/11/2026) — key e endereço (/bi/projetos) mantidos.
-      { key: 'bi/projetos', label: 'BI — Gestão de Projetos' },
+      // virtual: fica dentro de Projetos (botão Dashboard | Controle), não aparece como menu próprio na Home
+      { key: 'bi/projetos', label: 'BI — Gestão de Projetos', virtual: true },
       {
         key: '_gestao-projetos.auditoria-externa',
         label: 'Auditoria Externa',

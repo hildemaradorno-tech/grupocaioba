@@ -10,27 +10,7 @@ import ProjetosNav from './ProjetosNav'
 import ProjetosFiltrosPanel, { FiltrosCompactBar } from './ProjetosFiltrosPanel'
 import ModalImportarProjeto, { baixarModeloExcel } from './ModalImportarProjeto'
 
-const renderNome = (nome) => {
-  if (!nome) return null
-  const parseLine = (line, baseKey) => {
-    const parts = []
-    const regex = /(\*\*(.+?)\*\*)|(\*(.+?)\*)/g
-    let last = 0; let match; let k = baseKey
-    while ((match = regex.exec(line)) !== null) {
-      if (match.index > last) parts.push(line.slice(last, match.index))
-      if (match[1]) parts.push(<strong key={k++}>{match[2]}</strong>)
-      else parts.push(<em key={k++}>{match[4]}</em>)
-      last = regex.lastIndex
-    }
-    if (last < line.length) parts.push(line.slice(last))
-    return parts
-  }
-  return nome.split('\n').reduce((acc, line, i) => {
-    if (i > 0) acc.push(<br key={`br${i}`} />)
-    acc.push(...parseLine(line, i * 1000))
-    return acc
-  }, [])
-}
+import { renderNome } from './textoFormatado'
 
 const STATUS_MAP = {
   mapeado:      { label: 'Mapeado',      cor: 'bg-slate-100 text-slate-600', corAtivo: 'bg-slate-500 text-white' },

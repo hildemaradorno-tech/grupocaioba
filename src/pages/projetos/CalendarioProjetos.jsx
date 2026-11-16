@@ -22,6 +22,7 @@ function tarefaPassaFiltroData(t, ini, fim, tipo) {
 import { useNavigate, useLocation } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, CalendarDays, FileDown, FolderOpen, Users, CheckCircle2, PlayCircle, X, Activity, CheckCircle, AlertTriangle, Layers, BarChart2, Eye, PartyPopper } from 'lucide-react'
 import ProjetosNav from './ProjetosNav'
+import AgendaOutlookModal, { IconeOutlook } from './AgendaOutlookModal'
 import jsPDF from 'jspdf'
 import html2canvas from 'html2canvas'
 import { apiService } from '../../services/api'
@@ -128,6 +129,7 @@ export default function CalendarioProjetos({ abaInicial = 'lista' }) {
   const [visualizacaoLista]   = useState('data') // 'data' | 'projeto' | 'responsavel'
   const [filtroStatusCard, setFiltroStatusCard] = useState(new Set(['mapeado', 'programado', 'em_andamento', 'pausado']))
   const [gerandoPDF, setGerandoPDF] = useState(false)
+  const [outlookAberto, setOutlookAberto] = useState(false)
   const [googleConnected, setGoogleConnected] = useState(false)
   const [googleEmail, setGoogleEmail]         = useState(null)
   const [googleEvents, setGoogleEvents]       = useState([])
@@ -718,6 +720,12 @@ export default function CalendarioProjetos({ abaInicial = 'lista' }) {
       <div className="flex items-start justify-between gap-3">
         <ProjetosNav />
         <div className="flex items-start gap-2">
+          <button onClick={() => setOutlookAberto(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors"
+            title="Ver minhas tarefas no calendário do Outlook">
+            <IconeOutlook /> Conectar ao Outlook
+          </button>
+          {outlookAberto && <AgendaOutlookModal onClose={() => setOutlookAberto(false)} />}
           {aba === 'calendario' && (googleConnected ? (
             <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold bg-white border border-slate-200 text-slate-600">
               <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 shrink-0" fill="none"><path d="M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477 10-10S17.523 2 12 2z" fill="#4285F4"/><path d="M17.82 12.2c0-.367-.033-.72-.094-1.06H12v2.006h3.264a2.79 2.79 0 01-1.211 1.83v1.52h1.961c1.147-1.056 1.807-2.613 1.807-4.297z" fill="#4285F4"/><path d="M12 18c1.638 0 3.012-.543 4.014-1.47l-1.961-1.52c-.543.364-1.237.578-2.053.578-1.578 0-2.915-1.066-3.392-2.497H6.577v1.57A6.002 6.002 0 0012 18z" fill="#34A853"/><path d="M8.608 13.09A3.603 3.603 0 018.42 12c0-.38.065-.748.188-1.09V9.34H6.577A6.002 6.002 0 006 12c0 .967.232 1.882.577 2.66l2.031-1.57z" fill="#FBBC05"/><path d="M12 8.413c.89 0 1.688.306 2.316.906l1.735-1.735C14.01 6.543 13.071 6 12 6a6.002 6.002 0 00-5.423 3.34l2.031 1.57C9.085 9.48 10.422 8.413 12 8.413z" fill="#EA4335"/></svg>

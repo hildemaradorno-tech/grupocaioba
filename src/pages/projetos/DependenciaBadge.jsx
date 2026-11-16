@@ -10,7 +10,7 @@ const STATUS_LABEL = {
   cancelado: 'Cancelado',
 }
 
-const textoPlano = (s) => (s || '').replace(/\*\*?/g, '')
+import { textoPlano } from './textoFormatado'
 
 export default function DependenciaBadge({ deps, projetoAtualId }) {
   const [pos, setPos] = useState(null)
