@@ -21,9 +21,7 @@ import rhFeriasRoutes from './routes/rhFerias.js'
 import hondaRoutes from './routes/honda.js'
 import microworkRoutes from './routes/microwork.js'
 import truckpagRoutes from './routes/truckpag.js'
-import googleCalendarRoutes from './routes/googleCalendar.js'
 import projetosManifestacoesRoutes from './routes/projetosManifestacoes.js'
-import { linkRouter as projetosAgendaLinkRoutes, feedRouter as projetosAgendaFeedRoutes } from './routes/projetosAgenda.js'
 import auditAiRoutes from './routes/auditAi.js'
 import powerbiRoutes from './routes/powerbi.js'
 import agendamentoCrmRoutes from './routes/agendamentoCrm.js'
@@ -77,19 +75,8 @@ app.use('/api/produtividade', authMiddleware, produtividadeRoutes)
 // ── Rotas Gestor de Peças 2.0 (fase 1: dados simulados — ver services/gestorPecas/dataProvider.js) ─
 app.use('/api/gestor-pecas', authMiddleware, requireMenuLike('pecas/', 'pecas-motos/'), filtrarPorEmpresa, gestorPecasRoutes)
 
-// ── Rotas Google Calendar (OAuth + leitura de eventos) ───────────────────────
-// /callback é o redirect do Google (navegação do browser, sem cabeçalho Authorization): o `state`
-// assinado é validado dentro da própria rota. As demais exigem login e checam o dono do calendário.
-app.use('/api/google-calendar', (req, res, next) => (req.path === '/callback' ? next() : authMiddleware(req, res, next)), googleCalendarRoutes)
-
 // ── Rotas Gestão de Projetos — Período de Manifestação (Etapa 2) ────────────
 app.use('/api/projetos', authMiddleware, requireMenuLike('projetos', 'bi/projetos'), projetosManifestacoesRoutes)
-
-// ── Agenda de Projetos → Outlook (assinatura .ics) ──────────────────────────
-// /api/projetos-agenda/link: o usuário logado pega o link secreto da própria agenda.
-// /api/agenda-ics/<token>.ics: público (o Outlook não manda login) — protegido pelo token secreto.
-app.use('/api/projetos-agenda', authMiddleware, requireMenuLike('projetos', 'bi/projetos'), projetosAgendaLinkRoutes)
-app.use('/api/agenda-ics', projetosAgendaFeedRoutes)
 
 // ── Rotas Gestão de Projetos — Auditoria Externa (Copiloto de IA) ───────────
 app.use('/api/audit-ai', authMiddleware, requireMenuLike('auditoria-externa'), auditAiRoutes)

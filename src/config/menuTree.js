@@ -272,7 +272,6 @@ export const MENU_TREE = [
       { key: 'projetos', label: 'Projetos' },
       { key: 'projetos/lista-tarefas', label: 'Lista de Tarefas', virtual: true },
       { key: 'projetos/manifestacoes', label: 'Manifestações', virtual: true },
-      { key: 'projetos/calendario', label: 'Agenda', virtual: true },
       { key: 'projetos/ata-reuniao', label: 'Ata de Reunião', virtual: true },
       { key: 'projetos/custos', label: 'Custos de Projetos', virtual: true },
       // Veio do BI - Dashboard › Gestão (13/11/2026) — key e endereço (/bi/projetos) mantidos.

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
-import { FolderKanban, List, CalendarDays, ClipboardList, FileText, Wallet, BarChart2 } from 'lucide-react'
+import { FolderKanban, List, ClipboardList, FileText, Wallet, BarChart2 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { apiService } from '../../services/api'
 
@@ -33,7 +33,6 @@ export default function ProjetosNav() {
     { to: '/projetos',               key: 'projetos',               label: 'Projetos',          icon: FolderKanban, end: true },
     { to: '/projetos/lista-tarefas', key: 'projetos/lista-tarefas', label: 'Lista de Tarefas',  icon: List },
     { to: '/projetos/manifestacoes', key: 'projetos/manifestacoes', label: 'Manifestações',     icon: ClipboardList, convidadoOk: true },
-    { to: '/projetos/calendario',    key: 'projetos/calendario',    label: 'Agenda',            icon: CalendarDays },
     { to: '/projetos/ata-reuniao',   key: 'projetos/ata-reuniao',   label: 'Ata de Reunião',    icon: FileText },
     { to: '/projetos/custos',        key: 'projetos/custos',        label: 'Custos de Projetos', icon: Wallet },
   ]

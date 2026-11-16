@@ -5685,41 +5685,6 @@ export const apiService = {
     return { success: true }
   },
 
-  // GOOGLE CALENDAR
-  getGoogleCalendarStatus: async (usuarioId) => {
-    const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
-    const res = await fetch(`${backendUrl}/api/google-calendar/status?usuario_id=${usuarioId}`)
-    const body = await res.json()
-    return body // { connected: bool, google_email: string|null }
-  },
-
-  getGoogleCalendarAuthUrl: async (usuarioId) => {
-    const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
-    const res = await fetch(`${backendUrl}/api/google-calendar/auth-url?usuario_id=${usuarioId}`)
-    const body = await res.json()
-    if (!res.ok) throw new Error(body.error || 'Erro ao obter URL de autorização')
-    return body.url
-  },
-
-  getGoogleCalendarEvents: async (usuarioId, dataIni, dataFim) => {
-    const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
-    const qs = new URLSearchParams({ usuario_id: usuarioId })
-    if (dataIni) qs.set('data_ini', dataIni)
-    if (dataFim) qs.set('data_fim', dataFim)
-    const res = await fetch(`${backendUrl}/api/google-calendar/events?${qs}`)
-    const body = await res.json()
-    if (!res.ok) throw new Error(body.error || 'Erro ao buscar eventos')
-    return body // { connected, google_email, events: [] }
-  },
-
-  disconnectGoogleCalendar: async (usuarioId) => {
-    const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
-    const res = await fetch(`${backendUrl}/api/google-calendar/disconnect?usuario_id=${usuarioId}`, { method: 'DELETE' })
-    const body = await res.json()
-    if (!res.ok) throw new Error(body.error || 'Erro ao desconectar')
-    return body
-  },
-
   // ══════════════════════════════════════════
   // GESTÃO DE PROJETOS — AUDITORIA EXTERNA (Achados/Divergências/Plano de Ação)
   // ══════════════════════════════════════════

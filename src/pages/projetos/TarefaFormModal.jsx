@@ -13,7 +13,7 @@ const FORM_VAZIO = {
   responsavel_id: '', responsavel_nome: '',
   empresa_id: '', empresa_nome: '',
   area_id: '', area_nome: '',
-  data_inicio: '', data_fim: '', hora_inicio: '', hora_fim: '', progresso_pct: 0,
+  data_inicio: '', data_fim: '', progresso_pct: 0,
   status_kanban: 'mapeado', cor: '#2563eb',
   etapa: null,
 }
@@ -62,12 +62,9 @@ export default function TarefaFormModal({ projetoId, tarefa, initialValues, tare
       opts || optsRef.current
     const base = { ...FORM_VAZIO, ...raw }
     ;['nome', 'descricao', 'empresa_nome', 'area_nome', 'sistema_nome',
-      'fase_nome', 'responsavel_nome', 'data_inicio', 'data_fim', 'hora_inicio', 'hora_fim'].forEach(k => {
+      'fase_nome', 'responsavel_nome', 'data_inicio', 'data_fim'].forEach(k => {
       if (base[k] == null) base[k] = ''
     })
-    // banco devolve "08:00:00"; o campo de hora usa "08:00"
-    base.hora_inicio = String(base.hora_inicio).slice(0, 5)
-    base.hora_fim = String(base.hora_fim).slice(0, 5)
     if (!base.responsavel_id && base.responsavel_nome)
       { const r = findByNome(rs, base.responsavel_nome); if (r) base.responsavel_id = r.id }
     if (!base.sistema_id && base.sistema_nome)
@@ -271,9 +268,6 @@ export default function TarefaFormModal({ projetoId, tarefa, initialValues, tare
       progresso_pct: Number(form.progresso_pct) || 0,
       data_inicio: form.data_inicio || null,
       data_fim: form.data_fim || null,
-      // horário opcional: sem horário = dia inteiro na agenda do Outlook
-      hora_inicio: form.hora_inicio || null,
-      hora_fim: form.hora_fim || null,
     }
 
     if (payload.etapa != null) {
@@ -429,16 +423,10 @@ export default function TarefaFormModal({ projetoId, tarefa, initialValues, tare
                 <div className="flex flex-col gap-1">
                   <label className="text-[10px] font-bold text-slate-500 uppercase">Início</label>
                   <CalendarioPicker name="data_inicio" value={form.data_inicio || ''} onChange={handleChange} ocupacao={ocupacao} />
-                  <input type="time" name="hora_inicio" value={form.hora_inicio || ''} onChange={handleChange}
-                    title="Horário de início (opcional). Sem horário, a tarefa aparece como dia inteiro no Outlook."
-                    className="w-full text-xs p-1.5 border border-slate-200 rounded-md bg-white focus:ring-2 focus:ring-blue-500/20" />
                 </div>
                 <div className="flex flex-col gap-1">
                   <label className="text-[10px] font-bold text-slate-500 uppercase">Fim</label>
                   <CalendarioPicker name="data_fim" value={form.data_fim || ''} onChange={handleChange} ocupacao={ocupacao} initialViewDate={form.data_inicio || ''} />
-                  <input type="time" name="hora_fim" value={form.hora_fim || ''} onChange={handleChange}
-                    title="Horário de término (opcional)."
-                    className="w-full text-xs p-1.5 border border-slate-200 rounded-md bg-white focus:ring-2 focus:ring-blue-500/20" />
                 </div>
               </div>
             )

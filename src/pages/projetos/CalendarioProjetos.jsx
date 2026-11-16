@@ -19,10 +19,9 @@ function tarefaPassaFiltroData(t, ini, fim, tipo) {
   if (fim && t.data_fim > fim) return false
   return true
 }
-import { useNavigate, useLocation } from 'react-router-dom'
-import { ChevronLeft, ChevronRight, CalendarDays, FileDown, FolderOpen, Users, CheckCircle2, PlayCircle, X, Activity, CheckCircle, AlertTriangle, Layers, BarChart2, Eye, PartyPopper } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { CalendarDays, FileDown, FolderOpen, Users, CheckCircle2, PlayCircle, Activity, CheckCircle, AlertTriangle, Layers, Eye, PartyPopper } from 'lucide-react'
 import ProjetosNav from './ProjetosNav'
-import AgendaOutlookModal, { IconeOutlook } from './AgendaOutlookModal'
 import jsPDF from 'jspdf'
 import html2canvas from 'html2canvas'
 import { apiService } from '../../services/api'
@@ -57,11 +56,6 @@ const TASK_KPI_CFG = {
   concluido:    { label: 'Concluído',    icon: CheckCircle2,  st: { bg:'bg-teal-50',   border:'border-teal-100',   ring:'ring-teal-400',   icoBg:'bg-teal-100',   icoTxt:'text-teal-500',   numTxt:'text-teal-800',   labelTxt:'text-teal-400'   } },
 }
 
-const DIAS_SEMANA = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
-const MESES = [
-  'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
-  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
-]
 
 const STATUS_LABEL = {
   mapeado:      'Mapeado',
@@ -90,18 +84,11 @@ const getTextColor = (hex) => {
 const fmtData = (d) => d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') : '—'
 const DIAS_SEMANA_FULL = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado']
 const fmtDiaSemana = (iso) => { if (!iso) return ''; const d = new Date(iso + 'T12:00:00'); return DIAS_SEMANA_FULL[d.getDay()] }
-const toKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-const getSundayOf = (d) => {
-  const dt = new Date(d); dt.setHours(12, 0, 0, 0)
-  dt.setDate(dt.getDate() - dt.getDay())
-  return dt
-}
-const addDaysLocal = (d, n) => { const dt = new Date(d); dt.setDate(dt.getDate() + n); return dt }
 
-export default function CalendarioProjetos({ abaInicial = 'lista' }) {
+// Lista de Tarefas (a aba Agenda foi excluída em 16/11/2026)
+export default function CalendarioProjetos() {
   const navigate = useNavigate()
-  const location = useLocation()
-  const { isAdmin, departamentosPermitidosEfetivos, hasActionOrDefault, hasPermission, user } = useAuth()
+  const { isAdmin, departamentosPermitidosEfetivos, hasActionOrDefault } = useAuth()
   const ctx = useProjetosFiltros()
   const { modoVerTodos, setModoVerTodos } = ctx
   const canVerTodos       = !isAdmin && hasActionOrDefault('projetos', 'ver_todos_projetos')
@@ -109,16 +96,9 @@ export default function CalendarioProjetos({ abaInicial = 'lista' }) {
   const canAlterarStatusTarefa = hasActionOrDefault('projetos', 'alterar_status_tarefa')
   const canIniciarTarefa  = !modoVerTodos && hasActionOrDefault('projetos', 'iniciar_tarefa')
   const canConcluirTarefa = !modoVerTodos && hasActionOrDefault('projetos', 'concluir_tarefa')
-  const hoje = new Date()
 
-  const aba = abaInicial // 'lista' | 'calendario' — determinado pela rota
-  const [vistaCalendario, setVistaCalendario] = useState('semanal') // 'mensal' | 'semanal'
-  const [ano, setAno]             = useState(hoje.getFullYear())
-  const [mes, setMes]             = useState(hoje.getMonth()) // 0-indexed
-  const [semanaBase, setSemanaBase] = useState(() => getSundayOf(new Date()))
   const [projetos, setProjetos] = useState(getProjetosCache() ?? [])
   const [loading, setLoading]   = useState(getProjetosCache() === null)
-  const [tooltip, setTooltip]   = useState(null) // { tarefa, x, y }
   const [filtroResponsavel]        = useState('')
   const [filtroResponsavelProjeto] = useState('')
   const [filtroDepartamento]       = useState('')
@@ -129,11 +109,6 @@ export default function CalendarioProjetos({ abaInicial = 'lista' }) {
   const [visualizacaoLista]   = useState('data') // 'data' | 'projeto' | 'responsavel'
   const [filtroStatusCard, setFiltroStatusCard] = useState(new Set(['mapeado', 'programado', 'em_andamento', 'pausado']))
   const [gerandoPDF, setGerandoPDF] = useState(false)
-  const [outlookAberto, setOutlookAberto] = useState(false)
-  const [googleConnected, setGoogleConnected] = useState(false)
-  const [googleEmail, setGoogleEmail]         = useState(null)
-  const [googleEvents, setGoogleEvents]       = useState([])
-  const [, setLoadingGoogle]     = useState(false)
   const [modalEditarTarefa, setModalEditarTarefa] = useState(null)
   const [modalConcluir, setModalConcluir] = useState(null) // { tarefa, dataFim }
   const [modalConcluirProjeto, setModalConcluirProjeto] = useState(null) // projeto object
@@ -175,42 +150,6 @@ export default function CalendarioProjetos({ abaInicial = 'lista' }) {
     }).catch(() => {})
   }, [])
 
-  // Google Calendar — verifica status e carrega eventos apenas na aba Agenda
-  useEffect(() => {
-    if (abaInicial !== 'calendario' || !user?.id) return
-    const params = new URLSearchParams(location.search)
-    if (params.get('google_connected') === '1') {
-      navigate('/projetos/calendario', { replace: true })
-    }
-    apiService.getGoogleCalendarStatus(user.id)
-      .then(s => { setGoogleConnected(s.connected); setGoogleEmail(s.google_email || null) })
-      .catch(() => {})
-  }, [abaInicial, user?.id, location.search])
-
-  useEffect(() => {
-    if (abaInicial !== 'calendario' || !googleConnected || !user?.id) { setGoogleEvents([]); return }
-    setLoadingGoogle(true)
-    const d0 = toKey(diasSemana[0])
-    const d6 = toKey(diasSemana[6])
-    apiService.getGoogleCalendarEvents(user.id, d0, d6)
-      .then(r => setGoogleEvents(r.events || []))
-      .catch(() => setGoogleEvents([]))
-      .finally(() => setLoadingGoogle(false))
-  }, [abaInicial, googleConnected, user?.id, semanaBase])
-
-  const handleConectarGoogle = async () => {
-    if (!user?.id) return
-    try {
-      const url = await apiService.getGoogleCalendarAuthUrl(user.id)
-      window.location.href = url
-    } catch (err) { alert('Erro: ' + err.message) }
-  }
-
-  const handleDesconectarGoogle = async () => {
-    if (!user?.id) return
-    await apiService.disconnectGoogleCalendar(user.id).catch(() => {})
-    setGoogleConnected(false); setGoogleEmail(null); setGoogleEvents([])
-  }
 
   const recarregarDados = () => {
     clearProjetosCache()
@@ -307,186 +246,6 @@ export default function CalendarioProjetos({ abaInicial = 'lista' }) {
 
   const sistemaCorMap = Object.fromEntries(optsSist.map(s => [s.nome, s.cor || '#1e293b']))
 
-  // Tarefas para o calendário: apenas responsável da tarefa + status (sem departamento)
-  const tarefasParaCalendario = useMemo(() => {
-    let result = tarefas.filter(t => !filtroResponsavel || t.responsavel_nome === filtroResponsavel)
-    if (filtroStatusCard.size > 0) result = result.filter(t => filtroStatusCard.has(t.status_kanban))
-    return result
-  }, [tarefas, filtroResponsavel, filtroStatusCard])
-
-  // Monta a grade de semanas do mês atual
-  const semanas = useMemo(() => {
-    const primeiroDia  = new Date(ano, mes, 1)
-    const ultimoDia    = new Date(ano, mes + 1, 0)
-    const offsetInicio = primeiroDia.getDay() // 0=Dom
-
-    const dias = []
-    // Dias do mês anterior para preencher a primeira semana
-    for (let i = offsetInicio - 1; i >= 0; i--) {
-      dias.push({ data: new Date(ano, mes, -i), mesAtual: false })
-    }
-    // Dias do mês atual
-    for (let d = 1; d <= ultimoDia.getDate(); d++) {
-      dias.push({ data: new Date(ano, mes, d), mesAtual: true })
-    }
-    // Dias do próximo mês para completar a última semana
-    const restante = 7 - (dias.length % 7)
-    if (restante < 7) {
-      for (let i = 1; i <= restante; i++) {
-        dias.push({ data: new Date(ano, mes + 1, i), mesAtual: false })
-      }
-    }
-
-    const result = []
-    for (let i = 0; i < dias.length; i += 7) result.push(dias.slice(i, i + 7))
-    return result
-  }, [ano, mes])
-
-  // Atribui lanes globais: cada tarefa recebe o menor slot livre, garantindo
-  // que a mesma tarefa fique na mesma linha em todos os dias que ela abrange.
-  const tasksWithLanes = useMemo(() => {
-    const firstOfMonth = `${ano}-${String(mes + 1).padStart(2, '0')}-01`
-    const lastDay = new Date(ano, mes + 1, 0).getDate()
-    const lastOfMonth = `${ano}-${String(mes + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
-
-    const tasks = tarefasParaCalendario
-      .filter(t => t.data_inicio || t.data_fim)
-      .filter(t => {
-        const start = t.data_inicio || t.data_fim
-        const end   = t.data_fim   || t.data_inicio
-        return start <= lastOfMonth && end >= firstOfMonth
-      })
-      .sort((a, b) => {
-        const sa = a.data_inicio || a.data_fim
-        const sb = b.data_inicio || b.data_fim
-        return sa < sb ? -1 : sa > sb ? 1 : 0
-      })
-
-    const laneEnds = [] // laneEnds[i] = último data_fim ocupando a lane i
-
-    return tasks.map(task => {
-      const start = task.data_inicio || task.data_fim
-      const end   = task.data_fim   || task.data_inicio
-      let lane = 0
-      while (lane < laneEnds.length && laneEnds[lane] !== undefined && laneEnds[lane] >= start) {
-        lane++
-      }
-      laneEnds[lane] = end
-      return { ...task, lane }
-    })
-  }, [tarefasParaCalendario, ano, mes])
-
-  // Mapa: "YYYY-MM-DD" → { [lane]: tarefa } — slot fixo por dia
-  const slotMap = useMemo(() => {
-    const map = {}
-    tasksWithLanes.forEach(t => {
-      const dInicio = t.data_inicio || t.data_fim
-      const dFim    = t.data_fim   || t.data_inicio
-      semanas.flat().forEach(({ data, mesAtual }) => {
-        if (!mesAtual) return
-        const key = toKey(data)
-        if (key >= dInicio && key <= dFim) {
-          if (!map[key]) map[key] = {}
-          map[key][t.lane] = { ...t, isStart: key === dInicio, isEnd: key === dFim }
-        }
-      })
-    })
-    return map
-  }, [tasksWithLanes, semanas])
-
-  // ── Vista semanal ─────────────────────────────────────────────────────────
-  const diasSemana = useMemo(() =>
-    Array.from({ length: 7 }, (_, i) => addDaysLocal(semanaBase, i)),
-    [semanaBase]
-  )
-
-  const { slotMapSemana, maxLaneSemana } = useMemo(() => {
-    const d0 = toKey(diasSemana[0])
-    const d6 = toKey(diasSemana[6])
-    const tasks = tarefasParaCalendario
-      .filter(t => t.data_inicio || t.data_fim)
-      .filter(t => {
-        const s = t.data_inicio || t.data_fim
-        const e = t.data_fim   || t.data_inicio
-        return s <= d6 && e >= d0
-      })
-      .sort((a, b) => {
-        const sa = a.data_inicio || a.data_fim
-        const sb = b.data_inicio || b.data_fim
-        return sa < sb ? -1 : sa > sb ? 1 : 0
-      })
-    const laneEnds = []
-    const withLanes = tasks.map(task => {
-      const s = task.data_inicio || task.data_fim
-      const e = task.data_fim   || task.data_inicio
-      let lane = 0
-      while (lane < laneEnds.length && laneEnds[lane] !== undefined && laneEnds[lane] >= s) lane++
-      laneEnds[lane] = e
-      return { ...task, lane }
-    })
-    const map = {}
-    withLanes.forEach(t => {
-      const dI = t.data_inicio || t.data_fim
-      const dF = t.data_fim   || t.data_inicio
-      diasSemana.forEach(data => {
-        const key = toKey(data)
-        if (key >= dI && key <= dF) {
-          if (!map[key]) map[key] = {}
-          map[key][t.lane] = { ...t, isStart: key === dI, isEnd: key === dF }
-        }
-      })
-    })
-    return { slotMapSemana: map, maxLaneSemana: laneEnds.length }
-  }, [tarefasParaCalendario, diasSemana])
-
-  const { slotMapGoogle, maxLaneGoogle } = useMemo(() => {
-    if (!googleEvents.length) return { slotMapGoogle: {}, maxLaneGoogle: 0 }
-    const d0 = toKey(diasSemana[0])
-    const d6 = toKey(diasSemana[6])
-    const evs = googleEvents
-      .filter(e => {
-        const start = (e.start?.date || e.start?.dateTime || '').slice(0, 10)
-        const end   = (e.end?.date   || e.end?.dateTime   || '').slice(0, 10)
-        return start && end && start <= d6 && end >= d0
-      })
-      .map(e => ({
-        id:    e.id,
-        nome:  e.summary || '(sem título)',
-        data_inicio: (e.start?.date || e.start?.dateTime || '').slice(0, 10),
-        data_fim:    (e.end?.date   || e.end?.dateTime   || '').slice(0, 10),
-        google: true,
-      }))
-      .sort((a, b) => (a.data_inicio < b.data_inicio ? -1 : 1))
-    const laneEnds = []
-    const withLanes = evs.map(ev => {
-      let lane = 0
-      while (lane < laneEnds.length && laneEnds[lane] >= ev.data_inicio) lane++
-      laneEnds[lane] = ev.data_fim
-      return { ...ev, lane }
-    })
-    const map = {}
-    withLanes.forEach(ev => {
-      diasSemana.forEach(data => {
-        const key = toKey(data)
-        if (key >= ev.data_inicio && key <= ev.data_fim) {
-          if (!map[key]) map[key] = {}
-          map[key][ev.lane] = { ...ev, isStart: key === ev.data_inicio, isEnd: key === ev.data_fim }
-        }
-      })
-    })
-    return { slotMapGoogle: map, maxLaneGoogle: laneEnds.length }
-  }, [googleEvents, diasSemana])
-
-  const prevSemana = () => setSemanaBase(d => addDaysLocal(d, -7))
-  const nextSemana = () => setSemanaBase(d => addDaysLocal(d, +7))
-  const irParaHoje = () => { setSemanaBase(getSundayOf(new Date())); setAno(hoje.getFullYear()); setMes(hoje.getMonth()) }
-
-  const semanaLabel = (() => {
-    const d0 = diasSemana[0], d6 = diasSemana[6]
-    const fmt = (d) => d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }).replace('.', '')
-    const ano6 = d6.getFullYear()
-    return `${fmt(d0)} — ${fmt(d6)} ${ano6}`
-  })()
 
   // Lista ordenada por data_fim ASC para a aba Lista (com filtros de status, data e responsáveis)
   const tarefasLista = useMemo(() =>
@@ -620,17 +379,6 @@ export default function CalendarioProjetos({ abaInicial = 'lista' }) {
     }
   }
 
-  const prevMes = () => {
-    if (mes === 0) { setMes(11); setAno(a => a - 1) }
-    else setMes(m => m - 1)
-  }
-  const nextMes = () => {
-    if (mes === 11) { setMes(0); setAno(a => a + 1) }
-    else setMes(m => m + 1)
-  }
-
-  const anos = Array.from({ length: 8 }, (_, i) => hoje.getFullYear() - 3 + i)
-  const hojeStr = toKey(hoje)
 
   return (
     <div className="p-6 space-y-4 max-w-screen-2xl">
@@ -643,10 +391,10 @@ export default function CalendarioProjetos({ abaInicial = 'lista' }) {
           </div>
           <div>
             <h1 className="text-xl font-bold text-slate-900 tracking-tight">
-              {aba === 'lista' ? 'Lista de Tarefas' : 'Agenda'}
+              Lista de Tarefas
             </h1>
             <p className="text-xs text-slate-500">
-              {aba === 'lista' ? 'Tarefas por status e projeto' : 'Visualização mensal das tarefas'}
+              Tarefas por status e projeto
             </p>
           </div>
         </div>
@@ -665,85 +413,23 @@ export default function CalendarioProjetos({ abaInicial = 'lista' }) {
               {modoVerTodos ? 'Sair da Visualização Geral' : 'Ver Todos os Projetos'}
             </button>
           )}
-          {aba === 'lista' && (
-            <button
-              onClick={baixarPDF}
-              disabled={gerandoPDF || tarefasLista.length === 0}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              <FileDown className="h-3.5 w-3.5" />
-              {gerandoPDF ? 'Gerando…' : 'Baixar PDF'}
-            </button>
-          )}
-          {aba === 'calendario' && (<>
-            <div className="w-px h-5 bg-slate-200 mx-1" />
-            <div className="flex items-center bg-slate-100 rounded-lg p-0.5">
-              {[['mensal','Mensal'],['semanal','Semanal']].map(([v, l]) => (
-                <button key={v} onClick={() => setVistaCalendario(v)}
-                  className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
-                    vistaCalendario === v ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                  }`}>
-                  {l}
-                </button>
-              ))}
-            </div>
-            {vistaCalendario === 'mensal' ? (<>
-              <button onClick={prevMes} className="p-1.5 border border-slate-200 rounded-md hover:bg-slate-100 text-slate-500 transition-colors">
-                <ChevronLeft className="h-4 w-4" />
-              </button>
-              <select value={mes} onChange={e => setMes(Number(e.target.value))}
-                className="text-sm font-semibold px-2 py-1.5 border border-slate-200 rounded-md bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400">
-                {MESES.map((m, i) => <option key={i} value={i}>{m}</option>)}
-              </select>
-              <select value={ano} onChange={e => setAno(Number(e.target.value))}
-                className="text-sm font-semibold px-2 py-1.5 border border-slate-200 rounded-md bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400">
-                {anos.map(a => <option key={a} value={a}>{a}</option>)}
-              </select>
-              <button onClick={nextMes} className="p-1.5 border border-slate-200 rounded-md hover:bg-slate-100 text-slate-500 transition-colors">
-                <ChevronRight className="h-4 w-4" />
-              </button>
-            </>) : (<>
-              <button onClick={prevSemana} className="p-1.5 border border-slate-200 rounded-md hover:bg-slate-100 text-slate-500 transition-colors">
-                <ChevronLeft className="h-4 w-4" />
-              </button>
-              <span className="text-sm font-semibold text-slate-700 min-w-[200px] text-center">{semanaLabel}</span>
-              <button onClick={nextSemana} className="p-1.5 border border-slate-200 rounded-md hover:bg-slate-100 text-slate-500 transition-colors">
-                <ChevronRight className="h-4 w-4" />
-              </button>
-              <button onClick={irParaHoje} className="px-2.5 py-1.5 text-xs font-semibold border border-slate-200 rounded-md hover:bg-slate-100 text-slate-600 transition-colors">
-                Hoje
-              </button>
-            </>)}
-          </>)}
+          <button
+            onClick={baixarPDF}
+            disabled={gerandoPDF || tarefasLista.length === 0}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            <FileDown className="h-3.5 w-3.5" />
+            {gerandoPDF ? 'Gerando…' : 'Baixar PDF'}
+          </button>
         </div>
       </div>
       <div className="flex items-start justify-between gap-3">
         <ProjetosNav />
         <div className="flex items-start gap-2">
-          <button onClick={() => setOutlookAberto(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors"
-            title="Ver minhas tarefas no calendário do Outlook">
-            <IconeOutlook /> Conectar ao Outlook
-          </button>
-          {outlookAberto && <AgendaOutlookModal onClose={() => setOutlookAberto(false)} />}
-          {aba === 'calendario' && (googleConnected ? (
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold bg-white border border-slate-200 text-slate-600">
-              <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 shrink-0" fill="none"><path d="M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477 10-10S17.523 2 12 2z" fill="#4285F4"/><path d="M17.82 12.2c0-.367-.033-.72-.094-1.06H12v2.006h3.264a2.79 2.79 0 01-1.211 1.83v1.52h1.961c1.147-1.056 1.807-2.613 1.807-4.297z" fill="#4285F4"/><path d="M12 18c1.638 0 3.012-.543 4.014-1.47l-1.961-1.52c-.543.364-1.237.578-2.053.578-1.578 0-2.915-1.066-3.392-2.497H6.577v1.57A6.002 6.002 0 0012 18z" fill="#34A853"/><path d="M8.608 13.09A3.603 3.603 0 018.42 12c0-.38.065-.748.188-1.09V9.34H6.577A6.002 6.002 0 006 12c0 .967.232 1.882.577 2.66l2.031-1.57z" fill="#FBBC05"/><path d="M12 8.413c.89 0 1.688.306 2.316.906l1.735-1.735C14.01 6.543 13.071 6 12 6a6.002 6.002 0 00-5.423 3.34l2.031 1.57C9.085 9.48 10.422 8.413 12 8.413z" fill="#EA4335"/></svg>
-              <span className="max-w-[130px] truncate">{googleEmail}</span>
-              <button onClick={handleDesconectarGoogle} className="ml-1 text-slate-400 hover:text-red-500 transition-colors" title="Desconectar"><X className="h-3 w-3" /></button>
-            </div>
-          ) : (
-            <button onClick={handleConectarGoogle}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors"
-              title="Sincronizar com Google Calendar">
-              <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 shrink-0" fill="none"><path d="M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477 10-10S17.523 2 12 2z" fill="#4285F4"/><path d="M17.82 12.2c0-.367-.033-.72-.094-1.06H12v2.006h3.264a2.79 2.79 0 01-1.211 1.83v1.52h1.961c1.147-1.056 1.807-2.613 1.807-4.297z" fill="#4285F4"/><path d="M12 18c1.638 0 3.012-.543 4.014-1.47l-1.961-1.52c-.543.364-1.237.578-2.053.578-1.578 0-2.915-1.066-3.392-2.497H6.577v1.57A6.002 6.002 0 0012 18z" fill="#34A853"/><path d="M8.608 13.09A3.603 3.603 0 018.42 12c0-.38.065-.748.188-1.09V9.34H6.577A6.002 6.002 0 006 12c0 .967.232 1.882.577 2.66l2.031-1.57z" fill="#FBBC05"/><path d="M12 8.413c.89 0 1.688.306 2.316.906l1.735-1.735C14.01 6.543 13.071 6 12 6a6.002 6.002 0 00-5.423 3.34l2.031 1.57C9.085 9.48 10.422 8.413 12 8.413z" fill="#EA4335"/></svg>
-              Conectar Google Calendar
-            </button>
-          ))}
           <FiltrosCompactBar />
         </div>
       </div>
-      <ProjetosFiltrosPanel projetos={projetos} showTrigger={false} hiddenFilters={aba === 'lista' ? ['termProjeto'] : []} />
+      <ProjetosFiltrosPanel projetos={projetos} showTrigger={false} hiddenFilters={['termProjeto']} />
 
       {modoVerTodos && (
         <div className="flex items-center gap-2 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-xs font-semibold">
@@ -781,7 +467,7 @@ export default function CalendarioProjetos({ abaInicial = 'lista' }) {
       })()}
 
       {/* ── ABA LISTA ────────────────────────────────────────────────────────── */}
-      {aba === 'lista' && !loading && (
+      {!loading && (
         <div className="space-y-3">
           {/* Tabela */}
           <div ref={tableRef} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
@@ -977,164 +663,7 @@ export default function CalendarioProjetos({ abaInicial = 'lista' }) {
         </div>
       )}
 
-      {/* ── ABA CALENDÁRIO ───────────────────────────────────────────────────── */}
-      {aba === 'calendario' && !loading && (<>
 
-        {/* ── VISTA MENSAL ──────────────────────────────────────────────────── */}
-        {vistaCalendario === 'mensal' && (
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="grid grid-cols-7 bg-slate-50 border-b border-slate-200">
-            {DIAS_SEMANA.map((d, i) => (
-              <div key={d} className={`py-2.5 text-center text-[10px] font-bold uppercase tracking-wider ${i === 0 || i === 6 ? 'text-slate-400' : 'text-slate-500'}`}>{d}</div>
-            ))}
-          </div>
-          <div className="divide-y divide-slate-100">
-            {semanas.map((semana, si) => {
-              const maxLaneWeek = semana.reduce((max, { data, mesAtual }) => {
-                if (!mesAtual) return max
-                const nums = Object.keys(slotMap[toKey(data)] || {}).map(Number)
-                return nums.length ? Math.max(max, ...nums) : max
-              }, -1)
-              const numSlots = maxLaneWeek + 1
-              const rowHeight = Math.max(56, 26 + numSlots * 17)
-              return (
-                <div key={si} className="grid grid-cols-7" style={{ minHeight: `${rowHeight}px` }}>
-                  {semana.map(({ data, mesAtual }, di) => {
-                    const key = toKey(data)
-                    const slots = mesAtual ? (slotMap[key] || {}) : {}
-                    const isHoje = mesAtual && key === hojeStr
-                    const ehFimSem = di === 0 || di === 6
-                    return (
-                      <div key={di} className={`relative flex flex-col border-l border-slate-100 first:border-l-0 ${!mesAtual ? 'bg-slate-50/70' : ehFimSem ? 'bg-slate-50/30' : ''}`} style={{ overflow: 'visible' }}>
-                        <div className="flex justify-end pr-2 pt-1 mb-1 shrink-0">
-                          <span className={`text-[11px] font-bold w-5 h-5 flex items-center justify-center rounded-full ${isHoje ? 'bg-indigo-600 text-white' : !mesAtual ? 'text-slate-300' : ehFimSem ? 'text-slate-400' : 'text-slate-600'}`}>{data.getDate()}</span>
-                        </div>
-                        <div className="flex flex-col" style={{ gap: '1px', overflow: 'visible' }}>
-                          {Array.from({ length: numSlots }, (_, lane) => {
-                            const t = slots[lane]
-                            if (!t) return <div key={lane} style={{ height: '16px', flexShrink: 0 }} />
-                            const isStartHere = t.isStart || di === 0
-                            const isEndHere   = t.isEnd   || di === 6
-                            const cor = STATUS_COR[t.status_kanban] || '#3b82f6'
-                            return (
-                              <div key={lane} onMouseMove={e => setTooltip({ tarefa: t, x: e.clientX, y: e.clientY })} onMouseLeave={() => setTooltip(null)} onDoubleClick={() => { if (!canEditarTarefa) return; setTooltip(null); setModalEditarTarefa(t) }}
-                                style={{ position:'relative', zIndex:1, height:'16px', flexShrink:0, backgroundColor:cor, opacity:0.88, cursor:'pointer', display:'flex', alignItems:'center', overflow:'hidden',
-                                  borderRadius:[isStartHere?'3px':'0', isEndHere?'3px':'0', isEndHere?'3px':'0', isStartHere?'3px':'0'].join(' '),
-                                  marginLeft:isStartHere?'3px':'-1px', marginRight:isEndHere?'3px':'-1px', paddingLeft:isStartHere?'6px':'2px', paddingRight:'3px' }}>
-                                {isStartHere && <span style={{ fontSize:'9px', fontWeight:700, color:'rgba(255,255,255,0.95)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', lineHeight:1, userSelect:'none' }}>{t.nome}</span>}
-                              </div>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              )
-            })}
-          </div>
-        </div>
-        )}
-
-        {/* ── VISTA SEMANAL ─────────────────────────────────────────────────── */}
-        {vistaCalendario === 'semanal' && (() => {
-          const DIAS_SEG = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
-          const numSlots      = Math.max(1, maxLaneSemana)
-          const numSlotsGoogle = maxLaneGoogle
-          const colHeight = Math.max(180, 52 + numSlots * 28 + (numSlotsGoogle > 0 ? 8 + numSlotsGoogle * 24 : 0))
-          return (
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-              {/* Cabeçalho dos dias */}
-              <div className="grid grid-cols-7 border-b border-slate-200">
-                {diasSemana.map((data, di) => {
-                  const key = toKey(data)
-                  const isHoje  = key === hojeStr
-                  const ehFimSem = di === 0 || di === 6
-                  return (
-                    <div key={di} className={`flex flex-col items-center py-3 border-l border-slate-100 first:border-l-0 ${ehFimSem ? 'bg-slate-50' : 'bg-white'}`}>
-                      <span className={`text-[10px] font-bold uppercase tracking-wider mb-1 ${ehFimSem ? 'text-slate-400' : 'text-slate-400'}`}>{DIAS_SEG[di]}</span>
-                      <span className={`text-lg font-bold w-9 h-9 flex items-center justify-center rounded-full ${isHoje ? 'bg-indigo-600 text-white' : ehFimSem ? 'text-slate-400' : 'text-slate-700'}`}>{data.getDate()}</span>
-                      <span className="text-[10px] text-slate-400 mt-0.5">{data.toLocaleDateString('pt-BR', { month:'short' }).replace('.','')}</span>
-                    </div>
-                  )
-                })}
-              </div>
-              {/* Grid de tarefas */}
-              <div className="grid grid-cols-7 divide-x divide-slate-100" style={{ minHeight: `${colHeight}px` }}>
-                {diasSemana.map((data, di) => {
-                  const key = toKey(data)
-                  const slots       = slotMapSemana[key] || {}
-                  const slotsGoogle = slotMapGoogle[key]  || {}
-                  const ehFimSem = di === 0 || di === 6
-                  const isHoje  = key === hojeStr
-                  return (
-                    <div key={di} className={`relative flex flex-col p-1.5 gap-1 ${ehFimSem ? 'bg-slate-50/60' : ''} ${isHoje ? 'bg-indigo-50/30' : ''}`}>
-                      {/* Tarefas do sistema */}
-                      {Array.from({ length: numSlots }, (_, lane) => {
-                        const t = slots[lane]
-                        if (!t) return <div key={lane} style={{ height: '24px', flexShrink: 0 }} />
-                        const cor = STATUS_COR[t.status_kanban] || '#3b82f6'
-                        const isStartHere = t.isStart || di === 0
-                        const isEndHere   = t.isEnd   || di === 6
-                        return (
-                          <div key={lane} onMouseMove={e => setTooltip({ tarefa: t, x: e.clientX, y: e.clientY })} onMouseLeave={() => setTooltip(null)} onDoubleClick={() => { if (!canEditarTarefa) return; setTooltip(null); setModalEditarTarefa(t) }}
-                            style={{ height:'24px', flexShrink:0, backgroundColor:cor, opacity:0.85, cursor:'pointer', display:'flex', alignItems:'center', overflow:'hidden',
-                              borderRadius:[isStartHere?'5px':'0', isEndHere?'5px':'0', isEndHere?'5px':'0', isStartHere?'5px':'0'].join(' '),
-                              marginLeft:isStartHere?'0':'-7px', marginRight:isEndHere?'0':'-7px',
-                              paddingLeft:isStartHere?'8px':'4px', paddingRight:'4px',
-                              boxShadow: isStartHere ? '0 1px 3px rgba(0,0,0,0.15)' : 'none' }}>
-                            {isStartHere && <span style={{ fontSize:'10px', fontWeight:700, color:'rgba(255,255,255,0.95)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', lineHeight:1, userSelect:'none' }}>{t.nome}</span>}
-                          </div>
-                        )
-                      })}
-                      {/* Separador + eventos Google Calendar */}
-                      {numSlotsGoogle > 0 && (
-                        <>
-                          <div style={{ height:'4px', flexShrink:0, borderTop:'1px dashed #e2e8f0', margin:'2px -6px 0' }} />
-                          {Array.from({ length: numSlotsGoogle }, (_, lane) => {
-                            const ev = slotsGoogle[lane]
-                            if (!ev) return <div key={lane} style={{ height: '22px', flexShrink: 0 }} />
-                            const isStartHere = ev.isStart || di === 0
-                            const isEndHere   = ev.isEnd   || di === 6
-                            return (
-                              <div key={lane}
-                                title={ev.nome}
-                                style={{ height:'22px', flexShrink:0, backgroundColor:'#4285F4', opacity:0.82, display:'flex', alignItems:'center', overflow:'hidden',
-                                  borderRadius:[isStartHere?'4px':'0', isEndHere?'4px':'0', isEndHere?'4px':'0', isStartHere?'4px':'0'].join(' '),
-                                  marginLeft:isStartHere?'0':'-7px', marginRight:isEndHere?'0':'-7px',
-                                  paddingLeft:isStartHere?'7px':'4px', paddingRight:'4px' }}>
-                                {isStartHere && <span style={{ fontSize:'9px', fontWeight:600, color:'#fff', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', lineHeight:1, userSelect:'none' }}>{ev.nome}</span>}
-                              </div>
-                            )
-                          })}
-                        </>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          )
-        })()}
-      </>)}
-
-      {/* Legenda de status — só no calendário */}
-      {aba === 'calendario' && !loading && (
-        <div className="flex items-center gap-4 flex-wrap">
-          {Object.entries(STATUS_COR).map(([k, cor]) => (
-            <div key={k} className="flex items-center gap-1.5">
-              <div className="w-3 h-3 rounded-sm shrink-0" style={{ backgroundColor: cor }} />
-              <span className="text-[10px] text-slate-500 font-medium">{STATUS_LABEL[k]}</span>
-            </div>
-          ))}
-          {googleConnected && (
-            <div className="flex items-center gap-1.5 ml-2 pl-2 border-l border-slate-200">
-              <div className="w-3 h-3 rounded-sm shrink-0" style={{ backgroundColor: '#4285F4' }} />
-              <span className="text-[10px] text-slate-500 font-medium">Google Calendar</span>
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Modal Concluir Projeto */}
       {modalConcluirProjeto && (
@@ -1222,53 +751,6 @@ export default function CalendarioProjetos({ abaInicial = 'lista' }) {
         />
       )}
 
-      {/* Tooltip */}
-      {tooltip && (
-        <div
-          className="fixed z-[200] pointer-events-none"
-          style={{
-            left: Math.min(tooltip.x + 14, window.innerWidth - 240),
-            top: tooltip.y + 18,
-          }}
-        >
-          <div className="bg-slate-900 text-white rounded-lg shadow-2xl p-3 w-56">
-            <p className="font-bold text-white text-[11px] leading-snug mb-2.5 border-b border-slate-700 pb-2">
-              {tooltip.tarefa.nome}
-            </p>
-            <div className="space-y-1.5 text-[11px]">
-              {tooltip.tarefa.responsavel_nome && (
-                <div className="flex gap-2">
-                  <span className="text-slate-400 w-20 shrink-0">Responsável</span>
-                  <span className="text-slate-200">{tooltip.tarefa.responsavel_nome}</span>
-                </div>
-              )}
-              <div className="flex gap-2">
-                <span className="text-slate-400 w-20 shrink-0">Status</span>
-                <span className="font-semibold" style={{ color: STATUS_COR[tooltip.tarefa.status_kanban] || '#fff' }}>
-                  {STATUS_LABEL[tooltip.tarefa.status_kanban] || tooltip.tarefa.status_kanban}
-                </span>
-              </div>
-              {tooltip.tarefa.fase_nome && (
-                <div className="flex gap-2">
-                  <span className="text-slate-400 w-20 shrink-0">Fase</span>
-                  <span className="text-slate-200">{tooltip.tarefa.fase_nome}</span>
-                </div>
-              )}
-              {(tooltip.tarefa.data_inicio || tooltip.tarefa.data_fim) && (
-                <div className="flex gap-2 pt-1.5 mt-1 border-t border-slate-700">
-                  <span className="text-slate-400 w-20 shrink-0">Período</span>
-                  <span className="text-slate-200">
-                    {fmtData(tooltip.tarefa.data_inicio)} → <span className={
-                      tooltip.tarefa.status_kanban !== 'concluido' && tooltip.tarefa.data_fim && tooltip.tarefa.data_fim < hojeISO ? 'text-red-400 font-bold' :
-                      tooltip.tarefa.status_kanban !== 'concluido' && tooltip.tarefa.data_fim === hojeISO                           ? 'text-blue-300 font-bold' : ''
-                    }>{fmtData(tooltip.tarefa.data_fim)}</span>
-                  </span>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
