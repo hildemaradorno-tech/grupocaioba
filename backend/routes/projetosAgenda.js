@@ -154,6 +154,7 @@ function eventoDaTarefa(t, projeto, agoraUtc) {
 
 feedRouter.get('/:arquivo', wrap(async (req, res) => {
   const token = String(req.params.arquivo || '').replace(/\.ics$/i, '')
+  console.log(`[agenda-ics] ${req.method} ${token.slice(0, 6)}… ua="${req.get('user-agent') || ''}"`)
   if (!/^[a-f0-9]{48}$/.test(token)) return res.status(404).send('Calendário não encontrado.')
 
   const sb = getSupabaseAdmin()

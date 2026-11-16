@@ -30,7 +30,8 @@ export default function AgendaOutlookModal({ onClose }) {
 
   useEffect(() => { carregar().finally(() => setCarregando(false)) }, [])
 
-  const link = dados ? `${BACKEND_URL}/api/agenda-ics/${dados.token}.ics` : ''
+  // O Outlook clássico espera o formato webcal:// (é o exemplo da própria janela dele)
+  const link = dados ? `${BACKEND_URL.replace(/^https?:\/\//, 'webcal://')}/api/agenda-ics/${dados.token}.ics` : ''
   const ehLocal = /localhost|127\.0\.0\.1/.test(BACKEND_URL)
 
   const copiar = async () => {
