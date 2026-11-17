@@ -28,6 +28,7 @@ import agendamentoCrmRoutes from './routes/agendamentoCrm.js'
 import planosManutencaoRoutes from './routes/planosManutencao.js'
 import gestorPecasRoutes from './routes/gestorPecas.js'
 import produtividadeRoutes from './routes/produtividade.js'
+import rpaLogRoutes from './routes/rpaLog.js'
 import { iniciarSchedulerManifestacao } from './services/manifestacaoScheduler.js'
 import { iniciarSchedulerAuditoria } from './services/auditoriaAgendamento.js'
 import { iniciarSchedulerProjetosTarefas } from './services/projetosTaskScheduler.js'
@@ -74,6 +75,9 @@ app.use('/api/produtividade', authMiddleware, produtividadeRoutes)
 
 // ── Rotas Gestor de Peças 2.0 (fase 1: dados simulados — ver services/gestorPecas/dataProvider.js) ─
 app.use('/api/gestor-pecas', authMiddleware, requireMenuLike('pecas/', 'pecas-motos/'), filtrarPorEmpresa, gestorPecasRoutes)
+
+// ── Rotas BI Controle de Execuções RPA (SharePoint — Banco de Dados - Log RPA) ─
+app.use('/api/rpa-log', authMiddleware, requireMenu('bi/rpa-execucoes'), rpaLogRoutes)
 
 // ── Rotas Gestão de Projetos — Período de Manifestação (Etapa 2) ────────────
 app.use('/api/projetos', authMiddleware, requireMenuLike('projetos', 'bi/projetos'), projetosManifestacoesRoutes)

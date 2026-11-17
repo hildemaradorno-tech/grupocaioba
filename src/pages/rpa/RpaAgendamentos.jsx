@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { useSessionState } from '../../hooks/useSessionState'
-import { Settings, Pencil, CalendarClock, Trash2, Plus, X, AlertTriangle, CopyPlus, Rows, Clock, ClipboardList, RefreshCw, Link2, FileDown, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { Settings, Pencil, CalendarClock, Trash2, Plus, X, AlertTriangle, CopyPlus, Rows, Clock, ClipboardList, RefreshCw, Link2, FileDown, ArrowUp, ArrowDown, ArrowUpDown, BarChart2 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { MultiSearchCombobox } from '../../components/SearchCombobox'
 import { apiService } from '../../services/api'
@@ -194,6 +195,7 @@ const _cache = { uid: null, dados: null, departamentos: null, processos: null }
 
 export default function RpaAgendamentos() {
   const { hasPermission, user } = useAuth()
+  const navigate = useNavigate()
   const uid = user?.id ?? user?.email ?? null
   // cache em memória só vale para o mesmo usuário (troca de login sem recarregar a página)
   if (_cache.uid !== uid) Object.assign(_cache, { uid, dados: null, departamentos: null, processos: null })
@@ -1035,6 +1037,12 @@ export default function RpaAgendamentos() {
           <p className="text-xs text-slate-500 mt-0.5 max-w-3xl">Grade semanal de rotinas de RPA e atualizações de Power BI por setor. Todos os horários exibidos em horário de MS — <strong className="text-slate-600">*</strong> indica horário convertido de Brasília (Power BI); passe o mouse para ver o horário configurado.</p>
         </div>
         <div className="flex items-center gap-2 shrink-0 ml-auto">
+          {hasPermission('bi/rpa-execucoes') && (
+            <button type="button" onClick={() => navigate('/bi/rpa-execucoes')}
+              className="flex items-center gap-2 whitespace-nowrap bg-white hover:bg-indigo-50 text-indigo-600 border border-indigo-200 text-xs font-semibold px-3 py-2 rounded-md shadow-sm transition-colors">
+              <BarChart2 className="h-4 w-4 shrink-0" /> Ir para Dashboard
+            </button>
+          )}
           {visualizacao === 'atualizacao' && (
             <button
               type="button"

@@ -880,10 +880,9 @@ async function montarBaseBloco3Pecas(year, empresa, vendedor) {
   // PEÇAS. Sem vendedor selecionado, cai no mesmo agregado de todas as lojas.
   // Busca ao vivo (não passa pelo cache do sync agendado, que só cobre as
   // combinações fonte/ano/empresa sincronizadas, sem recorte por vendedor).
-  let balcaoVendedor = balcaoTodas
-  if (vendedor) {
-    try { balcaoVendedor = await extractBalcao(year, null, vendedor) } catch (_) { balcaoVendedor = null }
-  }
+  // Desde 14/11/2026 o realizado do Balcão (total e por vendedor) vem da Possibilidades (quadrosBloco3Pecas) —
+  // a leitura ao vivo do relatório por vendedor (lenta, no pré-cálculo de cada vendedor) saiu em 17/11/2026.
+  const balcaoVendedor = vendedor ? null : balcaoTodas
 
   // Metas aprovadas de Peças (tipo 'pecas' em fato_metas_publicadas): soma de
   // todos os vendedores pros quadros Gerente/Coordenador e, no VENDEDOR DE

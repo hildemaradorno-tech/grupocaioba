@@ -108,6 +108,7 @@ import BiProjetos from './pages/bi/BiProjetos'
 import BiAgendamentoServicos from './pages/bi/BiAgendamentoServicos'
 import BiAgendamentoServicosManual from './pages/bi/BiAgendamentoServicosManual'
 import BiPlanosManutencao from './pages/bi/BiPlanosManutencao'
+import BiRpaExecucoes from './pages/bi/BiRpaExecucoes'
 import IndicadoresProdutividade from './pages/pos-vendas/IndicadoresProdutividade'
 import BiPlanosManutencaoManual from './pages/bi/BiPlanosManutencaoManual'
 import BiPossibilidades from './pages/bi/BiPossibilidades'
@@ -344,6 +345,7 @@ export default function App() {
           { path: '/bi/agendamento-servicos', element: <BiAgendamentoServicos />, menuPath: 'bi/agendamento-servicos' },
           { path: '/bi/agendamento-servicos/manual', element: <BiAgendamentoServicosManual />, menuPath: 'bi/agendamento-servicos' },
           { path: '/bi/planos-manutencao', element: <BiPlanosManutencao />, menuPath: 'bi/planos-manutencao' },
+          { path: '/bi/rpa-execucoes', element: <BiRpaExecucoes />, menuPath: 'bi/rpa-execucoes' },
           { path: '/bi/planos-manutencao/manual', element: <BiPlanosManutencaoManual />, menuPath: 'bi/planos-manutencao' },
           { path: '/pos-vendas/produtividade', element: <IndicadoresProdutividade />, menuPath: 'pos-vendas/produtividade' },
           { path: '/pos-vendas/possibilidades', element: <BiPossibilidades />, menuPath: 'bi/possibilidades' },

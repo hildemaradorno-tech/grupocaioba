@@ -44,7 +44,7 @@ let emExecucao = false
 export function sincronizacaoEmAndamento() { return emExecucao }
 
 // Tarefas do fim da sincronização (ex.: pré-cálculo da Campanha Pós-Venda, ~40 s, registrado em
-// routes/kpi.js). Rodam antes de liberar o botão Atualizar: a Campanha recarrega já com os números novos.
+// routes/kpi.js). Rodam por trás, DEPOIS de liberar o botão Atualizar (desde 17/11/2026).
 // Falha numa delas não marca a sincronização como erro.
 const _aoTerminar = []
 export function aoTerminarSincronizacao(fn) { _aoTerminar.push(fn) }
@@ -54,15 +54,21 @@ export async function executarSincronizacao(origem, usuarioEmail = null) {
   if (emExecucao) throw new Error('Já existe uma sincronização em andamento.')
   emExecucao = true
 
+  let resultado
   try {
-    const resultado = await _executar(origem, usuarioEmail)
+    resultado = await _executar(origem, usuarioEmail)
+  } finally {
+    // Libera o botão Atualizar / "Sincronizando…" assim que a atualização termina (17/11/2026) — antes só depois
+    // do pré-cálculo, que levava vários minutos e deixava a Matriz presa em "Sincronizando…".
+    emExecucao = false
+  }
+  // Tarefas do fim (pré-cálculo da Campanha etc.): por trás, sem travar a tela; têm trava própria.
+  ;(async () => {
     for (const fn of _aoTerminar) {
       try { await fn(new Date().getFullYear()) } catch (err) { console.error('[KPI Sync] tarefa pós-sincronização falhou:', err.message) }
     }
-    return resultado
-  } finally {
-    emExecucao = false
-  }
+  })()
+  return resultado
 }
 
 async function _executar(origem, usuarioEmail) {

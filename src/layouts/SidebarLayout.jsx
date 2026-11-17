@@ -615,6 +615,13 @@ export default function SidebarLayout() {
             {canView('pos-vendas/produtividade') && <FlyItem to="/pos-vendas/produtividade" icon={Gauge} onClose={closeFlyout}>Indicadores de Produtividade</FlyItem>}
             {canView('bi/planos-manutencao') && <FlyItem to="/bi/planos-manutencao" icon={Wrench} onClose={closeFlyout}>Planos de Manutenção</FlyItem>}
             {canView('bi/possibilidades') && <FlyItem to="/pos-vendas/possibilidades" icon={Gauge} onClose={closeFlyout}>Possibilidades</FlyItem>}
+            {canView('bi/rpa-execucoes') && (
+              <>
+                <div className="mx-3 my-2 border-t border-blue-800/50" />
+                <FlyGroup label="Tecnologia" />
+                <FlyItem to="/bi/rpa-execucoes" icon={Bot} onClose={closeFlyout}>Controle de Execuções RPA</FlyItem>
+              </>
+            )}
           </>
         )
 

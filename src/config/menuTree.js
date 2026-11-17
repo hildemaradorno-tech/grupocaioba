@@ -414,6 +414,15 @@ export const MENU_TREE = [
       { key: 'bi/possibilidades', label: 'Possibilidades' },
       ],
       },
+      {
+        // Agrupamento "Tecnologia" (17/11/2026): BI do log de execuções do Robert Automation (SharePoint
+        // "Banco de Dados - Log RPA"). A tela operacional correspondente é Documentações › Agendamento de Processos.
+        key: '_bi.tecnologia',
+        label: 'Tecnologia',
+        children: [
+          { key: 'bi/rpa-execucoes', label: 'Controle de Execuções RPA' },
+        ],
+      },
     ],
   },
   {
