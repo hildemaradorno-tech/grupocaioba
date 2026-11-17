@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Edit2, Trash2, FolderKanban, Activity, CheckCircle, AlertTriangle, Layers, ShieldAlert, ChevronRight, ChevronDown, Loader2, X, CheckCircle2, Copy, BarChart2, Download, Eye, Settings, FileSpreadsheet, MessageSquare, Users, CircleDot, FileText } from 'lucide-react'
+import { Plus, Edit2, Trash2, FolderKanban, Activity, CheckCircle, AlertTriangle, Layers, ShieldAlert, ChevronRight, ChevronDown, Loader2, X, CheckCircle2, Copy, BarChart2, Download, Eye, Settings, FileSpreadsheet, MessageSquare, Users, CircleDot, FileText, Mail, BellRing } from 'lucide-react'
 import { apiService } from '../../services/api'
 import TarefaFormModal from './TarefaFormModal'
 import DependenciaBadge from './DependenciaBadge'
@@ -15,6 +15,8 @@ import ProjResponsaveis from './cadastros/ProjResponsaveis'
 import ProjFases from './cadastros/ProjFases'
 import ProjStatus from './cadastros/ProjStatus'
 import ProjTemplates from './cadastros/ProjTemplates'
+import ProjEmailConfig from './cadastros/ProjEmailConfig'
+import EnviarAvisosModal from './EnviarAvisosModal'
 
 const STATUS_MAP = {
   mapeado:      { label: 'Mapeado',      cor: 'bg-slate-100 text-slate-600', corAtivo: 'bg-slate-500 text-white' },
@@ -151,8 +153,11 @@ export default function ProjetosDashboard() {
     { path: 'projetos/fases',        label: 'Fases',               icon: Layers,    Tela: ProjFases },
     { path: 'projetos/status',       label: 'Status',              icon: CircleDot, Tela: ProjStatus },
     { path: 'projetos/templates',    label: 'Templates de Tarefa', icon: FileText,  Tela: ProjTemplates },
+    { path: 'projetos/config-emails', label: 'Configurar E-mails', icon: Mail,      Tela: ProjEmailConfig },
   ].filter(c => hasPermission(c.path))
   const [cadastroAberto, setCadastroAberto] = useState(null)
+  const canEnviarAvisos = hasPermission('projetos/enviar-avisos')
+  const [modalAvisos, setModalAvisos] = useState(false)
   const CadastroTela = cadastrosGear.find(c => c.path === cadastroAberto)?.Tela
   const canEditar     = !modoVerTodos && hasActionOrDefault('projetos', 'editar')
   const canExcluir    = !modoVerTodos && hasActionOrDefault('projetos', 'excluir')
@@ -998,7 +1003,7 @@ export default function ProjetosDashboard() {
                 <Plus className="h-4 w-4" /> Novo Projeto
               </button>
             )}
-            {(canCriar || cadastrosGear.length > 0) && (
+            {(canCriar || cadastrosGear.length > 0 || canEnviarAvisos) && (
               <div className="relative">
                 <button
                   onClick={e => {
@@ -1037,9 +1042,21 @@ export default function ProjetosDashboard() {
                           </button>
                         </>
                       )}
-                      {cadastrosGear.length > 0 && (
+                      {canEnviarAvisos && (
                         <>
                           {canCriar && <div className="my-1 border-t border-slate-100" />}
+                          <button
+                            onClick={() => { setMenuGear(false); setModalAvisos(true) }}
+                            className="w-full flex items-center gap-2 px-3 py-2 text-xs text-slate-700 hover:bg-slate-50"
+                          >
+                            <BellRing className="h-3.5 w-3.5 text-red-500 shrink-0" />
+                            Enviar avisos agora
+                          </button>
+                        </>
+                      )}
+                      {cadastrosGear.length > 0 && (
+                        <>
+                          {(canCriar || canEnviarAvisos) && <div className="my-1 border-t border-slate-100" />}
                           <div className="px-3 pt-1 pb-0.5 text-[10px] font-semibold text-slate-400 uppercase">Cadastros</div>
                           {cadastrosGear.map(c => {
                             const Icone = c.icon
@@ -1067,6 +1084,7 @@ export default function ProjetosDashboard() {
           <ProjetosNav />
           <FiltrosCompactBar />
         </div>
+        {modalAvisos && <EnviarAvisosModal onClose={() => setModalAvisos(false)} />}
         {CadastroTela && (
           <>
             {/* fundo separado: backdrop-filter num ancestral prenderia os modais internos (position: fixed) da tela de cadastro */}

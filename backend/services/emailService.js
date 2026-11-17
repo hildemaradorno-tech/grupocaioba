@@ -25,7 +25,7 @@ function getTransporter() {
   return transporter
 }
 
-export async function enviarEmail({ to, subject, html }) {
+export async function enviarEmail({ to, cc, subject, html }) {
   const t = getTransporter()
   if (!t) {
     console.warn('[email] SMTP não configurado — ignorado:', subject, '→', to)
@@ -34,6 +34,7 @@ export async function enviarEmail({ to, subject, html }) {
   await t.sendMail({
     from: `"${FROM_NAME}" <${FROM_EMAIL}>`,
     to,
+    ...(cc && cc.length ? { cc } : {}),
     subject,
     html: AVISO_AUTOMATICO + html,
   })

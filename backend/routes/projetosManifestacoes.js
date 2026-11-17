@@ -1,11 +1,20 @@
 import { Router } from 'express'
-import { authMiddleware } from '../middleware/authMiddleware.js'
+import { authMiddleware, requireMenu } from '../middleware/authMiddleware.js'
+import { enviarAvisosAgora } from '../services/projetosTaskScheduler.js'
 import { encerrarPeriodoManifestacao } from '../services/manifestacaoService.js'
 import { enviarEmail } from '../services/emailService.js'
 
 const router = Router()
 
 const wrap = fn => (req, res, next) => fn(req, res, next).catch(next)
+
+// POST /api/projetos/avisos-agora  body: { simular }
+// Engrenagem › Enviar avisos agora: e-mail por responsável com tarefas em atraso e que vencem hoje.
+// simular=true devolve só o resumo (prévia na tela antes de confirmar).
+router.post('/avisos-agora', requireMenu('projetos/enviar-avisos'), wrap(async (req, res) => {
+  const r = await enviarAvisosAgora({ simular: !!req.body?.simular, usuarioEmail: req.user?.email })
+  res.json(r)
+}))
 
 // POST /api/projetos/:id/encerrar-manifestacao — encerramento manual do Período
 // de Manifestação (Etapa 2), disparado pelo responsável via tela. O encerramento

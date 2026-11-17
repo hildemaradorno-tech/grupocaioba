@@ -1,5 +1,7 @@
 /**
- * Agendador do Período de Manifestação (Etapa 2): uma vez por dia (08:00),
+ * Regras configuráveis em Projetos › engrenagem › Configurar E-mails (proj_email_config):
+ * ligar/desligar lembrete e encerramento automático, dias do lembrete, horário (fuso Campo Grande).
+ * Agendador do Período de Manifestação (Etapa 2): uma vez por dia (horário configurado),
  * para cada projeto com manifestacao_status='aberto':
  *   - se o prazo já passou, encerra o período automaticamente;
  *   - se faltam 1 ou 2 dias, envia lembrete por e-mail aos convidados que
@@ -10,10 +12,7 @@ import cron from 'node-cron'
 import { getSupabaseAdmin } from './supabaseAdmin.js'
 import { encerrarPeriodoManifestacao } from './manifestacaoService.js'
 import { enviarEmail } from './emailService.js'
-
-function dataAtualIso(d) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
+import { reservarExecucaoDoDia } from './projetosEmailConfig.js'
 
 function diasEntre(hojeIso, prazoIso) {
   const hoje = new Date(hojeIso + 'T00:00:00')
@@ -56,9 +55,10 @@ async function enviarLembretes(supabaseAdmin, projeto, diasAntes) {
   }
 }
 
-async function verificarProjetos() {
+async function verificarProjetos(config, hojeIso) {
   const supabaseAdmin = getSupabaseAdmin()
   if (!supabaseAdmin) return
+  if (!config.manif_lembrete_ativo && !config.manif_encerrar_auto) return
 
   const { data: projetos, error } = await supabaseAdmin
     .from('proj_projetos')
@@ -67,30 +67,38 @@ async function verificarProjetos() {
     .not('manifestacao_prazo', 'is', null)
   if (error || !projetos?.length) return
 
-  const hojeIso = dataAtualIso(new Date())
+  const diasLembrete = (config.manif_lembrete_dias || []).map(Number)
 
   for (const projeto of projetos) {
     const dias = diasEntre(hojeIso, projeto.manifestacao_prazo)
     if (dias < 0) {
+      if (!config.manif_encerrar_auto) continue
       try {
         await encerrarPeriodoManifestacao(projeto.id, { manual: false })
         console.log(`[Manifestação] Período encerrado automaticamente por prazo — projeto "${projeto.nome}"`)
       } catch (err) {
         console.error(`[Manifestação] Erro ao encerrar automaticamente o projeto "${projeto.nome}":`, err.message)
       }
-    } else if (dias === 1 || dias === 2) {
+    } else if (config.manif_lembrete_ativo && dias > 0 && diasLembrete.includes(dias)) {
       await enviarLembretes(supabaseAdmin, projeto, dias)
     }
   }
 }
 
 export function iniciarSchedulerManifestacao() {
-  if (!getSupabaseAdmin()) {
+  const supabase = getSupabaseAdmin()
+  if (!supabase) {
     console.warn('[Manifestação] SUPABASE_URL/SUPABASE_SERVICE_KEY não configurados — agendamento desativado.')
     return
   }
-  cron.schedule('0 8 * * *', () => {
-    verificarProjetos().catch(err => console.error('[Manifestação] Erro no tick do scheduler:', err.message))
+  // a cada 5 min verifica se chegou o horário configurado (uma execução por dia)
+  cron.schedule('*/5 * * * *', async () => {
+    try {
+      const r = await reservarExecucaoDoDia(supabase, 'ultima_exec_manif')
+      if (r) await verificarProjetos(r.config, r.hoje)
+    } catch (err) {
+      console.error('[Manifestação] Erro no tick do scheduler:', err.message)
+    }
   })
-  console.log('[Manifestação] Scheduler iniciado (verificação diária às 08:00).')
+  console.log('[Manifestação] Scheduler iniciado (horário em Configurar E-mails, fuso Campo Grande).')
 }

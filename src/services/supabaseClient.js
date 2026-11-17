@@ -4341,6 +4341,22 @@ export const apiService = {
     return { success: true }
   },
 
+  // Configuração dos e-mails automáticos da Gestão de Projetos (linha única id=1)
+  getProjEmailConfig: async () => {
+    const { data, error } = await supabase.from('proj_email_config').select('*').eq('id', 1).maybeSingle()
+    if (error) throw error
+    return data
+  },
+  updateProjEmailConfig: async (campos) => {
+    const { data: sessao } = await supabase.auth.getSession()
+    const { data, error } = await supabase.from('proj_email_config')
+      .update({ ...campos, atualizado_em: new Date().toISOString(), atualizado_por: sessao?.session?.user?.email || null })
+      .eq('id', 1).select().maybeSingle()
+    if (error) throw error
+    if (!data) throw new Error('Sem permissão para alterar a configuração de e-mails.')
+    return data
+  },
+
   getProjFases: async () => {
     const { data, error } = await supabase.from('proj_fases').select('*').order('ordem', { ascending: true, nullsFirst: false }).order('nome', { ascending: true })
     if (error) throw error

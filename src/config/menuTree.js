@@ -308,6 +308,8 @@ export const MENU_TREE = [
           { key: 'projetos/fases', label: 'Fases' },
           { key: 'projetos/status', label: 'Status' },
           { key: 'projetos/templates', label: 'Templates de Tarefa' },
+          { key: 'projetos/config-emails', label: 'Configurar E-mails' },
+          { key: 'projetos/enviar-avisos', label: 'Enviar Avisos Agora (atrasadas e vencendo hoje)' },
         ],
       },
     ],
