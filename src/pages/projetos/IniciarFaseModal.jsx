@@ -134,7 +134,7 @@ export default function IniciarFaseModal({ projeto, fases, onClose, onSaved }) {
               className="w-full mt-1 text-xs p-2 border border-slate-200 rounded-md bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
             >
               <option value="">— Selecione —</option>
-              {fases.map(f => <option key={f.id} value={f.id}>{f.nome}</option>)}
+              {fases.map(f => <option key={f.id} value={f.id}>{f.ordem != null ? `${f.ordem}. ${f.nome}` : f.nome}</option>)}
             </select>
           </div>
 

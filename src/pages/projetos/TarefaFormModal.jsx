@@ -451,7 +451,8 @@ export default function TarefaFormModal({ projetoId, tarefa, initialValues, tare
               <select name="fase_id" value={form.fase_id} onChange={handleChange}
                 className={alertSel(!form.fase_id)}>
                 <option value="">Selecione</option>
-                {fases?.map(f => <option key={f.id} value={f.id}>{f.nome}</option>)}
+                {/* sequência = Ordem do cadastro de Fases (já vem ordenado); número na frente para mostrar a sequência */}
+                {fases?.map(f => <option key={f.id} value={f.id}>{f.ordem != null ? `${f.ordem}. ${f.nome}` : f.nome}</option>)}
               </select>
             </div>
             {/* Área vem sempre do projeto (regra no banco: trg_proj_tarefa_area_do_projeto) */}

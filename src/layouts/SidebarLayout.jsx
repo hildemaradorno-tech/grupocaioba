@@ -19,7 +19,7 @@ MENU_TREE.forEach(buildSectionLeaves)
 
 // ── Map route to section key ──────────────────────────────────────────────────
 function getActiveSectionKey(pathname) {
-  if (pathname === '/usuarios' || pathname === '/grupos' || pathname === '/permissoes-matriz') return '_config'
+  if (pathname === '/usuarios' || pathname === '/grupos' || pathname === '/permissoes-matriz' || pathname === '/bi/medidas') return '_config'
   if (pathname === '/tipos-processo' || pathname === '/rubricas' || pathname === '/fontes-dados' || pathname === '/bases-calculo' ||
     pathname === '/politica-comissao' || pathname === '/regras-faixas' || pathname === '/regras-pj' || pathname === '/descontos-pj' || pathname === '/documentos-pj' || pathname === '/cargos-remuneracoes' ||
     pathname === '/ferias' || pathname === '/sobreaviso-plantao' ||
@@ -494,6 +494,13 @@ export default function SidebarLayout() {
                 {canView('integracoes/controladoria') && <FlyItem to="/integracoes/controladoria" icon={PlugZap} onClose={closeFlyout}>Controladoria</FlyItem>}
               </>
             )}
+            {canViewSection('_config.fontes-dados') && (
+              <>
+                <div className="mx-3 my-2 border-t border-blue-800/50" />
+                <FlyGroup label="Fontes de Dados" />
+                {canView('bi/medidas') && <FlyItem to="/bi/medidas" icon={Ruler} onClose={closeFlyout}>Medidas BI</FlyItem>}
+              </>
+            )}
           </>
         )
 
@@ -581,17 +588,7 @@ export default function SidebarLayout() {
             {(canView('auditoria-externa/ciclos') || canView('auditoria-externa/dashboard') || canView('auditoria-externa/divergencias') || canView('auditoria-externa/plano-acao') || canView('auditoria-externa/tipos-acao')) && (
               <FlyItem to="/auditoria-externa/dashboard" icon={ShieldAlert} onClose={closeFlyout}>Auditoria Externa</FlyItem>
             )}
-
-            {canViewSection('_gestao-projetos.cadastros') && (
-              <>
-                <div className="h-px bg-slate-100 my-2" />
-                <FlyGroup label="Cadastros" />
-              </>
-            )}
-            {canView('projetos/responsaveis') && <FlyItem to="/projetos/responsaveis" icon={Users} onClose={closeFlyout}>Responsáveis</FlyItem>}
-            {canView('projetos/fases') && <FlyItem to="/projetos/fases" icon={Layers} onClose={closeFlyout}>Fases</FlyItem>}
-            {canView('projetos/status') && <FlyItem to="/projetos/status" icon={CircleDot} onClose={closeFlyout}>Status</FlyItem>}
-            {canView('projetos/templates') && <FlyItem to="/projetos/templates" icon={FileText} onClose={closeFlyout}>Templates de Tarefa</FlyItem>}
+            {/* Cadastros (Responsáveis, Fases, Status, Templates) ficam no botão engrenagem da tela Projetos (16/11/2026) */}
           </>
         )
 
@@ -618,13 +615,6 @@ export default function SidebarLayout() {
             {canView('pos-vendas/produtividade') && <FlyItem to="/pos-vendas/produtividade" icon={Gauge} onClose={closeFlyout}>Indicadores de Produtividade</FlyItem>}
             {canView('bi/planos-manutencao') && <FlyItem to="/bi/planos-manutencao" icon={Wrench} onClose={closeFlyout}>Planos de Manutenção</FlyItem>}
             {canView('bi/possibilidades') && <FlyItem to="/pos-vendas/possibilidades" icon={Gauge} onClose={closeFlyout}>Possibilidades</FlyItem>}
-            {canViewSection('_bi.fontes-dados') && (
-              <>
-                <div className="mx-3 my-2 border-t border-blue-800/50" />
-                <FlyGroup label="Fontes de Dados" />
-                {canView('bi/medidas') && <FlyItem to="/bi/medidas" icon={Ruler} onClose={closeFlyout}>Medidas BI</FlyItem>}
-              </>
-            )}
           </>
         )
 

@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Edit2, Trash2, FolderKanban, Activity, CheckCircle, AlertTriangle, Layers, ShieldAlert, ChevronRight, ChevronDown, Loader2, X, CheckCircle2, Copy, BarChart2, Download, Eye, Settings, FileSpreadsheet, MessageSquare } from 'lucide-react'
+import { Plus, Edit2, Trash2, FolderKanban, Activity, CheckCircle, AlertTriangle, Layers, ShieldAlert, ChevronRight, ChevronDown, Loader2, X, CheckCircle2, Copy, BarChart2, Download, Eye, Settings, FileSpreadsheet, MessageSquare, Users, CircleDot, FileText } from 'lucide-react'
 import { apiService } from '../../services/api'
 import TarefaFormModal from './TarefaFormModal'
 import DependenciaBadge from './DependenciaBadge'
@@ -11,6 +11,10 @@ import ProjetosFiltrosPanel, { FiltrosCompactBar } from './ProjetosFiltrosPanel'
 import ModalImportarProjeto, { baixarModeloExcel } from './ModalImportarProjeto'
 
 import { renderNome } from './textoFormatado'
+import ProjResponsaveis from './cadastros/ProjResponsaveis'
+import ProjFases from './cadastros/ProjFases'
+import ProjStatus from './cadastros/ProjStatus'
+import ProjTemplates from './cadastros/ProjTemplates'
 
 const STATUS_MAP = {
   mapeado:      { label: 'Mapeado',      cor: 'bg-slate-100 text-slate-600', corAtivo: 'bg-slate-500 text-white' },
@@ -140,6 +144,16 @@ export default function ProjetosDashboard() {
   // Botão "Ver Todos" aparece SOMENTE quando o flag ver_todos_projetos está marcado no grupo
   const canVerTodos   = !isAdminEfetivo && hasActionOrDefault('projetos', 'ver_todos_projetos')
   const canCriar      = !modoVerTodos && hasActionOrDefault('projetos', 'criar')
+  // Cadastros da Gestão de Projetos (saíram do menu lateral em 16/11/2026) — cada um pela sua permissão
+  // abrem em pop-up por cima da tela (a própria tela de cadastro renderizada dentro da janela)
+  const cadastrosGear = [
+    { path: 'projetos/responsaveis', label: 'Responsáveis',        icon: Users,     Tela: ProjResponsaveis },
+    { path: 'projetos/fases',        label: 'Fases',               icon: Layers,    Tela: ProjFases },
+    { path: 'projetos/status',       label: 'Status',              icon: CircleDot, Tela: ProjStatus },
+    { path: 'projetos/templates',    label: 'Templates de Tarefa', icon: FileText,  Tela: ProjTemplates },
+  ].filter(c => hasPermission(c.path))
+  const [cadastroAberto, setCadastroAberto] = useState(null)
+  const CadastroTela = cadastrosGear.find(c => c.path === cadastroAberto)?.Tela
   const canEditar     = !modoVerTodos && hasActionOrDefault('projetos', 'editar')
   const canExcluir    = !modoVerTodos && hasActionOrDefault('projetos', 'excluir')
   const canDuplicar   = !modoVerTodos && hasActionOrDefault('projetos', 'duplicar')
@@ -803,17 +817,28 @@ export default function ProjetosDashboard() {
         apiService.getProjetoById(p.id),
         apiService.getTarefas(p.id),
       ])
-      // Cria cópia do projeto (remove campos gerados pelo banco)
+      // Cria cópia do projeto (remove campos gerados pelo banco). Pedido do usuário (16/11/2026): a cópia
+      // nasce com as datas de início e término limpas e tudo em Mapeado (projeto e tarefas).
       const { id: _id, criado_em: _ce, atualizado_em: _ae, criado_por: _cp, ...dadosProjeto } = projetoOriginal
       const novoProjeto = await apiService.createProjeto({
         ...dadosProjeto,
         nome: `Cópia de ${projetoOriginal.nome}`,
         status: 'mapeado',
+        data_inicio: null,
+        data_fim_prevista: null,
+        data_fim_real: null,
       }, user?.email)
-      // Cria cada tarefa na cópia (preserva todos os campos exceto id/timestamps)
+      // Cria cada tarefa na cópia (preserva os demais campos; datas limpas, status Mapeado, progresso zerado)
       await Promise.all(
         tarefasOriginais.map(({ id: _tid, criado_em: _tce, atualizado_em: _tae, proj_deliberacoes: _del, ...dadosTarefa }) =>
-          apiService.createTarefa({ ...dadosTarefa, projeto_id: novoProjeto.id })
+          apiService.createTarefa({
+            ...dadosTarefa,
+            projeto_id: novoProjeto.id,
+            data_inicio: null,
+            data_fim: null,
+            status_kanban: 'mapeado',
+            progresso_pct: 0,
+          })
         )
       )
       await loadData(filtros)
@@ -973,7 +998,7 @@ export default function ProjetosDashboard() {
                 <Plus className="h-4 w-4" /> Novo Projeto
               </button>
             )}
-            {canCriar && (
+            {(canCriar || cadastrosGear.length > 0) && (
               <div className="relative">
                 <button
                   onClick={e => {
@@ -994,20 +1019,43 @@ export default function ProjetosDashboard() {
                       className="fixed z-50 bg-white border border-slate-200 rounded-lg shadow-xl py-1 w-52"
                       style={{ top: menuGearPos.top, right: menuGearPos.right }}
                     >
-                      <button
-                        onClick={() => { baixarModeloExcel(); setMenuGear(false) }}
-                        className="w-full flex items-center gap-2 px-3 py-2 text-xs text-slate-700 hover:bg-slate-50"
-                      >
-                        <FileSpreadsheet className="h-3.5 w-3.5 text-green-600 shrink-0" />
-                        Baixar Modelo Projeto
-                      </button>
-                      <button
-                        onClick={() => { setModalImportar(true); setMenuGear(false) }}
-                        className="w-full flex items-center gap-2 px-3 py-2 text-xs text-slate-700 hover:bg-slate-50"
-                      >
-                        <Download className="h-3.5 w-3.5 text-blue-600 shrink-0" />
-                        Importar Projeto
-                      </button>
+                      {canCriar && (
+                        <>
+                          <button
+                            onClick={() => { baixarModeloExcel(); setMenuGear(false) }}
+                            className="w-full flex items-center gap-2 px-3 py-2 text-xs text-slate-700 hover:bg-slate-50"
+                          >
+                            <FileSpreadsheet className="h-3.5 w-3.5 text-green-600 shrink-0" />
+                            Baixar Modelo Projeto
+                          </button>
+                          <button
+                            onClick={() => { setModalImportar(true); setMenuGear(false) }}
+                            className="w-full flex items-center gap-2 px-3 py-2 text-xs text-slate-700 hover:bg-slate-50"
+                          >
+                            <Download className="h-3.5 w-3.5 text-blue-600 shrink-0" />
+                            Importar Projeto
+                          </button>
+                        </>
+                      )}
+                      {cadastrosGear.length > 0 && (
+                        <>
+                          {canCriar && <div className="my-1 border-t border-slate-100" />}
+                          <div className="px-3 pt-1 pb-0.5 text-[10px] font-semibold text-slate-400 uppercase">Cadastros</div>
+                          {cadastrosGear.map(c => {
+                            const Icone = c.icon
+                            return (
+                              <button
+                                key={c.path}
+                                onClick={() => { setMenuGear(false); setCadastroAberto(c.path) }}
+                                className="w-full flex items-center gap-2 px-3 py-2 text-xs text-slate-700 hover:bg-slate-50"
+                              >
+                                <Icone className="h-3.5 w-3.5 text-slate-500 shrink-0" />
+                                {c.label}
+                              </button>
+                            )
+                          })}
+                        </>
+                      )}
                     </div>
                   </>
                 )}
@@ -1019,6 +1067,27 @@ export default function ProjetosDashboard() {
           <ProjetosNav />
           <FiltrosCompactBar />
         </div>
+        {CadastroTela && (
+          <>
+            {/* fundo separado: backdrop-filter num ancestral prenderia os modais internos (position: fixed) da tela de cadastro */}
+            <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-40" onClick={() => setCadastroAberto(null)} />
+            {/* centralizado por flex (sem transform, que também prenderia os modais internos) */}
+            <div className="fixed inset-0 z-40 flex items-center justify-center pointer-events-none">
+            <div className="relative pointer-events-auto w-[820px] max-w-[95vw] max-h-[88vh] overflow-y-auto bg-slate-50 rounded-lg border border-slate-200 shadow-2xl">
+              <button
+                onClick={() => setCadastroAberto(null)}
+                className="absolute top-3 right-3 z-10 p-1.5 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-200/70"
+                title="Fechar"
+              >
+                <X className="h-4 w-4" />
+              </button>
+              <div className="pr-8">
+                <CadastroTela />
+              </div>
+            </div>
+            </div>
+          </>
+        )}
         <ProjetosFiltrosPanel projetos={dados} showTrigger={false} />
       </div>
 

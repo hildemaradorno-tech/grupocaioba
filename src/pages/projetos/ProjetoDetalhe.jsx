@@ -189,7 +189,8 @@ const abrirModalMover = async (tarefa) => {
     try {
       await Promise.all(selecionadas.map(t => {
         const { id: _id, criado_em, atualizado_em, ...resto } = t
-        return apiService.createTarefa({ ...resto, etapa: null })
+        // Cópia limpa: sem datas, Mapeado e progresso 0 (pedido do usuário, 16/11/2026)
+        return apiService.createTarefa({ ...resto, etapa: null, data_inicio: null, data_fim: null, status_kanban: 'mapeado', progresso_pct: 0 })
       }))
       setTarefasSelecionadas(new Set())
       await loadData()
@@ -260,13 +261,14 @@ const abrirModalMover = async (tarefa) => {
     }})
   }
 
+  // Tarefa duplicada nasce limpa (pedido do usuário, 16/11/2026): sem datas, Mapeado e progresso 0.
   const handleDuplicar = (t) => {
     setModalTarefa({ tarefa: null, prefill: {
       nome: t.nome,
-      status_kanban: t.status_kanban,
-      progresso_pct: t.progresso_pct,
-      data_inicio: t.data_inicio || '',
-      data_fim: t.data_fim || '',
+      status_kanban: 'mapeado',
+      progresso_pct: 0,
+      data_inicio: '',
+      data_fim: '',
       fase_nome: t.fase_nome || '',
       sistema_nome: t.sistema_nome || '',
       responsavel_nome: t.responsavel_nome || '',
@@ -535,6 +537,24 @@ const abrirModalMover = async (tarefa) => {
                   <span className="font-semibold text-slate-700">{projeto.area_nome}</span>
                 </span>
               )}
+              {/* Sistemas Atendidos do projeto (cadastro do projeto, sistemas_nomes); legado: sistema_nome */}
+              {(() => {
+                const lista = projeto.sistemas_nomes?.length > 0
+                  ? projeto.sistemas_nomes
+                  : projeto.sistema_nome ? [projeto.sistema_nome] : []
+                if (!lista.length) return null
+                return (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs bg-slate-100 border border-slate-200 whitespace-nowrap">
+                    <span className="text-[10px] font-semibold text-slate-400 uppercase">{lista.length > 1 ? 'Sistemas:' : 'Sistema:'}</span>
+                    {lista.map(s => (
+                      <span key={s} className="px-2 py-0.5 rounded text-[10px] font-bold"
+                        style={{ backgroundColor: sistemaCorMap[s] || '#1e293b', color: sistemaCorTextoMap[s] || getTextColor(sistemaCorMap[s] || '#1e293b') }}>
+                        {s}
+                      </span>
+                    ))}
+                  </span>
+                )
+              })()}
               <span className={`px-3 py-1 rounded-full text-xs font-bold ${st.cor}`}>{st.label}</span>
               {projeto.fase_nome && (
                 <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-100">

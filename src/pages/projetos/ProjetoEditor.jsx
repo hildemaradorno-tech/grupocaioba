@@ -278,13 +278,14 @@ export default function ProjetoEditor() {
     }})
   }
 
+  // Tarefa duplicada nasce limpa (pedido do usuário, 16/11/2026): sem datas, Mapeado e progresso 0.
   const handleDuplicar = (t) => {
     setModalTarefa({ tarefa: null, prefill: {
       nome: t.nome,
-      status_kanban: t.status_kanban,
-      progresso_pct: t.progresso_pct,
-      data_inicio: t.data_inicio || '',
-      data_fim: t.data_fim || '',
+      status_kanban: 'mapeado',
+      progresso_pct: 0,
+      data_inicio: '',
+      data_fim: '',
       fase_nome: t.fase_nome || '',
       sistema_nome: t.sistema_nome || '',
       responsavel_nome: t.responsavel_nome || '',

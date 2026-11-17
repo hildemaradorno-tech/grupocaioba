@@ -142,6 +142,15 @@ export const MENU_TREE = [
           { key: 'integracoes/controladoria', label: 'Controladoria' },
         ],
       },
+      {
+        // Medidas BI: movido do menu BI (grupo Fontes de Dados) para Configurações em nov/2026.
+        // Mesma key (bi/medidas) e rota pra não perder as permissões já concedidas.
+        key: '_config.fontes-dados',
+        label: 'Fontes de Dados',
+        children: [
+          { key: 'bi/medidas', label: 'Medidas BI' },
+        ],
+      },
     ],
   },
   {
@@ -290,8 +299,10 @@ export const MENU_TREE = [
         ],
       },
       {
+        // virtual (16/11/2026): os cadastros ficam no botão engrenagem da tela Projetos; permissões mantidas
         key: '_gestao-projetos.cadastros',
         label: 'Cadastros',
+        virtual: true,
         children: [
           { key: 'projetos/responsaveis', label: 'Responsáveis' },
           { key: 'projetos/fases', label: 'Fases' },
@@ -400,16 +411,6 @@ export const MENU_TREE = [
       },
       { key: 'bi/possibilidades', label: 'Possibilidades' },
       ],
-      },
-      {
-        // Agrupamento de menu (sem navTo) — cada item abaixo é uma tela própria, não mais abas
-        // de uma página única. Movido de Comissões pra cá junto com Medidas BI.
-        key: '_bi.fontes-dados',
-        label: 'Fontes de Dados',
-        children: [
-          // Mesma key de antes (bi/medidas) pra não perder as permissões já concedidas.
-          { key: 'bi/medidas', label: 'Medidas BI' },
-        ],
       },
     ],
   },
