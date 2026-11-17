@@ -17,6 +17,7 @@
  * anterior ao primeiro registro do log (15/07/2026) fica sem valor. Prazos = configuração atual, com a
  * regra do mês (gar_regras_mes) do início da contagem de cada garantia quando houver.
  */
+import { cacheSwr } from './cacheSwr.js'
 import { getSupabaseAdmin } from './supabaseAdmin.js'
 import { numeroSemanaDoDia } from './kpiSemanas.js'
 import { getTitulosAReceber } from './sharepointFinanceiro.js'
@@ -121,7 +122,14 @@ function limitesDosPeriodos(ano) {
 }
 
 // incluirHoje: foto do período em andamento AGORA; padrão = fim de ontem (Matriz › Considerar o dia atual).
-export async function getIndicadoresGarantia(ano, empresaKey, { incluirHoje = false } = {}) {
+// Guardado para todos até a próxima Atualização da Matriz (cacheSwr, 17/11/2026) — antes recalculava a cada consulta.
+const _memoGar = new Map()
+export function getIndicadoresGarantia(ano, empresaKey, { incluirHoje = false } = {}) {
+  return cacheSwr(_memoGar, `${ano}|${empresaKey || 'TODAS'}|${incluirHoje ? 1 : 0}`,
+    () => calcularIndicadoresGarantia(ano, empresaKey, { incluirHoje }), { rotulo: 'garantias' })
+}
+
+async function calcularIndicadoresGarantia(ano, empresaKey, { incluirHoje = false } = {}) {
   const admin = getSupabaseAdmin()
   if (!admin) return null
 

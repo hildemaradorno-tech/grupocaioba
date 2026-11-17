@@ -1372,6 +1372,13 @@ export async function aquecerCacheCampanha(year = new Date().getFullYear()) {
     await passo('planos', () => basePlanosServicos(year, op))
     await passo('gerentes', () => quadrosBloco3PosVenda({ year, refresh: true }))
     await passo('peças', () => quadrosBloco3Pecas({ year, refresh: true }))
+    // Bloco 3 - Serviços como a tela pede (17/11/2026): aba Individual (sem pessoa) e Setores de cada empresa —
+    // deixa guardados para todos garantias, auditoria, produtividade e Possibilidades (cacheSwr).
+    await passo('serviços › individual', () => quadrosBloco3Servicos({ year }))
+    await passo('serviços › setores (todas)', () => quadrosBloco3Servicos({ year, empresaGarantia: 'TODAS', empresaFunilaria: 'CAMPO GRANDE', apenas: 'SETOR DE MECÂNICA' }))
+    for (const emp of EMPRESAS_CAMPANHA) {
+      await passo(`serviços › setores ${emp}`, () => quadrosBloco3Servicos({ year, empresaOficina: emp, empresaChefeOficina: emp, empresaGarantia: emp, empresaFunilaria: 'CAMPO GRANDE', apenas: 'SETOR DE MECÂNICA' }))
+    }
     for (const emp of EMPRESAS_CAMPANHA) {
       await passo(`setor mecânica ${emp}`, () => baseOficinaServicos(year, emp, op))
       await passo(`chefe de oficina ${emp}`, () => baseChefeOficinaServicos(year, emp, op))

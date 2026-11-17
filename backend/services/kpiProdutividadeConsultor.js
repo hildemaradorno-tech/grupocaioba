@@ -14,6 +14,7 @@
  * das Hr. Disp. Reais dos consultores), como a linha Total da aba Consultores.
  * Períodos: mês, semana, trimestre e ano; as metas usadas são as dos meses do período (até o mês atual).
  */
+import { cacheSwr } from './cacheSwr.js'
 import { getSupabaseAdmin } from './supabaseAdmin.js'
 import { metasProdutividade } from './produtividadeSync.js'
 import { semanasDoAno } from './kpiSemanas.js'
@@ -77,20 +78,14 @@ const CASAS_TRUCKS = ['CAMPO GRANDE', 'DOURADOS', 'TRÊS LAGOAS', 'CHAPADÃO DO 
 const _memoCasa = new Map()
 export function getEficaciaProdutividadePorCasa(ano, { incluirHoje = false } = {}) {
   const chave = `${ano}|${incluirHoje ? 1 : 0}`
-  const hit = _memoCasa.get(chave)
-  if (hit && Date.now() - hit.ts < 60_000) return hit.promessa
-  const promessa = calcularPorCasa(ano, incluirHoje).catch(err => { _memoCasa.delete(chave); throw err })
-  _memoCasa.set(chave, { ts: Date.now(), promessa })
-  return promessa
+  return cacheSwr(_memoCasa, chave, () => calcularPorCasa(ano, incluirHoje), { rotulo: 'produtividade por empresa' })
 }
 
 // Horas diárias dos mecânicos do ano (Trucks, sem os excluídos pela tela) — lidas uma vez e guardadas 60 s,
 // usadas pelos gerentes, pelo SETOR DE MECÂNICA e pelo quadro MECÂNICO.
 const _memoMec = new Map()
 function linhasMecanicosAno(ano) {
-  const hit = _memoMec.get(ano)
-  if (hit && Date.now() - hit.ts < 60_000) return hit.promessa
-  const promessa = (async () => {
+  return cacheSwr(_memoMec, ano, async () => {
     const admin = getSupabaseAdmin()
     if (!admin) return null
     const [mt, linhas] = await Promise.all([
@@ -101,9 +96,7 @@ function linhasMecanicosAno(ano) {
     const fora = new Set((mt?.excluidos || []).map(semAcento))
     return linhas.filter(r => ehTrucks(r.empresa) && !fora.has(semAcento(r.pessoa)) && !NAO_PESSOA.test(r.pessoa || ''))
       .map(r => ({ ...r, data: String(r.data).slice(0, 10), pessoaNorm: semAcento(r.pessoa), empresaNorm: semAcento(r.empresa) }))
-  })().catch(err => { _memoMec.delete(ano); throw err })
-  _memoMec.set(ano, { ts: Date.now(), promessa })
-  return promessa
+  }, { rotulo: 'horas dos mecânicos' })
 }
 
 function periodosMatriz(ano) {
@@ -180,11 +173,7 @@ const _memo = new Map() // ano → { ts, promessa } — a Campanha pede o quadro
 // incluirHoje: conta também o dia de HOJE; padrão só até ontem (Matriz › Considerar o dia atual).
 export function getProdutividadeConsultores(ano, { incluirHoje = false } = {}) {
   const chave = `${ano}|${incluirHoje ? 1 : 0}`
-  const hit = _memo.get(chave)
-  if (hit && Date.now() - hit.ts < 60_000) return hit.promessa
-  const promessa = calcular(ano, incluirHoje).catch(err => { _memo.delete(chave); throw err })
-  _memo.set(chave, { ts: Date.now(), promessa })
-  return promessa
+  return cacheSwr(_memo, chave, () => calcular(ano, incluirHoje), { rotulo: 'produtividade consultores' })
 }
 
 async function calcular(ano, incluirHoje = false) {

@@ -3,6 +3,7 @@
  * (reaproveitando as mesmas funções dos endpoints ao vivo) e grava o resultado
  * no Supabase para as telas consumirem o cache.
  */
+import { limparCachesSwr } from './cacheSwr.js'
 import { getSupabaseAdmin } from './supabaseAdmin.js'
 import { getResultados, getBloco1, getBloco2, getBacklog } from './sharepointKpi.js'
 import {
@@ -57,6 +58,8 @@ export async function executarSincronizacao(origem, usuarioEmail = null) {
   let resultado
   try {
     resultado = await _executar(origem, usuarioEmail)
+    // Dados novos gravados: os cálculos guardados para todos (cacheSwr) são refeitos na próxima consulta/pré-cálculo.
+    limparCachesSwr()
   } finally {
     // Libera o botão Atualizar / "Sincronizando…" assim que a atualização termina (17/11/2026) — antes só depois
     // do pré-cálculo, que levava vários minutos e deixava a Matriz presa em "Sincronizando…".

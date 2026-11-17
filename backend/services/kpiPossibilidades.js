@@ -22,6 +22,7 @@
  * "Considerar o dia atual"). Lê o ano inteiro uma vez e guarda por 10 min (limparCachePossibilidades()
  * depois de uma atualização).
  */
+import { cacheSwr } from './cacheSwr.js'
 import { getSupabaseAdmin } from './supabaseAdmin.js'
 import { semanasDoAno } from './kpiSemanas.js'
 
@@ -46,25 +47,14 @@ async function fetchTudo(montarQuery) {
   return out
 }
 
-// ── Leitura do ano (cache 10 min) ─────────────────────────────────────────────
+// ── Leitura do ano: guardada para todos até a próxima Atualização (cacheSwr, 17/11/2026) ─────────────
 const _cache = new Map() // ano → { ts, promessa }
 export function limparCachePossibilidades() { _cache.clear() }
 
-// Guardado há mais de 10 min: devolve o guardado na hora e relê por trás (a tela não espera os ~4 s).
-// limparCachePossibilidades() (depois de uma Atualização) força ler de novo na próxima consulta.
+// limparCachePossibilidades() (depois de uma Atualização das Medidas BI) e limparCachesSwr() (fim da
+// Atualização da Matriz) fazem ler de novo na próxima consulta.
 function carregarAno(ano) {
-  const hit = _cache.get(ano)
-  if (hit && (hit.relendo || Date.now() - hit.ts < 10 * 60_000)) return hit.promessa
-  if (hit) {
-    hit.relendo = true
-    const promessa = lerAno(ano)
-    promessa.then(() => _cache.set(ano, { ts: Date.now(), promessa }))
-      .catch(err => { hit.relendo = false; console.error('[possibilidades] releitura:', err.message) })
-    return hit.promessa
-  }
-  const nova = lerAno(ano).catch(err => { _cache.delete(ano); throw err })
-  _cache.set(ano, { ts: Date.now(), promessa: nova })
-  return nova
+  return cacheSwr(_cache, ano, () => lerAno(ano), { rotulo: 'possibilidades' })
 }
 
 async function lerAno(ano) {

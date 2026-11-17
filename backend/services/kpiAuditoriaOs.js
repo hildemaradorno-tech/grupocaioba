@@ -16,6 +16,7 @@
  * Por consultor (quadro CONSULTOR DE SERVIÇOS): só as O.S. do consultor (consultor_nome) nas mesmas auditorias
  * do grupo; % sobre o valor total em aberto DELE. Chave = nome normalizado (sem acento, maiúsculo).
  */
+import { cacheSwr } from './cacheSwr.js'
 import { getSupabaseAdmin } from './supabaseAdmin.js'
 import { numeroSemanaDoDia } from './kpiSemanas.js'
 
@@ -62,11 +63,8 @@ const _memo = new Map() // ano → { ts, promessa }
 // incluirHoje: considera também as auditorias de HOJE; padrão só até ontem (Matriz › Considerar o dia atual).
 export function getIndicadoresAuditoriaOs(ano, { incluirHoje = false } = {}) {
   const chave = `${ano}|${incluirHoje ? 1 : 0}`
-  const hit = _memo.get(chave)
-  if (hit && Date.now() - hit.ts < 60_000) return hit.promessa
-  const promessa = calcular(ano, incluirHoje).catch(err => { _memo.delete(chave); throw err })
-  _memo.set(chave, { ts: Date.now(), promessa })
-  return promessa
+  // Guardado na hora e recalculado por trás (cacheSwr) — antes recalculava depois de 1 min sem uso.
+  return cacheSwr(_memo, chave, () => calcular(ano, incluirHoje), { rotulo: 'auditoria O.S.' })
 }
 
 async function calcular(ano, incluirHoje = false) {
