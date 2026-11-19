@@ -325,6 +325,49 @@ export default function IndicadoresProdutividade() {
 
   useEffect(() => { carregar() }, [carregar])
 
+  // Atualização automática no 1º acesso do dia (pedido do usuário 19/11/2026): a primeira pessoa que abre a tela no
+  // dia relê o mês atual (até o dia 5, também o anterior) para todos; depois disso, só pelo botão azul. Vale para
+  // todas as abas (todas leem as mesmas tabelas). Se outra pessoa já estiver atualizando, acompanha até terminar.
+  const autoDiaFeito = useRef(false)
+  // "montado" separado do efeito: no modo de desenvolvimento (StrictMode) o efeito roda/limpa 2 vezes e a 2ª é
+  // ignorada pelo autoDiaFeito — a 1ª precisa continuar podendo atualizar a tela.
+  const montado = useRef(true)
+  useEffect(() => { montado.current = true; return () => { montado.current = false } }, [])
+  useEffect(() => {
+    if (autoDiaFeito.current) return
+    autoDiaFeito.current = true
+    const dia = (d) => new Date(d).toLocaleDateString('en-CA', { timeZone: 'America/Campo_Grande' })
+    const hoje = dia(new Date())
+    const [a, m, d] = hoje.split('-').map(Number)
+    const meses = d <= 5 ? [[m === 1 ? a - 1 : a, m === 1 ? 12 : m - 1], [a, m]] : [[a, m]]
+    const lidoHoje = async () => {
+      const { data } = await supabase.from('pv_prod_sync').select('ano, mes, marca, atualizado_em').in('ano', [...new Set(meses.map(x => x[0]))])
+      return meses.every(([ano, mes]) => ['TRUCKS', 'MOTOS'].every(mc => (data || []).some(s => s.ano === ano && s.mes === mes && s.marca === mc && dia(s.atualizado_em) === hoje)))
+    }
+    ;(async () => {
+      try {
+        if (await lidoHoje()) return
+        if (!montado.current) return
+        setAtualizando('Primeiro acesso do dia: atualizando os dados do mês para todos… pode levar alguns minutos (os números atuais continuam na tela até terminar).')
+        const r = await fetch(`${BACKEND_URL}/api/produtividade/auto-diario`, { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+        const j = await r.json().catch(() => ({}))
+        if (!r.ok) throw new Error(j.error || `erro ${r.status}`)
+        if (j.emAndamento) {
+          setAtualizando('Atualização do dia em andamento (iniciada por outro usuário)… a tela recarrega quando terminar.')
+          for (let i = 0; i < 60 && montado.current; i++) { // até ~10 min
+            await new Promise(ok => setTimeout(ok, 10000))
+            if (await lidoHoje()) break
+          }
+        }
+        if (montado.current) carregar()
+      } catch (e) {
+        if (montado.current) setErro(`Atualização automática do dia não concluída: ${e.message}`)
+      } finally {
+        if (montado.current) setAtualizando(null)
+      }
+    })()
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Regras de cores: valem as do mês da data final do período (mês sem regra = faixas padrão).
   const carregarRegras = useCallback(async () => {
     const { data, error } = await supabase.from('pv_prod_regras_cor').select('*')
