@@ -414,22 +414,25 @@ export const MENU_TREE = [
       { key: 'bi/possibilidades', label: 'Possibilidades' },
       ],
       },
-      {
-        // Agrupamento "Tecnologia" (17/11/2026): BI do log de execuções do Robert Automation (SharePoint
-        // "Banco de Dados - Log RPA"). A tela operacional correspondente é Documentações › Agendamento de Processos.
-        key: '_bi.tecnologia',
-        label: 'Tecnologia',
-        children: [
-          { key: 'bi/rpa-execucoes', label: 'Controle de Execuções RPA' },
-        ],
-      },
     ],
   },
   {
+    // Exibido como "Governança" desde 18/11/2026 (era "Documentações"); key mantida para não mudar as permissões.
     key: '_documentacoes',
-    label: 'Documentações',
+    label: 'Governança',
     children: [
-      { key: 'rpa/agendamentos', label: 'Agendamento de Processos' },
+      {
+        // Controle de Execuções RPA numa tela só (18/11/2026), como Garantias DAF: Dashboard (log do Robert
+        // Automation, bi/rpa-execucoes) e Controle (antiga tela Agendamento de Processos — key rpa/agendamentos
+        // mantida para não mudar as permissões já dadas; /rpa/agendamentos redireciona para ?modo=controle).
+        key: '_rpa-execucoes',
+        label: 'Controle de Processos',
+        navTo: 'bi/rpa-execucoes',
+        children: [
+          { key: 'bi/rpa-execucoes', label: 'Dashboard' },
+          { key: 'rpa/agendamentos', label: 'Controle — Agendamento de Processos' },
+        ],
+      },
       { key: 'documentacoes', label: 'Documentações' },
       { key: 'ecossistema', label: 'Ecossistema' },
     ],

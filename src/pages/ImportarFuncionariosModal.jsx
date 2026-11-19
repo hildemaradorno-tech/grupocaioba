@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo } from 'react'
+import React, { useState, useRef, useMemo, useEffect } from 'react'
 import * as XLSX from 'xlsx'
 import {
   X, Upload, FileSpreadsheet, AlertTriangle, CheckCircle2,
@@ -6,6 +6,7 @@ import {
   Search, CheckSquare, Square, UserX,
 } from 'lucide-react'
 import { apiService } from '../services/api'
+import CargoFormModal, { formCargoVazio, toUpperCargo } from '../components/CargoFormModal'
 
 const soDigitos = (v) => String(v || '').replace(/\D/g, '')
 const norm = (v) => String(v ?? '').trim()
@@ -148,8 +149,22 @@ const STATUS_INFO = {
 
 const DIFF_LABEL = { nome: 'nome', cargo: 'cargo', situacao: 'situação', admissao: 'admissão', demissao: 'demissão', reativacao: 'reativação', cpf: 'cpf' }
 
-export default function ImportarFuncionariosModal({ funcionarios, empresas, cargos, onClose, onImported }) {
+export default function ImportarFuncionariosModal({ funcionarios, empresas, cargos: cargosProp, onClose, onImported }) {
   const fileRef = useRef(null)
+  // Cargos ganham os que forem cadastrados aqui mesmo (cargo não encontrado → Cadastrar cargo)
+  const [cargos, setCargos] = useState(cargosProp || [])
+  // Cadastro de cargo durante a importação (18/11/2026): abre o mesmo formulário da tela Cargos,
+  // já com nome, código e empresa da planilha, para completar nível, agrupamento, departamentos e setores.
+  const [auxCargo, setAuxCargo] = useState(null) // { agrupamentos, departamentos, setores, empresas }
+  const [cargoNovo, setCargoNovo] = useState(null) // { linha, form }
+  const [erroCargoNovo, setErroCargoNovo] = useState(null)
+  const [salvandoCargoNovo, setSalvandoCargoNovo] = useState(false)
+  useEffect(() => {
+    if (!cargoNovo || auxCargo) return
+    Promise.all([apiService.getAgrupamentoCargos(), apiService.getDepartamentos(), apiService.getSetores()])
+      .then(([agrupamentos, departamentos, setores]) => setAuxCargo({ agrupamentos, departamentos, setores }))
+      .catch(err => setErroCargoNovo('Erro ao carregar agrupamentos/departamentos: ' + (err.message || String(err))))
+  }, [cargoNovo, auxCargo])
   const [arrastando, setArrastando] = useState(false)
   const [etapa, setEtapa] = useState('selecao') // selecao | preview | importando | resultado
   const [erroArquivo, setErroArquivo] = useState(null)
@@ -169,6 +184,46 @@ export default function ImportarFuncionariosModal({ funcionarios, empresas, carg
 
   const atualizarLinha = (key, campo, valor) =>
     setLinhas(prev => prev.map(l => l.key === key ? { ...l, [campo]: valor } : l))
+  const abrirCadastroCargo = (l) => {
+    setErroCargoNovo(null)
+    setCargoNovo({
+      linha: l,
+      form: {
+        ...formCargoVazio(),
+        nome_cargo: toUpperCargo(l.cargoNomePlanilha),
+        codigo_cargo_clt: l.codigoCargo || '',
+        empresa_id: l.empresaId || '',
+      },
+    })
+  }
+  const setFormCargoNovo = (upd) => setCargoNovo(prev => prev && ({ ...prev, form: typeof upd === 'function' ? upd(prev.form) : upd }))
+  const salvarCargoNovo = async (e) => {
+    e.preventDefault()
+    const { linha, form } = cargoNovo
+    setSalvandoCargoNovo(true)
+    setErroCargoNovo(null)
+    try {
+      const codigoEfetivo = form.tipo_contratacao === 'PJ' ? form.codigo_cargo_pj : form.codigo_cargo_clt
+      const payload = { ...form, nome_cargo: toUpperCargo(form.nome_cargo), codigo_cargo: codigoEfetivo, ativo: true }
+      const criado = await apiService.createCargo(payload)
+      const novo = { ...criado, departamento_ids: form.departamento_ids, setor_ids: form.setor_ids }
+      setCargos(prev => [...prev, novo])
+      // Vincula o cargo novo a todas as linhas da mesma empresa com o mesmo código de cargo (sem cargo escolhido)
+      setLinhas(prev => prev.map(x => (
+        x.status === 'cargo_nao_encontrado' && !x.cargoEscolhido &&
+        x.empresaId === linha.empresaId && x.codigoCargo === linha.codigoCargo
+      ) || x.key === linha.key ? { ...x, cargoEscolhido: novo.id } : x))
+      setCargoNovo(null)
+    } catch (err) {
+      const msg = err.message || String(err)
+      setErroCargoNovo(msg.includes('duplicate key') || msg.includes('unique constraint')
+        ? 'Já existe um cargo com este código para a empresa selecionada — escolha-o na lista.'
+        : 'Erro ao salvar cargo: ' + msg)
+    } finally {
+      setSalvandoCargoNovo(false)
+    }
+  }
+
   const atualizarAusente = (key, campo, valor) =>
     setAusentes(prev => prev.map(a => a.key === key ? { ...a, [campo]: valor } : a))
 
@@ -552,6 +607,7 @@ export default function ImportarFuncionariosModal({ funcionarios, empresas, carg
                           </td>
                           <td className="p-2 min-w-[220px]">
                             {l.status === 'cargo_nao_encontrado' && (
+                              <div className="flex items-center gap-1.5">
                               <select
                                 value={l.cargoEscolhido}
                                 onChange={e => atualizarLinha(l.key, 'cargoEscolhido', e.target.value)}
@@ -562,6 +618,17 @@ export default function ImportarFuncionariosModal({ funcionarios, empresas, carg
                                   <option key={c.id} value={c.id}>{c.codigo_cargo ? `${c.codigo_cargo} — ` : ''}{c.nome_cargo}</option>
                                 ))}
                               </select>
+                              {!l.cargoEscolhido && (
+                                <button
+                                  type="button"
+                                  onClick={() => abrirCadastroCargo(l)}
+                                  title={`Cadastrar o cargo ${l.codigoCargo || ''} ${l.cargoNomePlanilha || ''} nesta empresa`}
+                                  className="shrink-0 inline-flex items-center gap-1 px-2 py-1.5 rounded-md text-[11px] font-semibold text-white bg-purple-600 hover:bg-purple-700 whitespace-nowrap transition-colors"
+                                >
+                                  <PlusIcon className="h-3 w-3" /> Cadastrar cargo
+                                </button>
+                              )}
+                              </div>
                             )}
                             {l.status === 'novo' && (
                               <span className="text-[11px] text-slate-400">Cria novo cadastro — cargo: {l.cargoNome}</span>
@@ -714,6 +781,32 @@ export default function ImportarFuncionariosModal({ funcionarios, empresas, carg
         </div>
 
       </div>
+
+      {cargoNovo && (
+        <CargoFormModal
+          titulo={`Cadastrar Cargo — ${cargoNovo.linha.empresaNome || ''}`}
+          form={cargoNovo.form}
+          setForm={setFormCargoNovo}
+          agrupamentos={auxCargo?.agrupamentos || []}
+          departamentos={auxCargo?.departamentos || []}
+          setores={auxCargo?.setores || []}
+          empresas={empresas.filter(e => e.ativo !== false)}
+          erro={erroCargoNovo}
+          salvando={salvandoCargoNovo}
+          zIndex="z-[60]"
+          onCancel={() => setCargoNovo(null)}
+          onSubmit={salvarCargoNovo}
+          aviso={
+            <div className="flex items-start gap-2 bg-purple-50 border border-purple-200 rounded-md px-3 py-2 text-[11px] text-purple-800">
+              <PlusIcon className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+              <span>
+                Cargo da planilha não encontrado no cadastro. Complete os dados e salve — o cargo é criado agora e já fica
+                vinculado a todos os funcionários desta empresa com o código <strong>{cargoNovo.linha.codigoCargo || '—'}</strong> nesta importação.
+              </span>
+            </div>
+          }
+        />
+      )}
     </div>
   )
 }

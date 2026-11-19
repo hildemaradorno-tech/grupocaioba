@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   ClipboardCheck, AlertTriangle, ChevronRight, KeyRound,
   Settings, Target, ClipboardList, FolderKanban, Calculator, BookOpen,
-  Folder, FileText, X, PieChart, GraduationCap, ExternalLink, Wrench,
+  Folder, FileText, X, PieChart, GraduationCap, ExternalLink, Wrench, ShieldCheck,
 } from 'lucide-react'
 import { apiService } from '../services/api'
 import { useAuth } from '../context/AuthContext'
@@ -18,7 +18,7 @@ const GRUPO_ICONES = {
   '_metas': Target,
   '_controle-processos': ClipboardList,
   '_gestao-projetos': FolderKanban,
-  '_documentacoes': BookOpen,
+  '_documentacoes': ShieldCheck,
   '_bi': PieChart,
   '_treinamentos': GraduationCap,
 }

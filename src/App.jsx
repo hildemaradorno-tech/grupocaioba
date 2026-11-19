@@ -92,7 +92,6 @@ import Fornecedores from './pages/Fornecedores'
 import KpiMatriz, { KPI_MATRIZ_PERMS } from './pages/kpi/KpiMatriz'
 import CalcVendaServico from './pages/calculadoras/CalcVendaServico'
 import Documentacoes from './pages/Documentacoes'
-import RpaAgendamentos from './pages/rpa/RpaAgendamentos'
 import GradeTreinamentos from './pages/treinamentos/GradeTreinamentos'
 import GrupoAcessos from './pages/governanca/GrupoAcessos'
 import PerfisAcesso from './pages/governanca/PerfisAcesso'
@@ -326,7 +325,7 @@ export default function App() {
           { path: '/kpi/matriz', element: <KpiMatriz />, menuPath: KPI_MATRIZ_PERMS },
           { path: '/calculadoras/venda-servico', element: <CalcVendaServico />, menuPath: 'calculadoras/venda-servico' },
           { path: '/documentacoes', element: <Documentacoes />, menuPath: 'documentacoes' },
-          { path: '/rpa/agendamentos', element: <RpaAgendamentos />, menuPath: 'rpa/agendamentos' },
+          { path: '/rpa/agendamentos', element: <Navigate to="/bi/rpa-execucoes?modo=controle" replace /> },
           { path: '/treinamentos/grade', element: <GradeTreinamentos />, menuPath: 'treinamentos/grade' },
           { path: '/governanca/grupo-acessos', element: <GrupoAcessos />, menuPath: 'governanca/grupo-acessos' },
           { path: '/governanca/perfis-acesso', element: <PerfisAcesso />, menuPath: 'governanca/perfis-acesso' },
@@ -345,7 +344,7 @@ export default function App() {
           { path: '/bi/agendamento-servicos', element: <BiAgendamentoServicos />, menuPath: 'bi/agendamento-servicos' },
           { path: '/bi/agendamento-servicos/manual', element: <BiAgendamentoServicosManual />, menuPath: 'bi/agendamento-servicos' },
           { path: '/bi/planos-manutencao', element: <BiPlanosManutencao />, menuPath: 'bi/planos-manutencao' },
-          { path: '/bi/rpa-execucoes', element: <BiRpaExecucoes />, menuPath: 'bi/rpa-execucoes' },
+          { path: '/bi/rpa-execucoes', element: <BiRpaExecucoes />, menuPath: ['bi/rpa-execucoes', 'rpa/agendamentos'] },
           { path: '/bi/planos-manutencao/manual', element: <BiPlanosManutencaoManual />, menuPath: 'bi/planos-manutencao' },
           { path: '/pos-vendas/produtividade', element: <IndicadoresProdutividade />, menuPath: 'pos-vendas/produtividade' },
           { path: '/pos-vendas/possibilidades', element: <BiPossibilidades />, menuPath: 'bi/possibilidades' },

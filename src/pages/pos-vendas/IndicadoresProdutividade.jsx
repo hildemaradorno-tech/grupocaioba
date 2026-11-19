@@ -1,7 +1,7 @@
 import React, { Fragment, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, LabelList, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { Building2, Calendar, CalendarDays, ChevronDown, ChevronRight, Download, ExternalLink, Gauge, History, Info, RefreshCw, Search, Settings, Target, User, Wrench, X } from 'lucide-react'
+import { ArrowLeftRight, Building2, Calendar, CalendarDays, ChevronDown, ChevronRight, Download, ExternalLink, Gauge, History, Info, RefreshCw, Search, Settings, Target, User, Wrench, X } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import { supabase } from '../../services/supabaseClient'
 import { useAuth } from '../../context/AuthContext'
@@ -10,6 +10,7 @@ import {
   INDICADORES, VISUALIZACOES, somar, indicadores, corKpi, corFaixa, limitesDe, coresArcos, semAcento, fmtH, fmtPct, fmtR$,
 } from './produtividadeCalculos'
 import RegrasCoresModal from './RegrasCoresModal'
+import AbaEncerradoFaturado from './AbaEncerradoFaturado'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
 const PERM = 'pos-vendas/produtividade'
@@ -18,7 +19,9 @@ const ABAS = [
   { id: 'mecanicos', label: 'Mecânicos', icon: Wrench },
   { id: 'consultores', label: 'Consultores', icon: User },
   // Dia e Mensal unificados (pedido do usuário): botões Dia | Mês dentro da aba.
-  { id: 'diames', label: 'Período', icon: CalendarDays },
+  { id: 'diames', label: 'Evolução', icon: CalendarDays },
+  // Encerrado × Faturado (17/11/2026): tempo encerrado do mecânico × nota fiscal emitida, por O.S., em horas e valor.
+  { id: 'encfat', label: 'Análise de Horas', icon: ArrowLeftRight },
 ]
 const SEM_BOX = '(Em branco)'
 // Nomes que não são pessoas (mesma regra do backend): "Produtivo Não Associado" (Dealer.net) e "Sem Técnico" (MicroWork).
@@ -257,9 +260,10 @@ export default function IndicadoresProdutividade() {
   // ?aba=consultores (ex.: botão de origem da Matriz KPIs) abre direto nessa aba.
   const [aba, setAba] = useState(() => {
     const pedida = new URLSearchParams(window.location.search).get('aba')
-    return ['principais', 'mecanicos', 'consultores', 'diames'].includes(pedida) ? pedida : 'principais'
+    return ['principais', 'mecanicos', 'consultores', 'diames', 'encfat'].includes(pedida) ? pedida : 'principais'
   })
   const [modoResumo, setModoResumo] = useState('mecanico') // Resumo: Mecânicos | Consultores
+  const [slotAbaDireita, setSlotAbaDireita] = useState(null) // canto direito da linha das abas (Encerrado | Faturado)
   const [slotBuscaOs, setSlotBuscaOs] = useState(null) // espaço ao lado do Tipo de Visualização (busca por O.S. da aba Mecânicos)
   const [periodo, setPeriodo] = useState(periodoPadrao)
   const [empresasSel, setEmpresasSel] = useState([]) // nomes das filiais; vazio = Todos
@@ -271,6 +275,8 @@ export default function IndicadoresProdutividade() {
   const [pendentes, setPendentes] = useState([]) // metas do planejamento ainda não aprovadas (quadro da meta)
   // Pessoas fora do BI: setor Funilaria/Pintura (cadastro de Funcionários ou Planejamento de Metas) — vem do backend.
   const [excluidos, setExcluidos] = useState(() => new Set())
+  // Mecânicos fora do BI (exclusão + só OFICINA/Mecânica) — objeto com .has(nome), usado nas abas de mecânico.
+  const [excluidosMec, setExcluidosMec] = useState(() => new Set())
   // Box do cadastro de Funcionários (nome sem acento → Box), usado quando não há meta aprovada no período.
   const [boxCadastro, setBoxCadastro] = useState(() => new Map())
   // Box das metas aprovadas de todos os meses (nome sem acento → [{ ano, mes, box }]).
@@ -298,8 +304,13 @@ export default function IndicadoresProdutividade() {
         supabase.from('pv_prod_sync').select('*').then(r => { if (r.error) throw r.error; return r.data || [] }),
       ])
       const fora = new Set((mt.excluidos || []).map(semAcento))
-      const dentro = (r) => !fora.has(semAcento(r.pessoa)) && !NAO_PESSOA.test(r.pessoa || '')
+      // Mecânicos: só departamento OFICINA + setor Mecânica do cadastro de Funcionários (pedido do usuário 18/11/2026).
+      // Backend antigo (sem a lista) = regra antiga, só a exclusão.
+      const permitidos = Array.isArray(mt.mecanicosPermitidos) ? new Set(mt.mecanicosPermitidos.map(semAcento)) : null
+      const mecFora = (nome) => fora.has(semAcento(nome)) || (permitidos != null && !permitidos.has(semAcento(nome)))
+      const dentro = (r) => !NAO_PESSOA.test(r.pessoa || '') && (r.papel === 'mecanico' ? !mecFora(r.pessoa) : !fora.has(semAcento(r.pessoa)))
       setExcluidos(fora)
+      setExcluidosMec({ has: (k) => mecFora(k) })
       setBoxCadastro(new Map((mt.boxCadastro || []).map(b => [semAcento(b.pessoa), b.box])))
       const bm = new Map()
       for (const b of mt.boxMetas || []) { const k = semAcento(b.pessoa); if (!bm.has(k)) bm.set(k, []); bm.get(k).push(b) }
@@ -490,6 +501,7 @@ export default function IndicadoresProdutividade() {
       {erro && <p className="text-[11px] text-red-600 font-semibold">{erro}</p>}
 
       {/* ABAS — pílulas, como na Auditoria O.S. Aberta */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
       <div className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-lg p-0.5 w-fit flex-wrap">
         {ABAS.map(a => (
           <button key={a.id} type="button" onClick={() => setAba(a.id)}
@@ -498,6 +510,9 @@ export default function IndicadoresProdutividade() {
             <a.icon className="h-3.5 w-3.5" /> {a.label}
           </button>
         ))}
+      </div>
+      {/* Lado direito da linha das abas: botões Encerrado | Faturado da aba Encerrado × Faturado (a aba desenha aqui) */}
+
       </div>
 
       {!periodoOk && <p className="text-[11px] text-red-600">Informe um período válido (data inicial até a final).</p>}
@@ -509,7 +524,7 @@ export default function IndicadoresProdutividade() {
       )}
       {carregando && <p className="text-[11px] text-slate-500">Carregando…</p>}
 
-      {(
+      {aba !== 'encfat' && (
         <div className="flex flex-wrap items-end gap-3">
           {/* Consultores: só existe Horas Vendidas (Nota Fiscal Emitida) — seletor travado nela */}
           <Seletor label="Tipo de Visualização" value={travaFat ? 'fat' : vis} onChange={setVis} largura="w-72"
@@ -522,7 +537,7 @@ export default function IndicadoresProdutividade() {
               <div className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-lg p-0.5 w-fit">
                 {[['mecanico', 'Mecânicos', Wrench], ['consultor', 'Consultores', User]].map(([v, r, Ic]) => (
                   <button key={v} type="button" onClick={() => setModoResumo(v)}
-                    className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-[11px] font-semibold ${modoResumo === v ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}>
+                    className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-[11px] font-semibold ${modoResumo === v ? 'bg-slate-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}>
                     <Ic className="h-3.5 w-3.5" /> {r}
                   </button>
                 ))}
@@ -537,7 +552,7 @@ export default function IndicadoresProdutividade() {
       {aba === 'principais' && modoResumo === 'mecanico' && <AbaPrincipais total={total} mecDiario={mecDiario} boxDe={boxDe} vis={vis} />}
       {aba === 'principais' && modoResumo === 'consultor' && <ResumoConsultores diarioEsc={diarioEsc} metasEsc={metasEsc} reaisTotal={total.reais} />}
       {aba === 'mecanicos' && (
-        <AbaMecanicos mecDiario={mecDiario} infoMecanico={infoMecanico} boxDe={boxDe} vis={vis} periodo={periodo} noEscopo={noEscopo} excluidos={excluidos} slotBuscaOs={slotBuscaOs} metasEsc={metasEsc} pendentesEsc={pendentesEsc} />
+        <AbaMecanicos mecDiario={mecDiario} infoMecanico={infoMecanico} boxDe={boxDe} vis={vis} periodo={periodo} noEscopo={noEscopo} excluidos={excluidosMec} slotBuscaOs={slotBuscaOs} metasEsc={metasEsc} pendentesEsc={pendentesEsc} />
       )}
       {aba === 'consultores' && <AbaConsultores diarioEsc={diarioEsc} metasEsc={metasEsc} pendentesEsc={pendentesEsc} reaisTotal={total.reais}
         periodo={periodo} noEscopo={noEscopo} excluidos={excluidos} slotBuscaOs={slotBuscaOs} />}
@@ -545,6 +560,7 @@ export default function IndicadoresProdutividade() {
         <AbaDiaMes mecDiario={mecDiario} mensalEsc={mensalEsc} boxDe={boxDe} vis={vis} periodo={periodo} slot={slotBuscaOs}
           metasAno={metas.filter(m => noEscopo(m.empresa))} />
       )}
+      {aba === 'encfat' && <AbaEncerradoFaturado periodo={periodo} noEscopo={noEscopo} excluidos={excluidosMec} slotSentido={slotAbaDireita} recarga={syncs} />}
       {abrirRegras && (
         <RegrasCoresModal regras={regrasCor} anoInicial={Number(periodo.fim?.slice(0, 4)) || new Date().getFullYear()}
           usuario={user?.email || null} onClose={() => setAbrirRegras(false)} onSalvo={carregarRegras} />
@@ -1104,7 +1120,7 @@ function HistoricoMecanico({ pessoa, nome, periodo, noEscopo, visInicial, onClos
             <div className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-lg p-0.5">
               {[['dia', 'Por Dia'], ['tipo', 'Por Tipo de O.S.']].map(([v, r]) => (
                 <button key={v} type="button" onClick={() => setVisao(v)}
-                  className={`px-3 py-1 rounded-md text-[11px] font-semibold ${visao === v ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}>{r}</button>
+                  className={`px-3 py-1 rounded-md text-[11px] font-semibold ${visao === v ? 'bg-slate-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}>{r}</button>
               ))}
             </div>
             <select value={vis} onChange={e => setVis(e.target.value)} aria-label="Tipo de Visualização" disabled={ehConsultor}
@@ -1329,7 +1345,7 @@ function AbaDiaMes({ mecDiario, mensalEsc, boxDe, vis, periodo, metasAno, slot }
         <div className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-lg p-0.5 w-fit">
           {[['dia', 'Dia'], ['mes', 'Mês']].map(([v, r]) => (
             <button key={v} type="button" onClick={() => setModo(v)}
-              className={`px-4 py-1.5 rounded-md text-[11px] font-semibold ${modo === v ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}>{r}</button>
+              className={`px-4 py-1.5 rounded-md text-[11px] font-semibold ${modo === v ? 'bg-slate-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}>{r}</button>
           ))}
         </div>
         <p className="text-[10px] text-slate-500">

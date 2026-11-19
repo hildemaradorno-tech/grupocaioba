@@ -5,6 +5,7 @@ import { getPeriodData, getPeriodLabel } from '../../utils/kpiPeriods'
 import { useKpiData } from '../../hooks/useKpiData'
 import { fetchBloco2, fetchMetasOperacional } from '../../services/kpiService'
 import { useKpiYear } from '../../context/KpiYearContext'
+import { useExpandirQuadro } from '../../components/kpi/useExpandirQuadro'
 
 const np = { meta: null, realizado: null }
 // Fallback sem valores — dados reais vêm do SharePoint
@@ -176,6 +177,13 @@ export default function KpiIndicadoresOperacionais({ periodState: periodoMatriz 
     return porArea
   }, [allRows])
 
+  // Sub-abas por área (17/11/2026): Vendas · Pós-Vendas · Peças — uma área por vez, abre em Vendas.
+  const ROTULO_AREA = { 'Pós Venda': 'Pós-Vendas' }
+  const [areaAba, setAreaAba] = useState(ESTRUTURA[0][0])
+  const blocoAtual = blocos.find(b => b.area === areaAba) || blocos[0]
+  // Botão Expandir do quadro (17/11/2026) — o mesmo do Bloco 3 - Serviços (useExpandirQuadro).
+  const ex = useExpandirQuadro(ROTULO_AREA[blocoAtual?.area] || blocoAtual?.area || 'quadro')
+
   return (
     <div className="px-6 pb-6 pt-3 space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -188,14 +196,36 @@ export default function KpiIndicadoresOperacionais({ periodState: periodoMatriz 
 
       {!periodoMatriz && <PeriodSelector state={periodState} inlineTrimestral hideLegend />}
 
-      {/* Um bloco (card) por área, com Responsabilidade mesclada */}
+      {/* Sub-abas das áreas — mesmo visual das sub-abas do Bloco 3 - Serviços. */}
+      <div className="flex gap-1.5 border-b-2 border-blue-600">
+        {ESTRUTURA.map(([area]) => (
+          <button
+            key={area}
+            type="button"
+            aria-pressed={area === blocoAtual?.area}
+            onClick={() => setAreaAba(area)}
+            className={`px-5 py-2 text-[11px] font-semibold rounded-t-md transition-colors ${
+              area === blocoAtual?.area ? 'bg-blue-600 text-white shadow-sm' : 'bg-blue-50 text-blue-800 hover:bg-blue-100'
+            }`}
+          >
+            {ROTULO_AREA[area] || area}
+          </button>
+        ))}
+      </div>
+
+      {/* O bloco (card) da área escolhida, com Responsabilidade mesclada */}
       <div className="space-y-6">
-        {blocos.map(({ area, linhas }) => (
-          <div key={area} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="px-5 py-3 bg-blue-700 text-white text-sm font-bold tracking-wide uppercase">{area}</div>
-            <div className="overflow-x-auto">
+        {(blocoAtual ? [blocoAtual] : []).map(({ area, linhas }) => (
+          <React.Fragment key={area}>
+          {ex.fundo}
+          <div style={ex.estiloCaixa} className={`bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden ${ex.classeCaixa}`}>
+            <div className="flex items-center gap-3 px-5 py-3 bg-blue-700 text-white text-sm font-bold tracking-wide uppercase">
+              <span>{ROTULO_AREA[area] || area}</span>
+              {ex.botao}
+            </div>
+            <div className={ex.classeRolagem}>
               <table className="w-full text-xs whitespace-nowrap">
-                <thead>
+                <thead className={ex.classeCabecalho}>
                   <tr className="bg-slate-50 border-b border-slate-200">
                     <th className="text-center px-3 py-2.5 font-medium text-slate-500 sticky left-0 z-10 bg-slate-50 min-w-[150px] w-[150px]">Responsabilidade</th>
                     <th className="text-left px-4 py-2.5 font-medium text-slate-500 sticky left-[150px] z-10 bg-slate-50 min-w-[220px]">Indicador</th>
@@ -257,6 +287,7 @@ export default function KpiIndicadoresOperacionais({ periodState: periodoMatriz 
               </table>
             </div>
           </div>
+          </React.Fragment>
         ))}
       </div>
     </div>

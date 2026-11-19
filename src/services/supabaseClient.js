@@ -5295,10 +5295,14 @@ export const apiService = {
     return data || []
   },
 
-  createRpaProcesso: async ({ nome, departamento_id, departamento_nome, tipo, rpa_vinculado_id, rpa_vinculado_nome, tempo_atualizacao_min }) => {
+  createRpaProcesso: async ({ nome, departamento_id, departamento_nome, tipo, rpa_vinculado_id, rpa_vinculado_nome, tempo_atualizacao_min, atende, relatorios_extraidos, local_fonte, objetivo }) => {
     const { data, error } = await supabase
       .from('rpa_processos')
       .insert([{
+        objetivo: objetivo?.trim().toUpperCase() || null,
+        atende: atende?.trim().toUpperCase() || null,
+        relatorios_extraidos: relatorios_extraidos?.trim().toUpperCase() || null,
+        local_fonte: local_fonte?.trim().toUpperCase() || null,
         nome: nome.trim().toUpperCase(),
         departamento_id: departamento_id || null,
         departamento_nome: departamento_nome || null,
@@ -5314,10 +5318,14 @@ export const apiService = {
 
   // Atualiza o cadastro e propaga nome/setor para os campos denormalizados
   // das rotinas que usam o processo, e o tipo para as execuções agendadas.
-  updateRpaProcesso: async (id, { nome, departamento_id, departamento_nome, tipo, rpa_vinculado_id, rpa_vinculado_nome, tempo_atualizacao_min, ativo }) => {
+  updateRpaProcesso: async (id, { nome, departamento_id, departamento_nome, tipo, rpa_vinculado_id, rpa_vinculado_nome, tempo_atualizacao_min, ativo, atende, relatorios_extraidos, local_fonte, objetivo }) => {
     const { data, error } = await supabase
       .from('rpa_processos')
       .update({
+        objetivo: objetivo?.trim().toUpperCase() || null,
+        atende: atende?.trim().toUpperCase() || null,
+        relatorios_extraidos: relatorios_extraidos?.trim().toUpperCase() || null,
+        local_fonte: local_fonte?.trim().toUpperCase() || null,
         nome: nome.trim().toUpperCase(),
         departamento_id: departamento_id || null,
         departamento_nome: departamento_nome || null,

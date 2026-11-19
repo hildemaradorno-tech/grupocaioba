@@ -3,13 +3,14 @@
 // lido pelo backend (/api/rpa-log), cruzado com a agenda de Documentações › Agendamento de Processos
 // (rotinas ativas dos processos RPA). Todos os horários em MS.
 import React, { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import {
   Bot, RefreshCw, CheckCircle2, XCircle, Clock, AlertTriangle, Timer, Activity, FileText, X, CalendarClock,
-  ListChecks, LayoutDashboard, Bug, ArrowRight, CalendarX2,
+  ListChecks, LayoutDashboard, Bug, CalendarX2, BarChart2, ClipboardList,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
+import RpaAgendamentos from '../rpa/RpaAgendamentos'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
 
@@ -101,9 +102,34 @@ function ModalLog({ execucao, onClose }) {
 }
 
 // ── Página ──────────────────────────────────────────────────────────────────
+// Duas visões, como no BI Garantias DAF (18/11/2026): Dashboard (permissão bi/rpa-execucoes) e Controle
+// (permissão rpa/agendamentos = tela Agendamento de Processos, com todas as abas). Visão na URL (?modo=).
 export default function BiRpaExecucoes() {
   const { hasPermission } = useAuth()
-  const navigate = useNavigate()
+  const [params, setParams] = useSearchParams()
+  const podeDashboard = hasPermission('bi/rpa-execucoes')
+  const podeControle = hasPermission('rpa/agendamentos')
+  const modo = params.get('modo') === 'controle' && podeControle ? 'controle'
+    : params.get('modo') === 'dashboard' && podeDashboard ? 'dashboard'
+    : podeDashboard ? 'dashboard' : 'controle'
+  const irPara = (m) => setParams({ modo: m }, { replace: true })
+  const [slotAcoes, setSlotAcoes] = useState(null)
+  const botaoModo = (valor, label, Icon, habilitado, dica) => (
+    <button type="button" onClick={() => habilitado && irPara(valor)} disabled={!habilitado}
+      title={`${label} — ${dica}`} aria-label={label}
+      className={`flex items-center justify-center p-1.5 rounded-md transition-colors ${
+        modo === valor ? 'bg-indigo-600 text-white shadow-sm'
+          : habilitado ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-100' : 'text-slate-300 cursor-not-allowed'}`}>
+      <Icon className="h-3.5 w-3.5" />
+    </button>
+  )
+  // Visão Dashboard | Controle — ícones, como no BI Garantias DAF
+  const seletorModo = (
+    <div className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-lg p-0.5 w-fit">
+      {botaoModo('dashboard', 'Dashboard', BarChart2, podeDashboard, podeDashboard ? 'Indicadores das execuções do robô' : 'Sem permissão para o dashboard')}
+      {botaoModo('controle', 'Controle', ClipboardList, podeControle, podeControle ? 'Agendamento de Processos: rotinas, horários e cadastro' : 'Sem permissão para o controle')}
+    </div>
+  )
   const hoje = isoDia(new Date())
   const seteDiasAtras = isoDia(new Date(Date.now() - 6 * 86400000))
 
@@ -132,7 +158,8 @@ export default function BiRpaExecucoes() {
       setCarregando(false)
     }
   }
-  useEffect(() => { carregar() }, [])
+  // O log do SharePoint só é lido quando a visão Dashboard é aberta
+  useEffect(() => { if (modo === 'dashboard' && !dados) carregar() }, [modo])
 
   const agenda = dados?.agenda || []
   const agendaPorNome = useMemo(() => new Map(agenda.map(a => [normalizar(a.nome), a])), [agenda])
@@ -258,8 +285,7 @@ export default function BiRpaExecucoes() {
     return [...s]
   }, [porRobo])
 
-  const podeAgenda = hasPermission('rpa/agendamentos')
-  const sel = 'border border-slate-200 rounded-md px-2 py-1 text-[11px] bg-white text-slate-700'
+  const sel ='border border-slate-200 rounded-md px-2 py-1 text-[11px] bg-white text-slate-700'
 
   return (
     <div className="p-6 space-y-4">
@@ -270,26 +296,43 @@ export default function BiRpaExecucoes() {
             <Bot className="h-4 w-4 text-white" />
           </div>
           <div>
-            <h1 className="text-lg font-bold text-slate-900 tracking-tight">Controle de Execuções RPA</h1>
-            <p className="text-[11px] text-slate-500 uppercase tracking-wide">Robert Automation — log de execuções (horário de MS)</p>
+            <h1 className="text-lg font-bold text-slate-900 tracking-tight">Controle de Processos</h1>
+            <p className="text-[11px] text-slate-500 uppercase tracking-wide">
+              {modo === 'dashboard' ? 'Robert Automation — log de execuções (horário de MS)' : 'Controle — Agendamento de Processos (RPA e Power BI)'}
+            </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <p className="text-[10px] text-slate-500 leading-tight text-right">
-            Log no SharePoint: <strong className="text-slate-700">{dados?.arquivo_atualizado_em ? new Date(dados.arquivo_atualizado_em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—'}</strong><br />
-            Lido em: <strong className="text-slate-700">{carregando ? '...' : dados?.lido_em ? new Date(dados.lido_em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—'}</strong>
-          </p>
-          <button type="button" onClick={() => carregar(true)} disabled={carregando} title="Atualizar dados" aria-label="Atualizar dados"
-            className="flex items-center justify-center p-1.5 rounded-md bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm disabled:opacity-60 transition-colors">
-            <RefreshCw className={`h-3.5 w-3.5 ${carregando ? 'animate-spin' : ''}`} />
-          </button>
-          {podeAgenda && (
-            <button type="button" onClick={() => navigate('/rpa/agendamentos')}
-              className="flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1.5 rounded-md border border-indigo-200 text-indigo-700 bg-white hover:bg-indigo-50">
-              Ir para Agendamento de Processos <ArrowRight className="h-3.5 w-3.5" />
-            </button>
+        <div className="flex items-center gap-3">
+          {modo === 'dashboard' && (
+            <div className="flex items-center gap-2">
+              <p className="text-[10px] text-slate-500 leading-tight text-right">
+                Log no SharePoint: <strong className="text-slate-700">{dados?.arquivo_atualizado_em ? new Date(dados.arquivo_atualizado_em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—'}</strong><br />
+                Lido em: <strong className="text-slate-700">{carregando ? '...' : dados?.lido_em ? new Date(dados.lido_em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—'}</strong>
+              </p>
+              <button type="button" onClick={() => carregar(true)} disabled={carregando} title="Atualizar dados" aria-label="Atualizar dados"
+                className="flex items-center justify-center p-1.5 rounded-md bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm disabled:opacity-60 transition-colors">
+                <RefreshCw className={`h-3.5 w-3.5 ${carregando ? 'animate-spin' : ''}`} />
+              </button>
+            </div>
           )}
+          {/* Engrenagem do Controle (Novo Processo, Nova Rotina, Baixar PDF), colocada aqui pelo RpaAgendamentos */}
+          {modo === 'controle' && <div ref={setSlotAcoes} className="flex items-center" />}
         </div>
+      </div>
+
+      {/* Só a visão escolhida é montada. A troca Dashboard | Controle fica na linha das abas, à direita. */}
+      {modo === 'controle' ? <RpaAgendamentos acoesDireita={seletorModo} slotAcoes={slotAcoes} /> : (<>
+
+      {/* Abas (acima dos filtros e avisos desde 18/11/2026) */}
+      <div className="flex gap-1 border-b border-slate-200">
+        {ABAS.map(([k, n, Icon]) => (
+          <button key={k} onClick={() => setAba(k)}
+            className={`flex items-center gap-1.5 px-3 py-2 text-[11px] font-semibold border-b-2 -mb-px ${aba === k ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
+            <Icon className="h-3.5 w-3.5" /> {n}
+            {k === 'erros' && erros.length > 0 && <span className="ml-0.5 px-1.5 rounded-full bg-red-100 text-red-700 text-[10px]">{erros.length}</span>}
+          </button>
+        ))}
+        <div className="ml-auto self-center pb-1">{seletorModo}</div>
       </div>
 
       {/* Filtros */}
@@ -330,17 +373,6 @@ export default function BiRpaExecucoes() {
           </div>
         </div>
       )}
-
-      {/* Abas */}
-      <div className="flex gap-1 border-b border-slate-200">
-        {ABAS.map(([k, n, Icon]) => (
-          <button key={k} onClick={() => setAba(k)}
-            className={`flex items-center gap-1.5 px-3 py-2 text-[11px] font-semibold border-b-2 -mb-px ${aba === k ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
-            <Icon className="h-3.5 w-3.5" /> {n}
-            {k === 'erros' && erros.length > 0 && <span className="ml-0.5 px-1.5 rounded-full bg-red-100 text-red-700 text-[10px]">{erros.length}</span>}
-          </button>
-        ))}
-      </div>
 
       {carregando && !dados ? <p className="text-[11px] text-slate-400">Carregando log do SharePoint...</p> : (
         <>
@@ -518,6 +550,7 @@ export default function BiRpaExecucoes() {
       )}
 
       {logAberto && <ModalLog execucao={logAberto} onClose={() => setLogAberto(null)} />}
+      </>)}
     </div>
   )
 }

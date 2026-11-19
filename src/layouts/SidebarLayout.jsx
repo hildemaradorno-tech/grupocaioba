@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom'
-import { Settings, TableProperties, Users, ShieldCheck, Building2, Layers, FolderTree, Box as BoxIcon, Briefcase, Tag, Wrench, Package, TrendingUp, FileCheck2, ScrollText, Clock, CalendarX, Calendar, Target, ShoppingBag, Car, Cog, ClipboardCheck, UserCheck, LogOut, BarChart2, Wallet, ClipboardList, Home, FolderKanban, CircleDot, FileText, Truck, Calculator, BookOpen, GraduationCap, KeyRound, Eye, EyeOff, X, AlertTriangle, Bike, Network, PieChart, Share2, Gauge, Ruler, ShieldAlert, Landmark, Hash, ListChecks, ExternalLink, Workflow, Trophy, Percent, Palmtree, PhoneCall, PlugZap, Bell, Warehouse, Archive, Megaphone, ArrowRightLeft, Bot, SlidersHorizontal, ChevronRight } from 'lucide-react'
+import { Settings, TableProperties, Users, ShieldCheck, Building2, Layers, FolderTree, Box as BoxIcon, Briefcase, Tag, Wrench, Package, TrendingUp, FileCheck2, ScrollText, CalendarX, Calendar, Target, ShoppingBag, Car, Cog, ClipboardCheck, UserCheck, LogOut, BarChart2, Wallet, ClipboardList, Home, FolderKanban, CircleDot, FileText, Truck, Calculator, BookOpen, GraduationCap, KeyRound, Eye, EyeOff, X, AlertTriangle, Bike, Network, PieChart, Share2, Gauge, Ruler, ShieldAlert, Landmark, Hash, ListChecks, ExternalLink, Workflow, Trophy, Percent, Palmtree, PhoneCall, PlugZap, Bell, Warehouse, Archive, Megaphone, ArrowRightLeft, Bot, SlidersHorizontal, ChevronRight } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import TrocarSenhaObrigatoria from '../pages/TrocarSenhaObrigatoria'
 import { supabase } from '../services/supabaseClient'
@@ -31,6 +31,7 @@ function getActiveSectionKey(pathname) {
   if (cadastros.includes(pathname)) return '_config'
   if (pathname.startsWith('/metas')) return '_metas'
   if (pathname.startsWith('/garantias-daf')) return '_bi'
+  if (pathname.startsWith('/bi/rpa-execucoes')) return '_documentacoes' // Controle de Execuções RPA fica em Governança
   if (pathname.startsWith('/auditoria') || pathname.startsWith('/garantia') || pathname.startsWith('/honda') || pathname.startsWith('/truckpag') || pathname.startsWith('/bpm')) return '_controle-processos'
   if (pathname.startsWith('/projetos') || pathname.startsWith('/auditoria-externa') || pathname.startsWith('/bi/projetos')) return '_gestao-projetos'
   if (pathname.startsWith('/calculadoras')) return '_controle-processos'
@@ -615,21 +616,15 @@ export default function SidebarLayout() {
             {canView('pos-vendas/produtividade') && <FlyItem to="/pos-vendas/produtividade" icon={Gauge} onClose={closeFlyout}>Indicadores de Produtividade</FlyItem>}
             {canView('bi/planos-manutencao') && <FlyItem to="/bi/planos-manutencao" icon={Wrench} onClose={closeFlyout}>Planos de Manutenção</FlyItem>}
             {canView('bi/possibilidades') && <FlyItem to="/pos-vendas/possibilidades" icon={Gauge} onClose={closeFlyout}>Possibilidades</FlyItem>}
-            {canView('bi/rpa-execucoes') && (
-              <>
-                <div className="mx-3 my-2 border-t border-blue-800/50" />
-                <FlyGroup label="Tecnologia" />
-                <FlyItem to="/bi/rpa-execucoes" icon={Bot} onClose={closeFlyout}>Controle de Execuções RPA</FlyItem>
-              </>
-            )}
           </>
         )
 
       case '_documentacoes':
         return (
           <>
-            <FlyGroup label="Documentações" />
-            {canView('rpa/agendamentos') && <FlyItem to="/rpa/agendamentos" icon={Clock} onClose={closeFlyout}>Agendamento de Processos</FlyItem>}
+            <FlyGroup label="Governança" />
+            {/* Controle de Execuções RPA (Dashboard | Controle); o Controle é a antiga tela Agendamento de Processos */}
+            {(canView('bi/rpa-execucoes') || canView('rpa/agendamentos')) && <FlyItem to="/bi/rpa-execucoes" icon={Bot} onClose={closeFlyout}>Controle de Processos</FlyItem>}
             {canView('documentacoes') && <FlyItem to="/documentacoes" icon={BookOpen} onClose={closeFlyout}>Documentações</FlyItem>}
             {canView('ecossistema') && <FlyItem to="/ecossistema" icon={Share2} onClose={closeFlyout}>Ecossistema</FlyItem>}
           </>
@@ -736,8 +731,8 @@ export default function SidebarLayout() {
           )}
           {canViewSection('_documentacoes') && (
             <SidebarIconBtn
-              icon={BookOpen}
-              label="Documentações"
+              icon={ShieldCheck}
+              label="Governança"
               isActive={currentSection === '_documentacoes' || activeSection === '_documentacoes'}
               onClick={() => toggleSection('_documentacoes')}
             />
@@ -783,7 +778,7 @@ export default function SidebarLayout() {
                 {activeSection === '_bi' && 'BI - Dashboard'}
                 {activeSection === '_pecas' && 'Gestor de Peças 2.0 — Trucks'}
                 {activeSection === '_pecas-motos' && 'Gestor de Peças 2.0 — Motos'}
-                {activeSection === '_documentacoes' && 'Documentações'}
+                {activeSection === '_documentacoes' && 'Governança'}
                 {activeSection === '_treinamentos' && 'Treinamentos'}
                 {activeSection === 'organograma' && 'Organograma'}
               </span>

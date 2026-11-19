@@ -12,6 +12,8 @@
  *                                               sem repetir Empresa + O.S. + TMO Referência (1 vez por O.S., mesmo com 2 tipos — o Power BI repetia por tipo)
  *   Vendas Mecânicos/ROF042…                 → Hr. Vendidas/Gastas (NF emitida): Hr. Vend., Hr. Total, Vl Líquido, por NF Data;
  *                                               a coluna Consultor dá as Hr. Faturadas dos consultores
+ *   Serviços executados Não Cobrados/ROF101… → serviços executados e não cobrados (aba Análise de Horas), gravados à
+ *                                               parte em pv_prod_nao_cobrado (ano/mês do arquivo) — 18/11/2026
  * MOTOS (MicroWork — API, filtros em produtividadeFiltrosMicrowork.js):
  *   Apontamentos        → disponível (tempodisponivel), real (temporeal), vendido e gasto do apontamento
  *   Relatório Geral OS  → Hr. Aplicadas (tmoservico, por data de emissão da O.S.)
@@ -29,6 +31,9 @@ const BASE = '/Banco de Dados - DAF - Pós-Vendas/'
 // "Produtivo Não Associado" (Dealer.net) e "Sem Técnico" (MicroWork).
 const NAO_ASSOCIADO = /produtivo\s+n[aã]o\s+associado|^\s*sem\s+t[eé]cnico\s*$/i
 const LOTE = 1000
+// TMO de SERVIÇO DE TERCEIRO (código começando com T + número: T092, T099, T016…) não entra no BI, em nenhum
+// relatório (pedido do usuário 18/11/2026). Ex.: "T092 SERVIÇO TERCEIRO DE TESTE VAZAMENTO E CARGA DE GAS AR COND".
+const TMO_TERCEIRO = /^\s*T\d+\b/i
 
 const semAcento = (s) => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '')
 const normEmp = (s) => semAcento(s).toUpperCase().replace(/\s+/g, ' ').trim()
@@ -114,6 +119,7 @@ function novoAcumulador() {
     if (!data || (!pessoa && papel === 'consultor')) return
     // "Produtivo Não Associado" / "Sem Técnico" não são mecânicos: fora do BI, em qualquer relatório.
     if (papel === 'mecanico' && NAO_ASSOCIADO.test(pessoa)) return
+    if (TMO_TERCEIRO.test(tmo || '')) return
     const chave = `${data}|${empresa}|${papel}|${pessoa}|${os}|${tipoOs}|${tmo}`
     let l = mapa.get(chave)
     if (!l) {
@@ -122,7 +128,8 @@ function novoAcumulador() {
     }
     for (const k in campos) l[k] += campos[k] || 0
   }
-  return { mapa, add }
+  // naoCobrado: linhas do ROF101 (Trucks), gravadas em pv_prod_nao_cobrado — não entram em pv_prod_os.
+  return { mapa, add, naoCobrado: [] }
 }
 
 async function mapaEmpresas(admin) {
@@ -186,6 +193,25 @@ async function lerTrucks(ano, mes, empresa, acc) {
       vistos.add(chave)
       acc.add(d, M, empresa(emp), 'mecanico', normPessoa(r[col['Produtivo Nome']]), os, sigla, { hr_aplic: num(r[col['Tempo Vendido']]) },
         tmoTxt(r[col['TMO Referencia']], r[col['TMO Descricao']]))
+    }
+  }
+
+  // ROF101 — Serviços executados Não Cobrados (aba Análise de Horas). Arquivo mensal; mês sem arquivo = nada.
+  const f101 = arquivosDoMes(await listar('Serviços executados Não Cobrados'), 'ROF101', ano, mes)
+  det.rof101 = f101.map(f => f.name)
+  for (const f of f101) {
+    const { dados, col } = cabecalho(await lerAoA(f),
+      ['Descricao', 'Consultor', 'Produtivo', 'TipoOS', 'OSNumero', 'DataCriacao', 'Servico', 'ValorCusto', 'ValorTotal', 'Horas'], f.name)
+    for (const r of dados) {
+      const emp = txt(r[col.Descricao])
+      if (!emp || emp === 'Descricao' || !txt(r[col.OSNumero])) continue
+      const pessoa = normPessoa(r[col.Produtivo])
+      if (NAO_ASSOCIADO.test(pessoa) || TMO_TERCEIRO.test(txt(r[col.Servico]))) continue
+      acc.naoCobrado.push({
+        ano, mes, data: dataIso(r[col.DataCriacao]), marca: M, empresa: empresa(emp), consultor: normPessoa(r[col.Consultor]),
+        pessoa, os: txt(r[col.OSNumero]), tipo_os: txt(r[col.TipoOS]).split(' - ')[0], servico: txt(r[col.Servico]),
+        horas: num(r[col.Horas]), valor_custo: num(r[col.ValorCusto]), valor_total: num(r[col.ValorTotal]),
+      })
     }
   }
 
@@ -290,6 +316,18 @@ async function gravar(admin, ano, mes, marca, linhas, detalhes) {
   return regs.length
 }
 
+// ROF101 (não cobrado): apaga o mês do arquivo e grava de novo.
+async function gravarNaoCobrado(admin, ano, mes, linhas) {
+  const { error: delErr } = await admin.from('pv_prod_nao_cobrado').delete().eq('ano', ano).eq('mes', mes).eq('marca', 'TRUCKS')
+  if (delErr) throw delErr
+  const agora = new Date().toISOString()
+  for (let i = 0; i < linhas.length; i += LOTE) {
+    const { error } = await admin.from('pv_prod_nao_cobrado').insert(linhas.slice(i, i + LOTE).map(l => ({ ...l, atualizado_em: agora })))
+    if (error) throw error
+  }
+  return linhas.length
+}
+
 let _emExecucao = false
 
 /**
@@ -308,6 +346,7 @@ export async function sincronizarProdutividadeMes(admin, ano, mes) {
         const acc = novoAcumulador()
         const detalhes = await ler(ano, mes, empresa, acc)
         const linhas = await gravar(admin, ano, mes, marca, [...acc.mapa.values()], detalhes)
+        if (marca === 'TRUCKS') detalhes.naoCobrado = await gravarNaoCobrado(admin, ano, mes, acc.naoCobrado)
         resultado[marca] = { ok: true, linhas, detalhes }
       } catch (err) {
         console.error(`[Produtividade] ${marca} ${ano}-${mes}:`, err.message)
@@ -354,7 +393,7 @@ async function boxMetasAprovadas(admin, anos, fora) {
 export async function metasProdutividade(admin, anos) {
   // Setores fora do BI (pedidos do usuário, 12/11/2026): Funilaria/Pintura e Montagem/Revisão Entrega.
   const FUNILARIA = /funilaria|montagem/i
-  const [emps, mec, con, setores, funcs] = await Promise.all([
+  const [emps, mec, con, setores, funcs, deptos] = await Promise.all([
     admin.from('dim_empresas').select('id, empresa_fantasia').then(r => { if (r.error) throw r.error; return r.data }),
     lerTudo(() => admin.from('fato_rascunho_metas_servicos_mecanico')
       .select('id, empresa_id, setor_nome, box_nome, cargo_nome, colaborador_nome, ano, mes, dias_uteis_reais, horas_disponiveis, produtividade, meta_faturamento, meta_aprovada, aprovado_em, aprovado_por_nome')
@@ -363,7 +402,8 @@ export async function metasProdutividade(admin, anos) {
       .select('id, empresa_id, setor_nome, box_nome, cargo_nome, colaborador_nome, ano, mes, percentual, meta_faturamento, meta_aprovada, aprovado_em, aprovado_por_nome')
       .in('ano', anos).order('id')),
     admin.from('dim_setores').select('id, nome_setor').then(r => { if (r.error) throw r.error; return r.data }),
-    lerTudo(() => admin.from('dim_funcionarios').select('id, nome_funcionario, setor_ids, box_nome, ativo').order('id')),
+    lerTudo(() => admin.from('dim_funcionarios').select('id, nome_funcionario, setor_ids, departamento_ids, box_nome, ativo').order('id')),
+    admin.from('dim_departamentos').select('id, nome_departamento').then(r => { if (r.error) throw r.error; return r.data }),
   ])
   const nomeEmp = new Map(emps.map(e => [e.id, e.empresa_fantasia]))
 
@@ -377,6 +417,17 @@ export async function metasProdutividade(admin, anos) {
   }
   for (const r of [...mec, ...con]) if (r.colaborador_nome && FUNILARIA.test(r.setor_nome || '')) excluidos.add(normPessoa(r.colaborador_nome))
   const fora = (nome) => excluidos.has(normPessoa(nome))
+
+  // Mecânicos que podem aparecer no BI (pedido do usuário 18/11/2026): SÓ quem está no cadastro de Funcionários com
+  // departamento OFICINA e setor Mecânica. Mecânico fora do cadastro (ou com nome diferente) não aparece.
+  const idOficina = new Set(deptos.filter(d => /^oficina$/i.test(String(d.nome_departamento || '').trim())).map(d => String(d.id)))
+  const idMecanica = new Set(setores.filter(s => /^mec[aâ]nica$/i.test(String(s.nome_setor || '').trim())).map(s => String(s.id)))
+  const mecanicosPermitidos = new Set()
+  for (const f of funcs) {
+    const sIds = (Array.isArray(f.setor_ids) ? f.setor_ids : []).map(String)
+    const dIds = (Array.isArray(f.departamento_ids) ? f.departamento_ids : []).map(String)
+    if (f.nome_funcionario && sIds.some(id => idMecanica.has(id)) && dIds.some(id => idOficina.has(id))) mecanicosPermitidos.add(normPessoa(f.nome_funcionario))
+  }
 
   const out = []
   // Meses do planejamento que NÃO entram (sem aprovação) — a tela mostra no quadro da meta (ícone de alvo).
@@ -442,6 +493,7 @@ export async function metasProdutividade(admin, anos) {
     metas: out,
     pendentes,
     excluidos: [...excluidos],
+    mecanicosPermitidos: [...mecanicosPermitidos],
     boxCadastro: [...boxCadastro].map(([pessoa, box]) => ({ pessoa, box })),
     boxMetas: await boxMetasAprovadas(admin, anos, fora),
   }
