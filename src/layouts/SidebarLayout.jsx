@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom'
-import { Settings, TableProperties, Users, ShieldCheck, Building2, Layers, FolderTree, Box as BoxIcon, Briefcase, Tag, Wrench, Package, TrendingUp, FileCheck2, ScrollText, CalendarX, Calendar, Target, ShoppingBag, Car, Cog, ClipboardCheck, UserCheck, LogOut, BarChart2, Wallet, ClipboardList, Home, FolderKanban, CircleDot, FileText, Truck, Calculator, BookOpen, GraduationCap, KeyRound, Eye, EyeOff, X, AlertTriangle, Bike, Network, PieChart, Share2, Gauge, Ruler, ShieldAlert, Landmark, Hash, ListChecks, ExternalLink, Workflow, Trophy, Percent, Palmtree, PhoneCall, PlugZap, Bell, Warehouse, Archive, Megaphone, ArrowRightLeft, Bot, SlidersHorizontal, ChevronRight } from 'lucide-react'
+import { Settings, TableProperties, Users, ShieldCheck, Building2, Layers, FolderTree, Box as BoxIcon, Briefcase, Tag, Wrench, Package, TrendingUp, FileCheck2, ScrollText, CalendarX, Calendar, Target, ShoppingBag, Car, Cog, ClipboardCheck, UserCheck, LogOut, BarChart2, Wallet, ClipboardList, Home, FolderKanban, CircleDot, FileText, Truck, Calculator, BookOpen, GraduationCap, KeyRound, Eye, EyeOff, X, AlertTriangle, Bike, Network, PieChart, Share2, Gauge, Ruler, ShieldAlert, Landmark, Hash, ListChecks, ExternalLink, Workflow, Trophy, Percent, Palmtree, PhoneCall, PlugZap, Bell, Warehouse, Archive, Megaphone, ArrowRightLeft, Bot, SlidersHorizontal, ChevronRight, Receipt, TrainFront } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import TrocarSenhaObrigatoria from '../pages/TrocarSenhaObrigatoria'
 import { supabase } from '../services/supabaseClient'
@@ -32,6 +32,7 @@ function getActiveSectionKey(pathname) {
   if (pathname.startsWith('/metas')) return '_metas'
   if (pathname.startsWith('/garantias-daf')) return '_bi'
   if (pathname.startsWith('/bi/rpa-execucoes')) return '_documentacoes' // Controle de Execuções RPA fica em Governança
+  if (pathname.startsWith('/governanca/monitor-railway')) return '_documentacoes' // antes da regra /governanca (Configurações)
   if (pathname.startsWith('/auditoria') || pathname.startsWith('/garantia') || pathname.startsWith('/honda') || pathname.startsWith('/truckpag') || pathname.startsWith('/bpm')) return '_controle-processos'
   if (pathname.startsWith('/projetos') || pathname.startsWith('/auditoria-externa') || pathname.startsWith('/bi/projetos')) return '_gestao-projetos'
   if (pathname.startsWith('/calculadoras')) return '_controle-processos'
@@ -559,7 +560,7 @@ export default function SidebarLayout() {
       case '_controle-processos':
         return (
           <>
-            {(canView('honda/contas-a-receber') || canView('bpm/nfe-cancelamento-devolucao') || canViewSection('_pecas') || canViewSection('_pecas-motos') || canView('calculadoras/venda-servico')) && (
+            {(canView('honda/contas-a-receber') || canView('bpm/nfe-cancelamento-devolucao') || canView('garantia/extrato-pagamento-daf') || canViewSection('_pecas') || canViewSection('_pecas-motos') || canView('calculadoras/venda-servico')) && (
               <FlyGroup label="Controle de Processos" />
             )}
             {canView('honda/contas-a-receber') && <FlyItem to="/honda/contas-a-receber" icon={Bike} onClose={closeFlyout}>Contas a Receber HONDA</FlyItem>}
@@ -567,6 +568,7 @@ export default function SidebarLayout() {
       {(canView('truckpag/titulos') || canView('truckpag/conciliacao')) && (
         <FlyItem to={canView('truckpag/conciliacao') ? "/truckpag/conciliacao" : "/truckpag/titulos"} icon={Truck} onClose={closeFlyout}>TruckPag a Receber</FlyItem>
       )}
+            {canView('garantia/extrato-pagamento-daf') && <FlyItem to="/garantia/extrato-pagamento-daf" icon={Receipt} onClose={closeFlyout}>Extrato de Pagamento DAF</FlyItem>}
             {(canViewSection('_pecas') || canViewSection('_pecas-motos')) && <FlyGroup label="Gestor de Peças 2.0" />}
             {canViewSection('_pecas') && <FlyDrill icon={Package} onClick={() => setActiveSection('_pecas')}>Peças — Trucks</FlyDrill>}
             {canViewSection('_pecas-motos') && <FlyDrill icon={Bike} onClick={() => setActiveSection('_pecas-motos')}>Peças — Motos</FlyDrill>}
@@ -625,6 +627,7 @@ export default function SidebarLayout() {
             <FlyGroup label="Governança" />
             {/* Controle de Execuções RPA (Dashboard | Controle); o Controle é a antiga tela Agendamento de Processos */}
             {(canView('bi/rpa-execucoes') || canView('rpa/agendamentos')) && <FlyItem to="/bi/rpa-execucoes" icon={Bot} onClose={closeFlyout}>Controle de Processos</FlyItem>}
+            {canView('governanca/monitor-railway') && <FlyItem to="/governanca/monitor-railway" icon={TrainFront} onClose={closeFlyout}>Monitor Railway</FlyItem>}
             {canView('documentacoes') && <FlyItem to="/documentacoes" icon={BookOpen} onClose={closeFlyout}>Documentações</FlyItem>}
             {canView('ecossistema') && <FlyItem to="/ecossistema" icon={Share2} onClose={closeFlyout}>Ecossistema</FlyItem>}
           </>

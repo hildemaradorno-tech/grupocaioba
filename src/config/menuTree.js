@@ -251,6 +251,15 @@ export const MENU_TREE = [
           { key: 'truckpag/titulos', label: 'Títulos a Receber' },
         ],
       },
+      // Extrato de Pagamento DAF (19/11/2026) — planilha do SAP (Account-303920.xlsx) lida do SharePoint
+      {
+        key: '_garantia.extrato-daf',
+        label: 'Extrato de Pagamento DAF',
+        navTo: 'garantia/extrato-pagamento-daf',
+        children: [
+          { key: 'garantia/extrato-pagamento-daf', label: 'Extrato de Pagamento DAF' },
+        ],
+      },
       // Gestor de Peças 2.0 (movido para Controle de Processos em 29/10/2026) — dois Gestores separados com
       // as mesmas telas; keys mantidas (permissões pecas/... e pecas-motos/... não mudam). Sem dashboard no menu BI
       // (excluído a pedido do usuário em 29/10/2026); regras em Configurações → Departamentos → Peças.
@@ -433,6 +442,8 @@ export const MENU_TREE = [
           { key: 'rpa/agendamentos', label: 'Controle — Agendamento de Processos' },
         ],
       },
+      // Monitor Railway (19/11/2026): status, saúde, consumo, deploys e logs do backend (/api/railway)
+      { key: 'governanca/monitor-railway', label: 'Monitor Railway' },
       { key: 'documentacoes', label: 'Documentações' },
       { key: 'ecossistema', label: 'Ecossistema' },
     ],

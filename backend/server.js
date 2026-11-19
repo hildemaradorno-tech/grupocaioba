@@ -29,9 +29,12 @@ import planosManutencaoRoutes from './routes/planosManutencao.js'
 import gestorPecasRoutes from './routes/gestorPecas.js'
 import produtividadeRoutes from './routes/produtividade.js'
 import rpaLogRoutes from './routes/rpaLog.js'
+import extratoDafRoutes from './routes/extratoDaf.js'
+import railwayRoutes from './routes/railway.js'
 import { iniciarSchedulerManifestacao } from './services/manifestacaoScheduler.js'
 import { iniciarSchedulerAuditoria } from './services/auditoriaAgendamento.js'
 import { iniciarSchedulerProjetosTarefas } from './services/projetosTaskScheduler.js'
+import { iniciarSchedulerRailwayAlertas } from './services/railwayAlertas.js'
 
 const app = express()
 app.use(cors({ origin: '*', methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'], allowedHeaders: ['Content-Type','Authorization'] }))
@@ -78,6 +81,12 @@ app.use('/api/gestor-pecas', authMiddleware, requireMenuLike('pecas/', 'pecas-mo
 
 // ── Rotas BI Controle de Execuções RPA (SharePoint — Banco de Dados - Log RPA) ─
 app.use('/api/rpa-log', authMiddleware, requireMenu('bi/rpa-execucoes'), rpaLogRoutes)
+
+// ── Rotas Extrato de Pagamento DAF (SharePoint — Banco de Dados - DAF - Extrato de Pagamentos) ─
+app.use('/api/extrato-daf', authMiddleware, requireMenu('garantia/extrato-pagamento-daf'), extratoDafRoutes)
+
+// ── Rotas Governança › Monitor Railway (API pública GraphQL do Railway; token só no backend) ─
+app.use('/api/railway', authMiddleware, requireMenu('governanca/monitor-railway'), railwayRoutes)
 
 // ── Rotas Gestão de Projetos — Período de Manifestação (Etapa 2) ────────────
 app.use('/api/projetos', authMiddleware, requireMenuLike('projetos', 'bi/projetos'), projetosManifestacoesRoutes)
@@ -455,6 +464,7 @@ async function start() {
   iniciarSchedulerManifestacao()
   iniciarSchedulerAuditoria()
   iniciarSchedulerProjetosTarefas()
+  iniciarSchedulerRailwayAlertas()
 }
 
 start().catch(console.error)

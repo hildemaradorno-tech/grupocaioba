@@ -6,6 +6,7 @@ import { Target, CheckCircle2, XCircle, Goal, Pencil, ListChecks, Table2, BarCha
 import { apiService } from '../../services/supabaseClient'
 import { useAuth } from '../../context/AuthContext'
 import { empresaSelecionavel } from '../../utils/comissoesElegibilidade'
+import { useEmpresasPermitidas } from '../../hooks/useEmpresasPermitidas'
 import { INFO_RESUMO, FONTE_TABELAS } from './planosManutencaoTextos'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
@@ -947,6 +948,8 @@ export default function BiPlanosManutencao() {
   }
   const [empresas, setEmpresas] = useState([])
   const [empresasSel, setEmpresasSel] = useState([]) // vazio = todas
+  // Grupo de acesso: seletor e números só com as empresas liberadas ao usuário (administrador vê todas).
+  const { restrito, permiteId } = useEmpresasPermitidas()
   // ?aba=<nome da aba> (ex.: atalho da Matriz KPIs) abre direto nela, se estiver liberada.
   const [paramsUrl] = useSearchParams()
   const [aba, setAba] = useState(() => (abasVisiveis.includes(paramsUrl.get('aba')) ? paramsUrl.get('aba') : abasVisiveis[0] || '')) // '' = nenhuma aba liberada (não mostra conteúdo)
@@ -970,9 +973,9 @@ export default function BiPlanosManutencao() {
   }, [])
   const grupos = useMemo(() => {
     const m = {}
-    empresas.forEach(e => { if (/truck/i.test(e.agrupamento_nome || '')) (m[e.agrupamento_nome] ||= []).push(e) })
+    empresas.forEach(e => { if (/truck/i.test(e.agrupamento_nome || '') && permiteId(e.id)) (m[e.agrupamento_nome] ||= []).push(e) })
     return Object.entries(m).sort(([a], [b]) => a.localeCompare(b, 'pt-BR'))
-  }, [empresas])
+  }, [empresas, permiteId])
 
   // Veículos vendidos (Dealer.net REL_VEICULOSVENDIDOSPORPERIODO_REPORT, pasta DAF - Veículos) e
   // O.S. tipo P04 (ROF017_FATURAMENTOPOROS, pasta DAF - Pós-Vendas/Relatório Geral OS), lidos juntos.
@@ -1043,9 +1046,12 @@ export default function BiPlanosManutencao() {
   }
   useEffect(() => { carregarDados() }, [])
 
-  const nomesEmpresasSel = useMemo(() => (empresasSel.length
-    ? new Set(empresas.filter(e => empresasSel.includes(e.id)).map(e => (e.nome_empresa_sistema || '').toUpperCase()))
-    : null), [empresas, empresasSel])
+  // Nada marcado = todas as empresas liberadas no grupo de acesso (administrador: null = todas).
+  const nomesEmpresasSel = useMemo(() => {
+    const nomes = (lista) => new Set(lista.map(e => (e.nome_empresa_sistema || '').toUpperCase()).filter(Boolean))
+    if (empresasSel.length) return nomes(empresas.filter(e => empresasSel.includes(e.id) && permiteId(e.id)))
+    return restrito ? nomes(empresas.filter(e => permiteId(e.id))) : null
+  }, [empresas, empresasSel, restrito, permiteId])
 
   // Busca de chassi: um só campo, aplicado às tabelas das três abas (o card do Resumo não muda).
   // Com algo digitado, as tabelas ignoram o filtro de data (procura em todo o histórico dos arquivos);

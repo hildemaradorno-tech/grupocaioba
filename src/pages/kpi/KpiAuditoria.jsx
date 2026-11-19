@@ -6,6 +6,7 @@ import { useKpiYear } from '../../context/KpiYearContext'
 import { useSessionState } from '../../hooks/useSessionState'
 import { useKpiSourceStatus } from '../../context/KpiSourceStatusContext'
 import { fetchAuditoria } from '../../services/kpiService'
+import { useEmpresasPermitidas } from '../../hooks/useEmpresasPermitidas'
 
 
 // Store module-level — persiste entre navegações; evita spinner ao voltar para a página
@@ -175,7 +176,11 @@ export default function KpiAuditoria() {
   const [dataFim, setDataFim] = useState(hojeISO())
 
   // Empresas escolhidas (uma, várias ou nenhuma = todas). Valor enviado: nomes separados por vírgula.
-  const [empresas, setEmpresas] = useSessionState('kpi_auditoria_empresas', [])
+  // Só as empresas liberadas no grupo de acesso aparecem e entram na consulta.
+  const { permiteNome } = useEmpresasPermitidas()
+  const empresasOpcoes = EMPRESAS_AUDITORIA.filter(e => permiteNome(`CAIOBÁ TRUCKS - ${e.key}`))
+  const [empresasSalvas, setEmpresas] = useSessionState('kpi_auditoria_empresas', [])
+  const empresas = empresasSalvas.filter(k => empresasOpcoes.some(e => e.key === k))
   const empKey = empresas.length ? empresas.join(',') : 'todas'
   const toggleEmpresa = (k) => setEmpresas(prev => prev.includes(k) ? prev.filter(x => x !== k) : [...prev, k])
   // Não guarda no navegador — ao entrar na tela, sempre vem sem indicador selecionado.
@@ -251,7 +256,7 @@ export default function KpiAuditoria() {
         />
         <SeletorMultiplo
           rotulo="Empresa"
-          opcoes={EMPRESAS_AUDITORIA.map(e => ({ value: e.key, label: e.nome }))}
+          opcoes={empresasOpcoes.map(e => ({ value: e.key, label: e.nome }))}
           valores={empresas}
           onChange={setEmpresas}
           textoVazio="Selecione uma empresa"

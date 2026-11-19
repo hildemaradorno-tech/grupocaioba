@@ -68,6 +68,7 @@ import TruckPagTitulos from './pages/truckpag/TruckPagTitulos'
 import TruckPagConciliacao from './pages/truckpag/TruckPagConciliacao'
 import TruckPagRepasses from './pages/truckpag/TruckPagRepasses'
 import TipoTituloGarantia from './pages/garantia/TipoTituloGarantia'
+import ExtratoPagamentoDaf from './pages/garantia/ExtratoPagamentoDaf'
 import ModelosNotaDebito from './pages/garantia/ModelosNotaDebito'
 import ProjetosDashboard from './pages/projetos/ProjetosDashboard'
 import ProjetoDetalhe from './pages/projetos/ProjetoDetalhe'
@@ -92,6 +93,7 @@ import Fornecedores from './pages/Fornecedores'
 import KpiMatriz, { KPI_MATRIZ_PERMS } from './pages/kpi/KpiMatriz'
 import CalcVendaServico from './pages/calculadoras/CalcVendaServico'
 import Documentacoes from './pages/Documentacoes'
+import MonitorRailway from './pages/governanca/MonitorRailway'
 import GradeTreinamentos from './pages/treinamentos/GradeTreinamentos'
 import GrupoAcessos from './pages/governanca/GrupoAcessos'
 import PerfisAcesso from './pages/governanca/PerfisAcesso'
@@ -291,6 +293,7 @@ export default function App() {
           { path: '/truckpag/conciliacao', element: <TruckPagConciliacao />, menuPath: 'truckpag/conciliacao' },
           { path: '/truckpag/repasses', element: <TruckPagRepasses />, menuPath: 'truckpag/repasses' },
           { path: '/garantia/tipo-titulo', element: <TipoTituloGarantia />, menuPath: 'garantia/tipo-titulo' },
+          { path: '/garantia/extrato-pagamento-daf', element: <ExtratoPagamentoDaf />, menuPath: 'garantia/extrato-pagamento-daf' },
           { path: '/garantia/modelos-nota-debito', element: <ModelosNotaDebito />, menuPath: 'garantia/modelos-nota-debito' },
           // Garantias DAF ficou dentro de BI — Garantias DAF (Dashboard | Controle); as rotas antigas redirecionam.
           { path: '/garantias-daf-andamento', element: <Navigate to="/bi/garantias-daf?aba=oficina&modo=controle" replace /> },
@@ -325,6 +328,7 @@ export default function App() {
           { path: '/kpi/matriz', element: <KpiMatriz />, menuPath: KPI_MATRIZ_PERMS },
           { path: '/calculadoras/venda-servico', element: <CalcVendaServico />, menuPath: 'calculadoras/venda-servico' },
           { path: '/documentacoes', element: <Documentacoes />, menuPath: 'documentacoes' },
+          { path: '/governanca/monitor-railway', element: <MonitorRailway />, menuPath: 'governanca/monitor-railway' },
           { path: '/rpa/agendamentos', element: <Navigate to="/bi/rpa-execucoes?modo=controle" replace /> },
           { path: '/treinamentos/grade', element: <GradeTreinamentos />, menuPath: 'treinamentos/grade' },
           { path: '/governanca/grupo-acessos', element: <GrupoAcessos />, menuPath: 'governanca/grupo-acessos' },

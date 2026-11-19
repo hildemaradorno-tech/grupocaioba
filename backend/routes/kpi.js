@@ -1403,6 +1403,33 @@ export async function aquecerCacheCampanha(year = new Date().getFullYear()) {
 }
 aoTerminarSincronizacao((ano) => aquecerCacheCampanha(ano))
 
+// Aquecimento ao ligar o servidor (19/11/2026): 1 min depois de subir (deploy/reinício), monta por trás os
+// quadros principais do Bloco 3 — o primeiro usuário não espera o cálculo. Versão enxuta: só leituras do banco
+// (Possibilidades, Produtividade, Garantias, Auditoria) e bases já guardadas; sem SharePoint, sem o laço de
+// vendedores; uma coisa de cada vez; não roda com Atualização em andamento; falha só vai para o log.
+// Desligar: KPI_AQUECER_AO_INICIAR=0.
+async function aquecerAoIniciar() {
+  if (process.env.KPI_AQUECER_AO_INICIAR === '0') return
+  if (sincronizacaoEmAndamento() || _aquecendo) { console.log('[aquecimento ao iniciar] pulado: Atualização/pré-cálculo em andamento'); return }
+  const year = new Date().getFullYear()
+  const t0 = Date.now()
+  let ok = 0, falhas = 0
+  const passo = async (nome, fn) => {
+    if (sincronizacaoEmAndamento()) return // a Atualização refaz tudo no fim
+    try { await fn(); ok++ } catch (err) { falhas++; console.error('[aquecimento ao iniciar]', nome, err.message) }
+  }
+  await passo('possibilidades', () => getValoresPossibilidades(year))
+  await passo('gerentes', () => quadrosBloco3PosVenda({ year }))
+  await passo('serviços › individual', () => quadrosBloco3Servicos({ year }))
+  await passo('serviços › setores (todas)', () => quadrosBloco3Servicos({ year, empresaGarantia: 'TODAS', empresaFunilaria: 'CAMPO GRANDE', apenas: 'SETOR DE MECÂNICA' }))
+  for (const emp of EMPRESAS_CAMPANHA) {
+    await passo(`serviços › setores ${emp}`, () => quadrosBloco3Servicos({ year, empresaOficina: emp, empresaChefeOficina: emp, empresaGarantia: emp, empresaFunilaria: 'CAMPO GRANDE', apenas: 'SETOR DE MECÂNICA' }))
+  }
+  await passo('peças', () => quadrosBloco3Pecas({ year }))
+  console.log(`[aquecimento ao iniciar] ${ok} quadros prontos, ${falhas} falhas, ${Math.round((Date.now() - t0) / 1000)} s`)
+}
+setTimeout(() => { aquecerAoIniciar().catch(err => console.error('[aquecimento ao iniciar]', err.message)) }, 60_000).unref()
+
 // Quadro OFICINA: não tem seletor de pessoa, então "todas as casas somadas" não é um número
 // real de nenhuma unidade — exige escolher a empresa (como o Consultor/Mecânico exigem pessoa)
 // pra só então calcular o total daquela casa. Montado à parte (cache próprio por empresa).

@@ -4,12 +4,14 @@ import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, LabelList, Referen
 import { ArrowLeftRight, Building2, Calendar, CalendarDays, ChevronDown, ChevronRight, Download, ExternalLink, Gauge, History, Info, RefreshCw, Search, Settings, Target, User, Wrench, X } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import { supabase } from '../../services/supabaseClient'
+import { useEmpresasPermitidas } from '../../hooks/useEmpresasPermitidas'
 import { useAuth } from '../../context/AuthContext'
 import logoCaioba from '../../assets/logo-grupo.png'
 import {
   INDICADORES, VISUALIZACOES, somar, indicadores, corKpi, corFaixa, limitesDe, coresArcos, semAcento, fmtH, fmtPct, fmtR$,
 } from './produtividadeCalculos'
 import RegrasCoresModal from './RegrasCoresModal'
+import AplicadasPorTipo from './AplicadasPorTipo'
 import AbaEncerradoFaturado from './AbaEncerradoFaturado'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
@@ -252,6 +254,7 @@ function SeletorEmpresas({ grupos, selecionadas, onChange }) {
 // ── Página ──────────────────────────────────────────────────────────────────
 export default function IndicadoresProdutividade() {
   const { hasAction, user } = useAuth()
+  const { permiteNome } = useEmpresasPermitidas()
   const podeAtualizar = hasAction(PERM, 'atualizar')
   const podeRegras = hasAction(PERM, 'regras_cores')
   const [regrasCor, setRegrasCor] = useState([]) // pv_prod_regras_cor (todos os anos)
@@ -411,12 +414,13 @@ export default function IndicadoresProdutividade() {
   // Filiais presentes nos dados e nas metas, agrupadas em Caiobá Trucks / Caiobá Motos.
   const gruposEmpresa = useMemo(() => {
     const marcaDe = new Map()
-    for (const r of diario) if (r.empresa) marcaDe.set(r.empresa, r.marca)
-    for (const m of metas) if (m.empresa && !marcaDe.has(m.empresa)) marcaDe.set(m.empresa, marcaDaEmpresa(m.empresa))
+    // Só as empresas liberadas no grupo de acesso do usuário
+    for (const r of diario) if (r.empresa && permiteNome(r.empresa)) marcaDe.set(r.empresa, r.marca)
+    for (const m of metas) if (m.empresa && permiteNome(m.empresa) && !marcaDe.has(m.empresa)) marcaDe.set(m.empresa, marcaDaEmpresa(m.empresa))
     const g = { 'Caiobá Trucks': [], 'Caiobá Motos': [], Outras: [] }
     for (const [e, marca] of marcaDe) g[marca === 'TRUCKS' ? 'Caiobá Trucks' : marca === 'MOTOS' ? 'Caiobá Motos' : 'Outras'].push(e)
     return Object.entries(g).filter(([, l]) => l.length).map(([n, l]) => [n, l.sort((a, b) => a.localeCompare(b, 'pt-BR'))])
-  }, [diario, metas])
+  }, [diario, metas, permiteNome])
   // ?empresa=CAMPO GRANDE (ou TRUCKS = todas as Trucks) — link de origem da Matriz KPIs: abre com a empresa do
   // quadro marcada (uma vez, quando a lista de empresas chega).
   const empresaDoLink = useRef(new URLSearchParams(window.location.search).get('empresa'))
@@ -429,7 +433,8 @@ export default function IndicadoresProdutividade() {
     if (sel.length) setEmpresasSel(sel)
     empresaDoLink.current = null
   }, [gruposEmpresa])
-  const noEscopo = useCallback((empresa) => empresasSel.length === 0 || empresasSel.includes(empresa), [empresasSel])
+  // Grupo de acesso primeiro (Todos = todas as empresas liberadas ao usuário), depois a seleção da tela.
+  const noEscopo = useCallback((empresa) => permiteNome(empresa) && (empresasSel.length === 0 || empresasSel.includes(empresa)), [empresasSel, permiteNome])
 
   const diarioEsc = useMemo(() => diario.filter(r => noEscopo(r.empresa, r.marca)), [diario, noEscopo])
   const mensalEsc = useMemo(() => mensal.filter(r => noEscopo(r.empresa, r.marca)), [mensal, noEscopo])
@@ -569,11 +574,7 @@ export default function IndicadoresProdutividade() {
 
       {aba !== 'encfat' && (
         <div className="flex flex-wrap items-end gap-3">
-          {/* Consultores: só existe Horas Vendidas (Nota Fiscal Emitida) — seletor travado nela */}
-          <Seletor label="Tipo de Visualização" value={travaFat ? 'fat' : vis} onChange={setVis} largura="w-72"
-            disabled={travaFat} title={travaFat ? 'Para consultores as horas são sempre as da Nota Fiscal Emitida' : undefined}
-            opcoes={VISUALIZACOES.map(v => ({ value: v.id, label: v.label }))} />
-          {/* Resumo: modo Mecânicos (tela original) ou Consultores */}
+          {/* Resumo: modo Mecânicos | Consultores — ANTES do Tipo de Visualização (pedido do usuário 19/11/2026) */}
           {aba === 'principais' && (
             <div className="flex flex-col gap-1">
               <label className="text-[10px] font-bold text-slate-500 uppercase">Modo Visualização</label>
@@ -587,12 +588,16 @@ export default function IndicadoresProdutividade() {
               </div>
             </div>
           )}
+          {/* Consultores: só existe Horas Vendidas (Nota Fiscal Emitida) — seletor travado nela */}
+          <Seletor label="Tipo de Visualização" value={travaFat ? 'fat' : vis} onChange={setVis} largura="w-72"
+            disabled={travaFat} title={travaFat ? 'Para consultores as horas são sempre as da Nota Fiscal Emitida' : undefined}
+            opcoes={VISUALIZACOES.map(v => ({ value: v.id, label: v.label }))} />
           {/* Busca por O.S. das abas Mecânicos e Consultores (a aba desenha aqui) */}
           {(aba === 'mecanicos' || aba === 'consultores' || aba === 'diames') && <div key={aba} ref={setSlotBuscaOs} className="flex items-end" />}
         </div>
       )}
 
-      {aba === 'principais' && modoResumo === 'mecanico' && <AbaPrincipais total={total} mecDiario={mecDiario} boxDe={boxDe} vis={vis} />}
+      {aba === 'principais' && modoResumo === 'mecanico' && <AbaPrincipais total={total} mecDiario={mecDiario} boxDe={boxDe} vis={vis} periodo={periodo} noEscopo={noEscopo} excluidosMec={excluidosMec} />}
       {aba === 'principais' && modoResumo === 'consultor' && <ResumoConsultores diarioEsc={diarioEsc} metasEsc={metasEsc} reaisTotal={total.reais} />}
       {aba === 'mecanicos' && (
         <AbaMecanicos mecDiario={mecDiario} infoMecanico={infoMecanico} boxDe={boxDe} vis={vis} periodo={periodo} noEscopo={noEscopo} excluidos={excluidosMec} slotBuscaOs={slotBuscaOs} metasEsc={metasEsc} pendentesEsc={pendentesEsc} />
@@ -647,6 +652,7 @@ function textosInfo(vis) {
     eficiencia: F(`Eficiência = ${hv} ÷ Horas Gastas`, 'Quanto foi vendido para cada hora que o mecânico trabalhou nos serviços.'),
     eficacia: F(`Eficácia = ${hv} ÷ Horas Disponíveis Reais`, 'Quanto foi vendido para cada hora que o mecânico esteve disponível.'),
     produtividade: F('Produtividade = Horas Gastas ÷ Horas Disponíveis Reais', 'Quanto do tempo disponível o mecânico passou trabalhando em serviços.'),
+    produtividadeAplic: F('Produtividade = Horas Aplicadas ÷ Horas Disponíveis Reais', 'Quanto foi aplicado (aberto em O.S.) para cada hora que o mecânico esteve disponível.'),
   }
 }
 const porBoxInfo = (t) => <>{t}<p className="mt-1 text-slate-500">Por Box: mesma fórmula, somando as horas dos mecânicos de cada Box.</p></>
@@ -710,9 +716,28 @@ function ResumoConsultores({ diarioEsc, metasEsc, reaisTotal }) {
   )
 }
 
-function AbaPrincipais({ total, mecDiario, boxDe, vis }) {
+function AbaPrincipais({ total, mecDiario, boxDe, vis, periodo, noEscopo, excluidosMec }) {
   const boxes = useMemo(() => porBox(mecDiario, boxDe, vis), [mecDiario, boxDe, vis])
   const t = textosInfo(vis)
+  // Horas Aplicadas (abertura de O.S.) não têm horas gastas: fica só o indicador Aplicadas ÷ Disponíveis Reais
+  // (exibido como Produtividade) e sai o card Horas Gastas (pedido do usuário 19/11/2026).
+  if (vis === 'aplic') {
+    return (
+      <div className="flex flex-col gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Card titulo="Horas Disponíveis Reais" valor={fmtH(total.reais)} info={t.reais} />
+          <Card titulo="Horas Aplicadas" valor={fmtH(total.vend)} info={t.vend} alinhar="right" />
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Em Horas Aplicadas o indicador (Aplicadas ÷ Disponíveis Reais) é chamado de Produtividade (pedido 19/11/2026) */}
+          <Velocimetro titulo="Produtividade %" valor={total.eficacia} id="eficacia" info={t.produtividadeAplic} />
+          <BarrasPorBox titulo="Produtividade % por Box" dados={boxes} id="eficacia" vis={vis} info={porBoxInfo(t.produtividadeAplic)} alinhar="right" />
+        </div>
+        {/* Horas aplicadas por tipo de O.S. interno (pedido do usuário 19/11/2026) */}
+        <AplicadasPorTipo periodo={periodo} noEscopo={noEscopo} excluidos={excluidosMec} />
+      </div>
+    )
+  }
   return (
     <div className="flex flex-col gap-4">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

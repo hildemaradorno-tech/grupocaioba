@@ -8,6 +8,7 @@ import { apiService } from '../../services/api'
 import { Bar, BarChart, CartesianGrid, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import logoCaioba from '../../assets/logo-grupo.png'
 import { resolverPorDepartamento, resolverPorFuncionario, normalizaBusca } from '../../utils/biDimensoes'
+import { useEmpresasPermitidas } from '../../hooks/useEmpresasPermitidas'
 
 const fmtMoeda = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const primeiroDiaMes = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
@@ -573,6 +574,9 @@ export default function BiPossibilidades() {
   }, [noMes, dataInicio, dataFim, anoRef, mesRef])
   const [calendario, setCalendario] = useState([])
   const [metasPublicadas, setMetasPublicadas] = useState([])
+  // Empresas liberadas no grupo de acesso (inclusive "Visualizar como"); administrador vê todas.
+  const { restrito, permiteId } = useEmpresasPermitidas()
+  const empresasVisiveis = useMemo(() => empresas.filter(e => permiteId(e.id)), [empresas, permiteId])
   const [loading, setLoading] = useState(true)
 
   const [departamentos, setDepartamentos] = useState([])
@@ -599,15 +603,15 @@ export default function BiPossibilidades() {
   const empresaDoLink = useRef(new URLSearchParams(window.location.search).get('empresa'))
   useEffect(() => {
     const alvo = empresaDoLink.current
-    if (!alvo || !empresas.length) return
+    if (!alvo || !empresasVisiveis.length) return
     const n = (s) => normalizaBusca(s).replace(/ DO SUL$/, '')
-    const sel = empresas.filter(e => {
+    const sel = empresasVisiveis.filter(e => {
       const nome = n(e.empresa_fantasia || e.nome_empresa_sistema || e.nome_empresa)
       return nome.includes('TRUCKS') && (n(alvo) === 'TRUCKS' || nome.includes(n(alvo)))
     }).map(e => e.id)
     if (sel.length) setEmpresaIds(sel)
     empresaDoLink.current = null
-  }, [empresas])
+  }, [empresasVisiveis])
 
   const departamentoPorId = useMemo(() => new Map(departamentos.map(d => [d.id, d.nome_departamento])), [departamentos])
   const setoresPorDepartamento = useMemo(() => {
@@ -623,10 +627,17 @@ export default function BiPossibilidades() {
 
   // Nome de cada empresa marcada como aparece nos arquivos (normalizado, igual ao gravado em
   // fato_bi_medidas_diario) — null = todas.
+  // Nada marcado = todas as empresas liberadas no grupo de acesso (administrador: null = todas).
+  // Sem nenhuma empresa liberada, manda um nome que não existe para não trazer dado nenhum.
   const empresasNormSelecionadas = useMemo(() => {
-    if (empresaIds.length === 0) return null
-    return empresas.filter(e => empresaIds.includes(e.id)).map(e => normalizaBusca(e.nome_empresa_sistema || e.empresa_fantasia || e.nome_empresa))
-  }, [empresas, empresaIds])
+    const nomeNorm = (e) => normalizaBusca(e.nome_empresa_sistema || e.empresa_fantasia || e.nome_empresa)
+    if (empresaIds.length === 0) {
+      if (!restrito) return null
+      return empresasVisiveis.length ? empresasVisiveis.map(nomeNorm) : ['__sem_empresa_liberada__']
+    }
+    const lista = empresasVisiveis.filter(e => empresaIds.includes(e.id)).map(nomeNorm)
+    return lista.length ? lista : ['__sem_empresa_liberada__']
+  }, [empresasVisiveis, empresaIds, restrito])
   const chaveEmpresas = (empresasNormSelecionadas || []).join('|')
 
   // Medidas de BI com "Slot no Faturamento" (BI — Medidas) alimentam direto uma célula da
@@ -906,7 +917,7 @@ export default function BiPossibilidades() {
       return p?.fat ? p.serv / p.fat : 0
     }
     return metasDoPeriodo
-      .filter(r => empresaIds.length === 0 || empresaIds.includes(r.empresa_id))
+      .filter(r => permiteId(r.empresa_id) && (empresaIds.length === 0 || empresaIds.includes(r.empresa_id)))
       .map(r => {
         const metaMesTotal = Number(r.meta_faturamento || 0)
         let metaMesServicos = 0
@@ -922,7 +933,7 @@ export default function BiPossibilidades() {
           metaTotal: metaMesTotal * fator, metaServicos: metaMesServicos * fator, metaPecas: (metaMesTotal - metaMesServicos) * fator,
         }
       })
-  }, [metasDoPeriodo, empresaIds, fracaoMetaPeriodo, anoRef, mesRef])
+  }, [metasDoPeriodo, empresaIds, fracaoMetaPeriodo, anoRef, mesRef, permiteId])
   // Visão normal: Oficina pela meta dos consultores (TIPOS_FORA_DA_META fora). Modo Produtivo: meta
   // dos MECÂNICOS (já separada em Peças/Serviços), coerente com os valores pelo mecânico do ROF042.
   const metasConsideradas = usarProdutivo
@@ -1205,7 +1216,7 @@ export default function BiPossibilidades() {
             <div className="flex flex-wrap items-end gap-4">
               <div className="flex flex-col gap-1">
                 <label className="text-[10px] font-bold text-white uppercase flex items-center gap-1"><Building2 className="h-3 w-3" /> Empresas Fantasia</label>
-                <SeletorEmpresas empresas={empresas} selecionadas={empresaIds} onChange={setEmpresaIds} />
+                <SeletorEmpresas empresas={empresasVisiveis} selecionadas={empresaIds} onChange={setEmpresaIds} />
               </div>
               <div className="flex flex-col gap-1">
                 <label className="text-[10px] font-bold text-white uppercase flex items-center gap-1"><CalendarDays className="h-3 w-3" /> Data</label>

@@ -107,8 +107,6 @@ export default function BiGarantiasDaf() {
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2 shrink-0">
               <img src={logoCaioba} alt="Caiobá" className="h-11 w-auto" />
-              <span className="text-[30px] leading-none font-black italic tracking-tight text-[#1a4d8f]"
-                style={{ fontFamily: "'Arial Black', 'Segoe UI Black', Arial, sans-serif" }}>CAIOBÁ</span>
             </div>
             <div className="w-0.5 self-stretch bg-[#1a4d8f]" />
             <div style={{ fontFamily: "Cambria, Georgia, 'Times New Roman', serif" }}>

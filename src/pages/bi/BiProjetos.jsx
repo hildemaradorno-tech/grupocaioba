@@ -167,7 +167,7 @@ const statusInfo = (key) => STATUS_INFO[key] || { label: key || 'Sem status', co
 
 export default function BiProjetos() {
   const navigate = useNavigate()
-  const { hasPermission } = useAuth()
+  const { hasPermission, departamentosPermitidosEfetivos } = useAuth()
   const [projetos, setProjetos] = useState([])
   const [loading, setLoading] = useState(true)
   const [dataInicio, setDataInicio] = useState('')
@@ -187,10 +187,15 @@ export default function BiProjetos() {
   useEffect(() => {
     setLoading(true)
     apiService.getProjetosParaBi()
-      .then(setProjetos)
+      // Mesmo escopo da Gestão de Projetos: grupo em modo Individual vê só os departamentos liberados
+      // (projeto guarda a empresa-mãe, por isso o acesso aqui é por departamento, não por empresa).
+      .then(lista => {
+        const deps = departamentosPermitidosEfetivos
+        setProjetos(deps?.size > 0 ? (lista || []).filter(p => deps.has(p.departamento_nome)) : (lista || []))
+      })
       .catch(() => setProjetos([]))
       .finally(() => setLoading(false))
-  }, [])
+  }, [departamentosPermitidosEfetivos])
 
   const departamentoOf = (p) => p.departamento_nome?.trim() || 'Sem departamento'
 

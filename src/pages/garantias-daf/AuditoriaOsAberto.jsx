@@ -182,7 +182,9 @@ export default function AuditoriaOsAberto({
       .map(f => ({ id: f.id, nome: f.nome_funcionario, empresa_id: f.empresa_id, cargo_nome: f.cargo_nome }))
     setResponsaveis(respAtivos)
     setSituacoes(sit.filter(s => s.ativo))
-    setAuditorias(auds)
+    // Só auditorias das empresas liberadas no grupo (inclusive link direto ?empresa=&auditoria=); Admin vê todas.
+    const daEmpresaLiberada = (a) => empsFiltradas.some(e => a.empresa_id === e.id || a.empresa_nome === e.nome_empresa || a.empresa_nome === e.nome_empresa_sistema)
+    setAuditorias(isAdminEfetivo ? auds : auds.filter(daEmpresaLiberada))
     // e-mail → nome do usuário (para "quem fez o quê"); se não puder ler, mostra o e-mail
     apiService.getUsuarios()
       .then(us => setNomePorEmail(new Map(us.filter(u => u.email).map(u => [u.email.toLowerCase(), u.nome]))))

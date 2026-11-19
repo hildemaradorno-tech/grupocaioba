@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
+import { useEmpresasPermitidas } from '../../hooks/useEmpresasPermitidas'
 import { createPortal } from 'react-dom'
 import { Wrench, X, ChevronDown, Pencil } from 'lucide-react'
 import { MOCK_BLOCO3_SERVICOS } from '../../data/kpiMockData'
@@ -549,7 +550,14 @@ const SEM_LISTA = async () => []
 // não busca as listas de pessoas e pede ao backend só os quadros por empresa (pula a parte cara).
 function ServicosQuadros({ year, activePeriods, mesTotalKey, somenteLeitura = false, apenas = null, grupo = null, pessoasPermitidas = null, empresaOficinaInicial = null }) {
   const permitidos = pessoasPermitidas ? new Set(pessoasPermitidas.map(normNomePessoa)) : null
-  const visivel = (t) => (!apenas || t === apenas) && (!grupo || grupo.includes(t))
+  // Empresas do grupo de acesso: os seletores de empresa só listam as liberadas; "Todas as empresas" e os
+  // quadros que somam todas as lojas (Funilaria = Campo Grande, Agendamento) só para quem tem as 4 liberadas.
+  const { permiteNome } = useEmpresasPermitidas()
+  const empresasOficina = EMPRESAS_OFICINA.filter(n => permiteNome(`CAIOBÁ TRUCKS - ${n}`))
+  const todasEmpresas = empresasOficina.length === EMPRESAS_OFICINA.length
+  const quadroLiberado = (t) => (t === QUADRO_FUNILARIA ? empresasOficina.includes(EMPRESA_FUNILARIA)
+    : t === QUADRO_AGENDAMENTO ? todasEmpresas : true)
+  const visivel = (t) => (!apenas || t === apenas) && (!grupo || grupo.includes(t)) && quadroLiberado(t)
   const temPessoas = visivel(QUADRO_CONSULTOR) || visivel(QUADRO_MECANICO)
 
   const consultorFiltro = usePessoaFiltro(temPessoas ? fetchConsultoresServicos : SEM_LISTA, year)
@@ -576,7 +584,7 @@ function ServicosQuadros({ year, activePeriods, mesTotalKey, somenteLeitura = fa
     empresaChefeOficina: empresaChefeOficina || undefined,
     // SETOR FUNILARIA/PINTURA (14/11/2026): só Campo Grande tem funilaria — sem seletor, sempre Campo Grande.
     empresaFunilaria: visivel(QUADRO_FUNILARIA) ? EMPRESA_FUNILARIA : undefined,
-    empresaGarantia: empresaGarantia || (visivel(QUADRO_GARANTIA) ? EMPRESA_TODAS : undefined),
+    empresaGarantia: empresaGarantia || (visivel(QUADRO_GARANTIA) && todasEmpresas ? EMPRESA_TODAS : undefined),
     // Atalho do backend (não monta Consultor/Mecânico): só o Consultor de Plano, ou os quadros da aba
     // Setores (por empresa + Agendamento + Consultor de Plano).
     apenas: temPessoas ? undefined : apenas === QUADRO_PLANOS ? QUADRO_PLANOS : QUADRO_OFICINA,
@@ -646,11 +654,11 @@ function ServicosQuadros({ year, activePeriods, mesTotalKey, somenteLeitura = fa
           const ehPorEmpresa    = ehOficina || ehChefeOficina || ehFunilaria || ehGarantia
           // Setores: sem escolha mostra o total de todas as empresas; Chefe de Oficina e Setor de Mecânica
           // exigem a empresa (sem "Todas as empresas").
-          const ehSetorTotal    = ehGarantia
+          const ehSetorTotal    = ehGarantia && todasEmpresas
           const filtro      = ehConsultor ? consultorFiltro : ehMecanico ? mecanicoFiltro
-            : ehOficina ? { lista: EMPRESAS_OFICINA, aplicado: empresaOficina, setAplicado: setEmpresaOficina }
-            : ehChefeOficina ? { lista: EMPRESAS_OFICINA, aplicado: empresaChefeOficina, setAplicado: setEmpresaChefeOficina }
-            : ehGarantia ? { lista: EMPRESAS_OFICINA, aplicado: empresaGarantia, setAplicado: setEmpresaGarantia }
+            : ehOficina ? { lista: empresasOficina, aplicado: empresaOficina, setAplicado: setEmpresaOficina }
+            : ehChefeOficina ? { lista: empresasOficina, aplicado: empresaChefeOficina, setAplicado: setEmpresaChefeOficina }
+            : ehGarantia ? { lista: empresasOficina, aplicado: empresaGarantia, setAplicado: setEmpresaGarantia }
             : null
           return (
             <QuadroTable

@@ -6,6 +6,7 @@ import { AlertTriangle, BookOpen, Building2, Calendar, ChevronDown, ChevronLeft,
 import { useAuth } from '../../context/AuthContext'
 import { apiService } from '../../services/supabaseClient'
 import { empresaSelecionavel } from '../../utils/comissoesElegibilidade'
+import { useEmpresasPermitidas } from '../../hooks/useEmpresasPermitidas'
 import { INFO, OBJETIVO_ABAS } from './agendamentoServicosTextos'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
@@ -887,11 +888,13 @@ export default function BiAgendamentoServicos() {
   useEffect(() => {
     apiService.getEmpresas().then(r => setEmpresas((r || []).filter(empresaSelecionavel))).catch(() => setEmpresas([]))
   }, [])
+  // Grupo de acesso: seletor e números só com as empresas liberadas ao usuário (administrador vê todas).
+  const { permiteId, permiteNome } = useEmpresasPermitidas()
   const grupos = useMemo(() => {
     const m = {}
-    empresas.forEach(e => { if (/moto|truck/i.test(e.agrupamento_nome || '')) (m[e.agrupamento_nome] ||= []).push(e) })
+    empresas.forEach(e => { if (/moto|truck/i.test(e.agrupamento_nome || '') && permiteId(e.id)) (m[e.agrupamento_nome] ||= []).push(e) })
     return Object.entries(m).sort(([a], [b]) => a.localeCompare(b, 'pt-BR'))
-  }, [empresas])
+  }, [empresas, permiteId])
 
   const [passagensOs, setPassagensOs] = useState(null) // { rows } das O.S. do ano (ROF001 TODAS)
   // Campanhas CRM e O.S. (passagens) são lidas juntas; uma falhar não impede a outra.
@@ -960,10 +963,10 @@ export default function BiAgendamentoServicos() {
       ? new Set(empresas.filter(e => empresasSel.includes(e.id)).map(e => norm(e.empresa_fantasia || e.nome_empresa)))
       : null
     return passagensOs.rows.filter(o => o.data >= dataIni && o.data <= dataFim && o.situacao !== 'Cancelada'
-      && (!nomesSel || nomesSel.has(norm(o.empresa))))
+      && permiteNome(o.empresa) && (!nomesSel || nomesSel.has(norm(o.empresa))))
       // Tipo (Ativo × Passivo) só do ROF037.
       .map(o => (o.fonte_tipo_agendamento === 'ROF037' ? o : { ...o, tipo_agendamento: '' }))
-  }, [passagensOs, empresas, empresasSel, dataIni, dataFim])
+  }, [passagensOs, empresas, empresasSel, dataIni, dataFim, permiteNome])
   // Consulta de O.S.: as mesmas O.S. do período e empresas, inclusive as "Cancelada" (filtro próprio na janela).
   const consultaOs = useMemo(() => {
     if (!passagensOs) return []
@@ -971,9 +974,9 @@ export default function BiAgendamentoServicos() {
     const nomesSel = empresasSel.length
       ? new Set(empresas.filter(e => empresasSel.includes(e.id)).map(e => norm(e.empresa_fantasia || e.nome_empresa)))
       : null
-    return passagensOs.rows.filter(o => o.data >= dataIni && o.data <= dataFim && (!nomesSel || nomesSel.has(norm(o.empresa))))
+    return passagensOs.rows.filter(o => o.data >= dataIni && o.data <= dataFim && permiteNome(o.empresa) && (!nomesSel || nomesSel.has(norm(o.empresa))))
       .sort((a, b) => a.data.localeCompare(b.data) || a.empresa.localeCompare(b.empresa) || String(a.numero).localeCompare(String(b.numero), undefined, { numeric: true }))
-  }, [passagensOs, empresas, empresasSel, dataIni, dataFim])
+  }, [passagensOs, empresas, empresasSel, dataIni, dataFim, permiteNome])
   const passagens = osDoPeriodo ? osDoPeriodo.length : null
   const osAgendadas = osDoPeriodo ? osDoPeriodo.filter(veioDeAgendamento) : null
   const passagensAgendadas = osAgendadas ? osAgendadas.length : null
@@ -1025,13 +1028,13 @@ export default function BiAgendamentoServicos() {
       ? new Set(empresas.filter(e => empresasSel.includes(e.id)).map(e => norm(e.empresa_fantasia || e.nome_empresa)))
       : null
     return passagensOs.agendamentos
-      .filter(a => a.fonte === 'ROF037' && a.data && a.data >= dataIni && a.data <= dataFim && a.status !== 'CAN' && (!nomesSel || nomesSel.has(norm(a.empresa))))
+      .filter(a => a.fonte === 'ROF037' && a.data && a.data >= dataIni && a.data <= dataFim && a.status !== 'CAN' && permiteNome(a.empresa) && (!nomesSel || nomesSel.has(norm(a.empresa))))
       .map(a => {
         const os = a.os ? osPorChave.get(`${a.empresa}#${a.os}`) : null
         const desfecho = a.os ? 'virouOs' : a.status === 'NSW' ? 'noShow' : 'aExecutar'
         return { ...a, osRow: os || null, desfecho }
       })
-  }, [passagensOs, osPorChave, empresas, empresasSel, dataIni, dataFim])
+  }, [passagensOs, osPorChave, empresas, empresasSel, dataIni, dataFim, permiteNome])
   // Consulta de agendamentos (ROF037): todos os agendamentos com data no período e nas empresas escolhidas,
   // inclusive cancelados, e se o Ativo veio de campanha (mesma regra da aba Por Campanhas, ao contrário:
   // chassi + cliente num RCR038 e agendamento criado da data da campanha até 30 dias depois).
@@ -1059,7 +1062,7 @@ export default function BiAgendamentoServicos() {
       ? new Set(empresas.filter(e => empresasSel.includes(e.id)).map(e => norm(e.empresa_fantasia || e.nome_empresa)))
       : null
     return passagensOs.agendamentos
-      .filter(a => a.fonte === 'ROF037' && a.data && a.data >= dataIni && a.data <= dataFim && (!nomesSel || nomesSel.has(norm(a.empresa))))
+      .filter(a => a.fonte === 'ROF037' && a.data && a.data >= dataIni && a.data <= dataFim && permiteNome(a.empresa) && (!nomesSel || nomesSel.has(norm(a.empresa))))
       .map(a => {
         const camps = a.tipo === 'Ativo' && a.criado
           ? (campanhasPorVeiculo.get(`${a.chassi}#${a.cod_cliente}`) || []).filter(c => a.criado >= c.data && diasEntre(c.data, a.criado) <= 30).sort((x, y) => x.data.localeCompare(y.data))
@@ -1067,7 +1070,7 @@ export default function BiAgendamentoServicos() {
         return { ...a, campanhas: camps, desfecho: a.status === 'CAN' ? 'Cancelado' : a.os ? 'Comparecido' : a.status === 'NSW' ? 'No-show' : 'A comparecer' }
       })
       .sort((x, y) => x.data.localeCompare(y.data) || x.cliente.localeCompare(y.cliente, 'pt-BR'))
-  }, [passagensOs, campanhasPorVeiculo, empresas, empresasSel, dataIni, dataFim])
+  }, [passagensOs, campanhasPorVeiculo, empresas, empresasSel, dataIni, dataFim, permiteNome])
   const ehAtivo = (a) => a.tipo === 'Ativo'
   const ehPassivo = (a) => PASSIVOS.includes(a.tipo)
   const contaAg = (f) => (agendDoPeriodo ? agendDoPeriodo.filter(f).length : null)

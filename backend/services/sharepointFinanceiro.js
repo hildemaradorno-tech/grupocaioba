@@ -110,6 +110,8 @@ export async function getTitulosAReceber() {
       valor:                parseMoney(r['Valor']),
       saldo:                parseMoney(r['Saldo']),
       observacao:           String(r['Observ.']                        ?? '').trim(),
+      chassi:               String(r['Chassi']                         ?? '').trim(),
+      placa:                String(r['Placa']                          ?? '').trim(),
     }))
     .filter(r => r.nro_titulo !== '')
 

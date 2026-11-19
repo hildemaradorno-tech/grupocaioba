@@ -69,7 +69,7 @@ const vazio = (cats) => Object.fromEntries(cats.map(([k]) => [k, { h: 0, vl: 0 }
 // Tipo de O.S. interno (agrupa as O.S. abaixo do mecânico — pedido do usuário 17/11/2026).
 // Trucks: dim_tipos_os (sigla → tipo_interno, ex.: Cliente, Garantia, TruckPag, Interna Usados).
 // Motos: o MicroWork manda o tipo por extenso e não há cadastro — agrupado pelo começo do nome.
-function tipoInternoMotos(t) {
+export function tipoInternoMotos(t) {
   const u = String(t || '').toUpperCase()
   if (!u) return 'Sem tipo'
   if (u.startsWith('INTERNA')) return 'Interna'
