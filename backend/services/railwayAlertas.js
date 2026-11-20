@@ -1,5 +1,5 @@
-// Pontos de controle do Monitor Railway (19/11/2026) — mesma regra para a Visão Geral ("Precisa de atenção")
-// e para o aviso por e-mail. Cada controle volta com nivel: 'ok' | 'info' | 'atencao' | 'critico'.
+// Pontos de controle do Monitor Railway (19/11/2026) — painel "Precisa de atenção" da Visão Geral.
+// Cada controle volta com nivel: 'ok' | 'info' | 'atencao' | 'critico'.
 //
 // Limites (regra do plano Hobby na documentação do Railway, conferida em 19/11/2026: US$ 5/mês com US$ 5 de
 // consumo incluídos; memória US$ 10 por GB/mês é quase todo o custo deste backend):
@@ -8,12 +8,9 @@
 //   - projeção do ciclo acima do incluído = atenção; acima do limite de gasto (bloqueio) = crítico
 //   - domínio sem resposta = crítico; resposta acima de 3 s = atenção
 //
-// E-mail: verificação a cada 30 min, só onde RAILWAY_ALERTAS_ATIVO=1 (produção) — evita e-mail duplicado do
-// backend local. Destinatários em RAILWAY_ALERTA_EMAILS (separados por vírgula). Reenvia o mesmo problema
-// no máximo 1 vez por dia e manda um e-mail quando ele for resolvido.
-import cron from 'node-cron'
+// Aviso por e-mail REMOVIDO em 19/11/2026: o plano Hobby do Railway bloqueia SMTP (só no Pro), o envio dava
+// "Connection timeout" a cada 30 min. O usuário acompanha pela tela.
 import { getVisaoGeral, getPlano, getMetricas, ping } from './railwayMonitor.js'
-import { enviarEmail } from './emailService.js'
 
 export const LIMITES = {
   memoriaMediaMb: 500,
@@ -57,12 +54,15 @@ export async function calcularControles({ refresh = false } = {}) {
     const diasTot = ini && fim ? (fim - ini) / 864e5 : null
     const diasPass = ini ? Math.max(0.5, (Date.now() - ini) / 864e5) : null
     const projecao = a.uso_atual_usd != null && diasTot && diasPass ? (a.uso_atual_usd / diasPass) * diasTot : null
-    const limBloqueio = a.limite_gasto?.rigido != null ? a.limite_gasto.rigido / 100 : null
+    const limBloqueio = a.limite_gasto?.rigido != null ? a.limite_gasto.rigido : null
+    const limAviso = a.limite_gasto?.aviso != null ? a.limite_gasto.aviso : null
     if (projecao != null) {
       let nivel = 'ok'
       let detalhe = `Consumo até agora ${usd(a.uso_atual_usd)}; projeção até o fim do ciclo ${usd(projecao)}`
       if (limBloqueio != null && projecao >= limBloqueio) {
         nivel = 'critico'; detalhe += ` — passa do limite de bloqueio (${usd(limBloqueio)}): o Railway vai parar os serviços.`
+      } else if (limAviso != null && projecao >= limAviso) {
+        nivel = 'atencao'; detalhe += ` — passa do limite de aviso (${usd(limAviso)}) definido no Railway.`
       } else if (incluido != null && projecao > incluido) {
         nivel = 'atencao'; detalhe += ` — passa dos ${usd(incluido)} incluídos na mensalidade: cobrança extra de ≈ ${usd(projecao - incluido)}.`
       } else if (incluido != null) {
@@ -74,7 +74,7 @@ export async function calcularControles({ refresh = false } = {}) {
       add({ id: 'limite-estourado', grupo: 'Cobrança', nivel: 'critico', titulo: 'Limite de gasto atingido', detalhe: 'O Railway pode parar os serviços.', link: LINK_USAGE, linkTxt: 'Ver no Railway' })
     }
     add(a.limite_gasto
-      ? { id: 'limite-gasto', grupo: 'Cobrança', nivel: 'ok', titulo: 'Limite de gasto definido no Railway', detalhe: [a.limite_gasto.aviso != null && `aviso em ${usd(a.limite_gasto.aviso / 100)}`, a.limite_gasto.rigido != null && `bloqueio em ${usd(a.limite_gasto.rigido / 100)}`].filter(Boolean).join(' · ') }
+      ? { id: 'limite-gasto', grupo: 'Cobrança', nivel: 'ok', titulo: 'Limite de gasto definido no Railway', detalhe: [a.limite_gasto.aviso != null && `aviso em ${usd(a.limite_gasto.aviso)}`, a.limite_gasto.rigido != null && `bloqueio em ${usd(a.limite_gasto.rigido)}`].filter(Boolean).join(' · ') }
       : { id: 'limite-gasto', grupo: 'Cobrança', nivel: 'info', titulo: 'Sem limite de gasto no Railway', detalhe: 'Recomendado: aviso por e-mail do próprio Railway em US$ 5.', link: LINK_USAGE, linkTxt: 'Definir no Railway' })
   }
 
@@ -144,73 +144,7 @@ export async function calcularControles({ refresh = false } = {}) {
       info: controles.filter(c => c.nivel === 'info').length,
       ok: controles.filter(c => c.nivel === 'ok').length,
     },
-    email: {
-      ativo: process.env.RAILWAY_ALERTAS_ATIVO === '1',
-      destinatarios: (process.env.RAILWAY_ALERTA_EMAILS || '').split(',').map(s => s.trim()).filter(Boolean).length,
-      ultima_verificacao: estadoEmail.ultimaVerificacao,
-    },
     limites: LIMITES,
     calculado_em: new Date().toISOString(),
   }
-}
-
-// ── Aviso por e-mail ──────────────────────────────────────────────────────
-const estadoEmail = { abertos: new Map(), ultimaVerificacao: null } // id -> { controle, enviadoEm }
-const UM_DIA = 24 * 3600 * 1000
-
-function htmlLista(titulo, cor, itens) {
-  if (!itens.length) return ''
-  return `<h3 style="font-family:sans-serif;color:${cor};margin:16px 0 6px">${titulo}</h3>
-    <ul style="font-family:sans-serif;font-size:13px;color:#334155;padding-left:18px;margin:0">
-      ${itens.map(c => `<li style="margin-bottom:6px"><strong>${c.grupo} — ${c.titulo}</strong><br>${c.detalhe || ''}${c.link ? `<br><a href="${c.link}">${c.linkTxt || c.link}</a>` : ''}</li>`).join('')}
-    </ul>`
-}
-
-export async function verificarEEnviar() {
-  const destinatarios = (process.env.RAILWAY_ALERTA_EMAILS || '').split(',').map(s => s.trim()).filter(Boolean)
-  const { controles } = await calcularControles({ refresh: true })
-  estadoEmail.ultimaVerificacao = new Date().toISOString()
-  const problemas = controles.filter(c => c.nivel === 'critico' || c.nivel === 'atencao')
-  const agora = Date.now()
-
-  const novos = problemas.filter(c => {
-    const ab = estadoEmail.abertos.get(c.id)
-    return !ab || ab.controle.nivel !== c.nivel || agora - ab.enviadoEm >= UM_DIA
-  })
-  const idsProblemas = new Set(problemas.map(c => c.id))
-  const resolvidos = [...estadoEmail.abertos.values()].map(x => x.controle).filter(c => !idsProblemas.has(c.id))
-
-  if (!destinatarios.length || (!novos.length && !resolvidos.length)) {
-    resolvidos.forEach(c => estadoEmail.abertos.delete(c.id))
-    return { enviados: 0, novos: novos.length, resolvidos: resolvidos.length }
-  }
-
-  const temCritico = novos.some(c => c.nivel === 'critico')
-  const assunto = novos.length
-    ? `[Monitor Railway] ${temCritico ? '🔴' : '🟡'} ${novos.length} ponto(s) precisa(m) de atenção`
-    : `[Monitor Railway] ✅ ${resolvidos.length} ponto(s) resolvido(s)`
-  const frontend = process.env.FRONTEND_URL || ''
-  const html = `<div style="font-family:sans-serif;color:#0f172a">
-      <h2 style="margin:0 0 8px">Monitor Railway — backend do Portal de Gestão</h2>
-      <p style="font-size:13px;color:#475569;margin:0 0 8px">Verificação automática de ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Campo_Grande' })} (horário de MS).</p>
-      ${htmlLista('🔴 Crítico', '#dc2626', novos.filter(c => c.nivel === 'critico'))}
-      ${htmlLista('🟡 Atenção', '#d97706', novos.filter(c => c.nivel === 'atencao'))}
-      ${htmlLista('✅ Resolvido', '#059669', resolvidos)}
-      ${frontend ? `<p style="font-size:13px;margin-top:16px"><a href="${frontend}/governanca/monitor-railway">Abrir o Monitor Railway</a></p>` : ''}
-    </div>`
-  await enviarEmail({ to: destinatarios.join(','), subject: assunto, html })
-  novos.forEach(c => estadoEmail.abertos.set(c.id, { controle: c, enviadoEm: agora }))
-  resolvidos.forEach(c => estadoEmail.abertos.delete(c.id))
-  return { enviados: 1, novos: novos.length, resolvidos: resolvidos.length }
-}
-
-export function iniciarSchedulerRailwayAlertas() {
-  if (process.env.RAILWAY_ALERTAS_ATIVO !== '1' || !process.env.RAILWAY_API_TOKEN) {
-    console.log('[railway-alertas] desligado (RAILWAY_ALERTAS_ATIVO != 1 ou sem RAILWAY_API_TOKEN)')
-    return
-  }
-  // a cada 30 min; primeira verificação 1 min após subir
-  cron.schedule('*/30 * * * *', () => verificarEEnviar().catch(e => console.error('[railway-alertas]', e.message)))
-  setTimeout(() => verificarEEnviar().catch(e => console.error('[railway-alertas]', e.message)), 60 * 1000)
-  console.log('[railway-alertas] verificação a cada 30 min ativa')
 }

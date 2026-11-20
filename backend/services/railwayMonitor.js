@@ -209,7 +209,7 @@ export async function getPlano({ refresh = false } = {}) {
         situacao: c.state, em_teste: c.isTrialing, dias_teste: c.trialDaysRemaining,
         uso_atual_usd: c.currentUsage, creditos_usd: c.creditBalance, creditos_aplicados_usd: c.appliedCredits,
         ciclo_inicio: c.billingPeriod?.start || null, ciclo_fim: c.billingPeriod?.end || null,
-        // limites de gasto definidos pelo usuário (em centavos de dólar, quando houver)
+        // limites de gasto definidos pelo usuário, em DÓLARES (hardLimit/softLimit; só os campos agent* são em centavos)
         limite_gasto: c.usageLimit ? { rigido: c.usageLimit.hardLimit, aviso: c.usageLimit.softLimit, estourado: c.usageLimit.isOverLimit } : null,
       },
       capacidade: {

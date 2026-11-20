@@ -4,11 +4,20 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { Area, AreaChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import {
-  Train, RefreshCw, CheckCircle2, XCircle, AlertTriangle, Activity, LayoutDashboard, Rocket, ScrollText,
+  RefreshCw, CheckCircle2, XCircle, AlertTriangle, Activity, LayoutDashboard, Rocket, ScrollText,
   Cpu, Globe, GitCommit, Clock, Loader2, Search, BadgeCheck, CreditCard,
 } from 'lucide-react'
+import { PainelControles, Relogio, BarraUso } from '../../components/monitor/MonitorUI'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
+
+// Logo do Railway (Railway_Logo.svg enviado pelo usuário em 19/11/2026); cor via currentColor
+const LogoRailway = ({ className }) => (
+  <svg viewBox="0 0 1024 1024" fill="currentColor" className={className} aria-label="Railway" role="img">
+    <path d="M4.756 438.175A520.713 520.713 0 0 0 0 489.735h777.799c-2.716-5.306-6.365-10.09-10.045-14.772-132.97-171.791-204.498-156.896-306.819-161.26-34.114-1.403-57.249-1.967-193.037-1.967-72.677 0-151.688.185-228.628.39-9.96 26.884-19.566 52.942-24.243 74.14h398.571v51.909H4.756ZM783.93 541.696H.399c.82 13.851 2.112 27.517 3.978 40.999h723.39c32.248 0 50.299-18.297 56.162-40.999ZM45.017 724.306S164.941 1018.77 511.46 1024c207.112 0 385.071-123.006 465.907-299.694H45.017Z" />
+    <path d="M511.454 0C319.953 0 153.311 105.16 65.31 260.612c68.771-.144 202.704-.226 202.704-.226h.031v-.051c158.309 0 164.193.707 195.118 1.998l19.149.706c66.7 2.224 148.683 9.384 213.19 58.19 35.015 26.471 85.571 84.896 115.708 126.52 27.861 38.499 35.876 82.756 16.933 125.158-17.436 38.97-54.952 62.215-100.383 62.215H16.69s4.233 17.944 10.58 37.751h970.632A510.385 510.385 0 0 0 1024 512.218C1024.01 229.355 794.532 0 511.454 0Z" />
+  </svg>
+)
 
 const ABAS = [
   ['visao', 'Visão Geral', LayoutDashboard],
@@ -143,18 +152,16 @@ export default function MonitorRailway() {
   return (
     <div className="p-6 space-y-4">
       {/* Cabeçalho */}
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-fuchsia-600 flex items-center justify-center shrink-0">
-            <Train className="h-4 w-4 text-white" />
-          </div>
-          <div>
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          <LogoRailway className="h-10 w-10 text-[#100F13] shrink-0" />
+          <div className="min-w-0">
             <h1 className="text-lg font-bold text-slate-900 tracking-tight">Monitor Railway</h1>
-            <p className="text-[11px] text-slate-500 uppercase tracking-wide">Backend no Railway — status, saúde, consumo, deploys e logs</p>
+            <p className="text-[10px] text-slate-500">Hospedagem do backend — é onde o servidor Node/Express fica no ar, disponível 24 horas por dia num endereço fixo que o frontend chama sempre que precisa de algo que vem do SharePoint</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <p className="text-[10px] text-slate-500 leading-tight text-right">
+        <div className="flex items-center gap-2 shrink-0">
+          <p className="text-[10px] text-slate-500 leading-tight text-right whitespace-nowrap">
             Lido em: <strong className="text-slate-700">{carregando ? '...' : dataHora(dados?.lido_em)}</strong>
           </p>
           <button type="button" onClick={() => carregar(true)} disabled={carregando} title="Atualizar dados" aria-label="Atualizar dados"
@@ -200,6 +207,7 @@ export default function MonitorRailway() {
       {carregando && !dados ? <p className="text-[11px] text-slate-400">Consultando o Railway...</p> : dados && (
         <>
           {aba === 'visao' && <AbaVisao servicos={servicos} pings={pings} nomeServico={nomeServico}
+            capacidade={plano?.workspaces?.[0]?.capacidade}
             controles={controles} erroControles={erroControles} recarregandoControles={recarregandoControles} />}
           {aba === 'plano' && <AbaPlano plano={plano} erro={erroPlano} servicos={servicos} nomeServico={nomeServico} />}
           {aba === 'consumo' && servico && <AbaConsumo servico={servico} seletor={seletorServico} capacidade={plano?.workspaces?.[0]?.capacidade} />}
@@ -212,129 +220,127 @@ export default function MonitorRailway() {
   )
 }
 
-// ── Pontos de controle (backend: services/railwayAlertas.js — a mesma regra do aviso por e-mail) ──
-const NIVEL = {
-  critico: { txt: 'Crítico', cls: 'bg-red-50 border-red-200 text-red-800', dot: 'bg-red-500', icon: XCircle, iconCls: 'text-red-600' },
-  atencao: { txt: 'Atenção', cls: 'bg-amber-50 border-amber-200 text-amber-800', dot: 'bg-amber-500', icon: AlertTriangle, iconCls: 'text-amber-600' },
-  info: { txt: 'Recomendação', cls: 'bg-sky-50 border-sky-200 text-sky-800', dot: 'bg-sky-500', icon: Activity, iconCls: 'text-sky-600' },
-  ok: { txt: 'OK', cls: 'bg-white border-slate-200 text-slate-700', dot: 'bg-emerald-500', icon: CheckCircle2, iconCls: 'text-emerald-600' },
+// Tempo de resposta: 0–4 s — Ótimo / Bom / Lento / Ruim
+const FAIXAS_RESP = [
+  { ate: 500, txt: 'Ótimo', cor: '#10b981' },
+  { ate: 1500, txt: 'Bom', cor: '#6ee7b7', corTexto: '#059669' },
+  { ate: 3000, txt: 'Lento', cor: '#fbbf24', corTexto: '#d97706' },
+  { ate: 4000, txt: 'Ruim', cor: '#f87171', corTexto: '#dc2626' },
+]
+function IndicadorResposta({ ms }) {
+  return <Relogio valor={ms} faixas={FAIXAS_RESP} marcas={[0, 1000, 2000, 3000, 4000]} fmtMarca={v => `${v / 1000}s`}
+    rotuloAria={`Tempo de resposta ${ms} ms`} />
 }
-function PainelControles({ controles, erro, recarregando }) {
-  const [verOk, setVerOk] = useState(false)
-  if (erro) return (
-    <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-[11px] text-amber-800 flex items-center gap-2">
-      <AlertTriangle className="h-4 w-4 shrink-0" /> Não foi possível calcular os pontos de controle: {erro}
-    </div>
-  )
-  if (!controles) return <p className="text-[11px] text-slate-400">Verificando os pontos de controle...</p>
-  const lista = controles.controles
-  const problemas = lista.filter(c => c.nivel !== 'ok')
-  const oks = lista.filter(c => c.nivel === 'ok')
-  const r = controles.resumo
-  const email = controles.email
-  const linha = (c) => {
-    const n = NIVEL[c.nivel]
-    const Icon = n.icon
-    return (
-      <div key={c.id} className={`flex items-start gap-2.5 rounded-lg border px-3 py-2 ${n.cls}`}>
-        <Icon className={`h-4 w-4 shrink-0 mt-px ${n.iconCls}`} />
-        <div className="flex-1 min-w-0 text-[11px]">
-          <p><span className="font-bold">{c.titulo}</span> <span className="opacity-70">· {c.grupo}</span></p>
-          {c.detalhe && <p className="opacity-90">{c.detalhe}</p>}
-        </div>
-        {c.link && (
-          <a href={c.link} target="_blank" rel="noreferrer"
-            className="shrink-0 px-2 py-1 rounded-md bg-white/80 border border-current text-[10px] font-semibold hover:bg-white">{c.linkTxt || 'Abrir'}</a>
-        )}
-      </div>
-    )
-  }
-  return (
-    <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-      <div className="flex flex-wrap items-center gap-3 px-4 py-2.5 bg-slate-50 border-b border-slate-200">
-        <p className="text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Precisa de atenção</p>
-        <div className="flex items-center gap-3 text-[11px]">
-          {[['critico', r.critico], ['atencao', r.atencao], ['info', r.info], ['ok', r.ok]].map(([k, v]) => (
-            <span key={k} className="inline-flex items-center gap-1 text-slate-600"><span className={`h-2 w-2 rounded-full ${NIVEL[k].dot}`} /> {v} {NIVEL[k].txt.toLowerCase()}</span>
-          ))}
-          {recarregando && <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />}
-        </div>
-        <span className={`ml-auto text-[10px] ${email.ativo && email.destinatarios ? 'text-emerald-700' : 'text-slate-400'}`}>
-          {email.ativo && email.destinatarios
-            ? `Aviso por e-mail ligado (${email.destinatarios} destinatário${email.destinatarios > 1 ? 's' : ''}, verificação a cada 30 min)`
-            : 'Aviso por e-mail desligado neste servidor'}
-        </span>
-      </div>
-      <div className="p-3 space-y-2">
-        {problemas.length === 0
-          ? <p className="flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700"><CheckCircle2 className="h-4 w-4" /> Tudo dentro do controle — nada passou dos limites.</p>
-          : problemas.map(linha)}
-        <button type="button" onClick={() => setVerOk(v => !v)} className="text-[11px] font-semibold text-slate-500 hover:text-slate-700">
-          {verOk ? '▾' : '▸'} {oks.length} ponto(s) de controle OK
-        </button>
-        {verOk && <div className="space-y-2">{oks.map(linha)}</div>}
-      </div>
-    </div>
-  )
+
+// Memória: 0 até o limite do plano (8 GB) — Folga até 60%, Atenção até 85%, Crítico acima (mesma regra do painel)
+function IndicadorMemoria({ atualGb, picoGb, limiteGb }) {
+  const faixas = [
+    { ate: limiteGb * 0.6, txt: 'Folga', cor: '#10b981' },
+    { ate: limiteGb * 0.85, txt: 'Atenção', cor: '#fbbf24', corTexto: '#d97706' },
+    { ate: limiteGb, txt: 'Crítico', cor: '#f87171', corTexto: '#dc2626' },
+  ]
+  const passo = limiteGb <= 8 ? 2 : Math.ceil(limiteGb / 4)
+  const marcas = []
+  for (let v = 0; v <= limiteGb + 1e-9; v += passo) marcas.push(v)
+  return <Relogio valor={atualGb} faixas={faixas} marcas={marcas} fmtMarca={v => `${v}GB`} marcador={picoGb}
+    rotuloAria={`Memória ${atualGb} GB de ${limiteGb} GB`} />
 }
 
 // ── Visão Geral: pontos de controle + um card por serviço/ambiente ──────────
-function AbaVisao({ servicos, pings, nomeServico, controles, erroControles, recarregandoControles }) {
-  const total = servicos.length
-  const noAr = servicos.filter(s => s.ultimo?.status === 'SUCCESS').length
-  const comProblema = servicos.filter(s => ['FAILED', 'CRASHED'].includes(s.ultimo?.status)).length
-  const pingsLista = Object.values(pings).filter(p => p && p.ms != null)
-  const respMedia = pingsLista.length ? Math.round(pingsLista.reduce((a, p) => a + p.ms, 0) / pingsLista.length) : null
-  const cards = [
-    ['Serviços', total, 'text-slate-800'],
-    ['No ar', noAr, 'text-emerald-600'],
-    ['Com falha / travado', comProblema, comProblema ? 'text-red-600' : 'text-slate-800'],
-    ['Resposta média', respMedia != null ? `${respMedia} ms` : '—', 'text-slate-800'],
-  ]
+function AbaVisao({ servicos, pings, nomeServico, capacidade, controles, erroControles, recarregandoControles }) {
+  // Memória de cada serviço (agora e pico de 7 dias) para o relógio de memória
+  const [mem, setMem] = useState({})
+  useEffect(() => {
+    servicos.forEach(s => {
+      api(`/metricas?projectId=${s.projeto_id}&serviceId=${s.servico_id}&environmentId=${s.ambiente_id}&horas=168`)
+        .then(j => {
+          const v = (j.series.MEMORY_USAGE_GB || []).map(x => x.valor)
+          setMem(prev => ({ ...prev, [s.chave]: v.length ? { atual: v[v.length - 1], pico: Math.max(...v), media: v.reduce((a, b) => a + b, 0) / v.length } : { vazio: true } }))
+        })
+        .catch(e => setMem(prev => ({ ...prev, [s.chave]: { erro: e.message } })))
+    })
+  }, [servicos.map(s => s.chave).join(',')])
+  const limiteGb = capacidade?.memoria_bytes ? capacidade.memoria_bytes / 1e9 : null
+  const fmtGb = (gb) => gb == null ? '—' : gb < 1 ? `${Math.round(gb * 1024)} MB` : `${gb.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} GB`
   return (
     <div className="space-y-4">
       <PainelControles controles={controles} erro={erroControles} recarregando={recarregandoControles} />
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        {cards.map(([rot, val, cls]) => (
-          <div key={rot} className="bg-white border border-slate-200 rounded-xl px-4 py-3">
-            <p className="text-[11px] text-slate-500">{rot}</p>
-            <p className={`text-base font-bold ${cls}`}>{val}</p>
-          </div>
-        ))}
-      </div>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+      {/* Cards Serviços / No ar / Com falha / Resposta média saíram (19/11/2026): a falha aparece dentro do card
+          do serviço só quando acontece, e o relógio de resposta fica na "Saúde do domínio" do serviço. */}
+      {/* Um card por serviço, ocupando a largura da página: identificação | saúde e deploy | relógio */}
+      <div className="space-y-3">
         {servicos.map(s => {
           const p = s.dominio ? pings[s.dominio] : null
           const u = s.ultimo
           return (
-            <div key={s.chave} className="bg-white border border-slate-200 rounded-xl p-4 space-y-2.5">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="text-sm font-bold text-slate-800 truncate">{nomeServico(s)}</p>
-                  {s.dominio && (
-                    <a href={`https://${s.dominio}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] text-indigo-600 hover:underline">
-                      <Globe className="h-3 w-3" /> {s.dominio}
-                    </a>
-                  )}
+            <div key={s.chave} className="bg-white border border-slate-200 rounded-xl p-5 space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_auto_auto] gap-6 items-center">
+                {/* Identificação e, abaixo, o último deploy */}
+                <div className="min-w-0 space-y-3">
+                  <div>
+                    <p className="text-[11px] text-slate-400">Serviço</p>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <p className="text-sm font-bold text-slate-800 truncate">{nomeServico(s)}</p>
+                      <span className="shrink-0"><BadgeStatus status={u?.status} /></span>
+                    </div>
+                    {s.dominio && (
+                      <a href={`https://${s.dominio}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] text-indigo-600 hover:underline break-all">
+                        <Globe className="h-3 w-3 shrink-0" /> {s.dominio}
+                      </a>
+                    )}
+                  </div>
+                  <div className="text-[11px]">
+                    <p className="text-slate-400">Último deploy</p>
+                    <p className="text-sm font-bold text-slate-800">{dataHora(u?.criado_em)} <span className="text-[11px] font-normal text-slate-500">{tempoAtras(u?.criado_em)}</span></p>
+                  </div>
                 </div>
-                <BadgeStatus status={u?.status} />
+                {/* Relógio de memória (agora × limite do plano; traço tracejado = pico de 7 dias) */}
+                <div className="w-56 justify-self-center md:border-l md:border-slate-100 md:pl-6 text-center"
+                  title={limiteGb ? `Memória em uso agora sobre os ${capacidade?.memoria} do plano. Traço tracejado = maior uso nos últimos 7 dias. Folga até 60% · atenção até 85% · crítico acima.` : undefined}>
+                  {(() => {
+                    const m = mem[s.chave]
+                    if (!limiteGb || !m) return <p className="text-[11px] text-slate-400 py-6">medindo memória...</p>
+                    if (m.erro || m.vazio) return <p className="text-[11px] text-slate-400 py-6">memória indisponível</p>
+                    return (
+                      <>
+                        <IndicadorMemoria atualGb={m.atual} picoGb={m.pico} limiteGb={limiteGb} />
+                        <div className="text-[11px] mt-1">
+                          <p className="text-slate-400">Memória</p>
+                          <p className="font-semibold text-slate-700">{fmtGb(m.atual)} de {capacidade.memoria} · pico 7 dias {fmtGb(m.pico)}</p>
+                        </div>
+                      </>
+                    )
+                  })()}
+                </div>
+                {/* Relógio do tempo de resposta e, abaixo dele, a saúde do domínio */}
+                <div className="w-56 justify-self-center md:justify-self-end md:border-l md:border-slate-100 md:pl-6 text-center"
+                  title={p?.ms != null ? `Tempo de resposta: ${p.ms} ms. Até 0,5 s ótimo · até 1,5 s bom · até 3 s lento · acima disso ruim (vira alerta).` : undefined}>
+                  {p?.no_ar && p.ms != null && <IndicadorResposta ms={p.ms} />}
+                  <div className="text-[11px] mt-1">
+                    <p className="text-slate-400">Saúde do domínio</p>
+                    {!s.dominio ? <p className="text-slate-400">sem domínio público</p>
+                      : !p ? <p className="text-slate-400">testando...</p>
+                      : p.no_ar
+                        ? <p className="font-semibold text-emerald-600 inline-flex items-center gap-1"><Activity className="h-3 w-3" /> Respondendo · {p.ms} ms</p>
+                        : <p className="font-semibold text-red-600 inline-flex items-center gap-1"><XCircle className="h-3 w-3" /> Fora do ar{p.http ? ` · HTTP ${p.http}` : ''}{p.erro ? ` · ${p.erro}` : ''}</p>}
+                  </div>
+                </div>
               </div>
               {s.erro && <p className="text-[11px] text-red-600">{s.erro}</p>}
-              <div className="grid grid-cols-2 gap-2 text-[11px]">
-                <div>
-                  <p className="text-slate-400">Saúde do domínio</p>
-                  {!s.dominio ? <p className="text-slate-400">sem domínio público</p>
-                    : !p ? <p className="text-slate-400">testando...</p>
-                    : p.no_ar
-                      ? <p className="font-semibold text-emerald-600 flex items-center gap-1"><Activity className="h-3 w-3" /> Respondendo · {p.ms} ms</p>
-                      : <p className="font-semibold text-red-600 flex items-center gap-1"><XCircle className="h-3 w-3" /> Fora do ar{p.http ? ` · HTTP ${p.http}` : ''}{p.erro ? ` · ${p.erro}` : ''}</p>}
+              {/* Com falha / travado — só aparece quando acontece */}
+              {['FAILED', 'CRASHED'].includes(u?.status) && (
+                <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-[11px] text-red-700">
+                  <XCircle className="h-4 w-4 shrink-0 mt-px" />
+                  <span>
+                    <strong>{u.status === 'CRASHED' ? 'Serviço travado' : 'Último deploy com falha'}</strong> em {dataHora(u.criado_em)}.{' '}
+                    {s.ativo
+                      ? <>Continua rodando o deploy anterior, de {dataHora(s.ativo.criado_em)}.</>
+                      : <>Nenhum deploy anterior em uso — o sistema pode estar fora do ar.</>}
+                    {' '}Veja o motivo na aba <strong>Logs</strong>.
+                  </span>
                 </div>
-                <div>
-                  <p className="text-slate-400">Último deploy</p>
-                  <p className="font-semibold text-slate-700">{dataHora(u?.criado_em)} <span className="font-normal text-slate-400">{tempoAtras(u?.criado_em)}</span></p>
-                </div>
-              </div>
-              {u && u.status !== 'SUCCESS' && s.ativo && (
+              )}
+              {u && u.status !== 'SUCCESS' && !['FAILED', 'CRASHED'].includes(u.status) && s.ativo && (
                 <p className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
                   O último deploy não está no ar; o que está rodando é o de {dataHora(s.ativo.criado_em)}{s.ativo.commit ? ` (${s.ativo.commit})` : ''}.
                 </p>
@@ -551,27 +557,6 @@ function AbaLogs({ servico, seletor }) {
 }
 
 // ── Plano e Capacidade: plano, assinatura, uso do ciclo e limites do plano ─
-// Barra de uso × capacidade: verde até 60%, âmbar até 85%, vermelho acima
-function BarraUso({ rotulo, usado, total, txtUsado, txtTotal, obs, pctMarcador, txtMarcador }) {
-  const pct = total ? Math.min(100, (usado / total) * 100) : 0
-  const cor = pct >= 85 ? 'bg-red-500' : pct >= 60 ? 'bg-amber-500' : 'bg-emerald-500'
-  return (
-    <div>
-      <div className="flex items-baseline justify-between gap-2 text-[11px]">
-        <span className="text-slate-600 font-semibold">{rotulo}</span>
-        <span className="text-slate-500"><strong className="text-slate-800">{txtUsado}</strong> de {txtTotal} · <strong className={pct >= 85 ? 'text-red-600' : pct >= 60 ? 'text-amber-600' : 'text-emerald-600'}>{pct < 1 && pct > 0 ? '<1' : Math.round(pct)}%</strong></span>
-      </div>
-      <div className="relative h-2 mt-1 rounded-full bg-slate-100 overflow-visible">
-        <div className={`h-2 rounded-full ${cor}`} style={{ width: `${Math.max(pct, pct > 0 ? 1 : 0)}%` }} />
-        {pctMarcador != null && (
-          <div title={txtMarcador} className="absolute -top-0.5 h-3 w-0.5 bg-slate-500" style={{ left: `${Math.min(100, pctMarcador)}%` }} />
-        )}
-      </div>
-      {obs && <p className="text-[10px] text-slate-400 mt-0.5">{obs}</p>}
-    </div>
-  )
-}
-
 // Uso × Capacidade do plano: memória/CPU de cada serviço (agora e pico de 7 dias) contra o limite do plano,
 // gasto do ciclo contra o limite de gasto e a projeção até o fim do ciclo.
 function UsoCapacidade({ w, servicos, nomeServico }) {
@@ -603,7 +588,7 @@ function UsoCapacidade({ w, servicos, nomeServico }) {
   const diasPass = ini ? Math.max(0.5, (Date.now() - ini) / 864e5) : null
   const projecao = a.uso_atual_usd != null && diasTot && diasPass ? (a.uso_atual_usd / diasPass) * diasTot : null
   const lim = a.limite_gasto
-  const limGasto = lim?.rigido != null ? lim.rigido / 100 : lim?.aviso != null ? lim.aviso / 100 : null
+  const limGasto = lim?.rigido != null ? lim.rigido : lim?.aviso != null ? lim.aviso : null
   const incluido = USO_INCLUIDO[w.plano] ?? null
 
   return (
@@ -705,7 +690,7 @@ function AbaPlano({ plano, erro, servicos = [], nomeServico = (s) => s.servico }
           ['Domínios próprios por serviço', c.dominios_proprios],
           ['Builds simultâneos', c.builds_simultaneos],
           ['Retenção de logs', c.retencao_logs_dias != null ? `${c.retencao_logs_dias} dias` : null],
-          ['Limite de gasto', lim ? [lim.aviso != null && `aviso em ${usd(lim.aviso / 100)}`, lim.rigido != null && `bloqueio em ${usd(lim.rigido / 100)}`].filter(Boolean).join(' · ') + (lim.estourado ? ' — ESTOURADO' : '') : 'Não definido'],
+          ['Limite de gasto', lim ? [lim.aviso != null && `aviso em ${usd(lim.aviso)}`, lim.rigido != null && `bloqueio em ${usd(lim.rigido)}`].filter(Boolean).join(' · ') + (lim.estourado ? ' — ESTOURADO' : '') : 'Não definido'],
           ['Créditos', a.creditos_usd ? usd(a.creditos_usd) : 'Nenhum'],
         ].filter(([, v]) => v != null && v !== '')
         return (

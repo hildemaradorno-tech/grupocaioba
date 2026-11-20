@@ -31,10 +31,10 @@ import produtividadeRoutes from './routes/produtividade.js'
 import rpaLogRoutes from './routes/rpaLog.js'
 import extratoDafRoutes from './routes/extratoDaf.js'
 import railwayRoutes from './routes/railway.js'
+import supabaseMonitorRoutes from './routes/supabaseMonitor.js'
 import { iniciarSchedulerManifestacao } from './services/manifestacaoScheduler.js'
 import { iniciarSchedulerAuditoria } from './services/auditoriaAgendamento.js'
 import { iniciarSchedulerProjetosTarefas } from './services/projetosTaskScheduler.js'
-import { iniciarSchedulerRailwayAlertas } from './services/railwayAlertas.js'
 
 const app = express()
 app.use(cors({ origin: '*', methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'], allowedHeaders: ['Content-Type','Authorization'] }))
@@ -87,6 +87,7 @@ app.use('/api/extrato-daf', authMiddleware, requireMenu('garantia/extrato-pagame
 
 // ── Rotas Governança › Monitor Railway (API pública GraphQL do Railway; token só no backend) ─
 app.use('/api/railway', authMiddleware, requireMenu('governanca/monitor-railway'), railwayRoutes)
+app.use('/api/supabase-monitor', authMiddleware, requireMenu('governanca/monitor-supabase'), supabaseMonitorRoutes)
 
 // ── Rotas Gestão de Projetos — Período de Manifestação (Etapa 2) ────────────
 app.use('/api/projetos', authMiddleware, requireMenuLike('projetos', 'bi/projetos'), projetosManifestacoesRoutes)
@@ -464,7 +465,6 @@ async function start() {
   iniciarSchedulerManifestacao()
   iniciarSchedulerAuditoria()
   iniciarSchedulerProjetosTarefas()
-  iniciarSchedulerRailwayAlertas()
 }
 
 start().catch(console.error)

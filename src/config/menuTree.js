@@ -444,6 +444,8 @@ export const MENU_TREE = [
       },
       // Monitor Railway (19/11/2026): status, saúde, consumo, deploys e logs do backend (/api/railway)
       { key: 'governanca/monitor-railway', label: 'Monitor Railway' },
+      // Monitor Supabase (19/11/2026): banco, Storage, conexões, desempenho, saúde e logs (/api/supabase-monitor)
+      { key: 'governanca/monitor-supabase', label: 'Monitor Supabase' },
       { key: 'documentacoes', label: 'Documentações' },
       { key: 'ecossistema', label: 'Ecossistema' },
     ],

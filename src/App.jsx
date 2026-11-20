@@ -94,6 +94,7 @@ import KpiMatriz, { KPI_MATRIZ_PERMS } from './pages/kpi/KpiMatriz'
 import CalcVendaServico from './pages/calculadoras/CalcVendaServico'
 import Documentacoes from './pages/Documentacoes'
 import MonitorRailway from './pages/governanca/MonitorRailway'
+import MonitorSupabase from './pages/governanca/MonitorSupabase'
 import GradeTreinamentos from './pages/treinamentos/GradeTreinamentos'
 import GrupoAcessos from './pages/governanca/GrupoAcessos'
 import PerfisAcesso from './pages/governanca/PerfisAcesso'
@@ -329,6 +330,7 @@ export default function App() {
           { path: '/calculadoras/venda-servico', element: <CalcVendaServico />, menuPath: 'calculadoras/venda-servico' },
           { path: '/documentacoes', element: <Documentacoes />, menuPath: 'documentacoes' },
           { path: '/governanca/monitor-railway', element: <MonitorRailway />, menuPath: 'governanca/monitor-railway' },
+          { path: '/governanca/monitor-supabase', element: <MonitorSupabase />, menuPath: 'governanca/monitor-supabase' },
           { path: '/rpa/agendamentos', element: <Navigate to="/bi/rpa-execucoes?modo=controle" replace /> },
           { path: '/treinamentos/grade', element: <GradeTreinamentos />, menuPath: 'treinamentos/grade' },
           { path: '/governanca/grupo-acessos', element: <GrupoAcessos />, menuPath: 'governanca/grupo-acessos' },

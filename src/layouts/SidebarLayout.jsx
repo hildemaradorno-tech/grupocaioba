@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom'
-import { Settings, TableProperties, Users, ShieldCheck, Building2, Layers, FolderTree, Box as BoxIcon, Briefcase, Tag, Wrench, Package, TrendingUp, FileCheck2, ScrollText, CalendarX, Calendar, Target, ShoppingBag, Car, Cog, ClipboardCheck, UserCheck, LogOut, BarChart2, Wallet, ClipboardList, Home, FolderKanban, CircleDot, FileText, Truck, Calculator, BookOpen, GraduationCap, KeyRound, Eye, EyeOff, X, AlertTriangle, Bike, Network, PieChart, Share2, Gauge, Ruler, ShieldAlert, Landmark, Hash, ListChecks, ExternalLink, Workflow, Trophy, Percent, Palmtree, PhoneCall, PlugZap, Bell, Warehouse, Archive, Megaphone, ArrowRightLeft, Bot, SlidersHorizontal, ChevronRight, Receipt, TrainFront } from 'lucide-react'
+import { Settings, TableProperties, Users, ShieldCheck, Building2, Layers, FolderTree, Box as BoxIcon, Briefcase, Tag, Wrench, Package, TrendingUp, FileCheck2, ScrollText, CalendarX, Calendar, Target, ShoppingBag, Car, Cog, ClipboardCheck, UserCheck, LogOut, BarChart2, Wallet, ClipboardList, Home, FolderKanban, CircleDot, FileText, Truck, Calculator, BookOpen, GraduationCap, KeyRound, Eye, EyeOff, X, AlertTriangle, Bike, Network, PieChart, Share2, Gauge, Ruler, ShieldAlert, Landmark, Hash, ListChecks, ExternalLink, Workflow, Trophy, Percent, Palmtree, PhoneCall, PlugZap, Bell, Warehouse, Archive, Megaphone, ArrowRightLeft, Bot, SlidersHorizontal, ChevronRight, Receipt, TrainFront, DatabaseZap } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import TrocarSenhaObrigatoria from '../pages/TrocarSenhaObrigatoria'
 import { supabase } from '../services/supabaseClient'
@@ -33,6 +33,7 @@ function getActiveSectionKey(pathname) {
   if (pathname.startsWith('/garantias-daf')) return '_bi'
   if (pathname.startsWith('/bi/rpa-execucoes')) return '_documentacoes' // Controle de Execuções RPA fica em Governança
   if (pathname.startsWith('/governanca/monitor-railway')) return '_documentacoes' // antes da regra /governanca (Configurações)
+  if (pathname.startsWith('/governanca/monitor-supabase')) return '_documentacoes'
   if (pathname.startsWith('/auditoria') || pathname.startsWith('/garantia') || pathname.startsWith('/honda') || pathname.startsWith('/truckpag') || pathname.startsWith('/bpm')) return '_controle-processos'
   if (pathname.startsWith('/projetos') || pathname.startsWith('/auditoria-externa') || pathname.startsWith('/bi/projetos')) return '_gestao-projetos'
   if (pathname.startsWith('/calculadoras')) return '_controle-processos'
@@ -628,6 +629,7 @@ export default function SidebarLayout() {
             {/* Controle de Execuções RPA (Dashboard | Controle); o Controle é a antiga tela Agendamento de Processos */}
             {(canView('bi/rpa-execucoes') || canView('rpa/agendamentos')) && <FlyItem to="/bi/rpa-execucoes" icon={Bot} onClose={closeFlyout}>Controle de Processos</FlyItem>}
             {canView('governanca/monitor-railway') && <FlyItem to="/governanca/monitor-railway" icon={TrainFront} onClose={closeFlyout}>Monitor Railway</FlyItem>}
+            {canView('governanca/monitor-supabase') && <FlyItem to="/governanca/monitor-supabase" icon={DatabaseZap} onClose={closeFlyout}>Monitor Supabase</FlyItem>}
             {canView('documentacoes') && <FlyItem to="/documentacoes" icon={BookOpen} onClose={closeFlyout}>Documentações</FlyItem>}
             {canView('ecossistema') && <FlyItem to="/ecossistema" icon={Share2} onClose={closeFlyout}>Ecossistema</FlyItem>}
           </>
