@@ -74,6 +74,9 @@ as $$
         join pg_roles r on r.oid = s.userid
         where s.calls >= 5
           and r.rolname not like 'supabase%'
+          -- authenticator = consultas internas da API do Supabase (ex.: SELECT name FROM pg_timezone_names a cada
+          -- recarga do cache da API); não vêm das telas e não dá para otimizar do nosso lado
+          and r.rolname <> 'authenticator'
           and s.query not ilike '%pg_stat_statements%'
         order by s.mean_exec_time desc
         limit 15
