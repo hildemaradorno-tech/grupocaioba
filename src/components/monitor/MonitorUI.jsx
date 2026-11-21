@@ -1,6 +1,67 @@
-// Componentes compartilhados dos monitores de Governança (Monitor Railway, Monitor Supabase) — 19/11/2026.
-import React, { useState } from 'react'
-import { CheckCircle2, XCircle, AlertTriangle, Activity, Loader2 } from 'lucide-react'
+// Componentes compartilhados dos monitores de Governança (Railway, Supabase, SharePoint, Cloudflare, Saúde do
+// Sistema) — 19/11/2026.
+import React, { useCallback, useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import { CheckCircle2, XCircle, AlertTriangle, Activity, Loader2, ChevronRight } from 'lucide-react'
+
+// ── Navegação dos alertas até a aba e a tabela de origem (21/11/2026) ──
+// Cada ponto de controle vem do backend com destino { aba, alvo }. A aba fica na URL (?aba=), o alvo também
+// (?alvo=); a tela rola até o elemento com id "alvo-<alvo>" e destaca por alguns segundos.
+export const idAlvo = (alvo) => `alvo-${alvo}`
+export function linkDestino(base, destino) {
+  if (!destino) return base
+  const q = new URLSearchParams()
+  if (destino.aba) q.set('aba', destino.aba)
+  if (destino.alvo) q.set('alvo', destino.alvo)
+  const s = q.toString()
+  return s ? `${base}${base.includes('?') ? '&' : '?'}${s}` : base
+}
+
+// Aba ativa guardada na URL. Devolve [aba, trocarAba, irPara(destino)].
+export function useAbaNaUrl(abasValidas, padrao) {
+  const [params, setParams] = useSearchParams()
+  const aba = abasValidas.includes(params.get('aba')) ? params.get('aba') : padrao
+  const trocarAba = useCallback((k) => setParams(k === padrao ? {} : { aba: k }), [setParams, padrao])
+  const irPara = useCallback((d) => {
+    if (!d) return
+    const q = {}
+    const a = abasValidas.includes(d.aba) ? d.aba : padrao
+    if (a !== padrao) q.aba = a
+    if (d.alvo) q.alvo = d.alvo
+    setParams(q)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [setParams, padrao, abasValidas.join('|')])
+  return [aba, trocarAba, irPara]
+}
+
+// Rola até o alvo da URL quando ele aparecer na tela (as abas carregam dados depois) e destaca.
+export function useRolarParaAlvo() {
+  const [params, setParams] = useSearchParams()
+  const alvo = params.get('alvo')
+  useEffect(() => {
+    if (!alvo) return
+    let tentativas = 0
+    const t = setInterval(() => {
+      const el = document.getElementById(idAlvo(alvo))
+      tentativas++
+      if (!el && tentativas < 60) return // espera até ~12 s pelos dados da aba
+      clearInterval(t)
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        // contorno (cards) + fundo (linhas de tabela, onde o contorno não aparece)
+        const destaque = ['ring-2', 'ring-indigo-500', 'ring-offset-2', 'bg-indigo-50']
+        el.classList.add(...destaque, 'transition-shadow')
+        setTimeout(() => el.classList.remove(...destaque), 3500)
+      }
+      // tira o alvo da URL (mantém a aba) para não rolar de novo ao recarregar
+      const q = new URLSearchParams(window.location.search)
+      q.delete('alvo')
+      setParams(Object.fromEntries(q), { replace: true })
+    }, 200)
+    return () => clearInterval(t)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [alvo])
+}
 
 // ── Pontos de controle ("Precisa de atenção") ──
 export const NIVEL = {
@@ -9,7 +70,7 @@ export const NIVEL = {
   info: { txt: 'Recomendação', cls: 'bg-sky-50 border-sky-200 text-sky-800', dot: 'bg-sky-500', icon: Activity, iconCls: 'text-sky-600' },
   ok: { txt: 'OK', cls: 'bg-white border-slate-200 text-slate-700', dot: 'bg-emerald-500', icon: CheckCircle2, iconCls: 'text-emerald-600' },
 }
-export function PainelControles({ controles, erro, recarregando }) {
+export function PainelControles({ controles, erro, recarregando, onIr }) {
   const [verOk, setVerOk] = useState(false)
   if (erro) return (
     <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-[11px] text-amber-800 flex items-center gap-2">
@@ -24,17 +85,21 @@ export function PainelControles({ controles, erro, recarregando }) {
   const linha = (c) => {
     const n = NIVEL[c.nivel]
     const Icon = n.icon
+    const navegavel = !!(onIr && c.destino)
     return (
-      <div key={c.id} className={`flex items-start gap-2.5 rounded-lg border px-3 py-2 ${n.cls}`}>
+      <div key={c.id} onClick={navegavel ? () => onIr(c.destino) : undefined}
+        title={navegavel ? 'Ir para onde está a informação' : undefined}
+        className={`flex items-start gap-2.5 rounded-lg border px-3 py-2 ${n.cls} ${navegavel ? 'cursor-pointer hover:brightness-95' : ''}`}>
         <Icon className={`h-4 w-4 shrink-0 mt-px ${n.iconCls}`} />
         <div className="flex-1 min-w-0 text-[11px]">
           <p><span className="font-bold">{c.titulo}</span> <span className="opacity-70">· {c.grupo}</span></p>
           {c.detalhe && <p className="opacity-90">{c.detalhe}</p>}
         </div>
         {c.link && (
-          <a href={c.link} target="_blank" rel="noreferrer"
+          <a href={c.link} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}
             className="shrink-0 px-2 py-1 rounded-md bg-white/80 border border-current text-[10px] font-semibold hover:bg-white">{c.linkTxt || 'Abrir'}</a>
         )}
+        {navegavel && <span className="shrink-0 inline-flex items-center gap-0.5 text-[10px] font-semibold opacity-80 mt-px">Ver <ChevronRight className="h-3 w-3" /></span>}
       </div>
     )
   }

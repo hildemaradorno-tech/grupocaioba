@@ -66,6 +66,10 @@ as $$
     'consultas_lentas', (
       select coalesce(jsonb_agg(q order by q.media_ms desc), '[]'::jsonb) from (
         select left(regexp_replace(s.query, '\s+', ' ', 'g'), 220) as consulta,
+               -- objetos (tabelas/views/funções do schema public) citados no texto INTEIRO da consulta (21/11/2026):
+               -- nas chamadas de função pela API o nome vem depois dos 220 primeiros caracteres
+               (select coalesce(jsonb_agg(distinct m[1]), '[]'::jsonb)
+                  from regexp_matches(s.query, '"?public"?\."?([a-z0-9_]+)"?', 'g') m) as objetos,
                s.calls as chamadas,
                round(s.mean_exec_time::numeric, 1) as media_ms,
                round(s.total_exec_time::numeric / 1000, 1) as total_s,
@@ -77,6 +81,8 @@ as $$
           -- authenticator = consultas internas da API do Supabase (ex.: SELECT name FROM pg_timezone_names a cada
           -- recarga do cache da API); não vêm das telas e não dá para otimizar do nosso lado
           and r.rolname <> 'authenticator'
+          -- comandos de manutenção (criar índice, alterar tabela, testes com EXPLAIN...) não são consultas das telas
+          and s.query !~* '^\s*(create|alter|drop|explain|begin|commit|rollback|analyze|vacuum|grant|revoke|comment|do|set|reset|truncate|refresh)\M'
           and s.query not ilike '%pg_stat_statements%'
         order by s.mean_exec_time desc
         limit 15

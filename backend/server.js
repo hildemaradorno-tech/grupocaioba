@@ -32,6 +32,9 @@ import rpaLogRoutes from './routes/rpaLog.js'
 import extratoDafRoutes from './routes/extratoDaf.js'
 import railwayRoutes from './routes/railway.js'
 import supabaseMonitorRoutes from './routes/supabaseMonitor.js'
+import sharepointMonitorRoutes from './routes/sharepointMonitor.js'
+import cloudflareMonitorRoutes from './routes/cloudflareMonitor.js'
+import saudeSistemaRoutes from './routes/saudeSistema.js'
 import { iniciarSchedulerManifestacao } from './services/manifestacaoScheduler.js'
 import { iniciarSchedulerAuditoria } from './services/auditoriaAgendamento.js'
 import { iniciarSchedulerProjetosTarefas } from './services/projetosTaskScheduler.js'
@@ -88,6 +91,9 @@ app.use('/api/extrato-daf', authMiddleware, requireMenu('garantia/extrato-pagame
 // ── Rotas Governança › Monitor Railway (API pública GraphQL do Railway; token só no backend) ─
 app.use('/api/railway', authMiddleware, requireMenu('governanca/monitor-railway'), railwayRoutes)
 app.use('/api/supabase-monitor', authMiddleware, requireMenu('governanca/monitor-supabase'), supabaseMonitorRoutes)
+app.use('/api/sharepoint-monitor', authMiddleware, requireMenu('governanca/monitor-sharepoint'), sharepointMonitorRoutes)
+app.use('/api/cloudflare-monitor', authMiddleware, requireMenu('governanca/monitor-cloudflare'), cloudflareMonitorRoutes)
+app.use('/api/saude-sistema', authMiddleware, requireMenu('governanca/saude-sistema'), saudeSistemaRoutes)
 
 // ── Rotas Gestão de Projetos — Período de Manifestação (Etapa 2) ────────────
 app.use('/api/projetos', authMiddleware, requireMenuLike('projetos', 'bi/projetos'), projetosManifestacoesRoutes)

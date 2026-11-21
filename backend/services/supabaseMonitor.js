@@ -9,7 +9,41 @@
 //
 // Variáveis: SUPABASE_URL (já existe; dela sai o ref do projeto), SUPABASE_ACCESS_TOKEN (opcional),
 //            SUPABASE_PLANO (opcional: free | pro | team — quando a API não informar o plano).
+import { readFileSync } from 'fs'
 import { getSupabaseAdmin } from './supabaseAdmin.js'
+
+// Mapa "objeto do banco → arquivos do portal que o usam" (gerado do código em 21/11/2026 procurando
+// .from('x') e .rpc('x') em src/ e backend/). Serve para dizer de qual tela vem cada consulta lenta.
+let MAPA_OBJETOS = {}
+try { MAPA_OBJETOS = JSON.parse(readFileSync(new URL('./mapaObjetosTelas.json', import.meta.url), 'utf8')) } catch { /* sem mapa: só mostra o objeto */ }
+
+const ORIGEM_PAPEL = {
+  authenticated: 'Telas do portal (usuário logado)',
+  anon: 'Acesso sem login',
+  service_role: 'Backend (rotinas e cálculos do servidor)',
+  postgres: 'Manutenção (scripts e migrations)',
+}
+// "src/pages/pos-vendas/IndicadoresProdutividade.jsx" → "Tela pos-vendas › IndicadoresProdutividade"
+function nomeArquivo(rel) {
+  const semExt = rel.replace(/\.(jsx?|mjs)$/, '')
+  if (semExt.startsWith('src/pages/')) return `Tela ${semExt.slice(10).split('/').join(' › ')}`
+  if (semExt.startsWith('src/')) return `Frontend ${semExt.slice(4)}`
+  if (semExt.startsWith('backend/')) return `Backend ${semExt.slice(8)}`
+  return semExt
+}
+export function enriquecerConsulta(q) {
+  const objetos = Array.isArray(q.objetos) && q.objetos.length
+    ? q.objetos
+    : [...new Set([...String(q.consulta || '').matchAll(/"?public"?\."?([a-z0-9_]+)"?/gi)].map(m => m[1]))]
+  const usadoEm = [...new Set(objetos.flatMap(o => (MAPA_OBJETOS[o] || []).map(nomeArquivo)))]
+  return {
+    ...q,
+    objetos,
+    usado_em: usadoEm,
+    origem: ORIGEM_PAPEL[q.papel] || q.papel || '—',
+    tipo: /pgrst_call|json_to_record/.test(q.consulta || '') ? 'Função (RPC)' : objetos.length ? 'Leitura de tabela/view' : 'Consulta',
+  }
+}
 
 const API = 'https://api.supabase.com'
 const TTL_MS = 60 * 1000
@@ -57,8 +91,11 @@ export async function getBanco({ refresh = false } = {}) {
       : error.message)
     e.status = 502; throw e
   }
-  cacheBanco = { t: Date.now(), dados: data }
-  return data
+  // Comandos de manutenção ficam fora (a função nova já filtra; isto cobre a versão antiga) + origem de cada consulta
+  const MANUT = /^\s*(create|alter|drop|explain|begin|commit|rollback|analyze|vacuum|grant|revoke|comment|do|set|reset|truncate|refresh)\b/i
+  const dados = { ...data, consultas_lentas: (data?.consultas_lentas || []).filter(q => !MANUT.test(q.consulta || '')).map(enriquecerConsulta) }
+  cacheBanco = { t: Date.now(), dados }
+  return dados
 }
 
 // ── Management API (com token) ────────────────────────────────────────────
@@ -243,6 +280,15 @@ export async function calcularControles({ refresh = false } = {}) {
   if (plano.pausa) c.push({ id: 'pausa', grupo: 'Plano', nivel: 'info', titulo: 'Plano gratuito pausa o projeto após 7 dias sem uso',
     detalhe: 'Com o uso diário do portal isso não acontece.' })
 
+  // Destino de cada alerta: aba e tabela da tela onde está a informação (21/11/2026)
+  const DESTINO = {
+    token: { aba: 'requisicoes', alvo: 'aviso-token' }, projeto: { aba: 'visao', alvo: 'projeto' }, saude: { aba: 'visao', alvo: 'projeto' },
+    disco: { aba: 'plano', alvo: 'plano-projeto' }, 'banco-tamanho': { aba: 'plano', alvo: 'uso-banco' }, storage: { aba: 'plano', alvo: 'uso-storage' },
+    mau: { aba: 'plano', alvo: 'uso-mau' }, pausa: { aba: 'plano', alvo: 'plano-projeto' }, banco: { aba: 'banco', alvo: 'banco-resumo' },
+    conexoes: { aba: 'banco', alvo: 'banco-resumo' }, presas: { aba: 'banco', alvo: 'banco-resumo' }, cache: { aba: 'banco', alvo: 'banco-resumo' },
+    lentas: { aba: 'banco', alvo: 'banco-lentas' },
+  }
+  for (const x of c) x.destino = DESTINO[x.id] || { aba: 'visao', alvo: null }
   const ordem = { critico: 0, atencao: 1, info: 2, ok: 3 }
   c.sort((a, b) => ordem[a.nivel] - ordem[b.nivel])
   return {

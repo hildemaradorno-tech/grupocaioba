@@ -12,6 +12,16 @@
 // "Connection timeout" a cada 30 min. O usuário acompanha pela tela.
 import { getVisaoGeral, getPlano, getMetricas, ping } from './railwayMonitor.js'
 
+function destinoRailway(id) {
+  const [tipo, chave] = String(id).split(/:(.*)/s)
+  if (tipo === 'ping' || tipo === 'api') return { aba: 'visao', alvo: chave ? `servico-${chave}` : null }
+  if (tipo === 'deploy') return { aba: 'deploys', alvo: 'deploys' }
+  if (['mem-media', 'mem-pico', 'cpu-pico', 'metricas'].includes(tipo)) return { aba: 'consumo', alvo: 'consumo' }
+  if (['assinatura', 'api-plano'].includes(tipo)) return { aba: 'plano', alvo: 'plano-assinatura' }
+  if (['gasto', 'limite-estourado', 'limite-gasto'].includes(tipo)) return { aba: 'plano', alvo: 'plano-uso' }
+  return { aba: 'visao', alvo: null }
+}
+
 export const LIMITES = {
   memoriaMediaMb: 500,
   pctAtencao: 60,
@@ -134,6 +144,8 @@ export async function calcularControles({ refresh = false } = {}) {
     })
   }
 
+  // Destino de cada alerta: aba e tabela da tela onde está a informação (21/11/2026)
+  for (const ct of controles) ct.destino = destinoRailway(ct.id)
   const ordem = { critico: 0, atencao: 1, info: 2, ok: 3 }
   controles.sort((a, b) => ordem[a.nivel] - ordem[b.nivel])
   return {

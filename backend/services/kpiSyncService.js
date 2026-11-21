@@ -88,7 +88,12 @@ async function _executar(origem, usuarioEmail) {
   let sucessos = 0
   let falhas = 0
 
-  for (const { chave, fn } of FONTES_PLANILHA) {
+  // Planilha antiga da Matriz (SHAREPOINT_SITE_ID + SHAREPOINT_FILE_ID): sem as duas variáveis, a etapa é pulada
+  // em vez de contar 4 falhas — antes toda Atualização saía "PARCIAL" por isso (achado pela Saúde do Sistema,
+  // 19/11/2026; o usuário não usa mais essa planilha).
+  const planilhaConfigurada = !!(process.env.SHAREPOINT_SITE_ID && process.env.SHAREPOINT_FILE_ID)
+  if (!planilhaConfigurada) detalhes.planilhas.push({ chave: 'todas', ok: true, pulada: true, motivo: 'SHAREPOINT_SITE_ID/SHAREPOINT_FILE_ID não configurados' })
+  for (const { chave, fn } of planilhaConfigurada ? FONTES_PLANILHA : []) {
     try {
       const dados = await fn()
       const { error } = await supabaseAdmin

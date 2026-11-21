@@ -95,6 +95,9 @@ import CalcVendaServico from './pages/calculadoras/CalcVendaServico'
 import Documentacoes from './pages/Documentacoes'
 import MonitorRailway from './pages/governanca/MonitorRailway'
 import MonitorSupabase from './pages/governanca/MonitorSupabase'
+import MonitorSharepoint from './pages/governanca/MonitorSharepoint'
+import MonitorCloudflare from './pages/governanca/MonitorCloudflare'
+import SaudeSistema from './pages/governanca/SaudeSistema'
 import GradeTreinamentos from './pages/treinamentos/GradeTreinamentos'
 import GrupoAcessos from './pages/governanca/GrupoAcessos'
 import PerfisAcesso from './pages/governanca/PerfisAcesso'
@@ -331,6 +334,9 @@ export default function App() {
           { path: '/documentacoes', element: <Documentacoes />, menuPath: 'documentacoes' },
           { path: '/governanca/monitor-railway', element: <MonitorRailway />, menuPath: 'governanca/monitor-railway' },
           { path: '/governanca/monitor-supabase', element: <MonitorSupabase />, menuPath: 'governanca/monitor-supabase' },
+          { path: '/governanca/monitor-sharepoint', element: <MonitorSharepoint />, menuPath: 'governanca/monitor-sharepoint' },
+          { path: '/governanca/monitor-cloudflare', element: <MonitorCloudflare />, menuPath: 'governanca/monitor-cloudflare' },
+          { path: '/governanca/saude-sistema', element: <SaudeSistema />, menuPath: 'governanca/saude-sistema' },
           { path: '/rpa/agendamentos', element: <Navigate to="/bi/rpa-execucoes?modo=controle" replace /> },
           { path: '/treinamentos/grade', element: <GradeTreinamentos />, menuPath: 'treinamentos/grade' },
           { path: '/governanca/grupo-acessos', element: <GrupoAcessos />, menuPath: 'governanca/grupo-acessos' },

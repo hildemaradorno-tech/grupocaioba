@@ -442,10 +442,16 @@ export const MENU_TREE = [
           { key: 'rpa/agendamentos', label: 'Controle — Agendamento de Processos' },
         ],
       },
+      // Saúde do Sistema (19/11/2026): semáforo de todos os monitores + rotinas automáticas + integrações (/api/saude-sistema)
+      { key: 'governanca/saude-sistema', label: 'Saúde do Sistema' },
       // Monitor Railway (19/11/2026): status, saúde, consumo, deploys e logs do backend (/api/railway)
       { key: 'governanca/monitor-railway', label: 'Monitor Railway' },
       // Monitor Supabase (19/11/2026): banco, Storage, conexões, desempenho, saúde e logs (/api/supabase-monitor)
       { key: 'governanca/monitor-supabase', label: 'Monitor Supabase' },
+      // Monitor SharePoint (19/11/2026): planilhas que alimentam o portal (existência e atualização), senha do app no Azure (/api/sharepoint-monitor)
+      { key: 'governanca/monitor-sharepoint', label: 'Monitor SharePoint' },
+      // Monitor Cloudflare (19/11/2026): site no ar, publicações do frontend (Pages) e limite do plano (/api/cloudflare-monitor)
+      { key: 'governanca/monitor-cloudflare', label: 'Monitor Cloudflare' },
       { key: 'documentacoes', label: 'Documentações' },
       { key: 'ecossistema', label: 'Ecossistema' },
     ],

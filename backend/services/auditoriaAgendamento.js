@@ -15,6 +15,7 @@ import cron from 'node-cron'
 import { getSupabaseAdmin } from './supabaseAdmin.js'
 import { getOsAbertasGeral } from './sharepointGarantias.js'
 import { buscarOsAbertasMicrowork } from './microworkIntegracao.js'
+import { batimento, resultado } from './monitorRotinas.js'
 
 const FUSO = process.env.AUD_AGENDAMENTO_TZ || 'America/Campo_Grande'
 const POR_SISTEMA = 'Sistema (agendamento)'
@@ -125,7 +126,11 @@ export function iniciarSchedulerAuditoria() {
     return
   }
   cron.schedule('*/5 * * * *', () => {
-    executarAgendamentosAuditoria().catch(err => console.error('[Auditoria Agendada] Erro no tick:', err.message))
+    batimento('auditoria') // Saúde do Sistema: prova de que o scheduler está vivo
+    executarAgendamentosAuditoria().catch(err => {
+      console.error('[Auditoria Agendada] Erro no tick:', err.message)
+      resultado('auditoria', { ok: false, mensagem: err.message })
+    })
   })
   console.log(`[Auditoria Agendada] Scheduler iniciado (a cada 5 min, fuso ${FUSO}).`)
 }

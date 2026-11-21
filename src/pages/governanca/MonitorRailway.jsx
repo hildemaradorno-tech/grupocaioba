@@ -7,7 +7,7 @@ import {
   RefreshCw, CheckCircle2, XCircle, AlertTriangle, Activity, LayoutDashboard, Rocket, ScrollText,
   Cpu, Globe, GitCommit, Clock, Loader2, Search, BadgeCheck, CreditCard,
 } from 'lucide-react'
-import { PainelControles, Relogio, BarraUso } from '../../components/monitor/MonitorUI'
+import { PainelControles, Relogio, BarraUso, useAbaNaUrl, useRolarParaAlvo, idAlvo } from '../../components/monitor/MonitorUI'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
 
@@ -92,7 +92,9 @@ async function api(caminho) {
 }
 
 export default function MonitorRailway() {
-  const [aba, setAba] = useState('visao')
+  // Aba na URL + rolagem até o alvo do alerta clicado (21/11/2026)
+  const [aba, setAba, irPara] = useAbaNaUrl(ABAS.map(a => a[0]), 'visao')
+  useRolarParaAlvo()
   const [dados, setDados] = useState(null)
   const [carregando, setCarregando] = useState(false)
   const [erro, setErro] = useState(null)
@@ -208,7 +210,7 @@ export default function MonitorRailway() {
         <>
           {aba === 'visao' && <AbaVisao servicos={servicos} pings={pings} nomeServico={nomeServico}
             capacidade={plano?.workspaces?.[0]?.capacidade}
-            controles={controles} erroControles={erroControles} recarregandoControles={recarregandoControles} />}
+            controles={controles} erroControles={erroControles} recarregandoControles={recarregandoControles} onIr={irPara} />}
           {aba === 'plano' && <AbaPlano plano={plano} erro={erroPlano} servicos={servicos} nomeServico={nomeServico} />}
           {aba === 'consumo' && servico && <AbaConsumo servico={servico} seletor={seletorServico} capacidade={plano?.workspaces?.[0]?.capacidade} />}
           {aba === 'deploys' && <AbaDeploys servicos={servicos} nomeServico={nomeServico} />}
@@ -247,7 +249,7 @@ function IndicadorMemoria({ atualGb, picoGb, limiteGb }) {
 }
 
 // ── Visão Geral: pontos de controle + um card por serviço/ambiente ──────────
-function AbaVisao({ servicos, pings, nomeServico, capacidade, controles, erroControles, recarregandoControles }) {
+function AbaVisao({ servicos, pings, nomeServico, capacidade, controles, erroControles, recarregandoControles, onIr }) {
   // Memória de cada serviço (agora e pico de 7 dias) para o relógio de memória
   const [mem, setMem] = useState({})
   useEffect(() => {
@@ -264,7 +266,7 @@ function AbaVisao({ servicos, pings, nomeServico, capacidade, controles, erroCon
   const fmtGb = (gb) => gb == null ? '—' : gb < 1 ? `${Math.round(gb * 1024)} MB` : `${gb.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} GB`
   return (
     <div className="space-y-4">
-      <PainelControles controles={controles} erro={erroControles} recarregando={recarregandoControles} />
+      <PainelControles controles={controles} erro={erroControles} recarregando={recarregandoControles} onIr={onIr} />
       {/* Cards Serviços / No ar / Com falha / Resposta média saíram (19/11/2026): a falha aparece dentro do card
           do serviço só quando acontece, e o relógio de resposta fica na "Saúde do domínio" do serviço. */}
       {/* Um card por serviço, ocupando a largura da página: identificação | saúde e deploy | relógio */}
@@ -273,7 +275,7 @@ function AbaVisao({ servicos, pings, nomeServico, capacidade, controles, erroCon
           const p = s.dominio ? pings[s.dominio] : null
           const u = s.ultimo
           return (
-            <div key={s.chave} className="bg-white border border-slate-200 rounded-xl p-5 space-y-3">
+            <div key={s.chave} id={idAlvo(`servico-${s.chave}`)} className="bg-white border border-slate-200 rounded-xl p-5 space-y-3">
               <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_auto_auto] gap-6 items-center">
                 {/* Identificação e, abaixo, o último deploy */}
                 <div className="min-w-0 space-y-3">
@@ -416,7 +418,7 @@ function AbaConsumo({ servico, seletor, capacidade }) {
   )
 
   return (
-    <div className="space-y-3">
+    <div id={idAlvo('consumo')} className="space-y-3 rounded-xl">
       <div className="flex flex-wrap items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 py-2">
         {seletor}
         <div className="flex items-center gap-1 bg-slate-100 rounded-md p-1">
@@ -461,7 +463,7 @@ function AbaDeploys({ servicos, nomeServico }) {
     .flatMap(s => s.deploys.map(d => ({ ...d, servicoNome: nomeServico(s), emUso: s.ativo?.id === d.id })))
     .sort((a, b) => (a.criado_em < b.criado_em ? 1 : -1)), [servicos])
   return (
-    <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
+    <div id={idAlvo('deploys')} className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
       <table className="w-full text-left border-collapse min-w-[900px]">
         <thead>
           <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[11px] font-semibold uppercase tracking-wider">
@@ -592,7 +594,7 @@ function UsoCapacidade({ w, servicos, nomeServico }) {
   const incluido = USO_INCLUIDO[w.plano] ?? null
 
   return (
-    <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+    <div id={idAlvo('plano-uso')} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
       <p className="px-4 py-2 bg-slate-50 border-b border-slate-200 text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Uso × Capacidade do plano</p>
       <div className="p-4 space-y-4">
         {servicos.map(s => {
@@ -708,7 +710,7 @@ function AbaPlano({ plano, erro, servicos = [], nomeServico = (s) => s.servico }
                 </a>
               </div>
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div id={idAlvo('plano-assinatura')} className="grid grid-cols-2 md:grid-cols-4 gap-3 rounded-xl">
               {cards.map(([rot, val, cls]) => (
                 <div key={rot} className="bg-white border border-slate-200 rounded-xl px-4 py-3">
                   <p className="text-[11px] text-slate-500">{rot}</p>

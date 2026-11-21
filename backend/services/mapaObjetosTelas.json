@@ -1,0 +1,633 @@
+{
+ "approve_metas_consultor_empresa": [
+  "src/services/supabaseClient.js"
+ ],
+ "approve_metas_mecanico_empresa": [
+  "src/services/supabaseClient.js"
+ ],
+ "approve_metas_pecas_empresa": [
+  "src/services/supabaseClient.js"
+ ],
+ "approve_metas_pecas_setor": [
+  "src/services/supabaseClient.js"
+ ],
+ "aud_agendamentos": [
+  "backend/services/auditoriaAgendamento.js",
+  "backend/services/saudeSistema.js",
+  "src/services/supabaseClient.js"
+ ],
+ "aud_auditoria_os": [
+  "backend/services/auditoriaAgendamento.js",
+  "backend/services/kpiAuditoriaOs.js",
+  "src/services/supabaseClient.js"
+ ],
+ "aud_auditoria_reaberturas": [
+  "src/services/supabaseClient.js"
+ ],
+ "aud_auditorias": [
+  "backend/services/auditoriaAgendamento.js",
+  "backend/services/kpiAuditoriaOs.js",
+  "src/services/supabaseClient.js"
+ ],
+ "aud_configuracoes": [
+  "backend/services/kpiAuditoriaOs.js",
+  "src/services/supabaseClient.js"
+ ],
+ "aud_encerrar_prazos": [
+  "src/services/supabaseClient.js"
+ ],
+ "aud_metas_indicadores": [
+  "backend/services/kpiAuditoriaOs.js",
+  "src/services/supabaseClient.js"
+ ],
+ "aud_situacoes": [
+  "src/services/supabaseClient.js"
+ ],
+ "audext_achados": [
+  "src/services/supabaseClient.js"
+ ],
+ "audext_ciclos": [
+  "src/services/supabaseClient.js"
+ ],
+ "audext_planos_acao": [
+  "src/services/supabaseClient.js"
+ ],
+ "audext_tipos_acao": [
+  "src/services/supabaseClient.js"
+ ],
+ "audext_tipos_divergencia": [
+  "src/services/supabaseClient.js"
+ ],
+ "bi_agendamento_metas": [
+  "backend/services/kpiAgendamento.js",
+  "src/services/supabaseClient.js"
+ ],
+ "bi_medidas_agregado": [
+  "src/services/supabaseClient.js"
+ ],
+ "bi_medidas_agregado_mensal": [
+  "src/services/supabaseClient.js"
+ ],
+ "bi_planos_acoes": [
+  "src/services/supabaseClient.js"
+ ],
+ "bi_planos_metas": [
+  "backend/services/kpiPlanosManutencao.js",
+  "src/services/supabaseClient.js"
+ ],
+ "bi_planos_oportunidades": [
+  "src/services/supabaseClient.js"
+ ],
+ "bpm_audit_log": [
+  "src/services/bpm/bpmService.js"
+ ],
+ "bpm_comments": [
+  "src/services/bpm/bpmService.js"
+ ],
+ "bpm_process_definitions": [
+  "src/services/bpm/bpmService.js"
+ ],
+ "bpm_process_instances": [
+  "src/services/bpm/bpmService.js"
+ ],
+ "bpm_tasks": [
+  "src/services/bpm/bpmService.js"
+ ],
+ "config_sobreaviso": [
+  "src/services/supabaseClient.js"
+ ],
+ "ctb_centro_resultado_empresas": [
+  "src/services/supabaseClient.js"
+ ],
+ "ctb_centros_resultado": [
+  "src/services/supabaseClient.js"
+ ],
+ "ctb_cr_visuais": [
+  "src/services/supabaseClient.js"
+ ],
+ "ctb_dre_linhas": [
+  "src/services/supabaseClient.js"
+ ],
+ "ctb_orcamento": [
+  "src/services/supabaseClient.js"
+ ],
+ "ctb_plano_contas": [
+  "src/services/supabaseClient.js"
+ ],
+ "dim_agrupamento_cargos": [
+  "src/services/supabaseClient.js"
+ ],
+ "dim_agrupamento_departamentos": [
+  "src/services/supabaseClient.js"
+ ],
+ "dim_agrupamento_empresas": [
+  "src/services/supabaseClient.js"
+ ],
+ "dim_areas": [
+  "src/services/supabaseClient.js"
+ ],
+ "dim_bases_calculo": [
+  "src/services/supabaseClient.js"
+ ],
+ "dim_box": [
+  "backend/services/kpiMetas.js",
+  "src/services/supabaseClient.js"
+ ],
+ "dim_calendario_feriados": [
+  "src/services/supabaseClient.js"
+ ],
+ "dim_cargo_ganhos": [
+  "src/services/supabaseClient.js"
+ ],
+ "dim_cargos": [
+  "src/context/AuthContext.jsx",
+  "src/services/bpm/bpmService.js",
+  "src/services/supabaseClient.js"
+ ],
+ "dim_classificacao_compras": [
+  "src/services/supabaseClient.js"
+ ],
+ "dim_departamentos": [
+  "backend/services/boxFuncionarios.js",
+  "backend/services/produtividadeSync.js",
+  "src/services/supabaseClient.js"
+ ],
+ "dim_empresas": [
+  "backend/services/auditoriaAgendamento.js",
+  "backend/services/kpiGarantias.js",
+  "backend/services/produtividadeSync.js",
+  "src/services/supabaseClient.js"
+ ],
+ "dim_fontes_calculo": [
+  "backend/services/sharepointMonitor.js",
+  "src/services/supabaseClient.js"
+ ],
+ "dim_fontes_microwork": [
+  "src/services/supabaseClient.js"
+ ],
+ "dim_funcionarios": [
+  "backend/routes/kpi.js",
+  "backend/services/boxFuncionarios.js",
+  "backend/services/kpiMetas.js",
+  "backend/services/produtividadeSync.js",
+  "backend/services/sharepointFonteCalculo.js",
+  "src/pages/MinhaNotaFiscal.jsx",
+  "src/services/supabaseClient.js"
+ ],
+ "dim_funcionarios_assinatura": [
+  "src/services/supabaseClient.js"
+ ],
+ "dim_medidas_bi": [
+  "backend/services/biMedidasDiarioSync.js",
+  "backend/services/kpiPossibilidades.js",
+  "src/services/supabaseClient.js"
+ ],
+ "dim_medidas_bi_regra_condicoes": [
+  "src/services/supabaseClient.js"
+ ],
+ "dim_medidas_bi_regras": [
+  "backend/services/biMedidasDiarioSync.js",
+  "src/services/supabaseClient.js"
+ ],
+ "dim_movimento_venda": [
+  "src/services/supabaseClient.js"
+ ],
+ "dim_natureza_operacoes": [
+  "src/services/supabaseClient.js"
+ ],
+ "dim_regra_condicoes": [
+  "src/services/supabaseClient.js"
+ ],
+ "dim_regras_calculo": [
+  "src/services/supabaseClient.js"
+ ],
+ "dim_regras_comissao": [
+  "src/services/supabaseClient.js"
+ ],
+ "dim_regras_comissao_faixas": [
+  "src/services/supabaseClient.js"
+ ],
+ "dim_rubricas": [
+  "src/services/supabaseClient.js"
+ ],
+ "dim_segmentos": [
+  "src/services/supabaseClient.js"
+ ],
+ "dim_setores": [
+  "backend/routes/kpi.js",
+  "backend/services/boxFuncionarios.js",
+  "backend/services/kpiMetas.js",
+  "backend/services/kpiPossibilidades.js",
+  "backend/services/produtividadeSync.js",
+  "backend/services/sharepointFonteCalculo.js",
+  "src/services/supabaseClient.js"
+ ],
+ "dim_tipo_titulo_garantia": [
+  "backend/services/kpiGarantias.js",
+  "src/services/supabaseClient.js"
+ ],
+ "dim_tipos_os": [
+  "backend/services/biMedidasDiarioSync.js",
+  "backend/services/kpiPossibilidades.js",
+  "backend/services/tiposOsFiltro.js",
+  "src/pages/pos-vendas/AbaEncerradoFaturado.jsx",
+  "src/pages/pos-vendas/AplicadasPorTipo.jsx",
+  "src/pages/pos-vendas/IndicadoresProdutividade.jsx",
+  "src/services/supabaseClient.js"
+ ],
+ "dim_tipos_processo": [
+  "src/services/supabaseClient.js"
+ ],
+ "dim_tipos_produtos": [
+  "src/services/supabaseClient.js"
+ ],
+ "ecossistema_departamentos": [
+  "src/services/supabaseClient.js"
+ ],
+ "fato_bi_medidas_diario": [
+  "backend/services/biMedidasDiarioSync.js",
+  "backend/services/kpiPossibilidades.js"
+ ],
+ "fato_calendario": [
+  "backend/services/kpiMetas.js",
+  "src/services/supabaseClient.js"
+ ],
+ "fato_campanha_diario": [
+  "backend/services/campanhaDiarioSync.js",
+  "src/services/supabaseClient.js"
+ ],
+ "fato_campanha_fechamento": [
+  "src/services/supabaseClient.js"
+ ],
+ "fato_campanha_regras": [
+  "src/services/supabaseClient.js"
+ ],
+ "fato_comissoes_calculadas": [
+  "src/pages/MinhaNotaFiscal.jsx",
+  "src/services/supabaseClient.js"
+ ],
+ "fato_comissoes_lotes": [
+  "src/services/supabaseClient.js"
+ ],
+ "fato_comissoes_lotes_historico": [
+  "src/services/supabaseClient.js"
+ ],
+ "fato_metas_publicadas": [
+  "backend/routes/kpi.js",
+  "backend/services/kpiMetas.js",
+  "src/services/supabaseClient.js"
+ ],
+ "fato_politica_comissao": [
+  "src/services/supabaseClient.js"
+ ],
+ "fato_rascunho_metas_funilaria_pintura": [
+  "src/layouts/SidebarLayout.jsx",
+  "src/services/supabaseClient.js"
+ ],
+ "fato_rascunho_metas_pecas": [
+  "backend/services/kpiMetas.js",
+  "src/services/supabaseClient.js"
+ ],
+ "fato_rascunho_metas_servicos_consultor": [
+  "backend/routes/kpi.js",
+  "backend/services/produtividadeSync.js",
+  "src/services/supabaseClient.js"
+ ],
+ "fato_rascunho_metas_servicos_mecanico": [
+  "backend/services/produtividadeSync.js",
+  "src/layouts/SidebarLayout.jsx",
+  "src/services/supabaseClient.js"
+ ],
+ "fato_rascunho_metas_terceiros": [
+  "src/layouts/SidebarLayout.jsx",
+  "src/services/supabaseClient.js"
+ ],
+ "fornecedores": [
+  "src/services/supabaseClient.js"
+ ],
+ "gar_configuracoes": [
+  "backend/services/kpiGarantias.js",
+  "src/services/supabaseClient.js"
+ ],
+ "gar_garantias": [
+  "backend/services/kpiGarantias.js",
+  "src/services/supabaseClient.js"
+ ],
+ "gar_garantias_log": [
+  "backend/services/kpiGarantias.js",
+  "src/services/supabaseClient.js"
+ ],
+ "gar_garantias_respostas": [
+  "src/services/supabaseClient.js"
+ ],
+ "gar_metas_indicadores": [
+  "backend/services/kpiGarantias.js",
+  "src/services/supabaseClient.js"
+ ],
+ "gar_modelos_nota_debito": [
+  "src/services/supabaseClient.js"
+ ],
+ "gar_notas_debito": [
+  "src/services/supabaseClient.js"
+ ],
+ "gar_regras_mes": [
+  "backend/services/kpiGarantias.js",
+  "src/services/supabaseClient.js"
+ ],
+ "gar_titulos_observacoes": [
+  "src/services/supabaseClient.js"
+ ],
+ "gerar_calendario_anual": [
+  "src/services/supabaseClient.js"
+ ],
+ "get_pending_metas_pecas": [
+  "src/layouts/SidebarLayout.jsx",
+  "src/services/supabaseClient.js"
+ ],
+ "governanca_grupo_menus": [
+  "src/services/supabaseClient.js"
+ ],
+ "governanca_grupos_acesso": [
+  "src/services/supabaseClient.js"
+ ],
+ "governanca_menus": [
+  "src/services/supabaseClient.js"
+ ],
+ "governanca_perfis": [
+  "src/services/supabaseClient.js"
+ ],
+ "grupos_acesso": [
+  "src/context/AuthContext.jsx",
+  "src/services/supabaseClient.js"
+ ],
+ "honda_contas_receber_anotacoes": [
+  "src/services/supabaseClient.js"
+ ],
+ "honda_contas_receber_status": [
+  "src/services/supabaseClient.js"
+ ],
+ "kpi_cache_extrator": [
+  "backend/services/kpiSyncService.js"
+ ],
+ "kpi_cache_planilhas": [
+  "backend/routes/kpi.js",
+  "backend/services/kpiSyncService.js",
+  "src/services/supabaseClient.js"
+ ],
+ "kpi_metas_manuais": [
+  "backend/services/kpiMetasManuais.js"
+ ],
+ "kpi_pesos": [
+  "backend/services/kpiPesos.js"
+ ],
+ "kpi_sync_execucoes": [
+  "backend/services/kpiSyncService.js",
+  "backend/services/saudeSistema.js"
+ ],
+ "metas_aprovacao_historico": [
+  "src/services/supabaseClient.js"
+ ],
+ "mon_sharepoint_frequencia": [
+  "backend/services/sharepointMonitor.js"
+ ],
+ "mon_supabase_stats": [
+  "backend/services/supabaseMonitor.js"
+ ],
+ "pec_ia_analise": [
+  "src/pages/pecas/gestorPecasApi.js"
+ ],
+ "pec_parametros": [
+  "backend/routes/gestorPecas.js",
+  "src/pages/pecas/gestorPecasApi.js"
+ ],
+ "pec_promocao": [
+  "src/pages/pecas/gestorPecasApi.js"
+ ],
+ "pec_promocao_itens": [
+  "src/pages/pecas/gestorPecasApi.js"
+ ],
+ "pec_snapshot_item": [
+  "backend/routes/gestorPecas.js",
+  "src/pages/pecas/gestorPecasApi.js"
+ ],
+ "pec_sugestao_compra": [
+  "src/pages/pecas/gestorPecasApi.js"
+ ],
+ "pec_transferencia": [
+  "src/pages/pecas/gestorPecasApi.js"
+ ],
+ "permissoes_comissao_modo": [
+  "src/context/AuthContext.jsx",
+  "src/services/supabaseClient.js"
+ ],
+ "permissoes_comissao_setor_nivel": [
+  "src/context/AuthContext.jsx",
+  "src/services/supabaseClient.js"
+ ],
+ "permissoes_comissao_valor": [
+  "src/context/AuthContext.jsx",
+  "src/services/supabaseClient.js"
+ ],
+ "permissoes_depto_grupo": [
+  "src/context/AuthContext.jsx",
+  "src/services/supabaseClient.js"
+ ],
+ "permissoes_depto_grupo_auditoria": [
+  "src/context/AuthContext.jsx",
+  "src/services/supabaseClient.js"
+ ],
+ "permissoes_empresa_grupo": [
+  "src/context/AuthContext.jsx",
+  "src/services/supabaseClient.js"
+ ],
+ "permissoes_empresa_grupo_auditoria": [
+  "src/context/AuthContext.jsx",
+  "src/services/supabaseClient.js"
+ ],
+ "permissoes_grupo": [
+  "src/context/AuthContext.jsx",
+  "src/pages/PermissoesMatriz.jsx",
+  "src/services/supabaseClient.js"
+ ],
+ "permissoes_grupo_acoes": [
+  "src/context/AuthContext.jsx",
+  "src/pages/PermissoesMatriz.jsx",
+  "src/services/supabaseClient.js"
+ ],
+ "pj_anexos": [
+  "src/services/supabaseClient.js"
+ ],
+ "pj_coparticipacao_lancamentos": [
+  "src/services/supabaseClient.js"
+ ],
+ "pj_documentos_exigidos": [
+  "src/services/supabaseClient.js"
+ ],
+ "pj_nf_envios": [
+  "src/services/supabaseClient.js"
+ ],
+ "proj_ata_locais": [
+  "src/services/supabaseClient.js"
+ ],
+ "proj_atas_reuniao": [
+  "src/services/supabaseClient.js"
+ ],
+ "proj_custos_lancamentos": [
+  "src/services/supabaseClient.js"
+ ],
+ "proj_deliberacoes": [
+  "src/services/supabaseClient.js"
+ ],
+ "proj_email_config": [
+  "backend/services/projetosEmailConfig.js",
+  "backend/services/saudeSistema.js",
+  "src/services/supabaseClient.js"
+ ],
+ "proj_fases": [
+  "backend/services/manifestacaoService.js",
+  "src/services/supabaseClient.js"
+ ],
+ "proj_manifestacao_convidados": [
+  "backend/services/manifestacaoScheduler.js",
+  "backend/services/manifestacaoService.js",
+  "src/services/supabaseClient.js"
+ ],
+ "proj_manifestacao_lembretes": [
+  "backend/services/manifestacaoScheduler.js"
+ ],
+ "proj_manifestacoes": [
+  "backend/services/manifestacaoScheduler.js",
+  "src/services/supabaseClient.js"
+ ],
+ "proj_projetos": [
+  "backend/services/manifestacaoScheduler.js",
+  "backend/services/manifestacaoService.js",
+  "src/services/supabaseClient.js"
+ ],
+ "proj_responsaveis": [
+  "src/services/supabaseClient.js"
+ ],
+ "proj_sistemas": [
+  "src/services/supabaseClient.js"
+ ],
+ "proj_status": [
+  "src/services/supabaseClient.js"
+ ],
+ "proj_tarefa_notificacoes": [
+  "backend/services/projetosTaskScheduler.js"
+ ],
+ "proj_tarefas": [
+  "backend/services/projetosTaskScheduler.js",
+  "src/services/supabaseClient.js"
+ ],
+ "proj_tarefas_dependencias": [
+  "src/services/supabaseClient.js"
+ ],
+ "proj_templates": [
+  "src/services/supabaseClient.js"
+ ],
+ "pv_prod_enc_fat": [
+  "src/pages/pos-vendas/AbaEncerradoFaturado.jsx"
+ ],
+ "pv_prod_nao_cobrado": [
+  "backend/services/produtividadeSync.js",
+  "src/pages/pos-vendas/AbaEncerradoFaturado.jsx",
+  "src/pages/pos-vendas/AbaNaoCobrado.jsx"
+ ],
+ "pv_prod_os": [
+  "backend/services/produtividadeSync.js",
+  "src/pages/pos-vendas/AbaEncerradoFaturado.jsx",
+  "src/pages/pos-vendas/AplicadasPorTipo.jsx",
+  "src/pages/pos-vendas/IndicadoresProdutividade.jsx"
+ ],
+ "pv_prod_regras_cor": [
+  "backend/services/kpiProdutividadeConsultor.js",
+  "src/pages/pos-vendas/IndicadoresProdutividade.jsx",
+  "src/pages/pos-vendas/RegrasCoresModal.jsx"
+ ],
+ "pv_prod_sync": [
+  "backend/routes/produtividade.js",
+  "backend/services/produtividadeSync.js",
+  "backend/services/saudeSistema.js",
+  "src/pages/pos-vendas/IndicadoresProdutividade.jsx"
+ ],
+ "rel_cargos_departamentos": [
+  "src/services/supabaseClient.js"
+ ],
+ "rel_cargos_setores": [
+  "src/services/supabaseClient.js"
+ ],
+ "rh_ferias": [
+  "src/services/supabaseClient.js"
+ ],
+ "rh_ferias_importacoes": [
+  "src/services/supabaseClient.js"
+ ],
+ "rh_sobreaviso_plantao": [
+  "src/services/supabaseClient.js"
+ ],
+ "rpa_processos": [
+  "backend/services/sharepointRpaLog.js",
+  "src/services/supabaseClient.js"
+ ],
+ "rpa_rotina_execucoes": [
+  "src/services/supabaseClient.js"
+ ],
+ "rpa_rotinas": [
+  "backend/services/sharepointRpaLog.js",
+  "src/services/supabaseClient.js"
+ ],
+ "rpa_salvar_execucoes": [
+  "src/services/supabaseClient.js"
+ ],
+ "trein_categorias": [
+  "src/services/supabaseClient.js"
+ ],
+ "trein_curso_cargos": [
+  "src/services/supabaseClient.js"
+ ],
+ "trein_cursos": [
+  "src/services/supabaseClient.js"
+ ],
+ "trein_organograma": [
+  "src/services/supabaseClient.js"
+ ],
+ "trein_sistemas": [
+  "src/services/supabaseClient.js"
+ ],
+ "truckpag_baixas_titulos": [
+  "src/services/supabaseClient.js"
+ ],
+ "truckpag_config_conciliacao": [
+  "src/services/supabaseClient.js"
+ ],
+ "truckpag_config_tipos_saldo": [
+  "src/services/supabaseClient.js"
+ ],
+ "truckpag_creditos_nao_identificados": [
+  "src/services/supabaseClient.js"
+ ],
+ "truckpag_repasses": [
+  "src/services/supabaseClient.js"
+ ],
+ "truckpag_titulos": [
+  "src/services/supabaseClient.js"
+ ],
+ "usuarios": [
+  "backend/services/projetosTaskScheduler.js",
+  "src/context/AuthContext.jsx",
+  "src/layouts/SidebarLayout.jsx",
+  "src/pages/RedefinirSenha.jsx",
+  "src/pages/TrocarSenhaObrigatoria.jsx",
+  "src/pages/Usuarios.jsx",
+  "src/services/bpm/bpmService.js",
+  "src/services/supabaseClient.js"
+ ],
+ "vw_pv_prod_diario": [
+  "backend/services/kpiProdutividadeConsultor.js",
+  "src/pages/pos-vendas/IndicadoresProdutividade.jsx"
+ ],
+ "vw_pv_prod_mensal": [
+  "src/pages/pos-vendas/IndicadoresProdutividade.jsx"
+ ]
+}

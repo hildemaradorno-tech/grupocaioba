@@ -8,7 +8,7 @@ import {
   DatabaseZap, RefreshCw, CheckCircle2, XCircle, AlertTriangle, LayoutDashboard, BadgeCheck, Database, BarChart3,
   ScrollText, Loader2, Search, KeyRound, HardDrive, Users, Plug, Clock,
 } from 'lucide-react'
-import { PainelControles, Relogio, BarraUso } from '../../components/monitor/MonitorUI'
+import { PainelControles, Relogio, BarraUso, useAbaNaUrl, useRolarParaAlvo, idAlvo } from '../../components/monitor/MonitorUI'
 import logoSupabase from '../../assets/logo-supabase.webp' // logo enviado pelo usuário em 19/11/2026
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
@@ -68,7 +68,7 @@ async function api(caminho) {
 
 function AvisoToken() {
   return (
-    <div className="bg-sky-50 border border-sky-200 rounded-xl p-4 text-[11px] text-sky-900 space-y-1.5">
+    <div id={idAlvo('aviso-token')} className="bg-sky-50 border border-sky-200 rounded-xl p-4 text-[11px] text-sky-900 space-y-1.5">
       <p className="flex items-center gap-1.5 font-bold"><KeyRound className="h-4 w-4" /> Esta parte precisa do token da API do Supabase</p>
       <ol className="list-decimal pl-5 space-y-0.5">
         <li>No Supabase, abra <a href="https://supabase.com/dashboard/account/tokens" target="_blank" rel="noreferrer" className="underline font-semibold">Account › Access Tokens</a> e clique em <strong>Generate new token</strong> (nome sugerido: <em>portal-monitor</em>).</li>
@@ -92,7 +92,9 @@ function IndicadorPct({ pct, rotulo }) {
 }
 
 export default function MonitorSupabase() {
-  const [aba, setAba] = useState('visao')
+  // Aba na URL + rolagem até o alvo do alerta clicado (21/11/2026)
+  const [aba, setAba, irPara] = useAbaNaUrl(ABAS.map(a => a[0]), 'visao')
+  useRolarParaAlvo()
   const [dados, setDados] = useState(null)
   const [carregando, setCarregando] = useState(false)
   const [erro, setErro] = useState(null)
@@ -164,7 +166,7 @@ export default function MonitorSupabase() {
 
       {!dados && carregando && <p className="text-[11px] text-slate-400 flex items-center gap-1.5"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Lendo o Supabase...</p>}
 
-      {dados && aba === 'visao' && <AbaVisao dados={dados} controles={controles} erroControles={erroControles} recarregandoControles={recarregandoControles} />}
+      {dados && aba === 'visao' && <AbaVisao dados={dados} controles={controles} erroControles={erroControles} recarregandoControles={recarregandoControles} onIr={irPara} />}
       {dados && aba === 'plano' && <AbaPlano dados={dados} />}
       {dados && aba === 'banco' && <AbaBanco dados={dados} />}
       {dados && aba === 'requisicoes' && (temToken ? <AbaRequisicoes /> : <AvisoToken />)}
@@ -174,7 +176,7 @@ export default function MonitorSupabase() {
 }
 
 // ── Visão Geral ───────────────────────────────────────────────────────────
-function AbaVisao({ dados, controles, erroControles, recarregandoControles }) {
+function AbaVisao({ dados, controles, erroControles, recarregandoControles, onIr }) {
   const b = dados.banco
   const p = dados.plano
   const a = dados.api
@@ -184,8 +186,8 @@ function AbaVisao({ dados, controles, erroControles, recarregandoControles }) {
   const pctSt = (storageBytes / p.storage_bytes) * 100
   return (
     <div className="space-y-3">
-      <PainelControles controles={controles} erro={erroControles} recarregando={recarregandoControles} />
-      <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
+      <PainelControles controles={controles} erro={erroControles} recarregando={recarregandoControles} onIr={onIr} />
+      <div id={idAlvo('projeto')} className="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_auto_auto_auto] gap-6 items-center">
           <div className="min-w-0 space-y-3">
             <div>
@@ -259,6 +261,8 @@ function AnelUso({ pct }) {
   )
 }
 
+// alvo de cada linha de uso (destino dos alertas do backend)
+const ALVO_USO = [['Database size', 'uso-banco'], ['Monthly active', 'uso-mau'], ['File storage', 'uso-storage']]
 function AbaPlano({ dados }) {
   const b = dados.banco
   const p = dados.plano
@@ -297,7 +301,7 @@ function AbaPlano({ dados }) {
         </div>
         <div className="divide-y divide-slate-100">
           {itens.map(([rot, usado, lim, pct, obs]) => (
-            <div key={rot} className="px-4 py-2.5 flex items-center gap-3">
+            <div key={rot} id={idAlvo(ALVO_USO.find(([p]) => rot.startsWith(p))?.[1] || `uso-${rot}`)} className="px-4 py-2.5 flex items-center gap-3">
               <AnelUso pct={b ? pct : null} />
               <div className="flex-1 min-w-0">
                 <p className="text-[11px] font-semibold text-slate-700">{rot}</p>
@@ -318,7 +322,7 @@ function AbaPlano({ dados }) {
         </p>
       </div>
 
-      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+      <div id={idAlvo('plano-projeto')} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
         <p className="px-4 py-2.5 bg-slate-50 border-b border-slate-200 text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Projeto</p>
         <table className="w-full text-[11px]">
           <tbody>
@@ -350,7 +354,7 @@ function AbaBanco({ dados }) {
   const lim = dados.limites
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div id={idAlvo('banco-resumo')} className="grid grid-cols-2 md:grid-cols-4 gap-3 rounded-xl">
         {[
           [HardDrive, 'Tamanho do banco', tam(dbTotal(b))],
           [Database, 'Tabelas (public)', num(b.qtd_tabelas_public)],
@@ -393,7 +397,7 @@ function AbaBanco({ dados }) {
         <p className="px-4 py-2 text-[10px] text-slate-400 border-t border-slate-100">Linhas descartadas são registros apagados ou alterados que o banco ainda não limpou; o Postgres limpa sozinho com o tempo.</p>
       </div>
 
-      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+      <div id={idAlvo('banco-lentas')} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
         <p className="px-4 py-2.5 bg-slate-50 border-b border-slate-200 text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Consultas mais lentas (média por execução)</p>
         {(b.consultas_lentas || []).length === 0
           ? <p className="px-4 py-3 text-[11px] text-slate-400">Sem dados de consultas.</p>
@@ -402,7 +406,7 @@ function AbaBanco({ dados }) {
               <table className="w-full text-[11px]">
                 <thead className="text-slate-500">
                   <tr className="border-b border-slate-100">
-                    <th className="text-left px-4 py-2 font-semibold">Consulta</th>
+                    <th className="text-left px-4 py-2 font-semibold">Consulta — de onde vem</th>
                     <th className="text-right px-4 py-2 font-semibold">Média</th>
                     <th className="text-right px-4 py-2 font-semibold">Execuções</th>
                     <th className="text-right px-4 py-2 font-semibold">Tempo total</th>
@@ -411,7 +415,23 @@ function AbaBanco({ dados }) {
                 <tbody>
                   {b.consultas_lentas.map((q, i) => (
                     <tr key={i} className="border-b border-slate-50 align-top">
-                      <td className="px-4 py-1.5 text-slate-700 font-mono text-[10px] break-all">{q.consulta}</td>
+                      <td className="px-4 py-1.5">
+                        {/* De onde vem (21/11/2026): objeto do banco, tela/rotina que usa e quem disparou */}
+                        <div className="flex flex-wrap items-center gap-1 mb-1">
+                          {(q.objetos || []).map(o => (
+                            <span key={o} className="px-1.5 py-0.5 rounded bg-indigo-50 border border-indigo-200 text-indigo-700 text-[10px] font-semibold">{o}</span>
+                          ))}
+                          {q.tipo && <span className="text-[10px] text-slate-400">· {q.tipo}</span>}
+                        </div>
+                        <p className="text-[10px] text-slate-600">
+                          <strong>Usado em:</strong> {(q.usado_em || []).length ? q.usado_em.join(' · ') : 'não encontrado no código do portal'}
+                        </p>
+                        <p className="text-[10px] text-slate-500"><strong>Disparado por:</strong> {q.origem || q.papel || '—'}</p>
+                        <details className="mt-0.5">
+                          <summary className="text-[10px] text-slate-400 cursor-pointer hover:text-slate-600">ver o texto da consulta</summary>
+                          <p className="text-slate-700 font-mono text-[10px] break-all mt-0.5">{q.consulta}</p>
+                        </details>
+                      </td>
                       <td className={`px-4 py-1.5 text-right font-semibold whitespace-nowrap ${q.media_ms >= lim.consultaLentaMs ? 'text-amber-600' : 'text-slate-800'}`}>{num(q.media_ms)} ms</td>
                       <td className="px-4 py-1.5 text-right text-slate-600">{num(q.chamadas)}</td>
                       <td className="px-4 py-1.5 text-right text-slate-600 whitespace-nowrap">{num(q.total_s)} s</td>

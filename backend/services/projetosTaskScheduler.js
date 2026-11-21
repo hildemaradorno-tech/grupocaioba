@@ -15,6 +15,7 @@ import cron from 'node-cron'
 import { getSupabaseAdmin } from './supabaseAdmin.js'
 import { enviarEmail } from './emailService.js'
 import { reservarExecucaoDoDia, listaEmails, lerConfigEmails, agoraLocal } from './projetosEmailConfig.js'
+import { batimento, registrar } from './monitorRotinas.js'
 
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000'
 
@@ -256,9 +257,10 @@ export function iniciarSchedulerProjetosTarefas() {
   }
   // a cada 5 min verifica se chegou o horário configurado (uma execução por dia)
   cron.schedule('*/5 * * * *', async () => {
+    batimento('projetos-tarefas') // Saúde do Sistema: prova de que o scheduler está vivo
     try {
       const r = await reservarExecucaoDoDia(supabase, 'ultima_exec_tarefas')
-      if (r) await verificarTarefas(r.config, r.hoje)
+      if (r) await registrar('projetos-tarefas', () => verificarTarefas(r.config, r.hoje))
     } catch (err) {
       console.error('[Projetos] Erro no scheduler de tarefas:', err.message)
     }

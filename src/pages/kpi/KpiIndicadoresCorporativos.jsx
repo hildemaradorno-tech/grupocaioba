@@ -82,8 +82,12 @@ export default function KpiIndicadoresCorporativos({ periodState: periodoMatriz 
   const periodState = periodoMatriz || periodoProprio
   const { activePeriods } = periodState
   const { year } = useKpiYear()
-  const { data: rawRows } = useKpiData(fetchBloco1, MOCK, { year })
+  const { data: rawRows, source, loading } = useKpiData(fetchBloco1, MOCK, { year })
   const rows = useMemo(() => aplicarEstrutura(rawRows), [rawRows])
+  // Sem a planilha do SharePoint (SHAREPOINT_SITE_ID/FILE_ID), o serviço devolve os números de EXEMPLO (MOCK).
+  // Pedido do usuário 19/11/2026 (achado pela Saúde do Sistema): mostrar aviso em vez dos números de exemplo.
+  const semDados = source === 'mock'
+  const carregandoPrimeira = source == null && loading
 
   return (
     <div className="px-6 pb-6 pt-3 space-y-5">
@@ -97,6 +101,17 @@ export default function KpiIndicadoresCorporativos({ periodState: periodoMatriz 
 
       {!periodoMatriz && <PeriodSelector state={periodState} inlineTrimestral hideLegend />}
 
+      {semDados ? (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl px-5 py-4 text-amber-900">
+          <p className="text-sm font-bold">Sem dados — planilha não configurada</p>
+          <p className="text-xs mt-1 text-amber-800">
+            Os Indicadores Corporativos vêm de uma planilha no SharePoint que não está configurada no sistema
+            (variáveis SHAREPOINT_SITE_ID e SHAREPOINT_FILE_ID do backend). Por isso não há números para mostrar.
+          </p>
+        </div>
+      ) : carregandoPrimeira ? (
+        <p className="text-xs text-slate-400">Carregando os indicadores...</p>
+      ) : (
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-xs whitespace-nowrap">
@@ -159,6 +174,7 @@ export default function KpiIndicadoresCorporativos({ periodState: periodoMatriz 
           </table>
         </div>
       </div>
+      )}
     </div>
   )
 }

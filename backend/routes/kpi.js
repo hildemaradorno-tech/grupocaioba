@@ -56,6 +56,7 @@ import { getIndicadoresGarantia } from '../services/kpiGarantias.js'
 import { getIndicadoresAuditoriaOs, normConsultor } from '../services/kpiAuditoriaOs.js'
 import { getProdutividadeConsultores, metaProdutividadeRegrasCor, getEficaciaProdutividadePorCasa, getEficaciaProdutividadeMecanico, semAcento as semAcentoProd } from '../services/kpiProdutividadeConsultor.js'
 import { getIndicadoresAgendamento, comMetasAtuaisAgendamento } from '../services/kpiAgendamento.js'
+import { resultado as resultadoRotina } from '../services/monitorRotinas.js'
 import { getIndicadoresPlanos, contarPlanosPorMes } from '../services/kpiPlanosManutencao.js'
 import { getValoresPossibilidades, getOficinaPorCasa, getFaturamentoSetorMecanica, getBalcaoPecas, limparCachePossibilidades } from '../services/kpiPossibilidades.js'
 
@@ -1427,6 +1428,8 @@ async function aquecerAoIniciar() {
   }
   await passo('peças', () => quadrosBloco3Pecas({ year }))
   console.log(`[aquecimento ao iniciar] ${ok} quadros prontos, ${falhas} falhas, ${Math.round((Date.now() - t0) / 1000)} s`)
+  // Saúde do Sistema (19/11/2026)
+  resultadoRotina('aquecimento-kpi', { ok: falhas === 0, mensagem: `${ok} quadros prontos, ${falhas} falha(s)`, inicio: t0 })
 }
 setTimeout(() => { aquecerAoIniciar().catch(err => console.error('[aquecimento ao iniciar]', err.message)) }, 60_000).unref()
 

@@ -13,6 +13,7 @@ import { getSupabaseAdmin } from './supabaseAdmin.js'
 import { encerrarPeriodoManifestacao } from './manifestacaoService.js'
 import { enviarEmail } from './emailService.js'
 import { reservarExecucaoDoDia } from './projetosEmailConfig.js'
+import { batimento, registrar } from './monitorRotinas.js'
 
 function diasEntre(hojeIso, prazoIso) {
   const hoje = new Date(hojeIso + 'T00:00:00')
@@ -93,9 +94,10 @@ export function iniciarSchedulerManifestacao() {
   }
   // a cada 5 min verifica se chegou o horário configurado (uma execução por dia)
   cron.schedule('*/5 * * * *', async () => {
+    batimento('manifestacao') // Saúde do Sistema: prova de que o scheduler está vivo
     try {
       const r = await reservarExecucaoDoDia(supabase, 'ultima_exec_manif')
-      if (r) await verificarProjetos(r.config, r.hoje)
+      if (r) await registrar('manifestacao', () => verificarProjetos(r.config, r.hoje))
     } catch (err) {
       console.error('[Manifestação] Erro no tick do scheduler:', err.message)
     }
