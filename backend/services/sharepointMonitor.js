@@ -36,7 +36,7 @@ export const FONTES = [
   { id: 'repasses', nome: 'Repasses TruckPag (contas-receber-daf)', telas: 'TruckPag', pasta: `${DAF}/Financeiro - DAF`, padrao: 'contas-receber-daf', frequencia: 'manual' },
   { id: 'veiculos', nome: 'Veículos Vendidos', telas: 'BI Planos de Manutenção (vendas)', pasta: '/Banco de Dados - DAF - Veículos', padrao: 'REL_VEICULOSVENDIDOSPORPERIODO_REPORT', frequencia: 'diaria' },
   { id: 'potencial', nome: 'Potencial Renovação (CRM DAF)', telas: 'BI Planos de Manutenção', pasta: `${DAF}/CRM DMS DAF`, padrao: 'potencial renovação', contem: true, frequencia: 'manual' },
-  { id: 'rpa-log', nome: 'Log de Execuções do RPA', telas: 'Controle de Processos (Dashboard RPA)', pasta: '/Banco de Dados - Log RPA', padrao: 'Historico_Geral_Execucoes_RPA.csv', exato: true, frequencia: 'diaria' },
+  { id: 'rpa-log', nome: 'Log de Execuções do RPA', telas: 'Monitor Robert Automation (Dashboard)', pasta: '/Banco de Dados - Log RPA', padrao: 'Historico_Geral_Execucoes_RPA.csv', exato: true, frequencia: 'diaria' },
   { id: 'extrato-daf', nome: 'Extrato de Pagamento DAF (SAP)', telas: 'Extrato de Pagamento DAF', pasta: '/Banco de Dados - DAF - Extrato de Pagamentos', padrao: '', frequencia: 'manual' },
 ]
 

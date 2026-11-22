@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom'
-import { Settings, TableProperties, Users, ShieldCheck, Building2, Layers, FolderTree, Box as BoxIcon, Briefcase, Tag, Wrench, Package, TrendingUp, FileCheck2, ScrollText, CalendarX, Calendar, Target, ShoppingBag, Car, Cog, ClipboardCheck, UserCheck, LogOut, BarChart2, Wallet, ClipboardList, Home, FolderKanban, CircleDot, FileText, Truck, Calculator, BookOpen, GraduationCap, KeyRound, Eye, EyeOff, X, AlertTriangle, Bike, Network, PieChart, Share2, Gauge, Ruler, ShieldAlert, Landmark, Hash, ListChecks, ExternalLink, Workflow, Trophy, Percent, Palmtree, PhoneCall, PlugZap, Bell, Warehouse, Archive, Megaphone, ArrowRightLeft, Bot, SlidersHorizontal, ChevronRight, Receipt, TrainFront, DatabaseZap, FolderSync, CloudCog, HeartPulse } from 'lucide-react'
+import { Settings, TableProperties, Users, ShieldCheck, Building2, Layers, FolderTree, Box as BoxIcon, Briefcase, Tag, Wrench, Package, TrendingUp, FileCheck2, ScrollText, CalendarX, Calendar, Target, ShoppingBag, Car, Cog, ClipboardCheck, UserCheck, LogOut, BarChart2, Wallet, ClipboardList, Home, FolderKanban, CircleDot, FileText, Truck, Calculator, BookOpen, GraduationCap, KeyRound, Eye, EyeOff, X, AlertTriangle, Bike, Network, PieChart, Share2, Gauge, Ruler, ShieldAlert, Landmark, Hash, ListChecks, ExternalLink, Workflow, Trophy, Percent, Palmtree, PhoneCall, PlugZap, Bell, Warehouse, Archive, Megaphone, ArrowRightLeft, Bot, SlidersHorizontal, ChevronRight, Receipt, TrainFront, DatabaseZap, FolderSync, CloudCog, HeartPulse, BarChart3 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import TrocarSenhaObrigatoria from '../pages/TrocarSenhaObrigatoria'
 import { supabase } from '../services/supabaseClient'
@@ -31,6 +31,7 @@ function getActiveSectionKey(pathname) {
   if (cadastros.includes(pathname)) return '_config'
   if (pathname.startsWith('/metas')) return '_metas'
   if (pathname.startsWith('/garantias-daf')) return '_bi'
+  if (pathname.startsWith('/governanca/processos')) return '_documentacoes' // Monitores de Processos (antes da regra /governanca)
   if (pathname.startsWith('/bi/rpa-execucoes')) return '_documentacoes' // Controle de Execuções RPA fica em Governança
   if (pathname.startsWith('/governanca/saude-sistema')) return '_documentacoes'
   if (pathname.startsWith('/governanca/monitor-railway')) return '_documentacoes' // antes da regra /governanca (Configurações)
@@ -629,9 +630,12 @@ export default function SidebarLayout() {
         return (
           <>
             <FlyGroup label="Governança" />
-            {/* Controle de Execuções RPA (Dashboard | Controle); o Controle é a antiga tela Agendamento de Processos */}
-            {(canView('bi/rpa-execucoes') || canView('rpa/agendamentos')) && <FlyItem to="/bi/rpa-execucoes" icon={Bot} onClose={closeFlyout}>Controle de Processos</FlyItem>}
+            {/* Saúde do Sistema primeiro (pedido do usuário 21/11/2026) */}
             {canView('governanca/saude-sistema') && <FlyItem to="/governanca/saude-sistema" icon={HeartPulse} onClose={closeFlyout}>Saúde do Sistema</FlyItem>}
+            {/* Monitores de Processos (Robert Automation com Dashboard | Controle; Power BI e Fabric só Controle) */}
+            {(canView('bi/rpa-execucoes') || canView('rpa/agendamentos')) && <FlyItem to="/governanca/processos/rpa" icon={Bot} onClose={closeFlyout}>Monitor Robert Automation</FlyItem>}
+            {canView('rpa/agendamentos') && <FlyItem to="/governanca/processos/power-bi" icon={BarChart3} onClose={closeFlyout}>Monitor Power BI</FlyItem>}
+            {canView('rpa/agendamentos') && <FlyItem to="/governanca/processos/fabric" icon={Layers} onClose={closeFlyout}>Monitor Microsoft Fabric</FlyItem>}
             {canView('governanca/monitor-railway') && <FlyItem to="/governanca/monitor-railway" icon={TrainFront} onClose={closeFlyout}>Monitor Railway</FlyItem>}
             {canView('governanca/monitor-supabase') && <FlyItem to="/governanca/monitor-supabase" icon={DatabaseZap} onClose={closeFlyout}>Monitor Supabase</FlyItem>}
             {canView('governanca/monitor-sharepoint') && <FlyItem to="/governanca/monitor-sharepoint" icon={FolderSync} onClose={closeFlyout}>Monitor SharePoint</FlyItem>}

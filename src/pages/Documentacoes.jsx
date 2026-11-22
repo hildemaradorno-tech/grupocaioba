@@ -304,6 +304,12 @@ export default function Documentacoes() {
             <strong>Microsoft Graph API</strong> para ler (e em alguns casos gravar) esses arquivos, entregando os dados
             já tratados para o frontend.
           </PecaCard>
+
+          {/* Robert Automation (21/11/2026): mesmo texto do subtítulo do Monitor Robert Automation */}
+          <PecaCard icon={Bot} titulo="Robert Automation" tag="Robôs de extração (RPA)" corTag="bg-indigo-50 text-indigo-700">
+            É o robô que entra nos sistemas (Dealer.net, SAP, CRM...), extrai os relatórios nos horários agendados e
+            salva no SharePoint, de onde o portal e os BIs leem os dados.
+          </PecaCard>
         </div>
       </Secao>
 

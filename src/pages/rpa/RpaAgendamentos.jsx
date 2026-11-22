@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useSessionState } from '../../hooks/useSessionState'
-import { Settings, ChevronRight, Download, Pencil, CalendarClock, Trash2, Plus, X, AlertTriangle, CopyPlus, Clock, ClipboardList, RefreshCw, Link2, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react'
+import { Settings, ChevronRight, ExternalLink, Download, Pencil, CalendarClock, Trash2, Plus, X, AlertTriangle, CopyPlus, Clock, ClipboardList, RefreshCw, Link2, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react'
+import { itensPlanos } from '../../components/monitor/MonitorUI'
 import { useAuth } from '../../context/AuthContext'
 import { MultiSearchCombobox } from '../../components/SearchCombobox'
 import { apiService } from '../../services/api'
@@ -22,6 +23,27 @@ const TIPOS = [
   { codigo: 'PBI', nome: 'Power BI' },
   { codigo: 'FAB', nome: 'Microsoft Fabric' },
 ]
+
+// Tipo de RPA (21/11/2026, pedido do usuário) — coluna rpa_processos.tipo_processo
+const TIPOS_PROCESSO = [
+  { codigo: 'EXTRACAO', nome: 'Extração de Arquivos' },
+  { codigo: 'OPERACIONAL', nome: 'Operacional' },
+]
+const nomeTipoProcesso = (c) => TIPOS_PROCESSO.find(t => t.codigo === c)?.nome || null
+// Arquivos Extraídos em tabela (21/11/2026): [{ arquivo, pasta }]. Processo antigo sem a lista usa o texto antigo.
+const arquivosDoProcesso = (p) => Array.isArray(p?.arquivos_extraidos) && p.arquivos_extraidos.length
+  ? p.arquivos_extraidos.map(a => ({ arquivo: a.arquivo || '', pasta: a.pasta || '' }))
+  : (p?.relatorios_extraidos ? [{ arquivo: p.relatorios_extraidos, pasta: p.local_fonte || '' }] : [])
+// Linhas preenchidas + textos antigos derivados (lista de nomes e de pastas) para quem ainda lê os campos de texto
+const arquivosParaSalvar = (linhas) => {
+  const ok = (linhas || []).map(l => ({ arquivo: (l.arquivo || '').trim().toUpperCase(), pasta: (l.pasta || '').trim().toUpperCase() }))
+    .filter(l => l.arquivo || l.pasta)
+  return {
+    arquivos_extraidos: ok,
+    relatorios_extraidos: ok.map(l => l.arquivo).filter(Boolean).join('\n'),
+    local_fonte: [...new Set(ok.map(l => l.pasta).filter(Boolean))].join('\n'),
+  }
+}
 
 const formatHora = (h) => h ? h.slice(0, 5) : '—'
 
@@ -158,9 +180,16 @@ function AcoesMenu({ itens }) {
   const visiveis = itens.filter(i => i.onClick && permite(i.acao))
   if (!visiveis.length) return null
 
+  // Abre para baixo; se não couber até o fim da tela, abre para cima do botão (21/11/2026 — nas últimas linhas
+  // o menu ficava fora da tela). Também não passa da borda direita.
   const abrir = (e) => {
     const r = e.currentTarget.getBoundingClientRect()
-    setPos({ top: r.bottom + 4, left: r.left })
+    const altura = visiveis.length * 34 + 10 // ~34 px por item + bordas
+    const largura = 240 // w-60
+    const cabeEmbaixo = r.bottom + 4 + altura <= window.innerHeight - 8
+    const top = cabeEmbaixo ? r.bottom + 4 : Math.max(8, r.top - 4 - altura)
+    const left = Math.min(r.left, window.innerWidth - largura - 8)
+    setPos({ top, left })
   }
 
   return (
@@ -196,21 +225,58 @@ function AcoesMenu({ itens }) {
 
 // Engrenagem do cabeçalho (18/11/2026): reúne Novo Processo, Nova Rotina e Baixar PDF num menu, alinhado à direita.
 // Expandir/retrair do processo (substituiu o ⓘ em 18/11/2026): botão antes do nome e linha de detalhe
-// logo abaixo com Objetivo, Atende o Sistema, Processo Realizado e Local da Fonte (cadastro do processo).
+// logo abaixo com Objetivo, Atende, Processo Realizado e Local da Fonte (cadastro do processo).
 function BotaoExpandir({ aberto, onClick }) {
   return (
-    <button type="button" onClick={onClick} title={aberto ? 'Retrair' : 'Expandir detalhes do processo'}
+    <button type="button" data-export-ocultar onClick={onClick} title={aberto ? 'Retrair' : 'Expandir detalhes do processo'}
       className="p-0.5 -ml-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors shrink-0">
       <ChevronRight className={`h-3.5 w-3.5 transition-transform ${aberto ? 'rotate-90' : ''}`} />
     </button>
   )
 }
+// Tabela editável Arquivo × Pasta do cadastro do processo (21/11/2026). Texto em MAIÚSCULAS, como os demais campos.
+function TabelaArquivosExtraidos({ linhas, onChange }) {
+  const alterar = (i, campo, valor) => onChange(linhas.map((l, k) => (k === i ? { ...l, [campo]: valor.toUpperCase() } : l)))
+  const inp = 'w-full text-xs p-1.5 border border-slate-200 rounded-md font-medium text-slate-800 uppercase placeholder:normal-case focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500'
+  return (
+    <div className="space-y-1.5">
+      <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Arquivos Extraídos</label>
+      <div className="border border-slate-200 rounded-md overflow-hidden">
+        <table className="w-full text-xs">
+          <thead className="bg-slate-50 text-[10px] text-slate-500 uppercase tracking-wide">
+            <tr>
+              <th className="text-left px-2 py-1.5 font-semibold w-[45%]">Nome do arquivo</th>
+              <th className="text-left px-2 py-1.5 font-semibold">Pasta onde fica</th>
+              <th className="w-8" />
+            </tr>
+          </thead>
+          <tbody>
+            {linhas.map((l, i) => (
+              <tr key={i} className="border-t border-slate-100">
+                <td className="p-1.5"><input value={l.arquivo} onChange={e => alterar(i, 'arquivo', e.target.value)} placeholder="Ex.: RFS026_RELICMSESTADO" className={inp} /></td>
+                <td className="p-1.5"><input value={l.pasta} onChange={e => alterar(i, 'pasta', e.target.value)} placeholder="Ex.: SharePoint › Banco de Dados › Contabilidade" className={inp} /></td>
+                <td className="p-1.5 text-center">
+                  <button type="button" onClick={() => onChange(linhas.filter((_, k) => k !== i))} title="Remover este arquivo"
+                    className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-red-50"><Trash2 className="h-3.5 w-3.5" /></button>
+                </td>
+              </tr>
+            ))}
+            {!linhas.length && <tr><td colSpan={3} className="px-2 py-2 text-[11px] text-slate-400">Nenhum arquivo informado.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+      <button type="button" onClick={() => onChange([...linhas, { arquivo: '', pasta: linhas[linhas.length - 1]?.pasta || '' }])}
+        className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-600 hover:text-blue-700">
+        <Plus className="h-3.5 w-3.5" /> Adicionar arquivo
+      </button>
+    </div>
+  )
+}
+
 function LinhaDetalheProcesso({ p, colSpan }) {
   const campos = [
     ['Objetivo do Processo', p?.objetivo],
-    ['Atende o Sistema', p?.atende],
-    ['Arquivos Extraídos', p?.relatorios_extraidos],
-    ['Local da Fonte de Dados', p?.local_fonte],
+    ['Atende', p?.atende],
   ]
   return (
     <tr className="bg-slate-50/60">
@@ -224,6 +290,23 @@ function LinhaDetalheProcesso({ p, colSpan }) {
               <div className={`text-[10px] leading-snug whitespace-pre-wrap break-words ${val ? 'text-slate-700 font-medium' : 'text-slate-300'}`}>{val || '—'}</div>
             </div>
           ))}
+          {/* Arquivos Extraídos × Pasta (21/11/2026) */}
+          <div className="min-w-0">
+            <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wide leading-tight">Arquivos Extraídos</div>
+            {arquivosDoProcesso(p).length ? (
+              <table className="mt-0.5 text-[10px] border border-slate-200 rounded bg-white">
+                <thead><tr className="bg-slate-50 text-slate-500"><th className="text-left px-2 py-1 font-semibold">Arquivo</th><th className="text-left px-2 py-1 font-semibold">Pasta</th></tr></thead>
+                <tbody>
+                  {arquivosDoProcesso(p).map((a, i) => (
+                    <tr key={i} className="border-t border-slate-100 align-top">
+                      <td className="px-2 py-1 text-slate-700 font-medium break-words">{a.arquivo || '—'}</td>
+                      <td className="px-2 py-1 text-slate-600 break-words">{a.pasta || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : <div className="text-[10px] text-slate-300">—</div>}
+          </div>
         </div>
       </td>
     </tr>
@@ -296,7 +379,14 @@ function EngrenagemCabecalho({ itens }) {
 
 const _cache = { uid: null, dados: null, departamentos: null, processos: null }
 
-export default function RpaAgendamentos({ acoesDireita = null, slotAcoes = null }) {
+// sistema (21/11/2026): RPA | PBI | FAB — a tela vira o monitor de um sistema só (menus Monitor Robert Automation,
+// Monitor Power BI e Monitor Microsoft Fabric): filtra os processos por tipo e o cadastro novo já nasce desse tipo.
+// abaExterna (21/11/2026): processos | horario | atualizacao — a aba vem da fileira única de abas do monitor
+// (BiRpaExecucoes) e o seletor interno some.
+// setorExterno / onSetorExterno (21/11/2026): o filtro de setor vem do monitor e vale para TODAS as abas (Dashboard e
+// Controle ao mesmo tempo). Compara pela "chave" do setor (sem acento, espaço ou pontuação: "Pos Vendas" = "PÓS-VENDAS").
+const chaveSetorTxt = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]/g, '')
+export default function RpaAgendamentos({ acoesDireita = null, slotAcoes = null, sistema = null, abaExterna = null, setorExterno = null, onSetorExterno = null }) {
   const { hasPermission, user } = useAuth()
   const uid = user?.id ?? user?.email ?? null
   // cache em memória só vale para o mesmo usuário (troca de login sem recarregar a página)
@@ -312,10 +402,13 @@ export default function RpaAgendamentos({ acoesDireita = null, slotAcoes = null 
   // gravado (departamento_id nulo), então comparar por id escondia esses registros.
   const [filtroDept, setFiltroDept] = useSessionState('rpa_agend_filtro_setor', '')
   const nomeSetor = (id, nome) => nome || departamentos.find(d => d.id === id)?.nome_departamento || ''
-  const setorPassa = (id, nome) => !filtroDept || nomeSetor(id, nome) === filtroDept
+  const usaSetorExterno = typeof onSetorExterno === 'function'
+  const setorPassa = (id, nome) => usaSetorExterno
+    ? (!setorExterno?.chave || chaveSetorTxt(nomeSetor(id, nome)) === setorExterno.chave)
+    : (!filtroDept || nomeSetor(id, nome) === filtroDept)
   const [filtroTipo, setFiltroTipo] = useSessionState('rpa_agend_filtro_tipo', [])
   // Seleção múltipla de tipos; compatível com o valor antigo (string) salvo no navegador
-  const tiposFiltro = Array.isArray(filtroTipo) ? filtroTipo : (filtroTipo ? [filtroTipo] : [])
+  const tiposFiltro = sistema ? [sistema] : Array.isArray(filtroTipo) ? filtroTipo : (filtroTipo ? [filtroTipo] : [])
   const tipoPassa = (tipo) => tiposFiltro.length === 0 || tiposFiltro.includes(tipo)
   const toggleFiltroTipo = (codigo) => {
     setFiltroTipo(prev => {
@@ -330,7 +423,7 @@ export default function RpaAgendamentos({ acoesDireita = null, slotAcoes = null 
   // 18/11/2026: a aba Por Rotina foi unificada na aba Processos (grade semanal + cadastro na mesma aba);
   // quem tinha 'rotina' guardado na sessão cai em 'processos'.
   const [visualizacaoSalva, setVisualizacao] = useSessionState('rpa_agend_visualizacao', 'processos')
-  const visualizacao = visualizacaoSalva === 'rotina' ? 'processos' : visualizacaoSalva
+  const visualizacao = abaExterna || (visualizacaoSalva === 'rotina' ? 'processos' : visualizacaoSalva)
   const [sortRotina, setSortRotina] = useSessionState('rpa_agend_sort_rotina', { col: 'hora', dir: 'asc' })
   const [sortHorario, setSortHorario] = useSessionState('rpa_agend_sort_horario', { col: 'hora', dir: 'asc' })
   const [sortProc, setSortProc] = useSessionState('rpa_agend_sort_proc', { col: 'nome', dir: 'asc' })
@@ -352,7 +445,7 @@ export default function RpaAgendamentos({ acoesDireita = null, slotAcoes = null 
   const [novoProcessoAberto, setNovoProcessoAberto] = useState(false)
   const [novoProcessoNome, setNovoProcessoNome] = useState('')
   const [novoProcessoDeptId, setNovoProcessoDeptId] = useState('')
-  const [novoProcessoTipo, setNovoProcessoTipo] = useState('RPA')
+  const [novoProcessoTipo, setNovoProcessoTipo] = useState(sistema || 'RPA')
   const [novoProcessoRpaVincId, setNovoProcessoRpaVincId] = useState('')
   const [criandoProcesso, setCriandoProcesso] = useState(false)
 
@@ -371,7 +464,7 @@ export default function RpaAgendamentos({ acoesDireita = null, slotAcoes = null 
     if (s.has(chave)) s.delete(chave); else s.add(chave)
     return s
   })
-  const [docProcesso, setDocProcesso] = useState({ objetivo: '', atende: '', relatorios_extraidos: '', local_fonte: '' })
+  const [docProcesso, setDocProcesso] = useState({ tipo_processo: '', tempo_humano_min: '', objetivo: '', atende: '', relatorios_extraidos: '', local_fonte: '', arquivos_extraidos: [] })
   const [criandoProcessoHeader, setCriandoProcessoHeader] = useState(false)
   const [procEditId, setProcEditId] = useState(null)
   const [modalExcluirProcAberto, setModalExcluirProcAberto] = useState(false)
@@ -420,7 +513,7 @@ export default function RpaAgendamentos({ acoesDireita = null, slotAcoes = null 
     setNovoProcessoAberto(false)
     setNovoProcessoNome('')
     setNovoProcessoDeptId('')
-    setNovoProcessoTipo('RPA')
+    setNovoProcessoTipo(sistema || 'RPA')
     setTemplateHora('')
     setDiasTemplate(new Set())
     setExecSelecionadas(new Set())
@@ -450,7 +543,7 @@ export default function RpaAgendamentos({ acoesDireita = null, slotAcoes = null 
     setNovoProcessoAberto(false)
     setNovoProcessoNome('')
     setNovoProcessoDeptId('')
-    setNovoProcessoTipo('RPA')
+    setNovoProcessoTipo(sistema || 'RPA')
     setTemplateHora('')
     setDiasTemplate(new Set())
     setExecSelecionadas(new Set())
@@ -650,7 +743,7 @@ export default function RpaAgendamentos({ acoesDireita = null, slotAcoes = null 
       }))
       setNovoProcessoNome('')
       setNovoProcessoDeptId('')
-      setNovoProcessoTipo('RPA')
+      setNovoProcessoTipo(sistema || 'RPA')
       setNovoProcessoRpaVincId('')
       setNovoProcessoAberto(false)
     } catch (err) {
@@ -664,11 +757,11 @@ export default function RpaAgendamentos({ acoesDireita = null, slotAcoes = null 
     setProcEditId(null)
     setNovoProcessoNomeHeader('')
     setNovoProcessoDeptIdHeader('')
-    setNovoProcessoTipoHeader('RPA')
+    setNovoProcessoTipoHeader(sistema || 'RPA')
     setNovoProcessoRpaVincIdHeader('')
     setNovoProcessoTempoHeader(15)
     setNovoProcessoAtivoHeader(true)
-    setDocProcesso({ objetivo: '', atende: '', relatorios_extraidos: '', local_fonte: '' })
+    setDocProcesso({ tipo_processo: '', tempo_humano_min: '', objetivo: '', atende: '', relatorios_extraidos: '', local_fonte: '', arquivos_extraidos: [] })
     setErroProcessoHeader(null)
     setModalNovoProcessoAberto(true)
   }
@@ -681,7 +774,7 @@ export default function RpaAgendamentos({ acoesDireita = null, slotAcoes = null 
     setNovoProcessoRpaVincIdHeader(p.rpa_vinculado_id || '')
     setNovoProcessoTempoHeader(p.tempo_atualizacao_min ?? 15)
     setNovoProcessoAtivoHeader(p.ativo)
-    setDocProcesso({ objetivo: p.objetivo || '', atende: p.atende || '', relatorios_extraidos: p.relatorios_extraidos || '', local_fonte: p.local_fonte || '' })
+    setDocProcesso({ arquivos_extraidos: arquivosDoProcesso(p), tempo_humano_min: p.tempo_humano_min ?? '', tipo_processo: p.tipo_processo || '', objetivo: p.objetivo || '', atende: p.atende || '', relatorios_extraidos: p.relatorios_extraidos || '', local_fonte: p.local_fonte || '' })
     setErroProcessoHeader(null)
     setModalNovoProcessoAberto(true)
   }
@@ -704,6 +797,7 @@ export default function RpaAgendamentos({ acoesDireita = null, slotAcoes = null 
         rpa_vinculado_nome: rpaVinc?.nome,
         tempo_atualizacao_min: Number(novoProcessoTempoHeader) > 0 ? Number(novoProcessoTempoHeader) : 15,
         ...docProcesso,
+        ...arquivosParaSalvar(docProcesso.arquivos_extraidos),
         ativo: novoProcessoAtivoHeader,
       }
       if (procEditId) {
@@ -737,12 +831,12 @@ export default function RpaAgendamentos({ acoesDireita = null, slotAcoes = null 
     setModalExcluirProcAberto(true)
   }
 
-  // Exporta a tabela da aba aberta (Processos, Por Horário ou Atualização) em PDF (A4 paisagem),
+  // Exporta a tabela da aba aberta (Processos, Agenda ou Atualização) em PDF (A4 paisagem),
   // PNG ou JPG — html2canvas + jsPDF via import dinâmico (mesmo padrão de AtaReuniao.jsx).
   // A coluna Ações (engrenagens) não entra na exportação.
   const ABAS_EXPORT = {
     processos: { id: 'rpa-processos-tabela', titulo: 'Processos', arquivo: 'processos-rpa' },
-    horario: { id: 'rpa-horario-tabela', titulo: 'Por Horário', arquivo: 'por-horario-rpa' },
+    horario: { id: 'rpa-horario-tabela', titulo: 'Agenda', arquivo: 'agenda-rpa' },
     atualizacao: { id: 'rpa-atualizacao-tabela', titulo: 'Atualização', arquivo: 'atualizacao-rpa-powerbi' },
   }
   const handleExportar = async (formato) => {
@@ -755,7 +849,8 @@ export default function RpaAgendamentos({ acoesDireita = null, slotAcoes = null 
         import('html2canvas'),
         import('jspdf'),
       ])
-      const tituloTxt = `${aba.titulo} — Controle de Processos`
+      const nomeMonitor = { RPA: 'Monitor Robert Automation', PBI: 'Monitor Power BI', FAB: 'Monitor Microsoft Fabric' }[sistema] || 'Controle de Processos'
+      const tituloTxt = `${aba.titulo} — ${nomeMonitor}`
       const geradoTxt = `Gerado em ${new Date().toLocaleString('pt-BR')}`
       const canvas = await html2canvas(el, {
         scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff',
@@ -766,6 +861,19 @@ export default function RpaAgendamentos({ acoesDireita = null, slotAcoes = null 
           if (c) {
             c.style.overflow = 'visible'
             c.querySelectorAll('[data-export-ocultar]').forEach(n => n.remove())
+            // O html2canvas calcula a altura da linha menor que o navegador e corta a parte de baixo das letras;
+            // "sticky" e "truncate" também saem errados na imagem. Só na cópia: altura de linha folgada, nada
+            // grudado, nada cortado e o texto alinhado ao centro das células.
+            const st = doc.createElement('style')
+            st.textContent = `
+              #${aba.id} * { line-height: 1.45 !important; text-overflow: clip !important; }
+              #${aba.id} .sticky { position: static !important; }
+              #${aba.id} .truncate, #${aba.id} .line-clamp-3 { overflow: visible !important; white-space: normal !important; -webkit-line-clamp: unset !important; }
+              #${aba.id} span.inline-block, #${aba.id} button.inline-block { padding-top: 2px !important; padding-bottom: 4px !important; vertical-align: middle !important; }
+              #${aba.id} td { vertical-align: middle !important; }
+              #${aba.id} table table td, #${aba.id} table table th { padding-top: 3px !important; padding-bottom: 5px !important; }
+            `
+            doc.head.appendChild(st)
           }
         },
       })
@@ -1176,8 +1284,14 @@ export default function RpaAgendamentos({ acoesDireita = null, slotAcoes = null 
       !(visualizacao === 'atualizacao' && r.processo_id && rpasEscondidosAtu.has(r.processo_id))
     ).forEach(r => addSetor(r.departamento_id, r.departamento_nome))
   }
-  if (filtroDept) nomesSetores.add(filtroDept)
+  if (usaSetorExterno) {
+    // setor escolhido em outra aba que não tem processo aqui: continua aparecendo no seletor
+    if (setorExterno?.nome && ![...nomesSetores].some(n => chaveSetorTxt(n) === setorExterno.chave)) nomesSetores.add(setorExterno.nome)
+  } else if (filtroDept) nomesSetores.add(filtroDept)
   const setoresDisponiveis = [...nomesSetores].sort(cmpTexto)
+  const valorSetor = usaSetorExterno
+    ? (setoresDisponiveis.find(n => chaveSetorTxt(n) === setorExterno?.chave) || '')
+    : filtroDept
 
   if (loading) return <div className="p-6">Carregando...</div>
 
@@ -1209,6 +1323,8 @@ export default function RpaAgendamentos({ acoesDireita = null, slotAcoes = null 
                 { label: 'JPG', onClick: () => handleExportar('jpg') },
               ],
             },
+            // Planos do serviço (contratar), só nos monitores Power BI e Microsoft Fabric — 21/11/2026
+            ...itensPlanos({ PBI: 'powerbi', FAB: 'fabric' }[sistema]).map(p => ({ label: p.label, icon: ExternalLink, onClick: () => p.href && window.open(p.href, '_blank', 'noopener,noreferrer') })),
           ].filter(Boolean)} />
         )
         return slotAcoes ? createPortal(engrenagem, slotAcoes) : <div className="flex justify-end">{engrenagem}</div>
@@ -1224,7 +1340,7 @@ export default function RpaAgendamentos({ acoesDireita = null, slotAcoes = null 
 
       {/* Filtros */}
       <div className="flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-1 bg-slate-100 rounded-md p-1">
+        {!abaExterna && <div className="flex items-center gap-1 bg-slate-100 rounded-md p-1">
           {/* Processos é a primeira aba (18/11/2026) */}
           <button
             type="button"
@@ -1242,7 +1358,7 @@ export default function RpaAgendamentos({ acoesDireita = null, slotAcoes = null 
               visualizacao === 'horario' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
             }`}
           >
-            <Clock className="h-3.5 w-3.5" /> Por Horário
+            <Clock className="h-3.5 w-3.5" /> Agenda
           </button>
           <button
             type="button"
@@ -1253,8 +1369,8 @@ export default function RpaAgendamentos({ acoesDireita = null, slotAcoes = null 
           >
             <RefreshCw className="h-3.5 w-3.5" /> Atualização
           </button>
-        </div>
-        <div className="flex items-center gap-1 bg-slate-100 rounded-md p-1">
+        </div>}
+        {!sistema && <div className="flex items-center gap-1 bg-slate-100 rounded-md p-1">
           <button
             type="button"
             onClick={() => setFiltroTipo([])}
@@ -1283,7 +1399,7 @@ export default function RpaAgendamentos({ acoesDireita = null, slotAcoes = null 
               {t.nome}
             </button>
           ))}
-        </div>
+        </div>}
         {/* Troca Dashboard | Controle da tela Controle de Execuções RPA, na linha das abas, à direita */}
         {acoesDireita && <div className="ml-auto">{acoesDireita}</div>}
       </div>
@@ -1303,8 +1419,10 @@ export default function RpaAgendamentos({ acoesDireita = null, slotAcoes = null 
           />
         </div>
         <select
-          value={filtroDept}
-          onChange={e => setFiltroDept(e.target.value)}
+          value={valorSetor}
+          onChange={e => usaSetorExterno
+            ? onSetorExterno(e.target.value ? { chave: chaveSetorTxt(e.target.value), nome: e.target.value } : null)
+            : setFiltroDept(e.target.value)}
           className="text-xs p-2 border border-slate-200 rounded-md font-medium text-slate-700 bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
         >
           <option value="">Todos os setores</option>
@@ -1355,9 +1473,12 @@ export default function RpaAgendamentos({ acoesDireita = null, slotAcoes = null 
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[11px] font-semibold uppercase tracking-wider">
               <th data-export-ocultar className="p-3 w-14 text-center">Ações</th>
-              <ThSort label="Processo / Relatório" col="processo" sort={sortRotina} onSort={toggleSortRotina} className="min-w-[300px]" />
+              <ThSort label="Processos" col="processo" sort={sortRotina} onSort={toggleSortRotina} className="min-w-[300px]" />
               <ThSort label="Setor" col="setor" sort={sortRotina} onSort={toggleSortRotina} />
-              <ThSort label="Sistema" col="tipo" sort={sortRotina} onSort={toggleSortRotina} />
+              {/* Tipo de RPA em coluna (21/11/2026), logo após Setor */}
+              <th className="p-3 whitespace-nowrap">Tipo de RPA</th>
+              {/* Coluna Sistema some no monitor de um sistema só (21/11/2026) */}
+              {!sistema && <ThSort label="Sistema" col="tipo" sort={sortRotina} onSort={toggleSortRotina} />}
               <th className="p-3 whitespace-nowrap" title="Tempo médio de execução/atualização (cadastro do processo)">Tempo</th>
               {DIAS_SEMANA.map(d => (
                 <th key={d.n} className="p-3 whitespace-nowrap">{d.curto}</th>
@@ -1366,7 +1487,7 @@ export default function RpaAgendamentos({ acoesDireita = null, slotAcoes = null 
           </thead>
           <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
             {linhasRotina.length === 0 && semRotina.length === 0 ? (
-              <tr><td colSpan={DIAS_SEMANA.length + 5} className="p-6 text-center text-slate-400">Nenhum processo/relatório cadastrado.</td></tr>
+              <tr><td colSpan={DIAS_SEMANA.length + (sistema ? 5 : 6)} className="p-6 text-center text-slate-400">Nenhum processo/relatório cadastrado.</td></tr>
             ) : null}
             {linhasRotina.map(linha => {
               const proc = processos.find(p => p.id === linha.rotina.processo_id)
@@ -1392,7 +1513,7 @@ export default function RpaAgendamentos({ acoesDireita = null, slotAcoes = null 
                         <Link2 className="h-3.5 w-3.5 text-blue-500 shrink-0" />
                       </span>
                     )}
-                    {proc && !ehRelatorio(proc.tipo) && rpasVinculados.has(proc.id) && (
+                    {sistema !== 'RPA' && proc && !ehRelatorio(proc.tipo) && rpasVinculados.has(proc.id) && (
                       <span title={`RPA vinculado a: ${processos.filter(x => x.rpa_vinculado_id === proc.id).map(x => x.nome).join(', ')}`} className="cursor-help">
                         <Link2 className="h-3.5 w-3.5 text-slate-400 shrink-0" />
                       </span>
@@ -1400,7 +1521,8 @@ export default function RpaAgendamentos({ acoesDireita = null, slotAcoes = null 
                   </span>
                 </td>
                 <td className="p-3 whitespace-nowrap align-top">{linha.rotina.departamento_nome || '—'}</td>
-                <td className="p-3 whitespace-nowrap align-top">
+                <td className="p-3 whitespace-nowrap align-top">{nomeTipoProcesso(proc?.tipo_processo) || <span className="text-slate-300">—</span>}</td>
+                {!sistema && <td className="p-3 whitespace-nowrap align-top">
                   {(() => {
                     const t = linha.tipo || processos.find(p => p.id === linha.rotina.processo_id)?.tipo
                     return t ? (
@@ -1411,7 +1533,7 @@ export default function RpaAgendamentos({ acoesDireita = null, slotAcoes = null 
                       <span className="text-slate-300">—</span>
                     )
                   })()}
-                </td>
+                </td>}
                 <td className="p-3 whitespace-nowrap align-top tabular-nums">{linha.tempo ?? 15} min</td>
                 {DIAS_SEMANA.map(d => {
                   const oc = linha.dias[d.n]
@@ -1439,7 +1561,7 @@ export default function RpaAgendamentos({ acoesDireita = null, slotAcoes = null 
                   )
                 })}
               </tr>
-              {aberto && <LinhaDetalheProcesso p={proc} colSpan={DIAS_SEMANA.length + 4} />}
+              {aberto && <LinhaDetalheProcesso p={proc} colSpan={DIAS_SEMANA.length + (sistema ? 4 : 5)} />}
               </React.Fragment>
               )
             })}
@@ -1466,7 +1588,7 @@ export default function RpaAgendamentos({ acoesDireita = null, slotAcoes = null 
                         <Link2 className="h-3.5 w-3.5 text-blue-500 shrink-0" />
                       </span>
                     )}
-                    {!ehRelatorio(p.tipo) && rpasVinculados.has(p.id) && (
+                    {sistema !== 'RPA' && !ehRelatorio(p.tipo) && rpasVinculados.has(p.id) && (
                       <span title={`RPA vinculado a: ${processos.filter(x => x.rpa_vinculado_id === p.id).map(x => x.nome).join(', ')}`} className="cursor-help">
                         <Link2 className="h-3.5 w-3.5 text-slate-400 shrink-0" />
                       </span>
@@ -1474,15 +1596,16 @@ export default function RpaAgendamentos({ acoesDireita = null, slotAcoes = null 
                   </span>
                 </td>
                 <td className="p-3 whitespace-nowrap align-top">{p.departamento_nome || '—'}</td>
-                <td className="p-3 whitespace-nowrap align-top">
+                <td className="p-3 whitespace-nowrap align-top">{nomeTipoProcesso(p.tipo_processo) || <span className="text-slate-300">—</span>}</td>
+                {!sistema && <td className="p-3 whitespace-nowrap align-top">
                   <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-bold border ${tipoBadgeClasses(p.tipo || 'RPA')}`}>
                     {p.tipo || 'RPA'}
                   </span>
-                </td>
+                </td>}
                 <td className="p-3 whitespace-nowrap align-top tabular-nums">{p.tempo_atualizacao_min ?? 15} min</td>
                 <td colSpan={DIAS_SEMANA.length} className="p-3 align-top text-[11px] text-slate-400 italic">Sem rotina agendada</td>
               </tr>
-              {aberto && <LinhaDetalheProcesso p={p} colSpan={DIAS_SEMANA.length + 4} />}
+              {aberto && <LinhaDetalheProcesso p={p} colSpan={DIAS_SEMANA.length + (sistema ? 4 : 5)} />}
               </React.Fragment>
               )
             })}
@@ -1499,8 +1622,9 @@ export default function RpaAgendamentos({ acoesDireita = null, slotAcoes = null 
         <table className="w-full table-auto text-left border-collapse min-w-[1000px]">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[11px] font-semibold uppercase tracking-wider">
-              <ThSort label="RPA" col="rpa" sort={sortHorario} onSort={toggleSortHorario} />
-              <ThSort label="PBI / FAB" col="rel" sort={sortHorario} onSort={toggleSortHorario} />
+              {/* Monitor de um sistema só: uma coluna "Horário" (RPA no Robert; PBI/FAB no Power BI e no Fabric) — 21/11/2026 */}
+              {(!sistema || sistema === 'RPA') && <ThSort label={sistema ? 'Horário' : 'RPA'} col="rpa" sort={sortHorario} onSort={toggleSortHorario} />}
+              {(!sistema || sistema !== 'RPA') && <ThSort label={sistema ? 'Horário' : 'PBI / FAB'} col="rel" sort={sortHorario} onSort={toggleSortHorario} />}
               <ThSort label="Setor" col="setor" sort={sortHorario} onSort={toggleSortHorario} />
               {DIAS_SEMANA.map(d => (
                 <th key={d.n} className="p-3 whitespace-nowrap">{d.curto}</th>
@@ -1509,10 +1633,10 @@ export default function RpaAgendamentos({ acoesDireita = null, slotAcoes = null 
           </thead>
           <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
             {gradePorHorario.length === 0 ? (
-              <tr><td colSpan={DIAS_SEMANA.length + 3} className="p-6 text-center text-slate-400">Nenhum horário cadastrado.</td></tr>
+              <tr><td colSpan={DIAS_SEMANA.length + (sistema ? 2 : 3)} className="p-6 text-center text-slate-400">Nenhum horário cadastrado.</td></tr>
             ) : gradePorHorario.map((g, i) => (
               <tr key={i} className={`hover:bg-slate-50/70 transition-colors ${!g.ativo ? 'opacity-50' : ''}`}>
-                <td className="p-3 whitespace-nowrap align-top">
+                {(!sistema || sistema === 'RPA') && <td className="p-3 whitespace-nowrap align-top">
                   {!ehRelatorio(g.tipo) ? (
                     <span className="inline-block w-fit rounded px-1.5 py-0.5 text-[10px] font-bold border tabular-nums bg-indigo-50 text-indigo-700 border-indigo-100">
                       {formatHora(g.hora)}
@@ -1520,8 +1644,8 @@ export default function RpaAgendamentos({ acoesDireita = null, slotAcoes = null 
                   ) : (
                     <span className="text-slate-300">—</span>
                   )}
-                </td>
-                <td className="p-3 whitespace-nowrap align-top">
+                </td>}
+                {(!sistema || sistema !== 'RPA') && <td className="p-3 whitespace-nowrap align-top">
                   {ehRelatorio(g.tipo) ? (
                     <span title={tooltipHoraReal(g.hora, g.tipo)} className={`inline-block w-fit rounded px-1.5 py-0.5 text-[10px] font-bold border tabular-nums ${ehBrasilia(g.tipo) ? 'cursor-help' : ''} ${tipoBadgeClasses(g.tipo)}`}>
                       {formatHora(horaParaMS(g.hora, g.tipo))}{ehBrasilia(g.tipo) && g.hora ? '*' : ''}
@@ -1529,7 +1653,7 @@ export default function RpaAgendamentos({ acoesDireita = null, slotAcoes = null 
                   ) : (
                     <span className="text-slate-300">—</span>
                   )}
-                </td>
+                </td>}
                 <td className="p-3 whitespace-nowrap align-top">{g.departamento_nome || '—'}</td>
                 {DIAS_SEMANA.map(d => (
                   <td key={d.n} className="p-2 align-top">
@@ -1567,9 +1691,9 @@ export default function RpaAgendamentos({ acoesDireita = null, slotAcoes = null 
         <table className="w-full table-auto text-left border-collapse min-w-[1000px]">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[11px] font-semibold uppercase tracking-wider">
-              <ThSort label="Processo / Relatório" col="processo" sort={sortAtu} onSort={toggleSortAtu} />
+              <ThSort label="Processos" col="processo" sort={sortAtu} onSort={toggleSortAtu} />
               <ThSort label="Setor" col="setor" sort={sortAtu} onSort={toggleSortAtu} />
-              <ThSort label="Sistema" col="tipo" sort={sortAtu} onSort={toggleSortAtu} />
+              {!sistema && <ThSort label="Sistema" col="tipo" sort={sortAtu} onSort={toggleSortAtu} />}
               {DIAS_SEMANA.map(d => (
                 <th key={d.n} className="p-3 whitespace-nowrap">{d.curto}</th>
               ))}
@@ -1577,7 +1701,7 @@ export default function RpaAgendamentos({ acoesDireita = null, slotAcoes = null 
           </thead>
           <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
             {linhasAtualizacao.length === 0 ? (
-              <tr><td colSpan={DIAS_SEMANA.length + 3} className="p-6 text-center text-slate-400">Nenhuma atualização agendada.</td></tr>
+              <tr><td colSpan={DIAS_SEMANA.length + (sistema ? 2 : 3)} className="p-6 text-center text-slate-400">Nenhuma atualização agendada.</td></tr>
             ) : linhasAtualizacao.map((l, i) => (
               <tr key={i} className={`hover:bg-slate-50/70 transition-colors ${!l.ativo ? 'opacity-50' : ''}`}>
                 <td className="p-3 align-top font-bold text-slate-800">
@@ -1596,7 +1720,7 @@ export default function RpaAgendamentos({ acoesDireita = null, slotAcoes = null 
                   })()}
                 </td>
                 <td className="p-3 whitespace-nowrap align-top">{l.departamento_nome || '—'}</td>
-                <td className="p-3 whitespace-nowrap align-top">
+                {!sistema && <td className="p-3 whitespace-nowrap align-top">
                   <div className="flex items-center gap-1">
                     {l.tipos.map(t => (
                       <span key={t} className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-bold border ${tipoBadgeAtuClasses(t)}`}>
@@ -1604,7 +1728,7 @@ export default function RpaAgendamentos({ acoesDireita = null, slotAcoes = null 
                       </span>
                     ))}
                   </div>
-                </td>
+                </td>}
                 {DIAS_SEMANA.map(d => (
                   <td key={d.n} className="p-2 align-top">
                     {l.porDia[d.n]?.length ? (
@@ -1691,7 +1815,7 @@ export default function RpaAgendamentos({ acoesDireita = null, slotAcoes = null 
                             <option key={d.id} value={d.id}>{d.nome_departamento}</option>
                           ))}
                         </select>
-                        <select
+                        {!sistema && <select
                           value={novoProcessoTipo}
                           onChange={e => setNovoProcessoTipo(e.target.value)}
                           className="w-36 shrink-0 text-xs p-1.5 border border-slate-200 rounded-md font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
@@ -1699,7 +1823,7 @@ export default function RpaAgendamentos({ acoesDireita = null, slotAcoes = null 
                           {TIPOS.map(t => (
                             <option key={t.codigo} value={t.codigo}>{t.nome}</option>
                           ))}
-                        </select>
+                        </select>}
                       </div>
                       {ehRelatorio(novoProcessoTipo) && (
                         <div className="flex items-center gap-2">
@@ -1717,7 +1841,7 @@ export default function RpaAgendamentos({ acoesDireita = null, slotAcoes = null 
                       )}
                       <ErroForm>{erroProcesso}</ErroForm>
                       <div className="flex items-center justify-end gap-2">
-                        <button type="button" onClick={() => { setNovoProcessoAberto(false); setNovoProcessoNome(''); setNovoProcessoDeptId(''); setNovoProcessoTipo('RPA'); setNovoProcessoRpaVincId(''); setErroProcesso(null) }}
+                        <button type="button" onClick={() => { setNovoProcessoAberto(false); setNovoProcessoNome(''); setNovoProcessoDeptId(''); setNovoProcessoTipo(sistema || 'RPA'); setNovoProcessoRpaVincId(''); setErroProcesso(null) }}
                           className="text-slate-400 hover:text-slate-600 transition-colors">
                           <X className="h-4 w-4" />
                         </button>
@@ -1738,7 +1862,7 @@ export default function RpaAgendamentos({ acoesDireita = null, slotAcoes = null 
                       {form.departamento_nome || 'Preenchido automaticamente ao selecionar o processo'}
                     </span>
                   </div>
-                  <div className="flex flex-col gap-1">
+                  {!sistema && <div className="flex flex-col gap-1">
                     <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Sistema</label>
                     {form.tipo ? (
                       <span className={`inline-block w-fit rounded px-1.5 py-0.5 text-[10px] font-bold border ${tipoBadgeClasses(form.tipo)}`}>
@@ -1747,7 +1871,7 @@ export default function RpaAgendamentos({ acoesDireita = null, slotAcoes = null 
                     ) : (
                       <span className="text-xs font-semibold text-slate-700">Preenchido automaticamente ao selecionar o processo</span>
                     )}
-                  </div>
+                  </div>}
                 </div>
 
                 <div className="flex flex-col gap-2 bg-slate-50 border border-slate-200 rounded-md p-3">
@@ -1932,7 +2056,7 @@ export default function RpaAgendamentos({ acoesDireita = null, slotAcoes = null 
       {/* Modal novo processo (cabeçalho da página) */}
       {modalNovoProcessoAberto && (
         <div className="fixed top-0 right-0 bottom-0 left-16 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg border border-slate-200 w-[560px] max-h-[90vh] shadow-xl overflow-hidden flex flex-col">
+          <div className="bg-white rounded-lg border border-slate-200 w-[900px] max-w-[95vw] max-h-[92vh] shadow-xl overflow-hidden flex flex-col">
             <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50 shrink-0">
               <h3 className="text-sm font-bold text-slate-900">{procEditId ? 'Editar Processo / Relatório' : 'Cadastrar Processo / Relatório'}</h3>
               <button onClick={() => setModalNovoProcessoAberto(false)} className="text-slate-400 hover:text-slate-600"><X className="h-4 w-4" /></button>
@@ -1952,7 +2076,7 @@ export default function RpaAgendamentos({ acoesDireita = null, slotAcoes = null 
                   />
                 </div>
                 {/* Setor, Tipo e Tempo médio na mesma linha (18/11/2026) */}
-                <div className="grid grid-cols-3 gap-3 items-start">
+                <div className={`grid ${sistema ? 'grid-cols-4' : 'grid-cols-5'} gap-3 items-start`}>
                 <div className="space-y-1.5">
                   <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Setor</label>
                   <select
@@ -1966,7 +2090,7 @@ export default function RpaAgendamentos({ acoesDireita = null, slotAcoes = null 
                     ))}
                   </select>
                 </div>
-                <div className="space-y-1.5">
+                {!sistema && <div className="space-y-1.5">
                   <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Sistema *</label>
                   <select
                     value={novoProcessoTipoHeader}
@@ -1976,6 +2100,17 @@ export default function RpaAgendamentos({ acoesDireita = null, slotAcoes = null 
                     {TIPOS.map(t => (
                       <option key={t.codigo} value={t.codigo}>{t.nome}</option>
                     ))}
+                  </select>
+                </div>}
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wide whitespace-nowrap">Tipo de RPA</label>
+                  <select
+                    value={docProcesso.tipo_processo || ''}
+                    onChange={e => setDocProcesso(d => ({ ...d, tipo_processo: e.target.value }))}
+                    className="w-full text-xs p-2 border border-slate-200 rounded-md font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                  >
+                    <option value="">Selecione...</option>
+                    {TIPOS_PROCESSO.map(t => <option key={t.codigo} value={t.codigo}>{t.nome}</option>)}
                   </select>
                 </div>
                 <div className="space-y-1.5">
@@ -1987,6 +2122,20 @@ export default function RpaAgendamentos({ acoesDireita = null, slotAcoes = null 
                     value={novoProcessoTempoHeader}
                     onChange={e => setNovoProcessoTempoHeader(e.target.value)}
                     title="Tempo médio de execução: hora agendada + este tempo = hora em que termina/fica pronto"
+                    className="w-full text-xs p-2 border border-slate-200 rounded-md font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                  />
+                </div>
+                {/* Tempo Humano (21/11/2026): quanto uma pessoa levaria para fazer à mão uma execução deste processo */}
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wide whitespace-nowrap" title="Quanto tempo uma pessoa levaria para fazer à mão o que o robô faz em uma execução. Usado no card Tempo total humano do Resumo.">Tempo Humano (min)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={docProcesso.tempo_humano_min ?? ''}
+                    onChange={e => setDocProcesso(d => ({ ...d, tempo_humano_min: e.target.value }))}
+                    placeholder="Ex.: 60"
+                    title="Quanto tempo uma pessoa levaria para fazer à mão uma execução deste processo"
                     className="w-full text-xs p-2 border border-slate-200 rounded-md font-medium text-slate-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                   />
                 </div>
@@ -2011,9 +2160,7 @@ export default function RpaAgendamentos({ acoesDireita = null, slotAcoes = null 
                 )}
                 {[
                   { campo: 'objetivo', label: 'Objetivo do Processo', ph: 'Para que serve este processo/relatório...' },
-                  { campo: 'atende', label: 'Atende o Sistema', ph: 'Ex.: BI Faturamento, BI Planos de Manutenção, Dealer.net...' },
-                  { campo: 'relatorios_extraidos', label: 'Arquivos Extraídos', ph: 'Ex.: XMLs de NF-e, NFS-e e CT-e; ROF001, RCR038...' },
-                  { campo: 'local_fonte', label: 'Local da Fonte de Dados', ph: 'Ex.: SharePoint › Banco de Dados › Pós-Vendas › ROF001' },
+                  { campo: 'atende', label: 'Atende', ph: 'Ex.: BI Faturamento, BI Planos de Manutenção, Dealer.net...' },
                 ].map(f => (
                   <div key={f.campo} className="space-y-1.5">
                     <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">{f.label}</label>
@@ -2026,6 +2173,11 @@ export default function RpaAgendamentos({ acoesDireita = null, slotAcoes = null 
                     />
                   </div>
                 ))}
+                {/* Arquivos Extraídos em tabela: nome do arquivo e pasta lado a lado (21/11/2026) */}
+                <TabelaArquivosExtraidos
+                  linhas={docProcesso.arquivos_extraidos || []}
+                  onChange={linhas => setDocProcesso(d => ({ ...d, arquivos_extraidos: linhas }))}
+                />
                 {procEditId && (
                   <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer">
                     <input type="checkbox" checked={novoProcessoAtivoHeader} onChange={(e) => setNovoProcessoAtivoHeader(e.target.checked)} className="w-4 h-4" />

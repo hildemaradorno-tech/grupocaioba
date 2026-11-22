@@ -5295,10 +5295,15 @@ export const apiService = {
     return data || []
   },
 
-  createRpaProcesso: async ({ nome, departamento_id, departamento_nome, tipo, rpa_vinculado_id, rpa_vinculado_nome, tempo_atualizacao_min, atende, relatorios_extraidos, local_fonte, objetivo }) => {
+  createRpaProcesso: async ({ nome, departamento_id, departamento_nome, tipo, rpa_vinculado_id, rpa_vinculado_nome, tempo_atualizacao_min, atende, relatorios_extraidos, local_fonte, objetivo, tipo_processo, arquivos_extraidos, tempo_humano_min }) => {
     const { data, error } = await supabase
       .from('rpa_processos')
       .insert([{
+        tipo_processo: tipo_processo || null, // EXTRACAO | OPERACIONAL (21/11/2026)
+        // Tempo Humano (min) por execução — card Tempo total humano (21/11/2026)
+        tempo_humano_min: tempo_humano_min === '' || tempo_humano_min == null || !(Number(tempo_humano_min) >= 0) ? null : Math.round(Number(tempo_humano_min)),
+        // Arquivos Extraídos em tabela [{ arquivo, pasta }] (21/11/2026)
+        ...(Array.isArray(arquivos_extraidos) ? { arquivos_extraidos } : {}),
         objetivo: objetivo?.trim().toUpperCase() || null,
         atende: atende?.trim().toUpperCase() || null,
         relatorios_extraidos: relatorios_extraidos?.trim().toUpperCase() || null,
@@ -5318,10 +5323,15 @@ export const apiService = {
 
   // Atualiza o cadastro e propaga nome/setor para os campos denormalizados
   // das rotinas que usam o processo, e o tipo para as execuções agendadas.
-  updateRpaProcesso: async (id, { nome, departamento_id, departamento_nome, tipo, rpa_vinculado_id, rpa_vinculado_nome, tempo_atualizacao_min, ativo, atende, relatorios_extraidos, local_fonte, objetivo }) => {
+  updateRpaProcesso: async (id, { nome, departamento_id, departamento_nome, tipo, rpa_vinculado_id, rpa_vinculado_nome, tempo_atualizacao_min, ativo, atende, relatorios_extraidos, local_fonte, objetivo, tipo_processo, arquivos_extraidos, tempo_humano_min }) => {
     const { data, error } = await supabase
       .from('rpa_processos')
       .update({
+        tipo_processo: tipo_processo || null, // EXTRACAO | OPERACIONAL (21/11/2026)
+        // Tempo Humano (min) por execução — card Tempo total humano (21/11/2026)
+        tempo_humano_min: tempo_humano_min === '' || tempo_humano_min == null || !(Number(tempo_humano_min) >= 0) ? null : Math.round(Number(tempo_humano_min)),
+        // Arquivos Extraídos em tabela [{ arquivo, pasta }] (21/11/2026)
+        ...(Array.isArray(arquivos_extraidos) ? { arquivos_extraidos } : {}),
         objetivo: objetivo?.trim().toUpperCase() || null,
         atende: atende?.trim().toUpperCase() || null,
         relatorios_extraidos: relatorios_extraidos?.trim().toUpperCase() || null,

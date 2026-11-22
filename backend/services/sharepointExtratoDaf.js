@@ -5,7 +5,7 @@
 // Leitura ao vivo (sem tabela no Supabase), cache de 5 min por arquivo.
 import axios from 'axios'
 import XLSX from 'xlsx'
-import { graphGet } from './graphClient.js'
+import { graphGet, graphPutArquivo } from './graphClient.js'
 import { getTitulosAReceber, clearFinanceiroCache } from './sharepointFinanceiro.js'
 
 const PASTA = '/Banco de Dados - DAF - Extrato de Pagamentos'
@@ -30,12 +30,15 @@ export const COLUNAS = [
   ['Document Date', 'data_documento', 'Data Documento'],
   ['Clearing date', 'data_compensacao', 'Data Compensação'],
   ['Document currency', 'moeda_documento', 'Moeda Doc.'],
-  ['Amount in doc. curr.', 'valor_moeda_documento', 'Valor (Moeda Doc.)'],
+  ['Amount in doc. curr.', 'valor_moeda_documento', 'Valor'],
   ['Local Currency', 'moeda_local', 'Moeda Local'],
   ['Withholding tax amnt', 'imposto_retido', 'Imposto Retido'],
-  ['Amount in local currency', 'valor_moeda_local', 'Valor Líquido (Moeda Local)'],
+  ['Amount in local currency', 'valor_moeda_local', 'Valor Líquido'],
   ['Text', 'texto', 'Texto'],
 ]
+// Colunas lidas mas NÃO mostradas na tela/PDF (pedido do usuário em 22/11/2026: tirar "Moeda Doc." e "Moeda Local")
+const COLUNAS_OCULTAS = new Set(['moeda_documento', 'moeda_local'])
+const colunasTela = () => COLUNAS.filter(([, campo]) => !COLUNAS_OCULTAS.has(campo)).map(([, campo, rotulo]) => ({ campo, rotulo }))
 const CAMPOS_DATA = new Set(['data_lancamento', 'data_documento', 'data_compensacao'])
 const CAMPOS_VALOR = new Set(['valor_moeda_documento', 'imposto_retido', 'valor_moeda_local'])
 const norm = (s) => String(s ?? '').trim().toLowerCase().replace(/\s+/g, ' ')
@@ -93,7 +96,7 @@ export async function getExtratoDaf({ arquivo, refresh = false } = {}) {
   const escolhido = arquivos.find(a => a.nome === arquivo)
     || arquivos.find(a => a.nome.toLowerCase().startsWith('account-303920'))
     || arquivos[0]
-  if (!escolhido) return { arquivos, arquivo: null, colunas: COLUNAS.map(([, campo, rotulo]) => ({ campo, rotulo })), registros: [] }
+  if (!escolhido) return { arquivos, arquivo: null, colunas: colunasTela(), registros: [] }
 
   const c = cache.get(escolhido.nome)
   if (!refresh && c && c.modificado_em === escolhido.modificado_em && Date.now() - c.em < TTL_MS) return { ...c.dados, arquivos }
@@ -105,13 +108,49 @@ export async function getExtratoDaf({ arquivo, refresh = false } = {}) {
   const { registros, colunas_nao_encontradas } = parseExtrato(Buffer.from(bin.data))
   const dados = {
     arquivo: escolhido,
-    colunas: COLUNAS.map(([, campo, rotulo]) => ({ campo, rotulo })),
+    colunas: colunasTela(),
     colunas_nao_encontradas,
     registros,
     lido_em: new Date().toISOString(),
   }
   cache.set(escolhido.nome, { em: Date.now(), modificado_em: escolhido.modificado_em, dados })
   return { ...dados, arquivos }
+}
+
+// Importação manual (engrenagem da tela → "Importar arquivo"): o usuário envia a planilha do SAP
+// (ex.: Account-303920.xlsx) e ela é gravada na pasta do SharePoint com o nome enviado — se já existir
+// um arquivo com esse nome, ele é SUBSTITUÍDO. Assim a tela continua lendo sempre da pasta.
+// Antes de gravar, confere se é mesmo o extrato (colunas do SAP) e se tem ao menos 1 lançamento.
+const COLUNAS_OBRIGATORIAS_IMPORT = ['Document Type', 'Reference', 'Document Number', 'Amount in local currency', 'Text']
+export async function importarExtratoDaf(nomeEnviado, buffer) {
+  const nome = String(nomeEnviado || '').split(/[\\/]/).pop().trim()
+  if (!/\.xlsx?$/i.test(nome)) throw Object.assign(new Error('Envie a planilha do extrato em Excel (.xlsx).'), { status: 400 })
+  let cabecalho
+  try {
+    const wb = XLSX.read(buffer, { type: 'buffer' })
+    cabecalho = (XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 })[0] || []).map(norm)
+  } catch {
+    throw Object.assign(new Error('O arquivo enviado não é uma planilha Excel válida.'), { status: 400 })
+  }
+  const faltando = COLUNAS_OBRIGATORIAS_IMPORT.filter(c => !cabecalho.includes(norm(c)))
+  if (faltando.length) {
+    throw Object.assign(new Error(`O arquivo não parece ser o extrato de pagamento da DAF (SAP). Colunas que faltam: ${faltando.join(', ')}.`), { status: 400 })
+  }
+  const { registros } = parseExtrato(buffer)
+  if (!registros.length) throw Object.assign(new Error('O arquivo não tem nenhum lançamento.'), { status: 400 })
+
+  try {
+    const tipo = /\.xls$/i.test(nome) ? 'application/vnd.ms-excel' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    await graphPutArquivo(`${PASTA}/${nome}`, buffer, tipo)
+  } catch (e) {
+    if (e.response?.status === 403 || e.response?.status === 401) {
+      throw Object.assign(new Error('O sistema não tem permissão para gravar no SharePoint. O administrador do Azure precisa liberar ao aplicativo a permissão Files.ReadWrite.All (ou Sites.ReadWrite.All).'), { status: 403 })
+    }
+    throw e
+  }
+  console.log(`[ExtratoDaf] importado pela tela: ${PASTA}/${nome} (${registros.length} lançamento(s))`)
+  cache.delete(nome)
+  return { arquivo: nome, lancamentos: registros.length }
 }
 
 // ── Conciliação extrato × títulos a receber da DAF (RFN003 Analítico, mesma leitura do Garantias DAF) ─────
@@ -152,21 +191,31 @@ function indexar(lista, chaveFn) {
 function encontrarTitulo(linha, idx, titulos) {
   const nfp = linha.referencia?.match(/^NFP\s*(\d+)/i)?.[1]
   const ref = soDigitos(nfp || linha.referencia)
-  const porNota = ref ? (nfp ? idx.nfp.get(ref) : (idx.nfs.get(ref) || idx.nfp.get(ref))) : null
-  if (porNota?.length === 1) return { titulo: porNota[0], vinculo: 'Nota', motivo: nfp ? `NFP ${ref} = Nota Fiscal do título` : `NFS-e ${ref} = Nota de Serviço do título` }
+  // chaves: quais campos do título casaram com a linha (a tela marca essas colunas com ✔)
+  const pelaNfs = !nfp && ref ? idx.nfs.get(ref) : null
+  const porNota = ref ? (nfp ? idx.nfp.get(ref) : (pelaNfs || idx.nfp.get(ref))) : null
+  if (porNota?.length === 1) {
+    const chave = nfp || !pelaNfs ? 'nfp' : 'nfs'
+    return { titulo: porNota[0], vinculo: 'Nota', chaves: [chave], motivo: chave === 'nfp' ? `NFP ${ref} = Nota Fiscal do título` : `NFS-e ${ref} = Nota de Serviço do título` }
+  }
 
   // Sem nota única: pistas do Texto
   const p = pistasDoTexto(linha.texto)
   let cand = porNota?.length > 1 ? porNota : titulos
   const filtros = []
+  const chaves = []
   if (p.chassiFinal) {
     const f = cand.filter(t => t.chassi.toUpperCase().endsWith(p.chassiFinal))
     cand = f
-    if (f.length) filtros.push(`chassi ${p.chassi || p.chassiFinal}`)
+    if (f.length) { filtros.push(`chassi ${p.chassi || p.chassiFinal}`); chaves.push('chassi') }
   }
-  if (cand.length > 1 && p.os) { const f = cand.filter(t => soDigitos(t.os_numero) === p.os); if (f.length) { cand = f; filtros.push(`O.S. ${p.os}`) } }
-  if (cand.length > 1 && p.ordem) { const f = cand.filter(t => ordemDaObs(t.observacao) === p.ordem); if (f.length) { cand = f; filtros.push(`O${p.ordem} na observação`) } }
-  if (cand.length === 1 && filtros.length) return { titulo: cand[0], vinculo: 'Sugerido', motivo: `Pelo texto: ${filtros.join(' + ')}` }
+  if (cand.length > 1 && p.os) { const f = cand.filter(t => soDigitos(t.os_numero) === p.os); if (f.length) { cand = f; filtros.push(`O.S. ${p.os}`); chaves.push('os') } }
+  if (cand.length > 1 && p.ordem) { const f = cand.filter(t => ordemDaObs(t.observacao) === p.ordem); if (f.length) { cand = f; filtros.push(`O${p.ordem} na observação`); chaves.push('observacao') } }
+  if (cand.length === 1 && filtros.length) {
+    // O.S. do texto que bate com a do título também conta como chave, mesmo sem ter sido preciso para desempatar
+    if (p.os && soDigitos(cand[0].os_numero) === p.os && !chaves.includes('os')) chaves.push('os')
+    return { titulo: cand[0], vinculo: 'Sugerido', chaves, motivo: `Pelo texto: ${filtros.join(' + ')}` }
+  }
   if (cand.length > 1 && cand.length <= 10 && (filtros.length || porNota?.length > 1)) {
     return { titulo: null, vinculo: 'Ambíguo', motivo: `${cand.length} títulos possíveis (${filtros.join(' + ') || `nota ${ref}`})`, candidatos: cand.map(t => t.nro_lancamento) }
   }
@@ -183,7 +232,7 @@ function situacao({ valor, saldo, pago_bruto, pago_liquido }) {
 
 const linhaResumo = (l) => ({
   i: l.i, referencia: l.referencia, numero_documento: l.numero_documento, texto: l.texto, valor: l.valor_moeda_documento,
-  retido: l.imposto_retido, liquido: l.valor_moeda_local, vinculo: l.vinculo, motivo: l.motivo, candidatos: l.candidatos || [],
+  retido: l.imposto_retido, liquido: l.valor_moeda_local, vinculo: l.vinculo, motivo: l.motivo, chaves: l.chaves || [], candidatos: l.candidatos || [],
 })
 
 export async function getConciliacaoDaf({ arquivo, refresh = false } = {}) {
@@ -210,9 +259,10 @@ export async function getConciliacaoDaf({ arquivo, refresh = false } = {}) {
     const retido = r2(-ls.reduce((s, l) => s + (l.imposto_retido || 0), 0))
     const pago_liquido = r2(-ls.reduce((s, l) => s + (l.valor_moeda_local || 0), 0))
     return {
-      lancamento: t.nro_lancamento, nro_titulo: t.nro_titulo, empresa: t.empresa, tipo_titulo: t.tipo_titulo,
+      lancamento: t.nro_lancamento, nro_titulo: t.nro_titulo, empresa: t.empresa, cliente_fornecedor: t.cliente_fornecedor, tipo_titulo: t.tipo_titulo,
+      agente_cobrador: t.agente_cobrador, conta_gerencial: t.conta_gerencial,
       os: t.os_numero, chassi: t.chassi, placa: t.placa, nota_fiscal_servico: t.nota_fiscal_servico, nota_fiscal: t.nota_fiscal,
-      emissao: t.data_emissao, vencimento: t.data_vencimento, observacao: t.observacao,
+      emissao: t.data_emissao, vencimento: t.data_vencimento, atraso: t.atraso, observacao: t.observacao,
       valor: t.valor, saldo: t.saldo, pago_bruto, retido, pago_liquido,
       dif_valor: r2(t.valor - pago_bruto),
       dif_saldo: r2(t.saldo - pago_liquido),
@@ -226,7 +276,8 @@ export async function getConciliacaoDaf({ arquivo, refresh = false } = {}) {
   const emAberto = titulos
     .filter(t => t.saldo > TOLERANCIA && !noExtrato.has(t.nro_lancamento))
     .map(t => ({
-      lancamento: t.nro_lancamento, nro_titulo: t.nro_titulo, empresa: t.empresa, tipo_titulo: t.tipo_titulo, os: t.os_numero,
+      lancamento: t.nro_lancamento, nro_titulo: t.nro_titulo, empresa: t.empresa, cliente_fornecedor: t.cliente_fornecedor,
+      tipo_titulo: t.tipo_titulo, agente_cobrador: t.agente_cobrador, conta_gerencial: t.conta_gerencial, os: t.os_numero,
       chassi: t.chassi, nota_fiscal_servico: t.nota_fiscal_servico, nota_fiscal: t.nota_fiscal, emissao: t.data_emissao,
       vencimento: t.data_vencimento, atraso: t.atraso, valor: t.valor, saldo: t.saldo, observacao: t.observacao,
     }))

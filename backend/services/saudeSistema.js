@@ -11,6 +11,7 @@ import { calcularControles as controlesRailway } from './railwayAlertas.js'
 import { calcularControles as controlesSupabase } from './supabaseMonitor.js'
 import { getVisao as visaoSharepoint, calcularControles as controlesSharepoint } from './sharepointMonitor.js'
 import { getVisao as visaoCloudflare, calcularControles as controlesCloudflare } from './cloudflareMonitor.js'
+import { getRpaLog } from './sharepointRpaLog.js'
 
 const ORDEM = { critico: 0, atencao: 1, info: 2, ok: 3 }
 // Destino de cada alerta das abas Rotinas e Integrações: aba e linha/card da tela (21/11/2026)
@@ -258,6 +259,78 @@ export async function getIntegracoes({ refresh = false } = {}) {
   return dados
 }
 
+// ── Robert Automation (robôs RPA) ─────────────────────────────────────────
+// Mesma ligação log × cadastro do Monitor Robert Automation: nome igual (sem acento/caixa) ou, se único, sem o
+// "PROCESSO <nº> -/:" do começo e sem pontuação. Horários do log e da agenda são de MS.
+const normRpa = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/\s+/g, ' ').trim()
+const chaveRpa = (s) => normRpa(s).replace(/^PROCESSO\s*\d*\s*[-:–.]?\s*/, '').replace(/[^A-Z0-9]/g, '')
+const minutosDe = (hhmm) => { const [h, m] = String(hhmm || '0:0').split(':').map(Number); return h * 60 + m }
+const diaSemanaIso = (iso) => ((new Date(`${iso}T12:00:00`).getDay() + 6) % 7) + 1 // 1=Seg ... 7=Dom (igual à agenda)
+
+export async function getRobert({ refresh = false } = {}) {
+  const d = await getRpaLog({ refresh })
+  const { data: hoje, hora } = agoraLocal()
+  const agoraMin = minutosDe(hora)
+  const porNome = new Map(d.agenda.map(a => [normRpa(a.nome), a]))
+  const porChave = new Map()
+  d.agenda.forEach(a => { const k = chaveRpa(a.nome); porChave.set(k, porChave.has(k) ? null : a) })
+  const processoDe = (robo) => porNome.get(normRpa(robo)) || porChave.get(chaveRpa(robo)) || null
+  const nomeDe = (robo) => processoDe(robo)?.nome || robo
+
+  const execHoje = d.execucoes.filter(e => e.inicio.slice(0, 10) === hoje).sort((a, b) => a.inicio.localeCompare(b.inicio))
+  const c = []
+
+  // 1) Erros de hoje — por processo: se a última execução de hoje deu erro = crítico; se depois rodou com sucesso = atenção
+  const porProc = new Map()
+  for (const e of execHoje) {
+    const k = normRpa(nomeDe(e.robo))
+    if (!porProc.has(k)) porProc.set(k, { nome: nomeDe(e.robo), execs: [] })
+    porProc.get(k).execs.push(e)
+  }
+  let qtdErros = 0
+  for (const p of porProc.values()) {
+    const erros = p.execs.filter(e => e.status === 'Erro')
+    if (!erros.length) continue
+    qtdErros += erros.length
+    const ultimo = p.execs[p.execs.length - 1]
+    const ultErro = erros[erros.length - 1]
+    const resolvido = ultimo.status !== 'Erro'
+    c.push({
+      id: `rpa-erro-${normRpa(p.nome)}`, grupo: 'Erros de hoje', nivel: resolvido ? 'atencao' : 'critico',
+      titulo: `${p.nome}: ${erros.length} erro(s) hoje — último às ${ultErro.inicio.slice(11, 16)}${resolvido ? ' (rodou com sucesso depois)' : ''}`,
+      detalhe: ultErro.acao_erro ? `Ação que falhou: ${ultErro.acao_erro}` : (ultErro.erro || null),
+      destino: { aba: 'erros', alvo: null, processo: p.nome, de: hoje, ate: hoje },
+    })
+  }
+  if (!qtdErros) c.push({ id: 'rpa-erros-ok', grupo: 'Erros de hoje', nivel: 'ok', titulo: `Nenhum erro dos robôs hoje (${execHoje.length} execuções)`, destino: { aba: 'execucoes', alvo: null } })
+
+  // 2) Horários de hoje que já passaram há mais de 1 h sem execução (mesma tolerância do monitor: 10 min antes a 3 h depois)
+  const ds = diaSemanaIso(hoje)
+  const naoRodou = new Map() // processo -> horários de hoje sem execução
+  for (const a of d.agenda.filter(x => x.ativo !== false)) {
+    for (const h of [...new Set(a.horarios.filter(x => x.dia_semana === ds).map(x => x.hora))]) {
+      const hm = minutosDe(h)
+      if (agoraMin - hm < 60) continue // ainda aguardando
+      const rodou = execHoje.some(e => processoDe(e.robo) === a && (() => { const m = minutosDe(e.inicio.slice(11, 16)); return m >= hm - 10 && m <= hm + 180 })())
+      if (!rodou) { if (!naoRodou.has(a.nome)) naoRodou.set(a.nome, []); naoRodou.get(a.nome).push(h) }
+    }
+  }
+  for (const [nome, horas] of naoRodou) {
+    c.push({ id: `rpa-nao-exec-${normRpa(nome)}`, grupo: 'Agenda de hoje', nivel: 'atencao',
+      titulo: `${nome}: não rodou hoje às ${horas.join(', ')}`,
+      detalhe: 'Horário agendado que passou há mais de 1 h sem execução no log do robô.',
+      destino: { aba: 'execucoes', alvo: null, processo: nome, de: hoje, ate: hoje, status: 'Não executado' } })
+  }
+  if (!naoRodou.size) c.push({ id: 'rpa-nao-exec', grupo: 'Agenda de hoje', nivel: 'ok', titulo: 'Todos os horários de hoje já vencidos rodaram', destino: { aba: 'execucoes', alvo: null, de: hoje, ate: hoje } })
+
+  // 3) Log do SharePoint parado (o robô grava o histórico a cada execução)
+  const horasLog = d.arquivo_atualizado_em ? (Date.now() - Date.parse(d.arquivo_atualizado_em)) / 3600000 : null
+  if (horasLog != null && horasLog > 26) c.push({ id: 'rpa-log', grupo: 'Log', nivel: 'atencao', titulo: `Log de execuções sem atualizar há ${Math.round(horasLog)} h`, detalhe: 'O Robert Automation pode ter parado, ou deixou de gravar o histórico no SharePoint.', destino: { aba: 'resumo', alvo: null } })
+
+  ordenar(c)
+  return { controles: c, resumo: resumir(c), erros_hoje: qtdErros, execucoes_hoje: execHoje.length, lido_em: new Date().toISOString() }
+}
+
 // ── Resumo geral (todos os monitores) ─────────────────────────────────────
 // link = página do monitor; abaPadrao = aba que o "Ver detalhes" abre. Cada problema leva o destino (aba + alvo)
 // para a tela abrir direto onde está a informação (21/11/2026).
@@ -281,10 +354,12 @@ let cacheResumo = null
 export async function getResumo({ refresh = false } = {}) {
   if (!refresh && cacheResumo && Date.now() - cacheResumo.t < 2 * 60 * 1000) return cacheResumo.dados
   const blocos = await Promise.all([
-    bloco('railway', 'Railway — backend', '/governanca/monitor-railway', async () => railwayConfigurado() ? controlesRailway({ refresh }) : { naoConfigurado: 'Token do Railway não configurado' }),
-    bloco('supabase', 'Supabase — banco de dados', '/governanca/monitor-supabase', () => controlesSupabase({ refresh })),
-    bloco('sharepoint', 'SharePoint — planilhas', '/governanca/monitor-sharepoint', async () => controlesSharepoint(await visaoSharepoint({ refresh }))),
-    bloco('cloudflare', 'Cloudflare — telas do portal', '/governanca/monitor-cloudflare', async () => controlesCloudflare(await visaoCloudflare({ refresh }))),
+    // "Ver detalhes" sempre abre a aba de resumo de cada sistema (Resumo / Visão Geral) — 21/11/2026
+    bloco('robert', 'Robert Automation — robôs', '/governanca/processos/rpa', () => getRobert({ refresh }), 30000, 'resumo'),
+    bloco('railway', 'Railway — backend', '/governanca/monitor-railway', async () => railwayConfigurado() ? controlesRailway({ refresh }) : { naoConfigurado: 'Token do Railway não configurado' }, 30000, 'visao'),
+    bloco('supabase', 'Supabase — banco de dados', '/governanca/monitor-supabase', () => controlesSupabase({ refresh }), 30000, 'visao'),
+    bloco('sharepoint', 'SharePoint — planilhas', '/governanca/monitor-sharepoint', async () => controlesSharepoint(await visaoSharepoint({ refresh })), 30000, 'visao'),
+    bloco('cloudflare', 'Cloudflare — telas do portal', '/governanca/monitor-cloudflare', async () => controlesCloudflare(await visaoCloudflare({ refresh })), 30000, 'visao'),
     bloco('rotinas', 'Rotinas automáticas', '/governanca/saude-sistema', () => getRotinas(), 30000, 'rotinas'),
     bloco('integracoes', 'Integrações', '/governanca/saude-sistema', () => getIntegracoes({ refresh }), 30000, 'integracoes'),
   ])

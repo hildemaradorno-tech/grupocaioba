@@ -2,7 +2,7 @@
 // Sistema) — 19/11/2026.
 import React, { useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { CheckCircle2, XCircle, AlertTriangle, Activity, Loader2, ChevronRight } from 'lucide-react'
+import { CheckCircle2, XCircle, AlertTriangle, Activity, Loader2, ChevronRight, Settings, ExternalLink } from 'lucide-react'
 
 // ── Navegação dos alertas até a aba e a tabela de origem (21/11/2026) ──
 // Cada ponto de controle vem do backend com destino { aba, alvo }. A aba fica na URL (?aba=), o alvo também
@@ -13,6 +13,8 @@ export function linkDestino(base, destino) {
   const q = new URLSearchParams()
   if (destino.aba) q.set('aba', destino.aba)
   if (destino.alvo) q.set('alvo', destino.alvo)
+  // filtros extras da tela de destino (ex.: Monitor Robert Automation: processo e período)
+  for (const k of ['processo', 'de', 'ate', 'status']) if (destino[k]) q.set(k, destino[k])
   const s = q.toString()
   return s ? `${base}${base.includes('?') ? '&' : '?'}${s}` : base
 }
@@ -70,6 +72,60 @@ export const NIVEL = {
   info: { txt: 'Recomendação', cls: 'bg-sky-50 border-sky-200 text-sky-800', dot: 'bg-sky-500', icon: Activity, iconCls: 'text-sky-600' },
   ok: { txt: 'OK', cls: 'bg-white border-slate-200 text-slate-700', dot: 'bg-emerald-500', icon: CheckCircle2, iconCls: 'text-emerald-600' },
 }
+// ── Engrenagem do cabeçalho dos monitores (21/11/2026): links para a página de planos do serviço (contratar) ──
+// Endereços oficiais conferidos em 21/11/2026. Abrem em nova aba.
+export const PLANOS_SERVICO = {
+  railway: { nome: 'Railway', url: 'https://railway.com/pricing', extra: { rot: 'Plano atual e cobrança (Billing)', url: 'https://railway.com/workspace/plans' } },
+  supabase: { nome: 'Supabase', url: 'https://supabase.com/pricing', extra: { rot: 'Uso e cobrança da organização', url: 'https://supabase.com/dashboard/org/_/billing' } },
+  sharepoint: { nome: 'SharePoint (Microsoft 365)', url: 'https://www.microsoft.com/pt-br/microsoft-365/sharepoint/compare-sharepoint-plans' },
+  cloudflare: { nome: 'Cloudflare', url: 'https://www.cloudflare.com/plans/' },
+  powerbi: { nome: 'Power BI', url: 'https://www.microsoft.com/pt-br/power-platform/products/power-bi/pricing' },
+  fabric: { nome: 'Microsoft Fabric', url: 'https://azure.microsoft.com/pt-br/pricing/details/microsoft-fabric/' },
+}
+export function itensPlanos(chave) {
+  const p = PLANOS_SERVICO[chave]
+  if (!p) return []
+  const itens = [{ label: p.url ? `Planos do ${p.nome} (contratar)` : `Planos do ${p.nome} — endereço não informado`, href: p.url }]
+  if (p.extra) itens.push({ label: p.extra.rot, href: p.extra.url })
+  return itens
+}
+export function EngrenagemPlanos({ chave }) {
+  const [pos, setPos] = useState(null)
+  const itens = itensPlanos(chave)
+  useEffect(() => {
+    if (!pos) return
+    const fechar = () => setPos(null)
+    const onKey = (e) => { if (e.key === 'Escape') fechar() }
+    window.addEventListener('keydown', onKey); window.addEventListener('resize', fechar); window.addEventListener('scroll', fechar, true)
+    return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('resize', fechar); window.removeEventListener('scroll', fechar, true) }
+  }, [pos])
+  if (!itens.length) return null
+  return (
+    <>
+      <button type="button" title="Planos do serviço" aria-label="Planos do serviço"
+        onClick={e => { if (pos) { setPos(null); return } const r = e.currentTarget.getBoundingClientRect(); setPos({ top: r.bottom + 4, right: window.innerWidth - r.right }) }}
+        className="flex items-center justify-center p-1.5 rounded-md border border-slate-200 bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-50 shadow-sm">
+        <Settings className="h-3.5 w-3.5" />
+      </button>
+      {pos && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setPos(null)} />
+          <div style={{ top: pos.top, right: pos.right }} className="fixed z-50 w-72 bg-white border border-slate-200 rounded-md shadow-lg py-1 text-xs font-medium">
+            {itens.map(i => i.href ? (
+              <a key={i.label} href={i.href} target="_blank" rel="noopener noreferrer" onClick={() => setPos(null)}
+                className="w-full flex items-center gap-2 px-3 py-2 text-left text-slate-700 hover:bg-slate-50">
+                <ExternalLink className="h-3.5 w-3.5 shrink-0" /> {i.label}
+              </a>
+            ) : (
+              <span key={i.label} className="w-full flex items-center gap-2 px-3 py-2 text-slate-400"><ExternalLink className="h-3.5 w-3.5 shrink-0" /> {i.label}</span>
+            ))}
+          </div>
+        </>
+      )}
+    </>
+  )
+}
+
 export function PainelControles({ controles, erro, recarregando, onIr }) {
   const [verOk, setVerOk] = useState(false)
   if (erro) return (

@@ -430,20 +430,22 @@ export const MENU_TREE = [
     key: '_documentacoes',
     label: 'Governança',
     children: [
+      // Saúde do Sistema (19/11/2026): semáforo de todos os monitores + rotinas automáticas + integrações (/api/saude-sistema) — primeiro do menu (21/11/2026)
+      { key: 'governanca/saude-sistema', label: 'Saúde do Sistema' },
       {
         // Controle de Execuções RPA numa tela só (18/11/2026), como Garantias DAF: Dashboard (log do Robert
         // Automation, bi/rpa-execucoes) e Controle (antiga tela Agendamento de Processos — key rpa/agendamentos
         // mantida para não mudar as permissões já dadas; /rpa/agendamentos redireciona para ?modo=controle).
+        // 21/11/2026: dividido em 3 menus no Governança — Monitor Robert Automation (Dashboard + Controle dos RPA),
+        // Monitor Power BI e Monitor Microsoft Fabric (Controle filtrado pelo tipo). Mesmas 2 permissões para os três.
         key: '_rpa-execucoes',
-        label: 'Controle de Processos',
+        label: 'Monitores de Processos (Robert Automation, Power BI, Fabric)',
         navTo: 'bi/rpa-execucoes',
         children: [
           { key: 'bi/rpa-execucoes', label: 'Dashboard' },
           { key: 'rpa/agendamentos', label: 'Controle — Agendamento de Processos' },
         ],
       },
-      // Saúde do Sistema (19/11/2026): semáforo de todos os monitores + rotinas automáticas + integrações (/api/saude-sistema)
-      { key: 'governanca/saude-sistema', label: 'Saúde do Sistema' },
       // Monitor Railway (19/11/2026): status, saúde, consumo, deploys e logs do backend (/api/railway)
       { key: 'governanca/monitor-railway', label: 'Monitor Railway' },
       // Monitor Supabase (19/11/2026): banco, Storage, conexões, desempenho, saúde e logs (/api/supabase-monitor)

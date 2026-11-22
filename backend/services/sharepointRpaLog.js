@@ -83,7 +83,7 @@ export function parseCsvExecucoes(texto) {
 async function lerAgenda() {
   const sb = getSupabaseAdmin()
   const [{ data: processos, error: e1 }, { data: rotinas, error: e2 }] = await Promise.all([
-    sb.from('rpa_processos').select('id, nome, tipo, departamento_nome, ativo, rpa_vinculado_id'),
+    sb.from('rpa_processos').select('id, nome, tipo, departamento_nome, ativo, rpa_vinculado_id, tempo_humano_min'),
     sb.from('rpa_rotinas').select('id, processo_id, ativo, execucoes:rpa_rotina_execucoes(dia_semana, hora)'),
   ])
   if (e1) throw e1
@@ -99,6 +99,7 @@ async function lerAgenda() {
       nome: p.nome,
       setor: p.departamento_nome,
       ativo: p.ativo,
+      tempo_humano_min: p.tempo_humano_min ?? null, // card Tempo total humano (21/11/2026)
       relatorios_dependentes: relatoriosPorRpa[p.id] || [],
       horarios: (rotinas || [])
         .filter(r => r.processo_id === p.id && r.ativo)

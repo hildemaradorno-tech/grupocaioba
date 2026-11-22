@@ -7,7 +7,7 @@ import {
   RefreshCw, CheckCircle2, XCircle, AlertTriangle, LayoutDashboard, FileSpreadsheet, Loader2, Search,
   KeyRound, ExternalLink, Clock,
 } from 'lucide-react'
-import { PainelControles, Relogio, useAbaNaUrl, useRolarParaAlvo, idAlvo } from '../../components/monitor/MonitorUI'
+import { PainelControles, Relogio, useAbaNaUrl, useRolarParaAlvo, idAlvo, EngrenagemPlanos } from '../../components/monitor/MonitorUI'
 import logoSharepoint from '../../assets/logo-sharepoint.webp' // logo enviado pelo usuário em 19/11/2026
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
@@ -98,6 +98,8 @@ export default function MonitorSharepoint() {
             className="flex items-center justify-center p-1.5 rounded-md bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm disabled:opacity-60 transition-colors">
             <RefreshCw className={`h-3.5 w-3.5 ${carregando ? 'animate-spin' : ''}`} />
           </button>
+          {/* Planos do serviço (contratar) — 21/11/2026 */}
+          <EngrenagemPlanos chave="sharepoint" />
         </div>
       </div>
 
