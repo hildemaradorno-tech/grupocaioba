@@ -91,6 +91,7 @@ import TiposDivergenciaAuditoria from './pages/auditoria-externa/TiposDivergenci
 import { ProjetosFiltrosProvider } from './context/ProjetosFiltrosContext'
 import Fornecedores from './pages/Fornecedores'
 import KpiMatriz, { KPI_MATRIZ_PERMS } from './pages/kpi/KpiMatriz'
+import KpiMatrizManual from './pages/kpi/KpiMatrizManual'
 import CalcVendaServico from './pages/calculadoras/CalcVendaServico'
 import Documentacoes from './pages/Documentacoes'
 import MonitorRailway from './pages/governanca/MonitorRailway'
@@ -330,6 +331,8 @@ export default function App() {
           { path: '/projetos/fases', element: <ProjFases />, menuPath: '/projetos/fases' },
           { path: '/projetos/templates', element: <ProjTemplates />, menuPath: '/projetos/templates' },
           { path: '/kpi/matriz', element: <KpiMatriz />, menuPath: KPI_MATRIZ_PERMS },
+          // Manual de operação da Matriz (23/11/2026): livre para todos (manuais não entram no grupo de acesso).
+          { path: '/kpi/matriz/manual', element: <KpiMatrizManual /> },
           { path: '/calculadoras/venda-servico', element: <CalcVendaServico />, menuPath: 'calculadoras/venda-servico' },
           { path: '/documentacoes', element: <Documentacoes />, menuPath: 'documentacoes' },
           { path: '/governanca/monitor-railway', element: <MonitorRailway />, menuPath: 'governanca/monitor-railway' },

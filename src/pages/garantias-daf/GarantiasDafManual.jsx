@@ -451,7 +451,7 @@ export default function GarantiasDafManual() {
             <p>Arquivos extraídos do Dealer.net pelo RPA e gravados no SharePoint (pasta "Banco de Dados - DAF - Pós-Vendas").</p>
             <Itens itens={[
               ['ROF001_OSABERTA.xlsx', 'O.S. abertas — aba Na Oficina.'],
-              ['ROF001_OSABERTA_ENCERRADA.xlsx', 'O.S. encerradas — importação automática da aba Com Garantista (inclusive a placa, coluna Veiculo_Placa).'],
+              ['ROF001_OSAberta_Excel <ano>.xls', 'todas as O.S. do ano com a Situação (um arquivo por ano) — aba Com Garantista: importa só as Encerradas com valor (Encerrada sem valor não entra); as cadastradas que viraram Faturada, Cancelada ou não estão mais Encerradas (reabertas) aparecem nos avisos.'],
               ['ROF017_FATURAMENTOPOROS <ano>.xlsx', 'faturamento por O.S. (um arquivo por ano) — Buscar NF, Buscar Faturamento e Importar O.S. Faturadas (placa na coluna OS_VeiculoPlaca).'],
               ['RFN003_PosicaoAnaliticoReceber_Excel_<unidade>.xls', 'títulos a receber (um arquivo por unidade) — aba Garantias DAF a Receber.'],
             ]} />

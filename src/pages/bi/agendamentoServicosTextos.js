@@ -3,7 +3,7 @@
 // Mesmo formato de planosManutencaoTextos.js. Ao mudar uma regra do BI, atualizar aqui também (e vice-versa):
 // o manual é usado para auditoria — os números do BI têm que poder ser conferidos pelos relatórios descritos.
 
-const ARQ_OS = 'ROF001_OSAberta_Excel TODAS'
+const ARQ_OS = 'ROF001_OSAberta_Excel <ano>'
 const ARQ_AGEND = 'ROF037_AGENDAMENTOSERVICO'
 const ARQ_CAMPANHA = 'RCR038_CampanhaCRM_Clientes_Excel'
 const ARQ_CONTATO = 'RCR017_LISTAPORDATACONTATOENCERRAMENTO'
@@ -498,7 +498,7 @@ const TABELA_CONSULTA_AGEND = {
 // Pop-up do ícone ✓ (Consulta de O.S.) na linha das abas, à direita (aba Por Data da O.S.).
 const TABELA_CONSULTA_OS = {
   itens: [
-    ['Para que serve', 'Consultar as O.S. do ROF001 TODAS uma a uma e conferir os cards da aba. Vale o filtro Data (data de abertura, Data Criacao) e o filtro Empresas da tela.'],
+    ['Para que serve', 'Consultar as O.S. do ROF001 uma a uma e conferir os cards da aba. Vale o filtro Data (data de abertura, Data Criacao) e o filtro Empresas da tela.'],
     ['Filtros', 'Todas (sem canceladas) — igual ao card Quant. O.S. por data de abertura · Com agendamento — igual ao card O.S. com agendamento · Agendamento ativo · Agendamento ativo de campanha · Agendamento passivo (Receptivo, Presencial, Internet) · Sem agendamento · Estava no agendamento, não aberta por ele — igual ao card O.S. estava no agendamento, não aberta por ele · Pendentes de autorização (alerta ⚠) · Canceladas (fora dos cards). Quantidade de cada um no botão; busca por O.S., chassi, consultor, agendador, empresa ou número da campanha.'],
     ['Uma O.S. por linha', 'O ROF001 tem várias linhas por O.S.; a consulta mostra uma vez (Empresa + OS Numero) com os valores somados de todas as linhas — a mesma regra dos cards.'],
     ['Colunas do ROF001', 'Data de abertura (Data Criacao), Empresa, O.S. (OS Numero), Situação (Situacao Tipo OS), Tipo O.S. (Tipo OS Sigla), Chassi, Consultor (Consultor Nome), Agendador (só informativo — não é usado na conta), Peças (Produto), Serviços (Servico), Desconto e Total.'],

@@ -353,6 +353,15 @@ export async function sincronizarProdutividadeMes(admin, ano, mes) {
         resultado[marca] = { ok: false, erro: err.message }
       }
     }
+    // Resumo mensal pronto (23/11/2026): a tela lê vw_pv_prod_mensal desse resumo em vez de somar pv_prod_os
+    // a cada abertura. Refaz só o mês atualizado (migration pv_prod_mensal_resumo.sql).
+    try {
+      const { error } = await admin.rpc('pv_prod_mensal_recalcular', { p_ano: Number(ano), p_mes: Number(mes) })
+      if (error) throw error
+    } catch (err) {
+      console.error(`[Produtividade] resumo mensal ${ano}-${mes}:`, err.message)
+      resultado.resumoMensal = { ok: false, erro: err.message }
+    }
     return resultado
   } finally {
     _emExecucao = false

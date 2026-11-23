@@ -468,7 +468,7 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
       .finally(() => setLoading(false))
   }, [filtrosEmpresa])
 
-  // Data de modificação do arquivo-fonte (ROF001_OSABERTA_ENCERRADA) — só para referência,
+  // Data de modificação do arquivo-fonte (ROF001_OSAberta_Excel <ano>) — só para referência,
   // os dados exibidos aqui vêm do Supabase (importados previamente), não ao vivo do arquivo.
   useEffect(() => {
     const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'

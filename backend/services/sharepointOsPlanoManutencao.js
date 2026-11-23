@@ -11,7 +11,7 @@ const PASTA = '/Banco de Dados - DAF - Pós-Vendas/Relatório Geral OS'
 const PREFIX = 'ROF017_FATURAMENTOPOROS'
 // ROF001 (O.S. aberta): base das abas Ordens de Serviço e Contratos — todas as O.S. com chassi e situação
 // (Faturada, Encerrada, Em Andamento, Cancelada...). O faturamento (NF) é localizado no ROF017.
-// Arquivo: "ROF001_OSAberta_Excel TODAS" (todas as O.S. do ano). As fotos do dia (ROF001_OSABERTA e
+// Arquivo: "ROF001_OSAberta_Excel <ano>" (todas as O.S. de cada ano, um arquivo por ano). As fotos do dia (ROF001_OSABERTA e
 // ROF001_OSABERTA_ENCERRADA) não entram. A mesma O.S. em mais de um arquivo vale a do arquivo mais recente.
 const PREFIX_ABERTA = 'ROF001_OSABERTA_EXCEL'
 const ANO_INICIAL = 2024

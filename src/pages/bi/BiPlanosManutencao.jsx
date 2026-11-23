@@ -2,8 +2,9 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { createPortal } from 'react-dom'
 import { Bar, CartesianGrid, ComposedChart, LabelList, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { Target, CheckCircle2, XCircle, Goal, Pencil, ListChecks, Table2, BarChart3, LayoutDashboard, BookOpen, Building2, Calendar, CalendarClock, CalendarX2, ChevronDown, ChevronsUpDown, ChevronUp, FilePlus2, FileSearch, FileX2, Info, Play, RefreshCw, Repeat, Search, Settings, Upload, Truck, Wrench, X } from 'lucide-react'
+import { Target, CheckCircle2, XCircle, Goal, Pencil, ListChecks, Database, FolderOpen, Table2, BarChart3, LayoutDashboard, BookOpen, Building2, Calendar, CalendarClock, CalendarX2, ChevronDown, ChevronsUpDown, ChevronUp, FilePlus2, FileSearch, FileX2, Info, Play, RefreshCw, Repeat, Search, Settings, Upload, Truck, X } from 'lucide-react'
 import { apiService } from '../../services/supabaseClient'
+import logoCaioba from '../../assets/logo-grupo.png'
 import { useAuth } from '../../context/AuthContext'
 import { empresaSelecionavel } from '../../utils/comissoesElegibilidade'
 import { useEmpresasPermitidas } from '../../hooks/useEmpresasPermitidas'
@@ -348,6 +349,71 @@ function BotaoInfo({ titulo, info, secoes: secoesProprias, noTitulo, tabela }) {
   )
 }
 
+// Janela da engrenagem › Fonte de dados: cada relatório que alimenta o BI, a pasta no SharePoint e os arquivos com a
+// data/hora da última alteração (GET /api/planos-manutencao/fontes — só lista as pastas).
+function ModalFontes({ onClose }) {
+  const [dados, setDados] = useState(null)
+  const [erro, setErro] = useState('')
+  useEffect(() => {
+    fetch(`${BACKEND_URL}/api/planos-manutencao/fontes`)
+      .then(async r => { if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`); return r.json() })
+      .then(setDados).catch(e => setErro(e.message || String(e)))
+  }, [])
+  const fmt = (iso) => (iso ? new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—')
+  const dias = (iso) => (iso ? Math.floor((Date.now() - new Date(iso).getTime()) / 86400000) : null)
+  return createPortal(
+    <div className="fixed inset-y-0 right-0 left-16 z-50 flex items-center justify-center bg-slate-900/40 p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="bg-white rounded-lg shadow-xl w-full min-w-0 max-w-3xl max-h-[85vh] flex flex-col">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
+          <p className="text-sm font-bold text-slate-900 flex items-center gap-2"><Database className="h-4 w-4 text-blue-600" /> Fonte de dados</p>
+          <button type="button" onClick={onClose} aria-label="Fechar" className="text-slate-400 hover:text-slate-600"><X className="h-4 w-4" /></button>
+        </div>
+        <div className="p-4 space-y-3 overflow-auto text-[11px]">
+          {!dados && !erro && <p className="text-slate-400">Consultando as pastas do SharePoint...</p>}
+          {erro && <p className="text-red-600">Não foi possível consultar: {erro}</p>}
+          {dados?.fontes.map(fo => {
+            const ultimo = fo.arquivos[0]
+            const d = dias(ultimo?.modificado)
+            return (
+              <div key={fo.relatorio} className="border border-slate-200 rounded-lg overflow-hidden">
+                <div className="px-3 py-2 bg-slate-50 border-b border-slate-200">
+                  <p className="font-bold text-slate-900">{fo.relatorio}</p>
+                  <p className="text-slate-500 mt-0.5">{fo.uso}</p>
+                  <p className="text-slate-600 mt-0.5 flex items-center gap-1"><FolderOpen className="h-3 w-3 text-amber-600" /> {fo.pasta}</p>
+                </div>
+                {fo.arquivos.length === 0 ? (
+                  <p className="px-3 py-2 text-red-600">Nenhum arquivo encontrado nesta pasta.</p>
+                ) : (
+                  <table className="w-full">
+                    <thead className="text-slate-500 uppercase text-[10px]">
+                      <tr><th className="text-left font-bold px-3 py-1.5">Arquivo</th><th className="text-left font-bold px-3 py-1.5 whitespace-nowrap">Última alteração</th></tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 text-slate-800">
+                      {fo.arquivos.map((a, i) => (
+                        <tr key={a.nome}>
+                          <td className="px-3 py-1.5">
+                            {a.nome}
+                            {i === 0 && <span className="ml-1.5 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-100 text-blue-700">mais recente</span>}
+                          </td>
+                          <td className="px-3 py-1.5 whitespace-nowrap tabular-nums">{fmt(a.modificado)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+                {ultimo && d != null && d > 1 && (
+                  <p className="px-3 py-1.5 border-t border-slate-100 text-amber-700">Atenção: o arquivo mais recente foi atualizado há {d} dias.</p>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </div>,
+    document.body
+  )
+}
+
 // Janela da engrenagem › Cadastro de ações: incluir, renomear e ativar/desativar. Ação não é apagada (desativada some
 // da lista de escolha, mas continua nas oportunidades que já a usaram).
 function ModalCadastroAcoes({ acoes, onSalvar, onClose }) {
@@ -473,7 +539,7 @@ function ModalAcaoOportunidade({ linha, gravada, acoes, podeEditar, onSalvar, on
 
 // Engrenagem do cabeçalho (ao lado de Atualizar): menu com "Importar arquivo" do CRM DAF - Potencial Renovação.
 // Lista em portal (acima de tudo); o arquivo escolhido vai para `onImportar`.
-function MenuEngrenagem({ importando, onImportar, podeImportar, onAcoes }) {
+function MenuEngrenagem({ importando, onImportar, podeImportar, onAcoes, onFontes }) {
   const [pos, setPos] = useState(null)
   const ref = useRef(null)
   const arquivoRef = useRef(null)
@@ -495,8 +561,16 @@ function MenuEngrenagem({ importando, onImportar, podeImportar, onAcoes }) {
           <div className="fixed inset-0 z-40" onClick={() => setPos(null)} />
           <div style={{ position: 'fixed', top: pos.top, right: pos.right }}
             className="z-50 w-72 bg-white border border-slate-200 rounded-md shadow-lg py-1 text-xs text-slate-800">
-            {podeImportar && <button type="button" onClick={() => { setPos(null); arquivoRef.current?.click() }}
+            <button type="button" onClick={() => { setPos(null); onFontes() }}
               className="w-full text-left px-3 py-2 hover:bg-slate-50 flex items-start gap-2">
+              <Database className="h-3.5 w-3.5 text-blue-600 mt-0.5 shrink-0" />
+              <span>
+                <span className="font-semibold block">Fonte de dados</span>
+                <span className="text-[11px] text-slate-500">Relatórios que alimentam o BI, pastas no SharePoint e data/hora dos arquivos</span>
+              </span>
+            </button>
+            {podeImportar && <button type="button" onClick={() => { setPos(null); arquivoRef.current?.click() }}
+              className="w-full text-left px-3 py-2 hover:bg-slate-50 flex items-start gap-2 border-t border-slate-100">
               <Upload className="h-3.5 w-3.5 text-blue-600 mt-0.5 shrink-0" />
               <span>
                 <span className="font-semibold block">Importar arquivo</span>
@@ -916,6 +990,8 @@ export default function BiPlanosManutencao() {
   const [opGravadas, setOpGravadas] = useState(new Map()) // chave → linha de bi_planos_oportunidades
   const [acoesAberto, setAcoesAberto] = useState(false)
   const [acaoModal, setAcaoModal] = useState(null) // linha da aba Oportunidades
+  const [fontesAberto, setFontesAberto] = useState(false) // engrenagem › Fonte de dados
+  const [canceladoModal, setCanceladoModal] = useState(null) // contrato Cancelado renovado (botão Renovado)
   const lerAcoes = () => apiService.getBiPlanosAcoes().then(setAcoesCad).catch(() => {})
   const lerOportunidades = () => apiService.getBiPlanosOportunidades()
     .then(linhas => setOpGravadas(new Map(linhas.map(l => [l.chave, l])))).catch(() => {})
@@ -930,6 +1006,21 @@ export default function BiPlanosManutencao() {
     await lerOportunidades()
   }
   const nomeAcao = (id) => acoesCad.find(a => a.id === id)?.nome || ''
+  // Status do contrato; se for Cancelado e o chassi foi renovado depois, mostra ao lado o botão Renovado.
+  const StatusContrato = ({ contrato }) => {
+    const ren = renovacaoDoCancelado(contrato)
+    return (
+      <span className="inline-flex items-center gap-1.5">
+        <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${corStatusContrato(contrato.status)}`}>{contrato.status}</span>
+        {ren && (
+          <button type="button" onClick={() => setCanceladoModal(contrato)} title={`Renovado pelo contrato ${ren.efetivo.contrato}`}
+            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-100 text-blue-700 hover:bg-blue-200">
+            <Repeat className="h-3 w-3" /> Renovado
+          </button>
+        )}
+      </span>
+    )
+  }
   // Metas dos velocímetros (engrenagem). Sem a tabela ou com erro, ficam as padrão.
   const [visaoResultado, setVisaoResultado] = useState('resumo') // aba Resultado
   const [metasLinhas, setMetasLinhas] = useState([]) // [{ indicador, ano, mes, meta }]
@@ -1147,7 +1238,7 @@ export default function BiPlanosManutencao() {
     })
   }, [ordens])
   const dataOs = r => (tipoDataOs === 'nf' ? r.data_nf : r.data_abertura || r.data_nf)
-  // Aba Ordens de Serviço: só as O.S. do ROF001 TODAS (o ROF017 entra só para localizar a NF).
+  // Aba Ordens de Serviço: só as O.S. do ROF001 (o ROF017 entra só para localizar a NF).
   const listaOs = useMemo(() => osConciliadas.filter(r => r.noRof001)
     .filter(r => { const d = dataOs(r); return (verTodosOs ? !!d : naTabela(d)) && (!nomesEmpresasSel || nomesEmpresasSel.has(r.empresa_nome.toUpperCase())) })
     .sort((a, b) => (dataOs(b) || '').localeCompare(dataOs(a) || '') || a.os.localeCompare(b.os, 'pt-BR', { numeric: true })),
@@ -1287,6 +1378,17 @@ export default function BiPlanosManutencao() {
   // As O.S. do contrato já vêm conciliadas: abertura, status, NF, data e valor da NF.
   const dadosOsContrato = osDoContrato
   // Contrato anterior do chassi (pop-up de quem está como Renovado por ser o contrato da renovação).
+  // Contrato Cancelado renovado: o chassi tem um contrato criado depois dele que não está cancelado. Os contratos
+  // seguintes podem estar cancelados também (houve nova renovação à frente) — vale o primeiro não cancelado da sequência.
+  // Retorna { seguintes, efetivo } ou null (não é cancelado, ou não houve renovação).
+  const renovacaoDoCancelado = (c) => {
+    if (!c || (c.status || '').toLowerCase() !== 'cancelado') return null
+    const data = (x) => x.criacao || x.inicio || ''
+    const seguintes = outrosDoChassi(c).filter(n => data(n) && data(c) && data(n) > data(c))
+      .sort((a, b) => data(a).localeCompare(data(b)))
+    const efetivo = seguintes.find(n => (n.status || '').toLowerCase() !== 'cancelado')
+    return efetivo ? { seguintes, efetivo } : null
+  }
   const contratoAnterior = (c) => outrosDoChassi(c).filter(n => n.inicio && c.inicio && n.inicio < c.inicio)
     .sort((a, b) => b.inicio.localeCompare(a.inicio))[0]
   // Contratos a serem renovados: Expirado com fim no mês ANTERIOR a cada mês do filtro, como os veículos vendidos
@@ -1424,13 +1526,13 @@ export default function BiPlanosManutencao() {
         .filter(o => o.dataOs && o.dataOs >= v.data)
       return {
         chave: `novo|${v.chassi}|${v.data}`, tipoOp: 'Novo', contrato: fechados[0]?.contrato || '', cliente: v.cliente, chassi: v.chassi, dataVenda: v.data,
-        tipo: fechados[0]?.tipo || '', inicio: fechados[0]?.inicio || null, fim: fechados[0]?.fim || null, status: fechados[0]?.status || '',
+        contratoObj: fechados[0] || null, tipo: fechados[0]?.tipo || '', inicio: fechados[0]?.inicio || null, fim: fechados[0]?.fim || null, status: fechados[0]?.status || '',
         grupo: v.empresa_nome || '', realizado: fechados.length > 0, // empresa = NotaFiscal_EmpresaNom (relatório de vendas)
         detalhe: fechados.length ? { contrato: { contrato: '—', chassi: v.chassi, tipo: tipoVeiculo(v.estoque_tipo), inicio: v.data, fim: null, status: 'Veículo vendido' }, renovacao: { os, novos: fechados, modo: 'venda' } } : null,
       }
     })
     const renov = (verTodosOport ? (contratos?.rows || []).filter(ehExpirado) : listaARenovar).map(c => ({
-      chave: `renovacao|${c.contrato}|${c.chassi}`, tipoOp: 'Renovação', contrato: c.contrato, cliente: c.cliente, chassi: c.chassi, dataVenda: null, tipo: c.tipo,
+      chave: `renovacao|${c.contrato}|${c.chassi}`, tipoOp: 'Renovação', contratoObj: c, contrato: c.contrato, cliente: c.cliente, chassi: c.chassi, dataVenda: null, tipo: c.tipo,
       inicio: c.inicio, fim: c.fim, status: c.status, grupo: c.grupo, realizado: contratosRenovados.has(c),
       detalhe: contratosRenovados.has(c) ? { contrato: c, renovacao: contratosRenovados.get(c) } : null,
     }))
@@ -1478,24 +1580,26 @@ export default function BiPlanosManutencao() {
   return (
     // min-h-screen: com pouco conteúdo o min-h-full não cobria a área e aparecia o cinza claro do layout.
     <div className="min-h-screen bg-[#020617] p-6 space-y-5">
-      {/* CABEÇALHO + FILTROS (mesmo modelo do Agendamento de Serviços, em azul) */}
-      {/* Sem overflow-hidden: cortava a lista do seletor de empresas. O degradê leva o próprio arredondamento. */}
-      <div className="relative z-10 rounded-lg border border-slate-200 shadow-sm bg-white">
-        <div className="absolute inset-0 rounded-lg bg-gradient-to-r from-blue-100 via-sky-50 to-transparent pointer-events-none" />
-        <div className="relative flex flex-wrap items-stretch justify-between gap-4 p-5">
-          <div className="flex items-center gap-3 self-start">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center shrink-0">
-              <Wrench className="h-5 w-5 text-white" />
+      {/* CABEÇALHO + FILTROS — modelo padrão dos BIs (igual ao Garantias DAF): degradê com as cores do Grupo Caiobá,
+          logo à esquerda, título em Cambria; à direita, atualização + botões e os filtros. */}
+      {/* Sem overflow-hidden: cortava a lista do seletor de empresas. */}
+      <div className="relative z-10 rounded-lg shadow-sm"
+        style={{ background: 'linear-gradient(90deg, #fdf8ec 0%, #f8d78c 28%, #f0a30a 50%, #a08a35 68%, #4f6a6a 84%, #1a4d8f 100%)' }}>
+        <div className="relative flex flex-wrap items-stretch justify-between gap-4 px-5 py-3">
+          <div className="flex items-center gap-4 self-start">
+            <div className="flex items-center gap-2 shrink-0">
+              <img src={logoCaioba} alt="Caiobá" className="h-11 w-auto" />
             </div>
-            <div>
-              <h1 className="text-lg font-bold text-slate-900 tracking-tight">Planos de Manutenção</h1>
-              <p className="text-[11px] text-slate-500 uppercase tracking-wide">Planos de Manutenção — Pós-Venda</p>
+            <div className="w-0.5 self-stretch bg-[#1a4d8f]" />
+            <div style={{ fontFamily: "Cambria, Georgia, 'Times New Roman', serif" }}>
+              <h1 className="text-[22px] font-bold text-slate-900 uppercase leading-tight">Planos de Manutenção</h1>
+              <p className="text-[17px] italic text-slate-900 uppercase leading-tight mt-0.5">Pós-Vendas</p>
             </div>
           </div>
           <div className="flex flex-col items-end gap-2">
             <div className="flex items-center gap-2">
-              <p className="text-[10px] text-slate-500 leading-tight">
-                Última atualização: <strong className="text-slate-700">{carregandoVendas ? '...' : vendas?.lidoEm ? fmtDataHora(new Date(vendas.lidoEm)) : '—'}</strong>
+              <p className="text-[10px] text-white/90 leading-tight whitespace-nowrap">
+                Última atualização: <strong className="text-white">{carregandoVendas ? '...' : vendas?.lidoEm ? fmtDataHora(new Date(vendas.lidoEm)) : '—'}</strong>
               </p>
               {podeAtualizar && <button
                 type="button"
@@ -1507,10 +1611,10 @@ export default function BiPlanosManutencao() {
               >
                 <RefreshCw className={`h-3.5 w-3.5 ${carregando ? 'animate-spin' : ''}`} />
               </button>}
-              {(podeImportar || podeCadastrarAcoes) && (
-                <MenuEngrenagem importando={importando} onImportar={importarContratos} podeImportar={podeImportar}
-                  onAcoes={podeCadastrarAcoes ? () => setAcoesAberto(true) : null} />
-              )}
+              {/* Engrenagem para todos (Fonte de dados); Importar e Cadastro de ações conforme o grupo de acesso. */}
+              <MenuEngrenagem importando={importando} onImportar={importarContratos} podeImportar={podeImportar}
+                onAcoes={podeCadastrarAcoes ? () => setAcoesAberto(true) : null} onFontes={() => setFontesAberto(true)} />
+              {fontesAberto && <ModalFontes onClose={() => setFontesAberto(false)} />}
               {acoesAberto && <ModalCadastroAcoes acoes={acoesCad} onSalvar={salvarAcaoCad} onClose={() => setAcoesAberto(false)} />}
               {/* Manual operacional: página própria, sempre em outra aba. Link com target="_blank" em vez de
                   window.open, que alguns navegadores bloqueiam como pop-up ou abrem na mesma aba. */}
@@ -1520,21 +1624,21 @@ export default function BiPlanosManutencao() {
                 <BookOpen className="h-3.5 w-3.5" />
               </a>
             </div>
-            {erro && <p className="text-[10px] text-red-600 max-w-[420px] text-right leading-tight">{erro}</p>}
-            {importando && <p className="text-[10px] text-slate-600 max-w-[420px] text-right leading-tight">Importando o arquivo do CRM DAF…</p>}
+            {erro && <p className="text-[10px] text-red-100 bg-red-700/70 rounded px-1.5 py-0.5 max-w-[420px] text-right leading-tight">{erro}</p>}
+            {importando && <p className="text-[10px] text-white max-w-[420px] text-right leading-tight">Importando o arquivo do CRM DAF…</p>}
             {avisoImportacao && (
-              <p className={`text-[10px] max-w-[420px] text-right leading-tight ${avisoImportacao.ok ? 'text-emerald-700' : 'text-red-600'}`}>
+              <p className={`text-[10px] max-w-[420px] text-right leading-tight rounded px-1.5 py-0.5 ${avisoImportacao.ok ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-700'}`}>
                 {avisoImportacao.texto}
                 <button type="button" onClick={() => setAvisoImportacao(null)} className="ml-1 text-slate-400 hover:text-slate-700" aria-label="Fechar aviso">✕</button>
               </p>
             )}
             <div className="flex flex-wrap items-end gap-4">
               <div className="flex flex-col gap-1">
-                <label className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1"><Building2 className="h-3 w-3" /> Empresas</label>
+                <label className="text-[10px] font-bold text-white uppercase flex items-center gap-1"><Building2 className="h-3 w-3" /> Empresas</label>
                 <SeletorEmpresas grupos={grupos} selecionadas={empresasSel} onChange={setEmpresasSel} />
               </div>
               <div className="flex flex-col gap-1">
-                <label className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1"><Calendar className="h-3 w-3" /> Mês/Ano</label>
+                <label className="text-[10px] font-bold text-white uppercase flex items-center gap-1"><Calendar className="h-3 w-3" /> Mês/Ano</label>
                 <div className="flex items-center gap-1.5">
                   {/* Ano + um ou mais meses dele (cada mês inteiro; o mês atual vai até ontem). */}
                   <select className={inputCls} aria-label="Ano" value={anoSel} onChange={e => escolherAno(e.target.value)}>
@@ -1872,7 +1976,7 @@ export default function BiPlanosManutencao() {
                       })()}
                     </td>
                     <td className="px-3 py-1.5 whitespace-nowrap">
-                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${corStatusContrato(r.status)}`}>{r.status}</span>
+                      <StatusContrato contrato={r} />
                     </td>
                     {/* Data venda: última venda do chassi no relatório de vendas (— quando a venda não está no arquivo). */}
                     <td className="px-3 py-1.5 whitespace-nowrap tabular-nums">{dataVendaChassi(r.chassi) ? fmtData(dataVendaChassi(r.chassi)) : <span className="text-slate-300">—</span>}</td>
@@ -1946,7 +2050,7 @@ export default function BiPlanosManutencao() {
                     <td className="px-3 py-1.5 whitespace-nowrap tabular-nums">{r.inicio ? fmtData(r.inicio) : <span className="text-slate-300">—</span>}</td>
                     <td className="px-3 py-1.5 whitespace-nowrap tabular-nums">{r.fim ? fmtData(r.fim) : <span className="text-slate-300">—</span>}</td>
                     <td className="px-3 py-1.5 whitespace-nowrap">
-                      {r.status ? <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${corStatusContrato(r.status)}`}>{r.status}</span> : <span className="text-slate-300">—</span>}
+                      {r.status ? <StatusContrato contrato={r.contratoObj || r} /> : <span className="text-slate-300">—</span>}
                     </td>
                     <td className="px-3 py-1.5 whitespace-nowrap">
                       {/* Novo: o chassi fechou contrato no CRM depois da venda. Renovação: O.S. P04 ou novo contrato depois do fim. */}
@@ -2009,7 +2113,7 @@ export default function BiPlanosManutencao() {
             <table className="w-full text-[11px]">
               <thead className="bg-slate-50 text-slate-500 uppercase text-[10px] sticky top-0">
                 <tr>
-                  {/* ROF001 TODAS: O.S., abertura, chassi e valor; ROF017 (conciliação): descrição do serviço, Status NF e Data NF. */}
+                  {/* ROF001: O.S., abertura, chassi e valor; ROF017 (conciliação): descrição do serviço, Status NF e Data NF. */}
                   {['O.S.', 'Abertura', 'Chassi', 'Código', 'Descrição', 'Status NF', 'Data NF', 'Valor O.S.'].map(h => (
                     <ThOrdena key={h} titulo={h} ordenacao={ordOs} direita={h === 'Valor O.S.'} />
                   ))}
@@ -2094,6 +2198,14 @@ export default function BiPlanosManutencao() {
       )}
 
       {osModal && <ModalOs venda={osModal} onFechar={() => setOsModal(null)} />}
+      {canceladoModal && (() => {
+        const ren = renovacaoDoCancelado(canceladoModal)
+        return (
+          <ModalRenovacao contrato={canceladoModal}
+            renovacao={{ os: [], novos: ren?.seguintes || [], modo: 'cancelado', osContrato: ren ? osDoContrato(ren.efetivo) : [] }}
+            onFechar={() => setCanceladoModal(null)} />
+        )
+      })()}
       {acaoModal && (
         <ModalAcaoOportunidade linha={acaoModal} gravada={opGravadas.get(acaoModal.chave)} acoes={acoesCad} podeEditar={podeDefinirAcao}
           onSalvar={(dados) => salvarOportunidade(acaoModal, dados)} onClose={() => setAcaoModal(null)} />
@@ -2167,7 +2279,7 @@ function ModalVenda({ contrato, vendas, onFechar }) {
 
 function ModalRenovacao({ contrato, renovacao, onFechar }) {
   const modo = renovacao?.modo
-  const substituicao = modo === 'substituicao' || modo === 'anterior' || modo === 'substituto'
+  const substituicao = modo === 'substituicao' || modo === 'anterior' || modo === 'substituto' || modo === 'cancelado'
   // Contrato que realmente deu início (marcado com o play verde): o primeiro, pela data de início, que não foi
   // Cancelado (ex.: entre DMS-16393 cancelado, DMS-28980 expirado e DMS-41821 cancelado → DMS-28980).
   const efetivo = [...(renovacao?.novos || [])]
@@ -2180,7 +2292,7 @@ function ModalRenovacao({ contrato, renovacao, onFechar }) {
       <div className="bg-white rounded-lg shadow-xl w-full min-w-0 max-w-3xl max-h-[85vh] flex flex-col">
         <div className="flex items-start justify-between gap-3 px-4 py-3 border-b border-slate-200">
           <div>
-            <p className="text-sm font-bold text-slate-900">{modo === 'venda' ? 'Contrato Novo — Plano de Manutenção' : `${modo === 'transicao' ? 'Transição' : modo === 'substituicao' || modo === 'substituto' ? 'Substituição' : 'Renovação'} do Contrato — Plano de Manutenção`}</p>
+            <p className="text-sm font-bold text-slate-900">{modo === 'cancelado' ? 'Contrato Cancelado — Renovado' : modo === 'venda' ? 'Contrato Novo — Plano de Manutenção' : `${modo === 'transicao' ? 'Transição' : modo === 'substituicao' || modo === 'substituto' ? 'Substituição' : 'Renovação'} do Contrato — Plano de Manutenção`}</p>
             <p className="text-[11px] text-slate-500 mt-0.5">
               {modo === 'venda'
                 ? <>Chassi <span className="font-mono">{contrato.chassi}</span> · Veículo {contrato.tipo} · Venda em {fmtData(contrato.inicio)}</>
@@ -2243,7 +2355,8 @@ function ModalRenovacao({ contrato, renovacao, onFechar }) {
                 : modo === 'anterior' ? 'Contrato anterior, que este renovou'
                 : modo === 'substituto' ? 'Contrato cancelado, que este substituiu'
                 : modo === 'transicao' ? 'Contrato anterior do chassi, de onde vem a transição'
-                : modo === 'venda' ? 'Contrato fechado depois da venda' : 'Novo contrato do chassi'}
+                : modo === 'venda' ? 'Contrato fechado depois da venda'
+                : modo === 'cancelado' ? 'Contratos seguintes do chassi (o play verde é o que renovou)' : 'Novo contrato do chassi'}
             </p>
             {!renovacao?.novos.length ? (
               <p className="text-[11px] text-slate-400">Nenhum novo contrato do chassi que vá além do fim deste contrato.</p>

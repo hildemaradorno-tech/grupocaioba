@@ -130,6 +130,9 @@ export default function GarantiasDafDashboard({ variante = 'aberto', onLastModif
   const [progressoImportPend, setProgressoImportPend] = useState(null) // { atual, total }
   const [erroImportLote, setErroImportLote] = useState(null) // { total, exemplo } — resumo dos erros do último lote
   const [spRows, setSpRows]             = useState([])
+  // Com Garantista: O.S. de garantia do ROF001_OSAberta_Excel que NÃO estão Encerradas / Pendentes de
+  // Autorização de Encerramento (Faturada, Cancelada...) — só O.S., tipo e situação, para os avisos
+  const [spOutras, setSpOutras]         = useState([])
   const [spLoading, setSpLoading]       = useState(false)
   const [spLastModified, setSpLastModified] = useState(null)
   const [filtroEmpresaDash, setFiltroEmpresaDash] = useSessionState(`${pfx}_empresa`, '')
@@ -214,6 +217,7 @@ export default function GarantiasDafDashboard({ variante = 'aberto', onLastModif
       const data = r.ok ? await r.json() : []
       const rows = Array.isArray(data) ? data : (data.rows ?? [])
       setSpRows(rows)
+      setSpOutras(Array.isArray(data.outras) ? data.outras : [])
       if (data.lastModified) setSpLastModified(data.lastModified)
     } catch {}
     finally { setSpLoading(false) }
@@ -282,10 +286,19 @@ export default function GarantiasDafDashboard({ variante = 'aberto', onLastModif
     )),
     [spRows]
   )
-  const isNaBase = (item) => {
-    const key = `${String(item.numero_os ?? '').trim()}||${tipoCode(item.tipo_os_sigla) || tipoCode(item.tipo_garantia_descricao)}`
-    return spSet.has(key)
-  }
+  const chaveGarantia = (item) => `${String(item.numero_os ?? '').trim()}||${tipoCode(item.tipo_os_sigla) || tipoCode(item.tipo_garantia_descricao)}`
+  // Na base = O.S. Encerrada no ROF001_OSAberta_Excel
+  const isNaBase = (item) => spSet.has(chaveGarantia(item))
+  // Situação da O.S. no Dealer.net (ROF001_OSAberta_Excel); null = O.S. não está no arquivo
+  const situacaoSp = useMemo(() => {
+    const m = new Map()
+    for (const r of [...spOutras, ...spRows]) {
+      if (!r.situacao) continue
+      m.set(`${String(r.os_numero ?? '').trim()}||${tipoCode(r.tipo_os_sigla) || tipoCode(r.tipo_os_descricao)}`, r.situacao)
+    }
+    return m
+  }, [spRows, spOutras])
+  const situacaoDe = (item) => situacaoSp.get(chaveGarantia(item)) || null
 
 
 
@@ -384,7 +397,34 @@ export default function GarantiasDafDashboard({ variante = 'aberto', onLastModif
   }, [dados, filtroEmpresaDash, filtroTipoOS, empresaFantasiaMap])
 
   // OS que não foram encontradas no arquivo SharePoint — só faz sentido na tela Aberto
-  const grpNaoEncontrado = !isAndamento ? dadosBase.filter(g => !isNaBase(g)) : []
+  // (situação no ROF001_OSAberta_Excel diferente de Encerrada:
+  // Faturada, Cancelada... ou fora do arquivo). As Faturadas seguem pelo "Buscar NF" para o Histórico de O.S.
+  const grpForaDaAba = !isAndamento ? dadosBase.filter(g => !isNaBase(g)) : []
+  // Situações em que a O.S. voltou a ficar aberta (inclui Pendente de Autorização de Encerramento: cadastrada
+  // como Encerrada e não faturada, mas no arquivo não está mais Encerrada → aviso Reabertas)
+  const ehSitAberta = (s) => /em andamento|pendente autoriza[cç][aã]o abertura|pendente de autoriza[cç][aã]o de encerramento/i.test(s || '')
+  // Sem faturamento e não aberta (Cancelada, Pendente Autorização Cancelamento, Não Autorizada Abertura…):
+  // aviso próprio com botão Excluir (tela de confirmação)
+  const grpExcluirSemFat = grpForaDaAba.filter(g => { const s = situacaoDe(g); return !!s && s !== 'Faturada' && !ehSitAberta(s) })
+  const idsExcluirSemFat = new Set(grpExcluirSemFat.map(g => g.id))
+  // Dois avisos com Excluir: Canceladas (inclui Pendente Autorização Cancelamento) e as demais
+  const ehPendCancel = (s) => /pendente autoriza[cç][aã]o cancelamento/i.test(s || '')
+  const grpCanceladas = grpExcluirSemFat.filter(g => /cancel/i.test(situacaoDe(g)) && !ehPendCancel(situacaoDe(g)))
+  const grpPendCancel = grpExcluirSemFat.filter(g => ehPendCancel(situacaoDe(g)))
+  const grpOutrasSemFat = grpExcluirSemFat.filter(g => !/cancel/i.test(situacaoDe(g)))
+  // Reabertas (Em Andamento, Pendente Autorização Abertura, Pendente de Autorização de Encerramento): aviso com Excluir
+  const grpReabertas = grpForaDaAba.filter(g => ehSitAberta(situacaoDe(g)))
+  const idsReabertas = new Set(grpReabertas.map(g => g.id))
+  // Demais (Faturada ou fora do arquivo): aviso com Buscar NF
+  const grpNaoEncontrado = grpForaDaAba.filter(g => !idsExcluirSemFat.has(g.id) && !idsReabertas.has(g.id))
+  const contagemNaoEncontrado = { faturada: 0, outras: 0, fora: 0 }
+  for (const g of grpNaoEncontrado) {
+    const s = situacaoDe(g)
+    if (!s) contagemNaoEncontrado.fora++
+    else if (s === 'Faturada') contagemNaoEncontrado.faturada++
+    else contagemNaoEncontrado.outras++
+  }
+  const grpDoAviso = (k) => (k === 'canceladas' ? grpCanceladas : k === 'pend_cancel' ? grpPendCancel : k === 'reabertas' ? grpReabertas : grpOutrasSemFat)
 
   // Busca faturamento (ROF017) somente para as OS do alerta "não encontrada no SharePoint"
   // (grpNaoEncontrado) — são as candidatas a já terem sido faturadas ou canceladas.
@@ -393,7 +433,7 @@ export default function GarantiasDafDashboard({ variante = 'aberto', onLastModif
   const handleBuscarFaturamentoLote = useCallback(async () => {
     if (grpNaoEncontrado.length === 0) return
     const confirmar = window.confirm(
-      `Buscar faturamento para ${grpNaoEncontrado.length} OS não encontrada(s) no SharePoint?\n\nAs OS com Nota Fiscal emitida terão o status alterado automaticamente para "E — Nota Fiscal Emitida" e passarão a aparecer em Histórico de O.S.`
+      `Buscar faturamento para ${grpNaoEncontrado.length} O.S. que não estão mais como Encerradas no Dealer.net?\n\nAs OS com Nota Fiscal emitida terão o status alterado automaticamente para "E — Nota Fiscal Emitida" e passarão a aparecer em Histórico de O.S.`
     )
     if (!confirmar) return
 
@@ -500,7 +540,7 @@ export default function GarantiasDafDashboard({ variante = 'aberto', onLastModif
     [empresaLookup]
   )
 
-  // Importa direto do SharePoint (ROF001_OSABERTA_ENCERRADA) todas as OS pendentes. Disparado
+  // Importa direto do SharePoint (ROF001_OSAberta_Excel <ano>: só as Encerradas) todas as OS pendentes. Disparado
   // automaticamente pelo efeito logo abaixo (ao acessar a tela ou clicar em "Atualizar") — sem
   // modal de seleção nem confirmação, os dados já vêm completos do arquivo.
   const handleImportarLote = useCallback(async () => {
@@ -582,6 +622,37 @@ export default function GarantiasDafDashboard({ variante = 'aberto', onLastModif
     try { await apiService.deleteGarantia(idExcluir); await loadData(filtros) }
     catch (err) { alert('Erro ao excluir: ' + (err.message || String(err))) }
     finally { setModalExcluir(false) }
+  }
+
+  // Aviso "sem faturamento e não abertas" → Excluir (tela de confirmação com a lista)
+  // Clique num aviso: filtra a tabela só com as O.S. dele (limpa card e status selecionados, que
+  // somariam ao filtro) e rola a tela até a tabela. Clicar de novo no mesmo aviso limpa.
+  const tabelaAbertoRef = useRef(null)
+  const clicarAviso = (key) => {
+    const ativar = filtroNaBase !== key
+    setFiltroNaBase(ativar ? key : '')
+    if (ativar) {
+      setFiltroCard(null)
+      setStatusFiltro('')
+      setTimeout(() => tabelaAbertoRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
+    }
+  }
+
+  // modalExcluirSemFat: null | 'canceladas' | 'pend_cancel' | 'reabertas' | 'excluir' (qual aviso abriu a confirmação)
+  const [modalExcluirSemFat, setModalExcluirSemFat] = useState(null)
+  const [excluindoSemFat, setExcluindoSemFat] = useState(false)
+  const handleExcluirSemFat = async () => {
+    setExcluindoSemFat(true)
+    let erros = 0
+    for (const g of grpDoAviso(modalExcluirSemFat)) {
+      try { await apiService.deleteGarantia(g.id) }
+      catch { erros++ }
+    }
+    if (filtroNaBase === modalExcluirSemFat) setFiltroNaBase('')
+    setModalExcluirSemFat(null)
+    setExcluindoSemFat(false)
+    await loadData(filtros)
+    if (erros > 0) alert(`${erros} registro(s) não puderam ser excluídos.`)
   }
 
   const handleExcluirLote = async () => {
@@ -686,7 +757,11 @@ export default function GarantiasDafDashboard({ variante = 'aberto', onLastModif
       base = statusFiltro ? dadosBase.filter(g => g.status_codigo === statusFiltro) : dadosBase
     }
     if (filtroNaBase === 'sim') return base.filter(g => isNaBase(g))
-    if (filtroNaBase === 'nao') return base.filter(g => !isNaBase(g))
+    if (filtroNaBase === 'nao') return base.filter(g => !isNaBase(g) && !idsExcluirSemFat.has(g.id) && !idsReabertas.has(g.id))
+    if (filtroNaBase === 'reabertas') return base.filter(g => idsReabertas.has(g.id))
+    if (filtroNaBase === 'excluir') return base.filter(g => idsExcluirSemFat.has(g.id) && !/cancel/i.test(situacaoDe(g)))
+    if (filtroNaBase === 'canceladas') return base.filter(g => idsExcluirSemFat.has(g.id) && /cancel/i.test(situacaoDe(g)) && !ehPendCancel(situacaoDe(g)))
+    if (filtroNaBase === 'pend_cancel') return base.filter(g => idsExcluirSemFat.has(g.id) && ehPendCancel(situacaoDe(g)))
     return base
   })()
 
@@ -811,45 +886,66 @@ export default function GarantiasDafDashboard({ variante = 'aberto', onLastModif
       )}
 
       {/* ── ALERTAS ── */}
-      {!isAndamento && (grpNaoEncontrado.length > 0 || importandoPend || !!erroImportLote) && (
+      {!isAndamento && (grpNaoEncontrado.length > 0 || grpExcluirSemFat.length > 0 || grpReabertas.length > 0 || importandoPend || !!erroImportLote) && (
         <div className="flex flex-wrap gap-3">
+          {[
+            { key: 'canceladas', grp: grpCanceladas, titulo: (n) => `${n} O.S. Cancelada(s)`, sub: 'Verificar as O.S. no sistema antes de excluir.' },
+            { key: 'pend_cancel', grp: grpPendCancel, titulo: (n) => `${n} O.S. Pendente(s) de Autorização de Cancelamento`, sub: 'Verificar as O.S. no sistema antes de excluir.' },
+            { key: 'reabertas', grp: grpReabertas, titulo: (n) => `${n} O.S. reaberta(s)`, sub: 'Verificar as O.S. no sistema antes de excluir.' },
+            { key: 'excluir', grp: grpOutrasSemFat, titulo: (n) => `${n} O.S. sem faturamento e não abertas` },
+          ].filter(a => a.grp.length > 0).map(a => (
+            <div key={a.key} onClick={() => clicarAviso(a.key)}
+              title={filtroNaBase === a.key ? 'Clique para limpar o filtro e mostrar todas as O.S.' : 'Clique para filtrar a tabela abaixo só com estas O.S.'}
+              className={`flex flex-1 items-center gap-3 bg-slate-100 border border-slate-300 rounded-lg px-4 py-3 cursor-pointer transition-all hover:shadow-sm ${filtroNaBase === a.key ? 'ring-2 ring-slate-500' : ''}`}>
+              <div className="p-1.5 bg-slate-200 rounded-md shrink-0">
+                <XCircle className="h-4 w-4 text-slate-600" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-bold text-slate-800">{a.titulo(a.grp.length)}</p>
+                {a.sub && <p className="text-[10px] text-slate-600 mt-0.5">{a.sub}</p>}
+              </div>
+              {canExcluirOS && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); setModalExcluirSemFat(a.key) }}
+                  title="Excluir estas garantias do sistema (abre a confirmação)"
+                  aria-label="Excluir"
+                  className="shrink-0 flex items-center justify-center p-2 rounded-md bg-red-600 hover:bg-red-700 text-white transition-colors"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+          ))}
           {grpNaoEncontrado.length > 0 && (
-            <div className="flex flex-1 items-center gap-3 bg-red-50 border border-red-300 rounded-lg px-4 py-3">
+            <div onClick={() => clicarAviso('nao')}
+              title={filtroNaBase === 'nao' ? 'Clique para limpar o filtro e mostrar todas as O.S.' : 'Clique para filtrar a tabela abaixo só com estas O.S.'}
+              className={`flex flex-1 items-center gap-3 bg-red-50 border border-red-300 rounded-lg px-4 py-3 cursor-pointer transition-all hover:shadow-sm ${filtroNaBase === 'nao' ? 'ring-2 ring-red-500' : ''}`}>
               <div className="p-1.5 bg-red-100 rounded-md shrink-0">
                 <AlertTriangle className="h-4 w-4 text-red-600" />
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-xs font-bold text-red-800">
-                  {grpNaoEncontrado.length} OS não encontrada(s) no arquivo SharePoint
+                  {grpNaoEncontrado.length} O.S. Faturadas
                 </p>
                 <p className="text-[10px] text-red-600 mt-0.5">
-                  Podem ter sido faturadas ou canceladas — vale conferir.
+                  {[
+                    contagemNaoEncontrado.faturada > 0 && 'Clique no botão para buscar as NFs.',
+                    contagemNaoEncontrado.outras > 0 && `${contagemNaoEncontrado.outras} em outra situação`,
+                    contagemNaoEncontrado.fora > 0 && `${contagemNaoEncontrado.fora} fora do arquivo`,
+                  ].filter(Boolean).join(' · ')}
                 </p>
               </div>
-              <button
-                onClick={() => setFiltroNaBase(prev => prev === 'nao' ? '' : 'nao')}
-                title={filtroNaBase === 'nao' ? 'Limpar filtro e mostrar todas as OS' : 'Filtrar a tabela abaixo só com estas OS'}
-                className={`shrink-0 flex items-center justify-center p-2 rounded-md border transition-colors ${
-                  filtroNaBase === 'nao'
-                    ? 'bg-red-600 border-red-600 text-white'
-                    : 'bg-white border-red-300 text-red-700 hover:bg-red-100'
-                }`}
-              >
-                <Eye className="h-3.5 w-3.5" />
-              </button>
               {canBuscarNF && (
               <button
-                onClick={handleBuscarFaturamentoLote}
+                onClick={(e) => { e.stopPropagation(); handleBuscarFaturamentoLote() }}
                 disabled={buscandoFaturamentoLote}
-                title="Busca faturamento (ROF017) para as OS não encontradas no arquivo SharePoint; se encontrar NF emitida, muda o status para E e move para Histórico de O.S."
-                className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md bg-red-600 hover:bg-red-700 text-white transition-colors disabled:opacity-50"
+                title="Buscar NF — busca o faturamento (ROF017) destas O.S.; se encontrar NF emitida, muda o status para E e move para Histórico de O.S."
+                aria-label="Buscar NF"
+                className="shrink-0 flex items-center gap-1.5 p-2 text-xs font-semibold rounded-md bg-red-600 hover:bg-red-700 text-white transition-colors disabled:opacity-50"
               >
                 {buscandoFaturamentoLote
-                  ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  : <FileText className="h-3.5 w-3.5" />}
-                {buscandoFaturamentoLote
-                  ? `Buscando ${progressoBuscaLote?.atual ?? 0}/${progressoBuscaLote?.total ?? 0}...`
-                  : 'Buscar NF'}
+                  ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> {progressoBuscaLote?.atual ?? 0}/{progressoBuscaLote?.total ?? 0}</>
+                  : <Search className="h-3.5 w-3.5" />}
               </button>
               )}
             </div>
@@ -1099,7 +1195,11 @@ export default function GarantiasDafDashboard({ variante = 'aberto', onLastModif
             <Search className="h-3.5 w-3.5 text-slate-400 shrink-0" />
             Filtros
             {filtroNaBase === 'sim' && <span className="px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-[10px] font-bold">● Encontrado</span>}
-            {filtroNaBase === 'nao' && <span className="px-1.5 py-0.5 bg-red-100 text-red-700 rounded text-[10px] font-bold">● Não encontrado</span>}
+            {filtroNaBase === 'nao' && <span className="px-1.5 py-0.5 bg-red-100 text-red-700 rounded text-[10px] font-bold">● Faturadas</span>}
+            {filtroNaBase === 'pend_cancel' && <span className="px-1.5 py-0.5 bg-slate-200 text-slate-700 rounded text-[10px] font-bold">● Pendente de Autorização de Cancelamento</span>}
+            {filtroNaBase === 'reabertas' && <span className="px-1.5 py-0.5 bg-slate-200 text-slate-700 rounded text-[10px] font-bold">● Reabertas</span>}
+            {filtroNaBase === 'canceladas' && <span className="px-1.5 py-0.5 bg-slate-200 text-slate-700 rounded text-[10px] font-bold">● Canceladas</span>}
+            {filtroNaBase === 'excluir' && <span className="px-1.5 py-0.5 bg-slate-200 text-slate-700 rounded text-[10px] font-bold">● Sem faturamento e não abertas</span>}
           </div>
           {!!(filtroEmpresaDash || filtroTipoOS || filtroNaBase || filtros.numero_os || filtros.chassi || filtros.data_inicio || filtros.data_fim || filtros.data_fechamento_inicio || filtros.data_fechamento_fim) && (
             <button
@@ -1285,7 +1385,7 @@ export default function GarantiasDafDashboard({ variante = 'aberto', onLastModif
 
       {/* ── TABELA ABERTO (Supabase) ── */}
       {!isAndamento && (
-        <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-auto custom-scrollbar-light" style={{ maxHeight: '440px' }}>
+        <div ref={tabelaAbertoRef} className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-auto custom-scrollbar-light" style={{ maxHeight: '440px' }}>
           {loading ? (
             <div className="p-10 text-center text-xs text-slate-400">Carregando...</div>
           ) : (
@@ -1344,7 +1444,7 @@ export default function GarantiasDafDashboard({ variante = 'aberto', onLastModif
                       </td>
                       <td className="p-3 font-mono font-bold text-slate-900">
                         <span className="flex items-center gap-1.5">
-                          <span className={`shrink-0 w-2 h-2 rounded-full ${isNaBase(item) ? 'bg-green-500' : 'bg-red-500'}`} title={isNaBase(item) ? 'Encontrado no arquivo SP' : 'Não encontrado no arquivo SP'} />
+                          <span className={`shrink-0 w-2 h-2 rounded-full ${isNaBase(item) ? 'bg-green-500' : 'bg-red-500'}`} title={`Situação no Dealer.net: ${situacaoDe(item) || 'fora do arquivo'}`} />
                           {item.numero_os || '—'}
                         </span>
                       </td>
@@ -1409,6 +1509,53 @@ export default function GarantiasDafDashboard({ variante = 'aberto', onLastModif
           </div>
         </div>
       )}
+
+      {/* Modal — Excluir O.S. sem faturamento e não abertas (aviso) */}
+      {modalExcluirSemFat && (() => { const grpModal = grpDoAviso(modalExcluirSemFat); return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-lg mx-4 max-h-[85vh] flex flex-col">
+            <h3 className="text-sm font-bold text-slate-800 mb-2">Excluir {grpModal.length} garantia(s)?</h3>
+            <p className="text-xs text-slate-500 mb-3">
+              modalExcluirSemFat === 'canceladas' ? 'Estas O.S. estão canceladas no Dealer.net.' : modalExcluirSemFat === 'pend_cancel' ? 'Estas O.S. estão com o cancelamento pendente de autorização no Dealer.net.' : modalExcluirSemFat === 'reabertas' ? 'Estas O.S. foram reabertas no Dealer.net.' : 'Estas O.S. não foram faturadas e não estão abertas no Dealer.net.'} A exclusão remove as garantias do sistema
+              permanentemente — não é possível desfazer.
+            </p>
+            <div className="overflow-y-auto border border-slate-200 rounded-md mb-4">
+              <table className="w-full text-xs">
+                <thead className="bg-slate-50 text-[10px] uppercase text-slate-500 font-bold sticky top-0">
+                  <tr><th className="text-left p-2">Nº O.S.</th><th className="text-left p-2">Empresa</th><th className="text-left p-2">Tipo</th><th className="text-left p-2">Situação</th></tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {grpModal.map(g => (
+                    <tr key={g.id}>
+                      <td className="p-2 font-mono font-bold text-slate-800">{g.numero_os}</td>
+                      <td className="p-2 text-slate-600">{empresaNome(g)}</td>
+                      <td className="p-2 text-slate-600">{tipoCode(g.tipo_os_sigla) || tipoCode(g.tipo_garantia_descricao)}</td>
+                      <td className="p-2 text-slate-600">{situacaoDe(g)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setModalExcluirSemFat(null)}
+                disabled={excluindoSemFat}
+                className="px-3 py-1.5 rounded-md text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleExcluirSemFat}
+                disabled={excluindoSemFat}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-red-600 hover:bg-red-700 shadow-sm transition-colors disabled:opacity-60"
+              >
+                {excluindoSemFat && <Loader2 className="h-3 w-3 animate-spin" />}
+                {excluindoSemFat ? 'Excluindo...' : `Sim, excluir ${grpModal.length}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )})()}
 
       {/* Modal — Excluir em lote */}
       {modalExcluirLote && (

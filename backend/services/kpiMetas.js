@@ -166,8 +166,9 @@ export async function getMetaPecasPeriodos(ano, vendedorNome = null) {
 export async function getMetaPecasBalcaoPeriodos(ano, { empresaNome = null, soTrucks = false } = {}) {
   const base = await carregarBase(ano)
   if (!base) return null
-  const alvoEmp = empresaNome ? normNome(empresaNome) : null
-  const linhas = base.metas.filter(r => r.tipo === 'pecas' && /balc/i.test(r.departamento_nome || '') && (!alvoEmp || normNome(r.empresa_nome) === alvoEmp)
+  // empresaNome: um nome ou uma lista (seletor de empresas DAF da Matriz, 23/11/2026).
+  const alvosEmp = empresaNome ? new Set([].concat(empresaNome).map(normNome)) : null
+  const linhas = base.metas.filter(r => r.tipo === 'pecas' && /balc/i.test(r.departamento_nome || '') && (!alvosEmp || alvosEmp.has(normNome(r.empresa_nome)))
     && (!soTrucks || normNome(r.empresa_nome).includes('TRUCKS')))
   return periodizarMetas(linhas, ano, base.calendario)
 }
@@ -205,8 +206,9 @@ export async function getMetaOficinaPeriodos(ano, { consultorNome = null, empres
     linhas = base.metas.filter(r => r.tipo === 'mecanico')
   }
   if (empresaNome) {
-    const alvoEmp = normNome(empresaNome)
-    linhas = linhas.filter(r => normNome(r.empresa_nome) === alvoEmp)
+    // empresaNome: um nome ou uma lista (seletor de empresas DAF da Matriz, 23/11/2026).
+    const alvosEmp = new Set([].concat(empresaNome).map(normNome))
+    linhas = linhas.filter(r => alvosEmp.has(normNome(r.empresa_nome)))
   }
   if (semNaoAssociado) linhas = linhas.filter(r => normNome(r.colaborador_nome) !== 'PRODUTIVO NAO ASSOCIADO')
   if (soTrucks) linhas = linhas.filter(r => normNome(r.empresa_nome).includes('TRUCKS'))
@@ -304,7 +306,7 @@ export async function getMetaMargemOficinaPeriodos(ano, { empresaNome = null, co
   const base = await carregarBaseMargem(ano)
   if (!base) return null
 
-  const alvoEmp = empresaNome ? normNome(empresaNome) : null
+  const alvosEmp = empresaNome ? new Set([].concat(empresaNome).map(normNome)) : null // um nome ou uma lista (23/11/2026)
   const alvoCon = consultorNome ? normNome(consultorNome) : null
 
   const boxParaSetor = {}
@@ -341,7 +343,7 @@ export async function getMetaMargemOficinaPeriodos(ano, { empresaNome = null, co
 
   const lucroP = Array(12).fill(0), metaP = Array(12).fill(0), lucroS = Array(12).fill(0), metaS = Array(12).fill(0)
   for (const r of base.consultor) {
-    if (alvoEmp && normNome(r.empresa_nome) !== alvoEmp) continue
+    if (alvosEmp && !alvosEmp.has(normNome(r.empresa_nome))) continue
     if (soTrucks && !normNome(r.empresa_nome).includes('TRUCKS')) continue
     if (alvoCon && normNome(r.colaborador_nome) !== alvoCon) continue
     const aprovado = r.meta_aprovada != null && Math.abs((Number(r.meta_faturamento) || 0) - Number(r.meta_aprovada)) <= 0.001
@@ -389,12 +391,13 @@ export async function getMetaMargemBalcaoPeriodos(ano, { empresaNome = null, ven
     _cache.set(key, { data: linhas, ts: Date.now() })
   }
 
-  const alvoEmp = empresaNome ? normNome(empresaNome) : null
+  // empresaNome: um nome ou uma lista (seletor de empresas DAF da Matriz, 23/11/2026).
+  const alvosEmp = empresaNome ? new Set([].concat(empresaNome).map(normNome)) : null
   const alvoVen = vendedorNome ? normNome(vendedorNome) : null
   const lucro = Array(12).fill(0), meta = Array(12).fill(0)
   for (const r of linhas) {
     if (!/balc/i.test(r.departamento_nome || '')) continue
-    if (alvoEmp && normNome(r.empresa_nome) !== alvoEmp) continue
+    if (alvosEmp && !alvosEmp.has(normNome(r.empresa_nome))) continue
     if (soTrucks && !normNome(r.empresa_nome).includes('TRUCKS')) continue
     if (alvoVen && normNome(r.colaborador_nome) !== alvoVen) continue
     if (r.margem_pecas_pct == null || r.margem_pecas_pct === '') continue

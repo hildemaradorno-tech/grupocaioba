@@ -134,7 +134,7 @@ export default function MonitorSupabase() {
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <p className="text-[10px] text-slate-500 leading-tight text-right whitespace-nowrap">
-            Lido em: <strong className="text-slate-700">{carregando ? '...' : dataHora(dados?.lido_em)}</strong>
+            Atualizado em: <strong className="text-slate-700">{carregando ? '...' : dataHora(dados?.lido_em)}</strong>
           </p>
           <button type="button" onClick={() => carregar(true)} disabled={carregando} title="Atualizar dados" aria-label="Atualizar dados"
             className="flex items-center justify-center p-1.5 rounded-md bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm disabled:opacity-60 transition-colors">

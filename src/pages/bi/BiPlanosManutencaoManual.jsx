@@ -1,5 +1,5 @@
 import React from 'react'
-import { BookOpen, Database, LayoutDashboard, Truck, Wrench, FileText, Gauge, CreditCard, FileSearch, Check, Settings, Upload, Goal, Table2, BarChart3, Pencil, ListChecks, RefreshCw, Building2 } from 'lucide-react'
+import { BookOpen, Database, LayoutDashboard, Truck, Wrench, FileText, Gauge, CreditCard, FileSearch, Check, Settings, Upload, Goal, Table2, BarChart3, Pencil, ListChecks, RefreshCw, Building2, Repeat } from 'lucide-react'
 import { INFO_RESUMO, MANUAL_GERAL, MANUAL_RESUMO, MANUAL_ABAS } from './planosManutencaoTextos'
 
 // Manual operacional do BI Planos de Manutenção (aberto em nova aba pelo ícone de livro do cabeçalho do BI).
@@ -48,6 +48,8 @@ const BOTOES = {
   incluir: () => <span className="inline-flex px-2 py-0.5 rounded-md bg-blue-600 text-white text-[11px] font-semibold align-middle">Incluir</span>,
   atualizar: () => <span className="inline-flex p-1 rounded-md bg-blue-600 text-white align-middle"><RefreshCw className="h-3.5 w-3.5" /></span>,
   manual: () => <span className="inline-flex p-1 rounded-md bg-blue-600 text-white align-middle"><BookOpen className="h-3.5 w-3.5" /></span>,
+  renovado: () => <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-100 text-blue-700 align-middle"><Repeat className="h-3 w-3" /> Renovado</span>,
+  fontes: () => <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-slate-200 bg-white text-slate-800 text-[11px] font-semibold align-middle"><Database className="h-3 w-3 text-blue-600" /> Fonte de dados</span>,
   lapis: () => <span className="inline-flex p-0.5 rounded text-blue-600 border border-blue-200 align-middle"><Pencil className="h-3.5 w-3.5" /></span>,
   lupa: () => <span className="inline-flex p-0.5 rounded text-blue-600 border border-blue-200 align-middle"><FileSearch className="h-3.5 w-3.5" /></span>,
   ativa: () => <span className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-700 align-middle">Ativa</span>,

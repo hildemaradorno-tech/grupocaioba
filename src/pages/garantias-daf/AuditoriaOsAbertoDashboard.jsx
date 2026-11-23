@@ -17,7 +17,7 @@ import {
 
 const semVeiculo = (r) => r.na_oficina === false
 // Mesma regra do card "Veículos com mais de 30 dias na oficina" do Controle: 30+ dias E Na Oficina = Sim
-const mais30 = (r) => { const d = diasOficina(r.data_criacao, r.data_auditoria); return d !== null && d >= 30 && r.na_oficina === true }
+const mais30 = (r) => { const d = diasOficina(r.data_criacao, r.data_auditoria); return d !== null && d >= 30 } // 30+ dias, com ou sem veículo na oficina
 const tipoOs = (r) => r.tipo_os_descricao || r.tipo_os_sigla || '(Sem tipo)'
 // Chave da O.S. para a reincidência: empresa + número (no agrupamento há várias empresas e os números se repetem)
 const chaveOs = (r) => `${r._empKey || ''}|${r.os_numero}`

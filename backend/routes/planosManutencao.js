@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { isConfigured } from '../services/graphClient.js'
+import { isConfigured, graphGet } from '../services/graphClient.js'
 import { requireMenu, requireAcao } from '../middleware/authMiddleware.js'
 import { getVeiculosVendidos, clearVeiculosVendidosCache } from '../services/sharepointVeiculosVendidos.js'
 import { getOsPlanoManutencao, clearOsPlanoManutencaoCache } from '../services/sharepointOsPlanoManutencao.js'
@@ -62,6 +62,43 @@ router.post('/contratos/importar', requireAcao('bi/planos-manutencao', 'importar
     if (e.status) return res.status(e.status).json({ error: e.message })
     throw e
   }
+}))
+
+// GET /api/planos-manutencao/fontes — relatórios que alimentam o BI: pasta do SharePoint e os arquivos com a
+// data/hora da última alteração (só lista as pastas, não baixa nada). Engrenagem › Fonte de dados.
+const FONTES = [
+  { relatorio: 'REL_VEICULOSVENDIDOSPORPERIODO_REPORT', uso: 'Veículos vendidos (Resultado, Oportunidades, Veículos Vendidos)',
+    pasta: '/Banco de Dados - DAF - Veículos', casa: n => n.toUpperCase().startsWith('REL_VEICULOSVENDIDOSPORPERIODO_REPORT') },
+  { relatorio: 'CRM DAF - Plano de Manutenção - Potencial Renovação', uso: 'Contratos (Resultado, Oportunidades, Contratos)',
+    pasta: '/Banco de Dados - DAF - Pós-Vendas/CRM DMS DAF', casa: n => /\.xlsx?$/i.test(n) && n.normalize('NFC').toLowerCase().includes('potencial renovação'.normalize('NFC')) },
+  { relatorio: 'ROF017_FATURAMENTOPOROS', uso: 'Faturamento das O.S. P04 (Veículos Vendidos, Contratos, Oportunidades, Ordens de Serviço)',
+    pasta: '/Banco de Dados - DAF - Pós-Vendas/Relatório Geral OS', casa: n => n.toUpperCase().startsWith('ROF017_FATURAMENTOPOROS') && Number((n.match(/\d{4}/) || [])[0]) >= 2024 },
+  { relatorio: 'ROF001_OSAberta_Excel <ano>', uso: 'Todas as O.S. P04 (um arquivo por ano; Ordens de Serviço, Contratos)',
+    pasta: '/Banco de Dados - DAF - Pós-Vendas/Relatório Geral OS', casa: n => n.toUpperCase().startsWith('ROF001_OSABERTA_EXCEL') },
+]
+router.get('/fontes', wrap(async (req, res) => {
+  if (!isConfigured()) return res.status(503).json({ error: 'sharepoint_not_configured' })
+  const driveId = process.env.SHAREPOINT_DRIVE_ID
+  const cachePasta = {}
+  const listar = async (pasta) => {
+    if (cachePasta[pasta]) return cachePasta[pasta]
+    const itens = []
+    let url = `/drives/${driveId}/root:${encodeURI(pasta)}:/children?$top=200`
+    while (url) {
+      const r2 = await graphGet(url)
+      itens.push(...(r2.value || []))
+      url = r2['@odata.nextLink'] ? r2['@odata.nextLink'].replace('https://graph.microsoft.com/v1.0', '') : null
+    }
+    return (cachePasta[pasta] = itens)
+  }
+  const fontes = []
+  for (const fo of FONTES) {
+    const arquivos = (await listar(fo.pasta)).filter(i => i.file && fo.casa(i.name || ''))
+      .map(i => ({ nome: i.name, modificado: i.lastModifiedDateTime, tamanho: i.size }))
+      .sort((a, b) => (b.modificado || '').localeCompare(a.modificado || ''))
+    fontes.push({ relatorio: fo.relatorio, uso: fo.uso, pasta: fo.pasta.replace(/^\//, '').split('/').join(' › '), arquivos })
+  }
+  res.json({ fontes })
 }))
 
 export default router

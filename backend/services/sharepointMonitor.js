@@ -18,8 +18,8 @@ export const LIMITES = { atencaoHorasUteis: 30, criticoHorasUteis: 78, senhaAten
 // subpastas de ano (2025, 2026...). frequencia: 'diaria' (gerada pelo RPA) ou 'manual' (só informa a data).
 export const FONTES = [
   { id: 'rof001-aberta', nome: 'O.S. Abertas (ROF001)', telas: 'Garantias DAF, Auditoria O.S. Aberta', pasta: `${DAF}/Relatório Geral OS`, padrao: 'ROF001_OSABERTA.xlsx', exato: true, frequencia: 'diaria' },
-  { id: 'rof001-encerrada', nome: 'O.S. Encerradas (ROF001)', telas: 'Garantias DAF', pasta: `${DAF}/Relatório Geral OS`, padrao: 'ROF001_OSABERTA_ENCERRADA.xlsx', exato: true, frequencia: 'diaria' },
-  { id: 'rof001-excel', nome: 'O.S. Abertas — todas (ROF001 Excel)', telas: 'BI Agendamento de Serviços, BI Planos de Manutenção', pasta: `${DAF}/Relatório Geral OS`, padrao: 'ROF001_OSAberta_Excel', frequencia: 'diaria' },
+  { id: 'rof001-encerrada', nome: 'O.S. Encerradas (ROF001)', telas: 'Nenhuma (Garantias DAF passou a usar o ROF001 Excel)', pasta: `${DAF}/Relatório Geral OS`, padrao: 'ROF001_OSABERTA_ENCERRADA.xlsx', exato: true, frequencia: 'diaria' },
+  { id: 'rof001-excel', nome: 'O.S. Abertas — todas (ROF001 Excel)', telas: 'Garantias DAF (Com Garantista), BI Agendamento de Serviços, BI Planos de Manutenção', pasta: `${DAF}/Relatório Geral OS`, padrao: 'ROF001_OSAberta_Excel', frequencia: 'diaria' },
   { id: 'rof017', nome: 'Faturamento por O.S. (ROF017)', telas: 'BI Planos de Manutenção, BI Agendamento', pasta: `${DAF}/Relatório Geral OS`, padrao: 'ROF017_FATURAMENTOPOROS', frequencia: 'diaria' },
   { id: 'relgeralos', nome: 'Relatório Geral de O.S.', telas: 'Indicadores de Produtividade (Hr. Aplicadas)', pasta: `${DAF}/Relatório Geral OS`, padrao: 'RELATORIOGERALOS', frequencia: 'diaria' },
   { id: 'rof096', nome: 'Fechamento Cartão Produção (ROF096)', telas: 'Indicadores de Produtividade (Hr. Disponíveis)', pasta: `${DAF}/Fechamento Cartão Produção`, padrao: 'ROF096', subpastas: true, frequencia: 'diaria' },

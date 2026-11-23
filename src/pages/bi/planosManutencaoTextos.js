@@ -188,8 +188,9 @@ export const MANUAL_GERAL = [
     itens: [
       ['REL_VEICULOSVENDIDOSPORPERIODO_REPORT', 'Os veículos DAF vendidos (venda menos devolução): chassi, data da venda, empresa e se é novo ou usado.'],
       ['ROF017_FATURAMENTOPOROS', 'O faturamento das O.S. de Plano de Manutenção (tipo P04).'],
-      ['ROF001_OSAberta_Excel TODAS', 'Todas as O.S. de Plano de Manutenção (tipo P04) do ano, inclusive as ainda sem NF: número, abertura, chassi, valor e situação.'],
+      ['ROF001_OSAberta_Excel <ano>', 'Todas as O.S. de Plano de Manutenção (tipo P04) do ano, inclusive as ainda sem NF: número, abertura, chassi, valor e situação.'],
       ['CRM DAF - Plano de Manutenção - Potencial Renovação', 'Os contratos de Plano de Manutenção do CRM DAF: número, chassi, cliente, data de criação, início, fim e status.'],
+      ['Onde estão os arquivos', 'Na engrenagem [[engrenagem]] ao lado do botão Atualizar, escolha [[fontes]]: mostra cada relatório, para que é usado, a pasta do SharePoint e os arquivos com a data e a hora da última alteração (o mais recente fica marcado). Avisa quando o arquivo mais recente tem mais de 1 dia. Disponível para todos os usuários do BI.'],
     ],
   },
   {
@@ -239,13 +240,13 @@ export const FONTE_TABELAS = {
     '• ROF017_FATURAMENTOPOROS',
   ].join('\n'),
   os: [
-    '• ROF001_OSAberta_Excel TODAS',
+    '• ROF001_OSAberta_Excel <ano>',
     '• ROF017_FATURAMENTOPOROS',
   ].join('\n'),
   contratos: [
     '• CRM DAF - Plano de Manutenção - Potencial Renovação',
     '• ROF017_FATURAMENTOPOROS',
-    '• ROF001_OSAberta_Excel TODAS',
+    '• ROF001_OSAberta_Excel <ano>',
   ].join('\n'),
 }
 
@@ -275,6 +276,7 @@ export const MANUAL_ABAS = [
     itens: [
       ['O que lista', 'Todos os contratos de Plano de Manutenção, novos e de renovação, realizados no período do filtro selecionado (pela Data de Criação do contrato no CRM).'],
       ['Fonte (arquivo)', FONTE_TABELAS.contratos],
+      ['Cancelado renovado', 'Contrato com status Cancelado continua Cancelado, mas ganha ao lado o botão [[renovado]] quando o chassi teve renovação depois: um contrato criado depois dele que não está cancelado (se o seguinte também foi cancelado, vale o próximo da sequência). O botão abre os contratos seguintes do chassi, com o play verde no que renovou, e as O.S. P04 dele. Aparece também na aba Oportunidades. Com o flag Excluir cancelados marcado, os cancelados não aparecem.'],
       ['Excluir cancelados', 'Vem marcado: esconde os contratos com status Cancelado. Desmarcando, eles voltam para a tabela. Só vale no botão Todos.'],
       ['Ver todos (sem filtro de data)', 'Ignora o filtro Mês/Ano e mostra todos os contratos do arquivo, de qualquer data. Os demais filtros continuam valendo. Só vale no botão Todos.'],
       ['Lupa (Ver detalhes)', 'Aparece na Situação Renovação: mostra o contrato anterior do chassi (o que este contrato renovou) e as O.S. P04 deste contrato.'],

@@ -10,6 +10,7 @@ import { useKpiYear } from '../../context/KpiYearContext'
 import { useAuth } from '../../context/AuthContext'
 import { useExpandirQuadro } from '../../components/kpi/useExpandirQuadro'
 import PesoInput, { TotalPeso } from '../../components/kpi/PesoInput'
+import { useEmpresasDaf, usePessoasDaEmpresa, quadroNaEmpresa } from '../../components/kpi/EmpresasDafSelector'
 
 const BLOCO_PESOS = 'bloco3-pecas'
 const QUADRO_VENDEDOR = 'VENDEDOR DE PEÇAS'
@@ -290,7 +291,17 @@ export default function KpiBloco3Pecas({ periodState: periodoMatriz = null }) {
   // Seleção via dropdown (não texto livre) — sempre um nome exato da lista ou nenhum.
   const [vendedorSelecionado, setVendedorSelecionado] = useState(null)
 
-  const { data: quadros } = useKpiData(fetchBloco3Pecas, MOCK_BLOCO3_PECAS, { year, vendedor: vendedorSelecionado || undefined })
+  // Seletor de empresas DAF da Matriz (23/11/2026): Balcão e metas só das casas marcadas (Gerente/Coordenador
+  // Atacado e Vendedor sem vendedor escolhido). Todas = sem o parâmetro (total de sempre).
+  const daf = useEmpresasDaf()
+  const empresas = periodoMatriz && !daf.todas ? daf.efetivas.join(',') : undefined
+  // Seletor do VENDEDOR DE PEÇAS: só os vendedores das empresas marcadas; o escolhido que não for delas sai.
+  const vendedoresDaEmpresa = usePessoasDaEmpresa(year, 'vendedores', !!periodoMatriz)
+  const listaVendedores = vendedoresDaEmpresa.filtrar(vendedores)
+  useEffect(() => {
+    if (vendedorSelecionado && vendedoresDaEmpresa.filtrando && !listaVendedores.includes(vendedorSelecionado)) setVendedorSelecionado(null)
+  }) // eslint-disable-line react-hooks/exhaustive-deps
+  const { data: quadros } = useKpiData(fetchBloco3Pecas, MOCK_BLOCO3_PECAS, { year, vendedor: vendedorSelecionado || undefined, empresas })
 
   // Overlay otimista: aplicado por cima do que veio do backend assim que o usuário
   // salva um peso, sem precisar esperar o próximo fetch pra refletir na tela.
@@ -323,7 +334,8 @@ export default function KpiBloco3Pecas({ periodState: periodoMatriz = null }) {
       {!periodoMatriz && <PeriodSelector state={periodState} inlineTrimestral hideLegend modes={MODES_COM_SEMANAL} />}
 
       <div className="space-y-6">
-        {quadrosComPeso.map((quadro, idx) => (
+        {/* Matriz: só os quadros que existem nas empresas marcadas no cabeçalho (EMPRESAS_DO_QUADRO, 23/11/2026). */}
+        {quadrosComPeso.filter(q => !periodoMatriz || quadroNaEmpresa(q.tituloGerente, daf.efetivas)).map((quadro, idx) => (
           <QuadroTable
             key={idx}
             quadro={quadro}
@@ -334,7 +346,7 @@ export default function KpiBloco3Pecas({ periodState: periodoMatriz = null }) {
             somenteLeitura={!canEdit}
             vendedorSelector={quadro.tituloGerente === QUADRO_VENDEDOR && (
               <VendedorSelector
-                vendedores={vendedores}
+                vendedores={listaVendedores}
                 selecionado={vendedorSelecionado}
                 onSelecionar={setVendedorSelecionado}
                 onLimpar={() => setVendedorSelecionado(null)}

@@ -28,7 +28,7 @@ router.post('/sharepoint/aberta/refresh', wrap(async (req, res) => {
   res.json({ rows, lastModified })
 }))
 
-// GET /api/garantias/sharepoint/encerrada — todas as OS do ROF001_OSABERTA_ENCERRADA
+// GET /api/garantias/sharepoint/encerrada — O.S. de garantia dos arquivos ROF001_OSAberta_Excel <ano> (com a Situação)
 router.get('/sharepoint/encerrada', wrap(async (req, res) => {
   if (!isConfigured()) return res.status(503).json({ error: 'sharepoint_not_configured' })
   const data = await getOsEncerradas()

@@ -10,6 +10,7 @@ import { fetchBloco3PosVenda, salvarPeso, salvarMetaManual } from '../../service
 import { useExpandirQuadro } from '../../components/kpi/useExpandirQuadro'
 import AvisoCarregando from '../../components/kpi/AvisoCarregando'
 import PesoInput, { TotalPeso } from '../../components/kpi/PesoInput'
+import { useEmpresasDaf } from '../../components/kpi/EmpresasDafSelector'
 
 const BLOCO_PESOS = 'bloco3-pos-venda'
 
@@ -342,10 +343,23 @@ function ordenarCasas(quadros) {
 
 // GERENTE DE PROCESSOS E QUALIDADE: sem seletor de empresa (removido a pedido) — os indicadores de garantia vêm
 // com todas as empresas somadas. O backend ainda aceita ?empresaQualidade=, se um dia voltar.
-export function PosVendaQuadros({ year, activePeriods, mesTotalKey, somenteLeitura = false, apenas = null }) {
+// seletorMatriz (23/11/2026): na Matriz, os gerentes de loja seguem o seletor de empresas DAF do cabeçalho — só
+// aparecem os das empresas marcadas; Gerente Geral e Gerente de Processos (todo o grupo) aparecem sempre.
+const CASA_DO_GERENTE = {
+  'GERENTE DE SERVIÇO - CAMPO GRANDE': 'CAMPO GRANDE',
+  'GERENTE FILIAL - DOURADOS': 'DOURADOS',
+  'GERENTE FILIAL - TRÊS LAGOAS': 'TRÊS LAGOAS',
+  'GERENTE FILIAL - CHAPADÃO DO SUL': 'CHAPADÃO DO SUL',
+}
+export function PosVendaQuadros({ year, activePeriods, mesTotalKey, somenteLeitura = false, apenas = null, seletorMatriz = false }) {
+  const { efetivas: empresasMarcadas } = useEmpresasDaf()
+  const daEmpresaMarcada = (q) => !seletorMatriz || !CASA_DO_GERENTE[q.tituloGerente] || empresasMarcadas.includes(CASA_DO_GERENTE[q.tituloGerente])
   const { incluirHoje } = useKpiYear() // Matriz: período em andamento até ontem, ou até agora
   // atualizado = false: ainda sem a resposta do filtro atual (na 1ª abertura, os dados seriam os de demonstração).
-  const { data: quadros, atualizado } = useKpiData(fetchBloco3PosVenda, MOCK_BLOCO3_POS_VENDA, { year, incluirHoje: incluirHoje || undefined })
+  // Empresas marcadas na Matriz (23/11/2026): Gerente Geral e Gerente de Processos mostram só essas casas.
+  const { todas: todasDaf } = useEmpresasDaf()
+  const empresasParam = seletorMatriz && !todasDaf ? empresasMarcadas.join(',') : undefined
+  const { data: quadros, atualizado } = useKpiData(fetchBloco3PosVenda, MOCK_BLOCO3_POS_VENDA, { year, incluirHoje: incluirHoje || undefined, empresas: empresasParam })
 
   // Overlay otimista: aplicado por cima do que veio do backend assim que o usuário
   // salva um peso, sem precisar esperar o próximo fetch pra refletir na tela.
@@ -402,7 +416,7 @@ export function PosVendaQuadros({ year, activePeriods, mesTotalKey, somenteLeitu
 
   return (
       <div className="space-y-6">
-        {quadrosComPeso.filter(q => !apenas || q.tituloGerente === apenas).map((quadro, idx) => (
+        {quadrosComPeso.filter(q => (!apenas || q.tituloGerente === apenas) && daEmpresaMarcada(q)).map((quadro, idx) => (
           <QuadroTable key={idx} quadro={quadro} activePeriods={activePeriods} mesTotalKey={mesTotalKey} year={year} onSalvarPeso={handleSalvarPeso} onSalvarMetaManual={handleSalvarMetaManual} onSalvarMetasVarios={handleSalvarMetasVarios} somenteLeitura={somenteLeitura}
  />
         ))}

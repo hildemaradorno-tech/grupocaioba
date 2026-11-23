@@ -67,8 +67,9 @@ for (const g of ['GERENTE FILIAL - DOURADOS', 'GERENTE FILIAL - TRÊS LAGOAS', '
 // SETOR DE MECÂNICA (14/11/2026): Eficácia da Oficina = total da empresa escolhida na tela Indicadores de Produtividade.
 ORIGEM_POR_QUADRO['SETOR DE MECÂNICA|Eficácia da Oficina'] = { url: '/pos-vendas/produtividade', perm: 'pos-vendas/produtividade', nome: 'Pós-Vendas › Indicadores de Produtividade (total da empresa)', icone: Target }
 ORIGEM_POR_QUADRO['CHEFE DE OFICINA|Eficácia da Oficina'] = ORIGEM_POR_QUADRO['SETOR DE MECÂNICA|Eficácia da Oficina']
+ORIGEM_POR_QUADRO['CHEFE DE OFICINA|Eficácia %'] = ORIGEM_POR_QUADRO['SETOR DE MECÂNICA|Eficácia da Oficina'] // nome novo (23/11/2026)
 // MECÂNICO (14/11/2026): Eficácia e Produtividade do mecânico — aba Mecânicos da tela Indicadores de Produtividade.
-for (const ind of ['Eficácia da Oficina', 'Produtividade da Oficina']) {
+for (const ind of ['Eficácia da Oficina', 'Eficácia %', 'Produtividade da Oficina', 'Eficiência %']) {
   ORIGEM_POR_QUADRO[`MECÂNICO|${ind}`] = { url: '/pos-vendas/produtividade?aba=mecanicos', perm: 'pos-vendas/produtividade', nome: 'Pós-Vendas › Indicadores de Produtividade › Mecânicos', icone: Target }
 }
 // Gerentes de loja (14/11/2026): Eficácia e Produtividade da Oficina vêm do total da empresa na tela

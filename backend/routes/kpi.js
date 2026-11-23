@@ -54,11 +54,11 @@ import { getMetasManuais, setMetaManual, aplicarMetasManuais } from '../services
 import { getMetaPecasPeriodos, getMetaOficinaPeriodos, getMetaMecanicoPeriodos, getMetaMargemOficinaPeriodos, getMetaPecasBalcaoPeriodos, getMetaMargemBalcaoPeriodos, getMetaTrpPeriodos, getMetaTicketMedioPeriodos, getMetaFunilariaPeriodos, limparCacheMetas } from '../services/kpiMetas.js'
 import { getIndicadoresGarantia } from '../services/kpiGarantias.js'
 import { getIndicadoresAuditoriaOs, normConsultor } from '../services/kpiAuditoriaOs.js'
-import { getProdutividadeConsultores, metaProdutividadeRegrasCor, getEficaciaProdutividadePorCasa, getEficaciaProdutividadeMecanico, semAcento as semAcentoProd } from '../services/kpiProdutividadeConsultor.js'
+import { getProdutividadeConsultores, metaProdutividadeRegrasCor, getEficaciaProdutividadePorCasa, getEficaciaProdutividadeCasas, getEficaciaProdutividadeMecanico, semAcento as semAcentoProd } from '../services/kpiProdutividadeConsultor.js'
 import { getIndicadoresAgendamento, comMetasAtuaisAgendamento } from '../services/kpiAgendamento.js'
 import { resultado as resultadoRotina } from '../services/monitorRotinas.js'
 import { getIndicadoresPlanos, contarPlanosPorMes } from '../services/kpiPlanosManutencao.js'
-import { getValoresPossibilidades, getOficinaPorCasa, getFaturamentoSetorMecanica, getBalcaoPecas, limparCachePossibilidades } from '../services/kpiPossibilidades.js'
+import { getValoresPossibilidades, getOficinaPorCasa, getFaturamentoSetorMecanica, getBalcaoPecas, getCasasPorPessoa, limparCachePossibilidades } from '../services/kpiPossibilidades.js'
 
 const router = Router()
 
@@ -440,8 +440,11 @@ const BLOCO_SERVICOS_TEMPLATE = [
     cor: 'indigo',
     kpis: [
       { id: 1, indicador: 'Faturamento Total Oficina (Serviços)', orientacao: '>', metrica: 'R$', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
-      { id: 2, indicador: 'Eficácia da Oficina',                  orientacao: '>', metrica: '%',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
-      { id: 3, indicador: 'Produtividade da Oficina',             orientacao: '>', metrica: '%',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      // Eficácia % (23/11/2026, era 'Eficácia da Oficina' — aba Individual): mesma conta, só o nome.
+      { id: 2, indicador: 'Eficácia %',                           orientacao: '>', metrica: '%',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      // Eficiência % (23/11/2026, no lugar de Produtividade da Oficina): Horas Vendidas ÷ Horas Gastas do mecânico
+      // (tela Indicadores de Produtividade › Mecânicos). Mesmo id 3 — o peso gravado continua valendo.
+      { id: 3, indicador: 'Eficiência %',                         orientacao: '>', metrica: '%',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
     ],
   },
   {
@@ -451,7 +454,7 @@ const BLOCO_SERVICOS_TEMPLATE = [
     cor: 'purple',
     kpis: [
       { id: 1, indicador: 'Faturamento Total Oficina (Equipe)', orientacao: '>', metrica: 'R$', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
-      { id: 2, indicador: 'Eficácia da Oficina',                 orientacao: '>', metrica: '%',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      { id: 2, indicador: 'Eficácia da Oficina',                 orientacao: '>', metrica: '%',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np }, // líder: mantém 'Eficácia da Oficina' (só o Mecânico usa 'Eficácia %')
     ],
   },
   {
@@ -607,7 +610,7 @@ router.get('/status', (req, res) => {
 
 router.get('/bloco3-pos-venda', requireConfig, wrap(async (req, res) => {
   const year = parseInt(req.query.year) || new Date().getFullYear()
-  res.json(await quadrosBloco3PosVenda({ year, refresh: !!req.query.refresh, empresaQualidade: req.query.empresaQualidade || null, incluirHoje: !!req.query.incluirHoje }))
+  res.json(await quadrosBloco3PosVenda({ year, refresh: !!req.query.refresh, empresaQualidade: req.query.empresaQualidade || null, empresas: req.query.empresas || null, incluirHoje: !!req.query.incluirHoje }))
 }))
 
 // Quadros dos gerentes (Bloco 3 - Serviços, parte Pós-Venda) com pesos e metas manuais. A base (realizado
@@ -615,14 +618,23 @@ router.get('/bloco3-pos-venda', requireConfig, wrap(async (req, res) => {
 // Campanha pedia uma vez por função de gerente).
 // empresaQualidade: seletor de empresa do GERENTE DE PROCESSOS E QUALIDADE ('CAMPO GRANDE'…); vazio = todas somadas.
 // incluirHoje: período em andamento até agora; padrão até ONTEM (Matriz › Considerar o dia atual).
-async function quadrosBloco3PosVenda({ year, refresh = false, fundo = false, empresaQualidade = null, incluirHoje = false }) {
+// empresas (23/11/2026, seletor de empresas DAF da Matriz): casas marcadas ('DOURADOS,TRÊS LAGOAS'; vazio/'TODAS' = todas).
+// O Gerente Geral e o Gerente de Processos e Qualidade passam a mostrar só essas casas: Faturamento/Margens
+// (Possibilidades) e as metas aprovadas delas, O.S. da Auditoria e Garantias. Agendamento e Planos de Manutenção
+// continuam do grupo todo (as fontes não trazem a empresa).
+async function quadrosBloco3PosVenda({ year, refresh = false, fundo = false, empresaQualidade = null, empresas = null, incluirHoje = false }) {
   if (refresh) limparCachePossibilidades()
-  const [base, garantia, agendamento, planos, auditoriaOs, oficinaPoss, efProdCasa] = await Promise.all([
+  const casasSel = (empresas && empresas !== EMPRESA_TODAS) ? String(empresas).split(',').map(x => x.trim()).filter(Boolean) : null
+  const nomesSel = casasSel ? casasSel.map(c => EMPRESA_KEY_TO_RECEP[c] || c) : null
+  const [base, garantia, agendamento, planos, auditoriaOsTodas, oficinaPoss, efProdCasa, metaFatSel, margemSel] = await Promise.all([
     // v2 (14/11/2026): metas do Gerente Geral só Trucks — base guardada antes disso tinha a meta com Motos.
     obterBaseBloco3Servicos(`bloco3-posvenda-v2|${year}`, () => montarBaseBloco3PosVenda(year), { refresh, checarMetas: metasModo(fundo) }),
     // GERENTE DE PROCESSOS E QUALIDADE › Digitação Atrasada / Aguardando Aprovação DAF (fora do prazo): as garantias
     // de todas as empresas ou da escolhida (lidas na hora, como no SETOR GARANTIA — consulta leve no Supabase).
-    getIndicadoresGarantia(year, empresaQualidade || null, { incluirHoje }).catch(err => { console.error('[bloco3-pos-venda] garantias:', err.message); return null }),
+    (casasSel
+      ? Promise.all(casasSel.map(c => getIndicadoresGarantia(year, c, { incluirHoje }).catch(() => null))).then(somarGarantias)
+      : getIndicadoresGarantia(year, empresaQualidade || null, { incluirHoje })
+    ).catch(err => { console.error('[bloco3-pos-venda] garantias:', err.message); return null }),
     // Agendamento (grupo todo — o relatório não traz a empresa): base guardada + metas do BI na hora.
     baseAgendamentoServicos(year, { refresh, incluirHoje }).then(comMetasAtuaisAgendamento)
       .catch(err => { console.error('[bloco3-pos-venda] agendamento:', err.message); return null }),
@@ -632,14 +644,24 @@ async function quadrosBloco3PosVenda({ year, refresh = false, fundo = false, emp
     // Auditoria O.S. Aberta (aud_*): O.S. sem veículo e 30+ dias, por empresa e grupo — lida na hora.
     getIndicadoresAuditoriaOs(year, { incluirHoje }).catch(err => { console.error('[bloco3-pos-venda] auditoria O.S.:', err.message); return null }),
     // Faturamento Total Oficina e Margens (Serviços / Peças Oficina): linha OFICINA do BI Possibilidades.
-    getOficinaPorCasa(year, { incluirHoje }).catch(err => { console.error('[bloco3-pos-venda] possibilidades:', err.message); return null }),
+    getOficinaPorCasa(year, { incluirHoje, casas: casasSel }).catch(err => { console.error('[bloco3-pos-venda] possibilidades:', err.message); return null }),
     // Eficácia / Produtividade da Oficina dos gerentes de loja: tela Indicadores de Produtividade (total da empresa).
     getEficaciaProdutividadePorCasa(year, { incluirHoje }).catch(err => { console.error('[bloco3-pos-venda] indicadores produtividade:', err.message); return null }),
+    // Metas aprovadas (Faturamento Oficina e Margens) só das casas marcadas — Gerente Geral.
+    nomesSel ? getMetaOficinaPeriodos(year, { empresaNome: nomesSel }).catch(() => null) : null,
+    nomesSel ? getMetaMargemOficinaPeriodos(year, { empresaNome: nomesSel }).catch(() => null) : null,
   ])
+  // Auditoria O.S. do Gerente Geral: só as casas marcadas (última auditoria de cada uma, somadas).
+  const auditoriaOs = (casasSel && auditoriaOsTodas?.casasSel) ? { ...auditoriaOsTodas, grupo: auditoriaOsTodas.casasSel(casasSel) } : auditoriaOsTodas
   // Base guardada antes de um quadro ser renomeado: passa para o nome novo (QUADROS_NOME_ANTIGO).
   const baseNomesNovos = base.map(q => (QUADROS_NOME_ANTIGO[q.tituloGerente] ? { ...q, tituloGerente: QUADROS_NOME_ANTIGO[q.tituloGerente] } : q))
   let quadros = comGarantiasQualidade(baseNomesNovos, garantia, agendamento, planos, auditoriaOs)
-    .map(q => comPossibilidadesGerentes(q, oficinaPoss))
+    .map(q => comPossibilidadesGerentes(q, oficinaPoss, casasSel ? casasSel.join(',') : 'TODAS'))
+    .map(q => {
+      if (!casasSel || q.tituloGerente !== 'GERENTE GERAL PÓS-VENDAS') return q
+      const metas = { 'Faturamento Total Oficina (Peças + Serviços)': metaFatSel, 'Margem Bruta Serviços': margemSel?.servicos, 'Margem Bruta Peças Oficina': margemSel?.pecas }
+      return { ...q, kpis: q.kpis.map(k => (k.indicador in metas ? injectMeta(k, metas[k.indicador] || {}) : k)) }
+    })
     .map(q => {
       const v = efProdCasa?.[CASA_DO_GERENTE[q.tituloGerente]]
       return v ? comRealizadoDe(q, { 'Eficácia da Oficina': v.eficacia, 'Produtividade da Oficina': v.produtividade }) : q
@@ -839,25 +861,38 @@ router.get('/bloco3-pecas', requireConfig, wrap(async (req, res) => {
   res.json(await quadrosBloco3Pecas({
     year: parseInt(req.query.year) || new Date().getFullYear(),
     empresa: req.query.empresa || null,
+    empresas: req.query.empresas || null,
     vendedor: req.query.vendedor || null,
     refresh: !!req.query.refresh,
   }))
 }))
 
 // Quadros do Bloco 3 - Peças com pesos. Base guardada por empresa + vendedor (como o Bloco 3 - Serviços).
-async function quadrosBloco3Pecas({ year, empresa = null, vendedor = null, refresh = false, fundo = false, incluirHoje = false }) {
+// empresas (23/11/2026): casas do seletor DAF da Matriz, separadas por vírgula ('DOURADOS,TRÊS LAGOAS'; vazio ou
+// 'TODAS' = todas). Filtra o Balcão da Possibilidades e as metas de Peças/Margem Balcão dos quadros Gerente/
+// Coordenador Atacado (e Vendedor sem vendedor escolhido). Vendedor escolhido = as vendas dele, sem filtro de casa.
+async function quadrosBloco3Pecas({ year, empresa = null, empresas = null, vendedor = null, refresh = false, fundo = false, incluirHoje = false }) {
   if (refresh) limparCachePossibilidades()
-  const [base, balTodas, balVendedor] = await Promise.all([
+  const casas = (empresas && empresas !== EMPRESA_TODAS) ? String(empresas).split(',').map(s => s.trim()).filter(Boolean) : null
+  const nomesMeta = casas ? casas.map(c => EMPRESA_KEY_TO_RECEP[c] || c) : null
+  const [base, balTodas, balVendedor, metaFatCasas, metaMargemCasas] = await Promise.all([
     obterBaseBloco3Servicos(`bloco3-pecas-v2|${year}|${empresa || 'todas'}|${normPessoa(vendedor)}`,
       () => montarBaseBloco3Pecas(year, empresa, vendedor), { refresh, checarMetas: metasModo(fundo) }),
     // Faturamento / Margem Balcão: linha BALCÃO PEÇAS da Possibilidades (14/11/2026) — antes, Fontes (ind. 9 e 10).
-    getBalcaoPecas(year, { incluirHoje }).catch(err => { console.error('[bloco3-pecas] possibilidades:', err.message); return null }),
+    getBalcaoPecas(year, { incluirHoje, casas }).catch(err => { console.error('[bloco3-pecas] possibilidades:', err.message); return null }),
     vendedor ? getBalcaoPecas(year, { vendedor, incluirHoje }).catch(() => null) : null,
+    nomesMeta ? getMetaPecasBalcaoPeriodos(year, { empresaNome: nomesMeta }).catch(() => null) : null,
+    nomesMeta ? getMetaMargemBalcaoPeriodos(year, { empresaNome: nomesMeta }).catch(() => null) : null,
   ])
   const quadros = base.map(q => {
     const ehVendedor = q.tituloGerente === 'VENDEDOR DE PEÇAS'
     const bal = ehVendedor ? (vendedor ? balVendedor : balTodas) : balTodas
     let out = bal ? comRealizadoDe(q, { 'Faturamento Total Peças Balcão': bal.fat, 'Margem Bruta de Peças Balcão': bal.margem }) : q
+    // Metas só das casas escolhidas (o Vendedor com vendedor escolhido continua com a meta dele).
+    if (casas && !(ehVendedor && vendedor)) {
+      out = { ...out, kpis: out.kpis.map(k => (k.indicador === 'Faturamento Total Peças Balcão' ? injectMeta(k, metaFatCasas || {})
+        : k.indicador === 'Margem Bruta de Peças Balcão' ? injectMeta(k, metaMargemCasas || {}) : k)) }
+    }
     // Faturamento TRP: sem fonte por enquanto (14/11/2026) — realizado em branco até ser vinculado; a meta continua.
     out = comRealizadoDe(out, { 'Faturamento TRP': {} })
     return out
@@ -1165,9 +1200,10 @@ function comPossibilidades(q, poss) {
 
 // Gerentes (Bloco 3 › Gerentes, 14/11/2026): linha OFICINA da Possibilidades — Gerente Geral = todas as
 // empresas; gerentes de loja = a empresa deles (CASA_DO_GERENTE). Só o realizado; a meta continua a aprovada.
-function comPossibilidadesGerentes(q, oficinaPorCasa) {
+// chaveGeral: casas do Gerente Geral ('TODAS' ou as marcadas no seletor de empresas, 'DOURADOS,TRÊS LAGOAS').
+function comPossibilidadesGerentes(q, oficinaPorCasa, chaveGeral = 'TODAS') {
   if (!oficinaPorCasa) return q
-  const casa = q.tituloGerente === 'GERENTE GERAL PÓS-VENDAS' ? 'TODAS' : CASA_DO_GERENTE[q.tituloGerente]
+  const casa = q.tituloGerente === 'GERENTE GERAL PÓS-VENDAS' ? chaveGeral : CASA_DO_GERENTE[q.tituloGerente]
   const v = casa && oficinaPorCasa[casa]
   if (!v) return q
   return comRealizadoDe(q, {
@@ -1219,16 +1255,29 @@ async function quadrosBloco3Servicos({ year, consultor = null, mecanico = null, 
   const opts = { refresh, fundo }
   if (refresh) limparCachePossibilidades()
 
+  // Várias empresas (seletor de empresas DAF da Matriz, 23/11/2026): o parâmetro chega como lista separada por
+  // vírgula ("DOURADOS,TRÊS LAGOAS"). Com 2+ casas o quadro soma as casas (R$ e quantidades; Eficácia sobre as
+  // horas somadas) a partir das bases de cada casa, que já ficam guardadas. Uma casa ou 'TODAS' = caminho de sempre.
+  const casasDe = (v) => (v ? String(v).split(',').map(s => s.trim()).filter(Boolean) : [])
+  const casasOficina = casasDe(empresaOficina), casasChefe = casasDe(empresaChefeOficina), casasGarantia = casasDe(empresaGarantia)
+  const multiOficina = casasOficina.length > 1, multiChefe = casasChefe.length > 1, multiGarantia = casasGarantia.length > 1
+
   // SETOR GARANTIA lê o Supabase (gar_garantias) ao vivo — consulta leve e muda a cada atualização
   // de garantia, então não passa pelo cache da base.
   // CONSULTOR DE PLANO DE MANUTENÇÃO: contagens guardadas como a base; metas lidas na hora.
   let [base, oficina, chefeOficina, funilaria, garantia, planos, agendamento, auditoriaOs, prodConsultores, possibilidades, quadroConsultor, efProdCasa, fatEquipeChefe] = await Promise.all([
     // Consultor e Mecânico montados na hora, sem planilha (14/11/2026) — antes, base guardada por mecânico (ROF042/ROF096).
     semBase ? null : quadroMecanicoServicos(year, mecanico, incluirHoje).then(q => [q]).catch(err => { console.error('[bloco3-servicos] mecânico:', err.message); return [] }),
-    empresaOficina ? baseOficinaServicos(year, empresaOficina, opts) : null,
-    empresaChefeOficina ? baseChefeOficinaServicos(year, empresaChefeOficina, opts) : null,
+    // Várias casas: a Eficácia (único indicador) vem das horas somadas logo abaixo — não precisa da base.
+    (empresaOficina && !multiOficina) ? baseOficinaServicos(year, empresaOficina, opts) : null,
+    !empresaChefeOficina ? null : multiChefe
+      ? Promise.all(casasChefe.map(c => baseChefeOficinaServicos(year, c, opts).catch(() => null)))
+        .then(bs => ({ faturamento: somarMapas(bs.map(b => b?.faturamento)), metaFaturamento: somarMapas(bs.map(b => b?.metaFaturamento)), eficacia: {} }))
+      : baseChefeOficinaServicos(year, empresaChefeOficina, opts),
     empresaFunilaria ? baseFunilariaServicos(year, empresaFunilaria, opts) : null,
-    empresaGarantia ? getIndicadoresGarantia(year, semTodas(empresaGarantia), { incluirHoje }).catch(() => null) : null,
+    !empresaGarantia ? null : multiGarantia
+      ? Promise.all(casasGarantia.map(c => getIndicadoresGarantia(year, c, { incluirHoje }).catch(() => null))).then(somarGarantias)
+      : getIndicadoresGarantia(year, semTodas(empresaGarantia), { incluirHoje }).catch(() => null),
     soAgendamento ? null : basePlanosServicos(year, { ...opts, incluirHoje }) // aba Setores (soOficina) também mostra o Consultor de Plano
       .then(meses => getIndicadoresPlanos(year, meses))
       .catch(err => { console.error('[bloco3-servicos] planos:', err.message); return null }),
@@ -1246,8 +1295,18 @@ async function quadrosBloco3Servicos({ year, consultor = null, mecanico = null, 
     // SETOR DE MECÂNICA › Eficácia da Oficina: total da empresa na tela Indicadores de Produtividade (14/11/2026).
     (empresaOficina || empresaChefeOficina) ? getEficaciaProdutividadePorCasa(year, { incluirHoje }).catch(err => { console.error('[bloco3-servicos] indicadores produtividade:', err.message); return null }) : null,
     // CHEFE DE OFICINA › Faturamento Total Oficina (Equipe): setor Mecânica da Possibilidades na empresa (14/11/2026).
-    empresaChefeOficina ? getFaturamentoSetorMecanica(year, empresaChefeOficina, { incluirHoje }).catch(err => { console.error('[bloco3-servicos] possibilidades (mecânica):', err.message); return null }) : null,
+    !empresaChefeOficina ? null : (multiChefe
+      ? Promise.all(casasChefe.map(c => getFaturamentoSetorMecanica(year, c, { incluirHoje }))).then(somarMapas)
+      : getFaturamentoSetorMecanica(year, empresaChefeOficina, { incluirHoje })
+    ).catch(err => { console.error('[bloco3-servicos] possibilidades (mecânica):', err.message); return null }),
   ])
+  // Eficácia das várias casas juntas (horas somadas), no mesmo mapa por "casa" usado abaixo.
+  if (multiOficina || multiChefe) {
+    efProdCasa = { ...(efProdCasa || {}) }
+    for (const [param, casas, multi] of [[empresaOficina, casasOficina, multiOficina], [empresaChefeOficina, casasChefe, multiChefe]]) {
+      if (multi && !efProdCasa[param]) efProdCasa[param] = await getEficaciaProdutividadeCasas(year, casas, { incluirHoje }).catch(() => null)
+    }
+  }
   if (base && quadroConsultor) base = [quadroConsultor, ...base]
   if (base) base = await comMetaMecanico(base, year, mecanico)
   const extras = mergeBlocoServicos(BLOCO_SERVICOS_TEMPLATE.filter(q => QUADROS_EMPRESA.includes(q.tituloGerente) || q.tituloGerente === QUADRO_PLANOS || q.tituloGerente === QUADRO_AGENDAMENTO),
@@ -1266,7 +1325,7 @@ async function quadrosBloco3Servicos({ year, consultor = null, mecanico = null, 
       // SETOR DE MECÂNICA e CHEFE DE OFICINA › Eficácia: total da empresa escolhida (tela Indicadores de Produtividade).
       const casa = q.tituloGerente === 'SETOR DE MECÂNICA' ? (empresaOficina || 'TODAS') : q.tituloGerente === 'CHEFE DE OFICINA' ? empresaChefeOficina : null
       const v = casa && efProdCasa?.[casa]
-      let out = v ? comRealizadoDe(q, { 'Eficácia da Oficina': v.eficacia }) : q
+      let out = v ? comRealizadoDe(q, { 'Eficácia da Oficina': v.eficacia, 'Eficácia %': v.eficacia }) : q
       if (q.tituloGerente === 'CHEFE DE OFICINA' && fatEquipeChefe) out = comRealizadoDe(out, { 'Faturamento Total Oficina (Equipe)': fatEquipeChefe })
       return out
     })
@@ -1286,9 +1345,10 @@ async function quadrosBloco3Servicos({ year, consultor = null, mecanico = null, 
   // (14/11/2026) — a digitada na Matriz não vale mais.
   const qMec = quadros.find(q => q.tituloGerente === 'MECÂNICO')
   if (qMec) {
-    const [mEf, mPr] = await Promise.all([metaProdutividadeRegrasCor(year, 'eficacia').catch(() => null), metaProdutividadeRegrasCor(year, 'produtividade').catch(() => null)])
+    // Eficiência %: meta das Regras de Cores › Eficiência (23/11/2026).
+    const [mEf, mEi] = await Promise.all([metaProdutividadeRegrasCor(year, 'eficacia').catch(() => null), metaProdutividadeRegrasCor(year, 'eficiencia').catch(() => null)])
     for (const k of qMec.kpis) {
-      const m = k.indicador === 'Eficácia da Oficina' ? mEf : k.indicador === 'Produtividade da Oficina' ? mPr : null
+      const m = k.indicador === 'Eficácia %' ? mEf : k.indicador === 'Eficiência %' ? mEi : null
       if (m) metasManuaisServ[`MECÂNICO|${k.id}`] = m
     }
   }
@@ -1296,7 +1356,7 @@ async function quadrosBloco3Servicos({ year, consultor = null, mecanico = null, 
   // Também o CHEFE DE OFICINA › Eficácia da Oficina (14/11/2026).
   const metaEf = await metaProdutividadeRegrasCor(year, 'eficacia').catch(() => null)
   for (const titulo of ['SETOR DE MECÂNICA', 'CHEFE DE OFICINA']) {
-    const kEf = quadros.find(q => q.tituloGerente === titulo)?.kpis.find(k => k.indicador === 'Eficácia da Oficina')
+    const kEf = quadros.find(q => q.tituloGerente === titulo)?.kpis.find(k => k.indicador === 'Eficácia da Oficina' || k.indicador === 'Eficácia %')
     if (kEf && metaEf) metasManuaisServ[`${titulo}|${kEf.id}`] = metaEf
   }
   quadros = aplicarMetasManuais(quadros, metasManuaisServ, year)
@@ -1441,6 +1501,19 @@ setTimeout(() => { aquecerAoIniciar().catch(err => console.error('[aquecimento a
 const EMPRESA_TODAS = 'TODAS'
 const semTodas = (empresa) => (empresa === EMPRESA_TODAS ? null : empresa)
 
+// (Soma período a período: somarMapas, mais abaixo — período sem valor em todas as casas fica null.)
+// SETOR GARANTIA com várias casas: quantidades e metas somadas (meta só onde alguma casa tem meta).
+const CAMPOS_GARANTIA = ['digitacaoAtrasada', 'aguardandoForaPrazo', 'aprovadaSemFaturamento', 'recusadaForaPrazo', 'titulosVencidos']
+function somarGarantias(lista) {
+  const validas = (lista || []).filter(Boolean)
+  if (!validas.length) return null
+  const out = { metas: null }
+  for (const c of CAMPOS_GARANTIA) out[c] = somarMapas(validas.map(g => g[c]))
+  const comMeta = validas.filter(g => g.metas)
+  if (comMeta.length) out.metas = Object.fromEntries(CAMPOS_GARANTIA.map(c => [c, somarMapas(comMeta.map(g => g.metas[c]))]))
+  return out
+}
+
 async function montarOficinaBloco3Servicos(year, empresaOficinaParam) {
   const empresaOficina = semTodas(empresaOficinaParam)
   let rof042Oficina = null, rof096Oficina = null
@@ -1504,7 +1577,7 @@ async function quadroMecanicoServicos(year, mecanico, incluirHoje) {
   const ep = await getEficaciaProdutividadeMecanico(year, mecanico, { incluirHoje })
   const tpl = BLOCO_SERVICOS_TEMPLATE.filter(q => q.tituloGerente === 'MECÂNICO')
   const q = mergeBlocoServicos(tpl, null, null, null, null)[0]
-  return ep ? comRealizadoDe(q, { 'Eficácia da Oficina': ep.eficacia, 'Produtividade da Oficina': ep.produtividade }) : q
+  return ep ? comRealizadoDe(q, { 'Eficácia %': ep.eficacia, 'Eficiência %': ep.eficiencia }) : q
 }
 
 // (antiga) Base pesada do Bloco 3 - Serviços: só o MECÂNICO (ROF042/ROF096 do SharePoint). O consultor não entra mais
@@ -1569,6 +1642,13 @@ router.get('/extractor/consultores', requireConfig, wrap(async (req, res) => {
   const empresa = req.query.empresa && req.query.empresa !== 'todas' ? req.query.empresa : null
   const consultores = (await filtrarAtivos(await listaNomesConsultores(year, empresa))).sort((x, y) => x.localeCompare(y, 'pt-BR'))
   res.json({ year, consultores })
+}))
+
+// GET /api/kpi/pessoas-por-empresa?year=2026 — em quais empresas DAF cada consultor, mecânico e vendedor teve
+// movimento (BI Possibilidades). Os seletores de pessoa da Matriz filtram pelo seletor de empresas (23/11/2026).
+router.get('/pessoas-por-empresa', requireConfig, wrap(async (req, res) => {
+  const year = parseInt(req.query.year) || new Date().getFullYear()
+  res.json({ year, ...((await getCasasPorPessoa(year)) || { consultores: {}, mecanicos: {}, vendedores: {} }) })
 }))
 
 // GET /api/kpi/extractor/mecanicos?year=2026 — lista de mecânicos (ROF042 +

@@ -672,7 +672,7 @@ export default function AuditoriaOsAberto({
   // Ordem: Sem veículo na oficina · Mais de 30 dias · Total (pendentes)
   const CARDS_RESUMO = [
     { id: 'semVeiculo', label: 'OS em aberto sem veículo na oficina', pred: r => r.na_oficina === false, cor: 'red', icon: Truck },
-    { id: 'mais30', label: 'Veículos com mais de 30 dias na oficina', pred: r => { const d = diasOficina(r.data_criacao, r.data_auditoria); return r.na_oficina === true && d !== null && d >= 30 }, cor: 'amber', icon: AlertTriangle }, // só com veículo na oficina (Sim); "Não" fica no card "sem veículo"
+    { id: 'mais30', label: 'Veículos com mais de 30 dias na oficina', pred: r => { const d = diasOficina(r.data_criacao, r.data_auditoria); return d !== null && d >= 30 }, cor: 'amber', icon: AlertTriangle }, // 30+ dias, com ou sem veículo na oficina
     // Total: quantidade e valor de TODAS as OS da auditoria (pendentes ou não)
     { id: 'total', label: 'Total de OS em aberto', pred: () => true, cor: 'blue', icon: ClipboardList },
   ]

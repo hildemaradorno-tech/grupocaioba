@@ -277,8 +277,7 @@ export async function calcularControles({ refresh = false } = {}) {
       : { id: 'lentas', grupo: 'Desempenho', nivel: 'ok', titulo: 'Nenhuma consulta com média acima de 1 s' })
   }
 
-  if (plano.pausa) c.push({ id: 'pausa', grupo: 'Plano', nivel: 'info', titulo: 'Plano gratuito pausa o projeto após 7 dias sem uso',
-    detalhe: 'Com o uso diário do portal isso não acontece.' })
+  // Aviso "Plano gratuito pausa após 7 dias sem uso" removido (23/11/2026): a pausa já aparece na aba Plano e Capacidade
 
   // Destino de cada alerta: aba e tabela da tela onde está a informação (21/11/2026)
   const DESTINO = {

@@ -440,6 +440,12 @@ export const MENU_TREE = [
         // Monitor Power BI e Monitor Microsoft Fabric (Controle filtrado pelo tipo). Mesmas 2 permissões para os três.
         key: '_rpa-execucoes',
         label: 'Monitores de Processos (Robert Automation, Power BI, Fabric)',
+        // Na Home aparecem os 3 monitores separados (21/11/2026), como no menu lateral
+        atalhosHome: [
+          { label: 'Monitor Robert Automation', navTo: 'governanca/processos/rpa' },
+          { label: 'Monitor Power BI', navTo: 'governanca/processos/power-bi' },
+          { label: 'Monitor Microsoft Fabric', navTo: 'governanca/processos/fabric' },
+        ],
         navTo: 'bi/rpa-execucoes',
         children: [
           { key: 'bi/rpa-execucoes', label: 'Dashboard' },

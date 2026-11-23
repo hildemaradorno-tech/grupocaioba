@@ -14,6 +14,7 @@ import { useExpandirQuadro } from '../../components/kpi/useExpandirQuadro'
 import OrigemIndicador from '../../components/kpi/OrigemIndicador'
 import AvisoCarregando from '../../components/kpi/AvisoCarregando'
 import PesoInput, { TotalPeso } from '../../components/kpi/PesoInput'
+import { useEmpresasDaf, usePessoasDaEmpresa, quadroNaEmpresa, rotulo as rotuloEmpresa } from '../../components/kpi/EmpresasDafSelector'
 
 const BLOCO_PESOS = 'bloco3-servicos'
 const QUADRO_CONSULTOR = 'CONSULTOR DE SERVIÇOS'
@@ -205,8 +206,8 @@ const INDICADORES_META_MANUAL = new Set(['Eficácia da Oficina', 'Produtividade 
 // MECÂNICO (Eficácia e Produtividade) e CHEFE DE OFICINA (Eficácia), 14/11/2026: idem.
 const metaDeOutraTela = (tituloGerente, indicador) => (tituloGerente === 'CONSULTOR DE SERVIÇOS' && indicador === 'Produtividade da Oficina')
   || (tituloGerente === 'SETOR DE MECÂNICA' && indicador === 'Eficácia da Oficina')
-  || (tituloGerente === 'CHEFE DE OFICINA' && indicador === 'Eficácia da Oficina')
-  || (tituloGerente === 'MECÂNICO' && ['Eficácia da Oficina', 'Produtividade da Oficina'].includes(indicador))
+  || (tituloGerente === 'CHEFE DE OFICINA' && ['Eficácia da Oficina', 'Eficácia %'].includes(indicador))
+  || (tituloGerente === 'MECÂNICO' && ['Eficácia da Oficina', 'Eficácia %', 'Produtividade da Oficina', 'Eficiência %'].includes(indicador))
 
 
 // Botão ao lado do nome do indicador (fundo amarelo, pra deixar evidente que a meta pode ser
@@ -501,20 +502,36 @@ const SEM_LISTA = async () => []
 
 // grupo (opcional): só esses quadros aparecem (sub-abas da tela). Sem Consultor/Mecânico no grupo,
 // não busca as listas de pessoas e pede ao backend só os quadros por empresa (pula a parte cara).
-function ServicosQuadros({ year, activePeriods, mesTotalKey, somenteLeitura = false, apenas = null, grupo = null, pessoasPermitidas = null, empresaOficinaInicial = null }) {
+// seletorMatriz (23/11/2026): na Matriz KPIs os quadros por empresa seguem o seletor de empresas DAF do cabeçalho
+// (Todas, uma ou várias — várias = valores somados no backend) e não têm seletor próprio. Fora da Matriz
+// (pop-up da Campanha) continua o seletor de uma empresa em cada quadro.
+function ServicosQuadros({ year, activePeriods, mesTotalKey, somenteLeitura = false, apenas = null, grupo = null, pessoasPermitidas = null, empresaOficinaInicial = null, seletorMatriz = false }) {
   const permitidos = pessoasPermitidas ? new Set(pessoasPermitidas.map(normNomePessoa)) : null
   // Empresas do grupo de acesso: os seletores de empresa só listam as liberadas; "Todas as empresas" e os
   // quadros que somam todas as lojas (Funilaria = Campo Grande, Agendamento) só para quem tem as 4 liberadas.
   const { permiteNome } = useEmpresasPermitidas()
   const empresasOficina = EMPRESAS_OFICINA.filter(n => permiteNome(`CAIOBÁ TRUCKS - ${n}`))
   const todasEmpresas = empresasOficina.length === EMPRESAS_OFICINA.length
-  const quadroLiberado = (t) => (t === QUADRO_FUNILARIA ? empresasOficina.includes(EMPRESA_FUNILARIA)
+  const daf = useEmpresasDaf() // { efetivas: casas marcadas (nenhuma = todas as liberadas), todas: as 4 }
+  const quadroLiberado = (t) => (t === QUADRO_FUNILARIA ? (seletorMatriz ? daf.efetivas : empresasOficina).includes(EMPRESA_FUNILARIA)
     : t === QUADRO_AGENDAMENTO ? todasEmpresas : true)
+  // Matriz: só os quadros que existem nas empresas marcadas no cabeçalho (EMPRESAS_DO_QUADRO, 23/11/2026).
   const visivel = (t) => (!apenas || t === apenas) && (!grupo || grupo.includes(t)) && quadroLiberado(t)
+    && (!seletorMatriz || quadroNaEmpresa(t, daf.efetivas))
   const temPessoas = visivel(QUADRO_CONSULTOR) || visivel(QUADRO_MECANICO)
 
   const consultorFiltro = usePessoaFiltro(temPessoas ? fetchConsultoresServicos : SEM_LISTA, year)
   const mecanicoFiltro  = usePessoaFiltro(temPessoas ? fetchMecanicos : SEM_LISTA, year)
+  // Empresa marcada no cabeçalho da Matriz (23/11/2026): os seletores de Consultor/Mecânico listam só as pessoas
+  // dessas empresas; quem estava escolhido e não é delas sai da seleção.
+  const consultoresDaEmpresa = usePessoasDaEmpresa(year, 'consultores', seletorMatriz && temPessoas)
+  const mecanicosDaEmpresa   = usePessoasDaEmpresa(year, 'mecanicos', seletorMatriz && temPessoas)
+  const listaConsultores = consultoresDaEmpresa.filtrar(consultorFiltro.lista)
+  const listaMecanicos   = mecanicosDaEmpresa.filtrar(mecanicoFiltro.lista)
+  useEffect(() => {
+    if (consultorFiltro.aplicado && consultoresDaEmpresa.filtrando && !listaConsultores.includes(consultorFiltro.aplicado)) consultorFiltro.setAplicado(null)
+    if (mecanicoFiltro.aplicado && mecanicosDaEmpresa.filtrando && !listaMecanicos.includes(mecanicoFiltro.aplicado)) mecanicoFiltro.setAplicado(null)
+  }) // eslint-disable-line react-hooks/exhaustive-deps
 
   // SETOR DE MECÂNICA/CHEFE DE OFICINA/SETOR FUNILARIA-PINTURA não têm pessoa — exigem escolher a
   // empresa (mesma exigência do Consultor/Mecânico exigir pessoa) pra mostrar o valor; sem isso o
@@ -524,6 +541,15 @@ function ServicosQuadros({ year, activePeriods, mesTotalKey, somenteLeitura = fa
   const [empresaGarantia, setEmpresaGarantia] = useState(EMPRESAS_OFICINA.includes(empresaOficinaInicial) ? empresaOficinaInicial : null)
 
   const { incluirHoje } = useKpiYear() // Matriz: período em andamento até ontem, ou até agora
+  // Seletor DAF da Matriz → parâmetro de empresa: as 4 = 'TODAS'; senão a(s) casa(s) separadas por vírgula.
+  // Chefe de Oficina não tem o caminho 'TODAS' no backend: vai a lista das 4 (soma das casas).
+  const paramDaf = daf.todas ? EMPRESA_TODAS : daf.efetivas.join(',')
+  const empOficina = seletorMatriz ? (visivel(QUADRO_OFICINA) ? paramDaf : null) : empresaOficina
+  // Chefe de Oficina só existe em Campo Grande: os valores são só das casas dele entre as marcadas.
+  const casasChefe = daf.efetivas.filter(c => quadroNaEmpresa(QUADRO_CHEFE_OFICINA, [c]))
+  const empChefe   = seletorMatriz ? (visivel(QUADRO_CHEFE_OFICINA) ? casasChefe.join(',') : null) : empresaChefeOficina
+  const empGarantia = seletorMatriz ? (visivel(QUADRO_GARANTIA) ? paramDaf : null)
+    : empresaGarantia || (visivel(QUADRO_GARANTIA) && todasEmpresas ? EMPRESA_TODAS : null)
   // atualizado = false: os quadros na tela ainda são do filtro anterior (resposta nova a caminho).
   const { data: quadros, atualizado } = useKpiData(fetchBloco3Servicos, MOCK_BLOCO3_SERVICOS, {
     year,
@@ -533,11 +559,11 @@ function ServicosQuadros({ year, activePeriods, mesTotalKey, somenteLeitura = fa
     // Quadros da aba Setores: sem empresa escolhida = todas as lojas juntas ('TODAS' no backend).
     // Só pede quando o quadro aparece (o quadro por empresa custa uma leitura das fontes).
     // SETOR DE MECÂNICA (14/11/2026): só com empresa escolhida, como o Chefe de Oficina (sem "Todas").
-    empresaOficina: empresaOficina || undefined,
-    empresaChefeOficina: empresaChefeOficina || undefined,
+    empresaOficina: empOficina || undefined,
+    empresaChefeOficina: empChefe || undefined,
     // SETOR FUNILARIA/PINTURA (14/11/2026): só Campo Grande tem funilaria — sem seletor, sempre Campo Grande.
     empresaFunilaria: visivel(QUADRO_FUNILARIA) ? EMPRESA_FUNILARIA : undefined,
-    empresaGarantia: empresaGarantia || (visivel(QUADRO_GARANTIA) && todasEmpresas ? EMPRESA_TODAS : undefined),
+    empresaGarantia: empGarantia || undefined,
     // Atalho do backend (não monta Consultor/Mecânico): só o Consultor de Plano, ou os quadros da aba
     // Setores (por empresa + Agendamento + Consultor de Plano).
     apenas: temPessoas ? undefined : apenas === QUADRO_PLANOS ? QUADRO_PLANOS : QUADRO_OFICINA,
@@ -608,7 +634,10 @@ function ServicosQuadros({ year, activePeriods, mesTotalKey, somenteLeitura = fa
           // Setores: sem escolha mostra o total de todas as empresas; Chefe de Oficina e Setor de Mecânica
           // exigem a empresa (sem "Todas as empresas").
           const ehSetorTotal    = ehGarantia && todasEmpresas
+          // Matriz: quadros por empresa sem seletor próprio (seguem o seletor DAF do cabeçalho).
+          const doCabecalho = seletorMatriz && ehPorEmpresa
           const filtro      = ehConsultor ? consultorFiltro : ehMecanico ? mecanicoFiltro
+            : doCabecalho ? null
             : ehOficina ? { lista: empresasOficina, aplicado: empresaOficina, setAplicado: setEmpresaOficina }
             : ehChefeOficina ? { lista: empresasOficina, aplicado: empresaChefeOficina, setAplicado: setEmpresaChefeOficina }
             : ehGarantia ? { lista: empresasOficina, aplicado: empresaGarantia, setAplicado: setEmpresaGarantia }
@@ -630,10 +659,18 @@ function ServicosQuadros({ year, activePeriods, mesTotalKey, somenteLeitura = fa
               msgOcultar={!atualizado ? 'Carregando…' : null /* o aviso ("Selecione…para ver os valores") vai dentro do seletor */}
               icon={Wrench}
               // Empresa escolhida no quadro (Setores): o botão de origem abre a tela já com ela marcada.
-              empresaLink={ehFunilaria ? EMPRESA_FUNILARIA : ehPorEmpresa ? filtro?.aplicado : null}
-              pessoaSelector={filtro && (
+              empresaLink={ehFunilaria ? EMPRESA_FUNILARIA : ehChefeOficina && doCabecalho ? (casasChefe.length === 1 ? casasChefe[0] : null) : doCabecalho ? (daf.efetivas.length === 1 ? daf.efetivas[0] : null) : ehPorEmpresa ? filtro?.aplicado : null}
+              pessoaSelector={doCabecalho ? (
+                // No lugar do seletor: de quais empresas são os valores (o seletor fica no cabeçalho da Matriz).
+                <span className="text-[11px] font-medium text-slate-500">
+                  {ehFunilaria ? rotuloEmpresa(EMPRESA_FUNILARIA) : ehChefeOficina ? casasChefe.map(rotuloEmpresa).join(' + ') : daf.todas ? 'Todas as empresas' : daf.efetivas.map(rotuloEmpresa).join(' + ')}
+                </span>
+              ) : filtro && (
                 <PessoaSelector
-                  lista={ehPorEmpresa ? filtro.lista : (permitidos ? filtro.lista.filter(n => permitidos.has(normNomePessoa(n))) : filtro.lista)}
+                  lista={ehPorEmpresa ? filtro.lista : (() => {
+                    const daEmpresa = ehConsultor ? listaConsultores : ehMecanico ? listaMecanicos : filtro.lista
+                    return permitidos ? daEmpresa.filter(n => permitidos.has(normNomePessoa(n))) : daEmpresa
+                  })()}
                   selecionado={filtro.aplicado}
                   onSelecionar={filtro.setAplicado}
                   onLimpar={() => filtro.setAplicado(null)}
@@ -681,7 +718,6 @@ export default function KpiBloco3Servicos({ periodState: periodoMatriz = null })
           <h1 className="text-xl font-bold text-slate-800">Indicadores de Serviços</h1>
           <PeriodLegend />
         </div>
-        <p className="text-sm text-slate-500 mt-0.5">Indicadores de performance da oficina, consultores e mecânicos</p>
       </div>
 
       {!periodoMatriz && <PeriodSelector state={periodState} inlineTrimestral hideLegend modes={MODES_COM_SEMANAL} />}
@@ -707,8 +743,8 @@ export default function KpiBloco3Servicos({ periodState: periodoMatriz = null })
       </div>
 
       {aba.key === 'gerentes'
-        ? <PosVendaQuadros year={year} activePeriods={activePeriods} mesTotalKey={periodState.mesTotalKey} somenteLeitura={!canEdit} />
-        : <ServicosQuadros key={aba.key} year={year} activePeriods={activePeriods} mesTotalKey={periodState.mesTotalKey} somenteLeitura={!canEdit} grupo={aba.quadros} />}
+        ? <PosVendaQuadros year={year} activePeriods={activePeriods} mesTotalKey={periodState.mesTotalKey} somenteLeitura={!canEdit} seletorMatriz={!!periodoMatriz} />
+        : <ServicosQuadros key={aba.key} year={year} activePeriods={activePeriods} mesTotalKey={periodState.mesTotalKey} somenteLeitura={!canEdit} grupo={aba.quadros} seletorMatriz={!!periodoMatriz} />}
     </div>
   )
 }

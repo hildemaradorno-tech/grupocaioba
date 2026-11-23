@@ -758,7 +758,7 @@ const FILTROS_CONSULTA_OS = {
 const buscaOs = (o) => [o.numero, o.chassi, o.consultor, o.agendador, o.empresa, ...o.campanhas.map(c => c.id_campanha_execucao)]
 function ConsultaOs({ lista, carregando, onClose }) {
   return (
-    <JanelaConsulta titulo="Consulta de O.S. — ROF001 TODAS" lista={lista} carregando={carregando} onClose={onClose}
+    <JanelaConsulta titulo="Consulta de O.S. — ROF001" lista={lista} carregando={carregando} onClose={onClose}
       colunas={COLUNAS_CONSULTA_OS} filtros={FILTROS_CONSULTA_OS} busca={buscaOs} placeholder="Buscar O.S., chassi, consultor, agendador, empresa, campanha"
       aba="O.S." arquivo="Consulta OS" vazio="Nenhuma O.S. nesse filtro." />
   )
@@ -896,7 +896,7 @@ export default function BiAgendamentoServicos() {
     return Object.entries(m).sort(([a], [b]) => a.localeCompare(b, 'pt-BR'))
   }, [empresas, permiteId])
 
-  const [passagensOs, setPassagensOs] = useState(null) // { rows } das O.S. do ano (ROF001 TODAS)
+  const [passagensOs, setPassagensOs] = useState(null) // { rows } das O.S. do ano (ROF001)
   // Campanhas CRM e O.S. (passagens) são lidas juntas; uma falhar não impede a outra.
   const carregarCrm = async (refresh = false) => {
     setCarregando(true)
@@ -1224,7 +1224,7 @@ export default function BiAgendamentoServicos() {
             onTabela={() => setTabela('agendamentos')} tituloTabela="Agendamentos por data do agendamento" />
         )}
         {aba === ABA_PASSAGENS && (
-          <IconesAba onConferencia={() => setTabela('consultaOs')} tituloConferencia="Consulta de O.S. (ROF001 TODAS)"
+          <IconesAba onConferencia={() => setTabela('consultaOs')} tituloConferencia="Consulta de O.S. (ROF001)"
             onTabela={() => setTabela('passagens')} tituloTabela="Passagens por data de abertura" />
         )}
       </div>

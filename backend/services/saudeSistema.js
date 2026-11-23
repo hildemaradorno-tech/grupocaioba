@@ -291,10 +291,12 @@ export async function getRobert({ refresh = false } = {}) {
   for (const p of porProc.values()) {
     const erros = p.execs.filter(e => e.status === 'Erro')
     if (!erros.length) continue
-    qtdErros += erros.length
     const ultimo = p.execs[p.execs.length - 1]
     const ultErro = erros[erros.length - 1]
     const resolvido = ultimo.status !== 'Erro'
+    // 23/11/2026: rodou com sucesso depois do erro (ex.: execução manual) = resolvido, não fica como alerta
+    if (resolvido) continue
+    qtdErros += erros.length
     c.push({
       id: `rpa-erro-${normRpa(p.nome)}`, grupo: 'Erros de hoje', nivel: resolvido ? 'atencao' : 'critico',
       titulo: `${p.nome}: ${erros.length} erro(s) hoje — último às ${ultErro.inicio.slice(11, 16)}${resolvido ? ' (rodou com sucesso depois)' : ''}`,
@@ -311,7 +313,9 @@ export async function getRobert({ refresh = false } = {}) {
     for (const h of [...new Set(a.horarios.filter(x => x.dia_semana === ds).map(x => x.hora))]) {
       const hm = minutosDe(h)
       if (agoraMin - hm < 60) continue // ainda aguardando
-      const rodou = execHoje.some(e => processoDe(e.robo) === a && (() => { const m = minutosDe(e.inicio.slice(11, 16)); return m >= hm - 10 && m <= hm + 180 })())
+      // 23/11/2026: execução mais tarde no mesmo dia (ex.: manual) também conta — não só até 3 h depois
+      const proxH = [...new Set(a.horarios.filter(x => x.dia_semana === ds).map(x => x.hora))].map(minutosDe).filter(m => m > hm).sort((x, y) => x - y)[0] ?? Infinity
+      const rodou = execHoje.some(e => processoDe(e.robo) === a && e.status === 'Sucesso' && (() => { const m = minutosDe(e.inicio.slice(11, 16)); return m >= hm - 10 && m < proxH - 10 })())
       if (!rodou) { if (!naoRodou.has(a.nome)) naoRodou.set(a.nome, []); naoRodou.get(a.nome).push(h) }
     }
   }

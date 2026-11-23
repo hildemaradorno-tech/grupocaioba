@@ -61,8 +61,10 @@ const COR_STATUS = {
   Aguardando: 'bg-slate-100 text-slate-500',
   'Fora da agenda': 'bg-violet-100 text-violet-700',
 }
+// Nome exibido de cada status (23/11/2026: "Fora da agenda" aparece como "Manual"; o valor interno não muda)
+const ROTULO_STATUS = { 'Fora da agenda': 'Manual' }
 function Badge({ status }) {
-  return <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap ${COR_STATUS[status] || 'bg-slate-100 text-slate-600'}`}>{status}</span>
+  return <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap ${COR_STATUS[status] || 'bg-slate-100 text-slate-600'}`}>{ROTULO_STATUS[status] || status}</span>
 }
 
 function Card({ icon: Icon, titulo, valor, sub, cor }) {
@@ -279,6 +281,19 @@ export default function BiRpaExecucoes({ sistema = null }) {
           const alvo = [...meus].reverse().find(s => minutosDe(`${dia}T${s.hora}:00`) <= em + ANTECIPACAO_MIN)
           if (alvo && em - minutosDe(`${dia}T${alvo.hora}:00`) <= JANELA_MIN) { alvo.execs.push(e); usadas.add(e) }
         }
+        // Rodou depois (23/11/2026): horário sem sucesso + execução com sucesso mais tarde no mesmo dia, antes do próximo
+        // horário do processo (ex.: o robô falhou às 00:10 e alguém rodou à mão às 08:52) → o horário conta como cumprido
+        meus.forEach((sl, idx) => {
+          if (sl.execs.some(e => e.status === 'Sucesso')) return
+          const iniMin = minutosDe(`${dia}T${sl.hora}:00`) - ANTECIPACAO_MIN
+          const prox = meus[idx + 1] ? minutosDe(`${dia}T${meus[idx + 1].hora}:00`) - ANTECIPACAO_MIN : Infinity
+          const depois = execsDia.filter(e => !usadas.has(e) && minutosDe(e.inicio) >= iniMin && minutosDe(e.inicio) < prox)
+          const suc = depois.find(e => e.status === 'Sucesso')
+          if (!suc) return
+          depois.filter(e => e.inicio <= suc.inicio).forEach(e => { sl.execs.push(e); usadas.add(e) })
+          sl.execs.sort((a, b) => a.inicio.localeCompare(b.inicio))
+          sl.rodouDepois = true
+        })
         for (const s of meus) {
           const slotMin = minutosDe(`${dia}T${s.hora}:00`)
           const ok = s.execs.find(e => e.status === 'Sucesso')
@@ -360,7 +375,7 @@ export default function BiRpaExecucoes({ sistema = null }) {
     const doSlot = slotsF.map(s => ({
       chave: 'a|' + s.dia + s.hora + s.processo.id, quando: `${s.dia}T${s.hora}`, dia: s.dia, agendado: s.hora,
       nome: s.processo.nome, setor: s.processo.setor, situacao: s.status, exec: s.execucao || s.execs?.[0] || null,
-      atrasoMin: s.atrasoMin, tentativas: s.execs?.length || 0, processo: s.processo,
+      atrasoMin: s.atrasoMin, tentativas: s.execs?.length || 0, processo: s.processo, rodouDepois: !!s.rodouDepois,
     }))
     const fora = foraF.filter(e => !status || status === 'Fora da agenda' || e.status === status).map(e => ({
       chave: 'f|' + e.inicio + e.robo, quando: e.inicio, dia: e.inicio.slice(0, 10), agendado: null,
@@ -388,6 +403,8 @@ export default function BiRpaExecucoes({ sistema = null }) {
     const hojeIso = isoDia(agora)
     return (dados?.execucoes || [])
       .filter(e => e.status === 'Erro' && e.inicio.slice(0, 10) === hojeIso)
+      // erro já resolvido: o mesmo processo rodou com sucesso depois, hoje (23/11/2026)
+      .filter(e => !(dados?.execucoes || []).some(x => x.status === 'Sucesso' && x.inicio.slice(0, 10) === hojeIso && x.inicio > e.inicio && chaveRobo(x.robo) === chaveRobo(e.robo)))
       .map(e => ({ ...e, processo: processoDoNome(e.robo) }))
       .filter(e => passaSetor(e.pasta, e.processo?.setor) && passaRobo(e.robo))
       .sort((a, b) => b.inicio.localeCompare(a.inicio))
@@ -411,7 +428,6 @@ export default function BiRpaExecucoes({ sistema = null }) {
     const val = {
       nome: l => maiusc(l.nome), setor: l => maiusc(l.setor), ultima: l => l.ultima?.inicio || '',
       execs: l => l.execs.length, suc: l => l.suc, err: l => l.err, naoExec: l => l.naoExec, media: l => l.media ?? -1,
-      rel: l => (l.processo?.relatorios_dependentes || []).join(' '),
     }[ordResumo.col] || (l => l.ultima?.inicio || '')
     const dir = ordResumo.dir === 'asc' ? 1 : -1
     return [...porRobo].sort((a, b) => {
@@ -436,7 +452,7 @@ export default function BiRpaExecucoes({ sistema = null }) {
   const errosOrdenados = useMemo(() => {
     const val = {
       ultima: g => g.ultima.inicio, nome: g => maiusc(g.robo), setor: g => maiusc(g.pasta), acao: g => g.acao || '',
-      ocorr: g => g.ocorrencias.length, msg: g => g.ultima.erro || '', rel: g => (g.processo?.relatorios_dependentes || []).join(' '),
+      ocorr: g => g.ocorrencias.length, msg: g => g.ultima.erro || '',
     }[ordErros.col] || (g => g.ultima.inicio)
     const dir = ordErros.dir === 'asc' ? 1 : -1
     return [...erros].sort((a, b) => {
@@ -473,8 +489,7 @@ export default function BiRpaExecucoes({ sistema = null }) {
           {modo === 'dashboard' && (
             <div className="flex items-center gap-2">
               <p className="text-[10px] text-slate-500 leading-tight text-right whitespace-nowrap">
-                Log no SharePoint: <strong className="text-slate-700">{dados?.arquivo_atualizado_em ? new Date(dados.arquivo_atualizado_em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—'}</strong><br />
-                Lido em: <strong className="text-slate-700">{carregando ? '...' : dados?.lido_em ? new Date(dados.lido_em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—'}</strong>
+                Atualizado em: <strong className="text-slate-700">{carregando ? '...' : dados?.lido_em ? new Date(dados.lido_em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—'}</strong>
               </p>
               <button type="button" onClick={() => carregar(true)} disabled={carregando} title="Atualizar dados" aria-label="Atualizar dados"
                 className="flex items-center justify-center p-1.5 rounded-md bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm disabled:opacity-60 transition-colors">
@@ -519,7 +534,7 @@ export default function BiRpaExecucoes({ sistema = null }) {
         </select>
         <select value={status} onChange={e => setStatus(e.target.value)} className={sel}>
           <option value="">Todos os status</option>
-          {['Sucesso', 'Erro', 'Não executado', 'Aguardando', 'Fora da agenda'].map(s => <option key={s}>{s}</option>)}
+          {['Sucesso', 'Erro', 'Não executado', 'Aguardando', 'Fora da agenda'].map(s => <option key={s} value={s}>{ROTULO_STATUS[s] || s}</option>)}
         </select>
         {(setor || robo || status) && (
           <button onClick={() => { escolherSetor('', ''); setRobo(''); setStatus('') }} className="text-[11px] text-slate-500 hover:text-slate-700 underline">Limpar filtros</button>
@@ -675,13 +690,13 @@ export default function BiRpaExecucoes({ sistema = null }) {
                         <Td className="whitespace-nowrap">{l.agendado || <span className="text-slate-300">—</span>}</Td>
                         <Td className="font-semibold text-slate-800 whitespace-nowrap">{maiusc(l.nome)}{l.semCadastro && <span className="ml-1 text-[10px] font-normal text-amber-600">(sem cadastro)</span>}</Td>
                         <Td className="whitespace-nowrap">{maiusc(l.setor)}</Td>
-                        <Td><span className="flex gap-1 whitespace-nowrap"><Badge status={l.situacao} />{l.situacao === 'Fora da agenda' && l.exec && <Badge status={l.exec.status} />}</span></Td>
+                        <Td><span className="flex gap-1 whitespace-nowrap"><Badge status={l.situacao} />{l.situacao === 'Fora da agenda' && l.exec && <Badge status={l.exec.status} />}{l.rodouDepois && <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-violet-100 text-violet-700" title="O horário agendado falhou ou não rodou, e o processo foi executado com sucesso mais tarde no mesmo dia (manual)">Manual</span>}</span></Td>
                         <Td className="whitespace-nowrap">{l.exec ? fmtHora(l.exec.inicio) : '—'}</Td>
                         <Td className="whitespace-nowrap">{l.exec ? fmtHora(l.exec.fim) : ''}</Td>
                         <Td className="text-right whitespace-nowrap">{l.exec ? fmtDuracao(l.exec.duracao_seg) : ''}</Td>
                         <Td className={`text-right whitespace-nowrap ${l.atrasoMin > 15 ? 'text-orange-600 font-semibold' : ''}`}>{l.atrasoMin == null ? '' : `${l.atrasoMin} min`}</Td>
                         <Td className="text-right">{l.tentativas || ''}</Td>
-                        <Td className="max-w-md truncate text-red-600" title={l.exec?.erro || ''}>{l.exec?.status === 'Erro' ? l.exec.erro : ''}</Td>
+                        <Td className="min-w-[260px] max-w-md whitespace-normal break-words text-red-600" title={l.exec?.erro || ''}>{l.exec?.status === 'Erro' ? l.exec.erro : ''}</Td>
                         <Td>{l.exec?.arquivo_log && (
                           <button onClick={() => setLogAberto({ ...l.exec, processo: l.processo })} className="flex items-center gap-1 text-indigo-600 hover:text-indigo-800 whitespace-nowrap"><FileText className="h-3.5 w-3.5" /> Ver log</button>
                         )}</Td>
@@ -704,7 +719,6 @@ export default function BiRpaExecucoes({ sistema = null }) {
                   <ThOrd col="acao" ord={ordErros} setOrd={setOrdErros}>Ação que falhou</ThOrd>
                   <ThOrd col="ocorr" ord={ordErros} setOrd={setOrdErros} className="text-right">Ocorrências</ThOrd>
                   <ThOrd col="msg" ord={ordErros} setOrd={setOrdErros}>Mensagem</ThOrd>
-                  <ThOrd col="rel" ord={ordErros} setOrd={setOrdErros}>Relatórios afetados</ThOrd>
                   <Th></Th>
                 </tr></thead>
                 <tbody className="divide-y divide-slate-100">
@@ -716,11 +730,10 @@ export default function BiRpaExecucoes({ sistema = null }) {
                       <Td><code className="bg-slate-100 px-1 py-0.5 rounded text-[10px]">{g.acao || '—'}</code></Td>
                       <Td className="text-right font-semibold text-red-600">{g.ocorrencias.length}</Td>
                       <Td className="max-w-md"><p className="line-clamp-3 break-words" title={g.ultima.erro}>{g.ultima.erro}</p></Td>
-                      <Td className="max-w-xs">{g.processo?.relatorios_dependentes.join(' · ') || '—'}</Td>
                       <Td>{g.ultima.arquivo_log && <button onClick={() => setLogAberto(g.ultima)} className="flex items-center gap-1 text-indigo-600 hover:text-indigo-800 whitespace-nowrap"><FileText className="h-3.5 w-3.5" /> Ver log</button>}</Td>
                     </tr>
                   ))}
-                  {!erros.length && <tr><Td colSpan={8} className="text-center text-slate-400">Nenhum erro no período.</Td></tr>}
+                  {!erros.length && <tr><Td colSpan={7} className="text-center text-slate-400">Nenhum erro no período.</Td></tr>}
                 </tbody>
               </table>
             </div>

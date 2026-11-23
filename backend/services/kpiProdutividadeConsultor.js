@@ -111,7 +111,8 @@ function periodosMatriz(ano) {
 
 // Eficácia / Produtividade (%) por período de um conjunto de linhas (já cortado em ontem/hoje).
 function efProdPorPeriodo(linhas, periodos) {
-  const o = { eficacia: {}, produtividade: {} }
+  // eficiencia (23/11/2026): Horas Vendidas ÷ Horas Gastas — 'Eficiência %' da tela (visualização encerradas).
+  const o = { eficacia: {}, produtividade: {}, eficiencia: {} }
   for (const [p, [ini, fim]] of Object.entries(periodos)) {
     let reais = 0, vend = 0, gasto = 0
     for (const r of linhas) {
@@ -120,6 +121,7 @@ function efProdPorPeriodo(linhas, periodos) {
     }
     o.eficacia[p] = reais && vend ? (vend / reais) * 100 : null
     o.produtividade[p] = reais && gasto ? (gasto / reais) * 100 : null
+    o.eficiencia[p] = gasto && vend ? (vend / gasto) * 100 : null
   }
   return o
 }
@@ -141,6 +143,16 @@ async function calcularPorCasa(ano, incluirHoje) {
   return out
 }
 
+// Várias empresas juntas (seletor de empresas DAF da Matriz, 23/11/2026): Eficácia/Produtividade sobre as horas
+// somadas das casas escolhidas (não média das lojas). Lê as mesmas linhas guardadas (linhasMecanicosAno).
+export async function getEficaciaProdutividadeCasas(ano, casas, { incluirHoje = false } = {}) {
+  const todas = await linhasMecanicosAno(ano)
+  if (!todas) return null
+  const hoje = hojeMSHoras()
+  const alvos = (casas || []).map(semAcento)
+  return efProdPorPeriodo(todas.filter(r => (incluirHoje || r.data < hoje) && alvos.some(a => r.empresaNorm.includes(a))), periodosMatriz(ano))
+}
+
 // Quadro MECÂNICO (14/11/2026): Eficácia e Produtividade do mecânico escolhido, com a conta da aba Mecânicos da tela
 // Indicadores de Produtividade (horas dele em todas as empresas Trucks). Sem mecânico = total dos mecânicos.
 export async function getEficaciaProdutividadeMecanico(ano, mecanico, { incluirHoje = false } = {}) {
@@ -157,7 +169,7 @@ export async function getEficaciaProdutividadeMecanico(ano, mecanico, { incluirH
 // Devolve { m01: 80, …, m12: 80 } — no formato das metas manuais (semana = a do mês; trimestre/ano = média).
 // indicador: 'produtividade' (padrão) ou 'eficacia' — Gerentes de loja usam os dois (14/11/2026).
 // Faixa padrão do Power BI (limite inferior): eficácia 0,80 e produtividade 0,80.
-const LIMITE_PADRAO = { produtividade: 0.8, eficacia: 0.8 }
+const LIMITE_PADRAO = { produtividade: 0.8, eficacia: 0.8, eficiencia: 0.8 }
 export async function metaProdutividadeRegrasCor(ano, indicador = 'produtividade') {
   const admin = getSupabaseAdmin()
   const meses = {}

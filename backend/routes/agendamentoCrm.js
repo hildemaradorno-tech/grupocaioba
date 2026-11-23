@@ -19,7 +19,7 @@ router.post('/campanhas/refresh', wrap(async (req, res) => {
   res.json(await getCampanhasCrm())
 }))
 
-// GET /api/agendamento-crm/passagens — O.S. do ano (ROF001 TODAS) p/ contar passagens por data de abertura
+// GET /api/agendamento-crm/passagens — O.S. do ano (ROF001) p/ contar passagens por data de abertura
 router.get('/passagens', wrap(async (req, res) => {
   if (!isConfigured()) return res.status(503).json({ error: 'sharepoint_not_configured' })
   res.json(await getPassagensOs())

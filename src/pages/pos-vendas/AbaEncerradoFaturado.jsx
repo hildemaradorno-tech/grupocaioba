@@ -17,7 +17,7 @@
  */
 import React, { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Ban, ChevronDown, ChevronRight, Clock, Receipt, Info, Search, X } from 'lucide-react'
+import { Ban, ChevronDown, ChevronRight, Clock, List, Receipt, Info, Search, X } from 'lucide-react'
 import { Bar, BarChart, CartesianGrid, Cell, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { supabase } from '../../services/supabaseClient'
 import AbaNaoCobrado from './AbaNaoCobrado'
@@ -387,6 +387,22 @@ export default function AbaEncerradoFaturado({ periodo, noEscopo, excluidos, slo
   const ordemSerie = (item) => series.findIndex(([k]) => k === item?.dataKey)
   const series = [...(comTotal ? [['total', sentido === 'enc' ? 'Encerrado no período' : 'Faturado no período']] : []), ...catsVis.map(([k, rot]) => [k, rot])]
 
+  // Janela com as O.S. de um tipo interno (ícone na tabela por tipo; pedido do usuário 23/11/2026): O.S., mecânico,
+  // tipo de O.S. e TMOs. tipoJanela = nome do tipo interno, '__todos' = linha Total, '' = fechada.
+  const [tipoJanela, setTipoJanela] = useState('')
+  const raizRef = useRef(null) // a janela abre só sobre a área da tela (não cobre o menu lateral)
+  const osDaJanela = useMemo(() => {
+    if (!tipoJanela) return []
+    const out = []
+    for (const p of pessoas) for (const x of p.listaOs) {
+      const t = tipoDe(x.o)
+      if (tipoJanela !== '__todos' && t.interno !== tipoJanela) continue
+      out.push({ ...x, pessoa: p.nome, tipoNome: t.nome, interno: t.interno, catVal: catsDaOs(x, sentido, catsVis) })
+    }
+    return out.sort((a, b) => String(a.o.os).localeCompare(String(b.o.os), 'pt-BR', { numeric: true }) || a.pessoa.localeCompare(b.pessoa, 'pt-BR'))
+  }, [tipoJanela, pessoas, tipoDe, sentido, catsVis])
+  useEffect(() => { setTipoJanela('') }, [sentido])
+
   const alternar = (nome) => setAberto(s => { const n = new Set(s); n.has(nome) ? n.delete(nome) : n.add(nome); return n })
 
   const celPct = (h, tot) => <td className="px-2 text-right tabular-nums text-slate-500">{tot && h ? fmtPct(h / tot) : ''}</td>
@@ -430,7 +446,7 @@ export default function AbaEncerradoFaturado({ periodo, noEscopo, excluidos, slo
   )
 
   return (
-    <div className="flex flex-col gap-3">
+    <div ref={raizRef} className="flex flex-col gap-3">
       {/* Botões Encerrado | Faturado | Não cobrado antes da busca de O.S., na mesma linha (pedido do usuário 18/11/2026) */}
       <div className="flex flex-wrap items-end gap-3">{botoesSentido}{campoBusca}</div>
       {/* ⓘ com a explicação retirado por enquanto (pedido do usuário 17/11/2026) — componente Info2 continua no arquivo */}
@@ -519,7 +535,13 @@ export default function AbaEncerradoFaturado({ periodo, noEscopo, excluidos, slo
                   const ehTotal = d.tipo == null
                   return (
                     <tr key={d.tipo ?? '__total'} className={ehTotal ? 'font-bold bg-slate-50' : `border-b border-slate-100 hover:bg-sky-50/40 ${filtroTipo === d.tipo ? 'bg-sky-50' : ''}`}>
-                      <td className="py-1 pl-2 whitespace-nowrap">{ehTotal ? 'Total' : d.tipo}</td>
+                      <td className="py-1 pl-2 whitespace-nowrap">
+                        <span className="inline-flex items-center gap-1.5">
+                          <button type="button" onClick={() => setTipoJanela(ehTotal ? '__todos' : d.tipo)} title="Ver as O.S. (mecânico, tipo de O.S. e TMO)"
+                            className="p-0.5 rounded text-sky-600 hover:bg-sky-100"><List className="h-3.5 w-3.5" /></button>
+                          {ehTotal ? 'Total' : d.tipo}
+                        </span>
+                      </td>
                       {series.map(([k]) => {
                         const h = d[`${k}_h`] || 0, vl = d[`${k}_vl`] || 0, base = d.total_h || 0
                         const clique = ehTotal ? undefined : () => clicarBarra(d.tipo, k)
@@ -646,8 +668,115 @@ export default function AbaEncerradoFaturado({ periodo, noEscopo, excluidos, slo
           </tbody>
         </table>
       </div>
+      {tipoJanela && (
+        <JanelaOsTipo titulo={tipoJanela === '__todos' ? 'Todos os tipos' : tipoJanela} lista={osDaJanela} sentido={sentido} esquerda={Math.max(0, raizRef.current?.getBoundingClientRect().left ?? 0)}
+          cats={catsVis} comTotal={comTotal} onFechar={() => setTipoJanela('')} />
+      )}
       </>)}
     </div>
+  )
+}
+
+// Janela (pop-up) com as O.S. de um tipo de O.S. interno: nº da O.S., mecânico, tipo de O.S., datas e as mesmas
+// colunas de horas/valor da tabela; cada linha abre os TMOs (pedido do usuário 23/11/2026).
+function JanelaOsTipo({ titulo, lista, sentido, cats, comTotal, onFechar, esquerda = 0 }) {
+  const [abertas, setAbertas] = useState(() => new Set())
+  const [filtroTxt, setFiltroTxt] = useState('')
+  useEffect(() => {
+    const esc = (e) => { if (e.key === 'Escape') onFechar() }
+    window.addEventListener('keydown', esc)
+    return () => window.removeEventListener('keydown', esc)
+  }, [onFechar])
+  const enc = sentido === 'enc'
+  const f = semAcento(filtroTxt.trim())
+  const linhas = f ? lista.filter(x => String(x.o.os).includes(f) || semAcento(x.pessoa).includes(f) || semAcento(x.tipoNome || '').includes(f)) : lista
+  const alternar = (k) => setAbertas(s => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n })
+  const tot = { h: 0, vl: 0, cat: Object.fromEntries(cats.map(([k]) => [k, { h: 0, vl: 0 }])) }
+  for (const x of linhas) { tot.h += x.h; tot.vl += x.vl; for (const [k] of cats) { tot.cat[k].h += x.catVal[k].h; tot.cat[k].vl += x.catVal[k].vl } }
+  const nOs = new Set(linhas.map(x => `${x.o.marca}|${x.o.empresa}|${x.o.os}`)).size
+  const hv = (v) => (
+    <>
+      <td className="px-1.5 text-right tabular-nums whitespace-nowrap">{fmtH(v.h || null)}</td>
+      <td className="px-1.5 text-right tabular-nums whitespace-nowrap text-slate-500">{v.vl ? fmtR$(v.vl).replace(/R\$\s*/, '') : ''}</td>
+    </>
+  )
+  const numeros = (v) => <>{comTotal && hv(v)}{cats.map(([k]) => <Fragment key={k}>{hv(v.cat[k])}</Fragment>)}</>
+  const totalCols = 5 + (comTotal ? 2 : 0) + cats.length * 2
+  return createPortal(
+    <div className="fixed top-0 right-0 bottom-0 z-50 bg-black/40 flex items-center justify-center p-4" style={{ left: esquerda }} onMouseDown={onFechar}>
+      <div className="bg-white rounded-xl shadow-xl w-full min-w-0 max-w-[1500px] max-h-[88vh] flex flex-col overflow-hidden" onMouseDown={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-slate-200">
+          <div>
+            <p className="text-sm font-bold text-slate-800">{titulo}</p>
+            <p className="text-[11px] text-slate-500">{enc ? 'Encerrado' : 'Faturado'} · {nOs} O.S. · clique na O.S. para ver os TMOs</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg px-2 h-[30px]">
+              <Search className="h-3.5 w-3.5 text-slate-400" />
+              <input value={filtroTxt} onChange={e => setFiltroTxt(e.target.value)} placeholder="O.S., mecânico ou tipo"
+                className="w-44 text-[11px] outline-none bg-transparent" aria-label="Filtrar O.S. da janela" />
+            </div>
+            <button type="button" onClick={onFechar} className="p-1 rounded text-slate-500 hover:bg-slate-100" aria-label="Fechar"><X className="h-4 w-4" /></button>
+          </div>
+        </div>
+        <div className="overflow-auto min-w-0 px-3 pb-3">
+          <table className="w-full min-w-[1150px] text-[11px] table-fixed">
+            <thead className="sticky top-0 bg-white z-10">
+              <tr className="text-slate-600">
+                <th rowSpan={2} className="text-left py-1 pl-2 align-bottom border-b border-sky-300 w-[64px]">O.S.</th>
+                <th rowSpan={2} className="text-left px-2 align-bottom border-b border-sky-300 w-[15%]">Mecânico</th>
+                <th rowSpan={2} className="text-left px-2 align-bottom border-b border-sky-300 whitespace-nowrap w-[15%]">Tipo O.S.</th>
+                {enc ? <>
+                  <th rowSpan={2} className="text-left px-2 align-bottom border-b border-sky-300 whitespace-nowrap w-[82px]">Encerrado em</th>
+                  <th rowSpan={2} className="text-left px-2 align-bottom border-b border-sky-300 whitespace-nowrap w-[82px]">Data NF</th>
+                </> : <>
+                  <th rowSpan={2} className="text-left px-2 align-bottom border-b border-sky-300 whitespace-nowrap w-[82px]">Data NF</th>
+                  <th rowSpan={2} className="text-left px-2 align-bottom border-b border-sky-300 w-[90px] leading-tight">Encerrado em (mês)</th>
+                </>}
+                {comTotal && <th colSpan={2} className="px-2 text-center border-b border-slate-200">{enc ? 'Encerrado no período' : 'Faturado no período'}</th>}
+                {cats.map(([k, rot, cor]) => <th key={k} colSpan={2} className={`px-1.5 text-center border-b border-slate-200 leading-tight ${cor}`}>{rot}</th>)}
+              </tr>
+              <tr className="text-slate-500 border-b border-sky-300">
+                {[...(comTotal ? [0] : []), ...cats].map((_, i) => <Fragment key={i}><th className="px-1.5 text-right font-semibold">Horas</th><th className="px-1.5 text-right font-semibold">R$</th></Fragment>)}
+              </tr>
+            </thead>
+            <tbody>
+              {linhas.map(x => {
+                const k = `${x.o.marca}|${x.o.empresa}|${x.o.os}|${x.pessoa}`
+                return (
+                  <Fragment key={k}>
+                    <tr className="border-b border-slate-100 hover:bg-sky-50/40 cursor-pointer" onClick={() => alternar(k)}>
+                      <td className="py-0.5 pl-2 font-semibold whitespace-nowrap">
+                        <span className="inline-flex items-center gap-0.5">
+                          {abertas.has(k) ? <ChevronDown className="h-3 w-3 text-slate-400" /> : <ChevronRight className="h-3 w-3 text-slate-400" />}{x.o.os}
+                        </span>
+                      </td>
+                      <td className="px-2 truncate" title={x.pessoa}>{x.pessoa}</td>
+                      <td className="px-2 truncate" title={x.tipoNome}>{x.tipoNome}</td>
+                      <td className="px-2 truncate" title={[...x.datas].sort().map(fmtData).join(', ')}>{[...x.datas].sort().map(fmtData).join(', ')}</td>
+                      <td className="px-2 truncate">{enc ? (x.o.nfDatas.map(fmtData).join(', ') || '—') : ([...x.origem.keys()].sort().map(nomeMes).join(', ') || '—')}</td>
+                      {numeros({ h: x.h, vl: x.vl, cat: x.catVal })}
+                    </tr>
+                    {abertas.has(k) && (
+                      <LinhasTmo o={x.o} pessoa={x.pessoa} sentido={sentido} cats={cats} comTotal={comTotal} descSpan={3} totalCols={totalCols} semRS
+                        vh={x.o.fatTot > 0 ? x.o.vlTot / x.o.fatTot : (x.h ? x.vl / x.h : 0)} />
+                    )}
+                  </Fragment>
+                )
+              })}
+              {linhas.length > 0 && (
+                <tr className="font-bold bg-slate-50">
+                  <td colSpan={5} className="py-1 pl-2">Total</td>
+                  {numeros(tot)}
+                </tr>
+              )}
+              {!linhas.length && <tr><td colSpan={totalCols} className="py-3 text-center text-slate-500">Nenhuma O.S.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>,
+    document.body,
   )
 }
 
@@ -677,7 +806,7 @@ function agruparPorTipo(lista, tipoDe, sentido, cats) {
 // (ROF042 / vendas MicroWork) e não cobrado (ROF101), juntos pela DESCRIÇÃO do TMO sem os códigos do começo — o
 // Cartão Tarefa às vezes vem sem código ("DIAGNOSTICO MECÂNICO" × "SR100 DIAGNOSTICO MECÂNICO") e o ROF101 repete o
 // código ("4014402 4014402 1 gaxeta…"). Histórico inteiro da O.S.
-function TmosDaOs({ o, pessoa, sentido = 'enc' }) {
+function useTmos(o, pessoa) {
   const [linhas, setLinhas] = useState(null)
   const [erro, setErro] = useState('')
   useEffect(() => {
@@ -717,6 +846,61 @@ function TmosDaOs({ o, pessoa, sentido = 'enc' }) {
     })
     return () => { vivo = false }
   }, [o.marca, o.empresa, o.os, pessoa])
+  return { linhas, erro }
+}
+
+// TMOs como linhas da própria tabela da O.S., nas mesmas colunas (pedido do usuário 23/11/2026): descrição no lugar
+// do mecânico/tipo, datas nas colunas de data e horas/valor na coluna da situação do TMO.
+// vh = Vlr. Hora Vendida da O.S. (valoriza as horas encerradas, como na linha da O.S.).
+function valoresTmo(g, sentido, vh) {
+  const encMes = [...g.encDatas].sort().map(mesDe), nfMes = [...g.nfDatas].sort().map(mesDe)
+  const temNf = g.fat > 0.005 || Math.abs(g.vl) > 0.005
+  const fat = { h: g.fat, vl: g.vl }
+  if (sentido === 'enc') {
+    const ultEnc = encMes[encMes.length - 1] || ''
+    const noMes = temNf && nfMes.some(x => x <= ultEnc) // NF no mês do encerramento (ou antes) = "no mês"
+    const falta = temNf ? 0 : Math.max(g.enc - g.ncH, 0)
+    return { total: { h: g.enc, vl: g.enc * vh }, fatm: noMes ? fat : null, fatp: temNf && !noMes ? fat : null,
+      nc: { h: g.ncH, vl: g.ncV }, nao: { h: falta, vl: falta * vh } }
+  }
+  const sem = !g.enc
+  const mesmo = !sem && encMes.some(x => nfMes.includes(x))
+  return { total: fat, mesmo: mesmo ? fat : null, antes: !sem && !mesmo ? fat : null, sem: sem ? fat : null }
+}
+
+function LinhasTmo({ o, pessoa, sentido, cats, comTotal, vh = 0, descSpan = 2, totalCols, semRS = false }) {
+  const { linhas, erro } = useTmos(o, pessoa)
+  const msg = (t, cls = 'text-slate-500') => <tr><td colSpan={totalCols} className={`pl-8 py-1 text-[11px] ${cls}`}>{t}</td></tr>
+  if (erro) return msg(erro, 'text-red-600')
+  if (!linhas) return msg('Carregando TMOs…')
+  const enc = sentido === 'enc'
+  const lista = enc ? linhas : linhas.filter(g => g.fat > 0.005 || Math.abs(g.vl) > 0.005)
+  if (!lista.length) return msg(enc ? 'Sem TMO lançado para este mecânico na O.S.' : 'Sem TMO faturado para este mecânico na O.S.')
+  const datas = (set) => [...set].sort().map(fmtData).join(', ')
+  const meses = (set) => [...new Set([...set].map(mesDe))].sort().map(nomeMes).join(', ')
+  const rs = (v) => (semRS ? fmtR$(v).replace(/R\$\s*/, '') : fmtR$(v))
+  const hv = (x) => (
+    <>
+      <td className="px-1.5 text-right tabular-nums whitespace-nowrap">{x && x.h > 0.005 ? fmtH(x.h) : ''}</td>
+      <td className="px-1.5 text-right tabular-nums whitespace-nowrap text-slate-500">{x && Math.abs(x.vl) > 0.005 ? rs(x.vl) : ''}</td>
+    </>
+  )
+  return lista.map(g => {
+    const v = valoresTmo(g, sentido, vh)
+    return (
+      <tr key={g.k} className="border-b border-slate-100 bg-slate-50/80 text-slate-600">
+        <td colSpan={descSpan} className="py-0.5 pl-8 pr-2 truncate" title={g.desc}>{g.desc}</td>
+        <td className="px-2 truncate">{enc ? datas(g.encDatas) : (datas(g.nfDatas) || '—')}</td>
+        <td className="px-2 truncate">{enc ? (datas(g.nfDatas) || '—') : (meses(g.encDatas) || '—')}</td>
+        {comTotal && hv(v.total)}
+        {cats.map(([k]) => <Fragment key={k}>{hv(v[k])}</Fragment>)}
+      </tr>
+    )
+  })
+}
+
+function TmosDaOs({ o, pessoa, sentido = 'enc' }) {
+  const { linhas, erro } = useTmos(o, pessoa)
   if (erro) return <p className="text-[11px] text-red-600">{erro}</p>
   if (!linhas) return <p className="text-[11px] text-slate-500">Carregando TMOs…</p>
   if (!linhas.length) return <p className="text-[11px] text-slate-500">Sem TMO lançado para este mecânico na O.S.</p>
@@ -839,7 +1023,8 @@ function DetalheOs({ sentido, lista, tipoDe, cats, comTotal = true, pessoa, abri
                 {numeros({ h: x.h, vl: x.vl, cat: x.catVal })}
               </tr>
               {osAbertas.has(kOs) && (
-                <tr className="bg-white"><td colSpan={totalCols} className="pl-8 pr-2 py-1.5"><TmosDaOs o={x.o} pessoa={pessoa} sentido={sentido} /></td></tr>
+                <LinhasTmo o={x.o} pessoa={pessoa} sentido={sentido} cats={cats} comTotal={comTotal} descSpan={2} totalCols={totalCols}
+                  vh={x.o.fatTot > 0 ? x.o.vlTot / x.o.fatTot : (x.h ? x.vl / x.h : 0)} />
               )}
               </Fragment>
             )

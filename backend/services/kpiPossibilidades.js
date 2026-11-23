@@ -152,7 +152,9 @@ const indicadoresConsultor = (s) => ({
  * @returns { TODAS: {fatTotal, margemServicos, margemPecas}, 'CAMPO GRANDE': {...}, … } — cada um { período: valor }
  */
 export const CASAS_POSSIBILIDADES = ['CAMPO GRANDE', 'DOURADOS', 'TRÊS LAGOAS', 'CHAPADÃO DO SUL']
-export async function getOficinaPorCasa(ano, { incluirHoje = false } = {}) {
+// casas (opcional, 23/11/2026 — seletor de empresas DAF da Matriz): também a soma dessas casas, na chave
+// casas.join(',') (ex.: 'DOURADOS,TRÊS LAGOAS'); margens sobre os valores somados.
+export async function getOficinaPorCasa(ano, { incluirHoje = false, casas = null } = {}) {
   const base = await carregarAno(ano)
   if (!base) return null
   const periodos = periodosDoAno(ano, incluirHoje ? diaMS(0) : diaMS(-1))
@@ -160,9 +162,10 @@ export async function getOficinaPorCasa(ano, { incluirHoje = false } = {}) {
   // Linha BALCÃO PEÇAS (Faturamento Balcão = Real Total; Margem Bruta Peças Balcão = Margem Peças ÷ Real Peças).
   const regsBalcao = base.regs.filter(r => r.balcao && r.slot !== 'prodServicos')
   const out = {}
-  for (const casa of ['TODAS', ...CASAS_POSSIBILIDADES]) {
-    const alvo = casa === 'TODAS' ? null : normalizaBusca(casa).replace(/ DO SUL$/, '')
-    const daCasa = (lista) => (alvo ? lista.filter(r => r.empresa.includes(alvo)) : lista)
+  const chaveSel = casas?.length ? casas.join(',') : null
+  for (const casa of ['TODAS', ...CASAS_POSSIBILIDADES, ...(chaveSel ? [chaveSel] : [])]) {
+    const alvos = casa === 'TODAS' ? null : casa.split(',').map(c => normalizaBusca(c).replace(/ DO SUL$/, ''))
+    const daCasa = (lista) => (alvos ? lista.filter(r => alvos.some(a => r.empresa.includes(a))) : lista)
     const regs = daCasa(regsOficina)
     const regsBal = daCasa(regsBalcao)
     const o = { fatTotal: {}, margemServicos: {}, margemPecas: {}, balcaoFat: {}, balcaoMargemPecas: {} }
@@ -208,11 +211,14 @@ export async function getFaturamentoSetorMecanica(ano, casa, { incluirHoje = fal
  * Faturamento = Real Peças + Real Serviços; Margem = Margem Peças ÷ Real Peças × 100.
  * @returns { fat: { período: R$ }, margem: { período: % } }
  */
-export async function getBalcaoPecas(ano, { vendedor = null, incluirHoje = false } = {}) {
+// casas (opcional, 23/11/2026): só as empresas escolhidas no seletor DAF da Matriz (['DOURADOS', …]).
+export async function getBalcaoPecas(ano, { vendedor = null, incluirHoje = false, casas = null } = {}) {
   const base = await carregarAno(ano)
   if (!base) return null
   const nome = vendedor ? normalizaBusca(vendedor) : null
-  const regs = base.regs.filter(r => r.balcao && r.slot !== 'prodServicos' && (!nome || r.func === nome))
+  const filtrosCasa = casas?.length ? casas.map(daCasaFn) : null
+  const regs = base.regs.filter(r => r.balcao && r.slot !== 'prodServicos' && (!nome || r.func === nome)
+    && (!filtrosCasa || (r.empresa.includes('TRUCKS') && filtrosCasa.some(f => f(r))))) // casa da Trucks (não a Motos de mesmo nome)
   const out = { fat: {}, margem: {} }
   for (const [p, [ini, fim]] of Object.entries(periodosDoAno(ano, incluirHoje ? diaMS(0) : diaMS(-1)))) {
     const c = indicadoresConsultor(somar(regs.filter(r => r.data >= ini && r.data <= fim)))
@@ -249,4 +255,29 @@ export async function getValoresPossibilidades(ano, { incluirHoje = false, consu
     if (out.funilaria) { const f = somar(regsFun.filter(dentro)); out.funilaria.fatTotal[p] = f.realPecas + f.realServicos || null }
   }
   return out
+}
+
+/**
+ * Empresas de cada pessoa no ano (seletor de empresas DAF da Matriz, 23/11/2026): em quais casas da Caiobá Trucks
+ * o consultor (setores da Oficina), o mecânico (produtivo) e o vendedor (Balcão) tiveram movimento na Possibilidades.
+ * Os seletores de pessoa dos quadros mostram só quem é das empresas marcadas.
+ * @returns { consultores: { NOME: ['DOURADOS', …] }, mecanicos: {…}, vendedores: {…} } — nomes em maiúsculas sem acento.
+ */
+const CASAS_PESSOA = ['CAMPO GRANDE', 'DOURADOS', 'TRES LAGOAS', 'CHAPADAO']
+const CASA_NOME = { 'CAMPO GRANDE': 'CAMPO GRANDE', DOURADOS: 'DOURADOS', 'TRES LAGOAS': 'TRÊS LAGOAS', CHAPADAO: 'CHAPADÃO DO SUL' }
+export async function getCasasPorPessoa(ano) {
+  const base = await carregarAno(ano)
+  if (!base) return null
+  const grupos = { consultores: new Map(), mecanicos: new Map(), vendedores: new Map() }
+  const add = (mapa, nome, casa) => { if (!mapa.has(nome)) mapa.set(nome, new Set()); mapa.get(nome).add(casa) }
+  for (const r of base.regs) {
+    if (!r.func || !r.empresa.includes('TRUCKS')) continue
+    const chave = CASAS_PESSOA.find(c => r.empresa.includes(c))
+    if (!chave) continue
+    const nome = r.func.replace(/\s+/g, ' ')
+    if (r.slot === 'prodServicos') add(grupos.mecanicos, nome, CASA_NOME[chave])
+    else if (r.setorOficina) add(grupos.consultores, nome, CASA_NOME[chave])
+    if (r.balcao && r.slot !== 'prodServicos') add(grupos.vendedores, nome, CASA_NOME[chave])
+  }
+  return Object.fromEntries(Object.entries(grupos).map(([g, m]) => [g, Object.fromEntries([...m].map(([n, s]) => [n, [...s]]))]))
 }

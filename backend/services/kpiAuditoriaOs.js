@@ -4,7 +4,7 @@
  *
  *   O.S. aberta sem veículo na oficina — valor das O.S. com Na Oficina = Não ÷ valor total em aberto × 100
  *                                        (card "Total O.S. pendentes")
- *   O.S. >= 30 dias (% do Valor)       — valor das O.S. com Na Oficina = Sim e 30+ dias entre a criação da O.S.
+ *   O.S. >= 30 dias (% do Valor)       — valor das O.S. com 30+ dias (com ou sem veículo na oficina) entre a criação da O.S.
  *                                        e a data da auditoria ÷ valor total em aberto × 100 (card "Total O.S. > 30 dias")
  *
  * Fonte: auditorias gravadas no sistema (aud_auditorias / aud_auditoria_os), só empresas Caiobá Trucks.
@@ -93,7 +93,7 @@ async function calcular(ano, incluirHoje = false) {
     s.total += v
     if (r.na_oficina === false) s.semVeiculo += v
     const d = diasEntre(r.data_criacao, r.data_auditoria)
-    if (r.na_oficina === true && d !== null && d >= 30) s.mais30 += v
+    if (d !== null && d >= 30) s.mais30 += v // 30+ dias, com ou sem veículo na oficina
   }
   const novo = () => ({ total: 0, semVeiculo: 0, mais30: 0 })
   for (const r of linhas) {
@@ -166,5 +166,12 @@ async function calcular(ano, incluirHoje = false) {
       mais30: montar(grupoPorPeriodo, 'mais30', 'meta_mais30_pct', somaDe),
     }
   }
-  return { porCasa, grupo, porConsultor }
+  // Várias empresas (seletor de empresas DAF da Matriz, 23/11/2026): última auditoria de cada casa escolhida no
+  // período, somadas (como o grupo, só com essas casas). Função guardada junto (cache em memória).
+  const casasSel = (casas) => {
+    const porPeriodo = {}
+    for (const casa of casas) for (const [p, a] of Object.entries(ultima[casa] || {})) (porPeriodo[p] ||= []).push(a)
+    return { semVeiculo: montar(porPeriodo, 'semVeiculo', 'meta_pendentes_pct'), mais30: montar(porPeriodo, 'mais30', 'meta_mais30_pct') }
+  }
+  return { porCasa, grupo, porConsultor, casasSel }
 }

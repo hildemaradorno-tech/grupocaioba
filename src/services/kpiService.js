@@ -186,6 +186,16 @@ export async function fetchVendedoresBalcao(year) {
 }
 
 // Lista de consultores (pro seletor do quadro CONSULTOR DE SERVIÇOS)
+// Empresas DAF de cada consultor/mecânico/vendedor no ano (filtro dos seletores de pessoa da Matriz, 23/11/2026).
+// → { consultores: { NOME: ['DOURADOS', …] }, mecanicos: {…}, vendedores: {…} } ou null (backend fora do ar).
+export async function fetchPessoasPorEmpresa(year) {
+  try {
+    return await fetchWithTimeout(`${BASE}/pessoas-por-empresa?year=${year}`, 30_000)
+  } catch {
+    return null
+  }
+}
+
 export async function fetchConsultoresServicos(year, empresa) {
   try {
     const emp = empresa && empresa !== 'todas' ? `&empresa=${encodeURIComponent(empresa)}` : ''

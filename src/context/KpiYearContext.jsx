@@ -22,8 +22,12 @@ export function KpiYearProvider({ children }) {
   // Sempre começa desmarcado (não fica gravado).
   const [incluirHoje, setIncluirHoje] = useState(false)
 
+  // Matriz KPIs › seletor de empresas DAF (23/11/2026): nomes das casas marcadas ('CAMPO GRANDE', …);
+  // lista vazia = Todas. Não fica gravado (abre sempre em Todas).
+  const [empresasDaf, setEmpresasDaf] = useState([])
+
   return (
-    <KpiYearContext.Provider value={{ year, setYear, incluirHoje, setIncluirHoje }}>
+    <KpiYearContext.Provider value={{ year, setYear, incluirHoje, setIncluirHoje, empresasDaf, setEmpresasDaf }}>
       {children}
     </KpiYearContext.Provider>
   )
