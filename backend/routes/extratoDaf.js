@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { isConfigured } from '../services/graphClient.js'
-import { importarExtratoDaf } from '../services/sharepointExtratoDaf.js'
+import { importarExtratoDaf, getConciliacaoDaf } from '../services/sharepointExtratoDaf.js'
 
 const router = Router()
 const wrap = fn => (req, res, next) => fn(req, res, next).catch(next)
@@ -18,6 +18,13 @@ router.post('/importar', wrap(async (req, res) => {
     if (e.status) return res.status(e.status).json({ error: e.message })
     throw e
   }
+}))
+
+// GET /api/extrato-daf/titulos?refresh=1 — títulos a receber da DAF (RFN003, SharePoint) SEM extrato importado:
+// a aba Títulos mostra os títulos como antes, todos "Fora do extrato", até um extrato ser importado (23/11/2026).
+router.get('/titulos', wrap(async (req, res) => {
+  if (!isConfigured()) return res.status(503).json({ error: 'sharepoint_not_configured' })
+  res.json(await getConciliacaoDaf({ extrato: { arquivo: null, registros: [] }, refresh: req.query.refresh === '1' }))
 }))
 
 export default router

@@ -1120,20 +1120,27 @@ export default function ExtratoPagamentoDaf() {
     return j
   }
   // Atualizar: refaz a conciliação do arquivo já importado, relendo o RFN003
+  // Sem extrato importado: a aba Títulos mostra os títulos da DAF do RFN003 como antes (todos "Fora do extrato")
+  const carregarTitulos = async (refresh) => {
+    const r = await fetch(`${BACKEND_URL}/api/extrato-daf/titulos${refresh ? '?refresh=1' : ''}`)
+    const j = await r.json()
+    if (!r.ok) throw new Error(j.error === 'sharepoint_not_configured' ? 'SharePoint não configurado no backend (RFN003).' : (j.error || `HTTP ${r.status}`))
+    setConc(j)
+  }
+  // Atualizar: com extrato, refaz a conciliação (relendo o RFN003); sem extrato, relê só os títulos
   const carregar = async () => {
-    if (!arquivoAtual) return
     setCarregando(true); setErro(null)
-    try { await enviar(arquivoAtual, true) }
+    try { if (arquivoAtual) await enviar(arquivoAtual, true); else await carregarTitulos(true) }
     catch (e) { setErro(e.message) }
     finally { setCarregando(false) }
   }
-  // F5: recupera o último arquivo importado nesta aba do navegador
+  // Abertura: F5 recupera o último arquivo importado nesta aba do navegador; senão, carrega só os títulos
   useEffect(() => {
     let salvo = null
     try { salvo = JSON.parse(sessionStorage.getItem(CHAVE_SESSAO) || 'null') } catch { salvo = null }
-    if (!salvo?.base64) return
-    setArquivoAtual(salvo); setCarregando(true)
-    enviar(salvo, false).catch(e => setErro(e.message)).finally(() => setCarregando(false))
+    setCarregando(true)
+    const p = salvo?.base64 ? (setArquivoAtual(salvo), enviar(salvo, false)) : carregarTitulos(false)
+    p.catch(e => setErro(e.message)).finally(() => setCarregando(false))
   }, [])
 
   // ── Engrenagem › Importar arquivo Account- ────────────────────────────────
@@ -1211,7 +1218,7 @@ export default function ExtratoPagamentoDaf() {
               Atualizado em {fmtDataHora(dados.lido_em)}
             </span>
           )}
-          <button onClick={carregar} disabled={!arquivoAtual || carregando || importando} title={arquivoAtual ? 'Atualizar (refaz a conciliação relendo o RFN003)' : 'Importe um extrato primeiro'} aria-label="Atualizar"
+          <button onClick={carregar} disabled={carregando || importando} title={arquivoAtual ? 'Atualizar (refaz a conciliação relendo o RFN003)' : 'Atualizar (relê os títulos do RFN003)'} aria-label="Atualizar"
             className="flex items-center justify-center p-1.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50">
             <RefreshCw className={`h-4 w-4 ${carregando ? 'animate-spin' : ''}`} />
           </button>
@@ -1260,14 +1267,16 @@ export default function ExtratoPagamentoDaf() {
           Colunas não encontradas na planilha: {dados.colunas_nao_encontradas.join(', ')}. O layout do arquivo pode ter mudado.
         </div>
       )}
-      {!dados && !carregando && !importando && (
+      {!dados && !carregando && !importando && aba !== 'aberto' && (
         <div className="bg-slate-50 border border-slate-200 text-slate-600 text-[12px] rounded-lg px-4 py-6 text-center">
           Nenhum extrato importado. Importe o arquivo da DAF pela <b>engrenagem ⚙ › Importar arquivo Account</b>.
+          {conc && <> Os títulos da DAF já estão na aba <b>Títulos</b>.</>}
         </div>
       )}
-      {carregando && !dados && <div className="bg-slate-50 border border-slate-200 text-slate-600 text-[11px] rounded-lg px-3 py-2">Lendo o extrato importado e conciliando...</div>}
+      {carregando && !dados && !conc && <div className="bg-slate-50 border border-slate-200 text-slate-600 text-[11px] rounded-lg px-3 py-2">Carregando os títulos da DAF (RFN003)...</div>}
 
-      {dados && <>
+      {/* Resumo e aba Extrato só com extrato importado; aba Títulos sempre (títulos do RFN003) */}
+      {(dados || conc) && <>
       <ResumoConciliacao dados={dados} conc={conc} carregandoConc={carregandoConc} filtro={filtroResumo}
         setFiltro={(f) => {
           // "Falta Conciliar" são linhas do extrato sem título: na aba Títulos não há o que mostrar, então vai para Extrato
@@ -1275,7 +1284,7 @@ export default function ExtratoPagamentoDaf() {
           setFiltroResumo(novo)
           if (novo === 'falta' && aba !== 'extrato') setAba('extrato')
         }} />
-      {aba === 'extrato' && <AbaExtrato key={`ext-${versao}`} dados={dados} carregando={carregando} busca={busca} setBusca={setBusca} conc={conc} carregandoConc={carregandoConc} filtroResumo={filtroResumo} />}
+      {aba === 'extrato' && dados && <AbaExtrato key={`ext-${versao}`} dados={dados} carregando={carregando} busca={busca} setBusca={setBusca} conc={conc} carregandoConc={carregandoConc} filtroResumo={filtroResumo} />}
       {aba === 'aberto' && <AbaTitulos key={`tit-${versao}`} conc={conc} dados={dados} carregando={carregandoConc} busca={busca} setBusca={setBusca} filtroResumo={filtroResumo} />}
       {aba === 'retorno' && <AbaRetorno key={`ret-${versao}`} conc={conc} retorno={retorno} setRetorno={setRetorno} />}
       </>}
