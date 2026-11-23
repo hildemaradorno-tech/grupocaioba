@@ -1,5 +1,6 @@
 // Controle de Processos › Extrato de Pagamento DAF.
-// Fonte: SharePoint › BD › "Banco de Dados - DAF - Extrato de Pagamentos" (planilha exportada do SAP pela DAF,
+// Fonte: planilha exportada do SAP pela DAF, importada pela engrenagem (desde 23/11/2026 nada fica no SharePoint;
+// a antiga pasta "Banco de Dados - DAF - Extrato de Pagamentos" foi excluída) (
 // ex.: Account-303920.xlsx), lida ao vivo pelo backend (/api/extrato-daf). Cabeçalho traduzido para português.
 // Conciliação (/api/extrato-daf/conciliacao): cruza o extrato com os títulos a receber da DAF do RFN003
 // Analítico (Financeiro - DAF) — Referência = NFS-e ou "NFP" (Nota Fiscal do título); sem nota, pelo Texto
