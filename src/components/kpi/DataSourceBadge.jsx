@@ -2,10 +2,11 @@ import React, { useEffect, useState } from 'react'
 import { Cloud, Database, Loader2, AlertTriangle, XCircle } from 'lucide-react'
 import { getStatusSincronizacao } from '../../services/kpiService'
 
-// Fixa o fuso em Brasília para manter o horário exibido consistente.
+// Fixa o fuso de Mato Grosso do Sul (Campo Grande, UTC−4) — com o de Brasília o horário aparecia 1 h à frente
+// (23/11/2026).
 function formatDataHora(iso) {
   if (!iso) return null
-  return new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Sao_Paulo' })
+  return new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Campo_Grande' })
 }
 
 // Partes que falharam na última Atualização (kpi_sync_execucoes.detalhes: planilhas, extrator, biFaturamento,

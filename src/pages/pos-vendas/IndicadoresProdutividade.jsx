@@ -12,6 +12,7 @@ import {
 } from './produtividadeCalculos'
 import RegrasCoresModal from './RegrasCoresModal'
 import AplicadasPorTipo from './AplicadasPorTipo'
+import EvolucaoConsultores from './EvolucaoConsultores'
 import AbaEncerradoFaturado from './AbaEncerradoFaturado'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
@@ -266,6 +267,7 @@ export default function IndicadoresProdutividade() {
     return ['principais', 'mecanicos', 'consultores', 'diames', 'encfat'].includes(pedida) ? pedida : 'principais'
   })
   const [modoResumo, setModoResumo] = useState('mecanico') // Resumo: Mecânicos | Consultores
+  const [modoEvolucao, setModoEvolucao] = useState('mecanico') // Evolução: Mecânicos | Consultores (23/11/2026)
   const [slotAbaDireita, setSlotAbaDireita] = useState(null) // canto direito da linha das abas (Encerrado | Faturado)
   const [slotBuscaOs, setSlotBuscaOs] = useState(null) // espaço ao lado do Tipo de Visualização (busca por O.S. da aba Mecânicos)
   const [periodo, setPeriodo] = useState(periodoPadrao)
@@ -472,7 +474,7 @@ export default function IndicadoresProdutividade() {
   }, [infoMecanico, boxMetas, boxCadastro, fimAnoMes])
 
   const mecDiario = useMemo(() => diarioEsc.filter(r => r.papel === 'mecanico'), [diarioEsc])
-  const travaFat = aba === 'consultores' || (aba === 'principais' && modoResumo === 'consultor')
+  const travaFat = aba === 'consultores' || (aba === 'principais' && modoResumo === 'consultor') || (aba === 'diames' && modoEvolucao === 'consultor')
   const total = useMemo(() => indicadores(somar(mecDiario), vis), [mecDiario, vis])
 
   const ultimaAtualizacao = useMemo(() => {
@@ -575,13 +577,13 @@ export default function IndicadoresProdutividade() {
       {aba !== 'encfat' && (
         <div className="flex flex-wrap items-end gap-3">
           {/* Resumo: modo Mecânicos | Consultores — ANTES do Tipo de Visualização (pedido do usuário 19/11/2026) */}
-          {aba === 'principais' && (
+          {(aba === 'principais' || aba === 'diames') && (
             <div className="flex flex-col gap-1">
               <label className="text-[10px] font-bold text-slate-500 uppercase">Modo Visualização</label>
               <div className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-lg p-0.5 w-fit">
                 {[['mecanico', 'Mecânicos', Wrench], ['consultor', 'Consultores', User]].map(([v, r, Ic]) => (
-                  <button key={v} type="button" onClick={() => setModoResumo(v)}
-                    className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-[11px] font-semibold ${modoResumo === v ? 'bg-slate-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}>
+                  <button key={v} type="button" onClick={() => (aba === 'diames' ? setModoEvolucao(v) : setModoResumo(v))}
+                    className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-[11px] font-semibold ${(aba === 'diames' ? modoEvolucao : modoResumo) === v ? 'bg-slate-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}>
                     <Ic className="h-3.5 w-3.5" /> {r}
                   </button>
                 ))}
@@ -589,7 +591,7 @@ export default function IndicadoresProdutividade() {
             </div>
           )}
           {/* Consultores: só existe Horas Vendidas (Nota Fiscal Emitida) — seletor travado nela */}
-          <Seletor label="Tipo de Visualização" value={travaFat ? 'fat' : vis} onChange={setVis} largura="w-72"
+          <Seletor label="Tipo de Horas" value={travaFat ? 'fat' : vis} onChange={setVis} largura="w-72"
             disabled={travaFat} title={travaFat ? 'Para consultores as horas são sempre as da Nota Fiscal Emitida' : undefined}
             opcoes={VISUALIZACOES.map(v => ({ value: v.id, label: v.label }))} />
           {/* Busca por O.S. das abas Mecânicos e Consultores (a aba desenha aqui) */}
@@ -606,7 +608,7 @@ export default function IndicadoresProdutividade() {
         periodo={periodo} noEscopo={noEscopo} excluidos={excluidos} slotBuscaOs={slotBuscaOs} />}
       {aba === 'diames' && (
         <AbaDiaMes mecDiario={mecDiario} mensalEsc={mensalEsc} boxDe={boxDe} vis={vis} periodo={periodo} slot={slotBuscaOs}
-          metasAno={metas.filter(m => noEscopo(m.empresa))} />
+          metasAno={metas.filter(m => noEscopo(m.empresa))} modoPessoa={modoEvolucao} diarioEsc={diarioEsc} />
       )}
       {aba === 'encfat' && <AbaEncerradoFaturado periodo={periodo} noEscopo={noEscopo} excluidos={excluidosMec} slotSentido={slotAbaDireita} recarga={syncs} />}
       {abrirRegras && (
@@ -1191,8 +1193,8 @@ function HistoricoMecanico({ pessoa, nome, periodo, noEscopo, visInicial, onClos
                   className={`px-3 py-1 rounded-md text-[11px] font-semibold ${visao === v ? 'bg-slate-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}>{r}</button>
               ))}
             </div>
-            <select value={vis} onChange={e => setVis(e.target.value)} aria-label="Tipo de Visualização" disabled={ehConsultor}
-              title={ehConsultor ? 'Consultor: sempre as horas da Nota Fiscal Emitida' : 'Tipo de Visualização'}
+            <select value={vis} onChange={e => setVis(e.target.value)} aria-label="Tipo de Horas" disabled={ehConsultor}
+              title={ehConsultor ? 'Consultor: sempre as horas da Nota Fiscal Emitida' : 'Tipo de Horas'}
               className="h-8 w-72 border border-slate-300 rounded-md px-2 text-[11px] bg-white focus:outline-none focus:ring-1 focus:ring-sky-500 disabled:bg-slate-100 disabled:text-slate-600 disabled:cursor-not-allowed">
               {VISUALIZACOES.map(v => <option key={v.id} value={v.id}>{v.label}</option>)}
             </select>
@@ -1404,7 +1406,7 @@ function AbaConsultores({ diarioEsc, metasEsc, pendentesEsc, reaisTotal, periodo
 // ── Aba: Indicadores - Dia ──────────────────────────────────────────────────
 // Aba única Dia / Mês: Dia = período do calendário do cabeçalho; Mês = de 01/01 do ano da data final até a
 // data final (com a tabela mensal, que só aparece em Mês).
-function AbaDiaMes({ mecDiario, mensalEsc, boxDe, vis, periodo, metasAno, slot }) {
+function AbaDiaMes({ mecDiario, mensalEsc, boxDe, vis, periodo, metasAno, slot, modoPessoa = 'mecanico', diarioEsc = [] }) {
   const [modo, setModo] = useState('dia')
   const ano = periodo.fim ? periodo.fim.slice(0, 4) : ''
   return (
@@ -1416,15 +1418,12 @@ function AbaDiaMes({ mecDiario, mensalEsc, boxDe, vis, periodo, metasAno, slot }
               className={`px-4 py-1.5 rounded-md text-[11px] font-semibold ${modo === v ? 'bg-slate-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}>{r}</button>
           ))}
         </div>
-        <p className="text-[10px] text-slate-500">
-          {modo === 'dia'
-            ? `Por dia, de ${fmtData(periodo.ini)} a ${fmtData(periodo.fim)} (calendário do topo).`
-            : `Por mês, de 01/01/${ano} a ${fmtData(periodo.fim)} (data final do calendário do topo).`}
-        </p>
       </div>
-      {modo === 'dia'
-        ? <AbaDia mecDiario={mecDiario} boxDe={boxDe} vis={vis} slot={slot} />
-        : <AbaMensal mensalEsc={mensalEsc} metasEsc={metasAno} boxDe={boxDe} vis={vis} slot={slot} />}
+      {modoPessoa === 'consultor'
+        ? <EvolucaoConsultores key={modo} modo={modo} diarioEsc={diarioEsc} mensalEsc={mensalEsc} metasAno={metasAno} periodo={periodo} slot={slot} linhasConsultores={linhasConsultores} />
+        : modo === 'dia'
+          ? <AbaDia mecDiario={mecDiario} boxDe={boxDe} vis={vis} slot={slot} />
+          : <AbaMensal mensalEsc={mensalEsc} metasEsc={metasAno} boxDe={boxDe} vis={vis} slot={slot} />}
     </div>
   )
 }

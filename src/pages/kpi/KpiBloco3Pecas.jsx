@@ -9,6 +9,7 @@ import { fetchBloco3Pecas, salvarPeso, fetchVendedoresBalcao } from '../../servi
 import { useKpiYear } from '../../context/KpiYearContext'
 import { useAuth } from '../../context/AuthContext'
 import { useExpandirQuadro } from '../../components/kpi/useExpandirQuadro'
+import PesoInput, { TotalPeso } from '../../components/kpi/PesoInput'
 
 const BLOCO_PESOS = 'bloco3-pecas'
 const QUADRO_VENDEDOR = 'VENDEDOR DE PEÇAS'
@@ -61,53 +62,6 @@ function badgeClass(val) {
   return 'bg-red-100 text-red-700'
 }
 
-// Input editável do "Peso" — grava no Supabase ao sair do campo (onBlur/Enter),
-// pra ficar igual pra qualquer usuário que abrir essa tela.
-function PesoInput({ value, onSave }) {
-  const [draft, setDraft]   = useState(value ? Math.round(value * 100) : '') // 0 / sem peso = campo vazio
-  const [saving, setSaving] = useState(false)
-  const [erro, setErro]     = useState(false)
-
-  React.useEffect(() => {
-    setDraft(value ? Math.round(value * 100) : '')
-  }, [value])
-
-  const commit = async () => {
-    const atual = value ? Math.round(value * 100) : ''
-    if (draft === atual || draft === String(atual)) return
-    // Campo apagado = sem peso (grava 0) — não precisa digitar 0.
-    const num = draft === '' ? 0 : Math.max(0, Math.min(100, Number(draft)))
-    if (isNaN(num)) { setDraft(atual); return }
-    setSaving(true)
-    setErro(false)
-    try {
-      await onSave(num / 100)
-    } catch (err) {
-      console.warn('[KPI] Falha ao salvar peso:', err.message)
-      setErro(true)
-      setDraft(atual)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <span className="inline-flex items-center justify-center gap-0.5">
-      <input
-        type="number" min={0} max={100} step={1}
-        value={draft}
-        disabled={saving}
-        onChange={e => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur() }}
-        className={`w-12 text-center border rounded px-1 py-0.5 text-xs focus:outline-none focus:border-blue-400 disabled:opacity-50 ${
-          erro ? 'border-red-400' : 'border-slate-200'
-        }`}
-      />
-      <span className="text-slate-400">%</span>
-    </span>
-  )
-}
 
 // Dropdown de busca próprio (não usa <input list>/<datalist> nativo — o navegador desenha a
 // lista de sugestões sem nenhum controle de estilo/posição, o que ficava estranho dentro da
@@ -212,7 +166,6 @@ function QuadroTable({ quadro, activePeriods, mesTotalKey, year, onSalvarPeso, v
 
   // Peso de cada indicador deve somar 100% dentro do quadro do gerente.
   const totalPeso = Math.round(quadro.kpis.reduce((s, k) => s + (k.pesoObj ?? 0), 0) * 100)
-  const totalOk   = totalPeso === 100
 
   const ex = useExpandirQuadro(quadro.tituloGerente)
 
@@ -266,7 +219,7 @@ function QuadroTable({ quadro, activePeriods, mesTotalKey, year, onSalvarPeso, v
                 <td className="px-3 py-2.5 text-center text-slate-500">
                   {somenteLeitura
                     ? (row.pesoObj != null ? `${Math.round(row.pesoObj * 100)}%` : '—')
-                    : <PesoInput value={row.pesoObj} onSave={peso => onSalvarPeso(quadro.tituloGerente, row.id, peso)} />}
+                    : <PesoInput value={row.pesoObj} maxPermitido={100 - (totalPeso - Math.round((row.pesoObj ?? 0) * 100))} onSave={peso => onSalvarPeso(quadro.tituloGerente, row.id, peso)} />}
                 </td>
                 {activePeriods.map(p => {
                   const d       = getPeriodData(row, p)
@@ -293,7 +246,7 @@ function QuadroTable({ quadro, activePeriods, mesTotalKey, year, onSalvarPeso, v
               <td className="text-center px-3 py-2" />
               <td className="px-4 py-2 sticky left-0 bg-slate-50">Total</td>
               <td className="text-center px-2 py-2" />
-              <td className="text-center px-3 py-2">{totalPeso}%</td>
+              <td className="text-center px-3 py-2"><TotalPeso total={totalPeso} /></td>
               {activePeriods.map(p => {
                 const contribs = quadro.kpis.map(row => {
                   const d = getPeriodData(row, p)

@@ -9,16 +9,42 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
   RefreshCw, Search, FileSpreadsheet, Receipt, Landmark,
-  ChevronRight, ChevronDown, ListChecks, FolderOpen, Check, FileText, FileDown, Settings, Upload,
+  ChevronRight, ChevronDown, ListChecks, FolderOpen, Check, FileText, FileDown, Settings, Upload, ClipboardCheck, X,
 } from 'lucide-react'
+import * as XLSX from 'xlsx'
 // Arquivo de baixa no layout que o Dealer.net aceita — o mesmo do TruckPag
-import { gerarArquivoBaixaTitulos, siglaEmpresaPorNome } from '../truckpag/truckpagUtils'
+import { siglaEmpresaPorNome } from '../truckpag/truckpagUtils'
+
+// ── Arquivo de baixa (Dealer.net › Banco Retorno) ─────────────────────────────────────────────────────────────
+// Mesmo layout de 39 posições do TruckPag (gerarArquivoBaixaTitulos), mas o 1º caractere (tipo de registro)
+// depende do Tipo de Título — pedido do usuário em 23/11/2026: GARANTIA FÁBRICA = 4 (no TruckPag é sempre 3).
+// Tipo de título sem código aqui → a tela avisa e NÃO gera o arquivo, até o código ser definido nesta lista.
+const CODIGO_BAIXA_POR_TIPO = {
+  'GARANTIA FABRICA': '4',
+}
+const chaveTipo = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/\s+/g, ' ').trim()
+const codigoBaixaDoTipo = (tipo) => CODIGO_BAIXA_POR_TIPO[chaveTipo(tipo)] || null
+//   posição 1      — código do tipo de título (tabela acima)
+//   posições 2-16  — Lançamento (título), zero à esquerda
+//   posições 17-24 — Data de Pagamento, DDMMAAAA
+//   posições 25-39 — Valor em centavos, zero à esquerda
+function gerarArquivoBaixaDaf(titulos, dataPagamentoIso) {
+  const [ano, mes, dia] = String(dataPagamentoIso).split('-')
+  const ddmmaaaa = `${dia}${mes}${ano}`
+  return titulos.map(t => {
+    const codigo = codigoBaixaDoTipo(t.tipo_titulo)
+    const lanc = String(t.lancamento ?? '').padStart(15, '0')
+    const valor = String(Math.round((t.valor_baixa ?? 0) * 100)).padStart(15, '0')
+    return `${codigo}${lanc}${ddmmaaaa}${valor}`
+  }).join('\r\n') + '\r\n'
+}
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
 
 const ABAS = [
   ['extrato', 'Extrato', ListChecks],
   ['aberto', 'Títulos', FolderOpen],
+  ['retorno', 'Retorno da Baixa', ClipboardCheck],
 ]
 const CAMPOS_DATA = new Set(['data_lancamento', 'data_documento', 'data_compensacao'])
 const CAMPOS_VALOR = new Set(['valor_moeda_documento', 'imposto_retido', 'valor_moeda_local'])
@@ -52,9 +78,59 @@ function Badge({ texto }) {
   return <span title={DICA_SITUACAO[texto] || ''} className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap ${COR_SITUACAO[texto] || 'bg-slate-100 text-slate-600'}`}>{texto}</span>
 }
 
-function Card({ icon: Icon, titulo, valor, sub, cor }) {
+// Seletor de situação com várias marcações. selecionadas = Set; vazio = Todas.
+function SeletorSituacao({ opcoes, selecionadas, setSelecionadas }) {
+  const [aberto, setAberto] = useState(false)
+  const ref = useRef(null)
+  useEffect(() => {
+    if (!aberto) return
+    const fechar = (e) => { if (ref.current && !ref.current.contains(e.target)) setAberto(false) }
+    document.addEventListener('mousedown', fechar)
+    return () => document.removeEventListener('mousedown', fechar)
+  }, [aberto])
+  const todas = selecionadas.size === 0
+  const alternar = (s) => setSelecionadas(prev => {
+    const n = new Set(prev)
+    n.has(s) ? n.delete(s) : n.add(s)
+    return n.size === opcoes.length ? new Set() : n // marcar todas = "Todas"
+  })
+  const rotulo = todas ? 'Todas as situações' : selecionadas.size === 1 ? [...selecionadas][0] : `${selecionadas.size} situações`
   return (
-    <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm flex items-start gap-3">
+    <div className="relative flex items-center gap-1" ref={ref}>
+      <button type="button" onClick={() => setAberto(a => !a)}
+        className={`flex items-center gap-1 border rounded-lg px-2 py-1 text-[11px] bg-white ${todas ? 'border-slate-200 text-slate-700' : 'border-indigo-400 text-indigo-700'}`}>
+        Situação: {rotulo} <ChevronDown className="h-3 w-3" />
+      </button>
+      {/* Limpar o filtro de situação (volta para Todas) — só aparece com alguma situação marcada */}
+      {!todas && (
+        <button type="button" onClick={() => { setSelecionadas(new Set()); setAberto(false) }} title="Limpar filtro de situação"
+          className="flex items-center gap-1 border border-slate-200 rounded-lg px-2 py-1 text-[11px] bg-white text-slate-600 hover:bg-slate-50 hover:text-red-600">
+          <X className="h-3 w-3" /> Limpar
+        </button>
+      )}
+      {aberto && (
+        <div className="absolute right-0 mt-1 w-60 bg-white border border-slate-200 rounded-lg shadow-lg z-30 py-1">
+          <label className="flex items-center gap-2 px-3 py-1.5 text-[11px] hover:bg-slate-50 cursor-pointer border-b border-slate-100">
+            <input type="checkbox" checked={todas} onChange={() => setSelecionadas(new Set())} className="h-3.5 w-3.5 accent-indigo-600" />
+            <span className="font-semibold">Todas</span>
+          </label>
+          {opcoes.map(s => (
+            <label key={s} className="flex items-center gap-2 px-3 py-1.5 text-[11px] hover:bg-slate-50 cursor-pointer">
+              <input type="checkbox" checked={!todas && selecionadas.has(s)} onChange={() => alternar(s)} className="h-3.5 w-3.5 accent-indigo-600" />
+              <Badge texto={s} />
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Card clicável (onClick) filtra a tabela da aba; o ativo fica com borda azul.
+function Card({ icon: Icon, titulo, valor, sub, cor, ativo, onClick }) {
+  return (
+    <div onClick={onClick} title={onClick ? (ativo ? 'Clique para tirar o filtro' : 'Clique para filtrar a tabela') : undefined}
+      className={`bg-white border rounded-xl p-3 shadow-sm flex items-start gap-3 ${onClick ? 'cursor-pointer hover:border-indigo-300' : ''} ${ativo ? 'border-indigo-500 ring-1 ring-indigo-200' : 'border-slate-200'}`}>
       <div className={`p-2 rounded-lg ${cor}`}><Icon className="h-4 w-4" /></div>
       <div className="min-w-0">
         <p className="text-[11px] text-slate-500 uppercase tracking-wide">{titulo}</p>
@@ -201,7 +277,7 @@ function DetalheTituloDaLinha({ vinculo, carregandoConc, linhaAtual }) {
 
 // Só as colunas do arquivo (pedido do usuário em 22/11/2026: sem Título/Situação da conciliação aqui);
 // cada linha expande para mostrar o título conciliado.
-function AbaExtrato({ dados, carregando, busca, setBusca, conc, carregandoConc }) {
+function AbaExtrato({ dados, carregando, busca, setBusca, conc, carregandoConc, filtroResumo = '' }) {
   const [abertos, setAbertos] = useState(() => new Set())
   const alternar = (k) => setAbertos(s => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n })
   // linha do extrato → título conciliado (ou a linha sem título, com o motivo)
@@ -214,8 +290,24 @@ function AbaExtrato({ dados, carregando, busca, setBusca, conc, carregandoConc }
   }, [conc])
   const colunas = dados?.colunas || []
   const termo = semAcento(busca.trim())
+  const situacaoDaLinha = (i) => {
+    const v = vinculoPorLinha?.get(i)
+    return v ? (v.titulo ? v.titulo.situacao : (v.linha.vinculo === 'Ambíguo' ? 'Ambíguo' : 'Sem título')) : null
+  }
+  // Seletor de situação (várias marcações; vazio = todas)
+  const [situacoesSel, setSituacoesSel] = useState(() => new Set())
+  const opcoesSituacao = useMemo(() => [...new Set((dados?.registros || []).map((_, i) => situacaoDaLinha(i)).filter(Boolean))], [dados, vinculoPorLinha])
+  // Card do resumo: 'conciliado' = linhas que acharam título; 'falta' = linhas sem título (ou ambíguas)
   const registros = useMemo(() => (dados?.registros || []).map((r, i) => ({ ...r, _i: i }))
-    .filter(r => !termo || colunas.some(c => semAcento(CAMPOS_DATA.has(c.campo) ? fmtData(r[c.campo]) : r[c.campo]).includes(termo))), [dados, termo, colunas])
+    .filter(r => {
+      if (filtroResumo && vinculoPorLinha) {
+        const temTitulo = !!vinculoPorLinha.get(r._i)?.titulo
+        if (filtroResumo === 'conciliado' && !temTitulo) return false
+        if (filtroResumo === 'falta' && temTitulo) return false
+      }
+      if (situacoesSel.size && !situacoesSel.has(situacaoDaLinha(r._i))) return false
+      return !termo || colunas.some(c => semAcento(CAMPOS_DATA.has(c.campo) ? fmtData(r[c.campo]) : r[c.campo]).includes(termo))
+    }), [dados, termo, colunas, filtroResumo, vinculoPorLinha, situacoesSel])
   const totais = useMemo(() => registros.reduce((t, r) => ({
     bruto: t.bruto + (r.valor_moeda_documento || 0), imposto: t.imposto + (r.imposto_retido || 0), liquido: t.liquido + (r.valor_moeda_local || 0),
   }), { bruto: 0, imposto: 0, liquido: 0 }), [registros])
@@ -224,7 +316,8 @@ function AbaExtrato({ dados, carregando, busca, setBusca, conc, carregandoConc }
     <>
       {/* Cards Lançamentos/Valor Bruto/Imposto Retido/Valor Líquido saíram daqui (22/11/2026): Valor Bruto e
           Imposto Retido foram para o resumo das duas abas; Lançamentos e Valor Líquido = Total do Arquivo. */}
-      <CaixaTabela busca={busca} setBusca={setBusca} placeholder="Buscar em qualquer coluna (referência, documento, chassi, O.S....)">
+      <CaixaTabela busca={busca} setBusca={setBusca} placeholder="Buscar em qualquer coluna (referência, documento, chassi, O.S....)"
+        extra={<SeletorSituacao opcoes={opcoesSituacao} selecionadas={situacoesSel} setSelecionadas={setSituacoesSel} />}>
         <table className="min-w-full">
           <thead className="bg-slate-50 sticky top-0 z-10">
             <tr>
@@ -354,7 +447,7 @@ function DetalheExtratoDoTitulo({ titulo, dados }) {
 // Todos os títulos da DAF: os que têm valor no extrato (com a situação da conciliação) e os em aberto
 // fora do extrato ("Fora do extrato"). Mesmas colunas/nomes da tabela do título da aba Extrato
 // + Atraso e Observação; cada linha expande e mostra as linhas do extrato que pagaram o título.
-function AbaTitulos({ conc, dados, carregando, busca, setBusca }) {
+function AbaTitulos({ conc, dados, carregando, busca, setBusca, filtroResumo = '' }) {
   const [abertos, setAbertos] = useState(() => new Set())
   const alternar = (k) => setAbertos(s => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n })
   const todos = useMemo(() => [
@@ -364,15 +457,17 @@ function AbaTitulos({ conc, dados, carregando, busca, setBusca }) {
   const todasEmpresas = useMemo(() => [...new Set(todos.map(t => t.empresa))].sort(), [todos])
   const [empresa, setEmpresa] = useState(null) // null = empresa do extrato
   const [tipo, setTipo] = useState('')
-  const [situacao, setSituacao] = useState('')
+  const [situacao, setSituacao] = useState(() => new Set()) // várias situações; vazio = todas
   const empresaSel = empresa ?? (conc?.empresas_no_extrato?.length === 1 ? conc.empresas_no_extrato[0] : '')
   const termo = semAcento(busca.trim())
   const tipos = useMemo(() => [...new Set(todos.map(t => t.tipo_titulo))].sort(), [todos])
   const situacoes = useMemo(() => [...new Set(todos.map(t => t.situacao))], [todos])
+  // Card "Valor Conciliado" do resumo: só os títulos com valor no extrato
   const lista = useMemo(() => todos.filter(t =>
-    (!empresaSel || t.empresa === empresaSel) && (!tipo || t.tipo_titulo === tipo) && (!situacao || t.situacao === situacao)
+    (filtroResumo !== 'conciliado' || t.linhas.length > 0) &&
+    (!empresaSel || t.empresa === empresaSel) && (!tipo || t.tipo_titulo === tipo) && (!situacao.size || situacao.has(t.situacao))
     && contem(t, ['lancamento', 'nro_titulo', 'os', 'chassi', 'nota_fiscal_servico', 'nota_fiscal', 'observacao', 'tipo_titulo', 'agente_cobrador', 'conta_gerencial', 'situacao'], termo)),
-  [todos, empresaSel, tipo, situacao, termo])
+  [todos, empresaSel, tipo, situacao, termo, filtroResumo])
 
   // ── Seleção para baixa: só títulos com valor no extrato (os "Fora do extrato" não têm o que baixar) ──
   const [selecionados, setSelecionados] = useState(() => new Set())
@@ -438,10 +533,13 @@ function AbaTitulos({ conc, dados, carregando, busca, setBusca }) {
   // depois de um clique.
   const [etapaBaixa, setEtapaBaixa] = useState(null) // null | 'txt' | 'pdf'
   const [msgBaixa, setMsgBaixa] = useState(null)
+  // Tipos de título selecionados que ainda não têm código no arquivo de baixa (CODIGO_BAIXA_POR_TIPO)
+  const tiposSemCodigo = [...new Set(titulosBaixa.filter(t => !codigoBaixaDoTipo(t.tipo_titulo)).map(t => t.tipo_titulo || '(sem tipo)'))]
   const salvarTxt = async () => {
     setErroBaixa(null)
     try {
-      const conteudo = gerarArquivoBaixaTitulos(titulosBaixa.map(t => ({ titulo_codigo: t.lancamento, titulo_saldo: t.pago_liquido })), dataBaixa)
+      if (tiposSemCodigo.length) return // bloqueado: a janela já mostra o aviso
+      const conteudo = gerarArquivoBaixaDaf(titulosBaixa.map(t => ({ lancamento: t.lancamento, tipo_titulo: t.tipo_titulo, valor_baixa: t.pago_liquido })), dataBaixa)
       const ok = await salvarArquivo(async () => new Blob([conteudo], { type: 'text/plain;charset=utf-8' }), `${nomeBase()}.txt`, 'Arquivo de baixa', 'text/plain', '.txt')
       if (ok) setEtapaBaixa('pdf')
     } catch (e) {
@@ -652,13 +750,24 @@ function AbaTitulos({ conc, dados, carregando, busca, setBusca }) {
               </p>
             )}
             <p className="text-[11px] text-slate-400 break-all">{nomeBase()}.{etapaBaixa === 'txt' ? 'txt' : 'pdf'}</p>
+            {etapaBaixa === 'txt' && tiposSemCodigo.length > 0 && (
+              <div className="bg-amber-50 border border-amber-200 text-amber-800 text-[11px] rounded-lg px-3 py-2 space-y-1">
+                <p className="font-semibold">Tipo de título sem código definido para o arquivo de baixa:</p>
+                <ul className="list-disc pl-4">
+                  {tiposSemCodigo.map(tp => (
+                    <li key={tp}><b>{tp}</b> — {titulosBaixa.filter(t => (t.tipo_titulo || '(sem tipo)') === tp).length} título(s) selecionado(s)</li>
+                  ))}
+                </ul>
+                <p>Cada tipo de título começa com um código no arquivo (ex.: GARANTIA FÁBRICA = 4). Informe o código desse tipo para configurarmos, ou desmarque esses títulos.</p>
+              </div>
+            )}
             {erroBaixa && <p className="text-[11px] text-red-600">{erroBaixa}</p>}
             <div className="flex justify-end gap-2 pt-1">
               <button onClick={() => { setEtapaBaixa(null); setErroBaixa(null) }} disabled={gerandoPdf}
                 className="text-[11px] px-3 py-1.5 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-50">
                 {etapaBaixa === 'txt' ? 'Cancelar' : 'Não salvar o recibo'}
               </button>
-              <button onClick={etapaBaixa === 'txt' ? salvarTxt : salvarPdf} disabled={gerandoPdf}
+              <button onClick={etapaBaixa === 'txt' ? salvarTxt : salvarPdf} disabled={gerandoPdf || (etapaBaixa === 'txt' && tiposSemCodigo.length > 0)}
                 className="flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-50">
                 {gerandoPdf && <RefreshCw className="h-3.5 w-3.5 animate-spin" />} Salvar
               </button>
@@ -668,10 +777,7 @@ function AbaTitulos({ conc, dados, carregando, busca, setBusca }) {
       )}
       <CaixaTabela busca={busca} setBusca={setBusca} placeholder="Buscar por lançamento, O.S., nota, observação..."
         extra={<>
-          <select value={situacao} onChange={e => setSituacao(e.target.value)} className="border border-slate-200 rounded-lg px-2 py-1 text-[11px] bg-white">
-            <option value="">Todas as situações</option>
-            {situacoes.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
+          <SeletorSituacao opcoes={situacoes} selecionadas={situacao} setSelecionadas={setSituacao} />
           <select value={empresaSel} onChange={e => setEmpresa(e.target.value)} className="border border-slate-200 rounded-lg px-2 py-1 text-[11px] bg-white">
             <option value="">Todas as empresas</option>
             {todasEmpresas.map(e => <option key={e} value={e}>{empresaCurta(e)}</option>)}
@@ -750,7 +856,9 @@ let salvarComJanela = true
 // Resumo da conciliação (aparece nas abas Extrato e Títulos), sempre sobre o arquivo inteiro (ignora a busca):
 // Total do Arquivo, Valor Conciliado (linhas que acharam título) e Falta Conciliar (linhas sem título ou ambíguas),
 // pelo Valor Líquido (Moeda Local), com o mesmo sinal do arquivo.
-function ResumoConciliacao({ dados, conc, carregandoConc }) {
+// filtro / setFiltro: '' (tudo) | 'conciliado' | 'falta' — filtra as tabelas das abas Extrato e Títulos.
+function ResumoConciliacao({ dados, conc, carregandoConc, filtro, setFiltro }) {
+  const clicar = (f) => setFiltro(atual => (atual === f ? '' : f))
   const registros = dados?.registros || []
   if (!registros.length) return null
   const liquido = (r) => r?.valor_moeda_local || 0
@@ -764,12 +872,218 @@ function ResumoConciliacao({ dados, conc, carregandoConc }) {
   const imposto = registros.reduce((s, r) => s + (r.imposto_retido || 0), 0)
   return (
     <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-      <Card icon={Receipt} titulo="Valor Bruto" valor={fmtMoeda(bruto)} cor="bg-indigo-100 text-indigo-600" />
-      <Card icon={Landmark} titulo="Imposto Retido" valor={fmtMoeda(imposto)} cor="bg-amber-100 text-amber-600" />
-      <Card icon={FileSpreadsheet} titulo="Valor Líquido" valor={fmtMoeda(total)} cor="bg-slate-100 text-slate-600" />
-      <Card icon={Check} titulo="Valor Conciliado" valor={espera ? '...' : fmtMoeda(conciliado)} cor="bg-emerald-100 text-emerald-600" />
-      <Card icon={Receipt} titulo="Falta Conciliar" valor={espera ? '...' : fmtMoeda(falta)} cor={!espera && qtdFalta ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-500'} />
+      {/* Valor Bruto / Imposto / Líquido = tudo (tira o filtro); Conciliado e Falta Conciliar filtram */}
+      <Card icon={Receipt} titulo="Valor Bruto" valor={fmtMoeda(bruto)} cor="bg-indigo-100 text-indigo-600" onClick={() => setFiltro('')} />
+      <Card icon={Landmark} titulo="Imposto Retido" valor={fmtMoeda(imposto)} cor="bg-amber-100 text-amber-600" onClick={() => setFiltro('')} />
+      <Card icon={FileSpreadsheet} titulo="Valor Líquido" valor={fmtMoeda(total)} cor="bg-slate-100 text-slate-600" onClick={() => setFiltro('')} />
+      <Card icon={Check} titulo="Valor Conciliado" valor={espera ? '...' : fmtMoeda(conciliado)} cor="bg-emerald-100 text-emerald-600"
+        ativo={filtro === 'conciliado'} onClick={() => clicar('conciliado')} />
+      <Card icon={Receipt} titulo="Falta Conciliar" valor={espera ? '...' : fmtMoeda(falta)} cor={!espera && qtdFalta ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-500'}
+        ativo={filtro === 'falta'} onClick={() => clicar('falta')} />
     </div>
+  )
+}
+
+// ── Aba Retorno da Baixa ────────────────────────────────────────────────────
+// Confere o arquivo de retorno do Dealer.net (RFN048 – Retorno Cobrança Eletrônica, .xlsx) com a conciliação:
+// por título (Titulo_Codigo = Lançamento), a linha "RECEBIMENTO DE TÍTULO" tem que ser o Valor Líquido que
+// exportamos; "GARANTIA RECEBIDA A MENOR" (− saldo) e "JUROS EMBUTIDOS" (+ saldo) são o ajuste que o sistema faz
+// para zerar o título e têm que bater com a Dif. Saldo (Saldo Título − Valor Líquido). Lido só no navegador,
+// nada é gravado (validado em 23/11/2026 com o retorno de 13/11: 16/16 títulos conferem).
+const COR_RETORNO = {
+  'Baixa confere': 'bg-emerald-100 text-emerald-700',
+  'Valor divergente': 'bg-red-100 text-red-700',
+  'Ajuste divergente': 'bg-amber-100 text-amber-700',
+  'Ocorrência': 'bg-orange-100 text-orange-700',
+  'Não está no retorno': 'bg-slate-100 text-slate-600',
+  'Fora do extrato': 'bg-violet-100 text-violet-700',
+}
+const DICA_RETORNO = {
+  'Baixa confere': 'Recebido no retorno = Valor Líquido exportado, e o ajuste (recebida a menor / juros) = Dif. Saldo.',
+  'Valor divergente': 'O valor recebido no retorno é diferente do Valor Líquido exportado.',
+  'Ajuste divergente': 'O ajuste do sistema (recebida a menor / juros) não bate com a Dif. Saldo da conciliação.',
+  'Ocorrência': 'O retorno trouxe uma ocorrência diferente de BAIXA EFETIVADA.',
+  'Não está no retorno': 'Título com valor no extrato que não aparece no retorno (não exportado ou não baixado).',
+  'Fora do extrato': 'Título baixado no retorno que não está na conciliação deste extrato.',
+}
+// "11/13/26" (Dealer.net em inglês, mês/dia) ou "13/11/2026" → "AAAA-MM-DD"
+function dataRetorno(v) {
+  if (v instanceof Date) return v.toISOString().slice(0, 10)
+  const m = String(v || '').trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/)
+  if (!m) return null
+  let [, a, b, ano] = m
+  if (ano.length === 2) ano = `20${ano}`
+  const [mes, dia] = +a > 12 ? [b, a] : [a, b]
+  return `${ano}-${String(mes).padStart(2, '0')}-${String(dia).padStart(2, '0')}`
+}
+const COLUNAS_RETORNO = ['Titulo_Codigo', 'TituloMov_Valor', 'TipoCreditoDebito_Descricao']
+function lerRetorno(buffer) {
+  const wb = XLSX.read(buffer, { type: 'array' })
+  const linhas = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { raw: false, defval: '' })
+  const faltando = COLUNAS_RETORNO.filter(c => !(c in (linhas[0] || {})))
+  if (!linhas.length || faltando.length) throw new Error(`O arquivo não parece ser o retorno RFN048 do Dealer.net. Colunas que faltam: ${faltando.join(', ') || 'nenhuma linha'}.`)
+  const num = (v) => { const n = Number(String(v).replace(/,/g, '')); return Number.isFinite(n) ? n : 0 }
+  return linhas.filter(l => String(l.Titulo_Codigo).trim()).map(l => ({
+    lancamento: String(l.Titulo_Codigo).trim(),
+    numero_parcela: String(l.Titulo_NumeroParcela || '').trim(),
+    data_pagamento: dataRetorno(l.Titulo_DataPagamento),
+    valor: num(l.TituloMov_Valor),
+    tipo: String(l.TipoCreditoDebito_Descricao || '').trim(),
+    ocorrencia: String(l.OcorrenciaBancaria_Descricao || '').trim(),
+    cliente: String(l.Pessoa_Nome || '').trim(),
+  }))
+}
+
+function AbaRetorno({ conc, retorno, setRetorno }) {
+  const [abertos, setAbertos] = useState(() => new Set())
+  const [situacao, setSituacao] = useState('')
+  const alternar = (k) => setAbertos(s => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n })
+
+  const resultado = useMemo(() => {
+    if (!retorno) return []
+    const r2 = (n) => Math.round(n * 100) / 100
+    const porTit = new Map()
+    for (const l of retorno.linhas) {
+      if (!porTit.has(l.lancamento)) porTit.set(l.lancamento, [])
+      porTit.get(l.lancamento).push(l)
+    }
+    const titulos = new Map((conc?.conciliacao || []).map(t => [t.lancamento, t]))
+    const out = []
+    const montar = (lanc, t, ls) => {
+      const recebido = r2(ls.filter(l => /RECEBIMENTO/i.test(l.tipo)).reduce((s, l) => s + l.valor, 0))
+      const aMenor = r2(ls.filter(l => /A MENOR/i.test(l.tipo)).reduce((s, l) => s + l.valor, 0))
+      const juros = r2(ls.filter(l => /JUROS/i.test(l.tipo)).reduce((s, l) => s + l.valor, 0))
+      const ajuste = r2(aMenor - juros) // + baixa a menor (saldo maior que o pago) / − juros (pago acima do saldo)
+      const ocorrencias = [...new Set(ls.map(l => l.ocorrencia).filter(Boolean))]
+      const exportado = t ? t.pago_liquido : null
+      const difRecebido = t ? r2(recebido - exportado) : null
+      const difAjuste = t ? r2(ajuste - t.dif_saldo) : null
+      let sit
+      if (!t) sit = 'Fora do extrato'
+      else if (!ls.length) sit = 'Não está no retorno'
+      else if (ocorrencias.some(o => !/BAIXA EFETIVADA/i.test(o))) sit = 'Ocorrência'
+      else if (Math.abs(difRecebido) > 0.05) sit = 'Valor divergente'
+      else if (Math.abs(difAjuste) > 0.05) sit = 'Ajuste divergente'
+      else sit = 'Baixa confere'
+      out.push({
+        lancamento: lanc, titulo: t, linhas: ls, recebido, aMenor, juros, ajuste, ocorrencias, exportado, difRecebido, difAjuste, situacao: sit,
+        nro_titulo: t?.nro_titulo || ls[0]?.numero_parcela || '', data_pagamento: ls[0]?.data_pagamento || null,
+      })
+    }
+    for (const [lanc, ls] of porTit) montar(lanc, titulos.get(lanc), ls)
+    for (const [lanc, t] of titulos) if (!porTit.has(lanc)) montar(lanc, t, [])
+    const ordem = ['Valor divergente', 'Ajuste divergente', 'Ocorrência', 'Fora do extrato', 'Não está no retorno', 'Baixa confere']
+    return out.sort((a, b) => ordem.indexOf(a.situacao) - ordem.indexOf(b.situacao) || a.lancamento.localeCompare(b.lancamento, undefined, { numeric: true }))
+  }, [retorno, conc])
+
+  // situacao: '' (tudo) | uma situação | 'no_retorno' (card Títulos no Retorno) | 'divergente' (card Com Divergência)
+  const lista = !situacao ? resultado
+    : situacao === 'no_retorno' ? resultado.filter(r => r.linhas.length)
+    : situacao === 'divergente' ? resultado.filter(r => r.situacao !== 'Baixa confere')
+    : resultado.filter(r => r.situacao === situacao)
+  const clicarCard = (s) => setSituacao(atual => (atual === s ? '' : s))
+  const contar = (s) => resultado.filter(r => r.situacao === s).length
+  const totalRecebido = resultado.reduce((s, r) => s + r.recebido, 0)
+  const totalExportado = resultado.filter(r => r.linhas.length && r.titulo).reduce((s, r) => s + r.exportado, 0)
+  const divergentes = resultado.filter(r => r.situacao !== 'Baixa confere').length
+  const BadgeRet = ({ s }) => <span title={DICA_RETORNO[s] || ''} className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap ${COR_RETORNO[s] || 'bg-slate-100 text-slate-600'}`}>{s}</span>
+
+  return (
+    <>
+      {/* Importação do retorno fica só na engrenagem (pedido do usuário): aqui só o nome do arquivo lido */}
+      {retorno && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[11px] text-slate-500">{retorno.nome} · {retorno.linhas.length} linha(s)</span>
+          <button onClick={() => setRetorno(null)} className="text-[11px] text-slate-500 hover:text-slate-800 ml-auto">Limpar retorno</button>
+        </div>
+      )}
+      {!retorno && (
+        <div className="bg-slate-50 border border-slate-200 text-slate-600 text-[11px] rounded-lg px-3 py-3">
+          Depois de importar o arquivo de baixa no Dealer.net, importe o retorno pela <b>engrenagem ⚙ › Importar retorno da baixa (RFN048)</b>
+          para conferir se o que foi baixado é o mesmo que foi conciliado.
+        </div>
+      )}
+
+      {retorno && (
+        <>
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+            <Card icon={FileSpreadsheet} titulo="Títulos no Retorno" valor={resultado.filter(r => r.linhas.length).length} cor="bg-slate-100 text-slate-600"
+              ativo={situacao === 'no_retorno'} onClick={() => clicarCard('no_retorno')} />
+            <Card icon={Check} titulo="Baixa Confere" valor={contar('Baixa confere')} cor="bg-emerald-100 text-emerald-600"
+              ativo={situacao === 'Baixa confere'} onClick={() => clicarCard('Baixa confere')} />
+            <Card icon={Receipt} titulo="Com Divergência" valor={divergentes} cor={divergentes ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-500'}
+              ativo={situacao === 'divergente'} onClick={() => clicarCard('divergente')} />
+            <Card icon={Landmark} titulo="Valor Líquido (Exportado)" valor={fmtMoeda(totalExportado)} cor="bg-indigo-100 text-indigo-600" onClick={() => setSituacao('')} />
+            <Card icon={Receipt} titulo="Recebido (Retorno)" valor={fmtMoeda(totalRecebido)} cor={Math.abs(totalRecebido - totalExportado) > 0.05 ? 'bg-red-100 text-red-600' : 'bg-emerald-100 text-emerald-600'}
+              onClick={() => setSituacao('')} />
+          </div>
+
+          <div className="bg-white border border-slate-200 rounded-xl shadow-sm">
+            <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-b border-slate-200">
+              <select value={['no_retorno', 'divergente'].includes(situacao) ? '' : situacao} onChange={e => setSituacao(e.target.value)} className="border border-slate-200 rounded-lg px-2 py-1 text-[11px] bg-white">
+                <option value="">Todas as situações</option>
+                {[...new Set(resultado.map(r => r.situacao))].map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+            <div className="overflow-auto max-h-[calc(100vh-340px)]">
+              <table className="min-w-full">
+                <thead className="bg-slate-50 sticky top-0 z-10">
+                  <tr>
+                    <Th className="w-6" /><Th>Situação</Th><Th>Lançamento</Th><Th>Nº Título</Th><Th>Tipo de Título</Th><Th>O.S.</Th><Th>Chassi</Th><Th>Data Pagto</Th>
+                    <Th className="text-right">Valor Líquido (Exportado)</Th><Th className="text-right">Recebido (Retorno)</Th><Th className="text-right">Dif. Recebido</Th>
+                    <Th className="text-right">Saldo Título</Th><Th className="text-right">Dif. Saldo</Th><Th className="text-right">Ajuste (Retorno)</Th><Th>Ocorrência</Th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {lista.map(r => {
+                    const t = r.titulo
+                    const aberto = abertos.has(r.lancamento)
+                    return (
+                      <React.Fragment key={r.lancamento}>
+                        <tr className="hover:bg-slate-50 cursor-pointer" onClick={() => alternar(r.lancamento)}>
+                          <Td>{aberto ? <ChevronDown className="h-3.5 w-3.5 text-slate-400" /> : <ChevronRight className="h-3.5 w-3.5 text-slate-400" />}</Td>
+                          <Td><BadgeRet s={r.situacao} /></Td>
+                          <Td className="font-semibold text-slate-900">{r.lancamento}</Td><Td>{r.nro_titulo}</Td><Td>{t?.tipo_titulo}</Td><Td>{t?.os}</Td>
+                          <Td className="font-mono">{t?.chassi}</Td><Td>{fmtData(r.data_pagamento)}</Td>
+                          <Td className="text-right tabular-nums">{t ? fmtValor(r.exportado) : ''}</Td>
+                          <Td className="text-right tabular-nums">{r.linhas.length ? fmtValor(r.recebido) : ''}{t && r.linhas.length > 0 && <Confere dif={r.difRecebido} rotulo="Recebido no retorno" ref_="Valor Líquido exportado" />}</Td>
+                          {t && r.linhas.length ? <TdV v={r.difRecebido} destaque /> : <Td />}
+                          <Td className="text-right tabular-nums">{t ? fmtValor(t.saldo) : ''}</Td>
+                          <Td className="text-right tabular-nums">{t ? fmtValor(t.dif_saldo) : ''}</Td>
+                          <Td className="text-right tabular-nums">{r.linhas.length ? fmtValor(r.ajuste) : ''}{t && r.linhas.length > 0 && <Confere dif={r.difAjuste} rotulo="Ajuste do retorno" ref_="Dif. Saldo" />}</Td>
+                          <Td>{r.ocorrencias.join(', ')}</Td>
+                        </tr>
+                        {aberto && (
+                          <tr className="bg-slate-50/60">
+                            <td />
+                            <td colSpan={14} className="px-3 py-2">
+                              {r.linhas.length ? (
+                                <table className="min-w-full bg-slate-50 border border-slate-300 rounded-lg">
+                                  <thead className="bg-slate-200"><tr><Th>Lançamento</Th><Th>Nº Título</Th><Th>Data Pagto</Th><Th>Tipo do Movimento</Th><Th className="text-right">Valor</Th><Th>Ocorrência</Th></tr></thead>
+                                  <tbody className="divide-y divide-slate-200">
+                                    {r.linhas.map((l, i) => (
+                                      <tr key={i}><Td>{l.lancamento}</Td><Td>{l.numero_parcela}</Td><Td>{fmtData(l.data_pagamento)}</Td><Td>{l.tipo}</Td><TdV v={l.valor} /><Td>{l.ocorrencia}</Td></tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              ) : <p className="text-[11px] text-slate-400">Este título não aparece no arquivo de retorno.</p>}
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <p className="text-[10px] text-slate-400">
+            Recebido = linhas "RECEBIMENTO DE TÍTULO"; Ajuste = "GARANTIA RECEBIDA A MENOR" − "JUROS EMBUTIDOS", que tem que ser igual à Dif. Saldo
+            (Saldo Título − Valor Líquido). Tolerância de R$ 0,05. O retorno é lido só nesta tela, nada é gravado.
+          </p>
+        </>
+      )}
+    </>
   )
 }
 
@@ -783,6 +1097,8 @@ export default function ExtratoPagamentoDaf() {
   const [carregandoConc, setCarregandoConc] = useState(false)
   const [erro, setErro] = useState(null)
   const [busca, setBusca] = useState('')
+  const [retorno, setRetorno] = useState(null) // arquivo de retorno RFN048 lido na aba Retorno da Baixa (só no navegador)
+  const [filtroResumo, setFiltroResumo] = useState('') // card clicado no resumo: '' | 'conciliado' | 'falta'
 
   const buscarJson = async (caminho, nome, refresh) => {
     const q = new URLSearchParams()
@@ -826,7 +1142,24 @@ export default function ExtratoPagamentoDaf() {
   const [avisoImport, setAvisoImport] = useState(null)
   const [versao, setVersao] = useState(0) // muda a cada importação → recria as abas (zera seleção/expansão)
   const inputArquivo = useRef(null)
+  const inputRetorno = useRef(null)
   const menuRef = useRef(null)
+
+  // Engrenagem › Importar retorno da baixa (RFN048): lê o arquivo no navegador e abre a aba Retorno da Baixa
+  // já com a conferência (recebido × Valor Líquido exportado; ajuste × Dif. Saldo).
+  const importarRetorno = async (file) => {
+    if (!file) return
+    setErro(null); setAvisoImport(null)
+    try {
+      const linhas = lerRetorno(new Uint8Array(await file.arrayBuffer()))
+      setRetorno({ nome: file.name, linhas })
+      setAba('retorno')
+    } catch (e) {
+      setErro(`Retorno: ${e.message || String(e)}`)
+    } finally {
+      if (inputRetorno.current) inputRetorno.current.value = ''
+    }
+  }
   useEffect(() => {
     if (!menuAberto) return
     const fechar = (e) => { if (menuRef.current && !menuRef.current.contains(e.target)) setMenuAberto(false) }
@@ -851,7 +1184,7 @@ export default function ExtratoPagamentoDaf() {
       const j = await r.json()
       if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`)
       // Limpa tudo e concilia de novo com o arquivo importado
-      setDados(null); setConc(null); setBusca(''); setVersao(v => v + 1); setAba('extrato')
+      setDados(null); setConc(null); setBusca(''); setRetorno(null); setFiltroResumo(''); setVersao(v => v + 1); setAba('extrato')
       await carregar(j.arquivo, true)
       setAvisoImport(`Arquivo ${j.arquivo} importado (${j.lancamentos} lançamento(s)) e conciliação refeita.`)
     } catch (e) {
@@ -898,11 +1231,16 @@ export default function ExtratoPagamentoDaf() {
               <div className="absolute right-0 mt-1 w-56 bg-white border border-slate-200 rounded-lg shadow-lg z-30 py-1">
                 <button onClick={() => { setMenuAberto(false); inputArquivo.current?.click() }}
                   className="w-full flex items-center gap-2 px-3 py-2 text-[11px] text-slate-700 hover:bg-slate-50 text-left">
-                  <Upload className="h-3.5 w-3.5 text-slate-500" /> Importar arquivo
+                  <Upload className="h-3.5 w-3.5 text-slate-500" /> Importar arquivo Account-
+                </button>
+                <button onClick={() => { setMenuAberto(false); inputRetorno.current?.click() }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-[11px] text-slate-700 hover:bg-slate-50 text-left">
+                  <ClipboardCheck className="h-3.5 w-3.5 text-slate-500" /> Importar retorno da baixa (RFN048)
                 </button>
               </div>
             )}
             <input ref={inputArquivo} type="file" accept=".xlsx,.xls" className="hidden" onChange={e => importar(e.target.files?.[0])} />
+            <input ref={inputRetorno} type="file" accept=".xlsx,.xls" className="hidden" onChange={e => importarRetorno(e.target.files?.[0])} />
           </div>
         </div>
       </div>
@@ -933,9 +1271,16 @@ export default function ExtratoPagamentoDaf() {
         <div className="bg-slate-50 border border-slate-200 text-slate-600 text-[11px] rounded-lg px-3 py-2">Nenhuma planilha encontrada na pasta do SharePoint.</div>
       )}
 
-      <ResumoConciliacao dados={dados} conc={conc} carregandoConc={carregandoConc} />
-      {aba === 'extrato' && <AbaExtrato key={`ext-${versao}`} dados={dados} carregando={carregando} busca={busca} setBusca={setBusca} conc={conc} carregandoConc={carregandoConc} />}
-      {aba === 'aberto' && <AbaTitulos key={`tit-${versao}`} conc={conc} dados={dados} carregando={carregandoConc} busca={busca} setBusca={setBusca} />}
+      <ResumoConciliacao dados={dados} conc={conc} carregandoConc={carregandoConc} filtro={filtroResumo}
+        setFiltro={(f) => {
+          // "Falta Conciliar" são linhas do extrato sem título: na aba Títulos não há o que mostrar, então vai para Extrato
+          const novo = typeof f === 'function' ? f(filtroResumo) : f
+          setFiltroResumo(novo)
+          if (novo === 'falta' && aba !== 'extrato') setAba('extrato')
+        }} />
+      {aba === 'extrato' && <AbaExtrato key={`ext-${versao}`} dados={dados} carregando={carregando} busca={busca} setBusca={setBusca} conc={conc} carregandoConc={carregandoConc} filtroResumo={filtroResumo} />}
+      {aba === 'aberto' && <AbaTitulos key={`tit-${versao}`} conc={conc} dados={dados} carregando={carregandoConc} busca={busca} setBusca={setBusca} filtroResumo={filtroResumo} />}
+      {aba === 'retorno' && <AbaRetorno key={`ret-${versao}`} conc={conc} retorno={retorno} setRetorno={setRetorno} />}
     </div>
   )
 }
