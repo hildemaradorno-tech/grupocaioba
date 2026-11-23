@@ -1,22 +1,11 @@
-// Extrato de Pagamento DAF — lê as planilhas que a DAF envia (exportação do SAP, ex.: Account-303920.xlsx)
-// gravadas no SharePoint, biblioteca BD, pasta "Banco de Dados - DAF - Extrato de Pagamentos".
+// Extrato de Pagamento DAF — lê a planilha que a DAF envia (exportação do SAP, ex.: Account-303920.xlsx).
+// Desde 23/11/2026 (pedido do usuário) o extrato é lido SÓ pela importação na tela: o arquivo vem no POST,
+// é lido e conciliado na hora e devolvido para a tela. Nada é gravado (nem SharePoint, nem Supabase) —
+// "sempre que importar, não teremos banco de dados". Só o RFN003 (títulos a receber) continua vindo do SharePoint.
 // Planilha com 15 colunas em inglês (Document Type, Account, Reference...). Valores negativos = crédito
 // pago à concessionária. A última linha é o total por Clearing Document (sem Document Type/Number): ignorada.
-// Leitura ao vivo (sem tabela no Supabase), cache de 5 min por arquivo.
-import axios from 'axios'
 import XLSX from 'xlsx'
-import { graphGet, graphPutArquivo } from './graphClient.js'
 import { getTitulosAReceber, clearFinanceiroCache } from './sharepointFinanceiro.js'
-
-const PASTA = '/Banco de Dados - DAF - Extrato de Pagamentos'
-const TTL_MS = 5 * 60 * 1000
-const cache = new Map() // nome do arquivo → { em, dados }
-
-const driveId = () => {
-  const id = process.env.SHAREPOINT_DRIVE_ID
-  if (!id) throw new Error('SHAREPOINT_DRIVE_ID não configurado no ambiente')
-  return id
-}
 
 // Cabeçalho do SAP → campo + rótulo em português (a ordem é a da planilha)
 export const COLUNAS = [
@@ -82,49 +71,12 @@ export function parseExtrato(buffer) {
   return { registros, colunas_nao_encontradas: COLUNAS.filter((_, k) => idx[k] < 0).map(([orig]) => orig) }
 }
 
-async function listarArquivos() {
-  const r = await graphGet(`/drives/${driveId()}/root:${encodeURI(PASTA)}:/children?$top=500`)
-  return (r.value || [])
-    .filter(i => i.file && /\.xlsx?$/i.test(i.name))
-    .map(i => ({ id: i.id, nome: i.name, modificado_em: i.lastModifiedDateTime, tamanho: i.size }))
-    .sort((a, b) => a.nome.localeCompare(b.nome))
-}
-
-// arquivo: nome do arquivo na pasta (padrão: Account-303920.xlsx, ou o primeiro que existir)
-export async function getExtratoDaf({ arquivo, refresh = false } = {}) {
-  const arquivos = await listarArquivos()
-  const escolhido = arquivos.find(a => a.nome === arquivo)
-    || arquivos.find(a => a.nome.toLowerCase().startsWith('account-303920'))
-    || arquivos[0]
-  if (!escolhido) return { arquivos, arquivo: null, colunas: colunasTela(), registros: [] }
-
-  const c = cache.get(escolhido.nome)
-  if (!refresh && c && c.modificado_em === escolhido.modificado_em && Date.now() - c.em < TTL_MS) return { ...c.dados, arquivos }
-
-  const meta = await graphGet(`/drives/${driveId()}/items/${escolhido.id}`)
-  const url = meta['@microsoft.graph.downloadUrl']
-  if (!url) throw new Error(`Não foi possível baixar ${escolhido.nome} do SharePoint`)
-  const bin = await axios.get(url, { responseType: 'arraybuffer', timeout: 60_000 })
-  const { registros, colunas_nao_encontradas } = parseExtrato(Buffer.from(bin.data))
-  const dados = {
-    arquivo: escolhido,
-    colunas: colunasTela(),
-    colunas_nao_encontradas,
-    registros,
-    lido_em: new Date().toISOString(),
-  }
-  cache.set(escolhido.nome, { em: Date.now(), modificado_em: escolhido.modificado_em, dados })
-  return { ...dados, arquivos }
-}
-
-// Importação manual (engrenagem da tela → "Importar arquivo"): o usuário envia a planilha do SAP
-// (ex.: Account-303920.xlsx) e ela é gravada na pasta do SharePoint com o nome enviado — se já existir
-// um arquivo com esse nome, ele é SUBSTITUÍDO. Assim a tela continua lendo sempre da pasta.
-// Antes de gravar, confere se é mesmo o extrato (colunas do SAP) e se tem ao menos 1 lançamento.
+// Importação (engrenagem da tela → "Importar arquivo Account-"): confere se é mesmo o extrato (colunas do SAP,
+// ao menos 1 lançamento), lê e concilia na hora. Devolve { extrato, conciliacao } para a tela; nada é gravado.
 const COLUNAS_OBRIGATORIAS_IMPORT = ['Document Type', 'Reference', 'Document Number', 'Amount in local currency', 'Text']
-export async function importarExtratoDaf(nomeEnviado, buffer) {
+export async function importarExtratoDaf(nomeEnviado, buffer, { refresh = false } = {}) {
   const nome = String(nomeEnviado || '').split(/[\\/]/).pop().trim()
-  if (!/\.xlsx?$/i.test(nome)) throw Object.assign(new Error('Envie a planilha do extrato em Excel (.xlsx).'), { status: 400 })
+  if (!/\.xlsx?$/i.test(nome)) throw Object.assign(new Error('Envie a planilha do extrato em Excel (.xlsx ou .xls).'), { status: 400 })
   let cabecalho
   try {
     const wb = XLSX.read(buffer, { type: 'buffer' })
@@ -136,21 +88,19 @@ export async function importarExtratoDaf(nomeEnviado, buffer) {
   if (faltando.length) {
     throw Object.assign(new Error(`O arquivo não parece ser o extrato de pagamento da DAF (SAP). Colunas que faltam: ${faltando.join(', ')}.`), { status: 400 })
   }
-  const { registros } = parseExtrato(buffer)
+  const { registros, colunas_nao_encontradas } = parseExtrato(buffer)
   if (!registros.length) throw Object.assign(new Error('O arquivo não tem nenhum lançamento.'), { status: 400 })
 
-  try {
-    const tipo = /\.xls$/i.test(nome) ? 'application/vnd.ms-excel' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    await graphPutArquivo(`${PASTA}/${nome}`, buffer, tipo)
-  } catch (e) {
-    if (e.response?.status === 403 || e.response?.status === 401) {
-      throw Object.assign(new Error('O sistema não tem permissão para gravar no SharePoint. O administrador do Azure precisa liberar ao aplicativo a permissão Files.ReadWrite.All (ou Sites.ReadWrite.All).'), { status: 403 })
-    }
-    throw e
+  const extrato = {
+    arquivo: { nome, importado_em: new Date().toISOString() },
+    colunas: colunasTela(),
+    colunas_nao_encontradas,
+    registros,
+    lido_em: new Date().toISOString(),
   }
-  console.log(`[ExtratoDaf] importado pela tela: ${PASTA}/${nome} (${registros.length} lançamento(s))`)
-  cache.delete(nome)
-  return { arquivo: nome, lancamentos: registros.length }
+  const conciliacao = await getConciliacaoDaf({ extrato, refresh })
+  console.log(`[ExtratoDaf] importado pela tela: ${nome} (${registros.length} lançamento(s)) — só leitura, nada gravado`)
+  return { extrato, conciliacao }
 }
 
 // ── Conciliação extrato × títulos a receber da DAF (RFN003 Analítico, mesma leitura do Garantias DAF) ─────
@@ -235,9 +185,10 @@ const linhaResumo = (l) => ({
   retido: l.imposto_retido, liquido: l.valor_moeda_local, vinculo: l.vinculo, motivo: l.motivo, chaves: l.chaves || [], candidatos: l.candidatos || [],
 })
 
-export async function getConciliacaoDaf({ arquivo, refresh = false } = {}) {
+// extrato = o que importarExtratoDaf acabou de ler do arquivo enviado ({ arquivo, registros, ... })
+export async function getConciliacaoDaf({ extrato, refresh = false } = {}) {
   if (refresh) clearFinanceiroCache()
-  const [extrato, rfn] = await Promise.all([getExtratoDaf({ arquivo, refresh }), getTitulosAReceber()])
+  const rfn = await getTitulosAReceber()
   const titulos = (rfn.rows || []).filter(CLIENTE_DAF)
   const idx = {
     nfs: indexar(titulos, t => soDigitos(String(t.nota_fiscal_servico).split('/')[1])),

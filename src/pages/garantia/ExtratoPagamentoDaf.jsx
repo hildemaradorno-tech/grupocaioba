@@ -1092,51 +1092,52 @@ export default function ExtratoPagamentoDaf() {
   const [aba, setAba] = useState('extrato')
   const [dados, setDados] = useState(null)
   const [conc, setConc] = useState(null)
-  const [arquivo, setArquivo] = useState('')
-  const [carregando, setCarregando] = useState(true)
-  const [carregandoConc, setCarregandoConc] = useState(false)
+  // Desde 23/11/2026 o extrato é lido SÓ pela importação (pedido do usuário): nada é lido nem gravado na pasta do
+  // SharePoint. O arquivo importado fica guardado só nesta aba do navegador (sessionStorage) para o Atualizar e para
+  // um F5 não perder a tela; fechar a aba (ou importar outro) descarta.
+  const [arquivoAtual, setArquivoAtual] = useState(null) // { nome, base64 }
+  const [carregando, setCarregando] = useState(false)
+  const carregandoConc = carregando
   const [erro, setErro] = useState(null)
   const [busca, setBusca] = useState('')
   const [retorno, setRetorno] = useState(null) // arquivo de retorno RFN048 lido na aba Retorno da Baixa (só no navegador)
   const [filtroResumo, setFiltroResumo] = useState('') // card clicado no resumo: '' | 'conciliado' | 'falta'
+  const CHAVE_SESSAO = 'extratoDaf.arquivo'
 
-  const buscarJson = async (caminho, nome, refresh) => {
-    const q = new URLSearchParams()
-    if (nome) q.set('arquivo', nome)
-    if (refresh) q.set('refresh', '1')
-    const r = await fetch(`${BACKEND_URL}/api/extrato-daf${caminho}?${q}`)
+  // Envia o arquivo ao backend, que lê e concilia na hora (refresh = relê o RFN003 sem cache)
+  const enviar = async ({ nome, base64 }, refresh) => {
+    const r = await fetch(`${BACKEND_URL}/api/extrato-daf/importar`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nome, conteudoBase64: base64, refresh }),
+    })
     const j = await r.json()
-    if (!r.ok) throw new Error(j.error === 'sharepoint_not_configured' ? 'SharePoint não configurado no backend.' : (j.error || `HTTP ${r.status}`))
+    if (!r.ok) throw new Error(j.error === 'sharepoint_not_configured' ? 'SharePoint não configurado no backend (RFN003).' : (j.error || `HTTP ${r.status}`))
+    // Moeda Doc. e Moeda Local não aparecem em nenhuma aba nem no PDF (o backend já não manda; garantia extra)
+    j.extrato.colunas = (j.extrato.colunas || []).filter(c => !['moeda_documento', 'moeda_local'].includes(c.campo))
+    setDados(j.extrato)
+    setConc(j.conciliacao)
     return j
   }
-  const carregarConc = async (nome, refresh = false) => {
-    setCarregandoConc(true)
-    try { setConc(await buscarJson('/conciliacao', nome, refresh)) }
-    catch (e) { setErro(`Conciliação: ${e.message}`) }
-    finally { setCarregandoConc(false) }
-  }
-  const carregar = async (nome = arquivo, refresh = false) => {
+  // Atualizar: refaz a conciliação do arquivo já importado, relendo o RFN003
+  const carregar = async () => {
+    if (!arquivoAtual) return
     setCarregando(true); setErro(null)
-    try {
-      const j = await buscarJson('', nome, refresh)
-      // Moeda Doc. e Moeda Local não aparecem em nenhuma aba nem no PDF (o backend já não manda; garantia extra)
-      j.colunas = (j.colunas || []).filter(c => !['moeda_documento', 'moeda_local'].includes(c.campo))
-      setDados(j)
-      setArquivo(j.arquivo?.nome || '')
-      if (j.arquivo) carregarConc(j.arquivo.nome, refresh)
-      else setConc(null)
-    } catch (e) {
-      setErro(e.message)
-    } finally {
-      setCarregando(false)
-    }
+    try { await enviar(arquivoAtual, true) }
+    catch (e) { setErro(e.message) }
+    finally { setCarregando(false) }
   }
-  useEffect(() => { carregar() }, [])
+  // F5: recupera o último arquivo importado nesta aba do navegador
+  useEffect(() => {
+    let salvo = null
+    try { salvo = JSON.parse(sessionStorage.getItem(CHAVE_SESSAO) || 'null') } catch { salvo = null }
+    if (!salvo?.base64) return
+    setArquivoAtual(salvo); setCarregando(true)
+    enviar(salvo, false).catch(e => setErro(e.message)).finally(() => setCarregando(false))
+  }, [])
 
-  // ── Engrenagem › Importar arquivo ─────────────────────────────────────────
-  // Grava a planilha do SAP na pasta do SharePoint (substitui a de mesmo nome) e, a pedido do usuário,
-  // LIMPA a tela inteira (busca, seleção, linhas abertas, conciliação anterior) e refaz a conciliação do
-  // zero com o arquivo importado — relendo também o RFN003 (refresh).
+  // ── Engrenagem › Importar arquivo Account- ────────────────────────────────
+  // Lê a planilha do SAP (nada é gravado) e, a pedido do usuário, LIMPA a tela inteira (busca, seleção, linhas
+  // abertas, retorno, conciliação anterior) e concilia do zero com o arquivo importado — relendo o RFN003.
   const [menuAberto, setMenuAberto] = useState(false)
   const [importando, setImportando] = useState(false)
   const [avisoImport, setAvisoImport] = useState(null)
@@ -1177,16 +1178,13 @@ export default function ExtratoPagamentoDaf() {
         fr.onerror = () => reject(new Error('Não foi possível ler o arquivo.'))
         fr.readAsDataURL(file)
       })
-      const r = await fetch(`${BACKEND_URL}/api/extrato-daf/importar`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nome: file.name, conteudoBase64: base64 }),
-      })
-      const j = await r.json()
-      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`)
-      // Limpa tudo e concilia de novo com o arquivo importado
+      const novo = { nome: file.name, base64 }
+      // Limpa tudo e concilia do zero com o arquivo importado
       setDados(null); setConc(null); setBusca(''); setRetorno(null); setFiltroResumo(''); setVersao(v => v + 1); setAba('extrato')
-      await carregar(j.arquivo, true)
-      setAvisoImport(`Arquivo ${j.arquivo} importado (${j.lancamentos} lançamento(s)) e conciliação refeita.`)
+      const j = await enviar(novo, true)
+      setArquivoAtual(novo)
+      try { sessionStorage.setItem(CHAVE_SESSAO, JSON.stringify(novo)) } catch { /* sem sessionStorage: só não recupera no F5 */ }
+      setAvisoImport(`Arquivo ${file.name} importado (${j.extrato.registros.length} lançamento(s)) e conciliado.`)
     } catch (e) {
       setErro(`Importação: ${e.message}`)
     } finally {
@@ -1201,26 +1199,20 @@ export default function ExtratoPagamentoDaf() {
         <div>
           <h1 className="text-lg font-bold text-slate-900 tracking-tight">Extrato de Pagamento DAF</h1>
           <p className="text-[11px] text-slate-500">
-            SharePoint › Banco de Dados - DAF - Extrato de Pagamentos
-            {dados?.arquivo && <> · extrato de {fmtDataHora(dados.arquivo.modificado_em)}</>}
+            {dados?.arquivo ? <>Arquivo importado: {dados.arquivo.nome}</> : 'Nenhum extrato importado'}
             {conc?.rfn003_atualizado_em && <> · RFN003 de {fmtDataHora(conc.rfn003_atualizado_em)}</>}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {(dados?.arquivos?.length || 0) > 1 && (
-            <select value={arquivo} onChange={e => carregar(e.target.value)} className="border border-slate-200 rounded-lg px-2 py-1.5 text-[11px] bg-white">
-              {dados.arquivos.map(a => <option key={a.nome} value={a.nome}>{a.nome}</option>)}
-            </select>
-          )}
-          {/* Última atualização = quando o extrato foi lido do SharePoint pela última vez (lido_em do backend) */}
+          {/* Última atualização = quando o extrato importado foi conciliado pela última vez */}
           {dados?.lido_em && (
-            <span className="text-[11px] text-slate-500 whitespace-nowrap" title="Última vez que o extrato e a conciliação foram lidos">
+            <span className="text-[11px] text-slate-500 whitespace-nowrap" title="Última vez que o extrato importado foi conciliado com o RFN003">
               Atualizado em {fmtDataHora(dados.lido_em)}
             </span>
           )}
-          <button onClick={() => carregar(arquivo, true)} disabled={carregando || carregandoConc} title="Atualizar" aria-label="Atualizar"
+          <button onClick={carregar} disabled={!arquivoAtual || carregando || importando} title={arquivoAtual ? 'Atualizar (refaz a conciliação relendo o RFN003)' : 'Importe um extrato primeiro'} aria-label="Atualizar"
             className="flex items-center justify-center p-1.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50">
-            <RefreshCw className={`h-4 w-4 ${carregando || carregandoConc ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`h-4 w-4 ${carregando ? 'animate-spin' : ''}`} />
           </button>
           <div className="relative" ref={menuRef}>
             <button onClick={() => setMenuAberto(m => !m)} disabled={importando} title="Configurações"
@@ -1231,7 +1223,7 @@ export default function ExtratoPagamentoDaf() {
               <div className="absolute right-0 mt-1 w-56 bg-white border border-slate-200 rounded-lg shadow-lg z-30 py-1">
                 <button onClick={() => { setMenuAberto(false); inputArquivo.current?.click() }}
                   className="w-full flex items-center gap-2 px-3 py-2 text-[11px] text-slate-700 hover:bg-slate-50 text-left">
-                  <Upload className="h-3.5 w-3.5 text-slate-500" /> Importar arquivo Account-
+                  <Upload className="h-3.5 w-3.5 text-slate-500" /> Importar arquivo Account
                 </button>
                 <button onClick={() => { setMenuAberto(false); inputRetorno.current?.click() }}
                   className="w-full flex items-center gap-2 px-3 py-2 text-[11px] text-slate-700 hover:bg-slate-50 text-left">
@@ -1267,10 +1259,14 @@ export default function ExtratoPagamentoDaf() {
           Colunas não encontradas na planilha: {dados.colunas_nao_encontradas.join(', ')}. O layout do arquivo pode ter mudado.
         </div>
       )}
-      {dados && !dados.arquivo && !erro && (
-        <div className="bg-slate-50 border border-slate-200 text-slate-600 text-[11px] rounded-lg px-3 py-2">Nenhuma planilha encontrada na pasta do SharePoint.</div>
+      {!dados && !carregando && !importando && (
+        <div className="bg-slate-50 border border-slate-200 text-slate-600 text-[12px] rounded-lg px-4 py-6 text-center">
+          Nenhum extrato importado. Importe o arquivo da DAF pela <b>engrenagem ⚙ › Importar arquivo Account</b>.
+        </div>
       )}
+      {carregando && !dados && <div className="bg-slate-50 border border-slate-200 text-slate-600 text-[11px] rounded-lg px-3 py-2">Lendo o extrato importado e conciliando...</div>}
 
+      {dados && <>
       <ResumoConciliacao dados={dados} conc={conc} carregandoConc={carregandoConc} filtro={filtroResumo}
         setFiltro={(f) => {
           // "Falta Conciliar" são linhas do extrato sem título: na aba Títulos não há o que mostrar, então vai para Extrato
@@ -1281,6 +1277,7 @@ export default function ExtratoPagamentoDaf() {
       {aba === 'extrato' && <AbaExtrato key={`ext-${versao}`} dados={dados} carregando={carregando} busca={busca} setBusca={setBusca} conc={conc} carregandoConc={carregandoConc} filtroResumo={filtroResumo} />}
       {aba === 'aberto' && <AbaTitulos key={`tit-${versao}`} conc={conc} dados={dados} carregando={carregandoConc} busca={busca} setBusca={setBusca} filtroResumo={filtroResumo} />}
       {aba === 'retorno' && <AbaRetorno key={`ret-${versao}`} conc={conc} retorno={retorno} setRetorno={setRetorno} />}
+      </>}
     </div>
   )
 }
