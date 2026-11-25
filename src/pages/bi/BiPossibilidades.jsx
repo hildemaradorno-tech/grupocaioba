@@ -3,12 +3,15 @@ import { createPortal } from 'react-dom'
 import {
   CalendarDays, Clock, Hourglass, CheckCircle2, AlertTriangle, XCircle,
   Building2, Info, Loader2, RefreshCw, ChevronDown, ChevronRight,
+  Receipt, Package, Wrench, Truck, LayoutDashboard, Percent, TrendingUp, Settings,
 } from 'lucide-react'
 import { apiService } from '../../services/api'
 import { Bar, BarChart, CartesianGrid, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import logoCaioba from '../../assets/logo-grupo.png'
 import { resolverPorDepartamento, resolverPorFuncionario, normalizaBusca } from '../../utils/biDimensoes'
 import { useEmpresasPermitidas } from '../../hooks/useEmpresasPermitidas'
+import TempoNaOficina from '../garantias-daf/TempoNaOficina'
+import TempoOficinaRegrasModal from '../garantias-daf/TempoOficinaRegrasModal'
 
 const fmtMoeda = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const primeiroDiaMes = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
@@ -463,11 +466,12 @@ function EvolucaoVendas({ meses, indicador, depto, departamentosOpcoes, carregan
 }
 
 const VISOES = [
-  { key: 'total', label: 'Total' },
-  { key: 'balcao', label: 'Peças' },
-  { key: 'oficina', label: 'Serviços' },
-  { key: 'margem', label: 'Margem' },
-  { key: 'evolucao', label: 'Evolução' },
+  { key: 'total', label: 'Total', icon: LayoutDashboard },
+  { key: 'balcao', label: 'Peças', icon: Package },
+  { key: 'oficina', label: 'Serviços', icon: Wrench },
+  { key: 'margem', label: 'Margem', icon: Percent },
+  { key: 'evolucao', label: 'Evolução', icon: TrendingUp },
+  { key: 'tempo', label: 'Tempo na Oficina', icon: Clock },
 ]
 
 // Modo Produtivo (Oficina): Medidas do ROF042 (mecânico que executou) -> coluna da tabela. Margem
@@ -506,10 +510,10 @@ export default function BiPossibilidades() {
   const [dataFim, setDataFim] = useState(() => isoLocal(ontem()))
   const [aba, setAba] = useState('noMes') // 'entreDatas' | 'noMes' — abre sempre em "Metas e Real no Mês"
   // Visões do BI (abas acima dos dias úteis). 'total' = visão geral de sempre.
-  // ?visao=oficina (ex.: botão de origem da Matriz KPIs) abre direto nessa aba (Evolução não: muda as datas).
+  // ?visao=oficina (ex.: botão de origem da Matriz de KPIs) abre direto nessa aba (Evolução não: muda as datas).
   const [visao, setVisao] = useState(() => {
     const pedida = new URLSearchParams(window.location.search).get('visao')
-    return ['total', 'balcao', 'oficina', 'margem'].includes(pedida) ? pedida : 'total'
+    return ['total', 'balcao', 'oficina', 'margem', 'tempo'].includes(pedida) ? pedida : 'total' // tempo: link da Matriz (Bloco 2)
   }) // 'total' | 'balcao' | 'oficina' | 'margem' | 'evolucao'
   // Aba Evolução abre sempre de 01/01 do ano até ontem (muda o filtro de datas); ao sair dela, volta
   // o filtro que estava antes nas outras abas.
@@ -598,7 +602,7 @@ export default function BiPossibilidades() {
     apiService.getFuncionarios().then(lista => setFuncionarios(lista || [])).catch(() => setFuncionarios([]))
   }, [])
 
-  // ?empresa=CAMPO GRANDE (ou TRUCKS = todas as Trucks) — link de origem da Matriz KPIs: abre com a empresa do
+  // ?empresa=CAMPO GRANDE (ou TRUCKS = todas as Trucks) — link de origem da Matriz de KPIs: abre com a empresa do
   // quadro marcada (uma vez, quando a lista de empresas chega).
   const empresaDoLink = useRef(new URLSearchParams(window.location.search).get('empresa'))
   useEffect(() => {
@@ -644,7 +648,7 @@ export default function BiPossibilidades() {
   // tabela (Departamentos x Meta/Real/...). Os valores vêm já gravados por dia no Supabase
   // (fato_bi_medidas_diario, somados no banco pela função bi_medidas_agregado) — a tela não lê o
   // SharePoint. Quem grava é o backend, só manualmente: botão "Atualizar agora" daqui ou o
-  // "Atualizar Agora" da Matriz KPIs. Tipo de OS → Departamento/Setor é resolvido aqui (resolverPorDepartamento).
+  // "Atualizar Agora" da Matriz de KPIs. Tipo de OS → Departamento/Setor é resolvido aqui (resolverPorDepartamento).
   const [valoresSlot, setValoresSlot] = useState(() => new Map())
   const [valoresSlotDepto, setValoresSlotDepto] = useState(() => new Map())
   const [valoresSlotSetor, setValoresSlotSetor] = useState(() => new Map())
@@ -664,6 +668,12 @@ export default function BiPossibilidades() {
   const [ultimaAtualizacao, setUltimaAtualizacao] = useState(null)
   const [recarga, setRecarga] = useState(0)
   const [sincronizando, setSincronizando] = useState(false)
+  // Aba Tempo na Oficina: o botão do cabeçalho relê as O.S. (recargaTempo) e gira enquanto carrega.
+  const [recargaTempo, setRecargaTempo] = useState(0)
+  const [carregandoTempo, setCarregandoTempo] = useState(false)
+  // Engrenagem (só na aba Tempo na Oficina): cadastro das regras do relógio; regrasTempoVersao faz a aba reler.
+  const [regrasTempoAberto, setRegrasTempoAberto] = useState(false)
+  const [regrasTempoVersao, setRegrasTempoVersao] = useState(0)
   const [erroAtualizacao, setErroAtualizacao] = useState(null)
 
   useEffect(() => {
@@ -784,6 +794,8 @@ export default function BiPossibilidades() {
   // "Atualizar agora": backend relê o SharePoint do período filtrado (todas as empresas) e regrava
   // o Supabase; depois a tela recarrega de lá.
   const atualizarAgora = async () => {
+    // Aba Tempo na Oficina: o botão do cabeçalho só relê as O.S. (a aba não usa as Medidas BI).
+    if (visao === 'tempo') { setRecargaTempo(n => n + 1); return }
     setSincronizando(true)
     setErroAtualizacao(null)
     try {
@@ -797,7 +809,7 @@ export default function BiPossibilidades() {
       setRecarga(n => n + 1)
     }
   }
-  const atualizando = sincronizando || carregandoValores
+  const atualizando = visao === 'tempo' ? carregandoTempo : (sincronizando || carregandoValores)
   const fmtDataHora = (iso) => iso ? new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'
 
   // Meses cobertos pelo período, inteiros (do dia 1 ao último dia) — base da proporção da meta.
@@ -931,6 +943,8 @@ export default function BiPossibilidades() {
           ehMesRef: Number(r.ano) === anoRef && Number(r.mes) === mesRef,
           metaMesTotal, metaMesServicos, metaMesPecas: metaMesTotal - metaMesServicos,
           metaTotal: metaMesTotal * fator, metaServicos: metaMesServicos * fator, metaPecas: (metaMesTotal - metaMesServicos) * fator,
+          // Meta de passagens do consultor (Planejamento › Metas - Consultor), proporcional ao período.
+          metaPass: Number(r.passagens || 0) * fator,
         }
       })
   }, [metasDoPeriodo, empresaIds, fracaoMetaPeriodo, anoRef, mesRef, permiteId])
@@ -1211,6 +1225,17 @@ export default function BiPossibilidades() {
               >
                 <RefreshCw className={`h-4 w-4 ${atualizando ? 'animate-spin' : ''}`} />
               </button>
+              {visao === 'tempo' && (
+                <button
+                  type="button"
+                  onClick={() => setRegrasTempoAberto(true)}
+                  title="Regras do Tempo na Oficina"
+                  aria-label="Regras do Tempo na Oficina"
+                  className="flex items-center justify-center h-9 w-9 rounded-md border border-slate-300 bg-white text-slate-600 shadow-sm hover:bg-slate-50 transition-colors"
+                >
+                  <Settings className="h-4 w-4" />
+                </button>
+              )}
             </div>
             {erroAtualizacao && <p className="text-[10px] text-red-600 bg-white/90 rounded px-2 py-1 max-w-[420px] text-right leading-tight">{erroAtualizacao}</p>}
             <div className="flex flex-wrap items-end gap-4">
@@ -1234,15 +1259,22 @@ export default function BiPossibilidades() {
       </div>
 
       {/* VISÕES + (na Total) Metas e Real entre Datas / no Mês, na mesma linha */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-      <div className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-lg p-0.5 w-fit">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+      {/* Abas tipo "pasta" (mesmo modelo do BI Auditoria O.S. Aberta, 24/11/2026): cantos de cima arredondados,
+          inativas cinza-claro com borda, ativa azul preenchida e um pouco mais alta */}
+      {/* Aba ativa e linha de base no azul-marinho do cabeçalho (#1a4d8f), cor sólida */}
+      <div className="flex items-end gap-1 border-b-2 border-[#1a4d8f] flex-wrap">
         {VISOES.map(v => (
           <button
             key={v.key}
+            type="button"
             onClick={() => trocarVisao(v.key)}
-            className={`px-4 py-1.5 rounded-md text-xs font-semibold transition-colors ${visao === v.key ? 'bg-amber-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'}`}
+            className={`inline-flex items-center gap-1.5 px-4 rounded-t-md border border-b-0 text-[11px] font-semibold uppercase transition-colors ${
+              visao === v.key
+                ? 'py-2 bg-[#1a4d8f] border-[#1a4d8f] text-white shadow-sm'
+                : 'py-1.5 bg-gradient-to-b from-white to-slate-100 border-slate-300 text-slate-500 hover:text-slate-800 hover:to-slate-50'}`}
           >
-            {v.label}
+            <v.icon className="h-3.5 w-3.5" />{v.label}
           </button>
         ))}
       </div>
@@ -1291,7 +1323,21 @@ export default function BiPossibilidades() {
       )}
       </div>
 
-      {ehEvolucao ? (
+      <TempoOficinaRegrasModal aberto={regrasTempoAberto} onFechar={() => setRegrasTempoAberto(false)}
+        empresas={empresasVisiveis} onSalvo={() => setRegrasTempoVersao(n => n + 1)} />
+
+      {visao === 'tempo' ? (
+        // Tempo na Oficina: empresas marcadas no cabeçalho (nenhuma = todas as liberadas) e as datas do cabeçalho
+        // como período de saída das O.S. fechadas
+        <TempoNaOficina
+          empresas={empresaIds.length ? empresasVisiveis.filter(e => empresaIds.includes(e.id)) : empresasVisiveis}
+          periodo={{ de: dataInicio, ate: dataFim }}
+          backend={import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'}
+          recarga={recargaTempo}
+          onCarregando={setCarregandoTempo}
+          regrasVersao={regrasTempoVersao}
+        />
+      ) : ehEvolucao ? (
         <EvolucaoVendas meses={evoMeses.meses} departamentosOpcoes={evoDeptosOpcoes}
           indicador={evoIndicador} depto={evoDepto} carregando={carregandoEvo} />
       ) : ehMargem ? (
@@ -1373,6 +1419,41 @@ export default function BiPossibilidades() {
             <Gauge2 label="% Margem Venda Serviços" value={pctMrgServ} />
           </LinhaGauges>
           )}
+
+          {/* Aba Serviços: tickets médios e passagens — cada indicador com cor e ícone próprios (24/11/2026).
+              Valores de totalOficina: seguem o modo Consultor/Oficina e os filtros. */}
+          {ehOficina && (() => {
+            const pass = Number(totalOficina.pass) || 0
+            const tk = (v) => pass > 0 ? (Number(v) || 0) / pass : 0
+            // Metas: só as dos consultores da Oficina (são eles que planejam ticket e passagens), em qualquer modo.
+            // Meta de ticket = meta de faturamento ÷ meta de passagens — mesma conta do Planejamento.
+            const mc = metasTodas.filter(r => r.tipo === 'consultor' && r.departamento_id === DEPTO_OFICINA)
+              .reduce((a, r) => { a.pass += r.metaPass; a.pecas += r.metaPecas; a.serv += r.metaServicos; a.total += r.metaTotal; return a }, { pass: 0, pecas: 0, serv: 0, total: 0 })
+            const metaTk = (v) => mc.pass > 0 ? fmtMoeda(v / mc.pass) : '—'
+            const metas = [metaTk(mc.total), metaTk(mc.pecas), metaTk(mc.serv), mc.pass > 0 ? Math.round(mc.pass).toLocaleString('pt-BR') : '—']
+            const cards = [
+              { label: 'Ticket Médio Total', valor: fmtMoeda(tk(totalOficina.realTotal)), detalhe: `${fmtMoeda(totalOficina.realTotal)} ÷ ${pass.toLocaleString('pt-BR')} passagens`, Icone: Receipt, cor: 'border-l-indigo-500', fundo: 'bg-indigo-50 text-indigo-600', texto: 'text-indigo-700' },
+              { label: 'Ticket Médio Peças', valor: fmtMoeda(tk(totalOficina.realPecas)), detalhe: `${fmtMoeda(totalOficina.realPecas)} ÷ ${pass.toLocaleString('pt-BR')} passagens`, Icone: Package, cor: 'border-l-sky-500', fundo: 'bg-sky-50 text-sky-600', texto: 'text-sky-700' },
+              { label: 'Ticket Médio Serviços', valor: fmtMoeda(tk(totalOficina.realServicos)), detalhe: `${fmtMoeda(totalOficina.realServicos)} ÷ ${pass.toLocaleString('pt-BR')} passagens`, Icone: Wrench, cor: 'border-l-amber-500', fundo: 'bg-amber-50 text-amber-600', texto: 'text-amber-700' },
+              { label: 'Passagens', valor: pass.toLocaleString('pt-BR'), detalhe: 'Veículos atendidos no período', Icone: Truck, cor: 'border-l-emerald-500', fundo: 'bg-emerald-50 text-emerald-600', texto: 'text-emerald-700' },
+            ]
+            return (
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                {cards.map(({ label, valor, detalhe, Icone, cor, fundo, texto }, i) => (
+                  <div key={label} title={detalhe} className={`bg-white rounded-lg border border-slate-200 border-l-4 ${cor} shadow-sm px-4 py-3 flex items-center gap-3`}>
+                    <div className={`h-9 w-9 rounded-full flex items-center justify-center shrink-0 ${fundo}`}>
+                      <Icone className="h-4 w-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</div>
+                      <div className="text-[10px] text-slate-400">Meta: <span className="font-semibold text-slate-500">{metas[i]}</span></div>
+                      <div className={`text-base font-bold leading-tight ${texto}`}>{valor}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )
+          })()}
 
           {/* TABELA DE FATURAMENTO */}
           <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-x-auto custom-scrollbar-light">

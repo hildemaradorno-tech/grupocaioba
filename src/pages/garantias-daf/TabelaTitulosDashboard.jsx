@@ -33,7 +33,7 @@ const COLUNAS = [
   { col: 'nro_lancamento',     label: 'Lanç.',              cls: 'w-24' },
   { col: 'data_emissao',       label: 'Emiss.',             cls: 'w-24' },
   { col: 'data_vencimento',    label: 'Vencto.',            cls: 'w-24' },
-  { col: 'atraso',             label: 'Atr.',               cls: 'w-16 text-right' },
+  { col: 'atraso',             label: 'Dias',               cls: 'w-16 text-right' },
   { col: 'os_numero',          label: 'O.S',                cls: 'w-24' },
   { col: 'rps',                label: 'RPS',                cls: 'w-28' },
   { col: 'nfse',               label: 'NFSe',               cls: 'w-28' },

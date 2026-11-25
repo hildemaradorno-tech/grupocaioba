@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 
-// Campo editável do "Peso" de um indicador da Matriz KPIs (Bloco 3 - Serviços, Gerentes e Peças) — grava no
+// Campo editável do "Peso" de um indicador da Matriz de KPIs (Bloco 3 - Serviços, Gerentes e Peças) — grava no
 // Supabase ao sair do campo (Enter/Tab/clique fora), igual para qualquer usuário.
 // maxPermitido (23/11/2026): quanto este indicador ainda pode ter sem a soma do quadro passar de 100%
 // (100 − pesos dos outros indicadores). Valor acima disso não é gravado: o campo volta ao anterior e mostra o

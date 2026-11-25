@@ -1471,7 +1471,7 @@ export async function extractFaturamentoFunilariaPinturaPorData(year, empresaNom
 }
 
 // Mesma fonte de extractServicosOficina, mas filtrada pelo Consultor (Usuario_Nome)
-// que atendeu a O.S. — usado no bloco CONSULTOR DE SERVIÇOS da Matriz KPIs.
+// que atendeu a O.S. — usado no bloco CONSULTOR DE SERVIÇOS da Matriz de KPIs.
 export async function extractServicosPorConsultor(year = new Date().getFullYear(), empresaNome = null, consultorNome = null) {
   const yearStr = String(year)
   if (!VALID_YEARS.has(yearStr)) return null
@@ -1780,7 +1780,7 @@ export async function extractROF096EquipeOficina(year = new Date().getFullYear()
 
 // Mesma fonte de extractROF096, filtrada pelo mecânico (Usuario_Nome) — usado
 // como denominador (Horas Disponíveis) de Eficácia/Produtividade no bloco
-// MECÂNICO da Matriz KPIs.
+// MECÂNICO da Matriz de KPIs.
 export async function extractROF096PorMecanico(year = new Date().getFullYear(), empresaNome = null, mecanicoNome = null) {
   const yearStr      = String(year)
   const empresaNorm  = empresaNome  ? normalizeEmpresaNome(empresaNome).toUpperCase() : null
@@ -2054,7 +2054,7 @@ export async function extractROF042(year = new Date().getFullYear(), empresaNome
 }
 
 // Mesma fonte de extractROF042, filtrada pelo mecânico (coluna "Produtivo") —
-// usado no bloco MECÂNICO da Matriz KPIs (Faturamento via vlLiquido, e
+// usado no bloco MECÂNICO da Matriz de KPIs (Faturamento via vlLiquido, e
 // numerador de Eficácia/Produtividade via hrVend/hrAplic).
 export async function extractROF042PorMecanico(year = new Date().getFullYear(), empresaNome = null, mecanicoNome = null) {
   const yearStr      = String(year)
@@ -2102,7 +2102,7 @@ export async function listMecanicosROF042(year = new Date().getFullYear(), empre
 // CAMPANHA PÓS-VENDA — linhas brutas do ano (com dia) pra fato_campanha_diario
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Reaproveita os mesmos loaders (e o mesmo cache em memória) da Matriz KPIs — quando o sync
+// Reaproveita os mesmos loaders (e o mesmo cache em memória) da Matriz de KPIs — quando o sync
 // roda depois das fontes do extrator, os arquivos já estão em cache e nada é baixado de novo.
 // Sequencial de propósito (mesma disciplina de memória do resto do módulo).
 export async function getLinhasCampanha(year = new Date().getFullYear()) {

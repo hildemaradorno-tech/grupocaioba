@@ -1,5 +1,5 @@
 /**
- * Produtividade % do CONSULTOR DE SERVIÇOS (Matriz KPIs › Bloco 3 - Serviços › "Produtividade da Oficina"),
+ * Produtividade % do CONSULTOR DE SERVIÇOS (Matriz de KPIs › Bloco 3 - Serviços › "Produtividade da Oficina"),
  * com a MESMA conta da aba Consultores de Pós-Vendas › Indicadores de Produtividade
  * (src/pages/pos-vendas/IndicadoresProdutividade.jsx, AbaConsultores):
  *
@@ -240,5 +240,22 @@ async function calcular(ano, incluirHoje = false) {
     }
     grupo.realizado[p] = reaisTot && fatTot ? (fatTot / reaisTot) * 100 : null
   }
-  return { porConsultor, grupo }
+  // Empresas escolhidas (Bloco 2 - Departamental › Produtividade %, 24/11/2026): a mesma conta da linha Total da aba
+  // Consultores, só com as horas e metas dessas empresas (seletor de empresas DAF da Matriz). Guardada junto (memória).
+  const casasSel = (casas) => {
+    const alvos = (casas || []).map(semAcento)
+    const naCasa = (r) => alvos.some(a => semAcento(r.empresa).includes(a))
+    const diarioC = diario.filter(naCasa), metasC = metas.filter(naCasa)
+    const realizado = {}
+    for (const [p, { ini, fim, meses }] of Object.entries(periodos)) {
+      const mesesSet = new Set(meses)
+      const dias = diarioC.filter(l => l.data >= ini && l.data <= fim)
+      if (!dias.length) continue
+      let fatTot = 0, reaisTot = 0
+      for (const x of calcularConsultores(dias, metasC.filter(m => Number(m.ano) === ano && mesesSet.has(Number(m.mes)))).values()) { fatTot += x.fat; reaisTot += x.reais }
+      realizado[p] = reaisTot && fatTot ? (fatTot / reaisTot) * 100 : null
+    }
+    return realizado
+  }
+  return { porConsultor, grupo, casasSel }
 }

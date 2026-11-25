@@ -1,5 +1,5 @@
 /**
- * Resultados dos cálculos da Matriz KPIs guardados em memória, valendo para TODOS os usuários até a próxima
+ * Resultados dos cálculos da Matriz de KPIs guardados em memória, valendo para TODOS os usuários até a próxima
  * Atualização (pedido do usuário, 17/11/2026: "uma atualização quando o usuário entrar já grava para todos; se
  * quiser atualizar, clico no botão"). Antes recalculava a cada entrada depois de 1 min sem uso.
  *   - até `fresco` (padrão 20 h)  → o guardado, sem recalcular;

@@ -1,4 +1,4 @@
-// Regra ÚNICA de semanas do backend (Matriz KPIs + Campanha Pós-Venda). Mesma regra do frontend
+// Regra ÚNICA de semanas do backend (Matriz de KPIs + Campanha Pós-Venda). Mesma regra do frontend
 // (src/utils/kpiPeriods.js → semanasDoMes) — se mudar aqui, mudar lá também.
 //
 // Cada mês é cortado em semanas de domingo a sábado (a 1ª começa no dia 1, a última termina no fim

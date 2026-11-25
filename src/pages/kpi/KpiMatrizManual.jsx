@@ -4,7 +4,7 @@ import {
   RefreshCw, Building2, Calendar, Target, Info,
 } from 'lucide-react'
 
-// Manual de operação da Matriz KPIs - DAF (23/11/2026) — aberto em outra aba pelo ícone de livro do cabeçalho.
+// Manual de operação da Matriz de KPIs - DAF (23/11/2026) — aberto em outra aba pelo ícone de livro do cabeçalho.
 // Mesmo modelo dos manuais dos BIs (Planos de Manutenção, Agendamento): menu lateral fixo e uma seção por assunto.
 // Manual livre para todos os usuários (não entra no grupo de acesso). Os botões "Abrir" levam à tela onde cada meta
 // é ajustada — lá vale o acesso de cada usuário.
@@ -96,7 +96,7 @@ const SECOES = [
     id: 'visao-geral', titulo: 'Visão geral', icone: BookOpen, grupo: 'Geral',
     conteudo: (
       <>
-        <p>A Matriz KPIs - DAF reúne os indicadores de desempenho em blocos: <b>Resultados</b> (nota final), <b>Bloco 1 - Corporativo</b>, <b>Bloco 2 - Departamental</b>, <b>Bloco 3 - Serviços</b>, <b>Bloco 3 - Peças</b> e <b>Orçamento &amp; Backlog</b>.</p>
+        <p>A Matriz de KPIs - DAF reúne os indicadores de desempenho em blocos: <b>Resultados</b> (nota final), <b>Bloco 1 - Corporativo</b>, <b>Bloco 2 - Departamental</b>, <b>Bloco 3 - Serviços</b>, <b>Bloco 3 - Peças</b> e <b>Orçamento &amp; Backlog</b>.</p>
         <p className="font-semibold text-slate-800 pt-1">Cabeçalho</p>
         <Topicos itens={[
           <>Linha de cima: etiqueta <b>Dados sincronizados</b> (data e hora da última Atualização) e o botão {Botao.atualizar} Atualizar — a Matriz se atualiza sozinha no 1º acesso do dia.</>,
@@ -130,9 +130,10 @@ const SECOES = [
 
         <p className="font-semibold text-slate-800 pt-2">3. Bloco 2 - Departamental — dois pesos</p>
         <Topicos itens={[
-          <><b>Peso / Área</b>: quanto cada área (Vendas, Pós-Vendas, Peças) vale no Bloco 2. Soma das áreas = 100%.</>,
-          <><b>Peso / Objetivo</b>: quanto cada indicador vale dentro da sua área. Soma dos indicadores de cada área = 100%.</>,
-          <>Ajuste na planilha da Matriz (aba Bloco 2, colunas PESO / ÁREA e PESO / OBJETIVO).</>,
+          <><b>Peso</b>: quanto cada indicador vale. Digite direto no campo da coluna Peso (grava ao sair do campo, igual ao Bloco 3 - Serviços).</>,
+          <><b>Peso da área</b>: a linha <b>Total</b> no fim de cada área (ex.: Total Oficina, Total Auditoria) soma o peso dos indicadores da área; o Contrib. dela soma a contribuição da área no período.</>,
+          <>A soma dos pesos de cada aba (Vendas, Pós-Vendas, Peças) fecha em <b>100%</b> — o campo não aceita passar disso; a linha Total da aba fica em vermelho enquanto não chegar a 100%.</>,
+          <>Quem pode editar: ação "Editar Peso" do Bloco 2 no Grupo de Acessos.</>,
         ]} />
 
         <p className="font-semibold text-slate-800 pt-2">4. Bloco 3 (Serviços e Peças) — peso de cada indicador do quadro</p>
@@ -235,7 +236,7 @@ export default function KpiMatrizManual() {
     <div className="p-6 max-w-screen-xl">
       <div className="border-b border-slate-200 pb-4 mb-5">
         <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
-          <BookOpen className="h-5 w-5 text-blue-600" /> Manual de Operação — Matriz KPIs - DAF
+          <BookOpen className="h-5 w-5 text-blue-600" /> Manual de Operação — Matriz de KPIs - DAF
         </h1>
         <p className="text-xs text-slate-500 mt-1">
           Como distribuir os pesos de cada bloco e onde ajustar a meta de cada indicador do Bloco 3 - Serviços.

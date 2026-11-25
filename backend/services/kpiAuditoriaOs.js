@@ -1,5 +1,5 @@
 /**
- * Indicadores da Auditoria O.S. Aberta para a Matriz KPIs (Bloco 3 › Gerentes), com as mesmas regras do
+ * Indicadores da Auditoria O.S. Aberta para a Matriz de KPIs (Bloco 3 › Gerentes), com as mesmas regras do
  * Dashboard da Auditoria (src/pages/garantias-daf/AuditoriaOsAbertoDashboard.jsx):
  *
  *   O.S. aberta sem veículo na oficina — valor das O.S. com Na Oficina = Não ÷ valor total em aberto × 100

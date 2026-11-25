@@ -31,7 +31,7 @@ function falhasDaExecucao(det) {
 
 // Só exibe a origem do dado (sincronizado vs. mock) e quando foi a última sincronização — e, desde
 // 16/11/2026, se ela terminou parcial (alguma parte falhou) ou com erro, com o motivo na dica.
-// compacto: fonte e espaçamento menores (Matriz KPIs: embaixo dos seletores de período).
+// compacto: fonte e espaçamento menores (Matriz de KPIs: embaixo dos seletores de período).
 export default function DataSourceBadge({ source, loading, refreshKey = 0, compacto = false }) {
   const [ultimaExecucao, setUltimaExecucao] = useState(null)
 

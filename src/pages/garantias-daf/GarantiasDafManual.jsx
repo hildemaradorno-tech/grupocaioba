@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import {
   BookOpen, Settings, Activity, FileText, DollarSign, Receipt, Edit2, ListChecks, Database, Loader2,
-  RefreshCw, Eye, BarChart2, ClipboardList, Search, AlertTriangle, FileSignature,
+  RefreshCw, Eye, BarChart2, ClipboardList, Search, AlertTriangle, FileSignature, Target,
 } from 'lucide-react'
 import { apiService } from '../../services/api'
 
@@ -136,6 +136,8 @@ export default function GarantiasDafManual() {
   const diasOficina = cfg?.dias_oficina ?? 14
   const diasRecusa = cfg?.dias_recusa ?? 15
   const diasNfEnvio = cfg?.dias_nf_envio ?? 4
+  const diasCorAmarelo = cfg?.dias_cor_amarelo ?? 20
+  const diasCorVermelho = cfg?.dias_cor_vermelho ?? 30
   const diasSolucaoPadrao = cfg?.dias_solucao ?? 14
   const porTipo = cfg?.dias_solucao_por_tipo ?? {}
 
@@ -283,6 +285,20 @@ export default function GarantiasDafManual() {
                     <li>• <strong>No prazo</strong>: até <Valor>{diasRecusa} dia{diasRecusa === 1 ? '' : 's'}</Valor></li>
                     <li>• <strong>Fora do prazo</strong>: a partir de <Valor>{diasRecusa + 1} dias</Valor></li>
                   </ul>
+                </Sub>
+                <Sub titulo="Indicador - Tempo de garantia em aberto (Dashboard)">
+                  <p>
+                    Média de dias em aberto das O.S. (da criação da O.S. até hoje), num medidor ao lado do card Total Aberto.
+                    A meta é cadastrada na engrenagem, em <Btn icon={Target}>Meta — Tempo de garantia em aberto</Btn>: meta anual e
+                    meta de cada mês, ano a ano. Vale a meta do mês atual; mês em branco usa a anual. O medidor fica verde até a meta
+                    e vermelho acima dela.
+                  </p>
+                </Sub>
+                <Sub titulo="Tabela - Cores da coluna Dias">
+                  <p>
+                    Dias = da criação da O.S. até hoje. Regra geral: <Valor>verde</Valor> até {diasCorAmarelo - 1} dias,{' '}
+                    <Valor>amarelo</Valor> de {diasCorAmarelo} a {diasCorVermelho} dias e <Valor>vermelho</Valor> acima de {diasCorVermelho} dias.
+                  </p>
                 </Sub>
                 </AbaRegras>
                 <AbaRegras icon={DollarSign} titulo="Títulos a Receber (Faturadas)">

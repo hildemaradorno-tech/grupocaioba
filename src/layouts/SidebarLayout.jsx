@@ -606,8 +606,8 @@ export default function SidebarLayout() {
             {canViewSection('_bi.gestao') && (
               <>
                 <FlyGroup label="Gestão Estratégica" />
-                {canViewSection('_bi.kpis') && <FlyItem to="/kpi/matriz" icon={BarChart2} onClose={closeFlyout}>Matriz KPIs - DAF</FlyItem>}
-                {/* Campanha Pós-Venda logo abaixo da Matriz KPIs (usa os blocos da Matriz). */}
+                {canViewSection('_bi.kpis') && <FlyItem to="/kpi/matriz" icon={BarChart2} onClose={closeFlyout}>Matriz de KPIs - DAF</FlyItem>}
+                {/* Campanha Pós-Venda logo abaixo da Matriz de KPIs (usa os blocos da Matriz). */}
                 {['bi/campanha/regras', 'bi/campanha/apuracao', 'bi/campanha/resultado', 'bi/campanha/pagamento'].some(canView) && <FlyItem to="/bi/campanha" icon={Trophy} onClose={closeFlyout}>Campanha Pós-Venda - DAF</FlyItem>}
                 <div className="mx-3 my-2 border-t border-blue-800/50" />
               </>

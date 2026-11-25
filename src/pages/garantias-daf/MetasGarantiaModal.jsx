@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { Target, X, Loader2, ChevronLeft, ChevronRight, Copy } from 'lucide-react'
 import { apiService } from '../../services/api'
 
-// Metas dos indicadores do SETOR GARANTIA (Matriz KPIs › Bloco 3 - Serviços), por empresa — engrenagem das
+// Metas dos indicadores do SETOR GARANTIA (Matriz de KPIs › Bloco 3 - Serviços), por empresa — engrenagem das
 // Regras do Sistema de Garantias DAF. Mesmo modelo das Metas dos indicadores da Auditoria O.S. Aberta:
 // meta geral (vale para os meses em branco) e meta por mês, cadastrada ano a ano. Quantidade (O.S. ou
 // títulos), menor é melhor. "Todas as empresas" na Matriz = soma das metas das lojas.
@@ -121,7 +121,7 @@ export default function MetasGarantiaModal({ usuario, onClose }) {
       <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-3xl mx-4 max-h-[92vh] flex flex-col">
         <div className="flex items-center justify-between mb-1">
           <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
-            <Target className="h-4 w-4 text-rose-600" /> Metas — Setor Garantia (Matriz KPIs)
+            <Target className="h-4 w-4 text-rose-600" /> Metas — Setor Garantia (Matriz de KPIs)
           </h3>
           <button onClick={onClose} className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded transition-colors">
             <X className="h-4 w-4" />

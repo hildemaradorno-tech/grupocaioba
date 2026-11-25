@@ -261,12 +261,14 @@ export default function IndicadoresProdutividade() {
   const [regrasCor, setRegrasCor] = useState([]) // pv_prod_regras_cor (todos os anos)
   const [abrirRegras, setAbrirRegras] = useState(false)
 
-  // ?aba=consultores (ex.: botão de origem da Matriz KPIs) abre direto nessa aba.
+  // ?aba=consultores (ex.: botão de origem da Matriz de KPIs) abre direto nessa aba.
   const [aba, setAba] = useState(() => {
     const pedida = new URLSearchParams(window.location.search).get('aba')
     return ['principais', 'mecanicos', 'consultores', 'diames', 'encfat'].includes(pedida) ? pedida : 'principais'
   })
-  const [modoResumo, setModoResumo] = useState('mecanico') // Resumo: Mecânicos | Consultores
+  // Resumo: Mecânicos | Consultores. ?modo=consultor (botão de origem da Matriz › Bloco 2 › Produtividade %, 24/11/2026)
+  // abre o Resumo já no modo Consultores.
+  const [modoResumo, setModoResumo] = useState(() => (new URLSearchParams(window.location.search).get('modo') === 'consultor' ? 'consultor' : 'mecanico'))
   const [modoEvolucao, setModoEvolucao] = useState('mecanico') // Evolução: Mecânicos | Consultores (23/11/2026)
   const [slotAbaDireita, setSlotAbaDireita] = useState(null) // canto direito da linha das abas (Encerrado | Faturado)
   const [slotBuscaOs, setSlotBuscaOs] = useState(null) // espaço ao lado do Tipo de Visualização (busca por O.S. da aba Mecânicos)
@@ -423,7 +425,7 @@ export default function IndicadoresProdutividade() {
     for (const [e, marca] of marcaDe) g[marca === 'TRUCKS' ? 'Caiobá Trucks' : marca === 'MOTOS' ? 'Caiobá Motos' : 'Outras'].push(e)
     return Object.entries(g).filter(([, l]) => l.length).map(([n, l]) => [n, l.sort((a, b) => a.localeCompare(b, 'pt-BR'))])
   }, [diario, metas, permiteNome])
-  // ?empresa=CAMPO GRANDE (ou TRUCKS = todas as Trucks) — link de origem da Matriz KPIs: abre com a empresa do
+  // ?empresa=CAMPO GRANDE (ou TRUCKS = todas as Trucks) — link de origem da Matriz de KPIs: abre com a empresa do
   // quadro marcada (uma vez, quando a lista de empresas chega).
   const empresaDoLink = useRef(new URLSearchParams(window.location.search).get('empresa'))
   useEffect(() => {

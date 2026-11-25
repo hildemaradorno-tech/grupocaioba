@@ -193,7 +193,7 @@ export default function KpiAuditoria() {
   const [rows,       setRows]       = useState(initCached?.indicadores ?? [])
   const [loading,    setLoading]    = useState(!initCached)
   const [source,     setSource]     = useState(null)
-  // O selo "Dados sincronizados" mora no cabeçalho da Matriz KPIs; aqui só publica o status.
+  // O selo "Dados sincronizados" mora no cabeçalho da Matriz de KPIs; aqui só publica o status.
   const { setStatus, refreshToken } = useKpiSourceStatus()
   useEffect(() => { setStatus({ source, loading }) }, [source, loading, setStatus])
   const [meta,       setMeta]       = useState(initCached?.metaData    ?? null)

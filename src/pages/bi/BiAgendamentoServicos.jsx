@@ -880,7 +880,7 @@ export default function BiAgendamentoServicos() {
   const [carregando, setCarregando] = useState(false)
   const [erroCrm, setErroCrm] = useState('')
   const [tipo, setTipo] = useState(TIPOS[0])
-  // ?aba=<nome da aba> (ex.: atalho da Matriz KPIs) abre direto nela.
+  // ?aba=<nome da aba> (ex.: atalho da Matriz de KPIs) abre direto nela.
   const [paramsUrl] = useSearchParams()
   const [aba, setAba] = useState(() => (ABAS.includes(paramsUrl.get('aba')) ? paramsUrl.get('aba') : ABAS[0]))
 

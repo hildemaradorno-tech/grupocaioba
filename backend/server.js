@@ -48,7 +48,7 @@ app.options('*', cors())
 // too large").
 app.use(express.json({ limit: '20mb' }))
 
-// ── Rotas da Matriz KPIs (SharePoint / Microsoft Graph) ──────────────────────
+// ── Rotas da Matriz de KPIs (SharePoint / Microsoft Graph) ──────────────────────
 app.use('/api/kpi', authMiddleware, requireMenuLike('kpi', 'bi', 'metas', 'integracoes'), kpiRoutes)
 
 // ── Rotas Garantias DAF (SharePoint ROF001_OSABERTA) ─────────────────────────

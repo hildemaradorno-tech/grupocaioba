@@ -31,12 +31,13 @@ const ABAS = [
 ]
 
 // Abas que vêm da planilha da Matriz (só total do grupo) — o seletor de empresa não as filtra.
-const ABAS_SO_GRUPO = new Set(['resultados', 'bloco1', 'bloco2', 'orcamento-backlog'])
+// Bloco 2 saiu (24/11/2026): a aba Pós-Vendas segue as empresas marcadas.
+const ABAS_SO_GRUPO = new Set(['resultados', 'bloco1', 'orcamento-backlog'])
 
 export const KPI_MATRIZ_PERMS = ABAS.map(a => a.permKey)
 export default function KpiMatriz() {
   const { hasPermission, hasActionOrDefault, user } = useAuth()
-  // Sempre que entra na Matriz KPIs: visão Mensal no mês atual. Limpa a seleção de período guardada
+  // Sempre que entra na Matriz de KPIs: visão Mensal no mês atual. Limpa a seleção de período guardada
   // (antes das abas montarem — elas leem esses valores ao iniciar). Trocar de aba dentro da Matriz
   // continua mantendo o período escolhido.
   useState(() => {
@@ -92,7 +93,7 @@ export default function KpiMatriz() {
               <img src={logoCaioba} alt="Caiobá" className="h-11 w-auto shrink-0" />
               <div className="w-0.5 self-stretch bg-[#1a4d8f]" />
               <div style={{ fontFamily: "Cambria, Georgia, 'Times New Roman', serif" }}>
-                <h1 className="text-[22px] font-bold text-slate-900 uppercase leading-tight">Matriz KPIs - DAF</h1>
+                <h1 className="text-[22px] font-bold text-slate-900 uppercase leading-tight">Matriz de KPIs - DAF</h1>
                 <p className="text-[15px] italic text-slate-900 uppercase leading-tight mt-0.5">Indicadores de desempenho</p>
               </div>
             </div>
@@ -118,7 +119,7 @@ export default function KpiMatriz() {
                 {/* Sem a permissão de Atualizar, o botão só aparece (travado, girando) durante uma atualização. */}
                 {(podeSincronizar || sync.executando) && (
                   <button type="button" onClick={() => sync.iniciar(user?.email)} disabled={sync.executando || !podeSincronizar}
-                    title={sync.executando ? `Atualização em andamento${sync.porQuem ? ` (iniciada por ${sync.porQuem})` : ''} — aguarde terminar` : 'Atualizar dados (Matriz KPIs e Campanha Pós-Venda - DAF)'}
+                    title={sync.executando ? `Atualização em andamento${sync.porQuem ? ` (iniciada por ${sync.porQuem})` : ''} — aguarde terminar` : 'Atualizar dados (Matriz de KPIs e Campanha Pós-Venda - DAF)'}
                     aria-label="Atualizar dados"
                     className="flex items-center justify-center h-8 w-8 rounded-md border border-slate-300 bg-white text-slate-600 shadow-sm hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed transition-colors">
                     <RefreshCw className={`h-4 w-4 ${sync.executando ? 'animate-spin' : ''}`} />
@@ -126,7 +127,7 @@ export default function KpiMatriz() {
                 )}
                 {/* Manual de operação (23/11/2026): pesos de cada bloco e onde ajustar as metas — à direita do Atualizar, sempre em outra aba. */}
                 <a href="/kpi/matriz/manual" target="_blank" rel="noopener noreferrer"
-                  title="Manual de operação da Matriz KPIs (abre em outra aba)" aria-label="Manual de operação da Matriz KPIs"
+                  title="Manual de operação da Matriz de KPIs (abre em outra aba)" aria-label="Manual de operação da Matriz de KPIs"
                   className="flex items-center justify-center h-8 w-8 rounded-md bg-blue-600 hover:bg-blue-700 text-white shadow-sm transition-colors">
                   <BookOpen className="h-4 w-4" />
                 </a>
@@ -198,7 +199,7 @@ export default function KpiMatriz() {
           {/* Abas da planilha da Matriz (SharePoint): só têm o total do grupo, não dá para separar por empresa. */}
           {ABAS_SO_GRUPO.has(abaAtual.key) && !daf.todas && (
             <p role="status" className="mx-6 mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs text-amber-800">
-              Os valores desta aba são do grupo todo: a planilha da Matriz KPIs não separa por empresa, então o seletor de empresa não muda esta aba.
+              Os valores desta aba são do grupo todo: a planilha da Matriz de KPIs não separa por empresa, então o seletor de empresa não muda esta aba.
             </p>
           )}
           <div className="flex-1 overflow-y-auto">
@@ -206,7 +207,7 @@ export default function KpiMatriz() {
           </div>
         </>
       ) : (
-        <p className="px-6 py-6 text-sm text-slate-500">Você não tem permissão para visualizar nenhum indicador da Matriz KPIs.</p>
+        <p className="px-6 py-6 text-sm text-slate-500">Você não tem permissão para visualizar nenhum indicador da Matriz de KPIs.</p>
       )}
     </div>
   )

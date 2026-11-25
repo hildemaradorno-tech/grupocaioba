@@ -226,7 +226,7 @@ function ListaMarcavel({ rotulo, itens, marcados, onEscolher, onTodos, onLimpar 
   )
 }
 
-// Calendário de período (Matriz KPIs, 23/11/2026), com o ano junto — no lugar de "Meses"/"Períodos" + "Ano".
+// Calendário de período (Matriz de KPIs, 23/11/2026), com o ano junto — no lugar de "Meses"/"Períodos" + "Ano".
 // Botão "Nov/2026"; abre uma grade com os meses (ou trimestres, ou só o ano) e setas para trocar o ano.
 const MESES_CURTOS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
 // tipo: 'mes' (m01…m12), 'trimestre' (q1…q4) ou 'ano' (só o ano — visão Anual).
@@ -330,8 +330,8 @@ function CalendarioMes({ marcados = [], ano, anos, onEscolher, onAlternar = null
 
 // inlineTrimestral: mantido por compatibilidade (o trimestral agora sempre fica na mesma linha, como lista).
 // eslint-disable-next-line no-unused-vars
-// escuro: rótulos brancos em maiúsculas (cabeçalho com fundo degradê da Matriz KPIs, padrão Possibilidades).
-// calendario = { ano, anos, onAno } (Matriz KPIs): Mensal e Semanal escolhem UM mês num calendário com o ano
+// escuro: rótulos brancos em maiúsculas (cabeçalho com fundo degradê da Matriz de KPIs, padrão Possibilidades).
+// calendario = { ano, anos, onAno } (Matriz de KPIs): Mensal e Semanal escolhem UM mês num calendário com o ano
 // junto (no lugar da lista de Meses / do Mês e do seletor de Ano).
 export default function PeriodSelector({ state, hideLegend = false, modes = VIEW_MODES, inlineTrimestral = false, escuro = false, calendario = null }) {
   const rotulo = escuro ? "text-[10px] font-bold text-white uppercase" : "text-xs text-slate-500"
@@ -351,7 +351,7 @@ export default function PeriodSelector({ state, hideLegend = false, modes = VIEW
 
   const weekKeys = MONTH_WEEK_RANGES[weekMonth] || []
 
-  // escuro (Matriz KPIs, 23/11/2026): nome de cada seletor ACIMA dele; fora da Matriz, ao lado (como antes).
+  // escuro (Matriz de KPIs, 23/11/2026): nome de cada seletor ACIMA dele; fora da Matriz, ao lado (como antes).
   // Função (não componente) para não recriar o seletor a cada render — o calendário aberto não fecha sozinho.
   const campo = (titulo, controle, primeiro = false) => (escuro
     ? <div className="flex flex-col items-start gap-0.5"><span className={rotulo}>{titulo}</span>{controle}</div>

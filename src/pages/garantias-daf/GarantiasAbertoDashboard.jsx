@@ -346,6 +346,47 @@ function CardTotalAberto({ total, pecas, servicos, geral }) {
   )
 }
 
+// Indicador "Tempo de garantia em aberto": média de dias (criação da O.S. até hoje) num medidor meia-lua.
+// Meta do mês atual (ou anual) de gar_metas_tempo_aberto — verde até a meta, vermelho acima; risco = meta.
+function CardTempoAberto({ media, qtd, meta }) {
+  const temMeta = meta != null && meta > 0
+  const escala = Math.max(temMeta ? meta * 2 : 0, media * 1.1, 1)
+  const pct = Math.min(1, media / escala)
+  const acima = temMeta && media > meta
+  const cor = !temMeta ? '#7c3aed' : acima ? '#dc2626' : '#059669'
+  const r = 40, cx = 50, cy = 50
+  const ponto = (f) => [cx - r * Math.cos(Math.PI * f), cy - r * Math.sin(Math.PI * f)]
+  const [ex, ey] = ponto(pct)
+  const fmtDias = (v) => Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 1 })
+  const metaF = temMeta ? meta / escala : null
+  return (
+    <div className="h-full rounded-2xl p-4 shadow-lg bg-white border border-slate-200 flex flex-col justify-between">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[9px] font-bold uppercase tracking-wide leading-tight text-slate-500">Tempo de garantia em aberto</p>
+        <div className="w-7 h-7 rounded-full bg-violet-100 flex items-center justify-center shrink-0">
+          <Clock className="h-3.5 w-3.5 text-violet-600" />
+        </div>
+      </div>
+      <div className="flex flex-col items-center">
+        <svg viewBox="0 0 100 58" className="w-36 h-[84px]">
+          <path d={`M ${cx - r} ${cy} A ${r} ${r} 0 0 1 ${cx + r} ${cy}`} fill="none" stroke="#e2e8f0" strokeWidth="9" strokeLinecap="round" />
+          {pct > 0 && <path d={`M ${cx - r} ${cy} A ${r} ${r} 0 0 1 ${ex} ${ey}`} fill="none" stroke={cor} strokeWidth="9" strokeLinecap="round" />}
+          {temMeta && (() => {
+            const a = Math.PI * (1 - metaF)
+            return <line x1={cx + (r - 6) * Math.cos(a)} y1={cy - (r - 6) * Math.sin(a)} x2={cx + (r + 6) * Math.cos(a)} y2={cy - (r + 6) * Math.sin(a)}
+              stroke="#475569" strokeOpacity="0.7" strokeWidth="0.8" />
+          })()}
+          <text x="50" y="47" textAnchor="middle" fontSize="13" fontWeight="700" fill="#0f172a">{fmtDias(media)}</text>
+        </svg>
+        <p className="text-[10px] font-semibold text-slate-500 -mt-1">dias em média</p>
+      </div>
+      <p className={`text-[11px] font-bold mt-2 pt-1.5 border-t border-slate-100 text-center ${!temMeta ? 'text-slate-400' : acima ? 'text-red-600' : 'text-emerald-600'}`}>
+        {temMeta ? `Meta ${fmtDias(meta)} dias` : 'Sem meta cadastrada'}
+      </p>
+    </div>
+  )
+}
+
 // Dashboard "Garantias em Aberto (Encerradas)" — cards por grupo de status, tabela pivot
 // Status × Mês/Ano com drill-down (Tipo de OS → Status Atual) e tabela de detalhamento por OS.
 export default function GarantiasAbertoDashboard({ onLastModified }) {
@@ -392,8 +433,10 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
   // '<grupo>_prazo' / '<grupo>_fora' = linhas No prazo / Fora do prazo dos cards
   // Aguardando Aprovação DAF (digitada) e Recusas (recusada)
   const [grupoDoFiltro, prazoDoFiltro] = (filtroGrupo || '').split('_')
+  // Card único "A Digitar" (chave 'digitacao') = grupos digitar + atrasada; as linhas dele filtram cada um
+  const gruposDaChave = (k) => (k === 'digitacao' ? ['digitar', 'atrasada'] : [k])
   const casaGrupo = (g) => {
-    if (classificarStatus(g, diasDigitacao) !== grupoDoFiltro) return false
+    if (!gruposDaChave(grupoDoFiltro).includes(classificarStatus(g, diasDigitacao))) return false
     return prazoDoFiltro ? situacaoPrazoDoGrupo(grupoDoFiltro, g) === prazoDoFiltro : true
   }
   const [filtroStatusShc, setFiltroStatusShc] = useState(null) // texto do Status SHC clicado na tabela de detalhamento
@@ -486,7 +529,7 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
     [dados, filtroStatusShc, diasDigitacao]
   )
 
-  // Link da Matriz KPIs (?loja=CAMPO GRANDE): abre com a fatia da empresa marcada (14/11/2026).
+  // Link da Matriz de KPIs (?loja=CAMPO GRANDE): abre com a fatia da empresa marcada (14/11/2026).
   const empresasNosDados = useMemo(() => [...new Set(dados.map(g => g.empresa_nome || 'Não informado'))], [dados])
   useEmpresaDoLink(empresasNosDados, setFiltroEmpresa)
 
@@ -544,6 +587,27 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
     }, { qtd: 0, valor: 0 })
 
   // Resumo consolidado (não filtrável) — total de OS em aberto, distintas e por peças/serviços.
+  // Tempo de garantia em aberto: média de dias (criação da O.S. até hoje) das O.S. do card Total Aberto
+  const tempoAbertoStats = useMemo(() => {
+    const hoje = new Date()
+    const dias = dadosBaseShc.filter(g => g.data_abertura_os)
+      .map(g => Math.max(0, Math.floor((hoje - new Date(g.data_abertura_os + 'T12:00:00')) / 86400000)))
+    return { qtd: dias.length, media: dias.length ? dias.reduce((a, b) => a + b, 0) / dias.length : 0 }
+  }, [dadosBaseShc])
+  // Meta do mês atual (mes 1..12) ou anual (mes 0) — engrenagem → Meta — Tempo de garantia em aberto
+  const [metaTempo, setMetaTempo] = useState(null)
+  useEffect(() => {
+    const hoje = new Date()
+    apiService.getGarMetasTempoAno(hoje.getFullYear())
+      .then(lista => {
+        const doMes = lista.find(r => r.mes === hoje.getMonth() + 1)?.meta_dias
+        const anual = lista.find(r => r.mes === 0)?.meta_dias
+        const v = doMes ?? anual
+        setMetaTempo(v != null ? Number(v) : null)
+      })
+      .catch(() => setMetaTempo(null))
+  }, [])
+
   const totalAbertoStats = useMemo(() => {
     const pecas = dadosBaseShc.reduce((s, g) => s + Number(g.valor_pecas || 0), 0)
     const servicos = dadosBaseShc.reduce((s, g) => s + Number(g.valor_servicos || 0), 0)
@@ -552,7 +616,19 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
 
 
   // Card selecionado filtra as linhas exibidas na tabela (e gráficos) abaixo dos cards.
-  const gruposExibidos = grupoDoFiltro ? GRUPOS_STATUS.filter(g => g.key === grupoDoFiltro) : GRUPOS_STATUS
+  const gruposExibidos = grupoDoFiltro ? GRUPOS_STATUS.filter(g => gruposDaChave(grupoDoFiltro).includes(g.key)) : GRUPOS_STATUS
+  // Texto do prazo de digitação (um só, ou a faixa quando as O.S. caem em meses com regras diferentes)
+  const digitacaoTexto = textoFaixaDias(dadosSemGrupo.filter(g => g.status_codigo === 'A').map(g => diasDigitacao(g)), diasDigitacaoGeral)
+  // Cards do topo: A Digitar e Digitação Atrasada viram um card só, com as duas linhas embaixo
+  const CARDS_TOPO = [
+    { key: 'digitacao', card: 'A Digitar', icone: FileText, gradiente: 'from-amber-400 to-orange-600', grupos: ['digitar', 'atrasada'] },
+    ...GRUPOS_STATUS.filter(g => g.key !== 'digitar' && g.key !== 'atrasada').map(g => ({ ...g, grupos: [g.key] })),
+  ]
+  const totalCard = (c) => c.grupos.reduce((acc, k) => ({ qtd: acc.qtd + pivot[k].total.qtd, valor: acc.valor + pivot[k].total.valor }), { qtd: 0, valor: 0 })
+  const rodapeCard = (c) => c.key !== 'digitacao' ? rodapePrazo(c.key) : [
+    { label: `Em digitação (até ${digitacaoTexto})`, qtd: pivot.digitar.total.qtd, valor: pivot.digitar.total.valor, onClick: () => toggleFiltroGrupo('digitar'), ativo: filtroGrupo === 'digitar' },
+    { label: `Digitação atrasada (+ de ${digitacaoTexto})`, qtd: pivot.atrasada.total.qtd, valor: pivot.atrasada.total.valor, onClick: () => toggleFiltroGrupo('atrasada'), ativo: filtroGrupo === 'atrasada' },
+  ]
 
   const dadosExibidos = useMemo(
     () => aplicarFiltrosAberto(dadosBaseShc),
@@ -809,21 +885,97 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
     <div className="space-y-5">
       {/* CARDS — nível empresa/total, clicáveis, filtram a tabela abaixo */}
       <div className="grid grid-cols-6 gap-4">
-        {GRUPOS_STATUS.map(grp => (
-          <div key={grp.key} className={`h-full relative transition-all hover:shadow-xl ${grupoDoFiltro && grupoDoFiltro !== grp.key ? 'opacity-50' : ''} ${filtroGrupo === grp.key ? 'ring-2 ring-violet-500 rounded-2xl' : ''}`}>
+        {CARDS_TOPO.map(grp => (
+          <div key={grp.key} className={`h-full relative transition-all hover:shadow-xl ${grupoDoFiltro && grupoDoFiltro !== grp.key && !grp.grupos.includes(grupoDoFiltro) ? 'opacity-50' : ''} ${filtroGrupo === grp.key ? 'ring-2 ring-violet-500 rounded-2xl' : ''}`}>
             <StatTileGradient
               icon={grp.icone}
               label={grp.card}
-              value={fmtMoeda(pivot[grp.key].total.valor)}
-              sub={`Qtde O.S. ${pivot[grp.key].total.qtd}`}
+              value={fmtMoeda(totalCard(grp).valor)}
+              sub={`Qtde O.S. ${totalCard(grp).qtd}`}
               gradiente={grp.gradiente}
-              rodapeRows={rodapePrazo(grp.key)}
+              rodapeRows={rodapeCard(grp)}
             />
             <button type="button" onClick={() => toggleFiltroGrupo(grp.key)} className="absolute inset-0 rounded-2xl cursor-pointer" aria-label={`Filtrar por ${grp.card}`} />
           </div>
         ))}
         <CardTotalAberto {...totalAbertoStats} />
+        <CardTempoAberto media={tempoAbertoStats.media} qtd={tempoAbertoStats.qtd} meta={metaTempo} />
       </div>
+
+      {/* SITUAÇÃO DAS GARANTIAS — as linhas de baixo dos cards (A Digitar, Aguardando Aprovação DAF, Aprovada,
+          Recusas) num gráfico só, com os mesmos números dos cards (24/11/2026). Clique numa barra = clique na linha do card. */}
+      {(() => {
+        const p = (grupo, k) => prazosPorGrupo[grupo]?.[k] || { qtd: 0, valor: 0 }
+        const [lblPrazoDig, lblForaDig] = [`Dentro do prazo (${prazoSolucaoTexto})`, 'Fora do prazo']
+        const GRUPOS = [
+          { card: 'A Digitar', barras: [
+            { filtro: 'digitar', label: `Em digitação (até ${digitacaoTexto})`, cor: '#fbbf24', ...pivot.digitar.total },
+            { filtro: 'atrasada', label: `Digitação atrasada (+ de ${digitacaoTexto})`, cor: '#ea580c', ...pivot.atrasada.total },
+          ] },
+          { card: 'Aguardando Aprovação DAF', barras: [
+            { filtro: 'digitada_prazo', label: lblPrazoDig, cor: '#60a5fa', ...p('digitada', 'prazo') },
+            { filtro: 'digitada_fora', label: lblForaDig, cor: '#3730a3', ...p('digitada', 'fora') },
+          ] },
+          { card: 'Aprovada', barras: [
+            { filtro: 'aprovada', label: 'Aprovada', cor: '#0d9488', ...pivot.aprovada.total },
+          ] },
+          { card: 'Recusas', barras: [
+            { filtro: 'recusada_prazo', label: `No prazo (até ${recusaTexto})`, cor: '#fb7185', ...p('recusada', 'prazo') },
+            { filtro: 'recusada_fora', label: `Fora do prazo (+ de ${recusaTexto})`, cor: '#9f1239', ...p('recusada', 'fora') },
+          ] },
+        ]
+        const todas = GRUPOS.flatMap(g => g.barras)
+        const maior = Math.max(1, ...todas.map(b => b.valor))
+        const totalValor = todas.reduce((a, b) => a + b.valor, 0)
+        const totalQtd = todas.reduce((a, b) => a + b.qtd, 0)
+        const pctTxt = (v) => (totalValor ? `${((v / totalValor) * 100).toFixed(1).replace('.', ',')}%` : '0,0%')
+        const COLS = 'grid-cols-[minmax(170px,260px)_1fr_250px]'
+        return (
+          <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-5">
+            <p className="text-xs font-bold text-slate-900 mb-1">Situação das Garantias em Aberto</p>
+            <p className="text-[11px] text-slate-500 mb-4">As linhas dos cards — A Digitar, Aguardando Aprovação DAF, Aprovada e Recusas — em valor e quantidade de O.S. Clique numa barra para filtrar o painel por ela.</p>
+            <div className="space-y-3">
+              {GRUPOS.map(g => {
+                const tg = g.barras.reduce((a, b) => ({ qtd: a.qtd + b.qtd, valor: a.valor + b.valor }), { qtd: 0, valor: 0 })
+                return (
+                  <div key={g.card}>
+                    <div className={`grid ${COLS} items-center gap-3 px-2 pb-1`}>
+                      <span className="text-[11px] font-bold uppercase text-slate-800">{g.card}</span>
+                      <span />
+                      <span className="whitespace-nowrap text-right text-[11px] text-slate-500">{fmtMoeda(tg.valor)} · {tg.qtd} OS</span>
+                    </div>
+                    {g.barras.map(b => {
+                      const ativo = filtroGrupo === b.filtro
+                      return (
+                        <button key={b.filtro} type="button" onClick={() => toggleFiltroGrupo(b.filtro)}
+                          className={`grid w-full ${COLS} items-center gap-3 rounded-md px-2 py-1 text-left transition ${ativo ? 'bg-violet-50 ring-2 ring-violet-300' : 'hover:bg-slate-50'} ${filtroGrupo && !ativo ? 'opacity-50' : ''}`}>
+                          <span className="flex items-center gap-2 pl-3 text-[11px] font-semibold text-slate-700">
+                            <span className="h-3 w-3 shrink-0 rounded-sm" style={{ background: b.cor }} />{b.label}
+                          </span>
+                          <span className="flex h-5 w-full overflow-hidden rounded bg-slate-100">
+                            <span className="h-full" style={{ width: `${(b.valor / maior) * 100}%`, background: b.cor }} />
+                          </span>
+                          <span className="whitespace-nowrap text-right text-[11px] text-slate-600">
+                            <span className="text-xs font-bold text-slate-900">{fmtMoeda(b.valor)}</span>
+                            {' · '}{b.qtd} OS{' · '}{pctTxt(b.valor)}
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )
+              })}
+              <div className={`grid ${COLS} items-center gap-3 border-t border-slate-200 px-2 pt-2`}>
+                <span className="text-[11px] font-bold text-slate-900">Total em aberto</span>
+                <span />
+                <span className="whitespace-nowrap text-right text-[11px] text-slate-600">
+                  <span className="text-xs font-bold text-slate-900">{fmtMoeda(totalValor)}</span>{' · '}{totalQtd} OS
+                </span>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* GRÁFICOS DE PIZZA — POR VALOR / POR QUANTIDADE (nível categoria, participação no total) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -861,7 +1013,7 @@ export default function GarantiasAbertoDashboard({ onLastModified }) {
         <p className="text-[11px] text-slate-500">
           Filtrado por{' '}
           {[
-            filtroGrupo && <strong key="grupo" className="text-slate-900">{GRUPOS_STATUS.find(g => g.key === grupoDoFiltro)?.card}{prazoDoFiltro === 'prazo' ? (grupoDoFiltro === 'recusada' ? ' — No prazo' : ' — Dentro do prazo') : prazoDoFiltro === 'fora' ? ' — Fora do prazo' : ''}</strong>,
+            filtroGrupo && <strong key="grupo" className="text-slate-900">{grupoDoFiltro === 'digitacao' ? 'A Digitar' : GRUPOS_STATUS.find(g => g.key === grupoDoFiltro)?.card}{prazoDoFiltro === 'prazo' ? (grupoDoFiltro === 'recusada' ? ' — No prazo' : ' — Dentro do prazo') : prazoDoFiltro === 'fora' ? ' — Fora do prazo' : ''}</strong>,
             filtroEmpresa && <strong key="empresa" className="text-[#3987e5]">Empresa: {filtroEmpresa}</strong>,
             filtroTipo && <strong key="tipo" className="text-[#199e70]">Tipo: {filtroTipo}</strong>,
             filtroCluster && <strong key="cluster" className="text-[#d03b3b]">{BUCKETS_DIAS_CLUSTER[filtroCluster.ix].label} · {BUCKETS_VALOR_CLUSTER[filtroCluster.iy].label}</strong>,

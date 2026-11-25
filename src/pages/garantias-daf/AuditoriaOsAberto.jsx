@@ -29,6 +29,7 @@ const ETAPAS_AUDITORIA = [
 export default function AuditoriaOsAberto({
   embedded = false, slotFiltros = null, slotEngrenagem = null, onSlotVisao = null,
   selecao = null, onSelecao = null, soEngrenagem = false, onAlterado = null, onStatusAuditoria = null,
+  barraAbas = null,
 }) {
   const { user, isAdminEfetivo, hasAction, empresasPermitidasEfetivas } = useAuth()
   // Permissão por ação (matriz de permissões, menu 'auditoria-os-aberto'); Admin tem tudo
@@ -2318,7 +2319,16 @@ export default function AuditoriaOsAberto({
     <div className={embedded ? 'space-y-5' : 'p-6 space-y-5 max-w-screen-2xl'}>
 
       {/* CABEÇALHO — dentro do BI (embedded) o título fica no cabeçalho do BI; aqui sobram os seletores e a engrenagem */}
-      <div className={embedded ? 'flex items-center justify-end' : 'flex items-center justify-between border-b border-slate-200 pb-4'}>
+      <div className={embedded ? `flex items-end ${onSlotVisao ? 'justify-between' : 'justify-end'}` : 'flex items-center justify-between border-b border-slate-200 pb-4'}>
+        {/* No BI: abas (Indicadores · O.S. Pendentes · O.S. ≥ 30 Dias · Auditoria) desenhadas pela página, à esquerda */}
+        {embedded && barraAbas}
+        {embedded && onSlotVisao && !barraAbas && (
+          <div className="flex items-end gap-1 border-b-2 border-sky-600">
+            <span className="inline-flex items-center gap-1.5 px-4 py-2 rounded-t-md border border-b-0 border-sky-600 bg-gradient-to-b from-sky-500 to-sky-600 text-white shadow-sm text-[11px] font-semibold uppercase">
+              <ClipboardList className="h-3.5 w-3.5" />Auditoria
+            </span>
+          </div>
+        )}
         {!embedded && (
         <div>
           <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">

@@ -47,6 +47,10 @@ export default function RegrasSistemaModal({ onClose, onSalvo, usuario, tiposExt
   const [diasNfInput, setDiasNfInput] = useState('4')
   const [temColunaNf, setTemColunaNf] = useState(false)
   const [diasSolucaoPorTipoInput, setDiasSolucaoPorTipoInput] = useState({})
+  // Cores da coluna Dias (tabela Com Garantista): amarelo a partir de N, vermelho acima de M
+  const [corAmareloInput, setCorAmareloInput] = useState('20')
+  const [corVermelhoInput, setCorVermelhoInput] = useState('30')
+  const [temColunaCores, setTemColunaCores] = useState(false)
   const [selecionadosTipos, setSelecionadosTipos] = useState(new Set())
   const [valorAplicarTipos, setValorAplicarTipos] = useState('14')
   // Regras por mês: anos abertos nesta janela { 2026: [12 linhas] } — Salvar grava os que foram mexidos
@@ -73,6 +77,9 @@ export default function RegrasSistemaModal({ onClose, onSalvo, usuario, tiposExt
       setDiasRecusaInput(String(cfg?.dias_recusa ?? 15))
       setTemColunaNf(!!cfg && 'dias_nf_envio' in cfg)
       setDiasNfInput(String(cfg?.dias_nf_envio ?? 4))
+      setTemColunaCores(!!cfg && 'dias_cor_amarelo' in cfg && 'dias_cor_vermelho' in cfg)
+      setCorAmareloInput(String(cfg?.dias_cor_amarelo ?? 20))
+      setCorVermelhoInput(String(cfg?.dias_cor_vermelho ?? 30))
       const porTipo = cfg?.dias_solucao_por_tipo ?? {}
       setDiasSolucaoPorTipoInput(Object.fromEntries(Object.entries(porTipo).map(([k, v]) => [k, String(v)])))
       setTiposDim(tipos.filter(t => t.classificacao === 'Garantia' && t.sigla))
@@ -170,6 +177,12 @@ export default function RegrasSistemaModal({ onClose, onSalvo, usuario, tiposExt
       setErro('Informe números de dias válidos (maiores que zero).')
       return
     }
+    const corAm = Number(corAmareloInput)
+    const corVm = Number(corVermelhoInput)
+    if (temColunaCores && (![corAm, corVm].every(n => Number.isInteger(n) && n > 0) || corVm < corAm)) {
+      setErro('Cores da coluna Dias: informe dias inteiros maiores que zero, com o vermelho maior ou igual ao amarelo.')
+      return
+    }
     const porTipo = {}
     for (const [sigla, v] of Object.entries(diasSolucaoPorTipoInput)) {
       const n = Number(v)
@@ -202,7 +215,7 @@ export default function RegrasSistemaModal({ onClose, onSalvo, usuario, tiposExt
     }
     setSalvando(true); setErro(null)
     try {
-      const cfg = { dias_digitacao: dias, dias_oficina: diasOfi, dias_solucao: diasSolucao, dias_solucao_por_tipo: porTipo, dias_recusa: diasRec, ...(temColunaNf ? { dias_nf_envio: diasNf } : {}) }
+      const cfg = { dias_digitacao: dias, dias_oficina: diasOfi, dias_solucao: diasSolucao, dias_solucao_por_tipo: porTipo, dias_recusa: diasRec, ...(temColunaNf ? { dias_nf_envio: diasNf } : {}), ...(temColunaCores ? { dias_cor_amarelo: corAm, dias_cor_vermelho: corVm } : {}) }
       await apiService.updateConfiguracoesGarantias(cfg, usuario)
       for (const [a, linhas] of porAno) await apiService.saveRegrasGarantiasMes(a, linhas, usuario)
       const meses = await carregarRegrasMes()
@@ -290,6 +303,29 @@ export default function RegrasSistemaModal({ onClose, onSalvo, usuario, tiposExt
                   </>
                 )}
               </p>
+            </div>
+            <div className="flex flex-col gap-1 mb-4">
+              <label className={lblCls}>Cores da coluna Dias (tabela)</label>
+              <div className="flex items-center gap-2 flex-wrap text-[11px] text-slate-600">
+                <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-amber-400" /> Amarelo a partir de</span>
+                <input type="number" min="1" value={corAmareloInput} onChange={e => setCorAmareloInput(e.target.value)} disabled={!temColunaCores}
+                  className="w-16 text-xs p-1.5 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20 disabled:bg-slate-50 disabled:text-slate-400" />
+                <span>dias ·</span>
+                <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-red-500" /> Vermelho acima de</span>
+                <input type="number" min="1" value={corVermelhoInput} onChange={e => setCorVermelhoInput(e.target.value)} disabled={!temColunaCores}
+                  className="w-16 text-xs p-1.5 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20 disabled:bg-slate-50 disabled:text-slate-400" />
+                <span>dias</span>
+              </div>
+              <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">
+                Dias = da criação da O.S. até hoje.{Number(corAmareloInput) > 0 && Number(corVermelhoInput) > 0 && (
+                  <> Verde: até {Number(corAmareloInput) - 1} dias · Amarelo: de {Number(corAmareloInput)} a {Number(corVermelhoInput)} dias · Vermelho: a partir de {Number(corVermelhoInput) + 1} dias.</>
+                )}
+              </p>
+              {!temColunaCores && (
+                <p className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded p-1.5">
+                  Campo ainda não liberado no banco — por enquanto vale o padrão (amarelo 20, vermelho 30).
+                </p>
+              )}
             </div>
             {tipos.length > 0 && (
               <div className="flex flex-col gap-1">

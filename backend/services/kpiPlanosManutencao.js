@@ -1,5 +1,5 @@
 /**
- * Indicadores do quadro CONSULTOR DE PLANO DE MANUTENÇÃO (Matriz KPIs › Bloco 3 - Serviços), com a
+ * Indicadores do quadro CONSULTOR DE PLANO DE MANUTENÇÃO (Matriz de KPIs › Bloco 3 - Serviços), com a
  * mesma regra dos velocímetros do BI Planos de Manutenção (aba Resultado — BiPlanosManutencao.jsx):
  *
  * Em QUANTIDADE de contratos (o BI mostra em %):
@@ -136,6 +136,47 @@ export async function getIndicadoresPlanos(ano, meses = null) {
     return { realizado: out, meta: metas }
   }
 
+  return {
+    novos: montar('novos', 'vendidos', 'gaugeNovos'),
+    renovados: montar('renovados', 'aRenovar', 'gaugeRenovados'),
+  }
+}
+
+/**
+ * Bloco 2 - Departamental › Pós-Vendas (24/11/2026): Contratos novos e renovados EM % — o mesmo número dos
+ * velocímetros da aba Resultado do BI Planos (novos ÷ veículos vendidos no mês anterior; renovados ÷ contratos a
+ * renovar do mês anterior) e a meta % do BI (bi_planos_metas). Trimestre/ano: somas do período (meta ponderada
+ * pela base). Semanas ficam sem valor (o BI é mensal).
+ */
+export async function getPercentuaisPlanos(ano, meses = null) {
+  meses ??= await contarPlanosPorMes(ano)
+  const admin = getSupabaseAdmin()
+  const { data: metasLinhas } = admin
+    ? await admin.from('bi_planos_metas').select('indicador, ano, mes, meta').eq('ano', ano)
+    : { data: [] }
+  const metaPct = (ind, m) => {
+    const l = (metasLinhas || []).find(x => x.indicador === ind && Number(x.mes) === m)
+    return l ? Number(l.meta) : null
+  }
+  const montar = (num, den, ind) => {
+    const realizado = {}, meta = {}
+    const periodo = (k, ms) => {
+      const com = ms.filter(m => meses[m])
+      if (!com.length) { realizado[k] = null; meta[k] = null; return }
+      const n = com.reduce((s, m) => s + (Number(meses[m][num]) || 0), 0)
+      const d = com.reduce((s, m) => s + (Number(meses[m][den]) || 0), 0)
+      realizado[k] = d ? (n / d) * 100 : null
+      const comMeta = com.filter(m => metaPct(ind, m) != null)
+      const dMeta = comMeta.reduce((s, m) => s + (Number(meses[m][den]) || 0), 0)
+      meta[k] = comMeta.length === com.length
+        ? (dMeta ? comMeta.reduce((s, m) => s + metaPct(ind, m) * (Number(meses[m][den]) || 0), 0) / dMeta : metaPct(ind, com[com.length - 1]))
+        : null
+    }
+    for (let m = 1; m <= 12; m++) periodo(mk(m), [m])
+    for (const [q, ms] of Object.entries(QUARTERS)) periodo(q, ms)
+    periodo('fy', Array.from({ length: 12 }, (_, i) => i + 1))
+    return { realizado, meta }
+  }
   return {
     novos: montar('novos', 'vendidos', 'gaugeNovos'),
     renovados: montar('renovados', 'aRenovar', 'gaugeRenovados'),

@@ -272,7 +272,7 @@ const ddmm = (d) => `${String(d.getUTCDate()).padStart(2, '0')}/${String(d.getUT
 const diaUtilPadrao = (d) => (isoDia(d) <= 5 ? 1 : isoDia(d) === 6 ? 0.5 : 0)
 
 /**
- * Semanas do mês iguais às da Matriz KPIs (src/utils/kpiPeriods.js → semanasDoMes): domingo a
+ * Semanas do mês iguais às da Matriz de KPIs (src/utils/kpiPeriods.js → semanasDoMes): domingo a
  * sábado; semana parcial do começo/fim do mês só conta sozinha se tiver quarta-feira, senão junta
  * com a vizinha. Numeradas por mês: Sem 1, Sem 2…
  * @param {number} ano
@@ -285,7 +285,7 @@ export function montarSemanas(ano, mes, calendarios, cfg = CAMPANHA) {
   const ultimo = new Date(Date.UTC(ano, mes, 0)).getUTCDate()
   for (let d = 1; d <= ultimo; d++) dias.push(new Date(Date.UTC(ano, mes - 1, d)))
 
-  // Mesma regra da Matriz KPIs (semanasDoMes em kpiPeriods.js).
+  // Mesma regra da Matriz de KPIs (semanasDoMes em kpiPeriods.js).
   const grupos = semanasDoMes(ano, mes).map(({ inicio, fim }) => ({ dias: dias.slice(inicio - 1, fim) }))
 
   // dias úteis por data, por unidade (calendário da empresa; sem calendário -> regra padrão)
@@ -310,20 +310,20 @@ export function montarSemanas(ano, mes, calendarios, cfg = CAMPANHA) {
 }
 
 // ======================================================================================
-// Contribuição semanal lida direto da Matriz KPIs (Bloco 3 - Serviços › quadro do consultor)
+// Contribuição semanal lida direto da Matriz de KPIs (Bloco 3 - Serviços › quadro do consultor)
 // — mesma linha "Total" da tabela: soma peso × atingimento dos indicadores com peso configurado
 // (kpi_pesos), por semana. As semanas aqui são sempre as mesmas s01..s70 da Matriz (não as "Sem
 // 1..5" locais do mês de montarSemanas) — use semanasMatrizDoMes para converter mês → lista de
 // chaves, na mesma ordem (Sem 1 = primeira chave, Sem 2 = segunda, ...).
 // ======================================================================================
 
-// Chaves de semana da Matriz KPIs (s01..s70) do mês, na ordem (Sem 1, Sem 2, ...).
+// Chaves de semana da Matriz de KPIs (s01..s70) do mês, na ordem (Sem 1, Sem 2, ...).
 export function semanasMatrizDoMes(ano, mes) {
   const mKey = `m${String(mes).padStart(2, '0')}`
   return computeWeekSchema(Number(ano)).MONTH_WEEK_RANGES[mKey] || []
 }
 
-// Mesma regra da Matriz KPIs (KpiBloco3Servicos calcAtingimento).
+// Mesma regra da Matriz de KPIs (KpiBloco3Servicos calcAtingimento).
 function calcAtingimentoMatriz(orientacao, meta, realizado) {
   if (realizado == null || meta == null) return null
   if (orientacao === '<') {
@@ -462,7 +462,7 @@ export const REGRAS_PADRAO = {
   //   fechamento do trimestre, aplicando a faixa do trimestre sobre o bônus de cada mês.
   modelo: 'semanal',
   programa: 'Regulamento da Campanha de Bônus — Pós-Venda (julho/2026)',
-  // Avaliação por blocos da Matriz KPIs (aba Resultados, vertical Pós-Vendas):
+  // Avaliação por blocos da Matriz de KPIs (aba Resultados, vertical Pós-Vendas):
   // Bloco 1 = Companhia, Bloco 2 = Departamento (Pós-Vendas), Bloco 3 = Individual (a função).
   pesosBlocos: { companhia: 0.2, departamento: 0.3, individual: 0.5 },
   semanaMinSegSex: 3,
@@ -574,7 +574,7 @@ export const PONTOS_A_CONFIRMAR = [
   ['Gerente Geral fora de CG', 'O regulamento diz "50% (R$ 500,00) | 100% (R$ 1.000,00)". Foi lido como: a partir de 80% de atingimento paga R$ 500,00 e a partir de 100% paga R$ 1.000,00, sem supermeta.'],
   ['Margem de peças: mínimo × meta', 'O regulamento fala em "margem mínima de peças 30%"; o planejamento aprovou meta de margem de 40%. Aqui: a meta (40%) entra no cálculo do atingimento e os 30% são um piso — semana com margem abaixo do piso não paga.'],
   ['Eficiência ≥ 120% do mecânico', 'Usa a eficiência do MÊS (horas vendidas ÷ horas aplicadas). Semanas acima de 120% aparecem só como alerta.'],
-  ['Produtividade do mecânico', 'Horas vendidas ÷ horas disponíveis (como nas planilhas de apuração). A Matriz KPIs usa horas aplicadas ÷ disponíveis.'],
+  ['Produtividade do mecânico', 'Horas vendidas ÷ horas disponíveis (como nas planilhas de apuração). A Matriz de KPIs usa horas aplicadas ÷ disponíveis.'],
   ['Produtividade geral (Chefe de Oficina)', 'A planilha de agosto mistura critérios: a semana 1 bate com horas vendidas ÷ disponíveis e as semanas 2 e 4 com horas aplicadas ÷ disponíveis. O padrão é vendidas ÷ disponíveis (igual ao Mecânico); dá para trocar na regra do Chefe.'],
   ['Valores fixos por faixa (Chefe e Gerente Geral)', 'São valores do mês inteiro; cada semana paga o valor da faixa ÷ nº de semanas.'],
   ['Supermeta', 'O atingimento composto não tem teto por indicador; a supermeta (110% ou mais) paga 120% do bônus da semana.'],
@@ -664,7 +664,7 @@ export function combinarMetasUnidade(lista) {
 
 
 // ======================================================================================
-// Blocos 1 e 2 da Matriz KPIs (planilha de KPIs do SharePoint → kpi_cache_planilhas)
+// Blocos 1 e 2 da Matriz de KPIs (planilha de KPIs do SharePoint → kpi_cache_planilhas)
 // ======================================================================================
 // Só existem por trimestre (Q1–Q4) e ano. Atingimento do bloco = média dos indicadores
 // (realizado ÷ meta; orientação '<' inverte) ponderada pelo peso de cada indicador.

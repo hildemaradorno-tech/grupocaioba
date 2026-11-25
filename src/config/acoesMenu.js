@@ -224,8 +224,7 @@ export const ACOES_POR_MENU = [
       { value: 'cadastrar_situacoes',  label: 'Cadastrar Situações de Auditoria' },
       { value: 'programar_auditorias', label: 'Programar Auditorias (geração automática e Regra de Reabertura)' },
       { value: 'metas_indicadores',    label: 'Metas dos Indicadores (Dashboard — % máximo de O.S. pendentes e > 30 dias)' },
-      { value: 'exportar',             label: 'Exportar Auditoria (PDF / Excel da tabela atual)' },
-      // Modo Conferência
+      { value: 'exportar',             label: 'Exportar Auditoria (PDF / Excel da tabela atual)' },      // Modo Conferência
       { value: 'conferir',             label: 'Conferir — alterar Na Oficina no Modo Conferência' },
       { value: 'pendenciar',           label: 'Pendenciar OS selecionadas (Na Oficina = Não em lote)' },
       { value: 'concluir_conferencia', label: 'Botão Conferido (concluir conferência e definir prazo)' },
@@ -617,8 +616,8 @@ export const ACOES_POR_MENU = [
   {
     menuPath: 'bi/campanha/apuracao',
     acoes: [
-      { value: 'atualizar_numeros', label: 'Atualizar Números (sincroniza Matriz KPIs + Campanha)' },
-      { value: 'ver_matriz',        label: 'Ver Bloco 3 da Matriz KPIs (pop-up)' },
+      { value: 'atualizar_numeros', label: 'Atualizar Números (sincroniza Matriz de KPIs + Campanha)' },
+      { value: 'ver_matriz',        label: 'Ver Bloco 3 da Matriz de KPIs (pop-up)' },
       { value: 'fechar_mes',        label: 'Fechar Mês (congela os valores da empresa no mês)' },
       { value: 'reabrir_mes',       label: 'Reabrir Mês Fechado' },
     ],
@@ -626,7 +625,7 @@ export const ACOES_POR_MENU = [
   {
     menuPath: 'bi/campanha/resultado',
     acoes: [
-      { value: 'ver_matriz',        label: 'Ver Bloco 3 da Matriz KPIs (pop-up)' },
+      { value: 'ver_matriz',        label: 'Ver Bloco 3 da Matriz de KPIs (pop-up)' },
       { value: 'ver_calculo',       label: 'Ver Cálculo do Bônus de cada Semana (ⓘ)' },
     ],
   },
@@ -655,6 +654,12 @@ export const ACOES_POR_MENU = [
     menuPath: 'kpi/resultados',
     acoes: [
       { value: 'editar', label: 'Atualizar Dados (botão Sincronizar da Matriz)' },
+    ],
+  },
+  {
+    menuPath: 'kpi/bloco2-operacional',
+    acoes: [
+      { value: 'editar', label: 'Editar Peso' },
     ],
   },
   {

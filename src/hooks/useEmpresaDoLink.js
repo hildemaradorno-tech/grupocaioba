@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 
-// Link de origem da Matriz KPIs (?loja=CAMPO GRANDE): ao abrir a tela, aplica UMA vez o filtro de empresa
+// Link de origem da Matriz de KPIs (?loja=CAMPO GRANDE): ao abrir a tela, aplica UMA vez o filtro de empresa
 // (ex.: fatia "por Empresa" dos dashboards de Garantias DAF) no nome que corresponde à loja, assim que os
 // dados chegam. valores = nomes de empresa presentes nos dados; aplicar(nome) = liga o filtro da tela.
 // 'TRUCKS' (todas as Trucks) não filtra nada.

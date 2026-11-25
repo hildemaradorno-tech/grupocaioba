@@ -5,7 +5,7 @@
  *
  * Só manual (decisão do usuário em 17/10/2026 — sem agendamento automático):
  *  - botão "Atualizar agora" da tela (POST /api/bi-medidas/sincronizar) — período filtrado;
- *  - botão "Atualizar Agora" da Matriz KPIs (kpiSyncService) — mês anterior + mês atual.
+ *  - botão "Atualizar Agora" da Matriz de KPIs (kpiSyncService) — mês anterior + mês atual.
  *
  * Mesmo motor da leitura ao vivo (agregarPorDimensoes) e mesmas regras da Medida, inclusive a
  * tradução SETOR_OS → siglas de Tipos de O.S. que o frontend fazia (getRegrasParaCalculoMedidaBi).
@@ -18,7 +18,7 @@ const LOTE = 500
 const r2 = (v) => Math.round((v || 0) * 100) / 100
 const isoLocal = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 
-// Período padrão quando roda junto com a Matriz KPIs: 1º dia do mês anterior até hoje (pega correções
+// Período padrão quando roda junto com a Matriz de KPIs: 1º dia do mês anterior até hoje (pega correções
 // lançadas no mês que já fechou).
 export function periodoPadraoBi() {
   const hoje = new Date()
@@ -158,7 +158,7 @@ export async function sincronizarBiMedidasDiario(supabaseAdmin, periodo = period
     return { dataInicio, dataFim, ok: detalhes.every(d => d.ok), detalhes }
   } finally {
     emExecucao = false
-    // Matriz KPIs › Bloco 3 - Serviços lê esses mesmos dados (kpiPossibilidades.js): relê na próxima consulta.
+    // Matriz de KPIs › Bloco 3 - Serviços lê esses mesmos dados (kpiPossibilidades.js): relê na próxima consulta.
     limparCachePossibilidades()
   }
 }

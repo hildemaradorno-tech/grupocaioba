@@ -1,5 +1,5 @@
 /**
- * Sincronização manual dos dados de KPI/Matriz KPIs: lê o SharePoint uma vez
+ * Sincronização manual dos dados de KPI/Matriz de KPIs: lê o SharePoint uma vez
  * (reaproveitando as mesmas funções dos endpoints ao vivo) e grava o resultado
  * no Supabase para as telas consumirem o cache.
  */

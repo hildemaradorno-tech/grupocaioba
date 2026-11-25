@@ -18,11 +18,11 @@ export function KpiYearProvider({ children }) {
     setYearState(y)
   }
 
-  // Matriz KPIs: o período em andamento vale até ONTEM; marcado "Considerar o dia atual", até agora.
+  // Matriz de KPIs: o período em andamento vale até ONTEM; marcado "Considerar o dia atual", até agora.
   // Sempre começa desmarcado (não fica gravado).
   const [incluirHoje, setIncluirHoje] = useState(false)
 
-  // Matriz KPIs › seletor de empresas DAF (23/11/2026): nomes das casas marcadas ('CAMPO GRANDE', …);
+  // Matriz de KPIs › seletor de empresas DAF (23/11/2026): nomes das casas marcadas ('CAMPO GRANDE', …);
   // lista vazia = Todas. Não fica gravado (abre sempre em Todas).
   const [empresasDaf, setEmpresasDaf] = useState([])
 

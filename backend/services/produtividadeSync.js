@@ -369,7 +369,7 @@ export async function sincronizarProdutividadeMes(admin, ano, mes) {
 }
 
 // ── Metas (Planejamento de Metas — só as aprovadas) ─────────────────────────
-// Aprovada = meta_aprovada igual à meta_faturamento (mesma regra da Matriz KPIs, kpiMetas.js).
+// Aprovada = meta_aprovada igual à meta_faturamento (mesma regra da Matriz de KPIs, kpiMetas.js).
 const aprovada = (r) => r.meta_aprovada != null && Math.abs((Number(r.meta_faturamento) || 0) - Number(r.meta_aprovada)) <= 0.001
 
 async function lerTudo(consulta) {

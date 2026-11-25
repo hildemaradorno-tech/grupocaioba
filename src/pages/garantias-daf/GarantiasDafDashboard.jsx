@@ -160,6 +160,9 @@ export default function GarantiasDafDashboard({ variante = 'aberto', onLastModif
   const [diasRecusa, setDiasRecusa] = useState(15)
   // Regras por mês (gar_regras_mes): cada OS usa a do mês em que a contagem começa; mês vazio = geral
   const [regrasMes, setRegrasMes] = useState({})
+  // Cores da coluna Dias (tabela Com Garantista) — engrenagem → Regras — Com Garantista
+  const [diasCorAmarelo, setDiasCorAmarelo] = useState(20)
+  const [diasCorVermelho, setDiasCorVermelho] = useState(30)
 
   const aplicarRegras = (cfg, meses) => {
     setDiasRecusa(cfg?.dias_recusa ?? 15)
@@ -168,6 +171,8 @@ export default function GarantiasDafDashboard({ variante = 'aberto', onLastModif
     setDiasSolucao(cfg?.dias_solucao ?? 14)
     setDiasSolucaoPorTipo(cfg?.dias_solucao_por_tipo ?? {})
     if (meses) setRegrasMes(meses)
+    setDiasCorAmarelo(cfg?.dias_cor_amarelo ?? 20)
+    setDiasCorVermelho(cfg?.dias_cor_vermelho ?? 30)
   }
   useEffect(() => {
     apiService.getConfiguracoesGarantias().then(cfg => aplicarRegras(cfg)).catch(() => {})
@@ -765,6 +770,11 @@ export default function GarantiasDafDashboard({ variante = 'aberto', onLastModif
     return base
   })()
 
+  // Dias da O.S.: da data de criação até hoje (coluna Dias da tabela Com Garantista)
+  const diasDaOS = (g) => g.data_abertura_os
+    ? Math.max(0, Math.floor((new Date() - new Date(g.data_abertura_os + 'T12:00:00')) / 86400000))
+    : null
+
   const handleSort = (col) => {
     if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
     else { setSortCol(col); setSortDir('asc') }
@@ -774,6 +784,11 @@ export default function GarantiasDafDashboard({ variante = 'aberto', onLastModif
     const arr = [...dadosFiltrados]
     arr.sort((a, b) => {
       let va, vb
+      if (sortCol === 'dias_os') {
+        va = diasDaOS(a) ?? -1
+        vb = diasDaOS(b) ?? -1
+        return sortDir === 'asc' ? va - vb : vb - va
+      }
       if (sortCol === 'total') {
         va = Number(a.valor_pecas || 0) + Number(a.valor_servicos || 0)
         vb = Number(b.valor_pecas || 0) + Number(b.valor_servicos || 0)
@@ -1403,6 +1418,7 @@ export default function GarantiasDafDashboard({ variante = 'aberto', onLastModif
                     { col: 'numero_os',              label: 'Nº OS',               cls: 'w-32' },
                     { col: 'empresa_nome',            label: 'Empresa',             cls: 'w-80' },
                     { col: 'data_abertura_os',        label: 'Data Criação',        cls: 'w-32' },
+                    { col: 'dias_os',                 label: 'Dias',                cls: 'w-20 text-center' },
                     { col: 'tipo_garantia_descricao', label: 'Tipo OS',             cls: 'w-56' },
                     { col: 'consultor_nome',          label: 'Consultor',           cls: 'w-72' },
                     { col: 'cliente',                 label: 'Proprietário Veículo',cls: 'w-72' },
@@ -1428,7 +1444,7 @@ export default function GarantiasDafDashboard({ variante = 'aberto', onLastModif
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
                 {sortedDados.length === 0 ? (
-                  <tr><td colSpan="14" className="p-10 text-center text-slate-400">Nenhuma garantia encontrada.</td></tr>
+                  <tr><td colSpan="15" className="p-10 text-center text-slate-400">Nenhuma garantia encontrada.</td></tr>
                 ) : sortedDados.map(item => {
                   const vt = Number(item.valor_pecas || 0) + Number(item.valor_servicos || 0)
                   const st = getStatusDisplay(item, digitacaoDe(item))
@@ -1450,6 +1466,14 @@ export default function GarantiasDafDashboard({ variante = 'aberto', onLastModif
                       </td>
                       <td className="p-3 text-slate-700 whitespace-normal leading-snug">{empresaNome(item)}</td>
                       <td className="p-3 text-slate-500">{item.data_abertura_os ? new Date(item.data_abertura_os + 'T12:00:00').toLocaleDateString('pt-BR') : '—'}</td>
+                      <td className="p-3 text-center" title={`Dias desde a criação da O.S. até hoje · verde até ${diasCorAmarelo - 1}, amarelo de ${diasCorAmarelo} a ${diasCorVermelho}, vermelho acima de ${diasCorVermelho}`}>
+                        {diasDaOS(item) == null ? '—' : (
+                          <span className={`inline-flex min-w-[2.25rem] justify-center px-2 py-0.5 rounded-full text-[11px] font-bold ${
+                            diasDaOS(item) > diasCorVermelho ? 'bg-red-100 text-red-700'
+                              : diasDaOS(item) >= diasCorAmarelo ? 'bg-amber-100 text-amber-700'
+                              : 'bg-green-100 text-green-700'}`}>{diasDaOS(item)}</span>
+                        )}
+                      </td>
                       <td className="p-3 text-slate-600 truncate max-w-[160px]" title={item.tipo_garantia_descricao || item.tipo_os_sigla}>{item.tipo_garantia_descricao || item.tipo_os_sigla || '—'}</td>
                       <td className="p-3 text-slate-600">{item.consultor_nome || '—'}</td>
                       <td className="p-3 truncate max-w-[200px]" title={item.cliente}>{item.cliente || '—'}</td>

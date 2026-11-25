@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { isConfigured } from '../services/graphClient.js'
-import { getOsAbertasGarantia, clearGarantiasCache, getRof001Colunas, getRof001EncerradaColunas, getOsAbertasGeral, getOsAbertasInfo, getOsEncerradas, clearEncerradasCache } from '../services/sharepointGarantias.js'
+import { getOsAbertasGarantia, clearGarantiasCache, getRof001Colunas, getRof001EncerradaColunas, getOsAbertasGeral, getOsAbertasInfo, getOsEncerradas, clearEncerradasCache, getOsTempoOficina } from '../services/sharepointGarantias.js'
 import { getAllFaturamentosRof017, getFaturamentoPorOSRof017, getRof017Colunas, clearRof017Cache } from '../services/sharepointRof017.js'
 import { getRfn003Colunas, getTitulosAReceber, clearFinanceiroCache } from '../services/sharepointFinanceiro.js'
 
@@ -28,7 +28,15 @@ router.post('/sharepoint/aberta/refresh', wrap(async (req, res) => {
   res.json({ rows, lastModified })
 }))
 
-// GET /api/garantias/sharepoint/encerrada — O.S. de garantia dos arquivos ROF001_OSAberta_Excel <ano> (com a Situação)
+// GET /api/garantias/sharepoint/tempo-oficina?de=&ate=&empresa= — O.S. fechadas (entrada → saída) dos arquivos
+// ROF001_OSAberta_Excel <ano>, todos os tipos, pela data de saída (Fechado). Aba Tempo na Oficina da Auditoria.
+router.get('/sharepoint/tempo-oficina', wrap(async (req, res) => {
+  if (!isConfigured()) return res.status(503).json({ error: 'sharepoint_not_configured' })
+  const { de, ate, empresa } = req.query
+  res.json(await getOsTempoOficina({ de, ate, empresa }))
+}))
+
+// GET /api/garantias/sharepoint/encerrada —O.S. de garantia dos arquivos ROF001_OSAberta_Excel <ano> (com a Situação)
 router.get('/sharepoint/encerrada', wrap(async (req, res) => {
   if (!isConfigured()) return res.status(503).json({ error: 'sharepoint_not_configured' })
   const data = await getOsEncerradas()

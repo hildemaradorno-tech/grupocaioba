@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useSearchParams } from 'react-router-dom'
-import { BarChart2, ClipboardList, BookOpen } from 'lucide-react'
+import { ClipboardList, ClipboardCheck, BookOpen, Gauge, CalendarClock } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import logoCaioba from '../../assets/logo-grupo.png'
 import AuditoriaOsAberto from '../garantias-daf/AuditoriaOsAberto'
@@ -36,46 +36,44 @@ export default function BiAuditoriaOsAberto() {
   const podeDashboard = hasPermission(PERM_DASHBOARD)
   const podeControle = hasPermission(PERM_CONTROLE)
 
-  // Visão na URL (?modo=dashboard|controle); sem ela, a "Visão inicial" do grupo (Grupos de Acessos),
-  // se o usuário puder vê-la; senão a outra
-  const pedido = params.get('modo')
-  const modo = pedido === 'controle' && podeControle ? 'controle'
-    : pedido === 'dashboard' && podeDashboard ? 'dashboard'
-    : auditoriaVisaoPadraoEfetiva === 'controle' && podeControle ? 'controle'
-    : podeDashboard ? 'dashboard' : podeControle ? 'controle' : null
+  // Uma tela só, com abas: Indicadores · O.S. Pendentes · O.S. ≥ 30 Dias (permissão do Dashboard) e Auditoria
+  // (permissão do Controle). Aba na URL (?aba=); sem ela, a "Visão inicial" do grupo (Grupos de Acessos):
+  // Dashboard → Indicadores, Controle → Auditoria. ?modo=controle|dashboard (links antigos) ainda vale.
+  const ABAS = [
+    ...(podeDashboard ? [
+      { key: 'indicadores', label: 'Indicadores', icon: Gauge },
+      { key: 'pendentes', label: 'O.S. Pendentes', icon: ClipboardList },
+      { key: 'mais30', label: 'O.S. ≥ 30 Dias', icon: CalendarClock },
+    ] : []),
+    ...(podeControle ? [{ key: 'auditoria', label: 'Auditoria', icon: ClipboardCheck }] : []),
+  ]
+  const pedido = params.get('aba') || (params.get('modo') === 'controle' ? 'auditoria' : params.get('modo') === 'dashboard' ? 'indicadores' : null)
+  const aba = ABAS.some(a => a.key === pedido) ? pedido
+    : auditoriaVisaoPadraoEfetiva === 'controle' && podeControle ? 'auditoria'
+    : ABAS[0]?.key || null
 
-  if (!modo) return <div className="p-6 text-xs text-slate-500">Sem acesso à Auditoria O.S. Aberta.</div>
+  if (!aba) return <div className="p-6 text-xs text-slate-500">Sem acesso à Auditoria O.S. Aberta.</div>
+  const modo = aba === 'auditoria' ? 'controle' : 'dashboard'
 
-  // Só ícone; o nome aparece no balão (title)
-  const botaoModo = (valor, label, Icon, habilitado, dica) => (
-    <button
-      type="button"
-      onClick={() => habilitado && atualizarParams({ modo: valor })}
-      disabled={!habilitado}
-      title={`${label} — ${dica}`}
-      aria-label={label}
-      className={`flex items-center justify-center h-8 w-8 rounded-md transition-colors ${
-        modo === valor ? 'bg-indigo-600 text-white shadow-sm'
-          : habilitado ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-100' : 'text-slate-300 cursor-not-allowed'
-      }`}
-    >
-      <Icon className="h-4 w-4" />
-    </button>
-  )
-  // Visão Dashboard | Controle — cada visão reserva o lugar (onSlotVisao) na linha das abas / dos seletores, à direita
-  const seletorVisao = (
-    <div className="flex items-center gap-2">
-      {/* Auditoria em andamento (Conferência ou A Responder): etiqueta amarela antes dos ícones */}
-      {emAndamento && (
-        <span className="inline-flex items-center h-8 px-3 rounded-md bg-yellow-300 text-yellow-900 text-[11px] font-bold uppercase shadow-sm">
-          Em andamento
-        </span>
-      )}
-      <div className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-lg p-0.5 shadow-sm">
-        {botaoModo('dashboard', 'Dashboard', BarChart2, podeDashboard, podeDashboard ? 'ver indicadores' : 'sem permissão')}
-        {botaoModo('controle', 'Controle', ClipboardList, podeControle, podeControle ? 'conferir e responder as auditorias' : 'sem permissão')}
-      </div>
+  // Abas tipo "pasta": inativas cinza-claro com borda, ativa azul preenchida e um pouco mais alta
+  const barraAbas = (
+    <div className="flex items-end gap-1 border-b-2 border-sky-600 flex-wrap">
+      {ABAS.map(a => (
+        <button key={a.key} type="button" onClick={() => atualizarParams({ aba: a.key, modo: '' })}
+          className={`inline-flex items-center gap-1.5 px-4 rounded-t-md border border-b-0 text-[11px] font-semibold uppercase transition-colors ${
+            aba === a.key
+              ? 'py-2 bg-gradient-to-b from-sky-500 to-sky-600 border-sky-600 text-white shadow-sm'
+              : 'py-1.5 bg-gradient-to-b from-white to-slate-100 border-slate-300 text-slate-500 hover:text-slate-800 hover:to-slate-50'}`}>
+          <a.icon className="h-3.5 w-3.5" />{a.label}
+        </button>
+      ))}
     </div>
+  )
+  // À direita da linha das abas: etiqueta "Em andamento" (auditoria em Conferência ou A Responder)
+  const seletorVisao = emAndamento && (
+    <span className="inline-flex items-center h-8 px-3 rounded-md bg-yellow-300 text-yellow-900 text-[11px] font-bold uppercase shadow-sm">
+      Em andamento
+    </span>
   )
 
   return (
@@ -119,19 +117,20 @@ export default function BiAuditoriaOsAberto() {
             </div>
           </div>
         </div>
-        {slotVisao && createPortal(seletorVisao, slotVisao)}
+        {slotVisao && seletorVisao && createPortal(seletorVisao, slotVisao)}
 
         {/* Só a visão escolhida é montada — a outra não carrega dados enquanto estiver fechada */}
         {modo === 'dashboard'
           ? <>
-              <AuditoriaOsAbertoDashboard selecao={selecao} onSelecao={onSelecao} slotFiltros={slotFiltros} onSlotVisao={setSlotVisao} versao={versao} onStatusAuditoria={setStatusAuditoria} />
+              <AuditoriaOsAbertoDashboard selecao={selecao} onSelecao={onSelecao} slotFiltros={slotFiltros} onSlotVisao={setSlotVisao} versao={versao} onStatusAuditoria={setStatusAuditoria}
+                aba={aba} barraAbas={barraAbas} />
               {/* Engrenagem no Dashboard: a mesma do Controle (só ela e as janelas, sem a tabela) — quem tem o Controle */}
               {podeControle && (
                 <AuditoriaOsAberto embedded soEngrenagem slotEngrenagem={slotEngrenagem} selecao={selecao}
                   onAlterado={() => setVersao(v => v + 1)} />
               )}
             </>
-          : <AuditoriaOsAberto embedded slotFiltros={slotFiltros} slotEngrenagem={slotEngrenagem} onSlotVisao={setSlotVisao} selecao={selecao} onSelecao={(s) => onSelecao({ ...s, data: selecao.data })} onStatusAuditoria={setStatusAuditoria} />}
+          : <AuditoriaOsAberto embedded slotFiltros={slotFiltros} slotEngrenagem={slotEngrenagem} onSlotVisao={setSlotVisao} selecao={selecao} onSelecao={(s) => onSelecao({ ...s, data: selecao.data })} onStatusAuditoria={setStatusAuditoria} barraAbas={barraAbas} />}
       </div>
     </div>
   )

@@ -1,9 +1,9 @@
 /**
  * Metas aprovadas (fato_metas_publicadas — gravadas na Gestão de Aprovação de
- * Metas / Total Grupo) convertidas para os períodos da Matriz KPIs
+ * Metas / Total Grupo) convertidas para os períodos da Matriz de KPIs
  * (q1..q4, fy, m01..m12, s01..s70), prontas para injetar na coluna "Meta".
  *
- * Na Matriz KPIs a meta é sempre lida de fato_metas_publicadas — é o único
+ * Na Matriz de KPIs a meta é sempre lida de fato_metas_publicadas — é o único
  * lugar de verdade daqui; nunca ler as tabelas de rascunho/planejamento
  * (fato_rascunho_metas_*) diretamente.
  *
@@ -96,7 +96,7 @@ function diasUteisIntervalo(calEmpresaMes, ano, mes, inicio, fim) {
 }
 
 // Recebe linhas já filtradas de fato_metas_publicadas (mesmo tipo/recorte) e
-// devolve nos períodos da Matriz KPIs: mês direto, trimestre/FY somando os
+// devolve nos períodos da Matriz de KPIs: mês direto, trimestre/FY somando os
 // meses, semana rateando pelos dias úteis (fato_calendario da empresa da
 // linha; sem calendário cadastrado cai em segunda a sexta).
 function periodizarMetas(linhas, ano, calendario) {
@@ -432,15 +432,32 @@ export async function getMetaTrpPeriodos(ano, { vendedorNome = null } = {}) {
  * média simples dos tickets — para bater com a conta real (Faturamento ÷ Passagens).
  * vendedorNome aqui = consultorNome; empresaNome restringe à casa; ambos null = todos.
  */
-export async function getMetaTicketMedioPeriodos(ano, { consultorNome = null, empresaNome = null } = {}) {
-  const base = await carregarBase(ano)
-  if (!base) return null
+// empresaNome: um nome ou uma lista; soTrucks: só Caiobá Trucks (Bloco 2 - Departamental, 24/11/2026).
+function linhasTicketPassagens(base, { consultorNome = null, empresaNome = null, soTrucks = false } = {}) {
   const alvoCon = consultorNome ? normNome(consultorNome) : null
-  const alvoEmp = empresaNome ? normNome(empresaNome) : null
-  const linhas = base.metas
+  const alvosEmp = empresaNome ? new Set([].concat(empresaNome).map(normNome)) : null
+  return base.metas
     .filter(r => r.tipo === 'consultor' && r.ticket_total != null && r.passagens != null
       && (!alvoCon || normNome(r.colaborador_nome) === alvoCon)
-      && (!alvoEmp || normNome(r.empresa_nome) === alvoEmp))
+      && (!alvosEmp || alvosEmp.has(normNome(r.empresa_nome)))
+      && (!soTrucks || normNome(r.empresa_nome).includes('TRUCKS')))
+}
+
+/**
+ * Meta de Passagens (O.S.) por período: soma das passagens publicadas no planejamento dos consultores
+ * (fato_metas_publicadas.passagens) — Bloco 2 - Departamental › Passagem Total (24/11/2026).
+ */
+export async function getMetaPassagensPeriodos(ano, opts = {}) {
+  const base = await carregarBase(ano)
+  if (!base) return null
+  const linhas = linhasTicketPassagens(base, opts).map(r => ({ ...r, meta_faturamento: Number(r.passagens) }))
+  return periodizarMetas(linhas, ano, base.calendario)
+}
+
+export async function getMetaTicketMedioPeriodos(ano, { consultorNome = null, empresaNome = null, soTrucks = false } = {}) {
+  const base = await carregarBase(ano)
+  if (!base) return null
+  const linhas = linhasTicketPassagens(base, { consultorNome, empresaNome, soTrucks })
     .map(r => ({ ...r, meta_faturamento: Number(r.ticket_total) * Number(r.passagens) }))
   const fat = periodizarMetas(linhas, ano, base.calendario)
   const pas = periodizarMetas(linhas.map(r => ({ ...r, meta_faturamento: Number(r.passagens) })), ano, base.calendario)

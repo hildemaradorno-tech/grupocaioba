@@ -328,7 +328,7 @@ export const MENU_TREE = [
     label: 'BI - Dashboard',
     children: [
       {
-        // Agrupamento "Gestão Estratégica" (sem navTo, 13/11/2026), antes do Pós-Vendas: Matriz KPIs - DAF.
+        // Agrupamento "Gestão Estratégica" (sem navTo, 13/11/2026), antes do Pós-Vendas: Matriz de KPIs - DAF.
         key: '_bi.gestao',
         label: 'Gestão Estratégica',
         children: [
@@ -336,7 +336,7 @@ export const MENU_TREE = [
             // Permissões individuais mantidas (controlam quais abas aparecem em /kpi/matriz),
             // mas o grupo inteiro navega direto pra página única — ver navTo no Home.jsx (TabelaMenu).
             key: '_bi.kpis',
-            label: 'Matriz KPIs - DAF',
+            label: 'Matriz de KPIs - DAF',
             navTo: 'kpi/matriz',
             children: [
               { key: 'kpi/resultados', label: 'Resultados' },
@@ -347,7 +347,7 @@ export const MENU_TREE = [
               { key: 'kpi/orcamento-backlog', label: 'Orçamento & Backlog' },
             ],
           },
-          // Campanha Pós-Venda logo abaixo da Matriz KPIs, no grupo Gestão (13/11/2026). Mesmo padrão da Matriz KPIs:
+          // Campanha Pós-Venda logo abaixo da Matriz de KPIs, no grupo Gestão (13/11/2026). Mesmo padrão da Matriz de KPIs:
           // o grupo navega direto pra página única; cada aba e cada empresa é uma permissão própria
           // (ver CAMPANHA_ABAS / PERM_EMPRESA em BiCampanha.jsx) e os botões são ações em acoesMenu.js.
           // Precisa de pelo menos 1 aba E 1 empresa para usar a tela.

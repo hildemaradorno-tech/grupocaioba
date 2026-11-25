@@ -1,5 +1,5 @@
 /**
- * Pesos definidos manualmente por indicador da Matriz KPIs (coluna "Peso"),
+ * Pesos definidos manualmente por indicador da Matriz de KPIs (coluna "Peso"),
  * gravados no Supabase para ficarem os mesmos pra qualquer usuário que abrir
  * a tela — ver migration kpi_pesos.sql.
  */

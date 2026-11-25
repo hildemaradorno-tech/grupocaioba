@@ -1,12 +1,12 @@
 /**
  * Campanha Pós-Venda — grava fato_campanha_diario (1 linha por dia × empresa × pessoa).
  *
- * Roda dentro da sincronização agendada da Matriz KPIs (kpiSyncService), depois das fontes
+ * Roda dentro da sincronização agendada da Matriz de KPIs (kpiSyncService), depois das fontes
  * do extrator — os arquivos do SharePoint já estão no cache em memória nesse momento, então
  * este passo só soma e grava. A tela BI Campanha lê essa tabela direto do Supabase (poucas
  * centenas de linhas por empresa/mês) e monta as semanas da campanha a partir do dia.
  *
- * Fontes (mesmas da Matriz KPIs):
+ * Fontes (mesmas da Matriz de KPIs):
  *   consultor → REL_VENDARECEPCIONISTA (tot_serv, tot_pec, margem_peca, OS_Codigo, Usuario_Nome/Codigo)
  *   mecânico  → ROF042 (Hr. Total = aplicadas, Hr. Vend.) + ROF096 (disponíveis)
  *   Produtividade = aplicadas ÷ disponíveis · Eficiência = vendidas ÷ aplicadas (igual à Matriz)

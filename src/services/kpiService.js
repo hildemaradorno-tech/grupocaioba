@@ -1,5 +1,5 @@
 /**
- * Serviço de dados da Matriz KPIs.
+ * Serviço de dados da Matriz de KPIs.
  * Tenta buscar do backend (SharePoint via Graph API).
  * Se o backend não estiver configurado ou indisponível, usa dados mock automaticamente.
  */
@@ -53,6 +53,7 @@ function buildUrl(endpoint, params = {}) {
   if (params.empresaFunilaria) qs.set('empresaFunilaria', params.empresaFunilaria)
   if (params.empresaGarantia) qs.set('empresaGarantia', params.empresaGarantia)
   if (params.empresaQualidade) qs.set('empresaQualidade', params.empresaQualidade) // GERENTE DE PROCESSOS E QUALIDADE (Bloco 3 › Gerentes)
+  if (params.empresas) qs.set('empresas', params.empresas) // seletor de empresas DAF da Matriz ('DOURADOS,TRÊS LAGOAS')
   if (params.apenas) qs.set('apenas', params.apenas)
   if (params.apenas) qs.set('apenas', params.apenas) // Bloco 3 - Serviços: só um quadro por empresa (Campanha)
   if (params.mecanico && params.mecanico !== 'todos') qs.set('mecanico', params.mecanico)
@@ -103,6 +104,8 @@ async function tryFetch(endpoint, mockData, params = {}) {
 export async function fetchAuditoria(p)     { return tryFetch('auditoria',         null,                   p) }
 export async function fetchBloco1(p)        { return tryFetch('bloco1',           MOCK_BLOCO1,            p) }
 export async function fetchBloco2(p)        { return tryFetch('bloco2',           MOCK_BLOCO2,            p) }
+// Bloco 2 - Departamental › Pós-Vendas: { indicadores: { nome: { período: { meta, realizado } } } }
+export async function fetchBloco2PosVenda(p){ return tryFetch('bloco2-pos-venda', null, p) }
 export async function fetchBloco3PosVenda(p){ return tryFetch('bloco3-pos-venda', MOCK_BLOCO3_POS_VENDA,  p) }
 export async function fetchBloco3Pecas(p)   { return tryFetch('bloco3-pecas',     MOCK_BLOCO3_PECAS,      p) }
 export async function fetchBloco3Servicos(p){ return tryFetch('bloco3-servicos',  MOCK_BLOCO3_SERVICOS,   p) }
@@ -261,6 +264,16 @@ export async function salvarMetaManual({ bloco, tituloGerente, kpiId, ano, mes, 
 }
 
 // ── Pesos dos indicadores (coluna "Peso") ─────────────────────────────────────
+
+// Pesos gravados de um bloco: { 'tituloGerente|kpiId': peso }. Usado pelo Bloco 2 - Departamental.
+export async function fetchPesos(bloco) {
+  try {
+    const res = await fetchWithTimeout(`${BASE}/pesos?bloco=${encodeURIComponent(bloco)}`, 30_000)
+    return res || {}
+  } catch {
+    return {}
+  }
+}
 
 export async function salvarPeso({ bloco, tituloGerente, kpiId, peso }) {
   const res = await fetch(`${BASE}/pesos`, {

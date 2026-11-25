@@ -2184,6 +2184,57 @@ export const apiService = {
   // BI Possibilidades: resultado já gravado por dia (fato_bi_medidas_diario), somado no banco
   // pro período — por Medida × Tipo de OS. empresasNorm = lista de nomes de empresa normalizados
   // (sem acento, maiúsculo), iguais ao gravado; null/vazio = todas.
+  // Tempo na Oficina (BI Possibilidades) — regras do indicador "% dos veículos que saíram em até N dias".
+  getTempoOficinaRegras: async () => {
+    const { data, error } = await supabase.from('tempo_oficina_regras').select('*')
+      .order('ano', { ascending: false }).order('mes', { ascending: true, nullsFirst: true })
+    if (error) throw error
+    return data || []
+  },
+  salvarTempoOficinaRegra: async (regra) => {
+    const linha = {
+      ano: Number(regra.ano), mes: regra.mes ? Number(regra.mes) : null, empresa_id: regra.empresa_id || null,
+      dias_limite: Number(regra.dias_limite), meta_pct: Number(regra.meta_pct), atencao_pct: Number(regra.atencao_pct),
+      media_meta_dias: regra.media_meta_dias === '' || regra.media_meta_dias == null ? null : Number(regra.media_meta_dias),
+      media_atencao_dias: regra.media_atencao_dias === '' || regra.media_atencao_dias == null ? null : Number(regra.media_atencao_dias),
+      atualizado_em: new Date().toISOString(),
+    }
+    const q = regra.id
+      ? supabase.from('tempo_oficina_regras').update(linha).eq('id', regra.id)
+      : supabase.from('tempo_oficina_regras').insert([linha])
+    const { error } = await q
+    if (error) {
+      if (error.code === '23505') throw new Error('Já existe regra para esse ano, mês e empresa.')
+      throw error
+    }
+  },
+  excluirTempoOficinaRegra: async (id) => {
+    const { error } = await supabase.from('tempo_oficina_regras').delete().eq('id', id)
+    if (error) throw error
+  },
+
+  // O.S. do Pass (Medida BI com Slot 'pass' — contagem distinta de OS_Codigo da Venda de Serviços, pela data
+  // de emissão da nota) no período: [{ data (emissão da nota), empresa_norm, tipo_os, os }]. Base do Tempo na Oficina (BI Possibilidades).
+  getPassOsPeriodo: async ({ dataInicio, dataFim }) => {
+    const { data: medidas, error: eM } = await supabase.from('dim_medidas_bi').select('id').eq('slot_faturamento', 'pass').eq('ativo', true)
+    if (eM) throw eM
+    const ids = (medidas || []).map(m => m.id)
+    if (!ids.length) return []
+    const PAGE = 1000
+    const out = []
+    for (let de = 0; ; de += PAGE) {
+      const { data, error } = await supabase.from('fato_bi_medidas_diario')
+        .select('data, empresa_norm, tipo_os, distintos')
+        .in('medida_id', ids).gte('data', dataInicio).lte('data', dataFim)
+        .order('data').order('empresa_norm').order('tipo_os').order('funcionario')
+        .range(de, de + PAGE - 1)
+      if (error) throw error
+      for (const r of data || []) for (const os of r.distintos || []) out.push({ data: r.data, empresa_norm: r.empresa_norm, tipo_os: r.tipo_os, os: String(os).trim() })
+      if (!data || data.length < PAGE) break
+    }
+    return out
+  },
+
   getBiMedidasAgregado: async ({ dataInicio, dataFim, empresasNorm }) => {
     // Paginado: com o corte por Funcionário, um período longo pode passar de 1000 linhas.
     const PAGE = 1000
@@ -3158,7 +3209,7 @@ export const apiService = {
     await _aprovarZerados({ tabela: 'fato_rascunho_metas_servicos_consultor', empresaId, ano, usuario })
 
     const { data: rows, error: errFetch } = await supabase.from('fato_rascunho_metas_servicos_consultor')
-      // ticket_total e passagens: metas de Ticket Médio da Oficina (Matriz KPIs) — sem eles a meta
+      // ticket_total e passagens: metas de Ticket Médio da Oficina (Matriz de KPIs) — sem eles a meta
       // publicada ia vazia e o ticket não aparecia na Matriz.
       .select('empresa_id,empresa_nome,ano,mes,colaborador_id,colaborador_nome,departamento_id,departamento_nome,setor_id,setor_nome,box_id,box_nome,cargo_id,cargo_nome,meta_faturamento,meta_pecas,meta_servicos,meta_aprovada,aprovado_em,aprovado_por,aprovado_por_nome,ticket_total,passagens')
       .eq('empresa_id', empresaId).eq('ano', ano).not('meta_aprovada', 'is', null)
@@ -3325,7 +3376,7 @@ export const apiService = {
 
   getTotalGrupoPublicado: async (ano) => {
     const { data, error } = await supabase.from('fato_metas_publicadas')
-      .select('empresa_id,empresa_nome,ano,mes,tipo,colaborador_id,colaborador_nome,departamento_id,departamento_nome,setor_id,setor_nome,cargo_id,cargo_nome,meta_faturamento,meta_pecas,meta_servicos,publicado_em')
+      .select('empresa_id,empresa_nome,ano,mes,tipo,colaborador_id,colaborador_nome,departamento_id,departamento_nome,setor_id,setor_nome,cargo_id,cargo_nome,meta_faturamento,meta_pecas,meta_servicos,passagens,publicado_em')
       .eq('ano', ano)
       .order('empresa_nome', { ascending: true })
     if (error) throw error
@@ -3471,7 +3522,7 @@ export const apiService = {
     return { publicadas: pub.data || [], rascunhoConsultor: rasc.data || [] }
   },
 
-  // Blocos 1 (Corporativo) e 2 (Departamental) da Matriz KPIs, gravados pelo sync da Matriz
+  // Blocos 1 (Corporativo) e 2 (Departamental) da Matriz de KPIs, gravados pelo sync da Matriz
   // (planilha de KPIs do SharePoint → kpi_cache_planilhas). Vazio enquanto o sync não preencher.
   getKpiCachePlanilhas: async (chaves) => {
     const { data, error } = await supabase
@@ -3667,7 +3718,7 @@ export const apiService = {
     if (error) throw error
   },
 
-  // Metas dos indicadores do SETOR GARANTIA (Matriz KPIs), por empresa: geral (ano 0, mes 0) e por mês.
+  // Metas dos indicadores do SETOR GARANTIA (Matriz de KPIs), por empresa: geral (ano 0, mes 0) e por mês.
   getGarantiaMetas: async (empresa) => {
     let q = supabase.from('gar_metas_indicadores').select('empresa, ano, mes, indicador, meta')
     if (empresa) q = q.eq('empresa', empresa)
@@ -3691,6 +3742,20 @@ export const apiService = {
         .eq('empresa', l.empresa).eq('ano', l.ano).eq('mes', l.mes).eq('indicador', l.indicador)
       if (error) throw error
     }
+  },
+
+  // Meta do indicador "Tempo de garantia em aberto" (gar_metas_tempo_aberto): mes 1..12 = mês, mes 0 = anual
+  getGarMetasTempoAno: async (ano) => {
+    const { data, error } = await supabase.from('gar_metas_tempo_aberto').select('*').eq('ano', ano).order('mes')
+    if (error) throw error
+    return data || []
+  },
+  saveGarMetasTempoAno: async (ano, linhas, userEmail) => {
+    const agora = new Date().toISOString()
+    const { error } = await supabase
+      .from('gar_metas_tempo_aberto')
+      .upsert(linhas.map(l => ({ ano, ...l, atualizado_em: agora, atualizado_por: userEmail })), { onConflict: 'ano,mes' })
+    if (error) throw error
   },
 
   getGarantias: async (filtros = {}) => {

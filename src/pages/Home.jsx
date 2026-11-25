@@ -94,7 +94,7 @@ function ColunaMenu({ node, rootNode, selecionadoKey, hasPermission, navigate, o
 
       <div className="flex flex-col gap-2 p-3">
         {itens.map(item => {
-          // navTo faz um nó com children se comportar como link direto (ex.: Matriz KPIs
+          // navTo faz um nó com children se comportar como link direto (ex.: Matriz de KPIs
           // mantém os leaves para o editor de permissões, mas navega direto pra página única).
           const isFolder = !!item.children && !item.navTo
           const ativo = isFolder && selecionadoKey === item.key

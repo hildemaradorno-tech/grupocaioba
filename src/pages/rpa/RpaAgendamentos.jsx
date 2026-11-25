@@ -1324,7 +1324,7 @@ export default function RpaAgendamentos({ acoesDireita = null, slotAcoes = null,
               ],
             },
             // Planos do serviço (contratar), só nos monitores Power BI e Microsoft Fabric — 21/11/2026
-            ...itensPlanos({ PBI: 'powerbi', FAB: 'fabric' }[sistema]).map(p => ({ label: p.label, icon: ExternalLink, onClick: () => p.href && window.open(p.href, '_blank', 'noopener,noreferrer') })),
+            ...itensPlanos({ RPA: 'robert', PBI: 'powerbi', FAB: 'fabric' }[sistema]).map(p => ({ label: p.label, icon: ExternalLink, onClick: () => p.href && window.open(p.href, '_blank', 'noopener,noreferrer') })),
           ].filter(Boolean)} />
         )
         return slotAcoes ? createPortal(engrenagem, slotAcoes) : <div className="flex justify-end">{engrenagem}</div>

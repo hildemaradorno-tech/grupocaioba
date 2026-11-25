@@ -1,5 +1,5 @@
 /**
- * Valores da Matriz KPIs › Bloco 3 - Serviços tirados do BI "Possibilidades - Sintonia do Dia"
+ * Valores da Matriz de KPIs › Bloco 3 - Serviços tirados do BI "Possibilidades - Sintonia do Dia"
  * (src/pages/bi/BiPossibilidades.jsx) — pedido do usuário, 13/11/2026 (antes vinham de Matriz › Fontes):
  *
  *   CONSULTOR DE SERVIÇOS (aba Serviços › modo Consultor, linha do consultor; sem consultor = linha OFICINA)
@@ -109,9 +109,16 @@ async function lerAno(ano) {
       setorOficina: !!setorId && deptDoSetor.get(setorId) === DEPTO_OFICINA, // linhas de setor/consultor da Oficina
       funilaria: !!setorId && setorId === setorFunilaria,
       mecanica: !!setorId && setorId === setorMecanica,
+      ...(slotDaMedida.get(l.medida_id) === 'pass' ? { tipoOs: l.tipo_os || '' } : {}), // Tempo na Oficina (Bloco 2)
     }
   })
-  return { regs }
+  // Setor do Tipo de OS (cadastro, pela sigla e pelo nome) — usado no Tempo na Oficina.
+  const setorDoTipo = new Map()
+  for (const t of tiposOS) {
+    if (t.sigla) setorDoTipo.set(normalizaBusca(t.sigla), t.setor_servico || null)
+    if (t.tipo_os) setorDoTipo.set(normalizaBusca(t.tipo_os), t.setor_servico || null)
+  }
+  return { regs, setorDoTipo }
 }
 
 // ── Períodos da Matriz (até o corte) ─────────────────────────────────────────
@@ -168,17 +175,136 @@ export async function getOficinaPorCasa(ano, { incluirHoje = false, casas = null
     const daCasa = (lista) => (alvos ? lista.filter(r => alvos.some(a => r.empresa.includes(a))) : lista)
     const regs = daCasa(regsOficina)
     const regsBal = daCasa(regsBalcao)
-    const o = { fatTotal: {}, margemServicos: {}, margemPecas: {}, balcaoFat: {}, balcaoMargemPecas: {} }
+    // ticket / passagens (24/11/2026): Bloco 2 › Pós-Vendas › Ticket médio OFICINA e Passagem Total (O.S. distintas).
+    const o = { fatTotal: {}, margemServicos: {}, margemPecas: {}, ticket: {}, passagens: {}, balcaoFat: {}, balcaoMargemPecas: {} }
     for (const [p, [ini, fim]] of Object.entries(periodos)) {
       const dentro = (r) => r.data >= ini && r.data <= fim
-      const c = indicadoresConsultor(somar(regs.filter(dentro)))
+      const s = somar(regs.filter(dentro))
+      const c = indicadoresConsultor(s)
       o.fatTotal[p] = c.fatTotal; o.margemServicos[p] = c.margemServicos; o.margemPecas[p] = c.margemPecas
+      o.ticket[p] = c.ticket; o.passagens[p] = s.pass || null
       const b = indicadoresConsultor(somar(regsBal.filter(dentro)))
       o.balcaoFat[p] = b.fatTotal; o.balcaoMargemPecas[p] = b.margemPecas
     }
     out[casa] = o
   }
   return out
+}
+
+/**
+ * Bloco 2 › Pós-Vendas › Tempo veículo oficina / funilaria (24/11/2026): "Média de dias na oficina" da aba Tempo na
+ * Oficina do BI Possibilidades (src/pages/garantias-daf/TempoNaOficina.jsx), com a MESMA conta, separada por setor
+ * (Mecânica / Funilaria/Pintura):
+ *   - O.S. do Pass (faturadas) com nota emitida no período; dias = abertura (ROF001_OSAberta_Excel) → nota mais
+ *     recente da O.S. no período;
+ *   - linhas do ROF001 com o mesmo Tipo de OS faturado (se nenhum bater, todas as linhas da O.S.);
+ *   - setor pelo cadastro Tipos de OS (sigla), reserva pelo nome; uma O.S. conta uma vez em cada setor que tiver;
+ *   - média por O.S., arredondada em dias inteiros (como o relógio).
+ * Meta = "verde até" (media_meta_dias) da regra da engrenagem (tempo_oficina_regras) do mês do fim do período:
+ * mensal > anual; da empresa (só ela marcada) > todas.
+ * @returns { mecanica: { realizado: {p}, meta: {p} }, funilaria: { … } }
+ */
+const _cacheTempo = new Map()
+const diasEntre = (a, b) => (a && b ? Math.floor((new Date(b + 'T12:00:00') - new Date(a + 'T12:00:00')) / 86400000) : null)
+const setorPorNomeTempo = (nome) => {
+  const n = normalizaBusca(nome)
+  if (n.includes('FUNIL') || n.includes('PINTUR') || n.includes('(FUN')) return 'FUNILARIA/PINTURA'
+  return n ? 'MECANICA' : null
+}
+export async function getTempoOficinaPorSetor(ano, { incluirHoje = false, casas = null } = {}) {
+  const chave = `${ano}|${incluirHoje ? 1 : 0}|${casas?.length ? casas.join(',') : 'TODAS'}`
+  const [realizado, regras, empresas] = await Promise.all([
+    cacheSwr(_cacheTempo, chave, () => calcularTempoOficina(ano, { incluirHoje, casas }), { rotulo: 'tempo-oficina' }),
+    getSupabaseAdmin()?.from('tempo_oficina_regras').select('ano, mes, empresa_id, media_meta_dias').eq('ano', ano)
+      .then(r => r.data || []) ?? [],
+    casas?.length === 1
+      ? getSupabaseAdmin()?.from('dim_empresas').select('id, nome_empresa, nome_empresa_sistema').then(r => r.data || []) ?? []
+      : [],
+  ])
+  if (!realizado) return null
+  // Empresa única marcada → id em dim_empresas (Trucks da casa)
+  let empresaUnica = null
+  if (casas?.length === 1) {
+    const alvo = normalizaBusca(casas[0]).replace(/ DO SUL$/, '')
+    empresaUnica = empresas.find(e => [e.nome_empresa, e.nome_empresa_sistema].some(n => {
+      const x = normalizaBusca(n); return x.includes('TRUCKS') && x.includes(alvo)
+    }))?.id || null
+  }
+  const regraDoMes = (mes) => {
+    const candidatas = [
+      r => empresaUnica && r.empresa_id === empresaUnica && Number(r.mes) === mes,
+      r => empresaUnica && r.empresa_id === empresaUnica && !r.mes,
+      r => !r.empresa_id && Number(r.mes) === mes,
+      r => !r.empresa_id && !r.mes,
+    ]
+    for (const c of candidatas) { const achou = regras.find(c); if (achou) return achou }
+    return null
+  }
+  const meta = {}
+  const corte = incluirHoje ? diaMS(0) : diaMS(-1)
+  for (const [p, [ini, fim]] of Object.entries(periodosDoAno(ano, iso(ano, 12, 31)))) {
+    const fimEf = corte >= ini && corte < fim ? corte : fim // período em andamento: mês de hoje
+    const v = regraDoMes(Number(fimEf.slice(5, 7)))?.media_meta_dias
+    meta[p] = v === null || v === undefined ? null : Number(v)
+  }
+  return {
+    mecanica: { realizado: realizado.mecanica, meta },
+    funilaria: { realizado: realizado.funilaria, meta },
+  }
+}
+
+async function calcularTempoOficina(ano, { incluirHoje, casas }) {
+  const base = await carregarAno(ano)
+  if (!base) return null
+  const { getOsTempoOficina } = await import('./sharepointGarantias.js')
+  const { rows } = await getOsTempoOficina({ de: iso(ano - 1, 1, 1) })
+  const alvos = casas?.length ? casas.map(c => normalizaBusca(c).replace(/ DO SUL$/, '')) : null
+  const naCasa = (emp) => { const e = normalizaBusca(emp); return e.includes('TRUCKS') && (!alvos || alvos.some(a => e.includes(a))) }
+  // ROF001 por O.S. (empresa|nº)
+  const rofPorOs = new Map()
+  for (const r of rows) {
+    if (!naCasa(r.empresa_nome)) continue
+    const k = `${normalizaBusca(r.empresa_nome)}|${String(r.os_numero).trim()}`
+    if (!rofPorOs.has(k)) rofPorOs.set(k, [])
+    rofPorOs.get(k).push(r)
+  }
+  const setorDe = (r) => {
+    const s = base.setorDoTipo.get(normalizaBusca(r.tipo_os_sigla))
+    return s ? normalizaBusca(s) : setorPorNomeTempo(r.tipo_os_sigla)
+  }
+  const pass = base.regs.filter(r => r.slot === 'pass' && naCasa(r.empresa))
+  const mecanica = {}, funilaria = {}
+  for (const [p, [ini, fim]] of Object.entries(periodosDoAno(ano, incluirHoje ? diaMS(0) : diaMS(-1)))) {
+    const tiposDaOs = new Map() // empresa|os → Set(tipo)
+    const dataNota = new Map()
+    for (const r of pass) {
+      if (r.data < ini || r.data > fim) continue
+      for (const os of r.distintos || []) {
+        const k = `${normalizaBusca(r.empresa)}|${String(os).trim()}`
+        if (!tiposDaOs.has(k)) tiposDaOs.set(k, new Set())
+        tiposDaOs.get(k).add(normalizaBusca(r.tipoOs))
+        if (!dataNota.has(k) || r.data > dataNota.get(k)) dataNota.set(k, r.data)
+      }
+    }
+    const dias = { MECANICA: [], 'FUNILARIA/PINTURA': [] }
+    for (const [k, tipos] of tiposDaOs) {
+      const linhas = rofPorOs.get(k)
+      if (!linhas) continue
+      const comTipo = linhas.filter(l => tipos.has(normalizaBusca(l.tipo_os_sigla)))
+      const usadas = comTipo.length ? comTipo : linhas
+      // Uma vez por O.S. em cada setor (dias da 1ª linha, como a aba)
+      const porSetor = new Map()
+      for (const l of usadas) {
+        const s = setorDe(l)
+        if (!porSetor.has(s)) porSetor.set(s, diasEntre(String(l.data_criacao).slice(0, 10), dataNota.get(k)))
+      }
+      for (const [s, d] of porSetor) if (d !== null && dias[s]) dias[s].push(d)
+    }
+    const media = (lista) => (lista.length ? Math.round(lista.reduce((a, b) => a + b, 0) / lista.length) : null)
+    mecanica[p] = media(dias.MECANICA)
+    funilaria[p] = media(dias['FUNILARIA/PINTURA'])
+  }
+  return { mecanica, funilaria }
 }
 
 // Filtro de casa sobre empresa_norm ('CAIOBA TRUCKS - CHAPADAO' etc.); 'TODAS'/null = todas.

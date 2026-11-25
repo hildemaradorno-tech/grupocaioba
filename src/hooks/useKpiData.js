@@ -39,7 +39,7 @@ export function useKpiData(fetchFn, fallback, params = {}) {
   const [source,  setSource]  = useState(stored?.source ?? null)
 
   // Publica source/loading no context compartilhado — o badge "Dados sincronizados" mora no
-  // cabeçalho da Matriz KPIs (ao lado do Ano), não em cada aba; só a aba ativa fica montada
+  // cabeçalho da Matriz de KPIs (ao lado do Ano), não em cada aba; só a aba ativa fica montada
   // por vez, então não há conflito entre publishers.
   const { setStatus, refreshToken } = useKpiSourceStatus()
   const lastRefreshToken = useRef(refreshToken)

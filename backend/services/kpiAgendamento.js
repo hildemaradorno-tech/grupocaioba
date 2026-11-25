@@ -1,5 +1,5 @@
 /**
- * Indicadores do quadro SETOR DE AGENDAMENTO DE SERVIÇOS (Matriz KPIs › Bloco 3 - Serviços › aba Setores), com as mesmas
+ * Indicadores do quadro SETOR DE AGENDAMENTO DE SERVIÇOS (Matriz de KPIs › Bloco 3 - Serviços › aba Setores), com as mesmas
  * regras e metas do BI Agendamento de Serviços (Mesa de Agendamento):
  *
  *   Taxa de Agendamento          — aba Por Campanhas: Contatos agendados ÷ Contatos gerados × 100, pela data da
@@ -18,7 +18,7 @@ import { getSupabaseAdmin } from './supabaseAdmin.js'
 const ALL_MONTHS = Array.from({ length: 12 }, (_, i) => `m${String(i + 1).padStart(2, '0')}`)
 const ALL_WEEKS  = Array.from({ length: 70 }, (_, i) => `s${String(i + 1).padStart(2, '0')}`)
 const TODAS_CHAVES = [...ALL_MONTHS, ...ALL_WEEKS, 'q1', 'q2', 'q3', 'q4', 'fy']
-const METAS_PADRAO = { taxaAgendamento: 80, agTaxaConversaoAtivo: 80, agTaxaNoShow: 15 }
+const METAS_PADRAO = { taxaAgendamento: 80, agTaxaConversao: 80, agTaxaConversaoAtivo: 80, agTaxaNoShow: 15 }
 
 // Períodos (mês, semana, trimestre e ano) em que cai uma data 'AAAA-MM-DD' do ano pedido.
 function periodosDaData(iso, ano) {
@@ -79,6 +79,7 @@ export async function comMetasAtuaisAgendamento(dados) {
     taxaAgendamento: { ...dados.taxaAgendamento, meta: metaEmTodos(metas.taxaAgendamento) },
     taxaAtivo: { ...dados.taxaAtivo, meta: metaEmTodos(metas.agTaxaConversaoAtivo) },
     taxaNoShow: { ...dados.taxaNoShow, meta: metaEmTodos(metas.agTaxaNoShow) },
+    ...(dados.taxaAgData ? { taxaAgData: { ...dados.taxaAgData, meta: metaEmTodos(metas.agTaxaConversao) } } : {}),
   }
 }
 
@@ -98,10 +99,14 @@ export async function getIndicadoresAgendamento(ano, { incluirHoje = false } = {
     return [ativos.filter(a => a.os).length, ativos.length]
   })
   const taxaNoShow = taxaPorPeriodo(porData, lista => [lista.filter(a => !a.os && a.status === 'NSW').length, lista.length])
+  // Taxa de Agendamento da aba Por Data Agendamento (24/11/2026, Bloco 2 › Total agendamento): agendamentos com O.S. ÷
+  // agendamentos (todos os tipos, sem os cancelados) × 100, pela data do agendamento; meta agTaxaConversao do BI.
+  const taxaAgData = taxaPorPeriodo(porData, lista => [lista.filter(a => a.os).length, lista.length])
 
   return {
     taxaAgendamento: { realizado: taxaAgendamento, meta: metaEmTodos(metas.taxaAgendamento) },
     taxaAtivo: { realizado: taxaAtivo, meta: metaEmTodos(metas.agTaxaConversaoAtivo) },
     taxaNoShow: { realizado: taxaNoShow, meta: metaEmTodos(metas.agTaxaNoShow) },
+    taxaAgData: { realizado: taxaAgData, meta: metaEmTodos(metas.agTaxaConversao) },
   }
 }

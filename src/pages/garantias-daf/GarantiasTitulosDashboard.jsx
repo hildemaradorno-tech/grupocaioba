@@ -183,7 +183,7 @@ export default function GarantiasTitulosDashboard({ onLastModified }) {
   const limparDashboard = () => { setFiltroEmpresa(null); setFiltroTipo(null); setFiltroSituacao(null); setFiltroPeriodo(null) }
 
   const empresaOf = (r) => r.empresa?.trim() || 'Não informado'
-  // Link da Matriz KPIs (?loja=CAMPO GRANDE): abre com a fatia da empresa marcada (14/11/2026).
+  // Link da Matriz de KPIs (?loja=CAMPO GRANDE): abre com a fatia da empresa marcada (14/11/2026).
   const empresasNosDados = useMemo(() => [...new Set(titulosBase.map(r => r.empresa?.trim() || 'Não informado'))], [titulosBase])
   useEmpresaDoLink(empresasNosDados, setFiltroEmpresa)
   const tipoOf = (r) => r.tipo_titulo?.trim() || 'Não informado'

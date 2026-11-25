@@ -2,7 +2,7 @@ import React from 'react'
 import { ShieldCheck, ClipboardList, Calendar, Wrench, Target, Gauge } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 
-// Matriz KPIs › Bloco 3 - Serviços (abas Equipe, Setores e Gerentes): ao lado de cada indicador, um botão
+// Matriz de KPIs › Bloco 3 - Serviços (abas Equipe, Setores e Gerentes): ao lado de cada indicador, um botão
 // cinza com o ícone da tela de onde o valor sai (o mesmo ícone do menu) — abre essa tela, na aba certa,
 // em outra aba do navegador. Só aparece para quem pode ver a tela de destino; indicador sem tela de
 // origem fica sem botão. perm = permissão conferida pela própria tela de destino.
@@ -79,12 +79,35 @@ for (const g of ['GERENTE DE SERVIÇO - CAMPO GRANDE', 'GERENTE FILIAL - DOURADO
     ORIGEM_POR_QUADRO[`${g}|${ind}`] = { url: '/pos-vendas/produtividade', perm: 'pos-vendas/produtividade', nome: 'Pós-Vendas › Indicadores de Produtividade (total da empresa)', icone: Target }
   }
 }
+// Bloco 2 - Departamental › Pós-Vendas (24/11/2026): mesmas origens do Gerente Geral (quadro BLOCO2_POS_VENDA).
+export const QUADRO_BLOCO2_PV = 'BLOCO 2 › PÓS-VENDAS'
+for (const ind of ['Faturamento Total Oficina (Peças + Serviços)', 'Margem Serviços', 'Margem Peças Oficina', 'Ticket Médio Total Oficina', 'Passagem Total']) {
+  ORIGEM_POR_QUADRO[`${QUADRO_BLOCO2_PV}|${ind}`] = { ...POSSIBILIDADES, nome: 'Pós-Vendas › Possibilidades - Sintonia do Dia › Serviços (linha OFICINA)' }
+}
+ORIGEM_POR_QUADRO[`${QUADRO_BLOCO2_PV}|Margem Peças Balcão`] = { ...POSSIBILIDADES, url: '/pos-vendas/possibilidades?visao=balcao', nome: 'Pós-Vendas › Possibilidades - Sintonia do Dia › Peças (linha BALCÃO PEÇAS)' }
+// Faturamento do Bloco 2 = linha Total da Possibilidades (Balcão Peças + Oficina) — abre na aba Total.
+ORIGEM_POR_QUADRO[`${QUADRO_BLOCO2_PV}|Faturamento Total Oficina (Peças + Serviços)`] = { ...POSSIBILIDADES, url: '/pos-vendas/possibilidades', nome: 'Pós-Vendas › Possibilidades - Sintonia do Dia › Total (linha Total)' }
+for (const ind of ['Eficiência %', 'Eficácia %', 'Produtividade %']) {
+  ORIGEM_POR_QUADRO[`${QUADRO_BLOCO2_PV}|${ind}`] = { url: '/pos-vendas/produtividade', perm: 'pos-vendas/produtividade', nome: 'Pós-Vendas › Indicadores de Produtividade (total da empresa)', icone: Target }
+}
+// Tempo veículo oficina / funilaria = Média de dias na oficina (setor Mecânica / Funilaria-Pintura) da aba Tempo na Oficina.
+for (const ind of ['Tempo veículo oficina', 'Tempo veículo funilaria']) {
+  const funilaria = ind.endsWith('funilaria')
+  ORIGEM_POR_QUADRO[`${QUADRO_BLOCO2_PV}|${ind}`] = { ...POSSIBILIDADES, url: `/pos-vendas/possibilidades?visao=tempo&setor=${funilaria ? 'funilaria' : 'mecanica'}`, nome: `Pós-Vendas › Possibilidades - Sintonia do Dia › Tempo na Oficina (Média de dias na oficina, setor ${funilaria ? 'Funilaria/Pintura' : 'Mecânica'})` }
+}
+// Garantia em aberto = Tempo de garantia em aberto do Dashboard Garantias DAF (aba Com Garantista).
+ORIGEM_POR_QUADRO[`${QUADRO_BLOCO2_PV}|Tempo de garantia em aberto`] = { ...GARANTIAS_ABERTO, nome: 'Garantias DAF › Com Garantista › Tempo de garantia em aberto' }
+ORIGEM_POR_QUADRO[`${QUADRO_BLOCO2_PV}|Agendamentos ativos`] = agendamento('Por Data Agendamento')
+ORIGEM_POR_QUADRO[`${QUADRO_BLOCO2_PV}|Total agendamento`] = agendamento('Por Data Agendamento')
+// Produtividade % do Bloco 2 = % Produtividade dos Consultores do Resumo, modo Consultores (24/11/2026).
+ORIGEM_POR_QUADRO[`${QUADRO_BLOCO2_PV}|Produtividade %`] = { url: '/pos-vendas/produtividade?modo=consultor', perm: 'pos-vendas/produtividade', nome: 'Pós-Vendas › Indicadores de Produtividade › Resumo (modo Consultores)', icone: Target }
 
 // Empresa que o link leva para a tela de destino (Possibilidades / Indicadores de Produtividade abrem com ela
 // marcada, 14/11/2026): gerentes pelo quadro (Gerente Geral = todas as Trucks); quadros com seletor de empresa
 // passam a escolhida (prop empresa).
 const EMPRESA_DO_QUADRO = {
   'GERENTE GERAL PÓS-VENDAS': 'TRUCKS',
+  'BLOCO 2 › PÓS-VENDAS': 'TRUCKS',
   'GERENTE DE SERVIÇO - CAMPO GRANDE': 'CAMPO GRANDE',
   'GERENTE FILIAL - DOURADOS': 'DOURADOS',
   'GERENTE FILIAL - TRÊS LAGOAS': 'TRÊS LAGOAS',

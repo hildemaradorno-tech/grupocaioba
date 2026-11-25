@@ -74,6 +74,18 @@ export const NIVEL = {
 }
 // ── Engrenagem do cabeçalho dos monitores (21/11/2026): links para a página de planos do serviço (contratar) ──
 // Endereços oficiais conferidos em 21/11/2026. Abrem em nova aba.
+// Painel de cada sistema (onde se administra o serviço). Supabase: o projeto sai do VITE_SUPABASE_URL (sem fixar o ref).
+const refSupabase = (() => { try { return new URL(import.meta.env.VITE_SUPABASE_URL).hostname.split('.')[0] } catch { return null } })()
+export const ACESSO_SISTEMA = {
+  railway: { nome: 'Railway', url: 'https://railway.com/dashboard' },
+  supabase: { nome: 'Supabase', url: refSupabase ? `https://supabase.com/dashboard/project/${refSupabase}` : 'https://supabase.com/dashboard' },
+  sharepoint: { nome: 'SharePoint', url: 'https://caioba.sharepoint.com' },
+  cloudflare: { nome: 'Cloudflare', url: 'https://dash.cloudflare.com' },
+  powerbi: { nome: 'Power BI', url: 'https://app.powerbi.com' },
+  fabric: { nome: 'Microsoft Fabric', url: 'https://app.fabric.microsoft.com' },
+  robert: { nome: 'Robert Automation', url: 'https://auth.roberty.app/' }, // informado pelo usuário 24/11/2026 (sem planos)
+}
+
 export const PLANOS_SERVICO = {
   railway: { nome: 'Railway', url: 'https://railway.com/pricing', extra: { rot: 'Plano atual e cobrança (Billing)', url: 'https://railway.com/workspace/plans' } },
   supabase: { nome: 'Supabase', url: 'https://supabase.com/pricing', extra: { rot: 'Uso e cobrança da organização', url: 'https://supabase.com/dashboard/org/_/billing' } },
@@ -84,8 +96,11 @@ export const PLANOS_SERVICO = {
 }
 export function itensPlanos(chave) {
   const p = PLANOS_SERVICO[chave]
-  if (!p) return []
-  const itens = [{ label: p.url ? `Planos do ${p.nome} (contratar)` : `Planos do ${p.nome} — endereço não informado`, href: p.url }]
+  const acesso = ACESSO_SISTEMA[chave]
+  if (!p && !acesso) return []
+  const itens = acesso ? [{ label: `Acessar o ${acesso.nome}`, href: acesso.url }] : []
+  if (!p) return itens
+  itens.push({ label: p.url ? `Planos do ${p.nome} (contratar)` : `Planos do ${p.nome} — endereço não informado`, href: p.url })
   if (p.extra) itens.push({ label: p.extra.rot, href: p.extra.url })
   return itens
 }

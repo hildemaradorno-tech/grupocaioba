@@ -9,6 +9,7 @@ import {
   ChevronRight, Mail, Bot, BarChart3, Wrench, FileSpreadsheet,
 } from 'lucide-react'
 import { LogoRailway, LogoCloudflare, LogoSupabase, LogoSharepoint, LogoRobert } from '../../components/monitor/Logos'
+import { ACESSO_SISTEMA } from '../../components/monitor/MonitorUI'
 import { PainelControles, useAbaNaUrl, useRolarParaAlvo, idAlvo, linkDestino } from '../../components/monitor/MonitorUI'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
@@ -138,7 +139,11 @@ function AbaResumo({ resumo }) {
             <div key={b.id} className={`bg-white border rounded-xl overflow-hidden flex flex-col ${b.nivel === 'critico' ? 'border-red-200' : b.nivel === 'atencao' ? 'border-amber-200' : 'border-slate-200'}`}>
               <div className="flex items-center gap-2 px-4 py-2.5 border-b border-slate-100">
                 {LOGO_BLOCO[b.id] ? LOGO_BLOCO[b.id]('h-6 w-6 shrink-0') : <span className={`h-2.5 w-2.5 rounded-full ${s.dot}`} />}
-                <p className="text-[11px] font-bold text-slate-800 flex-1">{b.nome}</p>
+                {/* Título leva ao painel do sistema (24/11/2026) — nova aba */}
+                {ACESSO_SISTEMA[b.id]
+                  ? <a href={ACESSO_SISTEMA[b.id].url} target="_blank" rel="noopener noreferrer" title={`Acessar o ${ACESSO_SISTEMA[b.id].nome}`}
+                      className="text-[11px] font-bold text-slate-800 flex-1 hover:text-indigo-700 hover:underline">{b.nome}</a>
+                  : <p className="text-[11px] font-bold text-slate-800 flex-1">{b.nome}</p>}
                 <span className={`inline-flex items-center gap-1 text-[10px] font-bold ${s.texto}`}><Icon className="h-3.5 w-3.5" /> {s.txt}</span>
               </div>
               <div className="px-4 py-3 flex-1 space-y-1.5">
@@ -270,7 +275,7 @@ function AbaIntegracoes({ onIr }) {
       linha: d.ia.configurado ? (d.ia.ok ? `chave válida · ${d.ia.ms} ms` : d.ia.erro) : `sem chave (${d.ia.variavel})` },
     { id: 'powerbi', nome: 'Power BI', icon: BarChart3, uso: 'Relatórios da Controladoria no Power BI', x: d.powerbi,
       linha: d.powerbi.configurado ? (d.powerbi.ok ? `${d.powerbi.views} views liberadas` : d.powerbi.erro) : 'não configurado' },
-    { id: 'kpi', nome: 'Planilha antiga da Matriz KPIs', icon: FileSpreadsheet, uso: 'Matriz KPIs › Bloco 1 - Corporativo', x: { configurado: true, ok: d.kpi_planilha.configurado, opcional: true },
+    { id: 'kpi', nome: 'Planilha antiga da Matriz de KPIs', icon: FileSpreadsheet, uso: 'Matriz de KPIs › Bloco 1 - Corporativo', x: { configurado: true, ok: d.kpi_planilha.configurado, opcional: true },
       linha: d.kpi_planilha.configurado ? 'configurada' : `falta ${d.kpi_planilha.faltando.join(', ')}` },
   ]
   return (

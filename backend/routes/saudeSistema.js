@@ -12,7 +12,7 @@ const wrap = fn => (req, res) => fn(req, res).catch(e => {
 router.get('/resumo', wrap(async (req, res) => res.json(await getResumo({ refresh: req.query.refresh === '1' }))))
 // GET /api/saude-sistema/rotinas — schedulers e sincronizações
 router.get('/rotinas', wrap(async (req, res) => res.json(await getRotinas())))
-// GET /api/saude-sistema/integracoes[?refresh=1] — e-mail, MicroWork, IA, Power BI, planilha da Matriz KPIs
+// GET /api/saude-sistema/integracoes[?refresh=1] — e-mail, MicroWork, IA, Power BI, planilha da Matriz de KPIs
 router.get('/integracoes', wrap(async (req, res) => res.json(await getIntegracoes({ refresh: req.query.refresh === '1' }))))
 
 export default router

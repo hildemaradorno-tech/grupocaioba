@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState } from 'react'
 
-// Cada aba da Matriz KPIs busca seus próprios dados (useKpiData) e publica aqui se veio do
+// Cada aba da Matriz de KPIs busca seus próprios dados (useKpiData) e publica aqui se veio do
 // SharePoint ou é mock — o badge "Dados sincronizados" mora no cabeçalho compartilhado
 // (KpiMatriz.jsx, ao lado do seletor de Ano), não em cada aba, então precisa saber o status
 // da aba ativa sem subir o fetch inteiro pro componente pai.

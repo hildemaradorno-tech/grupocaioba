@@ -1,4 +1,4 @@
-// Estruturas de fallback da Matriz KPIs.
+// Estruturas de fallback da Matriz de KPIs.
 // Todos os valores numéricos são null — os dados reais vêm do SharePoint.
 
 const np = { meta: null, realizado: null }

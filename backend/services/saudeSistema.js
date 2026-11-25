@@ -1,7 +1,7 @@
 // Governança › Saúde do Sistema (19/11/2026).
 // Junta num só lugar o resumo de todos os monitores (Railway, Supabase, SharePoint, Cloudflare) e dois blocos
 // próprios: Rotinas automáticas (schedulers do backend e sincronizações) e Integrações (e-mail, MicroWork, IA,
-// Power BI, planilha da Matriz KPIs). Cada bloco devolve "controles" no mesmo formato do painel "Precisa de atenção".
+// Power BI, planilha da Matriz de KPIs). Cada bloco devolve "controles" no mesmo formato do painel "Precisa de atenção".
 import nodemailer from 'nodemailer'
 import { getSupabaseAdmin } from './supabaseAdmin.js'
 import { lerEstado, INICIADO_EM } from './monitorRotinas.js'
@@ -96,7 +96,7 @@ export async function getRotinas() {
     else if (atrasada) c.push({ id: `rot-${id}`, grupo: 'Rotinas', nivel: 'atencao', titulo: `${nome}: não rodou hoje (horário ${horario})` })
   }
 
-  // 4) Atualização da Matriz KPIs (kpi_sync_execucoes)
+  // 4) Atualização da Matriz de KPIs (kpi_sync_execucoes)
   if (sb) {
     const { data } = await sb.from('kpi_sync_execucoes').select('iniciado_em, finalizado_em, status, disparado_por, detalhes').order('iniciado_em', { ascending: false }).limit(10)
     const ult = (data || [])[0]
@@ -111,11 +111,11 @@ export async function getRotinas() {
       }
     }
     const nivel = !ult ? 'info' : ult.status === 'ERRO' ? 'critico' : ult.status === 'EXECUTANDO' && minDesde(ult.iniciado_em) > 120 ? 'critico' : ult.status === 'PARCIAL' ? 'atencao' : 'ok'
-    rotinas.push({ id: 'kpi-sync', nome: 'Atualização da Matriz KPIs', onde: 'Matriz KPIs › botão Atualizar', frequencia: 'quando alguém clica em Atualizar',
+    rotinas.push({ id: 'kpi-sync', nome: 'Atualização da Matriz de KPIs', onde: 'Matriz de KPIs › botão Atualizar', frequencia: 'quando alguém clica em Atualizar',
       ultima_execucao: ult?.finalizado_em || ult?.iniciado_em || null, status: ult?.status || null, falhas, travadas: travadas.length,
       historico: (data || []).map(x => ({ inicio: x.iniciado_em, fim: x.finalizado_em, status: x.status, por: x.disparado_por })), nivel })
     if (ult?.status === 'PARCIAL' || ult?.status === 'ERRO') c.push({ id: 'rot-kpi', grupo: 'Rotinas', nivel: ult.status === 'ERRO' ? 'critico' : 'atencao',
-      titulo: `Última atualização da Matriz KPIs: ${ult.status === 'ERRO' ? 'ERRO' : 'parcial'} (${dataHoraBR(ult.iniciado_em)})`,
+      titulo: `Última atualização da Matriz de KPIs: ${ult.status === 'ERRO' ? 'ERRO' : 'parcial'} (${dataHoraBR(ult.iniciado_em)})`,
       detalhe: falhas.map(f => `${f.parte}: ${f.qtd} falha(s) — ${f.erros.join('; ')}`).join(' · ') || null })
     if (travadas.length) c.push({ id: 'rot-kpi-travada', grupo: 'Rotinas', nivel: 'info', titulo: `${travadas.length} atualização(ões) antiga(s) ficaram "executando" sem terminar`,
       detalhe: 'Normalmente um reinício do backend no meio da atualização. Não atrapalha as próximas.' })
@@ -138,9 +138,9 @@ export async function getRotinas() {
     const m = mem['aquecimento-kpi']
     const desligado = process.env.KPI_AQUECER_AO_INICIAR === '0'
     const nivel = desligado ? 'info' : !m ? (minutosNoAr > 30 ? 'atencao' : 'info') : m.ultimo_ok ? 'ok' : 'atencao'
-    rotinas.push({ id: 'aquecimento-kpi', nome: 'Pré-cálculo da Matriz KPIs ao iniciar', onde: 'automático, 1 min após o backend subir', frequencia: 'a cada reinício/deploy do backend',
+    rotinas.push({ id: 'aquecimento-kpi', nome: 'Pré-cálculo da Matriz de KPIs ao iniciar', onde: 'automático, 1 min após o backend subir', frequencia: 'a cada reinício/deploy do backend',
       ultima_execucao: m?.ultima_execucao || null, ultimo_ok: m?.ultimo_ok ?? null, mensagem: desligado ? 'desligado (KPI_AQUECER_AO_INICIAR=0)' : m?.ultima_mensagem || null, duracao_ms: m?.duracao_ms ?? null, nivel })
-    if (m && !m.ultimo_ok) c.push({ id: 'rot-aquec', grupo: 'Rotinas', nivel: 'atencao', titulo: `Pré-cálculo da Matriz KPIs com falhas: ${m.ultima_mensagem}`, detalhe: 'O primeiro usuário da Matriz pode esperar mais.' })
+    if (m && !m.ultimo_ok) c.push({ id: 'rot-aquec', grupo: 'Rotinas', nivel: 'atencao', titulo: `Pré-cálculo da Matriz de KPIs com falhas: ${m.ultima_mensagem}`, detalhe: 'O primeiro usuário da Matriz pode esperar mais.' })
   }
 
   if (!c.some(x => x.nivel !== 'info')) c.push({ id: 'rot-ok', grupo: 'Rotinas', nivel: 'ok', titulo: 'Rotinas automáticas rodando normalmente' })
@@ -249,8 +249,8 @@ export async function getIntegracoes({ refresh = false } = {}) {
   else if (!powerbi.ok) c.push({ id: 'int-pbi', grupo: 'Power BI', nivel: 'critico', titulo: `Endereço do Power BI não respondeu: ${powerbi.erro}`, detalhe: 'Os relatórios do Power BI não conseguem atualizar os dados da Controladoria.' })
   else c.push({ id: 'int-pbi', grupo: 'Power BI', nivel: 'ok', titulo: `Endereço do Power BI respondendo (${powerbi.views} views liberadas)` })
 
-  // Planilha da Matriz KPIs
-  if (!kpiPlanilha.configurado) c.push({ id: 'int-kpi-planilha', grupo: 'Matriz KPIs', nivel: 'info', titulo: 'Planilha antiga da Matriz KPIs não configurada — etapa pulada na Atualização',
+  // Planilha da Matriz de KPIs
+  if (!kpiPlanilha.configurado) c.push({ id: 'int-kpi-planilha', grupo: 'Matriz de KPIs', nivel: 'info', titulo: 'Planilha antiga da Matriz de KPIs não configurada — etapa pulada na Atualização',
     detalhe: `Faltam ${kpiPlanilha.faltando.join(', ')}. A aba "Bloco 1 - Corporativo" da Matriz depende dessa planilha.` })
 
   ordenar(c)

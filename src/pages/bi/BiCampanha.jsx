@@ -14,12 +14,12 @@ import {
 // BI da Campanha de Bônus do Pós-Venda.
 //   Regras   = em reconstrução (vazia). As regras vigentes continuam vindo de REGRAS_PADRAO e de
 //              fato_campanha_regras (gravadas por mês) e são usadas pela Apuração.
-//   Apuração = cada pessoa avaliada nos blocos 1, 2 e 3 da Matriz KPIs, no mês escolhido
+//   Apuração = cada pessoa avaliada nos blocos 1, 2 e 3 da Matriz de KPIs, no mês escolhido
 //              (ou no trimestre acumulado, no programa trimestral)
 // Realizado vem de fato_campanha_diario (1 linha por dia × empresa × pessoa), gravada pelo
-// sync da Matriz KPIs no backend — a tela nunca lê o SharePoint, só essa tabela pequena.
+// sync da Matriz de KPIs no backend — a tela nunca lê o SharePoint, só essa tabela pequena.
 
-// Seletores do topo (Ano/Mês) no mesmo modelo da Matriz KPIs.
+// Seletores do topo (Ano/Mês) no mesmo modelo da Matriz de KPIs.
 const SEL_TOPO = 'bg-white text-slate-700 text-[11px] rounded-md px-2 py-1 border border-slate-300 focus:outline-none focus:border-blue-400 cursor-pointer'
 const MESES = [
   { v: '01', label: 'Janeiro' }, { v: '02', label: 'Fevereiro' }, { v: '03', label: 'Março' },
@@ -211,6 +211,20 @@ function aplicarVinculos(regras, unidade, linhasMes) {
     for (const [k, ids] of Object.entries(o.linhasForaVinculo || {})) {
       if ((ids || []).includes(unidade)) r = comValor(r, ['linhasRemovidas', unidade, k], true)
     }
+    // Funções com VALOR PRÓPRIO nesta empresa (engrenagem › "Usar valor próprio nesta função"):
+    // regras.linhasProprias = ['gmvi3il59', …] na linha da própria empresa. O resto do Bônus-alvo segue
+    // a origem; essas funções ficam com meta, supermeta, cargos, quadro, nome e semanal/mensal daqui.
+    for (const k of regras.linhasProprias || []) {
+      if (regras.funcoes?.[k]) {
+        for (const prop of ['alvo', 'supermeta']) r = comValor(r, ['funcoes', k, prop, unidade], regras.funcoes[k]?.[prop]?.[unidade] ?? null)
+      }
+      const grupo = regras.gruposBonus?.[unidade]?.[k]
+      if (grupo) r = comValor(r, ['gruposBonus', unidade, k], grupo)
+      for (const mapa of ['cargosLinha', 'quadroLinha', 'nomesLinha', 'resultadoSemanal']) {
+        const v = regras[mapa]?.[unidade]?.[k]
+        if (v !== undefined) r = comValor(r, [mapa, unidade, k], v)
+      }
+    }
   }
   return { regras: r, segue }
 }
@@ -336,7 +350,7 @@ export default function BiCampanha() {
     return () => { vivo = false }
   }, [ano, mes, recarregar])
 
-  // "Atualizar números" = a mesma atualização da Matriz KPIs (Matriz + Campanha, um processo só no
+  // "Atualizar números" = a mesma atualização da Matriz de KPIs (Matriz + Campanha, um processo só no
   // backend). Ao terminar — iniciada aqui, na Matriz ou por outra pessoa — relê os dados da tela.
   const sync = useSincronizacaoKpi((status) => { if (status !== 'ERRO') setRecarregar((n) => n + 1) })
 
@@ -387,7 +401,7 @@ export default function BiCampanha() {
   }
 
   // Fechamento do mês (por empresa): com o mês fechado, as abas mostram a "foto" gravada (participantes,
-  // semanas, valores da Matriz KPIs de cada função, regras) e não recalculam; as regras ficam travadas.
+  // semanas, valores da Matriz de KPIs de cada função, regras) e não recalculam; as regras ficam travadas.
   const [fechamento, setFechamento] = useState(null)
   const [versaoFech, setVersaoFech] = useState(0)
   useEffect(() => {
@@ -479,7 +493,7 @@ export default function BiCampanha() {
   const { consultores, mecanicos, chefes, gerentes, grupos, semCalculo } = participantes
   const metasUnidade = useMemo(() => metasAprovadasDaUnidade(metasAprovadas, u.empresaId), [metasAprovadas, u.empresaId])
 
-  // Blocos 1 e 2 da Matriz KPIs (só existem por trimestre): trimestre do mês escolhido.
+  // Blocos 1 e 2 da Matriz de KPIs (só existem por trimestre): trimestre do mês escolhido.
   const [kpiBlocos, setKpiBlocos] = useState({})
   useEffect(() => {
     apiService.getKpiCachePlanilhas(['bloco1', 'bloco2']).then(setKpiBlocos).catch(() => setKpiBlocos({}))
@@ -587,7 +601,7 @@ export default function BiCampanha() {
           {sync.mensagem && <p role="status" className="text-xs text-slate-600 mt-1">{sync.mensagem}</p>}
           {erroDados && <p className="text-xs text-red-600 mt-1">Não foi possível carregar os dados: {erroDados}</p>}
         </div>
-        {/* Mesmo modelo do topo da Matriz KPIs: botão só com o ícone + "Ano:" / "Mês:" ao lado. */}
+        {/* Mesmo modelo do topo da Matriz de KPIs: botão só com o ícone + "Ano:" / "Mês:" ao lado. */}
         <div className="flex items-center gap-3 shrink-0">
           {/* Empresa (antes do Ano) — vale para todas as abas; só as liberadas no grupo de acesso.
               Largura mínima para caber o nome inteiro (ex.: CAIOBÁ TRUCKS - CHAPADÃO). */}
@@ -630,7 +644,7 @@ export default function BiCampanha() {
         {/* Direita da linha das abas: Atualizar números (só na aba Apuração) e, na aba Regras, o
             Salvar e a engrenagem (colocados no slot via portal). */}
         <div className="ml-auto flex items-center gap-2 pb-1.5">
-          {/* Mesma atualização do botão da Matriz KPIs (Matriz + Campanha). Travado em todas as telas
+          {/* Mesma atualização do botão da Matriz de KPIs (Matriz + Campanha). Travado em todas as telas
               enquanto qualquer pessoa estiver atualizando. */}
           {aba === 'resultado' && podeAtualizar && <button type="button" onClick={() => sync.iniciar(user?.email)} disabled={sync.executando}
             title={sync.executando ? `Atualizando…${sync.porQuem ? ` (iniciada por ${sync.porQuem})` : ''} — aguarde terminar` : 'Atualizar números'}
@@ -719,7 +733,7 @@ export default function BiCampanha() {
 
 // ======================================================================================
 // Apuração — só o Bloco 3 (Individual) por enquanto (Blocos 1 e 2 ainda não têm dados).
-// Uma coluna por semana do mês (mesmas semanas da Matriz KPIs) com a contribuição da semana e,
+// Uma coluna por semana do mês (mesmas semanas da Matriz de KPIs) com a contribuição da semana e,
 // no fim, o Total = soma das contribuições das semanas.
 // ======================================================================================
 // Sub-abas da Apuração/Resultado, pelo quadro do Bloco 3 de cada função: GERENTE/COORDENADOR/SUPERVISÃO…
@@ -727,7 +741,7 @@ export default function BiCampanha() {
 // (SETOR…, Garantias) vão pelo nome do cargo: liderança → Gerentes; os demais → Equipe.
 // Equipe primeiro (é a que abre sempre); Gerentes depois.
 const SUB_ABAS_APURACAO = [{ k: 'equipe', label: 'Equipe' }, { k: 'gerentes', label: 'Gerentes' }]
-// Barra das sub-abas — mesmo modelo das sub-abas do Bloco 3 - Serviços da Matriz KPIs: ativa em azul
+// Barra das sub-abas — mesmo modelo das sub-abas do Bloco 3 - Serviços da Matriz de KPIs: ativa em azul
 // cheio, as outras em azul-claro, linha azul embaixo.
 function BarraSubAbas({ abas, ativa, contagem, onEscolher }) {
   return (
@@ -1191,7 +1205,7 @@ function faixaDoValor(v, faixas) {
 }
 
 // ======================================================================================
-// Funções da Apuração — valores do quadro do Bloco 3 - Serviços (Matriz KPIs) escolhido em cada função
+// Funções da Apuração — valores do quadro do Bloco 3 - Serviços (Matriz de KPIs) escolhido em cada função
 // do Bônus-alvo. Contribuição da semana = linha Total do quadro (soma peso × atingimento).
 // ======================================================================================
 
@@ -1225,7 +1239,7 @@ function LinkBloco3({ matrizB3, pessoas }) {
   return (
     <>
       <button type="button" onClick={() => setAberto(true)}
-        title="Ver o Bloco 3 - Serviços (Matriz KPIs)" aria-label="Ver o Bloco 3 - Serviços (Matriz KPIs)"
+        title="Ver o Bloco 3 - Serviços (Matriz de KPIs)" aria-label="Ver o Bloco 3 - Serviços (Matriz de KPIs)"
         className="h-4 w-4 inline-flex items-center justify-center rounded text-blue-600 hover:bg-blue-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400">
         <FileText className="h-3.5 w-3.5" />
       </button>
@@ -1235,7 +1249,7 @@ function LinkBloco3({ matrizB3, pessoas }) {
             className="w-full max-w-[96vw] h-[92vh] flex flex-col rounded-xl bg-slate-50 shadow-2xl normal-case tracking-normal text-left font-normal">
             <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-200 bg-white rounded-t-xl">
               <div>
-                <p className="text-sm font-bold text-slate-900 flex items-center gap-2"><FileText className="h-4 w-4 text-blue-600" /> Bloco 3 - Serviços · Matriz KPIs</p>
+                <p className="text-sm font-bold text-slate-900 flex items-center gap-2"><FileText className="h-4 w-4 text-blue-600" /> Bloco 3 - Serviços · Matriz de KPIs</p>
                 <p className="text-[11px] text-slate-500">Somente visualização — {MESES[Number(mes) - 1]?.label}/{ano}</p>
               </div>
               <button type="button" onClick={() => setAberto(false)} aria-label="Fechar"
@@ -1375,13 +1389,13 @@ const atingimentoB3 = (itens) => (itens.some((it) => it.atingimento == null) ? n
 // Atingimento e contribuição de cada semana de uma linha (pessoa).
 function celulasDaLinha(p, pesoB3) {
   return p.semanas.map((w) => {
-    // Bloco Consultores: a contribuição já vem pronta da Matriz KPIs (linha Total
+    // Bloco Consultores: a contribuição já vem pronta da Matriz de KPIs (linha Total
     // do quadro), sem multiplicar por peso do bloco/semana de novo.
     if (Object.prototype.hasOwnProperty.call(w, 'contribDireta')) {
       return { ating: w.contribDireta, contrib: w.contribDireta }
     }
     // Demais cargos: contribuição da semana = soma peso × atingimento dos indicadores (mesma escala
-    // da linha Total da Matriz KPIs), comparável direto com as Faixas de pagamento.
+    // da linha Total da Matriz de KPIs), comparável direto com as Faixas de pagamento.
     const ating = atingimentoB3(w.itens)
     // Semana sem dia útil não conta.
     if (!w.fr) return { ating, contrib: null, semDiaUtil: true }
@@ -1389,7 +1403,7 @@ function celulasDaLinha(p, pesoB3) {
   })
 }
 
-// Total do mês de uma linha: Consultores = valor mensal da Matriz KPIs; demais = média das semanas
+// Total do mês de uma linha: Consultores = valor mensal da Matriz de KPIs; demais = média das semanas
 // ponderada pelos dias úteis (mesma escala das semanas). parcial = alguma semana sem dados.
 function totalDaLinha(p, cels) {
   if (Object.prototype.hasOwnProperty.call(p, 'totalDireto')) return { total: p.totalDireto, parcial: p.totalDireto == null }
@@ -1886,12 +1900,23 @@ function ResumoSemanal({ titulo, cor, campanha, linhas: todasLinhas, carregando,
               const detalhe = w.itens.map((it) => `${it.indicador} ${pctTxt(it.peso)} × ${it.atingimento == null ? '—' : pctTxt(it.atingimento)}`).join('\n')
               const temContribDireta = Object.prototype.hasOwnProperty.call(w, 'contribDireta')
               const linhaAting = `Atingimento da semana: ${c.ating == null ? '—' : pctTxt(c.ating)}`
-              const linhaPeso = temContribDireta ? 'Contribuição da semana (Matriz KPIs)' : 'Contribuição = soma peso × atingimento dos indicadores'
+              const linhaPeso = temContribDireta ? 'Contribuição da semana (Matriz de KPIs)' : 'Contribuição = soma peso × atingimento dos indicadores'
               // Apuração mensal (Garantias): a semana é só informativa — faixa e bônus saem do Total do mês.
               const soInfo = p.mensal ? '\nSó informativo: o bônus é apurado pelo Total do mês.' : ''
               const tituloCel = c.semDiaUtil ? 'Semana sem dia útil' : `${linhaAting}\n${linhaPeso}\n${detalhe}${soInfo}`
               // Faixa pelo valor da contribuição da semana.
               const fx = c.semDiaUtil ? null : faixaDoValor(c.contrib, faixas)
+              // Só resultado mensal: as semanas não entram no cálculo — colunas da semana em branco.
+              if (p.mensal) {
+                const dicaMensal = 'Resultado mensal: faixa e bônus pelo Total do mês (sem valor semanal)'
+                return (
+                  <React.Fragment key={semanas[i].id}>
+                    <td className={TD} title={dicaMensal} />
+                    <td className={TDF} title={dicaMensal} />
+                    {completo && <td className={TDB} title={dicaMensal} />}
+                  </React.Fragment>
+                )
+              }
               return (
                 <React.Fragment key={semanas[i].id}>
                   <td className={TD} title={tituloCel}>
@@ -1928,7 +1953,7 @@ function ResumoSemanal({ titulo, cor, campanha, linhas: todasLinhas, carregando,
               )
             })}
             <td className={`${TD} font-bold ${COR_TOTAL.real}`}
-              title={parcial ? (temTotalDireto ? 'Sem meta ou sem dados no mês' : 'Parcial: semanas sem meta ou sem dados ficaram de fora') : (temTotalDireto ? 'Contribuição do mês (Matriz KPIs)' : 'Contribuição do mês: média das semanas ponderada pelos dias úteis')}>
+              title={parcial ? (temTotalDireto ? 'Sem meta ou sem dados no mês' : 'Parcial: semanas sem meta ou sem dados ficaram de fora') : (temTotalDireto ? 'Contribuição do mês (Matriz de KPIs)' : 'Contribuição do mês: média das semanas ponderada pelos dias úteis')}>
               {total == null ? VAZIO : <span className={corPct(total)}>{pctTxt(total)}{parcial ? '*' : ''}</span>}
             </td>
             {completo && (
@@ -2133,14 +2158,14 @@ function ComoFunciona() {
         <li className={passo}>
           <span className={num}>2</span>
           <div>
-            <b>🎯 Suas metas.</b> Cada cargo é avaliado pelos indicadores do <b>Bloco 3 - Serviços</b> da Matriz KPIs,
-            com as metas aprovadas no Planejamento de Metas ou definidas na própria Matriz KPIs.
+            <b>🎯 Suas metas.</b> Cada cargo é avaliado pelos indicadores do <b>Bloco 3 - Serviços</b> da Matriz de KPIs,
+            com as metas aprovadas no Planejamento de Metas ou definidas na própria Matriz de KPIs.
           </div>
         </li>
         <li className={passo}>
           <span className={num}>3</span>
           <div>
-            <b>📅 Apuração toda semana.</b> As semanas vão de domingo a sábado, as mesmas da Matriz KPIs (veja a tabela abaixo).
+            <b>📅 Apuração toda semana.</b> As semanas vão de domingo a sábado, as mesmas da Matriz de KPIs (veja a tabela abaixo).
             Uma semana incompleta no começo ou no fim do mês só conta sozinha se tiver uma quarta-feira; senão, é somada à
             semana vizinha — por isso o mês poderá ter <b>4 ou 5 semanas</b>. Em cada semana é calculada a <b>soma da contribuição</b>, que será o valor extraído de contribuição de cada
             indicador que possuir valores de pesos.
@@ -2159,7 +2184,7 @@ function ComoFunciona() {
           <span className={num}>5</span>
           <div>
             <b>💰 Valor da semana.</b> O bônus-alvo do mês (Meta ou Supermeta, tabela <b>Bônus-alvo - Serviços</b>) é dividido
-            entre os blocos da Matriz KPIs — por exemplo, Bloco 1 - Corporativo 20%, Bloco 2 - Departamental 30% e
+            entre os blocos da Matriz de KPIs — por exemplo, Bloco 1 - Corporativo 20%, Bloco 2 - Departamental 30% e
             Bloco 3 - Serviços 50%. As partes do Bloco 1 e do Bloco 2 são pagas <b>integralmente</b>, por mês. A parte do
             Bloco 3, dividida pela quantidade de semanas do mês, é o bônus-alvo da semana, e segue as faixas:
             bônus da semana = <b>% aplicado sobre o bônus × bônus-alvo da semana</b>.
@@ -2207,7 +2232,7 @@ function regrasZeradas(regras, unidade, unidades) {
   return r
 }
 
-// Quadros do Bloco 3 da Matriz KPIs, por aba (mesmos títulos do backend: BLOCO3_PV/BLOCO_SERVICOS e
+// Quadros do Bloco 3 da Matriz de KPIs, por aba (mesmos títulos do backend: BLOCO3_PV/BLOCO_SERVICOS e
 // BLOCO3_PECAS). Cada função do Bônus-alvo aponta para um quadro: regras.quadroLinha[unidade][linha] =
 // { bloco: 'servicos' | 'pecas', quadro }. Sem escolha salva, vale o padrão da função.
 const QUADROS_BLOCO3 = {
@@ -2284,7 +2309,7 @@ function EditorCargos({ cargosLista, empresaPadrao = '', quadroInicial, novo, li
   // Empresas que seguem o Bônus-alvo desta (vínculo): em quais delas esta função também vale.
   const [valeEm, setValeEm] = useState(() => seguidoras.filter((id) => !foraIniciais.includes(id)))
   const alternarValeEm = (id) => setValeEm((a) => (a.includes(id) ? a.filter((x) => x !== id) : [...a, id]))
-  // Quadro do Bloco 3 da Matriz KPIs que dá os valores da Apuração/Resultado desta função.
+  // Quadro do Bloco 3 da Matriz de KPIs que dá os valores da Apuração/Resultado desta função.
   const bloco = 'servicos' // só o Bloco 3 - Serviços
   const [quadro, setQuadro] = useState(quadroInicial?.quadro || '')
   const [individual, setIndividual] = useState(!!quadroInicial?.individual)
@@ -2340,10 +2365,10 @@ function EditorCargos({ cargosLista, empresaPadrao = '', quadroInicial, novo, li
             <input type="text" value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Ex.: Lavadores"
               className="mt-1 w-full text-xs p-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
           </label>
-          {/* Bloco 3 da Matriz KPIs: de onde vêm os valores da Apuração e do Resultado desta função. */}
+          {/* Bloco 3 da Matriz de KPIs: de onde vêm os valores da Apuração e do Resultado desta função. */}
           {!semQuadro && (
           <div className="text-xs space-y-2 rounded-md border border-slate-200 bg-slate-50/60 p-3">
-            <span className="block font-semibold text-slate-700">Bloco 3 - Serviços (Matriz KPIs)</span>
+            <span className="block font-semibold text-slate-700">Bloco 3 - Serviços (Matriz de KPIs)</span>
             <div className="flex flex-wrap items-center gap-2">
               <select aria-label="Quadro do Bloco 3" value={quadro}
                 onChange={(e) => { setQuadro(e.target.value); setIndividual(!!FILTRO_PESSOA[e.target.value]) }}
@@ -2560,7 +2585,7 @@ function AbaRegras({ cargosLista = [], travaPeriodicidade = null, permRegras = {
   const porSemana = (v) => `R$ ${moedaTxt((Number(v) || 0) / nSemanas)}`
   // Cargos de cada linha do Bônus-alvo (quem participa). Sem lista salva, mostra a regra padrão da função.
   const [editorCargos, setEditorCargos] = useState(null) // { linha } | { novo: true }
-  // Quadro do Bloco 3 (Matriz KPIs) de cada linha: Serviços ou Peças + o quadro (ex.: CONSULTOR DE SERVIÇOS).
+  // Quadro do Bloco 3 (Matriz de KPIs) de cada linha: Serviços ou Peças + o quadro (ex.: CONSULTOR DE SERVIÇOS).
   const quadroDaLinha = (l) => cfgQuadroDaLinha(rascunho, unidade, l.k)
   // Empresa da tela (filtro de empresa do editor de cargos abre nela); CAIOBÁ TRUCKS = todas.
   const empresaIdTela = campanha.unidades.find((x) => x.id === unidade)?.empresaId || ''
@@ -2647,8 +2672,15 @@ function AbaRegras({ cargosLista = [], travaPeriodicidade = null, permRegras = {
   // continua aberto com a mensagem de erro.
   // Quadro que esta empresa segue (vínculo de outra empresa) fica só leitura aqui.
   const podeEditar = (s) => !vinculos.segue?.[s] && (secaoAberta === 'todas' || secaoAberta === s)
+  // Bônus-alvo seguido de outra empresa: só as funções com valor próprio (linhasProprias) são editáveis,
+  // com o cadeado do quadro aberto.
+  const segueBonus = !!vinculos.segue?.bonus
+  const linhasProprias = new Set(rascunho.linhasProprias || [])
+  const bonusAberto = secaoAberta === 'todas' || secaoAberta === 'bonus'
+  const abertoSecao = (s) => (s === 'bonus' && segueBonus ? bonusAberto : podeEditar(s))
+  const podeEditarLinha = (l) => permRegras.editar && (segueBonus ? bonusAberto && linhasProprias.has(l.k) : podeEditar('bonus'))
   const alternarSecao = async (s) => {
-    if (podeEditar(s)) {
+    if (abertoSecao(s)) {
       if (alterado && !(await salvar())) return
       setSecaoAberta(null)
       return
@@ -2763,8 +2795,9 @@ function AbaRegras({ cargosLista = [], travaPeriodicidade = null, permRegras = {
   // aberto pode ter mudado, é a mudança dele que vai para o banco).
   const NOMES_SECAO = { chave: 'Regras-chave', bonus: 'Bônus-alvo', faixas: 'Faixas de pagamento' }
   const cadeadoSecao = (s) => {
-    if (!permRegras.editar || vinculos.segue?.[s]) return null // quadro seguido: edita-se na empresa de origem
-    const aberto = podeEditar(s)
+    // Quadro seguido: edita-se na empresa de origem — menos o Bônus-alvo com funções de valor próprio.
+    if (!permRegras.editar || (vinculos.segue?.[s] && !(s === 'bonus' && linhasProprias.size))) return null
+    const aberto = abertoSecao(s)
     const nome = NOMES_SECAO[s]
     return (
       <button type="button" onClick={() => alternarSecao(s)} disabled={salvando} aria-pressed={aberto}
@@ -2783,6 +2816,20 @@ function AbaRegras({ cargosLista = [], travaPeriodicidade = null, permRegras = {
   //  · senão → "Vale também para": empresas marcadas passam a seguir este quadro (grava ao fechar o cadeado).
   //    Fica de fora quem já segue outra origem neste quadro, ou quem é origem dele para outras empresas.
   const nomeUn = (id) => campanha.unidades.find((x) => x.id === id)?.nome || id
+  // Valor próprio por função (loja que segue o Bônus-alvo de outra): a função passa a usar os valores
+  // desta empresa — começa com os que estava seguindo — e o cadeado do quadro abre para editar; ao
+  // fechar, grava. "Voltar a seguir" desfaz.
+  const usarValorProprioLinha = (l) => {
+    alterar(['linhasProprias'], [...linhasProprias, l.k])
+    setSecaoAberta('bonus')
+    setMsg({ erro: false, txt: `"${l.nome}" com valor próprio — edite e feche o cadeado do Bônus-alvo para gravar.` })
+  }
+  const voltarASeguirLinha = (l) => {
+    if (!window.confirm(`"${l.nome}" volta a usar os valores de ${nomeUn(vinculos.segue.bonus)} nesta empresa?`)) return
+    alterar(['linhasProprias'], [...linhasProprias].filter((k) => k !== l.k))
+    setSecaoAberta('bonus')
+    setMsg({ erro: false, txt: `"${l.nome}" volta a seguir ${nomeUn(vinculos.segue.bonus)} — feche o cadeado do Bônus-alvo para gravar.` })
+  }
   const [desvinculando, setDesvinculando] = useState(null)
   const usarRegraPropria = async (q) => {
     if (!window.confirm(`Usar regra própria em ${QUADROS_VINCULO[q]} de ${nomeEmpresa} (${nomeMes}/${ano})?\n\nA empresa deixa de seguir ${nomeUn(vinculos.segue[q])}: os valores de hoje ficam gravados nela e passam a ser editados aqui.`)) return
@@ -2803,7 +2850,8 @@ function AbaRegras({ cargosLista = [], travaPeriodicidade = null, permRegras = {
       return (
         <div className="flex flex-wrap items-center gap-2 rounded-md border border-violet-200 bg-violet-50 px-3 py-1.5 text-[11px] text-violet-900">
           <Link2 className="h-3.5 w-3.5 shrink-0" />
-          <span>Segue a regra de <b>{nomeUn(origem)}</b></span>
+          <span>Segue a regra de <b>{nomeUn(origem)}</b>
+            {q === 'bonus' && linhasProprias.size > 0 && ` · ${linhasProprias.size} ${linhasProprias.size === 1 ? 'função com valor próprio' : 'funções com valor próprio'}`}</span>
           {permRegras.editar && !mesFechado && (
             <button type="button" onClick={() => usarRegraPropria(q)} disabled={!!desvinculando}
               className="ml-auto inline-flex items-center gap-1 rounded border border-violet-300 bg-white px-2 py-0.5 font-semibold text-violet-800 hover:bg-violet-100 disabled:opacity-50">
@@ -2987,25 +3035,35 @@ function AbaRegras({ cargosLista = [], travaPeriodicidade = null, permRegras = {
                     if (campo === 'meta') { delete t[`${l.k}:meta`]; delete t[`${l.k}:super`] } else delete t[`${l.k}:super`]
                     alterar(['bonusBloqueado', unidade], t)
                   }
+                  const editavelLinha = podeEditarLinha(l)
+                  const propria = segueBonus && linhasProprias.has(l.k)
+                  // Loja que segue o Bônus-alvo de outra: por função, "Usar valor próprio" / "Voltar a seguir".
+                  const itensEngrenagem = !segueBonus ? [
+                    { rotulo: 'Editar', icone: Pencil, onClick: () => setEditorCargos({ linha: l }), dica: 'Editar descrição, quadro do Bloco 3, empresas do resultado e cargos desta função' },
+                    { rotulo: 'Excluir', icone: Trash2, perigo: true, onClick: () => excluirLinha(l), dica: `Excluir a função "${l.nome}" e as metas dela` },
+                  ] : !permRegras.editar ? [] : propria ? [
+                    ...(bonusAberto ? [{ rotulo: 'Editar', icone: Pencil, onClick: () => setEditorCargos({ linha: l }), dica: 'Editar descrição, quadro do Bloco 3, empresas do resultado e cargos desta função (só nesta empresa)' }] : []),
+                    { rotulo: `Voltar a seguir ${nomeUn(vinculos.segue.bonus)}`, icone: Link2, onClick: () => voltarASeguirLinha(l), dica: `Esta função volta a usar os valores de ${nomeUn(vinculos.segue.bonus)}` },
+                  ] : [
+                    { rotulo: 'Usar valor próprio nesta função', icone: Unlink, onClick: () => usarValorProprioLinha(l), dica: `Só esta função deixa de seguir ${nomeUn(vinculos.segue.bonus)} nesta empresa; as demais continuam seguindo` },
+                  ]
                   return (
-                    <tr key={l.k} className="border-b border-slate-100 last:border-0">
+                    <tr key={l.k} className={`border-b border-slate-100 last:border-0 ${propria ? 'bg-violet-50/40' : ''}`}>
                       <td className="p-1.5 text-center">
-                        <MenuEngrenagem flutuante compacto titulo={`Ações — ${l.nome}`} itens={[
-                          { rotulo: 'Editar', icone: Pencil, onClick: () => setEditorCargos({ linha: l }), dica: 'Editar descrição, quadro do Bloco 3, empresas do resultado e cargos desta função' },
-                          { rotulo: 'Excluir', icone: Trash2, perigo: true, onClick: () => excluirLinha(l), dica: `Excluir a função "${l.nome}" e as metas dela` },
-                        ]} />
+                        <MenuEngrenagem flutuante compacto titulo={`Ações — ${l.nome}`} itens={itensEngrenagem} />
 
                       </td>
                       <td className="p-2 font-medium whitespace-nowrap text-slate-700">
                         {l.nome}
+                        {propria && <span className="ml-2 text-[10px] font-semibold text-violet-700" title={`Esta função não segue ${nomeUn(vinculos.segue.bonus)}: usa os valores desta empresa`}>valor próprio</span>}
                         {l.cargos && (
-                          <button type="button" onClick={() => setEditorCargos({ linha: l })}
+                          <button type="button" onClick={() => setEditorCargos({ linha: l })} disabled={!editavelLinha}
                             title={`Cargos que fazem parte de "${l.nome}": ${cargosDaLinha(l).join(', ') || 'nenhum'}`}
                             className="ml-2 inline-flex items-center gap-1 rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-semibold text-slate-600 hover:bg-slate-50 hover:text-blue-700">
                             <Users className="h-3 w-3" /> Cargos ({cargosDaLinha(l).length})
                           </button>
                         )}
-                        {/* Bloco/quadro da Matriz KPIs desta função (escolhido na janela de Cargos). */}
+                        {/* Bloco/quadro da Matriz de KPIs desta função (escolhido na janela de Cargos). */}
                         {!garantias && (() => {
                           const q = quadroDaLinha(l)
                           return (
@@ -3017,14 +3075,14 @@ function AbaRegras({ cargosLista = [], travaPeriodicidade = null, permRegras = {
                         })()}
                       </td>
                       <td className="p-1.5 text-right border-l border-slate-100">
-                        <MoedaInput rotulo={`Meta — ${l.nome}`}
+                        <MoedaInput rotulo={`Meta — ${l.nome}`} disabled={!editavelLinha}
                           value={metaTravada ? null : (lerCaminho(rascunho, l.meta) ?? null)}
                           onChange={(v) => { destravar('meta'); alterar(l.meta, v) }} />
                       </td>
                       {!garantias && celulasBlocos(metaTravada ? null : lerCaminho(rascunho, l.meta), !!quadroDaLinha(l).mensal)}
                       <td className="p-1.5 text-right border-l border-slate-100">
                         {l.supermeta && (
-                          <MoedaInput rotulo={`Supermeta — ${l.nome}`}
+                          <MoedaInput rotulo={`Supermeta — ${l.nome}`} disabled={!editavelLinha}
                             value={superTravada ? null : (valorSuper(l) ?? null)}
                             onChange={(v) => { destravar('super'); alterar(l.supermeta, v) }} />
                         )}
@@ -3202,11 +3260,13 @@ function AbaRegras({ cargosLista = [], travaPeriodicidade = null, permRegras = {
           {cadeadoSecao('bonus')}
         </div>
         {controleVinculo('bonus')}
-        <fieldset disabled={!podeEditar('bonus')} className="space-y-3 min-w-0">
+        {/* Bônus-alvo seguido: a tabela continua ativa (engrenagem "Usar valor próprio" e campos das funções
+            próprias); os demais campos ficam travados um a um. */}
+        <fieldset disabled={segueBonus ? !permRegras.editar : !podeEditar('bonus')} className="space-y-3 min-w-0">
         {/* Divisão do bônus entre os blocos da Matriz (iguais para todas as funções; gravado em
             regras.pesosBlocos). A parte de cada bloco é a base de cálculo daquele bloco — hoje só o
             Bloco 3 tem dados (Resultado e Pagamento usam a parte do Bloco 3). */}
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-600">
+        <fieldset disabled={!podeEditar('bonus')} className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-600 min-w-0">
           <span className="font-semibold text-slate-700">Divisão do bônus:</span>
           {[['companhia', 'Bloco 1 - Corporativo'], ['departamento', 'Bloco 2 - Departamental'], ['individual', 'Bloco 3 - Serviços']].map(([k, rot]) => (
             <label key={k} className="inline-flex items-center gap-1.5">
@@ -3218,7 +3278,7 @@ function AbaRegras({ cargosLista = [], travaPeriodicidade = null, permRegras = {
           <span className={`font-semibold ${somaBlocosOk ? 'text-emerald-700' : 'text-red-600'}`}>
             = {pctTxt(somaBlocos)} {somaBlocosOk ? '✔' : '(precisa somar 100%)'}
           </span>
-        </div>
+        </fieldset>
         {tabelaBonus(linhasServicos)}
         </fieldset>
         {/* Novo grupo de cargos (não existe em CAIOBÁ TRUCKS, que só tem o Gerente Geral) + o cadeado do

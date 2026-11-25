@@ -51,14 +51,14 @@ import {
 } from '../services/kpiSyncService.js'
 import { getPesos, setPeso, aplicarPesos } from '../services/kpiPesos.js'
 import { getMetasManuais, setMetaManual, aplicarMetasManuais } from '../services/kpiMetasManuais.js'
-import { getMetaPecasPeriodos, getMetaOficinaPeriodos, getMetaMecanicoPeriodos, getMetaMargemOficinaPeriodos, getMetaPecasBalcaoPeriodos, getMetaMargemBalcaoPeriodos, getMetaTrpPeriodos, getMetaTicketMedioPeriodos, getMetaFunilariaPeriodos, limparCacheMetas } from '../services/kpiMetas.js'
+import { getMetaPecasPeriodos, getMetaOficinaPeriodos, getMetaMecanicoPeriodos, getMetaMargemOficinaPeriodos, getMetaPecasBalcaoPeriodos, getMetaMargemBalcaoPeriodos, getMetaTrpPeriodos, getMetaTicketMedioPeriodos, getMetaPassagensPeriodos, getMetaFunilariaPeriodos, limparCacheMetas } from '../services/kpiMetas.js'
 import { getIndicadoresGarantia } from '../services/kpiGarantias.js'
 import { getIndicadoresAuditoriaOs, normConsultor } from '../services/kpiAuditoriaOs.js'
 import { getProdutividadeConsultores, metaProdutividadeRegrasCor, getEficaciaProdutividadePorCasa, getEficaciaProdutividadeCasas, getEficaciaProdutividadeMecanico, semAcento as semAcentoProd } from '../services/kpiProdutividadeConsultor.js'
 import { getIndicadoresAgendamento, comMetasAtuaisAgendamento } from '../services/kpiAgendamento.js'
 import { resultado as resultadoRotina } from '../services/monitorRotinas.js'
-import { getIndicadoresPlanos, contarPlanosPorMes } from '../services/kpiPlanosManutencao.js'
-import { getValoresPossibilidades, getOficinaPorCasa, getFaturamentoSetorMecanica, getBalcaoPecas, getCasasPorPessoa, limparCachePossibilidades } from '../services/kpiPossibilidades.js'
+import { getIndicadoresPlanos, getPercentuaisPlanos, contarPlanosPorMes } from '../services/kpiPlanosManutencao.js'
+import { getValoresPossibilidades, getOficinaPorCasa, getTempoOficinaPorSetor, getFaturamentoSetorMecanica, getBalcaoPecas, getCasasPorPessoa, limparCachePossibilidades } from '../services/kpiPossibilidades.js'
 
 const router = Router()
 
@@ -1109,7 +1109,7 @@ const basePlanosServicos = (year, { refresh = false, incluirHoje = false } = {})
   obterBaseBloco3Servicos(`bloco3-servicos-planos-v2|${year}${incluirHoje ? '|hoje' : ''}`, () => contarPlanosPorMes(year, { incluirHoje }), { refresh, checarMetas: false }) // v2: com semanas
 // BI Agendamento de Serviços: realizados guardados (leitura do SharePoint leva ~15 s a frio); metas lidas na hora.
 const baseAgendamentoServicos = (year, { refresh = false, incluirHoje = false } = {}) =>
-  obterBaseBloco3Servicos(`bloco3-servicos-agendamento-v2|${year}${incluirHoje ? '|hoje' : ''}`, () => getIndicadoresAgendamento(year, { incluirHoje }), { refresh, checarMetas: false })
+  obterBaseBloco3Servicos(`bloco3-servicos-agendamento-v3|${year}${incluirHoje ? '|hoje' : ''}`, () => getIndicadoresAgendamento(year, { incluirHoje }), { refresh, checarMetas: false })
 
 const QUADROS_EMPRESA_SERVICOS = ['SETOR DE MECÂNICA', 'CHEFE DE OFICINA', 'SETOR FUNILARIA/PINTURA', 'SETOR GARANTIA']
 const QUADRO_PLANOS_SERVICOS = 'CONSULTOR DE PLANO DE MANUTENÇÃO'
@@ -1669,6 +1669,129 @@ router.get('/bloco2-metas', wrap(async (req, res) => {
   res.json({ year, faturamentoTotalOficina: oficina })
 }))
 
+// Bloco 2 - Departamental › aba Pós-Vendas (24/11/2026): indicadores com as MESMAS contas do Bloco 3, sem conta nova.
+// GET /api/kpi/bloco2-pos-venda?year=&empresas=&incluirHoje= → { indicadores: { 'nome do Bloco 2': { período: { meta, realizado } } } }
+//   Faturamento Total Oficina, Margens (Serviços / Peças Oficina), O.S. sem veículo e O.S. >= 30 dias: os do GERENTE GERAL
+//     PÓS-VENDAS (Bloco 3 › Gerentes), com as empresas marcadas.
+//   Ticket médio e Passagem Total: linha OFICINA do BI Possibilidades (O.S. distintas); sem meta.
+//   EFICIÊNCIA / EFICÁCIA / PRODUTIVIDADE: tela Indicadores de Produtividade (horas dos mecânicos Trucks); meta = Regras de Cores.
+const BLOCO2_PV_DO_GERENTE_GERAL = {
+  // (Faturamento Total Oficina: linha Total da Possibilidades, montado em indicadoresBloco2PosVenda.)
+  // Nomes no Bloco 2 sem "Bruta" e sem "(total)" (24/11/2026).
+  'Margem Serviços': 'Margem Bruta Serviços',
+  'Margem Peças Oficina': 'Margem Bruta Peças Oficina',
+  'O.S. aberta sem veículo na oficina': 'O.S. aberta sem veículo na oficina',
+  'O.S. >= 30 dias (% do Valor)': 'O.S. abertas >= 30 dias',
+}
+// Do GERENTE DE PROCESSOS E QUALIDADE (BI Agendamento de Serviços; grupo todo — o relatório não traz a empresa).
+const BLOCO2_PV_DO_QUALIDADE = {
+  'Agendamentos ativos': 'Taxa de Agendamento Ativo (Por Data Agendamento)', // 24/11/2026
+}
+router.get('/bloco2-pos-venda', requireConfig, wrap(async (req, res) => {
+  const year = parseInt(req.query.year) || new Date().getFullYear()
+  res.json(await indicadoresBloco2PosVenda({ year, empresas: req.query.empresas || null, incluirHoje: !!req.query.incluirHoje }))
+}))
+
+async function indicadoresBloco2PosVenda({ year, empresas = null, incluirHoje = false }) {
+  const casasSel = (empresas && empresas !== EMPRESA_TODAS) ? String(empresas).split(',').map(x => x.trim()).filter(Boolean) : null
+  const chave = casasSel ? casasSel.join(',') : 'TODAS'
+  const nomesSel = casasSel ? casasSel.map(c => EMPRESA_KEY_TO_RECEP[c] || c) : null
+  const optsMeta = nomesSel ? { empresaNome: nomesSel } : { soTrucks: true }
+  const [pv, oficina, efProd, mEficacia, mEficiencia, mProdutividade, metaOficina, metaBalcao, metaMargemBalcao, metaTicket, metaPassagens, prodConsultores, agendamento, planosPct, tempoOficina, garantias] = await Promise.all([
+    quadrosBloco3PosVenda({ year, empresas: casasSel ? chave : null, incluirHoje })
+      .catch(err => { console.error('[bloco2-pos-venda] gerentes:', err.message); return [] }),
+    getOficinaPorCasa(year, { incluirHoje, casas: casasSel }).catch(err => { console.error('[bloco2-pos-venda] possibilidades:', err.message); return null }),
+    (casasSel && casasSel.length > 1
+      ? getEficaciaProdutividadeCasas(year, casasSel, { incluirHoje })
+      : getEficaciaProdutividadePorCasa(year, { incluirHoje }).then(m => m?.[chave] || null)
+    ).catch(err => { console.error('[bloco2-pos-venda] produtividade:', err.message); return null }),
+    metaProdutividadeRegrasCor(year, 'eficacia').catch(() => null),
+    metaProdutividadeRegrasCor(year, 'eficiencia').catch(() => null),
+    metaProdutividadeRegrasCor(year, 'produtividade').catch(() => null),
+    getMetaOficinaPeriodos(year, optsMeta).catch(() => null),
+    getMetaPecasBalcaoPeriodos(year, optsMeta).catch(() => null),
+    getMetaMargemBalcaoPeriodos(year, optsMeta).catch(() => null),
+    // Ticket Médio e Passagens: metas publicadas (aprovadas) no planejamento dos consultores (24/11/2026).
+    getMetaTicketMedioPeriodos(year, optsMeta).catch(() => null),
+    getMetaPassagensPeriodos(year, optsMeta).catch(() => null),
+    // Produtividade %: linha Total da aba Consultores da tela Indicadores de Produtividade (24/11/2026).
+    getProdutividadeConsultores(year, { incluirHoje }).catch(err => { console.error('[bloco2-pos-venda] produtividade consultores:', err.message); return null }),
+    // Total agendamento: Taxa de Agendamento da aba Por Data Agendamento do BI Agendamento (grupo todo).
+    baseAgendamentoServicos(year, { incluirHoje }).then(comMetasAtuaisAgendamento).catch(err => { console.error('[bloco2-pos-venda] agendamento:', err.message); return null }),
+    // Contratos novos / renovados em %: velocímetros da aba Resultado do BI Planos de Manutenção (grupo todo).
+    basePlanosServicos(year, { incluirHoje }).then(meses => getPercentuaisPlanos(year, meses)).catch(err => { console.error('[bloco2-pos-venda] planos:', err.message); return null }),
+    // Tempo veículo oficina / funilaria: Média de dias na oficina da aba Tempo na Oficina (Possibilidades), por setor.
+    getTempoOficinaPorSetor(year, { incluirHoje, casas: casasSel }).catch(err => { console.error('[bloco2-pos-venda] tempo na oficina:', err.message); return null }),
+    // Garantia em aberto: "Tempo de garantia em aberto" do Dashboard Garantias DAF (aba Com Garantista) + meta da engrenagem.
+    getIndicadoresGarantia(year, casasSel ? casasSel.join(',') : null, { incluirHoje }).catch(err => { console.error('[bloco2-pos-venda] garantias:', err.message); return null }),
+  ])
+  const PERIODOS = [...ALL_MONTHS, ...ALL_WEEKS, 'q1', 'q2', 'q3', 'q4', 'fy']
+  const soPeriodos = (k) => Object.fromEntries(PERIODOS.map(p => [p, { meta: k?.[p]?.meta ?? null, realizado: k?.[p]?.realizado ?? null }]))
+  const indicadores = {}
+
+  const geral = (pv || []).find(q => q.tituloGerente === 'GERENTE GERAL PÓS-VENDAS')
+  for (const [nomeB2, nomeB3] of Object.entries(BLOCO2_PV_DO_GERENTE_GERAL)) {
+    const k = geral?.kpis.find(x => x.indicador === nomeB3)
+    if (k) indicadores[nomeB2] = soPeriodos(k)
+  }
+  for (const [nome, v] of [['Contratos novos', planosPct?.novos], ['Contratos renovados', planosPct?.renovados]]) {
+    if (v) indicadores[nome] = Object.fromEntries(PERIODOS.map(p => [p, { meta: v.meta?.[p] ?? null, realizado: v.realizado?.[p] ?? null }]))
+  }
+  for (const [nome, v] of [['Tempo veículo oficina', tempoOficina?.mecanica], ['Tempo veículo funilaria', tempoOficina?.funilaria]]) {
+    if (v) indicadores[nome] = Object.fromEntries(PERIODOS.map(p => [p, { meta: v.meta?.[p] ?? null, realizado: v.realizado?.[p] ?? null }]))
+  }
+  if (garantias?.tempoAberto) {
+    indicadores['Tempo de garantia em aberto'] = Object.fromEntries(PERIODOS.map(p => [p, { meta: garantias.metas?.tempoAberto?.[p] ?? null, realizado: garantias.tempoAberto[p] ?? null }]))
+  }
+  if (agendamento?.taxaAgData) {
+    const t = agendamento.taxaAgData
+    indicadores['Total agendamento'] = Object.fromEntries(PERIODOS.map(p => [p, { meta: t.meta?.[p] ?? null, realizado: t.realizado?.[p] ?? null }]))
+  }
+  const qualidade = (pv || []).find(q => q.tituloGerente === 'GERENTE DE PROCESSOS E QUALIDADE')
+  for (const [nomeB2, nomeB3] of Object.entries(BLOCO2_PV_DO_QUALIDADE)) {
+    const k = qualidade?.kpis.find(x => x.indicador === nomeB3)
+    if (k) indicadores[nomeB2] = soPeriodos(k)
+  }
+
+  // Ticket / Passagem / Eficiência / Eficácia / Produtividade: quadro montado aqui (realizado + metas mês a mês).
+  const o = oficina?.[chave]
+  const q = {
+    tituloGerente: 'BLOCO2-PV',
+    kpis: [
+      { id: 1, indicador: 'Ticket Médio Total Oficina' }, { id: 2, indicador: 'Passagem Total' },
+      { id: 3, indicador: 'Eficiência %' }, { id: 4, indicador: 'Eficácia %' }, { id: 5, indicador: 'Produtividade %' },
+    ],
+  }
+  const comValores = comRealizadoDe(q, {
+    'Ticket Médio Total Oficina': o?.ticket, 'Passagem Total': o?.passagens,
+    'Eficiência %': efProd?.eficiencia, 'Eficácia %': efProd?.eficacia, 'Produtividade %': casasSel ? prodConsultores?.casasSel?.(casasSel) : prodConsultores?.grupo?.realizado,
+  })
+  // Faturamento Total Oficina (Peças + Serviços) do Bloco 2 (24/11/2026, pedido do usuário): linha TOTAL da
+  // Possibilidades - Sintonia do Dia (BALCÃO PEÇAS + OFICINA), não só a OFICINA do Gerente Geral.
+  // Realizado = Real Total das duas linhas; Meta = meta aprovada da Oficina + meta de Peças Balcão.
+  const FAT = 'Faturamento Total Oficina (Peças + Serviços)'
+  const realTotal = somarMapas([o?.fatTotal, o?.balcaoFat])
+  const metaTotal = somarMapas([metaOficina, metaBalcao])
+  indicadores[FAT] = Object.fromEntries(PERIODOS.map(p => [p, { meta: metaTotal?.[p] ?? null, realizado: realTotal?.[p] ?? null }]))
+  // Margem Bruta Peças Balcão (24/11/2026): linha BALCÃO PEÇAS da Possibilidades (Margem Peças ÷ Real Peças) e a meta
+  // de margem do Balcão (fato_rascunho_metas_pecas) — mesma conta dos Gerentes Filial / Gerente Atacado Peças.
+  indicadores['Margem Peças Balcão'] = Object.fromEntries(PERIODOS.map(p => [p, { meta: metaMargemBalcao?.[p] ?? null, realizado: o?.balcaoMargemPecas?.[p] ?? null }]))
+
+  const metas = {}
+  // Metas de Ticket / Passagens já vêm por período (não mês a mês): entram depois, direto.
+  if (mEficiencia) metas['BLOCO2-PV|3'] = mEficiencia
+  if (mEficacia) metas['BLOCO2-PV|4'] = mEficacia
+  if (mProdutividade) metas['BLOCO2-PV|5'] = mProdutividade
+  const [final] = aplicarMetasManuais([comValores], metas, year)
+  for (const k of final.kpis) indicadores[k.indicador] = soPeriodos(k)
+  for (const [nome, m] of [['Ticket Médio Total Oficina', metaTicket], ['Passagem Total', metaPassagens]]) {
+    if (!m || !indicadores[nome]) continue
+    for (const p of PERIODOS) indicadores[nome][p] = { ...indicadores[nome][p], meta: m[p] ?? null }
+  }
+
+  return { year, empresas: chave, indicadores }
+}
+
 router.get('/bloco2', requireConfig, wrap(async (req, res) => {
   const cache = await getCachePlanilha('bloco2')
   res.json(cache ?? await getBloco2())
@@ -1688,7 +1811,7 @@ router.get('/backlog', requireConfig, wrap(async (_, res) => {
   res.json(cache ?? await getBacklog())
 }))
 
-// ── Sincronização manual da Matriz KPIs ───────────────────────────────────────
+// ── Sincronização manual da Matriz de KPIs ───────────────────────────────────────
 
 // GET /api/kpi/sync/status — última execução manual
 router.get('/sync/status', wrap(async (_, res) => {

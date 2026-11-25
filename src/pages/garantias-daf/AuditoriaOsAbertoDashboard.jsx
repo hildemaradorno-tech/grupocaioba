@@ -646,7 +646,8 @@ function SeletorEmpresasAud({ grupos, selecionadas, onChange }) {
 // selecao/onSelecao: empresa e auditoria compartilhadas com a visão Controle ({ empresa, auditoria, data })
 // slotFiltros: elemento do cabeçalho do BI para os seletores; onSlotVisao: ref p/ os ícones Dashboard | Controle
 // versao: muda quando a engrenagem altera alguma auditoria → recarrega auditorias e OS
-export default function AuditoriaOsAbertoDashboard({ selecao = null, onSelecao = null, slotFiltros = null, onSlotVisao = null, versao = 0, onStatusAuditoria = null }) {
+// aba / barraAbas: no BI as abas (Indicadores · O.S. Pendentes · O.S. ≥ 30 Dias · Auditoria) são desenhadas pela página
+export default function AuditoriaOsAbertoDashboard({ selecao = null, onSelecao = null, slotFiltros = null, onSlotVisao = null, versao = 0, onStatusAuditoria = null, aba: abaExterna = null, barraAbas = null }) {
   const { isAdminEfetivo, empresasPermitidasEfetivas } = useAuth()
   // Metas dos indicadores (aud_configuracoes — engrenagem do Controle → Metas dos indicadores)
   const [metasAud, setMetasAud] = useState(null)
@@ -665,7 +666,8 @@ export default function AuditoriaOsAbertoDashboard({ selecao = null, onSelecao =
     // Várias empresas vão no parâmetro "data" da URL; a visão Controle recebe empresa vazia (escolhe uma lá)
     onSelecao?.(isGrupo ? { empresa: '', auditoria: '', data: `emps:${empresasSel.join(',')}` } : { empresa: empresaId, auditoria: dataSel, data: '' })
   }, [empresasSel, dataSel]) // eslint-disable-line react-hooks/exhaustive-deps
-  const [aba, setAba] = useState('indicadores')
+  const [abaInterna, setAba] = useState('indicadores')
+  const aba = abaExterna || abaInterna
   const [rows, setRows] = useState([])
   const [carregando, setCarregando] = useState(true)
   const [carregandoOs, setCarregandoOs] = useState(false)
@@ -707,7 +709,7 @@ export default function AuditoriaOsAbertoDashboard({ selecao = null, onSelecao =
     return () => { vivo = false }
   }, [isAdminEfetivo, empresasPermitidasEfetivas, versao])
 
-  // ?loja=CAMPO GRANDE (ou TRUCKS = todas as Trucks) — link de origem da Matriz KPIs (14/11/2026): abre com a
+  // ?loja=CAMPO GRANDE (ou TRUCKS = todas as Trucks) — link de origem da Matriz de KPIs (14/11/2026): abre com a
   // empresa do quadro marcada, uma vez, quando as empresas chegam (só se a URL não trouxe outra seleção).
   const lojaDoLink = useRef(new URLSearchParams(window.location.search).get('loja'))
   useEffect(() => {
@@ -897,16 +899,20 @@ export default function AuditoriaOsAbertoDashboard({ selecao = null, onSelecao =
       {slotFiltros ? createPortal(filtros, slotFiltros) : <div className="flex justify-end">{filtros}</div>}
 
       {/* ABAS à esquerda · ícones Dashboard | Controle à direita (desenhados pela página do BI) */}
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-lg p-0.5 w-fit flex-wrap">
+      <div className="flex items-end justify-between gap-3">
+        {/* Abas tipo "pasta" (mesmo modelo da aba Auditoria da visão Controle): cantos de cima arredondados,
+            inativas cinza-claro com borda, ativa azul preenchida e um pouco mais alta */}
+        {barraAbas || <div className="flex items-end gap-1 border-b-2 border-sky-600 flex-wrap">
           {ABAS.map(a => (
-            <button key={a.key} onClick={() => setAba(a.key)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-semibold transition-colors ${
-                aba === a.key ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'}`}>
-              <a.icon className="h-3.5 w-3.5" /> {a.label}
+            <button key={a.key} type="button" onClick={() => setAba(a.key)}
+              className={`inline-flex items-center gap-1.5 px-4 rounded-t-md border border-b-0 text-[11px] font-semibold uppercase transition-colors ${
+                aba === a.key
+                  ? 'py-2 bg-gradient-to-b from-sky-500 to-sky-600 border-sky-600 text-white shadow-sm'
+                  : 'py-1.5 bg-gradient-to-b from-white to-slate-100 border-slate-300 text-slate-500 hover:text-slate-800 hover:to-slate-50'}`}>
+              <a.icon className="h-3.5 w-3.5" />{a.label}
             </button>
           ))}
-        </div>
+        </div>}
         {onSlotVisao && <div ref={onSlotVisao} />}
       </div>
 

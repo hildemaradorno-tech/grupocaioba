@@ -1,5 +1,5 @@
 /**
- * Metas digitadas manualmente na Matriz KPIs (ex.: Eficácia da Oficina, Produtividade da
+ * Metas digitadas manualmente na Matriz de KPIs (ex.: Eficácia da Oficina, Produtividade da
  * Oficina — indicadores sem fonte automática de meta), gravadas no Supabase mês a mês pra
  * não se perderem — ver migration kpi_metas_manuais.sql. Mesmo padrão de kpiPesos.js.
  */

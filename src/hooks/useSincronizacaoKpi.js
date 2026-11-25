@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { getStatusSincronizacao, executarSincronizacaoAgora } from '../services/kpiService'
 
-// Atualização da Matriz KPIs compartilhada entre telas (Matriz KPIs e BI Campanha Pós-Venda).
+// Atualização da Matriz de KPIs compartilhada entre telas (Matriz de KPIs e BI Campanha Pós-Venda).
 // Um único processo no backend: a sincronização completa grava a Matriz e, no último passo, a
 // Campanha (fato_campanha_diario). O backend tem uma trava — enquanto alguém está atualizando,
 // ninguém mais consegue iniciar. Este hook consulta /sync/status periodicamente para que o botão
@@ -64,8 +64,8 @@ export function useSincronizacaoKpi(onConcluido) {
       setPorQuem(usuarioEmail || null)
       rodandoAntes.current = true
       setMensagem(automatica
-        ? 'Primeiro acesso do dia: atualizando os dados da Matriz KPIs e da Campanha… pode levar alguns minutos (os números atuais continuam na tela até terminar).'
-        : 'Atualizando a Matriz KPIs e a Campanha… pode levar alguns minutos.')
+        ? 'Primeiro acesso do dia: atualizando os dados da Matriz de KPIs e da Campanha… pode levar alguns minutos (os números atuais continuam na tela até terminar).'
+        : 'Atualizando a Matriz de KPIs e a Campanha… pode levar alguns minutos.')
     } catch (err) {
       // 409 = outra pessoa iniciou no mesmo instante: passa a acompanhar a dela.
       if (/andamento/i.test(err.message || '')) {

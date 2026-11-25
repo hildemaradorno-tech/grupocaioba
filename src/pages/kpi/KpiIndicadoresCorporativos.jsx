@@ -77,7 +77,7 @@ function fmtNum(v, metrica) {
 }
 
 export default function KpiIndicadoresCorporativos({ periodState: periodoMatriz = null }) {
-  // Na Matriz KPIs o seletor de Visão/Meses fica no topo (acima das abas) e chega por prop.
+  // Na Matriz de KPIs o seletor de Visão/Meses fica no topo (acima das abas) e chega por prop.
   const periodoProprio = usePeriodSelector('kpi-matriz')
   const periodState = periodoMatriz || periodoProprio
   const { activePeriods } = periodState

@@ -258,6 +258,58 @@ export async function getOsEncerradas() {
   return _cacheEncerrada
 }
 
+// ── Tempo na Oficina (Auditoria O.S. Aberta › Controle): O.S. FECHADAS dos arquivos "ROF001_OSAberta_Excel <ano>",
+// todos os tipos, com Data Criação (entrada) e Fechado (saída). Canceladas ficam de fora. Mesmo critério de
+// repetição do getOsEncerradas: a mesma O.S./tipo em mais de um arquivo vale a do arquivo modificado por último.
+// Guarda por arquivo só os campos usados (arquivos grandes) e só baixa de novo o arquivo que mudou.
+const _fechadasPorArquivo = new Map() // id → { lastModified, rows }
+
+function linhaTempoOficina(row) {
+  const r = mapOsRowExcel(row)
+  if (!r.os_numero || !r.fechado_data || !r.data_criacao) return null
+  if (/cancel/i.test(r.situacao)) return null
+  return {
+    os_numero: r.os_numero, tipo_os_sigla: r.tipo_os_sigla, consultor_nome: r.consultor_nome,
+    proprietario_veiculo: r.proprietario_veiculo, empresa_nome: r.empresa_nome, veiculo_placa: r.veiculo_placa,
+    veiculo_chassi: r.veiculo_chassi, total: r.total, data_criacao: r.data_criacao, fechado_data: r.fechado_data,
+    situacao: r.situacao,
+  }
+}
+
+// de/ate (YYYY-MM-DD) filtram pela data de saída (Fechado); empresa = Empresa_Nome (opcional, sem diferenciar maiúsculas)
+export async function getOsTempoOficina({ de, ate, empresa } = {}) {
+  const itens = await listarPastaOs()
+  const arquivos = itens.filter(i => i.file && String(i.name || '').toUpperCase().startsWith(PREFIX_OS_EXCEL))
+  if (arquivos.length === 0) throw new Error('Nenhum arquivo ROF001_OSAberta_Excel encontrado no SharePoint')
+
+  for (const item of arquivos) {
+    if (_fechadasPorArquivo.get(item.id)?.lastModified === item.lastModifiedDateTime) continue
+    const resp = await axios.get(item['@microsoft.graph.downloadUrl'], { responseType: 'arraybuffer', timeout: 120_000 })
+    const wb = XLSX.read(Buffer.from(resp.data), { type: 'buffer', cellDates: true })
+    const linhas = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '' })
+    const rows = []
+    for (const l of linhas) { const r = linhaTempoOficina(l); if (r) rows.push(r) }
+    _fechadasPorArquivo.set(item.id, { lastModified: item.lastModifiedDateTime, rows })
+    console.log(`[TempoOficina] ${item.name}: ${rows.length} linhas de O.S. fechadas`)
+    await new Promise(r => setImmediate(r))
+  }
+
+  const emp = (empresa || '').trim().toUpperCase()
+  const porOs = new Map()
+  let lastModified = null
+  for (const item of [...arquivos].sort((a, b) => a.lastModifiedDateTime.localeCompare(b.lastModifiedDateTime))) {
+    const lido = _fechadasPorArquivo.get(item.id)
+    if (!lido) continue
+    for (const r of lido.rows) {
+      if (emp && r.empresa_nome.toUpperCase() !== emp) continue
+      porOs.set(`${r.empresa_nome.toUpperCase()}|${r.os_numero}|${r.tipo_os_sigla}`, r)
+    }
+    if (!lastModified || item.lastModifiedDateTime > lastModified) lastModified = item.lastModifiedDateTime
+  }
+  const rows = [...porOs.values()].filter(r => (!de || r.fechado_data >= de) && (!ate || r.fechado_data <= ate))
+  return { rows, lastModified, arquivos: arquivos.map(a => a.name).sort() }
+}
+
 export async function getRof001Colunas() {
   const driveId = process.env.SHAREPOINT_DRIVE_ID
   const itemMeta = await graphGet(`/drives/${driveId}/root:${FILE_PATH}`)

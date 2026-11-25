@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { Maximize2, Minimize2 } from 'lucide-react'
 
-// Expandir um quadro da Matriz KPIs (bloco de um gerente/função) para ocupar a tela toda e voltar.
+// Expandir um quadro da Matriz de KPIs (bloco de um gerente/função) para ocupar a tela toda e voltar.
 // Botão no canto direito da linha do título; Esc ou clique fora também voltam.
 // Uso: const ex = useExpandirQuadro(titulo)
 //   <>{ex.fundo}<div className={`... ${ex.classeCaixa}`}> … título … {ex.botao} … <div className={ex.classeRolagem}>tabela</div></div></>

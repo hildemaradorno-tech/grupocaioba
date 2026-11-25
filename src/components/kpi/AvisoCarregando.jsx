@@ -1,7 +1,7 @@
 import React from 'react'
 import { Loader2 } from 'lucide-react'
 
-// Aviso bem visível enquanto os quadros da Matriz KPIs carregam (14/11/2026) — a primeira abertura do dia pode
+// Aviso bem visível enquanto os quadros da Matriz de KPIs carregam (14/11/2026) — a primeira abertura do dia pode
 // levar alguns segundos (cálculo das fontes: Possibilidades, Indicadores de Produtividade, Auditoria…).
 export default function AvisoCarregando({ texto = 'Carregando os valores dos indicadores…' }) {
   return (

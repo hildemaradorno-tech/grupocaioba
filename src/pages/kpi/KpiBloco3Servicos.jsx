@@ -502,7 +502,7 @@ const SEM_LISTA = async () => []
 
 // grupo (opcional): só esses quadros aparecem (sub-abas da tela). Sem Consultor/Mecânico no grupo,
 // não busca as listas de pessoas e pede ao backend só os quadros por empresa (pula a parte cara).
-// seletorMatriz (23/11/2026): na Matriz KPIs os quadros por empresa seguem o seletor de empresas DAF do cabeçalho
+// seletorMatriz (23/11/2026): na Matriz de KPIs os quadros por empresa seguem o seletor de empresas DAF do cabeçalho
 // (Todas, uma ou várias — várias = valores somados no backend) e não têm seletor próprio. Fora da Matriz
 // (pop-up da Campanha) continua o seletor de uma empresa em cada quadro.
 function ServicosQuadros({ year, activePeriods, mesTotalKey, somenteLeitura = false, apenas = null, grupo = null, pessoasPermitidas = null, empresaOficinaInicial = null, seletorMatriz = false }) {
@@ -698,7 +698,7 @@ const ABAS_SERVICOS = [
 ]
 
 export default function KpiBloco3Servicos({ periodState: periodoMatriz = null }) {
-  // Na Matriz KPIs o seletor de Visão/Meses fica no topo (acima das abas) e chega por prop.
+  // Na Matriz de KPIs o seletor de Visão/Meses fica no topo (acima das abas) e chega por prop.
   const periodoProprio = usePeriodSelector('kpi-matriz')
   const periodState = periodoMatriz || periodoProprio
   const { activePeriods } = periodState
@@ -751,7 +751,7 @@ export default function KpiBloco3Servicos({ periodState: periodoMatriz = null })
 
 // Visualização do Bloco 3 - Serviços só para consulta (pop-up da Campanha Pós-Venda): sem edição de
 // peso/meta, na visão Semanal do ano/mês recebidos. Seleção de período própria (não grava nem altera
-// a seleção da Matriz KPIs).
+// a seleção da Matriz de KPIs).
 // empresa (opcional): casa já escolhida nos quadros OFICINA / CHEFE DE OFICINA (a da Campanha).
 export function Bloco3ServicosVisualizacao({ ano, mes, quadro = null, pessoas = null, empresa = null }) {
   const periodState = usePeriodSelector(null, 'semanal')

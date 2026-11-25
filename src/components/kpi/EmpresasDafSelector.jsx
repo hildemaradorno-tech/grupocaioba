@@ -4,7 +4,7 @@ import { useKpiYear } from '../../context/KpiYearContext'
 import { useEmpresasPermitidas } from '../../hooks/useEmpresasPermitidas'
 import { fetchPessoasPorEmpresa } from '../../services/kpiService'
 
-// Empresas DAF (Caiobá Trucks) da Matriz KPIs, na ordem dos quadros.
+// Empresas DAF (Caiobá Trucks) da Matriz de KPIs, na ordem dos quadros.
 export const EMPRESAS_DAF = ['CAMPO GRANDE', 'DOURADOS', 'TRÊS LAGOAS', 'CHAPADÃO DO SUL']
 // Nome fantasia da empresa (dim_empresas.empresa_fantasia), ex.: 'CAIOBÁ TRUCKS - DOURADOS'.
 export const rotulo = (n) => `CAIOBÁ TRUCKS - ${n}`

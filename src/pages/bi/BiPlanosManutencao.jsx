@@ -1041,7 +1041,7 @@ export default function BiPlanosManutencao() {
   const [empresasSel, setEmpresasSel] = useState([]) // vazio = todas
   // Grupo de acesso: seletor e números só com as empresas liberadas ao usuário (administrador vê todas).
   const { restrito, permiteId } = useEmpresasPermitidas()
-  // ?aba=<nome da aba> (ex.: atalho da Matriz KPIs) abre direto nela, se estiver liberada.
+  // ?aba=<nome da aba> (ex.: atalho da Matriz de KPIs) abre direto nela, se estiver liberada.
   const [paramsUrl] = useSearchParams()
   const [aba, setAba] = useState(() => (abasVisiveis.includes(paramsUrl.get('aba')) ? paramsUrl.get('aba') : abasVisiveis[0] || '')) // '' = nenhuma aba liberada (não mostra conteúdo)
   // Se a aba aberta não estiver liberada (permissões carregadas depois), vai para a primeira liberada.

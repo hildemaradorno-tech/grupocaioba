@@ -12,6 +12,7 @@ import {
 import { useAuth } from '../../context/AuthContext'
 import RpaAgendamentos from '../rpa/RpaAgendamentos'
 import logoRobert from '../../assets/logo-robert.jpg'
+import { EngrenagemPlanos } from '../../components/monitor/MonitorUI'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
 
@@ -495,6 +496,8 @@ export default function BiRpaExecucoes({ sistema = null }) {
                 className="flex items-center justify-center p-1.5 rounded-md bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm disabled:opacity-60 transition-colors">
                 <RefreshCw className={`h-3.5 w-3.5 ${carregando ? 'animate-spin' : ''}`} />
               </button>
+              {/* Acessar o Robert Automation (24/11/2026) */}
+              <EngrenagemPlanos chave="robert" />
             </div>
           )}
           {/* Engrenagem do Controle (Novo Processo, Nova Rotina, Baixar PDF), colocada aqui pelo RpaAgendamentos */}

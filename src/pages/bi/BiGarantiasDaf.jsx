@@ -125,7 +125,7 @@ export default function BiGarantiasDaf() {
             {/* Visão Dashboard: a mesma engrenagem (Regras do Sistema), que vale para Controle e Dashboard */}
             {modo === 'dashboard' && podeRegras && (
               <div className="flex items-center gap-2">
-                <EngrenagemRegras usuario={user?.email} onSalvo={() => setVersaoRegras(v => v + 1)} />
+                <EngrenagemRegras usuario={user?.email} onSalvo={() => setVersaoRegras(v => v + 1)} onMetaSalva={() => setVersaoRegras(v => v + 1)} />
               </div>
             )}
             </div>
@@ -133,17 +133,21 @@ export default function BiGarantiasDaf() {
           </div>
         </div>
 
-        <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-lg p-0.5 w-fit">
+        {/* Abas tipo "pasta" (mesmo modelo do BI Possibilidades): cantos de cima arredondados, inativas
+            cinza-claro com borda, ativa azul-marinho (#1a4d8f) preenchida e um pouco mais alta, linha de base azul */}
+        <div className="flex items-end justify-between gap-3 border-b-2 border-[#1a4d8f]">
+        <div className="flex items-end gap-1 flex-wrap">
           {abasVisiveis.map(a => {
             const Icon = a.icon
             return (
               <button
                 key={a.key}
+                type="button"
                 onClick={() => trocarAba(a)}
-                className={`flex items-center gap-1.5 px-4 py-1.5 rounded-md text-xs font-semibold transition-colors ${
-                  abaAtual.key === a.key ? 'bg-orange-500 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
-                }`}
+                className={`inline-flex items-center gap-1.5 px-4 rounded-t-md border border-b-0 text-[11px] font-semibold uppercase transition-colors ${
+                  abaAtual.key === a.key
+                    ? 'py-2 bg-[#1a4d8f] border-[#1a4d8f] text-white shadow-sm'
+                    : 'py-1.5 bg-gradient-to-b from-white to-slate-100 border-slate-300 text-slate-500 hover:text-slate-800 hover:to-slate-50'}`}
               >
                 <Icon className="h-3.5 w-3.5" />
                 {a.label}
@@ -153,7 +157,7 @@ export default function BiGarantiasDaf() {
         </div>
 
         {/* Visão Dashboard | Controle — ícones, na linha das abas, à direita */}
-        <div className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-lg p-0.5">
+        <div className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-lg p-0.5 mb-1">
           {botaoModo('dashboard', 'Dashboard', BarChart2, podeDashboard(abaAtual),
             !abaAtual.dashboard ? 'Esta aba não tem dashboard' : !hasPermission('bi/garantias-daf') ? 'Sem permissão para o dashboard' : 'Ver indicadores')}
           {botaoModo('controle', 'Controle', ClipboardList, podeControle(abaAtual),

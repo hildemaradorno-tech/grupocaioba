@@ -1,5 +1,5 @@
 /**
- * Indicadores do quadro SETOR GARANTIA (Matriz KPIs › Bloco 3 - Serviços), a partir das garantias
+ * Indicadores do quadro SETOR GARANTIA (Matriz de KPIs › Bloco 3 - Serviços), a partir das garantias
  * cadastradas (gar_garantias) com as mesmas regras dos cards da tela Garantias DAF Aberto
  * (gar_configuracoes: dias_digitacao, dias_solucao, dias_solucao_por_tipo):
  *
@@ -139,7 +139,7 @@ async function calcularIndicadoresGarantia(ano, empresaKey, { incluirHoje = fals
     admin.from('gar_regras_mes').select('ano, mes, dias_digitacao, dias_solucao, dias_solucao_por_tipo, dias_recusa'),
     fetchTudo(() => admin.from('dim_empresas').select('id, empresa_fantasia, nome_empresa_sistema').order('id')),
     fetchTudo(() => admin.from('gar_garantias')
-      .select('id, empresa_id, empresa_nome, status_codigo, data_fechamento_os, criado_em, tipo_os_sigla, data_final_avaliacao, data_sg').order('id')),
+      .select('id, empresa_id, empresa_nome, status_codigo, data_fechamento_os, data_abertura_os, criado_em, tipo_os_sigla, data_final_avaliacao, data_sg').order('id')),
     fetchTudo(() => admin.from('gar_garantias_log')
       .select('garantia_id, valor_depois, alterado_em').eq('campo', 'status_codigo').order('id')),
   ])
@@ -169,8 +169,8 @@ async function calcularIndicadoresGarantia(ano, empresaKey, { incluirHoje = fals
   }
 
   const casaPorId = new Map(empresas.map(e => [e.id, casaDaEmpresa(e.nome_empresa_sistema) || casaDaEmpresa(e.empresa_fantasia)]))
-  const alvo = empresaKey ? norm(empresaKey) : null
-  const daCasa = garantias.filter(g => !alvo || norm(casaPorId.get(g.empresa_id) || casaDaEmpresa(g.empresa_nome)) === alvo)
+  const alvos = empresaKey ? String(empresaKey).split(',').map(norm).filter(Boolean) : null
+  const daCasa = garantias.filter(g => !alvos || alvos.includes(norm(casaPorId.get(g.empresa_id) || casaDaEmpresa(g.empresa_nome))))
 
   // Histórico de status por garantia, em ordem de data.
   const historico = new Map()
@@ -193,8 +193,14 @@ async function calcularIndicadoresGarantia(ano, empresaKey, { incluirHoje = fals
   // Contagem dos indicadores na fotografia de uma data.
   const contarEm = (data) => {
     let digitacao = 0, foraPrazo = 0, aprovada = 0, recusadaFora = 0
+    // Tempo de garantia em aberto (Dashboard da aba Com Garantista, 24/11/2026): média de dias da abertura da
+    // O.S. até a data, das garantias em aberto naquela data (status fora de E/F, como a tela).
+    let somaDiasAberto = 0, qtdAberto = 0
     for (const g of daCasa) {
       const s = statusEm(g, data)
+      if (s && s !== 'E' && s !== 'F' && g.data_abertura_os) {
+        somaDiasAberto += Math.max(0, diasDesde(new Date(g.data_abertura_os + 'T12:00:00'), data)); qtdAberto++
+      }
       if (s === 'A' && g.data_fechamento_os) {
         if (diasDesde(new Date(g.data_fechamento_os + 'T12:00:00'), data) > doMes('dias_digitacao', g.data_fechamento_os, diasDigitacao)) digitacao++
       } else if (STATUS_ANDAMENTO.has(s) && g.criado_em) {
@@ -207,7 +213,7 @@ async function calcularIndicadoresGarantia(ano, empresaKey, { incluirHoje = fals
         if (!inicio || diasDesde(new Date(inicio + 'T12:00:00'), data) > doMes('dias_recusa', inicio, diasRecusa)) recusadaFora++
       }
     }
-    return { digitacao, foraPrazo, aprovada, recusadaFora }
+    return { digitacao, foraPrazo, aprovada, recusadaFora, tempoAberto: qtdAberto ? Math.round(somaDiasAberto / qtdAberto * 10) / 10 : null }
   }
 
   const agora = incluirHoje ? new Date() : fimDeOntem()
@@ -215,13 +221,14 @@ async function calcularIndicadoresGarantia(ano, empresaKey, { incluirHoje = fals
   const aguardandoForaPrazo = {}
   const aprovadaSemFaturamento = {}
   const recusadaForaPrazo = {}
+  const tempoAberto = {}
   const fotos = new Map() // data (ms) → contagem (vários períodos terminam no mesmo dia)
   const lim = limitesDosPeriodos(ano)
   for (const k of [...ALL_MONTHS, ...ALL_WEEKS, ...Object.keys(QUARTERS), 'fy']) {
     const p = lim[k]
     // Sem valor: período que não existe no ano, ainda não começou, ou terminou antes do histórico existir.
     if (!p || !primeiroLog || p.ini > agora || p.fim < primeiroLog) {
-      digitacaoAtrasada[k] = null; aguardandoForaPrazo[k] = null; aprovadaSemFaturamento[k] = null; recusadaForaPrazo[k] = null
+      digitacaoAtrasada[k] = null; aguardandoForaPrazo[k] = null; aprovadaSemFaturamento[k] = null; recusadaForaPrazo[k] = null; tempoAberto[k] = null
       continue
     }
     const corte = p.fim > agora ? agora : p.fim // em andamento = hoje
@@ -231,6 +238,7 @@ async function calcularIndicadoresGarantia(ano, empresaKey, { incluirHoje = fals
     aguardandoForaPrazo[k] = c.foraPrazo
     aprovadaSemFaturamento[k] = c.aprovada
     recusadaForaPrazo[k] = c.recusadaFora
+    tempoAberto[k] = c.tempoAberto
   }
   // Títulos vencidos (SharePoint RFN003); se o arquivo não puder ser lido, fica sem valor.
   let vencidos = null
@@ -238,7 +246,7 @@ async function calcularIndicadoresGarantia(ano, empresaKey, { incluirHoje = fals
   const titulosVencidos = soNoPeriodoAtual(vencidos?.qtd ?? null, ano, incluirHoje ? diaMS(0) : diaMS(-1))
 
   const metas = await metasDoSetorGarantia(admin, ano, empresaKey, lim, agora)
-  return { digitacaoAtrasada, aguardandoForaPrazo, aprovadaSemFaturamento, recusadaForaPrazo, titulosVencidos, metas }
+  return { digitacaoAtrasada, aguardandoForaPrazo, aprovadaSemFaturamento, recusadaForaPrazo, titulosVencidos, tempoAberto, metas }
 }
 
 // Metas do SETOR GARANTIA cadastradas em Garantias DAF (engrenagem → Metas — Setor Garantia; tabela
@@ -256,16 +264,28 @@ async function metasDoSetorGarantia(admin, ano, empresaKey, lim, agora) {
   } catch { /* sem a tabela: sem metas */ }
   const idx = new Map(linhas.map(l => [`${l.empresa}|${l.ano}|${l.mes}|${l.indicador}`, Number(l.meta)]))
   const metaEmpresa = (casa, mes, ind) => idx.get(`${casa}|${ano}|${mes}|${ind}`) ?? idx.get(`${casa}|0|0|${ind}`) ?? null
-  const casas = empresaKey ? CASAS_METAS.filter(c => norm(c) === norm(empresaKey)) : CASAS_METAS
+  const alvosMeta = empresaKey ? String(empresaKey).split(',').map(norm) : null
+  const casas = alvosMeta ? CASAS_METAS.filter(c => alvosMeta.includes(norm(c))) : CASAS_METAS
   const metaNoMes = (mes, ind) => {
     const vals = casas.map(c => metaEmpresa(c, mes, ind)).filter(v => v != null)
     return vals.length ? vals.reduce((s, v) => s + v, 0) : null
   }
+  let metasTempo = []
+  try {
+    const { data, error } = await admin.from('gar_metas_tempo_aberto').select('mes, meta_dias').eq('ano', ano)
+    if (!error) metasTempo = data || []
+  } catch { /* sem a tabela */ }
+  const metaTempoNoMes = (mes) => {
+    const v = metasTempo.find(r => r.mes === mes)?.meta_dias ?? metasTempo.find(r => r.mes === 0)?.meta_dias
+    return v != null ? Number(v) : null
+  }
   const out = Object.fromEntries(INDICADORES_COM_META.map(i => [i, {}]))
+  out.tempoAberto = {}
   for (const [k, p] of Object.entries(lim)) {
     const ref = p.ini <= agora && p.fim > agora ? agora : p.fim // mês da foto do período
     const mes = Number(new Date(ref.getTime() - 4 * 3600 * 1000).toISOString().slice(5, 7)) // horário de MS
     for (const ind of INDICADORES_COM_META) out[ind][k] = metaNoMes(mes, ind)
+    out.tempoAberto[k] = metaTempoNoMes(mes)
   }
   return out
 }
