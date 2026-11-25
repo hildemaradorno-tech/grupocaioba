@@ -5,7 +5,7 @@
 // Textos do botão ⓘ de cada card/indicador do Resumo (objetivo, fonte, cálculo, filtros).
 const ARQ_VENDAS = 'REL_VEICULOSVENDIDOSPORPERIODO_REPORT'
 const ARQ_OS = 'ROF017_FATURAMENTOPOROS (só O.S. tipo P04)'
-const ARQ_CONTRATOS = 'CRM DAF - Plano de Manutenção - Potencial Renovação'
+const ARQ_CONTRATOS = 'PLANO DE MANUTENÇÃO CRM - RPA <ano>'
 // "Regras" e "Colunas utilizadas" do manual. Formato, uma informação por linha:
 //   linha terminada em ":"  → subtítulo
 //   "• texto"               → item de lista
@@ -44,7 +44,7 @@ const COL_OS = [
   '• NotaFiscalItem_TMOCod — 3216 = PLAN01 (novo contrato) · 3218 = PLAN02 (renovação)',
 ].join('\n')
 const COL_CONTRATOS = [
-  'CRM DAF - Plano de Manutenção - Potencial Renovação:',
+  'PLANO DE MANUTENÇÃO CRM - RPA <ano>:',
   '• Chassi — final do chassi (8 caracteres)',
   '• Contrato — número do contrato',
   '• Início Contrato (Contrato) (Contrato DMS) — início',
@@ -61,7 +61,7 @@ const REGRAS_CRM = [
   '• O seletor de Empresas não filtra (o arquivo não traz a empresa)',
 ].join('\n')
 const COL_CRM = [
-  'CRM DAF - Plano de Manutenção - Potencial Renovação:',
+  'PLANO DE MANUTENÇÃO CRM - RPA <ano>:',
   '• Chassi — final do chassi (8 caracteres), liga os contratos do mesmo veículo',
   '• Contrato — número do contrato',
   '• Data de Criação — mês em que o contrato conta',
@@ -91,7 +91,7 @@ export const INFO_RESUMO = {
   semContrato: {
     objetivo: 'Mostrar os veículos vendidos (mês anterior ao filtro) que ainda não têm Plano de Manutenção: oportunidade em aberto de contrato novo.',
     fonte: `${ARQ_VENDAS}\n${ARQ_CONTRATOS}`,
-    calculo: 'Veículos vendidos (por chassi) mês anterior − Contratos novos',
+    calculo: 'Dos Veículos vendidos (por chassi) mês anterior, os que ainda não fecharam contrato: o chassi não tem contrato no CRM criado na data da venda ou depois. São os mesmos da aba Oportunidades com Tipo Novo e Realizado = Não.',
     filtros: `${FILTRO_VENDAS}\n${REGRAS_CRM}`,
     colunas: `${COL_VENDAS}\n${COL_CRM}`,
   },
@@ -112,7 +112,7 @@ export const INFO_RESUMO = {
   semRenovacao: {
     objetivo: 'Mostrar os contratos vencidos no mês anterior ao filtro que não foram renovados: oportunidade de renovação em aberto.',
     fonte: ARQ_CONTRATOS,
-    calculo: 'Contratos a serem renovados do mês anterior − Contratos renovados',
+    calculo: 'Dos Contratos a serem renovados do mês anterior, os que não foram renovados: sem O.S. P04 do chassi nem novo contrato depois do fim. São os mesmos da aba Oportunidades com Tipo Renovação e Realizado = Não.',
     filtros: `${FILTRO_RENOV}\n${REGRAS_CRM}`,
     colunas: `${COL_CONTRATOS}\n${COL_CRM}`,
   },
@@ -133,7 +133,7 @@ export const INFO_RESUMO = {
   totalNaoRealizados: {
     objetivo: 'Mostrar o total de oportunidades que ainda não viraram contrato.',
     fonte: `${ARQ_VENDAS}\n${ARQ_CONTRATOS}`,
-    calculo: 'Sem contrato + Sem contrato renovado (= Oportunidades − Contratos realizados)',
+    calculo: 'Sem contrato + Sem contrato renovado: as oportunidades do mês anterior que ainda não viraram contrato.',
     filtros: `${FILTRO_VENDAS}\n${FILTRO_RENOV}\n${REGRAS_CRM}`,
     colunas: `${COL_VENDAS}\n${COL_CONTRATOS}\n${COL_CRM}`,
   },
@@ -184,19 +184,9 @@ export const MANUAL_GERAL = [
     ],
   },
   {
-    titulo: 'Fontes (relatórios)',
-    itens: [
-      ['REL_VEICULOSVENDIDOSPORPERIODO_REPORT', 'Os veículos DAF vendidos (venda menos devolução): chassi, data da venda, empresa e se é novo ou usado.'],
-      ['ROF017_FATURAMENTOPOROS', 'O faturamento das O.S. de Plano de Manutenção (tipo P04).'],
-      ['ROF001_OSAberta_Excel <ano>', 'Todas as O.S. de Plano de Manutenção (tipo P04) do ano, inclusive as ainda sem NF: número, abertura, chassi, valor e situação.'],
-      ['CRM DAF - Plano de Manutenção - Potencial Renovação', 'Os contratos de Plano de Manutenção do CRM DAF: número, chassi, cliente, data de criação, início, fim e status.'],
-      ['Onde estão os arquivos', 'Na engrenagem [[engrenagem]] ao lado do botão Atualizar, escolha [[fontes]]: mostra cada relatório, para que é usado, a pasta do SharePoint e os arquivos com a data e a hora da última alteração (o mais recente fica marcado). Avisa quando o arquivo mais recente tem mais de 1 dia. Disponível para todos os usuários do BI.'],
-    ],
-  },
-  {
     titulo: 'Importar arquivo',
     itens: [
-      ['Importar arquivo (engrenagem)', 'Use quando o arquivo de contratos do CRM DAF no SharePoint estiver desatualizado:\n• No CRM DAF, exporte a lista Potencial Renovação em Excel (.xlsx)\n• No BI, clique na engrenagem [[engrenagem]] ao lado do botão Atualizar e escolha [[importar]]\n• Selecione o arquivo exportado\n• O sistema confere se é a exportação certa (colunas Chassi, Contrato, Início, Fim e Razão do Status) e substitui o arquivo CRM DAF - Plano de Manutenção - Potencial Renovação no SharePoint\n• Ao terminar, aparece a mensagem com a quantidade de contratos gravados e o BI já passa a usar o arquivo novo'],
+      ['Importar arquivo (engrenagem)', 'Use quando o arquivo de contratos do CRM DAF no SharePoint estiver desatualizado:\n• No CRM DAF, exporte a lista Potencial Renovação em Excel (.xlsx)\n• No BI, clique na engrenagem [[engrenagem]] ao lado do botão Atualizar e escolha [[importar]]\n• Selecione o arquivo exportado\n• O sistema confere se é a exportação certa (colunas Chassi, Contrato, Início, Fim e Razão do Status) e substitui o arquivo PLANO DE MANUTENÇÃO CRM - RPA <ano> do SharePoint (o ano vem do nome do arquivo enviado ou, se for outro nome, da Data de Criação dos contratos, que precisa ser de um ano só)\n• Ao terminar, aparece a mensagem com a quantidade de contratos gravados e o BI já passa a usar o arquivo novo'],
       ['Quem pode', 'Só quem tem a ação Importar Arquivo do CRM DAF liberada no grupo de acesso (Grupos › BI — Planos de Manutenção). Sem ela, a engrenagem não aparece.'],
     ],
   },
@@ -232,11 +222,11 @@ export const FONTE_TABELAS = {
   vendidos: [
     '• REL_VEICULOSVENDIDOSPORPERIODO_REPORT',
     '• ROF017_FATURAMENTOPOROS',
-    '• CRM DAF - Plano de Manutenção - Potencial Renovação',
+    '• PLANO DE MANUTENÇÃO CRM - RPA <ano>',
   ].join('\n'),
   oportunidade: [
     '• REL_VEICULOSVENDIDOSPORPERIODO_REPORT',
-    '• CRM DAF - Plano de Manutenção - Potencial Renovação',
+    '• PLANO DE MANUTENÇÃO CRM - RPA <ano>',
     '• ROF017_FATURAMENTOPOROS',
   ].join('\n'),
   os: [
@@ -244,7 +234,7 @@ export const FONTE_TABELAS = {
     '• ROF017_FATURAMENTOPOROS',
   ].join('\n'),
   contratos: [
-    '• CRM DAF - Plano de Manutenção - Potencial Renovação',
+    '• PLANO DE MANUTENÇÃO CRM - RPA <ano>',
     '• ROF017_FATURAMENTOPOROS',
     '• ROF001_OSAberta_Excel <ano>',
   ].join('\n'),

@@ -857,7 +857,7 @@ export default function GarantiasDafDashboard({ variante = 'aberto', onLastModif
               >
                 <RefreshCw className={`h-3.5 w-3.5 ${spLoading ? 'animate-spin' : ''}`} />
               </button>
-              {canRegras && <EngrenagemRegras usuario={user?.email} onSalvo={aplicarRegras} tiposExtras={tipoOsDescMap} />}
+              {canRegras && <EngrenagemRegras usuario={user?.email} abaInicial={isAndamento ? 'oficina' : 'garantista'} onSalvo={aplicarRegras} tiposExtras={tipoOsDescMap} />}
               <button
                 onClick={() => window.open('/garantias-daf-manual', '_blank')}
                 title="Manual de operação"
@@ -877,7 +877,7 @@ export default function GarantiasDafDashboard({ variante = 'aberto', onLastModif
               >
                 <RefreshCw className={`h-3.5 w-3.5 ${spLoading ? 'animate-spin' : ''}`} />
               </button>
-              {canRegras && <EngrenagemRegras usuario={user?.email} onSalvo={aplicarRegras} tiposExtras={tipoOsDescMap} />}
+              {canRegras && <EngrenagemRegras usuario={user?.email} abaInicial={isAndamento ? 'oficina' : 'garantista'} onSalvo={aplicarRegras} tiposExtras={tipoOsDescMap} />}
               <button
                 onClick={() => window.open('/garantias-daf-manual', '_blank')}
                 title="Manual de operação"
@@ -1540,8 +1540,12 @@ export default function GarantiasDafDashboard({ variante = 'aberto', onLastModif
           <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-lg mx-4 max-h-[85vh] flex flex-col">
             <h3 className="text-sm font-bold text-slate-800 mb-2">Excluir {grpModal.length} garantia(s)?</h3>
             <p className="text-xs text-slate-500 mb-3">
-              modalExcluirSemFat === 'canceladas' ? 'Estas O.S. estão canceladas no Dealer.net.' : modalExcluirSemFat === 'pend_cancel' ? 'Estas O.S. estão com o cancelamento pendente de autorização no Dealer.net.' : modalExcluirSemFat === 'reabertas' ? 'Estas O.S. foram reabertas no Dealer.net.' : 'Estas O.S. não foram faturadas e não estão abertas no Dealer.net.'} A exclusão remove as garantias do sistema
-              permanentemente — não é possível desfazer.
+              {{
+                canceladas: 'Estas O.S. estão canceladas no Dealer.net.',
+                pend_cancel: 'Estas O.S. estão com o cancelamento pendente de autorização no Dealer.net.',
+                reabertas: 'Estas O.S. foram reabertas no Dealer.net.',
+              }[modalExcluirSemFat] || 'Estas O.S. não foram faturadas e não estão abertas no Dealer.net.'}{' '}
+              A exclusão remove as garantias do sistema permanentemente — não é possível desfazer.
             </p>
             <div className="overflow-y-auto border border-slate-200 rounded-md mb-4">
               <table className="w-full text-xs">

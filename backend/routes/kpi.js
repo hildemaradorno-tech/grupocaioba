@@ -53,6 +53,7 @@ import { getPesos, setPeso, aplicarPesos } from '../services/kpiPesos.js'
 import { getMetasManuais, setMetaManual, aplicarMetasManuais } from '../services/kpiMetasManuais.js'
 import { getMetaPecasPeriodos, getMetaOficinaPeriodos, getMetaMecanicoPeriodos, getMetaMargemOficinaPeriodos, getMetaPecasBalcaoPeriodos, getMetaMargemBalcaoPeriodos, getMetaTrpPeriodos, getMetaTicketMedioPeriodos, getMetaPassagensPeriodos, getMetaFunilariaPeriodos, limparCacheMetas } from '../services/kpiMetas.js'
 import { getIndicadoresGarantia } from '../services/kpiGarantias.js'
+import { cacheSwr } from '../services/cacheSwr.js'
 import { getIndicadoresAuditoriaOs, normConsultor } from '../services/kpiAuditoriaOs.js'
 import { getProdutividadeConsultores, metaProdutividadeRegrasCor, getEficaciaProdutividadePorCasa, getEficaciaProdutividadeCasas, getEficaciaProdutividadeMecanico, semAcento as semAcentoProd } from '../services/kpiProdutividadeConsultor.js'
 import { getIndicadoresAgendamento, comMetasAtuaisAgendamento } from '../services/kpiAgendamento.js'
@@ -1457,6 +1458,8 @@ export async function aquecerCacheCampanha(year = new Date().getFullYear()) {
     // Mecânicos: não há mais base por mecânico (quadroMecanicoServicos não lê planilha) — nada a pré-calcular.
     void mecanicos
     for (const n of vendedores) await passo(`vendedor ${n}`, () => quadrosBloco3Pecas({ year, vendedor: n, refresh: true }))
+    // Bloco 2 › Pós-Vendas (todas as empresas), já pronto para a Matriz abrir na hora (25/11/2026).
+    await passo('bloco 2 › pós-vendas', () => indicadoresBloco2PosVenda({ year }))
   } finally {
     _aquecendo = false
     console.log(`[pré-cálculo Campanha] ${ok} bases gravadas, ${falhas} falhas, ${Math.round((Date.now() - t0) / 1000)} s`)
@@ -1487,6 +1490,8 @@ async function aquecerAoIniciar() {
     await passo(`serviços › setores ${emp}`, () => quadrosBloco3Servicos({ year, empresaOficina: emp, empresaChefeOficina: emp, empresaGarantia: emp, empresaFunilaria: 'CAMPO GRANDE', apenas: 'SETOR DE MECÂNICA' }))
   }
   await passo('peças', () => quadrosBloco3Pecas({ year }))
+  // Bloco 2 › Pós-Vendas (todas as empresas) por último — lê SharePoint (Tempo na Oficina, Agendamento), 25/11/2026.
+  await passo('bloco 2 › pós-vendas', () => indicadoresBloco2PosVenda({ year }))
   console.log(`[aquecimento ao iniciar] ${ok} quadros prontos, ${falhas} falhas, ${Math.round((Date.now() - t0) / 1000)} s`)
   // Saúde do Sistema (19/11/2026)
   resultadoRotina('aquecimento-kpi', { ok: falhas === 0, mensagem: `${ok} quadros prontos, ${falhas} falha(s)`, inicio: t0 })
@@ -1681,7 +1686,7 @@ const BLOCO2_PV_DO_GERENTE_GERAL = {
   'Margem Serviços': 'Margem Bruta Serviços',
   'Margem Peças Oficina': 'Margem Bruta Peças Oficina',
   'O.S. aberta sem veículo na oficina': 'O.S. aberta sem veículo na oficina',
-  'O.S. >= 30 dias (% do Valor)': 'O.S. abertas >= 30 dias',
+  'O.S. >= 30 dias': 'O.S. abertas >= 30 dias', // sem '(% do Valor)' (25/11/2026)
 }
 // Do GERENTE DE PROCESSOS E QUALIDADE (BI Agendamento de Serviços; grupo todo — o relatório não traz a empresa).
 const BLOCO2_PV_DO_QUALIDADE = {
@@ -1692,7 +1697,16 @@ router.get('/bloco2-pos-venda', requireConfig, wrap(async (req, res) => {
   res.json(await indicadoresBloco2PosVenda({ year, empresas: req.query.empresas || null, incluirHoje: !!req.query.incluirHoje }))
 }))
 
-async function indicadoresBloco2PosVenda({ year, empresas = null, incluirHoje = false }) {
+// Resultado inteiro guardado para todos até a próxima Atualização (cacheSwr, 25/11/2026): a aba abria esperando
+// todas as fontes (SharePoint do Tempo na Oficina, Agendamento, Planos…) — ~27 s na 1ª vez. Agora a 1ª conta é
+// feita por trás no aquecimento (ao ligar o servidor e depois de cada Atualização) e a tela abre na hora.
+const _cacheBloco2Pv = new Map()
+function indicadoresBloco2PosVenda({ year, empresas = null, incluirHoje = false }) {
+  const chave = `${year}|${empresas && empresas !== EMPRESA_TODAS ? empresas : 'TODAS'}|${incluirHoje ? 1 : 0}`
+  return cacheSwr(_cacheBloco2Pv, chave, () => calcularBloco2PosVenda({ year, empresas, incluirHoje }), { rotulo: 'bloco2-pos-venda' })
+}
+
+async function calcularBloco2PosVenda({ year, empresas = null, incluirHoje = false }) {
   const casasSel = (empresas && empresas !== EMPRESA_TODAS) ? String(empresas).split(',').map(x => x.trim()).filter(Boolean) : null
   const chave = casasSel ? casasSel.join(',') : 'TODAS'
   const nomesSel = casasSel ? casasSel.map(c => EMPRESA_KEY_TO_RECEP[c] || c) : null
@@ -1739,6 +1753,10 @@ async function indicadoresBloco2PosVenda({ year, empresas = null, incluirHoje = 
   }
   for (const [nome, v] of [['Tempo veículo oficina', tempoOficina?.mecanica], ['Tempo veículo funilaria', tempoOficina?.funilaria]]) {
     if (v) indicadores[nome] = Object.fromEntries(PERIODOS.map(p => [p, { meta: v.meta?.[p] ?? null, realizado: v.realizado?.[p] ?? null }]))
+  }
+  // Recusa de Garantia: card "Recusas de garantia" do Dashboard Com Garantista (% em quantidade) + meta da engrenagem.
+  if (garantias?.recusasPct) {
+    indicadores['Recusa de Garantia'] = Object.fromEntries(PERIODOS.map(p => [p, { meta: garantias.metas?.recusasPct?.[p] ?? null, realizado: garantias.recusasPct[p] ?? null }]))
   }
   if (garantias?.tempoAberto) {
     indicadores['Tempo de garantia em aberto'] = Object.fromEntries(PERIODOS.map(p => [p, { meta: garantias.metas?.tempoAberto?.[p] ?? null, realizado: garantias.tempoAberto[p] ?? null }]))

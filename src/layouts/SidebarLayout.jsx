@@ -622,7 +622,7 @@ export default function SidebarLayout() {
             {(canView('bi/garantias-daf') || canView('garantias-daf-andamento') || canView('garantias-daf') || canView('garantias-daf-historicodeos') || canView('garantias-daf-titulos')) && <FlyItem to="/bi/garantias-daf" icon={ShieldCheck} onClose={closeFlyout}>Garantias DAF</FlyItem>}
             {canView('pos-vendas/produtividade') && <FlyItem to="/pos-vendas/produtividade" icon={Gauge} onClose={closeFlyout}>Indicadores de Produtividade</FlyItem>}
             {canView('bi/planos-manutencao') && <FlyItem to="/bi/planos-manutencao" icon={Wrench} onClose={closeFlyout}>Planos de Manutenção</FlyItem>}
-            {canView('bi/possibilidades') && <FlyItem to="/pos-vendas/possibilidades" icon={Gauge} onClose={closeFlyout}>Possibilidades</FlyItem>}
+            {canView('bi/possibilidades') && <FlyItem to="/pos-vendas/possibilidades" icon={Gauge} onClose={closeFlyout}>Possibilidades - Sintonia do Dia</FlyItem>}
           </>
         )
 

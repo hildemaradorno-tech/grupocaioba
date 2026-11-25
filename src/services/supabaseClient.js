@@ -2184,6 +2184,22 @@ export const apiService = {
   // BI Possibilidades: resultado já gravado por dia (fato_bi_medidas_diario), somado no banco
   // pro período — por Medida × Tipo de OS. empresasNorm = lista de nomes de empresa normalizados
   // (sem acento, maiúsculo), iguais ao gravado; null/vazio = todas.
+  // BI Possibilidades: metas APROVADAS do Planejamento com ticket e margem (não vão para fato_metas_publicadas).
+  // consultor: Metas - Consultor (ticket Peças/Serviços/Total, margem Peças/Serviços); pecas: Metas - Peças (margem).
+  getMetasPlanejadasAprovadas: async (ano) => {
+    const [cons, pecas] = await Promise.all([
+      supabase.from('fato_rascunho_metas_servicos_consultor')
+        .select('empresa_id, departamento_id, ano, mes, colaborador_id, meta_aprovada, meta_pecas, meta_servicos, ticket_pecas, ticket_servicos, ticket_total, margem_pecas_pct, margem_servicos_pct')
+        .eq('ano', ano).not('meta_aprovada', 'is', null),
+      supabase.from('fato_rascunho_metas_pecas')
+        .select('empresa_id, departamento_id, ano, mes, colaborador_id, meta_aprovada, margem_pecas_pct')
+        .eq('ano', ano).not('meta_aprovada', 'is', null),
+    ])
+    if (cons.error) throw cons.error
+    if (pecas.error) throw pecas.error
+    return { consultor: cons.data || [], pecas: pecas.data || [] }
+  },
+
   // Tempo na Oficina (BI Possibilidades) — regras do indicador "% dos veículos que saíram em até N dias".
   getTempoOficinaRegras: async () => {
     const { data, error } = await supabase.from('tempo_oficina_regras').select('*')
@@ -3758,6 +3774,20 @@ export const apiService = {
     if (error) throw error
   },
 
+  // Meta do indicador "Recusas de garantia" (gar_metas_recusas_pct, % máximo): mes 1..12 = mês, mes 0 = anual (25/11/2026)
+  getGarMetasRecusasAno: async (ano) => {
+    const { data, error } = await supabase.from('gar_metas_recusas_pct').select('*').eq('ano', ano).order('mes')
+    if (error) throw error
+    return data || []
+  },
+  saveGarMetasRecusasAno: async (ano, linhas, userEmail) => {
+    const agora = new Date().toISOString()
+    const { error } = await supabase
+      .from('gar_metas_recusas_pct')
+      .upsert(linhas.map(l => ({ ano, ...l, atualizado_em: agora, atualizado_por: userEmail })), { onConflict: 'ano,mes' })
+    if (error) throw error
+  },
+
   getGarantias: async (filtros = {}) => {
     // Non-admin with no empresa permissions → nothing to show (prevent full-table leak)
     if (filtros.empresa_ids !== undefined && filtros.empresa_ids.length === 0) return []
@@ -4731,21 +4761,27 @@ export const apiService = {
   getProjCustos: async () => {
     const { data, error } = await supabase
       .from('proj_custos_lancamentos')
-      .select('*, proj_projetos(id, nome)')
+      .select('*, proj_projetos(id, nome), proj_tarefas(id, nome, status_kanban)')
       .order('data', { ascending: false })
       .order('criado_em', { ascending: false })
     if (error) throw error
     return data || []
   },
-  createProjCusto: async ({ projeto_id, data, descricao, categoria, valor, criado_por }) => {
+  createProjCusto: async ({ projeto_id, data, descricao, categoria, tipo, valor, status, data_entrega, tarefa_id, horas, criado_por }) => {
     const { data: row, error } = await supabase.from('proj_custos_lancamentos')
-      .insert([{ projeto_id, data, descricao, categoria, valor, criado_por: criado_por || null }]).select()
+      .insert([{ projeto_id, data, descricao, categoria, tipo: tipo || null, valor, status: status || 'em_andamento', data_entrega: data_entrega || null, tarefa_id: tarefa_id || null, horas: horas ?? null, criado_por: criado_por || null }]).select()
     if (error) throw error
     return row?.[0]
   },
-  updateProjCusto: async (id, { projeto_id, data, descricao, categoria, valor }) => {
+  updateProjCusto: async (id, { projeto_id, data, descricao, categoria, tipo, valor, status, data_entrega, tarefa_id, horas }) => {
     const { error } = await supabase.from('proj_custos_lancamentos')
-      .update({ projeto_id, data, descricao, categoria, valor, atualizado_em: new Date().toISOString() }).eq('id', id)
+      .update({ projeto_id, data, descricao, categoria, tipo: tipo || null, valor, ...(status ? { status } : {}), data_entrega: data_entrega || null, tarefa_id: tarefa_id || null, horas: horas ?? null, atualizado_em: new Date().toISOString() }).eq('id', id)
+    if (error) throw error
+  },
+  // troca só o status (clique no selo da tabela)
+  updateProjCustoStatus: async (id, status, data_entrega) => {
+    const { error } = await supabase.from('proj_custos_lancamentos')
+      .update({ status, ...(data_entrega ? { data_entrega } : {}), atualizado_em: new Date().toISOString() }).eq('id', id)
     if (error) throw error
   },
   deleteProjCusto: async (id) => {

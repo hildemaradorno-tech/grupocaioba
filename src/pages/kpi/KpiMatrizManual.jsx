@@ -64,7 +64,7 @@ const METAS_SERVICOS = [
   {
     grupo: 'Garantias (BI Garantias DAF)',
     linhas: [
-      { ind: 'Garantias com Digitação Atrasada, Aguardando Aprovação DAF (fora do prazo), Aprovada sem Faturamento, Recusadas (fora do prazo), a Receber Vencidas', quadros: 'Setor Garantia, Gerente de Processos e Qualidade, Gerente Geral', onde: 'BI Garantias DAF › visão Controle › engrenagem › Metas — Setor Garantia (quantidade máxima por empresa e mês)', url: '/bi/garantias-daf?aba=aberto&modo=controle', tela: 'Garantias DAF', obs: 'Hoje as metas estão zeradas — cadastre-as para aparecerem na Matriz.' },
+      { ind: 'Garantias com Digitação Atrasada, Aguardando Aprovação DAF (fora do prazo), Aprovada sem Faturamento, Recusadas (fora do prazo), a Receber Vencidas', quadros: 'Setor Garantia, Gerente de Processos e Qualidade, Gerente Geral', onde: 'BI Garantias DAF › visão Controle › engrenagem › Regras e Metas › Com Garantista / Títulos a Receber › Metas da Matriz de KPIs (quantidade máxima por empresa e mês)', url: '/bi/garantias-daf?aba=aberto&modo=controle', tela: 'Garantias DAF', obs: 'Hoje as metas estão zeradas — cadastre-as para aparecerem na Matriz.' },
     ],
   },
   {

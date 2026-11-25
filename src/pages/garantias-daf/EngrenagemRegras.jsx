@@ -1,78 +1,37 @@
 import React, { useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Settings, Activity, FileText, DollarSign, Target } from 'lucide-react'
-import RegrasSistemaModal from './RegrasSistemaModal'
-import MetasGarantiaModal from './MetasGarantiaModal'
-import MetaTempoAbertoModal from './MetaTempoAbertoModal'
+import { Settings } from 'lucide-react'
+import RegrasMetasGarantiasModal from './RegrasMetasGarantiasModal'
 
-// Engrenagem das Regras do Sistema de Garantias DAF — mesmo modelo do menu da Auditoria O.S. Aberta:
-// lista suspensa com ícone, título e descrição; cada item abre só as regras daquela aba.
-// Usada no Dashboard e no Controle de todas as abas. onSalvo recebe a configuração gravada.
-const ITENS = [
-  { key: 'oficina',    icon: Activity,   cor: 'text-orange-600',  label: 'Regras — Na Oficina',        desc: 'Dias na Oficina' },
-  { key: 'garantista', icon: FileText,   cor: 'text-indigo-600',  label: 'Regras — Com Garantista',    desc: 'Digitação, solução, recusa e cores da coluna Dias' },
-  { key: 'meta_tempo', icon: Target,     cor: 'text-violet-600',  label: 'Meta — Tempo de garantia em aberto', desc: 'Média de dias em aberto, por mês e anual (Com Garantista)' },
-  { key: 'titulos',    icon: DollarSign, cor: 'text-emerald-600', label: 'Regras — Títulos a Receber', desc: 'Dias para envio da NF' },
-  // Abre a janela própria de metas (não a das regras/prazos)
-  { key: 'metas',      icon: Target,     cor: 'text-rose-600',    label: 'Metas — Setor Garantia',     desc: 'Quantidade máxima de O.S./títulos por indicador (Matriz de KPIs), por empresa e mês' },
-]
-
-export default function EngrenagemRegras({ usuario, onSalvo, tiposExtras, onMetaSalva }) {
+// Engrenagem das Regras do Sistema de Garantias DAF. Desde 25/11/2026 (pedido do usuário) abre direto a janela única
+// "Regras e Metas", com uma aba por tela (Na Oficina, Com Garantista, Títulos a Receber) — cada aba junta os prazos
+// e as metas daquela tela (inclusive as que vão para a Matriz de KPIs). Antes era uma lista com 5 itens separados.
+// Usada no Dashboard e no Controle de todas as abas. onSalvo recebe a configuração gravada; onMetaSalva, metas.
+// abaInicial (opcional): aba da janela que abre primeiro ('oficina' | 'garantista' | 'titulos').
+export default function EngrenagemRegras({ usuario, onSalvo, tiposExtras, onMetaSalva, abaInicial = 'garantista' }) {
   const [aberto, setAberto] = useState(false)
-  const [aba, setAba] = useState(null)
 
   return (
     <div className="relative">
       <button
         type="button"
-        onClick={() => setAberto(v => !v)}
-        aria-label="Regras do sistema"
-        title="Regras do sistema"
+        onClick={() => setAberto(true)}
+        aria-label="Regras e metas"
+        title="Regras e metas"
         className={`flex items-center justify-center p-1.5 rounded-md text-white shadow-sm transition-colors ${aberto ? 'bg-orange-600' : 'bg-orange-500 hover:bg-orange-600'}`}
       >
         <Settings className="h-3.5 w-3.5" />
       </button>
 
-      {aberto && (
-        <>
-          {/* clique fora fecha */}
-          <div className="fixed inset-0 z-30" onClick={() => setAberto(false)} />
-          <div className="absolute right-0 top-full mt-1.5 z-40 w-64 rounded-lg border border-slate-200 bg-white shadow-xl py-1">
-            {ITENS.map(it => (
-              <button
-                key={it.key}
-                type="button"
-                onClick={() => { setAberto(false); setAba(it.key) }}
-                className="w-full flex items-start gap-2.5 px-3 py-2 text-left hover:bg-slate-50 transition-colors"
-              >
-                <it.icon className={`h-4 w-4 mt-0.5 shrink-0 ${it.cor}`} />
-                <span className="leading-tight flex-1">
-                  <span className="block text-xs font-semibold text-slate-800">{it.label}</span>
-                  <span className="block text-[10px] text-slate-400 mt-0.5">{it.desc}</span>
-                </span>
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-
       {/* Portal: a engrenagem fica dentro do cabeçalho (z-10); a janela vai para o body para ficar por cima de tudo */}
-      {aba === 'metas' && createPortal(
-        <MetasGarantiaModal usuario={usuario} onClose={() => setAba(null)} />,
-        document.body
-      )}
-      {aba === 'meta_tempo' && createPortal(
-        <MetaTempoAbertoModal usuario={usuario} onClose={() => setAba(null)} onSalvo={() => onMetaSalva?.()} />,
-        document.body
-      )}
-      {aba && aba !== 'metas' && aba !== 'meta_tempo' && createPortal(
-        <RegrasSistemaModal
-          abaInicial={aba}
-          somenteAba
+      {aberto && createPortal(
+        <RegrasMetasGarantiasModal
           usuario={usuario}
           tiposExtras={tiposExtras}
-          onClose={() => setAba(null)}
+          abaInicial={abaInicial}
+          onClose={() => setAberto(false)}
           onSalvo={onSalvo}
+          onMetaSalva={onMetaSalva}
         />,
         document.body
       )}

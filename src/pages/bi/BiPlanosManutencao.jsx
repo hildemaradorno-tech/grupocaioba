@@ -574,7 +574,7 @@ function MenuEngrenagem({ importando, onImportar, podeImportar, onAcoes, onFonte
               <Upload className="h-3.5 w-3.5 text-blue-600 mt-0.5 shrink-0" />
               <span>
                 <span className="font-semibold block">Importar arquivo</span>
-                <span className="text-[11px] text-slate-500">CRM DAF - Plano de Manutenção - Potencial Renovação — atualiza a aba Contratos</span>
+                <span className="text-[11px] text-slate-500">PLANO DE MANUTENÇÃO CRM - RPA &lt;ano&gt; — atualiza a aba Contratos</span>
               </span>
             </button>}
             {onAcoes && (
@@ -1449,6 +1449,11 @@ export default function BiPlanosManutencao() {
     const renov = contar(listaRenovadosCrm, mesFimAnterior)
     const vend = contar(listaChassis.filter(ehDaf), r => r.data.slice(0, 7))
     const aRen = contar(listaARenovar, c => c.fim.slice(0, 7))
+    const aRenOk = contar(listaARenovar.filter(c => contratosRenovados.has(c)), c => c.fim.slice(0, 7))
+    const crmPorFinal = {}
+    ;(contratos?.rows || []).forEach(c => { if (c.chassi) (crmPorFinal[c.chassi.toUpperCase().slice(-8)] ||= []).push(c) })
+    const vendFechou = contar(listaChassis.filter(ehDaf).filter(v => (crmPorFinal[v.chassi.toUpperCase().slice(-8)] || [])
+      .some(c => !c.criacao || c.criacao >= v.data)), r => r.data.slice(0, 7))
     const soma = (o) => Object.values(o).reduce((t, v) => t + v, 0)
     return {
       novos: {
@@ -1459,18 +1464,20 @@ export default function BiPlanosManutencao() {
         titulo: 'Contratos renovados por mês do vencimento do contrato anterior', colunas: ['Mês do vencimento', 'Contratos renovados'],
         linhas: meses(renov).map(m => [rotulo(m) || 'Sem data', n(renov[m])]), total: ['Total', n(soma(renov))],
       },
+      // Sem contrato / Sem contrato renovado: por oportunidade do mês anterior (o veículo fechou contrato? o contrato
+      // foi renovado?) — mesma regra da coluna Realizado da aba Oportunidades.
       semContrato: {
-        titulo: 'Conta por mês da venda', colunas: ['Mês da venda', 'Vendidos', 'Contratos novos', 'Sem contrato'],
-        linhas: meses(vend, novos).map(m => [rotulo(m) || 'Sem venda nossa', n(vend[m]), n(novos[m]), n((vend[m] || 0) - (novos[m] || 0))]),
-        total: ['Total', n(soma(vend)), n(soma(novos)), n(soma(vend) - soma(novos))],
+        titulo: 'Veículos vendidos por mês da venda', colunas: ['Mês da venda', 'Vendidos', 'Fecharam contrato', 'Sem contrato'],
+        linhas: meses(vend).map(m => [rotulo(m), n(vend[m]), n(vendFechou[m]), n((vend[m] || 0) - (vendFechou[m] || 0))]),
+        total: ['Total', n(soma(vend)), n(soma(vendFechou)), n(soma(vend) - soma(vendFechou))],
       },
       semRenovacao: {
-        titulo: 'Conta por mês do vencimento', colunas: ['Mês do vencimento', 'A serem renovados', 'Renovados', 'Sem renovação'],
-        linhas: meses(aRen, renov).map(m => [rotulo(m) || 'Sem data', n(aRen[m]), n(renov[m]), n((aRen[m] || 0) - (renov[m] || 0))]),
-        total: ['Total', n(soma(aRen)), n(soma(renov)), n(soma(aRen) - soma(renov))],
+        titulo: 'Contratos a serem renovados por mês do vencimento', colunas: ['Mês do vencimento', 'A serem renovados', 'Renovados', 'Sem renovação'],
+        linhas: meses(aRen).map(m => [rotulo(m), n(aRen[m]), n(aRenOk[m]), n((aRen[m] || 0) - (aRenOk[m] || 0))]),
+        total: ['Total', n(soma(aRen)), n(soma(aRenOk)), n(soma(aRen) - soma(aRenOk))],
       },
     }
-  }, [vendas, listaNovosCrm, listaRenovadosCrm, listaChassis, listaARenovar, contratosPorChassi])
+  }, [vendas, contratos, listaNovosCrm, listaRenovadosCrm, listaChassis, listaARenovar, contratosPorChassi, contratosRenovados])
 
   const contratosPeriodo = {
     novos: resumoVendidos.filter(s => s === 'Novo contrato').length,
@@ -1538,6 +1545,17 @@ export default function BiPlanosManutencao() {
     }))
     return [...novos, ...renov]
   }, [verTodosOport, listaChassis, vendas, nomesEmpresasSel, contratos, contratosDoFinal, osPorChassi, listaARenovar, contratosRenovados])
+  // Resumo — Sem contrato / Sem contrato renovado / Contratos não realizados: contam, entre as oportunidades do mês
+  // anterior (veículos vendidos e contratos a serem renovados), as que ainda não viraram contrato — mesma regra da
+  // coluna Realizado da aba Oportunidades. Não usa o "Ver todos" da aba.
+  const naoRealizados = useMemo(() => {
+    const semContrato = listaChassis.filter(ehDaf).filter(v => {
+      const final = v.chassi.toUpperCase().slice(-8)
+      return !(contratosDoFinal[final] || []).some(c => !c.criacao || c.criacao >= v.data)
+    }).length
+    const semRenovacao = listaARenovar.filter(c => !contratosRenovados.has(c)).length
+    return { semContrato, semRenovacao, total: semContrato + semRenovacao }
+  }, [listaChassis, contratosDoFinal, listaARenovar, contratosRenovados])
   const tabelaOportunidade = useMemo(() => linhasOportunidade.filter(r => (casaChassi(r.chassi) || casaTexto(r.contrato, r.cliente)
     || (termo.length > (r.chassi || '').length && r.chassi && termo.endsWith(r.chassi.toUpperCase())))
     && (!filtroTipoOp || r.tipoOp === filtroTipoOp)
@@ -1660,6 +1678,8 @@ export default function BiPlanosManutencao() {
         </div>
       )}
       <div className={`flex flex-col items-start gap-3 ${abasVisiveis.length ? '' : 'hidden'}`}>
+        {/* Abas à esquerda e, na mesma linha à direita, os modos de visualização da aba Resultado. */}
+        <div className="flex flex-wrap items-center justify-between gap-3 w-full">
         <div className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-lg p-0.5 w-fit">
           {abasVisiveis.map(a => (
             <button
@@ -1672,10 +1692,9 @@ export default function BiPlanosManutencao() {
             </button>
           ))}
         </div>
-        {/* Busca de chassi fora das tabelas, abaixo das abas; só nas abas com tabela. */}
-        {/* Aba Resultado: botões de visualização (ícones), à direita da página e sem fundo. */}
+        {/* Aba Resultado: botões de visualização (ícones), na linha das abas, à direita e sem fundo. */}
         {aba === 'Resultado' && (
-          <div className="self-end flex items-center gap-1">
+          <div className="flex items-center gap-1">
             {VISOES_RESULTADO.map(([v, icone, titulo]) => {
               const Icone = { LayoutDashboard, Table2, BarChart3 }[icone]
               return (
@@ -1687,6 +1706,8 @@ export default function BiPlanosManutencao() {
             })}
           </div>
         )}
+        </div>
+        {/* Busca de chassi fora das tabelas, abaixo das abas; só nas abas com tabela. */}
         {aba !== 'Resultado' && (
           <div className="flex flex-wrap items-center gap-3 w-full">
             {aba === 'Contratos' && (
@@ -1852,9 +1873,9 @@ export default function BiPlanosManutencao() {
             tabela={tabelasPorMes.semContrato}
             icone={FileX2}
             cor="from-red-400 to-red-600"
-            // Veículos vendidos (por chassi) mês anterior − Contratos novos (CRM, criados nos meses do filtro).
-            valor={(carregandoVendas && !vendas) || (carregandoContratos && !contratos) ? '...' : vendas && contratos ? (chassisVendidos - contratosCrm.novos).toLocaleString('pt-BR') : '—'}
-            ajuda="Veículos vendidos (por chassi) mês anterior − Contratos novos"
+            // Veículos vendidos no mês anterior que ainda não fecharam contrato (coluna Realizado = Não na aba Oportunidades).
+            valor={(carregandoVendas && !vendas) || (carregandoContratos && !contratos) ? '...' : vendas && contratos ? naoRealizados.semContrato.toLocaleString('pt-BR') : '—'}
+            ajuda="Veículos vendidos do mês anterior que ainda não fecharam contrato"
           />
         </div>
         </div>
@@ -1887,9 +1908,9 @@ export default function BiPlanosManutencao() {
             tabela={tabelasPorMes.semRenovacao}
             icone={CalendarX2}
             cor="from-red-400 to-red-600"
-            // Contratos a serem renovados do mês anterior − Contratos renovados (CRM, criados nos meses do filtro).
-            valor={carregandoContratos && !contratos ? '...' : contratos ? (renovacoesPeriodo.aRenovar - contratosCrm.renovados).toLocaleString('pt-BR') : '—'}
-            ajuda="Contratos a serem renovados do mês anterior − Contratos renovados"
+            // Contratos a serem renovados do mês anterior que não foram renovados (Realizado = Não na aba Oportunidades).
+            valor={carregandoContratos && !contratos ? '...' : contratos ? naoRealizados.semRenovacao.toLocaleString('pt-BR') : '—'}
+            ajuda="Contratos a serem renovados do mês anterior que não foram renovados"
           />
         </div>
         </div>
@@ -1909,7 +1930,7 @@ export default function BiPlanosManutencao() {
             <CardTruck label="Contratos realizados" icone={CheckCircle2} info={INFO_RESUMO.totalRealizados} cor="from-emerald-400 to-emerald-600"
               valor={fmt(realizados)} ajuda="Contratos novos + Contratos renovados" />
             <CardTruck label="Contratos não realizados" icone={XCircle} info={INFO_RESUMO.totalNaoRealizados} cor="from-red-400 to-red-600"
-              valor={fmt(oportunidades - realizados)} ajuda="Sem contrato + Sem contrato renovado" />
+              valor={fmt(naoRealizados.total)} ajuda="Sem contrato + Sem contrato renovado" />
           </div>
         )
       })()}

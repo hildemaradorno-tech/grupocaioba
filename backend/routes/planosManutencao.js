@@ -67,13 +67,13 @@ router.post('/contratos/importar', requireAcao('bi/planos-manutencao', 'importar
 // GET /api/planos-manutencao/fontes — relatórios que alimentam o BI: pasta do SharePoint e os arquivos com a
 // data/hora da última alteração (só lista as pastas, não baixa nada). Engrenagem › Fonte de dados.
 const FONTES = [
-  { relatorio: 'REL_VEICULOSVENDIDOSPORPERIODO_REPORT', uso: 'Veículos vendidos (Resultado, Oportunidades, Veículos Vendidos)',
+  { relatorio: 'REL_VEICULOSVENDIDOSPORPERIODO_REPORT', uso: 'Veículos vendidos',
     pasta: '/Banco de Dados - DAF - Veículos', casa: n => n.toUpperCase().startsWith('REL_VEICULOSVENDIDOSPORPERIODO_REPORT') },
-  { relatorio: 'CRM DAF - Plano de Manutenção - Potencial Renovação', uso: 'Contratos (Resultado, Oportunidades, Contratos)',
-    pasta: '/Banco de Dados - DAF - Pós-Vendas/CRM DMS DAF', casa: n => /\.xlsx?$/i.test(n) && n.normalize('NFC').toLowerCase().includes('potencial renovação'.normalize('NFC')) },
-  { relatorio: 'ROF017_FATURAMENTOPOROS', uso: 'Faturamento das O.S. P04 (Veículos Vendidos, Contratos, Oportunidades, Ordens de Serviço)',
+  { relatorio: 'PLANO DE MANUTENÇÃO CRM - RPA <ano>', uso: 'Contratos de Plano de Manutenção',
+    pasta: '/Banco de Dados - DAF - Pós-Vendas/CRM DMS DAF', casa: n => /\.xlsx?$/i.test(n) && n.normalize('NFC').toLowerCase().includes('plano de manutenção crm - rpa'.normalize('NFC')) },
+  { relatorio: 'ROF017_FATURAMENTOPOROS', uso: 'Faturamento das O.S. de Plano de Manutenção',
     pasta: '/Banco de Dados - DAF - Pós-Vendas/Relatório Geral OS', casa: n => n.toUpperCase().startsWith('ROF017_FATURAMENTOPOROS') && Number((n.match(/\d{4}/) || [])[0]) >= 2024 },
-  { relatorio: 'ROF001_OSAberta_Excel <ano>', uso: 'Todas as O.S. P04 (um arquivo por ano; Ordens de Serviço, Contratos)',
+  { relatorio: 'ROF001_OSAberta_Excel <ano>', uso: 'Todas as O.S. de Plano de Manutenção',
     pasta: '/Banco de Dados - DAF - Pós-Vendas/Relatório Geral OS', casa: n => n.toUpperCase().startsWith('ROF001_OSABERTA_EXCEL') },
 ]
 router.get('/fontes', wrap(async (req, res) => {

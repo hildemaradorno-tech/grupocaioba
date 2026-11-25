@@ -91,7 +91,8 @@ export default function KpiIndicadoresCorporativos({ periodState: periodoMatriz 
 
   return (
     <div className="px-6 pb-6 pt-3 space-y-5">
-      <div className="flex flex-wrap items-start justify-between gap-4">
+      {/* Sem sub-abas: legenda à direita, alinhada à linha de baixo do cabeçalho (padrão das abas, 25/11/2026) */}
+      <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-xl font-bold text-slate-800">Indicadores Corporativos</h1>
           <p className="text-sm text-slate-500 mt-0.5">Saúde financeira e estratégica da empresa</p>

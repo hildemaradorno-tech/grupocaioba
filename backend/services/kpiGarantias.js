@@ -196,8 +196,12 @@ async function calcularIndicadoresGarantia(ano, empresaKey, { incluirHoje = fals
     // Tempo de garantia em aberto (Dashboard da aba Com Garantista, 24/11/2026): média de dias da abertura da
     // O.S. até a data, das garantias em aberto naquela data (status fora de E/F, como a tela).
     let somaDiasAberto = 0, qtdAberto = 0
+    // Recusas de garantia (card do Dashboard Com Garantista, 25/11/2026): % das garantias em aberto (status fora de
+    // E/F) que estão em Recusas (FR/Z), por quantidade.
+    let qtdEmAberto = 0, qtdRecusas = 0
     for (const g of daCasa) {
       const s = statusEm(g, data)
+      if (s && s !== 'E' && s !== 'F') { qtdEmAberto++; if (STATUS_RECUSADA.has(s)) qtdRecusas++ }
       if (s && s !== 'E' && s !== 'F' && g.data_abertura_os) {
         somaDiasAberto += Math.max(0, diasDesde(new Date(g.data_abertura_os + 'T12:00:00'), data)); qtdAberto++
       }
@@ -213,7 +217,8 @@ async function calcularIndicadoresGarantia(ano, empresaKey, { incluirHoje = fals
         if (!inicio || diasDesde(new Date(inicio + 'T12:00:00'), data) > doMes('dias_recusa', inicio, diasRecusa)) recusadaFora++
       }
     }
-    return { digitacao, foraPrazo, aprovada, recusadaFora, tempoAberto: qtdAberto ? Math.round(somaDiasAberto / qtdAberto * 10) / 10 : null }
+    return { digitacao, foraPrazo, aprovada, recusadaFora, tempoAberto: qtdAberto ? Math.round(somaDiasAberto / qtdAberto * 10) / 10 : null,
+      recusasPct: qtdEmAberto ? Math.round(qtdRecusas / qtdEmAberto * 1000) / 10 : null }
   }
 
   const agora = incluirHoje ? new Date() : fimDeOntem()
@@ -222,13 +227,14 @@ async function calcularIndicadoresGarantia(ano, empresaKey, { incluirHoje = fals
   const aprovadaSemFaturamento = {}
   const recusadaForaPrazo = {}
   const tempoAberto = {}
+  const recusasPct = {}
   const fotos = new Map() // data (ms) → contagem (vários períodos terminam no mesmo dia)
   const lim = limitesDosPeriodos(ano)
   for (const k of [...ALL_MONTHS, ...ALL_WEEKS, ...Object.keys(QUARTERS), 'fy']) {
     const p = lim[k]
     // Sem valor: período que não existe no ano, ainda não começou, ou terminou antes do histórico existir.
     if (!p || !primeiroLog || p.ini > agora || p.fim < primeiroLog) {
-      digitacaoAtrasada[k] = null; aguardandoForaPrazo[k] = null; aprovadaSemFaturamento[k] = null; recusadaForaPrazo[k] = null; tempoAberto[k] = null
+      digitacaoAtrasada[k] = null; aguardandoForaPrazo[k] = null; aprovadaSemFaturamento[k] = null; recusadaForaPrazo[k] = null; tempoAberto[k] = null; recusasPct[k] = null
       continue
     }
     const corte = p.fim > agora ? agora : p.fim // em andamento = hoje
@@ -239,6 +245,7 @@ async function calcularIndicadoresGarantia(ano, empresaKey, { incluirHoje = fals
     aprovadaSemFaturamento[k] = c.aprovada
     recusadaForaPrazo[k] = c.recusadaFora
     tempoAberto[k] = c.tempoAberto
+    recusasPct[k] = c.recusasPct
   }
   // Títulos vencidos (SharePoint RFN003); se o arquivo não puder ser lido, fica sem valor.
   let vencidos = null
@@ -246,7 +253,7 @@ async function calcularIndicadoresGarantia(ano, empresaKey, { incluirHoje = fals
   const titulosVencidos = soNoPeriodoAtual(vencidos?.qtd ?? null, ano, incluirHoje ? diaMS(0) : diaMS(-1))
 
   const metas = await metasDoSetorGarantia(admin, ano, empresaKey, lim, agora)
-  return { digitacaoAtrasada, aguardandoForaPrazo, aprovadaSemFaturamento, recusadaForaPrazo, titulosVencidos, tempoAberto, metas }
+  return { digitacaoAtrasada, aguardandoForaPrazo, aprovadaSemFaturamento, recusadaForaPrazo, titulosVencidos, tempoAberto, recusasPct, metas }
 }
 
 // Metas do SETOR GARANTIA cadastradas em Garantias DAF (engrenagem → Metas — Setor Garantia; tabela
@@ -279,13 +286,24 @@ async function metasDoSetorGarantia(admin, ano, empresaKey, lim, agora) {
     const v = metasTempo.find(r => r.mes === mes)?.meta_dias ?? metasTempo.find(r => r.mes === 0)?.meta_dias
     return v != null ? Number(v) : null
   }
+  let metasRecusas = []
+  try {
+    const { data, error } = await admin.from('gar_metas_recusas_pct').select('mes, meta_pct').eq('ano', ano)
+    if (!error) metasRecusas = data || []
+  } catch { /* sem a tabela */ }
+  const metaRecusasNoMes = (mes) => {
+    const v = metasRecusas.find(r => r.mes === mes)?.meta_pct ?? metasRecusas.find(r => r.mes === 0)?.meta_pct
+    return v != null ? Number(v) : null
+  }
   const out = Object.fromEntries(INDICADORES_COM_META.map(i => [i, {}]))
   out.tempoAberto = {}
+  out.recusasPct = {}
   for (const [k, p] of Object.entries(lim)) {
     const ref = p.ini <= agora && p.fim > agora ? agora : p.fim // mês da foto do período
     const mes = Number(new Date(ref.getTime() - 4 * 3600 * 1000).toISOString().slice(5, 7)) // horário de MS
     for (const ind of INDICADORES_COM_META) out[ind][k] = metaNoMes(mes, ind)
     out.tempoAberto[k] = metaTempoNoMes(mes)
+    out.recusasPct[k] = metaRecusasNoMes(mes)
   }
   return out
 }

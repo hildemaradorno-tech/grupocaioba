@@ -63,15 +63,16 @@ const ESTRUTURA = [
     ]],
     ['Auditoria', [
       // O.S. sem veículo e O.S. >= 30 dias antes das Auditorias padrão (24/11/2026).
-      ['O.S. aberta sem veículo na oficina', '%', '<'], ['O.S. >= 30 dias (% do Valor)', '%', '<'],
+      ['O.S. aberta sem veículo na oficina', '%', '<'], ['O.S. >= 30 dias', '%', '<', { antigos: ['O.S. >= 30 dias (% do Valor)'] }],
       // Tempo veículo oficina / funilaria logo abaixo: Média de dias na oficina (aba Tempo na Oficina), por setor (24/11/2026).
       ['Tempo veículo oficina', 'Dias', '<'], ['Tempo veículo funilaria', 'Dias', '<'],
       ['Tempo de garantia em aberto', 'Dias', '<', { antigos: ['Garantia em aberto (tempo médio) ou tempo de total OS'] }], // Tempo de garantia em aberto (Garantias DAF)
+      ['Recusa de Garantia', '%', '<'], // card Recusas de garantia (Garantias DAF › Com Garantista), 25/11/2026
       ['Auditoria padrão DOURADOS', '%', '>'], ['Auditoria padrão TRÊS LAGOAS', '%', '>'],
       ['Auditoria padrão CAMPO GRANDE', '%', '>'], ['Auditoria padrão CHAPADÃO', '%', '>'],
     ]],
     ['Dealer Development', [
-      ['Absorção de PV', '%', '>'], ['Recusa de Garantia', '%', '<'],
+      ['Absorção de PV', '%', '>'],
       ['Treinamentos Técnicos (on-line)', 'Unid.', '>'], ['Treinamentos Técnicos (presencial)', 'Unid.', '>'],
       ['Turnover geral', '%', '<'], ['Turnover técnicos', '%', '<'],
     ]],
@@ -242,17 +243,13 @@ export default function KpiIndicadoresOperacionais({ periodState: periodoMatriz 
 
   return (
     <div className="px-6 pb-6 pt-3 space-y-5">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold text-slate-800">Indicadores Departamentais</h1>
-        </div>
-        <PeriodLegend />
-      </div>
+      <h1 className="text-xl font-bold text-slate-800">Indicadores Departamentais</h1>
 
       {!periodoMatriz && <PeriodSelector state={periodState} inlineTrimestral hideLegend />}
 
       {/* Sub-abas das áreas — mesmo visual das sub-abas do Bloco 3 - Serviços. */}
-      <div className="flex gap-1.5 border-b-2 border-blue-600">
+      {/* Legenda de cores na linha das sub-abas, à direita — padrão das abas da Matriz (25/11/2026) */}
+      <div className="flex items-center gap-1.5 border-b-2 border-blue-600">
         {ESTRUTURA.map(([area]) => (
           <button
             key={area}
@@ -266,6 +263,7 @@ export default function KpiIndicadoresOperacionais({ periodState: periodoMatriz 
             {ROTULO_AREA[area] || area}
           </button>
         ))}
+        <span className="ml-auto"><PeriodLegend /></span>
       </div>
 
       {/* O bloco (card) da área escolhida, com Responsabilidade mesclada */}

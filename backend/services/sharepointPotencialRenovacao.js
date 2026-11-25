@@ -2,12 +2,15 @@ import * as XLSX from 'xlsx'
 import axios from 'axios'
 import { graphGet, graphPutArquivo } from './graphClient.js'
 
-// Contratos de Plano de Manutenção DAF com potencial de renovação (exportação do CRM DAF,
-// "CRM DAF - Plano de Manutenção - Potencial Renovação 2026.xlsx"). Uma linha por chassi do contrato; o mesmo
-// contrato pode ter vários chassis. O arquivo é achado pelo trecho "Potencial Renovação" em qualquer parte do nome
-// (o nome já mudou uma vez: era "Potencial Renovação 2026.xlsx").
+// Contratos de Plano de Manutenção DAF com potencial de renovação (exportação do CRM DAF feita pelo RPA, um
+// arquivo por ano: "PLANO DE MANUTENÇÃO CRM - RPA 2026.xlsx"). Uma linha por chassi do contrato; o mesmo contrato
+// pode ter vários chassis. Todos os arquivos com o trecho no nome são lidos juntos; a mesma linha do CRM (coluna
+// "(Não Modificar) Chassi do Contrato") em mais de um arquivo conta uma vez só, valendo a do arquivo mais recente.
 const PASTA = '/Banco de Dados - DAF - Pós-Vendas/CRM DMS DAF'
-const TRECHO_NOME = 'potencial renovação'
+const TRECHO_NOME = 'plano de manutenção crm - rpa'
+const NOME_DO_ANO = (ano) => `PLANO DE MANUTENÇÃO CRM - RPA ${ano}.xlsx`
+const normalizar = (v) => String(v || '').normalize('NFC').toLowerCase()
+const ehArquivoContratos = (nome) => /\.xlsx?$/i.test(nome || '') && normalizar(nome).includes(normalizar(TRECHO_NOME))
 
 const CACHE_TTL_MS = 5 * 60 * 1000
 let _cache = null
@@ -58,14 +61,16 @@ export async function importarPotencialRenovacao(nomeEnviado, buffer) {
   const contratos = lerArquivo(buffer)
   if (!contratos.length) throw Object.assign(new Error('O arquivo não tem nenhum contrato.'), { status: 400 })
 
-  // Substitui o arquivo atual da pasta (o mais recente com "Potencial Renovação" no nome); se não houver, grava
-  // com o nome enviado — garantindo que o nome tenha o trecho que o BI procura.
-  const atuais = (await listar(PASTA))
-    .filter(i => i.file && /\.xlsx?$/i.test(i.name || '') && i.name.normalize('NFC').toLowerCase().includes(TRECHO_NOME.normalize('NFC')))
-    .sort((a, b) => (b.lastModifiedDateTime || '').localeCompare(a.lastModifiedDateTime || ''))
-  const nomeEnviadoOk = nomeEnviado && nomeEnviado.normalize('NFC').toLowerCase().includes(TRECHO_NOME.normalize('NFC'))
-  const nomeFinal = atuais[0]?.name
-    || (nomeEnviadoOk ? nomeEnviado : `CRM DAF - Plano de Manutenção - Potencial Renovação ${new Date().getFullYear()}.xlsx`)
+  // Substitui o arquivo do ano na pasta: o ano vem do nome enviado (se já for um nome do RPA) ou, se não, da
+  // Data de Criação dos contratos — que precisa ser de um ano só, para não gravar por cima do arquivo errado.
+  const anoNoNome = ehArquivoContratos(nomeEnviado) ? (nomeEnviado.match(/20\d{2}/) || [])[0] : null
+  const anos = [...new Set(contratos.map(c => c.criacao?.slice(0, 4)).filter(Boolean))]
+  const anoAlvo = anoNoNome || (anos.length === 1 ? anos[0] : null)
+  if (!anoAlvo) {
+    throw Object.assign(new Error(`O arquivo tem contratos de vários anos. Renomeie para "${NOME_DO_ANO('AAAA')}", com o ano do arquivo que quer substituir, e importe de novo.`), { status: 400 })
+  }
+  const existente = (await listar(PASTA)).find(i => i.file && ehArquivoContratos(i.name) && i.name.includes(anoAlvo))
+  const nomeFinal = existente?.name || NOME_DO_ANO(anoAlvo)
   try {
     await graphPutArquivo(`${PASTA}/${nomeFinal}`, buffer, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
   } catch (e) {
@@ -88,9 +93,8 @@ export function getPotencialRenovacao() {
 }
 
 async function carregar() {
-  const arquivos = (await listar(PASTA))
-    .filter(i => i.file && /\.xlsx?$/i.test(i.name || '') && i.name.normalize('NFC').toLowerCase().includes(TRECHO_NOME.normalize('NFC')))
-  const rows = []
+  const arquivos = (await listar(PASTA)).filter(i => i.file && ehArquivoContratos(i.name))
+  const porLinha = new Map() // linha do CRM → contrato (do arquivo mais recente)
   const arquivosLidos = []
   let lastModified = null
 
@@ -102,15 +106,16 @@ async function carregar() {
     console.log(`[PotencialRenovacao] ${item.name}: ${contratos.length} chassi(s)`)
   }))
 
-  for (const item of arquivos) {
+  // Do mais antigo para o mais recente: a linha que aparece de novo num arquivo mais novo fica com os dados dele.
+  for (const item of [...arquivos].sort((a, b) => a.lastModifiedDateTime.localeCompare(b.lastModifiedDateTime))) {
     const lido = _porArquivo.get(item.id)
     if (!lido) continue
-    rows.push(...lido.rows)
+    lido.rows.forEach(c => porLinha.set(c.id_linha || `${c.contrato}|${c.chassi}`, c))
     arquivosLidos.push({ nome: item.name, linhas: lido.rows.length })
     if (!lastModified || item.lastModifiedDateTime > lastModified) lastModified = item.lastModifiedDateTime
   }
 
-  _cache = { rows, arquivos: arquivosLidos, lastModified, lidoEm: new Date().toISOString() }
+  _cache = { rows: [...porLinha.values()], arquivos: arquivosLidos, lastModified, lidoEm: new Date().toISOString() }
   _cacheTs = Date.now()
   return _cache
 }
@@ -124,6 +129,7 @@ function lerArquivo(buffer) {
     const chassi = txt(r.Chassi)
     if (!chassi) continue
     rows.push({
+      id_linha: txt(r['(Não Modificar) Chassi do Contrato']),
       grupo: txt(r['Grupo (Contrato) (Contrato DMS)']),
       contrato: txt(r.Contrato),
       criacao: dataSerial(r['Data de Criação']), // data em que o contrato foi cadastrado no CRM DAF

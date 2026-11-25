@@ -22,6 +22,7 @@ const ORIGEM_INDICADOR = {
   'O.S. aberta sem veículo na oficina': AUDITORIA_OS,
   'O.S. abertas >= 30 dias': AUDITORIA_OS,
   'O.S. >= 30 dias (% do Valor)': AUDITORIA_OS,
+  'O.S. >= 30 dias': AUDITORIA_OS, // Bloco 2 › Pós-Vendas (25/11/2026)
   // Garantias DAF
   'Garantias com Digitação Atrasada': GARANTIAS_ABERTO,
   'Garantias Aguardando Aprovação DAF (fora do prazo)': GARANTIAS_ABERTO,
@@ -97,6 +98,7 @@ for (const ind of ['Tempo veículo oficina', 'Tempo veículo funilaria']) {
 }
 // Garantia em aberto = Tempo de garantia em aberto do Dashboard Garantias DAF (aba Com Garantista).
 ORIGEM_POR_QUADRO[`${QUADRO_BLOCO2_PV}|Tempo de garantia em aberto`] = { ...GARANTIAS_ABERTO, nome: 'Garantias DAF › Com Garantista › Tempo de garantia em aberto' }
+ORIGEM_POR_QUADRO[`${QUADRO_BLOCO2_PV}|Recusa de Garantia`] = { ...GARANTIAS_ABERTO, nome: 'Garantias DAF › Com Garantista › Recusas de garantia' }
 ORIGEM_POR_QUADRO[`${QUADRO_BLOCO2_PV}|Agendamentos ativos`] = agendamento('Por Data Agendamento')
 ORIGEM_POR_QUADRO[`${QUADRO_BLOCO2_PV}|Total agendamento`] = agendamento('Por Data Agendamento')
 // Produtividade % do Bloco 2 = % Produtividade dos Consultores do Resumo, modo Consultores (24/11/2026).

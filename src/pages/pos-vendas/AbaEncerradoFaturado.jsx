@@ -17,7 +17,7 @@
  */
 import React, { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Ban, ChevronDown, ChevronRight, Clock, List, Receipt, Info, Search, X } from 'lucide-react'
+import { Ban, ChevronDown, ChevronRight, Clock, List, Receipt, Info, Search, Target, X } from 'lucide-react'
 import { Bar, BarChart, CartesianGrid, Cell, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { supabase } from '../../services/supabaseClient'
 import AbaNaoCobrado from './AbaNaoCobrado'
@@ -69,6 +69,21 @@ const vazio = (cats) => Object.fromEntries(cats.map(([k]) => [k, { h: 0, vl: 0 }
 // Tipo de O.S. interno (agrupa as O.S. abaixo do mecânico — pedido do usuário 17/11/2026).
 // Trucks: dim_tipos_os (sigla → tipo_interno, ex.: Cliente, Garantia, TruckPag, Interna Usados).
 // Motos: o MicroWork manda o tipo por extenso e não há cadastro — agrupado pelo começo do nome.
+// Objetivo de cada Modo Visualização da Análise de Horas — texto do usuário (25/11/2026), mostrado abaixo dos botões.
+const OBJETIVOS = {
+  enc: [
+    'Permite acompanhar todas as horas encerradas dentro do período selecionado no filtro de datas.',
+    'Demonstra detalhadamente o destino dessas horas: o que foi faturado no próprio mês, o que foi faturado em mês posterior ao encerramento, o que consta como "Não cobrado" e o que ainda falta faturar.',
+  ],
+  fat: [
+    'Apresenta o consolidado de todas as horas faturadas dentro do período selecionado.',
+    'Permite identificar a origem desse faturamento, evidenciando quais horas foram encerradas no próprio mês e quais são provenientes de meses anteriores.',
+  ],
+  nc: [
+    'Focado na auditoria e controle de perdas, permite identificar exatamente onde estão as horas apontadas que não geraram receita ou não foram faturadas internamente.',
+  ],
+}
+
 export function tipoInternoMotos(t) {
   const u = String(t || '').toUpperCase()
   if (!u) return 'Sem tipo'
@@ -449,6 +464,13 @@ export default function AbaEncerradoFaturado({ periodo, noEscopo, excluidos, slo
     <div ref={raizRef} className="flex flex-col gap-3">
       {/* Botões Encerrado | Faturado | Não cobrado antes da busca de O.S., na mesma linha (pedido do usuário 18/11/2026) */}
       <div className="flex flex-wrap items-end gap-3">{botoesSentido}{campoBusca}</div>
+      <div className="flex items-start gap-2 bg-sky-50 border border-sky-200 rounded-lg px-3 py-2">
+        <Target className="h-3.5 w-3.5 text-sky-600 mt-0.5 shrink-0" />
+        <div className="text-[11px] text-slate-700">
+          <span className="font-bold text-sky-800">Objetivo: </span>
+          {OBJETIVOS[sentido].map((t, i) => <p key={i} className={i ? 'mt-0.5' : 'inline'}>{t}</p>)}
+        </div>
+      </div>
       {/* ⓘ com a explicação retirado por enquanto (pedido do usuário 17/11/2026) — componente Info2 continua no arquivo */}
       {/* Botão "Não cobrado" (18/11/2026): tela própria (AbaNaoCobrado) com o ROF101 — no lugar dos quadros abaixo */}
       {sentido === 'nc' ? (

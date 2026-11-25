@@ -125,7 +125,7 @@ export default function BiGarantiasDaf() {
             {/* Visão Dashboard: a mesma engrenagem (Regras do Sistema), que vale para Controle e Dashboard */}
             {modo === 'dashboard' && podeRegras && (
               <div className="flex items-center gap-2">
-                <EngrenagemRegras usuario={user?.email} onSalvo={() => setVersaoRegras(v => v + 1)} onMetaSalva={() => setVersaoRegras(v => v + 1)} />
+                <EngrenagemRegras usuario={user?.email} abaInicial={{ oficina: 'oficina', titulos: 'titulos' }[abaAtual.key] || 'garantista'} onSalvo={() => setVersaoRegras(v => v + 1)} onMetaSalva={() => setVersaoRegras(v => v + 1)} />
               </div>
             )}
             </div>

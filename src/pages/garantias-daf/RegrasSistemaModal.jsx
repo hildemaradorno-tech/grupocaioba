@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Settings, X, Loader2, Activity, FileText, DollarSign, ChevronLeft, ChevronRight, ChevronDown, Copy } from 'lucide-react'
 import { apiService } from '../../services/api'
 import { carregarRegrasMes } from './regrasGarantiasMes'
@@ -34,8 +34,11 @@ const txt = (v) => (v != null && v !== '' ? String(v) : '')
 // configuração geral gravada e as regras mensais recarregadas, para a tela aplicar na hora.
 // tiposExtras: Map sigla → descrição de tipos que só existem nas garantias (fora do cadastro).
 // abaInicial: 'oficina' | 'garantista' | 'titulos' · somenteAba: sem os menus no topo
-export default function RegrasSistemaModal({ onClose, onSalvo, usuario, tiposExtras, abaInicial, somenteAba = false }) {
+// embutido (25/11/2026): só o miolo, dentro da janela única "Regras e Metas" — a aba vem de abaInicial (muda junto) e
+// quem grava é a janela de fora, pela função entregue em registrarSalvar.
+export default function RegrasSistemaModal({ onClose, onSalvo, usuario, tiposExtras, abaInicial, somenteAba = false, embutido = false, registrarSalvar }) {
   const [aba, setAba] = useState(ABAS_REGRAS.some(a => a.key === abaInicial) ? abaInicial : 'oficina')
+  useEffect(() => { if (embutido && ABAS_REGRAS.some(a => a.key === abaInicial)) setAba(abaInicial) }, [abaInicial, embutido])
   const [carregando, setCarregando] = useState(true)
   const [tiposDim, setTiposDim] = useState([])
   const [diasOficinaInput, setDiasOficinaInput] = useState('14')
@@ -168,61 +171,70 @@ export default function RegrasSistemaModal({ onClose, onSalvo, usuario, tiposExt
     marcarMexido()
   }
 
-  const salvar = async () => {
+  // Grava a regra geral e as regras por mês (das 3 abas) dos anos mexidos. Lança erro com a mensagem; devolve
+  // { cfg, meses } para a tela aplicar na hora.
+  const gravarTudo = async () => {
     const dias = Number(diasDigitacaoInput)
     const diasOfi = Number(diasOficinaInput)
     const diasRec = Number(diasRecusaInput)
     const diasNf = Number(diasNfInput)
     if ([dias, diasOfi, diasRec, ...(temColunaNf ? [diasNf] : [])].some(n => !Number.isFinite(n) || n <= 0)) {
-      setErro('Informe números de dias válidos (maiores que zero).')
-      return
+      throw new Error('Regras: informe números de dias válidos (maiores que zero).')
     }
     const corAm = Number(corAmareloInput)
     const corVm = Number(corVermelhoInput)
     if (temColunaCores && (![corAm, corVm].every(n => Number.isInteger(n) && n > 0) || corVm < corAm)) {
-      setErro('Cores da coluna Dias: informe dias inteiros maiores que zero, com o vermelho maior ou igual ao amarelo.')
-      return
+      setAba('garantista')
+      throw new Error('Cores da coluna Dias: informe dias inteiros maiores que zero, com o vermelho maior ou igual ao amarelo.')
     }
     const porTipo = {}
     for (const [sigla, v] of Object.entries(diasSolucaoPorTipoInput)) {
       const n = Number(v)
       if (v !== '' && v != null && Number.isFinite(n) && n > 0) porTipo[sigla] = n
     }
-    // Regras por mês dos anos mexidos — só os campos desta aba (o upsert não toca nos das outras)
+    // Regras por mês dos anos mexidos — todos os campos (as 3 abas ficam na mesma linha do mês)
     const porAno = []
     for (const a of mexidos) {
       const linhas = []
       for (let m = 0; m < 12; m++) {
         const l = anos[a][m] || {}
         const linha = { mes: m + 1 }
-        for (const { campo, curto } of mensais) {
-          const n = paraDias(l[campo])
-          if (Number.isNaN(n)) { setErro(`${MESES[m]}/${a} — ${curto}: informe um número de dias inteiro maior que zero (ou deixe em branco).`); setAno(a); return }
-          linha[campo] = n
-        }
-        if (aba === 'garantista') {
-          const pt = {}
-          for (const [sigla, v] of Object.entries(l.dias_solucao_por_tipo || {})) {
-            const n = paraDias(v)
-            if (Number.isNaN(n)) { setErro(`${MESES[m]}/${a} — Solução do tipo ${sigla}: informe um número de dias inteiro maior que zero.`); setAno(a); setMesTiposAberto(m); return }
-            if (n != null) pt[sigla] = n
+        for (const abaR of ABAS_REGRAS) {
+          for (const { campo, curto } of abaR.mensais) {
+            const n = paraDias(l[campo])
+            if (Number.isNaN(n)) { setAno(a); setAba(abaR.key); throw new Error(`${MESES[m]}/${a} — ${curto}: informe um número de dias inteiro maior que zero (ou deixe em branco).`) }
+            linha[campo] = n
           }
-          linha.dias_solucao_por_tipo = Object.keys(pt).length ? pt : null
         }
+        const pt = {}
+        for (const [sigla, v] of Object.entries(l.dias_solucao_por_tipo || {})) {
+          const n = paraDias(v)
+          if (Number.isNaN(n)) { setAno(a); setAba('garantista'); setMesTiposAberto(m); throw new Error(`${MESES[m]}/${a} — Solução do tipo ${sigla}: informe um número de dias inteiro maior que zero.`) }
+          if (n != null) pt[sigla] = n
+        }
+        linha.dias_solucao_por_tipo = Object.keys(pt).length ? pt : null
         linhas.push(linha)
       }
       porAno.push([a, linhas])
     }
+    const cfg = { dias_digitacao: dias, dias_oficina: diasOfi, dias_solucao: diasSolucao, dias_solucao_por_tipo: porTipo, dias_recusa: diasRec, ...(temColunaNf ? { dias_nf_envio: diasNf } : {}), ...(temColunaCores ? { dias_cor_amarelo: corAm, dias_cor_vermelho: corVm } : {}) }
+    await apiService.updateConfiguracoesGarantias(cfg, usuario)
+    for (const [a, linhas] of porAno) await apiService.saveRegrasGarantiasMes(a, linhas, usuario)
+    const meses = await carregarRegrasMes()
+    return { cfg, meses }
+  }
+  const gravarRef = useRef(gravarTudo)
+  gravarRef.current = gravarTudo
+  useEffect(() => { registrarSalvar?.(() => gravarRef.current()) }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const salvar = async () => {
     setSalvando(true); setErro(null)
     try {
-      const cfg = { dias_digitacao: dias, dias_oficina: diasOfi, dias_solucao: diasSolucao, dias_solucao_por_tipo: porTipo, dias_recusa: diasRec, ...(temColunaNf ? { dias_nf_envio: diasNf } : {}), ...(temColunaCores ? { dias_cor_amarelo: corAm, dias_cor_vermelho: corVm } : {}) }
-      await apiService.updateConfiguracoesGarantias(cfg, usuario)
-      for (const [a, linhas] of porAno) await apiService.saveRegrasGarantiasMes(a, linhas, usuario)
-      const meses = await carregarRegrasMes()
+      const { cfg, meses } = await gravarTudo()
       onSalvo?.(cfg, meses)
       onClose()
     } catch (err) {
-      setErro('Erro ao salvar: ' + (err.message || String(err)))
+      setErro(err.message || String(err))
     } finally {
       setSalvando(false)
     }
@@ -233,18 +245,9 @@ export default function RegrasSistemaModal({ onClose, onSalvo, usuario, tiposExt
   const inputMesCls = 'w-14 text-xs text-right p-1.5 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/20'
   const mesAtual = ano === new Date().getFullYear() ? new Date().getMonth() : -1
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-xl mx-4 max-h-[92vh] flex flex-col">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
-            <Settings className="h-4 w-4 text-slate-500" /> Regras do Sistema
-            {somenteAba && <span className="font-semibold text-slate-500">— {abaCfg.label}</span>}
-          </h3>
-          <button onClick={onClose} className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded transition-colors">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+  // Miolo da janela — também usado dentro da janela única "Regras e Metas" (embutido, 25/11/2026)
+  const corpo = (
+      <>
         {carregando ? (
           <p className="flex items-center gap-2 text-xs text-slate-400 py-6"><Loader2 className="h-4 w-4 animate-spin" /> Carregando regras...</p>
         ) : (
@@ -470,6 +473,23 @@ export default function RegrasSistemaModal({ onClose, onSalvo, usuario, tiposExt
             </div>
           </div>
         )}
+      </>
+  )
+  if (embutido) return corpo
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-xl mx-4 max-h-[92vh] flex flex-col">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
+            <Settings className="h-4 w-4 text-slate-500" /> Regras do Sistema
+            {somenteAba && <span className="font-semibold text-slate-500">— {abaCfg.label}</span>}
+          </h3>
+          <button onClick={onClose} className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded transition-colors">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        {corpo}
         <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
           <button onClick={onClose} disabled={salvando}
             className="px-3 py-1.5 rounded-md text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors">

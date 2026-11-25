@@ -35,7 +35,7 @@ export const FONTES = [
   { id: 'rfn024', nome: 'Créditos Não Identificados (RFN024)', telas: 'TruckPag', pasta: `${DAF}/Financeiro - DAF`, padrao: 'RFN024_SALDOCREDITOSNAOIDENTIFICADOS.xlsx', exato: true, frequencia: 'diaria' },
   { id: 'repasses', nome: 'Repasses TruckPag (contas-receber-daf)', telas: 'TruckPag', pasta: `${DAF}/Financeiro - DAF`, padrao: 'contas-receber-daf', frequencia: 'manual' },
   { id: 'veiculos', nome: 'Veículos Vendidos', telas: 'BI Planos de Manutenção (vendas)', pasta: '/Banco de Dados - DAF - Veículos', padrao: 'REL_VEICULOSVENDIDOSPORPERIODO_REPORT', frequencia: 'diaria' },
-  { id: 'potencial', nome: 'Potencial Renovação (CRM DAF)', telas: 'BI Planos de Manutenção', pasta: `${DAF}/CRM DMS DAF`, padrao: 'potencial renovação', contem: true, frequencia: 'manual' },
+  { id: 'potencial', nome: 'Plano de Manutenção CRM - RPA (CRM DAF)', telas: 'BI Planos de Manutenção', pasta: `${DAF}/CRM DMS DAF`, padrao: 'PLANO DE MANUTENÇÃO CRM - RPA', contem: true, frequencia: 'manual' },
   { id: 'rpa-log', nome: 'Log de Execuções do RPA', telas: 'Monitor Robert Automation (Dashboard)', pasta: '/Banco de Dados - Log RPA', padrao: 'Historico_Geral_Execucoes_RPA.csv', exato: true, frequencia: 'diaria' },
   // Extrato de Pagamento DAF não tem mais planilha no SharePoint (23/11/2026): o extrato é lido só pela importação
   // na tela, e a pasta "Banco de Dados - DAF - Extrato de Pagamentos" foi excluída. A tela usa o RFN003 acima.

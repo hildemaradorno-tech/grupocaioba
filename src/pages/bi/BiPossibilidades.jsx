@@ -3,10 +3,10 @@ import { createPortal } from 'react-dom'
 import {
   CalendarDays, Clock, Hourglass, CheckCircle2, AlertTriangle, XCircle,
   Building2, Info, Loader2, RefreshCw, ChevronDown, ChevronRight,
-  Receipt, Package, Wrench, Truck, LayoutDashboard, Percent, TrendingUp, Settings,
+  Receipt, Package, Wrench, Truck, LayoutDashboard, Percent, TrendingUp, Settings, User,
 } from 'lucide-react'
 import { apiService } from '../../services/api'
-import { Bar, BarChart, CartesianGrid, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { Bar, BarChart, CartesianGrid, ComposedChart, LabelList, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import logoCaioba from '../../assets/logo-grupo.png'
 import { resolverPorDepartamento, resolverPorFuncionario, normalizaBusca } from '../../utils/biDimensoes'
 import { useEmpresasPermitidas } from '../../hooks/useEmpresasPermitidas'
@@ -366,17 +366,17 @@ const COLUNAS_MARGEM = ['Departamentos', 'Margem Peças', '% Mrg Peças', 'Marge
 // Lucro = margem em R$; Ticket = Real ÷ Passagens (no "Todos", sem o Balcão, que não tem passagem);
 // Coef. Peças = Peças ÷ Serviços; Coef. Serviços = Real Serviços ÷ Horas Vendidas (ROF042).
 const INDICADORES_EVOLUCAO = [
-  { key: 'realTotal', label: 'Real Total', fmt: 'moeda', calc: v => v.realPecas + v.realServicos },
-  { key: 'realPecas', label: 'Real Peças', fmt: 'moeda', calc: v => v.realPecas },
-  { key: 'realServicos', label: 'Real Serviços', fmt: 'moeda', calc: v => v.realServicos },
-  { key: 'margemServicos', label: 'Margem Serviços', fmt: 'pct', calc: v => (v.realServicos > 0 ? (v.margemServicos / v.realServicos) * 100 : 0), detalhe: v => [['Margem Serviços', 'moeda', v.margemServicos], ['Real Serviços', 'moeda', v.realServicos]] },
-  { key: 'margemPecas', label: 'Margem Peças', fmt: 'pct', calc: v => (v.realPecas > 0 ? (v.margemPecas / v.realPecas) * 100 : 0), detalhe: v => [['Margem Peças', 'moeda', v.margemPecas], ['Real Peças', 'moeda', v.realPecas]] },
-  { key: 'lucroPecas', label: 'Lucro Peças', fmt: 'moeda', calc: v => v.margemPecas },
-  { key: 'lucroServicos', label: 'Lucro Serviços', fmt: 'moeda', calc: v => v.margemServicos },
-  { key: 'passagens', label: 'Passagens', fmt: 'int', calc: v => v.pass },
-  { key: 'ticketPecas', label: 'Ticket Peças', fmt: 'moeda', calc: v => (v.pass > 0 ? v.ticketPecasBase / v.pass : 0), detalhe: v => [['Real Peças (com OS)', 'moeda', v.ticketPecasBase], ['Passagens', 'int', v.pass]] },
-  { key: 'ticketServicos', label: 'Ticket Serviços', fmt: 'moeda', calc: v => (v.pass > 0 ? v.ticketServicosBase / v.pass : 0), detalhe: v => [['Real Serviços (com OS)', 'moeda', v.ticketServicosBase], ['Passagens', 'int', v.pass]] },
-  { key: 'ticketTotal', label: 'Ticket Total', fmt: 'moeda', calc: v => (v.pass > 0 ? (v.ticketPecasBase + v.ticketServicosBase) / v.pass : 0), detalhe: v => [['Real Total (com OS)', 'moeda', v.ticketPecasBase + v.ticketServicosBase], ['Passagens', 'int', v.pass]] },
+  { key: 'realTotal', label: 'Real Total', fmt: 'moeda', calc: v => v.realPecas + v.realServicos, meta: mt => mt.total },
+  { key: 'realPecas', label: 'Real Peças', fmt: 'moeda', calc: v => v.realPecas, meta: mt => mt.pecas },
+  { key: 'realServicos', label: 'Real Serviços', fmt: 'moeda', calc: v => v.realServicos, meta: mt => mt.servicos },
+  { key: 'margemServicos', label: 'Margem Serviços', fmt: 'pct', meta: mt => mt.margemServicosPct, calc: v => (v.realServicos > 0 ? (v.margemServicos / v.realServicos) * 100 : 0), detalhe: v => [['Margem Serviços', 'moeda', v.margemServicos], ['Real Serviços', 'moeda', v.realServicos]] },
+  { key: 'margemPecas', label: 'Margem Peças', fmt: 'pct', meta: mt => mt.margemPecasPct, calc: v => (v.realPecas > 0 ? (v.margemPecas / v.realPecas) * 100 : 0), detalhe: v => [['Margem Peças', 'moeda', v.margemPecas], ['Real Peças', 'moeda', v.realPecas]] },
+  { key: 'lucroPecas', label: 'Lucro Peças', fmt: 'moeda', calc: v => v.margemPecas, meta: mt => mt.lucroPecas },
+  { key: 'lucroServicos', label: 'Lucro Serviços', fmt: 'moeda', calc: v => v.margemServicos, meta: mt => mt.lucroServicos },
+  { key: 'passagens', label: 'Passagens', fmt: 'int', calc: v => v.pass, meta: mt => mt.passMeta },
+  { key: 'ticketPecas', label: 'Ticket Peças', soOficina: true, fmt: 'moeda', meta: mt => mt.ticketPecas, calc: v => (v.passOficina > 0 ? v.ticketPecasBase / v.passOficina : 0), detalhe: v => [['Real Peças (Oficina)', 'moeda', v.ticketPecasBase], ['Passagens (Oficina)', 'int', v.passOficina]] },
+  { key: 'ticketServicos', label: 'Ticket Serviços', soOficina: true, fmt: 'moeda', meta: mt => mt.ticketServicos, calc: v => (v.passOficina > 0 ? v.ticketServicosBase / v.passOficina : 0), detalhe: v => [['Real Serviços (Oficina)', 'moeda', v.ticketServicosBase], ['Passagens (Oficina)', 'int', v.passOficina]] },
+  { key: 'ticketTotal', label: 'Ticket Total', soOficina: true, fmt: 'moeda', meta: mt => mt.ticketTotal, calc: v => (v.passOficina > 0 ? (v.ticketPecasBase + v.ticketServicosBase) / v.passOficina : 0), detalhe: v => [['Real Total (Oficina)', 'moeda', v.ticketPecasBase + v.ticketServicosBase], ['Passagens (Oficina)', 'int', v.passOficina]] },
   { key: 'coefServicos', label: 'Coef.Serviços', fmt: 'moeda', calc: v => (v.horas > 0 ? v.realServicos / v.horas : 0), detalhe: v => [['Real Serviços', 'moeda', v.realServicos], ['Horas Vendidas', 'dec', v.horas]] },
   { key: 'coefPecas', label: 'Coef.Peças', fmt: 'dec', calc: v => (v.realServicos > 0 ? v.realPecas / v.realServicos : 0), detalhe: v => [['Real Peças', 'moeda', v.realPecas], ['Real Serviços', 'moeda', v.realServicos]] },
 ]
@@ -389,9 +389,51 @@ const fmtIndicador = (fmt, v) => {
   return n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
-function EvolucaoVendas({ meses, indicador, depto, departamentosOpcoes, carregando }) {
+// Metas planejadas aprovadas (Planejamento) → ticket, passagens e margem. Cada linha traz _f = fração da meta do mês
+// que entra (1 = mês cheio; no período, dias úteis do período ÷ do mês). Passagens do consultor = meta ÷ ticket total
+// (a coluna "passagens" do Planejamento é do SETOR inteiro e se repete em cada consultor — somar duplicava).
+// Ticket = média dos tickets planejados ponderada pelas passagens. Margem % = lucro planejado ÷ venda planejada,
+// só das linhas com margem preenchida.
+function resumoMetaPlanejada(consultor = [], pecas = []) {
+  const num = (v) => (v === null || v === undefined || v === '' ? null : Number(v))
+  let pass = 0, somaTP = 0, somaTS = 0, lucroP = 0, baseP = 0, lucroS = 0, baseS = 0
+  for (const r of consultor) {
+    const f = r._f ?? 1
+    const fat = num(r.meta_aprovada) || 0
+    const tt = num(r.ticket_total) || 0, tp = num(r.ticket_pecas) || 0, ts = num(r.ticket_servicos) || 0
+    if (tt > 0 && fat > 0) { const p = (fat / tt) * f; pass += p; somaTP += p * tp; somaTS += p * ts }
+    const vPecas = num(r.meta_pecas) ?? (tt > 0 ? fat * tp / tt : null)
+    const vServ = num(r.meta_servicos) ?? (tt > 0 ? fat * ts / tt : null)
+    const mp = num(r.margem_pecas_pct), ms = num(r.margem_servicos_pct)
+    if (mp !== null && vPecas) { lucroP += vPecas * f * mp / 100; baseP += vPecas * f }
+    if (ms !== null && vServ) { lucroS += vServ * f * ms / 100; baseS += vServ * f }
+  }
+  for (const r of pecas) {
+    const f = r._f ?? 1
+    const fat = num(r.meta_aprovada) || 0, mp = num(r.margem_pecas_pct)
+    if (mp !== null && fat) { lucroP += fat * f * mp / 100; baseP += fat * f }
+  }
+  return {
+    pass,
+    ticketPecas: pass > 0 ? somaTP / pass : null,
+    ticketServicos: pass > 0 ? somaTS / pass : null,
+    ticketTotal: pass > 0 ? (somaTP + somaTS) / pass : null,
+    margemPecasPct: baseP > 0 ? (lucroP / baseP) * 100 : null,
+    margemServicosPct: baseS > 0 ? (lucroS / baseS) * 100 : null,
+    lucroPecas: baseP > 0 ? lucroP : null,
+    lucroServicos: baseS > 0 ? lucroS : null,
+  }
+}
+
+// metasPorMes: 'ano-mes' -> metas cheias do mês (Planejamento publicado). Indicador com `meta` ganha a linha de meta.
+function EvolucaoVendas({ meses, indicador, depto, departamentosOpcoes, carregando, metasPorMes = new Map() }) {
   const ind = INDICADORES_EVOLUCAO.find(i => i.key === indicador) || INDICADORES_EVOLUCAO[0]
-  const dados = meses.map(m => ({ rotulo: `${m.ano}-${m.mes}`, mesNome: NOMES_MES[m.mes - 1], ano: m.ano, valor: ind.calc(m), base: m }))
+  const dados = meses.map(m => {
+    const mt = metasPorMes.get(`${m.ano}-${m.mes}`)
+    const meta = ind.meta && mt ? ind.meta(mt) : null
+    return { rotulo: `${m.ano}-${m.mes}`, mesNome: NOMES_MES[m.mes - 1], ano: m.ano, valor: ind.calc(m), meta: meta > 0 ? meta : null, base: m }
+  })
+  const temMeta = dados.some(d => d.meta != null)
   // Eixo: mês em cima; ano embaixo, uma vez por ano, no meio dos meses daquele ano. Mais de um ano no
   // período: linha vertical separando os anos.
   const meioDoAno = new Set()
@@ -410,6 +452,10 @@ function EvolucaoVendas({ meses, indicador, depto, departamentosOpcoes, carregan
       <div className="bg-white border border-slate-200 rounded-md shadow-lg px-3 py-2 text-[11px] text-slate-700">
         <p className="font-semibold text-slate-900 mb-1">{d.mesNome} {d.ano}</p>
         <p><span className="text-slate-500">{ind.label}:</span> <strong>{fmtIndicador(ind.fmt, d.valor)}</strong></p>
+        {d.meta != null && (
+          <p><span className="text-slate-500">Meta:</span> <strong className="text-red-600">{fmtIndicador(ind.fmt, d.meta)}</strong>
+            <span className="text-slate-500"> · {((d.valor / d.meta) * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}% da meta</span></p>
+        )}
         {partes && (
           <div className="mt-1.5 pt-1.5 border-t border-slate-100 space-y-0.5">
             <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Cálculo</p>
@@ -442,14 +488,22 @@ function EvolucaoVendas({ meses, indicador, depto, departamentosOpcoes, carregan
     <div className="flex gap-4 items-stretch">
       {/* Gráfico (o "Tipo de Venda" é o seletor de visualização na linha das abas) */}
       <div className="flex-1 min-w-0 bg-white rounded-lg border border-slate-200 shadow-sm p-4 flex flex-col gap-3">
-        <p className="text-sm font-semibold text-slate-800">{ind.label}{depto ? ` — ${departamentosOpcoes.find(d => d.id === depto)?.nome || ''}` : ''}</p>
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-sm font-semibold text-slate-800">{ind.label}{ind.soOficina ? ' — Oficina' : depto ? ` — ${departamentosOpcoes.find(d => d.id === depto)?.nome || ''}` : ''}</p>
+          {temMeta && (
+            <div className="flex items-center gap-3 text-[11px] text-slate-500">
+              <span className="inline-flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-[#1a8cff]" />Realizado</span>
+              <span className="inline-flex items-center gap-1"><span className="inline-block w-4 border-t-2 border-dashed border-red-600" />Meta</span>
+            </div>
+          )}
+        </div>
         {carregando ? (
           <div className="h-[380px] flex items-center justify-center text-xs text-slate-400"><Loader2 className="h-4 w-4 animate-spin mr-2" /> Carregando...</div>
         ) : dados.length === 0 ? (
           <div className="h-[380px] flex items-center justify-center text-xs text-slate-400">Sem dados no período.</div>
         ) : (
           <ResponsiveContainer width="100%" height={380}>
-            <BarChart data={dados} margin={{ top: 28, right: 12, left: 12, bottom: 22 }}>
+            <ComposedChart data={dados} margin={{ top: 28, right: 12, left: 12, bottom: 22 }}>
               <CartesianGrid vertical={false} stroke="#e2e8f0" />
               <XAxis dataKey="rotulo" tick={<TickMesAno />} interval={0} height={40} />
               <YAxis hide />
@@ -457,7 +511,11 @@ function EvolucaoVendas({ meses, indicador, depto, departamentosOpcoes, carregan
               <Bar dataKey="valor" fill="#1a8cff" radius={[3, 3, 0, 0]} maxBarSize={90}>
                 <LabelList dataKey="valor" position="top" formatter={(v) => fmtIndicador(ind.fmt, v)} style={{ fontSize: 11, fill: '#475569' }} />
               </Bar>
-            </BarChart>
+              {temMeta && (
+                <Line type="monotone" dataKey="meta" stroke="#dc2626" strokeWidth={2} strokeDasharray="6 4" connectNulls={false}
+                  dot={{ r: 3, fill: '#dc2626' }} activeDot={{ r: 4 }} isAnimationActive={false} />
+              )}
+            </ComposedChart>
           </ResponsiveContainer>
         )}
       </div>
@@ -762,18 +820,20 @@ export default function BiPossibilidades() {
     const deptos = new Set()
     const meses = [...porMes.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([, m]) => {
       const v = { ano: m.ano, mes: m.mes }
-      let balcaoPecas = 0, balcaoServicos = 0
+      let ofPecas = 0, ofServicos = 0, ofPass = 0
       for (const slot of SLOTS) {
         const medida = medidaPorSlot.get(slot)
         const r = medida ? resolverPorDepartamento(m.grupos.get(medida.id) || [], medida, { tiposOS, setores }) : null
         for (const id of (r?.valoresPorDepartamento.keys() || [])) if (id !== '__sem_departamento__') deptos.add(id)
         v[slot === 'horasVendidas' ? 'horas' : slot] = r ? (evoDepto ? (r.valoresPorDepartamento.get(evoDepto) || 0) : r.valorTotal) : 0
-        if (slot === 'realPecas') balcaoPecas = r?.valoresPorDepartamento.get(DEPTO_BALCAO_PECAS) || 0
-        if (slot === 'realServicos') balcaoServicos = r?.valoresPorDepartamento.get(DEPTO_BALCAO_PECAS) || 0
+        if (slot === 'realPecas') ofPecas = r?.valoresPorDepartamento.get(DEPTO_OFICINA) || 0
+        if (slot === 'realServicos') ofServicos = r?.valoresPorDepartamento.get(DEPTO_OFICINA) || 0
+        if (slot === 'pass') ofPass = r?.valoresPorDepartamento.get(DEPTO_OFICINA) || 0
       }
-      // Ticket: no "Todos" tira o Balcão (venda sem OS, sem passagem).
-      v.ticketPecasBase = evoDepto ? v.realPecas : v.realPecas - balcaoPecas
-      v.ticketServicosBase = evoDepto ? v.realServicos : v.realServicos - balcaoServicos
+      // Ticket: sempre só da Oficina (pedido do usuário, 25/11/2026), qualquer que seja o departamento escolhido.
+      v.ticketPecasBase = ofPecas
+      v.ticketServicosBase = ofServicos
+      v.passOficina = ofPass
       return v
     })
     return { meses, deptos }
@@ -844,6 +904,14 @@ export default function BiPossibilidades() {
   useEffect(() => {
     setCalendario(calendarioEmpresas.filter(r => r.empresa_id === empresaCalendario))
   }, [calendarioEmpresas, empresaCalendario])
+
+  // Metas planejadas aprovadas (ticket e margem), por ano do período
+  const [metasPlanejadas, setMetasPlanejadas] = useState({ consultor: [], pecas: [] })
+  useEffect(() => {
+    Promise.all(anosPeriodo.map(a => apiService.getMetasPlanejadasAprovadas(a)))
+      .then(listas => setMetasPlanejadas({ consultor: listas.flatMap(l => l.consultor), pecas: listas.flatMap(l => l.pecas) }))
+      .catch(() => setMetasPlanejadas({ consultor: [], pecas: [] }))
+  }, [anosPeriodo])
 
   useEffect(() => {
     Promise.all(anosPeriodo.map(a => apiService.getTotalGrupoPublicado(a)))
@@ -945,6 +1013,7 @@ export default function BiPossibilidades() {
           metaTotal: metaMesTotal * fator, metaServicos: metaMesServicos * fator, metaPecas: (metaMesTotal - metaMesServicos) * fator,
           // Meta de passagens do consultor (Planejamento › Metas - Consultor), proporcional ao período.
           metaPass: Number(r.passagens || 0) * fator,
+          ano: Number(r.ano), mes: Number(r.mes), passMes: Number(r.passagens || 0),
         }
       })
   }, [metasDoPeriodo, empresaIds, fracaoMetaPeriodo, anoRef, mesRef, permiteId])
@@ -953,6 +1022,40 @@ export default function BiPossibilidades() {
   const metasConsideradas = usarProdutivo
     ? metasTodas.filter(r => r.tipo === 'mecanico')
     : metasTodas.filter(r => !TIPOS_FORA_DA_META.includes(r.tipo))
+
+  // Aba Evolução: meta CHEIA de cada mês (Planejamento publicado), no departamento escolhido (ou todos).
+  // Tickets e Passagens: só as metas dos consultores (são eles que planejam ticket e passagens).
+  const evoMetasPorMes = useMemo(() => {
+    const mapa = new Map()
+    if (!ehEvolucao) return mapa
+    const daEmpresa = (r) => permiteId(r.empresa_id) && (empresaIds.length === 0 || empresaIds.includes(r.empresa_id))
+    const noDepto = (r) => !evoDepto || r.departamento_id === evoDepto
+    const porMes = (rows) => { const g = new Map(); for (const r of rows) { const k = `${Number(r.ano)}-${Number(r.mes)}`; if (!g.has(k)) g.set(k, []); g.get(k).push(r) } return g }
+    const consMes = porMes(metasPlanejadas.consultor.filter(daEmpresa))
+    const pecasMes = porMes(metasPlanejadas.pecas.filter(daEmpresa))
+    const mesesPlan = new Set([...consMes.keys(), ...pecasMes.keys()])
+    for (const k of mesesPlan) {
+      const cons = consMes.get(k) || []
+      // Ticket e passagens: só os consultores da Oficina. Margem/lucro: departamento escolhido (ou todos).
+      const oficina = resumoMetaPlanejada(cons.filter(r => r.departamento_id === DEPTO_OFICINA))
+      const margem = resumoMetaPlanejada(cons.filter(noDepto), (pecasMes.get(k) || []).filter(noDepto))
+      mapa.set(k, {
+        total: 0, pecas: 0, servicos: 0,
+        passMeta: !evoDepto || evoDepto === DEPTO_OFICINA ? oficina.pass : null,
+        ticketPecas: oficina.ticketPecas, ticketServicos: oficina.ticketServicos, ticketTotal: oficina.ticketTotal,
+        margemPecasPct: margem.margemPecasPct, margemServicosPct: margem.margemServicosPct,
+        lucroPecas: margem.lucroPecas, lucroServicos: margem.lucroServicos,
+      })
+    }
+    for (const r of metasTodas.filter(x => !TIPOS_FORA_DA_META.includes(x.tipo))) {
+      if (evoDepto && r.departamento_id !== evoDepto) continue
+      const k = `${r.ano}-${r.mes}`
+      const m = mapa.get(k) || { total: 0, pecas: 0, servicos: 0 }
+      m.total += r.metaMesTotal; m.pecas += r.metaMesPecas; m.servicos += r.metaMesServicos
+      mapa.set(k, m)
+    }
+    return mapa
+  }, [ehEvolucao, metasTodas, evoDepto, metasPlanejadas, empresaIds, permiteId])
 
   const somarMetas = (rows) => rows.reduce((acc, r) => {
     acc.metaPecas += r.metaPecas; acc.metaServicos += r.metaServicos; acc.metaTotal += r.metaTotal
@@ -1259,11 +1362,12 @@ export default function BiPossibilidades() {
       </div>
 
       {/* VISÕES + (na Total) Metas e Real entre Datas / no Mês, na mesma linha */}
-      <div className="flex flex-wrap items-end justify-between gap-3">
+      {/* Linha de base clara (fundo do BI é escuro) na largura toda da página; seletores ao lado das abas ficam um
+          pouco acima dela */}
+      <div className="flex flex-wrap items-end justify-between gap-3 border-b-2 border-slate-200 [&>*:not(:first-child)]:mb-1.5">
       {/* Abas tipo "pasta" (mesmo modelo do BI Auditoria O.S. Aberta, 24/11/2026): cantos de cima arredondados,
-          inativas cinza-claro com borda, ativa azul preenchida e um pouco mais alta */}
-      {/* Aba ativa e linha de base no azul-marinho do cabeçalho (#1a4d8f), cor sólida */}
-      <div className="flex items-end gap-1 border-b-2 border-[#1a4d8f] flex-wrap">
+          inativas cinza-claro com borda, ativa no azul-marinho do cabeçalho (#1a4d8f) e um pouco mais alta */}
+      <div className="flex items-end gap-1 flex-wrap">
         {VISOES.map(v => (
           <button
             key={v.key}
@@ -1278,50 +1382,62 @@ export default function BiPossibilidades() {
           </button>
         ))}
       </div>
-      {/* Aba Evolução: "Tipo de Venda" como seletor de visualização, na mesma linha das abas */}
-      {ehEvolucao && (
-        <div className="flex items-center gap-2 ml-auto">
-          <span className="text-[10px] font-bold uppercase tracking-wide text-slate-300">Modo Visualização</span>
-          <select value={evoIndicador} onChange={e => setEvoIndicador(e.target.value)}
-            className="text-xs font-semibold px-3 py-2 rounded-lg bg-white border border-slate-200 text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500/40 min-w-[180px]">
-            {INDICADORES_EVOLUCAO.map(i => <option key={i.key} value={i.key}>{i.label}</option>)}
-          </select>
-          <span className="text-[10px] font-bold uppercase tracking-wide text-slate-300 ml-2">Departamentos</span>
-          <select value={evoDepto} onChange={e => setEvoDepto(e.target.value)}
-            className="text-xs font-semibold px-3 py-2 rounded-lg bg-white border border-slate-200 text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500/40 min-w-[180px]">
-            <option value="">Todos</option>
-            {evoDeptosOpcoes.map(d => <option key={d.id} value={d.id}>{d.nome}</option>)}
-          </select>
-        </div>
-      )}
-      {/* Aba Serviços: modelo de visualização na mesma linha das abas */}
-      {ehOficina && (
-        <div className="flex items-center gap-2 mr-auto">
-          <span className="text-[10px] font-bold uppercase tracking-wide text-slate-300">Modelo de visualização</span>
-          <div className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-lg p-0.5 w-fit">
-            {MODOS_OFICINA.map(t => (
-              <button key={t.key} onClick={() => setModoOficina(t.key)}
-                className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${modoOficina === t.key ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'}`}>
-                {t.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-      {(visao === 'total' || ehBalcao || ehOficina || ehMargem) && (
-        <div className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-lg p-0.5 w-fit">
-          {[{ key: 'entreDatas', label: 'Metas e Real entre Datas' }, { key: 'noMes', label: 'Metas e Real no Mês' }].map(t => (
-            <button
-              key={t.key}
-              onClick={() => setAba(t.key)}
-              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${aba === t.key ? 'bg-amber-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'}`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-      )}
       </div>
+
+      {/* Abaixo da linha das abas (25/11/2026): à esquerda o Modelo de visualização (só Serviços); à direita Entre
+          Datas / No Mês (Total, Peças, Serviços e Margem) ou, na Evolução, Modo Visualização e Departamentos.
+          Botões e seletores com o visual das abas — caixa alta, cinza quando selecionado/escolhido. */}
+      {(visao === 'total' || ehBalcao || ehOficina || ehMargem || ehEvolucao) && (() => {
+        const botao = (ativo) => `inline-flex items-center gap-1.5 px-4 py-1.5 rounded-md border text-[11px] font-semibold uppercase transition-colors ${
+          ativo
+            ? 'bg-slate-600 border-slate-600 text-white shadow-sm'
+            : 'bg-gradient-to-b from-white to-slate-100 border-slate-300 text-slate-500 hover:text-slate-800 hover:to-slate-50'}`
+        // Seletor no mesmo cinza do botão selecionado (No Mês)
+        const seletor = 'h-8 pl-3 pr-8 rounded-md border border-slate-600 bg-slate-600 text-[11px] font-semibold uppercase text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-300/50 min-w-[180px] cursor-pointer'
+        const rotulo = 'text-[10px] font-bold uppercase tracking-wide text-slate-200'
+        return (
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            {ehOficina ? (
+              <div className="flex items-center gap-1" title="Modelo de visualização">
+                <span className={`${rotulo} mr-1`}>Modelo de visualização</span>
+                {MODOS_OFICINA.map(t => (
+                  <button key={t.key} type="button" onClick={() => setModoOficina(t.key)} className={botao(modoOficina === t.key)}>
+                    {t.key === 'tipoOs' ? <User className="h-3.5 w-3.5" /> : <Wrench className="h-3.5 w-3.5" />}{t.label}
+                  </button>
+                ))}
+              </div>
+            ) : <span />}
+            {ehEvolucao ? (
+              // Evolução: seletores do lado esquerdo da tela (25/11/2026)
+              <div className="flex flex-wrap items-center gap-2 order-first mr-auto">
+                <span className={rotulo}>Modo de Visualização</span>
+                <select value={evoIndicador} onChange={e => setEvoIndicador(e.target.value)} className={seletor}>
+                  {INDICADORES_EVOLUCAO.map(i => <option key={i.key} value={i.key} className="bg-white text-slate-800 normal-case">{i.label}</option>)}
+                </select>
+                <span className={`${rotulo} ml-2`}>Departamentos</span>
+                <select value={evoDepto} onChange={e => setEvoDepto(e.target.value)} className={seletor}>
+                  <option value="" className="bg-white text-slate-800 normal-case">Todos</option>
+                  {evoDeptosOpcoes.map(d => <option key={d.id} value={d.id} className="bg-white text-slate-800 normal-case">{d.nome}</option>)}
+                </select>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1" title="Metas e Real">
+                {[{ key: 'entreDatas', label: 'Entre Datas', icon: CalendarDays }, { key: 'noMes', label: 'No Mês', icon: Clock }].map(t => (
+                  <button
+                    key={t.key}
+                    type="button"
+                    onClick={() => setAba(t.key)}
+                    title={t.key === 'entreDatas' ? 'Metas e Real entre Datas' : 'Metas e Real no Mês'}
+                    className={botao(aba === t.key)}
+                  >
+                    <t.icon className="h-3.5 w-3.5" />{t.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )
+      })()}
 
       <TempoOficinaRegrasModal aberto={regrasTempoAberto} onFechar={() => setRegrasTempoAberto(false)}
         empresas={empresasVisiveis} onSalvo={() => setRegrasTempoVersao(n => n + 1)} />
@@ -1339,7 +1455,7 @@ export default function BiPossibilidades() {
         />
       ) : ehEvolucao ? (
         <EvolucaoVendas meses={evoMeses.meses} departamentosOpcoes={evoDeptosOpcoes}
-          indicador={evoIndicador} depto={evoDepto} carregando={carregandoEvo} />
+          indicador={evoIndicador} depto={evoDepto} carregando={carregandoEvo} metasPorMes={evoMetasPorMes} />
       ) : ehMargem ? (
         loading ? (
           <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-16 text-center text-slate-400 text-xs">Carregando...</div>
@@ -1427,10 +1543,15 @@ export default function BiPossibilidades() {
             const tk = (v) => pass > 0 ? (Number(v) || 0) / pass : 0
             // Metas: só as dos consultores da Oficina (são eles que planejam ticket e passagens), em qualquer modo.
             // Meta de ticket = meta de faturamento ÷ meta de passagens — mesma conta do Planejamento.
-            const mc = metasTodas.filter(r => r.tipo === 'consultor' && r.departamento_id === DEPTO_OFICINA)
-              .reduce((a, r) => { a.pass += r.metaPass; a.pecas += r.metaPecas; a.serv += r.metaServicos; a.total += r.metaTotal; return a }, { pass: 0, pecas: 0, serv: 0, total: 0 })
-            const metaTk = (v) => mc.pass > 0 ? fmtMoeda(v / mc.pass) : '—'
-            const metas = [metaTk(mc.total), metaTk(mc.pecas), metaTk(mc.serv), mc.pass > 0 ? Math.round(mc.pass).toLocaleString('pt-BR') : '—']
+            // Tickets planejados ponderados pelas passagens; passagens = meta ÷ ticket total, proporcional ao período.
+            const ini = Number(periodo.inicio.slice(0, 4)) * 100 + Number(periodo.inicio.slice(5, 7))
+            const fim = Number(periodo.fim.slice(0, 4)) * 100 + Number(periodo.fim.slice(5, 7))
+            const mc = resumoMetaPlanejada(metasPlanejadas.consultor
+              .filter(r => r.departamento_id === DEPTO_OFICINA && permiteId(r.empresa_id) && (empresaIds.length === 0 || empresaIds.includes(r.empresa_id)))
+              .filter(r => { const am = Number(r.ano) * 100 + Number(r.mes); return am >= ini && am <= fim })
+              .map(r => ({ ...r, _f: fracaoMetaPeriodo(r.empresa_id, Number(r.ano), Number(r.mes)) })))
+            const metaTk = (v) => v != null ? fmtMoeda(v) : '—'
+            const metas = [metaTk(mc.ticketTotal), metaTk(mc.ticketPecas), metaTk(mc.ticketServicos), mc.pass > 0 ? Math.round(mc.pass).toLocaleString('pt-BR') : '—']
             const cards = [
               { label: 'Ticket Médio Total', valor: fmtMoeda(tk(totalOficina.realTotal)), detalhe: `${fmtMoeda(totalOficina.realTotal)} ÷ ${pass.toLocaleString('pt-BR')} passagens`, Icone: Receipt, cor: 'border-l-indigo-500', fundo: 'bg-indigo-50 text-indigo-600', texto: 'text-indigo-700' },
               { label: 'Ticket Médio Peças', valor: fmtMoeda(tk(totalOficina.realPecas)), detalhe: `${fmtMoeda(totalOficina.realPecas)} ÷ ${pass.toLocaleString('pt-BR')} passagens`, Icone: Package, cor: 'border-l-sky-500', fundo: 'bg-sky-50 text-sky-600', texto: 'text-sky-700' },

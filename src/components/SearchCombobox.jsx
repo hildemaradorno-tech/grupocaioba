@@ -5,7 +5,8 @@ import { Search, ChevronDown, Check, X } from 'lucide-react'
 // Combobox de seleção única com busca — o <select> nativo fica difícil de navegar com muitas
 // opções (cargos, um por empresa; ou funcionários), então digitar filtra a lista em vez de
 // rolar tudo procurando. Genérico: quem usa passa como formatar rótulo/busca de cada opção.
-export function SearchCombobox({ value, onChange, opcoes, placeholder, emptyOptionLabel, searchPlaceholder, notFoundLabel, getLabel, getSearchText }) {
+// disabled / buttonClassName: opcionais (ex.: formulário de Custos de Projetos usa text-xs).
+export function SearchCombobox({ value, onChange, opcoes, placeholder, emptyOptionLabel, searchPlaceholder, notFoundLabel, getLabel, getSearchText, disabled = false, buttonClassName }) {
   const [aberto, setAberto] = useState(false)
   const [busca, setBusca] = useState('')
   const [pos, setPos] = useState(null)
@@ -23,6 +24,7 @@ export function SearchCombobox({ value, onChange, opcoes, placeholder, emptyOpti
   // Editar Usuário) — um painel "absolute" aqui dentro ficava cortado/deslocado por esse
   // scroll. Renderiza via portal em document.body, "fixed" na posição real do botão.
   const abrir = () => {
+    if (disabled) return
     if (!aberto && ref.current) {
       const r = ref.current.getBoundingClientRect()
       setPos({ top: r.bottom + 4, left: r.left, width: r.width })
@@ -53,7 +55,8 @@ export function SearchCombobox({ value, onChange, opcoes, placeholder, emptyOpti
       <button
         type="button"
         onClick={abrir}
-        className="w-full flex items-center justify-between gap-2 px-3 py-2 border border-slate-300 rounded-md bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        disabled={disabled}
+        className={buttonClassName || 'w-full flex items-center justify-between gap-2 px-3 py-2 border border-slate-300 rounded-md bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'}
       >
         <span className={`truncate ${selecionado ? 'text-slate-800' : 'text-slate-400'}`}>
           {selecionado ? getLabel(selecionado) : placeholder}

@@ -420,7 +420,7 @@ export const MENU_TREE = [
           { key: 'bi/planos-manutencao/ordens-servico', label: 'Aba Ordens de Serviço' },
         ],
       },
-      { key: 'bi/possibilidades', label: 'Possibilidades' },
+      { key: 'bi/possibilidades', label: 'Possibilidades - Sintonia do Dia' },
       ],
       },
     ],

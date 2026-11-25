@@ -206,11 +206,13 @@ export default function GarantiasDafManual() {
 
           <Secao id="regras" icon={Settings} titulo="Regras do Sistema">
             <p>
-              Abertas pela engrenagem <Btn icon={Settings}>Regras do sistema</Btn>. Valem para todos os usuários e todas as empresas,
-              no Controle e no Dashboard. Ao clicar na engrenagem abre uma lista com um item para cada aba —{' '}
-              <Btn icon={Activity}>Regras — Na Oficina</Btn>, <Btn icon={FileText}>Regras — Com Garantista</Btn> e{' '}
-              <Btn icon={DollarSign}>Regras — Títulos a Receber</Btn> —, cada um com a descrição do que controla. O item escolhido abre
-              uma janela só com as regras daquela aba (regra geral + regra por mês); <Btn>Salvar</Btn> grava e a tela já passa a usar o valor novo.
+              Abertas pela engrenagem <Btn icon={Settings}>Regras e metas</Btn>. Valem para todos os usuários e todas as empresas,
+              no Controle e no Dashboard. A engrenagem abre uma janela só, <strong>Regras e Metas</strong>, com uma aba para cada tela —{' '}
+              <Btn icon={Activity}>Na Oficina</Btn>, <Btn icon={FileText}>Com Garantista</Btn> e <Btn icon={DollarSign}>Títulos a Receber</Btn>{' '}
+              (abre na aba da tela em que você está). Cada aba junta os <strong>prazos</strong> daquela tela (regra geral + regra por mês) e as{' '}
+              <strong>metas</strong> dela: em Com Garantista, as metas do Tempo de garantia em aberto e das Recusas de garantia (Dashboard) e as
+              metas da Matriz de KPIs (Setor Garantia) por empresa; em Títulos a Receber, a meta da Matriz de títulos vencidos.{' '}
+              Um <Btn>Salvar</Btn> grava tudo e a tela já passa a usar os valores novos.
             </p>
             {carregando ? (
               <p className="flex items-center gap-2 text-slate-400"><Loader2 className="h-4 w-4 animate-spin" /> Carregando regras...</p>
@@ -289,7 +291,7 @@ export default function GarantiasDafManual() {
                 <Sub titulo="Indicador - Tempo de garantia em aberto (Dashboard)">
                   <p>
                     Média de dias em aberto das O.S. (da criação da O.S. até hoje), num medidor ao lado do card Total Aberto.
-                    A meta é cadastrada na engrenagem, em <Btn icon={Target}>Meta — Tempo de garantia em aberto</Btn>: meta anual e
+                    A meta é cadastrada na engrenagem, aba <Btn icon={FileText}>Com Garantista</Btn> › Metas dos indicadores do Dashboard: meta anual e
                     meta de cada mês, ano a ano. Vale a meta do mês atual; mês em branco usa a anual. O medidor fica verde até a meta
                     e vermelho acima dela.
                   </p>

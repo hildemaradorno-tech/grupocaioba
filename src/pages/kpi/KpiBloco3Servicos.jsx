@@ -198,7 +198,7 @@ function PessoaSelector({ lista, selecionado, onSelecionar, onLimpar, placeholde
 
 // Indicadores sem meta automática: o usuário digita a meta, só na visão Mensal (Consultor de
 // Serviços e Mecânico, que não têm fonte de meta pra Eficácia/Produtividade da Oficina).
-// SETOR GARANTIA não entra: a meta vem de Garantias DAF (engrenagem → Metas — Setor Garantia).
+// SETOR GARANTIA não entra: a meta vem de Garantias DAF (engrenagem → Regras e Metas › Metas da Matriz de KPIs).
 const INDICADORES_META_MANUAL = new Set(['Eficácia da Oficina', 'Produtividade da Oficina'])
 // Exceção: CONSULTOR DE SERVIÇOS › Produtividade da Oficina — a meta vem das Regras de Cores da tela
 // Pós-Vendas › Indicadores de Produtividade (limite inferior da faixa verde); não se digita aqui.
@@ -713,17 +713,14 @@ export default function KpiBloco3Servicos({ periodState: periodoMatriz = null })
       {/* Título, legenda e sub-abas fixos no topo ao rolar a página (como as abas da Matriz). */}
       <div className="sticky top-0 z-20 -mx-6 -mt-3 px-6 pt-3 space-y-5 bg-slate-50">
       <div>
-        {/* Legenda de cores na mesma linha do título, no lado direito da página. */}
-        <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-1">
-          <h1 className="text-xl font-bold text-slate-800">Indicadores de Serviços</h1>
-          <PeriodLegend />
-        </div>
+        <h1 className="text-xl font-bold text-slate-800">Indicadores de Serviços</h1>
       </div>
 
       {!periodoMatriz && <PeriodSelector state={periodState} inlineTrimestral hideLegend modes={MODES_COM_SEMANAL} />}
 
       {/* Sub-abas em destaque: fundo azul na ativa, cinza-azulado nas outras (diferente das abas da Matriz). */}
-      <div className="flex gap-1.5 border-b-2 border-blue-600">
+      {/* Legenda de cores na linha das sub-abas, à direita — padrão das abas da Matriz (25/11/2026) */}
+      <div className="flex items-center gap-1.5 border-b-2 border-blue-600">
         {ABAS_SERVICOS.map(a => (
           <button
             key={a.key}
@@ -739,6 +736,7 @@ export default function KpiBloco3Servicos({ periodState: periodoMatriz = null })
             {a.label}
           </button>
         ))}
+        <span className="ml-auto"><PeriodLegend /></span>
       </div>
       </div>
 

@@ -455,7 +455,7 @@ export default function GarantiasDafTitulos({ onLastModified, slotAcoes } = {}) 
               <RefreshCw className={`h-3.5 w-3.5 ${titulosRefreshing ? 'animate-spin' : ''}`} />
             </button>
             {canRegras && (
-              <EngrenagemRegras usuario={user?.email}
+              <EngrenagemRegras usuario={user?.email} abaInicial="titulos"
                 onSalvo={(cfg, meses) => { if (cfg?.dias_nf_envio) setDiasNfEnvio(cfg.dias_nf_envio); if (meses) setRegrasMes(meses) }} />
             )}
             <button
