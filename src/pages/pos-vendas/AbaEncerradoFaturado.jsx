@@ -17,10 +17,11 @@
  */
 import React, { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Ban, ChevronDown, ChevronRight, Clock, List, Receipt, Info, Search, Target, X } from 'lucide-react'
+import { Ban, ChevronDown, ChevronRight, Clock, List, Receipt, Info, Search, X } from 'lucide-react'
 import { Bar, BarChart, CartesianGrid, Cell, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { supabase } from '../../services/supabaseClient'
 import AbaNaoCobrado from './AbaNaoCobrado'
+import { botaoBi, rotuloBi } from './estiloBi'
 import { semAcento, fmtH, fmtPct, fmtR$ } from './produtividadeCalculos'
 
 const NAO_PESSOA = /produtivo\s+n[aã]o\s+associado|^\s*sem\s+t[eé]cnico\s*$/i
@@ -69,21 +70,6 @@ const vazio = (cats) => Object.fromEntries(cats.map(([k]) => [k, { h: 0, vl: 0 }
 // Tipo de O.S. interno (agrupa as O.S. abaixo do mecânico — pedido do usuário 17/11/2026).
 // Trucks: dim_tipos_os (sigla → tipo_interno, ex.: Cliente, Garantia, TruckPag, Interna Usados).
 // Motos: o MicroWork manda o tipo por extenso e não há cadastro — agrupado pelo começo do nome.
-// Objetivo de cada Modo Visualização da Análise de Horas — texto do usuário (25/11/2026), mostrado abaixo dos botões.
-const OBJETIVOS = {
-  enc: [
-    'Permite acompanhar todas as horas encerradas dentro do período selecionado no filtro de datas.',
-    'Demonstra detalhadamente o destino dessas horas: o que foi faturado no próprio mês, o que foi faturado em mês posterior ao encerramento, o que consta como "Não cobrado" e o que ainda falta faturar.',
-  ],
-  fat: [
-    'Apresenta o consolidado de todas as horas faturadas dentro do período selecionado.',
-    'Permite identificar a origem desse faturamento, evidenciando quais horas foram encerradas no próprio mês e quais são provenientes de meses anteriores.',
-  ],
-  nc: [
-    'Focado na auditoria e controle de perdas, permite identificar exatamente onde estão as horas apontadas que não geraram receita ou não foram faturadas internamente.',
-  ],
-}
-
 export function tipoInternoMotos(t) {
   const u = String(t || '').toUpperCase()
   if (!u) return 'Sem tipo'
@@ -436,7 +422,7 @@ export default function AbaEncerradoFaturado({ periodo, noEscopo, excluidos, slo
   // Campo de busca por nº da O.S. — logo abaixo das abas, no começo da aba (pedido do usuário 18/11/2026).
   const campoBusca = (
       <div className="flex items-center">
-        <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg px-2 h-[30px]">
+        <div className="flex items-center gap-1 bg-white border border-slate-300 rounded-md px-2 h-8">
           <Search className="h-3.5 w-3.5 text-slate-400" />
           <input value={busca} onChange={e => setBusca(e.target.value.replace(/\D/g, ''))} placeholder="Buscar nº da O.S." inputMode="numeric"
             className="w-32 text-[11px] outline-none bg-transparent" aria-label="Buscar número da O.S." />
@@ -447,13 +433,13 @@ export default function AbaEncerradoFaturado({ periodo, noEscopo, excluidos, slo
 
   // Mesmo modelo do "Modo Visualização" do Resumo: rótulo em cima + botões com ícone (pedido do usuário 18/11/2026).
   const botoesSentido = (
-      <div className="flex flex-col gap-1">
-        <label className="text-[10px] font-bold text-slate-500 uppercase">Modo Visualização</label>
-        <div className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-lg p-0.5 w-fit">
+      <div className="flex items-center gap-1">
+        <label className={`${rotuloBi} mr-1`}>Modo Visualização</label>
+        <div className="flex items-center gap-1">
           {[['enc', 'Encerrado', Clock], ['fat', 'Faturado', Receipt], ['nc', 'Não cobrado', Ban]].map(([v, r, Ic]) => (
             <button key={v} type="button" onClick={() => { setSentido(v); setAberto(new Set()); setFiltro(''); setFiltroTipo(''); setFiltroMes('') }}
-              className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-[11px] font-semibold ${sentido === v ? 'bg-slate-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}>
-              <Ic className="h-3.5 w-3.5" /> {r}
+              className={botaoBi(sentido === v)}>
+              <Ic className="h-3.5 w-3.5" />{r}
             </button>
           ))}
         </div>
@@ -463,22 +449,15 @@ export default function AbaEncerradoFaturado({ periodo, noEscopo, excluidos, slo
   return (
     <div ref={raizRef} className="flex flex-col gap-3">
       {/* Botões Encerrado | Faturado | Não cobrado antes da busca de O.S., na mesma linha (pedido do usuário 18/11/2026) */}
-      <div className="flex flex-wrap items-end gap-3">{botoesSentido}{campoBusca}</div>
-      <div className="flex items-start gap-2 bg-sky-50 border border-sky-200 rounded-lg px-3 py-2">
-        <Target className="h-3.5 w-3.5 text-sky-600 mt-0.5 shrink-0" />
-        <div className="text-[11px] text-slate-700">
-          <span className="font-bold text-sky-800">Objetivo: </span>
-          {OBJETIVOS[sentido].map((t, i) => <p key={i} className={i ? 'mt-0.5' : 'inline'}>{t}</p>)}
-        </div>
-      </div>
+      <div className="flex flex-wrap items-center gap-4">{botoesSentido}{campoBusca}</div>
       {/* ⓘ com a explicação retirado por enquanto (pedido do usuário 17/11/2026) — componente Info2 continua no arquivo */}
       {/* Botão "Não cobrado" (18/11/2026): tela própria (AbaNaoCobrado) com o ROF101 — no lugar dos quadros abaixo */}
       {sentido === 'nc' ? (
         <AbaNaoCobrado periodo={periodo} noEscopo={noEscopo} excluidos={excluidos} tipoDe={tipoDe} buscaOs={buscaOs} recarga={recarga} />
       ) : (<>
 
-      {erro && <p className="text-[11px] text-red-600 font-semibold">{erro}</p>}
-      {carregando && <p className="text-[11px] text-slate-500">Carregando…</p>}
+      {erro && <p className="text-[11px] text-red-400 font-semibold">{erro}</p>}
+      {carregando && <p className="text-[11px] text-slate-400">Carregando…</p>}
 
       {/* Cards: total + cada categoria (horas, valor e % das horas) */}
       <div className={`grid grid-cols-2 gap-2 ${sentido === 'fat' ? 'md:grid-cols-4' : 'md:grid-cols-5'}`}>

@@ -21,6 +21,9 @@ const QUADRO_CONSULTOR = 'CONSULTOR DE SERVIÇOS'
 const QUADRO_MECANICO  = 'MECÂNICO'
 const QUADRO_OFICINA   = 'SETOR DE MECÂNICA'
 const QUADRO_CHEFE_OFICINA = 'CHEFE DE OFICINA'
+// Aba Individual (25/11/2026): cargo de Chapadão do Sul, fixo nela (sem seletor) — mesmas contas do Chefe de Oficina.
+const QUADRO_MEC_LIDER = 'MECÂNICO SÊNIOR LÍDER'
+const EMPRESA_MEC_LIDER = 'CHAPADÃO DO SUL'
 const QUADRO_FUNILARIA = 'SETOR FUNILARIA/PINTURA'
 const QUADRO_GARANTIA  = 'SETOR GARANTIA'
 const QUADRO_PLANOS    = 'CONSULTOR DE PLANO DE MANUTENÇÃO'
@@ -207,6 +210,7 @@ const INDICADORES_META_MANUAL = new Set(['Eficácia da Oficina', 'Produtividade 
 const metaDeOutraTela = (tituloGerente, indicador) => (tituloGerente === 'CONSULTOR DE SERVIÇOS' && indicador === 'Produtividade da Oficina')
   || (tituloGerente === 'SETOR DE MECÂNICA' && indicador === 'Eficácia da Oficina')
   || (tituloGerente === 'CHEFE DE OFICINA' && ['Eficácia da Oficina', 'Eficácia %'].includes(indicador))
+  || (tituloGerente === 'MECÂNICO SÊNIOR LÍDER' && indicador === 'Eficácia da Oficina')
   || (tituloGerente === 'MECÂNICO' && ['Eficácia da Oficina', 'Eficácia %', 'Produtividade da Oficina', 'Eficiência %'].includes(indicador))
 
 
@@ -566,7 +570,8 @@ function ServicosQuadros({ year, activePeriods, mesTotalKey, somenteLeitura = fa
     empresaGarantia: empGarantia || undefined,
     // Atalho do backend (não monta Consultor/Mecânico): só o Consultor de Plano, ou os quadros da aba
     // Setores (por empresa + Agendamento + Consultor de Plano).
-    apenas: temPessoas ? undefined : apenas === QUADRO_PLANOS ? QUADRO_PLANOS : QUADRO_OFICINA,
+    // Mecânico Sênior Líder sozinho (pop-up da Campanha): atalho próprio do backend (25/11/2026).
+    apenas: temPessoas ? undefined : (apenas === QUADRO_PLANOS || apenas === QUADRO_MEC_LIDER) ? apenas : QUADRO_OFICINA,
   })
 
   // Overlay otimista: aplicado por cima do que veio do backend assim que o usuário
@@ -630,6 +635,7 @@ function ServicosQuadros({ year, activePeriods, mesTotalKey, somenteLeitura = fa
           const ehChefeOficina  = quadro.tituloGerente === QUADRO_CHEFE_OFICINA
           const ehFunilaria     = quadro.tituloGerente === QUADRO_FUNILARIA
           const ehGarantia      = quadro.tituloGerente === QUADRO_GARANTIA
+          const ehMecLider      = quadro.tituloGerente === QUADRO_MEC_LIDER
           const ehPorEmpresa    = ehOficina || ehChefeOficina || ehFunilaria || ehGarantia
           // Setores: sem escolha mostra o total de todas as empresas; Chefe de Oficina e Setor de Mecânica
           // exigem a empresa (sem "Todas as empresas").
@@ -659,8 +665,10 @@ function ServicosQuadros({ year, activePeriods, mesTotalKey, somenteLeitura = fa
               msgOcultar={!atualizado ? 'Carregando…' : null /* o aviso ("Selecione…para ver os valores") vai dentro do seletor */}
               icon={Wrench}
               // Empresa escolhida no quadro (Setores): o botão de origem abre a tela já com ela marcada.
-              empresaLink={ehFunilaria ? EMPRESA_FUNILARIA : ehChefeOficina && doCabecalho ? (casasChefe.length === 1 ? casasChefe[0] : null) : doCabecalho ? (daf.efetivas.length === 1 ? daf.efetivas[0] : null) : ehPorEmpresa ? filtro?.aplicado : null}
-              pessoaSelector={doCabecalho ? (
+              empresaLink={ehFunilaria || ehMecLider ? (ehMecLider ? EMPRESA_MEC_LIDER : EMPRESA_FUNILARIA) : ehChefeOficina && doCabecalho ? (casasChefe.length === 1 ? casasChefe[0] : null) : doCabecalho ? (daf.efetivas.length === 1 ? daf.efetivas[0] : null) : ehPorEmpresa ? filtro?.aplicado : null}
+              pessoaSelector={ehMecLider ? (
+                <span className="text-[11px] font-medium text-slate-500">{rotuloEmpresa(EMPRESA_MEC_LIDER)}</span>
+              ) : doCabecalho ? (
                 // No lugar do seletor: de quais empresas são os valores (o seletor fica no cabeçalho da Matriz).
                 <span className="text-[11px] font-medium text-slate-500">
                   {ehFunilaria ? rotuloEmpresa(EMPRESA_FUNILARIA) : ehChefeOficina ? casasChefe.map(rotuloEmpresa).join(' + ') : daf.todas ? 'Todas as empresas' : daf.efetivas.map(rotuloEmpresa).join(' + ')}
@@ -694,7 +702,7 @@ const ABAS_SERVICOS = [
   { key: 'gerentes', label: 'Gerentes' },
   { key: 'setores',  label: 'Setores',  quadros: [QUADRO_OFICINA, QUADRO_FUNILARIA, QUADRO_GARANTIA, QUADRO_AGENDAMENTO, QUADRO_PLANOS] },
   // Aba "Individual" (era "Equipe" até 14/11/2026; a key continua 'equipe').
-  { key: 'equipe',   label: 'Individual', quadros: [QUADRO_CONSULTOR, QUADRO_MECANICO, QUADRO_CHEFE_OFICINA] },
+  { key: 'equipe',   label: 'Individual', quadros: [QUADRO_CONSULTOR, QUADRO_MECANICO, QUADRO_CHEFE_OFICINA, QUADRO_MEC_LIDER] },
 ]
 
 export default function KpiBloco3Servicos({ periodState: periodoMatriz = null }) {
@@ -754,7 +762,7 @@ export default function KpiBloco3Servicos({ periodState: periodoMatriz = null })
 export function Bloco3ServicosVisualizacao({ ano, mes, quadro = null, pessoas = null, empresa = null }) {
   const periodState = usePeriodSelector(null, 'semanal')
   const { activePeriods, setWeekMonth, toggleS } = periodState
-  const doServicos = [QUADRO_CONSULTOR, QUADRO_MECANICO, QUADRO_OFICINA, QUADRO_CHEFE_OFICINA, QUADRO_FUNILARIA, QUADRO_GARANTIA, QUADRO_PLANOS].includes(quadro)
+  const doServicos = [QUADRO_CONSULTOR, QUADRO_MECANICO, QUADRO_OFICINA, QUADRO_CHEFE_OFICINA, QUADRO_MEC_LIDER, QUADRO_FUNILARIA, QUADRO_GARANTIA, QUADRO_PLANOS].includes(quadro)
   useEffect(() => {
     if (mes >= 1 && mes <= 12) {
       setWeekMonth(`m${String(mes).padStart(2, '0')}`) // marca as semanas do mês (e desmarca o Total)

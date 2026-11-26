@@ -459,6 +459,18 @@ const BLOCO_SERVICOS_TEMPLATE = [
     ],
   },
   {
+    // MECÂNICO SÊNIOR LÍDER (25/11/2026, aba Individual): cargo de Chapadão do Sul — fixo nela, sem seletor.
+    // Faturamento Total Oficina (Peças + Serviços) = linha OFICINA da Possibilidades em Chapadão, com a meta aprovada da
+    // oficina da empresa — mesma conta do GERENTE FILIAL - CHAPADÃO DO SUL (25/11/2026; antes, setor Mecânica).
+    // Eficácia = total da empresa na tela Indicadores de Produtividade (meta das Regras de Cores).
+    tituloGerente: 'MECÂNICO SÊNIOR LÍDER',
+    cor: 'purple',
+    kpis: [
+      { id: 1, indicador: 'Faturamento Total Oficina (Peças + Serviços)', orientacao: '>', metrica: 'R$', metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+      { id: 2, indicador: 'Eficácia da Oficina',       orientacao: '>', metrica: '%',  metaAnual: null, pesoObj: null, q1: np, q2: np, q3: np, q4: np, fy: np },
+    ],
+  },
+  {
     // Total da oficina (todos os mecânicos) — sem seletor de pessoa; não muda se um mecânico
     // for selecionado no quadro MECÂNICO acima (ver montarOficinaBloco3Servicos).
     tituloGerente: 'SETOR DE MECÂNICA',
@@ -1113,6 +1125,9 @@ const baseAgendamentoServicos = (year, { refresh = false, incluirHoje = false } 
   obterBaseBloco3Servicos(`bloco3-servicos-agendamento-v3|${year}${incluirHoje ? '|hoje' : ''}`, () => getIndicadoresAgendamento(year, { incluirHoje }), { refresh, checarMetas: false })
 
 const QUADROS_EMPRESA_SERVICOS = ['SETOR DE MECÂNICA', 'CHEFE DE OFICINA', 'SETOR FUNILARIA/PINTURA', 'SETOR GARANTIA']
+// Aba Individual › MECÂNICO SÊNIOR LÍDER: cargo só de Chapadão do Sul (25/11/2026).
+const QUADRO_MEC_LIDER = 'MECÂNICO SÊNIOR LÍDER'
+const CASA_MEC_LIDER = 'CHAPADÃO DO SUL'
 const QUADRO_PLANOS_SERVICOS = 'CONSULTOR DE PLANO DE MANUTENÇÃO'
 const QUADRO_AGENDAMENTO_SERVICOS = 'SETOR DE AGENDAMENTO DE SERVIÇOS' // sem seletor; vem junto com os quadros por empresa
 
@@ -1252,7 +1267,9 @@ async function quadrosBloco3Servicos({ year, consultor = null, mecanico = null, 
   const soPlanos = apenas === QUADRO_PLANOS
   // ?apenas=SETOR DE AGENDAMENTO DE SERVIÇOS (Campanha Pós-Venda) → só ele.
   const soAgendamento = apenas === QUADRO_AGENDAMENTO
-  const semBase = soOficina || soPlanos || soAgendamento
+  // ?apenas=MECÂNICO SÊNIOR LÍDER (Campanha Pós-Venda, 25/11/2026) → só ele.
+  const soLider = apenas === QUADRO_MEC_LIDER
+  const semBase = soOficina || soPlanos || soAgendamento || soLider
   const opts = { refresh, fundo }
   if (refresh) limparCachePossibilidades()
 
@@ -1279,10 +1296,10 @@ async function quadrosBloco3Servicos({ year, consultor = null, mecanico = null, 
     !empresaGarantia ? null : multiGarantia
       ? Promise.all(casasGarantia.map(c => getIndicadoresGarantia(year, c, { incluirHoje }).catch(() => null))).then(somarGarantias)
       : getIndicadoresGarantia(year, semTodas(empresaGarantia), { incluirHoje }).catch(() => null),
-    soAgendamento ? null : basePlanosServicos(year, { ...opts, incluirHoje }) // aba Setores (soOficina) também mostra o Consultor de Plano
+    (soAgendamento || soLider) ? null : basePlanosServicos(year, { ...opts, incluirHoje }) // aba Setores (soOficina) também mostra o Consultor de Plano
       .then(meses => getIndicadoresPlanos(year, meses))
       .catch(err => { console.error('[bloco3-servicos] planos:', err.message); return null }),
-    soPlanos ? null : baseAgendamentoServicos(year, { ...opts, incluirHoje })
+    (soPlanos || soLider) ? null : baseAgendamentoServicos(year, { ...opts, incluirHoje })
       .then(comMetasAtuaisAgendamento)
       .catch(err => { console.error('[bloco3-servicos] agendamento:', err.message); return null }),
     // Auditoria O.S. Aberta para o CONSULTOR DE SERVIÇOS (só quando o quadro dele é montado).
@@ -1308,6 +1325,16 @@ async function quadrosBloco3Servicos({ year, consultor = null, mecanico = null, 
       if (multi && !efProdCasa[param]) efProdCasa[param] = await getEficaciaProdutividadeCasas(year, casas, { incluirHoje }).catch(() => null)
     }
   }
+  // MECÂNICO SÊNIOR LÍDER (Chapadão do Sul): faturamento da linha OFICINA + meta da oficina + Eficácia da empresa.
+  let lider = null
+  if (!semBase || soLider) {
+    const [fat, meta, ef] = await Promise.all([
+      getOficinaPorCasa(year, { incluirHoje }).then(m => m?.[CASA_MEC_LIDER]?.fatTotal || null).catch(err => { console.error('[bloco3-servicos] mecânico líder (faturamento):', err.message); return null }),
+      getMetaOficinaPeriodos(year, { empresaNome: EMPRESA_KEY_TO_RECEP[CASA_MEC_LIDER] }).catch(() => null),
+      efProdCasa ? efProdCasa : getEficaciaProdutividadePorCasa(year, { incluirHoje }).catch(() => null),
+    ])
+    lider = { fat, meta, eficacia: ef?.[CASA_MEC_LIDER]?.eficacia || null }
+  }
   if (base && quadroConsultor) base = [quadroConsultor, ...base]
   if (base) base = await comMetaMecanico(base, year, mecanico)
   const extras = mergeBlocoServicos(BLOCO_SERVICOS_TEMPLATE.filter(q => QUADROS_EMPRESA.includes(q.tituloGerente) || q.tituloGerente === QUADRO_PLANOS || q.tituloGerente === QUADRO_AGENDAMENTO),
@@ -1316,12 +1343,17 @@ async function quadrosBloco3Servicos({ year, consultor = null, mecanico = null, 
   // A base guardada em cache pode ser de antes de um quadro novo existir: segue a ordem do template.
   const baseMap = Object.fromEntries((base || []).map(q => [q.tituloGerente, q]))
   const montados = BLOCO_SERVICOS_TEMPLATE
-    .filter(q => base ? true : soPlanos ? q.tituloGerente === QUADRO_PLANOS : soAgendamento ? q.tituloGerente === QUADRO_AGENDAMENTO
+    .filter(q => base ? true : soLider ? q.tituloGerente === QUADRO_MEC_LIDER : soPlanos ? q.tituloGerente === QUADRO_PLANOS : soAgendamento ? q.tituloGerente === QUADRO_AGENDAMENTO
       : QUADROS_EMPRESA.includes(q.tituloGerente) || q.tituloGerente === QUADRO_AGENDAMENTO || q.tituloGerente === QUADRO_PLANOS)
     .map(q => porTitulo[q.tituloGerente] ?? baseMap[q.tituloGerente] ?? q)
     .map(q => comAuditoriaConsultor(q, auditoriaOs, consultor))
     .map(q => comProdutividadeConsultor(q, prodConsultores, consultor))
     .map(q => comPossibilidades(q, possibilidades))
+    .map(q => {
+      if (q.tituloGerente !== QUADRO_MEC_LIDER || !lider) return q
+      const out = comRealizadoDe(q, { 'Faturamento Total Oficina (Peças + Serviços)': lider.fat || {}, 'Eficácia da Oficina': lider.eficacia || {} })
+      return { ...out, kpis: out.kpis.map(k => (k.id === 1 && lider.meta ? injectMeta(k, lider.meta) : k)) }
+    })
     .map(q => {
       // SETOR DE MECÂNICA e CHEFE DE OFICINA › Eficácia: total da empresa escolhida (tela Indicadores de Produtividade).
       const casa = q.tituloGerente === 'SETOR DE MECÂNICA' ? (empresaOficina || 'TODAS') : q.tituloGerente === 'CHEFE DE OFICINA' ? empresaChefeOficina : null
@@ -1356,7 +1388,7 @@ async function quadrosBloco3Servicos({ year, consultor = null, mecanico = null, 
   // SETOR DE MECÂNICA › Eficácia da Oficina: meta das Regras de Cores (Eficácia) da tela Indicadores de Produtividade.
   // Também o CHEFE DE OFICINA › Eficácia da Oficina (14/11/2026).
   const metaEf = await metaProdutividadeRegrasCor(year, 'eficacia').catch(() => null)
-  for (const titulo of ['SETOR DE MECÂNICA', 'CHEFE DE OFICINA']) {
+  for (const titulo of ['SETOR DE MECÂNICA', 'CHEFE DE OFICINA', QUADRO_MEC_LIDER]) {
     const kEf = quadros.find(q => q.tituloGerente === titulo)?.kpis.find(k => k.indicador === 'Eficácia da Oficina' || k.indicador === 'Eficácia %')
     if (kEf && metaEf) metasManuaisServ[`${titulo}|${kEf.id}`] = metaEf
   }

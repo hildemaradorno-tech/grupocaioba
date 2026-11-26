@@ -91,10 +91,10 @@ const REGRAS_CAMPANHA = [
   'Regras da campanha:',
   '• Um arquivo RCR038 por execução de campanha e unidade, ex: "... CGR 20261019.xls"',
   '• A data da campanha vem do nome do arquivo (a planilha não traz data); o filtro Data vale para ela',
-  '• Sem filtro de Empresas: o relatório da campanha não identifica a empresa',
+  '• Filtro Empresas: pela unidade da campanha — a sigla no nome do arquivo RCR038 (CGR Campo Grande, DOU Dourados, TLG Três Lagoas, CPD Chapadão); as linhas do RCR038 não trazem a empresa. O agendamento conta na unidade da campanha, mesmo se foi feito em outra empresa',
   '• Cada contato gerado (ID_Campanha_Execucao + id_atendimento) conta uma vez; o mesmo veículo em outra campanha conta de novo (ex: as campanhas 165 e 168 de 03/10 são a mesma lista de 63 veículos)',
   '• O agendamento conta UMA vez: se o mesmo veículo está em mais de uma campanha e o agendamento do ROF037 serve para as duas, ele conta só na 1ª campanha (data mais antiga; mesma data, menor número de campanha)',
-  '• As outras linhas desse veículo (nas outras campanhas) contam como Não agendados, com o motivo de encerramento delas no RCR017 (ex: S03 ou Agendamento cancelado); na conferência linha a linha, a coluna Veículo agendado na mostra a campanha onde o agendamento contou',
+  '• As outras linhas desse veículo (nas outras campanhas) contam como Não agendados, com o motivo de encerramento delas no RCR017 (ex: S03 ou Agendamento cancelado); na aba Contatos Gerados, a coluna Veículo agendado na mostra a campanha onde o agendamento contou',
   '• Não agendados = Contatos gerados − Contatos agendados',
   '• O Sintético do Dealer.net conta o agendamento em cada atendimento (ex: outubro — 8 no Dealer.net × 5 aqui; os outros 3 atendimentos dos mesmos veículos estão em Não agendados)',
 ].join('\n')
@@ -399,7 +399,7 @@ ${COL_AGEND}`,
   listaFaltaContatar: {
     objetivo: 'Listar os contatos a realizar, para a equipe da Mesa de Agendamento trabalhar.',
     fonte: `${ARQ_CAMPANHA}\n${ARQ_AGEND}\n${ARQ_CONTATO}`,
-    calculo: 'Os mesmos clientes do card Contatos a realizar, um por linha, da campanha mais antiga para a mais recente. Colunas: Data da campanha (nome do arquivo RCR038), Campanha (ID_Campanha_Execucao), Atendimento (id_atendimento), Cliente (nome), Chassi, Contato (Sem contato / Já contatado, sem resultado) e Próximo contato (data do contato registrado no RCR017 — AtendimentoContato_Data — para quem já foi contatado e ainda está sem resultado; vazio = ainda sem contato).',
+    calculo: 'Os mesmos clientes do card Contatos a realizar, um por linha, da campanha mais antiga para a mais recente. Colunas: Data da campanha (nome do arquivo RCR038), Campanha (ID_Campanha_Execucao), Atendimento (id_atendimento), Cliente (nome), Chassi, Operador (Atendimento_UsuarioNom do RCR017 — quem registrou o contato; vazio = ainda sem contato), Contato (Sem contato / Já contatado, sem resultado) e Próximo contato (data do contato registrado no RCR017 — AtendimentoContato_Data — para quem já foi contatado e ainda está sem resultado; vazio = ainda sem contato).',
     filtros: `${REGRAS_CAMPANHA}\n${REGRAS_AGENDADO}\n${REGRAS_CONTATO}`,
     colunas: `${COL_CAMPANHA}\n${COL_AGEND_CAMPANHA}\n${COL_CONTATO}`,
   },
@@ -443,14 +443,16 @@ const ALERTA_PENDENTES = {
   ],
 }
 
-// Objetivo de cada aba: aparece abaixo das abas no BI e como 1ª seção de cada aba no manual.
+// Objetivo de cada aba: 1ª seção de cada aba no manual (no BI saiu de baixo das abas a pedido do usuário, 25/11/2026).
 export const OBJETIVO_ABAS = {
+  'Campanhas Geradas': 'Mostra os números da aba Por Campanhas separados por data de geração das campanhas, um dia por linha, com o Total no fim igual aos cards.',
+  'Contatos Gerados': 'Lista os contatos gerados pelas campanhas do período, um por linha, com o que foi encontrado em cada relatório (RCR038, RCR017 e ROF037), para conferir os números da aba Por Campanhas.',
   'Por Data da O.S.': 'Análise com base na data de abertura da ordem de serviço: considera as ordens de serviço abertas no período e identifica quantas tiveram origem em agendamento.',
   'Por Data Agendamento': 'Análise com base na data do agendamento: considera os agendamentos programados para o período e apresenta o seu desfecho.',
   'Por Campanhas': 'Análise com base na data de execução da campanha: considera as campanhas de ativação do CRM executadas no período e mostra quantos clientes agendaram, por que os demais não agendaram e quantos ainda falta contatar.',
 }
 
-// Tabela do ícone na linha das abas, à direita (aba Por Campanhas).
+// Aba Campanhas Geradas (antiga tabela Campanhas por data de geração da aba Por Campanhas).
 const TABELA_CAMPANHAS = {
   itens: [
     ['O que mostra', 'Uma linha por data de geração (todas as campanhas do dia juntas), da mais recente para a mais antiga, e uma linha de Total no fim.'],
@@ -459,16 +461,15 @@ const TABELA_CAMPANHAS = {
   ],
 }
 
-// Pop-up do ícone ✓ (Conferência linha a linha) na linha das abas, à direita (aba Por Campanhas).
+// Aba Contatos Gerados (antiga Conferência linha a linha da aba Por Campanhas).
 const TABELA_CONFERENCIA = {
   itens: [
-    ['Para que serve', 'Conferir de onde sai cada número da aba: um contato gerado (atendimento) por linha, com o que foi encontrado em cada relatório. A soma das linhas de cada situação é igual ao card.'],
+    ['Para que serve', 'Conferir de onde sai cada número da aba Por Campanhas: um contato gerado (atendimento) por linha, com o que foi encontrado em cada relatório. A soma das linhas de cada situação é igual ao card.'],
     ['Filtros', 'Todos, Contato agendado, Contato encerrado e Contato a realizar (quantidade de cada um no botão = cards), e busca por cliente, chassi, atendimento, campanha ou operador. Vale o filtro Data da tela.'],
     ['Colunas do RCR038', 'Data da campanha (nome do arquivo), Campanha (ID_Campanha_Execucao), Atendimento (id_atendimento), Cód. cliente (ID_Cliente), Cliente (nome), Chassi.'],
     ['Colunas do RCR017 (pelo atendimento)', 'Contato (Encerrado / registrado, Já contatado sem resultado, Sem contato), Motivo de encerramento (o do contato mais recente), 1º contato e Último contato (AtendimentoContato_Data), Nº contatos (linhas do atendimento), Operador (Atendimento_UsuarioNom). Vazias = atendimento não está no RCR017.'],
-    ['Colunas do ROF037 (pelo chassi + cliente)', 'Agendamento criado em (AgendamentoHistorico_Data), Dias após a campanha (criação − data da campanha, até 30), Agendado para (DtAgendamento), Tipo, Status, O.S. (OSNumero) e Resultado (Compareceu, A comparecer, Não compareceu (No-show)). Vazias = não agendado. Veículo agendado na = quando o mesmo veículo foi agendado por outra campanha, mostra a campanha e o atendimento onde o agendamento contou (esta linha fica como não agendada).'],
+    ['Colunas do ROF037 (pelo chassi + cliente)', 'Empresa do agendamento (EmpresaNome — onde o cliente foi agendado), Agendamento criado em (AgendamentoHistorico_Data), Dias após a campanha (criação − data da campanha, até 30), Agendado para (DtAgendamento), Tipo, Status, O.S. (OSNumero) e Resultado (Compareceu, A comparecer, Não compareceu (No-show)). Vazias = não agendado. Veículo agendado na = quando o mesmo veículo foi agendado por outra campanha, mostra a campanha e o atendimento onde o agendamento contou (esta linha fica como não agendada).'],
     ['Situação', 'Contato agendado (achou agendamento no ROF037 — vale mesmo se o RCR017 tiver motivo de recusa) · Contato encerrado (não agendado com motivo no RCR017) · Contato a realizar (não agendado sem motivo).'],
-    ['Exportar Excel', 'Baixa as linhas do filtro atual, com as mesmas colunas, para conferir nos relatórios do Dealer.net.'],
   ],
 }
 
@@ -490,7 +491,6 @@ const TABELA_CONSULTA_AGEND = {
     ['Desfecho', 'Comparecido (tem O.S.) · No-show (status NSW) · A comparecer (sem O.S. e sem no-show) · Cancelado (CAN) — as mesmas regras dos cards.'],
     ['Veio de campanha?', 'Só para os Ativos. Sim = o mesmo chassi + cliente (Chassi + CodCliente = Chassi + ID_Cliente) está num RCR038 e o agendamento foi criado da data da campanha até 30 dias depois — a mesma regra do Agendado da aba Por Campanhas, olhando ao contrário. Colunas Campanha(s) (data), Atendimento(s), Dias após a campanha e Nº de campanhas vêm do RCR038; o veículo pode estar em mais de uma campanha dentro dos 30 dias, e aí todas aparecem, cada uma com a sua data. Campanhas de meses anteriores contam (ex: agendamento de outubro criado por campanha de setembro).'],
     ['Diferença com a aba Por Campanhas', 'Aqui o filtro Data é a data do AGENDAMENTO; na aba Por Campanhas é a data da CAMPANHA. Por isso aqui entram agendamentos de campanhas de meses anteriores. As duas contam cada agendamento uma vez (ex: outubro — 5 agendados das campanhas de outubro; aqui 15 ativos de campanha agendados para outubro, contando campanhas de setembro).'],
-    ['Exportar Excel', 'Baixa as linhas do filtro atual, com as mesmas colunas.'],
     ['Por que o ROF037 e não o RCR014', 'O ROF037 traz o tipo do agendamento (Ativo/Receptivo/Presencial/Internet), o status (inclusive no-show e cancelado), a empresa, o agendador e o número da O.S.; o RCR014 não traz tipo, status nem empresa.'],
   ],
 }
@@ -505,7 +505,6 @@ const TABELA_CONSULTA_OS = {
     ['Colunas do ROF037', 'Veio de agendamento? = Sim quando a O.S. está no ROF037 (Empresa + OS Numero = EmpresaNome + OSNumero) · Tipo do agendamento (AgendamentoTipo) e Agendamento criado em (AgendamentoHistorico_Data) desse agendamento.'],
     ['Veio de campanha? (RCR038)', 'Só para O.S. de agendamento Ativo. Sim = o Chassi + CodCliente do agendamento do ROF037 está num RCR038 (Chassi + ID_Cliente) e o agendamento foi criado da data da campanha até 30 dias depois — a mesma regra da aba Por Campanhas. Campanha(s) (data), Atendimento(s) e Dias após a campanha vêm do RCR038; se o veículo estava em mais de uma campanha na janela, todas aparecem. Filtro próprio: Agendamento ativo de campanha.'],
     ['Estava no agendamento, não aberta por ele', 'O.S. que NÃO está no ROF037, mas o veículo (chassi) tinha agendamento no ROF037 (sem CAN) perto da abertura: (1) 2ª O.S. da mesma visita — no mesmo dia, o agendamento abriu outra O.S.; (2) agendamento no mesmo dia sem ligação com esta O.S.; (3) agendamento sem O.S. (no-show ou em aberto) nos 30 dias antes, e o veículo veio depois sem agendar. Colunas: Estava no agendamento sem ser aberta por ele (qual dos três casos) e Agendamento do veículo (não ligado) — data, tipo, status, O.S. e empresa do agendamento.'],
-    ['Exportar Excel', 'Baixa as linhas do filtro atual, com as mesmas colunas.'],
   ],
 }
 
@@ -522,8 +521,6 @@ const TABELA_PASSAGENS = {
 // Uma seção por indicador/card de cada aba (chave do INFO, ou um bloco { itens } para seção sem número), mais as seções gerais.
 export const MANUAL_ABAS_CARDS = [
   ['Aba Por Campanhas', [
-    ['Tabela — Campanhas por data de geração', TABELA_CAMPANHAS],
-    ['Tabela — Conferência linha a linha', TABELA_CONFERENCIA],
     ['Indicador — Taxa de Agendamento', 'taxaAgendamento'],
     ['Indicador — Taxa de Conversão', 'taxaConversao'],
     ['Indicador — Taxa de No-show', 'taxaNoShow'],
@@ -570,13 +567,19 @@ export const MANUAL_ABAS_CARDS = [
     ['Card — Conversão — Ativos', 'conversaoAtivos'],
     ['Card — Conversão — Passivos', 'conversaoPassivos'],
   ]],
+  ['Aba Contatos Gerados', [
+    ['Tabela — Contatos gerados', TABELA_CONFERENCIA],
+  ]],
+  ['Aba Campanhas Geradas', [
+    ['Tabela — Campanhas geradas', TABELA_CAMPANHAS],
+  ]],
 ]
 export const MANUAL_GERAL = [
   {
     titulo: 'Visão geral',
     itens: [
       ['Para que serve', 'Acompanhar a Mesa de Agendamento do Pós-Venda: o resultado das campanhas de ativação do CRM (contatos agendados, encerrados e a realizar, motivos de encerramento), os agendamentos marcados e o seu desfecho (comparecido, a comparecer, no-show), e quantas O.S. vieram de agendamento (ativo ou passivo) e quanto faturaram.'],
-      ['Abas', 'Por Campanhas (data da campanha) · Por Data Agendamento (data para quando o agendamento foi marcado) · Por Data da O.S. (data de abertura da O.S.). O objetivo de cada aba aparece logo abaixo das abas.'],
+      ['Abas', 'Por Campanhas (data da campanha) · Por Data Agendamento (data para quando o agendamento foi marcado) · Por Data da O.S. (data de abertura da O.S.) · Contatos Gerados (os contatos da aba Por Campanhas, um por linha, pela data da campanha) · Campanhas Geradas (os números da aba Por Campanhas por data de geração). O objetivo de cada aba está na 1ª seção dela neste manual.'],
       ['Fonte dos agendamentos', 'O ROF037 é a fonte única dos agendamentos em todas as abas (o ROF026 e o RCR014 não são usados).'],
     ],
   },
@@ -584,9 +587,9 @@ export const MANUAL_GERAL = [
     titulo: 'Filtros e botões',
     itens: [
       ['Data', 'Ao abrir: o mês atual, do dia 1 até ontem (no dia 1, o mês anterior). As setas ‹ › trocam de mês; o calendário aceita qualquer data. O período escolhido continua o mesmo ao trocar de aba. Cada aba aplica o filtro na sua data (ver Abas).'],
-      ['Empresas', 'Nas abas Por Data Agendamento e Por Data da O.S. (por EmpresaNome do ROF037 / Empresa do ROF001). Não existe na aba Por Campanhas: o RCR038 não identifica a empresa.'],
-      ['Ícones da aba', 'Na linha das abas, à direita: ✓ abre a consulta linha a linha da aba (Conferência linha a linha, Consulta de agendamentos ou Consulta de O.S., todas com filtros, busca e Exportar Excel) e ▦ abre a tabela com os números por data.'],
-      ['Cabeçalho', 'Atualizar (↻) relê os relatórios do SharePoint · Engrenagem (⚙) define as metas dos indicadores · Livro abre este manual. "Última atualização" = quando os relatórios foram lidos.'],
+      ['Empresas', 'Em todas as abas. Por Data Agendamento e Por Data da O.S.: por EmpresaNome do ROF037 / Empresa do ROF001. Por Campanhas, Contatos Gerados e Campanhas Geradas: pela unidade da campanha, a sigla no nome do arquivo RCR038 (CGR Campo Grande, DOU Dourados, TLG Três Lagoas, CPD Chapadão) — as linhas do RCR038 não trazem a empresa; o agendamento conta na unidade da campanha, mesmo se foi feito em outra empresa (a empresa do agendamento aparece na coluna Empresa do agendamento da aba Contatos Gerados). Arquivo sem sigla no nome só entra com todas as empresas.'],
+      ['Botões da aba', 'Na linha das abas, logo depois de Campanhas Geradas (com o visual de aba, mas abrem uma janela — a aba escolhida não muda), só nas abas Por Data Agendamento e Por Data da O.S.: CONSULTA abre a consulta linha a linha da aba (Consulta de agendamentos ou Consulta de O.S., com filtros e busca) e TABELA abre a tabela com os números por data. Os dados da aba Por Campanhas linha a linha estão na aba Contatos Gerados e por data de geração na aba Campanhas Geradas.'],
+      ['Cabeçalho', 'Atualizar (↻) relê os relatórios do SharePoint · Engrenagem (⚙) define as metas dos indicadores · Livro abre este manual. "Atualizado em" = quando os relatórios foram lidos.'],
       ['ⓘ dos cards', 'Cada card, indicador e quadro tem o botão ⓘ com o objetivo, o cálculo (como os relatórios são ligados) e a fonte; as regras completas e as colunas usadas estão nas seções de cada aba deste manual.'],
     ],
   },

@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
-import { Trophy, Calculator, BookOpen, BarChart2, Loader2, RefreshCw, Info as InfoIcon, Lock, Unlock, Plus, Trash2, Eraser, Copy, CopyPlus, Settings, FileText, X, ChevronDown, Banknote, Users, Pencil, Wrench, Link2, Unlink } from 'lucide-react'
+import { Trophy, Calculator, BookOpen, BarChart2, Loader2, RefreshCw, Info as InfoIcon, Lock, Unlock, Plus, Trash2, Eraser, Copy, CopyPlus, Settings, FileText, X, ChevronDown, Banknote, Users, Pencil, Wrench, Link2, Unlink, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react'
 import { Bloco3ServicosVisualizacao } from '../kpi/KpiBloco3Servicos'
 import { createPortal } from 'react-dom'
 import { apiService } from '../../services/api'
@@ -777,7 +777,7 @@ function setorDaFuncao(cfg, nomeFuncao) {
   if (APOIO.test(normNome(nomeFuncao || ''))) return 'Equipe de Apoio'
   const q = normNome(cfg.quadro || '')
   if (q.startsWith('CONSULTOR')) return 'Consultores'
-  if (q === 'MECANICO' || q === 'SETOR DE MECANICA' || q === 'CHEFE DE OFICINA') return 'Mecânica'
+  if (q === 'MECANICO' || q === 'SETOR DE MECANICA' || q === 'CHEFE DE OFICINA' || q === 'MECANICO SENIOR LIDER') return 'Mecânica'
   if (q.startsWith('SETOR FUNILARIA')) return 'Funilaria/Pintura'
   if (cfg.garantias || q === 'SETOR GARANTIA') return 'Garantia'
   if (cfg.bloco === 'pecas' && q) return 'Peças'
@@ -1668,9 +1668,10 @@ const comLimiteTempo = (p) => Promise.race([p, new Promise((_, rej) => setTimeou
 const PARAM_EMPRESA_QUADRO = { 'SETOR DE MECÂNICA': 'empresaOficina', 'CHEFE DE OFICINA': 'empresaChefeOficina', 'SETOR FUNILARIA/PINTURA': 'empresaFunilaria', 'SETOR GARANTIA': 'empresaGarantia' }
 // Endpoint da Matriz de cada quadro (abas Bloco 3 - Serviços / Bloco 3 - Peças).
 const fetchDoQuadro = (bloco, quadro) => (bloco === 'pecas' ? fetchBloco3Pecas
-  : (['CONSULTOR DE SERVIÇOS', 'CONSULTOR DE PLANO DE MANUTENÇÃO', 'MECÂNICO', 'SETOR DE AGENDAMENTO DE SERVIÇOS', ...Object.keys(PARAM_EMPRESA_QUADRO)].includes(quadro) ? fetchBloco3Servicos : fetchBloco3PosVenda))
+  : (['CONSULTOR DE SERVIÇOS', 'CONSULTOR DE PLANO DE MANUTENÇÃO', 'MECÂNICO', 'MECÂNICO SÊNIOR LÍDER', 'SETOR DE AGENDAMENTO DE SERVIÇOS', ...Object.keys(PARAM_EMPRESA_QUADRO)].includes(quadro) ? fetchBloco3Servicos : fetchBloco3PosVenda))
 // Quadros sem pessoa nem empresa que a Matriz monta sozinhos (?apenas=): não espera Consultor/Mecânico.
-const QUADROS_APENAS = new Set(['CONSULTOR DE PLANO DE MANUTENÇÃO', 'SETOR DE AGENDAMENTO DE SERVIÇOS'])
+// MECÂNICO SÊNIOR LÍDER (25/11/2026): fixo em Chapadão do Sul, sem pessoa nem seletor de empresa.
+const QUADROS_APENAS = new Set(['CONSULTOR DE PLANO DE MANUTENÇÃO', 'SETOR DE AGENDAMENTO DE SERVIÇOS', 'MECÂNICO SÊNIOR LÍDER'])
 
 const SEM_VALORES_FOTO = [] // função sem valores na foto do mês fechado (referência fixa)
 
@@ -2236,7 +2237,7 @@ function regrasZeradas(regras, unidade, unidades) {
 // BLOCO3_PECAS). Cada função do Bônus-alvo aponta para um quadro: regras.quadroLinha[unidade][linha] =
 // { bloco: 'servicos' | 'pecas', quadro }. Sem escolha salva, vale o padrão da função.
 const QUADROS_BLOCO3 = {
-  servicos: ['CONSULTOR DE SERVIÇOS', 'CONSULTOR DE PLANO DE MANUTENÇÃO', 'MECÂNICO', 'CHEFE DE OFICINA', 'SETOR DE MECÂNICA', 'SETOR FUNILARIA/PINTURA', 'SETOR GARANTIA', 'SETOR DE AGENDAMENTO DE SERVIÇOS', 'GERENTE GERAL PÓS-VENDAS', 'GERENTE DE SERVIÇO - CAMPO GRANDE',
+  servicos: ['CONSULTOR DE SERVIÇOS', 'CONSULTOR DE PLANO DE MANUTENÇÃO', 'MECÂNICO', 'CHEFE DE OFICINA', 'MECÂNICO SÊNIOR LÍDER', 'SETOR DE MECÂNICA', 'SETOR FUNILARIA/PINTURA', 'SETOR GARANTIA', 'SETOR DE AGENDAMENTO DE SERVIÇOS', 'GERENTE GERAL PÓS-VENDAS', 'GERENTE DE SERVIÇO - CAMPO GRANDE',
     'GERENTE FILIAL - DOURADOS', 'GERENTE FILIAL - TRÊS LAGOAS', 'GERENTE FILIAL - CHAPADÃO DO SUL', 'GERENTE DE PROCESSOS E QUALIDADE'],
   pecas: ['GERENTE ATACADO PEÇAS', 'COORDENADOR ATACADO PEÇAS', 'VENDEDOR DE PEÇAS', 'GERENTE DE COMPRAS',
     'SUPERVISÃO DE PEÇAS/ENCARREGADO ESTOQUE', 'ESTOQUISTA/AUXILIAR PEÇAS'],
@@ -2583,6 +2584,8 @@ function AbaRegras({ cargosLista = [], travaPeriodicidade = null, permRegras = {
   // Bônus-alvo é do mês: por semana = valor ÷ nº de semanas do mês (5 semanas ÷ 5, 4 semanas ÷ 4).
   const nSemanas = campanha.semanas.length || 1
   const porSemana = (v) => `R$ ${moedaTxt((Number(v) || 0) / nSemanas)}`
+  // Ordenação da coluna Função na tabela do Bônus-alvo (null | 'asc' | 'desc') — abre sempre de A a Z.
+  const [ordemFuncao, setOrdemFuncao] = useState('asc')
   // Cargos de cada linha do Bônus-alvo (quem participa). Sem lista salva, mostra a regra padrão da função.
   const [editorCargos, setEditorCargos] = useState(null) // { linha } | { novo: true }
   // Quadro do Bloco 3 (Matriz de KPIs) de cada linha: Serviços ou Peças + o quadro (ex.: CONSULTOR DE SERVIÇOS).
@@ -2602,6 +2605,8 @@ function AbaRegras({ cargosLista = [], travaPeriodicidade = null, permRegras = {
       const k = `g${Date.now().toString(36)}`
       gravarSemanal(k)
       alterar(['gruposBonus', unidade, k], { nome, cargos, meta: 0, supermeta: null, ...(ed.area ? { area: ed.area } : {}) })
+      // Loja que segue o Bônus-alvo de outra: a função nova é só desta empresa (fica em linhasProprias).
+      if (segueBonus) alterar(['linhasProprias'], [...linhasProprias, k])
       if (!ed.area) alterar(['quadroLinha', unidade, k], quadro)
       if (empresas) alterar(['empresasResultado', unidade, k], empresas)
       if (foraVinculo) alterar(['linhasForaVinculo', k], foraVinculo)
@@ -2796,7 +2801,8 @@ function AbaRegras({ cargosLista = [], travaPeriodicidade = null, permRegras = {
   const NOMES_SECAO = { chave: 'Regras-chave', bonus: 'Bônus-alvo', faixas: 'Faixas de pagamento' }
   const cadeadoSecao = (s) => {
     // Quadro seguido: edita-se na empresa de origem — menos o Bônus-alvo com funções de valor próprio.
-    if (!permRegras.editar || (vinculos.segue?.[s] && !(s === 'bonus' && linhasProprias.size))) return null
+    // Bônus-alvo seguido continua com cadeado: funções com valor próprio e funções só desta loja.
+    if (!permRegras.editar || (vinculos.segue?.[s] && s !== 'bonus')) return null
     const aberto = abertoSecao(s)
     const nome = NOMES_SECAO[s]
     return (
@@ -2812,7 +2818,7 @@ function AbaRegras({ cargosLista = [], travaPeriodicidade = null, permRegras = {
   }
 
   // Vínculo do quadro (embaixo do título de cada quadro):
-  //  · esta empresa SEGUE outra → aviso "Segue a regra de X" + "Usar regra própria" (desvincula);
+  //  · esta empresa SEGUE outra → aviso "Segue a regra de X" + "Cadastro independente" (desvincula);
   //  · senão → "Vale também para": empresas marcadas passam a seguir este quadro (grava ao fechar o cadeado).
   //    Fica de fora quem já segue outra origem neste quadro, ou quem é origem dele para outras empresas.
   const nomeUn = (id) => campanha.unidades.find((x) => x.id === id)?.nome || id
@@ -2824,6 +2830,16 @@ function AbaRegras({ cargosLista = [], travaPeriodicidade = null, permRegras = {
     setSecaoAberta('bonus')
     setMsg({ erro: false, txt: `"${l.nome}" com valor próprio — edite e feche o cadeado do Bônus-alvo para gravar.` })
   }
+  // Dados da empresa de origem do Bônus-alvo (para saber se uma função existe lá).
+  const origemBonusDados = segueBonus ? (vinculos.linhasMes || []).find((x) => x.unidade === vinculos.segue.bonus)?.dados : null
+  // Função criada só nesta loja: some daqui (grupo e marca de valor próprio).
+  const excluirFuncaoDaLoja = (l) => {
+    if (!window.confirm(`Excluir a função "${l.nome}" de ${nomeEmpresa}?`)) return
+    removerGrupo(l.k)
+    alterar(['linhasProprias'], [...linhasProprias].filter((k) => k !== l.k))
+    setSecaoAberta('bonus')
+    setMsg({ erro: false, txt: `"${l.nome}" excluída — feche o cadeado do Bônus-alvo para gravar.` })
+  }
   const voltarASeguirLinha = (l) => {
     if (!window.confirm(`"${l.nome}" volta a usar os valores de ${nomeUn(vinculos.segue.bonus)} nesta empresa?`)) return
     alterar(['linhasProprias'], [...linhasProprias].filter((k) => k !== l.k))
@@ -2832,7 +2848,7 @@ function AbaRegras({ cargosLista = [], travaPeriodicidade = null, permRegras = {
   }
   const [desvinculando, setDesvinculando] = useState(null)
   const usarRegraPropria = async (q) => {
-    if (!window.confirm(`Usar regra própria em ${QUADROS_VINCULO[q]} de ${nomeEmpresa} (${nomeMes}/${ano})?\n\nA empresa deixa de seguir ${nomeUn(vinculos.segue[q])}: os valores de hoje ficam gravados nela e passam a ser editados aqui.`)) return
+    if (!window.confirm(`Cadastro independente em ${QUADROS_VINCULO[q]} de ${nomeEmpresa} (${nomeMes}/${ano})?\n\nA empresa deixa de seguir ${nomeUn(vinculos.segue[q])}: os valores de hoje ficam gravados nela e passam a ser editados aqui.`)) return
     setDesvinculando(q)
     setMsg(null)
     try {
@@ -2846,18 +2862,16 @@ function AbaRegras({ cargosLista = [], travaPeriodicidade = null, permRegras = {
   const controleVinculo = (q) => {
     if (!UNIDADES_VINCULO.includes(unidade)) return null
     const origem = vinculos.segue?.[q]
+    // Quadro seguido: só o botão "Cadastro independente" (a origem aparece ao passar o mouse).
     if (origem) {
+      if (!permRegras.editar || mesFechado) return null
       return (
-        <div className="flex flex-wrap items-center gap-2 rounded-md border border-violet-200 bg-violet-50 px-3 py-1.5 text-[11px] text-violet-900">
-          <Link2 className="h-3.5 w-3.5 shrink-0" />
-          <span>Segue a regra de <b>{nomeUn(origem)}</b>
-            {q === 'bonus' && linhasProprias.size > 0 && ` · ${linhasProprias.size} ${linhasProprias.size === 1 ? 'função com valor próprio' : 'funções com valor próprio'}`}</span>
-          {permRegras.editar && !mesFechado && (
-            <button type="button" onClick={() => usarRegraPropria(q)} disabled={!!desvinculando}
-              className="ml-auto inline-flex items-center gap-1 rounded border border-violet-300 bg-white px-2 py-0.5 font-semibold text-violet-800 hover:bg-violet-100 disabled:opacity-50">
-              {desvinculando === q ? <Loader2 className="h-3 w-3 animate-spin" /> : <Unlink className="h-3 w-3" />} Usar regra própria
-            </button>
-          )}
+        <div className="flex justify-end">
+          <button type="button" onClick={() => usarRegraPropria(q)} disabled={!!desvinculando}
+            title={`Segue a regra de ${nomeUn(origem)} — clique para cadastrar este quadro de forma independente nesta empresa`}
+            className="inline-flex items-center gap-1 rounded border border-violet-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-violet-800 hover:bg-violet-100 disabled:opacity-50">
+            {desvinculando === q ? <Loader2 className="h-3 w-3 animate-spin" /> : <Unlink className="h-3 w-3" />} Cadastro independente
+          </button>
         </div>
       )
     }
@@ -2996,6 +3010,10 @@ function AbaRegras({ cargosLista = [], travaPeriodicidade = null, permRegras = {
   const nomesEmpresas = (ids) => ids.map((id) => campanha.unidades.find((x) => x.id === id)?.nome || id).join(' + ')
 
   // Tabela do Bônus-alvo: Serviços (com a parte de cada bloco) ou Garantias (só Meta e Supermeta).
+  // Ordenação da coluna Função (só na tela; não muda a ordem gravada): null = ordem do cadastro,
+  // 'asc' = A→Z, 'desc' = Z→A. Cada clique no título alterna.
+  const ordenarLinhas = (lista) => (!ordemFuncao ? lista
+    : [...lista].sort((a, b) => (ordemFuncao === 'asc' ? 1 : -1) * String(a.nome).localeCompare(String(b.nome), 'pt-BR')))
   const tabelaBonus = (lista, garantias = false) => (
     lista.length === 0 ? (
           <p className="text-xs text-slate-500">{garantias ? 'Nenhuma função de Garantias nesta empresa.' : 'Nenhuma função com bônus nesta empresa.'}</p>
@@ -3005,7 +3023,15 @@ function AbaRegras({ cargosLista = [], travaPeriodicidade = null, permRegras = {
               <thead>
                 <tr className="bg-slate-50 border-t border-slate-200">
                   <th rowSpan={2} className={`${TH} w-9 align-bottom border-b border-slate-200`} aria-label="Excluir" />
-                  <th rowSpan={2} className={`${TH} text-left align-bottom border-b border-slate-200`}>Função</th>
+                  <th rowSpan={2} className={`${TH} text-left align-bottom border-b border-slate-200`}
+                    aria-sort={ordemFuncao === 'asc' ? 'ascending' : ordemFuncao === 'desc' ? 'descending' : 'none'}>
+                    <button type="button" onClick={() => setOrdemFuncao((o) => (o === null ? 'asc' : o === 'asc' ? 'desc' : null))}
+                      title={ordemFuncao === null ? 'Ordenar de A a Z' : ordemFuncao === 'asc' ? 'Ordenar de Z a A' : 'Voltar à ordem do cadastro'}
+                      className="inline-flex items-center gap-1 uppercase tracking-wide hover:text-blue-700">
+                      Função
+                      {ordemFuncao === 'asc' ? <ArrowUp className="h-3 w-3" /> : ordemFuncao === 'desc' ? <ArrowDown className="h-3 w-3" /> : <ArrowUpDown className="h-3 w-3 text-slate-300" />}
+                    </button>
+                  </th>
                   <th colSpan={garantias ? 1 : 4} className={`${TH} text-center border-l border-slate-200`}>Meta</th>
                   <th colSpan={garantias ? 1 : 4} className={`${TH} text-center border-l border-slate-200`}>Supermeta</th>
                 </tr>
@@ -3021,7 +3047,7 @@ function AbaRegras({ cargosLista = [], travaPeriodicidade = null, permRegras = {
                 </tr>
               </thead>
               <tbody>
-                {lista.map((l) => {
+                {ordenarLinhas(lista).map((l) => {
                   // Meta e Supermeta: campos sempre editáveis; apagar = em branco (sem bônus). As travas
                   // antigas (bonusBloqueado[unidade]: '<linha>:meta' / '<linha>:super' / '<linha>') ainda
                   // contam como "sem valor" e saem ao digitar um valor no campo.
@@ -3037,13 +3063,17 @@ function AbaRegras({ cargosLista = [], travaPeriodicidade = null, permRegras = {
                   }
                   const editavelLinha = podeEditarLinha(l)
                   const propria = segueBonus && linhasProprias.has(l.k)
+                  // Função criada só nesta loja (não existe na origem): Excluir em vez de "Voltar a seguir".
+                  const soDaLoja = propria && l.grupo && !origemBonusDados?.gruposBonus?.[vinculos.segue.bonus]?.[l.k]
                   // Loja que segue o Bônus-alvo de outra: por função, "Usar valor próprio" / "Voltar a seguir".
                   const itensEngrenagem = !segueBonus ? [
                     { rotulo: 'Editar', icone: Pencil, onClick: () => setEditorCargos({ linha: l }), dica: 'Editar descrição, quadro do Bloco 3, empresas do resultado e cargos desta função' },
                     { rotulo: 'Excluir', icone: Trash2, perigo: true, onClick: () => excluirLinha(l), dica: `Excluir a função "${l.nome}" e as metas dela` },
                   ] : !permRegras.editar ? [] : propria ? [
                     ...(bonusAberto ? [{ rotulo: 'Editar', icone: Pencil, onClick: () => setEditorCargos({ linha: l }), dica: 'Editar descrição, quadro do Bloco 3, empresas do resultado e cargos desta função (só nesta empresa)' }] : []),
-                    { rotulo: `Voltar a seguir ${nomeUn(vinculos.segue.bonus)}`, icone: Link2, onClick: () => voltarASeguirLinha(l), dica: `Esta função volta a usar os valores de ${nomeUn(vinculos.segue.bonus)}` },
+                    soDaLoja
+                      ? { rotulo: 'Excluir', icone: Trash2, perigo: true, onClick: () => excluirFuncaoDaLoja(l), dica: `Excluir a função "${l.nome}" desta empresa` }
+                      : { rotulo: `Voltar a seguir ${nomeUn(vinculos.segue.bonus)}`, icone: Link2, onClick: () => voltarASeguirLinha(l), dica: `Esta função volta a usar os valores de ${nomeUn(vinculos.segue.bonus)}` },
                   ] : [
                     { rotulo: 'Usar valor próprio nesta função', icone: Unlink, onClick: () => usarValorProprioLinha(l), dica: `Só esta função deixa de seguir ${nomeUn(vinculos.segue.bonus)} nesta empresa; as demais continuam seguindo` },
                   ]
@@ -3055,7 +3085,12 @@ function AbaRegras({ cargosLista = [], travaPeriodicidade = null, permRegras = {
                       </td>
                       <td className="p-2 font-medium whitespace-nowrap text-slate-700">
                         {l.nome}
-                        {propria && <span className="ml-2 text-[10px] font-semibold text-violet-700" title={`Esta função não segue ${nomeUn(vinculos.segue.bonus)}: usa os valores desta empresa`}>valor próprio</span>}
+                        {propria && (
+                          <span className="ml-2 text-[10px] font-semibold text-violet-700"
+                            title={soDaLoja ? `Função só desta empresa (não existe em ${nomeUn(vinculos.segue.bonus)})` : `Esta função não segue ${nomeUn(vinculos.segue.bonus)}: usa os valores desta empresa`}>
+                            {soDaLoja ? 'só desta empresa' : 'valor próprio'}
+                          </span>
+                        )}
                         {l.cargos && (
                           <button type="button" onClick={() => setEditorCargos({ linha: l })} disabled={!editavelLinha}
                             title={`Cargos que fazem parte de "${l.nome}": ${cargosDaLinha(l).join(', ') || 'nenhum'}`}
@@ -3110,11 +3145,6 @@ function AbaRegras({ cargosLista = [], travaPeriodicidade = null, permRegras = {
         </p>
       )}
       {/* Bloco normal (não "contents"): assim o espaçamento entre os quadros da aba funciona. */}
-      {permRegras.editar && !secaoAberta && (
-        <p className="text-xs text-slate-500 flex items-center gap-1.5">
-          <Lock className="h-3.5 w-3.5" /> Regras travadas — clique no cadeado de cada quadro para editá-lo; ao fechar o cadeado, as alterações são gravadas.
-        </p>
-      )}
       <fieldset disabled={!permRegras.editar} className="space-y-5 min-w-0">
     <div className="grid grid-cols-1 gap-5">
     {/* Semanas e Regras-chave lado a lado; Bônus-alvo e Faixas abaixo. */}
@@ -3285,8 +3315,8 @@ function AbaRegras({ cargosLista = [], travaPeriodicidade = null, permRegras = {
             quadro (fora do fieldset travado, para continuar clicável). */}
         <div className="flex items-center gap-2">
           {unidade !== 'TRUCKS' && (
-            <button type="button" onClick={() => setEditorCargos({ novo: true })} disabled={!permRegras.editar || !podeEditar('bonus')}
-              title={podeEditar('bonus') ? undefined : 'Abra o cadeado para adicionar'}
+            <button type="button" onClick={() => setEditorCargos({ novo: true })} disabled={!permRegras.editar || !abertoSecao('bonus')}
+              title={!abertoSecao('bonus') ? 'Abra o cadeado para adicionar' : segueBonus ? 'Cria uma função só desta empresa (as demais continuam seguindo)' : undefined}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-blue-700 border border-blue-200 bg-blue-50 hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed">
               <Plus className="h-3.5 w-3.5" /> Adicionar cargo
             </button>

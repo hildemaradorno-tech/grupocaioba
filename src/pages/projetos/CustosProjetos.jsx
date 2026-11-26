@@ -233,7 +233,7 @@ export default function CustosProjetos() {
   const filtroCls = 'text-xs p-1.5 border border-slate-200 rounded-md text-slate-700 bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500'
 
   return (
-    <div className="p-6 space-y-4 max-w-screen-xl">
+    <div className="p-6 space-y-4 w-full">
       <div className="flex items-center justify-between border-b border-slate-200 pb-4">
         <div>
           <h1 className="text-xl font-bold text-slate-900 tracking-tight">Custos de Projetos</h1>

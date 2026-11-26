@@ -1,4 +1,4 @@
 // Versão exibida no rodapé do menu lateral e na tela de login.
 // Atualizar ambos os valores sempre que for solicitada uma atualização de versão do sistema.
-export const APP_VERSION = '1.0.90'
-export const APP_BUILD_DATE = '25/11/2026'
+export const APP_VERSION = '1.0.91'
+export const APP_BUILD_DATE = '26/11/2026'

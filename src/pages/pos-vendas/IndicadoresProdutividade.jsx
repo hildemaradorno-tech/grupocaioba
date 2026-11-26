@@ -13,6 +13,7 @@ import {
 import RegrasCoresModal from './RegrasCoresModal'
 import AplicadasPorTipo from './AplicadasPorTipo'
 import EvolucaoConsultores from './EvolucaoConsultores'
+import { FUNDO_BI, abaBi, botaoBi, seletorBi, opcaoBi, rotuloBi } from './estiloBi'
 import AbaEncerradoFaturado from './AbaEncerradoFaturado'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
@@ -173,11 +174,12 @@ function BarrasPorBox({ titulo, dados, id, vis, info, alinhar }) {
 
 function Seletor({ label, value, onChange, opcoes, largura = 'w-64', disabled = false, title }) {
   return (
-    <div className="flex flex-col gap-1">
-      <label className="text-[10px] font-bold text-slate-500 uppercase">{label}</label>
+    // Padrão BI Possibilidades (25/11/2026): rótulo claro ao lado + seletor cinza em caixa alta
+    <div className="flex items-center gap-2">
+      <label className={rotuloBi}>{label}</label>
       <select value={value} onChange={e => onChange(e.target.value)} disabled={disabled} title={title}
-        className={`${largura} border border-slate-300 rounded-md px-2 py-1 text-[11px] bg-white focus:outline-none focus:ring-1 focus:ring-sky-500 disabled:bg-slate-100 disabled:text-slate-600 disabled:cursor-not-allowed`}>
-        {opcoes.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+        className={`${largura} ${seletorBi}`}>
+        {opcoes.map(o => <option key={o.value} value={o.value} className={opcaoBi}>{o.label}</option>)}
       </select>
     </div>
   )
@@ -492,7 +494,7 @@ export default function IndicadoresProdutividade() {
 
   return (
     <RegrasCorCtx.Provider value={regraDoPeriodo}>
-    <div className="min-h-full bg-white p-6">
+    <div className={`min-h-full ${FUNDO_BI} p-6`}>
      <div className="max-w-screen-2xl mx-auto flex flex-col gap-4 min-w-0">
       {/* CABEÇALHO — mesmo modelo da Auditoria O.S. Aberta (cores e logo do painel Power BI da Caiobá) */}
       <div className="relative z-10 rounded-lg shadow-sm"
@@ -549,17 +551,15 @@ export default function IndicadoresProdutividade() {
         </div>
       </div>
 
-      {atualizando && <p className="text-[11px] text-slate-600 flex items-center gap-1.5"><RefreshCw className="h-3.5 w-3.5 animate-spin" /> {atualizando}</p>}
-      {erro && <p className="text-[11px] text-red-600 font-semibold">{erro}</p>}
+      {atualizando && <p className="text-[11px] text-slate-300 flex items-center gap-1.5"><RefreshCw className="h-3.5 w-3.5 animate-spin" /> {atualizando}</p>}
+      {erro && <p className="text-[11px] text-red-400 font-semibold">{erro}</p>}
 
-      {/* ABAS — pílulas, como na Auditoria O.S. Aberta */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
-      <div className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-lg p-0.5 w-fit flex-wrap">
+      {/* ABAS — tipo "pasta", padrão do BI Possibilidades (25/11/2026): linha clara embaixo na largura toda */}
+      <div className="flex flex-wrap items-end justify-between gap-2 border-b-2 border-slate-200">
+      <div className="flex items-end gap-1 flex-wrap">
         {ABAS.map(a => (
-          <button key={a.id} type="button" onClick={() => setAba(a.id)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-semibold transition-colors ${
-              aba === a.id ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'}`}>
-            <a.icon className="h-3.5 w-3.5" /> {a.label}
+          <button key={a.id} type="button" onClick={() => setAba(a.id)} className={abaBi(aba === a.id)}>
+            <a.icon className="h-3.5 w-3.5" />{a.label}
           </button>
         ))}
       </div>
@@ -574,30 +574,30 @@ export default function IndicadoresProdutividade() {
           {podeAtualizar ? ' Use o botão azul de atualizar para ler o período.' : ' Peça a quem pode atualizar o BI para ler o período.'}
         </p>
       )}
-      {carregando && <p className="text-[11px] text-slate-500">Carregando…</p>}
+      {carregando && <p className="text-[11px] text-slate-400">Carregando…</p>}
 
       {aba !== 'encfat' && (
-        <div className="flex flex-wrap items-end gap-3">
+        <div className="flex flex-wrap items-center gap-4">
           {/* Resumo: modo Mecânicos | Consultores — ANTES do Tipo de Visualização (pedido do usuário 19/11/2026) */}
           {(aba === 'principais' || aba === 'diames') && (
-            <div className="flex flex-col gap-1">
-              <label className="text-[10px] font-bold text-slate-500 uppercase">Modo Visualização</label>
-              <div className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-lg p-0.5 w-fit">
+            <div className="flex items-center gap-1">
+              <label className={`${rotuloBi} mr-1`}>Modo Visualização</label>
+              <div className="flex items-center gap-1">
                 {[['mecanico', 'Mecânicos', Wrench], ['consultor', 'Consultores', User]].map(([v, r, Ic]) => (
                   <button key={v} type="button" onClick={() => (aba === 'diames' ? setModoEvolucao(v) : setModoResumo(v))}
-                    className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-[11px] font-semibold ${(aba === 'diames' ? modoEvolucao : modoResumo) === v ? 'bg-slate-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}>
-                    <Ic className="h-3.5 w-3.5" /> {r}
+                    className={botaoBi((aba === 'diames' ? modoEvolucao : modoResumo) === v)}>
+                    <Ic className="h-3.5 w-3.5" />{r}
                   </button>
                 ))}
               </div>
             </div>
           )}
           {/* Consultores: só existe Horas Vendidas (Nota Fiscal Emitida) — seletor travado nela */}
-          <Seletor label="Tipo de Horas" value={travaFat ? 'fat' : vis} onChange={setVis} largura="w-72"
+          <Seletor label="Tipo de Horas" value={travaFat ? 'fat' : vis} onChange={setVis} largura="w-[330px]"
             disabled={travaFat} title={travaFat ? 'Para consultores as horas são sempre as da Nota Fiscal Emitida' : undefined}
             opcoes={VISUALIZACOES.map(v => ({ value: v.id, label: v.label }))} />
           {/* Busca por O.S. das abas Mecânicos e Consultores (a aba desenha aqui) */}
-          {(aba === 'mecanicos' || aba === 'consultores' || aba === 'diames') && <div key={aba} ref={setSlotBuscaOs} className="flex items-end" />}
+          {(aba === 'mecanicos' || aba === 'consultores' || aba === 'diames') && <div key={aba} ref={setSlotBuscaOs} className="contents" />}
         </div>
       )}
 
@@ -959,11 +959,11 @@ function AbaMecanicos({ mecDiario, infoMecanico, boxDe, vis, periodo, noEscopo, 
 
   // Busca por O.S. — desenhada ao lado do Tipo de Visualização (slotBuscaOs, na página); sem o slot, fica aqui.
   const buscaOs = (
-    <div className="flex flex-col gap-1">
-      <label className="text-[10px] font-bold text-slate-500 uppercase">OS Número</label>
+    <div className="flex items-center gap-2">
+      <label className={rotuloBi}>OS Número</label>
       <div className="flex items-center gap-1">
         <input value={osBusca} onChange={e => setOsBusca(e.target.value)} onKeyDown={e => e.key === 'Enter' && buscarOs()}
-          placeholder="Inserir OS Número" className="w-44 border border-slate-300 rounded-md px-2 py-1 text-[11px]" />
+          placeholder="Inserir OS Número" className="w-44 h-8 border border-slate-300 rounded-md px-2 text-[11px]" />
         <button type="button" onClick={buscarOs} className="p-1.5 rounded-md bg-sky-600 text-white" aria-label="Buscar O.S."><Search className="h-3.5 w-3.5" /></button>
         {osEncontradas && <button type="button" onClick={() => { setOsBusca(''); setOsEncontradas(null) }} className="p-1.5 rounded-md bg-slate-200" aria-label="Limpar busca"><X className="h-3.5 w-3.5" /></button>}
       </div>
@@ -1317,11 +1317,11 @@ function AbaConsultores({ diarioEsc, metasEsc, pendentesEsc, reaisTotal, periodo
     setOsEncontradas(ls.filter(l => noEscopo(l.empresa, l.marca) && !excluidos.has(semAcento(l.pessoa))))
   }
   const buscaOs = (
-    <div className="flex flex-col gap-1">
-      <label className="text-[10px] font-bold text-slate-500 uppercase">OS Número</label>
+    <div className="flex items-center gap-2">
+      <label className={rotuloBi}>OS Número</label>
       <div className="flex items-center gap-1">
         <input value={osBusca} onChange={e => setOsBusca(e.target.value)} onKeyDown={e => e.key === 'Enter' && buscarOs()}
-          placeholder="Inserir OS Número" className="w-44 border border-slate-300 rounded-md px-2 py-1 text-[11px]" />
+          placeholder="Inserir OS Número" className="w-44 h-8 border border-slate-300 rounded-md px-2 text-[11px]" />
         <button type="button" onClick={buscarOs} className="p-1.5 rounded-md bg-sky-600 text-white" aria-label="Buscar O.S."><Search className="h-3.5 w-3.5" /></button>
         {osEncontradas && <button type="button" onClick={() => { setOsBusca(''); setOsEncontradas(null) }} className="p-1.5 rounded-md bg-slate-200" aria-label="Limpar busca"><X className="h-3.5 w-3.5" /></button>}
       </div>
@@ -1411,26 +1411,28 @@ function AbaConsultores({ diarioEsc, metasEsc, pendentesEsc, reaisTotal, periodo
 function AbaDiaMes({ mecDiario, mensalEsc, boxDe, vis, periodo, metasAno, slot, modoPessoa = 'mecanico', diarioEsc = [] }) {
   const [modo, setModo] = useState('dia')
   const ano = periodo.fim ? periodo.fim.slice(0, 4) : ''
+  // Produtivo / Consultores na linha dos botões Dia | Mês (pedido do usuário 25/11/2026)
+  const [slot2, setSlot2] = useState(null)
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex items-center gap-3">
-        <div className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-lg p-0.5 w-fit">
+      <div className="flex flex-wrap items-center gap-4">
+        <div className="flex items-center gap-1">
           {[['dia', 'Dia'], ['mes', 'Mês']].map(([v, r]) => (
-            <button key={v} type="button" onClick={() => setModo(v)}
-              className={`px-4 py-1.5 rounded-md text-[11px] font-semibold ${modo === v ? 'bg-slate-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}>{r}</button>
+            <button key={v} type="button" onClick={() => setModo(v)} className={botaoBi(modo === v)}>{r}</button>
           ))}
         </div>
+        <div ref={setSlot2} className="contents" />
       </div>
       {modoPessoa === 'consultor'
-        ? <EvolucaoConsultores key={modo} modo={modo} diarioEsc={diarioEsc} mensalEsc={mensalEsc} metasAno={metasAno} periodo={periodo} slot={slot} linhasConsultores={linhasConsultores} />
+        ? <EvolucaoConsultores key={modo} modo={modo} diarioEsc={diarioEsc} mensalEsc={mensalEsc} metasAno={metasAno} periodo={periodo} slot={slot} slot2={slot2} linhasConsultores={linhasConsultores} />
         : modo === 'dia'
-          ? <AbaDia mecDiario={mecDiario} boxDe={boxDe} vis={vis} slot={slot} />
-          : <AbaMensal mensalEsc={mensalEsc} metasEsc={metasAno} boxDe={boxDe} vis={vis} slot={slot} />}
+          ? <AbaDia mecDiario={mecDiario} boxDe={boxDe} vis={vis} slot={slot} slot2={slot2} />
+          : <AbaMensal mensalEsc={mensalEsc} metasEsc={metasAno} boxDe={boxDe} vis={vis} slot={slot} slot2={slot2} />}
     </div>
   )
 }
 
-function AbaDia({ mecDiario, boxDe, vis, slot }) {
+function AbaDia({ mecDiario, boxDe, vis, slot, slot2 }) {
   const [ind, setInd] = useState('eficacia')
   const [box, setBox] = useState('TODOS')
   const [pessoa, setPessoa] = useState('TODOS')
@@ -1453,13 +1455,14 @@ function AbaDia({ mecDiario, boxDe, vis, slot }) {
       {/* Indicadores / Box / Produtivo — ao lado do Tipo de Visualização (slot da página) */}
       {(() => {
         const filtros = (
-          <div className="flex flex-wrap items-end gap-3">
-            <Seletor label="Indicadores" value={ind} onChange={setInd} largura="w-44" opcoes={INDICADORES.map(i => ({ value: i.id, label: i.label }))} />
-            <Seletor label="Box" value={box} onChange={v => { setBox(v); setPessoa('TODOS') }} largura="w-44" opcoes={[{ value: 'TODOS', label: 'Todos' }, ...boxes.map(b => ({ value: b, label: b }))]} />
-            <Seletor label="Produtivo" value={pessoa} onChange={setPessoa} largura="w-72" opcoes={[{ value: 'TODOS', label: 'Todos' }, ...pessoas.map(p => ({ value: p, label: p }))]} />
+          // Com o slot (linha do Tipo de Horas), "contents": cada seletor entra na mesma linha e só quebra o que não couber (25/11/2026)
+          <div className={slot ? 'contents' : 'flex flex-wrap items-center gap-4'}>
+            <Seletor label="Indicadores" value={ind} onChange={setInd} largura="w-40" opcoes={INDICADORES.map(i => ({ value: i.id, label: i.label }))} />
+            <Seletor label="Box" value={box} onChange={v => { setBox(v); setPessoa('TODOS') }} largura="w-32" opcoes={[{ value: 'TODOS', label: 'Todos' }, ...boxes.map(b => ({ value: b, label: b }))]} />
           </div>
         )
-        return slot ? createPortal(filtros, slot) : filtros
+        const produtivo = <Seletor label="Produtivo" value={pessoa} onChange={setPessoa} largura="w-72" opcoes={[{ value: 'TODOS', label: 'Todos' }, ...pessoas.map(p => ({ value: p, label: p }))]} />
+        return <>{slot ? createPortal(filtros, slot) : filtros}{slot2 ? createPortal(produtivo, slot2) : produtivo}</>
       })()}
       <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-3">
         <ResponsiveContainer width="100%" height={380}>
@@ -1479,7 +1482,7 @@ function AbaDia({ mecDiario, boxDe, vis, slot }) {
 }
 
 // ── Aba: Indicadores - Mensal ───────────────────────────────────────────────
-function AbaMensal({ mensalEsc, metasEsc, boxDe, vis, slot }) {
+function AbaMensal({ mensalEsc, metasEsc, boxDe, vis, slot, slot2 }) {
   const [ind, setInd] = useState('eficacia')
   const [box, setBox] = useState('TODOS')
   const [pessoa, setPessoa] = useState('TODOS')
@@ -1523,13 +1526,14 @@ function AbaMensal({ mensalEsc, metasEsc, boxDe, vis, slot }) {
       {/* Indicadores / Box / Produtivo — ao lado do Tipo de Visualização (slot da página) */}
       {(() => {
         const filtros = (
-          <div className="flex flex-wrap items-end gap-3">
-            <Seletor label="Indicadores" value={ind} onChange={setInd} largura="w-44" opcoes={INDICADORES.map(i => ({ value: i.id, label: i.label }))} />
-            <Seletor label="Box" value={box} onChange={v => { setBox(v); setPessoa('TODOS') }} largura="w-44" opcoes={[{ value: 'TODOS', label: 'Todos' }, ...boxes.map(b => ({ value: b, label: b }))]} />
-            <Seletor label="Produtivo" value={pessoa} onChange={setPessoa} largura="w-72" opcoes={[{ value: 'TODOS', label: 'Todos' }, ...pessoas.map(p => ({ value: p, label: p }))]} />
+          // Com o slot (linha do Tipo de Horas), "contents": cada seletor entra na mesma linha e só quebra o que não couber (25/11/2026)
+          <div className={slot ? 'contents' : 'flex flex-wrap items-center gap-4'}>
+            <Seletor label="Indicadores" value={ind} onChange={setInd} largura="w-40" opcoes={INDICADORES.map(i => ({ value: i.id, label: i.label }))} />
+            <Seletor label="Box" value={box} onChange={v => { setBox(v); setPessoa('TODOS') }} largura="w-32" opcoes={[{ value: 'TODOS', label: 'Todos' }, ...boxes.map(b => ({ value: b, label: b }))]} />
           </div>
         )
-        return slot ? createPortal(filtros, slot) : filtros
+        const produtivo = <Seletor label="Produtivo" value={pessoa} onChange={setPessoa} largura="w-72" opcoes={[{ value: 'TODOS', label: 'Todos' }, ...pessoas.map(p => ({ value: p, label: p }))]} />
+        return <>{slot ? createPortal(filtros, slot) : filtros}{slot2 ? createPortal(produtivo, slot2) : produtivo}</>
       })()}
       <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-3">
         <ResponsiveContainer width="100%" height={300}>

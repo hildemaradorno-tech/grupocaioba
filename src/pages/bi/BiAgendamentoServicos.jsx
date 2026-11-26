@@ -2,12 +2,13 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { createPortal } from 'react-dom'
 import { Bar, BarChart, CartesianGrid, LabelList, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { AlertTriangle, BookOpen, Building2, Calendar, ChevronDown, ChevronLeft, ChevronRight, Download, Info, ListChecks, RefreshCw, Settings, Table2, X } from 'lucide-react'
+import { AlertTriangle, BookOpen, Building2, Calendar, CalendarCheck, ChevronDown, ChevronLeft, ChevronRight, Info, ListChecks, Megaphone, RefreshCw, Settings, Table2, Wrench, X } from 'lucide-react'
+import logoCaioba from '../../assets/logo-grupo.png'
 import { useAuth } from '../../context/AuthContext'
 import { apiService } from '../../services/supabaseClient'
 import { empresaSelecionavel } from '../../utils/comissoesElegibilidade'
 import { useEmpresasPermitidas } from '../../hooks/useEmpresasPermitidas'
-import { INFO, OBJETIVO_ABAS } from './agendamentoServicosTextos'
+import { INFO } from './agendamentoServicosTextos'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
 
@@ -261,12 +262,26 @@ function GaugeMeta({ label, valor, meta, info, menorMelhor }) {
 
 // Abas internas do BI.
 // Visão Período fica fora por enquanto (gráficos ainda sem fonte); o código dela continua abaixo.
-const ABAS = ['Por Campanhas', 'Por Data Agendamento', 'Por Data da O.S.']
+// Contatos Gerados (25/11/2026): a antiga Conferência linha a linha da aba Por Campanhas, agora como aba.
+const ABA_CONTATOS = 'Contatos Gerados'
+// Campanhas Geradas (25/11/2026): a antiga tabela "Campanhas por data de geração" da aba Por Campanhas, agora como aba.
+const ABA_CAMP_GERADAS = 'Campanhas Geradas'
+const ABAS = ['Por Campanhas', 'Por Data Agendamento', 'Por Data da O.S.', ABA_CONTATOS, ABA_CAMP_GERADAS]
 // Passagens: O.S. abertas e agendamentos; Por Data Agendamento: agenda pela data do agendamento e o que aconteceu; Campanhas: painel de cards/velocímetros; Visão Período: gráficos mensais.
 const ABA_PASSAGENS = 'Por Data da O.S.'
 const ABA_AGENDAMENTOS = 'Por Data Agendamento'
 const ABA_CAMPANHAS = 'Por Campanhas'
 const VISAO_PERIODO = 'Visão Período'
+// Unidade da campanha: sigla do nome do arquivo RCR038 (já padronizada no backend) → empresa (EmpresaNome).
+const EMPRESA_DA_SIGLA = {
+  CGR: 'CAIOBA TRUCKS - CAMPO GRANDE',
+  DOU: 'CAIOBA TRUCKS - DOURADOS',
+  TLG: 'CAIOBA TRUCKS - TRES LAGOAS',
+  CPD: 'CAIOBA TRUCKS - CHAPADAO',
+}
+const ICONE_ABA = { [ABA_CAMPANHAS]: Megaphone, [ABA_AGENDAMENTOS]: CalendarCheck, [ABA_PASSAGENS]: Wrench, [ABA_CONTATOS]: ListChecks, [ABA_CAMP_GERADAS]: Table2 }
+// Botões do cabeçalho (Atualizar, Metas, Manual): brancos, como no BI Possibilidades.
+const BOTAO_CABECALHO = 'flex items-center justify-center h-9 w-9 rounded-md border border-slate-300 bg-white text-slate-600 shadow-sm hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed transition-colors'
 
 // Multisseleção de empresas: marcar o agrupamento marca/desmarca todas as empresas dele.
 function SeletorEmpresas({ grupos, selecionadas, onChange }) {
@@ -340,24 +355,23 @@ function SeletorEmpresas({ grupos, selecionadas, onChange }) {
 }
 
 // Ícones da aba, na linha das abas, à direita: conferência/consulta linha a linha e tabela por data.
-function IconesAba({ onTabela, tituloTabela, onConferencia, tituloConferencia }) {
+// Conferência/Consulta e Tabela com o visual de aba inativa (pasta), logo depois de Por Data da O.S.
+const BOTAO_ABA = 'inline-flex items-center gap-1.5 px-4 py-1.5 rounded-t-md border border-b-0 text-[11px] font-semibold uppercase transition-colors bg-gradient-to-b from-white to-slate-100 border-slate-300 text-slate-500 hover:text-slate-800 hover:to-slate-50'
+
+function IconesAba({ onTabela, tituloTabela, onConferencia, rotuloConferencia, tituloConferencia }) {
   return (
-    <div className="flex justify-end">
-      <div className="flex items-center gap-1">
+    <>
         {onConferencia && (
-          <button type="button" onClick={onConferencia} title={tituloConferencia} aria-label={tituloConferencia}
-            className="p-1 rounded-md text-slate-300 hover:text-white hover:bg-slate-700 transition-colors">
-            <ListChecks className="h-4 w-4" />
+          <button type="button" onClick={onConferencia} title={tituloConferencia} aria-label={tituloConferencia} className={BOTAO_ABA}>
+            <ListChecks className="h-3.5 w-3.5" />{rotuloConferencia}
           </button>
         )}
         {onTabela && (
-          <button type="button" onClick={onTabela} title={`${tituloTabela} (tabela)`} aria-label={tituloTabela}
-            className="p-1 rounded-md text-slate-300 hover:text-white hover:bg-slate-700 transition-colors">
-            <Table2 className="h-4 w-4" />
+          <button type="button" onClick={onTabela} title={`${tituloTabela} (tabela)`} aria-label={tituloTabela} className={BOTAO_ABA}>
+            <Table2 className="h-3.5 w-3.5" />Tabela
           </button>
         )}
-      </div>
-    </div>
+    </>
   )
 }
 
@@ -382,6 +396,7 @@ const COLUNAS_CONFERENCIA = [
   ['Último contato', r => (r.contato_ultimo ? fmtData(r.contato_ultimo) : '')],
   ['Nº contatos', r => r.contato_qtde || ''],
   ['Operador', r => r.operador || ''],
+  ['Empresa do agendamento', r => agDaLinha(r)?.empresa || ''],
   ['Agendamento criado em', r => (agDaLinha(r) ? fmtData(agDaLinha(r).criado) : '')],
   ['Dias após a campanha', r => (agDaLinha(r) ? diasEntre(r.data, agDaLinha(r).criado) : '')],
   ['Agendado para', r => (agDaLinha(r)?.data_agendamento ? fmtData(agDaLinha(r).data_agendamento) : '')],
@@ -393,9 +408,10 @@ const COLUNAS_CONFERENCIA = [
 ]
 const FILTROS_CONFERENCIA = ['Todos', 'Contato agendado', 'Contato encerrado', 'Contato a realizar']
 
-// Pop-up "Conferência linha a linha" (aba Por Campanhas): um contato gerado por linha com tudo o que liga
+// Aba "Contatos Gerados" (antiga Conferência linha a linha): um contato gerado por linha com tudo o que liga
 // os relatórios (atendimento → RCR017; chassi + cliente → ROF037), filtro pela situação e exportação para Excel.
-function ConferenciaCampanhas({ rows, onClose }) {
+// inline = dentro da página (aba); sem inline, pop-up.
+function ConferenciaCampanhas({ rows, onClose, inline = false }) {
   const [filtro, setFiltro] = useState('Todos')
   const [busca, setBusca] = useState('')
   const lista = useMemo(() => {
@@ -406,21 +422,14 @@ function ConferenciaCampanhas({ rows, onClose }) {
       .sort((a, b) => a.data.localeCompare(b.data) || a.id_campanha_execucao - b.id_campanha_execucao || (a.id_atendimento ?? 0) - (b.id_atendimento ?? 0))
   }, [rows, filtro, busca])
   const qtde = (f) => rows.filter(r => f === 'Todos' || situacaoCampanha(r) === f).length
-  const exportar = async () => {
-    const XLSX = await import('xlsx')
-    const dados = lista.map(r => Object.fromEntries(COLUNAS_CONFERENCIA.map(([h, f]) => [h, f(r)])))
-    const ws = XLSX.utils.json_to_sheet(dados)
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, 'Conferência')
-    XLSX.writeFile(wb, `Conferencia Campanhas ${filtro} ${new Date().toISOString().slice(0, 10)}.xlsx`)
-  }
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-[95vw] max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+  const painel = (
+      <div className={inline ? 'bg-white rounded-lg shadow-sm border border-slate-200 w-full max-h-[75vh] flex flex-col' : 'bg-white rounded-lg shadow-xl w-full max-w-[95vw] max-h-[90vh] flex flex-col'} onClick={e => e.stopPropagation()}>
+        {!inline && (
         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
-          <p className="text-sm font-bold text-slate-900 flex items-center gap-2"><ListChecks className="h-4 w-4 text-emerald-600" /> Conferência linha a linha — contatos gerados</p>
+          <p className="text-sm font-bold text-slate-900 flex items-center gap-2"><ListChecks className="h-4 w-4 text-emerald-600" /> Contatos Gerados</p>
           <button type="button" onClick={onClose} aria-label="Fechar" className="text-slate-400 hover:text-slate-600"><X className="h-4 w-4" /></button>
         </div>
+        )}
         <div className="flex flex-wrap items-center gap-2 px-4 py-2 border-b border-slate-100">
           {FILTROS_CONFERENCIA.map(f => (
             <button key={f} type="button" onClick={() => setFiltro(f)}
@@ -430,10 +439,6 @@ function ConferenciaCampanhas({ rows, onClose }) {
           ))}
           <input value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar cliente, chassi, atendimento, campanha, operador"
             className="text-[11px] px-2 py-1 rounded-md border border-slate-300 w-72 focus:outline-none focus:ring-2 focus:ring-emerald-500/40" />
-          <button type="button" onClick={exportar} disabled={!lista.length}
-            className="ml-auto text-[11px] px-2 py-1 rounded-md bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-1">
-            <Download className="h-3.5 w-3.5" /> Exportar Excel ({lista.length.toLocaleString('pt-BR')})
-          </button>
         </div>
         <div className="overflow-auto px-4 pb-4">
           <table className="w-full text-[11px]">
@@ -451,22 +456,27 @@ function ConferenciaCampanhas({ rows, onClose }) {
           </table>
         </div>
       </div>
-    </div>,
+  )
+  if (inline) return painel
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>{painel}</div>,
     document.body
   )
 }
 
 // Pop-up com a tabela por data da aba: uma linha por data (mais recente primeiro) e o Total no fim.
 // colunas = [[título, (linha) => valor]]; a 1ª coluna é a data (à esquerda), as demais números (à direita).
-function TabelaPorData({ titulo, colunas, linhas, total, vazio, onClose }) {
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-7xl max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+// inline = dentro da página (aba Campanhas Geradas); sem inline, pop-up.
+function TabelaPorData({ titulo, colunas, linhas, total, vazio, onClose, inline = false }) {
+  const painel = (
+      <div className={inline ? 'bg-white rounded-lg shadow-sm border border-slate-200 w-full max-h-[75vh] flex flex-col' : 'bg-white rounded-lg shadow-xl w-full max-w-7xl max-h-[85vh] flex flex-col'} onClick={e => e.stopPropagation()}>
+        {!inline && (
         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
           <p className="text-sm font-bold text-slate-900 flex items-center gap-2"><Table2 className="h-4 w-4 text-emerald-600" /> {titulo}</p>
           <button type="button" onClick={onClose} aria-label="Fechar" className="text-slate-400 hover:text-slate-600"><X className="h-4 w-4" /></button>
         </div>
-        <div className="overflow-auto px-4 pb-4">
+        )}
+        <div className={`overflow-auto px-4 pb-4 ${inline ? 'pt-2' : ''}`}>
           <table className="w-full text-[11px]">
             <thead className="sticky top-0 z-10 bg-white text-slate-500 uppercase text-[10px] shadow-[0_1px_0_0_#e2e8f0]">
               <tr>{colunas.map(([h], i) => <th key={h} className={`font-bold py-1.5 px-2 border-b border-slate-200 ${i < 1 ? 'text-left' : 'text-right'}`}>{h}</th>)}</tr>
@@ -482,7 +492,10 @@ function TabelaPorData({ titulo, colunas, linhas, total, vazio, onClose }) {
           </table>
         </div>
       </div>
-    </div>,
+  )
+  if (inline) return painel
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>{painel}</div>,
     document.body
   )
 }
@@ -587,7 +600,7 @@ function TabelaFaltaContatar({ rows, carregando, info }) {
           <table className="w-full text-[11px]">
             <thead className="sticky top-0 z-10 bg-white">
               <tr className="text-slate-500 border-b border-slate-200">
-                {['Data da campanha', 'Campanha', 'Atendimento', 'Cliente', 'Chassi', 'Contato', 'Próximo contato'].map(h => <th key={h} className="text-left font-semibold py-1 pr-3 whitespace-nowrap">{h}</th>)}
+                {['Data da campanha', 'Campanha', 'Atendimento', 'Cliente', 'Chassi', 'Operador', 'Contato', 'Próximo contato'].map(h => <th key={h} className="text-left font-semibold py-1 pr-3 whitespace-nowrap">{h}</th>)}
               </tr>
             </thead>
             <tbody>
@@ -598,6 +611,7 @@ function TabelaFaltaContatar({ rows, carregando, info }) {
                   <td className="py-1 pr-3">{r.id_atendimento ?? '—'}</td>
                   <td className="py-1 pr-3">{r.cliente}</td>
                   <td className="py-1 pr-3 whitespace-nowrap">{r.chassi}</td>
+                  <td className="py-1 pr-3 whitespace-nowrap">{r.operador || ''}</td>
                   <td className="py-1 pr-3 whitespace-nowrap">{r.contato_registrado ? 'Já contatado, sem resultado' : 'Sem contato'}</td>
                   <td className="py-1 pr-3 whitespace-nowrap">{r.contato_ultimo ? fmtData(r.contato_ultimo) : ''}</td>
                 </tr>
@@ -659,13 +673,6 @@ function JanelaConsulta({ titulo, lista: todos, carregando, onClose, colunas, fi
     return todos.filter(filtros[filtro])
       .filter(a => !t || camposBusca(a).some(v => String(v ?? '').toUpperCase().includes(t)))
   }, [todos, filtros, filtro, busca, camposBusca])
-  const exportar = async () => {
-    const XLSX = await import('xlsx')
-    const ws = XLSX.utils.json_to_sheet(lista.map(a => Object.fromEntries(colunas.map(([h, f]) => [h, f(a)]))))
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, aba)
-    XLSX.writeFile(wb, `${arquivo} ${filtro} ${new Date().toISOString().slice(0, 10)}.xlsx`)
-  }
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
       <div className="bg-white rounded-lg shadow-xl w-full max-w-[95vw] max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
@@ -682,10 +689,6 @@ function JanelaConsulta({ titulo, lista: todos, carregando, onClose, colunas, fi
           ))}
           <input value={busca} onChange={e => setBusca(e.target.value)} placeholder={placeholder}
             className="text-[11px] px-2 py-1 rounded-md border border-slate-300 w-64 focus:outline-none focus:ring-2 focus:ring-emerald-500/40" />
-          <button type="button" onClick={exportar} disabled={!lista.length}
-            className="ml-auto text-[11px] px-2 py-1 rounded-md bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-1">
-            <Download className="h-3.5 w-3.5" /> Exportar Excel ({lista.length.toLocaleString('pt-BR')})
-          </button>
         </div>
         <div className="overflow-auto px-4 pb-4">
           <table className="w-full text-[11px]">
@@ -929,12 +932,23 @@ export default function BiAgendamentoServicos() {
   }
   // Ao trocar de aba o período escolhido continua o mesmo (só a Visão Período, escondida, usa o ano até ontem).
   // Contatos das campanhas dentro do período (data do arquivo) e das empresas selecionadas.
-  // Aba Por Campanhas sem filtro de Empresas: o relatório da campanha (RCR038) não identifica a empresa
-  // (a sigla no nome do arquivo não é confiável — há campanhas exportadas com sigla de outra unidade).
+  // Empresas (25/11/2026, pedido do usuário): o RCR038 não traz a empresa nas linhas; vale a UNIDADE DA CAMPANHA,
+  // pela sigla no nome do arquivo (CGR, DOU, TLG, CPD). O agendamento pode ter sido feito em outra empresa
+  // (ex: campanha de Dourados agendada em Campo Grande) — conta na unidade da campanha.
   const contatosFiltrados = useMemo(() => {
     if (!crm) return []
-    return agendamentoUmaVez(crm.rows.filter(r => r.data && r.data >= dataIni && r.data <= dataFim))
-  }, [crm, dataIni, dataFim])
+    const norm = (t) => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().trim()
+    const nomesSel = empresasSel.length
+      ? empresas.filter(e => empresasSel.includes(e.id)).map(e => norm(e.empresa_fantasia || e.nome_empresa))
+      : null
+    const daUnidade = (r) => {
+      const nome = EMPRESA_DA_SIGLA[r.sigla]
+      if (!nome) return !nomesSel // arquivo sem sigla: só com "Todas"
+      if (!permiteNome(nome)) return false
+      return !nomesSel || nomesSel.includes(norm(nome))
+    }
+    return agendamentoUmaVez(crm.rows.filter(r => r.data && r.data >= dataIni && r.data <= dataFim && daUnidade(r)))
+  }, [crm, dataIni, dataFim, empresas, empresasSel, permiteNome])
   const numeros = resumoContatos(contatosFiltrados)
   // Tabela "Campanhas por data de geração" (ícone na linha do subtítulo): mesmas regras dos cards, por campanha.
   const [tabela, setTabela] = useState(null) // 'campanhas' | 'agendamentos' | 'passagens' (pop-up da tabela por data)
@@ -1129,25 +1143,24 @@ export default function BiAgendamentoServicos() {
 
   return (
     <div className="min-h-full bg-[#020617] p-6 space-y-5">
-      {/* CABEÇALHO + FILTROS (mesmo modelo de Possibilidades, em verde) */}
-      {/* Sem overflow-hidden: cortava a lista do seletor de empresas. O degradê leva o próprio arredondamento. */}
-      <div className="relative z-10 rounded-lg border border-slate-200 shadow-sm bg-white">
-        <div className="absolute inset-0 rounded-lg bg-gradient-to-r from-emerald-100 via-green-50 to-transparent pointer-events-none" />
-        <div className="relative flex flex-wrap items-stretch justify-between gap-4 p-5">
-          {/* self-start: título no topo, na linha da "Última atualização" (como no Possibilidades) */}
-          <div className="flex items-center gap-3 self-start">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-400 to-green-600 flex items-center justify-center shrink-0">
-              <Calendar className="h-5 w-5 text-white" />
-            </div>
-            <div>
-              <h1 className="text-lg font-bold text-slate-900 tracking-tight">Mesa de Agendamento</h1>
-              <p className="text-[11px] text-slate-500 uppercase tracking-wide">Agendamento de Serviços — Pós-Venda</p>
+      {/* CABEÇALHO + FILTROS — mesmo modelo do BI Possibilidades - Sintonia do Dia (25/11/2026): degradê e logo do
+          painel Power BI da Caiobá, título em serifa caixa alta, botões brancos, rótulos brancos. */}
+      {/* Sem overflow-hidden: cortava a lista do seletor de empresas. */}
+      <div className="relative z-10 rounded-lg shadow-sm"
+        style={{ background: 'linear-gradient(90deg, #fdf8ec 0%, #f8d78c 28%, #f0a30a 50%, #a08a35 68%, #4f6a6a 84%, #1a4d8f 100%)' }}>
+        <div className="relative flex flex-wrap items-stretch justify-between gap-4 px-5 py-3">
+          <div className="flex items-center gap-4 self-start">
+            <img src={logoCaioba} alt="Caiobá" className="h-11 w-auto shrink-0" />
+            <div className="w-0.5 self-stretch bg-[#1a4d8f]" />
+            <div style={{ fontFamily: "Cambria, Georgia, 'Times New Roman', serif" }}>
+              <h1 className="text-[22px] font-bold text-slate-900 uppercase leading-tight">Mesa de Agendamento</h1>
+              <p className="text-[15px] italic text-slate-900 uppercase leading-tight mt-0.5">Agendamento de Serviços — Pós-Vendas</p>
             </div>
           </div>
           <div className="flex flex-col items-end gap-2">
             <div className="flex items-center gap-2">
-              <p className="text-[10px] text-slate-500 leading-tight">
-                Última atualização: <strong className="text-slate-700">{carregando ? '...' : crm?.lidoEm ? fmtDataHora(new Date(crm.lidoEm)) : '—'}</strong>
+              <p className="text-[10px] text-white leading-tight text-right">
+                Atualizado em:<br /><strong>{carregando ? '...' : crm?.lidoEm ? fmtDataHora(new Date(crm.lidoEm)) : '—'}</strong>
               </p>
               <button
                 type="button"
@@ -1155,36 +1168,34 @@ export default function BiAgendamentoServicos() {
                 disabled={carregando}
                 title="Atualizar dados"
                 aria-label="Atualizar dados"
-                className="flex items-center justify-center p-1.5 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+                className={BOTAO_CABECALHO}
               >
-                <RefreshCw className={`h-3.5 w-3.5 ${carregando ? 'animate-spin' : ''}`} />
+                <RefreshCw className={`h-4 w-4 ${carregando ? 'animate-spin' : ''}`} />
               </button>
               {/* Engrenagem: metas dos indicadores (velocímetros). */}
               <button type="button" onClick={() => setMetasAberto(true)} title="Metas dos indicadores" aria-label="Metas dos indicadores"
-                className="flex items-center justify-center p-1.5 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm transition-colors">
-                <Settings className="h-3.5 w-3.5" />
+                className={BOTAO_CABECALHO}>
+                <Settings className="h-4 w-4" />
               </button>
               {/* Manual operacional: página própria, sempre em outra aba (mesmo padrão do BI Planos de Manutenção). */}
               <a href="/bi/agendamento-servicos/manual" target="_blank" rel="noopener noreferrer"
                 title="Manual operacional do BI (abre em outra aba)" aria-label="Manual operacional do BI"
-                className="flex items-center justify-center p-1.5 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm transition-colors">
-                <BookOpen className="h-3.5 w-3.5" />
+                className={BOTAO_CABECALHO}>
+                <BookOpen className="h-4 w-4" />
               </a>
             </div>
-            {erroCrm && <p className="text-[10px] text-red-600 max-w-[420px] text-right leading-tight">{erroCrm}</p>}
+            {erroCrm && <p className="text-[10px] text-red-600 bg-white/90 rounded px-2 py-1 max-w-[420px] text-right leading-tight">{erroCrm}</p>}
             <div className="flex flex-wrap items-end gap-4">
-              {/* Na aba Por Campanhas não há seletor de Empresas (o RCR038 não identifica a empresa). */}
-              {aba !== ABA_CAMPANHAS && (
+              {/* Empresas em todas as abas; nas abas de campanha vale a unidade da campanha (sigla do arquivo RCR038). */}
               <div className="flex flex-col gap-1">
-                <label className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1"><Building2 className="h-3 w-3" /> Empresas</label>
+                <label className="text-[10px] font-bold text-white uppercase flex items-center gap-1"><Building2 className="h-3 w-3" /> Empresas</label>
                 <SeletorEmpresas grupos={grupos} selecionadas={empresasSel} onChange={setEmpresasSel} />
               </div>
-              )}
               <div className="flex flex-col gap-1">
-                <label className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1"><Calendar className="h-3 w-3" /> Data</label>
+                <label className="text-[10px] font-bold text-white uppercase flex items-center gap-1"><Calendar className="h-3 w-3" /> Data</label>
                 <div className="flex items-center gap-1.5">
                   <input type="date" className={inputCls.replace("w-full ", "")} max={dataFim} value={dataIni} onChange={e => e.target.value && setDataIni(e.target.value)} />
-                  <span className="text-slate-400 text-xs">até</span>
+                  <span className="text-white text-xs">até</span>
                   <input type="date" className={inputCls.replace("w-full ", "")} min={dataIni} value={dataFim} onChange={e => e.target.value && setDataFim(e.target.value)} />
                   <button type="button" onClick={() => trocarMes(-1)} title="Mês anterior" aria-label="Mês anterior"
                     className="p-1 rounded-md bg-white border border-slate-300 text-slate-600 hover:bg-slate-50">
@@ -1201,35 +1212,38 @@ export default function BiAgendamentoServicos() {
         </div>
       </div>
 
-      {/* Abas à esquerda; na mesma linha, à direita, os ícones da aba (conferência/consulta e tabela por data). */}
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-lg p-0.5 w-fit">
-          {ABAS.map(a => (
-            <button
-              key={a}
-              type="button"
-              onClick={() => trocarAba(a)}
-              className={`px-4 py-1.5 rounded-md text-xs font-semibold transition-colors ${aba === a ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'}`}
-            >
-              {a}
-            </button>
-          ))}
+      {/* Abas tipo "pasta" (modelo do BI Possibilidades, 25/11/2026) sobre a linha clara; na mesma linha, à direita,
+          os ícones da aba (conferência/consulta e tabela por data), um pouco acima da linha. */}
+      <div className="flex flex-wrap items-end justify-between gap-3 border-b-2 border-slate-200 [&>*:not(:first-child)]:mb-1.5">
+        <div className="flex items-end gap-1 flex-wrap">
+          {ABAS.map(a => {
+            const Icone = ICONE_ABA[a]
+            return (
+              <button
+                key={a}
+                type="button"
+                onClick={() => trocarAba(a)}
+                className={`inline-flex items-center gap-1.5 px-4 rounded-t-md border border-b-0 text-[11px] font-semibold uppercase transition-colors ${
+                  aba === a
+                    ? 'py-2 bg-[#1a4d8f] border-[#1a4d8f] text-white shadow-sm'
+                    : 'py-1.5 bg-gradient-to-b from-white to-slate-100 border-slate-300 text-slate-500 hover:text-slate-800 hover:to-slate-50'}`}
+              >
+                {Icone && <Icone className="h-3.5 w-3.5" />}{a}
+              </button>
+            )
+          })}
+          {/* Depois de Por Data da O.S., com o visual de aba: Conferência/Consulta e Tabela da aba escolhida
+              (abrem a janela, a aba ativa não muda). */}
+          {aba === ABA_AGENDAMENTOS && (
+            <IconesAba onConferencia={() => setTabela('consultaAgend')} rotuloConferencia="Consulta" tituloConferencia="Consulta de agendamentos (ROF037)"
+              onTabela={() => setTabela('agendamentos')} tituloTabela="Agendamentos por data do agendamento" />
+          )}
+          {aba === ABA_PASSAGENS && (
+            <IconesAba onConferencia={() => setTabela('consultaOs')} rotuloConferencia="Consulta" tituloConferencia="Consulta de O.S. (ROF001)"
+              onTabela={() => setTabela('passagens')} tituloTabela="Passagens por data de abertura" />
+          )}
         </div>
-        {aba === ABA_CAMPANHAS && (
-          <IconesAba onConferencia={crm ? () => setTabela('conferencia') : null} tituloConferencia="Conferência linha a linha"
-            onTabela={() => setTabela('campanhas')} tituloTabela="Campanhas por data de geração" />
-        )}
-        {aba === ABA_AGENDAMENTOS && (
-          <IconesAba onConferencia={() => setTabela('consultaAgend')} tituloConferencia="Consulta de agendamentos (ROF037)"
-            onTabela={() => setTabela('agendamentos')} tituloTabela="Agendamentos por data do agendamento" />
-        )}
-        {aba === ABA_PASSAGENS && (
-          <IconesAba onConferencia={() => setTabela('consultaOs')} tituloConferencia="Consulta de O.S. (ROF001)"
-            onTabela={() => setTabela('passagens')} tituloTabela="Passagens por data de abertura" />
-        )}
       </div>
-      {/* Objetivo da aba (mesmo texto do manual). */}
-      {OBJETIVO_ABAS[aba] && <p className="text-[11px] text-slate-300 leading-snug max-w-4xl -mt-2">{OBJETIVO_ABAS[aba]}</p>}
 
       {/* Tipo de Agendamentos: só na Visão Período. */}
       {aba === VISAO_PERIODO && (
@@ -1243,8 +1257,30 @@ export default function BiAgendamentoServicos() {
       </div>
       )}
 
-      {/* Aba Passagens: O.S. abertas no período e quantas vieram de agendamento. */}
-      {aba === ABA_AGENDAMENTOS ? (
+      {/* Aba Contatos Gerados: a antiga Conferência linha a linha, dentro da página (sem pop-up). */}
+      {aba === ABA_CONTATOS ? (
+        crm ? <ConferenciaCampanhas rows={contatosFiltrados} inline />
+          : <p className="text-[11px] text-slate-300">{carregando ? 'Carregando contatos gerados...' : 'Sem dados das campanhas.'}</p>
+      ) : aba === ABA_CAMP_GERADAS ? (
+        /* Aba Campanhas Geradas: a antiga tabela "Campanhas por data de geração", dentro da página (sem pop-up). */
+        crm ? (
+          <TabelaPorData inline linhas={linhasCampanhas} total={numeros} vazio="Nenhuma campanha no período."
+            colunas={[
+              ['Data de geração', l => fmtData(l.data)],
+              ['Campanhas geradas', l => l.campanhas],
+              ['Contatos gerados', l => l.contatos],
+              ['Contatos agendados', l => l.agendados],
+              ['Contatos encerrados', l => l.encerrados],
+              ['Contato a realizar', l => l.faltaContatar],
+              ['Agendamentos comparecidos', l => l.osAberta],
+              ['Agendamentos a comparecer', l => l.programados],
+              ['Agendamentos não comparecidos (No-show)', l => l.noShow],
+              ['Taxa de Agendamento', l => taxa(l.agendados, l.contatos)],
+              ['Taxa de Conversão', l => taxa(l.osAberta, l.agendados)],
+              ['Taxa de No-show', l => taxa(l.noShow, l.agendados)],
+            ]} />
+        ) : <p className="text-[11px] text-slate-300">{carregando ? 'Carregando campanhas...' : 'Sem dados das campanhas.'}</p>
+      ) : aba === ABA_AGENDAMENTOS ? (
         <>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {gaugesAgend.map(g => <GaugeMeta key={g.label} {...g} />)}
@@ -1343,6 +1379,7 @@ export default function BiAgendamentoServicos() {
 
       {/* À esquerda, o que aconteceu com os agendados (comparecidos, a comparecer, não comparecidos);
           à direita, Motivo de Encerramento (motivo dos Contatos encerrados, RCR017). */}
+      {/* Contatos agendados e Motivo de Encerramento lado a lado, com a mesma altura (a célula do grid estica). */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <CardContatosAgendados numeros={numeros} carregando={carregando && !crm} info={INFO.quadroAgendados} />
         <CardMotivos motivos={numeros.motivos} carregando={carregando && !crm} info={INFO.motivos} />
@@ -1355,26 +1392,8 @@ export default function BiAgendamentoServicos() {
       )}
 
       {metasAberto && <JanelaMetas metas={metas} info={metasInfo} onSalvar={salvarMetas} onClose={() => setMetasAberto(false)} />}
-      {tabela === 'conferencia' &&<ConferenciaCampanhas rows={contatosFiltrados} onClose={() => setTabela(null)} />}
       {tabela === 'consultaOs' && <ConsultaOs lista={consultaOsCampanha} carregando={carregando && !passagensOs} onClose={() => setTabela(null)} />}
       {tabela === 'consultaAgend' && <ConsultaAgendamentos lista={consultaAgend} carregando={carregando && !passagensOs} onClose={() => setTabela(null)} />}
-      {tabela === 'campanhas' && (
-        <TabelaPorData titulo="Campanhas por data de geração" linhas={linhasCampanhas} total={numeros} vazio="Nenhuma campanha no período." onClose={() => setTabela(null)}
-          colunas={[
-            ['Data de geração', l => fmtData(l.data)],
-            ['Campanhas geradas', l => l.campanhas],
-            ['Contatos gerados', l => l.contatos],
-            ['Contatos agendados', l => l.agendados],
-            ['Contatos encerrados', l => l.encerrados],
-            ['Contato a realizar', l => l.faltaContatar],
-            ['Agendamentos comparecidos', l => l.osAberta],
-            ['Agendamentos a comparecer', l => l.programados],
-            ['Agendamentos não comparecidos (No-show)', l => l.noShow],
-            ['Taxa de Agendamento', l => taxa(l.agendados, l.contatos)],
-            ['Taxa de Conversão', l => taxa(l.osAberta, l.agendados)],
-            ['Taxa de No-show', l => taxa(l.noShow, l.agendados)],
-          ]} />
-      )}
       {tabela === 'agendamentos' && (
         <TabelaPorData titulo="Agendamentos por data do agendamento" linhas={porData(agendDoPeriodo, resumoAgendamentos, true)}
           total={resumoAgendamentos(agendDoPeriodo || [])} vazio="Nenhum agendamento no período." onClose={() => setTabela(null)}

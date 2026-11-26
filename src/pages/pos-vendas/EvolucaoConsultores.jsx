@@ -9,6 +9,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { ChevronDown } from 'lucide-react'
+import { seletorBi, opcaoBi, rotuloBi } from './estiloBi'
 import { semAcento, fmtH, fmtPct, fmtR$ } from './produtividadeCalculos'
 
 const MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
@@ -38,14 +39,14 @@ function SeletorConsultores({ nomes, escolhidos, onChange }) {
   const resumo = !escolhidos.size ? 'Todos' : escolhidos.size === 1 ? nomes.find(n => escolhidos.has(semAcento(n))) || '1 consultor' : `${escolhidos.size} consultores`
   const alternar = (n) => { const k = semAcento(n); const s = new Set(escolhidos); s.has(k) ? s.delete(k) : s.add(k); onChange(s) }
   return (
-    <div className="flex flex-col gap-1 relative" ref={ref}>
-      <label className="text-[10px] font-bold text-slate-500 uppercase">Consultores</label>
+    <div className="flex items-center gap-2 relative" ref={ref}>
+      <label className={rotuloBi}>Consultores</label>
       <button type="button" onClick={() => setAberto(v => !v)}
-        className="w-72 h-[30px] flex items-center justify-between border border-slate-300 rounded-md px-2 text-[11px] bg-white">
-        <span className="truncate">{resumo}</span><ChevronDown className="h-3.5 w-3.5 text-slate-400" />
+        className={`w-72 flex items-center justify-between !px-3 ${seletorBi}`}>
+        <span className="truncate">{resumo}</span><ChevronDown className="h-3.5 w-3.5 text-white" />
       </button>
       {aberto && (
-        <div className="absolute top-full mt-1 z-30 w-72 max-h-72 overflow-y-auto bg-white border border-slate-200 rounded-md shadow-lg p-1 text-[11px]">
+        <div className="absolute top-full right-0 mt-1 z-30 w-72 max-h-72 overflow-y-auto bg-white border border-slate-200 rounded-md shadow-lg p-1 text-[11px]">
           <label className="flex items-center gap-2 px-2 py-1 hover:bg-slate-50 rounded cursor-pointer font-semibold border-b border-slate-100">
             <input type="checkbox" checked={!escolhidos.size} onChange={() => onChange(new Set())} /> Todos
           </label>
@@ -73,7 +74,7 @@ function TooltipCons({ active, payload, label }) {
   )
 }
 
-export default function EvolucaoConsultores({ modo, diarioEsc, mensalEsc, metasAno, periodo, slot, linhasConsultores }) {
+export default function EvolucaoConsultores({ modo, diarioEsc, mensalEsc, metasAno, periodo, slot, slot2, linhasConsultores }) {
   const [ind, setInd] = useState('prod')
   const [escolhidos, setEscolhidos] = useState(() => new Set())
   const indDef = IND_CONS.find(i => i.id === ind)
@@ -118,16 +119,17 @@ export default function EvolucaoConsultores({ modo, diarioEsc, mensalEsc, metasA
   }, [porMes])
 
   const filtros = (
-    <div className="flex flex-wrap items-end gap-3">
-      <div className="flex flex-col gap-1">
-        <label className="text-[10px] font-bold text-slate-500 uppercase">Indicadores</label>
-        <select value={ind} onChange={e => setInd(e.target.value)} className="w-44 h-[30px] border border-slate-300 rounded-md px-2 text-[11px] bg-white">
-          {IND_CONS.map(i => <option key={i.id} value={i.id}>{i.label}</option>)}
+    <div className={slot ? 'contents' : 'flex flex-wrap items-center gap-4'}>
+      <div className="flex items-center gap-2">
+        <label className={rotuloBi}>Indicadores</label>
+        <select value={ind} onChange={e => setInd(e.target.value)} className={`w-48 ${seletorBi}`}>
+          {IND_CONS.map(i => <option key={i.id} value={i.id} className={opcaoBi}>{i.label}</option>)}
         </select>
       </div>
-      <SeletorConsultores nomes={nomes} escolhidos={escolhidos} onChange={setEscolhidos} />
     </div>
   )
+  // Consultores na linha dos botões Dia | Mês (como o Produtivo dos mecânicos)
+  const consultores = <SeletorConsultores nomes={nomes} escolhidos={escolhidos} onChange={setEscolhidos} />
 
   const LINHAS = [
     ['Meta Horas', t => fmtH(t.meta || null)],
@@ -141,6 +143,7 @@ export default function EvolucaoConsultores({ modo, diarioEsc, mensalEsc, metasA
   return (
     <div className="flex flex-col gap-3">
       {slot ? createPortal(filtros, slot) : filtros}
+      {slot2 ? createPortal(consultores, slot2) : consultores}
       <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-3">
         <ResponsiveContainer width="100%" height={modo === 'dia' ? 380 : 300}>
           {modo === 'dia' ? (
