@@ -2,7 +2,7 @@ import * as XLSX from 'xlsx'
 import axios from 'axios'
 import { graphGet, selecionarArquivosRelatorio } from './graphClient.js'
 
-const PASTA = '/Banco de Dados - DAF - Pós-Vendas/Financeiro - DAF'
+const PASTA = '/Banco de Dados - DAF - Financeiro'
 // RFN003 passou a vir como 1 arquivo POR UNIDADE (ex: "..._CAMPO GRANDE.xls", "..._DOURADOS.xls"),
 // não mais um arquivo único — por isso busca por início do nome, não path exato.
 const PREFIX_TITULOS = 'RFN003_PosicaoAnaliticoReceber_Excel'

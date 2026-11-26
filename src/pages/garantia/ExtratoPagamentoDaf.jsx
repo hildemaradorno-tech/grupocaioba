@@ -3,7 +3,7 @@
 // a antiga pasta "Banco de Dados - DAF - Extrato de Pagamentos" foi excluída) (
 // ex.: Account-303920.xlsx), lida ao vivo pelo backend (/api/extrato-daf). Cabeçalho traduzido para português.
 // Conciliação (/api/extrato-daf/conciliacao): cruza o extrato com os títulos a receber da DAF do RFN003
-// Analítico (Financeiro - DAF) — Referência = NFS-e ou "NFP" (Nota Fiscal do título); sem nota, pelo Texto
+// Analítico (Banco de Dados - DAF - Financeiro) — Referência = NFS-e ou "NFP" (Nota Fiscal do título); sem nota, pelo Texto
 // (chassi, O.S., número "O0xxxxx" da Observação). Mostrada na aba Extrato (coluna Situação + expandir a linha)
 // e na aba Títulos em Aberto. A aba Conciliação foi excluída a pedido do usuário em 22/11/2026.
 // Nada é gravado: vale só enquanto os títulos não são baixados.

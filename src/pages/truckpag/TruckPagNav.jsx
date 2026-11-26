@@ -3,7 +3,7 @@ import { NavLink } from 'react-router-dom'
 import { Receipt, Link2, ArrowLeftRight, Info } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 
-const PASTA = 'Pasta SharePoint: /Banco de Dados - DAF - Pós-Vendas/Financeiro - DAF'
+const PASTA = 'Pasta SharePoint: /Banco de Dados - DAF - Financeiro'
 
 // `info` é o texto do botão de informação de cada aba (descrição + de onde vem o dado).
 const LINKS = [
