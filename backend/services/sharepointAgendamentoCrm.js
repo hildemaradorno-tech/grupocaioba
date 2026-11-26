@@ -18,6 +18,17 @@ const DIAS_CAMPANHA_AGENDAMENTO = 30
 // (id_atendimento do RCR038 = Atendimento_Codigo).
 const PASTA_CONTATOS = `${RAIZ}/LISTA POR DATA CONTATO_ENCERRAMENTO`
 const PREFIX_CONTATOS = 'RCR017_LISTAPORDATACONTATOENCERRAMENTO'
+// Atendimento_MotVendaPerdidaCod do RCR017 → nome (cadastro de Motivos de Venda Perdida do Dealer.net).
+// Código novo sem nome aqui aparece como "Venda perdida - cód. X".
+const MOTIVO_VENDA_PERDIDA = {
+  8: 'DUPLICIDADE DE ATENDIMENTO',
+  9: 'OUTROS',
+  12: 'FALTA ESTOQUE',
+  124: 'ENCERRADO SEM CONTATO',
+  125: 'B3 - CLIENTE NÃO COMPARECEU',
+  141: 'LIBERADO PRODUTO PARA VENDA',
+  161: 'TESTE DE SISTEMA',
+}
 
 const CACHE_TTL_MS = 5 * 60 * 1000
 let _cache = null
@@ -123,7 +134,11 @@ async function lerContatos() {
     for (const r of linhas) {
       const at = num(r.Atendimento_Codigo)
       if (at === null) continue
-      const c = porAtendimento.get(at) || { motivos: new Set(), agendouAtivo: false, datas: [], operador: '', motivoFinal: '', motivoFinalEm: -1 }
+      const c = porAtendimento.get(at) || { motivos: new Set(), agendouAtivo: false, datas: [], operador: '', motivoFinal: '', motivoFinalEm: -1, vendaPerdida: '' }
+      // Venda perdida (26/11/2026, pedido do usuário): atendimento dado como venda perdida no Dealer.net
+      // (Atendimento_MotVendaPerdidaCod preenchido) está encerrado, mesmo sem MotivoEncerramento.
+      const vp = txt(r.Atendimento_MotVendaPerdidaCod)
+      if (vp) c.vendaPerdida = vp
       const motivo = txt(r.MotivoEncerramento)
       if (motivo) c.motivos.add(motivo)
       // Motivo final = o do contato mais recente que tem motivo (um por atendimento, p/ o quadro "Por que não agendaram").
@@ -229,8 +244,11 @@ export async function getCampanhasCrm() {
     const c = r.id_atendimento !== null ? contatos.get(r.id_atendimento) : null
     r.contato_registrado = !!c
     r.motivos = c ? [...c.motivos] : []
-    r.motivo_final = c ? c.motivoFinal : ''
-    r.contato_realizado = !!c && (c.motivos.size > 0 || c.agendouAtivo)
+    r.venda_perdida = c ? c.vendaPerdida : ''
+    // Sem MotivoEncerramento mas com venda perdida: o motivo é a venda perdida (o RCR017 só traz o código;
+    // o nome vem do cadastro de Motivos de Venda Perdida do Dealer.net, informado pelo usuário em 26/11/2026).
+    r.motivo_final = c ? (c.motivoFinal || (c.vendaPerdida ? `Venda perdida - ${MOTIVO_VENDA_PERDIDA[c.vendaPerdida] || `cód. ${c.vendaPerdida}`}` : '')) : ''
+    r.contato_realizado = !!c && (c.motivos.size > 0 || c.agendouAtivo || !!c.vendaPerdida)
     const datas = c ? [...c.datas].sort() : []
     r.contato_primeiro = datas[0] || null
     r.contato_ultimo = datas[datas.length - 1] || null

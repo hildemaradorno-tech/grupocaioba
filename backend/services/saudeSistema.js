@@ -3,6 +3,7 @@
 // próprios: Rotinas automáticas (schedulers do backend e sincronizações) e Integrações (e-mail, MicroWork, IA,
 // Power BI, planilha da Matriz de KPIs). Cada bloco devolve "controles" no mesmo formato do painel "Precisa de atenção".
 import nodemailer from 'nodemailer'
+import { gmailConfigurado, tokenAcessoGmail } from './emailService.js'
 import { getSupabaseAdmin } from './supabaseAdmin.js'
 import { lerEstado, INICIADO_EM } from './monitorRotinas.js'
 import { agoraLocal } from './projetosEmailConfig.js'
@@ -160,6 +161,11 @@ async function testar(fn, timeoutMs = 12000) {
 }
 
 async function testarEmail() {
+  // Gmail pela API (26/11/2026): testa só a autorização (renova o acesso), sem enviar e-mail
+  if (gmailConfigurado()) {
+    const r = await testar(async () => { await tokenAcessoGmail(); return {} }, 15000)
+    return { configurado: true, meio: 'gmail', servidor: `Gmail (${process.env.GMAIL_FROM || 'conta autorizada'})`, ...r }
+  }
   const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_SECURE } = process.env
   if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) return { configurado: false }
   const port = Number(SMTP_PORT) || 587
@@ -228,6 +234,9 @@ export async function getIntegracoes({ refresh = false } = {}) {
 
   // E-mail
   if (!email.configurado) c.push({ id: 'int-email', grupo: 'E-mail', nivel: 'atencao', titulo: 'E-mail não configurado neste servidor (SMTP_HOST/USER/PASS)', detalhe: 'Avisos da Manifestação e das tarefas de Projetos não são enviados.' })
+  else if (!email.ok && email.meio === 'gmail') c.push({ id: 'int-email', grupo: 'E-mail', nivel: 'critico', titulo: `Envio de e-mail pelo Gmail não funciona: ${email.erro}`,
+    detalhe: 'Os avisos da Manifestação e das tarefas de Projetos não saem. Se a autorização expirou, rode de novo node scripts/gmailAutorizar.js.' })
+  else if (email.ok && email.meio === 'gmail') c.push({ id: 'int-email', grupo: 'E-mail', nivel: 'ok', titulo: `E-mail pelo Gmail funcionando (${process.env.GMAIL_FROM || 'conta autorizada'}, ${email.ms} ms)` })
   else if (!email.ok) c.push({ id: 'int-email', grupo: 'E-mail', nivel: 'atencao', titulo: `Envio de e-mail não funciona neste servidor: ${email.erro}`,
     detalhe: prod ? `A conta (${process.env.SMTP_USER || 'SMTP'}) está certa; o plano Hobby do Railway é que bloqueia a saída de e-mail (SMTP). Os avisos automáticos da Manifestação e das tarefas de Projetos não saem da produção.` : `Servidor ${email.servidor} não respondeu.` })
   else c.push({ id: 'int-email', grupo: 'E-mail', nivel: 'ok', titulo: `Servidor de e-mail respondendo (${email.ms} ms)` })

@@ -266,7 +266,7 @@ function GaugeMeta({ label, valor, meta, info, menorMelhor }) {
 const ABA_CONTATOS = 'Contatos Gerados'
 // Campanhas Geradas (25/11/2026): a antiga tabela "Campanhas por data de geração" da aba Por Campanhas, agora como aba.
 const ABA_CAMP_GERADAS = 'Campanhas Geradas'
-const ABAS = ['Por Campanhas', 'Por Data Agendamento', 'Por Data da O.S.', ABA_CONTATOS, ABA_CAMP_GERADAS]
+const ABAS = ['Por Campanhas', 'Por Data Agendamento', 'Por Data da O.S.', ABA_CAMP_GERADAS, ABA_CONTATOS]
 // Passagens: O.S. abertas e agendamentos; Por Data Agendamento: agenda pela data do agendamento e o que aconteceu; Campanhas: painel de cards/velocímetros; Visão Período: gráficos mensais.
 const ABA_PASSAGENS = 'Por Data da O.S.'
 const ABA_AGENDAMENTOS = 'Por Data Agendamento'
@@ -392,6 +392,7 @@ const COLUNAS_CONFERENCIA = [
   ['Situação', r => situacaoCampanha(r)],
   ['Contato (RCR017)', r => contatoCampanha(r)],
   ['Motivo de encerramento', r => r.motivo_final || ''],
+  ['Venda perdida (cód.)', r => r.venda_perdida || ''],
   ['1º contato', r => (r.contato_primeiro ? fmtData(r.contato_primeiro) : '')],
   ['Último contato', r => (r.contato_ultimo ? fmtData(r.contato_ultimo) : '')],
   ['Nº contatos', r => r.contato_qtde || ''],
@@ -585,43 +586,6 @@ function resumoContatos(rows) {
     }
   })
   return n
-}
-
-// Lista dos não agendados que faltam contatar (abaixo do card Contatos a realizar), da campanha mais antiga para a mais recente.
-function TabelaFaltaContatar({ rows, carregando, info }) {
-  const lista = rows.filter(r => !r.agendamento && !r.contato_realizado)
-    .sort((a, b) => a.data.localeCompare(b.data) || a.id_campanha_execucao - b.id_campanha_execucao || a.cliente.localeCompare(b.cliente, 'pt-BR'))
-  return (
-    <div className="relative bg-white border border-slate-200 rounded-lg p-3">
-      <BotaoInfo titulo="Contatos a realizar" info={info} />
-      <p className="text-[11px] font-semibold text-indigo-950 leading-tight mb-2 pr-5">Contatos a realizar ({lista.length.toLocaleString('pt-BR')})</p>
-      {carregando ? <p className="text-[11px] text-slate-400">...</p> : !lista.length ? <p className="text-[11px] text-slate-400">Nenhum contato a realizar no período.</p> : (
-        <div className="max-h-72 overflow-auto">
-          <table className="w-full text-[11px]">
-            <thead className="sticky top-0 z-10 bg-white">
-              <tr className="text-slate-500 border-b border-slate-200">
-                {['Data da campanha', 'Campanha', 'Atendimento', 'Cliente', 'Chassi', 'Operador', 'Contato', 'Próximo contato'].map(h => <th key={h} className="text-left font-semibold py-1 pr-3 whitespace-nowrap">{h}</th>)}
-              </tr>
-            </thead>
-            <tbody>
-              {lista.map((r, i) => (
-                <tr key={`${r.id_campanha_execucao}#${r.id_atendimento ?? r.id_cliente}#${i}`} className="border-b border-slate-100 text-slate-700">
-                  <td className="py-1 pr-3 whitespace-nowrap">{fmtData(r.data)}</td>
-                  <td className="py-1 pr-3">{r.id_campanha_execucao}</td>
-                  <td className="py-1 pr-3">{r.id_atendimento ?? '—'}</td>
-                  <td className="py-1 pr-3">{r.cliente}</td>
-                  <td className="py-1 pr-3 whitespace-nowrap">{r.chassi}</td>
-                  <td className="py-1 pr-3 whitespace-nowrap">{r.operador || ''}</td>
-                  <td className="py-1 pr-3 whitespace-nowrap">{r.contato_registrado ? 'Já contatado, sem resultado' : 'Sem contato'}</td>
-                  <td className="py-1 pr-3 whitespace-nowrap">{r.contato_ultimo ? fmtData(r.contato_ultimo) : ''}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  )
 }
 
 // Consulta de agendamentos (aba Por Data Agendamento): um agendamento do ROF037 por linha, com filtros e Excel.
@@ -1384,7 +1348,6 @@ export default function BiAgendamentoServicos() {
         <CardContatosAgendados numeros={numeros} carregando={carregando && !crm} info={INFO.quadroAgendados} />
         <CardMotivos motivos={numeros.motivos} carregando={carregando && !crm} info={INFO.motivos} />
       </div>
-      <TabelaFaltaContatar rows={contatosFiltrados} carregando={carregando && !crm} info={INFO.listaFaltaContatar} />
 
       </>
       )}

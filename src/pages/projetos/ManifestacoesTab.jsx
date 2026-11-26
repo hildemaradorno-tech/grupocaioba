@@ -210,7 +210,7 @@ export default function ManifestacoesTab({ projeto, onReload, convidados = [], m
           } else if (resultado?.erros?.length > 0) {
             alert(`⚠️ Participantes salvos, mas o envio de e-mail falhou:\n\n${resultado.erros.map(e => `${e.email}: ${e.erro}`).join('\n')}`)
           } else {
-            alert('⚠️ Participantes salvos, mas nenhum e-mail foi enviado.\n\nVerifique no Railway se SMTP_HOST, SMTP_USER e SMTP_PASS estão configurados.')
+            alert('⚠️ Participantes salvos, mas nenhum e-mail foi enviado.\n\nVerifique na Saúde do Sistema › Integrações se o e-mail (Gmail) está funcionando.')
           }
         } catch (errEmail) {
           console.error('[manifestacao] erro email:', errEmail)

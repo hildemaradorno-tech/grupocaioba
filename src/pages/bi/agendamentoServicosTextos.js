@@ -115,14 +115,15 @@ const REGRAS_CONTATO = [
   'Regras dos não agendados (RCR017):',
   '• Quem agendou vem sempre do ROF037; o RCR017 só explica os NÃO agendados',
   '• Liga pelo ID do atendimento: id_atendimento do RCR038 = Atendimento_Codigo do RCR017',
-  '• Contatos encerrados: não agendado cujo atendimento tem motivo de encerramento (MotivoEncerramento) ou o agendamento registrado num contato ativo ("Serviços:" na descrição, meio de contato que não é Receptivo) sem agendamento Ativo no ROF037',
-  '• Motivo: um por cliente — o do contato mais recente com motivo',
-  '• Contatos a realizar: não agendado sem motivo — o atendimento não aparece no RCR017 (sem contato) ou aparece sem resultado (já contatado, ex: retorno programado, contato receptivo)',
+  '• Contatos encerrados: não agendado cujo atendimento tem motivo de encerramento (MotivoEncerramento), foi dado como venda perdida (Atendimento_MotVendaPerdidaCod preenchido) ou tem o agendamento registrado num contato ativo ("Serviços:" na descrição, meio de contato que não é Receptivo) sem agendamento Ativo no ROF037',
+  '• Motivo: um por cliente — o do contato mais recente com motivo; sem MotivoEncerramento e com venda perdida, o motivo é "Venda perdida - <nome do motivo>" (o RCR017 só traz o código; o nome vem do cadastro de Motivos de Venda Perdida do Dealer.net: 8 Duplicidade de atendimento, 9 Outros, 12 Falta estoque, 124 Encerrado sem contato, 125 B3 - Cliente não compareceu, 141 Liberado produto para venda, 161 Teste de sistema; código sem nome cadastrado aparece como "Venda perdida - cód. X")',
+  '• Contatos a realizar: não agendado sem motivo e sem venda perdida — o atendimento não aparece no RCR017 (sem contato) ou aparece sem resultado (já contatado, ex: retorno programado, contato receptivo)',
 ].join('\n')
 const COL_CONTATO = [
   `${ARQ_CONTATO}:`,
   '• Atendimento_Codigo — liga com o id_atendimento da campanha',
   '• MotivoEncerramento — motivo do encerramento do contato',
+  '• Atendimento_MotVendaPerdidaCod — código da venda perdida; preenchido = atendimento encerrado',
   '• AtendimentoContato_Descricao — "Serviços:" = agendamento registrado no contato',
   '• MeioContato_Descricao — tira o contato Receptivo',
 ].join('\n')
@@ -385,28 +386,21 @@ ${COL_AGEND}`,
   encerrados: {
     objetivo: 'Mostrar quantos não agendados já foram trabalhados e não agendaram — e por quê.',
     fonte: `${ARQ_CAMPANHA}\n${ARQ_AGEND}\n${ARQ_CONTATO}`,
-    calculo: 'Contatos gerados não agendados (ROF037) cujo atendimento, no RCR017 (id_atendimento do RCR038 = Atendimento_Codigo), tem MotivoEncerramento preenchido — ou um contato ativo com "Serviços:" na descrição. O motivo de cada um está no quadro Motivo de Encerramento.',
+    calculo: 'Contatos gerados não agendados (ROF037) cujo atendimento, no RCR017 (id_atendimento do RCR038 = Atendimento_Codigo), tem MotivoEncerramento preenchido, Atendimento_MotVendaPerdidaCod preenchido (venda perdida) — ou um contato ativo com "Serviços:" na descrição. O motivo de cada um está no quadro Motivo de Encerramento.',
     filtros: `${REGRAS_CAMPANHA}\n${REGRAS_AGENDADO}\n${REGRAS_CONTATO}`,
     colunas: `${COL_CAMPANHA}\n${COL_AGEND_CAMPANHA}\n${COL_CONTATO}`,
   },
   faltaContatar: {
     objetivo: 'Mostrar quantos não agendados ainda precisam de contato para agendar.',
     fonte: `${ARQ_CAMPANHA}\n${ARQ_AGEND}\n${ARQ_CONTATO}`,
-    calculo: 'Contatos gerados não agendados (ROF037) e sem motivo de encerramento no RCR017: o id_atendimento não aparece no RCR017 (sem contato) ou aparece só com contato sem resultado (a coluna Contato da lista Contatos a realizar separa os dois casos). Contatos gerados = Contatos agendados + Contatos encerrados + Contatos a realizar.',
-    filtros: `${REGRAS_CAMPANHA}\n${REGRAS_AGENDADO}\n${REGRAS_CONTATO}`,
-    colunas: `${COL_CAMPANHA}\n${COL_AGEND_CAMPANHA}\n${COL_CONTATO}`,
-  },
-  listaFaltaContatar: {
-    objetivo: 'Listar os contatos a realizar, para a equipe da Mesa de Agendamento trabalhar.',
-    fonte: `${ARQ_CAMPANHA}\n${ARQ_AGEND}\n${ARQ_CONTATO}`,
-    calculo: 'Os mesmos clientes do card Contatos a realizar, um por linha, da campanha mais antiga para a mais recente. Colunas: Data da campanha (nome do arquivo RCR038), Campanha (ID_Campanha_Execucao), Atendimento (id_atendimento), Cliente (nome), Chassi, Operador (Atendimento_UsuarioNom do RCR017 — quem registrou o contato; vazio = ainda sem contato), Contato (Sem contato / Já contatado, sem resultado) e Próximo contato (data do contato registrado no RCR017 — AtendimentoContato_Data — para quem já foi contatado e ainda está sem resultado; vazio = ainda sem contato).',
+    calculo: 'Contatos gerados não agendados (ROF037) e sem motivo de encerramento nem venda perdida no RCR017: o id_atendimento não aparece no RCR017 (sem contato) ou aparece só com contato sem resultado (na aba Contatos Gerados, filtro Contato a realizar, a coluna Contato (RCR017) separa os dois casos). Contatos gerados = Contatos agendados + Contatos encerrados + Contatos a realizar.',
     filtros: `${REGRAS_CAMPANHA}\n${REGRAS_AGENDADO}\n${REGRAS_CONTATO}`,
     colunas: `${COL_CAMPANHA}\n${COL_AGEND_CAMPANHA}\n${COL_CONTATO}`,
   },
   motivos: {
     objetivo: 'Mostrar por que os clientes das campanhas não agendaram.',
     fonte: `${ARQ_CAMPANHA}\n${ARQ_AGEND}\n${ARQ_CONTATO}`,
-    calculo: 'Os clientes do card Contatos encerrados, um por cliente, pelo MotivoEncerramento do contato mais recente no RCR017; o total é igual ao card. "Agendamento no CRM sem Ativo no ROF037" = o contato registrou agendamento ("Serviços:"), mas não há agendamento Ativo no ROF037 dentro da regra. Quem agendou depois de recusar (ROF037) fica fora: conta em Contatos agendados. % = quantidade ÷ total do quadro.',
+    calculo: 'Os clientes do card Contatos encerrados, um por cliente, pelo MotivoEncerramento do contato mais recente no RCR017; o total é igual ao card. "Venda perdida - <motivo>" = atendimento dado como venda perdida no Dealer.net, sem MotivoEncerramento (o RCR017 só traz o código, em Atendimento_MotVendaPerdidaCod; o nome vem do cadastro de Motivos de Venda Perdida do Dealer.net — ex: 124 Encerrado sem contato). "Agendamento no CRM sem Ativo no ROF037" = o contato registrou agendamento ("Serviços:"), mas não há agendamento Ativo no ROF037 dentro da regra. Quem agendou depois de recusar (ROF037) fica fora: conta em Contatos agendados. % = quantidade ÷ total do quadro.',
     filtros: `${REGRAS_CAMPANHA}\n${REGRAS_AGENDADO}\n${REGRAS_CONTATO}`,
     colunas: `${COL_CAMPANHA}\n${COL_AGEND_CAMPANHA}\n${COL_CONTATO}`,
   },
@@ -467,7 +461,7 @@ const TABELA_CONFERENCIA = {
     ['Para que serve', 'Conferir de onde sai cada número da aba Por Campanhas: um contato gerado (atendimento) por linha, com o que foi encontrado em cada relatório. A soma das linhas de cada situação é igual ao card.'],
     ['Filtros', 'Todos, Contato agendado, Contato encerrado e Contato a realizar (quantidade de cada um no botão = cards), e busca por cliente, chassi, atendimento, campanha ou operador. Vale o filtro Data da tela.'],
     ['Colunas do RCR038', 'Data da campanha (nome do arquivo), Campanha (ID_Campanha_Execucao), Atendimento (id_atendimento), Cód. cliente (ID_Cliente), Cliente (nome), Chassi.'],
-    ['Colunas do RCR017 (pelo atendimento)', 'Contato (Encerrado / registrado, Já contatado sem resultado, Sem contato), Motivo de encerramento (o do contato mais recente), 1º contato e Último contato (AtendimentoContato_Data), Nº contatos (linhas do atendimento), Operador (Atendimento_UsuarioNom). Vazias = atendimento não está no RCR017.'],
+    ['Colunas do RCR017 (pelo atendimento)', 'Contato (Encerrado / registrado, Já contatado sem resultado, Sem contato), Motivo de encerramento (o do contato mais recente; sem ele e com venda perdida, Venda perdida - <motivo>), Venda perdida (cód.) (Atendimento_MotVendaPerdidaCod), 1º contato e Último contato (AtendimentoContato_Data), Nº contatos (linhas do atendimento), Operador (Atendimento_UsuarioNom). Vazias = atendimento não está no RCR017.'],
     ['Colunas do ROF037 (pelo chassi + cliente)', 'Empresa do agendamento (EmpresaNome — onde o cliente foi agendado), Agendamento criado em (AgendamentoHistorico_Data), Dias após a campanha (criação − data da campanha, até 30), Agendado para (DtAgendamento), Tipo, Status, O.S. (OSNumero) e Resultado (Compareceu, A comparecer, Não compareceu (No-show)). Vazias = não agendado. Veículo agendado na = quando o mesmo veículo foi agendado por outra campanha, mostra a campanha e o atendimento onde o agendamento contou (esta linha fica como não agendada).'],
     ['Situação', 'Contato agendado (achou agendamento no ROF037 — vale mesmo se o RCR017 tiver motivo de recusa) · Contato encerrado (não agendado com motivo no RCR017) · Contato a realizar (não agendado sem motivo).'],
   ],
@@ -531,7 +525,6 @@ export const MANUAL_ABAS_CARDS = [
     ['Card — Contatos a realizar', 'faltaContatar'],
     ['Quadro — Contatos agendados', 'quadroAgendados'],
     ['Quadro — Motivo de Encerramento', 'motivos'],
-    ['Lista — Contatos a realizar', 'listaFaltaContatar'],
   ]],
   ['Aba Por Data Agendamento', [
     ['Tabela — Agendamentos por data do agendamento', TABELA_AGENDAMENTOS],
@@ -567,11 +560,11 @@ export const MANUAL_ABAS_CARDS = [
     ['Card — Conversão — Ativos', 'conversaoAtivos'],
     ['Card — Conversão — Passivos', 'conversaoPassivos'],
   ]],
-  ['Aba Contatos Gerados', [
-    ['Tabela — Contatos gerados', TABELA_CONFERENCIA],
-  ]],
   ['Aba Campanhas Geradas', [
     ['Tabela — Campanhas geradas', TABELA_CAMPANHAS],
+  ]],
+  ['Aba Contatos Gerados', [
+    ['Tabela — Contatos gerados', TABELA_CONFERENCIA],
   ]],
 ]
 export const MANUAL_GERAL = [
@@ -579,7 +572,7 @@ export const MANUAL_GERAL = [
     titulo: 'Visão geral',
     itens: [
       ['Para que serve', 'Acompanhar a Mesa de Agendamento do Pós-Venda: o resultado das campanhas de ativação do CRM (contatos agendados, encerrados e a realizar, motivos de encerramento), os agendamentos marcados e o seu desfecho (comparecido, a comparecer, no-show), e quantas O.S. vieram de agendamento (ativo ou passivo) e quanto faturaram.'],
-      ['Abas', 'Por Campanhas (data da campanha) · Por Data Agendamento (data para quando o agendamento foi marcado) · Por Data da O.S. (data de abertura da O.S.) · Contatos Gerados (os contatos da aba Por Campanhas, um por linha, pela data da campanha) · Campanhas Geradas (os números da aba Por Campanhas por data de geração). O objetivo de cada aba está na 1ª seção dela neste manual.'],
+      ['Abas', 'Por Campanhas (data da campanha) · Por Data Agendamento (data para quando o agendamento foi marcado) · Por Data da O.S. (data de abertura da O.S.) · Campanhas Geradas (os números da aba Por Campanhas por data de geração) · Contatos Gerados (os contatos da aba Por Campanhas, um por linha, pela data da campanha). O objetivo de cada aba está na 1ª seção dela neste manual.'],
       ['Fonte dos agendamentos', 'O ROF037 é a fonte única dos agendamentos em todas as abas (o ROF026 e o RCR014 não são usados).'],
     ],
   },
@@ -588,7 +581,7 @@ export const MANUAL_GERAL = [
     itens: [
       ['Data', 'Ao abrir: o mês atual, do dia 1 até ontem (no dia 1, o mês anterior). As setas ‹ › trocam de mês; o calendário aceita qualquer data. O período escolhido continua o mesmo ao trocar de aba. Cada aba aplica o filtro na sua data (ver Abas).'],
       ['Empresas', 'Em todas as abas. Por Data Agendamento e Por Data da O.S.: por EmpresaNome do ROF037 / Empresa do ROF001. Por Campanhas, Contatos Gerados e Campanhas Geradas: pela unidade da campanha, a sigla no nome do arquivo RCR038 (CGR Campo Grande, DOU Dourados, TLG Três Lagoas, CPD Chapadão) — as linhas do RCR038 não trazem a empresa; o agendamento conta na unidade da campanha, mesmo se foi feito em outra empresa (a empresa do agendamento aparece na coluna Empresa do agendamento da aba Contatos Gerados). Arquivo sem sigla no nome só entra com todas as empresas.'],
-      ['Botões da aba', 'Na linha das abas, logo depois de Campanhas Geradas (com o visual de aba, mas abrem uma janela — a aba escolhida não muda), só nas abas Por Data Agendamento e Por Data da O.S.: CONSULTA abre a consulta linha a linha da aba (Consulta de agendamentos ou Consulta de O.S., com filtros e busca) e TABELA abre a tabela com os números por data. Os dados da aba Por Campanhas linha a linha estão na aba Contatos Gerados e por data de geração na aba Campanhas Geradas.'],
+      ['Botões da aba', 'Na linha das abas, logo depois de Contatos Gerados (com o visual de aba, mas abrem uma janela — a aba escolhida não muda), só nas abas Por Data Agendamento e Por Data da O.S.: CONSULTA abre a consulta linha a linha da aba (Consulta de agendamentos ou Consulta de O.S., com filtros e busca) e TABELA abre a tabela com os números por data. Os dados da aba Por Campanhas linha a linha estão na aba Contatos Gerados e por data de geração na aba Campanhas Geradas.'],
       ['Cabeçalho', 'Atualizar (↻) relê os relatórios do SharePoint · Engrenagem (⚙) define as metas dos indicadores · Livro abre este manual. "Atualizado em" = quando os relatórios foram lidos.'],
       ['ⓘ dos cards', 'Cada card, indicador e quadro tem o botão ⓘ com o objetivo, o cálculo (como os relatórios são ligados) e a fonte; as regras completas e as colunas usadas estão nas seções de cada aba deste manual.'],
     ],
