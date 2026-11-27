@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext'
 import BotaoIconeTooltip from '../components/BotaoIconeTooltip'
 import TooltipTexto from '../components/TooltipTexto'
 import { apiService } from '../services/api'
-import { EmpresaMultiFilter, empresaParam, filtrarPorEmpresas, empresasDasMetas } from '../components/EmpresaMultiFilter'
+import { EmpresaMultiFilter, empresaParam, filtrarPorEmpresas, useEscopoEmpresasMetas, useFiltroEmpresaEfetivo } from '../components/EmpresaMultiFilter'
 import SeletorMeses, { CssMesesOcultos } from '../components/SeletorMeses'
 import { valoresMetaMecanico, resolverPosicaoMecanico } from '../utils/metasMecanico'
 
@@ -210,7 +210,10 @@ export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = 
   const [filtroVisuSalvo,    setFiltroVisuAntigo] = useSessionState('mpvs_servicos_visu', 'total')
   // Na Gestão de Aprovação a tela usa o ano e as empresas da própria página e sempre o total.
   const filtroAno     = anoExterno ?? filtroAnoSalvo
-  const filtroEmpresa = empresasExterno ?? (modoAprovacao ? SEM_FILTRO : filtroEmpresaSalvo)
+  // Só as empresas liberadas no grupo de acesso ("Todas" = todas as permitidas); administrador vê tudo.
+  const { listar: listarEmpresasPermitidas } = useEscopoEmpresasMetas()
+  const filtroEmpresaSel = empresasExterno ?? (modoAprovacao ? SEM_FILTRO : filtroEmpresaSalvo)
+  const filtroEmpresa = useFiltroEmpresaEfetivo(filtroEmpresaSel, empresas)
   // Empresa/Ano vêm de fora (cabeçalho compartilhado das abas, ou da própria Gestão de Aprovação).
   const filtrosExternos = anoExterno != null || empresasExterno != null
   const filtroVisu    = modoAprovacao ? 'total' : (filtroVisuExterno ?? filtroVisuSalvo)
@@ -260,7 +263,7 @@ export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = 
         apiService.getMetasTerceiros(empId, filtroAno),
         apiService.getMetasFunilaria(empId, filtroAno),
       ])
-      const sortedEmps = [...empresasDasMetas(emps)].sort((a,b) => (a.empresa_fantasia||'').localeCompare(b.empresa_fantasia||''))
+      const sortedEmps = [...listarEmpresasPermitidas(emps)].sort((a,b) => (a.empresa_fantasia||'').localeCompare(b.empresa_fantasia||''))
       setEmpresas(sortedEmps)
       setDepartamentos(depts)
       setSetores(sets)
@@ -910,7 +913,7 @@ export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = 
             <select value={filtroAno} onChange={e => setFiltroAno(Number(e.target.value))} className={SEL}>
               {ANOS.map(a => <option key={a} value={a}>{a}</option>)}
             </select>
-            <div className="w-96"><EmpresaMultiFilter value={filtroEmpresa} onChange={setFiltroEmpresa} empresas={empresas} /></div>
+            <div className="w-96"><EmpresaMultiFilter value={filtroEmpresaSel} onChange={setFiltroEmpresa} empresas={empresas} /></div>
           </>
         )}
         {!filtrosExternos && (

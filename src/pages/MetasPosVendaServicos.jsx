@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useSessionState, useLimparSessaoAoEntrar } from '../hooks/useSessionState'
 import { Cog, AlertTriangle } from 'lucide-react'
 import { apiService } from '../services/api'
-import { EmpresaMultiFilter, empresasDasMetas, empresaParam, filtrarPorEmpresas } from '../components/EmpresaMultiFilter'
+import { EmpresaMultiFilter, empresaParam, filtrarPorEmpresas, useEscopoEmpresasMetas, useFiltroEmpresaEfetivo } from '../components/EmpresaMultiFilter'
 import { useAuth } from '../context/AuthContext'
 import { linhaPendente } from '../utils/totalPosVendas'
 import { valoresMetaMecanico } from '../utils/metasMecanico'
@@ -44,11 +44,16 @@ export default function MetasPosVendaServicos() {
   const aba = abasLiberadas.some(a => a.key === abaSalva) ? abaSalva : (abasLiberadas[0]?.key || null)
 
   // Empresa e Ano ficam aqui (mesma chave usada pelas 4 abas) e valem pra todas juntas.
-  const [filtroEmpresa, setFiltroEmpresa] = useSessionState('mpvs_servicos_empresas', [])
+  // filtroEmpresaSel = o que está marcado no seletor; filtroEmpresa = o que vale nos dados (só as empresas
+  // liberadas no grupo de acesso — "Todas" = todas as permitidas). Administrador vê tudo.
+  const [filtroEmpresaSel, setFiltroEmpresa] = useSessionState('mpvs_servicos_empresas', [])
   const [filtroAno,     setFiltroAno]     = useSessionState('mpvs_servicos_ano', anoAtual)
   // Total/Peças/Serviços — mesma chave usada por Mecânico, Consultor e Total.
   const [filtroVisu,    setFiltroVisu]    = useSessionState('mpvs_servicos_visu', 'total')
   const [empresas,      setEmpresas]      = useState([])
+  const [empresasCarregadas, setEmpresasCarregadas] = useState(false)
+  const { restrito, listar } = useEscopoEmpresasMetas()
+  const filtroEmpresa = useFiltroEmpresaEfetivo(filtroEmpresaSel, empresas)
   // Botão "+ Adicionar X" — cada aba registra o seu (Peças/Mecânico/Consultor têm; Total não tem).
   const [botaoAcao,     setBotaoAcao]     = useState(null)
   // Pendências de aprovação (Empresa/Ano filtrados) — mesmo critério da Gestão de Aprovação
@@ -57,9 +62,10 @@ export default function MetasPosVendaServicos() {
 
   useEffect(() => {
     apiService.getEmpresas()
-      .then(emps => setEmpresas([...empresasDasMetas(emps)].sort((a, b) => (a.empresa_fantasia || '').localeCompare(b.empresa_fantasia || ''))))
+      .then(emps => setEmpresas([...listar(emps)].sort((a, b) => (a.empresa_fantasia || '').localeCompare(b.empresa_fantasia || ''))))
       .catch(() => {})
-  }, [])
+      .finally(() => setEmpresasCarregadas(true))
+  }, [listar])
 
   useEffect(() => {
     let cancelado = false
@@ -92,7 +98,7 @@ export default function MetasPosVendaServicos() {
           <h1 className="text-2xl font-bold text-slate-800">Planejamento de Metas - Pós-Vendas</h1>
         </div>
         <div className="flex items-center gap-2">
-          <div className="w-96"><EmpresaMultiFilter value={filtroEmpresa} onChange={setFiltroEmpresa} empresas={empresas} /></div>
+          <div className="w-96"><EmpresaMultiFilter value={filtroEmpresaSel.filter(id => empresas.some(e => e.id === id))} onChange={setFiltroEmpresa} empresas={empresas} /></div>
           <select value={filtroAno} onChange={e => setFiltroAno(Number(e.target.value))} className={SEL}>
             {ANOS.map(a => <option key={a} value={a}>{a}</option>)}
           </select>
@@ -153,6 +159,11 @@ export default function MetasPosVendaServicos() {
 
       {/* Conteúdo da aba */}
       <div className="flex-1 min-h-0 overflow-hidden">
+        {restrito && empresasCarregadas && empresas.length === 0 && (
+          <div className="m-6 flex items-center justify-center py-10 text-slate-400 text-sm border border-dashed border-slate-200 rounded-xl bg-white">
+            Nenhuma empresa está liberada para o seu grupo de acesso (Grupos de Acessos › Acesso por Empresa).
+          </div>
+        )}
         {!aba && (
           <div className="m-6 flex items-center justify-center py-10 text-slate-400 text-sm border border-dashed border-slate-200 rounded-xl bg-white">
             Nenhuma aba do Planejamento de Metas - Pós-Vendas está liberada para o seu grupo de acesso.

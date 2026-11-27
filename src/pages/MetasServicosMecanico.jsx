@@ -6,7 +6,7 @@ import SeletorMeses, { CssMesesOcultos } from '../components/SeletorMeses'
 import { useAuth } from '../context/AuthContext'
 
 import { SearchCombobox } from '../components/SearchCombobox'
-import { EmpresaMultiFilter, empresaParam, filtrarPorEmpresas, empresaUnica, empresasDasMetas } from '../components/EmpresaMultiFilter'
+import { EmpresaMultiFilter, empresaParam, filtrarPorEmpresas, empresaUnica, useEscopoEmpresasMetas, useFiltroEmpresaEfetivo } from '../components/EmpresaMultiFilter'
 import { valoresMetaMecanico, resolverPosicaoMecanico } from '../utils/metasMecanico'
 import { agruparPorSegmento } from '../utils/segmentoMarca'
 import { LogoGrupo, LogoSegmento } from '../components/LogosMarca'
@@ -131,7 +131,10 @@ export default function MetasServicosMecanico({ empresaExterna = null, anoExtern
   const canDelete = hasActionOrDefault('metas/pos-vendas/servicos_pecas', 'excluir')
   const [filtroEmpresaSalva, setFiltroEmpresaSalva] = useSessionState('mpvs_servicos_empresas', [])
   const [filtroAnoSalvo,     setFiltroAnoSalvo]     = useSessionState('mpvs_servicos_ano', anoAtual)
-  const filtroEmpresa = empresaExterna ?? filtroEmpresaSalva
+  // Só as empresas liberadas no grupo de acesso ("Todas" = todas as permitidas); administrador vê tudo.
+  const { listar: listarEmpresasPermitidas } = useEscopoEmpresasMetas()
+  const filtroEmpresaSel = empresaExterna ?? filtroEmpresaSalva
+  const filtroEmpresa = useFiltroEmpresaEfetivo(filtroEmpresaSel, empresas)
   const filtroAno     = anoExterno ?? filtroAnoSalvo
   const filtrosExternos = empresaExterna != null || anoExterno != null
   const [filtroMecanico, setFiltroMecanico] = useSessionState('msm_mecanico', '') // busca por nome (texto livre)
@@ -241,7 +244,7 @@ export default function MetasServicosMecanico({ empresaExterna = null, anoExtern
         apiService.getEmpresas(), apiService.getDepartamentos(), apiService.getSetores(),
         apiService.getBox(), apiService.getCargos(), apiService.getFuncionarios(),
       ])
-      setEmpresas(sortNome(empresasDasMetas(emps), 'empresa_fantasia'))
+      setEmpresas(sortNome(listarEmpresasPermitidas(emps), 'empresa_fantasia'))
       setDepartamentos(sortNome(depts, 'nome_departamento'))
       setSetores(sortNome(sets, 'nome_setor'))
       setBoxes(sortNome(bxs, 'nome_box'))
@@ -987,7 +990,7 @@ export default function MetasServicosMecanico({ empresaExterna = null, anoExtern
             <>
               <div className="flex-1 max-w-sm">
                 <label className={LBL}>Empresa</label>
-                <EmpresaMultiFilter value={filtroEmpresa} onChange={setFiltroEmpresaSalva} empresas={empresas} />
+                <EmpresaMultiFilter value={filtroEmpresaSel} onChange={setFiltroEmpresaSalva} empresas={empresas} />
               </div>
               <div className="w-28">
                 <label className={LBL}>Ano</label>

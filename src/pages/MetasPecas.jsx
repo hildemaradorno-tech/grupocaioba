@@ -9,7 +9,7 @@ import { SearchCombobox } from '../components/SearchCombobox'
 import { agruparPorSegmento } from '../utils/segmentoMarca'
 import { LogoGrupo, LogoSegmento } from '../components/LogosMarca'
 import { avaliarMeses, mensagemMesesIncompletos, LinhaStatusMes, AlertaMesesIncompletos } from '../components/StatusMesesForm'
-import { EmpresaMultiFilter, empresaParam, filtrarPorEmpresas, empresaUnica, empresasDasMetas } from '../components/EmpresaMultiFilter'
+import { EmpresaMultiFilter, empresaParam, filtrarPorEmpresas, empresaUnica, useEscopoEmpresasMetas, useFiltroEmpresaEfetivo } from '../components/EmpresaMultiFilter'
 import { apiService } from '../services/api'
 
 const anoAtual = new Date().getFullYear()
@@ -261,7 +261,10 @@ export default function MetasPecas({ empresaExterna = null, anoExterno = null, a
 
   const [filtroEmpresaSalva, setFiltroEmpresaSalva] = useSessionState('mpvs_servicos_empresas', [])
   const [filtroAnoSalvo,     setFiltroAnoSalvo]     = useSessionState('mpvs_servicos_ano', anoAtual)
-  const filtroEmpresa = empresaExterna ?? filtroEmpresaSalva
+  // Só as empresas liberadas no grupo de acesso ("Todas" = todas as permitidas); administrador vê tudo.
+  const { listar: listarEmpresasPermitidas } = useEscopoEmpresasMetas()
+  const filtroEmpresaSel = empresaExterna ?? filtroEmpresaSalva
+  const filtroEmpresa = useFiltroEmpresaEfetivo(filtroEmpresaSel, empresas)
   const filtroAno     = anoExterno ?? filtroAnoSalvo
   const filtrosExternos = empresaExterna != null || anoExterno != null
 
@@ -311,7 +314,7 @@ export default function MetasPecas({ empresaExterna = null, anoExterno = null, a
         apiService.getCargos(),
         apiService.getFuncionarios(),
       ])
-      setEmpresas(sortNome(empresasDasMetas(emps), 'empresa_fantasia'))
+      setEmpresas(sortNome(listarEmpresasPermitidas(emps), 'empresa_fantasia'))
       setDepartamentos(sortNome(depts, 'nome_departamento'))
       setSetores(sortNome(sets, 'nome_setor'))
       setBoxes(sortNome(bxs, 'nome_box'))
@@ -815,7 +818,7 @@ export default function MetasPecas({ empresaExterna = null, anoExterno = null, a
           <div className="flex items-end gap-3">
             <div className="w-80">
               <label className={LBL}>Empresa</label>
-              <EmpresaMultiFilter value={filtroEmpresa} onChange={setFiltroEmpresaSalva} empresas={empresas} />
+              <EmpresaMultiFilter value={filtroEmpresaSel} onChange={setFiltroEmpresaSalva} empresas={empresas} />
             </div>
             <div className="w-28">
               <label className={LBL}>Ano</label>

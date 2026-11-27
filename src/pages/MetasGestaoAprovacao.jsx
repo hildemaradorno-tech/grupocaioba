@@ -5,7 +5,7 @@ import { ClipboardCheck, AlertTriangle, CheckCircle2, Loader2, Package, Wrench, 
 import { apiService } from '../services/api'
 import MetasPosVendaTotal from './MetasPosVendaTotal'
 import { useAuth } from '../context/AuthContext'
-import { EmpresaMultiFilter, empresasDasMetas } from '../components/EmpresaMultiFilter'
+import { EmpresaMultiFilter, useEscopoEmpresasMetas, useFiltroEmpresaEfetivo } from '../components/EmpresaMultiFilter'
 
 const anoAtual = new Date().getFullYear()
 const ANOS = Array.from({ length: 7 }, (_, i) => anoAtual - 1 + i)
@@ -41,11 +41,14 @@ export default function MetasGestaoAprovacao() {
 
   const [filtroAno, setFiltroAno] = useSessionState('mga_ano', anoAtual)
   // Mesma seleção de empresas das demais telas de Metas.
-  const [filtroEmpresa, setFiltroEmpresa] = useSessionState('mpvs_servicos_empresas', [])
+  // Só as empresas liberadas no grupo de acesso ("Todas" = todas as permitidas); administrador vê tudo.
+  const [filtroEmpresaSel, setFiltroEmpresa] = useSessionState('mpvs_servicos_empresas', [])
   const [empresasLista, setEmpresasLista] = useState([])
+  const { listar: listarEmpresasPermitidas } = useEscopoEmpresasMetas()
+  const filtroEmpresa = useFiltroEmpresaEfetivo(filtroEmpresaSel, empresasLista)
   useEffect(() => {
     apiService.getEmpresas()
-      .then(emps => setEmpresasLista([...empresasDasMetas(emps)].sort((a, b) => (a.empresa_fantasia || '').localeCompare(b.empresa_fantasia || ''))))
+      .then(emps => setEmpresasLista([...listarEmpresasPermitidas(emps)].sort((a, b) => (a.empresa_fantasia || '').localeCompare(b.empresa_fantasia || ''))))
       .catch(() => {})
   }, [])
   const [loading,   setLoading]   = useState(false)
@@ -93,8 +96,10 @@ export default function MetasGestaoAprovacao() {
 
   // ── KPIs ──────────────────────────────────────────────────────────────────
   const kpi = useMemo(() => {
-    const allPend = [...pending.pecas, ...pending.mecanico, ...pending.consultor, ]
-    const allRes  = [...resumo.pecas,  ...resumo.mecanico,  ...resumo.consultor,  ]
+    // Só as empresas do filtro efetivo (as liberadas no grupo de acesso, quando o usuário não é administrador).
+    const dentro = (r) => !filtroEmpresa.length || filtroEmpresa.includes(r.empresa_id)
+    const allPend = [...pending.pecas, ...pending.mecanico, ...pending.consultor, ].filter(dentro)
+    const allRes  = [...resumo.pecas,  ...resumo.mecanico,  ...resumo.consultor,  ].filter(dentro)
     const totalPendItems  = allPend.length
     const totalAprovados  = allRes.filter(r => !isPendente(r)).length
     const totalRegistros  = allRes.length
@@ -103,7 +108,7 @@ export default function MetasGestaoAprovacao() {
     const pctAprovado     = totalRegistros > 0 ? ((totalAprovados / totalRegistros) * 100) : 0
     const empsComPend = new Set(allPend.map(r => r.empresa_id)).size
     return { totalPendItems, totalAprovados, totalRegistros, totalR$Pendente, totalR$Geral, pctAprovado, empsComPend }
-  }, [pending, resumo])
+  }, [pending, resumo, filtroEmpresa])
 
   const tudo_aprovado = kpi.totalPendItems === 0 && kpi.totalRegistros > 0
 
@@ -175,7 +180,7 @@ export default function MetasGestaoAprovacao() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-96"><EmpresaMultiFilter value={filtroEmpresa} onChange={setFiltroEmpresa} empresas={empresasLista} /></div>
+            <div className="w-96"><EmpresaMultiFilter value={filtroEmpresaSel.filter(id => empresasLista.some(e => e.id === id))} onChange={setFiltroEmpresa} empresas={empresasLista} /></div>
             <select value={filtroAno} onChange={e => setFiltroAno(Number(e.target.value))}
               className="border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
               {ANOS.map(a => <option key={a} value={a}>{a}</option>)}
