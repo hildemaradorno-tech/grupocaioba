@@ -550,8 +550,8 @@ export default function SidebarLayout() {
             {canViewSection('_metas.operacionais') && (
               <>
                 <FlyGroup label="Operacionais" />
-                {canView('metas/vendas') && <FlyItem to="/metas/vendas" icon={Car} onClose={closeFlyout}>Vendas</FlyItem>}
-                {canView('metas/pos-vendas/servicos_pecas') && <FlyItem to="/metas/pos-vendas/servicos_pecas" icon={Cog} onClose={closeFlyout}>Pós-Vendas</FlyItem>}
+                {canViewSection('_metas.vendas') && <FlyItem to="/metas/vendas" icon={Car} onClose={closeFlyout}>Vendas</FlyItem>}
+                {canViewSection('_metas.posvendas') && <FlyItem to="/metas/pos-vendas/servicos_pecas" icon={Cog} onClose={closeFlyout}>Pós-Vendas</FlyItem>}
                 {canView('metas/gestao-aprovacao') && (
                   <FlyItem to="/metas/gestao-aprovacao" icon={ClipboardCheck} badge={pendingMetas} onClose={closeFlyout}>
                     Total Grupo

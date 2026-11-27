@@ -256,8 +256,8 @@ export default function MetasPecas({ empresaExterna = null, anoExterno = null, a
   const podeEditarPorMes = hasActionOrDefault('metas/pos-vendas/servicos_pecas', 'editar_por_mes')
   const podeAtualizarDias = hasActionOrDefault('metas/pos-vendas/servicos_pecas', 'atualizar_dias_uteis')
   const [trocaColab, setTrocaColab] = useState(null) // { antigoId, snapshot } enquanto está trocando
-  const canEdit = hasActionOrDefault('metas/pos-vendas/pecas', 'editar')
-  const canDelete = hasActionOrDefault('metas/pos-vendas/pecas', 'excluir')
+  const canEdit = hasActionOrDefault('metas/pos-vendas/servicos_pecas/aba-pecas', 'editar')
+  const canDelete = hasActionOrDefault('metas/pos-vendas/servicos_pecas/aba-pecas', 'excluir')
 
   const [filtroEmpresaSalva, setFiltroEmpresaSalva] = useSessionState('mpvs_servicos_empresas', [])
   const [filtroAnoSalvo,     setFiltroAnoSalvo]     = useSessionState('mpvs_servicos_ano', anoAtual)

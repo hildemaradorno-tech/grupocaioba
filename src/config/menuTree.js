@@ -217,7 +217,6 @@ export const MENU_TREE = [
               { key: 'metas/vendas/aba-total', label: 'Aba Total Vendas' },
             ],
           },
-          { key: 'metas/pos-vendas/pecas', label: 'Peças (Incluir / Editar / Excluir vendedores)', virtual: true },
           {
             key: '_metas.posvendas',
             label: 'Pós-Vendas',

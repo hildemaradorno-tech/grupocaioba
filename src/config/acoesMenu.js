@@ -494,10 +494,11 @@ export const ACOES_POR_MENU = [
     ],
   },
   {
-    menuPath: 'metas/pos-vendas/pecas',
+    // Ações da aba Peças ficam dentro da própria aba (antes eram de 'metas/pos-vendas/pecas', 27/11/2026)
+    menuPath: 'metas/pos-vendas/servicos_pecas/aba-pecas',
     acoes: [
-      { value: 'editar', label: 'Incluir / Editar vendedores (aba Peças)' },
-      { value: 'excluir', label: 'Excluir vendedor (aba Peças)' },
+      { value: 'editar', label: 'Incluir / Editar vendedores' },
+      { value: 'excluir', label: 'Excluir vendedor' },
     ],
   },
   {
