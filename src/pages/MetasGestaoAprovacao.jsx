@@ -4,6 +4,7 @@ import { useSessionState, useLimparSessaoAoEntrar } from '../hooks/useSessionSta
 import { ClipboardCheck, AlertTriangle, CheckCircle2, Loader2, Package, Wrench, TrendingUp, BarChart3, Cog, XCircle, Ban } from 'lucide-react'
 import { apiService } from '../services/api'
 import MetasPosVendaTotal from './MetasPosVendaTotal'
+import { useAuth } from '../context/AuthContext'
 import { EmpresaMultiFilter, empresasDasMetas } from '../components/EmpresaMultiFilter'
 
 const anoAtual = new Date().getFullYear()
@@ -63,8 +64,11 @@ export default function MetasGestaoAprovacao() {
   const [modalConf,    setModalConf]    = useState(null)
 
   const [abaSalva,      setAbaAtiva]      = useSessionState('mga_aba', 'posvendas')
-  // Aba salva que não existe mais (Novos / Usados foram unificadas em Vendas) volta para Pós-Vendas.
-  const abaAtiva = ['posvendas', 'vendas', 'geral'].includes(abaSalva) ? abaSalva : 'posvendas'
+  // Cada aba é uma permissão própria no Grupo de Acessos (menuTree: Planejamento de Metas › Total Grupo).
+  // Aba salva que não existe mais (Novos / Usados foram unificadas em Vendas) ou não liberada → 1ª liberada.
+  const { hasPermission } = useAuth()
+  const abasLiberadas = ['posvendas', 'vendas', 'geral'].filter(k => hasPermission(`metas/gestao-aprovacao/aba-${k}`))
+  const abaAtiva = abasLiberadas.includes(abaSalva) ? abaSalva : (abasLiberadas[0] || null)
 
 
   const load = useCallback(async () => {
@@ -210,7 +214,7 @@ export default function MetasGestaoAprovacao() {
             { key: 'posvendas', label: 'Pós-Vendas', icon: Wrench,   badge: [...resumo.pecas, ...resumo.mecanico, ...resumo.consultor].filter(r => !filtroEmpresa.length || filtroEmpresa.includes(r.empresa_id)).filter(isPendente).length },
             { key: 'vendas',   label: 'Vendas',   icon: TrendingUp, badge: 0 },
             { key: 'geral',    label: 'Geral',    icon: BarChart3,  badge: 0 },
-          ].map(({ key, label, icon: Icon, badge }) => (
+          ].filter(a => abasLiberadas.includes(a.key)).map(({ key, label, icon: Icon, badge }) => (
             <button key={key} onClick={() => setAbaAtiva(key)}
               className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold transition-colors flex-1 justify-center
                 ${abaAtiva === key ? 'bg-indigo-600 text-white shadow' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'}`}>
@@ -233,6 +237,11 @@ export default function MetasGestaoAprovacao() {
 
         {/* FILA DE APROVAÇÃO: mesma árvore das telas de Serviços (Grupo > Segmento/Marca > Empresa > Departamento
             > Setor > Box > Funcionário), com o status ao lado do setor e a coluna final de aprovação. */}
+        {!abaAtiva && (
+          <div className="flex items-center justify-center py-10 text-slate-400 text-sm border border-dashed border-slate-200 rounded-xl bg-white">
+            Nenhuma aba do Total Grupo está liberada para o seu grupo de acesso.
+          </div>
+        )}
         {abaAtiva === 'posvendas' && (
           <MetasPosVendaTotal modoAprovacao anoExterno={filtroAno} empresasExterno={filtroEmpresa} aoAlterarAprovacao={load} />
         )}

@@ -357,7 +357,7 @@ function LinhaDepto({ label, indent, negrito, dept, carregandoRealPecas, carrega
 
 // Linha da tabela "Margem de Venda" (aba Margem): Margem Peças/Serviços em R$ e % sobre o Real, e a
 // Margem Total (peças + serviços). Mesmas cores da Tabela de Faturamentos.
-function LinhaMargem({ label, indent = 0, negrito = false, dept, carregando, onToggle, aberto }) {
+function LinhaMargem({ label, indent = 0, negrito = false, dept, carregando, onToggle, aberto, tituloToggle = 'Ver setores' }) {
   const pctPecas = dept.realPecas > 0 ? (dept.margemPecas / dept.realPecas) * 100 : null
   const pctServ = dept.realServicos > 0 ? (dept.margemServicos / dept.realServicos) * 100 : null
   const ehDepto = !negrito && indent === 0
@@ -366,7 +366,7 @@ function LinhaMargem({ label, indent = 0, negrito = false, dept, carregando, onT
     <tr className={`border-b border-slate-200 ${negrito ? 'bg-slate-100 font-bold text-slate-900' : ehDepto ? 'bg-emerald-50 font-semibold text-slate-900 hover:bg-emerald-100' : 'text-slate-700 hover:bg-slate-50'}`}>
       <td className={`p-2 whitespace-nowrap ${negrito ? 'bg-slate-100' : ehDepto ? 'bg-emerald-50' : 'bg-white'}`} style={{ paddingLeft: `${8 + indent * 20}px` }}>
         {onToggle ? (
-          <button type="button" onClick={onToggle} title={aberto ? 'Recolher' : 'Ver setores'}
+          <button type="button" onClick={onToggle} title={aberto ? 'Recolher' : tituloToggle}
             className="inline-flex items-center gap-1 -ml-1 hover:text-blue-600 transition-colors">
             {aberto ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
             {label}
@@ -1263,32 +1263,50 @@ export default function BiPossibilidades() {
   useEffect(() => { apiService.getNaturezaOperacoes().then(setNaturezas).catch(() => setNaturezas([])) }, [])
   const [natVendedor, setNatVendedor] = useState({ chave: null, mapa: new Map(), carregando: false, erro: null })
   const [vendAbertos, setVendAbertos] = useState(() => new Set())
+  // Leitura em andamento (chave): o resultado só vale se ainda for a chave pedida por último — trocar de aba
+  // no meio não cancela a leitura (antes cancelava e a tela ficava presa em "Lendo…").
+  const natEmAndamento = useRef(null)
   useEffect(() => {
-    if (!ehBalcao || !medidasBi.length) return
+    // Lê por trás assim que a tela termina de carregar (qualquer aba, menos Evolução/Tempo, que usam outro período),
+    // para o "Por Natureza" e a abertura dos vendedores já estarem prontos ao clicar (27/11/2026). Espera os cadastros
+    // de Tipo de OS e Setor — sem eles o resolvedor não acha o setor e as naturezas saíam vazias.
+    if (ehEvolucao || visao === 'tempo' || carregandoValores || !medidasBi.length || !tiposOS.length || !setores.length) return
     const chave = `${periodo.inicio}|${periodo.fim}|${chaveEmpresas}|${recarga}`
-    if (natVendedor.chave === chave) return
-    let cancelado = false
+    if (natVendedor.chave === chave || natEmAndamento.current === chave) return
+    natEmAndamento.current = chave
     setNatVendedor(v => ({ ...v, chave, carregando: true, erro: null }))
     ;(async () => {
       const mapa = new Map() // 'setorId|NOME' -> Map(codigo -> { realPecas, margemPecas })
-      for (const [slot, campo] of [['realPecas', 'realPecas'], ['margemPecas', 'margemPecas']]) {
-        const medida = medidasBi.find(m => m.ativo && m.slot_faturamento === slot)
-        const f = medida?.fonte_bi
-        if (!f?.coluna_natureza_operacao || !f?.coluna_funcionario) continue
-        const regras = await apiService.getRegrasParaCalculoMedidaBi(medida.id)
-        const res = await apiService.agregarMedidaBi({
-          pasta: f.pasta_sharepoint, prefixo: f.prefixo_arquivo, usaSubpastaAno: f.usa_subpasta_ano, linhaCabecalho: f.linha_cabecalho,
-          colunaEmpresa: f.coluna_empresa, colunaData: f.coluna_data, colunaValor: medida.coluna_valor, tipoAgregacao: medida.tipo_agregacao,
-          colunasDimensao: { tipo_os: f.coluna_tipo_os, funcionario: f.coluna_funcionario, natureza_operacao: f.coluna_natureza_operacao, empresa: f.coluna_empresa },
-          empresaNome: null, dataInicio: periodo.inicio, dataFim: periodo.fim, regras,
-        })
-        const permitidas = empresasNormSelecionadas ? new Set(empresasNormSelecionadas) : null
+      const medidasNat = [['realPecas', 'realPecas'], ['margemPecas', 'margemPecas']]
+        .map(([slot, campo]) => ({ campo, medida: medidasBi.find(m => m.ativo && m.slot_faturamento === slot) }))
+        .filter(x => x.medida?.fonte_bi?.coluna_natureza_operacao && x.medida?.fonte_bi?.coluna_funcionario)
+      // 1º: Supabase (gravado no "Atualizar", instantâneo — 27/11/2026). Sem nada gravado no período: lê o SharePoint.
+      const gravadas = await apiService.getBiNaturezaPeriodo({
+        dataInicio: periodo.inicio, dataFim: periodo.fim, medidaIds: medidasNat.map(x => x.medida.id), empresasNorm: empresasNormSelecionadas,
+      }).catch(() => [])
+      for (const { campo, medida } of medidasNat) {
+        const f = medida.fonte_bi
         const porNatureza = new Map()
-        for (const g of res.grupos || []) {
-          if (permitidas && !permitidas.has(normalizaBusca(g.dims?.empresa))) continue
-          const cod = String(g.dims?.natureza_operacao ?? '').trim() || '(sem natureza)'
-          if (!porNatureza.has(cod)) porNatureza.set(cod, [])
-          porNatureza.get(cod).push({ dims: { tipo_os: g.dims?.tipo_os, funcionario: g.dims?.funcionario }, soma: Number(g.soma || 0), linhas: Number(g.linhas || 0) })
+        const somar = (cod, tipoOs, funcionario, soma, linhas) => {
+          const c = String(cod ?? '').trim() || '(sem natureza)'
+          if (!porNatureza.has(c)) porNatureza.set(c, [])
+          porNatureza.get(c).push({ dims: { tipo_os: tipoOs, funcionario }, soma: Number(soma || 0), linhas: Number(linhas || 0) })
+        }
+        if (gravadas.length) {
+          for (const g of gravadas) if (g.medida_id === medida.id) somar(g.natureza, g.tipo_os, g.funcionario, g.soma, g.linhas)
+        } else {
+          const regras = await apiService.getRegrasParaCalculoMedidaBi(medida.id)
+          const res = await apiService.agregarMedidaBi({
+            pasta: f.pasta_sharepoint, prefixo: f.prefixo_arquivo, usaSubpastaAno: f.usa_subpasta_ano, linhaCabecalho: f.linha_cabecalho,
+            colunaEmpresa: f.coluna_empresa, colunaData: f.coluna_data, colunaValor: medida.coluna_valor, tipoAgregacao: medida.tipo_agregacao,
+            colunasDimensao: { tipo_os: f.coluna_tipo_os, funcionario: f.coluna_funcionario, natureza_operacao: f.coluna_natureza_operacao, empresa: f.coluna_empresa },
+            empresaNome: null, dataInicio: periodo.inicio, dataFim: periodo.fim, regras,
+          })
+          const permitidas = empresasNormSelecionadas ? new Set(empresasNormSelecionadas) : null
+          for (const g of res.grupos || []) {
+            if (permitidas && !permitidas.has(normalizaBusca(g.dims?.empresa))) continue
+            somar(g.dims?.natureza_operacao, g.dims?.tipo_os, g.dims?.funcionario, g.soma, g.linhas)
+          }
         }
         for (const [cod, grupos] of porNatureza) {
           const r = resolverPorDepartamento(grupos, medida, { tiposOS, setores })
@@ -1300,10 +1318,11 @@ export default function BiPossibilidades() {
           }
         }
       }
-      if (!cancelado) setNatVendedor({ chave, mapa, carregando: false, erro: null })
-    })().catch(err => { if (!cancelado) setNatVendedor({ chave, mapa: new Map(), carregando: false, erro: err.message || String(err) }) })
-    return () => { cancelado = true }
-  }, [ehBalcao, medidasBi, periodo, chaveEmpresas, recarga, tiposOS, setores]) // eslint-disable-line react-hooks/exhaustive-deps
+      if (natEmAndamento.current === chave) { natEmAndamento.current = null; setNatVendedor({ chave, mapa, carregando: false, erro: null }) }
+    })().catch(err => {
+      if (natEmAndamento.current === chave) { natEmAndamento.current = null; setNatVendedor({ chave, mapa: new Map(), carregando: false, erro: err.message || String(err) }) }
+    })
+  }, [ehEvolucao, visao, carregandoValores, medidasBi, periodo, chaveEmpresas, recarga, tiposOS, setores]) // eslint-disable-line react-hooks/exhaustive-deps
   const nomeNatureza = (cod) => {
     // Arquivo RPR001 é da Caiobá Trucks: código repetido em outro agrupamento (ex.: Motos) fica em segundo plano
     const doCodigo = naturezas.filter(x => String(x.codigo ?? '').trim() === String(cod))
@@ -1313,6 +1332,8 @@ export default function BiPossibilidades() {
   // Tabela de Faturamentos da aba Peças: "Por Vendedor" | "Por Natureza" (mesmo modelo da aba Serviços, 26/11/2026).
   // Por Natureza = Setor › Grupo Movimento (cadastro Natureza de Operações) › Natureza.
   const [aberturaVendedor, setAberturaVendedor] = useState('vendedor') // 'vendedor' | 'natureza'
+  // Aba Margem: cada área (setor) abre Tipo de Movimento (Natureza, só Peças) e Tipo de O.S. (27/11/2026)
+  const [margemSetorAbertos, setMargemSetorAbertos] = useState(() => new Set())
   const [natGruposAbertos, setNatGruposAbertos] = useState(() => new Set())
   const grupoDaNatureza = (cod) => {
     const doCodigo = naturezas.filter(x => String(x.codigo ?? '').trim() === String(cod))
@@ -1552,7 +1573,7 @@ export default function BiPossibilidades() {
                     <div className="absolute right-0 top-10 z-50 w-60 rounded-md border border-slate-200 bg-white py-1 shadow-lg">
                       <button type="button" onClick={() => { setMenuEngrenagem(false); setCoresAberto(true) }}
                         className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-slate-700 hover:bg-slate-50">
-                        <Palette className="h-3.5 w-3.5 text-slate-500" /> Cores dos indicadores
+                        <Palette className="h-3.5 w-3.5 text-slate-500" /> Regras dos indicadores
                       </button>
                       <button type="button" onClick={() => { setMenuEngrenagem(false); setRegrasTempoAberto(true) }}
                         className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-slate-700 hover:bg-slate-50">
@@ -1721,9 +1742,55 @@ export default function BiPossibilidades() {
                       <React.Fragment key={dept.deptId}>
                         {/* Aba Margem: sempre expandida (setores sempre visíveis) */}
                         <LinhaMargem label={dept.label} dept={dept} carregando={carregandoValores} />
-                        {setoresDept.map(st => (
-                          <LinhaMargem key={st.setorId} label={st.label} indent={1} dept={st} carregando={carregandoValores} />
-                        ))}
+                        {setoresDept.map(st => {
+                          const aberto = margemSetorAbertos.has(st.setorId)
+                          const alternar = () => setMargemSetorAbertos(prev => { const n = new Set(prev); if (n.has(st.setorId)) n.delete(st.setorId); else n.add(st.setorId); return n })
+                          const subtitulo = (texto) => (
+                            <tr className="bg-slate-50 border-b border-slate-200">
+                              <td colSpan={COLUNAS_MARGEM.length} className="p-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-500" style={{ paddingLeft: '48px' }}>{texto}</td>
+                            </tr>
+                          )
+                          const nats = aberto ? naturezasDoSetor(st.setorId) : []
+                          // Balcão: só Tipo de Movimento. Demais: Tipo de O.S. por agrupamento (Tipo Interno) › Tipos de O.S.
+                          const ehBalcaoDept = dept.deptId === DEPTO_BALCAO_PECAS
+                          const tipos = aberto && !ehBalcaoDept ? linhasTipoOs(st.setorId).filter(t => t.margemPecas || t.margemServicos) : []
+                          const grupos = aberto && !ehBalcaoDept ? linhasGrupoTipo(st.setorId).filter(g => g.margemPecas || g.margemServicos) : []
+                          return (
+                            <React.Fragment key={st.setorId}>
+                              <LinhaMargem label={st.label} indent={1} dept={st} carregando={carregandoValores}
+                                onToggle={alternar} aberto={aberto} tituloToggle="Ver Tipo de Movimento e Tipo de O.S." />
+                              {aberto && (
+                                <>
+                                  {subtitulo('Tipo de Movimento (Natureza de Operação — Peças)')}
+                                  {natVendedor.carregando ? (
+                                    <tr><td colSpan={COLUNAS_MARGEM.length} className="p-2 text-[11px] text-slate-400" style={{ paddingLeft: '68px' }}>
+                                      <Loader2 className="inline h-3 w-3 animate-spin mr-1" /> Carregando…
+                                    </td></tr>
+                                  ) : nats.length === 0 ? (
+                                    <tr><td colSpan={COLUNAS_MARGEM.length} className="p-2 text-[11px] text-slate-400" style={{ paddingLeft: '68px' }}>Sem natureza de operação no período.</td></tr>
+                                  ) : nats.map(nat => (
+                                    <LinhaMargem key={`nat-${nat.cod}`} label={nat.label} indent={3} dept={nat} carregando={false} />
+                                  ))}
+                                  {!ehBalcaoDept && subtitulo('Tipo de O.S.')}
+                                  {!ehBalcaoDept && (grupos.length === 0 ? (
+                                    <tr><td colSpan={COLUNAS_MARGEM.length} className="p-2 text-[11px] text-slate-400" style={{ paddingLeft: '68px' }}>Sem Tipo de O.S. no período.</td></tr>
+                                  ) : grupos.map(grupo => {
+                                    const grupoAberto = gruposExpandidos.has(`margem|${grupo.grupoKey}`)
+                                    return (
+                                      <React.Fragment key={`grupo-${grupo.grupoKey}`}>
+                                        <LinhaMargem label={<span className="font-semibold">{grupo.label}</span>} indent={3} dept={grupo} carregando={carregandoValores}
+                                          onToggle={() => toggleGrupo(`margem|${grupo.grupoKey}`)} aberto={grupoAberto} tituloToggle="Ver Tipos de O.S." />
+                                        {grupoAberto && tipos.filter(t => `${st.setorId}|${normalizaBusca(t.grupo)}` === grupo.grupoKey).map(t => (
+                                          <LinhaMargem key={`tipo-${t.tipoKey}`} label={t.label} indent={4} dept={t} carregando={carregandoValores} />
+                                        ))}
+                                      </React.Fragment>
+                                    )
+                                  }))}
+                                </>
+                              )}
+                            </React.Fragment>
+                          )
+                        })}
                       </React.Fragment>
                     )
                   })}

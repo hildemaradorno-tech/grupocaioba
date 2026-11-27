@@ -26,17 +26,17 @@ export function periodoPadraoBi() {
   return { dataInicio: isoLocal(inicio), dataFim: isoLocal(hoje) }
 }
 
-async function carregarMedidasComSlot(supabaseAdmin) {
+export async function carregarMedidasComSlot(supabaseAdmin) {
   const { data: medidas, error } = await supabaseAdmin
     .from('dim_medidas_bi')
-    .select('id, nome, slot_faturamento, ativo, coluna_valor, tipo_agregacao, fonte_bi:dim_fontes_calculo(pasta_sharepoint, prefixo_arquivo, usa_subpasta_ano, linha_cabecalho, coluna_empresa, coluna_data, coluna_tipo_os, coluna_funcionario)')
+    .select('id, nome, slot_faturamento, ativo, coluna_valor, tipo_agregacao, fonte_bi:dim_fontes_calculo(pasta_sharepoint, prefixo_arquivo, usa_subpasta_ano, linha_cabecalho, coluna_empresa, coluna_data, coluna_tipo_os, coluna_funcionario, coluna_natureza_operacao)')
     .not('slot_faturamento', 'is', null)
     .eq('ativo', true)
   if (error) throw error
   return (medidas || []).filter(m => m.fonte_bi?.pasta_sharepoint && m.fonte_bi?.prefixo_arquivo && m.coluna_valor && m.fonte_bi?.coluna_tipo_os)
 }
 
-async function carregarRegras(supabaseAdmin, medidaId, siglasPorSetor) {
+export async function carregarRegras(supabaseAdmin, medidaId, siglasPorSetor) {
   const { data, error } = await supabaseAdmin
     .from('dim_medidas_bi_regras')
     .select('*, condicoes:dim_medidas_bi_regra_condicoes(*)')
@@ -53,7 +53,7 @@ async function carregarRegras(supabaseAdmin, medidaId, siglasPorSetor) {
   }))
 }
 
-async function carregarSiglasPorSetor(supabaseAdmin) {
+export async function carregarSiglasPorSetor(supabaseAdmin) {
   const { data, error } = await supabaseAdmin.from('dim_tipos_os').select('sigla, setor_servico')
   if (error) throw error
   const mapa = {}
@@ -131,6 +131,67 @@ async function sincronizarMedida(supabaseAdmin, medida, regras, { dataInicio, da
   return registros.length
 }
 
+// BI Possibilidades › aba Peças (27/11/2026): Medida cuja Fonte tem coluna de Natureza de Operação ganha também a
+// separação por Natureza em fato_bi_natureza_diario (dia × empresa × Tipo de OS × Funcionário × Natureza). A tela lê
+// de lá na hora, sem ler o SharePoint. Mesmo motor e mesmas regras da leitura principal; upsert + remoção do que sumiu.
+export async function sincronizarMedidaNatureza(supabaseAdmin, medida, regras, { dataInicio, dataFim }) {
+  const inicio = new Date().toISOString()
+  const f = medida.fonte_bi
+  const res = await agregarPorDimensoes({
+    pastaSharepoint: f.pasta_sharepoint,
+    prefixoArquivo: f.prefixo_arquivo,
+    usaSubpastaAno: !!f.usa_subpasta_ano,
+    linhaCabecalho: f.linha_cabecalho ? Number(f.linha_cabecalho) : 0,
+    colunaEmpresa: f.coluna_empresa,
+    colunaData: f.coluna_data,
+    colunaValor: medida.coluna_valor,
+    tipoAgregacao: medida.tipo_agregacao || 'SOMA',
+    colunasDimensao: {
+      tipo_os: f.coluna_tipo_os, empresa: f.coluna_empresa, natureza: f.coluna_natureza_operacao,
+      ...(f.coluna_funcionario ? { funcionario: f.coluna_funcionario } : {}),
+    },
+    regras,
+    empresaNome: null,
+    dataInicio,
+    dataFim,
+    forcarAtualizacao: true,
+    agruparPorDia: true,
+  })
+
+  const porChave = new Map()
+  for (const g of res.grupos || []) {
+    const empresaNorm = normalizaTexto(g.dims?.empresa)
+    const tipoOs = String(g.dims?.tipo_os ?? '').trim()
+    const funcionario = String(g.dims?.funcionario ?? '').trim()
+    const natureza = String(g.dims?.natureza ?? '').trim()
+    const chave = `${g.dims.data}|${empresaNorm}|${tipoOs}|${funcionario}|${natureza}`
+    let l = porChave.get(chave)
+    if (!l) {
+      l = { medida_id: medida.id, data: g.dims.data, empresa_norm: empresaNorm, tipo_os: tipoOs, funcionario, natureza, soma: 0, linhas: 0 }
+      porChave.set(chave, l)
+    }
+    l.soma += g.soma || 0
+    l.linhas += g.linhas || 0
+  }
+  const registros = [...porChave.values()].map(l => ({ ...l, soma: r2(l.soma), atualizado_em: inicio }))
+
+  for (let i = 0; i < registros.length; i += LOTE) {
+    const { error } = await supabaseAdmin
+      .from('fato_bi_natureza_diario')
+      .upsert(registros.slice(i, i + LOTE), { onConflict: 'medida_id,data,empresa_norm,tipo_os,funcionario,natureza' })
+    if (error) throw error
+  }
+  const { error: delErr } = await supabaseAdmin
+    .from('fato_bi_natureza_diario')
+    .delete()
+    .eq('medida_id', medida.id)
+    .gte('data', dataInicio)
+    .lte('data', dataFim)
+    .lt('atualizado_em', inicio)
+  if (delErr) throw delErr
+  return registros.length
+}
+
 // Trava simples em memória — evita duas sincronizações do BI ao mesmo tempo (clique duplo em
 // "Atualizar agora" ou o agendamento coincidindo com um clique).
 let emExecucao = false
@@ -150,7 +211,11 @@ export async function sincronizarBiMedidasDiario(supabaseAdmin, periodo = period
       try {
         const regras = await carregarRegras(supabaseAdmin, medida.id, siglasPorSetor)
         const linhas = await sincronizarMedida(supabaseAdmin, medida, regras, { dataInicio, dataFim })
-        detalhes.push({ medida: medida.nome, ok: true, linhas })
+        const det = { medida: medida.nome, ok: true, linhas }
+        if (medida.fonte_bi?.coluna_natureza_operacao) {
+          det.linhasNatureza = await sincronizarMedidaNatureza(supabaseAdmin, medida, regras, { dataInicio, dataFim })
+        }
+        detalhes.push(det)
       } catch (err) {
         detalhes.push({ medida: medida.nome, ok: false, erro: err.message })
       }

@@ -2216,6 +2216,25 @@ export const apiService = {
     return { consultor: cons.data || [], pecas: pecas.data || [] }
   },
 
+  // BI Possibilidades › aba Peças: separação por Natureza de Operação gravada no "Atualizar" (fato_bi_natureza_diario).
+  getBiNaturezaPeriodo: async ({ dataInicio, dataFim, medidaIds, empresasNorm }) => {
+    if (!medidaIds?.length) return []
+    const PAGE = 1000
+    const todas = []
+    for (let de = 0; ; de += PAGE) {
+      let q = supabase.from('fato_bi_natureza_diario')
+        .select('medida_id, empresa_norm, tipo_os, funcionario, natureza, soma, linhas')
+        .in('medida_id', medidaIds).gte('data', dataInicio).lte('data', dataFim)
+      if (empresasNorm?.length) q = q.in('empresa_norm', empresasNorm)
+      const { data, error } = await q.order('data').order('medida_id').order('empresa_norm').order('tipo_os').order('funcionario').order('natureza')
+        .range(de, de + PAGE - 1)
+      if (error) throw error
+      todas.push(...(data || []))
+      if (!data || data.length < PAGE) break
+    }
+    return todas
+  },
+
   // BI Possibilidades: regras de cor dos indicadores (uma linha, id = 1)
   getBiPossibRegrasCores: async () => {
     const { data, error } = await supabase.from('bi_possib_regras_cores').select('*').eq('id', 1).maybeSingle()

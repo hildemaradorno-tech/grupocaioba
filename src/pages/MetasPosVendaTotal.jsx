@@ -189,7 +189,9 @@ const SEL2 = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm text-s
 export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = false, somenteAprovado = false, anoExterno = null, empresasExterno = null, filtroVisuExterno = null, setFiltroVisuExterno = null, aoAlterarAprovacao = null, visao = 'padrao' } = {}) {
   const modoAprovacao = modoAprovacaoProp || somenteAprovado
   const podeAgir = modoAprovacaoProp
-  const { hasActionOrDefault, hasAction, usuarioId, userNome, isAdminEfetivo } = useAuth()
+  const { hasActionOrDefault, hasAction, usuarioId, userNome } = useAuth()
+  // Excluir colaborador por completo (mesmo aprovado): ação do Grupo de Acessos; admin sempre pode.
+  const podeExcluirColab = hasActionOrDefault('metas/gestao-aprovacao', 'excluir_colaborador')
   const canEdit = hasActionOrDefault('metas/gestao-aprovacao', 'editar')
   const podePendenciar = hasAction('/metas/gestao-aprovacao', 'pendenciar')
   const [empresas,      setEmpresas]      = useState([])
@@ -792,12 +794,12 @@ export default function MetasPosVendaTotal({ modoAprovacao: modoAprovacaoProp = 
                           <Calculator size={13} />
                         </button>
                       )}
-                      {modoAprovacao && isAdminEfetivo && (() => {
+                      {modoAprovacao && podeExcluirColab && (() => {
                         const tipos = [...new Set(colab.linhas.map(l => l._tipo))].filter(t => ['MECANICO', 'CONSULTOR', 'PECAS'].includes(t)).map(t => t.toLowerCase())
                         const l0 = colab.linhas[0]
                         if (!tipos.length || !l0?.colaborador_id || !l0?.empresa_id) return null
                         return (
-                          <button type="button" title="Excluir este colaborador por completo (somente administrador)"
+                          <button type="button" title="Excluir este colaborador por completo (planejamento + publicado)"
                             onClick={e => { e.stopPropagation(); setConfirmExcluir({ nome: colab.nome, empresaId: l0.empresa_id, empresaNome: eNome, colaboradorId: l0.colaborador_id, tipos }) }}
                             className="text-slate-300 hover:text-red-600 hover:bg-red-50 rounded p-0.5 transition-colors">
                             <Trash2 size={13} />

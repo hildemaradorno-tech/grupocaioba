@@ -16,12 +16,13 @@ const anoAtual = new Date().getFullYear()
 const ANOS = Array.from({ length: 7 }, (_, i) => anoAtual - 1 + i)
 const SEL = 'border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500'
 
+// Cada aba é uma permissão própria no Grupo de Acessos (menuTree: Planejamento de Metas › Pós-Vendas).
 const ABAS = [
-  { key: 'mecanico',     label: 'Mecânico' },
-  { key: 'consultor',    label: 'Consultor' },
-  { key: 'pecas',        label: 'Peças' },
-  { key: 'total',        label: 'Total' },
-  { key: 'grupo',        label: 'Grupo' },
+  { key: 'mecanico',     label: 'Mecânico',  perm: 'metas/pos-vendas/servicos_pecas/aba-mecanico' },
+  { key: 'consultor',    label: 'Consultor', perm: 'metas/pos-vendas/servicos_pecas/aba-consultor' },
+  { key: 'pecas',        label: 'Peças',     perm: 'metas/pos-vendas/servicos_pecas/aba-pecas' },
+  { key: 'total',        label: 'Total',     perm: 'metas/pos-vendas/servicos_pecas/aba-total' },
+  { key: 'grupo',        label: 'Grupo',     perm: 'metas/pos-vendas/servicos_pecas/aba-grupo' },
 ]
 
 // Filtros que voltam ao padrão (nada filtrado/selecionado) toda vez que se entra na tela — de todas as abas.
@@ -39,7 +40,8 @@ export default function MetasPosVendaServicos() {
   const { hasPermission } = useAuth()
   const [abaSalva, setAba] = useSessionState('mpvs_aba', 'mecanico')
   // Aba salva que não existe mais (ex.: Total Oficina, removida) volta para a primeira.
-  const aba = ABAS.some(a => a.key === abaSalva) ? abaSalva : 'mecanico'
+  const abasLiberadas = ABAS.filter(a => hasPermission(a.perm))
+  const aba = abasLiberadas.some(a => a.key === abaSalva) ? abaSalva : (abasLiberadas[0]?.key || null)
 
   // Empresa e Ano ficam aqui (mesma chave usada pelas 4 abas) e valem pra todas juntas.
   const [filtroEmpresa, setFiltroEmpresa] = useSessionState('mpvs_servicos_empresas', [])
@@ -116,7 +118,7 @@ export default function MetasPosVendaServicos() {
           estreitas o grupo da direita quebra pra uma 2ª linha (nunca fica escondido ou cortado). */}
       <div className="flex items-center justify-between border-b border-slate-200 bg-white px-6 pt-1 gap-3 flex-wrap">
         <div className="flex gap-1 shrink-0">
-          {ABAS.map(({ key, label }) => (
+          {abasLiberadas.map(({ key, label }) => (
             <button
               key={key}
               onClick={() => setAba(key)}
@@ -151,6 +153,11 @@ export default function MetasPosVendaServicos() {
 
       {/* Conteúdo da aba */}
       <div className="flex-1 min-h-0 overflow-hidden">
+        {!aba && (
+          <div className="m-6 flex items-center justify-center py-10 text-slate-400 text-sm border border-dashed border-slate-200 rounded-xl bg-white">
+            Nenhuma aba do Planejamento de Metas - Pós-Vendas está liberada para o seu grupo de acesso.
+          </div>
+        )}
         {aba === 'mecanico'     && <MetasServicosMecanico empresaExterna={filtroEmpresa} anoExterno={filtroAno} filtroVisuExterno={filtroVisu} setFiltroVisuExterno={setFiltroVisu} aoDefinirBotaoAcao={setBotaoAcao} />}
         {aba === 'consultor'    && <MetasServicosConsultor empresaExterna={filtroEmpresa} anoExterno={filtroAno} filtroVisuExterno={filtroVisu} setFiltroVisuExterno={setFiltroVisu} aoDefinirBotaoAcao={setBotaoAcao} />}
         {aba === 'pecas'        && <MetasPecas empresaExterna={filtroEmpresa} anoExterno={filtroAno} aoDefinirBotaoAcao={setBotaoAcao} />}

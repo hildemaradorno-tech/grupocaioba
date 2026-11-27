@@ -59,7 +59,7 @@ export default function CoresIndicadoresModal({ aberto, onFechar, onSalvo }) {
       <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-lg bg-white shadow-xl" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-4 py-3 bg-[#1a4d8f] rounded-t-lg">
           <div>
-            <p className="text-sm font-bold text-white">Cores dos indicadores</p>
+            <p className="text-sm font-bold text-white">Regras dos indicadores</p>
             <p className="text-[11px] text-white/80">A partir de quantos % cada indicador fica verde, amarelo ou vermelho</p>
           </div>
           <button type="button" onClick={onFechar} className="text-white/80 hover:text-white"><X className="h-4 w-4" /></button>

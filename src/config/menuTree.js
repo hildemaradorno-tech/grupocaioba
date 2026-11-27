@@ -203,12 +203,47 @@ export const MENU_TREE = [
         key: '_metas.operacionais',
         label: 'Operacionais',
         children: [
-          { key: 'metas/vendas', label: 'Vendas' },
-          { key: 'metas/pos-vendas/pecas', label: 'Peças', virtual: true },
-          { key: 'metas/pos-vendas/servicos_pecas', label: 'Pós-Vendas' },
+          // Mesmo padrão de Contas a Receber HONDA: o grupo navega direto pra tela; a key da tela é mantida
+          // (o acesso já dado não muda) e cada aba é uma permissão própria (marcar = pode ver a aba). Botões
+          // são ações em acoesMenu.js. (27/11/2026)
+          {
+            key: '_metas.vendas',
+            label: 'Vendas',
+            navTo: 'metas/vendas',
+            children: [
+              { key: 'metas/vendas', label: 'Tela Vendas' },
+              { key: 'metas/vendas/aba-novos', label: 'Aba Novos' },
+              { key: 'metas/vendas/aba-seminovos', label: 'Aba Seminovos' },
+              { key: 'metas/vendas/aba-total', label: 'Aba Total Vendas' },
+            ],
+          },
+          { key: 'metas/pos-vendas/pecas', label: 'Peças (Incluir / Editar / Excluir vendedores)', virtual: true },
+          {
+            key: '_metas.posvendas',
+            label: 'Pós-Vendas',
+            navTo: 'metas/pos-vendas/servicos_pecas',
+            children: [
+              { key: 'metas/pos-vendas/servicos_pecas', label: 'Tela Pós-Vendas' },
+              { key: 'metas/pos-vendas/servicos_pecas/aba-mecanico', label: 'Aba Mecânico' },
+              { key: 'metas/pos-vendas/servicos_pecas/aba-consultor', label: 'Aba Consultor' },
+              { key: 'metas/pos-vendas/servicos_pecas/aba-pecas', label: 'Aba Peças' },
+              { key: 'metas/pos-vendas/servicos_pecas/aba-total', label: 'Aba Total' },
+              { key: 'metas/pos-vendas/servicos_pecas/aba-grupo', label: 'Aba Grupo' },
+            ],
+          },
           { key: 'metas/pos-vendas/total', label: 'Total Pós-Vendas', virtual: true },
           { key: 'metas/pos-vendas/distribuicao-consultores', label: 'Distribuição — Consultores', virtual: true },
-          { key: 'metas/gestao-aprovacao', label: 'Total Grupo' },
+          {
+            key: '_metas.gestao',
+            label: 'Total Grupo',
+            navTo: 'metas/gestao-aprovacao',
+            children: [
+              { key: 'metas/gestao-aprovacao', label: 'Tela Total Grupo - Gestão de Aprovação' },
+              { key: 'metas/gestao-aprovacao/aba-posvendas', label: 'Aba Pós-Vendas' },
+              { key: 'metas/gestao-aprovacao/aba-vendas', label: 'Aba Vendas' },
+              { key: 'metas/gestao-aprovacao/aba-geral', label: 'Aba Geral' },
+            ],
+          },
         ],
       },
     ],

@@ -249,11 +249,15 @@ export default function MetasPecas({ empresaExterna = null, anoExterno = null, a
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState(null)
   const [atualizandoDias, setAtualizandoDias] = useState(false)
-  const { hasActionOrDefault, hasAction, usuarioId, userNome } = useAuth()
+  const { hasActionOrDefault, usuarioId, userNome } = useAuth()
   // Trocar o colaborador de um lançamento (mesmo aprovado): liberado pela ação Pendenciar (Grupos de Acesso).
-  const podeTrocarColab = hasAction('/metas/gestao-aprovacao', 'pendenciar')
+  // Ações do Grupo de Acessos (Planejamento de Metas › Pós-Vendas); sem flag = negado, admin sempre pode.
+  const podeTrocarColab = hasActionOrDefault('metas/pos-vendas/servicos_pecas', 'trocar_colaborador')
+  const podeEditarPorMes = hasActionOrDefault('metas/pos-vendas/servicos_pecas', 'editar_por_mes')
+  const podeAtualizarDias = hasActionOrDefault('metas/pos-vendas/servicos_pecas', 'atualizar_dias_uteis')
   const [trocaColab, setTrocaColab] = useState(null) // { antigoId, snapshot } enquanto está trocando
   const canEdit = hasActionOrDefault('metas/pos-vendas/pecas', 'editar')
+  const canDelete = hasActionOrDefault('metas/pos-vendas/pecas', 'excluir')
 
   const [filtroEmpresaSalva, setFiltroEmpresaSalva] = useSessionState('mpvs_servicos_empresas', [])
   const [filtroAnoSalvo,     setFiltroAnoSalvo]     = useSessionState('mpvs_servicos_ano', anoAtual)
@@ -847,7 +851,7 @@ export default function MetasPecas({ empresaExterna = null, anoExterno = null, a
               <input type="text" className={`${SEL} pl-8`} placeholder="Buscar por nome..." value={filtroColab} onChange={e => setFiltroColab(e.target.value)} />
             </div>
           </div>
-          {canEdit && empresaUnica(filtroEmpresa) && (
+          {podeAtualizarDias && empresaUnica(filtroEmpresa) && (
             <button onClick={atualizarDiasUteis} disabled={atualizandoDias}
               title="Relê o calendário e regrava os Dias Úteis de todos os vendedores desta empresa/ano (não mexe na Meta R$)"
               className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-indigo-50 hover:border-indigo-400 hover:text-indigo-700 transition-colors disabled:opacity-50 whitespace-nowrap">
@@ -858,10 +862,10 @@ export default function MetasPecas({ empresaExterna = null, anoExterno = null, a
         </div>
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <SeletorMeses selecionados={mesesSel} onChange={setMesesSel} />
-          {canEdit && (
+          {(canEdit || podeEditarPorMes) && (
             <div className="flex items-center gap-2">
-              <BotaoAcaoRetratil texto="Editar por Mês" Icone={CalendarDays} variante="secundario" onClick={abrirEditarPorMes} />
-              <BotaoAcaoRetratil texto="Adicionar Vendedor" onClick={abrirIncluir} />
+              {podeEditarPorMes && <BotaoAcaoRetratil texto="Editar por Mês" Icone={CalendarDays} variante="secundario" onClick={abrirEditarPorMes} />}
+              {canEdit && <BotaoAcaoRetratil texto="Adicionar Vendedor" onClick={abrirIncluir} />}
             </div>
           )}
         </div>
@@ -1440,7 +1444,7 @@ export default function MetasPecas({ empresaExterna = null, anoExterno = null, a
                         <Edit2 size={14}/> Editar
                       </button>
                     )}
-                    {canEdit && (
+                    {canDelete && (
                       <button onClick={() => {
                         setModalAberto(false)
                         setColabExcluir({ colaborador_id: form.colaborador_id, empresa_id: form.empresa_id, nome: form.colaborador_nome })

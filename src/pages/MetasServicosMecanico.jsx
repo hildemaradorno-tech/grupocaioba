@@ -121,9 +121,11 @@ export default function MetasServicosMecanico({ empresaExterna = null, anoExtern
   const [dadosConsultor, setDadosConsultor] = useState([])
   const [loading,       setLoading]       = useState(false)
   const [error,         setError]         = useState(null)
-  const { hasActionOrDefault, hasAction, usuarioId, userNome } = useAuth()
+  const { hasActionOrDefault, usuarioId, userNome } = useAuth()
   // Trocar o colaborador de um lançamento (mesmo aprovado): liberado pela ação Pendenciar (Grupos de Acesso).
-  const podeTrocarColab = hasAction('/metas/gestao-aprovacao', 'pendenciar')
+  // Ações do Grupo de Acessos (Planejamento de Metas › Pós-Vendas); sem flag = negado, admin sempre pode.
+  const podeTrocarColab = hasActionOrDefault('metas/pos-vendas/servicos_pecas', 'trocar_colaborador')
+  const podeEditarPorMes = hasActionOrDefault('metas/pos-vendas/servicos_pecas', 'editar_por_mes')
   const [trocaColab, setTrocaColab] = useState(null) // { antigoId, snapshot } enquanto está trocando
   const canEdit = hasActionOrDefault('metas/pos-vendas/servicos_pecas', 'editar')
   const canDelete = hasActionOrDefault('metas/pos-vendas/servicos_pecas', 'excluir')
@@ -1019,10 +1021,10 @@ export default function MetasServicosMecanico({ empresaExterna = null, anoExtern
         </div>
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <SeletorMeses selecionados={mesesSel} onChange={setMesesSel} />
-          {canEdit && (
+          {(canEdit || podeEditarPorMes) && (
             <div className="flex items-center gap-2">
-              <BotaoAcaoRetratil texto="Editar por Mês" Icone={CalendarDays} variante="secundario" onClick={abrirEditarPorMes} />
-              <BotaoAcaoRetratil texto="Adicionar Mecânico" onClick={abrirIncluir} />
+              {podeEditarPorMes && <BotaoAcaoRetratil texto="Editar por Mês" Icone={CalendarDays} variante="secundario" onClick={abrirEditarPorMes} />}
+              {canEdit && <BotaoAcaoRetratil texto="Adicionar Mecânico" onClick={abrirIncluir} />}
             </div>
           )}
         </div>

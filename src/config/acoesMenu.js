@@ -285,9 +285,10 @@ export const ACOES_POR_MENU = [
   {
     menuPath: 'metas/gestao-aprovacao',
     acoes: [
-      { value: 'editar', label: 'Incluir / Editar' },
+      { value: 'editar', label: 'Aprovar departamento' },
       { value: 'excluir', label: 'Excluir' },
       { value: 'pendenciar', label: 'Pendenciar (reverter uma aprovação de meta)' },
+      { value: 'excluir_colaborador', label: 'Excluir colaborador por completo (planejamento + publicado), mesmo aprovado' },
     ],
   },
   {
@@ -495,14 +496,18 @@ export const ACOES_POR_MENU = [
   {
     menuPath: 'metas/pos-vendas/pecas',
     acoes: [
-      { value: 'editar', label: 'Incluir / Editar' },
+      { value: 'editar', label: 'Incluir / Editar vendedores (aba Peças)' },
+      { value: 'excluir', label: 'Excluir vendedor (aba Peças)' },
     ],
   },
   {
     menuPath: 'metas/pos-vendas/servicos_pecas',
     acoes: [
-      { value: 'editar', label: 'Incluir / Editar' },
-      { value: 'excluir', label: 'Excluir' },
+      { value: 'editar', label: 'Incluir / Editar (Mecânico e Consultor)' },
+      { value: 'excluir', label: 'Excluir (Mecânico e Consultor)' },
+      { value: 'editar_por_mes', label: 'Editar por Mês (Mecânico / Consultor / Peças)' },
+      { value: 'trocar_colaborador', label: 'Trocar o colaborador de um lançamento (mesmo aprovado)' },
+      { value: 'atualizar_dias_uteis', label: 'Atualizar Dias Úteis pelo Calendário (aba Peças)' },
     ],
   },
   {
