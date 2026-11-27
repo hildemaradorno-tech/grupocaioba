@@ -4,7 +4,6 @@ import { apiService } from '../../services/api'
 import TruckPagNav from './TruckPagNav'
 import TruckPagRegrasModal from './TruckPagRegrasModal'
 import TruckPagConfigModal from './TruckPagConfigModal'
-import TruckPagRelatorioDivergencias from './TruckPagRelatorioDivergencias'
 import TruckPagDataArquivo from './TruckPagDataArquivo'
 import {
   fmtMoeda, fmtData, sincronizarTudoTruckPag, splitEstabelecimento,
@@ -668,7 +667,6 @@ export default function TruckPagRepasses() {
             <button onClick={() => setRegrasAberto(true)} title="Regras de conciliação" className="flex items-center justify-center p-2 rounded-md text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 shadow-sm transition-colors">
               <HelpCircle className="h-3.5 w-3.5 text-slate-500" />
             </button>
-            <TruckPagRelatorioDivergencias />
           </div>
         </div>
         <TruckPagNav />

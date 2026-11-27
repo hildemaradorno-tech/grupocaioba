@@ -3,7 +3,6 @@ import { RefreshCw, AlertTriangle, Link2, Link2Off, ArrowLeftRight, Wallet, Sett
 import { apiService } from '../../services/api'
 import TruckPagNav from './TruckPagNav'
 import TruckPagConfigModal from './TruckPagConfigModal'
-import TruckPagRelatorioDivergencias from './TruckPagRelatorioDivergencias'
 import TruckPagDataArquivo from './TruckPagDataArquivo'
 import TruckPagRepasseDetalheModal from './TruckPagRepasseDetalheModal'
 import TruckPagRegrasModal from './TruckPagRegrasModal'
@@ -224,7 +223,6 @@ export default function TruckPagConciliacao() {
             <button onClick={() => setRegrasAberto(true)} title="Regras de conciliação" className="flex items-center justify-center p-2 rounded-md text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 shadow-sm transition-colors">
               <HelpCircle className="h-3.5 w-3.5 text-slate-500" />
             </button>
-            <TruckPagRelatorioDivergencias />
           </div>
         </div>
         <TruckPagNav />

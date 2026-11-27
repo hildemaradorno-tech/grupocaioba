@@ -4,7 +4,6 @@ import { apiService } from '../../services/api'
 import TruckPagNav from './TruckPagNav'
 import TruckPagRegrasModal from './TruckPagRegrasModal'
 import TruckPagConfigModal from './TruckPagConfigModal'
-import TruckPagRelatorioDivergencias from './TruckPagRelatorioDivergencias'
 import TruckPagDataArquivo from './TruckPagDataArquivo'
 import {
   fmtMoeda, fmtData, sincronizarTudoTruckPag, conciliarTitulosRepasses, splitEstabelecimento,
@@ -276,7 +275,6 @@ export default function TruckPagTitulos() {
             >
               <HelpCircle className="h-3.5 w-3.5 text-slate-500" />
             </button>
-            <TruckPagRelatorioDivergencias />
           </div>
         </div>
         <TruckPagNav />
