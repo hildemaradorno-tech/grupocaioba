@@ -15,16 +15,26 @@ import {
 import * as XLSX from 'xlsx'
 // Arquivo de baixa no layout que o Dealer.net aceita — o mesmo do TruckPag
 import { siglaEmpresaPorNome } from '../truckpag/truckpagUtils'
+import { apiService } from '../../services/api'
+import ExtratoDafCodigosModal from './ExtratoDafCodigosModal'
 
 // ── Arquivo de baixa (Dealer.net › Banco Retorno) ─────────────────────────────────────────────────────────────
 // Mesmo layout de 39 posições do TruckPag (gerarArquivoBaixaTitulos), mas o 1º caractere (tipo de registro)
 // depende do Tipo de Título — pedido do usuário em 23/11/2026: GARANTIA FÁBRICA = 4 (no TruckPag é sempre 3).
 // Tipo de título sem código aqui → a tela avisa e NÃO gera o arquivo, até o código ser definido nesta lista.
-const CODIGO_BAIXA_POR_TIPO = {
+let CODIGO_BAIXA_POR_TIPO = {
   'GARANTIA FABRICA': '4',
 }
-const chaveTipo = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/\s+/g, ' ').trim()
+export const chaveTipo = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/\s+/g, ' ').trim()
 const codigoBaixaDoTipo = (tipo) => CODIGO_BAIXA_POR_TIPO[chaveTipo(tipo)] || null
+// CODIGO_BAIXA_POR_TIPO acima é só o fallback inicial — assim que a tela carrega, os códigos
+// cadastrados (engrenagem → Códigos de Tipo de Título, tabela gar_codigos_baixa_tipo_titulo)
+// substituem/estendem este objeto por inteiro (ver aplicarCodigosBaixa, chamado no useEffect).
+function aplicarCodigosBaixa(linhas) {
+  const novo = {}
+  for (const l of linhas) novo[chaveTipo(l.tipo_titulo)] = l.codigo
+  CODIGO_BAIXA_POR_TIPO = novo
+}
 //   posição 1      — código do tipo de título (tabela acima)
 //   posições 2-16  — Lançamento (título), zero à esquerda
 //   posições 17-24 — Data de Pagamento, DDMMAAAA
@@ -759,7 +769,7 @@ function AbaTitulos({ conc, dados, carregando, busca, setBusca, filtroResumo = '
                     <li key={tp}><b>{tp}</b> — {titulosBaixa.filter(t => (t.tipo_titulo || '(sem tipo)') === tp).length} título(s) selecionado(s)</li>
                   ))}
                 </ul>
-                <p>Cada tipo de título começa com um código no arquivo (ex.: GARANTIA FÁBRICA = 4). Informe o código desse tipo para configurarmos, ou desmarque esses títulos.</p>
+                <p>Cada tipo de título começa com um código no arquivo (ex.: GARANTIA FÁBRICA = 4). Cadastre o código desse tipo na engrenagem ⚙ › Códigos de Tipo de Título, ou desmarque esses títulos.</p>
               </div>
             )}
             {erroBaixa && <p className="text-[11px] text-red-600">{erroBaixa}</p>}
@@ -1154,6 +1164,18 @@ export default function ExtratoPagamentoDaf() {
   const inputRetorno = useRef(null)
   const menuRef = useRef(null)
 
+  // Códigos de Tipo de Título (arquivo de baixa) — cadastrados pela engrenagem, carregados do
+  // Supabase na montagem e aplicados em CODIGO_BAIXA_POR_TIPO (ver aplicarCodigosBaixa acima).
+  const [codigosModalAberto, setCodigosModalAberto] = useState(false)
+  const [, forcarRerender] = useState(0)
+  const carregarCodigosBaixa = async () => {
+    try {
+      aplicarCodigosBaixa(await apiService.getExtratoDafCodigosBaixa())
+      forcarRerender(v => v + 1)
+    } catch { /* fica no fallback fixo (GARANTIA FABRICA = 4) se não conseguir carregar */ }
+  }
+  useEffect(() => { carregarCodigosBaixa() }, [])
+
   // Engrenagem › Importar retorno da baixa (RFN048): lê o arquivo no navegador e abre a aba Retorno da Baixa
   // já com a conferência (recebido × Valor Líquido exportado; ajuste × Dif. Saldo).
   const importarRetorno = async (file) => {
@@ -1237,6 +1259,10 @@ export default function ExtratoPagamentoDaf() {
                   className="w-full flex items-center gap-2 px-3 py-2 text-[11px] text-slate-700 hover:bg-slate-50 text-left">
                   <ClipboardCheck className="h-3.5 w-3.5 text-slate-500" /> Importar retorno da baixa (RFN048)
                 </button>
+                <button onClick={() => { setMenuAberto(false); setCodigosModalAberto(true) }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-[11px] text-slate-700 hover:bg-slate-50 text-left">
+                  <Settings className="h-3.5 w-3.5 text-slate-500" /> Códigos de Tipo de Título
+                </button>
               </div>
             )}
             <input ref={inputArquivo} type="file" accept=".xlsx,.xls" className="hidden" onChange={e => importar(e.target.files?.[0])} />
@@ -1288,6 +1314,13 @@ export default function ExtratoPagamentoDaf() {
       {aba === 'aberto' && <AbaTitulos key={`tit-${versao}`} conc={conc} dados={dados} carregando={carregandoConc} busca={busca} setBusca={setBusca} filtroResumo={filtroResumo} />}
       {aba === 'retorno' && <AbaRetorno key={`ret-${versao}`} conc={conc} retorno={retorno} setRetorno={setRetorno} />}
       </>}
+
+      {codigosModalAberto && (
+        <ExtratoDafCodigosModal
+          onClose={() => setCodigosModalAberto(false)}
+          onSalvou={carregarCodigosBaixa}
+        />
+      )}
     </div>
   )
 }

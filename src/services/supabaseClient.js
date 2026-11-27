@@ -4116,6 +4116,27 @@ export const apiService = {
     if (error) throw error
     return { success: true }
   },
+
+  // ── Extrato de Pagamento DAF — códigos de tipo de título p/ arquivo de baixa ──
+  // (antes fixo no código, "GARANTIA FABRICA" = 4; agora cadastrável pela tela)
+  getExtratoDafCodigosBaixa: async () => {
+    const { data, error } = await supabase.from('gar_codigos_baixa_tipo_titulo').select('*').order('tipo_titulo')
+    if (error) throw error
+    return data || []
+  },
+  salvarExtratoDafCodigoBaixa: async (tipo_titulo, codigo) => {
+    const { data, error } = await supabase
+      .from('gar_codigos_baixa_tipo_titulo')
+      .upsert([{ tipo_titulo, codigo: String(codigo).trim(), atualizado_em: new Date().toISOString() }], { onConflict: 'tipo_titulo' })
+      .select()
+    if (error) throw error
+    return data?.[0]
+  },
+  deleteExtratoDafCodigoBaixa: async (id) => {
+    const { error } = await supabase.from('gar_codigos_baixa_tipo_titulo').delete().eq('id', id)
+    if (error) throw error
+    return { success: true }
+  },
   getResponsavelUsuario: async (email) => {
     if (!email) return null
     const { data, error } = await supabase.from('usuarios')
