@@ -506,7 +506,9 @@ export const ACOES_POR_MENU = [
     acoes: [
       { value: 'editar', label: 'Incluir / Editar (Mecânico e Consultor)' },
       { value: 'excluir', label: 'Excluir (Mecânico e Consultor)' },
-      { value: 'editar_por_mes', label: 'Editar por Mês (Mecânico / Consultor / Peças)' },
+      { value: 'editar_por_mes_mecanico',  label: 'Editar por Mês — aba Mecânico' },
+      { value: 'editar_por_mes_consultor', label: 'Editar por Mês — aba Consultor' },
+      { value: 'editar_por_mes_pecas',     label: 'Editar por Mês — aba Peças' },
       { value: 'trocar_colaborador', label: 'Trocar o colaborador de um lançamento (mesmo aprovado)' },
       { value: 'atualizar_dias_uteis', label: 'Atualizar Dias Úteis pelo Calendário (aba Peças)' },
     ],

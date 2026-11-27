@@ -253,7 +253,7 @@ export default function MetasPecas({ empresaExterna = null, anoExterno = null, a
   // Trocar o colaborador de um lançamento (mesmo aprovado): liberado pela ação Pendenciar (Grupos de Acesso).
   // Ações do Grupo de Acessos (Planejamento de Metas › Pós-Vendas); sem flag = negado, admin sempre pode.
   const podeTrocarColab = hasActionOrDefault('metas/pos-vendas/servicos_pecas', 'trocar_colaborador')
-  const podeEditarPorMes = hasActionOrDefault('metas/pos-vendas/servicos_pecas', 'editar_por_mes')
+  const podeEditarPorMes = hasActionOrDefault('metas/pos-vendas/servicos_pecas', 'editar_por_mes_pecas')
   const podeAtualizarDias = hasActionOrDefault('metas/pos-vendas/servicos_pecas', 'atualizar_dias_uteis')
   const [trocaColab, setTrocaColab] = useState(null) // { antigoId, snapshot } enquanto está trocando
   const canEdit = hasActionOrDefault('metas/pos-vendas/servicos_pecas/aba-pecas', 'editar')
