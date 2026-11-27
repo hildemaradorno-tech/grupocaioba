@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import {
-  ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, Search, X, ShieldCheck, Zap,
+  ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, Search, ShieldCheck, Zap,
   RefreshCw, AlertTriangle, LayoutDashboard, Check, CircleDot,
 } from 'lucide-react'
 import { supabase } from '../services/supabaseClient'
@@ -67,6 +67,18 @@ const ALL_MENU_KEYS_COM_ACOES = (() => {
   return s
 })()
 
+// ── Opções do filtro de permissão: todos os menus e submenus (seções e telas), em árvore ──
+const ROTULO_POR_KEY = new Map(ALL_ROWS.filter(r => r.type === 'section' || r.type === 'menu').map(r => [r.key, r.label]))
+const OPCOES_PERMISSAO = ALL_ROWS
+  .filter(r => r.type === 'section' || r.type === 'menu')
+  .map(r => ({
+    id: r.key,
+    label: r.label,
+    depth: r.depth,
+    secao: r.type === 'section',
+    caminho: [...r.sectionAncestors.map(k => ROTULO_POR_KEY.get(k)), r.label].join(' › '),
+  }))
+
 // ── Loading skeleton ──────────────────────────────────────────────────────────
 function Skeleton({ w = 'w-24', h = 'h-4' }) {
   return <div className={`${w} ${h} bg-slate-200 rounded animate-pulse`} />
@@ -81,11 +93,17 @@ export default function PermissoesMatriz() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(new Set())       // cell keys being saved
   const [err, setErr] = useState(null)
-  const [busca, setBusca] = useState('')
+  const [filtroPerms, setFiltroPerms] = useState([]) // keys de seções/menus escolhidos no filtro
   const [gruposSelecionados, setGruposSelecionados] = useState([])
+  const [tiposGrupo, setTiposGrupo] = useState([])
+  const [filtroTipo, setFiltroTipo] = useState([]) // ids: '__admin' | '__sem' | tipo_id — vazio = todos
+  // Mesmos seletores da tela Grupos de Acessos ('__sem' = sem valor)
+  const [agrupamentos, setAgrupamentos] = useState([])
+  const [departamentosCad, setDepartamentosCad] = useState([])
+  const [filtroAgrupamento, setFiltroAgrupamento] = useState([]) // vazio = todos
+  const [filtroDepartamento, setFiltroDepartamento] = useState([])
   const [openSections, setOpenSections] = useState(new Set())
   const [openAcoesMenu, setOpenAcoesMenu] = useState(new Set())
-  const busRef = useRef(null)
 
   // ── Load all data ───────────────────────────────────────────────────────────
   const loadAll = useCallback(async () => {
@@ -100,6 +118,9 @@ export default function PermissoesMatriz() {
       if (e1) throw e1
       if (e2) throw e2
       setGrupos(grps)
+      apiService.getTiposGrupoAcesso().then(setTiposGrupo).catch(() => setTiposGrupo([]))
+      apiService.getAgrupamentoEmpresas().then(a => setAgrupamentos(a || [])).catch(() => setAgrupamentos([]))
+      apiService.getDepartamentos().then(d => setDepartamentosCad([...new Set((d || []).filter(x => x.ativo !== false).map(x => x.nome_departamento).filter(Boolean))])).catch(() => setDepartamentosCad([]))
       setPermsSet(new Set((perms || []).map(p => `${p.grupo_id}:${p.menu_path}`)))
       setAcoesSet(new Set((acoes || []).map(a => `${a.grupo_id}:${a.menu_path}:${a.acao}`)))
     } catch (e) {
@@ -214,25 +235,29 @@ export default function PermissoesMatriz() {
   const todasExpandidas = openSections.size >= ALL_SECTION_KEYS.size && openAcoesMenu.size >= ALL_MENU_KEYS_COM_ACOES.size
   const toggleExpandirTudo = () => (todasExpandidas ? collapseAll() : expandAll())
 
-  // ── Visible rows (filtered by open sections + search) ──────────────────────
-  // Com busca ativa, ignora o estado de seções recolhidas — busca em TUDO e mostra
-  // as seções ancestrais dos itens encontrados, senão um menu/ação dentro de uma
-  // seção fechada nunca apareceria no resultado da busca.
+  // ── Visible rows (filtered by open sections + filtro de permissão) ──────────
+  // Com filtro: mostra os menus/seções escolhidos (seção = tudo o que está dentro dela), com as seções
+  // ancestrais sempre abertas. Ações aparecem direto quando o próprio menu foi escolhido; dentro de uma
+  // seção escolhida, seguem o botão "Ações" do menu.
+  const filtroAtivo = filtroPerms.length > 0
   const visibleRows = useMemo(() => {
-    if (busca.trim()) {
-      const term = busca.toLowerCase()
-      const encontrados = ALL_ROWS.filter(r => r.type !== 'section' && r.label.toLowerCase().includes(term))
-      const chavesEncontradas = new Set(encontrados.map(r => r.key))
-      const chavesAncestrais = new Set()
-      encontrados.forEach(r => r.sectionAncestors.forEach(k => chavesAncestrais.add(k)))
-      return ALL_ROWS.filter(r => chavesEncontradas.has(r.key) || (r.type === 'section' && chavesAncestrais.has(r.key)))
+    if (filtroAtivo) {
+      const sel = new Set(filtroPerms)
+      const escolhido = (r) => sel.has(r.key) || r.sectionAncestors.some(k => sel.has(k))
+      const encontrados = ALL_ROWS.filter(r => {
+        if (r.type === 'action') return sel.has(r.menuKey) || (r.sectionAncestors.some(k => sel.has(k)) && openAcoesMenu.has(r.menuKey))
+        return escolhido(r)
+      })
+      const chaves = new Set(encontrados.map(r => r.key))
+      encontrados.forEach(r => r.sectionAncestors.forEach(k => chaves.add(k)))
+      return ALL_ROWS.filter(r => chaves.has(r.key))
     }
     return ALL_ROWS.filter(row => {
       if (!row.sectionAncestors.every(k => openSections.has(k))) return false
       if (row.type === 'action' && !openAcoesMenu.has(row.menuKey)) return false
       return true
     })
-  }, [openSections, openAcoesMenu, busca])
+  }, [openSections, openAcoesMenu, filtroPerms, filtroAtivo])
 
   // ── Section summary: leaf keys de cada seção (em qualquer profundidade), pra
   // resumir o acesso do grupo naquela seção sem precisar expandir. Reaproveita
@@ -255,8 +280,19 @@ export default function PermissoesMatriz() {
   // ── Grupos filtrados pela seleção de grupos (colunas) ───────────────────────
   const gruposVisiveis = useMemo(() => {
     const idsSelecionados = new Set(gruposSelecionados)
-    return grupos.filter(g => idsSelecionados.size === 0 || idsSelecionados.has(g.id))
-  }, [grupos, gruposSelecionados])
+    return grupos
+      .filter(g => idsSelecionados.size === 0 || idsSelecionados.has(g.id))
+      .filter(g => !filtroAgrupamento.length || filtroAgrupamento.includes(g.agrupamento_empresa_id || '__sem'))
+      .filter(g => !filtroDepartamento.length || filtroDepartamento.includes(g.departamento || '__sem'))
+      .filter(g => !filtroTipo.length || filtroTipo.includes(g.is_admin ? '__admin' : (g.tipo_id || '__sem')))
+  }, [grupos, gruposSelecionados, filtroAgrupamento, filtroDepartamento, filtroTipo])
+  // Opções dos seletores (várias escolhas); '__sem' = sem valor, '__admin' = Administrador
+  const opcoesAgrupamento = useMemo(() => [...agrupamentos.map(a => ({ id: a.id, nome: a.nome_agrupamento })), { id: '__sem', nome: 'Sem grupo de empresa' }], [agrupamentos])
+  const opcoesTipo = useMemo(() => [{ id: '__admin', nome: 'Administrador' }, ...tiposGrupo.map(t => ({ id: t.id, nome: t.nome })), { id: '__sem', nome: 'Personalizado (sem tipo)' }], [tiposGrupo])
+  const departamentosOpcoes = useMemo(
+    () => [...new Set([...departamentosCad, ...grupos.map(g => g.departamento).filter(Boolean)])].sort((a, b) => a.localeCompare(b, 'pt-BR')),
+    [departamentosCad, grupos])
+  const opcoesDepartamento = useMemo(() => [...departamentosOpcoes.map(d => ({ id: d, nome: d })), { id: '__sem', nome: 'Sem departamento' }], [departamentosOpcoes])
 
   // ── Cell helpers ────────────────────────────────────────────────────────────
   const hasPerm  = (gId, path) => permsSet.has(`${gId}:${path}`)
@@ -292,14 +328,58 @@ export default function PermissoesMatriz() {
         )}
       </div>
 
-      {/* Filtros: grupo (colunas) + permissão (linhas) */}
-      <div className="shrink-0 px-6 py-2.5 border-b border-slate-200 bg-slate-50 flex items-center gap-4 flex-wrap">
-        <span className="text-xs font-semibold text-slate-500 shrink-0">Filtrar grupos:</span>
-        <div className="w-64">
+      {/* Filtros: 1ª linha = grupos de acesso (colunas); 2ª linha = menus (linhas) */}
+      <div className="shrink-0 px-6 py-2.5 border-b border-slate-200 bg-slate-50 flex flex-col gap-2">
+      <div className="flex items-center gap-3 flex-wrap">
+        <span className="text-xs font-semibold text-slate-500 shrink-0 w-28">Grupos de acesso:</span>
+        <div className="w-56">
           <MultiSearchCombobox
+            compacto
+            value={filtroAgrupamento}
+            onChange={setFiltroAgrupamento}
+            placeholder="Todos os grupos de empresa"
+            searchPlaceholder="Buscar grupo de empresa..."
+            notFoundLabel="Nada encontrado."
+            opcoes={opcoesAgrupamento}
+            getLabel={(o) => o.nome}
+            getSearchText={(o) => o.nome}
+            resumo={(sel) => sel.length === 1 ? sel[0].nome : `${sel.length} grupos de empresa`}
+          />
+        </div>
+        <div className="w-56">
+          <MultiSearchCombobox
+            compacto
+            value={filtroDepartamento}
+            onChange={setFiltroDepartamento}
+            placeholder="Todos os departamentos"
+            searchPlaceholder="Buscar departamento..."
+            notFoundLabel="Nada encontrado."
+            opcoes={opcoesDepartamento}
+            getLabel={(o) => o.nome}
+            getSearchText={(o) => o.nome}
+            resumo={(sel) => sel.length === 1 ? sel[0].nome : `${sel.length} departamentos`}
+          />
+        </div>
+        <div className="w-56">
+          <MultiSearchCombobox
+            compacto
+            value={filtroTipo}
+            onChange={setFiltroTipo}
+            placeholder="Todos os tipos"
+            searchPlaceholder="Buscar tipo..."
+            notFoundLabel="Nada encontrado."
+            opcoes={opcoesTipo}
+            getLabel={(o) => o.nome}
+            getSearchText={(o) => o.nome}
+            resumo={(sel) => sel.length === 1 ? sel[0].nome : `${sel.length} tipos`}
+          />
+        </div>
+        <div className="w-56">
+          <MultiSearchCombobox
+            compacto
             value={gruposSelecionados}
             onChange={setGruposSelecionados}
-            placeholder="— Todos os grupos —"
+            placeholder="Todos os grupos"
             searchPlaceholder="Buscar grupo pelo nome..."
             notFoundLabel="Nenhum grupo encontrado."
             opcoes={grupos}
@@ -308,24 +388,26 @@ export default function PermissoesMatriz() {
             resumo={(sel) => sel.length === 1 ? sel[0].nome_grupo : `${sel.length} grupos`}
           />
         </div>
-        <div className="w-px h-4 bg-slate-300 shrink-0" />
-
-        <span className="text-xs font-semibold text-slate-500 shrink-0">Filtrar permissão:</span>
-        <div className="relative w-56">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-          <input
-            ref={busRef}
-            value={busca}
-            onChange={e => setBusca(e.target.value)}
-            placeholder="Ex: Projetos, PDCA…"
-            className="w-full pl-8 pr-7 py-1.5 text-xs border border-slate-200 rounded bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
+      </div>
+      <div className="flex items-center gap-3 flex-wrap">
+        <span className="text-xs font-semibold text-slate-500 shrink-0 w-28">Menus:</span>
+        <div className="w-56">
+          <MultiSearchCombobox
+            compacto
+            value={filtroPerms}
+            onChange={setFiltroPerms}
+            placeholder="Todos os menus"
+            searchPlaceholder="Buscar menu ou submenu..."
+            notFoundLabel="Nenhum menu encontrado."
+            opcoes={OPCOES_PERMISSAO}
+            getLabel={(o) => (
+              <span style={{ paddingLeft: `${o.depth * 12}px` }} className={o.secao ? 'font-semibold' : ''}>{o.label}</span>
+            )}
+            getSearchText={(o) => o.caminho}
+            resumo={(sel) => sel.length === 1 ? sel[0].caminho : `${sel.length} menus`}
           />
-          {busca && (
-            <button onClick={() => { setBusca(''); busRef.current?.focus() }} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
-              <X className="h-3.5 w-3.5" />
-            </button>
-          )}
         </div>
+      </div>
       </div>
 
       {/* Matrix table */}
@@ -384,9 +466,9 @@ export default function PermissoesMatriz() {
                 ))
               : visibleRows.map(row => {
                   if (row.type === 'section') {
-                    // Durante a busca, a seção aparece forçadamente expandida (filha bateu com o termo),
+                    // Com filtro de permissão, a seção aparece forçadamente expandida (ela ou algo dentro foi escolhido),
                     // então o ícone deve refletir isso mesmo que não esteja em openSections de verdade.
-                    const isOpen = busca.trim() ? true : openSections.has(row.key)
+                    const isOpen = filtroAtivo ? true : openSections.has(row.key)
                     return (
                       <tr key={row.key} className="bg-slate-100 hover:bg-slate-200/70 transition-colors">
                         <td className="sticky left-0 z-10 bg-slate-100 hover:bg-slate-200 border-r border-b border-slate-200 px-4 py-2">
@@ -557,7 +639,7 @@ export default function PermissoesMatriz() {
         {!loading && visibleRows.length === 0 && (
           <div className="flex flex-col items-center justify-center py-16 text-slate-400">
             <Search className="h-8 w-8 mb-2" />
-            <p className="text-sm">Nenhuma permissão encontrada para "{busca}".</p>
+            <p className="text-sm">Nenhuma permissão encontrada para o filtro.</p>
           </div>
         )}
       </div>

@@ -112,7 +112,8 @@ export function SearchCombobox({ value, onChange, opcoes, placeholder, emptyOpti
 // painel ao marcar, pra permitir selecionar vários seguidos), com um resumo no botão.
 // quebrarTexto: nomes longos quebram linha na lista em vez de serem cortados com "..."
 // grupos (opcional): [{ id, label, ids }] — atalhos no topo da lista que marcam/desmarcam várias opções de uma vez.
-export function MultiSearchCombobox({ value, onChange, opcoes, placeholder, searchPlaceholder, notFoundLabel, getLabel, getSearchText, resumo, quebrarTexto = false, grupos = [] }) {
+// compacto: mesmo visual de um <select> pequeno de filtro (texto 12px, placeholder escuro)
+export function MultiSearchCombobox({ value, onChange, opcoes, placeholder, searchPlaceholder, notFoundLabel, getLabel, getSearchText, resumo, quebrarTexto = false, grupos = [], compacto = false }) {
   const [aberto, setAberto] = useState(false)
   const [busca, setBusca] = useState('')
   const [pos, setPos] = useState(null)
@@ -174,9 +175,11 @@ export function MultiSearchCombobox({ value, onChange, opcoes, placeholder, sear
       <button
         type="button"
         onClick={abrir}
-        className="w-full flex items-center justify-between gap-2 px-3 py-2 border border-slate-300 rounded-md bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        className={compacto
+          ? 'w-full flex items-center justify-between gap-2 py-1.5 px-2 border border-slate-200 rounded bg-white text-xs focus:outline-none focus:ring-2 focus:ring-indigo-300'
+          : 'w-full flex items-center justify-between gap-2 px-3 py-2 border border-slate-300 rounded-md bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'}
       >
-        <span className={`truncate ${selecionados.size ? 'text-slate-800' : 'text-slate-400'}`}>{rotuloBotao}</span>
+        <span className={`truncate ${selecionados.size || compacto ? 'text-slate-800' : 'text-slate-400'}`}>{rotuloBotao}</span>
         {selecionados.size > 0 ? (
           <X
             className="h-4 w-4 text-slate-400 hover:text-slate-600 shrink-0"
@@ -189,7 +192,10 @@ export function MultiSearchCombobox({ value, onChange, opcoes, placeholder, sear
       {aberto && pos && createPortal(
         <div
           data-multi-combobox-panel
-          style={{ position: 'fixed', top: pos.top, left: pos.left, width: pos.width }}
+          // compacto: a lista cresce até caber o texto das opções numa linha (sem passar da janela)
+          style={compacto
+            ? { position: 'fixed', top: pos.top, left: pos.left, minWidth: pos.width, width: 'max-content', maxWidth: window.innerWidth - pos.left - 8 }
+            : { position: 'fixed', top: pos.top, left: pos.left, width: pos.width }}
           className="z-50 bg-white border border-slate-200 rounded-md shadow-lg overflow-hidden"
         >
           <div className="relative border-b border-slate-100">

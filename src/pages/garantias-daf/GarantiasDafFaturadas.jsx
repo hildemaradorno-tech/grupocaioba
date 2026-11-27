@@ -46,7 +46,15 @@ const fmt = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', c
 
 const FILTROS_VAZIOS = { numero_os: '', chassi: '', cliente: '', numero_nf: '', data_inicio: '', data_fim: '' }
 
-export default function GarantiasDafFaturadas({ slotAcoes } = {}) {
+// onLastModified: informa a data do ROF017 (faturamento por O.S.) para o topo de BI — Garantias DAF.
+export default function GarantiasDafFaturadas({ slotAcoes, onLastModified } = {}) {
+  useEffect(() => {
+    const BACKEND = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
+    fetch(`${BACKEND}/api/garantias/sharepoint/rof017/info`)
+      .then(r => (r.ok ? r.json() : {}))
+      .then(d => onLastModified?.(d.lastModified ?? null))
+      .catch(() => {})
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
   // slotAcoes: espaço na linha das abas de Garantias DAF onde ficam os botões desta tela.
   const naLinhaDasAbas = (el) => (slotAcoes ? createPortal(el, slotAcoes) : el)
   const navigate = useNavigate()

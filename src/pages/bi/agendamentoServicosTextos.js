@@ -150,8 +150,8 @@ const COL_AGEND_CAMPANHA = [
   '• StatusAgendamento — AGE, CON, RAG, FIM, NSW, CAN',
   '• OSNumero — O.S. gerada pelo agendamento',
 ].join('\n')
-const META = 'Meta: definida na engrenagem (⚙) ao lado do botão Atualizar — o valor aparece no velocímetro (padrão 80%). Cor pelo atingimento da meta: abaixo de 80% vermelho, de 80% a 99% amarelo, 100% ou mais verde.'
-const META_MENOR = (meta) => `Meta: definida na engrenagem (⚙) ao lado do botão Atualizar — o valor aparece no velocímetro (padrão ${meta}%); quanto menor, melhor: atingimento = meta ÷ valor. Abaixo de 80% de atingimento vermelho, de 80% a 99% amarelo, 100% ou mais verde.`
+const META = 'Meta: definida mês a mês na engrenagem (⚙) › Metas dos indicadores — a do mês do filtro Data (vários meses = média das metas dos meses) aparece no velocímetro (padrão 80%). Cor pelo atingimento da meta: abaixo de 80% vermelho, de 80% a 99% amarelo, 100% ou mais verde.'
+const META_MENOR = (meta) => `Meta: definida mês a mês na engrenagem (⚙) › Metas dos indicadores — a do mês do filtro Data (vários meses = média das metas dos meses) aparece no velocímetro (padrão ${meta}%); quanto menor, melhor: atingimento = meta ÷ valor. Abaixo de 80% de atingimento vermelho, de 80% a 99% amarelo, 100% ou mais verde.`
 
 export const INFO = {
   // Aba Passagens
@@ -512,7 +512,23 @@ const TABELA_PASSAGENS = {
 }
 
 // ── Manual operacional do BI (botão de livro no cabeçalho) ───────────────────────────────────────────────────
-// Uma seção por indicador/card de cada aba (chave do INFO, ou um bloco { itens } para seção sem número), mais as seções gerais.
+// Indicadores (velocímetros) no manual: só o cálculo, dizendo de quais cards vem cada valor (pedido do usuário,
+// 26/11/2026). Fontes, regras, filtros e colunas ficam nos cards e tabelas.
+export const CALCULO_INDICADOR = {
+  taxaAgendamento: 'Card Contatos agendados ÷ card Contatos gerados × 100.',
+  taxaConversao: 'Agendamentos comparecidos (quadro Contatos agendados) ÷ card Contatos agendados × 100.',
+  taxaNoShow: 'Agendamentos não comparecidos (No-show) (quadro Contatos agendados) ÷ card Contatos agendados × 100. Quanto menor, melhor.',
+  agTaxaConversao: 'Card Agendamentos comparecidos ÷ card Agendamentos realizados × 100.',
+  agTaxaConversaoAtivo: 'Parte ativa do card Agendamentos comparecidos ÷ card Agendamentos ativos × 100.',
+  agTaxaConversaoPassivo: 'Parte passiva do card Agendamentos comparecidos ÷ card Agendamentos passivos × 100.',
+  agTaxaNoShow: 'Card Agendamentos Não comparecidos (No-Show) ÷ card Agendamentos realizados × 100. Quanto menor, melhor.',
+  gaugeAgendamentoOs: 'Card O.S. com agendamento ÷ card Quant. O.S. por data de abertura × 100.',
+  gaugeAtivo: 'Card Agendamentos ativos ÷ card Quant. O.S. por data de abertura × 100.',
+  gaugePassivo: 'Card Agendamentos passivos ÷ card Quant. O.S. por data de abertura × 100.',
+  gaugeAgNaoLigado: 'Card O.S. estava no agendamento, não aberta por ele ÷ card Quant. O.S. por data de abertura × 100. Quanto menor, melhor.',
+}
+// Uma aba por título; dentro, um subtítulo por indicador, card, quadro e tabela (chave do INFO, ou um bloco
+// { itens } para tabela/alerta), na ordem da tela.
 export const MANUAL_ABAS_CARDS = [
   ['Aba Por Campanhas', [
     ['Indicador — Taxa de Agendamento', 'taxaAgendamento'],
@@ -527,8 +543,6 @@ export const MANUAL_ABAS_CARDS = [
     ['Quadro — Motivo de Encerramento', 'motivos'],
   ]],
   ['Aba Por Data Agendamento', [
-    ['Tabela — Agendamentos por data do agendamento', TABELA_AGENDAMENTOS],
-    ['Tabela — Consulta de agendamentos', TABELA_CONSULTA_AGEND],
     ['Indicador — Taxa de Agendamento', 'agTaxaConversao'],
     ['Indicador — Taxa de Agendamento Ativo', 'agTaxaConversaoAtivo'],
     ['Indicador — Taxa de Agendamento Passivo', 'agTaxaConversaoPassivo'],
@@ -542,10 +556,10 @@ export const MANUAL_ABAS_CARDS = [
     ['Card — Conversão — Total', 'agConversaoTotal'],
     ['Card — Conversão — Ativos', 'agConversaoAtivos'],
     ['Card — Conversão — Passivos', 'agConversaoPassivos'],
+    ['Tabela — Agendamentos por data do agendamento', TABELA_AGENDAMENTOS],
+    ['Tabela — Consulta de agendamentos', TABELA_CONSULTA_AGEND],
   ]],
   ['Aba Por Data da O.S.', [
-    ['Tabela — Passagens por data de abertura', TABELA_PASSAGENS],
-    ['Tabela — Consulta de O.S.', TABELA_CONSULTA_OS],
     ['Indicador — Taxa de Agendamento', 'gaugeAgendamentoOs'],
     ['Indicador — Taxa de Agendamento Ativo', 'gaugeAtivo'],
     ['Indicador — Taxa de Agendamento Passivo', 'gaugePassivo'],
@@ -559,6 +573,8 @@ export const MANUAL_ABAS_CARDS = [
     ['Card — Conversão — Total', 'conversaoTotal'],
     ['Card — Conversão — Ativos', 'conversaoAtivos'],
     ['Card — Conversão — Passivos', 'conversaoPassivos'],
+    ['Tabela — Passagens por data de abertura', TABELA_PASSAGENS],
+    ['Tabela — Consulta de O.S.', TABELA_CONSULTA_OS],
   ]],
   ['Aba Campanhas Geradas', [
     ['Tabela — Campanhas geradas', TABELA_CAMPANHAS],
@@ -572,38 +588,12 @@ export const MANUAL_GERAL = [
     titulo: 'Visão geral',
     itens: [
       ['Para que serve', 'Acompanhar a Mesa de Agendamento do Pós-Venda: o resultado das campanhas de ativação do CRM (contatos agendados, encerrados e a realizar, motivos de encerramento), os agendamentos marcados e o seu desfecho (comparecido, a comparecer, no-show), e quantas O.S. vieram de agendamento (ativo ou passivo) e quanto faturaram.'],
-      ['Abas', 'Por Campanhas (data da campanha) · Por Data Agendamento (data para quando o agendamento foi marcado) · Por Data da O.S. (data de abertura da O.S.) · Campanhas Geradas (os números da aba Por Campanhas por data de geração) · Contatos Gerados (os contatos da aba Por Campanhas, um por linha, pela data da campanha). O objetivo de cada aba está na 1ª seção dela neste manual.'],
-      ['Fonte dos agendamentos', 'O ROF037 é a fonte única dos agendamentos em todas as abas (o ROF026 e o RCR014 não são usados).'],
-    ],
-  },
-  {
-    titulo: 'Filtros e botões',
-    itens: [
-      ['Data', 'Ao abrir: o mês atual, do dia 1 até ontem (no dia 1, o mês anterior). As setas ‹ › trocam de mês; o calendário aceita qualquer data. O período escolhido continua o mesmo ao trocar de aba. Cada aba aplica o filtro na sua data (ver Abas).'],
-      ['Empresas', 'Em todas as abas. Por Data Agendamento e Por Data da O.S.: por EmpresaNome do ROF037 / Empresa do ROF001. Por Campanhas, Contatos Gerados e Campanhas Geradas: pela unidade da campanha, a sigla no nome do arquivo RCR038 (CGR Campo Grande, DOU Dourados, TLG Três Lagoas, CPD Chapadão) — as linhas do RCR038 não trazem a empresa; o agendamento conta na unidade da campanha, mesmo se foi feito em outra empresa (a empresa do agendamento aparece na coluna Empresa do agendamento da aba Contatos Gerados). Arquivo sem sigla no nome só entra com todas as empresas.'],
-      ['Botões da aba', 'Na linha das abas, logo depois de Contatos Gerados (com o visual de aba, mas abrem uma janela — a aba escolhida não muda), só nas abas Por Data Agendamento e Por Data da O.S.: CONSULTA abre a consulta linha a linha da aba (Consulta de agendamentos ou Consulta de O.S., com filtros e busca) e TABELA abre a tabela com os números por data. Os dados da aba Por Campanhas linha a linha estão na aba Contatos Gerados e por data de geração na aba Campanhas Geradas.'],
-      ['Cabeçalho', 'Atualizar (↻) relê os relatórios do SharePoint · Engrenagem (⚙) define as metas dos indicadores · Livro abre este manual. "Atualizado em" = quando os relatórios foram lidos.'],
-      ['ⓘ dos cards', 'Cada card, indicador e quadro tem o botão ⓘ com o objetivo, o cálculo (como os relatórios são ligados) e a fonte; as regras completas e as colunas usadas estão nas seções de cada aba deste manual.'],
     ],
   },
   {
     titulo: 'Metas dos indicadores',
     itens: [
-      ['Onde definir', 'Botão de engrenagem (⚙) ao lado do botão Atualizar, no cabeçalho do BI. A janela lista os indicadores (velocímetros) de cada aba com a meta em %; Salvar vale para todos os usuários.'],
-      ['Padrão', 'Enquanto ninguém alterar: 80% para as taxas de agendamento e de conversão e 15% para as taxas de No-show (quanto menor, melhor).'],
-      ['Cor do velocímetro', 'Pelo atingimento da meta: abaixo de 80% vermelho, de 80% a 99% amarelo, 100% ou mais verde. Nas taxas de No-show, atingimento = meta ÷ valor.'],
-      ['Registro', 'A janela mostra a data e o usuário da última alteração.'],
-    ],
-  },
-  {
-    titulo: 'Fontes (relatórios)',
-    itens: [
-      [ARQ_OS, 'Pasta SharePoint: Banco de Dados - DAF - Pós-Vendas › Relatório Geral OS'],
-      [ARQ_AGEND, 'Pasta SharePoint: Banco de Dados - DAF - Pós-Vendas › Agendamentos - CRM › AGENDAMENTO DE SERVICOS E PRODUTOS'],
-      [ARQ_CAMPANHA, 'Pasta SharePoint: Banco de Dados - DAF - Pós-Vendas › Agendamentos - CRM › CAMPANHA CRM › (ano)'],
-      [ARQ_CONTATO, 'Pasta SharePoint: Banco de Dados - DAF - Pós-Vendas › Agendamentos - CRM › LISTA POR DATA CONTATO_ENCERRAMENTO'],
-      ['Aba lida', 'De cada arquivo é lida a aba "Dados" (como vem do Dealer.net); se não existir, a aba com mais linhas. Abas criadas a mais (ex: tabela dinâmica) não atrapalham.'],
-      ['Arquivos soltos', 'Só os arquivos dentro das pastas acima são lidos; arquivos salvos direto na pasta Agendamentos - CRM não entram.'],
+      ['Onde definir', 'Botão de engrenagem [[metas]] ao lado do botão Atualizar [[atualizar]] › menu Metas dos indicadores.'],
     ],
   },
 ]

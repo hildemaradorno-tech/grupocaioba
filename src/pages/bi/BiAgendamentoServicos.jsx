@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { createPortal } from 'react-dom'
 import { Bar, BarChart, CartesianGrid, LabelList, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { AlertTriangle, BookOpen, Building2, Calendar, CalendarCheck, ChevronDown, ChevronLeft, ChevronRight, Info, ListChecks, Megaphone, RefreshCw, Settings, Table2, Wrench, X } from 'lucide-react'
+import { AlertTriangle, BookOpen, Building2, Calendar, CalendarCheck, ChevronDown, ChevronLeft, ChevronRight, Gauge, Info, ListChecks, Megaphone, RefreshCw, Settings, Table2, Wrench, X } from 'lucide-react'
 import logoCaioba from '../../assets/logo-grupo.png'
 import { useAuth } from '../../context/AuthContext'
 import { apiService } from '../../services/supabaseClient'
@@ -37,23 +37,85 @@ const METAS_PADRAO = {
   agTaxaConversao: 80, agTaxaConversaoAtivo: 80, agTaxaConversaoPassivo: 80, agTaxaNoShow: 15,
   gaugeAgendamentoOs: 80, gaugeAtivo: 80, gaugePassivo: 80, gaugeAgNaoLigado: 10,
 }
-// Indicadores na janela de metas, por aba (na mesma ordem da tela).
-const METAS_POR_ABA = [
-  ['Por Campanhas', [['taxaAgendamento', 'Taxa de Agendamento'], ['taxaConversao', 'Taxa de Conversão'], ['taxaNoShow', 'Taxa de No-show', true]]],
-  ['Por Data Agendamento', [['agTaxaConversao', 'Taxa de Agendamento'], ['agTaxaConversaoAtivo', 'Taxa de Agendamento Ativo'], ['agTaxaConversaoPassivo', 'Taxa de Agendamento Passivo'], ['agTaxaNoShow', 'Taxa de No-show', true]]],
-  ['Por Data da O.S.', [['gaugeAgendamentoOs', 'Taxa de Agendamento'], ['gaugeAtivo', 'Taxa de Agendamento Ativo'], ['gaugePassivo', 'Taxa de Agendamento Passivo'], ['gaugeAgNaoLigado', 'Taxa de O.S. fora do Agendamento', true]]],
+// Indicadores na janela de metas: uma meta por indicador, a mesma em todas as abas onde ele aparece
+// (pedido do usuário em 26/11/2026). [chave, nome, quanto menor melhor, abas onde aparece]
+const METAS_INDICADORES = [
+  ['taxaAgendamento', 'Taxa de Agendamento', false, 'Por Campanhas · Por Data Agendamento · Por Data da O.S.'],
+  ['agTaxaConversaoAtivo', 'Taxa de Agendamento Ativo', false, 'Por Data Agendamento · Por Data da O.S.'],
+  ['agTaxaConversaoPassivo', 'Taxa de Agendamento Passivo', false, 'Por Data Agendamento · Por Data da O.S.'],
+  ['taxaConversao', 'Taxa de Conversão', false, 'Por Campanhas'],
+  ['taxaNoShow', 'Taxa de No-show', true, 'Por Campanhas · Por Data Agendamento'],
+  ['gaugeAgNaoLigado', 'Taxa de O.S. fora do Agendamento', true, 'Por Data da O.S.'],
 ]
+// Velocímetros das outras abas que usam a meta do mesmo indicador (chave do velocímetro → chave da meta).
+const META_IGUAL = {
+  agTaxaConversao: 'taxaAgendamento', gaugeAgendamentoOs: 'taxaAgendamento',
+  gaugeAtivo: 'agTaxaConversaoAtivo', gaugePassivo: 'agTaxaConversaoPassivo', agTaxaNoShow: 'taxaNoShow',
+}
+// Meta de cada indicador repetida nas chaves dos velocímetros iguais (a Matriz de KPIs lê agTaxaConversao, agTaxaNoShow…).
+const expandirMetas = (m) => ({ ...m, ...Object.fromEntries(Object.entries(META_IGUAL).map(([k, base]) => [k, m[base]])) })
 
-// Janela da engrenagem: meta (%) de cada indicador, salva para todos os usuários.
-function JanelaMetas({ metas, info, onSalvar, onClose }) {
-  const [valores, setValores] = useState(() => Object.fromEntries(Object.entries(metas).map(([k, v]) => [k, String(v)])))
+// Engrenagem do cabeçalho (ao lado de Atualizar): menu de configurações, mesmo padrão do BI Planos de Manutenção.
+// Lista em portal (acima de tudo); clicar fora fecha.
+function MenuEngrenagem({ onMetas }) {
+  const [pos, setPos] = useState(null)
+  const ref = useRef(null)
+  const abrir = () => {
+    const r = ref.current.getBoundingClientRect()
+    setPos({ top: r.bottom + 4, right: window.innerWidth - r.right })
+  }
+  return (
+    <>
+      <button ref={ref} type="button" onClick={abrir} title="Configurações" aria-label="Configurações" className={BOTAO_CABECALHO}>
+        <Settings className="h-4 w-4" />
+      </button>
+      {pos && createPortal(
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setPos(null)} />
+          <div style={{ position: 'fixed', top: pos.top, right: pos.right }}
+            className="z-50 w-72 bg-white border border-slate-200 rounded-md shadow-lg py-1 text-xs text-slate-800">
+            <button type="button" onClick={() => { setPos(null); onMetas() }}
+              className="w-full text-left px-3 py-2 hover:bg-slate-50 flex items-start gap-2">
+              <Gauge className="h-3.5 w-3.5 text-emerald-600 mt-0.5 shrink-0" />
+              <span>
+                <span className="font-semibold block">Metas dos indicadores</span>
+                <span className="text-[11px] text-slate-500">Meta (%) de cada velocímetro das abas</span>
+              </span>
+            </button>
+          </div>
+        </>,
+        document.body
+      )}
+    </>
+  )
+}
+
+// Janela da engrenagem › Metas dos indicadores: no ano escolhido (‹ ano ›), a meta (%) de cada indicador mês a mês.
+// Mês sem meta própria usa a meta de bi_agendamento_metas (aparece em cinza no campo do mês).
+const MESES_META = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
+function JanelaMetas({ padrao, mensais, anoInicial, info, onSalvar, onClose }) {
+  const [ano, setAno] = useState(anoInicial)
+  // Meta usada no mês em branco (não editável aqui; aparece em cinza no campo do mês).
+  const valPadrao = useMemo(() => Object.fromEntries(METAS_INDICADORES.map(([k]) => [k, String(padrao[k] ?? '')])), [padrao])
+  const chave = (ind, a, m) => `${ind}|${a}|${m}`
+  const original = useMemo(() => Object.fromEntries(mensais.map(l => [chave(l.indicador, l.ano, l.mes), String(Number(l.meta))])), [mensais])
+  const [valores, setValores] = useState(original)
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState('')
-  const invalido = Object.values(valores).some(v => v === '' || isNaN(Number(v)) || Number(v) < 0 || Number(v) > 100)
+  const ruim = (v) => isNaN(Number(v)) || Number(v) < 0 || Number(v) > 100
+  const invalido = Object.values(valores).some(v => v !== '' && ruim(v))
   const salvar = async () => {
     setSalvando(true); setErro('')
     try {
-      await onSalvar(Object.fromEntries(Object.entries(valores).map(([k, v]) => [k, Number(v)])))
+      const gravar = [], apagar = []
+      Object.keys({ ...valores, ...original }).forEach(k => {
+        const v = valores[k] ?? ''
+        const [indicador, a, m] = k.split('|')
+        const linha = { indicador, ano: Number(a), mes: Number(m) }
+        if (v !== '' && v !== original[k]) gravar.push({ ...linha, meta: Number(v) })
+        if (v === '' && original[k] != null) apagar.push(linha)
+      })
+      await onSalvar({ padrao: null, gravar, apagar })
       onClose()
     } catch (e) {
       setErro(`Não foi possível salvar: ${e.message || e}`)
@@ -61,33 +123,107 @@ function JanelaMetas({ metas, info, onSalvar, onClose }) {
       setSalvando(false)
     }
   }
+  const campo = 'w-full min-w-[44px] text-right text-[11px] px-1 py-1 rounded border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 placeholder:text-slate-300'
+  const sel = 'text-[11px] px-1.5 py-1 rounded border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/40'
+  // Aplicar em vários meses: a mesma meta em um indicador (ou todos) de um mês até outro; meta vazia = limpa (volta à meta em cinza).
+  const [lote, setLote] = useState({ ind: '', valor: '', de: 1, ate: 12 })
+  const [aviso, setAviso] = useState('')
+  const loteInvalido = (lote.valor !== '' && ruim(lote.valor)) || Number(lote.de) > Number(lote.ate)
+  const aplicarLote = () => {
+    const inds = lote.ind ? [lote.ind] : METAS_INDICADORES.map(([ind]) => ind)
+    setValores(v => {
+      const novo = { ...v }
+      inds.forEach(ind => { for (let m = Number(lote.de); m <= Number(lote.ate); m++) novo[chave(ind, ano, m)] = lote.valor })
+      return novo
+    })
+    setAviso(`${lote.valor === '' ? 'Meses limpos' : `Meta ${lote.valor}% aplicada`} de ${MESES_META[lote.de - 1]} a ${MESES_META[lote.ate - 1]} de ${ano}. Clique em Salvar para gravar.`)
+  }
+  // Seta no fim da linha: cada mês preenchido se repete nos meses seguintes em branco (ex: digita Jan → Fev a Dez iguais).
+  const repetirLinha = (ind) => {
+    setValores(v => {
+      const novo = { ...v }
+      let ultimo = ''
+      for (let m = 1; m <= 12; m++) {
+        const k = chave(ind, ano, m)
+        if ((novo[k] ?? '') !== '') ultimo = novo[k]
+        else if (ultimo !== '') novo[k] = ultimo
+      }
+      return novo
+    })
+  }
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-6xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-200">
           <p className="text-sm font-bold text-slate-900 flex items-center gap-2"><Settings className="h-4 w-4 text-emerald-600" /> Metas dos indicadores</p>
+          <div className="flex items-center gap-1 text-[11px] font-semibold text-slate-700">
+            <button type="button" onClick={() => setAno(a => a - 1)} aria-label="Ano anterior" className="p-1 rounded border border-slate-300 hover:bg-slate-50"><ChevronLeft className="h-3.5 w-3.5" /></button>
+            <span className="w-12 text-center">{ano}</span>
+            <button type="button" onClick={() => setAno(a => a + 1)} aria-label="Próximo ano" className="p-1 rounded border border-slate-300 hover:bg-slate-50"><ChevronRight className="h-3.5 w-3.5" /></button>
+          </div>
           <button type="button" onClick={onClose} aria-label="Fechar" className="text-slate-400 hover:text-slate-600"><X className="h-4 w-4" /></button>
         </div>
-        <div className="overflow-auto p-4 space-y-4">
-          {METAS_POR_ABA.map(([aba, itens]) => (
-            <div key={aba}>
-              <p className="text-[11px] font-bold text-emerald-700 uppercase mb-1.5">{aba}</p>
-              <div className="space-y-1.5">
-                {itens.map(([chave, label, menorMelhor]) => (
-                  <label key={chave} className="flex items-center justify-between gap-3 text-[11px] text-slate-700">
-                    <span>{label}{menorMelhor && <span className="text-slate-400"> (quanto menor, melhor)</span>}</span>
-                    <span className="flex items-center gap-1">
-                      <input type="number" min="0" max="100" step="0.1" value={valores[chave] ?? ''}
-                        onChange={e => setValores(v => ({ ...v, [chave]: e.target.value }))}
-                        className="w-20 text-right text-[11px] px-1.5 py-1 rounded-md border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500/40" />
-                      %
-                    </span>
-                  </label>
-                ))}
-              </div>
-            </div>
-          ))}
-          {info && <p className="text-[10px] text-slate-400">{info}</p>}
+        <div className="overflow-auto p-4 space-y-2">
+          <div className="flex flex-wrap items-end gap-2 p-2.5 rounded-md bg-emerald-50/60 border border-emerald-100 text-[11px] text-slate-700">
+            <span className="font-bold text-emerald-700 uppercase self-center mr-1">Aplicar em vários meses</span>
+            <label className="flex flex-col gap-0.5">Indicador
+              <select value={lote.ind} onChange={e => setLote(l => ({ ...l, ind: e.target.value }))} className={sel}>
+                <option value="">Todos os indicadores</option>
+                {METAS_INDICADORES.map(([ind, label]) => <option key={ind} value={ind}>{label}</option>)}
+              </select>
+            </label>
+            <label className="flex flex-col gap-0.5">Meta (%)
+              <input type="number" min="0" max="100" step="0.1" value={lote.valor} placeholder="vazio = limpar"
+                onChange={e => setLote(l => ({ ...l, valor: e.target.value }))} className={`${sel} w-28 text-right placeholder:text-slate-300`} />
+            </label>
+            <label className="flex flex-col gap-0.5">De
+              <select value={lote.de} onChange={e => setLote(l => ({ ...l, de: Number(e.target.value) }))} className={sel}>
+                {MESES_META.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+              </select>
+            </label>
+            <label className="flex flex-col gap-0.5">Até
+              <select value={lote.ate} onChange={e => setLote(l => ({ ...l, ate: Number(e.target.value) }))} className={sel}>
+                {MESES_META.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+              </select>
+            </label>
+            <button type="button" onClick={aplicarLote} disabled={loteInvalido}
+              className="px-3 py-1 rounded-md bg-emerald-600 text-white font-semibold hover:bg-emerald-700 disabled:opacity-50">Aplicar</button>
+            {aviso && <span className="self-center text-emerald-700">{aviso}</span>}
+          </div>
+          <table className="w-full text-[11px] text-slate-700">
+            <thead>
+              <tr className="text-slate-500">
+                <th className="text-left font-bold px-1 py-1">Indicador (%)</th>
+                {MESES_META.map(m => <th key={m} className="font-bold px-1 py-1">{m}</th>)}
+                <th className="w-7" />
+              </tr>
+            </thead>
+            <tbody>
+              {METAS_INDICADORES.map(([ind, label, menorMelhor, abas]) => (
+                    <tr key={ind} className="border-t border-slate-100">
+                      <td className="px-1 py-1 whitespace-nowrap">
+                        <span className="block">{label}{menorMelhor && <span className="text-slate-400"> (menor, melhor)</span>}</span>
+                        <span className="block text-[10px] text-slate-400">{abas}</span>
+                      </td>
+                      {MESES_META.map((_, i) => {
+                        const k = chave(ind, ano, i + 1)
+                        return (
+                          <td key={k} className="px-0.5 py-1">
+                            <input type="number" min="0" max="100" step="0.1" value={valores[k] ?? ''} placeholder={valPadrao[ind] ?? ''}
+                              onChange={e => setValores(v => ({ ...v, [k]: e.target.value }))} className={campo} />
+                          </td>
+                        )
+                      })}
+                      <td className="px-0.5 py-1">
+                        <button type="button" onClick={() => repetirLinha(ind)} title="Repetir cada mês preenchido nos meses seguintes em branco"
+                          aria-label="Repetir nos meses seguintes" className="p-1 rounded border border-slate-300 text-slate-500 hover:bg-emerald-50 hover:text-emerald-700">
+                          <ChevronRight className="h-3.5 w-3.5" />
+                        </button>
+                      </td>
+                    </tr>
+              ))}
+            </tbody>
+          </table>
           {erro && <p className="text-[11px] text-red-600">{erro}</p>}
         </div>
         <div className="flex justify-end gap-2 px-4 py-3 border-t border-slate-200">
@@ -826,19 +962,24 @@ const fmtDataHora = (d) => d.toLocaleString('pt-BR', { day: '2-digit', month: '2
 export default function BiAgendamentoServicos() {
   const { user } = useAuth()
   // Metas dos velocímetros (engrenagem). Sem a tabela ou com erro, ficam as padrão.
-  const [metas, setMetas] = useState(METAS_PADRAO)
+  // Meta padrão de cada indicador (bi_agendamento_metas) + metas mês a mês (bi_agendamento_metas_mes).
+  const [metasPadrao, setMetasPadrao] = useState(METAS_PADRAO)
+  const [metasMes, setMetasMes] = useState([]) // [{ indicador, ano, mes, meta }]
   const [metasInfo, setMetasInfo] = useState('')
   const [metasAberto, setMetasAberto] = useState(false)
-  const lerMetas = () => apiService.getBiAgendamentoMetas()
-    .then(linhas => {
-      setMetas({ ...METAS_PADRAO, ...Object.fromEntries(linhas.map(l => [l.indicador, Number(l.meta)])) })
-      const ultima = linhas.filter(l => l.atualizado_por).sort((a, b) => String(b.atualizado_em).localeCompare(String(a.atualizado_em)))[0]
-      setMetasInfo(ultima ? `Última alteração: ${new Date(ultima.atualizado_em).toLocaleString('pt-BR')} por ${ultima.atualizado_por}` : '')
-    })
-    .catch(() => {})
+  const lerMetas = () => Promise.all([
+    apiService.getBiAgendamentoMetas().catch(() => []),
+    apiService.getBiAgendamentoMetasMes().catch(() => []),
+  ]).then(([linhas, mensais]) => {
+    setMetasPadrao({ ...METAS_PADRAO, ...Object.fromEntries(linhas.map(l => [l.indicador, Number(l.meta)])) })
+    setMetasMes(mensais)
+    const ultima = [...linhas, ...mensais].filter(l => l.atualizado_por).sort((a, b) => String(b.atualizado_em).localeCompare(String(a.atualizado_em)))[0]
+    setMetasInfo(ultima ? `Última alteração: ${new Date(ultima.atualizado_em).toLocaleString('pt-BR')} por ${ultima.atualizado_por}` : '')
+  })
   useEffect(() => { lerMetas() }, [])
-  const salvarMetas = async (novas) => {
-    await apiService.saveBiAgendamentoMetas(novas, user?.email)
+  const salvarMetas = async ({ padrao, gravar, apagar }) => {
+    if (padrao) await apiService.saveBiAgendamentoMetas(padrao, user?.email)
+    if (gravar.length || apagar.length) await apiService.saveBiAgendamentoMetasMes(gravar, apagar, user?.email)
     await lerMetas()
   }
   const [empresas, setEmpresas] = useState([])
@@ -887,6 +1028,25 @@ export default function BiAgendamentoServicos() {
 
   const [dataIni, setDataIni] = useState(PADRAO_INI)
   const [dataFim, setDataFim] = useState(PADRAO_FIM)
+  // Meta de cada indicador no período do filtro Data: a meta de cada mês do período (sem meta no mês = a padrão);
+  // com mais de um mês, a média das metas dos meses.
+  const metas = useMemo(() => {
+    const meses = []
+    if (dataIni && dataFim && dataIni <= dataFim) {
+      let [a, m] = [Number(dataIni.slice(0, 4)), Number(dataIni.slice(5, 7))]
+      const fimAm = dataFim.slice(0, 7)
+      while (`${a}-${String(m).padStart(2, '0')}` <= fimAm && meses.length < 120) { meses.push([a, m]); m++; if (m > 12) { m = 1; a++ } }
+    }
+    // Uma meta por indicador (METAS_INDICADORES), repetida nos velocímetros iguais das outras abas (META_IGUAL).
+    return expandirMetas(Object.fromEntries(METAS_INDICADORES.map(([ind]) => {
+      if (!meses.length) return [ind, metasPadrao[ind]]
+      const vals = meses.map(([a, m]) => {
+        const l = metasMes.find(x => x.indicador === ind && Number(x.ano) === a && Number(x.mes) === m)
+        return l ? Number(l.meta) : metasPadrao[ind]
+      })
+      return [ind, Math.round(vals.reduce((t, v) => t + v, 0) / vals.length * 10) / 10]
+    })))
+  }, [metasPadrao, metasMes, dataIni, dataFim])
   // Setas ‹ ›: mês inteiro anterior/seguinte (no mês atual, até ontem, como ao abrir).
   const trocarMes = (passo) => {
     const [a, m] = dataIni.split('-').map(Number)
@@ -1136,11 +1296,8 @@ export default function BiAgendamentoServicos() {
               >
                 <RefreshCw className={`h-4 w-4 ${carregando ? 'animate-spin' : ''}`} />
               </button>
-              {/* Engrenagem: metas dos indicadores (velocímetros). */}
-              <button type="button" onClick={() => setMetasAberto(true)} title="Metas dos indicadores" aria-label="Metas dos indicadores"
-                className={BOTAO_CABECALHO}>
-                <Settings className="h-4 w-4" />
-              </button>
+              {/* Engrenagem: menu de configurações (Metas dos indicadores). */}
+              <MenuEngrenagem onMetas={() => setMetasAberto(true)} />
               {/* Manual operacional: página própria, sempre em outra aba (mesmo padrão do BI Planos de Manutenção). */}
               <a href="/bi/agendamento-servicos/manual" target="_blank" rel="noopener noreferrer"
                 title="Manual operacional do BI (abre em outra aba)" aria-label="Manual operacional do BI"
@@ -1354,7 +1511,7 @@ export default function BiAgendamentoServicos() {
       </>
       )}
 
-      {metasAberto && <JanelaMetas metas={metas} info={metasInfo} onSalvar={salvarMetas} onClose={() => setMetasAberto(false)} />}
+      {metasAberto && <JanelaMetas padrao={metasPadrao} mensais={metasMes} anoInicial={Number(dataFim.slice(0, 4)) || new Date().getFullYear()} info={metasInfo} onSalvar={salvarMetas} onClose={() => setMetasAberto(false)} />}
       {tabela === 'consultaOs' && <ConsultaOs lista={consultaOsCampanha} carregando={carregando && !passagensOs} onClose={() => setTabela(null)} />}
       {tabela === 'consultaAgend' && <ConsultaAgendamentos lista={consultaAgend} carregando={carregando && !passagensOs} onClose={() => setTabela(null)} />}
       {tabela === 'agendamentos' && (

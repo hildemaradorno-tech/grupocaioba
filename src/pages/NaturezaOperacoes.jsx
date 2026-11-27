@@ -154,7 +154,7 @@ export default function NaturezaOperacoes() {
             <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[11px] font-semibold uppercase tracking-wider">
               <th className="p-3 w-28 text-center">Código</th>
               <th className="p-3 w-2/5">Natureza de Operação</th>
-              <th className="p-3 w-36">Grupo Movimento</th>
+              <th className="p-3 w-48 whitespace-nowrap">Grupo Movimento</th>
               <th className="p-3">Agrupamento Empresas</th>
               <th className="p-3 w-24 text-center">Ações</th>
             </tr>
@@ -169,7 +169,7 @@ export default function NaturezaOperacoes() {
                 <td className="p-3 text-center text-slate-900 font-mono font-bold bg-slate-50/30">{item.codigo}</td>
                 <td className="p-3 text-slate-900 font-bold">{item.natureza_operacao}</td>
                 <td className="p-3">
-                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded border text-[10px] font-bold ${
+                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded border text-[10px] font-bold whitespace-nowrap ${
                     item.grupo_movimento === 'Compra' || item.grupo_movimento === 'Devolução de Venda' || item.grupo_movimento === 'Outras Entradas'
                       ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                       : 'bg-blue-50 text-blue-700 border-blue-200'

@@ -1,9 +1,9 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
   CalendarDays, Clock, Hourglass, CheckCircle2, AlertTriangle, XCircle,
   Building2, Info, Loader2, RefreshCw, ChevronDown, ChevronRight,
-  Receipt, Package, Wrench, Truck, LayoutDashboard, Percent, TrendingUp, Settings, User,
+  Receipt, Package, Wrench, Truck, LayoutDashboard, Percent, TrendingUp, Settings, User, ArrowUp, ArrowDown, ChevronLeft, Palette,
 } from 'lucide-react'
 import { apiService } from '../../services/api'
 import { Bar, BarChart, CartesianGrid, ComposedChart, LabelList, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
@@ -12,16 +12,34 @@ import { resolverPorDepartamento, resolverPorFuncionario, normalizaBusca } from 
 import { useEmpresasPermitidas } from '../../hooks/useEmpresasPermitidas'
 import TempoNaOficina from '../garantias-daf/TempoNaOficina'
 import TempoOficinaRegrasModal from '../garantias-daf/TempoOficinaRegrasModal'
+import CoresIndicadoresModal, { CORES_PADRAO } from './CoresIndicadoresModal'
 
 const fmtMoeda = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+// Sem centavos (tabela de Faturamento/Lucro da Evolução)
+const fmtMoedaInteiro = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 0, maximumFractionDigits: 0 })
 const primeiroDiaMes = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
 // Data local (não toISOString, que é UTC e no MS já vira o dia seguinte a partir das 20h).
 const isoLocal = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 // Padrão ao abrir a tela: do 1º dia do mês de ontem até ontem (o dia de hoje ainda não fechou).
 const ontem = () => { const d = new Date(); d.setDate(d.getDate() - 1); return d }
 
+// Regras de cor (engrenagem › Cores dos indicadores). tipo: 'realizado' | 'possib' | 'mrg_pecas' | 'mrg_serv'.
+const CORES = { verde: '#0ca30c', amarelo: '#fab219', vermelho: '#d03b3b' }
+const CoresBiContext = createContext(CORES_PADRAO)
+const useFaixasCor = (tipo) => {
+  const r = useContext(CoresBiContext)
+  return { verde: Number(r[`${tipo}_verde`]), amarelo: Number(r[`${tipo}_amarelo`]) }
+}
+const corDaFaixa = (v, f) => (v >= f.verde ? CORES.verde : v >= f.amarelo ? CORES.amarelo : CORES.vermelho)
+// % de margem colorido pela regra (colunas % Mrg das tabelas)
+function PctMargem({ valor, tipo }) {
+  const f = useFaixasCor(tipo)
+  return <span className="font-semibold" style={{ color: corDaFaixa(valor, f) }}>{valor.toFixed(2)}%</span>
+}
+
 // ── Tacômetro (SVG puro) — zonas de status fixas + marcações de escala + ponteiro afilado. ──
-function Gauge2({ label, value }) {
+function Gauge2({ label, value, tipo = 'mrg_pecas' }) {
+  const faixas = useFaixasCor(tipo)
   const v = Math.max(0, Math.min(100, value))
   const cx = 90, cy = 92, r = 60
   const ang = (t) => (180 - t * 180) * (Math.PI / 180)
@@ -31,8 +49,9 @@ function Gauge2({ label, value }) {
     const [x2, y2] = ponto(tFim, raio)
     return `M ${x1} ${y1} A ${raio} ${raio} 0 0 1 ${x2} ${y2}`
   }
-  // Cor do número = faixa onde o ponteiro está (mesmas faixas desenhadas: vermelho 0–40, amarelo 40–70, verde 70–100).
-  const cor = v >= 70 ? '#0ca30c' : v >= 40 ? '#fab219' : '#d03b3b'
+  // Cor do número = faixa onde o ponteiro está; faixas pela regra de cor da margem (engrenagem)
+  const cor = corDaFaixa(v, faixas)
+  const tAm = Math.max(0, Math.min(1, faixas.amarelo / 100)), tVe = Math.max(tAm, Math.min(1, faixas.verde / 100))
 
   // Marcações de escala — maior a cada 20%, menor a cada 10%.
   const ticks = Array.from({ length: 11 }, (_, i) => i / 10)
@@ -48,9 +67,9 @@ function Gauge2({ label, value }) {
     <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-2.5 flex flex-col items-center">
       <p className="text-[9px] font-bold uppercase tracking-wide text-slate-500 text-center leading-tight mb-1 min-h-[20px]">{label}</p>
       <svg viewBox="0 0 180 116" className="w-full max-w-[130px]">
-        <path d={arco(0, 0.4)} stroke="#d03b3b" strokeWidth="11" fill="none" />
-        <path d={arco(0.4, 0.7)} stroke="#fab219" strokeWidth="11" fill="none" />
-        <path d={arco(0.7, 1)} stroke="#0ca30c" strokeWidth="11" fill="none" />
+        {tAm > 0 && <path d={arco(0, tAm)} stroke="#d03b3b" strokeWidth="11" fill="none" />}
+        {tVe > tAm && <path d={arco(tAm, tVe)} stroke="#fab219" strokeWidth="11" fill="none" />}
+        {tVe < 1 && <path d={arco(tVe, 1)} stroke="#0ca30c" strokeWidth="11" fill="none" />}
 
         {/* Marcações de escala */}
         {ticks.map((t, i) => {
@@ -79,7 +98,8 @@ function Gauge2({ label, value }) {
 }
 
 // ── Gauge de margem — arco de progresso (sem ponteiro), preenche conforme o valor. ──
-function GaugeProgresso({ label, value }) {
+function GaugeProgresso({ label, value, tipo = 'realizado' }) {
+  const faixas = useFaixasCor(tipo)
   const v = Math.max(0, Math.min(100, value))
   const cx = 90, cy = 82, r = 58
   const ang = (t) => (180 - t * 180) * (Math.PI / 180)
@@ -93,7 +113,7 @@ function GaugeProgresso({ label, value }) {
     const [x2, y2] = ponto(tFim, raio)
     return `M ${x1} ${y1} A ${raio} ${raio} 0 0 1 ${x2} ${y2}`
   }
-  const cor = v >= 100 ? '#0ca30c' : v >= 80 ? '#fab219' : '#d03b3b'
+  const cor = corDaFaixa(value, faixas)
 
   return (
     <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-2.5 flex flex-col items-center">
@@ -138,9 +158,10 @@ function LinhaGauges({ children, esquerda = null }) {
   )
 }
 
-function StatusIcon({ pct }) {
-  if (pct >= 100) return <CheckCircle2 className="h-3.5 w-3.5 text-[#0ca30c] shrink-0" />
-  if (pct >= 80) return <AlertTriangle className="h-3.5 w-3.5 text-[#fab219] shrink-0" />
+function StatusIcon({ pct, tipo = 'realizado' }) {
+  const f = useFaixasCor(tipo)
+  if (pct >= f.verde) return <CheckCircle2 className="h-3.5 w-3.5 text-[#0ca30c] shrink-0" />
+  if (pct >= f.amarelo) return <AlertTriangle className="h-3.5 w-3.5 text-[#fab219] shrink-0" />
   return <XCircle className="h-3.5 w-3.5 text-[#d03b3b] shrink-0" />
 }
 
@@ -288,7 +309,7 @@ function LinhaDepto({ label, indent, negrito, dept, carregandoRealPecas, carrega
   const celulasPossib = (
     <>
       <td className="p-2 text-right whitespace-nowrap">{carregando ? <Loader2 className="h-3 w-3 animate-spin inline-block text-slate-300" /> : fmtMoeda(possibilidade)}</td>
-      <td className="p-2 text-right whitespace-nowrap">{semMeta ? '—' : <span className="inline-flex items-center gap-1 justify-end w-full">{pctPossib.toFixed(2)}% <StatusIcon pct={pctPossib} /></span>}</td>
+      <td className="p-2 text-right whitespace-nowrap">{semMeta ? '—' : <span className="inline-flex items-center gap-1 justify-end w-full">{pctPossib.toFixed(2)}% <StatusIcon pct={pctPossib} tipo="possib" /></span>}</td>
     </>
   )
 
@@ -310,7 +331,7 @@ function LinhaDepto({ label, indent, negrito, dept, carregandoRealPecas, carrega
         <>
           {celulasPossib}
           <td className="p-2 text-right whitespace-nowrap">{carregandoMargemPecas ? <Loader2 className="h-3 w-3 animate-spin inline-block text-slate-300" /> : fmtMoeda(dept.margemPecas)}</td>
-          <td className="p-2 text-right whitespace-nowrap">{pctMrgPecas.toFixed(2)}%</td>
+          <td className="p-2 text-right whitespace-nowrap"><PctMargem valor={pctMrgPecas} tipo="mrg_pecas" /></td>
         </>
       ) : (<>
       <td className="p-2 text-right whitespace-nowrap">{semMeta ? '—' : fmtMoeda(dept.metaServicos)}</td>
@@ -323,9 +344,9 @@ function LinhaDepto({ label, indent, negrito, dept, carregandoRealPecas, carrega
       {/* semMargem: aba Serviços › modo Oficina não mostra as colunas de margem */}
       {!semMargem && (<>
       <td className="p-2 text-right whitespace-nowrap">{carregandoMargemPecas ? <Loader2 className="h-3 w-3 animate-spin inline-block text-slate-300" /> : fmtMoeda(dept.margemPecas)}</td>
-      <td className="p-2 text-right whitespace-nowrap">{pctMrgPecas.toFixed(2)}%</td>
+      <td className="p-2 text-right whitespace-nowrap"><PctMargem valor={pctMrgPecas} tipo="mrg_pecas" /></td>
       <td className="p-2 text-right whitespace-nowrap">{carregandoMargemServicos ? <Loader2 className="h-3 w-3 animate-spin inline-block text-slate-300" /> : fmtMoeda(dept.margemServicos)}</td>
-      <td className="p-2 text-right whitespace-nowrap">{pctMrgServ.toFixed(2)}%</td>
+      <td className="p-2 text-right whitespace-nowrap"><PctMargem valor={pctMrgServ} tipo="mrg_serv" /></td>
       </>)}
       <td className="p-2 text-right whitespace-nowrap">{carregandoPass ? <Loader2 className="h-3 w-3 animate-spin inline-block text-slate-300" /> : (dept.pass || '—')}</td>
       <td className="p-2 text-right whitespace-nowrap">{ticket !== null ? fmtMoeda(ticket) : '—'}</td>
@@ -353,9 +374,9 @@ function LinhaMargem({ label, indent = 0, negrito = false, dept, carregando, onT
         ) : label}
       </td>
       <td className="p-2 text-right whitespace-nowrap">{moeda(dept.margemPecas)}</td>
-      <td className="p-2 text-right whitespace-nowrap">{pctPecas != null ? `${pctPecas.toFixed(2)}%` : ''}</td>
+      <td className="p-2 text-right whitespace-nowrap">{pctPecas != null ? <PctMargem valor={pctPecas} tipo="mrg_pecas" /> : ''}</td>
       <td className="p-2 text-right whitespace-nowrap">{moeda(dept.margemServicos)}</td>
-      <td className="p-2 text-right whitespace-nowrap">{pctServ != null ? `${pctServ.toFixed(2)}%` : ''}</td>
+      <td className="p-2 text-right whitespace-nowrap">{pctServ != null ? <PctMargem valor={pctServ} tipo="mrg_serv" /> : ''}</td>
       <td className="p-2 text-right whitespace-nowrap">{moeda((dept.margemPecas || 0) + (dept.margemServicos || 0))}</td>
     </tr>
   )
@@ -369,16 +390,14 @@ const INDICADORES_EVOLUCAO = [
   { key: 'realTotal', label: 'Real Total', fmt: 'moeda', calc: v => v.realPecas + v.realServicos, meta: mt => mt.total },
   { key: 'realPecas', label: 'Real Peças', fmt: 'moeda', calc: v => v.realPecas, meta: mt => mt.pecas },
   { key: 'realServicos', label: 'Real Serviços', fmt: 'moeda', calc: v => v.realServicos, meta: mt => mt.servicos },
-  { key: 'margemServicos', label: 'Margem Serviços', fmt: 'pct', meta: mt => mt.margemServicosPct, calc: v => (v.realServicos > 0 ? (v.margemServicos / v.realServicos) * 100 : 0), detalhe: v => [['Margem Serviços', 'moeda', v.margemServicos], ['Real Serviços', 'moeda', v.realServicos]] },
-  { key: 'margemPecas', label: 'Margem Peças', fmt: 'pct', meta: mt => mt.margemPecasPct, calc: v => (v.realPecas > 0 ? (v.margemPecas / v.realPecas) * 100 : 0), detalhe: v => [['Margem Peças', 'moeda', v.margemPecas], ['Real Peças', 'moeda', v.realPecas]] },
-  { key: 'lucroPecas', label: 'Lucro Peças', fmt: 'moeda', calc: v => v.margemPecas, meta: mt => mt.lucroPecas },
-  { key: 'lucroServicos', label: 'Lucro Serviços', fmt: 'moeda', calc: v => v.margemServicos, meta: mt => mt.lucroServicos },
+  { key: 'margemServicos', label: 'Margem Serviços', fmt: 'pct', dicaSimples: true, tabela: v => [['Faturamento Serviços', v.realServicos], ['Lucro Serviços', v.margemServicos]], meta: mt => mt.margemServicosPct, calc: v => (v.realServicos > 0 ? (v.margemServicos / v.realServicos) * 100 : 0), detalhe: v => [['Margem Serviços', 'moeda', v.margemServicos], ['Real Serviços', 'moeda', v.realServicos]] },
+  { key: 'margemPecas', label: 'Margem Peças', fmt: 'pct', dicaSimples: true, tabela: v => [['Faturamento Peças', v.realPecas], ['Lucro Peças', v.margemPecas]], meta: mt => mt.margemPecasPct, calc: v => (v.realPecas > 0 ? (v.margemPecas / v.realPecas) * 100 : 0), detalhe: v => [['Margem Peças', 'moeda', v.margemPecas], ['Real Peças', 'moeda', v.realPecas]] },
   { key: 'passagens', label: 'Passagens', fmt: 'int', calc: v => v.pass, meta: mt => mt.passMeta },
-  { key: 'ticketPecas', label: 'Ticket Peças', soOficina: true, fmt: 'moeda', meta: mt => mt.ticketPecas, calc: v => (v.passOficina > 0 ? v.ticketPecasBase / v.passOficina : 0), detalhe: v => [['Real Peças (Oficina)', 'moeda', v.ticketPecasBase], ['Passagens (Oficina)', 'int', v.passOficina]] },
-  { key: 'ticketServicos', label: 'Ticket Serviços', soOficina: true, fmt: 'moeda', meta: mt => mt.ticketServicos, calc: v => (v.passOficina > 0 ? v.ticketServicosBase / v.passOficina : 0), detalhe: v => [['Real Serviços (Oficina)', 'moeda', v.ticketServicosBase], ['Passagens (Oficina)', 'int', v.passOficina]] },
-  { key: 'ticketTotal', label: 'Ticket Total', soOficina: true, fmt: 'moeda', meta: mt => mt.ticketTotal, calc: v => (v.passOficina > 0 ? (v.ticketPecasBase + v.ticketServicosBase) / v.passOficina : 0), detalhe: v => [['Real Total (Oficina)', 'moeda', v.ticketPecasBase + v.ticketServicosBase], ['Passagens (Oficina)', 'int', v.passOficina]] },
-  { key: 'coefServicos', label: 'Coef.Serviços', fmt: 'moeda', calc: v => (v.horas > 0 ? v.realServicos / v.horas : 0), detalhe: v => [['Real Serviços', 'moeda', v.realServicos], ['Horas Vendidas', 'dec', v.horas]] },
-  { key: 'coefPecas', label: 'Coef.Peças', fmt: 'dec', calc: v => (v.realServicos > 0 ? v.realPecas / v.realServicos : 0), detalhe: v => [['Real Peças', 'moeda', v.realPecas], ['Real Serviços', 'moeda', v.realServicos]] },
+  { key: 'ticketPecas', label: 'Ticket Peças', soOficina: true, tabela: v => [['Faturamento Peças (Oficina)', v.ticketPecasBase], ['Passagens (Oficina)', v.passOficina, 'int']], fmt: 'moeda', meta: mt => mt.ticketPecas, calc: v => (v.passOficina > 0 ? v.ticketPecasBase / v.passOficina : 0), detalhe: v => [['Real Peças (Oficina)', 'moeda', v.ticketPecasBase], ['Passagens (Oficina)', 'int', v.passOficina]] },
+  { key: 'ticketServicos', label: 'Ticket Serviços', soOficina: true, tabela: v => [['Faturamento Serviços (Oficina)', v.ticketServicosBase], ['Passagens (Oficina)', v.passOficina, 'int']], fmt: 'moeda', meta: mt => mt.ticketServicos, calc: v => (v.passOficina > 0 ? v.ticketServicosBase / v.passOficina : 0), detalhe: v => [['Real Serviços (Oficina)', 'moeda', v.ticketServicosBase], ['Passagens (Oficina)', 'int', v.passOficina]] },
+  { key: 'ticketTotal', label: 'Ticket Total', soOficina: true, tabela: v => [['Faturamento Total (Oficina)', v.ticketPecasBase + v.ticketServicosBase], ['Passagens (Oficina)', v.passOficina, 'int']], fmt: 'moeda', meta: mt => mt.ticketTotal, calc: v => (v.passOficina > 0 ? (v.ticketPecasBase + v.ticketServicosBase) / v.passOficina : 0), detalhe: v => [['Real Total (Oficina)', 'moeda', v.ticketPecasBase + v.ticketServicosBase], ['Passagens (Oficina)', 'int', v.passOficina]] },
+  { key: 'coefServicos', label: 'Coef.Serviços', fmt: 'moeda', tabela: v => [['Faturamento Serviços', v.realServicos], ['Horas Vendidas', v.horas, 'dec']], calc: v => (v.horas > 0 ? v.realServicos / v.horas : 0), detalhe: v => [['Real Serviços', 'moeda', v.realServicos], ['Horas Vendidas', 'dec', v.horas]] },
+  { key: 'coefPecas', label: 'Coef.Peças', fmt: 'dec', tabela: v => [['Faturamento Peças', v.realPecas], ['Faturamento Serviços', v.realServicos]], calc: v => (v.realServicos > 0 ? v.realPecas / v.realServicos : 0), detalhe: v => [['Real Peças', 'moeda', v.realPecas], ['Real Serviços', 'moeda', v.realServicos]] },
 ]
 const NOMES_MES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro']
 const fmtIndicador = (fmt, v) => {
@@ -434,6 +453,8 @@ function EvolucaoVendas({ meses, indicador, depto, departamentosOpcoes, carregan
     return { rotulo: `${m.ano}-${m.mes}`, mesNome: NOMES_MES[m.mes - 1], ano: m.ano, valor: ind.calc(m), meta: meta > 0 ? meta : null, base: m }
   })
   const temMeta = dados.some(d => d.meta != null)
+  // Flag "Valores da meta": escreve o valor da meta acima de cada ponto da linha (25/11/2026)
+  const [mostrarValoresMeta, setMostrarValoresMeta] = useState(false)
   // Eixo: mês em cima; ano embaixo, uma vez por ano, no meio dos meses daquele ano. Mais de um ano no
   // período: linha vertical separando os anos.
   const meioDoAno = new Set()
@@ -447,14 +468,27 @@ function EvolucaoVendas({ meses, indicador, depto, departamentosOpcoes, carregan
   const DicaEvolucao = ({ active, payload }) => {
     if (!active || !payload?.length) return null
     const d = payload[0].payload
+    // Margens (dicaSimples): só Meta e Realizado, sem % da meta e sem o cálculo (25/11/2026)
+    if (ind.dicaSimples) {
+      return (
+        <div className="bg-white border border-slate-200 rounded-md shadow-lg px-3 py-2 text-[11px] text-slate-700">
+          <p className="font-semibold text-slate-900 mb-1">{d.mesNome} {d.ano}</p>
+          {d.meta != null && <p><span className="text-slate-500">Meta:</span> <strong className="text-amber-700">{fmtIndicador(ind.fmt, d.meta)}</strong></p>}
+          <p><span className="text-slate-500">Realizado:</span> <strong>{fmtIndicador(ind.fmt, d.valor)}</strong></p>
+        </div>
+      )
+    }
     const partes = ind.detalhe ? ind.detalhe(d.base) : null
     return (
       <div className="bg-white border border-slate-200 rounded-md shadow-lg px-3 py-2 text-[11px] text-slate-700">
         <p className="font-semibold text-slate-900 mb-1">{d.mesNome} {d.ano}</p>
+        {/* Com meta: Meta, depois o Realizado e, embaixo, o % da meta (25/11/2026) */}
+        {d.meta != null && (
+          <p><span className="text-slate-500">Meta:</span> <strong className="text-amber-700">{fmtIndicador(ind.fmt, d.meta)}</strong></p>
+        )}
         <p><span className="text-slate-500">{ind.label}:</span> <strong>{fmtIndicador(ind.fmt, d.valor)}</strong></p>
         {d.meta != null && (
-          <p><span className="text-slate-500">Meta:</span> <strong className="text-red-600">{fmtIndicador(ind.fmt, d.meta)}</strong>
-            <span className="text-slate-500"> · {((d.valor / d.meta) * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}% da meta</span></p>
+          <p><span className="text-slate-500">% da meta:</span> <strong>{((d.valor / d.meta) * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%</strong></p>
         )}
         {partes && (
           <div className="mt-1.5 pt-1.5 border-t border-slate-100 space-y-0.5">
@@ -492,8 +526,12 @@ function EvolucaoVendas({ meses, indicador, depto, departamentosOpcoes, carregan
           <p className="text-sm font-semibold text-slate-800">{ind.label}{ind.soOficina ? ' — Oficina' : depto ? ` — ${departamentosOpcoes.find(d => d.id === depto)?.nome || ''}` : ''}</p>
           {temMeta && (
             <div className="flex items-center gap-3 text-[11px] text-slate-500">
-              <span className="inline-flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-[#1a8cff]" />Realizado</span>
-              <span className="inline-flex items-center gap-1"><span className="inline-block w-4 border-t-2 border-dashed border-red-600" />Meta</span>
+              <span className="inline-flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-[#1a4d8f]" />Realizado</span>
+              <span className="inline-flex items-center gap-1"><span className="inline-block w-4 border-t-2 border-dashed border-amber-500" />Meta</span>
+              <label className="inline-flex items-center gap-1.5 ml-2 px-2 py-1 rounded-md border border-slate-300 bg-slate-50 font-semibold text-slate-600 cursor-pointer select-none hover:bg-slate-100">
+                <input type="checkbox" checked={mostrarValoresMeta} onChange={e => setMostrarValoresMeta(e.target.checked)} className="h-3.5 w-3.5 accent-amber-500" />
+                Valores da meta
+              </label>
             </div>
           )}
         </div>
@@ -508,15 +546,62 @@ function EvolucaoVendas({ meses, indicador, depto, departamentosOpcoes, carregan
               <XAxis dataKey="rotulo" tick={<TickMesAno />} interval={0} height={40} />
               <YAxis hide />
               <Tooltip content={<DicaEvolucao />} cursor={{ fill: 'rgba(148,163,184,0.12)' }} />
-              <Bar dataKey="valor" fill="#1a8cff" radius={[3, 3, 0, 0]} maxBarSize={90}>
+              <Bar dataKey="valor" fill="#1a4d8f" radius={[3, 3, 0, 0]} maxBarSize={90}>
                 <LabelList dataKey="valor" position="top" formatter={(v) => fmtIndicador(ind.fmt, v)} style={{ fontSize: 11, fill: '#475569' }} />
               </Bar>
               {temMeta && (
-                <Line type="monotone" dataKey="meta" stroke="#dc2626" strokeWidth={2} strokeDasharray="6 4" connectNulls={false}
-                  dot={{ r: 3, fill: '#dc2626' }} activeDot={{ r: 4 }} isAnimationActive={false} />
+                <Line type="monotone" dataKey="meta" stroke="#f59e0b" strokeWidth={2} strokeDasharray="6 4" connectNulls={false}
+                  dot={{ r: 3, fill: '#f59e0b' }} activeDot={{ r: 4 }} isAnimationActive={false}>
+                  {mostrarValoresMeta && (
+                    <LabelList dataKey="meta" position="top" offset={10} formatter={(v) => (v == null ? '' : fmtIndicador(ind.fmt, v))}
+                      style={{ fontSize: 11, fontWeight: 700, fill: '#b45309' }} />
+                  )}
+                </Line>
               )}
             </ComposedChart>
           </ResponsiveContainer>
+        )}
+        {/* Margens (Faturamento e Lucro) e Tickets (Faturamento e Passagens da Oficina): tabela por mês abaixo do gráfico */}
+        {ind.tabela && !carregando && dados.length > 0 && (
+          <div className="overflow-x-auto custom-scrollbar-light border-t border-slate-100 pt-3">
+            <table className="w-full text-[11px]">
+              <thead>
+                <tr className="bg-slate-800 text-white">
+                  <th className="px-2 py-1.5 text-left font-semibold uppercase whitespace-nowrap"></th>
+                  {dados.map(d => <th key={d.rotulo} className="px-2 py-1.5 text-right font-semibold whitespace-nowrap capitalize">{d.mesNome}{variosAnos ? `/${d.ano}` : ''}</th>)}
+                  <th className="px-2 py-1.5 text-right font-semibold uppercase whitespace-nowrap">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ind.tabela(dados[0].base).map((_, i) => {
+                  const valores = dados.map(d => ind.tabela(d.base)[i][1] || 0)
+                  const tipoLinha = ind.tabela(dados[0].base)[i][2]
+                  // 'int' = quantidade; 'dec' = horas (1 casa); padrão = R$ sem centavos
+                  const fmtLinha = tipoLinha === 'int' ? (x => Number(x || 0).toLocaleString('pt-BR', { maximumFractionDigits: 0 }))
+                    : tipoLinha === 'dec' ? (x => Number(x || 0).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })) : fmtMoedaInteiro
+                  return (
+                    <tr key={i} className="border-b border-slate-100">
+                      <td className="px-2 py-1.5 font-semibold text-slate-700 whitespace-nowrap">{ind.tabela(dados[0].base)[i][0]}</td>
+                      {/* Seta x mês anterior: verde subiu, vermelha caiu (25/11/2026) */}
+                      {valores.map((v, j) => {
+                        const ant = j > 0 ? valores[j - 1] : null
+                        return (
+                          <td key={j} className="px-2 py-1.5 text-right text-slate-700 whitespace-nowrap">
+                            <span className="inline-flex items-center justify-end gap-1">
+                              {ant !== null && v > ant && <ArrowUp className="h-3 w-3 text-green-600" aria-label="Acima do mês anterior" />}
+                              {ant !== null && v < ant && <ArrowDown className="h-3 w-3 text-red-600" aria-label="Abaixo do mês anterior" />}
+                              {fmtLinha(v)}
+                            </span>
+                          </td>
+                        )
+                      })}
+                      <td className="px-2 py-1.5 text-right font-bold text-slate-900 whitespace-nowrap">{fmtLinha(valores.reduce((a, b) => a + b, 0))}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
     </div>
@@ -566,6 +651,21 @@ export default function BiPossibilidades() {
   const [empresaIds, setEmpresaIds] = useState([])
   const [dataInicio, setDataInicio] = useState(() => primeiroDiaMes(ontem()))
   const [dataFim, setDataFim] = useState(() => isoLocal(ontem()))
+  // Passar o mês: parte do mês da Data Início; mês cheio (do dia 1 ao último dia), sem passar de ontem
+  const limiteData = isoLocal(ontem())
+  const passarMes = (passo) => {
+    const [a, m] = dataInicio.split('-').map(Number)
+    const ini = new Date(a, m - 1 + passo, 1)
+    const iniIso = isoLocal(ini)
+    if (iniIso > limiteData) return
+    const fimIso = isoLocal(new Date(ini.getFullYear(), ini.getMonth() + 1, 0))
+    setDataInicio(iniIso)
+    setDataFim(fimIso > limiteData ? limiteData : fimIso)
+  }
+  const podeAvancarMes = (() => {
+    const [a, m] = dataInicio.split('-').map(Number)
+    return isoLocal(new Date(a, m, 1)) <= limiteData
+  })()
   const [aba, setAba] = useState('noMes') // 'entreDatas' | 'noMes' — abre sempre em "Metas e Real no Mês"
   // Visões do BI (abas acima dos dias úteis). 'total' = visão geral de sempre.
   // ?visao=oficina (ex.: botão de origem da Matriz de KPIs) abre direto nessa aba (Evolução não: muda as datas).
@@ -731,6 +831,13 @@ export default function BiPossibilidades() {
   const [carregandoTempo, setCarregandoTempo] = useState(false)
   // Engrenagem (só na aba Tempo na Oficina): cadastro das regras do relógio; regrasTempoVersao faz a aba reler.
   const [regrasTempoAberto, setRegrasTempoAberto] = useState(false)
+  const [coresAberto, setCoresAberto] = useState(false)
+  const [menuEngrenagem, setMenuEngrenagem] = useState(false)
+  const [regrasCores, setRegrasCores] = useState(CORES_PADRAO)
+  const [coresVersao, setCoresVersao] = useState(0)
+  useEffect(() => {
+    apiService.getBiPossibRegrasCores().then(r => setRegrasCores({ ...CORES_PADRAO, ...(r || {}) })).catch(() => setRegrasCores(CORES_PADRAO))
+  }, [coresVersao])
   const [regrasTempoVersao, setRegrasTempoVersao] = useState(0)
   const [erroAtualizacao, setErroAtualizacao] = useState(null)
 
@@ -1147,6 +1254,104 @@ export default function BiPossibilidades() {
   // Vendedores abaixo do setor (aba Balcão): Real/Margem por Funcionário do relatório no setor,
   // casado por nome normalizado com a meta de Peças publicada do vendedor (proporcional ao período).
   // Aparece quem tem Real ou Meta no setor; ordenado pelo Real (maior primeiro).
+  // ── Aba Peças: abertura de cada vendedor por Natureza de Operação (26/11/2026) ──
+  // Lê do SharePoint na hora (Medidas de Real Peças e Margem Peças, com as mesmas regras), cortando por
+  // Tipo de OS + Vendedor + Natureza (coluna da Fonte BI: NF_NatOperCod). O setor sai do mesmo resolvedor
+  // do resto da tela, então a soma das naturezas bate com a linha do vendedor. Nome da natureza: cadastro
+  // Natureza de Operações (pelo código); sem cadastro, aparece o código.
+  const [naturezas, setNaturezas] = useState([])
+  useEffect(() => { apiService.getNaturezaOperacoes().then(setNaturezas).catch(() => setNaturezas([])) }, [])
+  const [natVendedor, setNatVendedor] = useState({ chave: null, mapa: new Map(), carregando: false, erro: null })
+  const [vendAbertos, setVendAbertos] = useState(() => new Set())
+  useEffect(() => {
+    if (!ehBalcao || !medidasBi.length) return
+    const chave = `${periodo.inicio}|${periodo.fim}|${chaveEmpresas}|${recarga}`
+    if (natVendedor.chave === chave) return
+    let cancelado = false
+    setNatVendedor(v => ({ ...v, chave, carregando: true, erro: null }))
+    ;(async () => {
+      const mapa = new Map() // 'setorId|NOME' -> Map(codigo -> { realPecas, margemPecas })
+      for (const [slot, campo] of [['realPecas', 'realPecas'], ['margemPecas', 'margemPecas']]) {
+        const medida = medidasBi.find(m => m.ativo && m.slot_faturamento === slot)
+        const f = medida?.fonte_bi
+        if (!f?.coluna_natureza_operacao || !f?.coluna_funcionario) continue
+        const regras = await apiService.getRegrasParaCalculoMedidaBi(medida.id)
+        const res = await apiService.agregarMedidaBi({
+          pasta: f.pasta_sharepoint, prefixo: f.prefixo_arquivo, usaSubpastaAno: f.usa_subpasta_ano, linhaCabecalho: f.linha_cabecalho,
+          colunaEmpresa: f.coluna_empresa, colunaData: f.coluna_data, colunaValor: medida.coluna_valor, tipoAgregacao: medida.tipo_agregacao,
+          colunasDimensao: { tipo_os: f.coluna_tipo_os, funcionario: f.coluna_funcionario, natureza_operacao: f.coluna_natureza_operacao, empresa: f.coluna_empresa },
+          empresaNome: null, dataInicio: periodo.inicio, dataFim: periodo.fim, regras,
+        })
+        const permitidas = empresasNormSelecionadas ? new Set(empresasNormSelecionadas) : null
+        const porNatureza = new Map()
+        for (const g of res.grupos || []) {
+          if (permitidas && !permitidas.has(normalizaBusca(g.dims?.empresa))) continue
+          const cod = String(g.dims?.natureza_operacao ?? '').trim() || '(sem natureza)'
+          if (!porNatureza.has(cod)) porNatureza.set(cod, [])
+          porNatureza.get(cod).push({ dims: { tipo_os: g.dims?.tipo_os, funcionario: g.dims?.funcionario }, soma: Number(g.soma || 0), linhas: Number(g.linhas || 0) })
+        }
+        for (const [cod, grupos] of porNatureza) {
+          const r = resolverPorDepartamento(grupos, medida, { tiposOS, setores })
+          for (const [k, v] of r.valoresPorSetorFuncionario) {
+            if (!mapa.has(k)) mapa.set(k, new Map())
+            const porCod = mapa.get(k)
+            if (!porCod.has(cod)) porCod.set(cod, { realPecas: 0, margemPecas: 0 })
+            porCod.get(cod)[campo] += v.valor
+          }
+        }
+      }
+      if (!cancelado) setNatVendedor({ chave, mapa, carregando: false, erro: null })
+    })().catch(err => { if (!cancelado) setNatVendedor({ chave, mapa: new Map(), carregando: false, erro: err.message || String(err) }) })
+    return () => { cancelado = true }
+  }, [ehBalcao, medidasBi, periodo, chaveEmpresas, recarga, tiposOS, setores]) // eslint-disable-line react-hooks/exhaustive-deps
+  const nomeNatureza = (cod) => {
+    // Arquivo RPR001 é da Caiobá Trucks: código repetido em outro agrupamento (ex.: Motos) fica em segundo plano
+    const doCodigo = naturezas.filter(x => String(x.codigo ?? '').trim() === String(cod))
+    const n = doCodigo.find(x => x.agrupamento_nome === 'Caiobá Trucks') || doCodigo[0]
+    return n?.natureza_operacao ? `${cod} - ${n.natureza_operacao}` : (cod === '(sem natureza)' ? cod : `Natureza ${cod}`)
+  }
+  // Tabela de Faturamentos da aba Peças: "Por Vendedor" | "Por Natureza" (mesmo modelo da aba Serviços, 26/11/2026).
+  // Por Natureza = Setor › Grupo Movimento (cadastro Natureza de Operações) › Natureza.
+  const [aberturaVendedor, setAberturaVendedor] = useState('vendedor') // 'vendedor' | 'natureza'
+  const [natGruposAbertos, setNatGruposAbertos] = useState(() => new Set())
+  const grupoDaNatureza = (cod) => {
+    const doCodigo = naturezas.filter(x => String(x.codigo ?? '').trim() === String(cod))
+    const n = doCodigo.find(x => x.agrupamento_nome === 'Caiobá Trucks') || doCodigo[0]
+    return n?.grupo_movimento || '(Natureza sem cadastro)'
+  }
+  const linhaVazia = (extra) => ({ metaPecas: 0, metaServicos: 0, metaTotal: 0, realPecas: 0, realServicos: 0, realTotal: 0, margemPecas: 0, margemServicos: 0, pass: 0, ...extra })
+  const naturezasDoSetor = (setorId) => {
+    const porCod = new Map()
+    for (const [k, mapaCod] of natVendedor.mapa) {
+      if (!k.startsWith(`${setorId}|`)) continue
+      for (const [cod, v] of mapaCod) {
+        if (!porCod.has(cod)) porCod.set(cod, linhaVazia({ cod, label: nomeNatureza(cod), grupo: grupoDaNatureza(cod) }))
+        const l = porCod.get(cod)
+        l.realPecas += v.realPecas; l.realTotal += v.realPecas; l.margemPecas += v.margemPecas
+      }
+    }
+    return [...porCod.values()].filter(l => l.realPecas || l.margemPecas).sort((a, b) => b.realPecas - a.realPecas)
+  }
+  const gruposNaturezaDoSetor = (setorId) => {
+    const nats = naturezasDoSetor(setorId)
+    const porGrupo = new Map()
+    for (const n of nats) {
+      if (!porGrupo.has(n.grupo)) porGrupo.set(n.grupo, linhaVazia({ grupoKey: `${setorId}|${n.grupo}`, label: n.grupo, naturezas: [] }))
+      const g = porGrupo.get(n.grupo)
+      g.realPecas += n.realPecas; g.realTotal += n.realPecas; g.margemPecas += n.margemPecas; g.naturezas.push(n)
+    }
+    return [...porGrupo.values()].sort((a, b) => b.realPecas - a.realPecas)
+  }
+
+  const naturezasDoVendedor = (setorId, vendedorKey) => {
+    const porCod = natVendedor.mapa.get(`${setorId}|${vendedorKey}`)
+    if (!porCod) return []
+    return [...porCod.entries()]
+      .map(([cod, v]) => ({ cod, label: nomeNatureza(cod), metaPecas: 0, metaServicos: 0, metaTotal: 0, realPecas: v.realPecas, realServicos: 0, realTotal: v.realPecas, margemPecas: v.margemPecas, margemServicos: 0, pass: 0 }))
+      .filter(l => l.realPecas || l.margemPecas)
+      .sort((a, b) => b.realPecas - a.realPecas)
+  }
+
   const linhasVendedor = (setorId) => {
     const porNome = new Map()
     const pegar = (chave, nome) => {
@@ -1290,6 +1495,8 @@ export default function BiPossibilidades() {
     : COLUNAS_FATURAMENTO
 
   return (
+    // Regras de cor (engrenagem) valem para os indicadores e colunas % de todas as abas
+    <CoresBiContext.Provider value={regrasCores}>
     <div className="min-h-full bg-[#020617] p-6 space-y-5">
       {/* CABEÇALHO + FILTROS */}
       {/* Cores e logo do painel Power BI da Caiobá — mesmo modelo de Pós-Vendas › Indicadores de Produtividade */}
@@ -1328,17 +1535,33 @@ export default function BiPossibilidades() {
               >
                 <RefreshCw className={`h-4 w-4 ${atualizando ? 'animate-spin' : ''}`} />
               </button>
-              {visao === 'tempo' && (
+              {/* Engrenagem em todas as abas (26/11/2026): menu de regras */}
+              <div className="relative">
                 <button
                   type="button"
-                  onClick={() => setRegrasTempoAberto(true)}
-                  title="Regras do Tempo na Oficina"
-                  aria-label="Regras do Tempo na Oficina"
+                  onClick={() => setMenuEngrenagem(m => !m)}
+                  title="Regras"
+                  aria-label="Regras"
                   className="flex items-center justify-center h-9 w-9 rounded-md border border-slate-300 bg-white text-slate-600 shadow-sm hover:bg-slate-50 transition-colors"
                 >
                   <Settings className="h-4 w-4" />
                 </button>
-              )}
+                {menuEngrenagem && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setMenuEngrenagem(false)} />
+                    <div className="absolute right-0 top-10 z-50 w-60 rounded-md border border-slate-200 bg-white py-1 shadow-lg">
+                      <button type="button" onClick={() => { setMenuEngrenagem(false); setCoresAberto(true) }}
+                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-slate-700 hover:bg-slate-50">
+                        <Palette className="h-3.5 w-3.5 text-slate-500" /> Cores dos indicadores
+                      </button>
+                      <button type="button" onClick={() => { setMenuEngrenagem(false); setRegrasTempoAberto(true) }}
+                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-slate-700 hover:bg-slate-50">
+                        <Clock className="h-3.5 w-3.5 text-slate-500" /> Regras do Tempo na Oficina
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
             {erroAtualizacao && <p className="text-[10px] text-red-600 bg-white/90 rounded px-2 py-1 max-w-[420px] text-right leading-tight">{erroAtualizacao}</p>}
             <div className="flex flex-wrap items-end gap-4">
@@ -1354,6 +1577,15 @@ export default function BiPossibilidades() {
                   <span className="text-white text-xs">até</span>
                   <input type="date" value={dataFim} onChange={e => setDataFim(e.target.value)}
                     className="text-[11px] px-1.5 py-1 rounded-md bg-white border border-slate-300 text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/40" />
+                  {/* Passar o mês (26/11/2026): mês inteiro anterior/seguinte; o mês atual vai até ontem */}
+                  <button type="button" onClick={() => passarMes(-1)} title="Mês anterior" aria-label="Mês anterior"
+                    className="flex items-center justify-center h-[26px] w-[26px] rounded-md border border-slate-300 bg-white text-slate-600 shadow-sm hover:bg-slate-50">
+                    <ChevronLeft className="h-3.5 w-3.5" />
+                  </button>
+                  <button type="button" onClick={() => passarMes(1)} disabled={!podeAvancarMes} title="Próximo mês" aria-label="Próximo mês"
+                    className="flex items-center justify-center h-[26px] w-[26px] rounded-md border border-slate-300 bg-white text-slate-600 shadow-sm hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed">
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  </button>
                 </div>
               </div>
             </div>
@@ -1422,7 +1654,8 @@ export default function BiPossibilidades() {
               </div>
             ) : (
               <div className="flex items-center gap-1" title="Metas e Real">
-                {[{ key: 'entreDatas', label: 'Entre Datas', icon: CalendarDays }, { key: 'noMes', label: 'No Mês', icon: Clock }].map(t => (
+                <span className={`${rotulo} mr-1`}>Modo de Valores</span>
+                {[{ key: 'noMes', label: 'No Mês', icon: Clock }, { key: 'entreDatas', label: 'Entre Datas', icon: CalendarDays }].map(t => (
                   <button
                     key={t.key}
                     type="button"
@@ -1439,6 +1672,7 @@ export default function BiPossibilidades() {
         )
       })()}
 
+      <CoresIndicadoresModal aberto={coresAberto} onFechar={() => setCoresAberto(false)} onSalvo={() => setCoresVersao(n => n + 1)} />
       <TempoOficinaRegrasModal aberto={regrasTempoAberto} onFechar={() => setRegrasTempoAberto(false)}
         empresas={empresasVisiveis} onSalvo={() => setRegrasTempoVersao(n => n + 1)} />
 
@@ -1463,10 +1697,10 @@ export default function BiPossibilidades() {
           <>
             {/* Indicadores de margem (mesma conta do % Mrg da tabela: margem ÷ Real) */}
             <LinhaGauges>
-              <Gauge2 label="% Margem Venda Peças - Balcão" value={pctMrgPecasBalcao} />
-              <Gauge2 label="% Margem Venda Peças - Oficina" value={pctMrgPecasOficina} />
-              <Gauge2 label="% Margem Venda Peças - Pós Vendas" value={pctMrgPecas} />
-              <Gauge2 label="% Margem Venda Serviços" value={pctMrgServ} />
+              <Gauge2 tipo="mrg_pecas" label="% Margem Venda Peças - Balcão" value={pctMrgPecasBalcao} />
+              <Gauge2 tipo="mrg_pecas" label="% Margem Venda Peças - Oficina" value={pctMrgPecasOficina} />
+              <Gauge2 tipo="mrg_pecas" label="% Margem Venda Peças - Pós Vendas" value={pctMrgPecas} />
+              <Gauge2 tipo="mrg_serv" label="% Margem Venda Serviços" value={pctMrgServ} />
             </LinhaGauges>
 
             {/* MARGEM DE VENDA — departamentos (expansíveis) › setores, e o Total */}
@@ -1513,26 +1747,26 @@ export default function BiPossibilidades() {
             <GaugeProgresso label="Realizado Peças Acum %" value={pctOf(totalOficina.realPecas, totalOficina.metaPecas)} />
             <GaugeProgresso label="Realizado Serv. Acum %" value={pctOf(totalOficina.realServicos, totalOficina.metaServicos)} />
             <GaugeProgresso label="Realizado Total Acum %" value={pctOf(totalOficina.realTotal, totalOficina.metaTotal)} />
-            <GaugeProgresso label="Possibilidades %" value={pctOf(projecaoOficina, totalOficina.metaMesTotal)} />
-            <Gauge2 label="% Margem Venda Peças - Oficina" value={pctMrgPecasOficina} />
-            <Gauge2 label="% Margem Venda Serviços - Oficina" value={pctMrgServOficina} />
+            <GaugeProgresso tipo="possib" label="Possibilidades %" value={pctOf(projecaoOficina, totalOficina.metaMesTotal)} />
+            <Gauge2 tipo="mrg_pecas" label="% Margem Venda Peças - Oficina" value={pctMrgPecasOficina} />
+            <Gauge2 tipo="mrg_serv" label="% Margem Venda Serviços - Oficina" value={pctMrgServOficina} />
           </LinhaGauges>
           ) : ehBalcao ? (
           <LinhaGauges>
             <GaugeProgresso label="Realizado Balcão Acum %" value={gaugeBalcao} />
-            <GaugeProgresso label="Possibilidades %" value={gaugePossibilidadesBalcao} />
-            <Gauge2 label="% Margem Venda Peças - Balcão" value={pctMrgPecasBalcao} />
+            <GaugeProgresso tipo="possib" label="Possibilidades %" value={gaugePossibilidadesBalcao} />
+            <Gauge2 tipo="mrg_pecas" label="% Margem Venda Peças - Balcão" value={pctMrgPecasBalcao} />
           </LinhaGauges>
           ) : (
           <LinhaGauges>
             <GaugeProgresso label="Realizado Peças Acum %" value={gaugePecas} />
             <GaugeProgresso label="Realizado Serv. Acum %" value={gaugeServicos} />
             <GaugeProgresso label="Realizado Total Acum %" value={gaugeTotal} />
-            <GaugeProgresso label="Possibilidades %" value={gaugePossibilidades} />
-            <Gauge2 label="% Margem Venda Peças - Balcão" value={pctMrgPecasBalcao} />
-            <Gauge2 label="% Margem Venda Peças - Oficina" value={pctMrgPecasOficina} />
-            <Gauge2 label="% Margem Venda Peças - Pós Vendas" value={pctMrgPecas} />
-            <Gauge2 label="% Margem Venda Serviços" value={pctMrgServ} />
+            <GaugeProgresso tipo="possib" label="Possibilidades %" value={gaugePossibilidades} />
+            <Gauge2 tipo="mrg_pecas" label="% Margem Venda Peças - Balcão" value={pctMrgPecasBalcao} />
+            <Gauge2 tipo="mrg_pecas" label="% Margem Venda Peças - Oficina" value={pctMrgPecasOficina} />
+            <Gauge2 tipo="mrg_pecas" label="% Margem Venda Peças - Pós Vendas" value={pctMrgPecas} />
+            <Gauge2 tipo="mrg_serv" label="% Margem Venda Serviços" value={pctMrgServ} />
           </LinhaGauges>
           )}
 
@@ -1580,6 +1814,16 @@ export default function BiPossibilidades() {
           <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-x-auto custom-scrollbar-light">
             <div className="flex items-center justify-between gap-3 p-4 pb-0">
               <p className="text-xs font-bold text-slate-900">Tabela de Faturamentos</p>
+              {ehBalcao && (
+                <div className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-md p-px w-fit">
+                  {[{ key: 'vendedor', label: 'Por Vendedor' }, { key: 'natureza', label: 'Por Natureza' }].map(t => (
+                    <button key={t.key} onClick={() => setAberturaVendedor(t.key)}
+                      className={`px-2 py-0.5 rounded text-[10px] font-semibold leading-4 transition-colors ${aberturaVendedor === t.key ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'}`}>
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+              )}
               {ehOficina && !usarProdutivo && (
                 <div className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-md p-px w-fit">
                   {[{ key: 'consultor', label: 'Por Consultor' }, { key: 'tipoOs', label: 'Por Tipo de OS' }].map(t => (
@@ -1696,12 +1940,61 @@ export default function BiPossibilidades() {
                             </React.Fragment>
                           )
                         })}
-                        {ehBalcao && linhasVendedor(setor.setorId).map(vend => (
-                          <LinhaDepto dias={diasInfo} semMargem={usarProdutivo} key={vend.vendedorKey} label={vend.label} indent={2} dept={vend}
-                            carregandoRealPecas={carregandoSlot('realPecas')} carregandoRealServicos={carregandoSlot('realServicos')}
-                            carregandoMargemPecas={carregandoSlot('margemPecas')} carregandoMargemServicos={carregandoSlot('margemServicos')}
-                            carregandoPass={carregandoSlot('pass')} soBalcao />
-                        ))}
+                        {ehBalcao && aberturaVendedor === 'natureza' && (natVendedor.carregando ? (
+                          <tr><td colSpan={colunasTabela.length} className="p-2 text-[11px] text-slate-400" style={{ paddingLeft: '48px' }}>
+                            <Loader2 className="inline h-3 w-3 animate-spin mr-1" /> Lendo as naturezas de operação no SharePoint…
+                          </td></tr>
+                        ) : natVendedor.erro ? (
+                          <tr><td colSpan={colunasTabela.length} className="p-2 text-[11px] text-red-600" style={{ paddingLeft: '48px' }}>{natVendedor.erro}</td></tr>
+                        ) : gruposNaturezaDoSetor(setor.setorId).map(grupo => {
+                          const aberto = natGruposAbertos.has(grupo.grupoKey)
+                          const alternar = () => setNatGruposAbertos(prev => { const n = new Set(prev); if (n.has(grupo.grupoKey)) n.delete(grupo.grupoKey); else n.add(grupo.grupoKey); return n })
+                          return (
+                            <React.Fragment key={grupo.grupoKey}>
+                              <LinhaDepto dias={diasInfo} indent={2} dept={grupo} semMeta soBalcao
+                                label={
+                                  <button type="button" onClick={alternar} title={aberto ? 'Recolher' : 'Ver Naturezas de Operação'}
+                                    className="inline-flex items-center gap-1 -ml-1 font-semibold text-slate-800 hover:text-blue-600 transition-colors">
+                                    {aberto ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                                    {grupo.label}
+                                  </button>
+                                } />
+                              {aberto && grupo.naturezas.map(nat => (
+                                <LinhaDepto key={nat.cod} dias={diasInfo} label={nat.label} indent={3} dept={nat} semMeta soBalcao />
+                              ))}
+                            </React.Fragment>
+                          )
+                        }))}
+                        {ehBalcao && aberturaVendedor === 'vendedor' && linhasVendedor(setor.setorId).map(vend => {
+                          const chaveVend = `${setor.setorId}|${vend.vendedorKey}`
+                          const aberto = vendAbertos.has(chaveVend)
+                          const alternar = () => setVendAbertos(prev => { const n = new Set(prev); if (n.has(chaveVend)) n.delete(chaveVend); else n.add(chaveVend); return n })
+                          const rotulo = (
+                            <button type="button" onClick={alternar} className="inline-flex items-center gap-1 hover:text-[#1a4d8f]" title="Ver por Natureza de Operação">
+                              {aberto ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}{vend.label}
+                            </button>
+                          )
+                          return (
+                            <React.Fragment key={vend.vendedorKey}>
+                              <LinhaDepto dias={diasInfo} semMargem={usarProdutivo} label={rotulo} indent={2} dept={vend}
+                                carregandoRealPecas={carregandoSlot('realPecas')} carregandoRealServicos={carregandoSlot('realServicos')}
+                                carregandoMargemPecas={carregandoSlot('margemPecas')} carregandoMargemServicos={carregandoSlot('margemServicos')}
+                                carregandoPass={carregandoSlot('pass')} soBalcao />
+                              {aberto && (natVendedor.carregando ? (
+                                <tr><td colSpan={colunasTabela.length} className="p-2 text-[11px] text-slate-400" style={{ paddingLeft: '88px' }}>
+                                  <Loader2 className="inline h-3 w-3 animate-spin mr-1" /> Lendo as naturezas de operação no SharePoint…
+                                </td></tr>
+                              ) : natVendedor.erro ? (
+                                <tr><td colSpan={colunasTabela.length} className="p-2 text-[11px] text-red-600" style={{ paddingLeft: '88px' }}>{natVendedor.erro}</td></tr>
+                              ) : naturezasDoVendedor(setor.setorId, vend.vendedorKey).length === 0 ? (
+                                <tr><td colSpan={colunasTabela.length} className="p-2 text-[11px] text-slate-400" style={{ paddingLeft: '88px' }}>Sem venda por natureza no período.</td></tr>
+                              ) : naturezasDoVendedor(setor.setorId, vend.vendedorKey).map(nat => (
+                                <LinhaDepto key={nat.cod} dias={diasInfo} label={<span className="text-[11px] text-slate-500">{nat.label}</span>} indent={4} dept={nat}
+                                  semMeta soBalcao />
+                              )))}
+                            </React.Fragment>
+                          )
+                        })}
                       </React.Fragment>
                     ))}
                   </React.Fragment>
@@ -1716,5 +2009,6 @@ export default function BiPossibilidades() {
         </>
       )}
     </div>
+    </CoresBiContext.Provider>
   )
 }

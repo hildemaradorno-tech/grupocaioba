@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Activity, FileText, DollarSign, Receipt, BarChart2, ClipboardList } from 'lucide-react'
+import { Activity, FileText, DollarSign, Receipt, BarChart2, ClipboardList, RefreshCw, BookOpen } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import logoCaioba from '../../assets/logo-grupo.png'
 import EngrenagemRegras from '../garantias-daf/EngrenagemRegras'
@@ -36,7 +36,7 @@ const ABAS = [
     key: 'historico', label: 'Histórico de O.S.', icon: Receipt, permKey: 'garantias-daf-historicodeos',
     objetivo: 'consultar as garantias com nota fiscal emitida ou enviadas à fábrica.',
     dashboard: null,
-    controle: (p) => <GarantiasDafFaturadas slotAcoes={p.slotAcoes} />,
+    controle: (p) => <GarantiasDafFaturadas slotAcoes={p.slotAcoes} onLastModified={p.onLastModified} />,
   },
 ]
 
@@ -44,7 +44,6 @@ export default function BiGarantiasDaf() {
   const { hasPermission, hasActionOrDefault, user, garantiasVisaoPadraoEfetiva } = useAuth()
   // Mesma permissão da engrenagem nas telas de Controle (ação "regras")
   const podeRegras = hasActionOrDefault('garantias-daf', 'regras') || hasActionOrDefault('garantias-daf-andamento', 'regras')
-  const [versaoRegras, setVersaoRegras] = useState(0)
   const [params, setParams] = useSearchParams()
 
   const podeDashboard = (a) => !!a.dashboard && hasPermission('bi/garantias-daf')
@@ -67,10 +66,43 @@ export default function BiGarantiasDaf() {
     irPara(a.key, proximo)
   }
 
-  const [lastModified, setLastModified] = useState(null)
-  // Espaço ao lado de Dashboard | Controle onde a tela de Controle coloca seus botões (Atualizar, Regras, Manual)
+  // Todas as telas (aba × Dashboard/Controle) que o usuário pode ver são montadas UMA vez ao entrar e ficam
+  // carregadas: trocar de aba ou de modo só mostra/esconde — não lê o banco/SharePoint de novo. Para reler,
+  // botão Atualizar (no Dashboard remonta só a tela visível; no Controle, o próprio botão da tela).
+  const telas = useMemo(() => abasVisiveis.flatMap(a => [
+    podeDashboard(a) && { key: `${a.key}:dashboard`, aba: a, modo: 'dashboard' },
+    podeControle(a) && { key: `${a.key}:controle`, aba: a, modo: 'controle' },
+  ].filter(Boolean)), [abasVisiveis.map(a => a.key).join(','), hasPermission]) // eslint-disable-line react-hooks/exhaustive-deps
+  const chaveAtiva = abaAtual ? `${abaAtual.key}:${modo}` : null
+  // versão de cada tela (muda = remonta = lê de novo)
+  const [versoes, setVersoes] = useState({})
+  const recarregarTela = (k) => setVersoes(v => ({ ...v, [k]: (v[k] || 0) + 1 }))
+  const recarregarDashboards = () => setVersoes(v => {
+    const n = { ...v }
+    for (const tl of telas) if (tl.modo === 'dashboard') n[tl.key] = (n[tl.key] || 0) + 1
+    return n
+  })
+  // Data do arquivo de cada tela; o topo mostra a da tela visível
+  const [lastModifiedPorTela, setLastModifiedPorTela] = useState({})
+  const setters = useMemo(() => Object.fromEntries(telas.map(tl => [tl.key,
+    (v) => setLastModifiedPorTela(p => (p[tl.key] === v ? p : { ...p, [tl.key]: v }))])), [telas])
+  const lastModified = chaveAtiva ? lastModifiedPorTela[chaveAtiva] ?? null : null
+  // Espaço ao lado de Dashboard | Controle onde a tela de Controle visível coloca seus botões (Atualizar, Regras, Manual)
   const [slotAcoes, setSlotAcoes] = useState(null)
-  useEffect(() => { setLastModified(null) }, [abaAtual?.key, modo])
+
+  // Visão Dashboard: "Atualizar arquivo" relê o arquivo da aba no SharePoint (sem o cache do backend)
+  // e remonta o dashboard, que busca tudo de novo.
+  const [atualizandoDash, setAtualizandoDash] = useState(false)
+  const atualizarDashboard = async () => {
+    const BACKEND = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
+    const rota = { oficina: '/api/garantias/sharepoint/aberta/refresh', aberto: '/api/garantias/sharepoint/encerrada/refresh', titulos: '/api/garantias/financeiro/titulos/refresh' }[abaAtual?.key]
+    setAtualizandoDash(true)
+    try { if (rota) await fetch(`${BACKEND}${rota}`, { method: 'POST' }) } catch {}
+    finally {
+      setAtualizandoDash(false)
+      recarregarTela(chaveAtiva)
+    }
+  }
 
   const fmtDataHora = (s) => { if (!s) return null; try { return new Date(s).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) } catch { return null } }
 
@@ -121,11 +153,32 @@ export default function BiGarantiasDaf() {
               Arquivo atualizado em: <strong className="text-white">{fmtDataHora(lastModified) || '—'}</strong>
             </p>
             {/* Botões da tela de Controle (Atualizar, Regras, Manual) */}
-            {modo === 'controle' && <div ref={setSlotAcoes} className="flex items-center gap-2" />}
+            {/* sempre montado (fica escondido no Dashboard) para o espaço não mudar ao trocar de modo */}
+            <div ref={setSlotAcoes} className={`flex items-center gap-2 ${modo === 'controle' ? '' : 'hidden'}`} />
             {/* Visão Dashboard: a mesma engrenagem (Regras do Sistema), que vale para Controle e Dashboard */}
-            {modo === 'dashboard' && podeRegras && (
+            {modo === 'dashboard' && (
               <div className="flex items-center gap-2">
-                <EngrenagemRegras usuario={user?.email} abaInicial={{ oficina: 'oficina', titulos: 'titulos' }[abaAtual.key] || 'garantista'} onSalvo={() => setVersaoRegras(v => v + 1)} onMetaSalva={() => setVersaoRegras(v => v + 1)} />
+                <button
+                  type="button"
+                  onClick={atualizarDashboard}
+                  disabled={atualizandoDash}
+                  title="Atualizar arquivo"
+                  aria-label="Atualizar arquivo"
+                  className="flex items-center justify-center p-1.5 rounded-md bg-orange-500 hover:bg-orange-600 text-white shadow-sm transition-colors disabled:opacity-50"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${atualizandoDash ? 'animate-spin' : ''}`} />
+                </button>
+                {podeRegras && <EngrenagemRegras usuario={user?.email} abaInicial={{ oficina: 'oficina', titulos: 'titulos' }[abaAtual.key] || 'garantista'} onSalvo={recarregarDashboards} onMetaSalva={recarregarDashboards} />}
+                {/* Manual de operação — livre para todos (não entra no Grupo de Acessos) */}
+                <button
+                  type="button"
+                  onClick={() => window.open('/garantias-daf-manual', '_blank')}
+                  title="Manual de operação"
+                  aria-label="Manual de operação"
+                  className="flex items-center justify-center p-1.5 rounded-md bg-orange-500 hover:bg-orange-600 text-white shadow-sm transition-colors"
+                >
+                  <BookOpen className="h-3.5 w-3.5" />
+                </button>
               </div>
             )}
             </div>
@@ -169,11 +222,17 @@ export default function BiGarantiasDaf() {
           <strong className="font-bold text-slate-900">Objetivo:</strong> {abaAtual.objetivo}
         </p>
 
-        {/* Só a visão escolhida é montada — a outra não carrega dados enquanto estiver fechada. */}
-        {/* versaoRegras: ao salvar a engrenagem no Dashboard, ele é recarregado com as regras novas */}
-        {modo === 'dashboard'
-          ? <React.Fragment key={versaoRegras}>{abaAtual.dashboard({ onLastModified: setLastModified })}</React.Fragment>
-          : abaAtual.controle({ onLastModified: setLastModified, slotAcoes })}
+        {/* Todas as telas montadas desde a entrada; só a visível aparece (as outras ficam escondidas, já carregadas) */}
+        {telas.map(tl => {
+          const ativa = tl.key === chaveAtiva
+          return (
+            <div key={`${tl.key}#${versoes[tl.key] || 0}`} className={ativa ? '' : 'hidden'}>
+              {tl.modo === 'dashboard'
+                ? tl.aba.dashboard({ onLastModified: setters[tl.key] })
+                : tl.aba.controle({ onLastModified: setters[tl.key], slotAcoes: ativa ? slotAcoes : null })}
+            </div>
+          )
+        })}
       </div>
     </div>
   )

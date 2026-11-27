@@ -297,23 +297,39 @@ export const apiService = {
     return data || []
   },
 
-  createGrupo: async (nome_grupo, is_admin = false, departamento = null) => {
+  createGrupo: async (nome_grupo, is_admin = false, departamento = null, agrupamento_empresa_id = null, tipo_id = null) => {
     const { data, error } = await supabase
       .from('grupos_acesso')
-      .insert([{ nome_grupo, is_admin, departamento }])
+      .insert([{ nome_grupo, is_admin, departamento, agrupamento_empresa_id: agrupamento_empresa_id || null, tipo_id: tipo_id || null }])
       .select()
       .single()
     if (error) throw error
     return data
   },
 
-  updateGrupo: async (id, nome_grupo, is_admin = false, departamento = null) => {
+  // agrupamento_empresa_id: undefined = não mexe (telas antigas que não enviam o campo)
+  updateGrupo: async (id, nome_grupo, is_admin = false, departamento = null, agrupamento_empresa_id = undefined, tipo_id = undefined) => {
+    const payload = { nome_grupo, is_admin, departamento }
+    if (agrupamento_empresa_id !== undefined) payload.agrupamento_empresa_id = agrupamento_empresa_id || null
+    if (tipo_id !== undefined) payload.tipo_id = tipo_id || null
     const { data, error } = await supabase
       .from('grupos_acesso')
-      .update({ nome_grupo, is_admin, departamento })
+      .update(payload)
       .eq('id', id)
       .select()
       .single()
+    if (error) throw error
+    return data
+  },
+
+  // Tipos de grupo de acesso (Gerentes, Diretores…) — só classificação
+  getTiposGrupoAcesso: async () => {
+    const { data, error } = await supabase.from('grupos_acesso_tipos').select('*').eq('ativo', true).order('nome')
+    if (error) throw error
+    return data || []
+  },
+  createTipoGrupoAcesso: async (nome) => {
+    const { data, error } = await supabase.from('grupos_acesso_tipos').insert([{ nome: nome.trim() }]).select().single()
     if (error) throw error
     return data
   },
@@ -2198,6 +2214,25 @@ export const apiService = {
     if (cons.error) throw cons.error
     if (pecas.error) throw pecas.error
     return { consultor: cons.data || [], pecas: pecas.data || [] }
+  },
+
+  // BI Possibilidades: regras de cor dos indicadores (uma linha, id = 1)
+  getBiPossibRegrasCores: async () => {
+    const { data, error } = await supabase.from('bi_possib_regras_cores').select('*').eq('id', 1).maybeSingle()
+    if (error) throw error
+    return data
+  },
+  salvarBiPossibRegrasCores: async (r) => {
+    const n = (v) => Number(v)
+    const { error } = await supabase.from('bi_possib_regras_cores').upsert({
+      id: 1,
+      realizado_verde: n(r.realizado_verde), realizado_amarelo: n(r.realizado_amarelo),
+      possib_verde: n(r.possib_verde), possib_amarelo: n(r.possib_amarelo),
+      mrg_pecas_verde: n(r.mrg_pecas_verde), mrg_pecas_amarelo: n(r.mrg_pecas_amarelo),
+      mrg_serv_verde: n(r.mrg_serv_verde), mrg_serv_amarelo: n(r.mrg_serv_amarelo),
+      atualizado_em: new Date().toISOString(),
+    })
+    if (error) throw error
   },
 
   // Tempo na Oficina (BI Possibilidades) — regras do indicador "% dos veículos que saíram em até N dias".
@@ -4199,6 +4234,27 @@ export const apiService = {
     const linhas = Object.entries(metas).map(([indicador, meta]) => ({ indicador, meta, atualizado_em: agora, atualizado_por: userEmail || null }))
     const { error } = await supabase.from('bi_agendamento_metas').upsert(linhas)
     if (error) throw error
+    return { success: true }
+  },
+  // Metas mês a mês (indicador + ano + mês); mês sem meta usa a padrão de bi_agendamento_metas.
+  getBiAgendamentoMetasMes: async () => {
+    const { data, error } = await supabase.from('bi_agendamento_metas_mes').select('indicador, ano, mes, meta, atualizado_em, atualizado_por')
+    if (error) throw error
+    return data || []
+  },
+  // gravar: [{ indicador, ano, mes, meta }] · apagar: [{ indicador, ano, mes }] (mês volta a usar a meta padrão)
+  saveBiAgendamentoMetasMes: async (gravar, apagar, userEmail) => {
+    const agora = new Date().toISOString()
+    if (gravar.length) {
+      const { error } = await supabase.from('bi_agendamento_metas_mes')
+        .upsert(gravar.map(l => ({ ...l, atualizado_em: agora, atualizado_por: userEmail || null })))
+      if (error) throw error
+    }
+    for (const l of apagar) {
+      const { error } = await supabase.from('bi_agendamento_metas_mes').delete()
+        .eq('indicador', l.indicador).eq('ano', l.ano).eq('mes', l.mes)
+      if (error) throw error
+    }
     return { success: true }
   },
 

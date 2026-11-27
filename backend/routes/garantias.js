@@ -3,6 +3,7 @@ import { isConfigured } from '../services/graphClient.js'
 import { getOsAbertasGarantia, clearGarantiasCache, getRof001Colunas, getRof001EncerradaColunas, getOsAbertasGeral, getOsAbertasInfo, getOsEncerradas, clearEncerradasCache, getOsTempoOficina } from '../services/sharepointGarantias.js'
 import { getAllFaturamentosRof017, getFaturamentoPorOSRof017, getRof017Colunas, clearRof017Cache } from '../services/sharepointRof017.js'
 import { getRfn003Colunas, getTitulosAReceber, clearFinanceiroCache } from '../services/sharepointFinanceiro.js'
+import { FONTES, verificarFonte } from '../services/sharepointMonitor.js'
 
 const router = Router()
 
@@ -49,6 +50,36 @@ router.post('/sharepoint/encerrada/refresh', wrap(async (req, res) => {
   clearEncerradasCache()
   const data = await getOsEncerradas()
   res.json(data)
+}))
+
+// GET /api/garantias/fontes — arquivos do SharePoint usados pela Garantias DAF: pasta, arquivo mais recente e
+// data da última atualização (mesma leitura do Monitor SharePoint). Engrenagem → Fontes de dados.
+const FONTES_GARANTIAS = [
+  { id: 'rof001-aberta', uso: 'Na Oficina (Em Aberto) — O.S. de garantia abertas na oficina' },
+  { id: 'rof001-excel',  uso: 'Com Garantista (Em Aberto) — importa as O.S. Encerradas com valor e a Situação das cadastradas (um arquivo por ano)' },
+  { id: 'rof017',        uso: 'Buscar NF, Buscar Faturamento e Importar O.S. Faturadas (um arquivo por ano)' },
+  { id: 'rfn003',        uso: 'Títulos a Receber (Faturadas) — títulos a receber da DAF (um arquivo por unidade)' },
+]
+// GET /api/garantias/sharepoint/rof017/info — só a data do ROF017 mais recente (aba Histórico de O.S.)
+router.get('/sharepoint/rof017/info', wrap(async (req, res) => {
+  if (!isConfigured()) return res.status(503).json({ error: 'sharepoint_not_configured' })
+  const v = await verificarFonte(FONTES.find(f => f.id === 'rof017'))
+  res.json({ nome: v.recente?.nome || null, lastModified: v.recente?.modificado_em || null })
+}))
+
+router.get('/fontes', wrap(async (req, res) => {
+  if (!isConfigured()) return res.status(503).json({ error: 'sharepoint_not_configured' })
+  const lista = await Promise.all(FONTES_GARANTIAS.map(async ({ id, uso }) => {
+    const fonte = FONTES.find(f => f.id === id)
+    if (!fonte) return null
+    const v = await verificarFonte(fonte)
+    return {
+      id, nome: v.nome, uso, pasta: v.pasta, padrao: v.padrao, encontrado: v.encontrado, arquivos: v.arquivos,
+      arquivo: v.recente?.nome || null, modificado_em: v.recente?.modificado_em || null, link: v.recente?.link || null,
+      todos: v.todos || [], nivel: v.nivel, motivo: v.motivo || null,
+    }
+  }))
+  res.json({ fontes: lista.filter(Boolean), lidoEm: new Date().toISOString() })
 }))
 
 // GET /api/garantias/colunas — diagnóstico: nomes exatos das colunas do Excel

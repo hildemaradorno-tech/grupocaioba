@@ -149,6 +149,9 @@ export async function verificarFonte(fonte) {
         por: recente.lastModifiedBy?.user?.displayName || recente.lastModifiedBy?.application?.displayName || null,
         link: recente.webUrl || null,
       },
+      // todos os arquivos que casam (ex.: um por ano), do mais recente para o mais antigo
+      todos: arquivos.map(i => ({ nome: i.name, modificado_em: i.lastModifiedDateTime, link: i.webUrl || null }))
+        .sort((x, y) => Date.parse(y.modificado_em) - Date.parse(x.modificado_em)),
       horas_uteis: Math.round(horasUteis * 10) / 10,
       nivel,
       motivo: nivel === 'ok' ? null : motivoAtraso(fonte, horasUteis, recente.lastModifiedDateTime),
