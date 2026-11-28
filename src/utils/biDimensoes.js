@@ -53,7 +53,7 @@ const acumularBucket = (mapa, chave, g) => {
 // "Produtivo Não Associado" é serviço de oficina sem mecânico informado).
 // Quem não casa com o cadastro (ex.: "Produtivo Não Associado") usa o setor do Tipo de OS da linha
 // (tiposOS; o ROF042 grava "I21 - I21 - FUNILARIA...", a sigla é o 1º trecho) e, sem isso, deptSemCadastro.
-export function resolverPorFuncionario(grupos, medida, { funcionarios, setores, deptSemCadastro = null, tiposOS = [] }) {
+export function resolverPorFuncionario(grupos, medida, { funcionarios, setores, deptSemCadastro = null, tiposOS = [], permite = null }) {
   const porNome = new Map()
   const porCodigo = new Map()
   for (const f of (funcionarios || [])) {
@@ -83,11 +83,12 @@ export function resolverPorFuncionario(grupos, medida, { funcionarios, setores, 
   const bucketTotal = novoBucket()
   const nomesSemDepartamento = new Set()
   for (const g of (grupos || [])) {
-    somarNoBucket(bucketTotal, g)
     const func = String(g.dims?.funcionario ?? '').trim()
     const cad = porNome.get(normalizaBusca(func)) || porCodigo.get(func) || null
     const setorId = lista(cad?.setor_ids)[0] || (!cad ? setorDoTipoOs(g.dims?.tipo_os) : null) || null
     const deptId = (setorId && setorPorId.get(setorId)?.departamento_id) || lista(cad?.departamento_ids)[0] || (!cad && deptSemCadastro) || '__sem_departamento__'
+    if (permite && !permite(deptId, setorId)) continue
+    somarNoBucket(bucketTotal, g)
     if (deptId === '__sem_departamento__') nomesSemDepartamento.add(func || '(sem funcionário)')
     acumularBucket(bucketsDepto, deptId, g)
     if (setorId) {
@@ -137,7 +138,25 @@ export function resolverPorFuncionario(grupos, medida, { funcionarios, setores, 
 // diagnóstico: os Tipos de OS que caíram em "Sem Departamento" (não cadastrados com Departamento
 // em Tipos de O.S. — Tipo de OS em BRANCO não cai aqui, é sempre Balcão Peças/Atacado Varejo,
 // venda direta sem Ordem de Serviço).
-export function resolverPorDepartamento(grupos, medida, { tiposOS, setores }) {
+// Departamento e setor de um Tipo de OS (mesma regra do resolverPorDepartamento) — devolve uma função
+// (bruto) => { deptId, setorId } com os cadastros já indexados.
+export function criarResolvedorTipoOs({ tiposOS, setores }) {
+  const porSigla = new Map()
+  for (const t of (tiposOS || [])) { const k = normalizaBusca(t.sigla); if (k) porSigla.set(k, t) }
+  const setorPorNome = new Map()
+  for (const s of (setores || [])) { const k = normalizaBusca(s.nome_setor); if (k) setorPorNome.set(k, s) }
+  return (bruto) => {
+    const txt = String(bruto ?? '').trim()
+    if (txt === '') return { deptId: 'af05c274-d017-4618-bb5f-87d46b589c36', setorId: 'cd487957-658d-4ca9-87fa-11fa294b3a53' }
+    const t = porSigla.get(normalizaBusca(txt)) || porSigla.get(normalizaBusca(txt.split(' - ')[0]))
+      || (tiposOS || []).find(x => String(x.codigo ?? '').trim() === txt) || null
+    return { deptId: t?.departamento_id || '__sem_departamento__', setorId: setorPorNome.get(normalizaBusca(t?.setor_servico))?.id || null }
+  }
+}
+
+// permite(deptId, setorId): opcional — Acesso por Departamento/Setor do grupo do usuário. Linha que o
+// usuário não pode ver fica fora de tudo (inclusive do Total).
+export function resolverPorDepartamento(grupos, medida, { tiposOS, setores, permite = null }) {
   // Tipo de OS casa por sigla (normalizada, sem acento) ou por código.
   const tipoOsPorSigla = new Map()
   for (const t of (tiposOS || [])) {
@@ -183,17 +202,18 @@ export function resolverPorDepartamento(grupos, medida, { tiposOS, setores }) {
   const bucketTotal = novoBucket()
   const nomesSemDepartamento = new Set()
   for (const g of (grupos || [])) {
-    somarNoBucket(bucketTotal, g)
     const tipoOsBruto = String(g.dims?.tipo_os ?? '').trim()
     const tipoOsResolvido = tipoOsBruto === '' ? null : resolverTipoOs(tipoOsBruto)
     const deptId = tipoOsBruto === '' ? DEPTO_BALCAO_PECAS : (tipoOsResolvido?.departamento_id || '__sem_departamento__')
+    const setorId = tipoOsBruto === '' ? SETOR_ATACADO_VAREJO : (setorPorNome.get(normalizaBusca(tipoOsResolvido?.setor_servico))?.id || null)
+    if (permite && !permite(deptId, setorId)) continue
+    somarNoBucket(bucketTotal, g)
     if (deptId === '__sem_departamento__') {
       const rotulo = g.dims?.tipo_os || '(vazio)'
       nomesSemDepartamento.add(rotulo)
     }
     acumularBucket(bucketsDepto, deptId, g)
 
-    const setorId = tipoOsBruto === '' ? SETOR_ATACADO_VAREJO : (setorPorNome.get(normalizaBusca(tipoOsResolvido?.setor_servico))?.id || null)
     if (setorId) {
       acumularBucket(bucketsSetor, setorId, g)
       if (tipoOsBruto) {

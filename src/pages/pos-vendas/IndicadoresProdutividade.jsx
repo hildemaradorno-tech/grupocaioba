@@ -258,7 +258,7 @@ function SeletorEmpresas({ grupos, selecionadas, onChange }) {
 export default function IndicadoresProdutividade() {
   const { hasAction, user } = useAuth()
   const { permiteNome } = useEmpresasPermitidas()
-  const podeAtualizar = hasAction(PERM, 'atualizar')
+  const podeAtualizar = true // botão Atualizar dados liberado para todos que acessam a tela — não fica no Grupo de Acessos
   const podeRegras = hasAction(PERM, 'regras_cores')
   const [regrasCor, setRegrasCor] = useState([]) // pv_prod_regras_cor (todos os anos)
   const [abrirRegras, setAbrirRegras] = useState(false)

@@ -36,7 +36,7 @@ const ABAS_SO_GRUPO = new Set(['resultados', 'bloco1', 'orcamento-backlog'])
 
 export const KPI_MATRIZ_PERMS = ABAS.map(a => a.permKey)
 export default function KpiMatriz() {
-  const { hasPermission, hasActionOrDefault, user } = useAuth()
+  const { hasPermission, user } = useAuth()
   // Sempre que entra na Matriz de KPIs: visão Mensal no mês atual. Limpa a seleção de período guardada
   // (antes das abas montarem — elas leem esses valores ao iniciar). Trocar de aba dentro da Matriz
   // continua mantendo o período escolhido.
@@ -77,7 +77,7 @@ export default function KpiMatriz() {
     return abasVisiveis.some(a => a.key === pedida) ? pedida : abasVisiveis[0]?.key
   })
   const abaAtual = abasVisiveis.find(a => a.key === aba) || abasVisiveis[0]
-  const podeSincronizar = hasActionOrDefault('kpi/resultados', 'editar')
+  const podeSincronizar = true // botão Atualizar Dados/Sincronizar liberado para todos — não fica no Grupo de Acessos
   const daf = useEmpresasDaf()
 
   return (

@@ -13,6 +13,7 @@
  */
 import { agregarPorDimensoes, normalizaTexto } from './sharepointFonteBi.js'
 import { limparCachePossibilidades } from './kpiPossibilidades.js'
+import { sincronizarTempoOficina } from './tempoOficinaSync.js'
 
 const LOTE = 500
 const r2 = (v) => Math.round((v || 0) * 100) / 100
@@ -219,6 +220,13 @@ export async function sincronizarBiMedidasDiario(supabaseAdmin, periodo = period
       } catch (err) {
         detalhes.push({ medida: medida.nome, ok: false, erro: err.message })
       }
+    }
+    // Aba Tempo na Oficina: O.S. fechadas do ROF001 gravadas no Supabase (27/11/2026)
+    try {
+      const t = await sincronizarTempoOficina(supabaseAdmin)
+      detalhes.push({ medida: 'Tempo na Oficina (O.S. fechadas)', ok: true, linhas: t.linhas })
+    } catch (err) {
+      detalhes.push({ medida: 'Tempo na Oficina (O.S. fechadas)', ok: false, erro: err.message })
     }
     return { dataInicio, dataFim, ok: detalhes.every(d => d.ok), detalhes }
   } finally {

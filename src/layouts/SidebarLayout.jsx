@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom'
-import { Settings, TableProperties, Users, ShieldCheck, Building2, Layers, FolderTree, Box as BoxIcon, Briefcase, Tag, Wrench, Package, TrendingUp, FileCheck2, ScrollText, CalendarX, Calendar, Target, ShoppingBag, Car, Cog, ClipboardCheck, UserCheck, LogOut, BarChart2, Wallet, ClipboardList, Home, FolderKanban, CircleDot, FileText, Truck, Calculator, BookOpen, GraduationCap, KeyRound, Eye, EyeOff, X, AlertTriangle, Bike, Network, PieChart, Share2, Gauge, Ruler, ShieldAlert, Landmark, Hash, ListChecks, ExternalLink, Workflow, Trophy, Percent, Palmtree, PhoneCall, PlugZap, Bell, Warehouse, Archive, Megaphone, ArrowRightLeft, Bot, SlidersHorizontal, ChevronRight, Receipt, TrainFront, DatabaseZap, FolderSync, CloudCog, HeartPulse, BarChart3 } from 'lucide-react'
+import { Settings, TableProperties, Users, ShieldCheck, Building2, Layers, FolderTree, Box as BoxIcon, Briefcase, Tag, Wrench, Package, TrendingUp, FileCheck2, ScrollText, CalendarX, Calendar, Target, ShoppingBag, Car, Cog, ClipboardCheck, UserCheck, LogOut, BarChart2, Wallet, ClipboardList, Home, FolderKanban, CircleDot, FileText, Truck, Calculator, BookOpen, GraduationCap, Presentation, KeyRound, Eye, EyeOff, X, AlertTriangle, Bike, Network, PieChart, Share2, Gauge, Ruler, ShieldAlert, Landmark, Hash, ListChecks, ExternalLink, Workflow, Trophy, Percent, Palmtree, PhoneCall, PlugZap, Bell, Warehouse, Archive, Megaphone, ArrowRightLeft, Bot, SlidersHorizontal, ChevronRight, Receipt, TrainFront, DatabaseZap, FolderSync, CloudCog, HeartPulse, BarChart3 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import TrocarSenhaObrigatoria from '../pages/TrocarSenhaObrigatoria'
 import { supabase } from '../services/supabaseClient'
@@ -656,6 +656,7 @@ export default function SidebarLayout() {
           <>
             <FlyGroup label="Treinamentos" />
             {canView('treinamentos/grade') && <FlyItem to="/treinamentos/grade" icon={GraduationCap} onClose={closeFlyout}>Grade de Treinamentos</FlyItem>}
+            {canView('treinamentos/apresentacoes') && <FlyItem to="/treinamentos/apresentacoes" icon={Presentation} onClose={closeFlyout}>Apresentações</FlyItem>}
             {canView('treinamentos/central') && <FlyItemExternal href="https://centraldetreinamentos.netlify.app/" icon={BookOpen} onClose={closeFlyout}>Central de Treinamentos</FlyItemExternal>}
           </>
         )

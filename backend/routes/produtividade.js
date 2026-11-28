@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { requireMenu, requireAcao } from '../middleware/authMiddleware.js'
+import { requireMenu } from '../middleware/authMiddleware.js'
 import { getSupabaseAdmin } from '../services/supabaseAdmin.js'
 import { sincronizarProdutividadeMes, metasProdutividade } from '../services/produtividadeSync.js'
 
@@ -20,7 +20,7 @@ router.get('/metas', wrap(async (req, res) => {
 
 // POST /api/produtividade/atualizar { ano, mes } — relê os relatórios de 1 mês (Trucks e Motos).
 // A tela chama mês a mês quando o período tem mais de um mês.
-router.post('/atualizar', requireAcao('pos-vendas/produtividade', 'atualizar'), wrap(async (req, res) => {
+router.post('/atualizar', requireMenu('pos-vendas/produtividade'), wrap(async (req, res) => {
   const ano = Number(req.body?.ano), mes = Number(req.body?.mes)
   if (!(ano > 2000 && ano < 2100) || !(mes >= 1 && mes <= 12)) return res.status(400).json({ error: 'Informe ano e mês.' })
   try {

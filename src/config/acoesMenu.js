@@ -161,7 +161,6 @@ export const ACOES_POR_MENU = [
   {
     menuPath: 'honda/contas-a-receber',
     acoes: [
-      { value: 'atualizar',        label: 'Atualizar (consulta a API do MicroWork e limpa anotações de títulos já baixados)' },
       { value: 'gerenciar_status', label: 'Cadastro de Status (engrenagem do topo — criar, renomear, trocar cor, ativar/inativar)' },
       { value: 'excluir_status',   label: 'Excluir Status (dentro do Cadastro de Status)' },
     ],
@@ -581,11 +580,19 @@ export const ACOES_POR_MENU = [
       { value: 'excluir', label: 'Excluir' },
     ],
   },
+  // BI Possibilidades - Sintonia do Dia — botões do topo e da engrenagem (sem flag = negado; admin sempre pode).
+  {
+    menuPath: 'bi/possibilidades',
+    acoes: [
+      // "Atualizar dados" (botão do topo) é livre para quem acessa a tela — não fica no Grupo de Acessos (27/11/2026).
+      { value: 'regras_indicadores', label: 'Regras dos indicadores (engrenagem — cores de Realizado, Possibilidades e Margens)' },
+      { value: 'regras_tempo',       label: 'Regras do Tempo na Oficina (engrenagem — saída no prazo e média de dias)' },
+    ],
+  },
   // Pós-Vendas › Indicadores de Produtividade (sem flag = negado; admin sempre pode).
   {
     menuPath: 'pos-vendas/produtividade',
     acoes: [
-      { value: 'atualizar', label: 'Atualizar dados (botão azul do topo — relê Dealer.net e MicroWork do período)' },
       { value: 'regras_cores', label: 'Regras de cores dos indicadores (engrenagem — Eficiência, Eficácia e Produtividade mês a mês)' },
     ],
   },
@@ -593,7 +600,6 @@ export const ACOES_POR_MENU = [
   {
     menuPath: 'bi/planos-manutencao',
     acoes: [
-      { value: 'atualizar',        label: 'Atualizar (botão azul do topo — relê os relatórios do SharePoint)' },
       { value: 'importar_arquivo', label: 'Importar Arquivo do CRM DAF (engrenagem)' },
       { value: 'cadastrar_acoes',  label: 'Cadastro de Ações das Oportunidades (engrenagem — incluir, renomear, ativar/inativar)' },
     ],
@@ -624,7 +630,6 @@ export const ACOES_POR_MENU = [
   {
     menuPath: 'bi/campanha/apuracao',
     acoes: [
-      { value: 'atualizar_numeros', label: 'Atualizar Números (sincroniza Matriz de KPIs + Campanha)' },
       { value: 'ver_matriz',        label: 'Ver Bloco 3 da Matriz de KPIs (pop-up)' },
       { value: 'fechar_mes',        label: 'Fechar Mês (congela os valores da empresa no mês)' },
       { value: 'reabrir_mes',       label: 'Reabrir Mês Fechado' },
@@ -656,12 +661,6 @@ export const ACOES_POR_MENU = [
     acoes: [
       { value: 'editar', label: 'Incluir / Editar' },
       { value: 'excluir', label: 'Excluir' },
-    ],
-  },
-  {
-    menuPath: 'kpi/resultados',
-    acoes: [
-      { value: 'editar', label: 'Atualizar Dados (botão Sincronizar da Matriz)' },
     ],
   },
   {

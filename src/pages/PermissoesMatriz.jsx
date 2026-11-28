@@ -60,6 +60,7 @@ const ALL_SECTION_KEYS = (() => {
   return s
 })()
 
+
 // ── Menus com ações (usado pra "Expandir todos" também abrir as ações) ────────
 const ALL_MENU_KEYS_COM_ACOES = (() => {
   const s = new Set()
@@ -79,6 +80,16 @@ const OPCOES_PERMISSAO = ALL_ROWS
     caminho: [...r.sectionAncestors.map(k => ROTULO_POR_KEY.get(k)), r.label].join(' › '),
   }))
 
+// Seção "Liberação por Acesso" (Acesso por Empresa / Departamento) — linhas montadas com os cadastros
+const LIB_SECOES = [
+  { id: '_lib', label: 'Liberação por Acesso', depth: 0, secao: true, caminho: 'Liberação por Acesso' },
+  { id: '_lib.emp', label: 'Acesso por Empresa', depth: 1, secao: true, caminho: 'Liberação por Acesso › Acesso por Empresa' },
+  { id: '_lib.dep', label: 'Acesso por Departamento', depth: 1, secao: true, caminho: 'Liberação por Acesso › Acesso por Departamento' },
+  { id: '_lib.set', label: 'Acesso por Setor', depth: 1, secao: true, caminho: 'Liberação por Acesso › Acesso por Setor' },
+]
+OPCOES_PERMISSAO.push(...LIB_SECOES)
+LIB_SECOES.forEach(l => ALL_SECTION_KEYS.add(l.id))
+
 // ── Loading skeleton ──────────────────────────────────────────────────────────
 function Skeleton({ w = 'w-24', h = 'h-4' }) {
   return <div className={`${w} ${h} bg-slate-200 rounded animate-pulse`} />
@@ -94,6 +105,12 @@ export default function PermissoesMatriz() {
   const [saving, setSaving] = useState(new Set())       // cell keys being saved
   const [err, setErr] = useState(null)
   const [filtroPerms, setFiltroPerms] = useState([]) // keys de seções/menus escolhidos no filtro
+  // Liberação por Acesso: empresas/departamentos do cadastro e o que cada grupo tem
+  const [empresasCad, setEmpresasCad] = useState([])
+  const [empSet, setEmpSet] = useState(new Set())   // "grupoId:empresaId"
+  const [depSet, setDepSet] = useState(new Set())   // "grupoId:departamento_nome"
+  const [setSet, setSetSet] = useState(new Set())   // "grupoId:setor_id"
+  const [setoresCad, setSetoresCad] = useState([])
   const [gruposSelecionados, setGruposSelecionados] = useState([])
   const [tiposGrupo, setTiposGrupo] = useState([])
   const [filtroTipo, setFiltroTipo] = useState([]) // ids: '__admin' | '__sem' | tipo_id — vazio = todos
@@ -110,13 +127,30 @@ export default function PermissoesMatriz() {
     setLoading(true)
     setErr(null)
     try {
-      const [grps, { data: perms, error: e1 }, { data: acoes, error: e2 }] = await Promise.all([
+      const [grps, { data: perms, error: e1 }, { data: acoes, error: e2 }, { data: emps, error: e3 }, { data: deps, error: e4 }, empresas] = await Promise.all([
         apiService.getGrupos(),
         supabase.from('permissoes_grupo').select('grupo_id, menu_path'),
         supabase.from('permissoes_grupo_acoes').select('grupo_id, menu_path, acao'),
+        supabase.from('permissoes_empresa_grupo').select('grupo_id, empresa_id'),
+        supabase.from('permissoes_depto_grupo').select('grupo_id, departamento_nome'),
+        apiService.getEmpresas(),
       ])
+      supabase.from('permissoes_setor_grupo').select('grupo_id, setor_id')
+        .then(({ data }) => setSetSet(new Set((data || []).map(r => `${r.grupo_id}:${r.setor_id}`))))
+      Promise.all([apiService.getSetores(), apiService.getDepartamentos()]).then(([sts, dps]) => {
+        const nomeDep = new Map((dps || []).map(d => [d.id, d.nome_departamento]))
+        setSetoresCad((sts || []).filter(x => x.ativo !== false)
+          .map(x => ({ id: x.id, nome: x.nome_setor, departamento: nomeDep.get(x.departamento_id) || '' }))
+          .sort((a, b) => a.departamento.localeCompare(b.departamento, 'pt-BR') || a.nome.localeCompare(b.nome, 'pt-BR')))
+      }).catch(() => setSetoresCad([]))
       if (e1) throw e1
       if (e2) throw e2
+      if (e3) throw e3
+      if (e4) throw e4
+      setEmpSet(new Set((emps || []).map(r => `${r.grupo_id}:${r.empresa_id}`)))
+      setDepSet(new Set((deps || []).map(r => `${r.grupo_id}:${r.departamento_nome}`)))
+      setEmpresasCad((empresas || []).filter(e => e.ativo !== false).sort((a, b) =>
+        (a.agrupamento_nome || '').localeCompare(b.agrupamento_nome || '', 'pt-BR') || (a.empresa_fantasia || a.nome_empresa || '').localeCompare(b.empresa_fantasia || b.nome_empresa || '', 'pt-BR')))
       setGrupos(grps)
       apiService.getTiposGrupoAcesso().then(setTiposGrupo).catch(() => setTiposGrupo([]))
       apiService.getAgrupamentoEmpresas().then(a => setAgrupamentos(a || [])).catch(() => setAgrupamentos([]))
@@ -212,6 +246,94 @@ export default function PermissoesMatriz() {
     }
   }, [])
 
+  // ── Liberação por Acesso: empresa (permissoes_empresa_grupo) ──────────────
+  const toggleEmpresa = useCallback(async (grupoId, empresaId) => {
+    const cellKey = `${grupoId}:${empresaId}`
+    const has = empSet.has(cellKey)
+    setSaving(s => new Set([...s, `emp:${cellKey}`]))
+    setErr(null)
+    try {
+      const q = has
+        ? supabase.from('permissoes_empresa_grupo').delete().eq('grupo_id', grupoId).eq('empresa_id', empresaId)
+        : supabase.from('permissoes_empresa_grupo').insert([{ grupo_id: grupoId, empresa_id: empresaId }])
+      const { error } = await q
+      if (error) throw error
+      setEmpSet(s => { const n = new Set(s); if (has) n.delete(cellKey); else n.add(cellKey); return n })
+    } catch (e) {
+      setErr(e.message || 'Erro ao salvar acesso por empresa.')
+    } finally {
+      setSaving(s => { const n = new Set(s); n.delete(`emp:${cellKey}`); return n })
+    }
+  }, [empSet])
+
+  // ── Liberação por Acesso: departamento (modo Todos/Individual + permissoes_depto_grupo) ──
+  const salvarModoDepto = useCallback(async (grupoId, modo) => {
+    const cellKey = `depmodo:${grupoId}`
+    setSaving(s => new Set([...s, cellKey]))
+    setErr(null)
+    try {
+      const { error } = await supabase.from('grupos_acesso').update({ projetos_depto_modo: modo }).eq('id', grupoId)
+      if (error) throw error
+      setGrupos(gs => gs.map(g => g.id === grupoId ? { ...g, projetos_depto_modo: modo } : g))
+    } catch (e) {
+      setErr(e.message || 'Erro ao salvar o modo do acesso por departamento.')
+    } finally {
+      setSaving(s => { const n = new Set(s); n.delete(cellKey); return n })
+    }
+  }, [])
+  const toggleDepto = useCallback(async (grupoId, nome) => {
+    const cellKey = `${grupoId}:${nome}`
+    const has = depSet.has(cellKey)
+    setSaving(s => new Set([...s, `dep:${cellKey}`]))
+    setErr(null)
+    try {
+      const q = has
+        ? supabase.from('permissoes_depto_grupo').delete().eq('grupo_id', grupoId).eq('departamento_nome', nome)
+        : supabase.from('permissoes_depto_grupo').insert([{ grupo_id: grupoId, departamento_nome: nome }])
+      const { error } = await q
+      if (error) throw error
+      setDepSet(s => { const n = new Set(s); if (has) n.delete(cellKey); else n.add(cellKey); return n })
+    } catch (e) {
+      setErr(e.message || 'Erro ao salvar acesso por departamento.')
+    } finally {
+      setSaving(s => { const n = new Set(s); n.delete(`dep:${cellKey}`); return n })
+    }
+  }, [depSet])
+
+  // ── Liberação por Acesso: setor (modo Todos/Individual + permissoes_setor_grupo) ──
+  const salvarModoSetor = useCallback(async (grupoId, modo) => {
+    const cellKey = `setmodo:${grupoId}`
+    setSaving(s => new Set([...s, cellKey]))
+    setErr(null)
+    try {
+      const { error } = await supabase.from('grupos_acesso').update({ setor_modo: modo }).eq('id', grupoId)
+      if (error) throw error
+      setGrupos(gs => gs.map(g => g.id === grupoId ? { ...g, setor_modo: modo } : g))
+    } catch (e) {
+      setErr(e.message || 'Erro ao salvar o modo do acesso por setor.')
+    } finally {
+      setSaving(s => { const n = new Set(s); n.delete(cellKey); return n })
+    }
+  }, [])
+  const toggleSetor = useCallback(async (grupoId, setorId) => {
+    const cellKey = `${grupoId}:${setorId}`
+    const has = setSet.has(cellKey)
+    setSaving(s => new Set([...s, `set:${cellKey}`]))
+    setErr(null)
+    try {
+      const q = has
+        ? supabase.from('permissoes_setor_grupo').delete().eq('grupo_id', grupoId).eq('setor_id', setorId)
+        : supabase.from('permissoes_setor_grupo').insert([{ grupo_id: grupoId, setor_id: setorId }])
+      const { error } = await q
+      if (error) throw error
+      setSetSet(s => { const n = new Set(s); if (has) n.delete(cellKey); else n.add(cellKey); return n })
+    } catch (e) {
+      setErr(e.message || 'Erro ao salvar acesso por setor.')
+    } finally {
+      setSaving(s => { const n = new Set(s); n.delete(`set:${cellKey}`); return n })
+    }
+  }, [setSet])
+
   // ── Section toggle ──────────────────────────────────────────────────────────
   const toggleSection = useCallback((key) => {
     setOpenSections(s => {
@@ -258,6 +380,28 @@ export default function PermissoesMatriz() {
       return true
     })
   }, [openSections, openAcoesMenu, filtroPerms, filtroAtivo])
+
+  // ── Linhas da seção "Liberação por Acesso" (mesmas regras de abrir/fechar e do filtro de menus) ──
+  const libVisiveis = useMemo(() => {
+    const deps = [...new Set(departamentosCad)].sort((a, b) => a.localeCompare(b, 'pt-BR'))
+    const linhas = [
+      { type: 'lib-section', key: '_lib', label: 'Liberação por Acesso', depth: 0, pais: [] },
+      { type: 'lib-section', key: '_lib.emp', label: 'Acesso por Empresa', depth: 1, pais: ['_lib'] },
+      ...empresasCad.map(e => ({ type: 'lib-emp', key: `_lib.emp|${e.id}`, empresa: e, depth: 2, pais: ['_lib', '_lib.emp'] })),
+      { type: 'lib-section', key: '_lib.dep', label: 'Acesso por Departamento', depth: 1, pais: ['_lib'] },
+      { type: 'lib-dep-modo', key: '_lib.dep|modo', label: 'Modo (Todos / Individual)', depth: 2, pais: ['_lib', '_lib.dep'] },
+      ...deps.map(d => ({ type: 'lib-dep', key: `_lib.dep|${d}`, nome: d, depth: 2, pais: ['_lib', '_lib.dep'] })),
+      { type: 'lib-section', key: '_lib.set', label: 'Acesso por Setor', depth: 1, pais: ['_lib'] },
+      { type: 'lib-set-modo', key: '_lib.set|modo', label: 'Modo (Todos / Individual)', depth: 2, pais: ['_lib', '_lib.set'] },
+      ...setoresCad.map(st => ({ type: 'lib-set', key: `_lib.set|${st.id}`, setor: st, depth: 2, pais: ['_lib', '_lib.set'] })),
+    ]
+    if (filtroAtivo) {
+      const sel = new Set(filtroPerms)
+      if (![...sel].some(k => k.startsWith('_lib'))) return []
+      return linhas.filter(r => sel.has(r.key) || r.pais.some(k => sel.has(k)) || (r.type === 'lib-section' && [...sel].some(k => k.startsWith(r.key))))
+    }
+    return linhas.filter(r => r.pais.every(k => openSections.has(k)))
+  }, [empresasCad, departamentosCad, setoresCad, filtroAtivo, filtroPerms, openSections])
 
   // ── Section summary: leaf keys de cada seção (em qualquer profundidade), pra
   // resumir o acesso do grupo naquela seção sem precisar expandir. Reaproveita
@@ -633,10 +777,85 @@ export default function PermissoesMatriz() {
                   )
                 })
             }
+            {!loading && libVisiveis.map(row => {
+              const pad = { paddingLeft: `${row.depth * 16}px` }
+              if (row.type === 'lib-section') {
+                const isOpen = filtroAtivo ? true : openSections.has(row.key)
+                return (
+                  <tr key={row.key} className="bg-emerald-50 hover:bg-emerald-100/70 transition-colors">
+                    <td className="sticky left-0 z-10 bg-emerald-50 border-r border-b border-emerald-200 px-4 py-2">
+                      <button onClick={() => toggleSection(row.key)} className="flex items-center gap-2 w-full text-left" style={pad}>
+                        {isOpen ? <ChevronDown className="h-3.5 w-3.5 text-emerald-600 shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 text-emerald-600 shrink-0" />}
+                        <span className="text-xs font-bold text-emerald-800 uppercase tracking-wide">{row.label}</span>
+                      </button>
+                    </td>
+                    {gruposVisiveis.map(g => <td key={g.id} className="border-r border-b border-emerald-200" />)}
+                  </tr>
+                )
+              }
+              if (row.type === 'lib-dep-modo' || row.type === 'lib-set-modo') {
+                const ehSetor = row.type === 'lib-set-modo'
+                return (
+                  <tr key={row.key} className="bg-violet-50/50">
+                    <td className="sticky left-0 z-10 bg-violet-50 border-r border-b border-violet-100 px-4 py-1.5">
+                      <div style={pad} title="Todos = sem restrição (inclusive departamentos futuros); Individual = só os marcados abaixo">
+                        <span className="text-xs font-semibold text-violet-700">{row.label}</span>
+                      </div>
+                    </td>
+                    {gruposVisiveis.map(g => (
+                      <td key={g.id} className="border-r border-b border-violet-100 px-2 py-1.5 text-center">
+                        {g.is_admin ? <span className="text-[11px] text-slate-400">Todos</span>
+                          : isSaving(`${ehSetor ? 'setmodo' : 'depmodo'}:${g.id}`) ? <RefreshCw className="h-3.5 w-3.5 text-violet-400 animate-spin mx-auto" />
+                          : (
+                            <select value={(ehSetor ? g.setor_modo : g.projetos_depto_modo) === 'INDIVIDUAL' ? 'INDIVIDUAL' : 'TODOS'} onChange={e => (ehSetor ? salvarModoSetor : salvarModoDepto)(g.id, e.target.value)}
+                              className="text-[11px] border border-violet-200 rounded px-1 py-0.5 bg-white text-slate-700 focus:ring-1 focus:ring-violet-300">
+                              <option value="TODOS">Todos</option>
+                              <option value="INDIVIDUAL">Individual</option>
+                            </select>
+                          )}
+                      </td>
+                    ))}
+                  </tr>
+                )
+              }
+              const ehEmp = row.type === 'lib-emp'
+              const ehSet = row.type === 'lib-set'
+              const rotulo = ehEmp ? (row.empresa.empresa_fantasia || row.empresa.nome_empresa) : ehSet ? row.setor.nome : row.nome
+              return (
+                <tr key={row.key} className="bg-white hover:bg-emerald-50/40 transition-colors group">
+                  <td className="sticky left-0 z-10 bg-white group-hover:bg-emerald-50 border-r border-b border-slate-100 px-4 py-2">
+                    <div className="flex items-center gap-2" style={pad}>
+                      <span className="text-sm text-slate-700 truncate">{rotulo}</span>
+                      {ehEmp && row.empresa.agrupamento_nome && <span className="text-[10px] text-slate-400 shrink-0">{row.empresa.agrupamento_nome}</span>}
+                      {ehSet && row.setor.departamento && <span className="text-[10px] text-slate-400 shrink-0">{row.setor.departamento}</span>}
+                    </div>
+                  </td>
+                  {gruposVisiveis.map(g => {
+                    const chave = ehEmp ? `${g.id}:${row.empresa.id}` : ehSet ? `${g.id}:${row.setor.id}` : `${g.id}:${row.nome}`
+                    const todosDepto = ehSet ? g.setor_modo !== 'INDIVIDUAL' : (!ehEmp && g.projetos_depto_modo !== 'INDIVIDUAL')
+                    const checked = g.is_admin || todosDepto || (ehEmp ? empSet.has(chave) : ehSet ? setSet.has(chave) : depSet.has(chave))
+                    const bloqueado = g.is_admin || todosDepto
+                    const spinning = isSaving(ehEmp ? `emp:${chave}` : ehSet ? `set:${chave}` : `dep:${chave}`)
+                    return (
+                      <td key={g.id} className="border-r border-b border-slate-100 px-3 py-2 text-center">
+                        {spinning
+                          ? <RefreshCw className="h-3.5 w-3.5 text-emerald-500 animate-spin mx-auto" />
+                          : (
+                            <input type="checkbox" checked={checked} disabled={bloqueado}
+                              title={g.is_admin ? 'Administrador vê tudo' : todosDepto ? 'Modo Todos: sem restrição — mude para Individual para escolher' : undefined}
+                              onChange={() => (ehEmp ? toggleEmpresa(g.id, row.empresa.id) : ehSet ? toggleSetor(g.id, row.setor.id) : toggleDepto(g.id, row.nome))}
+                              className={`w-4 h-4 rounded accent-emerald-600 cursor-pointer ${bloqueado ? 'opacity-40 cursor-not-allowed' : ''}`} />
+                          )}
+                      </td>
+                    )
+                  })}
+                </tr>
+              )
+            })}
           </tbody>
         </table>
 
-        {!loading && visibleRows.length === 0 && (
+        {!loading && visibleRows.length === 0 && libVisiveis.length === 0 && (
           <div className="flex flex-col items-center justify-center py-16 text-slate-400">
             <Search className="h-8 w-8 mb-2" />
             <p className="text-sm">Nenhuma permissão encontrada para o filtro.</p>

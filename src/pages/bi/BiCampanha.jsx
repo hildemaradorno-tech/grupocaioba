@@ -303,7 +303,7 @@ export default function BiCampanha() {
     if (abasVisiveis.length && !abasVisiveis.some((a) => a.k === aba)) setAba(abasVisiveis[0].k)
     if (unidade && !empresasVisiveis.some((x) => x.id === unidade)) setUnidade('')
   }) // eslint-disable-line react-hooks/exhaustive-deps
-  const podeAtualizar = hasActionOrDefault('bi/campanha/apuracao', 'atualizar_numeros') // botão só na aba Apuração
+  const podeAtualizar = true // botão Atualizar Números (só na aba Apuração) liberado para todos — não fica no Grupo de Acessos
   const permRegras = {
     editar: hasActionOrDefault('bi/campanha/regras', 'editar'),
     zerar: hasActionOrDefault('bi/campanha/regras', 'zerar'),

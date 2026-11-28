@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
   CalendarDays, Clock, Hourglass, CheckCircle2, AlertTriangle, XCircle,
@@ -8,8 +8,11 @@ import {
 import { apiService } from '../../services/api'
 import { Bar, BarChart, CartesianGrid, ComposedChart, LabelList, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import logoCaioba from '../../assets/logo-grupo.png'
-import { resolverPorDepartamento, resolverPorFuncionario, normalizaBusca } from '../../utils/biDimensoes'
+import { resolverPorDepartamento, resolverPorFuncionario, normalizaBusca, criarResolvedorTipoOs } from '../../utils/biDimensoes'
 import { useEmpresasPermitidas } from '../../hooks/useEmpresasPermitidas'
+import { useDepartamentosPermitidos } from '../../hooks/useDepartamentosPermitidos'
+import { useSetoresPermitidos } from '../../hooks/useSetoresPermitidos'
+import { useAuth } from '../../context/AuthContext'
 import TempoNaOficina from '../garantias-daf/TempoNaOficina'
 import TempoOficinaRegrasModal from '../garantias-daf/TempoOficinaRegrasModal'
 import CoresIndicadoresModal, { CORES_PADRAO } from './CoresIndicadoresModal'
@@ -608,6 +611,11 @@ function EvolucaoVendas({ meses, indicador, depto, departamentosOpcoes, carregan
   )
 }
 
+// Grupo de Acessos: permissão de cada aba (menuTree › Possibilidades - Sintonia do Dia)
+const PERM_ABA = {
+  total: 'bi/possibilidades/total', balcao: 'bi/possibilidades/pecas', oficina: 'bi/possibilidades/servicos',
+  margem: 'bi/possibilidades/margem', evolucao: 'bi/possibilidades/evolucao', tempo: 'bi/possibilidades/tempo-oficina',
+}
 const VISOES = [
   { key: 'total', label: 'Total', icon: LayoutDashboard },
   { key: 'balcao', label: 'Peças', icon: Package },
@@ -673,6 +681,12 @@ export default function BiPossibilidades() {
     const pedida = new URLSearchParams(window.location.search).get('visao')
     return ['total', 'balcao', 'oficina', 'margem', 'tempo'].includes(pedida) ? pedida : 'total' // tempo: link da Matriz (Bloco 2)
   }) // 'total' | 'balcao' | 'oficina' | 'margem' | 'evolucao'
+  // Grupo de Acessos (27/11/2026): abas liberadas e botões (Atualizar e engrenagem). Admin sempre vê tudo.
+  const { hasAction, hasPermission } = useAuth()
+  const visoesPermitidas = VISOES.filter(v => hasPermission(PERM_ABA[v.key]))
+  const podeAtualizarBi = true // botão Atualizar dados liberado para todos que acessam a tela
+  const podeRegrasIndicadores = hasAction('bi/possibilidades', 'regras_indicadores')
+  const podeRegrasTempo = hasAction('bi/possibilidades', 'regras_tempo')
   // Aba Evolução abre sempre de 01/01 do ano até ontem (muda o filtro de datas); ao sair dela, volta
   // o filtro que estava antes nas outras abas.
   const datasAntesEvolucao = useRef(null)
@@ -690,6 +704,12 @@ export default function BiPossibilidades() {
     }
     setVisao(nova)
   }
+  // Aba aberta sem permissão (ex.: link ?visao= ou aba padrão Total não liberada): vai para a 1ª liberada.
+  const chaveVisoesPermitidas = visoesPermitidas.map(v => v.key).join(',')
+  useEffect(() => {
+    if (visoesPermitidas.length && !visoesPermitidas.some(v => v.key === visao)) trocarVisao(visoesPermitidas[0].key)
+  }, [chaveVisoesPermitidas, visao]) // eslint-disable-line react-hooks/exhaustive-deps
+  const semAbaLiberada = visoesPermitidas.length === 0
   // Aba Oficina: sub-abas e, na sub-aba Total, o modo de visualização.
   const [modoOficina, setModoOficina] = useState('tipoOs') // 'tipoOs' | 'produtivo'
   // Modo Consultor: o que abre abaixo do setor na tabela — consultores ou Tipos de OS.
@@ -776,6 +796,25 @@ export default function BiPossibilidades() {
   }, [empresasVisiveis])
 
   const departamentoPorId = useMemo(() => new Map(departamentos.map(d => [d.id, d.nome_departamento])), [departamentos])
+
+  // Acesso por Departamento e Acesso por Setor do grupo (Grupos de Acessos, 27/11/2026): o usuário só vê os
+  // valores e as metas dos departamentos/setores liberados — vale para todas as abas, inclusive o Total.
+  // Com as duas regras, a linha precisa passar nas duas. Administrador ou "Todos" = sem restrição.
+  const { restrito: deptoRestrito, permiteDepartamento } = useDepartamentosPermitidos()
+  const { carregado: escopoSetorCarregado, restrito: setorRestrito, permiteSetorId } = useSetoresPermitidos()
+  const permiteDeptoSetor = useCallback((deptId, setorId) => {
+    if (deptoRestrito && (!deptId || deptId === '__sem_departamento__' || !permiteDepartamento(departamentoPorId.get(deptId)))) return false
+    if (setorRestrito && (!setorId || !permiteSetorId(setorId))) return false
+    return true
+  }, [deptoRestrito, setorRestrito, permiteDepartamento, permiteSetorId, departamentoPorId])
+  const filtroAcesso = deptoRestrito || setorRestrito ? permiteDeptoSetor : null
+  // Espera o escopo de setor e, com restrição de departamento, o cadastro de departamentos (nome ↔ id).
+  const acessoPronto = escopoSetorCarregado && (!deptoRestrito || departamentos.length > 0)
+  const permiteTipoOs = useMemo(() => {
+    if (!filtroAcesso) return null
+    const resolver = criarResolvedorTipoOs({ tiposOS, setores })
+    return (t) => { const { deptId, setorId } = resolver(t); return filtroAcesso(deptId, setorId) }
+  }, [filtroAcesso, tiposOS, setores])
   const setoresPorDepartamento = useMemo(() => {
     const mapa = new Map()
     for (const s of setores) {
@@ -844,6 +883,7 @@ export default function BiPossibilidades() {
   useEffect(() => {
     let cancelado = false
     setCarregandoValores(true)
+    if (!acessoPronto) return
     Promise.all([
       apiService.getMedidasBiComFonte(),
       apiService.getBiMedidasAgregado({ dataInicio: periodo.inicio, dataFim: periodo.fim, empresasNorm: empresasNormSelecionadas }),
@@ -860,7 +900,7 @@ export default function BiPossibilidades() {
       const abertura = { consultor: { grupo: new Map(), tipo: new Map() }, oficina: { grupo: new Map(), tipo: new Map() } }
       const prod = { depto: new Map(), setor: new Map(), setorFunc: new Map(), setorBox: new Map(), nomesSem: new Set() }
       for (const m of medidas.filter(m => m.slot_faturamento && m.ativo)) {
-        const r = resolverPorDepartamento(gruposPorMedida.get(m.id) || [], m, { tiposOS, setores })
+        const r = resolverPorDepartamento(gruposPorMedida.get(m.id) || [], m, { tiposOS, setores, permite: filtroAcesso })
         total.set(m.slot_faturamento, r.valorTotal)
         porDepto.set(m.slot_faturamento, r.valoresPorDepartamento)
         porSetor.set(m.slot_faturamento, r.valoresPorSetor)
@@ -872,7 +912,7 @@ export default function BiPossibilidades() {
         for (const n of r.nomesSemDepartamento) nomes.add(n)
         const colunaProd = SLOT_PRODUTIVO[m.slot_faturamento]
         if (colunaProd) {
-          const p = resolverPorFuncionario(gruposPorMedida.get(m.id) || [], m, { funcionarios, setores, deptSemCadastro: DEPTO_OFICINA, tiposOS })
+          const p = resolverPorFuncionario(gruposPorMedida.get(m.id) || [], m, { funcionarios, setores, deptSemCadastro: DEPTO_OFICINA, tiposOS, permite: filtroAcesso })
           prod.depto.set(colunaProd, p.valoresPorDepartamento)
           prod.setor.set(colunaProd, p.valoresPorSetor)
           prod.setorFunc.set(colunaProd, p.valoresPorSetorFuncionario)
@@ -893,7 +933,7 @@ export default function BiPossibilidades() {
     }).finally(() => { if (!cancelado) setCarregandoValores(false) })
     return () => { cancelado = true }
   // chaveEmpresas (texto) no lugar do array — o array muda de referência a cada render.
-  }, [chaveEmpresas, periodo, tiposOS, setores, funcionarios, recarga])
+  }, [chaveEmpresas, periodo, tiposOS, setores, funcionarios, recarga, acessoPronto, filtroAcesso])
 
   // Aba Evolução: soma por mês do período (bi_medidas_agregado_mensal), só quando a aba está aberta.
   const ehEvolucao = visao === 'evolucao'
@@ -930,7 +970,7 @@ export default function BiPossibilidades() {
       let ofPecas = 0, ofServicos = 0, ofPass = 0
       for (const slot of SLOTS) {
         const medida = medidaPorSlot.get(slot)
-        const r = medida ? resolverPorDepartamento(m.grupos.get(medida.id) || [], medida, { tiposOS, setores }) : null
+        const r = medida ? resolverPorDepartamento(m.grupos.get(medida.id) || [], medida, { tiposOS, setores, permite: filtroAcesso }) : null
         for (const id of (r?.valoresPorDepartamento.keys() || [])) if (id !== '__sem_departamento__') deptos.add(id)
         v[slot === 'horasVendidas' ? 'horas' : slot] = r ? (evoDepto ? (r.valoresPorDepartamento.get(evoDepto) || 0) : r.valorTotal) : 0
         if (slot === 'realPecas') ofPecas = r?.valoresPorDepartamento.get(DEPTO_OFICINA) || 0
@@ -944,12 +984,12 @@ export default function BiPossibilidades() {
       return v
     })
     return { meses, deptos }
-  }, [evoLinhas, medidasBi, tiposOS, setores, evoDepto])
+  }, [evoLinhas, medidasBi, tiposOS, setores, evoDepto, filtroAcesso])
   // Balcão Peças e Oficina sempre na lista (mesmo antes de os dados do período chegarem), mais
   // qualquer outro departamento que tenha valor no período.
   const evoDeptosOpcoes = [...new Set([DEPTO_BALCAO_PECAS, DEPTO_OFICINA, ...evoMeses.deptos])]
     .map(id => ({ id, nome: departamentos.find(d => d.id === id)?.nome_departamento || (id === DEPTO_BALCAO_PECAS ? 'BALCÃO PEÇAS' : id === DEPTO_OFICINA ? 'OFICINA' : '') }))
-    .filter(d => d.nome)
+    .filter(d => d.nome && (!filtroAcesso || !deptoRestrito || permiteDepartamento(d.nome)))
 
   const valorSlot = (chave) => valoresSlot.get(chave) || 0
   // Aba Oficina › Total › Produtivo: departamento/setor pelo cadastro do funcionário, não pelo Tipo de OS.
@@ -1019,6 +1059,12 @@ export default function BiPossibilidades() {
       .then(listas => setMetasPlanejadas({ consultor: listas.flatMap(l => l.consultor), pecas: listas.flatMap(l => l.pecas) }))
       .catch(() => setMetasPlanejadas({ consultor: [], pecas: [] }))
   }, [anosPeriodo])
+  // Metas planejadas só dos departamentos/setores liberados no grupo de acesso.
+  const metasPlanejadasVisiveis = useMemo(() => {
+    if (!filtroAcesso) return metasPlanejadas
+    const ok = (r) => filtroAcesso(r.departamento_id || '__sem_departamento__', r.setor_id || null)
+    return { consultor: metasPlanejadas.consultor.filter(ok), pecas: metasPlanejadas.pecas.filter(ok) }
+  }, [metasPlanejadas, filtroAcesso])
 
   useEffect(() => {
     Promise.all(anosPeriodo.map(a => apiService.getTotalGrupoPublicado(a)))
@@ -1105,6 +1151,7 @@ export default function BiPossibilidades() {
     }
     return metasDoPeriodo
       .filter(r => permiteId(r.empresa_id) && (empresaIds.length === 0 || empresaIds.includes(r.empresa_id)))
+      .filter(r => !filtroAcesso || filtroAcesso(r.departamento_id || '__sem_departamento__', r.setor_id || null))
       .map(r => {
         const metaMesTotal = Number(r.meta_faturamento || 0)
         let metaMesServicos = 0
@@ -1123,7 +1170,7 @@ export default function BiPossibilidades() {
           ano: Number(r.ano), mes: Number(r.mes), passMes: Number(r.passagens || 0),
         }
       })
-  }, [metasDoPeriodo, empresaIds, fracaoMetaPeriodo, anoRef, mesRef, permiteId])
+  }, [metasDoPeriodo, empresaIds, fracaoMetaPeriodo, anoRef, mesRef, permiteId, filtroAcesso])
   // Visão normal: Oficina pela meta dos consultores (TIPOS_FORA_DA_META fora). Modo Produtivo: meta
   // dos MECÂNICOS (já separada em Peças/Serviços), coerente com os valores pelo mecânico do ROF042.
   const metasConsideradas = usarProdutivo
@@ -1138,8 +1185,8 @@ export default function BiPossibilidades() {
     const daEmpresa = (r) => permiteId(r.empresa_id) && (empresaIds.length === 0 || empresaIds.includes(r.empresa_id))
     const noDepto = (r) => !evoDepto || r.departamento_id === evoDepto
     const porMes = (rows) => { const g = new Map(); for (const r of rows) { const k = `${Number(r.ano)}-${Number(r.mes)}`; if (!g.has(k)) g.set(k, []); g.get(k).push(r) } return g }
-    const consMes = porMes(metasPlanejadas.consultor.filter(daEmpresa))
-    const pecasMes = porMes(metasPlanejadas.pecas.filter(daEmpresa))
+    const consMes = porMes(metasPlanejadasVisiveis.consultor.filter(daEmpresa))
+    const pecasMes = porMes(metasPlanejadasVisiveis.pecas.filter(daEmpresa))
     const mesesPlan = new Set([...consMes.keys(), ...pecasMes.keys()])
     for (const k of mesesPlan) {
       const cons = consMes.get(k) || []
@@ -1162,7 +1209,7 @@ export default function BiPossibilidades() {
       mapa.set(k, m)
     }
     return mapa
-  }, [ehEvolucao, metasTodas, evoDepto, metasPlanejadas, empresaIds, permiteId])
+  }, [ehEvolucao, metasTodas, evoDepto, metasPlanejadasVisiveis, empresaIds, permiteId])
 
   const somarMetas = (rows) => rows.reduce((acc, r) => {
     acc.metaPecas += r.metaPecas; acc.metaServicos += r.metaServicos; acc.metaTotal += r.metaTotal
@@ -1271,7 +1318,8 @@ export default function BiPossibilidades() {
     // para o "Por Natureza" e a abertura dos vendedores já estarem prontos ao clicar (27/11/2026). Espera os cadastros
     // de Tipo de OS e Setor — sem eles o resolvedor não acha o setor e as naturezas saíam vazias.
     if (ehEvolucao || visao === 'tempo' || carregandoValores || !medidasBi.length || !tiposOS.length || !setores.length) return
-    const chave = `${periodo.inicio}|${periodo.fim}|${chaveEmpresas}|${recarga}`
+    if (!acessoPronto) return
+    const chave = `${periodo.inicio}|${periodo.fim}|${chaveEmpresas}|${recarga}|${filtroAcesso ? 'restrito' : 'todos'}`
     if (natVendedor.chave === chave || natEmAndamento.current === chave) return
     natEmAndamento.current = chave
     setNatVendedor(v => ({ ...v, chave, carregando: true, erro: null }))
@@ -1309,7 +1357,7 @@ export default function BiPossibilidades() {
           }
         }
         for (const [cod, grupos] of porNatureza) {
-          const r = resolverPorDepartamento(grupos, medida, { tiposOS, setores })
+          const r = resolverPorDepartamento(grupos, medida, { tiposOS, setores, permite: filtroAcesso })
           for (const [k, v] of r.valoresPorSetorFuncionario) {
             if (!mapa.has(k)) mapa.set(k, new Map())
             const porCod = mapa.get(k)
@@ -1322,7 +1370,7 @@ export default function BiPossibilidades() {
     })().catch(err => {
       if (natEmAndamento.current === chave) { natEmAndamento.current = null; setNatVendedor({ chave, mapa: new Map(), carregando: false, erro: err.message || String(err) }) }
     })
-  }, [ehEvolucao, visao, carregandoValores, medidasBi, periodo, chaveEmpresas, recarga, tiposOS, setores]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [ehEvolucao, visao, carregandoValores, medidasBi, periodo, chaveEmpresas, recarga, tiposOS, setores, acessoPronto, filtroAcesso]) // eslint-disable-line react-hooks/exhaustive-deps
   const nomeNatureza = (cod) => {
     // Arquivo RPR001 é da Caiobá Trucks: código repetido em outro agrupamento (ex.: Motos) fica em segundo plano
     const doCodigo = naturezas.filter(x => String(x.codigo ?? '').trim() === String(cod))
@@ -1546,7 +1594,7 @@ export default function BiPossibilidades() {
               <p className="text-[10px] text-white leading-tight text-right">
                 Atualizado em:<br /><strong>{sincronizando ? '...' : fmtDataHora(ultimaAtualizacao)}</strong>
               </p>
-              <button
+              {podeAtualizarBi && <button
                 type="button"
                 onClick={atualizarAgora}
                 disabled={atualizando}
@@ -1555,9 +1603,9 @@ export default function BiPossibilidades() {
                 className="flex items-center justify-center h-9 w-9 rounded-md border border-slate-300 bg-white text-slate-600 shadow-sm hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
               >
                 <RefreshCw className={`h-4 w-4 ${atualizando ? 'animate-spin' : ''}`} />
-              </button>
+              </button>}
               {/* Engrenagem em todas as abas (26/11/2026): menu de regras */}
-              <div className="relative">
+              {(podeRegrasIndicadores || podeRegrasTempo) && <div className="relative">
                 <button
                   type="button"
                   onClick={() => setMenuEngrenagem(m => !m)}
@@ -1571,18 +1619,18 @@ export default function BiPossibilidades() {
                   <>
                     <div className="fixed inset-0 z-40" onClick={() => setMenuEngrenagem(false)} />
                     <div className="absolute right-0 top-10 z-50 w-60 rounded-md border border-slate-200 bg-white py-1 shadow-lg">
-                      <button type="button" onClick={() => { setMenuEngrenagem(false); setCoresAberto(true) }}
+                      {podeRegrasIndicadores && <button type="button" onClick={() => { setMenuEngrenagem(false); setCoresAberto(true) }}
                         className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-slate-700 hover:bg-slate-50">
                         <Palette className="h-3.5 w-3.5 text-slate-500" /> Regras dos indicadores
-                      </button>
-                      <button type="button" onClick={() => { setMenuEngrenagem(false); setRegrasTempoAberto(true) }}
+                      </button>}
+                      {podeRegrasTempo && <button type="button" onClick={() => { setMenuEngrenagem(false); setRegrasTempoAberto(true) }}
                         className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-slate-700 hover:bg-slate-50">
                         <Clock className="h-3.5 w-3.5 text-slate-500" /> Regras do Tempo na Oficina
-                      </button>
+                      </button>}
                     </div>
                   </>
                 )}
-              </div>
+              </div>}
             </div>
             {erroAtualizacao && <p className="text-[10px] text-red-600 bg-white/90 rounded px-2 py-1 max-w-[420px] text-right leading-tight">{erroAtualizacao}</p>}
             <div className="flex flex-wrap items-end gap-4">
@@ -1614,6 +1662,13 @@ export default function BiPossibilidades() {
         </div>
       </div>
 
+      {semAbaLiberada && (
+        <div className="bg-white border border-slate-200 rounded-lg p-6 text-center text-[12px] text-slate-500">
+          Nenhuma aba deste BI está liberada para o seu grupo de acesso. Peça ao administrador para liberar em Grupo de Acessos › Possibilidades - Sintonia do Dia.
+        </div>
+      )}
+      {/* space-y-5 aqui dentro: o espaçamento da página (space-y-5 do container) não alcança os filhos desta caixa */}
+      <div className={semAbaLiberada ? 'hidden' : 'space-y-5'}>
       {/* VISÕES + (na Total) Metas e Real entre Datas / no Mês, na mesma linha */}
       {/* Linha de base clara (fundo do BI é escuro) na largura toda da página; seletores ao lado das abas ficam um
           pouco acima dela */}
@@ -1621,7 +1676,7 @@ export default function BiPossibilidades() {
       {/* Abas tipo "pasta" (mesmo modelo do BI Auditoria O.S. Aberta, 24/11/2026): cantos de cima arredondados,
           inativas cinza-claro com borda, ativa no azul-marinho do cabeçalho (#1a4d8f) e um pouco mais alta */}
       <div className="flex items-end gap-1 flex-wrap">
-        {VISOES.map(v => (
+        {visoesPermitidas.map(v => (
           <button
             key={v.key}
             type="button"
@@ -1707,6 +1762,7 @@ export default function BiPossibilidades() {
           recarga={recargaTempo}
           onCarregando={setCarregandoTempo}
           regrasVersao={regrasTempoVersao}
+          permiteTipoOs={permiteTipoOs}
         />
       ) : ehEvolucao ? (
         <EvolucaoVendas meses={evoMeses.meses} departamentosOpcoes={evoDeptosOpcoes}
@@ -1847,7 +1903,7 @@ export default function BiPossibilidades() {
             // Tickets planejados ponderados pelas passagens; passagens = meta ÷ ticket total, proporcional ao período.
             const ini = Number(periodo.inicio.slice(0, 4)) * 100 + Number(periodo.inicio.slice(5, 7))
             const fim = Number(periodo.fim.slice(0, 4)) * 100 + Number(periodo.fim.slice(5, 7))
-            const mc = resumoMetaPlanejada(metasPlanejadas.consultor
+            const mc = resumoMetaPlanejada(metasPlanejadasVisiveis.consultor
               .filter(r => r.departamento_id === DEPTO_OFICINA && permiteId(r.empresa_id) && (empresaIds.length === 0 || empresaIds.includes(r.empresa_id)))
               .filter(r => { const am = Number(r.ano) * 100 + Number(r.mes); return am >= ini && am <= fim })
               .map(r => ({ ...r, _f: fracaoMetaPeriodo(r.empresa_id, Number(r.ano), Number(r.mes)) })))
@@ -2075,6 +2131,7 @@ export default function BiPossibilidades() {
           </div>
         </>
       )}
+      </div>
     </div>
     </CoresBiContext.Provider>
   )

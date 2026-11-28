@@ -390,7 +390,7 @@ export default function HondaGarantiasReceber() {
   const { hasPermission, hasActionOrDefault } = useAuth()
   const abasVisiveis = ABAS_PORTADOR.filter(a => hasPermission(`${PERM_TELA}/${a.key}`))
   const chaveAbasVisiveis = abasVisiveis.map(a => a.key).join(',')
-  const podeAtualizar = hasActionOrDefault(PERM_TELA, 'atualizar')
+  const podeAtualizar = true // botão Atualizar liberado para todos que acessam a tela — não fica no Grupo de Acessos
   const podeGerenciarStatus = hasActionOrDefault(PERM_TELA, 'gerenciar_status')
   const podeExcluirStatus = hasActionOrDefault(PERM_TELA, 'excluir_status')
 

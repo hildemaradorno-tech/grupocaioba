@@ -979,7 +979,7 @@ export default function BiPlanosManutencao() {
   const { user, hasAction, hasPermission } = useAuth()
   // Abas liberadas no grupo de acesso (admin vê todas).
   const abasVisiveis = ABAS.filter(a => hasPermission(PERM_ABA[a]))
-  const podeAtualizar = hasAction('bi/planos-manutencao', 'atualizar')
+  const podeAtualizar = true // botão Atualizar liberado para todos que acessam a tela — não fica no Grupo de Acessos
   // Ações do grupo de acesso (Grupos › BI — Planos de Manutenção). Quem só tem o menu vê, mas não edita nem importa.
   const podeEditarMetas = hasAction('bi/planos-manutencao/resultado', 'editar_metas')
   const podeImportar = hasAction('bi/planos-manutencao', 'importar_arquivo')

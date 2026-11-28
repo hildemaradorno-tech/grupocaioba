@@ -100,6 +100,8 @@ import MonitorSharepoint from './pages/governanca/MonitorSharepoint'
 import MonitorCloudflare from './pages/governanca/MonitorCloudflare'
 import SaudeSistema from './pages/governanca/SaudeSistema'
 import GradeTreinamentos from './pages/treinamentos/GradeTreinamentos'
+import Apresentacoes from './pages/treinamentos/apresentacoes/Apresentacoes'
+import ApresentacaoPlayer from './pages/treinamentos/apresentacoes/ApresentacaoPlayer'
 import GrupoAcessos from './pages/governanca/GrupoAcessos'
 import PerfisAcesso from './pages/governanca/PerfisAcesso'
 import Ecossistema from './pages/Ecossistema'
@@ -352,6 +354,8 @@ export default function App() {
           { path: '/governanca/saude-sistema', element: <SaudeSistema />, menuPath: 'governanca/saude-sistema' },
           { path: '/rpa/agendamentos', element: <Navigate to="/governanca/processos/rpa?modo=controle" replace /> },
           { path: '/treinamentos/grade', element: <GradeTreinamentos />, menuPath: 'treinamentos/grade' },
+          { path: '/treinamentos/apresentacoes', element: <Apresentacoes />, menuPath: 'treinamentos/apresentacoes' },
+          { path: '/treinamentos/apresentacoes/:slug', element: <ApresentacaoPlayer />, menuPath: 'treinamentos/apresentacoes' },
           { path: '/governanca/grupo-acessos', element: <GrupoAcessos />, menuPath: 'governanca/grupo-acessos' },
           { path: '/governanca/perfis-acesso', element: <PerfisAcesso />, menuPath: 'governanca/perfis-acesso' },
           { path: '/ecossistema', element: <Ecossistema />, menuPath: 'ecossistema' },

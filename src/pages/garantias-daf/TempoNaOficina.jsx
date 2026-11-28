@@ -226,7 +226,8 @@ const inicioMes = () => `${hojeIso().slice(0, 8)}01`
 
 // empresas: empresas marcadas no BI (objetos de dim_empresas) · periodo: { de, ate } do cabeçalho do BI (data de saída);
 // sem periodo, a própria visão mostra os campos de data.
-export default function TempoNaOficina({ empresas = [], backend, periodo: periodoExterno = null, recarga = 0, onCarregando = null, regrasVersao = 0 }) {
+// permiteTipoOs(tipoOs): opcional — Acesso por Departamento/Setor do grupo (O.S. de setor não liberado fica fora).
+export default function TempoNaOficina({ empresas = [], backend, periodo: periodoExterno = null, recarga = 0, onCarregando = null, regrasVersao = 0, permiteTipoOs = null }) {
   // Uma visão só: O.S. em aberto agora (abertura → hoje) + O.S. que saíram no período (abertura → Fechado).
   // Flags: "Desconsiderar O.S. em aberto" (só as que saíram) e "Considerar somente O.S. em aberto" — uma exclui a outra.
   // Desde 24/11/2026 (pedido do usuário): só as O.S. do Pass (faturadas, pela data de emissão da nota) —
@@ -298,10 +299,14 @@ export default function TempoNaOficina({ empresas = [], backend, periodo: period
       // para a abertura e o fechamento de cada uma — busca os fechamentos desde 1 ano antes (O.S. fechada num mês e
       // faturada no outro) e sem limite no fim.
       const umAnoAntes = `${Number(periodo.de.slice(0, 4)) - 1}${periodo.de.slice(4)}`
-      const [data, passOs] = await Promise.all([
-        lerJson(`${backend}/api/garantias/sharepoint/tempo-oficina?de=${umAnoAntes}&ate=`, 'o SharePoint'),
-        apiService.getPassOsPeriodo({ dataInicio: periodo.de, dataFim: periodo.ate }),
-      ])
+      const passOs = (await apiService.getPassOsPeriodo({ dataInicio: periodo.de, dataFim: periodo.ate }))
+        .filter(p => !permiteTipoOs || permiteTipoOs(p.tipo_os))
+      // 1º: O.S. gravadas no Supabase no "Atualizar" (fato_tempo_oficina_os) — abre na hora (27/11/2026).
+      // Nada gravado para essas O.S.: lê os arquivos do SharePoint como antes.
+      let data = { rows: await apiService.getTempoOficinaOs(passOs.map(p => p.os)).catch(() => []) }
+      if (!data.rows.length && passOs.length) {
+        data = await lerJson(`${backend}/api/garantias/sharepoint/tempo-oficina?de=${umAnoAntes}&ate=`, 'o SharePoint')
+      }
       const comTipo = new Set(passOs.map(p => `${semAcento(p.empresa_norm)}|${p.os}|${semAcento(p.tipo_os)}`))
       const soOs = new Set(passOs.map(p => `${semAcento(p.empresa_norm)}|${p.os}`))
       // Data de saída = emissão da nota fiscal (a mais recente da O.S. no período) — o tempo na oficina vai da
@@ -321,7 +326,7 @@ export default function TempoNaOficina({ empresas = [], backend, periodo: period
         .map(sp => ({ ...sp, fechado_data: dataNota.get(`${semAcento(sp.empresa_nome)}|${String(sp.os_numero).trim()}`) || sp.fechado_data, _empresa: nomeTrucks.get(sp.empresa_nome.toLowerCase()) })))
     } catch (e) { setErro(e.message || String(e)) }
     finally { setCarregandoSaidas(false) }
-  }, [trucks, motos, nomeTrucks, backend, periodo.de, periodo.ate]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [trucks, motos, nomeTrucks, backend, periodo.de, periodo.ate, permiteTipoOs]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { carregarSaidas() }, [carregarSaidas])
   const carregar = () => { carregarSaidas() }

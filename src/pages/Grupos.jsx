@@ -6,10 +6,9 @@ import { ACOES_POR_PATH } from '../config/acoesMenu'
 import { DIMENSOES_COMISSAO, escopoComissaoTudoLiberado } from '../utils/permissoesComissao'
 import MenuEngrenagem from '../components/MenuEngrenagem'
 
-// Usado pra só exibir "Acesso por Departamento — Auditoria Externa"/"— Gestão de Projetos"
-// quando o grupo já tem pelo menos uma página do respectivo módulo liberada em Acesso a Páginas.
+// Usado pra só exibir "Acesso por Departamento — Auditoria Externa" quando o grupo já tem pelo menos
+// uma página do módulo liberada em Acesso a Páginas. (O "Acesso por Departamento" geral aparece sempre.)
 const AUDITORIA_EXTERNA_KEYS = ALL_LEAF_KEYS.filter(k => k.startsWith('auditoria-externa/'))
-const GESTAO_PROJETOS_KEYS = ALL_LEAF_KEYS.filter(k => k === 'projetos' || k.startsWith('projetos/'))
 
 // ── Tree checkbox node ────────────────────────────────────────────────────────
 
@@ -281,6 +280,9 @@ export default function Grupos() {
   const [empresaModoIndividual, setEmpresaModoIndividual] = useState(false)
   const [empresaExpandido, setEmpresaExpandido] = useState(false)
   const [selectedDeptosProjetos, setSelectedDeptosProjetos] = useState(new Set())
+  // Acesso por Setor (regra geral; Configurações → Setor de Serviços)
+  const [setorModo, setSetorModo] = useState('TODOS')
+  const [selectedSetores, setSelectedSetores] = useState(new Set())
   const [projetosDeptoModo, setProjetosDeptoModo] = useState('TODOS')
   const [garantiasVisao, setGarantiasVisao] = useState('tabela') // 'dashboard' | 'tabela' (= Controle)
   const [auditoriaVisao, setAuditoriaVisao] = useState('dashboard') // Auditoria O.S. Aberta: 'dashboard' | 'controle'
@@ -464,6 +466,9 @@ export default function Grupos() {
         apiService.getVisaoGarantiasGrupo(grupo.id),
         apiService.getVisaoAuditoriaGrupo(grupo.id),
       ])
+      apiService.getPermissoesSetorPorGrupo(grupo.id)
+        .then(r => { setSetorModo(r.modo); setSelectedSetores(new Set(r.valores)) })
+        .catch(() => { setSetorModo('TODOS'); setSelectedSetores(new Set()) })
       setSelectedPaths(new Set(paths))
       setSelectedAcoes(new Set(acoes.map(a => `${a.menu_path}|${a.acao}`)))
       setSelectedEmpresas(new Set(empIds))
@@ -664,6 +669,7 @@ export default function Grupos() {
         })),
         apiService.setPermissoesEmpresasGrupo(editingId_, isAdmin ? [] : [...selectedEmpresas]),
         apiService.setPermissoesDeptoPorGrupo(editingId_, isAdmin ? 'TODOS' : projetosDeptoModo, isAdmin ? [] : [...selectedDeptosProjetos]),
+        apiService.setPermissoesSetorPorGrupo(editingId_, isAdmin ? 'TODOS' : setorModo, isAdmin ? [] : [...selectedSetores]),
         apiService.setVisaoGarantiasGrupo(editingId_, garantiasVisao),
         apiService.setVisaoAuditoriaGrupo(editingId_, auditoriaVisao),
         apiService.setPermissoesDeptoAuditoriaPorGrupo(editingId_, isAdmin ? 'TODOS' : auditoriaDeptoModo, isAdmin ? [] : [...selectedDeptosAuditoria]),
@@ -990,14 +996,15 @@ export default function Grupos() {
         )}
       </div>
 
-      {/* ── Acesso por Departamento — Gestão de Projetos (só quando o grupo tem alguma
-           página do módulo liberada) ── */}
-      {(isAdmin || GESTAO_PROJETOS_KEYS.some(k => selectedPaths.has(k))) && (
+      {/* ── Acesso por Departamento — regra geral do sistema (Configurações → Departamentos). Vale em
+           todas as telas que restringem por departamento (hoje: Gestão de Projetos e BI Projetos). ── */}
+      {(
         <div className="bg-white rounded-lg shadow border border-slate-200 overflow-hidden mt-4">
           <div className="px-5 py-4 border-b border-slate-100">
-            <h2 className="text-base font-bold text-slate-900">Acesso por Departamento — Gestão de Projetos</h2>
+            <h2 className="text-base font-bold text-slate-900">Acesso por Departamento</h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              Restringe quais projetos este grupo pode visualizar em Gestão de Projetos, pelo departamento do projeto.
+              Restringe o que este grupo pode ver por departamento em todo o sistema, nas telas que usam essa regra
+              (hoje: Gestão de Projetos, BI Projetos e Possibilidades - Sintonia do Dia). Departamentos do cadastro de Configurações → Departamentos.
               "Todos" não restringe (inclusive departamentos criados no futuro); "Individual" libera só os marcados.
               {isAdmin && <span className="block mt-1 text-amber-600 font-medium">Administrador vê tudo automaticamente.</span>}
             </p>
@@ -1018,6 +1025,36 @@ export default function Grupos() {
           )}
         </div>
       )}
+
+      {/* ── Acesso por Setor — regra geral do sistema (Configurações → Setor de Serviços) ── */}
+      <div className="bg-white rounded-lg shadow border border-slate-200 overflow-hidden mt-4">
+        <div className="px-5 py-4 border-b border-slate-100">
+          <h2 className="text-base font-bold text-slate-900">Acesso por Setor</h2>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Restringe o que este grupo pode ver por setor em todo o sistema, nas telas que usam essa regra
+            (hoje: Possibilidades - Sintonia do Dia).
+            Setores do cadastro de Configurações → Setor de Serviços.
+            "Todos" não restringe (inclusive setores criados no futuro); "Individual" libera só os marcados.
+            {isAdmin && <span className="block mt-1 text-amber-600 font-medium">Administrador vê tudo automaticamente.</span>}
+          </p>
+        </div>
+        {!loadingPerms && (
+          <div className="px-5 py-1">
+            <SeletorDimensaoComissao
+              label="Setor"
+              escopo={{ modo: setorModo, valores: selectedSetores }}
+              opcoes={[...setoresComissao]
+                .map(st => ({ valor: st.id, label: `${st.nome_setor}${departamentosComissao.find(d => d.id === st.departamento_id) ? ` (${departamentosComissao.find(d => d.id === st.departamento_id).nome_departamento})` : ''}` }))
+                .sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'))}
+              disabled={isAdmin}
+              onModoChange={setSetorModo}
+              onToggleValor={(id) => setSelectedSetores(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n })}
+              onSelecionarTodos={() => setSelectedSetores(new Set(setoresComissao.map(st => st.id)))}
+              onLimpar={() => setSelectedSetores(new Set())}
+            />
+          </div>
+        )}
+      </div>
 
       {/* ── Acesso por Departamento — Auditoria Externa (só quando o grupo tem alguma
            página do módulo liberada) ── */}

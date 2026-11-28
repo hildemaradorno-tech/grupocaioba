@@ -2205,15 +2205,29 @@ export const apiService = {
   getMetasPlanejadasAprovadas: async (ano) => {
     const [cons, pecas] = await Promise.all([
       supabase.from('fato_rascunho_metas_servicos_consultor')
-        .select('empresa_id, departamento_id, ano, mes, colaborador_id, meta_aprovada, meta_pecas, meta_servicos, ticket_pecas, ticket_servicos, ticket_total, margem_pecas_pct, margem_servicos_pct')
+        .select('empresa_id, departamento_id, setor_id, ano, mes, colaborador_id, meta_aprovada, meta_pecas, meta_servicos, ticket_pecas, ticket_servicos, ticket_total, margem_pecas_pct, margem_servicos_pct')
         .eq('ano', ano).not('meta_aprovada', 'is', null),
       supabase.from('fato_rascunho_metas_pecas')
-        .select('empresa_id, departamento_id, ano, mes, colaborador_id, meta_aprovada, margem_pecas_pct')
+        .select('empresa_id, departamento_id, setor_id, ano, mes, colaborador_id, meta_aprovada, margem_pecas_pct')
         .eq('ano', ano).not('meta_aprovada', 'is', null),
     ])
     if (cons.error) throw cons.error
     if (pecas.error) throw pecas.error
     return { consultor: cons.data || [], pecas: pecas.data || [] }
+  },
+
+  // BI Possibilidades › aba Tempo na Oficina: O.S. fechadas gravadas no "Atualizar" (fato_tempo_oficina_os), pelos números.
+  getTempoOficinaOs: async (osNumeros) => {
+    const lista = [...new Set((osNumeros || []).map(o => String(o).trim()).filter(Boolean))]
+    const out = []
+    for (let i = 0; i < lista.length; i += 200) {
+      const { data, error } = await supabase.from('fato_tempo_oficina_os')
+        .select('empresa_nome, os_numero, tipo_os_sigla, consultor_nome, proprietario_veiculo, veiculo_placa, veiculo_chassi, total, data_criacao, fechado_data, situacao')
+        .in('os_numero', lista.slice(i, i + 200))
+      if (error) throw error
+      out.push(...(data || []))
+    }
+    return out
   },
 
   // BI Possibilidades › aba Peças: separação por Natureza de Operação gravada no "Atualizar" (fato_bi_natureza_diario).
@@ -4653,6 +4667,42 @@ export const apiService = {
       const { error } = await supabase.from('permissoes_depto_grupo').insert(nomes.map(nome => ({ grupo_id: grupoId, departamento_nome: nome })))
       if (error) throw error
     }
+  },
+
+  // ── Acesso por Setor (regra geral; grupos_acesso.setor_modo + permissoes_setor_grupo) ──
+  getPermissoesSetorPorGrupo: async (grupoId) => {
+    const [{ data, error }, { data: g, error: e2 }] = await Promise.all([
+      supabase.from('permissoes_setor_grupo').select('setor_id').eq('grupo_id', grupoId),
+      supabase.from('grupos_acesso').select('setor_modo').eq('id', grupoId).maybeSingle(),
+    ])
+    if (error) throw error
+    if (e2) throw e2
+    return { modo: g?.setor_modo === 'INDIVIDUAL' ? 'INDIVIDUAL' : 'TODOS', valores: (data || []).map(r => r.setor_id) }
+  },
+  setPermissoesSetorPorGrupo: async (grupoId, modo, setorIds) => {
+    const modoFinal = modo === 'INDIVIDUAL' ? 'INDIVIDUAL' : 'TODOS'
+    const [{ error: delErr }, { error: errModo }] = await Promise.all([
+      supabase.from('permissoes_setor_grupo').delete().eq('grupo_id', grupoId),
+      supabase.from('grupos_acesso').update({ setor_modo: modoFinal }).eq('id', grupoId),
+    ])
+    if (delErr) throw delErr
+    if (errModo) throw errModo
+    if (modoFinal === 'INDIVIDUAL' && setorIds.length > 0) {
+      const { error } = await supabase.from('permissoes_setor_grupo').insert(setorIds.map(setor_id => ({ grupo_id: grupoId, setor_id })))
+      if (error) throw error
+    }
+  },
+  // Escopo de setor do usuário (pelo e-mail — vale para "Visualizar como"): modo, ids e nomes dos setores liberados
+  getEscopoSetorDoUsuario: async (email) => {
+    const { data: u, error } = await supabase.from('usuarios').select('grupo_id').eq('email', email).maybeSingle()
+    if (error) throw error
+    if (!u?.grupo_id) return { modo: 'TODOS', setorIds: new Set(), nomes: new Set() }
+    const [{ data: g }, { data: perms }] = await Promise.all([
+      supabase.from('grupos_acesso').select('setor_modo').eq('id', u.grupo_id).maybeSingle(),
+      supabase.from('permissoes_setor_grupo').select('setor_id, setor:dim_setores(nome_setor)').eq('grupo_id', u.grupo_id),
+    ])
+    if (g?.setor_modo !== 'INDIVIDUAL') return { modo: 'TODOS', setorIds: new Set(), nomes: new Set() }
+    return { modo: 'INDIVIDUAL', setorIds: new Set((perms || []).map(p => p.setor_id)), nomes: new Set((perms || []).map(p => p.setor?.nome_setor).filter(Boolean)) }
   },
 
   // Restringe Auditoria Externa por departamento, independente de Projetos (antes as duas

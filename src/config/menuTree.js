@@ -454,7 +454,22 @@ export const MENU_TREE = [
           { key: 'bi/planos-manutencao/ordens-servico', label: 'Aba Ordens de Serviço' },
         ],
       },
-      { key: 'bi/possibilidades', label: 'Possibilidades - Sintonia do Dia' },
+      // BI Possibilidades - Sintonia do Dia (27/11/2026): mesmo padrão do Planos de Manutenção — a key da tela
+      // (bi/possibilidades) dá o acesso (rotas e RLS usam ela); cada aba é uma permissão própria; botões em acoesMenu.js.
+      {
+        key: '_bi.possibilidades',
+        label: 'Possibilidades - Sintonia do Dia',
+        navTo: 'bi/possibilidades',
+        children: [
+          { key: 'bi/possibilidades', label: 'Tela BI — Possibilidades - Sintonia do Dia' },
+          { key: 'bi/possibilidades/total', label: 'Aba Total' },
+          { key: 'bi/possibilidades/pecas', label: 'Aba Peças' },
+          { key: 'bi/possibilidades/servicos', label: 'Aba Serviços' },
+          { key: 'bi/possibilidades/margem', label: 'Aba Margem' },
+          { key: 'bi/possibilidades/evolucao', label: 'Aba Evolução' },
+          { key: 'bi/possibilidades/tempo-oficina', label: 'Aba Tempo na Oficina' },
+        ],
+      },
       ],
       },
     ],
@@ -503,6 +518,8 @@ export const MENU_TREE = [
     label: 'Treinamentos',
     children: [
       { key: 'treinamentos/grade', label: 'Grade de Treinamentos' },
+      // Apresentações (27/11/2026): catálogo de apresentações feitas no próprio sistema (React), abre como slideshow
+      { key: 'treinamentos/apresentacoes', label: 'Apresentações' },
       { key: 'treinamentos/central', label: 'Central de Treinamentos', href: 'https://centraldetreinamentos.netlify.app/' },
     ],
   },
